@@ -1,14 +1,51 @@
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { InternalAxiosRequestConfig } from 'axios';
+import { z } from 'zod';
 import { apiClient } from './api';
+import { getAuthData, registerSessionCacheClearer, setAuthData } from './auth';
+import { registerRouterNavigation } from './router-navigation';
+import { setAdminRuntimeConfig } from '@/test/runtime-config';
 
-const apiSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'api.ts'), 'utf8');
+type Adapter = typeof apiClient.axios.defaults.adapter;
+type AdapterFn = Extract<NonNullable<Adapter>, (...args: never[]) => unknown>;
+type RouterNavigate = (to: '/login', options: { replace: true }) => Promise<void>;
+const originalAdapter = apiClient.axios.defaults.adapter;
+
+function adapterFor(status: number, data: unknown): AdapterFn {
+  return async (config) => {
+    const response = { config, data, headers: {}, status, statusText: `${status}` };
+    if (config.validateStatus && !config.validateStatus(status)) {
+      const error = new Error(`Request failed with status code ${status}`) as Error & {
+        config: unknown;
+        response: unknown;
+        isAxiosError: boolean;
+      };
+      error.config = config;
+      error.response = response;
+      error.isAxiosError = true;
+      throw error;
+    }
+    return response;
+  };
+}
+
+function transportErrorAdapter(message: string): AdapterFn {
+  return async (config) => {
+    const error = new Error(message) as Error & {
+      config: unknown;
+      isAxiosError: boolean;
+    };
+    error.config = config;
+    error.isAxiosError = true;
+    throw error;
+  };
+}
 
 describe('admin api legacy path resolution', () => {
+  let routerNavigate: ReturnType<typeof vi.fn<RouterNavigate>>;
+
   beforeEach(() => {
+    routerNavigate = vi.fn<RouterNavigate>().mockResolvedValue(undefined);
+    registerRouterNavigation({ navigate: routerNavigate });
     const store = new Map<string, string>();
     const storage = {
       clear: () => store.clear(),
@@ -31,36 +68,41 @@ describe('admin api legacy path resolution', () => {
   });
 
   afterEach(() => {
-    window.settings = undefined;
+    apiClient.axios.defaults.adapter = originalAdapter;
+    registerSessionCacheClearer(() => undefined);
+    vi.restoreAllMocks();
+    setAdminRuntimeConfig();
     window.g_lang = undefined;
     window.localStorage.clear();
   });
 
-  it('prefixes admin endpoints with window.settings.secure_path', () => {
-    window.settings = { secure_path: '/secret-admin' };
+  it('prefixes admin endpoints with the bootstrapped secure_path', () => {
+    setAdminRuntimeConfig({ secure_path: '/secret-admin' });
 
     expect(apiClient.resolveAdminPath('/plan/fetch')).toBe('/secret-admin/plan/fetch');
   });
 
-  it('falls back to the original endpoint path when secure_path is not present', () => {
-    window.settings = {};
+  it('uses the canonical admin path when the runtime bootstrap is absent', () => {
+    setAdminRuntimeConfig();
 
-    expect(apiClient.resolveAdminPath('/plan/fetch')).toBe('/plan/fetch');
+    expect(apiClient.resolveAdminPath('/plan/fetch')).toBe('/admin/plan/fetch');
   });
 
-  it('uses window.settings.host for the legacy admin service host', async () => {
+  it('keeps the admin API same-origin', async () => {
     vi.resetModules();
-    window.settings = { host: 'https://api.example.com', secure_path: 'admin' };
+    setAdminRuntimeConfig({ secure_path: 'admin' });
 
     const { apiClient: hostedClient } = await import('./api');
 
-    expect(hostedClient.axios.defaults.baseURL).toBe('https://api.example.com/api/v1');
+    expect(hostedClient.axios.defaults.baseURL).toBe(
+      `${new URL(window.location.href).origin}/api/v1`,
+    );
   });
 
-  it('does not send the user-bundle locale header on admin requests', async () => {
+  it('sends the shared active locale in admin request headers', async () => {
     window.g_lang = 'ja-JP';
     const originalAdapter = apiClient.axios.defaults.adapter;
-    let requestConfig: InternalAxiosRequestConfig | undefined;
+    let requestConfig: Parameters<AdapterFn>[0] | undefined;
     apiClient.axios.defaults.adapter = async (config) => {
       requestConfig = config;
       return {
@@ -73,49 +115,71 @@ describe('admin api legacy path resolution', () => {
     };
 
     try {
-      await apiClient.request({ url: '/plan/fetch', method: 'GET' });
+      await apiClient.request({
+        url: '/plan/fetch',
+        method: 'GET',
+        responseSchema: z.unknown(),
+      });
 
-      expect(requestConfig?.headers?.['Content-Language']).toBeUndefined();
+      expect(requestConfig?.headers?.['Content-Language']).toBe('ja-JP');
     } finally {
       apiClient.axios.defaults.adapter = originalAdapter;
     }
   });
 
-  it('keeps auth and redirects once to the hash login route on 403', () => {
-    expect(apiSource).not.toContain('logout();');
-    expect(apiSource).toContain('let redirectingToLogin = false;');
-    expect(apiSource).toContain('if (redirectingToLogin) return;');
-    expect(apiSource).toContain('redirectingToLogin = true;');
-    expect(apiSource).toContain('setAuthData(null);');
-    expect(apiSource).toContain('replaceLegacyLoginHash();');
-    expect(apiSource).toContain("`${window.location.pathname}${window.location.search}#/login`");
-    expect(apiSource).toContain("new HashChangeEvent('hashchange'");
-    expect(apiSource).toContain("new PopStateEvent('popstate')");
-    expect(apiSource).toContain('restoreAuthAfterLoginRendered(authData);');
-    expect(apiSource).toContain("document.querySelector('.v2board-auth-box')");
-    expect(apiSource).toContain('setAuthData(authData);');
-    expect(apiSource).toContain('window.setTimeout(restore, 0);');
-    expect(apiSource).not.toContain('attemptsLeft <= 0');
-    expect(apiSource).not.toContain('data-v2board-admin-redirect');
-    expect(apiSource).not.toContain('window.location.pathname}#/login');
-    expect(apiSource).not.toContain('window.location.href = `${window.location.origin}/#/login`;');
-    expect(apiSource).not.toContain(
-      'window.location.href = window.location.origin + window.location.pathname;',
-    );
-    expect(apiSource).not.toContain('window.location.replace');
+  it('repairs an unsupported persisted locale from the supported browser preference', async () => {
+    vi.spyOn(window.navigator, 'languages', 'get').mockReturnValue(['ja-JP']);
+    vi.spyOn(window.navigator, 'language', 'get').mockReturnValue('ja-JP');
+    window.localStorage.setItem('umi_locale', 'fr-FR');
+    window.g_lang = 'not-a-locale';
+    let requestConfig: Parameters<AdapterFn>[0] | undefined;
+    apiClient.axios.defaults.adapter = async (config) => {
+      requestConfig = config;
+      return {
+        data: { data: [] },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      };
+    };
+
+    await apiClient.request({
+      url: '/plan/fetch',
+      method: 'GET',
+      responseSchema: z.unknown(),
+    });
+
+    expect(requestConfig?.headers?.['Content-Language']).toBe('ja-JP');
   });
 
-  it('raises a global notification for backend errors but stays silent on transport timeouts', () => {
-    // Faithful to the packaged admin: every non-200 backend response raises a
-    // single global notification ("请求失败" + first validation error / message),
-    // while transport-level failures (status 0) show nothing. The antd static
-    // notification API was replaced by the shadcn island toaster.
-    expect(apiSource).toContain('if (error.status === 0) return;');
-    expect(apiSource).toContain('toast.error(i18nGet(\'请求失败\'), {');
-    expect(apiSource).toContain('description: i18nGet(error.message),');
-    expect(apiSource).toContain('duration: 1500,');
-    expect(apiSource).not.toContain('notificationApi');
-    expect(apiSource).not.toContain("from 'antd'");
-    expect(apiSource).not.toContain('if (error.status >= 500) {');
+  it('clears the invalid credential, query cache and redirects to login on 403', async () => {
+    const clear = vi.fn();
+    registerSessionCacheClearer(clear);
+    setAuthData('expired-admin');
+    clear.mockClear();
+    apiClient.axios.defaults.adapter = adapterFor(403, { message: 'auth required' });
+
+    await expect(
+      apiClient.request({ url: '/user/info', method: 'GET', responseSchema: z.unknown() }),
+    ).rejects.toMatchObject({ status: 403 });
+
+    expect(getAuthData()).toBeNull();
+    expect(clear).toHaveBeenCalledOnce();
+    expect(routerNavigate).toHaveBeenCalledOnce();
+    expect(routerNavigate).toHaveBeenCalledWith('/login', { replace: true });
+  });
+
+  it('returns typed backend and transport errors to their query or mutation owner', async () => {
+    apiClient.axios.defaults.adapter = adapterFor(500, { message: 'server exploded' });
+
+    await expect(
+      apiClient.request({ url: '/plan/fetch', method: 'GET', responseSchema: z.unknown() }),
+    ).rejects.toMatchObject({ status: 500, message: 'server exploded' });
+
+    apiClient.axios.defaults.adapter = transportErrorAdapter('Network Error');
+    await expect(
+      apiClient.request({ url: '/plan/fetch', method: 'GET', responseSchema: z.unknown() }),
+    ).rejects.toMatchObject({ status: 0, message: 'Network Error' });
   });
 });

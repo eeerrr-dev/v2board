@@ -4,17 +4,15 @@ import { toast } from '@/lib/toast';
 import { useCountdown } from './use-countdown';
 
 interface SendEmailVerifyFlowOptions {
-  /** The legacy `isforget` flag: 0 for register, 1 for forget-password. */
+  /** The backend `isforget` flag: 0 for register, 1 for forget-password. */
   isforget: 0 | 1;
-  /** Resolves the address to send to (register wraps the whitelist suffix). */
-  getEmail: () => string;
   /** Runs the action behind the recaptcha gate (no-op gate when disabled). */
   runRecaptcha: (action: (recaptchaData?: string) => void | Promise<void>) => void;
 }
 
 export interface SendEmailVerifyFlow {
   /** Send-code button handler — runs recaptcha, then the email-verify mutation. */
-  sendCode: () => void;
+  sendCode: (email: string) => void;
   isSendingCode: boolean;
   cooldownActive: boolean;
   cooldownRemaining: number;
@@ -28,29 +26,37 @@ export interface SendEmailVerifyFlow {
 // controller, which is the only place that work outlives this flow.
 export function useSendEmailVerifyFlow({
   isforget,
-  getEmail,
   runRecaptcha,
 }: SendEmailVerifyFlowOptions): SendEmailVerifyFlow {
   const { t } = useTranslation();
-  const { mutateAsync: sendCodeMutation, isPending: isSendingCode } = useSendEmailVerifyMutation();
+  const { mutate: sendCodeMutation, isPending: isSendingCode } = useSendEmailVerifyMutation();
   const cooldown = useCountdown(60);
 
-  const onSendCode = async (recaptchaData?: string) => {
-    try {
-      const sent = await sendCodeMutation({
-        email: getEmail(),
+  const onSendCode = (email: string, recaptchaData?: string) => {
+    sendCodeMutation(
+      {
+        email,
         isforget,
         ...(recaptchaData ? { recaptcha_data: recaptchaData } : {}),
-      });
-      if (!sent) return;
-      toast.success(t('auth.email_code_sent_title'), {
-        description: t('auth.email_code_sent_description'),
-      });
-      cooldown.start();
-    } catch {}
+      },
+      {
+        onSuccess: (sent) => {
+          if (!sent) return;
+          toast.success(t($ => $.auth.email_code_sent_title), {
+            description: t($ => $.auth.email_code_sent_description),
+          });
+          cooldown.start();
+        },
+      },
+    );
   };
 
-  const sendCode = () => runRecaptcha(onSendCode);
+  // Capture the schema-validated email before opening recaptcha. Reading the
+  // live input only after the challenge would let edits made while it is open
+  // bypass the validation that preceded the action.
+  const sendCode = (email: string) => {
+    runRecaptcha((recaptchaData) => onSendCode(email, recaptchaData));
+  };
 
   return {
     sendCode,

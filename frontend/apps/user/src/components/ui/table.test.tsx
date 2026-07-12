@@ -17,8 +17,8 @@ import {
 describe('Table', () => {
   it('composes table primitives and passes caller hook classes and data attributes through', () => {
     renderWithProviders(
-      <TableScroll className="v2board-table-scroll">
-        <Table className="v2board-table min-w-[640px]">
+      <TableScroll className="test-table-scroll">
+        <Table className="test-table min-w-[640px]">
           <TableHeader className="border-y">
             <TableRow>
               <TableHead>Name</TableHead>
@@ -37,8 +37,8 @@ describe('Table', () => {
 
     const table = screen.getByRole('table');
     // Caller-supplied stable-selector hooks must land on the rendered elements.
-    expect(table).toHaveClass('v2board-table');
-    expect(table.parentElement).toHaveClass('v2board-table-scroll');
+    expect(table).toHaveClass('test-table');
+    expect(table.parentElement).toHaveClass('test-table-scroll');
     expect(screen.getByRole('columnheader', { name: 'Name' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Amount' })).toHaveClass('text-right');
     expect(screen.getByRole('cell', { name: '12.00' })).toHaveClass('text-right');
@@ -53,7 +53,7 @@ describe('Table', () => {
     renderWithProviders(
       <Table>
         <TableBody>
-          <TableEmpty colSpan={3} rowClassName="v2board-empty">
+          <TableEmpty colSpan={3} rowClassName="test-empty-row">
             Empty
           </TableEmpty>
         </TableBody>
@@ -62,10 +62,11 @@ describe('Table', () => {
 
     const cell = screen.getByRole('cell', { name: 'Empty' });
     expect(cell).toHaveAttribute('colspan', '3');
-    expect(cell.closest('tr')).toHaveClass('v2board-empty');
+    expect(cell.closest('tr')).toHaveClass('test-empty-row');
   });
 
   it('renders DataTable rows, cells, and row keys from column definitions', () => {
+    const scrollRef: { current: HTMLDivElement | null } = { current: null };
     renderWithProviders(
       <DataTable
         columns={[
@@ -78,6 +79,7 @@ describe('Table', () => {
         ]}
         data={[{ name: 'Alpha', amount: 12 }]}
         getRowKey={(row) => row.name}
+        scrollRef={scrollRef}
       />,
     );
 
@@ -85,6 +87,7 @@ describe('Table', () => {
     expect(screen.getByRole('cell', { name: 'Alpha' })).toBeInTheDocument();
     // meta.align drives cell alignment through the column definition API.
     expect(screen.getByRole('cell', { name: '12.00' })).toHaveClass('text-right');
+    expect(scrollRef.current).toHaveAttribute('data-slot', 'table-scroll');
     // getRowKey feeds the row identity exposed as data-row-key.
     expect(screen.getByRole('cell', { name: 'Alpha' }).closest('tr')).toHaveAttribute(
       'data-row-key',

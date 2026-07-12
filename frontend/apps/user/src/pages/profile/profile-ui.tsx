@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
@@ -81,12 +83,20 @@ export function ProfileConfirmDialog({
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <Button variant="outline" onClick={onCancel}>
-            {t('common.cancel')}
-          </Button>
-          <Button data-testid="profile-confirm-primary" onClick={onConfirm}>
-            {t('profile.confirm')}
-          </Button>
+          <AlertDialogCancel asChild>
+            <Button variant="outline">{t($ => $.common.cancel)}</Button>
+          </AlertDialogCancel>
+          <AlertDialogAction asChild>
+            <Button
+              data-testid="profile-confirm-primary"
+              onClick={(event) => {
+                event.preventDefault();
+                onConfirm();
+              }}
+            >
+              {t($ => $.profile.confirm)}
+            </Button>
+          </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

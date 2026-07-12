@@ -1,5 +1,7 @@
+use std::collections::{BTreeSet, HashMap};
+
 use serde::Serialize;
-use sqlx::{FromRow, MySqlPool};
+use sqlx::{FromRow, MySql, MySqlPool, QueryBuilder};
 
 use crate::plan::{PlanRow, find_plan};
 
@@ -87,6 +89,18 @@ struct RawOrderRow {
 pub struct CancelCandidate {
     pub status: i8,
     pub balance_amount: Option<i32>,
+    pub payment_id: Option<i32>,
+    pub callback_no: Option<String>,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum CancelPendingOrderError {
+    #[error("database error: {0}")]
+    Database(#[from] sqlx::Error),
+    #[error("the order balance refund exceeds the supported balance range")]
+    BalanceOverflow,
+    #[error("the order owner no longer exists")]
+    UserNotFound,
 }
 
 pub async fn fetch_user_orders(
@@ -110,13 +124,14 @@ pub async fn fetch_user_orders(
         }
     };
 
+    let plan_ids = rows
+        .iter()
+        .filter_map(|row| (row.plan_id != 0).then_some(row.plan_id))
+        .collect::<Vec<_>>();
+    let plans = fetch_order_plans(pool, &plan_ids).await?;
     let mut orders = Vec::with_capacity(rows.len());
     for row in rows {
-        let plan = if row.plan_id == 0 {
-            None
-        } else {
-            find_plan(pool, row.plan_id).await?
-        };
+        let plan = plans.get(&row.plan_id).cloned();
         orders.push(to_order(row, plan));
     }
     Ok(orders)
@@ -152,16 +167,20 @@ pub async fn find_user_order(
     let mut order = to_order(row, plan);
     order.try_out_plan_id = Some(try_out_plan_id);
     if let Some(ids) = surplus_order_ids {
+        let raw_orders = fetch_raw_user_orders_by_ids(pool, user_id, &ids).await?;
+        let plan_ids = raw_orders
+            .values()
+            .filter_map(|row| (row.plan_id != 0).then_some(row.plan_id))
+            .collect::<Vec<_>>();
+        let plans = fetch_order_plans(pool, &plan_ids).await?;
         let mut surplus_orders = Vec::new();
-        for id in ids {
-            if let Some(raw) = find_raw_user_order_by_id(pool, user_id, id).await? {
-                let plan = if raw.plan_id == 0 {
-                    Some(deposit_plan())
-                } else {
-                    find_plan(pool, raw.plan_id).await?
-                };
-                surplus_orders.push(to_order(raw, plan));
-            }
+        for raw in values_in_requested_order(&ids, &raw_orders) {
+            let plan = if raw.plan_id == 0 {
+                Some(deposit_plan())
+            } else {
+                plans.get(&raw.plan_id).cloned()
+            };
+            surplus_orders.push(to_order(raw, plan));
         }
         if !surplus_orders.is_empty() {
             order.surplus_orders = Some(surplus_orders);
@@ -188,7 +207,7 @@ pub async fn find_cancel_candidate(
     trade_no: &str,
 ) -> Result<Option<CancelCandidate>, sqlx::Error> {
     sqlx::query_as::<_, CancelCandidateRow>(
-        "SELECT status, balance_amount FROM v2_order WHERE user_id = ? AND trade_no = ? LIMIT 1",
+        "SELECT status, balance_amount, payment_id, callback_no FROM v2_order WHERE user_id = ? AND trade_no = ? LIMIT 1",
     )
     .bind(user_id)
     .bind(trade_no)
@@ -198,6 +217,8 @@ pub async fn find_cancel_candidate(
         row.map(|row| CancelCandidate {
             status: row.status,
             balance_amount: row.balance_amount,
+            payment_id: row.payment_id,
+            callback_no: row.callback_no,
         })
     })
 }
@@ -207,15 +228,23 @@ pub async fn cancel_pending_order(
     user_id: i64,
     trade_no: &str,
     balance_amount: Option<i32>,
+    expected_payment_id: Option<i32>,
+    expected_callback_no: Option<&str>,
     now: i64,
-) -> Result<bool, sqlx::Error> {
+) -> Result<bool, CancelPendingOrderError> {
     let mut tx = pool.begin().await?;
     let result = sqlx::query(
-        "UPDATE v2_order SET status = 2, updated_at = ? WHERE user_id = ? AND trade_no = ? AND status = 0",
+        r#"
+        UPDATE v2_order SET status = 2, updated_at = ?
+        WHERE user_id = ? AND trade_no = ? AND status = 0
+          AND payment_id <=> ? AND callback_no <=> ?
+        "#,
     )
     .bind(now)
     .bind(user_id)
     .bind(trade_no)
+    .bind(expected_payment_id)
+    .bind(expected_callback_no)
     .execute(&mut *tx)
     .await?;
 
@@ -225,8 +254,17 @@ pub async fn cancel_pending_order(
     }
 
     if let Some(balance_amount) = balance_amount.filter(|amount| *amount > 0) {
-        sqlx::query("UPDATE v2_user SET balance = balance + ?, updated_at = ? WHERE id = ?")
-            .bind(balance_amount)
+        let current_balance: i32 =
+            sqlx::query_scalar("SELECT balance FROM v2_user WHERE id = ? LIMIT 1 FOR UPDATE")
+                .bind(user_id)
+                .fetch_optional(&mut *tx)
+                .await?
+                .ok_or(CancelPendingOrderError::UserNotFound)?;
+        let new_balance = current_balance
+            .checked_add(balance_amount)
+            .ok_or(CancelPendingOrderError::BalanceOverflow)?;
+        sqlx::query("UPDATE v2_user SET balance = ?, updated_at = ? WHERE id = ?")
+            .bind(new_balance)
             .bind(now)
             .bind(user_id)
             .execute(&mut *tx)
@@ -241,6 +279,8 @@ pub async fn cancel_pending_order(
 struct CancelCandidateRow {
     status: i8,
     balance_amount: Option<i32>,
+    payment_id: Option<i32>,
+    callback_no: Option<String>,
 }
 
 async fn find_raw_user_order(
@@ -255,16 +295,59 @@ async fn find_raw_user_order(
         .await
 }
 
-async fn find_raw_user_order_by_id(
+async fn fetch_raw_user_orders_by_ids(
     pool: &MySqlPool,
     user_id: i64,
-    id: i64,
-) -> Result<Option<RawOrderRow>, sqlx::Error> {
-    sqlx::query_as::<_, RawOrderRow>(ORDER_FIND_BY_ID_SQL)
-        .bind(user_id)
-        .bind(id)
-        .fetch_optional(pool)
-        .await
+    ids: &[i64],
+) -> Result<HashMap<i64, RawOrderRow>, sqlx::Error> {
+    let ids = ids.iter().copied().collect::<BTreeSet<_>>();
+    let mut rows = HashMap::with_capacity(ids.len());
+    let ids = ids.into_iter().collect::<Vec<_>>();
+    for chunk in ids.chunks(500) {
+        let mut builder = QueryBuilder::<MySql>::new(ORDER_FIND_BY_IDS_SQL);
+        builder.push_bind(user_id);
+        builder.push(" AND id IN (");
+        let mut separated = builder.separated(", ");
+        for id in chunk {
+            separated.push_bind(*id);
+        }
+        builder.push(")");
+        for row in builder
+            .build_query_as::<RawOrderRow>()
+            .fetch_all(pool)
+            .await?
+        {
+            rows.insert(row.id, row);
+        }
+    }
+    Ok(rows)
+}
+
+async fn fetch_order_plans(
+    pool: &MySqlPool,
+    plan_ids: &[i32],
+) -> Result<HashMap<i32, PlanRow>, sqlx::Error> {
+    let plan_ids = plan_ids.iter().copied().collect::<BTreeSet<_>>();
+    let mut plans = HashMap::with_capacity(plan_ids.len());
+    let plan_ids = plan_ids.into_iter().collect::<Vec<_>>();
+    for chunk in plan_ids.chunks(500) {
+        let mut builder = QueryBuilder::<MySql>::new(PLAN_FIND_BY_IDS_SQL);
+        let mut separated = builder.separated(", ");
+        for plan_id in chunk {
+            separated.push_bind(*plan_id);
+        }
+        builder.push(")");
+        for plan in builder.build_query_as::<PlanRow>().fetch_all(pool).await? {
+            plans.insert(plan.id, plan);
+        }
+    }
+    Ok(plans)
+}
+
+fn values_in_requested_order<T: Clone>(ids: &[i64], values: &HashMap<i64, T>) -> Vec<T> {
+    ids.iter()
+        .filter_map(|id| values.get(id).cloned())
+        .collect()
 }
 
 fn to_order(row: RawOrderRow, plan: Option<PlanRow>) -> OrderRow {
@@ -431,7 +514,7 @@ WHERE user_id = ? AND trade_no = ?
 LIMIT 1
 "#;
 
-const ORDER_FIND_BY_ID_SQL: &str = r#"
+const ORDER_FIND_BY_IDS_SQL: &str = r#"
 SELECT
     id,
     invite_user_id,
@@ -458,8 +541,35 @@ SELECT
     created_at,
     updated_at
 FROM v2_order
-WHERE user_id = ? AND id = ?
-LIMIT 1
+WHERE user_id =
+"#;
+
+const PLAN_FIND_BY_IDS_SQL: &str = r#"
+SELECT
+    id,
+    group_id,
+    transfer_enable,
+    device_limit,
+    name,
+    speed_limit,
+    `show`,
+    sort,
+    renew,
+    content,
+    month_price,
+    quarter_price,
+    half_year_price,
+    year_price,
+    two_year_price,
+    three_year_price,
+    onetime_price,
+    reset_price,
+    reset_traffic_method,
+    capacity_limit,
+    created_at,
+    updated_at
+FROM v2_plan
+WHERE id IN (
 "#;
 
 #[cfg(test)]
@@ -485,5 +595,26 @@ mod tests {
         assert_eq!(value["name"], serde_json::json!("deposit"));
         assert!(value.get("group_id").is_some());
         assert!(value.get("transfer_enable").is_some());
+    }
+
+    #[test]
+    fn related_order_reads_use_bounded_batch_queries() {
+        assert!(ORDER_FIND_BY_IDS_SQL.contains("WHERE user_id ="));
+        assert!(PLAN_FIND_BY_IDS_SQL.contains("id IN ("));
+        let source = include_str!("order.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap();
+        assert!(production.contains("builder.push(\" AND id IN (\")"));
+        assert!(production.contains("ids.chunks(500)"));
+        assert!(production.contains("plan_ids.chunks(500)"));
+        assert!(!production.contains("find_raw_user_order_by_id"));
+    }
+
+    #[test]
+    fn batched_surplus_orders_keep_requested_order_duplicates_and_missing_behavior() {
+        let values = HashMap::from([(2, "two"), (7, "seven")]);
+        assert_eq!(
+            values_in_requested_order(&[7, 99, 2, 7], &values),
+            vec!["seven", "two", "seven"]
+        );
     }
 }

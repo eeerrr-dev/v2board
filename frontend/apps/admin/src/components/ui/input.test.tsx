@@ -18,14 +18,14 @@ describe('Input', () => {
   });
 
   it('omits aria-invalid in the resting state', () => {
-    expect(renderToStaticMarkup(<Input />)).not.toContain('aria-invalid');
+    expect(renderToStaticMarkup(<Input />)).not.toMatch(/\saria-invalid=/);
   });
 
-  it('applies the destructive treatment and aria-invalid when invalid', () => {
-    const html = renderToStaticMarkup(<Input invalid />);
+  it('uses aria-invalid as the single semantic and visual error signal', () => {
+    const html = renderToStaticMarkup(<Input aria-invalid />);
     expect(html).toContain('aria-invalid="true"');
-    expect(html).toContain('border-destructive');
-    expect(html).not.toContain('border-input');
+    expect(html).toContain('aria-invalid:border-destructive');
+    expect(html).toContain('aria-invalid:ring-destructive/20');
   });
 
   it('merges a caller className', () => {

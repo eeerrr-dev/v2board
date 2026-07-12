@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use serde::Serialize;
-use sqlx::{FromRow, MySqlPool};
+use sqlx::{FromRow, MySql, MySqlPool, QueryBuilder, Transaction};
 
 #[derive(Debug, Clone, FromRow, Serialize)]
 pub struct PlanRow {
@@ -33,6 +33,57 @@ pub async fn find_plan(pool: &MySqlPool, id: i32) -> Result<Option<PlanRow>, sql
     sqlx::query_as::<_, PlanRow>(PLAN_SELECT_SQL)
         .bind(id)
         .fetch_optional(pool)
+        .await
+}
+
+/// Locks the plan row that serializes every capacity-consuming path.
+pub async fn find_plan_for_update(
+    tx: &mut Transaction<'_, MySql>,
+    id: i32,
+) -> Result<Option<PlanRow>, sqlx::Error> {
+    let mut query = QueryBuilder::<MySql>::new(PLAN_SELECT_SQL);
+    query.push("FOR UPDATE");
+    query
+        .build_query_as::<PlanRow>()
+        .bind(id)
+        .fetch_optional(&mut **tx)
+        .await
+}
+
+pub const PLAN_CAPACITY_USAGE_SQL: &str = r#"
+SELECT
+    (
+        SELECT COUNT(*)
+        FROM v2_user AS active_user
+        WHERE active_user.plan_id = ?
+          AND (active_user.expired_at >= UNIX_TIMESTAMP() OR active_user.expired_at IS NULL)
+    ) + (
+        SELECT COUNT(DISTINCT pending_order.user_id)
+        FROM v2_order AS pending_order
+        WHERE pending_order.plan_id = ?
+          AND pending_order.status IN (0, 1)
+          AND pending_order.`type` IN (1, 3)
+          AND NOT EXISTS (
+              SELECT 1
+              FROM v2_user AS reserved_user
+              WHERE reserved_user.id = pending_order.user_id
+                AND reserved_user.plan_id = pending_order.plan_id
+                AND (
+                    reserved_user.expired_at >= UNIX_TIMESTAMP()
+                    OR reserved_user.expired_at IS NULL
+                )
+          )
+    ) AS capacity_used
+"#;
+
+pub async fn capacity_usage_for_update(
+    tx: &mut Transaction<'_, MySql>,
+    plan_id: i32,
+) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar(PLAN_CAPACITY_USAGE_SQL)
+        .bind(plan_id)
+        .bind(plan_id)
+        .fetch_one(&mut **tx)
         .await
 }
 
@@ -80,6 +131,53 @@ pub async fn count_active_users_by_plan(
         FROM v2_user
         WHERE plan_id IS NOT NULL
           AND (expired_at >= UNIX_TIMESTAMP() OR expired_at IS NULL)
+        GROUP BY plan_id
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| (row.plan_id, row.count))
+        .collect())
+}
+
+/// Capacity consumption includes active subscribers plus pending/opening
+/// new-plan orders that have not yet materialized as an active user. Completed
+/// orders disappear from the reservation term and are represented by the user
+/// row; cancelled orders disappear naturally.
+pub async fn count_capacity_usage_by_plan(
+    pool: &MySqlPool,
+) -> Result<HashMap<i32, i64>, sqlx::Error> {
+    let rows = sqlx::query_as::<_, PlanActiveCountRow>(
+        r#"
+        SELECT plan_id, CAST(SUM(slot_count) AS SIGNED) AS count
+        FROM (
+            SELECT plan_id, COUNT(*) AS slot_count
+            FROM v2_user
+            WHERE plan_id IS NOT NULL
+              AND (expired_at >= UNIX_TIMESTAMP() OR expired_at IS NULL)
+            GROUP BY plan_id
+
+            UNION ALL
+
+            SELECT pending_order.plan_id, COUNT(DISTINCT pending_order.user_id) AS slot_count
+            FROM v2_order AS pending_order
+            WHERE pending_order.status IN (0, 1)
+              AND pending_order.`type` IN (1, 3)
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM v2_user AS reserved_user
+                  WHERE reserved_user.id = pending_order.user_id
+                    AND reserved_user.plan_id = pending_order.plan_id
+                    AND (
+                        reserved_user.expired_at >= UNIX_TIMESTAMP()
+                        OR reserved_user.expired_at IS NULL
+                    )
+              )
+            GROUP BY pending_order.plan_id
+        ) AS capacity_usage
         GROUP BY plan_id
         "#,
     )

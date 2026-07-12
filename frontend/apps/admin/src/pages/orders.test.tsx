@@ -72,12 +72,24 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   refetch: vi.fn(),
   detail: undefined as Record<string, unknown> | undefined,
+  detailPending: false,
+  detailError: false,
+  detailRefetch: vi.fn(),
   userInfo: undefined as Record<string, unknown> | undefined,
+  userInfoPending: false,
+  userInfoError: false,
+  userInfoRefetch: vi.fn(),
+  inviteUserInfo: undefined as Record<string, unknown> | undefined,
+  inviteUserInfoPending: false,
+  inviteUserInfoError: false,
+  inviteUserInfoRefetch: vi.fn(),
   assignMutateAsync: vi.fn(),
   paidMutateAsync: vi.fn(),
   cancelMutateAsync: vi.fn(),
   updateMutateAsync: vi.fn(),
   confirm: vi.fn(),
+  plansError: false,
+  plansRefetch: vi.fn(),
 }));
 
 vi.mock('react-router', () => ({ useNavigate: () => mocks.navigate }));
@@ -94,13 +106,42 @@ vi.mock('@/lib/queries', () => ({
       data: { data: [ORDER_PENDING, ORDER_COMPLETED], total: mocks.total },
     };
   },
-  useAdminPlans: () => ({ data: [{ id: 1, name: '基础套餐' }] }),
-  useAdminOrderDetail: () => ({ data: mocks.detail }),
-  useAdminUserInfo: () => ({ data: mocks.userInfo }),
+  useAdminPlans: () => ({
+    data: mocks.plansError ? undefined : [{ id: 1, name: '基础套餐' }],
+    isError: mocks.plansError,
+    refetch: mocks.plansRefetch,
+  }),
+  useAdminOrderDetail: () => ({
+    data: mocks.detail,
+    isPending: mocks.detailPending,
+    isError: mocks.detailError,
+    refetch: mocks.detailRefetch,
+  }),
+  useAdminUserInfo: (id?: number | null) => {
+    const invite = id === 3;
+    return {
+      data: id == null ? undefined : invite ? mocks.inviteUserInfo : mocks.userInfo,
+      isPending: id != null && (invite ? mocks.inviteUserInfoPending : mocks.userInfoPending),
+      isError: id != null && (invite ? mocks.inviteUserInfoError : mocks.userInfoError),
+      refetch: invite ? mocks.inviteUserInfoRefetch : mocks.userInfoRefetch,
+    };
+  },
   useAssignOrderMutation: () => ({ isPending: false, mutateAsync: mocks.assignMutateAsync }),
-  useMarkOrderPaidMutation: () => ({ mutateAsync: mocks.paidMutateAsync }),
-  useCancelOrderMutation: () => ({ mutateAsync: mocks.cancelMutateAsync }),
-  useUpdateOrderMutation: () => ({ mutateAsync: mocks.updateMutateAsync }),
+  useMarkOrderPaidMutation: () => ({
+    mutate: (payload: unknown, options?: { onSuccess?: (data: unknown) => void }) => {
+      void Promise.resolve(mocks.paidMutateAsync(payload)).then(options?.onSuccess);
+    },
+  }),
+  useCancelOrderMutation: () => ({
+    mutate: (payload: unknown, options?: { onSuccess?: (data: unknown) => void }) => {
+      void Promise.resolve(mocks.cancelMutateAsync(payload)).then(options?.onSuccess);
+    },
+  }),
+  useUpdateOrderMutation: () => ({
+    mutate: (payload: unknown, options?: { onSuccess?: (data: unknown) => void }) => {
+      void Promise.resolve(mocks.updateMutateAsync(payload)).then(options?.onSuccess);
+    },
+  }),
 }));
 
 const ORDER_FILTER_KEY = 'v2board-admin-order-filter';
@@ -113,12 +154,24 @@ beforeEach(() => {
   mocks.navigate.mockReset();
   mocks.refetch.mockReset().mockResolvedValue(undefined);
   mocks.detail = undefined;
+  mocks.detailPending = false;
+  mocks.detailError = false;
+  mocks.detailRefetch.mockReset().mockResolvedValue(undefined);
   mocks.userInfo = undefined;
+  mocks.userInfoPending = false;
+  mocks.userInfoError = false;
+  mocks.userInfoRefetch.mockReset().mockResolvedValue(undefined);
+  mocks.inviteUserInfo = undefined;
+  mocks.inviteUserInfoPending = false;
+  mocks.inviteUserInfoError = false;
+  mocks.inviteUserInfoRefetch.mockReset().mockResolvedValue(undefined);
   mocks.assignMutateAsync.mockReset().mockResolvedValue('trade');
   mocks.paidMutateAsync.mockReset().mockResolvedValue(true);
   mocks.cancelMutateAsync.mockReset().mockResolvedValue(true);
   mocks.updateMutateAsync.mockReset().mockResolvedValue(true);
   mocks.confirm.mockReset().mockResolvedValue(true);
+  mocks.plansError = false;
+  mocks.plansRefetch.mockReset().mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -144,6 +197,17 @@ describe('OrdersPage', () => {
     expect(
       within(table).getByText(dayjs(1700000000 * 1000).format('YYYY/MM/DD HH:mm')),
     ).toBeInTheDocument();
+  });
+
+  it('blocks order assignment and retries when plans fail to load', async () => {
+    mocks.plansError = true;
+    const user = userEvent.setup();
+    render(<OrdersPage />);
+
+    expect(screen.getByText('订阅列表加载失败')).toBeInTheDocument();
+    expect(screen.getByTestId('order-assign-open')).toBeDisabled();
+    await user.click(screen.getByTestId('error-state-retry'));
+    expect(mocks.plansRefetch).toHaveBeenCalledOnce();
   });
 
   it('fetches the first page with the { current, pageSize, filter } shape', () => {
@@ -194,7 +258,7 @@ describe('OrdersPage', () => {
     });
   });
 
-  it('marks a pending order as paid by trade number, then refetches', async () => {
+  it('marks a pending order as paid by trade number', async () => {
     const user = userEvent.setup();
     render(<OrdersPage />);
 
@@ -202,7 +266,6 @@ describe('OrdersPage', () => {
     await user.click(await screen.findByTestId('order-mark-paid-202601010001'));
 
     expect(mocks.paidMutateAsync).toHaveBeenCalledWith('202601010001');
-    await waitFor(() => expect(mocks.refetch).toHaveBeenCalled());
   });
 
   it('cancels a pending order after the confirm dialog resolves true', async () => {
@@ -260,21 +323,166 @@ describe('OrdersPage', () => {
     expect(mocks.navigate).toHaveBeenCalledWith('/user');
   });
 
-  it('assigns an order with the raw (un-multiplied) total_amount payload, then refetches', async () => {
+  it('renders an explicit loading state while the order detail request is pending', async () => {
+    mocks.detailPending = true;
+    const user = userEvent.setup();
+    render(<OrdersPage />);
+
+    await user.click(screen.getByTestId('order-open-1'));
+    const sheet = await screen.findByTestId('order-detail');
+
+    expect(within(sheet).getByTestId('order-detail-loading')).toHaveAttribute('role', 'status');
+    expect(within(sheet).queryByTestId('order-detail-empty')).toBeNull();
+  });
+
+  it('surfaces and retries an order-detail failure instead of spinning forever', async () => {
+    mocks.detailError = true;
+    const user = userEvent.setup();
+    render(<OrdersPage />);
+
+    await user.click(screen.getByTestId('order-open-1'));
+    const error = await screen.findByTestId('order-detail-error');
+    expect(error).toHaveTextContent('订单详情加载失败');
+    expect(screen.queryByTestId('order-detail-loading')).toBeNull();
+
+    await user.click(within(error).getByTestId('error-state-retry'));
+    expect(mocks.detailRefetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders a real empty detail result instead of retaining the loading spinner', async () => {
+    const user = userEvent.setup();
+    render(<OrdersPage />);
+
+    await user.click(screen.getByTestId('order-open-1'));
+
+    expect(await screen.findByTestId('order-detail-empty')).toHaveTextContent('暂无订单详情');
+    expect(screen.queryByTestId('order-detail-loading')).toBeNull();
+  });
+
+  it('surfaces and retries the nested order-user failure', async () => {
+    mocks.detail = { ...ORDER_PENDING };
+    mocks.userInfoError = true;
+    const user = userEvent.setup();
+    render(<OrdersPage />);
+
+    await user.click(screen.getByTestId('order-open-1'));
+    const error = await screen.findByTestId('order-detail-user-error');
+    expect(error).toHaveTextContent('订单用户加载失败');
+    expect(screen.queryByTestId('order-detail-user-empty')).toBeNull();
+
+    await user.click(within(error).getByTestId('error-state-retry'));
+    expect(mocks.userInfoRefetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders an explicit empty state when the nested order-user result is absent', async () => {
+    mocks.detail = { ...ORDER_PENDING };
+    const user = userEvent.setup();
+    render(<OrdersPage />);
+
+    await user.click(screen.getByTestId('order-open-1'));
+
+    expect(await screen.findByTestId('order-detail-user-empty')).toHaveTextContent(
+      '未找到订单用户',
+    );
+    expect(screen.queryByTestId('order-detail-user-loading')).toBeNull();
+  });
+
+  it('surfaces and retries the nested invite-user failure', async () => {
+    mocks.detail = { ...ORDER_COMPLETED };
+    mocks.userInfo = { email: 'buyer@example.com' };
+    mocks.inviteUserInfoError = true;
+    const user = userEvent.setup();
+    render(<OrdersPage />);
+
+    await user.click(screen.getByTestId('order-open-2'));
+    const error = await screen.findByTestId('order-detail-invite-error');
+    expect(error).toHaveTextContent('邀请人信息加载失败');
+    expect(screen.queryByTestId('order-detail-invite-empty')).toBeNull();
+
+    await user.click(within(error).getByTestId('error-state-retry'));
+    expect(mocks.inviteUserInfoRefetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('distinguishes nested invite-user loading from a successful empty result', async () => {
+    mocks.detail = { ...ORDER_COMPLETED };
+    mocks.userInfo = { email: 'buyer@example.com' };
+    mocks.inviteUserInfoPending = true;
+    const user = userEvent.setup();
+    const { rerender } = render(<OrdersPage />);
+
+    await user.click(screen.getByTestId('order-open-2'));
+    expect(await screen.findByTestId('order-detail-invite-loading')).toHaveAttribute(
+      'role',
+      'status',
+    );
+    expect(screen.queryByTestId('order-detail-invite-empty')).toBeNull();
+
+    mocks.inviteUserInfoPending = false;
+    rerender(<OrdersPage />);
+
+    expect(await screen.findByTestId('order-detail-invite-empty')).toHaveTextContent(
+      '未找到邀请人',
+    );
+    expect(screen.queryByTestId('order-detail-invite-loading')).toBeNull();
+  });
+
+  it('assigns an order with the raw (un-multiplied) total_amount payload', async () => {
     const user = userEvent.setup();
     render(<OrdersPage />);
 
     await user.click(screen.getByTestId('order-assign-open'));
-    await user.type(await screen.findByTestId('order-assign-email'), 'buyer@example.com');
-    await user.type(screen.getByTestId('order-assign-amount'), '50');
+    const dialog = await screen.findByTestId('order-assign-dialog');
+    await user.type(within(dialog).getByTestId('order-assign-email'), 'buyer@example.com');
+    const selects = within(dialog).getAllByRole('combobox');
+    await user.click(selects[0]!);
+    await user.click(await screen.findByRole('option', { name: '基础套餐' }));
+    await user.click(selects[1]!);
+    await user.click(await screen.findByRole('option', { name: '月付' }));
+    await user.type(within(dialog).getByTestId('order-assign-amount'), '50');
     await user.click(screen.getByTestId('order-assign-submit'));
 
     await waitFor(() =>
-      expect(mocks.assignMutateAsync).toHaveBeenCalledWith(
-        expect.objectContaining({ email: 'buyer@example.com', total_amount: '50' }),
-      ),
+      expect(mocks.assignMutateAsync).toHaveBeenCalledWith({
+        email: 'buyer@example.com',
+        plan_id: 1,
+        period: 'month_price',
+        total_amount: '50',
+      }),
     );
-    await waitFor(() => expect(mocks.refetch).toHaveBeenCalled());
+  });
+
+  it('blocks an incomplete assignment and renders field errors without calling the API', async () => {
+    const user = userEvent.setup();
+    render(<OrdersPage />);
+
+    await user.click(screen.getByTestId('order-assign-open'));
+    await user.click(await screen.findByTestId('order-assign-submit'));
+
+    expect(mocks.assignMutateAsync).not.toHaveBeenCalled();
+    expect(screen.getByText('邮箱不能为空')).toBeInTheDocument();
+    expect(screen.getByText('订阅不能为空')).toBeInTheDocument();
+    expect(screen.getByText('订阅周期不能为空')).toBeInTheDocument();
+    expect(screen.getByText('支付金额不能为空')).toBeInTheDocument();
+  });
+
+  it('keeps the assignment dialog open and surfaces a server failure inline', async () => {
+    mocks.assignMutateAsync.mockRejectedValue(new Error('该用户不存在'));
+    const user = userEvent.setup();
+    render(<OrdersPage />);
+
+    await user.click(screen.getByTestId('order-assign-open'));
+    const dialog = await screen.findByTestId('order-assign-dialog');
+    await user.type(within(dialog).getByTestId('order-assign-email'), 'missing@example.com');
+    const selects = within(dialog).getAllByRole('combobox');
+    await user.click(selects[0]!);
+    await user.click(await screen.findByRole('option', { name: '基础套餐' }));
+    await user.click(selects[1]!);
+    await user.click(await screen.findByRole('option', { name: '月付' }));
+    await user.type(within(dialog).getByTestId('order-assign-amount'), '50');
+    await user.click(within(dialog).getByTestId('order-assign-submit'));
+
+    expect(await within(dialog).findByText('该用户不存在')).toBeInTheDocument();
+    expect(screen.getByTestId('order-assign-dialog')).toBeInTheDocument();
   });
 
   it('sends the new current on pagination change', async () => {

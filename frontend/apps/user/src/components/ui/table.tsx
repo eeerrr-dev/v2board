@@ -1,4 +1,6 @@
 import {
+  useCallback,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -23,8 +25,7 @@ import { ArrowDown, ArrowUp, ChevronsUpDown } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
 declare module '@tanstack/react-table' {
-  // Type params must match @tanstack's ColumnMeta signature exactly for declaration merging.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- declaration merging must repeat TanStack's exact generic signature
   interface ColumnMeta<TData extends RowData, TValue> {
     align?: 'left' | 'right' | 'center';
     className?: string;
@@ -38,8 +39,19 @@ type DataAttributes = {
 
 type TableScrollProps = HTMLAttributes<HTMLDivElement> & DataAttributes;
 
-function TableScroll({ className, ref, ...props }: TableScrollProps & { ref?: Ref<HTMLDivElement> }) {
-  return <div ref={ref} data-slot="table-scroll" className={cn('overflow-x-auto', className)} {...props} />;
+function TableScroll({
+  className,
+  ref,
+  ...props
+}: TableScrollProps & { ref?: Ref<HTMLDivElement> }) {
+  return (
+    <div
+      ref={ref}
+      data-slot="table-scroll"
+      className={cn('overflow-x-auto', className)}
+      {...props}
+    />
+  );
 }
 
 function Table({
@@ -47,7 +59,9 @@ function Table({
   ref,
   ...props
 }: TableHTMLAttributes<HTMLTableElement> & { ref?: Ref<HTMLTableElement> }) {
-  return <table ref={ref} data-slot="table" className={cn('w-full text-sm', className)} {...props} />;
+  return (
+    <table ref={ref} data-slot="table" className={cn('w-full text-sm', className)} {...props} />
+  );
 }
 
 function TableHeader({
@@ -71,7 +85,12 @@ function TableBody({
   ...props
 }: HTMLAttributes<HTMLTableSectionElement> & { ref?: Ref<HTMLTableSectionElement> }) {
   return (
-    <tbody ref={ref} data-slot="table-body" className={cn('divide-y divide-border', className)} {...props} />
+    <tbody
+      ref={ref}
+      data-slot="table-body"
+      className={cn('divide-y divide-border', className)}
+      {...props}
+    />
   );
 }
 
@@ -96,7 +115,12 @@ function TableHead({
   ...props
 }: ThHTMLAttributes<HTMLTableCellElement> & { ref?: Ref<HTMLTableCellElement> }) {
   return (
-    <th ref={ref} data-slot="table-head" className={cn('px-4 py-3 text-left font-medium', className)} {...props} />
+    <th
+      ref={ref}
+      data-slot="table-head"
+      className={cn('px-4 py-3 text-left font-medium', className)}
+      {...props}
+    />
   );
 }
 
@@ -186,10 +210,14 @@ function DataTable<TData>({
   // accessor (accessorKey/accessorFn) report getCanSort(), so display-only columns
   // stay inert and the default ([]) preserves the server's row order.
   const [sorting, setSorting] = useState<SortingState>([]);
-  const tableColumns = columns.map((column, index) => ({
-    ...column,
-    id: column.id ?? `column-${index}`,
-  }));
+  const tableColumns = useMemo(
+    () =>
+      columns.map((column, index) => ({
+        ...column,
+        id: column.id ?? `column-${index}`,
+      })),
+    [columns],
+  );
   // TanStack Table returns non-memoizable functions, so the React Compiler skips
   // memoizing this component by design — an accepted tradeoff for a sanctioned dep.
   // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Table API
@@ -200,15 +228,19 @@ function DataTable<TData>({
     onSortingChange: setSorting,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
-    getRowId: getRowKey
-      ? (row, index) => String(getRowKey(row, index))
-      : undefined,
+    getRowId: getRowKey ? (row, index) => String(getRowKey(row, index)) : undefined,
   });
   const rows = table.getRowModel().rows;
   const columnCount = table.getAllLeafColumns().length;
   const shouldVirtualize = Boolean(virtualizer?.enabled && rows.length > 0 && !empty);
+  const getVirtualRowKey = useCallback(
+    (index: number) => rows[index]?.id ?? index,
+    [rows],
+  );
   const rowVirtualizer = useVirtualizer({
-    count: shouldVirtualize ? rows.length : 0,
+    count: rows.length,
+    enabled: shouldVirtualize,
+    getItemKey: getVirtualRowKey,
     getScrollElement: () => scrollElementRef.current,
     estimateSize: () => virtualizer?.estimateSize ?? 56,
     overscan: virtualizer?.overscan ?? 8,
@@ -216,8 +248,7 @@ function DataTable<TData>({
   const virtualItems = shouldVirtualize ? rowVirtualizer.getVirtualItems() : [];
   const topPadding = virtualItems[0]?.start ?? 0;
   const bottomPadding = shouldVirtualize
-    ? rowVirtualizer.getTotalSize() -
-      (virtualItems[virtualItems.length - 1]?.end ?? 0)
+    ? rowVirtualizer.getTotalSize() - (virtualItems[virtualItems.length - 1]?.end ?? 0)
     : 0;
   const visibleRows = shouldVirtualize
     ? virtualItems.flatMap((item) => {
@@ -228,9 +259,7 @@ function DataTable<TData>({
   const setScrollRef = (node: HTMLDivElement | null) => {
     scrollElementRef.current = node;
     if (typeof scrollRef === 'function') scrollRef(node);
-    else if (scrollRef) {
-      (scrollRef as { current: HTMLDivElement | null }).current = node;
-    }
+    else if (scrollRef) scrollRef.current = node;
   };
 
   return (
@@ -286,11 +315,7 @@ function DataTable<TData>({
         </TableHeader>
         <TableBody className={bodyClassName}>
           {empty ? (
-            <TableEmpty
-              className={emptyClassName}
-              colSpan={columnCount}
-              data-testid={emptyTestId}
-            >
+            <TableEmpty className={emptyClassName} colSpan={columnCount} data-testid={emptyTestId}>
               {empty}
             </TableEmpty>
           ) : (

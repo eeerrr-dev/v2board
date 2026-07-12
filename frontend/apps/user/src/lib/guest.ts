@@ -1,18 +1,20 @@
-import { guest, passport } from '@v2board/api-client';
+import { INLINE_MUTATION_ERROR_META, guest, passport } from '@v2board/api-client';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiClient } from './api';
 
 export const useGuestConfig = () =>
   useQuery({
     queryKey: ['guest', 'config'],
-    queryFn: () => guest.config(apiClient),
+    queryFn: ({ signal }) => guest.config(apiClient, { signal }),
     staleTime: 0,
     refetchOnMount: 'always',
   });
 
 export const useLoginMutation = () =>
   useMutation({
-    mutationFn: (payload: Parameters<typeof passport.login>[1]) => passport.login(apiClient, payload),
+    mutationFn: (payload: Parameters<typeof passport.login>[1]) =>
+      passport.login(apiClient, payload),
+    meta: INLINE_MUTATION_ERROR_META,
   });
 
 export const useTokenLoginMutation = () =>

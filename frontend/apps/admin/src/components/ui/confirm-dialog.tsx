@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { getLocaleAntdMessages } from '@v2board/i18n';
+import type { SelectorParam } from 'i18next';
 import {
   AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
@@ -65,24 +67,16 @@ export function confirmDialog(options: ConfirmDialogOptions): Promise<boolean> {
 }
 
 export function ConfirmDialogProvider() {
-  const { i18n } = useTranslation();
+  const { t } = useTranslation();
   const request = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const open = request !== null;
   const [actionLoading, setActionLoading] = useState(false);
-  const confirmButtonRef = useRef<HTMLButtonElement>(null);
   const closingRef = useRef(false);
-
-  useEffect(() => {
-    if (request) confirmButtonRef.current?.focus();
-  }, [request]);
-
-  useEffect(() => {
-    setActionLoading(false);
-  }, [request?.id]);
 
   const close = (value: boolean) => {
     if (!request) return;
     closingRef.current = true;
+    setActionLoading(false);
     request.resolve(value);
     queue = queue.filter((item) => item.id !== request.id);
     notify();
@@ -106,7 +100,7 @@ export function ConfirmDialogProvider() {
   const cancel = () => void runAction(request?.options.onCancel, false);
   const options = request?.options;
   const buttonLoading = actionLoading || Boolean(options?.confirmButtonProps?.loading);
-  const defaultText = getConfirmDialogDefaultText(i18n.language);
+  const defaultText = getConfirmDialogDefaultText((selector) => t(selector));
 
   return (
     <AlertDialog
@@ -116,44 +110,55 @@ export function ConfirmDialogProvider() {
       }}
     >
       <AlertDialogContent
-        className="v2board-confirm-dialog sm:max-w-[26rem]"
+        className="sm:max-w-[26rem]"
         {...(options?.description ? {} : { 'aria-describedby': undefined })}
       >
         <AlertDialogHeader>
-          <AlertDialogTitle className="v2board-confirm-title">
-            {options?.title}
-          </AlertDialogTitle>
+          <AlertDialogTitle>{options?.title}</AlertDialogTitle>
           {options?.description ? (
-            <AlertDialogDescription className="v2board-confirm-content">
-              {options.description}
-            </AlertDialogDescription>
+            <AlertDialogDescription>{options.description}</AlertDialogDescription>
           ) : null}
         </AlertDialogHeader>
-        <AlertDialogFooter className="v2board-confirm-footer">
+        <AlertDialogFooter>
           {options?.showCancel !== false && (
-            <Button type="button" variant="outline" onClick={cancel} disabled={actionLoading}>
-              {options?.cancelText ?? defaultText.cancelText}
-            </Button>
+            <AlertDialogCancel asChild>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={actionLoading}
+                onClick={(event) => {
+                  event.preventDefault();
+                  cancel();
+                }}
+              >
+                {options?.cancelText ?? defaultText.cancelText}
+              </Button>
+            </AlertDialogCancel>
           )}
-          <Button
-            ref={confirmButtonRef}
-            type="button"
-            className="v2board-confirm-primary"
-            disabled={options?.confirmButtonProps?.disabled}
-            loading={buttonLoading}
-            onClick={() => void runAction(options?.onConfirm, true)}
-          >
-            {options?.confirmText ?? defaultText.confirmText}
-          </Button>
+          <AlertDialogAction asChild>
+            <Button
+              type="button"
+              disabled={options?.confirmButtonProps?.disabled}
+              loading={buttonLoading}
+              onClick={(event) => {
+                event.preventDefault();
+                void runAction(options?.onConfirm, true);
+              }}
+            >
+              {options?.confirmText ?? defaultText.confirmText}
+            </Button>
+          </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
   );
 }
 
-export function getConfirmDialogDefaultText(locale: string | undefined) {
-  const { okText, cancelText } = getLocaleAntdMessages(locale);
-  return { confirmText: okText, cancelText };
+export function getConfirmDialogDefaultText(translate: (selector: SelectorParam) => string) {
+  return {
+    confirmText: translate($ => $.common.confirm),
+    cancelText: translate($ => $.common.cancel),
+  };
 }
 
 export type { ConfirmDialogOptions };

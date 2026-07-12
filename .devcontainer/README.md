@@ -1,44 +1,22 @@
-# Dev Container (editor-only)
+# Dev Container（仅编辑器）
 
-This Dev Container exists for **one reason**: give VS Code's TypeScript server (and
-ESLint) the `node_modules` it needs to resolve `react`, `@v2board/*`, etc., so the
-editor stops showing red "Cannot find module" errors — **without** putting any
-`node_modules` on the host.
+此 Dev Container 为 VS Code 提供与项目一致的 Rust、rust-analyzer、Node 24、
+TypeScript、ESLint 与 Tailwind 语言服务。它不替代根目录的 `make` 工作流；运行、构建、
+测试和部署仍由 `docker-compose.local.yml` 完成。
 
-It is **not** a replacement for the project's Docker workflow. Installing,
-building, testing, running the dev server, and deploying still go through `make`
-(see `AGENTS.md`). This container only hosts the language server.
+## 使用
 
-## Why it's needed
+1. 安装 VS Code **Dev Containers** 扩展。
+2. 运行 **Dev Containers: Reopen in Container**。
+3. 首次创建时，`post-create.sh` 会执行锁定的 pnpm install 和 cargo fetch。
 
-The `make` workflow deliberately keeps `node_modules`, `.pnpm-store`, `dist`, etc.
-in Docker volumes, never on the host. That keeps the repo clean and builds
-reproducible — but it also means a host-only VS Code has no types to resolve. This
-Dev Container runs the TS server *inside* a container that has those types, so the
-host tree stays empty while IntelliSense works fully.
+仓库以读写方式挂载到 `/workspaces/v2board`，源码编辑正常写回宿主机。以下输出被独立
+named volumes 遮盖，不会污染宿主工作树：
 
-## How to use
+- frontend 根、两个 app 与四个 package 的 `node_modules`；
+- pnpm content store；
+- Cargo registry、git checkout 与 target。
 
-1. Install the **Dev Containers** VS Code extension.
-2. Command Palette → **Dev Containers: Reopen in Container**.
-3. First launch runs `post-create.sh` (`pnpm install --frozen-lockfile`) into the
-   container's volumes — a one-time wait. Subsequent launches are fast.
-4. The editor now resolves all imports. Keep using `make ...` (in a host terminal
-   or this container's terminal) for builds/tests/dev-server/deploy.
-
-## How it stays off the host
-
-- The repo is bind-mounted read-write at `/workspaces/v2board`, so your edits
-  persist to the host as normal.
-- Named volumes shadow every `node_modules` path (root + `apps/{user,admin}` +
-  `packages/{api-client,config,i18n,tokens,types}`) and the pnpm store, so none of
-  them land in the host working tree.
-- It runs as a **separate compose project**, so it never collides with
-  `make sync` / `make up` (those only touch the `v2board` project's volumes).
-
-## Notes
-
-- Runs as `root` in-container so the volumes are writable; on macOS/Windows your
-  host files stay owned by you (bind-mount UID mapping).
-- To rebuild from scratch: **Dev Containers: Rebuild Container** (re-runs the
-  install). To reclaim disk, remove this project's `dev-*` volumes in Docker.
+Dev Container 使用独立 Compose project，不会碰触 `make up` 的 MySQL、Redis、Rust
+runtime 或 frontend deploy volumes。需要验证修改时仍应运行 `make sync`，然后使用
+`make doctor`、`make rust-check`、`make deploy-smoke` 等项目 gate。

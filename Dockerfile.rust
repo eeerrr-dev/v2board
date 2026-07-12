@@ -1,15 +1,89 @@
-FROM rust:1.96.1-bookworm
+# syntax=docker/dockerfile:1.7
+
+ARG RUST_VERSION=1.97.0
+ARG NODE_VERSION=24
+ARG PNPM_VERSION=11.11.0
+
+FROM rust:${RUST_VERSION}-bookworm@sha256:7d0723df719e7f213b69dc7c8c595985c3f4b060cfbee4f7bc0e347a86fe3b6a AS development
 
 ENV CARGO_HOME=/usr/local/cargo \
+    CARGO_TARGET_DIR=/app/target \
     RUST_BACKTRACE=1 \
-    PATH=/usr/local/cargo/bin:$PATH
+    PATH=/usr/local/cargo/bin:$PATH \
+    V2BOARD_RUNTIME_ROOT=/var/lib/v2board
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates curl default-mysql-client pkg-config libssl-dev \
+        ca-certificates \
+        curl \
+        pkg-config \
+        libssl-dev \
     && rm -rf /var/lib/apt/lists/* \
-    && . /usr/local/cargo/env \
-    && rustup component add rustfmt clippy
+    && rustup component add clippy rustfmt \
+    && install -d -m 0777 \
+        /app/target \
+        /var/lib/v2board/config \
+        /var/lib/v2board/rules
 
-WORKDIR /app/backend/rust
-
+WORKDIR /src/backend/rust
 EXPOSE 8080
+
+FROM development AS rust-builder
+
+COPY backend/rust/ ./
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/app/target \
+    cargo build --release --locked -p v2board-api -p v2board-workers \
+    && install -Dm0755 /app/target/release/v2board-api /out/v2board-api \
+    && install -Dm0755 /app/target/release/v2board-workers /out/v2board-workers
+
+FROM node:${NODE_VERSION}-bookworm-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5 AS frontend-builder
+
+ARG PNPM_VERSION
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+WORKDIR /build/frontend
+
+RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
+COPY frontend/ ./
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
+    pnpm config set store-dir /root/.local/share/pnpm/store \
+    && pnpm install --frozen-lockfile \
+    && pnpm build:deploy
+
+FROM debian:bookworm-slim@sha256:60eac759739651111db372c07be67863818726f754804b8707c90979bda511df AS production
+
+ARG APP_UID=10001
+ARG APP_GID=10001
+ENV APP_URL=http://localhost:8000 \
+    RUST_BIND_ADDR=0.0.0.0:8080 \
+    RUST_LOG=v2board_api=info,tower_http=info \
+    V2BOARD_ENV=production \
+    V2BOARD_FRONTEND_DIR=/opt/v2board/frontend \
+    V2BOARD_RUNTIME_ROOT=/var/lib/v2board
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        libssl3 \
+        tini \
+        tzdata \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid "${APP_GID}" v2board \
+    && useradd --uid "${APP_UID}" --gid v2board --home-dir /nonexistent --shell /usr/sbin/nologin v2board \
+    && install -d -o v2board -g v2board \
+        /opt/v2board/frontend \
+        /var/lib/v2board/config \
+        /var/lib/v2board/rules
+
+COPY --from=rust-builder --chown=root:root /out/v2board-api /usr/local/bin/v2board-api
+COPY --from=rust-builder --chown=root:root /out/v2board-workers /usr/local/bin/v2board-workers
+COPY --from=frontend-builder --chown=root:root /build/frontend/dist-deploy/ /opt/v2board/frontend/
+USER v2board:v2board
+WORKDIR /var/lib/v2board
+EXPOSE 8080
+VOLUME ["/var/lib/v2board"]
+HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=6 \
+    CMD curl --fail --silent --show-error http://127.0.0.1:8080/readyz >/dev/null || exit 1
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["/usr/local/bin/v2board-api"]

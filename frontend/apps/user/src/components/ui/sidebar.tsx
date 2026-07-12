@@ -3,12 +3,13 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useEffectEvent,
   useMemo,
   useState,
   type ComponentProps,
   type CSSProperties,
 } from 'react';
-import { Slot } from '@radix-ui/react-slot';
+import { Slot as SlotPrimitive } from 'radix-ui';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { PanelLeft } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -24,12 +25,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 // Vendored shadcn Sidebar primitive (new-york-v4 registry, complete surface),
 // owned locally per the island rules. Adaptations from canonical: local named
@@ -101,19 +97,19 @@ function SidebarProvider({
     return isMobile ? setOpenMobile((value) => !value) : setOpen((value) => !value);
   }, [isMobile, setOpen]);
 
+  // Keep one browser subscription while the Effect Event reads the latest
+  // breakpoint and controlled/uncontrolled open state.
+  const handleKeyDown = useEffectEvent((event: KeyboardEvent) => {
+    if (event.key === SIDEBAR_KEYBOARD_SHORTCUT && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      toggleSidebar();
+    }
+  });
+
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (
-        event.key === SIDEBAR_KEYBOARD_SHORTCUT &&
-        (event.metaKey || event.ctrlKey)
-      ) {
-        event.preventDefault();
-        toggleSidebar();
-      }
-    };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [toggleSidebar]);
+  }, []);
 
   const state = open ? 'expanded' : 'collapsed';
 
@@ -203,7 +199,7 @@ function Sidebar({
 
   return (
     <div
-      className="group peer hidden text-sidebar-foreground md:block"
+      className="group peer hidden text-sidebar-foreground md:flex"
       data-state={state}
       data-collapsible={state === 'collapsed' ? collapsible : ''}
       data-variant={variant}
@@ -250,11 +246,7 @@ function Sidebar({
 }
 
 // No built-in sr-only label: callers pass a localized aria-label.
-function SidebarTrigger({
-  className,
-  onClick,
-  ...props
-}: ComponentProps<typeof Button>) {
+function SidebarTrigger({ className, onClick, ...props }: ComponentProps<typeof Button>) {
   const { toggleSidebar } = useSidebar();
 
   return (
@@ -363,7 +355,7 @@ function SidebarGroupLabel({
   asChild = false,
   ...props
 }: ComponentProps<'div'> & { asChild?: boolean }) {
-  const Comp = asChild ? Slot : 'div';
+  const Comp = asChild ? SlotPrimitive.Root : 'div';
 
   return (
     <Comp
@@ -384,7 +376,7 @@ function SidebarGroupAction({
   asChild = false,
   ...props
 }: ComponentProps<'button'> & { asChild?: boolean }) {
-  const Comp = asChild ? Slot : 'button';
+  const Comp = asChild ? SlotPrimitive.Root : 'button';
 
   return (
     <Comp
@@ -470,7 +462,7 @@ function SidebarMenuButton({
   isActive?: boolean;
   tooltip?: string | ComponentProps<typeof TooltipContent>;
 } & VariantProps<typeof sidebarMenuButtonVariants>) {
-  const Comp = asChild ? Slot : 'button';
+  const Comp = asChild ? SlotPrimitive.Root : 'button';
   const { isMobile, state } = useSidebar();
 
   const button = (
@@ -493,11 +485,7 @@ function SidebarMenuButton({
   return (
     <Tooltip>
       <TooltipTrigger asChild>{button}</TooltipTrigger>
-      <TooltipContent
-        side="right"
-        hidden={state !== 'collapsed' || isMobile}
-        {...tooltipProps}
-      />
+      <TooltipContent side="right" hidden={state !== 'collapsed' || isMobile} {...tooltipProps} />
     </Tooltip>
   );
 }
@@ -511,7 +499,7 @@ function SidebarMenuAction({
   asChild?: boolean;
   showOnHover?: boolean;
 }) {
-  const Comp = asChild ? Slot : 'button';
+  const Comp = asChild ? SlotPrimitive.Root : 'button';
 
   return (
     <Comp
@@ -560,10 +548,7 @@ function SidebarMenuSkeleton({
 }: ComponentProps<'div'> & {
   showIcon?: boolean;
 }) {
-  // Random width between 50 to 90%.
-  const width = useMemo(() => {
-    return `${Math.floor(Math.random() * 40) + 50}%`;
-  }, []);
+  const width = '70%';
 
   return (
     <div
@@ -572,9 +557,7 @@ function SidebarMenuSkeleton({
       className={cn('flex h-8 items-center gap-2 rounded-md px-2', className)}
       {...props}
     >
-      {showIcon && (
-        <Skeleton className="size-4 rounded-md" data-sidebar="menu-skeleton-icon" />
-      )}
+      {showIcon && <Skeleton className="size-4 rounded-md" data-sidebar="menu-skeleton-icon" />}
       <Skeleton
         className="h-4 max-w-(--skeleton-width) flex-1"
         data-sidebar="menu-skeleton-text"
@@ -621,7 +604,7 @@ function SidebarMenuSubButton({
   size?: 'sm' | 'md';
   isActive?: boolean;
 }) {
-  const Comp = asChild ? Slot : 'a';
+  const Comp = asChild ? SlotPrimitive.Root : 'a';
 
   return (
     <Comp

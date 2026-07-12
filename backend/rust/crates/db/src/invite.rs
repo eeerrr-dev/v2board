@@ -1,6 +1,29 @@
 use serde::Serialize;
 use sqlx::{FromRow, MySql, MySqlPool, Transaction};
 
+const VALID_COMMISSION_SUM_SQL: &str = "SELECT CAST(COALESCE(SUM(get_amount), 0) AS CHAR) FROM v2_commission_log WHERE invite_user_id = ?";
+const PENDING_COMMISSION_SUM_SQL: &str = r#"
+    SELECT CAST(COALESCE(SUM(commission_balance), 0) AS CHAR)
+    FROM v2_order
+    WHERE status = 3 AND commission_status = 0 AND invite_user_id = ?
+"#;
+
+fn exact_i64_aggregate(value: &str, metric: &str) -> Result<i64, sqlx::Error> {
+    let invalid = |reason: &str| {
+        sqlx::Error::Decode(
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("{metric} aggregate {reason}"),
+            )
+            .into(),
+        )
+    };
+    let exact = value
+        .parse::<i128>()
+        .map_err(|_| invalid("is not a valid integer"))?;
+    i64::try_from(exact).map_err(|_| invalid("exceeds the supported range"))
+}
+
 #[derive(Debug, Clone, FromRow, Serialize)]
 pub struct InviteCodeRow {
     pub id: i32,
@@ -78,22 +101,20 @@ pub async fn fetch_invite(pool: &MySqlPool, user_id: i64) -> Result<InviteFetchR
             .bind(user_id)
             .fetch_one(pool)
             .await?;
-    let valid_commission: i64 = sqlx::query_scalar(
-        "SELECT CAST(COALESCE(SUM(get_amount), 0) AS SIGNED) FROM v2_commission_log WHERE invite_user_id = ?",
-    )
-    .bind(user_id)
-    .fetch_one(pool)
-    .await?;
-    let pending_commission: i64 = sqlx::query_scalar(
-        r#"
-        SELECT CAST(COALESCE(SUM(commission_balance), 0) AS SIGNED)
-        FROM v2_order
-        WHERE status = 3 AND commission_status = 0 AND invite_user_id = ?
-        "#,
-    )
-    .bind(user_id)
-    .fetch_one(pool)
-    .await?;
+    let valid_commission = exact_i64_aggregate(
+        &sqlx::query_scalar::<_, String>(VALID_COMMISSION_SUM_SQL)
+            .bind(user_id)
+            .fetch_one(pool)
+            .await?,
+        "valid commission",
+    )?;
+    let pending_commission = exact_i64_aggregate(
+        &sqlx::query_scalar::<_, String>(PENDING_COMMISSION_SUM_SQL)
+            .bind(user_id)
+            .fetch_one(pool)
+            .await?,
+        "pending commission",
+    )?;
     let commission_rate = user
         .as_ref()
         .and_then(|user| user.commission_rate)
@@ -118,8 +139,8 @@ pub async fn fetch_invite(pool: &MySqlPool, user_id: i64) -> Result<InviteFetchR
 pub async fn fetch_commission_details(
     pool: &MySqlPool,
     user_id: i64,
-    current: i64,
     page_size: i64,
+    offset: i64,
 ) -> Result<(Vec<CommissionDetailRow>, i64), sqlx::Error> {
     let total: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM v2_commission_log WHERE invite_user_id = ? AND get_amount > 0",
@@ -138,7 +159,7 @@ pub async fn fetch_commission_details(
     )
     .bind(user_id)
     .bind(page_size)
-    .bind((current.max(1) - 1) * page_size)
+    .bind(offset)
     .fetch_all(pool)
     .await?;
     Ok((rows, total))
@@ -161,4 +182,30 @@ async fn insert_invite_code(
     .execute(&mut **tx)
     .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn commission_aggregates_preserve_exact_values_and_reject_i64_overflow() {
+        assert!(VALID_COMMISSION_SUM_SQL.contains("AS CHAR"));
+        assert!(PENDING_COMMISSION_SUM_SQL.contains("AS CHAR"));
+        assert!(!VALID_COMMISSION_SUM_SQL.contains("AS SIGNED"));
+        assert!(!PENDING_COMMISSION_SUM_SQL.contains("AS SIGNED"));
+
+        assert_eq!(exact_i64_aggregate("0", "test").unwrap(), 0);
+        assert_eq!(
+            exact_i64_aggregate("9223372036854775807", "test").unwrap(),
+            i64::MAX
+        );
+        assert_eq!(
+            exact_i64_aggregate("-9223372036854775808", "test").unwrap(),
+            i64::MIN
+        );
+        assert!(exact_i64_aggregate("9223372036854775808", "test").is_err());
+        assert!(exact_i64_aggregate("-9223372036854775809", "test").is_err());
+        assert!(exact_i64_aggregate("not-a-number", "test").is_err());
+    }
 }

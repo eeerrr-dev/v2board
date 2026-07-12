@@ -1,11 +1,16 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/render';
+import { createTestTranslation } from '@/test/i18next-selector';
 import { ConfirmDialogProvider, confirmDialog } from './confirm-dialog';
 
-// The provider only reads i18n.language for the localized default button text.
+// The provider reads the canonical common translations for its default buttons.
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ i18n: { language: 'zh-CN' } }),
+  useTranslation: () =>
+    createTestTranslation({
+      'common.confirm': '确定',
+      'common.cancel': '取消',
+    }),
 }));
 
 // Behavior tests for the queued confirm-dialog store + provider. These pin the
@@ -31,7 +36,7 @@ describe('confirm dialog queued behavior', () => {
 
     expect(await screen.findByRole('alertdialog', { name: 'First' })).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: '确 定' }));
+    await user.click(screen.getByRole('button', { name: '确定' }));
 
     // First resolved true; the queue advanced to the second request without
     // resolving it yet, and its primary button is interactive again (the
@@ -39,7 +44,7 @@ describe('confirm dialog queued behavior', () => {
     await waitFor(() => expect(resolvedA).toBe(true));
     expect(resolvedB).toBeUndefined();
     const second = screen.getByRole('alertdialog', { name: 'Second' });
-    const secondPrimary = within(second).getByRole('button', { name: '确 定' });
+    const secondPrimary = within(second).getByRole('button', { name: '确定' });
     expect(secondPrimary).toBeEnabled();
 
     await user.click(secondPrimary);
@@ -65,6 +70,26 @@ describe('confirm dialog queued behavior', () => {
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
 
+  it('focuses the safe cancel action so Enter cannot confirm a destructive request', async () => {
+    const { user } = renderWithProviders(<ConfirmDialogProvider />);
+
+    let resolved: boolean | undefined;
+    act(() => {
+      void confirmDialog({ title: 'Delete item?' }).then((value) => {
+        resolved = value;
+      });
+    });
+
+    const dialog = await screen.findByRole('alertdialog', { name: 'Delete item?' });
+    const cancel = within(dialog).getByRole('button', { name: '取消' });
+    await waitFor(() => expect(cancel).toHaveFocus());
+    expect(cancel).toHaveAttribute('data-alert-dialog-cancel');
+
+    await user.keyboard('{Enter}');
+
+    await waitFor(() => expect(resolved).toBe(false));
+  });
+
   it('does not invoke onCancel when a confirm programmatically closes the dialog', async () => {
     const onConfirm = vi.fn();
     const onCancel = vi.fn();
@@ -77,7 +102,7 @@ describe('confirm dialog queued behavior', () => {
       });
     });
 
-    await user.click(await screen.findByRole('button', { name: '确 定' }));
+    await user.click(await screen.findByRole('button', { name: '确定' }));
 
     // The programmatic close flips Radix open -> false; the closingRef guard must
     // stop that transition from being treated as a user cancel.
@@ -99,16 +124,20 @@ describe('confirm dialog queued behavior', () => {
     // The shell is a real alert dialog labelled by its title (shadcn/Radix
     // alert-dialog semantics rather than an Ant modal shim).
     const dialog = await screen.findByRole('alertdialog', { name: 'Hooked' });
-    // The interaction-parity harness (frontend/tests/lib) selects these v2board-* hooks, so they
-    // must stay addressable on the rendered dialog.
-    expect(dialog).toHaveClass('v2board-confirm-dialog');
-    expect(within(dialog).getByText('Hooked')).toHaveClass('v2board-confirm-title');
-    expect(within(dialog).getByText('Body copy')).toHaveClass('v2board-confirm-content');
-    const confirm = within(dialog).getByRole('button', { name: '确 定' });
-    expect(confirm).toHaveClass('v2board-confirm-primary');
-    expect(confirm.closest('.v2board-confirm-footer')).not.toBeNull();
-    // Default button text is localized through getConfirmDialogDefaultText.
-    expect(within(dialog).getByRole('button', { name: '取 消' })).toBeInTheDocument();
+    expect(dialog).toHaveAttribute('data-slot', 'alert-dialog-content');
+    expect(within(dialog).getByText('Hooked')).toHaveAttribute(
+      'data-slot',
+      'alert-dialog-title',
+    );
+    expect(within(dialog).getByText('Body copy')).toHaveAttribute(
+      'data-slot',
+      'alert-dialog-description',
+    );
+    const confirm = within(dialog).getByRole('button', { name: '确定' });
+    expect(confirm).toHaveAttribute('data-alert-dialog-action');
+    expect(confirm.closest('[data-slot="alert-dialog-footer"]')).not.toBeNull();
+    // Default button text comes from the canonical common translations.
+    expect(within(dialog).getByRole('button', { name: '取消' })).toBeInTheDocument();
 
     await user.click(confirm);
     await waitFor(() => expect(resolved).toBe(true));

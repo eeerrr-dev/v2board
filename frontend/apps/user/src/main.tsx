@@ -1,77 +1,42 @@
 import { lazy, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
-import { QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { presentMutationError } from '@v2board/api-client';
 import type { SubscribeInfo, UserInfo } from '@v2board/types';
 import { I18nextProvider } from 'react-i18next';
-import { createI18n, installLocaleDocumentEnvironment } from '@v2board/i18n';
-import {
-  installLegacyDevModuleRecovery,
-  installLegacyDevWhiteScreenFallback,
-  installLegacyHashRouteNormalizer,
-  installLegacyWhiteScreenRecovery,
-  normalizeLegacyHashRoute,
-} from '@v2board/config';
-import { RouterProvider } from 'react-router';
+import { createLazyI18n, installLocaleDocumentEnvironment } from '@v2board/i18n';
+import { RouterProvider } from 'react-router/dom';
 
-import { createUserRouter, USER_LEGACY_ROUTE_PATHS } from './App';
+import { createUserRouter } from './App';
 import { ConfirmDialogProvider } from './components/ui/confirm-dialog';
 import { Toaster } from './components/ui/toaster';
-import { registerSessionCacheClearer } from './lib/auth';
+import { registerSessionCacheClearer, setupAuthSync } from './lib/auth';
 import { applyInitialDarkMode } from './lib/dark-mode';
-import { applyLegacySettings } from './lib/legacy-settings';
+import { applyRuntimeConfig } from './lib/runtime-config';
+import { i18nGet } from './lib/errors';
 import { reportSubscribeToChat, reportUserInfoToChat, userKeys } from './lib/queries';
+import { registerRouterNavigation } from './lib/router-navigation';
+import { toast } from './lib/toast';
 import './styles/globals.css';
-import './styles/user-legacy-replica.css';
-import './styles/user-redesigned-surfaces.css';
 
-const legacyHashRouteOptions = {
-  authenticatedFallback: '/dashboard',
-  authenticatedPublicFallbackRoutes: [],
-  canonicalPath: '/',
-  guestFallback: '/login',
-  nestedPrefixes: USER_LEGACY_ROUTE_PATHS,
-  publicRoutes: ['/', '/login', '/register', '/forgetpassword'],
-  routes: USER_LEGACY_ROUTE_PATHS,
-} as const;
-const legacyRecoveryVersion = 'white-screen-recovery-38';
-const legacyWhiteScreenRecoveryConfig = {
-  storageKey: `v2board:white-screen-recovery:${legacyRecoveryVersion}`,
-} as const;
-const legacyDevModuleRecoveryConfig = {
-  storageKey: `v2board:dev-module-recovery:${legacyRecoveryVersion}`,
-} as const;
-
-normalizeLegacyHashRoute(legacyHashRouteOptions);
-installLegacyHashRouteNormalizer(legacyHashRouteOptions);
-if (import.meta.env.DEV) {
-  installLegacyDevModuleRecovery(legacyDevModuleRecoveryConfig);
-  installLegacyWhiteScreenRecovery(legacyHashRouteOptions, {
-    ...legacyWhiteScreenRecoveryConfig,
-    delay: 3000,
-  });
-  installLegacyDevWhiteScreenFallback({ delay: 5000 });
-}
-// Production deliberately ships NO white-screen watchdog: its terminal recovery
-// pass removes the Tier-1 `authorization` storage key off a DOM-emptiness
-// heuristic (packages/config/src/legacy-hash-route.ts), which would destroy a
-// valid session whenever the backend is merely slow. The router's
-// hydrateFallbackElement (App.tsx) keeps #root non-empty while initial loaders
-// are pending, and auth clearing stays owned by the tested 403 handler
-// (lib/api.ts). The dev-only installs above remain for the Vite module-graph
-// recovery cases that production builds cannot hit.
-applyLegacySettings();
-const i18n = createI18n();
+applyRuntimeConfig();
+const i18n = await createLazyI18n();
 installLocaleDocumentEnvironment(i18n);
 function queryKeyEquals(a: readonly unknown[], b: readonly unknown[]): boolean {
   return a.length === b.length && a.every((value, index) => value === b[index]);
 }
 
-// Mirror the legacy sagas: report the user to the Tawk/Crisp live-chat widgets
+// Preserve the Tawk/Crisp integration contract: report the user to the widgets
 // after each successful user/info and user/subscribe fetch (refetches included).
 // QueryCache onSuccess is React Query v5's canonical replacement for the removed
 // useQuery onSuccess and fires once per successful fetch keyed by query, so the
 // queryFns stay pure. The Crisp/Tawk payloads are external-integration contracts.
 const queryClient = new QueryClient({
+  mutationCache: new MutationCache({
+    onError: (error, _variables, _context, mutation) => {
+      presentMutationError(error, mutation.meta, (message) => toast.error(message), i18nGet);
+    },
+  }),
   queryCache: new QueryCache({
     onSuccess: (data, query) => {
       if (queryKeyEquals(query.queryKey, userKeys.info)) {
@@ -91,13 +56,15 @@ const queryClient = new QueryClient({
 // previous account's data (e.g. the subscribe_url credential). Registered here
 // because the QueryClient lives in the entry; lib/auth never imports main.
 registerSessionCacheClearer(() => queryClient.clear());
+setupAuthSync();
 
 applyInitialDarkMode();
 const router = createUserRouter(queryClient);
+registerRouterNavigation(router);
 
 // Dev-only TanStack Query devtools. The import lives inside an import.meta.env.DEV
 // branch so the production deploy build (where Vite statically resolves DEV to
-// false) dead-code-eliminates the dynamic import and never ships it in umi.js.
+// false) dead-code-eliminates the dynamic import from the production graph.
 const ReactQueryDevtools = import.meta.env.DEV
   ? lazy(() =>
       import('@tanstack/react-query-devtools').then((module) => ({

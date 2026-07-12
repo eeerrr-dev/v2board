@@ -11,6 +11,7 @@ import { UserTrafficModal } from './user-traffic-modal';
 
 const mocks = vi.hoisted(() => ({
   useAdminUserTraffic: vi.fn(),
+  refetch: vi.fn(),
 }));
 
 vi.mock('@/lib/queries', () => ({
@@ -19,12 +20,16 @@ vi.mock('@/lib/queries', () => ({
 
 beforeEach(() => {
   mocks.useAdminUserTraffic.mockReset();
+  mocks.refetch.mockReset().mockResolvedValue(undefined);
   mocks.useAdminUserTraffic.mockReturnValue({
     data: {
       data: [{ record_at: 1700000000, u: 1024, d: 2048, server_rate: 1 }],
       total: 25,
     },
+    isPending: false,
+    isError: false,
     isFetching: false,
+    refetch: mocks.refetch,
   });
 });
 
@@ -48,6 +53,62 @@ describe('UserTrafficModal', () => {
 
     expect(mocks.useAdminUserTraffic).toHaveBeenCalledWith(1, { current: 1, pageSize: 10 }, false);
     expect(screen.queryByTestId('user-traffic-modal')).not.toBeInTheDocument();
+  });
+
+  it('renders an explicit loading state without an empty traffic table', () => {
+    mocks.useAdminUserTraffic.mockReturnValue({
+      data: undefined,
+      isPending: true,
+      isError: false,
+      isFetching: true,
+      refetch: mocks.refetch,
+    });
+
+    render(<UserTrafficModal userId={1} open onClose={() => undefined} />);
+
+    expect(screen.getByTestId('user-traffic-loading')).toHaveAttribute('role', 'status');
+    expect(screen.queryByTestId('user-traffic-table')).toBeNull();
+    expect(screen.queryByTestId('user-traffic-empty')).toBeNull();
+  });
+
+  it('surfaces and retries a traffic failure even when stale rows remain cached', async () => {
+    mocks.useAdminUserTraffic.mockReturnValue({
+      data: {
+        data: [{ record_at: 1700000000, u: 1024, d: 2048, server_rate: 1 }],
+        total: 1,
+      },
+      isPending: false,
+      isError: true,
+      isFetching: false,
+      refetch: mocks.refetch,
+    });
+    const user = userEvent.setup();
+
+    render(<UserTrafficModal userId={1} open onClose={() => undefined} />);
+
+    const error = screen.getByTestId('user-traffic-error');
+    expect(error).toHaveTextContent('流量记录加载失败');
+    expect(screen.queryByTestId('user-traffic-table')).toBeNull();
+    expect(screen.queryByTestId('user-traffic-empty')).toBeNull();
+
+    await user.click(within(error).getByTestId('error-state-retry'));
+    expect(mocks.refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders the table empty state only after a successful empty response', () => {
+    mocks.useAdminUserTraffic.mockReturnValue({
+      data: { data: [], total: 0 },
+      isPending: false,
+      isError: false,
+      isFetching: false,
+      refetch: mocks.refetch,
+    });
+
+    render(<UserTrafficModal userId={1} open onClose={() => undefined} />);
+
+    expect(screen.getByTestId('user-traffic-empty')).toHaveTextContent('暂无数据');
+    expect(screen.queryByTestId('user-traffic-loading')).toBeNull();
+    expect(screen.queryByTestId('user-traffic-error')).toBeNull();
   });
 
   it('sends the new page on pagination change and resets when opening another user', async () => {

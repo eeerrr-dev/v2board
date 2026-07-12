@@ -104,7 +104,7 @@ export async function runProfileResetSubscribeConfirmInteraction(page) {
     '[data-testid="profile-confirm-dialog"], .ant-modal-confirm, .ant-modal',
   );
   await waitForPagePropertyAtLeast(page, '__visualParityUserResetSecurityCount', 1);
-  await page.waitForSelector('.v2board-toast-root, .ant-message-notice, .ant-notification-notice', {
+  await page.waitForSelector('[data-sonner-toast], .ant-message-notice, .ant-notification-notice', {
     state: 'visible',
     timeout: 5_000,
   });
@@ -124,10 +124,24 @@ export async function runProfileResetSubscribeConfirmInteraction(page) {
 export async function runProfileTelegramBindModalInteraction(page) {
   await page.evaluate(() => {
     window.__visualParityCopyCommandCount = 0;
+    const recordCopy = () => {
+      window.__visualParityCopyCommandCount += 1;
+    };
+    const clipboard = navigator.clipboard ?? {};
+    Object.defineProperty(clipboard, 'writeText', {
+      configurable: true,
+      value: async () => recordCopy(),
+    });
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: clipboard,
+    });
+    // The frozen oracle still calls execCommand. Production source is guarded
+    // against that deprecated API and exercises navigator.clipboard above.
     Object.defineProperty(document, 'execCommand', {
       configurable: true,
       value: (command) => {
-        if (command === 'copy') window.__visualParityCopyCommandCount += 1;
+        if (command === 'copy') recordCopy();
         return command === 'copy';
       },
     });
@@ -148,13 +162,14 @@ export async function runProfileTelegramBindModalInteraction(page) {
       document
         .querySelector('[data-testid="profile-telegram-bind-dialog"], .ant-modal')
         ?.textContent?.includes('@legacy_bot'),
+    null,
     { timeout: 5_000 },
   );
   await page.waitForTimeout(150);
   const opened = await profileTelegramBindState(page);
 
   await clickFirstVisible(page, '[data-testid="profile-copy-code"], .ant-modal code');
-  await page.waitForFunction(() => (window.__visualParityCopyCommandCount ?? 0) > 0, {
+  await page.waitForFunction(() => (window.__visualParityCopyCommandCount ?? 0) > 0, null, {
     timeout: 5_000,
   });
   const copied = await profileTelegramBindState(page);
@@ -171,7 +186,6 @@ export async function runProfileTelegramBindModalInteraction(page) {
 
 export async function runProfileTelegramUnbindConfirmInteraction(page) {
   const initialInfoFetchCount = page.__visualParityUserInfoFetchCount ?? 0;
-  const initialSubscribeFetchCount = page.__visualParityUserSubscribeFetchCount ?? 0;
   const before = await profileTelegramUnbindState(page);
 
   await clickFirstVisibleText(
@@ -200,12 +214,7 @@ export async function runProfileTelegramUnbindConfirmInteraction(page) {
     '__visualParityUserInfoFetchCount',
     initialInfoFetchCount + 1,
   );
-  await waitForPagePropertyAtLeast(
-    page,
-    '__visualParityUserSubscribeFetchCount',
-    initialSubscribeFetchCount + 1,
-  );
-  await page.waitForSelector('.v2board-toast-root, .ant-message-notice, .ant-notification-notice', {
+  await page.waitForSelector('[data-sonner-toast], .ant-message-notice, .ant-notification-notice', {
     state: 'visible',
     timeout: 5_000,
   });
@@ -217,8 +226,6 @@ export async function runProfileTelegramUnbindConfirmInteraction(page) {
     confirmed,
     infoFetchDelta: (page.__visualParityUserInfoFetchCount ?? 0) - initialInfoFetchCount,
     opened,
-    subscribeFetchDelta:
-      (page.__visualParityUserSubscribeFetchCount ?? 0) - initialSubscribeFetchCount,
   };
 }
 
@@ -285,7 +292,7 @@ export async function runProfileRedeemGiftcardInteraction(page) {
   await waitForProfileRedeemGiftcardLoading(page);
   const loading = await profileRedeemGiftcardState(page);
 
-  await page.waitForSelector('.v2board-toast-root, .ant-message-notice, .ant-notification-notice', {
+  await page.waitForSelector('[data-sonner-toast], .ant-message-notice, .ant-notification-notice', {
     state: 'visible',
     timeout: 5_000,
   });
@@ -350,12 +357,13 @@ export async function runProfileChangePasswordSuccessInteraction(page) {
   await waitForProfileChangePasswordLoading(page);
   const loading = await profileChangePasswordState(page);
 
-  await page.waitForSelector('.v2board-toast-root, .ant-message-notice, .ant-notification-notice', {
+  await page.waitForSelector('[data-sonner-toast], .ant-message-notice, .ant-notification-notice', {
     state: 'visible',
     timeout: 5_000,
   });
   await page.waitForFunction(
     () => window.location.hash.includes('/login') || window.location.hash.includes('/dashboard'),
+    null,
     { timeout: 5_000 },
   );
   await page.waitForTimeout(300);

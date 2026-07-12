@@ -8,6 +8,7 @@ import { viewports } from '../tests/lib/env.mjs';
 import { interactions } from '../tests/lib/interaction-scenarios.mjs';
 import { scenariosByLabel } from '../tests/lib/scenario-meta.mjs';
 import { GROUP_NAMES, groupOf } from '../tests/lib/spec-groups.mjs';
+import { auditUiSync } from './ui-sync-audit.mjs';
 
 if (isMainModule()) {
   const result = await auditParityConfig();
@@ -24,21 +25,13 @@ export async function auditParityConfig(projectRoot = getDefaultProjectRoot()) {
   const makefilePath = resolve(projectRoot, 'Makefile');
   const userAppPath = resolve(projectRoot, 'frontend/apps/user/src/App.tsx');
   const adminAppPath = resolve(projectRoot, 'frontend/apps/admin/src/App.tsx');
-  const userMainPath = resolve(projectRoot, 'frontend/apps/user/src/main.tsx');
-  const adminMainPath = resolve(projectRoot, 'frontend/apps/admin/src/main.tsx');
-  const userDevEntryPath = resolve(projectRoot, 'frontend/apps/user/index.html');
-  const adminDevEntryPath = resolve(projectRoot, 'frontend/apps/admin/index.html');
 
-  const [makefile, userApp, adminApp, userMain, adminMain, userDevEntry, adminDevEntry] =
-    await Promise.all([
-      readFile(makefilePath, 'utf8'),
-      readFile(userAppPath, 'utf8'),
-      readFile(adminAppPath, 'utf8'),
-      readFile(userMainPath, 'utf8'),
-      readFile(adminMainPath, 'utf8'),
-      readFile(userDevEntryPath, 'utf8'),
-      readFile(adminDevEntryPath, 'utf8'),
-    ]);
+  const [makefile, userApp, adminApp] = await Promise.all([
+    readFile(makefilePath, 'utf8'),
+    readFile(userAppPath, 'utf8'),
+    readFile(adminAppPath, 'utf8'),
+  ]);
+  const uiSync = await auditUiSync(projectRoot);
 
   // The parity modules are the single source of truth for the interaction lane.
   // The old text-parse of visual-parity.mjs retired with the driver; the
@@ -58,26 +51,16 @@ export async function auditParityConfig(projectRoot = getDefaultProjectRoot()) {
   const makeInteractionScenarios = readMakeList(makefile, 'INTERACTION_PARITY_SCENARIOS');
   const makeViewports = readMakeList(makefile, 'VISUAL_PARITY_VIEWPORTS');
 
-  const userRoutes = extractRouteArray(userApp, 'USER_LEGACY_ROUTE_PATHS');
-  const adminRoutes = extractRouteArray(adminApp, 'ADMIN_LEGACY_ROUTE_PATHS');
-  const userAppPublicRoutes = extractObjectArray(userApp, 'USER_LEGACY_ROUTE_OPTIONS', 'publicRoutes');
+  const userRoutes = extractRouteArray(userApp, 'USER_ROUTE_PATHS');
+  const adminRoutes = extractRouteArray(adminApp, 'ADMIN_ROUTE_PATHS');
+  const userAppPublicRoutes = extractObjectArray(userApp, 'USER_HASH_ROUTE_OPTIONS', 'publicRoutes');
   const adminAppPublicRoutes = extractObjectArray(
     adminApp,
-    'ADMIN_LEGACY_ROUTE_OPTIONS',
+    'ADMIN_HASH_ROUTE_OPTIONS',
     'publicRoutes',
   );
-  const userMainPublicRoutes = extractObjectArray(userMain, 'legacyHashRouteOptions', 'publicRoutes');
-  const adminMainPublicRoutes = extractObjectArray(
-    adminMain,
-    'legacyHashRouteOptions',
-    'publicRoutes',
-  );
-  const userDevRoutes = extractAssignedRouteArray(userDevEntry, 'var legacyRoutes = [');
-  const adminDevRoutes = extractAssignedRouteArray(adminDevEntry, 'var legacyRoutes = [');
-  const userDevPublicRoutes = extractAssignedRouteArray(userDevEntry, 'var legacyPublicRoutes = [');
-  const adminDevPublicRoutes = extractAssignedRouteArray(adminDevEntry, 'var legacyPublicRoutes = [');
-
   const failures = [
+    ...uiSync.failures,
     ...assertUnique('parity scenarios', scenarioLabels),
     ...assertUnique('parity interactions', interactionLabels),
     ...assertUnique('Makefile INTERACTION_PARITY_SCENARIOS', makeInteractionScenarios),
@@ -101,20 +84,8 @@ export async function auditParityConfig(projectRoot = getDefaultProjectRoot()) {
       scenarioPaths.filter((scenario) => scenario.label.startsWith('admin-')),
       new Set(interactionTargets),
     ),
-    ...assertSameOrderedValues('user dev entry legacyRoutes', userDevRoutes, userRoutes),
-    ...assertSameOrderedValues('admin dev entry legacyRoutes', adminDevRoutes, adminRoutes),
-    ...assertSameOrderedValues('user main legacy publicRoutes', userMainPublicRoutes, userAppPublicRoutes),
-    ...assertSameOrderedValues(
-      'admin main legacy publicRoutes',
-      adminMainPublicRoutes,
-      adminAppPublicRoutes,
-    ),
-    ...assertSameOrderedValues('user dev entry legacyPublicRoutes', userDevPublicRoutes, userAppPublicRoutes),
-    ...assertSameOrderedValues(
-      'admin dev entry legacyPublicRoutes',
-      adminDevPublicRoutes,
-      adminAppPublicRoutes,
-    ),
+    ...assertSubset('user public routes', userAppPublicRoutes, userRoutes),
+    ...assertSubset('admin public routes', adminAppPublicRoutes, adminRoutes),
   ];
 
   return {
@@ -123,13 +94,25 @@ export async function auditParityConfig(projectRoot = getDefaultProjectRoot()) {
     interactionScenarioCount: interactionLabels.length,
     scenarioCount: scenarioLabels.length,
     specGroupCount: GROUP_NAMES.length,
+    uiAppSpecificCount: uiSync.appSpecificCount,
+    uiSharedPrimitiveCount: uiSync.sharedPrimitiveCount,
+    uiSharedStylesheetCount: uiSync.sharedStylesheetCount,
     userRouteCount: userRoutes.length,
     viewportCount: viewportLabels.length,
   };
 }
 
 export function formatAuditSuccess(result) {
-  return `Parity config audit OK: ${result.scenarioCount} parity scenarios and ${result.interactionScenarioCount} interactions across ${result.specGroupCount} spec groups and ${result.viewportCount} viewports, Makefile INTERACTION_PARITY_SCENARIOS mirrors the interaction modules, parity covers ${result.userRouteCount} user routes plus ${result.adminRouteCount} admin routes, and dev entry route mirrors are aligned.`;
+  const appOnlyNoun = result.uiAppSpecificCount === 1 ? 'primitive' : 'primitives';
+  return (
+    `Parity config audit OK: ${result.scenarioCount} parity scenarios and ` +
+    `${result.interactionScenarioCount} interactions across ${result.specGroupCount} spec groups ` +
+    `and ${result.viewportCount} viewports, Makefile INTERACTION_PARITY_SCENARIOS mirrors ` +
+    `the interaction modules, and App.tsx route definitions cover ${result.userRouteCount} ` +
+    `user routes plus ${result.adminRouteCount} admin routes. UI sync covers ` +
+    `${result.uiSharedPrimitiveCount} shared primitives, ${result.uiSharedStylesheetCount} ` +
+    `shared stylesheets, and ${result.uiAppSpecificCount} explicit app-only ${appOnlyNoun}.`
+  );
 }
 
 export function readMakeList(source, name) {
@@ -172,11 +155,6 @@ export function extractBlock(source, startMarker, endMarker) {
 
 export function extractRouteArray(source, name) {
   const block = extractBlock(source, `export const ${name} = [`, '] as const;');
-  return extractQuotedValues(block);
-}
-
-export function extractAssignedRouteArray(source, startMarker) {
-  const block = extractBlock(source, startMarker, '];');
   return extractQuotedValues(block);
 }
 
@@ -234,35 +212,13 @@ export function assertSameOrderedList(name, actual, expected) {
   return failures;
 }
 
-export function assertSameOrderedValues(name, actual, expected) {
-  const failures = [];
-  const missing = expected.filter((value) => !actual.includes(value));
-  const extra = actual.filter((value) => !expected.includes(value));
-
-  if (missing.length > 0) {
-    failures.push(`${name} is missing values: ${missing.join(', ')}`);
-  }
-
-  if (extra.length > 0) {
-    failures.push(`${name} has unexpected values: ${extra.join(', ')}`);
-  }
-
-  if (missing.length === 0 && extra.length === 0 && actual.join('\n') !== expected.join('\n')) {
-    failures.push(
-      `${name} order differs.\nActual:   ${actual.join(' ')}\nExpected: ${expected.join(' ')}`,
-    );
-  }
-
-  return failures;
-}
-
 export function assertSubset(name, actual, expected) {
   const expectedSet = new Set(expected);
   const missing = actual.filter((value) => !expectedSet.has(value));
 
   return missing.length === 0
     ? []
-    : [`${name} has values not defined by the parity viewports: ${missing.join(', ')}`];
+    : [`${name} has values outside the allowed set: ${missing.join(', ')}`];
 }
 
 export function assertInteractionTargetsExist(scenarioLabels, interactionTargets) {

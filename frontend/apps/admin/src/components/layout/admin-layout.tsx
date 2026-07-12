@@ -1,8 +1,6 @@
-import { useEffect, useState, type ComponentType, type SVGProps } from 'react';
-import { useLocation, useNavigate } from 'react-router';
-import { useQuery } from '@tanstack/react-query';
-import { user } from '@v2board/api-client';
-import { getLegacyLocaleClassName, legacyGetLocale } from '@v2board/i18n';
+import { Suspense, useEffect, useState, type ComponentType, type SVGProps } from 'react';
+import { Link, useLocation } from 'react-router';
+import { useSuspenseQuery } from '@tanstack/react-query';
 import {
   BarChart3,
   BookOpen,
@@ -21,12 +19,11 @@ import {
   Sun,
   Ticket,
   Users,
-  Wand2,
   Wrench,
 } from 'lucide-react';
-import { apiClient } from '@/lib/api';
-import { cn } from '@/lib/cn';
-import { getLegacyCookie } from '@/lib/legacy-cookie';
+import { readCookie } from '@v2board/i18n';
+import { adminSessionQueryOptions } from '@/lib/session-queries';
+import { getAdminTitle } from '@/lib/runtime-config';
 import {
   setThemePreference,
   useDarkMode,
@@ -36,6 +33,7 @@ import {
 import { RouteBoundaryOutlet } from '@/components/route-error-boundary';
 import { AdminNavUser } from './admin-nav-user';
 import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -83,7 +81,6 @@ const NAV: NavGroup[] = [
     items: [
       { to: '/config/system', title: '系统配置', icon: SlidersHorizontal },
       { to: '/config/payment', title: '支付配置', icon: CreditCard },
-      { to: '/config/theme', title: '主题配置', icon: Wand2 },
     ],
   },
   {
@@ -122,11 +119,7 @@ const SIDEBAR_STATE_COOKIE = 'sidebar_state';
 
 function readSidebarDefaultOpen(): boolean {
   if (typeof document === 'undefined') return true;
-  return getLegacyCookie(SIDEBAR_STATE_COOKIE) !== 'false';
-}
-
-function getSiteTitle(): string {
-  return window.settings?.title || 'V2Board';
+  return readCookie(SIDEBAR_STATE_COOKIE) !== 'false';
 }
 
 function findActiveTitle(pathname: string): string {
@@ -143,13 +136,9 @@ function findActiveTitle(pathname: string): string {
 // cannot reach through useSidebar.
 function AdminSidebar({ siteTitle, email }: { siteTitle: string; email: string }) {
   const location = useLocation();
-  const navigate = useNavigate();
   const { setOpenMobile } = useSidebar();
 
-  const goto = (to: string) => {
-    navigate(to);
-    setOpenMobile(false);
-  };
+  const closeMobile = () => setOpenMobile(false);
 
   return (
     <Sidebar
@@ -161,13 +150,13 @@ function AdminSidebar({ siteTitle, email }: { siteTitle: string; email: string }
     >
       <SidebarHeader>
         <div className="flex items-center justify-between gap-1">
-          <button
-            type="button"
-            onClick={() => goto('/dashboard')}
+          <Link
+            to="/dashboard"
+            onClick={closeMobile}
             className="min-w-0 truncate rounded-md px-2 py-1 text-left text-base font-semibold text-sidebar-foreground outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring group-data-[collapsible=icon]:hidden"
           >
             {siteTitle}
-          </button>
+          </Link>
           <SidebarTrigger className="size-8 shrink-0" aria-label="切换导航" />
         </div>
       </SidebarHeader>
@@ -187,9 +176,15 @@ function AdminSidebar({ siteTitle, email }: { siteTitle: string; email: string }
                     location.pathname === item.to || location.pathname.startsWith(item.to + '/');
                   return (
                     <SidebarMenuItem key={item.to}>
-                      <SidebarMenuButton isActive={active} tooltip={item.title} onClick={() => goto(item.to)}>
-                        <item.icon />
-                        <span>{item.title}</span>
+                      <SidebarMenuButton asChild isActive={active} tooltip={item.title}>
+                        <Link
+                          to={item.to}
+                          aria-current={active ? 'page' : undefined}
+                          onClick={closeMobile}
+                        >
+                          <item.icon />
+                          <span>{item.title}</span>
+                        </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   );
@@ -207,19 +202,17 @@ function AdminSidebar({ siteTitle, email }: { siteTitle: string; email: string }
   );
 }
 
-export function AdminLayout() {
+function AdminLayoutContent() {
   const location = useLocation();
   const darkMode = useDarkMode();
   const themePreference = useThemePreference();
   const [sidebarDefaultOpen] = useState(readSidebarDefaultOpen);
-  const { data: userInfo } = useQuery({
-    queryKey: ['admin', 'user-info'],
-    queryFn: () => user.info(apiClient),
+  const { data: userInfo } = useSuspenseQuery({
+    ...adminSessionQueryOptions.userInfo(),
+    refetchOnMount: false,
   });
-  const email = userInfo?.email ?? '';
-  const siteTitle = getSiteTitle();
+  const siteTitle = getAdminTitle();
   const title = findActiveTitle(location.pathname);
-  const localeClass = getLegacyLocaleClassName(legacyGetLocale(), { includeLocale: false });
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -229,9 +222,9 @@ export function AdminLayout() {
     <SidebarProvider
       id="page-container"
       defaultOpen={sidebarDefaultOpen}
-      className={cn('v2board-island v2board-app-shell text-foreground', localeClass)}
+      className="text-foreground"
     >
-      <AdminSidebar siteTitle={siteTitle} email={email} />
+      <AdminSidebar siteTitle={siteTitle} email={userInfo.email} />
 
       <SidebarInset>
         <header
@@ -244,7 +237,10 @@ export function AdminLayout() {
               orientation="vertical"
               className="mx-2 data-[orientation=vertical]:h-4 md:hidden"
             />
-            <h1 className="v2board-container-title min-w-0 flex-1 truncate text-base font-medium text-foreground">
+            <h1
+              data-slot="page-title"
+              className="min-w-0 flex-1 truncate text-base font-medium text-foreground"
+            >
               {title}
             </h1>
             <div className="ml-auto flex shrink-0 items-center gap-1">
@@ -267,11 +263,19 @@ export function AdminLayout() {
                     value={themePreference}
                     onValueChange={(value) => setThemePreference(value as ThemePreference)}
                   >
-                    <DropdownMenuRadioItem value="system" data-theme-option="system" className="gap-2">
+                    <DropdownMenuRadioItem
+                      value="system"
+                      data-theme-option="system"
+                      className="gap-2"
+                    >
                       <Monitor className="size-4" />
                       跟随系统
                     </DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="light" data-theme-option="light" className="gap-2">
+                    <DropdownMenuRadioItem
+                      value="light"
+                      data-theme-option="light"
+                      className="gap-2"
+                    >
                       <Sun className="size-4" />
                       浅色
                     </DropdownMenuRadioItem>
@@ -286,12 +290,32 @@ export function AdminLayout() {
           </div>
         </header>
 
-        <div id="main-container" className="v2board-app-main flex-1">
+        <div id="main-container" className="flex-1">
           <div className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 md:py-6">
             <RouteBoundaryOutlet />
           </div>
         </div>
       </SidebarInset>
     </SidebarProvider>
+  );
+}
+
+function AdminLayoutFallback() {
+  return (
+    <div
+      role="status"
+      className="flex min-h-screen items-center justify-center bg-background"
+    >
+      <Spinner className="size-6" />
+      <span className="sr-only">正在加载</span>
+    </div>
+  );
+}
+
+export function AdminLayout() {
+  return (
+    <Suspense fallback={<AdminLayoutFallback />}>
+      <AdminLayoutContent />
+    </Suspense>
   );
 }

@@ -132,24 +132,47 @@ const AUTH_CARD_FILES = [
 ];
 
 describe('forbidden module imports', () => {
-  it('never imports retired legacy modules anywhere in src', () => {
-    // from: orders/detail.test.tsx (legacy '@/components/ui/dialog' bridge; the
-    // island's dialog is '@/components/ui/shadcn-dialog'), auth-recaptcha.test.tsx
-    // (same bridge), register/forget tests (lib/legacy-toast), login tests
+  it('never restores or imports retired legacy modules anywhere in src', () => {
+    // from: orders/detail.test.tsx (retired '@/components/ui/shadcn-dialog'
+    // migration name; the canonical registry path is '@/components/ui/dialog'),
+    // register/forget tests (lib/legacy-toast), login tests
     // (retired components/layout/auth-language-menu), toast.test.ts
     // (@radix-ui/react-toast store replaced by Sonner), form-field.test.tsx
-    // (retired cloneElement FormField — the canonical RHF primitive is
-    // '@/components/ui/form', which exports its own FormField).
+    // (retired cloneElement FormField), and form.test.tsx (retired
+    // FormProvider/context stack). RHF forms now compose Controller directly
+    // with the shared '@/components/ui/field' primitive.
     const banned = new Map<string, string>([
-      ['components/ui/dialog', "legacy dialog bridge — use '@/components/ui/shadcn-dialog'"],
-      ['components/ui/form-field', "retired cloneElement FormField — use the canonical '@/components/ui/form'"],
+      [
+        'components/ui/shadcn-dialog',
+        "retired migration name — use the canonical '@/components/ui/dialog' registry path",
+      ],
+      [
+        'components/ui/form',
+        "retired FormProvider stack — use Controller with '@/components/ui/field'",
+      ],
+      [
+        'components/ui/form-field',
+        "retired cloneElement FormField — use Controller with '@/components/ui/field'",
+      ],
       ['lib/legacy-toast', "retired legacy toast — use '@/lib/toast'"],
       ['components/layout/auth-language-menu', 'retired auth language-menu module'],
       ['@radix-ui/react-toast', 'legacy self-owned toast store — Sonner owns toasts'],
     ]);
+    const retiredSourceModules = new Set([
+      'components/ui/form.tsx',
+      'components/ui/form-field.tsx',
+      'components/ui/shadcn-dialog.tsx',
+    ]);
+    const restoredModules = sources
+      .filter(({ rel }) => retiredSourceModules.has(rel))
+      .map(({ rel }) => rel);
     const hits = importEdges
       .filter((edge) => banned.has(edge.resolved))
-      .map((edge) => `${edge.rel}:${edge.line} imports '${edge.specifier}' — ${banned.get(edge.resolved)}`);
+      .map(
+        (edge) =>
+          `${edge.rel}:${edge.line} imports '${edge.specifier}' — ${banned.get(edge.resolved)}`,
+      );
+    expect(restoredModules).toEqual([]);
     expect(hits).toEqual([]);
   });
 
@@ -185,7 +208,10 @@ describe('legacy class names never appear in source', () => {
         { pattern: /\banticon/, why: 'Ant Design icon classes are banned' },
         { pattern: /\bam-list/, why: 'antd-mobile list classes are banned' },
         { pattern: /\bslick-slider\b/, why: 'legacy slick carousel foundation is banned' },
-        { pattern: /\bfa fa-/, why: 'Font Awesome legacy icon classes are banned — use lucide-react' },
+        {
+          pattern: /\bfa fa-/,
+          why: 'Font Awesome legacy icon classes are banned — use lucide-react',
+        },
         { pattern: /\bsi si-/, why: 'Simple Line Icons classes are banned — use lucide-react' },
       ]),
     ).toEqual([]);
@@ -205,23 +231,14 @@ describe('legacy class names never appear in source', () => {
           why: 'OneUI block card/loading classes are banned',
         },
         {
-          allow: (line, rel) =>
-            rel === 'components/ui/form.tsx' && line.includes('data-slot="form-control"'),
           pattern: /\bform-control\b/,
-          why: 'Bootstrap form-control chrome is banned (shadcn form.tsx data-slot is the one sanctioned use)',
+          why: 'Bootstrap form-control chrome is banned',
         },
         {
           pattern: /\bbtn-block\b|\bbtn-primary\b|className="btn[\s"]/,
           why: 'Bootstrap button classes are banned',
         },
         {
-          // OneUI owns `.block`; layout must use flex/grid/inline-block instead
-          // (AGENTS.md; from knowledge/index.test.tsx item title/date spans and
-          // the switch primitive's rendered-markup twin). pages/dashboard.tsx is
-          // exempted as PRE-EXISTING debt (two `className="block truncate …"`
-          // spans shipped before this guard); drop the exemption when a source
-          // wave rewrites them.
-          allow: (_line, rel) => rel === 'pages/dashboard.tsx',
           pattern: /(["'`])(?:[^"'`]*\s)?block(?:\s[^"'`]*)?\1/,
           why: 'bare `block` class token is banned — OneUI owns .block',
         },
@@ -307,43 +324,39 @@ describe('retired auth chrome never returns', () => {
     ).toEqual([]);
   });
 
-  it('keeps brand/language-trigger class hooks out of the auth action card', () => {
-    // from: login.test.tsx / register.test.tsx / forget.test.tsx. The layout
-    // header (auth-brand.tsx, auth-language-menu.tsx) legitimately owns these.
+  it('keeps packaged theme logo paths out of the auth action card', () => {
     expect(
       violations([
         {
-          pattern: /v2board-auth-shell-brand|v2board-logo|v2board-auth-language-trigger|\/theme\/logo\.png/,
+          pattern: /\/theme\/logo\.png/,
           scope: AUTH_CARD_FILES,
-          why: 'brand/language chrome belongs to the auth layout, not the card',
+          why: 'operator assets come from validated runtime config',
         },
       ]),
     ).toEqual([]);
   });
 
-  it('keeps the legacy operator background setting out of the auth shell', () => {
-    // from: guest-layout.test.tsx. The behavior twin (background_url supplied,
-    // no inline background style rendered) is kept in guest-layout.test.tsx;
-    // lib/legacy-settings.ts legitimately declares the settings field.
+  it('does not interpolate operator image URLs into inline auth CSS', () => {
+    // guest-layout.test.tsx pins the safe <img src> customization path.
     expect(
       violations([
         {
-          pattern: /backgroundUrl|background_url/,
+          pattern: /backgroundImage|style=\{\{[^}]*background/,
           scope: ['components/layout/guest-layout.tsx', 'pages/auth/auth-layout.tsx'],
-          why: 'auth shell must not consume the legacy operator background setting',
+          why: 'operator image URLs belong in src attributes, not CSS strings',
         },
       ]),
     ).toEqual([]);
   });
 
-  it('bans hardcoded hash anchors in the guest layout — use react-router Link', () => {
-    // from: guest-layout.test.tsx. The auth pages' AuthFooterLink hash anchors
-    // are the deliberate current pattern, so this stays guest-layout-scoped.
+  it('bans hardcoded hash anchors throughout auth — use react-router Link', () => {
+    // React Router owns every internal auth transition while createHashRouter
+    // keeps the externally visible #/login, #/register and #/forgetpassword URLs.
     expect(
       violations([
         {
           pattern: /href="#\//,
-          scope: ['components/layout/guest-layout.tsx'],
+          scope: ['components/layout/guest-layout.tsx', 'pages/auth/'],
           why: 'in-app links must route through react-router Link',
         },
       ]),
@@ -361,26 +374,64 @@ describe('retired legacy identifiers never return', () => {
     // routeComponentKey, KeyedAppLayout, KeyedGuestLayout), knowledge
     // (lockLegacyDrawerBodyScroll, AntBtn), traffic (useFixedColumnRowHeights,
     // bodyRowHeightOffset, fixedBodyRowExtraPixel), sanitize-html (support-probe
-    // family), queries (useStripePublicKeyMutation), login/tickets-detail (keyCode).
+    // family), Stripe legacy token/CardElement flow, login/tickets-detail (keyCode).
     expect(
       violations([
         { pattern: /\bLegacyLoadingIcon\b/, why: 'legacy loading icon is retired' },
         { pattern: /\blegacyConfirm\b/, why: 'legacy confirm implementation is retired' },
         { pattern: /\buseLegacyRecaptcha\b/, why: 'legacy recaptcha hook is retired' },
         { pattern: /\breadFormValue\b/, why: 'retired DOM form-reader helper' },
-        { pattern: /\bisLegacyTimeoutError\b/, why: 'timeout special-casing is retired — all transport failures stay silent' },
-        { pattern: /\bLEGACY_AUTH_STORAGE_KEY\b/, why: 'raw legacy auth key is owned by lib/auth.ts helpers' },
-        { pattern: /\bLegacyUnknownRouteRedirect\b/, why: 'render-time unknown-route redirect is retired — catch-all loader owns it' },
-        { pattern: /\bUSER_ROUTE_ELEMENTS\b/, why: 'eager route-element map is retired — routes are lazy modules' },
-        { pattern: /\brouteComponentKey\b/, why: 'per-route layout keying caused remounts on sibling navigation' },
-        { pattern: /\bKeyedAppLayout\b|\bKeyedGuestLayout\b/, why: 'keyed layout wrappers are retired' },
-        { pattern: /lockLegacyDrawerBodyScroll/, why: 'legacy body-scroll drawer wiring is retired — Radix Sheet owns it' },
+        {
+          pattern: /\bisLegacyTimeoutError\b/,
+          why: 'timeout special-casing is retired — all transport failures stay silent',
+        },
+        {
+          pattern: /\bLEGACY_AUTH_STORAGE_KEY\b/,
+          why: 'raw legacy auth key is owned by lib/auth.ts helpers',
+        },
+        {
+          pattern: /\bLegacyUnknownRouteRedirect\b/,
+          why: 'render-time unknown-route redirect is retired — catch-all loader owns it',
+        },
+        {
+          pattern: /\bUSER_ROUTE_ELEMENTS\b/,
+          why: 'eager route-element map is retired — routes are lazy modules',
+        },
+        {
+          pattern: /\brouteComponentKey\b/,
+          why: 'per-route layout keying caused remounts on sibling navigation',
+        },
+        {
+          pattern: /\bKeyedAppLayout\b|\bKeyedGuestLayout\b/,
+          why: 'keyed layout wrappers are retired',
+        },
+        {
+          pattern: /lockLegacyDrawerBodyScroll/,
+          why: 'legacy body-scroll drawer wiring is retired — Radix Sheet owns it',
+        },
         { pattern: /\bAntBtn\b/, why: 'Ant Design button foundation is banned' },
-        { pattern: /\buseFixedColumnRowHeights\b|\bbodyRowHeightOffset\b|\bfixedBodyRowExtraPixel\b/, why: 'legacy fixed-column row-height shim is retired' },
-        { pattern: /DOMPurify\.isSupported|\bdomPurifySupported\b|\bisDOMPurifySupported\b|\bisDOMPurifyReliable\b|\bcanSanitizeWithDOMPurify\b/, why: 'DOMPurify support probes are retired — DOMPurify is the only sanitizer' },
-        { pattern: /\bsanitizeLegacyHtmlWithDomApi\b/, why: 'hand-rolled DOM-API sanitizer is retired' },
-        { pattern: /\buseStripePublicKeyMutation\b/, why: 'Stripe public key is a forever-cached query, not a mutation' },
-        { pattern: /\bkeyCode\b/, why: 'deprecated keyCode key handling is banned — use native form submit / event.key' },
+        {
+          pattern:
+            /\buseFixedColumnRowHeights\b|\bbodyRowHeightOffset\b|\bfixedBodyRowExtraPixel\b/,
+          why: 'legacy fixed-column row-height shim is retired',
+        },
+        {
+          pattern:
+            /DOMPurify\.isSupported|\bdomPurifySupported\b|\bisDOMPurifySupported\b|\bisDOMPurifyReliable\b|\bcanSanitizeWithDOMPurify\b/,
+          why: 'DOMPurify support probes are retired — DOMPurify is the only sanitizer',
+        },
+        {
+          pattern: /\bsanitizeLegacyHtmlWithDomApi\b/,
+          why: 'hand-rolled DOM-API sanitizer is retired',
+        },
+        {
+          pattern: /\bcreateToken\b|\bCardElement\b|stripe-card-form/,
+          why: 'Stripe Payment Element + PaymentIntent replaced legacy card tokens',
+        },
+        {
+          pattern: /\bkeyCode\b/,
+          why: 'deprecated keyCode key handling is banned — use native form submit / event.key',
+        },
       ]),
     ).toEqual([]);
   });
@@ -394,25 +445,61 @@ describe('scoped legacy APIs and patterns', () => {
     // legitimately use <Suspense>, and route modules define their own trees.
     expect(
       violations([
-        { pattern: /<Routes[\s>/]/, scope: ['App.tsx'], why: 'component-router <Routes> is banned — createHashRouter owns routing' },
-        { pattern: /<Suspense\b/, scope: ['App.tsx'], why: 'route-level Suspense is banned — hydrateFallbackElement + lazy route modules own pending UI' },
+        {
+          pattern: /<Routes[\s>/]/,
+          scope: ['App.tsx'],
+          why: 'component-router <Routes> is banned — createHashRouter owns routing',
+        },
+        {
+          pattern: /<Suspense\b/,
+          scope: ['App.tsx'],
+          why: 'route-level Suspense is banned — hydrateFallbackElement + lazy route modules own pending UI',
+        },
       ]),
     ).toEqual([]);
   });
 
-  it('lib/api.ts keeps the 403 teardown hash-only and storage-free', () => {
+  it('lib/api.ts permanently tears down an unauthorized session without credential restoration', () => {
     // from: api.test.ts. Reading window.location.href (URL parsing) stays
     // legal; assignment/replace/pathname interpolation and any direct
-    // localStorage access are not. logout() is banned in the 403 teardown —
-    // it must drop-and-restore the token instead.
+    // localStorage access and delayed credential restoration are not.
     expect(
       violations([
-        { pattern: /\blogout\s*\(/, scope: ['lib/api.ts'], why: 'full logout in the 403 teardown is banned' },
-        { pattern: /\blocalStorage\b/, scope: ['lib/api.ts'], why: 'storage access must go through lib/auth helpers' },
-        { pattern: /window\.location\.href\s*=/, scope: ['lib/api.ts'], why: 'full-page navigation is banned — park only the hash on #/login' },
-        { pattern: /window\.location\.replace\s*\(/, scope: ['lib/api.ts'], why: 'history-replacing full-page redirect is banned' },
-        { pattern: /window\.location\.pathname/, scope: ['lib/api.ts'], why: 'pathname-interpolated login URLs are banned' },
-        { pattern: /\/timeout\/i/, scope: ['lib/api.ts'], why: 'timeout message sniffing is banned — all transport failures stay silent' },
+        {
+          pattern: /\bsetAuthData\s*\(/,
+          scope: ['lib/api.ts'],
+          why: 'the 403 handler must not restore or mutate credentials directly',
+        },
+        {
+          pattern: /\bsetTimeout\s*\(/,
+          scope: ['lib/api.ts'],
+          why: 'delayed credential restoration is banned',
+        },
+        {
+          pattern: /\blocalStorage\b/,
+          scope: ['lib/api.ts'],
+          why: 'storage access must go through lib/auth helpers',
+        },
+        {
+          pattern: /window\.location\.href\s*=/,
+          scope: ['lib/api.ts'],
+          why: 'full-page navigation is banned — park only the hash on #/login',
+        },
+        {
+          pattern: /window\.location\.replace\s*\(/,
+          scope: ['lib/api.ts'],
+          why: 'history-replacing full-page redirect is banned',
+        },
+        {
+          pattern: /window\.location\.pathname/,
+          scope: ['lib/api.ts'],
+          why: 'pathname-interpolated login URLs are banned',
+        },
+        {
+          pattern: /\/timeout\/i/,
+          scope: ['lib/api.ts'],
+          why: 'timeout message sniffing is banned — all transport failures stay silent',
+        },
       ]),
     ).toEqual([]);
   });
@@ -425,10 +512,26 @@ describe('scoped legacy APIs and patterns', () => {
     const scope = ['pages/orders/detail.tsx'];
     expect(
       violations([
-        { pattern: /\bclosable|maskClosable|width=\{300\}|\bcentered\b|\bfooter=/, scope, why: 'Ant Design v3 Modal prop residue is banned on the QR dialog' },
-        { pattern: /\brenderAs\b|\bincludeMargin\b|\bbgColor\b|\bfgColor\b|\blevel=/, scope, why: 'legacy qrcode.react v1 props are banned — QRCodeSVG uses value/size' },
-        { pattern: /key=\{index\}/, scope, why: 'payment-method list identity must be key={method.id}' },
-        { pattern: /refetchInterval/, scope, why: 'poll cadence is owned by useOrderStatus in lib/queries' },
+        {
+          pattern: /\bclosable|maskClosable|width=\{300\}|\bcentered\b|\bfooter=/,
+          scope,
+          why: 'Ant Design v3 Modal prop residue is banned on the QR dialog',
+        },
+        {
+          pattern: /\brenderAs\b|\bincludeMargin\b|\bbgColor\b|\bfgColor\b|\blevel=/,
+          scope,
+          why: 'legacy qrcode.react v1 props are banned — QRCodeSVG uses value/size',
+        },
+        {
+          pattern: /key=\{index\}/,
+          scope,
+          why: 'payment-method list identity must be key={method.id}',
+        },
+        {
+          pattern: /refetchInterval/,
+          scope,
+          why: 'poll cadence is owned by useOrderStatus in lib/queries',
+        },
       ]),
     ).toEqual([]);
   });
@@ -441,7 +544,11 @@ describe('scoped legacy APIs and patterns', () => {
     const scope = ['pages/'];
     expect(
       violations([
-        { pattern: /new FormData\s*\(/, scope, why: 'FormData form plumbing is banned — use controlled/schema form state' },
+        {
+          pattern: /new FormData\s*\(/,
+          scope,
+          why: 'FormData form plumbing is banned — use controlled/schema form state',
+        },
         {
           pattern:
             /\b(?:form|email|password|confirmPassword|emailCode|oldPassword|newPassword|giftCard|coupon|input)Ref\b/,
@@ -468,9 +575,21 @@ describe('scoped legacy APIs and patterns', () => {
     const scope = ['pages/'];
     expect(
       violations([
-        { pattern: /\bcreatePortal\b/, scope, why: 'hand-rolled portals are banned — Radix primitives own portaling' },
-        { pattern: /<option\b/, scope, why: 'native <option> pickers are banned — use the Radix combobox/select' },
-        { pattern: /window\.(copy|jump)\b/, scope, why: 'global window markdown hooks are banned — use data-v2board-markdown-action delegation' },
+        {
+          pattern: /\bcreatePortal\b/,
+          scope,
+          why: 'hand-rolled portals are banned — Radix primitives own portaling',
+        },
+        {
+          pattern: /<option\b/,
+          scope,
+          why: 'native <option> pickers are banned — use the Radix combobox/select',
+        },
+        {
+          pattern: /window\.(copy|jump)\b/,
+          scope,
+          why: 'global window markdown hooks are banned — use data-v2board-markdown-action delegation',
+        },
       ]),
     ).toEqual([]);
   });
@@ -494,21 +613,54 @@ describe('scoped legacy APIs and patterns', () => {
     expect(
       violations([
         // from: profile.test.tsx — schema-based form state, not per-keystroke useState.
-        { pattern: /\bsetPasswordForm\b|\bsetGiftCard\b/, scope: ['pages/profile.tsx'], why: 'per-keystroke useState form tracking is banned' },
+        {
+          pattern: /\bsetPasswordForm\b|\bsetGiftCard\b/,
+          scope: ['pages/profile.tsx'],
+          why: 'per-keystroke useState form tracking is banned',
+        },
         // from: tickets/index.test.tsx — list refresh is owned by the mutations' onSuccess.
-        { pattern: /\bremoveQueries\b/, scope: ['pages/tickets/index.tsx'], why: 'page-level ticket cache cleanup is banned' },
+        {
+          pattern: /\bremoveQueries\b/,
+          scope: ['pages/tickets/index.tsx'],
+          why: 'page-level ticket cache cleanup is banned',
+        },
         // from: tickets/detail.test.tsx — polling flows through refetchInterval
         // (the { refetchInterval: 5000 } option is behavior-asserted there).
-        { pattern: /\bsetTimeout\b/, scope: ['pages/tickets/detail.tsx'], why: 'hand-rolled polling timers are banned — React Query refetchInterval owns polling' },
+        {
+          pattern: /\bsetTimeout\b/,
+          scope: ['pages/tickets/detail.tsx'],
+          why: 'hand-rolled polling timers are banned — React Query refetchInterval owns polling',
+        },
         // from: auth-recaptcha.test.tsx — no legacy dialog-bridge closable prop.
-        { pattern: /\bclosable/, scope: ['pages/auth/auth-recaptcha.tsx'], why: 'legacy dialog-bridge closable prop is banned' },
+        {
+          pattern: /\bclosable/,
+          scope: ['pages/auth/auth-recaptcha.tsx'],
+          why: 'legacy dialog-bridge closable prop is banned',
+        },
+        {
+          pattern: /\bsetTimeout\b|delayCaptchaIframeRemoving/,
+          scope: ['pages/auth/auth-recaptcha.tsx'],
+          why: 'solved reCAPTCHA actions run immediately; delayed legacy iframe/token shims are banned',
+        },
         // from: confirm-dialog.test.ts — no Ant modal ActionButton compatibility code.
-        { pattern: /\bActionButton\b/, scope: ['components/ui/confirm-dialog.tsx'], why: 'Ant modal ActionButton compatibility is banned' },
+        {
+          pattern: /\bActionButton\b/,
+          scope: ['components/ui/confirm-dialog.tsx'],
+          why: 'Ant modal ActionButton compatibility is banned',
+        },
         // from: toast.test.ts — Sonner owns toasts; both bans are toaster-scoped
         // (dark-mode.ts/confirm-dialog.tsx legitimately use useSyncExternalStore,
         // and sanitized markdown containers legitimately use innerHTML).
-        { pattern: /\buseSyncExternalStore\b/, scope: ['components/ui/toaster.tsx'], why: 'hand-rolled toast store subscription is banned' },
-        { pattern: /innerHTML/, scope: ['components/ui/toaster.tsx'], why: 'innerHTML toast rendering is banned' },
+        {
+          pattern: /\buseSyncExternalStore\b/,
+          scope: ['components/ui/toaster.tsx'],
+          why: 'hand-rolled toast store subscription is banned',
+        },
+        {
+          pattern: /innerHTML/,
+          scope: ['components/ui/toaster.tsx'],
+          why: 'innerHTML toast rendering is banned',
+        },
       ]),
     ).toEqual([]);
   });

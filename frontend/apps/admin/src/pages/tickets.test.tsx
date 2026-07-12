@@ -72,7 +72,7 @@ const mocks = vi.hoisted(() => {
     replyMutateAsync: vi.fn(),
     userInfoIds: [] as Array<number | null | undefined>,
     detail: makeDetail() as ReturnType<typeof makeDetail> | undefined,
-    detailError: false,
+    detailError: undefined as unknown,
     confirm: vi.fn(),
     toastLoading: vi.fn(),
     toastDismiss: vi.fn(),
@@ -114,11 +114,26 @@ vi.mock('@/lib/queries', () => ({
     };
   },
   useCloseTicketMutation: () => ({ mutate: mocks.closeMutate }),
-  useReplyTicketMutation: () => ({ isPending: false, mutateAsync: mocks.replyMutateAsync }),
+  useReplyTicketMutation: () => ({
+    isPending: false,
+    mutate: (
+      payload: unknown,
+      options?: { onSettled?: () => void; onSuccess?: (data: unknown) => void },
+    ) => {
+      void Promise.resolve(mocks.replyMutateAsync(payload)).then(
+        (data) => {
+          options?.onSuccess?.(data);
+          options?.onSettled?.();
+        },
+        () => options?.onSettled?.(),
+      );
+    },
+  }),
   useAdminTicket: () => ({
     refetch: mocks.ticketRefetch,
     data: mocks.detail,
-    isError: mocks.detailError,
+    error: mocks.detailError,
+    isError: Boolean(mocks.detailError),
     isFetching: false,
   }),
   useAdminUserInfo: (id?: number | null) => {
@@ -136,7 +151,7 @@ beforeEach(() => {
   mocks.replyMutateAsync.mockReset().mockResolvedValue(true);
   mocks.userInfoIds = [];
   mocks.detail = mocks.makeDetail();
-  mocks.detailError = false;
+  mocks.detailError = undefined;
   mocks.confirm.mockReset().mockResolvedValue(true);
   mocks.toastLoading.mockReset().mockReturnValue('toast-id');
   mocks.toastDismiss.mockReset();
@@ -211,20 +226,13 @@ describe('TicketsPage list', () => {
     expect(screen.queryByTestId('ticket-reply-filter')).not.toBeInTheDocument();
   });
 
-  it('closes a ticket by id after the confirm dialog resolves true, then refetches', async () => {
+  it('closes a ticket by id after the confirm dialog resolves true', async () => {
     const user = userEvent.setup();
     render(<TicketsPage />);
 
     await user.click(screen.getByTestId('ticket-close-1'));
     await waitFor(() => expect(mocks.confirm).toHaveBeenCalled());
-    await waitFor(() =>
-      expect(mocks.closeMutate).toHaveBeenCalledWith(
-        1,
-        expect.objectContaining({ onSuccess: expect.any(Function) }),
-      ),
-    );
-    mocks.closeMutate.mock.calls[0]![1].onSuccess();
-    expect(mocks.refetch).toHaveBeenCalled();
+    await waitFor(() => expect(mocks.closeMutate).toHaveBeenCalledWith(1, expect.any(Object)));
   });
 
   it('does not close a ticket when the confirm dialog is dismissed', async () => {
@@ -257,10 +265,6 @@ describe('TicketsPage list', () => {
     await waitFor(() =>
       expect(mocks.replyMutateAsync).toHaveBeenCalledWith({ id: 1, message: '这是回复' }),
     );
-    expect(mocks.ticketRefetch).toHaveBeenCalled();
-    expect(mocks.replyMutateAsync.mock.invocationCallOrder[0]!).toBeLessThan(
-      mocks.ticketRefetch.mock.invocationCallOrder[0]!,
-    );
   });
 });
 
@@ -285,16 +289,31 @@ describe('TicketsPage standalone chat route', () => {
   it('shows the not-found notice when the ticket fails to load', () => {
     mocks.params = { ticket_id: '1' };
     mocks.detail = undefined;
-    mocks.detailError = true;
+    mocks.detailError = { status: 500, message: '工单不存在' };
     render(<TicketsPage />);
 
     expect(screen.getByText('工单不存在')).toBeInTheDocument();
+    expect(screen.queryByTestId('ticket-reply-input')).not.toBeInTheDocument();
+  });
+
+  it('keeps non-not-found failures retryable instead of claiming the ticket is absent', async () => {
+    mocks.params = { ticket_id: '1' };
+    mocks.detail = undefined;
+    mocks.detailError = { status: 503, message: '服务暂时不可用' };
+    const user = userEvent.setup();
+    render(<TicketsPage />);
+
+    expect(screen.getByTestId('ticket-detail-error')).toHaveTextContent('服务暂时不可用');
+    expect(screen.queryByText('工单不存在')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('ticket-reply-input')).not.toBeInTheDocument();
+    await user.click(screen.getByTestId('error-state-retry'));
+    expect(mocks.ticketRefetch).toHaveBeenCalledOnce();
   });
 
   it('shows the loading notice before the ticket resolves', () => {
     mocks.params = { ticket_id: '1' };
     mocks.detail = undefined;
-    mocks.detailError = false;
+    mocks.detailError = undefined;
     render(<TicketsPage />);
 
     expect(screen.getByText('加载中...')).toBeInTheDocument();

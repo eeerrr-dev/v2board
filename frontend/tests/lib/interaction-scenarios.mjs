@@ -1,8 +1,8 @@
 import {
   runAdminConfigSaveFailureMatrixInteraction,
   runAdminConfigTabsInteraction,
-  runAdminThemeSettingsInteraction,
 } from './runners/admin/config.mjs';
+import { runAccessibilitySmokeInteraction } from './runners/accessibility.mjs';
 import {
   runAdminCouponCreateModalInteraction,
   runAdminCouponEditModalInteraction,
@@ -91,6 +91,7 @@ import {
 } from './runners/admin/user.mjs';
 import {
   runAdminLoginFormStateInteraction,
+  runAdminSessionExpiredRedirectInteraction,
   runAdminSystemQueueStateInteraction,
   runAuthPageStateInteraction,
   runForgetFormStateInteraction,
@@ -108,8 +109,8 @@ import {
   runOrderQrCheckoutInteraction,
   runOrderRedirectCheckoutInteraction,
   runOrderStripeDisabledCheckoutInteraction,
-  runOrderStripeTokenCheckoutFailureInteraction,
-  runOrderStripeTokenCheckoutInteraction,
+  runOrderStripeConfirmationFailureInteraction,
+  runOrderStripePaymentIntentCheckoutInteraction,
   runPlanCheckoutCouponErrorInteraction,
   runPlanCheckoutCouponInteraction,
   runPlansFilterTabsInteraction,
@@ -127,9 +128,7 @@ import {
   runDashboardSubscribeImportLinksInteraction,
   runDashboardSubscribeImportLinksInteractionFor,
 } from './runners/dashboard.mjs';
-import {
-  runFetchFailureStateInteraction,
-} from './runners/fetch-failure.mjs';
+import { runFetchFailureStateInteraction } from './runners/fetch-failure.mjs';
 import {
   runInviteFinanceSubmitMatrixInteraction,
   runInviteGenerateInteraction,
@@ -219,11 +218,13 @@ export const interactions = [
     scenarioLabel: 'user-dashboard-session-expired',
   },
   {
+    forceUserUnauthorized: true,
     forceUserUnauthorizedStatus: 401,
     label: 'user-auth-401-no-redirect',
-    readySelector: '[data-testid="dashboard-page"], #page-container, #main-container',
+    readySelector:
+      '[data-testid="dashboard-page"], [data-testid="route-error"], #page-container, #main-container',
     run: runUnauthorizedHttp401NoRedirectInteraction,
-    scenarioLabel: 'user-dashboard-session-expired',
+    scenarioLabel: 'user-dashboard',
   },
   {
     label: 'user-dashboard-dark-mode-persistence',
@@ -422,18 +423,21 @@ export const interactions = [
   },
   {
     delayUserOrderCheckoutMs: 200,
-    label: 'user-order-stripe-token-checkout',
-    run: runOrderStripeTokenCheckoutInteraction,
+    label: 'user-order-stripe-payment-intent-checkout',
+    legacyOracleStripeToken: 'tok_visual_parity_success',
+    run: runOrderStripePaymentIntentCheckoutInteraction,
     scenarioLabel: 'user-order-detail',
-    stripeToken: 'tok_visual_parity_success',
+    stripePaymentElementComplete: true,
   },
   {
     delayUserOrderCheckoutMs: 200,
-    label: 'user-order-stripe-checkout-failure',
+    label: 'user-order-stripe-confirmation-failure',
+    legacyOracleStripeToken: 'tok_visual_parity_failure',
     orderCheckoutError: true,
-    run: runOrderStripeTokenCheckoutFailureInteraction,
+    run: runOrderStripeConfirmationFailureInteraction,
     scenarioLabel: 'user-order-detail',
-    stripeToken: 'tok_visual_parity_failure',
+    stripeConfirmError: true,
+    stripePaymentElementComplete: true,
   },
   {
     checkoutRedirectUrl: '/#/order/VISUAL2026110001?cashier=visual',
@@ -592,15 +596,16 @@ export const interactions = [
   },
   {
     label: 'admin-session-expired-redirect',
-    run: runSessionExpiredRedirectInteraction,
+    run: runAdminSessionExpiredRedirectInteraction,
     scenarioLabel: 'admin-dashboard-session-expired',
   },
   {
+    forceAdminUnauthorized: true,
     forceAdminUnauthorizedStatus: 401,
     label: 'admin-auth-401-no-redirect',
     readySelector: '#page-container',
     run: runUnauthorizedHttp401NoRedirectInteraction,
-    scenarioLabel: 'admin-dashboard-session-expired',
+    scenarioLabel: 'admin-dashboard',
   },
   {
     label: 'admin-dashboard-commission-shortcut',
@@ -675,17 +680,10 @@ export const interactions = [
   },
   {
     adminConfigSaveError: true,
-    adminThemeSaveError: true,
     delayAdminConfigSaveMs: 200,
-    delayAdminThemeSaveMs: 200,
     label: 'admin-config-save-failure-matrix',
     run: runAdminConfigSaveFailureMatrixInteraction,
     scenarioLabel: 'admin-config',
-  },
-  {
-    label: 'admin-theme-settings-modal',
-    run: runAdminThemeSettingsInteraction,
-    scenarioLabel: 'admin-theme',
   },
   {
     label: 'admin-server-create-node-drawer',
@@ -1089,6 +1087,32 @@ export const interactions = [
     run: runAdminUsersExtremeViewportMatrixInteraction,
     scenarioLabel: 'admin-users-long-data',
     viewports: ['desktop'],
+  },
+  {
+    label: 'a11y-user-login',
+    readySelector: '[data-testid="auth-surface"]',
+    run: runAccessibilitySmokeInteraction,
+    scenarioLabel: 'user-login',
+    sourceOnly: true,
+  },
+  {
+    label: 'a11y-admin-login',
+    readySelector: '[data-testid="admin-login-surface"]',
+    run: runAccessibilitySmokeInteraction,
+    scenarioLabel: 'admin-login',
+    sourceOnly: true,
+  },
+  {
+    label: 'a11y-user-dashboard',
+    run: runAccessibilitySmokeInteraction,
+    scenarioLabel: 'user-dashboard',
+    sourceOnly: true,
+  },
+  {
+    label: 'a11y-admin-users',
+    run: runAccessibilitySmokeInteraction,
+    scenarioLabel: 'admin-users',
+    sourceOnly: true,
   },
 ];
 

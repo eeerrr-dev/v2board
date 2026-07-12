@@ -1,21 +1,81 @@
-import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { QueryClient } from '@tanstack/react-query';
+import type * as ApiClientModule from '@v2board/api-client';
+import type { LoaderFunctionArgs } from 'react-router';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ADMIN_LAYOUT_ROUTE_PATHS,
-  ADMIN_LEGACY_ROUTE_PATHS,
+  ADMIN_ROUTE_PATHS,
   ADMIN_STANDALONE_ROUTE_PATHS,
+  createAdminLoginLoader,
+  createAdminRoutes,
+  createRequireAdminLoader,
+  normalizeAdminRouteLoader,
+  rootAdminRouteLoader,
+  unknownAdminRouteLoader,
 } from './App';
+import { getAuthData, setAuthData } from '@/lib/auth';
+import { adminSessionKeys } from '@/lib/session-queries';
 
-const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'App.tsx'), 'utf8');
+const mocks = vi.hoisted(() => ({
+  checkLogin: vi.fn(),
+  userInfo: vi.fn(),
+}));
 
-describe('admin legacy route table', () => {
-  it('matches the bundled admin route list exactly', () => {
-    expect([...ADMIN_LEGACY_ROUTE_PATHS]).toEqual([
+vi.mock('@v2board/api-client', async (importOriginal) => {
+  const actual = await importOriginal<typeof ApiClientModule>();
+  return {
+    ...actual,
+    user: {
+      ...actual.user,
+      checkLogin: mocks.checkLogin,
+      info: mocks.userInfo,
+    },
+  };
+});
+
+function requestFor(hashPath: string): Request {
+  return new Request(
+    `https://v2board.local/${hashPath.startsWith('#') ? hashPath : `#${hashPath}`}`,
+  );
+}
+
+function loaderArgs(hashPath: string): LoaderFunctionArgs {
+  return {
+    request: requestFor(hashPath),
+    params: {},
+    context: {},
+  } as unknown as LoaderFunctionArgs;
+}
+
+function queryClient(): QueryClient {
+  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
+}
+
+async function expectRedirect(run: () => unknown | Promise<unknown>, location: string) {
+  try {
+    await run();
+    throw new Error('expected loader to redirect');
+  } catch (error) {
+    expect(error).toBeInstanceOf(Response);
+    expect((error as Response).headers.get('Location')).toBe(location);
+  }
+}
+
+describe('admin data router', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mocks.checkLogin.mockReset();
+    mocks.userInfo.mockReset();
+  });
+
+  afterEach(() => {
+    setAuthData(null);
+  });
+
+  it('preserves every externally visible hash route', () => {
+    expect([...ADMIN_ROUTE_PATHS]).toEqual([
       '/config/payment',
       '/config/system',
-      '/config/theme',
       '/coupon',
       '/giftcard',
       '/dashboard',
@@ -33,72 +93,148 @@ describe('admin legacy route table', () => {
       '/ticket',
       '/user',
     ]);
-  });
-
-  it('does not expose new-admin alias routes that were absent from the bundle', () => {
-    expect(ADMIN_LEGACY_ROUTE_PATHS).not.toContain('/users');
-    expect(ADMIN_LEGACY_ROUTE_PATHS).not.toContain('/orders');
-    expect(ADMIN_LEGACY_ROUTE_PATHS).not.toContain('/plans');
-    expect(ADMIN_LEGACY_ROUTE_PATHS).not.toContain('/servers');
-    expect(ADMIN_LEGACY_ROUTE_PATHS).not.toContain('/tickets');
-    expect(ADMIN_LEGACY_ROUTE_PATHS).not.toContain('/payments');
-    expect(ADMIN_LEGACY_ROUTE_PATHS).not.toContain('/coupons');
-    expect(ADMIN_LEGACY_ROUTE_PATHS).not.toContain('/notices');
-    expect(ADMIN_LEGACY_ROUTE_PATHS).not.toContain('/system');
-    expect(ADMIN_LEGACY_ROUTE_PATHS).not.toContain('/stats');
-  });
-
-  it('keeps the bundled ticket chat route outside the admin layout shell', () => {
     expect([...ADMIN_STANDALONE_ROUTE_PATHS]).toEqual(['/ticket/:ticket_id']);
     expect(ADMIN_LAYOUT_ROUTE_PATHS).not.toContain('/ticket/:ticket_id');
-    expect(ADMIN_LAYOUT_ROUTE_PATHS).toContain('/ticket');
   });
 
-  it('does not add route-level auth wrappers absent from the bundled admin routes', () => {
-    expect(source).not.toContain('RequireAuth');
-    expect(source).toContain('path="/ticket/:ticket_id"');
-    expect(source).toContain("ADMIN_ROUTE_ELEMENTS['/ticket/:ticket_id']");
-    expect(source).toContain('<AdminLayout />');
-  });
-
-  it('keeps the bundled root route redirect shape', () => {
-    expect(source).toContain('function RootRedirect()');
-    expect(source).toContain("navigate('/login');");
-    expect(source).toContain('return <div />;');
-    expect(source).toContain("'/': <RootRedirect />,");
-    expect(source).not.toContain('<Navigate to="/login" />');
-  });
-
-  it('normalizes unmatched legacy hashes without rendering the root redirect first', () => {
-    expect(source).toContain('path="*"');
-    expect(source).toContain('function LegacyUnknownRouteRedirect()');
-    expect(source).toContain("publicRoutes: ['/', '/login']");
-    expect(source).toContain('nestedPrefixes: ADMIN_LEGACY_ROUTE_PATHS');
-    expect(source).toContain('getNormalizedLegacyHashPath(current, ADMIN_LEGACY_ROUTE_OPTIONS)');
-    expect(source).toContain('return <Navigate to={normalized} replace />;');
-    expect(
-      source.indexOf('if (normalized !== current) return <Navigate to={normalized} replace />;'),
-    ).toBeLessThan(source.indexOf('<Routes>'));
-    expect(source).toContain("import { getAuthData } from '@/lib/auth';");
-    expect(source).toContain('function matchesAdminLegacyRoute(pathname: string): boolean');
-    expect(source).toContain('matchPath({ path, end: true }, pathname)');
-    expect(source).toContain('function getAdminRouteFallback(): string');
-    expect(source.indexOf('if (!matchesAdminLegacyRoute(location.pathname))')).toBeLessThan(
-      source.indexOf('<Routes>'),
+  it('uses lazy route modules for every page instead of eager page imports', () => {
+    const routes = createAdminRoutes(new QueryClient());
+    const children = routes[0]?.children ?? [];
+    const layout = children.find((route) =>
+      route.children?.some((child) => child.path === '/dashboard'),
     );
-    expect(source).toContain('<LegacyUnknownRouteRedirect />');
+    const dashboard = layout?.children?.find((route) => route.path === '/dashboard');
+    const login = children.find((route) => route.path === '/login');
+
+    expect(dashboard?.lazy).toBeTypeOf('function');
+    expect(login?.lazy).toBeTypeOf('function');
+    expect(login?.loader).toBeTypeOf('function');
+    expect(dashboard?.element).toBeUndefined();
+    expect(login?.element).toBeUndefined();
   });
 
-  it('keeps the bundled admin route modules synchronous while adding the white-screen guard', () => {
-    expect(source).not.toContain('lazy(() => import(');
-    expect(source).not.toContain('<Suspense');
-    expect(source).not.toContain('fallback={<Fallback />}');
-    expect(source).not.toContain('Spin size="large"');
-    expect(source).toContain(
-      "import { RouteBoundaryElement } from '@/components/route-error-boundary';",
+  it('redirects unauthenticated protected entries before a page module renders', async () => {
+    const loader = createRequireAdminLoader(new QueryClient());
+    await expectRedirect(() => loader(loaderArgs('/order')), '/login?redirect=%2Forder');
+    expect(mocks.checkLogin).not.toHaveBeenCalled();
+  });
+
+  it('rejects a stored non-admin identity and destroys its credential', async () => {
+    setAuthData('regular-user-token');
+    mocks.checkLogin.mockResolvedValue({ is_login: true, is_admin: false });
+    const loader = createRequireAdminLoader(new QueryClient());
+
+    await expectRedirect(() => loader(loaderArgs('/dashboard')), '/login');
+    expect(getAuthData()).toBeNull();
+  });
+
+  it('allows a verified admin only after resolving the shell identity', async () => {
+    setAuthData('admin-token');
+    mocks.checkLogin.mockResolvedValue({ is_login: true, is_admin: true });
+    mocks.userInfo.mockResolvedValue({ email: 'admin@example.com' });
+    const loader = createRequireAdminLoader(new QueryClient());
+
+    await expect(loader(loaderArgs('/dashboard'))).resolves.toBeNull();
+    expect(mocks.userInfo).toHaveBeenCalledOnce();
+  });
+
+  it('lets the route boundary own a shell-identity failure', async () => {
+    setAuthData('admin-token');
+    const failure = new Error('user info offline');
+    mocks.checkLogin.mockResolvedValue({ is_login: true, is_admin: true });
+    mocks.userInfo.mockRejectedValue(failure);
+    const loader = createRequireAdminLoader(queryClient());
+
+    await expect(loader(loaderArgs('/dashboard'))).rejects.toBe(failure);
+    expect(getAuthData()).toBe('admin-token');
+  });
+
+  it('returns a safe login target without probing when no credential exists', async () => {
+    const loader = createAdminLoginLoader(queryClient());
+
+    await expect(loader(loaderArgs('/login?redirect=%2Forder%3Fstatus%3D0'))).resolves.toEqual({
+      redirectTarget: '/order?status=0',
+    });
+    for (const target of ['order', 'https://evil.example', '//evil.example', '/\\evil.example']) {
+      const encoded = encodeURIComponent(target);
+      await expect(loader(loaderArgs(`/login?redirect=${encoded}`))).resolves.toEqual({
+        redirectTarget: '/dashboard',
+      });
+    }
+    expect(mocks.checkLogin).not.toHaveBeenCalled();
+  });
+
+  it('deduplicates an existing-admin probe and redirects from the loader', async () => {
+    setAuthData('admin-token');
+    mocks.checkLogin.mockResolvedValue({ is_login: true, is_admin: true });
+    mocks.userInfo.mockResolvedValue({ email: 'admin@example.com' });
+    const client = queryClient();
+    const loader = createAdminLoginLoader(client);
+
+    await Promise.all([
+      expectRedirect(() => loader(loaderArgs('/login?redirect=%2Forder')), '/order'),
+      expectRedirect(() => loader(loaderArgs('/login?redirect=%2Forder')), '/order'),
+    ]);
+    await expect(createRequireAdminLoader(client)(loaderArgs('/order'))).resolves.toBeNull();
+
+    expect(mocks.checkLogin).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(mocks.userInfo).toHaveBeenCalledOnce());
+    await vi.waitFor(() =>
+      expect(client.getQueryData(adminSessionKeys.userInfo)).toEqual({
+        email: 'admin@example.com',
+      }),
     );
-    expect(source).toContain('<RouteBoundaryElement>{ADMIN_ROUTE_ELEMENTS');
-    expect(source).toContain("import DashboardPage from '@/pages/dashboard';");
-    expect(source).toContain("import ConfigPage from '@/pages/config';");
+  });
+
+  it('clears a verified non-admin token and leaves the login form available', async () => {
+    setAuthData('regular-user-token');
+    mocks.checkLogin.mockResolvedValue({ is_login: true, is_admin: false });
+    const loader = createAdminLoginLoader(queryClient());
+
+    await expect(loader(loaderArgs('/login?redirect=%2Fticket'))).resolves.toEqual({
+      redirectTarget: '/ticket',
+    });
+    expect(getAuthData()).toBeNull();
+    expect(mocks.userInfo).not.toHaveBeenCalled();
+  });
+
+  it('lets the route boundary own a real session-probe failure', async () => {
+    setAuthData('temporarily-unverifiable-token');
+    const failure = new Error('offline');
+    mocks.checkLogin.mockRejectedValue(failure);
+    const loader = createAdminLoginLoader(queryClient());
+
+    await expect(loader(loaderArgs('/login?redirect=%2Fplan'))).rejects.toBe(failure);
+    expect(getAuthData()).toBe('temporarily-unverifiable-token');
+    expect(mocks.userInfo).not.toHaveBeenCalled();
+  });
+
+  it('settles an aborted login probe without presenting a stale route error', async () => {
+    setAuthData('admin-token');
+    mocks.checkLogin.mockRejectedValue(new DOMException('aborted', 'AbortError'));
+    const loader = createAdminLoginLoader(queryClient());
+
+    await expect(loader(loaderArgs('/login?redirect=%2Fplan'))).resolves.toEqual({
+      redirectTarget: '/plan',
+    });
+    expect(getAuthData()).toBe('admin-token');
+  });
+
+  it('normalizes malformed protected hashes without bypassing session routing', async () => {
+    await expectRedirect(() => normalizeAdminRouteLoader(loaderArgs('/login/dashboard')), '/login');
+
+    setAuthData('admin-token');
+    await expectRedirect(
+      () => normalizeAdminRouteLoader(loaderArgs('/login/dashboard')),
+      '/dashboard',
+    );
+  });
+
+  it('routes root and unknown URLs according to the current session', async () => {
+    await expectRedirect(() => rootAdminRouteLoader(), '/login');
+    await expectRedirect(() => unknownAdminRouteLoader(loaderArgs('/does-not-exist')), '/login');
+
+    setAuthData('admin-token');
+    await expectRedirect(() => rootAdminRouteLoader(), '/dashboard');
   });
 });

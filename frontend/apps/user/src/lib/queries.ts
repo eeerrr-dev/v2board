@@ -7,12 +7,12 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import type { UseQueryResult } from '@tanstack/react-query';
-import type { SubscribeInfo, UserInfo } from '@v2board/types';
+import type { StripePaymentIntent, SubscribeInfo, UserInfo } from '@v2board/types';
 import dayjs from 'dayjs';
 import { formatBytes } from '@v2board/config/format';
 import { apiClient } from './api';
 
-export type SaveOrderPayload = Parameters<typeof user.saveOrder>[1];
+export type SaveOrderInput = Parameters<typeof user.saveOrder>[1];
 export type CheckoutOrderPayload = Parameters<typeof user.checkoutOrder>[1];
 
 interface QueryFreshnessOptions {
@@ -48,9 +48,8 @@ export function reportUserInfoToChat(info: UserInfo) {
 
 export function reportSubscribeToChat(data: SubscribeInfo) {
   if (!window.$crisp) return;
-  // Matches the legacy moment(1e3 * expired_at).format('YYYY-MM-DD'); a null
-  // expiry becomes the epoch date exactly as the original does (no '-' fallback
-  // here). dayjs formats in local time, byte-identical to the old manual pad.
+  // The external chat contract formats `expired_at` in local time; a null expiry
+  // becomes the epoch date (there is intentionally no '-' fallback here).
   const expireTime = dayjs((data.expired_at ?? 0) * 1000).format('YYYY-MM-DD');
   window.$crisp.push([
     'set',
@@ -72,6 +71,7 @@ export function reportSubscribeToChat(data: SubscribeInfo) {
 const ordersScope = ['user', 'orders'] as const;
 
 export const userKeys = {
+  checkLogin: ['user', 'checkLogin'] as const,
   info: ['user', 'info'] as const,
   stat: ['user', 'stat'] as const,
   subscribe: ['user', 'subscribe'] as const,
@@ -96,80 +96,100 @@ export const userKeys = {
     ['user', 'knowledge', 'detail', id, lang] as const,
   trafficLog: ['user', 'trafficLog'] as const,
   commConfig: ['user', 'comm'] as const,
-  stripePublicKey: (methodId: string | undefined) =>
-    ['user', 'stripePublicKey', methodId] as const,
+  stripePaymentIntent: (tradeNo: string | undefined, methodId: number | undefined) =>
+    ['user', 'stripePaymentIntent', tradeNo, methodId] as const,
   servers: ['user', 'servers'] as const,
   telegramBot: ['user', 'telegram', 'bot'] as const,
   sessions: ['user', 'sessions'] as const,
 };
 
-export function fetchUserInfo() {
-  return user.info(apiClient);
+export function fetchUserInfo(signal?: AbortSignal) {
+  return user.info(apiClient, { signal });
 }
 
-function fetchSubscribe() {
-  return user.getSubscribe(apiClient);
+function fetchSubscribe(signal?: AbortSignal) {
+  return user.getSubscribe(apiClient, { signal });
 }
 
 export const userQueryOptions = {
-  info: () => queryOptions({ queryKey: userKeys.info, queryFn: fetchUserInfo }),
-  stat: () => queryOptions({ queryKey: userKeys.stat, queryFn: () => user.getStat(apiClient) }),
+  checkLogin: () =>
+    queryOptions({
+      queryKey: userKeys.checkLogin,
+      queryFn: ({ signal }) => user.checkLogin(apiClient, { signal }),
+      // Match the former one-shot effect: do not retry an auth probe, and do
+      // not treat a prior navigation's result as fresh on the next /login entry.
+      retry: false,
+      staleTime: 0,
+    }),
+  info: () =>
+    queryOptions({
+      queryKey: userKeys.info,
+      queryFn: ({ signal }) => fetchUserInfo(signal),
+    }),
+  stat: () =>
+    queryOptions({
+      queryKey: userKeys.stat,
+      queryFn: ({ signal }) => user.getStat(apiClient, { signal }),
+    }),
   subscribe: () =>
     queryOptions({
       queryKey: userKeys.subscribe,
-      queryFn: fetchSubscribe,
+      queryFn: ({ signal }) => fetchSubscribe(signal),
     }),
   orders: (status?: number) =>
     queryOptions({
       queryKey: userKeys.orders(status),
-      queryFn: () => user.fetchOrders(apiClient, status),
+      queryFn: ({ signal }) => user.fetchOrders(apiClient, status, { signal }),
     }),
   orderDetail: (tradeNo: string | undefined) =>
     queryOptions({
       queryKey: userKeys.orderDetail(tradeNo),
-      queryFn: () => user.orderDetail(apiClient, tradeNo as string),
+      queryFn: ({ signal }) => user.orderDetail(apiClient, tradeNo as string, { signal }),
     }),
   orderStatus: (tradeNo: string | undefined) =>
     queryOptions({
       queryKey: userKeys.orderStatus(tradeNo),
-      queryFn: () => user.checkOrder(apiClient, tradeNo as string),
+      queryFn: ({ signal }) => user.checkOrder(apiClient, tradeNo as string, { signal }),
     }),
   plans: () =>
     queryOptions({
       queryKey: userKeys.plans,
-      queryFn: () => user.fetchPlans(apiClient),
+      queryFn: ({ signal }) => user.fetchPlans(apiClient, { signal }),
     }),
   plan: (id: number | string | undefined) =>
     queryOptions({
       queryKey: userKeys.plan(id),
-      queryFn: () => user.fetchPlan(apiClient, id as number | string),
+      queryFn: ({ signal }) => user.fetchPlan(apiClient, id as number | string, { signal }),
     }),
   payments: () =>
-    queryOptions({ queryKey: userKeys.payments, queryFn: () => user.getPaymentMethod(apiClient) }),
+    queryOptions({
+      queryKey: userKeys.payments,
+      queryFn: ({ signal }) => user.getPaymentMethod(apiClient, { signal }),
+    }),
   notices: () =>
     queryOptions({
       queryKey: userKeys.notices,
-      queryFn: () => user.fetchNotices(apiClient),
+      queryFn: ({ signal }) => user.fetchNotices(apiClient, { signal }),
     }),
   tickets: () =>
     queryOptions({
       queryKey: userKeys.tickets,
-      queryFn: () => user.fetchTickets(apiClient),
+      queryFn: ({ signal }) => user.fetchTickets(apiClient, { signal }),
     }),
   ticketDetail: (id: number | string | undefined) =>
     queryOptions({
       queryKey: userKeys.ticketDetail(id),
-      queryFn: () => user.ticketDetail(apiClient, id as number | string),
+      queryFn: ({ signal }) => user.ticketDetail(apiClient, id as number | string, { signal }),
     }),
   invite: () =>
     queryOptions({
       queryKey: userKeys.invite,
-      queryFn: () => user.fetchInvite(apiClient),
+      queryFn: ({ signal }) => user.fetchInvite(apiClient, { signal }),
     }),
   inviteDetails: (current?: number, pageSize?: number) =>
     queryOptions({
       queryKey: userKeys.inviteDetails(current, pageSize),
-      queryFn: () => user.inviteDetails(apiClient, current, pageSize),
+      queryFn: ({ signal }) => user.inviteDetails(apiClient, current, pageSize, { signal }),
     }),
   knowledge: (language: string, keyword?: string) =>
     queryOptions({
@@ -185,31 +205,42 @@ export const userQueryOptions = {
         user.knowledgeDetail(apiClient, id as number | string, language, { signal }),
     }),
   trafficLog: () =>
-    queryOptions({ queryKey: userKeys.trafficLog, queryFn: () => user.getTrafficLog(apiClient) }),
+    queryOptions({
+      queryKey: userKeys.trafficLog,
+      queryFn: ({ signal }) => user.getTrafficLog(apiClient, { signal }),
+    }),
   commConfig: () =>
     queryOptions({
       queryKey: userKeys.commConfig,
-      queryFn: () => user.commConfig(apiClient),
+      queryFn: ({ signal }) => user.commConfig(apiClient, { signal }),
     }),
-  stripePublicKey: (methodId: string | undefined) =>
+  stripePaymentIntent: (tradeNo: string | undefined, methodId: number | undefined) =>
     queryOptions({
-      queryKey: userKeys.stripePublicKey(methodId),
-      queryFn: () => user.getStripePublicKey(apiClient, Number(methodId)),
+      queryKey: userKeys.stripePaymentIntent(tradeNo, methodId),
+      queryFn: ({ signal }) =>
+        user.prepareStripePaymentIntent(
+          apiClient,
+          {
+            trade_no: tradeNo as string,
+            method: methodId as number,
+          },
+          { signal },
+        ),
     }),
   servers: () =>
     queryOptions({
       queryKey: userKeys.servers,
-      queryFn: () => user.fetchServers(apiClient),
+      queryFn: ({ signal }) => user.fetchServers(apiClient, { signal }),
     }),
   telegramBot: () =>
     queryOptions({
       queryKey: userKeys.telegramBot,
-      queryFn: () => user.getTelegramBotInfo(apiClient),
+      queryFn: ({ signal }) => user.getTelegramBotInfo(apiClient, { signal }),
     }),
   sessions: () =>
     queryOptions({
       queryKey: userKeys.sessions,
-      queryFn: () => user.getActiveSession(apiClient),
+      queryFn: ({ signal }) => user.getActiveSession(apiClient, { signal }),
     }),
 };
 
@@ -219,8 +250,7 @@ export const useUserInfo = (options?: QueryFreshnessOptions) =>
     ...options,
   });
 
-export const useUserStat = () =>
-  useQuery(userQueryOptions.stat());
+export const useUserStat = () => useQuery(userQueryOptions.stat());
 
 export const useSubscribe = (options?: QueryFreshnessOptions & { enabled?: boolean }) =>
   useQuery({
@@ -228,8 +258,7 @@ export const useSubscribe = (options?: QueryFreshnessOptions & { enabled?: boole
     ...options,
   });
 
-export const useOrders = (status?: number) =>
-  useQuery(userQueryOptions.orders(status));
+export const useOrders = (status?: number) => useQuery(userQueryOptions.orders(status));
 
 export const useOrder = (tradeNo: string | undefined) =>
   useQuery({
@@ -250,8 +279,7 @@ export const useOrderStatus = (tradeNo: string | undefined, options?: QueryFresh
     ...options,
   });
 
-export const usePlans = () =>
-  useQuery(userQueryOptions.plans());
+export const usePlans = () => useQuery(userQueryOptions.plans());
 
 export const usePlan = (id: number | string | undefined) =>
   useQuery({
@@ -269,11 +297,9 @@ export const usePaymentMethods = (options?: QueryFreshnessOptions & { enabled?: 
     ...options,
   });
 
-export const useNotices = () =>
-  useQuery(userQueryOptions.notices());
+export const useNotices = () => useQuery(userQueryOptions.notices());
 
-export const useTickets = () =>
-  useQuery(userQueryOptions.tickets());
+export const useTickets = () => useQuery(userQueryOptions.tickets());
 
 export const useTicket = (id: number | string | undefined, options?: QueryFreshnessOptions) =>
   useQuery({
@@ -282,8 +308,7 @@ export const useTicket = (id: number | string | undefined, options?: QueryFreshn
     ...options,
   });
 
-export const useInvite = () =>
-  useQuery(userQueryOptions.invite());
+export const useInvite = () => useQuery(userQueryOptions.invite());
 
 export const useInviteDetails = (current?: number, pageSize?: number) =>
   useQuery({
@@ -305,8 +330,7 @@ export const useKnowledgeDetail = (id: number | string | undefined, language: st
     enabled: id !== undefined,
   });
 
-export const useTrafficLog = () =>
-  useQuery(userQueryOptions.trafficLog());
+export const useTrafficLog = () => useQuery(userQueryOptions.trafficLog());
 
 export const useCommConfig = (options?: QueryFreshnessOptions) =>
   useQuery({
@@ -314,16 +338,23 @@ export const useCommConfig = (options?: QueryFreshnessOptions) =>
     ...options,
   });
 
-export function useStripePublicKey(
-  methodId: string | undefined,
+export function useStripePaymentIntent(
+  tradeNo: string | undefined,
+  methodId: number | undefined,
   options?: { enabled?: boolean },
-): UseQueryResult<string> {
+): UseQueryResult<StripePaymentIntent> {
   return useQuery({
-    ...userQueryOptions.stripePublicKey(methodId),
-    // The original only fetches the Stripe public key once per method and never
-    // refetches or clears it, so cache it forever and gate on a present method.
-    enabled: Boolean(methodId) && options?.enabled !== false,
-    staleTime: Infinity,
+    ...userQueryOptions.stripePaymentIntent(tradeNo, methodId),
+    enabled: Boolean(tradeNo && methodId) && options?.enabled !== false,
+    // A PaymentIntent is bound to the currently selected gateway in the order row.
+    // Do not resurrect method A's cached client secret after A -> B -> A: B's
+    // preparation has already canceled A. The server endpoint is idempotent and
+    // safely reuses the still-current intent on a real remount.
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 }
 
@@ -366,14 +397,16 @@ export function useUpdateProfileMutation() {
 }
 
 export function useResetSubscribeMutation() {
-  // resetSecurity rotates the account uuid + token, but the rotated value lives in
-  // the subscribe URL (/user/getSubscribe), not the displayed /user/info fields, and
-  // the legacy profile refetched neither — it fire-and-forgot the reset and left the
-  // cached records stale until the next navigation. Match that: no onSuccess
-  // invalidation (the subscribe query stays disabled too), so the reset touches only
-  // the /user/resetSecurity call and the success toast.
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => user.resetSecurity(apiClient),
+    // resetSecurity rotates the UUID embedded in the subscription URL. Mark both
+    // projections stale at the mutation boundary so every screen observes the new
+    // credential instead of retaining the previous token until a later navigation.
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: userKeys.info });
+      void queryClient.invalidateQueries({ queryKey: userKeys.subscribe });
+    },
   });
 }
 
@@ -408,7 +441,7 @@ export function useCheckCouponMutation() {
 
 export function useSaveOrderMutation() {
   return useMutation({
-    mutationFn: (payload: SaveOrderPayload) => user.saveOrder(apiClient, payload),
+    mutationFn: (payload: SaveOrderInput) => user.saveOrder(apiClient, payload),
   });
 }
 
@@ -483,9 +516,8 @@ export function useUnbindTelegramMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => user.unbindTelegram(apiClient),
-    // Unbinding clears the telegram_id on the user record. The disabled
-    // subscribe query is still refetched imperatively at the call site, since
-    // invalidation does not refetch a query with enabled:false.
+    // Unbinding clears telegram_id on the user record. The optional subscribe
+    // cache is unrelated to that state and does not need a parity-only refetch.
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: userKeys.info });
     },

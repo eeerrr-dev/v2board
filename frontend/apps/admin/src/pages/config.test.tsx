@@ -1,7 +1,7 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import ConfigPage, { isLegacyChecked, parseLegacyInteger } from './config';
+import ConfigPage, { isBackendEnabled, parseBackendInteger } from './config';
 
 // The config surface is a redesigned shadcn island (PageShell + section nav +
 // Card sections of labeled shadcn controls) replacing the antd tabs / OneUI
@@ -9,7 +9,9 @@ import ConfigPage, { isLegacyChecked, parseLegacyInteger } from './config';
 // is the Tier-1 contract: fetch populates the fields, and each control persists
 // the EXACT backend key with its legacy-coerced value through /config/save
 // (per-field `{ [key]: value }`), plus the theme activate / theme-settings
-// save payloads.
+// save payloads. The RHF/Zod section forms also keep rejected drafts inline,
+// replace successful drafts with the refetched server value, and never treat a
+// failed plans/template dependency as an empty successful result.
 
 function makeConfig() {
   return {
@@ -58,11 +60,9 @@ function makeConfig() {
       show_subscribe_expire: 30,
     },
     frontend: {
-      frontend_theme: 'v2board',
-      frontend_theme_sidebar: 'light',
-      frontend_theme_header: 'dark',
       frontend_theme_color: 'default',
       frontend_background_url: 'https://example.com/bg.png',
+      frontend_custom_html: '<script src="https://example.com/widget.js"></script>',
     },
     server: {
       server_api_url: 'https://node.example.com',
@@ -116,54 +116,24 @@ function makeConfig() {
 }
 
 const mocks = vi.hoisted(() => ({
-  pathname: '/config/system',
   configData: undefined as unknown,
   refetch: vi.fn(),
+  plansData: [
+    { id: 1, name: '基础订阅' },
+    { id: 2, name: '高级订阅' },
+  ] as { id: number; name: string }[] | undefined,
+  plansError: null as Error | null,
+  plansPending: false,
+  plansRefetch: vi.fn(),
+  emailTemplatesData: ['default', 'notify'] as string[] | undefined,
+  emailTemplatesError: null as Error | null,
+  emailTemplatesPending: false,
+  emailTemplatesRefetch: vi.fn(),
   saveMutateAsync: vi.fn(),
-  saveThemeMutateAsync: vi.fn(),
-  themeConfigMutateAsync: vi.fn(),
   webhookMutateAsync: vi.fn(),
   testMailMutateAsync: vi.fn(),
-  themesRefetch: vi.fn(),
-  themesData: {
-    active: 'default',
-    themes: {
-      default: {
-        name: '默认主题',
-        description: '默认主题描述',
-        configs: [
-          {
-            field_name: 'homepage',
-            field_type: 'input',
-            label: '首页标题',
-            placeholder: '请输入首页标题',
-          },
-        ],
-      },
-      classic: { name: '经典主题', description: '经典主题描述', configs: [] },
-    },
-  } as {
-    active?: string;
-    themes: Record<
-      string,
-      {
-        name: string;
-        description: string;
-        configs: {
-          field_name: string;
-          field_type: string;
-          label: string;
-          placeholder?: string;
-        }[];
-      }
-    >;
-  },
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
-}));
-
-vi.mock('react-router', () => ({
-  useLocation: () => ({ pathname: mocks.pathname }),
 }));
 
 vi.mock('@/lib/toast', () => ({
@@ -178,46 +148,69 @@ vi.mock('@/lib/toast', () => ({
 
 vi.mock('@/lib/queries', () => ({
   useAdminPlans: () => ({
-    data: [
-      { id: 1, name: '基础订阅' },
-      { id: 2, name: '高级订阅' },
-    ],
+    data: mocks.plansData,
+    error: mocks.plansError,
+    isError: mocks.plansError !== null,
+    isPending: mocks.plansPending,
+    refetch: mocks.plansRefetch,
   }),
   useConfig: () => ({
+    error: null,
+    isError: false,
     isPending: false,
     isFetching: false,
     refetch: mocks.refetch,
     data: mocks.configData,
   }),
-  useEmailTemplates: () => ({ data: ['default', 'notify'] }),
-  useThemeTemplates: () => ({ data: ['v2board'] }),
-  useThemes: () => ({ refetch: mocks.themesRefetch, data: mocks.themesData }),
-  useSaveConfigMutation: () => ({ mutateAsync: mocks.saveMutateAsync, isPending: false }),
-  useThemeConfigMutation: () => ({ mutateAsync: mocks.themeConfigMutateAsync }),
-  useSaveThemeConfigMutation: () => ({ mutateAsync: mocks.saveThemeMutateAsync, isPending: false }),
-  useSetTelegramWebhookMutation: () => ({ mutateAsync: mocks.webhookMutateAsync, isPending: false }),
-  useTestSendMailMutation: () => ({ mutateAsync: mocks.testMailMutateAsync, isPending: false }),
+  useEmailTemplates: () => ({
+    data: mocks.emailTemplatesData,
+    error: mocks.emailTemplatesError,
+    isError: mocks.emailTemplatesError !== null,
+    isPending: mocks.emailTemplatesPending,
+    refetch: mocks.emailTemplatesRefetch,
+  }),
+  useSaveSystemConfigMutation: () => ({
+    mutateAsync: mocks.saveMutateAsync,
+    isPending: false,
+  }),
+  useSetTelegramWebhookMutation: () => ({
+    mutate: (payload: unknown, options?: { onSuccess?: (data: unknown) => void }) => {
+      void Promise.resolve(mocks.webhookMutateAsync(payload)).then(options?.onSuccess);
+    },
+    isPending: false,
+  }),
+  useTestSendMailMutation: () => ({
+    mutate: (payload: unknown, options?: { onSuccess?: (data: unknown) => void }) => {
+      void Promise.resolve(mocks.testMailMutateAsync(payload)).then(options?.onSuccess);
+    },
+    isPending: false,
+  }),
 }));
 
-function encodeExpectedThemeConfig(params: Record<string, unknown>) {
-  const json = JSON.stringify(params);
-  // eslint-disable-next-line @typescript-eslint/no-deprecated -- mirror encodeLegacyThemeConfig
-  return window.btoa(unescape(encodeURIComponent(json)));
-}
-
 beforeEach(() => {
-  mocks.pathname = '/config/system';
   mocks.configData = makeConfig();
-  mocks.refetch.mockReset().mockResolvedValue(undefined);
+  mocks.plansData = [
+    { id: 1, name: '基础订阅' },
+    { id: 2, name: '高级订阅' },
+  ];
+  mocks.plansError = null;
+  mocks.plansPending = false;
+  mocks.plansRefetch.mockReset().mockResolvedValue(undefined);
+  mocks.emailTemplatesData = ['default', 'notify'];
+  mocks.emailTemplatesError = null;
+  mocks.emailTemplatesPending = false;
+  mocks.emailTemplatesRefetch.mockReset().mockResolvedValue(undefined);
+  mocks.refetch.mockReset().mockImplementation(async () => ({
+    data: mocks.configData,
+    error: null,
+    isError: false,
+  }));
   mocks.saveMutateAsync.mockReset().mockResolvedValue(undefined);
-  mocks.saveThemeMutateAsync.mockReset().mockResolvedValue(undefined);
-  mocks.themeConfigMutateAsync.mockReset().mockResolvedValue({ homepage: 'Hi' });
   mocks.webhookMutateAsync.mockReset().mockResolvedValue(undefined);
   mocks.testMailMutateAsync.mockReset().mockResolvedValue({ data: true, log: { email: 'a@b.c' } });
-  mocks.themesRefetch.mockReset().mockResolvedValue(undefined);
   mocks.toastSuccess.mockReset();
   mocks.toastError.mockReset();
-  // Radix Select / Dialog pointer + scroll shims for happy-dom.
+  // Radix Select pointer + scroll shims for happy-dom.
   window.HTMLElement.prototype.scrollIntoView = vi.fn();
   window.HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
   window.HTMLElement.prototype.setPointerCapture = vi.fn();
@@ -244,8 +237,9 @@ describe('SystemConfigPage', () => {
     await user.type(input, 'My New Site');
     await user.tab();
 
-    await waitFor(() => expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ app_name: 'My New Site' }));
-    expect(mocks.refetch).toHaveBeenCalled();
+    await waitFor(() =>
+      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ app_name: 'My New Site' }),
+    );
   });
 
   it('saves a switch immediately with the key coerced to 1/0', async () => {
@@ -307,31 +301,167 @@ describe('SystemConfigPage', () => {
     );
   });
 
-  it('saves the light/dark theme switch as the exact string under the frontend key', async () => {
+  it('replaces a successful local draft with the authoritative refetched value', async () => {
+    const canonicalConfig = makeConfig();
+    canonicalConfig.site.app_name = '服务端规范化名称';
+    mocks.saveMutateAsync.mockImplementationOnce(async () => {
+      mocks.configData = canonicalConfig;
+    });
+    const user = userEvent.setup();
+    render(<ConfigPage />);
+
+    const input = screen.getByTestId('config-app_name');
+    await user.clear(input);
+    await user.type(input, '本地草稿');
+    await user.tab();
+
+    await waitFor(() => expect(mocks.refetch).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(input).toHaveValue('服务端规范化名称'));
+    expect(mocks.toastSuccess).toHaveBeenCalledWith('保存成功');
+  });
+
+  it('queues the latest same-field value and never lets an older refresh reset it', async () => {
+    const firstCanonical = makeConfig();
+    firstCanonical.site.force_https = 0;
+    const finalCanonical = makeConfig();
+    finalCanonical.site.force_https = 1;
+    let resolveFirstRefresh!: (result: {
+      data: ReturnType<typeof makeConfig>;
+      error: null;
+      isError: false;
+    }) => void;
+    let resolveSecondSave!: () => void;
+    mocks.saveMutateAsync.mockResolvedValueOnce(undefined).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSecondSave = resolve;
+        }),
+    );
+    mocks.refetch
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirstRefresh = resolve;
+          }),
+      )
+      .mockResolvedValueOnce({ data: finalCanonical, error: null, isError: false });
+    const user = userEvent.setup();
+    const view = render(<ConfigPage />);
+
+    const toggle = screen.getByTestId('config-force_https');
+    await user.click(toggle);
+    await waitFor(() => expect(mocks.refetch).toHaveBeenCalledTimes(1));
+    await user.click(toggle);
+
+    // React Query publishes refetched data before the refetch promise settles.
+    // Re-render with that stale snapshot and prove the in-flight queue protects
+    // the newer local value even though it equals the original default.
+    mocks.configData = firstCanonical;
+    view.rerender(<ConfigPage />);
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+
+    act(() => {
+      resolveFirstRefresh({ data: firstCanonical, error: null, isError: false });
+    });
+    await waitFor(() => expect(mocks.saveMutateAsync).toHaveBeenCalledTimes(2));
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+
+    act(() => resolveSecondSave());
+    await waitFor(() => expect(mocks.refetch).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'));
+    expect(mocks.saveMutateAsync.mock.calls).toEqual([[{ force_https: 0 }], [{ force_https: 1 }]]);
+  });
+
+  it('keeps a rejected draft and renders the mutation error inline', async () => {
+    mocks.saveMutateAsync.mockRejectedValueOnce(new Error('保存被拒绝'));
+    const user = userEvent.setup();
+    render(<ConfigPage />);
+
+    const input = screen.getByTestId('config-app_name');
+    await user.clear(input);
+    await user.type(input, '需要保留的草稿');
+    await user.tab();
+
+    const field = input.closest('[data-slot="field"]');
+    expect(field).not.toBeNull();
+    expect(await within(field as HTMLElement).findByRole('alert')).toHaveTextContent('保存被拒绝');
+    expect(input).toHaveValue('需要保留的草稿');
+    expect(mocks.refetch).not.toHaveBeenCalled();
+    expect(mocks.toastSuccess).not.toHaveBeenCalled();
+  });
+
+  it('gates sections when their dependent query fails and exposes a scoped retry', async () => {
+    mocks.plansData = undefined;
+    mocks.plansError = new Error('plans failed');
+    mocks.emailTemplatesData = undefined;
+    mocks.emailTemplatesError = new Error('templates failed');
+    const user = userEvent.setup();
+    render(<ConfigPage />);
+
+    const plansError = screen.getByTestId('config-plans-error');
+    expect(screen.queryByTestId('config-app_name')).not.toBeInTheDocument();
+    await user.click(within(plansError).getByTestId('error-state-retry'));
+    expect(mocks.plansRefetch).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByTestId('config-tab-email'));
+    const templatesError = screen.getByTestId('config-email-templates-error');
+    expect(screen.queryByTestId('config-email_host')).not.toBeInTheDocument();
+    await user.click(within(templatesError).getByTestId('error-state-retry'));
+    expect(mocks.emailTemplatesRefetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders the native frontend color, background, and custom HTML controls', async () => {
     const user = userEvent.setup();
     render(<ConfigPage />);
 
     await user.click(screen.getByTestId('config-tab-frontend'));
-    // frontend_theme_sidebar = 'light' → toggling off sends 'dark'.
-    await user.click(screen.getByTestId('config-frontend_theme_sidebar'));
 
+    expect(screen.getByTestId('config-frontend_theme_color')).toBeInTheDocument();
+    expect(screen.getByTestId('config-frontend_background_url')).toBeInTheDocument();
+    const customHtml = screen.getByTestId('config-frontend_custom_html');
+    expect(customHtml).toHaveValue('<script src="https://example.com/widget.js"></script>');
+    expect(screen.getByText(/仅供可信运维人员/)).toBeInTheDocument();
+
+    await user.clear(customHtml);
+    await user.type(customHtml, '<div data-widget="trusted" />');
+    await user.tab();
     await waitFor(() =>
-      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ frontend_theme_sidebar: 'dark' }),
+      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({
+        frontend_custom_html: '<div data-widget="trusted" />',
+      }),
     );
   });
 
   it('hides the conditional child field until its toggle is on', async () => {
+    const canonicalConfig = makeConfig();
+    canonicalConfig.safe.recaptcha_enable = 0;
+    let resolveSave!: () => void;
+    mocks.saveMutateAsync.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
     const user = userEvent.setup();
     render(<ConfigPage />);
 
     await user.click(screen.getByTestId('config-tab-safe'));
     expect(screen.getByTestId('config-recaptcha_key')).toBeInTheDocument();
 
-    // recaptcha_enable = 1 → the keys show. Turning it off hides them.
+    // recaptcha_enable = 1 → the keys show. The local form value must hide
+    // them immediately, without waiting for the queued save or refetch.
     await user.click(screen.getByTestId('config-recaptcha_enable'));
-    await waitFor(() =>
-      expect(screen.queryByTestId('config-recaptcha_key')).not.toBeInTheDocument(),
-    );
+    expect(screen.queryByTestId('config-recaptcha_key')).not.toBeInTheDocument();
+    expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ recaptcha_enable: 0 });
+    expect(mocks.refetch).not.toHaveBeenCalled();
+
+    // The successful refresh is authoritative. Model the backend-applied value
+    // instead of returning the stale pre-save fixture, and ensure it cannot
+    // re-open the conditional children.
+    mocks.configData = canonicalConfig;
+    act(() => resolveSave());
+    await waitFor(() => expect(mocks.refetch).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('config-recaptcha_key')).not.toBeInTheDocument();
   });
 
   it('triggers the telegram webhook and test-mail side effects', async () => {
@@ -348,67 +478,17 @@ describe('SystemConfigPage', () => {
   });
 });
 
-describe('ThemeConfigPage', () => {
-  beforeEach(() => {
-    mocks.pathname = '/config/theme';
-  });
-
-  it('renders the theme cards with activate state', () => {
-    render(<ConfigPage />);
-    expect(screen.getByText('默认主题')).toBeInTheDocument();
-    expect(screen.getByText('经典主题')).toBeInTheDocument();
-    expect(screen.getByText('当前主题')).toBeInTheDocument();
-    expect(screen.getByText('激活主题')).toBeInTheDocument();
-  });
-
-  it('activates a theme through the frontend_theme config key', async () => {
-    const user = userEvent.setup();
-    render(<ConfigPage />);
-
-    await user.click(screen.getByTestId('theme-activate-classic'));
-    await waitFor(() =>
-      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ frontend_theme: 'classic' }),
-    );
-    expect(mocks.themesRefetch).toHaveBeenCalled();
-  });
-
-  it('saves theme settings as base64-encoded JSON under {name, config}', async () => {
-    const user = userEvent.setup();
-    render(<ConfigPage />);
-
-    await user.click(screen.getByTestId('theme-settings-default'));
-    const dialog = await screen.findByTestId('theme-settings-dialog');
-    await waitFor(() => expect(within(dialog).getByLabelText('首页标题')).toHaveValue('Hi'));
-
-    await user.click(screen.getByTestId('theme-settings-save'));
-
-    await waitFor(() =>
-      expect(mocks.saveThemeMutateAsync).toHaveBeenCalledWith({
-        name: 'default',
-        config: encodeExpectedThemeConfig({ homepage: 'Hi' }),
-      }),
-    );
-  });
-
-  it('shows the loading spinner while themes are empty', () => {
-    mocks.themesData = { active: undefined, themes: {} };
-    render(<ConfigPage />);
-    expect(screen.getByRole('status')).toBeInTheDocument();
-    expect(screen.queryByText('主题设置')).not.toBeInTheDocument();
-  });
-});
-
-describe('legacy coercion helpers', () => {
-  it('reads truthy legacy booleans through parseInt', () => {
-    expect(isLegacyChecked(1)).toBe(true);
-    expect(isLegacyChecked('2')).toBe(true);
-    expect(isLegacyChecked(0)).toBe(false);
-    expect(isLegacyChecked('0')).toBe(false);
-    expect(isLegacyChecked('')).toBe(false);
+describe('backend coercion helpers', () => {
+  it('reads backend boolean-like values through parseInt', () => {
+    expect(isBackendEnabled(1)).toBe(true);
+    expect(isBackendEnabled('2')).toBe(true);
+    expect(isBackendEnabled(0)).toBe(false);
+    expect(isBackendEnabled('0')).toBe(false);
+    expect(isBackendEnabled('')).toBe(false);
   });
 
   it('parses integer fields with parseInt semantics', () => {
-    expect(parseLegacyInteger('12px')).toBe(12);
-    expect(Number.isNaN(parseLegacyInteger(''))).toBe(true);
+    expect(parseBackendInteger('12px')).toBe(12);
+    expect(Number.isNaN(parseBackendInteger(''))).toBe(true);
   });
 });

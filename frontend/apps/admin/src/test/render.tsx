@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { i18n as I18nInstance } from 'i18next';
 import { I18nextProvider } from 'react-i18next';
 import { createMemoryRouter, MemoryRouter, RouterProvider, type RouteObject } from 'react-router';
-import { createI18n } from '@v2board/i18n';
+import { createI18n } from '@v2board/i18n/testing';
 
 export type UserEvent = ReturnType<typeof userEvent.setup>;
 
@@ -38,8 +38,7 @@ export interface ProviderOptions {
 }
 
 export interface RenderWithProvidersOptions
-  extends Omit<RenderOptions, 'wrapper'>,
-    ProviderOptions {}
+  extends Omit<RenderOptions, 'wrapper'>, ProviderOptions {}
 
 export interface RenderWithProvidersResult extends RenderResult {
   /** The I18nInstance in use when `i18n` was requested. */

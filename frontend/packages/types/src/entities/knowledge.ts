@@ -2,8 +2,10 @@ export interface KnowledgeSummary {
   id: number;
   category: string;
   title: string;
-  sort: number | null;
-  show: 0 | 1;
+  /** Detail responses include sort; list projections intentionally omit it. */
+  sort?: number | null;
+  /** Admin lists/details include visibility; user list projections omit it. */
+  show?: 0 | 1;
   updated_at: number;
 }
 

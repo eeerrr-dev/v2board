@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { CheckCircle2, XCircle } from 'lucide-react';
 import { useQueueStats, useQueueWorkload } from '@/lib/queries';
 import { Card, CardContent } from '@/components/ui/card';
@@ -6,6 +6,7 @@ import { PageShell } from '@/components/ui/page';
 import { Spinner } from '@/components/ui/spinner';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { DataTable, type DataTableColumn } from '@/components/ui/table';
+import { ErrorState } from '@/components/ui/error-state';
 
 type QueueWorkloadRow = { name: string; processes: number; length: number; wait: number };
 
@@ -43,26 +44,6 @@ const workloadColumns: DataTableColumn<QueueWorkloadRow>[] = [
   },
 ];
 
-const POLL_INTERVAL = 3000;
-
-// Preserve the legacy self-scheduling poll: fetch immediately, then re-arm a
-// single setTimeout after each pass (not setInterval, so a slow refetch never
-// stacks). Returns the teardown that clears the pending timer.
-export function startQueuePolling(refetchStats: () => unknown, refetchWorkload: () => unknown) {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const getData = () => {
-    void refetchStats();
-    void refetchWorkload();
-    timer = setTimeout(() => {
-      getData();
-    }, POLL_INTERVAL);
-  };
-  getData();
-  return () => {
-    if (timer !== undefined) clearTimeout(timer);
-  };
-}
-
 function StatCard({ label, value }: { label: string; value: ReactNode }) {
   return (
     <Card>
@@ -80,13 +61,13 @@ export default function SystemPage() {
   const stats = queueStats.data;
   const workload = queueWorkload.data?.filter((item) => item.name !== 'default');
 
-  useEffect(() => startQueuePolling(queueStats.refetch, queueWorkload.refetch), []);
-
   return (
     <PageShell data-testid="queue-page">
       <section className="space-y-3">
         <h2 className="text-base font-semibold text-foreground">总览</h2>
-        {stats ? (
+        {queueStats.isError ? (
+          <ErrorState message="队列状态加载失败" onRetry={() => void queueStats.refetch()} />
+        ) : stats ? (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard label="当前作业量" value={stats.jobsPerMinute || '0'} />
             <StatCard label="近一小时处理量" value={stats.recentJobs || '0'} />
@@ -112,7 +93,9 @@ export default function SystemPage() {
 
       <section className="space-y-3">
         <h2 className="text-base font-semibold text-foreground">当前作业详情</h2>
-        {workload ? (
+        {queueWorkload.isError ? (
+          <ErrorState message="作业详情加载失败" onRetry={() => void queueWorkload.refetch()} />
+        ) : workload ? (
           <Card className="overflow-hidden py-0">
             <CardContent className="p-0">
               <DataTable

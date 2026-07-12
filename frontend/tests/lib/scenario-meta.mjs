@@ -18,7 +18,12 @@ const scenarios = [
   // `/#/` redirects an unauthenticated visit to the redesigned /login surface, so user-home-root*
   // screenshots the reskinned login: its pixel diff against the old oracle is retired alongside
   // user-login*. The behavior gate still holds via the user-home-root-page-state interaction.
-  { label: 'user-home-root', path: '/#/', readySelector: userAuthSurfaceSelector, visualRetired: true },
+  {
+    label: 'user-home-root',
+    path: '/#/',
+    readySelector: userAuthSurfaceSelector,
+    visualRetired: true,
+  },
   { label: 'user-login', path: '/#/login', visualRetired: true },
   { label: 'user-register-rich', path: '/#/register?code=INVITE2026', visualRetired: true },
   { label: 'user-forget', path: '/#/forgetpassword', visualRetired: true },
@@ -131,7 +136,8 @@ const scenarios = [
     authenticated: true,
     label: 'user-plans-sold-out',
     path: '/#/plan',
-    readySelector: '[data-testid="plan-card"][aria-disabled="true"], .block-link-pop button[disabled]',
+    readySelector:
+      '[data-testid="plan-card"][aria-disabled="true"], .block-link-pop button[disabled]',
     soldOutPlans: true,
     visualRetired: true,
   },
@@ -309,7 +315,7 @@ const scenarios = [
     authenticated: true,
     label: 'user-ticket-detail',
     path: '/#/ticket/7',
-    readySelector: '.js-chat-input',
+    readySelector: '[data-testid="ticket-reply-input"], .js-chat-input',
     visualRetired: true,
   },
   {
@@ -318,7 +324,7 @@ const scenarios = [
     longData: true,
     path: '/#/ticket/7',
     postReadyDelay: 300,
-    readySelector: '.js-chat-input',
+    readySelector: '[data-testid="ticket-reply-input"], .js-chat-input',
     visualRetired: true,
   },
   {
@@ -413,7 +419,8 @@ const scenarios = [
     label: 'user-plans-sold-out-zh-tw',
     locale: 'zh-TW',
     path: '/#/plan',
-    readySelector: '[data-testid="plan-card"][aria-disabled="true"], .block-link-pop button[disabled]',
+    readySelector:
+      '[data-testid="plan-card"][aria-disabled="true"], .block-link-pop button[disabled]',
     soldOutPlans: true,
     visualRetired: true,
   },
@@ -433,7 +440,7 @@ const scenarios = [
     locale: 'zh-TW',
     path: '/#/dashboard',
     postReadyDelay: 300,
-    readySelector: '.v2board-auth-box',
+    readySelector: '[data-testid="admin-login-surface"], .v2board-auth-box',
     visualRetired: true,
   },
   {
@@ -561,7 +568,8 @@ const scenarios = [
     label: 'user-plans-sold-out-en-us',
     locale: 'en-US',
     path: '/#/plan',
-    readySelector: '[data-testid="plan-card"][aria-disabled="true"], .block-link-pop button[disabled]',
+    readySelector:
+      '[data-testid="plan-card"][aria-disabled="true"], .block-link-pop button[disabled]',
     soldOutPlans: true,
     visualRetired: true,
   },
@@ -591,7 +599,7 @@ const scenarios = [
     locale: 'en-US',
     path: '/#/dashboard',
     postReadyDelay: 300,
-    readySelector: '.v2board-auth-box',
+    readySelector: '[data-testid="admin-login-surface"], .v2board-auth-box',
     visualRetired: true,
   },
   {
@@ -644,7 +652,7 @@ const scenarios = [
     label: 'user-home-root-zh-tw',
     locale: 'zh-TW',
     path: '/#/',
-    readySelector: '.v2board-auth-box',
+    readySelector: '[data-testid="admin-login-surface"], .v2board-auth-box',
     visualRetired: true,
   },
   { label: 'user-login-zh-tw', locale: 'zh-TW', path: '/#/login', visualRetired: true },
@@ -732,7 +740,7 @@ const scenarios = [
     label: 'user-ticket-detail-zh-tw',
     locale: 'zh-TW',
     path: '/#/ticket/7',
-    readySelector: '.js-chat-input',
+    readySelector: '[data-testid="ticket-reply-input"], .js-chat-input',
     visualRetired: true,
   },
   {
@@ -755,7 +763,7 @@ const scenarios = [
     label: 'user-home-root-en-us',
     locale: 'en-US',
     path: '/#/',
-    readySelector: '.v2board-auth-box',
+    readySelector: '[data-testid="admin-login-surface"], .v2board-auth-box',
     visualRetired: true,
   },
   { label: 'user-login-en-us', locale: 'en-US', path: '/#/login', visualRetired: true },
@@ -843,7 +851,7 @@ const scenarios = [
     label: 'user-ticket-detail-en-us',
     locale: 'en-US',
     path: '/#/ticket/7',
-    readySelector: '.js-chat-input',
+    readySelector: '[data-testid="ticket-reply-input"], .js-chat-input',
     visualRetired: true,
   },
   {
@@ -931,7 +939,8 @@ const scenarios = [
     label: 'user-plans-sold-out-ja-jp',
     locale: 'ja-JP',
     path: '/#/plan',
-    readySelector: '[data-testid="plan-card"][aria-disabled="true"], .block-link-pop button[disabled]',
+    readySelector:
+      '[data-testid="plan-card"][aria-disabled="true"], .block-link-pop button[disabled]',
     soldOutPlans: true,
     visualRetired: true,
   },
@@ -951,7 +960,7 @@ const scenarios = [
     locale: 'ja-JP',
     path: '/#/dashboard',
     postReadyDelay: 300,
-    readySelector: '.v2board-auth-box',
+    readySelector: '[data-testid="admin-login-surface"], .v2board-auth-box',
     visualRetired: true,
   },
   {
@@ -1014,7 +1023,7 @@ const scenarios = [
     label: 'user-home-root-ja-jp',
     locale: 'ja-JP',
     path: '/#/',
-    readySelector: '.v2board-auth-box',
+    readySelector: '[data-testid="admin-login-surface"], .v2board-auth-box',
     visualRetired: true,
   },
   {
@@ -1112,7 +1121,7 @@ const scenarios = [
     label: 'user-ticket-detail-ja-jp',
     locale: 'ja-JP',
     path: '/#/ticket/7',
-    readySelector: '.js-chat-input',
+    readySelector: '[data-testid="ticket-reply-input"], .js-chat-input',
     visualRetired: true,
   },
   {
@@ -1200,7 +1209,8 @@ const scenarios = [
     label: 'user-plans-sold-out-vi-vn',
     locale: 'vi-VN',
     path: '/#/plan',
-    readySelector: '[data-testid="plan-card"][aria-disabled="true"], .block-link-pop button[disabled]',
+    readySelector:
+      '[data-testid="plan-card"][aria-disabled="true"], .block-link-pop button[disabled]',
     soldOutPlans: true,
     visualRetired: true,
   },
@@ -1220,7 +1230,7 @@ const scenarios = [
     locale: 'vi-VN',
     path: '/#/dashboard',
     postReadyDelay: 300,
-    readySelector: '.v2board-auth-box',
+    readySelector: '[data-testid="admin-login-surface"], .v2board-auth-box',
     visualRetired: true,
   },
   {
@@ -1283,7 +1293,7 @@ const scenarios = [
     label: 'user-home-root-vi-vn',
     locale: 'vi-VN',
     path: '/#/',
-    readySelector: '.v2board-auth-box',
+    readySelector: '[data-testid="admin-login-surface"], .v2board-auth-box',
     visualRetired: true,
   },
   {
@@ -1381,7 +1391,7 @@ const scenarios = [
     label: 'user-ticket-detail-vi-vn',
     locale: 'vi-VN',
     path: '/#/ticket/7',
-    readySelector: '.js-chat-input',
+    readySelector: '[data-testid="ticket-reply-input"], .js-chat-input',
     visualRetired: true,
   },
   {
@@ -1469,7 +1479,8 @@ const scenarios = [
     label: 'user-plans-sold-out-ko-kr',
     locale: 'ko-KR',
     path: '/#/plan',
-    readySelector: '[data-testid="plan-card"][aria-disabled="true"], .block-link-pop button[disabled]',
+    readySelector:
+      '[data-testid="plan-card"][aria-disabled="true"], .block-link-pop button[disabled]',
     soldOutPlans: true,
     visualRetired: true,
   },
@@ -1489,7 +1500,7 @@ const scenarios = [
     locale: 'ko-KR',
     path: '/#/dashboard',
     postReadyDelay: 300,
-    readySelector: '.v2board-auth-box',
+    readySelector: '[data-testid="admin-login-surface"], .v2board-auth-box',
     visualRetired: true,
   },
   {
@@ -1552,7 +1563,7 @@ const scenarios = [
     label: 'user-home-root-ko-kr',
     locale: 'ko-KR',
     path: '/#/',
-    readySelector: '.v2board-auth-box',
+    readySelector: '[data-testid="admin-login-surface"], .v2board-auth-box',
     visualRetired: true,
   },
   {
@@ -1650,7 +1661,7 @@ const scenarios = [
     label: 'user-ticket-detail-ko-kr',
     locale: 'ko-KR',
     path: '/#/ticket/7',
-    readySelector: '.js-chat-input',
+    readySelector: '[data-testid="ticket-reply-input"], .js-chat-input',
     visualRetired: true,
   },
   {
@@ -1687,7 +1698,7 @@ const scenarios = [
     visualRetired: true,
     path: `/${adminPath}#/dashboard`,
     postReadyDelay: 300,
-    readySelector: '.v2board-auth-box',
+    readySelector: '[data-testid="admin-login-surface"], .v2board-auth-box',
   },
   {
     authenticated: true,
@@ -1839,15 +1850,6 @@ const scenarios = [
     visualRetired: true,
     path: `/${adminPath}#/config/system`,
     readySelector: '[data-testid^="config-tab-"], .ant-tabs-tab',
-    seedLegacyAdminStore: true,
-    warmupPath: `/${adminPath}#/login`,
-  },
-  {
-    authenticated: true,
-    label: 'admin-theme',
-    visualRetired: true,
-    path: `/${adminPath}#/config/theme`,
-    readySelector: '[data-testid^="theme-card-"], .block-transparent.bg-image',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -2013,7 +2015,7 @@ const scenarios = [
   {
     label: 'admin-root',
     path: `/${adminPath}#/`,
-    readySelector: '.v2board-auth-box',
+    readySelector: '[data-testid="admin-login-surface"], .v2board-auth-box',
     visualRetired: true,
   },
   { label: 'admin-login', path: `/${adminPath}#/login`, visualRetired: true },

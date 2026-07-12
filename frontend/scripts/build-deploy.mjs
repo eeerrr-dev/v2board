@@ -1,177 +1,491 @@
 import { execSync } from 'node:child_process';
-import { copyFile, cp, mkdir, mkdtemp, readFile, rm, readdir, stat } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import {
+  chmod,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readlink,
+  readdir,
+  rename,
+  rm,
+  stat,
+  symlink,
+} from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve, join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
+import { brotliCompressSync, gzipSync } from 'node:zlib';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dir, '..');
-const deployRoot = resolve(root, 'dist-deploy');
-const userThemeOut = resolve(root, 'dist-deploy/theme/default');
-const userOut = resolve(root, 'dist-deploy/theme/default/assets');
-const adminOut = resolve(root, 'dist-deploy/assets/admin');
-const adminThemeSource = resolve(root, 'apps/admin/src/styles/themes');
-const adminThemeOut = resolve(adminOut, 'themes');
-const userDeployRoot = resolve(root, 'apps/user/deploy');
-const adminThemeFiles = ['black.css', 'darkblue.css', 'default.css', 'green.css'];
-const legacyRootFiles = [
+const deployRoot = process.env.V2BOARD_DEPLOY_ROOT
+  ? resolve(process.env.V2BOARD_DEPLOY_ROOT)
+  : resolve(root, 'dist-deploy');
+const releasesRoot = join(deployRoot, 'releases');
+const forbiddenLegacyNames = new Set([
   'components.chunk.css',
   'vendors.async.js',
   'components.async.js',
-  'env.example.js',
   'custom.css',
   'custom.js',
-];
-const deployMode = process.env.V2BOARD_DEPLOY_MODE ?? 'all';
-const finalizeOnly = deployMode === 'finalize';
+  'env.example.js',
+  'umi.css',
+  'umi.js',
+]);
+const forbiddenLegacyDirectories = new Set(['i18n', 'images', 'theme', 'themes']);
+const runtimeConfigToken = '__V2BOARD_RUNTIME_CONFIG__';
 
-if (!['all', 'finalize'].includes(deployMode)) {
-  throw new Error(`Unsupported V2BOARD_DEPLOY_MODE: ${deployMode}`);
-}
-
-const stageRoot = finalizeOnly ? null : await mkdtemp(join(tmpdir(), 'v2board-deploy-'));
-const userStageOut = stageRoot ? join(stageRoot, 'theme/default/assets') : userOut;
-const adminStageOut = stageRoot ? join(stageRoot, 'assets/admin') : adminOut;
+await mkdir(releasesRoot, { recursive: true });
+const stageRoot = await mkdtemp(join(releasesRoot, '.build-'));
+const userStageOut = join(stageRoot, 'user');
+const adminStageOut = join(stageRoot, 'admin');
 
 try {
-  if (!finalizeOnly) {
-    await rm(deployRoot, { recursive: true, force: true });
+  execSync('pnpm --filter @v2board/user --filter @v2board/admin --parallel run typecheck', {
+    cwd: root,
+    stdio: 'inherit',
+  });
 
-    execSync('pnpm -F @v2board/user exec vite build --config vite.config.deploy.ts', {
-      cwd: root,
-      env: { ...process.env, V2BOARD_DEPLOY_OUT_DIR: userStageOut },
-      stdio: 'inherit',
-    });
-    execSync('pnpm -F @v2board/admin exec vite build --config vite.config.deploy.ts', {
-      cwd: root,
-      env: { ...process.env, V2BOARD_DEPLOY_OUT_DIR: adminStageOut },
-      stdio: 'inherit',
-    });
+  execSync('pnpm -F @v2board/user exec vite build --config vite.config.deploy.ts', {
+    cwd: root,
+    env: { ...process.env, V2BOARD_DEPLOY_OUT_DIR: userStageOut },
+    stdio: 'inherit',
+  });
+  execSync('pnpm -F @v2board/admin exec vite build --config vite.config.deploy.ts', {
+    cwd: root,
+    env: { ...process.env, V2BOARD_DEPLOY_OUT_DIR: adminStageOut },
+    stdio: 'inherit',
+  });
 
-    await cp(userStageOut, userOut, { recursive: true });
-    await cp(adminStageOut, adminOut, { recursive: true });
+  const userBuild = await validateViteBuild({
+    label: 'User',
+    outDir: userStageOut,
+    publicBase: '/assets/user/',
+    requiresCustomHtmlMarker: true,
+  });
+  const adminBuild = await validateViteBuild({
+    label: 'Admin',
+    outDir: adminStageOut,
+    publicBase: '/assets/admin/',
+    requiresCustomHtmlMarker: false,
+  });
+
+  for (const dir of [userStageOut, adminStageOut]) await rejectLegacyArtifacts(dir);
+
+  const userSize = await du(userStageOut);
+  const adminSize = await du(adminStageOut);
+  const releaseId = releaseIdFromBuilds(userBuild, adminBuild);
+  await normalizeReleasePermissions(stageRoot);
+  const publication = await publishBuild(stageRoot, deployRoot, releaseId);
+
+  console.log('\n=== Immutable frontend release complete ===');
+  console.log(
+    `User:  ${(userSize / 1024).toFixed(1)} KB, ${userBuild.files} verified files, ` +
+      `${(userBuild.initialGzip / 1024).toFixed(1)} KB initial gzip → current/user/`,
+  );
+  console.log(
+    `Admin: ${(adminSize / 1024).toFixed(1)} KB, ${adminBuild.files} verified files, ` +
+      `${(adminBuild.initialGzip / 1024).toFixed(1)} KB initial gzip → current/admin/`,
+  );
+  console.log(`Release: ${publication.release}`);
+  if (publication.previous) console.log(`Previous: ${publication.previous}`);
+} finally {
+  await rm(stageRoot, { recursive: true, force: true });
+}
+
+async function validateViteBuild({ label, outDir, publicBase, requiresCustomHtmlMarker }) {
+  const manifestPath = join(outDir, 'manifest.json');
+  const manifestSource = await readFile(manifestPath, 'utf8');
+  const manifest = JSON.parse(manifestSource);
+  if (!isRecord(manifest)) throw new Error(`${label} manifest must be a JSON object`);
+
+  const chunks = Object.entries(manifest);
+  const entries = chunks.filter(([, chunk]) => isRecord(chunk) && chunk.isEntry === true);
+  if (entries.length !== 1) {
+    throw new Error(`${label} manifest must contain exactly one entry, found ${entries.length}`);
   }
 
-  await mkdir(userThemeOut, { recursive: true });
-  for (const name of ['dashboard.blade.php', 'config.json']) {
-    await copyFile(join(userDeployRoot, name), join(userThemeOut, name));
-  }
+  const referencedFiles = new Set(['index.html', 'manifest.json']);
+  const visitedChunks = new Set();
 
-  await stat(join(userOut, 'umi.css'));
-  await stat(join(userOut, 'umi.js'));
-
-  await stat(join(adminOut, 'umi.css'));
-  await stat(join(adminOut, 'umi.js'));
-
-  await mkdir(adminThemeOut, { recursive: true });
-  for (const name of adminThemeFiles) {
-    await copyFile(join(adminThemeSource, name), join(adminThemeOut, name));
-    await stat(join(adminThemeOut, name));
-  }
-
-  async function pathExists(path) {
-    try {
-      await stat(path);
-      return true;
-    } catch (error) {
-      if (error?.code === 'ENOENT') return false;
-      throw error;
+  async function visitChunk(key, ancestry = []) {
+    if (visitedChunks.has(key)) return;
+    const chunk = manifest[key];
+    if (!isRecord(chunk)) {
+      throw new Error(`${label} manifest import does not resolve to a chunk: ${key}`);
     }
-  }
-
-  async function assertAbsent(path) {
-    if (await pathExists(path)) {
-      throw new Error(`Unexpected legacy deploy artifact: ${path}`);
+    if (ancestry.includes(key)) {
+      throw new Error(`${label} manifest contains an import cycle: ${[...ancestry, key].join(' -> ')}`);
     }
-  }
 
-  function normalizeCssUrl(rawUrl) {
-    const url = rawUrl.trim().replace(/^['"]|['"]$/g, '');
-    if (!url || url.startsWith('#')) return null;
-    if (/^(?:data|blob|https?):/i.test(url) || url.startsWith('//')) return null;
-    const path = url.split(/[?#]/, 1)[0];
-    if (!path) return null;
-    try {
-      return decodeURIComponent(path);
-    } catch {
-      return path;
-    }
-  }
-
-  async function assertCssUrlsExist(label, cssFile) {
-    const css = await readFile(cssFile, 'utf8');
-    const pattern = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*))\s*\)/g;
-    const missing = [];
-
-    for (const match of css.matchAll(pattern)) {
-      const url = normalizeCssUrl(match[1] ?? match[2] ?? match[3] ?? '');
-      if (!url) continue;
-
-      const assetPath = url.startsWith('/')
-        ? join(deployRoot, url.slice(1))
-        : resolve(dirname(cssFile), url);
-      if (!(await pathExists(assetPath))) {
-        missing.push(url);
+    visitedChunks.add(key);
+    await validateManifestAsset(`${label} chunk ${key}`, chunk.file, outDir, referencedFiles);
+    for (const field of ['css', 'assets']) {
+      const values = chunk[field] ?? [];
+      if (!Array.isArray(values)) throw new Error(`${label} manifest ${key}.${field} must be an array`);
+      for (const asset of values) {
+        await validateManifestAsset(
+          `${label} chunk ${key}.${field}`,
+          asset,
+          outDir,
+          referencedFiles,
+        );
       }
     }
-
-    if (missing.length) {
-      throw new Error(`${label} references missing deploy assets: ${missing.join(', ')}`);
+    for (const field of ['imports', 'dynamicImports']) {
+      const imports = chunk[field] ?? [];
+      if (!Array.isArray(imports)) {
+        throw new Error(`${label} manifest ${key}.${field} must be an array`);
+      }
+      for (const importedKey of imports) {
+        if (typeof importedKey !== 'string' || !Object.hasOwn(manifest, importedKey)) {
+          throw new Error(`${label} manifest ${key}.${field} has an unsafe reference`);
+        }
+        await visitChunk(importedKey, [...ancestry, key]);
+      }
     }
   }
 
-  for (const name of legacyRootFiles) {
-    await assertAbsent(join(userOut, name));
-    await assertAbsent(join(adminOut, name));
+  await visitChunk(entries[0][0]);
+  // Vite also records source-imported images and fonts as standalone manifest
+  // entries. They are not JavaScript imports, but they still need the same
+  // path/hash/existence validation as the entry's recursive chunk graph.
+  for (const [key] of chunks) {
+    if (!visitedChunks.has(key)) await visitChunk(key);
   }
 
-  for (const name of ['i18n', 'images', 'theme']) {
-    await assertAbsent(join(userOut, name));
+  const entry = entries[0][1];
+  if (typeof entry.file !== 'string' || !entry.file.endsWith('.js') || !(entry.css?.length > 0)) {
+    throw new Error(`${label} manifest entry must reference JavaScript and CSS`);
   }
-  await assertAbsent(join(adminOut, 'theme'));
 
-  async function assertSingleRootEntryFile(label, dir, pattern, expectedName) {
-    const matches = (await readdir(dir)).filter((name) => pattern.test(name)).sort();
-    if (matches.length !== 1 || matches[0] !== expectedName) {
-      throw new Error(
-        `${label} deploy must expose exactly one root entry file named ${expectedName}: ${matches.join(', ')}`,
-      );
+  const indexPath = join(outDir, 'index.html');
+  const indexSource = await readFile(indexPath, 'utf8');
+  assertExactlyOnce(
+    indexSource,
+    `<script id="v2board-runtime-config" type="application/json">${runtimeConfigToken}</script>`,
+    `${label} runtime config bootstrap`,
+  );
+  if (requiresCustomHtmlMarker) {
+    assertExactlyOnce(indexSource, '<!-- V2BOARD_CUSTOM_HTML -->', `${label} custom HTML marker`);
+    const rootPosition = indexSource.indexOf('<div id="root"></div>');
+    const markerPosition = indexSource.indexOf('<!-- V2BOARD_CUSTOM_HTML -->');
+    if (rootPosition === -1 || markerPosition < rootPosition) {
+      throw new Error(`${label} custom HTML marker must follow #root`);
+    }
+  }
+  if (indexSource.includes('window.settings')) {
+    throw new Error(`${label} index.html retains the retired window.settings bootstrap`);
+  }
+
+  const htmlAssets = await validateHtmlAssets(label, indexSource, outDir, publicBase);
+  for (const asset of [entry.file, ...(entry.css ?? [])]) {
+    const expectedUrl = `${publicBase}${asset}`;
+    if (!htmlAssets.has(expectedUrl)) {
+      throw new Error(`${label} index.html does not load manifest entry asset: ${expectedUrl}`);
     }
   }
 
-  await assertSingleRootEntryFile('User CSS', userOut, /^umi\d*\.css$/, 'umi.css');
-  await assertSingleRootEntryFile('User JS', userOut, /^umi\d*\.js$/, 'umi.js');
-  await assertSingleRootEntryFile('Admin CSS', adminOut, /^umi\d*\.css$/, 'umi.css');
-  await assertSingleRootEntryFile('Admin JS', adminOut, /^umi\d*\.js$/, 'umi.js');
-
-  await assertCssUrlsExist('User entry CSS', join(userOut, 'umi.css'));
-  await assertCssUrlsExist('Admin entry CSS', join(adminOut, 'umi.css'));
-  for (const name of adminThemeFiles) {
-    await assertCssUrlsExist(`Admin theme CSS ${name}`, join(adminThemeOut, name));
+  for (const asset of referencedFiles) {
+    if (!asset.endsWith('.css')) continue;
+    await assertCssUrlsExist(
+      `${label} CSS ${asset}`,
+      join(outDir, asset),
+      outDir,
+      publicBase,
+    );
   }
 
-  async function du(dir) {
-    let total = 0;
-    const entries = await readdir(dir, { withFileTypes: true });
-    for (const e of entries) {
-      const p = join(dir, e.name);
-      if (e.isDirectory()) total += await du(p);
-      else total += (await stat(p)).size;
+  const initialBundle = await measureInitialJavaScript(label, manifest, entries[0][0], outDir);
+  const defaultBudget = 300 * 1024;
+  const budgetVariable = `V2BOARD_${label.toUpperCase()}_INITIAL_JS_GZIP_BUDGET`;
+  const initialGzipBudget = Number(process.env[budgetVariable] ?? defaultBudget);
+  if (!Number.isFinite(initialGzipBudget) || initialGzipBudget <= 0) {
+    throw new Error(`${budgetVariable} must be a positive byte count`);
+  }
+  if (initialBundle.gzip > initialGzipBudget) {
+    throw new Error(
+      `${label} initial JavaScript is ${(initialBundle.gzip / 1024).toFixed(1)} KB gzip, ` +
+        `above the ${(initialGzipBudget / 1024).toFixed(1)} KB budget`,
+    );
+  }
+
+  return {
+    files: referencedFiles.size,
+    initialGzip: initialBundle.gzip,
+    initialBrotli: initialBundle.brotli,
+    indexSource,
+    manifestSource,
+  };
+}
+
+async function measureInitialJavaScript(label, manifest, entryKey, outDir) {
+  const visited = new Set();
+  const files = new Set();
+
+  function visit(key) {
+    if (visited.has(key)) return;
+    visited.add(key);
+    const chunk = manifest[key];
+    if (!isRecord(chunk)) throw new Error(`${label} initial import is missing: ${key}`);
+    if (typeof chunk.file === 'string' && chunk.file.endsWith('.js')) files.add(chunk.file);
+    const imports = chunk.imports ?? [];
+    if (!Array.isArray(imports)) throw new Error(`${label} manifest ${key}.imports must be an array`);
+    for (const importedKey of imports) visit(importedKey);
+  }
+
+  visit(entryKey);
+  let gzip = 0;
+  let brotli = 0;
+  for (const file of files) {
+    const source = await readFile(join(outDir, safeAssetPath(`${label} initial chunk`, file)));
+    gzip += gzipSync(source).byteLength;
+    brotli += brotliCompressSync(source).byteLength;
+  }
+  return { gzip, brotli };
+}
+
+async function validateManifestAsset(label, value, outDir, referencedFiles) {
+  const asset = safeAssetPath(label, value);
+  await assertRegularFile(join(outDir, asset), `${label} references a missing file: ${asset}`);
+  referencedFiles.add(asset);
+}
+
+function safeAssetPath(label, value) {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(`${label} must reference a non-empty asset path`);
+  }
+  if (value.includes('\\') || value.includes('?') || value.includes('#')) {
+    throw new Error(`${label} contains an unsafe asset path: ${value}`);
+  }
+
+  let decoded;
+  try {
+    decoded = decodeURIComponent(value);
+  } catch {
+    throw new Error(`${label} contains invalid URL encoding: ${value}`);
+  }
+  const segments = decoded.split('/');
+  if (
+    decoded !== value ||
+    decoded.startsWith('/') ||
+    segments.some((segment) => !segment || segment === '.' || segment === '..') ||
+    segments.length !== 1 ||
+    !/^[A-Za-z0-9._-]+-[A-Za-z0-9_-]{8,}\.[A-Za-z0-9.]+$/.test(decoded)
+  ) {
+    throw new Error(`${label} contains a non-hashed or unsafe asset path: ${value}`);
+  }
+  if (forbiddenLegacyNames.has(basename(decoded))) {
+    throw new Error(`${label} references forbidden legacy asset: ${value}`);
+  }
+  return decoded;
+}
+
+async function validateHtmlAssets(label, html, outDir, publicBase) {
+  const urls = new Set();
+  const pattern = /\b(?:href|src)=(?:"([^"]+)"|'([^']+)')/g;
+  for (const match of html.matchAll(pattern)) {
+    const value = match[1] ?? match[2];
+    if (!value || value.startsWith('#') || /^(?:data|https?):/i.test(value)) continue;
+    if (!value.startsWith(publicBase)) {
+      throw new Error(`${label} index.html contains an asset outside ${publicBase}: ${value}`);
     }
-    return total;
+    const asset = safeAssetPath(`${label} index.html`, value.slice(publicBase.length));
+    await assertRegularFile(
+      join(outDir, asset),
+      `${label} index.html references a missing file: ${value}`,
+    );
+    urls.add(value);
+  }
+  return urls;
+}
+
+function releaseIdFromBuilds(userBuild, adminBuild) {
+  return createHash('sha256')
+    .update('user\0')
+    .update(userBuild.manifestSource)
+    .update('\0')
+    .update(userBuild.indexSource)
+    .update('\0admin\0')
+    .update(adminBuild.manifestSource)
+    .update('\0')
+    .update(adminBuild.indexSource)
+    .digest('hex')
+    .slice(0, 20);
+}
+
+async function publishBuild(source, target, releaseId) {
+  const releases = join(target, 'releases');
+  const releaseName = `releases/${releaseId}`;
+  const releasePath = join(target, releaseName);
+  const pendingPath = `${releasePath}.tmp`;
+
+  if (!(await pathExists(releasePath))) {
+    await rm(pendingPath, { recursive: true, force: true });
+    await rename(source, pendingPath);
+    await rename(pendingPath, releasePath);
+  }
+  await normalizeReleasePermissions(releasePath);
+
+  const current = await readDeployLink(target, 'current');
+  if (current !== releaseName) {
+    if (current) await replaceDeployLink(target, 'previous', current);
+    else await rm(join(target, 'previous'), { force: true });
+    await replaceDeployLink(target, 'current', releaseName);
   }
 
-  const userSize = await du(userOut);
-  const adminSize = await du(adminOut);
+  const previous = await readDeployLink(target, 'previous');
+  await pruneOldReleases(releases, new Set([releaseName, previous].filter(Boolean)));
+  return { release: releaseName, previous };
+}
 
-  console.log('\n=== Drop-in deployment build complete ===');
-  console.log(`User theme:   ${(userSize / 1024).toFixed(1)} KB  →  backend/laravel/public/theme/default/`);
-  console.log(`Admin bundle: ${(adminSize / 1024).toFixed(1)} KB  →  backend/laravel/public/assets/admin/`);
-  console.log('\nDeploy:');
-  console.log(`  rsync -a --delete ${userThemeOut}/ /path/to/v2board/backend/laravel/public/theme/default/`);
-  console.log(`  rsync -a --delete ${adminOut}/ /path/to/v2board/backend/laravel/public/assets/admin/`);
-} finally {
-  if (stageRoot) {
-    await rm(stageRoot, { recursive: true, force: true });
+async function normalizeReleasePermissions(directory) {
+  await chmod(directory, 0o755);
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) {
+      await normalizeReleasePermissions(path);
+    } else if (entry.isFile()) {
+      await chmod(path, 0o644);
+    } else {
+      throw new Error(`Deploy release contains an unsupported filesystem entry: ${path}`);
+    }
   }
+}
+
+async function readDeployLink(target, name) {
+  const linkPath = join(target, name);
+  try {
+    const link = await readlink(linkPath);
+    if (!/^releases\/[a-f0-9]{20}$/.test(link)) {
+      throw new Error(`Deploy ${name} link has an unsafe target: ${link}`);
+    }
+    await stat(join(target, link));
+    return link;
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+async function replaceDeployLink(target, name, linkTarget) {
+  const temporary = join(target, `.${name}-${process.pid}-${Date.now()}`);
+  await symlink(linkTarget, temporary);
+  try {
+    await rename(temporary, join(target, name));
+  } finally {
+    await rm(temporary, { force: true });
+  }
+}
+
+async function pruneOldReleases(releases, retainedLinks) {
+  const retainedNames = new Set(
+    [...retainedLinks].map((link) => (typeof link === 'string' ? basename(link) : '')),
+  );
+  for (const entry of await readdir(releases, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !/^[a-f0-9]{20}$/.test(entry.name)) continue;
+    if (!retainedNames.has(entry.name)) {
+      await rm(join(releases, entry.name), { recursive: true, force: true });
+    }
+  }
+}
+
+async function rejectLegacyArtifacts(directory, rootDirectory = directory) {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    const relativePath = relative(rootDirectory, path).split(sep);
+    if (forbiddenLegacyNames.has(entry.name)) {
+      throw new Error(`Unexpected legacy deploy artifact: ${path}`);
+    }
+    if (entry.isDirectory() && relativePath.some((part) => forbiddenLegacyDirectories.has(part))) {
+      throw new Error(`Unexpected legacy deploy directory: ${path}`);
+    }
+    if (entry.isDirectory()) await rejectLegacyArtifacts(path, rootDirectory);
+  }
+}
+
+function assertExactlyOnce(source, value, label) {
+  const first = source.indexOf(value);
+  if (first === -1 || source.indexOf(value, first + value.length) !== -1) {
+    throw new Error(`${label} must appear exactly once`);
+  }
+}
+
+function normalizeCssUrl(rawUrl) {
+  const url = rawUrl.trim().replace(/^['"]|['"]$/g, '');
+  if (!url || url.startsWith('#')) return null;
+  if (/^(?:data|blob|https?):/i.test(url) || url.startsWith('//')) return null;
+  return url.split(/[?#]/, 1)[0] || null;
+}
+
+async function assertCssUrlsExist(label, cssFile, outDir, publicBase) {
+  const css = await readFile(cssFile, 'utf8');
+  const pattern = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*))\s*\)/g;
+  const missing = [];
+
+  for (const match of css.matchAll(pattern)) {
+    const url = normalizeCssUrl(match[1] ?? match[2] ?? match[3] ?? '');
+    if (!url) continue;
+
+    let assetPath;
+    if (url.startsWith('/')) {
+      if (!url.startsWith(publicBase)) {
+        throw new Error(`${label} references an asset outside ${publicBase}: ${url}`);
+      }
+      const asset = safeAssetPath(label, url.slice(publicBase.length));
+      assetPath = join(outDir, asset);
+    } else {
+      let decoded;
+      try {
+        decoded = decodeURIComponent(url);
+      } catch {
+        throw new Error(`${label} contains invalid URL encoding: ${url}`);
+      }
+      assetPath = resolve(dirname(cssFile), decoded);
+      const relativePath = relative(outDir, assetPath);
+      if (relativePath.startsWith('..') || relativePath.includes(`..${sep}`)) {
+        throw new Error(`${label} contains an unsafe relative URL: ${url}`);
+      }
+    }
+    if (!(await isRegularFile(assetPath))) missing.push(url);
+  }
+
+  if (missing.length) throw new Error(`${label} references missing deploy assets: ${missing.join(', ')}`);
+}
+
+async function pathExists(path) {
+  try {
+    await lstat(path);
+    return true;
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
+async function isRegularFile(path) {
+  try {
+    return (await stat(path)).isFile();
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
+async function assertRegularFile(path, message) {
+  if (!(await isRegularFile(path))) throw new Error(message);
+}
+
+function isRecord(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+async function du(dir) {
+  let total = 0;
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    total += entry.isDirectory() ? await du(path) : (await stat(path)).size;
+  }
+  return total;
 }

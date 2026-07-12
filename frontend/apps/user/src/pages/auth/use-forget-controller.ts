@@ -1,38 +1,31 @@
-import {
-  type BaseSyntheticEvent,
-  type ReactNode,
-} from 'react';
+import { type BaseSyntheticEvent, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
-import { useTranslation } from 'react-i18next';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, type UseFormRegister } from 'react-hook-form';
-import { z } from 'zod';
 import { useForgetMutation, useGuestConfig } from '@/lib/guest';
-import { toast } from '@/lib/toast';
-import { i18nGet } from '@/lib/errors';
 import { useAuthRecaptcha } from './auth-recaptcha';
-import { makeConfirmPasswordRefinement } from './refine-confirm-password';
+import {
+  authEmailSchema,
+  forgetSchema,
+  type ForgetFormInput,
+  type ForgetFormValues,
+} from './auth-validation';
 import { useSendEmailVerifyFlow } from './use-send-email-verify-flow';
-
-const forgetSchema = z
-  .object({
-    email: z.string(),
-    email_code: z.string(),
-    password: z.string(),
-    confirm_password: z.string(),
-  })
-  .superRefine(makeConfirmPasswordRefinement({ passwordKey: 'password', confirmKey: 'confirm_password' }));
-
-type ForgetFormValues = z.infer<typeof forgetSchema>;
 
 export interface ForgetController {
   configLoading: boolean;
-  registerInput: UseFormRegister<ForgetFormValues>;
+  configError: boolean;
+  retryConfig: () => void;
+  registerInput: UseFormRegister<ForgetFormInput>;
   submit: (event?: BaseSyntheticEvent) => Promise<void>;
-  /** Send-code button handler — runs recaptcha then the email-verify flow. */
-  sendCode: () => void;
-  /** True once the confirm-password superRefine flags a mismatch (drives the inline field error). */
-  passwordMismatch: boolean;
+  /** Validates email, then runs recaptcha and the email-verify flow. */
+  sendCode: () => Promise<void>;
+  errors: {
+    email?: string;
+    emailCode?: string;
+    password?: string;
+    confirmPassword?: string;
+  };
   isPending: boolean;
   isSendingCode: boolean;
   cooldownActive: boolean;
@@ -45,19 +38,25 @@ export interface ForgetController {
 // recaptcha-gated send-code + 60-second cooldown is shared with register via useSendEmailVerifyFlow.
 // The payload contract is unchanged.
 export function useForgetController(): ForgetController {
-  const { t } = useTranslation();
   const navigate = useNavigate();
   const guestConfig = useGuestConfig();
   const { data: config } = guestConfig;
   // Only show the full-form spinner on the true initial load; isFetching would
   // re-flash it on every background refetch (staleTime 0 + refetchOnMount).
   const configLoading = guestConfig.isLoading;
-  const { mutateAsync: forget, isPending } = useForgetMutation();
+  // Password-reset policy (notably recaptcha) is unknown until guest config has
+  // loaded successfully. Treat every other settled state as unavailable.
+  const configReady = guestConfig.isSuccess && config !== undefined;
+  const configError = !configLoading && !configReady;
+  const retryConfig = () => {
+    void guestConfig.refetch();
+  };
+  const { mutate: forget, isPending } = useForgetMutation();
   const { run: runRecaptcha, recaptchaModal } = useAuthRecaptcha(
     Boolean(config?.is_recaptcha),
     config?.recaptcha_site_key,
   );
-  const form = useForm<ForgetFormValues>({
+  const form = useForm<ForgetFormInput, unknown, ForgetFormValues>({
     resolver: zodResolver(forgetSchema),
     defaultValues: {
       email: '',
@@ -67,38 +66,63 @@ export function useForgetController(): ForgetController {
     },
   });
 
-  const { sendCode, isSendingCode, cooldownActive, cooldownRemaining } = useSendEmailVerifyFlow({
+  const {
+    sendCode: sendCodeWithConfig,
+    isSendingCode,
+    cooldownActive,
+    cooldownRemaining,
+  } = useSendEmailVerifyFlow({
     isforget: 1,
-    getEmail: () => form.getValues('email'),
     runRecaptcha,
   });
 
-  const onForget = async (values: ForgetFormValues) => {
-    try {
-      await forget({
-        email: values.email,
-        password: values.password,
-        email_code: values.email_code,
-      });
-      navigate('/login');
-    } catch {}
+  const sendCode = async () => {
+    if (!configReady || isSendingCode || cooldownActive) return;
+    const emailValid = await form.trigger('email', { shouldFocus: true });
+    if (!emailValid) return;
+    const email = authEmailSchema.safeParse(form.getValues('email'));
+    if (!email.success) return;
+    sendCodeWithConfig(email.data);
   };
 
-  const submit = form.handleSubmit(
-    onForget,
-    () => toast.error(i18nGet('请求失败'), { description: t('auth.password_mismatch') }),
-  );
+  const onForget = (values: ForgetFormValues) => {
+    if (!configReady) return;
+    const validated = forgetSchema.safeParse(values);
+    if (!validated.success) return;
+    forget(
+      {
+        email: validated.data.email,
+        password: validated.data.password,
+        email_code: validated.data.email_code,
+      },
+      { onSuccess: () => navigate('/login') },
+    );
+  };
 
-  // Read the proxied error here so the controller re-renders when the confirm-password
-  // superRefine toggles; the inline field error mirrors the existing mismatch toast.
-  const passwordMismatch = Boolean(form.formState.errors.confirm_password);
+  const submitForm = form.handleSubmit(onForget);
+  const submit = async (event?: BaseSyntheticEvent) => {
+    if (!configReady) {
+      event?.preventDefault();
+      return;
+    }
+    await submitForm(event);
+  };
+
+  const errors = form.formState.errors;
 
   return {
     configLoading,
+    configError,
+    retryConfig,
     registerInput: form.register,
     submit,
     sendCode,
-    passwordMismatch,
+    errors: {
+      email: errors.email?.message,
+      emailCode: errors.email_code?.message,
+      password: errors.password?.message,
+      confirmPassword: errors.confirm_password?.message,
+    },
     isPending,
     isSendingCode,
     cooldownActive,

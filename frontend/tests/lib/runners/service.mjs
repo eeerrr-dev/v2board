@@ -21,7 +21,7 @@ export async function runNodeTableScrollInteraction(page) {
 
 export async function runUserNodeTooltipsInteraction(page) {
   return hoverAllTooltipTargetsInteraction(page, [
-    '[data-testid="node-table"] .v2board-service-tooltip-trigger',
+    '[data-testid="node-table"] [data-slot="header-tooltip-trigger"]',
     '.ant-table-thead .anticon-question-circle',
   ]);
 }
@@ -42,7 +42,7 @@ export async function runUserTrafficTotalTooltipInteraction(page) {
   await setServiceTableScrollLeft(page, 'right');
   await page.waitForTimeout(150);
   return hoverTooltipInteraction(page, [
-    '[data-testid="traffic-table"] .v2board-service-tooltip-trigger',
+    '[data-testid="traffic-table"] [data-slot="header-tooltip-trigger"]',
     '.ant-table-fixed .anticon-question-circle',
     '.ant-table-thead .anticon-question-circle',
   ]);

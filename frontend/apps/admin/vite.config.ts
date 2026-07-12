@@ -5,11 +5,7 @@ import tailwindcss from '@tailwindcss/vite';
 import path from 'node:path';
 import {
   buildAppViteConfig,
-  legacyNavigationRedirectPlugin,
-  legacyViteClientStubPlugin,
-  localHorizonStatsPlugin,
-  rejectPackagedAdminAssetsPlugin,
-  stripViteClientPlugin,
+  hashNavigationRedirectPlugin,
 } from '@v2board/config/vite';
 
 const adminDevPath = (process.env.VITE_DEV_ADMIN_PATH ?? 'admin').replace(/^\/+|\/+$/g, '');
@@ -17,51 +13,29 @@ const adminPassthroughPaths = adminDevPath ? [`/${adminDevPath}`] : [];
 
 export default defineConfig({
   ...buildAppViteConfig({ port: 5174 }),
-  cacheDir: '../../node_modules/.vite/admin-white-screen-recovery-37',
+  cacheDir: '../../node_modules/.vite/admin',
   plugins: [
-    legacyNavigationRedirectPlugin({ passthroughPaths: adminPassthroughPaths }),
-    legacyViteClientStubPlugin(),
-    rejectPackagedAdminAssetsPlugin(),
+    hashNavigationRedirectPlugin({ passthroughPaths: adminPassthroughPaths }),
     tailwindcss(),
     react(),
     // React Compiler (1.0) auto-memoizes the redesigned shadcn islands, matching
     // the user app. @vitejs/plugin-react@6 drives its transforms through oxc, so
     // the compiler runs as a separate @rolldown/plugin-babel pass via the preset.
     babel({ presets: [reactCompilerPreset()] }),
-    stripViteClientPlugin(),
-    localHorizonStatsPlugin(),
   ],
   optimizeDeps: {
     include: [
-      '@ant-design/icons',
       '@hookform/resolvers/zod',
-      '@radix-ui/react-alert-dialog',
-      '@radix-ui/react-avatar',
-      '@radix-ui/react-checkbox',
-      '@radix-ui/react-dialog',
-      '@radix-ui/react-dropdown-menu',
-      '@radix-ui/react-label',
-      '@radix-ui/react-progress',
-      '@radix-ui/react-radio-group',
-      '@radix-ui/react-select',
-      '@radix-ui/react-slot',
-      '@radix-ui/react-switch',
-      '@radix-ui/react-tooltip',
+      'radix-ui',
       '@tanstack/react-query',
-      '@tanstack/react-query-devtools',
       '@tanstack/react-table',
       '@tanstack/react-virtual',
-      'antd',
-      'antd/locale/zh_CN',
-      'axios',
+      '@v2board/api-client > axios',
       'class-variance-authority',
       'clsx',
       'dayjs',
-      'echarts',
-      'echarts/theme/vintage',
       'i18next',
       'lucide-react',
-      'markdown-it',
       'react',
       'react-dom',
       'react-dom/client',
@@ -70,13 +44,18 @@ export default defineConfig({
       'react/jsx-runtime',
       'react-hook-form',
       'react-i18next',
+      'react-is',
       'react-router',
+      'react-router/dom',
+      'recharts',
       'sonner',
       'tailwind-merge',
       'zod',
     ],
-    holdUntilCrawlEnd: true,
+    // Every runtime dependency is declared above, so dependency optimization
+    // can run in parallel with the browser instead of holding the first load.
+    holdUntilCrawlEnd: false,
     noDiscovery: true,
   },
-  resolve: { alias: { '@': path.resolve(__dirname, 'src') } },
+  resolve: { alias: { '@': path.resolve(import.meta.dirname, 'src') } },
 });

@@ -24,7 +24,7 @@ export function ErrorState({ onRetry, message, 'data-testid': testId }: ErrorSta
       <TriangleAlert className="size-4" />
       <AlertDescription>
         <span className="flex flex-wrap items-center gap-2">
-          <span>{message ?? t('common.error_title')}</span>
+          <span>{message ?? t($ => $.common.error_title)}</span>
           {onRetry ? (
             <Button
               variant="link"
@@ -32,7 +32,7 @@ export function ErrorState({ onRetry, message, 'data-testid': testId }: ErrorSta
               onClick={onRetry}
               data-testid="error-state-retry"
             >
-              {t('common.retry')}
+              {t($ => $.common.retry)}
             </Button>
           ) : null}
         </span>

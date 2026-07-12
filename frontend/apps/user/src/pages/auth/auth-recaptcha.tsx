@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-} from '@/components/ui/shadcn-dialog';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { i18nGet } from '@/lib/errors';
+import { toast } from '@/lib/toast';
 
 interface RecaptchaApi {
   render: (
@@ -33,7 +31,8 @@ declare global {
 type ProtectedAction = (recaptchaData?: string) => void | Promise<void>;
 
 let recaptchaPromise: Promise<RecaptchaApi> | null = null;
-const RECAPTCHA_SCRIPT_URL = 'https://www.recaptcha.net/recaptcha/api.js?onload=onloadcallback&render=explicit';
+const RECAPTCHA_SCRIPT_URL =
+  'https://www.recaptcha.net/recaptcha/api.js?onload=onloadcallback&render=explicit';
 
 function loadRecaptcha() {
   if (window.grecaptcha?.render) return Promise.resolve(window.grecaptcha);
@@ -89,19 +88,10 @@ export function useAuthRecaptcha(enabled: boolean, siteKey?: string | null) {
   const [open, setOpen] = useState(false);
   const [widgetKey, setWidgetKey] = useState(0);
   const actionRef = useRef<ProtectedAction | null>(null);
-  const timeoutRef = useRef<number | null>(null);
-
-  const clearPendingToken = useCallback(() => {
-    if (timeoutRef.current !== null) {
-      window.clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
-  }, []);
 
   // Plain handler: only ever invoked from the Dialog onOpenChange closure, so its
   // identity is never read and the manual useCallback was compiler-redundant residue.
   const cancel = () => {
-    clearPendingToken();
     setOpen(false);
     actionRef.current = null;
   };
@@ -118,24 +108,20 @@ export function useAuthRecaptcha(enabled: boolean, siteKey?: string | null) {
     setOpen(true);
   };
 
-  const handleToken = useCallback(
-    (token: string | null) => {
-      // Keep the legacy 500ms hold so the solved badge shows before the dialog
-      // closes, but make it cancelable: an unmount/cancel mid-hold must not fire a
-      // stale mutation against a torn-down surface.
-      clearPendingToken();
-      timeoutRef.current = window.setTimeout(() => {
-        timeoutRef.current = null;
-        const action = actionRef.current;
-        setOpen(false);
-        actionRef.current = null;
-        if (action) void action(token ?? undefined);
-      }, 500);
-    },
-    [clearPendingToken],
-  );
+  const handleToken = useCallback((token: string | null) => {
+    const action = actionRef.current;
+    setOpen(false);
+    actionRef.current = null;
+    if (action) void action(token ?? undefined);
+  }, []);
 
-  useEffect(() => clearPendingToken, [clearPendingToken]);
+  const handleWidgetError = useCallback((error: unknown) => {
+    setOpen(false);
+    actionRef.current = null;
+    toast.error(i18nGet('请求失败'), {
+      description: error instanceof Error ? error.message : i18nGet('请求失败'),
+    });
+  }, []);
 
   const recaptchaModal = (
     <Dialog
@@ -151,7 +137,13 @@ export function useAuthRecaptcha(enabled: boolean, siteKey?: string | null) {
         showCloseButton={false}
       >
         <DialogTitle className="sr-only">reCAPTCHA</DialogTitle>
-        {enabled ? <AuthRecaptchaWidget siteKey={siteKey} onToken={handleToken} /> : null}
+        {enabled ? (
+          <AuthRecaptchaWidget
+            siteKey={siteKey}
+            onToken={handleToken}
+            onError={handleWidgetError}
+          />
+        ) : null}
       </DialogContent>
     </Dialog>
   );
@@ -162,9 +154,11 @@ export function useAuthRecaptcha(enabled: boolean, siteKey?: string | null) {
 function AuthRecaptchaWidget({
   siteKey,
   onToken,
+  onError,
 }: {
   siteKey?: string | null;
   onToken: (token: string | null) => void;
+  onError: (error: unknown) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -188,29 +182,20 @@ function AuthRecaptchaWidget({
           size: 'normal',
           badge: 'bottomright',
           'expired-callback': () => onToken(null),
-          'error-callback': () => {},
+          'error-callback': () => onError(new Error('reCAPTCHA verification failed')),
         });
       })
-      .catch(() => {});
+      .catch((error: unknown) => {
+        if (!cancelled) onError(error);
+      });
 
     return () => {
       cancelled = true;
       if (grecaptchaApi && widgetId !== undefined) {
-        if (containerRef.current) delayCaptchaIframeRemoving(containerRef.current);
         grecaptchaApi.reset(widgetId);
       }
     };
-  }, [onToken, siteKey]);
+  }, [onError, onToken, siteKey]);
 
   return <div ref={containerRef} />;
-}
-
-function delayCaptchaIframeRemoving(captcha: HTMLElement): void {
-  const detached = document.createElement('div');
-  document.body.appendChild(detached);
-  detached.style.display = 'none';
-  while (captcha.firstChild) detached.appendChild(captcha.firstChild);
-  window.setTimeout(() => {
-    document.body.removeChild(detached);
-  }, 5000);
 }

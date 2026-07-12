@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router';
+import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import type { ParseKeys } from 'i18next';
+import type { SelectorParam } from 'i18next';
 import {
   AlertCircle,
   Bell,
@@ -31,24 +31,28 @@ import {
 } from './dashboard-dialogs';
 import { useDashboardSubscription } from './dashboard-subscription';
 import { useCommConfig, useNotices, useSubscribe, useUserStat } from '@/lib/queries';
-import { formatBytes, formatLegacyDateSlash } from '@v2board/config/format';
+import { formatBackendDateSlash, formatBytes } from '@v2board/config/format';
 import { cn } from '@/lib/cn';
+import { getSiteTitle } from '@/lib/runtime-config';
 
-interface Shortcut {
-  to: string;
+interface ShortcutBase {
+  id: string;
   icon: typeof BookOpen;
-  titleKey: ParseKeys;
-  descKey: ParseKeys;
-  onClick?: () => void;
+  titleKey: SelectorParam;
+  descKey: SelectorParam;
+  appendSiteTitle?: boolean;
 }
+
+type Shortcut = ShortcutBase &
+  ({ to: string; onClick?: never } | { onClick: () => void; to?: never });
 
 export default function DashboardPage() {
   const { t } = useTranslation();
-  const navigate = useNavigate();
+  const siteTitle = getSiteTitle();
   const subscribe = useSubscribe();
   const stat = useUserStat();
   const notices = useNotices();
-  useCommConfig();
+  const commConfig = useCommConfig();
   const [confirmAction, setConfirmAction] = useState<DashboardConfirmAction>(null);
   const [subscribeOpen, setSubscribeOpen] = useState(false);
 
@@ -60,41 +64,59 @@ export default function DashboardPage() {
   const vm = useDashboardSubscription(sub);
   const noticeList = notices.data ?? [];
   const subscribeUrl = typeof sub?.subscribe_url === 'string' ? sub.subscribe_url : '';
-  const legacySub = sub!;
+  const subscription = sub!;
 
   const requestResetPackage = () => setConfirmAction('reset-package');
   const requestNewPeriod = () => setConfirmAction('new-period');
+  const dashboardDataFailed = stat.isError || notices.isError || commConfig.isError;
+
+  const retryDashboardData = () => {
+    if (stat.isError) void stat.refetch();
+    if (notices.isError) void notices.refetch();
+    if (commConfig.isError) void commConfig.refetch();
+  };
 
   const shortcuts: Shortcut[] = [
     {
+      id: 'tutorial',
       to: '/knowledge',
       icon: BookOpen,
-      titleKey: 'dashboard.shortcut_tutorial',
-      descKey: 'dashboard.shortcut_tutorial_desc',
+      titleKey: $ => $.dashboard.shortcut_tutorial,
+      descKey: $ => $.dashboard.shortcut_tutorial_desc,
+      appendSiteTitle: true,
     },
     {
-      to: '#',
+      id: 'subscribe',
       icon: LinkIcon,
-      titleKey: 'dashboard.shortcut_one_click',
-      descKey: 'dashboard.shortcut_one_click_desc',
+      titleKey: $ => $.dashboard.shortcut_one_click,
+      descKey: $ => $.dashboard.shortcut_one_click_desc,
       onClick: () => setSubscribeOpen(true),
     },
     {
+      id: 'buy',
       to: vm.canRenew ? `/plan/${sub?.plan_id}` : '/plan',
       icon: vm.canRenew ? RefreshCcw : ShoppingBag,
-      titleKey: vm.canRenew ? 'dashboard.renew_subscribe' : 'dashboard.shortcut_buy',
-      descKey: vm.canRenew ? 'dashboard.shortcut_renew_desc' : 'dashboard.shortcut_buy_desc',
+      titleKey: vm.canRenew
+        ? $ => $.dashboard.renew_subscribe
+        : $ => $.dashboard.shortcut_buy,
+      descKey: vm.canRenew
+        ? $ => $.dashboard.shortcut_renew_desc
+        : $ => $.dashboard.shortcut_buy_desc,
     },
     {
+      id: 'support',
       to: '/ticket',
       icon: Headphones,
-      titleKey: 'dashboard.shortcut_problem',
-      descKey: 'dashboard.shortcut_problem_desc',
+      titleKey: $ => $.dashboard.shortcut_problem,
+      descKey: $ => $.dashboard.shortcut_problem_desc,
     },
   ];
 
   return (
     <PageShell data-testid="dashboard-page">
+      {dashboardDataFailed ? (
+        <ErrorState onRetry={retryDashboardData} data-testid="dashboard-data-error" />
+      ) : null}
       {(pendingOrderCount > 0 || openTicketCount > 0 || vm.shouldShowTrafficAlert) && (
         <div data-testid="dashboard-alerts" className="grid gap-3">
           {pendingOrderCount > 0 && (
@@ -106,15 +128,14 @@ export default function DashboardPage() {
             >
               <AlertCircle className="size-4 text-destructive" />
               <AlertDescription className="sm:flex sm:flex-row sm:items-center sm:gap-2">
-                <span>{t('dashboard.alert_pending_order')}</span>
-                <button
-                  type="button"
+                <span>{t($ => $.dashboard.alert_pending_order)}</span>
+                <Link
+                  to="/order"
                   data-testid="dashboard-alert-link"
                   className="font-medium text-foreground underline-offset-4 hover:underline"
-                  onClick={() => navigate('/order')}
                 >
-                  {t('order.pay_now')}
-                </button>
+                  {t($ => $.order.pay_now)}
+                </Link>
               </AlertDescription>
             </Alert>
           )}
@@ -128,16 +149,15 @@ export default function DashboardPage() {
               <Bell className="size-4 text-warning" />
               <AlertDescription className="sm:flex sm:flex-row sm:items-center sm:gap-2">
                 <span>
-                  <strong>{openTicketCount}</strong> {t('dashboard.alert_open_ticket_suffix')}
+                  <strong>{openTicketCount}</strong> {t($ => $.dashboard.alert_open_ticket_suffix)}
                 </span>
-                <button
-                  type="button"
+                <Link
+                  to="/ticket"
                   data-testid="dashboard-alert-link"
                   className="font-medium text-foreground underline-offset-4 hover:underline"
-                  onClick={() => navigate('/ticket')}
                 >
-                  {t('dashboard.alert_view')}
-                </button>
+                  {t($ => $.dashboard.alert_view)}
+                </Link>
               </AlertDescription>
             </Alert>
           )}
@@ -150,7 +170,7 @@ export default function DashboardPage() {
             >
               <AlertCircle className="size-4 text-info" />
               <AlertDescription className="sm:flex sm:flex-row sm:items-center sm:gap-2">
-                <span>{t('dashboard.alert_traffic_rate', { rate: vm.usedPctRounded })}</span>
+                <span>{t($ => $.dashboard.alert_traffic_rate, { rate: vm.usedPctRounded })}</span>
                 {vm.trafficAlertResetAvailable ? (
                   <button
                     type="button"
@@ -158,7 +178,7 @@ export default function DashboardPage() {
                     className="font-medium text-foreground underline-offset-4 hover:underline"
                     onClick={requestResetPackage}
                   >
-                    {t('dashboard.buy_reset_package')}
+                    {t($ => $.dashboard.buy_reset_package)}
                   </button>
                 ) : null}
               </AlertDescription>
@@ -167,14 +187,19 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <DashboardNoticeCarousel notices={noticeList} />
+      {noticeList.length ? (
+        <DashboardNoticeCarousel
+          key={noticeList.map((notice) => notice.id).join(',')}
+          notices={noticeList}
+        />
+      ) : null}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.75fr)]">
         <Card data-testid="dashboard-card" className="overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 border-b border-border pb-5">
             <div className="space-y-1">
               <CardTitle data-testid="dashboard-card-title" className="text-xl">
-                {t('dashboard.plan')}
+                {t($ => $.dashboard.plan)}
               </CardTitle>
             </div>
             <span className="flex size-9 items-center justify-center rounded-md border border-border bg-background text-muted-foreground">
@@ -199,39 +224,33 @@ export default function DashboardPage() {
                 <div className="space-y-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-2xl font-semibold tracking-normal text-card-foreground">
-                      {legacySub.plan!.name}
+                      {subscription.plan!.name}
                     </h2>
                     {vm.expired ? (
-                      <StatusBadge
-                        data-testid="dashboard-status-expired"
-                        tone="destructive"
-                      >
-                        {t('dashboard.expired_label')}
+                      <StatusBadge data-testid="dashboard-status-expired" tone="destructive">
+                        {t($ => $.dashboard.expired_label)}
                       </StatusBadge>
                     ) : (
-                      <StatusBadge
-                        data-testid="dashboard-status-active"
-                        tone="success"
-                      >
+                      <StatusBadge data-testid="dashboard-status-active" tone="success">
                         <CheckCircle2 className="size-3" />
-                        {t('dashboard.active')}
+                        {t($ => $.dashboard.active)}
                       </StatusBadge>
                     )}
                   </div>
-                  {legacySub.expired_at === null ? (
-                    <p className="text-sm text-muted-foreground">{t('dashboard.long_term')}</p>
+                  {subscription.expired_at === null ? (
+                    <p className="text-sm text-muted-foreground">{t($ => $.dashboard.long_term)}</p>
                   ) : vm.expired ? (
-                    <p className="text-sm text-muted-foreground">{t('dashboard.expired_label')}</p>
+                    <p className="text-sm text-muted-foreground">{t($ => $.dashboard.expired_label)}</p>
                   ) : (
                     <p className="text-sm leading-6 text-muted-foreground">
-                      {t('dashboard.expires_in', {
-                        date: formatLegacyDateSlash(legacySub.expired_at),
+                      {t($ => $.dashboard.expires_in, {
+                        date: formatBackendDateSlash(subscription.expired_at),
                         day: vm.daysLeft,
                       })}
-                      {legacySub.reset_day !== null
-                        ? legacySub.reset_day === 0
-                          ? t('dashboard.reset_today')
-                          : t('dashboard.reset_in_days', { reset_day: legacySub.reset_day })
+                      {subscription.reset_day !== null
+                        ? subscription.reset_day === 0
+                          ? t($ => $.dashboard.reset_today)
+                          : t($ => $.dashboard.reset_in_days, { reset_day: subscription.reset_day })
                         : ''}
                     </p>
                   )}
@@ -240,6 +259,10 @@ export default function DashboardPage() {
                 <div className="space-y-3">
                   <Progress
                     data-testid="dashboard-progress"
+                    aria-label={t($ => $.dashboard.used_traffic, {
+                      used: formatBytes(vm.used),
+                      total: formatBytes(subscription.transfer_enable),
+                    })}
                     value={vm.usedPctClamped}
                     indicatorClassName={cn(
                       vm.trafficTone === 'danger' && 'bg-destructive',
@@ -256,32 +279,32 @@ export default function DashboardPage() {
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="rounded-lg border border-border bg-muted/30 p-3">
                       <p className="text-sm font-medium">
-                        {t('dashboard.used_traffic', {
+                        {t($ => $.dashboard.used_traffic, {
                           used: formatBytes(vm.used),
-                          total: formatBytes(legacySub.transfer_enable),
+                          total: formatBytes(subscription.transfer_enable),
                         })}
                       </p>
                     </div>
                     <div className="rounded-lg border border-border bg-muted/30 p-3">
                       <p className="text-sm font-medium">
-                        {t('dashboard.devices_online', {
-                          alive_ip: legacySub.alive_ip,
-                          device_limit: legacySub.device_limit ?? '∞',
+                        {t($ => $.dashboard.devices_online, {
+                          alive_ip: subscription.alive_ip,
+                          device_limit: subscription.device_limit ?? '∞',
                         })}
                       </p>
                     </div>
                   </div>
                   <div className="sr-only">
                     <span>
-                      {t('dashboard.used_traffic', {
+                      {t($ => $.dashboard.used_traffic, {
                         used: formatBytes(vm.used),
-                        total: formatBytes(legacySub.transfer_enable),
+                        total: formatBytes(subscription.transfer_enable),
                       })}
                     </span>
                     <span>
-                      {t('dashboard.devices_online', {
-                        alive_ip: legacySub.alive_ip,
-                        device_limit: legacySub.device_limit ?? '∞',
+                      {t($ => $.dashboard.devices_online, {
+                        alive_ip: subscription.alive_ip,
+                        device_limit: subscription.device_limit ?? '∞',
                       })}
                     </span>
                   </div>
@@ -290,34 +313,34 @@ export default function DashboardPage() {
                 <div className="flex flex-wrap gap-2">
                   {vm.resetAvailable ? (
                     <Button type="button" onClick={requestResetPackage}>
-                      {t('dashboard.buy_reset_package')}
+                      {t($ => $.dashboard.buy_reset_package)}
                     </Button>
                   ) : null}
                   {vm.canNewPeriod ? (
                     <Button type="button" onClick={requestNewPeriod}>
-                      {t('dashboard.new_period')}
+                      {t($ => $.dashboard.new_period)}
                     </Button>
                   ) : null}
                   {vm.expired ? (
-                    <Button
-                      type="button"
-                      onClick={() => navigate(vm.canRenew ? `/plan/${legacySub.plan_id}` : '/plan')}
-                    >
-                      {vm.canRenew ? t('dashboard.renew_subscribe') : t('dashboard.buy_subscribe')}
+                    <Button asChild>
+                      <Link to={vm.canRenew ? `/plan/${subscription.plan_id}` : '/plan'}>
+                        {vm.canRenew
+                          ? t($ => $.dashboard.renew_subscribe)
+                          : t($ => $.dashboard.buy_subscribe)}
+                      </Link>
                     </Button>
                   ) : null}
                 </div>
               </div>
             ) : (
-              <button
-                type="button"
+              <Link
+                to="/plan"
                 data-testid="dashboard-empty-plan"
                 className="flex min-h-40 w-full flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-muted/30 text-center transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                onClick={() => navigate('/plan')}
               >
                 <Plus className="size-8 text-muted-foreground" />
-                <span className="text-sm font-medium">{t('dashboard.shortcut_buy')}</span>
-              </button>
+                <span className="text-sm font-medium">{t($ => $.dashboard.shortcut_buy)}</span>
+              </Link>
             )}
           </CardContent>
         </Card>
@@ -325,7 +348,7 @@ export default function DashboardPage() {
         <Card data-testid="dashboard-card" className="overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 border-b border-border pb-5">
             <CardTitle data-testid="dashboard-card-title" className="text-xl">
-              {t('dashboard.shortcuts')}
+              {t($ => $.dashboard.shortcuts)}
             </CardTitle>
             <span className="flex size-9 items-center justify-center rounded-md border border-border bg-background text-muted-foreground">
               <Smartphone className="size-4" />
@@ -334,27 +357,42 @@ export default function DashboardPage() {
           <CardContent className="grid gap-3">
             {shortcuts.map((shortcut) => {
               const Icon = shortcut.icon;
-              return (
-                <button
-                  type="button"
-                  key={shortcut.titleKey}
-                  data-testid="dashboard-shortcut"
-                  className="group flex min-h-[4.5rem] min-w-0 items-center gap-3 rounded-lg border border-border bg-background p-4 text-left transition-colors hover:bg-accent/70 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                  onClick={shortcut.onClick ?? (() => navigate(shortcut.to))}
-                >
+              const content = (
+                <>
                   <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground transition-colors group-hover:bg-background group-hover:text-foreground">
                     <Icon className="size-4" />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium">{t(shortcut.titleKey)}</span>
-                    <span className="block truncate text-sm leading-6 text-muted-foreground">
+                    <span className="grid truncate text-sm font-medium">{t(shortcut.titleKey)}</span>
+                    <span className="grid truncate text-sm leading-6 text-muted-foreground">
                       {t(shortcut.descKey)}
-                      {shortcut.descKey === 'dashboard.shortcut_tutorial_desc' ? (
-                        <> {window.settings?.title}</>
-                      ) : null}
+                      {shortcut.appendSiteTitle ? <> {siteTitle}</> : null}
                     </span>
                   </span>
+                </>
+              );
+              const className =
+                'group flex min-h-[4.5rem] min-w-0 items-center gap-3 rounded-lg border border-border bg-background p-4 text-left transition-colors hover:bg-accent/70 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50';
+
+              return shortcut.onClick ? (
+                <button
+                  type="button"
+                  key={shortcut.id}
+                  data-testid="dashboard-shortcut"
+                  className={className}
+                  onClick={shortcut.onClick}
+                >
+                  {content}
                 </button>
+              ) : (
+                <Link
+                  key={shortcut.id}
+                  to={shortcut.to}
+                  data-testid="dashboard-shortcut"
+                  className={className}
+                >
+                  {content}
+                </Link>
               );
             })}
           </CardContent>

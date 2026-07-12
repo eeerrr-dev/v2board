@@ -1,5 +1,0 @@
-/* Restored document-level selection effects. */
-::selection {
-  color: #fff;
-  background: var(--color-brand-500);
-}

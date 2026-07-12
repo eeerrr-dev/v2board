@@ -6,6 +6,7 @@
   "main": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./clipboard": "./src/clipboard.ts",
     "./vite": "./src/vite.ts",
     "./format": "./src/format.ts"
   },
@@ -16,6 +17,8 @@
     "dayjs": "catalog:"
   },
   "devDependencies": {
+    "@typescript/native": "catalog:",
+    "@types/node": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:"
   }

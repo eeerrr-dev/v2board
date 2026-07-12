@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
-import type { ReactNode } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 import { screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/render';
+import { createTestTranslation } from '@/test/i18next-selector';
+import { setRuntimeConfig } from '@/test/runtime-config';
 import DashboardPage from './dashboard';
 
 const mocks = vi.hoisted(() => ({
@@ -10,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   labels: {
     'common.cancel': '取消',
     'common.confirm': '确定',
+    'common.error_title': '加载失败',
+    'common.retry': '重试',
     'dashboard.alert_open_ticket_suffix': '条工单正在处理中',
     'dashboard.alert_pending_order': '还有没支付的订单',
     'dashboard.alert_traffic_rate': '当前已使用流量达 {rate}%',
@@ -55,6 +59,8 @@ const mocks = vi.hoisted(() => ({
   } as Record<string, string>,
   navigate: vi.fn(),
   newPeriodMutateAsync: vi.fn(),
+  commIsError: false,
+  noticesIsError: false,
   notices: [] as Array<{
     content?: string;
     created_at: number;
@@ -64,11 +70,15 @@ const mocks = vi.hoisted(() => ({
     title: string;
   }>,
   refetchSubscribe: vi.fn(),
+  refetchComm: vi.fn(),
+  refetchNotices: vi.fn(),
+  refetchStat: vi.fn(),
   saveOrder: vi.fn(),
   stat: {
     pending_orders: 0,
     pending_tickets: 0,
   },
+  statIsError: false,
   subscribe: {} as Record<string, unknown> | undefined,
   subscribeIsError: false,
   subscribeIsLoading: false,
@@ -86,8 +96,9 @@ const embla = vi.hoisted(() => ({
 
 vi.mock('embla-carousel-react', () => {
   const api = {
-    scrollSnapList: () => [] as number[],
+    scrollSnapList: () => mocks.notices.map((_, index) => index),
     selectedScrollSnap: () => embla.index,
+    slidesInView: () => [embla.index],
     scrollTo: (index: number) => {
       embla.index = index;
       (embla.listeners.select ?? []).forEach((cb) => cb());
@@ -109,24 +120,29 @@ vi.mock('embla-carousel-react', () => {
 });
 
 vi.mock('react-router', () => ({
+  Link: ({ to, onClick, children, ...rest }: { to: string } & Omit<ComponentProps<'a'>, 'href'>) => (
+    <a
+      href={to}
+      onClick={(event) => {
+        onClick?.(event);
+        if (!event.defaultPrevented) {
+          event.preventDefault();
+          mocks.navigate(to);
+        }
+      }}
+      {...rest}
+    >
+      {children}
+    </a>
+  ),
   useNavigate: () => mocks.navigate,
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    i18n: { language: 'zh-CN' },
-    t: (key: string, values?: Record<string, unknown>) => {
-      let label = mocks.labels[key] ?? key;
-      Object.entries(values ?? {}).forEach(([name, value]) => {
-        label = label.replaceAll(`{{${name}}}`, String(value));
-        label = label.replaceAll(`{${name}}`, String(value));
-      });
-      return label;
-    },
-  }),
+  useTranslation: () => createTestTranslation(mocks.labels),
 }));
 
-vi.mock('@/components/ui/shadcn-dialog', () => ({
+vi.mock('@/components/ui/dialog', () => ({
   Dialog: ({
     children,
     open,
@@ -155,6 +171,8 @@ vi.mock('@/components/ui/shadcn-dialog', () => ({
 }));
 
 vi.mock('@/components/ui/alert-dialog', () => ({
+  AlertDialogAction: ({ children }: { children: ReactNode }) => <>{children}</>,
+  AlertDialogCancel: ({ children }: { children: ReactNode }) => <>{children}</>,
   AlertDialog: ({
     children,
     open,
@@ -183,17 +201,26 @@ vi.mock('@/components/ui/alert-dialog', () => ({
 }));
 
 vi.mock('@/lib/queries', () => ({
-  useCommConfig: () => ({}),
+  useCommConfig: () => ({
+    isError: mocks.commIsError,
+    refetch: mocks.refetchComm,
+  }),
   useNewPeriodMutation: () => ({
     isPending: false,
-    mutateAsync: mocks.newPeriodMutateAsync,
+    mutate: (_payload: undefined, options?: { onSuccess?: (data: unknown) => void }) => {
+      void Promise.resolve(mocks.newPeriodMutateAsync()).then(options?.onSuccess);
+    },
   }),
   useSaveOrderMutation: () => ({
     isPending: false,
-    mutateAsync: mocks.saveOrder,
+    mutate: (payload: unknown, options?: { onSuccess?: (data: unknown) => void }) => {
+      void Promise.resolve(mocks.saveOrder(payload)).then(options?.onSuccess);
+    },
   }),
   useNotices: () => ({
     data: mocks.notices,
+    isError: mocks.noticesIsError,
+    refetch: mocks.refetchNotices,
   }),
   useSubscribe: () => ({
     data: mocks.subscribe,
@@ -203,10 +230,12 @@ vi.mock('@/lib/queries', () => ({
   }),
   useUserStat: () => ({
     data: mocks.stat,
+    isError: mocks.statIsError,
+    refetch: mocks.refetchStat,
   }),
 }));
 
-vi.mock('@/lib/legacy-settings', () => ({
+vi.mock('@v2board/config/clipboard', () => ({
   copyText: mocks.copyText,
 }));
 
@@ -246,7 +275,12 @@ function resetMocks() {
   mocks.navigate.mockReset();
   mocks.newPeriodMutateAsync.mockReset();
   mocks.newPeriodMutateAsync.mockResolvedValue(true);
+  mocks.commIsError = false;
   mocks.notices = [];
+  mocks.noticesIsError = false;
+  mocks.refetchComm.mockReset();
+  mocks.refetchNotices.mockReset();
+  mocks.refetchStat.mockReset();
   mocks.refetchSubscribe.mockReset();
   mocks.refetchSubscribe.mockResolvedValue({});
   mocks.saveOrder.mockReset();
@@ -255,15 +289,16 @@ function resetMocks() {
     pending_orders: 0,
     pending_tickets: 0,
   };
+  mocks.statIsError = false;
   mocks.subscribe = baseSubscribe();
   mocks.subscribeIsError = false;
   mocks.subscribeIsLoading = false;
   mocks.toastSuccess.mockReset();
   embla.index = 0;
   embla.listeners = {};
-  window.settings = {
+  setRuntimeConfig({
     title: 'V2Board',
-  };
+  });
 }
 
 describe('DashboardPage shadcn shell rendering', () => {
@@ -289,7 +324,10 @@ describe('DashboardPage shadcn shell rendering', () => {
     const alerts = screen.getAllByRole('alert');
     const danger = alerts.find((alert) => alert.getAttribute('data-alert-kind') === 'danger')!;
     expect(danger).toHaveTextContent('还有没支付的订单');
-    expect(within(danger).getByRole('button', { name: '立即支付' })).toBeInTheDocument();
+    expect(within(danger).getByRole('link', { name: '立即支付' })).toHaveAttribute(
+      'href',
+      '/order',
+    );
 
     const warning = alerts.find((alert) => alert.getAttribute('data-alert-kind') === 'warning')!;
     expect(warning).toHaveTextContent('3 条工单正在处理中');
@@ -298,11 +336,17 @@ describe('DashboardPage shadcn shell rendering', () => {
     expect(info).toHaveTextContent('当前已使用流量达 85%');
 
     expect(screen.getByTestId('dashboard-notice-card')).toHaveTextContent('Notice A');
+    expect(screen.getByTestId('dashboard-notice-image')).toHaveAttribute('loading', 'eager');
+    expect(screen.getByTestId('dashboard-notice-image')).toHaveAttribute('decoding', 'async');
+    expect(screen.getByTestId('dashboard-notice-image')).toHaveAttribute('fetchpriority', 'high');
     // The backend `弹窗` tag auto-opens the notice dialog with its body.
     expect(screen.getByText('Notice body')).toBeInTheDocument();
 
     expect(screen.getByText('我的订阅')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Pro' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('progressbar', { name: '已用 850.00 B / 总计 1000.00 B' }),
+    ).toHaveAttribute('aria-valuenow', '85');
     expect(screen.getByTestId('dashboard-progress-bar')).toBeInTheDocument();
     expect(screen.getAllByText('在线设备 2/∞').length).toBeGreaterThan(0);
 
@@ -312,8 +356,8 @@ describe('DashboardPage shadcn shell rendering', () => {
     const tutorial = shortcuts.find((shortcut) => shortcut.textContent?.includes('查看教程'))!;
     expect(tutorial).toHaveTextContent('学习如何使用 V2Board');
     expect(screen.getByRole('button', { name: /一键订阅/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /续费订阅/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /遇到问题/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /续费订阅/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /遇到问题/ })).toBeInTheDocument();
   });
 
   it('renders the buy-subscribe empty state and routes it to the plan list', async () => {
@@ -344,6 +388,22 @@ describe('DashboardPage shadcn shell rendering', () => {
     expect(mocks.refetchSubscribe).toHaveBeenCalled();
   });
 
+  it('surfaces auxiliary dashboard failures and retries every failed query', async () => {
+    mocks.statIsError = true;
+    mocks.noticesIsError = true;
+    mocks.commIsError = true;
+
+    const { user } = renderWithProviders(<DashboardPage />);
+
+    const error = screen.getByTestId('dashboard-data-error');
+    expect(error).toHaveTextContent('加载失败');
+    await user.click(within(error).getByTestId('error-state-retry'));
+
+    expect(mocks.refetchStat).toHaveBeenCalledTimes(1);
+    expect(mocks.refetchNotices).toHaveBeenCalledTimes(1);
+    expect(mocks.refetchComm).toHaveBeenCalledTimes(1);
+  });
+
   it('renders a loading state without plan content while subscription data is incomplete', () => {
     mocks.subscribe = {};
 
@@ -355,7 +415,7 @@ describe('DashboardPage shadcn shell rendering', () => {
     expect(screen.queryByRole('heading', { name: 'Pro' })).not.toBeInTheDocument();
   });
 
-  it('keeps dashboard dates behind the user legacy date formatter output', () => {
+  it('keeps dashboard dates behind the backend timestamp formatter output', () => {
     renderWithProviders(<DashboardPage />);
 
     expect(screen.getByText(/2100\/01\/01/)).toBeInTheDocument();
@@ -374,7 +434,10 @@ describe('DashboardPage shadcn shell actions', () => {
     const menu = screen.getByTestId('dashboard-subscribe-menu');
     expect(screen.getByTestId('dashboard-subscribe-copy')).toHaveTextContent('复制订阅地址');
     const hiddify = within(menu).getByRole('button', { name: /导入到 Hiddify/ });
-    expect(hiddify.querySelector('img')?.getAttribute('src')).toContain('Hiddify.png');
+    const hiddifyIcon = hiddify.querySelector('img');
+    expect(hiddifyIcon?.getAttribute('src')).toContain('Hiddify.png');
+    expect(hiddifyIcon).toHaveAttribute('loading', 'lazy');
+    expect(hiddifyIcon).toHaveAttribute('decoding', 'async');
 
     await user.click(screen.getByTestId('dashboard-subscribe-copy'));
     expect(mocks.copyText).toHaveBeenCalledWith('https://example.test/sub');
@@ -395,12 +458,14 @@ describe('DashboardPage shadcn shell actions', () => {
         content: '<p>First notice</p>',
         created_at: 1_700_000_000,
         id: 1,
+        img_url: '/notice-a.jpg',
         title: 'Notice A',
       },
       {
         content: '<p>Second notice</p>',
         created_at: 1_700_100_000,
         id: 2,
+        img_url: '/notice-b.jpg',
         title: 'Notice B',
       },
     ];
@@ -412,6 +477,22 @@ describe('DashboardPage shadcn shell actions', () => {
     const slides = screen.getAllByTestId('dashboard-notice-slide');
     expect(slides[0]).toHaveAttribute('data-active', 'true');
     expect(slides[1]).toHaveAttribute('data-active', 'false');
+    expect(within(slides[0]!).getByTestId('dashboard-notice-image')).toHaveAttribute(
+      'loading',
+      'eager',
+    );
+    expect(within(slides[0]!).getByTestId('dashboard-notice-image')).toHaveAttribute(
+      'decoding',
+      'async',
+    );
+    expect(within(slides[1]!).getByTestId('dashboard-notice-image')).toHaveAttribute(
+      'loading',
+      'lazy',
+    );
+    expect(within(slides[1]!).getByTestId('dashboard-notice-image')).toHaveAttribute(
+      'decoding',
+      'async',
+    );
 
     // Clicking the second dot scrolls embla and moves the active flag onto slide 2.
     await user.click(screen.getByRole('button', { name: '公告 2' }));
@@ -464,9 +545,9 @@ describe('DashboardPage shadcn shell actions', () => {
     mocks.stat = { pending_orders: 1, pending_tickets: 1 };
     const { user } = renderWithProviders(<DashboardPage />);
 
-    await user.click(screen.getByRole('button', { name: '立即支付' }));
-    await user.click(screen.getByRole('button', { name: '立即查看' }));
-    await user.click(screen.getByRole('button', { name: /查看教程/ }));
+    await user.click(screen.getByRole('link', { name: '立即支付' }));
+    await user.click(screen.getByRole('link', { name: '立即查看' }));
+    await user.click(screen.getByRole('link', { name: /查看教程/ }));
 
     expect(mocks.navigate).toHaveBeenCalledWith('/order');
     expect(mocks.navigate).toHaveBeenCalledWith('/ticket');

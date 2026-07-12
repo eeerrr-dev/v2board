@@ -14,14 +14,6 @@ export function pickFetchQueryFields(query, keys) {
   return reduced;
 }
 
-export function scenarioByLabel(label) {
-  const scenario = scenarios.find((item) => item.label === label);
-  if (!scenario) {
-    throw new Error(`Unknown visual parity scenario ${label}`);
-  }
-  return scenario;
-}
-
 export function stableJson(value) {
   return JSON.stringify(sortForStableJson(value));
 }

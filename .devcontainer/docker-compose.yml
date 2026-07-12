@@ -7,14 +7,17 @@
 # tree never gains node_modules / .pnpm-store (AGENTS.md: no host build artifacts).
 services:
   dev:
-    image: mcr.microsoft.com/devcontainers/typescript-node:22-bookworm
+    build:
+      context: ..
+      dockerfile: Dockerfile.rust
+      target: development
     command: sleep infinity
-    working_dir: /workspaces/v2board/frontend
+    working_dir: /workspaces/v2board
     environment:
       COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
     volumes:
       - ..:/workspaces/v2board:cached
-      # node_modules at every workspace location (root + 2 apps + 5 packages) and
+      # node_modules at every workspace location (root + 2 apps + 4 packages) and
       # the pnpm store, all in volumes so they stay off the host tree:
       - dev-frontend-node_modules:/workspaces/v2board/frontend/node_modules
       - dev-user-node_modules:/workspaces/v2board/frontend/apps/user/node_modules
@@ -22,12 +25,13 @@ services:
       - dev-api-client-node_modules:/workspaces/v2board/frontend/packages/api-client/node_modules
       - dev-config-node_modules:/workspaces/v2board/frontend/packages/config/node_modules
       - dev-i18n-node_modules:/workspaces/v2board/frontend/packages/i18n/node_modules
-      - dev-tokens-node_modules:/workspaces/v2board/frontend/packages/tokens/node_modules
       - dev-types-node_modules:/workspaces/v2board/frontend/packages/types/node_modules
-      # pnpm co-locates its content store on the project's drive root (the bind-mount
-      # root = /workspaces/v2board), ignoring store-dir when it sits on another
-      # device. Mount a volume at exactly that path so the store stays off the host.
+      # post-create.sh pins pnpm's content store to this workspace-root path.
+      # Shadow it with a volume so the store stays off the host.
       - dev-pnpm-store:/workspaces/v2board/.pnpm-store
+      - dev-rust-target:/app/target
+      - dev-cargo-registry:/usr/local/cargo/registry
+      - dev-cargo-git:/usr/local/cargo/git
 
 volumes:
   dev-frontend-node_modules:
@@ -36,6 +40,8 @@ volumes:
   dev-api-client-node_modules:
   dev-config-node_modules:
   dev-i18n-node_modules:
-  dev-tokens-node_modules:
   dev-types-node_modules:
   dev-pnpm-store:
+  dev-rust-target:
+  dev-cargo-registry:
+  dev-cargo-git:

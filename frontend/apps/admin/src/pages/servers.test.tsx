@@ -4,19 +4,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ServersPage, {
   applyServerNodeColumnControls,
   createServerSortPayload,
-  getLegacyBinarySelectValue,
-  getLegacyNetworkSettingsPlaceholder,
-  getLegacyNumericSelectValue,
-  getLegacyServerInitialValues,
-  getLegacyV2nodeSecurityValue,
-  installLegacyServerSortPrompt,
-  moveServerNodeByLegacyDragIndexes,
-  shouldPromptLegacyServerSortClick,
+  getBinarySelectValue,
+  getNetworkSettingsPlaceholder,
+  getNumericSelectValue,
+  getV2nodeSecurityValue,
+  moveServerNodeByDragIndexes,
 } from './servers';
+import {
+  serverNodeFormSchema,
+  switchV2nodeProtocol,
+  type V2nodeEditorValues,
+} from './server-form-schema';
+import { createTestTranslation } from '@/test/i18next-selector';
 
 // The admin server manager is a redesigned pure shadcn island (route dispatch →
-// PageHeader + DataTable + Dialog/Sheet editors). Legacy ant-table / OneUI /
-// LegacyModal DOM byte-pins and the `serversSource` string assertions are
+// PageHeader + DataTable + Dialog/Sheet editors). Retired ant-table / OneUI /
+// modal DOM byte-pins and the `serversSource` string assertions are
 // retired. What stays covered is the permanent Tier-1 contract that real proxy
 // nodes and the shared backend consume: the per-protocol node-config field
 // keys/defaults/coercions (the exported pure helpers), the node/group/route save
@@ -99,40 +102,88 @@ const mocks = vi.hoisted(() => ({
   confirm: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
+  groupsData: undefined as typeof GROUPS | undefined,
+  nodesData: undefined as typeof NODES | undefined,
+  routesData: undefined as typeof ROUTES | undefined,
+  groupsError: false,
+  nodesError: false,
+  routesError: false,
+  blockerState: 'unblocked' as 'unblocked' | 'blocked' | 'proceeding',
+  blockerProceed: vi.fn(),
+  blockerReset: vi.fn(),
+  useBlocker: vi.fn(),
+  beforeUnload: undefined as ((event: BeforeUnloadEvent) => void) | undefined,
+  useBeforeUnload: vi.fn(),
 }));
 
 const defaultUserAgent = window.navigator.userAgent;
 
 vi.mock('react-router', () => ({
   useLocation: () => ({ pathname: mocks.pathname }),
+  useBlocker: mocks.useBlocker,
+  useBeforeUnload: mocks.useBeforeUnload,
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => createTestTranslation({}),
 }));
 
-vi.mock('@/lib/api', () => ({ apiClient: {} }));
-
-vi.mock('@v2board/api-client', () => ({ admin: { saveServer: mocks.saveServer } }));
-
 vi.mock('@/lib/toast', () => ({
-  toast: { success: mocks.toastSuccess, error: mocks.toastError, loading: vi.fn(), dismiss: vi.fn() },
+  toast: {
+    success: mocks.toastSuccess,
+    error: mocks.toastError,
+    loading: vi.fn(),
+    dismiss: vi.fn(),
+  },
 }));
 
 vi.mock('@/components/ui/confirm-dialog', () => ({ confirmDialog: mocks.confirm }));
 
 vi.mock('@/lib/queries', () => ({
-  useServerGroups: () => ({ isFetching: false, refetch: mocks.refetch, data: GROUPS }),
-  useServerNodes: () => ({ isFetching: false, refetch: mocks.refetch, data: NODES }),
-  useServerRoutes: () => ({ isFetching: false, refetch: mocks.refetch, data: ROUTES }),
-  useSaveServerGroupMutation: () => ({ isPending: false, mutateAsync: mocks.saveGroup }),
+  useServerGroups: () => ({
+    isFetching: false,
+    isError: mocks.groupsError,
+    isSuccess: !mocks.groupsError && mocks.groupsData !== undefined,
+    refetch: mocks.refetch,
+    data: mocks.groupsData,
+  }),
+  useServerNodes: () => ({
+    isFetching: false,
+    isError: mocks.nodesError,
+    isSuccess: !mocks.nodesError && mocks.nodesData !== undefined,
+    refetch: mocks.refetch,
+    data: mocks.nodesData,
+  }),
+  useServerRoutes: () => ({
+    isFetching: false,
+    isError: mocks.routesError,
+    isSuccess: !mocks.routesError && mocks.routesData !== undefined,
+    refetch: mocks.refetch,
+    data: mocks.routesData,
+  }),
+  useSaveServerGroupMutation: () => ({
+    isPending: false,
+    mutate: (payload: unknown, options?: { onSuccess?: (data: unknown) => void }) => {
+      void Promise.resolve(mocks.saveGroup(payload)).then(options?.onSuccess, () => undefined);
+    },
+  }),
   useDropServerGroupMutation: () => ({ mutate: mocks.dropGroup }),
-  useSaveServerRouteMutation: () => ({ isPending: false, mutateAsync: mocks.saveRoute }),
+  useSaveServerRouteMutation: () => ({
+    isPending: false,
+    mutate: (payload: unknown, options?: { onSuccess?: (data: unknown) => void }) => {
+      void Promise.resolve(mocks.saveRoute(payload)).then(options?.onSuccess, () => undefined);
+    },
+  }),
   useDropServerRouteMutation: () => ({ mutate: mocks.dropRoute }),
   useDropServerMutation: () => ({ mutate: mocks.dropServer }),
   useCopyServerMutation: () => ({ mutate: mocks.copyServer }),
   useUpdateServerMutation: () => ({ mutate: mocks.updateServer }),
   useSortServerNodesMutation: () => ({ mutate: mocks.sortServer }),
+  useSaveServerMutation: () => ({
+    mutate: (payload: unknown, options?: { onSuccess?: (data: unknown) => void }) => {
+      void Promise.resolve(mocks.saveServer(payload)).then(options?.onSuccess, () => undefined);
+    },
+  }),
 }));
 
 function setUserAgent(value: string) {
@@ -141,6 +192,12 @@ function setUserAgent(value: string) {
 
 beforeEach(() => {
   mocks.pathname = '/server/group';
+  mocks.groupsData = GROUPS;
+  mocks.nodesData = NODES;
+  mocks.routesData = ROUTES;
+  mocks.groupsError = false;
+  mocks.nodesError = false;
+  mocks.routesError = false;
   setUserAgent(defaultUserAgent);
   document.body.innerHTML = '';
   mocks.saveGroup.mockReset().mockResolvedValue(undefined);
@@ -156,6 +213,21 @@ beforeEach(() => {
   mocks.confirm.mockReset().mockResolvedValue(true);
   mocks.toastSuccess.mockReset();
   mocks.toastError.mockReset();
+  mocks.blockerState = 'unblocked';
+  mocks.blockerProceed.mockReset();
+  mocks.blockerReset.mockReset();
+  mocks.useBlocker.mockReset().mockImplementation(() => ({
+    state: mocks.blockerState,
+    location: undefined,
+    proceed: mocks.blockerProceed,
+    reset: mocks.blockerReset,
+  }));
+  mocks.beforeUnload = undefined;
+  mocks.useBeforeUnload
+    .mockReset()
+    .mockImplementation((callback: (event: BeforeUnloadEvent) => void) => {
+      mocks.beforeUnload = callback;
+    });
   // Radix Select / DropdownMenu pointer + scroll shims for happy-dom.
   window.HTMLElement.prototype.scrollIntoView = vi.fn();
   window.HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
@@ -189,6 +261,15 @@ describe('ServerGroupPage (shadcn island)', () => {
     expect(within(table).getByText('组名称')).toBeInTheDocument();
   });
 
+  it('does not render the empty state when the group query failed', () => {
+    mocks.groupsData = undefined;
+    mocks.groupsError = true;
+    render(<ServersPage />);
+
+    expect(screen.getByText('权限组加载失败')).toBeInTheDocument();
+    expect(screen.queryByTestId('server-groups-empty')).not.toBeInTheDocument();
+  });
+
   it('submits the group save payload from the create dialog', async () => {
     const user = userEvent.setup();
     render(<ServersPage />);
@@ -197,16 +278,57 @@ describe('ServerGroupPage (shadcn island)', () => {
       target: { value: 'New Group' },
     });
     await user.click(screen.getByTestId('server-group-submit'));
+    await waitFor(() => expect(mocks.saveGroup).toHaveBeenCalledWith({ name: 'New Group' }));
+  });
+
+  it('submits the exact group edit payload with its record id', async () => {
+    const user = userEvent.setup();
+    render(<ServersPage />);
+
+    await user.click(screen.getByTestId('server-group-edit-1'));
+    fireEvent.change(await screen.findByTestId('server-group-name'), {
+      target: { value: 'VIP Updated' },
+    });
+    await user.click(screen.getByTestId('server-group-submit'));
+
     await waitFor(() =>
-      expect(mocks.saveGroup).toHaveBeenCalledWith(expect.objectContaining({ name: 'New Group' })),
+      expect(mocks.saveGroup).toHaveBeenCalledWith({ id: 1, name: 'VIP Updated' }),
     );
+  });
+
+  it('shows an inline group error and sends no request for an empty name', async () => {
+    const user = userEvent.setup();
+    render(<ServersPage />);
+
+    await user.click(screen.getByTestId('server-group-create'));
+    await user.click(await screen.findByTestId('server-group-submit'));
+
+    expect(await screen.findByText('组名不能为空')).toBeInTheDocument();
+    expect(mocks.saveGroup).not.toHaveBeenCalled();
+    expect(screen.getByTestId('server-group-editor')).toBeInTheDocument();
+  });
+
+  it('preserves the group editor and value after the save request fails', async () => {
+    const user = userEvent.setup();
+    mocks.saveGroup.mockRejectedValueOnce(new Error('save failed'));
+    render(<ServersPage />);
+
+    await user.click(screen.getByTestId('server-group-create'));
+    fireEvent.change(await screen.findByTestId('server-group-name'), {
+      target: { value: 'Retry Group' },
+    });
+    await user.click(screen.getByTestId('server-group-submit'));
+
+    await waitFor(() => expect(mocks.saveGroup).toHaveBeenCalledOnce());
+    expect(screen.getByTestId('server-group-editor')).toBeInTheDocument();
+    expect(screen.getByTestId('server-group-name')).toHaveValue('Retry Group');
   });
 
   it('drops a group only after confirmation', async () => {
     const user = userEvent.setup();
     render(<ServersPage />);
     await user.click(screen.getByTestId('server-group-delete-1'));
-    await waitFor(() => expect(mocks.dropGroup).toHaveBeenCalledWith(1, expect.anything()));
+    await waitFor(() => expect(mocks.dropGroup).toHaveBeenCalledWith(1));
   });
 });
 
@@ -229,6 +351,15 @@ describe('ServerRoutePage (shadcn island)', () => {
     expect(within(table).getByText('自定义默认出站')).toBeInTheDocument();
   });
 
+  it('does not render the empty state when the route query failed', () => {
+    mocks.routesData = undefined;
+    mocks.routesError = true;
+    render(<ServersPage />);
+
+    expect(screen.getByText('路由列表加载失败')).toBeInTheDocument();
+    expect(screen.queryByTestId('server-routes-empty')).not.toBeInTheDocument();
+  });
+
   it('parses the multiline match value into a filtered array on save', async () => {
     const user = userEvent.setup();
     render(<ServersPage />);
@@ -241,10 +372,46 @@ describe('ServerRoutePage (shadcn island)', () => {
     });
     await user.click(screen.getByTestId('server-route-submit'));
     await waitFor(() =>
-      expect(mocks.saveRoute).toHaveBeenCalledWith(
-        expect.objectContaining({ remarks: 'Rule', match: ['a.com', 'b.com'] }),
-      ),
+      expect(mocks.saveRoute).toHaveBeenCalledWith({
+        remarks: 'Rule',
+        match: ['a.com', 'b.com'],
+        action: 'block',
+        action_value: null,
+      }),
     );
+  });
+
+  it('keeps the route editor open and sends no request for an invalid form', async () => {
+    const user = userEvent.setup();
+    render(<ServersPage />);
+
+    await user.click(screen.getByTestId('server-route-create'));
+    await user.click(await screen.findByTestId('server-route-submit'));
+
+    expect(await screen.findByText('备注不能为空')).toBeInTheDocument();
+    expect(screen.getByText('匹配值不能为空')).toBeInTheDocument();
+    expect(mocks.saveRoute).not.toHaveBeenCalled();
+    expect(screen.getByTestId('server-route-editor')).toBeInTheDocument();
+  });
+
+  it('preserves the route editor and values after the save request fails', async () => {
+    const user = userEvent.setup();
+    mocks.saveRoute.mockRejectedValueOnce(new Error('save failed'));
+    render(<ServersPage />);
+
+    await user.click(screen.getByTestId('server-route-create'));
+    fireEvent.change(await screen.findByTestId('server-route-remarks'), {
+      target: { value: 'Retry Route' },
+    });
+    fireEvent.change(screen.getByTestId('server-route-match'), {
+      target: { value: 'retry.example.test' },
+    });
+    await user.click(screen.getByTestId('server-route-submit'));
+
+    await waitFor(() => expect(mocks.saveRoute).toHaveBeenCalledOnce());
+    expect(screen.getByTestId('server-route-editor')).toBeInTheDocument();
+    expect(screen.getByTestId('server-route-remarks')).toHaveValue('Retry Route');
+    expect(screen.getByTestId('server-route-match')).toHaveValue('retry.example.test');
   });
 
   it('keeps the existing match array when editing without changes', async () => {
@@ -254,8 +421,29 @@ describe('ServerRoutePage (shadcn island)', () => {
     await user.click(await screen.findByTestId('server-route-submit'));
     await waitFor(() =>
       expect(mocks.saveRoute).toHaveBeenCalledWith(
-        expect.objectContaining({ match: ['geosite:netflix', 'domain:example.com'], action: 'route' }),
+        expect.objectContaining({
+          match: ['geosite:netflix', 'domain:example.com'],
+          action: 'route',
+        }),
       ),
+    );
+  });
+
+  it('submits the exact default-out edit payload without requiring match rows', async () => {
+    const user = userEvent.setup();
+    render(<ServersPage />);
+
+    await user.click(screen.getByTestId('server-route-edit-2'));
+    await user.click(await screen.findByTestId('server-route-submit'));
+
+    await waitFor(() =>
+      expect(mocks.saveRoute).toHaveBeenCalledWith({
+        id: 2,
+        remarks: 'Default',
+        match: [],
+        action: 'default_out',
+        action_value: '{}',
+      }),
     );
   });
 });
@@ -279,14 +467,50 @@ describe('ServerManagePage (shadcn island)', () => {
     expect(within(table).getByText('2 => 1')).toBeInTheDocument();
   });
 
+  it('does not render the empty state when the node query failed', () => {
+    mocks.nodesData = undefined;
+    mocks.nodesError = true;
+    render(<ServersPage />);
+
+    expect(screen.getByText('节点列表加载失败')).toBeInTheDocument();
+    expect(screen.queryByTestId('server-nodes-empty')).not.toBeInTheDocument();
+  });
+
+  it('blocks node editing while a dependent group query is unavailable', async () => {
+    const user = userEvent.setup();
+    mocks.groupsData = undefined;
+    mocks.groupsError = true;
+    render(<ServersPage />);
+
+    const addButton = screen.getByTestId('node-add');
+    expect(addButton).toBeDisabled();
+    expect(screen.getByText('权限组加载失败，无法编辑节点')).toBeInTheDocument();
+    await user.click(addButton);
+
+    expect(screen.queryByTestId('node-add-shadowsocks')).not.toBeInTheDocument();
+    expect(mocks.saveServer).not.toHaveBeenCalled();
+  });
+
+  it('blocks node editing while the dependent route query is unavailable', () => {
+    mocks.routesData = undefined;
+    mocks.routesError = true;
+    render(<ServersPage />);
+
+    expect(screen.getByTestId('node-add')).toBeDisabled();
+    expect(screen.getByText('路由列表加载失败，无法编辑节点')).toBeInTheDocument();
+    expect(mocks.saveServer).not.toHaveBeenCalled();
+  });
+
   it('dispatches the show toggle with the original key/value shape', async () => {
     const user = userEvent.setup();
     render(<ServersPage />);
     await user.click(screen.getByLabelText('切换「Tokyo」显隐'));
-    expect(mocks.updateServer).toHaveBeenCalledWith(
-      { type: 'shadowsocks', id: 1, key: 'show', value: 0 },
-      expect.anything(),
-    );
+    expect(mocks.updateServer).toHaveBeenCalledWith({
+      type: 'shadowsocks',
+      id: 1,
+      key: 'show',
+      value: 0,
+    });
   });
 
   it('copies the node host to the clipboard with the success toast', async () => {
@@ -304,7 +528,7 @@ describe('ServerManagePage (shadcn island)', () => {
     render(<ServersPage />);
     await user.click(screen.getByTestId('node-actions-1'));
     await user.click(await screen.findByTestId('node-copy-1'));
-    expect(mocks.copyServer).toHaveBeenCalledWith({ type: 'shadowsocks', id: 1 }, expect.anything());
+    expect(mocks.copyServer).toHaveBeenCalledWith({ type: 'shadowsocks', id: 1 });
   });
 
   it('deletes a node only after confirmation', async () => {
@@ -313,10 +537,7 @@ describe('ServerManagePage (shadcn island)', () => {
     await user.click(screen.getByTestId('node-actions-1'));
     await user.click(await screen.findByTestId('node-delete-1'));
     await waitFor(() =>
-      expect(mocks.dropServer).toHaveBeenCalledWith(
-        { type: 'shadowsocks', id: 1 },
-        expect.anything(),
-      ),
+      expect(mocks.dropServer).toHaveBeenCalledWith({ type: 'shadowsocks', id: 1 }),
     );
   });
 
@@ -329,22 +550,78 @@ describe('ServerManagePage (shadcn island)', () => {
     fireEvent.change(screen.getByTestId('node-host'), { target: { value: 'jp.example.com' } });
     fireEvent.change(screen.getByTestId('node-port'), { target: { value: '443' } });
     fireEvent.change(screen.getByTestId('node-server-port'), { target: { value: '8443' } });
+    await user.click(within(screen.getByTestId('node-group-ids')).getByRole('checkbox'));
     await user.click(screen.getByTestId('node-submit'));
     await waitFor(() =>
-      expect(mocks.saveServer).toHaveBeenCalledWith(
-        expect.anything(),
-        'shadowsocks',
-        expect.objectContaining({
+      expect(mocks.saveServer).toHaveBeenCalledWith({
+        type: 'shadowsocks',
+        data: {
           name: 'JP',
+          group_id: ['1'],
           host: 'jp.example.com',
           port: '443',
           server_port: '8443',
           rate: 1,
           cipher: 'chacha20-ietf-poly1305',
           obfs: '',
-        }),
-      ),
+        },
+      }),
     );
+  });
+
+  it('blocks an invalid node locally and keeps the editor open', async () => {
+    const user = userEvent.setup();
+    render(<ServersPage />);
+
+    await user.click(screen.getByTestId('node-add'));
+    await user.click(await screen.findByTestId('node-add-shadowsocks'));
+    await user.click(await screen.findByTestId('node-submit'));
+
+    expect(await screen.findByText('节点名称不能为空')).toBeInTheDocument();
+    expect(screen.getByText('权限组不能为空')).toBeInTheDocument();
+    expect(mocks.saveServer).not.toHaveBeenCalled();
+    expect(screen.getByTestId('node-editor')).toBeInTheDocument();
+  });
+
+  it('keeps a valid node and its editor intact after the save request fails', async () => {
+    const user = userEvent.setup();
+    mocks.saveServer.mockRejectedValueOnce(new Error('save failed'));
+    render(<ServersPage />);
+
+    await user.click(screen.getByTestId('node-add'));
+    await user.click(await screen.findByTestId('node-add-shadowsocks'));
+    fireEvent.change(await screen.findByTestId('node-name'), { target: { value: 'Retry me' } });
+    fireEvent.change(screen.getByTestId('node-host'), {
+      target: { value: 'retry.example.test' },
+    });
+    fireEvent.change(screen.getByTestId('node-port'), { target: { value: '443' } });
+    fireEvent.change(screen.getByTestId('node-server-port'), { target: { value: '10443' } });
+    await user.click(within(screen.getByTestId('node-group-ids')).getByRole('checkbox'));
+    await user.click(screen.getByTestId('node-submit'));
+
+    await waitFor(() => expect(mocks.saveServer).toHaveBeenCalledOnce());
+    expect(screen.getByTestId('node-editor')).toBeInTheDocument();
+    expect(screen.getByTestId('node-name')).toHaveValue('Retry me');
+    expect(screen.getByTestId('node-host')).toHaveValue('retry.example.test');
+  });
+
+  it('remounts the editor for every open so edits cannot race into another record', async () => {
+    const user = userEvent.setup();
+    render(<ServersPage />);
+
+    await user.click(screen.getByTestId('node-actions-1'));
+    await user.click(await screen.findByTestId('node-edit-1'));
+    fireEvent.change(await screen.findByTestId('node-name'), { target: { value: 'Unsaved' } });
+    await user.click(
+      within(screen.getByTestId('node-editor')).getByRole('button', { name: '取消' }),
+    );
+
+    await user.click(screen.getByTestId('node-actions-2'));
+    await user.click(await screen.findByTestId('node-edit-2'));
+
+    expect(await screen.findByTestId('node-name')).toHaveValue('Child');
+    expect(screen.getByTestId('node-host')).toHaveValue('child.example.com');
+    expect(screen.getByTestId('node-name')).not.toHaveValue('Unsaved');
   });
 
   it('builds the grouped sort payload from the reordered node list', async () => {
@@ -360,6 +637,52 @@ describe('ServerManagePage (shadcn island)', () => {
       expect.anything(),
     );
   });
+
+  it('blocks SPA navigation with the shadcn leave dialog while sorting', async () => {
+    const user = userEvent.setup();
+    const view = render(<ServersPage />);
+
+    expect(mocks.useBlocker).toHaveBeenLastCalledWith(false);
+    await user.click(screen.getByTestId('node-sort-toggle'));
+    expect(mocks.useBlocker).toHaveBeenLastCalledWith(true);
+
+    mocks.blockerState = 'blocked';
+    view.rerender(<ServersPage />);
+
+    expect(await screen.findByTestId('server-sort-leave-dialog')).toBeInTheDocument();
+    expect(screen.getByText('节点排序还没有保存，是否离开')).toBeInTheDocument();
+
+    await user.click(screen.getByTestId('server-sort-stay'));
+    expect(mocks.blockerReset).toHaveBeenCalledOnce();
+    expect(mocks.blockerProceed).not.toHaveBeenCalled();
+  });
+
+  it('proceeds through the blocked router navigation after confirmation', async () => {
+    const user = userEvent.setup();
+    const view = render(<ServersPage />);
+
+    await user.click(screen.getByTestId('node-sort-toggle'));
+    mocks.blockerState = 'blocked';
+    view.rerender(<ServersPage />);
+    await user.click(await screen.findByTestId('server-sort-leave'));
+
+    expect(mocks.blockerProceed).toHaveBeenCalledOnce();
+    expect(mocks.blockerReset).not.toHaveBeenCalled();
+  });
+
+  it('warns on hard navigation only while sort mode is active', async () => {
+    const user = userEvent.setup();
+    render(<ServersPage />);
+
+    const cleanEvent = new Event('beforeunload', { cancelable: true }) as BeforeUnloadEvent;
+    mocks.beforeUnload?.(cleanEvent);
+    expect(cleanEvent.defaultPrevented).toBe(false);
+
+    await user.click(screen.getByTestId('node-sort-toggle'));
+    const dirtyEvent = new Event('beforeunload', { cancelable: true }) as BeforeUnloadEvent;
+    mocks.beforeUnload?.(dirtyEvent);
+    expect(dirtyEvent.defaultPrevented).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -367,137 +690,319 @@ describe('ServerManagePage (shadcn island)', () => {
 // ---------------------------------------------------------------------------
 
 describe('server node config contract helpers', () => {
+  const commonNodeValues = {
+    name: 'Protocol Node',
+    group_id: ['1'],
+    route_id: [2],
+    parent_id: null,
+    host: 'node.example.test',
+    port: '443',
+    server_port: '10443',
+    tags: ['edge'],
+    rate: '1.5',
+    show: 1 as const,
+  };
+
+  it.each([
+    {
+      type: 'shadowsocks',
+      values: {
+        ...commonNodeValues,
+        type: 'shadowsocks',
+        cipher: 'chacha20-ietf-poly1305',
+        obfs: 'http',
+        obfs_settings: { path: '/obfs', host: 'cdn.example.test' },
+      },
+      data: {
+        ...commonNodeValues,
+        cipher: 'chacha20-ietf-poly1305',
+        obfs: 'http',
+        obfs_settings: { path: '/obfs', host: 'cdn.example.test' },
+      },
+    },
+    {
+      type: 'vmess',
+      values: {
+        ...commonNodeValues,
+        type: 'vmess',
+        tls: 1,
+        network: 'ws',
+        networkSettings: '{"path":"/vmess"}',
+        tlsSettings: { serverName: 'sni.example.test' },
+        ruleSettings: { domainStrategy: 'AsIs' },
+        dnsSettings: { servers: [] },
+      },
+      data: {
+        ...commonNodeValues,
+        tls: 1,
+        network: 'ws',
+        networkSettings: { path: '/vmess' },
+        tlsSettings: { serverName: 'sni.example.test' },
+        ruleSettings: { domainStrategy: 'AsIs' },
+        dnsSettings: null,
+      },
+    },
+    {
+      type: 'trojan',
+      values: {
+        ...commonNodeValues,
+        type: 'trojan',
+        network: 'ws',
+        network_settings: '{"path":"/trojan"}',
+        allow_insecure: 1,
+        server_name: 'trojan-sni.example.test',
+        tls: 1,
+        cipher: 'must-not-leak',
+      },
+      data: {
+        ...commonNodeValues,
+        network: 'ws',
+        network_settings: { path: '/trojan' },
+        allow_insecure: 1,
+        server_name: 'trojan-sni.example.test',
+      },
+    },
+    {
+      type: 'hysteria',
+      values: {
+        ...commonNodeValues,
+        type: 'hysteria',
+        version: 2,
+        up_mbps: '50',
+        down_mbps: '100',
+        obfs: 'salamander',
+        obfs_password: 'secret',
+        server_name: 'hysteria-sni.example.test',
+        insecure: 0,
+      },
+      data: {
+        ...commonNodeValues,
+        version: 2,
+        up_mbps: '50',
+        down_mbps: '100',
+        obfs: 'salamander',
+        obfs_password: 'secret',
+        server_name: 'hysteria-sni.example.test',
+        insecure: 0,
+      },
+    },
+    {
+      type: 'tuic',
+      values: {
+        ...commonNodeValues,
+        type: 'tuic',
+        server_name: 'tuic-sni.example.test',
+        insecure: 0,
+        disable_sni: 0,
+        udp_relay_mode: 'quic',
+        zero_rtt_handshake: 1,
+        congestion_control: 'bbr',
+      },
+      data: {
+        ...commonNodeValues,
+        server_name: 'tuic-sni.example.test',
+        insecure: 0,
+        disable_sni: 0,
+        udp_relay_mode: 'quic',
+        zero_rtt_handshake: 1,
+        congestion_control: 'bbr',
+      },
+    },
+    {
+      type: 'vless',
+      values: {
+        ...commonNodeValues,
+        type: 'vless',
+        sort: 7,
+        tls: 2,
+        tls_settings: { server_name: 'reality.example.test' },
+        flow: 'xtls-rprx-vision',
+        network: 'tcp',
+        network_settings: '{"acceptProxyProtocol":false}',
+        encryption: 'mlkem768x25519plus',
+        encryption_settings: { rtt: '1rtt' },
+      },
+      data: {
+        ...commonNodeValues,
+        sort: 7,
+        tls: 2,
+        tls_settings: { server_name: 'reality.example.test' },
+        flow: 'xtls-rprx-vision',
+        network: 'tcp',
+        network_settings: { acceptProxyProtocol: false },
+        encryption: 'mlkem768x25519plus',
+        encryption_settings: { rtt: '1rtt' },
+      },
+    },
+    {
+      type: 'anytls',
+      values: {
+        ...commonNodeValues,
+        type: 'anytls',
+        server_name: 'anytls-sni.example.test',
+        insecure: 0,
+        padding_scheme: '["stop=8","1=2-4"]',
+      },
+      data: {
+        ...commonNodeValues,
+        server_name: 'anytls-sni.example.test',
+        insecure: 0,
+        padding_scheme: '["stop=8","1=2-4"]',
+      },
+    },
+    {
+      type: 'v2node',
+      values: {
+        ...commonNodeValues,
+        type: 'v2node',
+        sort: 7,
+        listen_ip: '0.0.0.0',
+        install_command: 'must-not-leak',
+        config: {
+          protocol: 'vless',
+          tls: 2,
+          tls_settings: { server_name: 'v2node-reality.example.test' },
+          flow: 'xtls-rprx-vision',
+          network: 'tcp',
+          network_settings: '{"acceptProxyProtocol":true}',
+          encryption: 'mlkem768x25519plus',
+          encryption_settings: { rtt: '0rtt' },
+          disable_sni: 0,
+          zero_rtt_handshake: 0,
+          udp_relay_mode: 'must-not-leak',
+          congestion_control: 'must-not-leak',
+          cipher: 'must-not-leak',
+          up_mbps: '999',
+          down_mbps: '999',
+          obfs: 'must-not-leak',
+          obfs_password: 'must-not-leak',
+          padding_scheme: '["must-not-leak"]',
+        },
+      },
+      data: {
+        ...commonNodeValues,
+        sort: 7,
+        listen_ip: '0.0.0.0',
+        protocol: 'vless',
+        tls: 2,
+        tls_settings: { server_name: 'v2node-reality.example.test' },
+        flow: 'xtls-rprx-vision',
+        network: 'tcp',
+        network_settings: { acceptProxyProtocol: true },
+        encryption: 'mlkem768x25519plus',
+        encryption_settings: { rtt: '0rtt' },
+        disable_sni: 0,
+        zero_rtt_handshake: 0,
+      },
+    },
+  ])('builds the exact $type save payload', ({ type, values, data }) => {
+    expect(serverNodeFormSchema.parse(values)).toEqual({ type, data });
+  });
+
+  it('adds the record id only at the edit save boundary', () => {
+    const values = {
+      ...commonNodeValues,
+      type: 'shadowsocks',
+      cipher: 'aes-256-gcm',
+      obfs: '',
+    };
+
+    expect(serverNodeFormSchema.parse(values).data).not.toHaveProperty('id');
+    expect(serverNodeFormSchema.parse({ ...values, id: 42 })).toEqual({
+      type: 'shadowsocks',
+      data: {
+        ...commonNodeValues,
+        id: 42,
+        cipher: 'aes-256-gcm',
+        obfs: '',
+      },
+    });
+  });
+
+  it('clears stale protocol-only fields when a V2node changes protocol', () => {
+    const values: V2nodeEditorValues = {
+      ...commonNodeValues,
+      type: 'v2node',
+      listen_ip: '0.0.0.0',
+      install_command: 'keep-read-only-command',
+      config: {
+        protocol: 'vless',
+        tls: 2,
+        tls_settings: { server_name: 'old-reality.example.test' },
+        network: 'xhttp',
+        network_settings: { path: '/old' },
+        flow: 'xtls-rprx-vision',
+        encryption: 'mlkem768x25519plus',
+        encryption_settings: { rtt: '1rtt' },
+        disable_sni: 1,
+        zero_rtt_handshake: 1,
+      },
+    };
+
+    const next = switchV2nodeProtocol(values, 'tuic');
+
+    expect(next).toMatchObject({
+      type: 'v2node',
+      name: 'Protocol Node',
+      install_command: 'keep-read-only-command',
+      config: {
+        protocol: 'tuic',
+        tls: 1,
+        network: 'tcp',
+        network_settings: null,
+        disable_sni: 0,
+        zero_rtt_handshake: 0,
+        udp_relay_mode: 'native',
+        congestion_control: 'cubic',
+      },
+    });
+    for (const staleField of [
+      'tls_settings',
+      'flow',
+      'encryption',
+      'encryption_settings',
+      'cipher',
+      'up_mbps',
+      'down_mbps',
+      'obfs',
+      'obfs_password',
+      'padding_scheme',
+    ]) {
+      expect(next.config).not.toHaveProperty(staleField);
+    }
+  });
+
   it('uses the original type-specific transport placeholders', () => {
-    expect(getLegacyNetworkSettingsPlaceholder('v2node', 'tcp')).toContain(
+    expect(getNetworkSettingsPlaceholder('v2node', 'tcp')).toContain(
       '"acceptProxyProtocol": false',
     );
-    expect(getLegacyNetworkSettingsPlaceholder('v2node', 'http')).toContain(
-      '"Host": "xtls.github.io"',
-    );
-    expect(getLegacyNetworkSettingsPlaceholder('vmess', 'tcp')).not.toContain(
-      'acceptProxyProtocol',
-    );
-    expect(getLegacyNetworkSettingsPlaceholder('vmess', 'ws')).toContain('"Host": "v2ray.com"');
-    expect(getLegacyNetworkSettingsPlaceholder('vmess', 'xhttp')).not.toContain('"mode": "auto"');
-    expect(getLegacyNetworkSettingsPlaceholder('vless', 'ws')).toContain('"security": "auto"');
-    expect(getLegacyNetworkSettingsPlaceholder('vless', 'xhttp')).toContain('"mode": "auto"');
-    expect(getLegacyNetworkSettingsPlaceholder('trojan', 'tcp')).toBe('');
-    expect(getLegacyNetworkSettingsPlaceholder('trojan', 'httpupgrade')).toBe('');
-  });
-
-  it('uses the original new-node defaults for each server type', () => {
-    expect(getLegacyServerInitialValues('vmess')).toEqual({ rate: 1, tls: 0 });
-    expect(getLegacyServerInitialValues('shadowsocks')).toEqual({
-      rate: 1,
-      cipher: 'chacha20-ietf-poly1305',
-    });
-    expect(getLegacyServerInitialValues('hysteria')).toEqual({
-      rate: 1,
-      insecure: 0,
-      version: 1,
-    });
-    expect(getLegacyServerInitialValues('vless')).toEqual({
-      rate: 1,
-      tls: 0,
-      flow: null,
-    });
-    expect(getLegacyServerInitialValues('trojan')).toEqual({ rate: 1, tls: 0 });
-    expect(getLegacyServerInitialValues('tuic')).toEqual({
-      rate: 1,
-      insecure: 0,
-      disable_sni: 0,
-      udp_relay_mode: 'native',
-      zero_rtt_handshake: 0,
-      congestion_control: 'cubic',
-    });
-    expect(getLegacyServerInitialValues('anytls')).toEqual({ rate: 1, insecure: 0 });
-    expect(getLegacyServerInitialValues('v2node')).toEqual({
-      rate: 1,
-      tls: 0,
-      network: 'tcp',
-      disable_sni: 0,
-      zero_rtt_handshake: 0,
-      flow: null,
-    });
-    expect(getLegacyServerInitialValues('vmess')).not.toHaveProperty('show');
-    expect(getLegacyServerInitialValues('vmess')).not.toHaveProperty('port');
-    expect(getLegacyServerInitialValues('vmess')).not.toHaveProperty('group_id');
-    expect(getLegacyServerInitialValues('vmess')).not.toHaveProperty('route_id');
-    expect(getLegacyServerInitialValues('vmess')).not.toHaveProperty('network');
-    expect(getLegacyServerInitialValues('trojan')).not.toHaveProperty('network');
-    expect(getLegacyServerInitialValues('vless')).not.toHaveProperty('network');
-  });
-
-  it('keeps edit-node initialization on the saved record instead of applying new-node defaults', () => {
-    const values = getLegacyServerInitialValues('shadowsocks', {
-      name: 'Tokyo',
-      host: 'jp.example.com',
-    } as unknown as Parameters<typeof getLegacyServerInitialValues>[1]);
-
-    expect(values).toEqual({
-      name: 'Tokyo',
-      host: 'jp.example.com',
-    });
-    expect(values).not.toHaveProperty('rate');
-    expect(values).not.toHaveProperty('cipher');
-  });
-
-  it('keeps original V2node edit values instead of forcing TLS during initialization', () => {
-    expect(
-      getLegacyServerInitialValues('v2node', {
-        type: 'v2node',
-        protocol: 'anytls',
-        tls: 0,
-        network: 'tcp',
-      } as unknown as Parameters<typeof getLegacyServerInitialValues>[1]),
-    ).toMatchObject({
-      protocol: 'anytls',
-      tls: 0,
-      network: 'tcp',
-    });
-    expect(
-      getLegacyServerInitialValues('v2node', {
-        type: 'v2node',
-        protocol: 'hysteria2',
-        tls: 0,
-      } as unknown as Parameters<typeof getLegacyServerInitialValues>[1]),
-    ).toMatchObject({
-      protocol: 'hysteria2',
-      tls: 0,
-    });
+    expect(getNetworkSettingsPlaceholder('v2node', 'http')).toContain('"Host": "xtls.github.io"');
+    expect(getNetworkSettingsPlaceholder('vmess', 'tcp')).not.toContain('acceptProxyProtocol');
+    expect(getNetworkSettingsPlaceholder('vmess', 'ws')).toContain('"Host": "v2ray.com"');
+    expect(getNetworkSettingsPlaceholder('vmess', 'xhttp')).not.toContain('"mode": "auto"');
+    expect(getNetworkSettingsPlaceholder('vless', 'ws')).toContain('"security": "auto"');
+    expect(getNetworkSettingsPlaceholder('vless', 'xhttp')).toContain('"mode": "auto"');
+    expect(getNetworkSettingsPlaceholder('trojan', 'tcp')).toBe('');
+    expect(getNetworkSettingsPlaceholder('trojan', 'httpupgrade')).toBe('');
   });
 
   it('matches the original V2node security select fallback protocols', () => {
-    expect(getLegacyV2nodeSecurityValue('anytls', 0)).toBe(0);
-    expect(getLegacyV2nodeSecurityValue('hysteria2', 0)).toBe(1);
-    expect(getLegacyV2nodeSecurityValue('trojan', 0)).toBe(1);
-    expect(getLegacyV2nodeSecurityValue('tuic', 0)).toBe(1);
-    expect(getLegacyV2nodeSecurityValue('vless', 0)).toBe(0);
-    expect(getLegacyV2nodeSecurityValue('anytls', 2)).toBe(2);
+    expect(getV2nodeSecurityValue('anytls', 0)).toBe(0);
+    expect(getV2nodeSecurityValue('hysteria2', 0)).toBe(1);
+    expect(getV2nodeSecurityValue('trojan', 0)).toBe(1);
+    expect(getV2nodeSecurityValue('tuic', 0)).toBe(1);
+    expect(getV2nodeSecurityValue('vless', 0)).toBe(0);
+    expect(getV2nodeSecurityValue('anytls', 2)).toBe(2);
   });
 
-  it('coerces legacy numeric select display values like the original parseInt bindings', () => {
-    expect(getLegacyBinarySelectValue('0')).toBe(0);
-    expect(getLegacyBinarySelectValue('1')).toBe(1);
-    expect(getLegacyBinarySelectValue(2)).toBe(1);
-    expect(getLegacyBinarySelectValue(undefined)).toBe(0);
-    expect(getLegacyNumericSelectValue('2')).toBe(2);
-    expect(getLegacyNumericSelectValue('0', 1)).toBe(1);
-    expect(getLegacyNumericSelectValue(undefined, 1)).toBe(1);
-  });
-
-  it('formats the original VMess protocol object before opening the edit drawer', () => {
-    const networkSettings = {
-      path: '/',
-      headers: {
-        Host: 'v2ray.com',
-      },
-    };
-    const values = getLegacyServerInitialValues('vmess', {
-      networkSettings,
-    } as unknown as Parameters<typeof getLegacyServerInitialValues>[1]);
-
-    expect(values.networkSettings).toBe(JSON.stringify(networkSettings, null, 2));
+  it('coerces numeric select display values using the established parseInt contract', () => {
+    expect(getBinarySelectValue('0')).toBe(0);
+    expect(getBinarySelectValue('1')).toBe(1);
+    expect(getBinarySelectValue(2)).toBe(1);
+    expect(getBinarySelectValue(undefined)).toBe(0);
+    expect(getNumericSelectValue('2')).toBe(2);
+    expect(getNumericSelectValue('0', 1)).toBe(1);
+    expect(getNumericSelectValue(undefined, 1)).toBe(1);
   });
 
   it('builds the original grouped server sort payload from the full node order', () => {
@@ -518,64 +1023,10 @@ describe('server node config contract helpers', () => {
       { id: 1, type: 'shadowsocks' },
       { id: 2, type: 'vmess' },
       { id: 3, type: 'trojan' },
-    ] as Parameters<typeof moveServerNodeByLegacyDragIndexes>[0];
+    ] as Parameters<typeof moveServerNodeByDragIndexes>[0];
 
-    expect(moveServerNodeByLegacyDragIndexes(nodes, 0, 2).map((node) => node.id)).toEqual([
-      2, 3, 1,
-    ]);
-    expect(moveServerNodeByLegacyDragIndexes(nodes, 2, 0).map((node) => node.id)).toEqual([
-      3, 1, 2,
-    ]);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Unsaved-sort navigation prompt — behavioral, unchanged from the replica suite.
-// ---------------------------------------------------------------------------
-
-describe('legacy server sort navigation prompt', () => {
-  it('prompts for legacy server sort route clicks without blocking page-local controls', () => {
-    const navLink = document.createElement('a');
-    navLink.className = 'nav-main-link';
-    navLink.appendChild(document.createElement('span'));
-    document.body.appendChild(navLink);
-
-    const pageButton = document.createElement('button');
-    document.body.appendChild(pageButton);
-
-    expect(shouldPromptLegacyServerSortClick(navLink.firstElementChild)).toBe(true);
-    expect(shouldPromptLegacyServerSortClick(pageButton)).toBe(false);
-  });
-
-  it('cancels legacy server sort route clicks before React navigation runs', () => {
-    const confirm = vi.fn(() => false);
-    Object.defineProperty(window, 'confirm', { configurable: true, value: confirm });
-    const dispose = installLegacyServerSortPrompt('节点排序还没有保存，是否离开');
-    const navLink = document.createElement('a');
-    navLink.className = 'nav-main-link';
-    document.body.appendChild(navLink);
-    const click = new MouseEvent('click', { bubbles: true, cancelable: true });
-
-    expect(navLink.dispatchEvent(click)).toBe(false);
-    expect(click.defaultPrevented).toBe(true);
-    expect(confirm).toHaveBeenCalledWith('节点排序还没有保存，是否离开');
-
-    dispose();
-  });
-
-  it('restores the previous hash when the legacy server sort prompt rejects a hash transition', () => {
-    const confirm = vi.fn(() => false);
-    Object.defineProperty(window, 'confirm', { configurable: true, value: confirm });
-    window.location.hash = '#/server/manage';
-    const dispose = installLegacyServerSortPrompt('节点排序还没有保存，是否离开');
-
-    window.location.hash = '#/dashboard';
-    window.dispatchEvent(new HashChangeEvent('hashchange'));
-
-    expect(window.location.hash).toBe('#/server/manage');
-    expect(confirm).toHaveBeenCalledWith('节点排序还没有保存，是否离开');
-
-    dispose();
+    expect(moveServerNodeByDragIndexes(nodes, 0, 2).map((node) => node.id)).toEqual([2, 3, 1]);
+    expect(moveServerNodeByDragIndexes(nodes, 2, 0).map((node) => node.id)).toEqual([3, 1, 2]);
   });
 });
 
@@ -593,7 +1044,13 @@ describe('applyServerNodeColumnControls (node table sort/filter)', () => {
 
   it('filters by type matching node.type to the lowercased column label', () => {
     expect(
-      ids(applyServerNodeColumnControls(nodes, { typeFilter: ['Shadowsocks'], groupFilter: [], onlineSort: '' })),
+      ids(
+        applyServerNodeColumnControls(nodes, {
+          typeFilter: ['Shadowsocks'],
+          groupFilter: [],
+          onlineSort: '',
+        }),
+      ),
     ).toEqual([1]);
     expect(
       ids(
@@ -608,30 +1065,48 @@ describe('applyServerNodeColumnControls (node table sort/filter)', () => {
 
   it('filters by group membership as strings, OR-combined across selected groups', () => {
     expect(
-      ids(applyServerNodeColumnControls(nodes, { typeFilter: [], groupFilter: ['2'], onlineSort: '' })),
+      ids(
+        applyServerNodeColumnControls(nodes, {
+          typeFilter: [],
+          groupFilter: ['2'],
+          onlineSort: '',
+        }),
+      ),
     ).toEqual([2, 3]);
     expect(
-      ids(applyServerNodeColumnControls(nodes, { typeFilter: [], groupFilter: ['1'], onlineSort: '' })),
+      ids(
+        applyServerNodeColumnControls(nodes, {
+          typeFilter: [],
+          groupFilter: ['1'],
+          onlineSort: '',
+        }),
+      ),
     ).toEqual([1, 3]);
   });
 
   it('sorts by online ascending/descending and preserves source order when unsorted', () => {
     expect(
-      applyServerNodeColumnControls(nodes, { typeFilter: [], groupFilter: [], onlineSort: 'ascend' }).map(
-        (node) => node.online,
-      ),
+      applyServerNodeColumnControls(nodes, {
+        typeFilter: [],
+        groupFilter: [],
+        onlineSort: 'ascend',
+      }).map((node) => node.online),
     ).toEqual([0, 4, 8]);
     expect(
-      applyServerNodeColumnControls(nodes, { typeFilter: [], groupFilter: [], onlineSort: 'descend' }).map(
-        (node) => node.online,
-      ),
+      applyServerNodeColumnControls(nodes, {
+        typeFilter: [],
+        groupFilter: [],
+        onlineSort: 'descend',
+      }).map((node) => node.online),
     ).toEqual([8, 4, 0]);
     expect(
-      ids(applyServerNodeColumnControls(nodes, { typeFilter: [], groupFilter: [], onlineSort: '' })),
+      ids(
+        applyServerNodeColumnControls(nodes, { typeFilter: [], groupFilter: [], onlineSort: '' }),
+      ),
     ).toEqual([1, 2, 3]);
   });
 
-  it('applies filters before the sort like the legacy antd table', () => {
+  it('applies filters before sorting according to the table contract', () => {
     expect(
       ids(
         applyServerNodeColumnControls(nodes, {

@@ -1,7 +1,9 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import type { ComponentProps } from 'react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Plan } from '@v2board/types';
 import { renderWithProviders } from '@/test/render';
+import { createTestTranslation } from '@/test/i18next-selector';
 import PlanCheckoutPage from './checkout';
 
 const mocks = vi.hoisted(() => ({
@@ -43,6 +45,8 @@ const mocks = vi.hoisted(() => ({
   info: { plan_id: 1 },
   subscribe: { expired_at: 4_102_444_800 },
   orders: [] as Array<{ trade_no: string; status: number }>,
+  ordersIsError: false,
+  ordersPending: false,
   planIsError: false,
   planPending: false,
   planFetching: false,
@@ -50,6 +54,9 @@ const mocks = vi.hoisted(() => ({
 
 const labels: Record<string, string> = {
   'common.attention': '注意',
+  'common.loading': '加载中...',
+  'common.error_title': '加载失败',
+  'common.retry': '重试',
   'plan.monthly': '月付',
   'plan.yearly': '年付',
   'plan.onetime': '一次性',
@@ -67,6 +74,9 @@ const labels: Record<string, string> = {
   'plan.unfinished_order_confirm': '您还有未完成的订单，购买前需要先取消，确定要取消之前的订单吗？',
   'plan.confirm_cancel_previous': '确定取消',
   'plan.return_orders': '返回我的订单',
+  'errors.This payment period cannot be purchased, please choose another period':
+    '该订阅周期无法进行购买，请选择其它周期',
+  'errors.Coupon failed': '优惠券使用失败',
 };
 
 function resetPlan() {
@@ -98,15 +108,32 @@ function resetPlan() {
   mocks.planIsError = false;
   mocks.planPending = false;
   mocks.planFetching = false;
+  mocks.ordersIsError = false;
+  mocks.ordersPending = false;
 }
 
 vi.mock('react-router', () => ({
+  Link: ({ to, onClick, children, ...rest }: { to: string } & Omit<ComponentProps<'a'>, 'href'>) => (
+    <a
+      href={to}
+      onClick={(event) => {
+        onClick?.(event);
+        if (!event.defaultPrevented) {
+          event.preventDefault();
+          mocks.navigate(to);
+        }
+      }}
+      {...rest}
+    >
+      {children}
+    </a>
+  ),
   useParams: () => ({ plan_id: mocks.planId }),
   useNavigate: () => mocks.navigate,
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => labels[key] ?? key, i18n: { language: 'zh-CN' } }),
+  useTranslation: () => createTestTranslation(labels),
 }));
 
 vi.mock('@tanstack/react-query', () => ({
@@ -135,7 +162,10 @@ vi.mock('@/lib/queries', () => ({
     },
   }),
   useOrders: () => ({
-    data: mocks.orders,
+    data: mocks.ordersPending || mocks.ordersIsError ? undefined : mocks.orders,
+    isError: mocks.ordersIsError,
+    isPending: mocks.ordersPending,
+    isSuccess: !mocks.ordersPending && !mocks.ordersIsError,
     refetch: mocks.refetchOrders,
   }),
   useUserInfo: () => ({
@@ -150,11 +180,18 @@ vi.mock('@/lib/queries', () => ({
   }),
   useCheckCouponMutation: () => ({
     isPending: false,
-    mutateAsync: mocks.checkCoupon,
+    mutate: (
+      payload: unknown,
+      options?: { onError?: (error: unknown) => void; onSuccess?: (data: unknown) => void },
+    ) => {
+      void Promise.resolve(mocks.checkCoupon(payload)).then(options?.onSuccess, options?.onError);
+    },
   }),
   useSaveOrderMutation: () => ({
     isPending: false,
-    mutateAsync: mocks.saveOrder,
+    mutate: (payload: unknown, options?: { onSuccess?: (data: unknown) => void }) => {
+      void Promise.resolve(mocks.saveOrder(payload)).then(options?.onSuccess, () => undefined);
+    },
   }),
 }));
 
@@ -221,7 +258,7 @@ describe('PlanCheckoutPage rendering', () => {
     const card = screen.getByTestId('plan-non-renewable');
     expect(card).toHaveTextContent('该订阅无法续费，仅允许新用户购买');
 
-    await user.click(within(card).getByRole('button', { name: '选择其它订阅' }));
+    await user.click(within(card).getByRole('link', { name: '选择其它订阅' }));
     expect(mocks.navigate).toHaveBeenCalledWith('/plan');
   });
 
@@ -314,9 +351,91 @@ describe('PlanCheckoutPage query states', () => {
 
     expect(mocks.refetchPlan).toHaveBeenCalledTimes(1);
   });
+
+  it('waits for the unfinished-orders query and guards the action behind the disabled button', () => {
+    mocks.ordersPending = true;
+
+    renderWithProviders(<PlanCheckoutPage />);
+
+    expect(screen.getByTestId('unfinished-orders-loading')).toHaveTextContent('加载中...');
+    const submit = screen.getByTestId('commerce-submit');
+    expect(submit).toBeDisabled();
+
+    // Exercise the controller guard independently from the disabled UI.
+    submit.removeAttribute('disabled');
+    fireEvent.click(submit);
+
+    expect(mocks.saveOrder).not.toHaveBeenCalled();
+    expect(mocks.cancelOrder).not.toHaveBeenCalled();
+    expect(mocks.confirmDialog).not.toHaveBeenCalled();
+    expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
+  it('fails closed on an unfinished-orders error and retries without creating an order', async () => {
+    mocks.ordersIsError = true;
+
+    const { user } = renderWithProviders(<PlanCheckoutPage />);
+
+    expect(screen.getByTestId('unfinished-orders-error')).toBeInTheDocument();
+    const submit = screen.getByTestId('commerce-submit');
+    expect(submit).toBeDisabled();
+
+    submit.removeAttribute('disabled');
+    fireEvent.click(submit);
+    expect(mocks.saveOrder).not.toHaveBeenCalled();
+    expect(mocks.confirmDialog).not.toHaveBeenCalled();
+
+    await user.click(
+      within(screen.getByTestId('unfinished-orders-error')).getByTestId('error-state-retry'),
+    );
+
+    expect(mocks.refetchOrders).toHaveBeenCalledTimes(1);
+    expect(mocks.saveOrder).not.toHaveBeenCalled();
+    expect(mocks.cancelOrder).not.toHaveBeenCalled();
+  });
+
+  it('rechecks the latest orders state before a delayed confirmation action', async () => {
+    mocks.info = { plan_id: 2 };
+    mocks.saveOrder.mockResolvedValue('MUST-NOT-SAVE');
+
+    const { user, rerender } = renderWithProviders(<PlanCheckoutPage />);
+
+    await user.click(screen.getByTestId('commerce-submit'));
+    const changeOptions = mocks.confirmDialog.mock.calls[0]![0] as {
+      onConfirm: () => Promise<void>;
+    };
+
+    // The request can fail while the async confirmation UI remains open. Its
+    // old callback must not retain permission from the earlier success render.
+    mocks.ordersIsError = true;
+    rerender(<PlanCheckoutPage />);
+    await changeOptions.onConfirm();
+
+    expect(screen.getByTestId('unfinished-orders-error')).toBeInTheDocument();
+    expect(mocks.confirmDialog).toHaveBeenCalledTimes(1);
+    expect(mocks.saveOrder).not.toHaveBeenCalled();
+    expect(mocks.cancelOrder).not.toHaveBeenCalled();
+  });
 });
 
 describe('PlanCheckoutPage commerce behavior', () => {
+  it('creates a new order only after a successful empty unfinished-orders result', async () => {
+    mocks.orders = [];
+    mocks.saveOrder.mockResolvedValue('TRADE-EMPTY');
+
+    const { user } = renderWithProviders(<PlanCheckoutPage />);
+
+    await user.click(screen.getByTestId('commerce-submit'));
+
+    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/order/TRADE-EMPTY'));
+    expect(mocks.saveOrder).toHaveBeenCalledWith({
+      plan_id: 1,
+      period: 'month_price',
+    });
+    expect(mocks.cancelOrder).not.toHaveBeenCalled();
+    expect(mocks.confirmDialog).not.toHaveBeenCalled();
+  });
+
   it('applies coupon values through the original cents math and saves the order', async () => {
     mocks.checkCoupon.mockResolvedValue({
       id: 1,
@@ -407,28 +526,45 @@ describe('PlanCheckoutPage commerce behavior', () => {
     );
   });
 
-  it('keeps the undefined period payload when no price period exists', async () => {
+  it('blocks checkout with an explicit error when no purchasable period exists', async () => {
     const plan = mocks.plan as Plan;
     plan.month_price = null;
     plan.year_price = null;
     plan.onetime_price = null;
     plan.reset_price = null;
-    mocks.saveOrder.mockResolvedValue('TRADE-NO-PERIOD');
-
-    const { user } = renderWithProviders(<PlanCheckoutPage />);
+    renderWithProviders(<PlanCheckoutPage />);
 
     const summary = screen.getByTestId('checkout-summary');
     expect(summary).toHaveTextContent('Legacy Plan x');
-    expect(summary).toHaveTextContent('¥NaN');
-    expect(summary).toHaveTextContent('¥ NaN CNY');
+    expect(summary).not.toHaveTextContent('NaN');
+    expect(screen.getByTestId('checkout-validation-error')).toHaveTextContent(
+      '该订阅周期无法进行购买，请选择其它周期',
+    );
+    expect(screen.getByTestId('commerce-submit')).toBeDisabled();
+    expect(mocks.saveOrder).not.toHaveBeenCalled();
+    expect(mocks.navigate).not.toHaveBeenCalled();
+  });
 
-    await user.click(screen.getByTestId('commerce-submit'));
-
-    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/order/TRADE-NO-PERIOD'));
-    expect(mocks.saveOrder).toHaveBeenCalledWith({
-      plan_id: 1,
-      period: undefined,
+  it('blocks checkout instead of rendering NaN for an unknown coupon type', async () => {
+    mocks.checkCoupon.mockResolvedValue({
+      id: 1,
+      code: 'UNKNOWN',
+      name: 'Unknown Coupon',
+      type: 99,
+      value: 25,
     });
+
+    const { user } = renderWithProviders(<PlanCheckoutPage />);
+
+    await user.type(screen.getByTestId('coupon-input'), 'UNKNOWN');
+    await user.click(screen.getByRole('button', { name: '验证' }));
+
+    const summary = screen.getByTestId('checkout-summary');
+    expect(await within(summary).findByText('Unknown Coupon')).toBeInTheDocument();
+    expect(summary).not.toHaveTextContent('NaN');
+    expect(screen.getByTestId('checkout-validation-error')).toHaveTextContent('优惠券使用失败');
+    expect(screen.getByTestId('commerce-submit')).toBeDisabled();
+    expect(mocks.saveOrder).not.toHaveBeenCalled();
   });
 
   it('confirms and cancels the first unfinished order before creating a new one', async () => {
@@ -448,7 +584,9 @@ describe('PlanCheckoutPage commerce behavior', () => {
       onConfirm: () => Promise<void>;
       onCancel: () => void;
     };
-    expect(options.description).toBe('您还有未完成的订单，购买前需要先取消，确定要取消之前的订单吗？');
+    expect(options.description).toBe(
+      '您还有未完成的订单，购买前需要先取消，确定要取消之前的订单吗？',
+    );
     expect(options.confirmText).toBe('确定取消');
     expect(options.cancelText).toBe('返回我的订单');
 
@@ -491,6 +629,45 @@ describe('PlanCheckoutPage commerce behavior', () => {
       period: 'month_price',
     });
     expect(mocks.navigate).toHaveBeenCalledWith('/order/TRADE789');
+  });
+
+  it('does not let the change-subscription confirmation bypass an unfinished order', async () => {
+    mocks.info = { plan_id: 2 };
+    mocks.subscribe = { expired_at: 4_102_444_800 };
+    mocks.orders = [{ trade_no: 'PENDING-CHANGE', status: 1 }];
+    mocks.cancelOrder.mockResolvedValue(true);
+    mocks.saveOrder.mockResolvedValue('TRADE-CHANGED');
+
+    const { user } = renderWithProviders(<PlanCheckoutPage />);
+
+    await user.click(screen.getByTestId('commerce-submit'));
+
+    const changeOptions = mocks.confirmDialog.mock.calls[0]![0] as {
+      description: string;
+      onConfirm: () => Promise<void>;
+    };
+    expect(changeOptions.description).toBe('请注意，变更订阅会导致当前订阅被新订阅覆盖。');
+
+    await changeOptions.onConfirm();
+
+    expect(mocks.confirmDialog).toHaveBeenCalledTimes(2);
+    expect(mocks.saveOrder).not.toHaveBeenCalled();
+    const unfinishedOptions = mocks.confirmDialog.mock.calls[1]![0] as {
+      description: string;
+      onConfirm: () => Promise<void>;
+    };
+    expect(unfinishedOptions.description).toBe(
+      '您还有未完成的订单，购买前需要先取消，确定要取消之前的订单吗？',
+    );
+
+    await unfinishedOptions.onConfirm();
+
+    expect(mocks.cancelOrder).toHaveBeenCalledWith('PENDING-CHANGE');
+    expect(mocks.saveOrder).toHaveBeenCalledWith({
+      plan_id: 1,
+      period: 'month_price',
+    });
+    expect(mocks.navigate).toHaveBeenCalledWith('/order/TRADE-CHANGED');
   });
 
   it('skips the change-subscription warning when the old subscription is expired', async () => {

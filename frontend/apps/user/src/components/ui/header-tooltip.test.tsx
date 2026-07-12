@@ -4,17 +4,16 @@ import { HeaderTooltip } from './header-tooltip';
 import { TooltipProvider } from './tooltip';
 
 describe('HeaderTooltip', () => {
-  it('renders the parity trigger span with the help icon and Radix tooltip wiring', () => {
+  it('renders the slotted trigger span with the help icon and Radix tooltip wiring', () => {
     const html = renderToStaticMarkup(
       <TooltipProvider>
         <HeaderTooltip title="What this column means">Status</HeaderTooltip>
       </TooltipProvider>,
     );
 
-    // The interaction-parity hook class is preserved, and the trigger is
-    // keyboard-focusable (tabIndex) so the help tooltip is reachable without a
-    // pointer — Radix Tooltip.Trigger does not make a bare <span> focusable.
-    expect(html).toContain('v2board-service-tooltip-trigger');
+    // The trigger exposes a shadcn-style slot and is keyboard-focusable
+    // (tabIndex), because Radix does not make a bare <span> focusable.
+    expect(html).toContain('data-slot="header-tooltip-trigger"');
     expect(html).toContain('tabindex="0"');
     expect(html).toContain('Status');
     expect(html).toContain('<svg');
@@ -31,7 +30,7 @@ describe('HeaderTooltip', () => {
         </HeaderTooltip>
       </TooltipProvider>,
     );
-    expect(centered).toContain('v2board-service-tooltip-trigger');
+    expect(centered).toContain('data-slot="header-tooltip-trigger"');
     expect(centered).toContain('justify-center');
 
     const endAligned = renderToStaticMarkup(

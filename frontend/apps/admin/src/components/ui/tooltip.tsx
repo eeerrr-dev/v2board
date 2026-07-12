@@ -1,4 +1,4 @@
-import * as TooltipPrimitive from '@radix-ui/react-tooltip';
+import { Tooltip as TooltipPrimitive } from 'radix-ui';
 import { type ComponentProps } from 'react';
 import { cn } from '@/lib/cn';
 
@@ -16,8 +16,8 @@ function TooltipContent({
 }) {
   // `placement` is the single positioning knob: 'top' centers, 'topRight'
   // end-aligns. Radix's raw `align` is intentionally not exposed, and the
-  // scale-in origin comes from --radix-popper-transform-origin (see
-  // user-shadcn-motion.css), so no data-placement attribute is needed.
+  // scale-in origin comes from Radix's public component variable, so no
+  // data-placement attribute is needed.
   return (
     <TooltipPrimitive.Portal>
       <TooltipPrimitive.Content
@@ -26,7 +26,7 @@ function TooltipContent({
         align={placement === 'topRight' ? 'end' : 'center'}
         sideOffset={sideOffset}
         className={cn(
-          'v2board-island v2board-tooltip-content v2board-radix-popover-content z-50 overflow-hidden rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground shadow-md',
+          'z-50 origin-(--radix-tooltip-content-transform-origin) animate-in overflow-hidden rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground shadow-md fade-in-0 zoom-in-95 duration-150 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:duration-100 motion-reduce:animate-none!',
           className,
         )}
         {...props}

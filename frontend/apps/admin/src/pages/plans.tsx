@@ -1,7 +1,9 @@
-import { cloneElement, useEffect, useRef, useState, type ReactElement } from 'react';
+import { useState, type ReactElement } from 'react';
+import { zodResolver } from '@hookform/resolvers/zod';
 import type { admin } from '@v2board/api-client';
 import type { Plan, PlanPeriod } from '@v2board/types';
 import { ArrowDown, ArrowUp, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
+import { useForm, useWatch, type FieldPath, type FieldPathValue } from 'react-hook-form';
 import {
   useAdminPlans,
   useConfig,
@@ -17,9 +19,16 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { HeaderTooltip } from '@/components/ui/header-tooltip';
+import { Field, FieldError, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+  InputGroupText,
+} from '@/components/ui/input-group';
 import { PageHeader, PageShell } from '@/components/ui/page';
+import { ErrorState } from '@/components/ui/error-state';
 import {
   Select,
   SelectContent,
@@ -30,24 +39,27 @@ import {
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetFooter,
   SheetHeader,
   SheetTitle,
+  SheetTrigger,
 } from '@/components/ui/sheet';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { DataTable, type DataTableColumn } from '@/components/ui/table';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { planEditorSchema, type PlanEditorValues } from './plan-form-schema';
 
 // The plan (subscription) manager is a redesigned shadcn island. The Tier-1
 // contract is the shared backend: the /plan/fetch shape, the /plan/save payload
-// (every field passed through verbatim — the per-period price cents ×100 lives
-// in the api-client's serializePlanForSave, so this page must keep untouched /
-// emptied prices as `null` and never send NaN), the /plan/sort id list, the
-// /plan/drop id, and the /plan/update { id, [key]: value } show/renew toggles.
+// (the API client whitelists backend-consumed editor fields and converts prices
+// to cents, so untouched/emptied prices stay `null` and never become NaN), the
+// /plan/sort id list, /plan/drop id, and the dedicated /plan/update
+// { id, [key]: value } show/renew toggles.
 type SavePlanPayload = Parameters<typeof admin.savePlan>[1];
-type EditablePlan = SavePlanPayload;
+type EditablePlan = PlanEditorValues;
 
 const PRICE_FIELDS: { key: PlanPeriod; label: string }[] = [
   { key: 'month_price', label: '月付' },
@@ -71,11 +83,29 @@ const RESET_TRAFFIC_OPTIONS: { value: string; label: string }[] = [
   { value: '4', label: '按年重置' },
 ];
 
+function parseResetTrafficMethod(value: string): EditablePlan['reset_traffic_method'] {
+  switch (value) {
+    case 'null':
+      return null;
+    case '0':
+      return 0;
+    case '1':
+      return 1;
+    case '2':
+      return 2;
+    case '3':
+      return 3;
+    case '4':
+      return 4;
+    default:
+      throw new Error(`Unsupported reset traffic method: ${value}`);
+  }
+}
+
 // New plans start with every price explicitly null so the api-client leaves them
 // null (not for sale) instead of scaling `undefined` into NaN.
 function emptyPlan(): EditablePlan {
   return {
-    show: 0,
     name: null,
     transfer_enable: null,
     group_id: undefined,
@@ -104,32 +134,36 @@ function PriceInput({
   value,
   currencySymbol,
   onChange,
+  error,
 }: {
   id: string;
   label: string;
   value: unknown;
   currencySymbol?: string;
   onChange: (value: string) => void;
+  error?: { message?: string };
 }) {
   return (
-    <div className="space-y-2">
-      <Label htmlFor={id}>{label}</Label>
-      <div className="relative">
-        <Input
+    <Field data-invalid={Boolean(error)}>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <InputGroup>
+        <InputGroupInput
           id={id}
           type="number"
-          className={currencySymbol ? 'pr-8' : undefined}
+          step="0.01"
           value={inputValue(value)}
           onChange={(event) => onChange(event.target.value)}
+          aria-invalid={Boolean(error)}
           data-testid={id}
         />
         {currencySymbol ? (
-          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground">
-            {currencySymbol}
-          </span>
+          <InputGroupAddon align="inline-end">
+            <InputGroupText>{currencySymbol}</InputGroupText>
+          </InputGroupAddon>
         ) : null}
-      </div>
-    </div>
+      </InputGroup>
+      <FieldError errors={[error]} />
+    </Field>
   );
 }
 
@@ -140,6 +174,7 @@ function LimitInput({
   placeholder,
   suffix,
   onChange,
+  error,
 }: {
   id: string;
   label: string;
@@ -147,26 +182,30 @@ function LimitInput({
   placeholder?: string;
   suffix?: string;
   onChange: (value: string) => void;
+  error?: { message?: string };
 }) {
   return (
-    <div className="space-y-2">
-      <Label htmlFor={id}>{label}</Label>
-      <div className="relative">
-        <Input
+    <Field data-invalid={Boolean(error)}>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <InputGroup>
+        <InputGroupInput
           id={id}
-          className={suffix ? 'pr-12' : undefined}
+          type="number"
+          step="1"
           placeholder={placeholder}
           value={inputValue(value)}
           onChange={(event) => onChange(event.target.value)}
+          aria-invalid={Boolean(error)}
           data-testid={id}
         />
         {suffix ? (
-          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground">
-            {suffix}
-          </span>
+          <InputGroupAddon align="inline-end">
+            <InputGroupText>{suffix}</InputGroupText>
+          </InputGroupAddon>
         ) : null}
-      </div>
-    </div>
+      </InputGroup>
+      <FieldError errors={[error]} />
+    </Field>
   );
 }
 
@@ -182,19 +221,26 @@ function PlanEditor({
   groups: { id: number; name: string }[];
   currencySymbol?: string;
   pending: boolean;
-  onSave: (payload: SavePlanPayload) => Promise<unknown>;
+  onSave: (payload: SavePlanPayload, onSuccess: () => void) => void;
   children: ReactElement<{ onClick?: () => void }>;
 }) {
   const [open, setOpen] = useState(false);
-  const [submit, setSubmit] = useState<EditablePlan>(() => ({ ...(record ?? emptyPlan()) }));
+  const form = useForm<EditablePlan>({
+    resolver: zodResolver(planEditorSchema),
+    defaultValues: { ...emptyPlan(), ...record },
+  });
+  const submit = useWatch({ control: form.control });
 
   const openSheet = () => {
-    setSubmit({ ...(record ?? emptyPlan()) });
+    form.reset({ ...emptyPlan(), ...record });
     setOpen(true);
   };
 
-  const change = (key: keyof EditablePlan, value: unknown) => {
-    setSubmit((current) => ({ ...current, [key]: value }));
+  const change = <Key extends FieldPath<EditablePlan>>(
+    key: Key,
+    value: FieldPathValue<EditablePlan, Key>,
+  ) => {
+    form.setValue(key, value, { shouldDirty: true, shouldValidate: true });
   };
 
   // Empty price → null so it is not scaled/sold; any other value passes through
@@ -203,10 +249,9 @@ function PlanEditor({
     change(key, value !== '' ? value : null);
   };
 
-  const save = async () => {
-    await onSave({ ...submit });
-    setOpen(false);
-  };
+  const save = form.handleSubmit((validValues) => {
+    onSave(validValues, () => setOpen(false));
+  });
 
   const resetValue =
     submit.reset_traffic_method === null
@@ -216,174 +261,199 @@ function PlanEditor({
         : String(submit.reset_traffic_method);
 
   return (
-    <>
-      {cloneElement(children, { onClick: openSheet })}
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent
-          side="right"
-          className="w-full gap-0 overflow-y-auto sm:max-w-2xl"
-          data-testid="plan-editor"
-        >
-          <SheetHeader>
-            <SheetTitle>{submit.id ? '编辑订阅' : '新建订阅'}</SheetTitle>
-          </SheetHeader>
+    <Sheet
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (nextOpen) openSheet();
+        else setOpen(false);
+      }}
+    >
+      <SheetTrigger asChild>{children}</SheetTrigger>
+      <SheetContent
+        side="right"
+        className="w-full gap-0 overflow-y-auto sm:max-w-2xl"
+        data-testid="plan-editor"
+      >
+        <SheetHeader>
+          <SheetTitle>{submit.id ? '编辑订阅' : '新建订阅'}</SheetTitle>
+          <SheetDescription>配置订阅流量、权限组、价格周期和展示规则。</SheetDescription>
+        </SheetHeader>
 
-          <TooltipProvider delayDuration={100}>
-            <div className="space-y-5 px-4 pb-4">
-              <div className="space-y-2">
-                <Label htmlFor="plan-name">套餐名称</Label>
-                <Input
-                  id="plan-name"
-                  placeholder="请输入套餐名称"
-                  value={inputValue(submit.name)}
-                  onChange={(event) => change('name', event.target.value)}
-                  data-testid="plan-name"
-                />
-              </div>
+        <TooltipProvider delayDuration={100}>
+          <form id="plan-editor-form" className="space-y-5 px-4 pb-4" onSubmit={save} noValidate>
+            <Field data-invalid={Boolean(form.formState.errors.name)}>
+              <FieldLabel htmlFor="plan-name">套餐名称</FieldLabel>
+              <Input
+                id="plan-name"
+                placeholder="请输入套餐名称"
+                value={inputValue(submit.name)}
+                onChange={(event) => change('name', event.target.value)}
+                aria-invalid={Boolean(form.formState.errors.name)}
+                data-testid="plan-name"
+              />
+              <FieldError errors={[form.formState.errors.name]} />
+            </Field>
 
-              <div className="space-y-2">
-                <Label htmlFor="plan-content">套餐描述</Label>
-                <Textarea
-                  id="plan-content"
-                  rows={6}
-                  className="font-mono text-xs"
-                  placeholder="请输入套餐描述，支持HTML"
-                  value={inputValue(submit.content)}
-                  onChange={(event) => change('content', event.target.value)}
-                  data-testid="plan-content"
-                />
-              </div>
+            <Field>
+              <FieldLabel htmlFor="plan-content">套餐描述</FieldLabel>
+              <Textarea
+                id="plan-content"
+                rows={6}
+                className="font-mono text-xs"
+                placeholder="请输入套餐描述，支持HTML"
+                value={inputValue(submit.content)}
+                onChange={(event) => change('content', event.target.value)}
+                data-testid="plan-content"
+              />
+            </Field>
 
-              <div className="space-y-3">
-                <HeaderTooltip
-                  title="将金额留空则不会进行出售"
-                  className="text-sm font-medium text-foreground"
-                >
-                  售价设置
-                </HeaderTooltip>
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  {PRICE_FIELDS.map((field) => (
-                    <PriceInput
-                      key={field.key}
-                      id={`plan-price-${field.key}`}
-                      label={field.label}
-                      currencySymbol={currencySymbol}
-                      value={submit[field.key]}
-                      onChange={(value) => priceChange(field.key, value)}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <LimitInput
-                  id="plan-transfer-enable"
-                  label="套餐流量"
-                  suffix="GB"
-                  placeholder="请输入套餐流量"
-                  value={submit.transfer_enable}
-                  onChange={(value) => change('transfer_enable', value)}
-                />
-                <LimitInput
-                  id="plan-device-limit"
-                  label="设备数限制"
-                  placeholder="留空则不限制"
-                  value={submit.device_limit}
-                  onChange={(value) => change('device_limit', value)}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label htmlFor="plan-group">权限组</Label>
-                  <Select
-                    value={submit.group_id != null ? String(submit.group_id) : undefined}
-                    onValueChange={(value) => change('group_id', Number(value))}
-                  >
-                    <SelectTrigger id="plan-group" className="w-full" data-testid="plan-group">
-                      <SelectValue placeholder="请选择权限组" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {groups.map((group) => (
-                        <SelectItem key={group.id} value={String(group.id)}>
-                          {group.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="plan-reset-method">流量重置方式</Label>
-                  <Select
-                    value={resetValue}
-                    onValueChange={(value) =>
-                      change('reset_traffic_method', value === 'null' ? null : Number(value))
-                    }
-                  >
-                    <SelectTrigger
-                      id="plan-reset-method"
-                      className="w-full"
-                      data-testid="plan-reset-method"
-                    >
-                      <SelectValue placeholder="请选择流量重置方式" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {RESET_TRAFFIC_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <LimitInput
-                  id="plan-capacity-limit"
-                  label="最大容纳用户量"
-                  placeholder="留空则不限制"
-                  value={submit.capacity_limit}
-                  onChange={(value) => change('capacity_limit', value)}
-                />
-                <LimitInput
-                  id="plan-speed-limit"
-                  label="限速"
-                  suffix="Mbps"
-                  placeholder="留空则不限制"
-                  value={submit.speed_limit}
-                  onChange={(value) => change('speed_limit', value)}
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
-                  <Checkbox
-                    checked={Boolean(submit.force_update)}
-                    onCheckedChange={(value) => change('force_update', value === true)}
-                    data-testid="plan-force-update"
+            <div className="space-y-3">
+              <HeaderTooltip
+                title="将金额留空则不会进行出售"
+                className="text-sm font-medium text-foreground"
+              >
+                售价设置
+              </HeaderTooltip>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {PRICE_FIELDS.map((field) => (
+                  <PriceInput
+                    key={field.key}
+                    id={`plan-price-${field.key}`}
+                    label={field.label}
+                    currencySymbol={currencySymbol}
+                    value={submit[field.key]}
+                    onChange={(value) => priceChange(field.key, value)}
+                    error={form.formState.errors[field.key]}
                   />
-                  强制更新到用户
-                </label>
-                <p className="text-xs text-muted-foreground">
-                  勾选后变更的流量、限速、权限组将应用到该套餐下的用户
-                </p>
+                ))}
               </div>
             </div>
-          </TooltipProvider>
 
-          <SheetFooter>
-            <Button onClick={() => void save()} disabled={pending} data-testid="plan-submit">
-              {pending ? <Loader2 className="size-4 animate-spin" /> : null}
-              提交
-            </Button>
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              取消
-            </Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
-    </>
+            <div className="grid grid-cols-2 gap-3">
+              <LimitInput
+                id="plan-transfer-enable"
+                label="套餐流量"
+                suffix="GB"
+                placeholder="请输入套餐流量"
+                value={submit.transfer_enable}
+                onChange={(value) => change('transfer_enable', value)}
+                error={form.formState.errors.transfer_enable}
+              />
+              <LimitInput
+                id="plan-device-limit"
+                label="设备数限制"
+                placeholder="留空则不限制"
+                value={submit.device_limit}
+                onChange={(value) => change('device_limit', value)}
+                error={form.formState.errors.device_limit}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Field data-invalid={Boolean(form.formState.errors.group_id)}>
+                <FieldLabel htmlFor="plan-group">权限组</FieldLabel>
+                <Select
+                  value={submit.group_id != null ? String(submit.group_id) : ''}
+                  onValueChange={(value) => change('group_id', Number(value))}
+                >
+                  <SelectTrigger
+                    id="plan-group"
+                    className="w-full"
+                    data-testid="plan-group"
+                    aria-invalid={Boolean(form.formState.errors.group_id)}
+                  >
+                    <SelectValue placeholder="请选择权限组" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {groups.map((group) => (
+                      <SelectItem key={group.id} value={String(group.id)}>
+                        {group.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FieldError errors={[form.formState.errors.group_id]} />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="plan-reset-method">流量重置方式</FieldLabel>
+                <Select
+                  value={resetValue ?? ''}
+                  onValueChange={(value) =>
+                    change('reset_traffic_method', parseResetTrafficMethod(value))
+                  }
+                >
+                  <SelectTrigger
+                    id="plan-reset-method"
+                    className="w-full"
+                    data-testid="plan-reset-method"
+                  >
+                    <SelectValue placeholder="请选择流量重置方式" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {RESET_TRAFFIC_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <LimitInput
+                id="plan-capacity-limit"
+                label="最大容纳用户量"
+                placeholder="留空则不限制"
+                value={submit.capacity_limit}
+                onChange={(value) => change('capacity_limit', value)}
+                error={form.formState.errors.capacity_limit}
+              />
+              <LimitInput
+                id="plan-speed-limit"
+                label="限速"
+                suffix="Mbps"
+                placeholder="留空则不限制"
+                value={submit.speed_limit}
+                onChange={(value) => change('speed_limit', value)}
+                error={form.formState.errors.speed_limit}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+                <Checkbox
+                  checked={Boolean(submit.force_update)}
+                  onCheckedChange={(value) => change('force_update', value === true)}
+                  data-testid="plan-force-update"
+                />
+                强制更新到用户
+              </label>
+              <p className="text-xs text-muted-foreground">
+                勾选后变更的流量、限速、权限组将应用到该套餐下的用户
+              </p>
+            </div>
+          </form>
+        </TooltipProvider>
+
+        <SheetFooter>
+          <Button
+            type="submit"
+            form="plan-editor-form"
+            disabled={pending}
+            data-testid="plan-submit"
+          >
+            {pending ? (
+              <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
+            ) : null}
+            提交
+          </Button>
+          <Button variant="outline" onClick={() => setOpen(false)}>
+            取消
+          </Button>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -395,27 +465,22 @@ export default function PlansPage() {
   const drop = useDropPlanMutation();
   const update = useUpdatePlanMutation();
   const sort = useSortPlansMutation();
-  const [order, setOrder] = useState<Plan[]>(() => plans.data ?? []);
-  const [sortLoading, setSortLoading] = useState(false);
-  const orderRef = useRef(order);
-  orderRef.current = order;
-
-  useEffect(() => {
-    if (plans.data) setOrder(plans.data);
-  }, [plans.data]);
+  const [orderOverride, setOrderOverride] = useState<Plan[] | null>(null);
+  const order = orderOverride ?? plans.data ?? [];
+  const groupData = groups.data;
+  const groupsReady = !groups.isError && groupData !== undefined;
 
   const currencySymbol = config.data?.site?.currency_symbol;
 
-  const savePlan = async (payload: SavePlanPayload) => {
-    await save.mutateAsync(payload);
-    await plans.refetch();
+  const savePlan = (payload: SavePlanPayload, onSuccess: () => void) => {
+    save.mutate(payload, { onSuccess });
   };
 
   // Adjacent swap reorder. The persisted contract is unchanged: sort.mutate gets
   // the full id list in the new order, then the page refetches.
   const movePlan = (index: number, direction: -1 | 1) => {
     const target = index + direction;
-    const list = orderRef.current;
+    const list = order;
     if (target < 0 || target >= list.length) return;
     const next = [...list];
     const a = next[index];
@@ -423,16 +488,11 @@ export default function PlansPage() {
     if (!a || !b) return;
     next[index] = b;
     next[target] = a;
-    setOrder(next);
-    setSortLoading(true);
+    setOrderOverride(next);
     sort.mutate(
       next.map((plan) => plan.id),
       {
-        onSuccess: () => {
-          void plans.refetch().finally(() => {
-            setSortLoading(false);
-          });
-        },
+        onSettled: () => setOrderOverride(null),
       },
     );
   };
@@ -445,26 +505,15 @@ export default function PlansPage() {
       cancelText: '取消',
     });
     if (!confirmed) return;
-    drop.mutate(record.id, {
-      onSuccess: () => {
-        void plans.refetch();
-      },
-    });
+    drop.mutate(record.id);
   };
 
   const updatePlan = (id: number, key: 'show' | 'renew', value: 0 | 1) => {
-    update.mutate(
-      { id, key, value },
-      {
-        onSuccess: () => {
-          void plans.refetch();
-        },
-      },
-    );
+    update.mutate({ id, key, value });
   };
 
   const groupName = (id: number) =>
-    (groups.data ?? []).find((group) => group.id === parseInt(String(id), 10))?.name;
+    groupData?.find((group) => group.id === parseInt(String(id), 10))?.name;
 
   const columns: DataTableColumn<Plan>[] = [
     {
@@ -507,11 +556,7 @@ export default function PlansPage() {
         <Switch
           checked={Boolean(parseInt(String(row.original.show), 10))}
           onCheckedChange={() =>
-            updatePlan(
-              row.original.id,
-              'show',
-              parseInt(String(row.original.show), 10) ? 0 : 1,
-            )
+            updatePlan(row.original.id, 'show', parseInt(String(row.original.show), 10) ? 0 : 1)
           }
           aria-label={`切换「${row.original.name}」销售状态`}
         />
@@ -529,11 +574,7 @@ export default function PlansPage() {
         <Switch
           checked={Boolean(parseInt(String(row.original.renew), 10))}
           onCheckedChange={() =>
-            updatePlan(
-              row.original.id,
-              'renew',
-              parseInt(String(row.original.renew), 10) ? 0 : 1,
-            )
+            updatePlan(row.original.id, 'renew', parseInt(String(row.original.renew), 10) ? 0 : 1)
           }
           aria-label={`切换「${row.original.name}」续费`}
         />
@@ -583,18 +624,25 @@ export default function PlansPage() {
       header: () => <span>操作</span>,
       cell: ({ row }) => (
         <div className="flex items-center justify-end gap-1">
-          <PlanEditor
-            record={row.original}
-            groups={groups.data ?? []}
-            currencySymbol={currencySymbol}
-            pending={save.isPending}
-            onSave={savePlan}
-          >
-            <Button variant="ghost" size="sm" data-testid={`plan-edit-${row.original.id}`}>
+          {groupsReady ? (
+            <PlanEditor
+              record={row.original}
+              groups={groupData}
+              currencySymbol={currencySymbol}
+              pending={save.isPending}
+              onSave={savePlan}
+            >
+              <Button variant="ghost" size="sm" data-testid={`plan-edit-${row.original.id}`}>
+                <Pencil className="size-4" />
+                编辑
+              </Button>
+            </PlanEditor>
+          ) : (
+            <Button variant="ghost" size="sm" disabled>
               <Pencil className="size-4" />
               编辑
             </Button>
-          </PlanEditor>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -612,20 +660,33 @@ export default function PlansPage() {
 
   return (
     <PageShell data-testid="plans-page">
+      {plans.isError ? (
+        <ErrorState message="订阅列表加载失败" onRetry={() => void plans.refetch()} />
+      ) : null}
+      {groups.isError ? (
+        <ErrorState message="权限组加载失败" onRetry={() => void groups.refetch()} />
+      ) : null}
       <PageHeader
         title="订阅管理"
         actions={
-          <PlanEditor
-            groups={groups.data ?? []}
-            currencySymbol={currencySymbol}
-            pending={save.isPending}
-            onSave={savePlan}
-          >
-            <Button data-testid="plan-create">
+          groupsReady ? (
+            <PlanEditor
+              groups={groupData}
+              currencySymbol={currencySymbol}
+              pending={save.isPending}
+              onSave={savePlan}
+            >
+              <Button data-testid="plan-create">
+                <Plus className="size-4" />
+                添加订阅
+              </Button>
+            </PlanEditor>
+          ) : (
+            <Button disabled data-testid="plan-create">
               <Plus className="size-4" />
               添加订阅
             </Button>
-          </PlanEditor>
+          )
         }
       />
 
@@ -638,14 +699,18 @@ export default function PlansPage() {
               getRowKey={(row) => row.id}
               className="min-w-[1180px]"
               data-testid="plans-table"
-              empty={order.length === 0 ? '暂无订阅' : undefined}
+              empty={
+                !plans.isError && plans.data !== undefined && order.length === 0
+                  ? '暂无订阅'
+                  : undefined
+              }
               emptyTestId="plans-empty"
             />
           </CardContent>
         </Card>
       </TooltipProvider>
 
-      {sortLoading || plans.isPending ? (
+      {sort.isPending || plans.isPending ? (
         <div className="flex justify-center py-6" role="status">
           <Spinner className="size-5 text-muted-foreground" />
           <span className="sr-only">加载中</span>

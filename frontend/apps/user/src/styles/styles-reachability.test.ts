@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 // knip/depcheck do not follow CSS `@import`, so dead stylesheets accumulate
 // silently. The user runtime intentionally ships no Bootstrap/OneUI framework
-// CSS; this walks the `@import` graph rooted at the stylesheets main.tsx loads
+// CSS; this walks the `@import` graph rooted at the stylesheet main.tsx loads
 // and asserts every styles/*.css is actually reachable, failing the moment an
 // orphaned stylesheet is reintroduced.
 const here = dirname(fileURLToPath(import.meta.url));

@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/cn';
+import { translateRuntimeMessage } from '@/lib/translate-runtime-message';
 
 type AuthInputProps = ComponentPropsWithRef<typeof Input>;
 
@@ -25,7 +26,7 @@ interface AuthFieldProps {
   id: string;
   label: ReactNode;
   /** Inline field error copy; rendered as a `role="alert"` message tied to the control. */
-  error?: ReactNode;
+  error?: string;
   className?: string;
   /** The form control (e.g. <Input id={id} />). Props stay explicit — no cloneElement injection. */
   children: ReactNode;
@@ -33,20 +34,34 @@ interface AuthFieldProps {
 
 // Explicit label/control/error field wrapper for the register-based auth island.
 // The auth controllers expose only RHF `register` (no FormProvider/control), and
-// the error copy is external controller state rather than a FieldError, so the
-// context-driven components/ui/form.tsx primitive cannot wire these fields; this
-// keeps the wiring explicit instead of the retired cloneElement FormField.
+// the error copy is external controller state rather than a FieldError. Keep
+// this register wiring explicit; Controller-driven forms use the shared Field
+// primitive instead of a competing context or cloneElement abstraction.
 export function AuthField({ id, label, error, className, children }: AuthFieldProps) {
   return (
     <div className={cn('grid gap-3', className)}>
       <Label htmlFor={id}>{label}</Label>
       {children}
-      {error ? (
-        <p id={`${id}-error`} role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      ) : null}
+      <AuthFieldError id={`${id}-error`} message={error} />
     </div>
+  );
+}
+
+export function AuthFieldError({
+  id,
+  message,
+  className,
+}: {
+  id: string;
+  message?: string;
+  className?: string;
+}) {
+  const { i18n } = useTranslation();
+  if (!message) return null;
+  return (
+    <p id={id} role="alert" className={cn('text-sm text-destructive', className)}>
+      {translateRuntimeMessage(i18n, message)}
+    </p>
   );
 }
 
@@ -55,7 +70,7 @@ export function AuthLoadingState() {
   return (
     <div className="flex min-h-64 items-center justify-center" role="status">
       <Spinner className="size-5 text-muted-foreground" />
-      <span className="sr-only">{t('common.loading')}</span>
+      <span className="sr-only">{t($ => $.common.loading)}</span>
     </div>
   );
 }
@@ -77,6 +92,7 @@ interface AuthEmailWithSuffixFieldProps {
   suffixes: string[];
   value: string | undefined;
   onChange: (value: string) => void;
+  error?: string;
 }
 
 export function AuthEmailWithSuffixField({
@@ -87,6 +103,7 @@ export function AuthEmailWithSuffixField({
   suffixes,
   value,
   onChange,
+  error,
 }: AuthEmailWithSuffixFieldProps) {
   return (
     <div className="grid gap-3">
@@ -98,16 +115,12 @@ export function AuthEmailWithSuffixField({
           autoComplete="username"
           placeholder="name"
           className="min-w-0"
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? `${id}-error` : undefined}
           {...inputProps}
         />
-        <Select
-          value={value}
-          onValueChange={onChange}
-        >
-          <SelectTrigger
-            aria-label={selectLabel}
-            className="max-w-40"
-          >
+        <Select value={value} onValueChange={onChange}>
+          <SelectTrigger aria-label={selectLabel} className="max-w-40">
             <SelectValue>{value ? `@${value}` : undefined}</SelectValue>
           </SelectTrigger>
           <SelectContent>
@@ -119,6 +132,7 @@ export function AuthEmailWithSuffixField({
           </SelectContent>
         </Select>
       </div>
+      <AuthFieldError id={`${id}-error`} message={error} />
     </div>
   );
 }
@@ -133,6 +147,7 @@ interface AuthEmailCodeFieldProps {
   disabled?: boolean;
   loading?: boolean;
   onSendCode: () => void;
+  error?: string;
 }
 
 export function AuthEmailCodeField({
@@ -144,12 +159,21 @@ export function AuthEmailCodeField({
   disabled,
   loading,
   onSendCode,
+  error,
 }: AuthEmailCodeFieldProps) {
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
-      <AuthField id={id} label={label} className="min-w-0">
-        <Input id={id} type="text" inputMode="numeric" {...inputProps} />
-      </AuthField>
+      <div className="grid min-w-0 gap-3">
+        <Label htmlFor={id}>{label}</Label>
+        <Input
+          id={id}
+          type="text"
+          inputMode="numeric"
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? `${id}-error` : undefined}
+          {...inputProps}
+        />
+      </div>
       <Button
         type="button"
         size="lg"
@@ -161,6 +185,7 @@ export function AuthEmailCodeField({
       >
         {buttonLabel}
       </Button>
+      <AuthFieldError id={`${id}-error`} message={error} className="col-span-2" />
     </div>
   );
 }
@@ -172,7 +197,8 @@ interface AuthPasswordConfirmationFieldsProps {
   confirmId: string;
   confirmInputProps?: AuthInputProps;
   confirmLabel: ReactNode;
-  confirmError?: ReactNode;
+  passwordError?: string;
+  confirmError?: string;
 }
 
 export function AuthPasswordConfirmationFields({
@@ -182,19 +208,27 @@ export function AuthPasswordConfirmationFields({
   confirmId,
   confirmInputProps,
   confirmLabel,
+  passwordError,
   confirmError,
 }: AuthPasswordConfirmationFieldsProps) {
   return (
     <>
-      <AuthField id={passwordId} label={passwordLabel}>
-        <Input id={passwordId} type="password" autoComplete="new-password" {...passwordInputProps} />
+      <AuthField id={passwordId} label={passwordLabel} error={passwordError}>
+        <Input
+          id={passwordId}
+          type="password"
+          autoComplete="new-password"
+          aria-invalid={passwordError ? true : undefined}
+          aria-describedby={passwordError ? `${passwordId}-error` : undefined}
+          {...passwordInputProps}
+        />
       </AuthField>
       <AuthField id={confirmId} label={confirmLabel} error={confirmError}>
         <Input
           id={confirmId}
           type="password"
           autoComplete="new-password"
-          invalid={confirmError ? true : undefined}
+          aria-invalid={confirmError ? true : undefined}
           aria-describedby={confirmError ? `${confirmId}-error` : undefined}
           {...confirmInputProps}
         />
@@ -204,13 +238,5 @@ export function AuthPasswordConfirmationFields({
 }
 
 export function AuthSubmitButton({ className, ...props }: ButtonProps) {
-  return (
-    <Button
-      type="submit"
-      size="lg"
-      block
-      className={className}
-      {...props}
-    />
-  );
+  return <Button type="submit" size="lg" block className={className} {...props} />;
 }

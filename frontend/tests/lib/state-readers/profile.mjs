@@ -40,7 +40,7 @@ export async function profileResetSubscribeState(page) {
     ),
     resetButtons: await visibleTexts(page, '[data-testid="profile-reset-button"], .ant-btn-danger', 4),
     resetCount: page.__visualParityUserResetSecurityCount ?? 0,
-    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
+    toastTexts: await visibleTexts(page, '[data-sonner-toast], .ant-message-notice, .ant-notification-notice', 4),
     title,
     warningTexts: await visibleTexts(page, '[data-testid="profile-reset-warning"], .alert-warning', 4),
   };
@@ -122,7 +122,7 @@ export async function profileTelegramUnbindState(page) {
         4,
       ),
     ),
-    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
+    toastTexts: await visibleTexts(page, '[data-sonner-toast], .ant-message-notice, .ant-notification-notice', 4),
     unbindButtons: await visibleTexts(
       page,
       '[data-testid="profile-telegram-unbind"] button, .unbind_telegram .ant-btn, .unbind_telegram button',
@@ -230,7 +230,7 @@ export async function profileRedeemGiftcardState(page) {
     redeemRequests: (page.__visualParityUserRedeemGiftcardRequests ?? []).map((request) =>
       request && typeof request === 'object' && !Array.isArray(request) ? { ...request } : request,
     ),
-    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
+    toastTexts: await visibleTexts(page, '[data-sonner-toast], .ant-message-notice, .ant-notification-notice', 4),
   };
 }
 
@@ -269,8 +269,9 @@ export async function profileChangePasswordState(page) {
       isVisible,
     );
     return {
-      authBoxCount: Array.from(document.querySelectorAll('.v2board-auth-box')).filter(isVisible)
-        .length,
+      authBoxCount: Array.from(
+        document.querySelectorAll('[data-testid="auth-surface"], .v2board-auth-box'),
+      ).filter(isVisible).length,
       passwordInputs: inputs,
       saveButton: button
         ? {
@@ -299,7 +300,7 @@ export async function profileChangePasswordState(page) {
     ),
     hash: await page.evaluate(() => window.location.hash),
     localAuthPresent: await page.evaluate(() => Boolean(window.localStorage.getItem('authorization'))),
-    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
+    toastTexts: await visibleTexts(page, '[data-sonner-toast], .ant-message-notice, .ant-notification-notice', 4),
     ...domState,
     saveButton: normalizeProfileActionButtonState(domState.saveButton),
   };
@@ -381,6 +382,7 @@ export async function waitForProfileRedeemGiftcardLoading(page) {
               button.querySelector('.anticon-loading, .fa-spin, svg.animate-spin')),
         );
       },
+      null,
       { timeout: 5_000 },
     )
     .catch(() => undefined);
@@ -463,6 +465,7 @@ export async function waitForProfileChangePasswordLoading(page) {
               button.querySelector('.anticon-loading, .fa-spin, svg.animate-spin')),
         );
       },
+      null,
       { timeout: 5_000 },
     )
     .catch(() => undefined);

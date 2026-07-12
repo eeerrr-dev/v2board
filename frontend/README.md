@@ -1,134 +1,96 @@
 # V2Board Frontend
 
-A pnpm monorepo for restoring the V2Board frontend as source code against the
-original Laravel API (v1). The target is a complete source-level replica:
-function, behavior, visual appearance, layout, routing, persistence, and deploy
-shape should match the packaged frontend exactly, without runtime or build-time
-dependency on the packaged legacy bundles.
+React 19、TypeScript、Vite、Tailwind v4 与 shadcn/Radix 组成的 pnpm monorepo。
+用户端和管理端都由源码构建，不读取旧打包 CSS/JS，也不依赖 PHP 模板。
 
-Current status: the React/TypeScript application source owns its runtime CSS,
-fonts, deploy Blade/templates, and imported image assets. Run `make
-replica-audit` and `make public-bundle-audit` from the repository root before
-claiming the frontend is free of packaged runtime/build dependencies and host
-public bundle pollution.
+## 目录
 
-## Layout
-
-```
+```text
 apps/
-  admin/      Ant Design 6 admin panel
-  user/       Tailwind + shadcn user panel
+  user/         用户端纯 shadcn 应用
+  admin/        管理端纯 shadcn 应用
 packages/
-  types/      Shared domain types
-  api-client/ Typed Axios client wrapping every documented endpoint
-  i18n/       i18next bootstrap + translation tables (zh-CN/zh-TW/en/ja/fa/ru)
-  config/     Shared Vite/Tailwind/TS base
+  api-client/   类型化 API 边界
+  config/       Vite、Tailwind 与 TypeScript 共享配置
+  i18n/         i18next 初始化与翻译资源
+  types/        共享领域类型
+scripts/        deploy、浏览器 smoke 与审计脚本
+tests/          Playwright 行为/无障碍契约
 ```
 
-## Quick start
+## 开发
+
+从仓库根目录使用 Docker 工作流：
 
 ```bash
 make up
-make sync          # after source edits, refresh Docker workspaces
-make doctor        # verify Compose config and host cleanliness
+make sync
+make doctor
 ```
 
-Run dependency, test, build, and Playwright commands inside Docker. Do not run
-Composer, pnpm, npm, build, or test commands on the host when they would create
-`vendor/`, `node_modules/`, `.pnpm-store/`, `dist/`, `.vite/`, or cache output
-inside the repository.
+- <http://localhost:5173>：用户端 Vite server。
+- <http://localhost:5174/admin>：管理端 Vite server。
+- <http://localhost:8000>：Rust 提供的 production-shaped 页面与 API。
+
+两个 Vite server 都将 API 请求代理到 `rust-api:8080`。不要在宿主机运行会产生
+`node_modules`、`.pnpm-store`、`dist`、缓存或报告的 pnpm/npm 命令。
+
+需要直接执行 workspace 命令时，在容器内运行：
 
 ```bash
-docker-compose -p v2board -f docker-compose.local.yml exec frontend pnpm test
-docker-compose -p v2board -f docker-compose.local.yml exec frontend pnpm typecheck
+docker compose -p v2board -f docker-compose.local.yml exec frontend pnpm typecheck
+docker compose -p v2board -f docker-compose.local.yml exec frontend pnpm test
 ```
 
-Local ports:
+命令行 typecheck/build 使用原生 TypeScript 7 的 `tsc`；ESLint 与其他仍依赖稳定
+compiler API 的工具按 TypeScript 官方迁移方案并行使用 `@typescript/typescript6`。等
+原生 compiler API 稳定后再移除兼容包，而不是让生产检查继续停在旧编译器上。
 
-- `http://localhost:5173` is the source user dev server.
-- `http://localhost:5174` is the source admin dev server.
-- `http://localhost:8000` is the Laravel deployment target using source-built
-  assets.
-- `make legacy-oracle-serve` starts the old packaged frontend temporarily on
-  `http://localhost:8001` from `frontend/fixtures/legacy-oracle.ref`.
+## 部署格式
 
-The old packaged frontend must not be restored into the current `public/` tree
-for comparison. Use `make public-bundle-audit` to verify those host deploy
-targets are empty, `make interaction-parity` for behavior parity against the
-frozen oracle, and `make legacy-oracle-serve` only for manual inspection.
-Before relying on the oracle, `make legacy-oracle-check` verifies that the
-frozen ref contains the packaged user/admin entrypoints, async chunks, i18n
-scripts, and static/theme assets used by the parity harness.
+`pnpm build:deploy` 是唯一受支持的部署构建。它先在 release staging 目录中同时
+typecheck、构建并验证两个应用，成功后才发布：
 
-## Deployment
+```text
+dist-deploy/
+  releases/<content-id>/
+    user/{index.html,manifest.json,<content-hashed files>}
+    admin/{index.html,manifest.json,<content-hashed files>}
+  current -> releases/<content-id>
+  previous -> releases/<previous-content-id>
+```
 
-The deploy build emits `dist-deploy/`. For local verification, run `make
-deploy-smoke` from the repository root so the build happens inside Docker. In
-CI or a production build environment, run the equivalent `pnpm build:deploy`
-there, not on the local host workspace. Deploy with delete-sync semantics so old
-packaged files cannot survive beside the source-built bundle:
+每个 manifest 只有一个入口，所有 JS/CSS/字体/图片以扁平的内容哈希文件名发布。HTML 中只
+保留严格校验的 runtime-config token；Rust 在请求时注入品牌、语言和动态后台路径。
+发布使用原子 symlink 切换，并只保留 current/previous 两代，因此失败构建不会破坏最后
+一个可用 release，滚动发布间的在途静态请求也可以从 previous 完成。
+
+运行 `make deploy-smoke` 验证 release 结构、Rust HTML 注入、资源路由和旧 bundle
+隔离；运行 `make visual-smoke` 用 Docker 内 Chromium 检查桌面与移动布局。
+
+## 行为与参考项目
+
+`make interaction-parity`（`make behavior-parity` 的实现）驱动当前 Rust + React 应用
+和 `references/wyx2685-v2board` 中的只读参考 UI。比较范围只保留真实 Tier-1 契约：
+API endpoint/payload、认证与语言持久化、外部链接/集成及安全跳转。参考资源从不进入
+Vite 输入、deploy 输出或生产镜像。
 
 ```bash
-rsync -a --delete dist-deploy/theme/default/ /path/to/v2board/backend/laravel/public/theme/default/
-rsync -a --delete dist-deploy/assets/admin/ /path/to/v2board/backend/laravel/public/assets/admin/
+make reference-oracle-check
+make interaction-parity
+make accessibility-smoke
+make parity-config-audit
+make ui-sync-audit
 ```
 
-The repository does not track generated frontend files under
-`backend/laravel/public/theme/default/assets/` or `backend/laravel/public/assets/admin/`. Those directories are
-deployment targets only. The deploy output intentionally keeps legacy-compatible
-entry names such as `umi.css` and `umi.js`, but those files must come from the
-current source build, never from the packaged public tree.
+像素截图 lane 已退役。测试关注行为、可访问性、shadcn/Radix 结构和真实契约，不保留
+Ant Design、Bootstrap、OneUI、旧全局 CSS 或固定 `umi.js`/`umi.css` 入口。
 
-During restoration work, the old packaged CSS/JS may be inspected only as a
-parity oracle. It must not become a runtime, Vite, Laravel, or deploy input. Any
-monolithic CSS recovered into `frontend/apps/*/src` is a temporary compatibility
-layer to be broken back into maintainable source styles, not a completed source
-restoration.
+## 约束
 
-When an observed packaged behavior is questionable, classify it with
-`docs/legacy-frontend-behavior-audit.md` before copying, correcting, or testing
-it. The old frontend is an oracle for compatibility, not the only quality
-standard.
-
-For a local end-to-end deployment smoke, run `make deploy-smoke` from the
-repository root. It builds in Docker, syncs `dist-deploy/` into the Docker app
-container's Laravel `public/` tree, and verifies that the source-built user and
-admin resources are served while old bundle paths return 404.
-
-For a browser-rendered smoke, run `make visual-smoke`. It first runs the deploy
-smoke, then opens the source-built Laravel user/admin pages in Docker-contained
-Playwright Chromium at desktop and mobile sizes. This is a smoke guard for
-loaded CSS, visible layout, old-chunk regressions, and horizontal overflow; it
-is not by itself proof of full pixel parity with the packaged frontend.
-
-For behavior/contract parity against the frozen packaged frontend, run
-`make interaction-parity` (aliased by `make behavior-parity`). It extracts the
-packaged frontend from git history into Docker `/tmp`, serves it from an
-in-process oracle, and drives both the redesigned source and that oracle through
-the same interaction with Playwright Test (`frontend/playwright.config.mjs`),
-comparing only the Tier-1 contract fields. The pixel-screenshot lane is retired:
-every visual scenario is `visualRetired`, so parity is behavioral, not
-byte-for-byte. It must not be used as a source, build, Vite, Laravel, or
-deployment dependency.
-
-Run `make parity-config-audit` after adding or renaming parity scenarios. It is
-also part of `make doctor` and prevents the Makefile `INTERACTION_PARITY_SCENARIOS`
-list from drifting away from the parity modules under `frontend/tests/lib`; it
-also checks that every interaction maps to a spec group and that user/admin
-routes keep behavior coverage. The target runs in the Docker frontend container,
-so it does not require host Node.
-
-The deploy build is not considered fully source-restored while it copies,
-concatenates, or links old `umi.css`, `components.chunk.css`, `umi.js`,
-`vendors.async.js`, `components.async.js`, `env.example.js`, or packaged
-static/i18n/theme assets from `public/`. Optional `custom.css` and `custom.js`
-hooks are operator-provided files; the source deploy build must not generate or
-copy them from the packaged public tree.
-
-## Architecture rules
-
-- TypeScript strict, zero `any`.
-- Every HTTP call goes through `@v2board/api-client`.
-- User app never imports antd; admin app never imports tailwind.
-- TanStack Query owns server state; Zustand owns session/UI state.
-- i18next keys are the English string from `backend/laravel/resources/lang/en-US.json`.
+- strict TypeScript；不使用 `any` 逃逸。
+- HTTP 请求统一经过 `@v2board/api-client`。
+- TanStack Query 管理 server state，React Router 管理路由状态。
+- user/admin 使用本地拥有的 shadcn primitives、Radix 与 `lucide-react`。
+- 两个应用的共享 UI primitive 和全局 token CSS 必须通过 `make ui-sync-audit`。
+- 不复制、不拼接、不加载参考项目中的旧 bundle、CSS、字体或主题资源。

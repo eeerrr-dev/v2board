@@ -1,4 +1,4 @@
-import * as SheetPrimitive from '@radix-ui/react-dialog';
+import { Dialog as SheetPrimitive } from 'radix-ui';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { X } from 'lucide-react';
 import { type ComponentProps, type HTMLAttributes } from 'react';
@@ -22,16 +22,16 @@ function SheetOverlay({ className, ...props }: ComponentProps<typeof SheetPrimit
 }
 
 const sheetVariants = cva(
-  // Open/close motion (incl. side slides) lives in user-shadcn-motion.css under
-  // .v2board-radix-sheet-content[data-state][data-side]; no tw-animate utilities.
-  'v2board-island v2board-radix-sheet-content fixed z-50 flex flex-col gap-4 bg-background text-foreground shadow-lg',
+  'fixed z-50 flex flex-col gap-4 bg-background text-foreground shadow-lg transition ease-in-out data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:duration-200 data-[state=open]:duration-300 motion-reduce:animate-none!',
   {
     variants: {
       side: {
-        top: 'inset-x-0 top-0 border-b border-border',
-        bottom: 'inset-x-0 bottom-0 border-t border-border',
-        left: 'inset-y-0 left-0 h-full w-3/4 border-r border-border sm:max-w-sm',
-        right: 'inset-y-0 right-0 h-full w-3/4 border-l border-border sm:max-w-sm',
+        top: 'inset-x-0 top-0 border-b border-border data-[state=open]:slide-in-from-top data-[state=closed]:slide-out-to-top',
+        bottom:
+          'inset-x-0 bottom-0 border-t border-border data-[state=open]:slide-in-from-bottom data-[state=closed]:slide-out-to-bottom',
+        left: 'inset-y-0 left-0 h-full w-3/4 border-r border-border data-[state=open]:slide-in-from-left data-[state=closed]:slide-out-to-left sm:max-w-sm',
+        right:
+          'inset-y-0 right-0 h-full w-3/4 border-l border-border data-[state=open]:slide-in-from-right data-[state=closed]:slide-out-to-right sm:max-w-sm',
       },
     },
     defaultVariants: {
@@ -41,8 +41,7 @@ const sheetVariants = cva(
 );
 
 interface SheetContentProps
-  extends ComponentProps<typeof SheetPrimitive.Content>,
-    VariantProps<typeof sheetVariants> {}
+  extends ComponentProps<typeof SheetPrimitive.Content>, VariantProps<typeof sheetVariants> {}
 
 function SheetContent({ side = 'right', className, children, ...props }: SheetContentProps) {
   const { t } = useTranslation();
@@ -58,7 +57,7 @@ function SheetContent({ side = 'right', className, children, ...props }: SheetCo
         {children}
         <SheetPrimitive.Close className="absolute top-4 right-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none">
           <X className="size-4" />
-          <span className="sr-only">{t('common.close_dialog')}</span>
+          <span className="sr-only">{t($ => $.common.close_dialog)}</span>
         </SheetPrimitive.Close>
       </SheetPrimitive.Content>
     </SheetPortal>
@@ -66,7 +65,13 @@ function SheetContent({ side = 'right', className, children, ...props }: SheetCo
 }
 
 function SheetHeader({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div data-slot="sheet-header" className={cn('flex flex-col gap-2 text-left', className)} {...props} />;
+  return (
+    <div
+      data-slot="sheet-header"
+      className={cn('flex flex-col gap-2 text-left', className)}
+      {...props}
+    />
+  );
 }
 
 function SheetFooter({ className, ...props }: HTMLAttributes<HTMLDivElement>) {

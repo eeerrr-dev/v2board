@@ -1,4 +1,4 @@
-import * as RadioGroupPrimitive from '@radix-ui/react-radio-group';
+import { RadioGroup as RadioGroupPrimitive } from 'radix-ui';
 import type { ComponentPropsWithoutRef, ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 
@@ -7,11 +7,10 @@ interface SegmentedControlItem<T extends string> {
   value: T;
 }
 
-interface SegmentedControlProps<T extends string>
-  extends Omit<
-    ComponentPropsWithoutRef<typeof RadioGroupPrimitive.Root>,
-    'defaultValue' | 'onChange' | 'onValueChange' | 'value' | 'children'
-  > {
+interface SegmentedControlProps<T extends string> extends Omit<
+  ComponentPropsWithoutRef<typeof RadioGroupPrimitive.Root>,
+  'defaultValue' | 'onChange' | 'onValueChange' | 'value' | 'children'
+> {
   items: SegmentedControlItem<T>[];
   onValueChange: (value: T) => void;
   value: T;

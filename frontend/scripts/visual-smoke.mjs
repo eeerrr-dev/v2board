@@ -1,6 +1,6 @@
-import { chromium } from 'playwright';
+import { chromium } from '@playwright/test';
 
-const baseUrl = new URL(process.env.VISUAL_SMOKE_BASE_URL ?? 'http://laravel:8000');
+const baseUrl = new URL(process.env.VISUAL_SMOKE_BASE_URL ?? 'http://rust-api:8080');
 const adminPath = stripSlashes(process.env.VISUAL_SMOKE_ADMIN_PATH ?? 'admin');
 
 const oldChunkNames = [
@@ -10,21 +10,20 @@ const oldChunkNames = [
 ];
 const forbiddenFragments = [
   ...oldChunkNames,
-  `/theme/default/assets/${'i18n'}/`,
-  `/theme/default/assets/${'theme'}/`,
+  '/theme/',
+  `/assets/user/${'i18n'}/`,
+  `/assets/user/${'theme'}/`,
   `/assets/admin/${'theme'}/`,
 ];
 
 const pages = [
   {
-    cssPath: userAssetPath('umi.css'),
-    jsPath: userAssetPath('umi.js'),
+    assetPrefix: '/assets/user/',
     label: 'user',
     path: '/',
   },
   {
-    cssPath: '/assets/admin/umi.css',
-    jsPath: '/assets/admin/umi.js',
+    assetPrefix: '/assets/admin/',
     label: 'admin',
     path: `/${adminPath}`,
   },
@@ -103,10 +102,12 @@ async function smokePage(page, target, viewport) {
     failures.push(`${label} page returned ${response?.status() ?? 'no response'}`);
   }
 
-  await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined);
+  // Long-lived query polling means `networkidle` is not a valid readiness
+  // signal. Require the React tree to paint instead of swallowing that timeout.
+  await page.locator('#root > *').first().waitFor({ state: 'visible', timeout: 10_000 });
   await page.waitForTimeout(500);
 
-  const metrics = await page.evaluate(({ cssPath, jsPath }) => {
+  const metrics = await page.evaluate(({ assetPrefix }) => {
     const root = document.querySelector('#root') ?? document.body;
     const rootRect = root.getBoundingClientRect();
     const html = document.documentElement;
@@ -140,9 +141,9 @@ async function smokePage(page, target, viewport) {
 
     return {
       bodyBackground: window.getComputedStyle(body).backgroundColor,
-      cssLoaded: stylesheetHrefs.some((href) => href.includes(cssPath)),
+      cssLoaded: stylesheetHrefs.some((href) => new URL(href).pathname.startsWith(assetPrefix)),
       horizontalOverflow,
-      jsLoaded: scriptSrcs.some((src) => src.includes(jsPath)),
+      jsLoaded: scriptSrcs.some((src) => new URL(src).pathname.startsWith(assetPrefix)),
       rootHeight: rootRect.height,
       rootWidth: rootRect.width,
       sameOriginRuleCount,
@@ -151,8 +152,8 @@ async function smokePage(page, target, viewport) {
     };
   }, target);
 
-  if (!metrics.cssLoaded) failures.push(`${label} did not load ${target.cssPath}`);
-  if (!metrics.jsLoaded) failures.push(`${label} did not load ${target.jsPath}`);
+  if (!metrics.cssLoaded) failures.push(`${label} did not load hashed CSS from ${target.assetPrefix}`);
+  if (!metrics.jsLoaded) failures.push(`${label} did not load hashed ESM from ${target.assetPrefix}`);
   if (metrics.sameOriginRuleCount < 100) {
     failures.push(`${label} loaded too few CSS rules: ${metrics.sameOriginRuleCount}`);
   }
@@ -176,10 +177,6 @@ async function smokePage(page, target, viewport) {
 
 function stripSlashes(value) {
   return value.replace(/^\/+|\/+$/g, '');
-}
-
-function userAssetPath(fileName) {
-  return `/theme/default/${'assets'}/${fileName}`;
 }
 
 function urlFor(path) {

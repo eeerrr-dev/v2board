@@ -79,7 +79,8 @@ pub async fn fetch_available_servers(
             .parse::<i64>()
             .map(serde_json::Value::from)
             .unwrap_or_else(|_| serde_json::Value::String(row.port));
-        let mut extra = serde_json::from_str(&row.extra).unwrap_or(serde_json::Value::Null);
+        let mut extra = serde_json::from_str(&row.extra)
+            .map_err(|error| sqlx::Error::Decode(Box::new(error)))?;
         apply_parent_created_at(&row.r#type, row.parent_id, &mut extra, &created_at_by_id);
         servers.push(AvailableServerRow {
             id: row.id,

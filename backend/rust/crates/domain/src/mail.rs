@@ -3,6 +3,8 @@
 //! template is the same shell with a different title and body, so a single [`mail_shell`]
 //! reproduces the delivered HTML; each renderer supplies the per-template pieces.
 
+pub mod outbox;
+
 /// Mirrors Blade's `{{ }}` escaping (htmlspecialchars with ENT_QUOTES).
 pub fn html_escape(value: &str) -> String {
     value
@@ -55,25 +57,40 @@ pub fn render_notify(name: &str, url: &str, content: &str) -> String {
     mail_shell(name, url, "网站通知", &nl2br(content))
 }
 
-/// The worker's cron reminders (remindExpire / remindTraffic), with the shared "网站通知"
-/// shell as the fallback for any other worker-dispatched template.
-pub fn render_reminder(template_name: &str, name: &str, url: &str, subject: &str) -> String {
-    match template_name {
+/// The only reminder templates dispatched by the worker.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReminderKind {
+    Expire,
+    Traffic,
+}
+
+impl ReminderKind {
+    pub fn template_name(self) -> &'static str {
+        match self {
+            Self::Expire => "remindExpire",
+            Self::Traffic => "remindTraffic",
+        }
+    }
+}
+
+/// Renders one of the worker's two cron reminders. A typed kind keeps unknown
+/// template names from silently falling back to unrelated notification content.
+pub fn render_reminder(kind: ReminderKind, name: &str, url: &str) -> String {
+    match kind {
         // resources/views/mail/default/remindExpire.blade.php
-        "remindExpire" => mail_shell(
+        ReminderKind::Expire => mail_shell(
             name,
             url,
             "到期通知",
             "你的服务将在24小时内到期。为了不造成使用上的影响请尽快续费。如果你已续费请忽略此邮件。",
         ),
         // resources/views/mail/default/remindTraffic.blade.php
-        "remindTraffic" => mail_shell(
+        ReminderKind::Traffic => mail_shell(
             name,
             url,
             "流量通知",
             "你的流量已经使用95%。为了不造成使用上的影响请合理安排流量的使用。",
         ),
-        _ => mail_shell(name, url, "网站通知", &html_escape(subject)),
     }
 }
 
@@ -158,5 +175,18 @@ mod tests {
         let html = render_notify("Site", "https://x/", "hello\nworld");
         assert!(html.contains("网站通知"));
         assert!(html.contains("hello<br />\nworld"));
+    }
+
+    #[test]
+    fn reminder_kinds_keep_the_two_legacy_templates_explicit() {
+        let expire = render_reminder(ReminderKind::Expire, "Site", "https://x/");
+        assert!(expire.contains("到期通知"));
+        assert!(expire.contains("你的服务将在24小时内到期。"));
+        assert_eq!(ReminderKind::Expire.template_name(), "remindExpire");
+
+        let traffic = render_reminder(ReminderKind::Traffic, "Site", "https://x/");
+        assert!(traffic.contains("流量通知"));
+        assert!(traffic.contains("你的流量已经使用95%。"));
+        assert_eq!(ReminderKind::Traffic.template_name(), "remindTraffic");
     }
 }

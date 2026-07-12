@@ -1,8 +1,9 @@
-import { useNavigate } from 'react-router';
+import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { Copy, QrCode } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { copyText } from '@/lib/legacy-settings';
+import { copyText } from '@v2board/config/clipboard';
+import { getSiteTitle } from '@/lib/runtime-config';
 import { toast } from '@/lib/toast';
 import clashForAndroidIcon from '../assets/images/icon/Clash For Android.png';
 import clashForWindowsIcon from '../assets/images/icon/Clash For Windows.png';
@@ -47,17 +48,13 @@ const SUBSCRIBE_TARGET_ICONS: Record<string, string> = {
   Surge: surgeIcon,
 };
 
-export function DashboardSubscribeMenu({
-  onOpenQr,
-  subscribeUrl,
-}: DashboardSubscribeMenuProps) {
+export function DashboardSubscribeMenu({ onOpenQr, subscribeUrl }: DashboardSubscribeMenuProps) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   // React Compiler memoizes this derivation; no manual useMemo needed.
   const subscribeTargets = subscribeUrl ? getSubscribeTargets(subscribeUrl) : [];
 
   const copyUrl = async () => {
-    if (await copyText(subscribeUrl)) toast.success(t('dashboard.copy_success'));
+    if (await copyText(subscribeUrl)) toast.success(t($ => $.dashboard.copy_success));
   };
 
   return (
@@ -69,7 +66,7 @@ export function DashboardSubscribeMenu({
         onClick={copyUrl}
       >
         <Copy className="size-4 text-muted-foreground" />
-        <span>{t('dashboard.copy_subscribe')}</span>
+        <span>{t($ => $.dashboard.copy_subscribe)}</span>
       </button>
       <button
         type="button"
@@ -78,7 +75,7 @@ export function DashboardSubscribeMenu({
         onClick={onOpenQr}
       >
         <QrCode className="size-4 text-muted-foreground" />
-        <span>{t('dashboard.scan_qrcode_subscribe')}</span>
+        <span>{t($ => $.dashboard.scan_qrcode_subscribe)}</span>
       </button>
       {subscribeTargets.map((target) => (
         <button
@@ -91,20 +88,23 @@ export function DashboardSubscribeMenu({
             window.location.href = target.href;
           }}
         >
-          <img className="size-5 rounded-sm" src={SUBSCRIBE_TARGET_ICONS[target.title]} alt="" />
+          <img
+            className="size-5 rounded-sm"
+            src={SUBSCRIBE_TARGET_ICONS[target.title]}
+            alt=""
+            loading="lazy"
+            decoding="async"
+          />
           <span>
-            {t('dashboard.import_to')} {target.title}
+            {t($ => $.dashboard.import_to)} {target.title}
           </span>
         </button>
       ))}
       <div className="px-1 pb-1 pt-2">
-        <Button
-          type="button"
-          data-testid="dashboard-subscribe-tutorial"
-          className="w-full"
-          onClick={() => navigate('/knowledge')}
-        >
-          {t('dashboard.use_tutorial')}
+        <Button asChild className="w-full">
+          <Link to="/knowledge" data-testid="dashboard-subscribe-tutorial">
+            {t($ => $.dashboard.use_tutorial)}
+          </Link>
         </Button>
       </div>
     </div>
@@ -112,7 +112,7 @@ export function DashboardSubscribeMenu({
 }
 
 export function getSubscribeTargets(url: string) {
-  const title = window.settings!.title;
+  const title = getSiteTitle();
   const userAgent = window.navigator.userAgent;
   const lowerUserAgent = userAgent.toLowerCase();
   const isAppleMobile =

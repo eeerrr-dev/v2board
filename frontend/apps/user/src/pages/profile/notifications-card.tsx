@@ -19,19 +19,19 @@ export function NotificationsCard() {
             <Bell className="size-4" />
           </SectionIcon>
           <CardTitle className="text-lg" data-testid="profile-card-title">
-            {t('profile.notifications')}
+            {t($ => $.profile.notifications)}
           </CardTitle>
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
         <PreferenceRow
-          label={t('profile.remind_expire')}
+          label={t($ => $.profile.remind_expire)}
           checked={data?.remind_expire}
           loading={pending.remind_expire}
           onChange={(checked) => void toggle('remind_expire', checked ? 1 : 0)}
         />
         <PreferenceRow
-          label={t('profile.remind_traffic')}
+          label={t($ => $.profile.remind_traffic)}
           checked={data?.remind_traffic}
           loading={pending.remind_traffic}
           onChange={(checked) => void toggle('remind_traffic', checked ? 1 : 0)}

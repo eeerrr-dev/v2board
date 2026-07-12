@@ -3,7 +3,7 @@
 // URL to workers via the oracle-url file. The returned callback runs as global
 // teardown, closing the server after the whole suite.
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { oracleHost, oraclePort, oracleRoot, publicOracleHost } from './lib/env.mjs';
+import { oracleHost, oraclePort, oracleStateRoot, publicOracleHost } from './lib/env.mjs';
 import { readSourceSettings, startOracleServer } from './lib/oracle-server.mjs';
 import { oracleUrlFile } from './lib/oracle-url.mjs';
 
@@ -11,7 +11,7 @@ export default async function globalSetup() {
   const sourceSettings = await readSourceSettings();
   const oracle = await startOracleServer(oraclePort, oracleHost, publicOracleHost, sourceSettings);
 
-  mkdirSync(oracleRoot, { recursive: true });
+  mkdirSync(oracleStateRoot, { recursive: true });
   writeFileSync(oracleUrlFile, oracle.baseUrl.toString());
   console.log(`Parity oracle listening at ${oracle.baseUrl}`);
 

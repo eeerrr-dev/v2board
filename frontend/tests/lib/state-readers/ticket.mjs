@@ -32,7 +32,7 @@ export async function userTicketCreateModalState(page) {
     ),
     tableRows: await visibleTexts(page, '[data-testid="ticket-table"] tbody tr, .ant-table-tbody tr', 6),
     titles: await visibleTexts(page, '[data-testid="ticket-dialog-title"], .ant-modal-title', 2),
-    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
+    toastTexts: await visibleTexts(page, '[data-sonner-toast], .ant-message-notice, .ant-notification-notice', 4),
   };
 }
 
@@ -48,7 +48,7 @@ export async function ticketReplyState(page) {
       page,
       '[data-testid="ticket-reply-submit"], [data-testid="ticket-reply-send"], .js-chat-form button, .js-chat-form .ant-btn',
     ),
-    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
+    toastTexts: await visibleTexts(page, '[data-sonner-toast], .ant-message-notice, .ant-notification-notice', 4),
   };
 }
 
@@ -58,6 +58,6 @@ export async function userTicketListState(page) {
     closeCount: page.__visualParityUserTicketCloseCount ?? 0,
     hash: await page.evaluate(() => window.location.hash),
     tableRows: await visibleTexts(page, '[data-testid="ticket-table"] tbody tr, .ant-table-tbody tr', 6),
-    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
+    toastTexts: await visibleTexts(page, '[data-sonner-toast], .ant-message-notice, .ant-notification-notice', 4),
   };
 }

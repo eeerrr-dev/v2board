@@ -21,8 +21,6 @@ import {
   adminServerRankFixtures,
   adminServerRouteFixtures,
   adminStatFixture,
-  adminThemeFixtures,
-  adminThemeTemplateFixtures,
   adminTicketDetailFixture,
   adminTicketFixtures,
   adminUserFixtures,
@@ -130,7 +128,13 @@ export async function installApiFixtures(page, scenario, target, interaction = {
 
   await page.route('https://js.stripe.com/**', (route) => {
     route.fulfill({
-      body: stripeFixtureScript({ token: interaction.stripeToken }),
+      body: stripeFixtureScript({
+        confirmError: interaction.stripeConfirmError,
+        paymentElementComplete: interaction.stripePaymentElementComplete,
+        // Oracle-only: the frozen bundle still calls createToken. The modern
+        // source receives no token and must complete through confirmPayment.
+        legacyToken: target === 'oracle' ? interaction.legacyOracleStripeToken : null,
+      }),
       contentType: 'application/javascript',
       status: 200,
     });
@@ -199,17 +203,19 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     }
     if (pathname === '/api/v1/user/transfer') {
       page.__visualParityLastUserTransfer = requestData;
-      page.__visualParityUserTransferCount =
-        (page.__visualParityUserTransferCount ?? 0) + 1;
+      page.__visualParityUserTransferCount = (page.__visualParityUserTransferCount ?? 0) + 1;
       page.__visualParityUserTransferRequests = [
         ...(page.__visualParityUserTransferRequests ?? []),
         requestData,
       ];
     }
+    if (pathname === '/api/v1/user/invite/save') {
+      page.__visualParityUserInviteGenerateCount =
+        (page.__visualParityUserInviteGenerateCount ?? 0) + 1;
+    }
     if (pathname === '/api/v1/user/newPeriod') {
       page.__visualParityLastUserNewPeriod = requestData;
-      page.__visualParityUserNewPeriodCount =
-        (page.__visualParityUserNewPeriodCount ?? 0) + 1;
+      page.__visualParityUserNewPeriodCount = (page.__visualParityUserNewPeriodCount ?? 0) + 1;
       page.__visualParityUserNewPeriodRequests = [
         ...(page.__visualParityUserNewPeriodRequests ?? []),
         requestData,
@@ -224,16 +230,13 @@ export async function installApiFixtures(page, scenario, target, interaction = {
       ];
     }
     if (pathname === '/api/v1/user/order/fetch') {
-      page.__visualParityUserOrderFetchCount =
-        (page.__visualParityUserOrderFetchCount ?? 0) + 1;
+      page.__visualParityUserOrderFetchCount = (page.__visualParityUserOrderFetchCount ?? 0) + 1;
     }
     if (pathname === '/api/v1/user/plan/fetch' && !requestUrl.searchParams.has('id')) {
-      page.__visualParityUserPlanFetchCount =
-        (page.__visualParityUserPlanFetchCount ?? 0) + 1;
+      page.__visualParityUserPlanFetchCount = (page.__visualParityUserPlanFetchCount ?? 0) + 1;
     }
     if (pathname === '/api/v1/user/server/fetch') {
-      page.__visualParityUserServerFetchCount =
-        (page.__visualParityUserServerFetchCount ?? 0) + 1;
+      page.__visualParityUserServerFetchCount = (page.__visualParityUserServerFetchCount ?? 0) + 1;
     }
     if (pathname === '/api/v1/user/stat/getTrafficLog') {
       page.__visualParityUserTrafficFetchCount =
@@ -254,14 +257,15 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     }
     if (pathname === '/api/v1/user/coupon/check') {
       page.__visualParityLastUserCouponCheck = requestData;
-      page.__visualParityUserCouponCheckCount =
-        (page.__visualParityUserCouponCheckCount ?? 0) + 1;
+      page.__visualParityUserCouponCheckCount = (page.__visualParityUserCouponCheckCount ?? 0) + 1;
       page.__visualParityUserCouponCheckRequests = [
         ...(page.__visualParityUserCouponCheckRequests ?? []),
         requestData,
       ];
     }
     if (pathname === '/api/v1/user/comm/getStripePublicKey') {
+      page.__visualParityUserStripePrepareCount =
+        (page.__visualParityUserStripePrepareCount ?? 0) + 1;
       page.__visualParityUserStripePublicKeyCount =
         (page.__visualParityUserStripePublicKeyCount ?? 0) + 1;
       page.__visualParityUserStripePublicKeyRequests = [
@@ -269,14 +273,22 @@ export async function installApiFixtures(page, scenario, target, interaction = {
         requestData,
       ];
     }
+    if (pathname === '/api/v1/user/order/stripe/intent') {
+      page.__visualParityUserStripePrepareCount =
+        (page.__visualParityUserStripePrepareCount ?? 0) + 1;
+      page.__visualParityUserStripeIntentCount =
+        (page.__visualParityUserStripeIntentCount ?? 0) + 1;
+      page.__visualParityUserStripeIntentRequests = [
+        ...(page.__visualParityUserStripeIntentRequests ?? []),
+        requestData,
+      ];
+    }
     if (pathname === '/api/v1/user/ticket/fetch') {
-      page.__visualParityUserTicketFetchCount =
-        (page.__visualParityUserTicketFetchCount ?? 0) + 1;
+      page.__visualParityUserTicketFetchCount = (page.__visualParityUserTicketFetchCount ?? 0) + 1;
     }
     if (pathname === '/api/v1/user/ticket/reply') {
       page.__visualParityLastUserTicketReply = requestData;
-      page.__visualParityUserTicketReplyCount =
-        (page.__visualParityUserTicketReplyCount ?? 0) + 1;
+      page.__visualParityUserTicketReplyCount = (page.__visualParityUserTicketReplyCount ?? 0) + 1;
       page.__visualParityUserTicketReplyRequests = [
         ...(page.__visualParityUserTicketReplyRequests ?? []),
         requestData,
@@ -284,8 +296,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     }
     if (pathname === '/api/v1/user/ticket/close') {
       page.__visualParityLastUserTicketClose = requestData;
-      page.__visualParityUserTicketCloseCount =
-        (page.__visualParityUserTicketCloseCount ?? 0) + 1;
+      page.__visualParityUserTicketCloseCount = (page.__visualParityUserTicketCloseCount ?? 0) + 1;
       page.__visualParityUserTicketCloseRequests = [
         ...(page.__visualParityUserTicketCloseRequests ?? []),
         requestData,
@@ -293,8 +304,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     }
     if (pathname === '/api/v1/user/ticket/save') {
       page.__visualParityLastUserTicketSave = requestData;
-      page.__visualParityUserTicketSaveCount =
-        (page.__visualParityUserTicketSaveCount ?? 0) + 1;
+      page.__visualParityUserTicketSaveCount = (page.__visualParityUserTicketSaveCount ?? 0) + 1;
       page.__visualParityUserTicketSaveRequests = [
         ...(page.__visualParityUserTicketSaveRequests ?? []),
         requestData,
@@ -302,8 +312,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     }
     if (pathname === '/api/v1/user/ticket/withdraw') {
       page.__visualParityLastUserWithdraw = requestData;
-      page.__visualParityUserWithdrawCount =
-        (page.__visualParityUserWithdrawCount ?? 0) + 1;
+      page.__visualParityUserWithdrawCount = (page.__visualParityUserWithdrawCount ?? 0) + 1;
       page.__visualParityUserWithdrawRequests = [
         ...(page.__visualParityUserWithdrawRequests ?? []),
         requestData,
@@ -311,8 +320,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     }
     if (pathname === '/api/v1/user/order/cancel') {
       page.__visualParityLastUserOrderCancel = requestData;
-      page.__visualParityUserOrderCancelCount =
-        (page.__visualParityUserOrderCancelCount ?? 0) + 1;
+      page.__visualParityUserOrderCancelCount = (page.__visualParityUserOrderCancelCount ?? 0) + 1;
       page.__visualParityUserOrderCancelRequests = [
         ...(page.__visualParityUserOrderCancelRequests ?? []),
         requestData,
@@ -324,23 +332,9 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     }
     if (adminEndpoint === '/config/save') {
       page.__visualParityLastAdminConfigSave = requestData;
-      page.__visualParityAdminConfigSaveCount =
-        (page.__visualParityAdminConfigSaveCount ?? 0) + 1;
+      page.__visualParityAdminConfigSaveCount = (page.__visualParityAdminConfigSaveCount ?? 0) + 1;
       page.__visualParityAdminConfigSaveRequests = [
         ...(page.__visualParityAdminConfigSaveRequests ?? []),
-        requestData,
-      ];
-    }
-    if (adminEndpoint === '/theme/getThemes') {
-      page.__visualParityAdminThemeFetchCount =
-        (page.__visualParityAdminThemeFetchCount ?? 0) + 1;
-    }
-    if (adminEndpoint === '/theme/saveThemeConfig') {
-      page.__visualParityLastAdminThemeSave = requestData;
-      page.__visualParityAdminThemeSaveCount =
-        (page.__visualParityAdminThemeSaveCount ?? 0) + 1;
-      page.__visualParityAdminThemeSaveRequests = [
-        ...(page.__visualParityAdminThemeSaveRequests ?? []),
         requestData,
       ];
     }
@@ -354,18 +348,17 @@ export async function installApiFixtures(page, scenario, target, interaction = {
       page.__visualParityLastAdminOrderUpdate = requestData;
     }
     if (adminEndpoint === '/order/fetch') {
-      page.__visualParityAdminOrderFetchCount =
-        (page.__visualParityAdminOrderFetchCount ?? 0) + 1;
-      page.__visualParityLastAdminOrderFetchQuery = Object.fromEntries(requestUrl.searchParams.entries());
+      page.__visualParityAdminOrderFetchCount = (page.__visualParityAdminOrderFetchCount ?? 0) + 1;
+      page.__visualParityLastAdminOrderFetchQuery = Object.fromEntries(
+        requestUrl.searchParams.entries(),
+      );
     }
     if (adminEndpoint === '/plan/fetch') {
-      page.__visualParityAdminPlanFetchCount =
-        (page.__visualParityAdminPlanFetchCount ?? 0) + 1;
+      page.__visualParityAdminPlanFetchCount = (page.__visualParityAdminPlanFetchCount ?? 0) + 1;
     }
     if (adminEndpoint === '/plan/save') {
       page.__visualParityLastAdminPlanSave = requestData;
-      page.__visualParityAdminPlanSaveCount =
-        (page.__visualParityAdminPlanSaveCount ?? 0) + 1;
+      page.__visualParityAdminPlanSaveCount = (page.__visualParityAdminPlanSaveCount ?? 0) + 1;
       page.__visualParityAdminPlanSaveRequests = [
         ...(page.__visualParityAdminPlanSaveRequests ?? []),
         requestData,
@@ -373,8 +366,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     }
     if (adminEndpoint === '/plan/update') {
       page.__visualParityLastAdminPlanUpdate = requestData;
-      page.__visualParityAdminPlanUpdateCount =
-        (page.__visualParityAdminPlanUpdateCount ?? 0) + 1;
+      page.__visualParityAdminPlanUpdateCount = (page.__visualParityAdminPlanUpdateCount ?? 0) + 1;
       page.__visualParityAdminPlanUpdateRequests = [
         ...(page.__visualParityAdminPlanUpdateRequests ?? []),
         requestData,
@@ -382,8 +374,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     }
     if (adminEndpoint === '/plan/drop') {
       page.__visualParityLastAdminPlanDrop = requestData;
-      page.__visualParityAdminPlanDropCount =
-        (page.__visualParityAdminPlanDropCount ?? 0) + 1;
+      page.__visualParityAdminPlanDropCount = (page.__visualParityAdminPlanDropCount ?? 0) + 1;
       page.__visualParityAdminPlanDropRequests = [
         ...(page.__visualParityAdminPlanDropRequests ?? []),
         requestData,
@@ -408,8 +399,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     }
     if (adminEndpoint === '/server/manage/sort') {
       page.__visualParityLastAdminServerSort = requestData;
-      page.__visualParityAdminServerSortCount =
-        (page.__visualParityAdminServerSortCount ?? 0) + 1;
+      page.__visualParityAdminServerSortCount = (page.__visualParityAdminServerSortCount ?? 0) + 1;
       page.__visualParityAdminServerSortRequests = [
         ...(page.__visualParityAdminServerSortRequests ?? []),
         requestData,
@@ -473,8 +463,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     }
     if (adminEndpoint === '/notice/save') {
       page.__visualParityLastAdminNoticeSave = requestData;
-      page.__visualParityAdminNoticeSaveCount =
-        (page.__visualParityAdminNoticeSaveCount ?? 0) + 1;
+      page.__visualParityAdminNoticeSaveCount = (page.__visualParityAdminNoticeSaveCount ?? 0) + 1;
       page.__visualParityAdminNoticeSaveRequests = [
         ...(page.__visualParityAdminNoticeSaveRequests ?? []),
         requestData,
@@ -482,8 +471,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     }
     if (adminEndpoint === '/notice/show') {
       page.__visualParityLastAdminNoticeShow = requestData;
-      page.__visualParityAdminNoticeShowCount =
-        (page.__visualParityAdminNoticeShowCount ?? 0) + 1;
+      page.__visualParityAdminNoticeShowCount = (page.__visualParityAdminNoticeShowCount ?? 0) + 1;
       page.__visualParityAdminNoticeShowRequests = [
         ...(page.__visualParityAdminNoticeShowRequests ?? []),
         requestData,
@@ -491,8 +479,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     }
     if (adminEndpoint === '/notice/drop') {
       page.__visualParityLastAdminNoticeDrop = requestData;
-      page.__visualParityAdminNoticeDropCount =
-        (page.__visualParityAdminNoticeDropCount ?? 0) + 1;
+      page.__visualParityAdminNoticeDropCount = (page.__visualParityAdminNoticeDropCount ?? 0) + 1;
       page.__visualParityAdminNoticeDropRequests = [
         ...(page.__visualParityAdminNoticeDropRequests ?? []),
         requestData,
@@ -537,16 +524,14 @@ export async function installApiFixtures(page, scenario, target, interaction = {
       );
     }
     if (adminEndpoint === '/user/fetch') {
-      page.__visualParityAdminUserFetchCount =
-        (page.__visualParityAdminUserFetchCount ?? 0) + 1;
+      page.__visualParityAdminUserFetchCount = (page.__visualParityAdminUserFetchCount ?? 0) + 1;
       page.__visualParityLastAdminUserFetchQuery = Object.fromEntries(
         requestUrl.searchParams.entries(),
       );
     }
     if (adminEndpoint === '/user/update') {
       page.__visualParityLastAdminUserUpdate = requestData;
-      page.__visualParityAdminUserUpdateCount =
-        (page.__visualParityAdminUserUpdateCount ?? 0) + 1;
+      page.__visualParityAdminUserUpdateCount = (page.__visualParityAdminUserUpdateCount ?? 0) + 1;
       page.__visualParityAdminUserUpdateRequests = [
         ...(page.__visualParityAdminUserUpdateRequests ?? []),
         requestData,
@@ -563,8 +548,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     }
     if (adminEndpoint === '/user/delUser') {
       page.__visualParityLastAdminUserDelete = requestData;
-      page.__visualParityAdminUserDeleteCount =
-        (page.__visualParityAdminUserDeleteCount ?? 0) + 1;
+      page.__visualParityAdminUserDeleteCount = (page.__visualParityAdminUserDeleteCount ?? 0) + 1;
       page.__visualParityAdminUserDeleteRequests = [
         ...(page.__visualParityAdminUserDeleteRequests ?? []),
         requestData,
@@ -572,8 +556,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     }
     if (adminEndpoint === '/user/ban') {
       page.__visualParityLastAdminUserBan = requestData;
-      page.__visualParityAdminUserBanCount =
-        (page.__visualParityAdminUserBanCount ?? 0) + 1;
+      page.__visualParityAdminUserBanCount = (page.__visualParityAdminUserBanCount ?? 0) + 1;
       page.__visualParityAdminUserBanRequests = [
         ...(page.__visualParityAdminUserBanRequests ?? []),
         requestData,
@@ -725,9 +708,6 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     if (adminEndpoint === '/config/save' && interaction.delayAdminConfigSaveMs) {
       await delay(interaction.delayAdminConfigSaveMs);
     }
-    if (adminEndpoint === '/theme/saveThemeConfig' && interaction.delayAdminThemeSaveMs) {
-      await delay(interaction.delayAdminThemeSaveMs);
-    }
     if (
       ['/user/update', '/user/delUser', '/user/ban', '/user/allDel'].includes(
         adminEndpoint ?? '',
@@ -780,16 +760,24 @@ export function apiFixtureResponse(
   const adminEndpoint = adminFixtureEndpoint(pathname);
   const body = (data, extra = {}) => ({ code: 200, data, ...extra });
   const error = (message, code = 400) => ({ code, data: null, message });
-  const httpError = (message, status = 500) => ({ code: status, data: null, httpStatus: status, message });
+  const httpError = (message, status = 500) => ({
+    code: status,
+    data: null,
+    httpStatus: status,
+    message,
+  });
 
-  if (scenario.forceUserUnauthorized && pathname === '/api/v1/user/info') {
+  if (
+    (scenario.forceUserUnauthorized || interaction.forceUserUnauthorized) &&
+    pathname === '/api/v1/user/info'
+  ) {
     return httpError(
       'auth required',
       interaction.forceUserUnauthorizedStatus ?? scenario.forceUserUnauthorizedStatus ?? 403,
     );
   }
 
-  if (scenario.forceAdminUnauthorized && adminEndpoint) {
+  if ((scenario.forceAdminUnauthorized || interaction.forceAdminUnauthorized) && adminEndpoint) {
     return httpError(
       'auth required',
       interaction.forceAdminUnauthorizedStatus ?? scenario.forceAdminUnauthorizedStatus ?? 403,
@@ -803,7 +791,11 @@ export function apiFixtureResponse(
     if (scenario.adminUsersHttpError && adminEndpoint === '/user/fetch') {
       return httpError('Server Error', 500);
     }
-    if (/^\/server\/(shadowsocks|vmess|trojan|vless|hysteria|tuic|anytls|v2node)\/save$/.test(adminEndpoint)) {
+    if (
+      /^\/server\/(shadowsocks|vmess|trojan|vless|hysteria|tuic|anytls|v2node)\/save$/.test(
+        adminEndpoint,
+      )
+    ) {
       if (interaction?.adminServerNodeSaveError) return error('节点保存失败');
       return body(true);
     }
@@ -816,15 +808,6 @@ export function apiFixtureResponse(
         return body(true);
       case '/config/getEmailTemplate':
         return body(adminEmailTemplateFixtures);
-      case '/config/getThemeTemplate':
-        return body(adminThemeTemplateFixtures);
-      case '/theme/getThemes':
-        return body(adminThemeFixtures);
-      case '/theme/getThemeConfig':
-        return body({ homepage: 'V2Board' });
-      case '/theme/saveThemeConfig':
-        if (interaction?.adminThemeSaveError) return error('主题配置保存失败');
-        return body(true);
       case '/coupon/fetch':
         return body(adminCouponFixtures, { total: adminCouponFixtures.length });
       case '/coupon/generate':
@@ -838,13 +821,15 @@ export function apiFixtureResponse(
       case '/knowledge/fetch':
         return body(
           requestUrl.searchParams.has('id')
-            ? adminKnowledgeFixtures.find(
+            ? (adminKnowledgeFixtures.find(
                 (knowledge) => String(knowledge.id) === requestUrl.searchParams.get('id'),
-              ) ?? adminKnowledgeFixtures[0]
+              ) ?? adminKnowledgeFixtures[0])
             : adminKnowledgeFixtures,
         );
       case '/knowledge/getCategory':
-        return body(Array.from(new Set(adminKnowledgeFixtures.map((knowledge) => knowledge.category))));
+        return body(
+          Array.from(new Set(adminKnowledgeFixtures.map((knowledge) => knowledge.category))),
+        );
       case '/knowledge/save':
         if (interaction?.adminKnowledgeSaveError) return error('知识保存失败');
         return body(true);
@@ -894,7 +879,9 @@ export function apiFixtureResponse(
           requestData && typeof requestData.payment === 'string'
             ? requestData.payment
             : adminPaymentMethodsFixture[0];
-        return body(adminPaymentFormFixtures[requestedPayment] ?? adminPaymentFormFixtures.AlipayF2F);
+        return body(
+          adminPaymentFormFixtures[requestedPayment] ?? adminPaymentFormFixtures.AlipayF2F,
+        );
       }
       case '/server/group/fetch':
         return body(adminServerGroupFixtures);
@@ -932,7 +919,9 @@ export function apiFixtureResponse(
       case '/order/update':
         return body(true);
       case '/user/fetch':
-        return body(adminUserFixturesFor(scenario), { total: adminUserFixturesFor(scenario).length });
+        return body(adminUserFixturesFor(scenario), {
+          total: adminUserFixturesFor(scenario).length,
+        });
       case '/user/update':
         if (interaction?.adminUserUpdateError) return error('邮箱格式错误');
         return body(true);
@@ -979,8 +968,8 @@ export function apiFixtureResponse(
           const ticket =
             scenario.label === 'admin-ticket-detail'
               ? adminTicketDetailFixture
-              : adminTicketFixtures.find((item) => String(item.id) === requestedId) ??
-                adminTicketFixtures[0];
+              : (adminTicketFixtures.find((item) => String(item.id) === requestedId) ??
+                adminTicketFixtures[0]);
           return body(ticket);
         }
         return body(adminTicketFixtures, { total: adminTicketFixtures.length });
@@ -1018,8 +1007,8 @@ export function apiFixtureResponse(
         interaction?.telegramBoundProfile
           ? { ...userInfoFixture, telegram_id: 12345 }
           : scenario.bannedUser
-          ? bannedUserInfoFixture
-          : userInfoFixture,
+            ? bannedUserInfoFixture
+            : userInfoFixture,
       );
     case '/api/v1/user/update':
       return body(true);
@@ -1037,6 +1026,16 @@ export function apiFixtureResponse(
       return body(true);
     case '/api/v1/user/getSubscribe':
       return body(userSubscribeFixtureFor(scenario, interaction));
+    case '/api/v1/user/getActiveSession':
+      return body({
+        'visual-parity-session': {
+          auth_data: '',
+          current: true,
+          ip: '203.0.113.10',
+          login_at: 1_700_000_000,
+          ua: 'Visual Parity Browser',
+        },
+      });
     case '/api/v1/user/getStat':
       return body([2, 3, 0]);
     case '/api/v1/user/plan/fetch':
@@ -1059,14 +1058,14 @@ export function apiFixtureResponse(
         requestUrl.searchParams.get('trade_no') === dashboardResetPackageTradeNo
           ? dashboardResetPackageOrderFixture
           : requestUrl.searchParams.get('trade_no') === profileDepositTradeNo
-          ? profileDepositOrderFixture
-          : userOrderFixturesFor(scenario).find(
-              (order) => order.trade_no === requestUrl.searchParams.get('trade_no'),
-            ) ??
+            ? profileDepositOrderFixture
+            : (userOrderFixturesFor(scenario).find(
+                (order) => order.trade_no === requestUrl.searchParams.get('trade_no'),
+              ) ??
               orderFixtures.find(
                 (order) => order.trade_no === requestUrl.searchParams.get('trade_no'),
               ) ??
-              orderFixtures[0],
+              orderFixtures[0]),
       );
     case '/api/v1/user/order/cancel':
       return body(true);
@@ -1079,10 +1078,9 @@ export function apiFixtureResponse(
         return body('stripe-accepted', { type: 1 });
       }
       if (methodId === 3) {
-        return body(
-          interaction.checkoutRedirectUrl ?? '/#/order/VISUAL2026110001?cashier=visual',
-          { type: 1 },
-        );
+        return body(interaction.checkoutRedirectUrl ?? '/#/order/VISUAL2026110001?cashier=visual', {
+          type: 1,
+        });
       }
       return body('https://pay.example.test/qr/VISUAL2026110001', { type: 0 });
     }
@@ -1107,8 +1105,8 @@ export function apiFixtureResponse(
         requestUrl.searchParams.has('id')
           ? userTicketDetailFixtureFor(scenario)
           : scenario.emptyTickets
-          ? []
-          : userTicketFixturesFor(scenario),
+            ? []
+            : userTicketFixturesFor(scenario),
       );
     case '/api/v1/user/ticket/save':
       if (interaction?.ticketSaveError) return error('工单内容不能为空');
@@ -1152,6 +1150,13 @@ export function apiFixtureResponse(
       );
     case '/api/v1/user/comm/getStripePublicKey':
       return body('pk_test_visual_parity');
+    case '/api/v1/user/order/stripe/intent':
+      return body({
+        public_key: 'pk_test_visual_parity',
+        client_secret: 'pi_visual_secret_parity',
+        amount: 1000,
+        currency: 'cny',
+      });
     case '/api/v1/user/telegram/getBotInfo':
       return body({ username: 'legacy_bot' });
     default:
@@ -1230,8 +1235,7 @@ export function userSubscribeFixtureFor(scenario = {}, interaction = {}) {
 
 export function userPlanFixtureById(id, scenario = {}) {
   const plan =
-    userPlanFixturesFor(scenario).find((item) => String(item.id) === String(id)) ??
-    planFixtures[0];
+    userPlanFixturesFor(scenario).find((item) => String(item.id) === String(id)) ?? planFixtures[0];
   if (scenario.nonRenewablePlan) return { ...plan, renew: 0 };
   return plan;
 }
@@ -1271,11 +1275,16 @@ export function fulfillPlainJson(route, data) {
   });
 }
 
-export function stripeFixtureScript({ token = null } = {}) {
-  const tokenPayload = token ? { id: token, object: 'token' } : null;
+export function stripeFixtureScript({
+  confirmError = false,
+  legacyToken = null,
+  paymentElementComplete = false,
+} = {}) {
+  const tokenPayload = legacyToken ? { id: legacyToken, object: 'token' } : null;
   return `
 (() => {
-  const visualStripeToken = ${JSON.stringify(tokenPayload)};
+  const legacyOracleToken = ${JSON.stringify(tokenPayload)};
+  const visualPaymentElementComplete = ${JSON.stringify(Boolean(paymentElementComplete))};
   window.Stripe = function Stripe() {
     let lastElement = null;
     const createElement = () => {
@@ -1284,8 +1293,8 @@ export function stripeFixtureScript({ token = null } = {}) {
         const eventHandlers = handlers.get(event) || [];
         eventHandlers.forEach((handler) => handler(payload));
       };
-      const fireTokenReady = () => {
-        if (!visualStripeToken) return;
+      const fireElementComplete = () => {
+        if (!visualPaymentElementComplete) return;
         [0, 50, 150, 300, 750].forEach((delay) => {
           setTimeout(() => fire('change', { complete: true, empty: false }), delay);
         });
@@ -1300,7 +1309,7 @@ export function stripeFixtureScript({ token = null } = {}) {
           element.className = 'StripeElement';
           target.appendChild(element);
           fire('ready', {});
-          fireTokenReady();
+          fireElementComplete();
         },
         off(event, handler) {
           const eventHandlers = handlers.get(event) || [];
@@ -1308,7 +1317,7 @@ export function stripeFixtureScript({ token = null } = {}) {
         },
         on(event, handler) {
           handlers.set(event, [...(handlers.get(event) || []), handler]);
-          if (event === 'change') fireTokenReady();
+          if (event === 'change') fireElementComplete();
         },
         unmount() {},
         update() {},
@@ -1328,8 +1337,17 @@ export function stripeFixtureScript({ token = null } = {}) {
           },
         };
       },
+      // React Stripe.js validates the complete Stripe instance shape, which
+      // includes createToken even when the application only uses Payment
+      // Element. Keep the SDK-shaped method in both worlds, but make any source
+      // invocation fail loudly: only the frozen oracle may receive a token.
       createToken() {
-        return Promise.resolve(visualStripeToken ? { token: visualStripeToken } : {});
+        if (!legacyOracleToken) {
+          window.__visualParityUnexpectedStripeCreateTokenCount =
+            (window.__visualParityUnexpectedStripeCreateTokenCount ?? 0) + 1;
+          return Promise.reject(new Error('Modern source must not call Stripe createToken'));
+        }
+        return Promise.resolve({ token: legacyOracleToken });
       },
       createPaymentMethod() {
         return Promise.resolve({});
@@ -1337,8 +1355,18 @@ export function stripeFixtureScript({ token = null } = {}) {
       confirmCardPayment() {
         return Promise.resolve({});
       },
+      confirmPayment() {
+        window.__visualParityUserStripeConfirmCount =
+          (window.__visualParityUserStripeConfirmCount ?? 0) + 1;
+        return Promise.resolve(
+          ${JSON.stringify(Boolean(confirmError))}
+            ? { error: { message: 'Stripe confirmation failed' } }
+            : { paymentIntent: { status: 'succeeded' } },
+        );
+      },
     };
   };
+  window.Stripe.version = 'dahlia';
 })();
 `;
 }
@@ -1410,8 +1438,6 @@ export async function seedLegacyAdminStore(page, scenario = {}) {
         skipTickets,
         skipUsers,
         stat,
-        themes,
-        themeTemplates,
         ticketDetail,
         tickets,
         userInfo,
@@ -1455,7 +1481,6 @@ export async function seedLegacyAdminStore(page, scenario = {}) {
           payload: {
             ...config,
             emailTemplate: emailTemplates,
-            themeTemplate: themeTemplates,
           },
         });
         if (!skipCoupons) {
@@ -1491,7 +1516,6 @@ export async function seedLegacyAdminStore(page, scenario = {}) {
         if (!skipPlans) {
           store.dispatch({ type: 'plan/setState', payload: { plans } });
         }
-        store.dispatch({ type: 'theme/setState', payload: themes });
         store.dispatch({
           type: 'system/save',
           payload: { queueStats, queueWorkload },
@@ -1557,8 +1581,6 @@ export async function seedLegacyAdminStore(page, scenario = {}) {
         skipTickets: Boolean(scenario.adminTicketsTimeout),
         skipUsers: Boolean(scenario.adminUsersHttpError || scenario.adminUsersTimeout),
         stat: adminStatFixture,
-        themes: adminThemeFixtures,
-        themeTemplates: adminThemeTemplateFixtures,
         ticketDetail: adminTicketDetailFixture,
         tickets: adminTicketFixtures,
         userInfo: userInfoFixture,

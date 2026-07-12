@@ -1,0 +1,552 @@
+use axum::{
+    Json,
+    extract::{Form, Query, State},
+    http::HeaderMap,
+    response::{IntoResponse, Response},
+};
+use chrono::{Datelike, Duration, TimeZone, Utc};
+use hmac::{Hmac, KeyInit, Mac};
+use redis::AsyncCommands;
+use serde::{Deserialize, Serialize};
+use sha1::Sha1;
+use uuid::Uuid;
+use v2board_compat::{ApiError, LegacyEnvelope, legacy_data};
+use v2board_config::{AppConfig, app_now, app_timezone, duration_minutes_to_seconds};
+
+use crate::{
+    auth::{AuthQuery, require_user},
+    codec::{base64_decode_url_safe, safe_base64_encode},
+    runtime::AppState,
+    validation::forbidden,
+};
+
+#[derive(Debug, Serialize)]
+pub(crate) struct SubscribeInfo {
+    plan_id: Option<i32>,
+    token: String,
+    expired_at: Option<i64>,
+    u: i64,
+    d: i64,
+    transfer_enable: i64,
+    device_limit: Option<i32>,
+    email: String,
+    uuid: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    plan: Option<v2board_db::plan::PlanRow>,
+    alive_ip: i64,
+    subscribe_url: String,
+    reset_day: Option<i64>,
+    allow_new_period: i32,
+}
+
+pub(crate) async fn user_subscribe(
+    State(state): State<AppState>,
+    Query(query): Query<AuthQuery>,
+    headers: HeaderMap,
+) -> Result<Json<LegacyEnvelope<SubscribeInfo>>, ApiError> {
+    let user = require_user(&state, &headers, query.auth_data).await?;
+    let subscribe = v2board_db::user::find_user_subscribe(&state.db, user.id)
+        .await?
+        .ok_or_else(|| ApiError::legacy("The user does not exist"))?;
+    let plan = match subscribe.plan_id {
+        Some(plan_id) => Some(
+            v2board_db::plan::find_plan(&state.db, plan_id)
+                .await?
+                .ok_or_else(|| ApiError::legacy("Subscription plan does not exist"))?,
+        ),
+        None => None,
+    };
+    let alive_ip = alive_ip(&state.redis, user.id).await?;
+    let config = state.config_snapshot();
+    let reset_day = reset_day(subscribe.expired_at, plan.as_ref(), &config);
+    let subscribe_url = subscribe_url_for_user(&state, user.id, &subscribe.token).await?;
+
+    Ok(legacy_data(SubscribeInfo {
+        plan_id: subscribe.plan_id,
+        token: subscribe.token,
+        expired_at: subscribe.expired_at,
+        u: subscribe.u,
+        d: subscribe.d,
+        transfer_enable: subscribe.transfer_enable,
+        device_limit: subscribe.device_limit,
+        email: subscribe.email,
+        uuid: subscribe.uuid,
+        plan,
+        alive_ip,
+        subscribe_url,
+        reset_day,
+        allow_new_period: config.allow_new_period,
+    }))
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct UserPeriodRow {
+    plan_id: Option<i32>,
+    transfer_enable: i64,
+    u: i64,
+    d: i64,
+    expired_at: Option<i64>,
+    reset_traffic_method: Option<i8>,
+}
+
+pub(crate) async fn user_new_period(
+    State(state): State<AppState>,
+    Query(query): Query<AuthQuery>,
+    headers: HeaderMap,
+) -> Result<Json<LegacyEnvelope<bool>>, ApiError> {
+    let user = require_user(&state, &headers, query.auth_data).await?;
+    let config = state.config_snapshot();
+    if config.allow_new_period == 0 {
+        return Err(ApiError::legacy("Renewal is not allowed"));
+    }
+    let row = sqlx::query_as::<_, UserPeriodRow>(
+        r#"
+        SELECT u.plan_id, u.transfer_enable, u.u, u.d, u.expired_at, p.reset_traffic_method
+        FROM v2_user u
+        LEFT JOIN v2_plan p ON p.id = u.plan_id
+        WHERE u.id = ?
+        LIMIT 1
+        "#,
+    )
+    .bind(user.id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::legacy("The user does not exist"))?;
+    let used = row
+        .u
+        .checked_add(row.d)
+        .ok_or_else(|| ApiError::internal("user traffic exceeds the supported range"))?;
+    if row.transfer_enable > used {
+        return Err(ApiError::legacy(
+            "You have not used up your traffic, you cannot renew your subscription",
+        ));
+    }
+    // A plan-less user cannot renew: both getResetDay and getResetPeriod return null
+    // at `if ($user->plan_id === NULL) return null;`, and UserController::newPeriod
+    // turns either null into abort(500, 'You do not allow to renew the subscription').
+    // The LEFT JOIN alone can't tell plan-less from plan-with-null-method, so gate on
+    // plan_id directly before the method-based reset lookups below.
+    if row.plan_id.is_none() {
+        return Err(ApiError::legacy(
+            "You do not allow to renew the subscription",
+        ));
+    }
+    let expired_at = row
+        .expired_at
+        .filter(|expired_at| *expired_at > Utc::now().timestamp())
+        .ok_or_else(|| ApiError::legacy("You do not allow to renew the subscription"))?;
+    let mut reset_day = reset_day_by_method(expired_at, row.reset_traffic_method, &config)
+        .ok_or_else(|| ApiError::legacy("You do not allow to renew the subscription"))?;
+    let mut period = reset_period_by_method(row.reset_traffic_method, &config)
+        .ok_or_else(|| ApiError::legacy("You do not allow to renew the subscription"))?;
+    match period {
+        1 => {
+            reset_day = 30;
+            period = 30;
+        }
+        30 => {}
+        12 => {
+            reset_day = 365;
+            period = 365;
+        }
+        365 => {}
+        _ => return Err(ApiError::legacy("Invalid reset period")),
+    }
+    if reset_day <= 0 {
+        reset_day = period;
+    }
+    if let Some(next_expired_at) =
+        checked_reset_subscription_expiry(expired_at, reset_day, period, Utc::now().timestamp())?
+    {
+        sqlx::query("UPDATE v2_user SET expired_at = ?, u = 0, d = 0, updated_at = ? WHERE id = ?")
+            .bind(next_expired_at)
+            .bind(Utc::now().timestamp())
+            .bind(user.id)
+            .execute(&state.db)
+            .await?;
+        Ok(legacy_data(true))
+    } else {
+        Err(ApiError::legacy(
+            "You do not have enough time to renew your subscription",
+        ))
+    }
+}
+
+pub(super) fn checked_reset_subscription_expiry(
+    expired_at: i64,
+    reset_day: i64,
+    period: i64,
+    now: i64,
+) -> Result<Option<i64>, ApiError> {
+    if reset_day < 0 || period < 0 {
+        return Err(ApiError::legacy("Invalid reset period"));
+    }
+    let threshold = period
+        .checked_add(1)
+        .and_then(|days| days.checked_mul(86_400))
+        .ok_or_else(|| ApiError::legacy("Reset period exceeds the supported range"))?;
+    let remaining = expired_at
+        .checked_sub(now)
+        .ok_or_else(|| ApiError::legacy("Subscription expiry exceeds the supported range"))?;
+    if threshold >= remaining {
+        return Ok(None);
+    }
+    let reset_seconds = reset_day
+        .checked_mul(86_400)
+        .ok_or_else(|| ApiError::legacy("Reset period exceeds the supported range"))?;
+    expired_at
+        .checked_sub(reset_seconds)
+        .map(Some)
+        .ok_or_else(|| ApiError::legacy("Subscription expiry exceeds the supported range"))
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct UserQuickLoginRequest {
+    redirect: Option<String>,
+}
+
+pub(crate) async fn user_quick_login_url(
+    State(state): State<AppState>,
+    Query(query): Query<AuthQuery>,
+    headers: HeaderMap,
+    Form(payload): Form<UserQuickLoginRequest>,
+) -> Result<Json<LegacyEnvelope<String>>, ApiError> {
+    let user = require_user(&state, &headers, query.auth_data).await?;
+    let auth = state.auth_service();
+    Ok(legacy_data(
+        auth.quick_login_url(user.id, payload.redirect.as_deref())
+            .await?,
+    ))
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct PlanFetchQuery {
+    id: Option<i32>,
+    auth_data: Option<String>,
+}
+
+pub(crate) async fn user_plan_fetch(
+    State(state): State<AppState>,
+    Query(query): Query<PlanFetchQuery>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    let user = require_user(&state, &headers, query.auth_data).await?;
+    if let Some(id) = query.id {
+        let subscribe = v2board_db::user::find_user_subscribe(&state.db, user.id)
+            .await?
+            .ok_or_else(|| ApiError::legacy("The user does not exist"))?;
+        let plan = v2board_db::plan::find_plan(&state.db, id)
+            .await?
+            .ok_or_else(|| ApiError::legacy("Subscription plan does not exist"))?;
+        let hidden_plan = plan.show == 0;
+        let unavailable_hidden_plan =
+            hidden_plan && (plan.renew == 0 || subscribe.plan_id != Some(plan.id));
+        if unavailable_hidden_plan {
+            return Err(ApiError::legacy("Subscription plan does not exist"));
+        }
+        return Ok(legacy_data(plan).into_response());
+    }
+
+    let counts = v2board_db::plan::count_capacity_usage_by_plan(&state.db).await?;
+    let mut plans = v2board_db::plan::fetch_visible_plans(&state.db).await?;
+    for plan in &mut plans {
+        if let Some(capacity_limit) = plan.capacity_limit
+            && let Some(count) = counts.get(&plan.id)
+        {
+            let remaining = i64::from(capacity_limit)
+                .checked_sub(*count)
+                .and_then(|value| i32::try_from(value).ok())
+                .ok_or_else(|| ApiError::internal("plan capacity usage is outside range"))?;
+            plan.capacity_limit = Some(remaining);
+        }
+    }
+    Ok(legacy_data(plans).into_response())
+}
+
+pub(crate) async fn resolve_subscribe_token(
+    state: &AppState,
+    token: &str,
+) -> Result<String, ApiError> {
+    match state.config_snapshot().show_subscribe_method {
+        0 => Ok(token.to_string()),
+        1 => resolve_one_time_subscribe_token(state, token).await,
+        2 => resolve_totp_subscribe_token(state, token).await,
+        _ => Ok(token.to_string()),
+    }
+}
+
+async fn resolve_one_time_subscribe_token(
+    state: &AppState,
+    token: &str,
+) -> Result<String, ApiError> {
+    let mut conn = state.auth_redis.clone();
+    redis::Script::new(CONSUME_SUBSCRIBE_TOKEN_SCRIPT)
+        .key(format!("otpn_{token}"))
+        .arg("otp_")
+        .invoke_async::<Option<String>>(&mut conn)
+        .await?
+        .ok_or_else(|| forbidden("token is error"))
+}
+
+pub(crate) async fn resolve_totp_subscribe_token(
+    state: &AppState,
+    token: &str,
+) -> Result<String, ApiError> {
+    let cache_key = format!("totp_{token}");
+    let mut conn = state.auth_redis.clone();
+    if let Some(user_token) = conn.get::<_, Option<String>>(&cache_key).await? {
+        return Ok(user_token);
+    }
+
+    let decoded = base64_decode_url_safe(token).ok_or_else(|| forbidden("token is error"))?;
+    let decoded = String::from_utf8(decoded).map_err(|_| forbidden("token is error"))?;
+    let (user_id, client_hash) = decoded
+        .split_once(':')
+        .ok_or_else(|| forbidden("token is error"))?;
+    if user_id.is_empty() || client_hash.is_empty() {
+        return Err(forbidden("token is error"));
+    }
+    let user_id = user_id
+        .parse::<i64>()
+        .map_err(|_| forbidden("token is error"))?;
+    let user = v2board_db::user::find_user_access(&state.db, user_id)
+        .await?
+        .ok_or_else(|| forbidden("token is error"))?;
+
+    let timestep = duration_minutes_to_seconds(state.config_snapshot().show_subscribe_expire);
+    let counter = Utc::now().timestamp().max(0) as u64 / timestep;
+    let mut counter_bytes = [0_u8; 8];
+    counter_bytes[4..].copy_from_slice(&(counter as u32).to_be_bytes());
+    let expected = hmac_sha1_hex(user.token.as_bytes(), &counter_bytes)?;
+    if client_hash != expected {
+        return Err(forbidden("token is error"));
+    }
+
+    let _: () = conn.set_ex(cache_key, &user.token, timestep).await?;
+    Ok(user.token)
+}
+
+/// Mirror `Helper::getSubscribeUrl`: derive the method-specific token so the generated URL
+/// resolves back through [`resolve_subscribe_token`]. Method 0 keeps the raw token; method 1
+/// mints/reuses a one-time token; method 2 derives the time-stepped `{id}:{hmac}` token.
+pub(super) async fn subscribe_url_for_user(
+    state: &AppState,
+    user_id: i64,
+    token: &str,
+) -> Result<String, ApiError> {
+    let config = state.config_snapshot();
+    let method_token = match config.show_subscribe_method {
+        1 => one_time_subscribe_token(state, token).await?,
+        2 => totp_subscribe_token(&config, user_id, token)?,
+        _ => token.to_string(),
+    };
+    Ok(config.subscribe_url_for_token(&method_token))
+}
+
+/// Method 1 token: `Cache::add("otp_{token}")` mints a fresh 24-byte url-safe token and stores
+/// the reverse `otpn_{newtoken}` mapping the subscribe middleware pulls. The SET NX mirrors
+/// `Cache::add`, so a concurrent generator that loses the race reuses the winner's token.
+async fn one_time_subscribe_token(state: &AppState, token: &str) -> Result<String, ApiError> {
+    let mut raw = [0_u8; 24];
+    raw[..16].copy_from_slice(Uuid::new_v4().as_bytes());
+    raw[16..].copy_from_slice(&Uuid::new_v4().as_bytes()[..8]);
+    let new_token = safe_base64_encode(&raw);
+    let mut conn = state.auth_redis.clone();
+    Ok(redis::Script::new(MINT_SUBSCRIBE_TOKEN_SCRIPT)
+        .key(format!("otp_{token}"))
+        .arg("otpn_")
+        .arg(token)
+        .arg(&new_token)
+        .arg(86_400)
+        .invoke_async(&mut conn)
+        .await?)
+}
+
+const MINT_SUBSCRIBE_TOKEN_SCRIPT: &str = r#"
+local existing = redis.call('GET', KEYS[1])
+if existing and existing ~= '' then
+    return existing
+end
+redis.call('SET', KEYS[1], ARGV[3], 'EX', ARGV[4])
+redis.call('SET', ARGV[1] .. ARGV[3], ARGV[2], 'EX', ARGV[4])
+return ARGV[3]
+"#;
+
+const CONSUME_SUBSCRIBE_TOKEN_SCRIPT: &str = r#"
+local user_token = redis.call('GET', KEYS[1])
+if not user_token then
+    return false
+end
+redis.call('DEL', KEYS[1])
+redis.call('DEL', ARGV[1] .. user_token)
+return user_token
+"#;
+
+/// Method 2 token: `base64url("{user_id}:{hmac_sha1(counterBytes, token)}")`, derived purely so
+/// it stays in lock-step with [`resolve_totp_subscribe_token`] for the same time window.
+fn totp_subscribe_token(config: &AppConfig, user_id: i64, token: &str) -> Result<String, ApiError> {
+    let timestep = duration_minutes_to_seconds(config.show_subscribe_expire);
+    let counter = Utc::now().timestamp().max(0) as u64 / timestep;
+    let mut counter_bytes = [0_u8; 8];
+    counter_bytes[4..].copy_from_slice(&(counter as u32).to_be_bytes());
+    let hash = hmac_sha1_hex(token.as_bytes(), &counter_bytes)?;
+    Ok(safe_base64_encode(format!("{user_id}:{hash}").as_bytes()))
+}
+
+async fn alive_ip(redis: &redis::Client, user_id: i64) -> Result<i64, ApiError> {
+    let key = format!("ALIVE_IP_USER_{user_id}");
+    let mut conn = redis.get_multiplexed_async_connection().await?;
+    let current: Option<String> = conn.get(key).await?;
+    let Some(current) = current else {
+        return Ok(0);
+    };
+    Ok(serde_json::from_str::<serde_json::Value>(&current)
+        .ok()
+        .and_then(|value| value.get("alive_ip").and_then(|alive| alive.as_i64()))
+        .unwrap_or(0))
+}
+
+pub(crate) fn reset_day(
+    expired_at: Option<i64>,
+    plan: Option<&v2board_db::plan::PlanRow>,
+    config: &AppConfig,
+) -> Option<i64> {
+    let expired_at = expired_at?;
+    // A plan-less user has no reset schedule: UserService::getResetDay returns null
+    // at `if ($user->plan_id === NULL) return null;` before any method lookup, so a
+    // None plan must NOT fall back to the config default. A resolved plan whose own
+    // reset_traffic_method is NULL still uses the config default (the `unwrap_or`
+    // below), mirroring the `=== NULL` switch arm.
+    let plan = plan?;
+    if expired_at <= Utc::now().timestamp() {
+        return None;
+    }
+    let method = plan
+        .reset_traffic_method
+        .map(i32::from)
+        .unwrap_or(config.reset_traffic_method);
+
+    match method {
+        0 => Some(reset_day_by_month_first_day()),
+        1 => Some(reset_day_by_expire_day(expired_at)),
+        2 => None,
+        3 => days_until_year_first_day(),
+        4 => days_until_year_expire_day(expired_at),
+        _ => None,
+    }
+}
+
+fn reset_day_by_method(
+    expired_at: i64,
+    plan_reset_method: Option<i8>,
+    config: &AppConfig,
+) -> Option<i64> {
+    if expired_at <= Utc::now().timestamp() {
+        return None;
+    }
+    match plan_reset_method
+        .map(i32::from)
+        .unwrap_or(config.reset_traffic_method)
+    {
+        0 => Some(reset_day_by_month_first_day()),
+        1 => Some(reset_day_by_expire_day(expired_at)),
+        2 => None,
+        3 => days_until_year_first_day(),
+        4 => days_until_year_expire_day(expired_at),
+        _ => None,
+    }
+}
+
+fn reset_period_by_method(plan_reset_method: Option<i8>, config: &AppConfig) -> Option<i64> {
+    match plan_reset_method
+        .map(i32::from)
+        .unwrap_or(config.reset_traffic_method)
+    {
+        0 => Some(1),
+        1 => Some(30),
+        2 => None,
+        3 => Some(12),
+        4 => Some(365),
+        _ => None,
+    }
+}
+
+pub(super) fn reset_day_by_month_first_day() -> i64 {
+    let today = app_now().date_naive();
+    i64::from(last_day_of_current_month() - today.day())
+}
+
+fn reset_day_by_expire_day(expired_at: i64) -> i64 {
+    let today = app_now().date_naive();
+    let expire_day = app_timezone()
+        .timestamp_opt(expired_at, 0)
+        .single()
+        .map(|date| date.day())
+        .unwrap_or(today.day());
+    let today_day = today.day();
+    let last_day = last_day_of_current_month();
+
+    if expire_day >= today_day && expire_day >= last_day {
+        return i64::from(last_day - today_day);
+    }
+    if expire_day >= today_day {
+        return i64::from(expire_day - today_day);
+    }
+    i64::from(last_day - today_day + expire_day)
+}
+
+fn days_until_year_first_day() -> Option<i64> {
+    let now = app_now();
+    let next_year = app_timezone()
+        .with_ymd_and_hms(now.year() + 1, 1, 1, 0, 0, 0)
+        .single()?;
+    Some((next_year.timestamp() - now.timestamp()) / 86_400)
+}
+
+fn days_until_year_expire_day(expired_at: i64) -> Option<i64> {
+    let now = app_now();
+    let timezone = app_timezone();
+    let expired = timezone.timestamp_opt(expired_at, 0).single()?;
+    let this_year = timezone
+        .with_ymd_and_hms(now.year(), expired.month(), expired.day(), 0, 0, 0)
+        .single();
+    let target = match this_year {
+        Some(target) if target > now => target,
+        _ => timezone
+            .with_ymd_and_hms(now.year() + 1, expired.month(), expired.day(), 0, 0, 0)
+            .single()?,
+    };
+    Some((target.timestamp() - now.timestamp()) / 86_400)
+}
+
+fn last_day_of_current_month() -> u32 {
+    let today = app_now().date_naive();
+    let (year, month) = if today.month() == 12 {
+        (today.year() + 1, 1)
+    } else {
+        (today.year(), today.month() + 1)
+    };
+    let first_next_month = chrono::NaiveDate::from_ymd_opt(year, month, 1).unwrap_or(today);
+    (first_next_month - Duration::days(1)).day()
+}
+
+pub(crate) fn user_is_available(user: &v2board_db::user::UserAccessRow) -> bool {
+    let unexpired = user
+        .expired_at
+        .map(|expired_at| expired_at > Utc::now().timestamp())
+        .unwrap_or(true);
+    user.banned == 0 && user.transfer_enable > 0 && unexpired
+}
+
+fn hmac_sha1_hex(key: &[u8], message: &[u8]) -> Result<String, ApiError> {
+    type HmacSha1 = Hmac<Sha1>;
+    let mut mac =
+        HmacSha1::new_from_slice(key).map_err(|_| ApiError::internal("invalid hmac key"))?;
+    mac.update(message);
+    Ok(mac
+        .finalize()
+        .into_bytes()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect())
+}

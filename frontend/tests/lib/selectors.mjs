@@ -4,36 +4,61 @@
 // so every selector must match both DOMs: shadcn slot/role/testid first, antd
 // class fallback. Provenance: scratchpad admin-dom-map.
 
-export const languageMenuItemSelector = '.ant-dropdown-menu-item, .v2board-auth-language-menu-item';
-export const userAuthSurfaceSelector = '.v2board-auth-box, .v2board-auth-card';
+export const languageMenuItemSelector =
+  '[data-slot="dropdown-menu-radio-item"], .ant-dropdown-menu-item';
+export const userAuthSurfaceSelector = '[data-testid="auth-card"], .v2board-auth-box';
 export const userAuthControlSelector = [
+  '[data-testid="auth-card"] input',
+  '[data-testid="auth-card"] select',
+  '[data-testid="auth-card"] textarea',
   '.v2board-auth-box input',
   '.v2board-auth-box select',
   '.v2board-auth-box textarea',
-  '.v2board-auth-card input',
-  '.v2board-auth-card select',
-  '.v2board-auth-card textarea',
 ].join(', ');
 export const userAuthLinkSelector = [
+  '[data-testid="auth-card"] a',
   '.v2board-auth-box a',
-  '.v2board-auth-card a',
   '.bg-gray-lighter a',
 ].join(', ');
 export const userAuthTitleTextSelector = [
+  '[data-slot="auth-title"]',
   '.v2board-auth-box h1',
   '.v2board-auth-box h2',
   '.v2board-auth-box h3',
   '.v2board-auth-box .font-size-h1',
   '.v2board-auth-box p',
-  '.v2board-auth-card h1',
-  '.v2board-auth-card h2',
-  '.v2board-auth-card h3',
-  '.v2board-auth-card .v2board-auth-title',
 ].join(', ');
+export const adminAuthSurfaceSelector = '[data-testid="admin-login-surface"], .v2board-auth-box';
+export const adminAuthControlSelector = [
+  '[data-testid="admin-login-surface"] input',
+  '[data-testid="admin-login-surface"] select',
+  '[data-testid="admin-login-surface"] textarea',
+  '.v2board-auth-box input',
+  '.v2board-auth-box select',
+  '.v2board-auth-box textarea',
+].join(', ');
+export const adminAuthIdentifierSelector = [
+  '[data-testid="admin-login-surface"] input[type="email"]',
+  '[data-testid="admin-login-surface"] input[type="text"]',
+  '.v2board-auth-box input[type="email"]',
+  '.v2board-auth-box input[type="text"]',
+].join(', ');
+export const adminAuthPasswordSelector = [
+  '[data-testid="admin-login-surface"] input[type="password"]',
+  '.v2board-auth-box input[type="password"]',
+].join(', ');
+export const adminAuthSubmitSelector =
+  '[data-testid="admin-login-submit"], .v2board-auth-box button[type="submit"]';
+export const adminAuthForgotSelector =
+  '[data-testid="admin-forgot-password"], .v2board-auth-box .bg-gray-lighter a';
+export const adminForgotDialogSelector =
+  '[data-testid="admin-forgot-dialog"], .ant-modal-confirm, .ant-modal';
 export const dashboardShortcutSelector =
   '[data-testid="dashboard-page"], [data-testid="dashboard-shortcut"], .content-heading, .block-title, .block-link-pop';
-export const dashboardShortcutActionSelector = '[data-testid="dashboard-shortcut"], .block-link-pop';
-export const orderDetailReadySelector = '[data-testid="order-info"], #cashier .block-content, #cashier .block-title';
+export const dashboardShortcutActionSelector =
+  '[data-testid="dashboard-shortcut"], .block-link-pop';
+export const orderDetailReadySelector =
+  '[data-testid="order-info"], #cashier .block-content, #cashier .block-title';
 export const dashboardSubscribeShortcutTexts = [
   '一键订阅',
   'One-click Subscription',
@@ -41,14 +66,21 @@ export const dashboardSubscribeShortcutTexts = [
   '快速将节点导入对应客户端进行使用',
 ];
 export const dashboardEmptyPlanReadySelector = '[data-testid="dashboard-empty-plan"], .fa-plus';
-export const dashboardExpiredReadySelector = '[data-testid="dashboard-status-expired"], .text-danger';
-export const dashboardProgressReadySelector = '[data-testid="dashboard-progress-bar"], .progress-bar';
+export const dashboardExpiredReadySelector =
+  '[data-testid="dashboard-status-expired"], .text-danger';
+export const dashboardProgressReadySelector =
+  '[data-testid="dashboard-progress-bar"], .progress-bar';
 export const dashboardTrafficUsedUpReadySelector =
   '[data-testid="dashboard-progress-bar"][data-status="danger"], .progress-bar.bg-danger';
 export const userNodeRowsReadySelector = '[data-testid="node-table"] tbody tr, .ant-table-tbody tr';
-export const userNodeEmptyReadySelector = '[data-testid="node-empty"], .alert.alert-dark';
+// The API-500 scenario reaches the redesigned ErrorState rather than the empty
+// subscription alert. Both are valid terminal surfaces; keep the legacy alert
+// branch for the oracle without misclassifying source failures as empty data.
+export const userNodeEmptyReadySelector =
+  '[data-testid="node-empty"], [data-testid="node-error"], .alert.alert-dark';
 export const userNodeLoadingReadySelector = '[data-testid="node-loading"], #page-container';
-export const userTrafficRowsReadySelector = '[data-testid="traffic-table"] tbody tr, .ant-table-tbody tr';
+export const userTrafficRowsReadySelector =
+  '[data-testid="traffic-table"] tbody tr, .ant-table-tbody tr';
 export const userTrafficSurfaceReadySelector = '[data-testid="traffic-card"], .ant-table';
 
 // Distribute a descendant combinator across both selector unions so
@@ -87,7 +119,14 @@ export const adminMenuItemSelector =
 export const adminSwitchSelector = '.ant-switch, [role="switch"], [data-slot="switch"]';
 export const adminDrawerTitleSelector =
   '.ant-drawer-title, .ant-modal-title, [data-slot="sheet-title"], [data-slot="dialog-title"]';
-export const adminDrawerInputSelector = scopedSelectorUnion(adminOverlayOpenSelector, adminFormInputSelector);
+export const adminDrawerInputSelector = scopedSelectorUnion(
+  adminOverlayOpenSelector,
+  adminFormInputSelector,
+);
+export const adminDrawerInputGroupControlSelector = scopedSelectorUnion(
+  adminOverlayOpenSelector,
+  '[data-slot="input-group-control"]',
+);
 export const adminDrawerSelectTriggerSelector = scopedSelectorUnion(
   adminOverlayOpenSelector,
   adminSelectTriggerSelector,
@@ -96,24 +135,24 @@ export const adminDrawerLabelSelector = scopedSelectorUnion(
   adminOverlayOpenSelector,
   'label, [data-slot="label"]',
 );
+export const adminDrawerLegendSelector = scopedSelectorUnion(adminOverlayOpenSelector, 'legend');
 export const adminDrawerSelectedValueSelector = scopedSelectorUnion(
   adminOverlayOpenSelector,
   '.ant-select-selection-selected-value, [data-slot="select-trigger"]:not([data-placeholder])',
 );
 export const adminDrawerFooterButtonSelector =
   '.ant-drawer-open .v2board-drawer-action .ant-btn, .ant-modal-footer .ant-btn, [data-slot="sheet-footer"] button, [data-slot="dialog-footer"] button';
-export const adminConfirmDialogSelector =
-  '.ant-modal-confirm, [role="alertdialog"], .v2board-confirm-dialog';
+export const adminConfirmDialogSelector = '[role="alertdialog"], .ant-modal-confirm';
 export const adminConfirmPrimarySelector =
-  '.ant-modal-confirm-btns .ant-btn-primary, .v2board-confirm-primary, [role="alertdialog"] [data-slot="alert-dialog-action"]';
+  '[role="alertdialog"] [data-slot="alert-dialog-action"], .ant-modal-confirm-btns .ant-btn-primary';
 export const adminConfirmModalCountSelector =
-  '.ant-modal-confirm, .ant-modal, [role="alertdialog"], .v2board-confirm-dialog, [data-slot="dialog-content"]';
+  '[role="alertdialog"], [data-slot="dialog-content"], .ant-modal-confirm, .ant-modal';
 export const adminConfirmButtonsSelector =
-  '.ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn, .v2board-confirm-footer button, [role="alertdialog"] button';
+  '[role="alertdialog"] button, .ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn';
 export const adminConfirmContentSelector =
-  '.ant-modal-confirm-content, .ant-modal-body, .v2board-confirm-content, [data-slot="alert-dialog-description"]';
+  '[data-slot="alert-dialog-description"], .ant-modal-confirm-content, .ant-modal-body';
 export const adminConfirmTitleSelector =
-  '.ant-modal-confirm-title, .ant-modal-title, .v2board-confirm-title, [data-slot="alert-dialog-title"]';
+  '[data-slot="alert-dialog-title"], .ant-modal-confirm-title, .ant-modal-title';
 export const adminPlanCreateSelector = '.bg-white .ant-btn, [data-testid="plan-create"]';
 export const adminPlanSubmitSelector =
   '.ant-drawer-open .v2board-drawer-action .ant-btn-primary, [data-testid="plan-submit"]';
@@ -138,8 +177,6 @@ export const adminActiveConfigTabSelector =
   '.ant-tabs-tab-active, [data-testid^="config-tab-"][aria-current="page"]';
 export const adminConfigFieldInputSelector =
   '.block.border-bottom input.form-control, .block.border-bottom textarea.form-control, input[data-testid^="config-"], textarea[data-testid^="config-"]';
-export const adminThemeCardTitleSelector =
-  '.block-transparent.bg-image h3, [data-testid^="theme-card-"] [data-slot="card-title"]';
 export const adminTicketReplyInputSelector = '[data-testid="ticket-reply-input"], .js-chat-input';
 export const adminTicketReplyFilterDropdownSelector =
   '.ant-table-filter-dropdown, [data-slot="dropdown-menu-content"]';

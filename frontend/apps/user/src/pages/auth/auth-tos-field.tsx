@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { Trans } from 'react-i18next';
 import { Checkbox } from '@/components/ui/checkbox';
 
 export function getSafeTosHref(rawUrl: string): string | null {
@@ -20,47 +20,30 @@ export function getSafeTosHref(rawUrl: string): string | null {
   return normalized.startsWith('//') ? null : normalized;
 }
 
-function renderTosSentence(template: string, url: string): ReactNode {
-  const match = template.match(/^([\s\S]*?)<a\b[^>]*>([\s\S]*?)<\/a>([\s\S]*)$/);
-  if (!match) return template;
-  const [, before, linkText, after] = match;
+function TosSentence({ url }: { url: string }) {
   const safeHref = getSafeTosHref(url);
-
-  if (!safeHref) {
-    return (
-      <>
-        {before}
-        {linkText}
-        {after}
-      </>
-    );
-  }
-
-  return (
-    <>
-      {before}
-      <a
-        href={safeHref}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-primary underline underline-offset-4 transition-colors hover:text-primary/80"
-      >
-        {linkText}
-      </a>
-      {after}
-    </>
+  const terms = safeHref ? (
+    <a
+      href={safeHref}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-primary underline underline-offset-4 transition-colors hover:text-primary/80"
+    />
+  ) : (
+    <span />
   );
+
+  return <Trans i18nKey={$ => $.auth.tos_html} components={{ terms }} />;
 }
 
 interface AuthTosFieldProps {
   checked: boolean;
   id: string;
-  template: string;
   url: string;
   onToggle: () => void;
 }
 
-export function AuthTosField({ checked, id, template, url, onToggle }: AuthTosFieldProps) {
+export function AuthTosField({ checked, id, url, onToggle }: AuthTosFieldProps) {
   const textId = `${id}-text`;
 
   return (
@@ -72,7 +55,9 @@ export function AuthTosField({ checked, id, template, url, onToggle }: AuthTosFi
         aria-labelledby={textId}
         className="mt-0.5"
       />
-      <span id={textId}>{renderTosSentence(template, url)}</span>
+      <span id={textId}>
+        <TosSentence url={url} />
+      </span>
     </div>
   );
 }

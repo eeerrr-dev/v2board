@@ -14,10 +14,12 @@
   },
   "dependencies": {
     "@v2board/types": "workspace:*",
-    "axios": "catalog:"
+    "axios": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
-    "@types/node": "^26.0.1",
+    "@typescript/native": "catalog:",
+    "@types/node": "catalog:",
     "axios-mock-adapter": "^2.1.0",
     "typescript": "catalog:",
     "vitest": "catalog:"

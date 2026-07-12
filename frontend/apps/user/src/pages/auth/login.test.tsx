@@ -1,6 +1,9 @@
 import { waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { LinkProps } from 'react-router';
+import type * as AuthModule from '@/lib/auth';
 import { renderWithProviders } from '@/test/render';
+import { createTestTranslation } from '@/test/i18next-selector';
 import LoginPage from './login';
 
 const mocks = vi.hoisted(() => ({
@@ -14,18 +17,17 @@ const mocks = vi.hoisted(() => ({
       this.data = data;
     }
   },
-  apiClient: { name: 'apiClient' },
-  checkLogin: vi.fn(),
   fetchUserInfo: vi.fn(),
-  getAuthData: vi.fn(),
   isPending: false,
   labels: {
     'auth.email': '邮箱',
+    'auth.email_invalid': '请输入有效邮箱',
     'auth.forget_password': '忘记密码？',
     'auth.login_description': '输入邮箱和密码继续',
     'auth.login_title': '欢迎回来',
     'auth.no_account': '还没有账号？',
     'auth.password': '密码',
+    'auth.password_min': '密码至少需要 8 个字符',
     'auth.sign_up': '注册',
     'auth.submit_login': '登录',
   } as Record<string, string>,
@@ -33,11 +35,10 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   params: new URLSearchParams(),
   queryClient: {
-    fetchQuery: vi.fn(),
+    prefetchQuery: vi.fn(),
   },
   setAuthData: vi.fn(),
   settings: {
-    description: '',
     logo: '',
     title: 'V2Board',
   },
@@ -45,6 +46,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('react-router', () => ({
+  Link: ({ to, children, className }: LinkProps) => (
+    <a href={`#${String(to)}`} className={className}>
+      {children}
+    </a>
+  ),
   useNavigate: () => mocks.navigate,
   useSearchParams: () => [mocks.params],
 }));
@@ -53,21 +59,10 @@ vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => mocks.queryClient,
 }));
 
-vi.mock('@v2board/api-client', () => ({
-  ApiError: mocks.ApiError,
-  user: {
-    checkLogin: mocks.checkLogin,
-  },
-}));
-
-vi.mock('@/lib/api', () => ({
-  apiClient: mocks.apiClient,
-}));
-
-vi.mock('@/lib/auth', () => ({
-  getAuthData: mocks.getAuthData,
-  setAuthData: mocks.setAuthData,
-}));
+vi.mock('@/lib/auth', async (importOriginal) => {
+  const actual = await importOriginal<typeof AuthModule>();
+  return { ...actual, setAuthData: mocks.setAuthData };
+});
 
 vi.mock('@/lib/guest', () => ({
   useLoginMutation: () => ({
@@ -79,8 +74,11 @@ vi.mock('@/lib/guest', () => ({
   }),
 }));
 
-vi.mock('@/lib/legacy-settings', () => ({
-  getLegacyTitle: () => mocks.settings.title,
+vi.mock('@/lib/runtime-config', () => ({
+  getBackgroundUrl: () => '',
+  getLogoUrl: () => '',
+  getSiteTitle: () => mocks.settings.title,
+  getRuntimeConfig: () => ({ i18n: ['en-US', 'zh-CN'] }),
 }));
 
 vi.mock('@/lib/queries', () => ({
@@ -93,32 +91,22 @@ vi.mock('@/lib/queries', () => ({
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    i18n: { language: 'zh-CN' },
-    t: (key: string) => mocks.labels[key] ?? key,
-  }),
+  useTranslation: () => createTestTranslation(mocks.labels),
 }));
 
 function resetMocks() {
-  mocks.checkLogin.mockReset();
   mocks.fetchUserInfo.mockReset();
-  mocks.getAuthData.mockReset();
-  mocks.getAuthData.mockReturnValue(null);
   mocks.isPending = false;
   mocks.loginMutateAsync.mockReset();
   mocks.loginMutateAsync.mockResolvedValue({ auth_data: 'LOGIN_AUTH' });
   mocks.navigate.mockReset();
   mocks.params = new URLSearchParams();
-  mocks.queryClient.fetchQuery.mockReset();
-  mocks.queryClient.fetchQuery.mockResolvedValue(undefined);
+  mocks.queryClient.prefetchQuery.mockReset();
+  mocks.queryClient.prefetchQuery.mockResolvedValue(undefined);
   mocks.setAuthData.mockReset();
-  mocks.settings.description = '';
   mocks.settings.logo = '';
   mocks.settings.title = 'V2Board';
   window.g_lang = 'zh-CN';
-  window.settings = {
-    i18n: ['en-US', 'zh-CN'] as string[] & Record<string, Record<string, string>>,
-  };
   mocks.tokenLoginMutateAsync.mockReset();
   mocks.tokenLoginMutateAsync.mockResolvedValue({ auth_data: 'TOKEN_AUTH' });
 }
@@ -134,18 +122,15 @@ describe('LoginPage', () => {
   beforeEach(resetMocks);
 
   afterEach(() => {
-    window.settings = undefined;
     window.g_lang = undefined;
   });
 
   it('renders the login card with translated labels, shadcn examples, and footer copy', () => {
     const view = renderWithProviders(<LoginPage />);
 
-    // Interaction-parity harness hooks (frontend/tests/lib selects
-    // `.v2board-auth-card` and `.v2board-auth-title` in interactions mode).
-    expect(view.container.querySelector('.v2board-auth-card')).not.toBeNull();
+    expect(view.getByTestId('auth-card')).toBeInTheDocument();
     const heading = view.getByRole('heading', { level: 1, name: '欢迎回来' });
-    expect(view.container.querySelector('.v2board-auth-title')).toBe(heading);
+    expect(heading).toHaveAttribute('data-slot', 'auth-title');
     expect(view.getByText('输入邮箱和密码继续')).toBeInTheDocument();
 
     // Shadcn-style examples: the identifier field may show an example, passwords stay label-only.
@@ -164,7 +149,6 @@ describe('LoginPage', () => {
 
   it('shows a busy, still-labeled submit and no operator branding while login is pending', () => {
     mocks.isPending = true;
-    mocks.settings.description = 'Legacy description';
     mocks.settings.logo = '/theme/logo.png';
 
     const view = renderWithProviders(<LoginPage />);
@@ -174,9 +158,8 @@ describe('LoginPage', () => {
     expect(submit).toBeDisabled();
     expect(submit.querySelector('svg')).not.toBeNull();
 
-    // Operator logo and description stay out of the action card.
+    // Operator logo stays out of the action card.
     expect(view.queryByRole('img')).toBeNull();
-    expect(view.queryByText('Legacy description')).toBeNull();
     expect(view.getByRole('heading', { level: 1, name: '欢迎回来' })).toBeInTheDocument();
   });
 
@@ -195,21 +178,36 @@ describe('LoginPage', () => {
     expect(controls.every((element) => !element.hasAttribute('tabindex'))).toBe(true);
   });
 
+  it('renders email and minimum-password validation inline without calling login', async () => {
+    const view = renderWithProviders(<LoginPage />);
+
+    await view.user.type(view.getByLabelText('邮箱'), 'not-an-email');
+    await view.user.type(view.getByLabelText('密码'), 'short');
+    await view.user.click(view.getByRole('button', { name: '登录' }));
+
+    expect(await view.findByText('请输入有效邮箱')).toBeInTheDocument();
+    expect(view.getByText('密码至少需要 8 个字符')).toBeInTheDocument();
+    expect(view.getByLabelText('邮箱')).toHaveAttribute('aria-describedby', 'login-email-error');
+    expect(view.getByLabelText('密码')).toHaveAttribute('aria-describedby', 'login-password-error');
+    expect(mocks.loginMutateAsync).not.toHaveBeenCalled();
+    expect(mocks.setAuthData).not.toHaveBeenCalled();
+  });
+
   it('submits the form values, stores auth data, fetches user info, and pushes the redirect', async () => {
     mocks.params = new URLSearchParams('redirect=order');
     const view = renderWithProviders(<LoginPage />);
 
-    await view.user.type(view.getByLabelText('邮箱'), 'user@example.com');
-    await view.user.type(view.getByLabelText('密码'), 'secret');
+    await view.user.type(view.getByLabelText('邮箱'), '  user@example.com  ');
+    await view.user.type(view.getByLabelText('密码'), 'secret88');
     await view.user.click(view.getByRole('button', { name: '登录' }));
 
     await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/order'));
     expect(mocks.loginMutateAsync).toHaveBeenCalledWith({
       email: 'user@example.com',
-      password: 'secret',
+      password: 'secret88',
     });
     expect(mocks.setAuthData).toHaveBeenCalledWith('LOGIN_AUTH');
-    expect(mocks.queryClient.fetchQuery).toHaveBeenCalledWith({
+    expect(mocks.queryClient.prefetchQuery).toHaveBeenCalledWith({
       queryFn: mocks.fetchUserInfo,
       queryKey: ['user', 'info'],
     });
@@ -222,12 +220,12 @@ describe('LoginPage', () => {
     const view = renderWithProviders(<LoginPage />);
 
     await view.user.type(view.getByLabelText('邮箱'), 'user@example.com');
-    await view.user.type(view.getByLabelText('密码'), 'secret{Enter}');
+    await view.user.type(view.getByLabelText('密码'), 'secret88{Enter}');
 
     await waitFor(() =>
       expect(mocks.loginMutateAsync).toHaveBeenCalledWith({
         email: 'user@example.com',
-        password: 'secret',
+        password: 'secret88',
       }),
     );
     await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/dashboard'));
@@ -238,7 +236,7 @@ describe('LoginPage', () => {
     const view = renderWithProviders(<LoginPage />);
 
     await view.user.type(view.getByLabelText('邮箱'), 'user@example.com');
-    await view.user.type(view.getByLabelText('密码'), 'secret');
+    await view.user.type(view.getByLabelText('密码'), 'secret88');
     await view.user.click(view.getByRole('button', { name: '登录' }));
 
     await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/dashboard'));
@@ -255,7 +253,7 @@ describe('LoginPage', () => {
 
       const view = renderWithProviders(<LoginPage />);
       await view.user.type(view.getByLabelText('邮箱'), 'user@example.com');
-      await view.user.type(view.getByLabelText('密码'), 'secret');
+      await view.user.type(view.getByLabelText('密码'), 'secret88');
       await view.user.click(view.getByRole('button', { name: '登录' }));
 
       await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/dashboard'));
@@ -269,7 +267,7 @@ describe('LoginPage', () => {
     const view = renderWithProviders(<LoginPage />);
 
     await view.user.type(view.getByLabelText('邮箱'), 'user@example.com');
-    await view.user.type(view.getByLabelText('密码'), 'wrong');
+    await view.user.type(view.getByLabelText('密码'), 'wrongpass');
     await view.user.click(view.getByRole('button', { name: '登录' }));
 
     const alert = await view.findByRole('alert');
@@ -285,21 +283,33 @@ describe('LoginPage', () => {
     expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
-  it('suppresses the inline error for transport failures (status 0)', async () => {
+  it('shows an inline error for transport failures', async () => {
     mocks.loginMutateAsync.mockRejectedValue(new mocks.ApiError(0, 'Network Error'));
     const view = renderWithProviders(<LoginPage />);
 
     await view.user.type(view.getByLabelText('邮箱'), 'user@example.com');
-    await view.user.type(view.getByLabelText('密码'), 'secret');
+    await view.user.type(view.getByLabelText('密码'), 'secret88');
     await view.user.click(view.getByRole('button', { name: '登录' }));
 
     await waitFor(() => expect(mocks.loginMutateAsync).toHaveBeenCalled());
     await flushMicrotasks();
 
-    // Transport failures surfaced nothing in the oracle: no inline alert, no auth, no navigation.
-    expect(view.queryByRole('alert')).toBeNull();
+    expect(view.getByRole('alert')).toHaveTextContent('Network Error');
     expect(mocks.setAuthData).not.toHaveBeenCalled();
     expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
+  it('does not render stale inline feedback for a 403 owned by API redirect teardown', async () => {
+    mocks.loginMutateAsync.mockRejectedValue(new mocks.ApiError(403, '登录已过期'));
+    const view = renderWithProviders(<LoginPage />);
+
+    await view.user.type(view.getByLabelText('邮箱'), 'user@example.com');
+    await view.user.type(view.getByLabelText('密码'), 'secret88');
+    await view.user.click(view.getByRole('button', { name: '登录' }));
+
+    await waitFor(() => expect(mocks.loginMutateAsync).toHaveBeenCalledOnce());
+    await flushMicrotasks();
+    expect(view.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('clears the inline error once the user edits a field', async () => {
@@ -307,7 +317,7 @@ describe('LoginPage', () => {
     const view = renderWithProviders(<LoginPage />);
 
     await view.user.type(view.getByLabelText('邮箱'), 'user@example.com');
-    await view.user.type(view.getByLabelText('密码'), 'wrong');
+    await view.user.type(view.getByLabelText('密码'), 'wrongpass');
     await view.user.click(view.getByRole('button', { name: '登录' }));
     await view.findByRole('alert');
 
@@ -330,11 +340,11 @@ describe('LoginPage', () => {
     expect(mocks.loginMutateAsync).not.toHaveBeenCalled();
   });
 
-  it('navigates register and forgetpassword via real hash anchors (no javascript: hrefs)', () => {
+  it('keeps the register and forgetpassword hash contracts through React Router links', () => {
     const view = renderWithProviders(<LoginPage />);
 
     // Real hash anchors — the data router navigates natively, with no JS click handler or
-    // `javascript:` href. The behavior contract (lands on register/forgetpassword) is preserved.
+    // The Link targets stay router-native while createHashRouter preserves the public hash URLs.
     expect(view.getByRole('link', { name: '注册' })).toHaveAttribute('href', '#/register');
     expect(view.getByRole('link', { name: '忘记密码？' })).toHaveAttribute(
       'href',
@@ -352,7 +362,7 @@ describe('LoginPage', () => {
       verify: 'verify-token',
     });
     expect(mocks.setAuthData).toHaveBeenCalledWith('TOKEN_AUTH');
-    expect(mocks.queryClient.fetchQuery).not.toHaveBeenCalled();
+    expect(mocks.queryClient.prefetchQuery).not.toHaveBeenCalled();
     expect(mocks.navigate).not.toHaveBeenCalledWith('order');
   });
 
@@ -421,84 +431,5 @@ describe('LoginPage', () => {
 
     expect(mocks.setAuthData).not.toHaveBeenCalledWith('STALE_AUTH');
     expect(mocks.navigate).not.toHaveBeenCalledWith('/order');
-  });
-
-  it('ignores stale checkLogin completions after the bootstrap effect is cleaned up', async () => {
-    let resolveCheckLogin: ((value: { is_login: boolean }) => void) | undefined;
-    mocks.getAuthData.mockReturnValue('EXISTING_AUTH');
-    mocks.checkLogin.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          resolveCheckLogin = resolve;
-        }),
-    );
-
-    // A late is_login:true after unmount must not fetch user info or navigate.
-    const first = renderWithProviders(<LoginPage />);
-    await waitFor(() => expect(mocks.checkLogin).toHaveBeenCalledWith(mocks.apiClient));
-    first.unmount();
-    resolveCheckLogin?.({ is_login: true });
-    await flushMicrotasks();
-    expect(mocks.queryClient.fetchQuery).not.toHaveBeenCalled();
-    expect(mocks.navigate).not.toHaveBeenCalled();
-
-    // A late is_login:false after unmount must not wipe the stored auth data.
-    const second = renderWithProviders(<LoginPage />);
-    await waitFor(() => expect(mocks.checkLogin).toHaveBeenCalledTimes(2));
-    second.unmount();
-    resolveCheckLogin?.({ is_login: false });
-    await flushMicrotasks();
-    expect(mocks.setAuthData).not.toHaveBeenCalled();
-  });
-
-  it('keeps the original checkLogin effect auth-data guard before requesting /user/checkLogin', async () => {
-    renderWithProviders(<LoginPage />);
-    await flushMicrotasks();
-
-    expect(mocks.getAuthData).toHaveBeenCalled();
-    expect(mocks.checkLogin).not.toHaveBeenCalled();
-    expect(mocks.queryClient.fetchQuery).not.toHaveBeenCalled();
-    expect(mocks.navigate).not.toHaveBeenCalled();
-  });
-
-  it('checks an existing auth session on mount, fetches user info, and pushes dashboard', async () => {
-    mocks.getAuthData.mockReturnValue('EXISTING_AUTH');
-    mocks.checkLogin.mockResolvedValue({ is_login: true });
-
-    renderWithProviders(<LoginPage />);
-
-    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/dashboard'));
-    expect(mocks.checkLogin).toHaveBeenCalledWith(mocks.apiClient);
-    expect(mocks.queryClient.fetchQuery).toHaveBeenCalledWith({
-      queryFn: mocks.fetchUserInfo,
-      queryKey: ['user', 'info'],
-    });
-    expect(mocks.navigate).not.toHaveBeenCalledWith('dashboard');
-  });
-
-  it('clears existing auth when checkLogin says the session is not logged in', async () => {
-    mocks.getAuthData.mockReturnValue('STALE_AUTH');
-    mocks.checkLogin.mockResolvedValue({ is_login: false });
-
-    renderWithProviders(<LoginPage />);
-
-    await waitFor(() => expect(mocks.setAuthData).toHaveBeenCalledWith(null));
-    expect(mocks.checkLogin).toHaveBeenCalledWith(mocks.apiClient);
-    expect(mocks.navigate).not.toHaveBeenCalledWith('/dashboard');
-  });
-
-  it('does not run the stale-session checkLogin while a verify token is redeemed', async () => {
-    // An already-authed user opening a verify handoff link: token2Login mints a
-    // fresh session, so the stale-token checkLogin must not race it — a late
-    // is_login:false would otherwise wipe the freshly-minted token.
-    mocks.params = new URLSearchParams('verify=verify-token&redirect=order');
-    mocks.getAuthData.mockReturnValue('EXISTING_AUTH');
-    mocks.checkLogin.mockResolvedValue({ is_login: false });
-
-    renderWithProviders(<LoginPage />);
-
-    await waitFor(() => expect(mocks.setAuthData).toHaveBeenCalledWith('TOKEN_AUTH'));
-    expect(mocks.checkLogin).not.toHaveBeenCalled();
-    expect(mocks.setAuthData).not.toHaveBeenCalledWith(null);
   });
 });

@@ -19,7 +19,7 @@ export async function runAdminTicketReplySendInteraction(page) {
   const filled = await ticketReplyState(page);
 
   await page.locator(adminTicketReplyInputSelector).first().press('Enter');
-  await page.waitForSelector('.v2board-toast-root, .ant-message-notice, .ant-notification-notice', {
+  await page.waitForSelector('[data-sonner-toast], .ant-message-notice, .ant-notification-notice', {
     state: 'visible',
     timeout: 5_000,
   });

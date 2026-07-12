@@ -10,8 +10,8 @@ async function flushToasts(duration = 16) {
   await Promise.resolve();
 }
 
-function activeToasts(selector: string) {
-  return Array.from(document.querySelectorAll(selector)).filter(
+function activeToasts() {
+  return Array.from(document.querySelectorAll('[data-sonner-toast]')).filter(
     (toastElement) =>
       toastElement.getAttribute('data-removed') !== 'true' &&
       toastElement.getAttribute('data-visible') !== 'false',
@@ -34,42 +34,49 @@ describe('toast', () => {
     vi.useRealTimers();
   });
 
-  it('keeps only one message toast', async () => {
+  it('lets independent notifications coexist', async () => {
     await act(async () => {
       toast.success('first');
       toast.error('second');
       await flushToasts();
     });
 
-    const notices = activeToasts('.v2board-toast-message');
-    expect(notices).toHaveLength(1);
-    expect(notices[0]).toHaveTextContent('second');
+    const notices = activeToasts();
+    expect(notices).toHaveLength(2);
+    expect(notices.map((notice) => notice.textContent)).toEqual(
+      expect.arrayContaining([expect.stringContaining('first'), expect.stringContaining('second')]),
+    );
   });
 
-  it('destroys message toasts without closing notifications', async () => {
+  it('keeps loading notifications alive until their own id is dismissed', async () => {
+    let loadingId: string | number | undefined;
     await act(async () => {
-      toast.loading('loading');
+      loadingId = toast.loading('loading');
       toast.error('error', { description: 'details' });
       await flushToasts();
-    });
-
-    await act(async () => {
-      toast.destroy();
+      vi.advanceTimersByTime(10_000);
       await flushToasts(250);
     });
 
-    expect(activeToasts('.v2board-toast-message')).toHaveLength(0);
-    expect(activeToasts('.v2board-toast-notification')).toHaveLength(1);
+    const [loading] = activeToasts();
+    expect(loading).toHaveTextContent('loading');
+
+    await act(async () => {
+      toast.dismiss(loadingId);
+      await flushToasts(250);
+    });
+
+    expect(activeToasts()).toHaveLength(0);
   });
 
-  it('allows desktop notifications to stack', async () => {
+  it('allows notifications with descriptions to stack', async () => {
     await act(async () => {
       toast.error('error', { description: 'first' });
       toast.info('info', { description: 'second' });
       await flushToasts();
     });
 
-    expect(activeToasts('.v2board-toast-notification')).toHaveLength(2);
+    expect(activeToasts()).toHaveLength(2);
   });
 
   it('keeps notification message and description visible together', async () => {
@@ -78,22 +85,19 @@ describe('toast', () => {
       await flushToasts();
     });
 
-    const notification = activeToasts('.v2board-toast-notification')[0];
+    const notification = activeToasts()[0];
     expect(notification).toHaveTextContent('Request failed');
     expect(notification).toHaveTextContent('Server Error');
   });
 
-  it('marks rendered toasts with the island hooks the parity harness selects', async () => {
+  it('marks rendered toasts with Sonner data attributes', async () => {
     await act(async () => {
       toast.success('copied');
       await flushToasts();
     });
 
-    const [message] = activeToasts('.v2board-toast-message');
+    const [message] = activeToasts();
     expect(message).toBeDefined();
-    // The interaction-parity harness waits on `.v2board-toast-root`, and `v2board-island`
-    // scopes island tokens onto toast DOM rendered outside the island root.
-    expect(message!.classList.contains('v2board-toast-root')).toBe(true);
-    expect(message!.classList.contains('v2board-island')).toBe(true);
+    expect(message).toHaveAttribute('data-sonner-toast');
   });
 });

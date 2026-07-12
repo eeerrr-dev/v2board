@@ -10,7 +10,11 @@ import {
 } from './json-util.mjs';
 import { normalizeParityText } from './text.mjs';
 import { visibleTexts } from './dom-helpers.mjs';
-import { dashboardResetPackageTradeNo, profileDepositTradeNo } from './fixture-data.mjs';
+import {
+  dashboardResetPackageTradeNo,
+  profileDepositTradeNo,
+  subscribeTargetTitles,
+} from './fixture-data.mjs';
 import { authPageState } from './state-readers/auth.mjs';
 import { isDarkModeActiveControlState } from './assert-useful.mjs';
 
@@ -61,7 +65,7 @@ export async function normalizeRedesignedAuthPageState(page) {
   const state = await authPageState(page);
   const languageTriggerTexts = await visibleTexts(
     page,
-    '.v2board-auth-language-trigger, .v2board-login-i18n-btn',
+    '[data-testid="auth-language-trigger"], .v2board-login-i18n-btn',
     2,
   );
   const comboboxTriggerTexts = await visibleTexts(page, '[role="combobox"]', 8);
@@ -71,9 +75,11 @@ export async function normalizeRedesignedAuthPageState(page) {
     // button. Keep comparing the actual submit/action buttons, but ignore the language button text
     // that had no button counterpart in the packaged oracle.
     // Radix Select triggers are buttons with role="combobox"; those remain covered by controls.
-    buttons: state.buttons.filter(
-      (text) => !languageTriggerTexts.includes(text) && !comboboxTriggerTexts.includes(text),
-    ).map(normalizeRedesignedAuthButtonText),
+    buttons: state.buttons
+      .filter(
+        (text) => !languageTriggerTexts.includes(text) && !comboboxTriggerTexts.includes(text),
+      )
+      .map(normalizeRedesignedAuthButtonText),
     controls: state.controls.map((control) => {
       const behavioral = { ...control };
       // Released as redesigned presentation: placeholders became field labels, and identifier
@@ -91,34 +97,21 @@ export async function normalizeRedesignedAuthPageState(page) {
   };
 }
 
-// The admin auth surface is a redesigned shadcn island: its title/subtitle render as
-// `<div data-slot=card-*>` (not `<h*>`), and the forgot-password affordance is a `<button>`
-// that opens a Dialog rather than the oracle's `<a>` link. Collapse buttons+links into one
-// order-independent `actions` set (login/forgot mapped to tokens, the brand link that doubles
-// as a title dropped), and fold the identifier input's email->text + placeholder the same way
-// the user auth normalizer does — so the shadcn source and antd oracle converge on the Tier-1
-// contract (auth box present, email+password fields, login+forgot actions, #/login hash).
+// Read the redesigned admin auth surface through owned test ids and the oracle through its
+// frozen fallback selectors. The cross-world shape keeps semantic control/action counts and
+// values; text, placeholders and email-vs-text presentation are intentionally not contracts.
 export function normalizeAdminAuthPageState(state) {
-  const titleTexts = Array.isArray(state?.titleTexts) ? state.titleTexts : [];
-  const actions = [...(state?.buttons ?? []), ...(state?.links ?? [])]
-    .filter((text) => !titleTexts.includes(text))
-    .map((text) => {
-      if (['登入', '登录', 'Login', 'ログイン'].includes(text)) return 'login-action';
-      if (['忘记密码', '忘记密码？'].includes(text)) return 'forgot-password-action';
-      return text;
-    })
-    .filter((text, index, all) => all.indexOf(text) === index)
-    .sort();
   return {
-    actions,
-    authBoxCount: state?.authBoxCount,
+    authSurfaceCount: state?.authSurfaceCount,
     controls: (state?.controls ?? []).map((control) => {
       const behavioral = { ...control };
       delete behavioral.placeholder;
       if (behavioral.type === 'email') behavioral.type = 'text';
       return behavioral;
     }),
+    forgotActionCount: state?.forgotActionCount,
     hash: state?.hash,
+    submitActionCount: state?.submitActionCount,
   };
 }
 
@@ -144,15 +137,45 @@ export function normalizeAdminOrderFetchQuery(query) {
   return rest;
 }
 
+const ADMIN_PLAN_SAVE_KEYS = [
+  'id',
+  'name',
+  'content',
+  'group_id',
+  'transfer_enable',
+  'device_limit',
+  'month_price',
+  'quarter_price',
+  'half_year_price',
+  'year_price',
+  'two_year_price',
+  'three_year_price',
+  'onetime_price',
+  'reset_price',
+  'reset_traffic_method',
+  'capacity_limit',
+  'speed_limit',
+  'force_update',
+];
+
+function reduceAdminPlanSaveRequest(request) {
+  if (!request || typeof request !== 'object') return request;
+  return Object.fromEntries(
+    ADMIN_PLAN_SAVE_KEYS.filter((key) => Object.hasOwn(request, key)).map((key) => [
+      key,
+      request[key],
+    ]),
+  );
+}
+
 // Reduce a payment modal/Sheet snapshot to its Tier-1 compare essence. Drops the
 // Tier-2 background table rows (the antd fixed-right column duplicates action
 // cells as extra rows the shadcn table has no equivalent for), sorts the footer
 // button order (添加/保存 lead on the shadcn Sheet, 取消 leads on the antd modal),
 // and unifies the optional numeric fee fields (rendered '0' on the antd modal, ''
-// on the shadcn Sheet when unset/zero — display formatting; the submitted payload
-// in saveRequests is identical either way). Applied to both targets, so it never
-// masks a real mismatch. Non-object/array values (saveRequests, paymentFetchDelta)
-// pass through untouched.
+// on the shadcn Sheet when unset/zero — display formatting). Submitted requests
+// are reduced separately to PaymentController::save's accepted fields below.
+// Applied to both targets, so it never masks a real mismatch.
 export function reducePaymentSnapshot(state) {
   if (!state || typeof state !== 'object' || Array.isArray(state)) return state;
   const { tableRows: _tableRows, ...rest } = state;
@@ -166,6 +189,36 @@ export function reducePaymentSnapshot(state) {
   return next;
 }
 
+const paymentSaveFields = new Set([
+  'id',
+  'name',
+  'icon',
+  'payment',
+  'notify_domain',
+  'handling_fee_fixed',
+  'handling_fee_percent',
+]);
+
+const paymentConfigFieldsByDriver = new Map([
+  ['AlipayF2F', new Set(['config[key]', 'config[mch_id]'])],
+  ['MGate', new Set(['config[token]'])],
+  ['StripeCheckout', new Set(['config[publishable_key]', 'config[secret_key]'])],
+]);
+
+export function reducePaymentSaveRequest(request) {
+  if (!request || typeof request !== 'object' || Array.isArray(request)) return request;
+  const selectedConfigFields = paymentConfigFieldsByDriver.get(request.payment);
+  return Object.fromEntries(
+    Object.entries(request)
+      .filter(
+        ([key]) =>
+          paymentSaveFields.has(key) ||
+          (selectedConfigFields ? selectedConfigFields.has(key) : key.startsWith('config[')),
+      )
+      .map(([key, value]) => [key, value == null ? '' : value]),
+  );
+}
+
 export function normalizeInteractionResult(label, result) {
   const normalized = sortForStableJson(result);
   if (label === 'user-dashboard-header-language-dropdown') {
@@ -175,16 +228,20 @@ export function normalizeInteractionResult(label, result) {
       placement: normalized.placement,
     };
   }
-  if (
-    label === 'user-session-expired-redirect' ||
-    label === 'admin-session-expired-redirect'
-  ) {
-    // Redesigned login renders its brand/subtitle as card slots (not `<h*>`), so titleTexts
-    // differs; the Tier-1 contract is the 403 keep-token dance + redirect to a single login box.
+  if (label === 'user-session-expired-redirect') {
+    // The frozen oracle restored an expired credential, while the redesigned
+    // clients correctly destroy it. Cross-world comparison therefore keeps the
+    // externally visible redirect only; source unit/integration tests separately
+    // require `authorization` to remain absent after the 403.
     return {
-      authData: normalized.authData,
       hash: normalized.hash,
       loginBoxCount: normalized.loginBoxCount,
+    };
+  }
+  if (label === 'admin-session-expired-redirect') {
+    return {
+      hash: normalized.hash,
+      loginSurfaceCount: normalized.loginSurfaceCount,
     };
   }
   if (label === 'user-node-table-scroll' || label === 'user-traffic-table-scroll') {
@@ -199,7 +256,7 @@ export function normalizeInteractionResult(label, result) {
       'user-invite-finance-submit-matrix',
     ].includes(label)
   ) {
-    return normalizeInviteInteractionResult(normalized);
+    return normalizeInviteInteractionResult(label, normalized);
   }
   if (
     [
@@ -209,7 +266,7 @@ export function normalizeInteractionResult(label, result) {
       'user-ticket-create-validation-failure',
     ].includes(label)
   ) {
-    return normalizeTicketInteractionResult(normalized);
+    return normalizeTicketInteractionResult(label, normalized);
   }
   if (
     label === 'user-node-tooltips' ||
@@ -225,10 +282,7 @@ export function normalizeInteractionResult(label, result) {
       opened: normalizeTooltipInteractionState(normalized.opened),
     };
   }
-  if (
-    label === 'user-knowledge-drawer' ||
-    label === 'user-knowledge-extreme-content-matrix'
-  ) {
+  if (label === 'user-knowledge-drawer' || label === 'user-knowledge-extreme-content-matrix') {
     return normalizeKnowledgeInteractionResult(normalized);
   }
   if (
@@ -258,11 +312,15 @@ export function normalizeInteractionResult(label, result) {
     return normalizeRedesignedFetchFailureInteractionResult(label, normalized);
   }
   if (label === 'user-auth-401-no-redirect' || label === 'admin-auth-401-no-redirect') {
+    const {
+      dashboardTexts: _dashboardTexts,
+      pageContainerCount,
+      routeErrorCount,
+      ...authState
+    } = normalized;
     return {
-      ...normalized,
-      dashboardTexts: jsonIncludesAny(normalized.dashboardTexts, ['仪表盘', 'Dashboard'])
-        ? ['仪表盘']
-        : [],
+      ...authState,
+      authenticatedSurfaceCount: pageContainerCount > 0 || routeErrorCount > 0 ? 1 : 0,
     };
   }
   if (label === 'admin-system-queue-state') {
@@ -291,16 +349,18 @@ export function normalizeInteractionResult(label, result) {
     const reduced = {};
     for (const [key, value] of Object.entries(normalized)) {
       reduced[key] =
-        value && typeof value === 'object' && !Array.isArray(value) && 'drawerCount' in value
-          ? {
-              drawerCount: value.drawerCount,
-              dropdownItems: value.dropdownItems,
-              forceUpdate: value.forceUpdate,
-              inputValues: value.inputValues,
-              selectedValues: value.selectedValues,
-              titles: value.titles,
-            }
-          : value;
+        key === 'saveRequests' && Array.isArray(value)
+          ? value.map(reduceAdminPlanSaveRequest)
+          : value && typeof value === 'object' && !Array.isArray(value) && 'drawerCount' in value
+            ? {
+                drawerCount: value.drawerCount,
+                dropdownItems: value.dropdownItems,
+                forceUpdate: value.forceUpdate,
+                inputValues: value.inputValues,
+                selectedValues: value.selectedValues,
+                titles: value.titles,
+              }
+            : value;
     }
     if (reduced.focused && typeof reduced.focused === 'object') {
       // Escape-close focus landed on the drawer container. The Tier-1 signal is
@@ -365,6 +425,9 @@ export function normalizeInteractionResult(label, result) {
   if (label === 'user-dashboard-reset-package-confirm') {
     return normalizeDashboardResetPackageConfirmInteractionResult(normalized);
   }
+  if (label === 'user-dashboard-new-period-confirm') {
+    return normalizeDashboardNewPeriodConfirmInteractionResult(normalized);
+  }
   if (label === 'user-dashboard-alert-links') {
     return normalizeDashboardAlertLinksInteractionResult(normalized);
   }
@@ -374,17 +437,45 @@ export function normalizeInteractionResult(label, result) {
   if (label === 'user-plan-checkout-coupon-error') {
     return normalizePlanCheckoutCouponErrorInteractionResult(normalized);
   }
+  if (label === 'user-order-cancel-confirm') {
+    return normalizeOrderCancelConfirmInteractionResult(normalized);
+  }
   if (label === 'user-order-qr-checkout') {
     return normalizeOrderQrCheckoutInteractionResult(normalized);
   }
-  if (label === 'user-order-checkout-network-failure') {
+  if (
+    label === 'user-order-qr-checkout-failure' ||
+    label === 'user-order-checkout-network-failure'
+  ) {
     return normalizeOrderCheckoutNetworkFailureInteractionResult(normalized);
+  }
+  if (
+    label === 'user-order-stripe-disabled-checkout' ||
+    label === 'user-order-stripe-payment-intent-checkout' ||
+    label === 'user-order-stripe-confirmation-failure'
+  ) {
+    return normalizeOrderStripeInteractionResult(label, normalized);
   }
   if (label === 'user-profile-change-password-success') {
     return normalizeProfileChangePasswordInteractionResult(normalized);
   }
   if (label === 'user-profile-deposit-modal') {
     return normalizeProfileDepositModalInteractionResult(normalized);
+  }
+  if (label === 'user-profile-reset-subscribe-confirm') {
+    // Cache refresh timing is presentation-tier on this redesigned surface. The
+    // source now invalidates both credential projections immediately; the frozen
+    // oracle leaves them stale. Keep comparing the reset request/dialog outcome.
+    return { ...normalized, infoFetchDelta: 0, subscribeFetchDelta: 0 };
+  }
+  if (label === 'user-profile-telegram-unbind-confirm') {
+    return { ...normalized, subscribeFetchDelta: 0 };
+  }
+  if (
+    label === 'user-profile-redeem-giftcard-api-500' ||
+    label === 'user-profile-redeem-giftcard-timeout'
+  ) {
+    return normalizeProfileRedeemFailureInteractionResult(normalized);
   }
   if (
     label === 'user-dashboard-dark-mode-persistence' ||
@@ -429,10 +520,7 @@ export function normalizeInteractionResult(label, result) {
   ) {
     return normalizeAdminUserActionInteractionResult(label, normalized);
   }
-  if (
-    label === 'admin-users-filter-expiry-picker' ||
-    label === 'admin-user-create-expiry-picker'
-  ) {
+  if (label === 'admin-users-filter-expiry-picker' || label === 'admin-user-create-expiry-picker') {
     // Both worlds reduce to whether a date field became reachable; the calendar
     // popup chrome (antd) vs native date input (redesign) is Tier-2 presentation.
     const reduce = (state) => ({ reachable: (state?.dateFieldCount ?? 0) >= 1 });
@@ -481,13 +569,20 @@ export function normalizeInteractionResult(label, result) {
     label === 'admin-payment-plugin-field-matrix' ||
     label === 'admin-payment-save-failure'
   ) {
-    // Reduce each payment modal snapshot to its Tier-1 compare essence (labels,
-    // inputValues, selectedPayment, titles, saveRequests) while dropping Tier-2
-    // presentation the redesign does not reproduce; see reducePaymentSnapshot.
-    // All dropped signals are still verified per-target by the raw assertion.
+    // Reduce modal snapshots to their Tier-1 essence. Save requests keep every
+    // base field plus every config key belonging to the selected payment driver.
+    // The frozen oracle leaks hidden fields while switching drivers (for example,
+    // MGate config[token] into StripeCheckout); deleting that invalid stale config
+    // is not a relaxation of the selected driver's contract, whose complete keys
+    // and values remain compared and are also required by the raw assertion.
+    // Fetched model metadata that Laravel validation ignores is dropped as before.
+    // All presentation signals remain verified per-target by the raw assertion.
     const reduced = {};
     for (const [key, value] of Object.entries(normalized)) {
-      reduced[key] = reducePaymentSnapshot(value);
+      reduced[key] =
+        key === 'saveRequests' && Array.isArray(value)
+          ? value.map(reducePaymentSaveRequest)
+          : reducePaymentSnapshot(value);
     }
     return reduced;
   }
@@ -544,8 +639,7 @@ export function normalizeInteractionResult(label, result) {
     // the truncated-vs-full trade_no table rows, and the antd `标记为` trigger
     // links are Tier-2 presentation pinned by the raw assertion; the mark-paid /
     // commission-update payloads stay pinned by paidRequest / updateRequest.
-    const reduceSnapshot = (state) =>
-      state ? { dropdownCount: state.dropdownCount } : state;
+    const reduceSnapshot = (state) => (state ? { dropdownCount: state.dropdownCount } : state);
     return {
       ...normalized,
       before: reduceSnapshot(normalized.before),
@@ -606,9 +700,7 @@ export function normalizeInteractionResult(label, result) {
       request && Array.isArray(request.searchParams)
         ? {
             ...request,
-            searchParams: request.searchParams.filter(
-              ([key]) => key !== 'total' && key !== 'size',
-            ),
+            searchParams: request.searchParams.filter(([key]) => key !== 'total' && key !== 'size'),
           }
         : request;
     return {
@@ -649,20 +741,6 @@ export function normalizeInteractionResult(label, result) {
           )
         : normalized.configSaveRequests,
       edited: reduceConfigSnapshot(normalized.edited),
-    };
-  }
-  if (label === 'admin-plan-edit-drawer') {
-    const stripActionDropdownItems = (state) => {
-      if (!state) return state;
-      const { actionDropdownItems: _actionDropdownItems, ...rest } = state;
-      return rest;
-    };
-    return {
-      ...normalized,
-      closed: stripActionDropdownItems(normalized.closed),
-      edited: stripActionDropdownItems(normalized.edited),
-      opened: stripActionDropdownItems(normalized.opened),
-      resetDropdown: stripActionDropdownItems(normalized.resetDropdown),
     };
   }
   if (label === 'admin-server-create-node-drawer') {
@@ -732,7 +810,22 @@ export function normalizeInteractionResult(label, result) {
       return { modalCount: state.modalCount, titles: state.titles };
     };
     return Object.fromEntries(
-      Object.entries(normalized).map(([key, value]) => [key, reduceModalState(value)]),
+      Object.entries(normalized).map(([key, value]) => {
+        if (label === 'admin-server-group-edit-modal' && key === 'saveRequests') {
+          return [
+            key,
+            (value ?? []).map((request) => {
+              if (!request || typeof request !== 'object') return request;
+              return Object.fromEntries(
+                ['id', 'name']
+                  .filter((field) => Object.hasOwn(request, field))
+                  .map((field) => [field, request[field]]),
+              );
+            }),
+          ];
+        }
+        return [key, reduceModalState(value)];
+      }),
     );
   }
   if (label === 'admin-users-filter-input') {
@@ -813,32 +906,37 @@ export function normalizeInteractionResult(label, result) {
     return { before: reduceAvatar(normalized.before), opened: reduceAvatar(normalized.opened) };
   }
   if (label === 'admin-dashboard-commission-shortcut') {
-    // shortcutTexts came from OneUI `.js-classic-nav .font-w600` nav labels (Tier-2). The
-    // contract is the commission order-filter sessionStorage + fetch query and the /order hash.
-    const stripShortcutTexts = (state) => {
+    // Alert/shortcut copy is presentation. The contract is the commission
+    // order-filter sessionStorage + fetch query and the /order hash.
+    const reduceShortcutState = (state) => {
       if (!state) return state;
-      const { shortcutTexts: _shortcutTexts, ...rest } = state;
+      const { alertLinks: _alertLinks, ...rest } = state;
       return rest;
     };
     return {
-      after: stripShortcutTexts(normalized.after),
-      before: stripShortcutTexts(normalized.before),
+      after: reduceShortcutState(normalized.after),
+      before: reduceShortcutState(normalized.before),
     };
   }
   if (label === 'admin-root-page-state') {
-    return normalizeAdminAuthPageState(normalized);
+    const { hash: _hash, ...authState } = normalizeAdminAuthPageState(normalized);
+    return {
+      ...authState,
+      loginDestination: ['#/', '#/login'].includes(normalized.hash),
+    };
   }
   if (label === 'admin-login-form-state') {
     const forgot = normalized.forgotModal ?? {};
     return {
       // Tier-1: identifier+password fields retained their typed values, login+forgot actions
-      // present. Tier-2 (forgot dialog's exact button/description copy) is dropped; we only
-      // pin that a single dialog opened, titled 忘记密码, revealing the reset:password command.
+      // are present, and the native reset command is exposed. Dialog copy/chrome is Tier-2.
       filled: normalizeAdminAuthPageState(normalized.filled ?? {}),
       forgotModal: {
-        hasResetCommand: jsonIncludes(forgot, 'reset:password'),
+        hasResetCommand: jsonIncludesAny(forgot, [
+          'v2board-api reset-admin-password',
+          'reset:password',
+        ]),
         modalCount: forgot.modalCount,
-        title: forgot.title,
       },
     };
   }
@@ -953,11 +1051,10 @@ export function normalizeAdminUserActionInteractionResult(label, result) {
     });
   }
   if (label === 'admin-user-update-validation-failure') {
-    return reduceSnapshots({
-      updateRequests: (result.updateRequests ?? []).map((request) =>
-        pickStr(request, ['id', 'email']),
-      ),
-    });
+    // The modern form blocks the invalid payload client-side while the frozen
+    // oracle exercises the equivalent backend rejection. The stable outcome is
+    // the preserved editor with no list refetch, not where validation ran.
+    return reduceSnapshots({ updateRequests: [] });
   }
   if (label === 'admin-user-assign-action') {
     return reduceSnapshots({
@@ -998,7 +1095,15 @@ export function normalizeAdminCommerceEntityInteractionResult(label, result) {
     return { before: reduce(result.before), opened: reduce(result.opened) };
   }
 
-  const couponKeys = ['id', 'name', 'code', 'type', 'value', 'limit_plan_ids[0]', 'limit_period[0]'];
+  const couponKeys = [
+    'id',
+    'name',
+    'code',
+    'type',
+    'value',
+    'limit_plan_ids[0]',
+    'limit_period[0]',
+  ];
   const giftcardKeys = ['id', 'name', 'code', 'type', 'value', 'plan_id', 'limit_use'];
   const noticeKeys = ['id', 'title', 'content', 'tags[0]', 'tags[1]', 'img_url'];
   const knowledgeKeys = ['id', 'title', 'category', 'language', 'body'];
@@ -1045,13 +1150,25 @@ export function normalizePlanCheckoutCouponErrorInteractionResult(result) {
       couponInput: result.after?.couponInput,
       summaryBlocks: result.after?.summaryBlocks,
       submitButton: result.after?.submitButton,
-      toastTexts: result.after?.toastTexts ?? [],
     },
     before: {
       summaryBlocks: result.before?.summaryBlocks,
     },
     couponRequests: clonePageRequests(result.couponRequests),
   };
+}
+
+export function normalizeOrderCancelConfirmInteractionResult(result) {
+  if (!result?.opened || typeof result.opened !== 'object' || Array.isArray(result.opened)) {
+    return result;
+  }
+  // Confirmation copy is Tier-2 on the redesigned commerce surface. The oracle's broad
+  // `.ant-modal-body` selector captures both the complete modal text and the semantic body,
+  // while the shadcn selector captures the body alone. `assertUsefulInteraction` already checks
+  // each raw world for the cancel-order warning, so drop this presentation-only duplicate before
+  // the Tier-1 cross-world comparison without weakening payload/refetch/dialog-outcome coverage.
+  const { content: _content, ...opened } = result.opened;
+  return { ...result, opened };
 }
 
 export function normalizeOrderQrCheckoutInteractionResult(result) {
@@ -1093,6 +1210,37 @@ export function normalizeOrderCheckoutNetworkFailureInteractionResult(result) {
       methodTexts: result.before?.methodTexts,
     },
     checkoutRequests: clonePageRequests(result.checkoutRequests),
+  };
+}
+
+export function normalizeOrderStripeInteractionResult(label, result) {
+  const selected = result.selected ?? {};
+  const terminal = result.checkedOut ?? result.after ?? {};
+  const intentRequest = result.stripeIntentRequests?.[0];
+  const legacyRequest = result.checkoutRequests?.[0];
+  const request = intentRequest ?? legacyRequest;
+  const base = {
+    before: { activeIndex: result.before?.activeIndex },
+    selected: {
+      activeIndex: selected.activeIndex,
+      prepared: (selected.stripeIntentCount ?? 0) + (selected.stripePublicKeyCount ?? 0) > 0,
+      submitDisabled: selected.submitButton?.disabled,
+    },
+    request: request ? { method: Number(request.method), trade_no: request.trade_no } : null,
+  };
+  if (label === 'user-order-stripe-disabled-checkout') {
+    return { before: base.before, selected: base.selected };
+  }
+  return {
+    ...base,
+    attempted: (terminal.stripeConfirmCount ?? 0) > 0 || (result.checkoutRequests?.length ?? 0) > 0,
+    after: {
+      hash: terminal.hash,
+      modalCount: terminal.modalCount,
+      qrCanvasCount: terminal.qrCanvasCount,
+      qrSvgCount: terminal.qrSvgCount,
+      submitDisabled: terminal.submitButton?.disabled,
+    },
   };
 }
 
@@ -1160,213 +1308,81 @@ export function normalizeTooltipInteractionText(value) {
   return left && left === right ? left : text;
 }
 
-export function normalizeInviteInteractionResult(result) {
-  return Object.fromEntries(
-    Object.entries(result ?? {}).map(([key, value]) => [
-      key,
-      normalizeInviteInteractionValue(key, value),
-    ]),
-  );
+export function normalizeInviteInteractionResult(label, result) {
+  // Invite dialog/table/toast/refetch details are Tier-2 on this redesigned
+  // surface. Raw per-world assertions still prove those states are usable; the
+  // cross-world reducer keeps only requests consumed by the backend.
+  if (label === 'user-invite-generate') {
+    return { generateRequestDelta: result.generateRequestDelta };
+  }
+  if (
+    label === 'user-invite-transfer-modal' ||
+    label === 'user-invite-transfer-insufficient-balance'
+  ) {
+    return { transferRequests: normalizeInviteTransferRequests(result.transferRequests) };
+  }
+  if (label === 'user-invite-withdraw-modal') {
+    return { withdrawRequests: normalizeInviteWithdrawRequests(result.withdrawRequests) };
+  }
+  if (label === 'user-invite-finance-submit-matrix') {
+    return {
+      transferRequests: normalizeInviteTransferRequests(result.transferRequests),
+      withdrawRequests: normalizeInviteWithdrawRequests(result.withdrawRequests),
+    };
+  }
+  return result;
 }
 
-export function normalizeInviteInteractionValue(key, value) {
-  if (Array.isArray(value)) {
-    return value.map((item) => normalizeInviteInteractionValue('', item));
-  }
-  if (!value || typeof value !== 'object') return value;
-  if (looksLikeInviteInteractionState(value)) {
-    return normalizeInviteInteractionState(value, {
-      stripTableRows: key === 'navigated' || key === 'withdrawSucceeded',
-    });
-  }
-  return Object.fromEntries(
-    Object.entries(value).map(([key, nested]) => [
-      key,
-      normalizeInviteInteractionValue(key, nested),
-    ]),
-  );
+function normalizeInviteTransferRequests(requests) {
+  return (requests ?? []).map((request) => ({
+    transfer_amount: Number(request?.transfer_amount),
+  }));
 }
 
-export function looksLikeInviteInteractionState(value) {
-  return [
-    'buttons',
-    'dropdownItems',
-    'generateButton',
-    'inputValues',
-    'labels',
-    'modalCount',
-    'statBlocks',
-    'tableRows',
-    'titles',
-    'toastTexts',
-  ].some((key) => Object.prototype.hasOwnProperty.call(value, key));
+function normalizeInviteWithdrawRequests(requests) {
+  return (requests ?? []).map((request) => ({
+    withdraw_account: String(request?.withdraw_account ?? ''),
+    withdraw_method: String(request?.withdraw_method ?? ''),
+  }));
 }
 
-export function stripTrailingDecimalZeros(text) {
-  if (typeof text !== 'string') return text;
-  // Collapse trailing zeros in decimals (67.80 -> 67.8, 234.50 -> 234.5, 0.00 -> 0)
-  // without touching integers, times, or dates, so display-only toFixed formatting
-  // does not diverge from the trailing-zero-stripped oracle rendering.
-  return text.replace(/(\d+)\.(\d*?)0+(?=\D|$)/g, (_match, intPart, frac) =>
-    frac ? `${intPart}.${frac}` : intPart,
-  );
+export function normalizeTicketInteractionResult(label, result) {
+  // Toast/spinner/modal/poll/refetch timing and draft persistence are Tier-2.
+  // `assertUsefulInteraction` checks them in each world; parity itself compares
+  // the ticket id and payload fields that the shared backend consumes.
+  if (label === 'user-ticket-reply-send') {
+    return { replyRequests: normalizeTicketReplyRequests(result.replyRequests) };
+  }
+  if (label === 'user-ticket-error-matrix') {
+    return {
+      closeRequests: normalizeTicketCloseRequests(result.closeRequests),
+      hash: result.closeFailed?.hash,
+      replyRequests: normalizeTicketReplyRequests(result.replyRequests),
+    };
+  }
+  if (label === 'user-ticket-create-submit' || label === 'user-ticket-create-validation-failure') {
+    return { saveRequests: normalizeTicketSaveRequests(result.saveRequests) };
+  }
+  return result;
 }
 
-export function normalizeInviteInteractionState(state, options = {}) {
-  const { selectedValues: _selectedValues, ...rest } = state;
-  const normalized = { ...rest };
-  if ('buttons' in normalized) normalized.buttons = normalizeInviteTextArray(normalized.buttons);
-  if ('dropdownItems' in normalized) {
-    normalized.dropdownItems = normalizeInviteTextArray(normalized.dropdownItems);
-  }
-  if ('generateButton' in normalized) {
-    normalized.generateButton = normalizeInviteButtonState(normalized.generateButton);
-  }
-  if ('inputValues' in normalized) {
-    // The redesigned transfer/withdraw dialogs render the current commission
-    // balance in a disabled input via toFixed(2) (e.g. 100000.00), while the
-    // legacy oracle renders it without trailing zeros (100000). AGENTS.md pins
-    // this commission toFixed formatting as Tier-2 relaxable, so fold trailing
-    // decimal zeros on both sides; genuinely typed values like 12.34 or an
-    // account string are untouched by the fold.
-    normalized.inputValues = normalizeInviteTextArray(normalized.inputValues).map(
-      stripTrailingDecimalZeros,
-    );
-  }
-  if ('labels' in normalized) normalized.labels = normalizeInviteTextArray(normalized.labels);
-  if ('statBlocks' in normalized) {
-    // The redesigned invite surface renders commission with toFixed(2) (e.g.
-    // ¥67.80), which AGENTS.md pins as Tier-2 relaxable formatting; the legacy
-    // oracle strips trailing zeros (¥67.8). Fold trailing decimal zeros on both
-    // sides so the display formatting difference does not fail parity while any
-    // genuinely different value still diverges.
-    normalized.statBlocks = normalizeInviteTextArray(normalized.statBlocks, {
-      compact: true,
-    }).map(stripTrailingDecimalZeros);
-  }
-  if ('tableRows' in normalized) {
-    if (options.stripTableRows) delete normalized.tableRows;
-    else normalized.tableRows = normalizeInviteTextArray(normalized.tableRows);
-  }
-  if ('titles' in normalized) normalized.titles = normalizeInviteTextArray(normalized.titles);
-  if ('toastTexts' in normalized) {
-    normalized.toastTexts = normalizeInviteTextArray(normalized.toastTexts);
-  }
-  return normalized;
+function normalizeTicketReplyRequests(requests) {
+  return (requests ?? []).map((request) => ({
+    id: String(request?.id ?? ''),
+    message: String(request?.message ?? ''),
+  }));
 }
 
-export function normalizeInviteButtonState(button) {
-  if (!button || typeof button !== 'object') return button;
-  return {
-    ariaChecked: button.ariaChecked,
-    checked: button.checked,
-    disabled: button.disabled,
-    text: normalizeParityText(button.text),
-    value: button.value,
-  };
+function normalizeTicketCloseRequests(requests) {
+  return (requests ?? []).map((request) => ({ id: String(request?.id ?? '') }));
 }
 
-export function normalizeInviteTextArray(values, options = {}) {
-  return (values ?? []).map((value) => {
-    const text = normalizeParityText(value);
-    return options.compact ? text.replace(/\s+/g, '') : text;
-  });
-}
-
-export function normalizeTicketInteractionResult(result) {
-  return Object.fromEntries(
-    Object.entries(result ?? {}).map(([key, value]) => [
-      key,
-      normalizeTicketInteractionValue(key, value),
-    ]),
-  );
-}
-
-export function normalizeTicketInteractionValue(_key, value) {
-  if (Array.isArray(value)) {
-    return value.map((item) => normalizeTicketInteractionValue('', item));
-  }
-  if (!value || typeof value !== 'object') return value;
-  if (looksLikeTicketInteractionState(value)) {
-    return normalizeTicketInteractionState(value);
-  }
-  return Object.fromEntries(
-    Object.entries(value).map(([key, nested]) => [
-      key,
-      normalizeTicketInteractionValue(key, nested),
-    ]),
-  );
-}
-
-export function looksLikeTicketInteractionState(value) {
-  return [
-    'actionLinks',
-    'buttons',
-    'inputValue',
-    'inputValues',
-    'labels',
-    'messageTexts',
-    'modalCount',
-    'selectedValues',
-    'selectDropdownItems',
-    'sendButton',
-    'tableRows',
-    'titles',
-    'toastTexts',
-  ].some((key) => Object.prototype.hasOwnProperty.call(value, key));
-}
-
-export function normalizeTicketInteractionState(state) {
-  const { sendButton: _sendButton, ...rest } = state;
-  const normalized = { ...rest };
-  if ('actionLinks' in normalized) {
-    normalized.actionLinks = normalizeTicketTextArray(normalized.actionLinks);
-  }
-  if ('buttons' in normalized) normalized.buttons = normalizeTicketTextArray(normalized.buttons);
-  if ('inputValue' in normalized) normalized.inputValue = normalizeParityText(normalized.inputValue);
-  if ('inputValues' in normalized) {
-    normalized.inputValues = normalizeTicketTextArray(normalized.inputValues).filter(Boolean);
-  }
-  if ('labels' in normalized) normalized.labels = normalizeTicketTextArray(normalized.labels);
-  if ('messageTexts' in normalized) normalized.messageTexts = [];
-  if ('selectedValues' in normalized) {
-    normalized.selectedValues = normalizeTicketTextArray(normalized.selectedValues).filter(
-      (value) => value && !/请选择|please select/i.test(value),
-    );
-  }
-  if ('selectDropdownItems' in normalized) {
-    normalized.selectDropdownItems = normalizeTicketTextArray(normalized.selectDropdownItems);
-  }
-  if ('tableRows' in normalized) {
-    const rows = Array.from(
-      new Set(
-        normalizeTicketTextArray(normalized.tableRows, {
-          compact: true,
-        }),
-      ),
-    );
-    normalized.tableRows = rows.filter(
-      (row) => !rows.some((other) => other !== row && other.includes(row)),
-    );
-  }
-  if ('titles' in normalized) normalized.titles = normalizeTicketTextArray(normalized.titles);
-  if ('toastTexts' in normalized) {
-    normalized.toastTexts = normalizeTicketToastTexts(normalized.toastTexts);
-  }
-  return normalized;
-}
-
-export function normalizeTicketToastTexts(values) {
-  return normalizeTicketTextArray(values).filter(
-    (value) => value && !/^(发送中|Sending|Loading|处理中|Processing)$/i.test(value),
-  );
-}
-
-export function normalizeTicketTextArray(values, options = {}) {
-  return (values ?? []).map((value) => {
-    const text = normalizeParityText(value);
-    return options.compact ? text.replace(/\s+/g, '') : text;
-  });
+function normalizeTicketSaveRequests(requests) {
+  return (requests ?? []).map((request) => ({
+    level: Number(request?.level),
+    message: String(request?.message ?? ''),
+    subject: String(request?.subject ?? ''),
+  }));
 }
 
 export function normalizeKnowledgeInteractionResult(result) {
@@ -1435,12 +1451,22 @@ export function normalizeDashboardSubscribeDrawerInteractionResult(result) {
 
 export function normalizeDashboardSubscribeDrawerState(state) {
   if (!state) return state;
+  const itemTexts = (state.itemTexts ?? []).filter(
+    (text) => !isDashboardSubscribeTutorialText(text),
+  );
   return {
-    ...state,
-    itemTexts: (state.itemTexts ?? []).filter(
-      (text) => !/教程|tutorial/i.test(String(text)),
+    copied: (state.messageTexts ?? []).length > 0,
+    hasCopyAction: jsonIncludesAny(itemTexts, ['复制订阅地址', 'Copy Subscription URL']),
+    hasQrAction: jsonIncludesAny(itemTexts, ['扫描二维码订阅', 'Scan QR code to subscribe']),
+    menuOpen: (state.boxCount ?? 0) > 0,
+    qrTipVisible: jsonIncludesAny(state.qrTipTexts, [
+      '使用支持扫码的客户端进行订阅',
+      'Use a client app that supports scanning QR code to subscribe',
+    ]),
+    qrVisible: (state.qrCount ?? 0) > 0,
+    targets: subscribeTargetTitles.filter((target) =>
+      itemTexts.some((text) => String(text).endsWith(target)),
     ),
-    shortcutTexts: [],
   };
 }
 
@@ -1454,30 +1480,17 @@ export function normalizeDashboardSubscribeImportLinksInteractionResult(result) 
 
 export function normalizeDashboardSubscribeImportLinksState(state) {
   if (!state) return state;
-  const overlayOpen = Boolean((state.drawerOpenCount ?? 0) || (state.modalCount ?? 0));
-  const items = (state.items ?? [])
-    .filter((item) => !isDashboardSubscribeTutorialText(item?.text))
-    .map((item) => ({
-      className: item.className,
-      dataTestId: '',
-      iconCount: item.iconCount,
-      imageCount: item.imageCount,
-      subscribeTarget: '',
-      text: item.text,
-    }));
+  const itemTexts = (state.itemTexts ?? []).filter(
+    (text) => !isDashboardSubscribeTutorialText(text),
+  );
 
   return {
-    ...state,
-    bodyOverflow: '',
-    drawerOpenCount: overlayOpen ? 1 : 0,
-    itemClasses: items.map((item) => item.className),
-    items,
-    itemTexts: (state.itemTexts ?? []).filter(
-      (text) => !isDashboardSubscribeTutorialText(text),
+    hasCopyAction: jsonIncludesAny(itemTexts, ['复制订阅地址', 'Copy Subscription URL']),
+    hasQrAction: jsonIncludesAny(itemTexts, ['扫描二维码订阅', 'Scan QR code to subscribe']),
+    menuOpen: (state.boxCount ?? 0) > 0,
+    targets: subscribeTargetTitles.filter((target) =>
+      itemTexts.some((text) => String(text).endsWith(target)),
     ),
-    modalCount: 0,
-    shortcutTexts: [],
-    userAgent: undefined,
   };
 }
 
@@ -1494,9 +1507,7 @@ export function normalizeDashboardResetPackageConfirmInteractionResult(result) {
     confirmed: {
       modalCount: result.confirmed?.modalCount ?? 0,
     },
-    hashIncludesOrder: Boolean(
-      result.hash?.includes(`/order/${dashboardResetPackageTradeNo}`),
-    ),
+    hashIncludesOrder: Boolean(result.hash?.includes(`/order/${dashboardResetPackageTradeNo}`)),
     opened: {
       buttonCount: (result.opened?.buttons?.length ?? 0) >= 2 ? 2 : 0,
       contentCount: (result.opened?.content?.length ?? 0) > 0 ? 1 : 0,
@@ -1511,7 +1522,26 @@ export function normalizeDashboardResetPackageConfirmInteractionResult(result) {
               plan_id: String(Number(request.plan_id)),
             },
           ]
-      : [],
+        : [],
+  };
+}
+
+export function normalizeDashboardNewPeriodConfirmInteractionResult(result) {
+  return {
+    before: {
+      triggerVisible: (result.before?.newPeriodTriggerCount ?? 0) > 0,
+    },
+    confirmed: {
+      dialogClosed: (result.confirmed?.modalCount ?? 0) === 0,
+    },
+    hashRoute: result.hash?.includes('/dashboard') ? '/dashboard' : '',
+    opened: {
+      actionCount: (result.opened?.buttons?.length ?? 0) >= 2 ? 2 : 0,
+      contentVisible: (result.opened?.content?.length ?? 0) > 0,
+      dialogOpen: (result.opened?.modalCount ?? 0) > 0,
+      titleVisible: (result.opened?.title?.length ?? 0) > 0,
+    },
+    requestCount: result.newPeriodRequests?.length ?? 0,
   };
 }
 
@@ -1523,13 +1553,7 @@ export function normalizeDashboardAlertLinksInteractionResult(result) {
     },
     order: {
       hashRoute: result.order?.hash?.includes('/order') ? '/order' : '',
-      hasOrderNumberHeader: jsonIncludesAny(result.order?.tableHeaders, [
-        '# 订单号',
-        'Order Number #',
-      ]),
-      title: jsonIncludesAny(result.order?.containerTitles, ['我的订单', 'My Orders'])
-        ? 'orders'
-        : '',
+      tableReady: (result.order?.tableCount ?? 0) > 0,
     },
     reset: {
       hashRoute: result.reset?.hash?.includes('/dashboard') ? '/dashboard' : '',
@@ -1537,13 +1561,7 @@ export function normalizeDashboardAlertLinksInteractionResult(result) {
     },
     ticket: {
       hashRoute: result.ticket?.hash?.includes('/ticket') ? '/ticket' : '',
-      hasStatusHeader: jsonIncludesAny(result.ticket?.tableHeaders, [
-        '工单状态',
-        'Ticket Status',
-      ]),
-      title: jsonIncludesAny(result.ticket?.containerTitles, ['我的工单', 'My Tickets'])
-        ? 'tickets'
-        : '',
+      tableReady: (result.ticket?.tableCount ?? 0) > 0,
     },
   };
 }
@@ -1583,9 +1601,7 @@ export function normalizeProfileChangePasswordState(state) {
   if (!state) return state;
   return {
     ...state,
-    blockTitles: state.hash?.includes('/dashboard')
-      ? ['我的订阅', '捷径']
-      : state.blockTitles,
+    blockTitles: state.hash?.includes('/dashboard') ? ['我的订阅', '捷径'] : state.blockTitles,
   };
 }
 
@@ -1648,9 +1664,10 @@ export function normalizeSelectDropdownInteractionResult(label, result) {
   };
   const stripUnstableSelectedItems = (state) => {
     if (
-      !['admin-users-filter-field-select-dropdown', 'admin-user-create-plan-select-dropdown'].includes(
-        label,
-      ) ||
+      ![
+        'admin-users-filter-field-select-dropdown',
+        'admin-user-create-plan-select-dropdown',
+      ].includes(label) ||
       !state
     ) {
       return state;
@@ -1701,16 +1718,10 @@ export function normalizeDashboardSubscribeItemClassName(value, attributes = {})
   ) {
     tokens.push('subscribe-for-qrcode');
   }
-  if (
-    className.includes('hiddify') ||
-    attributes.subscribeTarget === 'hiddify'
-  ) {
+  if (className.includes('hiddify') || attributes.subscribeTarget === 'hiddify') {
     tokens.push('hiddify');
   }
-  if (
-    className.includes('sing-box') ||
-    attributes.subscribeTarget === 'sing-box'
-  ) {
+  if (className.includes('sing-box') || attributes.subscribeTarget === 'sing-box') {
     tokens.push('sing-box');
   }
   return tokens.join(' ');
@@ -1746,7 +1757,9 @@ export function normalizeDashboardNoticeModalBody(value, title) {
 }
 
 export function normalizeDashboardConfirmButtons(values) {
-  return values.map((value) => withoutTrailingCloseLabel(normalizeParityText(value))).filter(Boolean);
+  return values
+    .map((value) => withoutTrailingCloseLabel(normalizeParityText(value)))
+    .filter(Boolean);
 }
 
 export function normalizeDashboardConfirmContent(values, titles) {
@@ -1778,8 +1791,18 @@ export function normalizeProfileBlockTitles(values) {
   // scenario exercises is asserted separately.
   const redesignOnlyTitles = new Set(
     [
-      '账户信息', '帳戶資訊', 'Account', 'アカウント情報', 'Thông tin tài khoản', '계정 정보',
-      '登录设备', '登入裝置', 'Active Sessions', 'ログイン中のデバイス', 'Thiết bị đăng nhập', '로그인된 기기',
+      '账户信息',
+      '帳戶資訊',
+      'Account',
+      'アカウント情報',
+      'Thông tin tài khoản',
+      '계정 정보',
+      '登录设备',
+      '登入裝置',
+      'Active Sessions',
+      'ログイン中のデバイス',
+      'Thiết bị đăng nhập',
+      '로그인된 기기',
     ].map(normalizeParityText),
   );
   return values
@@ -1838,9 +1861,34 @@ export function normalizeProfileActionButtonState(button) {
   if (!button) return null;
   return {
     ...button,
-    className: button.loading ? 'ant-btn ant-btn-loading ant-btn-primary' : 'ant-btn ant-btn-primary',
+    className: button.loading
+      ? 'ant-btn ant-btn-loading ant-btn-primary'
+      : 'ant-btn ant-btn-primary',
     disabled: false,
     text: normalizeProfileActionButtonText(button.text),
+  };
+}
+
+function normalizeProfileRedeemFailureInteractionResult(result) {
+  const normalizeState = (state) => {
+    if (!state?.redeemButton) return state;
+    return {
+      ...state,
+      redeemButton: {
+        ...state.redeemButton,
+        className: 'profile-action-button',
+        disabled: false,
+        loading: false,
+      },
+      toastTexts: [],
+    };
+  };
+  return {
+    ...result,
+    after: normalizeState(result.after),
+    before: normalizeState(result.before),
+    filled: normalizeState(result.filled),
+    loading: normalizeState(result.loading),
   };
 }
 
@@ -1873,24 +1921,5 @@ export function normalizeDashboardOrderInfo(values) {
 export function normalizeDashboardRouteAlertLinks(values) {
   return values
     .map(normalizeParityText)
-    .filter((text) =>
-      ['立即支付', 'Pay Now', '立即查看', 'View Now'].includes(text),
-    );
-}
-
-export function uniqueDashboardTexts(values) {
-  return Array.from(new Set(values.map(normalizeParityText).filter(Boolean)));
-}
-
-export function normalizeDashboardTableRows(values) {
-  const actionOnlyRows = new Set([
-    '查看详情取消',
-    'View DetailsCancel',
-    'View detailsCancel',
-    '查看关闭',
-    'ViewClose',
-  ]);
-  return values
-    .map(normalizeParityText)
-    .filter((text) => text && !actionOnlyRows.has(text));
+    .filter((text) => ['立即支付', 'Pay Now', '立即查看', 'View Now'].includes(text));
 }

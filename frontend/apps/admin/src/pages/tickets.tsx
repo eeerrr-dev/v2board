@@ -3,7 +3,7 @@ import dayjs from 'dayjs';
 import { Activity, CircleX, Filter, MessageSquare, Send, User } from 'lucide-react';
 import type { Ticket } from '@v2board/types';
 import { useParams } from 'react-router';
-import type { admin } from '@v2board/api-client';
+import { getErrorPresentation, type admin } from '@v2board/api-client';
 import {
   useAdminTicket,
   useAdminTickets,
@@ -27,22 +27,24 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { PageHeader, PageShell } from '@/components/ui/page';
+import { ErrorState } from '@/components/ui/error-state';
 import { PaginationControl } from '@/components/ui/pagination';
 import { SegmentedControl } from '@/components/ui/segmented-control';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import { Spinner } from '@/components/ui/spinner';
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { DataTable, type DataTableColumn } from '@/components/ui/table';
 
 // The extra keys (status / email / reply_status) are the same admin ticket-fetch
-// filters the legacy console sent; `fetchTickets` spreads the whole query into
+// filters required by the backend contract; `fetchTickets` spreads the whole query into
 // the request params, so their names/shapes are the preserved data contract.
 type TicketQuery = admin.AdminPageQuery & {
   status?: number;
@@ -119,10 +121,10 @@ function TicketListPage() {
     searchTimer.current = setTimeout(() => patchQuery({ email: value || undefined }), 300);
   };
 
+  useEffect(() => () => clearTimeout(searchTimer.current), []);
+
   const toggleReplyStatus = (value: number, checked: boolean) => {
-    const next = checked
-      ? [...replyStatus, value]
-      : replyStatus.filter((item) => item !== value);
+    const next = checked ? [...replyStatus, value] : replyStatus.filter((item) => item !== value);
     patchQuery({ reply_status: next.length ? next : null });
   };
 
@@ -136,7 +138,6 @@ function TicketListPage() {
     closeTicket.mutate(row.id, {
       onSuccess: () => {
         toast.success('工单已关闭');
-        void tickets.refetch();
       },
     });
   };
@@ -212,6 +213,9 @@ function TicketListPage() {
 
   return (
     <PageShell data-testid="tickets-page">
+      {tickets.isError ? (
+        <ErrorState message="工单列表加载失败" onRetry={() => void tickets.refetch()} />
+      ) : null}
       <PageHeader title="工单管理" />
 
       <Card className="overflow-hidden py-0">
@@ -271,7 +275,11 @@ function TicketListPage() {
             getRowKey={(row) => row.id}
             className="min-w-[840px]"
             data-testid="tickets-table"
-            empty={data.length === 0 ? '暂无工单' : undefined}
+            empty={
+              !tickets.isError && tickets.data !== undefined && data.length === 0
+                ? '暂无工单'
+                : undefined
+            }
             emptyTestId="tickets-empty"
           />
 
@@ -303,6 +311,7 @@ function TicketListPage() {
         >
           <SheetHeader className="sr-only">
             <SheetTitle>工单详情</SheetTitle>
+            <SheetDescription>查看工单对话并回复用户。</SheetDescription>
           </SheetHeader>
           {chatTicketId !== null ? <TicketChat ticketId={chatTicketId} /> : null}
         </SheetContent>
@@ -318,13 +327,12 @@ function TicketListPage() {
   );
 }
 
-// The /ticket/:ticket_id route renders OUTSIDE AdminLayout's SidebarProvider, so
-// there is no ancestor `.v2board-island` to resolve the shadcn design tokens.
-// Unlike the in-shell list, this standalone route must carry the island
-// membership class itself; dark mode still follows the <html>.dark flip.
 function TicketChatStandalone({ ticketId }: { ticketId: string }) {
   return (
-    <div className="v2board-island flex h-screen justify-center bg-muted/40 text-foreground sm:p-6">
+    <div
+      data-slot="ticket-chat-standalone"
+      className="flex h-screen justify-center bg-muted/40 text-foreground sm:p-6"
+    >
       <div className="flex h-full w-full max-w-3xl flex-col overflow-hidden border-border bg-card sm:rounded-xl sm:border sm:shadow-sm">
         <TicketChat ticketId={ticketId} />
       </div>
@@ -340,6 +348,10 @@ function TicketChat({ ticketId }: { ticketId: number | string }) {
   const [trafficOpen, setTrafficOpen] = useState(false);
   const chatRef = useRef<HTMLDivElement | null>(null);
   const current = ticket.data;
+  const ticketError = ticket.isError ? getErrorPresentation(ticket.error) : null;
+  const isNotFound = Boolean(
+    ticketError && (ticketError.status === 404 || ticketError.message === '工单不存在'),
+  );
   const messageCount = current?.message?.length;
 
   useAdminUserInfo(current?.user_id);
@@ -349,25 +361,25 @@ function TicketChat({ ticketId }: { ticketId: number | string }) {
     if (chat) chat.scrollTo(0, chat.scrollHeight);
   }, [messageCount]);
 
-  useEffect(() => {
-    // Live refresh while the conversation is open (cadence is Tier-2).
-    const timer = window.setInterval(() => void ticket.refetch(), 5000);
-    return () => window.clearInterval(timer);
-  }, [ticket.refetch]);
-
-  const sendReply = async () => {
+  const sendReply = () => {
     if (reply.isPending || !message.trim()) return;
     const toastId = toast.loading('发送中');
-    try {
-      await reply.mutateAsync({ id: ticketId, message });
-    } finally {
-      toast.dismiss(toastId);
-    }
-    await ticket.refetch();
-    setMessage('');
+    reply.mutate(
+      { id: ticketId, message },
+      {
+        onSuccess: () => setMessage(''),
+        onSettled: () => toast.dismiss(toastId),
+      },
+    );
   };
 
-  const emptyNotice = current ? undefined : ticket.isError ? '工单不存在' : '加载中...';
+  const emptyNotice = current
+    ? undefined
+    : isNotFound
+      ? '工单不存在'
+      : ticket.isError
+        ? undefined
+        : '加载中...';
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
@@ -376,9 +388,7 @@ function TicketChat({ ticketId }: { ticketId: number | string }) {
           <div className="truncate text-base font-semibold text-foreground">
             {current?.subject ?? '工单详情'}
           </div>
-          {current ? (
-            <div className="text-xs text-muted-foreground">工单 #{current.id}</div>
-          ) : null}
+          {current ? <div className="text-xs text-muted-foreground">工单 #{current.id}</div> : null}
         </div>
         <TooltipProvider delayDuration={100}>
           <div className="flex items-center gap-1">
@@ -445,36 +455,45 @@ function TicketChat({ ticketId }: { ticketId: number | string }) {
         {emptyNotice ? (
           <div className="py-8 text-center text-sm text-muted-foreground">{emptyNotice}</div>
         ) : null}
+        {ticket.isError && !isNotFound ? (
+          <ErrorState
+            message={ticketError?.message}
+            onRetry={() => void ticket.refetch()}
+            data-testid="ticket-detail-error"
+          />
+        ) : null}
       </div>
 
-      <div className="border-t border-border p-3">
-        <div className="flex items-end gap-2">
-          <Textarea
-            rows={1}
-            value={message}
-            placeholder="输入内容回复工单..."
-            className="max-h-40 min-h-9 resize-none"
-            onChange={(event) => setMessage(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault();
-                void sendReply();
-              }
-            }}
-            data-testid="ticket-reply-input"
-          />
-          <Button
-            size="icon"
-            className="size-9 shrink-0"
-            aria-label="发送"
-            disabled={reply.isPending || !message.trim()}
-            onClick={() => void sendReply()}
-            data-testid="ticket-reply-submit"
-          >
-            <Send className="size-4" />
-          </Button>
+      {current ? (
+        <div className="border-t border-border p-3">
+          <div className="flex items-end gap-2">
+            <Textarea
+              rows={1}
+              value={message}
+              placeholder="输入内容回复工单..."
+              className="max-h-40 min-h-9 resize-none"
+              onChange={(event) => setMessage(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
+                  sendReply();
+                }
+              }}
+              data-testid="ticket-reply-input"
+            />
+            <Button
+              size="icon"
+              className="size-9 shrink-0"
+              aria-label="发送"
+              disabled={reply.isPending || !message.trim()}
+              onClick={sendReply}
+              data-testid="ticket-reply-submit"
+            >
+              <Send className="size-4" />
+            </Button>
+          </div>
         </div>
-      </div>
+      ) : null}
 
       <UserTrafficModal
         key={current?.user_id}

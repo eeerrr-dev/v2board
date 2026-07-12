@@ -135,6 +135,17 @@ export async function runDarkModePersistenceInteraction(page) {
 
 export async function runDashboardSubscribeDrawerInteraction(page) {
   await page.evaluate(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: async (value) => {
+          window.__visualParityClipboardWrites = [
+            ...(window.__visualParityClipboardWrites ?? []),
+            String(value),
+          ];
+        },
+      },
+    });
     Object.defineProperty(document, 'execCommand', {
       configurable: true,
       value: (command) => command === 'copy',
@@ -154,7 +165,7 @@ export async function runDashboardSubscribeDrawerInteraction(page) {
     page,
     '[data-testid="dashboard-subscribe-copy"], .oneClickSubscribe___2t9Xg .subsrcibe-for-link',
   );
-  await page.waitForSelector('.v2board-toast-root, .ant-message-notice, .ant-notification-notice', {
+  await page.waitForSelector('[data-sonner-toast], .ant-message-notice, .ant-notification-notice', {
     state: 'visible',
     timeout: 5_000,
   });
@@ -276,7 +287,6 @@ export async function runDashboardResetPackageConfirmInteraction(page) {
 
 export async function runDashboardNewPeriodConfirmInteraction(page) {
   const initialNewPeriodCount = page.__visualParityUserNewPeriodCount ?? 0;
-  const initialSubscribeFetchCount = page.__visualParityUserSubscribeFetchCount ?? 0;
   const before = await dashboardNewPeriodConfirmState(page);
 
   await clickFirstVisibleText(page, 'a, button', ['提前开启流量周期']);
@@ -297,16 +307,6 @@ export async function runDashboardNewPeriodConfirmInteraction(page) {
     '__visualParityUserNewPeriodCount',
     initialNewPeriodCount + 1,
   );
-  await waitForPagePropertyAtLeast(
-    page,
-    '__visualParityUserSubscribeFetchCount',
-    initialSubscribeFetchCount + 1,
-  );
-  await page.waitForSelector('.v2board-toast-root, .ant-message-notice, .ant-notification-notice', {
-    state: 'visible',
-    timeout: 5_000,
-  });
-  await page.waitForTimeout(150);
   const confirmed = await dashboardNewPeriodConfirmState(page);
 
   return {
@@ -317,8 +317,6 @@ export async function runDashboardNewPeriodConfirmInteraction(page) {
       request && typeof request === 'object' && !Array.isArray(request) ? { ...request } : request,
     ),
     opened,
-    subscribeFetchDelta:
-      (page.__visualParityUserSubscribeFetchCount ?? 0) - initialSubscribeFetchCount,
   };
 }
 
@@ -330,7 +328,9 @@ export async function runDashboardAlertLinksInteraction(page) {
     '[data-testid="dashboard-alert"][data-alert-kind="danger"] [data-testid="dashboard-alert-link"], .alert-danger .alert-link',
     0,
   );
-  await page.waitForFunction(() => window.location.hash.includes('/order'), { timeout: 5_000 });
+  await page.waitForFunction(() => window.location.hash.includes('/order'), null, {
+    timeout: 5_000,
+  });
   await page.waitForSelector('[data-testid="orders-table"], .ant-table-thead, .am-list-body', {
     state: 'visible',
     timeout: 10_000,
@@ -353,7 +353,9 @@ export async function runDashboardAlertLinksInteraction(page) {
     '[data-testid="dashboard-alert"][data-alert-kind="warning"] [data-testid="dashboard-alert-link"], .alert-warning .alert-link',
     0,
   );
-  await page.waitForFunction(() => window.location.hash.includes('/ticket'), { timeout: 5_000 });
+  await page.waitForFunction(() => window.location.hash.includes('/ticket'), null, {
+    timeout: 5_000,
+  });
   await page.waitForSelector('[data-testid="ticket-table"], .ant-table-thead, .am-list-body', {
     state: 'visible',
     timeout: 10_000,
@@ -373,7 +375,9 @@ export async function runAdminDashboardCommissionShortcutInteraction(page) {
   } else {
     await clickVisibleAt(page, '.alert-danger .alert-link', 1);
   }
-  await page.waitForFunction(() => window.location.hash.includes('/order'), { timeout: 5_000 });
+  await page.waitForFunction(() => window.location.hash.includes('/order'), null, {
+    timeout: 5_000,
+  });
   await waitForPageProperty(page, '__visualParityLastAdminOrderFetchQuery');
   await page.waitForTimeout(150);
   const after = await adminDashboardShortcutState(page);

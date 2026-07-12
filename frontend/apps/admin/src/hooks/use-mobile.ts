@@ -1,19 +1,22 @@
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
 
 const MOBILE_BREAKPOINT = 768;
 
-// Tracks whether the viewport is below the sidebar's mobile breakpoint. The
-// shadcn Sidebar primitive uses this to swap the desktop rail for a Sheet.
+const MOBILE_MEDIA_QUERY = `(max-width: ${MOBILE_BREAKPOINT - 1}px)`;
+
+function subscribeMobile(callback: () => void): () => void {
+  const media = window.matchMedia(MOBILE_MEDIA_QUERY);
+  media.addEventListener('change', callback);
+  return () => media.removeEventListener('change', callback);
+}
+
+function getMobileSnapshot(): boolean {
+  return window.innerWidth < MOBILE_BREAKPOINT;
+}
+
+// Viewport width is an external browser store, not component-owned state.
+// useSyncExternalStore gives render a current, tear-free snapshot and keeps the
+// media-query subscription lifecycle out of a state-mirroring effect.
 export function useIsMobile() {
-  const [isMobile, setIsMobile] = useState<boolean | undefined>(undefined);
-
-  useEffect(() => {
-    const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
-    const onChange = () => setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
-    mql.addEventListener('change', onChange);
-    setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
-    return () => mql.removeEventListener('change', onChange);
-  }, []);
-
-  return !!isMobile;
+  return useSyncExternalStore(subscribeMobile, getMobileSnapshot, () => false);
 }

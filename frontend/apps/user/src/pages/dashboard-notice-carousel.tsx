@@ -1,12 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Notice } from '@v2board/types';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/shadcn-dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import {
   Carousel,
@@ -14,8 +9,8 @@ import {
   CarouselItem,
   type CarouselApi,
 } from '@/components/ui/carousel';
-import { formatLegacyDate } from '@v2board/config/format';
-import { sanitizeLegacyHtml } from '@/lib/sanitize-html';
+import { formatBackendDate } from '@v2board/config/format';
+import { sanitizeBackendHtml } from '@/lib/sanitize-html';
 import { cn } from '@/lib/cn';
 
 interface DashboardNoticeCarouselProps {
@@ -26,13 +21,13 @@ export function DashboardNoticeCarousel({ notices }: DashboardNoticeCarouselProp
   const { t } = useTranslation();
   const [api, setApi] = useState<CarouselApi>();
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [activeNotice, setActiveNotice] = useState<Notice | null>(null);
-  const [noticeOpen, setNoticeOpen] = useState(false);
+  const initialPopup = notices.find((notice) => notice.tags?.includes('弹窗')) ?? null;
+  const [activeNotice, setActiveNotice] = useState<Notice | null>(initialPopup);
+  const [noticeOpen, setNoticeOpen] = useState(initialPopup !== null);
 
   useEffect(() => {
     if (!api) return;
     const onSelect = () => setSelectedIndex(api.selectedScrollSnap());
-    onSelect();
     api.on('select', onSelect);
     api.on('reInit', onSelect);
     return () => {
@@ -40,15 +35,6 @@ export function DashboardNoticeCarousel({ notices }: DashboardNoticeCarouselProp
       api.off('reInit', onSelect);
     };
   }, [api]);
-
-  useEffect(() => {
-    if (!notices.length) return;
-    const popup = notices.find((notice) => notice.tags?.includes('弹窗'));
-    if (popup) {
-      setActiveNotice(popup);
-      setNoticeOpen(true);
-    }
-  }, [notices]);
 
   const openNotice = (notice: Notice) => {
     setActiveNotice(notice);
@@ -62,7 +48,7 @@ export function DashboardNoticeCarousel({ notices }: DashboardNoticeCarouselProp
       <Carousel
         data-testid="dashboard-notice-carousel"
         setApi={setApi}
-        aria-label={t('notice.title')}
+        aria-label={t($ => $.notice.title)}
       >
         <CarouselContent>
           {notices.map((notice, index) => (
@@ -70,8 +56,13 @@ export function DashboardNoticeCarousel({ notices }: DashboardNoticeCarouselProp
               key={notice.id}
               data-testid="dashboard-notice-slide"
               data-active={index === selectedIndex ? 'true' : 'false'}
+              aria-label={`${t($ => $.notice.title)} ${index + 1} / ${notices.length}`}
             >
-              <NoticeCard notice={notice} onOpen={openNotice} />
+              <NoticeCard
+                notice={notice}
+                active={index === selectedIndex}
+                onOpen={openNotice}
+              />
             </CarouselItem>
           ))}
         </CarouselContent>
@@ -79,7 +70,7 @@ export function DashboardNoticeCarousel({ notices }: DashboardNoticeCarouselProp
           <div
             data-testid="dashboard-notice-dots"
             role="group"
-            aria-label={t('notice.title')}
+            aria-label={t($ => $.notice.title)}
             className="mt-3 flex h-auto justify-center gap-1"
           >
             {notices.map((notice, index) => (
@@ -88,7 +79,7 @@ export function DashboardNoticeCarousel({ notices }: DashboardNoticeCarouselProp
                 type="button"
                 data-testid="dashboard-notice-dot"
                 data-active={index === selectedIndex ? 'true' : 'false'}
-                aria-label={`${t('notice.title')} ${index + 1}`}
+                aria-label={`${t($ => $.notice.title)} ${index + 1}`}
                 aria-current={index === selectedIndex ? 'true' : undefined}
                 onClick={() => api?.scrollTo(index)}
                 className={cn(
@@ -115,7 +106,7 @@ export function DashboardNoticeCarousel({ notices }: DashboardNoticeCarouselProp
           {activeNotice?.content ? (
             <div
               className="custom-html-style max-h-[60vh] overflow-auto text-sm leading-6"
-              dangerouslySetInnerHTML={{ __html: sanitizeLegacyHtml(activeNotice.content) }}
+              dangerouslySetInnerHTML={{ __html: sanitizeBackendHtml(activeNotice.content) }}
             />
           ) : null}
         </DialogContent>
@@ -124,7 +115,15 @@ export function DashboardNoticeCarousel({ notices }: DashboardNoticeCarouselProp
   );
 }
 
-function NoticeCard({ notice, onOpen }: { notice: Notice; onOpen: (notice: Notice) => void }) {
+function NoticeCard({
+  notice,
+  active,
+  onOpen,
+}: {
+  notice: Notice;
+  active: boolean;
+  onOpen: (notice: Notice) => void;
+}) {
   const { t } = useTranslation();
   return (
     <button
@@ -134,22 +133,32 @@ function NoticeCard({ notice, onOpen }: { notice: Notice; onOpen: (notice: Notic
       onClick={() => onOpen(notice)}
     >
       <div
-        className={cn('min-h-36 p-5 sm:min-h-40', !notice.img_url && 'bg-muted/30')}
-        style={
-          notice.img_url
-            ? {
-                backgroundImage: `linear-gradient(rgba(0,0,0,.52), rgba(0,0,0,.52)), url(${notice.img_url})`,
-                backgroundPosition: 'center',
-                backgroundSize: 'cover',
-              }
-            : undefined
-        }
+        className={cn(
+          'relative isolate min-h-36 overflow-hidden p-5 sm:min-h-40',
+          !notice.img_url && 'bg-muted/30',
+        )}
       >
-        <Badge>{t('notice.title')}</Badge>
-        <div className={cn('mt-10 space-y-1', notice.img_url && 'text-white')}>
-          <div className="line-clamp-2 text-lg font-semibold">{notice.title}</div>
-          <div className={cn('text-sm text-muted-foreground', notice.img_url && 'text-white/75')}>
-            {formatLegacyDate(notice.created_at)}
+        {notice.img_url ? (
+          <>
+            <img
+              data-testid="dashboard-notice-image"
+              src={notice.img_url}
+              alt=""
+              loading={active ? 'eager' : 'lazy'}
+              decoding="async"
+              fetchPriority={active ? 'high' : 'low'}
+              className="absolute inset-0 -z-20 size-full object-cover"
+            />
+            <div aria-hidden="true" className="absolute inset-0 -z-10 bg-black/50" />
+          </>
+        ) : null}
+        <div className="relative">
+          <Badge>{t($ => $.notice.title)}</Badge>
+          <div className={cn('mt-10 space-y-1', notice.img_url && 'text-white')}>
+            <div className="line-clamp-2 text-lg font-semibold">{notice.title}</div>
+            <div className={cn('text-sm text-muted-foreground', notice.img_url && 'text-white/75')}>
+              {formatBackendDate(notice.created_at)}
+            </div>
           </div>
         </div>
       </div>

@@ -25,6 +25,7 @@ import {
   adminPlanCreateSelector,
   adminDrawerOpenSelector,
   adminDrawerTitleSelector,
+  adminDrawerInputGroupControlSelector,
   adminDrawerInputSelector,
   adminDrawerSelectTriggerSelector,
   adminSelectOptionSelector,
@@ -35,6 +36,12 @@ import {
   adminTableRowSelector,
 } from '../../selectors.mjs';
 
+// Price and quota fields use shadcn InputGroupInput while the frozen antd form
+// exposes ordinary inputs. A selector list preserves document order in both
+// worlds, so the existing contract field indexes remain stable.
+const adminPlanInputSelector =
+  `${adminDrawerInputSelector}, ${adminDrawerInputGroupControlSelector}`;
+
 export async function runAdminPlanCreateDrawerInteraction(page) {
   const initialPlanFetchCount = page.__visualParityAdminPlanFetchCount ?? 0;
   const before = await adminPlanDrawerState(page);
@@ -44,15 +51,15 @@ export async function runAdminPlanCreateDrawerInteraction(page) {
     timeout: 5_000,
   });
   await waitForVisibleText(page, adminDrawerTitleSelector, '新建订阅');
-  await fillVisibleAt(page, adminDrawerInputSelector, 0, 'Parity Plan');
-  await fillVisibleAt(page, adminDrawerInputSelector, 1, '<p>Parity plan body</p>');
-  await fillVisibleAt(page, adminDrawerInputSelector, 2, '12.34');
-  await fillVisibleAt(page, adminDrawerInputSelector, 3, '23.45');
-  await fillVisibleAt(page, adminDrawerInputSelector, 8, '199.00');
-  await fillVisibleAt(page, adminDrawerInputSelector, 10, '250');
-  await fillVisibleAt(page, adminDrawerInputSelector, 11, '7');
-  await fillVisibleAt(page, adminDrawerInputSelector, 12, '99');
-  await fillVisibleAt(page, adminDrawerInputSelector, 13, '50');
+  await fillVisibleAt(page, adminPlanInputSelector, 0, 'Parity Plan');
+  await fillVisibleAt(page, adminPlanInputSelector, 1, '<p>Parity plan body</p>');
+  await fillVisibleAt(page, adminPlanInputSelector, 2, '12.34');
+  await fillVisibleAt(page, adminPlanInputSelector, 3, '23.45');
+  await fillVisibleAt(page, adminPlanInputSelector, 8, '199.00');
+  await fillVisibleAt(page, adminPlanInputSelector, 10, '250');
+  await fillVisibleAt(page, adminPlanInputSelector, 11, '7');
+  await fillVisibleAt(page, adminPlanInputSelector, 12, '99');
+  await fillVisibleAt(page, adminPlanInputSelector, 13, '50');
   await clickVisibleAt(page, adminDrawerSelectTriggerSelector, 0);
   await waitForVisibleText(page, adminSelectOptionSelector, 'Default');
   const groupDropdown = await adminPlanDrawerState(page);
@@ -98,10 +105,10 @@ export async function runAdminPlanSaveFailureInteraction(page) {
     timeout: 5_000,
   });
   await waitForVisibleText(page, adminDrawerTitleSelector, '新建订阅');
-  await fillVisibleAt(page, adminDrawerInputSelector, 0, 'Parity Failed Plan');
-  await fillVisibleAt(page, adminDrawerInputSelector, 1, '<p>Plan failure body</p>');
-  await fillVisibleAt(page, adminDrawerInputSelector, 2, '12.34');
-  await fillVisibleAt(page, adminDrawerInputSelector, 10, '250');
+  await fillVisibleAt(page, adminPlanInputSelector, 0, 'Parity Failed Plan');
+  await fillVisibleAt(page, adminPlanInputSelector, 1, '<p>Plan failure body</p>');
+  await fillVisibleAt(page, adminPlanInputSelector, 2, '12.34');
+  await fillVisibleAt(page, adminPlanInputSelector, 10, '250');
   await selectLegacyFormOption(page, adminDrawerOpenSelector, '权限组', ['Default']);
   await page.waitForTimeout(100);
   const filled = await adminPlanDrawerState(page);
@@ -141,11 +148,11 @@ export async function runAdminPlanResetMethodMatrixInteraction(page) {
     timeout: 5_000,
   });
   await waitForVisibleText(page, adminDrawerTitleSelector, '新建订阅');
-  await fillVisibleAt(page, adminDrawerInputSelector, 0, 'Parity Reset Matrix');
-  await fillVisibleAt(page, adminDrawerInputSelector, 1, '<p>Reset method matrix</p>');
-  await fillVisibleAt(page, adminDrawerInputSelector, 2, '10.00');
-  await fillVisibleAt(page, adminDrawerInputSelector, 9, '2.00');
-  await fillVisibleAt(page, adminDrawerInputSelector, 10, '128');
+  await fillVisibleAt(page, adminPlanInputSelector, 0, 'Parity Reset Matrix');
+  await fillVisibleAt(page, adminPlanInputSelector, 1, '<p>Reset method matrix</p>');
+  await fillVisibleAt(page, adminPlanInputSelector, 2, '10.00');
+  await fillVisibleAt(page, adminPlanInputSelector, 9, '2.00');
+  await fillVisibleAt(page, adminPlanInputSelector, 10, '128');
   await selectLegacyFormOption(page, adminDrawerOpenSelector, '权限组', ['Default']);
   await openLegacySelectByLabel(page, adminDrawerOpenSelector, '流量重置方式');
   await waitForVisibleText(page, adminSelectOptionSelector, '每年1月1日');
@@ -212,15 +219,15 @@ export async function runAdminPlanEditDrawerInteraction(page) {
       Array.from(document.querySelectorAll(inputSelector)).some(
         (element) => 'value' in element && element.value === 'Pro',
       ),
-    adminDrawerInputSelector,
+    adminPlanInputSelector,
     { timeout: 5_000 },
   );
   const opened = await adminPlanDrawerState(page);
-  await fillVisibleAt(page, adminDrawerInputSelector, 0, 'Parity Edited Plan');
-  await fillVisibleAt(page, adminDrawerInputSelector, 1, '<p>Edited plan body</p>');
-  await fillVisibleAt(page, adminDrawerInputSelector, 2, '88.88');
-  await fillVisibleAt(page, adminDrawerInputSelector, 10, '300');
-  await fillVisibleAt(page, adminDrawerInputSelector, 11, '8');
+  await fillVisibleAt(page, adminPlanInputSelector, 0, 'Parity Edited Plan');
+  await fillVisibleAt(page, adminPlanInputSelector, 1, '<p>Edited plan body</p>');
+  await fillVisibleAt(page, adminPlanInputSelector, 2, '88.88');
+  await fillVisibleAt(page, adminPlanInputSelector, 10, '300');
+  await fillVisibleAt(page, adminPlanInputSelector, 11, '8');
   await clickVisibleAt(page, adminDrawerSelectTriggerSelector, 1);
   await waitForVisibleText(page, adminSelectOptionSelector, '不重置');
   const resetDropdown = await adminPlanDrawerState(page);
@@ -254,8 +261,8 @@ export async function runAdminPlanEditDrawerInteraction(page) {
 
 export async function runAdminPlanRenewTooltipInteraction(page) {
   return hoverTooltipInteraction(page, [
+    'thead [data-slot="header-tooltip-trigger"]',
     '.ant-table-thead .anticon-question-circle',
-    'thead .v2board-service-tooltip-trigger',
   ]);
 }
 

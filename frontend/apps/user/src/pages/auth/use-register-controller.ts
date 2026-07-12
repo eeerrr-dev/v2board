@@ -1,41 +1,36 @@
-import {
-  useState,
-  type BaseSyntheticEvent,
-  type ReactNode,
-} from 'react';
+import { useState, type BaseSyntheticEvent, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, type UseFormRegister } from 'react-hook-form';
-import { z } from 'zod';
 import { useGuestConfig, useRegisterMutation } from '@/lib/guest';
 import { toast } from '@/lib/toast';
 import { i18nGet } from '@/lib/errors';
 import { useAuthRecaptcha } from './auth-recaptcha';
-import { makeConfirmPasswordRefinement } from './refine-confirm-password';
+import {
+  authEmailSchema,
+  createRegisterSchema,
+  type RegisterFormInput,
+  type RegisterFormValues,
+} from './auth-validation';
 import { useSendEmailVerifyFlow } from './use-send-email-verify-flow';
-
-const registerSchema = z
-  .object({
-    email: z.string(),
-    email_code: z.string().optional(),
-    password: z.string(),
-    confirm_password: z.string(),
-    invite_code: z.string().optional(),
-  })
-  .superRefine(makeConfirmPasswordRefinement({ passwordKey: 'password', confirmKey: 'confirm_password' }));
-
-type RegisterFormValues = z.infer<typeof registerSchema>;
 
 export interface RegisterController {
   config: ReturnType<typeof useGuestConfig>['data'];
   configLoading: boolean;
-  registerInput: UseFormRegister<RegisterFormValues>;
+  configError: boolean;
+  retryConfig: () => void;
+  registerInput: UseFormRegister<RegisterFormInput>;
   submit: (event?: BaseSyntheticEvent) => Promise<void>;
-  /** Send-code button handler — runs recaptcha then the email-verify flow. */
-  sendCode: () => void;
-  /** True once the confirm-password superRefine flags a mismatch (drives the inline field error). */
-  passwordMismatch: boolean;
+  /** Validates email, then runs recaptcha and the email-verify flow. */
+  sendCode: () => Promise<void>;
+  errors: {
+    email?: string;
+    emailCode?: string;
+    password?: string;
+    confirmPassword?: string;
+    inviteCode?: string;
+  };
   isPending: boolean;
   isSendingCode: boolean;
   cooldownActive: boolean;
@@ -54,7 +49,7 @@ export interface RegisterController {
 // mutations / recaptcha orchestration / validation / navigation live here. The recaptcha-gated
 // send-code + 60-second cooldown is shared with the forget surface via useSendEmailVerifyFlow, so
 // this controller only owns register-specific concerns (TOS gating, whitelist suffix, invite code).
-// The request payloads and toast contract remain legacy-compatible.
+// The request payloads and toast behavior remain aligned with the backend contract.
 export function useRegisterController(): RegisterController {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -64,23 +59,20 @@ export function useRegisterController(): RegisterController {
   // Only show the full-form spinner on the true initial load; isFetching would
   // re-flash it on every background refetch (staleTime 0 + refetchOnMount).
   const configLoading = guestConfig.isLoading;
-  const { mutateAsync: register, isPending } = useRegisterMutation();
+  // Registration policy is security-sensitive: an unavailable guest config must
+  // never be interpreted as every server-side gate being disabled. A successful
+  // query with a concrete payload is the only state in which actions may run.
+  const configReady = guestConfig.isSuccess && config !== undefined;
+  const configError = !configLoading && !configReady;
+  const retryConfig = () => {
+    void guestConfig.refetch();
+  };
+  const { mutate: register, isPending } = useRegisterMutation();
   const { run: runRecaptcha, recaptchaModal } = useAuthRecaptcha(
     Boolean(config?.is_recaptcha),
     config?.recaptcha_site_key,
   );
   const initialInviteCode = params.get('code');
-  const form = useForm<RegisterFormValues>({
-    resolver: zodResolver(registerSchema),
-    defaultValues: {
-      email: '',
-      email_code: '',
-      password: '',
-      confirm_password: '',
-      invite_code: initialInviteCode ?? '',
-    },
-  });
-
   const [emailSuffix, setEmailSuffix] = useState<string | undefined>(undefined);
   const [tosChecked, setTosChecked] = useState(false);
   const emailWhitelistSuffix = config?.email_whitelist_suffix;
@@ -91,54 +83,104 @@ export function useRegisterController(): RegisterController {
       ? emailSuffix
       : (emailSuffixes[0] ?? '')
     : '';
+  const registerSchema = createRegisterSchema({
+    emailSuffix: hasEmailWhitelist ? selectedEmailSuffix : undefined,
+    emailCodeRequired: Boolean(config?.is_email_verify),
+    inviteCodeRequired: Boolean(config?.is_invite_force),
+  });
+  const form = useForm<RegisterFormInput, unknown, RegisterFormValues>({
+    resolver: zodResolver(registerSchema),
+    defaultValues: {
+      email: '',
+      email_code: '',
+      password: '',
+      confirm_password: '',
+      invite_code: initialInviteCode ?? '',
+    },
+  });
+
   const getEmail = (email: string) => {
-    return hasEmailWhitelist ? `${email}@${selectedEmailSuffix}` : email;
+    const normalized = email.trim();
+    return hasEmailWhitelist ? `${normalized}@${selectedEmailSuffix}` : normalized;
   };
 
-  const { sendCode, isSendingCode, cooldownActive, cooldownRemaining } = useSendEmailVerifyFlow({
+  const {
+    sendCode: sendCodeWithConfig,
+    isSendingCode,
+    cooldownActive,
+    cooldownRemaining,
+  } = useSendEmailVerifyFlow({
     isforget: 0,
-    getEmail: () => getEmail(form.getValues('email')),
     runRecaptcha,
   });
 
-  const onRegister = async (values: RegisterFormValues, recaptchaData?: string) => {
-    if (config?.tos_url && !tosChecked) {
-      toast.error(i18nGet('请求失败'), { description: t('auth.tos_required') });
-      return;
-    }
-    const inviteCode = values.invite_code || initialInviteCode || '';
-    if (config?.is_invite_force && !inviteCode) {
-      toast.error(i18nGet('请求失败'), { description: t('auth.invite_code_required') });
-      return;
-    }
-    try {
-      await register({
-        email: getEmail(values.email),
-        password: values.password,
-        invite_code: inviteCode,
-        email_code: config?.is_email_verify ? values.email_code ?? '' : '',
-        ...(recaptchaData ? { recaptcha_data: recaptchaData } : {}),
-      });
-      navigate('/login');
-    } catch {}
+  const sendCode = async () => {
+    if (!configReady || !config?.is_email_verify || isSendingCode || cooldownActive) return;
+    const emailValid = await form.trigger('email', { shouldFocus: true });
+    if (!emailValid) return;
+    const email = authEmailSchema.safeParse(getEmail(form.getValues('email')));
+    if (!email.success) return;
+    sendCodeWithConfig(email.data);
   };
 
-  const submit = form.handleSubmit(
-    (values) => runRecaptcha((recaptchaData) => onRegister(values, recaptchaData)),
-    () => toast.error(i18nGet('请求失败'), { description: t('auth.password_mismatch') }),
-  );
+  const onRegister = (values: RegisterFormValues, recaptchaData?: string) => {
+    // Keep the mutation guarded independently from the view. This also prevents
+    // a stale/detached form submission from bypassing the fail-closed policy.
+    if (!configReady) return;
+    const validated = registerSchema.safeParse(values);
+    if (!validated.success) return;
+    const formValues = validated.data;
+    if (config?.tos_url && !tosChecked) {
+      toast.error(i18nGet('请求失败'), { description: t($ => $.auth.tos_required) });
+      return;
+    }
+    const inviteCode = formValues.invite_code || initialInviteCode || '';
+    if (config?.is_invite_force && !inviteCode) {
+      toast.error(i18nGet('请求失败'), { description: t($ => $.auth.invite_code_required) });
+      return;
+    }
+    register(
+      {
+        email: getEmail(formValues.email),
+        password: formValues.password,
+        invite_code: inviteCode,
+        email_code: config?.is_email_verify ? formValues.email_code : '',
+        ...(recaptchaData ? { recaptcha_data: recaptchaData } : {}),
+      },
+      { onSuccess: () => navigate('/login') },
+    );
+  };
 
-  // Read the proxied error here so the controller re-renders when the confirm-password
-  // superRefine toggles; the inline field error mirrors the existing mismatch toast.
-  const passwordMismatch = Boolean(form.formState.errors.confirm_password);
+  const submitForm = form.handleSubmit((values) =>
+    runRecaptcha((recaptchaData) => onRegister(values, recaptchaData)),
+  );
+  const submit = async (event?: BaseSyntheticEvent) => {
+    if (!configReady) {
+      event?.preventDefault();
+      return;
+    }
+    await submitForm(event);
+  };
+
+  // Read the proxied errors in the controller so every field update re-renders
+  // the presentation with its localized inline error.
+  const errors = form.formState.errors;
 
   return {
     config,
     configLoading,
+    configError,
+    retryConfig,
     registerInput: form.register,
     submit,
     sendCode,
-    passwordMismatch,
+    errors: {
+      email: errors.email?.message,
+      emailCode: errors.email_code?.message,
+      password: errors.password?.message,
+      confirmPassword: errors.confirm_password?.message,
+      inviteCode: errors.invite_code?.message,
+    },
     isPending,
     isSendingCode,
     cooldownActive,

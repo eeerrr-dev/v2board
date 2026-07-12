@@ -16,12 +16,13 @@ import { clonePageRequests } from '../json-util.mjs';
 
 export async function runUserTicketReplySendInteraction(page) {
   const initialTicketFetchCount = page.__visualParityUserTicketFetchCount ?? 0;
-  await fillFirstVisible(page, '.js-chat-input', 'Parity reply send');
+  const replyInputSelector = '[data-testid="ticket-reply-input"], .js-chat-input';
+  await fillFirstVisible(page, replyInputSelector, 'Parity reply send');
   await page.waitForTimeout(100);
   const filled = await ticketReplyState(page);
 
-  await page.locator('.js-chat-input').first().press('Enter');
-  await page.waitForSelector('.v2board-toast-root, .ant-message-notice, .ant-notification-notice', {
+  await page.locator(replyInputSelector).first().press('Enter');
+  await page.waitForSelector('[data-sonner-toast], .ant-message-notice, .ant-notification-notice', {
     state: 'visible',
     timeout: 5_000,
   });
@@ -29,7 +30,7 @@ export async function runUserTicketReplySendInteraction(page) {
   const loading = await ticketReplyState(page);
 
   await waitForPagePropertyAtLeast(page, '__visualParityUserTicketReplyCount', 1);
-  await page.waitForSelector('.v2board-toast-root, .ant-message-notice, .ant-notification-notice', {
+  await page.waitForSelector('[data-sonner-toast], .ant-message-notice, .ant-notification-notice', {
     state: 'visible',
     timeout: 5_000,
   });
@@ -51,10 +52,11 @@ export async function runUserTicketErrorMatrixInteraction(page) {
   const initialTicketFetchCount = page.__visualParityUserTicketFetchCount ?? 0;
   const initialReplyCount = page.__visualParityUserTicketReplyCount ?? 0;
   const initialCloseCount = page.__visualParityUserTicketCloseCount ?? 0;
-  await fillFirstVisible(page, '.js-chat-input', 'Parity failed reply');
+  const replyInputSelector = '[data-testid="ticket-reply-input"], .js-chat-input';
+  await fillFirstVisible(page, replyInputSelector, 'Parity failed reply');
   await page.waitForTimeout(100);
   const replyFilled = await ticketReplyState(page);
-  await page.locator('.js-chat-input').first().press('Enter');
+  await page.locator(replyInputSelector).first().press('Enter');
   await waitForPagePropertyAtLeast(
     page,
     '__visualParityUserTicketReplyCount',
@@ -87,9 +89,10 @@ export async function runUserTicketErrorMatrixInteraction(page) {
   // Confirm the dialog when it appears so the close request fires on both. Do not wait
   // for it to hide -- this matrix rejects the close, and the shared dialog intentionally
   // stays open on a rejected onConfirm.
-  const closeConfirmSelector = '.v2board-confirm-dialog, .ant-modal-confirm, .ant-modal';
+  const closeConfirmSelector =
+    '[data-slot="alert-dialog-content"], .ant-modal-confirm, .ant-modal';
   const closeConfirmPrimarySelector =
-    '.v2board-confirm-primary, .ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary';
+    '[data-slot="alert-dialog-action"], .ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary';
   const closeConfirm = await page
     .waitForSelector(closeConfirmSelector, { state: 'visible', timeout: 1_500 })
     .catch(() => null);

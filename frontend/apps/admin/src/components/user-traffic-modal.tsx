@@ -1,14 +1,17 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import type { admin } from '@v2board/api-client';
 import { formatBytes, formatDate } from '@v2board/config/format';
 import { useAdminUserTraffic } from '@/lib/queries';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/shadcn-dialog';
+} from '@/components/ui/dialog';
+import { ErrorState } from '@/components/ui/error-state';
 import { PaginationControl } from '@/components/ui/pagination';
+import { Spinner } from '@/components/ui/spinner';
 import { DataTable, type DataTableColumn } from '@/components/ui/table';
 
 const PAGINATION_LABELS = {
@@ -65,23 +68,29 @@ export function UserTrafficModal({
   open: boolean;
   onClose: () => void;
 }) {
-  const [pagination, setPagination] = useState<TrafficPagination>(INITIAL_PAGINATION);
-  // Opening the modal for a different user must jump back to page 1 in the same
-  // render that issues the fetch, so the first request is never for a stale page.
-  const lastUserIdRef = useRef<number | null | undefined>(undefined);
-  const shouldResetPagination =
-    open &&
-    userId != null &&
-    lastUserIdRef.current !== undefined &&
-    lastUserIdRef.current !== userId;
-  const queryPagination = shouldResetPagination ? INITIAL_PAGINATION : pagination;
-  const records = useAdminUserTraffic(userId ?? undefined, queryPagination, open);
+  return (
+    <UserTrafficModalContent
+      key={userId ?? 'no-user'}
+      userId={userId}
+      open={open}
+      onClose={onClose}
+    />
+  );
+}
 
-  useEffect(() => {
-    if (!open || userId == null) return;
-    if (shouldResetPagination) setPagination(INITIAL_PAGINATION);
-    lastUserIdRef.current = userId;
-  }, [open, shouldResetPagination, userId]);
+function UserTrafficModalContent({
+  userId,
+  open,
+  onClose,
+}: {
+  userId?: number | null;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const [pagination, setPagination] = useState<TrafficPagination>(INITIAL_PAGINATION);
+  // The wrapper keys this stateful body by user id, so switching users resets
+  // pagination before the first render/query without an effect-driven repair.
+  const records = useAdminUserTraffic(userId ?? undefined, pagination, open);
 
   const data = records.data?.data ?? [];
   const total = records.data?.total ?? 0;
@@ -94,26 +103,48 @@ export function UserTrafficModal({
       >
         <DialogHeader className="border-b border-border px-6 py-4 text-left">
           <DialogTitle>流量记录</DialogTitle>
+          <DialogDescription>查看用户在各节点产生的上传、下载和计费流量。</DialogDescription>
         </DialogHeader>
-        <DataTable
-          columns={columns}
-          data={data}
-          getRowKey={(_row, index) => index}
-          scrollClassName="max-h-[60vh] overflow-y-auto"
-          data-testid="user-traffic-table"
-          empty={data.length === 0 ? '暂无数据' : undefined}
-          emptyTestId="user-traffic-empty"
-        />
-        {total > 0 ? (
-          <PaginationControl
-            current={queryPagination.current}
-            pageSize={pagination.pageSize}
-            total={total}
-            labels={PAGINATION_LABELS}
-            onChange={(page, pageSize) => setPagination({ current: page, pageSize })}
-            testIds={{ page: 'user-traffic-page', pageSize: 'user-traffic-page-size' }}
-          />
-        ) : null}
+        {records.isError ? (
+          <div className="px-6 py-8">
+            <ErrorState
+              data-testid="user-traffic-error"
+              message="流量记录加载失败"
+              onRetry={() => void records.refetch()}
+            />
+          </div>
+        ) : records.isPending ? (
+          <div
+            className="flex min-h-44 items-center justify-center"
+            role="status"
+            data-testid="user-traffic-loading"
+          >
+            <Spinner className="size-5 text-muted-foreground" />
+            <span className="sr-only">加载中</span>
+          </div>
+        ) : (
+          <>
+            <DataTable
+              columns={columns}
+              data={data}
+              getRowKey={(_row, index) => index}
+              scrollClassName="max-h-[60vh] overflow-y-auto"
+              data-testid="user-traffic-table"
+              empty={data.length === 0 ? '暂无数据' : undefined}
+              emptyTestId="user-traffic-empty"
+            />
+            {total > 0 ? (
+              <PaginationControl
+                current={pagination.current}
+                pageSize={pagination.pageSize}
+                total={total}
+                labels={PAGINATION_LABELS}
+                onChange={(page, pageSize) => setPagination({ current: page, pageSize })}
+                testIds={{ page: 'user-traffic-page', pageSize: 'user-traffic-page-size' }}
+              />
+            ) : null}
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );

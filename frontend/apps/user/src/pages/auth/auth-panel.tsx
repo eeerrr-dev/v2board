@@ -1,18 +1,12 @@
-import type {
-  AnchorHTMLAttributes,
-  FormHTMLAttributes,
-  ReactNode,
-} from 'react';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-} from '@/components/ui/card';
+import type { FormHTMLAttributes, ReactNode } from 'react';
+import { Link, type LinkProps } from 'react-router';
+import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
 
-interface AuthPanelProps
-  extends Omit<FormHTMLAttributes<HTMLFormElement>, 'children' | 'className' | 'title'> {
+interface AuthPanelProps extends Omit<
+  FormHTMLAttributes<HTMLFormElement>,
+  'children' | 'className' | 'title'
+> {
   children: ReactNode;
   footer: ReactNode;
   description?: ReactNode;
@@ -29,10 +23,13 @@ export function AuthPanel({
   ...formProps
 }: AuthPanelProps) {
   return (
-    <div className="v2board-auth-panel mx-auto w-full max-w-md">
-      <Card className="v2board-auth-card">
+    <div className="mx-auto w-full max-w-md">
+      <Card data-testid="auth-card">
         <CardHeader className="gap-2 px-7 text-center sm:px-8">
-          <h1 className="v2board-auth-title m-0 text-2xl font-bold leading-8 text-card-foreground">
+          <h1
+            data-slot="auth-title"
+            className="m-0 text-2xl font-bold leading-8 text-card-foreground"
+          >
             {title}
           </h1>
           {description ? (
@@ -56,9 +53,9 @@ export function AuthPanel({
   );
 }
 
-export function AuthFooterLink({ className, ...props }: AnchorHTMLAttributes<HTMLAnchorElement>) {
+export function AuthFooterLink({ className, ...props }: LinkProps) {
   return (
-    <a
+    <Link
       className={cn(
         'rounded-sm font-medium text-foreground underline underline-offset-4 transition-colors hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
         className,
@@ -68,9 +65,9 @@ export function AuthFooterLink({ className, ...props }: AnchorHTMLAttributes<HTM
   );
 }
 
-export function AuthAuxiliaryLink({ className, ...props }: AnchorHTMLAttributes<HTMLAnchorElement>) {
+export function AuthAuxiliaryLink({ className, ...props }: LinkProps) {
   return (
-    <a
+    <Link
       className={cn(
         'rounded-sm text-sm font-normal text-foreground underline-offset-4 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
         className,

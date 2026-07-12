@@ -1,28 +1,15 @@
 import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
-import {
-  Copy,
-  Plus,
-  Send,
-  TrendingUp,
-  Users,
-  WalletCards,
-} from 'lucide-react';
+import { Copy, Plus, Send, TrendingUp, Users, WalletCards } from 'lucide-react';
 import { useEmptyDescription } from '@/lib/use-empty-description';
 import { TransferDialog } from '@/components/dialogs/transfer-dialog';
 import { WithdrawDialog } from '@/components/dialogs/withdraw-dialog';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ErrorState } from '@/components/ui/error-state';
 import { HeaderTooltip } from '@/components/ui/header-tooltip';
-import { PaginationControl, getPaginationMaxCurrent } from '@/components/ui/pagination';
+import { PaginationControl } from '@/components/ui/pagination';
 import { PageShell } from '@/components/ui/page';
 import { Spinner } from '@/components/ui/spinner';
 import { DataTable, type DataTableColumn } from '@/components/ui/table';
@@ -36,9 +23,17 @@ import {
   useUserInfo,
   userKeys,
 } from '@/lib/queries';
-import { formatCentsPlain, formatLegacyDateMinuteSlash } from '@v2board/config/format';
-import { copyText } from '@/lib/legacy-settings';
+import { formatBackendDateMinuteSlash, formatCentsPlain } from '@v2board/config/format';
+import { copyText } from '@v2board/config/clipboard';
 import { toast } from '@/lib/toast';
+
+// The invite API receives the raw requested page; only the visible pagination
+// control clamps a now-empty final page after the total changes.
+function getVisibleCommissionPage(total: number, current: number, pageSize: number) {
+  if (pageSize <= 0) return 0;
+  const pageCount = Math.floor((total - 1) / pageSize) + 1;
+  return (current - 1) * pageSize >= total ? pageCount : current;
+}
 
 export default function InvitePage() {
   const { t } = useTranslation();
@@ -83,7 +78,7 @@ export default function InvitePage() {
   const detailRows = details.data?.data ?? [];
   const detailPaginationTotal = details.data?.total ?? detailRows.length;
   const detailPaginationItemTotal = detailPaginationTotal || detailRows.length;
-  const detailPaginationCurrent = getPaginationMaxCurrent(
+  const detailPaginationCurrent = getVisibleCommissionPage(
     detailPaginationItemTotal,
     page ?? 1,
     pageSize ?? 10,
@@ -92,7 +87,7 @@ export default function InvitePage() {
   const emptyDescription = useEmptyDescription();
   const codeColumns = [
     {
-      header: t('invite.code_col'),
+      header: t($ => $.invite.code_col),
       cell: ({ row }) => (
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-medium text-foreground">{row.original.code}</span>
@@ -104,25 +99,25 @@ export default function InvitePage() {
             onClick={() => void copyInviteLink(row.original.code)}
           >
             <Copy className="size-3.5" />
-            {t('invite.invite_link')}
+            {t($ => $.invite.invite_link)}
           </Button>
         </div>
       ),
     },
     {
-      header: t('invite.created_at_col'),
-      cell: ({ row }) => formatLegacyDateMinuteSlash(row.original.created_at),
+      header: t($ => $.invite.created_at_col),
+      cell: ({ row }) => formatBackendDateMinuteSlash(row.original.created_at),
       meta: { align: 'right', className: 'text-muted-foreground' },
     },
   ] satisfies DataTableColumn<(typeof codes)[number]>[];
   const detailColumns = [
     {
-      header: t('invite.issued_at'),
-      cell: ({ row }) => formatLegacyDateMinuteSlash(row.original.created_at),
+      header: t($ => $.invite.issued_at),
+      cell: ({ row }) => formatBackendDateMinuteSlash(row.original.created_at),
       meta: { className: 'text-muted-foreground' },
     },
     {
-      header: t('invite.commission_col'),
+      header: t($ => $.invite.commission_col),
       cell: ({ row }) => formatCentsPlain(row.original.get_amount),
       meta: { align: 'right', className: 'font-medium text-foreground' },
     },
@@ -130,16 +125,17 @@ export default function InvitePage() {
 
   const copyInviteLink = async (code: string) => {
     const url = `${window.location.origin}${window.location.pathname}#/register?code=${code}`;
-    if (await copyText(url)) toast.success(t('dashboard.copy_success'));
+    if (await copyText(url)) toast.success(t($ => $.dashboard.copy_success));
   };
 
-  const generateInvite = async () => {
+  const generateInvite = () => {
     if (generate.isPending) return;
-    try {
-      await generate.mutateAsync();
-      toast.success(t('invite.generated'));
-      void queryClient.invalidateQueries({ queryKey: userKeys.invite, exact: true });
-    } catch {}
+    generate.mutate(undefined, {
+      onSuccess: () => {
+        toast.success(t($ => $.invite.generated));
+        void queryClient.invalidateQueries({ queryKey: userKeys.invite, exact: true });
+      },
+    });
   };
 
   return (
@@ -150,7 +146,7 @@ export default function InvitePage() {
             <div className="min-w-0 space-y-3">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <WalletCards className="size-4" />
-                <span>{t('invite.title')}</span>
+                <span>{t($ => $.invite.title)}</span>
               </div>
               <div className="flex flex-wrap items-end gap-x-3 gap-y-1">
                 <span className="text-4xl font-semibold tracking-tight text-foreground">
@@ -160,24 +156,20 @@ export default function InvitePage() {
                   {comm?.currency}
                 </span>
               </div>
-              <p className="text-sm text-muted-foreground">{t('invite.available')}</p>
+              <p className="text-sm text-muted-foreground">{t($ => $.invite.available)}</p>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row lg:justify-end">
               <TransferDialog max={available}>
                 <Button type="button" data-testid="invite-transfer-trigger">
                   <Send className="size-4" />
-                  {t('invite.transfer')}
+                  {t($ => $.invite.transfer)}
                 </Button>
               </TransferDialog>
               {!comm?.withdraw_close && (
                 <WithdrawDialog methods={comm?.withdraw_methods ?? []}>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    data-testid="invite-withdraw-trigger"
-                  >
+                  <Button type="button" variant="outline" data-testid="invite-withdraw-trigger">
                     <WalletCards className="size-4" />
-                    {t('invite.withdraw_button')}
+                    {t($ => $.invite.withdraw_button)}
                   </Button>
                 </WithdrawDialog>
               )}
@@ -191,19 +183,16 @@ export default function InvitePage() {
         <Card className={cn(loading && 'opacity-80')} data-testid="invite-stats-card">
           {invite.isError ? (
             <CardContent>
-              <ErrorState
-                onRetry={() => void invite.refetch()}
-                data-testid="invite-stats-error"
-              />
+              <ErrorState onRetry={() => void invite.refetch()} data-testid="invite-stats-error" />
             </CardContent>
           ) : (
             <CardContent className="grid gap-0 p-0 sm:grid-cols-2 xl:grid-cols-4">
               <StatTile
                 icon={<Users className="size-4" />}
-                label={t('invite.registered')}
+                label={t($ => $.invite.registered)}
                 value={
                   registered !== undefined
-                    ? t('invite.people_count', { count: registered })
+                    ? t($ => $.invite.people_count, { count: registered })
                     : undefined
                 }
               />
@@ -211,11 +200,11 @@ export default function InvitePage() {
                 icon={<TrendingUp className="size-4" />}
                 label={
                   isDistribution ? (
-                    <HeaderTooltip title={t('invite.triple_hint')}>
-                      {t('invite.triple_rate')}
+                    <HeaderTooltip title={t($ => $.invite.triple_hint)}>
+                      {t($ => $.invite.triple_rate)}
                     </HeaderTooltip>
                   ) : (
-                    t('invite.commission_rate')
+                    t($ => $.invite.commission_rate)
                   )
                 }
                 value={commissionRate}
@@ -223,8 +212,8 @@ export default function InvitePage() {
               <StatTile
                 icon={<WalletCards className="size-4" />}
                 label={
-                  <HeaderTooltip title={t('invite.pending_hint')}>
-                    {t('invite.pending_commission')}
+                  <HeaderTooltip title={t($ => $.invite.pending_hint)}>
+                    {t($ => $.invite.pending_commission)}
                   </HeaderTooltip>
                 }
                 value={
@@ -235,7 +224,7 @@ export default function InvitePage() {
               />
               <StatTile
                 icon={<WalletCards className="size-4" />}
-                label={t('invite.valid_commission')}
+                label={t($ => $.invite.valid_commission)}
                 value={
                   validCommission !== undefined
                     ? `${symbol} ${formatCentsPlain(validCommission)}`
@@ -249,8 +238,8 @@ export default function InvitePage() {
         <Card className="overflow-hidden" data-testid="invite-code-card">
           <CardHeader className="gap-3 sm:flex sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-1.5">
-              <CardTitle>{t('invite.manage')}</CardTitle>
-              <CardDescription>{t('invite.invite_link')}</CardDescription>
+              <CardTitle>{t($ => $.invite.manage)}</CardTitle>
+              <CardDescription>{t($ => $.invite.invite_link)}</CardDescription>
             </div>
             <Button
               type="button"
@@ -259,21 +248,20 @@ export default function InvitePage() {
               onClick={() => void generateInvite()}
             >
               <Plus className="size-4" />
-              {t('invite.generate')}
+              {t($ => $.invite.generate)}
             </Button>
           </CardHeader>
           <CardContent className={invite.isError ? undefined : 'p-0'}>
             {invite.isError ? (
-              <ErrorState
-                onRetry={() => void invite.refetch()}
-                data-testid="invite-code-error"
-              />
+              <ErrorState onRetry={() => void invite.refetch()} data-testid="invite-code-error" />
             ) : (
               <ServiceTable
                 testId="invite-code-table"
                 columns={codeColumns}
                 data={codes}
-                empty={codes.length === 0 ? emptyDescription : undefined}
+                empty={
+                  invite.data !== undefined && codes.length === 0 ? emptyDescription : undefined
+                }
               />
             )}
           </CardContent>
@@ -282,16 +270,13 @@ export default function InvitePage() {
         <Card className="overflow-hidden" data-testid="invite-history-card">
           <CardHeader className="gap-3 sm:flex sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-1.5">
-              <CardTitle>{t('invite.history')}</CardTitle>
-              <CardDescription>{t('invite.commission_col')}</CardDescription>
+              <CardTitle>{t($ => $.invite.history)}</CardTitle>
+              <CardDescription>{t($ => $.invite.commission_col)}</CardDescription>
             </div>
             {detailsLoading ? (
-              <div
-                className="flex items-center gap-2 text-sm text-muted-foreground"
-                role="status"
-              >
+              <div className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
                 <Spinner className="size-4" />
-                <span>{t('common.loading')}</span>
+                <span>{t($ => $.common.loading)}</span>
               </div>
             ) : null}
           </CardHeader>
@@ -307,18 +292,22 @@ export default function InvitePage() {
                   testId="invite-history-table"
                   columns={detailColumns}
                   data={detailRows}
-                  empty={!detailRows.length ? emptyDescription : undefined}
+                  empty={
+                    details.data !== undefined && detailRows.length === 0
+                      ? emptyDescription
+                      : undefined
+                  }
                 />
                 {detailPaginationItemTotal > 0 && (
                   <PaginationControl
                     data-testid="invite-pagination"
                     current={detailPaginationCurrent}
                     labels={{
-                      itemsPerPage: t('common.items_per_page'),
-                      nextPage: t('common.next_page'),
-                      nextWindow: t('common.next_5'),
-                      previousPage: t('common.prev_page'),
-                      previousWindow: t('common.prev_5'),
+                      itemsPerPage: t($ => $.common.items_per_page),
+                      nextPage: t($ => $.common.next_page),
+                      nextWindow: t($ => $.common.next_5),
+                      previousPage: t($ => $.common.prev_page),
+                      previousWindow: t($ => $.common.prev_5),
                     }}
                     pageSize={pageSize ?? 10}
                     total={detailPaginationItemTotal}

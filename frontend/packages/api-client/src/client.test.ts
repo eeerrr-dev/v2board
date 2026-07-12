@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import AxiosMockAdapter from 'axios-mock-adapter';
-import { ApiError, createApiClient, type ApiRequestConfig } from './client';
+import { z } from 'zod';
+import { ApiContractError, ApiError, createApiClient } from './client';
+import { envelopeSchema, trueSchema } from './contracts';
 import {
   assignOrder,
   dumpUsersCsv,
@@ -12,26 +14,200 @@ import {
   fetchUsers,
   getUserInfoById,
   fetchNotices,
+  fetchPayments as fetchAdminPayments,
+  fetchServerNodes,
   fetchConfig,
   generateCoupon,
   generateGiftcard,
   generateUser,
   fetchPlans,
+  knowledgeDetail,
   savePlan,
+  savePayment,
   sendMailToUsers,
   setTelegramWebhook,
   sortServerNodes,
   statUser,
   testSendMail,
   updatePlan,
+  updateUser,
   updateServer,
 } from './endpoints/admin';
+import { config as fetchGuestConfig } from './endpoints/guest';
 import { login, token2Login } from './endpoints/passport';
 import * as passportEndpoints from './endpoints/passport';
 import * as userEndpoints from './endpoints/user';
 
 function textBuffer(text: string): ArrayBuffer {
   return new TextEncoder().encode(text).buffer as ArrayBuffer;
+}
+
+function makeCoupon(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 1,
+    code: 'CODE',
+    name: 'Coupon',
+    type: 1,
+    value: 100,
+    show: 1,
+    limit_use: null,
+    limit_use_with_user: null,
+    limit_plan_ids: null,
+    limit_period: null,
+    started_at: 0,
+    ended_at: 0,
+    created_at: 0,
+    updated_at: 0,
+    ...overrides,
+  };
+}
+
+function makeGiftcard(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 1,
+    name: 'Gift card',
+    code: 'GIFT',
+    type: 1,
+    value: 100,
+    plan_id: null,
+    limit_use: null,
+    used_user_ids: null,
+    started_at: null,
+    ended_at: null,
+    created_at: 0,
+    updated_at: 0,
+    ...overrides,
+  };
+}
+
+function makePlan(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 1,
+    group_id: 1,
+    transfer_enable: 100,
+    device_limit: null,
+    speed_limit: null,
+    reset_traffic_method: null,
+    name: 'Plan',
+    show: 1,
+    sort: null,
+    renew: 1,
+    content: null,
+    month_price: 1000,
+    quarter_price: null,
+    half_year_price: null,
+    year_price: null,
+    two_year_price: null,
+    three_year_price: null,
+    onetime_price: null,
+    reset_price: null,
+    capacity_limit: null,
+    created_at: 0,
+    updated_at: 0,
+    ...overrides,
+  };
+}
+
+function makeAdminConfig() {
+  return {
+    ticket: { ticket_status: 0 },
+    deposit: { deposit_bounus: ['50:18', '100:38'] },
+    invite: {
+      invite_force: 1,
+      invite_commission: 10,
+      invite_gen_limit: 5,
+      invite_never_expire: 0,
+      commission_first_time_enable: 1,
+      commission_auto_check_enable: 1,
+      commission_withdraw_limit: 100,
+      commission_withdraw_method: ['支付宝', 'USDT'],
+      withdraw_close_enable: 0,
+      commission_distribution_enable: 1,
+      commission_distribution_l1: 50,
+      commission_distribution_l2: 30,
+      commission_distribution_l3: 20,
+    },
+    site: {
+      logo: 'https://example.test/logo.png',
+      force_https: 1,
+      stop_register: 0,
+      app_name: 'V2Board',
+      app_description: 'V2Board is best!',
+      app_url: 'https://example.test',
+      subscribe_url: 'https://sub.example.test',
+      subscribe_path: '/api/v1/client/subscribe',
+      try_out_plan_id: 1,
+      try_out_hour: 24,
+      tos_url: 'https://example.test/tos',
+      currency: 'CNY',
+      currency_symbol: '¥',
+    },
+    subscribe: {
+      plan_change_enable: 1,
+      reset_traffic_method: 0,
+      surplus_enable: 1,
+      allow_new_period: 0,
+      new_order_event_id: 1,
+      renew_order_event_id: 0,
+      change_order_event_id: 1,
+      show_info_to_server_enable: 1,
+      show_subscribe_method: 2,
+      show_subscribe_expire: 30,
+    },
+    frontend: {
+      frontend_theme_color: 'default',
+      frontend_background_url: null,
+      frontend_custom_html: null,
+    },
+    server: {
+      server_api_url: 'https://node.example.test',
+      server_token: 'token',
+      server_pull_interval: 60,
+      server_push_interval: 60,
+      server_node_report_min_traffic: 0,
+      server_device_online_min_traffic: 0,
+      device_limit_mode: 0,
+    },
+    email: {
+      email_template: 'default',
+      email_host: 'smtp.example.test',
+      email_port: '465',
+      email_username: 'mailer',
+      email_password: 'password',
+      email_encryption: 'ssl',
+      email_from_address: 'noreply@example.test',
+    },
+    telegram: {
+      telegram_bot_enable: 1,
+      telegram_bot_token: 'bot-token',
+      telegram_discuss_link: 'https://t.me/example',
+    },
+    app: {
+      windows_version: '1.0.0',
+      windows_download_url: 'https://example.test/app.exe',
+      macos_version: '1.0.0',
+      macos_download_url: 'https://example.test/app.dmg',
+      android_version: '1.0.0',
+      android_download_url: 'https://example.test/app.apk',
+    },
+    safe: {
+      email_verify: 1,
+      safe_mode_enable: 1,
+      secure_path: 'admin-path',
+      email_whitelist_enable: 1,
+      email_whitelist_suffix: ['qq.com', 'gmail.com'],
+      email_gmail_limit_enable: 1,
+      recaptcha_enable: 1,
+      recaptcha_key: 'secret',
+      recaptcha_site_key: 'site',
+      register_limit_by_ip_enable: 1,
+      register_limit_count: 3,
+      register_limit_expire: 60,
+      password_limit_enable: 1,
+      password_limit_count: 5,
+      password_limit_expire: 60,
+    },
+  };
 }
 
 describe('createApiClient', () => {
@@ -46,8 +222,20 @@ describe('createApiClient', () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
     const sessions = {
-      'guid-1': { ip: '1.1.1.1', login_at: 1000, ua: 'Chrome', auth_data: 'token-a' },
-      'guid-2': { ip: '2.2.2.2', login_at: 2000, ua: 'Firefox', auth_data: 'token-b' },
+      'guid-1': {
+        ip: '1.1.1.1',
+        login_at: 1000,
+        ua: 'Chrome',
+        auth_data: '',
+        current: true,
+      },
+      'guid-2': {
+        ip: '2.2.2.2',
+        login_at: 2000,
+        ua: 'Firefox',
+        auth_data: '',
+        current: false,
+      },
     };
     mock.onGet('/user/getActiveSession').reply(200, { data: sessions });
 
@@ -73,20 +261,13 @@ describe('createApiClient', () => {
   it('keeps user notice fetch as the bundled notice model data-only state', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
+    const controller = new AbortController();
     mock.onGet('/user/notice/fetch').reply(200, { data: [], total: 99 });
 
-    await expect(userEndpoints.fetchNotices(client)).resolves.toEqual([]);
-  });
-
-  it('does not synthesize a user notice total absent from the bundled notice model', () => {
-    const source = readFileSync(new URL('./endpoints/user.ts', import.meta.url), 'utf8');
-
-    expect(source).toContain('export const fetchNotices = (client: ApiClient) =>');
-    expect(source).toContain(
-      "client.request<Notice[]>({ url: '/user/notice/fetch', method: 'GET' });",
-    );
-    expect(source).not.toContain('total: env.total ?? 0');
-    expect(source).not.toContain('NoticePage');
+    await expect(
+      userEndpoints.fetchNotices(client, { signal: controller.signal }),
+    ).resolves.toEqual([]);
+    expect(mock.history.get[0]?.signal).toBe(controller.signal);
   });
 
   it('unwraps the data envelope', async () => {
@@ -99,16 +280,74 @@ describe('createApiClient', () => {
     expect(result).toEqual({ token: 't', is_admin: 0, auth_data: 'jwt' });
   });
 
+  it('rejects a successful HTTP response that violates a critical runtime contract', async () => {
+    const client = createApiClient({ baseURL: '/api/v1' });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onPost('/passport/auth/login').reply(200, {
+      data: { token: 't', is_admin: 0 },
+    });
+
+    await expect(login(client, { email: 'a@b.c', password: 'x' })).rejects.toBeInstanceOf(
+      ApiContractError,
+    );
+  });
+
+  it('rejects malformed core query payloads across guest, user, and admin surfaces', async () => {
+    const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
+    const mock = new AxiosMockAdapter(client.axios);
+    const cases: Array<[string, () => Promise<unknown>, unknown]> = [
+      ['guest config', () => fetchGuestConfig(client), { is_email_verify: 0 }],
+      ['subscription', () => userEndpoints.getSubscribe(client), { plan_id: 1 }],
+      ['plans', () => userEndpoints.fetchPlans(client), [{ id: 1, name: 'partial' }]],
+      ['payment methods', () => userEndpoints.getPaymentMethod(client), [{ id: 1 }]],
+      ['tickets', () => userEndpoints.fetchTickets(client), [{ id: 1 }]],
+      ['servers', () => userEndpoints.fetchServers(client), [{ id: 1 }]],
+      ['knowledge', () => userEndpoints.fetchKnowledge(client, 'zh-CN'), { Guide: [{ id: 1 }] }],
+      ['admin config', () => fetchConfig(client, 'site'), { site: { currency: 'CNY' } }],
+      ['admin payments', () => fetchAdminPayments(client), [{ id: 1 }]],
+    ];
+
+    for (const [_label, run, malformed] of cases) {
+      mock.reset();
+      mock.onAny().reply(200, { data: malformed });
+      await expect(run()).rejects.toBeInstanceOf(ApiContractError);
+    }
+  });
+
+  it('rejects an unknown admin server type before it can select a management endpoint', async () => {
+    const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onGet('/admin-path/server/manage/getNodes').reply(200, {
+      data: [
+        {
+          id: 1,
+          name: 'unsupported node',
+          group_id: [1],
+          route_id: null,
+          type: 'future-protocol',
+          host: 'node.example.test',
+          port: 443,
+          server_port: null,
+          show: 1,
+          rate: '1',
+          parent_id: null,
+          online: 0,
+          last_check_at: null,
+        },
+      ],
+    });
+
+    await expect(fetchServerNodes(client)).rejects.toBeInstanceOf(ApiContractError);
+  });
+
   it('treats legacy 200 HTTP responses with non-200 business code as failures', async () => {
-    const onError = vi.fn();
-    const client = createApiClient({ baseURL: '/api/v1', onError });
+    const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
     mock.onPost('/passport/auth/login').reply(200, { code: 500, message: 'invalid login' });
     await expect(login(client, { email: 'a@b.c', password: 'x' })).rejects.toMatchObject({
       status: 500,
       message: 'invalid login',
     });
-    expect(onError).not.toHaveBeenCalled();
   });
 
   it('adds the legacy HTTP 200 code to successful envelopes when the body omits it', async () => {
@@ -117,44 +356,81 @@ describe('createApiClient', () => {
     mock.onGet('/user/notice/fetch').reply(200, { data: [], total: 0 });
 
     await expect(
-      client.requestEnvelope<unknown[]>({ url: '/user/notice/fetch', method: 'GET' }),
+      client.requestEnvelope({
+        url: '/user/notice/fetch',
+        method: 'GET',
+        responseSchema: envelopeSchema(z.array(z.unknown())),
+      }),
     ).resolves.toEqual({ code: 200, data: [], total: 0 });
   });
 
-  it('keeps checkout response type as the direct envelope field', async () => {
+  it.each([
+    ['code', '200'],
+    ['total', '1'],
+    ['type', null],
+  ])('rejects an invalid legacy envelope %s field before returning data', async (field, value) => {
+    const client = createApiClient({ baseURL: '/api/v1' });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onGet('/user/notice/fetch').reply(200, { data: [], [field]: value });
+
+    await expect(
+      client.requestEnvelope({
+        url: '/user/notice/fetch',
+        method: 'GET',
+        responseSchema: envelopeSchema(z.array(z.string())),
+      }),
+    ).rejects.toBeInstanceOf(ApiContractError);
+  });
+
+  it('rejects checkout success envelopes that omit the required direct type field', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
     mock.onPost('/user/order/checkout').reply(200, { data: 'https://pay.example.test' });
 
-    const result = await userEndpoints.checkoutOrder(client, { trade_no: 'T1', method: 1 });
-
-    expect((result as { type?: unknown }).type).toBeUndefined();
+    await expect(
+      userEndpoints.checkoutOrder(client, { trade_no: 'T1', method: 1 }),
+    ).rejects.toBeInstanceOf(ApiContractError);
   });
 
-  it('keeps checkout transport failures out of the global legacy error hook', async () => {
-    const onError = vi.fn();
-    const client = createApiClient({ baseURL: '/api/v1', onError });
+  it('prepares Stripe PaymentIntent with only the order and selected method', async () => {
+    const client = createApiClient({ baseURL: '/api/v1' });
+    const mock = new AxiosMockAdapter(client.axios);
+    const intent = {
+      public_key: 'pk_test',
+      client_secret: 'pi_test_secret_123',
+      amount: 1234,
+      currency: 'cny',
+    };
+    mock.onPost('/user/order/stripe/intent').reply(200, { data: intent });
+
+    await expect(
+      userEndpoints.prepareStripePaymentIntent(client, { trade_no: 'T1', method: 5 }),
+    ).resolves.toEqual(intent);
+    expect(mock.history.post[0]?.data).toBe('trade_no=T1&method=5');
+    expect(mock.history.post[0]?.data).not.toContain('token');
+  });
+
+  it('throws a typed checkout transport failure without owning UI presentation', async () => {
+    const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
     mock.onPost('/user/order/checkout').networkError();
 
-    await expect(userEndpoints.checkoutOrder(client, { trade_no: 'T1', method: 1 })).rejects.toMatchObject({
+    await expect(
+      userEndpoints.checkoutOrder(client, { trade_no: 'T1', method: 1 }),
+    ).rejects.toMatchObject({
       status: 0,
       message: 'Network Error',
     });
-    expect(onError).not.toHaveBeenCalled();
   });
 
-  it('keeps non-checkout transport failures on the global legacy error hook', async () => {
-    const onError = vi.fn();
-    const client = createApiClient({ baseURL: '/api/v1', onError });
+  it('throws typed transport failures for callers to present', async () => {
+    const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
     mock.onGet('/test').networkError();
 
-    await expect(client.request({ url: '/test', method: 'GET' })).rejects.toMatchObject({
-      status: 0,
-      message: 'Network Error',
-    });
-    expect(onError).toHaveBeenCalledOnce();
+    await expect(
+      client.request({ url: '/test', method: 'GET', responseSchema: z.unknown() }),
+    ).rejects.toMatchObject({ status: 0, message: 'Network Error' });
   });
 
   it('keeps invite detail totals as the direct envelope field', async () => {
@@ -177,23 +453,93 @@ describe('createApiClient', () => {
     expect(mock.history.post[0]?.data).toBe('transfer_amount=1234');
   });
 
-  it('rounds a float-cents transfer amount instead of truncating it', async () => {
+  it('converts decimal transfer amounts without binary floating-point drift', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
     mock.onPost('/user/transfer').reply(200, { data: true });
 
     await userEndpoints.transfer(client, '19.99');
 
-    // 100 * 19.99 = 1998.9999… — the raw float truncated to 1998 and
-    // short-changed the user; rounding sends the correct 1999.
+    // Binary multiplication produces 1998.9999…; the string-based boundary
+    // conversion still sends the exact 1999 cents.
     expect(mock.history.post[0]?.data).toBe('transfer_amount=1999');
   });
 
-  it('rounds the user transfer amount to integer cents in the API layer', () => {
-    const source = readFileSync(new URL('./endpoints/user.ts', import.meta.url), 'utf8');
+  it('converts deposit major units to integer cents at the save-order boundary', async () => {
+    const client = createApiClient({ baseURL: '/api/v1' });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onPost('/user/order/save').reply(200, { data: 'DEPOSIT-1' });
 
-    expect(source).toContain('Math.round(100 * Number(transferAmount))');
-    expect(source).not.toContain('100 * (transferAmount as number)');
+    await expect(
+      userEndpoints.saveOrder(client, {
+        plan_id: 0,
+        period: 'deposit',
+        deposit_amount: '12.34',
+      }),
+    ).resolves.toBe('DEPOSIT-1');
+
+    expect(mock.history.post[0]?.data).toBe('plan_id=0&period=deposit&deposit_amount=1234');
+  });
+
+  it('converts Admin user GiB and major-unit money exactly at the update boundary', async () => {
+    const client = createApiClient({
+      baseURL: '/api/v1',
+      adminSecurePath: () => 'admin-path',
+      nullFormValue: 'empty',
+    });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onPost('/admin-path/user/update').reply(200, { data: true });
+
+    await updateUser(client, {
+      id: 7,
+      email: 'user@example.com',
+      transfer_enable: '1.5',
+      u: '0.0000000004656612873077392578125',
+      d: 0,
+      balance: '19.99',
+      commission_balance: '-0.005',
+    });
+
+    expect(Object.fromEntries(new URLSearchParams(String(mock.history.post[0]?.data)))).toEqual({
+      id: '7',
+      email: 'user@example.com',
+      transfer_enable: '1610612736',
+      u: '1',
+      d: '0',
+      balance: '1999',
+      commission_balance: '-1',
+    });
+  });
+
+  it('rejects unsafe Admin user scaling before issuing the update request', async () => {
+    const client = createApiClient({
+      baseURL: '/api/v1',
+      adminSecurePath: () => 'admin-path',
+    });
+    const mock = new AxiosMockAdapter(client.axios);
+
+    await expect(
+      updateUser(client, {
+        id: 7,
+        email: 'user@example.com',
+        transfer_enable: '9007199254740992',
+      }),
+    ).rejects.toThrow(RangeError);
+    expect(mock.history.post).toHaveLength(0);
+  });
+
+  it('rejects an unsafe deposit amount before issuing the save-order request', async () => {
+    const client = createApiClient({ baseURL: '/api/v1' });
+    const mock = new AxiosMockAdapter(client.axios);
+
+    await expect(
+      userEndpoints.saveOrder(client, {
+        plan_id: 0,
+        period: 'deposit',
+        deposit_amount: '900719925474099.99',
+      }),
+    ).rejects.toThrow(RangeError);
+    expect(mock.history.post).toHaveLength(0);
   });
 
   it('keeps redeem gift card type and value on the legacy response envelope', async () => {
@@ -209,16 +555,13 @@ describe('createApiClient', () => {
   });
 
   it('treats HTTP 201 as a legacy request failure', async () => {
-    const onError = vi.fn();
-    const client = createApiClient({ baseURL: '/api/v1', onError });
+    const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
     mock.onPost('/test').reply(201, { message: 'created' });
 
-    await expect(client.request({ url: '/test', method: 'POST' })).rejects.toMatchObject({
-      status: 201,
-      message: 'created',
-    });
-    expect(onError).toHaveBeenCalledOnce();
+    await expect(
+      client.request({ url: '/test', method: 'POST', responseSchema: z.unknown() }),
+    ).rejects.toMatchObject({ status: 201, message: 'created' });
   });
 
   it('uses the legacy form body and request headers', async () => {
@@ -236,7 +579,28 @@ describe('createApiClient', () => {
     expect(request.data).toBe('email=a%40b.c&password=x');
     expect(request.headers?.authorization).toBe('auth');
     expect(request.headers?.['Content-Language']).toBe('zh-CN');
-    expect(request.withCredentials).toBe(true);
+    expect(request.withCredentials).toBe(false);
+    expect(request.timeout).toBe(15_000);
+  });
+
+  it('allows deliberate cookie auth and long-running request timeout overrides', async () => {
+    const client = createApiClient({
+      baseURL: '/api/v1',
+      timeoutMs: 30_000,
+      withCredentials: true,
+    });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onGet('/slow').reply(200, { data: true });
+
+    await client.request({
+      url: '/slow',
+      method: 'GET',
+      timeout: 60_000,
+      responseSchema: trueSchema,
+    });
+
+    expect(mock.history.get[0]?.withCredentials).toBe(true);
+    expect(mock.history.get[0]?.timeout).toBe(60_000);
   });
 
   it('omits nullish values from legacy form bodies', async () => {
@@ -247,6 +611,7 @@ describe('createApiClient', () => {
       url: '/test',
       method: 'POST',
       data: { keep: 'yes', skipNull: null, skipUndefined: undefined },
+      responseSchema: trueSchema,
     });
     expect(mock.history.post[0]?.data).toBe('keep=yes');
   });
@@ -259,6 +624,7 @@ describe('createApiClient', () => {
       url: '/test',
       method: 'POST',
       data: { clear: null, filter: [{ key: 'plan_id', condition: '=', value: null }] },
+      responseSchema: trueSchema,
     });
 
     expect(mock.history.post[0]?.data).toBe(
@@ -274,27 +640,37 @@ describe('createApiClient', () => {
       url: '/test',
       method: 'POST',
       data: { list: ['a', 'b'], nested: { key: 'value' } },
+      responseSchema: trueSchema,
     });
     expect(mock.history.post[0]?.data).toBe('list[0]=a&list[1]=b&nested[key]=value');
   });
 
-  it('uses the legacy for-in enumeration rules while serializing forms', async () => {
+  it('serializes only own enumerable form fields', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
     const payload = Object.create({ inherited: 'legacy' }) as Record<string, unknown>;
     payload.own = 'value';
 
     mock.onPost('/test').reply(200, { data: true });
-    await client.request({ url: '/test', method: 'POST', data: payload });
+    await client.request({
+      url: '/test',
+      method: 'POST',
+      data: payload,
+      responseSchema: trueSchema,
+    });
 
-    expect(mock.history.post[0]?.data).toBe('own=value&inherited=legacy');
+    expect(mock.history.post[0]?.data).toBe('own=value');
   });
 
   it('sends empty POST requests as legacy form requests', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
     mock.onPost('/user/newPeriod').reply(200, { data: true });
-    await client.request({ url: '/user/newPeriod', method: 'POST' });
+    await client.request({
+      url: '/user/newPeriod',
+      method: 'POST',
+      responseSchema: trueSchema,
+    });
     const request = mock.history.post[0]!;
     expect(request.data).toBe('');
     expect(request.headers?.['Content-Type']).toBe('application/x-www-form-urlencoded');
@@ -315,9 +691,9 @@ describe('createApiClient', () => {
     const client = createApiClient({ baseURL: '/api/v1', onUnauthorized });
     const mock = new AxiosMockAdapter(client.axios);
     mock.onGet('/user/info').reply(403, { message: 'auth required' });
-    await expect(client.request({ url: '/user/info', method: 'GET' })).rejects.toBeInstanceOf(
-      ApiError,
-    );
+    await expect(
+      client.request({ url: '/user/info', method: 'GET', responseSchema: z.unknown() }),
+    ).rejects.toBeInstanceOf(ApiError);
     expect(onUnauthorized).toHaveBeenCalledOnce();
   });
 
@@ -327,24 +703,21 @@ describe('createApiClient', () => {
     const mock = new AxiosMockAdapter(client.axios);
     mock.onGet('/user/info').reply(200, { code: 403, message: 'auth required' });
 
-    await expect(client.request({ url: '/user/info', method: 'GET' })).rejects.toMatchObject({
-      status: 403,
-      message: 'auth required',
-    });
+    await expect(
+      client.request({ url: '/user/info', method: 'GET', responseSchema: z.unknown() }),
+    ).rejects.toMatchObject({ status: 403, message: 'auth required' });
     expect(onUnauthorized).toHaveBeenCalledOnce();
   });
 
   it('maps other non-2xx responses into ApiError without unauthorized handling', async () => {
     const onUnauthorized = vi.fn();
-    const onError = vi.fn();
-    const client = createApiClient({ baseURL: '/api/v1', onUnauthorized, onError });
+    const client = createApiClient({ baseURL: '/api/v1', onUnauthorized });
     const mock = new AxiosMockAdapter(client.axios);
     mock.onGet('/user/info').reply(401, { message: 'auth required' });
-    await expect(client.request({ url: '/user/info', method: 'GET' })).rejects.toBeInstanceOf(
-      ApiError,
-    );
+    await expect(
+      client.request({ url: '/user/info', method: 'GET', responseSchema: z.unknown() }),
+    ).rejects.toBeInstanceOf(ApiError);
     expect(onUnauthorized).not.toHaveBeenCalled();
-    expect(onError).toHaveBeenCalledOnce();
   });
 
   it('uses the first legacy validation error as the ApiError message', async () => {
@@ -380,38 +753,61 @@ describe('createApiClient', () => {
     await expect(fetchAdminCoupons(client)).resolves.toEqual({ data: [], total: undefined });
     await expect(fetchAdminGiftcards(client)).resolves.toEqual({ data: [], total: undefined });
     await expect(statUser(client, { user_id: 1 })).resolves.toEqual({ data: [], total: undefined });
-    const userFetchRequest = mock.history.get.find(
-      (request) => request.url === '/admin-path/user/fetch',
-    ) as ApiRequestConfig | undefined;
-    const orderFetchRequest = mock.history.get.find(
-      (request) => request.url === '/admin-path/order/fetch',
-    ) as ApiRequestConfig | undefined;
-    expect(userFetchRequest?.skipLegacyGlobalError).toBe(true);
-    expect(orderFetchRequest?.skipLegacyGlobalError).toBe(true);
+    expect(mock.history.get.filter((request) => request.url?.includes('/user/fetch'))).toHaveLength(
+      1,
+    );
+    expect(
+      mock.history.get.filter((request) => request.url?.includes('/order/fetch')),
+    ).toHaveLength(1);
+  });
+
+  it('passes article id and cancellation through the admin knowledge-detail request', async () => {
+    const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
+    const mock = new AxiosMockAdapter(client.axios);
+    const controller = new AbortController();
+    mock.onGet('/admin-path/knowledge/fetch?id=7').reply(200, {
+      data: {
+        id: 7,
+        category: 'Guide',
+        title: 'Article',
+        body: 'Body',
+        language: 'zh-CN',
+        sort: null,
+        show: 1,
+        created_at: 1_700_000_000,
+        updated_at: 1_700_000_000,
+      },
+    });
+
+    await expect(knowledgeDetail(client, 7, { signal: controller.signal })).resolves.toMatchObject({
+      id: 7,
+      title: 'Article',
+    });
+    expect(mock.history.get[0]?.signal).toBe(controller.signal);
   });
 
   it('normalizes fetched coupon and giftcard amount values to legacy model units', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
     const couponRows = [
-      { id: 1, type: 1, value: 1234 },
-      { id: 2, type: 2, value: 30 },
+      makeCoupon({ id: 1, type: 1, value: 1234 }),
+      makeCoupon({ id: 2, type: 2, value: 30 }),
     ];
     const giftcardRows = [
-      { id: 1, type: 1, value: 5678 },
-      { id: 2, type: 3, value: 100 },
+      makeGiftcard({ id: 1, type: 1, value: 5678 }),
+      makeGiftcard({ id: 2, type: 3, value: 100 }),
     ];
     mock.onGet('/admin-path/coupon/fetch').reply(200, { data: couponRows, total: 2 });
     mock.onGet('/admin-path/giftcard/fetch').reply(200, { data: giftcardRows, total: 2 });
 
-    await expect(fetchAdminCoupons(client)).resolves.toEqual({
+    await expect(fetchAdminCoupons(client)).resolves.toMatchObject({
       data: [
         { id: 1, type: 1, value: 12.34 },
         { id: 2, type: 2, value: 30 },
       ],
       total: 2,
     });
-    await expect(fetchAdminGiftcards(client)).resolves.toEqual({
+    await expect(fetchAdminGiftcards(client)).resolves.toMatchObject({
       data: [
         { id: 1, type: 1, value: 56.78 },
         { id: 2, type: 3, value: 100 },
@@ -425,9 +821,7 @@ describe('createApiClient', () => {
     const mock = new AxiosMockAdapter(client.axios);
     mock.onAny().reply((config) => {
       expect(config.method).toBe('get');
-      expect(config.url).toBe(
-        '/admin-path/stat/getStatUser?user_id=1&current=2&pageSize=10&total=1',
-      );
+      expect(config.url).toBe('/admin-path/stat/getStatUser?user_id=1&current=2&pageSize=10');
       expect(config.params).toBeUndefined();
       return [
         200,
@@ -438,14 +832,12 @@ describe('createApiClient', () => {
       ];
     });
 
-    await expect(
-      statUser(client, { user_id: 1, current: 2, pageSize: 10, total: 1 }),
-    ).resolves.toEqual({
+    await expect(statUser(client, { user_id: 1, current: 2, pageSize: 10 })).resolves.toEqual({
       data: [{ record_at: 1700000000, u: 1024, d: 2048, server_rate: 1 }],
       total: 1,
     });
     expect(mock.history.get[0]?.url).toBe(
-      '/admin-path/stat/getStatUser?user_id=1&current=2&pageSize=10&total=1',
+      '/admin-path/stat/getStatUser?user_id=1&current=2&pageSize=10',
     );
   });
 
@@ -466,11 +858,74 @@ describe('createApiClient', () => {
     );
   });
 
-  it('uses the legacy direct multiplication shape for assigned-order amounts', () => {
-    const source = readFileSync(new URL('./endpoints/admin.ts', import.meta.url), 'utf8');
+  it('converts all admin money inputs at the API boundary without float drift', async () => {
+    const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onPost().reply(200, { data: true });
 
-    expect(source).toContain('total_amount: 100 * (data.total_amount as number),');
-    expect(source).not.toContain('total_amount: Number(data.total_amount) * 100');
+    await generateCoupon(client, { type: 1, value: '19.99' });
+    await generateGiftcard(client, { type: 1, value: '0.1' });
+    await savePayment(client, {
+      name: 'Card',
+      payment: 'StripeCheckout',
+      config: {},
+      handling_fee_fixed: '1.05',
+    });
+
+    expect(mock.history.post[0]?.data).toContain('value=1999');
+    expect(mock.history.post[1]?.data).toContain('value=10');
+    expect(mock.history.post[2]?.data).toContain('handling_fee_fixed=105');
+  });
+
+  it('sends only the PaymentController save contract and normalizes empty optionals', async () => {
+    const client = createApiClient({
+      baseURL: '/api/v1',
+      adminSecurePath: () => 'admin-path',
+      nullFormValue: 'empty',
+    });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onPost('/admin-path/payment/save').reply(200, { data: true });
+
+    await savePayment(client, {
+      name: 'New gateway',
+      payment: 'StripeCheckout',
+      config: { secret_key: 'sk_new' },
+      icon: '',
+      notify_domain: '',
+      handling_fee_fixed: '',
+      handling_fee_percent: '',
+      // Exercise the runtime whitelist as well as the stricter TS contract.
+      uuid: 'must-not-round-trip',
+      enable: 1,
+    } as unknown as Parameters<typeof savePayment>[1]);
+
+    expect(Object.fromEntries(new URLSearchParams(String(mock.history.post[0]?.data)))).toEqual({
+      name: 'New gateway',
+      payment: 'StripeCheckout',
+      'config[secret_key]': 'sk_new',
+    });
+
+    await savePayment(client, {
+      id: 7,
+      name: 'Edited gateway',
+      payment: 'StripeCheckout',
+      config: { secret_key: 'sk_edited' },
+      icon: '',
+      notify_domain: '',
+      handling_fee_fixed: '',
+      handling_fee_percent: '',
+    });
+
+    expect(Object.fromEntries(new URLSearchParams(String(mock.history.post[1]?.data)))).toEqual({
+      id: '7',
+      name: 'Edited gateway',
+      payment: 'StripeCheckout',
+      'config[secret_key]': 'sk_edited',
+      icon: '',
+      notify_domain: '',
+      handling_fee_fixed: '',
+      handling_fee_percent: '',
+    });
   });
 
   it('submits admin plan updates with the original dynamic key payload', async () => {
@@ -488,7 +943,7 @@ describe('createApiClient', () => {
 
     expect(source).toContain("key: 'show' | 'renew',");
     expect(source).toContain('value: 0 | 1,');
-    expect(source).toContain("adminPost<true>(client, '/plan/update', { id, [key]: value })");
+    expect(source).toContain("adminPostTrue(client, '/plan/update', { id, [key]: value })");
     expect(source).not.toContain('show?: 0 | 1, renew?: 0 | 1');
     expect(source).not.toContain('{ id, show, renew }');
   });
@@ -591,14 +1046,14 @@ describe('createApiClient', () => {
     expect(source).toContain("key: 'show',");
     expect(source).toContain('value: 0 | 1,');
     expect(source).toContain(
-      'adminPost<true>(client, `/server/${type}/update`, { id, [key]: value })',
+      'adminPostTrue(client, `/server/${type}/update`, { id, [key]: value })',
     );
     expect(source).not.toContain(
-      'show: 0 | 1,\n) => adminPost<true>(client, `/server/${type}/update`, { id, show })',
+      'show: 0 | 1,\n) => adminPostTrue(client, `/server/${type}/update`, { id, show })',
     );
   });
 
-  it('submits legacy admin plan prices in cents from the API layer', async () => {
+  it('submits admin plan prices in cents and strips fetched model metadata', async () => {
     const client = createApiClient({
       baseURL: '/api/v1',
       adminSecurePath: () => 'admin-path',
@@ -616,32 +1071,40 @@ describe('createApiClient', () => {
       year_price: '',
       onetime_price: 300,
       force_update: true,
-    });
+      show: 1,
+      renew: 1,
+      sort: 2,
+      count: 12,
+      created_at: 1_700_000_000,
+      updated_at: 1_700_000_001,
+    } as Parameters<typeof savePlan>[1] & Record<string, unknown>);
 
     const body = new URLSearchParams(String(mock.history.post[0]?.data));
     expect(body.get('id')).toBe('1');
     expect(body.get('name')).toBe('基础套餐');
     expect(body.get('month_price')).toBe('1234');
     expect(body.get('quarter_price')).toBe('0');
-    expect(body.get('year_price')).toBe('0');
+    expect(body.get('year_price')).toBe('');
     expect(body.get('onetime_price')).toBe('30000');
     expect(body.get('force_update')).toBe('true');
     expect(body.get('half_year_price')).toBe('');
+    expect(body.has('show')).toBe(false);
+    expect(body.has('renew')).toBe(false);
+    expect(body.has('sort')).toBe(false);
+    expect(body.has('count')).toBe(false);
+    expect(body.has('created_at')).toBe(false);
+    expect(body.has('updated_at')).toBe(false);
   });
 
-  it('normalizes legacy admin plan prices with the original null-only check', async () => {
+  it('normalizes schema-validated admin plan prices from cents', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
     mock.onGet('/admin-path/plan/fetch').reply(200, {
       data: [
-        {
-          id: 1,
-          name: '基础套餐',
+        makePlan({
           month_price: 1234,
           quarter_price: null,
-          half_year_price: '',
-          year_price: undefined,
-        },
+        }),
       ],
     });
 
@@ -649,43 +1112,51 @@ describe('createApiClient', () => {
 
     expect(result[0]?.month_price).toBe(12.34);
     expect(result[0]?.quarter_price).toBeNull();
-    expect(result[0]?.half_year_price).toBe(0);
-    expect(Number.isNaN(result[0]?.year_price as number)).toBe(true);
+  });
+
+  it('rejects malformed admin plan records instead of normalizing partial legacy data', async () => {
+    const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onGet('/admin-path/plan/fetch').reply(200, {
+      data: [{ id: 1, name: 'Incomplete plan', month_price: 1234 }],
+    });
+
+    await expect(fetchPlans(client)).rejects.toBeInstanceOf(ApiContractError);
   });
 
   it('normalizes legacy admin config comma-list strings after fetch', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
+    const config = makeAdminConfig();
     mock.onGet('/admin-path/config/fetch').reply(200, {
       data: {
+        ...config,
         deposit: { deposit_bounus: '50:18,100:38' },
-        invite: { commission_withdraw_method: '支付宝,USDT' },
-        site: { email_whitelist_suffix: 'qq.com,gmail.com' },
-        safe: { email_whitelist_suffix: 'safe.example' },
+        invite: { ...config.invite, commission_withdraw_method: '支付宝,USDT' },
+        site: { ...config.site, email_whitelist_suffix: 'qq.com,gmail.com' },
+        safe: { ...config.safe, email_whitelist_suffix: 'safe.example' },
       },
     });
 
     const result = await fetchConfig(client);
 
-    expect(result.deposit.deposit_bounus).toEqual(['50:18', '100:38']);
+    expect(result.deposit?.deposit_bounus).toEqual(['50:18', '100:38']);
     expect(result.deposit_bounus).toEqual(['50:18', '100:38']);
-    expect(result.invite.commission_withdraw_method).toEqual(['支付宝', 'USDT']);
+    expect(result.invite?.commission_withdraw_method).toEqual(['支付宝', 'USDT']);
     expect(result.commission_withdraw_method).toEqual(['支付宝', 'USDT']);
-    expect((result.site as unknown as Record<string, unknown>).email_whitelist_suffix).toEqual([
-      'qq.com',
-      'gmail.com',
-    ]);
-    expect(result.email_whitelist_suffix).toBe('safe.example');
+    expect(result.site?.email_whitelist_suffix).toEqual(['qq.com', 'gmail.com']);
+    expect(result.email_whitelist_suffix).toEqual(['safe.example']);
   });
 
   it('passes the legacy config key when a page requests a single config group', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
+    const site = makeAdminConfig().site;
     mock.onAny().reply((config) => {
       expect(config.method).toBe('get');
       expect(config.url).toBe('/admin-path/config/fetch?key=site');
       expect(config.params).toBeUndefined();
-      return [200, { data: { site: { currency: 'CNY' } } }];
+      return [200, { data: { site } }];
     });
 
     await expect(fetchConfig(client, 'site')).resolves.toMatchObject({
@@ -781,6 +1252,20 @@ describe('createApiClient', () => {
     });
   });
 
+  it('validates the JSON branch of the binary endpoint escape hatch', async () => {
+    const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock
+      .onPost('/admin-path/user/generate')
+      .reply(200, textBuffer(JSON.stringify({ data: 'unexpected' })), {
+        'content-type': 'application/json',
+      });
+
+    await expect(generateUser(client, { email_suffix: 'example.com' })).rejects.toBeInstanceOf(
+      ApiContractError,
+    );
+  });
+
   it('uses the legacy exact application/json check for CSV-capable admin responses', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
@@ -810,18 +1295,41 @@ describe('createApiClient', () => {
     );
   });
 
-  it('allows legacy admin user emails to omit empty subject and content fields', async () => {
+  it('submits the required admin mail subject and content with its target filter', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
     mock.onPost('/admin-path/user/sendMail').reply(200, { data: true });
 
     await sendMailToUsers(client, {
+      subject: 'Account notice',
+      content: 'Please review your account.',
       filter: [{ key: 'email', condition: '模糊', value: 'user@example.com' }],
     });
 
     expect(mock.history.post[0]?.data).toBe(
-      'filter[0][key]=email&filter[0][condition]=%E6%A8%A1%E7%B3%8A&filter[0][value]=user%40example.com',
+      'subject=Account%20notice&content=Please%20review%20your%20account.&filter[0][key]=email&filter[0][condition]=%E6%A8%A1%E7%B3%8A&filter[0][value]=user%40example.com',
     );
+    expect(mock.history.post[0]?.headers?.['Idempotency-Key']).toEqual(expect.any(String));
+  });
+
+  it('reuses the admin mail idempotency key when one mutation request is retried', async () => {
+    const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onPost('/admin-path/user/sendMail').replyOnce(500, { message: 'retry' });
+    mock.onPost('/admin-path/user/sendMail').reply(200, { data: true });
+    const mutation = { subject: 'Notice', content: 'Body' };
+
+    await expect(sendMailToUsers(client, mutation)).rejects.toBeInstanceOf(ApiError);
+    await expect(sendMailToUsers(client, mutation)).resolves.toBe(true);
+
+    const firstKey = mock.history.post[0]?.headers?.['Idempotency-Key'];
+    const retryKey = mock.history.post[1]?.headers?.['Idempotency-Key'];
+    expect(firstKey).toEqual(expect.any(String));
+    expect(retryKey).toBe(firstKey);
+    expect(mock.history.post[1]?.data).toBe(mock.history.post[0]?.data);
+
+    await sendMailToUsers(client, { ...mutation });
+    expect(mock.history.post[2]?.headers?.['Idempotency-Key']).not.toBe(firstKey);
   });
 
   it('preserves legacy generated coupon and giftcard CSV buffers', async () => {

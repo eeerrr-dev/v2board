@@ -1,18 +1,14 @@
 import { useState, type ReactNode } from 'react';
-import { Check } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  getCurrentLocaleLabel,
-  getEnabledLocales,
-  selectLocale,
-} from '@/lib/locale-menu';
+import { getCurrentLocaleLabel, getEnabledLocales, selectLocale } from '@/lib/locale-menu';
 
 interface LanguageMenuProps {
   /** Renders the trigger button; receives the current locale label for chrome. */
@@ -42,16 +38,15 @@ export function LanguageMenuItems({
 }: Pick<LanguageMenuProps, 'itemClassName' | 'activeIndicator'>) {
   const { i18n } = useTranslation();
   const locales = getEnabledLocales();
-  const currentLabel = getCurrentLocaleLabel();
+  const currentLocale = i18n.resolvedLanguage ?? i18n.language;
 
   return (
-    <>
+    <DropdownMenuRadioGroup value={currentLocale}>
       {locales.map((locale) => (
-        <DropdownMenuItem
+        <DropdownMenuRadioItem
           key={locale.code}
-          role={activeIndicator ? 'menuitemradio' : undefined}
-          aria-checked={activeIndicator ? locale.label === currentLabel : undefined}
-          className={cn(activeIndicator && 'justify-between gap-4', itemClassName)}
+          value={locale.code}
+          className={cn(activeIndicator && 'gap-4', itemClassName)}
           onSelect={(event) => {
             event.preventDefault();
             selectLocale(locale.code);
@@ -59,15 +54,9 @@ export function LanguageMenuItems({
           }}
         >
           {locale.label}
-          {activeIndicator ? (
-            <Check
-              aria-hidden="true"
-              className={cn('size-4', locale.label === currentLabel ? 'opacity-100' : 'opacity-0')}
-            />
-          ) : null}
-        </DropdownMenuItem>
+        </DropdownMenuRadioItem>
       ))}
-    </>
+    </DropdownMenuRadioGroup>
   );
 }
 
@@ -88,12 +77,7 @@ export function LanguageMenu({
   return (
     <DropdownMenu open={open} onOpenChange={setOpen} modal={false}>
       <DropdownMenuTrigger asChild>{trigger(currentLabel)}</DropdownMenuTrigger>
-      <DropdownMenuContent
-        align={align}
-        side={side}
-        sideOffset={4}
-        className={contentClassName}
-      >
+      <DropdownMenuContent align={align} side={side} sideOffset={4} className={contentClassName}>
         <LanguageMenuItems itemClassName={itemClassName} activeIndicator={activeIndicator} />
       </DropdownMenuContent>
     </DropdownMenu>

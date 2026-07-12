@@ -1,14 +1,28 @@
-import { act, type Ref } from 'react';
+import { act, type ComponentProps, type Ref } from 'react';
 import { fireEvent, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/render';
+import { createTestTranslation } from '@/test/i18next-selector';
 import OrderDetailPage from './detail';
 
 const orderRefetch = vi.hoisted(() => vi.fn());
+const paymentRefetch = vi.hoisted(() => vi.fn());
 const checkoutOrder = vi.hoisted(() => vi.fn());
 const checkOrder = vi.hoisted(() => vi.fn());
-const stripePublicKey = vi.hoisted(() => ({ value: undefined as string | undefined }));
-const stripeTokenize = vi.hoisted(() => vi.fn());
+const stripeIntent = vi.hoisted(() => ({
+  value: undefined as
+    { public_key: string; client_secret: string; amount: number; currency: string } | undefined,
+}));
+const stripeConfirm = vi.hoisted(() => vi.fn());
+const stripeIntentRefetch = vi.hoisted(() => vi.fn());
+const stripeIntentCalls = vi.hoisted(
+  () =>
+    [] as Array<{
+      tradeNo: string | undefined;
+      methodId: number | undefined;
+      options?: { enabled?: boolean };
+    }>,
+);
 const stripeMounts = vi.hoisted(() => ({ count: 0 }));
 const confirmDialog = vi.hoisted(() => vi.fn());
 const cancelMutateAsync = vi.hoisted(() => vi.fn());
@@ -24,11 +38,13 @@ const labels = vi.hoisted(() => ({
   'order.deposit': '充值',
 }));
 const paymentState = vi.hoisted(() => ({
-  data: [{ id: 1, name: 'Legacy Pay', payment: 'LegacyPay' }] as Array<
-    { id: number; name: string; payment: string } & Record<string, unknown>
-  >,
+  data: [{ id: 1, name: 'Legacy Pay', payment: 'LegacyPay' }] as
+    Array<{ id: number; name: string; payment: string } & Record<string, unknown>> | undefined,
+  isPending: false,
+  error: null as Error | null,
 }));
 const orderState = vi.hoisted(() => ({
+  error: null as Error | null,
   data: {
     trade_no: 'ORDER123',
     period: 'month_price',
@@ -73,15 +89,16 @@ const orderStatusState = vi.hoisted(() => ({
 }));
 
 vi.mock('react-router', () => ({
+  Link: ({ to, children, ...rest }: { to: string } & Omit<ComponentProps<'a'>, 'href'>) => (
+    <a href={to} {...rest}>
+      {children}
+    </a>
+  ),
   useParams: () => ({ trade_no: 'ORDER123' }),
-  useNavigate: () => vi.fn(),
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key: string) => labels[key as keyof typeof labels] ?? key,
-    i18n: { language: 'zh-CN' },
-  }),
+  useTranslation: () => createTestTranslation(labels),
 }));
 
 vi.mock('@tanstack/react-query', () => {
@@ -108,29 +125,32 @@ vi.mock('qrcode.react', () => ({
   QRCodeSVG: ({ value }: { value?: string }) => <svg data-qrcode={value} />,
 }));
 
-// Stub the Stripe card form at the module boundary: it exposes the same
-// submit-time tokenize() handle the page consumes, reports the public key it
-// was mounted with, and immediately signals a complete card so the checkout
-// button un-gates.
-vi.mock('@/components/stripe-card-form', async () => {
+vi.mock('@/components/stripe-payment-form', async () => {
   const { useEffect, useImperativeHandle } = await import('react');
   return {
-    StripeCardForm: ({
+    StripePaymentForm: ({
       publicKey,
+      clientSecret,
       onCompleteChange,
       ref,
     }: {
       publicKey: string;
+      clientSecret: string;
       onCompleteChange?: (complete: boolean) => void;
-      ref?: Ref<{ tokenize: () => Promise<{ id: string } | null> }>;
+      ref?: Ref<{ confirm: () => Promise<{ status?: 'succeeded'; error?: string }> }>;
     }) => {
-      useImperativeHandle(ref, () => ({ tokenize: () => stripeTokenize() }), []);
+      useImperativeHandle(ref, () => ({ confirm: () => stripeConfirm() }), []);
       useEffect(() => {
         stripeMounts.count += 1;
         onCompleteChange?.(true);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-      }, []);
-      return <div data-testid="stripe-card-form" data-public-key={publicKey} />;
+      }, [onCompleteChange]);
+      return (
+        <div
+          data-testid="stripe-payment-form"
+          data-public-key={publicKey}
+          data-client-secret={clientSecret}
+        />
+      );
     },
   };
 });
@@ -147,11 +167,16 @@ vi.mock('@/lib/queries', () => ({
     data: orderState.data,
     // The page now gates its full-page spinner on isPending (no data yet), not
     // isFetching, so a background refetch no longer blanks the cashier.
-    isPending: orderState.data === undefined,
+    error: orderState.error,
+    isError: orderState.error !== null,
+    isPending: orderState.data === undefined && orderState.error === null,
     refetch: orderRefetch,
   }),
   usePaymentMethods: () => ({
     data: paymentState.data,
+    isPending: paymentState.isPending,
+    error: paymentState.error,
+    refetch: paymentRefetch,
   }),
   useCommConfig: () => ({
     data: {
@@ -172,12 +197,25 @@ vi.mock('@/lib/queries', () => ({
     };
   },
   useCheckoutOrderMutation: () => ({
-    mutateAsync: checkoutOrder,
+    mutate: (payload: unknown, options?: { onSuccess?: (data: unknown) => void }) => {
+      void Promise.resolve(checkoutOrder(payload)).then(options?.onSuccess, () => undefined);
+    },
     isPending: false,
   }),
-  useStripePublicKey: () => ({
-    data: stripePublicKey.value,
-  }),
+  useStripePaymentIntent: (
+    tradeNo: string | undefined,
+    methodId: number | undefined,
+    options?: { enabled?: boolean },
+  ) => {
+    stripeIntentCalls.push({ tradeNo, methodId, options });
+    return {
+      data: stripeIntent.value,
+      isPending: false,
+      isFetching: false,
+      error: null,
+      refetch: stripeIntentRefetch,
+    };
+  },
   useUserInfo: () => ({}),
 }));
 
@@ -192,13 +230,16 @@ async function flushCheckout() {
 describe('OrderDetailPage shadcn commerce behavior', () => {
   beforeEach(() => {
     orderRefetch.mockReset();
+    paymentRefetch.mockReset();
     checkoutOrder.mockReset();
     checkOrder.mockReset();
     orderStatusState.data = undefined;
     orderStatusState.isError = false;
     orderStatusState.calls = [];
-    stripePublicKey.value = undefined;
-    stripeTokenize.mockReset();
+    stripeIntent.value = undefined;
+    stripeConfirm.mockReset();
+    stripeIntentRefetch.mockReset();
+    stripeIntentCalls.length = 0;
     stripeMounts.count = 0;
     confirmDialog.mockReset();
     cancelMutateAsync.mockReset();
@@ -210,6 +251,9 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
     toastSpies.loading.mockReset();
     toastSpies.success.mockReset();
     paymentState.data = [{ id: 1, name: 'Legacy Pay', payment: 'LegacyPay' }];
+    paymentState.isPending = false;
+    paymentState.error = null;
+    orderState.error = null;
     orderState.data = {
       trade_no: 'ORDER123',
       period: 'month_price',
@@ -293,12 +337,86 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
     expect(container.querySelector('#cashier')).toBeNull();
   });
 
+  it('shows a retryable error without calculating or exposing checkout before an order exists', async () => {
+    orderState.data = undefined;
+    orderState.error = new Error('Order detail failed');
+
+    const { user, container } = renderWithProviders(<OrderDetailPage />);
+
+    expect(screen.getByTestId('order-detail-error')).toHaveTextContent('Order detail failed');
+    expect(container.querySelector('#cashier')).toBeNull();
+    expect(screen.queryByTestId('order-summary')).toBeNull();
+    expect(screen.queryByTestId('commerce-submit')).toBeNull();
+    expect(checkoutOrder).not.toHaveBeenCalled();
+
+    await user.click(screen.getByTestId('error-state-retry'));
+
+    expect(orderRefetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows payment-method loading explicitly and cannot check out before a method is selected', () => {
+    paymentState.data = undefined;
+    paymentState.isPending = true;
+
+    renderWithProviders(<OrderDetailPage />);
+
+    expect(screen.getByTestId('payment-methods-loading')).toHaveAttribute('role', 'status');
+    const submit = screen.getByTestId('commerce-submit');
+    expect(submit).toBeDisabled();
+    fireEvent.click(submit);
+
+    expect(checkoutOrder).not.toHaveBeenCalled();
+    expect(stripeIntentCalls.at(-1)).toEqual({
+      tradeNo: 'ORDER123',
+      methodId: undefined,
+      options: { enabled: false },
+    });
+  });
+
+  it('surfaces a retryable payment-method fetch error and keeps checkout guarded', async () => {
+    // TanStack Query retains the last successful data when a refetch fails. The
+    // failure must still win over that stale gateway and prevent a submission.
+    paymentState.error = new Error('Payment methods failed');
+
+    const { user } = renderWithProviders(<OrderDetailPage />);
+
+    expect(screen.getByTestId('payment-methods-error')).toHaveTextContent('Payment methods failed');
+    expect(screen.queryByTestId('payment-option')).toBeNull();
+    const submit = screen.getByTestId('commerce-submit');
+    expect(submit).toBeDisabled();
+    fireEvent.click(submit);
+    expect(checkoutOrder).not.toHaveBeenCalled();
+
+    await user.click(screen.getByTestId('error-state-retry'));
+    expect(paymentRefetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders an explicit empty state and never prepares or submits an invalid method', () => {
+    paymentState.data = [];
+
+    renderWithProviders(<OrderDetailPage />);
+
+    expect(screen.getByTestId('payment-methods-empty')).toHaveTextContent('common.empty');
+    expect(screen.queryByTestId('payment-option')).toBeNull();
+    const submit = screen.getByTestId('commerce-submit');
+    expect(submit).toBeDisabled();
+    fireEvent.click(submit);
+
+    expect(checkoutOrder).not.toHaveBeenCalled();
+    expect(stripeIntentCalls.at(-1)).toEqual({
+      tradeNo: 'ORDER123',
+      methodId: undefined,
+      options: { enabled: false },
+    });
+  });
+
   it('preselects the first payment method and derives its handling fee from the method config', () => {
     paymentState.data = [
       {
         id: 9,
         name: 'Fee Pay',
         payment: 'LegacyPay',
+        icon: 'https://cdn.example.test/fee-pay.svg',
         handling_fee_fixed: 150,
         handling_fee_percent: 10,
       },
@@ -313,6 +431,10 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
     expect(options[0]).toHaveAttribute('data-state', 'checked');
     expect(options[0]).toHaveTextContent('Fee Pay');
     expect(options[1]).toHaveAttribute('data-state', 'unchecked');
+    const paymentIcon = options[0]!.querySelector('img');
+    expect(paymentIcon).toHaveAttribute('src', 'https://cdn.example.test/fee-pay.svg');
+    expect(paymentIcon).toHaveAttribute('loading', 'lazy');
+    expect(paymentIcon).toHaveAttribute('decoding', 'async');
     // The Radix indicator (harness hook payment-option-radio) renders on the
     // checked option only.
     expect(within(options[0]!).getByTestId('payment-option-radio')).toBeInTheDocument();
@@ -322,6 +444,21 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
     expect(screen.getByText('2.50')).toBeInTheDocument();
     expect(screen.getByText('¥ 12.50 CNY')).toBeInTheDocument();
   });
+
+  it.each([
+    ['fixed-only', { handling_fee_fixed: 150 }, '1.50', '¥ 11.50 CNY'],
+    ['percent-only', { handling_fee_percent: 10 }, '1.00', '¥ 11.00 CNY'],
+  ])(
+    'derives a %s handling fee without relying on nullable numeric coercion',
+    (_label, feeConfig, expectedFee, expectedTotal) => {
+      paymentState.data = [{ id: 9, name: 'Fee Pay', payment: 'LegacyPay', ...feeConfig }];
+
+      renderWithProviders(<OrderDetailPage />);
+
+      expect(screen.getByText(expectedFee)).toBeInTheDocument();
+      expect(screen.getByText(expectedTotal)).toBeInTheDocument();
+    },
+  );
 
   it('updates the handling fee when the payment method changes', async () => {
     paymentState.data = [
@@ -376,50 +513,89 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
     expect(screen.getByText('¥ 13.00 CNY')).toBeInTheDocument();
   });
 
-  it('tokenizes the card once at submit and sends the Stripe token in the checkout payload', async () => {
+  it('confirms the server-owned PaymentIntent without sending a legacy token', async () => {
     paymentState.data = [{ id: 5, name: 'Stripe Pay', payment: 'StripeCredit' }];
-    stripePublicKey.value = 'pk_test_live';
-    stripeTokenize.mockResolvedValue({ id: 'tok_test_123' });
-    checkoutOrder.mockResolvedValue({ type: 1, data: undefined });
+    stripeIntent.value = {
+      public_key: 'pk_test_live',
+      client_secret: 'pi_test_secret_123',
+      amount: 1000,
+      currency: 'cny',
+    };
+    stripeConfirm.mockResolvedValue({ status: 'succeeded' });
 
     const { user } = renderWithProviders(<OrderDetailPage />);
 
-    // The card form mounts with the fetched public key and no eager tokenization.
-    expect(screen.getByTestId('stripe-card-form')).toHaveAttribute(
+    expect(screen.getByTestId('stripe-payment-form')).toHaveAttribute(
       'data-public-key',
       'pk_test_live',
     );
-    expect(stripeTokenize).not.toHaveBeenCalled();
+    expect(screen.getByTestId('stripe-payment-form')).toHaveAttribute(
+      'data-client-secret',
+      'pi_test_secret_123',
+    );
+    expect(stripeIntentCalls.at(-1)).toEqual({
+      tradeNo: 'ORDER123',
+      methodId: 5,
+      options: { enabled: true },
+    });
+    expect(stripeConfirm).not.toHaveBeenCalled();
 
     const submit = screen.getByTestId('commerce-submit');
     expect(submit).toBeEnabled();
     await user.click(submit);
     await flushCheckout();
 
-    expect(stripeTokenize).toHaveBeenCalledTimes(1);
-    // Tier-1: the Stripe card token rides the /payment checkout payload.
-    expect(checkoutOrder).toHaveBeenCalledWith({
-      trade_no: 'ORDER123',
-      method: 5,
-      token: 'tok_test_123',
-    });
+    expect(stripeConfirm).toHaveBeenCalledTimes(1);
+    expect(checkoutOrder).not.toHaveBeenCalled();
     // The verification message stays behind i18n (key, not hardcoded Chinese).
     expect(toastSpies.loading).toHaveBeenCalledWith('order.stripe_verifying', { duration: 5000 });
     expect(screen.queryByTestId('payment-qrcode')).toBeNull();
   });
 
-  it('remounts the Stripe card form when the public key changes', () => {
+  it('surfaces a rejected Stripe confirmation and restores checkout controls', async () => {
     paymentState.data = [{ id: 5, name: 'Stripe Pay', payment: 'StripeCredit' }];
-    stripePublicKey.value = 'pk_a';
+    stripeIntent.value = {
+      public_key: 'pk_test_live',
+      client_secret: 'pi_test_secret_123',
+      amount: 1000,
+      currency: 'cny',
+    };
+    stripeConfirm.mockRejectedValue(new Error('Stripe network unavailable'));
+
+    const { user } = renderWithProviders(<OrderDetailPage />);
+    const submit = screen.getByTestId('commerce-submit');
+    await user.click(submit);
+    await flushCheckout();
+
+    expect(stripeConfirm).toHaveBeenCalledTimes(1);
+    expect(toastSpies.error).toHaveBeenCalledWith('Stripe network unavailable');
+    expect(submit).toBeEnabled();
+  });
+
+  it('remounts Stripe Elements when the PaymentIntent client secret changes', () => {
+    paymentState.data = [{ id: 5, name: 'Stripe Pay', payment: 'StripeCredit' }];
+    stripeIntent.value = {
+      public_key: 'pk_a',
+      client_secret: 'pi_a_secret',
+      amount: 1000,
+      currency: 'cny',
+    };
 
     const { rerender } = renderWithProviders(<OrderDetailPage />);
     expect(stripeMounts.count).toBe(1);
 
-    stripePublicKey.value = 'pk_b';
+    stripeIntent.value = {
+      public_key: 'pk_a',
+      client_secret: 'pi_b_secret',
+      amount: 1000,
+      currency: 'cny',
+    };
     rerender(<OrderDetailPage />);
 
-    // A new key must recreate the Stripe Elements instance, not update in place.
-    expect(screen.getByTestId('stripe-card-form')).toHaveAttribute('data-public-key', 'pk_b');
+    expect(screen.getByTestId('stripe-payment-form')).toHaveAttribute(
+      'data-client-secret',
+      'pi_b_secret',
+    );
     expect(stripeMounts.count).toBe(2);
   });
 
@@ -434,7 +610,6 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
     expect(checkoutOrder).toHaveBeenCalledWith({
       trade_no: 'ORDER123',
       method: 1,
-      token: undefined,
     });
 
     const dialog = await screen.findByRole('dialog', { name: 'order.checkout' });
@@ -480,13 +655,19 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
     // total_amount <= 0 orders settle server-side with no gateway, so checkout
     // returns type -1 with no QR/redirect. onPay must still refresh the order
     // plus the balance (info) and subscription (subscribe) it just consumed.
+    orderState.data = { ...orderState.data!, total_amount: 0 };
+    paymentState.data = [{ id: 5, name: 'Stripe Pay', payment: 'StripeCredit' }];
     checkoutOrder.mockResolvedValue({ type: -1, data: undefined });
 
     const { user } = renderWithProviders(<OrderDetailPage />);
 
-    await user.click(screen.getByTestId('commerce-submit'));
+    const submit = screen.getByTestId('commerce-submit');
+    expect(screen.queryByTestId('stripe-payment-form')).toBeNull();
+    expect(submit).toBeEnabled();
+    await user.click(submit);
     await flushCheckout();
 
+    expect(checkoutOrder).toHaveBeenCalledWith({ trade_no: 'ORDER123', method: 5 });
     expect(screen.queryByTestId('payment-qrcode')).toBeNull();
     expect(toastSpies.success).toHaveBeenCalledWith('order.success');
     expect(orderRefetch).toHaveBeenCalledTimes(1);

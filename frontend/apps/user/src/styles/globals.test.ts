@@ -1,135 +1,67 @@
 import { describe, expect, it } from 'vitest';
 import { readUserStyles } from '../test/read-user-styles';
 
-const css = readUserStyles;
+describe('user CSS system', () => {
+  it('uses one canonical Tailwind preflight and production-only source discovery', () => {
+    const css = readUserStyles();
 
-describe('custom HTML content CSS', () => {
-  it('keeps rich announcement and knowledge article content readable', () => {
-    const globals = css();
-
-    expect(globals).toContain('.custom-html-style {\n  color: #333;\n}');
-    expect(globals).toContain('.custom-html-style h1 {\n  font-size: 32px;');
-    expect(globals).toContain('.custom-html-style p {\n  font-size: 14px;\n  line-height: 1.7;');
-    expect(globals).toContain('.custom-html-style a {\n  color: #0052d9;\n}');
-    expect(globals).toContain('.custom-html-style pre {\n  display: block;');
-    expect(globals).toContain('.custom-html-style blockquote {\n  position: relative;');
-    expect(globals).toContain('.custom-html-style table {\n  font-size: 14px;');
-    expect(globals).toContain('.custom-html-style table td {\n  border: 1px solid #efefef;');
+    expect(css.match(/@import 'tailwindcss\/theme\.css'/g)).toHaveLength(1);
+    expect(css.match(/@import 'tailwindcss\/preflight\.css'/g)).toHaveLength(1);
+    expect(css.match(/@import 'tailwindcss\/utilities\.css'/g)).toHaveLength(1);
+    expect(css.match(/@import 'tw-animate-css'/g)).toHaveLength(1);
+    expect(css).toContain('layer(utilities) source(none);');
+    expect(css).toContain("@source '../**/*.{ts,tsx}';");
+    expect(css).toContain("@source not '../**/*.{test,spec}.{ts,tsx}';");
+    expect(css).toContain("@source not '../test/**';");
+    expect(css).not.toContain('@tailwind utilities');
+    expect(css).not.toContain("@import 'tailwindcss' source(none);");
+    expect(css).not.toContain('prefix(tw)');
+    expect(css).not.toContain('v2board-radix-');
   });
 
-  it('re-points the light-only rich-content colors in dark mode', () => {
-    const globals = css();
+  it('owns global shadcn tokens without an island-scoped preflight', () => {
+    const css = readUserStyles();
 
-    // The light rules pin element-matched colors (link blue, #f5f5f5 code fill,
-    // #333 blockquote, #f5f7fa table header) that beat the inherited dark
-    // foreground, so each needs an explicit .dark override to stay readable.
-    expect(globals).toContain('.dark .custom-html-style {\n  color: var(--foreground, #fafafa);');
-    expect(globals).toContain('.dark .custom-html-style a {\n  color: #8ab4f8;\n}');
-    expect(globals).toContain('.dark .custom-html-style pre,\n.dark .custom-html-style code {');
-    expect(globals).toContain('.dark .custom-html-style blockquote {\n  color: inherit;');
-    expect(globals).toContain(
-      '.dark .custom-html-style table th {\n  background-color: var(--muted, oklch(0.269 0 0));',
-    );
-  });
-});
-
-describe('remaining legacy utility CSS boundary', () => {
-  it('keeps rich-content compatibility without Bootstrap or OneUI UI foundations', () => {
-    const globals = css();
-
-    expect(globals).toContain('--color-brand-500: #0665d0;');
-    expect(globals).toContain('--color-page: #f0f3f8;');
-    expect(globals).toContain('.custom-html-style table th {');
-    expect(globals).toContain('::selection {');
-
-    expect(globals).not.toContain('.btn {');
-    expect(globals).not.toContain('.form-control {');
-    expect(globals).not.toContain('.block {');
-    expect(globals).not.toContain('.row {');
-    expect(globals).not.toContain('.col-md-');
-    expect(globals).not.toContain('.bg-white {');
-    expect(globals).not.toContain('.ant-btn {');
-    expect(globals).not.toContain('.ant-table {');
-    expect(globals).not.toContain('.ant-select {');
-    expect(globals).not.toContain('.ant-tooltip {');
-    expect(globals).not.toContain('.ant-drawer {');
-    expect(globals).not.toContain('.ant-switch {');
-    expect(globals).not.toContain('.ant-carousel {');
-    expect(globals).not.toContain('.am-list-item {');
-    expect(globals).not.toContain('.slick-dots');
-    expect(globals).not.toContain('.v2board-background {');
-    expect(globals).not.toContain('.v2board-auth-lang-btn {');
-    expect(globals).not.toContain('.sidebar-mini.sidebar-o');
-    expect(globals).not.toContain('.nav-main');
-  });
-});
-
-describe('shadcn island presentation CSS', () => {
-  it('declares the pure shadcn island theme variables and source boundaries', () => {
-    const globals = css();
-
-    expect(globals).toContain("@import 'tailwindcss' source(none);");
-    expect(globals).toContain("@import 'tailwindcss/theme.css';");
-    // Utilities are emitted without blanket !important; user-redesigned-surfaces
-    // imports the island base (user-auth-surface.css) before user-shadcn.css so
-    // utilities win the equal-specificity island/neutralizer rules on source
-    // order instead.
-    expect(globals).toContain('@tailwind utilities source(none);');
-    expect(globals).not.toContain('@media important');
-    expect(globals).toContain(
-      "@import './user-auth-surface.css';\n@import './user-shadcn.css';\n@import './user-shadcn-motion.css';",
-    );
-    expect(globals).not.toContain("@import 'tailwindcss';");
-    expect(globals).not.toContain('prefix(tw)');
-    expect(globals).toContain('@theme inline {');
-    expect(globals).toContain('--color-card: var(--card);');
-    expect(globals).toContain('--color-muted-foreground: var(--muted-foreground);');
-    // Naked utilities are scanned from every island page/component source (not a
-    // drift-prone per-file list), so a surface split into helper files keeps its
-    // unique utilities (regression: dashboard-notice-carousel.tsx lost w-6/h-1.5).
-    // The set is `{ts,tsx}`: shared class-string helpers live in `.ts` modules
-    // (dialog-surface.ts owns the dialog centering geometry), and a `tsx`-only
-    // glob pruned left-1/2/-translate-x-1/2 so every modal lost centering.
-    expect(globals).toContain("@source '../pages/**/*.{ts,tsx}';");
-    expect(globals).toContain("@source '../components/**/*.{ts,tsx}';");
-    // Every island root (surface + portaled menu/dialog/sheet/popover/tooltip/
-    // toast) carries the shared `.v2board-island` membership class; theming keys
-    // off that single selector instead of drift-prone parallel root lists, so a
-    // newly added portal surface cannot silently render untokened.
-    expect(globals).toContain('.v2board-island {\n  --radius: 0.625rem;');
-    expect(globals).not.toContain('.v2board-auth-surface,\n.v2board-app-shell,');
-    expect(globals).toContain('--card: oklch(1 0 0);');
-    expect(globals).toContain('--background: oklch(1 0 0);');
-    expect(globals).toContain('--primary: oklch(0.205 0 0);');
+    expect(css).toContain(':root {\n  --radius: 0.625rem;');
+    expect(css).toContain('.dark {\n  --background: oklch(0.145 0 0);');
+    expect(css).toContain(":root[data-theme-color='green']");
+    expect(css).toContain('@apply border-border outline-ring/50;');
+    expect(css).toContain('@apply bg-background text-foreground;');
+    expect(css).not.toContain('Island-scoped Preflight');
   });
 
-  it('keeps shadcn motion and class-driven dark theme tokens', () => {
-    const globals = css();
+  it('scopes backend-authored prose and removes global legacy element rules', () => {
+    const css = readUserStyles();
 
-    expect(globals).toContain('.v2board-page-shell {\n  animation: v2board-page-in 180ms ease-out both;');
-    // The sidebar tokens paint the rail in both themes: a deepened light
-    // gray against the white content, canonical near-black in dark.
-    expect(globals).toContain('--sidebar: oklch(0.97 0 0);');
-    expect(globals).toContain('--sidebar: oklch(0.205 0 0);');
-    expect(globals).not.toContain('hsl(var(--background))');
-    expect(globals).not.toContain('@media (prefers-color-scheme: dark)');
-    expect(globals).toContain('.dark .v2board-island {');
-    expect(globals).toContain('color-scheme: dark;');
-    expect(globals).toContain('--background: oklch(0.145 0 0);');
-    expect(globals).toContain('--card: oklch(0.205 0 0);');
-    expect(globals).toContain('--muted-foreground: oklch(0.708 0 0);');
+    expect(css).toContain('.custom-html-style h1 {');
+    expect(css).toContain('.custom-html-style :where(p, ul, ol, pre, blockquote, table) {');
+    expect(css).toContain('.custom-html-style table th {');
+    expect(css).toContain('color: var(--foreground);');
+    expect(css).not.toContain('.dark .custom-html-style');
+    expect(css).not.toContain('\nh1,\nh2,\nh3,');
+    expect(css).not.toContain('a:not([class])');
+    expect(css).not.toContain('\nsmall {');
+    expect(css).not.toContain('--legacy-link');
+    expect(css).not.toContain('--color-page');
   });
 
-  it('themes portaled shadcn feedback without legacy login or Ant chrome', () => {
-    const globals = css();
+  it('contains no Bootstrap, OneUI, or Ant presentation foundation', () => {
+    const css = readUserStyles();
 
-    // Portaled menus, dialogs, sheets, tooltips and toasts inherit the island
-    // theme purely through the shared `.v2board-island` class and its `.dark`
-    // flip (asserted above) — there is no per-feedback-surface CSS, and none of
-    // the legacy login or Ant feedback chrome remains.
-    expect(globals).not.toContain('.v2board-login-i18n-btn {');
-    expect(globals).not.toContain('.ant-modal {');
-    expect(globals).not.toContain('.ant-message {');
-    expect(globals).not.toContain('.ant-notification {');
+    for (const selector of [
+      '.btn {',
+      '.form-control {',
+      '.block {',
+      '.row {',
+      '.col-md-',
+      '.ant-btn {',
+      '.ant-table {',
+      '.ant-select {',
+      '.ant-tooltip {',
+      '.ant-drawer {',
+      '.ant-switch {',
+    ]) {
+      expect(css).not.toContain(selector);
+    }
   });
 });

@@ -416,6 +416,25 @@ export async function clickFirstVisibleText(page, selector, texts) {
   await page.mouse.click(point.x, point.y);
 }
 
+// Unlike the coordinate-based helper above, this variant lets Playwright wait
+// for the chosen element to stop moving before it clicks. Use it for animated
+// dropdown menus: an item can be visible while the overlay is still settling,
+// and a cached screen coordinate may otherwise land on an adjacent action.
+export async function clickFirstVisibleTextStable(page, selector, texts) {
+  const targetTexts = texts.map(normalizeParityText);
+  const candidates = page.locator(selector);
+  const count = await candidates.count();
+  for (let index = 0; index < count; index += 1) {
+    const candidate = candidates.nth(index);
+    if (!(await candidate.isVisible())) continue;
+    const candidateText = normalizeParityText(await candidate.textContent());
+    if (!targetTexts.includes(candidateText)) continue;
+    await candidate.click();
+    return;
+  }
+  throw new Error(`No visible element ${selector} with text ${targetTexts.join(', ')}`);
+}
+
 export async function clickFirstVisibleTextContaining(page, selector, texts) {
   const point = await page.evaluate(
     ({ selector: targetSelector, texts: targetTexts }) => {
@@ -699,7 +718,7 @@ export async function selectLegacyFormOption(
   }
 }
 
-export async function waitForVisibleElementsHidden(page, selector) {
+export async function waitForVisibleElementsHidden(page, selector, timeout = 5_000) {
   await page.waitForFunction(
     (targetSelector) => {
       const isVisible = (element) => {
@@ -710,7 +729,7 @@ export async function waitForVisibleElementsHidden(page, selector) {
       return !Array.from(document.querySelectorAll(targetSelector)).some(isVisible);
     },
     selector,
-    { timeout: 5_000 },
+    { timeout },
   );
 }
 
@@ -937,4 +956,3 @@ export async function waitForReadySelector(page, selector, diagnostics = [], tim
   }
   throw lastError ?? new Error(`Ready selector ${selector} did not become visible`);
 }
-

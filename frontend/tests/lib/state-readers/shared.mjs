@@ -8,7 +8,7 @@ export async function fetchFailureState(page) {
     // a Radix-style alert (role="alert", no literal `.alert` class), so capture its
     // per-surface testids: plans has no card fallback in `tables`, and this keeps the
     // failure state observable for the collapsed redesigned-fetch-failure normalizer.
-    '.alert, .ant-alert, [data-testid="plan-error"], [data-testid="orders-error"], [data-testid="ticket-error"]',
+    '.alert, .ant-alert, [data-testid="plan-error"], [data-testid="orders-error"], [data-testid="ticket-error"], [data-testid="node-error"], [data-testid="traffic-error"], [data-testid="knowledge-list-error"]',
     6,
   );
   const emptyTexts = await visibleTexts(

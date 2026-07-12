@@ -3,6 +3,7 @@ import { screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Plan } from '@v2board/types';
 import { renderWithProviders } from '@/test/render';
+import { createTestTranslation } from '@/test/i18next-selector';
 import PlansPage from './index';
 
 const mocks = vi.hoisted(() => ({
@@ -23,7 +24,10 @@ const labels: Record<string, string> = {
   'plan.almost_sold_out': '即将售罄',
   'plan.sold_out': '已售罄',
   'plan.buy_now': '立即订阅',
+  'plan.select_other': '选择其它订阅',
   'plan.no_plan': '暂无可用订阅',
+  'errors.This payment period cannot be purchased, please choose another period':
+    '该订阅周期无法进行购买，请选择其它周期',
 };
 
 function resetPlans() {
@@ -105,7 +109,7 @@ vi.mock('react-router', () => ({
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => labels[key] ?? key }),
+  useTranslation: () => createTestTranslation(labels),
 }));
 
 vi.mock('@/lib/queries', () => ({
@@ -156,7 +160,7 @@ describe('PlansPage shadcn commerce list rendering', () => {
     expect(traffic).toHaveAttribute('aria-disabled', 'true');
   });
 
-  it('keeps the original all-null-price card instead of hiding it', () => {
+  it('keeps an all-null-price plan visible but explicitly disables purchase', () => {
     mocks.plans = [
       {
         id: 3,
@@ -188,8 +192,13 @@ describe('PlansPage shadcn commerce list rendering', () => {
 
     const card = screen.getByTestId('plan-card');
     expect(card).toHaveTextContent('Legacy Empty Price');
-    expect(card).toHaveTextContent('¥ NaN');
-    expect(card).toHaveTextContent('立即订阅');
+    expect(card).not.toHaveTextContent('NaN');
+    expect(within(card).getByTestId('plan-price-unavailable')).toHaveTextContent(
+      '该订阅周期无法进行购买，请选择其它周期',
+    );
+    expect(card).toHaveTextContent('选择其它订阅');
+    expect(card).not.toHaveAttribute('href');
+    expect(card).toHaveAttribute('aria-disabled', 'true');
   });
 
   it('shows the empty state for an empty plan list', () => {

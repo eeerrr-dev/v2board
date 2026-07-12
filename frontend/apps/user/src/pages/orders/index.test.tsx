@@ -1,8 +1,10 @@
+import type { ComponentProps } from 'react';
 import { screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { formatLegacyDateMinuteSlash } from '@v2board/config/format';
+import { formatBackendDateMinuteSlash } from '@v2board/config/format';
 import { VIRTUALIZE_MIN_ROWS } from '@/components/ui/table';
 import { renderWithProviders } from '@/test/render';
+import { createTestTranslation } from '@/test/i18next-selector';
 import OrdersPage from './index';
 
 const mocks = vi.hoisted(() => ({
@@ -81,15 +83,25 @@ function defaultOrders() {
 }
 
 vi.mock('react-router', () => ({
-  useNavigate: () => mocks.navigate,
+  Link: ({ to, onClick, children, ...rest }: { to: string } & Omit<ComponentProps<'a'>, 'href'>) => (
+    <a
+      href={to}
+      onClick={(event) => {
+        onClick?.(event);
+        if (!event.defaultPrevented) {
+          event.preventDefault();
+          mocks.navigate(to);
+        }
+      }}
+      {...rest}
+    >
+      {children}
+    </a>
+  ),
 }));
 
 vi.mock('react-i18next', () => ({
-  // Empty-key sentinel: a regression to a `t('')` fallback in the period cell
-  // would leak this marker into the DOM instead of leaving the badge empty.
-  useTranslation: () => ({
-    t: (key: string) => (key === '' ? 'EMPTY_KEY_TRANSLATED' : (labels[key] ?? key)),
-  }),
+  useTranslation: () => createTestTranslation(labels),
 }));
 
 vi.mock('@/lib/queries', () => ({
@@ -138,22 +150,25 @@ describe('OrdersPage shadcn commerce table', () => {
 
     const rows = within(table).getAllByRole('row');
     const unpaidRow = rows[1]!;
-    expect(within(unpaidRow).getByRole('button', { name: 'ORDER123' })).toBeInTheDocument();
+    expect(within(unpaidRow).getByRole('link', { name: 'ORDER123' })).toHaveAttribute(
+      'href',
+      '/order/ORDER123',
+    );
     expect(within(unpaidRow).getByText('月付')).toBeInTheDocument();
     expect(within(unpaidRow).getByText('10.00')).toBeInTheDocument();
     expect(within(unpaidRow).getByText('待支付')).toBeInTheDocument();
     expect(
-      within(unpaidRow).getByText(formatLegacyDateMinuteSlash(1_700_000_000)),
+      within(unpaidRow).getByText(formatBackendDateMinuteSlash(1_700_000_000)),
     ).toBeInTheDocument();
-    expect(within(unpaidRow).getByRole('button', { name: '查看详情' })).toBeInTheDocument();
+    expect(within(unpaidRow).getByRole('link', { name: '查看详情' })).toBeInTheDocument();
     expect(within(unpaidRow).getByRole('button', { name: '取消' })).toBeInTheDocument();
 
     const completedRow = rows[2]!;
-    expect(within(completedRow).getByRole('button', { name: 'ORDER456' })).toBeInTheDocument();
+    expect(within(completedRow).getByRole('link', { name: 'ORDER456' })).toBeInTheDocument();
     expect(within(completedRow).getByText('流量重置包')).toBeInTheDocument();
     expect(within(completedRow).getByText('2.50')).toBeInTheDocument();
     expect(within(completedRow).getByText('已完成')).toBeInTheDocument();
-    expect(within(completedRow).getByText(formatLegacyDateMinuteSlash(0))).toBeInTheDocument();
+    expect(within(completedRow).getByText(formatBackendDateMinuteSlash(0))).toBeInTheDocument();
   });
 
   it('renders a shadcn empty state when there are no orders', () => {
@@ -234,9 +249,7 @@ describe('OrdersPage shadcn commerce table', () => {
     for (const row of virtualRows) {
       expect(row).toHaveAttribute('data-index');
     }
-    expect(
-      table.querySelectorAll('tbody tr[aria-hidden="true"]').length,
-    ).toBeGreaterThan(0);
+    expect(table.querySelectorAll('tbody tr[aria-hidden="true"]').length).toBeGreaterThan(0);
   });
 
   it('sorts by the amount and created-at columns on header click while other columns stay inert', async () => {
@@ -275,13 +288,13 @@ describe('OrdersPage commerce behavior', () => {
   it('navigates from both the trade number and detail action', async () => {
     const { user } = renderWithProviders(<OrdersPage />);
 
-    await user.click(screen.getByRole('button', { name: 'ORDER123' }));
+    await user.click(screen.getByRole('link', { name: 'ORDER123' }));
     expect(mocks.navigate).toHaveBeenCalledWith('/order/ORDER123');
 
     mocks.navigate.mockClear();
     const table = screen.getByTestId('orders-table');
     const firstRow = within(table).getAllByRole('row')[1]!;
-    await user.click(within(firstRow).getByRole('button', { name: '查看详情' }));
+    await user.click(within(firstRow).getByRole('link', { name: '查看详情' }));
     expect(mocks.navigate).toHaveBeenCalledWith('/order/ORDER123');
   });
 
@@ -303,7 +316,9 @@ describe('OrdersPage commerce behavior', () => {
       onConfirm: () => unknown;
     };
     expect(options.title).toBe('注意');
-    expect(options.description).toBe('如果您已经付款，取消订单可能会导致支付失败，确定要取消订单吗？');
+    expect(options.description).toBe(
+      '如果您已经付款，取消订单可能会导致支付失败，确定要取消订单吗？',
+    );
     expect(options.confirmText).toBe('关闭订单');
     expect(mocks.cancelMutateAsync).not.toHaveBeenCalled();
 
@@ -317,8 +332,8 @@ describe('OrdersPage commerce behavior', () => {
     const { user } = renderWithProviders(<OrdersPage />);
 
     const table = screen.getByTestId('orders-table');
-    const detailButtons = within(table).getAllByRole('button', { name: '查看详情' });
-    await user.click(detailButtons[1]!);
+    const detailLinks = within(table).getAllByRole('link', { name: '查看详情' });
+    await user.click(detailLinks[1]!);
     expect(mocks.navigate).toHaveBeenCalledWith('/order/ORDER456');
 
     const cancelButtons = within(table).getAllByRole('button', { name: '取消' });

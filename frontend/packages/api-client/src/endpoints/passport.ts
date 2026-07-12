@@ -1,5 +1,5 @@
-import type { AuthData } from '@v2board/types';
 import type { ApiClient } from '../client';
+import { authDataSchema, nullableAuthDataSchema, trueSchema } from '../contracts';
 
 export interface LoginPayload {
   email: string;
@@ -30,16 +30,41 @@ export interface TokenLoginPayload {
 }
 
 export const login = (client: ApiClient, payload: LoginPayload) =>
-  client.request<AuthData>({ url: '/passport/auth/login', method: 'POST', data: payload });
+  client.request({
+    url: '/passport/auth/login',
+    method: 'POST',
+    data: payload,
+    responseSchema: authDataSchema,
+  });
 
 export const register = (client: ApiClient, payload: RegisterPayload) =>
-  client.request<AuthData>({ url: '/passport/auth/register', method: 'POST', data: payload });
+  client.request({
+    url: '/passport/auth/register',
+    method: 'POST',
+    data: payload,
+    responseSchema: authDataSchema,
+  });
 
 export const forget = (client: ApiClient, payload: ForgetPayload) =>
-  client.request<true>({ url: '/passport/auth/forget', method: 'POST', data: payload });
+  client.request({
+    url: '/passport/auth/forget',
+    method: 'POST',
+    data: payload,
+    responseSchema: trueSchema,
+  });
 
 export const sendEmailVerify = (client: ApiClient, payload: SendEmailVerifyPayload) =>
-  client.request<true>({ url: '/passport/comm/sendEmailVerify', method: 'POST', data: payload });
+  client.request({
+    url: '/passport/comm/sendEmailVerify',
+    method: 'POST',
+    data: payload,
+    responseSchema: trueSchema,
+  });
 
 export const token2Login = (client: ApiClient, payload: TokenLoginPayload) =>
-  client.request<AuthData | null>({ url: '/passport/auth/token2Login', method: 'GET', params: payload });
+  client.request({
+    url: '/passport/auth/token2Login',
+    method: 'GET',
+    params: payload,
+    responseSchema: nullableAuthDataSchema,
+  });

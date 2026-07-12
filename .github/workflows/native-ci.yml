@@ -1,0 +1,199 @@
+name: Native CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/rust/**'
+      - 'frontend/**'
+      - 'Dockerfile.rust'
+      - 'Dockerfile.frontend'
+      - 'docker-compose.local.yml'
+      - 'Makefile'
+      - '.gitmodules'
+      - 'references/**'
+      - '.github/workflows/native-ci.yml'
+  pull_request:
+    paths:
+      - 'backend/rust/**'
+      - 'frontend/**'
+      - 'Dockerfile.rust'
+      - 'Dockerfile.frontend'
+      - 'docker-compose.local.yml'
+      - 'Makefile'
+      - '.gitmodules'
+      - 'references/**'
+      - '.github/workflows/native-ci.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust fmt, clippy, test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend/rust
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          submodules: recursive
+
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.97.0 --profile minimal --component clippy,rustfmt
+          rustup default 1.97.0
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace --locked
+
+      - name: Audit Rust dependencies
+        run: |
+          cargo install cargo-audit --version 0.22.2 --locked
+          cargo audit --deny warnings
+
+      - name: Enforce Rust dependency sources, licenses, and bans
+        run: |
+          cargo install cargo-deny --version 0.19.9 --locked
+          cargo deny check bans licenses sources
+
+      - name: Reject unused Rust dependencies
+        run: |
+          cargo install cargo-machete --version 0.9.2 --locked
+          cargo machete
+
+      - name: Reference route contract
+        env:
+          ROUTE_AUDIT_ADMIN_PATH: admin
+          ROUTE_AUDIT_REFERENCE_ROOT: ../../references/wyx2685-v2board
+          ROUTE_AUDIT_RUST_ROOT: .
+        run: cargo run --locked -p v2board-contract -- route-audit
+
+  frontend:
+    name: Frontend lint, typecheck, test, release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          package_json_file: frontend/package.json
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit modern frontend source isolation
+        run: pnpm audit:source
+
+      - name: Reject unused or undeclared dependencies
+        run: pnpm audit:deps
+
+      - name: Audit dependencies and registry signatures
+        run: |
+          pnpm audit --audit-level=low --lockfile-only
+          pnpm audit signatures
+
+      - name: Assert lockfile is deduplicated
+        run: pnpm dedupe --check
+
+      - name: Assert shared shadcn primitives stay synchronized
+        run: node scripts/ui-sync-audit.mjs
+
+      - name: Audit route, interaction, and viewport coverage
+        run: node scripts/parity-config-audit.mjs
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build immutable deploy release
+        run: pnpm build:deploy
+
+  integration:
+    name: Migrations, workers, deploy, browser behavior
+    needs: [rust, frontend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          submodules: recursive
+
+      - name: Start the production-shaped stack and apply real migrations
+        run: make deploy-smoke
+
+      - name: Reconcile scheduled worker side effects against MySQL and Redis
+        run: make rust-worker-reconcile
+
+      - name: Run desktop and mobile interaction plus accessibility contracts
+        env:
+          PARITY_WORKERS: '4'
+        run: make interaction-parity
+
+      - name: Print container logs after an integration failure
+        if: failure()
+        run: docker compose -p v2board -f docker-compose.local.yml logs --no-color --tail=300
+
+      - name: Stop integration containers
+        if: always()
+        run: make down
+
+  production-image:
+    name: Integrated production image
+    needs: [integration]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Assert retired runtimes stay isolated
+        run: make runtime-isolation-audit
+
+      - name: Build Rust + frontend non-root image
+        run: docker build --target production --tag v2board-native:ci --file Dockerfile.rust .
+
+      - name: Assert runtime identity and contents
+        run: |
+          test "$(docker image inspect --format '{{.Config.User}}' v2board-native:ci)" = "v2board:v2board"
+          docker run --rm --entrypoint /bin/sh v2board-native:ci -eu -c '
+            test -x /usr/local/bin/v2board-api
+            test -x /usr/local/bin/v2board-workers
+            test -f /opt/v2board/frontend/current/user/index.html
+            test -f /opt/v2board/frontend/current/admin/index.html
+            ! command -v php >/dev/null 2>&1
+            ! command -v composer >/dev/null 2>&1
+            test ! -e /reference
+            test ! -e /references
+            ! find /opt/v2board/frontend/current -type f \( \
+              -name "u""mi.js" -o -name "u""mi.css" -o \
+              -name "components"".chunk.css" -o -name "vendors"".async.js" -o \
+              -name "components"".async.js" \
+            \) | grep -q .
+          '

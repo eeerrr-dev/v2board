@@ -71,6 +71,8 @@ function makePlans() {
 const mocks = vi.hoisted(() => ({
   data: [] as ReturnType<typeof makePlans>,
   groups: [{ id: 2, name: '默认权限组' }],
+  groupsError: false,
+  groupsRefetch: vi.fn(),
   refetch: vi.fn(),
   saveMutateAsync: vi.fn(),
   dropMutate: vi.fn(),
@@ -87,9 +89,19 @@ vi.mock('@/lib/queries', () => ({
     refetch: mocks.refetch,
     data: mocks.data,
   }),
-  useServerGroups: () => ({ data: mocks.groups, isFetching: false, refetch: vi.fn() }),
+  useServerGroups: () => ({
+    data: mocks.groupsError ? undefined : mocks.groups,
+    isError: mocks.groupsError,
+    isFetching: false,
+    refetch: mocks.groupsRefetch,
+  }),
   useConfig: () => ({ data: { site: { currency_symbol: '¥' } }, refetch: vi.fn() }),
-  useSavePlanMutation: () => ({ mutateAsync: mocks.saveMutateAsync, isPending: false }),
+  useSavePlanMutation: () => ({
+    mutate: (payload: unknown, options?: { onSuccess?: (data: unknown) => void }) => {
+      void Promise.resolve(mocks.saveMutateAsync(payload)).then(options?.onSuccess);
+    },
+    isPending: false,
+  }),
   useDropPlanMutation: () => ({ mutate: mocks.dropMutate }),
   useUpdatePlanMutation: () => ({ mutate: mocks.updateMutate }),
   useSortPlansMutation: () => ({ mutate: mocks.sortMutate, isPending: false }),
@@ -101,6 +113,8 @@ describe('PlansPage', () => {
   beforeEach(() => {
     mocks.data = makePlans();
     mocks.groups = [{ id: 2, name: '默认权限组' }];
+    mocks.groupsError = false;
+    mocks.groupsRefetch.mockReset().mockResolvedValue(undefined);
     mocks.refetch.mockReset().mockResolvedValue(undefined);
     mocks.saveMutateAsync.mockReset().mockResolvedValue(undefined);
     mocks.dropMutate.mockReset();
@@ -127,6 +141,18 @@ describe('PlansPage', () => {
     expect(within(table).getAllByText('默认权限组').length).toBeGreaterThan(0);
   });
 
+  it('blocks plan editors and exposes retry when permission groups fail', async () => {
+    mocks.groupsError = true;
+    const user = userEvent.setup();
+    render(<PlansPage />);
+
+    expect(screen.getByText('权限组加载失败')).toBeInTheDocument();
+    expect(screen.getByTestId('plan-create')).toBeDisabled();
+    expect(screen.queryByTestId('plan-edit-1')).not.toBeInTheDocument();
+    await user.click(screen.getByTestId('error-state-retry'));
+    expect(mocks.groupsRefetch).toHaveBeenCalledOnce();
+  });
+
   it('creates a plan passing prices through verbatim, keeping untouched prices null', async () => {
     const user = userEvent.setup();
     render(<PlansPage />);
@@ -134,6 +160,9 @@ describe('PlansPage', () => {
     await user.click(screen.getByTestId('plan-create'));
     const sheet = await screen.findByTestId('plan-editor');
     await user.type(within(sheet).getByTestId('plan-name'), '新套餐');
+    await user.type(within(sheet).getByTestId('plan-transfer-enable'), '100');
+    await user.click(within(sheet).getByTestId('plan-group'));
+    await user.click(await screen.findByRole('option', { name: '默认权限组' }));
     // Decimal prices go through fireEvent to avoid number-input keystroke quirks.
     fireEvent.change(within(sheet).getByTestId('plan-price-month_price'), {
       target: { value: '12.34' },
@@ -150,7 +179,6 @@ describe('PlansPage', () => {
     expect(payload.year_price).toBeNull();
     expect(payload.onetime_price).toBeNull();
     expect(payload.reset_price).toBeNull();
-    await waitFor(() => expect(mocks.refetch).toHaveBeenCalled());
   });
 
   it('clears an emptied price back to null on edit', async () => {
@@ -177,6 +205,8 @@ describe('PlansPage', () => {
 
     await user.click(screen.getByTestId('plan-create'));
     const sheet = await screen.findByTestId('plan-editor');
+    await user.type(within(sheet).getByTestId('plan-name'), '新套餐');
+    await user.type(within(sheet).getByTestId('plan-transfer-enable'), '100');
     await user.click(within(sheet).getByTestId('plan-group'));
     await user.click(await screen.findByRole('option', { name: '默认权限组' }));
     await user.click(within(sheet).getByTestId('plan-submit'));
@@ -185,7 +215,28 @@ describe('PlansPage', () => {
     expect(mocks.saveMutateAsync.mock.calls[0]![0].group_id).toBe(2);
   });
 
-  it('reorders with sort.mutate over the new id order, then refetches', async () => {
+  it('blocks required and malformed values before calling the save mutation', async () => {
+    const user = userEvent.setup();
+    render(<PlansPage />);
+
+    await user.click(screen.getByTestId('plan-create'));
+    const sheet = await screen.findByTestId('plan-editor');
+    fireEvent.change(within(sheet).getByTestId('plan-transfer-enable'), {
+      target: { value: '1.5' },
+    });
+    fireEvent.change(within(sheet).getByTestId('plan-price-month_price'), {
+      target: { value: '900719925474099' },
+    });
+    await user.click(within(sheet).getByTestId('plan-submit'));
+
+    expect(mocks.saveMutateAsync).not.toHaveBeenCalled();
+    expect(await within(sheet).findByText('套餐名称不能为空')).toBeInTheDocument();
+    expect(within(sheet).getByText('权限组不能为空')).toBeInTheDocument();
+    expect(within(sheet).getByText('请输入整数')).toBeInTheDocument();
+    expect(within(sheet).getByText('请输入有效金额')).toBeInTheDocument();
+  });
+
+  it('reorders with sort.mutate over the new id order', async () => {
     const user = userEvent.setup();
     render(<PlansPage />);
 
@@ -193,10 +244,8 @@ describe('PlansPage', () => {
     await user.click(within(screen.getByTestId('plans-table')).getAllByLabelText('下移')[0]!);
     expect(mocks.sortMutate).toHaveBeenCalledWith(
       [2, 1],
-      expect.objectContaining({ onSuccess: expect.any(Function) }),
+      expect.objectContaining({ onSettled: expect.any(Function) }),
     );
-    mocks.sortMutate.mock.calls[0]![1].onSuccess();
-    expect(mocks.refetch).toHaveBeenCalled();
   });
 
   it('toggles the show and renew flags by id with the inverted value', async () => {
@@ -205,19 +254,11 @@ describe('PlansPage', () => {
 
     // show is 1 → toggles to 0.
     await user.click(screen.getByLabelText('切换「基础套餐」销售状态'));
-    expect(mocks.updateMutate).toHaveBeenCalledWith(
-      { id: 1, key: 'show', value: 0 },
-      expect.objectContaining({ onSuccess: expect.any(Function) }),
-    );
-    mocks.updateMutate.mock.calls[0]![1].onSuccess();
-    expect(mocks.refetch).toHaveBeenCalled();
+    expect(mocks.updateMutate).toHaveBeenCalledWith({ id: 1, key: 'show', value: 0 });
 
     // renew is 0 → toggles to 1.
     await user.click(screen.getByLabelText('切换「基础套餐」续费'));
-    expect(mocks.updateMutate).toHaveBeenCalledWith(
-      { id: 1, key: 'renew', value: 1 },
-      expect.objectContaining({ onSuccess: expect.any(Function) }),
-    );
+    expect(mocks.updateMutate).toHaveBeenCalledWith({ id: 1, key: 'renew', value: 1 });
   });
 
   it('drops a plan by id only after the confirm dialog resolves true', async () => {
@@ -226,14 +267,7 @@ describe('PlansPage', () => {
 
     await user.click(screen.getByTestId('plan-delete-1'));
     await waitFor(() => expect(mocks.confirm).toHaveBeenCalled());
-    await waitFor(() =>
-      expect(mocks.dropMutate).toHaveBeenCalledWith(
-        1,
-        expect.objectContaining({ onSuccess: expect.any(Function) }),
-      ),
-    );
-    mocks.dropMutate.mock.calls[0]![1].onSuccess();
-    expect(mocks.refetch).toHaveBeenCalled();
+    await waitFor(() => expect(mocks.dropMutate).toHaveBeenCalledWith(1));
   });
 
   it('does not drop a plan when the confirm dialog is dismissed', async () => {

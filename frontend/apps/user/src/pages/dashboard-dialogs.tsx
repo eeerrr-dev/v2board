@@ -8,9 +8,11 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/shadcn-dialog';
+} from '@/components/ui/dialog';
 import {
   AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
@@ -19,11 +21,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { DashboardSubscribeMenu } from './dashboard-subscribe-menu';
-import {
-  useNewPeriodMutation,
-  useSaveOrderMutation,
-  useSubscribe,
-} from '@/lib/queries';
+import { useNewPeriodMutation, useSaveOrderMutation, useSubscribe } from '@/lib/queries';
 import { toast } from '@/lib/toast';
 
 export type DashboardConfirmAction = 'reset-package' | 'new-period' | null;
@@ -41,33 +39,43 @@ export function DashboardConfirmDialog({ action, onClose }: DashboardConfirmDial
   const saveOrder = useSaveOrderMutation();
   const sub = subscribe.data;
 
-  const confirmResetPackage = async () => {
+  const confirmResetPackage = () => {
     if (!sub) return;
-    const tradeNo = await saveOrder.mutateAsync({
-      period: 'reset_price',
-      plan_id: sub.plan_id as number,
-    });
-    onClose();
-    navigate(`/order/${tradeNo}`);
+    saveOrder.mutate(
+      {
+        period: 'reset_price',
+        plan_id: sub.plan_id as number,
+      },
+      {
+        onSuccess: (tradeNo) => {
+          onClose();
+          navigate(`/order/${tradeNo}`);
+        },
+      },
+    );
   };
 
-  const confirmNewPeriod = async () => {
-    await newPeriod.mutateAsync();
-    await subscribe.refetch();
-    toast.success(t('dashboard.new_period_success'));
-    onClose();
-    navigate('/dashboard');
+  const confirmNewPeriod = () => {
+    newPeriod.mutate(undefined, {
+      onSuccess: () => {
+        void subscribe.refetch().then(() => {
+          toast.success(t($ => $.dashboard.new_period_success));
+          onClose();
+          navigate('/dashboard');
+        });
+      },
+    });
   };
 
   const confirmLoading = saveOrder.isPending || newPeriod.isPending;
   const confirmTitle =
     action === 'reset-package'
-      ? t('dashboard.reset_package_confirm_title')
-      : t('dashboard.new_period_confirm_title');
+      ? t($ => $.dashboard.reset_package_confirm_title)
+      : t($ => $.dashboard.new_period_confirm_title);
   const confirmContent =
     action === 'reset-package'
-      ? t('dashboard.reset_package_confirm_content')
-      : t('dashboard.new_period_confirm_content');
+      ? t($ => $.dashboard.reset_package_confirm_content)
+      : t($ => $.dashboard.new_period_confirm_content);
 
   return (
     <AlertDialog
@@ -82,29 +90,25 @@ export function DashboardConfirmDialog({ action, onClose }: DashboardConfirmDial
           <AlertDialogDescription>{confirmContent}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={confirmLoading}
-            onClick={onClose}
-          >
-            {t('common.cancel')}
-          </Button>
-          <Button
-            type="button"
-            data-testid="dashboard-confirm-primary"
-            loading={confirmLoading}
-            onClick={() => {
-              // Failures are surfaced globally by the API client's onError toast;
-              // swallow the rejection here so it doesn't become an unhandled
-              // promise rejection.
-              (action === 'reset-package' ? confirmResetPackage() : confirmNewPeriod()).catch(
-                () => {},
-              );
-            }}
-          >
-            {t('common.confirm')}
-          </Button>
+          <AlertDialogCancel asChild>
+            <Button type="button" variant="outline" disabled={confirmLoading}>
+              {t($ => $.common.cancel)}
+            </Button>
+          </AlertDialogCancel>
+          <AlertDialogAction asChild>
+            <Button
+              type="button"
+              data-testid="dashboard-confirm-primary"
+              loading={confirmLoading}
+              onClick={(event) => {
+                event.preventDefault();
+                if (action === 'reset-package') confirmResetPackage();
+                else confirmNewPeriod();
+              }}
+            >
+              {t($ => $.common.confirm)}
+            </Button>
+          </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
@@ -134,7 +138,7 @@ export function DashboardSubscribeDialog({
           aria-describedby={undefined}
         >
           <DialogHeader className="px-5 pt-5">
-            <DialogTitle>{t('dashboard.shortcut_one_click')}</DialogTitle>
+            <DialogTitle>{t($ => $.dashboard.shortcut_one_click)}</DialogTitle>
           </DialogHeader>
           <DashboardSubscribeMenu subscribeUrl={subscribeUrl} onOpenQr={() => setQrOpen(true)} />
         </DialogContent>
@@ -143,14 +147,14 @@ export function DashboardSubscribeDialog({
       <Dialog open={qrOpen} onOpenChange={setQrOpen}>
         <DialogContent data-testid="dashboard-dialog" className="sm:max-w-xs">
           <DialogHeader>
-            <DialogTitle>{t('dashboard.scan_qrcode_subscribe')}</DialogTitle>
-            <DialogDescription>{t('dashboard.qrcode_client_tip')}</DialogDescription>
+            <DialogTitle>{t($ => $.dashboard.scan_qrcode_subscribe)}</DialogTitle>
+            <DialogDescription>{t($ => $.dashboard.qrcode_client_tip)}</DialogDescription>
           </DialogHeader>
           <div
             className="flex justify-center"
             data-testid="dashboard-subscribe-qrcode-image"
             role="img"
-            aria-label={t('dashboard.scan_qrcode_subscribe')}
+            aria-label={t($ => $.dashboard.scan_qrcode_subscribe)}
           >
             <QRCodeSVG value={subscribeUrl} />
           </div>

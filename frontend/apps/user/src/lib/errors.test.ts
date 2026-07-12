@@ -1,14 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { createI18n } from '@v2board/i18n/testing';
 import { getCurrentLocale, i18nGet } from './errors';
 
 const originalNavigatorLanguage = window.navigator.language;
 
-describe('legacy error locale lookup', () => {
+describe('error locale lookup', () => {
   beforeEach(() => {
+    createI18n();
     window.localStorage.clear();
     window.g_lang = undefined;
     window.g_langSeparator = undefined;
-    window.settings = undefined;
   });
 
   afterEach(() => {
@@ -28,7 +29,7 @@ describe('legacy error locale lookup', () => {
     expect(i18nGet('请求失败')).toBe('请求失败');
   });
 
-  it('prefers legacy storage and then g_lang', () => {
+  it('prefers persisted storage and then g_lang', () => {
     window.g_lang = 'ja-JP';
     expect(getCurrentLocale()).toBe('ja-JP');
 
@@ -36,17 +37,13 @@ describe('legacy error locale lookup', () => {
     expect(getCurrentLocale()).toBe('en-US');
   });
 
-  it('uses bundled legacy dictionaries for the resolved locale', () => {
+  it('uses the complete locale resources for localized errors', () => {
     window.g_lang = 'en-US';
-    window.settings = {
-      i18n: [] as unknown as string[] & Record<string, Record<string, string>>,
-    };
-    window.settings.i18n!['en-US'] = { 请求失败: 'Legacy failed' };
+    expect(i18nGet('请求失败')).toBe('Request failed');
 
-    expect(i18nGet('请求失败')).toBe('Legacy failed');
-  });
+    window.g_lang = 'ja-JP';
+    expect(i18nGet('请求失败')).toBe('Request failed');
 
-  it('uses localized fallback dictionaries when the bundled assets are absent', () => {
     window.g_lang = 'zh-TW';
     expect(i18nGet('请求失败')).toBe('請求失敗');
 

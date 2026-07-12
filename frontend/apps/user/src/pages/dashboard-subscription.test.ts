@@ -1,16 +1,35 @@
 import { describe, expect, it } from 'vitest';
-import type { Plan, SubscribeInfo } from '@v2board/types';
 import { useDashboardSubscription } from './dashboard-subscription';
 
 const FUTURE = 9_999_999_999;
+type Subscribe = NonNullable<Parameters<typeof useDashboardSubscription>[0]>;
+type Plan = NonNullable<Subscribe['plan']>;
 
-function makeSub(overrides: Partial<SubscribeInfo> = {}): SubscribeInfo {
-  const plan = {
+function makeSub(overrides: { u?: number; d?: number } = {}): Subscribe {
+  const plan: Plan = {
     id: 1,
+    group_id: 1,
+    transfer_enable: 100_000,
+    device_limit: null,
+    speed_limit: null,
+    reset_traffic_method: null,
+    name: 'Plan',
+    sort: null,
     reset_price: 100,
     renew: 1,
     show: 1,
-  } as Plan;
+    content: null,
+    month_price: 1_000,
+    quarter_price: null,
+    half_year_price: null,
+    year_price: null,
+    two_year_price: null,
+    three_year_price: null,
+    onetime_price: null,
+    capacity_limit: null,
+    created_at: 0,
+    updated_at: 0,
+  };
   return {
     plan_id: 1,
     token: 't',

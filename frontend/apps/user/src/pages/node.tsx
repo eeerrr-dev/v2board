@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router';
+import { Link } from 'react-router';
 import { Server } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -16,10 +16,13 @@ import { useTableScrollPosition } from '@/lib/use-table-scroll-position';
 
 export default function NodePage() {
   const { t } = useTranslation();
-  const navigate = useNavigate();
-  // Old componentDidMount dispatches user/getSubscribe before server/fetch.
+  // Subscription state owns the empty-state route, so it must resolve before
+  // the node request starts; a failed subscription request cannot mean "no plan".
   const subscribe = useSubscribe({ refetchOnMount: 'always' });
-  const serversQuery = useServers({ refetchOnMount: 'always' });
+  const serversQuery = useServers({
+    enabled: subscribe.isSuccess,
+    refetchOnMount: 'always',
+  });
   // Key the full-page spinner on isPending (no data yet), not isFetching, so
   // cached rows keep rendering while the refetchOnMount('always') background
   // refetch runs instead of blanking the page on every revisit.
@@ -34,15 +37,15 @@ export default function NodePage() {
       id: 'name',
       accessorKey: 'name',
       meta: { className: 'font-medium text-foreground' },
-      header: () => <span>{t('node.simple_name')}</span>,
+      header: () => <span>{t($ => $.node.simple_name)}</span>,
       cell: ({ row }) => row.original.name,
     },
     {
       id: 'status',
       meta: { align: 'center' },
       header: () => (
-        <HeaderTooltip className="justify-center" title={t('node.status_tip')}>
-          {t('node.status')}
+        <HeaderTooltip className="justify-center" title={t($ => $.node.status_tip)}>
+          {t($ => $.node.status)}
         </HeaderTooltip>
       ),
       cell: ({ row }) => {
@@ -53,7 +56,7 @@ export default function NodePage() {
             showDot
             aria-label={online ? 'online' : 'offline'}
           >
-            {online ? t('node.online') : t('node.offline')}
+            {online ? t($ => $.node.online) : t($ => $.node.offline)}
           </StatusBadge>
         );
       },
@@ -62,15 +65,15 @@ export default function NodePage() {
       id: 'rate',
       meta: { align: 'center' },
       header: () => (
-        <HeaderTooltip className="justify-center" title={t('node.rate_tip')}>
-          {t('node.rate')}
+        <HeaderTooltip className="justify-center" title={t($ => $.node.rate_tip)}>
+          {t($ => $.node.rate)}
         </HeaderTooltip>
       ),
       cell: ({ row }) => <StatusBadge>{String(row.original.rate)} x</StatusBadge>,
     },
     {
       id: 'tags',
-      header: () => <span>{t('node.tags')}</span>,
+      header: () => <span>{t($ => $.node.tags)}</span>,
       cell: ({ row }) =>
         row.original.tags?.length ? (
           <div className="flex flex-wrap gap-1.5">
@@ -88,7 +91,7 @@ export default function NodePage() {
 
   const to = subscribe.data?.plan_id ? `/plan/${subscribe.data.plan_id}` : '/plan';
 
-  if (isPending) {
+  if (subscribe.isPending || (subscribe.isSuccess && isPending)) {
     return (
       <PageShell data-testid="node-page">
         <div
@@ -97,8 +100,19 @@ export default function NodePage() {
           role="status"
         >
           <Spinner className="size-5 text-muted-foreground" />
-          <span className="sr-only">{t('common.loading')}</span>
+          <span className="sr-only">{t($ => $.common.loading)}</span>
         </div>
+      </PageShell>
+    );
+  }
+
+  if (subscribe.isError) {
+    return (
+      <PageShell data-testid="node-page">
+        <ErrorState
+          onRetry={() => void subscribe.refetch()}
+          data-testid="node-subscribe-error"
+        />
       </PageShell>
     );
   }
@@ -121,14 +135,16 @@ export default function NodePage() {
           <Server className="size-4" />
           <AlertDescription>
             <span className="flex flex-wrap items-center gap-1">
-              <span>{t('node.no_available')}</span>
+              <span>{t($ => $.node.no_available)}</span>
               <Button
+                asChild
                 data-testid="node-empty-action"
                 variant="link"
                 className="h-auto p-0 text-sm"
-                onClick={() => navigate(to)}
               >
-                {subscribe.data?.plan_id ? t('node.renew') : t('node.subscribe')}
+                <Link to={to}>
+                  {subscribe.data?.plan_id ? t($ => $.node.renew) : t($ => $.node.subscribe)}
+                </Link>
               </Button>
             </span>
           </AlertDescription>
@@ -154,7 +170,7 @@ export default function NodePage() {
                 'data-testid': 'service-table-scroll',
                 tabIndex: 0,
                 role: 'region',
-                'aria-label': t('nav.node'),
+                'aria-label': t($ => $.nav.node),
                 onScroll,
               }}
               virtualizer={{ enabled: servers.length > VIRTUALIZE_MIN_ROWS }}

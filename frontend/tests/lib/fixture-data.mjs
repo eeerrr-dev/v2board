@@ -43,9 +43,12 @@ export const subscribeFixture = {
   email: 'visual@example.com',
   expired_at: 4_102_488_000,
   plan: {
+    capacity_limit: null,
     content: '',
     created_at: 1_700_000_000,
+    device_limit: 5,
     group_id: 1,
+    half_year_price: null,
     id: 1,
     month_price: 990,
     name: 'Pro',
@@ -53,9 +56,13 @@ export const subscribeFixture = {
     quarter_price: 2_490,
     renew: 1,
     reset_price: 100,
+    reset_traffic_method: 0,
     show: 1,
     sort: 1,
+    speed_limit: null,
+    three_year_price: null,
     transfer_enable: 1000,
+    two_year_price: null,
     updated_at: 1_700_000_000,
     year_price: 9_900,
   },
@@ -386,6 +393,7 @@ export const inviteFixture = {
       code: 'INVITE2026',
       created_at: 1_700_000_000,
       id: 1,
+      pv: 4,
       status: 0,
       updated_at: 1_700_000_000,
       user_id: 1,
@@ -394,12 +402,13 @@ export const inviteFixture = {
       code: 'WELCOME',
       created_at: 1_700_086_400,
       id: 2,
+      pv: 2,
       status: 0,
       updated_at: 1_700_086_400,
       user_id: 1,
     },
   ],
-  stat: [7, 23_450, 6_780, 12],
+  stat: [7, 23_450, 6_780, 12, userInfoFixture.commission_balance],
 };
 export const inviteDetailFixtures = [
   {
@@ -435,6 +444,7 @@ export const ticketFixtures = [
     status: 0,
     subject: 'Need help',
     updated_at: 1_700_000_060,
+    user_id: 1,
   },
   {
     created_at: 1_700_086_400,
@@ -445,6 +455,7 @@ export const ticketFixtures = [
     status: 0,
     subject: 'Waiting reply',
     updated_at: 1_700_086_460,
+    user_id: 1,
   },
   {
     created_at: 1_700_172_800,
@@ -455,6 +466,7 @@ export const ticketFixtures = [
     status: 1,
     subject: 'Closed ticket',
     updated_at: 1_700_172_860,
+    user_id: 1,
   },
 ];
 export const ticketDetailFixture = {
@@ -462,18 +474,30 @@ export const ticketDetailFixture = {
   message: [
     {
       created_at: 1_700_000_120,
-      is_me: 0,
+      id: 1,
+      is_me: false,
       message: 'Hello, how can we help?',
+      ticket_id: 7,
+      updated_at: 1_700_000_120,
+      user_id: 2,
     },
     {
       created_at: 1_700_000_240,
-      is_me: 1,
+      id: 2,
+      is_me: true,
       message: 'I need help with my subscription.',
+      ticket_id: 7,
+      updated_at: 1_700_000_240,
+      user_id: 1,
     },
     {
       created_at: 1_700_000_360,
-      is_me: 0,
+      id: 3,
+      is_me: false,
       message: 'We checked it and the subscription is active now.',
+      ticket_id: 7,
+      updated_at: 1_700_000_360,
+      user_id: 2,
     },
   ],
 };
@@ -583,47 +607,116 @@ export const userCommConfigFixture = {
   currency: 'CNY',
   currency_symbol: '¥',
   is_telegram: 0,
-  stripe_pk: null,
   telegram_discuss_link: null,
   withdraw_close: 0,
   withdraw_methods: ['Alipay', 'USDT'],
 };
 export const adminConfigFixture = {
+  ticket: {
+    ticket_status: 0,
+  },
+  deposit: {
+    deposit_bounus: ['50:18', '100:38'],
+  },
+  invite: {
+    invite_force: 1,
+    invite_commission: 10,
+    invite_gen_limit: 5,
+    invite_never_expire: 0,
+    commission_first_time_enable: 1,
+    commission_auto_check_enable: 1,
+    commission_withdraw_limit: 100,
+    commission_withdraw_method: ['支付宝', 'USDT'],
+    withdraw_close_enable: 0,
+    commission_distribution_enable: 1,
+    commission_distribution_l1: 50,
+    commission_distribution_l2: 30,
+    commission_distribution_l3: 20,
+  },
   site: {
+    logo: 'https://example.test/logo.png',
+    force_https: 1,
+    stop_register: 0,
+    app_name: 'V2Board',
+    app_description: 'V2Board is best!',
+    app_url: 'https://example.test',
+    subscribe_url: 'https://sub.example.test',
+    subscribe_path: '/api/v1/client/subscribe',
+    try_out_plan_id: 1,
+    try_out_hour: 24,
+    tos_url: 'https://example.test/tos',
     currency: 'CNY',
     currency_symbol: '¥',
   },
+  subscribe: {
+    plan_change_enable: 1,
+    reset_traffic_method: 0,
+    surplus_enable: 1,
+    allow_new_period: 0,
+    new_order_event_id: 1,
+    renew_order_event_id: 0,
+    change_order_event_id: 1,
+    show_info_to_server_enable: 1,
+    show_subscribe_method: 2,
+    show_subscribe_expire: 30,
+  },
+  frontend: {
+    frontend_theme_color: 'default',
+    frontend_background_url: null,
+    frontend_custom_html: null,
+  },
+  server: {
+    server_api_url: 'https://node.example.test',
+    server_token: 'token',
+    server_pull_interval: 60,
+    server_push_interval: 60,
+    server_node_report_min_traffic: 0,
+    server_device_online_min_traffic: 0,
+    device_limit_mode: 0,
+  },
+  email: {
+    email_template: 'default',
+    email_host: 'smtp.example.test',
+    email_port: '465',
+    email_username: 'mailer',
+    email_password: 'password',
+    email_encryption: 'ssl',
+    email_from_address: 'noreply@example.test',
+  },
+  telegram: {
+    telegram_bot_enable: 1,
+    telegram_bot_token: 'bot-token',
+    telegram_discuss_link: 'https://t.me/example',
+  },
+  app: {
+    windows_version: '1.0.0',
+    windows_download_url: 'https://example.test/app.exe',
+    macos_version: '1.0.0',
+    macos_download_url: 'https://example.test/app.dmg',
+    android_version: '1.0.0',
+    android_download_url: 'https://example.test/app.apk',
+  },
+  safe: {
+    email_verify: 1,
+    safe_mode_enable: 1,
+    secure_path: 'admin-path',
+    email_whitelist_enable: 1,
+    email_whitelist_suffix: ['qq.com', 'gmail.com'],
+    email_gmail_limit_enable: 1,
+    recaptcha_enable: 1,
+    recaptcha_key: 'secret',
+    recaptcha_site_key: 'site',
+    register_limit_by_ip_enable: 1,
+    register_limit_count: 3,
+    register_limit_expire: 60,
+    password_limit_enable: 1,
+    password_limit_count: 5,
+    password_limit_expire: 60,
+  },
 };
 export const adminEmailTemplateFixtures = ['default', 'classic'];
-export const adminThemeTemplateFixtures = {
-  default: {
-    name: 'Default',
-  },
-};
-export const adminThemeFixtures = {
-  active: 'default',
-  themes: {
-    default: {
-      configs: [
-        {
-          field_name: 'homepage',
-          field_type: 'input',
-          label: '首页标题',
-          placeholder: '请输入首页标题',
-        },
-      ],
-      description: '默认主题描述',
-      name: '默认主题',
-    },
-    classic: {
-      configs: [],
-      description: '经典主题描述',
-      name: '经典主题',
-    },
-  },
-};
 export const adminStatFixture = {
-  commission_last_month_payout: null,
+  commission_last_month_payout: 0,
   commission_month_payout: 0,
   commission_pending_total: 1,
   day_income: 1,
@@ -925,7 +1018,7 @@ export const adminTicketFixtures = [
     user_id: 2,
   },
 ];
-export const adminTicketDetailFixture = { ...adminTicketFixtures[0], user_id: null };
+export const adminTicketDetailFixture = { ...adminTicketFixtures[0] };
 export const longDataText =
   'Very Long Legacy Parity Name With Many Segments 2026 Enterprise International Edge Case';
 export const longPlanFixtures = Array.from({ length: 6 }, (_, index) => ({
@@ -976,8 +1069,12 @@ export const longTicketDetailFixture = {
   subject: `${longDataText} Ticket Detail Subject`,
   message: Array.from({ length: 10 }, (_, index) => ({
     created_at: 1_700_000_000 + index * 600,
-    is_me: index % 2,
+    id: 100 + index,
+    is_me: index % 2 === 1,
     message: `${longDataText} message bubble ${index + 1}. This message intentionally contains a long sentence to verify legacy wrapping and scroll behavior.`,
+    ticket_id: ticketDetailFixture.id,
+    updated_at: 1_700_000_000 + index * 600,
+    user_id: index % 2 === 1 ? ticketDetailFixture.user_id : 2,
   })),
 };
 export const longAdminServerNodeFixtures = Array.from({ length: 12 }, (_, index) => ({

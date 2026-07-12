@@ -18,8 +18,7 @@ const alertVariants = cva(
 );
 
 export interface AlertProps
-  extends HTMLAttributes<HTMLDivElement>,
-    VariantProps<typeof alertVariants> {
+  extends HTMLAttributes<HTMLDivElement>, VariantProps<typeof alertVariants> {
   ref?: Ref<HTMLDivElement>;
 }
 

@@ -11,7 +11,7 @@ import { WalletCard } from './profile/wallet-card';
 // The account surface is a grid of self-contained shadcn cards. Each card owns
 // its own queries, mutations, form, and dialog (see ./profile/*), so this page
 // is only the layout. Every Tier-1 contract lives inside a card: the deposit
-// Math.round(amount*100) payload (WalletCard), the 0/1 preference toggles
+// exact major-unit-to-cents deposit boundary (WalletCard/api-client), the 0/1 preference toggles
 // (WalletCard/NotificationsCard via usePreferenceToggle), the /login redirect
 // after a password change (PasswordCard), the never-fetch-on-mount subscribe
 // query plus its explicit refetch after a Telegram unbind (TelegramBindCard),

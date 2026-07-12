@@ -1,8 +1,11 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import type { ComponentProps } from 'react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { user } from '@v2board/api-client';
+import { setAdminRuntimeConfig } from '@/test/runtime-config';
+import { adminSessionKeys } from '@/lib/session-queries';
 import { AdminLayout } from './admin-layout';
 
 // The admin shell is a redesigned shadcn island (SidebarProvider + token
@@ -19,6 +22,26 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('react-router', () => ({
+  Link: ({
+    to,
+    onClick,
+    children,
+    ...rest
+  }: { to: string } & Omit<ComponentProps<'a'>, 'href'>) => (
+    <a
+      href={to}
+      onClick={(event) => {
+        onClick?.(event);
+        if (!event.defaultPrevented) {
+          event.preventDefault();
+          mocks.navigate(to);
+        }
+      }}
+      {...rest}
+    >
+      {children}
+    </a>
+  ),
   Outlet: () => <div data-outlet="true" />,
   useLocation: () => mocks.location,
   useNavigate: () => mocks.navigate,
@@ -28,8 +51,11 @@ vi.mock('@v2board/api-client', () => ({ user: { info: vi.fn() } }));
 vi.mock('@/lib/api', () => ({ apiClient: {} }));
 vi.mock('@/lib/auth', () => ({ logout: mocks.logout }));
 
-function renderShell() {
+function renderShell({ preloadUserInfo = true }: { preloadUserInfo?: boolean } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  if (preloadUserInfo) {
+    client.setQueryData(adminSessionKeys.userInfo, { email: 'admin@example.com' });
+  }
   return render(
     <QueryClientProvider client={client}>
       <AdminLayout />
@@ -48,20 +74,33 @@ describe('AdminLayout', () => {
     >);
     localStorage.clear();
     document.cookie = 'dark_mode=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+    document.cookie = 'sidebar_state=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
     document.documentElement.className = '';
-    window.settings = { title: 'V2Board', secure_path: 'admin' };
+    setAdminRuntimeConfig({ title: 'V2Board', secure_path: 'admin' });
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      writable: true,
+      value: 1024,
+    });
     Object.defineProperty(window, 'scrollTo', { configurable: true, value: vi.fn() });
   });
 
   afterEach(() => {
-    window.settings = undefined;
+    setAdminRuntimeConfig();
     document.documentElement.className = '';
   });
 
   it('renders the grouped admin navigation without any legacy OneUI shell markup', () => {
     renderShell();
 
-    for (const label of ['系统配置', '支付配置', '节点管理', '礼品卡管理', '队列监控', '知识库管理']) {
+    for (const label of [
+      '系统配置',
+      '支付配置',
+      '节点管理',
+      '礼品卡管理',
+      '队列监控',
+      '知识库管理',
+    ]) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
     expect(document.querySelector('.nav-main-link')).toBeNull();
@@ -74,7 +113,9 @@ describe('AdminLayout', () => {
     mocks.location = { pathname: '/user' };
     renderShell();
 
-    expect(screen.getByRole('button', { name: '用户管理' })).toHaveAttribute('data-active', 'true');
+    const active = screen.getByRole('link', { name: '用户管理' });
+    expect(active).toHaveAttribute('data-active', 'true');
+    expect(active).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('用户管理');
   });
 
@@ -85,28 +126,74 @@ describe('AdminLayout', () => {
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('');
   });
 
-  it('navigates to the target route from a sidebar item', async () => {
+  it('renders real links for the brand and sidebar routes', async () => {
     const u = userEvent.setup();
     renderShell();
 
-    await u.click(screen.getByRole('button', { name: '节点管理' }));
+    expect(screen.getByRole('link', { name: 'V2Board' })).toHaveAttribute('href', '/dashboard');
+    const node = screen.getByRole('link', { name: '节点管理' });
+    expect(node).toHaveAttribute('href', '/server/manage');
+    await u.click(node);
     expect(mocks.navigate).toHaveBeenCalledWith('/server/manage');
   });
 
-  it('requests user info on mount and shows the email in the account footer', async () => {
+  it('closes the mobile navigation sheet after following a link', async () => {
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      writable: true,
+      value: 500,
+    });
+    const u = userEvent.setup();
+    const { container } = renderShell();
+    const sheet = () =>
+      document.body.querySelector<HTMLElement>('[data-slot="sidebar"][data-mobile="true"]');
+
+    expect(sheet()).toBeNull();
+    await u.click(
+      container.querySelector<HTMLButtonElement>('#page-header [data-sidebar="trigger"]')!,
+    );
+    expect(sheet()).not.toBeNull();
+
+    const node = within(sheet()!).getByRole('link', { name: '节点管理' });
+    expect(node).toHaveAttribute('href', '/server/manage');
+    await u.click(node);
+
+    expect(mocks.navigate).toHaveBeenCalledWith('/server/manage');
+    expect(sheet()).toBeNull();
+  });
+
+  it('reads the loader-owned identity without issuing a duplicate shell request', () => {
     renderShell();
 
-    await waitFor(() => expect(user.info).toHaveBeenCalledTimes(1));
-    await waitFor(() =>
-      expect(screen.getByTestId('admin-avatar-trigger').textContent).toContain(
-        'admin@example.com',
-      ),
+    expect(screen.getByTestId('admin-avatar-trigger')).toHaveTextContent('admin@example.com');
+    expect(user.info).not.toHaveBeenCalled();
+  });
+
+  it('shows the suspense fallback while a defensive identity read is pending', () => {
+    vi.mocked(user.info).mockReturnValue(
+      new Promise<Awaited<ReturnType<typeof user.info>>>(() => {}),
     );
+
+    renderShell({ preloadUserInfo: false });
+
+    expect(screen.getByRole('status')).toHaveTextContent('正在加载');
+    expect(screen.queryByRole('navigation', { name: '主导航' })).not.toBeInTheDocument();
   });
 
   it('scrolls to the top on mount', () => {
     renderShell();
     expect(window.scrollTo).toHaveBeenCalledWith(0, 0);
+  });
+
+  it('toggles the desktop sidebar through the global keyboard shortcut', () => {
+    renderShell();
+    const rail = document.querySelector('[data-slot="sidebar"]');
+    expect(rail).toHaveAttribute('data-state', 'expanded');
+
+    fireEvent.keyDown(window, { key: 'b', ctrlKey: true });
+
+    expect(rail).toHaveAttribute('data-state', 'collapsed');
+    expect(document.cookie).toContain('sidebar_state=false');
   });
 
   it('logs out and returns to the login route from the account menu', async () => {

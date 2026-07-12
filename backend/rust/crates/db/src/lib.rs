@@ -11,4 +11,7 @@ pub mod stat;
 pub mod ticket;
 pub mod user;
 
-pub use pool::{DbPool, connect_mysql};
+pub use pool::{
+    DbInitError, DbPool, DbPoolConfig, connect_mysql, connect_mysql_with_config, migrate_mysql,
+    migrations_current,
+};

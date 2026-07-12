@@ -1,15 +1,8 @@
-import {
-  Suspense,
-  useEffect,
-  useState,
-  type ComponentType,
-  type SVGProps,
-} from 'react';
+import { Suspense, useEffect, useState, type ComponentType, type SVGProps } from 'react';
 import { Link, useLocation, useNavigation } from 'react-router';
 import { useSuspenseQuery } from '@tanstack/react-query';
-import type { ParseKeys } from 'i18next';
+import type { SelectorParam } from 'i18next';
 import { useTranslation } from 'react-i18next';
-import { getLegacyLocaleClassName } from '@v2board/i18n';
 import {
   Activity,
   BookOpen,
@@ -26,15 +19,14 @@ import {
 } from 'lucide-react';
 import { NavUser } from './nav-user';
 import { userQueryOptions } from '@/lib/queries';
-import { cn } from '@/lib/cn';
 import {
   setThemePreference,
   useDarkMode,
   useThemePreference,
   type ThemePreference,
 } from '@/lib/dark-mode';
-import { getLegacyTitle } from '@/lib/legacy-settings';
-import { getLegacyCookie } from '@/lib/legacy-cookie';
+import { getSiteTitle } from '@/lib/runtime-config';
+import { readCookie } from '@v2board/i18n';
 import { RouteBoundaryOutlet } from '@/components/route-error-boundary';
 import { Button } from '@/components/ui/button';
 import {
@@ -67,12 +59,13 @@ type ShellIcon = ComponentType<SVGProps<SVGSVGElement>>;
 
 interface NavItem {
   to: string;
-  labelKey: ParseKeys;
+  labelKey: SelectorParam;
   icon: ShellIcon;
 }
 
 interface NavGroup {
-  labelKey?: ParseKeys;
+  id: string;
+  labelKey?: SelectorParam;
   items: NavItem[];
 }
 
@@ -83,38 +76,42 @@ interface AppLayoutProps {
 
 const NAV: NavGroup[] = [
   {
+    id: 'primary',
     items: [
-      { to: '/dashboard', labelKey: 'nav.dashboard', icon: Gauge },
-      { to: '/knowledge', labelKey: 'nav.knowledge', icon: BookOpen },
+      { to: '/dashboard', labelKey: $ => $.nav.dashboard, icon: Gauge },
+      { to: '/knowledge', labelKey: $ => $.nav.knowledge, icon: BookOpen },
     ],
   },
   {
-    labelKey: 'nav.group_subscribe',
+    id: 'subscribe',
+    labelKey: $ => $.nav.group_subscribe,
     items: [
-      { to: '/plan', labelKey: 'nav.buy_subscribe', icon: ShoppingBag },
-      { to: '/node', labelKey: 'nav.node', icon: Server },
+      { to: '/plan', labelKey: $ => $.nav.buy_subscribe, icon: ShoppingBag },
+      { to: '/node', labelKey: $ => $.nav.node, icon: Server },
     ],
   },
   {
-    labelKey: 'nav.group_finance',
+    id: 'finance',
+    labelKey: $ => $.nav.group_finance,
     items: [
-      { to: '/order', labelKey: 'nav.orders', icon: ReceiptText },
-      { to: '/invite', labelKey: 'nav.invite', icon: UsersRound },
+      { to: '/order', labelKey: $ => $.nav.orders, icon: ReceiptText },
+      { to: '/invite', labelKey: $ => $.nav.invite, icon: UsersRound },
     ],
   },
   {
-    labelKey: 'nav.group_user',
+    id: 'user',
+    labelKey: $ => $.nav.group_user,
     items: [
-      { to: '/profile', labelKey: 'nav.profile', icon: UserRound },
-      { to: '/ticket', labelKey: 'nav.tickets', icon: Headphones },
-      { to: '/traffic', labelKey: 'nav.traffic', icon: Activity },
+      { to: '/profile', labelKey: $ => $.nav.profile, icon: UserRound },
+      { to: '/ticket', labelKey: $ => $.nav.tickets, icon: Headphones },
+      { to: '/traffic', labelKey: $ => $.nav.traffic, icon: Activity },
     ],
   },
 ];
 
-const DETAIL_LABELS: { match: RegExp; labelKey: ParseKeys }[] = [
-  { match: /^\/order\/[^/]+$/, labelKey: 'order.detail' },
-  { match: /^\/plan\/[^/]+$/, labelKey: 'plan.checkout_title' },
+const DETAIL_LABELS: { match: RegExp; labelKey: SelectorParam }[] = [
+  { match: /^\/order\/[^/]+$/, labelKey: $ => $.order.detail },
+  { match: /^\/plan\/[^/]+$/, labelKey: $ => $.plan.checkout_title },
 ];
 
 const SIDEBAR_STATE_COOKIE = 'sidebar_state';
@@ -126,10 +123,10 @@ function readSidebarDefaultOpen(): boolean {
   if (typeof document === 'undefined') return true;
   // Reuse the shared cookie reader (same parser dark-mode.ts uses) instead of a
   // second hand-rolled tokenizer. Absent cookie -> '' -> open by default.
-  return getLegacyCookie(SIDEBAR_STATE_COOKIE) !== 'false';
+  return readCookie(SIDEBAR_STATE_COOKIE) !== 'false';
 }
 
-function findActiveLabel(pathname: string): ParseKeys | undefined {
+function findActiveLabel(pathname: string): SelectorParam | undefined {
   for (const d of DETAIL_LABELS) {
     if (d.match.test(pathname)) return d.labelKey;
   }
@@ -158,8 +155,8 @@ function AppSidebar({ siteTitle, email }: { siteTitle: string; email: string }) 
       id="sidebar"
       variant="sidebar"
       collapsible="icon"
-      sheetTitle={t('nav.primary_nav')}
-      sheetDescription={t('nav.mobile_nav_description')}
+      sheetTitle={t($ => $.nav.primary_nav)}
+      sheetDescription={t($ => $.nav.mobile_nav_description)}
     >
       {/* Wordmark-only brand (no logo chip) with the collapse trigger living in
           the sidebar itself. Collapsed, the wordmark hides and the size-8
@@ -174,13 +171,13 @@ function AppSidebar({ siteTitle, email }: { siteTitle: string; email: string }) 
           >
             {siteTitle}
           </Link>
-          <SidebarTrigger className="size-8 shrink-0" aria-label={t('nav.toggle_nav')} />
+          <SidebarTrigger className="size-8 shrink-0" aria-label={t($ => $.nav.toggle_nav)} />
         </div>
       </SidebarHeader>
 
-      <SidebarContent role="navigation" aria-label={t('nav.primary_nav')}>
-        {NAV.map((group, groupIndex) => (
-          <SidebarGroup key={group.labelKey ?? `group-${groupIndex}`}>
+      <SidebarContent role="navigation" aria-label={t($ => $.nav.primary_nav)}>
+        {NAV.map((group) => (
+          <SidebarGroup key={group.id}>
             {group.labelKey ? (
               // mt-0 overrides the primitive's -mt-8 retraction so the label
               // row keeps its height when collapsed (text still fades): the
@@ -193,8 +190,7 @@ function AppSidebar({ siteTitle, email }: { siteTitle: string; email: string }) 
               <SidebarMenu>
                 {group.items.map((item) => {
                   const active =
-                    location.pathname === item.to ||
-                    location.pathname.startsWith(item.to + '/');
+                    location.pathname === item.to || location.pathname.startsWith(item.to + '/');
 
                   return (
                     <SidebarMenuItem key={item.to}>
@@ -225,7 +221,7 @@ function AppSidebar({ siteTitle, email }: { siteTitle: string; email: string }) 
 }
 
 function AppLayoutContent({ loading, title: titleProp }: AppLayoutProps = {}) {
-  const { i18n, t } = useTranslation();
+  const { t } = useTranslation();
   const location = useLocation();
   // The redesigned shell lazy-loads each route's chunk and runs its loader on
   // navigation; surface that interstitial with the data router's own navigation
@@ -243,12 +239,11 @@ function AppLayoutContent({ loading, title: titleProp }: AppLayoutProps = {}) {
   const themePreference = useThemePreference();
   const [sidebarDefaultOpen] = useState(readSidebarDefaultOpen);
   const activeLabel = findActiveLabel(location.pathname);
-  const siteTitle = getLegacyTitle();
+  const siteTitle = getSiteTitle();
   const title = titleProp ?? (activeLabel ? t(activeLabel) : '');
-  const localeClass = getLegacyLocaleClassName(i18n.language);
   // Static: the trigger opens a three-option theme menu, so a state-dependent
   // enable/disable label would misdescribe it.
-  const themeControlLabel = t('common.toggle_theme');
+  const themeControlLabel = t($ => $.common.toggle_theme);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -258,7 +253,7 @@ function AppLayoutContent({ loading, title: titleProp }: AppLayoutProps = {}) {
     <SidebarProvider
       id="page-container"
       defaultOpen={sidebarDefaultOpen}
-      className={cn('v2board-island v2board-app-shell text-foreground', localeClass)}
+      className="text-foreground"
     >
       {navPending ? (
         <div
@@ -266,7 +261,7 @@ function AppLayoutContent({ loading, title: titleProp }: AppLayoutProps = {}) {
           aria-hidden
           className="pointer-events-none fixed inset-x-0 top-0 z-50 h-0.5 overflow-hidden"
         >
-          <div className="h-full w-full animate-pulse bg-primary" />
+          <div className="h-full w-full animate-pulse bg-primary motion-reduce:animate-none" />
         </div>
       ) : null}
 
@@ -282,14 +277,17 @@ function AppLayoutContent({ loading, title: titleProp }: AppLayoutProps = {}) {
           <div className="mx-auto flex w-full max-w-6xl items-center gap-1 px-4 sm:px-6 lg:gap-2">
             {/* The desktop collapse control lives in the sidebar header; this
                 trigger only opens the mobile drawer. */}
-            <SidebarTrigger className="-ml-1 md:hidden" aria-label={t('nav.toggle_nav')} />
+            <SidebarTrigger className="-ml-1 md:hidden" aria-label={t($ => $.nav.toggle_nav)} />
 
             <Separator
               orientation="vertical"
               className="mx-2 data-[orientation=vertical]:h-4 md:hidden"
             />
 
-            <h1 className="v2board-container-title min-w-0 flex-1 truncate text-base font-medium text-foreground">
+            <h1
+              data-slot="page-title"
+              className="min-w-0 flex-1 truncate text-base font-medium text-foreground"
+            >
               {title}
             </h1>
 
@@ -313,17 +311,25 @@ function AppLayoutContent({ loading, title: titleProp }: AppLayoutProps = {}) {
                     value={themePreference}
                     onValueChange={(value) => setThemePreference(value as ThemePreference)}
                   >
-                    <DropdownMenuRadioItem value="system" data-theme-option="system" className="gap-2">
+                    <DropdownMenuRadioItem
+                      value="system"
+                      data-theme-option="system"
+                      className="gap-2"
+                    >
                       <Monitor className="size-4" />
-                      {t('common.theme_system')}
+                      {t($ => $.common.theme_system)}
                     </DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="light" data-theme-option="light" className="gap-2">
+                    <DropdownMenuRadioItem
+                      value="light"
+                      data-theme-option="light"
+                      className="gap-2"
+                    >
                       <Sun className="size-4" />
-                      {t('common.theme_light')}
+                      {t($ => $.common.theme_light)}
                     </DropdownMenuRadioItem>
                     <DropdownMenuRadioItem value="dark" data-theme-option="dark" className="gap-2">
                       <Moon className="size-4" />
-                      {t('common.theme_dark')}
+                      {t($ => $.common.theme_dark)}
                     </DropdownMenuRadioItem>
                   </DropdownMenuRadioGroup>
                 </DropdownMenuContent>
@@ -333,17 +339,17 @@ function AppLayoutContent({ loading, title: titleProp }: AppLayoutProps = {}) {
         </header>
 
         {loading ? (
-          <div id="main-container" className="v2board-app-main flex flex-1">
+          <div id="main-container" className="flex flex-1">
             <div
               role="status"
               className="flex w-full flex-1 items-center justify-center px-4 py-10"
             >
               <Spinner className="size-6" />
-              <span className="sr-only">{t('common.loading')}</span>
+              <span className="sr-only">{t($ => $.common.loading)}</span>
             </div>
           </div>
         ) : (
-          <div id="main-container" className="v2board-app-main flex-1">
+          <div id="main-container" className="flex-1">
             <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:px-6 md:py-6">
               <RouteBoundaryOutlet />
             </div>
@@ -356,15 +362,14 @@ function AppLayoutContent({ loading, title: titleProp }: AppLayoutProps = {}) {
 
 function AppLayoutFallback() {
   const { t } = useTranslation();
-  // Renders before the shell (and its island wrapper) exists, so it must carry
-  // v2board-island itself for the token background to resolve.
+  // Keep the same stable surface hook as the hydrated shell.
   return (
     <div
       role="status"
-      className="v2board-island flex min-h-screen items-center justify-center bg-background"
+      className="flex min-h-screen items-center justify-center bg-background"
     >
       <Spinner className="size-6" />
-      <span className="sr-only">{t('common.loading')}</span>
+      <span className="sr-only">{t($ => $.common.loading)}</span>
     </div>
   );
 }

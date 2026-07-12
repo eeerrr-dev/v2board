@@ -13,16 +13,13 @@ export function usePreferenceToggle() {
   const updateProfile = useUpdateProfileMutation();
   const [pending, setPending] = useState<Partial<Record<ProfilePreferenceKey, boolean>>>({});
 
-  const toggle = async (key: ProfilePreferenceKey, value: 0 | 1) => {
+  const toggle = (key: ProfilePreferenceKey, value: 0 | 1) => {
     setPending((current) => ({ ...current, [key]: true }));
-    try {
-      await updateProfile.mutateAsync({ [key]: value } as Parameters<
-        typeof updateProfile.mutateAsync
-      >[0]);
-    } catch {
-    } finally {
-      setPending((current) => ({ ...current, [key]: false }));
-    }
+    updateProfile.mutate({ [key]: value } as Parameters<typeof updateProfile.mutate>[0], {
+      onSettled: () => {
+        setPending((current) => ({ ...current, [key]: false }));
+      },
+    });
   };
 
   return { toggle, pending };

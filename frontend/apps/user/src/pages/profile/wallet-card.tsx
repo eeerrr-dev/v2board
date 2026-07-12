@@ -2,18 +2,13 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { WalletCards } from 'lucide-react';
+import { decimalToCents } from '@v2board/api-client';
 import { formatCentsPlain } from '@v2board/config/format';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -21,25 +16,22 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/shadcn-dialog';
-import { Form, FormControl, FormField, FormItem, FormMessage } from '@/components/ui/form';
+} from '@/components/ui/dialog';
+import { Field, FieldError, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { useCommConfig, useSaveOrderMutation, useUserInfo } from '@/lib/queries';
 import { ProfileSwitch } from './profile-ui';
 import { usePreferenceToggle } from './use-preference-toggle';
 
 const depositSchema = z.object({
-  // Validate the raw string so the decimal-place check sees the typed value
-  // before coercion. deposit_amount is sent as Math.round(Number(amount) * 100),
-  // so a value with more than two decimals cannot be represented in cents —
-  // reject it inline instead of silently rounding (e.g. 19.999 → 2000 cents).
-  // No .transform here (unlike a coercing schema): the canonical FormField wires
-  // `control` with input === output, and the handler does the Number() itself.
+  // Keep the raw major-unit string through the form and let the API boundary
+  // perform the cents conversion. Validate with that same exact converter so
+  // an unsafe integer is reported inline instead of reaching the mutation.
   amount: z
     .string()
     .trim()
     .min(1, 'profile.deposit_invalid')
-    .refine((value) => Number.isFinite(Number(value)) && Number(value) > 0, 'profile.deposit_invalid')
+    .refine((value) => isSafePositiveAmount(value), 'profile.deposit_invalid')
     .refine((value) => {
       const decimals = value.split('.')[1];
       return decimals === undefined || decimals.length <= 2;
@@ -47,6 +39,16 @@ const depositSchema = z.object({
 });
 
 type DepositFormValues = z.infer<typeof depositSchema>;
+
+const DEPOSIT_AMOUNT_ID = 'profile-deposit-amount';
+
+function isSafePositiveAmount(value: string): boolean {
+  try {
+    return decimalToCents(value) > 0;
+  } catch {
+    return false;
+  }
+}
 
 export function WalletCard() {
   const { t } = useTranslation();
@@ -63,7 +65,7 @@ export function WalletCard() {
 
   const data = info.data;
   const currency = comm?.currency;
-  const depositPlaceholder = t('profile.deposit_placeholder', { currency });
+  const depositPlaceholder = t($ => $.profile.deposit_placeholder, { currency });
 
   const openDeposit = () => {
     depositForm.reset({ amount: '' });
@@ -76,17 +78,14 @@ export function WalletCard() {
   };
 
   const onDeposit = depositForm.handleSubmit(({ amount }) => {
-    void saveOrder
-      .mutateAsync({
+    saveOrder.mutate(
+      {
         plan_id: 0,
         period: 'deposit',
-        // Cents must be an integer: the backend stores total_amount in an int
-        // column that truncates, so a raw float (19.99 * 100 = 1998.9999…)
-        // would under-credit the user by a cent. Round to the nearest cent.
-        deposit_amount: Math.round(Number(amount) * 100),
-      })
-      .then((tradeNo) => navigate(`/order/${tradeNo}`))
-      .catch(() => {});
+        deposit_amount: amount,
+      },
+      { onSuccess: (tradeNo) => navigate(`/order/${tradeNo}`) },
+    );
     closeDeposit();
   });
   // No invalid handler: an empty / non-numeric / over-precise amount now keeps
@@ -98,7 +97,7 @@ export function WalletCard() {
       <CardHeader className="gap-4">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-2">
-            <CardDescription>{t('profile.wallet')}</CardDescription>
+            <CardDescription>{t($ => $.profile.wallet)}</CardDescription>
             <CardTitle
               className="text-4xl font-semibold tracking-normal text-foreground sm:text-5xl"
               data-testid="profile-card-title"
@@ -117,10 +116,10 @@ export function WalletCard() {
       <CardContent className="flex flex-col gap-5">
         <div className="flex flex-col gap-4 rounded-lg border border-border bg-muted/40 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
-            <div className="text-sm font-medium leading-5">{t('profile.auto_renewal')}</div>
+            <div className="text-sm font-medium leading-5">{t($ => $.profile.auto_renewal)}</div>
           </div>
           <ProfileSwitch
-            ariaLabel={t('profile.auto_renewal')}
+            ariaLabel={t($ => $.profile.auto_renewal)}
             checked={data?.auto_renewal}
             loading={pending.auto_renewal}
             onChange={(checked) => void toggle('auto_renewal', checked ? 1 : 0)}
@@ -132,7 +131,7 @@ export function WalletCard() {
           size="lg"
           onClick={openDeposit}
         >
-          {t('profile.recharge')}
+          {t($ => $.profile.recharge)}
         </Button>
       </CardContent>
 
@@ -146,40 +145,48 @@ export function WalletCard() {
           showCloseButton={false}
         >
           <DialogHeader>
-            <DialogTitle>{t('profile.recharge')}</DialogTitle>
+            <DialogTitle>{t($ => $.profile.recharge)}</DialogTitle>
             <DialogDescription>{depositPlaceholder}</DialogDescription>
           </DialogHeader>
-          <Form {...depositForm}>
-            <form className="grid gap-4" onSubmit={onDeposit} noValidate>
-              <FormField
-                control={depositForm.control}
-                name="amount"
-                render={({ field, fieldState }) => (
-                  <FormItem>
-                    <FormControl>
-                      <Input
-                        data-testid="profile-deposit-input"
-                        autoComplete="one-time-code"
-                        aria-label={depositPlaceholder}
-                        placeholder={depositPlaceholder}
-                        invalid={fieldState.error ? true : undefined}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage data-testid="profile-deposit-error" />
-                  </FormItem>
-                )}
-              />
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={closeDeposit}>
-                  {t('common.cancel')}
-                </Button>
-                <Button type="submit" data-testid="profile-deposit-confirm">
-                  {t('profile.confirm')}
-                </Button>
-              </DialogFooter>
-            </form>
-          </Form>
+          <form className="grid gap-4" onSubmit={onDeposit} noValidate>
+            <Controller
+              control={depositForm.control}
+              name="amount"
+              render={({ field, fieldState }) => {
+                const errorId = `${DEPOSIT_AMOUNT_ID}-error`;
+
+                return (
+                  <Field data-invalid={fieldState.invalid}>
+                    <FieldLabel className="sr-only" htmlFor={DEPOSIT_AMOUNT_ID}>
+                      {depositPlaceholder}
+                    </FieldLabel>
+                    <Input
+                      {...field}
+                      id={DEPOSIT_AMOUNT_ID}
+                      data-testid="profile-deposit-input"
+                      autoComplete="one-time-code"
+                      placeholder={depositPlaceholder}
+                      aria-invalid={fieldState.invalid}
+                      aria-describedby={fieldState.invalid ? errorId : undefined}
+                    />
+                    <FieldError
+                      id={errorId}
+                      data-testid="profile-deposit-error"
+                      errors={[fieldState.error]}
+                    />
+                  </Field>
+                );
+              }}
+            />
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={closeDeposit}>
+                {t($ => $.common.cancel)}
+              </Button>
+              <Button type="submit" data-testid="profile-deposit-confirm">
+                {t($ => $.profile.confirm)}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </Card>

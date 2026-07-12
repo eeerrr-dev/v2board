@@ -1,15 +1,20 @@
 import { screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/render';
+import { createTestTranslation } from '@/test/i18next-selector';
+import { setRuntimeConfig } from '@/test/runtime-config';
 import { AuthLanguageMenu } from './auth-language-menu';
 
 const i18nMocks = vi.hoisted(() => ({ changeLanguage: vi.fn() }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key: string) => (key === 'common.language' ? 'Language' : key),
-    i18n: { language: 'en-US', changeLanguage: i18nMocks.changeLanguage },
-  }),
+  useTranslation: () => {
+    const translation = createTestTranslation({ 'common.language': 'Language' }, 'en-US');
+    return {
+      ...translation,
+      i18n: { ...translation.i18n, changeLanguage: i18nMocks.changeLanguage },
+    };
+  },
 }));
 
 describe('AuthLanguageMenu', () => {
@@ -17,13 +22,13 @@ describe('AuthLanguageMenu', () => {
     i18nMocks.changeLanguage.mockClear();
     window.localStorage.setItem('umi_locale', 'en-US');
     window.g_lang = 'en-US';
-    window.settings = { i18n: ['en-US', 'zh-CN'] as string[] & Record<string, Record<string, string>> };
+    setRuntimeConfig({ i18n: ['en-US', 'zh-CN'] });
   });
 
   afterEach(() => {
     document.cookie = 'i18n=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
     window.localStorage.clear();
-    window.settings = undefined;
+    setRuntimeConfig();
     window.g_lang = undefined;
     vi.restoreAllMocks();
   });
@@ -35,19 +40,19 @@ describe('AuthLanguageMenu', () => {
     expect(trigger.tagName).toBe('BUTTON');
     expect(trigger).toHaveAttribute('type', 'button');
     expect(trigger).toHaveTextContent('English');
-    // The interaction-parity harness drives the auth switcher through this hook.
-    expect(trigger).toHaveClass('v2board-auth-language-trigger');
+    expect(trigger).toHaveAttribute('data-testid', 'auth-language-trigger');
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
 
     await user.click(trigger);
 
     expect(trigger).toHaveAttribute('aria-expanded', 'true');
     const menu = await screen.findByRole('menu');
-    // The auth variant renders plain items (LanguageMenuItems passes
-    // role={undefined}, which wipes Radix's menuitem role), so select entries
-    // through the class hook the interaction-parity harness also drives.
-    const items = Array.from(menu.querySelectorAll('.v2board-auth-language-menu-item'));
+    const items = Array.from(menu.querySelectorAll('[data-slot="dropdown-menu-radio-item"]'));
     expect(items.map((item) => item.textContent)).toEqual(['English', '简体中文']);
+    expect(within(menu).getByRole('menuitemradio', { name: 'English' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
   });
 
   it('persists locale selection in place via changeLanguage without a full-page reload', async () => {

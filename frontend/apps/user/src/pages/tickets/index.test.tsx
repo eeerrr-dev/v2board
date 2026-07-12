@@ -1,10 +1,11 @@
 import type { ReactNode } from 'react';
+import type * as ReactRouterModule from 'react-router';
 import { screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { formatLegacyDateMinuteSlash } from '@v2board/config/format';
-import { getLocaleAntdMessages } from '@v2board/i18n';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { formatBackendDateMinuteSlash } from '@v2board/config/format';
 import { VIRTUALIZE_MIN_ROWS } from '@/components/ui/table';
 import { renderWithProviders } from '@/test/render';
+import { createTestTranslation } from '@/test/i18next-selector';
 import TicketsPage from './index';
 
 const mocks = vi.hoisted(() => {
@@ -43,7 +44,7 @@ const mocks = vi.hoisted(() => {
     error: false,
     fetching: true,
     makeTickets,
-    openWindow: vi.fn(),
+    navigate: vi.fn(),
     refetch: vi.fn(),
     saveMutateAsync: vi.fn(),
     savePending: false,
@@ -53,9 +54,15 @@ const mocks = vi.hoisted(() => {
 
 const confirmDialog = vi.hoisted(() => vi.fn());
 
+vi.mock('react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof ReactRouterModule>()),
+  useNavigate: () => mocks.navigate,
+}));
+
 const labels: Record<string, string> = {
   'common.attention': '注意',
   'common.cancel': '取消',
+  'common.empty': '暂无数据',
   'ticket.action': '操作',
   'ticket.close_ticket': '关闭',
   'ticket.confirm_close': '确定关闭该工单吗？',
@@ -83,10 +90,7 @@ const labels: Record<string, string> = {
 };
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    i18n: { language: 'zh-CN' },
-    t: (key: string) => labels[key] ?? key,
-  }),
+  useTranslation: () => createTestTranslation(labels),
 }));
 
 vi.mock('@/lib/queries', () => ({
@@ -99,7 +103,9 @@ vi.mock('@/lib/queries', () => ({
   }),
   useSaveTicketMutation: () => ({
     isPending: mocks.savePending,
-    mutateAsync: mocks.saveMutateAsync,
+    mutate: (payload: unknown, options?: { onSuccess?: (data: unknown) => void }) => {
+      void Promise.resolve(mocks.saveMutateAsync(payload)).then(options?.onSuccess);
+    },
   }),
   useCloseTicketMutation: () => ({
     mutateAsync: mocks.closeMutateAsync,
@@ -138,7 +144,9 @@ vi.mock('@/components/ui/select', () => ({
     <option value={value}>{children}</option>
   ),
   SelectTrigger: ({ children }: { children: ReactNode }) => children,
-  SelectValue: ({ placeholder }: { placeholder?: string }) => <option value="">{placeholder}</option>,
+  SelectValue: ({ placeholder }: { placeholder?: string }) => (
+    <option value="">{placeholder}</option>
+  ),
 }));
 
 function resetMocks() {
@@ -148,7 +156,7 @@ function resetMocks() {
   mocks.savePending = false;
   mocks.saveMutateAsync.mockReset();
   mocks.closeMutateAsync.mockReset();
-  mocks.openWindow.mockClear();
+  mocks.navigate.mockClear();
   mocks.refetch.mockClear();
   confirmDialog.mockReset();
 }
@@ -182,8 +190,8 @@ describe('TicketsPage shadcn surface', () => {
     expect(screen.getByText('待处理')).toBeInTheDocument();
     expect(screen.getByText('已关闭')).toBeInTheDocument();
 
-    expect(screen.getByText(formatLegacyDateMinuteSlash(1_700_000_000))).toBeInTheDocument();
-    expect(screen.getByText(formatLegacyDateMinuteSlash(60))).toBeInTheDocument();
+    expect(screen.getByText(formatBackendDateMinuteSlash(1_700_000_000))).toBeInTheDocument();
+    expect(screen.getByText(formatBackendDateMinuteSlash(60))).toBeInTheDocument();
 
     expect(screen.getAllByTestId('ticket-view')).toHaveLength(3);
     expect(screen.getAllByTestId('ticket-close')).toHaveLength(3);
@@ -255,14 +263,12 @@ describe('TicketsPage shadcn surface', () => {
     expect(screen.getByTestId('ticket-surface')).toHaveClass('opacity-80');
   });
 
-  it('renders the shared empty row with the locale antd empty copy', () => {
+  it('renders the shared empty row with the canonical localized copy', () => {
     mocks.tickets = [];
 
     renderWithProviders(<TicketsPage />);
 
-    expect(screen.getByTestId('ticket-empty')).toHaveTextContent(
-      getLocaleAntdMessages('zh-CN').emptyDescription,
-    );
+    expect(screen.getByTestId('ticket-empty')).toHaveTextContent(labels['common.empty']!);
   });
 
   it('surfaces a failed fetch as an error state with retry instead of the empty table', async () => {
@@ -285,22 +291,14 @@ describe('TicketsPage shadcn surface', () => {
 });
 
 describe('TicketsPage shadcn interactions', () => {
-  let originalOpen: typeof window.open;
-
   beforeEach(() => {
     resetMocks();
     mocks.fetching = false;
     mocks.saveMutateAsync.mockResolvedValue(undefined);
     mocks.closeMutateAsync.mockResolvedValue(undefined);
-    originalOpen = window.open;
-    window.open = mocks.openWindow as unknown as typeof window.open;
   });
 
-  afterEach(() => {
-    window.open = originalOpen;
-  });
-
-  it('opens ticket detail in the legacy popup window on desktop', async () => {
+  it('navigates to ticket detail through the existing hash-router route', async () => {
     const { user } = renderWithProviders(<TicketsPage />);
 
     const viewButtons = screen.getAllByTestId('ticket-view');
@@ -308,11 +306,7 @@ describe('TicketsPage shadcn interactions', () => {
 
     await user.click(viewButtons[0]!);
 
-    expect(mocks.openWindow).toHaveBeenCalledWith(
-      `${window.location.origin}${window.location.pathname}#/ticket/7`,
-      'newwindow',
-      'height=600,width=800,top=0,left=0,toolbar=no,menubar=no,scrollbars=no,resizable=no,location=no,status=no',
-    );
+    expect(mocks.navigate).toHaveBeenCalledWith('/ticket/7');
   });
 
   it('saves a new ticket through the shadcn dialog form', async () => {
@@ -334,9 +328,7 @@ describe('TicketsPage shadcn interactions', () => {
 
     // The parity harness submits via the footer's last button, so keep the
     // confirm button in that slot.
-    const footerButtons = within(screen.getByTestId('ticket-dialog-footer')).getAllByRole(
-      'button',
-    );
+    const footerButtons = within(screen.getByTestId('ticket-dialog-footer')).getAllByRole('button');
     const confirm = footerButtons[footerButtons.length - 1]!;
     expect(confirm).toHaveTextContent('确认');
 
@@ -360,14 +352,11 @@ describe('TicketsPage shadcn interactions', () => {
 
     expect(mocks.saveMutateAsync).not.toHaveBeenCalled();
 
-    // The canonical Form primitive renders each error through FormMessage (the
-    // parity harness never read the old per-field error testids). The three
-    // messages carry the placeholder copy as required text, in field order.
+    // The canonical Field primitive renders the three placeholder messages as
+    // required text, in field order.
     await screen.findByText('请输入工单主题');
     const dialog = screen.getByTestId('ticket-dialog');
-    const messages = Array.from(
-      dialog.querySelectorAll<HTMLElement>('[data-slot="form-message"]'),
-    );
+    const messages = Array.from(dialog.querySelectorAll<HTMLElement>('[data-slot="field-error"]'));
     expect(messages.map((node) => node.textContent)).toEqual([
       '请输入工单主题',
       '请选择工单等级',

@@ -14,48 +14,50 @@ resolver = "2"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/v2board/v2board"
-rust-version = "1.96.1"
+rust-version = "1.97.0"
 
 [workspace.dependencies]
 anyhow = "1"
-apalis = "1.0.0-rc.9"
-apalis-cron = "1.0.0-rc.8"
-apalis-redis = "1.0.0-rc.8"
+arc-swap = "1"
 argon2 = "0.5"
-async-trait = "0.1"
 axum = { version = "0.8", features = ["macros"] }
+base64 = "0.22"
 bcrypt = "0.19"
 chrono = { version = "0.4", features = ["serde"] }
-cron = "0.16"
+cron = "0.17"
+crc32fast = "1"
+csv = "1"
 dotenvy = "0.15"
+getrandom = "0.4"
 hex = "0.4"
 hmac = "0.13"
-jsonwebtoken = { version = "10", features = ["rust_crypto"] }
-lettre = { version = "0.11.22", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls", "rustls-platform-verifier", "ring"] }
+ipnet = "2"
+jsonwebtoken = { version = "10", default-features = false, features = ["aws_lc_rs"] }
+lettre = { version = "0.11.22", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls", "rustls-platform-verifier", "ring", "pool"] }
 md5 = "0.8"
 openssl = "0.10.81"
-redis = { version = "1", features = ["tokio-comp"] }
+percent-encoding = "2"
+quick-xml = { version = "0.41.0", features = ["serialize"] }
+redis = { version = "1", default-features = false, features = ["tokio-comp", "connection-manager", "script"] }
+regex = "1.13.0"
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls"] }
 rmp-serde = "1"
+rust_decimal = { version = "1.42.1", default-features = false, features = ["std"] }
 serde = { version = "1", features = ["derive"] }
-# preserve_order makes serde_json Maps keep insertion order (IndexMap-backed),
-# matching PHP's json_encode, which preserves associative-array insertion order.
-# Every dynamic Value/Map response and MySQL JSON_OBJECT we parse then serializes in
-# the order Laravel emits, instead of serde's default alphabetical (BTreeMap) sort.
-serde_json = { version = "1", features = ["preserve_order"] }
+serde_json = "1"
 serde_urlencoded = "0.7"
 # Parses operator-provided `custom.clash.yaml`/`custom.stash.yaml` overrides the
-# way Laravel's Symfony\Yaml does. Deserialized into a preserve_order
-# serde_json::Value so key order matches the source. serde_yaml is in
-# maintenance-only mode upstream but remains the stable, ubiquitous YAML reader;
-# no audit gate flags it.
-serde_yaml = "0.9"
+# way Laravel's Symfony\Yaml does. `serde_yaml_ng` is the maintained,
+# API-compatible continuation of the deprecated `serde_yaml` crate; JSON object
+# key order is intentionally not treated as an external byte-level contract.
+serde_yaml_ng = "0.10"
 sha1 = "0.11"
 sha2 = "0.11"
-sqlx = { version = "0.9", features = ["runtime-tokio", "tls-rustls", "mysql", "json", "chrono"] }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls", "mysql", "json", "chrono", "rust_decimal", "macros", "migrate"] }
 thiserror = "2"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "net"] }
-tower-http = { version = "0.7", features = ["cors", "trace"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "net", "time", "sync", "fs"] }
+tower-http = { version = "0.7", features = ["compression-br", "compression-gzip", "cors", "fs", "limit", "request-id", "sensitive-headers", "timeout", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
 uuid = { version = "1", features = ["v4"] }
+url = "2.5.8"

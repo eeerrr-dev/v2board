@@ -1,9 +1,12 @@
-import { cloneElement, useState, type ReactElement } from 'react';
+import { useState, type ReactElement } from 'react';
+import { zodResolver } from '@hookform/resolvers/zod';
 import dayjs from 'dayjs';
 import { useLocation } from 'react-router';
+import { Controller, useForm, useWatch } from 'react-hook-form';
 import { Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import type { admin } from '@v2board/api-client';
 import type { Coupon, CouponType, Giftcard, Plan } from '@v2board/types';
+import { copyText } from '@v2board/config/clipboard';
 import {
   useAdminCoupons,
   useAdminGiftcards,
@@ -20,9 +23,16 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Field, FieldError, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+  InputGroupText,
+} from '@/components/ui/input-group';
 import { PageHeader, PageShell } from '@/components/ui/page';
+import { ErrorState } from '@/components/ui/error-state';
 import { PaginationControl } from '@/components/ui/pagination';
 import {
   Select,
@@ -34,13 +44,21 @@ import {
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetFooter,
   SheetHeader,
   SheetTitle,
+  SheetTrigger,
 } from '@/components/ui/sheet';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { DataTable, type DataTableColumn } from '@/components/ui/table';
+import {
+  couponEditorSchema,
+  giftcardEditorSchema,
+  type CouponEditorValues,
+  type GiftcardEditorValues,
+} from './coupon-form-schema';
 
 type CouponSubmit = admin.GenerateCouponPayload;
 type GiftcardSubmit = admin.GenerateGiftcardPayload;
@@ -83,15 +101,15 @@ function planOptions(plans: Plan[] | undefined) {
   return (plans ?? []).map((plan) => ({ value: `${plan.id}`, label: plan.name }));
 }
 
-// The validity window persists as unix SECONDS. Convert to ms for the local
-// datetime-local field and back to a seconds string on change, mirroring the
-// legacy dayjs(1000 * sec) / dayjs(value).format('X') round-trip exactly.
+// The validity window persists as a decimal unix-seconds string. Use Day.js's
+// core unix() API here: the `X` format token requires AdvancedFormat and would
+// otherwise be emitted literally as "X".
 function toDateTimeLocal(seconds?: number | string | null) {
   return seconds ? dayjs(1000 * Number(seconds)).format('YYYY-MM-DDTHH:mm') : '';
 }
 
 function fromDateTimeLocal(value: string) {
-  return value ? dayjs(value).format('X') : null;
+  return value ? String(dayjs(value).unix()) : null;
 }
 
 function dateRange(startedAt?: number | string | null, endedAt?: number | string | null) {
@@ -117,7 +135,16 @@ function giftcardValueUnit(type: GiftcardSubmit['type']) {
   }
 }
 
-// Preserve the legacy CSV download for batch generation: the /generate endpoint
+function normalizeGenerationPayload<T extends object>(value: T) {
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      ([key, fieldValue]) =>
+        fieldValue !== undefined && !(key === 'generate_count' && fieldValue === ''),
+    ),
+  ) as T;
+}
+
+// Preserve the CSV download contract for batch generation: the /generate endpoint
 // returns an arraybuffer of codes only when generate_count is set.
 function downloadGeneratedCsv(prefix: 'COUPON' | 'GIFTCARD', buffer: unknown) {
   const blob = new Blob([buffer as BlobPart], { type: 'text/plain,charset=UTF-8' });
@@ -131,15 +158,21 @@ function downloadGeneratedCsv(prefix: 'COUPON' | 'GIFTCARD', buffer: unknown) {
 }
 
 function useCopy() {
-  return (text: string) => {
-    void navigator.clipboard?.writeText(text);
-    toast.success('复制成功');
+  return async (text: string) => {
+    if (await copyText(text)) toast.success('复制成功');
+    else toast.error('复制失败');
   };
 }
 
-function CopyableCode({ value, onCopy }: { value: string; onCopy: (value: string) => void }) {
+function CopyableCode({
+  value,
+  onCopy,
+}: {
+  value: string;
+  onCopy: (value: string) => Promise<void>;
+}) {
   return (
-    <button type="button" onClick={() => onCopy(value)} className="inline-flex">
+    <button type="button" onClick={() => void onCopy(value)} className="inline-flex">
       <Badge variant="secondary" className="cursor-pointer font-mono">
         {value}
       </Badge>
@@ -193,210 +226,291 @@ function CouponEditor({
   plans,
   pending,
   onSave,
-  onSaved,
   children,
 }: {
   record?: CouponRow;
   plans: Plan[];
   pending: boolean;
-  onSave: (payload: CouponSubmit) => Promise<GenerateResponse>;
-  onSaved: () => void | Promise<unknown>;
+  onSave: (payload: CouponSubmit, onSuccess: (response: GenerateResponse) => void) => void;
   children: ReactElement<{ onClick?: () => void }>;
 }) {
   const [open, setOpen] = useState(false);
-  const [submit, setSubmit] = useState<CouponSubmit>(() => ({ type: 1, ...(record ?? {}) }));
+  const form = useForm<CouponEditorValues>({
+    resolver: zodResolver(couponEditorSchema),
+    defaultValues: {
+      type: record?.type ?? 1,
+      id: record?.id,
+      name: record?.name,
+      code: record?.code,
+      value: record?.value ?? undefined,
+      started_at: record?.started_at ?? null,
+      ended_at: record?.ended_at ?? null,
+      limit_use: record?.limit_use ?? null,
+      limit_use_with_user: record?.limit_use_with_user ?? null,
+      limit_plan_ids: record?.limit_plan_ids ?? null,
+      limit_period: record?.limit_period ?? null,
+      generate_count: undefined,
+    },
+  });
+  const values = useWatch({ control: form.control });
 
   const openSheet = () => {
-    setSubmit({ type: 1, ...(record ?? {}) });
+    form.reset({
+      type: record?.type ?? 1,
+      id: record?.id,
+      name: record?.name,
+      code: record?.code,
+      value: record?.value ?? undefined,
+      started_at: record?.started_at ?? null,
+      ended_at: record?.ended_at ?? null,
+      limit_use: record?.limit_use ?? null,
+      limit_use_with_user: record?.limit_use_with_user ?? null,
+      limit_plan_ids: record?.limit_plan_ids ?? null,
+      limit_period: record?.limit_period ?? null,
+      generate_count: undefined,
+    });
     setOpen(true);
   };
 
-  const patch = (next: Partial<CouponSubmit>) => setSubmit((current) => ({ ...current, ...next }));
+  const save = form.handleSubmit((validValues) => {
+    onSave(normalizeGenerationPayload(validValues) as CouponSubmit, (response) => {
+      if (validValues.generate_count) downloadGeneratedCsv('COUPON', response.buffer);
+      setOpen(false);
+    });
+  });
 
-  const save = async () => {
-    const payload: CouponSubmit = { ...submit };
-    // Amount coupons store cents; percent coupons store the raw percentage.
-    if (payload.type === 1) payload.value = 100 * Number(payload.value);
-    const response = await onSave(payload);
-    if (payload.generate_count) downloadGeneratedCsv('COUPON', response.buffer);
-    await onSaved();
-    setOpen(false);
-  };
-
-  const selectedPlanIds = (submit.limit_plan_ids ?? []).map(String);
-  const selectedPeriods = (submit.limit_period ?? []).map(String);
+  const selectedPlanIds = (values.limit_plan_ids ?? []).map(String);
+  const selectedPeriods = (values.limit_period ?? []).map(String);
 
   return (
-    <>
-      {cloneElement(children, { onClick: openSheet })}
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent
-          side="right"
-          className="w-full gap-0 overflow-y-auto sm:max-w-md"
-          data-testid="coupon-editor"
-        >
-          <SheetHeader>
-            <SheetTitle>{submit.id ? '编辑优惠券' : '新建优惠券'}</SheetTitle>
-          </SheetHeader>
+    <Sheet
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (nextOpen) openSheet();
+        else setOpen(false);
+      }}
+    >
+      <SheetTrigger asChild>{children}</SheetTrigger>
+      <SheetContent
+        side="right"
+        className="w-full gap-0 overflow-y-auto sm:max-w-md"
+        data-testid="coupon-editor"
+      >
+        <SheetHeader>
+          <SheetTitle>{record?.id ? '编辑优惠券' : '新建优惠券'}</SheetTitle>
+          <SheetDescription>设置优惠额度、使用限制、有效期和适用订阅。</SheetDescription>
+        </SheetHeader>
 
-          <div className="space-y-4 px-4 pb-4">
-            <div className="space-y-2">
-              <Label htmlFor="coupon-name">名称</Label>
+        <form id="coupon-editor-form" className="space-y-4 px-4 pb-4" onSubmit={save} noValidate>
+          <Field data-invalid={Boolean(form.formState.errors.name)}>
+            <FieldLabel htmlFor="coupon-name">名称</FieldLabel>
+            <Input
+              id="coupon-name"
+              placeholder="请输入优惠券名称"
+              aria-invalid={Boolean(form.formState.errors.name)}
+              {...form.register('name')}
+              data-testid="coupon-name"
+            />
+            <FieldError errors={[form.formState.errors.name]} />
+          </Field>
+
+          {!values.generate_count ? (
+            <Field>
+              <FieldLabel htmlFor="coupon-code">自定义优惠券码</FieldLabel>
               <Input
-                id="coupon-name"
-                placeholder="请输入优惠券名称"
-                value={(submit.name as string | undefined) ?? ''}
-                onChange={(event) => patch({ name: event.target.value })}
-                data-testid="coupon-name"
+                id="coupon-code"
+                placeholder="自定义优惠券码(留空随机生成)"
+                {...form.register('code', {
+                  onChange: () => form.setValue('generate_count', undefined),
+                })}
+                data-testid="coupon-code"
               />
-            </div>
+            </Field>
+          ) : null}
 
-            {!submit.generate_count ? (
-              <div className="space-y-2">
-                <Label htmlFor="coupon-code">自定义优惠券码</Label>
-                <Input
-                  id="coupon-code"
-                  placeholder="自定义优惠券码(留空随机生成)"
-                  value={(submit.code as string | undefined) ?? ''}
-                  onChange={(event) =>
-                    patch({ code: event.target.value, generate_count: undefined })
-                  }
-                  data-testid="coupon-code"
-                />
-              </div>
-            ) : null}
-
-            <div className="space-y-2">
-              <Label htmlFor="coupon-value">优惠信息</Label>
-              <div className="flex gap-2">
-                <Select
-                  value={String(submit.type ?? 1)}
-                  onValueChange={(value) => patch({ type: Number(value) as CouponType })}
+          <Field data-invalid={Boolean(form.formState.errors.value)}>
+            <FieldLabel htmlFor="coupon-value">优惠信息</FieldLabel>
+            <div className="flex gap-2">
+              <Select
+                value={String(values.type ?? 1)}
+                onValueChange={(value) => form.setValue('type', Number(value) as CouponType)}
+              >
+                <SelectTrigger
+                  className="w-36 shrink-0"
+                  data-testid="coupon-type"
+                  aria-label="优惠类型"
                 >
-                  <SelectTrigger className="w-36 shrink-0" data-testid="coupon-type">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1">按金额优惠</SelectItem>
-                    <SelectItem value="2">按比例优惠</SelectItem>
-                  </SelectContent>
-                </Select>
-                <div className="relative flex-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">按金额优惠</SelectItem>
+                  <SelectItem value="2">按比例优惠</SelectItem>
+                </SelectContent>
+              </Select>
+              <InputGroup className="flex-1">
+                <InputGroupInput
+                  id="coupon-value"
+                  type="number"
+                  step={values.type === 1 ? '0.01' : '1'}
+                  placeholder="请输入值"
+                  aria-invalid={Boolean(form.formState.errors.value)}
+                  {...form.register('value')}
+                  data-testid="coupon-value"
+                />
+                <InputGroupAddon align="inline-end">
+                  <InputGroupText>{values.type === 1 ? '¥' : '%'}</InputGroupText>
+                </InputGroupAddon>
+              </InputGroup>
+            </div>
+            <FieldError errors={[form.formState.errors.value]} />
+          </Field>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field data-invalid={Boolean(form.formState.errors.started_at)}>
+              <FieldLabel htmlFor="coupon-start">开始时间</FieldLabel>
+              <Controller
+                control={form.control}
+                name="started_at"
+                render={({ field }) => (
                   <Input
-                    id="coupon-value"
-                    type="number"
-                    className="pr-8"
-                    placeholder="请输入值"
-                    value={submit.value ?? ''}
-                    onChange={(event) => patch({ value: event.target.value })}
-                    data-testid="coupon-value"
+                    id="coupon-start"
+                    name={field.name}
+                    type="datetime-local"
+                    value={toDateTimeLocal(field.value)}
+                    onChange={(event) =>
+                      form.setValue('started_at', fromDateTimeLocal(event.target.value), {
+                        shouldDirty: true,
+                        shouldValidate: true,
+                      })
+                    }
+                    onBlur={field.onBlur}
+                    ref={field.ref}
+                    aria-invalid={Boolean(form.formState.errors.started_at)}
+                    data-testid="coupon-start"
                   />
-                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground">
-                    {submit.type === 1 ? '¥' : '%'}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label htmlFor="coupon-start">开始时间</Label>
-                <Input
-                  id="coupon-start"
-                  type="datetime-local"
-                  value={toDateTimeLocal(submit.started_at)}
-                  onChange={(event) => patch({ started_at: fromDateTimeLocal(event.target.value) })}
-                  data-testid="coupon-start"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="coupon-end">结束时间</Label>
-                <Input
-                  id="coupon-end"
-                  type="datetime-local"
-                  value={toDateTimeLocal(submit.ended_at)}
-                  onChange={(event) => patch({ ended_at: fromDateTimeLocal(event.target.value) })}
-                  data-testid="coupon-end"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="coupon-limit-use">最大使用次数</Label>
-              <Input
-                id="coupon-limit-use"
-                placeholder="限制最大使用次数，用完则无法使用(为空则不限制)"
-                value={(submit.limit_use as string | number | undefined) ?? ''}
-                onChange={(event) => patch({ limit_use: event.target.value })}
-                data-testid="coupon-limit-use"
+                )}
               />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="coupon-limit-use-user">每个用户可使用次数</Label>
-              <Input
-                id="coupon-limit-use-user"
-                placeholder="限制每个用户可使用次数(为空则不限制)"
-                value={(submit.limit_use_with_user as string | number | undefined) ?? ''}
-                onChange={(event) => patch({ limit_use_with_user: event.target.value })}
-                data-testid="coupon-limit-use-user"
+              <FieldError errors={[form.formState.errors.started_at]} />
+            </Field>
+            <Field data-invalid={Boolean(form.formState.errors.ended_at)}>
+              <FieldLabel htmlFor="coupon-end">结束时间</FieldLabel>
+              <Controller
+                control={form.control}
+                name="ended_at"
+                render={({ field }) => (
+                  <Input
+                    id="coupon-end"
+                    name={field.name}
+                    type="datetime-local"
+                    value={toDateTimeLocal(field.value)}
+                    onChange={(event) =>
+                      form.setValue('ended_at', fromDateTimeLocal(event.target.value), {
+                        shouldDirty: true,
+                        shouldValidate: true,
+                      })
+                    }
+                    onBlur={field.onBlur}
+                    ref={field.ref}
+                    aria-invalid={Boolean(form.formState.errors.ended_at)}
+                    data-testid="coupon-end"
+                  />
+                )}
               />
-            </div>
-
-            <div className="space-y-2">
-              <Label>指定订阅</Label>
-              {plans.length ? (
-                <CheckboxGroup
-                  options={planOptions(plans)}
-                  value={selectedPlanIds}
-                  onChange={(value) => patch({ limit_plan_ids: value.length ? value : null })}
-                  testId="coupon-plan-ids"
-                />
-              ) : (
-                <p className="text-sm text-muted-foreground">暂无可选订阅</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label>指定周期</Label>
-              <CheckboxGroup
-                options={PERIOD_OPTIONS}
-                value={selectedPeriods}
-                onChange={(value) =>
-                  patch({ limit_period: (value.length ? value : null) as CouponSubmit['limit_period'] })
-                }
-                testId="coupon-periods"
-              />
-            </div>
-
-            {!submit.code && !submit.id ? (
-              <div className="space-y-2">
-                <Label htmlFor="coupon-generate-count">生成数量</Label>
-                <Input
-                  id="coupon-generate-count"
-                  placeholder="输入数量批量生成"
-                  value={(submit.generate_count as string | number | undefined) ?? ''}
-                  onChange={(event) =>
-                    patch({ generate_count: event.target.value, code: undefined })
-                  }
-                  data-testid="coupon-generate-count"
-                />
-              </div>
-            ) : null}
+              <FieldError errors={[form.formState.errors.ended_at]} />
+            </Field>
           </div>
 
-          <SheetFooter>
-            <Button onClick={() => void save()} disabled={pending} data-testid="coupon-submit">
-              {pending ? <Loader2 className="size-4 animate-spin" /> : null}
-              提交
-            </Button>
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              取消
-            </Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
-    </>
+          <Field data-invalid={Boolean(form.formState.errors.limit_use)}>
+            <FieldLabel htmlFor="coupon-limit-use">最大使用次数</FieldLabel>
+            <Input
+              id="coupon-limit-use"
+              type="number"
+              step="1"
+              placeholder="限制最大使用次数，用完则无法使用(为空则不限制)"
+              aria-invalid={Boolean(form.formState.errors.limit_use)}
+              {...form.register('limit_use')}
+              data-testid="coupon-limit-use"
+            />
+            <FieldError errors={[form.formState.errors.limit_use]} />
+          </Field>
+
+          <Field data-invalid={Boolean(form.formState.errors.limit_use_with_user)}>
+            <FieldLabel htmlFor="coupon-limit-use-user">每个用户可使用次数</FieldLabel>
+            <Input
+              id="coupon-limit-use-user"
+              type="number"
+              step="1"
+              placeholder="限制每个用户可使用次数(为空则不限制)"
+              aria-invalid={Boolean(form.formState.errors.limit_use_with_user)}
+              {...form.register('limit_use_with_user')}
+              data-testid="coupon-limit-use-user"
+            />
+            <FieldError errors={[form.formState.errors.limit_use_with_user]} />
+          </Field>
+
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium text-foreground">指定订阅</legend>
+            {plans.length ? (
+              <CheckboxGroup
+                options={planOptions(plans)}
+                value={selectedPlanIds}
+                onChange={(value) => form.setValue('limit_plan_ids', value.length ? value : null)}
+                testId="coupon-plan-ids"
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">暂无可选订阅</p>
+            )}
+          </fieldset>
+
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium text-foreground">指定周期</legend>
+            <CheckboxGroup
+              options={PERIOD_OPTIONS}
+              value={selectedPeriods}
+              onChange={(value) => form.setValue('limit_period', value.length ? value : null)}
+              testId="coupon-periods"
+            />
+          </fieldset>
+
+          {!values.code && !values.id ? (
+            <Field data-invalid={Boolean(form.formState.errors.generate_count)}>
+              <FieldLabel htmlFor="coupon-generate-count">生成数量</FieldLabel>
+              <Input
+                id="coupon-generate-count"
+                type="number"
+                min="1"
+                max="500"
+                step="1"
+                placeholder="输入数量批量生成"
+                aria-invalid={Boolean(form.formState.errors.generate_count)}
+                {...form.register('generate_count', {
+                  onChange: () => form.setValue('code', undefined),
+                })}
+                data-testid="coupon-generate-count"
+              />
+              <FieldError errors={[form.formState.errors.generate_count]} />
+            </Field>
+          ) : null}
+        </form>
+
+        <SheetFooter>
+          <Button
+            type="submit"
+            form="coupon-editor-form"
+            disabled={pending}
+            data-testid="coupon-submit"
+          >
+            {pending ? (
+              <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
+            ) : null}
+            提交
+          </Button>
+          <Button variant="outline" onClick={() => setOpen(false)}>
+            取消
+          </Button>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -408,6 +522,8 @@ function CouponsView() {
   const generate = useGenerateCouponMutation();
   const drop = useDropCouponMutation();
   const show = useShowCouponMutation();
+  const planOptions = plans.data;
+  const plansReady = !plans.isError && planOptions !== undefined;
 
   const data = coupons.data?.data ?? [];
   const total = coupons.data?.total ?? 0;
@@ -420,8 +536,7 @@ function CouponsView() {
       cancelText: '取消',
     });
     if (!confirmed) return;
-    await drop.mutateAsync(row.id);
-    void coupons.refetch();
+    drop.mutate(row.id);
   };
 
   const columns: DataTableColumn<CouponRow>[] = [
@@ -438,13 +553,7 @@ function CouponsView() {
       cell: ({ row }) => (
         <Switch
           checked={Boolean(row.original.show)}
-          onCheckedChange={() =>
-            show.mutate(row.original.id, {
-              onSuccess: () => {
-                void coupons.refetch();
-              },
-            })
-          }
+          onCheckedChange={() => show.mutate(row.original.id)}
           aria-label={`切换优惠券「${row.original.name}」启用`}
         />
       ),
@@ -487,18 +596,24 @@ function CouponsView() {
       header: () => <span>操作</span>,
       cell: ({ row }) => (
         <div className="flex items-center justify-end gap-1">
-          <CouponEditor
-            record={row.original}
-            plans={plans.data ?? []}
-            pending={generate.isPending}
-            onSave={(payload) => generate.mutateAsync(payload)}
-            onSaved={() => coupons.refetch()}
-          >
-            <Button variant="ghost" size="sm" data-testid={`coupon-edit-${row.original.id}`}>
+          {plansReady ? (
+            <CouponEditor
+              record={row.original}
+              plans={planOptions}
+              pending={generate.isPending}
+              onSave={(payload, onSuccess) => generate.mutate(payload, { onSuccess })}
+            >
+              <Button variant="ghost" size="sm" data-testid={`coupon-edit-${row.original.id}`}>
+                <Pencil className="size-4" />
+                编辑
+              </Button>
+            </CouponEditor>
+          ) : (
+            <Button variant="ghost" size="sm" disabled>
               <Pencil className="size-4" />
               编辑
             </Button>
-          </CouponEditor>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -516,20 +631,32 @@ function CouponsView() {
 
   return (
     <PageShell data-testid="coupons-page">
+      {coupons.isError ? (
+        <ErrorState message="优惠券列表加载失败" onRetry={() => void coupons.refetch()} />
+      ) : null}
+      {plans.isError ? (
+        <ErrorState message="订阅列表加载失败" onRetry={() => void plans.refetch()} />
+      ) : null}
       <PageHeader
         title="优惠券管理"
         actions={
-          <CouponEditor
-            plans={plans.data ?? []}
-            pending={generate.isPending}
-            onSave={(payload) => generate.mutateAsync(payload)}
-            onSaved={() => coupons.refetch()}
-          >
-            <Button data-testid="coupon-create">
+          plansReady ? (
+            <CouponEditor
+              plans={planOptions}
+              pending={generate.isPending}
+              onSave={(payload, onSuccess) => generate.mutate(payload, { onSuccess })}
+            >
+              <Button data-testid="coupon-create">
+                <Plus className="size-4" />
+                添加优惠券
+              </Button>
+            </CouponEditor>
+          ) : (
+            <Button disabled data-testid="coupon-create">
               <Plus className="size-4" />
               添加优惠券
             </Button>
-          </CouponEditor>
+          )
         }
       />
 
@@ -541,7 +668,11 @@ function CouponsView() {
             getRowKey={(row) => row.id}
             className="min-w-[900px]"
             data-testid="coupons-table"
-            empty={data.length === 0 ? '暂无优惠券' : undefined}
+            empty={
+              !coupons.isError && coupons.data !== undefined && data.length === 0
+                ? '暂无优惠券'
+                : undefined
+            }
             emptyTestId="coupons-empty"
           />
 
@@ -574,197 +705,280 @@ function GiftcardEditor({
   plans,
   pending,
   onSave,
-  onSaved,
   children,
 }: {
   record?: GiftcardRow;
   plans: Plan[];
   pending: boolean;
-  onSave: (payload: GiftcardSubmit) => Promise<GenerateResponse>;
-  onSaved: () => void | Promise<unknown>;
+  onSave: (payload: GiftcardSubmit, onSuccess: (response: GenerateResponse) => void) => void;
   children: ReactElement<{ onClick?: () => void }>;
 }) {
   const [open, setOpen] = useState(false);
-  const [submit, setSubmit] = useState<GiftcardSubmit>(() => ({ type: 1, ...(record ?? {}) }));
+  const form = useForm<GiftcardEditorValues>({
+    resolver: zodResolver(giftcardEditorSchema),
+    defaultValues: {
+      type: record?.type ?? 1,
+      id: record?.id,
+      name: record?.name,
+      code: record?.code,
+      value: record?.value ?? undefined,
+      plan_id: record?.plan_id ?? null,
+      started_at: record?.started_at ?? null,
+      ended_at: record?.ended_at ?? null,
+      limit_use: record?.limit_use ?? null,
+      generate_count: undefined,
+    },
+  });
+  const values = useWatch({ control: form.control });
 
   const openSheet = () => {
-    setSubmit({ type: 1, ...(record ?? {}) });
+    form.reset({
+      type: record?.type ?? 1,
+      id: record?.id,
+      name: record?.name,
+      code: record?.code,
+      value: record?.value ?? undefined,
+      plan_id: record?.plan_id ?? null,
+      started_at: record?.started_at ?? null,
+      ended_at: record?.ended_at ?? null,
+      limit_use: record?.limit_use ?? null,
+      generate_count: undefined,
+    });
     setOpen(true);
   };
 
-  const patch = (next: Partial<GiftcardSubmit>) =>
-    setSubmit((current) => ({ ...current, ...next }));
-
-  const save = async () => {
-    const payload: GiftcardSubmit = { ...submit };
-    if (payload.type === 1) payload.value = 100 * Number(payload.value);
-    const response = await onSave(payload);
-    if (payload.generate_count) downloadGeneratedCsv('GIFTCARD', response.buffer);
-    await onSaved();
-    setOpen(false);
-  };
+  const save = form.handleSubmit((validValues) => {
+    onSave(normalizeGenerationPayload(validValues) as GiftcardSubmit, (response) => {
+      if (validValues.generate_count) downloadGeneratedCsv('GIFTCARD', response.buffer);
+      setOpen(false);
+    });
+  });
 
   return (
-    <>
-      {cloneElement(children, { onClick: openSheet })}
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent
-          side="right"
-          className="w-full gap-0 overflow-y-auto sm:max-w-md"
-          data-testid="giftcard-editor"
-        >
-          <SheetHeader>
-            <SheetTitle>{submit.id ? '编辑礼品卡' : '新建礼品卡'}</SheetTitle>
-          </SheetHeader>
+    <Sheet
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (nextOpen) openSheet();
+        else setOpen(false);
+      }}
+    >
+      <SheetTrigger asChild>{children}</SheetTrigger>
+      <SheetContent
+        side="right"
+        className="w-full gap-0 overflow-y-auto sm:max-w-md"
+        data-testid="giftcard-editor"
+      >
+        <SheetHeader>
+          <SheetTitle>{record?.id ? '编辑礼品卡' : '新建礼品卡'}</SheetTitle>
+          <SheetDescription>设置礼品卡额度、订阅计划、数量和有效期。</SheetDescription>
+        </SheetHeader>
 
-          <div className="space-y-4 px-4 pb-4">
-            <div className="space-y-2">
-              <Label htmlFor="giftcard-name">名称</Label>
+        <form id="giftcard-editor-form" className="space-y-4 px-4 pb-4" onSubmit={save} noValidate>
+          <Field data-invalid={Boolean(form.formState.errors.name)}>
+            <FieldLabel htmlFor="giftcard-name">名称</FieldLabel>
+            <Input
+              id="giftcard-name"
+              placeholder="请输入礼品卡名称"
+              aria-invalid={Boolean(form.formState.errors.name)}
+              {...form.register('name')}
+              data-testid="giftcard-name"
+            />
+            <FieldError errors={[form.formState.errors.name]} />
+          </Field>
+
+          {!values.generate_count ? (
+            <Field>
+              <FieldLabel htmlFor="giftcard-code">自定义礼品卡卡密</FieldLabel>
               <Input
-                id="giftcard-name"
-                placeholder="请输入礼品卡名称"
-                value={(submit.name as string | undefined) ?? ''}
-                onChange={(event) => patch({ name: event.target.value })}
-                data-testid="giftcard-name"
+                id="giftcard-code"
+                placeholder="自定义礼品卡卡密(留空随机生成)"
+                {...form.register('code', {
+                  onChange: () => form.setValue('generate_count', undefined),
+                })}
+                data-testid="giftcard-code"
               />
-            </div>
+            </Field>
+          ) : null}
 
-            {!submit.generate_count ? (
-              <div className="space-y-2">
-                <Label htmlFor="giftcard-code">自定义礼品卡卡密</Label>
-                <Input
-                  id="giftcard-code"
-                  placeholder="自定义礼品卡卡密(留空随机生成)"
-                  value={(submit.code as string | undefined) ?? ''}
-                  onChange={(event) =>
-                    patch({ code: event.target.value, generate_count: undefined })
-                  }
-                  data-testid="giftcard-code"
-                />
-              </div>
-            ) : null}
-
-            <div className="space-y-2">
-              <Label htmlFor="giftcard-value">礼品卡类型</Label>
-              <div className="flex gap-2">
-                <Select
-                  value={String(submit.type ?? 1)}
-                  onValueChange={(value) =>
-                    patch({ type: Number(value) as GiftcardSubmit['type'] })
-                  }
+          <Field data-invalid={Boolean(form.formState.errors.value)}>
+            <FieldLabel htmlFor="giftcard-value">礼品卡类型</FieldLabel>
+            <div className="flex gap-2">
+              <Select
+                value={String(values.type ?? 1)}
+                onValueChange={(value) =>
+                  form.setValue('type', Number(value) as GiftcardEditorValues['type'])
+                }
+              >
+                <SelectTrigger
+                  className="w-40 shrink-0"
+                  data-testid="giftcard-type"
+                  aria-label="礼品卡类型"
                 >
-                  <SelectTrigger className="w-40 shrink-0" data-testid="giftcard-type">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1">增加账户余额</SelectItem>
-                    <SelectItem value="2">增加订阅时长</SelectItem>
-                    <SelectItem value="3">增加套餐流量</SelectItem>
-                    <SelectItem value="4">重置套餐流量</SelectItem>
-                    <SelectItem value="5">兑换订阅套餐</SelectItem>
-                  </SelectContent>
-                </Select>
-                <div className="relative flex-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">增加账户余额</SelectItem>
+                  <SelectItem value="2">增加订阅时长</SelectItem>
+                  <SelectItem value="3">增加套餐流量</SelectItem>
+                  <SelectItem value="4">重置套餐流量</SelectItem>
+                  <SelectItem value="5">兑换订阅套餐</SelectItem>
+                </SelectContent>
+              </Select>
+              <InputGroup className="flex-1">
+                <InputGroupInput
+                  id="giftcard-value"
+                  type="number"
+                  step={values.type === 1 ? '0.01' : '1'}
+                  disabled={values.type === 4}
+                  placeholder={values.type === 5 ? '一次性套餐输入0' : '请输入值'}
+                  value={values.type === 4 ? 0 : (values.value ?? '')}
+                  onChange={(event) => form.setValue('value', event.target.value)}
+                  aria-invalid={Boolean(form.formState.errors.value)}
+                  data-testid="giftcard-value"
+                />
+                <InputGroupAddon align="inline-end">
+                  <InputGroupText>{giftcardValueUnit(values.type)}</InputGroupText>
+                </InputGroupAddon>
+              </InputGroup>
+            </div>
+            <FieldError errors={[form.formState.errors.value]} />
+          </Field>
+
+          {values.type === 5 ? (
+            <Field data-invalid={Boolean(form.formState.errors.plan_id)}>
+              <FieldLabel htmlFor="giftcard-plan">指定订阅</FieldLabel>
+              <Select
+                value={values.plan_id != null ? String(values.plan_id) : ''}
+                onValueChange={(value) => form.setValue('plan_id', value || null)}
+              >
+                <SelectTrigger
+                  id="giftcard-plan"
+                  className="w-full"
+                  aria-invalid={Boolean(form.formState.errors.plan_id)}
+                  data-testid="giftcard-plan"
+                >
+                  <SelectValue placeholder="指定订阅" />
+                </SelectTrigger>
+                <SelectContent>
+                  {planOptions(plans).map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FieldError errors={[form.formState.errors.plan_id]} />
+            </Field>
+          ) : null}
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field data-invalid={Boolean(form.formState.errors.started_at)}>
+              <FieldLabel htmlFor="giftcard-start">开始时间</FieldLabel>
+              <Controller
+                control={form.control}
+                name="started_at"
+                render={({ field }) => (
                   <Input
-                    id="giftcard-value"
-                    type="number"
-                    className="pr-8"
-                    disabled={submit.type === 4}
-                    placeholder={submit.type === 5 ? '一次性套餐输入0' : '请输入值'}
-                    value={submit.type === 4 ? 0 : (submit.value ?? '')}
-                    onChange={(event) => patch({ value: event.target.value })}
-                    data-testid="giftcard-value"
+                    id="giftcard-start"
+                    name={field.name}
+                    type="datetime-local"
+                    value={toDateTimeLocal(field.value)}
+                    onChange={(event) =>
+                      form.setValue('started_at', fromDateTimeLocal(event.target.value), {
+                        shouldDirty: true,
+                        shouldValidate: true,
+                      })
+                    }
+                    onBlur={field.onBlur}
+                    ref={field.ref}
+                    aria-invalid={Boolean(form.formState.errors.started_at)}
+                    data-testid="giftcard-start"
                   />
-                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground">
-                    {giftcardValueUnit(submit.type)}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {submit.type === 5 ? (
-              <div className="space-y-2">
-                <Label htmlFor="giftcard-plan">指定订阅</Label>
-                <Select
-                  value={submit.plan_id != null ? String(submit.plan_id) : undefined}
-                  onValueChange={(value) => patch({ plan_id: value ? value : null })}
-                >
-                  <SelectTrigger id="giftcard-plan" className="w-full" data-testid="giftcard-plan">
-                    <SelectValue placeholder="指定订阅" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {planOptions(plans).map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            ) : null}
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label htmlFor="giftcard-start">开始时间</Label>
-                <Input
-                  id="giftcard-start"
-                  type="datetime-local"
-                  value={toDateTimeLocal(submit.started_at)}
-                  onChange={(event) => patch({ started_at: fromDateTimeLocal(event.target.value) })}
-                  data-testid="giftcard-start"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="giftcard-end">结束时间</Label>
-                <Input
-                  id="giftcard-end"
-                  type="datetime-local"
-                  value={toDateTimeLocal(submit.ended_at)}
-                  onChange={(event) => patch({ ended_at: fromDateTimeLocal(event.target.value) })}
-                  data-testid="giftcard-end"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="giftcard-limit-use">最大使用次数</Label>
-              <Input
-                id="giftcard-limit-use"
-                placeholder="限制最大使用次数，用完则无法使用(为空则不限制)"
-                value={(submit.limit_use as string | number | undefined) ?? ''}
-                onChange={(event) => patch({ limit_use: event.target.value })}
-                data-testid="giftcard-limit-use"
+                )}
               />
-            </div>
-
-            {!submit.code && !submit.id ? (
-              <div className="space-y-2">
-                <Label htmlFor="giftcard-generate-count">生成数量</Label>
-                <Input
-                  id="giftcard-generate-count"
-                  placeholder="输入数量批量生成"
-                  value={(submit.generate_count as string | number | undefined) ?? ''}
-                  onChange={(event) =>
-                    patch({ generate_count: event.target.value, code: undefined })
-                  }
-                  data-testid="giftcard-generate-count"
-                />
-              </div>
-            ) : null}
+              <FieldError errors={[form.formState.errors.started_at]} />
+            </Field>
+            <Field data-invalid={Boolean(form.formState.errors.ended_at)}>
+              <FieldLabel htmlFor="giftcard-end">结束时间</FieldLabel>
+              <Controller
+                control={form.control}
+                name="ended_at"
+                render={({ field }) => (
+                  <Input
+                    id="giftcard-end"
+                    name={field.name}
+                    type="datetime-local"
+                    value={toDateTimeLocal(field.value)}
+                    onChange={(event) =>
+                      form.setValue('ended_at', fromDateTimeLocal(event.target.value), {
+                        shouldDirty: true,
+                        shouldValidate: true,
+                      })
+                    }
+                    onBlur={field.onBlur}
+                    ref={field.ref}
+                    aria-invalid={Boolean(form.formState.errors.ended_at)}
+                    data-testid="giftcard-end"
+                  />
+                )}
+              />
+              <FieldError errors={[form.formState.errors.ended_at]} />
+            </Field>
           </div>
 
-          <SheetFooter>
-            <Button onClick={() => void save()} disabled={pending} data-testid="giftcard-submit">
-              {pending ? <Loader2 className="size-4 animate-spin" /> : null}
-              提交
-            </Button>
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              取消
-            </Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
-    </>
+          <Field data-invalid={Boolean(form.formState.errors.limit_use)}>
+            <FieldLabel htmlFor="giftcard-limit-use">最大使用次数</FieldLabel>
+            <Input
+              id="giftcard-limit-use"
+              type="number"
+              step="1"
+              placeholder="限制最大使用次数，用完则无法使用(为空则不限制)"
+              aria-invalid={Boolean(form.formState.errors.limit_use)}
+              {...form.register('limit_use')}
+              data-testid="giftcard-limit-use"
+            />
+            <FieldError errors={[form.formState.errors.limit_use]} />
+          </Field>
+
+          {!values.code && !values.id ? (
+            <Field data-invalid={Boolean(form.formState.errors.generate_count)}>
+              <FieldLabel htmlFor="giftcard-generate-count">生成数量</FieldLabel>
+              <Input
+                id="giftcard-generate-count"
+                type="number"
+                min="1"
+                max="500"
+                step="1"
+                placeholder="输入数量批量生成"
+                aria-invalid={Boolean(form.formState.errors.generate_count)}
+                {...form.register('generate_count', {
+                  onChange: () => form.setValue('code', undefined),
+                })}
+                data-testid="giftcard-generate-count"
+              />
+              <FieldError errors={[form.formState.errors.generate_count]} />
+            </Field>
+          ) : null}
+        </form>
+
+        <SheetFooter>
+          <Button
+            type="submit"
+            form="giftcard-editor-form"
+            disabled={pending}
+            data-testid="giftcard-submit"
+          >
+            {pending ? (
+              <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
+            ) : null}
+            提交
+          </Button>
+          <Button variant="outline" onClick={() => setOpen(false)}>
+            取消
+          </Button>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -775,14 +989,17 @@ function GiftcardsView() {
   const plans = useAdminPlans();
   const generate = useGenerateGiftcardMutation();
   const drop = useDropGiftcardMutation();
+  const planOptions = plans.data;
+  const plansReady = !plans.isError && planOptions !== undefined;
 
   const data = giftcards.data?.data ?? [];
   const total = giftcards.data?.total ?? 0;
 
   const planName = (id: number | string | null | undefined) =>
-    (plans.data ?? []).find((plan) => plan.id === id)?.name ?? '-';
+    planOptions?.find((plan) => plan.id === id)?.name ?? '-';
 
-  const renderValue = (value: number, type: Giftcard['type']) => {
+  const renderValue = (value: Giftcard['value'], type: Giftcard['type']) => {
+    if (value === null) return '-';
     switch (type) {
       case 1:
         return `${value.toFixed(2)} ¥`;
@@ -824,8 +1041,7 @@ function GiftcardsView() {
       cancelText: '取消',
     });
     if (!confirmed) return;
-    await drop.mutateAsync(row.id);
-    void giftcards.refetch();
+    drop.mutate(row.id);
   };
 
   const columns: DataTableColumn<GiftcardRow>[] = [
@@ -884,18 +1100,24 @@ function GiftcardsView() {
       header: () => <span>操作</span>,
       cell: ({ row }) => (
         <div className="flex items-center justify-end gap-1">
-          <GiftcardEditor
-            record={row.original}
-            plans={plans.data ?? []}
-            pending={generate.isPending}
-            onSave={(payload) => generate.mutateAsync(payload)}
-            onSaved={() => giftcards.refetch()}
-          >
-            <Button variant="ghost" size="sm" data-testid={`giftcard-edit-${row.original.id}`}>
+          {plansReady ? (
+            <GiftcardEditor
+              record={row.original}
+              plans={planOptions}
+              pending={generate.isPending}
+              onSave={(payload, onSuccess) => generate.mutate(payload, { onSuccess })}
+            >
+              <Button variant="ghost" size="sm" data-testid={`giftcard-edit-${row.original.id}`}>
+                <Pencil className="size-4" />
+                编辑
+              </Button>
+            </GiftcardEditor>
+          ) : (
+            <Button variant="ghost" size="sm" disabled>
               <Pencil className="size-4" />
               编辑
             </Button>
-          </GiftcardEditor>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -913,20 +1135,32 @@ function GiftcardsView() {
 
   return (
     <PageShell data-testid="giftcards-page">
+      {giftcards.isError ? (
+        <ErrorState message="礼品卡列表加载失败" onRetry={() => void giftcards.refetch()} />
+      ) : null}
+      {plans.isError ? (
+        <ErrorState message="订阅列表加载失败" onRetry={() => void plans.refetch()} />
+      ) : null}
       <PageHeader
         title="礼品卡管理"
         actions={
-          <GiftcardEditor
-            plans={plans.data ?? []}
-            pending={generate.isPending}
-            onSave={(payload) => generate.mutateAsync(payload)}
-            onSaved={() => giftcards.refetch()}
-          >
-            <Button data-testid="giftcard-create">
+          plansReady ? (
+            <GiftcardEditor
+              plans={planOptions}
+              pending={generate.isPending}
+              onSave={(payload, onSuccess) => generate.mutate(payload, { onSuccess })}
+            >
+              <Button data-testid="giftcard-create">
+                <Plus className="size-4" />
+                添加礼品卡
+              </Button>
+            </GiftcardEditor>
+          ) : (
+            <Button disabled data-testid="giftcard-create">
               <Plus className="size-4" />
               添加礼品卡
             </Button>
-          </GiftcardEditor>
+          )
         }
       />
 
@@ -938,7 +1172,11 @@ function GiftcardsView() {
             getRowKey={(row) => row.id}
             className="min-w-[960px]"
             data-testid="giftcards-table"
-            empty={data.length === 0 ? '暂无礼品卡' : undefined}
+            empty={
+              !giftcards.isError && giftcards.data !== undefined && data.length === 0
+                ? '暂无礼品卡'
+                : undefined
+            }
             emptyTestId="giftcards-empty"
           />
 

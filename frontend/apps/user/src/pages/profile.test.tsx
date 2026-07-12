@@ -1,14 +1,13 @@
 import type { ReactNode } from 'react';
 import { screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError } from '@v2board/api-client';
 import { renderWithProviders } from '@/test/render';
+import { createTestTranslation } from '@/test/i18next-selector';
 import ProfilePage from './profile';
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   refetchInfo: vi.fn(),
-  refetchSubscribe: vi.fn(),
   redeem: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
@@ -19,15 +18,17 @@ const mocks = vi.hoisted(() => ({
   saveOrder: vi.fn(),
   copyText: vi.fn(),
   refetchSessions: vi.fn(),
+  refetchBotInfo: vi.fn(),
   removeSession: vi.fn(),
   confirmDialog: vi.fn(),
-  getAuthData: vi.fn(),
   logout: vi.fn(),
   sessions: {
-    data: undefined as Record<
-      string,
-      { ip: string; login_at: number; ua: string; auth_data: string }
-    > | undefined,
+    data: undefined as
+      | Record<
+          string,
+          { ip: string; login_at: number; ua: string; auth_data: string; current: boolean }
+        >
+      | undefined,
     isLoading: false,
     isError: false,
   },
@@ -47,10 +48,11 @@ const mocks = vi.hoisted(() => ({
     is_telegram: false,
     telegram_discuss_link: '',
   },
-  subscribe: {
-    subscribe_url: 'https://example.test/sub',
-  } as { subscribe_url?: string } | undefined,
+  subscribe: undefined as { subscribe_url?: string } | undefined,
   botInfo: undefined as { username: string } | undefined,
+  botInfoPending: false,
+  botInfoError: false,
+  botInfoSuccess: true,
 }));
 
 const labels: Record<string, string> = {
@@ -110,7 +112,8 @@ const labels: Record<string, string> = {
   'profile.telegram_bind': '绑定Telegram',
   'profile.telegram_unbind': '解除绑定',
   'profile.telegram_unbind_confirm': '确定要解除绑定Telegram？',
-  'profile.telegram_unbind_tip': '如果你的Telegram ID已失效可以进行此操作。重置后你需要重新进行绑定。',
+  'profile.telegram_unbind_tip':
+    '如果你的Telegram ID已失效可以进行此操作。重置后你需要重新进行绑定。',
   'profile.telegram_discuss': 'Telegram 讨论组',
   'profile.start_now': '立即开始',
   'profile.join_now': '立即加入',
@@ -131,27 +134,15 @@ vi.mock('react-router', () => ({
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key: string, values?: Record<string, unknown>) => {
-      let label = labels[key] ?? key;
-      Object.entries(values ?? {}).forEach(([name, value]) => {
-        label = label.replaceAll(`{{${name}}}`, String(value));
-      });
-      return label;
-    },
-  }),
+  useTranslation: () => createTestTranslation(labels),
 }));
 
-vi.mock('@/components/ui/shadcn-dialog', () => ({
+vi.mock('@/components/ui/dialog', () => ({
   Dialog: ({ children, open }: { children: ReactNode; open?: boolean }) =>
     open ? <>{children}</> : null,
-  DialogContent: ({
-    children,
-    className,
-  }: {
-    children: ReactNode;
-    className?: string;
-  }) => <div className={className}>{children}</div>,
+  DialogContent: ({ children, className }: { children: ReactNode; className?: string }) => (
+    <div className={className}>{children}</div>
+  ),
   DialogDescription: ({ children }: { children: ReactNode }) => <p>{children}</p>,
   DialogFooter: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -159,6 +150,8 @@ vi.mock('@/components/ui/shadcn-dialog', () => ({
 }));
 
 vi.mock('@/components/ui/alert-dialog', () => ({
+  AlertDialogAction: ({ children }: { children: ReactNode }) => <>{children}</>,
+  AlertDialogCancel: ({ children }: { children: ReactNode }) => <>{children}</>,
   AlertDialog: ({ children, open }: { children: ReactNode; open?: boolean }) =>
     open ? <>{children}</> : null,
   AlertDialogContent: ({
@@ -188,32 +181,40 @@ vi.mock('@/lib/queries', () => ({
   useCommConfig: () => ({
     data: mocks.comm,
   }),
-  useSubscribe: () => ({
-    data: mocks.subscribe,
-    refetch: mocks.refetchSubscribe,
-  }),
+  useSubscribe: () => ({ data: mocks.subscribe }),
   useUpdateProfileMutation: () => ({
-    mutateAsync: mocks.updateProfile,
+    mutate: (payload: unknown, options?: MutationCallbacks) =>
+      runMockMutation(mocks.updateProfile, payload, options),
   }),
   useChangePasswordMutation: () => ({
     isPending: false,
-    mutateAsync: mocks.changePassword,
+    mutate: (payload: unknown, options?: MutationCallbacks) =>
+      runMockMutation(mocks.changePassword, payload, options),
   }),
   useRedeemGiftCardMutation: () => ({
     isPending: false,
-    mutateAsync: mocks.redeem,
+    mutate: (payload: unknown, options?: MutationCallbacks) =>
+      runMockMutation(mocks.redeem, payload, options),
   }),
   useResetSubscribeMutation: () => ({
-    mutateAsync: mocks.resetSub,
+    mutate: (payload: unknown, options?: MutationCallbacks) =>
+      runMockMutation(mocks.resetSub, payload, options),
   }),
   useUnbindTelegramMutation: () => ({
-    mutateAsync: mocks.unbindTelegram,
+    mutate: (payload: unknown, options?: MutationCallbacks) =>
+      runMockMutation(mocks.unbindTelegram, payload, options),
   }),
   useSaveOrderMutation: () => ({
-    mutateAsync: mocks.saveOrder,
+    mutate: (payload: unknown, options?: MutationCallbacks) =>
+      runMockMutation(mocks.saveOrder, payload, options),
   }),
   useTelegramBotInfo: () => ({
     data: mocks.botInfo,
+    isError: mocks.botInfoError,
+    isFetching: mocks.botInfoPending,
+    isPending: mocks.botInfoPending,
+    isSuccess: mocks.botInfoSuccess,
+    refetch: mocks.refetchBotInfo,
   }),
   useActiveSessions: () => ({
     data: mocks.sessions.data,
@@ -226,12 +227,34 @@ vi.mock('@/lib/queries', () => ({
   }),
 }));
 
-vi.mock('@/lib/legacy-settings', () => ({
+interface MutationCallbacks {
+  onError?: (error: unknown) => void;
+  onSettled?: () => void;
+  onSuccess?: (data: unknown) => void;
+}
+
+function runMockMutation(
+  mutation: (...args: unknown[]) => unknown,
+  payload: unknown,
+  options?: MutationCallbacks,
+) {
+  void Promise.resolve(mutation(payload)).then(
+    (data) => {
+      options?.onSuccess?.(data);
+      options?.onSettled?.();
+    },
+    (error: unknown) => {
+      options?.onError?.(error);
+      options?.onSettled?.();
+    },
+  );
+}
+
+vi.mock('@v2board/config/clipboard', () => ({
   copyText: mocks.copyText,
 }));
 
 vi.mock('@/lib/auth', () => ({
-  getAuthData: mocks.getAuthData,
   logout: mocks.logout,
 }));
 
@@ -250,7 +273,6 @@ describe('ProfilePage shadcn account surface', () => {
   beforeEach(() => {
     mocks.navigate.mockClear();
     mocks.refetchInfo.mockReset();
-    mocks.refetchSubscribe.mockReset();
     mocks.redeem.mockReset();
     mocks.toastSuccess.mockClear();
     mocks.toastError.mockClear();
@@ -262,20 +284,17 @@ describe('ProfilePage shadcn account surface', () => {
     mocks.copyText.mockClear();
     mocks.copyText.mockResolvedValue(true);
     mocks.refetchSessions.mockReset();
+    mocks.refetchBotInfo.mockReset();
     mocks.removeSession.mockReset();
     mocks.removeSession.mockResolvedValue(true);
-    mocks.getAuthData.mockReset();
-    mocks.getAuthData.mockReturnValue('token-current');
     mocks.logout.mockClear();
     mocks.confirmDialog.mockReset();
     // The imperative confirm dialog is exercised elsewhere; here we auto-confirm
     // so the revoke flow's onConfirm runs synchronously.
-    mocks.confirmDialog.mockImplementation(
-      (options: { onConfirm?: () => unknown }) => {
-        void options.onConfirm?.();
-        return Promise.resolve(true);
-      },
-    );
+    mocks.confirmDialog.mockImplementation((options: { onConfirm?: () => unknown }) => {
+      void options.onConfirm?.();
+      return Promise.resolve(true);
+    });
     mocks.sessions = {
       data: {
         'guid-other': {
@@ -283,12 +302,14 @@ describe('ProfilePage shadcn account surface', () => {
           login_at: 1_700_003_600,
           ua: 'Firefox on Windows',
           auth_data: 'token-other',
+          current: false,
         },
         'guid-current': {
           ip: '198.51.100.4',
           login_at: 1_700_000_000,
           ua: 'Chrome on macOS',
           auth_data: 'token-current',
+          current: true,
         },
       },
       isLoading: false,
@@ -312,6 +333,9 @@ describe('ProfilePage shadcn account surface', () => {
     };
     mocks.subscribe = { subscribe_url: 'https://example.test/sub' };
     mocks.botInfo = undefined;
+    mocks.botInfoPending = false;
+    mocks.botInfoError = false;
+    mocks.botInfoSuccess = true;
   });
 
   it('shows the redeem success toast only after the mutation resolves, leaving the refresh to the mutation', async () => {
@@ -342,10 +366,8 @@ describe('ProfilePage shadcn account surface', () => {
     expect(mocks.refetchInfo).not.toHaveBeenCalled();
   });
 
-  it('keeps the stuck loading state when gift card redeem times out', async () => {
-    // A timeout / network drop reaches the page as an ApiError with status 0
-    // (the api-client's transport-failure signal), not a plain Error.
-    mocks.redeem.mockRejectedValue(new ApiError(0, 'timeout exceeded'));
+  it('re-enables gift card redemption after a transport failure', async () => {
+    mocks.redeem.mockRejectedValue(new Error('timeout exceeded'));
 
     const { user } = renderWithProviders(<ProfilePage />);
 
@@ -354,8 +376,8 @@ describe('ProfilePage shadcn account surface', () => {
 
     await waitFor(() => expect(mocks.redeem).toHaveBeenCalledWith('CARD-FAIL'));
     const redeemButton = screen.getByTestId('profile-redeem-button');
-    await waitFor(() => expect(redeemButton).toBeDisabled());
-    expect(redeemButton).toHaveAttribute('aria-busy', 'true');
+    await waitFor(() => expect(redeemButton).toBeEnabled());
+    expect(redeemButton).not.toHaveAttribute('aria-busy', 'true');
     expect(mocks.refetchInfo).not.toHaveBeenCalled();
   });
 
@@ -366,7 +388,10 @@ describe('ProfilePage shadcn account surface', () => {
 
     await waitFor(() => expect(mocks.toastError).toHaveBeenCalledWith('请输入礼品卡'));
     expect(mocks.redeem).not.toHaveBeenCalled();
-    expect(screen.getByLabelText('礼品卡')).toHaveAttribute('aria-invalid', 'true');
+    const giftCard = screen.getByLabelText('礼品卡');
+    expect(screen.getByText('请输入礼品卡')).toBeInTheDocument();
+    expect(giftCard).toHaveAttribute('aria-invalid', 'true');
+    expect(giftCard).toHaveAccessibleDescription('请输入礼品卡');
   });
 
   it('renders the shadcn profile cards and telegram binding dialog content', async () => {
@@ -416,11 +441,9 @@ describe('ProfilePage shadcn account surface', () => {
     // The backend already returns these on info(); the card must surface them
     // instead of leaving the email/uuid/last_login/created_at keys dead.
     expect(screen.getByTestId('profile-account-card')).toBeInTheDocument();
-    expect(screen.getByTestId('profile-account-email')).toHaveTextContent(
-      /^user@example\.test$/,
-    );
+    expect(screen.getByTestId('profile-account-email')).toHaveTextContent(/^user@example\.test$/);
     expect(screen.getByTestId('profile-account-uuid')).toHaveTextContent(/^uuid-abc-123$/);
-    // Registration + last login render through the shared legacy datetime formatter.
+    // Registration + last login render through the shared backend datetime formatter.
     expect(screen.getByTestId('profile-account-created')).not.toHaveTextContent('—');
     expect(screen.getByTestId('profile-account-last-login')).not.toHaveTextContent('—');
 
@@ -519,6 +542,33 @@ describe('ProfilePage shadcn account surface', () => {
     expect(mocks.copyText).toHaveBeenCalledWith('/bind');
   });
 
+  it('shows Telegram bot loading separately from a retryable fetch failure', async () => {
+    mocks.comm = {
+      currency: 'USD',
+      is_telegram: true,
+      telegram_discuss_link: '',
+    };
+    mocks.botInfo = undefined;
+    mocks.botInfoPending = true;
+    mocks.botInfoSuccess = false;
+
+    const { user, rerender } = renderWithProviders(<ProfilePage />);
+
+    await user.click(screen.getByRole('button', { name: '立即开始' }));
+    expect(screen.getByRole('status')).toHaveTextContent('加载中');
+    expect(screen.queryByTestId('profile-telegram-bot-error')).not.toBeInTheDocument();
+
+    mocks.botInfoPending = false;
+    mocks.botInfoError = true;
+    rerender(<ProfilePage />);
+
+    expect(screen.getByTestId('profile-telegram-bot-error')).toHaveTextContent('加载失败');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '重试' }));
+    expect(mocks.refetchBotInfo).toHaveBeenCalledTimes(1);
+  });
+
   it('updates profile switches with the original 0/1 payload and leaves the refresh to the mutation', async () => {
     mocks.updateProfile.mockResolvedValue(true);
 
@@ -586,6 +636,7 @@ describe('ProfilePage shadcn account surface', () => {
     // so this text can only come from the form error).
     expect(screen.getByText('两次新密码输入不同')).toBeInTheDocument();
     expect(newPasswordInputs[1]).toHaveAttribute('aria-invalid', 'true');
+    expect(newPasswordInputs[1]).toHaveAccessibleDescription('两次新密码输入不同');
     expect(mocks.changePassword).not.toHaveBeenCalled();
     expect(mocks.navigate).not.toHaveBeenCalled();
   });
@@ -638,7 +689,7 @@ describe('ProfilePage shadcn account surface', () => {
       expect(mocks.saveOrder).toHaveBeenCalledWith({
         plan_id: 0,
         period: 'deposit',
-        deposit_amount: 1234,
+        deposit_amount: '12.34',
       }),
     );
     await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/order/DEPOSIT123'));
@@ -657,13 +708,32 @@ describe('ProfilePage shadcn account surface', () => {
 
     // 19.999 is finite and positive but cannot be represented in cents; the old
     // path silently rounded it to 2000 cents and closed the dialog.
-    await user.type(screen.getByTestId('profile-deposit-input'), '19.999');
+    const amountInput = screen.getByTestId('profile-deposit-input');
+    await user.type(amountInput, '19.999');
     await user.click(screen.getByTestId('profile-deposit-confirm'));
 
     // The dialog stays open with an inline error rather than silently closing.
     expect(await screen.findByTestId('profile-deposit-error')).toHaveTextContent(
       '充值金额最多支持两位小数',
     );
+    expect(amountInput).toHaveAttribute('aria-invalid', 'true');
+    expect(amountInput).toHaveAccessibleDescription('充值金额最多支持两位小数');
+    expect(mocks.saveOrder).not.toHaveBeenCalled();
+    expect(screen.getByTestId('profile-deposit-confirm')).toBeInTheDocument();
+  });
+
+  it('rejects a deposit that cannot be represented as a safe integer number of cents', async () => {
+    const { user } = renderWithProviders(<ProfilePage />);
+
+    await user.click(screen.getByTestId('profile-recharge'));
+    const amountInput = screen.getByTestId('profile-deposit-input');
+    await user.type(amountInput, '900719925474099.99');
+    await user.click(screen.getByTestId('profile-deposit-confirm'));
+
+    expect(await screen.findByTestId('profile-deposit-error')).toHaveTextContent(
+      '请输入有效的充值金额',
+    );
+    expect(amountInput).toHaveAttribute('aria-invalid', 'true');
     expect(mocks.saveOrder).not.toHaveBeenCalled();
     expect(screen.getByTestId('profile-deposit-confirm')).toBeInTheDocument();
   });
@@ -711,9 +781,7 @@ describe('ProfilePage shadcn account surface', () => {
     await user.click(screen.getByTestId('profile-confirm-primary'));
 
     await waitFor(() => expect(mocks.unbindTelegram).toHaveBeenCalledTimes(1));
-    // Unbinding's user-record refresh now lives in the mutation's onSuccess; the
-    // disabled subscribe query still needs the explicit call-site refetch.
+    // Unbinding's user-record refresh lives in the mutation's onSuccess.
     expect(mocks.refetchInfo).not.toHaveBeenCalled();
-    await waitFor(() => expect(mocks.refetchSubscribe).toHaveBeenCalledTimes(1));
   });
 });

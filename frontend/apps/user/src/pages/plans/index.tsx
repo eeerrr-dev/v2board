@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
-import type { ParseKeys } from 'i18next';
+import type { SelectorParam } from 'i18next';
 import { useCommConfig, usePlans } from '@/lib/queries';
 import { PLAN_PERIOD_LABELS, PURCHASABLE_PLAN_PERIODS } from '@/lib/plan-periods';
 import { PlanContent } from '@/components/plan-content';
@@ -26,9 +26,12 @@ const RENEWAL_PRICE_KEYS = PERIOD_PRICES.filter((p) => p.key !== 'onetime_price'
 type FilterKind = 'all' | 'period' | 'traffic';
 
 function getUnitPriceTag(plan: PlanLike) {
-  let unitPrice: { key: keyof PlanLike; labelKey: ParseKeys } | undefined;
+  let unitPrice: { labelKey: SelectorParam; price: number } | undefined;
   [...PERIOD_PRICES].reverse().forEach((period) => {
-    if (plan[period.key] !== null) unitPrice = period;
+    const price = plan[period.key];
+    if (typeof price === 'number' && Number.isFinite(price)) {
+      unitPrice = { labelKey: period.labelKey, price };
+    }
   });
   return unitPrice;
 }
@@ -52,18 +55,18 @@ export default function PlansPage() {
   return (
     <PageShell data-testid="plans-page">
       <PageHeader
-        title={t('plan.pick_title')}
-        description={t('plan.pick_best_for_you')}
+        title={t($ => $.plan.pick_title)}
+        description={t($ => $.plan.pick_best_for_you)}
         actions={
           <SegmentedControl
             data-testid="plan-tabs"
-            aria-label={t('plan.pick_title')}
+            aria-label={t($ => $.plan.pick_title)}
             value={filter}
             onValueChange={setFilter}
             items={[
-              { value: 'all', label: t('plan.filter_all') },
-              { value: 'period', label: t('plan.filter_period') },
-              { value: 'traffic', label: t('plan.filter_traffic') },
+              { value: 'all', label: t($ => $.plan.filter_all) },
+              { value: 'period', label: t($ => $.plan.filter_period) },
+              { value: 'traffic', label: t($ => $.plan.filter_traffic) },
             ]}
           />
         }
@@ -78,20 +81,20 @@ export default function PlansPage() {
           </CardContent>
         </Card>
       ) : filtered.length === 0 ? (
-        <EmptyState data-testid="plan-empty" title={t('plan.no_plan')} />
+        <EmptyState data-testid="plan-empty" title={t($ => $.plan.no_plan)} />
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {filtered.map((plan) => {
             const unitPrice = getUnitPriceTag(plan);
             const isSoldOut = plan.capacity_limit !== null && plan.capacity_limit <= 0;
+            const isPriceUnavailable = unitPrice === undefined;
+            const isUnavailable = isSoldOut || isPriceUnavailable;
             const almostSoldOut =
-              plan.capacity_limit !== null &&
-              plan.capacity_limit >= 1 &&
-              plan.capacity_limit <= 5;
+              plan.capacity_limit !== null && plan.capacity_limit >= 1 && plan.capacity_limit <= 5;
 
             const cardClassName = cn(
               'group flex h-full w-full rounded-xl border border-border bg-card text-left text-card-foreground shadow-sm transition-all',
-              isSoldOut
+              isUnavailable
                 ? 'pointer-events-none opacity-60'
                 : 'hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-md focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
             );
@@ -104,14 +107,35 @@ export default function PlansPage() {
                       {plan.name}
                     </CardTitle>
                     {almostSoldOut ? (
-                      <StatusBadge data-testid="plan-stock-badge" className="whitespace-nowrap" tone="warning">
-                        {t('plan.almost_sold_out')}
+                      <StatusBadge
+                        data-testid="plan-stock-badge"
+                        className="whitespace-nowrap"
+                        tone="warning"
+                      >
+                        {t($ => $.plan.almost_sold_out)}
                       </StatusBadge>
                     ) : null}
                   </div>
                   <div>
-                    <div className="text-3xl font-semibold tracking-normal">
-                      {symbol} {((unitPrice ? (plan[unitPrice.key] as number) : NaN) / 100).toFixed(2)}
+                    <div
+                      className={cn(
+                        'font-semibold',
+                        unitPrice
+                          ? 'text-3xl tracking-normal'
+                          : 'text-sm leading-6 text-destructive',
+                      )}
+                    >
+                      {unitPrice ? (
+                        <>
+                          {symbol} {(unitPrice.price / 100).toFixed(2)}
+                        </>
+                      ) : (
+                        <span data-testid="plan-price-unavailable">
+                          {t(
+                            $ => $.errors["This payment period cannot be purchased, please choose another period"],
+                          )}
+                        </span>
+                      )}
                     </div>
                     <div className="mt-1 text-sm text-muted-foreground">
                       {unitPrice ? t(unitPrice.labelKey) : ''}
@@ -119,31 +143,49 @@ export default function PlansPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="flex flex-1 flex-col gap-5">
-                  {plan.content ? <PlanContent content={plan.content} /> : <div />}
+                  {plan.content ? (
+                    <PlanContent content={plan.content} htmlClassName="custom-html-style" />
+                  ) : (
+                    <div />
+                  )}
                   <span
                     className={cn(
                       'inline-flex h-9 w-fit items-center justify-center rounded-md px-4 text-sm font-medium transition-colors',
-                      isSoldOut
+                      isUnavailable
                         ? 'border border-border bg-secondary text-secondary-foreground'
                         : 'bg-primary text-primary-foreground group-hover:bg-primary/90',
                     )}
                   >
-                    {isSoldOut ? t('plan.sold_out') : t('plan.buy_now')}
+                    {isSoldOut
+                      ? t($ => $.plan.sold_out)
+                      : isPriceUnavailable
+                        ? t($ => $.plan.select_other)
+                        : t($ => $.plan.buy_now)}
                   </span>
                 </CardContent>
               </Card>
             );
 
-            // Sold-out cards (capacity_limit <= 0) render as a non-interactive
-            // element rather than a disabled anchor (anchors have no `disabled`),
-            // keeping the Tier-1 sold-out block intact. Purchasable cards are real
+            // Sold-out and price-invalid cards render as non-interactive elements
+            // rather than disabled anchors (anchors have no `disabled`). The sold-out
+            // label keeps priority when both conditions apply; valid cards remain real
             // links so the hash router's native href affordances work.
-            return isSoldOut ? (
-              <div key={plan.id} data-testid="plan-card" aria-disabled="true" className={cardClassName}>
+            return isUnavailable ? (
+              <div
+                key={plan.id}
+                data-testid="plan-card"
+                aria-disabled="true"
+                className={cardClassName}
+              >
                 {cardBody}
               </div>
             ) : (
-              <Link key={plan.id} to={`/plan/${plan.id}`} data-testid="plan-card" className={cardClassName}>
+              <Link
+                key={plan.id}
+                to={`/plan/${plan.id}`}
+                data-testid="plan-card"
+                className={cardClassName}
+              >
                 {cardBody}
               </Link>
             );

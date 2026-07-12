@@ -1,4 +1,4 @@
-import { type QueryClient } from '@tanstack/react-query';
+import { CancelledError, type QueryClient } from '@tanstack/react-query';
 import { type ComponentType } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -8,17 +8,22 @@ import {
   type LoaderFunctionArgs,
   type RouteObject,
 } from 'react-router';
-import { getNormalizedLegacyHashPath } from '@v2board/config';
-import type { UserInfo } from '@v2board/types';
+import { getNormalizedHashPath } from '@v2board/config';
+import type { CheckLoginResult } from '@v2board/types';
 import { AppLayout } from '@/components/layout/app-layout';
 import { GuestLayout } from '@/components/layout/guest-layout';
 import { RequireAuth } from '@/components/layout/require-auth';
 import { RouteBoundaryOutlet, RouteErrorFallback } from '@/components/route-error-boundary';
 import { Spinner } from '@/components/ui/spinner';
-import { buildLoginRedirect, getAuthData } from '@/lib/auth';
-import { userQueryOptions } from '@/lib/queries';
+import {
+  buildLoginRedirect,
+  getAuthData,
+  normalizeLoginRedirectTarget,
+  setAuthData,
+} from '@/lib/auth';
+import { userKeys, userQueryOptions } from '@/lib/queries';
 
-export const USER_LEGACY_ROUTE_PATHS = [
+export const USER_ROUTE_PATHS = [
   '/dashboard',
   '/forgetpassword',
   '/',
@@ -37,7 +42,8 @@ export const USER_LEGACY_ROUTE_PATHS = [
   '/traffic',
 ] as const;
 
-type UserLegacyRoutePath = (typeof USER_LEGACY_ROUTE_PATHS)[number];
+type UserRoutePath = (typeof USER_ROUTE_PATHS)[number];
+type UserPageRoutePath = Exclude<UserRoutePath, '/'>;
 
 export const USER_GUEST_ROUTE_PATHS = ['/login', '/register', '/forgetpassword'] as const;
 
@@ -55,21 +61,20 @@ export const USER_APP_LAYOUT_ROUTE_PATHS = [
   '/traffic',
 ] as const;
 
-export const USER_LEGACY_ROUTE_OPTIONS = {
+export const USER_HASH_ROUTE_OPTIONS = {
   authenticatedFallback: '/dashboard',
   authenticatedPublicFallbackRoutes: [],
   guestFallback: '/login',
-  nestedPrefixes: USER_LEGACY_ROUTE_PATHS,
+  nestedPrefixes: USER_ROUTE_PATHS,
   publicRoutes: ['/', '/login', '/register', '/forgetpassword'],
-  routes: USER_LEGACY_ROUTE_PATHS,
+  routes: USER_ROUTE_PATHS,
 } as const;
 
 type LazyRouteModule = Promise<{ default: ComponentType }>;
 
-const USER_ROUTE_MODULES: Record<UserLegacyRoutePath, () => LazyRouteModule> = {
+const USER_ROUTE_MODULES: Record<UserPageRoutePath, () => LazyRouteModule> = {
   '/dashboard': () => import('@/pages/dashboard'),
   '/forgetpassword': () => import('@/pages/auth/forget'),
-  '/': () => import('@/pages/home'),
   '/invite': () => import('@/pages/invite'),
   '/knowledge': () => import('@/pages/knowledge'),
   '/login': () => import('@/pages/auth/login'),
@@ -85,7 +90,7 @@ const USER_ROUTE_MODULES: Record<UserLegacyRoutePath, () => LazyRouteModule> = {
   '/traffic': () => import('@/pages/traffic'),
 };
 
-function lazyPage(path: UserLegacyRoutePath): RouteObject['lazy'] {
+function lazyPage(path: UserPageRoutePath): RouteObject['lazy'] {
   return async () => {
     const module = await USER_ROUTE_MODULES[path]();
     return { Component: module.default };
@@ -98,19 +103,19 @@ function getRequestRoutePath(request: Request): string {
   return `${url.pathname}${url.search}`;
 }
 
-function matchesUserLegacyRoute(pathname: string): boolean {
-  return USER_LEGACY_ROUTE_PATHS.some((path) => matchPath({ path, end: true }, pathname));
+function matchesUserRoute(pathname: string): boolean {
+  return USER_ROUTE_PATHS.some((path) => matchPath({ path, end: true }, pathname));
 }
 
 function getUserRouteFallback(): string {
   return getAuthData()
-    ? USER_LEGACY_ROUTE_OPTIONS.authenticatedFallback
-    : USER_LEGACY_ROUTE_OPTIONS.guestFallback;
+    ? USER_HASH_ROUTE_OPTIONS.authenticatedFallback
+    : USER_HASH_ROUTE_OPTIONS.guestFallback;
 }
 
 export function normalizeUserRouteLoader({ request }: LoaderFunctionArgs) {
   const current = getRequestRoutePath(request);
-  const normalized = getNormalizedLegacyHashPath(current, USER_LEGACY_ROUTE_OPTIONS);
+  const normalized = getNormalizedHashPath(current, USER_HASH_ROUTE_OPTIONS);
 
   if (normalized !== current) throw redirect(normalized);
   return null;
@@ -118,41 +123,18 @@ export function normalizeUserRouteLoader({ request }: LoaderFunctionArgs) {
 
 export function unknownUserRouteLoader({ request }: LoaderFunctionArgs) {
   const current = getRequestRoutePath(request);
-  const normalized = getNormalizedLegacyHashPath(current, USER_LEGACY_ROUTE_OPTIONS);
+  const normalized = getNormalizedHashPath(current, USER_HASH_ROUTE_OPTIONS);
   const url = new URL(`https://v2board.local${normalized}`);
 
-  if (normalized !== current && matchesUserLegacyRoute(url.pathname)) throw redirect(normalized);
+  if (normalized !== current && matchesUserRoute(url.pathname)) throw redirect(normalized);
   throw redirect(getUserRouteFallback());
 }
 
-// The legacy empty user record: the packaged frontend initialized its user
-// state to an empty object and kept rendering the app shell when /user/info
-// failed without a session teardown (the oracle's user-auth-401-no-redirect
-// scenario keeps the dashboard mounted on an HTTP 401). AppLayout reads the
-// info query via useSuspenseQuery, which would re-throw a cached fetch error
-// to the route errorElement and replace the whole shell — so the require-user
-// loader seeds this record instead and page-level queries surface their own
-// failures. Page observers refetch the real record as soon as one succeeds.
-const EMPTY_USER_INFO: UserInfo = {
-  email: '',
-  transfer_enable: 0,
-  device_limit: null,
-  last_login_at: null,
-  created_at: 0,
-  banned: 0,
-  auto_renewal: 0,
-  remind_expire: 0,
-  remind_traffic: 0,
-  expired_at: null,
-  balance: 0,
-  commission_balance: 0,
-  plan_id: null,
-  discount: null,
-  commission_rate: null,
-  telegram_id: null,
-  uuid: '',
-  avatar_url: '',
-};
+/** Keep `/` as an explicit session-aware entry; no operator-rendered HTML
+ * configuration exists in the native runtime. */
+export function rootUserRouteLoader(): never {
+  throw redirect(getUserRouteFallback());
+}
 
 // Auth is guarded in two layers and BOTH are load-bearing:
 //   1. This route loader gates ENTRY. On navigation it redirects an
@@ -175,20 +157,94 @@ export function createRequireUserLoader(queryClient: QueryClient) {
 
     try {
       await queryClient.ensureQueryData(userQueryOptions.info());
-    } catch {
-      // A failed /user/info must not unmount the app shell (see EMPTY_USER_INFO
-      // above). Only a 403 tears the session down: redirectToLegacyLogin has
-      // already cleared the token by the time that rejection propagates here,
-      // so the getAuthData() check skips the seed and the auth gates own the
-      // redirect. A query that already holds data keeps it.
-      if (
-        getAuthData() &&
-        queryClient.getQueryData(userQueryOptions.info().queryKey) === undefined
-      ) {
-        queryClient.setQueryData(userQueryOptions.info().queryKey, EMPTY_USER_INFO);
-      }
+    } catch (error) {
+      // A 403 clears auth in the API layer; convert that teardown into a router
+      // redirect. Other failures belong to the route error boundary—never invent
+      // an empty user object that looks like valid authenticated server state.
+      if (!getAuthData()) throw redirect('/login');
+      throw error;
     }
     return null;
+  };
+}
+
+interface LoginProbeConsumer {
+  signal: AbortSignal;
+}
+
+function isAbortedQuery(error: unknown): boolean {
+  return (
+    error instanceof CancelledError ||
+    (typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError')
+  );
+}
+
+const activeLoginProbeConsumers = new WeakMap<QueryClient, Set<LoginProbeConsumer>>();
+
+function trackLoginProbe(queryClient: QueryClient, signal: AbortSignal): () => void {
+  const active = activeLoginProbeConsumers.get(queryClient) ?? new Set<LoginProbeConsumer>();
+  activeLoginProbeConsumers.set(queryClient, active);
+  const consumer = { signal };
+  active.add(consumer);
+
+  const onAbort = () => {
+    active.delete(consumer);
+    // Keep a shared probe alive while another concurrent loader still needs it;
+    // cancel only when every consumer has gone away.
+    if (active.size === 0) {
+      activeLoginProbeConsumers.delete(queryClient);
+      void queryClient.cancelQueries({ queryKey: userKeys.checkLogin, exact: true });
+    }
+  };
+  signal.addEventListener('abort', onAbort, { once: true });
+
+  return () => {
+    signal.removeEventListener('abort', onAbort);
+    active.delete(consumer);
+    if (active.size === 0) activeLoginProbeConsumers.delete(queryClient);
+  };
+}
+
+/**
+ * Resolve an existing session before the login component renders. TanStack
+ * Query owns the request lifecycle and AbortSignal; repeated/concurrent loader
+ * calls join the same checkLogin promise instead of issuing duplicate probes.
+ * A verify handoff is deliberately excluded: token2Login mints a new session
+ * and must never race a stale-token check.
+ */
+export function createLoginLoader(queryClient: QueryClient) {
+  return async ({ request }: LoaderFunctionArgs) => {
+    const routeUrl = new URL(getRequestRoutePath(request), 'https://v2board.local');
+    if (request.signal.aborted || routeUrl.searchParams.has('verify') || !getAuthData()) {
+      return null;
+    }
+
+    let session: CheckLoginResult;
+    const stopTracking = trackLoginProbe(queryClient, request.signal);
+    try {
+      session = await queryClient.fetchQuery(userQueryOptions.checkLogin());
+    } catch (error) {
+      // An abandoned navigation owns no UI and should not poison the next one.
+      // Real query failures belong to the route error boundary; silently showing
+      // a credential form would misrepresent an unavailable session check as a
+      // verified logged-out state.
+      if (request.signal.aborted || isAbortedQuery(error)) return null;
+      throw error;
+    } finally {
+      stopTracking();
+    }
+
+    if (request.signal.aborted) return null;
+
+    if (!session.is_login) {
+      setAuthData(null);
+      return null;
+    }
+
+    // The old effect navigated immediately and warmed user/info in parallel.
+    // Keep that non-blocking contract while deduping against the destination.
+    void queryClient.prefetchQuery(userQueryOptions.info());
+    throw redirect(normalizeLoginRedirectTarget(routeUrl.searchParams.get('redirect')));
   };
 }
 
@@ -203,33 +259,32 @@ export function createRequireUserLoader(queryClient: QueryClient) {
 export function createDashboardPrefetchLoader(queryClient: QueryClient) {
   return (): null => {
     if (!getAuthData()) return null;
-    void queryClient.ensureQueryData(userQueryOptions.subscribe()).catch(() => null);
-    void queryClient.ensureQueryData(userQueryOptions.stat()).catch(() => null);
-    void queryClient.ensureQueryData(userQueryOptions.notices()).catch(() => null);
-    void queryClient.ensureQueryData(userQueryOptions.commConfig()).catch(() => null);
+    // prefetchQuery is the canonical detached warm-up API: it retains query
+    // failures in cache for each surface's ErrorState and never rejects/toasts.
+    void queryClient.prefetchQuery(userQueryOptions.subscribe());
+    void queryClient.prefetchQuery(userQueryOptions.stat());
+    void queryClient.prefetchQuery(userQueryOptions.notices());
+    void queryClient.prefetchQuery(userQueryOptions.commConfig());
     return null;
   };
 }
 
-// Initial-hydration fallback: while the root matches' loaders/lazy chunks are
-// still pending on first load (e.g. requireUser awaiting a slow /user/info),
-// the data router would otherwise render nothing and leave #root empty — the
-// exact DOM shape the retired production white-screen watchdog keyed on.
-// Mirrors AppLayout's role=status spinner fallback.
+// Keep initial loader and lazy-chunk work visible and accessible while the data
+// router hydrates. Mirrors AppLayout's role=status spinner fallback.
 function RouteHydrateFallback() {
   const { t } = useTranslation();
   return (
     <div
       role="status"
-      className="v2board-island flex min-h-screen items-center justify-center bg-background"
+      className="flex min-h-screen items-center justify-center bg-background"
     >
       <Spinner className="size-6" />
-      <span className="sr-only">{t('common.loading')}</span>
+      <span className="sr-only">{t($ => $.common.loading)}</span>
     </div>
   );
 }
 
-function pageRoute(path: UserLegacyRoutePath, loader?: RouteObject['loader']): RouteObject {
+function pageRoute(path: UserPageRoutePath, loader?: RouteObject['loader']): RouteObject {
   return {
     path,
     lazy: lazyPage(path),
@@ -240,6 +295,7 @@ function pageRoute(path: UserLegacyRoutePath, loader?: RouteObject['loader']): R
 
 export function createUserRoutes(queryClient: QueryClient): RouteObject[] {
   const requireUser = createRequireUserLoader(queryClient);
+  const loginLoader = createLoginLoader(queryClient);
   const prefetchDashboard = createDashboardPrefetchLoader(queryClient);
 
   return [
@@ -250,11 +306,17 @@ export function createUserRoutes(queryClient: QueryClient): RouteObject[] {
       errorElement: <RouteErrorFallback />,
       hydrateFallbackElement: <RouteHydrateFallback />,
       children: [
-        pageRoute('/'),
+        {
+          path: '/',
+          loader: rootUserRouteLoader,
+          errorElement: <RouteErrorFallback />,
+        },
         {
           element: <GuestLayout />,
           errorElement: <RouteErrorFallback />,
-          children: USER_GUEST_ROUTE_PATHS.map((path) => pageRoute(path)),
+          children: USER_GUEST_ROUTE_PATHS.map((path) =>
+            pageRoute(path, path === '/login' ? loginLoader : undefined),
+          ),
         },
         {
           loader: requireUser,

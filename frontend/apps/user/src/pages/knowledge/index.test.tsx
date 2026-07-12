@@ -2,6 +2,7 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/render';
+import { createTestTranslation } from '@/test/i18next-selector';
 import KnowledgePage from './index';
 
 const mocks = vi.hoisted(() => {
@@ -58,23 +59,26 @@ const mocks = vi.hoisted(() => {
     copyText: vi.fn(),
     toastSuccess: vi.fn(),
     detailRefetch: vi.fn(),
+    knowledgeRefetch: vi.fn(),
     knowledgeArgs: [] as Array<{ language: string; keyword?: string }>,
     detailArgs: [] as Array<{ id: number | string | undefined; language: string }>,
     pending: false,
     fetching: false,
     placeholder: false,
+    knowledgeError: false,
     detailFetching: false,
     detailError: false,
     searchParams: new URLSearchParams(),
     defaultGroups,
     defaultDetailById,
-    groups: defaultGroups,
+    groups: defaultGroups as typeof defaultGroups | undefined,
     detailById: { ...defaultDetailById },
   };
 });
 
 const labels: Record<string, string> = {
   'common.close_dialog': 'Close',
+  'common.empty': '暂无数据',
   'common.loading': 'Loading...',
   'common.error_title': 'Something went wrong',
   'common.retry': 'Retry',
@@ -90,13 +94,7 @@ vi.mock('react-router', () => ({
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key: string, values?: Record<string, string>) =>
-      (labels[key] ?? key)
-        .replace('{{date}}', values?.date ?? '')
-        .replace('{date}', values?.date ?? ''),
-    i18n: { language: 'zh-CN' },
-  }),
+  useTranslation: () => createTestTranslation(labels),
 }));
 
 vi.mock('@/lib/api', () => ({
@@ -109,9 +107,11 @@ vi.mock('@/lib/queries', () => ({
     return {
       data: mocks.groups,
       error: undefined,
+      isError: mocks.knowledgeError,
       isPending: mocks.pending,
       isFetching: mocks.fetching,
       isPlaceholderData: mocks.placeholder,
+      refetch: mocks.knowledgeRefetch,
     };
   },
   useKnowledgeDetail: (id: number | string | undefined, language: string) => {
@@ -119,10 +119,7 @@ vi.mock('@/lib/queries', () => ({
     return {
       // The detail query has no placeholderData, so a pending fetch resolves to
       // no data yet; the page keeps the previous article visible on its own.
-      data:
-        id === undefined || mocks.detailFetching
-          ? undefined
-          : mocks.detailById[String(id)],
+      data: id === undefined || mocks.detailFetching ? undefined : mocks.detailById[String(id)],
       isFetching: mocks.detailFetching,
       isError: mocks.detailError,
       refetch: mocks.detailRefetch,
@@ -130,7 +127,7 @@ vi.mock('@/lib/queries', () => ({
   },
 }));
 
-vi.mock('@/lib/legacy-settings', () => ({
+vi.mock('@v2board/config/clipboard', () => ({
   copyText: mocks.copyText,
 }));
 
@@ -144,6 +141,7 @@ beforeEach(() => {
   mocks.pending = false;
   mocks.fetching = false;
   mocks.placeholder = false;
+  mocks.knowledgeError = false;
   mocks.detailFetching = false;
   mocks.detailError = false;
   mocks.searchParams = new URLSearchParams();
@@ -155,6 +153,7 @@ beforeEach(() => {
   mocks.copyText.mockResolvedValue(true);
   mocks.toastSuccess.mockClear();
   mocks.detailRefetch.mockClear();
+  mocks.knowledgeRefetch.mockClear();
 });
 
 describe('KnowledgePage shadcn library surface', () => {
@@ -191,6 +190,20 @@ describe('KnowledgePage shadcn library surface', () => {
     expect(screen.queryByText('没有匹配的文档')).not.toBeInTheDocument();
     expect(screen.queryAllByTestId('knowledge-item')).toHaveLength(0);
   });
+
+  it('shows a retryable list error instead of misrepresenting a failed fetch as empty', async () => {
+    mocks.groups = {};
+    mocks.knowledgeError = true;
+
+    const { user } = renderWithProviders(<KnowledgePage />);
+
+    expect(screen.getByTestId('knowledge-list-error')).toHaveTextContent('Something went wrong');
+    expect(screen.queryByTestId('knowledge-empty')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+
+    expect(mocks.knowledgeRefetch).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('KnowledgePage redesigned interactions', () => {
@@ -219,9 +232,9 @@ describe('KnowledgePage redesigned interactions', () => {
     renderWithProviders(<KnowledgePage />);
 
     expect(screen.getByTestId('knowledge-search-bar')).toBeInTheDocument();
-    expect(
-      within(screen.getByTestId('knowledge-loading')).getByRole('status'),
-    ).toHaveTextContent('Loading...');
+    expect(within(screen.getByTestId('knowledge-loading')).getByRole('status')).toHaveTextContent(
+      'Loading...',
+    );
     expect(screen.queryByText('General')).not.toBeInTheDocument();
     expect(screen.queryAllByTestId('knowledge-item')).toHaveLength(0);
   });
@@ -254,12 +267,37 @@ describe('KnowledgePage redesigned interactions', () => {
       expect(within(sheet).getByTestId('knowledge-sheet-title')).toHaveTextContent('Router Guide'),
     );
 
-    // Legacy inline onclick hooks are sanitized into delegated data attributes.
+    // Backend inline onclick hooks are sanitized into delegated data attributes.
     const article = within(sheet).getByTestId('knowledge-article');
     const jump = within(article).getByRole('button', { name: 'jump' });
     expect(jump).toHaveAttribute('data-v2board-markdown-action', 'jump');
     expect(jump).toHaveAttribute('data-v2board-markdown-value', '1');
     expect(article.querySelector('[onclick]')).toBeNull();
+  });
+
+  it('starts a URL detail request without waiting for the list and does not reapply it after close', async () => {
+    mocks.searchParams = new URLSearchParams('id=2');
+    mocks.groups = undefined;
+    mocks.pending = true;
+    mocks.fetching = true;
+
+    const { user } = renderWithProviders(<KnowledgePage />);
+
+    const sheet = await screen.findByTestId('knowledge-sheet');
+    expect(mocks.detailArgs).toContainEqual({ id: 2, language: 'zh-CN' });
+    expect(screen.getByTestId('knowledge-loading')).toBeInTheDocument();
+
+    await user.click(within(sheet).getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByTestId('knowledge-sheet')).not.toBeInTheDocument());
+
+    // A router/search update can produce a new URLSearchParams object. The URL
+    // remains an initial navigation input, so it must not reopen a sheet the
+    // user explicitly closed.
+    mocks.searchParams = new URLSearchParams('id=1');
+    await user.type(screen.getByRole('textbox', { name: '搜索文档' }), 'x');
+
+    expect(screen.queryByTestId('knowledge-sheet')).not.toBeInTheDocument();
+    expect(mocks.detailArgs.at(-1)).toEqual({ id: undefined, language: 'zh-CN' });
   });
 
   it('opens an article by URL id even when it is absent from the current list', async () => {
@@ -325,9 +363,7 @@ describe('KnowledgePage redesigned interactions', () => {
 
     await user.click(within(sheet).getByRole('button', { name: 'Close' }));
 
-    await waitFor(() =>
-      expect(screen.queryByTestId('knowledge-sheet')).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByTestId('knowledge-sheet')).not.toBeInTheDocument());
   });
 
   it('renders an empty article body through the markdown fallback without crashing', async () => {
@@ -378,9 +414,7 @@ describe('KnowledgePage redesigned interactions', () => {
     jump.focus();
     await user.keyboard('{Enter}');
 
-    await waitFor(() =>
-      expect(mocks.detailArgs).toContainEqual({ id: '1', language: 'zh-CN' }),
-    );
+    await waitFor(() => expect(mocks.detailArgs).toContainEqual({ id: '1', language: 'zh-CN' }));
     await waitFor(() =>
       expect(within(sheet).getByTestId('knowledge-sheet-title')).toHaveTextContent('Copy Article'),
     );

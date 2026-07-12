@@ -1,8 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getAuthData, logout, setAuthData, subscribeAuth } from './auth';
+import {
+  getAuthData,
+  logout,
+  registerSessionCacheClearer,
+  setAuthData,
+  setupAuthSync,
+  subscribeAuth,
+} from './auth';
 
 describe('admin legacy auth storage', () => {
   afterEach(() => {
+    registerSessionCacheClearer(() => undefined);
     localStorage.clear();
   });
 
@@ -25,5 +33,31 @@ describe('admin legacy auth storage', () => {
     expect(listener).toHaveBeenNthCalledWith(1, 'jwt');
     expect(listener).toHaveBeenNthCalledWith(2, null);
     expect(localStorage.getItem('authorization')).toBeNull();
+  });
+
+  it('clears all admin server state when the token identity changes', () => {
+    const clear = vi.fn();
+    registerSessionCacheClearer(clear);
+
+    setAuthData('first-admin');
+    clear.mockClear();
+    setAuthData('second-admin');
+
+    expect(clear).toHaveBeenCalledOnce();
+    expect(getAuthData()).toBe('second-admin');
+  });
+
+  it('synchronizes auth teardown from another browser tab', () => {
+    const clear = vi.fn();
+    const listener = vi.fn();
+    registerSessionCacheClearer(clear);
+    const unsubscribe = subscribeAuth(listener);
+    setupAuthSync();
+
+    window.dispatchEvent(new StorageEvent('storage', { key: 'authorization', newValue: null }));
+
+    expect(clear).toHaveBeenCalledOnce();
+    expect(listener).toHaveBeenCalledWith(null);
+    unsubscribe();
   });
 });

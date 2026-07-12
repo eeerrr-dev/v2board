@@ -3,129 +3,127 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-const viteConfigSource = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), '../vite.config.ts'),
-  'utf8',
-);
-const deployViteConfigSource = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), '../vite.config.deploy.ts'),
-  'utf8',
-);
+const here = dirname(fileURLToPath(import.meta.url));
+const viteConfigSource = readFileSync(join(here, '../vite.config.ts'), 'utf8');
+const deployViteConfigSource = readFileSync(join(here, '../vite.config.deploy.ts'), 'utf8');
 const sharedViteConfigSource = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), '../../../packages/config/src/vite.ts'),
+  join(here, '../../../packages/config/src/vite.ts'),
   'utf8',
 );
-const buildDeploySource = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), '../../../scripts/build-deploy.mjs'),
-  'utf8',
-);
+const buildDeploySource = readFileSync(join(here, '../../../scripts/build-deploy.mjs'), 'utf8');
+const adminDevTemplateSource = readFileSync(join(here, '../index.html'), 'utf8');
+const packageJson = JSON.parse(readFileSync(join(here, '../package.json'), 'utf8')) as {
+  dependencies: Record<string, string>;
+  scripts: Record<string, string>;
+};
+const userPackageJson = JSON.parse(readFileSync(join(here, '../../user/package.json'), 'utf8')) as {
+  scripts: Record<string, string>;
+};
+const workspacePackageJson = JSON.parse(
+  readFileSync(join(here, '../../../package.json'), 'utf8'),
+) as {
+  scripts: Record<string, string>;
+};
 
-describe('admin Vite dev optimizer', () => {
-  it('keeps admin optimized deps isolated and fully declared for stable page clicks', () => {
-    expect(viteConfigSource).toContain(
-      "cacheDir: '../../node_modules/.vite/admin-white-screen-recovery-37'",
-    );
-    expect(viteConfigSource).toContain('optimizeDeps: {');
-    expect(viteConfigSource).toContain('legacyNavigationRedirectPlugin(');
-    expect(viteConfigSource).toContain('legacyViteClientStubPlugin()');
-    expect(viteConfigSource).toContain('rejectPackagedAdminAssetsPlugin()');
-    expect(viteConfigSource).toContain('stripViteClientPlugin()');
-    expect(viteConfigSource).not.toContain('legacyAdminAssetsPlugin()');
-    expect(viteConfigSource).toContain("'axios'");
-    expect(viteConfigSource).toContain("'echarts/theme/vintage'");
-    expect(viteConfigSource).toContain("'react-dom'");
-    expect(viteConfigSource).toContain("'react/jsx-dev-runtime'");
-    expect(viteConfigSource).toContain("'react/jsx-runtime'");
-    expect(viteConfigSource).toContain('holdUntilCrawlEnd: true');
+describe('admin Vite configuration', () => {
+  it('uses the real Vite HMR client with an explicit dependency graph', () => {
+    expect(viteConfigSource).toContain("cacheDir: '../../node_modules/.vite/admin'");
+    expect(viteConfigSource).toContain('hashNavigationRedirectPlugin(');
+    expect(viteConfigSource).not.toContain('legacyViteClientStubPlugin');
+    expect(viteConfigSource).not.toContain('stripViteClientPlugin');
+    expect(sharedViteConfigSource).toContain('hmr: true');
+    expect(sharedViteConfigSource).not.toContain('export function legacyViteClientStubPlugin');
+    expect(sharedViteConfigSource).not.toContain('export function stripViteClientPlugin');
+    expect(sharedViteConfigSource).not.toContain('export function rejectPackagedAdminAssetsPlugin');
+    expect(viteConfigSource).toContain("'@v2board/api-client > axios'");
+    expect(viteConfigSource).toContain("'radix-ui'");
+    expect(viteConfigSource).toContain("'react-is'");
+    expect(viteConfigSource).toContain("'recharts'");
+    expect(viteConfigSource).not.toContain("'echarts'");
+    expect(viteConfigSource).not.toContain("'antd'");
+    expect(viteConfigSource).toContain('holdUntilCrawlEnd: false');
     expect(viteConfigSource).toContain('noDiscovery: true');
+    expect(sharedViteConfigSource).not.toContain('manualChunks');
+    expect(sharedViteConfigSource).not.toContain('rollupOptions: {');
   });
 
-  it('disables Vite HMR so open legacy pages are not half-refreshed while clicking', () => {
-    expect(sharedViteConfigSource).toContain('hmr: false');
-    expect(sharedViteConfigSource).not.toContain('overlay: false');
-    expect(sharedViteConfigSource).toContain('export function legacyNavigationRedirectPlugin(');
-    expect(sharedViteConfigSource).toContain('location: `/#${pathname}${url.search}`');
-    expect(sharedViteConfigSource).toContain("'content-length': '0'");
-    expect(sharedViteConfigSource).toContain('export function stripViteClientPlugin()');
-    expect(sharedViteConfigSource).toContain('export function legacyViteClientStubPlugin()');
-    expect(sharedViteConfigSource).toContain('export function rejectPackagedAdminAssetsPlugin()');
-    expect(sharedViteConfigSource).toContain("pathname.startsWith('/assets/admin/')");
-    expect(sharedViteConfigSource).not.toContain('export function legacyAdminAssetsPlugin()');
-    expect(sharedViteConfigSource).not.toContain('../../../public/assets/admin');
-    expect(sharedViteConfigSource).toContain('export function updateStyle');
-    expect(sharedViteConfigSource).toContain('export function createHotContext');
-    expect(sharedViteConfigSource).toContain('export function injectQuery');
-    expect(sharedViteConfigSource).toContain('export class ErrorOverlay');
-    expect(sharedViteConfigSource).toContain('/@vite\\/client');
+  it('uses the shadcn Recharts v3 stack without retaining ECharts', () => {
+    expect(packageJson.dependencies.recharts).toBe('^3.9.2');
+    expect(packageJson.dependencies['react-is']).toBe('catalog:');
+    expect(packageJson.dependencies).not.toHaveProperty('echarts');
   });
 
-  it('does not copy or concatenate old packaged admin assets into deploy output', () => {
-    expect(deployViteConfigSource).toContain('assetsInlineLimit: 0');
-    expect(deployViteConfigSource).toContain('emptyOutDir: false');
-    expect(deployViteConfigSource).toContain('chunkSizeWarningLimit: 3200');
-    expect(deployViteConfigSource).toContain('rolldownOptions: {');
-    expect(deployViteConfigSource).toContain('transform: {');
-    expect(deployViteConfigSource).toContain("'import.meta': '{}'");
-    expect(deployViteConfigSource).toContain('codeSplitting: false');
-    expect(deployViteConfigSource).not.toContain('rollupOptions: {');
-    expect(deployViteConfigSource).not.toContain('inlineDynamicImports');
-    expect(deployViteConfigSource).not.toContain('copyLegacyAdminAssets');
-    expect(deployViteConfigSource).not.toContain('cpSync');
-    expect(deployViteConfigSource).not.toContain('readFileSync');
-    expect(deployViteConfigSource).not.toContain('writeFileSync');
-    expect(deployViteConfigSource).not.toContain('../../../public/assets/admin');
-    expect(deployViteConfigSource).not.toContain('components.chunk.css');
-    expect(deployViteConfigSource).not.toContain('vendors.async.js');
-    expect(deployViteConfigSource).not.toContain('components.async.js');
-    expect(deployViteConfigSource).not.toContain('env.example.js');
-    expect(deployViteConfigSource).not.toContain("'custom.css'");
-    expect(deployViteConfigSource).not.toContain("'custom.js'");
-    expect(deployViteConfigSource).toContain('process.env.V2BOARD_DEPLOY_OUT_DIR');
+  it('emits manifest-driven hashed ESM chunks and split CSS', () => {
+    expect(deployViteConfigSource).toContain("base: '/assets/admin/'");
+    expect(deployViteConfigSource).toContain('cssCodeSplit: true');
+    expect(deployViteConfigSource).toContain("manifest: 'manifest.json'");
+    expect(deployViteConfigSource).toContain('modulePreload: { polyfill: false }');
+    expect(deployViteConfigSource).toContain("input: path.resolve(import.meta.dirname, 'index.html')");
+    expect(deployViteConfigSource).toContain("entryFileNames: '[name]-[hash].js'");
+    expect(deployViteConfigSource).toContain("chunkFileNames: '[name]-[hash].js'");
+    expect(deployViteConfigSource).toContain("assetFileNames: 'asset-[hash][extname]'");
+    expect(deployViteConfigSource).not.toContain("format: 'iife'");
+    expect(deployViteConfigSource).not.toContain('codeSplitting: false');
+    expect(deployViteConfigSource).not.toContain('umi.js');
+    expect(deployViteConfigSource).not.toContain('umi.css');
+    expect(deployViteConfigSource).toContain(
+      'Deploy Vite config is internal; run the workspace pnpm build:deploy command',
+    );
+    expect(deployViteConfigSource).not.toContain("'../../dist-deploy");
   });
 
-  it('deploys admin theme css from source-owned files without colliding with the entry css name', () => {
-    expect(buildDeploySource).toContain("apps/admin/src/styles/themes");
-    expect(buildDeploySource).toContain("mkdtemp(join(tmpdir(), 'v2board-deploy-'))");
-    expect(buildDeploySource).toContain('V2BOARD_DEPLOY_OUT_DIR: userStageOut');
-    expect(buildDeploySource).toContain('V2BOARD_DEPLOY_OUT_DIR: adminStageOut');
-    expect(buildDeploySource).toContain('await rm(deployRoot, { recursive: true, force: true });');
-    expect(buildDeploySource).toContain('await cp(userStageOut, userOut, { recursive: true });');
-    expect(buildDeploySource).toContain('await cp(adminStageOut, adminOut, { recursive: true });');
-    expect(buildDeploySource).toContain("resolve(adminOut, 'themes')");
-    expect(buildDeploySource).toContain("['black.css', 'darkblue.css', 'default.css', 'green.css']");
-    expect(buildDeploySource).toContain('const legacyRootFiles = [');
-    expect(buildDeploySource).toContain("'components.chunk.css'");
-    expect(buildDeploySource).toContain("'vendors.async.js'");
-    expect(buildDeploySource).toContain("'components.async.js'");
-    expect(buildDeploySource).toContain("'env.example.js'");
-    expect(buildDeploySource).toContain("'custom.css'");
-    expect(buildDeploySource).toContain("'custom.js'");
-    expect(buildDeploySource).toContain("Unexpected legacy deploy artifact");
-    expect(buildDeploySource).toContain('for (const name of legacyRootFiles)');
-    expect(buildDeploySource).toContain('await assertAbsent(join(userOut, name));');
-    expect(buildDeploySource).toContain('await assertAbsent(join(adminOut, name));');
-    expect(buildDeploySource).not.toContain("copyFile(join(userDeployRoot, 'custom.css')");
-    expect(buildDeploySource).not.toContain("copyFile(join(userDeployRoot, 'custom.js')");
-    expect(buildDeploySource).toContain('async function assertSingleRootEntryFile');
-    expect(buildDeploySource).toContain(
-      "await assertSingleRootEntryFile('User CSS', userOut, /^umi\\d*\\.css$/, 'umi.css');",
+  it('applies the dark-mode preference before loading development styles', () => {
+    expect(adminDevTemplateSource).not.toContain('catch (error) {}');
+    expect(adminDevTemplateSource).toContain(
+      "if (separator === -1 || item.slice(0, separator) !== 'dark_mode') return value;",
     );
-    expect(buildDeploySource).toContain(
-      "await assertSingleRootEntryFile('User JS', userOut, /^umi\\d*\\.js$/, 'umi.js');",
+    expect(adminDevTemplateSource).toContain("document.documentElement.classList.add('dark');");
+    expect(adminDevTemplateSource).toContain(
+      "document.documentElement.style.colorScheme = 'dark';",
     );
-    expect(buildDeploySource).toContain(
-      "await assertSingleRootEntryFile('Admin CSS', adminOut, /^umi\\d*\\.css$/, 'umi.css');",
+    expect(adminDevTemplateSource.indexOf('if (dark) {')).toBeLessThan(
+      adminDevTemplateSource.indexOf('<script type="module"'),
     );
-    expect(buildDeploySource).toContain(
-      "await assertSingleRootEntryFile('Admin JS', adminOut, /^umi\\d*\\.js$/, 'umi.js');",
+    expect(adminDevTemplateSource).toContain(
+      '<script id="v2board-runtime-config" type="application/json">__V2BOARD_RUNTIME_CONFIG__</script>',
     );
-    expect(buildDeploySource).toContain('async function assertCssUrlsExist(label, cssFile)');
+    expect(adminDevTemplateSource).not.toContain('window.settings');
+  });
+
+  it('validates every manifest asset and rejects old deploy artifacts', () => {
+    expect(buildDeploySource).toContain(
+      'pnpm --filter @v2board/user --filter @v2board/admin --parallel run typecheck',
+    );
+    expect(buildDeploySource).toContain('async function validateViteBuild');
+    expect(buildDeploySource).toContain('manifest must contain exactly one entry');
+    expect(buildDeploySource).toContain('manifest entry must reference JavaScript and CSS');
     expect(buildDeploySource).toContain('references missing deploy assets');
-    expect(buildDeploySource).toContain("await assertCssUrlsExist('User entry CSS'");
-    expect(buildDeploySource).toContain("await assertCssUrlsExist('Admin entry CSS'");
-    expect(buildDeploySource).toContain("await assertCssUrlsExist(`Admin theme CSS ${name}`");
-    expect(buildDeploySource).not.toContain('public/assets/admin/theme');
-    expect(deployViteConfigSource).toContain("if (name.endsWith('.css')) return 'umi.css';");
+    expect(buildDeploySource).not.toContain('V2BOARD_DEPLOY_MODE');
+    expect(buildDeploySource).not.toContain('finalizeOnly');
+    expect(buildDeploySource).toContain("'umi.css'");
+    expect(buildDeploySource).toContain("'umi.js'");
+    expect(buildDeploySource).toContain("new Set(['i18n', 'images', 'theme', 'themes'])");
+    expect(buildDeploySource).not.toContain('apps/admin/src/styles/themes');
+    expect(buildDeploySource).not.toContain('adminThemeFiles');
+
+    const validation = buildDeploySource.indexOf('const userBuild = await validateViteBuild({');
+    const publish = buildDeploySource.indexOf(
+      'await publishBuild(stageRoot, deployRoot, releaseId)',
+    );
+    expect(validation).toBeGreaterThan(-1);
+    expect(publish).toBeGreaterThan(validation);
+    expect(buildDeploySource).toContain('async function publishBuild(source, target, releaseId)');
+    expect(buildDeploySource).toContain('await rename(pendingPath, releasePath)');
+    expect(buildDeploySource).toContain("await replaceDeployLink(target, 'current', releaseName)");
+    expect(buildDeploySource).toContain("await replaceDeployLink(target, 'previous', current)");
+    expect(buildDeploySource).not.toContain(
+      'await rm(deployRoot, { recursive: true, force: true })',
+    );
   });
 
+  it('exposes one canonical deploy command instead of app-level partial builds', () => {
+    expect(workspacePackageJson.scripts['build:deploy']).toBe('node scripts/build-deploy.mjs');
+    expect(packageJson.scripts).not.toHaveProperty('build:deploy');
+    expect(userPackageJson.scripts).not.toHaveProperty('build:deploy');
+  });
 });

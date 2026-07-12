@@ -1,8 +1,14 @@
-/*
- * Tailwind is pulled in here only for its Preflight reset and default theme.
- * `source(none)` means no utility classes are emitted at this layer — every user
- * surface is a pure shadcn island that owns its own unprefixed utilities via
- * user-shadcn.css. Nothing consumes tw:-prefixed utilities (the app asserts they
- * are absent), so that namespace is no longer reserved and none are generated.
- */
-@import 'tailwindcss' source(none);
+/* Explicit Tailwind v4 layers: each framework stylesheet is loaded exactly once. */
+@layer theme, base, components, utilities;
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/preflight.css' layer(base);
+@import 'tailwindcss/utilities.css' layer(utilities) source(none);
+@import 'tw-animate-css';
+@import './user-custom-html.css';
+@import './user-theme.css';
+@import './user-shadcn.css';
+
+/* Scan production TypeScript only; tests and test helpers never ship utilities. */
+@source '../**/*.{ts,tsx}';
+@source not '../**/*.{test,spec}.{ts,tsx}';
+@source not '../test/**';

@@ -1,4 +1,4 @@
-import * as ProgressPrimitive from '@radix-ui/react-progress';
+import { Progress as ProgressPrimitive } from 'radix-ui';
 import { type ComponentProps, type ComponentPropsWithoutRef } from 'react';
 import { cn } from '@/lib/cn';
 
@@ -11,10 +11,15 @@ interface ProgressProps extends ComponentProps<typeof ProgressPrimitive.Root> {
   indicatorProps?: ComponentPropsWithoutRef<typeof ProgressPrimitive.Indicator> & DataAttributes;
 }
 
-function Progress({ className, indicatorClassName, indicatorProps, value, ...props }: ProgressProps) {
-  const safeValue = typeof value === 'number' && Number.isFinite(value)
-    ? Math.max(0, Math.min(100, value))
-    : 0;
+function Progress({
+  className,
+  indicatorClassName,
+  indicatorProps,
+  value,
+  ...props
+}: ProgressProps) {
+  const safeValue =
+    typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0;
 
   return (
     <ProgressPrimitive.Root
@@ -25,7 +30,10 @@ function Progress({ className, indicatorClassName, indicatorProps, value, ...pro
     >
       <ProgressPrimitive.Indicator
         {...indicatorProps}
-        className={cn('h-full w-full rounded-full bg-primary transition-transform', indicatorClassName)}
+        className={cn(
+          'h-full w-full rounded-full bg-primary transition-transform',
+          indicatorClassName,
+        )}
         style={{
           ...indicatorProps?.style,
           transform: `translateX(-${100 - safeValue}%)`,

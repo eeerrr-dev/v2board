@@ -13,15 +13,14 @@ export interface GuestConfig {
 export interface UserCommConfig {
   is_telegram: 0 | 1;
   telegram_discuss_link: string | null;
-  stripe_pk: string | null;
   withdraw_methods: string[];
   withdraw_close: 0 | 1;
   currency: string;
   currency_symbol: string;
   commission_distribution_enable: 0 | 1;
-  commission_distribution_l1: string | null;
-  commission_distribution_l2: string | null;
-  commission_distribution_l3: string | null;
+  commission_distribution_l1: string | number | null;
+  commission_distribution_l2: string | number | null;
+  commission_distribution_l3: string | number | null;
 }
 
 export interface AdminConfigFlat {
@@ -77,11 +76,9 @@ export interface AdminConfigFlat {
   subscribe_url: string | null;
   subscribe_path: string | null;
   secure_path: string | null;
-  frontend_theme: string;
-  frontend_theme_sidebar: 'light' | 'dark';
-  frontend_theme_header: 'light' | 'dark';
   frontend_theme_color: 'default' | 'darkblue' | 'black' | 'green';
   frontend_background_url: string | null;
+  frontend_custom_html: string | null;
   safe_mode_enable: 0 | 1;
   server_api_url: string | null;
   server_token: string | null;
@@ -147,7 +144,8 @@ export interface AdminConfigGroups {
     | 'tos_url'
     | 'currency'
     | 'currency_symbol'
-  >;
+  > &
+    Partial<Pick<AdminConfigFlat, 'email_whitelist_suffix'>>;
   subscribe: Pick<
     AdminConfigFlat,
     | 'plan_change_enable'
@@ -163,11 +161,7 @@ export interface AdminConfigGroups {
   >;
   frontend: Pick<
     AdminConfigFlat,
-    | 'frontend_theme'
-    | 'frontend_theme_sidebar'
-    | 'frontend_theme_header'
-    | 'frontend_theme_color'
-    | 'frontend_background_url'
+    'frontend_theme_color' | 'frontend_background_url' | 'frontend_custom_html'
   >;
   server: Pick<
     AdminConfigFlat,
@@ -222,19 +216,14 @@ export interface AdminConfigGroups {
   >;
 }
 
-export interface AdminConfig extends AdminConfigGroups, Partial<AdminConfigFlat> {
-  tabs?: keyof AdminConfigGroups;
-}
-
-export interface SystemStatus {
-  schedule: boolean;
-  horizon: boolean;
-  logChannel: string;
-  logLevel: string;
-  cacheDriver: string;
-  backendVersion: string;
-  frontendVersion: string;
-}
+/**
+ * `/admin/config/fetch` may return every group or only the requested group.
+ * Keep that partial response shape honest instead of inventing absent groups.
+ */
+export type AdminConfig = Partial<AdminConfigGroups> &
+  Partial<AdminConfigFlat> & {
+    tabs?: keyof AdminConfigGroups;
+  };
 
 export interface QueueStats {
   failedJobs: number;

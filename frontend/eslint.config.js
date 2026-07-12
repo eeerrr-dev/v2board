@@ -4,6 +4,7 @@ import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
 import prettier from 'eslint-config-prettier';
 import globals from 'globals';
+import pluginQuery from '@tanstack/eslint-plugin-query';
 
 export default tseslint.config(
   {
@@ -17,8 +18,9 @@ export default tseslint.config(
     ],
   },
   js.configs.recommended,
+  ...pluginQuery.configs['flat/recommended'],
   {
-    files: ['scripts/**/*.mjs'],
+    files: ['**/*.config.mjs', 'scripts/**/*.mjs', 'tests/**/*.mjs'],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'module',
@@ -57,14 +59,14 @@ export default tseslint.config(
         { allowShortCircuit: true, allowTernary: true },
       ],
       'no-console': 'off',
-      'no-empty': ['error', { allowEmptyCatch: true }],
+      'no-empty': 'error',
       'no-undef': 'off',
       'no-unused-expressions': ['error', { allowShortCircuit: true, allowTernary: true }],
-      'react/jsx-key': 'off',
+      'react/jsx-key': 'error',
       'react/no-unknown-property': ['error', { ignore: ['unselectable'] }],
       'react/react-in-jsx-scope': 'off',
       'react/prop-types': 'off',
-      'react/jsx-no-target-blank': 'off',
+      'react/jsx-no-target-blank': 'error',
       'react-hooks/exhaustive-deps': 'off',
       'react-hooks/immutability': 'off',
       'react-hooks/incompatible-library': 'off',
@@ -84,12 +86,10 @@ export default tseslint.config(
   // this block) turns on `projectService`; it is scoped to `*/src` so it never touches
   // files outside a tsconfig. Pure-type deprecations have been cleared (FormEvent ->
   // SyntheticEvent, ElementRef -> ComponentRef, MutableRefObject -> RefObject). The
-  // behavioral deprecations deliberately retained for legacy parity (keyCode,
-  // onKeyPress, execCommand, clip, webkitUserSelect, getElementsByTagName, substr,
-  // unescape, returnValue, charCode) each carry an inline `eslint-disable-next-line
-  // @typescript-eslint/no-deprecated -- behavior-parity` directive at their call site
-  // (AGENTS.md behavior-parity gate). Drop those directives as each surface is
-  // redesigned and parity-retired.
+  // The only deliberately retained browser deprecation is BeforeUnloadEvent.returnValue,
+  // which remains necessary for the unsaved server-order prompt. It carries a local,
+  // documented lint suppression; deprecated convenience APIs and compatibility shims
+  // are otherwise rejected across both redesigned apps.
   {
     files: ['apps/*/src/**/*.{ts,tsx}', 'packages/*/src/**/*.{ts,tsx}'],
     languageOptions: {
@@ -103,30 +103,27 @@ export default tseslint.config(
     },
     rules: { '@typescript-eslint/no-deprecated': 'error' },
   },
-  // The user app runs the React Compiler (1.0), so the compiler-correctness
-  // react-hooks rules are turned back on for its source (they stay off globally
-  // because the admin replica is still legacy DOM/hook patterns).
+  // Both redesigned apps run React Compiler. Keep its correctness diagnostics
+  // enabled for every authored component so compilation never silently bails
+  // out behind a globally disabled lint rule.
   //
   // Enforced: purity / refs / immutability / incompatible-library — these are the
   // rules the compiler actually relies on to safely auto-memoize. They are clean
   // across the user app, except TanStack Table's useReactTable (an inherently
   // non-memoizable API), disabled inline at that one call site.
   //
-  // Deliberately NOT enabled here: exhaustive-deps and set-state-in-effect. Both
-  // are advisory hygiene rules the compiler tolerates, and every current violation
-  // is an intentional, behavior-parity effect on a contract-covered surface — the
-  // backend `弹窗` auto-popup, the checkout payment-status polling state machine,
-  // the recaptcha cleanup, and the knowledge URL-id open. Under the repo's
-  // `--max-warnings 0` lint gate, turning them on would force ~10 inline-disables
-  // of legitimate Tier-1/Tier-2 code that catch no real bug. They remain off until
-  // a surface is refactored to not need the effect, rather than annotated en masse.
+  // Source hooks use the full correctness set. State that mirrors queries/props is
+  // modeled as derived or keyed state, and effects are reserved for external
+  // synchronization (timers, subscriptions, focus and imperative libraries).
   {
-    files: ['apps/user/src/**/*.{ts,tsx}'],
+    files: ['apps/*/src/**/*.{ts,tsx}'],
     rules: {
       'react-hooks/immutability': 'error',
       'react-hooks/incompatible-library': 'error',
       'react-hooks/purity': 'error',
       'react-hooks/refs': 'error',
+      'react-hooks/exhaustive-deps': 'error',
+      'react-hooks/set-state-in-effect': 'error',
     },
   },
   prettier,

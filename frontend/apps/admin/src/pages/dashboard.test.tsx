@@ -1,30 +1,69 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import type { ComponentProps, ReactNode } from 'react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { buildOrderChartModel } from '@/components/admin-chart';
 import DashboardPage from './dashboard';
 
 // The dashboard is a redesigned shadcn island (shadcn Alerts + shortcut cards +
-// stat cards + token-aware echarts hosts) replacing the OneUI block layout. The
-// darkreader canvas baseline, js-classic-nav shells, and stats-bar scroll log
-// are retired. What stays covered is behavior: the pending-work alerts and their
-// navigation, the pending-commission sessionStorage filter, the shortcut routes,
-// the site currency lookup, and the cent-formatted income.
+// stat cards + token-aware shadcn/Recharts composition) replacing the OneUI block
+// layout. What stays covered is behavior: pending-work navigation, the pending-
+// commission sessionStorage filter, shortcut routes, currency, and chart semantics.
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
-  echartsInit: vi.fn(() => ({ setOption: vi.fn(), resize: vi.fn(), dispose: vi.fn() })),
+  responsiveContainerRender: vi.fn(),
+  lineChartRender: vi.fn(),
+  barChartRender: vi.fn(),
 }));
 
-vi.mock('react-router', () => ({ useNavigate: () => mocks.navigate }));
+vi.mock('react-router', () => ({
+  Link: ({ to, children, ...props }: { to: string } & Omit<ComponentProps<'a'>, 'href'>) => (
+    <a href={to} {...props}>
+      {children}
+    </a>
+  ),
+  useNavigate: () => mocks.navigate,
+}));
 
-vi.mock('echarts', () => ({ init: mocks.echartsInit }));
+vi.mock('recharts', async () => {
+  const React = await import('react');
+  type MockChartProps = { children?: ReactNode; [key: string]: unknown };
 
-vi.mock('@/lib/legacy-settings', () => ({
+  const primitive = () => null;
+  return {
+    ResponsiveContainer: ({ children, ...props }: MockChartProps) => {
+      mocks.responsiveContainerRender(props);
+      return React.createElement(React.Fragment, null, children);
+    },
+    LineChart: ({ children, ...props }: MockChartProps) => {
+      mocks.lineChartRender(props);
+      return React.createElement('div', { 'data-testid': 'mock-line-chart' }, children);
+    },
+    BarChart: ({ children, ...props }: MockChartProps) => {
+      mocks.barChartRender(props);
+      return React.createElement('div', { 'data-testid': 'mock-bar-chart' }, children);
+    },
+    Bar: primitive,
+    CartesianGrid: primitive,
+    Legend: primitive,
+    Line: primitive,
+    Tooltip: primitive,
+    XAxis: primitive,
+    YAxis: primitive,
+  };
+});
+
+vi.mock('@/lib/runtime-config', () => ({
   getAdminApiBaseUrl: () => 'http://localhost/api/v1',
 }));
-
 vi.mock('@/lib/queries', () => ({
   useConfig: () => ({ data: { site: { currency: 'CNY' }, currency: 'USD' } }),
+  useQueueStats: () => ({
+    data: { status: 'running' },
+    isError: false,
+    refetch: vi.fn(),
+  }),
   useStat: () => ({
     data: {
       online_user: 9,
@@ -48,25 +87,44 @@ vi.mock('@/lib/queries', () => ({
 describe('DashboardPage', () => {
   beforeEach(() => {
     mocks.navigate.mockReset();
+    mocks.responsiveContainerRender.mockReset();
+    mocks.lineChartRender.mockReset();
+    mocks.barChartRender.mockReset();
     window.sessionStorage.clear();
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.resolve({ json: () => Promise.resolve({ status: 'running' }) })),
-    );
   });
 
-  afterEach(() => {
-    vi.unstubAllGlobals();
+  it('aligns sparse order series by their actual date instead of array position', () => {
+    expect(
+      buildOrderChartModel([
+        { type: '新购', date: '07-01', value: 10 },
+        { type: '新购', date: '07-02', value: 20 },
+        { type: '续费', date: '07-01', value: 4 },
+      ]),
+    ).toEqual({
+      series: [
+        { dataKey: 'series_0', label: '新购' },
+        { dataKey: 'series_1', label: '续费' },
+      ],
+      rows: [
+        { date: '07-01', series_0: 10, series_1: 4 },
+        { date: '07-02', series_0: 20 },
+      ],
+    });
   });
 
-  it('renders the pending-work alerts with their counts', () => {
+  async function renderDashboard() {
     render(<DashboardPage />);
+    await screen.findByTestId('admin-order-chart');
+  }
+
+  it('renders the pending-work alerts with their counts', async () => {
+    await renderDashboard();
     expect(screen.getByText('有 2 条工单等待处理')).toBeInTheDocument();
     expect(screen.getByText('有 3 笔佣金等待确认')).toBeInTheDocument();
   });
 
-  it('shows income cents against the site currency (not the top-level currency)', () => {
-    render(<DashboardPage />);
+  it('shows income cents against the site currency (not the top-level currency)', async () => {
+    await renderDashboard();
     // day_income 12345 → 123.45
     expect(screen.getByText('123.45')).toBeInTheDocument();
     expect(screen.getAllByText('CNY').length).toBeGreaterThan(0);
@@ -74,16 +132,18 @@ describe('DashboardPage', () => {
     expect(screen.getByText('9')).toBeInTheDocument();
   });
 
-  it('routes the ticket alert action to the ticket console', async () => {
-    const user = userEvent.setup();
-    render(<DashboardPage />);
-    await user.click(screen.getByTestId('dashboard-ticket-alert').querySelector('button')!);
-    expect(mocks.navigate).toHaveBeenCalledWith('/ticket');
+  it('links the ticket alert action to the ticket console', async () => {
+    await renderDashboard();
+    expect(screen.getByTestId('dashboard-ticket-alert').querySelector('a')).toHaveAttribute(
+      'href',
+      '/ticket',
+    );
+    expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
   it('stashes the pending-commission order filter before opening orders', async () => {
     const user = userEvent.setup();
-    render(<DashboardPage />);
+    await renderDashboard();
     await user.click(screen.getByTestId('dashboard-commission-action'));
 
     expect(window.sessionStorage.getItem('v2board-admin-order-filter')).toBe(
@@ -96,23 +156,33 @@ describe('DashboardPage', () => {
     expect(mocks.navigate).toHaveBeenCalledWith('/order');
   });
 
-  it('navigates from each quick shortcut', async () => {
-    const user = userEvent.setup();
-    render(<DashboardPage />);
+  it('renders each quick shortcut as a real link', async () => {
+    await renderDashboard();
 
-    await user.click(screen.getByRole('button', { name: '系统设置' }));
-    expect(mocks.navigate).toHaveBeenCalledWith('/config/system');
-    await user.click(screen.getByRole('button', { name: '订单管理' }));
-    expect(mocks.navigate).toHaveBeenCalledWith('/order');
-    await user.click(screen.getByRole('button', { name: '订阅管理' }));
-    expect(mocks.navigate).toHaveBeenCalledWith('/plan');
-    await user.click(screen.getByRole('button', { name: '用户管理' }));
-    expect(mocks.navigate).toHaveBeenCalledWith('/user');
+    for (const [name, href] of [
+      ['系统设置', '/config/system'],
+      ['订单管理', '/order'],
+      ['订阅管理', '/plan'],
+      ['用户管理', '/user'],
+    ] as const) {
+      expect(screen.getByRole('link', { name })).toHaveAttribute('href', href);
+    }
+    expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
-  it('initializes an echarts host for each chart card', async () => {
-    render(<DashboardPage />);
-    // order chart + 4 rank charts (a theme settle may re-init, so assert ≥ 5).
-    await waitFor(() => expect(mocks.echartsInit.mock.calls.length).toBeGreaterThanOrEqual(5));
+  it('composes one accessible line chart and four vertical ranking charts', async () => {
+    await renderDashboard();
+
+    expect(screen.getByTestId('admin-order-chart')).toBeInTheDocument();
+    expect(await screen.findAllByTestId('admin-ranking-chart')).toHaveLength(4);
+    expect(mocks.lineChartRender).toHaveBeenCalledWith(
+      expect.objectContaining({ accessibilityLayer: true, 'aria-label': '订单统计折线图' }),
+    );
+    expect(mocks.barChartRender).toHaveBeenCalledWith(
+      expect.objectContaining({ accessibilityLayer: true, layout: 'vertical' }),
+    );
+    expect(mocks.responsiveContainerRender).toHaveBeenCalledWith(
+      expect.objectContaining({ initialDimension: { width: 320, height: 360 } }),
+    );
   });
 });

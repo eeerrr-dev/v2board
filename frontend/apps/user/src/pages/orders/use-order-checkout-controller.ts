@@ -9,29 +9,49 @@ import {
   useOrderStatus,
   usePaymentMethods,
   useCancelOrderMutation,
-  useStripePublicKey,
+  useStripePaymentIntent,
   useUserInfo,
   userKeys,
 } from '@/lib/queries';
 import { confirmDialog } from '@/components/ui/confirm-dialog';
-import type { StripeCardFormHandle } from '@/components/stripe-card-form';
+import type { StripePaymentFormHandle } from '@/components/stripe-payment-form';
 import { toast } from '@/lib/toast';
 
 export interface OrderCheckoutController {
-  /** Resolved order (with a `{ plan: {} }` fallback while the detail loads). */
-  order: Order;
+  /** Resolved order; absent while loading or after a failed detail request. */
+  order: Order | undefined;
   /** Query-level loading gate for the full-page spinner (isPending, not isFetching). */
   isLoading: boolean;
+  orderError: string | null;
+  retryOrder: () => void;
   /** The order is still awaiting payment (status 0). */
   isPending: boolean;
-  paymentMethods: PaymentMethod[] | undefined;
+  paymentMethods: PaymentMethod[];
+  paymentMethodsState: {
+    isPending: boolean;
+    error: string | null;
+    isEmpty: boolean;
+    retry: () => void;
+  };
   effectiveMethodId: number | undefined;
+  /** True only when the effective method still exists in the current query result. */
+  canCheckout: boolean;
   selectMethod: (id: number) => void;
   isStripePayment: boolean;
-  stripePublicKey: string | null;
-  stripeCardRef: Ref<StripeCardFormHandle>;
-  cardComplete: boolean;
-  setCardComplete: (complete: boolean) => void;
+  stripePaymentIntent: {
+    public_key: string;
+    client_secret: string;
+    amount: number;
+    currency: string;
+  } | null;
+  stripePreparation: {
+    isPending: boolean;
+    error: string | null;
+    retry: () => void;
+  };
+  stripePaymentRef: Ref<StripePaymentFormHandle>;
+  paymentComplete: boolean;
+  setPaymentComplete: (complete: boolean) => void;
   onPay: () => Promise<void>;
   isCheckoutPending: boolean;
   qrcode: { visible: boolean; payUrl: string | undefined; close: () => void };
@@ -45,11 +65,16 @@ export interface OrderCheckoutController {
 // Authored V2Board — order checkout behavior controller. Owns the order/payment/Stripe
 // queries, the self-stopping order-status poll bootstrap, the payment-settlement
 // reconciliation, and the onPay/cancel orchestration; the page keeps pure rendering.
-// The request/redirect payloads (save/checkout/cancel, the Stripe card token) stay
-// byte-identical — only where the loading/poll lifecycle lives changes.
+// Stripe uses a server-owned PaymentIntent and Payment Element; no card token ever
+// passes through application code.
 export function useOrderCheckoutController(tradeNo: string | undefined): OrderCheckoutController {
   const { t } = useTranslation();
-  const orderQuery = useOrder(tradeNo);
+  const {
+    data: order,
+    error: orderQueryError,
+    isPending: isOrderPending,
+    refetch: refetchOrder,
+  } = useOrder(tradeNo);
   const queryClient = useQueryClient();
   // Fetch payment methods in parallel with the order instead of chaining behind it:
   // /user/order/getPaymentMethod has no data dependency on the order, so fire it while
@@ -58,31 +83,37 @@ export function useOrderCheckoutController(tradeNo: string | undefined): OrderCh
   // so skip the request. This removes the checkout-page request waterfall while still not
   // firing for a cached, already-settled order.
   const paymentsQuery = usePaymentMethods({
-    enabled: Boolean(tradeNo) && (orderQuery.data === undefined || orderQuery.data.status === 0),
+    enabled: Boolean(tradeNo) && (order === undefined || order.status === 0),
   });
   // Old componentDidMount dispatches order/detail, then user/getUserInfo, then comm/config.
   useUserInfo({ refetchOnMount: 'always' });
   const { data: comm } = useCommConfig({ refetchOnMount: 'always' });
   const cancelMutation = useCancelOrderMutation();
   const checkout = useCheckoutOrderMutation();
-  const { mutateAsync: checkoutOrder } = checkout;
   const [methodId, setMethodId] = useState<number | undefined>();
-  const [qrcodeVisible, setQrcodeVisible] = useState(false);
+  const [qrcodeRequested, setQrcodeRequested] = useState(false);
   const [payUrl, setPayUrl] = useState<string | undefined>();
-  const [pollOrderStatus, setPollOrderStatus] = useState(false);
-  // Stripe tokenizes at submit time (see onPay), so the controller only tracks whether the
-  // CardElement reports itself complete — enough to gate the checkout button.
-  const [cardComplete, setCardComplete] = useState(false);
-  const stripeCardRef = useRef<StripeCardFormHandle>(null);
+  const [pollTradeNo, setPollTradeNo] = useState<string | null>(null);
+  const [completedStripeIntent, setCompletedStripeIntent] = useState<string | null>(null);
+  const [stripeConfirming, setStripeConfirming] = useState(false);
+  const stripeConfirmingRef = useRef(false);
+  const stripePaymentRef = useRef<StripePaymentFormHandle>(null);
   // useOrderStatus owns the 3s self-stopping poll cadence (it stops once the order leaves
   // the pending state or the check errors); this controller only decides whether to poll
   // at all, via enabled.
+  const pollOrderStatus = Boolean(tradeNo && order && pollTradeNo === tradeNo);
   const orderStatusQuery = useOrderStatus(tradeNo, { enabled: pollOrderStatus });
   const currencySymbol = comm?.currency_symbol;
   const currency = comm?.currency;
-  const paymentMethods = orderQuery.data ? paymentsQuery.data : undefined;
-  const hasLoadedOrder = Boolean(orderQuery.data);
-  const isLoading = orderQuery.isPending;
+  const paymentMethods = order ? (paymentsQuery.data ?? []) : [];
+  const paymentMethodsError =
+    paymentsQuery.error instanceof Error
+      ? paymentsQuery.error.message || t($ => $.common.error_title)
+      : paymentsQuery.error
+        ? t($ => $.common.error_title)
+        : null;
+  const hasLoadedOrder = Boolean(order);
+  const isLoading = isOrderPending;
 
   // The original waits 3s before starting /user/order/check, then TanStack Query owns the
   // 3s refetch cadence. Bootstrapping straight off [tradeNo, hasLoadedOrder] — with no
@@ -92,11 +123,8 @@ export function useOrderCheckoutController(tradeNo: string | undefined): OrderCh
   // and never started the poll for a cached order.
   useEffect(() => {
     if (!tradeNo || !hasLoadedOrder) return;
-    const timer = window.setTimeout(() => setPollOrderStatus(true), 3000);
-    return () => {
-      window.clearTimeout(timer);
-      setPollOrderStatus(false);
-    };
+    const timer = window.setTimeout(() => setPollTradeNo(tradeNo), 3000);
+    return () => window.clearTimeout(timer);
   }, [tradeNo, hasLoadedOrder]);
 
   // Payment settled (gateway poll flips the order out of pending, or a free /
@@ -104,99 +132,132 @@ export function useOrderCheckoutController(tradeNo: string | undefined): OrderCh
   // records it just moved — balance (info) and the subscription (subscribe) it extended.
   // The original left both stale until a full reload.
   const refreshAfterPayment = useCallback(() => {
-    void orderQuery.refetch();
+    void refetchOrder();
     void queryClient.invalidateQueries({ queryKey: userKeys.info });
     void queryClient.invalidateQueries({ queryKey: userKeys.subscribe });
-  }, [orderQuery.refetch, queryClient]);
+  }, [queryClient, refetchOrder]);
 
   useEffect(() => {
     const status = orderStatusQuery.data;
     if (status === undefined || status === 0) return;
-    setQrcodeVisible(false);
     // The original poll success only hides the QR modal; it leaves payUrl in state.
     // Manual modal cancel is the path that clears it. useOrderStatus owns stopping the
     // poll once the order leaves the pending state.
     refreshAfterPayment();
   }, [refreshAfterPayment, orderStatusQuery.data]);
 
-  useEffect(() => {
-    // The bundled poll success only hides the QR modal once the order leaves the pending
-    // (status 0) state.
-    if (orderQuery.data?.status !== 0) setQrcodeVisible(false);
-  }, [orderQuery.data?.status]);
+  const isPending = order?.status === 0;
+  const qrcodeVisible = Boolean(qrcodeRequested && isPending && (orderStatusQuery.data ?? 0) === 0);
 
-  const effectiveMethodId = methodId ?? paymentMethods?.[0]?.id;
-  const selectedPayment = paymentMethods?.find((p) => p.id === effectiveMethodId);
-  const isStripePayment = selectedPayment?.payment === 'StripeCredit';
-
-  // The original only fetches the Stripe public key once a Stripe method is selected and
-  // never refetches it, so cache it forever behind the selected method.
-  const stripeQuery = useStripePublicKey(
-    effectiveMethodId === undefined ? undefined : String(effectiveMethodId),
-    { enabled: isStripePayment },
+  // A selected gateway can disappear after an operator configuration refresh. Resolve the
+  // effective method from the current query result on every render, falling back to the
+  // first current method instead of retaining a now-invalid id.
+  const selectedPayment =
+    paymentMethods.find((payment) => payment.id === methodId) ?? paymentMethods[0];
+  const effectiveMethodId = selectedPayment?.id;
+  const canCheckout = Boolean(
+    tradeNo &&
+    order &&
+    isPending &&
+    selectedPayment &&
+    !paymentsQuery.isPending &&
+    !paymentMethodsError,
   );
-  const stripePublicKey = stripeQuery.data ?? null;
+  // A balance-covered/free order must go through the ordinary checkout endpoint,
+  // which performs the immediate server-side settlement before consulting a
+  // gateway. It neither needs nor can create a positive-amount PaymentIntent.
+  const isStripePayment = Boolean(
+    canCheckout && order && selectedPayment?.payment === 'StripeCredit' && order.total_amount > 0,
+  );
+
+  // Preparing is idempotent on the server and reuses the order's PaymentIntent. It starts
+  // when Stripe becomes the effective method so Payment Element is ready before submit.
+  const stripeIntentQuery = useStripePaymentIntent(tradeNo, effectiveMethodId, {
+    enabled: isStripePayment,
+  });
+  // TanStack Query intentionally retains the previous successful data when a
+  // refetch fails. A client secret is not ordinary display data: once another
+  // method has superseded it, confirming it can charge an intent the order will
+  // refuse to settle. Only expose a fully current, idle query result.
+  const stripePaymentIntent =
+    canCheckout && !stripeIntentQuery.isFetching && !stripeIntentQuery.error
+      ? (stripeIntentQuery.data ?? null)
+      : null;
+  const paymentComplete =
+    stripePaymentIntent !== null && completedStripeIntent === stripePaymentIntent.client_secret;
+  const stripeClientSecret = stripePaymentIntent?.client_secret ?? null;
+  const setPaymentComplete = useCallback(
+    (complete: boolean) => {
+      setCompletedStripeIntent(complete ? stripeClientSecret : null);
+    },
+    [stripeClientSecret],
+  );
 
   // pre_handling_amount from the server wins; otherwise derive the fee from the selected
   // method. The bundled poll-success refetch replaces the order detail without re-running
   // getPaymentMethod, so a paid (non-pending) order has no locally injected fee.
-  const currentOrder = orderQuery.data;
-  const fee = !currentOrder
+  const fee = !order
     ? 0
-    : (currentOrder.pre_handling_amount ??
-      (currentOrder.status === 0 ? calculatePreHandlingAmount(currentOrder, selectedPayment) : 0));
-
-  const order = (orderQuery.data ?? { plan: {} }) as Order;
-  const isPending = order.status === 0;
+    : (order.pre_handling_amount ??
+      (order.status === 0 ? calculatePreHandlingAmount(order, selectedPayment) : 0));
 
   const onPay = async () => {
-    if (!tradeNo) return;
-    let token: string | undefined;
+    // Never let an empty/loading/failed or stale payment-method result reach the checkout
+    // endpoint. This also narrows effectiveMethodId to number without a type assertion.
+    if (!tradeNo || !order || !canCheckout || effectiveMethodId === undefined) return;
     if (isStripePayment) {
-      const stripeToken = await stripeCardRef.current?.tokenize();
-      if (!stripeToken) {
-        toast.error(t('order.credit_card_check'));
-        return;
+      if (stripeConfirmingRef.current) return;
+      stripeConfirmingRef.current = true;
+      setStripeConfirming(true);
+      try {
+        const result = await stripePaymentRef.current?.confirm();
+        if (!result || result.error) {
+          toast.error(result?.error ?? t($ => $.order.credit_card_check));
+          return;
+        }
+        setPollTradeNo(tradeNo);
+        toast.loading(t($ => $.order.stripe_verifying), { duration: 5000 });
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : t($ => $.common.error_title));
+      } finally {
+        stripeConfirmingRef.current = false;
+        setStripeConfirming(false);
       }
-      token = stripeToken.id;
+      return;
     }
-    try {
-      const result = await checkoutOrder({
+    checkout.mutate(
+      {
         trade_no: tradeNo,
-        method: effectiveMethodId as number,
-        token,
-      });
-      if (isStripePayment) {
-        toast.loading(t('order.stripe_verifying'), { duration: 5000 });
-        return;
-      }
-      if (result.type === 0) {
-        setQrcodeVisible(true);
-        setPayUrl(typeof result.data === 'string' ? result.data : undefined);
-      } else if (result.type === 1 && typeof result.data === 'string') {
-        window.location.href = result.data;
-        toast.info(t('order.redirecting_checkout'));
-      } else if (result.type === -1) {
-        // Free / balance-covered order (backend total_amount <= 0): it settles
-        // immediately with no gateway, so there is no QR or redirect. Without this
-        // branch onPay fell through silently. Confirm it and refresh the order + account
-        // state so the result card and balance render at once.
-        toast.success(t('order.success'));
-        refreshAfterPayment();
-      }
-    } catch {
-      // The mutation tracks its own error/pending state; swallow here to keep the
-      // checkout button restored after a failed /payment request.
-    }
+        method: effectiveMethodId,
+      },
+      {
+        onSuccess: (result) => {
+          if (result.type === 0) {
+            setQrcodeRequested(true);
+            setPayUrl(typeof result.data === 'string' ? result.data : undefined);
+          } else if (result.type === 1 && typeof result.data === 'string') {
+            window.location.href = result.data;
+            toast.info(t($ => $.order.redirecting_checkout));
+          } else if (result.type === -1) {
+            // Free / balance-covered order (backend total_amount <= 0): it settles
+            // immediately with no gateway, so there is no QR or redirect. Without this
+            // branch onPay fell through silently. Confirm it and refresh the order + account
+            // state so the result card and balance render at once.
+            toast.success(t($ => $.order.success));
+            refreshAfterPayment();
+          }
+        },
+      },
+    );
   };
 
   const runCancel = () => {
-    const cancelTradeNo = order.trade_no;
+    const cancelTradeNo = order?.trade_no;
     if (!cancelTradeNo) return;
     void confirmDialog({
-      title: t('common.attention'),
-      description: t('order.cancel_confirm'),
-      confirmText: t('order.cancel'),
+      title: t($ => $.common.attention),
+      description: t($ => $.order.cancel_confirm),
+      confirmText: t($ => $.order.cancel),
       confirmButtonProps: { loading: cancelMutation.isPending },
       onConfirm: () => cancelMutation.mutateAsync(cancelTradeNo),
     });
@@ -205,22 +266,47 @@ export function useOrderCheckoutController(tradeNo: string | undefined): OrderCh
   return {
     order,
     isLoading,
+    orderError: orderQueryError instanceof Error ? orderQueryError.message : null,
+    retryOrder: () => {
+      void refetchOrder();
+    },
     isPending,
     paymentMethods,
+    paymentMethodsState: {
+      isPending: paymentsQuery.isPending,
+      error: paymentMethodsError,
+      isEmpty: !paymentsQuery.isPending && !paymentMethodsError && paymentMethods.length === 0,
+      retry: () => {
+        void paymentsQuery.refetch();
+      },
+    },
     effectiveMethodId,
-    selectMethod: (id: number) => setMethodId(id),
+    canCheckout,
+    selectMethod: (id: number) => {
+      setMethodId(id);
+      // Payment Element remounts when a method is revisited; its previous
+      // completeness signal is no longer evidence that the new form is complete.
+      setCompletedStripeIntent(null);
+    },
     isStripePayment,
-    stripePublicKey,
-    stripeCardRef,
-    cardComplete,
-    setCardComplete,
+    stripePaymentIntent,
+    stripePreparation: {
+      isPending: stripeIntentQuery.isPending,
+      error: stripeIntentQuery.error instanceof Error ? stripeIntentQuery.error.message : null,
+      retry: () => {
+        void stripeIntentQuery.refetch();
+      },
+    },
+    stripePaymentRef,
+    paymentComplete,
+    setPaymentComplete,
     onPay,
-    isCheckoutPending: checkout.isPending,
+    isCheckoutPending: checkout.isPending || stripeIntentQuery.isFetching || stripeConfirming,
     qrcode: {
       visible: qrcodeVisible,
       payUrl,
       close: () => {
-        setQrcodeVisible(false);
+        setQrcodeRequested(false);
         setPayUrl(undefined);
       },
     },
@@ -232,8 +318,8 @@ export function useOrderCheckoutController(tradeNo: string | undefined): OrderCh
 }
 
 function calculatePreHandlingAmount(order: Order, method?: PaymentMethod) {
-  return order.total_amount > 0 && (method?.handling_fee_fixed || method?.handling_fee_percent)
-    ? order.total_amount * ((method.handling_fee_percent as number) / 100) +
-        (method.handling_fee_fixed as number)
-    : 0;
+  if (order.total_amount <= 0) return 0;
+  const percent = method?.handling_fee_percent ?? 0;
+  const fixed = method?.handling_fee_fixed ?? 0;
+  return order.total_amount * (percent / 100) + fixed;
 }

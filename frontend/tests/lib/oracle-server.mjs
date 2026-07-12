@@ -151,24 +151,67 @@ export async function readSourceSettings() {
     fetchSourceHtml(`/${adminPath}`),
   ]);
 
+  const userRuntime = requireRuntimeConfig(userHtml, 'user');
+  const adminRuntime = requireRuntimeConfig(adminHtml, 'admin');
+
   return {
     admin: {
-      backgroundUrl: extractStringSetting(adminHtml, 'background_url', ''),
-      logo: extractStringSetting(adminHtml, 'logo', ''),
-      securePath: extractStringSetting(adminHtml, 'secure_path', adminPath),
-      theme: extractTheme(adminHtml),
-      title: extractStringSetting(adminHtml, 'title', 'V2Board'),
-      version: extractStringSetting(adminHtml, 'version', 'oracle'),
+      backgroundUrl: stringSetting(adminRuntime, 'background_url') ?? '',
+      logo: stringSetting(adminRuntime, 'logo') ?? '',
+      securePath: requireStringSetting(adminRuntime, 'secure_path', 'admin'),
+      theme: requireRuntimeTheme(adminRuntime, 'admin'),
+      title: requireStringSetting(adminRuntime, 'title', 'admin'),
+      version: 'reference',
     },
     user: {
-      backgroundUrl: extractStringSetting(userHtml, 'background_url', ''),
-      description: extractStringSetting(userHtml, 'description', ''),
-      logo: extractStringSetting(userHtml, 'logo', ''),
-      theme: extractTheme(userHtml),
-      title: extractStringSetting(userHtml, 'title', 'V2Board'),
-      version: extractStringSetting(userHtml, 'version', 'oracle'),
+      backgroundUrl: stringSetting(userRuntime, 'background_url') ?? '',
+      description: stringSetting(userRuntime, 'description') ?? '',
+      logo: stringSetting(userRuntime, 'logo') ?? '',
+      theme: requireRuntimeTheme(userRuntime, 'user'),
+      title: requireStringSetting(userRuntime, 'title', 'user'),
+      version: 'reference',
     },
   };
+}
+
+function requireRuntimeConfig(html, label) {
+  const config = extractRuntimeConfig(html);
+  if (!config) {
+    throw new Error(`${label} source HTML is missing a valid runtime-config bootstrap`);
+  }
+  return config;
+}
+
+function extractRuntimeConfig(html) {
+  const match = /<script\b(?=[^>]*\bid=["']v2board-runtime-config["'])[^>]*>([\s\S]*?)<\/script>/i.exec(
+    html,
+  );
+  if (!match) return null;
+  try {
+    const parsed = JSON.parse(match[1]);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function stringSetting(settings, key) {
+  const value = settings?.[key];
+  return typeof value === 'string' ? value : null;
+}
+
+function requireStringSetting(settings, key, label) {
+  const value = stringSetting(settings, key);
+  if (value === null) throw new Error(`${label} runtime config is missing string field ${key}`);
+  return value;
+}
+
+function requireRuntimeTheme(settings, label) {
+  const color = settings?.theme?.color;
+  if (typeof color !== 'string') {
+    throw new Error(`${label} runtime config is missing theme.color`);
+  }
+  return { color, header: 'dark', sidebar: 'light' };
 }
 
 async function fetchSourceHtml(path) {
@@ -188,19 +231,6 @@ async function fetchSourceHtml(path) {
     }
   }
   throw lastError;
-}
-
-function extractTheme(html) {
-  return {
-    color: extractStringSetting(html, 'color', 'default'),
-    header: extractStringSetting(html, 'header', 'dark'),
-    sidebar: extractStringSetting(html, 'sidebar', 'light'),
-  };
-}
-
-function extractStringSetting(html, key, fallback) {
-  const match = new RegExp(`${key}:\\s*'([^']*)'`).exec(html);
-  return match?.[1] ?? fallback;
 }
 
 function jsString(value) {
@@ -321,8 +351,4 @@ function contentType(filePath) {
     default:
       return 'application/octet-stream';
   }
-}
-
-function stripSlashes(value) {
-  return value.trim().replace(/^\/+|\/+$/g, '');
 }

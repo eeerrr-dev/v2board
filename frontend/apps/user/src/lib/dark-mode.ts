@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
-import { getLegacyCookie, setLegacyCookie } from './legacy-cookie';
+import { readCookie, writeCookie } from '@v2board/i18n';
+import { syncRuntimeThemeColorMeta } from './runtime-config';
 
 const DARK_MODE_KEY = 'dark_mode';
 const listeners = new Set<() => void>();
@@ -7,12 +8,12 @@ const listeners = new Set<() => void>();
 export type ThemePreference = 'system' | 'light' | 'dark';
 
 // The persisted preference. The frontend-only `dark_mode` cookie stays the single
-// storage key: 'dark' → '1' and 'light' → '0' keep the legacy binary values, and
+// storage key: 'dark' → '1' and 'light' → '0' keep the persisted binary values, and
 // 'system' (or an absent/unknown cookie) means "follow the OS". Reading tolerates
-// both the words and the legacy 1/0 so existing users, the store, and the
-// pre-paint script in index.html / dashboard.blade.php all agree.
+// both the words and the existing 1/0 values so users, the store, and the
+// pre-paint script in index.html and the React runtime agree.
 export function readThemePreference(): ThemePreference {
-  const raw = getLegacyCookie(DARK_MODE_KEY);
+  const raw = readCookie(DARK_MODE_KEY);
   if (raw === '1' || raw === 'dark') return 'dark';
   if (raw === '0' || raw === 'light') return 'light';
   return 'system';
@@ -44,6 +45,7 @@ export function isDarkModeApplied(): boolean {
 export function applyDarkMode(enabled = resolveDarkMode()): void {
   document.documentElement.classList.toggle('dark', enabled);
   document.documentElement.style.colorScheme = enabled ? 'dark' : 'light';
+  syncRuntimeThemeColorMeta();
 }
 
 // React to OS theme changes while the preference is 'system' — the whole point
@@ -68,10 +70,7 @@ export function applyInitialDarkMode(): void {
 // Persist a preference and apply it immediately. 'system' re-defers to the OS.
 export function setThemePreference(preference: ThemePreference): void {
   applyDarkMode(resolveDarkMode(preference));
-  setLegacyCookie(
-    DARK_MODE_KEY,
-    preference === 'dark' ? '1' : preference === 'light' ? '0' : 'system',
-  );
+  writeCookie(DARK_MODE_KEY, preference === 'dark' ? '1' : preference === 'light' ? '0' : 'system');
   listeners.forEach((listener) => listener());
 }
 

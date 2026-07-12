@@ -3,16 +3,17 @@
 ## Local Workflow
 
 Use Docker for local setup, dependencies, builds, and tests. Do not run
-Composer, pnpm, npm, build, or test commands on the host when they would create
-`vendor/`, `node_modules/`, `.pnpm-store/`, `dist/`, `.vite/`, coverage, cache,
-or deploy output inside the repository.
+Cargo, pnpm, npm, build, or test commands on the host when they would create
+`target/`, `node_modules/`, `.pnpm-store/`, `dist/`, `.vite/`, coverage, cache,
+reports, or deploy output inside the repository.
 
 - Use `make up`, `make down`, `make reset`, `make sync`, and `make logs`.
 - After source edits that need Docker execution, run `make sync` so the Docker
-  app/frontend workspaces receive the host changes.
+  frontend workspace and immutable deploy release receive the host changes.
 - Use `make doctor` for the general local sanity gate.
-- Use `make public-bundle-audit` to confirm host `public/theme/default/assets/`
-  and `public/assets/admin/` stay empty.
+- Use `make rust-check`, `make rust-test`, and `make rust-target-gate` for the
+  native backend and worker gates.
+- Use `make public-bundle-audit` to confirm host build/deploy targets stay empty.
 - Use `make parity-config-audit` after changing routes or visual/interaction
   parity scenario lists.
 - Use `make deploy-smoke` after deploy-path or public asset changes.
@@ -23,57 +24,64 @@ or deploy output inside the repository.
   interaction-parity` and the viewports with `VISUAL_PARITY_VIEWPORTS=desktop`
   (or `mobile`). The old pixel/screenshot `make visual-parity` lane is retired:
   every scenario is `visualRetired`, so parity is behavioral, not byte-for-byte.
-- Use `make legacy-oracle-check` before relying on the frozen packaged oracle.
-- Use `make legacy-oracle-up` / `make legacy-oracle-down` only for a persistent
-  manual oracle on `http://localhost:8001`.
+- Use `make reference-oracle-check` before relying on the pinned, read-only
+  compatibility reference. `make reference-oracle-up` is only for optional
+  manual inspection on `http://localhost:8001`.
 - Use `make clean-host` to preview ignored host cleanup. Use
   `make clean-host-apply` only after reviewing the `make clean-host` preview and
   confirming every listed path is disposable host output.
 
 If a direct package/test command is needed, run it inside the appropriate Docker
-service or one-off frontend container. Keep generated dependency, cache, build,
-deploy, visual, and interaction artifacts in Docker volumes, not on the host.
+service or one-off container. Keep generated dependency, cache, build, deploy,
+visual, interaction, database, and native runtime artifacts in Docker volumes.
 
 ## Source And Deploy Rules
 
 - `docker-compose.local.yml` is the canonical tracked local workflow.
   `docker-compose.yml` is ignored and only for personal overrides.
-- Do not mount the frontend container to `./public` or make the frontend read
-  packaged public assets from `/app/public`.
+- Production consists only of `backend/rust` plus the source-built frontend.
+  Do not add a second backend, server-side template layer, or duplicate worker
+  and scheduler runtime.
 - Source-owned frontend code lives under `frontend/apps/*/src`.
 - Source-built deploy artifacts live in the Docker `frontend-deploy` volume at
-  `/app/frontend/dist-deploy`; do not write `dist-deploy/` on the host.
+  `/app/frontend-deploy`, outside the mutable frontend workspace; do not write
+  `dist-deploy/` on the host.
+- The deploy root contains immutable `releases/<content-id>/{user,admin}` trees
+  plus atomic `current`/`previous` symlinks. Rust receives this volume read-only
+  through `V2BOARD_FRONTEND_DIR`, renders HTML from `current`, and serves hashed
+  assets from `current` with `previous` as the in-flight rollout fallback. The
+  public routes are `/`, the dynamic admin path, and `/assets/{user,admin}/*`.
+- Rust-owned mutable configuration and application state live under
+  `/var/lib/v2board`, never in a source directory.
 - Visual and interaction reports live in Docker artifact volumes under
   `/app/frontend/.cache/`; do not write parity reports on the host.
-- Deployed files may keep legacy-compatible names like `umi.css` and `umi.js`,
-  but they must be freshly built from `frontend/apps/*/src`.
+- Production deployment is manifest-driven: the build validates each Vite
+  manifest and emits hashed ESM/CSS plus a guarded `index.html`; Rust serves the
+  validated index and injects runtime config. Manifests are not public runtime
+  inputs. Do not recreate fixed `umi.css`/`umi.js` entry names.
 - Never import, concatenate, copy, serve, or deploy the old packaged bundles:
   `umi.js`, `umi.css`, `components.chunk.css`, `vendors.async.js`,
   `components.async.js`, `env.example.js`, copied static/i18n/theme assets, or
-  admin equivalents.
-- `custom.css` and `custom.js` are optional operator-provided hooks only. Build
-  and deploy scripts must not generate or copy them.
-- The legacy oracle is pinned by `frontend/fixtures/legacy-oracle.ref`. Do not
-  remove or rewrite it unless replacing it with an equally complete packaged
-  frontend oracle. Old frontend files may be inspected only as oracle/test
-  fixtures and only restored into Docker `/tmp` or Docker volumes.
+  admin equivalents. There are no runtime `custom.css`/`custom.js` fallbacks.
+- `references/wyx2685-v2board` is the only retained old implementation. It is a
+  pinned git submodule mounted read-only for compatibility tests. Never COPY it
+  into an image, source tree, runtime volume, Vite input, or deploy release.
 
-## Frontend Reskin Direction
+## Frontend Contract Direction
 
-The source-level replica milestone is complete and frozen as `replica-baseline`.
-The project is now a surface-by-surface frontend migration: behavior stays
-strict, appearance may change decisively when a surface is explicitly
-redesigned.
+The user and admin applications are fully redesigned shadcn surfaces. The old
+frontend is retired; only its read-only reference submodule remains to identify
+externally observable compatibility contracts.
 
-- Behavioral/contract parity is permanent, but the anchor is the shared backend
-  and external integrations, not the frozen frontend. The legacy oracle only
+- Behavioral/contract parity is permanent, but the anchor is the Rust backend
+  and external integrations, not the reference frontend. The reference only
   witnesses what those already expect; matching it is a proxy for matching the
   real contract, never an end in itself. Two tiers follow:
   - Tier 1 — non-negotiable (permanent): true external contracts — API endpoints
     and request payloads, auth/session persistence keys, hash route paths (the
     backend emails links into them, e.g. `?verify=`), and payloads sent to
-    external integrations (e.g. the Stripe card token and Crisp/Tawk session
-    data) — where changing one breaks a real external party; plus the security-
+    external integrations (e.g. Stripe PaymentIntent metadata/webhooks and
+    Crisp/Tawk session data) — where changing one breaks a real external party; plus the security-
     and session-critical behavioral OUTCOMES (auth redirects, i18n/language
     persistence) and any edge case that maps to a backend or data contract (e.g.
     which payload is sent for an empty coupon, sold-out handling), pinned as
@@ -89,8 +97,7 @@ redesigned.
     scenario, the same way visual parity is retired — provided Tier 1 stays
     intact and a behavior/interaction scenario still covers the route. When
     unsure whether an edge case is a data contract or pure presentation, treat it
-    as Tier 1. Do not treat a Tier-2 pin as an external contract, and do not
-    relax one on a surface still on the replica.
+    as Tier 1. Do not treat a Tier-2 pin as an external contract.
 - The per-surface "must remain covered" lists further down inherit this Tier
   model; read them through it rather than as flat byte-pins. An item there is
   Tier 1 only if a real external party consumes it — a request payload, an
@@ -100,26 +107,14 @@ redesigned.
   observability, or popup-vs-mobile navigation are Tier 2 — relaxable on a
   redesigned surface as long as a behavior/interaction scenario still covers the
   route.
-- Visual/pixel parity is retired only for redesigned surfaces: mark their visual
-  scenarios `visualRetired: true` in `frontend/scripts/visual-parity.mjs` and
-  keep a behavior/interaction scenario for the route. This holds for every
-  redesigned surface below, so the per-surface sections do not restate it.
-- For surfaces not yet redesigned, the old strict oracle standard still holds.
-  Do not downgrade an un-redesigned mismatch to acceptable drift.
-- Do not claim a redesigned surface is complete unless behavior parity is green,
-  its visual scenarios are explicitly retired, and the new design has been
-  reviewed.
-- Do not claim a still-replica surface is complete unless the relevant
-  deploy/visual/behavior checks match the oracle.
-- A redesigned surface may become a pure shadcn island when the owner explicitly
-  chooses that direction. In that case, prioritize shadcn/Radix composition and
-  behavior tests over preserving legacy DOM, legacy class names, or old visual
-  shape.
+- Visual/pixel parity is retired for every surface. Keep behavior/interaction
+  coverage for every route and prioritize shadcn/Radix composition,
+  accessibility, and real contracts over reference DOM or legacy class names.
 
 ## Modern Frontend Stack
 
-Continue building on the current verified project rather than starting a second
-frontend. New redesigned surfaces should use:
+Continue building on the current verified frontend rather than starting another
+application or compatibility layer. New work uses:
 
 - React + TypeScript + Vite.
 - React Router for the existing routing/deploy shape.
@@ -127,29 +122,16 @@ frontend. New redesigned surfaces should use:
 - `@v2board/api-client` for API contracts.
 - Existing i18n infrastructure.
 - Radix primitives for accessible low-level behavior.
-- shadcn/ui registry components are allowed for explicitly designated pure
-  shadcn islands. Copy the generated source into the app, own it locally, and
-  keep the island coherent instead of mixing half-legacy and half-shadcn UI.
-- Local `components/ui` primitives remain preferred for gradual-reskin surfaces
-  that are not pure shadcn islands.
+- shadcn/ui registry components copied into and owned by each app's local
+  `components/ui`, composed from Radix primitives.
 - `lucide-react` for new icons.
 - Tailwind v4.
-- `@v2board/tokens` for gradual-reskin surfaces. Pure shadcn islands may use
-  shadcn's canonical token names and utility classes when that produces a
-  cleaner, more coherent implementation.
+- Local CSS variables and shared canonical shadcn token names. Do not add a
+  token package until a real non-shadcn consumer requires one.
 
-For gradual-reskin code, keep using the `tw:` prefix. Vendored legacy CSS owns
-bare class names like `block`, `container`, `badge`, `.btn`, and
-`.form-control`; prefixed utilities avoid accidental collisions. No surface is
-currently gradual-reskin — the user surfaces are all pure shadcn islands (the
-user app even asserts `tw:` is absent) and the admin app is a redesigned shadcn
-surface (zero Ant Design imports) — so this prefix rule and the `@v2board/tokens`
-/ local `components/ui` gradual-reskin guidance above apply only if such a surface
-is reintroduced.
-
-For pure shadcn islands, unprefixed Tailwind utilities and shadcn token names are
-allowed intentionally. Keep those islands route- or component-scoped, avoid
-leaking their assumptions into replica surfaces, and verify behavior with tests.
+Use unprefixed Tailwind utilities and shadcn token names. Do not reintroduce the
+retired `tw:` gradual-reskin convention, legacy global selector ownership, or a
+second styling system.
 
 ### Auth Surface Direction
 
@@ -182,7 +164,8 @@ The user commerce flow (`/plan`, `/plan/:plan_id`, `/order`, and
 - Keep commerce contracts strict: plan filtering, sold-out handling
   (`capacity_limit`), coupon checks, save-order payloads, unfinished-order and
   order cancellation payloads (`{trade_no}`), change-subscription payload,
-  payment-method selection, Stripe-token / QR / redirect checkout, routing, and
+  payment-method selection, Stripe PaymentIntent preparation and Payment Element
+  confirmation (including signed webhook settlement) / QR / redirect checkout, routing, and
   i18n must remain covered. Handling-fee math (a display estimate; the server
   value always wins), polling cadence, query/cache cleanup, confirmation-dialog
   copy, and failure-state presentation are Tier-2 defaults — relaxable on these
@@ -190,7 +173,7 @@ The user commerce flow (`/plan`, `/plan/:plan_id`, `/order`, and
 - Preserve stable commerce behavior hooks only where tests or interaction parity
   need them — the live ones are the `#cashier` container and the `data-testid`
   values `coupon-input`, `order-info`, `payment-qrcode`, `payment-option`, and
-  `commerce-submit`. (The `.v2board-*` class names are legacy oracle-side selector
+  `commerce-submit`. (The `.v2board-*` class names are reference-side selector
   fallbacks, not source hooks.)
 
 ### User Profile Direction
@@ -275,10 +258,6 @@ structure rather than pixel-era class names.
   behavior or interaction parity needs stable selectors.
 - Do not reintroduce Ant table class names such as `ant-table-column-title` or
   `ant-table-tbody` as presentation helpers on redesigned user tables.
-- Avoid bare Tailwind utility classes that collide with legacy global selectors
-  on redesigned user surfaces. In particular, do not use `.block` as a layout
-  utility because OneUI owns that class; use `flex`, `grid`, `inline-block`, or
-  no display class instead.
 
 ### Admin Surface Direction
 
@@ -287,7 +266,10 @@ surface — every admin page is shadcn/Radix with zero Ant Design imports. Its
 visual-parity scenarios are retired (`visualRetired: true`), so the admin
 interaction-parity scenarios are the standing contract guard, run with
 `INTERACTION_PARITY_SCENARIOS="admin" make interaction-parity` (desktop +
-mobile). Admin copy stays Chinese-only; preserve exact Chinese labels and titles.
+mobile). Do not impose a frontend-only language restriction on the admin app;
+shared locale state, document language/direction, and API locale headers must
+remain coherent. Existing untranslated copy may stay Chinese until product
+translations are supplied, but Chinese-only behavior is not a contract.
 
 - Keep admin contracts strict: every admin API endpoint and request payload
   (config, coupon/giftcard/notice/knowledge/plan/server/user/order/ticket
@@ -301,7 +283,7 @@ mobile). Admin copy stays Chinese-only; preserve exact Chinese labels and titles
   table truncation and horizontal-scroll observability, and date-picker chrome.
 - Admin interaction scenarios use union selectors (shadcn slot/testid/role first,
   Ant class fallback) so one `run(page)` drives both the shadcn source and the
-  frozen Ant oracle, with a Tier-1 `normalize*InteractionResult` reducer dropping
+  read-only reference UI, with a Tier-1 `normalize*InteractionResult` reducer dropping
   Tier-2 presentation. Keep that pattern when adding or editing admin scenarios
   rather than branching per world, and reduce cross-world comparison to the
   Tier-1 payload/query/redirect fields while dropping presentation.
@@ -316,10 +298,6 @@ For new redesigned surfaces, do not use:
 - Hidden runtime dependencies on packaged legacy bundles.
 - Copying the old packaged bundle DOM, CSS, or file structure as the foundation
   for a redesigned surface.
-
-Legacy Ant Design v3, Bootstrap 4, OneUI, and Font Awesome 5 CSS may remain for
-surfaces still on the replica. Those vendored versions are final for replica
-parity and must not be upgraded casually; upgrading them is a redesign decision.
 
 ## Implementation Discipline
 

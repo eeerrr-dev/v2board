@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { formatBytes, formatLegacyDateSlash } from '@v2board/config/format';
+import { formatBackendDateSlash, formatBytes } from '@v2board/config/format';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent } from '@/components/ui/card';
 import { ErrorState } from '@/components/ui/error-state';
@@ -26,13 +26,13 @@ export default function TrafficPage() {
     {
       accessorKey: 'record_at',
       sortingFn: 'basic',
-      header: t('traffic.record_at'),
+      header: t($ => $.traffic.record_at),
       cell: ({ row }) =>
-        row.original.record_at ? formatLegacyDateSlash(row.original.record_at) : '-',
+        row.original.record_at ? formatBackendDateSlash(row.original.record_at) : '-',
     },
     {
       meta: { align: 'right' },
-      header: t('traffic.actual_upload'),
+      header: t($ => $.traffic.actual_upload),
       cell: ({ row }) => {
         const upload = parseInt(String(row.original.u));
         return row.original.server_rate ? formatBytes(upload) : 0;
@@ -40,7 +40,7 @@ export default function TrafficPage() {
     },
     {
       meta: { align: 'right' },
-      header: t('traffic.actual_download'),
+      header: t($ => $.traffic.actual_download),
       cell: ({ row }) => {
         const download = parseInt(String(row.original.d));
         return row.original.server_rate ? formatBytes(download) : 0;
@@ -48,7 +48,7 @@ export default function TrafficPage() {
     },
     {
       meta: { align: 'center' },
-      header: t('traffic.deduct_rate'),
+      header: t($ => $.traffic.deduct_rate),
       cell: ({ row }) => {
         const rate = Number.parseFloat(row.original.server_rate);
         return <StatusBadge>{rate ? `${rate.toFixed(2)} x` : '-'}</StatusBadge>;
@@ -58,14 +58,21 @@ export default function TrafficPage() {
       id: 'total-charged',
       meta: { align: 'right', className: 'font-medium' },
       header: () => (
-        <HeaderTooltip className="justify-end" placement="topRight" title={t('traffic.total_formula')}>
-          {t('traffic.total_charged')}
+        <HeaderTooltip
+          className="justify-end"
+          placement="topRight"
+          title={t($ => $.traffic.total_formula)}
+        >
+          {t($ => $.traffic.total_charged)}
         </HeaderTooltip>
       ),
       cell: ({ row }) => {
         const upload = parseInt(String(row.original.u));
         const download = parseInt(String(row.original.d));
-        const charged = (upload + download) * (row.original.server_rate as unknown as number);
+        // Number() is the explicit form of JavaScript's multiplication coercion:
+        // decimal strings, the backend empty-string zero, and malformed NaN all
+        // retain the backend contract without lying to TypeScript.
+        const charged = (upload + download) * Number(row.original.server_rate);
         return formatBytes(charged);
       },
     },
@@ -78,7 +85,7 @@ export default function TrafficPage() {
           <CardContent className="p-0">
             <div className="border-b border-border bg-card p-4">
               <Alert className="bg-muted/40" data-testid="traffic-notice">
-                <AlertDescription>{t('traffic.notice')}</AlertDescription>
+                <AlertDescription>{t($ => $.traffic.notice)}</AlertDescription>
               </Alert>
             </div>
 
@@ -88,7 +95,7 @@ export default function TrafficPage() {
                 role="status"
               >
                 <Spinner className="size-4" />
-                <span>{t('common.loading')}</span>
+                <span>{t($ => $.common.loading)}</span>
               </div>
             ) : null}
 
@@ -105,14 +112,14 @@ export default function TrafficPage() {
                 data={rows}
                 data-table-kind="service"
                 data-testid="traffic-table"
-                empty={!rows.length ? emptyDescription : undefined}
+                empty={data !== undefined && rows.length === 0 ? emptyDescription : undefined}
                 emptyClassName="py-16"
                 emptyTestId="traffic-empty"
                 scrollRef={bodyRef}
                 scrollProps={{
                   tabIndex: 0,
                   role: 'region',
-                  'aria-label': t('nav.traffic'),
+                  'aria-label': t($ => $.nav.traffic),
                   'data-scroll-position': scrollPosition,
                   'data-testid': 'service-table-scroll',
                   onScroll,

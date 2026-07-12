@@ -1,22 +1,16 @@
-import { LOCALE_ENTRIES, isSupportedLocale, type SupportedLocale } from '@v2board/i18n';
-
-// Derived from the single locale registry so a new locale needs no edit here.
-const ERROR_DICTIONARIES: Record<SupportedLocale, Record<string, string>> = Object.fromEntries(
-  LOCALE_ENTRIES.map((entry): [SupportedLocale, Record<string, string>] => [
-    entry.code,
-    entry.errors,
-  ]),
-) as Record<SupportedLocale, Record<string, string>>;
+import {
+  isSupportedLocale,
+  translateLoadedError,
+  type SupportedLocale,
+} from '@v2board/i18n';
 
 export function i18nGet(message: string): string {
   const locale = getCurrentLocale();
-  const legacy = window.settings?.i18n?.[locale]?.[message];
-  if (legacy) return legacy;
-  return ERROR_DICTIONARIES[locale]?.[message] ?? message;
+  return translateLoadedError(locale, message);
 }
 
-// Resolves the locale for error-dictionary lookups. Intentionally NOT the i18n
-// package's legacyGetLocale: this path must fall back to zh-CN (never
+// Resolves the locale for error-dictionary lookups. Intentionally separate from
+// the package's getLocale: this path must fall back to zh-CN (never
 // navigator.language) before the provider stamps window.g_lang, so an error
 // message is never resolved against an unselected browser locale. Keep the two
 // readers separate — see errors.test.ts "falls back to zh-CN instead of

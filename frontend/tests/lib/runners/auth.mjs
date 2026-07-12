@@ -1,6 +1,7 @@
 import {
-  authPageState,
+  adminAuthPageState,
   loginLanguagePersistenceState,
+  readAdminSessionExpiredRedirectState,
   readSessionExpiredRedirectState,
   readUnauthorizedHttp401NoRedirectState,
 } from '../state-readers/auth.mjs';
@@ -15,7 +16,15 @@ import {
   waitForVisibleElementCountAtLeast,
   visibleCount,
 } from '../dom-helpers.mjs';
-import { userAuthSurfaceSelector, languageMenuItemSelector } from '../selectors.mjs';
+import {
+  adminAuthForgotSelector,
+  adminAuthIdentifierSelector,
+  adminAuthPasswordSelector,
+  adminAuthSurfaceSelector,
+  adminForgotDialogSelector,
+  languageMenuItemSelector,
+  userAuthSurfaceSelector,
+} from '../selectors.mjs';
 
 export async function runRedesignedLoginPageStateInteraction(page) {
   return normalizeRedesignedAuthPageState(page);
@@ -28,7 +37,10 @@ export async function runLoginFormLanguageInteraction(page) {
     'visual@example.com',
   );
   await fillFirstVisible(page, 'input[type="password"]', 'secret123');
-  await clickFirstVisibleWithPointer(page, '.v2board-auth-language-trigger, .ant-dropdown-trigger');
+  await clickFirstVisibleWithPointer(
+    page,
+    '[data-testid="auth-language-trigger"], .ant-dropdown-trigger',
+  );
   await page.waitForTimeout(150);
   return {
     email: await firstInputValue(
@@ -42,12 +54,15 @@ export async function runLoginFormLanguageInteraction(page) {
 
 export async function runLoginLanguagePersistenceInteraction(page) {
   const before = await loginLanguagePersistenceState(page);
-  await clickFirstVisibleWithPointer(page, '.v2board-auth-language-trigger, .ant-dropdown-trigger');
+  await clickFirstVisibleWithPointer(
+    page,
+    '[data-testid="auth-language-trigger"], .ant-dropdown-trigger',
+  );
   await page.waitForTimeout(150);
   const menuItems = withoutDroppedLocale(await visibleTexts(page, languageMenuItemSelector, 8));
-  const navigation = page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 3_000 }).catch(
-    () => undefined,
-  );
+  const navigation = page
+    .waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 3_000 })
+    .catch(() => undefined);
   await clickFirstVisibleText(page, languageMenuItemSelector, ['English']);
   await navigation;
   await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined);
@@ -67,36 +82,45 @@ export async function runLoginLanguagePersistenceInteraction(page) {
 }
 
 export async function runAuthPageStateInteraction(page) {
-  return authPageState(page);
+  return adminAuthPageState(page);
 }
 
 export async function runRegisterFormStateInteraction(page) {
-  await fillVisibleAt(page, 'input[type="text"], input:not([type]), input[type="email"]', 0, 'parity-user');
+  await fillVisibleAt(
+    page,
+    'input[type="text"], input:not([type]), input[type="email"]',
+    0,
+    'parity-user',
+  );
   await fillVisibleAt(page, 'input[type="password"]', 0, 'secret123');
   await fillVisibleAt(page, 'input[type="password"]', 1, 'secret123');
   return normalizeRedesignedAuthPageState(page);
 }
 
 export async function runForgetFormStateInteraction(page) {
-  await fillVisibleAt(page, 'input[type="text"], input:not([type]), input[type="email"]', 0, 'visual@example.com');
-  await fillVisibleAt(page, 'input[type="text"], input:not([type]), input[type="email"]', 1, '123456');
+  await fillVisibleAt(
+    page,
+    'input[type="text"], input:not([type]), input[type="email"]',
+    0,
+    'visual@example.com',
+  );
+  await fillVisibleAt(
+    page,
+    'input[type="text"], input:not([type]), input[type="email"]',
+    1,
+    '123456',
+  );
   await fillVisibleAt(page, 'input[type="password"]', 0, 'secret123');
   await fillVisibleAt(page, 'input[type="password"]', 1, 'secret123');
   return normalizeRedesignedAuthPageState(page);
 }
 
 export async function runAdminLoginFormStateInteraction(page) {
-  await fillVisibleAt(page, 'input[type="text"], input:not([type]), input[type="email"]', 0, 'admin@local');
-  await fillVisibleAt(page, 'input[type="password"]', 0, '12345678');
-  const filled = await authPageState(page);
-  // Redesign renders the forgot affordance as a `<button>` opening a Dialog; oracle uses an
-  // `<a>` opening an antd modal. Union both so one run drives either build.
-  await clickFirstVisibleText(page, 'a, button', ['忘记密码']);
-  await waitForVisibleElementCountAtLeast(
-    page,
-    '[role="dialog"], .ant-modal-confirm, .ant-modal',
-    1,
-  );
+  await fillFirstVisible(page, adminAuthIdentifierSelector, 'admin@example.com');
+  await fillFirstVisible(page, adminAuthPasswordSelector, '12345678');
+  const filled = await adminAuthPageState(page);
+  await clickFirstVisibleWithPointer(page, adminAuthForgotSelector);
+  await waitForVisibleElementCountAtLeast(page, adminForgotDialogSelector, 1);
   return {
     filled,
     forgotModal: {
@@ -110,15 +134,7 @@ export async function runAdminLoginFormStateInteraction(page) {
         '[role="dialog"] [data-slot="dialog-description"], [role="dialog"] code, .ant-modal-confirm-content, .ant-modal-body',
         4,
       ),
-      modalCount: await visibleCount(
-        page,
-        '[data-slot="dialog-content"], .ant-modal-confirm, .ant-modal',
-      ),
-      title: await visibleTexts(
-        page,
-        '[role="dialog"] [data-slot="dialog-title"], .ant-modal-confirm-title, .ant-modal-title',
-        2,
-      ),
+      modalCount: await visibleCount(page, adminForgotDialogSelector),
     },
   };
 }
@@ -154,6 +170,17 @@ export async function runSessionExpiredRedirectInteraction(page) {
     { timeout: 5_000 },
   );
   return readSessionExpiredRedirectState(page);
+}
+
+export async function runAdminSessionExpiredRedirectInteraction(page) {
+  await page.waitForFunction(
+    (authSurfaceSelector) =>
+      window.location.hash.includes('/login') &&
+      Boolean(document.querySelector(authSurfaceSelector)),
+    adminAuthSurfaceSelector,
+    { timeout: 5_000 },
+  );
+  return readAdminSessionExpiredRedirectState(page);
 }
 
 export async function runUnauthorizedHttp401NoRedirectInteraction(page) {

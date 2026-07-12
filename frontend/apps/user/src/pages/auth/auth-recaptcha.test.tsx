@@ -1,7 +1,13 @@
-import { screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/render';
 import { useAuthRecaptcha } from './auth-recaptcha';
+
+const toastError = vi.hoisted(() => vi.fn());
+
+vi.mock('@/lib/toast', () => ({
+  toast: { error: toastError },
+}));
 
 function Harness({ action = () => {} }: { action?: (recaptchaData?: string) => void }) {
   const { run, recaptchaModal } = useAuthRecaptcha(true, 'site-key');
@@ -17,6 +23,7 @@ function Harness({ action = () => {} }: { action?: (recaptchaData?: string) => v
 
 describe('useAuthRecaptcha', () => {
   beforeEach(() => {
+    toastError.mockReset();
     window.grecaptcha = {
       render: vi.fn(() => 1),
       reset: vi.fn(),
@@ -44,7 +51,7 @@ describe('useAuthRecaptcha', () => {
     expect(options.callback).toBeTypeOf('function');
   });
 
-  it('does not run the gated action when the surface unmounts during the token hold', async () => {
+  it('runs the gated action immediately after a token is solved', async () => {
     const action = vi.fn();
     let solve: ((token: string) => void) | undefined;
     window.grecaptcha = {
@@ -55,20 +62,40 @@ describe('useAuthRecaptcha', () => {
       reset: vi.fn(),
     };
 
-    const { user, unmount } = renderWithProviders(<Harness action={action} />);
+    const { user } = renderWithProviders(<Harness action={action} />);
 
     await user.click(screen.getByRole('button', { name: 'open' }));
     await waitFor(() => {
       expect(solve).toBeTypeOf('function');
     });
 
-    // grecaptcha solves (schedules the 500ms hold), then the surface unmounts before
-    // the hold elapses. The legacy timer would fire the captured mutation; the
-    // cancelable timer must be cleared on unmount instead.
-    solve!('token-value');
-    unmount();
-    await new Promise((resolve) => setTimeout(resolve, 600));
+    await act(async () => {
+      solve!('token-value');
+    });
+    await waitFor(() => expect(action).toHaveBeenCalledWith('token-value'));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
 
+  it('clears the pending action when the dialog is cancelled', async () => {
+    const action = vi.fn();
+    let solve: ((token: string) => void) | undefined;
+    window.grecaptcha = {
+      render: vi.fn((_target: HTMLElement, options: { callback: (token: string) => void }) => {
+        solve = options.callback;
+        return 1;
+      }),
+      reset: vi.fn(),
+    };
+
+    const { user } = renderWithProviders(<Harness action={action} />);
+
+    await user.click(screen.getByRole('button', { name: 'open' }));
+    await waitFor(() => expect(solve).toBeTypeOf('function'));
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+    // A late callback from the disposed widget must not resurrect the action.
+    act(() => solve!('late-token'));
     expect(action).not.toHaveBeenCalled();
   });
 
@@ -78,7 +105,17 @@ describe('useAuthRecaptcha', () => {
     // module singleton so a second attempt re-tries the load instead of reusing the
     // cached rejection; we count load attempts via the appendChild calls.
     delete window.grecaptcha;
-    const appendSpy = vi.spyOn(document.body, 'appendChild');
+    const nativeAppendChild = document.body.appendChild.bind(document.body);
+    const appendWithoutExternalLoad = <T extends Node>(node: T): T => {
+      if (node instanceof HTMLScriptElement && node.src.includes('recaptcha')) {
+        queueMicrotask(() => node.dispatchEvent(new Event('error')));
+        return node;
+      }
+      return nativeAppendChild(node) as T;
+    };
+    const appendSpy = vi
+      .spyOn(document.body, 'appendChild')
+      .mockImplementation(appendWithoutExternalLoad);
     const scriptAppendCount = () =>
       appendSpy.mock.calls.filter(([node]) => {
         const el = node as Partial<HTMLScriptElement> & { tagName?: string };
@@ -89,19 +126,18 @@ describe('useAuthRecaptcha', () => {
       const { user } = renderWithProviders(<Harness />);
 
       // First attempt tries to install the loader <script> (which fails to load).
+      // The failure is explicitly presented and the unusable dialog closes.
       await user.click(screen.getByRole('button', { name: 'open' }));
       await waitFor(() => {
         expect(scriptAppendCount()).toBe(1);
       });
-
-      // The user closes the blank dialog and retries: the second attempt must
-      // re-append a fresh loader rather than reuse the cached rejection, proving
-      // the module singleton was released on failure.
-      await user.keyboard('{Escape}');
       await waitFor(() => {
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
       });
+      expect(toastError).toHaveBeenCalledTimes(1);
 
+      // A second attempt must re-append a fresh loader rather than reuse the
+      // cached rejection, proving the module singleton was released on failure.
       await user.click(screen.getByRole('button', { name: 'open' }));
       await waitFor(() => {
         expect(scriptAppendCount()).toBe(2);

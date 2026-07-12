@@ -1,110 +1,58 @@
+import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { useEffect, type ReactNode } from 'react';
-import { QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MutationCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { presentMutationError } from '@v2board/api-client';
 import { I18nextProvider } from 'react-i18next';
-import { createI18n, installLocaleDocumentEnvironment } from '@v2board/i18n';
-import {
-  getNormalizedLegacyHashPath,
-  installLegacyDevModuleRecovery,
-  installLegacyDevWhiteScreenFallback,
-  installLegacyHashRouteNormalizer,
-  installLegacyWhiteScreenRecovery,
-  normalizeLegacyHashRoute,
-} from '@v2board/config';
-import { HashRouter, Navigate, useLocation } from 'react-router';
-import App, { ADMIN_LEGACY_ROUTE_PATHS } from './App';
-import { RouteBoundaryElement } from './components/route-error-boundary';
+import { createLazyI18n, installLocaleDocumentEnvironment } from '@v2board/i18n';
+import { RouterProvider } from 'react-router/dom';
+import { createAdminRouter } from './App';
 import { ConfirmDialogProvider } from './components/ui/confirm-dialog';
 import { Toaster } from './components/ui/toaster';
-import { applyAdminLegacySettings } from './lib/legacy-settings';
+import { applyAdminRuntimeConfig } from './lib/runtime-config';
 import { applyInitialDarkMode } from './lib/dark-mode';
-import { redirectToLegacyLogin } from './lib/api';
-// The admin is now a pure shadcn island app: the vendored Bootstrap/OneUI/antd
-// replica stylesheets are gone, so this is the only style entry. It brings its
-// own scoped baseline (admin-island.css) instead of a global Tailwind preflight.
-import './styles/admin-redesigned-surfaces.css';
+import { registerSessionCacheClearer, setupAuthSync } from './lib/auth';
+import { registerRouterNavigation } from './lib/router-navigation';
+import { shouldRetryAdminQuery } from './lib/query-retry';
+import { toast } from './lib/toast';
+import './styles/globals.css';
 
-const legacyHashRouteOptions = {
-  authenticatedFallback: '/dashboard',
-  guestFallback: '/login',
-  nestedPrefixes: ADMIN_LEGACY_ROUTE_PATHS,
-  publicRoutes: ['/', '/login'],
-  routes: ADMIN_LEGACY_ROUTE_PATHS,
-} as const;
-const legacyRecoveryVersion = 'white-screen-recovery-37';
-const legacyWhiteScreenRecoveryConfig = {
-  storageKey: `v2board:white-screen-recovery:${legacyRecoveryVersion}`,
-} as const;
-const legacyDevModuleRecoveryConfig = {
-  storageKey: `v2board:dev-module-recovery:${legacyRecoveryVersion}`,
-} as const;
-
-normalizeLegacyHashRoute(legacyHashRouteOptions);
-installLegacyHashRouteNormalizer(legacyHashRouteOptions);
-if (import.meta.env.DEV) {
-  installLegacyDevModuleRecovery(legacyDevModuleRecoveryConfig);
-  installLegacyWhiteScreenRecovery(legacyHashRouteOptions, {
-    ...legacyWhiteScreenRecoveryConfig,
-    delay: 3000,
-  });
-  installLegacyDevWhiteScreenFallback({ delay: 5000 });
-} else {
-  installLegacyWhiteScreenRecovery(legacyHashRouteOptions, legacyWhiteScreenRecoveryConfig);
-}
-applyAdminLegacySettings();
+applyAdminRuntimeConfig();
 applyInitialDarkMode();
 
-const i18n = createI18n();
+const i18n = await createLazyI18n();
 installLocaleDocumentEnvironment(i18n);
+
 const queryClient = new QueryClient({
-  queryCache: new QueryCache({
-    onError: (error) => {
-      if (isUnauthorizedError(error)) redirectToLegacyLogin();
+  mutationCache: new MutationCache({
+    onError: (error, _variables, _context, mutation) => {
+      presentMutationError(error, mutation.meta, (message) => toast.error(message));
     },
   }),
-  defaultOptions: { queries: { staleTime: 0, retry: false, refetchOnWindowFocus: false } },
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      refetchOnWindowFocus: false,
+      retry: shouldRetryAdminQuery,
+    },
+  },
 });
 
-function isUnauthorizedError(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null) return false;
-  const status = (error as { status?: unknown }).status;
-  const responseStatus = (error as { response?: { status?: unknown } }).response?.status;
-  return status === 403 || responseStatus === 403;
-}
+registerSessionCacheClearer(() => queryClient.clear());
+setupAuthSync();
+const router = createAdminRouter(queryClient);
+registerRouterNavigation(router);
 
 const root = document.getElementById('root');
 if (!root) throw new Error('root element missing');
 
-function LegacyRouteGate({ children }: { children: ReactNode }) {
-  const location = useLocation();
-  const current = `${location.pathname}${location.search}`;
-  const normalized = getNormalizedLegacyHashPath(current, legacyHashRouteOptions);
-
-  useEffect(() => {
-    normalizeLegacyHashRoute(legacyHashRouteOptions);
-  }, [location.hash, location.pathname, location.search]);
-
-  return normalized !== current ? <Navigate to={normalized} replace /> : <>{children}</>;
-}
-
-function Boot() {
-  return (
-    <QueryClientProvider client={queryClient}>
-      <HashRouter>
-        <RouteBoundaryElement>
-          <LegacyRouteGate>
-            <App />
-          </LegacyRouteGate>
-          <ConfirmDialogProvider />
-          <Toaster />
-        </RouteBoundaryElement>
-      </HashRouter>
-    </QueryClientProvider>
-  );
-}
-
 createRoot(root).render(
-  <I18nextProvider i18n={i18n}>
-    <Boot />
-  </I18nextProvider>,
+  <StrictMode>
+    <I18nextProvider i18n={i18n}>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+        <ConfirmDialogProvider />
+        <Toaster />
+      </QueryClientProvider>
+    </I18nextProvider>
+  </StrictMode>,
 );

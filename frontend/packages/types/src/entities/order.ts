@@ -43,7 +43,6 @@ export interface OrderSavePayload {
 export interface OrderCheckoutPayload {
   trade_no: string;
   method: number;
-  token?: string;
 }
 
 export interface OrderCheckoutResult {
@@ -51,9 +50,21 @@ export interface OrderCheckoutResult {
   data: string | boolean;
 }
 
+export interface StripePaymentIntentPayload {
+  trade_no: string;
+  method: number;
+}
+
+export interface StripePaymentIntent {
+  public_key: string;
+  client_secret: string;
+  amount: number;
+  currency: string;
+}
+
 export interface AdminOrderRow extends Order {
   id: number;
   user_id: number;
   email?: string;
-  plan_name: string | null;
+  plan_name?: string | null;
 }

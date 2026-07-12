@@ -1,16 +1,17 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import SystemPage, { startQueuePolling } from './system';
+import SystemPage from './system';
 
 // The queue monitor is a redesigned shadcn island (stat cards + DataTable)
 // replacing the OneUI block / ant-table replica. The DOM byte-pins
 // (block-rounded, ant-table-* classes, si icons) are retired; what stays
 // covered is behavior: the stat values, the 'default' workload filter, the
-// zh queue-name mapping, and the immediate-then-every-3s self-scheduling poll.
+// zh queue-name mapping, and explicit query failures.
 
 const mocks = vi.hoisted(() => ({
   stats: {
     data: { jobsPerMinute: 12, recentJobs: 34, failedJobs: 5, status: true },
+    isError: false,
     refetch: vi.fn(),
   },
   workload: {
@@ -19,6 +20,7 @@ const mocks = vi.hoisted(() => ({
       { name: 'order_handle', processes: 4, length: 5, wait: 6 },
       { name: 'traffic_fetch', processes: 7, length: 8, wait: 9 },
     ],
+    isError: false,
     refetch: vi.fn(),
   },
 }));
@@ -50,25 +52,14 @@ describe('SystemPage queue monitor', () => {
     expect(screen.getByTestId('queue-workload-table').querySelectorAll('tbody tr')).toHaveLength(2);
   });
 
-  it('loads stats and workload immediately, then re-arms a 3s poll', () => {
-    vi.useFakeTimers();
-    const refetchStats = vi.fn();
-    const refetchWorkload = vi.fn();
+  it('renders a retryable error instead of disguising a failed request as empty data', () => {
+    mocks.stats.isError = true;
     try {
-      const stop = startQueuePolling(refetchStats, refetchWorkload);
-      expect(refetchStats).toHaveBeenCalledTimes(1);
-      expect(refetchWorkload).toHaveBeenCalledTimes(1);
-
-      vi.advanceTimersByTime(3000);
-      expect(refetchStats).toHaveBeenCalledTimes(2);
-      expect(refetchWorkload).toHaveBeenCalledTimes(2);
-
-      stop();
-      vi.advanceTimersByTime(6000);
-      expect(refetchStats).toHaveBeenCalledTimes(2);
-      expect(refetchWorkload).toHaveBeenCalledTimes(2);
+      render(<SystemPage />);
+      expect(screen.getByText('队列状态加载失败')).toBeInTheDocument();
+      expect(screen.getByTestId('error-state-retry')).toBeInTheDocument();
     } finally {
-      vi.useRealTimers();
+      mocks.stats.isError = false;
     }
   });
 });

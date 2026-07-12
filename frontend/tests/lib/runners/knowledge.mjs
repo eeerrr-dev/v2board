@@ -16,6 +16,7 @@ export async function runKnowledgeDrawerInteraction(page) {
       Array.from(
         document.querySelectorAll('[data-testid="knowledge-sheet-title"], .ant-drawer-title'),
       ).some((element) => element.textContent?.includes('Copy Article')),
+    null,
     { timeout: 5_000 },
   );
   const opened = await knowledgeState(page);
@@ -24,6 +25,7 @@ export async function runKnowledgeDrawerInteraction(page) {
     () =>
       !document.querySelector('[data-testid="knowledge-sheet"]') &&
       !document.querySelector('.ant-drawer-open'),
+    null,
     { timeout: 5_000 },
   );
   const closed = await knowledgeState(page);
@@ -44,6 +46,7 @@ export async function runUserKnowledgeExtremeContentMatrixInteraction(page) {
       Array.from(
         document.querySelectorAll('[data-testid="knowledge-sheet-title"], .ant-drawer-title'),
       ).some((element) => element.textContent?.includes('Extreme Legacy')),
+    null,
     { timeout: 5_000 },
   );
   const opened = await knowledgeState(page);

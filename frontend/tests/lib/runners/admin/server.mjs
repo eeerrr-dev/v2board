@@ -3,6 +3,7 @@ import {
   openAdminNodeAddMenu,
   selectAdminNodeGroupDefault,
   adminNodeGroupDefaultSelected,
+  clickVisibleAdminNodeType,
   closeVisibleAdminServerDrawers,
   openAdminServerNodeDrawerForType,
   closeAdminServerNodeDrawer,
@@ -40,15 +41,29 @@ import {
   adminModalFooterButtonSelector,
   adminServerGroupSubmitSelector,
 } from '../../selectors.mjs';
-import { normalizeParityText } from '../../text.mjs';
 import { jsonIncludes, clonePageRequests } from '../../json-util.mjs';
+
+async function selectAdminNodeFieldOption(page, testId, legacyLabel, optionText) {
+  const trigger = page.locator(`[data-testid="${testId}"]`).first();
+  if ((await trigger.count()) > 0) {
+    await trigger.click();
+    await page
+      .locator('[data-slot="select-content"] [data-slot="select-item"]')
+      .filter({ hasText: optionText })
+      .first()
+      .click();
+    await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
+    return;
+  }
+  await selectLegacyFormOption(page, '.ant-drawer-open', legacyLabel, [optionText]);
+}
 
 export async function runAdminServerCreateNodeDrawerInteraction(page) {
   const before = await adminServerNodeDrawerState(page);
   await openAdminNodeAddMenu(page);
   await waitForVisibleText(page, adminMenuItemSelector,'Shadowsocks');
   const menuOpened = await adminServerNodeDrawerState(page);
-  await clickFirstVisibleText(page, adminMenuItemSelector, ['Shadowsocks']);
+  await clickVisibleAdminNodeType(page, 'Shadowsocks');
   await page.waitForSelector(adminDrawerOpenSelector, {
     state: 'visible',
     timeout: 5_000,
@@ -79,7 +94,7 @@ export async function runAdminServerVlessRealityMatrixInteraction(page) {
   await openAdminNodeAddMenu(page);
   await waitForVisibleText(page, adminMenuItemSelector,'VLess');
   const menuOpened = await adminServerNodeDrawerState(page);
-  await clickFirstVisibleText(page, adminMenuItemSelector, ['VLess']);
+  await clickVisibleAdminNodeType(page, 'VLess');
   await page.waitForSelector(adminDrawerOpenSelector, {
     state: 'visible',
     timeout: 5_000,
@@ -92,10 +107,15 @@ export async function runAdminServerVlessRealityMatrixInteraction(page) {
   await fillVisibleAt(page, adminDrawerInputSelector, 4, '10443');
   await selectAdminNodeGroupDefault(page);
   const opened = await adminServerVlessMatrixState(page);
-  await selectLegacyFormOption(page, '.ant-drawer-open', '安全性', ['Reality']);
-  await selectLegacyFormOption(page, '.ant-drawer-open', '传输协议', ['TCP']);
+  await selectAdminNodeFieldOption(page, 'node-vless-security', '安全性', 'Reality');
+  await selectAdminNodeFieldOption(page, 'node-network', '传输协议', 'TCP');
   await waitForVisibleText(page, adminFormLabelSelector, 'XTLS流控算法');
-  await selectLegacyFormOption(page, '.ant-drawer-open', 'XTLS流控算法', ['xtls-rprx-vision']);
+  await selectAdminNodeFieldOption(
+    page,
+    'node-flow',
+    'XTLS流控算法',
+    'xtls-rprx-vision',
+  );
   const realityTcp = await adminServerVlessMatrixState(page);
   await clickFirstVisible(page, adminNodeSubmitSelector);
   await waitForPagePropertyAtLeast(page, '__visualParityAdminServerNodeSaveCount', 1);
@@ -120,11 +140,10 @@ export async function runAdminServerVlessRealityMatrixInteraction(page) {
 
 async function adminServerVlessMatrixState(page) {
   const state = await adminServerNodeDrawerState(page);
-  const bodyText = await page.evaluate(() => document.body?.innerText ?? '');
-  const normalizedBodyText = normalizeParityText(bodyText);
-  const selectedValues = ['Default', 'Reality', 'TCP', 'xtls-rprx-vision'].filter(
-    (value) => jsonIncludes(state.selectedValues, value) || normalizedBodyText.includes(value),
+  const selectedValues = ['Reality', 'TCP', 'xtls-rprx-vision'].filter((value) =>
+    jsonIncludes(state.selectedValues, value),
   );
+  if (await adminNodeGroupDefaultSelected(page)) selectedValues.unshift('Default');
   return {
     actionButtons: state.actionButtons,
     drawerCount: state.drawerCount,
@@ -152,6 +171,7 @@ export async function runAdminServerNodeSaveFailureInteraction(page) {
   await fillVisibleAt(page, adminDrawerInputSelector, 3, '443');
   await fillVisibleAt(page, adminDrawerInputSelector, 4, '10443');
   await selectAdminNodeGroupDefault(page);
+  await selectAdminNodeFieldOption(page, 'node-network', '传输协议', 'TCP');
   const filled = await adminServerNodeDrawerState(page);
   await clickFirstVisible(page, adminNodeSubmitSelector);
   await waitForPagePropertyAtLeast(page, '__visualParityAdminServerNodeSaveCount', 1);
@@ -300,6 +320,7 @@ export async function runAdminServerV2nodeProtocolMatrixInteraction(page) {
   const tuic = await adminServerNodeDrawerState(page);
 
   await selectLegacyFormOption(page, '.ant-drawer-open', '节点协议', ['AnyTLS']);
+  await selectLegacyFormOption(page, '.ant-drawer-open', '传输协议', ['TCP']);
   const anytls = await adminServerNodeDrawerState(page);
   await closeAdminServerNodeDrawer(page);
 

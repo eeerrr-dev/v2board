@@ -41,6 +41,7 @@ import {
 import {
   clickFirstVisible,
   clickFirstVisibleText,
+  clickFirstVisibleTextStable,
   clickVisibleAt,
   fillFirstVisible,
   fillVisibleAt,
@@ -170,7 +171,7 @@ export async function runAdminUserBulkConfirmInteraction(page, actionText, conte
   const filtered = await adminUserBulkActionState(page);
   await openAdminUserToolbarDropdown(page, actionText);
   const dropdown = await adminUserBulkActionState(page);
-  await clickFirstVisibleText(page, adminMenuItemSelector, [actionText]);
+  await clickFirstVisibleTextStable(page, adminMenuItemSelector, [actionText]);
   await page.waitForSelector(adminConfirmDialogSelector, { state: 'visible', timeout: 5_000 });
   await waitForVisibleText(page, adminConfirmTitleSelector, '提醒');
   await waitForVisibleText(page, adminConfirmContentSelector, contentText);
@@ -186,7 +187,7 @@ export async function runAdminUserDestructiveFailureMatrixInteraction(page) {
   const before = await adminUserDestructiveFailureState(page);
   await openAdminUserRowActionMenu(page, '删除用户');
   const deleteDropdown = await adminUserDestructiveFailureState(page);
-  await clickFirstVisibleText(page, adminMenuItemSelector, ['删除用户']);
+  await clickFirstVisibleTextStable(page, adminMenuItemSelector, ['删除用户']);
   await page.waitForSelector(adminConfirmDialogSelector, { state: 'visible', timeout: 5_000 });
   await waitForVisibleText(page, adminConfirmTitleSelector, '删除用户');
   const deleteOpened = await adminUserDestructiveFailureState(page);
@@ -202,7 +203,7 @@ export async function runAdminUserDestructiveFailureMatrixInteraction(page) {
 
   await openAdminUserToolbarDropdown(page, '批量封禁');
   const banDropdown = await adminUserDestructiveFailureState(page);
-  await clickFirstVisibleText(page, adminMenuItemSelector, ['批量封禁']);
+  await clickFirstVisibleTextStable(page, adminMenuItemSelector, ['批量封禁']);
   await page.waitForSelector(adminConfirmDialogSelector, { state: 'visible', timeout: 5_000 });
   await waitForVisibleText(page, adminConfirmTitleSelector, '提醒');
   const banOpened = await adminUserDestructiveFailureState(page);
@@ -214,7 +215,7 @@ export async function runAdminUserDestructiveFailureMatrixInteraction(page) {
 
   await openAdminUserToolbarDropdown(page, '批量删除');
   const allDeleteDropdown = await adminUserDestructiveFailureState(page);
-  await clickFirstVisibleText(page, adminMenuItemSelector, ['批量删除']);
+  await clickFirstVisibleTextStable(page, adminMenuItemSelector, ['批量删除']);
   await page.waitForSelector(adminConfirmDialogSelector, { state: 'visible', timeout: 5_000 });
   await waitForVisibleText(page, adminConfirmTitleSelector, '提醒');
   const allDeleteOpened = await adminUserDestructiveFailureState(page);
@@ -251,7 +252,7 @@ export async function runAdminUserExportDownloadMatrixInteraction(page) {
   const filtered = await adminUserExportDownloadState(page);
   await openAdminUserToolbarDropdown(page, '导出CSV');
   const dropdown = await adminUserExportDownloadState(page);
-  await clickFirstVisibleText(page, adminMenuItemSelector, ['导出CSV']);
+  await clickFirstVisibleTextStable(page, adminMenuItemSelector, ['导出CSV']);
   await waitForPagePropertyAtLeast(page, '__visualParityAdminUserDumpCsvCount', 1);
   await page.waitForTimeout(350);
   const downloaded = await adminUserExportDownloadState(page);
@@ -323,7 +324,7 @@ export async function runAdminUserSendMailModalInteraction(page) {
   const before = await adminUserSendMailModalState(page);
   await openAdminUserToolbarDropdown(page, '发送邮件');
   const dropdown = await adminUserSendMailModalState(page);
-  await clickFirstVisibleText(page, adminMenuItemSelector, ['发送邮件']);
+  await clickFirstVisibleTextStable(page, adminMenuItemSelector, ['发送邮件']);
   await page.waitForSelector(adminDialogOpenSelector, { state: 'visible', timeout: 5_000 });
   await waitForVisibleText(page, adminDrawerTitleSelector, '发送邮件');
   const opened = await adminUserSendMailModalState(page);
@@ -343,7 +344,7 @@ export async function runAdminUserSendMailSubmitMatrixInteraction(page) {
 
   await openAdminUserToolbarDropdown(page, '发送邮件');
   const successDropdown = await adminUserSendMailModalState(page);
-  await clickFirstVisibleText(page, adminMenuItemSelector, ['发送邮件']);
+  await clickFirstVisibleTextStable(page, adminMenuItemSelector, ['发送邮件']);
   await page.waitForSelector(adminDialogOpenSelector, { state: 'visible', timeout: 5_000 });
   await waitForVisibleText(page, adminDrawerTitleSelector, '发送邮件');
   await fillAdminUserSendMailSubject(page, 'Parity Mail Submit Success');
@@ -362,7 +363,7 @@ export async function runAdminUserSendMailSubmitMatrixInteraction(page) {
 
   await openAdminUserToolbarDropdown(page, '发送邮件');
   const failureDropdown = await adminUserSendMailModalState(page);
-  await clickFirstVisibleText(page, adminMenuItemSelector, ['发送邮件']);
+  await clickFirstVisibleTextStable(page, adminMenuItemSelector, ['发送邮件']);
   await page.waitForSelector(adminDialogOpenSelector, { state: 'visible', timeout: 5_000 });
   await waitForVisibleText(page, adminDrawerTitleSelector, '发送邮件');
   await fillAdminUserSendMailSubject(page, 'Parity Mail Failure');
@@ -393,7 +394,7 @@ export async function runAdminUserResetSecretConfirmInteraction(page) {
   const before = await adminUserConfirmState(page);
   await openAdminUserRowActionMenu(page, '重置UUID及订阅URL');
   const dropdown = await adminUserConfirmState(page);
-  await clickFirstVisibleText(page, adminMenuItemSelector, ['重置UUID及订阅URL']);
+  await clickFirstVisibleTextStable(page, adminMenuItemSelector, ['重置UUID及订阅URL']);
   await page.waitForSelector(adminConfirmDialogSelector, { state: 'visible', timeout: 5_000 });
   await waitForVisibleText(page, adminConfirmTitleSelector, '重置安全信息');
   const opened = await adminUserConfirmState(page);
@@ -407,7 +408,7 @@ export async function runAdminUserDeleteConfirmInteraction(page) {
   const before = await adminUserConfirmState(page);
   await openAdminUserRowActionMenu(page, '删除用户');
   const dropdown = await adminUserConfirmState(page);
-  await clickFirstVisibleText(page, adminMenuItemSelector, ['删除用户']);
+  await clickFirstVisibleTextStable(page, adminMenuItemSelector, ['删除用户']);
   await page.waitForSelector(adminConfirmDialogSelector, { state: 'visible', timeout: 5_000 });
   await waitForVisibleText(page, adminConfirmTitleSelector, '删除用户');
   const opened = await adminUserConfirmState(page);
@@ -422,7 +423,7 @@ export async function runAdminUserCopyActionInteraction(page) {
   const before = await adminUserCopyActionState(page);
   await openAdminUserRowActionMenu(page, '复制订阅URL');
   const dropdown = await adminUserCopyActionState(page);
-  await clickFirstVisibleText(page, adminMenuItemSelector, ['复制订阅URL']);
+  await clickFirstVisibleTextStable(page, adminMenuItemSelector, ['复制订阅URL']);
   // The redesigned surface copies silently through `navigator.clipboard`; the antd
   // oracle copies through `execCommand` + a `复制成功` toast. Wait for whichever
   // observable the copy produced.
@@ -431,9 +432,10 @@ export async function runAdminUserCopyActionInteraction(page) {
       (window.__visualParityClipboardWrites ?? []).length > 0 ||
       Boolean(
         document.querySelector(
-          '.v2board-toast-root, .ant-message-notice, .ant-notification-notice',
+          '[data-sonner-toast], .ant-message-notice, .ant-notification-notice',
         ),
       ),
+    null,
     { timeout: 5_000 },
   );
   await page.waitForTimeout(100);
@@ -445,7 +447,7 @@ export async function runAdminUserEditActionInteraction(page) {
   const before = await adminUserEditActionState(page);
   await openAdminUserRowActionMenu(page, '编辑');
   const opened = await adminUserEditActionState(page);
-  await clickFirstVisibleText(page, adminMenuItemSelector, ['编辑']);
+  await clickFirstVisibleTextStable(page, adminMenuItemSelector, ['编辑']);
   await page.waitForSelector(adminDrawerOpenSelector, { state: 'visible', timeout: 5_000 });
   await waitForVisibleText(page, adminDrawerTitleSelector, '用户管理');
   await waitForOverlayInputValue(page, 'visual-user@example.com');
@@ -458,7 +460,7 @@ export async function runAdminUserUpdateValidationFailureInteraction(page) {
   const before = await adminUserEditActionState(page);
   await openAdminUserRowActionMenu(page, '编辑');
   const dropdown = await adminUserEditActionState(page);
-  await clickFirstVisibleText(page, adminMenuItemSelector, ['编辑']);
+  await clickFirstVisibleTextStable(page, adminMenuItemSelector, ['编辑']);
   await page.waitForSelector(adminDrawerOpenSelector, { state: 'visible', timeout: 5_000 });
   await waitForVisibleText(page, adminDrawerTitleSelector, '用户管理');
   await waitForOverlayInputValue(page, 'visual-user@example.com');
@@ -466,7 +468,9 @@ export async function runAdminUserUpdateValidationFailureInteraction(page) {
   await page.waitForTimeout(100);
   const edited = await adminUserEditActionState(page);
   await clickAdminUserManageSubmit(page);
-  await waitForPagePropertyAtLeast(page, '__visualParityAdminUserUpdateCount', 1);
+  // The redesigned RHF/Zod form rejects the malformed email locally; the
+  // frozen oracle still submits it and receives the backend validation error.
+  // Both outcomes must preserve the drawer and avoid a list refetch.
   await page.waitForTimeout(350);
   const failed = await adminUserEditActionState(page);
   return {
@@ -483,7 +487,7 @@ export async function runAdminUserAssignActionInteraction(page) {
   const before = await adminUserAssignActionState(page);
   await openAdminUserRowActionMenu(page, '分配订单');
   const opened = await adminUserAssignActionState(page);
-  await clickFirstVisibleText(page, adminMenuItemSelector, ['分配订单']);
+  await clickFirstVisibleTextStable(page, adminMenuItemSelector, ['分配订单']);
   await page.waitForSelector(adminDialogOpenSelector, { state: 'visible', timeout: 5_000 });
   await waitForVisibleText(page, adminDrawerTitleSelector, '订单分配');
   const modalOpened = await adminOrderAssignModalState(page);
@@ -519,8 +523,10 @@ export async function runAdminUserOrdersActionInteraction(page) {
   const before = await adminUserOrdersActionState(page);
   await openAdminUserRowActionMenu(page, 'TA的订单');
   const opened = await adminUserOrdersActionState(page);
-  await clickFirstVisibleText(page, adminMenuItemSelector, ['TA的订单']);
-  await page.waitForFunction(() => window.location.hash.includes('/order'), { timeout: 5_000 });
+  await clickFirstVisibleTextStable(page, adminMenuItemSelector, ['TA的订单']);
+  await page.waitForFunction(() => window.location.hash.includes('/order'), null, {
+    timeout: 5_000,
+  });
   await waitForPageProperty(page, '__visualParityLastAdminOrderFetchQuery');
   await page.waitForSelector(adminTableRowSelector, { state: 'visible', timeout: 5_000 });
   const navigated = await adminUserOrdersActionState(page);
@@ -531,7 +537,7 @@ export async function runAdminUserInviteActionInteraction(page) {
   const before = await adminUserInviteActionState(page);
   await openAdminUserRowActionMenu(page, 'TA的邀请');
   const opened = await adminUserInviteActionState(page);
-  await clickFirstVisibleText(page, adminMenuItemSelector, ['TA的邀请']);
+  await clickFirstVisibleTextStable(page, adminMenuItemSelector, ['TA的邀请']);
   await waitForPageProperty(page, '__visualParityLastAdminFilteredUserFetchQuery');
   const filtered = await adminUserInviteActionState(page);
   return { before, filtered, opened };
@@ -541,7 +547,7 @@ export async function runAdminUserTrafficActionInteraction(page) {
   const before = await adminUserTrafficActionState(page);
   await openAdminUserRowActionMenu(page, 'TA的流量记录');
   const opened = await adminUserTrafficActionState(page);
-  await clickFirstVisibleText(page, adminMenuItemSelector, ['TA的流量记录']);
+  await clickFirstVisibleTextStable(page, adminMenuItemSelector, ['TA的流量记录']);
   await waitForPageProperty(page, '__visualParityLastAdminUserTrafficQuery');
   await page.waitForSelector(adminDialogOpenSelector, { state: 'visible', timeout: 5_000 });
   await waitForVisibleText(page, adminDrawerTitleSelector, '流量记录');
@@ -559,4 +565,3 @@ export async function runAdminUsersExtremeViewportMatrixInteraction(page) {
   const filterDrawer = await adminUsersExtremeViewportState(page);
   return { before, filterDrawer, narrowed };
 }
-

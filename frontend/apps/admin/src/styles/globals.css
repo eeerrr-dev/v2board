@@ -1,0 +1,13 @@
+/* Explicit Tailwind v4 layers: each framework stylesheet is loaded exactly once. */
+@layer theme, base, components, utilities;
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/preflight.css' layer(base);
+@import 'tailwindcss/utilities.css' layer(utilities) source(none);
+@import 'tw-animate-css';
+@import './admin-theme.css';
+@import './admin-shadcn.css';
+
+/* Scan production TypeScript only; tests and test helpers never ship utilities. */
+@source '../**/*.{ts,tsx}';
+@source not '../**/*.{test,spec}.{ts,tsx}';
+@source not '../test/**';

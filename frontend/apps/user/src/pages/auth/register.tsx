@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { ErrorState } from '@/components/ui/error-state';
 import { Input } from '@/components/ui/input';
 import {
   AuthEmailCodeField,
@@ -18,10 +19,12 @@ export default function RegisterPage() {
   const {
     config,
     configLoading,
+    configError,
+    retryConfig,
     registerInput,
     submit,
     sendCode,
-    passwordMismatch,
+    errors,
     isPending,
     isSendingCode,
     cooldownActive,
@@ -39,37 +42,42 @@ export default function RegisterPage() {
   return (
     <>
       <AuthPanel
-        title={t('auth.register_title')}
-        description={t('auth.register_description')}
+        title={t($ => $.auth.register_title)}
+        description={t($ => $.auth.register_description)}
         onSubmit={submit}
         footer={
           <>
-            {t('auth.have_account')}{' '}
-            <AuthFooterLink href="#/login">{t('auth.sign_in')}</AuthFooterLink>
+            {t($ => $.auth.have_account)}{' '}
+            <AuthFooterLink to="/login">{t($ => $.auth.sign_in)}</AuthFooterLink>
           </>
         }
       >
         {configLoading ? (
           <AuthLoadingState />
+        ) : configError ? (
+          <ErrorState data-testid="register-config-error" onRetry={retryConfig} />
         ) : (
           <AuthFormStack>
             {hasEmailWhitelist ? (
               <AuthEmailWithSuffixField
                 id="register-email"
-                label={t('auth.email')}
-                selectLabel={t('auth.email_domain')}
+                label={t($ => $.auth.email)}
+                selectLabel={t($ => $.auth.email_domain)}
                 suffixes={emailSuffixes}
                 value={selectedEmailSuffix}
                 onChange={setEmailSuffix}
                 inputProps={registerInput('email')}
+                error={errors.email}
               />
             ) : (
-              <AuthField id="register-email" label={t('auth.email')}>
+              <AuthField id="register-email" label={t($ => $.auth.email)} error={errors.email}>
                 <Input
                   id="register-email"
                   type="email"
                   autoComplete="username"
                   placeholder="m@example.com"
+                  aria-invalid={errors.email ? true : undefined}
+                  aria-describedby={errors.email ? 'register-email-error' : undefined}
                   {...registerInput('email')}
                 />
               </AuthField>
@@ -78,33 +86,34 @@ export default function RegisterPage() {
             {config?.is_email_verify ? (
               <AuthEmailCodeField
                 id="register-email-code"
-                label={t('auth.email_code')}
-                buttonLabel={cooldownActive ? cooldownRemaining : t('auth.send_code')}
+                label={t($ => $.auth.email_code)}
+                buttonLabel={cooldownActive ? cooldownRemaining : t($ => $.auth.send_code)}
                 buttonAriaLabel={
-                  cooldownActive ? t('auth.code_sent', { seconds: cooldownRemaining }) : undefined
+                  cooldownActive ? t($ => $.auth.code_sent, { seconds: cooldownRemaining }) : undefined
                 }
                 disabled={cooldownActive || isSendingCode}
                 loading={isSendingCode}
                 onSendCode={sendCode}
                 inputProps={registerInput('email_code')}
+                error={errors.emailCode}
               />
             ) : null}
 
             <AuthPasswordConfirmationFields
               passwordId="register-password"
-              passwordLabel={t('auth.password')}
+              passwordLabel={t($ => $.auth.password)}
               passwordInputProps={registerInput('password')}
               confirmId="register-confirm-password"
-              confirmLabel={t('auth.confirm_password')}
+              confirmLabel={t($ => $.auth.confirm_password)}
               confirmInputProps={registerInput('confirm_password')}
-              confirmError={passwordMismatch ? t('auth.password_mismatch') : undefined}
+              passwordError={errors.password}
+              confirmError={errors.confirmPassword}
             />
             <AuthField
               id="register-invite-code"
+              error={errors.inviteCode}
               label={
-                config?.is_invite_force
-                  ? t('auth.invite_code')
-                  : t('auth.invite_code_optional')
+                config?.is_invite_force ? t($ => $.auth.invite_code) : t($ => $.auth.invite_code_optional)
               }
             >
               <Input
@@ -113,6 +122,8 @@ export default function RegisterPage() {
                 disabled={Boolean(initialInviteCode)}
                 defaultValue={initialInviteCode ?? undefined}
                 autoComplete="off"
+                aria-invalid={errors.inviteCode ? true : undefined}
+                aria-describedby={errors.inviteCode ? 'register-invite-code-error' : undefined}
                 {...registerInput('invite_code')}
               />
             </AuthField>
@@ -121,7 +132,6 @@ export default function RegisterPage() {
               <AuthTosField
                 id="register-tos"
                 checked={tosChecked}
-                template={t('auth.tos_html')}
                 url={config.tos_url}
                 onToggle={() => setTosChecked((value) => !value)}
               />
@@ -131,7 +141,7 @@ export default function RegisterPage() {
               loading={isPending}
               disabled={isPending || Boolean(config?.tos_url && !tosChecked)}
             >
-              {t('auth.submit_register')}
+              {t($ => $.auth.submit_register)}
             </AuthSubmitButton>
           </AuthFormStack>
         )}

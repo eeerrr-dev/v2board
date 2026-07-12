@@ -4,10 +4,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/cn';
 
 // Table-header label with a trailing help icon and tooltip, shared by the
-// service (node/traffic) and invite tables. The `v2board-service-tooltip-trigger`
-// class is selected by the interaction-parity harness — keep it. Alignment
-// differs per table (node centers, traffic end-aligns, invite stays default),
-// so callers pass `justify-*` via className.
+// service (node/traffic) and invite tables. Alignment differs per table (node
+// centers, traffic end-aligns, invite stays default), so callers pass
+// `justify-*` via className.
 function HeaderTooltip({
   children,
   className,
@@ -28,8 +27,9 @@ function HeaderTooltip({
             unreachable by keyboard / screen-reader users. */}
         <span
           tabIndex={0}
+          data-slot="header-tooltip-trigger"
           className={cn(
-            'v2board-service-tooltip-trigger inline-flex cursor-help items-center gap-1 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+            'inline-flex cursor-help items-center gap-1 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
             className,
           )}
         >

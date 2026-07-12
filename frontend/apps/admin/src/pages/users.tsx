@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState, type ComponentProps, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ComponentProps } from 'react';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router';
-import { useQueryClient } from '@tanstack/react-query';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
 import {
   Activity,
   ArrowDown,
@@ -23,9 +24,11 @@ import {
   UsersRound,
   X,
 } from 'lucide-react';
-import type { AdminFilter } from '@v2board/api-client';
-import type { AdminUserRow, PlanPeriod } from '@v2board/types';
+import type { admin, AdminFilter } from '@v2board/api-client';
+import type { AdminUserRow } from '@v2board/types';
+import { copyText } from '@v2board/config/clipboard';
 import { formatDateMinuteSlash, formatDateTime } from '@v2board/config/format';
+import { takeStoredAdminFilters } from '@/lib/stored-admin-filters';
 import {
   useAdminPlans,
   useAdminUsers,
@@ -48,10 +51,11 @@ import { Card, CardContent } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/shadcn-dialog';
+} from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -60,8 +64,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Field, FieldError, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field';
 import { PageHeader, PageShell } from '@/components/ui/page';
+import { ErrorState } from '@/components/ui/error-state';
 import { PaginationControl } from '@/components/ui/pagination';
 import {
   Select,
@@ -73,6 +78,7 @@ import {
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetFooter,
   SheetHeader,
   SheetTitle,
@@ -80,14 +86,19 @@ import {
 import { Spinner } from '@/components/ui/spinner';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@/components/ui/table';
 import { cn } from '@/lib/cn';
+import {
+  assignOrderSchema,
+  generateUserSchema,
+  sendMailSchema,
+  userFilterSchema,
+  type AssignOrderValues,
+  type GenerateUserValues,
+  type SendMailValues,
+  type UserFilterValues,
+} from './user-action-form-schema';
 
 interface QueryState {
   current: number;
@@ -102,26 +113,7 @@ interface PlanOption {
   value: number;
 }
 
-interface GenerateUserSubmit {
-  email_prefix?: string;
-  email_suffix?: string;
-  password?: string;
-  plan_id?: number | null;
-  expired_at?: string | null;
-  generate_count?: string;
-}
-
-interface SendMailSubmit {
-  subject?: string;
-  content?: string;
-}
-
-interface AssignOrderSubmit {
-  email?: string;
-  plan_id?: number;
-  period?: PlanPeriod;
-  total_amount?: string;
-}
+type GenerateUserPayload = Parameters<typeof admin.generateUser>[1];
 
 interface FilterField {
   key: string;
@@ -159,30 +151,11 @@ const PERIOD_OPTIONS = Object.keys(PERIOD_TEXT).map((period) => ({
   label: PERIOD_TEXT[period] ?? period,
 }));
 
-function assignOrderSubmit(email?: string): AssignOrderSubmit {
-  return {
-    email: email || undefined,
-    plan_id: undefined,
-    period: undefined,
-    total_amount: undefined,
-  };
-}
-
 // Cross-page Tier-1 contract: the order manager (and the dashboard) seed an
 // AdminFilter[] into sessionStorage then navigate to /user. Read it on mount,
 // apply it as the initial filter, and clear it.
 function readStoredUserFilter(): AdminFilter[] {
-  if (typeof window === 'undefined') return [];
-  const stored = window.sessionStorage.getItem('v2board-admin-user-filter');
-  if (!stored) return [];
-  window.sessionStorage.removeItem('v2board-admin-user-filter');
-  try {
-    const parsed = JSON.parse(stored) as AdminFilter[] | { filter?: AdminFilter[] };
-    if (Array.isArray(parsed)) return parsed;
-    return Array.isArray(parsed.filter) ? parsed.filter : [];
-  } catch {
-    return [];
-  }
+  return takeStoredAdminFilters('v2board-admin-user-filter');
 }
 
 function downloadText(name: string, buffer: unknown) {
@@ -200,6 +173,10 @@ function downloadGeneratedUserCsv(buffer: unknown) {
   downloadText(`USER ${dayjs().format('YYYY-MM-DD HH:mm:ss')}.csv`, buffer);
 }
 
+function requestErrorMessage(error: unknown) {
+  return error instanceof Error && error.message ? error.message : '请求失败';
+}
+
 function planSelectItems(plans: PlanOption[], includeEmpty = false) {
   return [
     ...(includeEmpty ? [{ value: PLAN_NONE, label: '无' }] : []),
@@ -209,7 +186,7 @@ function planSelectItems(plans: PlanOption[], includeEmpty = false) {
 
 export default function UsersPage() {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
+  const [currentUnixTime, setCurrentUnixTime] = useState(() => Date.now() / 1000);
   const [query, setQuery] = useState<QueryState>(() => ({
     current: 1,
     pageSize: 10,
@@ -225,6 +202,10 @@ export default function UsersPage() {
   const sendMail = useSendMailToUsersMutation();
   const banUsers = useBanUsersMutation();
   const deleteAll = useDeleteAllUsersMutation();
+  const planData = plans.data;
+  const groupData = groups.data;
+  const plansReady = !plans.isError && planData !== undefined;
+  const groupsReady = !groups.isError && groupData !== undefined;
 
   const [editing, setEditing] = useState<AdminUserRow | null>(null);
   const [creating, setCreating] = useState(false);
@@ -233,39 +214,41 @@ export default function UsersPage() {
   const [assigning, setAssigning] = useState<AdminUserRow | null>(null);
   const [trafficUser, setTrafficUser] = useState<AdminUserRow | null>(null);
 
-  useEffect(
-    () => () => {
-      queryClient.removeQueries({ queryKey: ['admin', 'users'] });
-      queryClient.removeQueries({ queryKey: ['admin', 'user'] });
-    },
-    [queryClient],
-  );
+  useEffect(() => {
+    const timer = window.setInterval(() => setCurrentUnixTime(Date.now() / 1000), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const planOptions = useMemo<PlanOption[]>(
-    () => plans.data?.map((plan) => ({ label: plan.name, value: plan.id })) ?? [],
-    [plans.data],
+    () => (plansReady ? planData.map((plan) => ({ label: plan.name, value: plan.id })) : []),
+    [planData, plansReady],
   );
 
   const groupMap = useMemo(() => {
     const map = new Map<number, string>();
-    for (const group of groups.data ?? []) map.set(group.id, group.name);
+    if (!groupsReady) return map;
+    for (const group of groupData) map.set(group.id, group.name);
     return map;
-  }, [groups.data]);
+  }, [groupData, groupsReady]);
 
   const filterFields = useMemo<FilterField[]>(
     () => [
       { key: 'email', title: '邮箱', condition: ['模糊'] },
       { key: 'id', title: '用户ID', condition: ['=', '>=', '>', '<', '<='] },
-      {
-        key: 'plan_id',
-        title: '订阅',
-        condition: ['='],
-        type: 'select',
-        options: [
-          { label: '无订阅', value: PLAN_NONE },
-          ...planOptions.map((plan) => ({ label: plan.label, value: plan.value })),
-        ],
-      },
+      ...(plansReady
+        ? [
+            {
+              key: 'plan_id',
+              title: '订阅',
+              condition: ['='],
+              type: 'select' as const,
+              options: [
+                { label: '无订阅', value: PLAN_NONE },
+                ...planOptions.map((plan) => ({ label: plan.label, value: plan.value })),
+              ],
+            },
+          ]
+        : []),
       { key: 'transfer_enable', title: '流量', condition: ['>=', '>', '<', '<='] },
       { key: 'd', title: '下行', condition: ['>=', '>', '<', '<='] },
       { key: 'expired_at', title: '到期时间', condition: ['>=', '>', '<', '<='], type: 'date' },
@@ -295,7 +278,7 @@ export default function UsersPage() {
         ],
       },
     ],
-    [planOptions],
+    [planOptions, plansReady],
   );
 
   const data = users.data?.data ?? [];
@@ -315,7 +298,7 @@ export default function UsersPage() {
   const jumpOrderFilter = (key: string, condition: string, value: string | number) => {
     window.sessionStorage.setItem(
       'v2board-admin-order-filter',
-      JSON.stringify({ filter: [{ key, condition, value }], total }),
+      JSON.stringify([{ key, condition, value }]),
     );
     navigate('/order');
   };
@@ -328,13 +311,11 @@ export default function UsersPage() {
       cancelText: '取消',
     });
     if (!confirmed) return;
-    resetSecret
-      .mutateAsync(row.id)
-      .then(() => {
+    resetSecret.mutate(row.id, {
+      onSuccess: () => {
         toast.success('重置成功');
-        void users.refetch();
-      })
-      .catch(() => undefined);
+      },
+    });
   };
 
   const deleteUser = async (row: AdminUserRow) => {
@@ -345,23 +326,22 @@ export default function UsersPage() {
       cancelText: '取消',
     });
     if (!confirmed) return;
-    remove
-      .mutateAsync(row.id)
-      .then(() => {
+    remove.mutate(row.id, {
+      onSuccess: () => {
         toast.success('删除成功');
-        void users.refetch();
-      })
-      .catch(() => undefined);
+      },
+    });
   };
 
-  const copySubscribeUrl = (row: AdminUserRow) => {
-    void navigator.clipboard?.writeText(row.subscribe_url);
+  const copySubscribeUrl = async (row: AdminUserRow) => {
+    if (await copyText(row.subscribe_url)) toast.success('复制成功');
+    else toast.error('复制失败');
   };
 
   const runUserAction = (key: string, row: AdminUserRow) => {
     if (key === 'edit') setEditing(row);
-    if (key === 'assign') setAssigning(row);
-    if (key === 'copy') copySubscribeUrl(row);
+    if (key === 'assign' && plansReady) setAssigning(row);
+    if (key === 'copy') void copySubscribeUrl(row);
     if (key === 'reset') void resetUserSecret(row);
     if (key === 'orders') jumpOrderFilter('user_id', '=', row.id);
     if (key === 'invite') setFilter([{ key: 'invite_user_id', condition: '=', value: row.id }]);
@@ -371,15 +351,14 @@ export default function UsersPage() {
 
   const exportCsv = () => {
     const toastId = toast.loading('导出中');
-    dumpCsv
-      .mutateAsync(query.filter)
-      .then((response) => {
-        toast.dismiss(toastId);
+    dumpCsv.mutate(query.filter, {
+      onSuccess: (response) => {
         downloadText(`${formatDateTime(Date.now() / 1000)}.csv`, response.buffer);
-      })
-      .catch(() => {
+      },
+      onSettled: () => {
         toast.dismiss(toastId);
-      });
+      },
+    });
   };
 
   const bulkBan = async () => {
@@ -390,10 +369,7 @@ export default function UsersPage() {
       cancelText: '取消',
     });
     if (!confirmed) return;
-    banUsers
-      .mutateAsync(query.filter)
-      .then(() => void users.refetch())
-      .catch(() => undefined);
+    banUsers.mutate(query.filter);
   };
 
   const bulkDelete = async () => {
@@ -404,36 +380,39 @@ export default function UsersPage() {
       cancelText: '取消',
     });
     if (!confirmed) return;
-    deleteAll
-      .mutateAsync(query.filter)
-      .then(() => void users.refetch())
-      .catch(() => undefined);
+    deleteAll.mutate(query.filter);
   };
 
-  const sortHeader = (label: string, key: string) => () => {
-    const active = query.sort === key;
-    const Icon = active ? (query.sort_type === 'ASC' ? ArrowUp : ArrowDown) : ChevronsUpDown;
-    return (
-      <button
-        type="button"
-        className="inline-flex items-center gap-1.5 rounded-sm outline-none transition-colors select-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
-        onClick={() => sortBy(key)}
-      >
-        {label}
-        <Icon className={cn('size-3.5', !active && 'opacity-50')} aria-hidden="true" />
-      </button>
-    );
+  const sortHeader = (label: string, key: string) => {
+    function SortHeader() {
+      const active = query.sort === key;
+      const Icon = active ? (query.sort_type === 'ASC' ? ArrowUp : ArrowDown) : ChevronsUpDown;
+      return (
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 rounded-sm outline-none transition-colors select-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          onClick={() => sortBy(key)}
+        >
+          {label}
+          <Icon className={cn('size-3.5', !active && 'opacity-50')} aria-hidden="true" />
+        </button>
+      );
+    }
+    return SortHeader;
   };
 
   const renderEmail = (row: AdminUserRow) => {
     const onlineAt = (row as AdminUserRow & { t?: number | null }).t;
-    const online = !(Date.now() / 1000 - 600 > Number(onlineAt));
+    const online = !(currentUnixTime - 600 > Number(onlineAt));
     return (
       <Tooltip>
         <TooltipTrigger asChild>
           <span className="inline-flex items-center gap-2">
             <span
-              className={cn('size-2 shrink-0 rounded-full', online ? 'bg-success' : 'bg-muted-foreground')}
+              className={cn(
+                'size-2 shrink-0 rounded-full',
+                online ? 'bg-success' : 'bg-muted-foreground',
+              )}
             />
             {row.email}
           </span>
@@ -462,7 +441,7 @@ export default function UsersPage() {
   };
 
   const renderExpiredAt = (value: number | null) => {
-    const expired = value !== null && value < Date.now() / 1000;
+    const expired = value !== null && value < currentUnixTime;
     return (
       <StatusBadge tone={expired ? 'destructive' : 'success'}>
         {value ? formatDateMinuteSlash(value) : value === null ? '长期有效' : '-'}
@@ -512,7 +491,9 @@ export default function UsersPage() {
           parseFloat(String(row.original.total_used)) >
           parseFloat(String(row.original.transfer_enable));
         return (
-          <StatusBadge tone={over ? 'destructive' : 'success'}>{row.original.total_used}</StatusBadge>
+          <StatusBadge tone={over ? 'destructive' : 'success'}>
+            {row.original.total_used}
+          </StatusBadge>
         );
       },
     },
@@ -555,16 +536,31 @@ export default function UsersPage() {
       id: 'actions',
       meta: { align: 'right' },
       header: () => <span>操作</span>,
-      cell: ({ row }) => <UserRowActions row={row.original} onAction={runUserAction} />,
+      cell: ({ row }) => (
+        <UserRowActions row={row.original} onAction={runUserAction} assignDisabled={!plansReady} />
+      ),
     },
   ];
 
   return (
     <PageShell data-testid="users-page">
+      {users.isError ? (
+        <ErrorState message="用户列表加载失败" onRetry={() => void users.refetch()} />
+      ) : null}
+      {plans.isError ? (
+        <ErrorState message="订阅列表加载失败" onRetry={() => void plans.refetch()} />
+      ) : null}
+      {groups.isError ? (
+        <ErrorState message="权限组加载失败" onRetry={() => void groups.refetch()} />
+      ) : null}
       <PageHeader
         title="用户管理"
         actions={
-          <Button onClick={() => setCreating(true)} data-testid="user-create">
+          <Button
+            onClick={() => setCreating(true)}
+            disabled={!plansReady}
+            data-testid="user-create"
+          >
             <UserPlus className="size-4" />
             创建用户
           </Button>
@@ -602,7 +598,10 @@ export default function UsersPage() {
                       <FileSpreadsheet className="size-4" />
                       导出CSV
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setMailOpen(true)} data-testid="user-send-mail">
+                    <DropdownMenuItem
+                      onClick={() => setMailOpen(true)}
+                      data-testid="user-send-mail"
+                    >
                       <Mail className="size-4" />
                       发送邮件
                     </DropdownMenuItem>
@@ -647,7 +646,11 @@ export default function UsersPage() {
               getRowKey={(row) => row.id}
               className="min-w-[1280px]"
               data-testid="users-table"
-              empty={data.length === 0 ? '暂无用户' : undefined}
+              empty={
+                !users.isError && users.data !== undefined && data.length === 0
+                  ? '暂无用户'
+                  : undefined
+              }
               emptyTestId="users-empty"
               virtualizer={{ enabled: data.length > VIRTUALIZE_MIN_ROWS }}
             />
@@ -681,26 +684,19 @@ export default function UsersPage() {
         userId={editing?.id}
         open={editing != null}
         onClose={() => setEditing(null)}
-        onSaved={() => users.refetch()}
       />
 
       <GenerateUserModal
-        open={creating}
+        open={creating && plansReady}
         plans={planOptions}
         loading={generate.isPending}
         onClose={() => setCreating(false)}
-        onSubmit={(values) =>
-          generate
-            .mutateAsync(values as Parameters<typeof generate.mutateAsync>[0])
-            .then((response) => {
-              if (values.generate_count) downloadGeneratedUserCsv(response.buffer);
-              return users.refetch();
-            })
-            .then(() => {
-              setCreating(false);
-            })
-            .catch(() => undefined)
-        }
+        onSubmit={async (values) => {
+          if (!plansReady) return;
+          const response = await generate.mutateAsync(values);
+          if (values.generate_count) downloadGeneratedUserCsv(response.buffer);
+          setCreating(false);
+        }}
       />
 
       <SendMailModal
@@ -708,18 +704,18 @@ export default function UsersPage() {
         filter={query.filter}
         loading={sendMail.isPending}
         onClose={() => setMailOpen(false)}
-        onSubmit={(values) =>
-          sendMail
-            .mutateAsync({ filter: query.filter, ...values })
-            .then(() => {
-              toast.success('已加入队列执行');
-              setMailOpen(false);
-            })
-            .catch(() => undefined)
-        }
+        onSubmit={async (values) => {
+          await sendMail.mutateAsync({ filter: query.filter, ...values });
+          toast.success('已加入队列执行');
+          setMailOpen(false);
+        }}
       />
 
-      <AssignOrderModal user={assigning} plans={planOptions} onClose={() => setAssigning(null)} />
+      <AssignOrderModal
+        user={plansReady ? assigning : null}
+        plans={planOptions}
+        onClose={() => setAssigning(null)}
+      />
 
       <UserTrafficModal
         userId={trafficUser?.id}
@@ -740,9 +736,11 @@ export default function UsersPage() {
 function UserRowActions({
   row,
   onAction,
+  assignDisabled,
 }: {
   row: AdminUserRow;
   onAction: (key: string, row: AdminUserRow) => void;
+  assignDisabled: boolean;
 }) {
   return (
     <DropdownMenu>
@@ -757,7 +755,7 @@ function UserRowActions({
           <Pencil className="size-4" />
           编辑
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => onAction('assign', row)}>
+        <DropdownMenuItem disabled={assignDisabled} onClick={() => onAction('assign', row)}>
           <Plus className="size-4" />
           分配订单
         </DropdownMenuItem>
@@ -795,19 +793,7 @@ function UserRowActions({
   );
 }
 
-function FieldRow({ label, children }: { label: ReactNode; children: ReactNode }) {
-  return (
-    <div className="space-y-2">
-      <Label>{label}</Label>
-      {children}
-    </div>
-  );
-}
-
-function AmountInput({
-  suffix,
-  ...props
-}: ComponentProps<typeof Input> & { suffix: string }) {
+function AmountInput({ suffix, ...props }: ComponentProps<typeof Input> & { suffix: string }) {
   return (
     <div className="relative">
       <Input className="pr-8" {...props} />
@@ -831,37 +817,45 @@ function UserFilterSheet({
   value: AdminFilter[];
   onApply: (filter: AdminFilter[]) => void;
 }) {
-  const [rows, setRows] = useState<AdminFilter[]>(value);
+  const form = useForm<UserFilterValues>({
+    resolver: zodResolver(userFilterSchema),
+    defaultValues: { rows: value },
+  });
+  const {
+    fields: filterRows,
+    append,
+    remove,
+  } = useFieldArray({
+    control: form.control,
+    name: 'rows',
+  });
+  const rows = useWatch({ control: form.control, name: 'rows' }) ?? [];
 
   useEffect(() => {
-    if (open) setRows(value);
-  }, [open, value]);
+    if (open) form.reset({ rows: value });
+  }, [form, open, value]);
 
   const fieldOf = (key: string) => fields.find((field) => field.key === key) ?? fields[0]!;
 
   const addRow = () => {
     const field = fields[0]!;
-    setRows((current) => [...current, { key: field.key, condition: field.condition[0]!, value: '' }]);
+    append({ key: field.key, condition: field.condition[0]!, value: '' });
   };
-
-  const removeRow = (index: number) =>
-    setRows((current) => current.filter((_, itemIndex) => itemIndex !== index));
-
-  const update = (index: number, patch: Partial<AdminFilter>) =>
-    setRows((current) => current.map((row, itemIndex) => (itemIndex === index ? { ...row, ...patch } : row)));
 
   const changeField = (index: number, key: string) => {
     const field = fieldOf(key);
-    update(index, { key, condition: field.condition[0]!, value: '' });
+    form.setValue(`rows.${index}.key`, key, { shouldDirty: true });
+    form.setValue(`rows.${index}.condition`, field.condition[0]!, { shouldDirty: true });
+    form.setValue(`rows.${index}.value`, '', { shouldDirty: true, shouldValidate: true });
   };
 
-  const apply = () => {
-    onApply(rows.filter((row) => row.value !== '' && row.value != null));
+  const apply = form.handleSubmit(({ rows: nextRows }) => {
+    onApply(nextRows);
     onOpenChange(false);
-  };
+  });
 
   const reset = () => {
-    setRows([]);
+    form.reset({ rows: [] });
     onApply([]);
     onOpenChange(false);
   };
@@ -875,19 +869,26 @@ function UserFilterSheet({
       >
         <SheetHeader className="border-b border-border px-6 py-4">
           <SheetTitle>过滤器</SheetTitle>
+          <SheetDescription>组合字段条件以筛选用户列表。</SheetDescription>
         </SheetHeader>
 
         <div className="flex-1 space-y-4 overflow-y-auto px-6 py-4">
-          {rows.length === 0 ? (
+          {filterRows.length === 0 ? (
             <p className="text-sm text-muted-foreground">点击下方按钮添加过滤条件。</p>
           ) : null}
-          {rows.map((row, index) => {
+          {filterRows.map((filterRow, index) => {
+            const row = rows[index] ?? filterRow;
             const field = fieldOf(row.key);
+            const valueError = form.formState.errors.rows?.[index]?.value;
             return (
-              <div key={index} className="space-y-2 rounded-md border border-border p-3">
+              <div key={filterRow.id} className="space-y-2 rounded-md border border-border p-3">
                 <div className="flex items-center gap-2">
                   <Select value={row.key} onValueChange={(key) => changeField(index, key)}>
-                    <SelectTrigger className="flex-1" data-testid={`user-filter-field-${index}`}>
+                    <SelectTrigger
+                      className="flex-1"
+                      aria-label={`筛选字段 ${index + 1}`}
+                      data-testid={`user-filter-field-${index}`}
+                    >
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -898,53 +899,75 @@ function UserFilterSheet({
                       ))}
                     </SelectContent>
                   </Select>
-                  <Select
-                    value={row.condition}
-                    onValueChange={(condition) => update(index, { condition })}
-                  >
-                    <SelectTrigger className="w-24" data-testid={`user-filter-condition-${index}`}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {field.condition.map((condition) => (
-                        <SelectItem key={condition} value={condition}>
-                          {condition}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Controller
+                    control={form.control}
+                    name={`rows.${index}.condition`}
+                    render={({ field: conditionField }) => (
+                      <Select value={conditionField.value} onValueChange={conditionField.onChange}>
+                        <SelectTrigger
+                          className="w-24"
+                          aria-label={`筛选条件 ${index + 1}`}
+                          data-testid={`user-filter-condition-${index}`}
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {field.condition.map((condition) => (
+                            <SelectItem key={condition} value={condition}>
+                              {condition}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
                   <Button
+                    type="button"
                     variant="ghost"
                     size="icon"
                     className="size-9 shrink-0 text-muted-foreground"
                     aria-label="删除条件"
-                    onClick={() => removeRow(index)}
+                    onClick={() => remove(index)}
                     data-testid={`user-filter-remove-${index}`}
                   >
                     <X className="size-4" />
                   </Button>
                 </div>
-                <FilterValueInput
-                  index={index}
-                  field={field}
-                  value={row.value}
-                  onChange={(next) => update(index, { value: next })}
-                />
+                <Field data-invalid={Boolean(valueError)}>
+                  <Controller
+                    control={form.control}
+                    name={`rows.${index}.value`}
+                    render={({ field: valueField }) => (
+                      <FilterValueInput
+                        index={index}
+                        field={field}
+                        value={valueField.value}
+                        onChange={valueField.onChange}
+                      />
+                    )}
+                  />
+                  <FieldError errors={[valueError]} />
+                </Field>
               </div>
             );
           })}
 
-          <Button variant="outline" onClick={addRow} data-testid="user-filter-add">
+          <Button type="button" variant="outline" onClick={addRow} data-testid="user-filter-add">
             <Plus className="size-4" />
             添加条件
           </Button>
         </div>
 
         <SheetFooter className="flex-row justify-end gap-2 border-t border-border px-6 py-4">
-          <Button variant="outline" onClick={reset} data-testid="user-filter-reset-all">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={reset}
+            data-testid="user-filter-reset-all"
+          >
             重置
           </Button>
-          <Button onClick={apply} data-testid="user-filter-apply">
+          <Button type="button" onClick={() => void apply()} data-testid="user-filter-apply">
             确定
           </Button>
         </SheetFooter>
@@ -966,7 +989,8 @@ function FilterValueInput({
 }) {
   if (field.type === 'select') {
     const options = field.options ?? [];
-    const current = value == null ? undefined : options.find((option) => String(option.value) === String(value));
+    const current =
+      value == null ? undefined : options.find((option) => String(option.value) === String(value));
     return (
       <Select
         value={current ? String(current.value) : undefined}
@@ -975,7 +999,11 @@ function FilterValueInput({
           onChange(option ? option.value : next);
         }}
       >
-        <SelectTrigger className="w-full" data-testid={`user-filter-value-${index}`}>
+        <SelectTrigger
+          className="w-full"
+          aria-label={`筛选值 ${index + 1}`}
+          data-testid={`user-filter-value-${index}`}
+        >
           <SelectValue placeholder="请选择" />
         </SelectTrigger>
         <SelectContent>
@@ -993,9 +1021,10 @@ function FilterValueInput({
     return (
       <Input
         type="datetime-local"
+        aria-label={`筛选值 ${index + 1}`}
         value={value ? dayjs(1000 * Number(value)).format('YYYY-MM-DDTHH:mm') : ''}
         onChange={(event) =>
-          onChange(event.target.value ? dayjs(event.target.value).format('X') : '')
+          onChange(event.target.value ? String(dayjs(event.target.value).unix()) : '')
         }
         data-testid={`user-filter-value-${index}`}
       />
@@ -1005,6 +1034,7 @@ function FilterValueInput({
   return (
     <Input
       placeholder="欲检索内容"
+      aria-label={`筛选值 ${index + 1}`}
       value={value == null ? '' : String(value)}
       onChange={(event) => onChange(event.target.value)}
       data-testid={`user-filter-value-${index}`}
@@ -1023,111 +1053,202 @@ function GenerateUserModal({
   plans: PlanOption[];
   loading: boolean;
   onClose: () => void;
-  onSubmit: (values: GenerateUserSubmit) => Promise<void>;
+  onSubmit: (values: GenerateUserPayload) => Promise<void>;
 }) {
-  const [submit, setSubmit] = useState<GenerateUserSubmit>({});
+  const form = useForm<GenerateUserValues>({
+    resolver: zodResolver(generateUserSchema),
+    defaultValues: {
+      email_prefix: '',
+      email_suffix: '',
+      password: '',
+      plan_id: null,
+      expired_at: null,
+      generate_count: '',
+    },
+  });
+  const emailPrefix = useWatch({ control: form.control, name: 'email_prefix' });
+  const generateCount = useWatch({ control: form.control, name: 'generate_count' });
 
   useEffect(() => {
-    if (!open) setSubmit({});
-  }, [open]);
+    if (!open) form.reset();
+  }, [form, open]);
 
   const close = () => {
-    setSubmit({});
+    form.reset();
     onClose();
   };
 
-  const setField = <K extends keyof GenerateUserSubmit>(key: K, value: GenerateUserSubmit[K]) =>
-    setSubmit((state) => ({ ...state, [key]: value }));
-
   const planItems = planSelectItems(plans, true);
+  const submit = form.handleSubmit(async (values) => {
+    form.clearErrors('root.serverError');
+    const emailPrefix = values.email_prefix.trim();
+    const generateCount = values.generate_count.trim();
+    const payload: GenerateUserPayload = {
+      email_suffix: values.email_suffix.trim(),
+      ...(emailPrefix ? { email_prefix: emailPrefix } : {}),
+      ...(generateCount ? { generate_count: generateCount } : {}),
+      ...(values.password ? { password: values.password } : {}),
+      ...(values.plan_id != null ? { plan_id: values.plan_id } : {}),
+      ...(values.expired_at ? { expired_at: values.expired_at } : {}),
+    };
+    try {
+      await onSubmit(payload);
+    } catch (error) {
+      form.setError('root.serverError', { message: requestErrorMessage(error) });
+    }
+  });
 
   return (
     <Dialog open={open} onOpenChange={(next) => (!next ? close() : undefined)}>
       <DialogContent data-testid="user-generate-dialog">
         <DialogHeader>
           <DialogTitle>创建用户</DialogTitle>
+          <DialogDescription>批量创建用户并设置初始订阅与到期时间。</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <FieldRow label="邮箱">
+        <form className="space-y-4" onSubmit={submit} noValidate>
+          <FieldError errors={[form.formState.errors.root?.serverError]} />
+          <FieldSet
+            data-invalid={Boolean(
+              form.formState.errors.email_prefix || form.formState.errors.email_suffix,
+            )}
+          >
+            <FieldLegend variant="label">邮箱</FieldLegend>
             <div className="flex items-center gap-2">
-              {!submit.generate_count ? (
-                <Input
-                  placeholder="账号（批量生成请留空）"
-                  value={submit.email_prefix ?? ''}
-                  onChange={(event) => setField('email_prefix', event.target.value)}
-                  data-testid="generate-email-prefix"
+              {!generateCount ? (
+                <Controller
+                  control={form.control}
+                  name="email_prefix"
+                  render={({ field }) => (
+                    <Input
+                      {...field}
+                      placeholder="账号（批量生成请留空）"
+                      onChange={(event) => {
+                        field.onChange(event);
+                        if (event.target.value) {
+                          form.setValue('generate_count', '', { shouldValidate: true });
+                        }
+                      }}
+                      data-testid="generate-email-prefix"
+                      aria-invalid={Boolean(form.formState.errors.email_prefix)}
+                    />
+                  )}
                 />
               ) : null}
               <span className="text-muted-foreground">@</span>
-              <Input
-                placeholder="域"
-                value={submit.email_suffix ?? ''}
-                onChange={(event) => setField('email_suffix', event.target.value)}
-                data-testid="generate-email-suffix"
+              <Controller
+                control={form.control}
+                name="email_suffix"
+                render={({ field, fieldState }) => (
+                  <Input
+                    {...field}
+                    placeholder="域"
+                    data-testid="generate-email-suffix"
+                    aria-invalid={fieldState.invalid}
+                  />
+                )}
               />
             </div>
-          </FieldRow>
-          <FieldRow label="密码">
-            <Input
-              placeholder="留空则密码与邮箱相同"
-              value={submit.password ?? ''}
-              onChange={(event) => setField('password', event.target.value)}
+            <FieldError
+              errors={[form.formState.errors.email_prefix, form.formState.errors.email_suffix]}
             />
-          </FieldRow>
-          <FieldRow label="到期时间">
-            <Input
-              type="date"
-              placeholder="请选择用户到期日期，为空则不限制到期时间"
-              value={submit.expired_at ? dayjs(1000 * Number(submit.expired_at)).format('YYYY-MM-DD') : ''}
-              onChange={(event) =>
-                setField('expired_at', event.target.value ? dayjs(event.target.value).format('X') : null)
-              }
-              data-testid="generate-expired"
+          </FieldSet>
+          <Field>
+            <FieldLabel htmlFor="generate-password">密码</FieldLabel>
+            <Controller
+              control={form.control}
+              name="password"
+              render={({ field }) => (
+                <Input {...field} id="generate-password" placeholder="留空则密码与邮箱相同" />
+              )}
             />
-          </FieldRow>
-          <FieldRow label="订阅计划">
-            <Select
-              value={submit.plan_id != null ? String(submit.plan_id) : PLAN_NONE}
-              onValueChange={(value) => setField('plan_id', value === PLAN_NONE ? null : Number(value))}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="请选择用户订阅计划" />
-              </SelectTrigger>
-              <SelectContent>
-                {planItems.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </FieldRow>
-          {!submit.email_prefix ? (
-            <FieldRow label="生成数量">
-              <Input
-                placeholder="如果为批量生成请输入生成数量"
-                value={submit.generate_count ?? ''}
-                onChange={(event) => setField('generate_count', event.target.value)}
-                data-testid="generate-count"
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="generate-expired">到期时间</FieldLabel>
+            <Controller
+              control={form.control}
+              name="expired_at"
+              render={({ field }) => (
+                <Input
+                  id="generate-expired"
+                  type="date"
+                  placeholder="请选择用户到期日期，为空则不限制到期时间"
+                  value={field.value ? dayjs(1000 * Number(field.value)).format('YYYY-MM-DD') : ''}
+                  onChange={(event) =>
+                    field.onChange(
+                      event.target.value ? String(dayjs(event.target.value).unix()) : null,
+                    )
+                  }
+                  data-testid="generate-expired"
+                />
+              )}
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="generate-plan">订阅计划</FieldLabel>
+            <Controller
+              control={form.control}
+              name="plan_id"
+              render={({ field }) => (
+                <Select
+                  value={field.value != null ? String(field.value) : PLAN_NONE}
+                  onValueChange={(value) =>
+                    field.onChange(value === PLAN_NONE ? null : Number(value))
+                  }
+                >
+                  <SelectTrigger id="generate-plan" className="w-full">
+                    <SelectValue placeholder="请选择用户订阅计划" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {planItems.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          </Field>
+          {!emailPrefix ? (
+            <Field data-invalid={Boolean(form.formState.errors.generate_count)}>
+              <FieldLabel htmlFor="generate-count">生成数量</FieldLabel>
+              <Controller
+                control={form.control}
+                name="generate_count"
+                render={({ field, fieldState }) => (
+                  <Input
+                    {...field}
+                    id="generate-count"
+                    placeholder="如果为批量生成请输入生成数量"
+                    onChange={(event) => {
+                      field.onChange(event);
+                      if (event.target.value) {
+                        form.setValue('email_prefix', '', { shouldValidate: true });
+                      }
+                    }}
+                    data-testid="generate-count"
+                    aria-invalid={fieldState.invalid}
+                  />
+                )}
               />
-            </FieldRow>
+              <FieldError errors={[form.formState.errors.generate_count]} />
+            </Field>
           ) : null}
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={close}>
-            取消
-          </Button>
-          <Button
-            onClick={() => void onSubmit({ ...submit })}
-            disabled={loading}
-            loading={loading}
-            data-testid="generate-submit"
-          >
-            生成
-          </Button>
-        </DialogFooter>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={close}>
+              取消
+            </Button>
+            <Button
+              type="submit"
+              disabled={loading || form.formState.isSubmitting}
+              loading={loading || form.formState.isSubmitting}
+              data-testid="generate-submit"
+            >
+              生成
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );
@@ -1144,57 +1265,97 @@ function SendMailModal({
   filter: AdminFilter[];
   loading: boolean;
   onClose: () => void;
-  onSubmit: (values: SendMailSubmit) => Promise<void>;
+  onSubmit: (values: SendMailValues) => Promise<void>;
 }) {
-  const [submit, setSubmit] = useState<SendMailSubmit>({});
+  const form = useForm<SendMailValues>({
+    resolver: zodResolver(sendMailSchema),
+    defaultValues: { subject: '', content: '' },
+  });
 
   useEffect(() => {
-    if (!open) setSubmit({});
-  }, [open]);
+    if (!open) form.reset();
+  }, [form, open]);
+
+  const close = () => {
+    form.reset();
+    onClose();
+  };
+  const submit = form.handleSubmit(async (values) => {
+    form.clearErrors('root.serverError');
+    try {
+      await onSubmit(values);
+    } catch (error) {
+      form.setError('root.serverError', { message: requestErrorMessage(error) });
+    }
+  });
 
   return (
-    <Dialog open={open} onOpenChange={(next) => (!next ? onClose() : undefined)}>
+    <Dialog open={open} onOpenChange={(next) => (!next ? close() : undefined)}>
       <DialogContent data-testid="user-send-mail-dialog">
         <DialogHeader>
           <DialogTitle>发送邮件</DialogTitle>
+          <DialogDescription>向当前筛选范围内的用户发送邮件。</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <FieldRow label="收件人">
-            <Input disabled value={filter.length ? '过滤用户' : '全部用户'} />
-          </FieldRow>
-          <FieldRow label="主题">
+        <form className="space-y-4" onSubmit={submit} noValidate>
+          <FieldError errors={[form.formState.errors.root?.serverError]} />
+          <Field>
+            <FieldLabel htmlFor="send-mail-recipient">收件人</FieldLabel>
             <Input
-              placeholder="请输入邮件主题"
-              value={submit.subject ?? ''}
-              onChange={(event) => setSubmit((state) => ({ ...state, subject: event.target.value }))}
-              data-testid="send-mail-subject"
+              id="send-mail-recipient"
+              disabled
+              value={filter.length ? '过滤用户' : '全部用户'}
             />
-          </FieldRow>
-          <FieldRow label="发送内容">
-            <Textarea
-              rows={12}
-              placeholder="请输入邮件内容"
-              value={submit.content ?? ''}
-              onChange={(event) => setSubmit((state) => ({ ...state, content: event.target.value }))}
-              data-testid="send-mail-content"
+          </Field>
+          <Field data-invalid={Boolean(form.formState.errors.subject)}>
+            <FieldLabel htmlFor="send-mail-subject">主题</FieldLabel>
+            <Controller
+              control={form.control}
+              name="subject"
+              render={({ field, fieldState }) => (
+                <Input
+                  {...field}
+                  id="send-mail-subject"
+                  placeholder="请输入邮件主题"
+                  data-testid="send-mail-subject"
+                  aria-invalid={fieldState.invalid}
+                />
+              )}
             />
-          </FieldRow>
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            取消
-          </Button>
-          <Button
-            onClick={() => void onSubmit(submit)}
-            disabled={loading}
-            loading={loading}
-            data-testid="send-mail-submit"
-          >
-            确定
-          </Button>
-        </DialogFooter>
+            <FieldError errors={[form.formState.errors.subject]} />
+          </Field>
+          <Field data-invalid={Boolean(form.formState.errors.content)}>
+            <FieldLabel htmlFor="send-mail-content">发送内容</FieldLabel>
+            <Controller
+              control={form.control}
+              name="content"
+              render={({ field, fieldState }) => (
+                <Textarea
+                  {...field}
+                  id="send-mail-content"
+                  rows={12}
+                  placeholder="请输入邮件内容"
+                  data-testid="send-mail-content"
+                  aria-invalid={fieldState.invalid}
+                />
+              )}
+            />
+            <FieldError errors={[form.formState.errors.content]} />
+          </Field>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={close}>
+              取消
+            </Button>
+            <Button
+              type="submit"
+              disabled={loading || form.formState.isSubmitting}
+              loading={loading || form.formState.isSubmitting}
+              data-testid="send-mail-submit"
+            >
+              确定
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );
@@ -1209,106 +1370,158 @@ function AssignOrderModal({
   plans: PlanOption[];
   onClose: () => void;
 }) {
-  const queryClient = useQueryClient();
   const assign = useAssignOrderMutation();
-  const [submit, setSubmit] = useState<AssignOrderSubmit>(() => assignOrderSubmit());
+  const form = useForm<AssignOrderValues>({
+    resolver: zodResolver(assignOrderSchema),
+    defaultValues: {
+      email: user?.email ?? '',
+      plan_id: undefined,
+      period: undefined,
+      total_amount: '',
+    },
+  });
 
   useEffect(() => {
-    if (user) setSubmit(assignOrderSubmit(user.email));
-  }, [user]);
+    form.reset({
+      email: user?.email ?? '',
+      plan_id: undefined,
+      period: undefined,
+      total_amount: '',
+    });
+  }, [form, user]);
 
   const close = () => {
-    setSubmit(assignOrderSubmit(user?.email));
+    form.reset();
     onClose();
   };
 
-  const setField = <K extends keyof AssignOrderSubmit>(key: K, value: AssignOrderSubmit[K]) =>
-    setSubmit((state) => ({ ...state, [key]: value }));
-
-  const doAssign = () => {
+  const doAssign = form.handleSubmit(async (values) => {
     // total_amount stays the raw entered value; the api-client applies the ×100
     // cents conversion. Preserving the raw payload here is the contract.
-    assign
-      .mutateAsync(submit)
-      .then(() => queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] }))
-      .then(close)
-      .catch(() => undefined);
-  };
+    form.clearErrors('root.serverError');
+    try {
+      await assign.mutateAsync(values);
+      close();
+    } catch (error) {
+      form.setError('root.serverError', { message: requestErrorMessage(error) });
+    }
+  });
 
   return (
     <Dialog open={Boolean(user)} onOpenChange={(next) => (!next ? close() : undefined)}>
       <DialogContent data-testid="user-assign-dialog">
         <DialogHeader>
           <DialogTitle>订单分配</DialogTitle>
+          <DialogDescription>为当前用户创建并分配订阅订单。</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <FieldRow label="用户邮箱">
-            <Input
-              placeholder="请输入用户邮箱"
-              value={submit.email ?? ''}
-              onChange={(event) => setField('email', event.target.value)}
-              data-testid="assign-email"
+        <form className="space-y-4" onSubmit={doAssign} noValidate>
+          <FieldError errors={[form.formState.errors.root?.serverError]} />
+          <Field data-invalid={Boolean(form.formState.errors.email)}>
+            <FieldLabel htmlFor="assign-email">用户邮箱</FieldLabel>
+            <Controller
+              control={form.control}
+              name="email"
+              render={({ field, fieldState }) => (
+                <Input
+                  {...field}
+                  id="assign-email"
+                  type="email"
+                  placeholder="请输入用户邮箱"
+                  data-testid="assign-email"
+                  aria-invalid={fieldState.invalid}
+                />
+              )}
             />
-          </FieldRow>
-          <FieldRow label="请选择订阅">
-            <Select
-              value={submit.plan_id != null ? String(submit.plan_id) : undefined}
-              onValueChange={(value) => setField('plan_id', Number(value))}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="请选择订阅" />
-              </SelectTrigger>
-              <SelectContent>
-                {plans.map((plan) => (
-                  <SelectItem key={plan.value} value={String(plan.value)}>
-                    {plan.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </FieldRow>
-          <FieldRow label="请选择周期">
-            <Select
-              value={submit.period}
-              onValueChange={(value) => setField('period', value as PlanPeriod)}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="请选择周期" />
-              </SelectTrigger>
-              <SelectContent>
-                {PERIOD_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </FieldRow>
-          <FieldRow label="支付金额">
-            <AmountInput
-              suffix="¥"
-              placeholder="请输入需要支付的金额"
-              value={submit.total_amount ?? ''}
-              onChange={(event) => setField('total_amount', event.target.value)}
-              data-testid="assign-amount"
+            <FieldError errors={[form.formState.errors.email]} />
+          </Field>
+          <Field data-invalid={Boolean(form.formState.errors.plan_id)}>
+            <FieldLabel htmlFor="user-assign-plan">请选择订阅</FieldLabel>
+            <Controller
+              control={form.control}
+              name="plan_id"
+              render={({ field }) => (
+                <Select
+                  value={field.value != null ? String(field.value) : undefined}
+                  onValueChange={(value) => field.onChange(Number(value))}
+                >
+                  <SelectTrigger
+                    id="user-assign-plan"
+                    className="w-full"
+                    aria-invalid={Boolean(form.formState.errors.plan_id)}
+                  >
+                    <SelectValue placeholder="请选择订阅" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {plans.map((plan) => (
+                      <SelectItem key={plan.value} value={String(plan.value)}>
+                        {plan.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             />
-          </FieldRow>
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={close}>
-            取消
-          </Button>
-          <Button
-            onClick={doAssign}
-            disabled={assign.isPending}
-            loading={assign.isPending}
-            data-testid="assign-submit"
-          >
-            确定
-          </Button>
-        </DialogFooter>
+            <FieldError errors={[form.formState.errors.plan_id]} />
+          </Field>
+          <Field data-invalid={Boolean(form.formState.errors.period)}>
+            <FieldLabel htmlFor="user-assign-period">请选择周期</FieldLabel>
+            <Controller
+              control={form.control}
+              name="period"
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger
+                    id="user-assign-period"
+                    className="w-full"
+                    aria-invalid={Boolean(form.formState.errors.period)}
+                  >
+                    <SelectValue placeholder="请选择周期" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PERIOD_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+            <FieldError errors={[form.formState.errors.period]} />
+          </Field>
+          <Field data-invalid={Boolean(form.formState.errors.total_amount)}>
+            <FieldLabel htmlFor="assign-amount">支付金额</FieldLabel>
+            <Controller
+              control={form.control}
+              name="total_amount"
+              render={({ field, fieldState }) => (
+                <AmountInput
+                  {...field}
+                  id="assign-amount"
+                  suffix="¥"
+                  placeholder="请输入需要支付的金额"
+                  data-testid="assign-amount"
+                  aria-invalid={fieldState.invalid}
+                />
+              )}
+            />
+            <FieldError errors={[form.formState.errors.total_amount]} />
+          </Field>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={close}>
+              取消
+            </Button>
+            <Button
+              type="submit"
+              disabled={assign.isPending || form.formState.isSubmitting}
+              loading={assign.isPending || form.formState.isSubmitting}
+              data-testid="assign-submit"
+            >
+              确定
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );

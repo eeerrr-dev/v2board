@@ -14,11 +14,9 @@ function setNavigator(userAgent: string, maxTouchPoints: number) {
 describe('getSubscribeTargets', () => {
   afterEach(() => {
     vi.restoreAllMocks();
-    window.settings = undefined;
   });
 
   it('gives an iPadOS device the Apple-mobile targets but not the macOS-only ClashX', () => {
-    window.settings = { title: 'V2Board' } as typeof window.settings;
     // iPadOS 13+ Safari reports itself as "Macintosh" with a touch screen.
     setNavigator(IPAD_OS13_UA, 5);
 
@@ -30,7 +28,6 @@ describe('getSubscribeTargets', () => {
   });
 
   it('still offers ClashX on a real desktop Mac (no touch screen)', () => {
-    window.settings = { title: 'V2Board' } as typeof window.settings;
     setNavigator(MAC_UA, 0);
 
     const titles = getSubscribeTargets('https://example.com/sub').map((t) => t.title);

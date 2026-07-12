@@ -14,7 +14,7 @@ export async function inviteState(page) {
       4,
     ),
     tableRows: await visibleTexts(page, ':is([data-testid="invite-code-table"], [data-testid="invite-history-table"]) tbody tr, .ant-table-tbody tr', 10),
-    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
+    toastTexts: await visibleTexts(page, '[data-sonner-toast], .ant-message-notice, .ant-notification-notice', 4),
   };
 }
 
@@ -41,6 +41,6 @@ export async function inviteFinanceDialogState(page) {
     ),
     tableRows: await visibleTexts(page, ':is([data-testid="invite-code-table"], [data-testid="invite-history-table"]) tbody tr, .ant-table-tbody tr', 4),
     titles: await visibleTexts(page, '[data-testid="invite-dialog-title"], .ant-modal-title', 2),
-    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
+    toastTexts: await visibleTexts(page, '[data-sonner-toast], .ant-message-notice, .ant-notification-notice', 4),
   };
 }

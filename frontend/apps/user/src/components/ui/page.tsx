@@ -12,7 +12,10 @@ export function PageShell({
     <div
       ref={ref}
       data-slot="page-shell"
-      className={cn('v2board-page-shell flex w-full flex-col gap-6', className)}
+      className={cn(
+        'flex w-full animate-in flex-col gap-6 fade-in-0 slide-in-from-bottom-1 duration-200 motion-reduce:animate-none!',
+        className,
+      )}
       {...props}
     />
   );
@@ -35,8 +38,9 @@ export function PageHeader({
 }: PageHeaderProps) {
   return (
     <div
+      data-slot="page-header"
       className={cn(
-        'v2board-page-header flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between',
+        'flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between',
         className,
       )}
       {...props}
@@ -47,9 +51,7 @@ export function PageHeader({
             {eyebrow}
           </div>
         ) : null}
-        <h2 className="truncate text-2xl font-semibold tracking-normal text-foreground">
-          {title}
-        </h2>
+        <h2 className="truncate text-2xl font-semibold tracking-normal text-foreground">{title}</h2>
         {description ? (
           <p className="max-w-2xl text-sm leading-6 text-muted-foreground">{description}</p>
         ) : null}

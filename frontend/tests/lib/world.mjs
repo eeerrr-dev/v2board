@@ -78,6 +78,11 @@ async function preparePageForInteraction(page, url, scenario, target, interactio
   await installApiFixtures(page, scenario, target, interaction);
   if (scenario.warmupPath) {
     await gotoStable(page, new URL(scenario.warmupPath, url).toString());
+    // A fixed post-navigation delay is not enough under a full serial run: a
+    // lazy data-router can still be mounting when the hash is changed, so the
+    // first hashchange is lost and the URL/content disagree. Navigate only
+    // after the warmup React/Umi root has observably mounted.
+    await waitForMountedContent(page, diagnostics);
     if (target === 'oracle' && scenario.seedLegacyAdminStore) {
       await seedLegacyAdminStore(page, scenario);
     }
@@ -111,7 +116,7 @@ async function runOneWorld(browser, url, scenario, interaction, viewport, target
   try {
     await preparePageForInteraction(page, url, scenario, target, interaction);
     const result = await interaction.run(page);
-    assertUsefulInteraction(interaction.label, result);
+    assertUsefulInteraction(interaction.label, result, target);
     return collapseCjkDeep(normalizeInteractionResult(interaction.label, result));
   } catch (error) {
     const snapshot = await readDebugSnapshot(page).catch(() => ({
@@ -143,6 +148,13 @@ export async function runParityScenario({ browser, interaction, projectName }) {
     viewport,
     'source',
   );
+
+  // Accessibility is a quality gate for the redesigned source. The frozen
+  // legacy oracle is intentionally not scanned: it is neither shipped nor a
+  // valid baseline for modern shadcn semantics.
+  if (interaction.sourceOnly) {
+    return { sourceResult, oracleResult: null };
+  }
 
   await delay(250);
 

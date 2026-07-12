@@ -1,10 +1,10 @@
 {
   // Editor-only dev environment. Runtime execution (install / build / test /
   // dev-server / deploy) still belongs to the `make` Docker workflow — this
-  // container exists only so VS Code's TypeScript server can resolve the frontend
-  // workspace's node_modules WITHOUT putting any node_modules on the host.
+  // container exists so rust-analyzer and the TypeScript server can resolve the
+  // native/backend and frontend workspaces without host-generated artifacts.
   // See .devcontainer/README.md.
-  "name": "v2board-frontend",
+  "name": "v2board-native",
   "dockerComposeFile": "docker-compose.yml",
   "service": "dev",
   "workspaceFolder": "/workspaces/v2board",
@@ -16,12 +16,19 @@
   // separate project from the `make` stack, so this never touches your running app.
   "shutdownAction": "stopCompose",
   "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "24"
+    }
+  },
   "customizations": {
     "vscode": {
       "extensions": [
         "dbaeumer.vscode-eslint",
         "esbenp.prettier-vscode",
-        "bradlc.vscode-tailwindcss"
+        "bradlc.vscode-tailwindcss",
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml"
       ],
       "settings": {
         // Use the workspace TypeScript (installed into the container volume), not

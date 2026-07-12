@@ -1,13 +1,33 @@
 version: 2
 updates:
-  # Keep the SHA-pinned GitHub Actions in the workflows current (and on a
-  # supported Node runtime). Grouped into a single weekly PR to avoid noise;
-  # Dependabot updates both the SHA and the trailing `# vX.Y.Z` comment.
+  - package-ecosystem: cargo
+    directory: /backend/rust
+    schedule:
+      interval: weekly
+    groups:
+      rust:
+        patterns: ['*']
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    groups:
+      frontend:
+        patterns: ['*']
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      containers:
+        patterns: ['*']
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
     groups:
       github-actions:
-        patterns:
-          - '*'
+        patterns: ['*']

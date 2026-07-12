@@ -1,0 +1,99 @@
+import { afterEach, describe, expect, it } from 'vitest';
+import { setAdminRuntimeConfig } from '@/test/runtime-config';
+import {
+  applyAdminRuntimeConfig,
+  getAdminApiBaseUrl,
+  getAdminBackgroundUrl,
+  getAdminLogo,
+  getAdminRuntimeConfig,
+  getAdminSecurePath,
+  getAdminTitle,
+} from './runtime-config';
+
+describe('admin runtime config', () => {
+  afterEach(() => {
+    setAdminRuntimeConfig();
+    document.documentElement.classList.remove('dark');
+    document.documentElement.removeAttribute('data-theme-color');
+    document.title = '';
+  });
+
+  it('reads title, logo, background and secure path from the JSON bootstrap', () => {
+    setAdminRuntimeConfig({
+      title: 'Panel',
+      logo: '/logo.png',
+      background_url: '/bg.jpg',
+      secure_path: '/admin',
+    });
+
+    expect(getAdminTitle()).toBe('Panel');
+    expect(getAdminLogo()).toBe('/logo.png');
+    expect(getAdminBackgroundUrl()).toBe('/bg.jpg');
+    expect(getAdminApiBaseUrl()).toBe(`${new URL(window.location.href).origin}/api/v1`);
+    expect(getAdminSecurePath()).toBe('admin');
+  });
+
+  it('falls back safely when the backend token is not replaced', () => {
+    const element = document.createElement('script');
+    element.id = 'v2board-runtime-config';
+    element.type = 'application/json';
+    element.textContent = '__V2BOARD_RUNTIME_CONFIG__';
+    document.head.append(element);
+
+    expect(getAdminRuntimeConfig()).toMatchObject({ title: 'V2Board', secure_path: 'admin' });
+    expect(getAdminApiBaseUrl()).toBe(`${new URL(window.location.href).origin}/api/v1`);
+  });
+
+  it('keeps bootstrap config immutable and applies a token theme without a stylesheet link', () => {
+    setAdminRuntimeConfig({
+      description: 'Native administration',
+      title: 'Admin',
+      secure_path: '/admin',
+      theme: { color: 'green' },
+    });
+
+    applyAdminRuntimeConfig();
+
+    expect(getAdminSecurePath()).toBe('admin');
+    expect(document.title).toBe('Admin');
+    expect(document.documentElement.dataset.themeColor).toBe('green');
+    expect(document.querySelector('link[data-v2board-admin-theme-color]')).toBeNull();
+    expect(document.querySelector('meta[name="description"]')).toHaveAttribute(
+      'content',
+      'Native administration',
+    );
+    expect(document.querySelector('meta[name="theme-color"]')).toHaveAttribute(
+      'content',
+      '#319795',
+    );
+
+    document.documentElement.classList.add('dark');
+    applyAdminRuntimeConfig();
+    expect(document.querySelector('meta[name="theme-color"]')).toHaveAttribute(
+      'content',
+      '#171717',
+    );
+  });
+
+  it('rejects active URL schemes in operator-provided images', () => {
+    setAdminRuntimeConfig({
+      background_url: 'javascript:alert(1)',
+      logo: 'data:image/svg+xml,<svg/>',
+    });
+
+    expect(getAdminBackgroundUrl()).toBe('');
+    expect(getAdminLogo()).toBe('');
+  });
+
+  it('uses the default token palette for an unknown theme', () => {
+    setAdminRuntimeConfig({
+      title: 'Admin',
+      secure_path: 'admin',
+      theme: { color: 'unsupported' },
+    });
+
+    applyAdminRuntimeConfig();
+
+    expect(document.documentElement.dataset.themeColor).toBe('default');
+  });
+});

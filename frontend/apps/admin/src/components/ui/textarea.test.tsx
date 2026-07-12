@@ -16,7 +16,7 @@ describe('Textarea', () => {
   });
 
   it('sets aria-invalid so the destructive variants engage when invalid', () => {
-    const html = renderToStaticMarkup(<Textarea invalid />);
+    const html = renderToStaticMarkup(<Textarea aria-invalid />);
     expect(html).toContain('aria-invalid="true"');
     expect(html).toContain('aria-invalid:border-destructive');
     expect(html).toContain('dark:aria-invalid:ring-destructive/40');

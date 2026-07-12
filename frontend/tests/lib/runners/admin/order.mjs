@@ -47,6 +47,7 @@ export async function runAdminOrderDetailModalInteraction(page) {
     () =>
       document.body.textContent.includes('订单信息') &&
       document.body.textContent.includes('VISUAL2026110001'),
+    null,
     { timeout: 5_000 },
   );
   const opened = await adminOrderDetailModalState(page);
@@ -58,11 +59,9 @@ export async function runAdminOrderDetailModalInteraction(page) {
 }
 
 export async function runAdminOrderStatusTooltipsInteraction(page) {
-  // antd header help icons vs the redesigned HeaderTooltip `v2board-service-
-  // tooltip-trigger` span (shared with the node/traffic/invite tables).
   return hoverAllTooltipTargetsInteraction(page, [
+    '[data-slot="header-tooltip-trigger"]',
     '.ant-table-thead .anticon-question-circle',
-    '.v2board-service-tooltip-trigger',
   ]);
 }
 
@@ -76,6 +75,7 @@ export async function runAdminOrderAssignModalInteraction(page) {
     () =>
       document.body.textContent.includes('订单分配') &&
       document.body.textContent.includes('用户邮箱'),
+    null,
     { timeout: 5_000 },
   );
   const opened = await adminOrderAssignModalState(page);
@@ -244,4 +244,3 @@ export async function runAdminOrdersFilterPaginationMatrixInteraction(page) {
 
   return { before, filtered, page2 };
 }
-

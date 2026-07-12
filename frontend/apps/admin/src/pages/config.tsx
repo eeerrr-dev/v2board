@@ -1,35 +1,27 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { useLocation } from 'react-router';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { Controller, useForm, useWatch, type Control } from 'react-hook-form';
+import { z } from 'zod';
 import { Loader2 } from 'lucide-react';
 import type { AdminConfig, AdminConfigFlat, AdminConfigGroups, Plan } from '@v2board/types';
-import type { AdminThemeField, AdminThemeInfo } from '@v2board/api-client';
+import { getErrorPresentation } from '@v2board/api-client';
 import {
   useAdminPlans,
   useConfig,
   useEmailTemplates,
-  useSaveConfigMutation,
-  useSaveThemeConfigMutation,
+  useSaveSystemConfigMutation,
   useSetTelegramWebhookMutation,
   useTestSendMailMutation,
-  useThemeConfigMutation,
-  useThemeTemplates,
-  useThemes,
 } from '@/lib/queries';
 import { cn } from '@/lib/cn';
 import { toast } from '@/lib/toast';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/shadcn-dialog';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Field, FieldError } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { PageHeader, PageShell } from '@/components/ui/page';
+import { ErrorState } from '@/components/ui/error-state';
 import {
   Select,
   SelectContent,
@@ -42,10 +34,138 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 
 type ConfigGroupKey = keyof AdminConfigGroups;
-type ConfigState = Partial<Record<ConfigGroupKey, Record<string, unknown>>> & Partial<AdminConfig>;
 
-const DOCS_SEPARATION_URL =
-  'https://docs.v2board.com/use/advanced.html#%E5%89%8D%E7%AB%AF%E5%88%86%E7%A6%BB';
+type ConfigFieldValue = string | number | string[] | null | undefined;
+type ConfigSectionValues = Record<string, ConfigFieldValue>;
+
+const SECTION_FIELDS = {
+  site: [
+    'app_name',
+    'app_description',
+    'app_url',
+    'force_https',
+    'logo',
+    'subscribe_url',
+    'subscribe_path',
+    'tos_url',
+    'stop_register',
+    'try_out_plan_id',
+    'try_out_hour',
+    'currency',
+    'currency_symbol',
+  ],
+  safe: [
+    'email_verify',
+    'email_gmail_limit_enable',
+    'safe_mode_enable',
+    'secure_path',
+    'email_whitelist_enable',
+    'email_whitelist_suffix',
+    'recaptcha_enable',
+    'recaptcha_key',
+    'recaptcha_site_key',
+    'register_limit_by_ip_enable',
+    'register_limit_count',
+    'register_limit_expire',
+    'password_limit_enable',
+    'password_limit_count',
+    'password_limit_expire',
+  ],
+  subscribe: [
+    'plan_change_enable',
+    'reset_traffic_method',
+    'surplus_enable',
+    'allow_new_period',
+    'new_order_event_id',
+    'renew_order_event_id',
+    'change_order_event_id',
+    'show_info_to_server_enable',
+    'show_subscribe_method',
+    'show_subscribe_expire',
+  ],
+  deposit: ['deposit_bounus'],
+  ticket: ['ticket_status'],
+  invite: [
+    'invite_force',
+    'invite_commission',
+    'invite_gen_limit',
+    'invite_never_expire',
+    'commission_first_time_enable',
+    'commission_auto_check_enable',
+    'commission_withdraw_limit',
+    'commission_withdraw_method',
+    'withdraw_close_enable',
+    'commission_distribution_enable',
+    'commission_distribution_l1',
+    'commission_distribution_l2',
+    'commission_distribution_l3',
+  ],
+  frontend: ['frontend_theme_color', 'frontend_background_url', 'frontend_custom_html'],
+  server: [
+    'server_api_url',
+    'server_token',
+    'server_pull_interval',
+    'server_push_interval',
+    'server_node_report_min_traffic',
+    'server_device_online_min_traffic',
+    'device_limit_mode',
+  ],
+  email: [
+    'email_host',
+    'email_port',
+    'email_encryption',
+    'email_username',
+    'email_password',
+    'email_from_address',
+    'email_template',
+  ],
+  telegram: ['telegram_bot_token', 'telegram_bot_enable', 'telegram_discuss_link'],
+  app: [
+    'windows_version',
+    'windows_download_url',
+    'macos_version',
+    'macos_download_url',
+    'android_version',
+    'android_download_url',
+  ],
+} as const satisfies Record<ConfigGroupKey, readonly string[]>;
+
+const configFieldValueSchema = z.union([
+  z.string(),
+  z.number(),
+  z.array(z.string()),
+  z.null(),
+  z.undefined(),
+]);
+
+function createSectionSchema(
+  fields: readonly string[],
+): z.ZodType<ConfigSectionValues, ConfigSectionValues> {
+  const allowed = new Set(fields);
+  return z.record(z.string(), configFieldValueSchema).superRefine((values, ctx) => {
+    for (const field of Object.keys(values)) {
+      if (allowed.has(field)) continue;
+      ctx.addIssue({ code: 'custom', path: [field], message: '配置字段不属于当前分组' });
+    }
+  });
+}
+
+const SECTION_SCHEMAS: Record<
+  ConfigGroupKey,
+  z.ZodType<ConfigSectionValues, ConfigSectionValues>
+> = {
+  site: createSectionSchema(SECTION_FIELDS.site),
+  safe: createSectionSchema(SECTION_FIELDS.safe),
+  subscribe: createSectionSchema(SECTION_FIELDS.subscribe),
+  deposit: createSectionSchema(SECTION_FIELDS.deposit),
+  ticket: createSectionSchema(SECTION_FIELDS.ticket),
+  invite: createSectionSchema(SECTION_FIELDS.invite),
+  frontend: createSectionSchema(SECTION_FIELDS.frontend),
+  server: createSectionSchema(SECTION_FIELDS.server),
+  email: createSectionSchema(SECTION_FIELDS.email),
+  telegram: createSectionSchema(SECTION_FIELDS.telegram),
+  app: createSectionSchema(SECTION_FIELDS.app),
+};
 
 const SECTIONS: { key: ConfigGroupKey; title: string }[] = [
   { key: 'site', title: '站点' },
@@ -62,8 +182,6 @@ const SECTIONS: { key: ConfigGroupKey; title: string }[] = [
 ];
 
 export default function ConfigPage() {
-  const location = useLocation();
-  if (location.pathname === '/config/theme') return <ThemeConfigPage />;
   return <SystemConfigPage />;
 }
 
@@ -71,88 +189,49 @@ export default function ConfigPage() {
 // System config (grouped setting fields, auto-saved per field to /config/save)
 // ---------------------------------------------------------------------------
 
-/**
- * Per-field save context. Every setter forwards the exact backend key
- * (byte-for-byte) plus its legacy-coerced value; the backend `/config/save`
- * merges any subset of keys, so a `{ [key]: value }` payload is the contract.
- */
 interface FormCtx {
-  get: (group: ConfigGroupKey, field: string) => unknown;
-  /** Update local state only (keeps a controlled input in sync while typing). */
-  setDraft: (group: ConfigGroupKey, field: string, value: unknown) => void;
-  /** Update local state and immediately persist (toggles / selects). */
-  commit: (group: ConfigGroupKey, field: string, value: unknown) => void;
-  /** Persist a value for the given key (text inputs commit on blur). */
-  save: (field: string, value: unknown) => void;
+  control: Control<ConfigSectionValues>;
+  get: (group: ConfigGroupKey, field: string) => ConfigFieldValue;
+  isSaving: (field: string) => boolean;
+  save: (group: ConfigGroupKey, field: string, value: ConfigFieldValue) => void;
 }
 
 function SystemConfigPage() {
   const config = useConfig();
   const plans = useAdminPlans();
   const emailTemplates = useEmailTemplates();
-  useThemeTemplates();
-  const saveConfig = useSaveConfigMutation();
   const webhook = useSetTelegramWebhookMutation();
   const testMail = useTestSendMailMutation();
   const [active, setActive] = useState<ConfigGroupKey>('site');
-  const [state, setState] = useState<ConfigState>(() => (config.data ?? {}) as ConfigState);
-
-  useEffect(() => {
-    if (config.data) setState(config.data as ConfigState);
-  }, [config.data]);
-
-  const update = (group: ConfigGroupKey, field: string, value: unknown) => {
-    setState((current) => ({
-      ...current,
-      [group]: {
-        ...((current[group] as Record<string, unknown> | undefined) ?? {}),
-        [field]: value,
-      },
-    }));
-  };
-
-  const saveField = (field: string, value: unknown) => {
-    saveConfig
-      .mutateAsync({ [field]: value } as Partial<AdminConfigFlat>)
-      .then(() => {
-        toast.success('保存成功');
-        void config.refetch();
-      })
-      .catch(() => undefined);
-  };
-
-  const ctx: FormCtx = {
-    get: (group, field) => (state[group] as Record<string, unknown> | undefined)?.[field],
-    setDraft: update,
-    commit: (group, field, value) => {
-      update(group, field, value);
-      saveField(field, value);
-    },
-    save: saveField,
-  };
 
   const sendTestMail = () => {
-    testMail
-      .mutateAsync()
-      .then((result) => {
+    testMail.mutate(undefined, {
+      onSuccess: (result) => {
         const log = result.log;
         if (log?.error) {
           toast.error('发送失败', { description: log.error });
         } else {
           toast.success('发送成功', { description: `收信地址：${log?.email ?? ''}` });
         }
-      })
-      .catch(() => undefined);
+      },
+    });
   };
 
   const setWebhook = () => {
-    webhook
-      .mutateAsync()
-      .then(() => toast.success('webhook 设置成功'))
-      .catch(() => undefined);
+    webhook.mutate(undefined, {
+      onSuccess: () => toast.success('webhook 设置成功'),
+    });
   };
 
-  if (config.isPending) {
+  if (config.isError) {
+    return (
+      <PageShell data-testid="config-page">
+        <ErrorState message="系统配置加载失败" onRetry={() => void config.refetch()} />
+      </PageShell>
+    );
+  }
+
+  if (config.isPending || !config.data) {
     return (
       <PageShell data-testid="config-page">
         <div className="flex justify-center py-16" role="status">
@@ -192,30 +271,264 @@ function SystemConfigPage() {
         </nav>
 
         <div className="min-w-0 space-y-6">
-          {active === 'site' ? <SiteSection ctx={ctx} plans={plans.data ?? []} /> : null}
-          {active === 'safe' ? <SafeSection ctx={ctx} /> : null}
-          {active === 'subscribe' ? <SubscribeSection ctx={ctx} /> : null}
-          {active === 'deposit' ? <DepositSection ctx={ctx} /> : null}
-          {active === 'ticket' ? <TicketSection ctx={ctx} /> : null}
-          {active === 'invite' ? <InviteSection ctx={ctx} /> : null}
-          {active === 'frontend' ? <FrontendSection ctx={ctx} /> : null}
-          {active === 'server' ? <ServerSection ctx={ctx} /> : null}
-          {active === 'email' ? (
-            <EmailSection
-              ctx={ctx}
-              templates={emailTemplates.data ?? []}
-              onTest={sendTestMail}
-              testing={testMail.isPending}
+          {active === 'site' && plans.isError ? (
+            <ErrorState
+              message="订阅依赖加载失败，无法编辑站点配置"
+              onRetry={() => void plans.refetch()}
+              data-testid="config-plans-error"
             />
-          ) : null}
-          {active === 'telegram' ? (
-            <TelegramSection ctx={ctx} onWebhook={setWebhook} webhookPending={webhook.isPending} />
-          ) : null}
-          {active === 'app' ? <AppSection ctx={ctx} /> : null}
+          ) : active === 'site' && !plans.data ? (
+            <ConfigDependencyLoading label="正在加载订阅依赖" />
+          ) : active === 'email' && emailTemplates.isError ? (
+            <ErrorState
+              message="邮件模板加载失败，无法编辑邮件配置"
+              onRetry={() => void emailTemplates.refetch()}
+              data-testid="config-email-templates-error"
+            />
+          ) : active === 'email' && !emailTemplates.data ? (
+            <ConfigDependencyLoading label="正在加载邮件模板" />
+          ) : (
+            <SystemConfigSectionForm
+              key={active}
+              group={active}
+              config={config.data}
+              plans={plans.data}
+              emailTemplates={emailTemplates.data}
+              onTestMail={sendTestMail}
+              testMailPending={testMail.isPending}
+              onSetWebhook={setWebhook}
+              webhookPending={webhook.isPending}
+              refreshConfig={async () => {
+                const result = await config.refetch();
+                if (result.isError || !result.data) {
+                  throw result.error ?? new Error('系统配置刷新失败');
+                }
+                return result.data;
+              }}
+            />
+          )}
         </div>
       </div>
     </PageShell>
   );
+}
+
+function ConfigDependencyLoading({ label }: { label: string }) {
+  return (
+    <div className="flex justify-center py-16" role="status">
+      <Spinner className="size-6 text-muted-foreground" />
+      <span className="sr-only">{label}</span>
+    </div>
+  );
+}
+
+function getConfigSectionValues(config: AdminConfig, group: ConfigGroupKey): ConfigSectionValues {
+  const source = config[group];
+  if (!source || typeof source !== 'object' || Array.isArray(source)) return {};
+
+  const record = Object.fromEntries(Object.entries(source));
+  const selected: Record<string, unknown> = {};
+  for (const field of SECTION_FIELDS[group]) {
+    if (Object.hasOwn(record, field)) selected[field] = record[field];
+  }
+
+  const parsed = SECTION_SCHEMAS[group].safeParse(selected);
+  if (!parsed.success) {
+    throw new Error(`系统配置「${group}」的数据格式不正确`, { cause: parsed.error });
+  }
+  return parsed.data;
+}
+
+function SystemConfigSectionForm({
+  group,
+  config,
+  plans,
+  emailTemplates,
+  onTestMail,
+  testMailPending,
+  onSetWebhook,
+  webhookPending,
+  refreshConfig,
+}: {
+  group: ConfigGroupKey;
+  config: AdminConfig;
+  plans?: Plan[];
+  emailTemplates?: string[];
+  onTestMail: () => void;
+  testMailPending: boolean;
+  onSetWebhook: () => void;
+  webhookPending: boolean;
+  refreshConfig: () => Promise<AdminConfig>;
+}) {
+  const saveConfig = useSaveSystemConfigMutation();
+  const serverValues = useMemo(() => getConfigSectionValues(config, group), [config, group]);
+  const form = useForm<ConfigSectionValues>({
+    resolver: zodResolver(SECTION_SCHEMAS[group]),
+    defaultValues: serverValues,
+    mode: 'onChange',
+  });
+  const values = useWatch({ control: form.control });
+  const [pendingFields, setPendingFields] = useState<ReadonlySet<string>>(() => new Set());
+  const queuedSaves = useRef(new Map<string, { generation: number; value: ConfigFieldValue }>());
+  const drainingFields = useRef(new Set<string>());
+  const saveGenerations = useRef<Record<string, number>>({});
+  const refreshTail = useRef<Promise<void>>(Promise.resolve());
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    // A full-config refetch updates the shared query before its promise settles.
+    // Preserve every field whose save queue is still draining so an older
+    // response cannot briefly or permanently replace the latest local value.
+    const currentValues = form.getValues();
+    const nextValues = { ...serverValues };
+    for (const field of drainingFields.current) {
+      if (Object.hasOwn(currentValues, field)) nextValues[field] = currentValues[field];
+    }
+    for (const field of queuedSaves.current.keys()) {
+      if (Object.hasOwn(currentValues, field)) nextValues[field] = currentValues[field];
+    }
+    form.reset(nextValues, { keepDirtyValues: true, keepErrors: true });
+  }, [form, serverValues]);
+
+  useEffect(() => {
+    // React Strict Mode replays effects in development, so each setup must
+    // restore the mounted flag after its matching cleanup.
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  const refreshInOrder = () => {
+    const refresh = refreshTail.current.then(refreshConfig);
+    refreshTail.current = refresh.then(
+      () => undefined,
+      () => undefined,
+    );
+    return refresh;
+  };
+
+  const drainField = async (field: string) => {
+    if (drainingFields.current.has(field)) return;
+    drainingFields.current.add(field);
+    if (mounted.current) setPendingFields((current) => new Set(current).add(field));
+
+    try {
+      let queued = queuedSaves.current.get(field);
+      while (queued) {
+        queuedSaves.current.delete(field);
+        const { generation, value } = queued;
+
+        try {
+          await saveConfig.mutateAsync({ [field]: value } as Partial<AdminConfigFlat>);
+          // A newer local value already supersedes this response. Persist it
+          // immediately and avoid a full-config refresh that can only be stale.
+          if ((saveGenerations.current[field] ?? 0) !== generation) {
+            queued = queuedSaves.current.get(field);
+            continue;
+          }
+
+          const refreshed = await refreshInOrder();
+          if (
+            mounted.current &&
+            (saveGenerations.current[field] ?? 0) === generation &&
+            !queuedSaves.current.has(field)
+          ) {
+            const canonicalValue = getConfigSectionValues(refreshed, group)[field];
+            form.resetField(field, { defaultValue: canonicalValue });
+            toast.success('保存成功');
+          }
+        } catch (error) {
+          // A failed superseded request must not block or annotate the newer
+          // value waiting behind it. Only the queue tail owns inline feedback.
+          if (
+            mounted.current &&
+            (saveGenerations.current[field] ?? 0) === generation &&
+            !queuedSaves.current.has(field)
+          ) {
+            form.setError(field, {
+              type: 'server',
+              message: getErrorPresentation(error).message,
+            });
+          }
+        }
+
+        queued = queuedSaves.current.get(field);
+      }
+    } finally {
+      drainingFields.current.delete(field);
+      if (mounted.current) {
+        setPendingFields((current) => {
+          const next = new Set(current);
+          next.delete(field);
+          return next;
+        });
+      }
+    }
+  };
+
+  const saveField = (requestedGroup: ConfigGroupKey, field: string, value: ConfigFieldValue) => {
+    const allowedFields: readonly string[] = SECTION_FIELDS[group];
+    if (requestedGroup !== group || !allowedFields.includes(field)) {
+      throw new Error(`配置字段「${field}」不属于「${group}」分组`);
+    }
+
+    const payloadValue = configFieldValueSchema.safeParse(value);
+    const fieldValue = SECTION_SCHEMAS[group].safeParse({ [field]: value });
+    if (!payloadValue.success || !fieldValue.success) {
+      form.setError(field, { type: 'validate', message: '请输入有效的配置值' });
+      return;
+    }
+
+    const generation = (saveGenerations.current[field] ?? 0) + 1;
+    saveGenerations.current[field] = generation;
+    queuedSaves.current.set(field, { generation, value: payloadValue.data });
+    form.clearErrors(field);
+    void drainField(field);
+  };
+
+  const ctx: FormCtx = {
+    control: form.control,
+    get: (requestedGroup, field) => (requestedGroup === group ? values[field] : undefined),
+    isSaving: (field) => pendingFields.has(field),
+    save: (requestedGroup, field, value) => {
+      saveField(requestedGroup, field, value);
+    },
+  };
+
+  switch (group) {
+    case 'site':
+      if (!plans) throw new Error('站点配置缺少订阅依赖');
+      return <SiteSection ctx={ctx} plans={plans} />;
+    case 'safe':
+      return <SafeSection ctx={ctx} />;
+    case 'subscribe':
+      return <SubscribeSection ctx={ctx} />;
+    case 'deposit':
+      return <DepositSection ctx={ctx} />;
+    case 'ticket':
+      return <TicketSection ctx={ctx} />;
+    case 'invite':
+      return <InviteSection ctx={ctx} />;
+    case 'frontend':
+      return <FrontendSection ctx={ctx} />;
+    case 'server':
+      return <ServerSection ctx={ctx} />;
+    case 'email':
+      if (!emailTemplates) throw new Error('邮件配置缺少模板依赖');
+      return (
+        <EmailSection
+          ctx={ctx}
+          templates={emailTemplates}
+          onTest={onTestMail}
+          testing={testMailPending}
+        />
+      );
+    case 'telegram':
+      return <TelegramSection ctx={ctx} onWebhook={onSetWebhook} webhookPending={webhookPending} />;
+    case 'app':
+      return <AppSection ctx={ctx} />;
+  }
 }
 
 // --- Shared field primitives ----------------------------------------------
@@ -276,16 +589,33 @@ function SwitchRow({
   indent?: boolean;
 }) {
   return (
-    <SettingRow title={title} description={description} indent={indent}>
-      <div className="flex h-10 items-center sm:justify-end">
-        <Switch
-          checked={isLegacyChecked(ctx.get(group, field))}
-          onCheckedChange={(checked) => ctx.commit(group, field, checked ? 1 : 0)}
-          aria-label={title}
-          data-testid={`config-${field}`}
-        />
-      </div>
-    </SettingRow>
+    <Controller
+      control={ctx.control}
+      name={field}
+      render={({ field: controlField, fieldState }) => (
+        <SettingRow title={title} description={description} indent={indent}>
+          <Field data-invalid={fieldState.invalid} aria-busy={ctx.isSaving(field)}>
+            <div className="flex h-10 items-center sm:justify-end">
+              <Switch
+                ref={controlField.ref}
+                name={controlField.name}
+                checked={isBackendEnabled(controlField.value)}
+                onBlur={controlField.onBlur}
+                onCheckedChange={(checked) => {
+                  const value = checked ? 1 : 0;
+                  controlField.onChange(value);
+                  ctx.save(group, field, value);
+                }}
+                aria-label={title}
+                aria-invalid={fieldState.invalid}
+                data-testid={`config-${field}`}
+              />
+            </div>
+            <FieldError errors={[fieldState.error]} />
+          </Field>
+        </SettingRow>
+      )}
+    />
   );
 }
 
@@ -310,30 +640,43 @@ function TextRow({
   type?: string;
   suffix?: string;
   indent?: boolean;
-  coerce?: (value: string) => unknown;
+  coerce?: (value: string) => ConfigFieldValue;
 }) {
   return (
-    <SettingRow title={title} description={description} indent={indent}>
-      <div className={suffix ? 'relative' : undefined}>
-        <Input
-          type={type}
-          className={suffix ? 'pr-10' : undefined}
-          placeholder={placeholder}
-          aria-label={title}
-          data-testid={`config-${field}`}
-          value={toText(ctx.get(group, field))}
-          onChange={(event) => ctx.setDraft(group, field, event.target.value)}
-          onBlur={(event) =>
-            ctx.save(field, coerce ? coerce(event.target.value) : event.target.value)
-          }
-        />
-        {suffix ? (
-          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground">
-            {suffix}
-          </span>
-        ) : null}
-      </div>
-    </SettingRow>
+    <Controller
+      control={ctx.control}
+      name={field}
+      render={({ field: controlField, fieldState }) => (
+        <SettingRow title={title} description={description} indent={indent}>
+          <Field data-invalid={fieldState.invalid} aria-busy={ctx.isSaving(field)}>
+            <div className={suffix ? 'relative' : undefined}>
+              <Input
+                ref={controlField.ref}
+                name={controlField.name}
+                type={type}
+                className={suffix ? 'pr-10' : undefined}
+                placeholder={placeholder}
+                aria-label={title}
+                aria-invalid={fieldState.invalid}
+                data-testid={`config-${field}`}
+                value={toText(controlField.value)}
+                onChange={(event) => controlField.onChange(event.target.value)}
+                onBlur={(event) => {
+                  controlField.onBlur();
+                  ctx.save(group, field, coerce ? coerce(event.target.value) : event.target.value);
+                }}
+              />
+              {suffix ? (
+                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground">
+                  {suffix}
+                </span>
+              ) : null}
+            </div>
+            <FieldError errors={[fieldState.error]} />
+          </Field>
+        </SettingRow>
+      )}
+    />
   );
 }
 
@@ -356,22 +699,35 @@ function TextareaRow({
   placeholder?: string;
   rows: number;
   indent?: boolean;
-  coerce?: (value: string) => unknown;
+  coerce?: (value: string) => ConfigFieldValue;
 }) {
   return (
-    <SettingRow title={title} description={description} indent={indent}>
-      <Textarea
-        rows={rows}
-        placeholder={placeholder}
-        aria-label={title}
-        data-testid={`config-${field}`}
-        value={toText(ctx.get(group, field))}
-        onChange={(event) => ctx.setDraft(group, field, event.target.value)}
-        onBlur={(event) =>
-          ctx.save(field, coerce ? coerce(event.target.value) : event.target.value)
-        }
-      />
-    </SettingRow>
+    <Controller
+      control={ctx.control}
+      name={field}
+      render={({ field: controlField, fieldState }) => (
+        <SettingRow title={title} description={description} indent={indent}>
+          <Field data-invalid={fieldState.invalid} aria-busy={ctx.isSaving(field)}>
+            <Textarea
+              ref={controlField.ref}
+              name={controlField.name}
+              rows={rows}
+              placeholder={placeholder}
+              aria-label={title}
+              aria-invalid={fieldState.invalid}
+              data-testid={`config-${field}`}
+              value={toText(controlField.value)}
+              onChange={(event) => controlField.onChange(event.target.value)}
+              onBlur={(event) => {
+                controlField.onBlur();
+                ctx.save(group, field, coerce ? coerce(event.target.value) : event.target.value);
+              }}
+            />
+            <FieldError errors={[fieldState.error]} />
+          </Field>
+        </SettingRow>
+      )}
+    />
   );
 }
 
@@ -396,27 +752,49 @@ function SelectRow({
   fallback?: string;
   indent?: boolean;
 }) {
-  const raw = ctx.get(group, field);
-  const current = raw == null || raw === '' ? fallback : String(raw);
   return (
-    <SettingRow title={title} description={description} indent={indent}>
-      <Select value={current} onValueChange={(value) => ctx.commit(group, field, value)}>
-        <SelectTrigger
-          className="w-full"
-          aria-label={title}
-          data-testid={`config-${field}`}
-        >
-          <SelectValue placeholder={placeholder} />
-        </SelectTrigger>
-        <SelectContent>
-          {options.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </SettingRow>
+    <Controller
+      control={ctx.control}
+      name={field}
+      render={({ field: controlField, fieldState }) => {
+        const current =
+          controlField.value == null || controlField.value === ''
+            ? fallback
+            : String(controlField.value);
+        return (
+          <SettingRow title={title} description={description} indent={indent}>
+            <Field data-invalid={fieldState.invalid} aria-busy={ctx.isSaving(field)}>
+              <Select
+                name={controlField.name}
+                value={current}
+                onValueChange={(value) => {
+                  controlField.onChange(value);
+                  ctx.save(group, field, value);
+                }}
+              >
+                <SelectTrigger
+                  ref={controlField.ref}
+                  className="w-full"
+                  aria-label={title}
+                  aria-invalid={fieldState.invalid}
+                  data-testid={`config-${field}`}
+                >
+                  <SelectValue placeholder={placeholder} />
+                </SelectTrigger>
+                <SelectContent>
+                  {options.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FieldError errors={[fieldState.error]} />
+            </Field>
+          </SettingRow>
+        );
+      }}
+    />
   );
 }
 
@@ -430,14 +808,6 @@ function WarningAlert({ children }: { children: ReactNode }) {
     <Alert className="border-warning/30 bg-warning/10 text-warning">
       <AlertDescription className="text-warning">{children}</AlertDescription>
     </Alert>
-  );
-}
-
-function SeparationLink() {
-  return (
-    <a className="font-semibold underline" href={DOCS_SEPARATION_URL}>
-      前后分离
-    </a>
   );
 }
 
@@ -600,7 +970,7 @@ function SafeSection({ ctx }: { ctx: FormCtx }) {
         title="邮箱后缀白名单"
         description="开启后在名单中的邮箱后缀才允许进行注册。"
       />
-      {isLegacyChecked(ctx.get('safe', 'email_whitelist_enable')) ? (
+      {isBackendEnabled(ctx.get('safe', 'email_whitelist_enable')) ? (
         <TextareaRow
           ctx={ctx}
           group="safe"
@@ -620,7 +990,7 @@ function SafeSection({ ctx }: { ctx: FormCtx }) {
         title="防机器人"
         description="开启后将会使用Google reCAPTCHA防止机器人。"
       />
-      {isLegacyChecked(ctx.get('safe', 'recaptcha_enable')) ? (
+      {isBackendEnabled(ctx.get('safe', 'recaptcha_enable')) ? (
         <>
           <TextRow
             ctx={ctx}
@@ -649,7 +1019,7 @@ function SafeSection({ ctx }: { ctx: FormCtx }) {
         title="IP注册限制"
         description="开启后如果IP注册账户达到规则要求将会被限制注册，请注意IP判断可能因为CDN或前置代理导致问题。"
       />
-      {isLegacyChecked(ctx.get('safe', 'register_limit_by_ip_enable')) ? (
+      {isBackendEnabled(ctx.get('safe', 'register_limit_by_ip_enable')) ? (
         <>
           <TextRow
             ctx={ctx}
@@ -678,7 +1048,7 @@ function SafeSection({ ctx }: { ctx: FormCtx }) {
         title="防爆破限制"
         description="开启后如果该账户尝试登陆失败次数过多将会被限制。"
       />
-      {isLegacyChecked(ctx.get('safe', 'password_limit_enable')) ? (
+      {isBackendEnabled(ctx.get('safe', 'password_limit_enable')) ? (
         <>
           <TextRow
             ctx={ctx}
@@ -865,7 +1235,7 @@ function InviteSection({ ctx }: { ctx: FormCtx }) {
         title="邀请佣金百分比"
         description="默认全局的佣金分配比例，你可以在用户管理单独配置单个比例。"
         placeholder="请输入"
-        coerce={parseLegacyInteger}
+        coerce={parseBackendInteger}
       />
       <TextRow
         ctx={ctx}
@@ -873,7 +1243,7 @@ function InviteSection({ ctx }: { ctx: FormCtx }) {
         field="invite_gen_limit"
         title="用户可创建邀请码上限"
         placeholder="请输入"
-        coerce={parseLegacyInteger}
+        coerce={parseBackendInteger}
       />
       <SwitchRow
         ctx={ctx}
@@ -928,7 +1298,7 @@ function InviteSection({ ctx }: { ctx: FormCtx }) {
         title="三级分销"
         description="开启后将佣金将按照设置的3成比例进行分成，三成比例合计请不要>100%。"
       />
-      {isLegacyChecked(ctx.get('invite', 'commission_distribution_enable')) ? (
+      {isBackendEnabled(ctx.get('invite', 'commission_distribution_enable')) ? (
         <>
           <TextRow
             ctx={ctx}
@@ -962,70 +1332,38 @@ function InviteSection({ ctx }: { ctx: FormCtx }) {
 
 function FrontendSection({ ctx }: { ctx: FormCtx }) {
   return (
-    <div className="space-y-4">
-      <WarningAlert>
-        如果你采用前后分离的方式部署V2board管理端，那么本页配置将不会生效。了解
-        <SeparationLink />
-      </WarningAlert>
-      <Section title="个性化">
-        <LightDarkRow
-          ctx={ctx}
-          group="frontend"
-          field="frontend_theme_sidebar"
-          title="边栏风格"
-        />
-        <LightDarkRow ctx={ctx} group="frontend" field="frontend_theme_header" title="头部风格" />
-        <SelectRow
-          ctx={ctx}
-          group="frontend"
-          field="frontend_theme_color"
-          title="主题色"
-          fallback="default"
-          options={[
-            { value: 'default', label: '默认' },
-            { value: 'black', label: '黑色' },
-            { value: 'darkblue', label: '暗蓝色' },
-            { value: 'green', label: '奶绿色' },
-          ]}
-        />
-        <TextRow
-          ctx={ctx}
-          group="frontend"
-          field="frontend_background_url"
-          title="背景"
-          description="将会在后台登录页面进行展示。"
-          placeholder="https://xxxxx.com/wallpaper.png"
-        />
-      </Section>
-    </div>
-  );
-}
-
-function LightDarkRow({
-  ctx,
-  group,
-  field,
-  title,
-}: {
-  ctx: FormCtx;
-  group: ConfigGroupKey;
-  field: string;
-  title: string;
-}) {
-  const isLight = ctx.get(group, field) === 'light';
-  return (
-    <SettingRow title={title}>
-      <div className="flex h-10 items-center gap-2 sm:justify-end">
-        <span className="text-sm text-muted-foreground">暗</span>
-        <Switch
-          checked={isLight}
-          onCheckedChange={(checked) => ctx.commit(group, field, checked ? 'light' : 'dark')}
-          aria-label={title}
-          data-testid={`config-${field}`}
-        />
-        <span className="text-sm text-muted-foreground">亮</span>
-      </div>
-    </SettingRow>
+    <Section title="个性化">
+      <SelectRow
+        ctx={ctx}
+        group="frontend"
+        field="frontend_theme_color"
+        title="主题色"
+        fallback="default"
+        options={[
+          { value: 'default', label: '默认' },
+          { value: 'black', label: '黑色' },
+          { value: 'darkblue', label: '暗蓝色' },
+          { value: 'green', label: '奶绿色' },
+        ]}
+      />
+      <TextRow
+        ctx={ctx}
+        group="frontend"
+        field="frontend_background_url"
+        title="背景"
+        description="将会在后台登录页面进行展示。"
+        placeholder="https://xxxxx.com/wallpaper.png"
+      />
+      <TextareaRow
+        ctx={ctx}
+        group="frontend"
+        field="frontend_custom_html"
+        title="自定义集成 HTML"
+        description="仅供可信运维人员集成统计、客服等代码；内容会原样注入用户端页面，请勿粘贴任何不可信 HTML 或脚本。"
+        placeholder="<!-- 仅粘贴经过审核的可信集成代码 -->"
+        rows={8}
+      />
+    </Section>
   );
 }
 
@@ -1113,7 +1451,7 @@ function EmailSection({
   return (
     <div className="space-y-4">
       <WarningAlert>
-        如果你更改了本页配置，需要对队列服务进行重启。另外本页配置优先级高于.env中邮件配置。
+        保存后 API 与后台任务会自动应用最新邮件配置；本页配置优先级高于环境变量中的邮件配置。
       </WarningAlert>
       <Section title="邮件">
         <TextRow
@@ -1169,12 +1507,14 @@ function EmailSection({
           group="email"
           field="email_template"
           title="邮件模板"
-          description="你可以在文档查看如何自定义邮件模板"
+          description="选择当前原生运行时提供的邮件模板"
           options={templates.map((template) => ({ value: template, label: template }))}
         />
         <SettingRow title="发送测试邮件" description="邮件将会发送到当前登陆用户邮箱">
           <Button onClick={onTest} disabled={testing} data-testid="config-test-mail">
-            {testing ? <Loader2 className="size-4 animate-spin" /> : null}
+            {testing ? (
+              <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
+            ) : null}
             发送测试邮件
           </Button>
         </SettingRow>
@@ -1208,12 +1548,10 @@ function TelegramSection({
           title="设置Webhook"
           description="对机器人进行Webhook设置，不设置将无法收到Telegram通知。"
         >
-          <Button
-            onClick={onWebhook}
-            disabled={webhookPending}
-            data-testid="config-set-webhook"
-          >
-            {webhookPending ? <Loader2 className="size-4 animate-spin" /> : null}
+          <Button onClick={onWebhook} disabled={webhookPending} data-testid="config-set-webhook">
+            {webhookPending ? (
+              <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
+            ) : null}
             一键设置
           </Button>
         </SettingRow>
@@ -1289,237 +1627,58 @@ function AppEntryRow({
   return (
     <SettingRow title={title} description={description}>
       <div className="space-y-2">
-        <Input
-          placeholder="1.0.0"
-          aria-label={`${title}版本号`}
-          data-testid={`config-${versionField}`}
-          value={toText(ctx.get('app', versionField))}
-          onChange={(event) => ctx.setDraft('app', versionField, event.target.value)}
-          onBlur={(event) => ctx.save(versionField, event.target.value)}
+        <Controller
+          control={ctx.control}
+          name={versionField}
+          render={({ field, fieldState }) => (
+            <Field data-invalid={fieldState.invalid} aria-busy={ctx.isSaving(versionField)}>
+              <Input
+                ref={field.ref}
+                name={field.name}
+                placeholder="1.0.0"
+                aria-label={`${title}版本号`}
+                aria-invalid={fieldState.invalid}
+                data-testid={`config-${versionField}`}
+                value={toText(field.value)}
+                onChange={(event) => field.onChange(event.target.value)}
+                onBlur={(event) => {
+                  field.onBlur();
+                  ctx.save('app', versionField, event.target.value);
+                }}
+              />
+              <FieldError errors={[fieldState.error]} />
+            </Field>
+          )}
         />
-        <Input
-          placeholder={urlPlaceholder}
-          aria-label={`${title}下载地址`}
-          data-testid={`config-${urlField}`}
-          value={toText(ctx.get('app', urlField))}
-          onChange={(event) => ctx.setDraft('app', urlField, event.target.value)}
-          onBlur={(event) => ctx.save(urlField, event.target.value)}
+        <Controller
+          control={ctx.control}
+          name={urlField}
+          render={({ field, fieldState }) => (
+            <Field data-invalid={fieldState.invalid} aria-busy={ctx.isSaving(urlField)}>
+              <Input
+                ref={field.ref}
+                name={field.name}
+                placeholder={urlPlaceholder}
+                aria-label={`${title}下载地址`}
+                aria-invalid={fieldState.invalid}
+                data-testid={`config-${urlField}`}
+                value={toText(field.value)}
+                onChange={(event) => field.onChange(event.target.value)}
+                onBlur={(event) => {
+                  field.onBlur();
+                  ctx.save('app', urlField, event.target.value);
+                }}
+              />
+              <FieldError errors={[fieldState.error]} />
+            </Field>
+          )}
         />
       </div>
     </SettingRow>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Theme config (/config/theme): theme manager cards + per-theme settings dialog
-// ---------------------------------------------------------------------------
-
-function ThemeConfigPage() {
-  const themes = useThemes();
-  const saveConfig = useSaveConfigMutation();
-  const themeItems = themes.data?.themes ?? {};
-  const active = themes.data?.active;
-  const loading = Object.keys(themeItems).length <= 0;
-
-  const activateTheme = (name: string) => {
-    saveConfig
-      .mutateAsync({ frontend_theme: name })
-      .then(() => {
-        void themes.refetch();
-      })
-      .catch(() => undefined);
-  };
-
-  if (loading) {
-    return (
-      <PageShell data-testid="config-page">
-        <div className="flex justify-center py-16" role="status">
-          <Spinner className="size-6 text-muted-foreground" />
-          <span className="sr-only">加载中</span>
-        </div>
-      </PageShell>
-    );
-  }
-
-  return (
-    <PageShell data-testid="config-page">
-      <PageHeader title="主题配置" />
-      <WarningAlert>
-        如果你采用前后分离的方式部署V2board，那么主题配置将不会生效。了解
-        <SeparationLink />
-      </WarningAlert>
-      <div className="grid gap-4 sm:grid-cols-2">
-        {Object.entries(themeItems).map(([key, theme]) => (
-          <Card key={key} data-testid={`theme-card-${key}`}>
-            <CardHeader>
-              <CardTitle>{theme.name}</CardTitle>
-              <CardDescription>{theme.description}</CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-wrap gap-2">
-              <Button
-                variant={active === key ? 'secondary' : 'default'}
-                disabled={active === key}
-                onClick={() => activateTheme(key)}
-                data-testid={`theme-activate-${key}`}
-              >
-                {active === key ? '当前主题' : '激活主题'}
-              </Button>
-              <ThemeSettingsButton
-                themeKey={key}
-                theme={theme}
-                onSaved={() => themes.refetch()}
-              />
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    </PageShell>
-  );
-}
-
-function ThemeSettingsButton({
-  themeKey,
-  theme,
-  onSaved,
-}: {
-  themeKey: string;
-  theme: AdminThemeInfo;
-  onSaved: () => void | Promise<unknown>;
-}) {
-  const getConfig = useThemeConfigMutation();
-  const saveConfig = useSaveThemeConfigMutation();
-  const [open, setOpen] = useState(false);
-  const [params, setParams] = useState<Record<string, unknown>>({});
-
-  const show = () => {
-    setOpen(true);
-    getConfig
-      .mutateAsync(themeKey)
-      .then((data) => setParams(data))
-      .catch(() => undefined);
-  };
-
-  const save = async () => {
-    try {
-      await saveConfig.mutateAsync({ name: themeKey, config: encodeLegacyThemeConfig(params) });
-      await onSaved();
-      toast.success('保存成功');
-      setOpen(false);
-    } catch {
-      // Keep the dialog open on failure, matching the legacy quiet behavior.
-    }
-  };
-
-  return (
-    <>
-      <Button variant="outline" onClick={show} data-testid={`theme-settings-${themeKey}`}>
-        主题设置
-      </Button>
-      <Dialog
-        open={open}
-        onOpenChange={(next) => {
-          setOpen(next);
-          if (!next) setParams({});
-        }}
-      >
-        <DialogContent className="sm:max-w-lg" data-testid="theme-settings-dialog">
-          <DialogHeader>
-            <DialogTitle>{`配置${theme.name}主题`}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            {(theme.configs ?? []).map((field) => (
-              <div className="space-y-2" key={field.field_name}>
-                <Label htmlFor={`theme-${field.field_name}`}>{field.label}</Label>
-                <ThemeField
-                  id={`theme-${field.field_name}`}
-                  field={field}
-                  value={params[field.field_name]}
-                  onChange={(value) =>
-                    setParams((state) => ({ ...state, [field.field_name]: value }))
-                  }
-                />
-              </div>
-            ))}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              取消
-            </Button>
-            <Button
-              onClick={() => void save()}
-              disabled={saveConfig.isPending}
-              data-testid="theme-settings-save"
-            >
-              {saveConfig.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
-              确定
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
-  );
-}
-
-function ThemeField({
-  id,
-  field,
-  value,
-  onChange,
-}: {
-  id: string;
-  field: AdminThemeField;
-  value: unknown;
-  onChange: (value: unknown) => void;
-}) {
-  if (field.field_type === 'select') {
-    const options = (field.select_options ?? {}) as Record<string, string>;
-    return (
-      <Select
-        value={value == null ? undefined : String(value)}
-        onValueChange={(next) => onChange(next)}
-      >
-        <SelectTrigger id={id} className="w-full">
-          <SelectValue placeholder={field.placeholder} />
-        </SelectTrigger>
-        <SelectContent>
-          {Object.keys(options).map((key) => (
-            <SelectItem key={key} value={key}>
-              {options[key] ?? ''}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    );
-  }
-  if (field.field_type === 'textarea') {
-    return (
-      <Textarea
-        id={id}
-        rows={5}
-        placeholder={field.placeholder}
-        value={toText(value)}
-        onChange={(event) => onChange(event.target.value)}
-      />
-    );
-  }
-  return (
-    <Input
-      id={id}
-      placeholder={field.placeholder}
-      value={toText(value)}
-      onChange={(event) => onChange(event.target.value)}
-    />
-  );
-}
-
-function encodeLegacyThemeConfig(params: Record<string, unknown>) {
-  const json = JSON.stringify(params);
-  if (typeof window === 'undefined') return Buffer.from(json).toString('base64');
-  // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
-  return window.btoa(unescape(encodeURIComponent(json)));
-}
-
-// --- Legacy value coercions (kept byte-identical as backend contract) -------
+// --- Backend-contract value coercions --------------------------------------
 
 function toText(value: unknown) {
   if (Array.isArray(value)) return value.join(',');
@@ -1530,10 +1689,10 @@ function splitComma(value: string) {
   return value.split(',');
 }
 
-export function parseLegacyInteger(value: string) {
+export function parseBackendInteger(value: string) {
   return parseInt(value);
 }
 
-export function isLegacyChecked(value: unknown) {
+export function isBackendEnabled(value: unknown) {
   return Boolean(parseInt(toText(value)));
 }

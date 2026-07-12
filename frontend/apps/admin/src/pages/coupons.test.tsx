@@ -7,9 +7,9 @@ import CouponsPage from './coupons';
 // The admin coupon/giftcard manager is a redesigned shadcn island (PageHeader +
 // DataTable + Sheet editor). Legacy ant-table / ant-modal DOM byte-pins are
 // retired. What stays covered is the Tier-1 contract: the fetch page shape, the
-// generate payload with its cents (×100 for amount) / unix-second date
-// encoding, the plan/period restriction arrays, drop/show, and the type-driven
-// value semantics.
+// generate payload with raw display decimals (the api-client owns cents
+// conversion) / unix-second date encoding, the plan/period restriction arrays,
+// drop/show, and the type-driven value semantics.
 
 const COUPON = {
   id: 1,
@@ -48,6 +48,8 @@ const mocks = vi.hoisted(() => ({
   couponQueries: [] as Array<Record<string, unknown>>,
   giftcardQueries: [] as Array<Record<string, unknown>>,
   couponTotal: 1,
+  plansError: false,
+  plansRefetch: vi.fn(),
   refetch: vi.fn(),
   generateCoupon: vi.fn(),
   dropCoupon: vi.fn(),
@@ -69,18 +71,44 @@ vi.mock('@/lib/toast', () => ({
 vi.mock('@/lib/queries', () => ({
   useAdminCoupons: (query: Record<string, unknown>) => {
     mocks.couponQueries.push(query);
-    return { isPending: false, refetch: mocks.refetch, data: { data: [COUPON], total: mocks.couponTotal } };
+    return {
+      isPending: false,
+      refetch: mocks.refetch,
+      data: { data: [COUPON], total: mocks.couponTotal },
+    };
   },
   useAdminGiftcards: (query: Record<string, unknown>) => {
     mocks.giftcardQueries.push(query);
     return { isPending: false, refetch: mocks.refetch, data: { data: [GIFTCARD], total: 1 } };
   },
-  useAdminPlans: () => ({ data: [{ id: 1, name: 'VIP' }] }),
-  useGenerateCouponMutation: () => ({ isPending: false, mutateAsync: mocks.generateCoupon }),
-  useDropCouponMutation: () => ({ mutateAsync: mocks.dropCoupon }),
+  useAdminPlans: () => ({
+    data: mocks.plansError ? undefined : [{ id: 1, name: 'VIP' }],
+    isError: mocks.plansError,
+    refetch: mocks.plansRefetch,
+  }),
+  useGenerateCouponMutation: () => ({
+    isPending: false,
+    mutate: (payload: unknown, options?: { onSuccess?: (data: unknown) => void }) => {
+      void Promise.resolve(mocks.generateCoupon(payload)).then(options?.onSuccess);
+    },
+  }),
+  useDropCouponMutation: () => ({
+    mutate: (payload: unknown, options?: { onSuccess?: (data: unknown) => void }) => {
+      void Promise.resolve(mocks.dropCoupon(payload)).then(options?.onSuccess);
+    },
+  }),
   useShowCouponMutation: () => ({ mutate: mocks.showCoupon }),
-  useGenerateGiftcardMutation: () => ({ isPending: false, mutateAsync: mocks.generateGiftcard }),
-  useDropGiftcardMutation: () => ({ mutateAsync: mocks.dropGiftcard }),
+  useGenerateGiftcardMutation: () => ({
+    isPending: false,
+    mutate: (payload: unknown, options?: { onSuccess?: (data: unknown) => void }) => {
+      void Promise.resolve(mocks.generateGiftcard(payload)).then(options?.onSuccess);
+    },
+  }),
+  useDropGiftcardMutation: () => ({
+    mutate: (payload: unknown, options?: { onSuccess?: (data: unknown) => void }) => {
+      void Promise.resolve(mocks.dropGiftcard(payload)).then(options?.onSuccess);
+    },
+  }),
 }));
 
 beforeEach(() => {
@@ -88,6 +116,8 @@ beforeEach(() => {
   mocks.couponQueries = [];
   mocks.giftcardQueries = [];
   mocks.couponTotal = 1;
+  mocks.plansError = false;
+  mocks.plansRefetch.mockReset().mockResolvedValue(undefined);
   mocks.refetch.mockReset().mockResolvedValue(undefined);
   mocks.generateCoupon.mockReset().mockResolvedValue({ buffer: new ArrayBuffer(8) });
   mocks.dropCoupon.mockReset().mockResolvedValue(true);
@@ -111,7 +141,55 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+function completeCouponForm(
+  sheet: HTMLElement,
+  values: { name?: string; value?: string; start?: string; end?: string } = {},
+) {
+  fireEvent.change(within(sheet).getByTestId('coupon-name'), {
+    target: { value: values.name ?? '有效优惠券' },
+  });
+  fireEvent.change(within(sheet).getByTestId('coupon-value'), {
+    target: { value: values.value ?? '10' },
+  });
+  fireEvent.input(within(sheet).getByTestId('coupon-start'), {
+    target: { value: values.start ?? '2023-11-14T22:00' },
+  });
+  fireEvent.input(within(sheet).getByTestId('coupon-end'), {
+    target: { value: values.end ?? '2023-11-15T22:00' },
+  });
+}
+
+function completeGiftcardForm(
+  sheet: HTMLElement,
+  values: { name?: string; value?: string; start?: string; end?: string } = {},
+) {
+  fireEvent.change(within(sheet).getByTestId('giftcard-name'), {
+    target: { value: values.name ?? '有效礼品卡' },
+  });
+  fireEvent.change(within(sheet).getByTestId('giftcard-value'), {
+    target: { value: values.value ?? '10' },
+  });
+  fireEvent.input(within(sheet).getByTestId('giftcard-start'), {
+    target: { value: values.start ?? '2023-11-14T22:00' },
+  });
+  fireEvent.input(within(sheet).getByTestId('giftcard-end'), {
+    target: { value: values.end ?? '2023-11-15T22:00' },
+  });
+}
+
 describe('CouponsView', () => {
+  it('blocks coupon editors and exposes retry when plans fail', async () => {
+    mocks.plansError = true;
+    const user = userEvent.setup();
+    render(<CouponsPage />);
+
+    expect(screen.getByText('订阅列表加载失败')).toBeInTheDocument();
+    expect(screen.getByTestId('coupon-create')).toBeDisabled();
+    expect(screen.queryByTestId('coupon-edit-1')).not.toBeInTheDocument();
+    await user.click(screen.getByTestId('error-state-retry'));
+    expect(mocks.plansRefetch).toHaveBeenCalledOnce();
+  });
+
   it('fetches the first coupon page with the { current, pageSize } shape', () => {
     render(<CouponsPage />);
     expect(mocks.couponQueries[0]).toEqual({ current: 1, pageSize: 10 });
@@ -126,9 +204,9 @@ describe('CouponsView', () => {
     expect(within(table).getByText('无限')).toBeInTheDocument();
     expect(
       within(table).getByText(
-        `${dayjs(1700000000 * 1000).format('YYYY/MM/DD HH:mm')} ~ ${dayjs(
-          1700086400 * 1000,
-        ).format('YYYY/MM/DD HH:mm')}`,
+        `${dayjs(1700000000 * 1000).format('YYYY/MM/DD HH:mm')} ~ ${dayjs(1700086400 * 1000).format(
+          'YYYY/MM/DD HH:mm',
+        )}`,
       ),
     ).toBeInTheDocument();
   });
@@ -140,7 +218,7 @@ describe('CouponsView', () => {
     expect(mocks.toastSuccess).toHaveBeenCalledWith('复制成功');
   });
 
-  it('creates an amount coupon with the value scaled to cents (×100) and no CSV download', async () => {
+  it('passes an amount coupon decimal to the api-client and does not download a CSV', async () => {
     const createObjectURL = vi.fn(() => 'blob:x');
     Object.assign(window.URL, { createObjectURL, revokeObjectURL: vi.fn() });
     const user = userEvent.setup();
@@ -148,18 +226,16 @@ describe('CouponsView', () => {
 
     await user.click(screen.getByTestId('coupon-create'));
     const sheet = await screen.findByTestId('coupon-editor');
-    await user.type(within(sheet).getByTestId('coupon-name'), '新券');
-    await user.type(within(sheet).getByTestId('coupon-value'), '10');
+    completeCouponForm(sheet, { name: '新券', value: '10' });
     await user.click(within(sheet).getByTestId('coupon-submit'));
 
     await waitFor(() =>
       expect(mocks.generateCoupon).toHaveBeenCalledWith(
-        expect.objectContaining({ name: '新券', type: 1, value: 1000 }),
+        expect.objectContaining({ name: '新券', type: 1, value: '10' }),
       ),
     );
     expect(mocks.generateCoupon.mock.calls[0]?.[0]).not.toHaveProperty('generate_count');
     expect(createObjectURL).not.toHaveBeenCalled();
-    await waitFor(() => expect(mocks.refetch).toHaveBeenCalled());
   });
 
   it('keeps the percent coupon value un-scaled', async () => {
@@ -170,7 +246,7 @@ describe('CouponsView', () => {
     const sheet = await screen.findByTestId('coupon-editor');
     await user.click(within(sheet).getByTestId('coupon-type'));
     await user.click(await screen.findByRole('option', { name: '按比例优惠' }));
-    await user.type(within(sheet).getByTestId('coupon-value'), '15');
+    completeCouponForm(sheet, { value: '15' });
     await user.click(within(sheet).getByTestId('coupon-submit'));
 
     await waitFor(() =>
@@ -186,19 +262,17 @@ describe('CouponsView', () => {
 
     await user.click(screen.getByTestId('coupon-create'));
     const sheet = await screen.findByTestId('coupon-editor');
-    fireEvent.change(within(sheet).getByTestId('coupon-start'), {
-      target: { value: '2023-11-14T22:00' },
-    });
-    fireEvent.change(within(sheet).getByTestId('coupon-end'), {
-      target: { value: '2023-11-15T22:00' },
+    completeCouponForm(sheet, {
+      start: '2023-11-14T22:00',
+      end: '2023-11-15T22:00',
     });
     await user.click(within(sheet).getByTestId('coupon-submit'));
 
     await waitFor(() =>
       expect(mocks.generateCoupon).toHaveBeenCalledWith(
         expect.objectContaining({
-          started_at: dayjs('2023-11-14T22:00').format('X'),
-          ended_at: dayjs('2023-11-15T22:00').format('X'),
+          started_at: String(dayjs('2023-11-14T22:00').unix()),
+          ended_at: String(dayjs('2023-11-15T22:00').unix()),
         }),
       ),
     );
@@ -210,6 +284,7 @@ describe('CouponsView', () => {
 
     await user.click(screen.getByTestId('coupon-create'));
     const sheet = await screen.findByTestId('coupon-editor');
+    completeCouponForm(sheet);
     await user.click(within(within(sheet).getByTestId('coupon-plan-ids')).getByRole('checkbox'));
     await user.click(
       within(within(sheet).getByTestId('coupon-periods')).getByRole('checkbox', { name: '月付' }),
@@ -233,20 +308,33 @@ describe('CouponsView', () => {
 
     await user.click(screen.getByTestId('coupon-create'));
     const sheet = await screen.findByTestId('coupon-editor');
-    await user.type(within(sheet).getByTestId('coupon-name'), '批量券');
-    await user.type(within(sheet).getByTestId('coupon-value'), '5');
+    completeCouponForm(sheet, { name: '批量券', value: '5' });
     await user.type(within(sheet).getByTestId('coupon-generate-count'), '3');
     await user.click(within(sheet).getByTestId('coupon-submit'));
 
     await waitFor(() =>
       expect(mocks.generateCoupon).toHaveBeenCalledWith(
-        expect.objectContaining({ generate_count: '3', value: 500 }),
+        expect.objectContaining({ generate_count: '3', value: '5' }),
       ),
     );
     await waitFor(() => expect(createObjectURL).toHaveBeenCalled());
   });
 
-  it('edits a coupon, sending the id and cents-scaled value back', async () => {
+  it('blocks incomplete and inverted validity payloads before the mutation', async () => {
+    const user = userEvent.setup();
+    render(<CouponsPage />);
+
+    await user.click(screen.getByTestId('coupon-create'));
+    const sheet = await screen.findByTestId('coupon-editor');
+    completeCouponForm(sheet, { name: '', start: '2023-11-16T22:00', end: '2023-11-15T22:00' });
+    await user.click(within(sheet).getByTestId('coupon-submit'));
+
+    expect(mocks.generateCoupon).not.toHaveBeenCalled();
+    expect(await within(sheet).findByText('名称不能为空')).toBeInTheDocument();
+    expect(within(sheet).getByText('结束时间必须晚于开始时间')).toBeInTheDocument();
+  });
+
+  it('edits a coupon, sending the id and display decimal to the api-client', async () => {
     const user = userEvent.setup();
     render(<CouponsPage />);
 
@@ -258,7 +346,7 @@ describe('CouponsView', () => {
 
     await waitFor(() =>
       expect(mocks.generateCoupon).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 1, type: 1, value: 1000, code: 'SAVE10' }),
+        expect.objectContaining({ id: 1, type: 1, value: 10, code: 'SAVE10' }),
       ),
     );
   });
@@ -269,7 +357,6 @@ describe('CouponsView', () => {
     await user.click(screen.getByTestId('coupon-delete-1'));
     await waitFor(() => expect(mocks.confirm).toHaveBeenCalled());
     await waitFor(() => expect(mocks.dropCoupon).toHaveBeenCalledWith(1));
-    await waitFor(() => expect(mocks.refetch).toHaveBeenCalled());
   });
 
   it('does not drop a coupon when the confirm dialog is dismissed', async () => {
@@ -295,11 +382,27 @@ describe('CouponsView', () => {
     render(<CouponsPage />);
     mocks.couponQueries = [];
     await user.click(screen.getByRole('button', { name: '2' }));
-    expect(mocks.couponQueries[mocks.couponQueries.length - 1]).toEqual({ current: 2, pageSize: 10 });
+    expect(mocks.couponQueries[mocks.couponQueries.length - 1]).toEqual({
+      current: 2,
+      pageSize: 10,
+    });
   });
 });
 
 describe('GiftcardsView', () => {
+  it('blocks gift-card editors and exposes retry when plans fail', async () => {
+    mocks.pathname = '/giftcard';
+    mocks.plansError = true;
+    const user = userEvent.setup();
+    render(<CouponsPage />);
+
+    expect(screen.getByText('订阅列表加载失败')).toBeInTheDocument();
+    expect(screen.getByTestId('giftcard-create')).toBeDisabled();
+    expect(screen.queryByTestId('giftcard-edit-1')).not.toBeInTheDocument();
+    await user.click(screen.getByTestId('error-state-retry'));
+    expect(mocks.plansRefetch).toHaveBeenCalledOnce();
+  });
+
   beforeEach(() => {
     mocks.pathname = '/giftcard';
   });
@@ -314,20 +417,20 @@ describe('GiftcardsView', () => {
     expect(within(table).getByText('VIP')).toBeInTheDocument();
   });
 
-  it('creates an amount giftcard with the value scaled to cents (×100)', async () => {
+  it('passes an amount giftcard decimal to the api-client', async () => {
     const user = userEvent.setup();
     render(<CouponsPage />);
 
     await user.click(screen.getByTestId('giftcard-create'));
     const sheet = await screen.findByTestId('giftcard-editor');
-    await user.type(within(sheet).getByTestId('giftcard-name'), '充值卡');
-    await user.type(within(sheet).getByTestId('giftcard-value'), '20');
+    completeGiftcardForm(sheet, { name: '充值卡', value: '20' });
     await user.click(within(sheet).getByTestId('giftcard-submit'));
 
     await waitFor(() =>
       expect(mocks.generateGiftcard).toHaveBeenCalledWith(
-        expect.objectContaining({ name: '充值卡', type: 1, value: 2000 }),
+        expect.objectContaining({ name: '充值卡', type: 1, value: '20' }),
       ),
     );
+    expect(mocks.generateGiftcard.mock.calls[0]?.[0]).not.toHaveProperty('generate_count');
   });
 });

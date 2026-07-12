@@ -3,10 +3,10 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "packageManager": "pnpm@11.9.0",
+  "packageManager": "pnpm@11.11.0",
   "engines": {
-    "node": ">=22.22.0",
-    "pnpm": ">=11.9.0"
+    "node": ">=24.11.0",
+    "pnpm": ">=11.11.0"
   },
   "scripts": {
     "dev:admin": "pnpm --filter @v2board/admin dev",
@@ -15,37 +15,29 @@
     "build:admin": "pnpm --filter @v2board/admin build",
     "build:deploy": "node scripts/build-deploy.mjs",
     "build:user": "pnpm --filter @v2board/user build",
+    "audit:deps": "knip --dependencies",
+    "audit:source": "node scripts/frontend-source-audit.mjs",
     "typecheck": "pnpm -r --parallel typecheck",
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write \"**/*.{ts,tsx,json,md,css}\"",
     "test": "pnpm -r --parallel test",
     "visual-smoke": "node scripts/visual-smoke.mjs",
-    "parity": "playwright test",
-    "prepare": "husky"
+    "parity": "playwright test"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.61.1",
-    "@types/node": "^26.0.1",
-    "eslint": "^10.6.0",
+    "@tanstack/eslint-plugin-query": "catalog:",
+    "@types/node": "catalog:",
+    "eslint": "^10.7.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.7.0",
-    "husky": "^9.1.7",
-    "lint-staged": "^17.0.8",
-    "playwright": "^1.61.1",
-    "prettier": "^3.9.4",
-    "typescript": "^6.0.3",
-    "typescript-eslint": "^8.62.1"
-  },
-  "lint-staged": {
-    "*.{ts,tsx}": [
-      "eslint --fix",
-      "prettier --write"
-    ],
-    "*.{json,md,css}": [
-      "prettier --write"
-    ]
+    "knip": "catalog:",
+    "prettier": "^3.9.5",
+    "typescript": "catalog:",
+    "typescript-eslint": "^8.63.0"
   }
 }

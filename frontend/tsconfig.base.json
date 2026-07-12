@@ -8,16 +8,18 @@
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
+    "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
     "exactOptionalPropertyTypes": false,
+    "erasableSyntaxOnly": true,
     "isolatedModules": true,
+    "noUncheckedSideEffectImports": true,
     "verbatimModuleSyntax": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
-    "useDefineForClassFields": true,
-    "ignoreDeprecations": "6.0"
+    "useDefineForClassFields": true
   }
 }

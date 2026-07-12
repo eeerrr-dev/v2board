@@ -1,6 +1,7 @@
 import { screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/render';
+import { createTestTranslation } from '@/test/i18next-selector';
 import TrafficPage from './traffic';
 
 const queryState = vi.hoisted(() => ({
@@ -25,16 +26,14 @@ const labels: Record<string, string> = {
   'traffic.deduct_rate': '扣费倍率',
   'traffic.total_charged': '合计',
   'traffic.total_formula': '公式：(实际上行 + 实际下行) x 扣费倍率 = 扣除流量',
+  'common.empty': '暂无数据',
   'common.loading': 'Loading...',
   'common.error_title': '加载失败',
   'common.retry': '重试',
 };
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key: string) => labels[key] ?? key,
-    i18n: { language: 'zh-CN' },
-  }),
+  useTranslation: () => createTestTranslation(labels),
 }));
 
 vi.mock('@/lib/queries', () => ({
@@ -81,7 +80,7 @@ describe('TrafficPage loading state', () => {
   it('renders the localized empty description when there are no rows', () => {
     renderWithProviders(<TrafficPage />);
 
-    // useEmptyDescription resolves the antd empty message for zh-CN.
+    // useEmptyDescription resolves the canonical common message for zh-CN.
     expect(screen.getByTestId('traffic-empty')).toHaveTextContent('暂无数据');
   });
 });
@@ -149,12 +148,11 @@ describe('TrafficPage service table', () => {
     expect(within(first!).getByText('100.00 B')).toBeInTheDocument();
   });
 
-  it('opens the charged-total formula tooltip from the parity header trigger', async () => {
+  it('opens the charged-total formula tooltip from the slotted header trigger', async () => {
     const { user } = renderWithProviders(<TrafficPage />);
 
     const trigger = screen.getByText('合计');
-    // The parity harness hovers [data-testid="traffic-table"] .v2board-service-tooltip-trigger.
-    expect(trigger).toHaveClass('v2board-service-tooltip-trigger');
+    expect(trigger).toHaveAttribute('data-slot', 'header-tooltip-trigger');
     // The shared HeaderTooltip keeps traffic's end alignment via className.
     expect(trigger).toHaveClass('justify-end');
 

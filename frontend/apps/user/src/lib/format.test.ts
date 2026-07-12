@@ -3,10 +3,10 @@ import {
   formatBytes,
   formatCentsPlain,
   formatDateTime,
-  formatLegacyDate,
-  formatLegacyDateMinuteSlash,
-  formatLegacyDateSlash,
-  formatLegacyDateTime,
+  formatBackendDate,
+  formatBackendDateMinuteSlash,
+  formatBackendDateSlash,
+  formatBackendDateTime,
   formatMoney,
 } from '@v2board/config/format';
 
@@ -36,17 +36,17 @@ describe('formatters', () => {
     const s = formatDateTime(t);
     expect(s).toMatch(/2026-05-2[23] \d{2}:\d{2}:\d{2}/);
   });
-  it('formats the legacy date family with numeric coercion', () => {
+  it('formats backend timestamps with numeric coercion', () => {
     // Numeric dayjs format tokens are locale-independent; coerce strings and
     // fall back to "Invalid date" for non-timestamps. Midday UTC keeps the date
     // stable across the runner's timezone.
     const t = Math.floor(new Date('2026-05-23T12:00:00Z').getTime() / 1000);
-    expect(formatLegacyDate(undefined)).toBe('Invalid date');
-    expect(formatLegacyDateSlash(undefined)).toBe('Invalid date');
-    expect(formatLegacyDate(t)).toBe('2026-05-23');
-    expect(formatLegacyDate(String(t))).toBe('2026-05-23');
-    expect(formatLegacyDateSlash(t)).toBe('2026/05/23');
-    expect(formatLegacyDateMinuteSlash(t)).toMatch(/2026\/05\/23 \d{2}:\d{2}/);
-    expect(formatLegacyDateTime(t)).toMatch(/2026-05-23 \d{2}:\d{2}:\d{2}/);
+    expect(formatBackendDate(undefined)).toBe('Invalid date');
+    expect(formatBackendDateSlash(undefined)).toBe('Invalid date');
+    expect(formatBackendDate(t)).toBe('2026-05-23');
+    expect(formatBackendDate(String(t))).toBe('2026-05-23');
+    expect(formatBackendDateSlash(t)).toBe('2026/05/23');
+    expect(formatBackendDateMinuteSlash(t)).toMatch(/2026\/05\/23 \d{2}:\d{2}/);
+    expect(formatBackendDateTime(t)).toMatch(/2026-05-23 \d{2}:\d{2}:\d{2}/);
   });
 });

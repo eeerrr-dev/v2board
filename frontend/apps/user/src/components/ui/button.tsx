@@ -1,5 +1,5 @@
 import { cva, type VariantProps } from 'class-variance-authority';
-import { Slot } from '@radix-ui/react-slot';
+import { Slot as SlotPrimitive } from 'radix-ui';
 import { type ButtonHTMLAttributes, type Ref } from 'react';
 import { cn } from '@/lib/cn';
 import { Spinner } from './spinner';
@@ -30,8 +30,7 @@ const buttonVariants = cva(
 );
 
 export interface ButtonProps
-  extends ButtonHTMLAttributes<HTMLButtonElement>,
-    VariantProps<typeof buttonVariants> {
+  extends ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof buttonVariants> {
   asChild?: boolean;
   loading?: boolean;
   ref?: Ref<HTMLButtonElement>;
@@ -52,7 +51,7 @@ export function Button({
   ref,
   ...props
 }: ButtonProps) {
-  const Comp = asChild ? Slot : 'button';
+  const Comp = asChild ? SlotPrimitive.Root : 'button';
   const isDisabled = disabled || loading;
   const sharedProps = {
     ref,

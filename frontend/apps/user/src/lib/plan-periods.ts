@@ -1,4 +1,4 @@
-import type { ParseKeys } from 'i18next';
+import type { SelectorParam } from 'i18next';
 import type { PlanPeriod } from '@v2board/types';
 
 // Canonical plan-period domain knowledge for the commerce surfaces. The pages
@@ -12,7 +12,7 @@ import type { PlanPeriod } from '@v2board/types';
 // save-order payload) and plans' getUnitPriceTag (excludes reset_price, Tier-2
 // display tag). They differ by design; do not unify them into one picker.
 
-/** Every backend plan-period key, in the legacy display order. */
+/** Every backend plan-period key, in the product display order. */
 export const PLAN_PERIOD_ORDER: readonly PlanPeriod[] = [
   'month_price',
   'quarter_price',
@@ -27,19 +27,18 @@ export const PLAN_PERIOD_ORDER: readonly PlanPeriod[] = [
 export type PurchasablePlanPeriod = Exclude<PlanPeriod, 'reset_price'>;
 
 /** Periods selectable at checkout and priced on plan cards — everything but reset_price. */
-export const PURCHASABLE_PLAN_PERIODS: readonly PurchasablePlanPeriod[] =
-  PLAN_PERIOD_ORDER.filter(
-    (period): period is PurchasablePlanPeriod => period !== 'reset_price',
-  );
+export const PURCHASABLE_PLAN_PERIODS: readonly PurchasablePlanPeriod[] = PLAN_PERIOD_ORDER.filter(
+  (period): period is PurchasablePlanPeriod => period !== 'reset_price',
+);
 
-/** PlanPeriod -> i18n label key, matching the legacy translations. */
-export const PLAN_PERIOD_LABELS: Record<PlanPeriod, ParseKeys> = {
-  month_price: 'plan.monthly',
-  quarter_price: 'plan.quarterly',
-  half_year_price: 'plan.half_year',
-  year_price: 'plan.yearly',
-  two_year_price: 'plan.two_year',
-  three_year_price: 'plan.three_year',
-  onetime_price: 'plan.onetime',
-  reset_price: 'plan.reset',
+/** PlanPeriod -> canonical i18next selector. */
+export const PLAN_PERIOD_LABELS: Record<PlanPeriod, SelectorParam> = {
+  month_price: $ => $.plan.monthly,
+  quarter_price: $ => $.plan.quarterly,
+  half_year_price: $ => $.plan.half_year,
+  year_price: $ => $.plan.yearly,
+  two_year_price: $ => $.plan.two_year,
+  three_year_price: $ => $.plan.three_year,
+  onetime_price: $ => $.plan.onetime,
+  reset_price: $ => $.plan.reset,
 };

@@ -1,6 +1,9 @@
 import { orderPaymentMethodNames } from '../fixture-data.mjs';
 import { visibleCount, visibleTexts, firstElementState } from '../dom-helpers.mjs';
 
+const planFilterControlSelector =
+  '[data-testid="plan-tabs"] [role="tab"], [data-testid="plan-tabs"] [role="radio"]';
+
 export async function orderPaymentState(page) {
   const paymentOptions = await orderPaymentOptionStates(page);
   const detectedActiveIndex = paymentOptions.findIndex((option) => option.checked);
@@ -17,7 +20,10 @@ export async function orderPaymentState(page) {
       '#cashier [data-testid="order-summary"], #cashier [data-testid="checkout-summary"], #cashier .v2board-order-summary, #cashier .col-md-4 .block',
       4,
     ),
-    submitButton: await firstCommerceActionState(page, '#cashier [data-testid="commerce-submit"], #cashier .btn-block.btn-primary'),
+    submitButton: await firstCommerceActionState(
+      page,
+      '#cashier [data-testid="commerce-submit"], #cashier .btn-block.btn-primary',
+    ),
   };
 }
 
@@ -63,7 +69,9 @@ export async function orderPaymentOptionStates(page) {
           checked:
             state === 'checked' ||
             ariaChecked === 'true' ||
-            element.matches('.active, .ant-radio-button-wrapper-checked, .ant-radio-wrapper-checked') ||
+            element.matches(
+              '.active, .ant-radio-button-wrapper-checked, .ant-radio-wrapper-checked',
+            ) ||
             Boolean(element.querySelector('.ant-radio-checked')) ||
             Boolean(input?.checked),
           name: matchedNames[0],
@@ -84,17 +92,38 @@ export async function orderCheckoutState(page) {
       '[data-testid="payment-qrcode-status"], [data-testid="payment-qrcode"], .ant-modal',
       4,
     ),
-    qrCanvasCount: await visibleCount(page, '[data-testid="payment-qrcode"] canvas, .ant-modal canvas'),
+    qrCanvasCount: await visibleCount(
+      page,
+      '[data-testid="payment-qrcode"] canvas, .ant-modal canvas',
+    ),
     qrSvgCount: await visibleCount(page, '[data-testid="payment-qrcode"] svg, .ant-modal svg'),
     stripePublicKeyCount: page.__visualParityUserStripePublicKeyCount ?? 0,
-    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
+    stripeIntentCount: page.__visualParityUserStripeIntentCount ?? 0,
+    stripeConfirmCount: await readStripeConfirmCount(page),
+    stripeUnexpectedCreateTokenCount: await page.evaluate(
+      () => window.__visualParityUnexpectedStripeCreateTokenCount ?? 0,
+    ),
+    toastTexts: await visibleTexts(
+      page,
+      '[data-sonner-toast], .ant-message-notice, .ant-notification-notice',
+      4,
+    ),
   };
+}
+
+// API request counters live on Playwright's Node-side Page object, while the
+// Stripe fixture runs inside the browser and records confirmPayment there.
+// Keep this boundary explicit so a real PaymentIntent confirmation cannot be
+// mistaken for the frozen oracle's legacy /order/checkout request.
+export function readStripeConfirmCount(page) {
+  return page.evaluate(() => window.__visualParityUserStripeConfirmCount ?? 0);
 }
 
 export async function waitForOrderPaymentMethodCount(page) {
   await page.waitForFunction(
     (methodNames) => {
-      const text = document.querySelector('#cashier')?.textContent ?? document.body.textContent ?? '';
+      const text =
+        document.querySelector('#cashier')?.textContent ?? document.body.textContent ?? '';
       return methodNames.every((name) => text.includes(name));
     },
     orderPaymentMethodNames,
@@ -136,7 +165,9 @@ export async function clickOrderPaymentMethodAt(page, index) {
           .filter((candidate) => {
             const text = normalizeText(candidate.textContent);
             const matchedNames = methodNames.filter((name) => text.includes(name));
-            return isVisible(candidate) && matchedNames.length === 1 && matchedNames[0] === targetName;
+            return (
+              isVisible(candidate) && matchedNames.length === 1 && matchedNames[0] === targetName
+            );
           })
           .sort(
             (left, right) =>
@@ -170,7 +201,11 @@ export async function waitForCreditCardSection(page) {
 }
 
 export async function commerceCreditCardTexts(page) {
-  const texts = await visibleTexts(page, '#cashier h2, #cashier h3, #cashier .fa-user-shield, #cashier .mt-3.mb-5', 8);
+  const texts = await visibleTexts(
+    page,
+    '#cashier h2, #cashier h3, #cashier .fa-user-shield, #cashier .mt-3.mb-5',
+    8,
+  );
   return texts.filter((text) => /信用卡|credit card|安全|secure|security|encrypt|加密/i.test(text));
 }
 
@@ -178,13 +213,17 @@ export async function plansFilterState(page) {
   return {
     activeIndex: await activePlanTabIndex(page),
     cardCount: await visibleCount(page, '[data-testid="plan-card"], a.block-link-pop'),
-    cardTitles: await visibleTexts(page, '[data-testid="plan-card-title"], .block-header.plan .block-title', 6),
+    cardTitles: await visibleTexts(
+      page,
+      '[data-testid="plan-card-title"], .block-header.plan .block-title',
+      6,
+    ),
     tabStates: await planTabStates(page),
   };
 }
 
 export async function activePlanTabIndex(page) {
-  return page.evaluate(() => {
+  return page.evaluate((modernSelector) => {
     const isVisible = (element) => {
       const rect = element.getBoundingClientRect();
       const style = window.getComputedStyle(element);
@@ -204,15 +243,16 @@ export async function activePlanTabIndex(page) {
       planTabLabels.includes((element.textContent ?? '').trim().replace(/\s+/g, ' '));
     const isActiveTab = (element) =>
       element.getAttribute('data-state') === 'active' ||
+      element.getAttribute('data-state') === 'checked' ||
+      element.getAttribute('aria-selected') === 'true' ||
+      element.getAttribute('aria-checked') === 'true' ||
       String(element.className).split(/\s+/).includes('active') ||
       Boolean(
         element.closest(
           '.ant-tabs-tab-active, .ant-radio-button-wrapper-checked, .ant-segmented-item-selected',
         ),
       );
-    const modernTabs = Array.from(
-      document.querySelectorAll('[data-testid="plan-tabs"] [role="tab"]'),
-    ).filter(isVisible);
+    const modernTabs = Array.from(document.querySelectorAll(modernSelector)).filter(isVisible);
     const tabs = modernTabs.length
       ? modernTabs
       : Array.from(
@@ -221,11 +261,11 @@ export async function activePlanTabIndex(page) {
           ),
         ).filter((element) => isVisible(element) && isPlanTabLabel(element));
     return tabs.findIndex(isActiveTab);
-  });
+  }, planFilterControlSelector);
 }
 
 export async function clickPlanFilterTab(page, index) {
-  const modernCount = await visibleCount(page, '[data-testid="plan-tabs"] [role="tab"]');
+  const modernCount = await visibleCount(page, planFilterControlSelector);
   if (modernCount > 0) {
     await page.evaluate(
       ({ index: targetIndex, selector: targetSelector }) => {
@@ -249,9 +289,15 @@ export async function clickPlanFilterTab(page, index) {
                   cancelable: true,
                 });
           element.dispatchEvent(pointerEvent);
-          element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, cancelable: true }));
-          element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0, cancelable: true }));
-          element.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0, cancelable: true }));
+          element.dispatchEvent(
+            new MouseEvent('mousedown', { bubbles: true, button: 0, cancelable: true }),
+          );
+          element.dispatchEvent(
+            new MouseEvent('mouseup', { bubbles: true, button: 0, cancelable: true }),
+          );
+          element.dispatchEvent(
+            new MouseEvent('click', { bubbles: true, button: 0, cancelable: true }),
+          );
         };
         const element = Array.from(document.querySelectorAll(targetSelector)).filter(isVisible)[
           targetIndex
@@ -261,7 +307,7 @@ export async function clickPlanFilterTab(page, index) {
         }
         dispatchSequence(element);
       },
-      { index, selector: '[data-testid="plan-tabs"] [role="tab"]' },
+      { index, selector: planFilterControlSelector },
     );
     return;
   }
@@ -285,9 +331,15 @@ export async function clickPlanFilterTab(page, index) {
             })
           : new MouseEvent('mousedown', { bubbles: true, button: 0, cancelable: true });
       element.dispatchEvent(pointerEvent);
-      element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, cancelable: true }));
-      element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0, cancelable: true }));
-      element.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0, cancelable: true }));
+      element.dispatchEvent(
+        new MouseEvent('mousedown', { bubbles: true, button: 0, cancelable: true }),
+      );
+      element.dispatchEvent(
+        new MouseEvent('mouseup', { bubbles: true, button: 0, cancelable: true }),
+      );
+      element.dispatchEvent(
+        new MouseEvent('click', { bubbles: true, button: 0, cancelable: true }),
+      );
     };
     const isVisible = (element) => {
       const rect = element.getBoundingClientRect();
@@ -307,7 +359,7 @@ export async function clickPlanFilterTab(page, index) {
 }
 
 export async function planTabStates(page) {
-  return page.evaluate(() => {
+  return page.evaluate((modernSelector) => {
     const isVisible = (element) => {
       const rect = element.getBoundingClientRect();
       const style = window.getComputedStyle(element);
@@ -327,15 +379,16 @@ export async function planTabStates(page) {
       planTabLabels.includes((element.textContent ?? '').trim().replace(/\s+/g, ' '));
     const normalizeClassName = (element) =>
       element.getAttribute('data-state') === 'active' ||
+      element.getAttribute('data-state') === 'checked' ||
+      element.getAttribute('aria-selected') === 'true' ||
+      element.getAttribute('aria-checked') === 'true' ||
       String(element.className).split(/\s+/).includes('active') ||
       element.closest(
         '.ant-tabs-tab-active, .ant-radio-button-wrapper-checked, .ant-segmented-item-selected',
       )
         ? 'active'
         : '';
-    const modernTabs = Array.from(
-      document.querySelectorAll('[data-testid="plan-tabs"] [role="tab"]'),
-    ).filter(isVisible);
+    const modernTabs = Array.from(document.querySelectorAll(modernSelector)).filter(isVisible);
     const tabs = modernTabs.length
       ? modernTabs
       : Array.from(
@@ -343,12 +396,11 @@ export async function planTabStates(page) {
             '[data-testid="plan-tabs"] span, .ant-tabs-tab, .ant-radio-button-wrapper, .ant-segmented-item, [role="tab"], span, button',
           ),
         ).filter((element) => isVisible(element) && isPlanTabLabel(element));
-    return tabs
-      .map((element) => ({
-        className: normalizeClassName(element),
-        text: (element.textContent ?? '').trim().replace(/\s+/g, ' '),
-      }));
-  });
+    return tabs.map((element) => ({
+      className: normalizeClassName(element),
+      text: (element.textContent ?? '').trim().replace(/\s+/g, ' '),
+    }));
+  }, planFilterControlSelector);
 }
 
 export async function firstCommerceActionState(page, selector) {
@@ -361,12 +413,7 @@ export async function commerceSummaryTexts(page, selector, limit) {
     /\s*(下单|提交订单|立即订阅|结账|支付|Place Order|Subscribe Now|Checkout|Pay)$/i;
   return (await visibleTexts(page, selector, limit))
     .filter((text) => /\d/.test(text))
-    .map((text) =>
-      text
-        .trim()
-        .replace(/\s+/g, ' ')
-        .replace(actionTextPattern, ''),
-    );
+    .map((text) => text.trim().replace(/\s+/g, ' ').replace(actionTextPattern, ''));
 }
 
 export async function clickCouponVerifyButton(page) {
@@ -381,7 +428,9 @@ export async function clickCouponVerifyButton(page) {
         '[data-testid="coupon-input"], .v2board-input-coupon, #cashier input[placeholder*="优惠"], #cashier input[placeholder*="Coupon"], #cashier input[placeholder*="coupon"]',
       ),
     ).find(isVisible);
-    const container = input?.closest('.block, .input-group, [data-testid="checkout-summary"]') ?? input?.parentElement;
+    const container =
+      input?.closest('.block, .input-group, [data-testid="checkout-summary"]') ??
+      input?.parentElement;
     const button = container
       ? Array.from(container.querySelectorAll('button, .btn')).find(isVisible)
       : null;

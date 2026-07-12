@@ -6,11 +6,12 @@ const useMutation = vi.hoisted(() => vi.fn((options: unknown) => options));
 const useQuery = vi.hoisted(() => vi.fn((options: UseQueryOptions) => options));
 const invalidateQueries = vi.hoisted(() => vi.fn());
 const apiUser = vi.hoisted(() => ({
+  checkLogin: vi.fn(),
   info: vi.fn(),
   getSubscribe: vi.fn(),
   fetchKnowledge: vi.fn(),
   knowledgeDetail: vi.fn(),
-  getStripePublicKey: vi.fn(),
+  prepareStripePaymentIntent: vi.fn(),
 }));
 
 vi.mock('@tanstack/react-query', () => ({
@@ -31,7 +32,7 @@ vi.mock('@v2board/api-client', () => ({
   user: apiUser,
 }));
 
-type QueryFn = (context?: unknown) => Promise<unknown>;
+type QueryFn = (context: { signal: AbortSignal }) => Promise<unknown>;
 
 describe('user query state behavior', () => {
   it('centralizes the user/info and subscribe queries behind shared queryOptions definitions', async () => {
@@ -39,23 +40,42 @@ describe('user query state behavior', () => {
 
     apiUser.info.mockReset().mockResolvedValue({ email: 'user@example.test' });
     apiUser.getSubscribe.mockReset().mockResolvedValue({ subscribe_url: 'https://s.test/sub' });
+    const signal = new AbortController().signal;
 
     const info = userQueryOptions.info() as unknown as UseQueryOptions;
     expect(info.queryKey).toEqual(['user', 'info']);
-    await expect((info.queryFn as QueryFn)()).resolves.toEqual({ email: 'user@example.test' });
+    await expect((info.queryFn as QueryFn)({ signal })).resolves.toEqual({
+      email: 'user@example.test',
+    });
     const { apiClient } = await import('./api');
-    expect(apiUser.info).toHaveBeenCalledWith(apiClient);
+    expect(apiUser.info).toHaveBeenCalledWith(apiClient, { signal });
 
     const subscribe = userQueryOptions.subscribe() as unknown as UseQueryOptions;
     expect(subscribe.queryKey).toEqual(['user', 'subscribe']);
-    await expect((subscribe.queryFn as QueryFn)()).resolves.toEqual({
+    await expect((subscribe.queryFn as QueryFn)({ signal })).resolves.toEqual({
       subscribe_url: 'https://s.test/sub',
     });
-    expect(apiUser.getSubscribe).toHaveBeenCalledWith(apiClient);
+    expect(apiUser.getSubscribe).toHaveBeenCalledWith(apiClient, { signal });
 
     // The hooks consume the same centralized definitions instead of redefining keys.
     expect((useUserInfo() as unknown as UseQueryOptions).queryKey).toEqual(['user', 'info']);
     expect((useSubscribe() as unknown as UseQueryOptions).queryKey).toEqual(['user', 'subscribe']);
+  });
+
+  it('defines the login-session probe with a stable key and forwards TanStack aborts', async () => {
+    const { userKeys, userQueryOptions } = await import('./queries');
+    const { apiClient } = await import('./api');
+    const signal = new AbortController().signal;
+    apiUser.checkLogin.mockReset().mockResolvedValue({ is_login: true });
+
+    const options = userQueryOptions.checkLogin() as unknown as UseQueryOptions;
+
+    expect(userKeys.checkLogin).toEqual(['user', 'checkLogin']);
+    expect(options.queryKey).toEqual(userKeys.checkLogin);
+    expect(options.retry).toBe(false);
+    expect(options.staleTime).toBe(0);
+    await expect((options.queryFn as QueryFn)({ signal })).resolves.toEqual({ is_login: true });
+    expect(apiUser.checkLogin).toHaveBeenCalledWith(apiClient, { signal });
   });
 
   it('keeps the previous knowledge list while a new search request is pending', async () => {
@@ -98,19 +118,38 @@ describe('user query state behavior', () => {
     expect(options.gcTime).toBeUndefined();
   });
 
-  it('fetches the Stripe public key as a forever-cached query gated on the selected method', async () => {
-    const { useStripePublicKey } = await import('./queries');
+  it('never reuses a superseded Stripe PaymentIntent cache entry', async () => {
+    const { useStripePaymentIntent } = await import('./queries');
+    const { apiClient } = await import('./api');
+    const signal = new AbortController().signal;
+    apiUser.prepareStripePaymentIntent.mockReset().mockResolvedValue({
+      public_key: 'pk_test',
+      client_secret: 'pi_test_secret',
+      amount: 100,
+      currency: 'cny',
+    });
 
-    const disabled = useStripePublicKey(undefined) as unknown as UseQueryOptions;
+    const disabled = useStripePaymentIntent(undefined, undefined) as unknown as UseQueryOptions;
     expect(disabled.enabled).toBe(false);
-    expect(disabled.staleTime).toBe(Infinity);
+    expect(disabled.staleTime).toBe(0);
+    expect(disabled.gcTime).toBe(0);
 
-    const enabled = useStripePublicKey('9') as unknown as UseQueryOptions;
+    const enabled = useStripePaymentIntent('ORDER123', 9) as unknown as UseQueryOptions;
     expect(enabled.enabled).toBe(true);
-    expect(enabled.queryKey).toEqual(['user', 'stripePublicKey', '9']);
-    expect(enabled.staleTime).toBe(Infinity);
+    expect(enabled.queryKey).toEqual(['user', 'stripePaymentIntent', 'ORDER123', 9]);
+    expect(enabled.staleTime).toBe(0);
+    expect(enabled.gcTime).toBe(0);
+    expect(enabled.refetchOnMount).toBe('always');
+    await (enabled.queryFn as QueryFn)({ signal });
+    expect(apiUser.prepareStripePaymentIntent).toHaveBeenCalledWith(
+      apiClient,
+      { trade_no: 'ORDER123', method: 9 },
+      { signal },
+    );
 
-    const optedOut = useStripePublicKey('9', { enabled: false }) as unknown as UseQueryOptions;
+    const optedOut = useStripePaymentIntent('ORDER123', 9, {
+      enabled: false,
+    }) as unknown as UseQueryOptions;
     expect(optedOut.enabled).toBe(false);
   });
 
@@ -136,9 +175,8 @@ describe('user query state behavior', () => {
   });
 
   it('keeps route-id query keys aligned with the raw route params and gates fetching on presence', async () => {
-    const { userQueryOptions, useOrder, usePlan, useTicket, useKnowledgeDetail } = await import(
-      './queries'
-    );
+    const { userQueryOptions, useOrder, usePlan, useTicket, useKnowledgeDetail } =
+      await import('./queries');
 
     // An unset route id lands a literal `undefined` in the key — never a `?? ''`
     // sentinel, which would be a distinct, request-reaching cache key.
@@ -190,9 +228,10 @@ describe('user query state behavior', () => {
     window.$crisp = { push };
     apiUser.info.mockReset().mockResolvedValue({ email: 'user@example.test', balance: 100 });
     apiUser.getSubscribe.mockReset().mockResolvedValue({ u: 1, d: 2, transfer_enable: 3 });
+    const context = { signal: new AbortController().signal };
 
-    await (userQueryOptions.info().queryFn as QueryFn)();
-    await (userQueryOptions.subscribe().queryFn as QueryFn)();
+    await (userQueryOptions.info().queryFn as QueryFn)(context);
+    await (userQueryOptions.subscribe().queryFn as QueryFn)(context);
 
     // The reporters must not run inside the queryFns anymore — main.tsx wires
     // them through QueryCache onSuccess instead.
@@ -292,17 +331,14 @@ describe('user query state behavior', () => {
     }
   });
 
-  it('leaves the reset-subscribe mutation fire-and-forget so it refetches nothing', async () => {
-    // resetSecurity rotates the uuid/token into the subscribe URL, not the displayed
-    // /user/info fields; the legacy profile refetched neither. The interaction-parity
-    // oracle pins infoFetchDelta/subscribeFetchDelta at 0, so the mutation must expose
-    // no onSuccess invalidation at all.
+  it('invalidates every cached credential projection after reset-subscribe', async () => {
     const { useResetSubscribeMutation } = await import('./queries');
-    const mutation = useResetSubscribeMutation() as unknown as { onSuccess?: unknown };
+    const mutation = useResetSubscribeMutation() as unknown as { onSuccess: () => void };
 
     invalidateQueries.mockReset();
-    expect(mutation.onSuccess).toBeUndefined();
-    expect(invalidateQueries).not.toHaveBeenCalled();
+    expect(mutation.onSuccess()).toBeUndefined();
+    expect(invalidateQueries).toHaveBeenNthCalledWith(1, { queryKey: ['user', 'info'] });
+    expect(invalidateQueries).toHaveBeenNthCalledWith(2, { queryKey: ['user', 'subscribe'] });
   });
 
   it('keeps the payment-method query off the per-mount refetch path while leaving plans live', async () => {

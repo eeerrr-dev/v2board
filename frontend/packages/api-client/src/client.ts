@@ -4,63 +4,115 @@ import axios, {
   type AxiosRequestConfig,
   type AxiosResponse,
 } from 'axios';
+import type { output, ZodType } from 'zod';
 
 export class ApiError extends Error {
-  constructor(
-    public readonly status: number,
-    message: string,
-    public readonly raw?: unknown,
-  ) {
+  public readonly status: number;
+  public readonly raw?: unknown;
+
+  constructor(status: number, message: string, raw?: unknown) {
     super(message);
     this.name = 'ApiError';
+    this.status = status;
+    this.raw = raw;
   }
 }
 
-export interface ApiErrorHook {
+export class ApiContractError extends Error {
+  public readonly endpoint: string;
+  public readonly raw: unknown;
+
+  constructor(endpoint: string, raw: unknown, cause: unknown) {
+    super(`API response does not match its contract: ${endpoint}`, { cause });
+    this.name = 'ApiContractError';
+    this.endpoint = endpoint;
+    this.raw = raw;
+  }
+}
+
+export interface ApiUnauthorizedHook {
   (error: ApiError): void;
 }
 
 export interface ApiClientOptions {
   baseURL?: string;
+  /** Default request deadline. Individual requests may override it with Axios `timeout`. */
+  timeoutMs?: number;
+  /** Opt in only for deployments that deliberately authenticate with cross-origin cookies. */
+  withCredentials?: boolean;
   getAuthData?: () => string | null;
   getLocale?: () => string | null;
-  onUnauthorized?: ApiErrorHook;
-  onError?: ApiErrorHook;
+  onUnauthorized?: ApiUnauthorizedHook;
   adminSecurePath?: () => string | null;
   nullFormValue?: 'omit' | 'empty';
 }
 
-export interface ApiRequestConfig extends AxiosRequestConfig {
-  skipLegacyGlobalError?: boolean;
-}
+export type ApiRequestConfig = AxiosRequestConfig;
+
+export type JsonApiRequestConfig<TSchema extends ZodType> = Omit<
+  ApiRequestConfig,
+  'responseType'
+> & {
+  responseSchema: TSchema;
+  responseType?: 'json';
+};
+
+export type BinaryApiRequestConfig<TJsonSchema extends ZodType> = Omit<
+  ApiRequestConfig,
+  'responseType'
+> & {
+  /** Schema for the JSON envelope returned when the CSV-capable endpoint has no file. */
+  jsonResponseSchema: TJsonSchema;
+};
 
 export interface BackendEnvelope<T> {
-  code?: number;
+  code: number;
   data: T;
   total?: number;
   type?: number;
-  buffer?: unknown;
   message?: string;
   msg?: string;
 }
 
+export interface RawBinaryResponse {
+  code: number;
+  data: ArrayBuffer;
+  buffer: ArrayBuffer;
+}
+
+export type BinaryApiResponse<TJsonSchema extends ZodType> =
+  RawBinaryResponse | output<TJsonSchema>;
+
+type BackendEnvelopeObject = Record<string, unknown> & {
+  code?: number;
+  total?: number;
+  type?: number;
+  message?: string;
+  msg?: string;
+};
+
 export interface ApiClient {
   axios: AxiosInstance;
-  request: <T>(config: ApiRequestConfig) => Promise<T>;
-  // `Extra` types the extra top-level envelope fields some endpoints return
-  // alongside `data` (e.g. redeemgiftcard's `value`). It defaults to `unknown`,
-  // so `BackendEnvelope<T> & unknown` collapses to `BackendEnvelope<T>` and
-  // every single-arg caller is unchanged.
-  requestEnvelope: <T, Extra = unknown>(
-    config: ApiRequestConfig,
-  ) => Promise<BackendEnvelope<T> & Extra>;
+  /** Validates and returns the backend envelope's `data` field. */
+  request: <TSchema extends ZodType>(
+    config: JsonApiRequestConfig<TSchema>,
+  ) => Promise<output<TSchema>>;
+  /** Validates and returns the complete normalized backend envelope. */
+  requestEnvelope: <TSchema extends ZodType>(
+    config: JsonApiRequestConfig<TSchema>,
+  ) => Promise<output<TSchema>>;
+  /** Explicit escape hatch for endpoints that may return either CSV bytes or JSON. */
+  requestBinary: <TJsonSchema extends ZodType>(
+    config: BinaryApiRequestConfig<TJsonSchema>,
+  ) => Promise<BinaryApiResponse<TJsonSchema>>;
   resolveAdminPath: (path: string) => string;
 }
 
 export function createApiClient(options: ApiClientOptions = {}): ApiClient {
   const instance = axios.create({
     baseURL: options.baseURL ?? '/api/v1',
-    withCredentials: true,
+    timeout: options.timeoutMs ?? 15_000,
+    withCredentials: options.withCredentials ?? false,
     validateStatus: (status) => status === 200,
   });
 
@@ -80,7 +132,7 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       }
       config.params = undefined;
     }
-    if (isLegacyPost(config.method) && config.data === undefined) {
+    if (isPostRequest(config.method) && config.data === undefined) {
       config.headers['Content-Type'] = 'application/x-www-form-urlencoded';
       config.data = '';
     } else if (shouldFormEncode(config.data)) {
@@ -102,8 +154,6 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       const apiError = new ApiError(status, message, error.response?.data);
       if (status === 403) {
         options.onUnauthorized?.(apiError);
-      } else if (!skipLegacyGlobalError(error.config)) {
-        options.onError?.(apiError);
       }
       return Promise.reject(apiError);
     },
@@ -111,17 +161,33 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
 
   return {
     axios: instance,
-    request: async <T,>(config: ApiRequestConfig) => {
-      const response = await instance.request<BackendEnvelope<T>>(config);
-      return unwrapLegacyEnvelope(response.data, response.status, options).data;
+    request: async <TSchema extends ZodType>(config: JsonApiRequestConfig<TSchema>) => {
+      const { responseSchema, ...requestConfig } = config;
+      const response = await instance.request<unknown>(requestConfig);
+      const endpoint = String(config.url ?? '<unknown>');
+      const data = unwrapBackendEnvelope(response.data, response.status, options, endpoint).data;
+      return parseContract(responseSchema, data, endpoint);
     },
-    requestEnvelope: async <T, Extra = unknown>(config: ApiRequestConfig) => {
-      const response = await instance.request<BackendEnvelope<T>>(config);
-      // The unwrap is shape-agnostic; the single assertion that the payload also
-      // carries the caller-declared `Extra` fields lives here, at the dynamic
-      // boundary, instead of being re-cast at each endpoint.
-      return unwrapLegacyEnvelope(response.data, response.status, options) as BackendEnvelope<T> &
-        Extra;
+    requestEnvelope: async <TSchema extends ZodType>(config: JsonApiRequestConfig<TSchema>) => {
+      const { responseSchema, ...requestConfig } = config;
+      const response = await instance.request<unknown>(requestConfig);
+      const endpoint = String(config.url ?? '<unknown>');
+      const envelope = unwrapBackendEnvelope(response.data, response.status, options, endpoint);
+      return parseContract(responseSchema, envelope, endpoint);
+    },
+    requestBinary: async <TJsonSchema extends ZodType>(
+      config: BinaryApiRequestConfig<TJsonSchema>,
+    ) => {
+      const { jsonResponseSchema, ...requestConfig } = config;
+      const response = await instance.request<unknown>({
+        ...requestConfig,
+        responseType: 'arraybuffer',
+      });
+      const buffer = toArrayBuffer(response.data);
+      if (buffer) return { code: response.status, data: buffer, buffer };
+      const endpoint = String(config.url ?? '<unknown>');
+      const envelope = unwrapBackendEnvelope(response.data, response.status, options, endpoint);
+      return parseContract(jsonResponseSchema, envelope, endpoint);
     },
     resolveAdminPath: (path) => {
       const securePath = options.adminSecurePath?.();
@@ -131,36 +197,71 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
   };
 }
 
-function skipLegacyGlobalError(config: unknown): boolean {
-  return Boolean((config as ApiRequestConfig | undefined)?.skipLegacyGlobalError);
+function parseContract<TSchema extends ZodType>(
+  schema: TSchema,
+  value: unknown,
+  endpoint: string,
+): output<TSchema> {
+  const result = schema.safeParse(value);
+  if (!result.success) throw new ApiContractError(endpoint, value, result.error);
+  return result.data;
 }
 
-function unwrapLegacyEnvelope<T>(
-  envelope: BackendEnvelope<T>,
+function unwrapBackendEnvelope(
+  envelope: unknown,
   httpStatus: number,
   options: ApiClientOptions,
-): BackendEnvelope<T> {
+  endpoint: string,
+): BackendEnvelope<unknown> & Record<string, unknown> {
   if (!isEnvelopeObject(envelope)) {
     return {
       code: httpStatus,
-      data: envelope as T,
-      buffer: envelope,
+      data: envelope,
     };
   }
-  const legacyEnvelope = { code: httpStatus, ...envelope };
-  if (legacyEnvelope.code !== 200) {
+  assertBackendEnvelopeMetadata(envelope, endpoint);
+  const backendEnvelope = {
+    ...envelope,
+    code: envelope.code ?? httpStatus,
+    data: envelope.data,
+  };
+  if (backendEnvelope.code !== 200) {
     const apiError = new ApiError(
-      legacyEnvelope.code,
-      legacyEnvelope.message ?? legacyEnvelope.msg ?? 'Request failed, please try again later',
-      legacyEnvelope,
+      backendEnvelope.code,
+      backendEnvelope.message ?? backendEnvelope.msg ?? 'Request failed, please try again later',
+      backendEnvelope,
     );
-    if (legacyEnvelope.code === 403) options.onUnauthorized?.(apiError);
+    if (backendEnvelope.code === 403) options.onUnauthorized?.(apiError);
     throw apiError;
   }
-  return legacyEnvelope;
+  return backendEnvelope;
 }
 
-function isEnvelopeObject<T>(envelope: BackendEnvelope<T>): envelope is BackendEnvelope<T> {
+function assertBackendEnvelopeMetadata(
+  envelope: Record<string, unknown>,
+  endpoint: string,
+): asserts envelope is BackendEnvelopeObject {
+  for (const field of ['code', 'total', 'type'] as const) {
+    const value = envelope[field];
+    if (value === undefined || (typeof value === 'number' && Number.isFinite(value))) continue;
+    throw new ApiContractError(
+      endpoint,
+      envelope,
+      new TypeError(`Backend envelope field "${field}" must be a finite number`),
+    );
+  }
+  for (const field of ['message', 'msg'] as const) {
+    const value = envelope[field];
+    if (value === undefined || typeof value === 'string') continue;
+    throw new ApiContractError(
+      endpoint,
+      envelope,
+      new TypeError(`Backend envelope field "${field}" must be a string`),
+    );
+  }
+}
+
+function isEnvelopeObject(envelope: unknown): envelope is Record<string, unknown> {
   if (envelope === null || typeof envelope !== 'object' || Array.isArray(envelope)) return false;
   if (envelope instanceof ArrayBuffer) return false;
   if (ArrayBuffer.isView(envelope)) return false;
@@ -180,12 +281,11 @@ function normalizeArrayBufferJsonResponse<T>(response: AxiosResponse<T>): AxiosR
 
 function getContentType(headers: unknown): string {
   const maybeHeaders = headers as
-    | { get?: (name: string) => unknown; [key: string]: unknown }
-    | undefined;
+    { get?: (name: string) => unknown; [key: string]: unknown } | undefined;
   const value =
     typeof maybeHeaders?.get === 'function'
       ? maybeHeaders.get('content-type')
-      : maybeHeaders?.['content-type'] ?? maybeHeaders?.['Content-Type'];
+      : (maybeHeaders?.['content-type'] ?? maybeHeaders?.['Content-Type']);
   return typeof value === 'string' ? value : String(value ?? '');
 }
 
@@ -196,7 +296,7 @@ function toArrayBuffer(data: unknown): ArrayBuffer | null {
   return view.slice().buffer;
 }
 
-function isLegacyPost(method: string | undefined): boolean {
+function isPostRequest(method: string | undefined): boolean {
   return (method ?? 'GET').toUpperCase() === 'POST';
 }
 
@@ -217,33 +317,42 @@ function firstValidationError(errors: Record<string, string[]> | undefined): str
 function serializeForm(data: unknown, nullFormValue: 'omit' | 'empty'): string {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return '';
   const parts: string[] = [];
-  for (const key in data as Record<string, unknown>) {
-    appendFormValue(key, (data as Record<string, unknown>)[key], parts, nullFormValue);
-  }
+  const target = {
+    append(key: string, value: unknown) {
+      parts.push(`${key}=${encodeURIComponent(String(value))}`);
+    },
+  };
+  const source =
+    nullFormValue === 'empty' ? replaceNullFormValues(data, new WeakMap()) : data;
+  axios.toFormData(source as object, target, {
+    indexes: true,
+    maxDepth: 20,
+  });
   return parts.join('&');
 }
 
-function appendFormValue(
-  key: string,
+function replaceNullFormValues(
   value: unknown,
-  parts: string[],
-  nullFormValue: 'omit' | 'empty',
-): void {
-  if (value === undefined) return;
-  if (value === null) {
-    if (nullFormValue === 'empty') parts.push(`${key}=`);
-    return;
+  seen: WeakMap<object, unknown>,
+): unknown {
+  if (value === null) return '';
+  if (value === undefined || typeof value !== 'object') return value;
+  if (seen.has(value)) return seen.get(value);
+
+  if (Array.isArray(value)) {
+    const copy: unknown[] = [];
+    seen.set(value, copy);
+    for (const item of value) copy.push(replaceNullFormValues(item, seen));
+    return copy;
   }
-  if (value !== null && typeof value === 'object') {
-    for (const childKey in value as Record<string, unknown>) {
-      appendFormValue(
-        `${key}[${childKey}]`,
-        (value as Record<string, unknown>)[childKey],
-        parts,
-        nullFormValue,
-      );
-    }
-    return;
+
+  if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
+    return value;
   }
-  parts.push(`${key}=${encodeURIComponent(String(value))}`);
+  const copy: Record<string, unknown> = {};
+  seen.set(value, copy);
+  for (const [key, child] of Object.entries(value)) {
+    copy[key] = replaceNullFormValues(child, seen);
+  }
+  return copy;
 }

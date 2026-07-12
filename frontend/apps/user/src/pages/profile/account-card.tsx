@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CircleUser, Copy } from 'lucide-react';
-import { formatLegacyDateTime } from '@v2board/config/format';
+import { formatBackendDateTime } from '@v2board/config/format';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useUserInfo } from '@/lib/queries';
-import { copyText } from '@/lib/legacy-settings';
+import { copyText } from '@v2board/config/clipboard';
 import { toast } from '@/lib/toast';
 import { SectionIcon } from './profile-ui';
 
@@ -15,7 +15,7 @@ export function AccountCard() {
   const data = info.data;
 
   const copyUuid = async () => {
-    if (data?.uuid && (await copyText(data.uuid))) toast.success(t('dashboard.copy_success'));
+    if (data?.uuid && (await copyText(data.uuid))) toast.success(t($ => $.dashboard.copy_success));
   };
 
   return (
@@ -26,32 +26,32 @@ export function AccountCard() {
             <CircleUser className="size-4" />
           </SectionIcon>
           <CardTitle className="text-lg" data-testid="profile-card-title">
-            {t('profile.account')}
+            {t($ => $.profile.account)}
           </CardTitle>
         </div>
       </CardHeader>
       <CardContent>
         <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
           <IdentityField
-            label={t('profile.email')}
+            label={t($ => $.profile.email)}
             value={data?.email}
             testId="profile-account-email"
           />
           <IdentityField
-            label={t('profile.uuid')}
+            label={t($ => $.profile.uuid)}
             value={data?.uuid}
             testId="profile-account-uuid"
-            copyLabel={data?.uuid ? t('common.copy') : undefined}
+            copyLabel={data?.uuid ? t($ => $.common.copy) : undefined}
             onCopy={data?.uuid ? copyUuid : undefined}
           />
           <IdentityField
-            label={t('profile.created_at')}
-            value={data?.created_at ? formatLegacyDateTime(data.created_at) : undefined}
+            label={t($ => $.profile.created_at)}
+            value={data?.created_at ? formatBackendDateTime(data.created_at) : undefined}
             testId="profile-account-created"
           />
           <IdentityField
-            label={t('profile.last_login')}
-            value={data?.last_login_at ? formatLegacyDateTime(data.last_login_at) : undefined}
+            label={t($ => $.profile.last_login)}
+            value={data?.last_login_at ? formatBackendDateTime(data.last_login_at) : undefined}
             testId="profile-account-last-login"
           />
         </div>

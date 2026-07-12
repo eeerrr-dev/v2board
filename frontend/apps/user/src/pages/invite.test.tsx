@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react';
 import { screen, waitFor, within } from '@testing-library/react';
-import { formatLegacyDateMinuteSlash } from '@v2board/config/format';
+import { formatBackendDateMinuteSlash } from '@v2board/config/format';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/render';
+import { createTestTranslation } from '@/test/i18next-selector';
 import InvitePage from './invite';
 
 const mocks = vi.hoisted(() => ({
@@ -32,6 +33,7 @@ const mocks = vi.hoisted(() => ({
   inviteRefetch: vi.fn(),
   inviteStat: [7, 2345, 678, 12] as Array<number | undefined> | undefined,
   labels: {
+    'common.empty': '暂无数据',
     'common.error_title': '出错了',
     'common.items_per_page': '条/页',
     'common.loading': 'Loading...',
@@ -74,16 +76,7 @@ vi.mock('@tanstack/react-query', () => ({
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    i18n: { language: 'zh-CN' },
-    t: (key: string, values?: Record<string, unknown>) => {
-      let label = mocks.labels[key] ?? key;
-      Object.entries(values ?? {}).forEach(([name, value]) => {
-        label = label.replaceAll(`{{${name}}}`, String(value));
-      });
-      return label;
-    },
-  }),
+  useTranslation: () => createTestTranslation(mocks.labels),
 }));
 
 vi.mock('@/components/dialogs/transfer-dialog', () => ({
@@ -103,7 +96,9 @@ vi.mock('@/lib/queries', () => ({
   }),
   useGenerateInviteMutation: () => ({
     isPending: mocks.generateIsPending,
-    mutateAsync: mocks.generateMutateAsync,
+    mutate: (_payload: undefined, options?: { onSuccess?: (data: unknown) => void }) => {
+      void Promise.resolve(mocks.generateMutateAsync()).then(options?.onSuccess);
+    },
   }),
   useInvite: () => ({
     data: mocks.inviteError
@@ -119,9 +114,7 @@ vi.mock('@/lib/queries', () => ({
   useInviteDetails: (current?: number, pageSize?: number) => {
     mocks.detailQueryCalls.push({ current, pageSize });
     return {
-      data: mocks.detailsError
-        ? undefined
-        : { data: mocks.detailRows, total: mocks.detailsTotal },
+      data: mocks.detailsError ? undefined : { data: mocks.detailRows, total: mocks.detailsTotal },
       isError: mocks.detailsError,
       isFetching: mocks.detailsFetching,
       refetch: mocks.detailsRefetch,
@@ -132,7 +125,7 @@ vi.mock('@/lib/queries', () => ({
   }),
 }));
 
-vi.mock('@/lib/legacy-settings', () => ({
+vi.mock('@v2board/config/clipboard', () => ({
   copyText: mocks.copyText,
 }));
 
@@ -198,10 +191,9 @@ describe('InvitePage shadcn surface', () => {
 
     // Stats card: stat tuple [registered, valid, pending, rate] read positionally.
     const stats = screen.getByTestId('invite-stats-card');
-    // Tooltip-bearing stat headers render through the shared HeaderTooltip
-    // primitive and keep the parity trigger class the harness selects.
-    expect(within(stats).getByText('确认中的佣金')).toHaveClass(
-      'v2board-service-tooltip-trigger',
+    expect(within(stats).getByText('确认中的佣金')).toHaveAttribute(
+      'data-slot',
+      'header-tooltip-trigger',
     );
     expect(within(stats).getByText('已注册用户数')).toBeInTheDocument();
     expect(within(stats).getByText('7人')).toBeInTheDocument();
@@ -215,9 +207,10 @@ describe('InvitePage shadcn surface', () => {
     // Code management card.
     const codeCard = screen.getByTestId('invite-code-card');
     expect(within(codeCard).getByText('邀请码管理')).toBeInTheDocument();
-    expect(
-      within(codeCard).getByRole('button', { name: '生成邀请码' }),
-    ).toHaveAttribute('data-testid', 'invite-generate');
+    expect(within(codeCard).getByRole('button', { name: '生成邀请码' })).toHaveAttribute(
+      'data-testid',
+      'invite-generate',
+    );
 
     // Both tables render through the shared DataTable: real table semantics,
     // shared scroll container hook, and index-based data-row-key row hooks.
@@ -227,15 +220,11 @@ describe('InvitePage shadcn surface', () => {
     expect(codeTable).toContainElement(
       within(codeTable).getByRole('columnheader', { name: '邀请码' }),
     );
-    expect(
-      within(codeTable).getByRole('columnheader', { name: '创建时间' }),
-    ).toBeInTheDocument();
+    expect(within(codeTable).getByRole('columnheader', { name: '创建时间' })).toBeInTheDocument();
     expect(within(codeTable).getByText('ABC123')).toBeInTheDocument();
+    expect(within(codeTable).getByRole('button', { name: '复制链接' })).toBeInTheDocument();
     expect(
-      within(codeTable).getByRole('button', { name: '复制链接' }),
-    ).toBeInTheDocument();
-    expect(
-      within(codeTable).getByText(formatLegacyDateMinuteSlash(1_700_000_000)),
+      within(codeTable).getByText(formatBackendDateMinuteSlash(1_700_000_000)),
     ).toBeInTheDocument();
     expect(within(codeTable).getByText('ABC123').closest('tr')).toHaveAttribute(
       'data-row-key',
@@ -248,11 +237,9 @@ describe('InvitePage shadcn surface', () => {
     expect(
       within(historyTable).getByRole('columnheader', { name: '发放时间' }),
     ).toBeInTheDocument();
+    expect(within(historyTable).getByRole('columnheader', { name: '佣金' })).toBeInTheDocument();
     expect(
-      within(historyTable).getByRole('columnheader', { name: '佣金' }),
-    ).toBeInTheDocument();
-    expect(
-      within(historyTable).getByText(formatLegacyDateMinuteSlash(1_700_000_600)),
+      within(historyTable).getByText(formatBackendDateMinuteSlash(1_700_000_600)),
     ).toBeInTheDocument();
     expect(within(historyTable).getByText('12.34')).toBeInTheDocument();
     expect(within(historyTable).getByText('12.34').closest('tr')).toHaveAttribute(
@@ -334,9 +321,7 @@ describe('InvitePage fetch failures', () => {
     const { user } = renderWithProviders(<InvitePage />);
 
     const historyCard = screen.getByTestId('invite-history-card');
-    expect(within(historyCard).getByTestId('invite-history-error')).toHaveTextContent(
-      '出错了',
-    );
+    expect(within(historyCard).getByTestId('invite-history-error')).toHaveTextContent('出错了');
     expect(screen.queryByTestId('invite-history-table')).toBeNull();
     expect(screen.queryByTestId('invite-pagination')).toBeNull();
 
@@ -362,9 +347,7 @@ describe('InvitePage shadcn pagination', () => {
     renderWithProviders(<InvitePage />);
 
     expect(screen.getByTestId('invite-pagination')).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { current: 'page', name: '1' }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { current: 'page', name: '1' })).toBeInTheDocument();
     expect(screen.getByTestId('invite-page-size')).toBeInTheDocument();
   });
 
@@ -425,9 +408,7 @@ describe('InvitePage shadcn actions', () => {
 
     await user.click(screen.getByRole('button', { name: '2' }));
 
-    expect(
-      screen.getByRole('button', { current: 'page', name: '2' }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { current: 'page', name: '2' })).toBeInTheDocument();
     expect(mocks.detailQueryCalls.at(-1)).toEqual({ current: 2, pageSize: 10 });
   });
 
@@ -438,9 +419,7 @@ describe('InvitePage shadcn actions', () => {
 
     await user.click(screen.getByRole('button', { name: '4' }));
 
-    expect(
-      screen.getByRole('button', { current: 'page', name: '4' }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { current: 'page', name: '4' })).toBeInTheDocument();
     expect(mocks.detailQueryCalls.at(-1)).toEqual({ current: 4, pageSize: 10 });
 
     // The total shrinks under the selected page: the raw page state stays 4,
@@ -448,9 +427,7 @@ describe('InvitePage shadcn actions', () => {
     mocks.detailsTotal = 25;
     rerender(<InvitePage />);
 
-    expect(
-      screen.getByRole('button', { current: 'page', name: '3' }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { current: 'page', name: '3' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '4' })).toBeNull();
   });
 });

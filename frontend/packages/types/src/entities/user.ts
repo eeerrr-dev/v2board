@@ -26,16 +26,15 @@ export interface UserStat {
   pending_tickets: number;
 }
 
-// One entry from the backend USER_SESSIONS cache map (AuthService::getSessions).
-// The map is keyed by an opaque session guid. `auth_data` is the raw JWT that
-// session logs in with; the UI never renders it, but it is how the current
-// session is identified (compared against the stored token in profile.tsx) so
-// the active-session card can badge "this device" and block self-revocation.
+// One entry from the backend USER_SESSIONS cache map (AuthService::sessions).
+// The requesting session is identified explicitly; `auth_data` is retained only
+// as the backend's redacted response-shape field and is never used as a bearer.
 export interface ActiveSession {
   ip: string;
   login_at: number;
   ua: string;
   auth_data: string;
+  current: boolean;
 }
 
 export type ActiveSessionMap = Record<string, ActiveSession>;
@@ -87,8 +86,12 @@ export interface AdminUserRow {
   is_admin: 0 | 1;
   is_staff: 0 | 1;
   invite_user_id: number | null;
+  invite_user_email?: string | null;
   discount: number | null;
+  commission_type?: 0 | 1 | 2 | null;
   commission_rate: number | null;
+  speed_limit?: number | null;
+  remarks?: string | null;
   telegram_id: number | null;
   last_login_at: number | null;
   created_at: number;
@@ -105,9 +108,13 @@ export interface AdminUserUpdatePayload {
   device_limit?: number | null;
   balance?: number;
   commission_balance?: number;
+  commission_type?: number | string;
   commission_rate?: number | null;
   discount?: number | null;
   speed_limit?: number | null;
+  u?: number;
+  d?: number;
+  remarks?: string | null;
   invite_user_email?: string | null;
   is_admin?: 0 | 1;
   is_staff?: 0 | 1;

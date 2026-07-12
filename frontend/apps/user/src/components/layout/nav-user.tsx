@@ -100,17 +100,14 @@ export function NavUser({ email }: NavUserProps) {
             <DropdownMenuGroup>
               <DropdownMenuItem onSelect={() => goto('/profile')}>
                 <UserRound className="size-4" />
-                {t('nav.profile')}
+                {t($ => $.nav.profile)}
               </DropdownMenuItem>
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger data-testid="app-language-trigger">
                   <Languages className="size-4" />
-                  {t('common.language')}
+                  {t($ => $.common.language)}
                 </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent
-                  data-testid="app-language-menu"
-                  className="min-w-40"
-                >
+                <DropdownMenuSubContent data-testid="app-language-menu" className="min-w-40">
                   <LanguageMenuItems activeIndicator itemClassName="whitespace-nowrap" />
                 </DropdownMenuSubContent>
               </DropdownMenuSub>
@@ -124,7 +121,7 @@ export function NavUser({ email }: NavUserProps) {
               }}
             >
               <LogOut className="size-4" />
-              {t('common.logout')}
+              {t($ => $.common.logout)}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -137,9 +134,7 @@ function getInitials(email: string): string {
   const local = (email.split('@')[0] ?? '').trim();
   const parts = local.split(/[._\-+]+/).filter(Boolean);
   const letters =
-    parts.length >= 2
-      ? `${parts[0]?.[0] ?? ''}${parts[1]?.[0] ?? ''}`
-      : local.slice(0, 2);
+    parts.length >= 2 ? `${parts[0]?.[0] ?? ''}${parts[1]?.[0] ?? ''}` : local.slice(0, 2);
   return letters.toUpperCase() || 'U';
 }
 

@@ -2,6 +2,7 @@ import { type ComponentProps } from 'react';
 import { fireEvent, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/render';
+import { createTestTranslation } from '@/test/i18next-selector';
 import { AppLayout } from './app-layout';
 
 const mocks = vi.hoisted(() => ({
@@ -79,10 +80,13 @@ vi.mock('react-router', () => ({
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    i18n: { language: mocks.locale, changeLanguage: mocks.changeLanguage },
-    t: (key: string) => mocks.labels[key] ?? key,
-  }),
+  useTranslation: () => {
+    const translation = createTestTranslation(mocks.labels, mocks.locale);
+    return {
+      ...translation,
+      i18n: { ...translation.i18n, changeLanguage: mocks.changeLanguage },
+    };
+  },
 }));
 
 // The account menu's Language submenu renders the shared locale items; pin the
@@ -113,19 +117,14 @@ vi.mock('@/lib/auth', () => ({
 }));
 
 vi.mock('@/lib/dark-mode', async () => {
-  const { useEffect, useState } = await import('react');
-  const useStore = <T,>(read: () => T) => {
-    const [value, setValue] = useState(read);
-    useEffect(() => {
-      const listener = () => setValue(read());
-      mocks.darkListeners.add(listener);
-      return () => {
-        mocks.darkListeners.delete(listener);
-      };
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-    return value;
+  const { useSyncExternalStore } = await import('react');
+  const subscribe = (listener: () => void) => {
+    mocks.darkListeners.add(listener);
+    return () => {
+      mocks.darkListeners.delete(listener);
+    };
   };
+  const useStore = <T,>(read: () => T) => useSyncExternalStore(subscribe, read, read);
   return {
     setThemePreference: (preference: 'system' | 'light' | 'dark') => {
       mocks.setThemePreference(preference);
@@ -138,8 +137,9 @@ vi.mock('@/lib/dark-mode', async () => {
   };
 });
 
-vi.mock('@/lib/legacy-settings', () => ({
-  getLegacyTitle: () => mocks.title,
+vi.mock('@/lib/runtime-config', () => ({
+  getRuntimeConfig: () => ({ i18n: ['en-US', 'zh-CN'] }),
+  getSiteTitle: () => mocks.title,
 }));
 
 function resetMocks() {
@@ -187,10 +187,7 @@ describe('AppLayout shadcn app shell structure', () => {
 
     // The sidebar exposes a labelled navigation landmark of real links.
     const nav = screen.getByRole('navigation', { name: 'Primary navigation' });
-    expect(within(nav).getByRole('link', { name: '仪表盘' })).toHaveAttribute(
-      'href',
-      '/dashboard',
-    );
+    expect(within(nav).getByRole('link', { name: '仪表盘' })).toHaveAttribute('href', '/dashboard');
     expect(within(nav).getByRole('link', { name: '使用文档' })).toHaveAttribute(
       'href',
       '/knowledge',
@@ -209,13 +206,12 @@ describe('AppLayout shadcn app shell structure', () => {
     // Brand wordmark links back to the dashboard.
     expect(screen.getByRole('link', { name: 'V2Board' })).toHaveAttribute('href', '/dashboard');
 
-    // Header: the page title (visual-parity reads .v2board-container-title),
-    // and the account chip with the user's email. The language switcher moved
+    // Header: the page title and the account chip with the user's email. The language switcher moved
     // into the account menu's submenu, so the header must no longer carry a
     // standalone trigger for it.
     const title = screen.getByRole('heading', { level: 1 });
     expect(title).toHaveTextContent('仪表盘');
-    expect(title).toHaveClass('v2board-container-title');
+    expect(title).toHaveAttribute('data-slot', 'page-title');
     expect(screen.queryByTestId('app-language-trigger')).not.toBeInTheDocument();
     expect(screen.getByTestId('app-avatar-trigger')).toHaveTextContent('user@example.com');
 
@@ -229,10 +225,7 @@ describe('AppLayout shadcn app shell structure', () => {
     renderWithProviders(<AppLayout />);
 
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('订单详情');
-    expect(screen.getByRole('link', { name: '我的订单' })).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
+    expect(screen.getByRole('link', { name: '我的订单' })).toHaveAttribute('aria-current', 'page');
   });
 
   it('renders a centered loading state instead of the outlet', () => {
@@ -271,9 +264,7 @@ describe('AppLayout shadcn app shell behavior', () => {
     expect(scrollTo).toHaveBeenCalledWith(0, 0);
     // The desktop rail keeps the #sidebar hook and renders no mobile Sheet.
     expect(container.querySelector('#sidebar')).not.toBeNull();
-    expect(
-      document.body.querySelector('[data-slot="sidebar"][data-mobile="true"]'),
-    ).toBeNull();
+    expect(document.body.querySelector('[data-slot="sidebar"][data-mobile="true"]')).toBeNull();
 
     const rail = container.querySelector<HTMLElement>('[data-slot="sidebar"]')!;
     expect(rail).toHaveAttribute('data-state', 'expanded');
@@ -289,6 +280,12 @@ describe('AppLayout shadcn app shell behavior', () => {
     // The collapse is persisted under the same cookie name the restore path
     // reads back — the write half of the sidebar_state round trip.
     expect(document.cookie).toContain('sidebar_state=false');
+
+    // React 19's Effect Event keeps one global subscription while still seeing
+    // the latest expanded/collapsed state.
+    fireEvent.keyDown(window, { key: 'b', ctrlKey: true });
+    expect(rail).toHaveAttribute('data-state', 'expanded');
+    expect(document.cookie).toContain('sidebar_state=true');
 
     // Nav items stay reachable in the rail as real links (middle-click/a11y)
     // inside the navigation landmark, and route through the router.

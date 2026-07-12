@@ -2,22 +2,22 @@ import { screen, within } from '@testing-library/react';
 import { Route, Routes } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/render';
+import { setRuntimeConfig } from '@/test/runtime-config';
 import { GuestLayout } from './guest-layout';
 
-// The operator background_url is always configured in these tests: the
-// redesigned auth shell must ignore it, so every render doubles as proof the
-// legacy backdrop never reaches the DOM.
-vi.mock('@/lib/legacy-settings', () => ({
-  getLegacySettings: () => ({
-    background_url: 'https://cdn.example.test/bg.jpg',
-  }),
-  getLegacyTitle: () => 'V2Board',
+// The operator brand assets are configured in these tests so the pure shadcn
+// shell also covers its modern, tokenized customization layer.
+vi.mock('@/lib/runtime-config', () => ({
+  getBackgroundUrl: () => 'https://cdn.example.test/bg.jpg',
+  getLogoUrl: () => 'https://cdn.example.test/logo.svg',
+  getRuntimeConfig: () => ({ i18n: ['en-US', 'zh-CN'] }),
+  getSiteTitle: () => 'V2Board',
 }));
 
 function renderGuest(path: string) {
-  window.settings = {
-    i18n: ['en-US', 'zh-CN'] as string[] & Record<string, Record<string, string>>,
-  };
+  setRuntimeConfig({
+    i18n: ['en-US', 'zh-CN'],
+  });
 
   return renderWithProviders(
     <Routes>
@@ -38,28 +38,31 @@ function hasInlineBackground(container: HTMLElement): boolean {
 }
 
 describe('GuestLayout auth shell (route-isolated 2026 reskin)', () => {
-  it('renders the shadcn auth shell around the routed page and ignores the operator background', () => {
+  it('renders the shadcn auth shell with tokenized operator brand assets', () => {
     const { container } = renderGuest('/login');
 
     // #page-container / #main-container are visual-parity ready-selectors.
     expect(container.querySelector('#page-container')).not.toBeNull();
     const main = container.querySelector('#main-container');
     expect(main).not.toBeNull();
-    // The v2board-auth-surface/-frame hooks mark AuthLayout's island shell —
-    // their presence is the behavior twin of the retired "GuestLayout
-    // delegates to AuthLayout" source pin.
-    expect(main).toHaveClass('v2board-auth-surface');
-    const frame = container.querySelector<HTMLElement>('.v2board-auth-frame');
+    expect(main).toHaveAttribute('data-testid', 'auth-surface');
+    const frame = container.querySelector<HTMLElement>('[data-slot="auth-route-frame"]');
     expect(frame).not.toBeNull();
     expect(within(frame!).getByText('login probe')).toBeInTheDocument();
 
-    // Shell chrome: brand wordmark plus the language menu trigger
-    // (visual-parity clicks .v2board-auth-language-trigger).
+    // Shell chrome: brand wordmark plus the language menu trigger.
     expect(screen.getByText('V2Board')).toBeInTheDocument();
-    expect(container.querySelector('.v2board-auth-language-trigger')).not.toBeNull();
+    expect(screen.getByTestId('auth-language-trigger')).toBeInTheDocument();
 
-    // The configured background_url never renders: no inline background style
-    // anywhere in the shell.
+    const background = container.querySelector('img[src="https://cdn.example.test/bg.jpg"]');
+    expect(background).toHaveAttribute('decoding', 'async');
+    expect(background).toHaveAttribute('fetchpriority', 'high');
+    expect(container.querySelector('img[src="https://cdn.example.test/logo.svg"]')).toHaveAttribute(
+      'decoding',
+      'async',
+    );
+    // URLs are assigned through image src attributes, never interpolated into
+    // an inline CSS declaration.
     expect(hasInlineBackground(container)).toBe(false);
   });
 
@@ -72,10 +75,14 @@ describe('GuestLayout auth shell (route-isolated 2026 reskin)', () => {
     for (const [path, probe] of cases) {
       const { container, unmount } = renderGuest(path);
 
-      expect(container.querySelector('#main-container')).toHaveClass('v2board-auth-surface');
-      const frame = container.querySelector<HTMLElement>('.v2board-auth-frame');
+      expect(container.querySelector('#main-container')).toHaveAttribute(
+        'data-testid',
+        'auth-surface',
+      );
+      const frame = container.querySelector<HTMLElement>('[data-slot="auth-route-frame"]');
       expect(frame).not.toBeNull();
       expect(within(frame!).getByText(probe)).toBeInTheDocument();
+      expect(container.querySelector('img[src="https://cdn.example.test/bg.jpg"]')).not.toBeNull();
       expect(hasInlineBackground(container)).toBe(false);
 
       unmount();

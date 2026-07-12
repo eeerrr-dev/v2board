@@ -1,4 +1,4 @@
-import * as AlertDialogPrimitive from '@radix-ui/react-alert-dialog';
+import { AlertDialog as AlertDialogPrimitive } from 'radix-ui';
 import { type ComponentProps } from 'react';
 import { cn } from '@/lib/cn';
 import {
@@ -13,6 +13,26 @@ import {
 const AlertDialog = AlertDialogPrimitive.Root;
 const AlertDialogTrigger = AlertDialogPrimitive.Trigger;
 const AlertDialogPortal = AlertDialogPrimitive.Portal;
+
+function AlertDialogAction(props: ComponentProps<typeof AlertDialogPrimitive.Action>) {
+  return (
+    <AlertDialogPrimitive.Action
+      data-slot="alert-dialog-action"
+      data-alert-dialog-action=""
+      {...props}
+    />
+  );
+}
+
+function AlertDialogCancel(props: ComponentProps<typeof AlertDialogPrimitive.Cancel>) {
+  return (
+    <AlertDialogPrimitive.Cancel
+      data-slot="alert-dialog-cancel"
+      data-alert-dialog-cancel=""
+      {...props}
+    />
+  );
+}
 
 function AlertDialogOverlay({
   className,
@@ -29,6 +49,7 @@ function AlertDialogOverlay({
 
 function AlertDialogContent({
   className,
+  onOpenAutoFocus,
   ...props
 }: ComponentProps<typeof AlertDialogPrimitive.Content>) {
   return (
@@ -37,6 +58,17 @@ function AlertDialogContent({
       <AlertDialogPrimitive.Content
         data-slot="alert-dialog-content"
         className={cn(dialogContentClassName, className)}
+        onOpenAutoFocus={(event) => {
+          onOpenAutoFocus?.(event);
+          if (event.defaultPrevented) return;
+
+          const content = event.currentTarget as HTMLElement | null;
+          const cancel = content?.querySelector<HTMLElement>('[data-alert-dialog-cancel]');
+          if (cancel) {
+            event.preventDefault();
+            cancel.focus();
+          }
+        }}
         {...props}
       />
     </AlertDialogPortal>
@@ -91,6 +123,8 @@ function AlertDialogDescription({
 
 export {
   AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,

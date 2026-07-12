@@ -68,13 +68,13 @@ export async function tooltipState(page) {
       element.getAttribute('data-state') !== 'closed' &&
       !String(element.className).includes('ant-tooltip-hidden');
     const tooltips = Array.from(
-      document.querySelectorAll('.v2board-tooltip-content, .ant-tooltip'),
+      document.querySelectorAll('[data-slot="tooltip-content"], .ant-tooltip'),
     )
       .filter(isOpenTooltip)
       .filter(isVisible);
     const tooltip = tooltips[0];
     const textElements = tooltip
-      ? tooltip.matches('.v2board-tooltip-content')
+      ? tooltip.matches('[data-slot="tooltip-content"]')
         ? [tooltip]
         : Array.from(tooltip.querySelectorAll('.ant-tooltip-inner'))
       : [];
@@ -84,8 +84,8 @@ export async function tooltipState(page) {
       openTriggerCount: Array.from(
         document.querySelectorAll(
           [
-            '.v2board-service-tooltip-trigger[data-state="delayed-open"]',
-            '.v2board-service-tooltip-trigger[data-state="instant-open"]',
+            '[data-slot="header-tooltip-trigger"][data-state="delayed-open"]',
+            '[data-slot="header-tooltip-trigger"][data-state="instant-open"]',
             '.ant-tooltip-open',
           ].join(', '),
         ),
@@ -132,10 +132,13 @@ export async function waitForVisibleTooltip(page, timeout = 5_000) {
       const isOpenTooltip = (element) =>
         element.getAttribute('data-state') !== 'closed' &&
         !String(element.className).includes('ant-tooltip-hidden');
-      return Array.from(document.querySelectorAll('.v2board-tooltip-content, .ant-tooltip'))
+      return Array.from(
+        document.querySelectorAll('[data-slot="tooltip-content"], .ant-tooltip'),
+      )
         .filter(isOpenTooltip)
         .some(isVisible);
     },
+    null,
     { timeout },
   );
 }
@@ -156,10 +159,13 @@ export async function waitForNoVisibleTooltip(page, timeout = 5_000) {
       const isOpenTooltip = (element) =>
         element.getAttribute('data-state') !== 'closed' &&
         !String(element.className).includes('ant-tooltip-hidden');
-      return !Array.from(document.querySelectorAll('.v2board-tooltip-content, .ant-tooltip'))
+      return !Array.from(
+        document.querySelectorAll('[data-slot="tooltip-content"], .ant-tooltip'),
+      )
         .filter(isOpenTooltip)
         .some(isVisible);
     },
+    null,
     { timeout },
   );
 }
@@ -187,6 +193,10 @@ export async function hoverFirstVisibleFromSelectors(page, selectors) {
     }
     throw new Error(`No visible hover target for selectors: ${targetSelectors.join(', ')}`);
   }, selectors);
+  // Playwright can reuse the browser pointer position across pages/worlds. If
+  // two table-header triggers land at the same coordinates, a direct move may
+  // emit no new mouseenter. Leave the target first, then enter it explicitly.
+  await page.mouse.move(1, 1);
   await page.mouse.move(point.x, point.y);
 }
 

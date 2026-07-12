@@ -6,7 +6,11 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+argon2.workspace = true
+chrono.workspace = true
 md5.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
+thiserror.workspace = true
+uuid.workspace = true

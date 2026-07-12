@@ -32,8 +32,10 @@ import {
   adminConfirmTitleSelector,
   adminDialogOpenSelector,
   adminDrawerFooterButtonSelector,
+  adminDrawerInputGroupControlSelector,
   adminDrawerInputSelector,
   adminDrawerLabelSelector,
+  adminDrawerLegendSelector,
   adminDrawerOpenSelector,
   adminDrawerSelectTriggerSelector,
   adminDrawerSelectedValueSelector,
@@ -52,7 +54,6 @@ import {
   adminSelectTriggerSelector,
   adminSwitchSelector,
   adminTableRowSelector,
-  adminThemeCardTitleSelector,
   adminUserPageItemSelector,
   adminUserRowActionTriggerSelector,
   adminUserToolbarButtonSelector,
@@ -175,6 +176,23 @@ export async function openAdminNodeAddMenu(page) {
   }
 }
 
+// Node-type menus animate in the frozen Ant UI. Clicking a precomputed point
+// can hit a neighbouring item after the menu shifts; a Locator follows the
+// chosen element and waits for it to become actionable in both Ant and Radix.
+export async function clickVisibleAdminNodeType(page, typeLabel) {
+  const expected = normalizeParityText(typeLabel);
+  const items = page.locator(adminMenuItemSelector);
+  const count = await items.count();
+  for (let index = 0; index < count; index += 1) {
+    const item = items.nth(index);
+    if (!(await item.isVisible())) continue;
+    if (normalizeParityText(await item.textContent()) !== expected) continue;
+    await item.click();
+    return;
+  }
+  throw new Error(`No visible node type menu item ${typeLabel}`);
+}
+
 // Open a node row's editor across both worlds. The redesigned row exposes a
 // `node-actions-«id»` Radix DropdownMenu trigger (needs a real pointer event)
 // whose 编辑 item opens the drawer; the antd oracle uses its fixed-column row
@@ -222,7 +240,8 @@ export async function selectAdminNodeGroupDefault(page) {
     const container = document.querySelector('[data-testid="node-group-ids"]');
     if (!container) return false;
     const label = Array.from(container.querySelectorAll('label')).find(
-      (element) => isVisible(element) && (element.textContent ?? '').replace(/\s+/g, '').includes('Default'),
+      (element) =>
+        isVisible(element) && (element.textContent ?? '').replace(/\s+/g, '').includes('Default'),
     );
     if (!label) return false;
     const box =
@@ -249,7 +268,9 @@ export async function adminNodeGroupDefaultSelected(page) {
       const label = Array.from(container.querySelectorAll('label')).find((element) =>
         (element.textContent ?? '').replace(/\s+/g, '').includes('Default'),
       );
-      const box = label?.querySelector('[role="checkbox"], [data-slot="checkbox"], input[type="checkbox"]');
+      const box = label?.querySelector(
+        '[role="checkbox"], [data-slot="checkbox"], input[type="checkbox"]',
+      );
       if (box) {
         return (
           box.getAttribute('aria-checked') === 'true' ||
@@ -270,7 +291,7 @@ export async function openAdminServerNodeDrawerForType(page, typeLabel) {
   await openAdminNodeAddMenu(page);
   await waitForVisibleText(page, adminMenuItemSelector, typeLabel);
   const menuOpened = await adminServerNodeDrawerState(page);
-  await clickFirstVisibleText(page, adminMenuItemSelector, [typeLabel]);
+  await clickVisibleAdminNodeType(page, typeLabel);
   await page.waitForSelector(adminDrawerOpenSelector, {
     state: 'visible',
     timeout: 5_000,
@@ -455,7 +476,10 @@ export async function toggleAdminCouponScopeItem(page, groupTestId, itemText, an
     return;
   }
   await selectLegacyFormOption(page, '.ant-modal', antdLabel, [itemText], { waitForHidden: false });
-  await page.locator('.ant-modal-title').click().catch(() => undefined);
+  await page
+    .locator('.ant-modal-title')
+    .click()
+    .catch(() => undefined);
 }
 
 // Fill a notice-editor field in either world: the redesigned Dialog exposes each
@@ -526,26 +550,34 @@ export async function openAdminUserFilterFieldSelect(page) {
 }
 
 export async function adminUserFilterDateFieldState(page, testIdPrefix = 'user-filter-value-') {
-  return page.evaluate(({ prefix }) => {
-    const isVisible = (element) => {
-      const rect = element.getBoundingClientRect();
-      const style = window.getComputedStyle(element);
-      return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
-    };
-    // Count a reachable date affordance in either world: the redesigned native
-    // date/datetime-local input (matched by testid prefix), or the antd calendar
-    // picker input.
-    const dateFieldCount = Array.from(
-      document.querySelectorAll(`[data-testid^="${prefix}"], .ant-calendar-picker-input`),
-    ).filter(
-      (element) =>
-        isVisible(element) &&
-        (element.classList.contains('ant-calendar-picker-input') ||
-          element.getAttribute('type') === 'date' ||
-          element.getAttribute('type') === 'datetime-local'),
-    ).length;
-    return { dateFieldCount };
-  }, { prefix: testIdPrefix });
+  return page.evaluate(
+    ({ prefix }) => {
+      const isVisible = (element) => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.display !== 'none' &&
+          style.visibility !== 'hidden'
+        );
+      };
+      // Count a reachable date affordance in either world: the redesigned native
+      // date/datetime-local input (matched by testid prefix), or the antd calendar
+      // picker input.
+      const dateFieldCount = Array.from(
+        document.querySelectorAll(`[data-testid^="${prefix}"], .ant-calendar-picker-input`),
+      ).filter(
+        (element) =>
+          isVisible(element) &&
+          (element.classList.contains('ant-calendar-picker-input') ||
+            element.getAttribute('type') === 'date' ||
+            element.getAttribute('type') === 'datetime-local'),
+      ).length;
+      return { dateFieldCount };
+    },
+    { prefix: testIdPrefix },
+  );
 }
 
 export async function clickAdminUserPage(page, pageNumber) {
@@ -592,9 +624,16 @@ export async function applyAdminUserEmailFilter(page, value = 'visual@example.co
         const isVisible = (element) => {
           const rect = element.getBoundingClientRect();
           const style = window.getComputedStyle(element);
-          return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+          return (
+            rect.width > 0 &&
+            rect.height > 0 &&
+            style.display !== 'none' &&
+            style.visibility !== 'hidden'
+          );
         };
-        const group = Array.from(document.querySelectorAll('.v2board-filter-drawer .form-group')).find(
+        const group = Array.from(
+          document.querySelectorAll('.v2board-filter-drawer .form-group'),
+        ).find(
           (element) =>
             isVisible(element) &&
             Array.from(element.querySelectorAll('label')).some((label) =>
@@ -603,7 +642,8 @@ export async function applyAdminUserEmailFilter(page, value = 'visual@example.co
         );
         const input = group
           ? Array.from(group.querySelectorAll('input, textarea')).find(
-              (element) => isVisible(element) && !element.className.includes('ant-select-search__field'),
+              (element) =>
+                isVisible(element) && !element.className.includes('ant-select-search__field'),
             )
           : null;
         return input && 'value' in input && input.value === targetValue;
@@ -611,10 +651,11 @@ export async function applyAdminUserEmailFilter(page, value = 'visual@example.co
       value,
       { timeout: 5_000 },
     );
-    await dispatchFirstVisibleTextClick(page, '.v2board-filter-drawer .v2board-drawer-action .ant-btn', [
-      '检索',
-      '检 索',
-    ]);
+    await dispatchFirstVisibleTextClick(
+      page,
+      '.v2board-filter-drawer .v2board-drawer-action .ant-btn',
+      ['检索', '检 索'],
+    );
   }
   await waitForPageProperty(page, '__visualParityLastAdminUserFetchQuery');
   await waitForVisibleElementsHidden(page, adminDrawerOpenSelector);
@@ -641,7 +682,9 @@ export async function openAdminUserFilterSheet(page) {
   if (shadcnTrigger) {
     await page.click('[data-testid="user-filter-open"]');
   } else {
-    await clickFirstVisibleTextInViewport(page, '.v2board-table-action .ant-btn, .ant-btn', ['过滤器']);
+    await clickFirstVisibleTextInViewport(page, '.v2board-table-action .ant-btn, .ant-btn', [
+      '过滤器',
+    ]);
   }
   await page.waitForSelector(
     '[data-testid="user-filter-sheet"], .v2board-filter-drawer, .ant-drawer-open',
@@ -826,15 +869,6 @@ export async function clickAdminUserManageSubmit(page) {
   }
 }
 
-export async function adminThemeModalState(page) {
-  return {
-    inputValues: await visibleInputValues(page, adminDrawerInputSelector),
-    labels: await visibleTexts(page, adminDrawerLabelSelector, 10),
-    modalCount: await visibleCount(page, adminOverlayOpenSelector),
-    titles: await visibleTexts(page, adminDrawerTitleSelector, 4),
-  };
-}
-
 export async function adminConfigSaveFailureState(page) {
   return {
     activeTabs: await visibleTexts(page, adminActiveConfigTabSelector, 4),
@@ -842,19 +876,11 @@ export async function adminConfigSaveFailureState(page) {
     inputValues: await visibleInputValues(page, adminConfigFieldInputSelector),
     saveCount: page.__visualParityAdminConfigSaveCount ?? 0,
     tableRows: await visibleTexts(page, adminTableRowSelector, 4),
-    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 6),
-  };
-}
-
-export async function adminThemeSaveFailureState(page) {
-  return {
-    buttons: await visibleTexts(page, adminDrawerFooterButtonSelector, 4),
-    inputValues: await visibleInputValues(page, adminDrawerInputSelector),
-    modalCount: await visibleCount(page, adminOverlayOpenSelector),
-    saveCount: page.__visualParityAdminThemeSaveCount ?? 0,
-    themeCards: await visibleTexts(page, adminThemeCardTitleSelector, 4),
-    titles: await visibleTexts(page, adminDrawerTitleSelector, 4),
-    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 6),
+    toastTexts: await visibleTexts(
+      page,
+      '[data-sonner-toast], .ant-message-notice, .ant-notification-notice',
+      6,
+    ),
   };
 }
 
@@ -878,7 +904,6 @@ export async function adminDashboardShortcutState(page) {
     hash: await page.evaluate(() => window.location.hash),
     orderFetchQuery: normalizeAdminOrderFetchQuery(page.__visualParityLastAdminOrderFetchQuery),
     orderFilter,
-    shortcutTexts: await visibleTexts(page, '.js-classic-nav .font-w600', 8),
   };
 }
 
@@ -896,11 +921,7 @@ export async function adminTablePaginationState(page, queryNamespace) {
       2,
     ),
     nextClasses: await visibleClassNames(page, '.ant-pagination-next', 1),
-    pageItems: await visibleTexts(
-      page,
-      `.ant-pagination-item, [data-testid="${pageTestId}"]`,
-      8,
-    ),
+    pageItems: await visibleTexts(page, `.ant-pagination-item, [data-testid="${pageTestId}"]`, 8),
     pageSizeSelection: await visibleTexts(
       page,
       `.ant-pagination-options-size-changer .ant-select-selection-selected-value, [data-testid="${pageSizeTestId}"]`,
@@ -919,7 +940,12 @@ export async function adminPaymentModalState(page) {
   return {
     buttons: await visibleTexts(page, adminDrawerFooterButtonSelector, 4),
     dropdownItems: await visibleTexts(page, adminSelectOptionSelector, 6),
-    inputValues: await visibleInputValues(page, adminDrawerInputSelector),
+    // Payment percentage fees use InputGroupInput in the redesign. The local
+    // selector union retains DOM order and avoids changing every admin reader.
+    inputValues: await visibleInputValues(
+      page,
+      `${adminDrawerInputSelector}, ${adminDrawerInputGroupControlSelector}`,
+    ),
     labels: await visibleTexts(page, adminDrawerLabelSelector, 12),
     modalCount: await visibleCount(page, adminOverlayOpenSelector),
     selectedPayment: await visibleTexts(page, adminDrawerSelectedValueSelector, 2),
@@ -933,7 +959,10 @@ export async function adminServerNodeDrawerState(page) {
   const fallbackDrawerCount =
     openDrawerCount > 0
       ? openDrawerCount
-      : (await visibleCount(page, '.ant-drawer .v2board-drawer-action, [data-slot="sheet-footer"]')) > 0
+      : (await visibleCount(
+            page,
+            '.ant-drawer .v2board-drawer-action, [data-slot="sheet-footer"]',
+          )) > 0
         ? 1
         : 0;
   const rootedSelectedValues = await visibleTexts(page, adminDrawerSelectedValueSelector, 12);
@@ -947,7 +976,14 @@ export async function adminServerNodeDrawerState(page) {
     dropdownCount: await visibleCount(page, '.ant-dropdown, [data-slot="dropdown-menu-content"]'),
     dropdownItems: await visibleTexts(page, adminMenuItemSelector, 10),
     inputValues: await visibleInputValues(page, adminDrawerInputSelector),
-    labels: await visibleTexts(page, adminDrawerLabelSelector, 24),
+    // Redesigned permission/route groups are semantic fieldsets; the antd
+    // oracle renders the same names as labels. Read both without changing the
+    // shared product DOM.
+    labels: await visibleTexts(
+      page,
+      `${adminDrawerLabelSelector}, ${adminDrawerLegendSelector}`,
+      28,
+    ),
     selectDropdownItems: await visibleTexts(page, adminSelectOptionSelector, 10),
     selectedValues,
     tableRows: await visibleTexts(page, adminTableRowSelector, 8),
@@ -993,7 +1029,11 @@ export async function adminOrderAssignModalState(page) {
   return {
     buttons: await visibleTexts(page, adminDrawerFooterButtonSelector, 4),
     inputValues: await visibleInputValues(page, adminDrawerInputSelector),
-    labels: await visibleTexts(page, adminDrawerLabelSelector, 8),
+    labels: await visibleTexts(
+      page,
+      `${adminDrawerLabelSelector}, ${adminDrawerLegendSelector}`,
+      8,
+    ),
     modalCount: await visibleCount(page, adminOverlayOpenSelector),
     selectedValues: await visibleTexts(page, adminDrawerSelectedValueSelector, 4),
     titles: await visibleTexts(page, adminDrawerTitleSelector, 2),
@@ -1038,9 +1078,16 @@ export async function adminOrderFilterPaginationState(page) {
 export async function filterDrawerDebugState(page) {
   return {
     buttons: await visibleTexts(page, '.v2board-filter-drawer .ant-btn', 8),
-    inputs: await visibleInputValues(page, '.v2board-filter-drawer input, .v2board-filter-drawer textarea'),
+    inputs: await visibleInputValues(
+      page,
+      '.v2board-filter-drawer input, .v2board-filter-drawer textarea',
+    ),
     labels: await visibleTexts(page, '.v2board-filter-drawer label', 8),
-    notifications: await visibleTexts(page, '.v2board-toast-root, .ant-notification-notice, .ant-message-notice', 4),
+    notifications: await visibleTexts(
+      page,
+      '[data-sonner-toast], .ant-notification-notice, .ant-message-notice',
+      4,
+    ),
   };
 }
 
@@ -1065,7 +1112,9 @@ export async function adminTicketsReplyFilterState(page) {
       .map((element) => ({
         checked:
           Boolean(
-            element.querySelector('.ant-checkbox-checked, .ant-checkbox-wrapper-checked, input:checked'),
+            element.querySelector(
+              '.ant-checkbox-checked, .ant-checkbox-wrapper-checked, input:checked',
+            ),
           ) ||
           // Radix DropdownMenuCheckboxItem marks its checked state on the item.
           element.getAttribute('aria-checked') === 'true' ||
@@ -1119,7 +1168,11 @@ export async function adminUserCreateModalState(page) {
     buttons: await visibleTexts(page, adminDrawerFooterButtonSelector, 4),
     dropdownItems: await visibleTexts(page, adminSelectOptionSelector, 8),
     inputValues: await visibleInputValues(page, adminDrawerInputSelector),
-    labels: await visibleTexts(page, adminDrawerLabelSelector, 8),
+    labels: await visibleTexts(
+      page,
+      `${adminDrawerLabelSelector}, ${adminDrawerLegendSelector}`,
+      8,
+    ),
     modalCount: await visibleCount(page, adminDialogOpenSelector),
     selectedValues: await visibleTexts(page, adminDrawerSelectedValueSelector, 4),
     tableRows: await visibleTexts(page, adminTableRowSelector, 6),
@@ -1132,7 +1185,11 @@ export async function adminUserSortState(page) {
   return {
     query: normalizeAdminOrderFetchQuery(page.__visualParityLastAdminUserFetchQuery),
     rowTexts: await visibleTexts(page, adminTableRowSelector, 6),
-    sorterClasses: await visibleClassNames(page, '.ant-table-column-sorter-up, .ant-table-column-sorter-down', 8),
+    sorterClasses: await visibleClassNames(
+      page,
+      '.ant-table-column-sorter-up, .ant-table-column-sorter-down',
+      8,
+    ),
     tableHeaders: await visibleTexts(page, '.ant-table-thead th, [data-slot="table-head"]', 14),
   };
 }
@@ -1143,10 +1200,18 @@ export async function adminUserSendMailModalState(page) {
     buttons: await visibleTexts(page, adminDrawerFooterButtonSelector, 4),
     dropdownItems: modalCount ? [] : await visibleTexts(page, adminMenuItemSelector, 8),
     inputValues: await visibleInputValues(page, adminDrawerInputSelector),
-    labels: await visibleTexts(page, adminDrawerLabelSelector, 6),
+    labels: await visibleTexts(
+      page,
+      `${adminDrawerLabelSelector}, ${adminDrawerLegendSelector}`,
+      6,
+    ),
     modalCount,
     tableRows: await visibleTexts(page, adminTableRowSelector, 6),
-    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
+    toastTexts: await visibleTexts(
+      page,
+      '[data-sonner-toast], .ant-message-notice, .ant-notification-notice',
+      4,
+    ),
     titles: await visibleTexts(page, adminDrawerTitleSelector, 2),
     toolbarButtons: await visibleTexts(page, adminUserToolbarButtonSelector, 6),
   };
@@ -1169,7 +1234,11 @@ export async function adminUserCopyActionState(page) {
   return {
     clipboardWrites: await page.evaluate(() => window.__visualParityClipboardWrites ?? []),
     dropdownItems: await visibleTexts(page, adminMenuItemSelector, 10),
-    messageTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
+    messageTexts: await visibleTexts(
+      page,
+      '[data-sonner-toast], .ant-message-notice, .ant-notification-notice',
+      4,
+    ),
     modalCount: await visibleCount(page, adminOverlayOpenSelector),
     tableRows: await visibleTexts(page, adminTableRowSelector, 6),
     triggerTexts: await visibleTexts(page, adminUserRowActionTriggerSelector, 10),
@@ -1206,7 +1275,11 @@ export async function adminUserDestructiveFailureState(page) {
     modalCount,
     tableRows: await visibleTexts(page, adminTableRowSelector, 6),
     titles: await visibleTexts(page, adminConfirmTitleSelector, 2),
-    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 6),
+    toastTexts: await visibleTexts(
+      page,
+      '[data-sonner-toast], .ant-message-notice, .ant-notification-notice',
+      6,
+    ),
     toolbarButtons: await visibleTexts(page, adminUserToolbarButtonSelector, 8),
     triggerTexts: await visibleTexts(page, adminUserRowActionTriggerSelector, 10),
   };
@@ -1224,7 +1297,11 @@ export async function adminUserExportDownloadState(page) {
     probe: normalizeDownloadProbe(probe),
     requestCount: page.__visualParityAdminUserDumpCsvCount ?? 0,
     tableRows: await visibleTexts(page, adminTableRowSelector, 6),
-    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 6),
+    toastTexts: await visibleTexts(
+      page,
+      '[data-sonner-toast], .ant-message-notice, .ant-notification-notice',
+      6,
+    ),
     toolbarButtons: await visibleTexts(page, adminUserToolbarButtonSelector, 8),
   };
 }
@@ -1285,7 +1362,9 @@ export async function adminUserInviteActionState(page) {
     hash: await page.evaluate(() => window.location.hash),
     tableRows: await visibleTexts(page, adminTableRowSelector, 6),
     triggerTexts: await visibleTexts(page, adminUserRowActionTriggerSelector, 10),
-    userFetchQuery: normalizeAdminOrderFetchQuery(page.__visualParityLastAdminFilteredUserFetchQuery),
+    userFetchQuery: normalizeAdminOrderFetchQuery(
+      page.__visualParityLastAdminFilteredUserFetchQuery,
+    ),
   };
 }
 
@@ -1433,6 +1512,7 @@ export async function waitForHeaderAvatarDropdown(page) {
         ),
       ).some(isVisible);
     },
+    null,
     { timeout: 5_000 },
   );
 }
@@ -1468,7 +1548,9 @@ export async function headerAvatarDropdownState(page) {
         (element) => element.querySelector('.fa-user-circle') && isVisible(element),
       );
     const visibleMenus = Array.from(
-      document.querySelectorAll('[data-testid="admin-avatar-menu"], #page-header .dropdown-menu.show'),
+      document.querySelectorAll(
+        '[data-testid="admin-avatar-menu"], #page-header .dropdown-menu.show',
+      ),
     ).filter(isVisible);
     const menu = visibleMenus[0];
     const triggerRect = trigger ? rectOf(trigger) : undefined;
@@ -1495,8 +1577,17 @@ export async function headerAvatarDropdownState(page) {
 export async function adminCouponModalState(page) {
   return {
     buttons: await visibleTexts(page, adminDrawerFooterButtonSelector, 4),
-    inputValues: await visibleInputValues(page, adminDrawerInputSelector),
-    labels: await visibleTexts(page, adminDrawerLabelSelector, 14),
+    inputValues: await visibleInputValues(
+      page,
+      `${adminDrawerInputSelector}, ${adminDrawerInputGroupControlSelector}`,
+    ),
+    // Checkbox groups are correctly named by fieldset/legend in the shadcn
+    // editor; the frozen antd oracle expresses the same names as form labels.
+    labels: await visibleTexts(
+      page,
+      `${adminDrawerLabelSelector}, ${adminDrawerLegendSelector}`,
+      16,
+    ),
     modalCount: await visibleCount(page, adminOverlayOpenSelector),
     // The redesigned coupon editor renders its type as a Radix Select whose
     // trigger text is the chosen option (`adminDrawerSelectedValueSelector`); the
@@ -1518,7 +1609,13 @@ export async function adminGiftcardModalState(page) {
   return {
     buttons: await visibleTexts(page, adminDrawerFooterButtonSelector, 4),
     dropdownItems: await visibleTexts(page, adminSelectOptionSelector, 10),
-    inputValues: await visibleInputValues(page, adminDrawerInputSelector),
+    // Gift-card amount/period values use InputGroupInput in the redesign while
+    // the antd oracle exposes ordinary inputs. Keep the union reader-local so
+    // both worlds retain the same document-order field sequence.
+    inputValues: await visibleInputValues(
+      page,
+      `${adminDrawerInputSelector}, ${adminDrawerInputGroupControlSelector}`,
+    ),
     labels: await visibleTexts(page, adminDrawerLabelSelector, 14),
     modalCount: await visibleCount(page, adminOverlayOpenSelector),
     // Type + plan are Radix Selects whose trigger text is the chosen option; the
@@ -1564,7 +1661,7 @@ export async function adminPlanDrawerState(page) {
           return {
             checked: Boolean(
               wrapper.matches('.ant-checkbox-wrapper-checked') ||
-                wrapper.querySelector('.ant-checkbox-checked, input:checked'),
+              wrapper.querySelector('.ant-checkbox-checked, input:checked'),
             ),
           };
         }
@@ -1581,7 +1678,10 @@ export async function adminPlanDrawerState(page) {
       }
       return null;
     }, adminOverlayOpenSelector),
-    inputValues: await visibleInputValues(page, adminDrawerInputSelector),
+    inputValues: await visibleInputValues(
+      page,
+      `${adminDrawerInputSelector}, ${adminDrawerInputGroupControlSelector}`,
+    ),
     labels: await visibleTexts(page, adminDrawerLabelSelector, 24),
     selectedValues: await visibleTexts(page, adminDrawerSelectedValueSelector, 6),
     tableRows: await visibleTexts(page, adminTableRowSelector, 6),
@@ -1605,7 +1705,7 @@ export async function adminMutationFailureState(page) {
         disabled: Boolean(element.matches(':disabled, .ant-switch-disabled')),
         loading: Boolean(
           element.matches('.ant-switch-loading') ||
-            element.querySelector('.ant-switch-loading-icon'),
+          element.querySelector('.ant-switch-loading-icon'),
         ),
       }));
   }, adminSwitchSelector);
@@ -1638,7 +1738,11 @@ export async function adminMutationFailureState(page) {
     },
     switches,
     tableRows: await visibleTexts(page, adminTableRowSelector, 8),
-    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 6),
+    toastTexts: await visibleTexts(
+      page,
+      '[data-sonner-toast], .ant-message-notice, .ant-notification-notice',
+      6,
+    ),
   };
 }
 
@@ -1757,7 +1861,12 @@ export async function clickAdminTableRowDropdownAction(page, rowText, actionText
     const isInViewport = (element) => {
       if (!isVisible(element)) return false;
       const rect = element.getBoundingClientRect();
-      return rect.bottom > 0 && rect.right > 0 && rect.top < window.innerHeight && rect.left < window.innerWidth;
+      return (
+        rect.bottom > 0 &&
+        rect.right > 0 &&
+        rect.top < window.innerHeight &&
+        rect.left < window.innerWidth
+      );
     };
     const allRows = Array.from(document.querySelectorAll('.ant-table-tbody tr'));
     const row = allRows.find(
@@ -1771,9 +1880,13 @@ export async function clickAdminTableRowDropdownAction(page, rowText, actionText
     const triggerCandidates = [];
     const rowKey = row.getAttribute('data-row-key');
     if (rowKey !== null) {
-      for (const fixedRow of document.querySelectorAll('.ant-table-fixed-right .ant-table-tbody tr')) {
+      for (const fixedRow of document.querySelectorAll(
+        '.ant-table-fixed-right .ant-table-tbody tr',
+      )) {
         if (fixedRow.getAttribute('data-row-key') === rowKey) {
-          triggerCandidates.push(...fixedRow.querySelectorAll('.v2board-table-action .ant-dropdown-trigger'));
+          triggerCandidates.push(
+            ...fixedRow.querySelectorAll('.v2board-table-action .ant-dropdown-trigger'),
+          );
           triggerCandidates.push(...fixedRow.querySelectorAll('a'));
         }
       }
@@ -1783,17 +1896,21 @@ export async function clickAdminTableRowDropdownAction(page, rowText, actionText
       : [];
     const rowIndex = siblingRows.indexOf(row);
     if (rowIndex >= 0) {
-      const fixedRow = Array.from(document.querySelectorAll('.ant-table-fixed-right .ant-table-tbody tr'))[
-        rowIndex
-      ];
+      const fixedRow = Array.from(
+        document.querySelectorAll('.ant-table-fixed-right .ant-table-tbody tr'),
+      )[rowIndex];
       if (fixedRow) {
-        triggerCandidates.push(...fixedRow.querySelectorAll('.v2board-table-action .ant-dropdown-trigger'));
+        triggerCandidates.push(
+          ...fixedRow.querySelectorAll('.v2board-table-action .ant-dropdown-trigger'),
+        );
         triggerCandidates.push(...fixedRow.querySelectorAll('a'));
       }
     }
     triggerCandidates.push(...row.querySelectorAll('.v2board-table-action .ant-dropdown-trigger'));
     triggerCandidates.push(...row.querySelectorAll('a'));
-    const trigger = triggerCandidates.find(isInViewport) ?? triggerCandidates.find((element) => {
+    const trigger =
+      triggerCandidates.find(isInViewport) ??
+      triggerCandidates.find((element) => {
         const text = (element.textContent ?? '').trim().replace(/\s+/g, ' ');
         return isVisible(element) && text.includes('操作');
       });
@@ -1804,7 +1921,10 @@ export async function clickAdminTableRowDropdownAction(page, rowText, actionText
   }, rowText);
   await waitForVisibleText(page, '.ant-dropdown-menu-item', actionText);
   const point = await page.evaluate((targetActionText) => {
-    const normalizeText = (value) => String(value ?? '').trim().replace(/\s+/g, ' ');
+    const normalizeText = (value) =>
+      String(value ?? '')
+        .trim()
+        .replace(/\s+/g, ' ');
     const isVisible = (element) => {
       const rect = element.getBoundingClientRect();
       const style = window.getComputedStyle(element);
@@ -1819,7 +1939,12 @@ export async function clickAdminTableRowDropdownAction(page, rowText, actionText
     const isInViewport = (element) => {
       if (!isVisible(element)) return false;
       const rect = element.getBoundingClientRect();
-      return rect.bottom > 0 && rect.right > 0 && rect.top < window.innerHeight && rect.left < window.innerWidth;
+      return (
+        rect.bottom > 0 &&
+        rect.right > 0 &&
+        rect.top < window.innerHeight &&
+        rect.left < window.innerWidth
+      );
     };
     const elements = Array.from(document.querySelectorAll('.ant-dropdown-menu-item a')).filter(
       (element) => normalizeText(element.textContent) === normalizeText(targetActionText),

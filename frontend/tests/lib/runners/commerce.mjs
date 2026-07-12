@@ -8,6 +8,7 @@ import {
   orderPaymentState,
   clickOrderPaymentMethodAt,
   orderCheckoutState,
+  readStripeConfirmCount,
   waitForCreditCardSection,
 } from '../state-readers/commerce.mjs';
 import {
@@ -47,13 +48,25 @@ export async function runPlanCheckoutCouponInteraction(page) {
   await fillFirstVisible(page, checkoutCouponInputSelector, couponCheckFixture.code);
   await clickCouponVerifyButton(page);
   await page
-    .waitForFunction((couponName) => document.body.textContent.includes(couponName), couponCheckFixture.name, {
-      timeout: 5_000,
-    })
-    .catch(() => {});
+    .waitForFunction(
+      (couponName) => document.body.textContent.includes(couponName),
+      couponCheckFixture.name,
+      {
+        timeout: 5_000,
+      },
+    )
+    .catch((error) => {
+      // The frozen oracle may not render a coupon label even though the request
+      // completed; the state reader below remains the authoritative comparison.
+      void error;
+    });
 
   return {
-    activePeriodIndex: await safeVisibleElementDomIndex(page, checkoutCheckedPeriodOptionSelector, 0),
+    activePeriodIndex: await safeVisibleElementDomIndex(
+      page,
+      checkoutCheckedPeriodOptionSelector,
+      0,
+    ),
     activePeriods: await visibleTexts(page, checkoutCheckedPeriodOptionSelector, 2),
     couponInput: await firstInputValue(page, checkoutCouponInputSelector),
     selectCount,
@@ -62,7 +75,10 @@ export async function runPlanCheckoutCouponInteraction(page) {
       '#cashier [data-testid="checkout-summary"], #cashier .col-md-4 .block',
       4,
     ),
-    submitButton: await firstCommerceActionState(page, '#cashier [data-testid="commerce-submit"], #cashier .btn-block.btn-primary'),
+    submitButton: await firstCommerceActionState(
+      page,
+      '#cashier [data-testid="commerce-submit"], #cashier .btn-block.btn-primary',
+    ),
   };
 }
 
@@ -92,8 +108,15 @@ export async function runPlanCheckoutCouponErrorInteraction(page) {
       '#cashier [data-testid="checkout-summary"], #cashier .col-md-4 .block',
       4,
     ),
-    submitButton: await firstCommerceActionState(page, '#cashier [data-testid="commerce-submit"], #cashier .btn-block.btn-primary'),
-    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
+    submitButton: await firstCommerceActionState(
+      page,
+      '#cashier [data-testid="commerce-submit"], #cashier .btn-block.btn-primary',
+    ),
+    toastTexts: await visibleTexts(
+      page,
+      '[data-sonner-toast], .ant-message-notice, .ant-notification-notice',
+      4,
+    ),
   };
   return {
     after,
@@ -114,7 +137,10 @@ export async function runOrderPaymentMethodInteraction(page) {
 export async function runOrderQrCheckoutInteraction(page) {
   const initialCheckoutCount = page.__visualParityUserOrderCheckoutCount ?? 0;
   const before = await orderCheckoutState(page);
-  await clickFirstVisible(page, '#cashier [data-testid="commerce-submit"], #cashier .btn-block.btn-primary');
+  await clickFirstVisible(
+    page,
+    '#cashier [data-testid="commerce-submit"], #cashier .btn-block.btn-primary',
+  );
   await page.waitForTimeout(100);
   const loading = await orderCheckoutState(page);
   await waitForPagePropertyAtLeast(
@@ -128,6 +154,7 @@ export async function runOrderQrCheckoutInteraction(page) {
   });
   await page.waitForFunction(
     () => /等待支付中|Waiting for payment/i.test(document.body.textContent ?? ''),
+    null,
     { timeout: 5_000 },
   );
   await page.waitForTimeout(150);
@@ -143,7 +170,10 @@ export async function runOrderQrCheckoutInteraction(page) {
 export async function runOrderCheckoutFailureInteraction(page) {
   const initialCheckoutCount = page.__visualParityUserOrderCheckoutCount ?? 0;
   const before = await orderCheckoutState(page);
-  await clickFirstVisible(page, '#cashier [data-testid="commerce-submit"], #cashier .btn-block.btn-primary');
+  await clickFirstVisible(
+    page,
+    '#cashier [data-testid="commerce-submit"], #cashier .btn-block.btn-primary',
+  );
   await page.waitForTimeout(100);
   const loading = await orderCheckoutState(page);
   await waitForPagePropertyAtLeast(
@@ -165,79 +195,110 @@ export async function runOrderStripeDisabledCheckoutInteraction(page) {
   await waitForOrderPaymentMethodCount(page);
   const before = await orderCheckoutState(page);
   await clickOrderPaymentMethodAt(page, 1);
-  await waitForPagePropertyAtLeast(page, '__visualParityUserStripePublicKeyCount', 1);
+  await waitForPagePropertyAtLeast(page, '__visualParityUserStripePrepareCount', 1);
   await waitForCreditCardSection(page);
   await page.waitForTimeout(150);
   const selected = await orderCheckoutState(page);
   return {
     before,
     checkoutRequests: clonePageRequests(page.__visualParityUserOrderCheckoutRequests),
+    stripeIntentRequests: clonePageRequests(page.__visualParityUserStripeIntentRequests),
     selected,
   };
 }
 
-export async function runOrderStripeTokenCheckoutInteraction(page) {
+export async function runOrderStripePaymentIntentCheckoutInteraction(page) {
   const initialCheckoutCount = page.__visualParityUserOrderCheckoutCount ?? 0;
+  const initialConfirmCount = await readStripeConfirmCount(page);
   await waitForOrderPaymentMethodCount(page);
   const before = await orderCheckoutState(page);
   await clickOrderPaymentMethodAt(page, 1);
-  await waitForPagePropertyAtLeast(page, '__visualParityUserStripePublicKeyCount', 1);
+  await waitForPagePropertyAtLeast(page, '__visualParityUserStripePrepareCount', 1);
   await waitForCreditCardSection(page);
   await page.waitForFunction(
     () => {
-      const button = document.querySelector('#cashier [data-testid="commerce-submit"], #cashier .btn-block.btn-primary');
+      const button = document.querySelector(
+        '#cashier [data-testid="commerce-submit"], #cashier .btn-block.btn-primary',
+      );
       return button instanceof HTMLButtonElement && !button.disabled;
     },
+    null,
     { timeout: 5_000 },
   );
   await page.waitForTimeout(150);
   const selected = await orderCheckoutState(page);
-  await clickFirstVisible(page, '#cashier [data-testid="commerce-submit"], #cashier .btn-block.btn-primary');
-  await waitForPagePropertyAtLeast(
+  await clickFirstVisible(
     page,
-    '__visualParityUserOrderCheckoutCount',
-    initialCheckoutCount + 1,
+    '#cashier [data-testid="commerce-submit"], #cashier .btn-block.btn-primary',
   );
+  await waitForStripeCheckoutAttempt(page, initialCheckoutCount, initialConfirmCount);
   await page.waitForTimeout(350);
   const checkedOut = await orderCheckoutState(page);
   return {
     before,
     checkedOut,
     checkoutRequests: clonePageRequests(page.__visualParityUserOrderCheckoutRequests),
+    stripeIntentRequests: clonePageRequests(page.__visualParityUserStripeIntentRequests),
     selected,
   };
 }
 
-export async function runOrderStripeTokenCheckoutFailureInteraction(page) {
+export async function runOrderStripeConfirmationFailureInteraction(page) {
   const initialCheckoutCount = page.__visualParityUserOrderCheckoutCount ?? 0;
+  const initialConfirmCount = await readStripeConfirmCount(page);
   await waitForOrderPaymentMethodCount(page);
   const before = await orderCheckoutState(page);
   await clickOrderPaymentMethodAt(page, 1);
-  await waitForPagePropertyAtLeast(page, '__visualParityUserStripePublicKeyCount', 1);
+  await waitForPagePropertyAtLeast(page, '__visualParityUserStripePrepareCount', 1);
   await waitForCreditCardSection(page);
   await page.waitForFunction(
     () => {
-      const button = document.querySelector('#cashier [data-testid="commerce-submit"], #cashier .btn-block.btn-primary');
+      const button = document.querySelector(
+        '#cashier [data-testid="commerce-submit"], #cashier .btn-block.btn-primary',
+      );
       return button instanceof HTMLButtonElement && !button.disabled;
     },
+    null,
     { timeout: 5_000 },
   );
   await page.waitForTimeout(150);
   const selected = await orderCheckoutState(page);
-  await clickFirstVisible(page, '#cashier [data-testid="commerce-submit"], #cashier .btn-block.btn-primary');
-  await waitForPagePropertyAtLeast(
+  await clickFirstVisible(
     page,
-    '__visualParityUserOrderCheckoutCount',
-    initialCheckoutCount + 1,
+    '#cashier [data-testid="commerce-submit"], #cashier .btn-block.btn-primary',
   );
+  await waitForStripeCheckoutAttempt(page, initialCheckoutCount, initialConfirmCount);
   await page.waitForTimeout(350);
   const after = await orderCheckoutState(page);
   return {
     after,
     before,
     checkoutRequests: clonePageRequests(page.__visualParityUserOrderCheckoutRequests),
+    stripeIntentRequests: clonePageRequests(page.__visualParityUserStripeIntentRequests),
     selected,
   };
+}
+
+async function waitForStripeCheckoutAttempt(
+  page,
+  initialCheckoutCount,
+  initialConfirmCount,
+  timeout = 5_000,
+) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt <= timeout) {
+    // The source confirms its server-owned PaymentIntent in the browser. The
+    // frozen oracle instead posts its card token through the intercepted API,
+    // whose counter belongs to the Node-side Page object.
+    if (
+      (page.__visualParityUserOrderCheckoutCount ?? 0) > initialCheckoutCount ||
+      (await readStripeConfirmCount(page)) > initialConfirmCount
+    ) {
+      return;
+    }
+    await page.waitForTimeout(50);
+  }
+  throw new Error('Stripe checkout attempt was not observed');
 }
 
 export async function runOrderRedirectCheckoutInteraction(page) {
@@ -246,13 +307,16 @@ export async function runOrderRedirectCheckoutInteraction(page) {
   await clickOrderPaymentMethodAt(page, 2);
   await page.waitForTimeout(100);
   const selected = await orderCheckoutState(page);
-  await clickFirstVisible(page, '#cashier [data-testid="commerce-submit"], #cashier .btn-block.btn-primary');
+  await clickFirstVisible(
+    page,
+    '#cashier [data-testid="commerce-submit"], #cashier .btn-block.btn-primary',
+  );
   await waitForPagePropertyAtLeast(
     page,
     '__visualParityUserOrderCheckoutCount',
     initialCheckoutCount + 1,
   );
-  await page.waitForFunction(() => window.location.hash.includes('cashier=visual'), {
+  await page.waitForFunction(() => window.location.hash.includes('cashier=visual'), null, {
     timeout: 5_000,
   });
   await page.waitForTimeout(150);
@@ -265,16 +329,17 @@ export async function runOrderRedirectCheckoutInteraction(page) {
 }
 
 export async function runOrderCancelConfirmInteraction(page) {
-  const confirmSelector = '.v2board-confirm-dialog, .ant-modal-confirm, .ant-modal';
+  const confirmSelector = '[data-slot="alert-dialog-content"], .ant-modal-confirm, .ant-modal';
   const confirmButtonSelector =
-    '.v2board-confirm-dialog button, .ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn';
+    '[data-slot="alert-dialog-content"] button, .ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn';
   const confirmPrimarySelector =
-    '.v2board-confirm-primary, .ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary';
+    '[data-slot="alert-dialog-action"], .ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary';
   const cancelActionSelector = 'a, button, [role="button"]';
   const cancelLinkTexts = ['Cancel', '取消'];
   const initialOrderCancelCount = page.__visualParityUserOrderCancelCount ?? 0;
   const initialOrderFetchCount = page.__visualParityUserOrderFetchCount ?? 0;
-  const cancelLinks = (await visibleTextCount(page, cancelActionSelector, cancelLinkTexts)) > 0 ? 1 : 0;
+  const cancelLinks =
+    (await visibleTextCount(page, cancelActionSelector, cancelLinkTexts)) > 0 ? 1 : 0;
   if (!cancelLinks) {
     return {
       cancelLinks,
@@ -293,13 +358,13 @@ export async function runOrderCancelConfirmInteraction(page) {
     buttons: await visibleTexts(page, confirmButtonSelector, 4),
     content: await visibleTexts(
       page,
-      '.v2board-confirm-dialog, .v2board-confirm-content, .ant-modal-confirm-content, .ant-modal-body',
+      '[data-slot="alert-dialog-description"], .ant-modal-confirm-content, .ant-modal-body',
       2,
     ),
     modalCount: await visibleCount(page, confirmSelector),
     title: await visibleTexts(
       page,
-      '.v2board-confirm-title, .ant-modal-confirm-title, .ant-modal-title',
+      '[data-slot="alert-dialog-title"], .ant-modal-confirm-title, .ant-modal-title',
       2,
     ),
   };

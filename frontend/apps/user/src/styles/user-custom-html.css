@@ -1,173 +1,164 @@
 /*
- * Restored custom HTML styles for backend-rendered rich content (announcements,
- * knowledge articles, plan content, and the public homepage), scoped under
- * `.custom-html-style`. Merged from the former 14 single-rule
- * `user-custom-html-*.css` fragments in their original import order; the rules
- * are otherwise as shipped by the packaged user app, except the table-cell
- * `word-break: break-all` line, which was cascade-dead (the later header/body
- * cell rules always overrode it with `break-word` at equal specificity).
+ * Token-native prose for backend-authored knowledge, notices, plan content,
+ * and plan descriptions. The scope is deliberate: raw backend markup cannot
+ * carry Tailwind classes, while application chrome remains entirely shadcn.
  */
-
-/* Base color. */
 .custom-html-style {
-  color: #333;
+  color: var(--foreground);
+  font-size: 0.875rem;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
 }
 
-/* Heading rhythm. */
-.custom-html-style h1 {
-  font-size: 32px;
-  padding: 0;
-  border: none;
+.custom-html-style :where(h1, h2, h3, h4) {
+  color: var(--foreground);
   font-weight: 700;
-  margin: 32px 0;
-  line-height: 1.2;
+  line-height: 1.25;
+  text-wrap: balance;
+}
+
+.custom-html-style h1 {
+  margin-block: 2rem 1rem;
+  font-size: 2rem;
 }
 
 .custom-html-style h2 {
-  font-size: 24px;
-  padding: 0;
-  border: none;
-  font-weight: 700;
-  margin: 24px 0;
-  line-height: 1.7;
+  margin-block: 1.75rem 0.875rem;
+  font-size: 1.5rem;
 }
 
 .custom-html-style h3 {
-  font-size: 18px;
-  margin: 18px 0;
-  padding: 0;
-  line-height: 1.7;
-  border: none;
+  margin-block: 1.5rem 0.75rem;
+  font-size: 1.125rem;
 }
 
-/* Paragraph, link, and strong text. */
-.custom-html-style p {
-  font-size: 14px;
-  line-height: 1.7;
-  margin: 8px 0;
+.custom-html-style h4 {
+  margin-block: 1.25rem 0.625rem;
+  font-size: 1rem;
+}
+
+.custom-html-style :where(p, ul, ol, pre, blockquote, table) {
+  margin-block: 0.75rem;
 }
 
 .custom-html-style a {
-  color: #0052d9;
+  color: var(--primary);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--primary) 40%, transparent);
+  text-underline-offset: 0.2em;
 }
 
 .custom-html-style a:hover {
-  text-decoration: none;
+  text-decoration-color: var(--primary);
 }
 
 .custom-html-style strong {
+  color: var(--foreground);
   font-weight: 700;
 }
 
-/* List typography and spacing. */
-.custom-html-style ol,
+.custom-html-style :where(ol, ul) {
+  padding-inline-start: 1.5rem;
+}
+
 .custom-html-style ul {
-  font-size: 14px;
-  line-height: 28px;
-  padding-left: 36px;
+  list-style: disc;
+}
+
+.custom-html-style ol {
+  list-style: decimal;
 }
 
 .custom-html-style li {
-  margin-bottom: 8px;
-  line-height: 1.7;
+  margin-block: 0.25rem;
+  padding-inline-start: 0.25rem;
 }
 
-/* Horizontal rule spacing. */
 .custom-html-style hr {
-  margin-top: 20px;
-  margin-bottom: 20px;
+  margin-block: 1.5rem;
   border: 0;
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--border);
 }
 
-/* Preformatted code blocks. */
+.custom-html-style :where(pre, code) {
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  background: var(--muted);
+  color: var(--foreground);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+}
+
 .custom-html-style pre {
-  display: block;
-  background-color: #f5f5f5;
-  padding: 20px;
-  font-size: 14px;
-  line-height: 28px;
-  border-radius: 0;
+  max-width: 100%;
   overflow-x: auto;
-  word-break: break-word;
+  padding: 1rem;
+  font-size: 0.8125rem;
+  line-height: 1.65;
+  white-space: pre;
 }
 
-/* Inline code. */
-.custom-html-style code {
-  background-color: #f5f5f5;
+.custom-html-style :not(pre) > code {
+  padding: 0.125rem 0.35rem;
+  font-size: 0.85em;
+}
+
+.custom-html-style pre code {
+  border: 0;
   border-radius: 0;
-  padding: 3px 0;
-  margin: 0;
-  font-size: 14px;
-  overflow-x: auto;
-  word-break: normal;
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
 }
 
-.custom-html-style code::after,
-.custom-html-style code::before {
-  letter-spacing: 0;
-}
-
-/* Blockquotes. */
 .custom-html-style blockquote {
-  position: relative;
-  margin: 16px 0;
-  padding: 5px 8px 5px 30px;
-  background: rgba(102, 128, 153, 0.05);
-  color: #333;
-  border: none;
-  border-left: 10px solid #d6dbdf;
+  border-inline-start: 0.25rem solid var(--border);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: color-mix(in oklab, var(--muted) 60%, transparent);
+  color: var(--muted-foreground);
+  padding: 0.75rem 1rem;
 }
 
-/* Media sizing. */
-.custom-html-style img,
-.custom-html-style video {
+.custom-html-style :where(img, video) {
+  display: block;
   max-width: 100%;
+  height: auto;
+  border-radius: var(--radius);
 }
 
-/* Table shell layout. */
 .custom-html-style table {
-  font-size: 14px;
-  line-height: 1.7;
+  display: block;
+  width: max-content;
   max-width: 100%;
-  overflow: auto;
-  border: 1px solid #f6f6f6;
-  border-collapse: collapse;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  border-collapse: separate;
   border-spacing: 0;
-  box-sizing: border-box;
+  font-size: 0.8125rem;
 }
 
-/* Table text wrapping. */
-.custom-html-style table td,
-.custom-html-style table th {
-  word-wrap: break-word;
+.custom-html-style table th,
+.custom-html-style table td {
+  min-width: 4rem;
+  border-inline-end: 1px solid var(--border);
+  border-block-end: 1px solid var(--border);
+  padding: 0.625rem 0.75rem;
+  text-align: start;
+  vertical-align: top;
   white-space: normal;
 }
 
-/* Table row borders and alternating row state. */
-.custom-html-style table tr {
-  border: 1px solid #efefef;
-}
-
-.custom-html-style table tr:nth-child(2n) {
-  background-color: transparent;
-}
-
-/* Table header cells. */
 .custom-html-style table th {
-  text-align: center;
-  font-weight: 700;
-  border: 1px solid #efefef;
-  padding: 10px 6px;
-  background-color: #f5f7fa;
-  word-break: break-word;
+  background: var(--muted);
+  color: var(--foreground);
+  font-weight: 600;
 }
 
-/* Table body cells. */
-.custom-html-style table td {
-  border: 1px solid #efefef;
-  text-align: left;
-  padding: 10px 15px;
-  min-width: 60px;
-  word-break: break-word;
+.custom-html-style table tr:last-child > * {
+  border-block-end: 0;
+}
+
+.custom-html-style table tr > *:last-child {
+  border-inline-end: 0;
 }

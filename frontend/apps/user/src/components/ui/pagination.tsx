@@ -1,22 +1,7 @@
-import {
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
-} from 'lucide-react';
-import {
-  type HTMLAttributes,
-  type LiHTMLAttributes,
-  type Ref,
-} from 'react';
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { type HTMLAttributes, type LiHTMLAttributes, type Ref } from 'react';
 import { Button, type ButtonProps } from './button';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from './select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './select';
 import { cn } from '@/lib/cn';
 
 type PaginationItemValue = number | 'jump-prev' | 'jump-next';
@@ -82,7 +67,9 @@ function PaginationItem({
   ref,
   ...props
 }: LiHTMLAttributes<HTMLLIElement> & { ref?: Ref<HTMLLIElement> }) {
-  return <li ref={ref} data-slot="pagination-item" className={cn('inline-flex', className)} {...props} />;
+  return (
+    <li ref={ref} data-slot="pagination-item" className={cn('inline-flex', className)} {...props} />
+  );
 }
 
 function PaginationButton({
@@ -107,11 +94,6 @@ function PaginationButton({
 function getPaginationPageCount(total: number, pageSize: number) {
   if (pageSize <= 0) return 0;
   return Math.floor((total - 1) / pageSize) + 1;
-}
-
-function getPaginationMaxCurrent(total: number, current: number, pageSize: number) {
-  const pageCount = getPaginationPageCount(total, pageSize);
-  return (current - 1) * pageSize >= total ? pageCount : current;
 }
 
 function getPaginationItems(current: number, totalPages: number): PaginationItemValue[] {
@@ -146,9 +128,7 @@ function PaginationControl({
   const safeCurrent = totalPages > 0 ? Math.min(Math.max(current, 1), totalPages) : 0;
   const items = getPaginationItems(safeCurrent, totalPages);
   const jumpPage = (item: 'jump-prev' | 'jump-next') =>
-    item === 'jump-prev'
-      ? Math.max(1, safeCurrent - 5)
-      : Math.min(totalPages, safeCurrent + 5);
+    item === 'jump-prev' ? Math.max(1, safeCurrent - 5) : Math.min(totalPages, safeCurrent + 5);
   const changePage = (targetPage: number) => {
     if (totalPages <= 0) return;
     onChange(Math.min(Math.max(targetPage, 1), totalPages), pageSize);
@@ -224,10 +204,17 @@ function PaginationControl({
         onValueChange={(value) => {
           const nextPageSize = Number.parseInt(value, 10);
           const nextTotalPages = getPaginationPageCount(total, nextPageSize);
-          onChange(nextTotalPages === 0 ? safeCurrent : Math.min(safeCurrent, nextTotalPages), nextPageSize);
+          onChange(
+            nextTotalPages === 0 ? safeCurrent : Math.min(safeCurrent, nextTotalPages),
+            nextPageSize,
+          );
         }}
       >
-        <SelectTrigger className="h-9 w-full sm:w-36" data-testid={testIds?.pageSize}>
+        <SelectTrigger
+          aria-label={labels.itemsPerPage}
+          className="h-9 w-full sm:w-36"
+          data-testid={testIds?.pageSize}
+        >
           <SelectValue />
         </SelectTrigger>
         <SelectContent align="end">
@@ -242,4 +229,4 @@ function PaginationControl({
   );
 }
 
-export { PaginationControl, getPaginationMaxCurrent };
+export { PaginationControl };

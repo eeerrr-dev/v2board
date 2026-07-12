@@ -1,52 +1,47 @@
-import { useState } from 'react';
-import type { ParseKeys } from 'i18next';
+import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Gift } from 'lucide-react';
-import { ApiError } from '@v2board/api-client';
 import { formatCentsPlain } from '@v2board/config/format';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Form, FormControl, FormField, FormItem, FormLabel } from '@/components/ui/form';
+import { Field, FieldError, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { useRedeemGiftCardMutation } from '@/lib/queries';
 import { toast } from '@/lib/toast';
 import { SectionIcon } from './profile-ui';
 
 const giftCardSchema = z.object({
-  code: z.string().min(1),
+  code: z.string().min(1, 'profile.redeem_placeholder'),
 });
 
 type GiftCardFormValues = z.infer<typeof giftCardSchema>;
 
+const GIFT_CARD_CODE_ID = 'profile-gift-card-code';
+
 export function GiftCardCard() {
   const { t } = useTranslation();
   const redeem = useRedeemGiftCardMutation();
-  const [redeemTimeoutStuck, setRedeemTimeoutStuck] = useState(false);
   const giftCardForm = useForm<GiftCardFormValues>({
     resolver: zodResolver(giftCardSchema),
     defaultValues: { code: '' },
   });
 
-  const redeemLoading = redeem.isPending || redeemTimeoutStuck;
-
   const onRedeem = giftCardForm.handleSubmit(
-    async ({ code }) => {
-      setRedeemTimeoutStuck(false);
-      try {
-        const result = await redeem.mutateAsync(code);
-        toast.success(
-          t('profile.redeem_success', {
-            detail: redeemGiftcardText(result.type, result.value, t),
-          }),
-        );
-      } catch (error) {
-        if (isTransportError(error)) setRedeemTimeoutStuck(true);
-      }
+    ({ code }) => {
+      redeem.mutate(code, {
+        onSuccess: (result) => {
+          toast.success(
+            t($ => $.profile.redeem_success, {
+              detail: redeemGiftcardText(result.type, result.value, t),
+            }),
+          );
+        },
+      });
     },
-    () => toast.error(t('profile.redeem_placeholder')),
+    () => toast.error(t($ => $.profile.redeem_placeholder)),
   );
 
   return (
@@ -57,41 +52,45 @@ export function GiftCardCard() {
             <Gift className="size-4" />
           </SectionIcon>
           <CardTitle className="text-lg" data-testid="profile-card-title">
-            {t('profile.redeem_giftcard')}
+            {t($ => $.profile.redeem_giftcard)}
           </CardTitle>
         </div>
       </CardHeader>
       <CardContent>
-        <Form {...giftCardForm}>
-          <form className="space-y-4" onSubmit={onRedeem} noValidate>
-            <FormField
-              control={giftCardForm.control}
-              name="code"
-              render={({ field, fieldState }) => (
-                <FormItem className="gap-2.5">
-                  <FormLabel>{t('profile.redeem_giftcard')}</FormLabel>
-                  <FormControl>
-                    <Input
-                      data-testid="profile-giftcard-input"
-                      placeholder={t('profile.redeem_placeholder')}
-                      autoComplete="one-time-code"
-                      invalid={fieldState.error ? true : undefined}
-                      {...field}
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-            <Button
-              type="submit"
-              className="w-full sm:w-fit"
-              data-testid="profile-redeem-button"
-              loading={redeemLoading}
-            >
-              {t('profile.redeem_submit')}
-            </Button>
-          </form>
-        </Form>
+        <form className="space-y-4" onSubmit={onRedeem} noValidate>
+          <Controller
+            control={giftCardForm.control}
+            name="code"
+            render={({ field, fieldState }) => {
+              const errorId = `${GIFT_CARD_CODE_ID}-error`;
+              return (
+                <Field className="gap-2.5" data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor={GIFT_CARD_CODE_ID}>
+                    {t($ => $.profile.redeem_giftcard)}
+                  </FieldLabel>
+                  <Input
+                    {...field}
+                    id={GIFT_CARD_CODE_ID}
+                    data-testid="profile-giftcard-input"
+                    placeholder={t($ => $.profile.redeem_placeholder)}
+                    autoComplete="one-time-code"
+                    aria-invalid={fieldState.invalid}
+                    aria-describedby={fieldState.invalid ? errorId : undefined}
+                  />
+                  <FieldError id={errorId} errors={[fieldState.error]} />
+                </Field>
+              );
+            }}
+          />
+          <Button
+            type="submit"
+            className="w-full sm:w-fit"
+            data-testid="profile-redeem-button"
+            loading={redeem.isPending}
+          >
+            {t($ => $.profile.redeem_submit)}
+          </Button>
+        </form>
       </CardContent>
     </Card>
   );
@@ -99,33 +98,24 @@ export function GiftCardCard() {
 
 function redeemGiftcardText(
   type: number,
-  value: number,
-  // A minimal callable instead of the full TFunction: passing the heavy i18next
-  // t type into this helper and calling it with interpolation overflows the TS
-  // instantiation depth (TS2589). Keys are still checked against ParseKeys.
-  t: (key: ParseKeys, options?: Record<string, string | number>) => string,
+  value: number | null,
+  t: TFunction,
 ) {
+  if (value === null) {
+    return type === 4 ? t($ => $.profile.redeem_reset) : t($ => $.profile.redeem_unknown);
+  }
   switch (type) {
     case 1:
-      return t('profile.redeem_balance', { amount: formatCentsPlain(value) });
+      return t($ => $.profile.redeem_balance, { amount: formatCentsPlain(value) });
     case 2:
-      return t('profile.redeem_days', { days: value });
+      return t($ => $.profile.redeem_days, { days: value });
     case 3:
-      return t('profile.redeem_traffic', { traffic: value });
+      return t($ => $.profile.redeem_traffic, { traffic: value });
     case 4:
-      return t('profile.redeem_reset');
+      return t($ => $.profile.redeem_reset);
     case 5:
-      return t('profile.redeem_plan_days', { days: value });
+      return t($ => $.profile.redeem_plan_days, { days: value });
     default:
-      return t('profile.redeem_unknown');
+      return t($ => $.profile.redeem_unknown);
   }
-}
-
-// A gift-card redeem that never gets a backend response (timeout / network
-// drop) leaves the button in the legacy "stuck loading" state. The api-client
-// already models every transport-level failure as ApiError.status === 0, so key
-// off that structured signal instead of string-sniffing the message (the same
-// anti-pattern api.test.ts forbids in the api layer).
-function isTransportError(error: unknown) {
-  return error instanceof ApiError && error.status === 0;
 }

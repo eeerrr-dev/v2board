@@ -9,7 +9,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/shadcn-dialog';
+} from '@/components/ui/dialog';
+import { ErrorState } from '@/components/ui/error-state';
 import { Spinner } from '@/components/ui/spinner';
 import {
   useCommConfig,
@@ -18,7 +19,7 @@ import {
   useUnbindTelegramMutation,
   useUserInfo,
 } from '@/lib/queries';
-import { copyText } from '@/lib/legacy-settings';
+import { copyText } from '@v2board/config/clipboard';
 import { toast } from '@/lib/toast';
 import { ProfileConfirmDialog, SectionIcon } from './profile-ui';
 
@@ -26,9 +27,8 @@ export function TelegramBindCard() {
   const { t } = useTranslation();
   const { data: comm } = useCommConfig({ refetchOnMount: 'always' });
   const info = useUserInfo({ refetchOnMount: 'always' });
-  // The original /profile never dispatches user/getSubscribe on mount; it only
-  // reads whatever subscribe data already sits in the store and re-fetches
-  // solely after unbinding Telegram. Keep that contract (enabled: false).
+  // The bind command may reuse subscription data already fetched by another
+  // surface, but this card never creates an extra request merely to render.
   const subscribeQuery = useSubscribe({ enabled: false });
   const unbindTelegram = useUnbindTelegramMutation();
   const [telegramOpen, setTelegramOpen] = useState(false);
@@ -39,15 +39,11 @@ export function TelegramBindCard() {
 
   const onConfirmUnbind = () => {
     setConfirmOpen(false);
-    void unbindTelegram
-      .mutateAsync()
-      .then(() => {
-        toast.success(t('profile.reset_success'));
-        // The mutation invalidates the user record; the subscribe query is
-        // disabled, so it still needs an explicit refetch here.
-        void subscribeQuery.refetch();
-      })
-      .catch(() => {});
+    unbindTelegram.mutate(undefined, {
+      onSuccess: () => {
+        toast.success(t($ => $.profile.reset_success));
+      },
+    });
   };
 
   if (!comm?.is_telegram) return null;
@@ -63,7 +59,7 @@ export function TelegramBindCard() {
                   <Send className="size-4" />
                 </SectionIcon>
                 <CardTitle className="text-lg" data-testid="profile-card-title">
-                  {t('profile.telegram_bind')}
+                  {t($ => $.profile.telegram_bind)}
                 </CardTitle>
               </div>
               <Button
@@ -71,7 +67,7 @@ export function TelegramBindCard() {
                 size="sm"
                 onClick={() => setTelegramOpen(true)}
               >
-                {t('profile.start_now')}
+                {t($ => $.profile.start_now)}
               </Button>
             </div>
           </CardHeader>
@@ -82,7 +78,7 @@ export function TelegramBindCard() {
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-1.5">
                 <CardTitle className="text-lg" data-testid="profile-card-title">
-                  {t('profile.telegram_bind')}
+                  {t($ => $.profile.telegram_bind)}
                 </CardTitle>
                 <CardDescription data-testid="profile-telegram-id">
                   Telegram ID: {String(data.telegram_id)}
@@ -94,7 +90,7 @@ export function TelegramBindCard() {
                 size="sm"
                 onClick={() => setConfirmOpen(true)}
               >
-                {t('profile.telegram_unbind')}
+                {t($ => $.profile.telegram_unbind)}
               </Button>
             </div>
           </CardHeader>
@@ -104,13 +100,16 @@ export function TelegramBindCard() {
       <TelegramBindDialog
         open={telegramOpen}
         botUsername={botInfo.data?.username}
+        botError={botInfo.isError || (botInfo.isSuccess && !botInfo.data?.username)}
+        botLoading={botInfo.isPending || botInfo.isFetching}
         subscribeUrl={subscribeQuery.data?.subscribe_url}
+        onRetry={() => void botInfo.refetch()}
         onClose={() => setTelegramOpen(false)}
       />
       <ProfileConfirmDialog
         open={confirmOpen}
-        title={t('profile.telegram_unbind_confirm')}
-        description={t('profile.telegram_unbind_tip')}
+        title={t($ => $.profile.telegram_unbind_confirm)}
+        description={t($ => $.profile.telegram_unbind_tip)}
         onCancel={() => setConfirmOpen(false)}
         onConfirm={onConfirmUnbind}
       />
@@ -133,12 +132,12 @@ export function TelegramDiscussCard() {
               <MessageCircle className="size-4" />
             </SectionIcon>
             <CardTitle className="text-lg" data-testid="profile-card-title">
-              {t('profile.telegram_discuss')}
+              {t($ => $.profile.telegram_discuss)}
             </CardTitle>
           </div>
           <Button asChild size="sm">
             <a href={comm.telegram_discuss_link} target="_blank" rel="noreferrer">
-              {t('profile.join_now')}
+              {t($ => $.profile.join_now)}
             </a>
           </Button>
         </div>
@@ -148,13 +147,19 @@ export function TelegramDiscussCard() {
 }
 
 function TelegramBindDialog({
+  botError,
+  botLoading,
   botUsername,
   onClose,
+  onRetry,
   open,
   subscribeUrl,
 }: {
+  botError: boolean;
+  botLoading: boolean;
   botUsername?: string;
   onClose: () => void;
+  onRetry: () => void;
   open: boolean;
   subscribeUrl?: string;
 }) {
@@ -165,17 +170,19 @@ function TelegramBindDialog({
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
       <DialogContent data-testid="profile-telegram-bind-dialog" aria-describedby={undefined}>
         <DialogHeader>
-          <DialogTitle>{t('profile.telegram_bind')}</DialogTitle>
+          <DialogTitle>{t($ => $.profile.telegram_bind)}</DialogTitle>
         </DialogHeader>
-        {botUsername ? (
+        {botError ? (
+          <ErrorState onRetry={onRetry} data-testid="profile-telegram-bot-error" />
+        ) : botUsername ? (
           <div className="space-y-6">
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-sm font-medium">
                 <Link2 className="size-4 text-muted-foreground" />
-                {t('profile.telegram_step1')}
+                {t($ => $.profile.telegram_step1)}
               </div>
               <div className="text-sm text-muted-foreground">
-                {t('profile.telegram_search')}
+                {t($ => $.profile.telegram_search)}
                 <a
                   href={`https://t.me/${botUsername}`}
                   className="ml-1 font-medium text-foreground underline underline-offset-4"
@@ -187,29 +194,35 @@ function TelegramBindDialog({
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-sm font-medium">
                 <Copy className="size-4 text-muted-foreground" />
-                {t('profile.telegram_step2')}
+                {t($ => $.profile.telegram_step2)}
               </div>
-              <div className="text-sm text-muted-foreground">{t('profile.telegram_send')}</div>
+              <div className="text-sm text-muted-foreground">{t($ => $.profile.telegram_send)}</div>
               <button
                 type="button"
                 className="flex w-full cursor-pointer rounded-md border border-border bg-muted px-3 py-2 text-left font-mono text-sm text-foreground"
                 data-testid="profile-copy-code"
                 onClick={async () => {
-                  if (await copyText(bindCommand)) toast.success(t('dashboard.copy_success'));
+                  if (await copyText(bindCommand)) toast.success(t($ => $.dashboard.copy_success));
                 }}
               >
                 {bindCommand}
               </button>
             </div>
           </div>
-        ) : (
-          <div className="flex min-h-24 items-center justify-center">
+        ) : botLoading ? (
+          <div
+            className="flex min-h-24 items-center justify-center gap-2 text-sm text-muted-foreground"
+            role="status"
+          >
             <Spinner />
+            <span>{t($ => $.common.loading)}</span>
           </div>
+        ) : (
+          <ErrorState onRetry={onRetry} data-testid="profile-telegram-bot-error" />
         )}
         <DialogFooter>
           <Button data-testid="profile-telegram-bind-confirm" onClick={onClose}>
-            {t('profile.i_know')}
+            {t($ => $.profile.i_know)}
           </Button>
         </DialogFooter>
       </DialogContent>

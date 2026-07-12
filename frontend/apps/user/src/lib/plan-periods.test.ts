@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ParseKeys } from 'i18next';
+import { keyFromSelector } from 'i18next';
 import type { PlanPeriod } from '@v2board/types';
 import {
   PLAN_PERIOD_LABELS,
@@ -14,7 +14,7 @@ import {
 // (PERIOD_LABEL_KEY), plans/index.tsx (PERIOD_PRICES). When those pages adopt
 // lib/plan-periods, these frozen copies keep pinning the derived shapes.
 
-const PAGE_PERIOD_LABEL_MAP: Record<PlanPeriod, ParseKeys> = {
+const PAGE_PERIOD_LABEL_MAP: Record<PlanPeriod, string> = {
   month_price: 'plan.monthly',
   quarter_price: 'plan.quarterly',
   half_year_price: 'plan.half_year',
@@ -28,7 +28,7 @@ const PAGE_PERIOD_LABEL_MAP: Record<PlanPeriod, ParseKeys> = {
 const CHECKOUT_PERIODS: {
   key: PurchasablePlanPeriod;
   period: PurchasablePlanPeriod;
-  labelKey: ParseKeys;
+  labelKey: string;
 }[] = [
   { key: 'month_price', period: 'month_price', labelKey: 'plan.monthly' },
   { key: 'quarter_price', period: 'quarter_price', labelKey: 'plan.quarterly' },
@@ -39,7 +39,7 @@ const CHECKOUT_PERIODS: {
   { key: 'onetime_price', period: 'onetime_price', labelKey: 'plan.onetime' },
 ];
 
-const PLANS_PERIOD_PRICES: { key: PurchasablePlanPeriod; labelKey: ParseKeys }[] = [
+const PLANS_PERIOD_PRICES: { key: PurchasablePlanPeriod; labelKey: string }[] = [
   { key: 'month_price', labelKey: 'plan.monthly' },
   { key: 'quarter_price', labelKey: 'plan.quarterly' },
   { key: 'half_year_price', labelKey: 'plan.half_year' },
@@ -54,7 +54,14 @@ describe('plan-periods canonical tables', () => {
     // checkout.tsx PERIOD_LABELS, orders/index.tsx PERIOD_LABEL, and
     // orders/detail.tsx PERIOD_LABEL_KEY are the identical literal; key
     // insertion order included.
-    expect(JSON.stringify(PLAN_PERIOD_LABELS)).toBe(JSON.stringify(PAGE_PERIOD_LABEL_MAP));
+    expect(
+      Object.fromEntries(
+        Object.entries(PLAN_PERIOD_LABELS).map(([period, selector]) => [
+          period,
+          keyFromSelector(selector),
+        ]),
+      ),
+    ).toEqual(PAGE_PERIOD_LABEL_MAP);
   });
 
   it('orders every plan period exactly once, in label-map key order', () => {
@@ -73,7 +80,7 @@ describe('plan-periods canonical tables', () => {
     const derived = PURCHASABLE_PLAN_PERIODS.map((key) => ({
       key,
       period: key,
-      labelKey: PLAN_PERIOD_LABELS[key],
+      labelKey: keyFromSelector(PLAN_PERIOD_LABELS[key]),
     }));
     expect(derived).toEqual(CHECKOUT_PERIODS);
     expect(JSON.stringify(derived)).toBe(JSON.stringify(CHECKOUT_PERIODS));
@@ -82,7 +89,7 @@ describe('plan-periods canonical tables', () => {
   it("rebuilds plans' PERIOD_PRICES byte-for-byte", () => {
     const derived = PURCHASABLE_PLAN_PERIODS.map((key) => ({
       key,
-      labelKey: PLAN_PERIOD_LABELS[key],
+      labelKey: keyFromSelector(PLAN_PERIOD_LABELS[key]),
     }));
     expect(derived).toEqual(PLANS_PERIOD_PRICES);
     expect(JSON.stringify(derived)).toBe(JSON.stringify(PLANS_PERIOD_PRICES));

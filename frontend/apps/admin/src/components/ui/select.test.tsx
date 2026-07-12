@@ -1,12 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from './select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './select';
 
 describe('Select', () => {
   it('composes Radix select primitives with shadcn classes', () => {
@@ -31,13 +25,13 @@ describe('Select', () => {
   it('renders invalid trigger state with destructive treatment', () => {
     const html = renderToStaticMarkup(
       <Select>
-        <SelectTrigger invalid>
+        <SelectTrigger aria-invalid>
           <SelectValue placeholder="Choose" />
         </SelectTrigger>
       </Select>,
     );
 
     expect(html).toContain('aria-invalid="true"');
-    expect(html).toContain('border-destructive');
+    expect(html).toContain('aria-invalid:border-destructive');
   });
 });

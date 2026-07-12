@@ -1,11 +1,14 @@
-import { cloneElement, useEffect, useRef, useState, type ReactElement } from 'react';
-import { admin } from '@v2board/api-client';
+import { useCallback, useEffect, useState } from 'react';
+import { zodResolver } from '@hookform/resolvers/zod';
+import type { admin } from '@v2board/api-client';
 import type { AdminPayment, PaymentFormDefinition } from '@v2board/types';
 import { ArrowDown, ArrowUp, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
-import { apiClient } from '@/lib/api';
+import { Controller, useForm, useWatch } from 'react-hook-form';
 import {
   useAdminPayments,
   useDropPaymentMutation,
+  usePaymentForm,
+  usePaymentMethods,
   useSavePaymentMutation,
   useShowPaymentMutation,
   useSortPaymentMutation,
@@ -15,9 +18,16 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { HeaderTooltip } from '@/components/ui/header-tooltip';
+import { Field, FieldError, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+  InputGroupText,
+} from '@/components/ui/input-group';
 import { PageHeader, PageShell } from '@/components/ui/page';
+import { ErrorState } from '@/components/ui/error-state';
 import {
   Select,
   SelectContent,
@@ -28,6 +38,7 @@ import {
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetFooter,
   SheetHeader,
   SheetTitle,
@@ -36,207 +47,362 @@ import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { DataTable, type DataTableColumn } from '@/components/ui/table';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { paymentFormSchema, type PaymentEditorValues } from './payment-form-schema';
 
 type SavePaymentPayload = Parameters<typeof admin.savePayment>[1];
 
+function paymentEditorValues(record?: AdminPayment): PaymentEditorValues {
+  if (!record) {
+    return {
+      name: '',
+      icon: '',
+      notify_domain: '',
+      handling_fee_percent: '',
+      handling_fee_fixed: '',
+      payment: '',
+      config: {},
+    };
+  }
+  return {
+    id: record.id,
+    name: record.name,
+    icon: record.icon ?? '',
+    notify_domain: record.notify_domain ?? '',
+    // The backend models “no percentage fee” as nullable and rejects 0 on save
+    // (`between:0.1,100`), while older rows may still expose a persisted zero.
+    handling_fee_percent: record.handling_fee_percent || '',
+    handling_fee_fixed:
+      record.handling_fee_fixed == null ? '' : String(Number(record.handling_fee_fixed) / 100),
+    payment: record.payment,
+    config: record.config,
+  };
+}
+
+function configForDefinition(
+  definition: PaymentFormDefinition,
+  existing: Record<string, string>,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(definition).map(([key, field]) => [key, existing[key] ?? field.value ?? '']),
+  );
+}
+
 function PaymentEditor({
   record,
-  fetchLoading,
-  children,
+  open,
+  returnFocus,
+  pending,
+  onOpenChange,
   onSave,
-  onSaved,
 }: {
   record?: AdminPayment;
-  fetchLoading: boolean;
-  children: ReactElement<{ onClick?: () => void }>;
-  onSave: (payload: SavePaymentPayload) => Promise<unknown>;
-  onSaved: () => void;
+  open: boolean;
+  returnFocus: HTMLButtonElement;
+  pending: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSave: (payload: SavePaymentPayload, onSuccess: () => void) => void;
 }) {
-  const [submit, setSubmit] = useState<Record<string, unknown>>(() => ({ ...(record ?? {}) }));
-  const [open, setOpen] = useState(false);
-  const [paymentMethods, setPaymentMethods] = useState<string[]>([]);
-  const [selectPaymentMethod, setSelectPaymentMethod] = useState<string | undefined>(undefined);
-  const [form, setForm] = useState<PaymentFormDefinition>({});
-  const [config, setConfig] = useState<Record<string, unknown>>(() => ({
-    ...(record?.config ?? {}),
-  }));
+  const form = useForm<PaymentEditorValues>({
+    resolver: zodResolver(paymentFormSchema),
+    defaultValues: paymentEditorValues(record),
+  });
+  const selectedPaymentMethod = useWatch({ control: form.control, name: 'payment' });
+  const paymentMethodsQuery = usePaymentMethods(open);
+  const definitionQuery = usePaymentForm(
+    selectedPaymentMethod,
+    record?.id,
+    open && Boolean(selectedPaymentMethod),
+  );
+  const paymentMethods = paymentMethodsQuery.data ?? [];
+  const definition = definitionQuery.data;
+  const methodsLoading = open && (paymentMethodsQuery.isPending || paymentMethodsQuery.isFetching);
+  const methodsError = open && paymentMethodsQuery.isError;
+  const methodsEmpty =
+    open &&
+    !methodsLoading &&
+    !methodsError &&
+    paymentMethodsQuery.data !== undefined &&
+    paymentMethods.length === 0;
+  const definitionLoading =
+    open &&
+    Boolean(selectedPaymentMethod) &&
+    (definitionQuery.isPending || definitionQuery.isFetching);
+  const definitionError = open && Boolean(selectedPaymentMethod) && definitionQuery.isError;
+  const definitionEmpty =
+    open &&
+    Boolean(selectedPaymentMethod) &&
+    !definitionLoading &&
+    !definitionError &&
+    definition !== undefined &&
+    Object.keys(definition).length === 0;
+  const definitionReady =
+    open &&
+    Boolean(selectedPaymentMethod) &&
+    !definitionLoading &&
+    !definitionError &&
+    definition !== undefined &&
+    Object.keys(definition).length > 0;
+  const editorReady = open && !methodsLoading && !methodsError && !methodsEmpty && definitionReady;
 
-  const submitOnChange = (key: string, value: unknown) => {
-    setSubmit((current) => ({ ...current, [key]: value }));
-  };
+  const onSelectPaymentMethod = useCallback(
+    (payment: string | undefined) => {
+      if (!payment) return;
+      const previousPayment = form.getValues('payment');
+      const previousConfig = form.getValues('config');
+      form.setValue('payment', payment, { shouldDirty: true, shouldValidate: true });
+      // Clear every key owned by the previous driver immediately. The keyed
+      // payment-form query will hydrate only the selected driver's definition;
+      // a late response for another key is never observed by this editor.
+      const existingConfig =
+        previousPayment === payment
+          ? previousConfig
+          : record?.payment === payment
+            ? record.config
+            : {};
+      form.setValue('config', existingConfig, {
+        shouldDirty: previousPayment !== payment,
+        shouldValidate: true,
+      });
+    },
+    [form, record],
+  );
 
-  const configOnChange = (key: string, value: unknown) => {
-    setConfig((current) => ({ ...current, [key]: value }));
-  };
+  useEffect(() => {
+    const firstMethod = paymentMethodsQuery.data?.[0];
+    if (!open || methodsLoading || methodsError || selectedPaymentMethod || !firstMethod) return;
+    onSelectPaymentMethod(firstMethod);
+  }, [
+    methodsError,
+    methodsLoading,
+    onSelectPaymentMethod,
+    open,
+    paymentMethodsQuery.data,
+    selectedPaymentMethod,
+  ]);
 
-  const onSelectPaymentMethod = async (payment: string | undefined) => {
-    const nextForm = await admin.paymentForm(apiClient, payment, record?.id);
-    setForm(nextForm);
-    setSelectPaymentMethod(payment);
-  };
-
-  const show = async () => {
-    const methods = await admin.paymentMethods(apiClient);
-    const selected = record?.payment || methods[0];
-    setPaymentMethods(methods);
-    setSelectPaymentMethod(selected);
-    setOpen(true);
-    await onSelectPaymentMethod(selected);
-  };
-
-  const save = async () => {
-    await onSave({
-      ...submit,
-      payment: selectPaymentMethod,
-      config,
-    } as SavePaymentPayload);
-    setOpen(false);
-    onSaved();
-  };
+  const save = form.handleSubmit((values) => {
+    if (!editorReady || !definition) return;
+    onSave(
+      {
+        ...values,
+        config: configForDefinition(definition, values.config),
+      },
+      () => onOpenChange(false),
+    );
+  });
 
   return (
-    <>
-      {cloneElement(children, { onClick: show })}
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent
-          side="right"
-          className="w-full gap-0 overflow-y-auto sm:max-w-md"
-          data-testid="payment-editor"
-        >
-          <SheetHeader>
-            <SheetTitle>{submit.id ? '编辑支付方式' : '添加支付方式'}</SheetTitle>
-          </SheetHeader>
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="right"
+        className="w-full gap-0 overflow-y-auto sm:max-w-md"
+        data-testid="payment-editor"
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          if (returnFocus.isConnected) returnFocus.focus();
+        }}
+      >
+        <SheetHeader>
+          <SheetTitle>{record?.id ? '编辑支付方式' : '添加支付方式'}</SheetTitle>
+          <SheetDescription>配置支付驱动、显示信息、手续费和网关参数。</SheetDescription>
+        </SheetHeader>
 
-          <div className="space-y-4 px-4 pb-4">
-            <div className="space-y-2">
-              <Label htmlFor="payment-name">显示名称</Label>
-              <Input
-                id="payment-name"
-                placeholder="用于前端显示使用"
-                defaultValue={submit.name as string | undefined}
-                onChange={(event) => submitOnChange('name', event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="payment-icon">图标URL(选填)</Label>
-              <Input
-                id="payment-icon"
-                placeholder="用于前端显示使用(https://x.com/icon.svg)"
-                defaultValue={submit.icon as string | undefined}
-                onChange={(event) => submitOnChange('icon', event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="payment-notify">自定义通知域名(选填)</Label>
-              <Input
-                id="payment-notify"
-                placeholder="网关的通知将会发送到该域名(https://x.com)"
-                defaultValue={submit.notify_domain as string | undefined}
-                onChange={(event) => submitOnChange('notify_domain', event.target.value)}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label htmlFor="payment-fee-percent">百分比手续费(选填)</Label>
-                <div className="relative">
-                  <Input
-                    id="payment-fee-percent"
-                    type="number"
-                    className="pr-8"
-                    placeholder="在订单金额基础上附加手续费"
-                    defaultValue={submit.handling_fee_percent as string | number | undefined}
-                    onChange={(event) => submitOnChange('handling_fee_percent', event.target.value)}
-                  />
-                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground">
-                    %
-                  </span>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="payment-fee-fixed">固定手续费(选填)</Label>
-                <Input
-                  id="payment-fee-fixed"
+        <form id="payment-editor-form" className="space-y-4 px-4 pb-4" onSubmit={save} noValidate>
+          <Field data-invalid={Boolean(form.formState.errors.name)}>
+            <FieldLabel htmlFor="payment-name">显示名称</FieldLabel>
+            <Input
+              id="payment-name"
+              placeholder="用于前端显示使用"
+              aria-invalid={Boolean(form.formState.errors.name)}
+              {...form.register('name')}
+            />
+            <FieldError errors={[form.formState.errors.name]} />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="payment-icon">图标URL(选填)</FieldLabel>
+            <Input
+              id="payment-icon"
+              placeholder="用于前端显示使用(https://x.com/icon.svg)"
+              {...form.register('icon')}
+            />
+          </Field>
+          <Field data-invalid={Boolean(form.formState.errors.notify_domain)}>
+            <FieldLabel htmlFor="payment-notify">自定义通知域名(选填)</FieldLabel>
+            <Input
+              id="payment-notify"
+              placeholder="网关的通知将会发送到该域名(https://x.com)"
+              aria-invalid={Boolean(form.formState.errors.notify_domain)}
+              {...form.register('notify_domain')}
+            />
+            <FieldError errors={[form.formState.errors.notify_domain]} />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field data-invalid={Boolean(form.formState.errors.handling_fee_percent)}>
+              <FieldLabel htmlFor="payment-fee-percent">百分比手续费(选填)</FieldLabel>
+              <InputGroup>
+                <InputGroupInput
+                  id="payment-fee-percent"
                   type="number"
+                  min="0.1"
+                  max="100"
+                  step="0.1"
                   placeholder="在订单金额基础上附加手续费"
-                  defaultValue={
-                    submit.handling_fee_fixed != null
-                      ? (submit.handling_fee_fixed as number) / 100
-                      : undefined
-                  }
-                  onChange={(event) =>
-                    submitOnChange('handling_fee_fixed', 100 * (event.target.value as unknown as number))
-                  }
+                  aria-invalid={Boolean(form.formState.errors.handling_fee_percent)}
+                  {...form.register('handling_fee_percent')}
                 />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="payment-method">接口文件</Label>
-              <Select
-                value={selectPaymentMethod}
-                onValueChange={(value) => {
-                  void onSelectPaymentMethod(value);
-                }}
-              >
-                <SelectTrigger id="payment-method" className="w-full">
-                  <SelectValue placeholder="选择支付接口" />
-                </SelectTrigger>
-                <SelectContent>
-                  {paymentMethods.map((method) => (
-                    <SelectItem key={method} value={method}>
-                      {method}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {Object.keys(form).map((key) => {
-              const field = form[key] as PaymentFormDefinition[string];
-              const inputType = field.type;
-              const showInput =
-                inputType === 'input' ||
-                inputType === 'text' ||
-                inputType === 'string' ||
-                !inputType;
-
-              return (
-                <div className="space-y-2" key={key}>
-                  <Label htmlFor={`payment-config-${key}`}>{field.label}</Label>
-                  {showInput ? (
-                    <Input
-                      id={`payment-config-${key}`}
-                      placeholder={field.description}
-                      defaultValue={(config[key] || field.value) as string | undefined}
-                      onChange={(event) => configOnChange(key, event.target.value)}
-                    />
-                  ) : null}
-                </div>
-              );
-            })}
-
-            {selectPaymentMethod === 'MGate' ? (
-              <Alert className="border-warning/30 bg-warning/10 text-warning">
-                <AlertDescription className="text-warning">MGate TG@nulledsan</AlertDescription>
-              </Alert>
-            ) : null}
+                <InputGroupAddon align="inline-end">
+                  <InputGroupText>%</InputGroupText>
+                </InputGroupAddon>
+              </InputGroup>
+              <FieldError errors={[form.formState.errors.handling_fee_percent]} />
+            </Field>
+            <Field data-invalid={Boolean(form.formState.errors.handling_fee_fixed)}>
+              <FieldLabel htmlFor="payment-fee-fixed">固定手续费(选填)</FieldLabel>
+              <Input
+                id="payment-fee-fixed"
+                type="number"
+                step="0.01"
+                placeholder="在订单金额基础上附加手续费"
+                aria-invalid={Boolean(form.formState.errors.handling_fee_fixed)}
+                {...form.register('handling_fee_fixed')}
+              />
+              <FieldError errors={[form.formState.errors.handling_fee_fixed]} />
+            </Field>
           </div>
-
-          <SheetFooter>
-            <Button
-              onClick={() => void save()}
-              disabled={fetchLoading}
-              data-testid="payment-save"
+          <Field data-invalid={Boolean(form.formState.errors.payment)}>
+            <FieldLabel htmlFor="payment-method">接口文件</FieldLabel>
+            <Select
+              value={selectedPaymentMethod ?? ''}
+              disabled={methodsLoading || methodsError || methodsEmpty}
+              onValueChange={onSelectPaymentMethod}
             >
-              {fetchLoading ? <Loader2 className="size-4 animate-spin" /> : null}
-              {submit.id ? '保存' : '添加'}
-            </Button>
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              取消
-            </Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
-    </>
+              <SelectTrigger
+                id="payment-method"
+                className="w-full"
+                aria-invalid={Boolean(form.formState.errors.payment)}
+              >
+                <SelectValue placeholder="选择支付接口" />
+              </SelectTrigger>
+              <SelectContent>
+                {paymentMethods.map((method) => (
+                  <SelectItem key={method} value={method}>
+                    {method}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <FieldError errors={[form.formState.errors.payment]} />
+          </Field>
+
+          {methodsLoading ? (
+            <div
+              className="flex min-h-20 items-center justify-center gap-2 text-sm text-muted-foreground"
+              role="status"
+              data-testid="payment-methods-loading"
+            >
+              <Spinner className="size-4" />
+              正在加载支付接口
+            </div>
+          ) : null}
+          {methodsError ? (
+            <ErrorState
+              data-testid="payment-methods-error"
+              message="支付接口列表加载失败"
+              onRetry={() => void paymentMethodsQuery.refetch()}
+            />
+          ) : null}
+          {methodsEmpty ? (
+            <ErrorState
+              data-testid="payment-methods-empty"
+              message="暂无可用支付接口"
+              onRetry={() => void paymentMethodsQuery.refetch()}
+            />
+          ) : null}
+
+          {definitionLoading ? (
+            <div
+              className="flex min-h-20 items-center justify-center gap-2 text-sm text-muted-foreground"
+              role="status"
+              data-testid="payment-definition-loading"
+            >
+              <Spinner className="size-4" />
+              正在加载接口配置
+            </div>
+          ) : null}
+          {definitionError ? (
+            <ErrorState
+              data-testid="payment-definition-error"
+              message="支付接口配置加载失败"
+              onRetry={() => void definitionQuery.refetch()}
+            />
+          ) : null}
+          {definitionEmpty ? (
+            <ErrorState
+              data-testid="payment-definition-empty"
+              message="该支付接口未提供配置字段"
+              onRetry={() => void definitionQuery.refetch()}
+            />
+          ) : null}
+
+          {definitionReady && definition
+            ? Object.entries(definition).map(([key, definitionField]) => {
+                const inputType = definitionField.type;
+                const showInput =
+                  inputType === 'input' ||
+                  inputType === 'text' ||
+                  inputType === 'string' ||
+                  !inputType;
+
+                return (
+                  <Field key={`${selectedPaymentMethod}:${key}`}>
+                    <FieldLabel htmlFor={`payment-config-${key}`}>
+                      {definitionField.label}
+                    </FieldLabel>
+                    {showInput ? (
+                      <Controller
+                        control={form.control}
+                        name={`config.${key}`}
+                        defaultValue={form.getValues('config')[key] ?? definitionField.value ?? ''}
+                        render={({ field }) => (
+                          <Input
+                            id={`payment-config-${key}`}
+                            placeholder={definitionField.description}
+                            {...field}
+                          />
+                        )}
+                      />
+                    ) : null}
+                  </Field>
+                );
+              })
+            : null}
+          <FieldError errors={[form.formState.errors.config]} />
+
+          {selectedPaymentMethod === 'MGate' ? (
+            <Alert className="border-warning/30 bg-warning/10 text-warning">
+              <AlertDescription className="text-warning">MGate TG@nulledsan</AlertDescription>
+            </Alert>
+          ) : null}
+        </form>
+
+        <SheetFooter>
+          <Button
+            type="submit"
+            form="payment-editor-form"
+            disabled={pending || !editorReady}
+            data-testid="payment-save"
+          >
+            {pending ? (
+              <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
+            ) : null}
+            {record?.id ? '保存' : '添加'}
+          </Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            取消
+          </Button>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -246,22 +412,30 @@ export default function PaymentsPage() {
   const show = useShowPaymentMutation();
   const drop = useDropPaymentMutation();
   const sort = useSortPaymentMutation();
-  const [orderedPayments, setOrderedPayments] = useState<AdminPayment[]>(() => payments.data ?? []);
-  const [sortLoading, setSortLoading] = useState(false);
-  const orderRef = useRef(orderedPayments);
+  const [orderOverride, setOrderOverride] = useState<AdminPayment[] | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editor, setEditor] = useState<{
+    session: number;
+    record?: AdminPayment;
+    returnFocus: HTMLButtonElement;
+  } | null>(null);
+  const orderedPayments = orderOverride ?? payments.data ?? [];
 
-  useEffect(() => {
-    if (payments.data) setOrderedPayments(payments.data);
-  }, [payments.data]);
-
-  orderRef.current = orderedPayments;
+  const openPaymentEditor = (record: AdminPayment | undefined, returnFocus: HTMLButtonElement) => {
+    setEditor((current) => ({
+      session: (current?.session ?? 0) + 1,
+      record,
+      returnFocus,
+    }));
+    setEditorOpen(true);
+  };
 
   // Adjacent swap reorder. The drag handle is retired for accessible move
   // buttons, but the persisted contract is unchanged: sort.mutate receives the
   // full id list in the new order, then the page refetches.
   const movePayment = (index: number, direction: -1 | 1) => {
     const target = index + direction;
-    const list = orderRef.current;
+    const list = orderedPayments;
     if (target < 0 || target >= list.length) return;
     const next = [...list];
     const a = next[index];
@@ -269,16 +443,11 @@ export default function PaymentsPage() {
     if (!a || !b) return;
     next[index] = b;
     next[target] = a;
-    setOrderedPayments(next);
-    setSortLoading(true);
+    setOrderOverride(next);
     sort.mutate(
       next.map((payment) => payment.id),
       {
-        onSuccess: () => {
-          void payments.refetch().finally(() => {
-            setSortLoading(false);
-          });
-        },
+        onSettled: () => setOrderOverride(null),
       },
     );
   };
@@ -290,8 +459,7 @@ export default function PaymentsPage() {
       confirmText: '确定',
     });
     if (!confirmed) return;
-    await drop.mutateAsync(row.id);
-    void payments.refetch();
+    drop.mutate(row.id);
   };
 
   const columns: DataTableColumn<AdminPayment>[] = [
@@ -308,13 +476,7 @@ export default function PaymentsPage() {
       cell: ({ row }) => (
         <Switch
           checked={Boolean(parseInt(String(row.original.enable), 10))}
-          onCheckedChange={() =>
-            show.mutate(row.original.id, {
-              onSuccess: () => {
-                void payments.refetch();
-              },
-            })
-          }
+          onCheckedChange={() => show.mutate(row.original.id)}
           aria-label={`切换「${row.original.name}」启用`}
         />
       ),
@@ -368,19 +530,17 @@ export default function PaymentsPage() {
             >
               <ArrowDown className="size-4" />
             </Button>
-            <PaymentEditor
-              record={row.original}
-              fetchLoading={payments.isFetching}
-              onSave={(payload) => save.mutateAsync(payload)}
-              onSaved={() => {
-                void payments.refetch();
-              }}
+            <Button
+              variant="ghost"
+              size="sm"
+              data-testid={`payment-edit-${row.original.id}`}
+              onClick={(event) => openPaymentEditor(row.original, event.currentTarget)}
+              aria-haspopup="dialog"
+              aria-expanded={editorOpen && editor?.record?.id === row.original.id}
             >
-              <Button variant="ghost" size="sm" data-testid={`payment-edit-${row.original.id}`}>
-                <Pencil className="size-4" />
-                编辑
-              </Button>
-            </PaymentEditor>
+              <Pencil className="size-4" />
+              编辑
+            </Button>
             <Button
               variant="ghost"
               size="sm"
@@ -399,23 +559,35 @@ export default function PaymentsPage() {
 
   return (
     <PageShell data-testid="payments-page">
+      {payments.isError ? (
+        <ErrorState message="支付配置加载失败" onRetry={() => void payments.refetch()} />
+      ) : null}
       <PageHeader
         title="支付配置"
         actions={
-          <PaymentEditor
-            fetchLoading={payments.isFetching}
-            onSave={(payload) => save.mutateAsync(payload)}
-            onSaved={() => {
-              void payments.refetch();
-            }}
+          <Button
+            data-testid="payment-create"
+            onClick={(event) => openPaymentEditor(undefined, event.currentTarget)}
+            aria-haspopup="dialog"
+            aria-expanded={editorOpen && editor?.record === undefined}
           >
-            <Button data-testid="payment-create">
-              <Plus className="size-4" />
-              添加支付方式
-            </Button>
-          </PaymentEditor>
+            <Plus className="size-4" />
+            添加支付方式
+          </Button>
         }
       />
+
+      {editor ? (
+        <PaymentEditor
+          key={editor.session}
+          record={editor.record}
+          open={editorOpen}
+          returnFocus={editor.returnFocus}
+          pending={save.isPending}
+          onOpenChange={setEditorOpen}
+          onSave={(payload, onSuccess) => save.mutate(payload, { onSuccess })}
+        />
+      ) : null}
 
       <TooltipProvider delayDuration={100}>
         <Card className="overflow-hidden py-0">
@@ -426,14 +598,18 @@ export default function PaymentsPage() {
               getRowKey={(row) => row.id}
               className="min-w-[900px]"
               data-testid="payments-table"
-              empty={orderedPayments.length === 0 ? '暂无支付方式' : undefined}
+              empty={
+                !payments.isError && payments.data !== undefined && orderedPayments.length === 0
+                  ? '暂无支付方式'
+                  : undefined
+              }
               emptyTestId="payments-empty"
             />
           </CardContent>
         </Card>
       </TooltipProvider>
 
-      {sortLoading || payments.isPending ? (
+      {sort.isPending || payments.isPending ? (
         <div className="flex justify-center py-6" role="status">
           <Spinner className="size-5 text-muted-foreground" />
           <span className="sr-only">加载中</span>

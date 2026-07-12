@@ -6,12 +6,17 @@
 set -euo pipefail
 
 corepack enable
-corepack prepare pnpm@11.0.0 --activate
+corepack prepare pnpm@11.11.0 --activate
 
 cd /workspaces/v2board/frontend
 
-# Store location is pinned via npm_config_store_dir (see docker-compose.yml) so the
-# store lands in the /pnpm-store volume, never on the host tree.
-HUSKY=0 pnpm install --frozen-lockfile
+# Keep this explicit, as in the main Docker workflow: the workspace-root path is
+# shadowed by a named volume in docker-compose.yml, so the store never lands in
+# the host tree.
+pnpm config set store-dir /workspaces/v2board/.pnpm-store
+pnpm install --frozen-lockfile
 
-echo "Dev container ready: frontend workspace installed; host tree stays clean."
+cd /workspaces/v2board/backend/rust
+cargo fetch --locked
+
+echo "Dev container ready: Rust and frontend dependencies are in named volumes."

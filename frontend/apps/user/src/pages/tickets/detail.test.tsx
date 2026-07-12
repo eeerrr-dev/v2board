@@ -1,7 +1,8 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { formatLegacyDateMinuteSlash } from '@v2board/config/format';
+import { formatBackendDateMinuteSlash } from '@v2board/config/format';
 import { renderWithProviders } from '@/test/render';
+import { createTestTranslation } from '@/test/i18next-selector';
 import TicketDetailPage from './detail';
 
 const state = vi.hoisted(() => {
@@ -38,12 +39,12 @@ const state = vi.hoisted(() => {
     routeTicketId: '7' as string | undefined,
     ticket: makeTicket() as ReturnType<typeof makeTicket> | undefined,
     ticketCalls: [] as Array<{ id: number | string | undefined; options?: unknown }>,
-    ticketError: false,
+    ticketError: undefined as unknown,
   };
 });
 
 const toastMocks = vi.hoisted(() => ({
-  destroy: vi.fn(),
+  dismiss: vi.fn(),
   loading: vi.fn(),
   success: vi.fn(),
 }));
@@ -62,10 +63,7 @@ vi.mock('react-router', () => ({
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    i18n: { language: 'zh-CN' },
-    t: (key: string) => labels[key] ?? key,
-  }),
+  useTranslation: () => createTestTranslation(labels),
 }));
 
 vi.mock('@/lib/queries', () => ({
@@ -73,14 +71,33 @@ vi.mock('@/lib/queries', () => ({
     state.ticketCalls.push({ id, options });
     return {
       data: state.ticket,
-      isError: state.ticketError,
+      error: state.ticketError,
+      isError: Boolean(state.ticketError),
       isFetching: false,
       refetch: state.refetch,
     };
   },
   useReplyTicketMutation: () => ({
     isPending: state.replyPending,
-    mutateAsync: state.replyMutateAsync,
+    mutate: (
+      payload: unknown,
+      options?: {
+        onError?: (error: unknown) => void;
+        onSettled?: () => void;
+        onSuccess?: (data: unknown) => void;
+      },
+    ) => {
+      void Promise.resolve(state.replyMutateAsync(payload)).then(
+        (data) => {
+          options?.onSuccess?.(data);
+          options?.onSettled?.();
+        },
+        (error: unknown) => {
+          options?.onError?.(error);
+          options?.onSettled?.();
+        },
+      );
+    },
   }),
 }));
 
@@ -93,14 +110,14 @@ let scrollTo: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   state.routeTicketId = '7';
   state.ticket = state.makeTicket();
-  state.ticketError = false;
+  state.ticketError = undefined;
   state.ticketCalls = [];
   state.replyPending = false;
   state.refetch.mockReset();
   state.replyMutateAsync.mockReset();
   state.replyMutateAsync.mockResolvedValue(undefined);
-  toastMocks.destroy.mockReset();
-  toastMocks.loading.mockReset();
+  toastMocks.dismiss.mockReset();
+  toastMocks.loading.mockReset().mockReturnValue('ticket-reply-loading');
   toastMocks.success.mockReset();
   scrollTo = vi.fn();
   Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
@@ -120,51 +137,57 @@ describe('TicketDetailPage shadcn chat surface', () => {
     expect(screen.getByTestId('ticket-detail-header')).toHaveTextContent('#7');
     expect(screen.getByRole('heading', { name: 'Need help' })).toBeInTheDocument();
 
-    // .js-chat-messages / .js-chat-form / .js-chat-input and the
-    // ticket-reply-send testid are interaction-parity harness selectors.
     const chat = screen.getByTestId('ticket-chat');
-    expect(chat).toHaveClass('js-chat-messages');
     expect(screen.getByText('My message')).toBeInTheDocument();
     expect(screen.getByText('Support reply')).toBeInTheDocument();
     const chatText = chat.textContent ?? '';
     expect(chatText.indexOf('My message')).toBeLessThan(chatText.indexOf('Support reply'));
-    expect(screen.getByText(formatLegacyDateMinuteSlash(1_700_000_000))).toBeInTheDocument();
-    expect(screen.getByText(formatLegacyDateMinuteSlash(1_700_000_060))).toBeInTheDocument();
+    expect(screen.getByText(formatBackendDateMinuteSlash(1_700_000_000))).toBeInTheDocument();
+    expect(screen.getByText(formatBackendDateMinuteSlash(1_700_000_060))).toBeInTheDocument();
 
-    expect(screen.getByTestId('ticket-reply-form')).toHaveClass('js-chat-form');
+    expect(screen.getByTestId('ticket-reply-form')).toBeInTheDocument();
     const input = screen.getByPlaceholderText('输入内容回复工单...');
     expect(input).toBe(screen.getByTestId('ticket-reply-input'));
-    expect(input).toHaveClass('js-chat-input');
     expect(screen.getByTestId('ticket-reply-send')).toBeEnabled();
   });
 
-  it('marks the standalone route root as a v2board-island so its shadcn tokens resolve', () => {
-    // /ticket/:ticket_id renders OUTSIDE AppLayout (App.tsx), so the page root must
-    // carry .v2board-island itself — otherwise --background/--foreground/--primary are
-    // undefined, bg-background/bg-primary collapse, and dark mode cannot flip.
+  it('exposes the standalone ticket surface through a component slot', () => {
     renderWithProviders(<TicketDetailPage />);
 
-    expect(screen.getByTestId('ticket-detail')).toHaveClass('v2board-island');
+    expect(screen.getByTestId('ticket-detail')).toHaveAttribute('data-slot', 'ticket-detail');
   });
 
-  it('keeps the chat shell visible when the ticket fetch fails', () => {
+  it('shows the backend not-found contract without offering a reply composer', () => {
     state.ticket = undefined;
-    state.ticketError = true;
+    state.ticketError = { status: 500, message: '工单不存在' };
 
     renderWithProviders(<TicketDetailPage />);
 
     expect(screen.getAllByText('工单不存在').length).toBeGreaterThan(0);
     expect(screen.getByTestId('ticket-chat')).toBeInTheDocument();
-    expect(screen.getByTestId('ticket-reply-form')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('输入内容回复工单...')).toBeInTheDocument();
+    expect(screen.queryByTestId('ticket-reply-form')).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('输入内容回复工单...')).not.toBeInTheDocument();
     expect(screen.queryByText('页面加载失败')).not.toBeInTheDocument();
     expect(screen.queryByText('刷新页面')).not.toBeInTheDocument();
     expect(screen.queryByText('Need help')).not.toBeInTheDocument();
   });
 
+  it('shows a retryable error for unrelated query failures', async () => {
+    state.ticket = undefined;
+    state.ticketError = { status: 503, message: '服务暂时不可用' };
+
+    const { user } = renderWithProviders(<TicketDetailPage />);
+
+    expect(screen.getByTestId('ticket-detail-error')).toHaveTextContent('服务暂时不可用');
+    expect(screen.queryByText('工单不存在')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('ticket-reply-form')).not.toBeInTheDocument();
+    await user.click(screen.getByTestId('error-state-retry'));
+    expect(state.refetch).toHaveBeenCalledOnce();
+  });
+
   it('renders visible loading text before the ticket fetch resolves', () => {
     state.ticket = undefined;
-    state.ticketError = false;
+    state.ticketError = undefined;
 
     renderWithProviders(<TicketDetailPage />);
 
@@ -245,7 +268,7 @@ describe('TicketDetailPage query polling and reply behavior', () => {
       message: 'Please help me',
     });
     await waitFor(() => expect(toastMocks.success).toHaveBeenCalledWith('发送成功'));
-    expect(toastMocks.destroy).toHaveBeenCalledTimes(1);
+    expect(toastMocks.dismiss).toHaveBeenCalledWith('ticket-reply-loading');
     expect(input).toHaveValue('');
     expect(state.refetch).not.toHaveBeenCalled();
   });
@@ -263,7 +286,7 @@ describe('TicketDetailPage query polling and reply behavior', () => {
       id: '7',
       message: 'Please keep this',
     });
-    await waitFor(() => expect(toastMocks.destroy).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(toastMocks.dismiss).toHaveBeenCalledWith('ticket-reply-loading'));
     expect(toastMocks.success).not.toHaveBeenCalled();
     expect(input).toHaveValue('Please keep this');
     expect(state.refetch).not.toHaveBeenCalled();

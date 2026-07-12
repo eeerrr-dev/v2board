@@ -14,6 +14,9 @@ export interface ParityConfigAuditResult {
   interactionScenarioCount: number;
   scenarioCount: number;
   specGroupCount: number;
+  uiAppSpecificCount: number;
+  uiSharedPrimitiveCount: number;
+  uiSharedStylesheetCount: number;
   userRouteCount: number;
   viewportCount: number;
 }
@@ -23,7 +26,6 @@ export function formatAuditSuccess(result: ParityConfigAuditResult): string;
 export function readMakeList(source: string, name: string): string[];
 export function extractBlock(source: string, startMarker: string, endMarker: string): string;
 export function extractRouteArray(source: string, name: string): string[];
-export function extractAssignedRouteArray(source: string, startMarker: string): string[];
 export function extractObjectArray(
   source: string,
   objectName: string,
@@ -32,7 +34,6 @@ export function extractObjectArray(
 export function extractQuotedValues(block: string): string[];
 export function assertUnique(name: string, values: string[]): string[];
 export function assertSameOrderedList(name: string, actual: string[], expected: string[]): string[];
-export function assertSameOrderedValues(name: string, actual: string[], expected: string[]): string[];
 export function assertSubset(name: string, actual: string[], expected: string[]): string[];
 export function assertInteractionTargetsExist(
   scenarioLabels: string[],

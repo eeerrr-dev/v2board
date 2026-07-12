@@ -18,7 +18,8 @@ export interface Ticket {
   level: TicketLevel;
   status: TicketStatus;
   reply_status: 0 | 1;
-  last_reply_user_id: number | null;
+  /** Present on the Rust API; older Laravel responses omit the derived field. */
+  last_reply_user_id?: number | null;
   created_at: number;
   updated_at: number;
   message?: TicketMessage[];

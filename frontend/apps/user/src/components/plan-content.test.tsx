@@ -67,15 +67,57 @@ describe('PlanContent shadcn feature rendering', () => {
     const { container } = renderWithProviders(
       <PlanContent
         content="null"
-        className="v2board-plan-content px-3"
-        htmlClassName="v2board-plan-content"
+        className="test-plan-content px-3"
+        htmlClassName="test-plan-content"
       />,
     );
 
     const wrapper = container.firstElementChild as HTMLElement;
-    expect(wrapper).toHaveClass('v2board-plan-content');
+    expect(wrapper).toHaveClass('test-plan-content');
     expect(wrapper).not.toHaveClass('px-3');
     expect(wrapper).toHaveTextContent('null');
+  });
+
+  it.each([
+    ['a null row', [null]],
+    ['a string row', ['not-a-feature-object']],
+    ['a null feature', [{ feature: null, support: false }]],
+    ['an object feature', [{ feature: { label: 'nested' }, support: true }]],
+  ])('falls back to sanitized HTML for a feature array containing %s', (_case, value) => {
+    const content = JSON.stringify(value);
+    const { container } = renderWithProviders(
+      <PlanContent content={content} className="feature-list" htmlClassName="html-fallback" />,
+    );
+
+    const wrapper = container.firstElementChild as HTMLElement;
+    expect(wrapper).toHaveClass('html-fallback');
+    expect(wrapper).not.toHaveClass('feature-list');
+    expect(wrapper.querySelector('svg')).toBeNull();
+    expect(wrapper.textContent).toBe(content);
+  });
+
+  it('preserves scalar support truthiness and renders numeric feature labels', () => {
+    renderWithProviders(
+      <PlanContent
+        content={JSON.stringify([
+          { feature: 1, support: 1 },
+          { feature: 'String support', support: 'yes' },
+          { feature: 'Empty support', support: '' },
+          { feature: 'Null support', support: null },
+        ])}
+      />,
+    );
+
+    expect(screen.getByText('1').closest('div')?.querySelector('.lucide-check')).not.toBeNull();
+    expect(
+      screen.getByText('String support').closest('div')?.querySelector('.lucide-check'),
+    ).not.toBeNull();
+    expect(
+      screen.getByText('Empty support').closest('div')?.querySelector('.lucide-x'),
+    ).not.toBeNull();
+    expect(
+      screen.getByText('Null support').closest('div')?.querySelector('.lucide-x'),
+    ).not.toBeNull();
   });
 
   it('sanitizes the raw HTML handoff, stripping scripts and event handlers', () => {

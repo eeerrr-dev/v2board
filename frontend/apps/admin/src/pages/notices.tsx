@@ -1,6 +1,8 @@
 import { useState } from 'react';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { Controller, useForm, useWatch } from 'react-hook-form';
 import dayjs from 'dayjs';
-import { Loader2, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
 import type { Notice } from '@v2board/types';
 import {
   useAdminNotices,
@@ -9,23 +11,42 @@ import {
   useShowNoticeMutation,
 } from '@/lib/queries';
 import { confirmDialog } from '@/components/ui/confirm-dialog';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/shadcn-dialog';
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Field, FieldError, FieldLabel } from '@/components/ui/field';
 import { PageHeader, PageShell } from '@/components/ui/page';
+import { ErrorState } from '@/components/ui/error-state';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
+import { TagsInput } from '@/components/ui/tags-input';
 import { Textarea } from '@/components/ui/textarea';
 import { DataTable, type DataTableColumn } from '@/components/ui/table';
+import {
+  noticeEditorSchema,
+  type NoticeEditorValues,
+  type NoticeSavePayload,
+} from './notice-form-schema';
+
+const NOTICE_FORM_ID = 'notice-editor-form';
+
+function noticeEditorValues(notice?: Notice): NoticeEditorValues {
+  return {
+    ...(notice ? { id: notice.id } : {}),
+    title: notice?.title ?? '',
+    content: notice?.content ?? '',
+    img_url: notice?.img_url ?? '',
+    tags: notice?.tags ?? [],
+  };
+}
 
 export default function NoticesPage() {
   const notices = useAdminNotices({});
@@ -33,31 +54,29 @@ export default function NoticesPage() {
   const drop = useDropNoticeMutation();
   const show = useShowNoticeMutation();
   const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState<Partial<Notice>>({});
+  const form = useForm<NoticeEditorValues, unknown, NoticeSavePayload>({
+    resolver: zodResolver(noticeEditorSchema),
+    defaultValues: noticeEditorValues(),
+  });
+  const editingId = useWatch({ control: form.control, name: 'id' });
   const dataSource = notices.data?.data ?? [];
 
   const openCreate = () => {
-    setDraft({});
+    form.reset(noticeEditorValues());
     setOpen(true);
   };
 
   const openEdit = (row: Notice) => {
-    setDraft({ ...row });
+    form.reset(noticeEditorValues(row));
     setOpen(true);
   };
 
-  const saveNotice = async () => {
-    await save.mutateAsync({ ...draft });
-    await notices.refetch();
-    setOpen(false);
-  };
+  const saveNotice = form.handleSubmit((values) => {
+    save.mutate(values, { onSuccess: () => setOpen(false) });
+  });
 
   const toggleShow = (row: Notice) => {
-    show.mutate(row.id, {
-      onSuccess: () => {
-        void notices.refetch();
-      },
-    });
+    show.mutate(row.id);
   };
 
   const removeNotice = async (row: Notice) => {
@@ -67,11 +86,7 @@ export default function NoticesPage() {
       confirmText: '删除',
     });
     if (!confirmed) return;
-    drop.mutate(row.id, {
-      onSuccess: () => {
-        void notices.refetch();
-      },
-    });
+    drop.mutate(row.id);
   };
 
   const columns: DataTableColumn<Notice>[] = [
@@ -137,6 +152,9 @@ export default function NoticesPage() {
 
   return (
     <PageShell data-testid="notices-page">
+      {notices.isError ? (
+        <ErrorState message="公告列表加载失败" onRetry={() => void notices.refetch()} />
+      ) : null}
       <PageHeader
         title="公告管理"
         actions={
@@ -155,7 +173,11 @@ export default function NoticesPage() {
             getRowKey={(row) => row.id}
             className="min-w-[720px]"
             data-testid="notices-table"
-            empty={dataSource.length === 0 ? '暂无公告' : undefined}
+            empty={
+              notices.isSuccess && notices.data !== undefined && dataSource.length === 0
+                ? '暂无公告'
+                : undefined
+            }
             emptyTestId="notices-empty"
           />
         </CardContent>
@@ -164,61 +186,73 @@ export default function NoticesPage() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-lg" data-testid="notice-dialog">
           <DialogHeader>
-            <DialogTitle>{draft.id ? '编辑公告' : '新建公告'}</DialogTitle>
+            <DialogTitle>{editingId ? '编辑公告' : '新建公告'}</DialogTitle>
+            <DialogDescription>编辑公告标题、内容、标签和图片。</DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="notice-title">标题</Label>
+          <form id={NOTICE_FORM_ID} className="space-y-4" onSubmit={saveNotice} noValidate>
+            <Field data-invalid={Boolean(form.formState.errors.title)}>
+              <FieldLabel htmlFor="notice-title">标题</FieldLabel>
               <Input
                 id="notice-title"
                 placeholder="请输入公告标题"
-                value={draft.title ?? ''}
-                onChange={(event) => setDraft({ ...draft, title: event.target.value })}
+                aria-invalid={Boolean(form.formState.errors.title)}
+                {...form.register('title')}
               />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="notice-content">公告内容</Label>
+              <FieldError errors={[form.formState.errors.title]} />
+            </Field>
+            <Field data-invalid={Boolean(form.formState.errors.content)}>
+              <FieldLabel htmlFor="notice-content">公告内容</FieldLabel>
               <Textarea
                 id="notice-content"
                 rows={12}
                 placeholder="请输入公告内容"
-                value={draft.content ?? ''}
-                onChange={(event) => setDraft({ ...draft, content: event.target.value })}
+                aria-invalid={Boolean(form.formState.errors.content)}
+                {...form.register('content')}
               />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="notice-tags">公告标签</Label>
-              <TagInput
-                id="notice-tags"
-                placeholder="输入后回车添加标签"
-                value={draft.tags ?? []}
-                onChange={(tags) =>
-                  setDraft({ ...draft, tags: (tags.length > 0 ? tags : null) as Notice['tags'] })
-                }
+              <FieldError errors={[form.formState.errors.content]} />
+            </Field>
+            <Field data-invalid={Boolean(form.formState.errors.tags)}>
+              <FieldLabel htmlFor="notice-tags">公告标签</FieldLabel>
+              <Controller
+                control={form.control}
+                name="tags"
+                render={({ field }) => (
+                  <TagsInput
+                    id="notice-tags"
+                    placeholder="输入后回车添加标签"
+                    value={field.value}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    invalid={Boolean(form.formState.errors.tags)}
+                  />
+                )}
               />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="notice-img">图片URL</Label>
+              <FieldError errors={[form.formState.errors.tags]} />
+            </Field>
+            <Field data-invalid={Boolean(form.formState.errors.img_url)}>
+              <FieldLabel htmlFor="notice-img">图片URL</FieldLabel>
               <Input
                 id="notice-img"
                 placeholder="请输入图片URL"
-                value={(draft.img_url as string | undefined) ?? ''}
-                onChange={(event) => setDraft({ ...draft, img_url: event.target.value })}
+                aria-invalid={Boolean(form.formState.errors.img_url)}
+                {...form.register('img_url')}
               />
-            </div>
-          </div>
+              <FieldError errors={[form.formState.errors.img_url]} />
+            </Field>
+          </form>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               取消
             </Button>
             <Button
-              onClick={() => void saveNotice()}
+              type="submit"
+              form={NOTICE_FORM_ID}
               disabled={save.isPending}
+              loading={save.isPending}
               data-testid="notice-submit"
             >
-              {save.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
               提交
             </Button>
           </DialogFooter>
@@ -232,59 +266,5 @@ export default function NoticesPage() {
         </div>
       ) : null}
     </PageShell>
-  );
-}
-
-interface TagInputProps {
-  id?: string;
-  value: string[];
-  onChange: (value: string[]) => void;
-  placeholder?: string;
-}
-
-// Small shadcn-native replacement for the legacy antd `mode="tags"` select:
-// Enter commits the draft, Backspace on an empty draft pops the last tag, and
-// each tag renders as a removable badge. Duplicates are ignored, matching the
-// old tag set semantics.
-function TagInput({ id, value, onChange, placeholder }: TagInputProps) {
-  const [draft, setDraft] = useState('');
-
-  const commit = () => {
-    const next = draft.trim();
-    if (next && !value.includes(next)) onChange([...value, next]);
-    setDraft('');
-  };
-
-  return (
-    <div className="flex min-h-9 flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-2 py-1.5 text-sm shadow-xs focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50">
-      {value.map((tag) => (
-        <Badge key={tag} variant="secondary" className="gap-1 pr-1">
-          {tag}
-          <button
-            type="button"
-            className="rounded-full text-muted-foreground hover:text-foreground"
-            onClick={() => onChange(value.filter((item) => item !== tag))}
-            aria-label={`移除标签 ${tag}`}
-          >
-            <X className="size-3" />
-          </button>
-        </Badge>
-      ))}
-      <input
-        id={id}
-        className="min-w-24 flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
-        value={draft}
-        placeholder={value.length ? '' : placeholder}
-        onChange={(event) => setDraft(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') {
-            event.preventDefault();
-            commit();
-          } else if (event.key === 'Backspace' && !draft && value.length) {
-            onChange(value.slice(0, -1));
-          }
-        }}
-      />
-    </div>
   );
 }

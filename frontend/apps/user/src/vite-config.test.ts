@@ -15,8 +15,12 @@ const sharedViteConfigSource = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), '../../../packages/config/src/vite.ts'),
   'utf8',
 );
-const userDeployTemplateSource = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), '../deploy/dashboard.blade.php'),
+const userDevTemplateSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '../index.html'),
+  'utf8',
+);
+const buildDeploySource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '../../../scripts/build-deploy.mjs'),
   'utf8',
 );
 
@@ -90,19 +94,13 @@ const INJECTED_OR_TRANSITIVE = new Set([
 
 describe('user Vite dev optimizer', () => {
   it('keeps user optimized deps isolated and fully declared for stable page clicks', () => {
-    expect(viteConfigSource).toContain(
-      "cacheDir: '../../node_modules/.vite/user-white-screen-recovery-38'",
-    );
+    expect(viteConfigSource).toContain("cacheDir: '../../node_modules/.vite/user'");
     expect(viteConfigSource).toContain('optimizeDeps: {');
-    expect(viteConfigSource).toContain('legacyNavigationRedirectPlugin()');
-    expect(viteConfigSource).toContain('rejectPackagedUserAssetsPlugin()');
+    expect(viteConfigSource).toContain('hashNavigationRedirectPlugin()');
     expect(viteConfigSource).not.toContain('themeRuntimeAssetsPlugin()');
     expect(viteConfigSource).not.toContain('legacyThemePlugin()');
-    // The redesigned user island runs real Vite HMR + React Fast Refresh, so the
-    // @vite/client stub and strip plugins are dropped (admin still uses them via
-    // the shared hmr:false default). noDiscovery keeps the dep graph stable.
     expect(viteConfigSource).toContain('react()');
-    expect(viteConfigSource).toContain('hmr: true');
+    expect(sharedViteConfigSource).toContain('hmr: true');
     expect(viteConfigSource).not.toContain('legacyViteClientStubPlugin');
     expect(viteConfigSource).not.toContain('stripViteClientPlugin');
     expect(viteConfigSource).toContain("'@v2board/api-client > axios'");
@@ -117,10 +115,8 @@ describe('user Vite dev optimizer', () => {
   });
 
   it('declares every third-party runtime import in optimizeDeps.include', () => {
-    // noDiscovery stops Vite from re-optimizing mid-session, so a third-party
-    // import added without a matching include entry would trip a full re-optimize
-    // and white-screen the HMR-disabled dev server. Assert the include set and
-    // the source imports agree in both directions.
+    // noDiscovery makes this an explicit contract: source imports and the
+    // pre-bundle list must agree in both directions.
     const undeclared = [...importedThirdParty].filter((s) => !includeSet.has(s)).sort();
     expect(undeclared).toEqual([]);
 
@@ -130,27 +126,22 @@ describe('user Vite dev optimizer', () => {
     expect(dead).toEqual([]);
   });
 
-  it('disables Vite HMR so open legacy pages are not half-refreshed while clicking', () => {
-    expect(sharedViteConfigSource).toContain('hmr: false');
+  it('uses the real Vite client and React Fast Refresh', () => {
+    expect(sharedViteConfigSource).toContain('hmr: true');
     expect(sharedViteConfigSource).not.toContain('overlay: false');
-    expect(sharedViteConfigSource).toContain('export function legacyNavigationRedirectPlugin()');
+    expect(sharedViteConfigSource).toContain('export function hashNavigationRedirectPlugin(');
+    expect(sharedViteConfigSource).not.toContain("pathname.startsWith('/theme/')");
+    expect(sharedViteConfigSource).not.toContain("pathname.startsWith('/monitor/')");
     expect(sharedViteConfigSource).toContain('location: `/#${pathname}${url.search}`');
     expect(sharedViteConfigSource).toContain("'content-length': '0'");
-    expect(sharedViteConfigSource).toContain('export function stripViteClientPlugin()');
-    expect(sharedViteConfigSource).toContain('export function legacyViteClientStubPlugin()');
-    expect(sharedViteConfigSource).toContain('export function rejectPackagedUserAssetsPlugin()');
-    expect(sharedViteConfigSource).toContain("pathname.startsWith('/theme/default/assets/')");
-    expect(sharedViteConfigSource).toContain("res.end('Not found')");
+    expect(sharedViteConfigSource).not.toContain('export function stripViteClientPlugin()');
+    expect(sharedViteConfigSource).not.toContain('export function legacyViteClientStubPlugin()');
+    expect(sharedViteConfigSource).not.toContain('export function rejectPackagedUserAssetsPlugin()');
     expect(sharedViteConfigSource).not.toContain('export function themeRuntimeAssetsPlugin()');
     expect(sharedViteConfigSource).not.toContain('USER_THEME_PACKAGED_BUNDLE_ASSET.test(url)');
     expect(sharedViteConfigSource).not.toContain('components\\.chunk\\.css');
     expect(sharedViteConfigSource).not.toContain('(?:images|theme)');
     expect(sharedViteConfigSource).not.toContain('(?:i18n|images|static|theme)');
-    expect(sharedViteConfigSource).toContain('export function updateStyle');
-    expect(sharedViteConfigSource).toContain('export function createHotContext');
-    expect(sharedViteConfigSource).toContain('export function injectQuery');
-    expect(sharedViteConfigSource).toContain('export class ErrorOverlay');
-    expect(sharedViteConfigSource).toContain('/@vite\\/client');
   });
 
   it('does not copy old packaged JS chunks into the user deploy output', () => {
@@ -161,15 +152,25 @@ describe('user Vite dev optimizer', () => {
     expect(deployViteConfigSource).not.toContain('readFileSync');
     expect(deployViteConfigSource).not.toContain('writeFileSync');
     expect(deployViteConfigSource).toContain('assetsInlineLimit: 0');
-    expect(deployViteConfigSource).toContain('emptyOutDir: false');
-    expect(deployViteConfigSource).toContain('chunkSizeWarningLimit: 1400');
+    expect(deployViteConfigSource).toContain('emptyOutDir: true');
+    expect(deployViteConfigSource).toContain('cssCodeSplit: true');
+    expect(deployViteConfigSource).toContain("manifest: 'manifest.json'");
+    expect(deployViteConfigSource).toContain('modulePreload: { polyfill: false }');
     expect(deployViteConfigSource).toContain('rolldownOptions: {');
-    expect(deployViteConfigSource).toContain('transform: {');
-    expect(deployViteConfigSource).toContain("'import.meta': '{}'");
-    expect(deployViteConfigSource).toContain('codeSplitting: false');
+    expect(deployViteConfigSource).toContain("base: '/assets/user/'");
+    expect(deployViteConfigSource).toContain("input: path.resolve(import.meta.dirname, 'index.html')");
+    expect(deployViteConfigSource).toContain("entryFileNames: '[name]-[hash].js'");
+    expect(deployViteConfigSource).toContain("chunkFileNames: '[name]-[hash].js'");
+    expect(deployViteConfigSource).toContain("assetFileNames: 'asset-[hash][extname]'");
+    expect(deployViteConfigSource).not.toContain('codeSplitting: false');
+    expect(deployViteConfigSource).not.toContain("format: 'iife'");
     expect(deployViteConfigSource).not.toContain('rollupOptions: {');
     expect(deployViteConfigSource).not.toContain('inlineDynamicImports');
     expect(deployViteConfigSource).toContain('process.env.V2BOARD_DEPLOY_OUT_DIR');
+    expect(deployViteConfigSource).toContain(
+      'Deploy Vite config is internal; run the workspace pnpm build:deploy command',
+    );
+    expect(deployViteConfigSource).not.toContain("'../../dist-deploy");
     expect(deployViteConfigSource).not.toContain("'i18n'");
     expect(deployViteConfigSource).not.toContain("'static'");
     expect(deployViteConfigSource).not.toContain("'images'");
@@ -180,34 +181,41 @@ describe('user Vite dev optimizer', () => {
     expect(deployViteConfigSource).not.toContain('public/theme/default/assets');
   });
 
-  it('cache-busts user deploy entry assets from file mtimes', () => {
-    expect(userDeployTemplateSource).toContain('$assetVersion = function ($path) use ($version)');
-    expect(userDeployTemplateSource).toContain('filemtime($assetPath)');
-    expect(userDeployTemplateSource).toContain(
-      '/assets/umi.css?v={{$assetVersion("theme/{$theme}/assets/umi.css")}}',
+  it('publishes a backend-neutral HTML entry with explicit runtime insertion points', () => {
+    expect(userDevTemplateSource).toContain(
+      '<script id="v2board-runtime-config" type="application/json">__V2BOARD_RUNTIME_CONFIG__</script>',
     );
-    expect(userDeployTemplateSource).toContain(
-      '/assets/umi.js?v={{$assetVersion("theme/{$theme}/assets/umi.js")}}',
+    expect(userDevTemplateSource).toContain('<!-- V2BOARD_CUSTOM_HTML -->');
+    expect(userDevTemplateSource.indexOf('<div id="root"></div>')).toBeLessThan(
+      userDevTemplateSource.indexOf('<!-- V2BOARD_CUSTOM_HTML -->'),
     );
-    expect(userDeployTemplateSource).not.toContain('/assets/umi.css?v={{$version}}');
-    expect(userDeployTemplateSource).not.toContain('/assets/umi.js?v={{$version}}');
+    expect(userDevTemplateSource.indexOf('<!-- V2BOARD_CUSTOM_HTML -->')).toBeLessThan(
+      userDevTemplateSource.indexOf('<script type="module"'),
+    );
+    expect(userDevTemplateSource).not.toContain('window.settings');
+    expect(userDevTemplateSource).not.toContain('custom.css');
+    expect(userDevTemplateSource).not.toContain('custom.js');
+    expect(buildDeploySource).toContain("const userStageOut = join(stageRoot, 'user')");
+    expect(buildDeploySource).toContain('process.env.V2BOARD_DEPLOY_ROOT');
+    expect(buildDeploySource).toContain("publicBase: '/assets/user/'");
+    expect(buildDeploySource).toContain("const releaseName = `releases/${releaseId}`");
+    expect(buildDeploySource).toContain("await replaceDeployLink(target, 'current', releaseName)");
+    expect(buildDeploySource).not.toContain('dashboard.blade.php');
+    expect(buildDeploySource).not.toContain('backend/laravel');
   });
 
   it('applies the resolved theme before first paint to avoid a theme flash', () => {
-    expect(userDeployTemplateSource).toContain(
-      "if (parts[0] !== 'dark_mode' || parts[1] === undefined) return value;",
+    expect(userDevTemplateSource).not.toContain('catch (error) {}');
+    expect(userDevTemplateSource).toContain(
+      "if (separator === -1 || item.slice(0, separator) !== 'dark_mode') return value;",
     );
-    expect(userDeployTemplateSource).toContain("document.documentElement.classList.add('dark');");
-    expect(userDeployTemplateSource).toContain(
-      "document.documentElement.style.colorScheme = 'dark';",
-    );
-    // A 'system' / absent preference follows the OS before umi.css loads, so a
+    // A 'system' / absent preference follows the OS before app CSS loads, so a
     // dark-OS visitor never flashes light.
-    expect(userDeployTemplateSource).toContain(
+    expect(userDevTemplateSource).toContain(
       "window.matchMedia('(prefers-color-scheme: dark)').matches",
     );
-    expect(userDeployTemplateSource.indexOf('if (dark) {')).toBeLessThan(
-      userDeployTemplateSource.indexOf('/assets/umi.css?v='),
+    expect(userDevTemplateSource.indexOf('if (dark) {')).toBeLessThan(
+      userDevTemplateSource.indexOf('<script type="module"'),
     );
   });
 });

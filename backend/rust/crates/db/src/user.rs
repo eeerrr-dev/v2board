@@ -8,6 +8,7 @@ pub struct UserAuthRow {
     pub password: String,
     pub password_algo: Option<String>,
     pub password_salt: Option<String>,
+    pub session_epoch: i64,
     pub token: String,
     pub banned: i8,
     pub is_admin: i8,
@@ -91,7 +92,7 @@ pub async fn find_user_for_auth(
 ) -> Result<Option<UserAuthRow>, sqlx::Error> {
     sqlx::query_as::<_, UserAuthRow>(
         r#"
-        SELECT id, email, password, password_algo, password_salt, token, banned, is_admin, is_staff
+        SELECT id, email, password, password_algo, password_salt, session_epoch, token, banned, is_admin, is_staff
         FROM v2_user
         WHERE email = ?
         LIMIT 1
@@ -108,7 +109,7 @@ pub async fn find_user_for_auth_by_id(
 ) -> Result<Option<UserAuthRow>, sqlx::Error> {
     sqlx::query_as::<_, UserAuthRow>(
         r#"
-        SELECT id, email, password, password_algo, password_salt, token, banned, is_admin, is_staff
+        SELECT id, email, password, password_algo, password_salt, session_epoch, token, banned, is_admin, is_staff
         FROM v2_user
         WHERE id = ?
         LIMIT 1
@@ -289,13 +290,65 @@ pub async fn update_password(
     let result = sqlx::query(
         r#"
         UPDATE v2_user
-        SET password = ?, password_algo = NULL, password_salt = NULL, updated_at = ?
+        SET password = ?, password_algo = NULL, password_salt = NULL,
+            session_epoch = session_epoch + 1, updated_at = ?
         WHERE id = ?
         "#,
     )
     .bind(password_hash)
     .bind(now)
     .bind(id)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+pub async fn change_password_if_current(
+    pool: &MySqlPool,
+    id: i64,
+    expected_hash: &str,
+    expected_session_epoch: i64,
+    password_hash: &str,
+    now: i64,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        r#"
+        UPDATE v2_user
+        SET password = ?, password_algo = NULL, password_salt = NULL,
+            session_epoch = session_epoch + 1, updated_at = ?
+        WHERE id = ? AND password = ? AND session_epoch = ?
+        "#,
+    )
+    .bind(password_hash)
+    .bind(now)
+    .bind(id)
+    .bind(expected_hash)
+    .bind(expected_session_epoch)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+/// Upgrades a successfully verified legacy password without revoking the session that is
+/// currently being created. The compare-and-set avoids overwriting a concurrent password reset.
+pub async fn rehash_password(
+    pool: &MySqlPool,
+    id: i64,
+    expected_hash: &str,
+    password_hash: &str,
+    now: i64,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        r#"
+        UPDATE v2_user
+        SET password = ?, password_algo = NULL, password_salt = NULL, updated_at = ?
+        WHERE id = ? AND password = ?
+        "#,
+    )
+    .bind(password_hash)
+    .bind(now)
+    .bind(id)
+    .bind(expected_hash)
     .execute(pool)
     .await?;
     Ok(result.rows_affected() > 0)

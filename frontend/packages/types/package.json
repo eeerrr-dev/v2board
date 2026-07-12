@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@typescript/native": "catalog:",
     "typescript": "catalog:"
   }
 }

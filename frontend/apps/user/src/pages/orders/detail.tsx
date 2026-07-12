@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
-import type { ParseKeys } from 'i18next';
-import { useParams, useNavigate } from 'react-router';
+import type { SelectorParam } from 'i18next';
+import { Link, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { QRCodeSVG } from 'qrcode.react';
 import { BookOpen, CheckCircle2, Info, TriangleAlert } from 'lucide-react';
@@ -11,26 +11,28 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/shadcn-dialog';
-import { StripeCardForm } from '@/components/stripe-card-form';
-import { formatLegacyDateTime } from '@v2board/config/format';
+} from '@/components/ui/dialog';
+import { StripePaymentForm } from '@/components/stripe-payment-form';
+import { formatBackendDateTime } from '@v2board/config/format';
 import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { PageShell } from '@/components/ui/page';
+import { ErrorState } from '@/components/ui/error-state';
+import { EmptyState, PageShell } from '@/components/ui/page';
 import { RadioGroup, RadioGroupIndicator, RadioGroupItem } from '@/components/ui/radio-group';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/cn';
 import { useOrderCheckoutController } from './use-order-checkout-controller';
 
-const PERIOD_LABEL_KEY: Record<string, ParseKeys> = {
-  month_price: 'plan.monthly',
-  quarter_price: 'plan.quarterly',
-  half_year_price: 'plan.half_year',
-  year_price: 'plan.yearly',
-  two_year_price: 'plan.two_year',
-  three_year_price: 'plan.three_year',
-  onetime_price: 'plan.onetime',
-  reset_price: 'plan.reset',
+const PERIOD_LABEL_KEY: Record<string, SelectorParam> = {
+  month_price: $ => $.plan.monthly,
+  quarter_price: $ => $.plan.quarterly,
+  half_year_price: $ => $.plan.half_year,
+  year_price: $ => $.plan.yearly,
+  two_year_price: $ => $.plan.two_year,
+  three_year_price: $ => $.plan.three_year,
+  onetime_price: $ => $.plan.onetime,
+  reset_price: $ => $.plan.reset,
 };
 
 export default function OrderDetailPage() {
@@ -39,15 +41,20 @@ export default function OrderDetailPage() {
   const {
     order,
     isLoading,
+    orderError,
+    retryOrder,
     isPending,
     paymentMethods,
+    paymentMethodsState,
     effectiveMethodId,
+    canCheckout,
     selectMethod,
     isStripePayment,
-    stripePublicKey,
-    stripeCardRef,
-    cardComplete,
-    setCardComplete,
+    stripePaymentIntent,
+    stripePreparation,
+    stripePaymentRef,
+    paymentComplete,
+    setPaymentComplete,
     onPay,
     isCheckoutPending,
     qrcode,
@@ -64,6 +71,19 @@ export default function OrderDetailPage() {
       </div>
     );
   }
+
+  if (!order) {
+    return (
+      <PageShell className="max-w-3xl">
+        <ErrorState
+          data-testid="order-detail-error"
+          message={orderError ?? undefined}
+          onRetry={retryOrder}
+        />
+      </PageShell>
+    );
+  }
+
   const isDeposit = order.plan?.id == 0;
   const periodLabelKey = order.period ? PERIOD_LABEL_KEY[order.period] : undefined;
   const periodLabel = periodLabelKey ? t(periodLabelKey) : undefined;
@@ -83,15 +103,15 @@ export default function OrderDetailPage() {
         <div className="space-y-6">
           {!isPending && <OrderResult status={order.status} />}
 
-          <OrderInfoCard title={t('order.product_info')} tradeTitle>
+          <OrderInfoCard title={t($ => $.order.product_info)} tradeTitle>
             <div data-testid="order-info">
               {isDeposit ? (
-                <InfoRow label={t('order.product_name')}>{t('order.deposit')}</InfoRow>
+                <InfoRow label={t($ => $.order.product_name)}>{t($ => $.order.deposit)}</InfoRow>
               ) : (
                 <>
-                  <InfoRow label={t('order.product_name')}>{order.plan?.name}</InfoRow>
-                  <InfoRow label={t('order.product_period')}>{periodLabel}</InfoRow>
-                  <InfoRow label={t('order.product_traffic')}>
+                  <InfoRow label={t($ => $.order.product_name)}>{order.plan?.name}</InfoRow>
+                  <InfoRow label={t($ => $.order.product_period)}>{periodLabel}</InfoRow>
+                  <InfoRow label={t($ => $.order.product_traffic)}>
                     {transferEnable}
                     {' GB'}
                   </InfoRow>
@@ -100,7 +120,7 @@ export default function OrderDetailPage() {
             </div>
           </OrderInfoCard>
           <OrderInfoCard
-            title={t('order.info')}
+            title={t($ => $.order.info)}
             tradeTitle
             options={
               isPending ? (
@@ -109,36 +129,39 @@ export default function OrderDetailPage() {
                   variant="outline"
                   size="sm"
                   loading={cancel.isPending}
+                  disabled={isCheckoutPending}
                   onClick={cancel.run}
                 >
-                  {t('order.cancel')}
+                  {t($ => $.order.cancel)}
                 </Button>
               ) : null
             }
           >
             <div data-testid="order-info">
-              <InfoRow label={t('order.trade_no')}>{order.trade_no}</InfoRow>
+              <InfoRow label={t($ => $.order.trade_no)}>{order.trade_no}</InfoRow>
               {order.discount_amount ? (
-                <InfoRow label={t('order.discount_amount')}>
+                <InfoRow label={t($ => $.order.discount_amount)}>
                   {amountText(order.discount_amount)}
                 </InfoRow>
               ) : null}
               {order.surplus_amount ? (
-                <InfoRow label={t('order.surplus_used')}>
+                <InfoRow label={t($ => $.order.surplus_used)}>
                   {amountText(order.surplus_amount)}
                 </InfoRow>
               ) : null}
               {order.refund_amount ? (
-                <InfoRow label={t('order.refund_amount')}>{amountText(order.refund_amount)}</InfoRow>
+                <InfoRow label={t($ => $.order.refund_amount)}>
+                  {amountText(order.refund_amount)}
+                </InfoRow>
               ) : null}
               {order.balance_amount ? (
-                <InfoRow label={t('order.balance_used')}>{amountText(order.balance_amount)}</InfoRow>
+                <InfoRow label={t($ => $.order.balance_used)}>
+                  {amountText(order.balance_amount)}
+                </InfoRow>
               ) : null}
-              {fee ? (
-                <InfoRow label={t('order.handling_fee')}>{amountText(fee)}</InfoRow>
-              ) : null}
-              <InfoRow label={t('order.created_at')}>
-                {formatLegacyDateTime(order.created_at)}
+              {fee ? <InfoRow label={t($ => $.order.handling_fee)}>{amountText(fee)}</InfoRow> : null}
+              <InfoRow label={t($ => $.order.created_at)}>
+                {formatBackendDateTime(order.created_at)}
               </InfoRow>
             </div>
           </OrderInfoCard>
@@ -147,45 +170,103 @@ export default function OrderDetailPage() {
             <>
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base leading-6">{t('order.payment_method')}</CardTitle>
+                  <CardTitle className="text-base leading-6">{t($ => $.order.payment_method)}</CardTitle>
                 </CardHeader>
                 <CardContent className="p-6 pt-0">
-                  <RadioGroup
-                    value={effectiveMethodId === undefined ? undefined : String(effectiveMethodId)}
-                    onValueChange={(nextMethodId) => {
-                      selectMethod(Number(nextMethodId));
-                    }}
-                  >
-                    {paymentMethods?.map((method) => (
-                      <RadioGroupItem
-                        key={method.id}
-                        value={String(method.id)}
-                        data-testid="payment-option"
-                      >
-                        <div className="flex items-center gap-3">
-                          <RadioGroupIndicator data-testid="payment-option-radio" />
-                          {method.name}
-                        </div>
-                        {method.icon && (
-                          <img className="h-7 w-auto" src={method.icon} alt="" />
-                        )}
-                      </RadioGroupItem>
-                    ))}
-                  </RadioGroup>
+                  {paymentMethodsState.isPending ? (
+                    <div
+                      className="flex min-h-24 items-center justify-center"
+                      role="status"
+                      data-testid="payment-methods-loading"
+                    >
+                      <Spinner className="size-5" />
+                    </div>
+                  ) : paymentMethodsState.error ? (
+                    <ErrorState
+                      data-testid="payment-methods-error"
+                      message={paymentMethodsState.error}
+                      onRetry={paymentMethodsState.retry}
+                    />
+                  ) : paymentMethodsState.isEmpty ? (
+                    <EmptyState
+                      className="min-h-24"
+                      data-testid="payment-methods-empty"
+                      title={t($ => $.common.empty)}
+                    />
+                  ) : (
+                    <RadioGroup
+                      disabled={isCheckoutPending}
+                      value={
+                        effectiveMethodId === undefined ? undefined : String(effectiveMethodId)
+                      }
+                      onValueChange={(nextMethodId) => {
+                        selectMethod(Number(nextMethodId));
+                      }}
+                    >
+                      {paymentMethods.map((method) => (
+                        <RadioGroupItem
+                          key={method.id}
+                          value={String(method.id)}
+                          data-testid="payment-option"
+                        >
+                          <div className="flex items-center gap-3">
+                            <RadioGroupIndicator data-testid="payment-option-radio" />
+                            {method.name}
+                          </div>
+                          {method.icon && (
+                            <img
+                              className="h-7 w-auto"
+                              src={method.icon}
+                              alt=""
+                              loading="lazy"
+                              decoding="async"
+                            />
+                          )}
+                        </RadioGroupItem>
+                      ))}
+                    </RadioGroup>
+                  )}
                 </CardContent>
               </Card>
 
-              {isStripePayment && stripePublicKey && (
+              {isStripePayment && stripePreparation.isPending && (
+                <div className="flex min-h-24 items-center justify-center" role="status">
+                  <Spinner className="size-5" />
+                </div>
+              )}
+
+              {isStripePayment && stripePreparation.error && (
+                <Alert variant="destructive">
+                  <TriangleAlert />
+                  <AlertDescription>
+                    <span>{stripePreparation.error}</span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={stripePreparation.retry}
+                    >
+                      {t($ => $.common.retry)}
+                    </Button>
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {isStripePayment && stripePaymentIntent && (
                 <>
-                  <h2 className="text-base font-semibold leading-6 text-foreground">{t('order.credit_card_title')}</h2>
-                  <StripeCardForm
-                    key={stripePublicKey}
-                    publicKey={stripePublicKey}
-                    ref={stripeCardRef}
-                    onCompleteChange={setCardComplete}
+                  <h2 className="text-base font-semibold leading-6 text-foreground">
+                    {t($ => $.order.credit_card_title)}
+                  </h2>
+                  <StripePaymentForm
+                    key={stripePaymentIntent.client_secret}
+                    publicKey={stripePaymentIntent.public_key}
+                    clientSecret={stripePaymentIntent.client_secret}
+                    returnUrl={window.location.href}
+                    ref={stripePaymentRef}
+                    onCompleteChange={setPaymentComplete}
                   />
                   <div className="mt-3 mb-5 text-sm text-muted-foreground">
-                    {t('order.credit_card_security')}
+                    {t($ => $.order.credit_card_security)}
                   </div>
                 </>
               )}
@@ -197,14 +278,16 @@ export default function OrderDetailPage() {
           <aside data-testid="order-side">
             <Card data-testid="order-summary">
               <CardHeader>
-                <CardTitle className="text-base leading-6">{t('order.total')}</CardTitle>
+                <CardTitle className="text-base leading-6">{t($ => $.order.total)}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 {isDeposit ? (
                   <div className="space-y-2 text-sm">
                     <div className="flex items-center justify-between gap-4">
-                      {t('order.deposit_bonus')}
-                      <div className="text-right font-medium">{moneyText(order.bounus, symbol)}</div>
+                      {t($ => $.order.deposit_bonus)}
+                      <div className="text-right font-medium">
+                        {moneyText(order.bounus, symbol)}
+                      </div>
                     </div>
                   </div>
                 ) : null}
@@ -212,8 +295,10 @@ export default function OrderDetailPage() {
                 {isDeposit ? (
                   <div className="border-b border-border pb-4 text-sm">
                     <div className="flex items-center justify-between gap-4">
-                      {t('order.deposit_received')}
-                      <div className="text-right font-medium">{moneyText(order.get_amount, symbol)}</div>
+                      {t($ => $.order.deposit_received)}
+                      <div className="text-right font-medium">
+                        {moneyText(order.get_amount, symbol)}
+                      </div>
                     </div>
                   </div>
                 ) : null}
@@ -235,29 +320,27 @@ export default function OrderDetailPage() {
                 )}
 
                 {order.discount_amount ? (
-                  <AmountBlock label={t('order.discount')}>
+                  <AmountBlock label={t($ => $.order.discount)}>
                     {moneyText(order.discount_amount, symbol)}
                   </AmountBlock>
                 ) : null}
                 {order.surplus_amount ? (
-                  <AmountBlock label={t('order.surplus')}>
+                  <AmountBlock label={t($ => $.order.surplus)}>
                     {moneyText(order.surplus_amount, symbol)}
                   </AmountBlock>
                 ) : null}
                 {order.refund_amount ? (
-                  <AmountBlock label={t('order.refund')}>
+                  <AmountBlock label={t($ => $.order.refund)}>
                     - {moneyText(order.refund_amount, symbol)}
                   </AmountBlock>
                 ) : null}
                 {fee ? (
-                  <AmountBlock label={t('order.handling_fee')}>
+                  <AmountBlock label={t($ => $.order.handling_fee)}>
                     + {(fee / 100).toFixed(2)}
                   </AmountBlock>
                 ) : null}
 
-                <div className="pt-2 text-sm text-muted-foreground">
-                  {t('order.grand_total')}
-                </div>
+                <div className="pt-2 text-sm text-muted-foreground">{t($ => $.order.grand_total)}</div>
                 <div className="text-3xl font-semibold tracking-normal text-card-foreground">
                   {symbol} {(grandTotal / 100).toFixed(2)} {currency}
                 </div>
@@ -266,10 +349,12 @@ export default function OrderDetailPage() {
                   block
                   data-testid="commerce-submit"
                   loading={isCheckoutPending}
-                  disabled={isStripePayment && !cardComplete}
+                  disabled={
+                    !canCheckout || (isStripePayment && (!stripePaymentIntent || !paymentComplete))
+                  }
                   onClick={onPay}
                 >
-                  {t('order.checkout')}
+                  {t($ => $.order.checkout)}
                 </Button>
               </CardContent>
             </Card>
@@ -289,15 +374,12 @@ export default function OrderDetailPage() {
           showCloseButton={false}
         >
           <DialogHeader className="sr-only">
-            <DialogTitle>{t('order.checkout')}</DialogTitle>
-            <DialogDescription>{t('order.waiting_pay')}</DialogDescription>
+            <DialogTitle>{t($ => $.order.checkout)}</DialogTitle>
+            <DialogDescription>{t($ => $.order.waiting_pay)}</DialogDescription>
           </DialogHeader>
           {qrcode.payUrl && (
-            <div className="flex justify-center" role="img" aria-label={t('common.scan_qrcode')}>
-              <QRCodeSVG
-                value={qrcode.payUrl}
-                size={250}
-              />
+            <div className="flex justify-center" role="img" aria-label={t($ => $.common.scan_qrcode)}>
+              <QRCodeSVG value={qrcode.payUrl} size={250} />
             </div>
           )}
           <DialogFooter className="justify-center sm:justify-center">
@@ -305,7 +387,7 @@ export default function OrderDetailPage() {
               className="text-center text-sm text-muted-foreground"
               data-testid="payment-qrcode-status"
             >
-              {t('order.waiting_pay')}
+              {t($ => $.order.waiting_pay)}
             </p>
           </DialogFooter>
         </DialogContent>
@@ -374,28 +456,27 @@ function moneyText(cents: number | null | undefined, symbol?: string | null) {
 
 function OrderResult({ status }: { status?: number }) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   const result =
     status === 1
       ? {
           icon: <Info className="size-8" />,
           status: 'info',
-          title: t('order.processing_title'),
-          subtitle: t('order.processing'),
+          title: t($ => $.order.processing_title),
+          subtitle: t($ => $.order.processing),
         }
       : status === 2
         ? {
             icon: <TriangleAlert className="size-8" />,
             status: 'warning',
-            title: t('common.cancelled'),
-            subtitle: t('order.cancel_timeout'),
+            title: t($ => $.common.cancelled),
+            subtitle: t($ => $.order.cancel_timeout),
           }
         : status === 3 || status === 4
           ? {
               icon: <CheckCircle2 className="size-8" />,
               status: 'success',
-              title: t('common.completed'),
-              subtitle: t('order.success'),
+              title: t($ => $.common.completed),
+              subtitle: t($ => $.order.success),
             }
           : {
               icon: <Info className="size-8" />,
@@ -424,9 +505,11 @@ function OrderResult({ status }: { status?: number }) {
           ) : null}
         </div>
         {(status === 3 || status === 4) && (
-          <Button type="button" onClick={() => navigate('/knowledge')}>
-            <BookOpen className="size-4" />
-            {t('order.view_tutorial')}
+          <Button asChild>
+            <Link to="/knowledge">
+              <BookOpen className="size-4" />
+              {t($ => $.order.view_tutorial)}
+            </Link>
           </Button>
         )}
       </CardContent>

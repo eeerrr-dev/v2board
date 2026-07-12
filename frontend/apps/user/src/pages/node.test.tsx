@@ -1,6 +1,8 @@
+import type { ComponentProps } from 'react';
 import { screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/render';
+import { createTestTranslation } from '@/test/i18next-selector';
 import NodePage from './node';
 
 interface ServerRow {
@@ -25,8 +27,13 @@ const queryState = vi.hoisted(() => ({
   serversPending: false,
   serversFetching: false,
   serversError: false,
+  serversEnabled: undefined as boolean | undefined,
   serversRefetch: vi.fn(),
   subscribe: undefined as { plan_id?: number | null } | undefined,
+  subscribeError: false,
+  subscribePending: false,
+  subscribeRefetch: vi.fn(),
+  subscribeSuccess: true,
 }));
 
 const labels: Record<string, string> = {
@@ -45,22 +52,50 @@ const labels: Record<string, string> = {
 };
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => labels[key] ?? key, i18n: { language: 'zh-CN' } }),
+  useTranslation: () => createTestTranslation(labels),
 }));
 
 vi.mock('react-router', () => ({
-  useNavigate: () => queryState.navigate,
+  Link: ({
+    to,
+    onClick,
+    children,
+    ...rest
+  }: { to: string } & Omit<ComponentProps<'a'>, 'href'>) => (
+    <a
+      href={to}
+      onClick={(event) => {
+        onClick?.(event);
+        if (!event.defaultPrevented) {
+          event.preventDefault();
+          queryState.navigate(to);
+        }
+      }}
+      {...rest}
+    >
+      {children}
+    </a>
+  ),
 }));
 
 vi.mock('@/lib/queries', () => ({
-  useSubscribe: () => ({ data: queryState.subscribe }),
-  useServers: () => ({
-    data: queryState.servers,
-    isPending: queryState.serversPending,
-    isFetching: queryState.serversFetching,
-    isError: queryState.serversError,
-    refetch: queryState.serversRefetch,
+  useSubscribe: () => ({
+    data: queryState.subscribe,
+    isError: queryState.subscribeError,
+    isPending: queryState.subscribePending,
+    isSuccess: queryState.subscribeSuccess,
+    refetch: queryState.subscribeRefetch,
   }),
+  useServers: (options?: { enabled?: boolean }) => {
+    queryState.serversEnabled = options?.enabled;
+    return {
+      data: queryState.servers,
+      isPending: queryState.serversPending,
+      isFetching: queryState.serversFetching,
+      isError: queryState.serversError,
+      refetch: queryState.serversRefetch,
+    };
+  },
 }));
 
 function makeServer(overrides: Partial<ServerRow>): ServerRow {
@@ -89,10 +124,26 @@ beforeEach(() => {
   queryState.serversPending = false;
   queryState.serversFetching = false;
   queryState.serversError = false;
+  queryState.serversEnabled = undefined;
   queryState.subscribe = undefined;
+  queryState.subscribeError = false;
+  queryState.subscribePending = false;
+  queryState.subscribeRefetch.mockClear();
+  queryState.subscribeSuccess = true;
 });
 
 describe('NodePage loading state', () => {
+  it('waits for the subscription before enabling the node request', () => {
+    queryState.subscribePending = true;
+    queryState.subscribeSuccess = false;
+
+    renderWithProviders(<NodePage />);
+
+    expect(queryState.serversEnabled).toBe(false);
+    expect(screen.getByTestId('node-loading')).toBeInTheDocument();
+    expect(screen.queryByTestId('node-empty')).not.toBeInTheDocument();
+  });
+
   it('shows only the loading status while the initial servers fetch is pending', () => {
     queryState.serversPending = true;
     queryState.serversFetching = true;
@@ -146,8 +197,7 @@ describe('NodePage service table', () => {
     for (const header of ['名称', '状态', '倍率', '标签']) {
       expect(within(table).getByRole('columnheader', { name: header })).toBeInTheDocument();
     }
-    // The parity harness hovers [data-testid="node-table"] .v2board-service-tooltip-trigger.
-    expect(table.querySelectorAll('.v2board-service-tooltip-trigger')).toHaveLength(2);
+    expect(table.querySelectorAll('[data-slot="header-tooltip-trigger"]')).toHaveLength(2);
 
     const [hkRow, usRow] = within(table).getAllByRole('row').slice(1);
     // Rows keep server order with index-based keys, not server-id keys (1, 2).
@@ -167,11 +217,11 @@ describe('NodePage service table', () => {
     expect(usCells[3]).toHaveTextContent(/^-$/); // null tags fall back to a dash
   });
 
-  it('opens the status tooltip from its parity header trigger', async () => {
+  it('opens the status tooltip from its slotted header trigger', async () => {
     const { user } = renderWithProviders(<NodePage />);
 
     const trigger = screen.getByText('状态');
-    expect(trigger).toHaveClass('v2board-service-tooltip-trigger');
+    expect(trigger).toHaveAttribute('data-slot', 'header-tooltip-trigger');
     // The shared HeaderTooltip keeps node's centered alignment via className.
     expect(trigger).toHaveClass('justify-center');
 
@@ -189,10 +239,9 @@ describe('NodePage empty state routing', () => {
     const { user } = renderWithProviders(<NodePage />);
 
     expect(screen.getByTestId('node-empty')).toBeInTheDocument();
-    const action = screen.getByRole('button', { name: '续费' });
+    const action = screen.getByRole('link', { name: '续费' });
     expect(action).toHaveAttribute('data-testid', 'node-empty-action');
-    // The action is a real button, not a legacy javascript-href anchor.
-    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(action).toHaveAttribute('href', '/plan/7');
 
     await user.click(action);
 
@@ -205,13 +254,30 @@ describe('NodePage empty state routing', () => {
 
     const { user } = renderWithProviders(<NodePage />);
 
-    await user.click(screen.getByRole('button', { name: '订阅' }));
+    const action = screen.getByRole('link', { name: '订阅' });
+    expect(action).toHaveAttribute('href', '/plan');
+    await user.click(action);
 
     expect(queryState.navigate).toHaveBeenCalledWith('/plan');
   });
 });
 
 describe('NodePage error state', () => {
+  it('shows a retryable subscription error instead of the no-plan action', async () => {
+    queryState.subscribeError = true;
+    queryState.subscribeSuccess = false;
+    queryState.servers = [];
+
+    const { user } = renderWithProviders(<NodePage />);
+
+    expect(queryState.serversEnabled).toBe(false);
+    expect(screen.getByTestId('node-subscribe-error')).toBeInTheDocument();
+    expect(screen.queryByTestId('node-empty')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '重试' }));
+    expect(queryState.subscribeRefetch).toHaveBeenCalledTimes(1);
+  });
+
   it('shows a retryable error state instead of the subscribe prompt when the fetch fails', async () => {
     queryState.serversError = true;
     queryState.subscribe = { plan_id: 7 };

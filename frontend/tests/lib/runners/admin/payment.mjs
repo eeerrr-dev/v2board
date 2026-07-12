@@ -14,6 +14,7 @@ import {
 import { hoverAllTooltipTargetsInteraction } from '../../tooltip-helpers.mjs';
 import {
   adminOverlayOpenSelector,
+  adminDrawerInputGroupControlSelector,
   adminDrawerInputSelector,
   adminSelectOptionSelector,
   adminSelectDropdownSelector,
@@ -29,6 +30,12 @@ import {
   clickAdminOrderRowAction,
 } from '../../state-readers/admin.mjs';
 
+// Payment fee controls use the shadcn InputGroup slot while legacy antd exposes
+// the same controls as ordinary inputs. Keep this union payment-local: selector
+// lists are returned in document order, preserving the shared field indexes.
+const adminPaymentInputSelector =
+  `${adminDrawerInputSelector}, ${adminDrawerInputGroupControlSelector}`;
+
 export async function runAdminPaymentCreateModalInteraction(page) {
   const initialPaymentFetchCount = page.__visualParityAdminPaymentFetchCount ?? 0;
   await clickFirstVisibleText(page, 'button', ['添加支付方式']);
@@ -36,10 +43,10 @@ export async function runAdminPaymentCreateModalInteraction(page) {
     state: 'visible',
     timeout: 5_000,
   });
-  await page.waitForFunction(() => document.body.textContent.includes('商户ID'), {
+  await page.waitForFunction(() => document.body.textContent.includes('商户ID'), null, {
     timeout: 5_000,
   });
-  await fillVisibleAt(page, adminDrawerInputSelector, 0, 'Parity Pay');
+  await fillVisibleAt(page, adminPaymentInputSelector, 0, 'Parity Pay');
   await page.waitForTimeout(100);
   const opened = await adminPaymentModalState(page);
   await openLegacySelectByLabel(page, adminOverlayOpenSelector, '接口文件');
@@ -50,11 +57,11 @@ export async function runAdminPaymentCreateModalInteraction(page) {
   const dropdown = await adminPaymentModalState(page);
   await clickFirstVisibleText(page, adminSelectOptionSelector, ['StripeCheckout']);
   await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
-  await page.waitForFunction(() => document.body.textContent.includes('Secret Key'), {
+  await page.waitForFunction(() => document.body.textContent.includes('Secret Key'), null, {
     timeout: 5_000,
   });
-  await fillVisibleAt(page, adminDrawerInputSelector, 5, 'pk_parity_create');
-  await fillVisibleAt(page, adminDrawerInputSelector, 6, 'sk_parity_create');
+  await fillVisibleAt(page, adminPaymentInputSelector, 5, 'pk_parity_create');
+  await fillVisibleAt(page, adminPaymentInputSelector, 6, 'sk_parity_create');
   await page.waitForTimeout(100);
   const switched = await adminPaymentModalState(page);
   await clickFirstVisible(page, adminPaymentSaveSelector);
@@ -86,10 +93,17 @@ export async function runAdminPaymentSaveFailureInteraction(page) {
     state: 'visible',
     timeout: 5_000,
   });
-  await page.waitForFunction(() => document.body.textContent.includes('商户ID'), {
+  await page.waitForFunction(() => document.body.textContent.includes('商户ID'), null, {
     timeout: 5_000,
   });
-  await fillVisibleAt(page, adminDrawerInputSelector, 0, 'Parity Failed Pay');
+  await fillVisibleAt(page, adminPaymentInputSelector, 0, 'Parity Failed Pay');
+  // Fill the dynamic gateway fields explicitly. The frozen form displayed
+  // backend-provided defaults without committing them to its submit state,
+  // whereas the controlled form correctly submits displayed values. Explicit
+  // input makes the failure request itself a shared, backend-valid Tier-1
+  // payload instead of normalizing away that legacy defect.
+  await fillVisibleAt(page, adminPaymentInputSelector, 5, 'failed-secret');
+  await fillVisibleAt(page, adminPaymentInputSelector, 6, 'failed-merchant');
   await page.waitForTimeout(100);
   const filled = await adminPaymentModalState(page);
   await clickFirstVisible(page, adminPaymentSaveSelector);
@@ -123,13 +137,13 @@ export async function runAdminPaymentEditModalInteraction(page) {
       );
       return values.includes('Alipay') && values.includes('visual-merchant');
     },
-    adminDrawerInputSelector,
+    adminPaymentInputSelector,
     { timeout: 5_000 },
   );
   const opened = await adminPaymentModalState(page);
-  await fillVisibleAt(page, adminDrawerInputSelector, 0, 'Parity Edited Pay');
-  await fillVisibleAt(page, adminDrawerInputSelector, 5, 'edited-secret');
-  await fillVisibleAt(page, adminDrawerInputSelector, 6, 'edited-merchant');
+  await fillVisibleAt(page, adminPaymentInputSelector, 0, 'Parity Edited Pay');
+  await fillVisibleAt(page, adminPaymentInputSelector, 5, 'edited-secret');
+  await fillVisibleAt(page, adminPaymentInputSelector, 6, 'edited-merchant');
   await page.waitForTimeout(100);
   const edited = await adminPaymentModalState(page);
   await clickFirstVisible(page, adminPaymentSaveSelector);
@@ -161,10 +175,10 @@ export async function runAdminPaymentPluginFieldMatrixInteraction(page) {
     state: 'visible',
     timeout: 5_000,
   });
-  await page.waitForFunction(() => document.body.textContent.includes('商户ID'), {
+  await page.waitForFunction(() => document.body.textContent.includes('商户ID'), null, {
     timeout: 5_000,
   });
-  await fillVisibleAt(page, adminDrawerInputSelector, 0, 'Parity Plugin Matrix');
+  await fillVisibleAt(page, adminPaymentInputSelector, 0, 'Parity Plugin Matrix');
   const alipay = await adminPaymentModalState(page);
   await selectLegacyFormOption(page, adminOverlayOpenSelector, '接口文件', ['MGate']);
   await waitForVisibleText(page, adminDrawerLabelSelector, 'Token');
@@ -230,7 +244,7 @@ export async function runAdminPaymentModalKeyboardCloseInteraction(page) {
 
 export async function runAdminPaymentNotifyTooltipInteraction(page) {
   return hoverAllTooltipTargetsInteraction(page, [
+    '[data-slot="header-tooltip-trigger"]',
     '.ant-table-thead .anticon-question-circle',
-    '.v2board-service-tooltip-trigger',
   ]);
 }

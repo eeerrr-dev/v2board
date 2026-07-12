@@ -43,7 +43,11 @@ export function RouteErrorFallback() {
   // standalone-ticket routes), so it carries the island class itself to pull in
   // the token theming rather than inheriting it from the shell.
   return (
-    <div className="v2board-island flex min-h-[60vh] items-center justify-center p-6">
+    <div
+      data-slot="route-error-state"
+      className="flex min-h-[60vh] items-center justify-center p-6"
+      data-testid="route-error"
+    >
       <div className="flex max-w-sm flex-col items-center gap-4 text-center">
         <div className="flex size-12 items-center justify-center rounded-full bg-destructive/10 text-destructive">
           <AlertTriangle className="size-6" />

@@ -13,15 +13,26 @@ import { hoverAllTooltipTargetsInteraction } from '../tooltip-helpers.mjs';
 import { inviteFinanceDialogState, inviteState } from '../state-readers/invite.mjs';
 
 export async function runInviteGenerateInteraction(page) {
+  const initialGenerateCount = page.__visualParityUserInviteGenerateCount ?? 0;
   const before = await inviteState(page);
   await clickFirstVisible(page, '[data-testid="invite-generate"], .block-header .block-options .btn');
-  await page.waitForSelector('.v2board-toast-root, .ant-message-notice, .ant-notification-notice', {
+  await waitForPagePropertyAtLeast(
+    page,
+    '__visualParityUserInviteGenerateCount',
+    initialGenerateCount + 1,
+  );
+  await page.waitForSelector('[data-sonner-toast], .ant-message-notice, .ant-notification-notice', {
     state: 'visible',
     timeout: 5_000,
   });
   await page.waitForTimeout(100);
   const after = await inviteState(page);
-  return { after, before };
+  return {
+    after,
+    before,
+    generateRequestDelta:
+      (page.__visualParityUserInviteGenerateCount ?? 0) - initialGenerateCount,
+  };
 }
 
 export async function runInviteTransferModalInteraction(page) {
@@ -109,7 +120,9 @@ export async function runInviteWithdrawModalInteraction(page) {
   await page.waitForTimeout(100);
   const saving = await inviteFinanceDialogState(page);
   await waitForPagePropertyAtLeast(page, '__visualParityUserWithdrawCount', 1);
-  await page.waitForFunction(() => window.location.hash.includes('/ticket'), { timeout: 5_000 });
+  await page.waitForFunction(() => window.location.hash.includes('/ticket'), null, {
+    timeout: 5_000,
+  });
   await page.waitForTimeout(250);
   const navigated = await inviteFinanceDialogState(page);
   return {
@@ -191,7 +204,9 @@ export async function runInviteFinanceSubmitMatrixInteraction(page) {
     '__visualParityUserWithdrawCount',
     initialWithdrawCount + 2,
   );
-  await page.waitForFunction(() => window.location.hash.includes('/ticket'), { timeout: 5_000 });
+  await page.waitForFunction(() => window.location.hash.includes('/ticket'), null, {
+    timeout: 5_000,
+  });
   await page.waitForTimeout(250);
   const withdrawSucceeded = await inviteFinanceDialogState(page);
 
@@ -213,7 +228,7 @@ export async function runInviteFinanceSubmitMatrixInteraction(page) {
 
 export async function runUserInviteTooltipsInteraction(page) {
   return hoverAllTooltipTargetsInteraction(page, [
-    '[data-testid="invite-surface"] .v2board-service-tooltip-trigger',
+    '[data-testid="invite-surface"] [data-slot="header-tooltip-trigger"]',
     '.anticon-question-circle',
   ]);
 }

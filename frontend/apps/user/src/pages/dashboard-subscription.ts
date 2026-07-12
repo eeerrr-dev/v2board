@@ -25,9 +25,9 @@ export function useDashboardSubscription(sub: Subscribe): DashboardSubscriptionV
   const usedPctRounded = Math.round(usedPct * 100) / 100;
   const usedPctClamped = Math.max(0, Math.min(100, usedPct));
   const trafficTone = getTrafficTone(usedPctRounded);
-  const daysLeft = legacyDaysUntil(sub?.expired_at);
-  const expired = isLegacyExpired(sub?.expired_at ?? null);
-  const canRenew = isLegacyRenewable(sub);
+  const daysLeft = getSubscriptionDaysLeft(sub?.expired_at);
+  const expired = isSubscriptionExpired(sub?.expired_at ?? null);
+  const canRenew = isSubscriptionRenewable(sub);
   // Gate the reset/new-period actions on the true usage, not the 2-decimal
   // display value: rounding 99.996% up to 100.00 would otherwise offer a new
   // period (and drop the low-traffic alert) before the quota is really spent.
@@ -52,7 +52,7 @@ export function useDashboardSubscription(sub: Subscribe): DashboardSubscriptionV
   };
 }
 
-export function isLegacyExpired(expiredAt: number | null | undefined) {
+export function isSubscriptionExpired(expiredAt: number | null | undefined) {
   return expiredAt !== null && expiredAt !== undefined && expiredAt < Date.now() / 1000;
 }
 
@@ -62,11 +62,11 @@ export function getTrafficTone(usedPctRounded: number): TrafficTone {
   return 'success';
 }
 
-export function legacyDaysUntil(timestamp: number | string | null | undefined) {
+export function getSubscriptionDaysLeft(timestamp: number | string | null | undefined) {
   return ((Number(timestamp) - Math.floor(Date.now() / 1000)) / 86400).toFixed(0);
 }
 
-export function isLegacyRenewable(subscribe: Subscribe) {
+export function isSubscriptionRenewable(subscribe: Subscribe) {
   if (!subscribe?.plan?.renew) return false;
-  return Boolean(subscribe.plan.show || !isLegacyExpired(subscribe.expired_at));
+  return Boolean(subscribe.plan.show || !isSubscriptionExpired(subscribe.expired_at));
 }

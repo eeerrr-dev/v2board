@@ -1,9 +1,12 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { Controller, useForm } from 'react-hook-form';
 import { ChevronDown, ListFilter, Plus, Search } from 'lucide-react';
 import type { AdminFilter } from '@v2board/api-client';
-import type { AdminOrderRow, Plan, PlanPeriod } from '@v2board/types';
+import type { AdminOrderRow, Plan } from '@v2board/types';
 import { formatDateMinuteSlash, formatDateTime } from '@v2board/config/format';
+import { takeStoredAdminFilters } from '@/lib/stored-admin-filters';
 import {
   useAdminOrderDetail,
   useAdminOrders,
@@ -21,10 +24,11 @@ import { Card, CardContent } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/shadcn-dialog';
+} from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,8 +41,9 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { HeaderTooltip } from '@/components/ui/header-tooltip';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { PageHeader, PageShell } from '@/components/ui/page';
+import { Field, FieldError, FieldLabel } from '@/components/ui/field';
+import { EmptyState, PageHeader, PageShell } from '@/components/ui/page';
+import { ErrorState } from '@/components/ui/error-state';
 import { PaginationControl } from '@/components/ui/pagination';
 import {
   Select,
@@ -50,6 +55,7 @@ import {
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
@@ -57,6 +63,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
 import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@/components/ui/table';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { assignOrderSchema, type AssignOrderValues } from './user-action-form-schema';
 
 const PERIOD_TEXT: Record<string, string> = {
   month_price: '月付',
@@ -113,26 +120,16 @@ interface QueryState {
   filter: AdminFilter[];
 }
 
-// Cross-page Tier-1 contract: the dashboard writes an AdminFilter[] to
+// Cross-page Tier-1 contract: dashboard and user actions write an AdminFilter[] to
 // sessionStorage['v2board-admin-order-filter'] then navigates to /order. This
 // page must read that key on mount, apply it as the initial filter, and clear
-// it. The legacy object form ({ filter, total }) is still accepted defensively;
-// the response total is authoritative, so the stored total is ignored.
+// it. This key is application-internal, so malformed or obsolete shapes are
+// discarded instead of carrying a second compatibility representation forever.
 function readStoredOrderFilter(): AdminFilter[] {
-  if (typeof window === 'undefined') return [];
-  const stored = window.sessionStorage.getItem('v2board-admin-order-filter');
-  if (!stored) return [];
-  window.sessionStorage.removeItem('v2board-admin-order-filter');
-  try {
-    const parsed = JSON.parse(stored) as AdminFilter[] | { filter?: AdminFilter[] };
-    if (Array.isArray(parsed)) return parsed;
-    return Array.isArray(parsed.filter) ? parsed.filter : [];
-  } catch {
-    return [];
-  }
+  return takeStoredAdminFilters('v2board-admin-order-filter');
 }
 
-// Cents -> decimal string. Preserves the legacy amount interpretation exactly.
+// Cents -> decimal string. Preserves the backend amount interpretation exactly.
 function cents(value?: number | null) {
   return ((value as number) / 100).toFixed(2);
 }
@@ -142,18 +139,20 @@ function filterValue(filter: AdminFilter[], key: string) {
   return found == null ? undefined : String(found);
 }
 
-interface AssignOrderSubmit {
-  email?: string;
-  plan_id?: number;
-  period?: PlanPeriod;
-  total_amount?: string;
-}
-
 function DetailRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex gap-4 py-2 text-sm">
       <span className="w-24 shrink-0 text-muted-foreground">{label}</span>
       <span className="min-w-0 flex-1 break-words text-foreground">{children}</span>
+    </div>
+  );
+}
+
+function DetailLoading({ testId }: { testId: string }) {
+  return (
+    <div className="flex justify-center py-10" role="status" data-testid={testId}>
+      <Spinner className="size-5 text-muted-foreground" />
+      <span className="sr-only">加载中</span>
     </div>
   );
 }
@@ -175,103 +174,171 @@ function OrderDetailSheet({
   const user = useAdminUserInfo(order.data?.user_id);
   const inviteUser = useAdminUserInfo(order.data?.invite_user_id);
   const detail = order.data;
+  const detailUser = user.data;
+  const detailInviteUser = inviteUser.data;
   const planName = plans.find((plan) => plan.id === detail?.plan_id)?.name;
-  // Backend-field interpretation preserved: wait for the invited user's info too
-  // before rendering, so the commission block never flashes a half-loaded row.
-  const loaded = Boolean(detail && user.data?.email && (!detail.invite_user_id || inviteUser.data));
+  const requiresInviteUser = detail?.invite_user_id != null;
 
-  return (
-    <Sheet open={open} onOpenChange={(next) => (!next ? onClose() : undefined)}>
-      <SheetContent side="right" className="w-full gap-0 overflow-y-auto sm:max-w-md" data-testid="order-detail">
-        <SheetHeader>
-          <SheetTitle>订单信息</SheetTitle>
-        </SheetHeader>
-
-        {loaded && detail ? (
-          <div className="divide-y divide-border px-4 pb-6">
-            <DetailRow label="邮箱">
+  let content: ReactNode;
+  if (order.isError) {
+    content = (
+      <div className="px-4 py-6">
+        <ErrorState
+          data-testid="order-detail-error"
+          message="订单详情加载失败"
+          onRetry={() => void order.refetch()}
+        />
+      </div>
+    );
+  } else if (order.isPending) {
+    content = <DetailLoading testId="order-detail-loading" />;
+  } else if (!detail) {
+    content = (
+      <EmptyState className="m-4 min-h-32" data-testid="order-detail-empty" title="暂无订单详情" />
+    );
+  } else if (user.isError) {
+    content = (
+      <div className="px-4 py-6">
+        <ErrorState
+          data-testid="order-detail-user-error"
+          message="订单用户加载失败"
+          onRetry={() => void user.refetch()}
+        />
+      </div>
+    );
+  } else if (user.isPending) {
+    content = <DetailLoading testId="order-detail-user-loading" />;
+  } else if (!detailUser) {
+    content = (
+      <EmptyState
+        className="m-4 min-h-32"
+        data-testid="order-detail-user-empty"
+        title="未找到订单用户"
+      />
+    );
+  } else if (requiresInviteUser && inviteUser.isError) {
+    content = (
+      <div className="px-4 py-6">
+        <ErrorState
+          data-testid="order-detail-invite-error"
+          message="邀请人信息加载失败"
+          onRetry={() => void inviteUser.refetch()}
+        />
+      </div>
+    );
+  } else if (requiresInviteUser && inviteUser.isPending) {
+    content = <DetailLoading testId="order-detail-invite-loading" />;
+  } else if (requiresInviteUser && !detailInviteUser) {
+    content = (
+      <EmptyState
+        className="m-4 min-h-32"
+        data-testid="order-detail-invite-empty"
+        title="未找到邀请人"
+      />
+    );
+  } else {
+    content = (
+      <div className="divide-y divide-border px-4 pb-6">
+        <DetailRow label="邮箱">
+          <button
+            type="button"
+            className="text-primary underline-offset-4 hover:underline"
+            onClick={() => onUserFilter('email', '模糊', detailUser.email)}
+            data-testid="order-detail-user"
+          >
+            {detailUser.email}
+          </button>
+        </DetailRow>
+        <DetailRow label="订单号">
+          <span className="font-mono">{detail.trade_no}</span>
+        </DetailRow>
+        <DetailRow label="订单周期">{PERIOD_TEXT[detail.period] ?? detail.period}</DetailRow>
+        <DetailRow label="订单状态">{ORDER_STATUS[detail.status]?.label}</DetailRow>
+        <DetailRow label="订阅计划">{planName}</DetailRow>
+        <DetailRow label="回调单号">{detail.callback_no || '-'}</DetailRow>
+        <DetailRow label="支付金额">{cents(detail.total_amount)}</DetailRow>
+        <DetailRow label="余额支付">{cents(detail.balance_amount)}</DetailRow>
+        <DetailRow label="优惠金额">{cents(detail.discount_amount)}</DetailRow>
+        <DetailRow label="退回金额">{cents(detail.refund_amount)}</DetailRow>
+        <DetailRow label="折抵金额">{cents(detail.surplus_amount)}</DetailRow>
+        <DetailRow label="创建时间">{formatDateTime(detail.created_at)}</DetailRow>
+        <DetailRow label="更新时间">{formatDateTime(detail.updated_at)}</DetailRow>
+        {detail.invite_user_id && detail.status === 3 ? (
+          <>
+            <DetailRow label="邀请人">
               <button
                 type="button"
                 className="text-primary underline-offset-4 hover:underline"
-                onClick={() => user.data && onUserFilter('email', '模糊', user.data.email)}
-                data-testid="order-detail-user"
+                onClick={() =>
+                  detailInviteUser &&
+                  onUserFilter('invite_by_email', '模糊', detailInviteUser.email)
+                }
+                data-testid="order-detail-invite"
               >
-                {user.data?.email}
+                {detailInviteUser?.email}
               </button>
             </DetailRow>
-            <DetailRow label="订单号">
-              <span className="font-mono">{detail.trade_no}</span>
-            </DetailRow>
-            <DetailRow label="订单周期">{PERIOD_TEXT[detail.period] ?? detail.period}</DetailRow>
-            <DetailRow label="订单状态">{ORDER_STATUS[detail.status]?.label}</DetailRow>
-            <DetailRow label="订阅计划">{planName}</DetailRow>
-            <DetailRow label="回调单号">{detail.callback_no || '-'}</DetailRow>
-            <DetailRow label="支付金额">{cents(detail.total_amount)}</DetailRow>
-            <DetailRow label="余额支付">{cents(detail.balance_amount)}</DetailRow>
-            <DetailRow label="优惠金额">{cents(detail.discount_amount)}</DetailRow>
-            <DetailRow label="退回金额">{cents(detail.refund_amount)}</DetailRow>
-            <DetailRow label="折抵金额">{cents(detail.surplus_amount)}</DetailRow>
-            <DetailRow label="创建时间">{formatDateTime(detail.created_at)}</DetailRow>
-            <DetailRow label="更新时间">{formatDateTime(detail.updated_at)}</DetailRow>
-            {detail.invite_user_id && detail.status === 3 ? (
-              <>
-                <DetailRow label="邀请人">
-                  <button
-                    type="button"
-                    className="text-primary underline-offset-4 hover:underline"
-                    onClick={() =>
-                      inviteUser.data && onUserFilter('invite_by_email', '模糊', inviteUser.data.email)
-                    }
-                    data-testid="order-detail-invite"
-                  >
-                    {inviteUser.data?.email}
-                  </button>
-                </DetailRow>
-                <DetailRow label="佣金金额">{cents(detail.commission_balance)}</DetailRow>
-                {detail.actual_commission_balance ? (
-                  <DetailRow label="实际发放">{cents(detail.actual_commission_balance)}</DetailRow>
-                ) : null}
-                <DetailRow label="佣金状态">{COMMISSION_STATUS[detail.commission_status]?.label}</DetailRow>
-              </>
+            <DetailRow label="佣金金额">{cents(detail.commission_balance)}</DetailRow>
+            {detail.actual_commission_balance ? (
+              <DetailRow label="实际发放">{cents(detail.actual_commission_balance)}</DetailRow>
             ) : null}
-          </div>
-        ) : (
-          <div className="flex justify-center py-10" role="status">
-            <Spinner className="size-5 text-muted-foreground" />
-            <span className="sr-only">加载中</span>
-          </div>
-        )}
+            <DetailRow label="佣金状态">
+              {COMMISSION_STATUS[detail.commission_status]?.label}
+            </DetailRow>
+          </>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={(next) => (!next ? onClose() : undefined)}>
+      <SheetContent
+        side="right"
+        className="w-full gap-0 overflow-y-auto sm:max-w-md"
+        data-testid="order-detail"
+      >
+        <SheetHeader>
+          <SheetTitle>订单信息</SheetTitle>
+          <SheetDescription>查看订单状态、金额、订阅周期与支付信息。</SheetDescription>
+        </SheetHeader>
+
+        {content}
       </SheetContent>
     </Sheet>
   );
 }
 
-function AssignOrderDialog({
-  plans,
-  onAssigned,
-}: {
-  plans: Plan[];
-  onAssigned: () => void | Promise<unknown>;
-}) {
+function AssignOrderDialog({ plans }: { plans: Plan[] }) {
   const assign = useAssignOrderMutation();
   const [open, setOpen] = useState(false);
-  const [submit, setSubmit] = useState<AssignOrderSubmit>({});
+  const form = useForm<AssignOrderValues>({
+    resolver: zodResolver(assignOrderSchema),
+    defaultValues: { email: '', plan_id: undefined, period: undefined, total_amount: '' },
+  });
 
   const openDialog = () => {
-    setSubmit({});
+    form.reset();
     setOpen(true);
   };
 
-  const assignOrder = async () => {
+  const assignOrder = form.handleSubmit(async (values) => {
+    form.clearErrors('root.serverError');
     try {
       // total_amount stays the raw entered value; the api-client applies the
       // ×100 cents conversion. Preserving the raw payload here is the contract.
-      await assign.mutateAsync(submit);
-      await onAssigned();
+      await assign.mutateAsync(values);
       setOpen(false);
-    } catch {
-      // Errors surface through the global onError handler; keep the dialog open.
+    } catch (error) {
+      form.setError('root.serverError', {
+        message: error instanceof Error && error.message ? error.message : '请求失败',
+      });
     }
+  });
+
+  const setDialogOpen = (nextOpen: boolean) => {
+    if (!nextOpen) form.reset();
+    setOpen(nextOpen);
   };
 
   return (
@@ -280,94 +347,125 @@ function AssignOrderDialog({
         <Plus className="size-4" />
         添加订单
       </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md" data-testid="order-assign-dialog">
           <DialogHeader>
             <DialogTitle>订单分配</DialogTitle>
+            <DialogDescription>为指定用户创建订单并选择订阅计划与周期。</DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="assign-email">用户邮箱</Label>
-              <Input
-                id="assign-email"
-                placeholder="请输入用户邮箱"
-                value={submit.email ?? ''}
-                onChange={(event) => setSubmit((state) => ({ ...state, email: event.target.value }))}
-                data-testid="order-assign-email"
+          <form className="space-y-4" onSubmit={assignOrder} noValidate>
+            <FieldError errors={[form.formState.errors.root?.serverError]} />
+            <Field data-invalid={Boolean(form.formState.errors.email)}>
+              <FieldLabel htmlFor="order-assign-email">用户邮箱</FieldLabel>
+              <Controller
+                control={form.control}
+                name="email"
+                render={({ field, fieldState }) => (
+                  <Input
+                    {...field}
+                    id="order-assign-email"
+                    type="email"
+                    placeholder="请输入用户邮箱"
+                    data-testid="order-assign-email"
+                    aria-invalid={fieldState.invalid}
+                  />
+                )}
               />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="assign-plan">请选择订阅</Label>
-              <Select
-                value={submit.plan_id != null ? String(submit.plan_id) : undefined}
-                onValueChange={(value) => setSubmit((state) => ({ ...state, plan_id: Number(value) }))}
-              >
-                <SelectTrigger id="assign-plan" className="w-full">
-                  <SelectValue placeholder="请选择订阅" />
-                </SelectTrigger>
-                <SelectContent>
-                  {plans.map((plan) => (
-                    <SelectItem key={plan.id} value={String(plan.id)}>
-                      {plan.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="assign-period">请选择周期</Label>
-              <Select
-                value={submit.period}
-                onValueChange={(value) =>
-                  setSubmit((state) => ({ ...state, period: value as PlanPeriod }))
-                }
-              >
-                <SelectTrigger id="assign-period" className="w-full">
-                  <SelectValue placeholder="请选择周期" />
-                </SelectTrigger>
-                <SelectContent>
-                  {PERIOD_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="assign-amount">支付金额</Label>
+              <FieldError errors={[form.formState.errors.email]} />
+            </Field>
+            <Field data-invalid={Boolean(form.formState.errors.plan_id)}>
+              <FieldLabel htmlFor="order-assign-plan">请选择订阅</FieldLabel>
+              <Controller
+                control={form.control}
+                name="plan_id"
+                render={({ field }) => (
+                  <Select
+                    value={field.value != null ? String(field.value) : ''}
+                    onValueChange={(value) => field.onChange(Number(value))}
+                  >
+                    <SelectTrigger
+                      id="order-assign-plan"
+                      className="w-full"
+                      aria-invalid={Boolean(form.formState.errors.plan_id)}
+                    >
+                      <SelectValue placeholder="请选择订阅" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {plans.map((plan) => (
+                        <SelectItem key={plan.id} value={String(plan.id)}>
+                          {plan.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+              <FieldError errors={[form.formState.errors.plan_id]} />
+            </Field>
+            <Field data-invalid={Boolean(form.formState.errors.period)}>
+              <FieldLabel htmlFor="order-assign-period">请选择周期</FieldLabel>
+              <Controller
+                control={form.control}
+                name="period"
+                render={({ field }) => (
+                  <Select value={field.value ?? ''} onValueChange={field.onChange}>
+                    <SelectTrigger
+                      id="order-assign-period"
+                      className="w-full"
+                      aria-invalid={Boolean(form.formState.errors.period)}
+                    >
+                      <SelectValue placeholder="请选择周期" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PERIOD_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+              <FieldError errors={[form.formState.errors.period]} />
+            </Field>
+            <Field data-invalid={Boolean(form.formState.errors.total_amount)}>
+              <FieldLabel htmlFor="order-assign-amount">支付金额</FieldLabel>
               <div className="relative">
-                <Input
-                  id="assign-amount"
-                  className="pr-8"
-                  placeholder="请输入需要支付的金额"
-                  value={submit.total_amount ?? ''}
-                  onChange={(event) =>
-                    setSubmit((state) => ({ ...state, total_amount: event.target.value }))
-                  }
-                  data-testid="order-assign-amount"
+                <Controller
+                  control={form.control}
+                  name="total_amount"
+                  render={({ field, fieldState }) => (
+                    <Input
+                      {...field}
+                      id="order-assign-amount"
+                      className="pr-8"
+                      placeholder="请输入需要支付的金额"
+                      data-testid="order-assign-amount"
+                      aria-invalid={fieldState.invalid}
+                    />
+                  )}
                 />
                 <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground">
                   ¥
                 </span>
               </div>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              取消
-            </Button>
-            <Button
-              onClick={() => void assignOrder()}
-              disabled={assign.isPending}
-              loading={assign.isPending}
-              data-testid="order-assign-submit"
-            >
-              确定
-            </Button>
-          </DialogFooter>
+              <FieldError errors={[form.formState.errors.total_amount]} />
+            </Field>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+                取消
+              </Button>
+              <Button
+                type="submit"
+                disabled={assign.isPending || form.formState.isSubmitting}
+                loading={assign.isPending || form.formState.isSubmitting}
+                data-testid="order-assign-submit"
+              >
+                确定
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </>
@@ -391,6 +489,8 @@ export default function OrdersPage() {
     filter: query.filter,
   });
   const plans = useAdminPlans();
+  const planData = plans.data;
+  const plansReady = !plans.isError && planData !== undefined;
   const paid = useMarkOrderPaidMutation();
   const cancel = useCancelOrderMutation();
   const updateOrder = useUpdateOrderMutation();
@@ -414,17 +514,16 @@ export default function OrdersPage() {
     searchTimer.current = setTimeout(() => setFilter('trade_no', '模糊', value), 300);
   };
 
+  useEffect(() => () => clearTimeout(searchTimer.current), []);
+
   const resetFilters = () => {
+    clearTimeout(searchTimer.current);
+    searchTimer.current = undefined;
     setSearch('');
     setQuery((state) => ({ ...state, current: 1, filter: [] }));
   };
 
-  const markPaid = (tradeNo: string) => {
-    paid
-      .mutateAsync(tradeNo)
-      .then(() => void orders.refetch())
-      .catch(() => undefined);
-  };
+  const markPaid = (tradeNo: string) => paid.mutate(tradeNo);
 
   const cancelOrder = async (tradeNo: string) => {
     const confirmed = await confirmDialog({
@@ -433,17 +532,11 @@ export default function OrdersPage() {
       confirmText: '确定',
     });
     if (!confirmed) return;
-    cancel
-      .mutateAsync(tradeNo)
-      .then(() => void orders.refetch())
-      .catch(() => undefined);
+    cancel.mutate(tradeNo);
   };
 
   const updateCommission = (tradeNo: string, value: string) => {
-    updateOrder
-      .mutateAsync({ tradeNo, key: 'commission_status', value })
-      .then(() => void orders.refetch())
-      .catch(() => undefined);
+    updateOrder.mutate({ tradeNo, key: 'commission_status', value });
   };
 
   // Cross-page Tier-1 contract: seed the user filter and navigate to /user,
@@ -526,13 +619,22 @@ export default function OrdersPage() {
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">
-          <DropdownMenuItem disabled={value === 0} onClick={() => updateCommission(row.trade_no, '0')}>
+          <DropdownMenuItem
+            disabled={value === 0}
+            onClick={() => updateCommission(row.trade_no, '0')}
+          >
             待确认
           </DropdownMenuItem>
-          <DropdownMenuItem disabled={value === 1} onClick={() => updateCommission(row.trade_no, '1')}>
+          <DropdownMenuItem
+            disabled={value === 1}
+            onClick={() => updateCommission(row.trade_no, '1')}
+          >
             有效
           </DropdownMenuItem>
-          <DropdownMenuItem disabled={value === 3} onClick={() => updateCommission(row.trade_no, '3')}>
+          <DropdownMenuItem
+            disabled={value === 3}
+            onClick={() => updateCommission(row.trade_no, '3')}
+          >
             无效
           </DropdownMenuItem>
         </DropdownMenuContent>
@@ -599,7 +701,9 @@ export default function OrdersPage() {
     {
       id: 'commission_status',
       header: () => (
-        <HeaderTooltip title="标记为[有效]后将会由系统处理后发放到用户并完成">佣金状态</HeaderTooltip>
+        <HeaderTooltip title="标记为[有效]后将会由系统处理后发放到用户并完成">
+          佣金状态
+        </HeaderTooltip>
       ),
       cell: ({ row }) => renderCommissionStatus(row.original),
     },
@@ -613,9 +717,23 @@ export default function OrdersPage() {
 
   return (
     <PageShell data-testid="orders-page">
+      {orders.isError ? (
+        <ErrorState message="订单列表加载失败" onRetry={() => void orders.refetch()} />
+      ) : null}
+      {plans.isError ? (
+        <ErrorState message="订阅列表加载失败" onRetry={() => void plans.refetch()} />
+      ) : null}
       <PageHeader
         title="订单管理"
-        actions={<AssignOrderDialog plans={plans.data ?? []} onAssigned={() => orders.refetch()} />}
+        actions={
+          plansReady ? (
+            <AssignOrderDialog plans={planData} />
+          ) : (
+            <Button disabled data-testid="order-assign-open">
+              分配订单
+            </Button>
+          )
+        }
       />
 
       <TooltipProvider delayDuration={100}>
@@ -679,7 +797,11 @@ export default function OrdersPage() {
               getRowKey={(row) => row.id}
               className="min-w-[1024px]"
               data-testid="orders-table"
-              empty={data.length === 0 ? '暂无订单' : undefined}
+              empty={
+                !orders.isError && orders.data !== undefined && data.length === 0
+                  ? '暂无订单'
+                  : undefined
+              }
               emptyTestId="orders-empty"
               virtualizer={{ enabled: data.length > VIRTUALIZE_MIN_ROWS }}
             />

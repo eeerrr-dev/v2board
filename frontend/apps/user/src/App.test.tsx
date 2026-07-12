@@ -1,27 +1,63 @@
 import { isValidElement, type ReactElement } from 'react';
-import { QueryClient } from '@tanstack/react-query';
+import { CancelledError, QueryClient } from '@tanstack/react-query';
 import { screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryRouter, type LoaderFunctionArgs, type RouteObject } from 'react-router';
+import type * as ApiClientModule from '@v2board/api-client';
 import { AppLayout } from '@/components/layout/app-layout';
 import { GuestLayout } from '@/components/layout/guest-layout';
 import { RequireAuth } from '@/components/layout/require-auth';
 import { RouteBoundaryOutlet } from '@/components/route-error-boundary';
+import { apiClient } from '@/lib/api';
 import { setAuthData } from '@/lib/auth';
 import { userQueryOptions } from '@/lib/queries';
 import { renderRoutes } from '@/test/render';
 import {
   USER_APP_LAYOUT_ROUTE_PATHS,
-  USER_LEGACY_ROUTE_OPTIONS,
-  USER_LEGACY_ROUTE_PATHS,
+  USER_HASH_ROUTE_OPTIONS,
+  USER_ROUTE_PATHS,
+  createLoginLoader,
   createRequireUserLoader,
   createUserRouter,
   createUserRoutes,
+  rootUserRouteLoader,
 } from './App';
 
-function loaderArgs(routePath: string): LoaderFunctionArgs {
+const sessionApi = vi.hoisted(() => ({
+  checkLogin: vi.fn(),
+  commConfig: vi.fn(),
+  fetchNotices: vi.fn(),
+  getStat: vi.fn(),
+  getSubscribe: vi.fn(),
+  info: vi.fn(),
+}));
+
+vi.mock('@v2board/api-client', async (importOriginal) => {
+  const actual = await importOriginal<typeof ApiClientModule>();
   return {
-    request: new Request(`https://v2board.local${routePath}`),
+    ...actual,
+    user: {
+      ...actual.user,
+      checkLogin: sessionApi.checkLogin,
+      commConfig: sessionApi.commConfig,
+      fetchNotices: sessionApi.fetchNotices,
+      getStat: sessionApi.getStat,
+      getSubscribe: sessionApi.getSubscribe,
+      info: sessionApi.info,
+    },
+  };
+});
+
+beforeEach(() => {
+  sessionApi.commConfig.mockResolvedValue({});
+  sessionApi.fetchNotices.mockResolvedValue([]);
+  sessionApi.getStat.mockResolvedValue({ pending_orders: 0, pending_tickets: 0 });
+  sessionApi.getSubscribe.mockResolvedValue(null);
+});
+
+function loaderArgs(routePath: string, signal?: AbortSignal): LoaderFunctionArgs {
+  return {
+    request: new Request(`https://v2board.local${routePath}`, { signal }),
     params: {},
     context: {},
   } as unknown as LoaderFunctionArgs;
@@ -34,6 +70,19 @@ function catchRedirect(run: () => unknown): Response {
   let thrown: unknown;
   try {
     run();
+  } catch (error) {
+    thrown = error;
+  }
+  expect(thrown).toBeInstanceOf(Response);
+  const response = thrown as Response;
+  expect(response.status).toBe(302);
+  return response;
+}
+
+async function catchAsyncRedirect(run: () => Promise<unknown>): Promise<Response> {
+  let thrown: unknown;
+  try {
+    await run();
   } catch (error) {
     thrown = error;
   }
@@ -72,11 +121,17 @@ function userRouteTree(queryClient = new QueryClient()) {
 
 afterEach(() => {
   setAuthData(null);
+  sessionApi.checkLogin.mockReset();
+  sessionApi.commConfig.mockReset();
+  sessionApi.fetchNotices.mockReset();
+  sessionApi.getStat.mockReset();
+  sessionApi.getSubscribe.mockReset();
+  sessionApi.info.mockReset();
 });
 
-describe('user legacy route table', () => {
+describe('user route table', () => {
   it('matches the bundled user route list exactly', () => {
-    expect([...USER_LEGACY_ROUTE_PATHS]).toEqual([
+    expect([...USER_ROUTE_PATHS]).toEqual([
       '/dashboard',
       '/forgetpassword',
       '/',
@@ -97,29 +152,29 @@ describe('user legacy route table', () => {
   });
 
   it('does not expose route aliases absent from the bundled theme', () => {
-    expect(USER_LEGACY_ROUTE_PATHS).not.toContain('/forget');
-    expect(USER_LEGACY_ROUTE_PATHS).not.toContain('/plans');
-    expect(USER_LEGACY_ROUTE_PATHS).not.toContain('/orders');
-    expect(USER_LEGACY_ROUTE_PATHS).not.toContain('/tickets');
-    expect(USER_LEGACY_ROUTE_PATHS).not.toContain('/nodes');
-    expect(USER_LEGACY_ROUTE_PATHS).not.toContain('/home');
+    expect(USER_ROUTE_PATHS).not.toContain('/forget');
+    expect(USER_ROUTE_PATHS).not.toContain('/plans');
+    expect(USER_ROUTE_PATHS).not.toContain('/orders');
+    expect(USER_ROUTE_PATHS).not.toContain('/tickets');
+    expect(USER_ROUTE_PATHS).not.toContain('/nodes');
+    expect(USER_ROUTE_PATHS).not.toContain('/home');
   });
 
-  it('wires the legacy hash-normalization options for this app', () => {
-    expect(USER_LEGACY_ROUTE_OPTIONS.authenticatedFallback).toBe('/dashboard');
-    expect(USER_LEGACY_ROUTE_OPTIONS.guestFallback).toBe('/login');
+  it('wires the hash-route normalization options for this app', () => {
+    expect(USER_HASH_ROUTE_OPTIONS.authenticatedFallback).toBe('/dashboard');
+    expect(USER_HASH_ROUTE_OPTIONS.guestFallback).toBe('/login');
     // Empty on purpose: an authenticated session may stay on /login etc.
-    // instead of being force-bounced to the dashboard (legacy behavior).
-    expect(USER_LEGACY_ROUTE_OPTIONS.authenticatedPublicFallbackRoutes).toEqual([]);
-    // Nested legacy paths like /dashboard/plan recover against the full table.
-    expect(USER_LEGACY_ROUTE_OPTIONS.nestedPrefixes).toEqual([...USER_LEGACY_ROUTE_PATHS]);
-    expect(USER_LEGACY_ROUTE_OPTIONS.publicRoutes).toEqual([
+    // instead of being force-bounced to the dashboard (route contract).
+    expect(USER_HASH_ROUTE_OPTIONS.authenticatedPublicFallbackRoutes).toEqual([]);
+    // Duplicated nested paths like /dashboard/plan recover against the full table.
+    expect(USER_HASH_ROUTE_OPTIONS.nestedPrefixes).toEqual([...USER_ROUTE_PATHS]);
+    expect(USER_HASH_ROUTE_OPTIONS.publicRoutes).toEqual([
       '/',
       '/login',
       '/register',
       '/forgetpassword',
     ]);
-    expect(USER_LEGACY_ROUTE_OPTIONS.routes).toEqual([...USER_LEGACY_ROUTE_PATHS]);
+    expect(USER_HASH_ROUTE_OPTIONS.routes).toEqual([...USER_ROUTE_PATHS]);
   });
 });
 
@@ -137,6 +192,14 @@ describe('user route tree', () => {
       '/register',
       '/forgetpassword',
     ]);
+    expect(typeof guestLayout!.children?.find((route) => route.path === '/login')?.loader).toBe(
+      'function',
+    );
+    expect(
+      guestLayout!.children
+        ?.filter((route) => route.path !== '/login')
+        .every((route) => route.loader === undefined),
+    ).toBe(true);
   });
 
   it('mounts app pages under one shared RequireAuth-gated AppLayout with the entry loader', () => {
@@ -167,17 +230,20 @@ describe('user route tree', () => {
     expect(typeof detailIndex?.lazy).toBe('function');
   });
 
-  it('gives every legacy page a lazy route module with its own error boundary', async () => {
+  it('gives every rendered page a lazy route module and keeps root redirect-only', () => {
     const { root, children, guestLayout, appLayout, ticketDetail } = userRouteTree();
-    const home = children.find((route) => route.path === '/');
+    const rootEntry = children.find((route) => route.path === '/');
     const pageRoutes = [
-      home!,
       ...(guestLayout!.children ?? []),
       ...(appLayout!.children ?? []),
       ...(ticketDetail!.children ?? []),
     ];
 
-    expect(pageRoutes).toHaveLength(USER_LEGACY_ROUTE_PATHS.length);
+    expect(rootEntry).toBeDefined();
+    expect(rootEntry!.lazy).toBeUndefined();
+    expect(typeof rootEntry!.loader).toBe('function');
+    expect(rootEntry!.errorElement).toBeTruthy();
+    expect(pageRoutes).toHaveLength(USER_ROUTE_PATHS.length - 1);
     for (const route of pageRoutes) {
       expect(typeof route.lazy).toBe('function');
       expect(route.errorElement).toBeTruthy();
@@ -186,13 +252,10 @@ describe('user route tree', () => {
       expect(route.errorElement).toBeTruthy();
     }
 
-    // A lazy module resolves to a renderable route Component.
-    const homeModule = await (home!.lazy as () => Promise<{ Component: unknown }>)();
-    expect(typeof homeModule.Component).toBe('function');
   });
 });
 
-describe('legacy hash normalization loaders (root + catch-all wiring)', () => {
+describe('hash-route normalization loaders (root + catch-all wiring)', () => {
   const { root, catchAll } = userRouteTree();
   const normalize = root.loader as SyncLoader;
   const unknown = catchAll!.loader as SyncLoader;
@@ -211,7 +274,7 @@ describe('legacy hash normalization loaders (root + catch-all wiring)', () => {
     expect(normalize(loaderArgs('/register'))).toBeNull();
   });
 
-  it('recovers nested legacy paths onto their canonical route, keeping the query', () => {
+  it('recovers duplicated nested paths onto their canonical route, keeping the query', () => {
     setAuthData('token-xyz');
     const response = catchRedirect(() => normalize(loaderArgs('/dashboard/plan?from=email')));
     expect(response.headers.get('Location')).toBe('/plan?from=email');
@@ -247,11 +310,187 @@ describe('legacy hash normalization loaders (root + catch-all wiring)', () => {
     );
   });
 
-  it('recovers a nested legacy path from the catch-all before falling back', () => {
+  it('recovers a duplicated nested path from the catch-all before falling back', () => {
     setAuthData('token-xyz');
     expect(
       catchRedirect(() => unknown(loaderArgs('/dashboard/traffic'))).headers.get('Location'),
     ).toBe('/traffic');
+  });
+});
+
+describe('native root route loader', () => {
+  it('routes guests to login and authenticated sessions to the dashboard', () => {
+    setAuthData(null);
+    expect(catchRedirect(() => rootUserRouteLoader()).headers.get('Location')).toBe('/login');
+
+    setAuthData('token-xyz');
+    expect(catchRedirect(() => rootUserRouteLoader()).headers.get('Location')).toBe('/dashboard');
+  });
+});
+
+describe('login existing-session loader', () => {
+  it('does not probe without a stored auth token', async () => {
+    setAuthData(null);
+    const loader = createLoginLoader(
+      new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+    );
+
+    await expect(loader(loaderArgs('/login'))).resolves.toBeNull();
+    expect(sessionApi.checkLogin).not.toHaveBeenCalled();
+    expect(sessionApi.info).not.toHaveBeenCalled();
+  });
+
+  it('redirects a valid session and prewarms user info through the QueryClient', async () => {
+    setAuthData('EXISTING_AUTH');
+    sessionApi.checkLogin.mockResolvedValue({ is_login: true });
+    sessionApi.info.mockResolvedValue({ email: 'user@example.com' });
+    const queryClient = new QueryClient();
+    const loader = createLoginLoader(queryClient);
+
+    const response = await catchAsyncRedirect(() => loader(loaderArgs('/login?redirect=order')));
+
+    expect(response.headers.get('Location')).toBe('/order');
+    expect(sessionApi.checkLogin).toHaveBeenCalledTimes(1);
+    expect(sessionApi.checkLogin).toHaveBeenCalledWith(apiClient, {
+      signal: expect.any(AbortSignal),
+    });
+    await waitFor(() => expect(sessionApi.info).toHaveBeenCalledTimes(1));
+    expect(queryClient.getQueryData(userQueryOptions.checkLogin().queryKey)).toEqual({
+      is_login: true,
+    });
+  });
+
+  it('clears an invalid stored session and leaves the login route active', async () => {
+    setAuthData('STALE_AUTH');
+    sessionApi.checkLogin.mockResolvedValue({ is_login: false });
+    const loader = createLoginLoader(
+      new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+    );
+
+    await expect(loader(loaderArgs('/login'))).resolves.toBeNull();
+
+    expect(localStorage.getItem('authorization')).toBeNull();
+    expect(sessionApi.info).not.toHaveBeenCalled();
+  });
+
+  it('keeps the token and lets the route boundary own a session-probe transport failure', async () => {
+    setAuthData('EXISTING_AUTH');
+    const failure = new Error('network down');
+    sessionApi.checkLogin.mockRejectedValue(failure);
+    const loader = createLoginLoader(
+      new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+    );
+
+    await expect(loader(loaderArgs('/login'))).rejects.toBe(failure);
+
+    expect(localStorage.getItem('authorization')).toBe('EXISTING_AUTH');
+    expect(sessionApi.info).not.toHaveBeenCalled();
+  });
+
+  it('quietly settles an aborted session probe because the navigation has no UI owner', async () => {
+    setAuthData('EXISTING_AUTH');
+    sessionApi.checkLogin.mockRejectedValue(new DOMException('aborted', 'AbortError'));
+    const loader = createLoginLoader(
+      new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+    );
+
+    await expect(loader(loaderArgs('/login'))).resolves.toBeNull();
+    expect(localStorage.getItem('authorization')).toBe('EXISTING_AUTH');
+  });
+
+  it('quietly settles TanStack Query cancellation without masking real failures', async () => {
+    setAuthData('EXISTING_AUTH');
+    sessionApi.checkLogin.mockRejectedValue(new CancelledError());
+    const loader = createLoginLoader(
+      new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+    );
+
+    await expect(loader(loaderArgs('/login'))).resolves.toBeNull();
+    expect(localStorage.getItem('authorization')).toBe('EXISTING_AUTH');
+  });
+
+  it('aborts the TanStack request when the sole route-loader consumer is cancelled', async () => {
+    setAuthData('EXISTING_AUTH');
+    let querySignal: AbortSignal | undefined;
+    sessionApi.checkLogin.mockImplementation(
+      (_client: unknown, config: { signal: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          querySignal = config.signal;
+          config.signal.addEventListener('abort', () => reject(new Error('aborted')), {
+            once: true,
+          });
+        }),
+    );
+    const loader = createLoginLoader(new QueryClient());
+    const navigation = new AbortController();
+
+    const pending = loader(loaderArgs('/login', navigation.signal));
+    await waitFor(() => expect(sessionApi.checkLogin).toHaveBeenCalledTimes(1));
+    navigation.abort();
+
+    await expect(pending).resolves.toBeNull();
+    expect(querySignal?.aborted).toBe(true);
+    expect(localStorage.getItem('authorization')).toBe('EXISTING_AUTH');
+  });
+
+  it('never probes the stale session while a verify handoff is present', async () => {
+    setAuthData('EXISTING_AUTH');
+    const loader = createLoginLoader(new QueryClient());
+
+    await expect(
+      loader(loaderArgs('/login?verify=one-time-token&redirect=order')),
+    ).resolves.toBeNull();
+
+    expect(sessionApi.checkLogin).not.toHaveBeenCalled();
+    expect(localStorage.getItem('authorization')).toBe('EXISTING_AUTH');
+  });
+
+  it('dedupes concurrent/StrictMode-equivalent loader probes and user-info prewarms', async () => {
+    setAuthData('EXISTING_AUTH');
+    let resolveSession: ((value: { is_login: boolean }) => void) | undefined;
+    let querySignal: AbortSignal | undefined;
+    sessionApi.checkLogin.mockImplementation(
+      (_client: unknown, config: { signal: AbortSignal }) =>
+        new Promise((resolve) => {
+          querySignal = config.signal;
+          resolveSession = resolve;
+        }),
+    );
+    sessionApi.info.mockResolvedValue({ email: 'user@example.com' });
+    const loader = createLoginLoader(new QueryClient());
+    const firstNavigation = new AbortController();
+    const secondNavigation = new AbortController();
+
+    const first = loader(loaderArgs('/login', firstNavigation.signal));
+    const second = loader(loaderArgs('/login', secondNavigation.signal));
+    await waitFor(() => expect(sessionApi.checkLogin).toHaveBeenCalledTimes(1));
+    firstNavigation.abort();
+    expect(querySignal?.aborted).toBe(false);
+    resolveSession?.({ is_login: true });
+
+    const results = await Promise.allSettled([first, second]);
+    expect(results[0]).toEqual({ status: 'fulfilled', value: null });
+    expect(results[1]?.status).toBe('rejected');
+    if (results[1]?.status === 'rejected') {
+      expect(results[1].reason).toBeInstanceOf(Response);
+      expect((results[1].reason as Response).headers.get('Location')).toBe('/dashboard');
+    }
+    expect(sessionApi.checkLogin).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(sessionApi.info).toHaveBeenCalledTimes(1));
+  });
+
+  it('normalizes browser-equivalent protocol-relative redirect bypasses', async () => {
+    setAuthData('EXISTING_AUTH');
+    sessionApi.checkLogin.mockResolvedValue({ is_login: true });
+    sessionApi.info.mockResolvedValue({ email: 'user@example.com' });
+    const loader = createLoginLoader(new QueryClient());
+    const unsafe = encodeURIComponent('/\\evil.example/path');
+
+    const response = await catchAsyncRedirect(() =>
+      loader(loaderArgs(`/login?redirect=${unsafe}`)),
+    );
+
+    expect(response.headers.get('Location')).toBe('/dashboard');
   });
 });
 
@@ -291,22 +530,14 @@ describe('user route auth entry gate (layer 1: route loader)', () => {
     setAuthData(null);
   });
 
-  it('seeds the legacy empty user record when /user/info fails while still authenticated', async () => {
-    // Legacy keeps the dashboard shell mounted on an HTTP 401 from /user/info
-    // (user-auth-401-no-redirect); an errored info query would make AppLayout's
-    // useSuspenseQuery re-throw to the route errorElement and unmount the shell.
+  it('lets the route boundary handle /user/info failures without fabricating a user', async () => {
     setAuthData('token-xyz');
     const queryClient = new QueryClient();
     vi.spyOn(queryClient, 'ensureQueryData').mockRejectedValue(new Error('auth required'));
     const loader = createRequireUserLoader(queryClient);
 
-    const result = await loader(loaderArgs('/dashboard'));
-
-    expect(result).toBeNull();
-    expect(queryClient.getQueryData(userQueryOptions.info().queryKey)).toMatchObject({
-      email: '',
-      balance: 0,
-    });
+    await expect(loader(loaderArgs('/dashboard'))).rejects.toThrow('auth required');
+    expect(queryClient.getQueryData(userQueryOptions.info().queryKey)).toBeUndefined();
     setAuthData(null);
   });
 
@@ -314,26 +545,31 @@ describe('user route auth entry gate (layer 1: route loader)', () => {
     setAuthData('token-xyz');
     const queryClient = new QueryClient();
     vi.spyOn(queryClient, 'ensureQueryData').mockImplementation(async () => {
-      // redirectToLegacyLogin clears the token before the rejection propagates.
+      // The API unauthorized handler clears the token before rejection propagates.
       setAuthData(null);
       throw new Error('auth required');
     });
     const loader = createRequireUserLoader(queryClient);
 
-    const result = await loader(loaderArgs('/dashboard'));
-
-    expect(result).toBeNull();
+    let thrown: unknown;
+    try {
+      await loader(loaderArgs('/dashboard'));
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(Response);
+    expect((thrown as Response).headers.get('Location')).toBe('/login');
     expect(queryClient.getQueryData(userQueryOptions.info().queryKey)).toBeUndefined();
   });
 
-  it('keeps previously fetched user info instead of overwriting it with the fallback', async () => {
+  it('keeps previously fetched user info intact when a refresh fails', async () => {
     setAuthData('token-xyz');
     const queryClient = new QueryClient();
     queryClient.setQueryData(userQueryOptions.info().queryKey, { email: 'a@b.c' } as never);
     vi.spyOn(queryClient, 'ensureQueryData').mockRejectedValue(new Error('timeout'));
     const loader = createRequireUserLoader(queryClient);
 
-    await loader(loaderArgs('/dashboard'));
+    await expect(loader(loaderArgs('/dashboard'))).rejects.toThrow('timeout');
 
     expect(queryClient.getQueryData(userQueryOptions.info().queryKey)).toEqual({
       email: 'a@b.c',
@@ -345,9 +581,7 @@ describe('user route auth entry gate (layer 1: route loader)', () => {
 describe('user route dashboard prefetch loader', () => {
   it('wires a dashboard-only loader that warms subscribe/stat/notices/comm when authenticated', () => {
     const queryClient = new QueryClient();
-    const ensureSpy = vi
-      .spyOn(queryClient, 'ensureQueryData')
-      .mockResolvedValue(null as never);
+    const prefetchSpy = vi.spyOn(queryClient, 'prefetchQuery').mockResolvedValue(null as never);
     const { appLayout } = userRouteTree(queryClient);
     const dashboard = appLayout!.children?.find((route) => route.path === '/dashboard');
 
@@ -363,11 +597,11 @@ describe('user route dashboard prefetch loader', () => {
 
     setAuthData(null);
     expect(prefetch(loaderArgs('/dashboard'))).toBeNull();
-    expect(ensureSpy).not.toHaveBeenCalled();
+    expect(prefetchSpy).not.toHaveBeenCalled();
 
     setAuthData('token-xyz');
     expect(prefetch(loaderArgs('/dashboard'))).toBeNull();
-    const warmedKeys = ensureSpy.mock.calls.map(([options]) => options.queryKey);
+    const warmedKeys = prefetchSpy.mock.calls.map(([options]) => options.queryKey);
     expect(warmedKeys).toEqual([
       userQueryOptions.subscribe().queryKey,
       userQueryOptions.stat().queryKey,
@@ -379,7 +613,7 @@ describe('user route dashboard prefetch loader', () => {
 });
 
 describe('user router behavior', () => {
-  it('reads the legacy #/ hash entry location (hash router contract)', () => {
+  it('reads the #/ hash entry location defined by the router contract', () => {
     setAuthData(null);
     window.location.hash = '#/login';
     const router = createUserRouter(new QueryClient());
@@ -401,9 +635,7 @@ describe('user router behavior', () => {
       await waitFor(() => expect(router.state.location.pathname).toBe('/login'), {
         timeout: 5000,
       });
-      expect(router.state.location.search).toBe(
-        `?redirect=${encodeURIComponent('/ticket/123')}`,
-      );
+      expect(router.state.location.search).toBe(`?redirect=${encodeURIComponent('/ticket/123')}`);
     } finally {
       router.dispose();
     }
@@ -425,6 +657,7 @@ describe('user router behavior', () => {
     setAuthData('token-xyz');
     const queryClient = new QueryClient();
     vi.spyOn(queryClient, 'ensureQueryData').mockResolvedValue(null as never);
+    vi.spyOn(queryClient, 'prefetchQuery').mockResolvedValue(undefined);
     const authedRouter = createMemoryRouter(createUserRoutes(queryClient), {
       initialEntries: ['/definitely/not/a/route'],
     });

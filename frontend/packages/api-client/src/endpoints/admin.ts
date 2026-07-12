@@ -2,33 +2,57 @@ import type {
   AdminConfig,
   AdminConfigFlat,
   AdminOrderRow,
-  AdminPayment,
-  AdminStatSummary,
   AdminUserRow,
   AdminUserUpdatePayload,
   Coupon,
   Giftcard,
   Knowledge,
-  KnowledgeSummary,
   Notice,
-  OrderStatPoint,
-  PaymentFormDefinition,
-  QueueWorkloadItem,
   Plan,
   PlanPeriod,
-  QueueStats,
-  ServerRankItem,
   Ticket,
   TicketReplyPayload,
-  UserRankItem,
 } from '@v2board/types';
-import type { ApiClient, ApiRequestConfig, BackendEnvelope } from '../client';
+import type { output, ZodType } from 'zod';
+import type { ApiClient, ApiRequestConfig, BinaryApiResponse } from '../client';
+import type { serverRouteActionSchema, serverTypeNameSchema } from '../contracts';
+import { decimalToCents, decimalToScaledInteger } from '../money';
+import {
+  adminConfigSchema,
+  adminFilterSchema,
+  adminKnowledgeSummarySchema,
+  adminOrderSchema,
+  adminPaymentSchema,
+  adminStatSummarySchema,
+  adminUserDetailSchema,
+  adminUserSchema,
+  adminUserTrafficSchema,
+  arraySchema,
+  couponSchema,
+  csvJsonEnvelopeSchema,
+  giftcardSchema,
+  knowledgeSchema,
+  noticeSchema,
+  orderStatSchema,
+  pageEnvelopeSchema,
+  paymentFormSchema,
+  planSchema,
+  queueStatsSchema,
+  queueWorkloadSchema,
+  serverGroupSchema,
+  serverNodeSchema,
+  serverRankSchema,
+  serverRouteSchema,
+  stringArraySchema,
+  stringSchema,
+  testMailEnvelopeSchema,
+  ticketSchema,
+  trueSchema,
+  userRankSchema,
+} from '../contracts';
 
-export interface AdminFilter {
-  key: string;
-  condition: string;
-  value: string | number | null;
-}
+export const adminFilterArraySchema = arraySchema(adminFilterSchema);
+export type AdminFilter = output<typeof adminFilterSchema>;
 
 export interface AdminPageQuery {
   current?: number;
@@ -38,53 +62,15 @@ export interface AdminPageQuery {
   filter?: AdminFilter[];
 }
 
-export interface AdminThemeField {
-  field_name: string;
-  field_type: 'select' | 'input' | 'textarea';
-  label: string;
-  placeholder?: string;
-  select_options?: Record<string, string>;
-}
+export type AdminTestMailResult = output<typeof testMailEnvelopeSchema>;
 
-export interface AdminThemeInfo {
-  name: string;
-  description: string;
-  configs?: AdminThemeField[];
-}
-
-export interface AdminThemesResult {
-  themes: Record<string, AdminThemeInfo>;
-  active: string;
-}
-
-export interface AdminTestMailLog {
-  error?: string;
-  email?: string;
-  config?: {
-    host?: string;
-    port?: string | number;
-    encryption?: string;
-    username?: string;
-  };
-}
-
-export interface AdminTestMailResult extends BackendEnvelope<true> {
-  log?: AdminTestMailLog;
-}
-
-export interface AdminUserTrafficRecord {
-  record_at: number;
-  u: number;
-  d: number;
-  server_rate: number | string;
-}
+export type AdminUserTrafficRecord = output<typeof adminUserTrafficSchema>;
 
 export interface AdminUserTrafficQuery {
   user_id: number;
   page?: number;
   current?: number;
   pageSize?: number;
-  total?: number;
 }
 
 interface PageResult<T> {
@@ -92,87 +78,112 @@ interface PageResult<T> {
   total?: number;
 }
 
-const LEGACY_GB_BYTES = 1_073_741_824;
+type QueryRequestConfig = Pick<ApiRequestConfig, 'signal'>;
+type MutationRequestConfig = Pick<ApiRequestConfig, 'signal' | 'headers'>;
 
-const adminGet = <T>(client: ApiClient, path: string, params?: Record<string, unknown>) =>
-  client.request<T>({ url: client.resolveAdminPath(path), method: 'GET', params });
+const BYTES_PER_GIB = 1_073_741_824;
 
-const adminGetEnvelope = <T>(
+const adminGet = <TSchema extends ZodType>(
   client: ApiClient,
   path: string,
+  responseSchema: TSchema,
   params?: Record<string, unknown>,
-  config?: Pick<ApiRequestConfig, 'skipLegacyGlobalError'>,
+  config?: QueryRequestConfig,
 ) =>
-  client.requestEnvelope<T>({
+  client.request({
     url: client.resolveAdminPath(path),
     method: 'GET',
     params,
+    responseSchema,
     ...config,
   });
 
-const adminPost = <T>(client: ApiClient, path: string, data?: Record<string, unknown>) =>
-  client.request<T>({ url: client.resolveAdminPath(path), method: 'POST', data });
-
-function normalizeAdminConfig(config: AdminConfig): AdminConfig {
-  const deposit = { ...(config.deposit ?? {}) } as Record<string, unknown>;
-  const invite = { ...(config.invite ?? {}) } as Record<string, unknown>;
-  const site = { ...(config.site ?? {}) } as Record<string, unknown>;
-
-  if (typeof deposit.deposit_bounus === 'string') {
-    deposit.deposit_bounus = deposit.deposit_bounus.split(',');
-  }
-  if (typeof invite.commission_withdraw_method === 'string') {
-    invite.commission_withdraw_method = invite.commission_withdraw_method.split(',');
-  }
-  if (typeof site.email_whitelist_suffix === 'string') {
-    site.email_whitelist_suffix = site.email_whitelist_suffix.split(',');
-  }
-
-  const normalizedConfig = {
+const adminGetEnvelope = <TSchema extends ZodType>(
+  client: ApiClient,
+  path: string,
+  responseSchema: TSchema,
+  params?: Record<string, unknown>,
+  config?: QueryRequestConfig,
+) =>
+  client.requestEnvelope({
+    url: client.resolveAdminPath(path),
+    method: 'GET',
+    params,
+    responseSchema,
     ...config,
-    deposit: deposit as AdminConfig['deposit'],
-    invite: invite as AdminConfig['invite'],
-    site: site as AdminConfig['site'],
-  };
+  });
 
+const adminPost = <TSchema extends ZodType>(
+  client: ApiClient,
+  path: string,
+  responseSchema: TSchema,
+  data?: unknown,
+  config?: MutationRequestConfig,
+) =>
+  client.request({
+    url: client.resolveAdminPath(path),
+    method: 'POST',
+    data,
+    responseSchema,
+    ...config,
+  });
+
+const adminPostTrue = (
+  client: ApiClient,
+  path: string,
+  data?: unknown,
+  config?: MutationRequestConfig,
+) => adminPost(client, path, trueSchema, data, config);
+
+const bulkMailIdempotencyKeys = new WeakMap<object, string>();
+
+function mutationIdempotencyKey(payload: object): string {
+  const existing = bulkMailIdempotencyKeys.get(payload);
+  if (existing) return existing;
+  const generated =
+    globalThis.crypto?.randomUUID?.() ??
+    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  bulkMailIdempotencyKeys.set(payload, generated);
+  return generated;
+}
+
+function normalizeAdminConfig(config: output<typeof adminConfigSchema>): AdminConfig {
   return {
-    ...(normalizedConfig.ticket ?? {}),
-    ...(normalizedConfig.deposit ?? {}),
-    ...(normalizedConfig.invite ?? {}),
-    ...(normalizedConfig.site ?? {}),
-    ...(normalizedConfig.subscribe ?? {}),
-    ...(normalizedConfig.frontend ?? {}),
-    ...(normalizedConfig.server ?? {}),
-    ...(normalizedConfig.email ?? {}),
-    ...(normalizedConfig.telegram ?? {}),
-    ...(normalizedConfig.app ?? {}),
-    ...(normalizedConfig.safe ?? {}),
-    ...normalizedConfig,
+    ...(config.ticket ?? {}),
+    ...(config.deposit ?? {}),
+    ...(config.invite ?? {}),
+    ...(config.site ?? {}),
+    ...(config.subscribe ?? {}),
+    ...(config.frontend ?? {}),
+    ...(config.server ?? {}),
+    ...(config.email ?? {}),
+    ...(config.telegram ?? {}),
+    ...(config.app ?? {}),
+    ...(config.safe ?? {}),
+    ...config,
   };
 }
 
-export const fetchConfig = async (client: ApiClient, key?: string) =>
+export const fetchConfig = async (client: ApiClient, key?: string, config?: QueryRequestConfig) =>
   normalizeAdminConfig(
-    await adminGet<AdminConfig>(client, '/config/fetch', key ? { key } : undefined),
+    await adminGet(client, '/config/fetch', adminConfigSchema, key ? { key } : undefined, config),
   );
 
 export const saveConfig = (client: ApiClient, data: Partial<AdminConfigFlat>) =>
-  adminPost<true>(client, '/config/save', data as Record<string, unknown>);
+  adminPostTrue(client, '/config/save', data);
 
-export const getEmailTemplate = (client: ApiClient) =>
-  adminGet<string[]>(client, '/config/getEmailTemplate');
-
-export const getThemeTemplate = (client: ApiClient) =>
-  adminGet<Record<string, unknown>>(client, '/config/getThemeTemplate');
+export const getEmailTemplate = (client: ApiClient, config?: QueryRequestConfig) =>
+  adminGet(client, '/config/getEmailTemplate', stringArraySchema, undefined, config);
 
 export const setTelegramWebhook = (client: ApiClient, telegram_bot_token?: string) =>
-  adminPost<true>(client, '/config/setTelegramWebhook', { telegram_bot_token });
+  adminPostTrue(client, '/config/setTelegramWebhook', { telegram_bot_token });
 
 export const testSendMail = (client: ApiClient) =>
-  client.requestEnvelope<true>({
+  client.requestEnvelope({
     url: client.resolveAdminPath('/config/testSendMail'),
     method: 'POST',
-  }) as Promise<AdminTestMailResult>;
+    responseSchema: testMailEnvelopeSchema,
+  });
 
 const PLAN_PRICE_KEYS = [
   'month_price',
@@ -185,8 +196,24 @@ const PLAN_PRICE_KEYS = [
   'reset_price',
 ] as const satisfies readonly (keyof Plan)[];
 
+const PLAN_SAVE_KEYS = [
+  'id',
+  'name',
+  'content',
+  'group_id',
+  'transfer_enable',
+  'device_limit',
+  ...PLAN_PRICE_KEYS,
+  'reset_traffic_method',
+  'capacity_limit',
+  'speed_limit',
+  'force_update',
+] as const;
+
+type AdminPlanField = Exclude<(typeof PLAN_SAVE_KEYS)[number], 'force_update'>;
+
 export type AdminPlanSavePayload = {
-  [K in keyof Plan]?: Plan[K] | string | null;
+  [K in AdminPlanField]?: Plan[K] | string | null;
 } & {
   force_update?: boolean;
 };
@@ -200,231 +227,363 @@ function normalizePlan(plan: Plan): Plan {
   return next;
 }
 
-function legacyScaledFixed(value: unknown, divisor: number) {
+function formatScaledBackendValue(value: unknown, divisor: number) {
   return (Number(value) / divisor).toFixed(2);
 }
 
 function normalizeAdminUser(
-  user: AdminUserRow,
-  {
-    includeInviteUserEmail = false,
-    normalizeTotalUsed = false,
-  }: { includeInviteUserEmail?: boolean; normalizeTotalUsed?: boolean } = {},
+  user: output<typeof adminUserSchema>,
+  { normalizeTotalUsed = false }: { normalizeTotalUsed?: boolean } = {},
 ): AdminUserRow {
-  const next = { ...user } as Record<string, unknown>;
-  next.password = '';
-  next.transfer_enable = legacyScaledFixed(next.transfer_enable, LEGACY_GB_BYTES);
-  next.u = legacyScaledFixed(next.u, LEGACY_GB_BYTES);
-  next.d = legacyScaledFixed(next.d, LEGACY_GB_BYTES);
-  if (normalizeTotalUsed && 'total_used' in next) {
-    next.total_used = legacyScaledFixed(next.total_used, LEGACY_GB_BYTES);
-  }
-  next.commission_balance = legacyScaledFixed(next.commission_balance, 100);
-  next.balance = legacyScaledFixed(next.balance, 100);
-  const inviteUser = next.invite_user as { email?: string } | undefined;
-  if (includeInviteUserEmail && inviteUser) next.invite_user_email = inviteUser.email;
-  return next as unknown as AdminUserRow;
+  return {
+    ...user,
+    password: '',
+    transfer_enable: formatScaledBackendValue(user.transfer_enable, BYTES_PER_GIB),
+    u: formatScaledBackendValue(user.u, BYTES_PER_GIB),
+    d: formatScaledBackendValue(user.d, BYTES_PER_GIB),
+    plan_name: user.plan_name ?? null,
+    total_used: normalizeTotalUsed
+      ? formatScaledBackendValue(user.total_used, BYTES_PER_GIB)
+      : user.total_used,
+    commission_balance: formatScaledBackendValue(user.commission_balance, 100),
+    balance: formatScaledBackendValue(user.balance, 100),
+  };
 }
 
-export const fetchPlans = async (client: ApiClient) =>
-  (await adminGet<Plan[]>(client, '/plan/fetch')).map(normalizePlan);
+function normalizeAdminUserDetail(user: output<typeof adminUserDetailSchema>) {
+  return {
+    ...user,
+    password: '',
+    transfer_enable: formatScaledBackendValue(user.transfer_enable, BYTES_PER_GIB),
+    u: formatScaledBackendValue(user.u, BYTES_PER_GIB),
+    d: formatScaledBackendValue(user.d, BYTES_PER_GIB),
+    commission_balance: formatScaledBackendValue(user.commission_balance, 100),
+    balance: formatScaledBackendValue(user.balance, 100),
+    ...(user.invite_user?.email !== undefined ? { invite_user_email: user.invite_user.email } : {}),
+  };
+}
+
+export const fetchPlans = async (client: ApiClient, config?: QueryRequestConfig) =>
+  (await adminGet(client, '/plan/fetch', arraySchema(planSchema), undefined, config)).map(
+    normalizePlan,
+  );
 
 export const savePlan = (client: ApiClient, data: AdminPlanSavePayload) =>
-  adminPost<true>(client, '/plan/save', serializePlanForSave(data));
+  adminPostTrue(client, '/plan/save', serializePlanForSave(data));
 
 function serializePlanForSave(data: AdminPlanSavePayload): Record<string, unknown> {
-  const next: Record<string, unknown> = { ...data };
+  const next: Record<string, unknown> = {};
+  for (const key of PLAN_SAVE_KEYS) {
+    const value = data[key];
+    if (value !== undefined) next[key] = value;
+  }
   for (const key of PLAN_PRICE_KEYS) {
     const value = next[key];
-    if (value !== null) {
-      next[key] = Math.round(100 * Number(value));
+    if (value === undefined) continue;
+    if (value === null || value === '') {
+      next[key] = null;
+      continue;
     }
+    next[key] = decimalToCents(value as string | number);
   }
   return next;
 }
 
 export const updatePlan = (client: ApiClient, id: number, key: 'show' | 'renew', value: 0 | 1) =>
-  adminPost<true>(client, '/plan/update', { id, [key]: value });
+  adminPostTrue(client, '/plan/update', { id, [key]: value });
 
 export const dropPlan = (client: ApiClient, id: number) =>
-  adminPost<true>(client, '/plan/drop', { id });
+  adminPostTrue(client, '/plan/drop', { id });
 
 export const sortPlans = (client: ApiClient, plan_ids: number[]) =>
-  adminPost<true>(client, '/plan/sort', { plan_ids });
+  adminPostTrue(client, '/plan/sort', { plan_ids });
 
 export const fetchUsers = async (
   client: ApiClient,
   query: AdminPageQuery = {},
+  config?: QueryRequestConfig,
 ): Promise<PageResult<AdminUserRow>> => {
-  const env = await adminGetEnvelope<AdminUserRow[]>(client, '/user/fetch', { ...query }, {
-    skipLegacyGlobalError: true,
-  });
+  const env = await adminGetEnvelope(
+    client,
+    '/user/fetch',
+    pageEnvelopeSchema(adminUserSchema),
+    { ...query },
+    config,
+  );
   return {
     data: env.data.map((user) => normalizeAdminUser(user, { normalizeTotalUsed: true })),
     total: env.total,
   };
 };
 
-export const updateUser = (client: ApiClient, data: AdminUserUpdatePayload) =>
-  adminPost<true>(client, '/user/update', data as unknown as Record<string, unknown>);
+const ADMIN_USER_SCALED_FIELDS = {
+  transfer_enable: BYTES_PER_GIB,
+  u: BYTES_PER_GIB,
+  d: BYTES_PER_GIB,
+  balance: 100,
+  commission_balance: 100,
+} as const;
 
-export const getUserInfoById = async (client: ApiClient, id: number) =>
-  normalizeAdminUser(await adminGet<AdminUserRow>(client, '/user/getUserInfoById', { id }), {
-    includeInviteUserEmail: true,
-  });
+type AdminUserScaledField = keyof typeof ADMIN_USER_SCALED_FIELDS;
+
+/** Display-unit input accepted by the Admin editor. Unit conversion belongs at
+ * this API boundary so no page can accidentally send fractional bytes/cents. */
+export type AdminUserUpdateInput = Omit<AdminUserUpdatePayload, AdminUserScaledField> & {
+  [K in AdminUserScaledField]?: string | number | null;
+};
+
+function serializeAdminUserUpdate(data: AdminUserUpdateInput): AdminUserUpdatePayload {
+  const payload = { ...data } as Record<string, unknown>;
+  for (const [field, scale] of Object.entries(ADMIN_USER_SCALED_FIELDS)) {
+    const value = data[field as AdminUserScaledField];
+    if (value === undefined || value === null || value === '') {
+      payload[field] = value;
+    } else {
+      payload[field] = decimalToScaledInteger(value, scale);
+    }
+  }
+  return payload as unknown as AdminUserUpdatePayload;
+}
+
+export const updateUser = async (client: ApiClient, data: AdminUserUpdateInput) =>
+  adminPostTrue(client, '/user/update', serializeAdminUserUpdate(data));
+
+export const getUserInfoById = async (client: ApiClient, id: number, config?: QueryRequestConfig) =>
+  normalizeAdminUserDetail(
+    await adminGet(client, '/user/getUserInfoById', adminUserDetailSchema, { id }, config),
+  );
 
 export const generateUser = (
   client: ApiClient,
   data: {
     email_prefix?: string;
-    email_suffix?: string;
+    email_suffix: string;
     password?: string;
     plan_id?: number | null;
     expired_at?: number | string | null;
     generate_count?: number | string;
   },
 ) =>
-  client.requestEnvelope<unknown>({
+  client.requestBinary({
     url: client.resolveAdminPath('/user/generate'),
     method: 'POST',
     data,
-    responseType: 'arraybuffer',
-  }) as Promise<GenerateCsvResponse>;
+    jsonResponseSchema: csvJsonEnvelopeSchema,
+  });
 
 export const sendMailToUsers = (
   client: ApiClient,
-  data: { subject?: string; content?: string; filter?: AdminFilter[] },
-) => adminPost<true>(client, '/user/sendMail', data);
+  data: { subject: string; content: string; filter?: AdminFilter[] },
+) =>
+  adminPostTrue(client, '/user/sendMail', data, {
+    // TanStack invokes a mutation retry with the same variables object. Keeping
+    // the key by object identity makes that retry replay the durable batch while
+    // leaving the legacy form body byte-for-byte unchanged.
+    headers: { 'Idempotency-Key': mutationIdempotencyKey(data) },
+  });
 
 export const dumpUsersCsv = (client: ApiClient, filter?: AdminFilter[]) =>
-  client.requestEnvelope<unknown>({
+  client.requestBinary({
     url: client.resolveAdminPath('/user/dumpCSV'),
     method: 'POST',
     data: { filter },
-    responseType: 'arraybuffer',
-  }) as Promise<GenerateCsvResponse>;
+    jsonResponseSchema: csvJsonEnvelopeSchema,
+  });
 
 export const banUsers = (client: ApiClient, filter?: AdminFilter[]) =>
-  adminPost<true>(client, '/user/ban', { filter });
+  adminPostTrue(client, '/user/ban', { filter });
 
 export const resetUserSecret = (client: ApiClient, id: number) =>
-  adminPost<true>(client, '/user/resetSecret', { id });
+  adminPostTrue(client, '/user/resetSecret', { id });
 
 export const deleteUser = (client: ApiClient, id: number) =>
-  adminPost<true>(client, '/user/delUser', { id });
+  adminPostTrue(client, '/user/delUser', { id });
 
 export const deleteAllUsers = (client: ApiClient, filter?: AdminFilter[]) =>
-  adminPost<true>(client, '/user/allDel', { filter });
+  adminPostTrue(client, '/user/allDel', { filter });
 
 export const fetchOrders = async (
   client: ApiClient,
   query: AdminPageQuery & { is_commission?: 0 | 1 } = {},
+  config?: QueryRequestConfig,
 ): Promise<PageResult<AdminOrderRow>> => {
-  const env = await adminGetEnvelope<AdminOrderRow[]>(client, '/order/fetch', { ...query }, {
-    skipLegacyGlobalError: true,
-  });
+  const env = await adminGetEnvelope(
+    client,
+    '/order/fetch',
+    pageEnvelopeSchema(adminOrderSchema),
+    { ...query },
+    config,
+  );
   return { data: env.data, total: env.total };
 };
 
-export const orderDetail = (client: ApiClient, id: number) =>
-  adminPost<AdminOrderRow>(client, '/order/detail', { id });
+export const orderDetail = (client: ApiClient, id: number, config?: QueryRequestConfig) =>
+  adminPost(client, '/order/detail', adminOrderSchema, { id }, config);
 
 export const paidOrder = (client: ApiClient, trade_no: string) =>
-  adminPost<true>(client, '/order/paid', { trade_no });
+  adminPostTrue(client, '/order/paid', { trade_no });
 
 export const cancelOrder = (client: ApiClient, trade_no: string) =>
-  adminPost<true>(client, '/order/cancel', { trade_no });
+  adminPostTrue(client, '/order/cancel', { trade_no });
 
 export const updateOrder = (
   client: ApiClient,
   trade_no: string,
   key: 'commission_status' | 'status',
   value: string | number,
-) => adminPost<true>(client, '/order/update', { trade_no, [key]: value });
+) => adminPostTrue(client, '/order/update', { trade_no, [key]: value });
 
 export const assignOrder = (
   client: ApiClient,
   data: {
-    email?: string;
-    plan_id?: number;
-    period?: PlanPeriod;
-    total_amount?: number | string | null;
+    email: string;
+    plan_id: number;
+    period: PlanPeriod;
+    total_amount: number | string;
   },
 ) =>
-  adminPost<string>(client, '/order/assign', {
+  adminPost(client, '/order/assign', stringSchema, {
     ...data,
-    total_amount: 100 * (data.total_amount as number),
+    total_amount: data.total_amount === '' ? data.total_amount : decimalToCents(data.total_amount),
   });
 
-export const fetchPayments = (client: ApiClient) =>
-  adminGet<AdminPayment[]>(client, '/payment/fetch');
+export const fetchPayments = (client: ApiClient, config?: QueryRequestConfig) =>
+  adminGet(client, '/payment/fetch', arraySchema(adminPaymentSchema), undefined, config);
 
-export const paymentMethods = (client: ApiClient) =>
-  adminGet<string[]>(client, '/payment/getPaymentMethods');
+export const paymentMethods = (client: ApiClient, config?: QueryRequestConfig) =>
+  adminGet(client, '/payment/getPaymentMethods', stringArraySchema, undefined, config);
 
-export type SavePaymentPayload = Omit<
-  Partial<AdminPayment>,
-  'config' | 'handling_fee_fixed' | 'handling_fee_percent'
-> & {
-  config?: Record<string, unknown>;
+export interface SavePaymentPayload {
+  id?: number;
+  name: string;
+  icon?: string | null;
+  payment: string;
+  config: Record<string, unknown>;
+  notify_domain?: string | null;
   handling_fee_fixed?: string | number | null;
   handling_fee_percent?: string | number | null;
-};
+}
 
-export const paymentForm = (client: ApiClient, payment?: string, id?: number) =>
-  adminPost<PaymentFormDefinition>(client, '/payment/getPaymentForm', { payment, id });
+export const paymentForm = (
+  client: ApiClient,
+  payment?: string,
+  id?: number,
+  config?: QueryRequestConfig,
+) => adminPost(client, '/payment/getPaymentForm', paymentFormSchema, { payment, id }, config);
+
+const optionalPaymentFields = [
+  'icon',
+  'notify_domain',
+  'handling_fee_fixed',
+  'handling_fee_percent',
+] as const;
+
+function serializePaymentForSave(data: SavePaymentPayload): Record<string, unknown> {
+  // Whitelist the fields PaymentController::save actually consumes. In
+  // particular, never echo fetched uuid/enable/sort/timestamps/notify_url back
+  // into an update just because a caller started from an AdminPayment object.
+  const payload: Record<string, unknown> = {
+    ...(data.id === undefined ? {} : { id: data.id }),
+    name: data.name,
+    payment: data.payment,
+    config: data.config,
+  };
+  for (const key of optionalPaymentFields) {
+    const value = data[key];
+    if (value === undefined) continue;
+    if (value === '') {
+      // Missing optional fields are cleanest on create. On edit, an explicit
+      // null is required so clearing an existing value does not silently retain
+      // the old database value; the admin client encodes null as an empty form
+      // value for Laravel's ConvertEmptyStringsToNull middleware.
+      if (data.id === undefined) continue;
+      payload[key] = null;
+      continue;
+    }
+    payload[key] = value;
+  }
+  if (payload.handling_fee_fixed != null) {
+    payload.handling_fee_fixed = decimalToCents(payload.handling_fee_fixed as string | number);
+  }
+  return payload;
+}
 
 export const savePayment = (client: ApiClient, data: SavePaymentPayload) =>
-  adminPost<true>(client, '/payment/save', data as Record<string, unknown>);
+  adminPostTrue(client, '/payment/save', serializePaymentForSave(data));
 
 export const showPayment = (client: ApiClient, id: number) =>
-  adminPost<true>(client, '/payment/show', { id });
+  adminPostTrue(client, '/payment/show', { id });
 
 export const sortPayments = (client: ApiClient, payment_ids: number[]) =>
-  adminPost<true>(client, '/payment/sort', { ids: payment_ids });
+  adminPostTrue(client, '/payment/sort', { ids: payment_ids });
 
 export const dropPayment = (client: ApiClient, id: number) =>
-  adminPost<true>(client, '/payment/drop', { id });
+  adminPostTrue(client, '/payment/drop', { id });
 
 export const fetchNotices = async (
   client: ApiClient,
   _query: AdminPageQuery = {},
+  config?: QueryRequestConfig,
 ): Promise<PageResult<Notice>> => {
-  const env = await adminGetEnvelope<Notice[]>(client, '/notice/fetch');
+  const env = await adminGetEnvelope(
+    client,
+    '/notice/fetch',
+    pageEnvelopeSchema(noticeSchema),
+    undefined,
+    config,
+  );
   return { data: env.data, total: env.total };
 };
 
-export const saveNotice = (client: ApiClient, data: Partial<Notice>) =>
-  adminPost<true>(client, '/notice/save', data as Record<string, unknown>);
+export type SaveNoticePayload = Pick<Notice, 'content' | 'img_url' | 'tags' | 'title'> & {
+  id?: number;
+};
+
+export const saveNotice = (client: ApiClient, data: SaveNoticePayload) =>
+  adminPostTrue(client, '/notice/save', data);
 
 export const dropNotice = (client: ApiClient, id: number) =>
-  adminPost<true>(client, '/notice/drop', { id });
+  adminPostTrue(client, '/notice/drop', { id });
 
 export const showNotice = (client: ApiClient, id: number) =>
-  adminPost<true>(client, '/notice/show', { id });
+  adminPostTrue(client, '/notice/show', { id });
 
 export const fetchTickets = async (
   client: ApiClient,
   query: AdminPageQuery = {},
+  config?: QueryRequestConfig,
 ): Promise<PageResult<Ticket>> => {
-  const env = await adminGetEnvelope<Ticket[]>(client, '/ticket/fetch', { ...query });
+  const env = await adminGetEnvelope(
+    client,
+    '/ticket/fetch',
+    pageEnvelopeSchema(ticketSchema),
+    { ...query },
+    config,
+  );
   return { data: env.data, total: env.total };
 };
 
-export const ticketDetail = (client: ApiClient, id: number | string) =>
-  adminGet<Ticket>(client, '/ticket/fetch', { id });
+export const ticketDetail = (client: ApiClient, id: number | string, config?: QueryRequestConfig) =>
+  adminGet(client, '/ticket/fetch', ticketSchema, { id }, config);
 
 export const replyTicket = (client: ApiClient, payload: TicketReplyPayload) =>
-  adminPost<true>(client, '/ticket/reply', payload as unknown as Record<string, unknown>);
+  adminPostTrue(client, '/ticket/reply', payload);
 
 export const closeTicket = (client: ApiClient, id: number) =>
-  adminPost<true>(client, '/ticket/close', { id });
+  adminPostTrue(client, '/ticket/close', { id });
 
 export const fetchCoupons = async (
   client: ApiClient,
   query: AdminPageQuery = {},
+  config?: QueryRequestConfig,
 ): Promise<PageResult<Coupon>> => {
-  const env = await adminGetEnvelope<Coupon[]>(client, '/coupon/fetch', { ...query });
+  const env = await adminGetEnvelope(
+    client,
+    '/coupon/fetch',
+    pageEnvelopeSchema(couponSchema),
+    { ...query },
+    config,
+  );
   env.data.forEach((coupon) => {
     if (coupon.type === 1) coupon.value = coupon.value / 100;
   });
@@ -444,29 +603,42 @@ export type GenerateCouponPayload = Omit<
   generate_count?: number | string;
 };
 
-export type GenerateCsvResponse = BackendEnvelope<unknown> & { buffer?: unknown };
+export type GenerateCsvResponse = BinaryApiResponse<typeof csvJsonEnvelopeSchema>;
 
 export const generateCoupon = (client: ApiClient, data: GenerateCouponPayload) =>
-  client.requestEnvelope<unknown>({
+  client.requestBinary({
     url: client.resolveAdminPath('/coupon/generate'),
     method: 'POST',
-    data: data as Record<string, unknown>,
-    responseType: 'arraybuffer',
-  }) as Promise<GenerateCsvResponse>;
+    data: {
+      ...data,
+      value:
+        data.type === 1 && data.value != null && data.value !== ''
+          ? decimalToCents(data.value)
+          : data.value,
+    },
+    jsonResponseSchema: csvJsonEnvelopeSchema,
+  });
 
 export const dropCoupon = (client: ApiClient, id: number) =>
-  adminPost<true>(client, '/coupon/drop', { id });
+  adminPostTrue(client, '/coupon/drop', { id });
 
 export const showCoupon = (client: ApiClient, id: number) =>
-  adminPost<true>(client, '/coupon/show', { id });
+  adminPostTrue(client, '/coupon/show', { id });
 
 export const fetchGiftcards = async (
   client: ApiClient,
   query: AdminPageQuery = {},
+  config?: QueryRequestConfig,
 ): Promise<PageResult<Giftcard>> => {
-  const env = await adminGetEnvelope<Giftcard[]>(client, '/giftcard/fetch', { ...query });
+  const env = await adminGetEnvelope(
+    client,
+    '/giftcard/fetch',
+    pageEnvelopeSchema(giftcardSchema),
+    { ...query },
+    config,
+  );
   env.data.forEach((giftcard) => {
-    if (giftcard.type === 1) giftcard.value = giftcard.value / 100;
+    if (giftcard.type === 1 && giftcard.value !== null) giftcard.value /= 100;
   });
   return { data: env.data, total: env.total };
 };
@@ -484,167 +656,207 @@ export type GenerateGiftcardPayload = Omit<
 };
 
 export const generateGiftcard = (client: ApiClient, data: GenerateGiftcardPayload) =>
-  client.requestEnvelope<unknown>({
+  client.requestBinary({
     url: client.resolveAdminPath('/giftcard/generate'),
     method: 'POST',
-    data: data as Record<string, unknown>,
-    responseType: 'arraybuffer',
-  }) as Promise<GenerateCsvResponse>;
+    data: {
+      ...data,
+      value:
+        data.type === 1 && data.value != null && data.value !== ''
+          ? decimalToCents(data.value)
+          : data.value,
+    },
+    jsonResponseSchema: csvJsonEnvelopeSchema,
+  });
 
 export const dropGiftcard = (client: ApiClient, id: number) =>
-  adminPost<true>(client, '/giftcard/drop', { id });
+  adminPostTrue(client, '/giftcard/drop', { id });
 
-export const fetchKnowledge = (client: ApiClient) =>
-  adminGet<KnowledgeSummary[]>(client, '/knowledge/fetch');
+export const fetchKnowledge = (client: ApiClient, config?: QueryRequestConfig) =>
+  adminGet(client, '/knowledge/fetch', arraySchema(adminKnowledgeSummarySchema), undefined, config);
 
-export const knowledgeDetail = (client: ApiClient, id: number) =>
-  adminGet<Knowledge>(client, '/knowledge/fetch', { id });
+export const knowledgeDetail = (client: ApiClient, id: number, config?: QueryRequestConfig) =>
+  adminGet(client, '/knowledge/fetch', knowledgeSchema, { id }, config);
 
-export const knowledgeCategories = (client: ApiClient) =>
-  adminGet<string[]>(client, '/knowledge/getCategory');
+export const knowledgeCategories = (client: ApiClient, config?: QueryRequestConfig) =>
+  adminGet(client, '/knowledge/getCategory', stringArraySchema, undefined, config);
 
-export const saveKnowledge = (client: ApiClient, data: Partial<Knowledge>) =>
-  adminPost<true>(client, '/knowledge/save', data as Record<string, unknown>);
+export type SaveKnowledgePayload = Pick<Knowledge, 'body' | 'category' | 'language' | 'title'> & {
+  id?: number;
+};
+
+export const saveKnowledge = (client: ApiClient, data: SaveKnowledgePayload) =>
+  adminPostTrue(client, '/knowledge/save', data);
 
 export const showKnowledge = (client: ApiClient, id: number) =>
-  adminPost<true>(client, '/knowledge/show', { id });
+  adminPostTrue(client, '/knowledge/show', { id });
 
 export const dropKnowledge = (client: ApiClient, id: number) =>
-  adminPost<true>(client, '/knowledge/drop', { id });
+  adminPostTrue(client, '/knowledge/drop', { id });
 
 export const sortKnowledge = (client: ApiClient, knowledge_ids: number[]) =>
-  adminPost<true>(client, '/knowledge/sort', { knowledge_ids });
+  adminPostTrue(client, '/knowledge/sort', { knowledge_ids });
 
-export const queueStats = (client: ApiClient) =>
-  adminGet<QueueStats>(client, '/system/getQueueStats');
+export const queueStats = (client: ApiClient, config?: QueryRequestConfig) =>
+  adminGet(client, '/system/getQueueStats', queueStatsSchema, undefined, config);
 
-export const queueWorkload = (client: ApiClient) =>
-  adminGet<QueueWorkloadItem[]>(client, '/system/getQueueWorkload');
+export const queueWorkload = (client: ApiClient, config?: QueryRequestConfig) =>
+  adminGet(client, '/system/getQueueWorkload', arraySchema(queueWorkloadSchema), undefined, config);
 
-export const statSummary = (client: ApiClient) =>
-  adminGet<AdminStatSummary>(client, '/stat/getOverride');
+export const statSummary = (client: ApiClient, config?: QueryRequestConfig) =>
+  adminGet(client, '/stat/getOverride', adminStatSummarySchema, undefined, config);
 
-export const statServerLastRank = (client: ApiClient) =>
-  adminGet<ServerRankItem[]>(client, '/stat/getServerLastRank');
+export const statServerLastRank = (client: ApiClient, config?: QueryRequestConfig) =>
+  adminGet(client, '/stat/getServerLastRank', arraySchema(serverRankSchema), undefined, config);
 
-export const statServerTodayRank = (client: ApiClient) =>
-  adminGet<ServerRankItem[]>(client, '/stat/getServerTodayRank');
+export const statServerTodayRank = (client: ApiClient, config?: QueryRequestConfig) =>
+  adminGet(client, '/stat/getServerTodayRank', arraySchema(serverRankSchema), undefined, config);
 
-export const statUserLastRank = (client: ApiClient) =>
-  adminGet<UserRankItem[]>(client, '/stat/getUserLastRank');
+export const statUserLastRank = (client: ApiClient, config?: QueryRequestConfig) =>
+  adminGet(client, '/stat/getUserLastRank', arraySchema(userRankSchema), undefined, config);
 
-export const statUserTodayRank = (client: ApiClient) =>
-  adminGet<UserRankItem[]>(client, '/stat/getUserTodayRank');
+export const statUserTodayRank = (client: ApiClient, config?: QueryRequestConfig) =>
+  adminGet(client, '/stat/getUserTodayRank', arraySchema(userRankSchema), undefined, config);
 
-export const statOrder = (client: ApiClient) =>
-  adminGet<OrderStatPoint[]>(client, '/stat/getOrder');
+export const statOrder = (client: ApiClient, config?: QueryRequestConfig) =>
+  adminGet(client, '/stat/getOrder', arraySchema(orderStatSchema), undefined, config);
 
 export const statUser = async (
   client: ApiClient,
   query: AdminUserTrafficQuery,
+  config?: QueryRequestConfig,
 ): Promise<PageResult<AdminUserTrafficRecord>> => {
-  const env = await adminGetEnvelope<AdminUserTrafficRecord[]>(client, '/stat/getStatUser', {
-    ...query,
-  });
+  const env = await adminGetEnvelope(
+    client,
+    '/stat/getStatUser',
+    pageEnvelopeSchema(adminUserTrafficSchema),
+    { ...query },
+    config,
+  );
   return { data: env.data, total: env.total };
 };
 
-export const themes = (client: ApiClient) =>
-  adminGet<AdminThemesResult>(client, '/theme/getThemes');
+export type ServerNode = output<typeof serverNodeSchema>;
 
-export const themeConfig = (client: ApiClient, name: string) =>
-  adminPost<Record<string, unknown>>(client, '/theme/getThemeConfig', { name });
-
-export const saveThemeConfig = (client: ApiClient, data: { name: string; config: string }) =>
-  adminPost<true>(client, '/theme/saveThemeConfig', data as unknown as Record<string, unknown>);
-
-export interface ServerNode {
-  id: number;
-  name: string;
-  group_id: number[] | string[];
-  route_id: number[];
-  type: string;
-  host: string;
-  port: number | string;
-  server_port: number | null;
-  show: 0 | 1 | string;
-  rate: string;
-  parent_id: number | null;
-  online: number;
-  last_check_at: number | null;
-  is_online: 0 | 1;
-  available_status?: 0 | 1 | 2;
-}
-
-export const fetchServerNodes = (client: ApiClient) =>
-  adminGet<ServerNode[]>(client, '/server/manage/getNodes');
+export const fetchServerNodes = (client: ApiClient, config?: QueryRequestConfig) =>
+  adminGet(client, '/server/manage/getNodes', arraySchema(serverNodeSchema), undefined, config);
 
 export const sortServerNodes = (
   client: ApiClient,
   payload: Record<string, Record<string | number, number>>,
 ) =>
-  client.request<true>({
+  client.request({
     url: client.resolveAdminPath('/server/manage/sort'),
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     data: JSON.stringify(payload),
+    responseSchema: trueSchema,
   });
 
-export interface ServerGroup {
-  id: number;
+export type ServerGroup = output<typeof serverGroupSchema>;
+
+export interface SaveServerGroupPayload {
+  id?: number;
   name: string;
-  user_count?: number;
-  server_count?: number;
-  created_at: number;
-  updated_at: number;
 }
 
-export const fetchServerGroups = (client: ApiClient) =>
-  adminGet<ServerGroup[]>(client, '/server/group/fetch');
+export const fetchServerGroups = (client: ApiClient, config?: QueryRequestConfig) =>
+  adminGet(client, '/server/group/fetch', arraySchema(serverGroupSchema), undefined, config);
 
-export const saveServerGroup = (client: ApiClient, data: Partial<ServerGroup>) =>
-  adminPost<true>(client, '/server/group/save', data as Record<string, unknown>);
+export const saveServerGroup = (client: ApiClient, data: SaveServerGroupPayload) =>
+  adminPostTrue(client, '/server/group/save', data);
 
 export const dropServerGroup = (client: ApiClient, id: number) =>
-  adminPost<true>(client, '/server/group/drop', { id });
+  adminPostTrue(client, '/server/group/drop', { id });
 
-export interface ServerRoute {
-  id: number;
+export type ServerRouteAction = output<typeof serverRouteActionSchema>;
+export type ServerRoute = output<typeof serverRouteSchema>;
+
+export interface SaveServerRoutePayload {
+  id?: number;
   remarks: string;
-  match: string[] | string;
-  action: string;
+  match: string[];
+  action: ServerRouteAction;
   action_value: string | null;
-  created_at: number;
-  updated_at: number;
 }
 
-export const fetchServerRoutes = (client: ApiClient) =>
-  adminGet<ServerRoute[]>(client, '/server/route/fetch');
+export const fetchServerRoutes = (client: ApiClient, config?: QueryRequestConfig) =>
+  adminGet(client, '/server/route/fetch', arraySchema(serverRouteSchema), undefined, config);
 
-export const saveServerRoute = (client: ApiClient, data: Partial<ServerRoute>) =>
-  adminPost<true>(client, '/server/route/save', data as Record<string, unknown>);
+export const saveServerRoute = (client: ApiClient, data: SaveServerRoutePayload) =>
+  adminPostTrue(client, '/server/route/save', data);
 
 export const dropServerRoute = (client: ApiClient, id: number) =>
-  adminPost<true>(client, '/server/route/drop', { id });
+  adminPostTrue(client, '/server/route/drop', { id });
 
-export type ServerTypeName =
-  | 'shadowsocks'
-  | 'vmess'
-  | 'trojan'
-  | 'tuic'
-  | 'vless'
-  | 'hysteria'
-  | 'anytls'
-  | 'v2node';
+export type ServerTypeName = output<typeof serverTypeNameSchema>;
 
-export const saveServer = (
-  client: ApiClient,
-  type: ServerTypeName,
-  data: Record<string, unknown>,
-) => adminPost<true>(client, `/server/${type}/save`, data);
+type ServerPayloadScalar = string | number;
+type ServerPayloadBinary = 0 | 1 | '0' | '1';
+type ServerPayloadSecurity = ServerPayloadBinary | 2 | '2';
+type ServerJsonContainer = Record<string, unknown> | unknown[] | null;
+
+/**
+ * Exact public request surface shared by the eight server save endpoints.
+ * Protocol-specific keys are optional because the endpoint path supplies the
+ * discriminator, but arbitrary keys and response-only fields are rejected.
+ */
+export interface SaveServerPayload {
+  id?: number;
+  name: string;
+  group_id: ServerPayloadScalar[];
+  route_id?: ServerPayloadScalar[] | null;
+  parent_id?: ServerPayloadScalar | null;
+  host: string;
+  port: ServerPayloadScalar;
+  server_port: ServerPayloadScalar;
+  tags?: string[] | null;
+  rate: ServerPayloadScalar;
+  show?: ServerPayloadBinary;
+  sort?: ServerPayloadScalar | null;
+  listen_ip?: string | null;
+  protocol?: 'shadowsocks' | 'vmess' | 'vless' | 'trojan' | 'tuic' | 'hysteria2' | 'anytls';
+  tls?: ServerPayloadSecurity;
+  tls_settings?: ServerJsonContainer;
+  tlsSettings?: ServerJsonContainer;
+  network?: string;
+  network_settings?: ServerJsonContainer;
+  networkSettings?: ServerJsonContainer;
+  ruleSettings?: ServerJsonContainer;
+  dnsSettings?: ServerJsonContainer;
+  flow?: 'xtls-rprx-vision' | null;
+  encryption?: string | null;
+  encryption_settings?: ServerJsonContainer;
+  cipher?: string | null;
+  obfs?: string | null;
+  obfs_settings?: {
+    path?: ServerPayloadScalar | null;
+    host?: ServerPayloadScalar | null;
+  } | null;
+  obfs_password?: string | null;
+  server_name?: string | null;
+  allow_insecure?: ServerPayloadBinary;
+  insecure?: ServerPayloadBinary;
+  version?: 1 | 2 | '1' | '2';
+  up_mbps?: ServerPayloadScalar | null;
+  down_mbps?: ServerPayloadScalar | null;
+  disable_sni?: ServerPayloadBinary;
+  udp_relay_mode?: string | null;
+  zero_rtt_handshake?: ServerPayloadBinary;
+  congestion_control?: string | null;
+  padding_scheme?: string | null;
+}
+
+export interface SaveServerRequest {
+  type: ServerTypeName;
+  data: SaveServerPayload;
+}
+
+export const saveServer = (client: ApiClient, type: ServerTypeName, data: SaveServerPayload) =>
+  adminPostTrue(client, `/server/${type}/save`, data);
 
 export const dropServer = (client: ApiClient, type: ServerTypeName, id: number) =>
-  adminPost<true>(client, `/server/${type}/drop`, { id });
+  adminPostTrue(client, `/server/${type}/drop`, { id });
 
 export const updateServer = (
   client: ApiClient,
@@ -652,7 +864,7 @@ export const updateServer = (
   id: number,
   key: 'show',
   value: 0 | 1,
-) => adminPost<true>(client, `/server/${type}/update`, { id, [key]: value });
+) => adminPostTrue(client, `/server/${type}/update`, { id, [key]: value });
 
 export const copyServer = (client: ApiClient, type: ServerTypeName, id: number) =>
-  adminPost<true>(client, `/server/${type}/copy`, { id });
+  adminPostTrue(client, `/server/${type}/copy`, { id });

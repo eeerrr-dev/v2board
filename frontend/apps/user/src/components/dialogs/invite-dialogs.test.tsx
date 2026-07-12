@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/render';
+import { createTestTranslation } from '@/test/i18next-selector';
 import { TransferDialog } from './transfer-dialog';
 import { WithdrawDialog } from './withdraw-dialog';
 
@@ -23,10 +24,8 @@ vi.mock('react-router', () => ({
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    i18n: { language: 'zh-CN' },
-    t: (key: string, values?: Record<string, unknown>) => {
-      const labels: Record<string, string> = {
+  useTranslation: () =>
+    createTestTranslation({
         'common.cancel': '取消',
         'dashboard.transfer_to_balance': '推广佣金划转至余额',
         'invite.current_commission_balance': '当前推广佣金余额',
@@ -45,18 +44,11 @@ vi.mock('react-i18next', () => ({
         'invite.withdraw_method_placeholder': '请选择提现方式',
         'invite.withdraw_submit': '确认',
         'profile.confirm': '确认',
-      };
-      return (labels[key] ?? key)
-        .replace('{{title}}', String(values?.title ?? ''))
-        .replace('{title}', String(values?.title ?? ''));
-    },
-  }),
+    }),
 }));
 
-vi.mock('@/lib/legacy-settings', () => ({
-  getLegacySettings: () => ({
-    title: 'V2Board',
-  }),
+vi.mock('@/lib/runtime-config', () => ({
+  getSiteTitle: () => 'V2Board',
 }));
 
 vi.mock('@/lib/queries', () => ({
@@ -65,38 +57,65 @@ vi.mock('@/lib/queries', () => ({
   },
   useTransferMutation: () => ({
     isPending: false,
-    mutateAsync: mocks.transferMutateAsync,
+    mutate: (payload: unknown, options?: MutationCallbacks) =>
+      runMockMutation(mocks.transferMutateAsync, payload, options),
   }),
   useWithdrawCommissionMutation: () => ({
     isPending: false,
-    mutateAsync: mocks.withdrawMutateAsync,
+    mutate: (payload: unknown, options?: MutationCallbacks) =>
+      runMockMutation(mocks.withdrawMutateAsync, payload, options),
   }),
 }));
+
+interface MutationCallbacks {
+  onError?: (error: unknown) => void;
+  onSuccess?: (data: unknown) => void;
+}
+
+function runMockMutation(
+  mutation: (...args: unknown[]) => unknown,
+  payload: unknown,
+  options?: MutationCallbacks,
+) {
+  void Promise.resolve(mutation(payload)).then(options?.onSuccess, options?.onError);
+}
 
 vi.mock('@/components/ui/select', () => ({
   Select: ({
     children,
+    disabled,
+    name,
     onValueChange,
     value,
   }: {
     children: ReactNode;
+    disabled?: boolean;
+    name?: string;
     onValueChange: (value: string) => void;
     value?: string;
-  }) => (
-    <select
-      aria-label="invite-select"
-      data-testid="invite-select-trigger"
-      value={value ?? ''}
-      onChange={(event) => onValueChange(event.target.value)}
-    >
-      <option value="">{findSelectPlaceholder(children)}</option>
-      {collectSelectOptions(children).map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
-  ),
+  }) => {
+    const trigger = findSelectTriggerProps(children);
+    return (
+      <select
+        id={trigger.id}
+        name={name}
+        disabled={disabled}
+        aria-invalid={trigger['aria-invalid']}
+        aria-describedby={trigger['aria-describedby']}
+        data-testid="invite-select-trigger"
+        value={value ?? ''}
+        onBlur={trigger.onBlur}
+        onChange={(event) => onValueChange(event.target.value)}
+      >
+        <option value="">{findSelectPlaceholder(children)}</option>
+        {collectSelectOptions(children).map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    );
+  },
   SelectContent: ({ children }: { children: ReactNode }) => children,
   SelectItem: ({ children }: { children: ReactNode; value: string }) => children,
   SelectTrigger: ({ children }: { children: ReactNode }) => children,
@@ -108,7 +127,8 @@ function collectSelectOptions(children: ReactNode): Array<{ label: ReactNode; va
   for (const child of Array.isArray(children) ? children : [children]) {
     if (!child || typeof child !== 'object' || !('props' in child)) continue;
     const props = child.props as { children?: ReactNode; value?: string };
-    if (typeof props.value === 'string') options.push({ label: props.children, value: props.value });
+    if (typeof props.value === 'string')
+      options.push({ label: props.children, value: props.value });
     options.push(...collectSelectOptions(props.children));
   }
   return options;
@@ -123,6 +143,29 @@ function findSelectPlaceholder(children: ReactNode): ReactNode {
     if (nested) return nested;
   }
   return '';
+}
+
+function findSelectTriggerProps(children: ReactNode): {
+  id?: string;
+  onBlur?: () => void;
+  'aria-invalid'?: boolean;
+  'aria-describedby'?: string;
+} {
+  for (const child of Array.isArray(children) ? children : [children]) {
+    if (!child || typeof child !== 'object' || !('props' in child)) continue;
+    const props = child.props as {
+      children?: ReactNode;
+      id?: string;
+      onBlur?: () => void;
+      'aria-invalid'?: boolean;
+      'aria-describedby'?: string;
+      'data-testid'?: string;
+    };
+    if (props['data-testid'] === 'invite-select-trigger') return props;
+    const nested = findSelectTriggerProps(props.children);
+    if (nested.id) return nested;
+  }
+  return {};
 }
 
 function renderTransferDialog() {
@@ -161,9 +204,7 @@ describe('invite commission dialogs shadcn behavior', () => {
     await user.click(screen.getByRole('button', { name: '划转' }));
 
     const dialog = screen.getByTestId('invite-dialog');
-    expect(
-      within(dialog).getByText('划转后的余额仅用于V2Board消费使用'),
-    ).toBeInTheDocument();
+    expect(within(dialog).getByText('划转后的余额仅用于V2Board消费使用')).toBeInTheDocument();
     const balance = within(dialog).getByLabelText('当前推广佣金余额');
     expect(balance).toBeDisabled();
     expect(balance).toHaveValue('123.45');
@@ -197,7 +238,11 @@ describe('invite commission dialogs shadcn behavior', () => {
 
     await user.click(confirmButton());
 
-    expect(await screen.findByText('请输入需要划转到余额的金额')).toBeInTheDocument();
+    const error = await screen.findByText('请输入需要划转到余额的金额');
+    const amount = screen.getByLabelText('划转金额');
+    expect(error).toBeInTheDocument();
+    expect(amount).toHaveAttribute('aria-invalid', 'true');
+    expect(amount).toHaveAccessibleDescription('请输入需要划转到余额的金额');
     expect(mocks.transferMutateAsync).not.toHaveBeenCalled();
   });
 
@@ -271,14 +316,26 @@ describe('invite commission dialogs shadcn behavior', () => {
     await waitFor(() => expect(screen.queryByTestId('invite-dialog')).not.toBeInTheDocument());
 
     await user.click(screen.getByRole('button', { name: '推广佣金提现' }));
-    const method = screen.getByTestId('invite-select-trigger');
-    expect(method).toHaveValue('');
-    expect(within(method).getByRole('option', { name: '请选择提现方式' })).toBeInTheDocument();
+    const methodSelect = screen.getByTestId('invite-select-trigger');
+    expect(methodSelect).toHaveValue('');
+    expect(
+      within(methodSelect).getByRole('option', { name: '请选择提现方式' }),
+    ).toBeInTheDocument();
     expect(screen.getByLabelText('提现账号')).toHaveValue('');
 
     await user.click(confirmButton());
 
-    expect(await screen.findByText('请输入提现账号')).toBeInTheDocument();
+    const accountError = await screen.findByText('请输入提现账号');
+    const method = screen.getByLabelText('提现方式');
+    const account = screen.getByLabelText('提现账号');
+    expect(accountError).toBeInTheDocument();
+    expect(
+      screen.getByText('请选择提现方式', { selector: '[data-slot="field-error"]' }),
+    ).toBeInTheDocument();
+    expect(method).toHaveAttribute('aria-invalid', 'true');
+    expect(method).toHaveAccessibleDescription('请选择提现方式');
+    expect(account).toHaveAttribute('aria-invalid', 'true');
+    expect(account).toHaveAccessibleDescription('请输入提现账号');
     expect(mocks.withdrawMutateAsync).not.toHaveBeenCalled();
     expect(mocks.navigate).not.toHaveBeenCalled();
   });

@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useRef, useState } from 'react';
+import { useDeferredValue, useState } from 'react';
 import type { KeyboardEvent, MouseEvent } from 'react';
 import { useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
@@ -20,13 +20,13 @@ import {
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/cn';
 import { getRequestLocale } from '@/lib/api';
-import { formatLegacyDateSlash } from '@v2board/config/format';
-import { copyText } from '@/lib/legacy-settings';
+import { formatBackendDateSlash } from '@v2board/config/format';
+import { copyText } from '@v2board/config/clipboard';
 import { toast } from '@/lib/toast';
 import {
-  LEGACY_MARKDOWN_ACTION_ATTRIBUTE,
-  LEGACY_MARKDOWN_VALUE_ATTRIBUTE,
-  renderLegacyMarkdown,
+  BACKEND_MARKDOWN_ACTION_ATTRIBUTE,
+  BACKEND_MARKDOWN_VALUE_ATTRIBUTE,
+  renderBackendMarkdown,
 } from '@/lib/markdown';
 import { useKnowledge, useKnowledgeDetail } from '@/lib/queries';
 
@@ -36,12 +36,21 @@ export default function KnowledgePage() {
   const deferredKeyword = useDeferredValue(searchValue);
   const [searchParams] = useSearchParams();
   const language = getRequestLocale();
-  const [selectedId, setSelectedId] = useState<number | string | undefined>(undefined);
+  // The URL is the initial navigation input, not state to mirror after every
+  // render. Capture it once so the detail request can start alongside the list
+  // request, and closing or manually selecting an article is never undone by a
+  // later list/search update.
+  const [selectedId, setSelectedId] = useState<number | string | undefined>(() => {
+    const raw = searchParams.get('id');
+    if (raw == null) return undefined;
+    const urlId = Number.parseInt(raw, 10);
+    return Number.isNaN(urlId) ? undefined : urlId;
+  });
   // Remembers the article that is on screen while a jump to another article
   // loads, so the previous one stays visible instead of blanking to a spinner.
-  const previousArticleRef = useRef<Knowledge | undefined>(undefined);
+  const [previousArticle, setPreviousArticle] = useState<Knowledge | undefined>(undefined);
   const knowledgeQuery = useKnowledge(language, deferredKeyword || undefined);
-  const { data, isPending, isFetching, isPlaceholderData } = knowledgeQuery;
+  const { data, isError, isPending, isFetching, isPlaceholderData } = knowledgeQuery;
   // The full spinner card is only for the initial load (no cached list yet).
   // While a debounced search resolves, keepPreviousData keeps the prior list as
   // placeholder data, so keep rendering it dimmed instead of blanking it —
@@ -59,52 +68,28 @@ export default function KnowledgePage() {
   // the new query has no data yet, so fall back to the last-shown article
   // (captured in jumpToArticle) to keep it visible; a fresh open clears the ref
   // and shows the loading state instead.
-  const visibleDetail =
-    detail.data ?? (detail.isFetching ? previousArticleRef.current : undefined);
+  const visibleDetail = detail.data ?? (detail.isFetching ? previousArticle : undefined);
   const detailVisible = selectedId !== undefined;
   const detailTitle =
-    visibleDetail?.title || (detail.isError ? t('common.error_title') : t('common.loading'));
-  const urlIdAppliedRef = useRef(false);
+    visibleDetail?.title || (detail.isError ? t($ => $.common.error_title) : t($ => $.common.loading));
   const emptyDescription = useEmptyDescription();
 
-  useEffect(() => {
-    if (urlIdAppliedRef.current) return;
-    if (!data) return;
-    const raw = searchParams.get('id');
-    if (raw == null) {
-      urlIdAppliedRef.current = true;
-      return;
-    }
-    const urlId = parseInt(raw);
-    // Apply the URL id exactly once now that the list has settled, whether or
-    // not it is present in the current (language-filtered / searched) list. The
-    // detail endpoint fetches any shown article by id, so a link to a
-    // cross-language or search-excluded article still opens instead of silently
-    // failing and re-running this effect forever.
-    urlIdAppliedRef.current = true;
-    if (Number.isNaN(urlId)) return;
-    const matchedItem = Object.values(data)
-      .flatMap((items) => items ?? [])
-      .find((item) => parseInt(String(item.id)) === urlId);
-    setSelectedId(matchedItem ? matchedItem.id : urlId);
-  }, [data, searchParams]);
-
   // React Compiler memoizes this render (one markdown render per visible article).
-  const renderedBody = renderLegacyMarkdown(visibleDetail?.body || '');
+  const renderedBody = renderBackendMarkdown(visibleDetail?.body || '');
 
   const closeDetail = () => {
-    previousArticleRef.current = undefined;
+    setPreviousArticle(undefined);
     setSelectedId(undefined);
   };
 
   const openDetail = (item: KnowledgeSummary) => {
     // A fresh open from the list shows the loading state, not the last article.
-    previousArticleRef.current = undefined;
+    setPreviousArticle(undefined);
     setSelectedId(item.id);
   };
 
   const copyMarkdownText = async (text: string) => {
-    if (await copyText(text)) toast.success(t('dashboard.copy_success'));
+    if (await copyText(text)) toast.success(t($ => $.dashboard.copy_success));
   };
 
   const jumpToArticle = (id: number | string) => {
@@ -113,20 +98,20 @@ export default function KnowledgePage() {
       return;
     }
     // Keep the current article visible while the jumped-to article loads.
-    previousArticleRef.current = visibleDetail;
+    setPreviousArticle(visibleDetail);
     setSelectedId(id);
   };
 
   const runMarkdownAction = (element: HTMLElement) => {
-    const action = element.getAttribute(LEGACY_MARKDOWN_ACTION_ATTRIBUTE);
-    const value = element.getAttribute(LEGACY_MARKDOWN_VALUE_ATTRIBUTE) ?? '';
+    const action = element.getAttribute(BACKEND_MARKDOWN_ACTION_ATTRIBUTE);
+    const value = element.getAttribute(BACKEND_MARKDOWN_VALUE_ATTRIBUTE) ?? '';
     if (action === 'copy') void copyMarkdownText(value);
     if (action === 'jump') jumpToArticle(value);
   };
 
   const handleMarkdownAction = (event: MouseEvent<HTMLDivElement>) => {
     if (!(event.target instanceof Element)) return;
-    const element = event.target.closest<HTMLElement>(`[${LEGACY_MARKDOWN_ACTION_ATTRIBUTE}]`);
+    const element = event.target.closest<HTMLElement>(`[${BACKEND_MARKDOWN_ACTION_ATTRIBUTE}]`);
     if (!element || !event.currentTarget.contains(element)) return;
     event.preventDefault();
     runMarkdownAction(element);
@@ -135,7 +120,7 @@ export default function KnowledgePage() {
   const handleMarkdownActionKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     if (!(event.target instanceof Element)) return;
-    const element = event.target.closest<HTMLElement>(`[${LEGACY_MARKDOWN_ACTION_ATTRIBUTE}]`);
+    const element = event.target.closest<HTMLElement>(`[${BACKEND_MARKDOWN_ACTION_ATTRIBUTE}]`);
     if (!element || !event.currentTarget.contains(element)) return;
     event.preventDefault();
     runMarkdownAction(element);
@@ -146,17 +131,15 @@ export default function KnowledgePage() {
       <Card className="overflow-hidden" data-testid="knowledge-card">
         <CardHeader className="gap-4 sm:flex sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-2">
-            <CardTitle className="truncate text-xl">{t('nav.knowledge')}</CardTitle>
-            {articleCount > 0 ? (
-              <Badge variant="secondary">{articleCount}</Badge>
-            ) : null}
+            <CardTitle className="truncate text-xl">{t($ => $.nav.knowledge)}</CardTitle>
+            {articleCount > 0 ? <Badge variant="secondary">{articleCount}</Badge> : null}
           </div>
           <div className="relative w-full sm:max-w-sm" data-testid="knowledge-search-bar">
             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              aria-label={t('knowledge.search_placeholder')}
+              aria-label={t($ => $.knowledge.search_placeholder)}
               className="pl-9"
-              placeholder={t('knowledge.search_placeholder')}
+              placeholder={t($ => $.knowledge.search_placeholder)}
               value={searchValue}
               onChange={(event) => setSearchValue(event.target.value)}
             />
@@ -164,12 +147,21 @@ export default function KnowledgePage() {
         </CardHeader>
       </Card>
 
-      {showListSpinner ? (
+      {isError ? (
+        <Card>
+          <CardContent className="py-8">
+            <ErrorState
+              onRetry={() => void knowledgeQuery.refetch()}
+              data-testid="knowledge-list-error"
+            />
+          </CardContent>
+        </Card>
+      ) : showListSpinner ? (
         <Card data-testid="knowledge-loading">
           <CardContent className="flex items-center justify-center gap-2 py-14 text-sm text-muted-foreground">
             <span role="status" className="inline-flex items-center gap-2">
               <Spinner />
-              <span>{t('common.loading')}</span>
+              <span>{t($ => $.common.loading)}</span>
             </span>
           </CardContent>
         </Card>
@@ -209,8 +201,8 @@ export default function KnowledgePage() {
                           className="flex text-xs text-muted-foreground"
                           data-testid="knowledge-item-date"
                         >
-                          {t('knowledge.last_update', {
-                            date: formatLegacyDateSlash(item.updated_at),
+                          {t($ => $.knowledge.last_update, {
+                            date: formatBackendDateSlash(item.updated_at),
                           })}
                         </span>
                       </span>
@@ -228,7 +220,7 @@ export default function KnowledgePage() {
             className="py-14 text-center text-sm text-muted-foreground"
             data-testid="knowledge-empty"
           >
-            {deferredKeyword ? t('knowledge.no_results') : emptyDescription}
+            {deferredKeyword ? t($ => $.knowledge.no_results) : emptyDescription}
           </CardContent>
         </Card>
       )}
@@ -250,10 +242,10 @@ export default function KnowledgePage() {
             </SheetTitle>
             <SheetDescription className={visibleDetail?.updated_at ? undefined : 'sr-only'}>
               {visibleDetail?.updated_at
-                ? t('knowledge.last_update', {
-                    date: formatLegacyDateSlash(visibleDetail.updated_at),
+                ? t($ => $.knowledge.last_update, {
+                    date: formatBackendDateSlash(visibleDetail.updated_at),
                   })
-                : t('common.loading')}
+                : t($ => $.common.loading)}
             </SheetDescription>
           </SheetHeader>
           <div
@@ -261,12 +253,9 @@ export default function KnowledgePage() {
             data-testid="knowledge-sheet-body"
           >
             {detail.isFetching ? (
-              <div
-                role="status"
-                className="flex items-center gap-2 text-sm text-muted-foreground"
-              >
+              <div role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Spinner />
-                <span>{t('common.loading')}</span>
+                <span>{t($ => $.common.loading)}</span>
               </div>
             ) : detail.isError ? (
               // A failed detail fetch must not sit on a blank body under a stuck

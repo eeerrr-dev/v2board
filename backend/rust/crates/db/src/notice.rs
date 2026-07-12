@@ -46,13 +46,12 @@ pub async fn find_visible_notice(
 
 pub async fn fetch_visible_notices(
     pool: &MySqlPool,
-    current: i64,
     page_size: i64,
+    offset: i64,
 ) -> Result<(Vec<NoticeRow>, i64), sqlx::Error> {
     let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM v2_notice WHERE `show` = 1")
         .fetch_one(pool)
         .await?;
-    let offset = (current.max(1) - 1) * page_size;
     let rows = sqlx::query_as::<_, RawNoticeRow>(
         r#"
         SELECT id, title, content, `show`, img_url, tags, created_at, updated_at

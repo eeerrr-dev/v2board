@@ -19,6 +19,7 @@ import * as adminOrder from './runners/admin/order.mjs';
 import * as adminCgnk from './runners/admin/coupon-giftcard-notice-knowledge.mjs';
 import * as adminTicket from './runners/admin/ticket.mjs';
 import * as adminUser from './runners/admin/user.mjs';
+import * as accessibility from './runners/accessibility.mjs';
 import { interactions } from './interaction-scenarios.mjs';
 
 function runnerSet(module) {
@@ -43,6 +44,7 @@ const GROUPS = {
   'admin-coupon-giftcard-notice-knowledge': runnerSet(adminCgnk),
   'admin-ticket': runnerSet(adminTicket),
   'admin-user': runnerSet(adminUser),
+  accessibility: runnerSet(accessibility),
 };
 
 export const GROUP_NAMES = Object.keys(GROUPS);

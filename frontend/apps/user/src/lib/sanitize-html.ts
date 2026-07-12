@@ -1,6 +1,6 @@
 import DOMPurify, { type Config } from 'dompurify';
 
-const LEGACY_HTML_ALLOWED_ATTRS = [
+const BACKEND_HTML_ALLOWED_ATTRS = [
   'align',
   'alt',
   'aria-label',
@@ -23,7 +23,7 @@ const LEGACY_HTML_ALLOWED_ATTRS = [
   'width',
 ] as const;
 
-const LEGACY_HTML_ALLOWED_TAGS = [
+const BACKEND_HTML_ALLOWED_TAGS = [
   'a',
   'abbr',
   'article',
@@ -77,9 +77,9 @@ const LEGACY_HTML_ALLOWED_TAGS = [
 
 // `target`, `rel`, and the data-v2board-* hooks are already granted by ALLOWED_ATTR
 // (combined with ALLOW_DATA_ATTR), so no ADD_ATTR escape hatch is needed.
-const LEGACY_HTML_SANITIZE_CONFIG = {
-  ALLOWED_ATTR: [...LEGACY_HTML_ALLOWED_ATTRS],
-  ALLOWED_TAGS: [...LEGACY_HTML_ALLOWED_TAGS],
+const BACKEND_HTML_SANITIZE_CONFIG = {
+  ALLOWED_ATTR: [...BACKEND_HTML_ALLOWED_ATTRS],
+  ALLOWED_TAGS: [...BACKEND_HTML_ALLOWED_TAGS],
   ADD_DATA_URI_TAGS: ['img'],
   ALLOW_DATA_ATTR: true,
 } satisfies Config;
@@ -88,7 +88,7 @@ const LEGACY_HTML_SANITIZE_CONFIG = {
 // at import time. This app is CSR-only (createRoot, no SSR), so every caller runs
 // in a real browser or jsdom; the single node-safety guard below fails closed only
 // if the module is ever imported without a DOM.
-export function sanitizeLegacyHtml(html: string) {
+export function sanitizeBackendHtml(html: string) {
   if (typeof window === 'undefined') return '';
-  return DOMPurify.sanitize(html, LEGACY_HTML_SANITIZE_CONFIG);
+  return DOMPurify.sanitize(html, BACKEND_HTML_SANITIZE_CONFIG);
 }

@@ -1,2 +1,3 @@
+export * from './clipboard';
 export * from './format';
-export * from './legacy-hash-route';
+export * from './hash-route';

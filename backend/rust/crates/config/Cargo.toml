@@ -7,5 +7,8 @@ repository.workspace = true
 
 [dependencies]
 chrono.workspace = true
+crc32fast.workspace = true
 dotenvy.workspace = true
-
+ipnet.workspace = true
+rust_decimal.workspace = true
+serde_json.workspace = true

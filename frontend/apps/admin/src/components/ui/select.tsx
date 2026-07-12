@@ -1,4 +1,4 @@
-import * as SelectPrimitive from '@radix-ui/react-select';
+import { Select as SelectPrimitive } from 'radix-ui';
 import { Check, ChevronDown, ChevronUp } from 'lucide-react';
 import { type ComponentProps } from 'react';
 import { cn } from '@/lib/cn';
@@ -10,18 +10,13 @@ const SelectValue = SelectPrimitive.Value;
 function SelectTrigger({
   className,
   children,
-  invalid,
   ...props
-}: ComponentProps<typeof SelectPrimitive.Trigger> & { invalid?: boolean }) {
+}: ComponentProps<typeof SelectPrimitive.Trigger>) {
   return (
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
-      aria-invalid={invalid || undefined}
       className={cn(
-        'flex h-10 w-full items-center justify-between gap-2 rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs outline-hidden transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 data-[placeholder]:text-muted-foreground dark:bg-input/30 dark:hover:bg-input/50 [&>span]:line-clamp-1',
-        invalid
-          ? 'border-destructive focus-visible:border-destructive focus-visible:ring-destructive/20 dark:aria-invalid:ring-destructive/40'
-          : 'border-input',
+        'flex h-10 w-full items-center justify-between gap-2 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-hidden transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 data-[placeholder]:text-muted-foreground aria-invalid:border-destructive aria-invalid:ring-[3px] aria-invalid:ring-destructive/20 dark:bg-input/30 dark:hover:bg-input/50 dark:aria-invalid:ring-destructive/40 [&>span]:line-clamp-1',
         className,
       )}
       {...props}
@@ -75,7 +70,7 @@ function SelectContent({
       <SelectPrimitive.Content
         data-slot="select-content"
         className={cn(
-          'v2board-island v2board-radix-popover-content relative z-50 max-h-(--radix-select-content-available-height) min-w-32 overflow-x-hidden overflow-y-auto rounded-md border border-border bg-popover text-popover-foreground shadow-md outline-hidden',
+          'relative z-50 max-h-(--radix-select-content-available-height) min-w-32 origin-(--radix-select-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-md border border-border bg-popover text-popover-foreground shadow-md outline-hidden data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:duration-100 data-[state=open]:duration-150 motion-reduce:animate-none!',
           position === 'popper' &&
             'data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1',
           className,
@@ -87,8 +82,7 @@ function SelectContent({
         <SelectPrimitive.Viewport
           className={cn(
             'p-1',
-            position === 'popper' &&
-              'w-full min-w-[var(--radix-select-trigger-width)]',
+            position === 'popper' && 'w-full min-w-[var(--radix-select-trigger-width)]',
           )}
         >
           {children}

@@ -4,50 +4,33 @@ import babel from '@rolldown/plugin-babel';
 import tailwindcss from '@tailwindcss/vite';
 import path from 'node:path';
 
-const deployOutDir =
-  process.env.V2BOARD_DEPLOY_OUT_DIR ?? path.resolve(__dirname, '../../dist-deploy/assets/admin');
+const deployOutDir = process.env.V2BOARD_DEPLOY_OUT_DIR;
+if (!deployOutDir) {
+  throw new Error('Deploy Vite config is internal; run the workspace pnpm build:deploy command');
+}
 
 export default defineConfig({
   base: '/assets/admin/',
-  // @tailwindcss/vite owns the `@import 'tailwindcss'` compile for the deploy
-  // bundle's umi.css; React Compiler runs via the @rolldown/plugin-babel preset,
-  // same as the dev config and the user app.
   plugins: [tailwindcss(), react(), babel({ presets: [reactCompilerPreset()] })],
   resolve: {
-    alias: { '@': path.resolve(__dirname, 'src') },
+    alias: { '@': path.resolve(import.meta.dirname, 'src') },
   },
   build: {
     target: 'es2023',
     sourcemap: false,
-    cssCodeSplit: false,
+    cssCodeSplit: true,
     assetsInlineLimit: 0,
     reportCompressedSize: false,
-    // The Laravel drop-in deploy is intentionally a single classic script.
-    // Keep the limit near the current bundle so real growth still warns.
-    chunkSizeWarningLimit: 3200,
     outDir: deployOutDir,
-    emptyOutDir: false,
-    modulePreload: false,
+    emptyOutDir: true,
+    manifest: 'manifest.json',
+    modulePreload: { polyfill: false },
     rolldownOptions: {
-      transform: {
-        define: {
-          // Deploy bundles are classic scripts, so make Rolldown's IIFE import.meta
-          // replacement explicit instead of relying on its warning-time fallback.
-          'import.meta': '{}',
-        },
-      },
-      input: path.resolve(__dirname, 'src/main.tsx'),
+      input: path.resolve(import.meta.dirname, 'index.html'),
       output: {
-        format: 'iife',
-        codeSplitting: false,
-        entryFileNames: 'umi.js',
-        chunkFileNames: 'chunks/[name].[hash].js',
-        assetFileNames: (info) => {
-          const name = info.name ?? '';
-          if (name.endsWith('.css')) return 'umi.css';
-          return 'static/[name].[hash][extname]';
-        },
-        manualChunks: undefined,
+        entryFileNames: '[name]-[hash].js',
+        chunkFileNames: '[name]-[hash].js',
+        assetFileNames: 'asset-[hash][extname]',
       },
     },
   },

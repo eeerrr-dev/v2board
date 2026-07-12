@@ -1,7 +1,7 @@
-import type { ReactNode } from 'react';
 import { Check, X } from 'lucide-react';
+import { z } from 'zod';
 import { cn } from '@/lib/cn';
-import { sanitizeLegacyHtml } from '@/lib/sanitize-html';
+import { sanitizeBackendHtml } from '@/lib/sanitize-html';
 
 interface PlanContentProps {
   content?: string | null;
@@ -9,29 +9,37 @@ interface PlanContentProps {
   htmlClassName?: string;
 }
 
+const planFeatureListSchema = z.array(
+  z.object({
+    feature: z.union([z.string(), z.number()]),
+    // The backend `support` field uses JavaScript truthiness. Keep that behavior
+    // for JSON scalars while rejecting objects and arrays.
+    support: z.union([z.boolean(), z.number(), z.string(), z.null()]).optional(),
+  }),
+);
+
 export function PlanContent({ content, className, htmlClassName }: PlanContentProps) {
+  const rawContent = content ?? '';
   let parsed: unknown;
-  let parseFailed = false;
   try {
-    parsed = JSON.parse(content as string);
+    parsed = JSON.parse(rawContent);
   } catch {
-    parseFailed = true;
+    parsed = undefined;
   }
 
-  const isFeatureList = Array.isArray(parsed);
-  if (parseFailed || !isFeatureList) {
+  const featureList = planFeatureListSchema.safeParse(parsed);
+  if (!featureList.success) {
     return (
       <div
         className={cn(htmlClassName ?? className)}
-        dangerouslySetInnerHTML={{ __html: sanitizeLegacyHtml(content as string) }}
+        dangerouslySetInnerHTML={{ __html: sanitizeBackendHtml(rawContent) }}
       />
     );
   }
 
-  const features = parsed as Array<{ feature?: unknown; support?: unknown }>;
   return (
     <div className={cn('grid gap-2.5 text-sm', className)}>
-      {features.map((item, index) => {
+      {featureList.data.map((item, index) => {
         const supported = Boolean(item.support);
         const Icon = supported ? Check : X;
         return (
@@ -48,7 +56,7 @@ export function PlanContent({ content, className, htmlClassName }: PlanContentPr
                 supported ? 'text-primary' : 'text-muted-foreground',
               )}
             />
-            <span>{item.feature as ReactNode}</span>
+            <span>{item.feature}</span>
           </div>
         );
       })}

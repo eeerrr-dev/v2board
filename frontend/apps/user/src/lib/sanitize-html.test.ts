@@ -1,14 +1,14 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { sanitizeLegacyHtml } from './sanitize-html';
+import { sanitizeBackendHtml } from './sanitize-html';
 
-describe('legacy HTML sanitization', () => {
+describe('backend HTML sanitization', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
   it('preserves safe legacy markup and strips event handlers and script content', () => {
-    const sanitized = sanitizeLegacyHtml(
+    const sanitized = sanitizeBackendHtml(
       '<section class="hero"><a href="https://example.com" onclick="alert(1)">Go</a><script>alert(1)</script></section>',
     );
 
@@ -21,7 +21,7 @@ describe('legacy HTML sanitization', () => {
   });
 
   it('keeps the markdown action hooks and rich markup the knowledge surface relies on', () => {
-    const sanitized = sanitizeLegacyHtml(
+    const sanitized = sanitizeBackendHtml(
       '<div><button data-v2board-markdown-action="copy" data-v2board-markdown-value="text">Copy</button>' +
         '<table><tbody><tr><td colspan="2">cell</td></tr></tbody></table>' +
         '<img src="data:image/png;base64,AAAA" alt="qr" /></div>',
@@ -34,7 +34,7 @@ describe('legacy HTML sanitization', () => {
   });
 
   it('drops disallowed embeds, form controls, and javascript: URLs', () => {
-    const sanitized = sanitizeLegacyHtml(
+    const sanitized = sanitizeBackendHtml(
       '<form action="/steal"><input name="a" /></form>' +
         '<iframe src="https://evil.example"></iframe>' +
         '<a href="javascript:alert(1)">bad</a>',
@@ -48,6 +48,6 @@ describe('legacy HTML sanitization', () => {
 
   it('fails closed to an empty string when no DOM window exists', () => {
     vi.stubGlobal('window', undefined);
-    expect(sanitizeLegacyHtml('<p>content</p>')).toBe('');
+    expect(sanitizeBackendHtml('<p>content</p>')).toBe('');
   });
 });

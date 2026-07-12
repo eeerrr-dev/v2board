@@ -27,10 +27,10 @@ export interface Giftcard {
   name: string;
   code: string;
   type: 1 | 2 | 3 | 4 | 5;
-  value: number;
+  value: number | null;
   plan_id: number | null;
   limit_use: number | null;
-  used_user_ids: string | null;
+  used_user_ids: string | Array<number | string> | null;
   started_at: number | null;
   ended_at: number | null;
   created_at: number;

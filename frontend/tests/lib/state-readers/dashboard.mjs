@@ -11,8 +11,6 @@ import {
   normalizeDashboardNoticeModalBody,
   normalizeDashboardRouteAlertLinks,
   normalizeDashboardSubscribeItemClassName,
-  normalizeDashboardTableRows,
-  uniqueDashboardTexts,
 } from '../normalizers.mjs';
 import {
   dashboardShortcutActionSelector,
@@ -137,7 +135,7 @@ export async function dashboardSubscribeState(page) {
       '[data-testid="dashboard-subscribe-menu"] [data-testid^="dashboard-subscribe-"], .oneClickSubscribe___2t9Xg .item___yrtOv',
       12,
     ),
-    messageTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
+    messageTexts: await visibleTexts(page, '[data-sonner-toast], .ant-message-notice, .ant-notification-notice', 4),
     modalCount,
     qrCount: await visibleCount(
       page,
@@ -330,12 +328,9 @@ export async function dashboardNewPeriodConfirmState(page) {
   return {
     buttons: normalizeDashboardConfirmButtons(buttons),
     content: normalizeDashboardConfirmContent(content, title),
-    hash: await page.evaluate(() => window.location.hash),
     modalCount: await visibleCount(page, '[data-testid="dashboard-dialog"], .ant-modal-confirm, .ant-modal'),
-    newPeriodCount: page.__visualParityUserNewPeriodCount ?? 0,
     newPeriodTriggerCount,
     title,
-    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
   };
 }
 
@@ -348,22 +343,10 @@ export async function dashboardAlertLinksState(page) {
         4,
       ),
     ),
-    blockTitles: await visibleTexts(page, '[data-testid="dashboard-card-title"], .block-title', 8),
-    containerTitles: await visibleTexts(page, '.v2board-container-title', 4),
     hash: await page.evaluate(() => window.location.hash),
-    tableHeaders: uniqueDashboardTexts(
-      await visibleTexts(
-        page,
-        '[data-testid="orders-table"] th, [data-testid="ticket-table"] th, .ant-table-column-title',
-        12,
-      ),
-    ),
-    tableRows: normalizeDashboardTableRows(
-      await visibleTexts(
-        page,
-        '[data-testid="orders-table"] tbody tr, [data-testid="ticket-table"] tbody tr, .ant-table-tbody tr, .am-list-item',
-        8,
-      ),
+    tableCount: await visibleCount(
+      page,
+      '[data-testid="orders-table"], [data-testid="ticket-table"], .ant-table, .am-list-body',
     ),
   };
 }

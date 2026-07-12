@@ -5,7 +5,10 @@ import { GROUP_NAMES, groupOf } from '../lib/spec-groups.mjs';
 // A structural guard, not a browser test: it fails fast if a newly added
 // interaction lands in no spec group (and would silently never run).
 test.describe('parity: coverage', () => {
-  test.skip(({ browserName }, testInfo) => testInfo.project.name === 'mobile', 'run once');
+  // Playwright 1.61 requires an object-destructured fixture argument even when
+  // this project-only predicate intentionally consumes no fixtures.
+  // eslint-disable-next-line no-empty-pattern
+  test.skip(({}, testInfo) => testInfo.project.name === 'mobile', 'run once');
 
   test('every interaction maps to exactly one spec group', () => {
     const unmapped = interactions.filter((interaction) => groupOf(interaction) === null);
@@ -15,5 +18,16 @@ test.describe('parity: coverage', () => {
       return total + interactions.filter((interaction) => groupOf(interaction) === name).length;
     }, 0);
     expect(perGroup).toBe(interactions.length);
+  });
+
+  test('source-only interactions are limited to the explicit axe gate', () => {
+    expect(
+      interactions.filter((interaction) => interaction.sourceOnly).map(({ label }) => label),
+    ).toEqual([
+      'a11y-user-login',
+      'a11y-admin-login',
+      'a11y-user-dashboard',
+      'a11y-admin-users',
+    ]);
   });
 });

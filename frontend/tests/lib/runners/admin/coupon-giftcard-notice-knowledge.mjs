@@ -14,7 +14,6 @@ import {
   fillAdminNoticeField,
   addAdminNoticeTag,
   adminKnowledgeDrawerState,
-  dismissAdminKnowledgeDrawer,
 } from '../../state-readers/admin.mjs';
 import {
   waitForVisibleText,
@@ -22,6 +21,7 @@ import {
   waitForVisibleElementsHidden,
   clickFirstVisible,
   clickFirstVisibleText,
+  clickFirstVisibleTextStable,
   fillVisibleAt,
 } from '../../dom-helpers.mjs';
 import { clonePageRequests } from '../../json-util.mjs';
@@ -35,6 +35,28 @@ import {
   adminDrawerOpenSelector,
 } from '../../selectors.mjs';
 
+async function fillRedesignedValidityWindow(page, prefix) {
+  const start = page.locator(`[data-testid="${prefix}-start"]`).first();
+  const end = page.locator(`[data-testid="${prefix}-end"]`).first();
+  if ((await start.count()) === 0 || (await end.count()) === 0) return;
+  await start.fill('2030-01-01T00:00');
+  await end.fill('2030-01-02T00:00');
+}
+
+async function finishAdminKnowledgeSave(page) {
+  // The redesigned editor closes itself after its invalidating mutation has
+  // settled; the frozen oracle leaves its drawer open. Detect the outcome
+  // instead of branching by world. The grace period also prevents a Cancel
+  // coordinate racing the source's closing animation and landing on Submit.
+  try {
+    await waitForVisibleElementsHidden(page, adminDrawerOpenSelector, 1_500);
+  } catch {
+    await clickFirstVisibleTextStable(page, adminDrawerFooterButtonSelector, ['取消', '取 消']);
+  }
+  await waitForVisibleElementsHidden(page, adminDrawerOpenSelector);
+  await waitForVisibleElementsHidden(page, adminDrawerTitleSelector);
+}
+
 export async function runAdminCouponCreateModalInteraction(page) {
   const initialCouponFetchCount = page.__visualParityAdminCouponFetchCount ?? 0;
   await openAdminCreateOverlay(page, 'coupon-create');
@@ -42,6 +64,7 @@ export async function runAdminCouponCreateModalInteraction(page) {
   await fillAdminOverlayInput(page, 'coupon-name', 0, 'Parity Coupon');
   await fillAdminOverlayInput(page, 'coupon-code', 1, 'PARITY2026');
   await fillAdminOverlayInput(page, 'coupon-value', 2, '25');
+  await fillRedesignedValidityWindow(page, 'coupon');
   await page.waitForTimeout(100);
   const opened = await adminCouponModalState(page);
   await clickAdminEntitySubmit(page, 'coupon-submit');
@@ -69,6 +92,7 @@ export async function runAdminCouponGenerateFailureInteraction(page) {
   await fillAdminOverlayInput(page, 'coupon-name', 0, 'Parity Failed Coupon');
   await fillAdminOverlayInput(page, 'coupon-code', 1, 'FAIL2026');
   await fillAdminOverlayInput(page, 'coupon-value', 2, '25');
+  await fillRedesignedValidityWindow(page, 'coupon');
   await page.waitForTimeout(100);
   const filled = await adminCouponModalState(page);
   await clickAdminEntitySubmit(page, 'coupon-submit');
@@ -113,6 +137,7 @@ export async function runAdminCouponTypeMatrixInteraction(page) {
   await fillAdminOverlayInput(page, 'coupon-name', 0, 'Parity Ratio Coupon');
   await fillAdminOverlayInput(page, 'coupon-code', 1, 'RATIO2026');
   await fillAdminOverlayInput(page, 'coupon-value', 2, '15');
+  await fillRedesignedValidityWindow(page, 'coupon');
   const amount = await adminCouponModalState(page);
   // The 优惠信息 type control is the first overlay select in both worlds (the
   // redesigned coupon-type Radix Select; the antd single-select).
@@ -206,6 +231,7 @@ export async function runAdminGiftcardCreateModalInteraction(page) {
     '.ant-modal input[placeholder="一次性套餐输入0"]',
     '0',
   );
+  await fillRedesignedValidityWindow(page, 'giftcard');
   await openAdminOverlaySelectTrigger(page, 'giftcard-plan', 1);
   await waitForVisibleText(page, adminSelectOptionSelector, 'Pro');
   const planDropdown = await adminGiftcardModalState(page);
@@ -249,6 +275,13 @@ export async function runAdminGiftcardGenerateFailureInteraction(page) {
   await openAdminCreateOverlay(page, 'giftcard-create');
   await fillAdminOverlayInput(page, 'giftcard-name', 0, 'Parity Failed Giftcard');
   await fillAdminOverlayInput(page, 'giftcard-code', 1, 'FAIL-GIFT-2026');
+  await fillAdminOverlayInputBySelector(
+    page,
+    'giftcard-value',
+    '.ant-modal input[placeholder="请输入值"]',
+    '10',
+  );
+  await fillRedesignedValidityWindow(page, 'giftcard');
   await page.waitForTimeout(100);
   const filled = await adminGiftcardModalState(page);
   await clickAdminEntitySubmit(page, 'giftcard-submit');
@@ -479,7 +512,7 @@ export async function runAdminKnowledgeCreateDrawerInteraction(page) {
     '__visualParityAdminKnowledgeFetchCount',
     initialKnowledgeFetchCount + 1,
   );
-  await dismissAdminKnowledgeDrawer(page);
+  await finishAdminKnowledgeSave(page);
   const closed = await adminKnowledgeDrawerState(page);
   return {
     before,
@@ -558,7 +591,7 @@ export async function runAdminKnowledgeEditDrawerInteraction(page) {
     '__visualParityAdminKnowledgeFetchCount',
     initialKnowledgeFetchCount + 1,
   );
-  await dismissAdminKnowledgeDrawer(page);
+  await finishAdminKnowledgeSave(page);
   const closed = await adminKnowledgeDrawerState(page);
   return {
     before,

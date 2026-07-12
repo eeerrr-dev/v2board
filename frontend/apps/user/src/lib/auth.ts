@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react';
 
 const AUTH_STORAGE_KEY = 'authorization';
 const listeners = new Set<(value: string | null) => void>();
+let authSyncInstalled = false;
 
 export function getAuthData(): string | null {
   return localStorage.getItem(AUTH_STORAGE_KEY);
@@ -12,11 +13,15 @@ function notifyAuthChange(value = getAuthData()): void {
 }
 
 export function setAuthData(value: string | null): void {
+  const previous = getAuthData();
+  if (previous === value) return;
+
   if (value === null) {
     localStorage.removeItem(AUTH_STORAGE_KEY);
   } else {
     localStorage.setItem(AUTH_STORAGE_KEY, value);
   }
+  clearSessionCaches();
   notifyAuthChange(value);
 }
 
@@ -42,9 +47,18 @@ export function clearSessionCaches(): void {
   sessionCacheClearer?.();
 }
 
+export function setupAuthSync(): void {
+  if (authSyncInstalled) return;
+  authSyncInstalled = true;
+  window.addEventListener('storage', (event) => {
+    if (event.key !== AUTH_STORAGE_KEY) return;
+    clearSessionCaches();
+    notifyAuthChange(event.newValue);
+  });
+}
+
 export function logout(): void {
   setAuthData(null);
-  clearSessionCaches();
 }
 
 // Single source of truth for the auth gate's login redirect. The login page
@@ -54,6 +68,22 @@ export function logout(): void {
 // `pathname + search` the user should return to.
 export function buildLoginRedirect(current: string): string {
   return `/login?redirect=${encodeURIComponent(current)}`;
+}
+
+/**
+ * Resolve the post-login destination as an internal route. This is shared by
+ * the /login loader (existing sessions) and the login controller (new/verify
+ * sessions), so protocol-relative and browser-normalized backslash bypasses
+ * cannot drift between the two entry paths.
+ */
+export function normalizeLoginRedirectTarget(target: string | null): string {
+  if (!target) return '/dashboard';
+  const normalized = target
+    .replace(/[\t\n\r]/g, '')
+    .trim()
+    .replace(/\\/g, '/');
+  if (normalized.startsWith('//')) return '/dashboard';
+  return normalized.startsWith('/') ? normalized : `/${normalized}`;
 }
 
 // Subscribe React components to the auth token so a logout() (or token2Login)
