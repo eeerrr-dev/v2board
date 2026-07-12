@@ -86,7 +86,6 @@ struct UserPeriodRow {
     u: i64,
     d: i64,
     expired_at: Option<i64>,
-    reset_traffic_method: Option<i8>,
 }
 
 pub(crate) async fn user_new_period(
@@ -102,12 +101,11 @@ pub(crate) async fn user_new_period(
     let mut tx = state.db.begin().await?;
     let row = sqlx::query_as::<_, UserPeriodRow>(
         r#"
-        SELECT u.plan_id, u.transfer_enable, u.u, u.d, u.expired_at, p.reset_traffic_method
+        SELECT u.plan_id, u.transfer_enable, u.u, u.d, u.expired_at
         FROM v2_user u
-        LEFT JOIN v2_plan p ON p.id = u.plan_id
-        WHERE u.id = ?
+        WHERE u.id = $1
         LIMIT 1
-        FOR UPDATE
+        FOR UPDATE OF u
         "#,
     )
     .bind(user.id)
@@ -126,20 +124,26 @@ pub(crate) async fn user_new_period(
     // A plan-less user cannot renew: both getResetDay and getResetPeriod return null
     // at `if ($user->plan_id === NULL) return null;`, and UserController::newPeriod
     // turns either null into abort(500, 'You do not allow to renew the subscription').
-    // The LEFT JOIN alone can't tell plan-less from plan-with-null-method, so gate on
-    // plan_id directly before the method-based reset lookups below.
-    if row.plan_id.is_none() {
-        return Err(ApiError::legacy(
-            "You do not allow to renew the subscription",
-        ));
-    }
+    let plan_id = row
+        .plan_id
+        .ok_or_else(|| ApiError::legacy("You do not allow to renew the subscription"))?;
+    // PostgreSQL cannot lock the nullable side of an outer join. Preserve the
+    // subscription writer lock order explicitly: user first, then the existing
+    // plan whose reset method controls this mutation.
+    let plan_reset_method = sqlx::query_scalar::<_, Option<i16>>(
+        "SELECT reset_traffic_method FROM v2_plan WHERE id = $1 FOR SHARE",
+    )
+    .bind(plan_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .flatten();
     let expired_at = row
         .expired_at
         .filter(|expired_at| *expired_at > Utc::now().timestamp())
         .ok_or_else(|| ApiError::legacy("You do not allow to renew the subscription"))?;
-    let mut reset_day = reset_day_by_method(expired_at, row.reset_traffic_method, &config)
+    let mut reset_day = reset_day_by_method(expired_at, plan_reset_method, &config)
         .ok_or_else(|| ApiError::legacy("You do not allow to renew the subscription"))?;
-    let mut period = reset_period_by_method(row.reset_traffic_method, &config)
+    let mut period = reset_period_by_method(plan_reset_method, &config)
         .ok_or_else(|| ApiError::legacy("You do not allow to renew the subscription"))?;
     match period {
         1 => {
@@ -161,8 +165,8 @@ pub(crate) async fn user_new_period(
         checked_reset_subscription_expiry(expired_at, reset_day, period, Utc::now().timestamp())?
     {
         let updated = sqlx::query(
-            "UPDATE v2_user SET expired_at = ?, traffic_epoch = traffic_epoch + 1, \
-             u = 0, d = 0, updated_at = ? WHERE id = ?",
+            "UPDATE v2_user SET expired_at = $1, traffic_epoch = traffic_epoch + 1, \
+             u = 0, d = 0, updated_at = $2 WHERE id = $3",
         )
         .bind(next_expired_at)
         .bind(Utc::now().timestamp())
@@ -449,7 +453,7 @@ pub(crate) fn reset_day(
 
 fn reset_day_by_method(
     expired_at: i64,
-    plan_reset_method: Option<i8>,
+    plan_reset_method: Option<i16>,
     config: &AppConfig,
 ) -> Option<i64> {
     if expired_at <= Utc::now().timestamp() {
@@ -468,7 +472,7 @@ fn reset_day_by_method(
     }
 }
 
-fn reset_period_by_method(plan_reset_method: Option<i8>, config: &AppConfig) -> Option<i64> {
+fn reset_period_by_method(plan_reset_method: Option<i16>, config: &AppConfig) -> Option<i64> {
     match plan_reset_method
         .map(i32::from)
         .unwrap_or(config.reset_traffic_method)

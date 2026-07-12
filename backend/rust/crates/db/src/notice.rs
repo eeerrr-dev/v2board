@@ -1,12 +1,12 @@
 use serde::Serialize;
-use sqlx::{FromRow, MySqlPool};
+use sqlx::{FromRow, PgPool};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct NoticeRow {
     pub id: i32,
     pub title: String,
     pub content: String,
-    pub show: i8,
+    pub show: i16,
     pub img_url: Option<String>,
     pub tags: Option<Vec<String>>,
     pub created_at: i64,
@@ -18,22 +18,19 @@ struct RawNoticeRow {
     id: i32,
     title: String,
     content: String,
-    show: i8,
+    show: i16,
     img_url: Option<String>,
     tags: Option<String>,
     created_at: i64,
     updated_at: i64,
 }
 
-pub async fn find_visible_notice(
-    pool: &MySqlPool,
-    id: i32,
-) -> Result<Option<NoticeRow>, sqlx::Error> {
+pub async fn find_visible_notice(pool: &PgPool, id: i32) -> Result<Option<NoticeRow>, sqlx::Error> {
     let row = sqlx::query_as::<_, RawNoticeRow>(
         r#"
-        SELECT id, title, content, `show`, img_url, tags, created_at, updated_at
+        SELECT id, title, content, show, img_url, tags::text AS tags, created_at, updated_at
         FROM v2_notice
-        WHERE id = ? AND `show` = 1
+        WHERE id = $1 AND show = 1
         LIMIT 1
         "#,
     )
@@ -45,20 +42,20 @@ pub async fn find_visible_notice(
 }
 
 pub async fn fetch_visible_notices(
-    pool: &MySqlPool,
+    pool: &PgPool,
     page_size: i64,
     offset: i64,
 ) -> Result<(Vec<NoticeRow>, i64), sqlx::Error> {
-    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM v2_notice WHERE `show` = 1")
+    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM v2_notice WHERE show = 1")
         .fetch_one(pool)
         .await?;
     let rows = sqlx::query_as::<_, RawNoticeRow>(
         r#"
-        SELECT id, title, content, `show`, img_url, tags, created_at, updated_at
+        SELECT id, title, content, show, img_url, tags::text AS tags, created_at, updated_at
         FROM v2_notice
-        WHERE `show` = 1
+        WHERE show = 1
         ORDER BY created_at DESC
-        LIMIT ? OFFSET ?
+        LIMIT $1 OFFSET $2
         "#,
     )
     .bind(page_size)

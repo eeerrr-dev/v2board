@@ -148,13 +148,13 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Start the production-shaped stack and apply real migrations
+      - name: Start the native-runtime-shaped test stack and apply real migrations
         run: make deploy-smoke
 
-      - name: Verify production invariants against disposable MySQL and Redis state
+      - name: Verify production invariants against disposable PostgreSQL, ClickHouse, and Redis state
         run: make rust-integration
 
-      - name: Reconcile scheduled worker side effects against MySQL and Redis
+      - name: Reconcile scheduled worker side effects against PostgreSQL and Redis
         run: make rust-worker-reconcile
 
       - name: Run desktop and mobile interaction plus accessibility contracts
@@ -170,8 +170,8 @@ jobs:
         if: always()
         run: make down
 
-  production-image:
-    name: Integrated production image
+  native-release:
+    name: Native Linux release
     needs: [integration]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -181,42 +181,79 @@ jobs:
       - name: Assert retired runtimes stay isolated
         run: make runtime-isolation-audit
 
-      - name: Build independently probed API and worker images
-        run: |
-          docker build --target production-api --tag v2board-api:ci --file Dockerfile.rust .
-          docker build --target production-worker --tag v2board-worker:ci --file Dockerfile.rust .
+      - name: Audit the native release contract
+        run: make native-release-audit
 
-      - name: Assert API runtime identity, contents, and probe
+      - name: Export and verify the disposable lifecycle tool
         run: |
-          test "$(docker image inspect --format '{{.Config.User}}' v2board-api:ci)" = "v2board:v2board"
-          docker image inspect --format '{{json .Config.Healthcheck.Test}}' v2board-api:ci | grep -q /readyz
-          docker run --rm --entrypoint /bin/sh v2board-api:ci -eu -c '
-            test -x /usr/local/bin/v2board-api
-            test ! -e /usr/local/bin/v2board-workers
-            test -f /opt/v2board/frontend/current/user/index.html
-            test -f /opt/v2board/frontend/current/admin/index.html
-            ! command -v php >/dev/null 2>&1
-            ! command -v composer >/dev/null 2>&1
-            test ! -e /reference
-            test ! -e /references
-            ! find /opt/v2board/frontend/current -type f \( \
-              -name "u""mi.js" -o -name "u""mi.css" -o \
-              -name "components"".chunk.css" -o -name "vendors"".async.js" -o \
-              -name "components"".async.js" \
-            \) | grep -q .
-          '
+          docker build \
+            --target lifecycle-tool \
+            --output type=local,dest=lifecycle-tool \
+            --file Dockerfile.rust .
+          test -x lifecycle-tool/v2board-lifecycle
+          test "$(find lifecycle-tool -maxdepth 1 -type f | wc -l)" -eq 1
+          file lifecycle-tool/v2board-lifecycle | grep -Eq 'ELF 64-bit LSB.*x86-64'
+          ! ldd lifecycle-tool/v2board-lifecycle | grep -q 'not found'
 
-      - name: Assert worker runtime identity, contents, logging, and probe
+      - name: Export the bare-metal release filesystem
         run: |
-          test "$(docker image inspect --format '{{.Config.User}}' v2board-worker:ci)" = "v2board:v2board"
-          docker image inspect --format '{{json .Config.Healthcheck.Test}}' v2board-worker:ci | grep -q V2BOARD_WORKER_HEALTH_FILE
-          docker image inspect --format '{{json .Config.Env}}' v2board-worker:ci | grep -q v2board_workers=info
-          docker run --rm --entrypoint /bin/sh v2board-worker:ci -eu -c '
-            test -x /usr/local/bin/v2board-workers
-            test ! -e /usr/local/bin/v2board-api
-            test ! -e /opt/v2board/frontend/current/user/index.html
-            ! command -v php >/dev/null 2>&1
-            ! command -v composer >/dev/null 2>&1
-            test ! -e /reference
-            test ! -e /references
-          '
+          docker build \
+            --target native-release \
+            --build-arg V2BOARD_SOURCE_REVISION="${GITHUB_SHA}" \
+            --output type=local,dest=native-release \
+            --file Dockerfile.rust .
+
+      - name: Verify release layout, checksums, and Linux binaries
+        run: |
+          test -x native-release/bin/v2board-api
+          test -x native-release/bin/v2board-workers
+          test -x native-release/bin/v2board-analytics-schema
+          test "$(find native-release/bin -maxdepth 1 -type f | wc -l)" -eq 3
+          test -L native-release/frontend/current
+          test -f native-release/frontend/current/user/index.html
+          test -f native-release/frontend/current/admin/index.html
+          test -f native-release/systemd/v2board-api.service
+          test -f native-release/systemd/v2board-worker.service
+          grep -Fxq 'format=v2board-native-release-v1' native-release/RELEASE
+          grep -Fxq "source_revision=${GITHUB_SHA}" native-release/RELEASE
+          grep -Fxq 'target_os=linux' native-release/RELEASE
+          grep -Fxq 'target_arch=amd64' native-release/RELEASE
+          (cd native-release && sha256sum --check SHA256SUMS)
+          ! find native-release/frontend -type f \( \
+            -name "u""mi.js" -o -name "u""mi.css" -o \
+            -name "components"".chunk.css" -o -name "vendors"".async.js" -o \
+            -name "components"".async.js" \
+          \) | grep -q .
+          for binary in native-release/bin/*; do
+            file "$binary" | grep -Eq 'ELF 64-bit LSB.*x86-64'
+            ! ldd "$binary" | grep -q 'not found'
+          done
+
+      - name: Verify hardened systemd units
+        run: |
+          sudo useradd --system --user-group --home-dir /var/lib/v2board/api --shell /usr/sbin/nologin v2board-api
+          sudo useradd --system --user-group --home-dir /var/lib/v2board/worker --shell /usr/sbin/nologin v2board-worker
+          sudo install -d -m 0755 /opt/v2board/releases
+          sudo cp -a native-release /opt/v2board/releases/ci
+          sudo ln -s /opt/v2board/releases/ci /opt/v2board/current
+          sudo install -d -m 0700 -o v2board-api -g v2board-api /var/lib/v2board/api
+          sudo install -d -m 0700 -o v2board-worker -g v2board-worker /var/lib/v2board/worker
+          sudo install -d -m 0755 /var/lib/v2board/rules
+          sudo install -m 0644 native-release/systemd/*.service /etc/systemd/system/
+          systemd-analyze verify v2board-api.service v2board-worker.service
+
+      - name: Pack the native release
+        run: |
+          tar --sort=name --mtime='UTC 2020-01-01' --owner=0 --group=0 --numeric-owner \
+            -C native-release -czf v2board-native-linux-amd64.tar.gz .
+          sha256sum v2board-native-linux-amd64.tar.gz > v2board-native-linux-amd64.tar.gz.sha256
+
+      - name: Upload the native release
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: v2board-native-linux-amd64
+          path: |
+            v2board-native-linux-amd64.tar.gz
+            v2board-native-linux-amd64.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 14

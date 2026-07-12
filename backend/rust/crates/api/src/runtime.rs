@@ -16,6 +16,7 @@ use axum::{
 use chrono::Utc;
 use serde_json::json;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use uuid::Uuid;
 use v2board_config::AppConfig;
 use v2board_db::{DbPool, migrations_current};
 use v2board_domain::{
@@ -29,6 +30,7 @@ pub(crate) struct AppState {
     config: Arc<ArcSwap<AppConfig>>,
     config_reload: Arc<tokio::sync::Mutex<()>>,
     pub(crate) db: DbPool,
+    pub(crate) installation_id: Uuid,
     pub(crate) redis: redis::Client,
     pub(crate) auth_redis: redis::aio::ConnectionManager,
     pub(crate) http: reqwest::Client,
@@ -37,9 +39,14 @@ pub(crate) struct AppState {
 }
 
 impl AppState {
+    // Keep the process-owned dependencies explicit at the one composition root;
+    // collapsing unrelated pools/clients into an opaque tuple would make startup
+    // wiring and principal separation harder to audit.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         config: AppConfig,
         db: DbPool,
+        installation_id: Uuid,
         redis: redis::Client,
         auth_redis: redis::aio::ConnectionManager,
         http: reqwest::Client,
@@ -50,6 +57,7 @@ impl AppState {
             config: Arc::new(ArcSwap::from_pointee(config)),
             config_reload: Arc::new(tokio::sync::Mutex::new(())),
             db,
+            installation_id,
             redis,
             auth_redis,
             http,
@@ -141,18 +149,18 @@ pub(crate) async fn reset_admin_password(
     config: &AppConfig,
     password_kdf: &PasswordKdf,
     email: &str,
+    password: Option<String>,
 ) -> anyhow::Result<()> {
     let email = email.trim();
     if email.is_empty() {
         anyhow::bail!(
-            "usage: V2BOARD_NEW_PASSWORD=<secret> v2board-api reset-admin-password <email>"
+            "usage: provide the v2board-new-password systemd credential (or V2BOARD_NEW_PASSWORD_FILE) and run v2board-api reset-admin-password <email>"
         );
     }
-    let password = std::env::var("V2BOARD_NEW_PASSWORD")
-        .ok()
+    let password = password
         .filter(|password| password.chars().count() >= 8)
         .ok_or_else(|| {
-            anyhow::anyhow!("V2BOARD_NEW_PASSWORD must contain at least 8 characters")
+            anyhow::anyhow!("the one-shot administrator password must contain at least 8 characters")
         })?;
     let password_hash = password_kdf
         .hash(&password)
@@ -160,7 +168,8 @@ pub(crate) async fn reset_admin_password(
         .map_err(|error| anyhow::anyhow!(error.to_string()))?;
     let mut tx = db.begin().await?;
     let user_id = sqlx::query_scalar::<_, i64>(
-        "SELECT id FROM v2_user WHERE email = ? AND is_admin = 1 LIMIT 1 FOR UPDATE",
+        "SELECT id FROM v2_user \
+         WHERE lower(btrim(email)) = lower(btrim($1)) AND is_admin = 1 LIMIT 1 FOR UPDATE",
     )
     .bind(email)
     .fetch_optional(&mut *tx)
@@ -169,9 +178,9 @@ pub(crate) async fn reset_admin_password(
     let result = sqlx::query(
         r#"
         UPDATE v2_user
-        SET password = ?, password_algo = NULL, password_salt = NULL,
-            session_epoch = session_epoch + 1, updated_at = ?
-        WHERE id = ? AND is_admin = 1
+        SET password = $1, password_algo = NULL, password_salt = NULL,
+            session_epoch = session_epoch + 1, updated_at = $2
+        WHERE id = $3 AND is_admin = 1
         "#,
     )
     .bind(password_hash)

@@ -15,8 +15,8 @@ pub fn html_escape(value: &str) -> String {
         .replace('\'', "&#039;")
 }
 
-/// Mirrors PHP `nl2br($value)` (XHTML): insert `<br />` before each line break while keeping
-/// the original newline sequence. Used by the `notify` template's `{!! nl2br($content) !!}`.
+/// Mirrors PHP \"nl2br($value)\" (XHTML): insert \"<br />\" before each line break while keeping
+/// the original newline sequence. Used by the \"notify\" template's \"{!! nl2br($content) !!}\".
 pub fn nl2br(value: &str) -> String {
     let mut out = String::with_capacity(value.len() + 8);
     let mut chars = value.chars().peekable();
@@ -42,7 +42,7 @@ pub fn nl2br(value: &str) -> String {
     out
 }
 
-/// resources/views/mail/default/verify.blade.php: title 邮箱验证码 with the escaped `{{$code}}`.
+/// resources/views/mail/default/verify.blade.php: title 邮箱验证码 with the escaped \"{{$code}}\".
 pub fn render_verify(name: &str, url: &str, code: &str) -> String {
     let body = format!(
         "您的验证码是：{}，请在 5 分钟内进行验证。如果该验证码不为您本人申请，请无视。",
@@ -51,7 +51,7 @@ pub fn render_verify(name: &str, url: &str, code: &str) -> String {
     mail_shell(name, url, "邮箱验证码", &body)
 }
 
-/// resources/views/mail/default/notify.blade.php: title 网站通知 with `{!! nl2br($content) !!}`
+/// resources/views/mail/default/notify.blade.php: title 网站通知 with \"{!! nl2br($content) !!}\"
 /// (raw, so operator-authored HTML/newlines pass through exactly as Laravel delivers them).
 pub fn render_notify(name: &str, url: &str, content: &str) -> String {
     mail_shell(name, url, "网站通知", &nl2br(content))
@@ -94,10 +94,10 @@ pub fn render_reminder(kind: ReminderKind, name: &str, url: &str) -> String {
     }
 }
 
-/// The shared default-theme mail shell used by every `resources/views/mail/default/*.blade.php`
+/// The shared default-theme mail shell used by every \"resources/views/mail/default/*.blade.php\"
 /// template: a header band carrying the site name, a title, the greeting plus body, and a footer
-/// "return to site" link. `name` and `url` are HTML-escaped to mirror Blade's `{{ }}` output;
-/// `body_html` is inserted verbatim (callers escape or raw-render per template).
+/// "return to site" link. \"name\" and \"url\" are HTML-escaped to mirror Blade's \"{{ }}\" output;
+/// \"body_html\" is inserted verbatim (callers escape or raw-render per template).
 pub fn mail_shell(name: &str, url: &str, title: &str, body_html: &str) -> String {
     let name = html_escape(name);
     let url = html_escape(url);

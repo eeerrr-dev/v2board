@@ -17,6 +17,6 @@ named volumes 遮盖，不会污染宿主工作树：
 - pnpm content store；
 - Cargo registry、git checkout 与 target。
 
-Dev Container 使用独立 Compose project，不会碰触 `make up` 的 MySQL、Redis、Rust
-runtime 或 frontend deploy volumes。需要验证修改时仍应运行 `make sync`，然后使用
+Dev Container 使用独立 Compose project，不会碰触 `make up` 的 PostgreSQL、ClickHouse、Redis、
+Rust runtime 或 frontend deploy volumes。需要验证修改时仍应运行 `make sync`，然后使用
 `make doctor`、`make rust-check`、`make deploy-smoke` 等项目 gate。

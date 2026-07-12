@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, HashMap};
 
 use serde::Serialize;
-use sqlx::{FromRow, MySql, MySqlPool, QueryBuilder};
+use sqlx::{FromRow, PgPool, Postgres, QueryBuilder};
 
 use crate::plan::{PlanRow, find_plan};
 
@@ -21,11 +21,11 @@ pub struct OrderRow {
     pub refund_amount: Option<i32>,
     pub balance_amount: Option<i32>,
     pub surplus_order_ids: Option<Vec<i64>>,
-    pub status: i8,
-    pub commission_status: i8,
+    pub status: i16,
+    pub commission_status: i16,
     pub commission_balance: i32,
     pub actual_commission_balance: Option<i32>,
-    pub invite_user_id: Option<i32>,
+    pub invite_user_id: Option<i64>,
     pub paid_at: Option<i64>,
     pub created_at: i64,
     pub updated_at: i64,
@@ -60,7 +60,7 @@ pub struct DepositPlan {
 #[derive(Debug, Clone, FromRow)]
 struct RawOrderRow {
     id: i64,
-    invite_user_id: Option<i32>,
+    invite_user_id: Option<i64>,
     user_id: i64,
     plan_id: i32,
     coupon_id: Option<i32>,
@@ -76,8 +76,8 @@ struct RawOrderRow {
     refund_amount: Option<i32>,
     balance_amount: Option<i32>,
     surplus_order_ids: Option<String>,
-    status: i8,
-    commission_status: i8,
+    status: i16,
+    commission_status: i16,
     commission_balance: i32,
     actual_commission_balance: Option<i32>,
     paid_at: Option<i64>,
@@ -87,7 +87,7 @@ struct RawOrderRow {
 
 #[derive(Debug, Clone)]
 pub struct CancelCandidate {
-    pub status: i8,
+    pub status: i16,
     pub balance_amount: Option<i32>,
     pub payment_id: Option<i32>,
     pub callback_no: Option<String>,
@@ -104,9 +104,9 @@ pub enum CancelPendingOrderError {
 }
 
 pub async fn fetch_user_orders(
-    pool: &MySqlPool,
+    pool: &PgPool,
     user_id: i64,
-    status: Option<i8>,
+    status: Option<i16>,
 ) -> Result<Vec<OrderRow>, sqlx::Error> {
     let rows = match status {
         Some(status) => {
@@ -138,7 +138,7 @@ pub async fn fetch_user_orders(
 }
 
 pub async fn find_user_order(
-    pool: &MySqlPool,
+    pool: &PgPool,
     user_id: i64,
     trade_no: &str,
     try_out_plan_id: i32,
@@ -190,11 +190,11 @@ pub async fn find_user_order(
 }
 
 pub async fn find_order_status(
-    pool: &MySqlPool,
+    pool: &PgPool,
     user_id: i64,
     trade_no: &str,
-) -> Result<Option<i8>, sqlx::Error> {
-    sqlx::query_scalar("SELECT status FROM v2_order WHERE user_id = ? AND trade_no = ? LIMIT 1")
+) -> Result<Option<i16>, sqlx::Error> {
+    sqlx::query_scalar("SELECT status FROM v2_order WHERE user_id = $1 AND trade_no = $2 LIMIT 1")
         .bind(user_id)
         .bind(trade_no)
         .fetch_optional(pool)
@@ -202,12 +202,12 @@ pub async fn find_order_status(
 }
 
 pub async fn find_cancel_candidate(
-    pool: &MySqlPool,
+    pool: &PgPool,
     user_id: i64,
     trade_no: &str,
 ) -> Result<Option<CancelCandidate>, sqlx::Error> {
     sqlx::query_as::<_, CancelCandidateRow>(
-        "SELECT status, balance_amount, payment_id, callback_no FROM v2_order WHERE user_id = ? AND trade_no = ? LIMIT 1",
+        "SELECT status, balance_amount, payment_id, callback_no FROM v2_order WHERE user_id = $1 AND trade_no = $2 LIMIT 1",
     )
     .bind(user_id)
     .bind(trade_no)
@@ -224,7 +224,7 @@ pub async fn find_cancel_candidate(
 }
 
 pub async fn cancel_pending_order(
-    pool: &MySqlPool,
+    pool: &PgPool,
     user_id: i64,
     trade_no: &str,
     balance_amount: Option<i32>,
@@ -235,9 +235,10 @@ pub async fn cancel_pending_order(
     let mut tx = pool.begin().await?;
     let result = sqlx::query(
         r#"
-        UPDATE v2_order SET status = 2, updated_at = ?
-        WHERE user_id = ? AND trade_no = ? AND status = 0
-          AND payment_id <=> ? AND callback_no <=> ?
+        UPDATE v2_order SET status = 2, updated_at = $1
+        WHERE user_id = $2 AND trade_no = $3 AND status = 0
+          AND payment_id IS NOT DISTINCT FROM $4
+          AND callback_no IS NOT DISTINCT FROM $5
         "#,
     )
     .bind(now)
@@ -255,7 +256,7 @@ pub async fn cancel_pending_order(
 
     if let Some(balance_amount) = balance_amount.filter(|amount| *amount > 0) {
         let current_balance: i32 =
-            sqlx::query_scalar("SELECT balance FROM v2_user WHERE id = ? LIMIT 1 FOR UPDATE")
+            sqlx::query_scalar("SELECT balance FROM v2_user WHERE id = $1 LIMIT 1 FOR UPDATE")
                 .bind(user_id)
                 .fetch_optional(&mut *tx)
                 .await?
@@ -263,7 +264,7 @@ pub async fn cancel_pending_order(
         let new_balance = current_balance
             .checked_add(balance_amount)
             .ok_or(CancelPendingOrderError::BalanceOverflow)?;
-        sqlx::query("UPDATE v2_user SET balance = ?, updated_at = ? WHERE id = ?")
+        sqlx::query("UPDATE v2_user SET balance = $1, updated_at = $2 WHERE id = $3")
             .bind(new_balance)
             .bind(now)
             .bind(user_id)
@@ -277,14 +278,14 @@ pub async fn cancel_pending_order(
 
 #[derive(Debug, FromRow)]
 struct CancelCandidateRow {
-    status: i8,
+    status: i16,
     balance_amount: Option<i32>,
     payment_id: Option<i32>,
     callback_no: Option<String>,
 }
 
 async fn find_raw_user_order(
-    pool: &MySqlPool,
+    pool: &PgPool,
     user_id: i64,
     trade_no: &str,
 ) -> Result<Option<RawOrderRow>, sqlx::Error> {
@@ -296,7 +297,7 @@ async fn find_raw_user_order(
 }
 
 async fn fetch_raw_user_orders_by_ids(
-    pool: &MySqlPool,
+    pool: &PgPool,
     user_id: i64,
     ids: &[i64],
 ) -> Result<HashMap<i64, RawOrderRow>, sqlx::Error> {
@@ -304,7 +305,7 @@ async fn fetch_raw_user_orders_by_ids(
     let mut rows = HashMap::with_capacity(ids.len());
     let ids = ids.into_iter().collect::<Vec<_>>();
     for chunk in ids.chunks(500) {
-        let mut builder = QueryBuilder::<MySql>::new(ORDER_FIND_BY_IDS_SQL);
+        let mut builder = QueryBuilder::<Postgres>::new(ORDER_FIND_BY_IDS_SQL);
         builder.push_bind(user_id);
         builder.push(" AND id IN (");
         let mut separated = builder.separated(", ");
@@ -324,14 +325,14 @@ async fn fetch_raw_user_orders_by_ids(
 }
 
 async fn fetch_order_plans(
-    pool: &MySqlPool,
+    pool: &PgPool,
     plan_ids: &[i32],
 ) -> Result<HashMap<i32, PlanRow>, sqlx::Error> {
     let plan_ids = plan_ids.iter().copied().collect::<BTreeSet<_>>();
     let mut plans = HashMap::with_capacity(plan_ids.len());
     let plan_ids = plan_ids.into_iter().collect::<Vec<_>>();
     for chunk in plan_ids.chunks(500) {
-        let mut builder = QueryBuilder::<MySql>::new(PLAN_FIND_BY_IDS_SQL);
+        let mut builder = QueryBuilder::<Postgres>::new(PLAN_FIND_BY_IDS_SQL);
         let mut separated = builder.separated(", ");
         for plan_id in chunk {
             separated.push_bind(*plan_id);
@@ -429,7 +430,7 @@ SELECT
     plan_id,
     coupon_id,
     payment_id,
-    `type`,
+    type,
     period,
     trade_no,
     callback_no,
@@ -448,7 +449,7 @@ SELECT
     created_at,
     updated_at
 FROM v2_order
-WHERE user_id = ? AND status = ?
+WHERE user_id = $1 AND status = $2
 ORDER BY created_at DESC
 "#;
 
@@ -460,7 +461,7 @@ SELECT
     plan_id,
     coupon_id,
     payment_id,
-    `type`,
+    type,
     period,
     trade_no,
     callback_no,
@@ -479,7 +480,7 @@ SELECT
     created_at,
     updated_at
 FROM v2_order
-WHERE user_id = ?
+WHERE user_id = $1
 ORDER BY created_at DESC
 "#;
 
@@ -491,7 +492,7 @@ SELECT
     plan_id,
     coupon_id,
     payment_id,
-    `type`,
+    type,
     period,
     trade_no,
     callback_no,
@@ -510,7 +511,7 @@ SELECT
     created_at,
     updated_at
 FROM v2_order
-WHERE user_id = ? AND trade_no = ?
+WHERE user_id = $1 AND trade_no = $2
 LIMIT 1
 "#;
 
@@ -522,7 +523,7 @@ SELECT
     plan_id,
     coupon_id,
     payment_id,
-    `type`,
+    type,
     period,
     trade_no,
     callback_no,
@@ -552,7 +553,7 @@ SELECT
     device_limit,
     name,
     speed_limit,
-    `show`,
+    show,
     sort,
     renew,
     content,

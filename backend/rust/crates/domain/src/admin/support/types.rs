@@ -2,41 +2,41 @@ use super::*;
 
 #[derive(FromRow)]
 pub(in super::super) struct PaymentRow {
-    pub(in super::super) id: i64,
+    pub(in super::super) id: i32,
     pub(in super::super) name: String,
     pub(in super::super) payment: String,
     pub(in super::super) icon: Option<String>,
-    pub(in super::super) handling_fee_fixed: Option<i64>,
+    pub(in super::super) handling_fee_fixed: Option<i32>,
     pub(in super::super) handling_fee_percent: Option<f64>,
     pub(in super::super) uuid: String,
     pub(in super::super) config: String,
     pub(in super::super) notify_domain: Option<String>,
-    pub(in super::super) enable: i8,
-    pub(in super::super) sort: Option<i64>,
+    pub(in super::super) enable: i16,
+    pub(in super::super) sort: Option<i32>,
     pub(in super::super) created_at: i64,
     pub(in super::super) updated_at: i64,
 }
 
 #[derive(Debug, FromRow)]
 pub(in super::super) struct NoticeRaw {
-    id: i64,
+    id: i32,
     title: String,
     content: String,
     img_url: Option<String>,
     tags: Option<String>,
-    show: i8,
+    show: i16,
     created_at: i64,
     updated_at: i64,
 }
 
 #[derive(Debug, Serialize)]
 pub(in super::super) struct NoticeDto {
-    id: i64,
+    id: i32,
     title: String,
     content: String,
     img_url: Option<String>,
     tags: Option<Vec<String>>,
-    show: i8,
+    show: i16,
     created_at: i64,
     updated_at: i64,
 }

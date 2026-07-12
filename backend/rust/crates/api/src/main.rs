@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 
 use v2board_config::AppConfig;
-use v2board_db::{connect_mysql, migrate_mysql};
+use v2board_db::{connect_postgres, migrate_postgres, migrations_current};
 use v2board_domain::{auth::PasswordKdf, smtp::SmtpTransportCache};
 
 mod admin;
@@ -35,69 +35,59 @@ async fn main() -> anyhow::Result<()> {
         cli::print_help();
         return Ok(());
     }
-
-    init_tracing();
-    match &command {
-        cli::Command::ProvisionValidate { manifest } => {
-            let spec = v2board_provision::load_provision_spec(manifest)?;
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&serde_json::json!({
-                    "valid": true,
-                    "schema_version": spec.schema_version,
-                    "operation_id": spec.operation_id,
-                    "reference_commit": v2board_provision::LEGACY_REFERENCE_COMMIT,
-                    "manifest_binding_hmac_sha256": spec.manifest_binding_hmac_sha256(),
-                    "secrets_redacted": true
-                }))?
-            );
-            return Ok(());
-        }
-        cli::Command::ProvisionInspect { manifest } => {
-            let spec = v2board_provision::load_provision_spec(manifest)?;
-            let inspection = v2board_provision::build_inspection(
-                &spec,
-                v2board_provision::InspectionMode::Online,
-            )
-            .await?;
-            println!("{}", serde_json::to_string_pretty(&inspection)?);
-            if !inspection.passed() {
-                anyhow::bail!(
-                    "online provision compatibility inspection is blocked; see the JSON report"
-                );
-            }
-            return Ok(());
-        }
-        cli::Command::ProvisionPlan { manifest } => {
-            let spec = v2board_provision::load_provision_spec(manifest)?;
-            let plan = v2board_provision::build_inspection(
-                &spec,
-                v2board_provision::InspectionMode::FencedFinal,
-            )
-            .await?;
-            println!("{}", serde_json::to_string_pretty(&plan)?);
-            if !plan.passed() {
-                anyhow::bail!("fenced final provision plan is blocked; see the JSON report");
-            }
-            return Ok(());
-        }
-        cli::Command::Serve
-        | cli::Command::Migrate
-        | cli::Command::ResetAdminPassword { .. }
-        | cli::Command::Help => {}
+    let migration_database_secret = v2board_config::one_shot_secret(
+        "V2BOARD_MIGRATION_DATABASE_URL",
+        "V2BOARD_MIGRATION_DATABASE_URL_FILE",
+        "v2board-migration-database-url",
+    )?;
+    let admin_password_secret = v2board_config::one_shot_secret(
+        "V2BOARD_NEW_PASSWORD",
+        "V2BOARD_NEW_PASSWORD_FILE",
+        "v2board-new-password",
+    )?;
+    if !matches!(&command, cli::Command::Migrate) && migration_database_secret.is_some() {
+        anyhow::bail!(
+            "the one-shot migration database credential is forbidden for this API command"
+        );
+    }
+    if !matches!(&command, cli::Command::ResetAdminPassword { .. })
+        && admin_password_secret.is_some()
+    {
+        anyhow::bail!(
+            "the one-shot administrator password credential is forbidden for this API command"
+        );
     }
 
-    let config = AppConfig::try_from_env()?;
-    let db = connect_mysql(&config.database_url).await?;
+    init_tracing();
+    let config = AppConfig::try_from_api_env()?;
+    let database_url = if matches!(&command, cli::Command::Migrate) {
+        migration_database_url(&config, migration_database_secret)?
+    } else {
+        config.database_url.clone()
+    };
+    let db = connect_postgres(&database_url).await?;
     if matches!(&command, cli::Command::Migrate) {
-        migrate_mysql(&db).await?;
-        println!("database migrations applied");
+        migrate_postgres(&db, config.environment.is_production()).await?;
+        println!("database migration lineage verified and any permitted migrations applied");
         return Ok(());
+    }
+    if !migrations_current(&db).await? {
+        anyhow::bail!(
+            "refusing to start API commands against a PostgreSQL schema that is not exactly current"
+        );
     }
     let password_kdf = PasswordKdf::new(config.password_kdf_max_parallel);
     if let cli::Command::ResetAdminPassword { email } = command {
-        return reset_admin_password(&db, &config, &password_kdf, &email).await;
+        return reset_admin_password(
+            &db,
+            &config,
+            &password_kdf,
+            &email,
+            admin_password_secret,
+        )
+        .await;
     }
+    let installation_id = v2board_db::installation_id(&db).await?;
     let redis = redis::Client::open(config.redis_url.clone())?;
     let auth_redis = tokio::time::timeout(
         std::time::Duration::from_secs(config.http_connect_timeout_seconds),
@@ -110,6 +100,7 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState::new(
         config.clone(),
         db,
+        installation_id,
         redis,
         auth_redis,
         http,
@@ -132,4 +123,55 @@ async fn main() -> anyhow::Result<()> {
     server_result?;
 
     Ok(())
+}
+
+fn migration_database_url(
+    config: &AppConfig,
+    migration_database_secret: Option<String>,
+) -> anyhow::Result<String> {
+    match migration_database_secret {
+        Some(value) => {
+            let migration = url::Url::parse(&value)
+                .map_err(|_| anyhow::anyhow!("V2BOARD_MIGRATION_DATABASE_URL is invalid"))?;
+            v2board_config::validate_postgres_connection_query(
+                &migration,
+                config.environment.is_production(),
+            )?;
+            let runtime = url::Url::parse(&config.database_url)
+                .map_err(|_| anyhow::anyhow!("database_url is invalid"))?;
+            let migration_database = v2board_config::postgres_database_name(&migration)?;
+            let runtime_database = v2board_config::postgres_database_name(&runtime)?;
+            if !matches!(migration.scheme(), "postgres" | "postgresql")
+                || migration.host_str().map(str::to_ascii_lowercase)
+                    != runtime.host_str().map(str::to_ascii_lowercase)
+                || migration.port().unwrap_or(5432) != runtime.port().unwrap_or(5432)
+                || migration_database != runtime_database
+            {
+                anyhow::bail!(
+                    "V2BOARD_MIGRATION_DATABASE_URL must target the configured PostgreSQL database"
+                );
+            }
+            let migration_principal = v2board_config::postgres_principal_name(&migration)?;
+            let runtime_principal = v2board_config::postgres_principal_name(&runtime)?;
+            if config.environment.is_production() && migration_principal.is_empty() {
+                anyhow::bail!(
+                    "V2BOARD_MIGRATION_DATABASE_URL must name an explicit PostgreSQL principal"
+                );
+            }
+            if config.environment.is_production()
+                && (migration_principal == runtime_principal
+                    || migration_principal == config.peer_database_principal)
+            {
+                anyhow::bail!(
+                    "V2BOARD_MIGRATION_DATABASE_URL must use a principal distinct from API and declared worker"
+                );
+            }
+            Ok(value)
+        }
+        _ if config.environment.is_production() => anyhow::bail!(
+            "V2BOARD_MIGRATION_DATABASE_URL is required for production migrations; \
+             migration credentials must not be retained as the API database_url"
+        ),
+        _ => Ok(config.database_url.clone()),
+    }
 }

@@ -75,7 +75,7 @@ fn user_sort_whitelists_expression_and_direction() {
     assert_eq!(
         user_sort(&params),
         (
-            "(CAST(u.u AS DECIMAL(65,0)) + CAST(u.d AS DECIMAL(65,0)))".to_string(),
+            "(CAST(u.u AS NUMERIC(65,0)) + CAST(u.d AS NUMERIC(65,0)))".to_string(),
             "ASC"
         )
     );
@@ -91,7 +91,7 @@ fn user_sort_whitelists_expression_and_direction() {
 #[test]
 fn user_total_used_sql_widens_before_adding_bigint_counters() {
     let users_source = include_str!("../users.rs");
-    let widened = "CAST(u.u AS DECIMAL(65,0)) + CAST(u.d AS DECIMAL(65,0))";
+    let widened = "CAST(u.u AS NUMERIC(65,0)) + CAST(u.d AS NUMERIC(65,0))";
     assert_eq!(users_source.matches(widened).count(), 3);
     assert!(!users_source.contains("'total_used', u.u + u.d"));
 
@@ -537,6 +537,16 @@ fn server_save_vless_gates_settings_flow_and_sort() {
     let mut with_sort = base.to_vec();
     with_sort.push(("sort", "5"));
     assert!(saved_columns("vless", &with_sort).contains(&"sort"));
+
+    // VLESS is the only protocol whose PostgreSQL `port` column is INTEGER;
+    // every other node table stores it as text.
+    let mut pairs = server_common();
+    pairs.extend_from_slice(&base);
+    let values = server_save_values("vless", &params(&pairs)).unwrap();
+    assert!(matches!(
+        values.iter().find(|(column, _)| *column == "port"),
+        Some((_, AdminSqlValue::Integer(1)))
+    ));
 }
 
 #[test]

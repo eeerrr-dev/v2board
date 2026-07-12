@@ -1,0 +1,1018 @@
+use std::collections::HashSet;
+
+use clickhouse::Row;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use uuid::Uuid;
+
+#[derive(Clone, Copy, Debug)]
+pub struct ClickHouseMigration {
+    pub version: u64,
+    pub name: &'static str,
+    pub sql: &'static str,
+}
+
+pub const CLICKHOUSE_MIGRATIONS: &[ClickHouseMigration] = &[
+    ClickHouseMigration {
+        version: 1,
+        name: "schema_migration",
+        sql: include_str!("../../../clickhouse-migrations/0001_schema_migration.sql"),
+    },
+    ClickHouseMigration {
+        version: 2,
+        name: "traffic_reported_v1",
+        sql: include_str!("../../../clickhouse-migrations/0002_traffic_reported_v1.sql"),
+    },
+    ClickHouseMigration {
+        version: 3,
+        name: "traffic_accounted_v1",
+        sql: include_str!("../../../clickhouse-migrations/0003_traffic_accounted_v1.sql"),
+    },
+    ClickHouseMigration {
+        version: 4,
+        name: "reported_retry_dedup",
+        sql: include_str!("../../../clickhouse-migrations/0004_reported_retry_dedup.sql"),
+    },
+    ClickHouseMigration {
+        version: 5,
+        name: "accounted_retry_dedup",
+        sql: include_str!("../../../clickhouse-migrations/0005_accounted_retry_dedup.sql"),
+    },
+    ClickHouseMigration {
+        version: 6,
+        name: "reported_batch_index",
+        sql: include_str!("../../../clickhouse-migrations/0006_reported_batch_index.sql"),
+    },
+    ClickHouseMigration {
+        version: 7,
+        name: "accounted_batch_index",
+        sql: include_str!("../../../clickhouse-migrations/0007_accounted_batch_index.sql"),
+    },
+    ClickHouseMigration {
+        version: 8,
+        name: "materialize_reported_batch_index",
+        sql: include_str!(
+            "../../../clickhouse-migrations/0008_materialize_reported_batch_index.sql"
+        ),
+    },
+    ClickHouseMigration {
+        version: 9,
+        name: "materialize_accounted_batch_index",
+        sql: include_str!(
+            "../../../clickhouse-migrations/0009_materialize_accounted_batch_index.sql"
+        ),
+    },
+    ClickHouseMigration {
+        version: 10,
+        name: "installation_binding",
+        sql: include_str!("../../../clickhouse-migrations/0010_installation_binding.sql"),
+    },
+];
+
+const SUPPORTED_CLICKHOUSE_MAJOR: u64 = 26;
+const SUPPORTED_CLICKHOUSE_MINOR: u64 = 3;
+const REQUIRED_DEDUPLICATION_WINDOW: &str = "non_replicated_deduplication_window = 10000";
+
+#[derive(Debug, thiserror::Error)]
+pub enum ClickHouseMigrationError {
+    #[error("ClickHouse migration versions must be strictly increasing")]
+    InvalidOrder,
+    #[error("ClickHouse migration {version} has conflicting ledger checksums")]
+    ConflictingLedger { version: u64 },
+    #[error("ClickHouse migration {version} checksum changed")]
+    ChecksumMismatch { version: u64 },
+    #[error("ClickHouse migration {version} ledger name changed")]
+    NameMismatch { version: u64 },
+    #[error("ClickHouse schema ledger contains unknown version {version}")]
+    UnknownLedgerVersion { version: u64 },
+    #[error("ClickHouse schema ledger contains duplicate version {version}")]
+    DuplicateLedgerVersion { version: u64 },
+    #[error("ClickHouse schema ledger has a gap at version {version}")]
+    LedgerGap { version: u64 },
+    #[error(
+        "ClickHouse schema ledger is incomplete: expected {expected} versions, observed {observed}"
+    )]
+    IncompleteLineage { expected: usize, observed: usize },
+    #[error("ClickHouse {observed} is unsupported; analytics requires 26.3.x")]
+    UnsupportedVersion { observed: String },
+    #[error(
+        "ClickHouse target database has {table_count} table(s) but no v2_schema_migration ledger"
+    )]
+    UnmanagedNonEmptyDatabase { table_count: u64 },
+    #[error("ClickHouse target has a pre-existing schema ledger without a valid bootstrap entry")]
+    IncompleteLedger,
+    #[error("ClickHouse target database contains unexpected table {table}")]
+    UnexpectedTable { table: String },
+    #[error("ClickHouse installation binding is missing")]
+    MissingInstallationBinding,
+    #[error("ClickHouse installation binding is duplicated or malformed")]
+    InvalidInstallationBinding,
+    #[error("ClickHouse database is already bound to a different installation")]
+    InstallationBindingConflict,
+    #[error("ClickHouse schema invariant failed for {table}: {detail}")]
+    SchemaInvariant { table: String, detail: String },
+    #[error("ClickHouse migration failed: {0}")]
+    ClickHouse(#[from] clickhouse::error::Error),
+}
+
+#[derive(Debug, Deserialize, Row)]
+struct LedgerRow {
+    version: u64,
+    name: String,
+    checksum: String,
+}
+
+#[derive(Debug, Row, Serialize)]
+struct AppliedMigration<'a> {
+    version: u64,
+    name: &'a str,
+    checksum: &'a str,
+    applied_at_unix: i64,
+}
+
+#[derive(Debug, Deserialize, Row)]
+struct StringValue {
+    value: String,
+}
+
+#[derive(Debug, Deserialize, Row)]
+struct CountValue {
+    value: u64,
+}
+
+#[derive(Debug, Deserialize, Row)]
+struct TableState {
+    engine: String,
+    partition_key: String,
+    sorting_key: String,
+    create_table_query: String,
+}
+
+#[derive(Debug, Deserialize, Row, Eq, PartialEq)]
+struct ColumnState {
+    name: String,
+    type_name: String,
+}
+
+#[derive(Debug, Deserialize, Row)]
+struct IndexState {
+    name: String,
+    type_full: String,
+    expr: String,
+    granularity: u64,
+}
+
+#[derive(Debug, Deserialize, Row)]
+struct TableName {
+    name: String,
+}
+
+#[derive(Debug, Deserialize, Row)]
+struct InstallationBindingRow {
+    singleton: u8,
+    #[serde(with = "clickhouse::serde::uuid")]
+    installation_id: Uuid,
+}
+
+#[derive(Debug, Deserialize, Row)]
+struct InstallationIdRow {
+    #[serde(with = "clickhouse::serde::uuid")]
+    installation_id: Uuid,
+}
+
+#[derive(Debug, Row, Serialize)]
+struct NewInstallationBinding {
+    singleton: u8,
+    #[serde(with = "clickhouse::serde::uuid")]
+    installation_id: Uuid,
+    bound_at_unix: i64,
+}
+
+/// Apply the independent ClickHouse migration lineage.
+///
+/// The provisioner must serialize schema migration principals. The ledger
+/// still detects checksum drift and conflicting concurrent history instead of
+/// treating `IF NOT EXISTS` as proof that the expected table exists.
+pub async fn migrate_clickhouse(
+    client: &clickhouse::Client,
+    now_unix: i64,
+) -> Result<(), ClickHouseMigrationError> {
+    if CLICKHOUSE_MIGRATIONS
+        .iter()
+        .enumerate()
+        .any(|(index, migration)| migration.version != index as u64 + 1)
+    {
+        return Err(ClickHouseMigrationError::InvalidOrder);
+    }
+
+    ensure_supported_version(client).await?;
+
+    let ledger_preexisting = table_exists(client, "v2_schema_migration").await?;
+    let preexisting_tables = table_names(client).await?;
+    if !ledger_preexisting {
+        if !preexisting_tables.is_empty() {
+            return Err(ClickHouseMigrationError::UnmanagedNonEmptyDatabase {
+                table_count: preexisting_tables.len() as u64,
+            });
+        }
+    } else {
+        reject_unknown_tables(&preexisting_tables)?;
+    }
+
+    // Bootstrap the ledger before it can describe itself.
+    client.query(CLICKHOUSE_MIGRATIONS[0].sql).execute().await?;
+    // ClickHouse has no transactional DDL. Make the bootstrap ledger itself
+    // retry-idempotent before writing its first row, including recovery after
+    // a crash between CREATE TABLE and the version-1 ledger insert.
+    client
+        .query(
+            "ALTER TABLE v2_schema_migration MODIFY SETTING \
+             non_replicated_deduplication_window = 10000",
+        )
+        .execute()
+        .await?;
+    validate_ledger_table(client).await?;
+
+    let initial_prefix = validate_ledger_lineage(client, false).await?;
+    if ledger_preexisting && initial_prefix == 0 {
+        let tables = table_names(client).await?;
+        if tables.len() != 1 || tables[0] != "v2_schema_migration" {
+            return Err(ClickHouseMigrationError::IncompleteLedger);
+        }
+    }
+
+    for (index, migration) in CLICKHOUSE_MIGRATIONS.iter().enumerate() {
+        let prefix = validate_ledger_lineage(client, false).await?;
+        if prefix > index {
+            continue;
+        }
+        if prefix < index {
+            return Err(ClickHouseMigrationError::LedgerGap {
+                version: index as u64 + 1,
+            });
+        }
+
+        client.query(migration.sql).execute().await?;
+        validate_migration_effect(client, migration.version).await?;
+        insert_migration_ledger_row(client, migration, now_unix).await?;
+        let observed = validate_ledger_lineage(client, false).await?;
+        if observed <= index {
+            return Err(ClickHouseMigrationError::ConflictingLedger {
+                version: migration.version,
+            });
+        }
+    }
+    validate_ledger_lineage(client, true).await?;
+    validate_clickhouse_schema(client).await?;
+    Ok(())
+}
+
+/// Validate the exact embedded schema and atomically bind an empty analytics
+/// database to one PostgreSQL installation. On ordinary single-node
+/// MergeTree, every contender uses the same deduplication token deliberately:
+/// exactly one installation row can win and all losers fail verification.
+pub async fn bind_clickhouse_installation(
+    client: &clickhouse::Client,
+    installation_id: Uuid,
+    now_unix: i64,
+) -> Result<(), ClickHouseMigrationError> {
+    validate_runtime_schema(client).await?;
+    let rows = installation_binding_rows(client).await?;
+    if rows.is_empty() {
+        let fact_installations = raw_fact_installations(client).await?;
+        if fact_installations.len() > 1
+            || fact_installations
+                .first()
+                .is_some_and(|observed| *observed != installation_id)
+        {
+            return Err(ClickHouseMigrationError::InstallationBindingConflict);
+        }
+        let mut insert = client
+            .insert::<NewInstallationBinding>("v2_installation_binding")
+            .await?
+            .with_setting(
+                "insert_deduplication_token",
+                "v2board.analytics-installation-binding.v1",
+            )
+            .with_setting("async_insert", "0")
+            .with_setting("wait_end_of_query", "1");
+        insert
+            .write(&NewInstallationBinding {
+                singleton: 1,
+                installation_id,
+                bound_at_unix: now_unix,
+            })
+            .await?;
+        insert.end().await?;
+    }
+    verify_installation_binding(client, installation_id).await
+}
+
+async fn raw_fact_installations(
+    client: &clickhouse::Client,
+) -> Result<Vec<Uuid>, ClickHouseMigrationError> {
+    Ok(client
+        .query(
+            "SELECT DISTINCT installation_id FROM ( \
+                 SELECT installation_id FROM v2_traffic_reported_v1 \
+                 UNION ALL \
+                 SELECT installation_id FROM v2_traffic_accounted_v1 \
+             ) ORDER BY installation_id LIMIT 2",
+        )
+        .fetch_all::<InstallationIdRow>()
+        .await?
+        .into_iter()
+        .map(|row| row.installation_id)
+        .collect())
+}
+
+/// Per-batch fail-closed readiness check. This is intentionally read-only:
+/// schema binding may occur only during the worker's startup/recovery phase.
+pub async fn verify_clickhouse_runtime_ready(
+    client: &clickhouse::Client,
+    installation_id: Uuid,
+) -> Result<(), ClickHouseMigrationError> {
+    validate_runtime_schema(client).await?;
+    verify_installation_binding(client, installation_id).await
+}
+
+async fn validate_runtime_schema(
+    client: &clickhouse::Client,
+) -> Result<(), ClickHouseMigrationError> {
+    ensure_supported_version(client).await?;
+    validate_ledger_lineage(client, true).await?;
+    validate_clickhouse_schema(client).await
+}
+
+async fn installation_binding_rows(
+    client: &clickhouse::Client,
+) -> Result<Vec<InstallationBindingRow>, ClickHouseMigrationError> {
+    Ok(client
+        .query(
+            "SELECT singleton, installation_id FROM v2_installation_binding \
+             ORDER BY singleton, installation_id",
+        )
+        .fetch_all::<InstallationBindingRow>()
+        .await?)
+}
+
+async fn verify_installation_binding(
+    client: &clickhouse::Client,
+    installation_id: Uuid,
+) -> Result<(), ClickHouseMigrationError> {
+    let rows = installation_binding_rows(client).await?;
+    if rows.is_empty() {
+        return Err(ClickHouseMigrationError::MissingInstallationBinding);
+    }
+    if rows.len() != 1 || rows[0].singleton != 1 {
+        return Err(ClickHouseMigrationError::InvalidInstallationBinding);
+    }
+    if rows[0].installation_id != installation_id {
+        return Err(ClickHouseMigrationError::InstallationBindingConflict);
+    }
+    Ok(())
+}
+
+async fn ensure_supported_version(
+    client: &clickhouse::Client,
+) -> Result<(), ClickHouseMigrationError> {
+    let observed = client
+        .query("SELECT version() AS value")
+        .fetch_one::<StringValue>()
+        .await?
+        .value;
+    let supported = parse_version_major_minor(&observed)
+        .is_some_and(|version| version == (SUPPORTED_CLICKHOUSE_MAJOR, SUPPORTED_CLICKHOUSE_MINOR));
+    if !supported {
+        return Err(ClickHouseMigrationError::UnsupportedVersion { observed });
+    }
+    Ok(())
+}
+
+fn parse_version_major_minor(value: &str) -> Option<(u64, u64)> {
+    let mut parts = value.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    Some((major, minor))
+}
+
+async fn table_exists(
+    client: &clickhouse::Client,
+    table: &str,
+) -> Result<bool, ClickHouseMigrationError> {
+    let count = client
+        .query(
+            "SELECT count() AS value FROM system.tables \
+             WHERE database = currentDatabase() AND name = ?",
+        )
+        .bind(table)
+        .fetch_one::<CountValue>()
+        .await?
+        .value;
+    Ok(count == 1)
+}
+
+async fn table_names(client: &clickhouse::Client) -> Result<Vec<String>, ClickHouseMigrationError> {
+    Ok(client
+        .query(
+            "SELECT name FROM system.tables \
+             WHERE database = currentDatabase() ORDER BY name",
+        )
+        .fetch_all::<TableName>()
+        .await?
+        .into_iter()
+        .map(|row| row.name)
+        .collect())
+}
+
+fn reject_unknown_tables(tables: &[String]) -> Result<(), ClickHouseMigrationError> {
+    for table in tables {
+        if !EXPECTED_TABLES.contains(&table.as_str()) {
+            return Err(ClickHouseMigrationError::UnexpectedTable {
+                table: table.clone(),
+            });
+        }
+    }
+    Ok(())
+}
+
+async fn ledger_rows(
+    client: &clickhouse::Client,
+) -> Result<Vec<LedgerRow>, ClickHouseMigrationError> {
+    Ok(client
+        .query(
+            "SELECT version, name, checksum FROM v2_schema_migration \
+             ORDER BY version, applied_at_unix, checksum, name",
+        )
+        .fetch_all::<LedgerRow>()
+        .await?)
+}
+
+async fn validate_ledger_lineage(
+    client: &clickhouse::Client,
+    exact: bool,
+) -> Result<usize, ClickHouseMigrationError> {
+    let rows = ledger_rows(client).await?;
+    validate_ledger_rows(&rows, exact)
+}
+
+fn validate_ledger_rows(
+    rows: &[LedgerRow],
+    exact: bool,
+) -> Result<usize, ClickHouseMigrationError> {
+    let mut seen = HashSet::with_capacity(rows.len());
+    for row in rows {
+        if !seen.insert(row.version) {
+            return Err(ClickHouseMigrationError::DuplicateLedgerVersion {
+                version: row.version,
+            });
+        }
+        let Some(expected) = CLICKHOUSE_MIGRATIONS
+            .iter()
+            .find(|migration| migration.version == row.version)
+        else {
+            return Err(ClickHouseMigrationError::UnknownLedgerVersion {
+                version: row.version,
+            });
+        };
+        if row.checksum != checksum(expected.sql.as_bytes()) {
+            return Err(ClickHouseMigrationError::ChecksumMismatch {
+                version: row.version,
+            });
+        }
+        if row.name != expected.name {
+            return Err(ClickHouseMigrationError::NameMismatch {
+                version: row.version,
+            });
+        }
+    }
+
+    let mut prefix = 0_usize;
+    for migration in CLICKHOUSE_MIGRATIONS {
+        if seen.contains(&migration.version) {
+            prefix += 1;
+        } else {
+            if rows.iter().any(|row| row.version > migration.version) {
+                return Err(ClickHouseMigrationError::LedgerGap {
+                    version: migration.version,
+                });
+            }
+            break;
+        }
+    }
+    if exact && prefix != CLICKHOUSE_MIGRATIONS.len() {
+        return Err(ClickHouseMigrationError::IncompleteLineage {
+            expected: CLICKHOUSE_MIGRATIONS.len(),
+            observed: prefix,
+        });
+    }
+    Ok(prefix)
+}
+
+async fn insert_migration_ledger_row(
+    client: &clickhouse::Client,
+    migration: &ClickHouseMigration,
+    now_unix: i64,
+) -> Result<(), ClickHouseMigrationError> {
+    let checksum = checksum(migration.sql.as_bytes());
+    let token = format!(
+        "v2board.clickhouse-schema-ledger.v1.{}.{}",
+        migration.version, checksum
+    );
+    let mut insert = client
+        .insert::<AppliedMigration<'_>>("v2_schema_migration")
+        .await?
+        .with_setting("insert_deduplication_token", token)
+        .with_setting("async_insert", "0")
+        .with_setting("wait_end_of_query", "1");
+    insert
+        .write(&AppliedMigration {
+            version: migration.version,
+            name: migration.name,
+            checksum: &checksum,
+            applied_at_unix: now_unix,
+        })
+        .await?;
+    insert.end().await?;
+    Ok(())
+}
+
+async fn validate_migration_effect(
+    client: &clickhouse::Client,
+    version: u64,
+) -> Result<(), ClickHouseMigrationError> {
+    match version {
+        1 => validate_ledger_table(client).await,
+        2 => validate_event_table_shape(
+            client,
+            "v2_traffic_reported_v1",
+            "installation_id, user_id, accounting_date, accepted_at_unix, event_id, ingest_batch_id, batch_row_number",
+            REPORTED_COLUMNS,
+        )
+        .await
+        .map(|_| ()),
+        3 => validate_event_table_shape(
+            client,
+            "v2_traffic_accounted_v1",
+            "installation_id, user_id, accounting_date, accounted_at_unix, event_id, ingest_batch_id, batch_row_number",
+            ACCOUNTED_COLUMNS,
+        )
+        .await
+        .map(|_| ()),
+        4 => validate_event_deduplication(client, "v2_traffic_reported_v1").await,
+        5 => validate_event_deduplication(client, "v2_traffic_accounted_v1").await,
+        6 => validate_event_index(client, "v2_traffic_reported_v1").await,
+        7 => validate_event_index(client, "v2_traffic_accounted_v1").await,
+        8 => {
+            validate_event_index(client, "v2_traffic_reported_v1").await?;
+            validate_no_pending_mutation(client, "v2_traffic_reported_v1").await
+        }
+        9 => {
+            validate_event_index(client, "v2_traffic_accounted_v1").await?;
+            validate_no_pending_mutation(client, "v2_traffic_accounted_v1").await
+        }
+        10 => validate_installation_binding_table(client).await,
+        _ => Err(ClickHouseMigrationError::UnknownLedgerVersion { version }),
+    }
+}
+
+async fn validate_clickhouse_schema(
+    client: &clickhouse::Client,
+) -> Result<(), ClickHouseMigrationError> {
+    let tables = table_names(client).await?;
+    reject_unknown_tables(&tables)?;
+    if tables.len() != EXPECTED_TABLES.len() {
+        return Err(ClickHouseMigrationError::SchemaInvariant {
+            table: "currentDatabase()".to_owned(),
+            detail: "managed table inventory is incomplete".to_owned(),
+        });
+    }
+    validate_ledger_table(client).await?;
+    validate_event_table(
+        client,
+        "v2_traffic_reported_v1",
+        "installation_id, user_id, accounting_date, accepted_at_unix, event_id, ingest_batch_id, batch_row_number",
+        REPORTED_COLUMNS,
+    )
+    .await?;
+    validate_event_table(
+        client,
+        "v2_traffic_accounted_v1",
+        "installation_id, user_id, accounting_date, accounted_at_unix, event_id, ingest_batch_id, batch_row_number",
+        ACCOUNTED_COLUMNS,
+    )
+    .await?;
+    validate_no_pending_mutation(client, "v2_traffic_reported_v1").await?;
+    validate_no_pending_mutation(client, "v2_traffic_accounted_v1").await?;
+    validate_installation_binding_table(client).await?;
+    Ok(())
+}
+
+async fn validate_ledger_table(
+    client: &clickhouse::Client,
+) -> Result<(), ClickHouseMigrationError> {
+    let state = validate_table(
+        client,
+        "v2_schema_migration",
+        "MergeTree",
+        "",
+        "version, applied_at_unix, checksum",
+        LEDGER_COLUMNS,
+    )
+    .await?;
+    if !state
+        .create_table_query
+        .contains(REQUIRED_DEDUPLICATION_WINDOW)
+    {
+        return Err(schema_error(
+            "v2_schema_migration",
+            "schema-ledger retry deduplication is not explicitly enabled",
+        ));
+    }
+    Ok(())
+}
+
+async fn validate_event_table(
+    client: &clickhouse::Client,
+    table: &str,
+    sorting_key: &str,
+    expected_columns: &[(&str, &str)],
+) -> Result<(), ClickHouseMigrationError> {
+    validate_event_table_shape(client, table, sorting_key, expected_columns).await?;
+    validate_event_deduplication(client, table).await?;
+    validate_event_index(client, table).await
+}
+
+async fn validate_event_table_shape(
+    client: &clickhouse::Client,
+    table: &str,
+    sorting_key: &str,
+    expected_columns: &[(&str, &str)],
+) -> Result<TableState, ClickHouseMigrationError> {
+    validate_table(
+        client,
+        table,
+        "MergeTree",
+        "(table_generation, toYYYYMM(accounting_date))",
+        sorting_key,
+        expected_columns,
+    )
+    .await
+}
+
+async fn validate_event_deduplication(
+    client: &clickhouse::Client,
+    table: &str,
+) -> Result<(), ClickHouseMigrationError> {
+    let states = client
+        .query(
+            "SELECT engine, partition_key, sorting_key, create_table_query \
+             FROM system.tables WHERE database = currentDatabase() AND name = ?",
+        )
+        .bind(table)
+        .fetch_all::<TableState>()
+        .await?;
+    if states.len() != 1 {
+        return Err(schema_error(table, "table is missing or duplicated"));
+    }
+    let state = &states[0];
+    if !state
+        .create_table_query
+        .contains(REQUIRED_DEDUPLICATION_WINDOW)
+    {
+        return Err(schema_error(
+            table,
+            "non-replicated retry deduplication is not explicitly enabled",
+        ));
+    }
+    Ok(())
+}
+
+async fn validate_event_index(
+    client: &clickhouse::Client,
+    table: &str,
+) -> Result<(), ClickHouseMigrationError> {
+    let indices = client
+        .query(
+            "SELECT name, type_full, expr, granularity \
+             FROM system.data_skipping_indices \
+             WHERE database = currentDatabase() AND table = ? AND name = 'idx_ingest_batch_id'",
+        )
+        .bind(table)
+        .fetch_all::<IndexState>()
+        .await?;
+    if indices.len() != 1 {
+        return Err(schema_error(
+            table,
+            "batch-id skipping index is missing or duplicated",
+        ));
+    }
+    let index = &indices[0];
+    if index.name != "idx_ingest_batch_id"
+        || index.type_full != "bloom_filter(0.001)"
+        || index.expr != "ingest_batch_id"
+        || index.granularity != 1
+    {
+        return Err(schema_error(
+            table,
+            "batch-id skipping index definition drifted",
+        ));
+    }
+    Ok(())
+}
+
+async fn validate_no_pending_mutation(
+    client: &clickhouse::Client,
+    table: &str,
+) -> Result<(), ClickHouseMigrationError> {
+    let pending = client
+        .query(
+            "SELECT count() AS value FROM system.mutations \
+             WHERE database = currentDatabase() AND table = ? AND is_done = 0",
+        )
+        .bind(table)
+        .fetch_one::<CountValue>()
+        .await?
+        .value;
+    if pending != 0 {
+        return Err(schema_error(
+            table,
+            "index materialization mutation is still pending",
+        ));
+    }
+    Ok(())
+}
+
+async fn validate_installation_binding_table(
+    client: &clickhouse::Client,
+) -> Result<(), ClickHouseMigrationError> {
+    let state = validate_table(
+        client,
+        "v2_installation_binding",
+        "MergeTree",
+        "",
+        "singleton, installation_id",
+        INSTALLATION_BINDING_COLUMNS,
+    )
+    .await?;
+    if !state
+        .create_table_query
+        .contains(REQUIRED_DEDUPLICATION_WINDOW)
+        || !state
+            .create_table_query
+            .contains("CONSTRAINT chk_single_installation_binding CHECK singleton = 1")
+    {
+        return Err(schema_error(
+            "v2_installation_binding",
+            "singleton constraint or retry deduplication setting drifted",
+        ));
+    }
+    Ok(())
+}
+
+async fn validate_table(
+    client: &clickhouse::Client,
+    table: &str,
+    engine: &str,
+    partition_key: &str,
+    sorting_key: &str,
+    expected_columns: &[(&str, &str)],
+) -> Result<TableState, ClickHouseMigrationError> {
+    let states = client
+        .query(
+            "SELECT engine, partition_key, sorting_key, create_table_query \
+             FROM system.tables WHERE database = currentDatabase() AND name = ?",
+        )
+        .bind(table)
+        .fetch_all::<TableState>()
+        .await?;
+    if states.len() != 1 {
+        return Err(schema_error(table, "table is missing or duplicated"));
+    }
+    let state = states
+        .into_iter()
+        .next()
+        .ok_or_else(|| schema_error(table, "table state disappeared during validation"))?;
+    if state.engine != engine
+        || state.partition_key != partition_key
+        || state.sorting_key != sorting_key
+    {
+        return Err(schema_error(
+            table,
+            "engine, partition key, or sorting key drifted",
+        ));
+    }
+    let columns = client
+        .query(
+            "SELECT name, type AS type_name FROM system.columns \
+             WHERE database = currentDatabase() AND table = ? ORDER BY position",
+        )
+        .bind(table)
+        .fetch_all::<ColumnState>()
+        .await?;
+    let expected = expected_columns
+        .iter()
+        .map(|(name, type_name)| ColumnState {
+            name: (*name).to_owned(),
+            type_name: (*type_name).to_owned(),
+        })
+        .collect::<Vec<_>>();
+    if columns != expected {
+        return Err(schema_error(table, "column order, name, or type drifted"));
+    }
+    Ok(state)
+}
+
+fn schema_error(table: &str, detail: &str) -> ClickHouseMigrationError {
+    ClickHouseMigrationError::SchemaInvariant {
+        table: table.to_owned(),
+        detail: detail.to_owned(),
+    }
+}
+
+const EXPECTED_TABLES: &[&str] = &[
+    "v2_installation_binding",
+    "v2_schema_migration",
+    "v2_traffic_accounted_v1",
+    "v2_traffic_reported_v1",
+];
+
+const LEDGER_COLUMNS: &[(&str, &str)] = &[
+    ("version", "UInt64"),
+    ("name", "String"),
+    ("checksum", "String"),
+    ("applied_at_unix", "Int64"),
+];
+
+const INSTALLATION_BINDING_COLUMNS: &[(&str, &str)] = &[
+    ("singleton", "UInt8"),
+    ("installation_id", "UUID"),
+    ("bound_at_unix", "Int64"),
+];
+
+const REPORTED_COLUMNS: &[(&str, &str)] = &[
+    ("event_id", "String"),
+    ("schema_major", "UInt16"),
+    ("installation_id", "UUID"),
+    ("report_key", "String"),
+    ("payload_hash", "String"),
+    ("identity_kind", "LowCardinality(String)"),
+    ("user_id", "UInt64"),
+    ("traffic_epoch", "UInt64"),
+    ("server_id", "UInt64"),
+    ("server_type", "LowCardinality(String)"),
+    ("rate_text", "String"),
+    ("rate_decimal_10_2", "Decimal(10, 2)"),
+    ("raw_u", "UInt64"),
+    ("raw_d", "UInt64"),
+    ("charged_u", "UInt64"),
+    ("charged_d", "UInt64"),
+    ("accepted_at_unix", "Int64"),
+    ("accounting_date", "Date"),
+    ("accounting_timezone", "LowCardinality(String)"),
+    ("ingest_batch_id", "UUID"),
+    ("batch_row_number", "UInt32"),
+    ("outbox_payload_sha256", "String"),
+    ("table_generation", "UInt32"),
+    ("ingested_at_unix", "Int64"),
+];
+
+const ACCOUNTED_COLUMNS: &[(&str, &str)] = &[
+    ("event_id", "String"),
+    ("schema_major", "UInt16"),
+    ("installation_id", "UUID"),
+    ("report_key", "String"),
+    ("payload_hash", "String"),
+    ("identity_kind", "LowCardinality(String)"),
+    ("user_id", "UInt64"),
+    ("traffic_epoch", "UInt64"),
+    ("server_id", "UInt64"),
+    ("server_type", "LowCardinality(String)"),
+    ("rate_text", "String"),
+    ("rate_decimal_10_2", "Decimal(10, 2)"),
+    ("raw_u", "UInt64"),
+    ("raw_d", "UInt64"),
+    ("charged_u", "UInt64"),
+    ("charged_d", "UInt64"),
+    ("accepted_at_unix", "Int64"),
+    ("accounting_date", "Date"),
+    ("accounting_timezone", "LowCardinality(String)"),
+    ("accounted_at_unix", "Int64"),
+    ("outcome", "LowCardinality(String)"),
+    ("u_after", "Nullable(UInt64)"),
+    ("d_after", "Nullable(UInt64)"),
+    ("ingest_batch_id", "UUID"),
+    ("batch_row_number", "UInt32"),
+    ("outbox_payload_sha256", "String"),
+    ("table_generation", "UInt32"),
+    ("ingested_at_unix", "Int64"),
+];
+
+fn checksum(bytes: &[u8]) -> String {
+    let mut digest = Sha256::new();
+    digest.update(b"v2board.clickhouse-migration.v1\0");
+    digest.update((bytes.len() as u64).to_be_bytes());
+    digest.update(bytes);
+    hex::encode(digest.finalize())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migration_versions_are_monotonic_and_checksums_are_stable() {
+        for (index, migration) in CLICKHOUSE_MIGRATIONS.iter().enumerate() {
+            assert_eq!(migration.version, index as u64 + 1);
+            assert!(!migration.sql.trim().is_empty());
+            assert_eq!(checksum(migration.sql.as_bytes()).len(), 64);
+        }
+    }
+
+    #[test]
+    fn raw_tables_do_not_use_eventual_replacing_merge_correctness() {
+        for migration in &CLICKHOUSE_MIGRATIONS[1..=2] {
+            assert!(migration.sql.contains("ENGINE = MergeTree"));
+            assert!(!migration.sql.contains("ReplacingMergeTree"));
+            assert!(
+                migration
+                    .sql
+                    .contains("PARTITION BY (table_generation, toYYYYMM")
+            );
+        }
+        assert!(
+            CLICKHOUSE_MIGRATIONS[3]
+                .sql
+                .contains("non_replicated_deduplication_window")
+        );
+        assert!(
+            CLICKHOUSE_MIGRATIONS[4]
+                .sql
+                .contains("non_replicated_deduplication_window")
+        );
+        assert!(CLICKHOUSE_MIGRATIONS[5].sql.contains("idx_ingest_batch_id"));
+        assert!(CLICKHOUSE_MIGRATIONS[6].sql.contains("idx_ingest_batch_id"));
+        assert!(
+            CLICKHOUSE_MIGRATIONS[9]
+                .sql
+                .contains("v2_installation_binding")
+        );
+    }
+
+    #[test]
+    fn clickhouse_version_gate_accepts_only_the_pinned_lts_line() {
+        assert_eq!(parse_version_major_minor("26.3.17.4"), Some((26, 3)));
+        assert_eq!(parse_version_major_minor("26.3"), Some((26, 3)));
+        assert_ne!(parse_version_major_minor("26.4.1.1"), Some((26, 3)));
+        assert_ne!(parse_version_major_minor("25.8.12.1"), Some((26, 3)));
+        assert_eq!(parse_version_major_minor("not-a-version"), None);
+    }
+
+    #[test]
+    fn ledger_lineage_rejects_future_gap_duplicate_and_incomplete_history() {
+        let row = |index: usize| LedgerRow {
+            version: CLICKHOUSE_MIGRATIONS[index].version,
+            name: CLICKHOUSE_MIGRATIONS[index].name.to_owned(),
+            checksum: checksum(CLICKHOUSE_MIGRATIONS[index].sql.as_bytes()),
+        };
+        let exact = (0..CLICKHOUSE_MIGRATIONS.len())
+            .map(row)
+            .collect::<Vec<_>>();
+        assert_eq!(validate_ledger_rows(&exact, true).unwrap(), exact.len());
+
+        let mut future = exact
+            .iter()
+            .map(|item| LedgerRow {
+                version: item.version,
+                name: item.name.clone(),
+                checksum: item.checksum.clone(),
+            })
+            .collect::<Vec<_>>();
+        future.push(LedgerRow {
+            version: 999,
+            name: "future".into(),
+            checksum: "0".repeat(64),
+        });
+        assert!(matches!(
+            validate_ledger_rows(&future, false),
+            Err(ClickHouseMigrationError::UnknownLedgerVersion { version: 999 })
+        ));
+
+        let gap = vec![row(0), row(2)];
+        assert!(matches!(
+            validate_ledger_rows(&gap, false),
+            Err(ClickHouseMigrationError::LedgerGap { version: 2 })
+        ));
+
+        let duplicate = vec![row(0), row(0)];
+        assert!(matches!(
+            validate_ledger_rows(&duplicate, false),
+            Err(ClickHouseMigrationError::DuplicateLedgerVersion { version: 1 })
+        ));
+
+        assert!(matches!(
+            validate_ledger_rows(&[row(0)], true),
+            Err(ClickHouseMigrationError::IncompleteLineage { .. })
+        ));
+    }
+}

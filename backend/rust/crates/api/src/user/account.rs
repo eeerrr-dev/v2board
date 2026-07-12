@@ -45,9 +45,9 @@ pub(crate) async fn check_login(
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct UserUpdateRequest {
-    auto_renewal: Option<i8>,
-    remind_expire: Option<i8>,
-    remind_traffic: Option<i8>,
+    auto_renewal: Option<i16>,
+    remind_expire: Option<i16>,
+    remind_traffic: Option<i16>,
 }
 
 pub(crate) async fn user_update(
@@ -180,7 +180,7 @@ pub(crate) async fn user_comm_config(
     }))
 }
 
-fn validate_binary(field: &str, value: Option<i8>) -> Result<(), ApiError> {
+fn validate_binary(field: &str, value: Option<i16>) -> Result<(), ApiError> {
     match value {
         Some(0 | 1) | None => Ok(()),
         Some(_) => Err(ApiError::bad_request(format!("{field} must be 0 or 1"))),

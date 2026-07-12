@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail, ensure};
-use sqlx::{AssertSqlSafe, Executor, MySqlPool, SqlSafeStr};
+use sqlx::{AssertSqlSafe, Executor, PgPool, SqlSafeStr};
 use syn::{
     Expr, ExprCall, ExprLit, ExprPath, ItemConst, ItemStatic, Lit,
     visit::{self, Visit},
@@ -27,58 +27,62 @@ struct SourceInventory {
 }
 
 /// Prepare every statically recoverable runtime query against the freshly
-/// migrated MySQL schema. SQLx's dynamic APIs remain necessary for legacy
+/// migrated PostgreSQL schema. SQLx's dynamic APIs remain necessary for safe
 /// table dispatch and variable-size batches, so those call sites are tracked
 /// by an explicit per-file inventory: adding one without updating this audit
 /// and its integration scenario fails CI.
-pub async fn run(pool: &MySqlPool) -> Result<()> {
+pub async fn run(pool: &PgPool) -> Result<()> {
     let inventory = source_inventory()?;
     assert_dynamic_inventory(&inventory)?;
     assert_dynamic_tables(pool).await?;
 
     let mut connection = pool.acquire().await?;
     let mut prepared = 0_usize;
-    let mut lifecycle_exclusions = 0_usize;
+    let mut legacy_adapter_exclusions = 0_usize;
+    let mut prepare_failures = Vec::new();
     for query in inventory.static_queries {
-        // This query intentionally executes only before migration 0005. The
-        // latest schema has dropped the legacy column, and pool.rs first checks
-        // the migration ledger before it can reach this branch.
-        if query
-            .sql
-            .contains("SELECT id, used_user_ids FROM v2_giftcard ORDER BY id")
-        {
-            lifecycle_exclusions += 1;
+        // The native runtime inventory deliberately scans db::pool, but the
+        // one explicitly named legacy-source connector uses five MySQL session
+        // statements. They are read-only provision inputs, never native SQL.
+        if query.source == "crates/db/src/pool.rs" && is_legacy_mysql_adapter_sql(&query.sql) {
+            legacy_adapter_exclusions += 1;
             continue;
         }
-        connection
+        let result = connection
             .prepare(AssertSqlSafe(query.sql.clone()).into_sql_str())
-            .await
-            .with_context(|| {
-                format!(
-                    "MySQL failed to prepare static runtime SQL from {}: {}",
-                    query.source,
-                    compact_sql(&query.sql)
-                )
-            })?;
-        prepared += 1;
+            .await;
+        match result {
+            Ok(_) => prepared += 1,
+            Err(error) => prepare_failures.push(format!(
+                "{}: {}: {error}",
+                query.source,
+                compact_sql(&query.sql)
+            )),
+        }
     }
     ensure!(
-        lifecycle_exclusions == 1,
-        "expected exactly one audited pre-migration SQL exclusion, found {lifecycle_exclusions}"
+        legacy_adapter_exclusions == 5,
+        "expected exactly five audited legacy MySQL adapter exclusions, found {legacy_adapter_exclusions}"
+    );
+    ensure!(
+        prepare_failures.is_empty(),
+        "PostgreSQL failed to prepare {} static native runtime queries:\n{}",
+        prepare_failures.len(),
+        prepare_failures.join("\n")
     );
     ensure!(
         prepared >= 250,
         "only {prepared} static runtime queries were discovered"
     );
     println!(
-        "SQL schema prepare inventory: {prepared} static queries prepared; {} dynamic sqlx calls and {} QueryBuilder sites explicitly inventoried; {lifecycle_exclusions} lifecycle exclusion.",
+        "SQL schema prepare inventory: {prepared} static queries prepared; {} dynamic sqlx calls and {} QueryBuilder sites explicitly inventoried; {legacy_adapter_exclusions} legacy adapter exclusions.",
         inventory.dynamic_sqlx.values().sum::<usize>(),
         inventory.query_builders.values().sum::<usize>(),
     );
     Ok(())
 }
 
-async fn assert_dynamic_tables(pool: &MySqlPool) -> Result<()> {
+async fn assert_dynamic_tables(pool: &PgPool) -> Result<()> {
     const TABLES: &[&str] = &[
         "v2_plan",
         "v2_payment",
@@ -100,17 +104,24 @@ async fn assert_dynamic_tables(pool: &MySqlPool) -> Result<()> {
         "v2_mail_outbox",
         "v2_mail_outbox_batch",
         "v2_mail_log",
+        "v2_analytics_delivery_batch",
+        "v2_analytics_outbox",
         "v2_server_traffic_report",
+        "v2_server_traffic_report_item",
     ];
     for table in TABLES {
         let id_columns: i64 = sqlx::query_scalar(
             r#"
             SELECT COUNT(*)
             FROM information_schema.columns
-            WHERE table_schema = DATABASE() AND table_name = ?
+            WHERE table_schema = current_schema() AND table_name = $1
               AND column_name = CASE
                     WHEN table_name = 'v2_mail_outbox_batch' THEN 'batch_key'
-                    WHEN table_name = 'v2_server_traffic_report' THEN 'report_key'
+                    WHEN table_name IN (
+                        'v2_server_traffic_report', 'v2_server_traffic_report_item'
+                    ) THEN 'report_key'
+                    WHEN table_name = 'v2_analytics_delivery_batch' THEN 'batch_id'
+                    WHEN table_name = 'v2_analytics_outbox' THEN 'outbox_id'
                     ELSE 'id'
                   END
             "#,
@@ -142,7 +153,10 @@ fn inventory(root: &Path) -> Result<SourceInventory> {
     let mut files = Vec::new();
     // Contract code is the gate itself rather than a production runtime. Scan
     // every crate that can issue database traffic in API or worker processes.
-    for crate_name in ["api", "db", "domain", "workers"] {
+    // `provision` is intentionally absent: its explicitly named legacy MySQL
+    // source adapter is not native runtime SQL. Analytics is included because
+    // API/worker processes call its PostgreSQL outbox directly.
+    for crate_name in ["analytics", "api", "db", "domain", "workers"] {
         let source = root.join("crates").join(crate_name).join("src");
         ensure!(
             source.is_dir(),
@@ -373,9 +387,19 @@ const DYNAMIC_SQLX_SITES: &[DynamicSite] = &[
         count: 1,
         coverage: "constant retention SQL is prepared and an isolated live worker runs cleanup",
     },
+    DynamicSite {
+        source: "crates/workers/src/reset.rs",
+        count: 1,
+        coverage: "fixed retention SQL variants and bounded reset worker tests",
+    },
 ];
 
 const QUERY_BUILDER_SITES: &[DynamicSite] = &[
+    DynamicSite {
+        source: "crates/analytics/src/outbox.rs",
+        count: 1,
+        coverage: "2,001-row enqueue, conflict, and PostgreSQL-to-ClickHouse round-trip tests",
+    },
     DynamicSite {
         source: "crates/api/src/server_api/config.rs",
         count: 1,
@@ -420,6 +444,11 @@ const QUERY_BUILDER_SITES: &[DynamicSite] = &[
         source: "crates/domain/src/admin/statistics.rs",
         count: 3,
         coverage: "admin dashboard/list interaction parity",
+    },
+    DynamicSite {
+        source: "crates/domain/src/admin/support/values.rs",
+        count: 2,
+        coverage: "exact PostgreSQL integer-cast builder unit tests and caller interaction parity",
     },
     DynamicSite {
         source: "crates/domain/src/admin/users.rs",
@@ -489,4 +518,17 @@ fn compact_sql(sql: &str) -> String {
     } else {
         format!("{}…", &compact[..240])
     }
+}
+
+fn is_legacy_mysql_adapter_sql(sql: &str) -> bool {
+    let sql = sql.trim_start();
+    [
+        "SET SESSION time_zone",
+        "SET NAMES utf8mb4",
+        "SET SESSION sql_mode",
+        "SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ",
+        "SET SESSION TRANSACTION READ ONLY",
+    ]
+    .iter()
+    .any(|prefix| sql.starts_with(prefix))
 }

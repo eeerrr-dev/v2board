@@ -164,9 +164,9 @@ async fn handle_telegram_chat_join_request(
     let chat_id = join.chat.id;
     let user = sqlx::query_as::<_, v2board_db::user::UserAccessRow>(
         r#"
-        SELECT id, token, uuid, group_id, banned, u, d, transfer_enable, expired_at, commission_balance
+        SELECT id, token, uuid, group_id, plan_id, banned, u, d, transfer_enable, expired_at, commission_balance
         FROM v2_user
-        WHERE telegram_id = ?
+        WHERE telegram_id = $1
         LIMIT 1
         "#,
     )
@@ -267,7 +267,7 @@ async fn telegram_bind(
         r#"
         SELECT id, email, telegram_id, is_admin, is_staff, u, d, transfer_enable
         FROM v2_user
-        WHERE token = ?
+        WHERE token = $1
         LIMIT 1
         "#,
     )
@@ -282,7 +282,7 @@ async fn telegram_bind(
             "该账号已经绑定了Telegram账号",
         ));
     }
-    let updated = sqlx::query("UPDATE v2_user SET telegram_id = ?, updated_at = ? WHERE id = ?")
+    let updated = sqlx::query("UPDATE v2_user SET telegram_id = $1, updated_at = $2 WHERE id = $3")
         .bind(chat_id)
         .bind(Utc::now().timestamp())
         .bind(user.id)
@@ -398,7 +398,7 @@ async fn telegram_reply_ticket(
     state: &AppState,
     bot_token: &str,
     message: &TelegramMessage,
-    ticket_id: i32,
+    ticket_id: i64,
 ) -> Result<(), TelegramCommandError> {
     if !message.is_private() {
         return Ok(());
@@ -435,7 +435,7 @@ async fn telegram_reply_ticket(
 
 async fn reply_ticket_by_admin(
     state: &AppState,
-    ticket_id: i32,
+    ticket_id: i64,
     user_id: i64,
     message: &str,
 ) -> Result<(), ApiError> {
@@ -461,7 +461,7 @@ async fn telegram_user_by_chat_id(
         r#"
         SELECT id, email, telegram_id, is_admin, is_staff, u, d, transfer_enable
         FROM v2_user
-        WHERE telegram_id = ?
+        WHERE telegram_id = $1
         LIMIT 1
         "#,
     )
@@ -484,7 +484,7 @@ pub(crate) async fn send_telegram_message_with_admin(
         SELECT telegram_id
         FROM v2_user
         WHERE telegram_id IS NOT NULL
-          AND (is_admin = 1 OR (? = 1 AND is_staff = 1))
+          AND (is_admin = 1 OR ($1 = 1 AND is_staff = 1))
         "#,
     )
     .bind(include_staff as i32)
@@ -616,7 +616,7 @@ fn subscribe_token_from_url(value: &str) -> Option<String> {
         .filter(|token| !token.is_empty())
 }
 
-fn telegram_reply_ticket_id(text: &str) -> Option<i32> {
+fn telegram_reply_ticket_id(text: &str) -> Option<i64> {
     let after_hash = text.split_once('#')?.1.trim_start();
     let digits = after_hash
         .trim_start_matches('`')
@@ -624,7 +624,7 @@ fn telegram_reply_ticket_id(text: &str) -> Option<i32> {
         .skip_while(|ch| !ch.is_ascii_digit())
         .take_while(|ch| ch.is_ascii_digit())
         .collect::<String>();
-    digits.parse::<i32>().ok()
+    digits.parse::<i64>().ok()
 }
 
 fn escape_telegram_markdown(text: &str) -> String {
@@ -737,8 +737,8 @@ struct TelegramUserRow {
     id: i64,
     email: String,
     telegram_id: Option<i64>,
-    is_admin: i8,
-    is_staff: i8,
+    is_admin: i16,
+    is_staff: i16,
     u: i64,
     d: i64,
     transfer_enable: i64,

@@ -1,6 +1,5 @@
 use chrono::{Months, TimeZone, Utc};
-use sqlx::{FromRow, MySql, Transaction};
-use uuid::Uuid;
+use sqlx::{FromRow, Postgres, Transaction};
 use v2board_config::app_timezone;
 
 use crate::{batch::finish_item_batch, state::WorkerState, time::timestamp_after};
@@ -12,33 +11,33 @@ FROM v2_user
 WHERE auto_renewal <> 0
   AND plan_id IS NOT NULL
   AND expired_at IS NOT NULL
-  AND expired_at > ?
-  AND expired_at < ?
-  AND id > ?
+  AND expired_at > $1
+  AND expired_at < $2
+  AND id > $3
 ORDER BY id
-LIMIT ?
+LIMIT $4
 "#;
 const RENEWAL_LOCKED_USER_SQL: &str = r#"
 SELECT id, balance, plan_id, expired_at
 FROM v2_user
-WHERE id = ?
+WHERE id = $1
   AND auto_renewal <> 0
   AND plan_id IS NOT NULL
   AND expired_at IS NOT NULL
-  AND expired_at > ?
-  AND expired_at < ?
+  AND expired_at > $2
+  AND expired_at < $3
 LIMIT 1
 FOR UPDATE
 "#;
 const RENEWAL_UPDATE_SQL: &str = r#"
 UPDATE v2_user
-SET balance = balance - ?, expired_at = ?, updated_at = ?
-WHERE id = ?
+SET balance = balance - $1, expired_at = $2, updated_at = $3
+WHERE id = $4
   AND auto_renewal <> 0
-  AND plan_id = ?
-  AND expired_at = ?
-  AND balance >= ?
-  AND expired_at > ?
+  AND plan_id = $5
+  AND expired_at = $6
+  AND balance >= $7
+  AND expired_at > $8
 "#;
 
 #[derive(Debug, Clone, FromRow)]
@@ -52,7 +51,7 @@ struct RenewalUserRow {
 #[derive(Debug, Clone, FromRow)]
 struct RenewalPlanRow {
     id: i32,
-    renew: i8,
+    renew: i16,
     month_price: Option<i32>,
     quarter_price: Option<i32>,
     half_year_price: Option<i32>,
@@ -104,7 +103,7 @@ async fn renew_user(state: &WorkerState, user_id: i64) -> anyhow::Result<()> {
         r#"
         SELECT period
         FROM v2_order
-        WHERE user_id = ?
+        WHERE user_id = $1
           AND period NOT IN ('reset_price', 'onetime_price', 'deposit')
           AND status = 3
         ORDER BY created_at DESC
@@ -135,7 +134,7 @@ async fn renew_user(state: &WorkerState, user_id: i64) -> anyhow::Result<()> {
         SELECT id, renew, month_price, quarter_price, half_year_price, year_price,
                two_year_price, three_year_price
         FROM v2_plan
-        WHERE id = ?
+        WHERE id = $1
         LIMIT 1
         FOR SHARE
         "#,
@@ -160,7 +159,7 @@ async fn renew_user(state: &WorkerState, user_id: i64) -> anyhow::Result<()> {
         return Ok(());
     };
 
-    let trade_no = generate_trade_no();
+    let trade_no = v2board_domain::order::generate_order_no();
     let updated = sqlx::query(RENEWAL_UPDATE_SQL)
         .bind(terms.price)
         .bind(terms.expired_at)
@@ -178,8 +177,8 @@ async fn renew_user(state: &WorkerState, user_id: i64) -> anyhow::Result<()> {
     sqlx::query(
         r#"
         INSERT INTO v2_order
-            (user_id, plan_id, `type`, period, trade_no, total_amount, balance_amount, status, created_at, updated_at)
-        VALUES (?, ?, 2, ?, ?, 0, ?, 3, ?, ?)
+            (user_id, plan_id, "type", period, trade_no, total_amount, balance_amount, status, created_at, updated_at)
+        VALUES ($1, $2, 2, $3, $4, 0, $5, 3, $6, $7)
         "#,
     )
     .bind(user.id)
@@ -237,12 +236,12 @@ fn renewal_price(plan: &RenewalPlanRow, period: &str) -> Option<i32> {
 }
 
 async fn disable_auto_renewal(
-    tx: &mut Transaction<'_, MySql>,
+    tx: &mut Transaction<'_, Postgres>,
     user_id: i64,
     now: i64,
 ) -> anyhow::Result<()> {
     sqlx::query(
-        "UPDATE v2_user SET auto_renewal = 0, updated_at = ? WHERE id = ? AND auto_renewal <> 0",
+        "UPDATE v2_user SET auto_renewal = 0, updated_at = $1 WHERE id = $2 AND auto_renewal <> 0",
     )
     .bind(now)
     .bind(user_id)
@@ -271,14 +270,6 @@ fn add_period(timestamp: i64, period: &str) -> Option<i64> {
         .single()?
         .checked_add_months(Months::new(months))
         .map(|date| date.timestamp())
-}
-
-fn generate_trade_no() -> String {
-    format!(
-        "{}{}",
-        Utc::now().format("%Y%m%d%H%M%S"),
-        Uuid::new_v4().simple()
-    )
 }
 
 #[cfg(test)]
@@ -342,16 +333,16 @@ mod tests {
     #[test]
     fn renewal_sql_rechecks_locked_state_and_guards_the_deduction() {
         assert!(RENEWAL_CANDIDATE_SQL.trim_start().starts_with("SELECT id"));
-        assert!(RENEWAL_CANDIDATE_SQL.contains("id > ?"));
+        assert!(RENEWAL_CANDIDATE_SQL.contains("id > $3"));
         assert!(RENEWAL_CANDIDATE_SQL.contains("ORDER BY id"));
-        assert!(RENEWAL_CANDIDATE_SQL.contains("LIMIT ?"));
+        assert!(RENEWAL_CANDIDATE_SQL.contains("LIMIT $4"));
         assert!(RENEWAL_LOCKED_USER_SQL.contains("FOR UPDATE"));
         assert!(RENEWAL_LOCKED_USER_SQL.contains("auto_renewal <> 0"));
-        assert!(RENEWAL_LOCKED_USER_SQL.contains("expired_at > ?"));
-        assert!(RENEWAL_UPDATE_SQL.contains("plan_id = ?"));
-        assert!(RENEWAL_UPDATE_SQL.contains("expired_at = ?"));
-        assert!(RENEWAL_UPDATE_SQL.contains("balance >= ?"));
-        assert!(RENEWAL_UPDATE_SQL.contains("expired_at > ?"));
+        assert!(RENEWAL_LOCKED_USER_SQL.contains("expired_at > $2"));
+        assert!(RENEWAL_UPDATE_SQL.contains("plan_id = $5"));
+        assert!(RENEWAL_UPDATE_SQL.contains("expired_at = $6"));
+        assert!(RENEWAL_UPDATE_SQL.contains("balance >= $7"));
+        assert!(RENEWAL_UPDATE_SQL.contains("expired_at > $8"));
 
         let source = include_str!("renewal.rs");
         let function = &source[source.find("async fn renew_user").unwrap()..];

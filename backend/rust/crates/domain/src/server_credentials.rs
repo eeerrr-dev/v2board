@@ -84,5 +84,12 @@ mod tests {
             1,
             &token
         ));
+        assert!(!verify_node_token(
+            "a sufficiently long server master key",
+            "v2node",
+            7,
+            0,
+            "a sufficiently long server master key"
+        ));
     }
 }

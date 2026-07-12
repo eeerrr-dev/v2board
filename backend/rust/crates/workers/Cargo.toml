@@ -21,6 +21,7 @@ tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 uuid.workspace = true
+v2board-analytics = { version = "0.1.0", path = "../analytics" }
 v2board-config = { version = "0.1.0", path = "../config" }
 v2board-db = { version = "0.1.0", path = "../db" }
 v2board-domain = { version = "0.1.0", path = "../domain" }

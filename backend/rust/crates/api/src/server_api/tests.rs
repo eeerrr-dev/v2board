@@ -6,7 +6,7 @@ use serde_json::json;
 
 use super::{
     ServerUserRow, TrafficEntry,
-    config::{explode_php_lines, php_int_truthy, php_truthy},
+    config::{explode_php_lines, parse_i32_json_list, php_int_truthy, php_truthy},
     response::{etag_matches, sha1_hex},
     server_online_status,
     traffic::{
@@ -60,10 +60,26 @@ fn traffic_statistics_use_bounded_atomic_upserts() {
         .unwrap();
     let stats = &source[start..end];
     assert!(stats.contains("entries.chunks(TRAFFIC_REPORT_SQL_BATCH_SIZE)"));
-    assert!(stats.contains("AS incoming ON DUPLICATE KEY UPDATE"));
-    assert!(stats.contains("v2_stat_user.u + incoming.u"));
+    assert!(stats.contains("ON CONFLICT (server_rate, user_id, record_at)"));
+    assert!(stats.contains("v2_stat_user.u + EXCLUDED.u"));
     assert!(!stats.contains("SELECT id, u, d"));
     assert!(!stats.contains("UPDATE v2_stat_user SET"));
+}
+
+#[test]
+fn traffic_report_analytics_use_one_bounded_bulk_enqueue() {
+    let source = include_str!("traffic.rs");
+    let start = source
+        .find("async fn persist_durable_traffic_report")
+        .unwrap();
+    let end = source[start..]
+        .find("fn is_internal_traffic_report_key")
+        .map(|offset| start + offset)
+        .unwrap();
+    let persist = &source[start..end];
+    assert!(persist.contains("Vec::<AnalyticsEvent>::with_capacity(items.len())"));
+    assert!(persist.contains("enqueue_events(&mut tx, &analytics_events, now)"));
+    assert!(!persist.contains("enqueue_event(&mut tx"));
 }
 
 fn object(value: serde_json::Value) -> serde_json::Map<String, serde_json::Value> {
@@ -287,6 +303,29 @@ fn php_truthy_filters_like_array_filter() {
     assert!(!php_truthy(&json!("")));
     assert!(!php_truthy(&json!("0")));
     assert!(!php_truthy(&serde_json::Value::Null));
+}
+
+#[test]
+fn server_group_ids_accept_legacy_json_numeric_strings() {
+    assert_eq!(
+        parse_i32_json_list(Some(&r#"["1",2,"invalid"]"#.to_string())),
+        vec![1, 2]
+    );
+    assert_eq!(parse_i32_json_list(Some(&"3".to_string())), vec![3]);
+}
+
+#[test]
+fn server_route_lookup_is_parameter_bounded_and_restores_manifest_order_in_rust() {
+    let source = include_str!("config.rs");
+    let start = source.find("async fn server_routes").unwrap();
+    let end = source[start..]
+        .find("pub(super) fn parse_i32_json_list")
+        .map(|offset| start + offset)
+        .unwrap();
+    let implementation = &source[start..end];
+    assert!(implementation.contains("unique_ids.chunks(500)"));
+    assert!(implementation.contains("rows.sort_by_key"));
+    assert!(!implementation.contains("ORDER BY CASE"));
 }
 
 #[test]

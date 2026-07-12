@@ -1,209 +1,221 @@
 # V2Board Native
 
-V2Board 的现代化实现：单一 Rust 后端、Rust worker，以及 React + TypeScript +
-Vite + shadcn/ui 前端。PHP/Laravel 与旧打包前端不再属于运行、构建或部署链路。
+V2Board 的现代化实现：单一 Rust API、Rust worker，以及 React + TypeScript +
+Vite + shadcn/ui 前端。PHP/Laravel 与旧打包前端不属于新版运行、构建或部署链路。
 
-## 架构
+## 架构与数据所有权
 
-- `backend/rust`：Axum API、后台任务、SQLx migration 与本地开发 seed。
+- `backend/rust`：Axum API、后台任务、PostgreSQL migration、ClickHouse analytics
+  projection 与本地开发 seed。
 - `frontend/apps/user`：用户端 React 应用。
 - `frontend/apps/admin`：管理端 React 应用。
 - `frontend/packages`：类型、API client、i18n 与共享构建配置。
-- `references/wyx2685-v2board`：只读上游参考；仅用于兼容性审计，绝不参与生产构建。
+- `references/wyx2685-v2board`：固定且只读的旧版参考，只用于兼容审计和旧版迁移源识别。
 
-Rust 在一个端口同时提供 API、用户页、动态后台路径和带内容哈希的静态资源。
-Vite 的不可变 release 位于 `dist-deploy/releases/*`，`current` 原子地指向当前版本。
+新版数据存储固定为：
 
-## 安装与升级契约
+- **PostgreSQL 18**：唯一权威事务数据库。用户、订阅、额度、订单、支付、配置、幂等状态、
+  migration/installation ledger 和待发布 analytics outbox 都以它为准。
+- **ClickHouse 26.3 LTS**：只保存 PostgreSQL 先提交的不可变分析投影，绝不反写或决定核心业务状态。
+- **Redis**：只保存 session、限流、lease、锁和短期缓存，不保存不可恢复账本。
 
-在实现或执行全新安装、从 pinned reference 旧版迁移、native 升级或破坏性升级前，必须遵守
-[安装、旧版迁移与升级不可变契约](docs/upgrade-invariants.md)。未在该契约中明确归为可重建的
-现有状态默认按最高保护级处理；来源不明、无法验证的半迁移或存在歧义时禁止写入。可验证的 pending
-operation 只能按原计划 resume/recover，不得开始新的升级。
+MySQL、Percona 和 MariaDB 都不是新版可选运行时。它们只可能作为
+`references/wyx2685-v2board` 所代表旧系统的**只读 source**，经明确识别后进入维护式迁移。
+完整边界见 [PostgreSQL + ClickHouse 持久化不变量](docs/postgresql-clickhouse-invariants.md)。
 
-手填字段、双 Redis DB、全量登出、target MySQL 自动创建意图和节点维护切换的说明见
-[唯一旧版迁移清单 v2](docs/legacy-migration-manifest.md)。
+Rust 在一个端口同时提供 API、用户页、动态后台路径和带内容哈希的静态资源。前端部署根包含
+不可变 `releases/<content-id>/{user,admin}`，并通过 `current`/`previous` 原子链接切换版本。
 
-### 当前只读 lifecycle 工具
+## 安装、旧版迁移与升级
 
-当前只提供三条**不会执行迁移**的命令：
+全新安装、旧版迁移、native 升级和破坏性升级都必须遵守
+[安装、旧版迁移与升级不可变契约](docs/upgrade-invariants.md)以及
+[PostgreSQL + ClickHouse 持久化不变量](docs/postgresql-clickhouse-invariants.md)。来源不明、
+无法验证的半迁移或 installation identity 不一致时必须停止，不能猜测后继续写入。
 
-- `v2board-api provision validate --manifest <path>`：校验 secret-bearing JSON 文件的权限、版本、
-  duplicate/unknown/missing key、完整 file-only AppConfig、运行时同源语义和固定迁移决策；不连接数据库，
-  也不写文件。
-- `v2board-api provision inspect --manifest <path>`：旧系统仍运行时执行在线只读兼容检查；
-  verdict 为 `compatible|blocked`，不会进入维护。
-- `v2board-api provision plan --manifest <path>`：只在操作者已确认进入维护、完成 fence/drain/
-  backup/restore proof 后执行最终只读检查；verdict 为 `ready_for_confirmation|blocked`。
+当前一次性 lifecycle CLI 只有三条只读命令：
 
-`inspect` 和 `plan` 只连接 source MySQL/Redis、target MySQL `bootstrap_database_url` 与 target Redis，
-输出脱敏 inventory；不复制数据、不排空队列、不创建 target 数据库/账号/表、不生成节点凭据，
-也不写 `config.json`。MySQL 版本由服务器自动报告：source 仅接受 MySQL/Percona 5.7+；target
-要求 MySQL 8.4+，且 `application_database_url` 指定的库名和解码后的应用 `'user'@'host'` 必须不存在。
-bootstrap 凭据必须能从 `information_schema` / `mysql.user` 证明这两个事实。用户无需、也不应手工预建
-target 库或账号；future `apply` 只能在最终确认后用 bootstrap 凭据创建
-`utf8mb4/utf8mb4_unicode_ci` 库、受限应用账号和 native schema。`application_account_host`
-明确指定 MySQL `'user'@'host'` 中的客户端来源范围，不是 DSN 服务器 host，只接受精确 hostname/IP
-或规范 IPv4 CIDR，不接受 `%`/`_` wildcard。`require_database_absent=true` 与
-`require_account_absent=true` 都是强制项。
-target Redis 没有建立逻辑 DB
-的操作；工具只验证选定 DB/namespace 为空，绝不 `FLUSHDB`。
+- `v2board-lifecycle validate --manifest <path>`：严格校验 lifecycle JSON，不连接数据存储。
+- `v2board-lifecycle inspect --manifest <path>`：旧系统仍运行时执行在线只读检查。
+- `v2board-lifecycle plan --manifest <path>`：进入 fenced maintenance 后执行最终只读计划检查。
 
-唯一 legacy v2 固定为 `manual_only`（不导入旧配置）、`logout_all`（不转换旧 session）、
-`discard_ephemeral_after_fence`（不复制已 fencing 的可重建 cache）和 `maintenance_cutover`
-（不启用在线 global-token 双协议窗口）；Stripe 与临时订阅 token 均固定 `assert_none`，旧主题固定放弃，
-自定义规则只能声明不存在或确认放弃。这些是清单约束，不代表对应 apply 动作已经实现；口头声明“没用
-Stripe”不能代替 plan 的数据库零状态检查。
+当前**没有** `apply`。检查报告继续以 `apply_available=false` 和实现 blocker
+失败关闭，不能获得迁移、写入或切流许可。manifest v3 已冻结并严格区分
+[全新安装](docs/examples/fresh-install.v3.example.json)、
+[旧版迁移](docs/examples/legacy-migration.v3.example.json)和
+[native 升级](docs/examples/native-upgrade.v3.example.json)；v2 会在字段解释前被拒绝。自动化仍必须等待
+converter、journal、target bootstrap、one-shot final-recheck/apply 执行器和全部门禁完成。
 
-[v2 示例清单](docs/examples/legacy-migration.v2.example.json) 是带占位符的公开模板，权限也是仓库普通
-只读文件，**不能直接运行**。先复制到仓库外的受保护 secret 路径，逐项复核并填写所有字段（不能只
-替换 `REPLACE`），生成新的 operation UUID，再设为仅 owner 可读写：
+旧版迁移固定把 source MySQL/MariaDB 和旧 Redis 保持只读，先完成 inventory、fence、
+pending traffic/queue drain、一致备份与隔离恢复证明，再转换到全新的 PostgreSQL 18 target。
+旧 session 不转换，迁移后全量登出；ClickHouse 只能从经过验证的 PostgreSQL outbox 或明确标注的
+legacy aggregate 重建，不能用 ClickHouse 行数证明事务迁移成功。
 
-```bash
-cp docs/examples/legacy-migration.v2.example.json /secure/private/legacy-migration.json
-chmod 600 /secure/private/legacy-migration.json
-v2board-api provision validate --manifest /secure/private/legacy-migration.json
-v2board-api provision inspect --manifest /secure/private/legacy-migration.json
-# compatible 后，只在明确进入维护并完成 fence/drain/backup/restore proof 后执行：
-v2board-api provision plan --manifest /secure/private/legacy-migration.json
+这是一次性离线迁移，不是长期共存方案：不实现 CDC、MySQL→PostgreSQL 复制、影子读、双写、分批放量
+或旧库运行时回退。真正的数据变更只能在一个维护窗口内执行一次；最终验收通过后统一启动新版并永久
+停用 MySQL/MariaDB 和旧 Redis，撤销账号与网络访问。旧库只允许留下带校验和的加密冷归档，不得重新
+接入生产。迁移后服务器也不保留一次性 lifecycle/MySQL source 工具。
+
+## 单一人工清单、双运行时配置
+
+操作者只手工维护一个 lifecycle v3 JSON manifest；旧 `.env`、Laravel 配置和 theme 脚本都不自动
+导入。清单中的公共行为配置会分别与 API/worker 所需的最小 datastore 凭据组合，形成两个严格文档：
+`/var/lib/v2board/api/config.json` 和 `/var/lib/v2board/worker/config.json`。当前 CLI 只在内存中构造并
+验证这两个 map，尚不写文件或执行 apply。
+
+两个生产文档都使用：
+
+```json
+{
+  "configuration_source": "file_only"
+}
 ```
 
-不要提交填写后的清单。独立的 `lifecycle_audit_key` 不得与 app/node secret 或 target datastore 密码共用；它把原始清单完整 bytes
-绑定进报告，任何配置、凭据、备份引用或格式变化都会使旧确认失效。数据库 URL 中的特殊用户名/密码
-必须进行 URL percent-encoding，校验器会先解码再检查，编码不能绕过账号分离或 placeholder 规则；source 的明文
-MySQL/Redis 连接只允许在可信私网或加密隧道中使用，target bootstrap/application 生产连接必须使用受验证的
-TLS。
+上面只是模式标记，**不是可直接启动的完整配置**。`file_only` 要求精确 key 集合、正确
+`runtime_role` 和完整公共字段；缺 key、未知 key、错类型、非法 secret、错配 role 或 malformed JSON
+都会失败关闭，值型环境变量也不能覆盖文件。API 文档只含 API PostgreSQL URL、worker 的非秘密
+principal 名和 Redis；worker 文档只含 worker PostgreSQL URL、API 的非秘密 principal 名、Redis 与
+ClickHouse writer。API 不接收任何 ClickHouse 凭据，worker 不接收 API URL 或 ClickHouse reader。
 
-当前 legacy 检查只接受可探测为 standalone 的拓扑：MySQL UUID 必须有效、非零、彼此不同，且不能检测到
-replication channel、group member 或 binlog replica client；Redis 必须是 master、零 connected replica、
-关闭 cluster，且 source/target `run_id` 不同。未注册或离线 replica、底层 storage failure domain 仍无法靠
-单节点查询完全证明，所以完整 topology binding 继续作为 `implementation_blocker`。
+bootstrap/schema/migration 一次性凭据、systemd watchdog 路径和连接池大小等进程编排参数不属于长期
+应用配置，继续由 systemd credential/部署平台注入，且不会从旧系统迁移。
 
-旧版 MySQL `v2_user.token` 是永久订阅凭据，必须原值迁移；Redis `otp_`/`otpn_` 是短期一次性
-映射，`totp_` 只是已验证时间窗的临时 cache，而 TOTP URL 在签发时甚至可以不写 Redis。
-Redis 中的 `v2board_upload_traffic` / `v2board_download_traffic` 则是节点已上报但尚未累加到
-MySQL `u/d` 的权威增量，不是可丢 cache。完整边界见上述清单。
+两个文件都包含 secret，必须分别由对应 Unix 用户拥有，并以原子替换方式更新：
 
-固定流程是：在线 `inspect` 全部通过 → 第一次确认是否进入维护 → fence/drain/backup/restore proof
-→ 最终 `plan` 全部通过并展示脱敏摘要 → 第二次确认精确 `operation_id + report_sha256` → future
-`apply`。仓库当前没有 `provision apply`，实现边界明确为 `apply_available=false`；`compatible` 和
-`ready_for_confirmation` 都不是切流或迁移许可。`report_sha256` 是将其自身置空后的 canonical
-report payload 摘要，且包含 `manifest_binding_hmac_sha256` 与现场实例 identity，并非最终打印 JSON
-文件的 `sha256sum`。v2 `runtime`
-仅覆盖 file-only AppConfig keys；database pool、worker lifecycle/retention 和 runtime/rules/frontend path
-bootstrap 尚未纳入 materialize/promote。少量旧配置事实和未分类 Redis key 也尚未机器证明，因此仍是
-apply blocker。它们会明确列在 `implementation_blockers`；当前在线命令失败关闭为
-`blocked/resolve_blockers`。只有这些实现缺口全部关闭且 apply 真正可用后，才会返回
-`compatible/confirm_enter_maintenance`。
+```bash
+chown v2board-api:v2board-api /var/lib/v2board/api/config.json
+chmod 0700 /var/lib/v2board/api
+chmod 0600 /var/lib/v2board/api/config.json
+chown v2board-worker:v2board-worker /var/lib/v2board/worker/config.json
+chmod 0700 /var/lib/v2board/worker
+chmod 0600 /var/lib/v2board/worker/config.json
+```
 
-## 本地开发
+文件拆分还不等于权限隔离：生产 API 与 Worker 使用不同用户和不同可写父目录，不能共享 config 目录；
+否则 API 的原子 rename 权限可能影响 Worker 文件。`V2BOARD_CONFIG_PATH` 只能由 systemd unit 固定为本
+进程路径，不能绕过 role 与额外 secret key 校验。
 
-所有依赖安装、构建和测试都在 Docker 内完成：
+进程启动时配置无效会拒绝启动；运行中的错误编辑会保留最后一个已验证快照并记录错误。datastore
+URL/凭据、监听地址、route、连接/请求 client 或 KDF 并发等已被进程捕获的字段即使语法正确也不会
+伪装成热切换，修改后必须重启。不要提交填写后的配置。数据库 URL 中的特殊用户名或密码必须
+percent-encode。
+
+### 数据存储权限分离
+
+- API 和 worker 各自在自己的文档中使用 `database_url`；`peer_database_principal` 只保存对方的非秘密
+  role 名，用于拒绝 principal 复用。migration job 使用第三个、只在迁移窗口存在的 DDL principal，
+  并同时与 API/worker role 不同。
+- ClickHouse schema principal 只注入一次性 schema job。当前 API 不查询 ClickHouse，因此不持有
+  reader 或 writer；worker relay 只持有 raw INSERT 和核对自身批次所需受限 SELECT 的 writer，
+  不持有 reader 或 DDL 凭据。
+- 生产 PostgreSQL URL 必须使用 `sslmode=verify-full`，ClickHouse 必须使用经过证书验证的
+  `https://` origin，Redis 必须使用 `rediss://`。本地 Compose 的明文连接只允许存在于隔离开发网络。
+
+## 本地 Docker 开发
+
+所有依赖安装、构建、migration 和测试都在 Docker 中完成：
 
 ```bash
 make up
-make sync        # 修改源码后刷新 Docker workspace
+make sync        # 修改源码后重建/刷新 Docker workspace 与部署 release
 make doctor
 ```
 
-本地入口：
+`docker-compose.local.yml` 固定使用 PostgreSQL 18.4、ClickHouse 26.3 LTS、Redis 8.8，并包含两个独立的
+一次性 migration service：
 
-- 应用/API：<http://localhost:8000>
-- 用户端 Vite：<http://localhost:5173>
-- 管理端 Vite：<http://localhost:5174/admin>
-- Mailpit：<http://localhost:8025>
+- `rust-migrate`：运行 `v2board-api migrate`，只管理 PostgreSQL schema lineage。
+- `clickhouse-migrate`：运行 `v2board-analytics-schema`，只管理 ClickHouse schema lineage。
 
-本地数据库由 Rust migration 创建。`V2BOARD_SEED_LOCAL=1` 默认生成管理员
-`admin@example.com` / `12345678` 和最小测试数据；生产环境不要开启此变量。
+本地端口如下；数据库端口暴露只为开发诊断，生产不应直接公开：
 
-常用检查：
+| 服务 | 地址/端口 |
+|---|---|
+| Rust 应用与 API | <http://localhost:8000> |
+| 用户端 Vite | <http://localhost:5173> |
+| 管理端 Vite | <http://localhost:5174/admin> |
+| PostgreSQL | `localhost:5432` |
+| ClickHouse HTTP / native | `localhost:8123` / `localhost:9000` |
+| Redis | `localhost:6379` |
+| Mailpit SMTP / UI | `localhost:1025` / <http://localhost:8025> |
+| 只读 reference oracle（可选） | <http://localhost:8001> |
+
+本地 PostgreSQL schema 由 Rust migration 创建；ClickHouse schema 由独立 migration service 创建。
+`V2BOARD_SEED_LOCAL=1` 默认生成管理员 `admin@example.com` / `12345678` 和最小测试数据，生产环境
+禁止开启。
+
+常用验证命令：
 
 ```bash
-make rust-check
-make rust-test
+make doctor                 # Compose、宿主输出、runtime 隔离和配置审计
+make rust-check             # fmt + clippy
+make rust-test              # workspace tests
+make rust-integration       # PostgreSQL/ClickHouse/Redis 与 analytics outbox 往返
+make native-database-audit  # 新版 runtime 禁止旧数据库 driver/方言回流
+make rust-target-gate       # Rust 全量发布门禁
 make deploy-smoke
-make visual-smoke
 make behavior-parity
 ```
 
-`make reset` 会删除 MySQL、Redis、Rust runtime、依赖和构建 volumes；需要保留数据时
-只使用 `make sync`。
+`make reset` 会删除 PostgreSQL、ClickHouse、Redis、Rust runtime、依赖和构建 volumes 后重建，属于
+破坏性本地操作。需要保留数据时只使用 `make sync`；不要寻找或调用已经移除的旧数据库运行时
+升级 helper。
 
-从旧的 MySQL 8.0 本地 volume 首次升级到 8.4 时，先运行
-`make mysql-auth-upgrade`。它只在隔离的一次性容器中临时加载旧认证插件，把本地
-`root`/`v2board` 账户迁移到 `caching_sha2_password`，随后立即以禁用旧插件的正常
-8.4 服务重启；不会删除数据库。生产数据库请按 [backend/README.md](backend/README.md)
-中的维护窗口步骤迁移并轮换真实密码。
+## 裸机生产发布与启动顺序
 
-## 生产镜像
+Docker 只用于本地开发、CI、测试和可复现构建，生产服务器不安装 Docker。CI 从
+`Dockerfile.rust` 的 `native-release` export stage 生成原生 Linux release，其中只包含：
 
-根目录的 `Dockerfile.rust` 是生产构建入口。`production-api` 与
-`production-worker` 是独立的生产 stage；默认 `production` 兼容别名指向 API。
-它们会：
+- `v2board-api`、`v2board-workers`、`v2board-analytics-schema` 三个 ELF；
+- 已验证的 immutable frontend release；
+- `v2board-api.service`、`v2board-worker.service`；
+- `RELEASE` 和 `SHA256SUMS`。
 
-1. 以锁文件构建 release API 与 worker；
-2. 仅为 API 构建并验证 user/admin 的 manifest-driven Vite release；
-3. 分别生成最小、非 root、使用各自健康检查与日志默认值的运行镜像。
+当前发布目标固定 Debian 12 compatible Linux amd64/glibc。服务器先验证归档 SHA-256，再解压到
+root-owned `/opt/v2board/releases/<release-id>`，最后原子更新 `/opt/v2board/current`；不得在服务器编译。
+生产至少准备 PostgreSQL 18.x、ClickHouse 26.3 LTS 和 Redis，它们由各自原生 system service 或托管
+平台维护，不由 V2Board unit 安装或启动。
 
-下面的 `migrate` 是 native SQLx schema runner，只能用于已确认的空库或 native lineage，并不构成成熟的
-fresh-install workflow。**绝不能把 `DATABASE_URL` 指向 reference 旧库，也不能用它代替旧版迁移器。**
+长期进程固定使用两个无登录 Unix 用户和完全分离的可写目录：
 
-```bash
-docker build --target production-api -f Dockerfile.rust -t v2board-api .
-docker build --target production-worker -f Dockerfile.rust -t v2board-worker .
-docker run --rm \
-  -e DATABASE_URL='mysql://user:pass@db.example.com:3306/v2board?ssl-mode=VERIFY_IDENTITY' \
-  -e REDIS_URL='rediss://cache.example.com:6380/1' \
-  -e APP_URL='https://app.example.com' \
-  -e APP_KEY='<inject-at-least-32-random-bytes>' \
-  -e V2BOARD_SERVER_TOKEN='<inject-a-different-32-byte-random-secret>' \
-  -e V2BOARD_TRUSTED_PROXY_CIDRS='10.42.0.10/32' \
-  -v v2board-runtime:/var/lib/v2board \
-  v2board-api /usr/local/bin/v2board-api migrate
-docker run --rm -p 8000:8080 \
-  -e DATABASE_URL='mysql://user:pass@db.example.com:3306/v2board?ssl-mode=VERIFY_IDENTITY' \
-  -e REDIS_URL='rediss://cache.example.com:6380/1' \
-  -e APP_URL='https://app.example.com' \
-  -e APP_KEY='<inject-at-least-32-random-bytes>' \
-  -e V2BOARD_SERVER_TOKEN='<inject-a-different-32-byte-random-secret>' \
-  -e V2BOARD_TRUSTED_PROXY_CIDRS='10.42.0.10/32' \
-  -v v2board-runtime:/var/lib/v2board \
-  v2board-api
-docker run --rm \
-  -e DATABASE_URL='mysql://user:pass@db.example.com:3306/v2board?ssl-mode=VERIFY_IDENTITY' \
-  -e REDIS_URL='rediss://cache.example.com:6380/1' \
-  -e APP_URL='https://app.example.com' \
-  -e APP_KEY='<inject-at-least-32-random-bytes>' \
-  -e V2BOARD_SERVER_TOKEN='<inject-a-different-32-byte-random-secret>' \
-  -e V2BOARD_TRUSTED_PROXY_CIDRS='10.42.0.10/32' \
-  -v v2board-runtime:/var/lib/v2board \
-  v2board-worker
-```
+- `v2board-api` 只写 `/var/lib/v2board/api`，读取 `/var/lib/v2board/api/config.json`；
+- `v2board-worker` 只写 `/var/lib/v2board/worker`，读取 `/var/lib/v2board/worker/config.json`；
+- `/var/lib/v2board/rules` 与 `/opt/v2board/current` 由 root 拥有、进程只读；
+- 两份 config 均为各自 owner 的 `0600`，父目录为各自 owner 的 `0700`，不能使用共享可写 config 目录。
 
-尖括号值只是 secret-manager 占位符，不是可复用密钥，而且生产校验会明确拒绝这些占位符；
-运行前必须由部署密钥存储替换。生产模式会拒绝明文数据存储连接：
-MySQL URL 必须包含 `ssl-mode=VERIFY_IDENTITY`（私有 CA 另加 `ssl-ca`），Redis 必须使用
-`rediss://`；本地 Compose 的明文连接只用于隔离开发网络。
+完整安装边界见[裸机部署指南](deploy/README.md)，systemd unit 位于 [`deploy/systemd`](deploy/systemd)。
+API 只绑定 `127.0.0.1:8080`，由 Nginx/Caddy
+终止 TLS 并把页面、API 和 `/assets/*` 全部反代给 Rust。Worker 使用 `Type=notify` 和 `WatchdogSec=30s`；
+只有 PostgreSQL、精确 migration ledger 与 Redis 探测成功才发送 `READY=1`，持续探测失败时 systemd
+会重启它。API/worker 在监听或启动任务前也会拒绝非 exact-current PostgreSQL schema。
 
-唯一旧版迁移固定使用维护切换，不开启在线 global-token 兼容窗口：先停止旧 API/worker/scheduler 和
-所有 node reporter，排空 queue 并结清旧 Redis traffic hash；转换完成后保持
-`V2BOARD_SERVER_LEGACY_TOKEN_ENABLE=false` 和 `V2BOARD_SERVER_REQUIRE_IDEMPOTENCY_KEY=true`，
-从管理端 `server/manage/getNodes` 取得各节点独立的 `n1_...` 凭据，手工更新 endpoint/token，并让每个
-流量批次携带稳定且不可复用于其他 payload 的 `Idempotency-Key`。逐节点验证 config/users 拉取和
-traffic 幂等计费后，才恢复 reporter。当前只读 preflight 只会报告节点数量和这一维护要求，不会执行
-上述操作。
+一次性 `v2board-lifecycle` 是独立 migration tool，只有它允许携带只读 MySQL source adapter。它不进入
+长期 native release；迁移成功后必须从服务器删除并撤销全部 source credential。普通
+`v2board-api migrate` 也不是 legacy converter：生产中它只核验已 active 且与当前 binary 完全一致的
+PostgreSQL ledger，fresh/legacy/forward-upgrade DDL 必须等待 lifecycle apply。
 
-先把 migration 命令作为平台串行的一次性 Job 运行成功，再启动 API 与 worker。API
-healthcheck 使用 `/readyz`，schema checksum、MySQL、Redis 或前端 release 未就绪时
-不会把实例标为健康。worker 不开放 HTTP 端口；它使用经过 MySQL/Redis 探测后更新的
-本地时间戳健康文件，任一调度循环异常退出时整个进程失败退出并由编排器重启。生产数据只写入
-`/var/lib/v2board`；镜像内前端 release 是只读的。反向代理应把所有应用流量交给
-Rust，并为 `/assets/user/*` 与 `/assets/admin/*` 保留其 immutable cache header。若
-使用 bind mount/PVC，需确保 `/var/lib/v2board` 对镜像内 UID/GID `10001:10001` 可写。
+release 启用顺序固定为：验证 release/配置/数据库备份 → 串行 schema lifecycle job → 原子更新
+`/opt/v2board/current` → 启动 API → `/readyz` 通过 → 启动 Worker。API 与 Worker 的 stdout/stderr 进入
+journald，必须配置磁盘上限和 retention；PostgreSQL、ClickHouse、Redis 使用各自原生日志轮转。
 
-管理员密码重置使用原生命令：为容器注入一次性的 `V2BOARD_NEW_PASSWORD`，执行
-`v2board-api reset-admin-password <email>`；开发镜像中可等价执行
-`cargo run -p v2board-api -- reset-admin-password <email>`，无需任何 PHP 工具。
+### 健康与 ClickHouse 故障语义
+
+- API `/readyz` 检查 PostgreSQL migration、Redis 和前端 release。
+- worker 的 systemd watchdog 检查 PostgreSQL exact migration 与 Redis；worker 不开放 HTTP 端口。
+- API 当前不查询 ClickHouse，短暂中断不进入 API readiness；订单、认证、支付和 PostgreSQL 流量结算
+  可继续，analytics 标记 stale/unavailable，outbox 保留并重试。
+- 这不是“任意长故障都不影响核心”的承诺。outbox 容量预算、磁盘水位与安全背压门禁尚未实现；在其
+  完成前，长期 ClickHouse 故障是生产 blocker，也是三类 lifecycle `apply=false` 的原因之一。
+- ClickHouse 固定单节点已有串行且可崩溃恢复的 schema migration、精确 lineage 校验和 installation
+  binding；但 TTL/archive/restore drill、HA/ReplicatedMergeTree/Keeper 以及跨节点 schema 协调尚未完成。
+  双文件 secret split 完成后仍不能解除 fresh、legacy 或 native upgrade 的 apply blocker。
+- 本地 Compose 对全部服务使用有界 `local` 日志（10MB × 3）；生产使用有界 journald 和数据库原生日志
+  轮转，日志耗尽共享磁盘必须按数据库不可用处理。
+- 必须告警 pending rows/bytes、oldest outbox age、publish/retry rate 和 ClickHouse merge/replica lag；
+  不得把陈旧投影伪装成实时权威数据，也不得回退为对 PostgreSQL 的无界分析扫描。
+
+管理员密码重置使用原生命令 `v2board-api reset-admin-password <email>`；生产一次性 secret 必须通过
+root-only credential file/systemd credential 注入，不能保留在 unit Environment 或 shell history，且不需要 PHP 工具。
 
 ## 参考实现
 
@@ -215,6 +227,5 @@ make reference-oracle-check
 make reference-oracle-up      # 可选：localhost:8001 手工兼容性查看
 ```
 
-兼容测试直接从 `references/wyx2685-v2board` 读取旧资源，不会复制到当前源码、生产镜像
-或 deploy volume。行为契约以真实 API、路由、持久化键和外部集成为准，而不是旧 DOM
-或像素输出。
+兼容测试直接从 `references/wyx2685-v2board` 读取旧资源，不会复制到当前源码、生产 release artifact 或 deploy
+volume。行为契约以真实 API、路由、持久化键和外部集成为准，而不是旧 DOM 或像素输出。

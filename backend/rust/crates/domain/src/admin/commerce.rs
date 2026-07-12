@@ -4,7 +4,7 @@ const PLAN_FORCE_UPDATE_MAX_USERS: usize = 10_000;
 const ADMIN_ASSIGN_UNFINISHED_ORDER_SQL: &str = r#"
 SELECT id
 FROM v2_order
-WHERE user_id = ? AND status IN (0, 1)
+WHERE user_id = $1 AND status IN (0, 1)
 LIMIT 1
 FOR UPDATE
 "#;
@@ -109,7 +109,7 @@ fn payment_reconciliation_identity_hash(value: &str) -> [u8; 32] {
 
 pub(super) fn reconciliation_resolved_filter(
     params: &HashMap<String, String>,
-) -> Result<i8, ApiError> {
+) -> Result<i16, ApiError> {
     match optional_string(params, "resolved").as_deref() {
         None | Some("0" | "unresolved" | "open") => Ok(0),
         Some("1" | "resolved" | "closed") => Ok(1),
@@ -132,18 +132,21 @@ fn map_admin_order_write_error(error: sqlx::Error) -> ApiError {
     {
         return ApiError::legacy("该用户还有待支付的订单，无法分配");
     }
-    if matches!(database_error.code().as_deref(), Some("1205" | "1213")) {
+    if matches!(
+        database_error.code().as_deref(),
+        Some("40P01" | "40001" | "55P03")
+    ) {
         return ApiError::legacy("订单状态正在被其他请求修改，请重试");
     }
     ApiError::Database(error)
 }
 
 async fn lock_server_group_for_share(
-    tx: &mut Transaction<'_, MySql>,
+    tx: &mut DbTransaction<'_>,
     group_id: i64,
 ) -> Result<(), ApiError> {
-    let exists: Option<i64> =
-        sqlx::query_scalar("SELECT id FROM v2_server_group WHERE id = ? LIMIT 1 FOR SHARE")
+    let exists: Option<i32> =
+        sqlx::query_scalar("SELECT id FROM v2_server_group WHERE id = $1 LIMIT 1 FOR SHARE")
             .bind(group_id)
             .fetch_optional(&mut **tx)
             .await?;
@@ -154,7 +157,7 @@ async fn lock_server_group_for_share(
 }
 
 async fn lock_plan_users_for_update(
-    tx: &mut Transaction<'_, MySql>,
+    tx: &mut DbTransaction<'_>,
     plan_id: i64,
 ) -> Result<(), ApiError> {
     let mut after_id = 0_i64;
@@ -164,9 +167,9 @@ async fn lock_plan_users_for_update(
             r#"
             SELECT id
             FROM v2_user
-            WHERE plan_id = ? AND id > ?
+            WHERE plan_id = $1 AND id > $2
             ORDER BY id
-            LIMIT ?
+            LIMIT $3
             FOR UPDATE
             "#,
         )
@@ -254,13 +257,13 @@ impl AdminService {
         let shown_ids = plans.iter().map(|plan| plan.id).collect::<HashSet<_>>();
         let mut hidden = sqlx::query_as::<_, v2board_db::plan::PlanRow>(
             r#"
-            SELECT id, group_id, transfer_enable, device_limit, name, speed_limit, `show`, sort,
+            SELECT id, group_id, transfer_enable, device_limit, name, speed_limit, "show", sort,
                    renew, content, month_price, quarter_price, half_year_price, year_price,
                    two_year_price, three_year_price, onetime_price, reset_price,
                    reset_traffic_method, capacity_limit, created_at, updated_at
             FROM v2_plan
-            WHERE `show` = 0
-            ORDER BY sort ASC
+            WHERE "show" = 0
+            ORDER BY sort ASC NULLS FIRST
             "#,
         )
         .fetch_all(&self.db)
@@ -322,8 +325,8 @@ impl AdminService {
                 // unbounded id list.
                 lock_plan_users_for_update(&mut tx, id).await?;
             }
-            let plan_exists: Option<i64> =
-                sqlx::query_scalar("SELECT id FROM v2_plan WHERE id = ? LIMIT 1 FOR UPDATE")
+            let plan_exists: Option<i32> =
+                sqlx::query_scalar("SELECT id FROM v2_plan WHERE id = $1 LIMIT 1 FOR UPDATE")
                     .bind(id)
                     .fetch_optional(&mut *tx)
                     .await?;
@@ -334,12 +337,20 @@ impl AdminService {
             sqlx::query(
                 r#"
                 UPDATE v2_plan
-                SET group_id = ?, transfer_enable = ?, device_limit = ?, name = ?,
-                    speed_limit = ?, content = ?,
-                    month_price = ?, quarter_price = ?, half_year_price = ?, year_price = ?,
-                    two_year_price = ?, three_year_price = ?, onetime_price = ?, reset_price = ?,
-                    reset_traffic_method = ?, capacity_limit = ?, updated_at = ?
-                WHERE id = ?
+                SET group_id = CAST($1::BIGINT AS INTEGER), transfer_enable = $2,
+                    device_limit = CAST($3::BIGINT AS INTEGER), name = $4,
+                    speed_limit = CAST($5::BIGINT AS INTEGER), content = $6,
+                    month_price = CAST($7::BIGINT AS INTEGER),
+                    quarter_price = CAST($8::BIGINT AS INTEGER),
+                    half_year_price = CAST($9::BIGINT AS INTEGER),
+                    year_price = CAST($10::BIGINT AS INTEGER),
+                    two_year_price = CAST($11::BIGINT AS INTEGER),
+                    three_year_price = CAST($12::BIGINT AS INTEGER),
+                    onetime_price = CAST($13::BIGINT AS INTEGER),
+                    reset_price = CAST($14::BIGINT AS INTEGER),
+                    reset_traffic_method = CAST($15::BIGINT AS SMALLINT),
+                    capacity_limit = CAST($16::BIGINT AS INTEGER), updated_at = $17
+                WHERE id = $18::BIGINT
                 "#,
             )
             .bind(group_id)
@@ -366,8 +377,10 @@ impl AdminService {
                 sqlx::query(
                     r#"
                     UPDATE v2_user
-                    SET group_id = ?, transfer_enable = ?, device_limit = ?, speed_limit = ?, updated_at = ?
-                    WHERE plan_id = ?
+                    SET group_id = CAST($1::BIGINT AS INTEGER), transfer_enable = $2,
+                        device_limit = CAST($3::BIGINT AS INTEGER),
+                        speed_limit = CAST($4::BIGINT AS INTEGER), updated_at = $5
+                    WHERE plan_id = $6::BIGINT
                     "#,
                 )
                 .bind(group_id)
@@ -390,7 +403,15 @@ impl AdminService {
                     two_year_price, three_year_price, onetime_price, reset_price,
                     reset_traffic_method, capacity_limit, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (
+                    CAST($1::BIGINT AS INTEGER), $2, CAST($3::BIGINT AS INTEGER), $4,
+                    CAST($5::BIGINT AS INTEGER), $6, CAST($7::BIGINT AS INTEGER),
+                    CAST($8::BIGINT AS INTEGER), CAST($9::BIGINT AS INTEGER),
+                    CAST($10::BIGINT AS INTEGER), CAST($11::BIGINT AS INTEGER),
+                    CAST($12::BIGINT AS INTEGER), CAST($13::BIGINT AS INTEGER),
+                    CAST($14::BIGINT AS INTEGER), CAST($15::BIGINT AS SMALLINT),
+                    CAST($16::BIGINT AS INTEGER), $17, $18
+                )
                 "#,
             )
             .bind(group_id)
@@ -436,15 +457,18 @@ impl AdminService {
             }
         }
         // PlanController::update aborts 500 when the plan id does not exist.
-        let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM v2_plan WHERE id = ? LIMIT 1")
-            .bind(id)
-            .fetch_optional(&self.db)
-            .await?;
+        let exists: Option<i32> =
+            sqlx::query_scalar("SELECT id FROM v2_plan WHERE id = $1 LIMIT 1")
+                .bind(id)
+                .fetch_optional(&self.db)
+                .await?;
         if exists.is_none() {
             return Err(ApiError::legacy("该订阅不存在"));
         }
         if let Some(show) = optional_i64(params, "show") {
-            sqlx::query("UPDATE v2_plan SET `show` = ?, updated_at = ? WHERE id = ?")
+            sqlx::query(
+                "UPDATE v2_plan SET \"show\" = CAST($1::BIGINT AS SMALLINT), updated_at = $2 WHERE id = $3::BIGINT",
+            )
                 .bind(show)
                 .bind(Utc::now().timestamp())
                 .bind(id)
@@ -452,7 +476,9 @@ impl AdminService {
                 .await?;
         }
         if let Some(renew) = optional_i64(params, "renew") {
-            sqlx::query("UPDATE v2_plan SET renew = ?, updated_at = ? WHERE id = ?")
+            sqlx::query(
+                "UPDATE v2_plan SET renew = CAST($1::BIGINT AS SMALLINT), updated_at = $2 WHERE id = $3::BIGINT",
+            )
                 .bind(renew)
                 .bind(Utc::now().timestamp())
                 .bind(id)
@@ -466,12 +492,12 @@ impl AdminService {
         let rows = sqlx::query_as::<_, PaymentRow>(
             r#"
             SELECT id, name, payment, icon, handling_fee_fixed,
-                   CAST(handling_fee_percent AS DOUBLE) AS handling_fee_percent,
-                   uuid, CAST(config AS CHAR) AS config, notify_domain, enable, sort,
+                   CAST(handling_fee_percent AS DOUBLE PRECISION) AS handling_fee_percent,
+                   uuid, CAST(config AS TEXT) AS config, notify_domain, enable, sort,
                    created_at, updated_at
             FROM v2_payment
             WHERE archived_at IS NULL
-            ORDER BY sort ASC
+            ORDER BY sort ASC NULLS FIRST
             "#,
         )
         .fetch_all(&self.db)
@@ -535,8 +561,8 @@ impl AdminService {
         let mut payment = params.get("payment").cloned().unwrap_or_default();
         let config = if let Some(id) = optional_i64(params, "id") {
             let (stored_payment, raw_config) = sqlx::query_as::<_, (String, String)>(
-                "SELECT payment, CAST(config AS CHAR) FROM v2_payment \
-                 WHERE id = ? AND archived_at IS NULL LIMIT 1",
+                "SELECT payment, CAST(config AS TEXT) FROM v2_payment \
+                 WHERE id = $1 AND archived_at IS NULL LIMIT 1",
             )
             .bind(id)
             .fetch_optional(&self.db)
@@ -613,8 +639,8 @@ impl AdminService {
         if let Some(id) = optional_i64(params, "id") {
             let mut tx = self.db.begin().await?;
             let current = sqlx::query_as::<_, (String, String)>(
-                "SELECT payment, CAST(config AS CHAR) FROM v2_payment \
-                 WHERE id = ? AND archived_at IS NULL LIMIT 1 FOR UPDATE",
+                "SELECT payment, CAST(config AS TEXT) FROM v2_payment \
+                 WHERE id = $1 AND archived_at IS NULL LIMIT 1 FOR UPDATE",
             )
             .bind(id)
             .fetch_optional(&mut *tx)
@@ -625,8 +651,6 @@ impl AdminService {
                 Some((&current.0, &current.1)),
                 submitted_config,
             )?;
-            let config = serde_json::to_string(&config_value)
-                .map_err(|_| ApiError::internal("failed to encode payment config"))?;
             let config_changed = serde_json::from_str::<Value>(&current.1)
                 .map(|value| value != config_value)
                 .unwrap_or(true);
@@ -638,15 +662,16 @@ impl AdminService {
             sqlx::query(
                 r#"
                 UPDATE v2_payment
-                SET name = ?, icon = ?, payment = ?, config = ?, notify_domain = ?,
-                    handling_fee_fixed = ?, handling_fee_percent = ?, updated_at = ?
-                WHERE id = ? AND archived_at IS NULL
+                SET name = $1, icon = $2, payment = $3, config = $4, notify_domain = $5,
+                    handling_fee_fixed = CAST($6::BIGINT AS INTEGER),
+                    handling_fee_percent = $7, updated_at = $8
+                WHERE id = $9::BIGINT AND archived_at IS NULL
                 "#,
             )
             .bind(&name)
             .bind(optional_string(params, "icon"))
             .bind(&payment)
-            .bind(config)
+            .bind(Json(config_value))
             .bind(optional_string(params, "notify_domain"))
             .bind(handling_fee_fixed)
             .bind(optional_decimal(params, "handling_fee_percent"))
@@ -657,22 +682,23 @@ impl AdminService {
             tx.commit().await?;
         } else {
             let config_value = resolve_redacted_payment_config(&payment, None, submitted_config)?;
-            let config = serde_json::to_string(&config_value)
-                .map_err(|_| ApiError::internal("failed to encode payment config"))?;
             sqlx::query(
                 r#"
                 INSERT INTO v2_payment (
                     name, icon, payment, uuid, config, notify_domain, handling_fee_fixed,
                     handling_fee_percent, enable, sort, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
+                VALUES (
+                    $1, $2, $3, $4, $5, $6, CAST($7::BIGINT AS INTEGER),
+                    $8, 0, CAST($9::BIGINT AS INTEGER), $10, $11
+                )
                 "#,
             )
             .bind(&name)
             .bind(params.get("icon"))
             .bind(&payment)
             .bind(random_payment_uuid())
-            .bind(config)
+            .bind(Json(config_value))
             .bind(params.get("notify_domain"))
             .bind(handling_fee_fixed)
             .bind(optional_decimal(params, "handling_fee_percent"))
@@ -687,9 +713,9 @@ impl AdminService {
 
     pub(super) async fn payment_drop(&self, id: i64) -> Result<AdminOutput, ApiError> {
         let mut tx = self.db.begin().await?;
-        let exists: Option<i64> = sqlx::query_scalar(
+        let exists: Option<i32> = sqlx::query_scalar(
             "SELECT id FROM v2_payment \
-                 WHERE id = ? AND archived_at IS NULL LIMIT 1 FOR UPDATE",
+                 WHERE id = $1 AND archived_at IS NULL LIMIT 1 FOR UPDATE",
         )
         .bind(id)
         .fetch_optional(&mut *tx)
@@ -700,8 +726,8 @@ impl AdminService {
         let now = Utc::now().timestamp();
         let archived = sqlx::query(
             "UPDATE v2_payment \
-             SET enable = 0, archived_at = COALESCE(archived_at, ?), updated_at = ? \
-             WHERE id = ? AND archived_at IS NULL",
+             SET enable = 0, archived_at = COALESCE(archived_at, $1), updated_at = $2 \
+             WHERE id = $3 AND archived_at IS NULL",
         )
         .bind(now)
         .bind(now)
@@ -716,8 +742,8 @@ impl AdminService {
         let mut tx = self.db.begin().await?;
         for (index, id) in ids.iter().enumerate() {
             sqlx::query(
-                "UPDATE v2_payment SET sort = ?, updated_at = ? \
-                 WHERE id = ? AND archived_at IS NULL",
+                "UPDATE v2_payment SET sort = CAST($1::BIGINT AS INTEGER), updated_at = $2 \
+                 WHERE id = $3::BIGINT AND archived_at IS NULL",
             )
             .bind((index + 1) as i64)
             .bind(Utc::now().timestamp())
@@ -736,8 +762,8 @@ impl AdminService {
         // in-flight callbacks continue using the immutable driver/config binding.
         let updated = sqlx::query(
             "UPDATE v2_payment \
-             SET enable = IF(enable = 1, 0, 1), updated_at = ? \
-             WHERE id = ? AND archived_at IS NULL",
+             SET enable = CASE WHEN enable = 1 THEN 0::SMALLINT ELSE 1::SMALLINT END, updated_at = $1 \
+             WHERE id = $2::BIGINT AND archived_at IS NULL",
         )
         .bind(Utc::now().timestamp())
         .bind(id)
@@ -755,7 +781,12 @@ impl AdminService {
     ) -> Result<AdminOutput, ApiError> {
         let pagination = page(params)?;
         let resolved = reconciliation_resolved_filter(params)?;
-        let payment_id = optional_i64(params, "payment_id");
+        let payment_id = optional_i64(params, "payment_id")
+            .map(|value| {
+                i32::try_from(value)
+                    .map_err(|_| validation_error("payment_id", "payment_id 超出支持范围"))
+            })
+            .transpose()?;
         let reason = optional_string(params, "reason");
         let trade_no_hash = optional_string(params, "trade_no")
             .map(|value| hex::encode(payment_reconciliation_identity_hash(&value)));
@@ -767,14 +798,14 @@ impl AdminService {
             SELECT COUNT(*)
             FROM v2_payment_reconciliation r
             WHERE (
-                ? = 2
-                OR (? = 0 AND r.resolved_at IS NULL)
-                OR (? = 1 AND r.resolved_at IS NOT NULL)
+                $1::SMALLINT = 2
+                OR ($2::SMALLINT = 0 AND r.resolved_at IS NULL)
+                OR ($3::SMALLINT = 1 AND r.resolved_at IS NOT NULL)
             )
-              AND (? IS NULL OR r.payment_id = ?)
-              AND (? IS NULL OR r.reason = ?)
-              AND (? IS NULL OR r.trade_no_hash = UNHEX(?))
-              AND (? IS NULL OR r.callback_no_hash = UNHEX(?))
+              AND ($4::INTEGER IS NULL OR r.payment_id = $5)
+              AND ($6::TEXT IS NULL OR r.reason = $7::TEXT)
+              AND ($8::TEXT IS NULL OR r.trade_no_hash = decode($9::TEXT, 'hex'))
+              AND ($10::TEXT IS NULL OR r.callback_no_hash = decode($11::TEXT, 'hex'))
             "#,
         )
         .bind(resolved)
@@ -793,16 +824,16 @@ impl AdminService {
 
         let rows = sqlx::query_scalar::<_, Json<Value>>(
             r#"
-            SELECT JSON_OBJECT(
+            SELECT jsonb_build_object(
                 'id', r.id,
                 'payment_id', r.payment_id,
                 'payment_name', p.name,
                 'payment_archived_at', p.archived_at,
                 'provider', r.provider,
                 'trade_no', r.trade_no,
-                'trade_no_hash', HEX(r.trade_no_hash),
+                'trade_no_hash', encode(r.trade_no_hash, 'hex'),
                 'callback_no', r.callback_no,
-                'callback_no_hash', HEX(r.callback_no_hash),
+                'callback_no_hash', encode(r.callback_no_hash, 'hex'),
                 'reason', r.reason,
                 'order_status', r.order_status,
                 'expected_amount', r.expected_amount,
@@ -816,16 +847,16 @@ impl AdminService {
             FROM v2_payment_reconciliation r
             JOIN v2_payment p ON p.id = r.payment_id
             WHERE (
-                ? = 2
-                OR (? = 0 AND r.resolved_at IS NULL)
-                OR (? = 1 AND r.resolved_at IS NOT NULL)
+                $1::SMALLINT = 2
+                OR ($2::SMALLINT = 0 AND r.resolved_at IS NULL)
+                OR ($3::SMALLINT = 1 AND r.resolved_at IS NOT NULL)
             )
-              AND (? IS NULL OR r.payment_id = ?)
-              AND (? IS NULL OR r.reason = ?)
-              AND (? IS NULL OR r.trade_no_hash = UNHEX(?))
-              AND (? IS NULL OR r.callback_no_hash = UNHEX(?))
+              AND ($4::INTEGER IS NULL OR r.payment_id = $5)
+              AND ($6::TEXT IS NULL OR r.reason = $7::TEXT)
+              AND ($8::TEXT IS NULL OR r.trade_no_hash = decode($9::TEXT, 'hex'))
+              AND ($10::TEXT IS NULL OR r.callback_no_hash = decode($11::TEXT, 'hex'))
             ORDER BY (r.resolved_at IS NOT NULL) ASC, r.first_seen_at DESC, r.id DESC
-            LIMIT ? OFFSET ?
+            LIMIT $12 OFFSET $13
             "#,
         )
         .bind(resolved)
@@ -858,30 +889,30 @@ impl AdminService {
         let clauses = self.order_filter_clauses(params).await?;
 
         let mut count_builder =
-            QueryBuilder::<MySql>::new("SELECT COUNT(*) FROM v2_order o WHERE 1 = 1");
+            QueryBuilder::<Postgres>::new("SELECT COUNT(*) FROM v2_order o WHERE 1 = 1");
         push_order_where(&mut count_builder, is_commission, &clauses);
         let total: i64 = count_builder
             .build_query_scalar()
             .fetch_one(&self.db)
             .await?;
 
-        let mut builder = QueryBuilder::<MySql>::new(
+        let mut builder = QueryBuilder::<Postgres>::new(
             r#"
-            SELECT JSON_OBJECT(
+            SELECT jsonb_build_object(
                 'id', o.id, 'invite_user_id', o.invite_user_id, 'user_id', o.user_id,
                 'email', u.email, 'plan_id', o.plan_id, 'plan_name', p.name, 'coupon_id', o.coupon_id,
                 'type', o.type, 'period', o.period, 'trade_no', o.trade_no,
                 'callback_no', o.callback_no, 'total_amount', o.total_amount,
                 'handling_amount', o.handling_amount, 'discount_amount', o.discount_amount,
                 'surplus_amount', o.surplus_amount, 'refund_amount', o.refund_amount,
-                'balance_amount', o.balance_amount, 'surplus_order_ids', CAST(o.surplus_order_ids AS JSON),
+                'balance_amount', o.balance_amount, 'surplus_order_ids', CAST(o.surplus_order_ids AS JSONB),
                 'status', o.status, 'commission_status', o.commission_status,
                 'commission_balance', o.commission_balance,
                 'actual_commission_balance', o.actual_commission_balance,
                 'payment_id', o.payment_id,
                 'payment_reconciliation_open_count', (
                     SELECT COUNT(*) FROM v2_payment_reconciliation r
-                    WHERE r.trade_no_hash = UNHEX(SHA2(o.trade_no, 256))
+                    WHERE r.trade_no_hash = sha256(convert_to(o.trade_no, 'UTF8'))
                       AND r.resolved_at IS NULL
                 ),
                 'paid_at', o.paid_at, 'created_at', o.created_at, 'updated_at', o.updated_at
@@ -927,16 +958,17 @@ impl AdminService {
                 .to_string();
             let mut value = entry.get("value").cloned().unwrap_or_default();
             if key == "email" {
-                let user_id: Option<i64> =
-                    sqlx::query_scalar("SELECT id FROM v2_user WHERE email = ? LIMIT 1")
-                        .bind(format!("%{value}%"))
-                        .fetch_optional(&self.db)
-                        .await?;
+                let user_id: Option<i64> = sqlx::query_scalar(
+                    "SELECT id FROM v2_user WHERE LOWER(email) = LOWER($1) LIMIT 1",
+                )
+                .bind(format!("%{value}%"))
+                .fetch_optional(&self.db)
+                .await?;
                 if let Some(user_id) = user_id {
                     clauses.push(OrderFilterClause::Compare {
                         column: "user_id",
                         op: "=",
-                        value: user_id.to_string(),
+                        value: FilterBind::Int(user_id),
                     });
                 }
                 continue;
@@ -949,7 +981,15 @@ impl AdminService {
             else {
                 continue;
             };
-            clauses.push(OrderFilterClause::Compare { column, op, value });
+            clauses.push(OrderFilterClause::Compare {
+                column,
+                op,
+                value: if op == "like" || !order_column_is_numeric(column) {
+                    FilterBind::Text(value)
+                } else {
+                    FilterBind::Int(value.trim().parse().unwrap_or_default())
+                },
+            });
         }
         Ok(clauses)
     }
@@ -958,13 +998,13 @@ impl AdminService {
         let mut value = fetch_json_one(
             &self.db,
             r#"
-            SELECT JSON_OBJECT(
+            SELECT jsonb_build_object(
                 'id', o.id, 'invite_user_id', o.invite_user_id, 'user_id', o.user_id,
                 'plan_id', o.plan_id, 'coupon_id', o.coupon_id, 'type', o.type, 'period', o.period,
                 'trade_no', o.trade_no, 'callback_no', o.callback_no, 'total_amount', o.total_amount,
                 'handling_amount', o.handling_amount, 'discount_amount', o.discount_amount,
                 'surplus_amount', o.surplus_amount, 'refund_amount', o.refund_amount,
-                'balance_amount', o.balance_amount, 'surplus_order_ids', CAST(o.surplus_order_ids AS JSON),
+                'balance_amount', o.balance_amount, 'surplus_order_ids', CAST(o.surplus_order_ids AS JSONB),
                 'status', o.status, 'commission_status', o.commission_status,
                 'commission_balance', o.commission_balance,
                 'actual_commission_balance', o.actual_commission_balance,
@@ -972,7 +1012,7 @@ impl AdminService {
                 'paid_at', o.paid_at, 'created_at', o.created_at, 'updated_at', o.updated_at
             )
             FROM v2_order o
-            WHERE o.id = ?
+            WHERE o.id = $1
             LIMIT 1
             "#,
             id,
@@ -990,13 +1030,13 @@ impl AdminService {
         let trade_no_hash = payment_reconciliation_identity_hash(&trade_no);
         let commission_rows = sqlx::query_scalar::<_, Json<Value>>(
             r#"
-            SELECT JSON_OBJECT(
+            SELECT jsonb_build_object(
                 'id', id, 'invite_user_id', invite_user_id, 'user_id', user_id,
                 'trade_no', trade_no, 'order_amount', order_amount, 'get_amount', get_amount,
                 'created_at', created_at, 'updated_at', updated_at
             )
             FROM v2_commission_log
-            WHERE trade_no = ?
+            WHERE trade_no = $1
             "#,
         )
         .bind(&trade_no)
@@ -1005,10 +1045,10 @@ impl AdminService {
         let commission_log = json_rows(commission_rows);
         let payment_reconciliations = sqlx::query_scalar::<_, Json<Value>>(
             r#"
-            SELECT JSON_OBJECT(
+            SELECT jsonb_build_object(
                 'id', id, 'payment_id', payment_id, 'provider', provider,
-                'trade_no', trade_no, 'trade_no_hash', HEX(trade_no_hash),
-                'callback_no', callback_no, 'callback_no_hash', HEX(callback_no_hash),
+                'trade_no', trade_no, 'trade_no_hash', encode(trade_no_hash, 'hex'),
+                'callback_no', callback_no, 'callback_no_hash', encode(callback_no_hash, 'hex'),
                 'reason', reason,
                 'order_status', order_status, 'expected_amount', expected_amount,
                 'settled_amount', settled_amount, 'occurrence_count', occurrence_count,
@@ -1016,7 +1056,7 @@ impl AdminService {
                 'resolved_at', resolved_at, 'resolution', resolution
             )
             FROM v2_payment_reconciliation
-            WHERE trade_no_hash = ?
+            WHERE trade_no_hash = $1
             ORDER BY first_seen_at DESC, id DESC
             "#,
         )
@@ -1040,15 +1080,15 @@ impl AdminService {
             let rows = if surplus_ids.is_empty() {
                 Vec::new()
             } else {
-                let mut builder = QueryBuilder::<MySql>::new(
+                let mut builder = QueryBuilder::<Postgres>::new(
                     r#"
-                    SELECT JSON_OBJECT(
+                    SELECT jsonb_build_object(
                         'id', o.id, 'invite_user_id', o.invite_user_id, 'user_id', o.user_id,
                         'plan_id', o.plan_id, 'coupon_id', o.coupon_id, 'type', o.type, 'period', o.period,
                         'trade_no', o.trade_no, 'callback_no', o.callback_no, 'total_amount', o.total_amount,
                         'handling_amount', o.handling_amount, 'discount_amount', o.discount_amount,
                         'surplus_amount', o.surplus_amount, 'refund_amount', o.refund_amount,
-                        'balance_amount', o.balance_amount, 'surplus_order_ids', CAST(o.surplus_order_ids AS JSON),
+                        'balance_amount', o.balance_amount, 'surplus_order_ids', CAST(o.surplus_order_ids AS JSONB),
                         'status', o.status, 'commission_status', o.commission_status,
                         'commission_balance', o.commission_balance,
                         'actual_commission_balance', o.actual_commission_balance,
@@ -1099,7 +1139,7 @@ impl AdminService {
         let trade_no = required_string(params, "trade_no")?;
         if let Some(value) = optional_i64(params, "commission_status") {
             sqlx::query(
-                "UPDATE v2_order SET commission_status = ?, updated_at = ? WHERE trade_no = ?",
+                "UPDATE v2_order SET commission_status = CAST($1::BIGINT AS SMALLINT), updated_at = $2 WHERE trade_no = $3",
             )
             .bind(value)
             .bind(Utc::now().timestamp())
@@ -1124,7 +1164,7 @@ impl AdminService {
             r#"
             SELECT trade_no, resolved_at, resolution
             FROM v2_payment_reconciliation
-            WHERE id = ?
+            WHERE id = $1
             LIMIT 1
             FOR UPDATE
             "#,
@@ -1143,8 +1183,8 @@ impl AdminService {
         let updated = sqlx::query(
             r#"
             UPDATE v2_payment_reconciliation
-            SET resolved_at = ?, resolution = ?
-            WHERE id = ? AND resolved_at IS NULL
+            SET resolved_at = $1, resolution = $2
+            WHERE id = $3 AND resolved_at IS NULL
             "#,
         )
         .bind(now)
@@ -1176,11 +1216,11 @@ impl AdminService {
         // Ports Admin\OrderController::cancel + OrderService::cancel (:273-291):
         // only pending orders can be cancelled, and the balance paid toward the
         // order is refunded to the user via addBalance.
-        let order: (i8, i64, Option<i64>, Option<i32>, Option<String>) = sqlx::query_as(
+        let order: (i16, i64, Option<i64>, Option<i32>, Option<String>) = sqlx::query_as(
             r#"
-            SELECT status, user_id, balance_amount, payment_id, callback_no
+            SELECT status, user_id, balance_amount::BIGINT, payment_id, callback_no
             FROM v2_order
-            WHERE trade_no = ?
+            WHERE trade_no = $1
             LIMIT 1
             "#,
         )
@@ -1203,9 +1243,10 @@ impl AdminService {
         let mut tx = self.db.begin().await?;
         let updated = sqlx::query(
             r#"
-            UPDATE v2_order SET status = 2, updated_at = ?
-            WHERE trade_no = ? AND status = 0
-              AND payment_id <=> ? AND callback_no <=> ?
+            UPDATE v2_order SET status = 2, updated_at = $1
+            WHERE trade_no = $2 AND status = 0
+              AND payment_id IS NOT DISTINCT FROM $3
+              AND callback_no IS NOT DISTINCT FROM $4
             "#,
         )
         .bind(now)
@@ -1219,20 +1260,20 @@ impl AdminService {
         }
         if let Some(balance) = balance_amount.filter(|value| *value != 0) {
             // UserService::addBalance: lock the row, add, and reject a negative result.
-            let current: i64 =
-                sqlx::query_scalar("SELECT balance FROM v2_user WHERE id = ? FOR UPDATE")
+            let current: i32 =
+                sqlx::query_scalar("SELECT balance FROM v2_user WHERE id = $1 FOR UPDATE")
                     .bind(user_id)
                     .fetch_optional(&mut *tx)
                     .await?
                     .ok_or_else(|| ApiError::legacy("更新失败"))?;
-            let updated = current
+            let updated = i64::from(current)
                 .checked_add(balance)
                 .ok_or_else(|| ApiError::legacy("更新失败"))?;
             if !(0..=i64::from(i32::MAX)).contains(&updated) {
                 return Err(ApiError::legacy("更新失败"));
             }
-            sqlx::query("UPDATE v2_user SET balance = ?, updated_at = ? WHERE id = ?")
-                .bind(updated)
+            sqlx::query("UPDATE v2_user SET balance = $1, updated_at = $2 WHERE id = $3")
+                .bind(i32::try_from(updated).map_err(|_| ApiError::legacy("更新失败"))?)
                 .bind(now)
                 .bind(user_id)
                 .execute(&mut *tx)
@@ -1252,7 +1293,7 @@ impl AdminService {
         // row is loaded again only after the user's unfinished-order range has
         // been locked, preserving the global order -> user -> plan sequence.
         let user_id: Option<i64> =
-            sqlx::query_scalar("SELECT id FROM v2_user WHERE email = ? LIMIT 1")
+            sqlx::query_scalar("SELECT id FROM v2_user WHERE LOWER(email) = LOWER($1) LIMIT 1")
                 .bind(email)
                 .fetch_optional(&self.db)
                 .await?;
@@ -1270,15 +1311,15 @@ impl AdminService {
         // (id, plan_id, expired_at, invite_user_id).
         type AssignUserRow = (i64, Option<i64>, Option<i64>, Option<i64>);
         let user: Option<AssignUserRow> = sqlx::query_as(
-            "SELECT id, plan_id, expired_at, invite_user_id FROM v2_user WHERE id = ? LIMIT 1 FOR UPDATE",
+            "SELECT id, plan_id::bigint, expired_at, invite_user_id FROM v2_user WHERE id = $1 LIMIT 1 FOR UPDATE",
         )
         .bind(user_id)
         .fetch_optional(&mut *tx)
         .await?;
         let (user_id, user_plan_id, user_expired_at, user_invite_user_id) =
             user.ok_or_else(|| ApiError::legacy("该用户不存在"))?;
-        let plan_exists: Option<i64> =
-            sqlx::query_scalar("SELECT id FROM v2_plan WHERE id = ? LIMIT 1 FOR SHARE")
+        let plan_exists: Option<i32> =
+            sqlx::query_scalar("SELECT id FROM v2_plan WHERE id = $1 LIMIT 1 FOR SHARE")
                 .bind(plan_id)
                 .fetch_optional(&mut *tx)
                 .await?;
@@ -1303,14 +1344,18 @@ impl AdminService {
         let (invite_user_id, commission_balance) = self
             .assign_invite_in_tx(&mut tx, user_id, user_invite_user_id, total_amount)
             .await?;
-        let trade_no = format!("{}{}", now, Uuid::new_v4().simple());
+        let trade_no = crate::order::generate_order_no();
         sqlx::query(
             r#"
             INSERT INTO v2_order (
                 user_id, invite_user_id, plan_id, period, trade_no, total_amount, type,
                 status, commission_status, commission_balance, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?)
+            VALUES (
+                $1, $2, CAST($3::BIGINT AS INTEGER), $4, $5,
+                CAST($6::BIGINT AS INTEGER), CAST($7::BIGINT AS INTEGER),
+                0, 0, CAST($8::BIGINT AS INTEGER), $9, $10
+            )
             "#,
         )
         .bind(user_id)
@@ -1336,7 +1381,7 @@ impl AdminService {
     /// commission_rate (falling back to config invite_commission) decide the cut.
     async fn assign_invite_in_tx(
         &self,
-        tx: &mut Transaction<'_, MySql>,
+        tx: &mut DbTransaction<'_>,
         user_id: i64,
         user_invite_user_id: Option<i64>,
         total_amount: i64,
@@ -1351,8 +1396,8 @@ impl AdminService {
         let Some(inviter_id) = user_invite_user_id else {
             return Ok((None, 0));
         };
-        let inviter: Option<(i8, Option<i32>)> = sqlx::query_as(
-            "SELECT commission_type, commission_rate FROM v2_user WHERE id = ? LIMIT 1",
+        let inviter: Option<(i16, Option<i32>)> = sqlx::query_as(
+            "SELECT commission_type, commission_rate FROM v2_user WHERE id = $1 LIMIT 1",
         )
         .bind(inviter_id)
         .fetch_optional(&mut **tx)
@@ -1384,11 +1429,11 @@ impl AdminService {
     /// OrderService::haveValidOrder: the user has any order whose status is not in
     /// {0 pending, 2 cancelled}.
     async fn user_have_valid_order_in_tx(
-        tx: &mut Transaction<'_, MySql>,
+        tx: &mut DbTransaction<'_>,
         user_id: i64,
     ) -> Result<bool, ApiError> {
         let found: Option<i64> = sqlx::query_scalar(
-            "SELECT id FROM v2_order WHERE user_id = ? AND status NOT IN (0, 2) LIMIT 1",
+            "SELECT id FROM v2_order WHERE user_id = $1 AND status NOT IN (0, 2) LIMIT 1",
         )
         .bind(user_id)
         .fetch_optional(&mut **tx)
@@ -1407,7 +1452,7 @@ impl AdminService {
         let id = required_i64(params, "id")?;
         let mut tx = self.db.begin().await?;
         let has_order: Option<i64> = sqlx::query_scalar(
-            "SELECT id FROM v2_order WHERE referenced_plan_id = ? LIMIT 1 FOR UPDATE",
+            "SELECT id FROM v2_order WHERE referenced_plan_id = $1 LIMIT 1 FOR UPDATE",
         )
         .bind(id)
         .fetch_optional(&mut *tx)
@@ -1416,30 +1461,30 @@ impl AdminService {
             return Err(ApiError::legacy("该订阅下存在订单无法删除"));
         }
         let has_user: Option<i64> =
-            sqlx::query_scalar("SELECT id FROM v2_user WHERE plan_id = ? LIMIT 1 FOR UPDATE")
+            sqlx::query_scalar("SELECT id FROM v2_user WHERE plan_id = $1 LIMIT 1 FOR UPDATE")
                 .bind(id)
                 .fetch_optional(&mut *tx)
                 .await?;
         if has_user.is_some() {
             return Err(ApiError::legacy("该订阅下存在用户无法删除"));
         }
-        let has_giftcard: Option<i64> =
-            sqlx::query_scalar("SELECT id FROM v2_giftcard WHERE plan_id = ? LIMIT 1 FOR UPDATE")
+        let has_giftcard: Option<i32> =
+            sqlx::query_scalar("SELECT id FROM v2_giftcard WHERE plan_id = $1 LIMIT 1 FOR UPDATE")
                 .bind(id)
                 .fetch_optional(&mut *tx)
                 .await?;
         if has_giftcard.is_some() {
             return Err(ApiError::legacy("该订阅仍被礼品卡使用，无法删除"));
         }
-        let exists: Option<i64> =
-            sqlx::query_scalar("SELECT id FROM v2_plan WHERE id = ? LIMIT 1 FOR UPDATE")
+        let exists: Option<i32> =
+            sqlx::query_scalar("SELECT id FROM v2_plan WHERE id = $1 LIMIT 1 FOR UPDATE")
                 .bind(id)
                 .fetch_optional(&mut *tx)
                 .await?;
         if exists.is_none() {
             return Err(ApiError::legacy("该订阅ID不存在"));
         }
-        let deleted = sqlx::query("DELETE FROM v2_plan WHERE id = ?")
+        let deleted = sqlx::query("DELETE FROM v2_plan WHERE id = $1")
             .bind(id)
             .execute(&mut *tx)
             .await?;

@@ -408,13 +408,16 @@ pub(in super::super) fn server_node_select(kind: &str, table: &str) -> String {
     let mut pairs = String::new();
     for (name, cast) in node_columns(kind) {
         let expr = match cast {
-            NodeCast::Plain => format!("`{name}`"),
-            NodeCast::Json => format!("CAST(`{name}` AS JSON)"),
-            NodeCast::Padding => format!("CAST(`{name}` AS CHAR)"),
+            NodeCast::Plain => format!("\"{name}\""),
+            NodeCast::Json => format!("CAST(\"{name}\" AS JSONB)"),
+            NodeCast::Padding => format!("CAST(\"{name}\" AS TEXT)"),
         };
         pairs.push_str(&format!("'{name}', {expr}, "));
     }
-    format!("SELECT JSON_OBJECT({pairs}'type', '{kind}') FROM {table} ORDER BY sort ASC")
+    format!(
+        "SELECT jsonb_build_object({pairs}'type', '{kind}') FROM {table} \
+         ORDER BY sort ASC NULLS FIRST"
+    )
 }
 
 /// PHP escapeshellarg(): wraps in single quotes, escaping embedded quotes.
@@ -538,6 +541,13 @@ pub(in super::super) fn server_save_values(
             values.push(("insecure", optional_int_value(params, "insecure", 0)));
         }
         "vless" => {
+            // Unlike every other protocol table, PostgreSQL stores VLESS `port`
+            // as INTEGER. Replace the common text value with an integer bind so
+            // the dynamic INSERT/UPDATE has the target column's real type.
+            let port = required_i64(params, "port")?;
+            if let Some((_, value)) = values.iter_mut().find(|(column, _)| *column == "port") {
+                *value = AdminSqlValue::Integer(port);
+            }
             let tls = optional_i64(params, "tls").unwrap_or_default();
             let network = required_string(params, "network")?;
             let encryption = optional_string(params, "encryption");
@@ -725,7 +735,10 @@ pub(in super::super) fn push_common_server_values(
     // the other protocols never write it, so drag-ordering survives every edit.
     values.push((
         "group_id",
-        text_value(required_json_array_string(params, "group_id")?),
+        AdminSqlValue::Json(Some(
+            serde_json::from_str(&required_json_array_string(params, "group_id")?)
+                .map_err(|_| ApiError::validation_field("group_id", "节点组格式不正确"))?,
+        )),
     ));
     values.push(("name", text_value(required_string(params, "name")?)));
     values.push(("rate", text_value(required_string(params, "rate")?)));
@@ -974,7 +987,7 @@ pub(in super::super) fn hysteria_obfs_password(
         .map(|value| value.trim().is_empty() || value.eq_ignore_ascii_case("null"))
         .unwrap_or(true)
     {
-        return AdminSqlValue::Null;
+        return AdminSqlValue::TextNull;
     }
     optional_string(params, "obfs_password")
         .map(AdminSqlValue::Text)

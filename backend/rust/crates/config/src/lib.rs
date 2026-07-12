@@ -8,6 +8,7 @@ use std::{
 
 use chrono::{DateTime, FixedOffset, Utc};
 use ipnet::IpNet;
+use percent_encoding::percent_decode_str;
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde_json::{Map, Value};
 
@@ -39,8 +40,6 @@ pub const FILE_ONLY_RUNTIME_KEYS_V1: &[&str] = &[
     "privileged_step_up_ttl_seconds",
     "privileged_step_up_max_attempts",
     "privileged_step_up_attempt_window_seconds",
-    "legacy_auth_params_enable",
-    "legacy_jwt_cutoff_unix",
     "app_key",
     "app_name",
     "app_url",
@@ -104,7 +103,6 @@ pub const FILE_ONLY_RUNTIME_KEYS_V1: &[&str] = &[
     "ticket_status",
     "commission_withdraw_limit",
     "server_token",
-    "server_legacy_token_enable",
     "server_require_idempotency_key",
     "server_api_url",
     "server_push_interval",
@@ -153,7 +151,7 @@ pub fn app_now() -> DateTime<FixedOffset> {
     Utc::now().with_timezone(&app_timezone())
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimePaths {
     pub config: PathBuf,
     pub frontend: PathBuf,
@@ -171,6 +169,39 @@ pub enum RuntimeEnvironment {
     Testing,
     Staging,
     Production,
+}
+
+/// Selects the only datastore credential set a long-lived process may load.
+/// The lifecycle manifest is shared operator input, but its materialized
+/// runtime documents are deliberately role-specific.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeRole {
+    Api,
+    Worker,
+}
+
+impl RuntimeRole {
+    const fn file_value(self) -> &'static str {
+        match self {
+            Self::Api => "api",
+            Self::Worker => "worker",
+        }
+    }
+
+    const fn default_config_relative_path(self) -> &'static str {
+        match self {
+            Self::Api => "api/config.json",
+            Self::Worker => "worker/config.json",
+        }
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct ClickHouseWriterConfig {
+    pub url: String,
+    pub database: String,
+    pub username: String,
+    pub password: Option<String>,
 }
 
 impl RuntimeEnvironment {
@@ -202,9 +233,12 @@ impl RuntimeEnvironment {
 // the complete secret-bearing configuration.
 #[derive(Clone)]
 pub struct AppConfig {
+    pub runtime_role: RuntimeRole,
     pub environment: RuntimeEnvironment,
     pub bind_addr: String,
     pub database_url: String,
+    pub peer_database_principal: String,
+    pub clickhouse_writer: Option<ClickHouseWriterConfig>,
     pub redis_url: String,
     pub cors_allowed_origins: Vec<String>,
     pub trusted_proxy_cidrs: Vec<IpNet>,
@@ -219,8 +253,6 @@ pub struct AppConfig {
     pub privileged_step_up_ttl_seconds: u64,
     pub privileged_step_up_max_attempts: u64,
     pub privileged_step_up_attempt_window_seconds: u64,
-    pub legacy_auth_params_enable: bool,
-    pub legacy_jwt_cutoff_unix: i64,
     pub runtime_paths: RuntimePaths,
     pub app_key: String,
     pub app_name: String,
@@ -282,7 +314,6 @@ pub struct AppConfig {
     pub ticket_status: i32,
     pub commission_withdraw_limit: i32,
     pub server_token: Option<String>,
-    pub server_legacy_token_enable: bool,
     pub server_require_idempotency_key: bool,
     pub server_api_url: Option<String>,
     pub server_push_interval: i32,
@@ -311,21 +342,45 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
-    pub fn from_env() -> Self {
-        Self::try_from_env().unwrap_or_else(|error| panic!("failed to load native config: {error}"))
+    pub fn from_api_env() -> Self {
+        Self::try_from_api_env()
+            .unwrap_or_else(|error| panic!("failed to load API config: {error}"))
+    }
+
+    pub fn try_from_api_env() -> io::Result<Self> {
+        Self::try_from_env_for_role(RuntimeRole::Api)
+    }
+
+    pub fn try_from_worker_env() -> io::Result<Self> {
+        Self::try_from_env_for_role(RuntimeRole::Worker)
     }
 
     /// Loads a complete configuration snapshot without panicking. Long-lived
     /// processes use this path for hot reloads so a malformed external edit can
     /// be rejected while the last-known-good snapshot remains active.
-    pub fn try_from_env() -> io::Result<Self> {
-        if let Some(path) = env_path(&["V2BOARD_ENV_PATH", "RUST_ENV_PATH"])
-            && path.exists()
-        {
-            let _ = dotenvy::from_path(path);
+    fn try_from_env_for_role(runtime_role: RuntimeRole) -> io::Result<Self> {
+        let env_path = env_path(&["V2BOARD_ENV_PATH", "RUST_ENV_PATH"]);
+        if let Some(path) = env_path.as_ref() {
+            if !path.is_file() {
+                return Err(invalid_setting(
+                    "V2BOARD_ENV_PATH",
+                    "must name an existing regular file",
+                ));
+            }
+            dotenvy::from_path(path).map_err(|error| {
+                invalid_setting("V2BOARD_ENV_PATH", &format!("could not be loaded: {error}"))
+            })?;
         }
-        let _ = dotenvy::dotenv();
-        Self::try_from_runtime_paths(RuntimePaths::from_env())
+        validate_role_environment(runtime_role)?;
+        let config =
+            Self::try_from_runtime_paths(runtime_role, RuntimePaths::from_env(runtime_role))?;
+        if env_path.is_some() && config.environment.is_production() {
+            return Err(invalid_setting(
+                "V2BOARD_ENV_PATH",
+                "dotenv files are forbidden in production; use the role-owned file-only JSON",
+            ));
+        }
+        Ok(config)
     }
 
     /// Reloads the exact runtime config file used by this snapshot. Ordinary
@@ -333,28 +388,90 @@ impl AppConfig {
     /// `configuration_source=file_only` snapshot ignores value overrides.
     /// Runtime paths cannot jump to a different file during reload.
     pub fn reload(&self) -> io::Result<Self> {
-        Self::try_from_runtime_paths(self.runtime_paths.clone())
+        let next = Self::try_from_runtime_paths(self.runtime_role, self.runtime_paths.clone())?;
+        self.validate_reload_compatible(&next)?;
+        Ok(next)
     }
 
-    fn try_from_runtime_paths(runtime_paths: RuntimePaths) -> io::Result<Self> {
+    /// A config parse succeeding does not make every field hot-reloadable.
+    /// These values have already been captured by listeners, pools, reusable
+    /// clients, or route construction. Accepting a changed snapshot would make
+    /// the displayed config disagree with the resources actually serving
+    /// requests, which is especially dangerous for datastore cutovers.
+    fn validate_reload_compatible(&self, next: &Self) -> io::Result<()> {
+        let mut restart_required = Vec::new();
+        macro_rules! restart_bound {
+            ($field:ident) => {
+                if self.$field != next.$field {
+                    restart_required.push(stringify!($field));
+                }
+            };
+        }
+        restart_bound!(runtime_role);
+        restart_bound!(environment);
+        restart_bound!(bind_addr);
+        restart_bound!(database_url);
+        restart_bound!(peer_database_principal);
+        restart_bound!(clickhouse_writer);
+        restart_bound!(redis_url);
+        restart_bound!(http_connect_timeout_seconds);
+        restart_bound!(http_request_timeout_seconds);
+        restart_bound!(api_request_timeout_seconds);
+        restart_bound!(password_kdf_max_parallel);
+        restart_bound!(runtime_paths);
+        if self.admin_path() != next.admin_path() {
+            restart_required.push("admin_path");
+        }
+        if restart_required.is_empty() {
+            Ok(())
+        } else {
+            Err(invalid_setting(
+                "runtime configuration reload",
+                &format!(
+                    "changed restart-required fields: {}",
+                    restart_required.join(", ")
+                ),
+            ))
+        }
+    }
+
+    fn try_from_runtime_paths(
+        runtime_role: RuntimeRole,
+        runtime_paths: RuntimePaths,
+    ) -> io::Result<Self> {
         let file_config = load_config(&runtime_paths.config).map_err(|error| {
             io::Error::new(
                 error.kind(),
                 format!("failed to load {}: {error}", runtime_paths.config.display()),
             )
         })?;
-        Self::try_from_config_map(file_config, runtime_paths)
+        Self::try_from_config_map_for_role(runtime_role, file_config, runtime_paths)
     }
 
     /// Builds and validates a runtime snapshot from an already parsed JSON
     /// document. Lifecycle tooling uses this to prove that a complete,
     /// file-only document has the same semantics the API and worker will load,
     /// without staging or writing the eventual runtime file.
-    pub fn try_from_config_map(
+    pub fn try_from_api_config_map(
         file_config: Map<String, Value>,
         runtime_paths: RuntimePaths,
     ) -> io::Result<Self> {
-        validate_scalar_config(&file_config)?;
+        Self::try_from_config_map_for_role(RuntimeRole::Api, file_config, runtime_paths)
+    }
+
+    pub fn try_from_worker_config_map(
+        file_config: Map<String, Value>,
+        runtime_paths: RuntimePaths,
+    ) -> io::Result<Self> {
+        Self::try_from_config_map_for_role(RuntimeRole::Worker, file_config, runtime_paths)
+    }
+
+    fn try_from_config_map_for_role(
+        runtime_role: RuntimeRole,
+        file_config: Map<String, Value>,
+        runtime_paths: RuntimePaths,
+    ) -> io::Result<Self> {
+        validate_scalar_config(&file_config, runtime_role)?;
         let environment = RuntimeEnvironment::parse(
             config_or_env(&file_config, "environment", "V2BOARD_ENV").as_deref(),
         )
@@ -365,12 +482,57 @@ impl AppConfig {
         )
         .map_err(|message| io::Error::new(io::ErrorKind::InvalidInput, message))?;
         let database_url = config_or_env(&file_config, "database_url", "DATABASE_URL")
-            .unwrap_or_else(|| "mysql://v2board:v2board@mysql:3306/v2board".to_string());
+            .unwrap_or_else(|| "postgresql://v2board:v2board@postgres:5432/v2board".to_string());
+        let peer_database_principal = config_or_env(
+            &file_config,
+            "peer_database_principal",
+            "V2BOARD_PEER_DATABASE_PRINCIPAL",
+        )
+        .unwrap_or_else(|| match runtime_role {
+            RuntimeRole::Api => "v2board_worker".to_string(),
+            RuntimeRole::Worker => "v2board_api".to_string(),
+        });
+        let clickhouse_writer =
+            (runtime_role == RuntimeRole::Worker).then(|| ClickHouseWriterConfig {
+                url: config_or_env(&file_config, "clickhouse_url", "V2BOARD_CLICKHOUSE_URL")
+                    .unwrap_or_else(|| "http://clickhouse:8123".to_string()),
+                database: config_or_env(
+                    &file_config,
+                    "clickhouse_database",
+                    "V2BOARD_CLICKHOUSE_DATABASE",
+                )
+                .unwrap_or_else(|| "v2board_analytics".to_string()),
+                username: config_or_env(
+                    &file_config,
+                    "clickhouse_writer_username",
+                    "V2BOARD_CLICKHOUSE_WRITER_USERNAME",
+                )
+                .unwrap_or_else(|| "v2board_analytics_writer".to_string()),
+                password: config_or_env(
+                    &file_config,
+                    "clickhouse_writer_password",
+                    "V2BOARD_CLICKHOUSE_WRITER_PASSWORD",
+                ),
+            });
         let redis_url = config_or_env(&file_config, "redis_url", "REDIS_URL")
             .unwrap_or_else(|| "redis://redis:6379/1".to_string());
-        validate_datastore_transport(environment, &database_url, &redis_url)?;
+        validate_datastore_transport(
+            environment,
+            &database_url,
+            &peer_database_principal,
+            clickhouse_writer.as_ref(),
+            &redis_url,
+        )?;
         let server_token = config_or_env(&file_config, "server_token", "V2BOARD_SERVER_TOKEN");
         validate_production_secret(environment, "server_token", server_token.as_deref())?;
+        let bind_addr = config_or_env(&file_config, "bind_addr", "RUST_BIND_ADDR")
+            .unwrap_or_else(|| "0.0.0.0:8080".to_string());
+        if environment.is_production() && bind_addr != "127.0.0.1:8080" {
+            return Err(invalid_setting(
+                "bind_addr",
+                "bare-metal production must bind 127.0.0.1:8080 behind the TLS reverse proxy",
+            ));
+        }
 
         let trusted_proxy_cidrs = parse_trusted_proxy_cidrs(&file_config)?;
 
@@ -441,12 +603,25 @@ impl AppConfig {
             15 * 60,
         )
         .clamp(60, 24 * 60 * 60) as u64;
+        let server_require_idempotency_key = config_bool(
+            &file_config,
+            "server_require_idempotency_key",
+            "V2BOARD_SERVER_REQUIRE_IDEMPOTENCY_KEY",
+            environment.is_production(),
+        );
+        validate_node_report_contract(
+            environment,
+            configuration_is_file_only(&file_config),
+            server_require_idempotency_key,
+        )?;
 
         Ok(Self {
+            runtime_role,
             environment,
-            bind_addr: config_or_env(&file_config, "bind_addr", "RUST_BIND_ADDR")
-                .unwrap_or_else(|| "0.0.0.0:8080".to_string()),
+            bind_addr,
             database_url,
+            peer_database_principal,
+            clickhouse_writer,
             redis_url,
             cors_allowed_origins,
             trusted_proxy_cidrs,
@@ -496,19 +671,6 @@ impl AppConfig {
             privileged_step_up_ttl_seconds,
             privileged_step_up_max_attempts,
             privileged_step_up_attempt_window_seconds,
-            legacy_auth_params_enable: config_bool(
-                &file_config,
-                "legacy_auth_params_enable",
-                "V2BOARD_LEGACY_AUTH_PARAMS_ENABLE",
-                !environment.is_production(),
-            ),
-            legacy_jwt_cutoff_unix: config_i64(
-                &file_config,
-                "legacy_jwt_cutoff_unix",
-                "V2BOARD_LEGACY_JWT_CUTOFF_UNIX",
-                0,
-            )
-            .max(0),
             runtime_paths,
             app_key,
             app_name: config_or_env(&file_config, "app_name", "V2BOARD_APP_NAME")
@@ -778,18 +940,7 @@ impl AppConfig {
                 100,
             ),
             server_token,
-            server_legacy_token_enable: config_bool(
-                &file_config,
-                "server_legacy_token_enable",
-                "V2BOARD_SERVER_LEGACY_TOKEN_ENABLE",
-                !environment.is_production(),
-            ),
-            server_require_idempotency_key: config_bool(
-                &file_config,
-                "server_require_idempotency_key",
-                "V2BOARD_SERVER_REQUIRE_IDEMPOTENCY_KEY",
-                environment.is_production(),
-            ),
+            server_require_idempotency_key,
             server_api_url: config_or_env(&file_config, "server_api_url", "V2BOARD_SERVER_API_URL"),
             server_push_interval: config_i32(
                 &file_config,
@@ -975,7 +1126,7 @@ impl AppConfig {
 }
 
 impl RuntimePaths {
-    fn from_env() -> Self {
+    fn from_env(runtime_role: RuntimeRole) -> Self {
         let root = env_path(&["V2BOARD_RUNTIME_ROOT", "RUST_RUNTIME_ROOT"])
             .unwrap_or_else(|| PathBuf::from("/var/lib/v2board"));
         let frontend = env_path(&["V2BOARD_FRONTEND_DIR", "RUST_FRONTEND_DIR"])
@@ -983,7 +1134,7 @@ impl RuntimePaths {
 
         Self {
             config: env_path(&["V2BOARD_CONFIG_PATH", "RUST_CONFIG_PATH"])
-                .unwrap_or_else(|| root.join("config/config.json")),
+                .unwrap_or_else(|| root.join(runtime_role.default_config_relative_path())),
             frontend,
             rules: env_path(&["V2BOARD_RULE_DIR", "RUST_RULE_DIR"])
                 .unwrap_or_else(|| root.join("rules")),
@@ -1000,6 +1151,141 @@ fn env_opt(key: &str) -> Option<String> {
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty() && value != "null")
+}
+
+/// Reads a one-shot secret from exactly one of a direct environment value, an
+/// explicit absolute file, or a systemd credential. Long-lived runtime JSON
+/// uses its own role loader; this helper is only for transient administrative
+/// commands whose credentials must not be retained in a unit Environment.
+pub fn one_shot_secret(
+    value_environment: &str,
+    file_environment: &str,
+    systemd_credential_name: &str,
+) -> io::Result<Option<String>> {
+    let direct = env_opt(value_environment);
+    let explicit_path = env::var_os(file_environment)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from);
+    if explicit_path.as_ref().is_some_and(|path| !path.is_absolute()) {
+        return Err(invalid_setting(file_environment, "must be an absolute path"));
+    }
+    let credential_path = env::var_os("CREDENTIALS_DIRECTORY")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .map(|directory| directory.join(systemd_credential_name))
+        .filter(|path| path.exists());
+    let source_count = usize::from(direct.is_some())
+        + usize::from(explicit_path.is_some())
+        + usize::from(credential_path.is_some());
+    if source_count > 1 {
+        return Err(invalid_setting(
+            value_environment,
+            "must use exactly one direct, *_FILE, or systemd credential source",
+        ));
+    }
+    if let Some(value) = direct {
+        return Ok(Some(value));
+    }
+    explicit_path
+        .or(credential_path)
+        .map(|path| read_one_shot_secret_file(&path, file_environment))
+        .transpose()
+}
+
+fn read_one_shot_secret_file(path: &Path, setting: &str) -> io::Result<String> {
+    const MAX_ONE_SHOT_SECRET_BYTES: u64 = 64 * 1024;
+    let metadata = fs::symlink_metadata(path).map_err(|error| {
+        invalid_setting(setting, &format!("could not inspect secret file: {error}"))
+    })?;
+    if !metadata.file_type().is_file() || metadata.len() == 0 {
+        return Err(invalid_setting(
+            setting,
+            "must name a non-empty regular, non-symlink file",
+        ));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if metadata.permissions().mode() & 0o077 != 0 {
+            return Err(invalid_setting(
+                setting,
+                "secret file must not grant group or world permissions",
+            ));
+        }
+    }
+    if metadata.len() > MAX_ONE_SHOT_SECRET_BYTES {
+        return Err(invalid_setting(setting, "secret file exceeds 64 KiB"));
+    }
+    let bytes = fs::read(path).map_err(|error| {
+        invalid_setting(setting, &format!("could not read secret file: {error}"))
+    })?;
+    let decoded = std::str::from_utf8(&bytes)
+        .map_err(|_| invalid_setting(setting, "secret file must be valid UTF-8"))?;
+    let value = decoded
+        .strip_suffix("\r\n")
+        .or_else(|| decoded.strip_suffix('\n'))
+        .unwrap_or(decoded);
+    if value.is_empty()
+        || value
+            .chars()
+            .any(|character| matches!(character, '\r' | '\n' | '\0'))
+    {
+        return Err(invalid_setting(
+            setting,
+            "secret file must contain exactly one non-empty text line",
+        ));
+    }
+    Ok(value.to_string())
+}
+
+fn validate_role_environment(runtime_role: RuntimeRole) -> io::Result<()> {
+    let forbidden: &[&str] = match runtime_role {
+        RuntimeRole::Api => &[
+            "V2BOARD_WORKER_DATABASE_URL",
+            "V2BOARD_CLICKHOUSE_URL",
+            "V2BOARD_CLICKHOUSE_DATABASE",
+            "V2BOARD_CLICKHOUSE_READER_USERNAME",
+            "V2BOARD_CLICKHOUSE_READER_PASSWORD",
+            "V2BOARD_CLICKHOUSE_WRITER_USERNAME",
+            "V2BOARD_CLICKHOUSE_WRITER_PASSWORD",
+            "V2BOARD_CLICKHOUSE_SCHEMA_URL",
+            "V2BOARD_CLICKHOUSE_SCHEMA_DATABASE",
+            "V2BOARD_CLICKHOUSE_SCHEMA_USERNAME",
+            "V2BOARD_CLICKHOUSE_SCHEMA_PASSWORD",
+            "V2BOARD_CLICKHOUSE_SCHEMA_PASSWORD_FILE",
+        ],
+        RuntimeRole::Worker => &[
+            "V2BOARD_WORKER_DATABASE_URL",
+            "V2BOARD_NEW_PASSWORD",
+            "V2BOARD_NEW_PASSWORD_FILE",
+            "V2BOARD_CLICKHOUSE_READER_USERNAME",
+            "V2BOARD_CLICKHOUSE_READER_PASSWORD",
+            "V2BOARD_CLICKHOUSE_SCHEMA_URL",
+            "V2BOARD_CLICKHOUSE_SCHEMA_DATABASE",
+            "V2BOARD_CLICKHOUSE_SCHEMA_USERNAME",
+            "V2BOARD_CLICKHOUSE_SCHEMA_PASSWORD",
+            "V2BOARD_CLICKHOUSE_SCHEMA_PASSWORD_FILE",
+            "V2BOARD_MIGRATION_DATABASE_URL",
+            "V2BOARD_MIGRATION_DATABASE_URL_FILE",
+        ],
+    };
+    let present = forbidden
+        .iter()
+        .copied()
+        .filter(|key| env_opt(key).is_some())
+        .collect::<Vec<_>>();
+    if present.is_empty() {
+        Ok(())
+    } else {
+        Err(invalid_setting(
+            "runtime role environment",
+            &format!(
+                "contains credentials or datastore settings forbidden for {}: {}",
+                runtime_role.file_value(),
+                present.join(", ")
+            ),
+        ))
+    }
 }
 
 fn env_path(keys: &[&str]) -> Option<PathBuf> {
@@ -1063,21 +1349,87 @@ fn validate_https_configuration(
     Ok(())
 }
 
-/// Production database credentials and application data must not cross the
-/// network in clear text. Local/development Compose intentionally remains on
-/// its isolated plaintext network; production uses the TLS URL forms already
-/// supported by the selected Redis and SQLx rustls features.
+/// Validate the independent schema job before it sends DDL credentials. The
+/// schema binary does not load the application snapshot, so it must enforce
+/// the same origin, identifier, TLS, and production-secret boundary itself.
+pub fn validate_clickhouse_schema_connection(
+    environment: RuntimeEnvironment,
+    endpoint: &str,
+    database: &str,
+    username: &str,
+    password: Option<&str>,
+) -> io::Result<()> {
+    let url = url::Url::parse(endpoint).map_err(|_| {
+        invalid_setting(
+            "V2BOARD_CLICKHOUSE_SCHEMA_URL",
+            "must be a valid ClickHouse HTTP(S) origin",
+        )
+    })?;
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.path() != "/"
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(invalid_setting(
+            "V2BOARD_CLICKHOUSE_SCHEMA_URL",
+            "must be an HTTP(S) origin without credentials, path, query, or fragment",
+        ));
+    }
+    if !valid_datastore_identifier(database) || !valid_datastore_identifier(username) {
+        return Err(invalid_setting(
+            "ClickHouse schema identity",
+            "database and username must be unquoted ASCII identifiers",
+        ));
+    }
+    if environment.is_production() {
+        if url.scheme() != "https" {
+            return Err(invalid_setting(
+                "V2BOARD_CLICKHOUSE_SCHEMA_URL",
+                "must use https:// with certificate verification in production",
+            ));
+        }
+        validate_production_secret(environment, "V2BOARD_CLICKHOUSE_SCHEMA_PASSWORD", password)?;
+    }
+    Ok(())
+}
+
 fn validate_datastore_transport(
     environment: RuntimeEnvironment,
     database_url: &str,
+    peer_database_principal: &str,
+    clickhouse_writer: Option<&ClickHouseWriterConfig>,
     redis_url: &str,
 ) -> io::Result<()> {
     let database = url::Url::parse(database_url)
-        .map_err(|_| invalid_setting("DATABASE_URL", "must be a valid MySQL URL"))?;
-    if database.scheme() != "mysql" {
+        .map_err(|_| invalid_setting("DATABASE_URL", "must be a valid PostgreSQL URL"))?;
+    if !matches!(database.scheme(), "postgres" | "postgresql") {
         return Err(invalid_setting(
             "DATABASE_URL",
-            "must use the mysql URL scheme",
+            "must use the postgres or postgresql URL scheme",
+        ));
+    }
+    if database.host_str().is_none() {
+        return Err(invalid_setting(
+            "DATABASE_URL",
+            "must include a host and database name",
+        ));
+    }
+    validate_postgres_connection_query(&database, environment.is_production())?;
+    postgres_database_name(&database)?;
+    if !valid_postgres_identifier(peer_database_principal) {
+        return Err(invalid_setting(
+            "peer_database_principal",
+            "must be one unquoted PostgreSQL identifier",
+        ));
+    }
+    let database_principal = postgres_principal_name(&database)?;
+    if database_principal == peer_database_principal {
+        return Err(invalid_setting(
+            "peer_database_principal",
+            "must differ from the principal in database_url",
         ));
     }
     let redis = url::Url::parse(redis_url)
@@ -1088,30 +1440,185 @@ fn validate_datastore_transport(
             "must use the redis or rediss URL scheme",
         ));
     }
+    if let Some(writer) = clickhouse_writer {
+        let clickhouse = url::Url::parse(&writer.url).map_err(|_| {
+            invalid_setting(
+                "V2BOARD_CLICKHOUSE_URL",
+                "must be a valid ClickHouse HTTP(S) endpoint",
+            )
+        })?;
+        if !matches!(clickhouse.scheme(), "http" | "https")
+            || clickhouse.host_str().is_none()
+            || !clickhouse.username().is_empty()
+            || clickhouse.password().is_some()
+            || clickhouse.path() != "/"
+            || clickhouse.query().is_some()
+            || clickhouse.fragment().is_some()
+        {
+            return Err(invalid_setting(
+                "V2BOARD_CLICKHOUSE_URL",
+                "must be an HTTP(S) origin without credentials, path, query, or fragment",
+            ));
+        }
+        if !valid_datastore_identifier(&writer.database)
+            || !valid_datastore_identifier(&writer.username)
+        {
+            return Err(invalid_setting(
+                "ClickHouse writer identity",
+                "database and username must be unquoted ASCII identifiers",
+            ));
+        }
+        if environment.is_production() {
+            if clickhouse.scheme() != "https" {
+                return Err(invalid_setting(
+                    "V2BOARD_CLICKHOUSE_URL",
+                    "must use https:// with certificate verification in production",
+                ));
+            }
+            validate_production_secret(
+                environment,
+                "V2BOARD_CLICKHOUSE_WRITER_PASSWORD",
+                writer.password.as_deref(),
+            )?;
+        }
+    }
     if !environment.is_production() {
         return Ok(());
     }
-
     if redis.scheme() != "rediss" {
         return Err(invalid_setting(
             "REDIS_URL",
             "must use rediss:// with certificate verification in production",
         ));
     }
-    let verify_identity = database.query_pairs().any(|(key, value)| {
-        key.eq_ignore_ascii_case("ssl-mode")
-            && matches!(
-                value.to_ascii_lowercase().replace('-', "_").as_str(),
-                "verify_identity"
-            )
-    });
-    if !verify_identity {
+    if database_principal.is_empty() {
         return Err(invalid_setting(
             "DATABASE_URL",
-            "must set ssl-mode=VERIFY_IDENTITY in production",
+            "must name an explicit principal in production",
         ));
     }
     Ok(())
+}
+
+/// URL usernames are percent-encoded components. Security comparisons must use
+/// the decoded PostgreSQL role name so `%61pi` cannot masquerade as a principal
+/// distinct from `api` while SQLx authenticates both as the same role.
+pub fn postgres_principal_name(url: &url::Url) -> io::Result<String> {
+    percent_decode_str(url.username())
+        .decode_utf8()
+        .map(|value| value.into_owned())
+        .map_err(|_| invalid_setting("PostgreSQL URL username", "must be valid UTF-8"))
+}
+
+/// Return the exact decoded database component accepted by the native
+/// lifecycle. Requiring one unquoted identifier avoids treating a trailing
+/// slash or alternate percent-encoding as an equivalent target during a
+/// split-brain check when SQLx could interpret it differently.
+pub fn postgres_database_name(url: &url::Url) -> io::Result<String> {
+    let raw = url.path().strip_prefix('/').unwrap_or_default();
+    let name = percent_decode_str(raw)
+        .decode_utf8()
+        .map_err(|_| invalid_setting("PostgreSQL URL database", "must be valid UTF-8"))?
+        .into_owned();
+    if !valid_postgres_identifier(&name) {
+        return Err(invalid_setting(
+            "PostgreSQL URL database",
+            "must be one unquoted ASCII identifier of at most 63 bytes",
+        ));
+    }
+    Ok(name)
+}
+
+/// Reject PostgreSQL URI query forms that can override the authority/path
+/// inspected by lifecycle and security checks. SQLx accepts libpq-style
+/// identity overrides (`host`, `dbname`, `user`, ...) and both `sslmode` and
+/// `ssl-mode`; accepting them here would let the validated URL describe one
+/// endpoint while the driver connects to another.
+pub fn validate_postgres_connection_query(
+    url: &url::Url,
+    require_verified_identity: bool,
+) -> io::Result<()> {
+    let mut seen = BTreeSet::new();
+    let mut sslmode = None;
+    for (key, value) in url.query_pairs() {
+        let lowercase = key.to_ascii_lowercase();
+        if key.as_ref() != lowercase {
+            return Err(invalid_setting(
+                "PostgreSQL URL query",
+                "parameter names must use canonical lowercase spelling",
+            ));
+        }
+        let canonical = lowercase.replace('_', "-");
+        if !seen.insert(canonical.clone()) {
+            return Err(invalid_setting(
+                "PostgreSQL URL query",
+                "duplicate or aliased parameters are not allowed",
+            ));
+        }
+        if matches!(
+            canonical.as_str(),
+            "host"
+                | "hostaddr"
+                | "port"
+                | "dbname"
+                | "database"
+                | "user"
+                | "username"
+                | "password"
+                | "passfile"
+                | "service"
+                | "servicefile"
+        ) {
+            return Err(invalid_setting(
+                "PostgreSQL URL query",
+                "endpoint, database, principal, and secret overrides are forbidden",
+            ));
+        }
+        if canonical == "ssl-mode" {
+            return Err(invalid_setting(
+                "PostgreSQL URL query",
+                "ssl-mode aliases are forbidden; use exactly one sslmode parameter",
+            ));
+        }
+        if canonical == "sslmode" {
+            sslmode = Some(value.into_owned());
+        }
+    }
+    if require_verified_identity && sslmode.as_deref() != Some("verify-full") {
+        return Err(invalid_setting(
+            "PostgreSQL URL query",
+            "production URLs must set exactly one sslmode=verify-full",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_node_report_contract(
+    environment: RuntimeEnvironment,
+    lifecycle_managed: bool,
+    server_require_idempotency_key: bool,
+) -> io::Result<()> {
+    if !environment.is_production() && !lifecycle_managed {
+        return Ok(());
+    }
+    if !server_require_idempotency_key {
+        return Err(invalid_setting(
+            "server authentication",
+            "production and lifecycle-managed installs require scoped node credentials and idempotency keys",
+        ));
+    }
+    Ok(())
+}
+
+fn valid_postgres_identifier(value: &str) -> bool {
+    valid_datastore_identifier(value) && value.len() <= 63
+}
+
+fn valid_datastore_identifier(value: &str) -> bool {
+    let mut characters = value.chars();
+    matches!(characters.next(), Some('_' | 'a'..='z' | 'A'..='Z'))
+        && characters.all(|character| character == '_' || character.is_ascii_alphanumeric())
+        && value.len() <= 128
 }
 
 fn load_cors_allowed_origins(
@@ -1249,8 +1756,11 @@ fn is_obvious_secret_placeholder(value: &str) -> bool {
 /// typo such as `V2BOARD_RECAPTCHA_ENABLE=tru` silently became `false`, and a
 /// malformed integer silently selected its default. Security controls must not
 /// fail open this way.
-fn validate_scalar_config(config: &Map<String, Value>) -> io::Result<()> {
-    validate_configuration_source(config)?;
+fn validate_scalar_config(
+    config: &Map<String, Value>,
+    runtime_role: RuntimeRole,
+) -> io::Result<()> {
+    validate_configuration_source(config, runtime_role)?;
     const BOOL_SETTINGS: &[(&str, &str)] = &[
         ("force_https", "V2BOARD_FORCE_HTTPS"),
         ("email_verify", "V2BOARD_EMAIL_VERIFY"),
@@ -1291,16 +1801,8 @@ fn validate_scalar_config(config: &Map<String, Value>) -> io::Result<()> {
         ("safe_mode_enable", "V2BOARD_SAFE_MODE_ENABLE"),
         ("password_limit_enable", "V2BOARD_PASSWORD_LIMIT_ENABLE"),
         (
-            "legacy_auth_params_enable",
-            "V2BOARD_LEGACY_AUTH_PARAMS_ENABLE",
-        ),
-        (
             "privileged_step_up_enable",
             "V2BOARD_PRIVILEGED_STEP_UP_ENABLE",
-        ),
-        (
-            "server_legacy_token_enable",
-            "V2BOARD_SERVER_LEGACY_TOKEN_ENABLE",
         ),
         (
             "server_require_idempotency_key",
@@ -1348,7 +1850,6 @@ fn validate_scalar_config(config: &Map<String, Value>) -> io::Result<()> {
             "privileged_step_up_attempt_window_seconds",
             "V2BOARD_PRIVILEGED_STEP_UP_ATTEMPT_WINDOW_SECONDS",
         ),
-        ("legacy_jwt_cutoff_unix", "V2BOARD_LEGACY_JWT_CUTOFF_UNIX"),
         ("email_port", "V2BOARD_EMAIL_PORT"),
         ("register_limit_count", "V2BOARD_REGISTER_LIMIT_COUNT"),
         ("register_limit_expire", "V2BOARD_REGISTER_LIMIT_EXPIRE"),
@@ -1494,13 +1995,6 @@ fn validate_scalar_config(config: &Map<String, Value>) -> io::Result<()> {
         "V2BOARD_AUTH_SESSION_MAX_PER_USER",
         1,
         100,
-    )?;
-    validate_integer_range(
-        config,
-        "legacy_jwt_cutoff_unix",
-        "V2BOARD_LEGACY_JWT_CUTOFF_UNIX",
-        0,
-        i64::MAX,
     )?;
     validate_integer_range(config, "email_port", "V2BOARD_EMAIL_PORT", 1, 65_535)?;
     validate_integer_range(
@@ -1804,15 +2298,41 @@ fn configuration_is_file_only(config: &Map<String, Value>) -> bool {
         == Some(FILE_ONLY_CONFIGURATION_SOURCE)
 }
 
-fn validate_configuration_source(config: &Map<String, Value>) -> io::Result<()> {
+fn validate_configuration_source(
+    config: &Map<String, Value>,
+    runtime_role: RuntimeRole,
+) -> io::Result<()> {
     match config.get(CONFIGURATION_SOURCE_KEY) {
         None => Ok(()),
         Some(Value::String(value)) if value == FILE_ONLY_CONFIGURATION_SOURCE => {
-            let expected = FILE_ONLY_RUNTIME_KEYS_V1
+            if config.get("runtime_role").and_then(Value::as_str) != Some(runtime_role.file_value())
+            {
+                return Err(invalid_setting(
+                    "runtime_role",
+                    &format!(
+                        "must be the exact string {} for this process",
+                        runtime_role.file_value()
+                    ),
+                ));
+            }
+            let mut expected = FILE_ONLY_RUNTIME_KEYS_V1
                 .iter()
                 .copied()
-                .chain(["database_url", "redis_url"])
+                .chain([
+                    "runtime_role",
+                    "database_url",
+                    "peer_database_principal",
+                    "redis_url",
+                ])
                 .collect::<BTreeSet<_>>();
+            if runtime_role == RuntimeRole::Worker {
+                expected.extend([
+                    "clickhouse_url",
+                    "clickhouse_database",
+                    "clickhouse_writer_username",
+                    "clickhouse_writer_password",
+                ]);
+            }
             let actual = config.keys().map(String::as_str).collect::<BTreeSet<_>>();
             let missing = expected.difference(&actual).copied().collect::<Vec<_>>();
             if !missing.is_empty() {
@@ -1892,6 +2412,31 @@ fn yuan_to_cents(value: &str) -> Option<i32> {
 mod tests {
     use super::*;
     use std::sync::{Arc, Barrier};
+
+    #[test]
+    fn one_shot_secret_files_are_single_line_regular_files() {
+        let root = env::temp_dir().join(format!(
+            "v2board-one-shot-secret-test-{}-{}",
+            std::process::id(),
+            CONFIG_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(&root).expect("create secret test directory");
+        let path = root.join("credential");
+        fs::write(&path, b"secret-value\n").expect("write secret");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
+                .expect("restrict secret permissions");
+        }
+        assert_eq!(
+            read_one_shot_secret_file(&path, "TEST_SECRET").expect("read secret"),
+            "secret-value"
+        );
+        fs::write(&path, b"first\nsecond\n").expect("write multiline secret");
+        assert!(read_one_shot_secret_file(&path, "TEST_SECRET").is_err());
+        fs::remove_dir_all(root).expect("remove secret test directory");
+    }
 
     #[test]
     fn minute_durations_are_bounded_before_seconds_conversion() {
@@ -1986,7 +2531,7 @@ mod tests {
             .as_object()
             .expect("object")
             .clone();
-        let error = validate_scalar_config(&invalid_bool).unwrap_err();
+        let error = validate_scalar_config(&invalid_bool, RuntimeRole::Api).unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
         assert!(error.to_string().contains("recaptcha_enable"));
 
@@ -1994,25 +2539,25 @@ mod tests {
             .as_object()
             .expect("object")
             .clone();
-        assert!(validate_scalar_config(&invalid_integer).is_err());
+        assert!(validate_scalar_config(&invalid_integer, RuntimeRole::Api).is_err());
 
         let out_of_range = serde_json::json!({ "auth_session_max_per_user": 101 })
             .as_object()
             .expect("object")
             .clone();
-        assert!(validate_scalar_config(&out_of_range).is_err());
+        assert!(validate_scalar_config(&out_of_range, RuntimeRole::Api).is_err());
 
         let overflowing_i32 = serde_json::json!({ "server_push_interval": 2147483648_i64 })
             .as_object()
             .expect("object")
             .clone();
-        assert!(validate_scalar_config(&overflowing_i32).is_err());
+        assert!(validate_scalar_config(&overflowing_i32, RuntimeRole::Api).is_err());
 
         let structural = serde_json::json!({ "force_https": [] })
             .as_object()
             .expect("object")
             .clone();
-        assert!(validate_scalar_config(&structural).is_err());
+        assert!(validate_scalar_config(&structural, RuntimeRole::Api).is_err());
     }
 
     #[test]
@@ -2170,7 +2715,8 @@ mod tests {
             .expect("object")
             .clone();
         save_config_atomic(&path, &initial).expect("initial config");
-        let snapshot = AppConfig::try_from_runtime_paths(runtime_paths).expect("initial snapshot");
+        let snapshot = AppConfig::try_from_runtime_paths(RuntimeRole::Api, runtime_paths)
+            .expect("initial snapshot");
         assert_eq!(snapshot.ticket_status, 17);
         assert_eq!(snapshot.privileged_auth_session_ttl_seconds, 30 * 60);
         assert_eq!(
@@ -2194,6 +2740,21 @@ mod tests {
             snapshot.reload().expect("reloaded snapshot").ticket_status,
             23
         );
+
+        let restart_bound_edit = serde_json::json!({
+            "ticket_status": 23,
+            "password_kdf_max_parallel": 5
+        })
+        .as_object()
+        .expect("object")
+        .clone();
+        save_config_atomic(&path, &restart_bound_edit).expect("restart-bound edit");
+        let error = match snapshot.reload() {
+            Ok(_) => panic!("datastore cutover must require a process restart"),
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("password_kdf_max_parallel"));
+        assert!(error.to_string().contains("restart-required"));
         fs::remove_dir_all(root).expect("remove test root");
     }
 
@@ -2244,6 +2805,57 @@ mod tests {
     }
 
     #[test]
+    fn file_only_documents_are_strictly_bound_to_one_runtime_role() {
+        fn document(role: RuntimeRole) -> Map<String, Value> {
+            let mut config = FILE_ONLY_RUNTIME_KEYS_V1
+                .iter()
+                .map(|key| ((*key).to_string(), Value::Null))
+                .collect::<Map<_, _>>();
+            config.insert(
+                "configuration_source".to_string(),
+                Value::String("file_only".to_string()),
+            );
+            config.insert(
+                "runtime_role".to_string(),
+                Value::String(role.file_value().to_string()),
+            );
+            config.insert("database_url".to_string(), Value::Null);
+            config.insert("peer_database_principal".to_string(), Value::Null);
+            config.insert("redis_url".to_string(), Value::Null);
+            if role == RuntimeRole::Worker {
+                for key in [
+                    "clickhouse_url",
+                    "clickhouse_database",
+                    "clickhouse_writer_username",
+                    "clickhouse_writer_password",
+                ] {
+                    config.insert(key.to_string(), Value::Null);
+                }
+            }
+            config
+        }
+
+        let api = document(RuntimeRole::Api);
+        validate_configuration_source(&api, RuntimeRole::Api).expect("API document");
+        assert!(validate_configuration_source(&api, RuntimeRole::Worker).is_err());
+
+        let mut api_with_worker_secret = api;
+        api_with_worker_secret.insert(
+            "clickhouse_writer_password".to_string(),
+            Value::String("must-not-load".to_string()),
+        );
+        assert!(validate_configuration_source(&api_with_worker_secret, RuntimeRole::Api).is_err());
+
+        let mut worker = document(RuntimeRole::Worker);
+        validate_configuration_source(&worker, RuntimeRole::Worker).expect("worker document");
+        worker.insert(
+            "clickhouse_reader_password".to_string(),
+            Value::String("must-not-load".to_string()),
+        );
+        assert!(validate_configuration_source(&worker, RuntimeRole::Worker).is_err());
+    }
+
+    #[test]
     fn trusted_proxy_cidrs_parse_ipv4_and_ipv6() {
         let config = serde_json::json!({
             "trusted_proxy_cidrs": ["10.0.0.0/8", "2001:db8::/32"]
@@ -2265,10 +2877,20 @@ mod tests {
 
     #[test]
     fn production_datastores_require_verified_transport() {
+        fn production_clickhouse(url: &str) -> ClickHouseWriterConfig {
+            ClickHouseWriterConfig {
+                url: url.to_string(),
+                database: "v2board_analytics".to_string(),
+                username: "v2board_writer".to_string(),
+                password: Some("0123456789abcdef0123456789abcdef".to_string()),
+            }
+        }
         assert!(
             validate_datastore_transport(
                 RuntimeEnvironment::Production,
-                "mysql://user:secret@db.example.test/v2board?ssl-mode=VERIFY_IDENTITY",
+                "postgresql://api:secret@db.example.test/v2board?sslmode=verify-full",
+                "worker",
+                Some(&production_clickhouse("https://analytics.example.test")),
                 "rediss://cache.example.test/1",
             )
             .is_ok()
@@ -2276,7 +2898,9 @@ mod tests {
         assert!(
             validate_datastore_transport(
                 RuntimeEnvironment::Production,
-                "mysql://user:secret@db.example.test/v2board",
+                "postgresql://api:secret@db.example.test/v2board",
+                "worker",
+                Some(&production_clickhouse("https://analytics.example.test")),
                 "rediss://cache.example.test/1",
             )
             .is_err()
@@ -2284,7 +2908,19 @@ mod tests {
         assert!(
             validate_datastore_transport(
                 RuntimeEnvironment::Production,
-                "mysql://user:secret@db.example.test/v2board?ssl-mode=VERIFY_IDENTITY",
+                "postgresql://api:secret@db.example.test/v2board?sslmode=verify-full",
+                "worker",
+                Some(&production_clickhouse("http://analytics.example.test")),
+                "rediss://cache.example.test/1",
+            )
+            .is_err()
+        );
+        assert!(
+            validate_datastore_transport(
+                RuntimeEnvironment::Production,
+                "postgresql://api:secret@db.example.test/v2board?sslmode=verify-full",
+                "worker",
+                Some(&production_clickhouse("https://analytics.example.test")),
                 "redis://cache.example.test/1",
             )
             .is_err()
@@ -2292,11 +2928,83 @@ mod tests {
         assert!(
             validate_datastore_transport(
                 RuntimeEnvironment::Local,
-                "mysql://v2board:v2board@mysql/v2board",
+                "postgresql://v2board:v2board@postgres/v2board",
+                "v2board_worker",
+                Some(&ClickHouseWriterConfig {
+                    url: "http://clickhouse:8123".to_string(),
+                    database: "v2board_analytics".to_string(),
+                    username: "v2board_analytics_writer".to_string(),
+                    password: None,
+                }),
                 "redis://redis/1",
             )
             .is_ok()
         );
+        assert!(
+            validate_datastore_transport(
+                RuntimeEnvironment::Production,
+                "postgresql://api:secret@db.example.test/v2board?sslmode=verify-full",
+                "worker",
+                None,
+                "rediss://cache.example.test/1",
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn postgres_database_identity_is_exact_and_decoded() {
+        let encoded = url::Url::parse("postgresql://api@db/%76%32board").unwrap();
+        assert_eq!(postgres_database_name(&encoded).unwrap(), "v2board");
+
+        for invalid in [
+            "postgresql://api@db/",
+            "postgresql://api@db/v2board/",
+            "postgresql://api@db/v2-board",
+            "postgresql://api@db/%FF",
+        ] {
+            let url = url::Url::parse(invalid).unwrap();
+            assert!(postgres_database_name(&url).is_err(), "accepted {invalid}");
+        }
+    }
+
+    #[test]
+    fn postgres_query_cannot_override_the_validated_connection() {
+        let allowed = url::Url::parse(
+            "postgresql://api@db/v2board?sslmode=verify-full&sslrootcert=%2Fcerts%2Fca.pem",
+        )
+        .unwrap();
+        assert!(validate_postgres_connection_query(&allowed, true).is_ok());
+
+        for attack in [
+            "sslmode=verify-full&ssl-mode=disable",
+            "sslmode=verify-full&host=other.example.test",
+            "sslmode=verify-full&hostaddr=127.0.0.1",
+            "sslmode=verify-full&port=15432",
+            "sslmode=verify-full&dbname=other",
+            "sslmode=verify-full&user=shared",
+            "sslmode=verify-full&password=other",
+            "sslmode=verify-full&sslmode=disable",
+            "SSLMODE=verify-full",
+            "sslmode=VERIFY-FULL",
+            "sslmode=verify-full&h%6fst=other.example.test",
+        ] {
+            let url = url::Url::parse(&format!("postgresql://api@db/v2board?{attack}")).unwrap();
+            assert!(
+                validate_postgres_connection_query(&url, true).is_err(),
+                "accepted {attack}"
+            );
+        }
+    }
+
+    #[test]
+    fn production_and_file_only_require_node_report_idempotency() {
+        assert!(
+            validate_node_report_contract(RuntimeEnvironment::Production, false, false).is_err()
+        );
+        assert!(validate_node_report_contract(RuntimeEnvironment::Local, true, false).is_err());
+        assert!(validate_node_report_contract(RuntimeEnvironment::Local, false, false).is_ok());
+        assert!(validate_node_report_contract(RuntimeEnvironment::Production, false, true).is_ok());
     }
 
     #[test]

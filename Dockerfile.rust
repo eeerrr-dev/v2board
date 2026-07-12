@@ -21,7 +21,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rustup component add clippy rustfmt \
     && install -d -m 0777 \
         /app/target \
-        /var/lib/v2board/config \
+        /var/lib/v2board/api \
+        /var/lib/v2board/worker \
         /var/lib/v2board/rules
 
 WORKDIR /src/backend/rust
@@ -33,9 +34,26 @@ COPY backend/rust/ ./
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/app/target \
-    cargo build --release --locked -p v2board-api -p v2board-workers \
+    cargo build --release --locked --bins \
+        -p v2board-api -p v2board-workers -p v2board-analytics \
     && install -Dm0755 /app/target/release/v2board-api /out/v2board-api \
-    && install -Dm0755 /app/target/release/v2board-workers /out/v2board-workers
+    && install -Dm0755 /app/target/release/v2board-workers /out/v2board-workers \
+    && install -Dm0755 /app/target/release/v2board-analytics-schema \
+        /out/v2board-analytics-schema
+
+FROM development AS lifecycle-builder
+
+COPY backend/rust/ ./
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/app/target \
+    cargo build --release --locked -p v2board-lifecycle \
+    && install -Dm0755 /app/target/release/v2board-lifecycle \
+        /out/v2board-lifecycle
+
+FROM scratch AS lifecycle-tool
+
+COPY --from=lifecycle-builder /out/v2board-lifecycle /v2board-lifecycle
 
 FROM node:${NODE_VERSION}-bookworm-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5 AS frontend-builder
 
@@ -50,60 +68,40 @@ RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
     && pnpm install --frozen-lockfile \
     && pnpm build:deploy
 
-FROM debian:bookworm-slim@sha256:60eac759739651111db372c07be67863818726f754804b8707c90979bda511df AS production-base
+FROM debian:bookworm-slim@sha256:60eac759739651111db372c07be67863818726f754804b8707c90979bda511df AS native-release-assembler
 
-ARG APP_UID=10001
-ARG APP_GID=10001
-ENV V2BOARD_ENV=production \
-    V2BOARD_RUNTIME_ROOT=/var/lib/v2board
+ARG TARGETOS
+ARG TARGETARCH
+ARG V2BOARD_SOURCE_REVISION=unknown
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates \
-        curl \
-        libssl3 \
-        tini \
-        tzdata \
-    && rm -rf /var/lib/apt/lists/* \
-    && groupadd --gid "${APP_GID}" v2board \
-    && useradd --uid "${APP_UID}" --gid v2board --home-dir /nonexistent --shell /usr/sbin/nologin v2board \
-    && install -d -o v2board -g v2board \
-        /opt/v2board/frontend \
-        /var/lib/v2board/config \
-        /var/lib/v2board/rules
+WORKDIR /release
+COPY --from=rust-builder /out/ /release/bin/
+COPY --from=frontend-builder /build/frontend/dist-deploy/ /release/frontend/
+COPY deploy/systemd/ /release/systemd/
 
-USER v2board:v2board
-WORKDIR /var/lib/v2board
-VOLUME ["/var/lib/v2board"]
-ENTRYPOINT ["/usr/bin/tini", "--"]
+RUN test "${TARGETOS}" = linux \
+    && test -n "${TARGETARCH}" \
+    && test -x bin/v2board-api \
+    && test -x bin/v2board-workers \
+    && test -x bin/v2board-analytics-schema \
+    && test -L frontend/current \
+    && test -f frontend/current/user/index.html \
+    && test -f frontend/current/admin/index.html \
+    && test -f systemd/v2board-api.service \
+    && test -f systemd/v2board-worker.service \
+    && printf '%s\n' \
+        'format=v2board-native-release-v1' \
+        "source_revision=${V2BOARD_SOURCE_REVISION}" \
+        "target_os=${TARGETOS}" \
+        "target_arch=${TARGETARCH}" \
+        > RELEASE \
+    && find bin frontend systemd RELEASE -type f -print0 \
+        | sort -z \
+        | xargs -0 sha256sum > SHA256SUMS
 
-FROM production-base AS production-api
+# Export this stage with:
+# docker build --target native-release --output type=local,dest=<directory> .
+# It is an installable filesystem payload, not a runnable container image.
+FROM scratch AS native-release
 
-ENV RUST_BIND_ADDR=0.0.0.0:8080 \
-    RUST_LOG=v2board_api=info,tower_http=info \
-    V2BOARD_FRONTEND_DIR=/opt/v2board/frontend
-
-COPY --from=rust-builder --chown=root:root /out/v2board-api /usr/local/bin/v2board-api
-COPY --from=frontend-builder --chown=root:root /build/frontend/dist-deploy/ /opt/v2board/frontend/
-EXPOSE 8080
-HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=6 \
-    CMD ["curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:8080/readyz"]
-
-CMD ["/usr/local/bin/v2board-api"]
-
-FROM production-base AS production-worker
-
-ENV RUST_LOG=v2board_workers=info \
-    V2BOARD_WORKER_HEALTH_FILE=/tmp/v2board-worker-health \
-    V2BOARD_WORKER_HEALTH_MAX_AGE_SECONDS=30
-
-COPY --from=rust-builder --chown=root:root /out/v2board-workers /usr/local/bin/v2board-workers
-HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=6 \
-    CMD ["/bin/sh", "-ec", "last=$(cat \"$V2BOARD_WORKER_HEALTH_FILE\") && now=$(date +%s) && age=$((now - last)) && test \"$age\" -ge 0 && test \"$age\" -le \"$V2BOARD_WORKER_HEALTH_MAX_AGE_SECONDS\""]
-
-CMD ["/usr/local/bin/v2board-workers"]
-
-# Preserve the established default target while exposing a smaller, correctly
-# probed worker image through `--target production-worker`.
-FROM production-api AS production
-
-CMD ["/usr/local/bin/v2board-api"]
+COPY --from=native-release-assembler /release/ /

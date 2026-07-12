@@ -86,7 +86,7 @@ pub(in super::super) fn user_sort(params: &HashMap<String, String>) -> (String, 
         .filter(|value| !value.is_empty())
     {
         Some("total_used") => {
-            "(CAST(u.u AS DECIMAL(65,0)) + CAST(u.d AS DECIMAL(65,0)))".to_string()
+            "(CAST(u.u AS NUMERIC(65,0)) + CAST(u.d AS NUMERIC(65,0)))".to_string()
         }
         Some(sort) => match user_column(sort) {
             Some(column) => format!("u.{column}"),
@@ -98,14 +98,20 @@ pub(in super::super) fn user_sort(params: &HashMap<String, String>) -> (String, 
 }
 
 pub(in super::super) fn push_user_where(
-    builder: &mut QueryBuilder<MySql>,
+    builder: &mut QueryBuilder<Postgres>,
     clauses: &[UserFilterClause],
 ) {
     for clause in clauses {
         builder.push(" AND ");
         match clause {
             UserFilterClause::Compare { column, op, value } => {
-                builder.push(format!("u.{column} {op} "));
+                if *op == "like" {
+                    builder.push(format!("u.{column}::text ILIKE "));
+                } else if *column == "email" && matches!(*op, "=" | "<>") {
+                    builder.push(format!("LOWER(u.email) {op} LOWER("));
+                } else {
+                    builder.push(format!("u.{column} {op} "));
+                }
                 match value {
                     FilterBind::Int(value) => {
                         builder.push_bind(*value);
@@ -113,6 +119,9 @@ pub(in super::super) fn push_user_where(
                     FilterBind::Text(value) => {
                         builder.push_bind(value.clone());
                     }
+                }
+                if *column == "email" && *op != "like" && matches!(*op, "=" | "<>") {
+                    builder.push(")");
                 }
             }
             UserFilterClause::IsNull { column } => {
@@ -129,7 +138,7 @@ pub(in super::super) enum OrderFilterClause {
     Compare {
         column: &'static str,
         op: &'static str,
-        value: String,
+        value: FilterBind,
     },
 }
 
@@ -167,7 +176,7 @@ pub(in super::super) fn order_column(key: &str) -> Option<&'static str> {
 /// Applies the is_commission scope and filter[] clauses to an order builder whose
 /// order table is aliased `o`. Ports OrderController::fetch (:58-63) + filter().
 pub(in super::super) fn push_order_where(
-    builder: &mut QueryBuilder<MySql>,
+    builder: &mut QueryBuilder<Postgres>,
     is_commission: bool,
     clauses: &[OrderFilterClause],
 ) {
@@ -178,9 +187,28 @@ pub(in super::super) fn push_order_where(
     }
     for clause in clauses {
         let OrderFilterClause::Compare { column, op, value } = clause;
-        builder.push(format!(" AND o.`{column}` {op} "));
-        builder.push_bind(value.clone());
+        if *op == "like" {
+            builder.push(format!(" AND o.\"{column}\"::text ILIKE "));
+        } else {
+            builder.push(format!(" AND o.\"{column}\" {op} "));
+        }
+        match value {
+            FilterBind::Int(value) => {
+                builder.push_bind(*value);
+            }
+            FilterBind::Text(value) => {
+                builder.push_bind(value.clone());
+            }
+        }
     }
+}
+
+pub(in super::super) fn user_column_is_numeric(column: &str) -> bool {
+    !matches!(column, "email" | "uuid" | "token" | "remarks")
+}
+
+pub(in super::super) fn order_column_is_numeric(column: &str) -> bool {
+    !matches!(column, "period" | "trade_no" | "callback_no")
 }
 
 /// Reconstructs `filter[<i>][<field>]` request keys into per-index maps of raw
@@ -222,7 +250,7 @@ pub(in super::super) const LOG_FILTER_CONDITIONS: &[&str] =
 /// `level`, so the column is fixed. Ports FilterScope's condition mapping
 /// (App\Scope\FilterScope): in/is → equality, not → <>, gt/lt → >/<, like → %v%.
 pub(in super::super) fn push_log_filters(
-    builder: &mut QueryBuilder<MySql>,
+    builder: &mut QueryBuilder<Postgres>,
     entries: &[BTreeMap<String, String>],
 ) {
     for entry in entries {

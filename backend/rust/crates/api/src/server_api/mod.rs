@@ -193,7 +193,7 @@ pub(super) async fn hydrate_online_status(
     Ok(())
 }
 
-fn server_online_status(now: i64, last_check_at: Option<i64>) -> i8 {
+fn server_online_status(now: i64, last_check_at: Option<i64>) -> i16 {
     // Widen before subtracting so the exact legacy boundary (`now - 300 > last_check_at`) is
     // preserved without collapsing an i64 underflow onto `i64::MIN`.
     if i128::from(now) - 300 > i128::from(last_check_at.unwrap_or(0)) {
@@ -215,14 +215,14 @@ struct ServerNodeRow {
     listen_ip: Option<String>,
     protocol: Option<String>,
     version: Option<i32>,
-    tls: Option<i8>,
+    tls: Option<i16>,
     tls_settings: Option<String>,
     flow: Option<String>,
     network: Option<String>,
     network_settings: Option<String>,
     encryption: Option<String>,
     encryption_settings: Option<String>,
-    zero_rtt_handshake: Option<i8>,
+    zero_rtt_handshake: Option<i16>,
     congestion_control: Option<String>,
     cipher: Option<String>,
     obfs: Option<String>,

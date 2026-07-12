@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use chrono::NaiveDate;
-use sqlx::{FromRow, MySql, Transaction};
+use sqlx::{FromRow, Postgres, Transaction};
 use v2board_config::{AppConfig, app_now};
 use v2board_domain::mail::{
     ReminderKind,
@@ -21,28 +21,28 @@ SELECT id, email
 FROM v2_user
 WHERE COALESCE(remind_expire, 0) <> 0
   AND expired_at IS NOT NULL
-  AND expired_at > ?
+  AND expired_at > $1
   AND CAST(expired_at AS DECIMAL(65, 0)) - 86400
-      < CAST(? AS DECIMAL(65, 0))
-  AND id > ?
+      < CAST($2 AS DECIMAL(65, 0))
+  AND id > $3
 ORDER BY id
-LIMIT ?
+LIMIT $4
 "#;
 
 const TRAFFIC_REMINDER_CANDIDATES_SQL: &str = r#"
 SELECT id, email
 FROM v2_user
 WHERE COALESCE(remind_traffic, 0) <> 0
-  AND (expired_at IS NULL OR expired_at >= ?)
+  AND (expired_at IS NULL OR expired_at >= $1)
   AND (CAST(u AS DECIMAL(65, 0)) + CAST(d AS DECIMAL(65, 0))) > 0
   AND CAST(transfer_enable AS DECIMAL(65, 0)) > 0
   AND (CAST(u AS DECIMAL(65, 0)) + CAST(d AS DECIMAL(65, 0))) * 100
       >= CAST(transfer_enable AS DECIMAL(65, 0)) * 95
   AND (CAST(u AS DECIMAL(65, 0)) + CAST(d AS DECIMAL(65, 0)))
       < CAST(transfer_enable AS DECIMAL(65, 0))
-  AND id > ?
+  AND id > $2
 ORDER BY id
-LIMIT ?
+LIMIT $3
 "#;
 
 #[derive(Debug, Clone, FromRow)]
@@ -160,7 +160,7 @@ async fn enqueue_reminder_kind(
 }
 
 async fn select_reminder_candidates(
-    tx: &mut Transaction<'_, MySql>,
+    tx: &mut Transaction<'_, Postgres>,
     kind: ReminderKind,
     now: i64,
     after_user_id: i64,
@@ -252,19 +252,19 @@ mod tests {
     #[test]
     fn reminder_queries_select_only_eligible_users_with_wide_math() {
         assert!(EXPIRE_REMINDER_CANDIDATES_SQL.contains("remind_expire"));
-        assert!(EXPIRE_REMINDER_CANDIDATES_SQL.contains("expired_at > ?"));
+        assert!(EXPIRE_REMINDER_CANDIDATES_SQL.contains("expired_at > $1"));
         assert!(EXPIRE_REMINDER_CANDIDATES_SQL.contains("- 86400"));
         assert!(EXPIRE_REMINDER_CANDIDATES_SQL.contains("DECIMAL(65, 0)"));
-        assert!(EXPIRE_REMINDER_CANDIDATES_SQL.contains("id > ?"));
-        assert!(EXPIRE_REMINDER_CANDIDATES_SQL.contains("LIMIT ?"));
+        assert!(EXPIRE_REMINDER_CANDIDATES_SQL.contains("id > $3"));
+        assert!(EXPIRE_REMINDER_CANDIDATES_SQL.contains("LIMIT $4"));
         assert!(!EXPIRE_REMINDER_CANDIDATES_SQL.contains(" u,"));
         assert!(TRAFFIC_REMINDER_CANDIDATES_SQL.contains("remind_traffic"));
-        assert!(TRAFFIC_REMINDER_CANDIDATES_SQL.contains("expired_at >= ?"));
+        assert!(TRAFFIC_REMINDER_CANDIDATES_SQL.contains("expired_at >= $1"));
         assert!(TRAFFIC_REMINDER_CANDIDATES_SQL.contains("DECIMAL(65, 0)"));
         assert!(TRAFFIC_REMINDER_CANDIDATES_SQL.contains("* 95"));
         assert!(TRAFFIC_REMINDER_CANDIDATES_SQL.contains("< CAST(transfer_enable"));
-        assert!(TRAFFIC_REMINDER_CANDIDATES_SQL.contains("id > ?"));
-        assert!(TRAFFIC_REMINDER_CANDIDATES_SQL.contains("LIMIT ?"));
+        assert!(TRAFFIC_REMINDER_CANDIDATES_SQL.contains("id > $2"));
+        assert!(TRAFFIC_REMINDER_CANDIDATES_SQL.contains("LIMIT $3"));
     }
 
     #[test]

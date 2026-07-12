@@ -1,0 +1,2 @@
+ALTER TABLE v2_traffic_accounted_v1
+MODIFY SETTING non_replicated_deduplication_window = 10000

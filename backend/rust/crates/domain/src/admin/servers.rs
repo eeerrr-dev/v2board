@@ -29,14 +29,11 @@ fn requested_server_group_ids(params: &HashMap<String, String>) -> Result<Vec<i6
     parse_server_group_ids(&required_json_array_string(params, "group_id")?)
 }
 
-async fn lock_server_groups(
-    tx: &mut Transaction<'_, MySql>,
-    group_ids: &[i64],
-) -> Result<(), ApiError> {
+async fn lock_server_groups(tx: &mut DbTransaction<'_>, group_ids: &[i64]) -> Result<(), ApiError> {
     let mut found = 0_usize;
     for chunk in group_ids.chunks(SERVER_GROUP_LOCK_BATCH_SIZE) {
         let mut builder =
-            QueryBuilder::<MySql>::new("SELECT id FROM v2_server_group WHERE id IN (");
+            QueryBuilder::<Postgres>::new("SELECT id::bigint FROM v2_server_group WHERE id IN (");
         let mut ids = builder.separated(", ");
         for id in chunk {
             ids.push_bind(*id);
@@ -55,21 +52,18 @@ async fn lock_server_groups(
 }
 
 async fn server_table_uses_group(
-    tx: &mut Transaction<'_, MySql>,
+    tx: &mut DbTransaction<'_>,
     table: &str,
     group_id: i64,
 ) -> Result<bool, ApiError> {
-    let numeric = group_id.to_string();
-    let string = serde_json::to_string(&numeric)
-        .map_err(|_| ApiError::internal("failed to encode server group id"))?;
     let sql = AssertSqlSafe(format!(
-        "SELECT id FROM {table} \
-         WHERE JSON_CONTAINS(group_id, ?) OR JSON_CONTAINS(group_id, ?) \
+        "SELECT id::bigint FROM {table} \
+         WHERE group_id @> jsonb_build_array($1::bigint)
+            OR group_id @> jsonb_build_array($1::text) \
          LIMIT 1 FOR SHARE"
     ));
     Ok(sqlx::query_scalar::<_, i64>(sql)
-        .bind(numeric)
-        .bind(string)
+        .bind(group_id)
         .fetch_optional(&mut **tx)
         .await?
         .is_some())
@@ -85,14 +79,14 @@ impl AdminService {
         let kind = server_kind_from_path(path)?;
         let id = required_i64(params, "id")?;
         let mut tx = self.db.begin().await?;
-        let result = sqlx::query(AssertSqlSafe(format!("DELETE FROM {table} WHERE id = ?")))
+        let result = sqlx::query(AssertSqlSafe(format!("DELETE FROM {table} WHERE id = $1")))
             .bind(id)
             .execute(&mut *tx)
             .await?;
         if result.rows_affected() == 0 {
             return Err(ApiError::legacy("节点ID不存在"));
         }
-        sqlx::query("DELETE FROM v2_server_credential WHERE node_type = ? AND node_id = ?")
+        sqlx::query("DELETE FROM v2_server_credential WHERE node_type = $1 AND node_id = $2")
             .bind(kind)
             .bind(id)
             .execute(&mut *tx)
@@ -111,8 +105,8 @@ impl AdminService {
         // checks and before the delete.
         let id = required_i64(params, "id")?;
         let mut tx = self.db.begin().await?;
-        let exists: Option<i64> =
-            sqlx::query_scalar("SELECT id FROM v2_server_group WHERE id = ? LIMIT 1 FOR UPDATE")
+        let exists: Option<i32> =
+            sqlx::query_scalar("SELECT id FROM v2_server_group WHERE id = $1 LIMIT 1 FOR UPDATE")
                 .bind(id)
                 .fetch_optional(&mut *tx)
                 .await?;
@@ -124,8 +118,8 @@ impl AdminService {
                 return Err(ApiError::legacy("该组已被节点所使用，无法删除"));
             }
         }
-        let plan_used: Option<i64> =
-            sqlx::query_scalar("SELECT id FROM v2_plan WHERE group_id = ? LIMIT 1 FOR SHARE")
+        let plan_used: Option<i32> =
+            sqlx::query_scalar("SELECT id FROM v2_plan WHERE group_id = $1 LIMIT 1 FOR SHARE")
                 .bind(id)
                 .fetch_optional(&mut *tx)
                 .await?;
@@ -133,14 +127,14 @@ impl AdminService {
             return Err(ApiError::legacy("该组已被订阅所使用，无法删除"));
         }
         let user_used: Option<i64> =
-            sqlx::query_scalar("SELECT id FROM v2_user WHERE group_id = ? LIMIT 1 FOR SHARE")
+            sqlx::query_scalar("SELECT id FROM v2_user WHERE group_id = $1 LIMIT 1 FOR SHARE")
                 .bind(id)
                 .fetch_optional(&mut *tx)
                 .await?;
         if user_used.is_some() {
             return Err(ApiError::legacy("该组已被用户所使用，无法删除"));
         }
-        let deleted = sqlx::query("DELETE FROM v2_server_group WHERE id = ?")
+        let deleted = sqlx::query("DELETE FROM v2_server_group WHERE id = $1")
             .bind(id)
             .execute(&mut *tx)
             .await?;
@@ -157,7 +151,7 @@ impl AdminService {
         let mut group_ids = Vec::new();
         for (_, table) in SERVER_TABLES {
             let rows: Vec<String> =
-                sqlx::query_scalar(AssertSqlSafe(format!("SELECT group_id FROM {table}")))
+                sqlx::query_scalar(AssertSqlSafe(format!("SELECT group_id::text FROM {table}")))
                     .fetch_all(&self.db)
                     .await?;
             group_ids.extend(rows);
@@ -176,11 +170,11 @@ impl AdminService {
             let group = fetch_json_one(
                 &self.db,
                 r#"
-                SELECT JSON_OBJECT(
+                SELECT jsonb_build_object(
                     'id', id, 'name', name, 'created_at', created_at, 'updated_at', updated_at
                 )
                 FROM v2_server_group
-                WHERE id = ?
+                WHERE id = $1
                 LIMIT 1
                 "#,
                 group_id,
@@ -195,7 +189,7 @@ impl AdminService {
         let mut groups = fetch_json_list(
             &self.db,
             r#"
-            SELECT JSON_OBJECT(
+            SELECT jsonb_build_object(
                 'id', id, 'name', name, 'created_at', created_at, 'updated_at', updated_at,
                 'user_count', (SELECT COUNT(*) FROM v2_user WHERE group_id = v2_server_group.id),
                 'server_count', 0
@@ -226,7 +220,7 @@ impl AdminService {
     ) -> Result<AdminOutput, ApiError> {
         let now = Utc::now().timestamp();
         if let Some(id) = optional_i64(params, "id") {
-            sqlx::query("UPDATE v2_server_group SET name = ?, updated_at = ? WHERE id = ?")
+            sqlx::query("UPDATE v2_server_group SET name = $1, updated_at = $2 WHERE id = $3")
                 .bind(required_string(params, "name")?)
                 .bind(now)
                 .bind(id)
@@ -234,7 +228,7 @@ impl AdminService {
                 .await?;
         } else {
             sqlx::query(
-                "INSERT INTO v2_server_group (name, created_at, updated_at) VALUES (?, ?, ?)",
+                "INSERT INTO v2_server_group (name, created_at, updated_at) VALUES ($1, $2, $3)",
             )
             .bind(required_string(params, "name")?)
             .bind(now)
@@ -250,8 +244,8 @@ impl AdminService {
             fetch_json_list(
                 &self.db,
                 r#"
-            SELECT JSON_OBJECT(
-                'id', id, 'remarks', remarks, 'match', CAST(`match` AS JSON),
+            SELECT jsonb_build_object(
+                'id', id, 'remarks', remarks, 'match', CAST("match" AS JSONB),
                 'action', action, 'action_value', action_value,
                 'created_at', created_at, 'updated_at', updated_at
             )
@@ -275,34 +269,35 @@ impl AdminService {
         // else array_filter()s out empty match entries before json_encode.
         let action = required_string(params, "action")?;
         let matches = if action == "default_out" {
-            "[]".to_string()
+            Value::Array(Vec::new())
         } else {
             let filtered = route_match_values(params)
                 .into_iter()
                 .filter(|value| !php_falsy(value))
                 .collect::<Vec<_>>();
-            json_string(&Value::Array(filtered))
+            Value::Array(filtered)
         };
+        let action_value = optional_string(params, "action_value").map(Value::String);
         if let Some(id) = optional_i64(params, "id") {
             sqlx::query(
-                "UPDATE v2_server_route SET remarks = ?, `match` = ?, action = ?, action_value = ?, updated_at = ? WHERE id = ?",
+                "UPDATE v2_server_route SET remarks = $1, \"match\" = $2, action = $3, action_value = $4, updated_at = $5 WHERE id = $6",
             )
             .bind(required_string(params, "remarks")?)
-            .bind(matches)
+            .bind(Json(matches))
             .bind(&action)
-            .bind(optional_string(params, "action_value"))
+            .bind(action_value.clone().map(Json))
             .bind(now)
             .bind(id)
             .execute(&self.db)
             .await?;
         } else {
             sqlx::query(
-                "INSERT INTO v2_server_route (remarks, `match`, action, action_value, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO v2_server_route (remarks, \"match\", action, action_value, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)",
             )
             .bind(required_string(params, "remarks")?)
-            .bind(matches)
+            .bind(Json(matches))
             .bind(&action)
-            .bind(optional_string(params, "action_value"))
+            .bind(action_value.map(Json))
             .bind(now)
             .bind(now)
             .execute(&self.db)
@@ -461,17 +456,17 @@ impl AdminService {
         let mut tx = self.db.begin().await?;
         lock_server_groups(&mut tx, &group_ids).await?;
         let node_id = if let Some(id) = optional_i64(params, "id") {
-            let mut builder = QueryBuilder::<MySql>::new(format!("UPDATE {table} SET "));
+            let mut builder = QueryBuilder::<Postgres>::new(format!("UPDATE {table} SET "));
             let mut first = true;
             for (column, value) in &values {
                 if !first {
                     builder.push(", ");
                 }
                 first = false;
-                builder.push(format!("`{column}` = "));
-                push_admin_sql_bind(&mut builder, value);
+                builder.push(format!("\"{column}\" = "));
+                push_admin_sql_bind(&mut builder, column, value);
             }
-            builder.push(", `updated_at` = ");
+            builder.push(", \"updated_at\" = ");
             builder.push_bind(now);
             builder.push(" WHERE id = ");
             builder.push_bind(id);
@@ -481,40 +476,42 @@ impl AdminService {
             }
             i32::try_from(id).map_err(|_| ApiError::legacy("服务器不存在"))?
         } else {
-            let mut builder = QueryBuilder::<MySql>::new(format!("INSERT INTO {table} ("));
+            let mut builder = QueryBuilder::<Postgres>::new(format!("INSERT INTO {table} ("));
             let mut columns = builder.separated(", ");
             for (column, _) in &values {
-                columns.push(format!("`{column}`"));
+                columns.push(format!("\"{column}\""));
             }
-            columns.push("`created_at`");
-            columns.push("`updated_at`");
+            columns.push("\"created_at\"");
+            columns.push("\"updated_at\"");
             builder.push(") VALUES (");
             let mut placeholders = builder.separated(", ");
-            for (_, value) in &values {
-                push_admin_sql_value(&mut placeholders, value);
+            for (column, value) in &values {
+                push_admin_sql_value(&mut placeholders, column, value);
             }
             placeholders.push_bind(now);
             placeholders.push_bind(now);
-            builder.push(")");
-            let result = builder.build().execute(&mut *tx).await?;
-            i32::try_from(result.last_insert_id())
-                .map_err(|_| ApiError::internal("server id exceeds the supported range"))?
+            builder.push(") RETURNING id");
+            builder
+                .build_query_scalar::<i32>()
+                .fetch_one(&mut *tx)
+                .await?
         };
         sqlx::query(
             r#"
             INSERT INTO v2_server_credential
                 (node_type, node_id, credential_epoch, updated_at)
-            VALUES (?, ?, 0, ?)
-            ON DUPLICATE KEY UPDATE
-                credential_epoch = IF(?, credential_epoch + 1, credential_epoch),
-                updated_at = ?
+            VALUES ($1, $2, 0, $3)
+            ON CONFLICT (node_type, node_id) DO UPDATE SET
+                credential_epoch = CASE WHEN $4
+                    THEN v2_server_credential.credential_epoch + 1
+                    ELSE v2_server_credential.credential_epoch END,
+                updated_at = EXCLUDED.updated_at
             "#,
         )
         .bind(kind)
         .bind(node_id)
         .bind(now)
         .bind(rotate_credential)
-        .bind(now)
         .execute(&mut *tx)
         .await?;
         tx.commit().await?;
@@ -531,50 +528,53 @@ impl AdminService {
         let id = required_i64(params, "id")?;
         let columns = server_copy_columns(kind)?;
         let source_group_ids: Option<String> = sqlx::query_scalar(AssertSqlSafe(format!(
-            "SELECT group_id FROM {table} WHERE id = ? LIMIT 1"
+            "SELECT group_id::text FROM {table} WHERE id = $1 LIMIT 1"
         )))
         .bind(id)
         .fetch_optional(&self.db)
         .await?;
         let source_group_ids = source_group_ids.ok_or_else(|| ApiError::legacy("服务器不存在"))?;
         let group_ids = parse_server_group_ids(&source_group_ids)?;
-        let mut builder = QueryBuilder::<MySql>::new(format!("INSERT INTO {table} ("));
+        let mut builder = QueryBuilder::<Postgres>::new(format!("INSERT INTO {table} ("));
         let mut insert_columns = builder.separated(", ");
         for column in columns {
-            insert_columns.push(format!("`{column}`"));
+            insert_columns.push(format!("\"{column}\""));
         }
-        insert_columns.push("`created_at`");
-        insert_columns.push("`updated_at`");
+        insert_columns.push("\"created_at\"");
+        insert_columns.push("\"updated_at\"");
         builder.push(") SELECT ");
         let mut select_columns = builder.separated(", ");
         for column in columns {
             if *column == "show" {
-                select_columns.push("0");
+                select_columns.push("0::SMALLINT");
             } else {
-                select_columns.push(format!("`{column}`"));
+                select_columns.push(format!("\"{column}\""));
             }
         }
         // Laravel's copy replicates the row via create($server->toArray()): because
         // created_at/updated_at are fillable (guarded = ['id']) they are set from the
         // source row, so updateTimestamps() leaves them untouched. Preserve the
         // original timestamps rather than stamping now().
-        select_columns.push("`created_at`");
-        select_columns.push("`updated_at`");
+        select_columns.push("\"created_at\"");
+        select_columns.push("\"updated_at\"");
         builder.push(format!(" FROM {table} WHERE id = "));
         builder.push_bind(id);
         builder.push(" AND group_id = ");
-        builder.push_bind(&source_group_ids);
+        builder.push_bind(Json(
+            serde_json::from_str::<Value>(&source_group_ids)
+                .map_err(|_| ApiError::internal("stored server group_id is invalid"))?,
+        ));
+        builder.push(" RETURNING id");
         let mut tx = self.db.begin().await?;
         lock_server_groups(&mut tx, &group_ids).await?;
-        let result = builder.build().execute(&mut *tx).await?;
-        if result.rows_affected() == 0 {
-            return Err(ApiError::legacy("服务器不存在"));
-        }
-        let node_id = i32::try_from(result.last_insert_id())
-            .map_err(|_| ApiError::internal("server id exceeds the supported range"))?;
+        let node_id = builder
+            .build_query_scalar::<i32>()
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or_else(|| ApiError::legacy("服务器不存在"))?;
         sqlx::query(
             "INSERT INTO v2_server_credential \
-             (node_type, node_id, credential_epoch, updated_at) VALUES (?, ?, 0, ?)",
+             (node_type, node_id, credential_epoch, updated_at) VALUES ($1, $2, 0, $3)",
         )
         .bind(kind)
         .bind(node_id)
@@ -599,7 +599,7 @@ impl AdminService {
             };
             if let (Ok(id), Ok(sort)) = (id.parse::<i64>(), value.parse::<i64>()) {
                 sqlx::query(AssertSqlSafe(format!(
-                    "UPDATE {table} SET sort = ? WHERE id = ?"
+                    "UPDATE {table} SET sort = CAST($1::BIGINT AS INTEGER) WHERE id = $2::BIGINT"
                 )))
                 .bind(sort)
                 .bind(id)
@@ -631,7 +631,7 @@ mod tests {
         let source = include_str!("servers.rs");
         assert!(source.contains("lock_server_groups(&mut tx, &group_ids)"));
         assert!(source.contains("for (_, table) in SERVER_TABLES"));
-        assert!(source.contains("JSON_CONTAINS(group_id, ?)"));
+        assert!(source.contains("group_id @> jsonb_build_array($1::bigint)"));
         assert!(source.contains("LIMIT 1 FOR SHARE"));
     }
 }

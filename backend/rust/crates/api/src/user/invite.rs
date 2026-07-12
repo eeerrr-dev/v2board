@@ -5,7 +5,6 @@ use axum::{
 };
 use chrono::Utc;
 use serde::Deserialize;
-use uuid::Uuid;
 use v2board_compat::{ApiError, LegacyEnvelope, legacy_data, legacy_page};
 
 use crate::{
@@ -22,12 +21,12 @@ pub(crate) struct TransferRequest {
 struct TransferUserRow {
     commission_balance: i32,
     balance: i32,
-    invite_user_id: Option<i32>,
+    invite_user_id: Option<i64>,
 }
 
 #[derive(sqlx::FromRow)]
 struct TransferInviterRow {
-    commission_type: i8,
+    commission_type: i16,
     commission_rate: Option<i32>,
 }
 
@@ -49,7 +48,7 @@ pub(crate) async fn user_transfer(
     let now = Utc::now().timestamp();
     let mut tx = state.db.begin().await?;
     let current = sqlx::query_as::<_, TransferUserRow>(
-        "SELECT commission_balance, balance, invite_user_id FROM v2_user WHERE id = ? LIMIT 1 FOR UPDATE",
+        "SELECT commission_balance, balance, invite_user_id FROM v2_user WHERE id = $1 LIMIT 1 FOR UPDATE",
     )
     .bind(user.id)
     .fetch_optional(&mut *tx)
@@ -61,7 +60,7 @@ pub(crate) async fn user_transfer(
         payload.transfer_amount,
     )?;
     sqlx::query(
-        "UPDATE v2_user SET commission_balance = ?, balance = ?, updated_at = ? WHERE id = ?",
+        "UPDATE v2_user SET commission_balance = $1, balance = $2, updated_at = $3 WHERE id = $4",
     )
     .bind(commission_balance)
     .bind(balance)
@@ -76,14 +75,14 @@ pub(crate) async fn user_transfer(
     let mut order_commission_balance = 0i32;
     if let Some(invite_user_id) = current.invite_user_id {
         let inviter = sqlx::query_as::<_, TransferInviterRow>(
-            "SELECT commission_type, commission_rate FROM v2_user WHERE id = ? LIMIT 1",
+            "SELECT commission_type, commission_rate FROM v2_user WHERE id = $1 LIMIT 1",
         )
         .bind(invite_user_id)
         .fetch_optional(&mut *tx)
         .await?;
         if let Some(inviter) = inviter {
             let has_valid_order: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM v2_order WHERE user_id = ? AND status NOT IN (0, 2)",
+                "SELECT COUNT(*) FROM v2_order WHERE user_id = $1 AND status NOT IN (0, 2)",
             )
             .bind(user.id)
             .fetch_one(&mut *tx)
@@ -108,14 +107,14 @@ pub(crate) async fn user_transfer(
         r#"
         INSERT INTO v2_order (
             user_id, invite_user_id, plan_id, period, trade_no, total_amount, surplus_amount,
-            type, status, callback_no, commission_status, commission_balance, created_at, updated_at
+            "type", status, callback_no, commission_status, commission_balance, created_at, updated_at
         )
-        VALUES (?, ?, 0, 'deposit', ?, 0, ?, 9, 3, '佣金划转 Commission transfer', 0, ?, ?, ?)
+        VALUES ($1, $2, 0, 'deposit', $3, 0, $4, 9, 3, '佣金划转 Commission transfer', 0, $5, $6, $7)
         "#,
     )
     .bind(user.id)
     .bind(current.invite_user_id)
-    .bind(generate_trade_no())
+    .bind(v2board_domain::order::generate_order_no())
     .bind(payload.transfer_amount)
     .bind(order_commission_balance)
     .bind(now)
@@ -258,12 +257,4 @@ fn parse_positive_page_value(
         ));
     }
     Ok(value)
-}
-
-fn generate_trade_no() -> String {
-    format!(
-        "{}{}",
-        Utc::now().format("%Y%m%d%H%M%S"),
-        Uuid::new_v4().simple()
-    )
 }

@@ -1,11 +1,16 @@
 # Canonical local workflow: native Rust API/workers plus the source React apps.
 # Dependency, cache, build, deploy, and runtime output stays in Docker volumes.
 
-x-rust-environment: &rust-environment
+x-local-logging: &local-logging
+  driver: local
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-rust-common-environment: &rust-common-environment
   APP_KEY: ${APP_KEY:-local-rust-dev-key}
   APP_URL: ${APP_URL:-http://localhost:8000}
-  DATABASE_URL: mysql://v2board:v2board@mysql:3306/v2board
-  REDIS_URL: redis://redis:6379/1
+  REDIS_URL: ${V2BOARD_LOCAL_REDIS_URL:-redis://redis:6379/1}
   RUST_BIND_ADDR: 0.0.0.0:8080
   V2BOARD_FRONTEND_ADMIN_PATH: ${V2BOARD_FRONTEND_ADMIN_PATH:-admin}
   V2BOARD_FRONTEND_DIR: /app/frontend-deploy
@@ -15,10 +20,23 @@ x-rust-environment: &rust-environment
   V2BOARD_DATABASE_IDLE_TIMEOUT_SECONDS: ${V2BOARD_DATABASE_IDLE_TIMEOUT_SECONDS:-600}
   V2BOARD_DATABASE_MAX_LIFETIME_SECONDS: ${V2BOARD_DATABASE_MAX_LIFETIME_SECONDS:-1800}
   V2BOARD_AUTH_SESSION_TTL_SECONDS: ${V2BOARD_AUTH_SESSION_TTL_SECONDS:-2592000}
-  V2BOARD_LEGACY_JWT_CUTOFF_UNIX: ${V2BOARD_LEGACY_JWT_CUTOFF_UNIX:-0}
   V2BOARD_ENV: local
   V2BOARD_RUNTIME_ROOT: /var/lib/v2board
   V2BOARD_SEED_LOCAL: ${V2BOARD_SEED_LOCAL:-1}
+
+x-rust-api-environment: &rust-api-environment
+  <<: *rust-common-environment
+  DATABASE_URL: ${V2BOARD_LOCAL_API_DATABASE_URL:-postgresql://v2board:v2board@postgres:5432/v2board}
+  V2BOARD_PEER_DATABASE_PRINCIPAL: v2board_worker
+
+x-rust-worker-environment: &rust-worker-environment
+  <<: *rust-common-environment
+  DATABASE_URL: ${V2BOARD_LOCAL_WORKER_DATABASE_URL:-postgresql://v2board:v2board@postgres:5432/v2board}
+  V2BOARD_PEER_DATABASE_PRINCIPAL: v2board_api
+  V2BOARD_CLICKHOUSE_URL: http://clickhouse:8123
+  V2BOARD_CLICKHOUSE_DATABASE: ${V2BOARD_LOCAL_CLICKHOUSE_DATABASE:-v2board_analytics}
+  V2BOARD_CLICKHOUSE_WRITER_USERNAME: v2board_analytics
+  V2BOARD_CLICKHOUSE_WRITER_PASSWORD: v2board
 
 x-rust-volumes: &rust-volumes
   - ./backend/rust:/src/backend/rust:ro
@@ -74,6 +92,7 @@ x-reference-frontend-volumes: &reference-frontend-volumes
 
 services:
   frontend-build:
+    logging: *local-logging
     build:
       context: .
       dockerfile: Dockerfile.frontend
@@ -105,6 +124,7 @@ services:
     restart: "no"
 
   rust-migrate:
+    logging: *local-logging
     build:
       context: .
       dockerfile: Dockerfile.rust
@@ -113,14 +133,37 @@ services:
     init: true
     working_dir: /src/backend/rust
     command: cargo run --locked -p v2board-api -- migrate
-    environment: *rust-environment
+    environment: *rust-api-environment
     depends_on:
-      mysql:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    volumes: *rust-volumes
+
+  clickhouse-migrate:
+    logging: *local-logging
+    build:
+      context: .
+      dockerfile: Dockerfile.rust
+      target: development
+    image: v2board-rust-dev
+    init: true
+    working_dir: /src/backend/rust
+    command: cargo run --locked -p v2board-analytics --bin v2board-analytics-schema
+    environment:
+      V2BOARD_ENV: local
+      V2BOARD_CLICKHOUSE_SCHEMA_URL: http://clickhouse:8123
+      V2BOARD_CLICKHOUSE_SCHEMA_DATABASE: ${V2BOARD_LOCAL_CLICKHOUSE_DATABASE:-v2board_analytics}
+      V2BOARD_CLICKHOUSE_SCHEMA_USERNAME: v2board_analytics
+      V2BOARD_CLICKHOUSE_SCHEMA_PASSWORD: v2board
+    depends_on:
+      clickhouse:
         condition: service_healthy
     restart: "no"
     volumes: *rust-volumes
 
   rust-api:
+    logging: *local-logging
     build:
       context: .
       dockerfile: Dockerfile.rust
@@ -130,12 +173,12 @@ services:
     working_dir: /src/backend/rust
     command: cargo run --locked -p v2board-api
     environment:
-      <<: *rust-environment
+      <<: *rust-api-environment
       RUST_LOG: ${RUST_LOG:-v2board_api=info,tower_http=info}
     depends_on:
       frontend-build:
         condition: service_completed_successfully
-      mysql:
+      postgres:
         condition: service_healthy
       rust-migrate:
         condition: service_completed_successfully
@@ -148,7 +191,7 @@ services:
       start_period: 180s
       retries: 24
     ports:
-      - "8000:8080"
+      - "${RUST_API_PORT:-8000}:8080"
     volumes:
       - ./backend/rust:/src/backend/rust:ro
       - rust-cargo-registry:/usr/local/cargo/registry
@@ -158,6 +201,7 @@ services:
       - frontend-deploy:/app/frontend-deploy:ro
 
   rust-worker:
+    logging: *local-logging
     build:
       context: .
       dockerfile: Dockerfile.rust
@@ -167,7 +211,7 @@ services:
     working_dir: /src/backend/rust
     command: cargo run --locked -p v2board-workers
     environment:
-      <<: *rust-environment
+      <<: *rust-worker-environment
       RUST_LOG: ${RUST_WORKER_LOG:-v2board_workers=info}
       V2BOARD_WORKER_HEALTH_FILE: /tmp/v2board-worker-health
       V2BOARD_WORKER_HEALTH_MAX_AGE_SECONDS: "30"
@@ -189,6 +233,7 @@ services:
     volumes: *rust-volumes
 
   frontend:
+    logging: *local-logging
     image: v2board-frontend-dev
     init: true
     working_dir: /app/frontend
@@ -215,6 +260,7 @@ services:
     volumes: *frontend-dev-volumes
 
   reference-oracle:
+    logging: *local-logging
     profiles: ["reference"]
     image: v2board-frontend-dev
     init: true
@@ -242,31 +288,50 @@ services:
       - "8001:8001"
     volumes: *reference-frontend-volumes
 
-  mysql:
-    image: mysql:8.4.10@sha256:c831a0f11348d402b43d77453e17d770be2eef356615a2823fe0f5a0d6c8b9af
-    command:
-      - --character-set-server=utf8mb4
-      - --collation-server=utf8mb4_unicode_ci
-      # Local migrations run as the scoped application user. MySQL 8.4 enables
-      # binary logging by default and otherwise requires SUPER to create the
-      # rolling-deploy compatibility trigger in migration 0043.
-      - --log-bin-trust-function-creators=1
+  postgres:
+    logging: *local-logging
+    image: postgres:18.4-bookworm@sha256:d9c83446333daec3f0588cc709adb80c26090b7f9f0f7ec8d43c243385d79818
     environment:
-      MYSQL_DATABASE: v2board
-      MYSQL_USER: v2board
-      MYSQL_PASSWORD: v2board
-      MYSQL_ROOT_PASSWORD: v2board
+      POSTGRES_DB: v2board
+      POSTGRES_USER: v2board
+      POSTGRES_PASSWORD: v2board
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=C.UTF-8
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-pv2board"]
+      test: ["CMD-SHELL", "pg_isready -U v2board -d v2board"]
       interval: 5s
       timeout: 5s
       retries: 30
     ports:
-      - "3306:3306"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - mysql-data:/var/lib/mysql
+      # PostgreSQL 18 deliberately mounts the parent so a future pg_upgrade
+      # can keep versioned data directories side by side.
+      - postgres-data:/var/lib/postgresql
+
+  clickhouse:
+    logging: *local-logging
+    image: clickhouse/clickhouse-server:26.3.17.4@sha256:85c434814ac8905e5648027ce926f74ab067edd6aadbccb6c0c165cd3571ea49
+    environment:
+      CLICKHOUSE_DB: v2board_analytics
+      CLICKHOUSE_USER: v2board_analytics
+      CLICKHOUSE_PASSWORD: v2board
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - clickhouse-client --user v2board_analytics --password v2board --query 'SELECT 1'
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    ports:
+      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"
+      - "${CLICKHOUSE_NATIVE_PORT:-9000}:9000"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - clickhouse-logs:/var/log/clickhouse-server
 
   redis:
+    logging: *local-logging
     image: redis:8.8.0-alpine@sha256:9d317178eceac8454a2284a9e6df2466b93c745529947f0cd42a0fa9609d7005
     command:
       - redis-server
@@ -280,11 +345,12 @@ services:
       timeout: 5s
       retries: 30
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis-data:/data
 
   mailpit:
+    logging: *local-logging
     image: axllent/mailpit:v1.30.3@sha256:956d688cbd13dca36c72d8e94c34d6d1cdf4a005aa6aa4ff6edaaac56c34d8df
     environment:
       MP_SMTP_AUTH_ACCEPT_ANY: "true"
@@ -306,7 +372,9 @@ volumes:
   frontend-config-node_modules:
   frontend-i18n-node_modules:
   frontend-types-node_modules:
-  mysql-data:
+  postgres-data:
+  clickhouse-data:
+  clickhouse-logs:
   redis-data:
   rust-cargo-registry:
   rust-cargo-git:

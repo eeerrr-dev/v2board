@@ -1,6 +1,6 @@
-.PHONY: up down reset sync logs ps shell doctor mysql-auth-upgrade \
+.PHONY: up down reset sync logs ps shell doctor \
 	rust-check rust-test rust-integration rust-route-audit rust-worker-reconcile rust-target-gate \
-	public-bundle-audit runtime-isolation-audit frontend-source-audit parity-config-audit ui-sync-audit \
+	public-bundle-audit runtime-isolation-audit native-database-audit native-release-audit frontend-source-audit parity-config-audit ui-sync-audit \
 	deploy-smoke visual-smoke interaction-parity accessibility-smoke behavior-parity \
 	reference-oracle-check reference-oracle-up reference-oracle-down \
 	clean-frontend-runs clean-host clean-host-apply mailpit-ui admin-url
@@ -63,38 +63,7 @@ up:
 	@echo "  admin dev http://localhost:5174/$(ADMIN_PATH)"
 	@echo "  mail      http://localhost:8025"
 	@echo ""
-	@echo "Production-shaped pages and APIs are served by Rust on :8000."
-
-# One-time local-volume bridge for repositories upgraded from MySQL 8.0. The
-# normal Compose service never enables mysql_native_password; this isolated
-# maintenance container exists only long enough to convert the known local
-# accounts, then is removed before MySQL restarts normally.
-mysql-auth-upgrade:
-	@set -eu; \
-	volume="$(COMPOSE_PROJECT)_mysql-data"; \
-	name="$(COMPOSE_PROJECT)-mysql-auth-upgrade"; \
-	docker volume inspect "$$volume" >/dev/null; \
-	$(DCF) stop rust-api rust-worker mysql >/dev/null 2>&1 || true; \
-	docker rm -f "$$name" >/dev/null 2>&1 || true; \
-	docker run -d --rm --name "$$name" \
-		-v "$$volume:/var/lib/mysql" \
-		mysql:8.4.10@sha256:c831a0f11348d402b43d77453e17d770be2eef356615a2823fe0f5a0d6c8b9af \
-		--mysql-native-password=ON --skip-networking >/dev/null; \
-	trap 'docker stop "$$name" >/dev/null 2>&1 || true' EXIT INT TERM; \
-	ready=0; attempts=0; \
-	while [ "$$attempts" -lt 60 ]; do \
-		if docker exec "$$name" mysqladmin ping -uroot -pv2board --silent >/dev/null 2>&1; then ready=1; break; fi; \
-		attempts=$$((attempts + 1)); sleep 1; \
-	done; \
-	[ "$$ready" -eq 1 ] || { echo "MySQL authentication migration did not become ready"; exit 1; }; \
-	docker exec "$$name" mysql -uroot -pv2board --execute \
-		"ALTER USER IF EXISTS 'root'@'localhost' IDENTIFIED WITH caching_sha2_password BY 'v2board'; \
-		 ALTER USER IF EXISTS 'root'@'%' IDENTIFIED WITH caching_sha2_password BY 'v2board'; \
-		 ALTER USER IF EXISTS 'v2board'@'%' IDENTIFIED WITH caching_sha2_password BY 'v2board';"; \
-	docker stop "$$name" >/dev/null; \
-	trap - EXIT INT TERM; \
-	$(DCF) up -d mysql redis; \
-	echo "Local MySQL accounts now use caching_sha2_password; mysql_native_password is disabled."
+	@echo "Native-runtime-shaped local pages and APIs are served by Rust on :8000."
 
 down:
 	$(DCF) down --remove-orphans
@@ -128,6 +97,8 @@ doctor:
 	@$(DCF) config --quiet
 	$(MAKE) --no-print-directory public-bundle-audit
 	$(MAKE) --no-print-directory runtime-isolation-audit
+	$(MAKE) --no-print-directory native-database-audit
+	$(MAKE) --no-print-directory native-release-audit
 	$(MAKE) --no-print-directory frontend-source-audit
 	$(MAKE) --no-print-directory parity-config-audit
 	$(MAKE) --no-print-directory ui-sync-audit
@@ -145,12 +116,27 @@ rust-test:
 
 rust-integration:
 	$(DCF) build rust-api
-	$(DCF) up -d --wait mysql redis
+	$(DCF) up -d --wait postgres clickhouse redis
+	$(DCF) exec -T postgres dropdb --force --if-exists -U v2board v2board_analytics_test
+	$(DCF) exec -T postgres createdb -U v2board v2board_analytics_test
+	$(DCF) exec -T clickhouse clickhouse-client --user v2board_analytics --password v2board \
+		--query 'DROP DATABASE IF EXISTS v2board_analytics_test SYNC'
+	$(DCF) exec -T clickhouse clickhouse-client --user v2board_analytics --password v2board \
+		--query 'CREATE DATABASE v2board_analytics_test'
 	$(DCF) run --rm -T --no-deps --entrypoint bash \
-		-e RUST_INTEGRATION_DATABASE_ROOT_URL=mysql://root:v2board@mysql:3306/mysql \
+		-e RUST_INTEGRATION_DATABASE_ROOT_URL=postgresql://v2board:v2board@postgres:5432/postgres \
+		-e RUST_INTEGRATION_DATABASE_URL=postgresql://v2board:v2board@postgres:5432/v2board_analytics_test \
+		-e RUST_INTEGRATION_CLICKHOUSE_URL=http://clickhouse:8123 \
+		-e RUST_INTEGRATION_CLICKHOUSE_DATABASE=v2board_analytics_test \
+		-e RUST_INTEGRATION_CLICKHOUSE_USERNAME=v2board_analytics \
+		-e RUST_INTEGRATION_CLICKHOUSE_PASSWORD=v2board \
 		-e RUST_INTEGRATION_REDIS_URL=redis://redis:6379/15 \
 		rust-api -lc \
-		'. /usr/local/cargo/env; cargo build --locked -p v2board-workers && cargo run --locked -p v2board-contract -- production-invariants'
+		'set -eu; . /usr/local/cargo/env; \
+		 cargo test --locked -p v2board-analytics --test clickhouse_roundtrip; \
+		 cargo test --locked -p v2board-analytics --test outbox_roundtrip; \
+		 cargo build --locked -p v2board-workers; \
+		 cargo run --locked -p v2board-contract -- production-invariants'
 
 rust-route-audit:
 	$(DCF) build rust-api
@@ -160,7 +146,7 @@ rust-route-audit:
 		rust-api -lc '. /usr/local/cargo/env; cargo run --locked -p v2board-contract -- route-audit'
 
 rust-worker-reconcile:
-	$(DCF) up -d --build mysql redis rust-api rust-worker
+	$(DCF) up -d --build postgres clickhouse redis clickhouse-migrate rust-api rust-worker
 	@sleep $(RUST_WORKER_RECONCILE_WAIT_SECONDS)
 	$(DCF) exec -T rust-api cargo run --locked -p v2board-workers -- run-once statistics
 	$(DCF) exec -T \
@@ -171,7 +157,7 @@ rust-target-gate: rust-check rust-test rust-integration rust-route-audit rust-wo
 	@echo "Rust API, worker, route, and reconciliation gates passed."
 
 public-bundle-audit:
-	@paths='backend/rust/target frontend/dist frontend/dist-deploy frontend/.cache frontend/coverage frontend/apps/user/dist frontend/apps/admin/dist public/theme/default public/assets/admin'; \
+	@paths='backend/rust/target frontend/dist frontend/dist-deploy frontend/.cache frontend/coverage frontend/apps/user/dist frontend/apps/admin/dist public/theme/default public/assets/admin native-release lifecycle-tool v2board-native-linux-amd64.tar.gz v2board-native-linux-amd64.tar.gz.sha256'; \
 	found=0; \
 	for path in $$paths; do \
 		if [ -e "$$path" ]; then echo "Host-generated deploy/build output found: $$path"; found=1; fi; \
@@ -186,7 +172,68 @@ runtime-isolation-audit:
 		Dockerfile.rust Dockerfile.frontend docker-compose.local.yml .github .devcontainer \
 		--glob '!**/references/**' || true)"; \
 	if [ -n "$$matches" ]; then echo "$$matches"; exit 1; fi
-	@echo "Production workflow has no Laravel or packaged-frontend runtime dependency."
+	@$(DCF) config --format json | jq -e \
+		'.services | all(.[]; .logging.driver == "local" and .logging.options["max-size"] == "10m" and .logging.options["max-file"] == "3")' \
+		>/dev/null || { echo "Every local Compose service must use bounded local logging (10m x 3)."; exit 1; }
+	@echo "Production workflow has no retired runtime dependency; local service logs are bounded."
+
+native-database-audit:
+	@matches="$$(rg -n \
+		'\b(MySql|MySqlPool|MySqlConnection)\b|connect_mysql|migrate_mysql|ON DUPLICATE KEY|INSERT IGNORE|GET_LOCK\(|RELEASE_LOCK\(' \
+		backend/rust/crates/api backend/rust/crates/analytics backend/rust/crates/compat backend/rust/crates/config \
+		backend/rust/crates/contract backend/rust/crates/db backend/rust/crates/domain \
+		backend/rust/crates/workers \
+		--glob '*.rs' || true)"; \
+	if [ -n "$$matches" ]; then echo "$$matches"; exit 1; fi
+	@matches="$$(rg -n \
+		'features[[:space:]]*=[[:space:]]*\[[^]]*"mysql"|v2board-provision|v2board-lifecycle' \
+		backend/rust/crates/api/Cargo.toml backend/rust/crates/analytics/Cargo.toml backend/rust/crates/db/Cargo.toml \
+		backend/rust/crates/domain/Cargo.toml backend/rust/crates/workers/Cargo.toml \
+		backend/rust/crates/contract/Cargo.toml || true)"; \
+	if [ -n "$$matches" ]; then echo "$$matches"; exit 1; fi
+	@$(DCF) build rust-api >/dev/null
+	@graph="$$( $(DCF) run --rm -T --no-deps --entrypoint bash rust-api -lc \
+		'. /usr/local/cargo/env; cargo tree --locked -e normal -p v2board-api -p v2board-workers -p v2board-analytics' \
+		)" || exit $$?; \
+	matches="$$(printf '%s\n' "$$graph" | rg 'sqlx-mysql|v2board-provision|v2board-lifecycle' || true)"; \
+	if [ -n "$$matches" ]; then echo "$$matches"; exit 1; fi
+	@graph="$$( $(DCF) run --rm -T --no-deps --entrypoint bash rust-api -lc \
+		'. /usr/local/cargo/env; cargo tree --locked -e normal -p v2board-lifecycle' \
+		)" || exit $$?; \
+	printf '%s\n' "$$graph" | rg -q 'v2board-provision'; \
+	printf '%s\n' "$$graph" | rg -q 'sqlx-mysql'
+	@test ! -d backend/rust/migrations || \
+		test -z "$$(find backend/rust/migrations -type f -print -quit)"
+	@rg -q 'migrations-postgres' backend/rust/crates/db/src/pool.rs
+	@echo "API/worker/schema graphs exclude MySQL; only the isolated lifecycle graph contains the adapter."
+
+native-release-audit:
+	@test -f deploy/systemd/v2board-api.service
+	@test -f deploy/systemd/v2board-worker.service
+	@rg -q '^FROM scratch AS lifecycle-tool$$' Dockerfile.rust
+	@rg -q '^COPY --from=lifecycle-builder /out/v2board-lifecycle /v2board-lifecycle$$' Dockerfile.rust
+	@rg -q '^FROM scratch AS native-release$$' Dockerfile.rust
+	@rg -q '^COPY --from=native-release-assembler /release/ /$$' Dockerfile.rust
+	@if rg -n '^FROM .* AS production(-api|-worker|-base|-lifecycle)?$$|^(HEALTHCHECK|ENTRYPOINT|CMD|VOLUME) ' Dockerfile.rust; then \
+		echo "Dockerfile.rust must export a filesystem payload, not a production runtime image."; exit 1; \
+	fi
+	@for unit in deploy/systemd/v2board-api.service deploy/systemd/v2board-worker.service; do \
+		rg -Fqx 'NoNewPrivileges=true' "$$unit"; \
+		rg -Fqx 'ProtectSystem=strict' "$$unit"; \
+		rg -Fqx 'ProtectHome=true' "$$unit"; \
+		rg -Fqx 'PrivateTmp=true' "$$unit"; \
+		rg -Fqx 'CapabilityBoundingSet=' "$$unit"; \
+	done
+	@rg -Fqx 'User=v2board-api' deploy/systemd/v2board-api.service
+	@rg -Fqx 'ReadWritePaths=/var/lib/v2board/api' deploy/systemd/v2board-api.service
+	@rg -Fqx 'User=v2board-worker' deploy/systemd/v2board-worker.service
+	@rg -Fqx 'Type=notify' deploy/systemd/v2board-worker.service
+	@rg -Fqx 'WatchdogSec=30s' deploy/systemd/v2board-worker.service
+	@rg -Fqx 'ReadWritePaths=/var/lib/v2board/worker' deploy/systemd/v2board-worker.service
+	@rg -q '^  native-release:$$' .github/workflows/native-ci.yml
+	@rg -q -- '--target native-release' .github/workflows/native-ci.yml
+	@rg -q -- '--output type=local,dest=native-release' .github/workflows/native-ci.yml
+	@echo "Bare-metal release export and hardened systemd unit contracts are present."
 
 frontend-source-audit:
 	$(DCF) build frontend-build
@@ -220,7 +267,7 @@ reference-oracle-down:
 	$(REFERENCE_DCF) rm -f reference-oracle >/dev/null 2>&1 || true
 
 deploy-smoke:
-	$(DCF) up -d --build --wait mysql redis rust-api
+	$(DCF) up -d --build --wait postgres clickhouse redis rust-api
 	$(FRONTEND_RUN) \
 		-e "DEPLOY_SMOKE_BASE_URL=$(SOURCE_BASE_URL)" \
 		-e "DEPLOY_SMOKE_ADMIN_PATH=$(ADMIN_PATH)" \

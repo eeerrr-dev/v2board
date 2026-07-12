@@ -36,6 +36,7 @@ impl AuthService {
         // Laravel uses the raw, original-case `$email` for the whitelist check, the
         // `User::where('email', ...)` existence probe and the `SendEmailJob` recipient, and
         // only `strtolower(trim($email))` for the EMAIL_VERIFY_CODE / LAST_SEND cache keys.
+        // The repository lookup remains case-insensitive like the legacy database collation.
         let email = input.email.trim();
         let cache_email = email.to_ascii_lowercase();
 

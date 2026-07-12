@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use chrono::Utc;
-use sqlx::{AssertSqlSafe, MySql, QueryBuilder};
+use sqlx::{AssertSqlSafe, Postgres, QueryBuilder};
 use v2board_compat::ApiError;
 use v2board_db::DbPool;
 
@@ -50,127 +50,157 @@ fn server_node_sql(node_type: &str) -> Option<&'static str> {
     match node_type {
         "shadowsocks" => Some(
             r#"
-            SELECT id, group_id, route_id, name, rate, host, CAST(port AS CHAR) AS port,
+            SELECT id, group_id::text AS group_id, route_id::text AS route_id,
+                   name, rate, host, CAST(port AS TEXT) AS port,
                    server_port, created_at,
-                   NULL AS listen_ip, NULL AS protocol, NULL AS version, NULL AS tls,
+                   NULL AS listen_ip, NULL AS protocol, NULL::INTEGER AS version,
+                   NULL::SMALLINT AS tls,
                    NULL AS tls_settings, NULL AS flow, NULL AS network, NULL AS network_settings,
-                   NULL AS encryption, NULL AS encryption_settings, NULL AS disable_sni,
-                   NULL AS udp_relay_mode, NULL AS zero_rtt_handshake, NULL AS congestion_control,
-                   cipher, obfs, obfs_settings, NULL AS obfs_password, NULL AS padding_scheme,
-                   NULL AS allow_insecure, NULL AS server_name, NULL AS up_mbps, NULL AS down_mbps
+                   NULL AS encryption, NULL AS encryption_settings,
+                   NULL::SMALLINT AS disable_sni,
+                   NULL AS udp_relay_mode, NULL::SMALLINT AS zero_rtt_handshake,
+                   NULL AS congestion_control,
+                   cipher, obfs, obfs_settings::text AS obfs_settings,
+                   NULL AS obfs_password, NULL AS padding_scheme,
+                   NULL::SMALLINT AS allow_insecure, NULL AS server_name,
+                   NULL::INTEGER AS up_mbps, NULL::INTEGER AS down_mbps
             FROM v2_server_shadowsocks
-            WHERE id = ?
+            WHERE id = $1
             LIMIT 1
             "#,
         ),
         "vmess" => Some(
             r#"
-            SELECT id, group_id, route_id, name, rate, host, CAST(port AS CHAR) AS port,
+            SELECT id, group_id::text AS group_id, route_id::text AS route_id,
+                   name, rate, host, CAST(port AS TEXT) AS port,
                    server_port, created_at,
-                   NULL AS listen_ip, NULL AS protocol, NULL AS version, tls,
-                   tlsSettings AS tls_settings, NULL AS flow, network,
-                   networkSettings AS network_settings, NULL AS encryption,
-                   NULL AS encryption_settings, NULL AS disable_sni, NULL AS udp_relay_mode,
-                   NULL AS zero_rtt_handshake, NULL AS congestion_control, NULL AS cipher,
+                   NULL AS listen_ip, NULL AS protocol, NULL::INTEGER AS version, tls,
+                   "tlsSettings"::text AS tls_settings, NULL AS flow, network,
+                   "networkSettings"::text AS network_settings, NULL AS encryption,
+                   NULL AS encryption_settings, NULL::SMALLINT AS disable_sni,
+                   NULL AS udp_relay_mode, NULL::SMALLINT AS zero_rtt_handshake,
+                   NULL AS congestion_control, NULL AS cipher,
                    NULL AS obfs, NULL AS obfs_settings, NULL AS obfs_password,
-                   NULL AS padding_scheme, NULL AS allow_insecure, NULL AS server_name,
-                   NULL AS up_mbps, NULL AS down_mbps
+                   NULL AS padding_scheme, NULL::SMALLINT AS allow_insecure, NULL AS server_name,
+                   NULL::INTEGER AS up_mbps, NULL::INTEGER AS down_mbps
             FROM v2_server_vmess
-            WHERE id = ?
+            WHERE id = $1
             LIMIT 1
             "#,
         ),
         "trojan" => Some(
             r#"
-            SELECT id, group_id, route_id, name, rate, host, CAST(port AS CHAR) AS port,
+            SELECT id, group_id::text AS group_id, route_id::text AS route_id,
+                   name, rate, host, CAST(port AS TEXT) AS port,
                    server_port, created_at,
-                   NULL AS listen_ip, NULL AS protocol, NULL AS version, NULL AS tls,
+                   NULL AS listen_ip, NULL AS protocol, NULL::INTEGER AS version,
+                   NULL::SMALLINT AS tls,
                    NULL AS tls_settings, NULL AS flow, network,
-                   network_settings, NULL AS encryption, NULL AS encryption_settings,
-                   NULL AS disable_sni, NULL AS udp_relay_mode, NULL AS zero_rtt_handshake,
+                   network_settings::text AS network_settings,
+                   NULL AS encryption, NULL AS encryption_settings,
+                   NULL::SMALLINT AS disable_sni, NULL AS udp_relay_mode,
+                   NULL::SMALLINT AS zero_rtt_handshake,
                    NULL AS congestion_control, NULL AS cipher, NULL AS obfs,
                    NULL AS obfs_settings, NULL AS obfs_password, NULL AS padding_scheme,
-                   allow_insecure, server_name, NULL AS up_mbps, NULL AS down_mbps
+                   allow_insecure, server_name,
+                   NULL::INTEGER AS up_mbps, NULL::INTEGER AS down_mbps
             FROM v2_server_trojan
-            WHERE id = ?
+            WHERE id = $1
             LIMIT 1
             "#,
         ),
         "vless" => Some(
             r#"
-            SELECT id, group_id, route_id, name, rate, host, CAST(port AS CHAR) AS port,
+            SELECT id, group_id::text AS group_id, route_id::text AS route_id,
+                   name, rate, host, CAST(port AS TEXT) AS port,
                    server_port, created_at,
-                   NULL AS listen_ip, NULL AS protocol, NULL AS version, tls,
-                   tls_settings, flow, network, network_settings, encryption,
-                   encryption_settings, NULL AS disable_sni, NULL AS udp_relay_mode,
-                   NULL AS zero_rtt_handshake, NULL AS congestion_control, NULL AS cipher,
+                   NULL AS listen_ip, NULL AS protocol, NULL::INTEGER AS version, tls,
+                   tls_settings::text AS tls_settings, flow, network,
+                   network_settings::text AS network_settings, encryption,
+                   encryption_settings::text AS encryption_settings,
+                   NULL::SMALLINT AS disable_sni, NULL AS udp_relay_mode,
+                   NULL::SMALLINT AS zero_rtt_handshake, NULL AS congestion_control,
+                   NULL AS cipher,
                    NULL AS obfs, NULL AS obfs_settings, NULL AS obfs_password,
-                   NULL AS padding_scheme, NULL AS allow_insecure, NULL AS server_name,
-                   NULL AS up_mbps, NULL AS down_mbps
+                   NULL AS padding_scheme, NULL::SMALLINT AS allow_insecure, NULL AS server_name,
+                   NULL::INTEGER AS up_mbps, NULL::INTEGER AS down_mbps
             FROM v2_server_vless
-            WHERE id = ?
+            WHERE id = $1
             LIMIT 1
             "#,
         ),
         "tuic" => Some(
             r#"
-            SELECT id, group_id, route_id, name, rate, host, CAST(port AS CHAR) AS port,
+            SELECT id, group_id::text AS group_id, route_id::text AS route_id,
+                   name, rate, host, CAST(port AS TEXT) AS port,
                    server_port, created_at,
-                   NULL AS listen_ip, NULL AS protocol, NULL AS version, NULL AS tls,
+                   NULL AS listen_ip, NULL AS protocol, NULL::INTEGER AS version,
+                   NULL::SMALLINT AS tls,
                    NULL AS tls_settings, NULL AS flow, NULL AS network, NULL AS network_settings,
                    NULL AS encryption, NULL AS encryption_settings, disable_sni,
                    udp_relay_mode, zero_rtt_handshake, congestion_control, NULL AS cipher,
                    NULL AS obfs, NULL AS obfs_settings, NULL AS obfs_password,
                    NULL AS padding_scheme, insecure AS allow_insecure, server_name,
-                   NULL AS up_mbps, NULL AS down_mbps
+                   NULL::INTEGER AS up_mbps, NULL::INTEGER AS down_mbps
             FROM v2_server_tuic
-            WHERE id = ?
+            WHERE id = $1
             LIMIT 1
             "#,
         ),
         "hysteria" => Some(
             r#"
-            SELECT id, group_id, route_id, name, rate, host, CAST(port AS CHAR) AS port,
+            SELECT id, group_id::text AS group_id, route_id::text AS route_id,
+                   name, rate, host, CAST(port AS TEXT) AS port,
                    server_port, created_at,
-                   NULL AS listen_ip, NULL AS protocol, version, NULL AS tls,
+                   NULL AS listen_ip, NULL AS protocol, version, NULL::SMALLINT AS tls,
                    NULL AS tls_settings, NULL AS flow, NULL AS network, NULL AS network_settings,
-                   NULL AS encryption, NULL AS encryption_settings, NULL AS disable_sni,
-                   NULL AS udp_relay_mode, NULL AS zero_rtt_handshake, NULL AS congestion_control,
+                   NULL AS encryption, NULL AS encryption_settings,
+                   NULL::SMALLINT AS disable_sni,
+                   NULL AS udp_relay_mode, NULL::SMALLINT AS zero_rtt_handshake,
+                   NULL AS congestion_control,
                    NULL AS cipher, obfs, NULL AS obfs_settings, obfs_password,
                    NULL AS padding_scheme, insecure AS allow_insecure, server_name,
                    up_mbps, down_mbps
             FROM v2_server_hysteria
-            WHERE id = ?
+            WHERE id = $1
             LIMIT 1
             "#,
         ),
         "anytls" => Some(
             r#"
-            SELECT id, group_id, route_id, name, rate, host, CAST(port AS CHAR) AS port,
+            SELECT id, group_id::text AS group_id, route_id::text AS route_id,
+                   name, rate, host, CAST(port AS TEXT) AS port,
                    server_port, created_at,
-                   NULL AS listen_ip, NULL AS protocol, NULL AS version, NULL AS tls,
+                   NULL AS listen_ip, NULL AS protocol, NULL::INTEGER AS version,
+                   NULL::SMALLINT AS tls,
                    NULL AS tls_settings, NULL AS flow, NULL AS network, NULL AS network_settings,
-                   NULL AS encryption, NULL AS encryption_settings, NULL AS disable_sni,
-                   NULL AS udp_relay_mode, NULL AS zero_rtt_handshake, NULL AS congestion_control,
+                   NULL AS encryption, NULL AS encryption_settings,
+                   NULL::SMALLINT AS disable_sni,
+                   NULL AS udp_relay_mode, NULL::SMALLINT AS zero_rtt_handshake,
+                   NULL AS congestion_control,
                    NULL AS cipher, NULL AS obfs, NULL AS obfs_settings, NULL AS obfs_password,
-                   padding_scheme, insecure AS allow_insecure, server_name,
-                   NULL AS up_mbps, NULL AS down_mbps
+                   padding_scheme::text AS padding_scheme, insecure AS allow_insecure, server_name,
+                   NULL::INTEGER AS up_mbps, NULL::INTEGER AS down_mbps
             FROM v2_server_anytls
-            WHERE id = ?
+            WHERE id = $1
             LIMIT 1
             "#,
         ),
         "v2node" => Some(
             r#"
-            SELECT id, group_id, route_id, name, rate, host, CAST(port AS CHAR) AS port,
-                   server_port, created_at, listen_ip, protocol, NULL AS version, tls,
-                   tls_settings, flow, network, network_settings, encryption,
-                   encryption_settings, disable_sni, udp_relay_mode, zero_rtt_handshake,
+            SELECT id, group_id::text AS group_id, route_id::text AS route_id,
+                   name, rate, host, CAST(port AS TEXT) AS port,
+                   server_port, created_at, listen_ip, protocol, NULL::INTEGER AS version, tls,
+                   tls_settings::text AS tls_settings, flow, network,
+                   network_settings::text AS network_settings, encryption,
+                   encryption_settings::text AS encryption_settings,
+                   disable_sni, udp_relay_mode, zero_rtt_handshake,
                    congestion_control, cipher, obfs, NULL AS obfs_settings, obfs_password,
-                   padding_scheme, NULL AS allow_insecure, NULL AS server_name,
+                   padding_scheme::text AS padding_scheme,
+                   NULL::SMALLINT AS allow_insecure, NULL AS server_name,
                    up_mbps, down_mbps
             FROM v2_server_v2node
-            WHERE id = ?
+            WHERE id = $1
             LIMIT 1
             "#,
         ),
@@ -185,7 +215,7 @@ pub(super) async fn server_available_users(
     if group_ids.is_empty() {
         return Ok(Vec::new());
     }
-    let mut builder = QueryBuilder::<MySql>::new(
+    let mut builder = QueryBuilder::<Postgres>::new(
         "SELECT id, uuid, speed_limit, device_limit FROM v2_user WHERE group_id IN (",
     );
     {

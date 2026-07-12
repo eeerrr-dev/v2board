@@ -1,8 +1,8 @@
 use chrono::Utc;
 use serde::Deserialize;
-use sqlx::{MySql, Transaction};
 use v2board_compat::ApiError;
 use v2board_config::duration_minutes_to_seconds;
+use v2board_db::DbTransaction;
 
 use super::validation::{validate_email, validate_password};
 use super::{AuthData, AuthService, cache_key, legacy_guid};
@@ -105,7 +105,7 @@ impl AuthService {
             // Do not next-key lock a missing email before the shared invite
             // row. Concurrent registrations for different addresses otherwise
             // hold compatible email gaps, then one waits on the invite while
-            // the invite holder waits for the other's insert intention (1213).
+            // the invite holder waits for the other's insert intention (a deadlock).
             // The unique email index is the authoritative race-free check; an
             // insert conflict rolls this transaction's invite consumption back.
             let invite_user_id = self
@@ -113,13 +113,14 @@ impl AuthService {
                 .await?;
             let trial = self.trial_plan(&mut tx).await?;
 
-            let result = sqlx::query(
+            let user_id = sqlx::query_scalar::<_, i64>(
                 r#"
                 INSERT INTO v2_user (
                     invite_user_id, email, password, uuid, token, transfer_enable, device_limit,
                     group_id, plan_id, speed_limit, expired_at, last_login_at, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                RETURNING id
                 "#,
             )
             .bind(invite_user_id)
@@ -136,7 +137,7 @@ impl AuthService {
             .bind(now)
             .bind(now)
             .bind(now)
-            .execute(&mut *tx)
+            .fetch_one(&mut *tx)
             .await
             .map_err(|error| {
                 if is_email_unique_violation(&error) {
@@ -145,7 +146,6 @@ impl AuthService {
                     ApiError::Database(error)
                 }
             })?;
-            let user_id = result.last_insert_id() as i64;
             tx.commit().await?;
             Ok(user_id)
         }
@@ -172,25 +172,29 @@ impl AuthService {
                     "Invalid invitation code",
                 ));
             }
-            sqlx::query("UPDATE v2_invite_code SET pv = pv + 1, updated_at = ? WHERE code = ?")
-                .bind(Utc::now().timestamp())
-                .bind(invite_code)
-                .execute(&self.db)
-                .await?;
+            sqlx::query(
+                "UPDATE v2_invite_code SET pv = pv + 1, updated_at = $1 \
+                 WHERE lower(code) = lower($2)",
+            )
+            .bind(Utc::now().timestamp())
+            .bind(invite_code)
+            .execute(&self.db)
+            .await?;
         }
         Ok(true)
     }
 
     async fn consume_invite_code(
         &self,
-        tx: &mut Transaction<'_, MySql>,
+        tx: &mut DbTransaction<'_>,
         invite_code: Option<&str>,
     ) -> Result<Option<i64>, ApiError> {
         let Some(code) = invite_code.map(str::trim).filter(|value| !value.is_empty()) else {
             return Ok(None);
         };
         let row = sqlx::query_as::<_, InviteCodeRow>(
-            "SELECT id, user_id FROM v2_invite_code WHERE code = ? AND status = 0 LIMIT 1 FOR UPDATE",
+            "SELECT id, user_id FROM v2_invite_code \
+             WHERE lower(code) = lower($1) AND status = 0 LIMIT 1 FOR UPDATE",
         )
         .bind(code)
         .fetch_optional(&mut **tx)
@@ -203,7 +207,7 @@ impl AuthService {
         };
         if !self.config.invite_never_expire {
             let result = sqlx::query(
-                "UPDATE v2_invite_code SET status = 1, updated_at = ? WHERE id = ? AND status = 0",
+                "UPDATE v2_invite_code SET status = 1, updated_at = $1 WHERE id = $2 AND status = 0",
             )
             .bind(Utc::now().timestamp())
             .bind(row.id)
@@ -266,7 +270,7 @@ impl AuthService {
         }
     }
 
-    async fn trial_plan(&self, tx: &mut Transaction<'_, MySql>) -> Result<TrialPlan, ApiError> {
+    async fn trial_plan(&self, tx: &mut DbTransaction<'_>) -> Result<TrialPlan, ApiError> {
         if self.config.try_out_plan_id <= 0 {
             return Ok(TrialPlan::default());
         }
@@ -274,7 +278,7 @@ impl AuthService {
             r#"
             SELECT id, group_id, transfer_enable, device_limit, speed_limit
             FROM v2_plan
-            WHERE id = ?
+            WHERE id = $1
             LIMIT 1
             "#,
         )
@@ -335,15 +339,16 @@ pub(super) fn validate_registration_auxiliary_inputs(
 fn is_email_unique_violation(error: &sqlx::Error) -> bool {
     error.as_database_error().is_some_and(|error| {
         error.is_unique_violation()
-            && (error.constraint() == Some("email")
-                || error.message().contains("v2_user.email")
-                || error.message().contains("for key 'email'"))
+            && matches!(
+                error.constraint(),
+                Some("uniq_user_email" | "uniq_user_email_canonical")
+            )
     })
 }
 
 #[derive(Debug, sqlx::FromRow)]
 struct InviteCodeRow {
-    id: i64,
+    id: i32,
     user_id: i64,
 }
 

@@ -6,9 +6,9 @@ const ORDER_CANDIDATE_PAGE_SIZE: i64 = 250;
 const ORDER_CANDIDATE_SQL: &str = r#"
 SELECT id, trade_no
 FROM v2_order
-WHERE status IN (0, 1) AND id > ?
+WHERE status IN (0, 1) AND id > $1
 ORDER BY id
-LIMIT ?
+LIMIT $2
 "#;
 
 pub(crate) async fn run(state: &WorkerState) -> anyhow::Result<()> {
@@ -52,9 +52,9 @@ mod tests {
 
     #[test]
     fn unfinished_orders_are_scanned_with_a_bounded_primary_key_cursor() {
-        assert!(ORDER_CANDIDATE_SQL.contains("id > ?"));
+        assert!(ORDER_CANDIDATE_SQL.contains("id > $1"));
         assert!(ORDER_CANDIDATE_SQL.contains("ORDER BY id"));
-        assert!(ORDER_CANDIDATE_SQL.contains("LIMIT ?"));
+        assert!(ORDER_CANDIDATE_SQL.contains("LIMIT $2"));
         assert_eq!(ORDER_CANDIDATE_PAGE_SIZE, 250);
     }
 }

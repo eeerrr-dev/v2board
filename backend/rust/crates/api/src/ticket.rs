@@ -36,7 +36,7 @@ fn validate_ticket_message(field: &str, message: &str) -> Result<(), ApiError> {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct TicketFetchQuery {
-    id: Option<i32>,
+    id: Option<i64>,
     auth_data: Option<String>,
 }
 
@@ -59,7 +59,7 @@ pub(crate) async fn ticket_fetch(
 #[derive(Debug, Deserialize)]
 pub(crate) struct TicketSaveRequest {
     subject: Option<String>,
-    level: Option<i8>,
+    level: Option<i16>,
     message: Option<String>,
 }
 
@@ -125,7 +125,7 @@ pub(crate) async fn ticket_save(
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct TicketReplyRequest {
-    id: Option<i32>,
+    id: Option<i64>,
     message: Option<String>,
 }
 
@@ -165,7 +165,7 @@ pub(crate) async fn ticket_reply(
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct IdRequest {
-    id: Option<i32>,
+    id: Option<i64>,
 }
 
 pub(crate) async fn ticket_close(

@@ -1,0 +1,294 @@
+use uuid::Uuid;
+use v2board_analytics::{
+    IdentityKind, ProjectionStatus, ReportedTrafficEvent, TrafficEventCore,
+    bind_clickhouse_installation, claim_delivery_batch, clickhouse_client, enqueue_event,
+    enqueue_events, mark_batch_published, migrate_clickhouse, project_or_verify_batch,
+    prune_published_outbox, quarantine_batch, release_batch_for_retry,
+};
+
+static POSTGRES_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations-postgres");
+
+#[tokio::test]
+async fn postgres_outbox_to_clickhouse_is_retryable_end_to_end() {
+    let (Ok(database_url), Ok(clickhouse_url)) = (
+        std::env::var("RUST_INTEGRATION_DATABASE_URL"),
+        std::env::var("RUST_INTEGRATION_CLICKHOUSE_URL"),
+    ) else {
+        return;
+    };
+    let pool = sqlx::PgPool::connect(&database_url).await.unwrap();
+    POSTGRES_MIGRATOR.run(&pool).await.unwrap();
+
+    let clickhouse_database = std::env::var("RUST_INTEGRATION_CLICKHOUSE_DATABASE")
+        .unwrap_or_else(|_| "v2board_analytics".into());
+    let clickhouse_username = std::env::var("RUST_INTEGRATION_CLICKHOUSE_USERNAME")
+        .unwrap_or_else(|_| "v2board_analytics".into());
+    let clickhouse_password = std::env::var("RUST_INTEGRATION_CLICKHOUSE_PASSWORD").ok();
+    let clickhouse = clickhouse_client(
+        &clickhouse_url,
+        &clickhouse_database,
+        &clickhouse_username,
+        clickhouse_password.as_deref(),
+    );
+    let now = chrono::Utc::now().timestamp();
+    migrate_clickhouse(&clickhouse, now).await.unwrap();
+    let installation_id = Uuid::parse_str("40aa4a80-eb4b-4b25-9c3b-e17ed047873d").unwrap();
+    bind_clickhouse_installation(&clickhouse, installation_id, now)
+        .await
+        .unwrap();
+
+    let report_key = v2board_analytics::deterministic_event_id(
+        "integration.report-key.v1",
+        &installation_id.to_string(),
+        &Uuid::new_v4().to_string(),
+        "1",
+    );
+    let event = ReportedTrafficEvent::new(TrafficEventCore {
+        installation_id: installation_id.to_string(),
+        report_key,
+        payload_hash: "b".repeat(64),
+        identity_kind: IdentityKind::Explicit,
+        user_id: "1".into(),
+        traffic_epoch: "1".into(),
+        server_id: "1".into(),
+        server_type: "integration".into(),
+        rate_text: "1.00".into(),
+        rate_decimal_10_2: "1.00".into(),
+        raw_u: "11".into(),
+        raw_d: "22".into(),
+        charged_u: "11".into(),
+        charged_d: "22".into(),
+        accepted_at: now,
+        accounting_date: chrono::Utc::now()
+            .with_timezone(&chrono::FixedOffset::east_opt(8 * 3600).unwrap())
+            .format("%Y-%m-%d")
+            .to_string(),
+        accounting_timezone: "Asia/Shanghai".into(),
+    })
+    .unwrap()
+    .into_outbox()
+    .unwrap();
+
+    let mut tx = pool.begin().await.unwrap();
+    enqueue_event(&mut tx, &event, now).await.unwrap();
+    tx.commit().await.unwrap();
+
+    let batch = claim_delivery_batch(&pool, Uuid::new_v4(), now, 300, 10_000)
+        .await
+        .unwrap()
+        .expect("the inserted event must be claimable");
+    assert_eq!(batch.rows.len(), 1);
+    assert_eq!(batch.rows[0].event, event);
+    assert_eq!(
+        project_or_verify_batch(&clickhouse, &batch, installation_id)
+            .await
+            .unwrap(),
+        ProjectionStatus::InsertedAndVerified
+    );
+    // Re-run before acknowledging PostgreSQL to model an ambiguous network ACK.
+    assert_eq!(
+        project_or_verify_batch(&clickhouse, &batch, installation_id)
+            .await
+            .unwrap(),
+        ProjectionStatus::AlreadyPresentAndVerified
+    );
+    mark_batch_published(&pool, &batch, now + 1).await.unwrap();
+
+    let published: Option<i64> =
+        sqlx::query_scalar("SELECT published_at FROM v2_analytics_outbox WHERE event_id = $1")
+            .bind(&event.event_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(published, Some(now + 1));
+
+    // Exact producer retry is accepted after publication; it cannot create a
+    // second outbox identity.
+    let mut tx = pool.begin().await.unwrap();
+    enqueue_event(&mut tx, &event, now + 2).await.unwrap();
+    tx.commit().await.unwrap();
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM v2_analytics_outbox WHERE event_id = $1")
+            .bind(&event.event_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(count, 1);
+
+    let mut retry_payload: ReportedTrafficEvent =
+        serde_json::from_value(event.payload.clone()).unwrap();
+    retry_payload.core.report_key = v2board_analytics::deterministic_event_id(
+        "integration.report-key.v1",
+        &installation_id.to_string(),
+        &Uuid::new_v4().to_string(),
+        "2",
+    );
+    retry_payload.core.user_id = "2".into();
+    let retry_event = ReportedTrafficEvent::new(retry_payload.core)
+        .unwrap()
+        .into_outbox()
+        .unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    enqueue_event(&mut tx, &retry_event, now + 3).await.unwrap();
+    tx.commit().await.unwrap();
+    let claimed = claim_delivery_batch(&pool, Uuid::new_v4(), now + 3, 300, 10_000)
+        .await
+        .unwrap()
+        .unwrap();
+    let unavailable = clickhouse_client(
+        "http://127.0.0.1:9",
+        &clickhouse_database,
+        &clickhouse_username,
+        clickhouse_password.as_deref(),
+    );
+    assert!(
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            project_or_verify_batch(&unavailable, &claimed, installation_id),
+        )
+        .await
+        .unwrap()
+        .is_err()
+    );
+    release_batch_for_retry(&pool, &claimed, "integration ClickHouse outage")
+        .await
+        .unwrap();
+    let reclaimed = claim_delivery_batch(&pool, Uuid::new_v4(), now + 4, 300, 10_000)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(reclaimed.batch_id, claimed.batch_id);
+    assert_eq!(reclaimed.content_sha256, claimed.content_sha256);
+    assert_eq!(reclaimed.rows, claimed.rows);
+    project_or_verify_batch(&clickhouse, &reclaimed, installation_id)
+        .await
+        .unwrap();
+    mark_batch_published(&pool, &reclaimed, now + 4)
+        .await
+        .unwrap();
+
+    // Retention is bounded and terminal-only. A strict cutoff keeps the
+    // boundary row, while pending and quarantined state can never match.
+    let old = derived_event(&event, "prune-old", 101);
+    let mut tx = pool.begin().await.unwrap();
+    enqueue_event(&mut tx, &old, now - 200).await.unwrap();
+    tx.commit().await.unwrap();
+    let old_batch = claim_delivery_batch(&pool, Uuid::new_v4(), now, 300, 10_000)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(old_batch.rows[0].event.event_id, old.event_id);
+    mark_batch_published(&pool, &old_batch, now - 100)
+        .await
+        .unwrap();
+
+    let boundary = derived_event(&event, "prune-boundary", 102);
+    let mut tx = pool.begin().await.unwrap();
+    enqueue_event(&mut tx, &boundary, now - 100).await.unwrap();
+    tx.commit().await.unwrap();
+    let boundary_batch = claim_delivery_batch(&pool, Uuid::new_v4(), now, 300, 10_000)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(boundary_batch.rows[0].event.event_id, boundary.event_id);
+    mark_batch_published(&pool, &boundary_batch, now - 50)
+        .await
+        .unwrap();
+
+    let quarantined = derived_event(&event, "prune-quarantined", 103);
+    let mut tx = pool.begin().await.unwrap();
+    enqueue_event(&mut tx, &quarantined, now - 200)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let quarantined_batch = claim_delivery_batch(&pool, Uuid::new_v4(), now, 300, 10_000)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        quarantined_batch.rows[0].event.event_id,
+        quarantined.event_id
+    );
+    quarantine_batch(
+        &pool,
+        &quarantined_batch,
+        now - 100,
+        "integration integrity quarantine",
+    )
+    .await
+    .unwrap();
+
+    let pending = derived_event(&event, "prune-pending", 104);
+    let mut tx = pool.begin().await.unwrap();
+    enqueue_event(&mut tx, &pending, now - 200).await.unwrap();
+    tx.commit().await.unwrap();
+
+    let pruned = prune_published_outbox(&pool, now - 50, 10_000)
+        .await
+        .unwrap();
+    assert_eq!(pruned.outbox_rows, 1);
+    assert_eq!(pruned.delivery_batches, 1);
+    for (event_id, expected) in [
+        (&old.event_id, 0_i64),
+        (&boundary.event_id, 1),
+        (&quarantined.event_id, 1),
+        (&pending.event_id, 1),
+    ] {
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM v2_analytics_outbox WHERE event_id = $1")
+                .bind(event_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(count, expected);
+    }
+
+    // A report with thousands of traffic items uses three bounded insert
+    // chunks plus three immutable-content verification reads, not thousands
+    // of individual PostgreSQL round trips.
+    let bulk = (0..2_001_u64)
+        .map(|index| derived_event(&event, &format!("bulk-{index}"), index + 10_000))
+        .collect::<Vec<_>>();
+    let mut tx = pool.begin().await.unwrap();
+    enqueue_events(&mut tx, &bulk, now + 5).await.unwrap();
+    tx.commit().await.unwrap();
+    let bulk_ids = bulk
+        .iter()
+        .map(|event| event.event_id.clone())
+        .collect::<Vec<_>>();
+    let bulk_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM v2_analytics_outbox WHERE event_id = ANY($1)")
+            .bind(&bulk_ids)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(bulk_count, 2_001);
+
+    let mut tx = pool.begin().await.unwrap();
+    enqueue_events(&mut tx, &bulk, now + 6).await.unwrap();
+    tx.commit().await.unwrap();
+    let mut conflict = bulk[0].clone();
+    conflict.occurred_at += 1;
+    let mut tx = pool.begin().await.unwrap();
+    assert!(enqueue_events(&mut tx, &[conflict], now + 7).await.is_err());
+    tx.rollback().await.unwrap();
+}
+
+fn derived_event(
+    source: &v2board_analytics::AnalyticsEvent,
+    discriminator: &str,
+    user_id: u64,
+) -> v2board_analytics::AnalyticsEvent {
+    let mut payload: ReportedTrafficEvent = serde_json::from_value(source.payload.clone()).unwrap();
+    payload.core.report_key = v2board_analytics::deterministic_event_id(
+        "integration.derived-report-key.v1",
+        &payload.core.installation_id,
+        discriminator,
+        &user_id.to_string(),
+    );
+    payload.core.user_id = user_id.to_string();
+    ReportedTrafficEvent::new(payload.core)
+        .unwrap()
+        .into_outbox()
+        .unwrap()
+}

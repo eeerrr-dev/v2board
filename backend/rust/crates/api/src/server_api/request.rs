@@ -121,7 +121,7 @@ pub(super) async fn validate_server_token(
         .ok_or_else(|| ApiError::legacy("token is error"))?;
     let credential_epoch = sqlx::query_scalar::<_, i64>(
         "SELECT credential_epoch FROM v2_server_credential \
-         WHERE node_type = ? AND node_id = ? LIMIT 1",
+         WHERE node_type = $1 AND node_id = $2 LIMIT 1",
     )
     .bind(&identity.node_type)
     .bind(identity.node_id)
@@ -135,16 +135,6 @@ pub(super) async fn validate_server_token(
         credential_epoch,
         token,
     ) {
-        return Ok(());
-    }
-    if config.server_legacy_token_enable
-        && v2board_compat::constant_time_secret_eq(master_key, token)
-    {
-        tracing::warn!(
-            node_type = identity.node_type,
-            node_id = identity.node_id,
-            "accepted deprecated global server token; rotate this node to its scoped credential"
-        );
         return Ok(());
     }
     Err(ApiError::legacy("token is error"))

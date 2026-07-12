@@ -11,13 +11,15 @@ use lettre::{
 };
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use sqlx::{MySql, QueryBuilder, Transaction};
+use sqlx::{Postgres, QueryBuilder};
 use uuid::Uuid;
+use v2board_db::DbTransaction;
 
 const MAIL_OUTBOX_ENQUEUE_CHUNK_SIZE: usize = 100;
 const MAIL_OUTBOX_ADDRESS_MAX_CHARS: usize = 512;
 const MAIL_OUTBOX_TEMPLATE_MAX_CHARS: usize = 255;
-const MYSQL_MEDIUMTEXT_MAX_BYTES: usize = 16_777_215;
+// Preserve the legacy payload ceiling even though PostgreSQL TEXT is larger.
+const LEGACY_MAIL_BODY_MAX_BYTES: usize = 16_777_215;
 
 #[derive(Debug, Clone)]
 pub struct PreparedMailEnvelope {
@@ -125,8 +127,8 @@ pub fn validate_prepared_mail_delivery(
     validate_mail_sender(&envelope.sender)?;
     validate_mail_recipient(recipient)?;
     if envelope.template_name.chars().count() > MAIL_OUTBOX_TEMPLATE_MAX_CHARS
-        || envelope.subject.len() > MYSQL_MEDIUMTEXT_MAX_BYTES
-        || envelope.body.len() > MYSQL_MEDIUMTEXT_MAX_BYTES
+        || envelope.subject.len() > LEGACY_MAIL_BODY_MAX_BYTES
+        || envelope.body.len() > LEGACY_MAIL_BODY_MAX_BYTES
     {
         return Err(MailOutboxError::InvalidContent);
     }
@@ -155,17 +157,18 @@ pub fn validate_prepared_mail_delivery(
 /// payload mismatch is explicit so request paths can reject key reuse while cron
 /// producers can warn and retain the first durable occurrence.
 pub async fn reserve_mail_outbox_batch(
-    tx: &mut Transaction<'_, MySql>,
+    tx: &mut DbTransaction<'_>,
     batch_key: &str,
     payload_hash: &str,
     actor: &str,
     now: i64,
 ) -> Result<bool, MailOutboxError> {
-    let inserted = match sqlx::query(
+    let inserted = sqlx::query(
         r#"
         INSERT INTO v2_mail_outbox_batch
             (batch_key, payload_hash, actor, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (batch_key) DO NOTHING
         "#,
     )
     .bind(batch_key)
@@ -174,17 +177,14 @@ pub async fn reserve_mail_outbox_batch(
     .bind(now)
     .bind(now)
     .execute(&mut **tx)
-    .await
-    {
-        Ok(_) => true,
-        Err(error) if is_duplicate_key_error(&error) => false,
-        Err(error) => return Err(error.into()),
-    };
+    .await?
+    .rows_affected()
+        == 1;
     if inserted {
         return Ok(true);
     }
     let existing_hash: String = sqlx::query_scalar(
-        "SELECT payload_hash FROM v2_mail_outbox_batch WHERE batch_key = ? FOR UPDATE",
+        "SELECT payload_hash FROM v2_mail_outbox_batch WHERE batch_key = $1 FOR UPDATE",
     )
     .bind(batch_key)
     .fetch_one(&mut **tx)
@@ -199,7 +199,7 @@ pub async fn reserve_mail_outbox_batch(
 /// All RFC validation finishes before the first write, so callers can skip a bad
 /// reminder recipient without leaving a partial/empty reminder occurrence.
 pub async fn enqueue_prepared_mail(
-    tx: &mut Transaction<'_, MySql>,
+    tx: &mut DbTransaction<'_>,
     batch_key: &str,
     envelope: &PreparedMailEnvelope,
     recipients: &[String],
@@ -217,8 +217,8 @@ pub async fn enqueue_prepared_mail(
     let updated = sqlx::query(
         r#"
         UPDATE v2_mail_outbox_batch
-        SET sender = ?, template_name = ?, subject = ?, body = ?, updated_at = ?
-        WHERE batch_key = ?
+        SET sender = $1, template_name = $2, subject = $3, body = $4, updated_at = $5
+        WHERE batch_key = $6
         "#,
     )
     .bind(&envelope.sender)
@@ -233,14 +233,14 @@ pub async fn enqueue_prepared_mail(
         return Err(MailOutboxError::BatchLost);
     }
     for chunk in deliveries.chunks(100) {
-        let mut builder = QueryBuilder::<MySql>::new(
+        let mut builder = QueryBuilder::<Postgres>::new(
             "INSERT INTO v2_mail_outbox (batch_key, recipient, message_id, attempt_count, available_at, created_at, updated_at) ",
         );
         builder.push_values(chunk, |mut row, (recipient, message_id)| {
             row.push_bind(batch_key)
                 .push_bind(*recipient)
                 .push_bind(message_id)
-                .push_bind(0_u32)
+                .push_bind(0_i32)
                 .push_bind(now)
                 .push_bind(now)
                 .push_bind(now);
@@ -260,7 +260,7 @@ pub async fn enqueue_prepared_mail(
 /// call from pre-existing success/pending/failure tombstones. Only claimed rows
 /// receive items, so a concurrent caller cannot resurrect a completed delivery.
 pub async fn enqueue_mail_outbox_occurrences(
-    tx: &mut Transaction<'_, MySql>,
+    tx: &mut DbTransaction<'_>,
     actor: &str,
     envelope: &PreparedMailEnvelope,
     occurrences: &[MailOutboxOccurrence],
@@ -299,7 +299,7 @@ pub async fn enqueue_mail_outbox_occurrences(
 
     let claim_actor = format!("outbox-enqueue:{}", Uuid::new_v4());
     for chunk in validated.chunks(MAIL_OUTBOX_ENQUEUE_CHUNK_SIZE) {
-        let mut builder = QueryBuilder::<MySql>::new(
+        let mut builder = QueryBuilder::<Postgres>::new(
             "INSERT INTO v2_mail_outbox_batch (batch_key, payload_hash, actor, sender, template_name, subject, body, created_at, updated_at) ",
         );
         builder.push_values(chunk, |mut row, occurrence| {
@@ -313,13 +313,13 @@ pub async fn enqueue_mail_outbox_occurrences(
                 .push_bind(now)
                 .push_bind(now);
         });
-        builder.push(" AS incoming ON DUPLICATE KEY UPDATE batch_key = incoming.batch_key");
+        builder.push(" ON CONFLICT (batch_key) DO NOTHING");
         builder.build().execute(&mut **tx).await?;
     }
 
     let mut claimed_rows = HashMap::with_capacity(validated.len());
     for chunk in validated.chunks(MAIL_OUTBOX_ENQUEUE_CHUNK_SIZE) {
-        let mut builder = QueryBuilder::<MySql>::new(
+        let mut builder = QueryBuilder::<Postgres>::new(
             "SELECT batch_key, payload_hash, actor FROM v2_mail_outbox_batch WHERE batch_key IN (",
         );
         let mut keys = builder.separated(", ");
@@ -344,7 +344,7 @@ pub async fn enqueue_mail_outbox_occurrences(
     )?;
 
     for chunk in fresh.chunks(MAIL_OUTBOX_ENQUEUE_CHUNK_SIZE) {
-        let mut builder = QueryBuilder::<MySql>::new("UPDATE v2_mail_outbox_batch SET actor = ");
+        let mut builder = QueryBuilder::<Postgres>::new("UPDATE v2_mail_outbox_batch SET actor = ");
         builder
             .push_bind(actor)
             .push(" WHERE actor = ")
@@ -361,14 +361,14 @@ pub async fn enqueue_mail_outbox_occurrences(
         }
     }
     for chunk in fresh.chunks(MAIL_OUTBOX_ENQUEUE_CHUNK_SIZE) {
-        let mut builder = QueryBuilder::<MySql>::new(
+        let mut builder = QueryBuilder::<Postgres>::new(
             "INSERT INTO v2_mail_outbox (batch_key, recipient, message_id, attempt_count, available_at, created_at, updated_at) ",
         );
         builder.push_values(chunk, |mut row, occurrence| {
             row.push_bind(&occurrence.batch_key)
                 .push_bind(&occurrence.recipient)
                 .push_bind(&occurrence.message_id)
-                .push_bind(0_u32)
+                .push_bind(0_i32)
                 .push_bind(now)
                 .push_bind(now)
                 .push_bind(now);
@@ -445,12 +445,6 @@ fn partition_claimed_mail_outbox_occurrences(
 
 fn sha256_hex(value: &[u8]) -> String {
     hex::encode(Sha256::digest(value))
-}
-
-fn is_duplicate_key_error(error: &sqlx::Error) -> bool {
-    error
-        .as_database_error()
-        .is_some_and(|error| error.is_unique_violation())
 }
 
 #[cfg(test)]
@@ -610,13 +604,13 @@ mod tests {
             .unwrap();
         let implementation = &source[start..end];
         let claim = implementation
-            .find(concat!("ON DUPLICATE KEY ", "UPDATE"))
+            .find("ON CONFLICT (batch_key) DO NOTHING")
             .unwrap();
         let locked_read = implementation
             .find(concat!("payload_hash, actor ", "FROM v2_mail_outbox_batch"))
             .unwrap();
         assert!(claim < locked_read);
-        assert!(implementation.contains(concat!("AS incoming ", "ON DUPLICATE")));
+        assert!(implementation.contains("ON CONFLICT (batch_key) DO NOTHING"));
         assert!(!implementation.contains(concat!("VALUES", "(batch_key)")));
         assert!(implementation.contains(concat!(") FOR ", "UPDATE")));
         assert!(implementation.contains(concat!("for chunk in fresh.", "chunks")));

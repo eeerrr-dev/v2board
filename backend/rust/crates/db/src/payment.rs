@@ -1,5 +1,5 @@
 use serde::Serialize;
-use sqlx::{FromRow, MySqlPool};
+use sqlx::{FromRow, PgPool};
 
 #[derive(Debug, Clone, FromRow, Serialize)]
 pub struct PaymentMethodRow {
@@ -9,13 +9,13 @@ pub struct PaymentMethodRow {
     pub icon: Option<String>,
     pub handling_fee_fixed: Option<i32>,
     // Eloquent returns the `decimal(5,2)` column verbatim as its string form
-    // (e.g. "0.50"), never as a JSON number. `CAST(... AS CHAR)` preserves that
+    // (e.g. "0.50"), never as a JSON number. PostgreSQL's `::text` preserves that
     // scale so the emitted value matches Laravel's PaymentController::getPaymentMethod.
     pub handling_fee_percent: Option<String>,
 }
 
 pub async fn fetch_enabled_payment_methods(
-    pool: &MySqlPool,
+    pool: &PgPool,
 ) -> Result<Vec<PaymentMethodRow>, sqlx::Error> {
     sqlx::query_as::<_, PaymentMethodRow>(
         r#"
@@ -25,10 +25,10 @@ pub async fn fetch_enabled_payment_methods(
             payment,
             icon,
             handling_fee_fixed,
-            CAST(handling_fee_percent AS CHAR) AS handling_fee_percent
+            handling_fee_percent::text AS handling_fee_percent
         FROM v2_payment
         WHERE enable = 1 AND archived_at IS NULL
-        ORDER BY sort ASC
+        ORDER BY sort ASC NULLS FIRST
         "#,
     )
     .fetch_all(pool)
@@ -69,9 +69,7 @@ mod tests {
 
     #[test]
     fn webhook_routing_key_is_unique_per_payment_driver() {
-        let migration = include_str!("../../../migrations/0017_payment_driver_uuid_unique.sql");
-        assert!(
-            migration.contains("ADD UNIQUE KEY `uniq_payment_driver_uuid` (`payment`, `uuid`)")
-        );
+        let migration = include_str!("../../../migrations-postgres/0001_initial.sql");
+        assert!(migration.contains("CONSTRAINT uniq_payment_driver_uuid UNIQUE (payment, uuid)"));
     }
 }

@@ -29,8 +29,8 @@ pub(super) fn validate_email(email: &str) -> Result<(), ApiError> {
 }
 
 /// Authentication identifiers use one canonical cache/rate-limit spelling.
-/// MySQL's email uniqueness lookup is case-insensitive in the native schema,
-/// so the same spelling is safe for the database lookup as well.
+/// The retained MySQL source treated email uniqueness case-insensitively; the
+/// PostgreSQL canonical-email index preserves that identity contract.
 pub(super) fn normalize_email(email: &str) -> String {
     email.trim().to_ascii_lowercase()
 }

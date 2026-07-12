@@ -1,17 +1,36 @@
 use std::{collections::BTreeMap, time::Duration};
 
-use chrono::Utc;
+use chrono::{NaiveDate, Utc};
 use redis::AsyncCommands;
-use sqlx::{FromRow, MySql, QueryBuilder, Transaction};
+use sqlx::{FromRow, Postgres, QueryBuilder, Transaction};
+use v2board_analytics::{
+    AccountedOutcome, AccountedTrafficEvent, AnalyticsEvent, IdentityKind, TrafficEventCore,
+    enqueue_events,
+};
 
 use crate::{reset::TRAFFIC_RESET_LOCK_KEY, state::WorkerState};
 
-#[derive(FromRow)]
+#[derive(Debug, FromRow)]
+struct DurableTrafficReport {
+    report_key: String,
+    payload_hash: String,
+    node_id: i32,
+    node_type: String,
+    rate_text: String,
+    rate_decimal_10_2: String,
+    identity_kind: String,
+    accepted_at: i64,
+    accounting_date: NaiveDate,
+}
+
+#[derive(Clone, Debug, FromRow, PartialEq, Eq)]
 struct DurableTrafficItem {
     user_id: i64,
     traffic_epoch: i64,
-    u: i64,
-    d: i64,
+    raw_u: i64,
+    raw_d: i64,
+    charged_u: i64,
+    charged_d: i64,
 }
 
 #[derive(Debug, FromRow)]
@@ -27,6 +46,14 @@ struct TrafficUpdate {
     user_id: i64,
     u: i64,
     d: i64,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct TrafficAccountingResult {
+    item: DurableTrafficItem,
+    outcome: AccountedOutcome,
+    u_after: Option<i64>,
+    d_after: Option<i64>,
 }
 
 const TRAFFIC_SQL_BATCH_SIZE: usize = 250;
@@ -58,9 +85,11 @@ async fn apply_durable_traffic_reports(state: &WorkerState) -> anyhow::Result<()
     let mut processed = 0_usize;
     while processed < TRAFFIC_MAX_REPORTS_PER_TICK && tokio::time::Instant::now() < deadline {
         let mut tx = state.db.begin().await?;
-        let report_key = sqlx::query_scalar::<_, String>(
+        let report = sqlx::query_as::<_, DurableTrafficReport>(
             r#"
-            SELECT report_key
+            SELECT report_key, payload_hash, node_id, node_type, rate_text,
+                   rate_decimal_10_2::text AS rate_decimal_10_2,
+                   identity_kind, accepted_at, accounting_date
             FROM v2_server_traffic_report
             WHERE applied_at IS NULL
             ORDER BY created_at, report_key
@@ -70,30 +99,41 @@ async fn apply_durable_traffic_reports(state: &WorkerState) -> anyhow::Result<()
         )
         .fetch_optional(&mut *tx)
         .await?;
-        let Some(report_key) = report_key else {
+        let Some(report) = report else {
             tx.commit().await?;
             break;
         };
         let items = sqlx::query_as::<_, DurableTrafficItem>(
             r#"
-            SELECT user_id, traffic_epoch, u, d
+            SELECT user_id, traffic_epoch, raw_u, raw_d, charged_u, charged_d
             FROM v2_server_traffic_report_item
-            WHERE report_key = ?
+            WHERE report_key = $1
             ORDER BY user_id
             "#,
         )
-        .bind(&report_key)
+        .bind(&report.report_key)
         .fetch_all(&mut *tx)
         .await?;
-        let stale_items = apply_traffic_items(&mut tx, &items).await?;
-        if is_internal_traffic_report_key(&report_key) {
+        let accounting_results = apply_traffic_items(&mut tx, &items).await?;
+        let accounted_at = Utc::now().timestamp();
+        enqueue_accounted_events(state, &mut tx, &report, &accounting_results, accounted_at)
+            .await?;
+        let stale_items = accounting_results
+            .iter()
+            .filter(|result| result.outcome == AccountedOutcome::StaleEpoch)
+            .count();
+        let missing_users = accounting_results
+            .iter()
+            .filter(|result| result.outcome == AccountedOutcome::MissingUser)
+            .count();
+        if is_internal_traffic_report_key(&report.report_key) {
             // Implicit reports have a fresh unguessable key for every
             // upload, so their applied header cannot deduplicate a replay. Drop
             // it with its FK-cascaded items in the same accounting transaction.
             let deleted = sqlx::query(
-                "DELETE FROM v2_server_traffic_report WHERE report_key = ? AND applied_at IS NULL",
+                "DELETE FROM v2_server_traffic_report WHERE report_key = $1 AND applied_at IS NULL",
             )
-            .bind(&report_key)
+            .bind(&report.report_key)
             .execute(&mut *tx)
             .await?;
             if deleted.rows_affected() != 1 {
@@ -104,13 +144,13 @@ async fn apply_durable_traffic_reports(state: &WorkerState) -> anyhow::Result<()
             let updated = sqlx::query(
                 r#"
                 UPDATE v2_server_traffic_report
-                SET applied_at = ?, updated_at = ?
-                WHERE report_key = ? AND applied_at IS NULL
+                SET applied_at = $1, updated_at = $2
+                WHERE report_key = $3 AND applied_at IS NULL
                 "#,
             )
             .bind(now)
             .bind(now)
-            .bind(&report_key)
+            .bind(&report.report_key)
             .execute(&mut *tx)
             .await?;
             if updated.rows_affected() != 1 {
@@ -118,8 +158,8 @@ async fn apply_durable_traffic_reports(state: &WorkerState) -> anyhow::Result<()
             }
             // Explicit keys are replay identities. Retain the applied header,
             // but payload rows are no longer needed after the atomic commit.
-            sqlx::query("DELETE FROM v2_server_traffic_report_item WHERE report_key = ?")
-                .bind(&report_key)
+            sqlx::query("DELETE FROM v2_server_traffic_report_item WHERE report_key = $1")
+                .bind(&report.report_key)
                 .execute(&mut *tx)
                 .await?;
         }
@@ -127,9 +167,16 @@ async fn apply_durable_traffic_reports(state: &WorkerState) -> anyhow::Result<()
         processed += 1;
         if stale_items > 0 {
             tracing::info!(
-                report_key,
+                report_key = %report.report_key,
                 stale_items,
                 "discarded traffic from an earlier quota epoch"
+            );
+        }
+        if missing_users > 0 {
+            tracing::warn!(
+                report_key = %report.report_key,
+                missing_users,
+                "recorded traffic items whose user no longer exists"
             );
         }
     }
@@ -143,12 +190,12 @@ async fn apply_durable_traffic_reports(state: &WorkerState) -> anyhow::Result<()
 }
 
 async fn apply_traffic_items(
-    tx: &mut Transaction<'_, MySql>,
+    tx: &mut Transaction<'_, Postgres>,
     items: &[DurableTrafficItem],
-) -> anyhow::Result<usize> {
+) -> anyhow::Result<Vec<TrafficAccountingResult>> {
     let aggregated = aggregate_traffic_items(items)?;
     if aggregated.is_empty() {
-        return Ok(0);
+        return Ok(Vec::new());
     }
 
     // Every worker acquires user locks in ascending id order, including across chunks. Each
@@ -156,8 +203,9 @@ async fn apply_traffic_items(
     // creating a deadlock cycle and keeping the report transaction all-or-nothing.
     let mut locked = BTreeMap::new();
     for chunk in aggregated.chunks(TRAFFIC_SQL_BATCH_SIZE) {
-        let mut builder =
-            QueryBuilder::<MySql>::new("SELECT id, traffic_epoch, u, d FROM v2_user WHERE id IN (");
+        let mut builder = QueryBuilder::<Postgres>::new(
+            "SELECT id, traffic_epoch, u, d FROM v2_user WHERE id IN (",
+        );
         let mut separated = builder.separated(", ");
         for item in chunk {
             separated.push_bind(item.user_id);
@@ -173,21 +221,38 @@ async fn apply_traffic_items(
     }
 
     let mut updates = Vec::with_capacity(locked.len());
-    let mut stale_items = 0_usize;
+    let mut results = Vec::with_capacity(aggregated.len());
     for item in aggregated {
         let Some(current) = locked.get(&item.user_id) else {
+            results.push(TrafficAccountingResult {
+                item,
+                outcome: AccountedOutcome::MissingUser,
+                u_after: None,
+                d_after: None,
+            });
             continue;
         };
         if current.traffic_epoch != item.traffic_epoch {
-            stale_items += 1;
+            results.push(TrafficAccountingResult {
+                item,
+                outcome: AccountedOutcome::StaleEpoch,
+                u_after: None,
+                d_after: None,
+            });
             continue;
         }
-        let (u, d) = checked_traffic_totals(current.u, current.d, item.u, item.d)
+        let (u, d) = checked_traffic_totals(current.u, current.d, item.charged_u, item.charged_d)
             .ok_or_else(|| anyhow::anyhow!("user traffic exceeds the supported range"))?;
         updates.push(TrafficUpdate {
             user_id: item.user_id,
             u,
             d,
+        });
+        results.push(TrafficAccountingResult {
+            item,
+            outcome: AccountedOutcome::Applied,
+            u_after: Some(u),
+            d_after: Some(d),
         });
     }
 
@@ -195,45 +260,110 @@ async fn apply_traffic_items(
     for chunk in updates.chunks(TRAFFIC_SQL_BATCH_SIZE) {
         update_traffic_chunk(tx, chunk, now).await?;
     }
-    Ok(stale_items)
+    Ok(results)
 }
 
 fn aggregate_traffic_items(
     items: &[DurableTrafficItem],
 ) -> anyhow::Result<Vec<DurableTrafficItem>> {
-    let mut aggregated = BTreeMap::<i64, (i64, i64, i64)>::new();
+    let mut aggregated = BTreeMap::<i64, (i64, i64, i64, i64, i64)>::new();
     for item in items {
         let totals = aggregated
             .entry(item.user_id)
-            .or_insert((item.traffic_epoch, 0, 0));
+            .or_insert((item.traffic_epoch, 0, 0, 0, 0));
         if totals.0 != item.traffic_epoch {
             anyhow::bail!("traffic report contains multiple quota epochs for one user");
         }
-        let (u, d) = checked_traffic_totals(totals.1, totals.2, item.u, item.d)
+        let (raw_u, raw_d) = checked_traffic_totals(totals.1, totals.2, item.raw_u, item.raw_d)
             .ok_or_else(|| anyhow::anyhow!("traffic report exceeds the supported range"))?;
-        totals.1 = u;
-        totals.2 = d;
+        let (charged_u, charged_d) =
+            checked_traffic_totals(totals.3, totals.4, item.charged_u, item.charged_d)
+                .ok_or_else(|| anyhow::anyhow!("traffic report exceeds the supported range"))?;
+        totals.1 = raw_u;
+        totals.2 = raw_d;
+        totals.3 = charged_u;
+        totals.4 = charged_d;
     }
     Ok(aggregated
         .into_iter()
-        .map(|(user_id, (traffic_epoch, u, d))| DurableTrafficItem {
-            user_id,
-            traffic_epoch,
-            u,
-            d,
-        })
+        .map(
+            |(user_id, (traffic_epoch, raw_u, raw_d, charged_u, charged_d))| DurableTrafficItem {
+                user_id,
+                traffic_epoch,
+                raw_u,
+                raw_d,
+                charged_u,
+                charged_d,
+            },
+        )
         .collect())
 }
 
+async fn enqueue_accounted_events(
+    state: &WorkerState,
+    tx: &mut Transaction<'_, Postgres>,
+    report: &DurableTrafficReport,
+    results: &[TrafficAccountingResult],
+    accounted_at: i64,
+) -> anyhow::Result<()> {
+    let identity_kind = parse_identity_kind(&report.identity_kind)?;
+    let key_is_implicit = is_internal_traffic_report_key(&report.report_key);
+    if key_is_implicit != (identity_kind == IdentityKind::Implicit) {
+        anyhow::bail!("traffic report identity kind does not match its report key");
+    }
+    let mut events = Vec::<AnalyticsEvent>::with_capacity(results.len());
+    for result in results {
+        let item = &result.item;
+        let core = TrafficEventCore {
+            installation_id: state.installation_id.to_string(),
+            report_key: report.report_key.clone(),
+            payload_hash: report.payload_hash.clone(),
+            identity_kind,
+            user_id: item.user_id.to_string(),
+            traffic_epoch: item.traffic_epoch.to_string(),
+            server_id: report.node_id.to_string(),
+            server_type: report.node_type.clone(),
+            rate_text: report.rate_text.clone(),
+            rate_decimal_10_2: report.rate_decimal_10_2.clone(),
+            raw_u: item.raw_u.to_string(),
+            raw_d: item.raw_d.to_string(),
+            charged_u: item.charged_u.to_string(),
+            charged_d: item.charged_d.to_string(),
+            accepted_at: report.accepted_at,
+            accounting_date: report.accounting_date.format("%Y-%m-%d").to_string(),
+            accounting_timezone: "Asia/Shanghai".to_owned(),
+        };
+        let event = AccountedTrafficEvent::new(
+            core,
+            accounted_at,
+            result.outcome,
+            result.u_after.map(|value| value.to_string()),
+            result.d_after.map(|value| value.to_string()),
+        )?
+        .into_outbox()?;
+        events.push(event);
+    }
+    enqueue_events(tx, &events, accounted_at).await?;
+    Ok(())
+}
+
+fn parse_identity_kind(value: &str) -> anyhow::Result<IdentityKind> {
+    match value {
+        "explicit" => Ok(IdentityKind::Explicit),
+        "implicit" => Ok(IdentityKind::Implicit),
+        _ => anyhow::bail!("traffic report has an invalid identity kind"),
+    }
+}
+
 async fn update_traffic_chunk(
-    tx: &mut Transaction<'_, MySql>,
+    tx: &mut Transaction<'_, Postgres>,
     updates: &[TrafficUpdate],
     now: i64,
 ) -> Result<(), sqlx::Error> {
     if updates.is_empty() {
         return Ok(());
     }
-    let mut builder = QueryBuilder::<MySql>::new("UPDATE v2_user SET u = CASE id ");
+    let mut builder = QueryBuilder::<Postgres>::new("UPDATE v2_user SET u = CASE id ");
     for update in updates {
         builder.push("WHEN ");
         builder.push_bind(update.user_id);
@@ -259,7 +389,12 @@ async fn update_traffic_chunk(
         separated.push_bind(update.user_id);
     }
     builder.push(")");
-    builder.build().execute(&mut **tx).await?;
+    let result = builder.build().execute(&mut **tx).await?;
+    if result.rows_affected() != updates.len() as u64 {
+        return Err(sqlx::Error::Protocol(
+            "traffic user update count did not match the locked rows".to_owned(),
+        ));
+    }
     Ok(())
 }
 
@@ -292,43 +427,61 @@ mod tests {
             DurableTrafficItem {
                 user_id: 9,
                 traffic_epoch: 4,
-                u: 1,
-                d: 2,
+                raw_u: 1,
+                raw_d: 2,
+                charged_u: 3,
+                charged_d: 4,
             },
             DurableTrafficItem {
                 user_id: 2,
                 traffic_epoch: 7,
-                u: 3,
-                d: 4,
+                raw_u: 3,
+                raw_d: 4,
+                charged_u: 5,
+                charged_d: 6,
             },
             DurableTrafficItem {
                 user_id: 9,
                 traffic_epoch: 4,
-                u: 5,
-                d: 6,
+                raw_u: 5,
+                raw_d: 6,
+                charged_u: 7,
+                charged_d: 8,
             },
         ])
         .unwrap();
         assert_eq!(
             aggregated
                 .iter()
-                .map(|item| (item.user_id, item.u, item.d))
+                .map(|item| {
+                    (
+                        item.user_id,
+                        item.raw_u,
+                        item.raw_d,
+                        item.charged_u,
+                        item.charged_d,
+                    )
+                })
                 .collect::<Vec<_>>(),
-            vec![(2, 3, 4), (9, 6, 8)]
+            vec![(2, 3, 4, 5, 6), (9, 6, 8, 10, 12)]
         );
         assert!(
             aggregate_traffic_items(&[
                 DurableTrafficItem {
                     user_id: 1,
                     traffic_epoch: 0,
-                    u: i64::MAX,
-                    d: 0,
+                    raw_u: i64::MAX,
+                    raw_d: 0,
+                    charged_u: i64::MAX,
+                    charged_d: 0,
                 },
                 DurableTrafficItem {
                     user_id: 1,
                     traffic_epoch: 0,
-                    u: 1,
-                    d: 0,
+                    raw_u: 1,
+                    raw_d: 0,
+                    charged_u: 1,
+                    charged_d: 0,
                 },
             ])
             .is_err()
@@ -341,14 +494,16 @@ mod tests {
         let production = source.split("#[cfg(test)]").next().unwrap();
         assert!(production.contains(") ORDER BY id FOR UPDATE"));
         assert!(production.contains("UPDATE v2_user SET u = CASE id"));
-        assert!(!production.contains("WHERE id = ? LIMIT 1 FOR UPDATE"));
+        assert!(production.contains("enqueue_events(tx, &events, accounted_at)"));
+        assert!(!production.contains("enqueue_event(tx, &event, accounted_at)"));
+        assert!(!production.contains("WHERE id = $1 LIMIT 1 FOR UPDATE"));
     }
 
     #[test]
     fn traffic_migration_contains_durable_report_ledgers() {
-        let migration = include_str!("../../../migrations/0003_worker_idempotency.sql");
-        assert!(migration.contains("CREATE TABLE `v2_server_traffic_report`"));
-        assert!(migration.contains("CREATE TABLE `v2_server_traffic_report_item`"));
+        let migration = include_str!("../../../migrations-postgres/0001_initial.sql");
+        assert!(migration.contains("CREATE TABLE v2_server_traffic_report"));
+        assert!(migration.contains("CREATE TABLE v2_server_traffic_report_item"));
     }
 
     #[test]
@@ -358,16 +513,20 @@ mod tests {
             "a".repeat(62)
         )));
         assert!(!is_internal_traffic_report_key(&"a".repeat(64)));
-        let migration = include_str!("../../../migrations/0004_traffic_report_sha256.sql");
+        let migration = include_str!("../../../migrations-postgres/0001_initial.sql");
         assert!(migration.contains("ON DELETE CASCADE"));
     }
 
     #[test]
     fn traffic_epoch_migration_fences_reset_periods() {
-        let migration = include_str!("../../../migrations/0009_traffic_quota_epoch.sql");
-        assert!(migration.contains("`traffic_epoch` bigint NOT NULL DEFAULT 0"));
-        let item_migration = include_str!("../../../migrations/0013_traffic_report_epoch.sql");
-        assert!(item_migration.contains("`traffic_epoch` bigint NOT NULL DEFAULT 0"));
+        let migration = include_str!("../../../migrations-postgres/0001_initial.sql");
+        assert!(migration.contains("traffic_epoch BIGINT NOT NULL DEFAULT 0"));
+        assert_eq!(
+            migration
+                .matches("traffic_epoch BIGINT NOT NULL DEFAULT 0")
+                .count(),
+            2
+        );
         let source = include_str!("traffic.rs");
         assert!(source.contains("current.traffic_epoch != item.traffic_epoch"));
     }

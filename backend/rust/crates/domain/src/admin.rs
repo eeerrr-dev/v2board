@@ -12,12 +12,13 @@ use rust_decimal::Decimal;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
-use sqlx::{AssertSqlSafe, FromRow, MySql, MySqlPool, QueryBuilder, Transaction, types::Json};
+use sqlx::{AssertSqlSafe, FromRow, Postgres, QueryBuilder, types::Json};
 use uuid::Uuid;
 use v2board_compat::ApiError;
 use v2board_config::{
     AppConfig, MAX_CONFIG_DURATION_MINUTES, app_now, app_timezone, update_config_atomic,
 };
+use v2board_db::{DbPool, DbTransaction};
 
 use crate::payment_provider::{payment_provider_codes, payment_provider_form};
 use crate::{
@@ -110,7 +111,7 @@ fn payment_verification_version_blocks_update(driver_changed: bool, config_chang
 
 #[derive(Clone)]
 pub struct AdminService {
-    db: MySqlPool,
+    db: DbPool,
     redis: redis::Client,
     config: Arc<AppConfig>,
     http: reqwest::Client,
@@ -127,7 +128,7 @@ pub enum AdminOutput {
 
 impl AdminService {
     pub fn new(
-        db: MySqlPool,
+        db: DbPool,
         redis: redis::Client,
         config: Arc<AppConfig>,
         http: reqwest::Client,

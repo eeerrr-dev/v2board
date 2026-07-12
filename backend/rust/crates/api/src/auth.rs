@@ -203,31 +203,20 @@ pub(crate) struct AuthQuery {
 pub(crate) async fn require_user(
     state: &AppState,
     headers: &HeaderMap,
-    auth_data: Option<String>,
+    _auth_data: Option<String>,
 ) -> Result<AuthUser, ApiError> {
-    let config = state.config_snapshot();
-    let auth_data = select_auth_data(headers, auth_data, config.legacy_auth_params_enable)
-        .ok_or_else(ApiError::unauthorized)?;
+    let auth_data = select_auth_data(headers).ok_or_else(ApiError::unauthorized)?;
     let auth = state.auth_service();
     auth.user_from_auth_data(&auth_data).await
 }
 
-fn select_auth_data(
-    headers: &HeaderMap,
-    legacy_auth_data: Option<String>,
-    legacy_params_enabled: bool,
-) -> Option<String> {
-    if let Some(header) = headers.get(axum::http::header::AUTHORIZATION) {
-        return header
-            .to_str()
-            .ok()
-            .filter(|value| !value.is_empty() && value.len() <= MAX_AUTH_DATA_BYTES)
-            .map(ToOwned::to_owned);
-    }
-    if !legacy_params_enabled {
-        return None;
-    }
-    legacy_auth_data.filter(|value| !value.is_empty() && value.len() <= MAX_AUTH_DATA_BYTES)
+fn select_auth_data(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get(axum::http::header::AUTHORIZATION)?
+        .to_str()
+        .ok()
+        .filter(|value| !value.is_empty() && value.len() <= MAX_AUTH_DATA_BYTES)
+        .map(ToOwned::to_owned)
 }
 
 fn bounded_user_agent(headers: &HeaderMap) -> Option<String> {
@@ -312,35 +301,34 @@ mod tests {
     use axum::http::{HeaderMap, header};
 
     use super::{
-        MAX_USER_AGENT_BYTES, bounded_user_agent, recent_password_authentication, select_auth_data,
+        AuthQuery, MAX_USER_AGENT_BYTES, bounded_user_agent, recent_password_authentication,
+        select_auth_data,
     };
     use v2board_domain::auth::AuthUser;
 
     #[test]
-    fn authorization_header_wins_and_legacy_params_can_be_disabled() {
+    fn only_the_authorization_header_is_an_authentication_source() {
+        let accepted_shape: AuthQuery =
+            serde_urlencoded::from_str("auth_data=query-token").expect("accepted query shape");
+        assert_eq!(accepted_shape.auth_data.as_deref(), Some("query-token"));
+
         let mut headers = HeaderMap::new();
         headers.insert(header::AUTHORIZATION, "header-token".parse().unwrap());
-        assert_eq!(
-            select_auth_data(&headers, Some("query-token".to_string()), true).as_deref(),
-            Some("header-token")
-        );
+        assert_eq!(select_auth_data(&headers).as_deref(), Some("header-token"));
         headers.insert(
             header::AUTHORIZATION,
             "x".repeat(super::MAX_AUTH_DATA_BYTES + 1).parse().unwrap(),
         );
         assert_eq!(
-            select_auth_data(&headers, Some("query-token".to_string()), true),
+            select_auth_data(&headers),
             None,
-            "an invalid explicit Authorization header must not fall back to a URL token"
+            "an invalid Authorization header must fail closed"
         );
         headers.remove(header::AUTHORIZATION);
         assert_eq!(
-            select_auth_data(&headers, Some("query-token".to_string()), false),
-            None
-        );
-        assert_eq!(
-            select_auth_data(&headers, Some("query-token".to_string()), true).as_deref(),
-            Some("query-token")
+            select_auth_data(&headers),
+            None,
+            "accepted auth_data parameter shape is never an authentication source"
         );
     }
 

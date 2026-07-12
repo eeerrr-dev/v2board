@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use serde::Serialize;
-use sqlx::{FromRow, MySqlPool};
+use sqlx::{FromRow, PgPool};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AvailableServerRow {
@@ -16,7 +16,7 @@ pub struct AvailableServerRow {
     pub port: serde_json::Value,
     pub cache_key: String,
     pub last_check_at: Option<i64>,
-    pub is_online: i8,
+    pub is_online: i16,
     pub tags: Option<Vec<String>>,
     pub sort: Option<i32>,
     #[serde(skip_serializing_if = "serde_json::Value::is_null")]
@@ -41,7 +41,7 @@ struct RawServerRow {
 }
 
 pub async fn fetch_available_servers(
-    pool: &MySqlPool,
+    pool: &PgPool,
     user_group_id: Option<i32>,
 ) -> Result<Vec<AvailableServerRow>, sqlx::Error> {
     let rows = sqlx::query_as::<_, RawServerRow>(AVAILABLE_SERVERS_SQL)
@@ -135,8 +135,18 @@ fn parse_i32_list_optional(value: &str) -> Option<Vec<i32>> {
     if value.is_empty() || value.eq_ignore_ascii_case("null") {
         return None;
     }
-    serde_json::from_str::<Vec<i32>>(value)
+    serde_json::from_str::<Vec<serde_json::Value>>(value)
         .ok()
+        .map(|items| {
+            items
+                .into_iter()
+                .filter_map(|item| {
+                    item.as_i64()
+                        .and_then(|value| i32::try_from(value).ok())
+                        .or_else(|| item.as_str().and_then(|value| value.parse::<i32>().ok()))
+                })
+                .collect::<Vec<_>>()
+        })
         .or_else(|| value.parse::<i32>().ok().map(|item| vec![item]))
         .filter(|items| !items.is_empty())
 }
@@ -163,58 +173,66 @@ fn parse_string_list_optional(value: &str) -> Option<Vec<String>> {
 
 const AVAILABLE_SERVERS_SQL: &str = r#"
 SELECT
-    id, parent_id, group_id, route_id, name, rate, 'shadowsocks' AS `type`,
-    host, CAST(port AS CHAR) AS port, tags, sort, updated_at,
-    JSON_OBJECT('cipher', cipher, 'obfs', obfs, 'obfs_settings', obfs_settings, 'created_at', created_at) AS extra
+    id, parent_id, group_id::text AS group_id, route_id::text AS route_id,
+    name, rate, 'shadowsocks' AS type, host, port::text AS port,
+    tags::text AS tags, sort, updated_at,
+    jsonb_build_object('cipher', cipher, 'obfs', obfs, 'obfs_settings', obfs_settings, 'created_at', created_at)::text AS extra
 FROM v2_server_shadowsocks
-WHERE `show` = 1
+WHERE show = 1
 UNION ALL
 SELECT
-    id, parent_id, group_id, route_id, name, rate, 'vmess' AS `type`,
-    host, CAST(port AS CHAR) AS port, tags, sort, updated_at,
-    JSON_OBJECT('network', network, 'tls', tls, 'network_settings', networkSettings, 'tls_settings', tlsSettings) AS extra
+    id, parent_id, group_id::text AS group_id, route_id::text AS route_id,
+    name, rate, 'vmess' AS type, host, port::text AS port,
+    tags::text AS tags, sort, updated_at,
+    jsonb_build_object('network', network, 'tls', tls, 'network_settings', "networkSettings", 'tls_settings', "tlsSettings")::text AS extra
 FROM v2_server_vmess
-WHERE `show` = 1
+WHERE show = 1
 UNION ALL
 SELECT
-    id, parent_id, group_id, route_id, name, rate, 'trojan' AS `type`,
-    host, CAST(port AS CHAR) AS port, tags, sort, updated_at,
-    JSON_OBJECT('network', network, 'network_settings', network_settings, 'allow_insecure', allow_insecure, 'server_name', server_name) AS extra
+    id, parent_id, group_id::text AS group_id, route_id::text AS route_id,
+    name, rate, 'trojan' AS type, host, port::text AS port,
+    tags::text AS tags, sort, updated_at,
+    jsonb_build_object('network', network, 'network_settings', network_settings, 'allow_insecure', allow_insecure, 'server_name', server_name)::text AS extra
 FROM v2_server_trojan
-WHERE `show` = 1
+WHERE show = 1
 UNION ALL
 SELECT
-    id, parent_id, group_id, route_id, name, rate, 'tuic' AS `type`,
-    host, CAST(port AS CHAR) AS port, tags, sort, updated_at,
-    JSON_OBJECT('server_name', server_name, 'insecure', insecure, 'disable_sni', disable_sni, 'udp_relay_mode', udp_relay_mode, 'zero_rtt_handshake', zero_rtt_handshake, 'congestion_control', congestion_control) AS extra
+    id, parent_id, group_id::text AS group_id, route_id::text AS route_id,
+    name, rate, 'tuic' AS type, host, port::text AS port,
+    tags::text AS tags, sort, updated_at,
+    jsonb_build_object('server_name', server_name, 'insecure', insecure, 'disable_sni', disable_sni, 'udp_relay_mode', udp_relay_mode, 'zero_rtt_handshake', zero_rtt_handshake, 'congestion_control', congestion_control)::text AS extra
 FROM v2_server_tuic
-WHERE `show` = 1
+WHERE show = 1
 UNION ALL
 SELECT
-    id, parent_id, group_id, route_id, name, rate, 'hysteria' AS `type`,
-    host, CAST(port AS CHAR) AS port, tags, sort, updated_at,
-    JSON_OBJECT('version', version, 'up_mbps', up_mbps, 'down_mbps', down_mbps, 'obfs', obfs, 'obfs_password', obfs_password, 'server_name', server_name, 'insecure', insecure) AS extra
+    id, parent_id, group_id::text AS group_id, route_id::text AS route_id,
+    name, rate, 'hysteria' AS type, host, port::text AS port,
+    tags::text AS tags, sort, updated_at,
+    jsonb_build_object('version', version, 'up_mbps', up_mbps, 'down_mbps', down_mbps, 'obfs', obfs, 'obfs_password', obfs_password, 'server_name', server_name, 'insecure', insecure)::text AS extra
 FROM v2_server_hysteria
-WHERE `show` = 1
+WHERE show = 1
 UNION ALL
 SELECT
-    id, parent_id, group_id, route_id, name, rate, 'vless' AS `type`,
-    host, CAST(port AS CHAR) AS port, tags, sort, updated_at,
-    JSON_OBJECT('tls', tls, 'tls_settings', tls_settings, 'flow', flow, 'network', network, 'network_settings', network_settings, 'encryption', encryption, 'encryption_settings', encryption_settings) AS extra
+    id, parent_id, group_id::text AS group_id, route_id::text AS route_id,
+    name, rate, 'vless' AS type, host, port::text AS port,
+    tags::text AS tags, sort, updated_at,
+    jsonb_build_object('tls', tls, 'tls_settings', tls_settings, 'flow', flow, 'network', network, 'network_settings', network_settings, 'encryption', encryption, 'encryption_settings', encryption_settings)::text AS extra
 FROM v2_server_vless
-WHERE `show` = 1
+WHERE show = 1
 UNION ALL
 SELECT
-    id, parent_id, group_id, route_id, name, rate, 'anytls' AS `type`,
-    host, CAST(port AS CHAR) AS port, tags, sort, updated_at,
-    JSON_OBJECT('server_name', server_name, 'insecure', insecure, 'padding_scheme', padding_scheme) AS extra
+    id, parent_id, group_id::text AS group_id, route_id::text AS route_id,
+    name, rate, 'anytls' AS type, host, port::text AS port,
+    tags::text AS tags, sort, updated_at,
+    jsonb_build_object('server_name', server_name, 'insecure', insecure, 'padding_scheme', padding_scheme)::text AS extra
 FROM v2_server_anytls
-WHERE `show` = 1
+WHERE show = 1
 UNION ALL
 SELECT
-    id, parent_id, group_id, route_id, name, rate, 'v2node' AS `type`,
-    host, CAST(port AS CHAR) AS port, tags, sort, updated_at,
-    JSON_OBJECT(
+    id, parent_id, group_id::text AS group_id, route_id::text AS route_id,
+    name, rate, 'v2node' AS type, host, port::text AS port,
+    tags::text AS tags, sort, updated_at,
+    jsonb_build_object(
         'protocol', protocol, 'tls', tls, 'tls_settings', tls_settings, 'flow', flow,
         'network', network, 'network_settings', network_settings, 'encryption', encryption,
         'encryption_settings', encryption_settings, 'disable_sni', disable_sni,
@@ -222,9 +240,9 @@ SELECT
         'congestion_control', congestion_control, 'cipher', cipher, 'up_mbps', up_mbps,
         'down_mbps', down_mbps, 'obfs', obfs, 'obfs_password', obfs_password,
         'padding_scheme', padding_scheme
-    ) AS extra
+    )::text AS extra
 FROM v2_server_v2node
-WHERE `show` = 1
+WHERE show = 1
 "#;
 
 #[cfg(test)]
@@ -264,5 +282,11 @@ mod tests {
         let mut extra = json!({ "server_name": "example.com" });
         apply_parent_created_at("hysteria", Some(1), &mut extra, &created_at_by_id);
         assert_eq!(extra.get("created_at"), None);
+    }
+
+    #[test]
+    fn legacy_json_numeric_strings_remain_valid_group_ids() {
+        assert_eq!(parse_i32_list(r#"["1",2,"bad"]"#), vec![1, 2]);
+        assert_eq!(parse_i32_list("3"), vec![3]);
     }
 }

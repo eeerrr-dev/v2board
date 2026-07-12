@@ -39,20 +39,27 @@ visual, interaction, database, and native runtime artifacts in Docker volumes.
 
 - `docker-compose.local.yml` is the canonical tracked local workflow.
   `docker-compose.yml` is ignored and only for personal overrides.
+- Docker is only a local development, build, CI, and test boundary. Production
+  runs exported native Linux binaries and the source-built frontend directly on
+  the server under systemd; do not add production Compose files, container
+  runtime dependencies, or production image deployment instructions.
 - Production consists only of `backend/rust` plus the source-built frontend.
   Do not add a second backend, server-side template layer, or duplicate worker
   and scheduler runtime.
 - Source-owned frontend code lives under `frontend/apps/*/src`.
 - Source-built deploy artifacts live in the Docker `frontend-deploy` volume at
-  `/app/frontend-deploy`, outside the mutable frontend workspace; do not write
-  `dist-deploy/` on the host.
+  `/app/frontend-deploy` during local/CI builds, outside the mutable frontend
+  workspace; do not write `dist-deploy/` on the host. A release export installs
+  that validated tree at `/opt/v2board/frontend` on the server.
 - The deploy root contains immutable `releases/<content-id>/{user,admin}` trees
-  plus atomic `current`/`previous` symlinks. Rust receives this volume read-only
-  through `V2BOARD_FRONTEND_DIR`, renders HTML from `current`, and serves hashed
+  plus atomic `current`/`previous` symlinks. Rust reads the production tree
+  directly and read-only through `V2BOARD_FRONTEND_DIR`, renders HTML from `current`, and serves hashed
   assets from `current` with `previous` as the in-flight rollout fallback. The
   public routes are `/`, the dynamic admin path, and `/assets/{user,admin}/*`.
 - Rust-owned mutable configuration and application state live under
-  `/var/lib/v2board`, never in a source directory.
+  `/var/lib/v2board`, never in a source directory. Production API and worker use
+  distinct Unix users and `0600` role-owned config files; container mount
+  isolation is not a production security boundary.
 - Visual and interaction reports live in Docker artifact volumes under
   `/app/frontend/.cache/`; do not write parity reports on the host.
 - Production deployment is manifest-driven: the build validates each Vite

@@ -1,224 +1,197 @@
-# 唯一旧版迁移清单 v2
+# 旧版迁移清单 v3
 
-本清单只服务于 `references/wyx2685-v2board` 固定 commit
-`7e77de9f4873b317157490529f7be7d6f8a62421`。采用一个手填 JSON 是正确方向，但边界必须清楚：
+本指南只适用于 `references/wyx2685-v2board` 固定 commit
+`7e77de9f4873b317157490529f7be7d6f8a62421` 到新版 PostgreSQL 18 +
+ClickHouse 26.3 + Redis 架构的迁移。旧 MySQL、Percona 或 MariaDB 只可能是只读来源，绝不是新版
+runtime 的可选数据库。
 
-- **手填目标意图**：source 只读连接、target MySQL bootstrap 连接、期望的受限应用连接、
-  target Redis 逻辑 DB、站点与安全配置、邮件/Telegram、节点 master secret 和迁移决策；
-- **自动读取现场事实**：MySQL 实际版本与结构、旧数据冲突、未完成订单、Stripe inventory、节点数量、
-  Redis 流量/队列/锁/临时订阅 token、source/target 实例身份、target MySQL 服务器能力、期望库名及
-  期望应用账号不存在、target Redis 为空；
-- **绝不把旧配置导入目标**：不合并或执行旧 `.env`、`config/v2board.php`、theme、custom PHP/JS；
-- **不能手填可探测事实来绕过检查**：例如没有 MySQL version 字段，不能靠填写“旧库是 MySQL 8”
-  跳过服务器探测，也不能只声明“没用 Stripe”跳过数据库零状态检查；
-- **当前仍有未机器验证的来源声明**：cache driver、两个 Redis prefix、旧订阅方式/有效期和停止签发
-  时间必须手填，当前工具不会读取旧 config 证明它们正确。它们只帮助执行有界预检；未来 apply 在
-  安全解析器或等价机器证据落地前继续阻断。
+完整的数据所有权、outbox 和故障语义见
+[PostgreSQL + ClickHouse 持久化不变量](postgresql-clickhouse-invariants.md)，三类 lifecycle 的共同
+契约见[安装、迁移与升级不可变契约](upgrade-invariants.md)。
 
-因此，一个文件会比自动猜测旧配置更简单、可复查，但不会替代数据库和 Redis 的自动检查。
+## 为什么使用一个手填文件
 
-这里的 `manual_only` 专指“目标配置由操作者明确填写，不从旧配置自动转换”。只读验证少数来源事实不
-等于导入目标配置；成熟 apply 必须补上这一步，不能永远信任人工填写。
+手填一个严格 JSON 文件比猜测和转换旧配置更容易复查，但它只负责表达**目标意图**：
 
-## 已固定的选择
+- 旧 MySQL/MariaDB 与两个旧 Redis 逻辑库的只读连接；
+- PostgreSQL bootstrap/migration/API/worker 四个 principal 的连接；
+- ClickHouse bootstrap/schema/writer/reader 四个 principal、retention 和网络证据；
+- 空 target Redis、API/worker 两个最终 runtime 路径、公共行为配置和明确的迁移决策。
 
-v2 不提供自由组合，以下值必须原样出现：
+工具不会导入、合并、执行或推断旧 `.env`、`config/v2board.php`、theme、PHP、CSS 或 JavaScript。
+`runtime` 的每个目标值都由操作者明确填写；数据库、Redis、文件和现场版本等可探测事实仍必须自动
+检查，不能靠清单中的自报值绕过。
+
+目标 datastore 连接由清单分别物化到 API/worker file-only map；当前 CLI 只验证这两个 map，不写
+文件。bootstrap 和 schema/migration 凭据只供 lifecycle job 使用，不得进入长期 API/worker runtime。
+API map 不含 worker URL 或任何 ClickHouse 凭据；worker map 不含 API URL、reader 或 DDL 凭据。
+
+清单 schema 固定为 `schema_version: 3`。v2 已退役并被 loader 明确拒绝，不能把旧 v2 文件改个版本号
+继续使用。
+
+## 固定选择
+
+`legacy_reference_migration` 不提供自由组合；以下值必须原样出现：
 
 | 项目 | 固定值 | 结果 |
 | --- | --- | --- |
-| 旧配置 | `manual_only` | 目标值全部手填，不导入旧配置 |
-| 登录态 | `logout_all` | 不转换 Laravel session；切换后所有用户和管理员重新登录 |
-| 旧 cache | `discard_ephemeral_after_fence` | 停止旧 producer 后不复制登录态、限流和可重建 cache；不包含流量/队列 |
-| Stripe | `assert_none` | 自动查库证明 Stripe payment 与相关未完成订单为零，否则阻断 |
-| 临时订阅链接 | `assert_none` | 扫描 OTP/TOTP key，并等待旧签发方式的最长有效窗口结束 |
-| 节点 | `maintenance_cutover` | 停止所有旧 reporter，切换后逐节点配置 scoped token 和幂等键 |
-| 旧主题 | `discard_confirmed` | 不运行或复制旧主题、CSS、JS 和 bundle |
-| 自定义订阅规则 | `none` 或 `discard_confirmed` | 只有实际不存在或明确接受放弃时才能选择 |
+| 旧配置 | `manual_only` | 目标值全部手填，不从旧配置导入 |
+| 登录态 | `logout_all` | 不转换 Laravel session；用户和管理员切换后重新登录 |
+| 旧 cache | `discard_ephemeral_after_fence` | 只在 producer 已 fence 后放弃已分类的临时 cache |
+| Stripe | `assert_none` | 自动检查 Stripe 相关 inventory 为零，否则阻断 |
+| 临时订阅 token | `assert_none` | 等待所有已签发 OTP/TOTP 窗口耗尽，否则阻断 |
+| 节点 | `one_shot_offline_cutover` | 全部 reporter 停机时批量换 scoped token/幂等键，全部验证后统一启动 |
+| 旧 theme | `discard_confirmed` | 明确接受旧视觉/脚本资产不进入新版 |
+| custom rules | `none` 或 `discard_confirmed` | 不盲拷旧模板；存在未处置文件时阻断 |
 
-## MySQL 里的永久订阅 token 与 Redis 临时状态
+同时固定：
 
-用户的永久订阅凭据是 MySQL `v2_user.token`，不是 Redis key。它与用户 ID、密码 hash、
-`uuid` 一样是 F0 数据：迁移必须保留原值，不得因为全量登出、清 cache 或升级而重生。
-旧订阅方式 0 直接把这个永久 token 放入 URL。
+- `runtime.configuration_source=file_only`；
+- `target.api_runtime_config_path=/var/lib/v2board/api/config.json`、
+  `target.worker_runtime_config_path=/var/lib/v2board/worker/config.json`；
+- native runtime 不含 query/form auth fallback、旧 JWT decoder/cutoff 或全局 node-token fallback；
+- `runtime.server_require_idempotency_key=true`；
+- `APP_KEY`、server token、lifecycle audit key 和所有 target 密码互不复用。
 
-Redis 中的 `otp_`/`otpn_`/`totp_` 是为了不在每个对外 URL 中直接暴露永久 token 而产生的
-短期表示：
+## 永久订阅 token 与旧 Redis
 
-- 方式 1 使用 `otp_{permanent}` 和 `otpn_{temporary}` 两个 24 小时映射；订阅验证成功时
-  反查 MySQL 永久 token 并消费该临时映射。
-- 方式 2 由用户 ID、MySQL 永久 token 和当前时间窗计算 TOTP URL；生成 URL 时可以完全
-  不写 Redis。第一次验证时先用用户 ID 从 MySQL 找回永久 token，然后才可能在 Redis 中
-  以 `totp_{temporary}` 再缓存一个完整 timestep。
+旧用户的永久订阅凭据是 source SQL 表中的 `v2_user.token`。它与用户 ID、`uuid`、密码 hash、余额、
+套餐和流量一样属于必须原值转换到 PostgreSQL 的业务数据。
 
-所以这些临时链接不适合写入 MySQL 长期迁移，而“Redis 扫不到 key”也不能单独证明外部已签发的
-TOTP URL 已失效。必须先停止签发，再等完已验证的最长有效窗口。`TEMP_TOKEN`
-快捷登录、邮件验证码、限流、节点在线状态、`USER_SESSIONS_*`/JWT 登录 cache 等也是 Redis 临时状态；按
-`logout_all` 和 `discard_ephemeral_after_fence` 可在停止旧 producer 后放弃，但不能把未知 key
-自动当成 cache。
+Redis 中的 `otp_`、`otpn_`、`totp_` 是短期订阅映射或验证 cache，不是永久 token：
 
-另一类 Redis 数据不是 cache：节点已经上报、但定时任务还没累加到 MySQL `v2_user.u/d`
-及统计表的上传/下载增量，会先存在 Redis `v2board_upload_traffic` /
-`v2board_download_traffic` hash 中。这是“已接受、尚未落库”的权威流量，不是历史流量
-报表的缓存；必须在 fence 后持久化、对账并证明为空，不得直接删除。真实 queue 和
-可重试失败任务也同样不属于可丢 cache。
+- mode 1 通常先写双向 mapping，再签发临时 URL；
+- mode 2 可由用户 ID、永久 token 和时间窗计算 URL，签发时完全不写 Redis；首次验证时才可能写 cache。
 
-## 为什么旧 Redis 要填两个地址
+因此“Redis 扫不到 key”不等于没有已签发链接。非 mode 0 的来源必须记录停止签发时间，并等待完整
+有效期和时钟裕量；最终 `plan` 还会要求相关 key 为零。
 
-固定旧版通常把直接 Redis 命令和队列放在 `REDIS_DB`（常见 DB 0），把 Laravel `Cache::` 放在
-`REDIS_CACHE_DB`（常见 DB 1）。流量 hash 在前者，`otp_`/`otpn_`/`totp_` 在后者；两边还会叠加
-`REDIS_PREFIX`，Cache key 另叠加 `CACHE_PREFIX`。只填写一个 Redis URL 会产生假零结果，所以 v2
-分别要求：
+另一类 Redis 数据绝不是 cache：`v2board_upload_traffic` 和
+`v2board_download_traffic` 保存节点已上报、但尚未计入 SQL `v2_user.u/d` 与统计表的增量。queue 和
+retryable failed work 也可能仍含待执行的业务动作。它们必须在 fence 后以耐久、可恢复的方式排空并
+与 SQL 对账，不能直接丢弃或 `FLUSHDB`。
+
+## 为什么 source 要填两个 Redis URL
+
+固定旧版通常把直接 Redis、queue 和流量 hash 放在 `REDIS_DB`，把 Laravel `Cache::`、OTP/TOTP 等放在
+`REDIS_CACHE_DB`。两者还分别受 `REDIS_PREFIX` 和 `CACHE_PREFIX` 影响，所以清单必须提供：
 
 - `redis_default_url`；
 - `redis_cache_url`；
 - `redis_connection_prefix`；
 - `redis_cache_prefix`。
 
-v2 只接受 `legacy_cache_driver=redis`。若真实旧安装使用 file、memcached 或其他 cache driver，不能填写
-Redis 来伪装通过；应归为 unsupported source，先补对应的只读 inventory 适配器。
+只填一个 URL 可能产生危险的假零结果。v3 目前只接受 `legacy_cache_driver=redis`；真实来源若使用其他
+driver，必须先增加对应的只读 inventory adapter，不能伪填 Redis。
 
-订阅方式 2 的 TOTP URL 在生成时不会写 Redis。为避免“扫描不到 key”被误判为不存在，还必须填写旧
-`show_subscribe_method`、`show_subscribe_expire` 和停止签发时间；方式 1 至少等待 24 小时，方式 2
-在只有“停止签发”人工时间而没有完整 runtime fence proof 时按两个旧 time bucket 等待，另加时钟裕量。
+## Target 由 lifecycle 创建
 
-上述 cache driver、prefix、method、expire 目前都是 operator declaration；填错可能产生假零。即使报告
-出现 `compatible` 或 `ready_for_confirmation`，也不能据此手工迁移。它们以及未分类的 source Redis key
-都是未来 apply blocker；
-当前 `discard_ephemeral_after_fence` 还没有机器证明每一个遗留 key 都确实可重建。
+操作者提供已存在的 bootstrap principal 连接和外部网络控制证据，不手工预建目标业务库或长期
+principal。future `apply` 必须在操作者根据在线 `inspect` 作出一次不可逆迁移授权后，先 fence 并执行
+内部 final recheck，再写 durable pending journal 和创建：
 
-## 节点维护切换是什么意思
+### PostgreSQL 18
 
-“节点”是部署在各服务器上的代理程序/reporters，不是数据库里的节点记录。旧 reporter 常共用一个
-全局 token，而且同一批流量没有稳定的唯一编号；新版默认使用每节点凭据，并要求稳定的
-`Idempotency-Key`，以防同一批流量重复计费。
+- `bootstrap_database_url`：连接已经存在的系统库，principal 只用于创建 target database/roles；
+- `migration_database_url`：target database 上的 DDL 与 migration ledger principal；
+- `api_database_url`：只拥有 API 所需 DML；
+- `worker_database_url`：只拥有 worker、queue 和 outbox 所需 DML。
 
-所以这里不做在线兼容桥。维护时先停旧 reporter、结清 Redis 流量与队列，迁移完成后为每个节点生成
-独立凭据，更新其面板地址/token/幂等上报能力，再逐个恢复。若直接切换而不更新，表现为配置拉取和
-流量上报被拒绝，即“掉线”；节点表数据本身不会丢。
+四个 URL 必须指向同一 PostgreSQL 18 实例；后三个指向同一 target database，principal 彼此独立，并在
+生产使用 `sslmode=verify-full`。目标库及 migration/API/worker roles 必须不存在；bootstrap role 已由
+基础设施提供且具备受审计的创建权限。collation/ctype 固定为 `C.UTF-8`。
+PostgreSQL role 不携带 MySQL 的 `'user'@'host'` 范围，所以清单必须记录外部 `pg_hba.conf` 与网络策略
+证据。
 
-## Target MySQL 由工具创建，不要手工预建库
+### ClickHouse 26.3 LTS
 
-v2 的 target 明确分开两个 MySQL URL：
+清单分别填写 bootstrap、schema、仅允许 raw INSERT 与批次核对 SELECT 的 relay writer，以及面向分析查询的
+select-only reader principal。bootstrap
+principal 已由基础设施提供；目标 database 及 schema/writer/reader principals 必须不存在。初始拓扑
+固定为 standalone non-replicated，raw/aggregate retention 必须显式填写并满足 `aggregate >= raw`。
 
-- `bootstrap_database_url`：连接新 MySQL 8.4 服务器上已存在的 system/bootstrap 库，使用仅供
-  lifecycle 创建 target 库、应用账号和授权的管理凭据；
-- `application_database_url`：最终 runtime 要使用的受限账号和期望库名；在检查及最终确认之前，
-  该库名必须不存在。
-- `application_account_host`：future `CREATE USER`/`GRANT` 中 MySQL account 的 host 范围（即
-  `'application_user'@'application_account_host'`）；它是 API/worker 客户端来源范围，不是 DSN 中
-  MySQL 服务器 host。只接受精确 hostname、精确 IP 或规范 IPv4 CIDR；禁止 `%`、`_` 等 MySQL
-  wildcard，也不得默认成宽泛 `%`。
+ClickHouse 只保存由 PostgreSQL outbox 投影、可重建的分析事实；短暂不可用时不阻止认证、订单、支付
+或流量结算的同步事务。当前 API 不消费 reader；worker 只得到 writer。长期不可用会耗尽 PostgreSQL
+outbox 容量，容量/磁盘水位/安全背压门禁尚未实现，因此仍是 production apply blocker。API/worker
+禁止同步双写 PostgreSQL 和 ClickHouse。
 
-`require_database_absent=true` 与 `require_account_absent=true` 是防止误覆盖、误接管 principal 的强制
-声明。两个 URL 必须指向同一 host/port、
-不同数据库和不同凭据。在线检查只连 bootstrap URL：自动识别服务器版本/能力，并通过
-`information_schema` 与 `mysql.user` 证明期望库名及精确 `'user'@'host'` 不存在；bootstrap principal
-若无权读取这些证明信息就安全失败。不连接、不创建尚不存在的应用库。
+### Redis
 
-只有在维护期最终检查全部通过，操作者又确认精确 `operation_id + report_sha256` 后，future
-`provision apply` 才可用 bootstrap 凭据创建新库，固定为 `utf8mb4/utf8mb4_unicode_ci`，创建/限定
-应用账号仅能从 `application_account_host` 登录并仅获得运行所需权限，然后创建 native schema。
-future apply 必须使用不带 `IF NOT EXISTS` 的 `CREATE DATABASE` / `CREATE USER`，bootstrap 凭据绝不得
-写入最终 `config.json`。如果期望库名或账号已存在，默认阻断；只有 durable journal 证明它就是同一
-operation 之前创建的 pending target，才能进入 resume/recovery，不能复用无 lineage 的旧账号。
+目标 URL 必须使用 `rediss://`，与两个 source Redis identity 不同，并且选定逻辑 DB/namespace 为空。
+Redis 没有“创建逻辑 DB”步骤；工具只验证空状态，绝不会用 `FLUSHDB` 帮忙变空。
 
-Redis 没有对等的“创建逻辑 DB”操作。操作者在 `redis_url` 选择 target DB number/namespace，工具只验证
-它与 source 隔离、为空且具备必要命令；不会用 `FLUSHDB` 帮忙“变空”。需要新物理 Redis 实例时，
-由基础设施先提供连接，lifecycle 工具仍只管该逻辑 DB/namespace。
+## 先检查，再计划，最后才可能写入
 
-## 先检查，再两次明确确认
+固定顺序是：
 
-唯一旧版迁移固定为以下流程：
+1. `validate` 离线校验 v3 文件、全部必填 key/type、URL、secret 独立性和固定决策。
+2. 旧系统仍在服务时运行 `inspect`，在线只读检查来源、target 和当前 blocker。它不授权进入迁移。
+3. 工具输出不可变的检查报告；操作者查看后只作一次决定：是否针对精确
+   `operation_id + inspect report_sha256` 启动不可逆的 one-shot `apply`。拒绝或不确认都不进入维护、
+   不停止旧服务，也不创建 target。
+4. future `apply` 在同一次调用中先 fence 旧 API writer、worker、scheduler、全部 node reporter 和临时
+   链接签发，再排空并对账流量、queue、failed/paid-pending work，建立一致 backup 并验证隔离恢复。
+5. 同一 `apply` 在首次 mutation 前自动执行 final recheck；任何 manifest、现场 identity、数据或报告
+   发生变化都立即中止，不插入第二次人工等待。
+6. final recheck 通过后，同一 `apply` 才写 pending journal、创建 target、bulk 转换、逐值验证、物化
+   配置、离线批量更新全部节点，并只启动新版一次；验收成功后立即完成 source retirement。
 
-1. `provision inspect` 在旧系统仍运行时执行在线只读兼容检查；有 blocker 就完整报告，不进入
-   维护或迁移。
-2. 报告为 `compatible` 时，只请操作者第一次确认：**是否进入维护窗口**；这不是确认迁移。
-3. 确认后 fence 旧 API writer、worker、scheduler 和所有 node reporter，停止签发临时链接，安全结清/
-   对账 Redis 流量与队列，建立一致备份并通过隔离 restore drill。
-4. `provision plan` 在 fence 后重做最终只读检查。任何 source/config/datastore 变化都废弃旧报告；
-   只有 `ready_for_confirmation` 才能展示最终数据库创建、转换、预计停机、proof 和回滚摘要。
-5. 操作者第二次确认必须绑定精确 `operation_id + report_sha256`；过期、重跑或内容改变后的报告
-   不能沿用旧确认。
-6. 只有这个最终确认才允许 future `provision apply` 写 journal、创建 target MySQL 并迁移。拒绝确认时
-   不创建 target 库；在证明安全后可解除 fence 并恢复旧系统。
+`apply` 不得实现 CDC、双写、shadow read、跨维护窗口 backfill 或按节点逐批恢复服务。journal/checkpoint
+只用于同一次停机操作的崩溃恢复。最终提交后统一启动新版，随即撤销 source 账号、隔离网络、永久停服
+MySQL/MariaDB 与旧 Redis，并从服务器删除一次性 lifecycle/MySQL 工具；只保留带 SHA-256 的加密冷归档。
+此后禁止 MySQL runtime rollback，只能恢复 PostgreSQL/ClickHouse 或 forward recovery。
 
-当前 CLI 只做到第 1 和第 4 的有界只读报告，不会互动地进入维护，也没有第 6 的 `apply`。
-两次确认是冻结的未来编排契约，不能用 shell 的模糊 `yes` 或手工执行 SQL 绕过。
-journal、backup binding、source facts、Redis ownership、target 权限和 apply 等静态能力缺口会列入
-`implementation_blockers`，在在线阶段也直接给出 `blocked/resolve_blockers`；不会用退出码 0 的
-`compatible` 掩盖“迁移器尚未实现”。只有这些缺口关闭且 `apply_available=true` 后，在线检查才可返回
-`compatible/confirm_enter_maintenance`。
+当前仓库只实现 `validate`、`inspect` 和 `plan`，且 converter/apply 仍不可用。报告固定
+`converter_available=false`、`apply_available=false`、`verdict=blocked`、
+`next_action=resolve_blockers`；不存在 lifecycle `apply` 命令。即使某些现场检查全部通过，也不能手工把
+它解释成受支持迁移许可。
 
-## 使用当前只读命令
+## 使用 v3 示例
 
-公开示例包含故意无效的 UUID、域名、CIDR、密钥和路径，也不是 secret 文件权限。复制到仓库外后必须
-逐项复核并填写所有字段，不能只替换包含 `REPLACE` 的值：
+模板含公开 placeholder，不能直接运行。复制到仓库外，逐项复查并填写，生成新的 operation UUID，
+限制为 owner-only 权限：
 
 ```bash
-cp docs/examples/legacy-migration.v2.example.json /secure/private/legacy-migration.json
-uuidgen  # 把结果填入 operation_id，不要复用示例 UUID
+cp docs/examples/legacy-migration.v3.example.json /secure/private/legacy-migration.json
 chmod 600 /secure/private/legacy-migration.json
-v2board-api provision validate --manifest /secure/private/legacy-migration.json
-v2board-api provision inspect --manifest /secure/private/legacy-migration.json
-# 仅在上面报告 compatible、你确认进入维护并完成 fence/drain/backup/restore proof 后：
-v2board-api provision plan --manifest /secure/private/legacy-migration.json
+
+v2board-lifecycle validate --manifest /secure/private/legacy-migration.json
+v2board-lifecycle inspect --manifest /secure/private/legacy-migration.json
+
+# 当前仅供开发审计；future apply 会在维护窗口内部自动执行同一 final recheck：
+v2board-lifecycle plan --manifest /secure/private/legacy-migration.json
 ```
 
-`lifecycle_audit_key` 必须是新生成、至少 32 bytes、只供 lifecycle 审计使用的独立 secret；不得与
-`runtime.app_key`、`runtime.server_token` 或 target datastore 密码相同，也不会物化进最终 runtime。报告只包含用它对**原始清单
-完整 bytes**计算的 `manifest_binding_hmac_sha256`。因此 DSN、密码、backup reference、runtime 值乃至
-空白格式发生任何变化，绑定值和最终 `report_sha256` 都会变化，旧确认立即失效；报告又不会暴露可用于
-离线猜测清单中低熵 secret 的裸 manifest hash。
+清单必须是 regular、non-symlink 文件，大小为 1 byte 到 1 MiB，且在 Unix 上不得授予 group/world 权限。
+datastore URL 密码中的特殊字符要 percent-encode。生产 target 必须使用经过身份验证的 TLS；source 只有
+在具名可信维护网络或加密隧道内才可声明非 TLS 例外。
 
-公开示例的 maintenance attestations 默认都是 `false`，`backup_reference` 默认是 `null`，这是在线
-`inspect` 之前的正确初始状态。不得为了让命令变绿而提前填 `true`。只有第一次确认进入
-维护、实际完成对应 fence/drain/backup/restore proof 后，才把每项 attestation 更新为真实值，
-填入非占位的 backup reference，再执行最终 `plan`。
+报告不会输出明文 secret。`manifest_binding_hmac_sha256` 绑定原始清单 bytes；
+`report_binding_hmac_sha256` 与 `report_sha256` 绑定检查结果和现场 identity。修改 JSON 空格、凭据、
+endpoint、backup reference 或 runtime 值都会改变 binding。
 
-连接 URL 内的用户名、密码若含 `@`、`:`、`/`、`#` 等字符，必须 percent-encode；校验器会先严格解码
-再检查用户名分离、长度和 placeholder，编码不能绕过规则。`app_url`、每个 `subscribe_url` 和
-`server_api_url` 必须是无 userinfo/path/query/fragment 的规范 HTTPS origin；CORS entry 同样如此。
-`verified_tls` 要求
-source MySQL 使用 `ssl-mode=VERIFY_IDENTITY`，两个 source Redis 都使用 `rediss://`；旧基础设施确实只在
-隔离维护网内可达时，才可显式选择 `trusted_maintenance_network`。
+## 当前只读检查覆盖与缺口
 
-`validate` 不连接也不写入；`inspect` 是在线只读检查，scope 为
-`online_read_only_compatibility_inspection`，verdict 为 `compatible|blocked`；`plan` 是 fence 后最终只读检查，
-scope 为 `fenced_read_only_final_plan`，verdict 为 `ready_for_confirmation|blocked`。它们都输出脱敏
-`operation_id`、`manifest_binding_hmac_sha256`、`report_sha256` 和 `apply_available=false`。
-`report_sha256` 是将该字段置空后 canonical report payload 的摘要；payload 包含 manifest binding、
-现场实例 identity 和所有检查结果，不是最终打印 JSON 文件的直接哈希。存在 blocker 时，命令在
-完整打印 JSON 后返回非零退出码。
+legacy `inspect/plan` 已检查或报告：
 
-target MySQL 必须是可连接的 MySQL 8.4+ bootstrap 服务器，且 `application_database_url` 指定的库名
-和解码后的应用 `'user'@'host'` 必须不存在；source/target MySQL `server_uuid` 也必须不同。将来创建时
-固定使用 `utf8mb4/utf8mb4_unicode_ci`。当前 legacy 路径只接受没有检测到 replication channel、group
-replication member 或 binlog replica client 的 standalone MySQL。target Redis 必须是与 source `run_id`
-不同的空 Redis 6.2+ 逻辑 DB，并且 source/target 都必须报告 `role=master`、零 connected replica、
-`cluster_enabled=0`；cluster/replica 拓扑会阻断，避免单节点 `SCAN` 产生假空。它还必须可见 `GETDEL`、
-`EVALSHA`、`SCRIPT` 命令。命令存在不等于当前 ACL 真能执行，因此当前列为 implementation blocker。
-这些探测仍不能证明未注册/离线 replica 或底层 storage failure domain；完整 topology binding 继续作为
-implementation blocker，不能仅凭 UUID/run_id 宣称物理隔离完成。
-每次 Redis SCAN 最多接受 100,000 个 key，超过即报错而不是给出不完整 inventory。
+- source MySQL/Percona 5.7+ 或 MariaDB 10.2+ 的实际 vendor/version、read-only session、结构指纹、
+  standalone 可见拓扑和 core object inventory；
+- 未完成/paid-pending order、Stripe 零状态、关系/唯一性/collation 冲突、giftcard redemption；
+- 节点 `group_id`、coupon `limit_plan_ids`、order `surplus_order_ids`、giftcard `used_user_ids` 的 JSON ID
+  array 类型、正整数/目标范围、引用完整性和数字字符串 normalization 计数；
+- 两个 source Redis 的流量、queue、failed work、reset lock、OTP/TOTP 窗口与实例 identity；
+- target PostgreSQL 18 能力、库/角色为空、collation 与外部控制声明；
+- target ClickHouse 26.3 LTS、database/principal 为空、standalone 状态、grant/retention 声明；
+- target Redis 为空、版本/命令能力与 source 隔离。
 
-当前清单还没有 `shared|exclusive` Redis ownership 和独立 Horizon prefix 证明；全库发现 namespace 外的
-queue/traffic/lock/OTP-like key 时会保守阻断，而其余未分类 key 只 warning。共享 Redis DB 因而可能产生
-安全的假阳性，并未得到完整支持；未来 apply 必须按契约中的 `P/CP/H` classifier 关闭假阳性和假阴性。
+仍未实现并持续 fail closed 的核心能力包括：完整来源 lineage/config/artifact 证明、MySQL/MariaDB 到
+PostgreSQL 一次性 offline converter、跨 datastore snapshot 一致性、完整 Redis ownership classifier、provider 侧
+Stripe 零状态、target bootstrap、operation journal、数据逐值验证、ClickHouse 初始投影、配置原子
+promote、backup binding、pre-commit abort/restore、离线节点批量验收、source retirement 和最终 `apply`。
+ClickHouse 固定单节点的 schema lock、
+崩溃恢复、精确 lineage 与 installation binding 已实现；TTL/archive/restore drill、HA/Keeper 与跨节点
+schema 协调，以及 PostgreSQL outbox 容量预算/磁盘水位/安全背压仍未完成；secret split 通过也不会
+解除这些 blocker。
 
-当前 Stripe `assert_none` 只机器统计旧库中的 `Stripe*` payment row 及其 status 0/1 order。provider 侧
-callback/reconciliation inventory 尚未证明，因此完整 Stripe proof 仍是 apply blocker；不能把当前
-`compatible` 或 `ready_for_confirmation` 称为完整的 Stripe not-applicable 证明。
-
-## 当前不能做的事
-
-仓库没有 `provision apply`，报告固定输出 `apply_available=false`。当前不会创建 target MySQL、复制数据、运行 target
-migration、写 `config.json`、生成节点凭据、建立 operation journal、验证 backup restore 或切流。
-普通 `v2board-api migrate` 也已拒绝“有表但没有 native SQLx lineage”的数据库，绝不能指向旧库。
-
-真正开放 apply 前仍必须补齐：最终确认后由 bootstrap 创建独立 MySQL 8.4 target、一致快照复制、
-逐表数据 proof、可恢复 journal、
-backup/restore drill、旧 runtime artifact inventory、pool/worker/path 配置纳入单一文件，以及最终原子
-config promote。最终 `config.json` 只能物化 target runtime 值，绝不能保留 source 凭据、backup reference
-或旧环境内容。旧 cache/prefix/subscription/queue 事实必须由严格、非执行式 parser 校验只读
-`bootstrap/cache/config.php` snapshot 及 SHA，停止签发时间必须来自 future journal 的 machine fence，不能
-继续信任当前手填值。完整不可变边界见 [安装、旧版迁移与升级不可变契约](upgrade-invariants.md)。
+普通 `v2board-api migrate` 只运行已确认 native PostgreSQL lineage 的 SQLx migration；它不是 legacy
+adoption/converter 命令，绝不能指向旧 MySQL/MariaDB 或未知 PostgreSQL 数据库。

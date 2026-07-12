@@ -1,5 +1,5 @@
 use serde::Serialize;
-use sqlx::{FromRow, MySqlPool};
+use sqlx::{FromRow, PgPool};
 
 #[derive(Debug, Clone, FromRow)]
 pub struct UserAuthRow {
@@ -10,9 +10,9 @@ pub struct UserAuthRow {
     pub password_salt: Option<String>,
     pub session_epoch: i64,
     pub token: String,
-    pub banned: i8,
-    pub is_admin: i8,
-    pub is_staff: i8,
+    pub banned: i16,
+    pub is_admin: i16,
+    pub is_staff: i16,
 }
 
 #[derive(Debug, Clone, FromRow)]
@@ -22,10 +22,10 @@ struct RawUserInfoRow {
     pub device_limit: Option<i32>,
     pub last_login_at: Option<i64>,
     pub created_at: i64,
-    pub banned: i8,
-    pub auto_renewal: Option<i8>,
-    pub remind_expire: Option<i8>,
-    pub remind_traffic: Option<i8>,
+    pub banned: i16,
+    pub auto_renewal: Option<i16>,
+    pub remind_expire: Option<i16>,
+    pub remind_traffic: Option<i16>,
     pub expired_at: Option<i64>,
     pub balance: i32,
     pub commission_balance: i32,
@@ -43,10 +43,10 @@ pub struct UserInfoRow {
     pub device_limit: Option<i32>,
     pub last_login_at: Option<i64>,
     pub created_at: i64,
-    pub banned: i8,
-    pub auto_renewal: Option<i8>,
-    pub remind_expire: Option<i8>,
-    pub remind_traffic: Option<i8>,
+    pub banned: i16,
+    pub auto_renewal: Option<i16>,
+    pub remind_expire: Option<i16>,
+    pub remind_traffic: Option<i16>,
     pub expired_at: Option<i64>,
     pub balance: i32,
     pub commission_balance: i32,
@@ -78,7 +78,7 @@ pub struct UserAccessRow {
     pub uuid: String,
     pub group_id: Option<i32>,
     pub plan_id: Option<i32>,
-    pub banned: i8,
+    pub banned: i16,
     pub u: i64,
     pub d: i64,
     pub transfer_enable: i64,
@@ -87,14 +87,14 @@ pub struct UserAccessRow {
 }
 
 pub async fn find_user_for_auth(
-    pool: &MySqlPool,
+    pool: &PgPool,
     email: &str,
 ) -> Result<Option<UserAuthRow>, sqlx::Error> {
     sqlx::query_as::<_, UserAuthRow>(
         r#"
         SELECT id, email, password, password_algo, password_salt, session_epoch, token, banned, is_admin, is_staff
         FROM v2_user
-        WHERE email = ?
+        WHERE lower(btrim(email)) = lower(btrim($1))
         LIMIT 1
         "#,
     )
@@ -104,14 +104,14 @@ pub async fn find_user_for_auth(
 }
 
 pub async fn find_user_for_auth_by_id(
-    pool: &MySqlPool,
+    pool: &PgPool,
     id: i64,
 ) -> Result<Option<UserAuthRow>, sqlx::Error> {
     sqlx::query_as::<_, UserAuthRow>(
         r#"
         SELECT id, email, password, password_algo, password_salt, session_epoch, token, banned, is_admin, is_staff
         FROM v2_user
-        WHERE id = ?
+        WHERE id = $1
         LIMIT 1
         "#,
     )
@@ -120,7 +120,7 @@ pub async fn find_user_for_auth_by_id(
     .await
 }
 
-pub async fn find_user_info(pool: &MySqlPool, id: i64) -> Result<Option<UserInfoRow>, sqlx::Error> {
+pub async fn find_user_info(pool: &PgPool, id: i64) -> Result<Option<UserInfoRow>, sqlx::Error> {
     let raw = sqlx::query_as::<_, RawUserInfoRow>(
         r#"
         SELECT
@@ -142,7 +142,7 @@ pub async fn find_user_info(pool: &MySqlPool, id: i64) -> Result<Option<UserInfo
             telegram_id,
             uuid
         FROM v2_user
-        WHERE id = ?
+        WHERE id = $1
         LIMIT 1
         "#,
     )
@@ -176,14 +176,14 @@ pub async fn find_user_info(pool: &MySqlPool, id: i64) -> Result<Option<UserInfo
 }
 
 pub async fn find_user_subscribe(
-    pool: &MySqlPool,
+    pool: &PgPool,
     id: i64,
 ) -> Result<Option<UserSubscribeRow>, sqlx::Error> {
     sqlx::query_as::<_, UserSubscribeRow>(
         r#"
         SELECT plan_id, token, expired_at, u, d, transfer_enable, device_limit, email, uuid
         FROM v2_user
-        WHERE id = ?
+        WHERE id = $1
         LIMIT 1
         "#,
     )
@@ -193,14 +193,14 @@ pub async fn find_user_subscribe(
 }
 
 pub async fn find_user_access(
-    pool: &MySqlPool,
+    pool: &PgPool,
     id: i64,
 ) -> Result<Option<UserAccessRow>, sqlx::Error> {
     sqlx::query_as::<_, UserAccessRow>(
         r#"
         SELECT id, token, uuid, group_id, plan_id, banned, u, d, transfer_enable, expired_at, commission_balance
         FROM v2_user
-        WHERE id = ?
+        WHERE id = $1
         LIMIT 1
         "#,
     )
@@ -210,14 +210,14 @@ pub async fn find_user_access(
 }
 
 pub async fn find_user_access_by_token(
-    pool: &MySqlPool,
+    pool: &PgPool,
     token: &str,
 ) -> Result<Option<UserAccessRow>, sqlx::Error> {
     sqlx::query_as::<_, UserAccessRow>(
         r#"
         SELECT id, token, uuid, group_id, plan_id, banned, u, d, transfer_enable, expired_at, commission_balance
         FROM v2_user
-        WHERE token = ?
+        WHERE token = $1
         LIMIT 1
         "#,
     )
@@ -227,22 +227,22 @@ pub async fn find_user_access_by_token(
 }
 
 pub async fn update_preferences(
-    pool: &MySqlPool,
+    pool: &PgPool,
     id: i64,
-    auto_renewal: Option<i8>,
-    remind_expire: Option<i8>,
-    remind_traffic: Option<i8>,
+    auto_renewal: Option<i16>,
+    remind_expire: Option<i16>,
+    remind_traffic: Option<i16>,
     now: i64,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
         UPDATE v2_user
         SET
-            auto_renewal = COALESCE(?, auto_renewal),
-            remind_expire = COALESCE(?, remind_expire),
-            remind_traffic = COALESCE(?, remind_traffic),
-            updated_at = ?
-        WHERE id = ?
+            auto_renewal = COALESCE($1, auto_renewal),
+            remind_expire = COALESCE($2, remind_expire),
+            remind_traffic = COALESCE($3, remind_traffic),
+            updated_at = $4
+        WHERE id = $5
         "#,
     )
     .bind(auto_renewal)
@@ -255,34 +255,36 @@ pub async fn update_preferences(
     Ok(())
 }
 
-pub async fn clear_telegram_id(pool: &MySqlPool, id: i64, now: i64) -> Result<bool, sqlx::Error> {
-    let result = sqlx::query("UPDATE v2_user SET telegram_id = NULL, updated_at = ? WHERE id = ?")
-        .bind(now)
-        .bind(id)
-        .execute(pool)
-        .await?;
+pub async fn clear_telegram_id(pool: &PgPool, id: i64, now: i64) -> Result<bool, sqlx::Error> {
+    let result =
+        sqlx::query("UPDATE v2_user SET telegram_id = NULL, updated_at = $1 WHERE id = $2")
+            .bind(now)
+            .bind(id)
+            .execute(pool)
+            .await?;
     Ok(result.rows_affected() > 0)
 }
 
 pub async fn update_security(
-    pool: &MySqlPool,
+    pool: &PgPool,
     id: i64,
     uuid: &str,
     token: &str,
     now: i64,
 ) -> Result<bool, sqlx::Error> {
-    let result = sqlx::query("UPDATE v2_user SET uuid = ?, token = ?, updated_at = ? WHERE id = ?")
-        .bind(uuid)
-        .bind(token)
-        .bind(now)
-        .bind(id)
-        .execute(pool)
-        .await?;
+    let result =
+        sqlx::query("UPDATE v2_user SET uuid = $1, token = $2, updated_at = $3 WHERE id = $4")
+            .bind(uuid)
+            .bind(token)
+            .bind(now)
+            .bind(id)
+            .execute(pool)
+            .await?;
     Ok(result.rows_affected() > 0)
 }
 
 pub async fn update_password(
-    pool: &MySqlPool,
+    pool: &PgPool,
     id: i64,
     password_hash: &str,
     now: i64,
@@ -290,9 +292,9 @@ pub async fn update_password(
     let result = sqlx::query(
         r#"
         UPDATE v2_user
-        SET password = ?, password_algo = NULL, password_salt = NULL,
-            session_epoch = session_epoch + 1, updated_at = ?
-        WHERE id = ?
+        SET password = $1, password_algo = NULL, password_salt = NULL,
+            session_epoch = session_epoch + 1, updated_at = $2
+        WHERE id = $3
         "#,
     )
     .bind(password_hash)
@@ -304,7 +306,7 @@ pub async fn update_password(
 }
 
 pub async fn change_password_if_current(
-    pool: &MySqlPool,
+    pool: &PgPool,
     id: i64,
     expected_hash: &str,
     expected_session_epoch: i64,
@@ -314,9 +316,9 @@ pub async fn change_password_if_current(
     let result = sqlx::query(
         r#"
         UPDATE v2_user
-        SET password = ?, password_algo = NULL, password_salt = NULL,
-            session_epoch = session_epoch + 1, updated_at = ?
-        WHERE id = ? AND password = ? AND session_epoch = ?
+        SET password = $1, password_algo = NULL, password_salt = NULL,
+            session_epoch = session_epoch + 1, updated_at = $2
+        WHERE id = $3 AND password = $4 AND session_epoch = $5
         "#,
     )
     .bind(password_hash)
@@ -332,7 +334,7 @@ pub async fn change_password_if_current(
 /// Upgrades a successfully verified legacy password without revoking the session that is
 /// currently being created. The compare-and-set avoids overwriting a concurrent password reset.
 pub async fn rehash_password(
-    pool: &MySqlPool,
+    pool: &PgPool,
     id: i64,
     expected_hash: &str,
     password_hash: &str,
@@ -341,8 +343,8 @@ pub async fn rehash_password(
     let result = sqlx::query(
         r#"
         UPDATE v2_user
-        SET password = ?, password_algo = NULL, password_salt = NULL, updated_at = ?
-        WHERE id = ? AND password = ?
+        SET password = $1, password_algo = NULL, password_salt = NULL, updated_at = $2
+        WHERE id = $3 AND password = $4
         "#,
     )
     .bind(password_hash)
@@ -354,28 +356,39 @@ pub async fn rehash_password(
     Ok(result.rows_affected() > 0)
 }
 
-pub async fn count_pending_orders(pool: &MySqlPool, user_id: i64) -> Result<i64, sqlx::Error> {
+pub async fn count_pending_orders(pool: &PgPool, user_id: i64) -> Result<i64, sqlx::Error> {
     let count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM v2_order WHERE status = 0 AND user_id = ?")
+        sqlx::query_scalar("SELECT COUNT(*) FROM v2_order WHERE status = 0 AND user_id = $1")
             .bind(user_id)
             .fetch_one(pool)
             .await?;
     Ok(count)
 }
 
-pub async fn count_pending_tickets(pool: &MySqlPool, user_id: i64) -> Result<i64, sqlx::Error> {
+pub async fn count_pending_tickets(pool: &PgPool, user_id: i64) -> Result<i64, sqlx::Error> {
     let count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM v2_ticket WHERE status = 0 AND user_id = ?")
+        sqlx::query_scalar("SELECT COUNT(*) FROM v2_ticket WHERE status = 0 AND user_id = $1")
             .bind(user_id)
             .fetch_one(pool)
             .await?;
     Ok(count)
 }
 
-pub async fn count_invited_users(pool: &MySqlPool, user_id: i64) -> Result<i64, sqlx::Error> {
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM v2_user WHERE invite_user_id = ?")
+pub async fn count_invited_users(pool: &PgPool, user_id: i64) -> Result<i64, sqlx::Error> {
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM v2_user WHERE invite_user_id = $1")
         .bind(user_id)
         .fetch_one(pool)
         .await?;
     Ok(count)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn authentication_lookup_uses_the_canonical_email_index() {
+        let source = include_str!("user.rs");
+        assert!(source.contains("lower(btrim(email)) = lower(btrim($1))"));
+        let migration = include_str!("../../../migrations-postgres/0001_initial.sql");
+        assert!(migration.contains("uniq_user_email_canonical"));
+    }
 }

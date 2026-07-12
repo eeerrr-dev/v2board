@@ -5,9 +5,10 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use sqlx::{FromRow, MySql, MySqlPool, Transaction};
+use sqlx::FromRow;
 use v2board_compat::ApiError;
 use v2board_config::AppConfig;
+use v2board_db::{DbPool, DbTransaction};
 
 #[cfg(test)]
 use openssl::pkey::PKey;
@@ -17,9 +18,11 @@ mod payment_integrations;
 
 use lifecycle::{
     calculate_handling_amount, calculate_handling_amount_cents, commission_amount,
-    credit_user_balance, find_user_for_order, generate_order_no, insert_order, is_valid_period,
-    mark_order_paid, round_cents,
+    credit_user_balance, find_user_for_order, insert_order, is_valid_period, mark_order_paid,
+    round_cents,
 };
+
+pub use lifecycle::generate_order_no;
 
 #[cfg(test)]
 use lifecycle::{
@@ -40,10 +43,10 @@ use payment_integrations::{
 const GIB: i64 = 1_073_741_824;
 const UNFINISHED_ORDER_UNIQUE_KEY: &str = "uniq_unfinished_order_per_user";
 const PAYMENT_SETTLEMENT_ORDER_SQL: &str = r#"
-    SELECT id, status, total_amount, handling_amount, user_id, payment_id,
+    SELECT id, status, total_amount::BIGINT, handling_amount::BIGINT, user_id, payment_id,
            callback_no, callback_no_hash
     FROM v2_order
-    WHERE trade_no = ?
+    WHERE trade_no = $1
     LIMIT 1
     FOR UPDATE
 "#;
@@ -53,21 +56,21 @@ const PAYMENT_NOTIFY_LOOKUP_SQL: &str = r#"
         payment,
         enable,
         uuid,
-        CAST(config AS CHAR) AS config,
+        CAST(config AS TEXT) AS config,
         notify_domain,
         handling_fee_fixed,
         handling_fee_percent
     FROM v2_payment
-    WHERE payment = ? AND uuid = ?
+    WHERE payment = $1 AND uuid = $2
     LIMIT 1
 "#;
-const PAYMENT_ACTIVE_CONFIG_FOR_SHARE_SQL: &str = "SELECT payment, CAST(config AS CHAR) FROM v2_payment \
-     WHERE id = ? AND enable = 1 AND archived_at IS NULL LIMIT 1 FOR SHARE";
+const PAYMENT_ACTIVE_CONFIG_FOR_SHARE_SQL: &str = "SELECT payment, CAST(config AS TEXT) FROM v2_payment \
+     WHERE id = $1 AND enable = 1 AND archived_at IS NULL LIMIT 1 FOR SHARE";
 const UNFINISHED_ORDER_FOR_UPDATE_SQL: &str =
-    "SELECT id FROM v2_order WHERE user_id = ? AND status IN (0, 1) LIMIT 1 FOR UPDATE";
+    "SELECT id FROM v2_order WHERE user_id = $1 AND status IN (0, 1) LIMIT 1 FOR UPDATE";
 #[derive(Clone)]
 pub struct OrderService {
-    db: MySqlPool,
+    db: DbPool,
     config: Arc<AppConfig>,
 }
 
@@ -87,7 +90,7 @@ pub struct CheckoutOrderInput {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CheckoutResult {
-    pub r#type: i8,
+    pub r#type: i16,
     pub data: serde_json::Value,
 }
 
@@ -133,24 +136,24 @@ struct DraftOrder {
     refund_amount: Option<Decimal>,
     balance_amount: Option<Decimal>,
     surplus_order_ids: Option<Vec<i64>>,
-    invite_user_id: Option<i32>,
+    invite_user_id: Option<i64>,
     commission_balance: Decimal,
 }
 
 #[derive(Debug, Clone, FromRow)]
 struct UserForOrder {
     id: i64,
-    invite_user_id: Option<i32>,
+    invite_user_id: Option<i64>,
     balance: i32,
     discount: Option<i32>,
-    commission_type: i8,
+    commission_type: i16,
     commission_rate: Option<i32>,
     traffic_epoch: i64,
     u: i64,
     d: i64,
     transfer_enable: i64,
     device_limit: Option<i32>,
-    banned: i8,
+    banned: i16,
     group_id: Option<i32>,
     plan_id: Option<i32>,
     speed_limit: Option<i32>,
@@ -160,9 +163,9 @@ struct UserForOrder {
 #[derive(Debug, Clone, FromRow)]
 struct CouponRow {
     id: i32,
-    r#type: i8,
+    r#type: i16,
     value: i32,
-    show: i8,
+    show: i16,
     limit_use: Option<i32>,
     limit_use_with_user: Option<i32>,
     limit_plan_ids: Option<String>,
@@ -199,7 +202,7 @@ struct OrderForCheckout {
 struct PaymentForCheckout {
     id: i32,
     payment: String,
-    enable: i8,
+    enable: i16,
     uuid: String,
     config: String,
     notify_domain: Option<String>,
@@ -245,7 +248,7 @@ pub struct LatePaymentNotice {
     pub callback_no: String,
     pub callback_no_hash: String,
     pub reason: &'static str,
-    pub order_status: i8,
+    pub order_status: i16,
     pub expected_amount: i64,
     pub settled_amount: Option<i64>,
 }
@@ -317,7 +320,7 @@ fn payment_binding_matches(
 }
 
 fn is_ordinary_payment_replay(
-    status: i8,
+    status: i16,
     bound_callback_no: Option<&str>,
     bound_callback_no_hash: Option<&[u8]>,
     callback_no: &str,
@@ -326,11 +329,8 @@ fn is_ordinary_payment_replay(
         && payment_callback_identity_matches(bound_callback_no, bound_callback_no_hash, callback_no)
 }
 
-fn should_emit_late_payment_notice(rows_affected: u64) -> bool {
-    // MySQL reports one affected row for INSERT and two for the duplicate-key
-    // UPDATE that increments occurrence_count. Notify operators only for the
-    // first durable observation of a provider transaction.
-    rows_affected == 1
+fn should_emit_late_payment_notice(first_observation: bool) -> bool {
+    first_observation
 }
 
 fn payment_amount_matches(
@@ -348,7 +348,7 @@ struct PaymentReconciliation<'a> {
     trade_no: &'a str,
     callback_no: &'a str,
     reason: &'a str,
-    order_status: i8,
+    order_status: i16,
     expected_amount: i64,
     settled_amount: Option<i64>,
 }
@@ -387,15 +387,15 @@ fn bounded_payment_audit_identity(value: &str) -> (String, String) {
 }
 
 async fn upsert_payment_reconciliation(
-    tx: &mut Transaction<'_, MySql>,
+    tx: &mut DbTransaction<'_>,
     record: PaymentReconciliation<'_>,
-) -> Result<u64, ApiError> {
+) -> Result<bool, ApiError> {
     let now = Utc::now().timestamp();
     let trade_no_hash = payment_identifier_hash(record.trade_no);
     let callback_no_hash = payment_identifier_hash(record.callback_no);
     let trade_no = bounded_payment_identifier(record.trade_no);
     let callback_no = bounded_payment_identifier(record.callback_no);
-    let result = sqlx::query(
+    let first_observation = sqlx::query_scalar::<_, bool>(
         r#"
         INSERT INTO v2_payment_reconciliation (
             payment_id, provider, trade_no, trade_no_hash,
@@ -403,10 +403,11 @@ async fn upsert_payment_reconciliation(
             expected_amount, settled_amount, occurrence_count,
             first_seen_at, last_seen_at, resolved_at, resolution
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, NULL, NULL) AS new
-        ON DUPLICATE KEY UPDATE
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 1, $11, $12, NULL, NULL)
+        ON CONFLICT (payment_id, callback_no_hash) DO UPDATE SET
             occurrence_count = v2_payment_reconciliation.occurrence_count + 1,
-            last_seen_at = new.last_seen_at
+            last_seen_at = EXCLUDED.last_seen_at
+        RETURNING occurrence_count = 1
         "#,
     )
     .bind(record.payment_id)
@@ -421,9 +422,9 @@ async fn upsert_payment_reconciliation(
     .bind(record.settled_amount)
     .bind(now)
     .bind(now)
-    .execute(&mut **tx)
+    .fetch_one(&mut **tx)
     .await?;
-    Ok(result.rows_affected())
+    Ok(first_observation)
 }
 
 fn payable_amount_cents(
@@ -454,7 +455,7 @@ enum PaymentNotifyOutcome {
 }
 
 impl OrderService {
-    pub fn new(db: MySqlPool, config: Arc<AppConfig>) -> Self {
+    pub fn new(db: DbPool, config: Arc<AppConfig>) -> Self {
         Self { db, config }
     }
 
@@ -525,14 +526,14 @@ impl OrderService {
                 id,
                 user_id,
                 plan_id,
-                `type`,
+                "type",
                 period,
                 trade_no,
                 total_amount,
                 refund_amount,
-                surplus_order_ids
+                surplus_order_ids::text AS surplus_order_ids
             FROM v2_order
-            WHERE trade_no = ? AND user_id = ? AND status = 0
+            WHERE trade_no = $1 AND user_id = $2 AND status = 0
             LIMIT 1
             FOR UPDATE
             "#,
@@ -543,7 +544,7 @@ impl OrderService {
         .await?
         .ok_or_else(|| ApiError::legacy("Order does not exist or has been paid"))?;
         let binding = sqlx::query_as::<_, (Option<i32>, Option<String>)>(
-            "SELECT payment_id, callback_no FROM v2_order WHERE id = ?",
+            "SELECT payment_id, callback_no FROM v2_order WHERE id = $1",
         )
         .bind(order.id)
         .fetch_one(&mut *tx)
@@ -569,12 +570,12 @@ impl OrderService {
                 payment,
                 enable,
                 uuid,
-                CAST(config AS CHAR) AS config,
+                CAST(config AS TEXT) AS config,
                 notify_domain,
                 handling_fee_fixed,
                 handling_fee_percent
             FROM v2_payment
-            WHERE id = ? AND archived_at IS NULL
+            WHERE id = $1 AND archived_at IS NULL
             LIMIT 1
             "#,
         )
@@ -624,9 +625,11 @@ impl OrderService {
         let updated = sqlx::query(
             r#"
             UPDATE v2_order
-            SET payment_id = ?, handling_amount = ?, callback_no = NULL,
-                callback_no_hash = NULL, updated_at = ?
-            WHERE id = ? AND status = 0 AND payment_id <=> ? AND callback_no <=> ?
+            SET payment_id = $1, handling_amount = $2, callback_no = NULL,
+                callback_no_hash = NULL, updated_at = $3
+            WHERE id = $4 AND status = 0
+              AND payment_id IS NOT DISTINCT FROM $5
+              AND callback_no IS NOT DISTINCT FROM $6
             "#,
         )
         .bind(payment.id)
@@ -666,7 +669,7 @@ impl OrderService {
             r#"
             SELECT id, trade_no, total_amount, callback_no, payment_id
             FROM v2_order
-            WHERE trade_no = ? AND user_id = ? AND status = 0
+            WHERE trade_no = $1 AND user_id = $2 AND status = 0
             LIMIT 1
             FOR UPDATE
             "#,
@@ -682,11 +685,11 @@ impl OrderService {
 
         let payment = sqlx::query_as::<_, PaymentForCheckout>(
             r#"
-            SELECT id, payment, enable, uuid, CAST(config AS CHAR) AS config,
+            SELECT id, payment, enable, uuid, CAST(config AS TEXT) AS config,
                    notify_domain, handling_fee_fixed,
                    handling_fee_percent
             FROM v2_payment
-            WHERE id = ? AND payment = 'StripeCredit' AND archived_at IS NULL
+            WHERE id = $1 AND payment = 'StripeCredit' AND archived_at IS NULL
             LIMIT 1
             "#,
         )
@@ -744,9 +747,11 @@ impl OrderService {
             let updated = sqlx::query(
                 r#"
                 UPDATE v2_order
-                SET payment_id = ?, handling_amount = ?, callback_no = ?,
-                    callback_no_hash = ?, updated_at = ?
-                WHERE id = ? AND status = 0 AND payment_id <=> ? AND callback_no <=> ?
+                SET payment_id = $1, handling_amount = $2, callback_no = $3,
+                    callback_no_hash = $4, updated_at = $5
+                WHERE id = $6 AND status = 0
+                  AND payment_id IS NOT DISTINCT FROM $7
+                  AND callback_no IS NOT DISTINCT FROM $8
                 "#,
             )
             .bind(payment.id)
@@ -762,8 +767,8 @@ impl OrderService {
             let bound = if updated.rows_affected() == 1 {
                 true
             } else {
-                let current = sqlx::query_as::<_, (i8, Option<i32>, Option<String>)>(
-                    "SELECT status, payment_id, callback_no FROM v2_order WHERE id = ?",
+                let current = sqlx::query_as::<_, (i16, Option<i32>, Option<String>)>(
+                    "SELECT status, payment_id, callback_no FROM v2_order WHERE id = $1",
                 )
                 .bind(order.0)
                 .fetch_optional(&mut *bind_tx)
@@ -803,7 +808,7 @@ impl OrderService {
             return Ok(true);
         }
         let row = sqlx::query_as::<_, (String, String)>(
-            "SELECT payment, CAST(config AS CHAR) FROM v2_payment WHERE id = ? LIMIT 1",
+            "SELECT payment, CAST(config AS TEXT) FROM v2_payment WHERE id = $1 LIMIT 1",
         )
         .bind(payment_id)
         .fetch_optional(&self.db)
@@ -954,7 +959,7 @@ impl OrderService {
 
     async fn user_email(&self, user_id: i64) -> Result<Option<String>, ApiError> {
         let email =
-            sqlx::query_scalar::<_, String>("SELECT email FROM v2_user WHERE id = ? LIMIT 1")
+            sqlx::query_scalar::<_, String>("SELECT email FROM v2_user WHERE id = $1 LIMIT 1")
                 .bind(user_id)
                 .fetch_optional(&self.db)
                 .await?;
@@ -962,8 +967,8 @@ impl OrderService {
     }
 
     pub async fn paid_manually(&self, trade_no: &str) -> Result<(), ApiError> {
-        let expected_binding = sqlx::query_as::<_, (i8, Option<i32>, Option<String>)>(
-            "SELECT status, payment_id, callback_no FROM v2_order WHERE trade_no = ? LIMIT 1",
+        let expected_binding = sqlx::query_as::<_, (i16, Option<i32>, Option<String>)>(
+            "SELECT status, payment_id, callback_no FROM v2_order WHERE trade_no = $1 LIMIT 1",
         )
         .bind(trade_no)
         .fetch_optional(&self.db)
@@ -990,14 +995,14 @@ impl OrderService {
                 id,
                 user_id,
                 plan_id,
-                `type`,
+                "type",
                 period,
                 trade_no,
                 total_amount,
                 refund_amount,
-                surplus_order_ids
+                surplus_order_ids::text AS surplus_order_ids
             FROM v2_order
-            WHERE trade_no = ?
+            WHERE trade_no = $1
             LIMIT 1
             FOR UPDATE
             "#,
@@ -1008,8 +1013,8 @@ impl OrderService {
         else {
             return Err(ApiError::legacy("订单不存在"));
         };
-        let current_binding = sqlx::query_as::<_, (i8, Option<i32>, Option<String>)>(
-            "SELECT status, payment_id, callback_no FROM v2_order WHERE id = ?",
+        let current_binding = sqlx::query_as::<_, (i16, Option<i32>, Option<String>)>(
+            "SELECT status, payment_id, callback_no FROM v2_order WHERE id = $1",
         )
         .bind(order.id)
         .fetch_one(&mut *tx)
@@ -1032,11 +1037,11 @@ impl OrderService {
 
     pub async fn handle_pending_order(&self, trade_no: &str) -> Result<(), ApiError> {
         let Some(expiration_snapshot) =
-            sqlx::query_as::<_, (i8, i64, Option<i32>, Option<String>)>(
+            sqlx::query_as::<_, (i16, i64, Option<i32>, Option<String>)>(
                 r#"
                 SELECT status, created_at, payment_id, callback_no
                 FROM v2_order
-                WHERE trade_no = ?
+                WHERE trade_no = $1
                 LIMIT 1
                 "#,
             )
@@ -1068,14 +1073,14 @@ impl OrderService {
                 id,
                 user_id,
                 plan_id,
-                `type`,
+                "type",
                 period,
                 trade_no,
                 total_amount,
                 refund_amount,
-                surplus_order_ids
+                surplus_order_ids::text AS surplus_order_ids
             FROM v2_order
-            WHERE trade_no = ?
+            WHERE trade_no = $1
             LIMIT 1
             FOR UPDATE
             "#,
@@ -1089,8 +1094,8 @@ impl OrderService {
         };
 
         let (status, created_at, balance_amount, payment_id, callback_no) =
-            sqlx::query_as::<_, (i8, i64, Option<i32>, Option<i32>, Option<String>)>(
-                "SELECT status, created_at, balance_amount, payment_id, callback_no FROM v2_order WHERE id = ?",
+            sqlx::query_as::<_, (i16, i64, Option<i32>, Option<i32>, Option<String>)>(
+                "SELECT status, created_at, balance_amount, payment_id, callback_no FROM v2_order WHERE id = $1",
             )
             .bind(order.id)
             .fetch_one(&mut *tx)
@@ -1102,7 +1107,7 @@ impl OrderService {
                 && payment_id == expiration_snapshot.2
                 && callback_no == expiration_snapshot.3 =>
             {
-                sqlx::query("UPDATE v2_order SET status = 2, updated_at = ? WHERE id = ?")
+                sqlx::query("UPDATE v2_order SET status = 2, updated_at = $1 WHERE id = $2")
                     .bind(Utc::now().timestamp())
                     .bind(order.id)
                     .execute(&mut *tx)
@@ -1144,7 +1149,7 @@ impl OrderService {
         {
             let mut tx = self.db.begin().await?;
             let payment_exists: Option<i32> =
-                sqlx::query_scalar("SELECT id FROM v2_payment WHERE id = ? LIMIT 1 FOR SHARE")
+                sqlx::query_scalar("SELECT id FROM v2_payment WHERE id = $1 LIMIT 1 FOR SHARE")
                     .bind(expected_binding.payment_id)
                     .fetch_optional(&mut *tx)
                     .await?;
@@ -1166,7 +1171,7 @@ impl OrderService {
                 _,
                 (
                     i64,
-                    i8,
+                    i16,
                     i64,
                     Option<i64>,
                     i64,
@@ -1240,7 +1245,7 @@ impl OrderService {
                 let callback_no_hash = payment_identifier_hash(callback_no);
                 sqlx::query_scalar::<_, bool>(
                     "SELECT EXISTS(SELECT 1 FROM v2_payment_reconciliation \
-                     WHERE payment_id = ? AND callback_no_hash = ?)",
+                     WHERE payment_id = $1 AND callback_no_hash = $2)",
                 )
                 .bind(expected_binding.payment_id)
                 .bind(callback_no_hash.as_slice())
@@ -1265,7 +1270,7 @@ impl OrderService {
                 if ordinary_replay {
                     let callback_no_hash = payment_identifier_hash(callback_no);
                     if bound_callback_no_hash.as_deref() != Some(callback_no_hash.as_slice()) {
-                        sqlx::query("UPDATE v2_order SET callback_no_hash = ? WHERE id = ?")
+                        sqlx::query("UPDATE v2_order SET callback_no_hash = $1 WHERE id = $2")
                             .bind(callback_no_hash.as_slice())
                             .bind(order_id)
                             .execute(&mut *tx)

@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use serde::Serialize;
-use sqlx::{FromRow, MySqlPool};
+use sqlx::{FromRow, PgPool};
 
 #[derive(Debug, Clone, FromRow, Serialize)]
 pub struct KnowledgeSummaryRow {
@@ -9,7 +9,7 @@ pub struct KnowledgeSummaryRow {
     pub category: String,
     pub title: String,
     pub sort: Option<i32>,
-    pub show: i8,
+    pub show: i16,
     pub updated_at: i64,
 }
 
@@ -21,20 +21,17 @@ pub struct KnowledgeRow {
     pub title: String,
     pub body: String,
     pub sort: Option<i32>,
-    pub show: i8,
+    pub show: i16,
     pub created_at: i64,
     pub updated_at: i64,
 }
 
-pub async fn find_knowledge(
-    pool: &MySqlPool,
-    id: i32,
-) -> Result<Option<KnowledgeRow>, sqlx::Error> {
+pub async fn find_knowledge(pool: &PgPool, id: i32) -> Result<Option<KnowledgeRow>, sqlx::Error> {
     sqlx::query_as::<_, KnowledgeRow>(
         r#"
-        SELECT id, language, category, title, body, sort, `show`, created_at, updated_at
+        SELECT id, language, category, title, body, sort, show, created_at, updated_at
         FROM v2_knowledge
-        WHERE id = ? AND `show` = 1
+        WHERE id = $1 AND show = 1
         LIMIT 1
         "#,
     )
@@ -44,7 +41,7 @@ pub async fn find_knowledge(
 }
 
 pub async fn fetch_knowledge(
-    pool: &MySqlPool,
+    pool: &PgPool,
     language: &str,
     keyword: Option<&str>,
 ) -> Result<BTreeMap<String, Vec<KnowledgeSummaryRow>>, sqlx::Error> {
@@ -52,10 +49,10 @@ pub async fn fetch_knowledge(
         let pattern = format!("%{keyword}%");
         sqlx::query_as::<_, KnowledgeSummaryRow>(
             r#"
-            SELECT id, category, title, sort, `show`, updated_at
+            SELECT id, category, title, sort, show, updated_at
             FROM v2_knowledge
-            WHERE language = ? AND `show` = 1 AND (title LIKE ? OR body LIKE ?)
-            ORDER BY sort ASC
+            WHERE language = $1 AND show = 1 AND (title ILIKE $2 OR body ILIKE $3)
+            ORDER BY sort ASC NULLS FIRST
             "#,
         )
         .bind(language)
@@ -66,10 +63,10 @@ pub async fn fetch_knowledge(
     } else {
         sqlx::query_as::<_, KnowledgeSummaryRow>(
             r#"
-            SELECT id, category, title, sort, `show`, updated_at
+            SELECT id, category, title, sort, show, updated_at
             FROM v2_knowledge
-            WHERE language = ? AND `show` = 1
-            ORDER BY sort ASC
+            WHERE language = $1 AND show = 1
+            ORDER BY sort ASC NULLS FIRST
             "#,
         )
         .bind(language)

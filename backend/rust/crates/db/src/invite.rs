@@ -1,12 +1,13 @@
 use serde::Serialize;
-use sqlx::{FromRow, MySql, MySqlPool, Transaction};
+use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-const VALID_COMMISSION_SUM_SQL: &str = "SELECT CAST(COALESCE(SUM(get_amount), 0) AS CHAR) FROM v2_commission_log WHERE invite_user_id = ?";
+const VALID_COMMISSION_SUM_SQL: &str =
+    "SELECT COALESCE(SUM(get_amount), 0)::text FROM v2_commission_log WHERE invite_user_id = $1";
 const PENDING_COMMISSION_SUM_SQL: &str = r#"
-    SELECT CAST(COALESCE(SUM(commission_balance), 0) AS CHAR)
+    SELECT COALESCE(SUM(commission_balance), 0)::text
     FROM v2_order
-    WHERE status = 3 AND commission_status = 0 AND invite_user_id = ?
+    WHERE status = 3 AND commission_status = 0 AND invite_user_id = $1
 "#;
 
 fn exact_i64_aggregate(value: &str, metric: &str) -> Result<i64, sqlx::Error> {
@@ -30,7 +31,7 @@ pub struct InviteCodeRow {
     pub id: i32,
     pub user_id: i64,
     pub code: String,
-    pub status: i8,
+    pub status: i16,
     pub pv: i32,
     pub created_at: i64,
     pub updated_at: i64,
@@ -38,7 +39,7 @@ pub struct InviteCodeRow {
 
 #[derive(Debug, Clone, FromRow, Serialize)]
 pub struct CommissionDetailRow {
-    pub id: i32,
+    pub id: i64,
     pub trade_no: String,
     pub order_amount: i32,
     pub get_amount: i32,
@@ -58,14 +59,14 @@ pub struct InviteUserRow {
 }
 
 pub async fn create_invite_code(
-    pool: &MySqlPool,
+    pool: &PgPool,
     user_id: i64,
     limit: i64,
     now: i64,
 ) -> Result<bool, sqlx::Error> {
     let mut tx = pool.begin().await?;
     let user_exists =
-        sqlx::query_scalar::<_, i64>("SELECT id FROM v2_user WHERE id = ? LIMIT 1 FOR UPDATE")
+        sqlx::query_scalar::<_, i64>("SELECT id FROM v2_user WHERE id = $1 LIMIT 1 FOR UPDATE")
             .bind(user_id)
             .fetch_optional(&mut *tx)
             .await?;
@@ -74,7 +75,7 @@ pub async fn create_invite_code(
         return Ok(false);
     }
     let count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM v2_invite_code WHERE user_id = ? AND status = 0")
+        sqlx::query_scalar("SELECT COUNT(*) FROM v2_invite_code WHERE user_id = $1 AND status = 0")
             .bind(user_id)
             .fetch_one(&mut *tx)
             .await?;
@@ -87,12 +88,12 @@ pub async fn create_invite_code(
     Ok(true)
 }
 
-pub async fn fetch_invite(pool: &MySqlPool, user_id: i64) -> Result<InviteFetchRow, sqlx::Error> {
+pub async fn fetch_invite(pool: &PgPool, user_id: i64) -> Result<InviteFetchRow, sqlx::Error> {
     let codes = sqlx::query_as::<_, InviteCodeRow>(
         r#"
         SELECT id, user_id, code, status, pv, created_at, updated_at
         FROM v2_invite_code
-        WHERE user_id = ? AND status = 0
+        WHERE user_id = $1 AND status = 0
         ORDER BY id ASC
         "#,
     )
@@ -100,13 +101,13 @@ pub async fn fetch_invite(pool: &MySqlPool, user_id: i64) -> Result<InviteFetchR
     .fetch_all(pool)
     .await?;
     let user = sqlx::query_as::<_, InviteUserRow>(
-        "SELECT commission_rate, commission_balance FROM v2_user WHERE id = ? LIMIT 1",
+        "SELECT commission_rate, commission_balance FROM v2_user WHERE id = $1 LIMIT 1",
     )
     .bind(user_id)
     .fetch_optional(pool)
     .await?;
     let registered: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM v2_user WHERE invite_user_id = ?")
+        sqlx::query_scalar("SELECT COUNT(*) FROM v2_user WHERE invite_user_id = $1")
             .bind(user_id)
             .fetch_one(pool)
             .await?;
@@ -146,13 +147,13 @@ pub async fn fetch_invite(pool: &MySqlPool, user_id: i64) -> Result<InviteFetchR
 }
 
 pub async fn fetch_commission_details(
-    pool: &MySqlPool,
+    pool: &PgPool,
     user_id: i64,
     page_size: i64,
     offset: i64,
 ) -> Result<(Vec<CommissionDetailRow>, i64), sqlx::Error> {
     let total: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM v2_commission_log WHERE invite_user_id = ? AND get_amount > 0",
+        "SELECT COUNT(*) FROM v2_commission_log WHERE invite_user_id = $1 AND get_amount > 0",
     )
     .bind(user_id)
     .fetch_one(pool)
@@ -161,9 +162,9 @@ pub async fn fetch_commission_details(
         r#"
         SELECT id, trade_no, order_amount, get_amount, created_at
         FROM v2_commission_log
-        WHERE invite_user_id = ? AND get_amount > 0
+        WHERE invite_user_id = $1 AND get_amount > 0
         ORDER BY created_at DESC
-        LIMIT ? OFFSET ?
+        LIMIT $2 OFFSET $3
         "#,
     )
     .bind(user_id)
@@ -175,7 +176,7 @@ pub async fn fetch_commission_details(
 }
 
 async fn insert_invite_code(
-    tx: &mut Transaction<'_, MySql>,
+    tx: &mut Transaction<'_, Postgres>,
     user_id: i64,
     now: i64,
 ) -> Result<(), sqlx::Error> {
@@ -184,7 +185,7 @@ async fn insert_invite_code(
         let result = sqlx::query(
             r#"
             INSERT INTO v2_invite_code (user_id, code, status, pv, created_at, updated_at)
-            VALUES (?, ?, 0, 0, ?, ?)
+            VALUES ($1, $2, 0, 0, $3, $4)
             "#,
         )
         .bind(user_id)
@@ -217,10 +218,8 @@ mod tests {
 
     #[test]
     fn commission_aggregates_preserve_exact_values_and_reject_i64_overflow() {
-        assert!(VALID_COMMISSION_SUM_SQL.contains("AS CHAR"));
-        assert!(PENDING_COMMISSION_SUM_SQL.contains("AS CHAR"));
-        assert!(!VALID_COMMISSION_SUM_SQL.contains("AS SIGNED"));
-        assert!(!PENDING_COMMISSION_SUM_SQL.contains("AS SIGNED"));
+        assert!(VALID_COMMISSION_SUM_SQL.contains("::text"));
+        assert!(PENDING_COMMISSION_SUM_SQL.contains("::text"));
 
         assert_eq!(exact_i64_aggregate("0", "test").unwrap(), 0);
         assert_eq!(
@@ -242,7 +241,7 @@ mod tests {
         assert_eq!(code.len(), 8);
         assert!(code.bytes().all(|byte| byte.is_ascii_hexdigit()));
 
-        let migration = include_str!("../../../migrations/0016_invite_code_invariants.sql");
-        assert!(migration.contains("ADD UNIQUE KEY `uniq_invite_code` (`code`)"));
+        let migration = include_str!("../../../migrations-postgres/0001_initial.sql");
+        assert!(migration.contains("CONSTRAINT uniq_invite_code UNIQUE (code)"));
     }
 }

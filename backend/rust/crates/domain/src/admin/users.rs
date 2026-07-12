@@ -64,8 +64,15 @@ impl AdminService {
             }
             if key == "invite_by_email" {
                 let op = user_filter_operator(&condition).unwrap_or("=");
+                let predicate = if op == "like" {
+                    "email ILIKE $1".to_string()
+                } else if matches!(op, "=" | "<>") {
+                    format!("LOWER(email) {op} LOWER($1)")
+                } else {
+                    format!("email {op} $1")
+                };
                 let invite_id: Option<i64> = sqlx::query_scalar(AssertSqlSafe(format!(
-                    "SELECT id FROM v2_user WHERE email {op} ? LIMIT 1"
+                    "SELECT id FROM v2_user WHERE {predicate} LIMIT 1"
                 )))
                 .bind(&value)
                 .fetch_optional(&self.db)
@@ -88,7 +95,11 @@ impl AdminService {
             clauses.push(UserFilterClause::Compare {
                 column,
                 op,
-                value: FilterBind::Text(value),
+                value: if op == "like" || !user_column_is_numeric(column) {
+                    FilterBind::Text(value)
+                } else {
+                    FilterBind::Int(value.trim().parse().unwrap_or_default())
+                },
             });
         }
         Ok(clauses)
@@ -103,7 +114,7 @@ impl AdminService {
         staff_scoped: bool,
         after_id: i64,
     ) -> Result<Vec<i64>, ApiError> {
-        let mut builder = QueryBuilder::<MySql>::new("SELECT u.id FROM v2_user u WHERE 1 = 1");
+        let mut builder = QueryBuilder::<Postgres>::new("SELECT u.id FROM v2_user u WHERE 1 = 1");
         if staff_scoped {
             builder.push(" AND u.is_admin = 0 AND u.is_staff = 0");
         }
@@ -151,10 +162,10 @@ impl AdminService {
         clauses: &[UserFilterClause],
         staff_scoped: bool,
         after_id: i64,
-        tx: &mut Transaction<'_, MySql>,
+        tx: &mut DbTransaction<'_>,
     ) -> Result<Vec<(i64, String)>, ApiError> {
         let mut builder =
-            QueryBuilder::<MySql>::new("SELECT u.id, u.email FROM v2_user u WHERE 1 = 1");
+            QueryBuilder::<Postgres>::new("SELECT u.id, u.email FROM v2_user u WHERE 1 = 1");
         if staff_scoped {
             builder.push(" AND u.is_admin = 0 AND u.is_staff = 0");
         }
@@ -275,53 +286,56 @@ impl AdminService {
         params: &HashMap<String, String>,
     ) -> Result<i64, ApiError> {
         let email = required_string(params, "_admin_email")?;
-        sqlx::query_scalar::<_, i64>("SELECT id FROM v2_user WHERE email = ? LIMIT 1")
-            .bind(email)
-            .fetch_optional(&self.db)
-            .await?
-            .ok_or_else(|| ApiError::legacy("管理员不存在"))
+        sqlx::query_scalar::<_, i64>(
+            "SELECT id FROM v2_user WHERE LOWER(email) = LOWER($1) LIMIT 1",
+        )
+        .bind(email)
+        .fetch_optional(&self.db)
+        .await?
+        .ok_or_else(|| ApiError::legacy("管理员不存在"))
     }
 
     /// Set-based cascade shared by delUser and allDel. Every chunk follows the same table order
     /// and sorted id order, preserving a stable lock acquisition order under concurrent deletes.
     async fn delete_users_cascade(
         &self,
-        tx: &mut sqlx::Transaction<'_, MySql>,
+        tx: &mut DbTransaction<'_>,
         user_ids: &[i64],
     ) -> Result<(), ApiError> {
         for user_ids in user_ids.chunks(USER_DELETE_SQL_BATCH_SIZE) {
-            let mut orders = QueryBuilder::<MySql>::new("DELETE FROM v2_order WHERE user_id IN (");
+            let mut orders =
+                QueryBuilder::<Postgres>::new("DELETE FROM v2_order WHERE user_id IN (");
             push_id_binds(&mut orders, user_ids);
             orders.push(")");
             orders.build().execute(&mut **tx).await?;
 
             let mut invites =
-                QueryBuilder::<MySql>::new("DELETE FROM v2_invite_code WHERE user_id IN (");
+                QueryBuilder::<Postgres>::new("DELETE FROM v2_invite_code WHERE user_id IN (");
             push_id_binds(&mut invites, user_ids);
             invites.push(")");
             invites.build().execute(&mut **tx).await?;
 
-            let mut messages = QueryBuilder::<MySql>::new(
-                "DELETE tm FROM v2_ticket_message tm INNER JOIN v2_ticket t ON t.id = tm.ticket_id WHERE t.user_id IN (",
+            let mut messages = QueryBuilder::<Postgres>::new(
+                "DELETE FROM v2_ticket_message tm USING v2_ticket t WHERE t.id = tm.ticket_id AND t.user_id IN (",
             );
             push_id_binds(&mut messages, user_ids);
             messages.push(")");
             messages.build().execute(&mut **tx).await?;
 
             let mut tickets =
-                QueryBuilder::<MySql>::new("DELETE FROM v2_ticket WHERE user_id IN (");
+                QueryBuilder::<Postgres>::new("DELETE FROM v2_ticket WHERE user_id IN (");
             push_id_binds(&mut tickets, user_ids);
             tickets.push(")");
             tickets.build().execute(&mut **tx).await?;
 
-            let mut referrals = QueryBuilder::<MySql>::new(
+            let mut referrals = QueryBuilder::<Postgres>::new(
                 "UPDATE v2_user SET invite_user_id = NULL WHERE invite_user_id IN (",
             );
             push_id_binds(&mut referrals, user_ids);
             referrals.push(")");
             referrals.build().execute(&mut **tx).await?;
 
-            let mut users = QueryBuilder::<MySql>::new("DELETE FROM v2_user WHERE id IN (");
+            let mut users = QueryBuilder::<Postgres>::new("DELETE FROM v2_user WHERE id IN (");
             push_id_binds(&mut users, user_ids);
             users.push(")");
             users.build().execute(&mut **tx).await?;
@@ -330,12 +344,12 @@ impl AdminService {
     }
 
     async fn lock_users_for_update(
-        tx: &mut Transaction<'_, MySql>,
+        tx: &mut DbTransaction<'_>,
         user_ids: &[i64],
     ) -> Result<usize, ApiError> {
         let mut found = 0_usize;
         for user_ids in user_ids.chunks(USER_DELETE_SQL_BATCH_SIZE) {
-            let mut builder = QueryBuilder::<MySql>::new("SELECT id FROM v2_user WHERE id IN (");
+            let mut builder = QueryBuilder::<Postgres>::new("SELECT id FROM v2_user WHERE id IN (");
             push_id_binds(&mut builder, user_ids);
             builder.push(") ORDER BY id FOR UPDATE");
             found += builder
@@ -356,20 +370,20 @@ impl AdminService {
         let (sort_expr, direction) = user_sort(params);
 
         let mut count_builder =
-            QueryBuilder::<MySql>::new("SELECT COUNT(*) FROM v2_user u WHERE 1 = 1");
+            QueryBuilder::<Postgres>::new("SELECT COUNT(*) FROM v2_user u WHERE 1 = 1");
         push_user_where(&mut count_builder, &clauses);
         let total: i64 = count_builder
             .build_query_scalar()
             .fetch_one(&self.db)
             .await?;
 
-        let mut builder = QueryBuilder::<MySql>::new(
+        let mut builder = QueryBuilder::<Postgres>::new(
             r#"
-            SELECT JSON_OBJECT(
+            SELECT jsonb_build_object(
                 'id', u.id, 'email', u.email, 'password', '', 'balance', u.balance,
                 'commission_balance', u.commission_balance, 'transfer_enable', u.transfer_enable,
                 'device_limit', u.device_limit, 'u', u.u, 'd', u.d,
-                'total_used', CAST(u.u AS DECIMAL(65,0)) + CAST(u.d AS DECIMAL(65,0)),
+                'total_used', CAST(u.u AS NUMERIC(65,0)) + CAST(u.d AS NUMERIC(65,0)),
                 'alive_ip', 0, 'ips', '', 'plan_id', u.plan_id, 'plan_name', p.name,
                 'group_id', u.group_id, 'expired_at', u.expired_at, 'uuid', u.uuid,
                 'token', u.token, 'subscribe_url', '', 'banned', u.banned,
@@ -390,7 +404,12 @@ impl AdminService {
         );
         push_user_where(&mut builder, &clauses);
         // sort_expr and direction are whitelisted by user_sort, so this raw push is safe.
-        builder.push(format!(" ORDER BY {sort_expr} {direction} LIMIT "));
+        let nulls = if direction == "ASC" {
+            "NULLS FIRST"
+        } else {
+            "NULLS LAST"
+        };
+        builder.push(format!(" ORDER BY {sort_expr} {direction} {nulls} LIMIT "));
         builder.push_bind(pagination.limit);
         builder.push(" OFFSET ");
         builder.push_bind(pagination.offset);
@@ -407,11 +426,11 @@ impl AdminService {
         let value = fetch_json_one(
             &self.db,
             r#"
-            SELECT JSON_OBJECT(
+            SELECT jsonb_build_object(
                 'id', u.id, 'email', u.email, 'password', '', 'balance', u.balance,
                 'commission_balance', u.commission_balance, 'transfer_enable', u.transfer_enable,
                 'device_limit', u.device_limit, 'u', u.u, 'd', u.d,
-                'total_used', CAST(u.u AS DECIMAL(65,0)) + CAST(u.d AS DECIMAL(65,0)),
+                'total_used', CAST(u.u AS NUMERIC(65,0)) + CAST(u.d AS NUMERIC(65,0)),
                 'alive_ip', 0, 'ips', '', 'plan_id', u.plan_id, 'plan_name', p.name,
                 'group_id', u.group_id, 'expired_at', u.expired_at, 'uuid', u.uuid,
                 'token', u.token, 'subscribe_url', '', 'banned', u.banned,
@@ -424,12 +443,13 @@ impl AdminService {
                 'password_algo', u.password_algo, 'password_salt', u.password_salt,
                 'telegram_id', u.telegram_id,
                 'last_login_at', u.last_login_at, 'created_at', u.created_at, 'updated_at', u.updated_at,
-                'invite_user', IF(i.id IS NULL, NULL, JSON_OBJECT('id', i.id, 'email', i.email))
+                'invite_user', CASE WHEN i.id IS NULL THEN NULL
+                    ELSE jsonb_build_object('id', i.id, 'email', i.email) END
             )
             FROM v2_user u
             LEFT JOIN v2_plan p ON p.id = u.plan_id
             LEFT JOIN v2_user i ON i.id = u.invite_user_id
-            WHERE u.id = ?
+            WHERE u.id = $1
             LIMIT 1
             "#,
             id,
@@ -443,11 +463,11 @@ impl AdminService {
         let value = fetch_json_one(
             &self.db,
             r#"
-            SELECT JSON_OBJECT(
+            SELECT jsonb_build_object(
                 'id', u.id, 'email', u.email, 'password', '', 'balance', u.balance,
                 'commission_balance', u.commission_balance, 'transfer_enable', u.transfer_enable,
                 'device_limit', u.device_limit, 'u', u.u, 'd', u.d,
-                'total_used', CAST(u.u AS DECIMAL(65,0)) + CAST(u.d AS DECIMAL(65,0)),
+                'total_used', CAST(u.u AS NUMERIC(65,0)) + CAST(u.d AS NUMERIC(65,0)),
                 'alive_ip', 0, 'ips', '', 'plan_id', u.plan_id, 'plan_name', p.name,
                 'group_id', u.group_id, 'expired_at', u.expired_at, 'uuid', u.uuid,
                 'token', u.token, 'subscribe_url', '', 'banned', u.banned,
@@ -463,7 +483,7 @@ impl AdminService {
             )
             FROM v2_user u
             LEFT JOIN v2_plan p ON p.id = u.plan_id
-            WHERE u.id = ? AND u.is_admin = 0 AND u.is_staff = 0
+            WHERE u.id = $1 AND u.is_admin = 0 AND u.is_staff = 0
             LIMIT 1
             "#,
             id,
@@ -480,7 +500,7 @@ impl AdminService {
         // Ports UserController::update (laravel .../Admin/UserController.php:125-172).
         let id = required_i64(params, "id")?;
         let current_email: String =
-            sqlx::query_scalar("SELECT email FROM v2_user WHERE id = ? LIMIT 1")
+            sqlx::query_scalar("SELECT email FROM v2_user WHERE id = $1 LIMIT 1")
                 .bind(id)
                 .fetch_optional(&self.db)
                 .await?
@@ -488,7 +508,7 @@ impl AdminService {
         let email = required_string(params, "email")?;
         if email != current_email {
             let taken: Option<i64> =
-                sqlx::query_scalar("SELECT id FROM v2_user WHERE email = ? LIMIT 1")
+                sqlx::query_scalar("SELECT id FROM v2_user WHERE LOWER(email) = LOWER($1) LIMIT 1")
                     .bind(&email)
                     .fetch_optional(&self.db)
                     .await?;
@@ -526,21 +546,21 @@ impl AdminService {
 
         // plan_id drives group_id (:145-153): a set plan_id resolves group_id from
         // the plan, otherwise group_id is reset to NULL.
-        let mut group_id = AdminSqlValue::Null;
+        let mut group_id = AdminSqlValue::IntegerNull;
         if params.contains_key("plan_id") {
             if let Some(plan_id) = optional_i64(params, "plan_id") {
-                let plan_group: Option<i64> =
-                    sqlx::query_scalar("SELECT group_id FROM v2_plan WHERE id = ? LIMIT 1")
+                let plan_group: Option<i32> =
+                    sqlx::query_scalar("SELECT group_id FROM v2_plan WHERE id = $1 LIMIT 1")
                         .bind(plan_id)
                         .fetch_optional(&self.db)
                         .await?
                         .ok_or_else(|| ApiError::legacy("订阅计划不存在"))?;
                 group_id = plan_group
-                    .map(AdminSqlValue::Integer)
-                    .unwrap_or(AdminSqlValue::Null);
+                    .map(|value| AdminSqlValue::Integer(i64::from(value)))
+                    .unwrap_or(AdminSqlValue::IntegerNull);
                 values.push(("plan_id", AdminSqlValue::Integer(plan_id)));
             } else {
-                values.push(("plan_id", AdminSqlValue::Null));
+                values.push(("plan_id", AdminSqlValue::IntegerNull));
             }
         }
         values.push(("group_id", group_id));
@@ -553,16 +573,17 @@ impl AdminService {
             .filter(|value| !value.is_empty())
         {
             Some(invite_email) => {
-                if let Some(invite_id) =
-                    sqlx::query_scalar::<_, i64>("SELECT id FROM v2_user WHERE email = ? LIMIT 1")
-                        .bind(invite_email)
-                        .fetch_optional(&self.db)
-                        .await?
+                if let Some(invite_id) = sqlx::query_scalar::<_, i64>(
+                    "SELECT id FROM v2_user WHERE LOWER(email) = LOWER($1) LIMIT 1",
+                )
+                .bind(invite_email)
+                .fetch_optional(&self.db)
+                .await?
                 {
                     values.push(("invite_user_id", AdminSqlValue::Integer(invite_id)));
                 }
             }
-            None => values.push(("invite_user_id", AdminSqlValue::Null)),
+            None => values.push(("invite_user_id", AdminSqlValue::IntegerNull)),
         }
 
         let password_changed = params
@@ -571,7 +592,7 @@ impl AdminService {
         if let Some(password) = params.get("password").filter(|value| !value.is_empty()) {
             let hash = self.password_kdf.hash(password).await?;
             values.push(("password", AdminSqlValue::Text(hash)));
-            values.push(("password_algo", AdminSqlValue::Null));
+            values.push(("password_algo", AdminSqlValue::TextNull));
         }
 
         // Any privilege assignment invalidates sessions issued under the old
@@ -582,23 +603,23 @@ impl AdminService {
             password_changed || optional_i64(params, "banned") == Some(1) || role_changed;
         let resets_traffic = params.contains_key("u") || params.contains_key("d");
 
-        let mut builder = QueryBuilder::<MySql>::new("UPDATE v2_user SET ");
+        let mut builder = QueryBuilder::<Postgres>::new("UPDATE v2_user SET ");
         let mut first = true;
         for (column, value) in &values {
             if !first {
                 builder.push(", ");
             }
             first = false;
-            builder.push(format!("`{column}` = "));
-            push_admin_sql_bind(&mut builder, value);
+            builder.push(format!("\"{column}\" = "));
+            push_admin_sql_bind(&mut builder, column, value);
         }
         if revokes_sessions {
-            builder.push(", `session_epoch` = `session_epoch` + 1");
+            builder.push(", \"session_epoch\" = \"session_epoch\" + 1");
         }
         if resets_traffic {
-            builder.push(", `traffic_epoch` = `traffic_epoch` + 1");
+            builder.push(", \"traffic_epoch\" = \"traffic_epoch\" + 1");
         }
-        builder.push(", `updated_at` = ");
+        builder.push(", \"updated_at\" = ");
         builder.push_bind(Utc::now().timestamp());
         builder.push(" WHERE id = ");
         builder.push_bind(id);
@@ -619,7 +640,7 @@ impl AdminService {
         // non-admin/non-staff users.
         let id = required_i64(params, "id")?;
         let current_email: String = sqlx::query_scalar(
-            "SELECT email FROM v2_user WHERE id = ? AND is_admin = 0 AND is_staff = 0 LIMIT 1",
+            "SELECT email FROM v2_user WHERE id = $1 AND is_admin = 0 AND is_staff = 0 LIMIT 1",
         )
         .bind(id)
         .fetch_optional(&self.db)
@@ -628,7 +649,7 @@ impl AdminService {
         let email = required_string(params, "email")?;
         if email != current_email {
             let taken: Option<i64> =
-                sqlx::query_scalar("SELECT id FROM v2_user WHERE email = ? LIMIT 1")
+                sqlx::query_scalar("SELECT id FROM v2_user WHERE LOWER(email) = LOWER($1) LIMIT 1")
                     .bind(&email)
                     .fetch_optional(&self.db)
                     .await?;
@@ -657,8 +678,8 @@ impl AdminService {
         // Staff update only sets group_id when a real plan_id is supplied.
         if params.contains_key("plan_id") {
             if let Some(plan_id) = optional_i64(params, "plan_id") {
-                let plan_group: Option<i64> =
-                    sqlx::query_scalar("SELECT group_id FROM v2_plan WHERE id = ? LIMIT 1")
+                let plan_group: Option<i32> =
+                    sqlx::query_scalar("SELECT group_id FROM v2_plan WHERE id = $1 LIMIT 1")
                         .bind(plan_id)
                         .fetch_optional(&self.db)
                         .await?
@@ -667,11 +688,11 @@ impl AdminService {
                 values.push((
                     "group_id",
                     plan_group
-                        .map(AdminSqlValue::Integer)
-                        .unwrap_or(AdminSqlValue::Null),
+                        .map(|value| AdminSqlValue::Integer(i64::from(value)))
+                        .unwrap_or(AdminSqlValue::IntegerNull),
                 ));
             } else {
-                values.push(("plan_id", AdminSqlValue::Null));
+                values.push(("plan_id", AdminSqlValue::IntegerNull));
             }
         }
         let password_changed = params
@@ -680,28 +701,28 @@ impl AdminService {
         if let Some(password) = params.get("password").filter(|value| !value.is_empty()) {
             let hash = self.password_kdf.hash(password).await?;
             values.push(("password", AdminSqlValue::Text(hash)));
-            values.push(("password_algo", AdminSqlValue::Null));
+            values.push(("password_algo", AdminSqlValue::TextNull));
         }
         let revokes_sessions = password_changed || optional_i64(params, "banned") == Some(1);
         let resets_traffic = params.contains_key("u") || params.contains_key("d");
 
-        let mut builder = QueryBuilder::<MySql>::new("UPDATE v2_user SET ");
+        let mut builder = QueryBuilder::<Postgres>::new("UPDATE v2_user SET ");
         let mut first = true;
         for (column, value) in &values {
             if !first {
                 builder.push(", ");
             }
             first = false;
-            builder.push(format!("`{column}` = "));
-            push_admin_sql_bind(&mut builder, value);
+            builder.push(format!("\"{column}\" = "));
+            push_admin_sql_bind(&mut builder, column, value);
         }
         if revokes_sessions {
-            builder.push(", `session_epoch` = `session_epoch` + 1");
+            builder.push(", \"session_epoch\" = \"session_epoch\" + 1");
         }
         if resets_traffic {
-            builder.push(", `traffic_epoch` = `traffic_epoch` + 1");
+            builder.push(", \"traffic_epoch\" = \"traffic_epoch\" + 1");
         }
-        builder.push(", `updated_at` = ");
+        builder.push(", \"updated_at\" = ");
         builder.push_bind(Utc::now().timestamp());
         builder.push(" WHERE id = ");
         builder.push_bind(id);
@@ -733,7 +754,7 @@ impl AdminService {
         }
         let mut tx = self.db.begin().await?;
         for ids in ids.chunks(USER_DELETE_SQL_BATCH_SIZE) {
-            let mut builder = QueryBuilder::<MySql>::new(
+            let mut builder = QueryBuilder::<Postgres>::new(
                 "UPDATE v2_user SET banned = 1, session_epoch = session_epoch + 1, updated_at = ",
             );
             builder.push_bind(Utc::now().timestamp());
@@ -748,7 +769,7 @@ impl AdminService {
     }
 
     pub(super) async fn user_reset_secret(&self, id: i64) -> Result<AdminOutput, ApiError> {
-        sqlx::query("UPDATE v2_user SET token = ?, uuid = ?, updated_at = ? WHERE id = ?")
+        sqlx::query("UPDATE v2_user SET token = $1, uuid = $2, updated_at = $3 WHERE id = $4")
             .bind(random_token())
             .bind(Uuid::new_v4().to_string())
             .bind(Utc::now().timestamp())
@@ -769,7 +790,8 @@ impl AdminService {
             return Ok(None);
         };
         let row: (i64, Option<i64>, Option<i64>, Option<i64>) = sqlx::query_as(
-            "SELECT id, group_id, transfer_enable, device_limit FROM v2_plan WHERE id = ? LIMIT 1",
+            "SELECT id::BIGINT, group_id::BIGINT, transfer_enable, device_limit::BIGINT \
+             FROM v2_plan WHERE id = $1::BIGINT LIMIT 1",
         )
         .bind(plan_id)
         .fetch_optional(&self.db)
@@ -799,13 +821,28 @@ impl AdminService {
             }
             None => (None, None, 0, None),
         };
+        // These values originate from INTEGER columns, but `generate_plan`
+        // exposes i64 for legacy arithmetic. Convert back to exact PostgreSQL
+        // bind types before INSERT (including QueryBuilder's batched path).
+        let plan_id_db = plan_id
+            .map(i32::try_from)
+            .transpose()
+            .map_err(|_| ApiError::internal("stored plan id exceeds PostgreSQL INTEGER"))?;
+        let group_id_db = group_id
+            .map(i32::try_from)
+            .transpose()
+            .map_err(|_| ApiError::internal("stored group id exceeds PostgreSQL INTEGER"))?;
+        let device_limit_db = device_limit
+            .map(i32::try_from)
+            .transpose()
+            .map_err(|_| ApiError::internal("stored device limit exceeds PostgreSQL INTEGER"))?;
 
         // Single generation returns JSON; the CSV path is multiGenerate only.
         if let Some(prefix) = optional_string(params, "email_prefix") {
             let suffix = required_string(params, "email_suffix")?;
             let email = format!("{prefix}@{suffix}");
             let exists: Option<i64> =
-                sqlx::query_scalar("SELECT id FROM v2_user WHERE email = ? LIMIT 1")
+                sqlx::query_scalar("SELECT id FROM v2_user WHERE LOWER(email) = LOWER($1) LIMIT 1")
                     .bind(&email)
                     .fetch_optional(&self.db)
                     .await?;
@@ -824,14 +861,14 @@ impl AdminService {
                     email, plan_id, group_id, transfer_enable, device_limit, expired_at,
                     uuid, token, password, password_algo, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULL, $10, $11)
                 "#,
             )
             .bind(&email)
-            .bind(plan_id)
-            .bind(group_id)
+            .bind(plan_id_db)
+            .bind(group_id_db)
             .bind(transfer_enable)
-            .bind(device_limit)
+            .bind(device_limit_db)
             .bind(optional_i64(params, "expired_at"))
             .bind(Uuid::new_v4().to_string())
             .bind(random_token())
@@ -885,7 +922,7 @@ impl AdminService {
         prepared.sort_unstable_by_key(|(index, ..)| *index);
 
         let mut tx = self.db.begin().await?;
-        let mut insert = QueryBuilder::<MySql>::new(
+        let mut insert = QueryBuilder::<Postgres>::new(
             r#"
             INSERT INTO v2_user (
                 email, plan_id, group_id, transfer_enable, device_limit, expired_at,
@@ -895,10 +932,10 @@ impl AdminService {
         );
         insert.push_values(&prepared, |mut row, (_, email, _, uuid, token, hash)| {
             row.push_bind(email)
-                .push_bind(plan_id)
-                .push_bind(group_id)
+                .push_bind(plan_id_db)
+                .push_bind(group_id_db)
                 .push_bind(transfer_enable)
-                .push_bind(device_limit)
+                .push_bind(device_limit_db)
                 .push_bind(expired_at)
                 .push_bind(uuid)
                 .push_bind(token)
@@ -962,7 +999,7 @@ impl AdminService {
         let mut after_id = 0_i64;
         let mut exported = 0_usize;
         loop {
-            let mut builder = QueryBuilder::<MySql>::new(
+            let mut builder = QueryBuilder::<Postgres>::new(
                 "SELECT u.id AS id, u.email AS email, u.balance AS balance, \
                  u.commission_balance AS commission_balance, u.transfer_enable AS transfer_enable, \
                  u.u AS u, u.d AS d, u.device_limit AS device_limit, u.expired_at AS expired_at, \
@@ -1048,9 +1085,9 @@ impl AdminService {
         }
         let mut tx = self.db.begin().await?;
         for ids in ids.chunks(USER_DELETE_SQL_BATCH_SIZE) {
-            let mut builder = QueryBuilder::<MySql>::new("UPDATE v2_user SET banned = ");
+            let mut builder = QueryBuilder::<Postgres>::new("UPDATE v2_user SET banned = CAST(");
             builder.push_bind(value);
-            builder.push(", session_epoch = session_epoch + 1");
+            builder.push("::BIGINT AS SMALLINT), session_epoch = session_epoch + 1");
             builder.push(", updated_at = ");
             builder.push_bind(Utc::now().timestamp());
             builder.push(" WHERE id IN (");
@@ -1106,7 +1143,7 @@ impl AdminService {
     }
 
     async fn lock_user_orders_and_find_pending_stripe(
-        tx: &mut sqlx::Transaction<'_, MySql>,
+        tx: &mut DbTransaction<'_>,
         user_ids: &[i64],
     ) -> Result<bool, ApiError> {
         if user_ids.is_empty() {
@@ -1115,7 +1152,7 @@ impl AdminService {
         for user_ids in user_ids.chunks(USER_DELETE_SQL_BATCH_SIZE) {
             let mut after_order_id = 0_i64;
             loop {
-                let mut builder = QueryBuilder::<MySql>::new(
+                let mut builder = QueryBuilder::<Postgres>::new(
                     "SELECT id, status, callback_no FROM v2_order WHERE user_id IN (",
                 );
                 push_id_binds(&mut builder, user_ids);
@@ -1125,7 +1162,7 @@ impl AdminService {
                 builder.push_bind(USER_MUTATION_PAGE_SIZE);
                 builder.push(" FOR UPDATE");
                 let rows = builder
-                    .build_query_as::<(i64, i8, Option<String>)>()
+                    .build_query_as::<(i64, i16, Option<String>)>()
                     .fetch_all(&mut **tx)
                     .await?;
                 let Some(last_id) = rows.last().map(|(id, _, _)| *id) else {
@@ -1151,7 +1188,7 @@ impl AdminService {
     ) -> Result<AdminOutput, ApiError> {
         let user_id = required_i64(params, "user_id")?;
         let invite_user_id = optional_i64(params, "invite_user_id");
-        sqlx::query("UPDATE v2_user SET invite_user_id = ?, updated_at = ? WHERE id = ?")
+        sqlx::query("UPDATE v2_user SET invite_user_id = $1, updated_at = $2 WHERE id = $3")
             .bind(invite_user_id)
             .bind(Utc::now().timestamp())
             .bind(user_id)
@@ -1161,7 +1198,7 @@ impl AdminService {
     }
 }
 
-fn push_id_binds(builder: &mut QueryBuilder<MySql>, user_ids: &[i64]) {
+fn push_id_binds(builder: &mut QueryBuilder<Postgres>, user_ids: &[i64]) {
     let mut separated = builder.separated(", ");
     for user_id in user_ids {
         separated.push_bind(*user_id);
@@ -1190,7 +1227,7 @@ mod tests {
         for sql in [
             "DELETE FROM v2_order WHERE user_id IN (",
             "DELETE FROM v2_invite_code WHERE user_id IN (",
-            "WHERE t.user_id IN (",
+            "t.user_id IN (",
             "DELETE FROM v2_ticket WHERE user_id IN (",
             "WHERE invite_user_id IN (",
             "DELETE FROM v2_user WHERE id IN (",

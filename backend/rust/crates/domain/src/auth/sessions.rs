@@ -1,6 +1,5 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
-use jsonwebtoken::{Algorithm, DecodingKey, Validation};
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -36,18 +35,8 @@ return 1
 #[derive(Serialize)]
 pub struct AuthData {
     pub token: String,
-    pub is_admin: i8,
+    pub is_admin: i16,
     pub auth_data: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub(super) struct AuthClaims {
-    id: i64,
-    session: String,
-    /// Tokens issued before the auth-hardening migration deserialize as epoch zero. A password
-    /// reset or ban increments the database value and therefore revokes those legacy tokens too.
-    #[serde(default)]
-    pub(super) session_epoch: i64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -62,8 +51,6 @@ pub struct SessionMeta {
     ip: Option<String>,
     login_at: i64,
     ua: Option<String>,
-    #[serde(default)]
-    auth_data: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     token_hash: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -76,8 +63,8 @@ pub struct SessionMeta {
 pub struct AuthUser {
     pub id: i64,
     pub email: String,
-    pub is_admin: i8,
-    pub is_staff: i8,
+    pub is_admin: i16,
+    pub is_staff: i16,
     pub session_id: String,
     pub authenticated_at: i64,
     pub password_authenticated: bool,
@@ -92,7 +79,7 @@ impl AuthService {
         let code = legacy_guid(false);
         let key = cache_key("TEMP_TOKEN", &code);
         let session_epoch: i64 = sqlx::query_scalar(
-            "SELECT session_epoch FROM v2_user WHERE id = ? AND banned = 0 LIMIT 1",
+            "SELECT session_epoch FROM v2_user WHERE id = $1 AND banned = 0 LIMIT 1",
         )
         .bind(user_id)
         .fetch_optional(&self.db)
@@ -184,10 +171,6 @@ impl AuthService {
         // once (Rust seeds it in the register INSERT). Do not touch it on login/token2Login.
         let now = Utc::now().timestamp();
 
-        // Establish the compatibility deadline once. Redis SET NX means neither a restart nor a
-        // later configuration reload can silently extend acceptance of pre-migration JWTs.
-        self.legacy_jwt_deadline().await?;
-
         let session = Uuid::new_v4().simple().to_string();
         let session_ttl_seconds = session_ttl_seconds(
             self.config.auth_session_ttl_seconds,
@@ -211,9 +194,6 @@ impl AuthService {
                         ip: ip.clone(),
                         login_at: now,
                         ua: user_agent.clone(),
-                        // Never place a bearer credential in the user-visible session map. Old
-                        // JWT records are read only during the bounded migration window.
-                        auth_data: String::new(),
                         token_hash: Some(token_hash),
                         expires_at: Some(expires_at),
                         password_authenticated,
@@ -241,28 +221,18 @@ impl AuthService {
         if auth_data.is_empty() || auth_data.len() > 4096 {
             return Err(ApiError::unauthorized());
         }
-        let claims = if let Some(identity) = self.opaque_session_identity(auth_data).await? {
-            AuthClaims {
-                id: identity.id,
-                session: identity.session,
-                session_epoch: identity.session_epoch,
-            }
-        } else {
-            if !looks_like_legacy_jwt(auth_data)
-                || Utc::now().timestamp() >= self.legacy_jwt_deadline().await?
-            {
-                return Err(ApiError::unauthorized());
-            }
-            self.decode_legacy_auth_data(auth_data)?
-        };
-        let user = db::user::find_user_for_auth_by_id(&self.db, claims.id).await?;
+        let identity = self
+            .opaque_session_identity(auth_data)
+            .await?
+            .ok_or_else(ApiError::unauthorized)?;
+        let user = db::user::find_user_for_auth_by_id(&self.db, identity.id).await?;
         let Some(user) = user else {
             return Err(ApiError::unauthorized());
         };
-        if user.banned != 0 || user.session_epoch != claims.session_epoch {
+        if user.banned != 0 || user.session_epoch != identity.session_epoch {
             return Err(ApiError::unauthorized());
         }
-        let Some(session_meta) = self.session_meta(claims.id, &claims.session).await? else {
+        let Some(session_meta) = self.session_meta(identity.id, &identity.session).await? else {
             return Err(ApiError::unauthorized());
         };
         Ok(AuthUser {
@@ -270,7 +240,7 @@ impl AuthService {
             email: user.email,
             is_admin: user.is_admin,
             is_staff: user.is_staff,
-            session_id: claims.session,
+            session_id: identity.session,
             authenticated_at: session_meta.login_at,
             password_authenticated: session_meta.password_authenticated,
         })
@@ -435,19 +405,6 @@ impl AuthService {
         Ok(bound_user_id == user_id && bound_session_id == session_id)
     }
 
-    fn decode_legacy_auth_data(&self, token: &str) -> Result<AuthClaims, ApiError> {
-        let mut validation = Validation::new(Algorithm::HS256);
-        validation.validate_exp = false;
-        validation.required_spec_claims.clear();
-        let data = jsonwebtoken::decode::<AuthClaims>(
-            token,
-            &DecodingKey::from_secret(self.config.app_key.as_bytes()),
-            &validation,
-        )
-        .map_err(|_| ApiError::unauthorized())?;
-        Ok(data.claims)
-    }
-
     async fn add_opaque_session(
         &self,
         user_id: i64,
@@ -497,22 +454,6 @@ impl AuthService {
             }),
             None => Ok(None),
         }
-    }
-
-    async fn legacy_jwt_deadline(&self) -> Result<i64, ApiError> {
-        let candidate = self.config.legacy_jwt_cutoff_unix.max(0);
-        let mut conn = self.redis.clone();
-        let _: Option<String> = redis::cmd("SET")
-            .arg(LEGACY_JWT_DEADLINE_KEY)
-            .arg(candidate)
-            .arg("NX")
-            .query_async(&mut conn)
-            .await?;
-        let stored: i64 = conn.get(LEGACY_JWT_DEADLINE_KEY).await?;
-        // Configuration can always shorten or disable a previously persisted migration window;
-        // it can never extend one. Because `candidate` is an absolute Unix timestamp, losing
-        // Redis state cannot move the cutoff into the future.
-        Ok(effective_legacy_jwt_cutoff(stored, candidate))
     }
 
     async fn check_session(&self, user_id: i64, session_id: &str) -> Result<bool, ApiError> {
@@ -590,8 +531,8 @@ pub(super) fn truncate_utf8(mut value: String, maximum_bytes: usize) -> String {
 pub(super) fn session_ttl_seconds(
     ordinary: u64,
     privileged: u64,
-    is_admin: i8,
-    is_staff: i8,
+    is_admin: i16,
+    is_staff: i16,
 ) -> u64 {
     if is_admin != 0 || is_staff != 0 {
         privileged
@@ -608,7 +549,6 @@ fn user_sessions_key(user_id: i64) -> String {
 }
 
 pub(super) const AUTH_SESSION_KEY_PREFIX: &str = "AUTH_SESSION_";
-const LEGACY_JWT_DEADLINE_KEY: &str = "AUTH_LEGACY_JWT_DEADLINE";
 
 fn user_auth_keys_key(user_id: i64) -> String {
     format!("AUTH_USER_SESSION_KEYS_{user_id}")
@@ -643,21 +583,9 @@ pub(super) fn generate_auth_token() -> Result<String, ApiError> {
     Ok(URL_SAFE_NO_PAD.encode(bytes))
 }
 
-pub(super) fn looks_like_legacy_jwt(value: &str) -> bool {
-    value.split('.').count() == 3
-}
-
-pub(super) fn effective_legacy_jwt_cutoff(stored: i64, configured: i64) -> i64 {
-    stored.min(configured.max(0))
-}
-
 pub(super) fn parse_temp_token(value: &str) -> Option<(i64, i64)> {
-    if let Some((user_id, session_epoch)) = value.split_once(':') {
-        return Some((user_id.parse().ok()?, session_epoch.parse().ok()?));
-    }
-    // One-minute tokens created immediately before the migration stored only the user id. They
-    // remain usable for epoch-zero users and are automatically invalid after any revocation.
-    Some((value.parse().ok()?, 0))
+    let (user_id, session_epoch) = value.split_once(':')?;
+    Some((user_id.parse().ok()?, session_epoch.parse().ok()?))
 }
 
 pub(super) const ADD_OPAQUE_SESSION_SCRIPT: &str = r#"

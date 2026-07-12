@@ -2,41 +2,123 @@ use super::*;
 
 #[derive(Debug, Clone)]
 pub(in super::super) enum AdminSqlValue {
-    Null,
+    TextNull,
+    IntegerNull,
     Integer(i64),
     Text(String),
+    Json(Option<Value>),
+}
+
+#[derive(Clone, Copy)]
+enum AdminIntegerColumnType {
+    SmallInt,
+    Integer,
+    BigInt,
+}
+
+/// `AdminSqlValue` deliberately keeps request integers as `i64`: validation and
+/// compatibility logic operate on Laravel-style integers, while the PostgreSQL
+/// schema uses a mixture of SMALLINT, INTEGER, and BIGINT. PostgreSQL does not
+/// implicitly narrow a BIGINT bind for INSERT/UPDATE assignment, so every
+/// dynamic integer assignment must carry the target column's exact SQL type.
+fn admin_integer_column_type(column: &str) -> AdminIntegerColumnType {
+    match column {
+        "allow_insecure" | "auto_renewal" | "banned" | "commission_type" | "disable_sni"
+        | "insecure" | "is_admin" | "is_staff" | "remind_expire" | "remind_traffic" | "renew"
+        | "show" | "tls" | "type" | "zero_rtt_handshake" => AdminIntegerColumnType::SmallInt,
+        "balance"
+        | "capacity_limit"
+        | "commission_balance"
+        | "commission_rate"
+        | "device_limit"
+        | "discount"
+        | "down_mbps"
+        | "group_id"
+        | "limit_use"
+        | "limit_use_with_user"
+        | "parent_id"
+        | "plan_id"
+        | "port"
+        | "server_port"
+        | "sort"
+        | "speed_limit"
+        | "up_mbps"
+        | "value"
+        | "version" => AdminIntegerColumnType::Integer,
+        _ => AdminIntegerColumnType::BigInt,
+    }
+}
+
+fn push_admin_integer_value(
+    separated: &mut sqlx::query_builder::Separated<'_, Postgres, &str>,
+    column: &str,
+    value: Option<i64>,
+) {
+    let cast = match admin_integer_column_type(column) {
+        AdminIntegerColumnType::SmallInt => " AS SMALLINT)",
+        AdminIntegerColumnType::Integer => " AS INTEGER)",
+        AdminIntegerColumnType::BigInt => " AS BIGINT)",
+    };
+    separated.push("CAST(");
+    separated.push_bind_unseparated(value);
+    separated.push_unseparated(cast);
+}
+
+fn push_admin_integer_bind(builder: &mut QueryBuilder<Postgres>, column: &str, value: Option<i64>) {
+    let cast = match admin_integer_column_type(column) {
+        AdminIntegerColumnType::SmallInt => " AS SMALLINT)",
+        AdminIntegerColumnType::Integer => " AS INTEGER)",
+        AdminIntegerColumnType::BigInt => " AS BIGINT)",
+    };
+    builder.push("CAST(");
+    builder.push_bind(value);
+    builder.push(cast);
 }
 
 pub(in super::super) fn push_admin_sql_value(
-    separated: &mut sqlx::query_builder::Separated<'_, MySql, &str>,
+    separated: &mut sqlx::query_builder::Separated<'_, Postgres, &str>,
+    column: &str,
     value: &AdminSqlValue,
 ) {
     match value {
-        AdminSqlValue::Null => {
+        AdminSqlValue::TextNull => {
             separated.push_bind(Option::<String>::None);
         }
+        AdminSqlValue::IntegerNull => {
+            push_admin_integer_value(separated, column, None);
+        }
         AdminSqlValue::Integer(value) => {
-            separated.push_bind(*value);
+            push_admin_integer_value(separated, column, Some(*value));
         }
         AdminSqlValue::Text(value) => {
             separated.push_bind(value.clone());
+        }
+        AdminSqlValue::Json(value) => {
+            separated.push_bind(value.clone().map(Json));
         }
     }
 }
 
 pub(in super::super) fn push_admin_sql_bind(
-    builder: &mut QueryBuilder<MySql>,
+    builder: &mut QueryBuilder<Postgres>,
+    column: &str,
     value: &AdminSqlValue,
 ) {
     match value {
-        AdminSqlValue::Null => {
+        AdminSqlValue::TextNull => {
             builder.push_bind(Option::<String>::None);
         }
+        AdminSqlValue::IntegerNull => {
+            push_admin_integer_bind(builder, column, None);
+        }
         AdminSqlValue::Integer(value) => {
-            builder.push_bind(*value);
+            push_admin_integer_bind(builder, column, Some(*value));
         }
         AdminSqlValue::Text(value) => {
             builder.push_bind(value.clone());
+        }
+        AdminSqlValue::Json(value) => {
+            builder.push_bind(value.clone().map(Json));
         }
     }
 }
@@ -127,7 +209,7 @@ pub(in super::super) fn optional_text(value: Option<String>) -> AdminSqlValue {
     value
         .filter(|value| !value.trim().is_empty() && !value.eq_ignore_ascii_case("null"))
         .map(AdminSqlValue::Text)
-        .unwrap_or(AdminSqlValue::Null)
+        .unwrap_or(AdminSqlValue::TextNull)
 }
 
 pub(in super::super) fn optional_text_value(
@@ -151,7 +233,7 @@ pub(in super::super) fn optional_int_or_null_value(
 ) -> AdminSqlValue {
     optional_i64(params, key)
         .map(AdminSqlValue::Integer)
-        .unwrap_or(AdminSqlValue::Null)
+        .unwrap_or(AdminSqlValue::IntegerNull)
 }
 
 /// Builds a Laravel-style 422 validation error for a single field: the message
@@ -227,11 +309,12 @@ pub(in super::super) fn optional_json_array_text_value(
     params: &HashMap<String, String>,
     key: &str,
 ) -> AdminSqlValue {
-    json_array_string(params, key)
-        .ok()
-        .flatten()
-        .map(AdminSqlValue::Text)
-        .unwrap_or(AdminSqlValue::Null)
+    AdminSqlValue::Json(
+        json_array_string(params, key)
+            .ok()
+            .flatten()
+            .and_then(|value| serde_json::from_str(&value).ok()),
+    )
 }
 
 pub(in super::super) fn json_array_string(
@@ -252,9 +335,7 @@ pub(in super::super) fn optional_json_text_value(
     params: &HashMap<String, String>,
     key: &str,
 ) -> AdminSqlValue {
-    optional_json_value(params, key)
-        .map(json_value)
-        .unwrap_or(AdminSqlValue::Null)
+    AdminSqlValue::Json(optional_json_value(params, key))
 }
 
 pub(in super::super) fn optional_decoded_json_text_value(
@@ -264,9 +345,7 @@ pub(in super::super) fn optional_decoded_json_text_value(
     let Some(value) = optional_string(params, key) else {
         return optional_json_text_value(params, key);
     };
-    serde_json::from_str::<Value>(&value)
-        .map(json_value)
-        .unwrap_or(AdminSqlValue::Null)
+    AdminSqlValue::Json(serde_json::from_str::<Value>(&value).ok())
 }
 
 pub(in super::super) fn optional_json_value(
@@ -286,5 +365,38 @@ pub(in super::super) fn optional_json_value(
 }
 
 pub(in super::super) fn json_value(value: Value) -> AdminSqlValue {
-    AdminSqlValue::Text(json_string(&value))
+    AdminSqlValue::Json(Some(value))
+}
+
+#[cfg(test)]
+mod postgres_integer_bind_tests {
+    use super::*;
+
+    #[test]
+    fn dynamic_values_cast_request_i64_to_exact_postgres_column_types() {
+        let mut builder = QueryBuilder::<Postgres>::new("VALUES (");
+        {
+            let mut values = builder.separated(", ");
+            push_admin_sql_value(&mut values, "show", &AdminSqlValue::Integer(1));
+            push_admin_sql_value(&mut values, "plan_id", &AdminSqlValue::Integer(2));
+            push_admin_sql_value(&mut values, "expired_at", &AdminSqlValue::IntegerNull);
+        }
+        builder.push(")");
+        assert_eq!(
+            builder.sql(),
+            "VALUES (CAST($1 AS SMALLINT), CAST($2 AS INTEGER), CAST($3 AS BIGINT))"
+        );
+    }
+
+    #[test]
+    fn dynamic_assignments_use_the_same_exact_integer_casts() {
+        let mut builder = QueryBuilder::<Postgres>::new("UPDATE v2_user SET banned = ");
+        push_admin_sql_bind(&mut builder, "banned", &AdminSqlValue::Integer(1));
+        builder.push(", balance = ");
+        push_admin_sql_bind(&mut builder, "balance", &AdminSqlValue::Integer(10));
+        assert_eq!(
+            builder.sql(),
+            "UPDATE v2_user SET banned = CAST($1 AS SMALLINT), balance = CAST($2 AS INTEGER)"
+        );
+    }
 }

@@ -3,6 +3,7 @@ use std::{future::Future, path::PathBuf, time::Duration};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::{
+    analytics,
     metrics::record_worker_loop_heartbeat,
     outbox,
     scheduler::{SCHEDULED_JOBS, run_schedule_loop},
@@ -10,7 +11,7 @@ use crate::{
 };
 
 const HEALTH_JOB_NAME: &str = "worker_health";
-const DEFAULT_HEALTH_FILE: &str = "/tmp/v2board-worker-health";
+const DEFAULT_HEALTH_FILE: &str = "/run/v2board-worker/health";
 const DEFAULT_HEARTBEAT_INTERVAL_SECONDS: u64 = 10;
 const DEFAULT_SHUTDOWN_TIMEOUT_SECONDS: u64 = 30;
 const DEPENDENCY_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
@@ -58,6 +59,9 @@ pub(crate) fn init_tracing() {
 
 pub(crate) async fn run(state: WorkerState) -> anyhow::Result<()> {
     let runtime_config = WorkerRuntimeConfig::from_env()?;
+    probe_dependencies(&state).await?;
+    write_health_heartbeat(&runtime_config.health_file).await?;
+    systemd_notify("READY=1\nSTATUS=PostgreSQL, migration ledger, and Redis are ready")?;
     tracing::info!("v2board rust worker starting");
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     let mut loops = tokio::task::JoinSet::new();
@@ -74,6 +78,24 @@ pub(crate) async fn run(state: WorkerState) -> anyhow::Result<()> {
                     heartbeat_state,
                     heartbeat_interval,
                     run_schedule_loop(job, state, shutdown),
+                )
+                .await,
+            )
+        });
+    }
+    {
+        let state = state.clone();
+        let heartbeat_state = state.clone();
+        let shutdown = shutdown_rx.clone();
+        let heartbeat_interval = runtime_config.heartbeat_interval;
+        loops.spawn(async move {
+            (
+                analytics::JOB_NAME,
+                run_loop_with_heartbeat(
+                    analytics::JOB_NAME,
+                    heartbeat_state,
+                    heartbeat_interval,
+                    analytics::run_loop(state, shutdown),
                 )
                 .await,
             )
@@ -120,6 +142,9 @@ pub(crate) async fn run(state: WorkerState) -> anyhow::Result<()> {
     };
 
     let _ = shutdown_tx.send(true);
+    if let Err(error) = systemd_notify("STOPPING=1\nSTATUS=Worker is draining active jobs") {
+        tracing::warn!(?error, "failed to notify systemd about worker shutdown");
+    }
     let _ = tokio::fs::remove_file(&runtime_config.health_file).await;
     if tokio::time::timeout(runtime_config.shutdown_timeout, drain_loops(&mut loops))
         .await
@@ -169,7 +194,6 @@ async fn run_health_loop(
     mut shutdown: tokio::sync::watch::Receiver<bool>,
     runtime_config: WorkerRuntimeConfig,
 ) -> anyhow::Result<()> {
-    let _ = tokio::fs::remove_file(&runtime_config.health_file).await;
     let mut interval = tokio::time::interval(runtime_config.heartbeat_interval);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
@@ -177,8 +201,8 @@ async fn run_health_loop(
             _ = interval.tick() => {
                 match probe_dependencies(&state).await {
                     Ok(()) => {
-                        let now = chrono::Utc::now().timestamp().to_string();
-                        tokio::fs::write(&runtime_config.health_file, now).await?;
+                        write_health_heartbeat(&runtime_config.health_file).await?;
+                        systemd_notify("WATCHDOG=1\nSTATUS=Worker dependencies are healthy")?;
                     }
                     Err(error) => {
                         tracing::warn!(?error, "worker dependency health probe failed");
@@ -193,6 +217,38 @@ async fn run_health_loop(
             }
         }
     }
+}
+
+async fn write_health_heartbeat(path: &std::path::Path) -> anyhow::Result<()> {
+    let now = chrono::Utc::now().timestamp().to_string();
+    tokio::fs::write(path, now).await?;
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn systemd_notify(message: &str) -> anyhow::Result<()> {
+    use std::{
+        os::{linux::net::SocketAddrExt, unix::ffi::OsStrExt},
+        path::Path,
+    };
+
+    let Some(path) = std::env::var_os("NOTIFY_SOCKET") else {
+        return Ok(());
+    };
+    let socket = std::os::unix::net::UnixDatagram::unbound()?;
+    let bytes = path.as_os_str().as_bytes();
+    if let Some(abstract_name) = bytes.strip_prefix(b"@") {
+        let address = std::os::unix::net::SocketAddr::from_abstract_name(abstract_name)?;
+        socket.send_to_addr(message.as_bytes(), &address)?;
+    } else {
+        socket.send_to(message.as_bytes(), Path::new(&path))?;
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn systemd_notify(_message: &str) -> anyhow::Result<()> {
+    Ok(())
 }
 
 async fn probe_dependencies(state: &WorkerState) -> anyhow::Result<()> {

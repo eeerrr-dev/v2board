@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
-use sqlx::MySqlPool;
+use uuid::Uuid;
 use v2board_config::AppConfig;
+use v2board_db::DbPool;
 use v2board_domain::smtp::SmtpTransportCache;
 
 #[derive(Clone)]
@@ -10,7 +11,8 @@ pub(crate) struct WorkerState {
     pub(crate) config: Arc<AppConfig>,
     config_store: Arc<ArcSwap<AppConfig>>,
     config_reload: Arc<tokio::sync::Mutex<Option<String>>>,
-    pub(crate) db: MySqlPool,
+    pub(crate) db: DbPool,
+    pub(crate) installation_id: Uuid,
     pub(crate) redis: redis::Client,
     pub(crate) smtp: SmtpTransportCache,
 }
@@ -18,7 +20,8 @@ pub(crate) struct WorkerState {
 impl WorkerState {
     pub(crate) fn new(
         config: Arc<AppConfig>,
-        db: MySqlPool,
+        db: DbPool,
+        installation_id: Uuid,
         redis: redis::Client,
         smtp: SmtpTransportCache,
     ) -> Self {
@@ -27,6 +30,7 @@ impl WorkerState {
             config_store: Arc::new(ArcSwap::from(config)),
             config_reload: Arc::new(tokio::sync::Mutex::new(None)),
             db,
+            installation_id,
             redis,
             smtp,
         }
@@ -67,6 +71,7 @@ impl WorkerState {
             config_store: self.config_store.clone(),
             config_reload: self.config_reload.clone(),
             db: self.db.clone(),
+            installation_id: self.installation_id,
             redis: self.redis.clone(),
             smtp: self.smtp.clone(),
         }

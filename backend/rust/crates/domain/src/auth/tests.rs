@@ -11,9 +11,8 @@ use super::{
         validate_registration_auxiliary_inputs,
     },
     sessions::{
-        ADD_OPAQUE_SESSION_SCRIPT, AUTH_SESSION_KEY_PREFIX, AuthClaims,
-        RESERVE_STEP_UP_ATTEMPT_SCRIPT, auth_session_key, decode_session_metadata,
-        effective_legacy_jwt_cutoff, generate_auth_token, looks_like_legacy_jwt, parse_temp_token,
+        ADD_OPAQUE_SESSION_SCRIPT, AUTH_SESSION_KEY_PREFIX, RESERVE_STEP_UP_ATTEMPT_SCRIPT,
+        auth_session_key, decode_session_metadata, generate_auth_token, parse_temp_token,
         session_ttl_seconds, step_up_limiter_keys, truncate_utf8,
     },
     validation::{
@@ -276,18 +275,12 @@ async fn bounded_password_worker_hashes_and_verifies_off_runtime_threads() {
 }
 
 #[test]
-fn temporary_login_tokens_bind_the_session_epoch_and_read_legacy_values() {
+fn temporary_login_tokens_require_the_user_and_session_epoch() {
     assert_eq!(parse_temp_token("42:7"), Some((42, 7)));
-    assert_eq!(parse_temp_token("42"), Some((42, 0)));
+    assert_eq!(parse_temp_token("42"), None);
     assert_eq!(parse_temp_token("bad"), None);
     assert_eq!(parse_temp_token("42:bad"), None);
-}
-
-#[test]
-fn pre_epoch_auth_claims_deserialize_as_epoch_zero() {
-    let claims: AuthClaims =
-        serde_json::from_value(serde_json::json!({ "id": 9, "session": "legacy" })).unwrap();
-    assert_eq!(claims.session_epoch, 0);
+    assert_eq!(parse_temp_token("42:7:extra"), None);
 }
 
 #[test]
@@ -332,22 +325,6 @@ fn session_metadata_truncation_preserves_utf8_boundaries() {
 }
 
 #[test]
-fn only_three_segment_values_enter_the_bounded_legacy_jwt_path() {
-    assert!(looks_like_legacy_jwt("header.payload.signature"));
-    assert!(!looks_like_legacy_jwt("opaque-token"));
-    assert!(!looks_like_legacy_jwt("two.parts"));
-    assert!(!looks_like_legacy_jwt("too.many.jwt.parts"));
-}
-
-#[test]
-fn configured_legacy_cutoff_can_only_shorten_the_persisted_window() {
-    assert_eq!(effective_legacy_jwt_cutoff(2_000, 3_000), 2_000);
-    assert_eq!(effective_legacy_jwt_cutoff(3_000, 2_000), 2_000);
-    assert_eq!(effective_legacy_jwt_cutoff(3_000, 0), 0);
-    assert_eq!(effective_legacy_jwt_cutoff(3_000, -1), 0);
-}
-
-#[test]
 fn opaque_session_script_sets_absolute_ttl_without_storing_the_bearer() {
     assert!(ADD_OPAQUE_SESSION_SCRIPT.contains("'NX'"));
     assert!(ADD_OPAQUE_SESSION_SCRIPT.contains("'EX', ARGV[4]"));
@@ -380,11 +357,14 @@ fn registration_limiter_atomically_reserves_and_releases_only_its_own_slot() {
 #[test]
 fn invitation_code_consumption_is_locked_and_guarded() {
     let source = include_str!("registration.rs");
-    assert!(source.contains("WHERE code = ? AND status = 0 LIMIT 1 FOR UPDATE"));
-    assert!(source.contains("WHERE id = ? AND status = 0"));
+    assert!(source.contains("WHERE lower(code) = lower($1)"));
+    assert!(source.contains("AND status = 0 LIMIT 1 FOR UPDATE"));
+    assert!(source.contains("WHERE id = $2 AND status = 0"));
     assert!(source.contains("result.rows_affected() != 1"));
-    assert!(!source.contains("email = ? LIMIT 1 FOR UPDATE"));
+    assert!(!source.contains("email = $1 LIMIT 1 FOR UPDATE"));
     assert!(source.contains("is_email_unique_violation"));
+    let migration = include_str!("../../../../migrations-postgres/0001_initial.sql");
+    assert!(migration.contains("uniq_invite_code_canonical"));
     assert!(
         source.find("consume_invite_code").unwrap() < source.find("INSERT INTO v2_user").unwrap()
     );

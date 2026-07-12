@@ -1,18 +1,38 @@
 use std::collections::HashMap;
 
 use chrono::Utc;
-use sqlx::{FromRow, MySql, Transaction};
+use sqlx::{FromRow, Postgres, Transaction};
 use v2board_config::AppConfig;
 
 use crate::{state::WorkerState, time::timestamp_before};
 
+const COMMISSION_AUTO_CHECK_BATCH_SIZE: i64 = 1_000;
+const COMMISSION_AUTO_CHECK_MAX_BATCHES: usize = 20;
+const COMMISSION_MAX_PAYOUTS_PER_TICK: usize = 10_000;
+const COMMISSION_AUTO_CHECK_SQL: &str = r#"
+WITH candidates AS (
+    SELECT id
+    FROM v2_order
+    WHERE commission_status = 0
+      AND invite_user_id IS NOT NULL
+      AND status IN (3, 4)
+      AND updated_at <= $2
+    ORDER BY id
+    LIMIT $3
+    FOR UPDATE SKIP LOCKED
+)
+UPDATE v2_order AS target
+SET commission_status = 1, updated_at = $1
+FROM candidates
+WHERE target.id = candidates.id AND target.commission_status = 0
+"#;
 const COMMISSION_CLAIM_SQL: &str = r#"
 SELECT id, invite_user_id, user_id, trade_no, total_amount, commission_balance,
        actual_commission_balance
 FROM v2_order
 WHERE commission_status = 1
   AND invite_user_id IS NOT NULL
-  AND id > ?
+  AND id > $1
 ORDER BY id
 LIMIT 1
 FOR UPDATE SKIP LOCKED
@@ -38,24 +58,24 @@ struct InviterRow {
 pub(crate) async fn run(state: &WorkerState) -> anyhow::Result<()> {
     if state.config.commission_auto_check_enable {
         let now = Utc::now().timestamp();
-        sqlx::query(
-            r#"
-            UPDATE v2_order
-            SET commission_status = 1, updated_at = ?
-            WHERE commission_status = 0
-              AND invite_user_id IS NOT NULL
-              AND status IN (3, 4)
-              AND updated_at <= ?
-            "#,
-        )
-        .bind(now)
-        .bind(timestamp_before(now, 3 * 86_400))
-        .execute(&state.db)
-        .await?;
+        let cutoff = timestamp_before(now, 3 * 86_400);
+        for _ in 0..COMMISSION_AUTO_CHECK_MAX_BATCHES {
+            let marked = sqlx::query(COMMISSION_AUTO_CHECK_SQL)
+                .bind(now)
+                .bind(cutoff)
+                .bind(COMMISSION_AUTO_CHECK_BATCH_SIZE)
+                .execute(&state.db)
+                .await?
+                .rows_affected();
+            if marked < COMMISSION_AUTO_CHECK_BATCH_SIZE as u64 {
+                break;
+            }
+        }
     }
 
     let mut after_id = 0_i64;
-    loop {
+    let mut processed = 0_usize;
+    while processed < COMMISSION_MAX_PAYOUTS_PER_TICK {
         let mut tx = state.db.begin().await?;
         let order = sqlx::query_as::<_, CommissionOrderRow>(COMMISSION_CLAIM_SQL)
             .bind(after_id)
@@ -66,6 +86,7 @@ pub(crate) async fn run(state: &WorkerState) -> anyhow::Result<()> {
             break;
         };
         after_id = order.id;
+        processed += 1;
         if let Err(error) = pay_commission_order_in_tx(state, &mut tx, &order).await {
             tx.rollback().await?;
             tracing::error!(
@@ -84,7 +105,7 @@ pub(crate) async fn run(state: &WorkerState) -> anyhow::Result<()> {
 
 async fn pay_commission_order_in_tx(
     state: &WorkerState,
-    tx: &mut Transaction<'_, MySql>,
+    tx: &mut Transaction<'_, Postgres>,
     order: &CommissionOrderRow,
 ) -> anyhow::Result<()> {
     let shares = commission_shares(&state.config);
@@ -103,7 +124,7 @@ async fn pay_commission_order_in_tx(
             break;
         }
         let Some(row) = sqlx::query_as::<_, InviterRow>(
-            "SELECT id, invite_user_id FROM v2_user WHERE id = ? LIMIT 1",
+            "SELECT id, invite_user_id FROM v2_user WHERE id = $1 LIMIT 1",
         )
         .bind(id)
         .fetch_optional(&mut **tx)
@@ -130,7 +151,7 @@ async fn pay_commission_order_in_tx(
             )?;
         let now = Utc::now().timestamp();
         let (balance, commission_balance): (i32, i32) = sqlx::query_as(
-            "SELECT balance, commission_balance FROM v2_user WHERE id = ? LIMIT 1 FOR UPDATE",
+            "SELECT balance, commission_balance FROM v2_user WHERE id = $1 LIMIT 1 FOR UPDATE",
         )
         .bind(payout.inviter_id)
         .fetch_optional(&mut **tx)
@@ -139,7 +160,7 @@ async fn pay_commission_order_in_tx(
         if state.config.withdraw_close_enable {
             let balance = checked_commission_total(balance, payout.amount)
                 .ok_or_else(|| anyhow::anyhow!("recipient balance exceeds supported cents"))?;
-            sqlx::query("UPDATE v2_user SET balance = ?, updated_at = ? WHERE id = ?")
+            sqlx::query("UPDATE v2_user SET balance = $1, updated_at = $2 WHERE id = $3")
                 .bind(balance)
                 .bind(now)
                 .bind(payout.inviter_id)
@@ -150,18 +171,20 @@ async fn pay_commission_order_in_tx(
                 .ok_or_else(|| {
                     anyhow::anyhow!("recipient commission balance exceeds supported cents")
                 })?;
-            sqlx::query("UPDATE v2_user SET commission_balance = ?, updated_at = ? WHERE id = ?")
-                .bind(commission_balance)
-                .bind(now)
-                .bind(payout.inviter_id)
-                .execute(&mut **tx)
-                .await?;
+            sqlx::query(
+                "UPDATE v2_user SET commission_balance = $1, updated_at = $2 WHERE id = $3",
+            )
+            .bind(commission_balance)
+            .bind(now)
+            .bind(payout.inviter_id)
+            .execute(&mut **tx)
+            .await?;
         }
         sqlx::query(
             r#"
             INSERT INTO v2_commission_log
                 (invite_user_id, user_id, trade_no, order_amount, get_amount, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             "#,
         )
         .bind(payout.inviter_id)
@@ -178,8 +201,8 @@ async fn pay_commission_order_in_tx(
     let completed = sqlx::query(
         r#"
         UPDATE v2_order
-        SET commission_status = 2, actual_commission_balance = ?, updated_at = ?
-        WHERE id = ? AND commission_status = 1
+        SET commission_status = 2, actual_commission_balance = $1, updated_at = $2
+        WHERE id = $3 AND commission_status = 1
         "#,
     )
     .bind(actual_commission_balance)
@@ -285,9 +308,12 @@ mod tests {
 
     #[test]
     fn commission_claim_is_ordered_locked_and_non_blocking_across_workers() {
+        assert!(COMMISSION_AUTO_CHECK_SQL.contains("WITH candidates AS"));
+        assert!(COMMISSION_AUTO_CHECK_SQL.contains("LIMIT $3"));
+        assert!(COMMISSION_AUTO_CHECK_SQL.contains("FOR UPDATE SKIP LOCKED"));
         assert!(COMMISSION_CLAIM_SQL.contains("ORDER BY id"));
         assert!(COMMISSION_CLAIM_SQL.contains("FOR UPDATE SKIP LOCKED"));
-        let migration = include_str!("../../../migrations/0003_worker_idempotency.sql");
+        let migration = include_str!("../../../migrations-postgres/0001_initial.sql");
         assert!(migration.contains("idx_commission_claim"));
     }
 

@@ -10,8 +10,11 @@ use redis::AsyncCommands;
 use rust_decimal::{Decimal, RoundingStrategy, prelude::ToPrimitive};
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use sqlx::{MySql, QueryBuilder, Transaction};
+use sqlx::{Postgres, QueryBuilder, Transaction};
 use uuid::Uuid;
+use v2board_analytics::{
+    AnalyticsEvent, IdentityKind, ReportedTrafficEvent, TrafficEventCore, enqueue_events,
+};
 use v2board_compat::ApiError;
 
 use crate::{json_value::value_to_i64, runtime::AppState};
@@ -24,6 +27,16 @@ use super::{
 };
 
 const TRAFFIC_REPORT_SQL_BATCH_SIZE: usize = 500;
+
+#[derive(Debug, Clone)]
+struct AcceptedTrafficItem {
+    user_id: i64,
+    traffic_epoch: i64,
+    raw_u: i64,
+    raw_d: i64,
+    charged_u: i64,
+    charged_d: i64,
+}
 
 // Merge every user's per-node alive-IP bucket in Redis itself. Reports from
 // different nodes can race; a client-side GET/SET loop loses one of those
@@ -177,7 +190,7 @@ pub(super) async fn server_alive_list(
         FROM v2_user
         WHERE CAST(u AS DECIMAL(30,0)) + CAST(d AS DECIMAL(30,0))
               < CAST(transfer_enable AS DECIMAL(30,0))
-          AND (expired_at >= ? OR expired_at IS NULL)
+          AND (expired_at >= $1 OR expired_at IS NULL)
           AND banned = 0
           AND device_limit > 0
         "#,
@@ -595,16 +608,32 @@ async fn persist_durable_traffic_report(
 ) -> Result<(), ApiError> {
     let payload_hash = traffic_report_payload_hash(node.id, &node.rate, node_type, entries);
     let now = Utc::now().timestamp();
+    let accounting_date = v2board_config::app_now().date_naive();
+    let identity_kind = if is_internal_traffic_report_key(report_key) {
+        IdentityKind::Implicit
+    } else {
+        IdentityKind::Explicit
+    };
+    let rate_text = canonical_rate_text(&node.rate, rate);
+    let rate_decimal_10_2 = rate_decimal_10_2(rate)?;
     let mut tx = state.db.begin().await?;
     let inserted = match sqlx::query(
         r#"
         INSERT INTO v2_server_traffic_report
-            (report_key, payload_hash, applied_at, created_at, updated_at)
-        VALUES (?, ?, NULL, ?, ?)
+            (report_key, payload_hash, node_id, node_type, rate_text, rate_decimal_10_2,
+             identity_kind, accepted_at, accounting_date, applied_at, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULL, $10, $11)
         "#,
     )
     .bind(report_key)
     .bind(&payload_hash)
+    .bind(node.id)
+    .bind(node_type)
+    .bind(&rate_text)
+    .bind(rate_decimal_10_2)
+    .bind(identity_kind_db_value(identity_kind))
+    .bind(now)
+    .bind(accounting_date)
     .bind(now)
     .bind(now)
     .execute(&mut *tx)
@@ -622,7 +651,7 @@ async fn persist_durable_traffic_report(
     };
     if !inserted {
         let existing_hash: String = sqlx::query_scalar(
-            "SELECT payload_hash FROM v2_server_traffic_report WHERE report_key = ? FOR UPDATE",
+            "SELECT payload_hash FROM v2_server_traffic_report WHERE report_key = $1 FOR UPDATE",
         )
         .bind(report_key)
         .fetch_one(&mut *tx)
@@ -647,34 +676,116 @@ async fn persist_durable_traffic_report(
         let epoch = *epochs
             .get(&entry.user_id)
             .ok_or_else(|| ApiError::bad_request("Traffic report contains an unauthorized user"))?;
-        items.push((
-            entry.user_id,
-            epoch,
-            charged_bytes(entry.u, rate)?,
-            charged_bytes(entry.d, rate)?,
-        ));
+        items.push(AcceptedTrafficItem {
+            user_id: entry.user_id,
+            traffic_epoch: epoch,
+            raw_u: entry.u,
+            raw_d: entry.d,
+            charged_u: charged_bytes(entry.u, rate)?,
+            charged_d: charged_bytes(entry.d, rate)?,
+        });
     }
     for chunk in items.chunks(TRAFFIC_REPORT_SQL_BATCH_SIZE) {
-        let mut builder = QueryBuilder::<MySql>::new(
+        let mut builder = QueryBuilder::<Postgres>::new(
             "INSERT INTO v2_server_traffic_report_item \
-             (report_key, user_id, traffic_epoch, u, d) ",
+             (report_key, user_id, traffic_epoch, raw_u, raw_d, charged_u, charged_d) ",
         );
-        builder.push_values(chunk, |mut row, (user_id, epoch, u, d)| {
+        builder.push_values(chunk, |mut row, item| {
             row.push_bind(report_key)
-                .push_bind(*user_id)
-                .push_bind(*epoch)
-                .push_bind(*u)
-                .push_bind(*d);
+                .push_bind(item.user_id)
+                .push_bind(item.traffic_epoch)
+                .push_bind(item.raw_u)
+                .push_bind(item.raw_d)
+                .push_bind(item.charged_u)
+                .push_bind(item.charged_d);
         });
         builder.build().execute(&mut *tx).await?;
     }
+    let rate_decimal_text = decimal_with_scale(rate_decimal_10_2, 2);
+    let mut analytics_events = Vec::<AnalyticsEvent>::with_capacity(items.len());
+    for item in &items {
+        let core = TrafficEventCore {
+            installation_id: state.installation_id.to_string(),
+            report_key: report_key.to_owned(),
+            payload_hash: payload_hash.clone(),
+            identity_kind,
+            user_id: item.user_id.to_string(),
+            traffic_epoch: item.traffic_epoch.to_string(),
+            server_id: node.id.to_string(),
+            server_type: node_type.to_owned(),
+            rate_text: rate_text.clone(),
+            rate_decimal_10_2: rate_decimal_text.clone(),
+            raw_u: item.raw_u.to_string(),
+            raw_d: item.raw_d.to_string(),
+            charged_u: item.charged_u.to_string(),
+            charged_d: item.charged_d.to_string(),
+            accepted_at: now,
+            accounting_date: accounting_date.format("%Y-%m-%d").to_string(),
+            accounting_timezone: "Asia/Shanghai".to_owned(),
+        };
+        let event = ReportedTrafficEvent::new(core)
+            .and_then(ReportedTrafficEvent::into_outbox)
+            .map_err(traffic_analytics_event_error)?;
+        analytics_events.push(event);
+    }
+    enqueue_events(&mut tx, &analytics_events, now)
+        .await
+        .map_err(traffic_analytics_outbox_error)?;
     persist_traffic_stats(&mut tx, node, node_type, entries, rate).await?;
     tx.commit().await?;
     Ok(())
 }
 
+fn is_internal_traffic_report_key(report_key: &str) -> bool {
+    report_key.starts_with("i-")
+}
+
+fn identity_kind_db_value(identity_kind: IdentityKind) -> &'static str {
+    match identity_kind {
+        IdentityKind::Explicit => "explicit",
+        IdentityKind::Implicit => "implicit",
+    }
+}
+
+fn canonical_rate_text(raw: &str, parsed: Decimal) -> String {
+    if raw.trim().parse::<Decimal>().is_ok() {
+        raw.trim().to_owned()
+    } else {
+        parsed.normalize().to_string()
+    }
+}
+
+fn rate_decimal_10_2(rate: Decimal) -> Result<Decimal, ApiError> {
+    let rounded = rate.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
+    let maximum = Decimal::new(9_999_999_999, 2);
+    if rounded.is_sign_negative() || rounded > maximum {
+        return Err(ApiError::bad_request(
+            "Server traffic rate is outside the supported range",
+        ));
+    }
+    Ok(rounded)
+}
+
+fn decimal_with_scale(mut value: Decimal, scale: u32) -> String {
+    value.rescale(scale);
+    value.to_string()
+}
+
+fn traffic_analytics_event_error(error: v2board_analytics::EventValidationError) -> ApiError {
+    tracing::error!(
+        ?error,
+        "refusing to persist an invalid traffic analytics event"
+    );
+    ApiError::internal("failed to persist traffic analytics event")
+}
+
+fn traffic_analytics_outbox_error(error: v2board_analytics::OutboxError) -> ApiError {
+    tracing::error!(?error, "failed to enqueue the traffic analytics event");
+    ApiError::internal("failed to persist traffic analytics event")
+}
+
 async fn lock_report_users(
-    tx: &mut Transaction<'_, MySql>,
+    tx: &mut Transaction<'_, Postgres>,
     node: &ServerNodeRow,
     entries: &[TrafficEntry],
 ) -> Result<BTreeMap<i64, i64>, ApiError> {
@@ -697,7 +808,7 @@ async fn lock_report_users(
     let mut epochs = BTreeMap::new();
     for user_chunk in user_ids.chunks(TRAFFIC_REPORT_SQL_BATCH_SIZE) {
         let mut builder =
-            QueryBuilder::<MySql>::new("SELECT id, traffic_epoch FROM v2_user WHERE id IN (");
+            QueryBuilder::<Postgres>::new("SELECT id, traffic_epoch FROM v2_user WHERE id IN (");
         {
             let mut separated = builder.separated(", ");
             for user_id in user_chunk {
@@ -729,7 +840,7 @@ async fn lock_report_users(
 }
 
 async fn persist_traffic_stats(
-    tx: &mut Transaction<'_, MySql>,
+    tx: &mut Transaction<'_, Postgres>,
     node: &ServerNodeRow,
     node_type: &str,
     entries: &[TrafficEntry],
@@ -745,10 +856,10 @@ async fn persist_traffic_stats(
 
     // A single row-alias upsert per fixed-size chunk replaces the former
     // SELECT + UPDATE/INSERT round trip for every user.  The unique statistics
-    // key serializes concurrent node reports, while strict MySQL arithmetic
+    // key serializes concurrent node reports, while strict PostgreSQL arithmetic
     // rejects rather than wraps a signed BIGINT overflow.
     for chunk in entries.chunks(TRAFFIC_REPORT_SQL_BATCH_SIZE) {
-        let mut builder = QueryBuilder::<MySql>::new(
+        let mut builder = QueryBuilder::<Postgres>::new(
             "INSERT INTO v2_stat_user \
              (user_id, server_rate, u, d, record_type, record_at, created_at, updated_at) ",
         );
@@ -763,10 +874,10 @@ async fn persist_traffic_stats(
                 .push_bind(now);
         });
         builder.push(
-            " AS incoming ON DUPLICATE KEY UPDATE \
-             u = v2_stat_user.u + incoming.u, \
-             d = v2_stat_user.d + incoming.d, \
-             updated_at = incoming.updated_at",
+            " ON CONFLICT (server_rate, user_id, record_at) DO UPDATE SET \
+             u = v2_stat_user.u + EXCLUDED.u, \
+             d = v2_stat_user.d + EXCLUDED.d, \
+             updated_at = EXCLUDED.updated_at",
         );
         builder
             .build()
@@ -779,11 +890,11 @@ async fn persist_traffic_stats(
         r#"
         INSERT INTO v2_stat_server
             (server_id, server_type, u, d, record_type, record_at, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'd', ?, ?, ?) AS incoming
-        ON DUPLICATE KEY UPDATE
-            u = v2_stat_server.u + incoming.u,
-            d = v2_stat_server.d + incoming.d,
-            updated_at = incoming.updated_at
+        VALUES ($1, $2, $3, $4, 'd', $5, $6, $7)
+        ON CONFLICT (server_id, server_type, record_at) DO UPDATE SET
+            u = v2_stat_server.u + EXCLUDED.u,
+            d = v2_stat_server.d + EXCLUDED.d,
+            updated_at = EXCLUDED.updated_at
         "#,
     )
     .bind(node.id)
@@ -803,7 +914,7 @@ fn traffic_stat_write_error(error: sqlx::Error) -> ApiError {
     let is_overflow = error
         .as_database_error()
         .and_then(|error| error.code())
-        .is_some_and(|code| matches!(code.as_ref(), "1264" | "1690"));
+        .is_some_and(|code| code.as_ref() == "22003");
     if is_overflow {
         ApiError::bad_request("Server traffic total is outside the supported range")
     } else {

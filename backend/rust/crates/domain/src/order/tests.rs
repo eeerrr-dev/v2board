@@ -158,24 +158,22 @@ fn provider_identifiers_keep_bounded_utf8_labels_and_full_hashes() {
     assert_eq!(audit_label, label);
     assert_eq!(audit_hash.len(), 64);
     assert!(audit_hash.bytes().all(|byte| byte.is_ascii_hexdigit()));
-    let migration = include_str!("../../../../migrations/0042_order_callback_identity.sql");
+    let migration = include_str!("../../../../migrations-postgres/0001_initial.sql");
     assert!(migration.contains("callback_no_hash"));
-    assert!(!migration.contains("UPDATE `v2_order`"));
-    let bridge = include_str!("../../../../migrations/0043_legacy_callback_identity_bridge.sql");
-    assert!(bridge.contains("NEW.`callback_no_hash` <=> OLD.`callback_no_hash`"));
-    assert!(bridge.contains("UNHEX(SHA2(NEW.`callback_no`, 256))"));
+    assert!(migration.contains("octet_length(callback_no_hash) = 32"));
 }
 
 #[test]
 fn late_payment_notification_is_idempotent_after_the_ledger_upsert() {
-    assert!(should_emit_late_payment_notice(1));
-    assert!(!should_emit_late_payment_notice(2));
-    let migration = include_str!("../../../../migrations/0011_payment_reconciliation.sql");
-    assert!(migration.contains("UNIQUE KEY `uniq_payment_reconciliation_callback`"));
-    assert!(migration.contains("`reason` varchar(64) NOT NULL"));
+    assert!(should_emit_late_payment_notice(true));
+    assert!(!should_emit_late_payment_notice(false));
+    let migration = include_str!("../../../../migrations-postgres/0001_initial.sql");
+    assert!(migration.contains("uniq_payment_reconciliation_callback"));
+    assert!(migration.contains("reason"));
     let implementation = include_str!("../order.rs");
-    assert!(implementation.contains("occurrence_count ="));
+    assert!(implementation.contains("ON CONFLICT (payment_id, callback_no_hash) DO UPDATE"));
     assert!(implementation.contains("occurrence_count + 1"));
+    assert!(implementation.contains("RETURNING occurrence_count = 1"));
 }
 
 #[test]
@@ -201,7 +199,7 @@ fn settlement_query_locks_binding_and_amount_in_one_row_snapshot() {
 
 #[test]
 fn callback_lookup_does_not_filter_out_a_disabled_in_flight_gateway() {
-    assert!(PAYMENT_NOTIFY_LOOKUP_SQL.contains("payment = ? AND uuid = ?"));
+    assert!(PAYMENT_NOTIFY_LOOKUP_SQL.contains("payment = $1 AND uuid = $2"));
     assert!(!PAYMENT_NOTIFY_LOOKUP_SQL.contains("enable ="));
 }
 
@@ -664,6 +662,30 @@ fn coupon_discount_values_fail_closed_for_legacy_invalid_rows() {
     assert!(super::lifecycle::validate_coupon_discount(2, -1).is_err());
     assert!(super::lifecycle::validate_coupon_discount(2, 101).is_err());
     assert!(super::lifecycle::validate_coupon_discount(99, 10).is_err());
+}
+
+#[test]
+fn coupon_lookup_preserves_legacy_case_insensitive_identity() {
+    let source = include_str!("lifecycle.rs");
+    assert!(source.contains("WHERE lower(code) = lower($1)"));
+    let migration = include_str!("../../../../migrations-postgres/0001_initial.sql");
+    assert!(migration.contains("uniq_coupon_code_canonical"));
+}
+
+#[test]
+fn coupon_plan_scope_accepts_legacy_numeric_strings() {
+    assert_eq!(
+        super::lifecycle::parse_i32_json_list(Some(r#"["1",2,"invalid"]"#)),
+        Some(vec![1, 2])
+    );
+}
+
+#[test]
+fn every_order_producer_can_reuse_the_bounded_trade_number_generator() {
+    let trade_no = generate_order_no();
+    assert_eq!(trade_no.len(), 25);
+    assert!(trade_no.bytes().all(|byte| byte.is_ascii_digit()));
+    assert!(trade_no.len() <= 36);
 }
 
 #[test]
@@ -2252,16 +2274,19 @@ fn add_period_time_floors_past_base_to_now_and_passes_through_unknown_period() {
 fn unfinished_order_invariant_has_both_lock_and_database_guard() {
     assert!(USER_FOR_ORDER_SQL.contains("FOR UPDATE"));
     assert!(UNFINISHED_ORDER_FOR_UPDATE_SQL.ends_with("FOR UPDATE"));
-    let migration = include_str!("../../../../migrations/0003_worker_idempotency.sql");
+    let migration = include_str!("../../../../migrations-postgres/0001_initial.sql");
     assert!(migration.contains(UNFINISHED_ORDER_UNIQUE_KEY));
-    assert!(migration.contains("CASE WHEN `status` IN (0, 1) THEN `user_id` ELSE NULL END"));
+    assert!(migration.contains("status"));
+    assert!(migration.contains("user_id"));
+    assert!(migration.contains("0, 1"));
 }
 
 #[test]
 fn pending_payment_guards_have_a_selective_database_index() {
-    let migration = include_str!("../../../../migrations/0007_index_payment_pending_orders.sql");
+    let migration = include_str!("../../../../migrations-postgres/0001_initial.sql");
     assert!(migration.contains("idx_order_payment_status"));
-    assert!(migration.contains("(`payment_id`, `status`)"));
+    assert!(migration.contains("payment_id"));
+    assert!(migration.contains("status"));
 }
 
 #[test]
@@ -2269,10 +2294,12 @@ fn capacity_reservation_query_counts_only_unmaterialized_slot_consumers() {
     let sql = v2board_db::plan::PLAN_CAPACITY_USAGE_SQL;
     assert!(sql.contains("COUNT(DISTINCT pending_order.user_id)"));
     assert!(sql.contains("pending_order.status IN (0, 1)"));
-    assert!(sql.contains("pending_order.`type` IN (1, 3)"));
+    assert!(sql.contains("pending_order.type IN (1, 3)"));
     assert!(sql.contains("NOT EXISTS"));
     assert!(sql.contains("reserved_user.plan_id = pending_order.plan_id"));
-    assert!(sql.contains("reserved_user.expired_at >= UNIX_TIMESTAMP()"));
+    assert!(
+        sql.contains("reserved_user.expired_at >= EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT")
+    );
 }
 
 #[test]

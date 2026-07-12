@@ -10,12 +10,17 @@ use std::{
 use anyhow::{Context, Result, bail, ensure};
 use chrono::Utc;
 use redis::AsyncCommands;
-use sqlx::{AssertSqlSafe, MySqlPool, mysql::MySqlPoolOptions};
+use sha2::{Digest, Sha256};
+use sqlx::{AssertSqlSafe, PgPool, postgres::PgPoolOptions};
 use tokio::task::JoinSet;
 use url::Url;
 use uuid::Uuid;
+use v2board_analytics::{
+    AnalyticsEvent, OutboxError, claim_delivery_batch, enqueue_event, mark_batch_published,
+    release_batch_for_retry,
+};
 use v2board_config::{AppConfig, RuntimeEnvironment};
-use v2board_db::{DbPoolConfig, migrations_current};
+use v2board_db::{DbPoolConfig, installation_id, migrations_current};
 use v2board_domain::{
     admin::{AdminOutput, AdminService},
     auth::{AuthService, PasswordKdf, RegisterInput, hash_password},
@@ -24,55 +29,9 @@ use v2board_domain::{
     smtp::SmtpTransportCache,
 };
 
-static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations");
+static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations-postgres");
 
-const MIGRATION_SQL: &[&str] = &[
-    include_str!("../../../migrations/0001_initial.sql"),
-    include_str!("../../../migrations/0002_auth_hardening.sql"),
-    include_str!("../../../migrations/0003_worker_idempotency.sql"),
-    include_str!("../../../migrations/0004_traffic_report_sha256.sql"),
-    include_str!("../../../migrations/0005_normalize_giftcard_redemptions.sql"),
-    include_str!("../../../migrations/0006_durable_mail_outbox.sql"),
-    include_str!("../../../migrations/0007_index_payment_pending_orders.sql"),
-    include_str!("../../../migrations/0008_drop_retired_redis_traffic_ledger.sql"),
-    include_str!("../../../migrations/0009_traffic_quota_epoch.sql"),
-    include_str!("../../../migrations/0010_business_invariants.sql"),
-    include_str!("../../../migrations/0011_payment_reconciliation.sql"),
-    include_str!("../../../migrations/0012_relational_integrity.sql"),
-    include_str!("../../../migrations/0013_traffic_report_epoch.sql"),
-    include_str!("../../../migrations/0014_coupon_code_unique.sql"),
-    include_str!("../../../migrations/0015_giftcard_code_unique.sql"),
-    include_str!("../../../migrations/0016_invite_code_invariants.sql"),
-    include_str!("../../../migrations/0017_payment_driver_uuid_unique.sql"),
-    include_str!("../../../migrations/0018_ticket_open_invariants.sql"),
-    include_str!("../../../migrations/0019_ticket_message_index.sql"),
-    include_str!("../../../migrations/0020_node_credentials.sql"),
-    include_str!("../../../migrations/0021_seed_node_credentials.sql"),
-    include_str!("../../../migrations/0022_order_relational_integrity.sql"),
-    include_str!("../../../migrations/0023_plan_group_integrity.sql"),
-    include_str!("../../../migrations/0024_user_relational_integrity.sql"),
-    include_str!("../../../migrations/0025_giftcard_plan_integrity.sql"),
-    include_str!("../../../migrations/0026_invite_user_integrity.sql"),
-    include_str!("../../../migrations/0027_ticket_user_integrity.sql"),
-    include_str!("../../../migrations/0028_ticket_message_integrity.sql"),
-    include_str!("../../../migrations/0029_giftcard_redemption_user_integrity.sql"),
-    include_str!("../../../migrations/0030_traffic_report_user_integrity.sql"),
-    include_str!("../../../migrations/0031_stat_user_index.sql"),
-    include_str!("../../../migrations/0032_shadowsocks_group_json.sql"),
-    include_str!("../../../migrations/0033_vmess_group_json.sql"),
-    include_str!("../../../migrations/0034_trojan_group_json.sql"),
-    include_str!("../../../migrations/0035_tuic_group_json.sql"),
-    include_str!("../../../migrations/0036_hysteria_group_json.sql"),
-    include_str!("../../../migrations/0037_vless_group_json.sql"),
-    include_str!("../../../migrations/0038_anytls_group_json.sql"),
-    include_str!("../../../migrations/0039_v2node_group_json.sql"),
-    include_str!("../../../migrations/0040_archive_payment_methods.sql"),
-    include_str!("../../../migrations/0041_reconciliation_payment_integrity.sql"),
-    include_str!("../../../migrations/0042_order_callback_identity.sql"),
-    include_str!("../../../migrations/0043_legacy_callback_identity_bridge.sql"),
-];
-
-const DEFAULT_ROOT_DATABASE_URL: &str = "mysql://root:v2board@mysql:3306/mysql";
+const DEFAULT_ROOT_DATABASE_URL: &str = "postgresql://v2board:v2board@postgres:5432/postgres";
 const DEFAULT_RUNTIME_REDIS_URL: &str = "redis://redis:6379/1";
 const DEFAULT_INTEGRATION_REDIS_URL: &str = "redis://redis:6379/15";
 const DEFAULT_WORKER_BIN: &str = "/app/target/debug/v2board-workers";
@@ -89,18 +48,13 @@ pub async fn run() -> Result<()> {
         "RUST_INTEGRATION_REDIS_URL must select a Redis database isolated from REDIS_URL"
     );
 
-    let database_name = format!(
-        "v2board_contract_{}",
-        &Uuid::new_v4().simple().to_string()[..16]
-    );
+    let database_name = GeneratedDatabaseName::new("contract")?;
     let database_url = database_url_for(&root_database_url, &database_name)?;
-    let root = MySqlPoolOptions::new()
+    let root = PgPoolOptions::new()
         .max_connections(2)
         .connect(&root_database_url)
         .await
         .context("connect to the disposable-database administrator")?;
-    migration_preflight_failure_modes(&root, &root_database_url).await?;
-    pass("migration preflights reject duplicate, orphan, and malformed legacy state");
     create_database(&root, &database_name).await?;
 
     let pool_config = DbPoolConfig {
@@ -110,11 +64,29 @@ pub async fn run() -> Result<()> {
         idle_timeout: Duration::from_secs(30),
         max_lifetime: Duration::from_secs(300),
     };
-    let pool = v2board_db::connect_mysql_with_config(&database_url, &pool_config)
-        .await
-        .context("connect to the disposable integration database")?;
-    let result =
-        run_isolated_checks(&pool, &database_url, &database_name, &integration_redis_url).await;
+    let pool = match v2board_db::connect_postgres_with_config(&database_url, &pool_config).await {
+        Ok(pool) => pool,
+        Err(error) => {
+            let error =
+                anyhow::Error::new(error).context("connect to the disposable integration database");
+            let cleanup = drop_database(&root, &database_name).await;
+            root.close().await;
+            return match cleanup {
+                Ok(()) => Err(error),
+                Err(cleanup) => Err(error.context(format!(
+                    "also failed to drop disposable database {}: {cleanup:#}",
+                    database_name.as_str()
+                ))),
+            };
+        }
+    };
+    let result = run_isolated_checks(
+        &pool,
+        &database_url,
+        database_name.as_str(),
+        &integration_redis_url,
+    )
+    .await;
 
     pool.close().await;
     let drop_result = drop_database(&root, &database_name).await;
@@ -122,7 +94,8 @@ pub async fn run() -> Result<()> {
 
     match (result, drop_result) {
         (Err(error), Err(cleanup)) => Err(error.context(format!(
-            "also failed to drop disposable database {database_name}: {cleanup:#}"
+            "also failed to drop disposable database {}: {cleanup:#}",
+            database_name.as_str()
         ))),
         (Err(error), Ok(())) => Err(error),
         (Ok(()), Err(cleanup)) => Err(cleanup),
@@ -134,7 +107,7 @@ pub async fn run() -> Result<()> {
 }
 
 async fn run_isolated_checks(
-    pool: &MySqlPool,
+    pool: &PgPool,
     database_url: &str,
     database_name: &str,
     integration_redis_url: &str,
@@ -143,18 +116,22 @@ async fn run_isolated_checks(
     flush_redis(&integration_redis).await?;
 
     let result = async {
-        audit_forward_migration_ddl_boundaries()?;
         crate::sql_schema_prepare::audit_dynamic_inventory()?;
         MIGRATOR
             .run(pool)
             .await
-            .context("apply every embedded migration to a fresh MySQL database")?;
+            .context("apply every embedded migration to a fresh PostgreSQL database")?;
         ensure!(
             migrations_current(pool).await?,
             "freshly applied migration ledger is not current"
         );
+        installation_identity_invariant(pool).await?;
+        pass("installation identity is explicit, active, immutable, and fail-closed");
         schema_invariants(pool).await?;
         pass("fresh migrations and production schema constraints");
+
+        analytics_outbox_invariant(pool).await?;
+        pass("analytics outbox uniqueness, batching, and leases are durable");
 
         crate::sql_schema_prepare::run(pool).await?;
         pass("static runtime SQL prepares against the migrated production schema");
@@ -169,9 +146,6 @@ async fn run_isolated_checks(
         ticket_state_machine(pool, database_url, database_name, integration_redis_url).await?;
         pass("one-open-ticket and reply/auto-close serialization");
 
-        late_payment_reconciliation(pool, database_url, integration_redis_url).await?;
-        pass("late authenticated payment reconciliation is durable and idempotent");
-
         node_identity_epoch(pool).await?;
         pass("node credentials are bound to identity and revocation epoch");
 
@@ -184,6 +158,9 @@ async fn run_isolated_checks(
 
         worker_health_process(database_url, database_name, integration_redis_url).await?;
         pass("a live isolated worker publishes health and per-loop heartbeats");
+
+        late_payment_reconciliation(pool, database_url, integration_redis_url).await?;
+        pass("late authenticated payment reconciliation is durable and idempotent");
 
         migration_readiness_failure_modes(pool).await?;
         pass("migration readiness fails closed for missing or corrupt ledger state");
@@ -202,207 +179,29 @@ async fn run_isolated_checks(
     }
 }
 
-fn audit_forward_migration_ddl_boundaries() -> Result<()> {
-    for (index, migration) in MIGRATION_SQL.iter().enumerate().skip(8) {
-        let persistent_ddl = migration
-            .lines()
-            .map(str::trim_start)
-            .filter(|line| {
-                line.starts_with("ALTER TABLE")
-                    || line.starts_with("CREATE TABLE")
-                    || line.starts_with("DROP TABLE")
-                    || line.starts_with("RENAME TABLE")
-                    || line.starts_with("CREATE TRIGGER")
-                    || line.starts_with("DROP TRIGGER")
-            })
-            .count();
-        ensure!(
-            persistent_ddl <= 1,
-            "forward migration version {} contains {persistent_ddl} irreversible DDL statements; split it so MySQL failure is retryable",
-            index + 1
-        );
-    }
-    Ok(())
-}
-
-#[derive(Clone, Copy)]
-enum PreflightFailureCase {
-    DuplicateBusinessCode,
-    OrphanOrder,
-    NonArrayNodeGroup,
-}
-
-async fn migration_preflight_failure_modes(
-    root: &MySqlPool,
-    root_database_url: &str,
-) -> Result<()> {
-    for case in [
-        PreflightFailureCase::DuplicateBusinessCode,
-        PreflightFailureCase::OrphanOrder,
-        PreflightFailureCase::NonArrayNodeGroup,
-    ] {
-        run_preflight_failure_case(root, root_database_url, case).await?;
-    }
-    Ok(())
-}
-
-async fn run_preflight_failure_case(
-    root: &MySqlPool,
-    root_database_url: &str,
-    case: PreflightFailureCase,
-) -> Result<()> {
-    let suffix = match case {
-        PreflightFailureCase::DuplicateBusinessCode => "duplicate",
-        PreflightFailureCase::OrphanOrder => "orphan",
-        PreflightFailureCase::NonArrayNodeGroup => "nodejson",
-    };
-    let database_name = format!(
-        "v2board_preflight_{suffix}_{}",
-        &Uuid::new_v4().simple().to_string()[..10]
-    );
-    create_database(root, &database_name).await?;
-    let database_url = database_url_for(root_database_url, &database_name)?;
-    let pool = MySqlPoolOptions::new()
-        .max_connections(1)
-        .connect(&database_url)
-        .await?;
-    let result = exercise_preflight_failure(&pool, case).await;
-    pool.close().await;
-    let cleanup = drop_database(root, &database_name).await;
-    match (result, cleanup) {
-        (Err(error), Err(cleanup)) => Err(error.context(format!(
-            "also failed to drop preflight database {database_name}: {cleanup:#}"
-        ))),
-        (Err(error), Ok(())) => Err(error),
-        (Ok(()), Err(cleanup)) => Err(cleanup),
-        (Ok(()), Ok(())) => Ok(()),
-    }
-}
-
-async fn exercise_preflight_failure(pool: &MySqlPool, case: PreflightFailureCase) -> Result<()> {
-    let mut connection = pool.acquire().await?;
-    let migrations_before_failure = match case {
-        PreflightFailureCase::DuplicateBusinessCode => 9,
-        PreflightFailureCase::OrphanOrder | PreflightFailureCase::NonArrayNodeGroup => 11,
-    };
-    for migration in MIGRATION_SQL.iter().take(migrations_before_failure) {
-        sqlx::raw_sql(*migration).execute(&mut *connection).await?;
-    }
-
-    match case {
-        PreflightFailureCase::DuplicateBusinessCode => {
-            sqlx::query(
-                r#"
-                INSERT INTO v2_coupon (
-                    code, name, type, value, `show`, started_at, ended_at, created_at, updated_at
-                ) VALUES
-                    ('DUPLICATE-INTEGRATION', 'first', 1, 100, 0, 0, 1, 0, 0),
-                    ('DUPLICATE-INTEGRATION', 'second', 1, 100, 0, 0, 1, 0, 0)
-                "#,
-            )
-            .execute(&mut *connection)
-            .await?;
-        }
-        PreflightFailureCase::OrphanOrder => {
-            sqlx::query(
-                r#"
-                INSERT INTO v2_order (
-                    user_id, plan_id, type, period, trade_no, total_amount, status,
-                    commission_status, commission_balance, created_at, updated_at
-                ) VALUES (987654321, 0, 1, 'deposit', ?, 100, 2, 0, 0, 0, 0)
-                "#,
-            )
-            .bind(Uuid::new_v4().hyphenated().to_string())
-            .execute(&mut *connection)
-            .await?;
-        }
-        PreflightFailureCase::NonArrayNodeGroup => {
-            sqlx::query(
-                r#"
-                INSERT INTO v2_server_shadowsocks (
-                    group_id, name, rate, host, port, server_port, cipher, created_at, updated_at
-                ) VALUES ('{}', 'malformed group integration node', '1', '127.0.0.1',
-                          '443', 443, 'aes-128-gcm', 0, 0)
-                "#,
-            )
-            .execute(&mut *connection)
-            .await?;
-        }
-    }
-
-    let failing_migration = match case {
-        PreflightFailureCase::DuplicateBusinessCode => MIGRATION_SQL[9],
-        PreflightFailureCase::OrphanOrder | PreflightFailureCase::NonArrayNodeGroup => {
-            MIGRATION_SQL[11]
-        }
-    };
-    let error = sqlx::raw_sql(failing_migration)
-        .execute(&mut *connection)
-        .await
-        .expect_err("migration preflight accepted invalid legacy state");
-    let error_text = error.to_string();
-    let expected_guard = match case {
-        PreflightFailureCase::DuplicateBusinessCode => "business_invariant_preflight_failed",
-        PreflightFailureCase::OrphanOrder | PreflightFailureCase::NonArrayNodeGroup => {
-            "relational_integrity_preflight_failed"
-        }
-    };
-    ensure!(
-        error_text.contains(expected_guard) || error_text.contains("Duplicate entry"),
-        "migration failed for an unexpected reason: {error_text}"
-    );
-
-    let persistent_ddl_count: i64 = match case {
-        PreflightFailureCase::DuplicateBusinessCode => {
-            sqlx::query_scalar(
-                r#"
-                SELECT COUNT(*) FROM information_schema.statistics
-                WHERE table_schema = DATABASE() AND table_name = 'v2_coupon'
-                  AND index_name = 'uniq_coupon_code'
-                "#,
-            )
-            .fetch_one(&mut *connection)
-            .await?
-        }
-        PreflightFailureCase::OrphanOrder | PreflightFailureCase::NonArrayNodeGroup => {
-            sqlx::query_scalar(
-                r#"
-                SELECT COUNT(*) FROM information_schema.columns
-                WHERE table_schema = DATABASE() AND table_name = 'v2_order'
-                  AND column_name = 'referenced_plan_id'
-                "#,
-            )
-            .fetch_one(&mut *connection)
-            .await?
-        }
-    };
-    ensure!(
-        persistent_ddl_count == 0,
-        "preflight failure occurred after persistent migration DDL was applied"
-    );
-    Ok(())
-}
-
-async fn schema_invariants(pool: &MySqlPool) -> Result<()> {
+async fn schema_invariants(pool: &PgPool) -> Result<()> {
     for (table, index) in [
         ("v2_coupon", "uniq_coupon_code"),
         ("v2_giftcard", "uniq_giftcard_code"),
         ("v2_invite_code", "uniq_invite_code"),
         ("v2_payment", "uniq_payment_driver_uuid"),
+        ("v2_order", "uniq_unfinished_order_per_user"),
         ("v2_ticket", "uniq_ticket_open_user"),
         (
             "v2_payment_reconciliation",
             "uniq_payment_reconciliation_callback",
         ),
+        ("v2_analytics_outbox", "uniq_analytics_event_id"),
+        ("v2_analytics_outbox", "uniq_analytics_batch_row"),
     ] {
         let unique_columns: i64 = sqlx::query_scalar(
             r#"
             SELECT COUNT(*)
-            FROM information_schema.statistics
-            WHERE table_schema = DATABASE()
-              AND table_name = ?
-              AND index_name = ?
-              AND non_unique = 0
+            FROM pg_indexes
+            WHERE schemaname = current_schema()
+              AND tablename = $1
+              AND indexname = $2
+              AND indexdef LIKE 'CREATE UNIQUE INDEX%'
             "#,
         )
         .bind(table)
@@ -420,12 +219,18 @@ async fn schema_invariants(pool: &MySqlPool) -> Result<()> {
         ("v2_payment_reconciliation", "trade_no_hash"),
         ("v2_payment_reconciliation", "callback_no_hash"),
         ("v2_order", "callback_no_hash"),
+        ("v2_system_installation", "installation_id"),
+        ("v2_analytics_outbox", "delivery_batch_id"),
+        ("v2_server_traffic_report", "identity_kind"),
+        ("v2_server_traffic_report", "accounting_date"),
+        ("v2_server_traffic_report_item", "raw_u"),
+        ("v2_server_traffic_report_item", "charged_u"),
     ] {
         let count: i64 = sqlx::query_scalar(
             r#"
             SELECT COUNT(*)
             FROM information_schema.columns
-            WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?
+            WHERE table_schema = current_schema() AND table_name = $1 AND column_name = $2
             "#,
         )
         .bind(table)
@@ -437,12 +242,15 @@ async fn schema_invariants(pool: &MySqlPool) -> Result<()> {
     let reconciliation_payment_fk: i64 = sqlx::query_scalar(
         r#"
         SELECT COUNT(*)
-        FROM information_schema.referential_constraints
-        WHERE constraint_schema = DATABASE()
-          AND table_name = 'v2_payment_reconciliation'
-          AND constraint_name = 'fk_payment_reconciliation_payment'
-          AND referenced_table_name = 'v2_payment'
-          AND delete_rule = 'RESTRICT'
+        FROM pg_constraint AS constraint_row
+        JOIN pg_class AS source_table ON source_table.oid = constraint_row.conrelid
+        JOIN pg_class AS target_table ON target_table.oid = constraint_row.confrelid
+        JOIN pg_namespace AS namespace ON namespace.oid = source_table.relnamespace
+        WHERE namespace.nspname = current_schema()
+          AND constraint_row.contype = 'f'
+          AND source_table.relname = 'v2_payment_reconciliation'
+          AND target_table.relname = 'v2_payment'
+          AND constraint_row.confdeltype = 'r'
         "#,
     )
     .fetch_one(pool)
@@ -455,7 +263,7 @@ async fn schema_invariants(pool: &MySqlPool) -> Result<()> {
         r#"
         SELECT data_type
         FROM information_schema.columns
-        WHERE table_schema = DATABASE()
+        WHERE table_schema = current_schema()
           AND table_name = 'v2_payment_reconciliation'
           AND column_name = 'expected_amount'
         "#,
@@ -466,34 +274,219 @@ async fn schema_invariants(pool: &MySqlPool) -> Result<()> {
         expected_amount_type == "bigint",
         "payment reconciliation expected_amount is not bigint"
     );
-    let callback_bridge_trigger: i64 = sqlx::query_scalar(
+    let partial_unique_indexes: i64 = sqlx::query_scalar(
         r#"
         SELECT COUNT(*)
-        FROM information_schema.triggers
-        WHERE trigger_schema = DATABASE()
-          AND event_object_table = 'v2_order'
-          AND trigger_name = 'v2_order_callback_identity_before_update'
-          AND action_timing = 'BEFORE'
-          AND event_manipulation = 'UPDATE'
+        FROM pg_index AS index_row
+        JOIN pg_class AS index_name ON index_name.oid = index_row.indexrelid
+        JOIN pg_namespace AS namespace ON namespace.oid = index_name.relnamespace
+        WHERE namespace.nspname = current_schema()
+          AND index_name.relname IN ('uniq_unfinished_order_per_user', 'uniq_ticket_open_user')
+          AND index_row.indisunique
+          AND index_row.indpred IS NOT NULL
         "#,
     )
     .fetch_one(pool)
     .await?;
     ensure!(
-        callback_bridge_trigger == 1,
-        "missing legacy callback identity rolling-deploy bridge"
+        partial_unique_indexes == 2,
+        "unfinished-order and open-ticket indexes are not partial unique indexes"
+    );
+
+    partial_unique_behavior(pool).await?;
+    Ok(())
+}
+
+async fn installation_identity_invariant(pool: &PgPool) -> Result<()> {
+    ensure!(
+        matches!(installation_id(pool).await, Err(sqlx::Error::RowNotFound)),
+        "an unbootstrapped database exposed an installation identity"
+    );
+    let expected = Uuid::new_v4();
+    let now = Utc::now().timestamp();
+    sqlx::query(
+        r#"
+        INSERT INTO v2_system_installation
+            (singleton, installation_id, lineage, state, created_at)
+        VALUES (1, $1, 'native', 'pending', $2)
+        "#,
+    )
+    .bind(expected)
+    .bind(now)
+    .execute(pool)
+    .await?;
+    ensure!(
+        matches!(installation_id(pool).await, Err(sqlx::Error::RowNotFound)),
+        "a pending installation was accepted as active"
+    );
+    sqlx::query(
+        "UPDATE v2_system_installation SET state = 'active', activated_at = $1 WHERE singleton = 1",
+    )
+    .bind(now)
+    .execute(pool)
+    .await?;
+    ensure!(installation_id(pool).await? == expected);
+    ensure!(
+        sqlx::query("UPDATE v2_system_installation SET installation_id = $1 WHERE singleton = 1")
+            .bind(Uuid::new_v4())
+            .execute(pool)
+            .await
+            .is_err(),
+        "installation UUID was mutable"
+    );
+    ensure!(
+        sqlx::query("UPDATE v2_system_installation SET state = 'pending' WHERE singleton = 1")
+            .execute(pool)
+            .await
+            .is_err(),
+        "installation state moved backwards"
+    );
+    ensure!(
+        sqlx::query("DELETE FROM v2_system_installation WHERE singleton = 1")
+            .execute(pool)
+            .await
+            .is_err(),
+        "installation identity was deletable"
+    );
+    Ok(())
+}
+
+async fn partial_unique_behavior(pool: &PgPool) -> Result<()> {
+    let user_id = insert_user(pool, "partial-unique", "not-used").await?;
+    let now = Utc::now().timestamp();
+    let trade_no = Uuid::new_v4().hyphenated().to_string();
+    sqlx::query(
+        r#"
+        INSERT INTO v2_order (
+            user_id, plan_id, type, period, trade_no, total_amount, status,
+            commission_status, commission_balance, created_at, updated_at
+        ) VALUES ($1, 0, 1, 'deposit', $2, 0, 0, 0, 0, $3, $4)
+        "#,
+    )
+    .bind(user_id)
+    .bind(&trade_no)
+    .bind(now)
+    .bind(now)
+    .execute(pool)
+    .await?;
+    ensure!(
+        sqlx::query(
+            r#"
+            INSERT INTO v2_order (
+                user_id, plan_id, type, period, trade_no, total_amount, status,
+                commission_status, commission_balance, created_at, updated_at
+            ) VALUES ($1, 0, 1, 'deposit', $2, 0, 1, 0, 0, $3, $4)
+            "#,
+        )
+        .bind(user_id)
+        .bind(Uuid::new_v4().hyphenated().to_string())
+        .bind(now)
+        .bind(now)
+        .execute(pool)
+        .await
+        .is_err(),
+        "partial unique order index allowed two unfinished orders"
+    );
+    sqlx::query("UPDATE v2_order SET status = 2 WHERE trade_no = $1")
+        .bind(&trade_no)
+        .execute(pool)
+        .await?;
+
+    let ticket_id: i64 = sqlx::query_scalar(
+        r#"
+        INSERT INTO v2_ticket
+            (user_id, subject, level, status, reply_status, created_at, updated_at)
+        VALUES ($1, 'first', 0, 0, 0, $2, $3)
+        RETURNING id
+        "#,
+    )
+    .bind(user_id)
+    .bind(now)
+    .bind(now)
+    .fetch_one(pool)
+    .await?;
+    ensure!(
+        sqlx::query(
+            r#"
+            INSERT INTO v2_ticket
+                (user_id, subject, level, status, reply_status, created_at, updated_at)
+            VALUES ($1, 'second', 0, 0, 0, $2, $3)
+            "#,
+        )
+        .bind(user_id)
+        .bind(now)
+        .bind(now)
+        .execute(pool)
+        .await
+        .is_err(),
+        "partial unique ticket index allowed two open tickets"
+    );
+    sqlx::query("UPDATE v2_ticket SET status = 1 WHERE id = $1")
+        .bind(ticket_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+async fn analytics_outbox_invariant(pool: &PgPool) -> Result<()> {
+    let now = Utc::now().timestamp();
+    let event = AnalyticsEvent {
+        event_id: format!("{:064x}", 1),
+        event_name: "contract.event.v1".to_string(),
+        schema_major: 1,
+        report_key: random_traffic_key(),
+        partition_month: Utc::now().format("%Y-%m-01").to_string(),
+        occurred_at: now,
+        payload: serde_json::json!({"contract": true}),
+        payload_sha256: format!("{:064x}", 2),
+    };
+    let mut tx = pool.begin().await?;
+    enqueue_event(&mut tx, &event, now).await?;
+    enqueue_event(&mut tx, &event, now).await?;
+    let mut conflict = event.clone();
+    conflict.payload = serde_json::json!({"contract": false});
+    ensure!(
+        matches!(
+            enqueue_event(&mut tx, &conflict, now).await,
+            Err(OutboxError::EventConflict { .. })
+        ),
+        "analytics event id accepted conflicting immutable content"
+    );
+    tx.commit().await?;
+
+    let owner = Uuid::new_v4();
+    let batch = claim_delivery_batch(pool, owner, now, 30, 100)
+        .await?
+        .context("analytics event was not claimable")?;
+    ensure!(batch.rows.len() == 1 && batch.rows[0].event == event);
+    release_batch_for_retry(pool, &batch, "contract retry").await?;
+    let replacement_owner = Uuid::new_v4();
+    let retry = claim_delivery_batch(pool, replacement_owner, now + 1, 30, 100)
+        .await?
+        .context("released analytics batch was not reclaimable")?;
+    ensure!(retry.batch_id == batch.batch_id && retry.lease_owner == replacement_owner);
+    mark_batch_published(pool, &retry, now + 2).await?;
+    let published: bool = sqlx::query_scalar(
+        "SELECT published_at IS NOT NULL FROM v2_analytics_outbox WHERE event_id = $1",
+    )
+    .bind(&event.event_id)
+    .fetch_one(pool)
+    .await?;
+    ensure!(
+        published,
+        "published analytics batch left its event pending"
     );
     Ok(())
 }
 
 async fn traffic_epoch_invariant(
-    pool: &MySqlPool,
+    pool: &PgPool,
     database_url: &str,
     database_name: &str,
     redis_url: &str,
 ) -> Result<()> {
     let user_id = insert_user(pool, "traffic", "not-used").await?;
-    sqlx::query("UPDATE v2_user SET u = 11, d = 13 WHERE id = ?")
+    sqlx::query("UPDATE v2_user SET u = 11, d = 13 WHERE id = $1")
         .bind(user_id)
         .execute(pool)
         .await?;
@@ -501,7 +494,7 @@ async fn traffic_epoch_invariant(
     let stale_key = random_traffic_key();
     insert_traffic_report(pool, &stale_key, user_id, 0, 101, 103).await?;
     let reset = sqlx::query(
-        "UPDATE v2_user SET u = 0, d = 0, traffic_epoch = traffic_epoch + 1 WHERE id = ?",
+        "UPDATE v2_user SET u = 0, d = 0, traffic_epoch = traffic_epoch + 1 WHERE id = $1",
     )
     .bind(user_id)
     .execute(pool)
@@ -513,7 +506,7 @@ async fn traffic_epoch_invariant(
 
     run_worker_once(database_url, database_name, redis_url, "traffic_update").await?;
     let (u, d, epoch): (i64, i64, i64) =
-        sqlx::query_as("SELECT u, d, traffic_epoch FROM v2_user WHERE id = ?")
+        sqlx::query_as("SELECT u, d, traffic_epoch FROM v2_user WHERE id = $1")
             .bind(user_id)
             .fetch_one(pool)
             .await?;
@@ -526,7 +519,7 @@ async fn traffic_epoch_invariant(
     let current_key = random_traffic_key();
     insert_traffic_report(pool, &current_key, user_id, epoch, 7, 9).await?;
     run_worker_once(database_url, database_name, redis_url, "traffic_update").await?;
-    let (u, d): (i64, i64) = sqlx::query_as("SELECT u, d FROM v2_user WHERE id = ?")
+    let (u, d): (i64, i64) = sqlx::query_as("SELECT u, d FROM v2_user WHERE id = $1")
         .bind(user_id)
         .fetch_one(pool)
         .await?;
@@ -539,7 +532,7 @@ async fn traffic_epoch_invariant(
 }
 
 async fn insert_traffic_report(
-    pool: &MySqlPool,
+    pool: &PgPool,
     report_key: &str,
     user_id: i64,
     epoch: i64,
@@ -549,22 +542,28 @@ async fn insert_traffic_report(
     let now = Utc::now().timestamp();
     sqlx::query(
         "INSERT INTO v2_server_traffic_report \
-         (report_key, payload_hash, applied_at, created_at, updated_at) \
-         VALUES (?, ?, NULL, ?, ?)",
+         (report_key, payload_hash, node_id, node_type, rate_text, rate_decimal_10_2,
+          identity_kind, accepted_at, accounting_date, applied_at, created_at, updated_at) \
+         VALUES ($1, $2, 1, 'contract', '1', 1.00, 'explicit', $3, $4, NULL, $5, $6)",
     )
     .bind(report_key)
     .bind(random_traffic_key())
+    .bind(now)
+    .bind(Utc::now().date_naive())
     .bind(now)
     .bind(now)
     .execute(pool)
     .await?;
     sqlx::query(
         "INSERT INTO v2_server_traffic_report_item \
-         (report_key, user_id, traffic_epoch, u, d) VALUES (?, ?, ?, ?, ?)",
+         (report_key, user_id, traffic_epoch, raw_u, raw_d, charged_u, charged_d)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)",
     )
     .bind(report_key)
     .bind(user_id)
     .bind(epoch)
+    .bind(u)
+    .bind(d)
     .bind(u)
     .bind(d)
     .execute(pool)
@@ -572,14 +571,14 @@ async fn insert_traffic_report(
     Ok(())
 }
 
-async fn assert_report_consumed(pool: &MySqlPool, report_key: &str) -> Result<()> {
+async fn assert_report_consumed(pool: &PgPool, report_key: &str) -> Result<()> {
     let applied_at: Option<i64> =
-        sqlx::query_scalar("SELECT applied_at FROM v2_server_traffic_report WHERE report_key = ?")
+        sqlx::query_scalar("SELECT applied_at FROM v2_server_traffic_report WHERE report_key = $1")
             .bind(report_key)
             .fetch_one(pool)
             .await?;
     let item_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM v2_server_traffic_report_item WHERE report_key = ?",
+        "SELECT COUNT(*) FROM v2_server_traffic_report_item WHERE report_key = $1",
     )
     .bind(report_key)
     .fetch_one(pool)
@@ -592,13 +591,13 @@ async fn assert_report_consumed(pool: &MySqlPool, report_key: &str) -> Result<()
     Ok(())
 }
 
-async fn invite_single_consumption(pool: &MySqlPool, redis_url: &str) -> Result<()> {
+async fn invite_single_consumption(pool: &PgPool, redis_url: &str) -> Result<()> {
     let inviter_id = insert_user(pool, "inviter", "not-used").await?;
     let invite_code = Uuid::new_v4().simple().to_string();
     let now = Utc::now().timestamp();
     sqlx::query(
         "INSERT INTO v2_invite_code (user_id, code, status, pv, created_at, updated_at) \
-         VALUES (?, ?, 0, 0, ?, ?)",
+         VALUES ($1, $2, 0, 0, $3, $4)",
     )
     .bind(inviter_id)
     .bind(&invite_code)
@@ -644,11 +643,11 @@ async fn invite_single_consumption(pool: &MySqlPool, redis_url: &str) -> Result<
         (success, rejected) == (1, 5),
         "invite code admitted {success} registrations"
     );
-    let status: i8 = sqlx::query_scalar("SELECT status FROM v2_invite_code WHERE code = ?")
+    let status: i16 = sqlx::query_scalar("SELECT status FROM v2_invite_code WHERE code = $1")
         .bind(&invite_code)
         .fetch_one(pool)
         .await?;
-    let invited: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM v2_user WHERE invite_user_id = ?")
+    let invited: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM v2_user WHERE invite_user_id = $1")
         .bind(inviter_id)
         .fetch_one(pool)
         .await?;
@@ -660,7 +659,7 @@ async fn invite_single_consumption(pool: &MySqlPool, redis_url: &str) -> Result<
 }
 
 async fn ticket_state_machine(
-    pool: &MySqlPool,
+    pool: &PgPool,
     database_url: &str,
     database_name: &str,
     redis_url: &str,
@@ -698,8 +697,8 @@ async fn ticket_state_machine(
         (created, existed) == (1, 7),
         "one-open-ticket invariant failed"
     );
-    let first_ticket: i32 =
-        sqlx::query_scalar("SELECT id FROM v2_ticket WHERE user_id = ? AND status = 0")
+    let first_ticket: i64 =
+        sqlx::query_scalar("SELECT id FROM v2_ticket WHERE user_id = $1 AND status = 0")
             .bind(user_id)
             .fetch_one(pool)
             .await?;
@@ -722,8 +721,8 @@ async fn ticket_state_machine(
             == TicketCreateOutcome::Created,
         "failed to create reply-race ticket"
     );
-    let race_ticket: i32 =
-        sqlx::query_scalar("SELECT id FROM v2_ticket WHERE user_id = ? AND status = 0")
+    let race_ticket: i64 =
+        sqlx::query_scalar("SELECT id FROM v2_ticket WHERE user_id = $1 AND status = 0")
             .bind(user_id)
             .fetch_one(pool)
             .await?;
@@ -748,7 +747,7 @@ async fn ticket_state_machine(
         reply == UserTicketReplyOutcome::Replied,
         "fresh user reply lost its row lock"
     );
-    let race_status: i8 = sqlx::query_scalar("SELECT status FROM v2_ticket WHERE id = ?")
+    let race_status: i16 = sqlx::query_scalar("SELECT status FROM v2_ticket WHERE id = $1")
         .bind(race_ticket)
         .fetch_one(pool)
         .await?;
@@ -772,14 +771,14 @@ async fn ticket_state_machine(
             == TicketCreateOutcome::Created,
         "failed to create stale ticket"
     );
-    let stale_ticket: i32 =
-        sqlx::query_scalar("SELECT id FROM v2_ticket WHERE user_id = ? AND status = 0")
+    let stale_ticket: i64 =
+        sqlx::query_scalar("SELECT id FROM v2_ticket WHERE user_id = $1 AND status = 0")
             .bind(user_id)
             .fetch_one(pool)
             .await?;
     insert_operator_reply(pool, stale_ticket, now - 90_000).await?;
     run_worker_once(database_url, database_name, redis_url, "check_ticket").await?;
-    let stale_status: i8 = sqlx::query_scalar("SELECT status FROM v2_ticket WHERE id = ?")
+    let stale_status: i16 = sqlx::query_scalar("SELECT status FROM v2_ticket WHERE id = $1")
         .bind(stale_ticket)
         .fetch_one(pool)
         .await?;
@@ -790,17 +789,17 @@ async fn ticket_state_machine(
     Ok(())
 }
 
-async fn insert_operator_reply(pool: &MySqlPool, ticket_id: i32, timestamp: i64) -> Result<()> {
+async fn insert_operator_reply(pool: &PgPool, ticket_id: i64, timestamp: i64) -> Result<()> {
     sqlx::query(
         "INSERT INTO v2_ticket_message (user_id, ticket_id, message, created_at, updated_at) \
-         VALUES (0, ?, 'operator reply', ?, ?)",
+         VALUES (0, $1, 'operator reply', $2, $3)",
     )
     .bind(ticket_id)
     .bind(timestamp)
     .bind(timestamp)
     .execute(pool)
     .await?;
-    sqlx::query("UPDATE v2_ticket SET status = 0, reply_status = 1, updated_at = ? WHERE id = ?")
+    sqlx::query("UPDATE v2_ticket SET status = 0, reply_status = 1, updated_at = $1 WHERE id = $2")
         .bind(timestamp)
         .bind(ticket_id)
         .execute(pool)
@@ -809,34 +808,38 @@ async fn insert_operator_reply(pool: &MySqlPool, ticket_id: i32, timestamp: i64)
 }
 
 async fn late_payment_reconciliation(
-    pool: &MySqlPool,
+    pool: &PgPool,
     database_url: &str,
     redis_url: &str,
 ) -> Result<()> {
     let user_id = insert_user(pool, "late-payment", "not-used").await?;
     let payment_uuid = Uuid::new_v4().simple().to_string();
     let now = Utc::now().timestamp();
-    let payment = sqlx::query(
+    let payment_id: i32 = sqlx::query_scalar(
         r#"
         INSERT INTO v2_payment (
             uuid, payment, name, config, enable, created_at, updated_at
-        ) VALUES (?, 'EPay', 'integration EPay', ?, 1, ?, ?)
+        ) VALUES ($1, 'EPay', 'integration EPay', $2, 1, $3, $4)
+        RETURNING id
         "#,
     )
     .bind(&payment_uuid)
-    .bind(r#"{"key":"epay-secret","pid":"integration","url":"https://pay.invalid"}"#)
+    .bind(serde_json::json!({
+        "key": "epay-secret",
+        "pid": "integration",
+        "url": "https://pay.invalid"
+    }))
     .bind(now)
     .bind(now)
-    .execute(pool)
+    .fetch_one(pool)
     .await?;
-    let payment_id = payment.last_insert_id() as i32;
     let trade_no = Uuid::new_v4().hyphenated().to_string();
     sqlx::query(
         r#"
         INSERT INTO v2_order (
             user_id, plan_id, payment_id, type, period, trade_no, total_amount,
             status, commission_status, commission_balance, created_at, updated_at
-        ) VALUES (?, 0, ?, 1, 'deposit', ?, 1234, 2, 0, 0, ?, ?)
+        ) VALUES ($1, 0, $2, 1, 'deposit', $3, 1234, 2, 0, 0, $4, $5)
         "#,
     )
     .bind(user_id)
@@ -930,14 +933,14 @@ async fn late_payment_reconciliation(
         first_notices == 1,
         "late payment emitted {first_notices} first-seen notices"
     );
-    let (rows, occurrences, order_status): (i64, i64, i8) = sqlx::query_as(
+    let (rows, occurrences, order_status): (i64, i64, i16) = sqlx::query_as(
         r#"
         SELECT
             COUNT(*),
-            COALESCE(MAX(occurrence_count), 0),
-            (SELECT status FROM v2_order WHERE trade_no = ?)
+            COALESCE(MAX(occurrence_count), 0)::BIGINT,
+            (SELECT status FROM v2_order WHERE trade_no = $1)
         FROM v2_payment_reconciliation
-        WHERE payment_id = ? AND callback_no = 'EPAY-LATE-INTEGRATION'
+        WHERE payment_id = $2 AND callback_no = 'EPAY-LATE-INTEGRATION'
         "#,
     )
     .bind(&trade_no)
@@ -987,7 +990,7 @@ async fn late_payment_reconciliation(
         r#"
         SELECT reason, expected_amount, settled_amount
         FROM v2_payment_reconciliation
-        WHERE payment_id = ? AND callback_no = 'EPAY-AMOUNT-MISMATCH'
+        WHERE payment_id = $1 AND callback_no = 'EPAY-AMOUNT-MISMATCH'
         "#,
     )
     .bind(payment_id)
@@ -1042,10 +1045,10 @@ async fn late_payment_reconciliation(
     let (unknown_reason, stored_trade_no, stored_callback_no): (String, String, String) =
         sqlx::query_as(
             "SELECT reason, trade_no, callback_no FROM v2_payment_reconciliation \
-             WHERE payment_id = ? AND callback_no_hash = UNHEX(SHA2(?, 256))",
+             WHERE payment_id = $1 AND callback_no_hash = $2",
         )
         .bind(payment_id)
-        .bind(&unknown_callback_no)
+        .bind(sha256_bytes(&unknown_callback_no))
         .fetch_one(pool)
         .await?;
     ensure!(
@@ -1057,21 +1060,21 @@ async fn late_payment_reconciliation(
         "oversized provider identifiers were not stored as bounded UTF-8 labels"
     );
     let trade_hash_matches: bool = sqlx::query_scalar(
-        "SELECT trade_no_hash = UNHEX(SHA2(?, 256)) \
+        "SELECT trade_no_hash = $1 \
          FROM v2_payment_reconciliation \
-         WHERE payment_id = ? AND callback_no_hash = UNHEX(SHA2(?, 256))",
+         WHERE payment_id = $2 AND callback_no_hash = $3",
     )
-    .bind(&missing_trade_no)
+    .bind(sha256_bytes(&missing_trade_no))
     .bind(payment_id)
-    .bind(&unknown_callback_no)
+    .bind(sha256_bytes(&unknown_callback_no))
     .fetch_one(pool)
     .await?;
     ensure!(
         trade_hash_matches,
         "bounded reconciliation label did not retain the raw trade identity hash"
     );
-    let archived_state: (i8, Option<i64>) =
-        sqlx::query_as("SELECT enable, archived_at FROM v2_payment WHERE id = ?")
+    let archived_state: (i16, Option<i64>) =
+        sqlx::query_as("SELECT enable, archived_at FROM v2_payment WHERE id = $1")
             .bind(payment_id)
             .fetch_one(pool)
             .await?;
@@ -1079,10 +1082,7 @@ async fn late_payment_reconciliation(
         archived_state.0 == 0 && archived_state.1.is_some(),
         "delayed callbacks did not preserve the archived verification version"
     );
-    let expected_callback_hash_hex: String = sqlx::query_scalar("SELECT UPPER(SHA2(?, 256))")
-        .bind(&unknown_callback_no)
-        .fetch_one(pool)
-        .await?;
+    let expected_callback_hash_hex = sha256_hex(&unknown_callback_no);
     let list_output = admin
         .get(
             "order/reconciliation/fetch",
@@ -1109,7 +1109,7 @@ async fn late_payment_reconciliation(
         INSERT INTO v2_order (
             user_id, plan_id, payment_id, type, period, trade_no, total_amount,
             status, commission_status, commission_balance, created_at, updated_at
-        ) VALUES (?, 0, ?, 1, 'deposit', ?, 200, 0, 0, 0, ?, ?)
+        ) VALUES ($1, 0, $2, 1, 'deposit', $3, 200, 0, 0, 0, $4, $5)
         "#,
     )
     .bind(user_id)
@@ -1149,16 +1149,16 @@ async fn late_payment_reconciliation(
         "oversized authenticated callback did not complete the normal paid transition"
     );
     let (paid_status, callback_label, callback_label_bytes, callback_hash_matches): (
-        i8,
+        i16,
         String,
-        i64,
+        i32,
         bool,
     ) = sqlx::query_as(
         "SELECT status, callback_no, OCTET_LENGTH(callback_no), \
-                    callback_no_hash = UNHEX(SHA2(?, 256)) \
-             FROM v2_order WHERE trade_no = ?",
+                    callback_no_hash = $1 \
+             FROM v2_order WHERE trade_no = $2",
     )
-    .bind(&paid_callback_no)
+    .bind(sha256_bytes(&paid_callback_no))
     .bind(&paid_trade_no)
     .fetch_one(pool)
     .await?;
@@ -1179,10 +1179,10 @@ async fn late_payment_reconciliation(
     );
     let unexpected_reconciliation: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM v2_payment_reconciliation \
-         WHERE payment_id = ? AND callback_no_hash = UNHEX(SHA2(?, 256))",
+         WHERE payment_id = $1 AND callback_no_hash = $2",
     )
     .bind(payment_id)
-    .bind(&paid_callback_no)
+    .bind(sha256_bytes(&paid_callback_no))
     .fetch_one(pool)
     .await?;
     ensure!(
@@ -1190,67 +1190,15 @@ async fn late_payment_reconciliation(
         "an ordinary oversized callback replay was misclassified for reconciliation"
     );
 
-    // Simulate an old API replica in a rolling deploy: it changes callback_no
-    // without mentioning the new digest column. The 0043 bridge must replace,
-    // not retain, the previous digest so the new replica sees an exact replay.
-    let legacy_callback_no = "EPAY-LEGACY-ROLLING";
-    sqlx::query("UPDATE v2_order SET callback_no = ? WHERE trade_no = ?")
-        .bind(legacy_callback_no)
-        .bind(&paid_trade_no)
-        .execute(pool)
-        .await?;
-    let legacy_hash_matches: bool = sqlx::query_scalar(
-        "SELECT callback_no_hash = UNHEX(SHA2(?, 256)) \
-         FROM v2_order WHERE trade_no = ?",
-    )
-    .bind(legacy_callback_no)
-    .bind(&paid_trade_no)
-    .fetch_one(pool)
-    .await?;
-    ensure!(
-        legacy_hash_matches,
-        "legacy rolling-deploy writer left a stale callback digest"
-    );
-    let mut legacy_replay = BTreeMap::from([
-        ("money".to_string(), "2.00".to_string()),
-        ("out_trade_no".to_string(), paid_trade_no),
-        ("trade_no".to_string(), legacy_callback_no.to_string()),
-        ("trade_status".to_string(), "TRADE_SUCCESS".to_string()),
-    ]);
-    let canonical = legacy_replay
-        .iter()
-        .map(|(key, value)| format!("{key}={value}"))
-        .collect::<Vec<_>>()
-        .join("&");
-    legacy_replay.insert(
-        "sign".to_string(),
-        format!("{:x}", md5::compute(format!("{canonical}epay-secret"))),
-    );
-    legacy_replay.insert("sign_type".to_string(), "MD5".to_string());
-    let legacy_response = order
-        .handle_payment_notify(
-            "EPay",
-            &payment_uuid,
-            PaymentNotifyInput {
-                params: legacy_replay.into_iter().collect(),
-                body: Vec::new(),
-                headers: HashMap::new(),
-            },
-        )
-        .await?;
-    ensure!(
-        legacy_response.paid_notice.is_none() && legacy_response.late_payment_notice.is_none(),
-        "rolling-deploy bridge did not preserve exact replay idempotency"
-    );
     Ok(())
 }
 
-async fn node_identity_epoch(pool: &MySqlPool) -> Result<()> {
+async fn node_identity_epoch(pool: &PgPool) -> Result<()> {
     let node_id = 700_000 + i32::from(Uuid::new_v4().as_bytes()[0]);
     let now = Utc::now().timestamp();
     sqlx::query(
         "INSERT INTO v2_server_credential \
-         (node_type, node_id, credential_epoch, updated_at) VALUES ('v2node', ?, 0, ?)",
+         (node_type, node_id, credential_epoch, updated_at) VALUES ('v2node', $1, 0, $2)",
     )
     .bind(node_id)
     .bind(now)
@@ -1258,7 +1206,7 @@ async fn node_identity_epoch(pool: &MySqlPool) -> Result<()> {
     .await?;
     let master = "integration-only-node-master-key-with-enough-entropy";
     let epoch: i64 = sqlx::query_scalar(
-        "SELECT credential_epoch FROM v2_server_credential WHERE node_type = 'v2node' AND node_id = ?",
+        "SELECT credential_epoch FROM v2_server_credential WHERE node_type = 'v2node' AND node_id = $1",
     )
     .bind(node_id)
     .fetch_one(pool)
@@ -1276,15 +1224,15 @@ async fn node_identity_epoch(pool: &MySqlPool) -> Result<()> {
     ensure!(!verify_node_token(master, "vmess", node_id, epoch, &token));
 
     sqlx::query(
-        "UPDATE v2_server_credential SET credential_epoch = credential_epoch + 1, updated_at = ? \
-         WHERE node_type = 'v2node' AND node_id = ?",
+        "UPDATE v2_server_credential SET credential_epoch = credential_epoch + 1, updated_at = $1 \
+         WHERE node_type = 'v2node' AND node_id = $2",
     )
     .bind(now + 1)
     .bind(node_id)
     .execute(pool)
     .await?;
     let revoked_epoch: i64 = sqlx::query_scalar(
-        "SELECT credential_epoch FROM v2_server_credential WHERE node_type = 'v2node' AND node_id = ?",
+        "SELECT credential_epoch FROM v2_server_credential WHERE node_type = 'v2node' AND node_id = $1",
     )
     .bind(node_id)
     .fetch_one(pool)
@@ -1308,7 +1256,7 @@ async fn node_identity_epoch(pool: &MySqlPool) -> Result<()> {
     Ok(())
 }
 
-async fn auth_rate_limits(pool: &MySqlPool, database_url: &str, redis_url: &str) -> Result<()> {
+async fn auth_rate_limits(pool: &PgPool, database_url: &str, redis_url: &str) -> Result<()> {
     let redis = redis::Client::open(redis_url)?;
     flush_redis(&redis).await?;
 
@@ -1349,7 +1297,7 @@ async fn auth_rate_limits(pool: &MySqlPool, database_url: &str, redis_url: &str)
         }
     }
     let persisted_same_email: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM v2_user WHERE email = ?")
+        sqlx::query_scalar("SELECT COUNT(*) FROM v2_user WHERE email = $1")
             .bind(&same_email)
             .fetch_one(pool)
             .await?;
@@ -1541,6 +1489,7 @@ async fn worker_health_process(
     let _ = tokio::fs::remove_file(&health_file).await;
     let mut child = Command::new(&worker_bin)
         .env("DATABASE_URL", database_url)
+        .env("V2BOARD_PEER_DATABASE_PRINCIPAL", "v2board_api")
         .env("REDIS_URL", redis_url)
         .env("V2BOARD_ENV", "testing")
         .env("V2BOARD_SEED_LOCAL", "0")
@@ -1624,14 +1573,14 @@ async fn wait_for_worker_health(
     }
 }
 
-async fn migration_readiness_failure_modes(pool: &MySqlPool) -> Result<()> {
+async fn migration_readiness_failure_modes(pool: &PgPool) -> Result<()> {
     let latest = MIGRATOR
         .iter()
         .filter(|migration| migration.migration_type.is_up_migration())
         .map(|migration| migration.version)
         .max()
         .context("embedded migration list is empty")?;
-    let deleted = sqlx::query("DELETE FROM _sqlx_migrations WHERE version = ?")
+    let deleted = sqlx::query("DELETE FROM _sqlx_migrations WHERE version = $1")
         .bind(latest)
         .execute(pool)
         .await?;
@@ -1653,7 +1602,7 @@ async fn migration_readiness_failure_modes(pool: &MySqlPool) -> Result<()> {
     Ok(())
 }
 
-async fn auth_service(pool: &MySqlPool, redis_url: &str, config: AppConfig) -> Result<AuthService> {
+async fn auth_service(pool: &PgPool, redis_url: &str, config: AppConfig) -> Result<AuthService> {
     let redis = redis::Client::open(redis_url)?;
     let manager = redis::aio::ConnectionManager::new(redis).await?;
     Ok(AuthService::new(
@@ -1669,8 +1618,8 @@ async fn auth_service(pool: &MySqlPool, redis_url: &str, config: AppConfig) -> R
     ))
 }
 
-fn integration_config(_pool: &MySqlPool, redis_url: &str) -> Result<AppConfig> {
-    let mut config = AppConfig::try_from_env().context("load integration AppConfig")?;
+fn integration_config(_pool: &PgPool, redis_url: &str) -> Result<AppConfig> {
+    let mut config = AppConfig::try_from_api_env().context("load integration AppConfig")?;
     config.environment = RuntimeEnvironment::Testing;
     config.redis_url = redis_url.to_string();
     config.app_key = "integration-only-app-key-with-at-least-thirty-two-bytes".to_string();
@@ -1683,16 +1632,16 @@ fn integration_config(_pool: &MySqlPool, redis_url: &str) -> Result<AppConfig> {
     Ok(config)
 }
 
-async fn insert_user(pool: &MySqlPool, label: &str, password: &str) -> Result<i64> {
+async fn insert_user(pool: &PgPool, label: &str, password: &str) -> Result<i64> {
     let email = format!("{label}-{}@example.test", Uuid::new_v4().simple());
     insert_user_with_email(pool, &email, password).await
 }
 
-async fn insert_user_with_email(pool: &MySqlPool, email: &str, password: &str) -> Result<i64> {
+async fn insert_user_with_email(pool: &PgPool, email: &str, password: &str) -> Result<i64> {
     let now = Utc::now().timestamp();
-    let result = sqlx::query(
+    sqlx::query_scalar(
         "INSERT INTO v2_user (email, password, uuid, token, created_at, updated_at) \
-         VALUES (?, ?, ?, ?, ?, ?)",
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
     )
     .bind(email)
     .bind(password)
@@ -1700,9 +1649,9 @@ async fn insert_user_with_email(pool: &MySqlPool, email: &str, password: &str) -
     .bind(Uuid::new_v4().simple().to_string())
     .bind(now)
     .bind(now)
-    .execute(pool)
-    .await?;
-    Ok(result.last_insert_id() as i64)
+    .fetch_one(pool)
+    .await
+    .map_err(Into::into)
 }
 
 async fn run_worker_once(
@@ -1720,6 +1669,7 @@ async fn run_worker_once(
         let output = Command::new(&worker_bin)
             .args(["run-once", job])
             .env("DATABASE_URL", &database_url)
+            .env("V2BOARD_PEER_DATABASE_PRINCIPAL", "v2board_api")
             .env("REDIS_URL", &redis_url)
             .env("V2BOARD_ENV", "testing")
             .env("V2BOARD_SEED_LOCAL", "0")
@@ -1750,43 +1700,99 @@ async fn flush_redis(redis: &redis::Client) -> Result<()> {
     Ok(())
 }
 
-async fn create_database(root: &MySqlPool, database_name: &str) -> Result<()> {
-    ensure_safe_identifier(database_name)?;
+async fn create_database(root: &PgPool, database_name: &GeneratedDatabaseName) -> Result<()> {
     sqlx::query(AssertSqlSafe(format!(
-        "CREATE DATABASE `{database_name}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+        "CREATE DATABASE {} WITH TEMPLATE template0 ENCODING 'UTF8'",
+        database_name.quoted()
     )))
     .execute(root)
     .await?;
     Ok(())
 }
 
-async fn drop_database(root: &MySqlPool, database_name: &str) -> Result<()> {
-    ensure_safe_identifier(database_name)?;
+async fn drop_database(root: &PgPool, database_name: &GeneratedDatabaseName) -> Result<()> {
+    // A failed invariant may leave pooled or child-process sessions behind.
+    // Terminate them by a bound value before issuing the necessarily dynamic
+    // DROP DATABASE against the validated generated identifier.
+    let _: Vec<bool> = sqlx::query_scalar(
+        r#"
+        SELECT pg_terminate_backend(pid)
+        FROM pg_stat_activity
+        WHERE datname = $1 AND pid <> pg_backend_pid()
+        "#,
+    )
+    .bind(database_name.as_str())
+    .fetch_all(root)
+    .await?;
     sqlx::query(AssertSqlSafe(format!(
-        "DROP DATABASE IF EXISTS `{database_name}`"
+        "DROP DATABASE IF EXISTS {} WITH (FORCE)",
+        database_name.quoted()
     )))
     .execute(root)
     .await?;
     Ok(())
 }
 
-fn database_url_for(root_database_url: &str, database_name: &str) -> Result<String> {
-    ensure_safe_identifier(database_name)?;
+fn database_url_for(
+    root_database_url: &str,
+    database_name: &GeneratedDatabaseName,
+) -> Result<String> {
     let mut url = Url::parse(root_database_url).context("parse integration root database URL")?;
-    url.set_path(&format!("/{database_name}"));
+    url.set_path(&format!("/{}", database_name.as_str()));
     Ok(url.to_string())
 }
 
-fn ensure_safe_identifier(value: &str) -> Result<()> {
+#[derive(Debug)]
+struct GeneratedDatabaseName(String);
+
+impl GeneratedDatabaseName {
+    fn new(label: &str) -> Result<Self> {
+        ensure!(
+            !label.is_empty()
+                && label
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit()),
+            "unsafe generated database label"
+        );
+        let value = format!(
+            "v2board_{label}_{}",
+            &Uuid::new_v4().simple().to_string()[..16]
+        );
+        validate_generated_database_name(&value)?;
+        Ok(Self(value))
+    }
+
+    fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    fn quoted(&self) -> String {
+        // Validation excludes quotes and every other escaping case.
+        format!("\"{}\"", self.0)
+    }
+}
+
+fn validate_generated_database_name(value: &str) -> Result<()> {
     ensure!(
         !value.is_empty()
-            && value.len() <= 64
+            && value.len() <= 63
             && value
                 .bytes()
                 .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_'),
         "unsafe generated SQL identifier"
     );
     Ok(())
+}
+
+fn sha256_bytes(value: &str) -> Vec<u8> {
+    Sha256::digest(value.as_bytes()).to_vec()
+}
+
+fn sha256_hex(value: &str) -> String {
+    Sha256::digest(value.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 fn random_traffic_key() -> String {
@@ -1799,4 +1805,19 @@ fn env_or(key: &str, default: &str) -> String {
 
 fn pass(name: &str) {
     println!("PASS {name}");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generated_database_names_are_quote_safe_and_bounded() {
+        let name = GeneratedDatabaseName::new("contract").unwrap();
+        assert!(name.as_str().starts_with("v2board_contract_"));
+        assert!(name.as_str().len() <= 63);
+        assert_eq!(name.quoted(), format!("\"{}\"", name.as_str()));
+        assert!(validate_generated_database_name("bad\";drop database postgres").is_err());
+        assert!(validate_generated_database_name("Uppercase").is_err());
+    }
 }

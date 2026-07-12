@@ -10,7 +10,7 @@ use super::{
     subscription::{checked_reset_subscription_expiry, reset_day, reset_day_by_month_first_day},
 };
 
-fn reset_day_plan_fixture(reset_traffic_method: Option<i8>) -> v2board_db::plan::PlanRow {
+fn reset_day_plan_fixture(reset_traffic_method: Option<i16>) -> v2board_db::plan::PlanRow {
     v2board_db::plan::PlanRow {
         id: 1,
         group_id: 1,
@@ -39,7 +39,7 @@ fn reset_day_plan_fixture(reset_traffic_method: Option<i8>) -> v2board_db::plan:
 
 #[test]
 fn reset_day_returns_none_for_plan_less_user_ignoring_config_default() {
-    let mut config = AppConfig::from_env();
+    let mut config = AppConfig::from_api_env();
     // A month-first-day default would otherwise compute a non-null day.
     config.reset_traffic_method = 0;
     let future = Utc::now().timestamp() + 30 * 86_400;
@@ -100,6 +100,9 @@ fn commission_transfer_checks_both_balance_columns() {
 #[test]
 fn giftcard_redemption_serializes_on_the_card_row() {
     assert!(GIFTCARD_FOR_UPDATE_SQL.trim_end().ends_with("FOR UPDATE"));
+    assert!(GIFTCARD_FOR_UPDATE_SQL.contains("lower(code) = lower($1)"));
+    let migration = include_str!("../../../../migrations-postgres/0001_initial.sql");
+    assert!(migration.contains("uniq_giftcard_code_canonical"));
 }
 
 #[test]
@@ -115,7 +118,7 @@ fn giftcard_mutations_lock_the_order_range_before_the_user() {
         .find("sqlx::query_scalar(GIFTCARD_USER_ORDER_RANGE_SQL)")
         .unwrap();
     let user_lock = source
-        .find("FROM v2_user WHERE id = ? LIMIT 1 FOR UPDATE")
+        .find("FROM v2_user WHERE id = $1 LIMIT 1 FOR UPDATE")
         .unwrap();
     assert!(range_lock < user_lock);
 }

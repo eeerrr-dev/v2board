@@ -209,9 +209,9 @@ impl AuthService {
         // field errors before the controller body runs.
         validate_forget(&input.email, &input.password, &input.email_code)?;
         // Laravel lowercases only the cache-key email (`strtolower(trim($email))`) for
-        // FORGET_REQUEST_LIMIT / EMAIL_VERIFY_CODE, but looks the user up with the raw,
-        // original-case `$request->input('email')`. Registration now stores the trimmed
-        // original-case email, so the reset lookup must match that case exactly.
+        // FORGET_REQUEST_LIMIT / EMAIL_VERIFY_CODE and passes the original spelling to
+        // the user lookup. The legacy utf8mb4_unicode_ci column still made that lookup
+        // case-insensitive; the PostgreSQL repository preserves the same identity rule.
         let email = input.email.trim();
         let cache_email = email.to_ascii_lowercase();
         let limit_key = cache_key("FORGET_REQUEST_LIMIT", &cache_email);

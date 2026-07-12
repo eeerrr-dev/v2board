@@ -6,7 +6,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde_json::json;
-use sqlx::{MySql, QueryBuilder};
+use sqlx::{Postgres, QueryBuilder};
 use v2board_compat::ApiError;
 use v2board_db::DbPool;
 
@@ -81,7 +81,8 @@ pub(super) async fn server_deepbwork_config(
     // ruleSettings live only on v2_server_vmess, so fetch just those two extra columns.
     let (dns_settings_raw, rule_settings_raw) =
         sqlx::query_as::<_, (Option<String>, Option<String>)>(
-            "SELECT dnsSettings, ruleSettings FROM v2_server_vmess WHERE id = ? LIMIT 1",
+            "SELECT \"dnsSettings\"::text, \"ruleSettings\"::text \
+             FROM v2_server_vmess WHERE id = $1 LIMIT 1",
         )
         .bind(node_id)
         .fetch_optional(&state.db)
@@ -503,27 +504,35 @@ async fn server_routes(
     if route_ids.is_empty() {
         return Ok(Vec::new());
     }
-    let mut builder = QueryBuilder::<MySql>::new(
-        "SELECT id, `match` AS match_text, action, action_value FROM v2_server_route WHERE id IN (",
-    );
-    {
+    let mut positions = HashMap::with_capacity(route_ids.len());
+    let mut unique_ids = Vec::with_capacity(route_ids.len());
+    for route_id in route_ids {
+        if positions.contains_key(&route_id) {
+            continue;
+        }
+        positions.insert(route_id, unique_ids.len());
+        unique_ids.push(route_id);
+    }
+    let mut rows = Vec::with_capacity(unique_ids.len());
+    for chunk in unique_ids.chunks(500) {
+        let mut builder = QueryBuilder::<Postgres>::new(
+            "SELECT id, \"match\"::text AS match_text, action, \
+             action_value::text AS action_value \
+             FROM v2_server_route WHERE id IN (",
+        );
         let mut separated = builder.separated(", ");
-        for route_id in &route_ids {
+        for route_id in chunk {
             separated.push_bind(*route_id);
         }
+        separated.push_unseparated(")");
+        rows.extend(
+            builder
+                .build_query_as::<ServerRouteRow>()
+                .fetch_all(db)
+                .await?,
+        );
     }
-    builder.push(") ORDER BY FIELD(id, ");
-    {
-        let mut separated = builder.separated(", ");
-        for route_id in &route_ids {
-            separated.push_bind(*route_id);
-        }
-    }
-    builder.push(")");
-    let rows = builder
-        .build_query_as::<ServerRouteRow>()
-        .fetch_all(db)
-        .await?;
+    rows.sort_by_key(|row| positions.get(&row.id).copied().unwrap_or(usize::MAX));
     Ok(rows
         .into_iter()
         .map(|row| {
@@ -557,8 +566,18 @@ pub(super) fn parse_i32_json_list(value: Option<&String>) -> Vec<i32> {
     else {
         return Vec::new();
     };
-    serde_json::from_str::<Vec<i32>>(value)
+    serde_json::from_str::<Vec<serde_json::Value>>(value)
         .ok()
+        .map(|items| {
+            items
+                .into_iter()
+                .filter_map(|item| {
+                    item.as_i64()
+                        .and_then(|value| i32::try_from(value).ok())
+                        .or_else(|| item.as_str().and_then(|value| value.parse::<i32>().ok()))
+                })
+                .collect::<Vec<_>>()
+        })
         .or_else(|| value.parse::<i32>().ok().map(|value| vec![value]))
         .unwrap_or_default()
 }

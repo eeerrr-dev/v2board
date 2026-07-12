@@ -22,8 +22,6 @@ pub enum ApiError {
     Database(#[from] sqlx::Error),
     #[error("redis error: {0}")]
     Redis(#[from] redis::RedisError),
-    #[error("jwt error: {0}")]
-    Jwt(#[from] jsonwebtoken::errors::Error),
     #[error("internal error: {0}")]
     Internal(String),
 }
@@ -103,7 +101,7 @@ impl ApiError {
         match self {
             Self::Http { status, .. } => *status,
             Self::Validation { .. } => StatusCode::UNPROCESSABLE_ENTITY,
-            Self::Database(_) | Self::Redis(_) | Self::Jwt(_) | Self::Internal(_) => {
+            Self::Database(_) | Self::Redis(_) | Self::Internal(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
         }
@@ -112,7 +110,7 @@ impl ApiError {
     fn public_message(&self) -> String {
         match self {
             Self::Http { message, .. } | Self::Validation { message, .. } => message.clone(),
-            Self::Database(_) | Self::Redis(_) | Self::Jwt(_) | Self::Internal(_) => {
+            Self::Database(_) | Self::Redis(_) | Self::Internal(_) => {
                 GENERIC_ERROR_MESSAGE.to_string()
             }
         }

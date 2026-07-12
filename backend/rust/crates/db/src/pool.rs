@@ -1,18 +1,21 @@
 use argon2::{Argon2, PasswordHasher, password_hash::SaltString};
-use std::time::Duration;
-
 use chrono::Utc;
-use sqlx::{MySqlConnection, MySqlPool, mysql::MySqlPoolOptions};
+use sqlx::{PgConnection, PgPool, Postgres, Transaction, postgres::PgPoolOptions};
+use std::time::Duration;
 use uuid::Uuid;
 
-static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations");
+static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations-postgres");
 
-const LOCAL_SEED_LOCK: &str = "v2board-native-local-seed";
+// Advisory locks are scoped to one PostgreSQL cluster.  A fixed, audited key is
+// preferable to a server-version-dependent text hash for the local-only seed.
+const LOCAL_SEED_LOCK: i64 = 0x0056_3242_4f41_5244;
 const LOCAL_SEED_ADMIN_EMAIL: &str = "admin@example.com";
 const LOCAL_SEED_ADMIN_PASSWORD: &str = "12345678";
 const RETIRED_LOCAL_SEED_ADMIN_EMAIL: &str = "admin@local";
+const REQUIRED_POSTGRES_MAJOR: i32 = 18;
 
-pub type DbPool = MySqlPool;
+pub type DbPool = PgPool;
+pub type DbTransaction<'a> = Transaction<'a, Postgres>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DbPoolConfig {
@@ -80,20 +83,6 @@ pub enum DbInitError {
     Database(#[from] sqlx::Error),
     #[error("migration error: {0}")]
     Migration(#[from] sqlx::migrate::MigrateError),
-    #[error(
-        "migration 3 preflight failed: {duplicate_user_count} users have multiple unfinished orders (status 0/1); sample user ids: {sample_user_ids:?}. Resolve those orders explicitly before migrating"
-    )]
-    UnfinishedOrderDuplicates {
-        duplicate_user_count: i64,
-        sample_user_ids: Vec<i32>,
-    },
-    #[error(
-        "migration 5 preflight failed: {malformed_giftcard_count} gift cards have malformed used_user_ids JSON; sample giftcard ids: {sample_giftcard_ids:?}. Repair each value to a JSON array of integer user ids before migrating"
-    )]
-    MalformedGiftcardRedemptions {
-        malformed_giftcard_count: usize,
-        sample_giftcard_ids: Vec<i64>,
-    },
     #[error("password hash error: {0}")]
     Password(String),
     #[error("timed out acquiring the local seed lock")]
@@ -101,20 +90,43 @@ pub enum DbInitError {
     #[error("lost the local seed lock before it could be released")]
     SeedLockLost,
     #[error(
-        "database contains tables but no native SQLx migration lineage; ordinary migrate cannot adopt a legacy or unknown schema—use the reviewed provision workflow"
+        "database contains tables but no native PostgreSQL SQLx migration lineage; ordinary migrate cannot adopt a legacy or unknown schema—use the reviewed lifecycle workflow"
     )]
     UnboundMigrationTarget,
+    #[error(
+        "production PostgreSQL schema changes require the reviewed lifecycle apply workflow; ordinary migrate can only verify an already-current bound native database"
+    )]
+    ProductionLifecycleRequired,
+    #[error("PostgreSQL SQLx migration ledger is not an exact valid prefix of this binary")]
+    InvalidMigrationLineage,
+    #[error("PostgreSQL installation binding is missing or is not uniquely active")]
+    InstallationBindingMissing,
+    #[error("native runtime requires PostgreSQL 18.x, but the server reports version_num {0}")]
+    UnsupportedPostgresVersion(i32),
 }
 
-pub async fn connect_mysql(database_url: &str) -> Result<DbPool, DbInitError> {
-    connect_mysql_with_config(database_url, &DbPoolConfig::from_env()?).await
+pub async fn connect_postgres(database_url: &str) -> Result<DbPool, DbInitError> {
+    let pool = connect_postgres_with_config(database_url, &DbPoolConfig::from_env()?).await?;
+    let version_num: i32 =
+        sqlx::query_scalar("SELECT current_setting('server_version_num')::INTEGER")
+            .fetch_one(&pool)
+            .await?;
+    if postgres_major(version_num) != REQUIRED_POSTGRES_MAJOR {
+        pool.close().await;
+        return Err(DbInitError::UnsupportedPostgresVersion(version_num));
+    }
+    Ok(pool)
 }
 
-pub async fn connect_mysql_with_config(
+fn postgres_major(version_num: i32) -> i32 {
+    version_num / 10_000
+}
+
+pub async fn connect_postgres_with_config(
     database_url: &str,
     config: &DbPoolConfig,
 ) -> Result<DbPool, DbInitError> {
-    let pool = MySqlPoolOptions::new()
+    let pool = PgPoolOptions::new()
         .min_connections(config.min_connections)
         .max_connections(config.max_connections)
         .acquire_timeout(config.acquire_timeout)
@@ -123,25 +135,25 @@ pub async fn connect_mysql_with_config(
         .test_before_acquire(true)
         .after_connect(|connection, _metadata| {
             Box::pin(async move {
-                // Business logic uses Unix timestamps, strict integer writes and
-                // explicit locking reads. Pin every pooled session so a server
-                // default change cannot silently alter those semantics between
-                // replicas or reconnects.
-                sqlx::query("SET SESSION time_zone = '+00:00'")
+                // PostgreSQL READ COMMITTED plus explicit row locks and database
+                // constraints most closely matches the application's intended
+                // current-row semantics.  PostgreSQL REPEATABLE READ is snapshot
+                // isolation and would require whole-transaction 40001 retries.
+                sqlx::query("SET TIME ZONE 'UTC'")
                     .execute(&mut *connection)
                     .await?;
-                sqlx::query("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci")
+                // Native migrations own exactly the public schema. Keeping
+                // pg_catalog implicit makes PostgreSQL search it before public,
+                // while preventing role- or database-level search_path drift
+                // from redirecting unqualified application tables.
+                sqlx::query("SET search_path TO public")
                     .execute(&mut *connection)
                     .await?;
                 sqlx::query(
-                    "SET SESSION sql_mode = \
-                     'STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'",
+                    "SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL READ COMMITTED",
                 )
                 .execute(&mut *connection)
                 .await?;
-                sqlx::query("SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ")
-                    .execute(&mut *connection)
-                    .await?;
                 Ok(())
             })
         })
@@ -150,13 +162,11 @@ pub async fn connect_mysql_with_config(
     Ok(pool)
 }
 
-pub async fn migrate_mysql(pool: &DbPool) -> Result<(), DbInitError> {
-    // Validate this before touching schema state. A production deployment must
-    // never turn a misspelled migration job into the well-known local admin.
+pub async fn migrate_postgres(pool: &DbPool, production: bool) -> Result<(), DbInitError> {
+    // Validate before touching schema state. A misspelled migration target must
+    // never become a native installation or receive the well-known local admin.
     let should_seed_local = local_seed_enabled()?;
-    reject_unbound_migration_target(pool).await?;
-    preflight_unfinished_order_uniqueness(pool).await?;
-    preflight_giftcard_redemptions(pool).await?;
+    validate_migration_target(pool, production).await?;
     MIGRATOR.run(pool).await?;
     if should_seed_local {
         seed_local(pool).await?;
@@ -164,130 +174,67 @@ pub async fn migrate_mysql(pool: &DbPool) -> Result<(), DbInitError> {
     Ok(())
 }
 
-async fn reject_unbound_migration_target(pool: &DbPool) -> Result<(), DbInitError> {
+async fn validate_migration_target(pool: &DbPool, production: bool) -> Result<(), DbInitError> {
     let table_count = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE'",
+        "SELECT COUNT(*) FROM information_schema.tables \
+         WHERE table_schema = current_schema() AND table_type = 'BASE TABLE'",
     )
     .fetch_one(pool)
     .await?;
-    if table_count == 0 || table_exists(pool, "_sqlx_migrations").await? {
+    if table_count == 0 {
+        if production {
+            return Err(DbInitError::ProductionLifecycleRequired);
+        }
         return Ok(());
     }
-    Err(DbInitError::UnboundMigrationTarget)
-}
-
-async fn preflight_giftcard_redemptions(pool: &DbPool) -> Result<(), DbInitError> {
-    if !table_exists(pool, "v2_giftcard").await? {
-        return Ok(());
+    if !table_exists(pool, "_sqlx_migrations").await? {
+        return Err(DbInitError::UnboundMigrationTarget);
     }
-    let migration_5_applied = if table_exists(pool, "_sqlx_migrations").await? {
-        sqlx::query_scalar::<_, i64>(
-            "SELECT EXISTS(SELECT 1 FROM _sqlx_migrations WHERE version = 5 AND success = TRUE)",
-        )
-        .fetch_one(pool)
-        .await?
-            != 0
-    } else {
-        false
-    };
-    if migration_5_applied {
-        return Ok(());
-    }
-
-    let legacy_rows = sqlx::query_as::<_, (i64, Option<String>)>(
-        "SELECT id, used_user_ids FROM v2_giftcard ORDER BY id",
+    let applied = sqlx::query_as::<_, (i64, Vec<u8>, bool)>(
+        "SELECT version, checksum, success FROM _sqlx_migrations ORDER BY version",
     )
     .fetch_all(pool)
     .await?;
-    let malformed = malformed_giftcard_redemption_ids(&legacy_rows);
-    if malformed.is_empty() {
-        return Ok(());
+    let embedded = MIGRATOR
+        .iter()
+        .filter(|migration| migration.migration_type.is_up_migration())
+        .map(|migration| (migration.version, migration.checksum.as_ref()))
+        .collect::<Vec<_>>();
+    if !migration_records_valid_prefix(&applied, &embedded) {
+        return Err(DbInitError::InvalidMigrationLineage);
     }
-
-    Err(DbInitError::MalformedGiftcardRedemptions {
-        malformed_giftcard_count: malformed.len(),
-        sample_giftcard_ids: malformed.into_iter().take(10).collect(),
-    })
-}
-
-fn malformed_giftcard_redemption_ids(rows: &[(i64, Option<String>)]) -> Vec<i64> {
-    rows.iter()
-        .filter_map(|(id, raw)| {
-            raw.as_deref()
-                .and_then(|raw| serde_json::from_str::<Vec<i64>>(raw).err())
-                .map(|_| *id)
-        })
-        .collect()
-}
-
-async fn preflight_unfinished_order_uniqueness(pool: &DbPool) -> Result<(), DbInitError> {
-    if !table_exists(pool, "v2_order").await? {
-        return Ok(());
+    if production && !migration_records_current(&applied, &embedded) {
+        return Err(DbInitError::ProductionLifecycleRequired);
     }
-    let migration_3_applied = if table_exists(pool, "_sqlx_migrations").await? {
-        sqlx::query_scalar::<_, i64>(
-            "SELECT EXISTS(SELECT 1 FROM _sqlx_migrations WHERE version = 3 AND success = TRUE)",
+    let installation_active = if table_exists(pool, "v2_system_installation").await? {
+        sqlx::query_scalar::<_, bool>(
+            "SELECT COUNT(*) = 1 FROM v2_system_installation \
+             WHERE singleton = 1 AND state = 'active' AND activated_at IS NOT NULL",
         )
         .fetch_one(pool)
         .await?
-            != 0
     } else {
         false
     };
-    if migration_3_applied {
-        return Ok(());
+    if !installation_active {
+        return Err(DbInitError::InstallationBindingMissing);
     }
-
-    let duplicate_user_count = sqlx::query_scalar::<_, i64>(
-        r#"
-        SELECT COUNT(*) FROM (
-            SELECT user_id
-            FROM v2_order
-            WHERE status IN (0, 1)
-            GROUP BY user_id
-            HAVING COUNT(*) > 1
-        ) AS duplicate_users
-        "#,
-    )
-    .fetch_one(pool)
-    .await?;
-    if duplicate_user_count == 0 {
-        return Ok(());
-    }
-
-    let sample_user_ids = sqlx::query_scalar::<_, i32>(
-        r#"
-        SELECT user_id
-        FROM v2_order
-        WHERE status IN (0, 1)
-        GROUP BY user_id
-        HAVING COUNT(*) > 1
-        ORDER BY user_id
-        LIMIT 10
-        "#,
-    )
-    .fetch_all(pool)
-    .await?;
-    Err(DbInitError::UnfinishedOrderDuplicates {
-        duplicate_user_count,
-        sample_user_ids,
-    })
+    Ok(())
 }
 
 async fn table_exists(pool: &DbPool, table_name: &str) -> Result<bool, sqlx::Error> {
-    Ok(sqlx::query_scalar::<_, i64>(
+    sqlx::query_scalar::<_, bool>(
         r#"
         SELECT EXISTS(
             SELECT 1
             FROM information_schema.tables
-            WHERE table_schema = DATABASE() AND table_name = ?
+            WHERE table_schema = current_schema() AND table_name = $1
         )
         "#,
     )
     .bind(table_name)
     .fetch_one(pool)
-    .await?
-        != 0)
+    .await
 }
 
 /// Reports whether every successful database migration exactly matches the ordered versions and
@@ -307,8 +254,33 @@ pub async fn migrations_current(pool: &DbPool) -> Result<bool, sqlx::Error> {
     Ok(migration_records_current(&applied, &embedded))
 }
 
+/// Returns the immutable identity of the one active installation.
+///
+/// `singleton = 1` is the table primary key, so `fetch_one` means exactly one
+/// active row: pending, retired, missing, or unbootstrapped installations fail
+/// closed with `RowNotFound`.
+pub async fn installation_id(pool: &DbPool) -> Result<Uuid, sqlx::Error> {
+    sqlx::query_scalar("SELECT installation_id FROM v2_system_installation WHERE state = 'active'")
+        .fetch_one(pool)
+        .await
+}
+
 fn migration_records_current(applied: &[(i64, Vec<u8>, bool)], embedded: &[(i64, &[u8])]) -> bool {
     applied.len() == embedded.len()
+        && applied.iter().zip(embedded).all(
+            |((applied_version, applied_checksum, success), (embedded_version, checksum))| {
+                *success
+                    && applied_version == embedded_version
+                    && applied_checksum.as_slice() == *checksum
+            },
+        )
+}
+
+fn migration_records_valid_prefix(
+    applied: &[(i64, Vec<u8>, bool)],
+    embedded: &[(i64, &[u8])],
+) -> bool {
+    applied.len() <= embedded.len()
         && applied.iter().zip(embedded).all(
             |((applied_version, applied_checksum, success), (embedded_version, checksum))| {
                 *success
@@ -376,43 +348,61 @@ fn local_seed_enabled_for(
     Ok(enabled)
 }
 
-async fn seed_local(pool: &MySqlPool) -> Result<(), DbInitError> {
+async fn seed_local(pool: &PgPool) -> Result<(), DbInitError> {
     let mut connection = pool.acquire().await?;
-    let acquired = sqlx::query_scalar::<_, Option<i64>>("SELECT GET_LOCK(?, 30)")
+    let acquired = sqlx::query_scalar::<_, bool>("SELECT pg_try_advisory_lock($1)")
         .bind(LOCAL_SEED_LOCK)
         .fetch_one(&mut *connection)
         .await?;
-    if acquired != Some(1) {
+    if !acquired {
         return Err(DbInitError::SeedLockUnavailable);
     }
 
     let seed_result = seed_local_locked(&mut connection).await;
-    let released = sqlx::query_scalar::<_, Option<i64>>("SELECT RELEASE_LOCK(?)")
+    let released = sqlx::query_scalar::<_, bool>("SELECT pg_advisory_unlock($1)")
         .bind(LOCAL_SEED_LOCK)
         .fetch_one(&mut *connection)
         .await;
 
     seed_result?;
-    if released? != Some(1) {
+    if !released? {
         return Err(DbInitError::SeedLockLost);
     }
     Ok(())
 }
 
-async fn seed_local_locked(connection: &mut MySqlConnection) -> Result<(), DbInitError> {
+async fn seed_local_locked(connection: &mut PgConnection) -> Result<(), DbInitError> {
     let now = Utc::now().timestamp();
-    let current_admin_exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM v2_user WHERE email = ? LIMIT 1)")
-            .bind(LOCAL_SEED_ADMIN_EMAIL)
+    let installation_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM v2_system_installation)")
             .fetch_one(&mut *connection)
             .await?;
-    if !current_admin_exists {
-        // Preserve the original local seed's id, password, and related test data
-        // while moving it to an address accepted by the frontend email contract.
-        // This is an upgrade migration, not an authentication fallback.
+    if !installation_exists {
         sqlx::query(
-            "UPDATE v2_user SET email = ?, updated_at = ? \
-             WHERE email = ? AND is_admin = 1 LIMIT 1",
+            r#"
+            INSERT INTO v2_system_installation (
+                singleton, installation_id, lineage, state, created_at, activated_at
+            )
+            VALUES (1, $1, 'native', 'active', $2, $3)
+            "#,
+        )
+        .bind(Uuid::new_v4())
+        .bind(now)
+        .bind(now)
+        .execute(&mut *connection)
+        .await?;
+    }
+    let current_admin_exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM v2_user WHERE lower(btrim(email)) = lower(btrim($1)))",
+    )
+    .bind(LOCAL_SEED_ADMIN_EMAIL)
+    .fetch_one(&mut *connection)
+    .await?;
+    if !current_admin_exists {
+        sqlx::query(
+            "UPDATE v2_user SET email = $1, updated_at = $2 \
+             WHERE id = (SELECT id FROM v2_user \
+                         WHERE lower(btrim(email)) = lower(btrim($3)) AND is_admin = 1 LIMIT 1)",
         )
         .bind(LOCAL_SEED_ADMIN_EMAIL)
         .bind(now)
@@ -421,50 +411,40 @@ async fn seed_local_locked(connection: &mut MySqlConnection) -> Result<(), DbIni
         .await?;
     }
 
-    let admin_exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM v2_user WHERE email = ? LIMIT 1)")
-            .bind(LOCAL_SEED_ADMIN_EMAIL)
-            .fetch_one(&mut *connection)
-            .await?;
-    if !admin_exists {
-        let salt = SaltString::encode_b64(Uuid::new_v4().as_bytes())
-            .map_err(|error| DbInitError::Password(error.to_string()))?;
-        let password = Argon2::default()
-            .hash_password(LOCAL_SEED_ADMIN_PASSWORD.as_bytes(), &salt)
-            .map_err(|error| DbInitError::Password(error.to_string()))?
-            .to_string();
-        let uuid = Uuid::new_v4().hyphenated().to_string();
-        let token = format!(
-            "{:x}",
-            md5::compute(format!("{}-{now}", Uuid::new_v4().hyphenated()))
-        );
-        sqlx::query(
-            r#"
-            INSERT INTO v2_user (
-                email, password, uuid, token, is_admin, created_at, updated_at
-            )
-            SELECT ?, ?, ?, ?, 1, ?, ? FROM DUAL
-            WHERE NOT EXISTS (
-                SELECT 1 FROM v2_user WHERE email = ? LIMIT 1
-            )
-            "#,
+    let salt = SaltString::encode_b64(Uuid::new_v4().as_bytes())
+        .map_err(|error| DbInitError::Password(error.to_string()))?;
+    let password = Argon2::default()
+        .hash_password(LOCAL_SEED_ADMIN_PASSWORD.as_bytes(), &salt)
+        .map_err(|error| DbInitError::Password(error.to_string()))?
+        .to_string();
+    let uuid = Uuid::new_v4().hyphenated().to_string();
+    let token = format!(
+        "{:x}",
+        md5::compute(format!("{}-{now}", Uuid::new_v4().hyphenated()))
+    );
+    sqlx::query(
+        r#"
+        INSERT INTO v2_user (
+            email, password, uuid, token, is_admin, created_at, updated_at
         )
-        .bind(LOCAL_SEED_ADMIN_EMAIL)
-        .bind(password)
-        .bind(uuid)
-        .bind(token)
-        .bind(now)
-        .bind(now)
-        .bind(LOCAL_SEED_ADMIN_EMAIL)
-        .execute(&mut *connection)
-        .await?;
-    }
+        VALUES ($1, $2, $3, $4, 1, $5, $6)
+        ON CONFLICT ((lower(btrim(email)))) DO NOTHING
+        "#,
+    )
+    .bind(LOCAL_SEED_ADMIN_EMAIL)
+    .bind(password)
+    .bind(uuid)
+    .bind(token)
+    .bind(now)
+    .bind(now)
+    .execute(&mut *connection)
+    .await?;
 
     sqlx::query(
         r#"
         INSERT INTO v2_server_group (name, created_at, updated_at)
-        SELECT 'Default Group', ?, ? FROM DUAL
-        WHERE NOT EXISTS (SELECT 1 FROM v2_server_group LIMIT 1)
+        SELECT 'Default Group', $1, $2
+        WHERE NOT EXISTS (SELECT 1 FROM v2_server_group)
         "#,
     )
     .bind(now)
@@ -478,13 +458,13 @@ async fn seed_local_locked(connection: &mut MySqlConnection) -> Result<(), DbIni
     sqlx::query(
         r#"
         INSERT INTO v2_plan (
-            group_id, transfer_enable, name, `show`, sort, renew, content,
+            group_id, transfer_enable, name, show, sort, renew, content,
             month_price, quarter_price, half_year_price, year_price,
             onetime_price, created_at, updated_at
         )
-        SELECT ?, 100, 'Test Plan', 1, 1, 1, 'Local Rust test plan',
-               100, 280, 540, 1000, 9900, ?, ? FROM DUAL
-        WHERE NOT EXISTS (SELECT 1 FROM v2_plan LIMIT 1)
+        SELECT $1, 100, 'Test Plan', 1, 1, 1, 'Local Rust test plan',
+               100, 280, 540, 1000, 9900, $2, $3
+        WHERE NOT EXISTS (SELECT 1 FROM v2_plan)
         "#,
     )
     .bind(group_id)
@@ -496,12 +476,11 @@ async fn seed_local_locked(connection: &mut MySqlConnection) -> Result<(), DbIni
     sqlx::query(
         r#"
         INSERT INTO v2_knowledge (
-            language, category, title, body, sort, `show`, created_at, updated_at
+            language, category, title, body, sort, show, created_at, updated_at
         )
         SELECT 'zh-CN', '使用文档', '本地开发环境快速开始',
-               ?,
-               1, 1, ?, ? FROM DUAL
-        WHERE NOT EXISTS (SELECT 1 FROM v2_knowledge LIMIT 1)
+               $1, 1, 1, $2, $3
+        WHERE NOT EXISTS (SELECT 1 FROM v2_knowledge)
         "#,
     )
     .bind(format!(
@@ -528,6 +507,30 @@ mod tests {
             &[
                 (1, checksum_1.to_vec(), true),
                 (2, checksum_2.to_vec(), true),
+            ],
+            &embedded,
+        ));
+        assert!(migration_records_valid_prefix(&[], &embedded));
+        assert!(migration_records_valid_prefix(
+            &[(1, checksum_1.to_vec(), true)],
+            &embedded,
+        ));
+        assert!(migration_records_valid_prefix(
+            &[
+                (1, checksum_1.to_vec(), true),
+                (2, checksum_2.to_vec(), true),
+            ],
+            &embedded,
+        ));
+        assert!(!migration_records_valid_prefix(
+            &[(2, checksum_2.to_vec(), true)],
+            &embedded,
+        ));
+        assert!(!migration_records_valid_prefix(
+            &[
+                (1, checksum_1.to_vec(), true),
+                (2, checksum_2.to_vec(), true),
+                (3, b"future".to_vec(), true),
             ],
             &embedded,
         ));
@@ -559,97 +562,6 @@ mod tests {
     }
 
     #[test]
-    fn unfinished_order_preflight_error_is_actionable_without_mutating_orders() {
-        let error = DbInitError::UnfinishedOrderDuplicates {
-            duplicate_user_count: 3,
-            sample_user_ids: vec![7, 11, 42],
-        };
-        let message = error.to_string();
-        assert!(message.contains("3 users"));
-        assert!(message.contains("[7, 11, 42]"));
-        assert!(message.contains("Resolve those orders explicitly"));
-    }
-
-    #[test]
-    fn giftcard_preflight_error_is_actionable_and_fail_closed() {
-        let error = DbInitError::MalformedGiftcardRedemptions {
-            malformed_giftcard_count: 2,
-            sample_giftcard_ids: vec![4, 9],
-        };
-        let message = error.to_string();
-        assert!(message.contains("2 gift cards"));
-        assert!(message.contains("[4, 9]"));
-        assert!(message.contains("JSON array of integer user ids"));
-    }
-
-    #[test]
-    fn giftcard_preflight_accepts_only_integer_arrays_or_null() {
-        let rows = vec![
-            (1, None),
-            (2, Some("[]".to_string())),
-            (3, Some("[7,11]".to_string())),
-            (4, Some(String::new())),
-            (5, Some("{}".to_string())),
-            (6, Some("[\"7\"]".to_string())),
-            (7, Some("[1.5]".to_string())),
-        ];
-        assert_eq!(malformed_giftcard_redemption_ids(&rows), vec![4, 5, 6, 7]);
-    }
-
-    #[test]
-    fn giftcard_migration_is_normalized_and_removes_the_legacy_column() {
-        let migration = include_str!("../../../migrations/0005_normalize_giftcard_redemptions.sql");
-        assert!(migration.contains("CREATE TABLE `v2_giftcard_redemption`"));
-        assert!(migration.contains("PRIMARY KEY (`giftcard_id`, `user_id`)"));
-        assert!(migration.contains("`created_at` bigint NOT NULL"));
-        assert!(migration.contains("ERROR ON EMPTY ERROR ON ERROR"));
-        assert!(migration.contains("DROP COLUMN `used_user_ids`"));
-    }
-
-    #[test]
-    fn mail_outbox_migration_is_transactional_idempotent_and_leased() {
-        let migration = include_str!("../../../migrations/0006_durable_mail_outbox.sql");
-        assert!(migration.contains("PRIMARY KEY (`batch_key`)"));
-        assert!(migration.contains("`actor` varchar(512) NOT NULL"));
-        assert!(migration.contains("uniq_mail_outbox_batch_recipient"));
-        assert!(migration.contains("uniq_mail_outbox_message_id"));
-        assert!(migration.contains("FOREIGN KEY (`batch_key`)"));
-        assert!(migration.contains("ON DELETE CASCADE"));
-        assert!(migration.contains("idx_mail_outbox_claim"));
-        assert!(migration.contains("`last_error` text DEFAULT NULL"));
-        assert_eq!(migration.matches("`sender` varchar(512)").count(), 1);
-        assert_eq!(migration.matches("`subject` mediumtext").count(), 1);
-        assert_eq!(migration.matches("`body` mediumtext").count(), 1);
-        assert_eq!(migration.matches("`template_name` varchar(255)").count(), 1);
-        assert!(!migration.contains("`sent_at`"));
-    }
-
-    #[test]
-    fn retired_redis_traffic_ledger_is_removed_by_a_forward_migration() {
-        let migration =
-            include_str!("../../../migrations/0008_drop_retired_redis_traffic_ledger.sql");
-        assert!(migration.contains("DROP TABLE `v2_traffic_batch`"));
-    }
-
-    #[test]
-    fn relational_integrity_migration_is_fail_closed_and_preserves_deposits() {
-        let preflight = include_str!("../../../migrations/0012_relational_integrity.sql");
-        let order = include_str!("../../../migrations/0022_order_relational_integrity.sql");
-        let plan = include_str!("../../../migrations/0023_plan_group_integrity.sql");
-        let user = include_str!("../../../migrations/0024_user_relational_integrity.sql");
-        let ticket_message = include_str!("../../../migrations/0028_ticket_message_integrity.sql");
-        let node = include_str!("../../../migrations/0032_shadowsocks_group_json.sql");
-        assert!(preflight.contains("relational_integrity_preflight_failed"));
-        assert!(order.contains("CASE WHEN `plan_id` = 0 THEN NULL"));
-        assert!(order.contains("fk_order_plan_non_deposit"));
-        assert!(plan.contains("fk_plan_group"));
-        assert!(user.contains("fk_user_plan"));
-        assert!(ticket_message.contains("fk_ticket_message_ticket"));
-        assert!(node.contains("JSON_TYPE(`group_id`) = 'ARRAY'"));
-        assert!(node.contains("JSON_LENGTH(`group_id`) > 0"));
-    }
-
-    #[test]
     fn production_environment_rejects_the_known_local_seed() {
         for environment in ["prod", "PROD", "production", "Production"] {
             let error = local_seed_enabled_for(Some("1"), Some(environment)).unwrap_err();
@@ -658,5 +570,32 @@ mod tests {
         assert!(local_seed_enabled_for(Some("true"), Some("local")).unwrap());
         assert!(!local_seed_enabled_for(Some("0"), Some("production")).unwrap());
         assert!(!local_seed_enabled_for(None, Some("production")).unwrap());
+    }
+
+    #[test]
+    fn postgres_migrations_are_independent_from_the_mysql_lineage() {
+        let baseline = include_str!("../../../migrations-postgres/0001_initial.sql");
+        assert!(baseline.contains("PostgreSQL 18"));
+        assert!(baseline.contains("GENERATED BY DEFAULT AS IDENTITY"));
+        assert!(baseline.contains("uniq_unfinished_order_per_user"));
+        assert!(baseline.contains("CREATE TABLE v2_system_installation"));
+        assert!(baseline.contains("CREATE TABLE v2_analytics_outbox"));
+        assert!(!baseline.contains("gen_random_uuid"));
+        assert!(!baseline.contains("ENGINE=InnoDB"));
+        assert!(!baseline.contains("AUTO_INCREMENT"));
+        let executable_sql = baseline
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("--"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(!executable_sql.contains('`'));
+    }
+
+    #[test]
+    fn native_runtime_accepts_only_postgres_18_patch_releases() {
+        assert_eq!(postgres_major(180_000), REQUIRED_POSTGRES_MAJOR);
+        assert_eq!(postgres_major(180_004), REQUIRED_POSTGRES_MAJOR);
+        assert_ne!(postgres_major(170_009), REQUIRED_POSTGRES_MAJOR);
+        assert_ne!(postgres_major(190_000), REQUIRED_POSTGRES_MAJOR);
     }
 }

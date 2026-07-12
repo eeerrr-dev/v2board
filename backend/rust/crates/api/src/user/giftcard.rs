@@ -22,8 +22,8 @@ pub(crate) struct RedeemGiftcardRequest {
 
 #[derive(Debug, sqlx::FromRow)]
 struct GiftcardRow {
-    id: i64,
-    r#type: i8,
+    id: i32,
+    r#type: i16,
     value: Option<i32>,
     plan_id: Option<i32>,
     limit_use: Option<i32>,
@@ -44,16 +44,16 @@ struct GiftUserRow {
 }
 
 pub(super) const GIFTCARD_FOR_UPDATE_SQL: &str = r#"
-SELECT id, `type`, value, plan_id, limit_use, started_at, ended_at
+SELECT id, "type", value, plan_id, limit_use, started_at, ended_at
 FROM v2_giftcard
-WHERE code = ?
+WHERE lower(code) = lower($1)
 LIMIT 1
 FOR UPDATE
 "#;
 pub(super) const GIFTCARD_USER_ORDER_RANGE_SQL: &str = r#"
 SELECT id
 FROM v2_order
-WHERE user_id = ? AND status IN (0, 1)
+WHERE user_id = $1 AND status IN (0, 1)
 LIMIT 1
 FOR UPDATE
 "#;
@@ -85,7 +85,7 @@ pub(crate) async fn redeem_giftcard(
         .fetch_optional(&mut *tx)
         .await?;
     let mut user = sqlx::query_as::<_, GiftUserRow>(
-        "SELECT id, balance, expired_at, transfer_enable, traffic_epoch, u, d, plan_id FROM v2_user WHERE id = ? LIMIT 1 FOR UPDATE",
+        "SELECT id, balance, expired_at, transfer_enable, traffic_epoch, u, d, plan_id FROM v2_user WHERE id = $1 LIMIT 1 FOR UPDATE",
     )
     .bind(auth_user.id)
     .fetch_optional(&mut *tx)
@@ -108,7 +108,7 @@ pub(crate) async fn redeem_giftcard(
         ));
     }
     let already_redeemed: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM v2_giftcard_redemption WHERE giftcard_id = ? AND user_id = ?)",
+        "SELECT EXISTS(SELECT 1 FROM v2_giftcard_redemption WHERE giftcard_id = $1 AND user_id = $2)",
     )
     .bind(giftcard.id)
     .bind(auth_user.id)
@@ -175,8 +175,8 @@ pub(crate) async fn redeem_giftcard(
                     SELECT EXISTS(
                         SELECT 1
                         FROM v2_order
-                        WHERE user_id = ? AND plan_id = ?
-                          AND status IN (0, 1) AND `type` IN (1, 3)
+                        WHERE user_id = $1 AND plan_id = $2
+                          AND status IN (0, 1) AND "type" IN (1, 3)
                     )
                     "#,
                 )
@@ -212,10 +212,11 @@ pub(crate) async fn redeem_giftcard(
     sqlx::query(
         r#"
         UPDATE v2_user
-        SET balance = ?, expired_at = ?, transfer_enable = ?, traffic_epoch = ?, u = ?, d = ?,
-            plan_id = ?, group_id = COALESCE(?, group_id),
-            device_limit = IF(?, ?, device_limit), updated_at = ?
-        WHERE id = ?
+        SET balance = $1, expired_at = $2, transfer_enable = $3, traffic_epoch = $4,
+            u = $5, d = $6, plan_id = $7, group_id = COALESCE($8, group_id),
+            device_limit = CASE WHEN $9 <> 0 THEN $10 ELSE device_limit END,
+            updated_at = $11
+        WHERE id = $12
         "#,
     )
     .bind(user.balance)
@@ -233,14 +234,14 @@ pub(crate) async fn redeem_giftcard(
     .execute(&mut *tx)
     .await?;
     sqlx::query(
-        "INSERT INTO v2_giftcard_redemption (giftcard_id, user_id, created_at) VALUES (?, ?, ?)",
+        "INSERT INTO v2_giftcard_redemption (giftcard_id, user_id, created_at) VALUES ($1, $2, $3)",
     )
     .bind(giftcard.id)
     .bind(auth_user.id)
     .bind(now)
     .execute(&mut *tx)
     .await?;
-    sqlx::query("UPDATE v2_giftcard SET limit_use = ?, updated_at = ? WHERE id = ?")
+    sqlx::query("UPDATE v2_giftcard SET limit_use = $1, updated_at = $2 WHERE id = $3")
         .bind(giftcard.limit_use.map(|limit| limit - 1))
         .bind(now)
         .bind(giftcard.id)

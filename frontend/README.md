@@ -73,7 +73,7 @@ dist-deploy/
 `make interaction-parity`（`make behavior-parity` 的实现）驱动当前 Rust + React 应用
 和 `references/wyx2685-v2board` 中的只读参考 UI。比较范围只保留真实 Tier-1 契约：
 API endpoint/payload、认证与语言持久化、外部链接/集成及安全跳转。参考资源从不进入
-Vite 输入、deploy 输出或生产镜像。
+Vite 输入、deploy 输出或生产 release artifact。
 
 ```bash
 make reference-oracle-check

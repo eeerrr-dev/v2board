@@ -1,11 +1,13 @@
 [workspace]
 members = [
   "crates/api",
+  "crates/analytics",
   "crates/compat",
   "crates/config",
   "crates/contract",
   "crates/db",
   "crates/domain",
+  "crates/lifecycle",
   "crates/provision",
   "crates/workers",
 ]
@@ -36,7 +38,6 @@ getrandom = "0.4.3"
 hex = "0.4.3"
 hmac = "0.13.0"
 ipnet = "2.12.0"
-jsonwebtoken = { version = "10.4.0", default-features = false, features = ["aws_lc_rs"] }
 lettre = { version = "0.11.22", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls", "rustls-platform-verifier", "aws-lc-rs", "pool"] }
 md5 = "0.8.1"
 openssl = "0.10.81"
@@ -57,7 +58,10 @@ serde-saphyr = "0.0.29"
 sha1 = "0.11.0"
 sha2 = "0.11.0"
 subtle = "2.6.1"
-sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls-aws-lc-rs", "mysql", "json", "chrono", "rust_decimal", "macros", "migrate"] }
+# PostgreSQL is the only native runtime datastore. The disposable lifecycle
+# tool enables SQLx MySQL only in its isolated legacy-source adapter.
+sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls-aws-lc-rs", "postgres", "json", "chrono", "rust_decimal", "uuid", "macros", "migrate"] }
+clickhouse = { version = "0.15.1", default-features = false, features = ["lz4", "rustls-tls", "uuid", "chrono"] }
 syn = { version = "2.0.117", features = ["full", "visit"] }
 thiserror = "2.0.18"
 tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread", "signal", "net", "time", "sync", "fs"] }

@@ -18,7 +18,6 @@ csv.workspace = true
 getrandom.workspace = true
 hex.workspace = true
 hmac.workspace = true
-jsonwebtoken.workspace = true
 lettre.workspace = true
 md5.workspace = true
 openssl.workspace = true

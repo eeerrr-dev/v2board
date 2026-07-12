@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use chrono::{DateTime, Datelike, FixedOffset, Months, TimeZone, Utc};
-use sqlx::{FromRow, MySql, QueryBuilder};
+use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 use v2board_config::{app_now, app_timezone};
 
@@ -15,12 +15,47 @@ pub(crate) const TRAFFIC_RESET_LOCK_KEY: &str = "traffic_reset_lock";
 const TRAFFIC_UPDATE_SCHEDULER_LOCK_KEY: &str = "RUST_SCHEDULER_LOCK_traffic_update";
 const RESET_LOCK_IO_TIMEOUT: Duration = Duration::from_secs(5);
 const RESET_USER_BATCH_SIZE: i64 = 500;
+const RETENTION_DELETE_BATCH_SIZE: i64 = 5_000;
+const RETENTION_MAX_BATCHES_PER_TABLE: usize = 20;
+const STAT_USER_RETENTION_SQL: &str = r#"
+WITH doomed AS (
+    SELECT id FROM v2_stat_user
+    WHERE record_at < $1
+    ORDER BY record_at, id
+    LIMIT $2
+)
+DELETE FROM v2_stat_user AS target
+USING doomed
+WHERE target.id = doomed.id
+"#;
+const STAT_SERVER_RETENTION_SQL: &str = r#"
+WITH doomed AS (
+    SELECT id FROM v2_stat_server
+    WHERE record_at < $1
+    ORDER BY record_at, id
+    LIMIT $2
+)
+DELETE FROM v2_stat_server AS target
+USING doomed
+WHERE target.id = doomed.id
+"#;
+const SYSTEM_LOG_RETENTION_SQL: &str = r#"
+WITH doomed AS (
+    SELECT id FROM v2_log
+    WHERE created_at < $1
+    ORDER BY created_at, id
+    LIMIT $2
+)
+DELETE FROM v2_log AS target
+USING doomed
+WHERE target.id = doomed.id
+"#;
 
 #[derive(Debug, Clone, FromRow)]
 struct ResetUserRow {
     id: i64,
     expired_at: i64,
-    reset_traffic_method: Option<i8>,
+    reset_traffic_method: Option<i16>,
 }
 
 async fn acquire_traffic_reset_lock(state: &WorkerState) -> anyhow::Result<SchedulerLock> {
@@ -93,11 +128,11 @@ async fn reset_traffic_inner(state: &WorkerState) -> anyhow::Result<()> {
             SELECT u.id, u.expired_at, p.reset_traffic_method
             FROM v2_user u
             INNER JOIN v2_plan p ON p.id = u.plan_id
-            WHERE u.id > ?
+            WHERE u.id > $1
               AND u.expired_at IS NOT NULL
-              AND u.expired_at > ?
+              AND u.expired_at > $2
             ORDER BY u.id
-            LIMIT ?
+            LIMIT $3
             FOR UPDATE
             "#,
         )
@@ -116,7 +151,7 @@ async fn reset_traffic_inner(state: &WorkerState) -> anyhow::Result<()> {
             .map(|user| user.id)
             .collect::<Vec<_>>();
         if !ids.is_empty() {
-            let mut builder = QueryBuilder::<MySql>::new(
+            let mut builder = QueryBuilder::<Postgres>::new(
                 "UPDATE v2_user SET traffic_epoch = traffic_epoch + 1, \
                  u = 0, d = 0, scheduled_traffic_reset_key = ",
             );
@@ -195,18 +230,23 @@ pub(crate) async fn run_log(state: &WorkerState) -> anyhow::Result<()> {
     let stat_before =
         month_delta_timestamp(2).unwrap_or_else(|| timestamp_before(now, 60 * 86_400));
     let log_before = month_delta_timestamp(1).unwrap_or_else(|| timestamp_before(now, 30 * 86_400));
-    sqlx::query("DELETE FROM v2_stat_user WHERE record_at < ?")
-        .bind(stat_before)
-        .execute(&state.db)
-        .await?;
-    sqlx::query("DELETE FROM v2_stat_server WHERE record_at < ?")
-        .bind(stat_before)
-        .execute(&state.db)
-        .await?;
-    sqlx::query("DELETE FROM v2_log WHERE created_at < ?")
-        .bind(log_before)
-        .execute(&state.db)
-        .await?;
+    for (sql, cutoff) in [
+        (STAT_USER_RETENTION_SQL, stat_before),
+        (STAT_SERVER_RETENTION_SQL, stat_before),
+        (SYSTEM_LOG_RETENTION_SQL, log_before),
+    ] {
+        for _ in 0..RETENTION_MAX_BATCHES_PER_TABLE {
+            let deleted = sqlx::query(sql)
+                .bind(cutoff)
+                .bind(RETENTION_DELETE_BATCH_SIZE)
+                .execute(&state.db)
+                .await?
+                .rows_affected();
+            if deleted < RETENTION_DELETE_BATCH_SIZE as u64 {
+                break;
+            }
+        }
+    }
     Ok(())
 }
 
@@ -259,5 +299,19 @@ mod tests {
             reset_traffic_method: Some(2),
         };
         assert!(!should_reset_user(&user, 3));
+    }
+
+    #[test]
+    fn retention_deletes_are_index_ordered_and_bounded() {
+        for sql in [
+            STAT_USER_RETENTION_SQL,
+            STAT_SERVER_RETENTION_SQL,
+            SYSTEM_LOG_RETENTION_SQL,
+        ] {
+            assert!(sql.contains("WITH doomed AS"));
+            assert!(sql.contains("ORDER BY"));
+            assert!(sql.contains("LIMIT $2"));
+            assert!(sql.contains("USING doomed"));
+        }
     }
 }

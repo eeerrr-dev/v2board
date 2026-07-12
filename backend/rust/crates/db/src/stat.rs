@@ -1,5 +1,5 @@
 use serde::Serialize;
-use sqlx::{FromRow, MySqlPool};
+use sqlx::{FromRow, PgPool};
 
 #[derive(Debug, Clone, FromRow, Serialize)]
 pub struct TrafficLogRow {
@@ -11,7 +11,7 @@ pub struct TrafficLogRow {
 }
 
 pub async fn fetch_traffic_logs(
-    pool: &MySqlPool,
+    pool: &PgPool,
     user_id: i64,
     from_record_at: i64,
 ) -> Result<Vec<TrafficLogRow>, sqlx::Error> {
@@ -22,9 +22,9 @@ pub async fn fetch_traffic_logs(
             d,
             record_at,
             user_id,
-            CAST(server_rate AS CHAR) AS server_rate
+            server_rate::text AS server_rate
         FROM v2_stat_user
-        WHERE user_id = ? AND record_at >= ?
+        WHERE user_id = $1 AND record_at >= $2
         ORDER BY record_at DESC
         "#,
     )

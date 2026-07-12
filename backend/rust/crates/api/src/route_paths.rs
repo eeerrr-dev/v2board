@@ -62,7 +62,7 @@ mod tests {
 
     #[test]
     fn current_admin_route_match_uses_latest_config_path() {
-        let mut config = AppConfig::from_env();
+        let mut config = AppConfig::from_api_env();
         config.secure_path = Some("new-admin".to_string());
         config.frontend_admin_path = None;
 

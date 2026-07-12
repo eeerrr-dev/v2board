@@ -92,7 +92,7 @@ pub(in super::super) fn bool_i(value: bool) -> i32 {
 }
 
 pub(in super::super) async fn fetch_json_list(
-    db: &MySqlPool,
+    db: &DbPool,
     sql: &str,
 ) -> Result<Vec<Value>, ApiError> {
     let rows = sqlx::query_scalar::<_, Json<Value>>(AssertSqlSafe(sql))
@@ -102,7 +102,7 @@ pub(in super::super) async fn fetch_json_list(
 }
 
 pub(in super::super) async fn fetch_json_list_bind(
-    db: &MySqlPool,
+    db: &DbPool,
     sql: &str,
     bind: i64,
 ) -> Result<Vec<Value>, ApiError> {
@@ -114,7 +114,7 @@ pub(in super::super) async fn fetch_json_list_bind(
 }
 
 pub(in super::super) async fn fetch_json_list_page(
-    db: &MySqlPool,
+    db: &DbPool,
     sql: &str,
     limit: i64,
     offset: i64,
@@ -128,7 +128,7 @@ pub(in super::super) async fn fetch_json_list_page(
 }
 
 pub(in super::super) async fn fetch_json_list_page_bind(
-    db: &MySqlPool,
+    db: &DbPool,
     sql: &str,
     bind: i64,
     limit: i64,
@@ -144,7 +144,7 @@ pub(in super::super) async fn fetch_json_list_page_bind(
 }
 
 pub(in super::super) async fn fetch_json_list_page_bind_text(
-    db: &MySqlPool,
+    db: &DbPool,
     sql: &str,
     bind: &str,
     limit: i64,
@@ -160,7 +160,7 @@ pub(in super::super) async fn fetch_json_list_page_bind_text(
 }
 
 pub(in super::super) async fn fetch_json_one(
-    db: &MySqlPool,
+    db: &DbPool,
     sql: &str,
     bind: i64,
 ) -> Result<Option<Value>, ApiError> {
@@ -276,12 +276,23 @@ pub(in super::super) fn admin_sort_clause(params: &HashMap<String, String>) -> S
         Some("ASC") => "ASC",
         _ => "DESC",
     };
+    // MySQL orders NULL before non-NULL for ASC and after it for DESC;
+    // PostgreSQL defaults are the reverse. Pin the legacy list/pagination
+    // contract explicitly for every allowed or operator-supplied column.
+    let nulls = if direction == "ASC" {
+        "NULLS FIRST"
+    } else {
+        "NULLS LAST"
+    };
     let column = params
         .get("sort")
         .map(String::as_str)
         .filter(|value| !value.is_empty())
         .unwrap_or("id");
-    format!("ORDER BY `{}` {direction}", column.replace('`', "``"))
+    format!(
+        "ORDER BY \"{}\" {direction} {nulls}",
+        column.replace('"', "\"\"")
+    )
 }
 
 pub(in super::super) fn array_param(

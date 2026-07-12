@@ -24,7 +24,7 @@ fn unique_random_codes(count: usize, length: usize) -> Vec<String> {
 }
 
 async fn insert_generated_codes(
-    tx: &mut Transaction<'_, MySql>,
+    tx: &mut DbTransaction<'_>,
     table: GeneratedCodeTable,
     field_values: &[(&'static str, AdminSqlValue)],
     codes: &[String],
@@ -34,26 +34,26 @@ async fn insert_generated_codes(
         return Ok(());
     }
     let mut builder = match table {
-        GeneratedCodeTable::Coupon => QueryBuilder::<MySql>::new("INSERT INTO v2_coupon ("),
-        GeneratedCodeTable::Giftcard => QueryBuilder::<MySql>::new("INSERT INTO v2_giftcard ("),
+        GeneratedCodeTable::Coupon => QueryBuilder::<Postgres>::new("INSERT INTO v2_coupon ("),
+        GeneratedCodeTable::Giftcard => QueryBuilder::<Postgres>::new("INSERT INTO v2_giftcard ("),
     };
     let mut columns = builder.separated(", ");
     for (column, _) in field_values {
-        columns.push(format!("`{column}`"));
+        columns.push(format!("\"{column}\""));
     }
     if matches!(table, GeneratedCodeTable::Coupon) {
-        columns.push("`show`");
+        columns.push("\"show\"");
     }
-    columns.push("`code`");
-    columns.push("`created_at`");
-    columns.push("`updated_at`");
+    columns.push("\"code\"");
+    columns.push("\"created_at\"");
+    columns.push("\"updated_at\"");
     builder.push(") ");
     builder.push_values(codes, |mut row, code| {
-        for (_, value) in field_values {
-            push_admin_sql_value(&mut row, value);
+        for (column, value) in field_values {
+            push_admin_sql_value(&mut row, column, value);
         }
         if matches!(table, GeneratedCodeTable::Coupon) {
-            row.push_bind(1_i64);
+            row.push_bind(1_i16);
         }
         row.push_bind(code).push_bind(now).push_bind(now);
     });
@@ -62,7 +62,7 @@ async fn insert_generated_codes(
 }
 
 async fn insert_unique_generated_code_batch(
-    tx: &mut Transaction<'_, MySql>,
+    tx: &mut DbTransaction<'_>,
     table: GeneratedCodeTable,
     field_values: &[(&'static str, AdminSqlValue)],
     count: usize,
@@ -119,7 +119,7 @@ struct TicketReplyNotification {
 impl AdminService {
     pub(super) async fn notice_fetch(&self) -> Result<AdminOutput, ApiError> {
         let rows = sqlx::query_as::<_, NoticeRaw>(
-            "SELECT id, title, content, img_url, tags, `show`, created_at, updated_at FROM v2_notice ORDER BY id DESC",
+            "SELECT id, title, content, img_url, tags::text AS tags, \"show\", created_at, updated_at FROM v2_notice ORDER BY id DESC",
         )
         .fetch_all(&self.db)
         .await?;
@@ -133,10 +133,14 @@ impl AdminService {
         params: &HashMap<String, String>,
     ) -> Result<AdminOutput, ApiError> {
         let now = Utc::now().timestamp();
-        let tags = json_array_string(params, "tags")?;
+        let tags = json_array_string(params, "tags")?
+            .map(|value| serde_json::from_str::<Value>(&value))
+            .transpose()
+            .map_err(|_| ApiError::validation_field("tags", "公告标签格式不正确"))?
+            .map(Json);
         if let Some(id) = optional_i64(params, "id") {
             sqlx::query(
-                "UPDATE v2_notice SET title = ?, content = ?, img_url = ?, tags = ?, updated_at = ? WHERE id = ?",
+                "UPDATE v2_notice SET title = $1, content = $2, img_url = $3, tags = $4, updated_at = $5 WHERE id = $6",
             )
             .bind(required_string(params, "title")?)
             .bind(required_string(params, "content")?)
@@ -148,7 +152,7 @@ impl AdminService {
             .await?;
         } else {
             sqlx::query(
-                "INSERT INTO v2_notice (title, content, img_url, tags, `show`, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)",
+                "INSERT INTO v2_notice (title, content, img_url, tags, \"show\", created_at, updated_at) VALUES ($1, $2, $3, $4, 1, $5, $6)",
             )
             .bind(required_string(params, "title")?)
             .bind(required_string(params, "content")?)
@@ -192,17 +196,17 @@ impl AdminService {
                 .await;
         }
 
-        let mut builder = QueryBuilder::<MySql>::new("UPDATE v2_notice SET ");
+        let mut builder = QueryBuilder::<Postgres>::new("UPDATE v2_notice SET ");
         let mut first = true;
         for (column, value) in &values {
             if !first {
                 builder.push(", ");
             }
             first = false;
-            builder.push(format!("`{column}` = "));
-            push_admin_sql_bind(&mut builder, value);
+            builder.push(format!("\"{column}\" = "));
+            push_admin_sql_bind(&mut builder, column, value);
         }
-        builder.push(", `updated_at` = ");
+        builder.push(", \"updated_at\" = ");
         builder.push_bind(Utc::now().timestamp());
         builder.push(" WHERE id = ");
         builder.push_bind(id);
@@ -221,13 +225,13 @@ impl AdminService {
             let value = fetch_json_one(
                 &self.db,
                 r#"
-                SELECT JSON_OBJECT(
+                SELECT jsonb_build_object(
                     'id', id, 'language', language, 'category', category, 'title', title,
-                    'body', body, 'sort', sort, 'show', `show`, 'created_at', created_at,
+                    'body', body, 'sort', sort, 'show', "show", 'created_at', created_at,
                     'updated_at', updated_at
                 )
                 FROM v2_knowledge
-                WHERE id = ?
+                WHERE id = $1
                 LIMIT 1
                 "#,
                 id,
@@ -240,12 +244,12 @@ impl AdminService {
             fetch_json_list(
                 &self.db,
                 r#"
-            SELECT JSON_OBJECT(
-                'id', id, 'category', category, 'title', title, 'sort', sort, 'show', `show`,
+            SELECT jsonb_build_object(
+                'id', id, 'category', category, 'title', title, 'sort', sort, 'show', "show",
                 'updated_at', updated_at
             )
             FROM v2_knowledge
-            ORDER BY sort ASC
+            ORDER BY sort ASC NULLS FIRST
             "#
             )
             .await?
@@ -273,8 +277,8 @@ impl AdminService {
             sqlx::query(
                 r#"
                 UPDATE v2_knowledge
-                SET language = ?, category = ?, title = ?, body = ?, updated_at = ?
-                WHERE id = ?
+                SET language = $1, category = $2, title = $3, body = $4, updated_at = $5
+                WHERE id = $6
                 "#,
             )
             .bind(required_string(params, "language")?)
@@ -289,7 +293,7 @@ impl AdminService {
             sqlx::query(
                 r#"
                 INSERT INTO v2_knowledge (language, category, title, body, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES ($1, $2, $3, $4, $5, $6)
                 "#,
             )
             .bind(required_string(params, "language")?)
@@ -313,7 +317,7 @@ impl AdminService {
             let ticket = fetch_json_one(
                 &self.db,
                 r#"
-                SELECT JSON_OBJECT(
+                SELECT jsonb_build_object(
                     'id', id, 'user_id', user_id, 'subject', subject, 'level', level,
                     'status', status, 'reply_status', reply_status,
                     'last_reply_user_id', (
@@ -322,7 +326,7 @@ impl AdminService {
                     'created_at', created_at, 'updated_at', updated_at
                 )
                 FROM v2_ticket
-                WHERE id = ?
+                WHERE id = $1
                 LIMIT 1
                 "#,
                 id,
@@ -334,16 +338,15 @@ impl AdminService {
             let messages = fetch_json_list_bind(
                 &self.db,
                 r#"
-                SELECT JSON_OBJECT(
+                SELECT jsonb_build_object(
                     'id', id, 'user_id', user_id, 'ticket_id', ticket_id, 'message', message,
-                    'is_me', CAST(
-                        IF(user_id <> (SELECT user_id FROM v2_ticket WHERE id = v2_ticket_message.ticket_id), 'true', 'false')
-                        AS JSON
+                    'is_me', user_id <> (
+                        SELECT user_id FROM v2_ticket WHERE id = v2_ticket_message.ticket_id
                     ),
                     'created_at', created_at, 'updated_at', updated_at
                 )
                 FROM v2_ticket_message
-                WHERE ticket_id = ?
+                WHERE ticket_id = $1
                 ORDER BY id ASC
                 "#,
                 id,
@@ -358,7 +361,7 @@ impl AdminService {
         // and orders by updated_at. Staff\TicketController::fetch only filters by
         // status and orders by created_at.
         fn apply_filters(
-            builder: &mut QueryBuilder<MySql>,
+            builder: &mut QueryBuilder<Postgres>,
             status: Option<i64>,
             reply_statuses: &[i64],
             user_id: Option<i64>,
@@ -399,26 +402,28 @@ impl AdminService {
         // absent → no scope, matching the Laravel `if ($user)` guard.
         let user_id = if !staff && params.contains_key("email") {
             let email = params.get("email").cloned().unwrap_or_default();
-            sqlx::query_scalar::<_, i64>("SELECT id FROM v2_user WHERE email = ? LIMIT 1")
-                .bind(email)
-                .fetch_optional(&self.db)
-                .await?
+            sqlx::query_scalar::<_, i64>(
+                "SELECT id FROM v2_user WHERE LOWER(email) = LOWER($1) LIMIT 1",
+            )
+            .bind(email)
+            .fetch_optional(&self.db)
+            .await?
         } else {
             None
         };
 
         let pagination = page(params)?;
         let mut count_builder =
-            QueryBuilder::<MySql>::new("SELECT COUNT(*) FROM v2_ticket WHERE 1 = 1");
+            QueryBuilder::<Postgres>::new("SELECT COUNT(*) FROM v2_ticket WHERE 1 = 1");
         apply_filters(&mut count_builder, status, &reply_statuses, user_id);
         let total: i64 = count_builder
             .build_query_scalar()
             .fetch_one(&self.db)
             .await?;
 
-        let mut builder = QueryBuilder::<MySql>::new(
+        let mut builder = QueryBuilder::<Postgres>::new(
             r#"
-            SELECT JSON_OBJECT(
+            SELECT jsonb_build_object(
                 'id', id, 'user_id', user_id, 'subject', subject, 'level', level,
                 'status', status, 'reply_status', reply_status,
                 'last_reply_user_id', (
@@ -452,12 +457,12 @@ impl AdminService {
         // acting admin, reopens the ticket (status = 0), sets reply_status based
         // on authorship, and notifies the owner by email (deduped 30 min).
         let id = required_i64(params, "id")?;
-        let ticket_id = i32::try_from(id).map_err(|_| ApiError::legacy("工单不存在"))?;
+        let ticket_id = id;
         let message = required_string(params, "message")?;
         validate_ticket_message_length(&message)?;
         let admin_id = self.current_admin_id(params).await?;
         let (ticket_user_id, subject): (i64, String) =
-            sqlx::query_as("SELECT user_id, subject FROM v2_ticket WHERE id = ? LIMIT 1")
+            sqlx::query_as("SELECT user_id, subject FROM v2_ticket WHERE id = $1 LIMIT 1")
                 .bind(id)
                 .fetch_optional(&self.db)
                 .await?
@@ -542,7 +547,7 @@ impl AdminService {
         message: &str,
     ) -> Option<(String, PreparedMailEnvelope)> {
         let email: Option<String> =
-            match sqlx::query_scalar("SELECT email FROM v2_user WHERE id = ? LIMIT 1")
+            match sqlx::query_scalar("SELECT email FROM v2_user WHERE id = $1 LIMIT 1")
                 .bind(user_id)
                 .fetch_optional(&self.db)
                 .await
@@ -653,14 +658,7 @@ impl AdminService {
     }
 
     pub(super) async fn ticket_close(&self, id: i64) -> Result<AdminOutput, ApiError> {
-        if let Ok(ticket_id) = i32::try_from(id) {
-            v2board_db::ticket::close_ticket_as_operator(
-                &self.db,
-                ticket_id,
-                Utc::now().timestamp(),
-            )
-            .await?;
-        }
+        v2board_db::ticket::close_ticket_as_operator(&self.db, id, Utc::now().timestamp()).await?;
         Ok(AdminOutput::Data(json!(true)))
     }
 
@@ -676,15 +674,15 @@ impl AdminService {
             &self.db,
             &format!(
                 r#"
-            SELECT JSON_OBJECT(
+            SELECT jsonb_build_object(
                 'id', id, 'code', code, 'name', name, 'type', type, 'value', value,
-                'show', `show`, 'limit_use', limit_use, 'limit_use_with_user', limit_use_with_user,
-                'limit_plan_ids', CAST(limit_plan_ids AS JSON), 'limit_period', CAST(limit_period AS JSON),
+                'show', "show", 'limit_use', limit_use, 'limit_use_with_user', limit_use_with_user,
+                'limit_plan_ids', CAST(limit_plan_ids AS JSONB), 'limit_period', CAST(limit_period AS JSONB),
                 'started_at', started_at, 'ended_at', ended_at, 'created_at', created_at, 'updated_at', updated_at
             )
             FROM v2_coupon
             {}
-            LIMIT ? OFFSET ?
+            LIMIT $1 OFFSET $2
             "#,
                 admin_sort_clause(params)
             ),
@@ -707,22 +705,22 @@ impl AdminService {
             &self.db,
             &format!(
                 r#"
-            SELECT JSON_OBJECT(
+            SELECT jsonb_build_object(
                 'id', id, 'code', code, 'name', name, 'type', type, 'value', value,
                 'plan_id', plan_id, 'limit_use', limit_use,
                 'used_user_ids', COALESCE(
                     (
-                        SELECT JSON_ARRAYAGG(redemption.user_id)
+                        SELECT jsonb_agg(redemption.user_id)
                         FROM v2_giftcard_redemption AS redemption
                         WHERE redemption.giftcard_id = v2_giftcard.id
                     ),
-                    JSON_ARRAY()
+                    '[]'::jsonb
                 ),
                 'started_at', started_at, 'ended_at', ended_at, 'created_at', created_at, 'updated_at', updated_at
             )
             FROM v2_giftcard
             {}
-            LIMIT ? OFFSET ?
+            LIMIT $1 OFFSET $2
             "#,
                 admin_sort_clause(params)
             ),
@@ -927,8 +925,8 @@ impl AdminService {
 
         let mut values = giftcard_field_values(params);
         if let Some(id) = optional_i64(params, "id") {
-            let exists: Option<i64> =
-                sqlx::query_scalar("SELECT id FROM v2_giftcard WHERE id = ? LIMIT 1")
+            let exists: Option<i32> =
+                sqlx::query_scalar("SELECT id FROM v2_giftcard WHERE id = $1 LIMIT 1")
                     .bind(id)
                     .fetch_optional(&self.db)
                     .await?;
@@ -962,17 +960,17 @@ impl AdminService {
         values: &[(&str, AdminSqlValue)],
         now: i64,
     ) -> Result<(), ApiError> {
-        let mut builder = QueryBuilder::<MySql>::new(format!("INSERT INTO {table} ("));
+        let mut builder = QueryBuilder::<Postgres>::new(format!("INSERT INTO {table} ("));
         let mut columns = builder.separated(", ");
         for (column, _) in values {
-            columns.push(format!("`{column}`"));
+            columns.push(format!("\"{column}\""));
         }
-        columns.push("`created_at`");
-        columns.push("`updated_at`");
+        columns.push("\"created_at\"");
+        columns.push("\"updated_at\"");
         builder.push(") VALUES (");
         let mut placeholders = builder.separated(", ");
-        for (_, value) in values {
-            push_admin_sql_value(&mut placeholders, value);
+        for (column, value) in values {
+            push_admin_sql_value(&mut placeholders, column, value);
         }
         placeholders.push_bind(now);
         placeholders.push_bind(now);
@@ -1010,20 +1008,20 @@ impl AdminService {
         values: &[(&str, AdminSqlValue)],
         now: i64,
     ) -> Result<(), ApiError> {
-        let mut builder = QueryBuilder::<MySql>::new(format!("UPDATE {table} SET "));
+        let mut builder = QueryBuilder::<Postgres>::new(format!("UPDATE {table} SET "));
         let mut first = true;
         for (column, value) in values {
             if !first {
                 builder.push(", ");
             }
             first = false;
-            builder.push(format!("`{column}` = "));
-            push_admin_sql_bind(&mut builder, value);
+            builder.push(format!("\"{column}\" = "));
+            push_admin_sql_bind(&mut builder, column, value);
         }
         if !first {
             builder.push(", ");
         }
-        builder.push("`updated_at` = ");
+        builder.push("\"updated_at\" = ");
         builder.push_bind(now);
         builder.push(" WHERE id = ");
         builder.push_bind(id);
@@ -1047,11 +1045,9 @@ mod generated_code_tests {
         assert!(source.contains("builder.push_values(codes"));
         assert!(source.contains("insert_unique_generated_code_batch"));
         assert!(source.contains("is_unique_violation"));
-        let coupon_migration = include_str!("../../../../migrations/0014_coupon_code_unique.sql");
-        let giftcard_migration =
-            include_str!("../../../../migrations/0015_giftcard_code_unique.sql");
-        assert!(coupon_migration.contains("ADD UNIQUE KEY `uniq_coupon_code` (`code`)"));
-        assert!(giftcard_migration.contains("ADD UNIQUE KEY `uniq_giftcard_code` (`code`)"));
+        let baseline = include_str!("../../../../migrations-postgres/0001_initial.sql");
+        assert!(baseline.contains("uniq_coupon_code"));
+        assert!(baseline.contains("uniq_giftcard_code"));
         let retired_row_loop = ["for _ in 0..", "count"].concat();
         assert!(!source.contains(&retired_row_loop));
     }

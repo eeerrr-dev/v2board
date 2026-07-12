@@ -4,13 +4,16 @@ use anyhow::{Result, bail};
 use chrono::Utc;
 use redis::AsyncCommands;
 use serde_json::{Value, json};
-use sqlx::MySqlPool;
+use sqlx::PgPool;
 
 pub async fn run() -> Result<()> {
-    let database_url = env_or("DATABASE_URL", "mysql://v2board:v2board@mysql:3306/v2board");
+    let database_url = env_or(
+        "DATABASE_URL",
+        "postgresql://v2board:v2board@postgres:5432/v2board",
+    );
     let redis_url = env_or("REDIS_URL", "redis://redis:6379/1");
     let strict = env_bool("WORKER_RECONCILE_STRICT", true);
-    let pool = MySqlPool::connect(&database_url).await?;
+    let pool = PgPool::connect(&database_url).await?;
     let redis = redis::Client::open(redis_url.as_str())?;
     let mut conn = redis.get_multiplexed_async_connection().await?;
     let now = Utc::now().timestamp();
@@ -83,7 +86,7 @@ pub async fn run() -> Result<()> {
 
     let expired_unpaid_orders = count_with_i64(
         &pool,
-        "SELECT COUNT(*) FROM v2_order WHERE status = 0 AND created_at <= ?",
+        "SELECT COUNT(*) FROM v2_order WHERE status = 0 AND created_at <= $1",
         now.saturating_sub(7_200),
     )
     .await?;
@@ -122,7 +125,7 @@ pub async fn run() -> Result<()> {
         FROM v2_ticket t
         WHERE t.status = 0
           AND t.reply_status = 1
-          AND t.updated_at <= ?
+          AND t.updated_at <= $1
           AND (
             SELECT tm.user_id
             FROM v2_ticket_message tm
@@ -161,7 +164,7 @@ pub async fn run() -> Result<()> {
     let yesterday = yesterday_start_timestamp();
     let stat_exists = count_with_i64(
         &pool,
-        "SELECT COUNT(*) FROM v2_stat WHERE record_at = ?",
+        "SELECT COUNT(*) FROM v2_stat WHERE record_at = $1",
         yesterday,
     )
     .await?;
@@ -218,14 +221,14 @@ fn report_reconcile_results(checks: &[ReconcileCheck], strict_mode: bool) -> Res
     Ok(())
 }
 
-async fn count(pool: &MySqlPool, sql: &'static str) -> Result<i64> {
+async fn count(pool: &PgPool, sql: &'static str) -> Result<i64> {
     sqlx::query_scalar::<_, i64>(sql)
         .fetch_one(pool)
         .await
         .map_err(Into::into)
 }
 
-async fn count_with_i64(pool: &MySqlPool, sql: &'static str, value: i64) -> Result<i64> {
+async fn count_with_i64(pool: &PgPool, sql: &'static str, value: i64) -> Result<i64> {
     sqlx::query_scalar::<_, i64>(sql)
         .bind(value)
         .fetch_one(pool)

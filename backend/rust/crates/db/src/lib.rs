@@ -12,6 +12,6 @@ pub mod ticket;
 pub mod user;
 
 pub use pool::{
-    DbInitError, DbPool, DbPoolConfig, connect_mysql, connect_mysql_with_config, migrate_mysql,
-    migrations_current,
+    DbInitError, DbPool, DbPoolConfig, DbTransaction, connect_postgres,
+    connect_postgres_with_config, installation_id, migrate_postgres, migrations_current,
 };

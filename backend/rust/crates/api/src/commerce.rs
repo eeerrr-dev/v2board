@@ -15,7 +15,7 @@ use crate::{
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct OrderFetchQuery {
-    status: Option<i8>,
+    status: Option<i16>,
     auth_data: Option<String>,
 }
 
@@ -44,7 +44,7 @@ pub(crate) async fn order_save(
 
 #[derive(Debug, Serialize)]
 pub(crate) struct CheckoutEnvelope {
-    r#type: i8,
+    r#type: i16,
     data: serde_json::Value,
 }
 
@@ -119,7 +119,7 @@ pub(crate) async fn order_check(
     State(state): State<AppState>,
     Query(query): Query<TradeNoQuery>,
     headers: HeaderMap,
-) -> Result<Json<LegacyEnvelope<i8>>, ApiError> {
+) -> Result<Json<LegacyEnvelope<i16>>, ApiError> {
     let user = require_user(&state, &headers, query.auth_data).await?;
     let status = v2board_db::order::find_order_status(&state.db, user.id, &query.trade_no)
         .await?

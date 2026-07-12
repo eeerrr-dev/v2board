@@ -1,9 +1,12 @@
 use chrono::{Datelike, Months, TimeZone, Utc};
 use rust_decimal::{Decimal, RoundingStrategy, prelude::ToPrimitive};
-use sqlx::{MySql, QueryBuilder, Transaction};
+use serde_json::json;
+use sqlx::types::Json;
+use sqlx::{Postgres, QueryBuilder};
 use uuid::Uuid;
 use v2board_compat::ApiError;
 use v2board_config::{app_now, app_timezone};
+use v2board_db::DbTransaction;
 use v2board_db::plan::PlanRow;
 
 use super::{
@@ -22,19 +25,19 @@ pub(super) fn checked_add_cents(
 }
 
 pub(super) async fn credit_user_balance(
-    tx: &mut Transaction<'_, MySql>,
+    tx: &mut DbTransaction<'_>,
     user_id: i64,
     credit: i32,
     overflow_message: &'static str,
 ) -> Result<(), ApiError> {
     let current_balance: i32 =
-        sqlx::query_scalar("SELECT balance FROM v2_user WHERE id = ? LIMIT 1 FOR UPDATE")
+        sqlx::query_scalar("SELECT balance FROM v2_user WHERE id = $1 LIMIT 1 FOR UPDATE")
             .bind(user_id)
             .fetch_optional(&mut **tx)
             .await?
             .ok_or_else(|| ApiError::legacy("The user does not exist"))?;
     let new_balance = checked_add_cents(current_balance, credit, overflow_message)?;
-    sqlx::query("UPDATE v2_user SET balance = ?, updated_at = ? WHERE id = ?")
+    sqlx::query("UPDATE v2_user SET balance = $1, updated_at = $2 WHERE id = $3")
         .bind(new_balance)
         .bind(Utc::now().timestamp())
         .bind(user_id)
@@ -46,7 +49,7 @@ pub(super) async fn credit_user_balance(
 impl OrderService {
     pub(super) async fn build_deposit_order(
         &self,
-        tx: &mut Transaction<'_, MySql>,
+        tx: &mut DbTransaction<'_>,
         user: UserForOrder,
         period: &str,
         deposit_amount: Option<i32>,
@@ -88,7 +91,7 @@ impl OrderService {
 
     pub(super) async fn build_plan_order(
         &self,
-        tx: &mut Transaction<'_, MySql>,
+        tx: &mut DbTransaction<'_>,
         mut user: UserForOrder,
         plan_id: i32,
         period: &str,
@@ -163,7 +166,7 @@ impl OrderService {
 
     async fn apply_coupon(
         &self,
-        tx: &mut Transaction<'_, MySql>,
+        tx: &mut DbTransaction<'_>,
         code: &str,
         draft: &mut DraftOrder,
     ) -> Result<(), ApiError> {
@@ -171,17 +174,17 @@ impl OrderService {
             r#"
             SELECT
                 id,
-                `type`,
+                "type",
                 value,
-                `show`,
+                "show",
                 limit_use,
                 limit_use_with_user,
-                limit_plan_ids,
-                limit_period,
+                limit_plan_ids::text AS limit_plan_ids,
+                limit_period::text AS limit_period,
                 started_at,
                 ended_at
             FROM v2_coupon
-            WHERE code = ?
+            WHERE lower(code) = lower($1)
             LIMIT 1
             FOR UPDATE
             "#,
@@ -210,10 +213,11 @@ impl OrderService {
             if limit_use <= 0 {
                 return Err(ApiError::legacy("Coupon failed"));
             }
-            let result = sqlx::query("UPDATE v2_coupon SET limit_use = limit_use - 1 WHERE id = ?")
-                .bind(coupon.id)
-                .execute(&mut **tx)
-                .await?;
+            let result =
+                sqlx::query("UPDATE v2_coupon SET limit_use = limit_use - 1 WHERE id = $1")
+                    .bind(coupon.id)
+                    .execute(&mut **tx)
+                    .await?;
             if result.rows_affected() == 0 {
                 return Err(ApiError::legacy("Coupon failed"));
             }
@@ -223,7 +227,7 @@ impl OrderService {
 
     async fn set_order_type(
         &self,
-        tx: &mut Transaction<'_, MySql>,
+        tx: &mut DbTransaction<'_>,
         user: &UserForOrder,
         plan: &PlanRow,
         draft: &mut DraftOrder,
@@ -265,7 +269,7 @@ impl OrderService {
 
     async fn apply_surplus_value(
         &self,
-        tx: &mut Transaction<'_, MySql>,
+        tx: &mut DbTransaction<'_>,
         user: &UserForOrder,
         draft: &mut DraftOrder,
     ) -> Result<(), ApiError> {
@@ -274,7 +278,7 @@ impl OrderService {
                 r#"
                 SELECT id, period, total_amount, balance_amount, surplus_amount, refund_amount, created_at
                 FROM v2_order
-                WHERE user_id = ? AND period = 'onetime_price' AND status = 3
+                WHERE user_id = $1 AND period = 'onetime_price' AND status = 3
                 ORDER BY id DESC
                 LIMIT 1
                 "#,
@@ -310,7 +314,7 @@ impl OrderService {
             r#"
             SELECT id, period, total_amount, balance_amount, surplus_amount, refund_amount, created_at
             FROM v2_order
-            WHERE user_id = ?
+            WHERE user_id = $1
               AND period != 'reset_price'
               AND period != 'onetime_price'
               AND period != 'deposit'
@@ -408,7 +412,7 @@ impl OrderService {
 
     async fn apply_balance(
         &self,
-        tx: &mut Transaction<'_, MySql>,
+        tx: &mut DbTransaction<'_>,
         user: &mut UserForOrder,
         draft: &mut DraftOrder,
     ) -> Result<(), ApiError> {
@@ -430,8 +434,8 @@ impl OrderService {
         let result = sqlx::query(
             r#"
             UPDATE v2_user
-            SET balance = balance - ?, updated_at = ?
-            WHERE id = ? AND balance >= ?
+            SET balance = balance - $1, updated_at = $2
+            WHERE id = $3 AND balance >= $4
             "#,
         )
         .bind(use_balance_cents)
@@ -451,7 +455,7 @@ impl OrderService {
 
     async fn set_invite(
         &self,
-        tx: &mut Transaction<'_, MySql>,
+        tx: &mut DbTransaction<'_>,
         user: &UserForOrder,
         draft: &mut DraftOrder,
     ) -> Result<(), ApiError> {
@@ -487,7 +491,7 @@ impl OrderService {
 
     pub(super) async fn open_order_in_tx(
         &self,
-        tx: &mut Transaction<'_, MySql>,
+        tx: &mut DbTransaction<'_>,
         order: OrderForCheckout,
     ) -> Result<(), ApiError> {
         if order.r#type == 9 {
@@ -504,7 +508,7 @@ impl OrderService {
                 "Deposit credit exceeds the supported balance range",
             )
             .await?;
-            sqlx::query("UPDATE v2_order SET status = 3, updated_at = ? WHERE id = ?")
+            sqlx::query("UPDATE v2_order SET status = 3, updated_at = $1 WHERE id = $2")
                 .bind(Utc::now().timestamp())
                 .bind(order.id)
                 .execute(&mut **tx)
@@ -544,7 +548,7 @@ impl OrderService {
         }
         user.speed_limit = plan.speed_limit;
         save_opened_user(tx, &user).await?;
-        sqlx::query("UPDATE v2_order SET status = 3, updated_at = ? WHERE id = ?")
+        sqlx::query("UPDATE v2_order SET status = 3, updated_at = $1 WHERE id = $2")
             .bind(Utc::now().timestamp())
             .bind(order.id)
             .execute(&mut **tx)
@@ -554,7 +558,7 @@ impl OrderService {
 }
 
 pub(super) async fn find_user_for_order(
-    tx: &mut Transaction<'_, MySql>,
+    tx: &mut DbTransaction<'_>,
     user_id: i64,
 ) -> Result<UserForOrder, ApiError> {
     sqlx::query_as::<_, UserForOrder>(USER_FOR_ORDER_SQL)
@@ -565,7 +569,7 @@ pub(super) async fn find_user_for_order(
 }
 
 async fn have_capacity(
-    tx: &mut Transaction<'_, MySql>,
+    tx: &mut DbTransaction<'_>,
     plan_id: i32,
     capacity_limit: Option<i32>,
 ) -> Result<bool, sqlx::Error> {
@@ -581,7 +585,7 @@ pub(super) fn capacity_has_slot(capacity_limit: i32, capacity_used: i64) -> bool
 }
 
 async fn validate_coupon(
-    tx: &mut Transaction<'_, MySql>,
+    tx: &mut DbTransaction<'_>,
     coupon: &CouponRow,
     draft: &DraftOrder,
 ) -> Result<(), ApiError> {
@@ -618,7 +622,7 @@ async fn validate_coupon(
             r#"
             SELECT COUNT(*)
             FROM v2_order
-            WHERE coupon_id = ? AND user_id = ? AND status NOT IN (0, 2)
+            WHERE coupon_id = $1 AND user_id = $2 AND status NOT IN (0, 2)
             "#,
         )
         .bind(coupon.id)
@@ -634,7 +638,7 @@ async fn validate_coupon(
     Ok(())
 }
 
-pub(super) fn validate_coupon_discount(coupon_type: i8, value: i32) -> Result<(), ApiError> {
+pub(super) fn validate_coupon_discount(coupon_type: i16, value: i32) -> Result<(), ApiError> {
     let valid = match coupon_type {
         1 => value >= 0,
         2 => (0..=100).contains(&value),
@@ -651,7 +655,7 @@ pub(super) fn validate_coupon_discount(coupon_type: i8, value: i32) -> Result<()
 /// `has_valid_order` is whether the buyer already has a completed order, which
 /// gates first-purchase-only commission (types 0 and 2).
 pub(super) fn commission_is_eligible(
-    commission_type: i8,
+    commission_type: i16,
     first_time_enable: bool,
     has_valid_order: bool,
 ) -> bool {
@@ -686,12 +690,9 @@ pub(super) fn commission_amount(
     total_amount * percent(rate)
 }
 
-async fn have_valid_order(
-    tx: &mut Transaction<'_, MySql>,
-    user_id: i64,
-) -> Result<bool, sqlx::Error> {
+async fn have_valid_order(tx: &mut DbTransaction<'_>, user_id: i64) -> Result<bool, sqlx::Error> {
     let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM v2_order WHERE user_id = ? AND status NOT IN (0, 2)",
+        "SELECT COUNT(*) FROM v2_order WHERE user_id = $1 AND status NOT IN (0, 2)",
     )
     .bind(user_id)
     .fetch_one(&mut **tx)
@@ -700,7 +701,7 @@ async fn have_valid_order(
 }
 
 async fn fetch_surplus_order_ids(
-    tx: &mut Transaction<'_, MySql>,
+    tx: &mut DbTransaction<'_>,
     user_id: i64,
     include_one_time: bool,
 ) -> Result<Option<Vec<i64>>, sqlx::Error> {
@@ -708,13 +709,13 @@ async fn fetch_surplus_order_ids(
         r#"
         SELECT id
         FROM v2_order
-        WHERE user_id = ? AND period != 'reset_price' AND status = 3
+        WHERE user_id = $1 AND period != 'reset_price' AND status = 3
         "#
     } else {
         r#"
         SELECT id
         FROM v2_order
-        WHERE user_id = ?
+        WHERE user_id = $1
           AND period != 'reset_price'
           AND period != 'onetime_price'
           AND period != 'deposit'
@@ -729,14 +730,11 @@ async fn fetch_surplus_order_ids(
 }
 
 pub(super) async fn insert_order(
-    tx: &mut Transaction<'_, MySql>,
+    tx: &mut DbTransaction<'_>,
     draft: &DraftOrder,
     now: i64,
 ) -> Result<(), ApiError> {
-    let surplus_order_ids = draft
-        .surplus_order_ids
-        .as_ref()
-        .map(|ids| serde_json::to_string(ids).expect("integer order IDs are JSON serializable"));
+    let surplus_order_ids = draft.surplus_order_ids.as_ref().map(|ids| Json(json!(ids)));
     let total_amount = round_cents(draft.total_amount)?;
     let discount_amount = draft.discount_amount.map(round_cents).transpose()?;
     let surplus_amount = draft.surplus_amount.map(round_cents).transpose()?;
@@ -750,7 +748,7 @@ pub(super) async fn insert_order(
             user_id,
             plan_id,
             coupon_id,
-            `type`,
+            "type",
             period,
             trade_no,
             total_amount,
@@ -765,7 +763,7 @@ pub(super) async fn insert_order(
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 0, 0, $14, $15, $16)
         "#,
     )
     .bind(draft.invite_user_id)
@@ -803,7 +801,7 @@ fn is_unfinished_order_unique_violation(error: &sqlx::Error) -> bool {
 }
 
 pub(super) async fn mark_order_paid(
-    tx: &mut Transaction<'_, MySql>,
+    tx: &mut DbTransaction<'_>,
     order_id: i64,
     callback_no: &str,
     now: i64,
@@ -813,8 +811,8 @@ pub(super) async fn mark_order_paid(
     sqlx::query(
         r#"
         UPDATE v2_order
-        SET status = 1, paid_at = ?, callback_no = ?, callback_no_hash = ?, updated_at = ?
-        WHERE id = ? AND status = 0
+        SET status = 1, paid_at = $1, callback_no = $2, callback_no_hash = $3, updated_at = $4
+        WHERE id = $5 AND status = 0
         "#,
     )
     .bind(now)
@@ -827,43 +825,40 @@ pub(super) async fn mark_order_paid(
     Ok(())
 }
 
-async fn mark_surplus_orders(
-    tx: &mut Transaction<'_, MySql>,
-    ids: &[i64],
-) -> Result<(), sqlx::Error> {
-    if ids.is_empty() {
-        return Ok(());
+async fn mark_surplus_orders(tx: &mut DbTransaction<'_>, ids: &[i64]) -> Result<(), sqlx::Error> {
+    for chunk in ids.chunks(500) {
+        let mut builder =
+            QueryBuilder::<Postgres>::new("UPDATE v2_order SET status = 4 WHERE id IN (");
+        let mut separated = builder.separated(", ");
+        for id in chunk {
+            separated.push_bind(id);
+        }
+        separated.push_unseparated(")");
+        builder.build().execute(&mut **tx).await?;
     }
-    let mut builder = QueryBuilder::<MySql>::new("UPDATE v2_order SET status = 4 WHERE id IN (");
-    let mut separated = builder.separated(", ");
-    for id in ids {
-        separated.push_bind(id);
-    }
-    separated.push_unseparated(")");
-    builder.build().execute(&mut **tx).await?;
     Ok(())
 }
 
 async fn save_opened_user(
-    tx: &mut Transaction<'_, MySql>,
+    tx: &mut DbTransaction<'_>,
     user: &UserForOrder,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
         UPDATE v2_user
         SET
-            balance = ?,
-            traffic_epoch = ?,
-            u = ?,
-            d = ?,
-            transfer_enable = ?,
-            device_limit = ?,
-            group_id = ?,
-            plan_id = ?,
-            speed_limit = ?,
-            expired_at = ?,
-            updated_at = ?
-        WHERE id = ?
+            balance = $1,
+            traffic_epoch = $2,
+            u = $3,
+            d = $4,
+            transfer_enable = $5,
+            device_limit = $6,
+            group_id = $7,
+            plan_id = $8,
+            speed_limit = $9,
+            expired_at = $10,
+            updated_at = $11
+        WHERE id = $12
         "#,
     )
     .bind(user.balance)
@@ -1173,7 +1168,7 @@ pub(super) fn round_cents(amount: Decimal) -> Result<i32, ApiError> {
         .ok_or_else(|| ApiError::legacy("Order amount is outside the supported range"))
 }
 
-pub(super) fn generate_order_no() -> String {
+pub fn generate_order_no() -> String {
     let now = app_now();
     let bytes = *Uuid::new_v4().as_bytes();
     let random = 10_000 + (u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) % 90_000);
@@ -1195,13 +1190,23 @@ fn parse_i64_json_list(value: Option<&str>) -> Option<Vec<i64>> {
         .filter(|items| !items.is_empty())
 }
 
-fn parse_i32_json_list(value: Option<&str>) -> Option<Vec<i32>> {
+pub(super) fn parse_i32_json_list(value: Option<&str>) -> Option<Vec<i32>> {
     let value = value?.trim();
     if value.is_empty() || value.eq_ignore_ascii_case("null") {
         return None;
     }
-    serde_json::from_str::<Vec<i32>>(value)
+    serde_json::from_str::<Vec<serde_json::Value>>(value)
         .ok()
+        .map(|items| {
+            items
+                .into_iter()
+                .filter_map(|item| {
+                    item.as_i64()
+                        .and_then(|value| i32::try_from(value).ok())
+                        .or_else(|| item.as_str().and_then(|value| value.parse::<i32>().ok()))
+                })
+                .collect::<Vec<_>>()
+        })
         .filter(|items| !items.is_empty())
 }
 
@@ -1234,7 +1239,7 @@ SELECT
     speed_limit,
     expired_at
 FROM v2_user
-WHERE id = ?
+WHERE id = $1
 LIMIT 1
 FOR UPDATE
 "#;
