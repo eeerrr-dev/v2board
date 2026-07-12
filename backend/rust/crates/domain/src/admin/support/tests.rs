@@ -589,3 +589,10 @@ fn csv_export_quotes_structural_characters_and_neutralizes_formulas() {
     assert_eq!(&record[1], "comma, quote \" and\nnewline");
     assert_eq!(&record[2], "'=HYPERLINK(\"https://evil.example\")");
 }
+
+#[test]
+fn payment_webhook_uuid_uses_the_full_uuid_entropy() {
+    let uuid = random_payment_uuid();
+    assert_eq!(uuid.len(), 32);
+    assert!(uuid.bytes().all(|byte| byte.is_ascii_hexdigit()));
+}

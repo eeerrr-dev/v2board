@@ -1,6 +1,8 @@
+use std::sync::OnceLock;
+
 use chrono::Utc;
-use redis::AsyncCommands;
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 use v2board_compat::ApiError;
 use v2board_config::duration_minutes_to_seconds;
@@ -8,11 +10,44 @@ use v2board_db as db;
 
 use super::password::password_needs_rehash;
 use super::validation::{
-    validate_change_password, validate_email, validate_forget, validate_password,
+    normalize_email, validate_change_password, validate_email, validate_forget, validate_password,
 };
+use super::verification::LimitedEmailCodeResult;
 use super::{AuthData, AuthService, cache_key, legacy_guid};
 
-#[derive(Debug, Clone, Deserialize)]
+static DUMMY_PASSWORD_HASH: OnceLock<String> = OnceLock::new();
+
+pub(super) const RESERVE_LOGIN_ATTEMPT_SCRIPT: &str = r#"
+local account_count = tonumber(redis.call('GET', KEYS[1]) or '0')
+local ip_count = tonumber(redis.call('GET', KEYS[2]) or '0')
+local account_ip_count = tonumber(redis.call('GET', KEYS[3]) or '0')
+if account_count >= tonumber(ARGV[1]) or
+   ip_count >= tonumber(ARGV[2]) or
+   account_ip_count >= tonumber(ARGV[1]) then
+    return 0
+end
+for index = 1, 3 do
+    local count = redis.call('INCR', KEYS[index])
+    if count == 1 then
+        redis.call('EXPIRE', KEYS[index], ARGV[3])
+    end
+end
+return 1
+"#;
+
+pub(super) const RELEASE_LOGIN_ATTEMPT_SCRIPT: &str = r#"
+for index = 1, 3 do
+    local count = tonumber(redis.call('GET', KEYS[index]) or '0')
+    if count <= 1 then
+        redis.call('DEL', KEYS[index])
+    else
+        redis.call('DECR', KEYS[index])
+    end
+end
+return 1
+"#;
+
+#[derive(Clone, Deserialize)]
 pub struct ForgetInput {
     pub email: String,
     pub email_code: String,
@@ -32,27 +67,39 @@ impl AuthService {
         // i.e. before the password-error rate limiter is touched.
         validate_email(email)?;
         validate_password(password)?;
+        let email = normalize_email(email);
 
         let password_error_limit = if self.config.password_limit_enable {
-            let key = cache_key("PASSWORD_ERROR_LIMIT", email);
-            let mut conn = self.redis.clone();
-            let count = conn.get::<_, Option<i64>>(&key).await?.unwrap_or(0);
-            if count >= self.config.password_limit_count {
+            let keys = login_limiter_keys(&email, ip.as_deref());
+            if !self.reserve_login_attempt(&keys).await? {
                 return Err(ApiError::legacy(format!(
                     "There are too many password errors, please try again after {} minutes.",
                     self.config.password_limit_expire
                 )));
             }
-            Some(key)
+            Some(keys)
         } else {
             None
         };
 
-        let user = db::user::find_user_for_auth(&self.db, email)
-            .await?
-            .ok_or_else(|| ApiError::legacy("Incorrect email or password"))?;
+        let user = match db::user::find_user_for_auth(&self.db, &email).await {
+            Ok(user) => user,
+            Err(error) => {
+                self.release_login_attempt(password_error_limit.as_ref())
+                    .await;
+                return Err(error.into());
+            }
+        };
+        let Some(user) = user else {
+            if let Err(error) = self.verify_dummy_password(password).await {
+                self.release_login_attempt(password_error_limit.as_ref())
+                    .await;
+                return Err(error);
+            }
+            return Err(ApiError::legacy("Incorrect email or password"));
+        };
 
-        if !self
+        let password_matches = match self
             .password_kdf
             .verify(
                 user.password_algo.as_deref(),
@@ -60,17 +107,23 @@ impl AuthService {
                 password,
                 &user.password,
             )
-            .await?
+            .await
         {
-            if let Some(key) = password_error_limit {
-                self.increment_counter_with_ttl(
-                    &key,
-                    duration_minutes_to_seconds(self.config.password_limit_expire),
-                )
-                .await?;
+            Ok(password_matches) => password_matches,
+            Err(error) => {
+                self.release_login_attempt(password_error_limit.as_ref())
+                    .await;
+                return Err(error);
             }
+        };
+        if !password_matches {
             return Err(ApiError::legacy("Incorrect email or password"));
         }
+
+        // The reservation represents only a password failure. Release it once
+        // the password is proven correct, while retaining prior failed counts.
+        self.release_login_attempt(password_error_limit.as_ref())
+            .await;
 
         if user.banned != 0 {
             return Err(ApiError::legacy("Your account has been suspended"));
@@ -91,8 +144,63 @@ impl AuthService {
             .await?;
         }
 
-        self.auth_data_for_user(user.id, Some(user.session_epoch), ip, user_agent)
+        self.auth_data_for_user(user.id, Some(user.session_epoch), ip, user_agent, true)
             .await
+    }
+
+    async fn reserve_login_attempt(&self, keys: &[String; 3]) -> Result<bool, ApiError> {
+        let mut conn = self.redis.clone();
+        let account_limit = self.config.password_limit_count.max(1);
+        let ip_limit = account_limit.saturating_mul(10);
+        let reserved = redis::Script::new(RESERVE_LOGIN_ATTEMPT_SCRIPT)
+            .key(&keys[0])
+            .key(&keys[1])
+            .key(&keys[2])
+            .arg(account_limit)
+            .arg(ip_limit)
+            .arg(duration_minutes_to_seconds(
+                self.config.password_limit_expire,
+            ))
+            .invoke_async::<i64>(&mut conn)
+            .await?;
+        Ok(reserved == 1)
+    }
+
+    async fn release_login_attempt(&self, keys: Option<&[String; 3]>) {
+        let Some(keys) = keys else {
+            return;
+        };
+        let mut conn = self.redis.clone();
+        if let Err(error) = redis::Script::new(RELEASE_LOGIN_ATTEMPT_SCRIPT)
+            .key(&keys[0])
+            .key(&keys[1])
+            .key(&keys[2])
+            .invoke_async::<i64>(&mut conn)
+            .await
+        {
+            tracing::warn!(?error, "login limiter reservation cleanup failed");
+        }
+    }
+
+    async fn verify_dummy_password(&self, password: &str) -> Result<(), ApiError> {
+        let hash = if let Some(hash) = DUMMY_PASSWORD_HASH.get() {
+            hash.clone()
+        } else {
+            let candidate = self
+                .password_kdf
+                .hash("v2board-dummy-password-not-an-account")
+                .await?;
+            let _ = DUMMY_PASSWORD_HASH.set(candidate);
+            DUMMY_PASSWORD_HASH
+                .get()
+                .expect("dummy password hash was initialized")
+                .clone()
+        };
+        let _ = self
+            .password_kdf
+            .verify(None, None, password, &hash)
+            .await?;
+        Ok(())
     }
 
     pub async fn forget(&self, input: ForgetInput) -> Result<bool, ApiError> {
@@ -107,17 +215,23 @@ impl AuthService {
         let email = input.email.trim();
         let cache_email = email.to_ascii_lowercase();
         let limit_key = cache_key("FORGET_REQUEST_LIMIT", &cache_email);
-        let mut conn = self.redis.clone();
-        let count = conn.get::<_, Option<i64>>(&limit_key).await?.unwrap_or(0);
-        if count >= 3 {
-            return Err(ApiError::legacy("Reset failed, Please try again later"));
-        }
-        if !self
-            .consume_email_code(&cache_email, Some(input.email_code.as_str()))
+        match self
+            .consume_email_code_with_failure_limit(
+                &cache_email,
+                &input.email_code,
+                &limit_key,
+                3,
+                300,
+            )
             .await?
         {
-            self.increment_counter_with_ttl(&limit_key, 300).await?;
-            return Err(ApiError::legacy("Incorrect email verification code"));
+            LimitedEmailCodeResult::Consumed => {}
+            LimitedEmailCodeResult::Incorrect => {
+                return Err(ApiError::legacy("Incorrect email verification code"));
+            }
+            LimitedEmailCodeResult::Limited => {
+                return Err(ApiError::legacy("Reset failed, Please try again later"));
+            }
         }
         let user = db::user::find_user_for_auth(&self.db, email)
             .await?
@@ -199,4 +313,26 @@ impl AuthService {
         }
         Ok(self.config.subscribe_url_for_token(&token))
     }
+}
+
+pub(super) fn login_limiter_keys(email: &str, ip: Option<&str>) -> [String; 3] {
+    let email = normalize_email(email);
+    let ip = ip
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("no-client-ip");
+    [
+        format!("PASSWORD_ERROR_LIMIT_ACCOUNT_{}", digest_key(&email)),
+        format!("PASSWORD_ERROR_LIMIT_IP_{}", digest_key(ip)),
+        format!(
+            "PASSWORD_ERROR_LIMIT_ACCOUNT_IP_{}",
+            digest_key(&format!("{email}\0{ip}"))
+        ),
+    ]
+}
+
+fn digest_key(value: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(value.as_bytes());
+    hex::encode(hasher.finalize())
 }

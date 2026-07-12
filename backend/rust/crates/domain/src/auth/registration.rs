@@ -1,5 +1,4 @@
 use chrono::Utc;
-use redis::AsyncCommands;
 use serde::Deserialize;
 use sqlx::{MySql, Transaction};
 use v2board_compat::ApiError;
@@ -8,7 +7,40 @@ use v2board_config::duration_minutes_to_seconds;
 use super::validation::{validate_email, validate_password};
 use super::{AuthData, AuthService, cache_key, legacy_guid};
 
-#[derive(Debug, Clone, Deserialize)]
+pub(super) const MAX_INVITE_CODE_BYTES: usize = 255;
+pub(super) const MAX_EMAIL_CODE_BYTES: usize = 64;
+pub(super) const MAX_RECAPTCHA_DATA_BYTES: usize = 4096;
+
+pub(super) const RESERVE_REGISTRATION_SLOT_SCRIPT: &str = r#"
+local now = tonumber(ARGV[1])
+local expires_at = tonumber(ARGV[2])
+local limit = tonumber(ARGV[3])
+local token = ARGV[4]
+
+redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now)
+if redis.call('ZCARD', KEYS[1]) >= limit then
+    return 0
+end
+
+redis.call('ZADD', KEYS[1], 'NX', expires_at, token)
+redis.call('EXPIREAT', KEYS[1], expires_at)
+return 1
+"#;
+
+pub(super) const RELEASE_REGISTRATION_SLOT_SCRIPT: &str = r#"
+local removed = redis.call('ZREM', KEYS[1], ARGV[1])
+if redis.call('ZCARD', KEYS[1]) == 0 then
+    redis.call('DEL', KEYS[1])
+end
+return removed
+"#;
+
+struct RegistrationLimitReservation {
+    key: String,
+    token: String,
+}
+
+#[derive(Clone, Deserialize)]
 pub struct RegisterInput {
     pub email: String,
     pub password: String,
@@ -34,115 +66,112 @@ impl AuthService {
         // EMAIL_VERIFY_CODE cache key is lowercased (`strtolower(trim($email))`).
         let email = input.email.trim();
         let cache_email = email.to_ascii_lowercase();
+        validate_registration_auxiliary_inputs(&input)?;
 
-        if let Some(ip) = ip.as_deref()
-            && self.config.register_limit_by_ip_enable
-        {
-            let key = cache_key("REGISTER_IP_RATE_LIMIT", ip);
-            let mut conn = self.redis.clone();
-            let count = conn.get::<_, Option<i64>>(&key).await?.unwrap_or(0);
-            if count >= self.config.register_limit_count {
-                return Err(ApiError::legacy(format!(
-                    "Register frequently, please try again after {} minute",
-                    self.config.register_limit_expire
-                )));
+        let reservation = self.reserve_registration_slot(ip.as_deref()).await?;
+        let registration: Result<i64, ApiError> = async {
+            self.verify_recaptcha(input.recaptcha_data.as_deref())
+                .await?;
+            self.validate_register_email(email).await?;
+            if self.config.stop_register {
+                return Err(ApiError::legacy("Registration has closed"));
             }
-        }
-        self.verify_recaptcha(input.recaptcha_data.as_deref())
-            .await?;
-        self.validate_register_email(email).await?;
-        if self.config.stop_register {
-            return Err(ApiError::legacy("Registration has closed"));
-        }
-        if self.config.invite_force
-            && input
-                .invite_code
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .is_none()
-        {
-            return Err(ApiError::legacy(
-                "You must use the invitation code to register",
-            ));
-        }
-        if self.config.email_verify
-            && !self
-                .consume_email_code(&cache_email, input.email_code.as_deref())
-                .await?
-        {
-            return Err(ApiError::legacy("Incorrect email verification code"));
-        }
-
-        let password_hash = self.password_kdf.hash(&input.password).await?;
-        let uuid = legacy_guid(true);
-        let token = legacy_guid(false);
-        let now = Utc::now().timestamp();
-        let mut tx = self.db.begin().await?;
-
-        if email_exists_for_update(&mut tx, email).await? {
-            return Err(ApiError::legacy("Email already exists"));
-        }
-
-        let invite_user_id = self
-            .consume_invite_code(&mut tx, input.invite_code.as_deref())
-            .await?;
-        let trial = self.trial_plan(&mut tx).await?;
-
-        let result = sqlx::query(
-            r#"
-            INSERT INTO v2_user (
-                invite_user_id, email, password, uuid, token, transfer_enable, device_limit,
-                group_id, plan_id, speed_limit, expired_at, last_login_at, created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            "#,
-        )
-        .bind(invite_user_id)
-        .bind(email)
-        .bind(password_hash)
-        .bind(uuid)
-        .bind(token)
-        .bind(trial.transfer_enable)
-        .bind(trial.device_limit)
-        .bind(trial.group_id)
-        .bind(trial.plan_id)
-        .bind(trial.speed_limit)
-        .bind(trial.expired_at)
-        .bind(now)
-        .bind(now)
-        .bind(now)
-        .execute(&mut *tx)
-        .await?;
-        let user_id = result.last_insert_id() as i64;
-        tx.commit().await?;
-
-        if let Some(ip) = ip.as_deref()
-            && self.config.register_limit_by_ip_enable
-        {
-            let key = cache_key("REGISTER_IP_RATE_LIMIT", ip);
-            if let Err(error) = self
-                .increment_counter_with_ttl(
-                    &key,
-                    duration_minutes_to_seconds(self.config.register_limit_expire),
-                )
-                .await
+            if self.config.invite_force
+                && input
+                    .invite_code
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .is_none()
             {
-                tracing::warn!(
-                    ?error,
-                    user_id,
-                    ip,
-                    "registration IP limiter update failed after committed account creation"
-                );
+                return Err(ApiError::legacy(
+                    "You must use the invitation code to register",
+                ));
             }
-        }
+            if self.config.email_verify
+                && !self
+                    .consume_email_code(&cache_email, input.email_code.as_deref())
+                    .await?
+            {
+                return Err(ApiError::legacy("Incorrect email verification code"));
+            }
 
-        self.auth_data_for_user(user_id, Some(0), ip, user_agent)
+            let password_hash = self.password_kdf.hash(&input.password).await?;
+            let uuid = legacy_guid(true);
+            let token = legacy_guid(false);
+            let now = Utc::now().timestamp();
+            let mut tx = self.db.begin().await?;
+
+            // Do not next-key lock a missing email before the shared invite
+            // row. Concurrent registrations for different addresses otherwise
+            // hold compatible email gaps, then one waits on the invite while
+            // the invite holder waits for the other's insert intention (1213).
+            // The unique email index is the authoritative race-free check; an
+            // insert conflict rolls this transaction's invite consumption back.
+            let invite_user_id = self
+                .consume_invite_code(&mut tx, input.invite_code.as_deref())
+                .await?;
+            let trial = self.trial_plan(&mut tx).await?;
+
+            let result = sqlx::query(
+                r#"
+                INSERT INTO v2_user (
+                    invite_user_id, email, password, uuid, token, transfer_enable, device_limit,
+                    group_id, plan_id, speed_limit, expired_at, last_login_at, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                "#,
+            )
+            .bind(invite_user_id)
+            .bind(email)
+            .bind(password_hash)
+            .bind(uuid)
+            .bind(token)
+            .bind(trial.transfer_enable)
+            .bind(trial.device_limit)
+            .bind(trial.group_id)
+            .bind(trial.plan_id)
+            .bind(trial.speed_limit)
+            .bind(trial.expired_at)
+            .bind(now)
+            .bind(now)
+            .bind(now)
+            .execute(&mut *tx)
+            .await
+            .map_err(|error| {
+                if is_email_unique_violation(&error) {
+                    ApiError::legacy("Email already exists")
+                } else {
+                    ApiError::Database(error)
+                }
+            })?;
+            let user_id = result.last_insert_id() as i64;
+            tx.commit().await?;
+            Ok(user_id)
+        }
+        .await;
+        let user_id = match registration {
+            Ok(user_id) => user_id,
+            Err(error) => {
+                if let Some(reservation) = reservation.as_ref() {
+                    self.release_registration_slot(reservation).await;
+                }
+                return Err(error);
+            }
+        };
+
+        self.auth_data_for_user(user_id, Some(0), ip, user_agent, true)
             .await
     }
 
     pub async fn passport_pv(&self, invite_code: Option<&str>) -> Result<bool, ApiError> {
         if let Some(invite_code) = invite_code.map(str::trim).filter(|value| !value.is_empty()) {
+            if invite_code.len() > MAX_INVITE_CODE_BYTES {
+                return Err(ApiError::validation_field(
+                    "invite_code",
+                    "Invalid invitation code",
+                ));
+            }
             sqlx::query("UPDATE v2_invite_code SET pv = pv + 1, updated_at = ? WHERE code = ?")
                 .bind(Utc::now().timestamp())
                 .bind(invite_code)
@@ -161,7 +190,7 @@ impl AuthService {
             return Ok(None);
         };
         let row = sqlx::query_as::<_, InviteCodeRow>(
-            "SELECT id, user_id FROM v2_invite_code WHERE code = ? AND status = 0 LIMIT 1",
+            "SELECT id, user_id FROM v2_invite_code WHERE code = ? AND status = 0 LIMIT 1 FOR UPDATE",
         )
         .bind(code)
         .fetch_optional(&mut **tx)
@@ -173,13 +202,68 @@ impl AuthService {
             return Ok(None);
         };
         if !self.config.invite_never_expire {
-            sqlx::query("UPDATE v2_invite_code SET status = 1, updated_at = ? WHERE id = ?")
-                .bind(Utc::now().timestamp())
-                .bind(row.id)
-                .execute(&mut **tx)
-                .await?;
+            let result = sqlx::query(
+                "UPDATE v2_invite_code SET status = 1, updated_at = ? WHERE id = ? AND status = 0",
+            )
+            .bind(Utc::now().timestamp())
+            .bind(row.id)
+            .execute(&mut **tx)
+            .await?;
+            if result.rows_affected() != 1 {
+                return Err(ApiError::legacy("Invalid invitation code"));
+            }
         }
         Ok(Some(row.user_id))
+    }
+
+    async fn reserve_registration_slot(
+        &self,
+        ip: Option<&str>,
+    ) -> Result<Option<RegistrationLimitReservation>, ApiError> {
+        let Some(ip) = ip.filter(|_| self.config.register_limit_by_ip_enable) else {
+            return Ok(None);
+        };
+        let key = cache_key("REGISTER_IP_RATE_LIMIT_V2", ip);
+        let token = legacy_guid(false);
+        let now = Utc::now().timestamp();
+        let ttl = i64::try_from(duration_minutes_to_seconds(
+            self.config.register_limit_expire,
+        ))
+        .unwrap_or(i64::MAX)
+        .max(1);
+        let expires_at = now.saturating_add(ttl);
+        let mut conn = self.redis.clone();
+        let reserved = redis::Script::new(RESERVE_REGISTRATION_SLOT_SCRIPT)
+            .key(&key)
+            .arg(now)
+            .arg(expires_at)
+            .arg(self.config.register_limit_count)
+            .arg(&token)
+            .invoke_async::<i64>(&mut conn)
+            .await?;
+        if reserved != 1 {
+            return Err(ApiError::legacy(format!(
+                "Register frequently, please try again after {} minute",
+                self.config.register_limit_expire
+            )));
+        }
+        Ok(Some(RegistrationLimitReservation { key, token }))
+    }
+
+    async fn release_registration_slot(&self, reservation: &RegistrationLimitReservation) {
+        let mut conn = self.redis.clone();
+        if let Err(error) = redis::Script::new(RELEASE_REGISTRATION_SLOT_SCRIPT)
+            .key(&reservation.key)
+            .arg(&reservation.token)
+            .invoke_async::<i64>(&mut conn)
+            .await
+        {
+            tracing::warn!(
+                ?error,
+                key = %reservation.key,
+                "failed to release registration IP limiter reservation"
+            );
+        }
     }
 
     async fn trial_plan(&self, tx: &mut Transaction<'_, MySql>) -> Result<TrialPlan, ApiError> {
@@ -212,16 +296,49 @@ impl AuthService {
     }
 }
 
-async fn email_exists_for_update(
-    tx: &mut Transaction<'_, MySql>,
-    email: &str,
-) -> Result<bool, sqlx::Error> {
-    let id =
-        sqlx::query_scalar::<_, i64>("SELECT id FROM v2_user WHERE email = ? LIMIT 1 FOR UPDATE")
-            .bind(email)
-            .fetch_optional(&mut **tx)
-            .await?;
-    Ok(id.is_some())
+pub(super) fn validate_registration_auxiliary_inputs(
+    input: &RegisterInput,
+) -> Result<(), ApiError> {
+    if input
+        .invite_code
+        .as_deref()
+        .is_some_and(|value| value.len() > MAX_INVITE_CODE_BYTES)
+    {
+        return Err(ApiError::validation_field(
+            "invite_code",
+            "Invalid invitation code",
+        ));
+    }
+    if input
+        .email_code
+        .as_deref()
+        .is_some_and(|value| value.len() > MAX_EMAIL_CODE_BYTES)
+    {
+        return Err(ApiError::validation_field(
+            "email_code",
+            "Incorrect email verification code",
+        ));
+    }
+    if input
+        .recaptcha_data
+        .as_deref()
+        .is_some_and(|value| value.len() > MAX_RECAPTCHA_DATA_BYTES)
+    {
+        return Err(ApiError::validation_field(
+            "recaptcha_data",
+            "Invalid code is incorrect",
+        ));
+    }
+    Ok(())
+}
+
+fn is_email_unique_violation(error: &sqlx::Error) -> bool {
+    error.as_database_error().is_some_and(|error| {
+        error.is_unique_violation()
+            && (error.constraint() == Some("email")
+                || error.message().contains("v2_user.email")
+                || error.message().contains("for key 'email'"))
+    })
 }
 
 #[derive(Debug, sqlx::FromRow)]

@@ -14,6 +14,7 @@ use serde_json::{Map, Value};
 /// enough for every subscription/rate-limit use while keeping Redis expiry and
 /// timestamp arithmetic inside a small, predictable range.
 pub const MAX_CONFIG_DURATION_MINUTES: i64 = 365 * 24 * 60;
+const DEFAULT_PRIVILEGED_SESSION_TTL_SECONDS: i64 = 30 * 60;
 
 /// Convert a validated minute setting to seconds. The clamp is a final defense
 /// for manually constructed `AppConfig` values in embedders/tests; normal file
@@ -43,17 +44,66 @@ pub struct RuntimePaths {
     pub rules: PathBuf,
 }
 
-#[derive(Clone, Debug)]
+/// Deployment mode is parsed once and shared by every security-sensitive
+/// default. Keeping this typed prevents `prod` and `production` from being
+/// interpreted differently by configuration and runtime code.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum RuntimeEnvironment {
+    #[default]
+    Local,
+    Development,
+    Testing,
+    Staging,
+    Production,
+}
+
+impl RuntimeEnvironment {
+    pub fn parse(value: Option<&str>) -> Result<Self, &'static str> {
+        match value.map(str::trim).filter(|value| !value.is_empty()) {
+            None => Ok(Self::Local),
+            Some(value) if value.eq_ignore_ascii_case("local") => Ok(Self::Local),
+            Some(value) if value.eq_ignore_ascii_case("dev") => Ok(Self::Development),
+            Some(value) if value.eq_ignore_ascii_case("development") => Ok(Self::Development),
+            Some(value) if value.eq_ignore_ascii_case("test") => Ok(Self::Testing),
+            Some(value) if value.eq_ignore_ascii_case("testing") => Ok(Self::Testing),
+            Some(value) if value.eq_ignore_ascii_case("stage") => Ok(Self::Staging),
+            Some(value) if value.eq_ignore_ascii_case("staging") => Ok(Self::Staging),
+            Some(value) if value.eq_ignore_ascii_case("prod") => Ok(Self::Production),
+            Some(value) if value.eq_ignore_ascii_case("production") => Ok(Self::Production),
+            Some(_) => {
+                Err("V2BOARD_ENV must be local, development, testing, staging, or production")
+            }
+        }
+    }
+
+    pub const fn is_production(self) -> bool {
+        matches!(self, Self::Production)
+    }
+}
+
+// Do not derive Debug: this snapshot contains database, Redis, SMTP, recaptcha,
+// Telegram and server credentials. An accidental `?config` log must not expose
+// the complete secret-bearing configuration.
+#[derive(Clone)]
 pub struct AppConfig {
+    pub environment: RuntimeEnvironment,
     pub bind_addr: String,
     pub database_url: String,
     pub redis_url: String,
+    pub cors_allowed_origins: Vec<String>,
     pub trusted_proxy_cidrs: Vec<IpNet>,
     pub http_connect_timeout_seconds: u64,
     pub http_request_timeout_seconds: u64,
     pub api_request_timeout_seconds: u64,
     pub password_kdf_max_parallel: usize,
     pub auth_session_ttl_seconds: u64,
+    pub privileged_auth_session_ttl_seconds: u64,
+    pub auth_session_max_per_user: usize,
+    pub privileged_step_up_enable: bool,
+    pub privileged_step_up_ttl_seconds: u64,
+    pub privileged_step_up_max_attempts: u64,
+    pub privileged_step_up_attempt_window_seconds: u64,
+    pub legacy_auth_params_enable: bool,
     pub legacy_jwt_cutoff_unix: i64,
     pub runtime_paths: RuntimePaths,
     pub app_key: String,
@@ -116,6 +166,8 @@ pub struct AppConfig {
     pub ticket_status: i32,
     pub commission_withdraw_limit: i32,
     pub server_token: Option<String>,
+    pub server_legacy_token_enable: bool,
+    pub server_require_idempotency_key: bool,
     pub server_api_url: Option<String>,
     pub server_push_interval: i32,
     pub server_pull_interval: i32,
@@ -174,22 +226,94 @@ impl AppConfig {
                 format!("failed to load {}: {error}", runtime_paths.config.display()),
             )
         })?;
-        let app_key = resolve_app_key(env_opt("V2BOARD_ENV").as_deref(), env_opt("APP_KEY"))
+        validate_scalar_config(&file_config)?;
+        let environment = RuntimeEnvironment::parse(env_opt("V2BOARD_ENV").as_deref())
             .map_err(|message| io::Error::new(io::ErrorKind::InvalidInput, message))?;
+        let app_key = resolve_app_key(environment, env_opt("APP_KEY"))
+            .map_err(|message| io::Error::new(io::ErrorKind::InvalidInput, message))?;
+        let database_url = env_or("DATABASE_URL", "mysql://v2board:v2board@mysql:3306/v2board");
+        let redis_url = env_or("REDIS_URL", "redis://redis:6379/1");
+        validate_datastore_transport(environment, &database_url, &redis_url)?;
+        let server_token = config_or_env(&file_config, "server_token", "V2BOARD_SERVER_TOKEN");
+        validate_production_secret(environment, "server_token", server_token.as_deref())?;
+
+        let trusted_proxy_cidrs = parse_trusted_proxy_cidrs(&file_config)?;
+
+        let force_https = config_bool(
+            &file_config,
+            "force_https",
+            "V2BOARD_FORCE_HTTPS",
+            environment.is_production(),
+        );
+        let app_url = config_or_env(&file_config, "app_url", "APP_URL");
+        let cors_allowed_origins = load_cors_allowed_origins(&file_config, app_url.as_deref())?;
+        validate_https_configuration(
+            force_https,
+            app_url.as_deref(),
+            !trusted_proxy_cidrs.is_empty(),
+        )?;
+
+        let auth_session_ttl_seconds = config_i64(
+            &file_config,
+            "auth_session_ttl_seconds",
+            "V2BOARD_AUTH_SESSION_TTL_SECONDS",
+            30 * 24 * 60 * 60,
+        )
+        .clamp(60 * 60, 365 * 24 * 60 * 60) as u64;
+        // Keep the built-in admin client usable without weakening the mutation
+        // gate: a password-authenticated privileged session is deliberately
+        // short, and its initial recent-authentication window covers that same
+        // lifetime. Clients that opt into a longer privileged session must use
+        // the explicit step-up endpoint after the configured window.
+        let privileged_default = DEFAULT_PRIVILEGED_SESSION_TTL_SECONDS;
+        let privileged_auth_session_ttl_seconds = config_i64(
+            &file_config,
+            "privileged_auth_session_ttl_seconds",
+            "V2BOARD_PRIVILEGED_AUTH_SESSION_TTL_SECONDS",
+            privileged_default,
+        )
+        .clamp(15 * 60, 7 * 24 * 60 * 60) as u64;
+        if privileged_auth_session_ttl_seconds >= auth_session_ttl_seconds {
+            return Err(invalid_setting(
+                "privileged_auth_session_ttl_seconds",
+                "must be shorter than auth_session_ttl_seconds",
+            ));
+        }
+        let privileged_step_up_ttl_seconds = config_i64(
+            &file_config,
+            "privileged_step_up_ttl_seconds",
+            "V2BOARD_PRIVILEGED_STEP_UP_TTL_SECONDS",
+            privileged_auth_session_ttl_seconds as i64,
+        )
+        .clamp(60, 60 * 60) as u64;
+        if privileged_step_up_ttl_seconds > privileged_auth_session_ttl_seconds {
+            return Err(invalid_setting(
+                "privileged_step_up_ttl_seconds",
+                "must not exceed privileged_auth_session_ttl_seconds",
+            ));
+        }
+        let privileged_step_up_max_attempts = config_i64(
+            &file_config,
+            "privileged_step_up_max_attempts",
+            "V2BOARD_PRIVILEGED_STEP_UP_MAX_ATTEMPTS",
+            5,
+        )
+        .clamp(1, 20) as u64;
+        let privileged_step_up_attempt_window_seconds = config_i64(
+            &file_config,
+            "privileged_step_up_attempt_window_seconds",
+            "V2BOARD_PRIVILEGED_STEP_UP_ATTEMPT_WINDOW_SECONDS",
+            15 * 60,
+        )
+        .clamp(60, 24 * 60 * 60) as u64;
 
         Ok(Self {
+            environment,
             bind_addr: env_or("RUST_BIND_ADDR", "0.0.0.0:8080"),
-            database_url: env_or("DATABASE_URL", "mysql://v2board:v2board@mysql:3306/v2board"),
-            redis_url: env_or("REDIS_URL", "redis://redis:6379/1"),
-            trusted_proxy_cidrs: config_list(
-                &file_config,
-                "trusted_proxy_cidrs",
-                "V2BOARD_TRUSTED_PROXY_CIDRS",
-                &[],
-            )
-            .into_iter()
-            .filter_map(|cidr| cidr.parse::<IpNet>().ok())
-            .collect(),
+            database_url,
+            redis_url,
+            cors_allowed_origins,
+            trusted_proxy_cidrs,
             http_connect_timeout_seconds: config_i64(
                 &file_config,
                 "http_connect_timeout_seconds",
@@ -218,13 +342,30 @@ impl AppConfig {
                 4,
             )
             .clamp(1, 64) as usize,
-            auth_session_ttl_seconds: config_i64(
+            auth_session_ttl_seconds,
+            privileged_auth_session_ttl_seconds,
+            auth_session_max_per_user: config_i64(
                 &file_config,
-                "auth_session_ttl_seconds",
-                "V2BOARD_AUTH_SESSION_TTL_SECONDS",
-                30 * 24 * 60 * 60,
+                "auth_session_max_per_user",
+                "V2BOARD_AUTH_SESSION_MAX_PER_USER",
+                20,
             )
-            .clamp(60 * 60, 365 * 24 * 60 * 60) as u64,
+            .clamp(1, 100) as usize,
+            privileged_step_up_enable: config_bool(
+                &file_config,
+                "privileged_step_up_enable",
+                "V2BOARD_PRIVILEGED_STEP_UP_ENABLE",
+                environment.is_production(),
+            ),
+            privileged_step_up_ttl_seconds,
+            privileged_step_up_max_attempts,
+            privileged_step_up_attempt_window_seconds,
+            legacy_auth_params_enable: config_bool(
+                &file_config,
+                "legacy_auth_params_enable",
+                "V2BOARD_LEGACY_AUTH_PARAMS_ENABLE",
+                !environment.is_production(),
+            ),
             legacy_jwt_cutoff_unix: config_i64(
                 &file_config,
                 "legacy_jwt_cutoff_unix",
@@ -236,7 +377,7 @@ impl AppConfig {
             app_key,
             app_name: config_or_env(&file_config, "app_name", "V2BOARD_APP_NAME")
                 .unwrap_or_else(|| "V2Board".to_string()),
-            app_url: config_or_env(&file_config, "app_url", "APP_URL"),
+            app_url,
             app_description: config_or_env(
                 &file_config,
                 "app_description",
@@ -245,7 +386,7 @@ impl AppConfig {
             .or_else(|| Some("V2Board is best".to_string())),
             logo: config_or_env(&file_config, "logo", "V2BOARD_LOGO"),
             tos_url: config_or_env(&file_config, "tos_url", "V2BOARD_TOS_URL"),
-            force_https: config_bool(&file_config, "force_https", "V2BOARD_FORCE_HTTPS", false),
+            force_https,
             email_verify: config_bool(&file_config, "email_verify", "V2BOARD_EMAIL_VERIFY", false),
             email_template: config_or_env(&file_config, "email_template", "V2BOARD_EMAIL_TEMPLATE"),
             email_host: config_or_env(&file_config, "email_host", "V2BOARD_EMAIL_HOST"),
@@ -321,7 +462,7 @@ impl AppConfig {
                 &file_config,
                 "register_limit_by_ip_enable",
                 "V2BOARD_REGISTER_LIMIT_BY_IP_ENABLE",
-                false,
+                register_ip_limit_default(environment),
             ),
             register_limit_count: config_i64(
                 &file_config,
@@ -500,7 +641,19 @@ impl AppConfig {
                 "V2BOARD_COMMISSION_WITHDRAW_LIMIT",
                 100,
             ),
-            server_token: config_or_env(&file_config, "server_token", "V2BOARD_SERVER_TOKEN"),
+            server_token,
+            server_legacy_token_enable: config_bool(
+                &file_config,
+                "server_legacy_token_enable",
+                "V2BOARD_SERVER_LEGACY_TOKEN_ENABLE",
+                !environment.is_production(),
+            ),
+            server_require_idempotency_key: config_bool(
+                &file_config,
+                "server_require_idempotency_key",
+                "V2BOARD_SERVER_REQUIRE_IDEMPOTENCY_KEY",
+                environment.is_production(),
+            ),
             server_api_url: config_or_env(&file_config, "server_api_url", "V2BOARD_SERVER_API_URL"),
             server_push_interval: config_i32(
                 &file_config,
@@ -669,6 +822,20 @@ impl AppConfig {
     pub fn admin_api_route(&self) -> String {
         format!("/api/v1/{}/{{*admin_path}}", self.admin_path())
     }
+
+    /// Validates the security-sensitive cross-field portion of an admin config
+    /// update before the file is persisted. Runtime reload is therefore not the
+    /// first point at which a bad production secret or HTTPS combination is
+    /// discovered.
+    pub fn validate_security_update(
+        &self,
+        server_token: Option<&str>,
+        force_https: bool,
+        app_url: Option<&str>,
+    ) -> io::Result<()> {
+        validate_production_secret(self.environment, "server_token", server_token)?;
+        validate_https_configuration(force_https, app_url, !self.trusted_proxy_cidrs.is_empty())
+    }
 }
 
 impl RuntimePaths {
@@ -695,6 +862,10 @@ fn env_or(key: &str, default: &str) -> String {
         .unwrap_or_else(|| default.to_string())
 }
 
+const fn register_ip_limit_default(environment: RuntimeEnvironment) -> bool {
+    environment.is_production()
+}
+
 fn env_opt(key: &str) -> Option<String> {
     env::var(key)
         .ok()
@@ -707,18 +878,567 @@ fn env_path(keys: &[&str]) -> Option<PathBuf> {
 }
 
 fn resolve_app_key(
-    environment: Option<&str>,
+    environment: RuntimeEnvironment,
     configured: Option<String>,
 ) -> Result<String, &'static str> {
-    let production = environment.is_some_and(|value| value.eq_ignore_ascii_case("production"));
-    if production
-        && configured
-            .as_deref()
-            .is_none_or(|value| value == "local-rust-dev-key")
-    {
-        return Err("APP_KEY must be explicitly configured for production");
+    if environment.is_production() {
+        let Some(key) = configured.as_deref() else {
+            return Err("APP_KEY must be explicitly configured for production");
+        };
+        if key.len() < 32 {
+            return Err("APP_KEY must contain at least 32 bytes of secret material in production");
+        }
+        if is_obvious_secret_placeholder(key) {
+            return Err("APP_KEY must not be a placeholder in production");
+        }
     }
     Ok(configured.unwrap_or_else(|| "local-rust-dev-key".to_string()))
+}
+
+fn validate_https_configuration(
+    force_https: bool,
+    app_url: Option<&str>,
+    has_trusted_proxy: bool,
+) -> io::Result<()> {
+    if !force_https {
+        return Ok(());
+    }
+    let Some(url) = app_url else {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "app_url/APP_URL is required when force_https is enabled",
+        ));
+    };
+    let Some(authority) = url.strip_prefix("https://") else {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "app_url/APP_URL must use https when force_https is enabled",
+        ));
+    };
+    if authority
+        .split(['/', '?', '#'])
+        .next()
+        .is_none_or(|host| host.is_empty() || host.contains('@'))
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "app_url/APP_URL must contain a valid HTTPS authority",
+        ));
+    }
+    if !has_trusted_proxy {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "trusted_proxy_cidrs is required when force_https is enabled",
+        ));
+    }
+    Ok(())
+}
+
+/// Production database credentials and application data must not cross the
+/// network in clear text. Local/development Compose intentionally remains on
+/// its isolated plaintext network; production uses the TLS URL forms already
+/// supported by the selected Redis and SQLx rustls features.
+fn validate_datastore_transport(
+    environment: RuntimeEnvironment,
+    database_url: &str,
+    redis_url: &str,
+) -> io::Result<()> {
+    let database = url::Url::parse(database_url)
+        .map_err(|_| invalid_setting("DATABASE_URL", "must be a valid MySQL URL"))?;
+    if database.scheme() != "mysql" {
+        return Err(invalid_setting(
+            "DATABASE_URL",
+            "must use the mysql URL scheme",
+        ));
+    }
+    let redis = url::Url::parse(redis_url)
+        .map_err(|_| invalid_setting("REDIS_URL", "must be a valid Redis URL"))?;
+    if !matches!(redis.scheme(), "redis" | "rediss") {
+        return Err(invalid_setting(
+            "REDIS_URL",
+            "must use the redis or rediss URL scheme",
+        ));
+    }
+    if !environment.is_production() {
+        return Ok(());
+    }
+
+    if redis.scheme() != "rediss" {
+        return Err(invalid_setting(
+            "REDIS_URL",
+            "must use rediss:// with certificate verification in production",
+        ));
+    }
+    let verify_identity = database.query_pairs().any(|(key, value)| {
+        key.eq_ignore_ascii_case("ssl-mode")
+            && matches!(
+                value.to_ascii_lowercase().replace('-', "_").as_str(),
+                "verify_identity"
+            )
+    });
+    if !verify_identity {
+        return Err(invalid_setting(
+            "DATABASE_URL",
+            "must set ssl-mode=VERIFY_IDENTITY in production",
+        ));
+    }
+    Ok(())
+}
+
+fn load_cors_allowed_origins(
+    config: &Map<String, Value>,
+    app_url: Option<&str>,
+) -> io::Result<Vec<String>> {
+    let configured = env_opt("V2BOARD_CORS_ALLOWED_ORIGINS")
+        .map(|value| parse_list(&value))
+        .or_else(|| {
+            config.get("cors_allowed_origins").map(|value| match value {
+                Value::Array(items) => items.iter().filter_map(config_value_string).collect(),
+                value => config_value_string(value)
+                    .map(|value| parse_list(&value))
+                    .unwrap_or_default(),
+            })
+        });
+    let strict_origin_entries = configured.is_some();
+    let candidates = configured.unwrap_or_else(|| {
+        app_url
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned)
+            .into_iter()
+            .collect()
+    });
+    let mut origins = Vec::with_capacity(candidates.len());
+    for candidate in candidates {
+        let parsed = url::Url::parse(&candidate).map_err(|_| {
+            invalid_setting(
+                "cors_allowed_origins",
+                "each entry must be an absolute HTTP(S) origin",
+            )
+        })?;
+        if !matches!(parsed.scheme(), "http" | "https")
+            || !parsed.username().is_empty()
+            || parsed.password().is_some()
+            || (strict_origin_entries
+                && (parsed.query().is_some()
+                    || parsed.fragment().is_some()
+                    || parsed.path() != "/"))
+        {
+            return Err(invalid_setting(
+                "cors_allowed_origins",
+                "each entry must contain only an HTTP(S) scheme, host, and optional port",
+            ));
+        }
+        let origin = parsed.origin().ascii_serialization();
+        if origin == "null" {
+            return Err(invalid_setting(
+                "cors_allowed_origins",
+                "opaque and wildcard origins are not allowed",
+            ));
+        }
+        if !origins.contains(&origin) {
+            origins.push(origin);
+        }
+    }
+    Ok(origins)
+}
+
+fn parse_trusted_proxy_cidrs(config: &Map<String, Value>) -> io::Result<Vec<IpNet>> {
+    config_list(
+        config,
+        "trusted_proxy_cidrs",
+        "V2BOARD_TRUSTED_PROXY_CIDRS",
+        &[],
+    )
+    .into_iter()
+    .map(|cidr| {
+        cidr.parse::<IpNet>().map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("trusted_proxy_cidrs contains invalid CIDR: {cidr}"),
+            )
+        })
+    })
+    .collect()
+}
+
+fn validate_production_secret(
+    environment: RuntimeEnvironment,
+    name: &str,
+    value: Option<&str>,
+) -> io::Result<()> {
+    if !environment.is_production() {
+        return Ok(());
+    }
+    let Some(value) = value else {
+        return Err(invalid_setting(
+            name,
+            "must be explicitly configured in production",
+        ));
+    };
+    if value.len() < 32 {
+        return Err(invalid_setting(
+            name,
+            "must contain at least 32 bytes of secret material in production",
+        ));
+    }
+    if is_obvious_secret_placeholder(value) {
+        return Err(invalid_setting(
+            name,
+            "must not be a placeholder in production",
+        ));
+    }
+    Ok(())
+}
+
+fn is_obvious_secret_placeholder(value: &str) -> bool {
+    let value = value.trim();
+    if value.is_empty()
+        || (value.starts_with('<') && value.ends_with('>'))
+        || value.bytes().all(|byte| byte == value.as_bytes()[0])
+    {
+        return true;
+    }
+    let lower = value.to_ascii_lowercase();
+    lower == "local-rust-dev-key"
+        || [
+            "change-me",
+            "changeme",
+            "replace-me",
+            "replaceme",
+            "replace-with",
+            "your-secret",
+            "insert-secret",
+            "inject-at-least",
+            "inject-a-different",
+        ]
+        .iter()
+        .any(|marker| lower.contains(marker))
+}
+
+/// Reject malformed scalar settings before the snapshot is built. Previously a
+/// typo such as `V2BOARD_RECAPTCHA_ENABLE=tru` silently became `false`, and a
+/// malformed integer silently selected its default. Security controls must not
+/// fail open this way.
+fn validate_scalar_config(config: &Map<String, Value>) -> io::Result<()> {
+    const BOOL_SETTINGS: &[(&str, &str)] = &[
+        ("force_https", "V2BOARD_FORCE_HTTPS"),
+        ("email_verify", "V2BOARD_EMAIL_VERIFY"),
+        ("stop_register", "V2BOARD_STOP_REGISTER"),
+        ("invite_force", "V2BOARD_INVITE_FORCE"),
+        ("invite_never_expire", "V2BOARD_INVITE_NEVER_EXPIRE"),
+        ("email_whitelist_enable", "V2BOARD_EMAIL_WHITELIST_ENABLE"),
+        (
+            "email_gmail_limit_enable",
+            "V2BOARD_EMAIL_GMAIL_LIMIT_ENABLE",
+        ),
+        ("recaptcha_enable", "V2BOARD_RECAPTCHA_ENABLE"),
+        (
+            "register_limit_by_ip_enable",
+            "V2BOARD_REGISTER_LIMIT_BY_IP_ENABLE",
+        ),
+        ("telegram_bot_enable", "V2BOARD_TELEGRAM_BOT_ENABLE"),
+        ("withdraw_close_enable", "V2BOARD_WITHDRAW_CLOSE_ENABLE"),
+        (
+            "commission_distribution_enable",
+            "V2BOARD_COMMISSION_DISTRIBUTION_ENABLE",
+        ),
+        (
+            "commission_auto_check_enable",
+            "V2BOARD_COMMISSION_AUTO_CHECK_ENABLE",
+        ),
+        (
+            "show_info_to_server_enable",
+            "V2BOARD_SHOW_INFO_TO_SERVER_ENABLE",
+        ),
+        ("plan_change_enable", "V2BOARD_PLAN_CHANGE_ENABLE"),
+        ("surplus_enable", "V2BOARD_SURPLUS_ENABLE"),
+        (
+            "commission_first_time_enable",
+            "V2BOARD_COMMISSION_FIRST_TIME_ENABLE",
+        ),
+        ("server_log_enable", "V2BOARD_SERVER_LOG_ENABLE"),
+        ("safe_mode_enable", "V2BOARD_SAFE_MODE_ENABLE"),
+        ("password_limit_enable", "V2BOARD_PASSWORD_LIMIT_ENABLE"),
+        (
+            "legacy_auth_params_enable",
+            "V2BOARD_LEGACY_AUTH_PARAMS_ENABLE",
+        ),
+        (
+            "privileged_step_up_enable",
+            "V2BOARD_PRIVILEGED_STEP_UP_ENABLE",
+        ),
+        (
+            "server_legacy_token_enable",
+            "V2BOARD_SERVER_LEGACY_TOKEN_ENABLE",
+        ),
+        (
+            "server_require_idempotency_key",
+            "V2BOARD_SERVER_REQUIRE_IDEMPOTENCY_KEY",
+        ),
+    ];
+    const INTEGER_SETTINGS: &[(&str, &str)] = &[
+        (
+            "http_connect_timeout_seconds",
+            "V2BOARD_HTTP_CONNECT_TIMEOUT_SECONDS",
+        ),
+        (
+            "http_request_timeout_seconds",
+            "V2BOARD_HTTP_REQUEST_TIMEOUT_SECONDS",
+        ),
+        (
+            "api_request_timeout_seconds",
+            "V2BOARD_API_REQUEST_TIMEOUT_SECONDS",
+        ),
+        (
+            "password_kdf_max_parallel",
+            "V2BOARD_PASSWORD_KDF_MAX_PARALLEL",
+        ),
+        (
+            "auth_session_ttl_seconds",
+            "V2BOARD_AUTH_SESSION_TTL_SECONDS",
+        ),
+        (
+            "privileged_auth_session_ttl_seconds",
+            "V2BOARD_PRIVILEGED_AUTH_SESSION_TTL_SECONDS",
+        ),
+        (
+            "auth_session_max_per_user",
+            "V2BOARD_AUTH_SESSION_MAX_PER_USER",
+        ),
+        (
+            "privileged_step_up_ttl_seconds",
+            "V2BOARD_PRIVILEGED_STEP_UP_TTL_SECONDS",
+        ),
+        (
+            "privileged_step_up_max_attempts",
+            "V2BOARD_PRIVILEGED_STEP_UP_MAX_ATTEMPTS",
+        ),
+        (
+            "privileged_step_up_attempt_window_seconds",
+            "V2BOARD_PRIVILEGED_STEP_UP_ATTEMPT_WINDOW_SECONDS",
+        ),
+        ("legacy_jwt_cutoff_unix", "V2BOARD_LEGACY_JWT_CUTOFF_UNIX"),
+        ("email_port", "V2BOARD_EMAIL_PORT"),
+        ("register_limit_count", "V2BOARD_REGISTER_LIMIT_COUNT"),
+        ("register_limit_expire", "V2BOARD_REGISTER_LIMIT_EXPIRE"),
+        ("show_subscribe_method", "V2BOARD_SHOW_SUBSCRIBE_METHOD"),
+        ("show_subscribe_expire", "V2BOARD_SHOW_SUBSCRIBE_EXPIRE"),
+        ("allow_new_period", "V2BOARD_ALLOW_NEW_PERIOD"),
+        ("reset_traffic_method", "V2BOARD_RESET_TRAFFIC_METHOD"),
+        ("try_out_plan_id", "V2BOARD_TRY_OUT_PLAN_ID"),
+        ("try_out_hour", "V2BOARD_TRY_OUT_HOUR"),
+        ("invite_commission", "V2BOARD_INVITE_COMMISSION"),
+        ("new_order_event_id", "V2BOARD_NEW_ORDER_EVENT_ID"),
+        ("renew_order_event_id", "V2BOARD_RENEW_ORDER_EVENT_ID"),
+        ("change_order_event_id", "V2BOARD_CHANGE_ORDER_EVENT_ID"),
+        ("invite_gen_limit", "V2BOARD_INVITE_GEN_LIMIT"),
+        ("ticket_status", "V2BOARD_TICKET_STATUS"),
+        (
+            "commission_withdraw_limit",
+            "V2BOARD_COMMISSION_WITHDRAW_LIMIT",
+        ),
+        ("server_push_interval", "V2BOARD_SERVER_PUSH_INTERVAL"),
+        ("server_pull_interval", "V2BOARD_SERVER_PULL_INTERVAL"),
+        (
+            "server_node_report_min_traffic",
+            "V2BOARD_SERVER_NODE_REPORT_MIN_TRAFFIC",
+        ),
+        (
+            "server_device_online_min_traffic",
+            "V2BOARD_SERVER_DEVICE_ONLINE_MIN_TRAFFIC",
+        ),
+        ("device_limit_mode", "V2BOARD_DEVICE_LIMIT_MODE"),
+        ("password_limit_count", "V2BOARD_PASSWORD_LIMIT_COUNT"),
+        ("password_limit_expire", "V2BOARD_PASSWORD_LIMIT_EXPIRE"),
+    ];
+    const I32_SETTINGS: &[&str] = &[
+        "email_port",
+        "show_subscribe_method",
+        "allow_new_period",
+        "reset_traffic_method",
+        "try_out_plan_id",
+        "invite_commission",
+        "new_order_event_id",
+        "renew_order_event_id",
+        "change_order_event_id",
+        "ticket_status",
+        "commission_withdraw_limit",
+        "server_push_interval",
+        "server_pull_interval",
+        "server_node_report_min_traffic",
+        "server_device_online_min_traffic",
+        "device_limit_mode",
+    ];
+
+    for &(config_key, env_key) in BOOL_SETTINGS {
+        if let Some(value) = scalar_setting(config, config_key, env_key)?
+            && parse_bool_strict(&value).is_none()
+        {
+            return Err(invalid_setting(
+                config_key,
+                "must be true/false, yes/no, on/off, or 1/0",
+            ));
+        }
+    }
+    for &(config_key, env_key) in INTEGER_SETTINGS {
+        if let Some(value) = scalar_setting(config, config_key, env_key)? {
+            if I32_SETTINGS.contains(&config_key) {
+                value
+                    .parse::<i32>()
+                    .map_err(|_| invalid_setting(config_key, "must be a 32-bit integer"))?;
+            } else {
+                value
+                    .parse::<i64>()
+                    .map_err(|_| invalid_setting(config_key, "must be an integer"))?;
+            }
+        }
+    }
+
+    validate_integer_range(
+        config,
+        "http_connect_timeout_seconds",
+        "V2BOARD_HTTP_CONNECT_TIMEOUT_SECONDS",
+        1,
+        300,
+    )?;
+    validate_integer_range(
+        config,
+        "http_request_timeout_seconds",
+        "V2BOARD_HTTP_REQUEST_TIMEOUT_SECONDS",
+        1,
+        600,
+    )?;
+    validate_integer_range(
+        config,
+        "api_request_timeout_seconds",
+        "V2BOARD_API_REQUEST_TIMEOUT_SECONDS",
+        1,
+        600,
+    )?;
+    validate_integer_range(
+        config,
+        "password_kdf_max_parallel",
+        "V2BOARD_PASSWORD_KDF_MAX_PARALLEL",
+        1,
+        64,
+    )?;
+    validate_integer_range(
+        config,
+        "auth_session_ttl_seconds",
+        "V2BOARD_AUTH_SESSION_TTL_SECONDS",
+        3_600,
+        365 * 24 * 60 * 60,
+    )?;
+    validate_integer_range(
+        config,
+        "privileged_auth_session_ttl_seconds",
+        "V2BOARD_PRIVILEGED_AUTH_SESSION_TTL_SECONDS",
+        15 * 60,
+        7 * 24 * 60 * 60,
+    )?;
+    validate_integer_range(
+        config,
+        "privileged_step_up_ttl_seconds",
+        "V2BOARD_PRIVILEGED_STEP_UP_TTL_SECONDS",
+        60,
+        60 * 60,
+    )?;
+    validate_integer_range(
+        config,
+        "privileged_step_up_max_attempts",
+        "V2BOARD_PRIVILEGED_STEP_UP_MAX_ATTEMPTS",
+        1,
+        20,
+    )?;
+    validate_integer_range(
+        config,
+        "privileged_step_up_attempt_window_seconds",
+        "V2BOARD_PRIVILEGED_STEP_UP_ATTEMPT_WINDOW_SECONDS",
+        60,
+        24 * 60 * 60,
+    )?;
+    validate_integer_range(
+        config,
+        "auth_session_max_per_user",
+        "V2BOARD_AUTH_SESSION_MAX_PER_USER",
+        1,
+        100,
+    )?;
+    validate_integer_range(
+        config,
+        "legacy_jwt_cutoff_unix",
+        "V2BOARD_LEGACY_JWT_CUTOFF_UNIX",
+        0,
+        i64::MAX,
+    )?;
+    validate_integer_range(config, "email_port", "V2BOARD_EMAIL_PORT", 1, 65_535)?;
+    validate_integer_range(
+        config,
+        "register_limit_count",
+        "V2BOARD_REGISTER_LIMIT_COUNT",
+        1,
+        10_000,
+    )?;
+    validate_integer_range(
+        config,
+        "password_limit_count",
+        "V2BOARD_PASSWORD_LIMIT_COUNT",
+        1,
+        1_000,
+    )?;
+    Ok(())
+}
+
+fn scalar_setting(
+    config: &Map<String, Value>,
+    config_key: &str,
+    env_key: &str,
+) -> io::Result<Option<String>> {
+    if let Some(value) = env_opt(env_key) {
+        return Ok(Some(value));
+    }
+    let Some(value) = config.get(config_key) else {
+        return Ok(None);
+    };
+    match value {
+        Value::String(value) => Ok(Some(value.trim().to_string())),
+        Value::Number(value) => Ok(Some(value.to_string())),
+        Value::Bool(value) => Ok(Some(if *value { "true" } else { "false" }.to_string())),
+        Value::Null | Value::Array(_) | Value::Object(_) => Err(invalid_setting(
+            config_key,
+            "must be a scalar string, number, or boolean",
+        )),
+    }
+}
+
+fn validate_integer_range(
+    config: &Map<String, Value>,
+    config_key: &str,
+    env_key: &str,
+    minimum: i64,
+    maximum: i64,
+) -> io::Result<()> {
+    let Some(value) = scalar_setting(config, config_key, env_key)? else {
+        return Ok(());
+    };
+    let value = value
+        .parse::<i64>()
+        .map_err(|_| invalid_setting(config_key, "must be an integer"))?;
+    if !(minimum..=maximum).contains(&value) {
+        return Err(invalid_setting(
+            config_key,
+            &format!("must be between {minimum} and {maximum}"),
+        ));
+    }
+    Ok(())
+}
+
+fn invalid_setting(config_key: &str, message: &str) -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidInput,
+        format!("{config_key} {message}"),
+    )
 }
 
 /// Reads the native runtime configuration. A missing file is an empty document;
@@ -940,7 +1660,15 @@ fn config_list(
 }
 
 fn parse_bool(value: &str) -> bool {
-    matches!(value, "1" | "true" | "TRUE" | "yes" | "YES")
+    parse_bool_strict(value).unwrap_or(false)
+}
+
+fn parse_bool_strict(value: &str) -> Option<bool> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => Some(true),
+        "0" | "false" | "no" | "off" => Some(false),
+        _ => None,
+    }
 }
 
 fn parse_list(value: &str) -> Vec<String> {
@@ -1036,18 +1764,144 @@ mod tests {
     }
 
     #[test]
-    fn production_requires_an_explicit_non_local_app_key() {
-        assert!(resolve_app_key(Some("production"), None).is_err());
+    fn production_aliases_require_a_strong_explicit_app_key() {
+        assert_eq!(
+            RuntimeEnvironment::parse(Some("prod")).unwrap(),
+            RuntimeEnvironment::Production
+        );
+        assert!(resolve_app_key(RuntimeEnvironment::Production, None).is_err());
         assert!(
-            resolve_app_key(Some("production"), Some("local-rust-dev-key".to_string())).is_err()
+            resolve_app_key(
+                RuntimeEnvironment::Production,
+                Some("local-rust-dev-key".to_string())
+            )
+            .is_err()
+        );
+        assert!(
+            resolve_app_key(
+                RuntimeEnvironment::Production,
+                Some("production-secret".to_string())
+            )
+            .is_err()
         );
         assert_eq!(
-            resolve_app_key(Some("production"), Some("production-secret".to_string())).unwrap(),
-            "production-secret"
+            resolve_app_key(
+                RuntimeEnvironment::Production,
+                Some("0123456789abcdef0123456789abcdef".to_string())
+            )
+            .unwrap(),
+            "0123456789abcdef0123456789abcdef"
         );
         assert_eq!(
-            resolve_app_key(Some("local"), None).unwrap(),
+            resolve_app_key(RuntimeEnvironment::Local, None).unwrap(),
             "local-rust-dev-key"
+        );
+        assert!(RuntimeEnvironment::parse(Some("prdduction")).is_err());
+    }
+
+    #[test]
+    fn malformed_security_scalars_fail_closed() {
+        let invalid_bool = serde_json::json!({ "recaptcha_enable": "tru" })
+            .as_object()
+            .expect("object")
+            .clone();
+        let error = validate_scalar_config(&invalid_bool).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert!(error.to_string().contains("recaptcha_enable"));
+
+        let invalid_integer = serde_json::json!({ "password_limit_count": "many" })
+            .as_object()
+            .expect("object")
+            .clone();
+        assert!(validate_scalar_config(&invalid_integer).is_err());
+
+        let out_of_range = serde_json::json!({ "auth_session_max_per_user": 101 })
+            .as_object()
+            .expect("object")
+            .clone();
+        assert!(validate_scalar_config(&out_of_range).is_err());
+
+        let overflowing_i32 = serde_json::json!({ "server_push_interval": 2147483648_i64 })
+            .as_object()
+            .expect("object")
+            .clone();
+        assert!(validate_scalar_config(&overflowing_i32).is_err());
+
+        let structural = serde_json::json!({ "force_https": [] })
+            .as_object()
+            .expect("object")
+            .clone();
+        assert!(validate_scalar_config(&structural).is_err());
+    }
+
+    #[test]
+    fn force_https_requires_a_canonical_https_app_url() {
+        assert!(validate_https_configuration(false, None, false).is_ok());
+        assert!(validate_https_configuration(true, None, true).is_err());
+        assert!(validate_https_configuration(true, Some("http://example.com"), true).is_err());
+        assert!(
+            validate_https_configuration(true, Some("https://user@example.com"), true).is_err()
+        );
+        assert!(validate_https_configuration(true, Some("https://example.com"), false).is_err());
+        assert!(validate_https_configuration(true, Some("https://example.com"), true).is_ok());
+    }
+
+    #[test]
+    fn production_server_master_token_is_explicit_and_strong() {
+        assert!(
+            validate_production_secret(RuntimeEnvironment::Production, "server_token", None)
+                .is_err()
+        );
+        assert!(
+            validate_production_secret(
+                RuntimeEnvironment::Production,
+                "server_token",
+                Some("short-secret")
+            )
+            .is_err()
+        );
+        for placeholder in [
+            "<inject-at-least-32-random-bytes>",
+            "<inject-a-different-32-byte-random-secret>",
+            "replace-with-a-real-production-secret-now",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        ] {
+            assert!(
+                validate_production_secret(
+                    RuntimeEnvironment::Production,
+                    "server_token",
+                    Some(placeholder),
+                )
+                .is_err(),
+                "placeholder must fail closed: {placeholder}"
+            );
+            assert!(
+                resolve_app_key(
+                    RuntimeEnvironment::Production,
+                    Some(placeholder.to_string())
+                )
+                .is_err(),
+                "APP_KEY placeholder must fail closed: {placeholder}"
+            );
+        }
+        assert!(
+            validate_production_secret(
+                RuntimeEnvironment::Production,
+                "server_token",
+                Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+            )
+            .is_err()
+        );
+        assert!(
+            validate_production_secret(
+                RuntimeEnvironment::Production,
+                "server_token",
+                Some("0123456789abcdef0123456789abcdef")
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_production_secret(RuntimeEnvironment::Local, "server_token", None).is_ok()
         );
     }
 
@@ -1137,6 +1991,11 @@ mod tests {
         save_config_atomic(&path, &initial).expect("initial config");
         let snapshot = AppConfig::try_from_runtime_paths(runtime_paths).expect("initial snapshot");
         assert_eq!(snapshot.ticket_status, 17);
+        assert_eq!(snapshot.privileged_auth_session_ttl_seconds, 30 * 60);
+        assert_eq!(
+            snapshot.privileged_step_up_ttl_seconds,
+            snapshot.privileged_auth_session_ttl_seconds
+        );
 
         fs::write(&path, b"{not-json").expect("malformed external edit");
         assert!(snapshot.reload().is_err());
@@ -1172,14 +2031,97 @@ mod tests {
     }
 
     #[test]
-    fn trusted_proxy_cidrs_parse_ipv4_and_ipv6_and_drop_invalid_entries() {
-        let values = ["10.0.0.0/8", "2001:db8::/32", "not-a-cidr"];
-        let parsed = values
-            .into_iter()
-            .filter_map(|value| value.parse::<IpNet>().ok())
-            .collect::<Vec<_>>();
+    fn trusted_proxy_cidrs_parse_ipv4_and_ipv6() {
+        let config = serde_json::json!({
+            "trusted_proxy_cidrs": ["10.0.0.0/8", "2001:db8::/32"]
+        })
+        .as_object()
+        .expect("object")
+        .clone();
+        let parsed = parse_trusted_proxy_cidrs(&config).unwrap();
         assert_eq!(parsed.len(), 2);
         assert!(parsed[0].contains(&"10.4.5.6".parse::<std::net::IpAddr>().unwrap()));
         assert!(parsed[1].contains(&"2001:db8::42".parse::<std::net::IpAddr>().unwrap()));
+
+        let invalid = serde_json::json!({ "trusted_proxy_cidrs": ["not-a-cidr"] })
+            .as_object()
+            .expect("object")
+            .clone();
+        assert!(parse_trusted_proxy_cidrs(&invalid).is_err());
+    }
+
+    #[test]
+    fn production_datastores_require_verified_transport() {
+        assert!(
+            validate_datastore_transport(
+                RuntimeEnvironment::Production,
+                "mysql://user:secret@db.example.test/v2board?ssl-mode=VERIFY_IDENTITY",
+                "rediss://cache.example.test/1",
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_datastore_transport(
+                RuntimeEnvironment::Production,
+                "mysql://user:secret@db.example.test/v2board",
+                "rediss://cache.example.test/1",
+            )
+            .is_err()
+        );
+        assert!(
+            validate_datastore_transport(
+                RuntimeEnvironment::Production,
+                "mysql://user:secret@db.example.test/v2board?ssl-mode=VERIFY_IDENTITY",
+                "redis://cache.example.test/1",
+            )
+            .is_err()
+        );
+        assert!(
+            validate_datastore_transport(
+                RuntimeEnvironment::Local,
+                "mysql://v2board:v2board@mysql/v2board",
+                "redis://redis/1",
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn cors_origins_are_canonical_and_never_wildcarded() {
+        let explicit = serde_json::json!({
+            "cors_allowed_origins": [
+                "https://app.example.test",
+                "https://app.example.test:443"
+            ]
+        })
+        .as_object()
+        .expect("object")
+        .clone();
+        assert_eq!(
+            load_cors_allowed_origins(&explicit, Some("https://ignored.example.test")).unwrap(),
+            vec!["https://app.example.test"]
+        );
+
+        let default = Map::new();
+        assert_eq!(
+            load_cors_allowed_origins(
+                &default,
+                Some("https://app.example.test/admin/?source=deploy")
+            )
+            .unwrap(),
+            vec!["https://app.example.test"]
+        );
+        let invalid = serde_json::json!({ "cors_allowed_origins": ["*"] })
+            .as_object()
+            .expect("object")
+            .clone();
+        assert!(load_cors_allowed_origins(&invalid, None).is_err());
+    }
+
+    #[test]
+    fn registration_ip_limit_defaults_on_only_in_production() {
+        assert!(register_ip_limit_default(RuntimeEnvironment::Production));
+        assert!(!register_ip_limit_default(RuntimeEnvironment::Local));
+        assert!(!register_ip_limit_default(RuntimeEnvironment::Testing));
     }
 }

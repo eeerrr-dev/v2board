@@ -50,15 +50,11 @@ RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
     && pnpm install --frozen-lockfile \
     && pnpm build:deploy
 
-FROM debian:bookworm-slim@sha256:60eac759739651111db372c07be67863818726f754804b8707c90979bda511df AS production
+FROM debian:bookworm-slim@sha256:60eac759739651111db372c07be67863818726f754804b8707c90979bda511df AS production-base
 
 ARG APP_UID=10001
 ARG APP_GID=10001
-ENV APP_URL=http://localhost:8000 \
-    RUST_BIND_ADDR=0.0.0.0:8080 \
-    RUST_LOG=v2board_api=info,tower_http=info \
-    V2BOARD_ENV=production \
-    V2BOARD_FRONTEND_DIR=/opt/v2board/frontend \
+ENV V2BOARD_ENV=production \
     V2BOARD_RUNTIME_ROOT=/var/lib/v2board
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -75,15 +71,39 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         /var/lib/v2board/config \
         /var/lib/v2board/rules
 
-COPY --from=rust-builder --chown=root:root /out/v2board-api /usr/local/bin/v2board-api
-COPY --from=rust-builder --chown=root:root /out/v2board-workers /usr/local/bin/v2board-workers
-COPY --from=frontend-builder --chown=root:root /build/frontend/dist-deploy/ /opt/v2board/frontend/
 USER v2board:v2board
 WORKDIR /var/lib/v2board
-EXPOSE 8080
 VOLUME ["/var/lib/v2board"]
-HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=6 \
-    CMD curl --fail --silent --show-error http://127.0.0.1:8080/readyz >/dev/null || exit 1
-
 ENTRYPOINT ["/usr/bin/tini", "--"]
+
+FROM production-base AS production-api
+
+ENV RUST_BIND_ADDR=0.0.0.0:8080 \
+    RUST_LOG=v2board_api=info,tower_http=info \
+    V2BOARD_FRONTEND_DIR=/opt/v2board/frontend
+
+COPY --from=rust-builder --chown=root:root /out/v2board-api /usr/local/bin/v2board-api
+COPY --from=frontend-builder --chown=root:root /build/frontend/dist-deploy/ /opt/v2board/frontend/
+EXPOSE 8080
+HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=6 \
+    CMD ["curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:8080/readyz"]
+
+CMD ["/usr/local/bin/v2board-api"]
+
+FROM production-base AS production-worker
+
+ENV RUST_LOG=v2board_workers=info \
+    V2BOARD_WORKER_HEALTH_FILE=/tmp/v2board-worker-health \
+    V2BOARD_WORKER_HEALTH_MAX_AGE_SECONDS=30
+
+COPY --from=rust-builder --chown=root:root /out/v2board-workers /usr/local/bin/v2board-workers
+HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=6 \
+    CMD ["/bin/sh", "-ec", "last=$(cat \"$V2BOARD_WORKER_HEALTH_FILE\") && now=$(date +%s) && age=$((now - last)) && test \"$age\" -ge 0 && test \"$age\" -le \"$V2BOARD_WORKER_HEALTH_MAX_AGE_SECONDS\""]
+
+CMD ["/usr/local/bin/v2board-workers"]
+
+# Preserve the established default target while exposing a smaller, correctly
+# probed worker image through `--target production-worker`.
+FROM production-api AS production
+
 CMD ["/usr/local/bin/v2board-api"]

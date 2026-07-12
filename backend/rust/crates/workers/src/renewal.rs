@@ -5,6 +5,7 @@ use v2board_config::app_timezone;
 
 use crate::{batch::finish_item_batch, state::WorkerState, time::timestamp_after};
 
+const RENEWAL_CANDIDATE_PAGE_SIZE: i64 = 250;
 const RENEWAL_CANDIDATE_SQL: &str = r#"
 SELECT id
 FROM v2_user
@@ -13,7 +14,9 @@ WHERE auto_renewal <> 0
   AND expired_at IS NOT NULL
   AND expired_at > ?
   AND expired_at < ?
+  AND id > ?
 ORDER BY id
+LIMIT ?
 "#;
 const RENEWAL_LOCKED_USER_SQL: &str = r#"
 SELECT id, balance, plan_id, expired_at
@@ -60,21 +63,32 @@ struct RenewalPlanRow {
 
 pub(crate) async fn run(state: &WorkerState) -> anyhow::Result<()> {
     let now = Utc::now().timestamp();
-    let user_ids = sqlx::query_scalar::<_, i64>(RENEWAL_CANDIDATE_SQL)
-        .bind(now)
-        .bind(timestamp_after(now, 2 * 86_400))
-        .fetch_all(&state.db)
-        .await?;
-
-    let total = user_ids.len();
+    let renewal_before = timestamp_after(now, 2 * 86_400);
+    let mut after_id = 0_i64;
+    let mut total = 0_usize;
     let mut failed = 0_usize;
     let mut first_error = None;
-    for user_id in user_ids {
-        if let Err(error) = renew_user(state, user_id).await {
-            tracing::warn!(user_id, ?error, "auto renewal failed");
-            failed += 1;
-            first_error.get_or_insert_with(|| error.to_string());
+
+    loop {
+        let user_ids = sqlx::query_scalar::<_, i64>(RENEWAL_CANDIDATE_SQL)
+            .bind(now)
+            .bind(renewal_before)
+            .bind(after_id)
+            .bind(RENEWAL_CANDIDATE_PAGE_SIZE)
+            .fetch_all(&state.db)
+            .await?;
+        let Some(last_id) = user_ids.last().copied() else {
+            break;
+        };
+        for user_id in user_ids {
+            total += 1;
+            if let Err(error) = renew_user(state, user_id).await {
+                tracing::warn!(user_id, ?error, "auto renewal failed");
+                failed += 1;
+                first_error.get_or_insert_with(|| error.to_string());
+            }
         }
+        after_id = last_id;
     }
     finish_item_batch("auto renewals", total, failed, first_error)
 }
@@ -82,16 +96,10 @@ pub(crate) async fn run(state: &WorkerState) -> anyhow::Result<()> {
 async fn renew_user(state: &WorkerState, user_id: i64) -> anyhow::Result<()> {
     let now = Utc::now().timestamp();
     let mut tx = state.db.begin().await?;
-    let Some(user) = sqlx::query_as::<_, RenewalUserRow>(RENEWAL_LOCKED_USER_SQL)
-        .bind(user_id)
-        .bind(now)
-        .bind(timestamp_after(now, 2 * 86_400))
-        .fetch_optional(&mut *tx)
-        .await?
-    else {
-        tx.rollback().await?;
-        return Ok(());
-    };
+    // Keep the global order lifecycle lock order: order/range first, then the
+    // owning user, then the plan.  Cancellation and settlement take the same
+    // order -> user sequence, so renewal cannot form the former user -> order
+    // deadlock cycle with them.
     let latest_period = sqlx::query_scalar::<_, String>(
         r#"
         SELECT period
@@ -104,9 +112,19 @@ async fn renew_user(state: &WorkerState, user_id: i64) -> anyhow::Result<()> {
         FOR SHARE
         "#,
     )
-    .bind(user.id)
+    .bind(user_id)
     .fetch_optional(&mut *tx)
     .await?;
+    let Some(user) = sqlx::query_as::<_, RenewalUserRow>(RENEWAL_LOCKED_USER_SQL)
+        .bind(user_id)
+        .bind(now)
+        .bind(timestamp_after(now, 2 * 86_400))
+        .fetch_optional(&mut *tx)
+        .await?
+    else {
+        tx.rollback().await?;
+        return Ok(());
+    };
     let Some(latest_period) = latest_period else {
         disable_auto_renewal(&mut tx, user.id, now).await?;
         tx.commit().await?;
@@ -324,6 +342,9 @@ mod tests {
     #[test]
     fn renewal_sql_rechecks_locked_state_and_guards_the_deduction() {
         assert!(RENEWAL_CANDIDATE_SQL.trim_start().starts_with("SELECT id"));
+        assert!(RENEWAL_CANDIDATE_SQL.contains("id > ?"));
+        assert!(RENEWAL_CANDIDATE_SQL.contains("ORDER BY id"));
+        assert!(RENEWAL_CANDIDATE_SQL.contains("LIMIT ?"));
         assert!(RENEWAL_LOCKED_USER_SQL.contains("FOR UPDATE"));
         assert!(RENEWAL_LOCKED_USER_SQL.contains("auto_renewal <> 0"));
         assert!(RENEWAL_LOCKED_USER_SQL.contains("expired_at > ?"));
@@ -331,5 +352,12 @@ mod tests {
         assert!(RENEWAL_UPDATE_SQL.contains("expired_at = ?"));
         assert!(RENEWAL_UPDATE_SQL.contains("balance >= ?"));
         assert!(RENEWAL_UPDATE_SQL.contains("expired_at > ?"));
+
+        let source = include_str!("renewal.rs");
+        let function = &source[source.find("async fn renew_user").unwrap()..];
+        assert!(
+            function.find("SELECT period").unwrap()
+                < function.find("RENEWAL_LOCKED_USER_SQL").unwrap()
+        );
     }
 }

@@ -1,5 +1,5 @@
 .PHONY: up down reset sync logs ps shell doctor mysql-auth-upgrade \
-	rust-check rust-test rust-route-audit rust-worker-reconcile rust-target-gate \
+	rust-check rust-test rust-integration rust-route-audit rust-worker-reconcile rust-target-gate \
 	public-bundle-audit runtime-isolation-audit frontend-source-audit parity-config-audit ui-sync-audit \
 	deploy-smoke visual-smoke interaction-parity accessibility-smoke behavior-parity \
 	reference-oracle-check reference-oracle-up reference-oracle-down \
@@ -143,6 +143,15 @@ rust-test:
 	$(DCF) run --rm -T --no-deps --entrypoint bash rust-api -lc \
 		'. /usr/local/cargo/env; cargo test --workspace --locked'
 
+rust-integration:
+	$(DCF) build rust-api
+	$(DCF) up -d --wait mysql redis
+	$(DCF) run --rm -T --no-deps --entrypoint bash \
+		-e RUST_INTEGRATION_DATABASE_ROOT_URL=mysql://root:v2board@mysql:3306/mysql \
+		-e RUST_INTEGRATION_REDIS_URL=redis://redis:6379/15 \
+		rust-api -lc \
+		'. /usr/local/cargo/env; cargo build --locked -p v2board-workers && cargo run --locked -p v2board-contract -- production-invariants'
+
 rust-route-audit:
 	$(DCF) build rust-api
 	$(DCF) run --rm -T --no-deps --entrypoint bash \
@@ -158,7 +167,7 @@ rust-worker-reconcile:
 		-e WORKER_RECONCILE_STRICT=$(RUST_WORKER_RECONCILE_STRICT) \
 		rust-api cargo run --locked -p v2board-contract -- worker-reconcile
 
-rust-target-gate: rust-check rust-test rust-route-audit rust-worker-reconcile
+rust-target-gate: rust-check rust-test rust-integration rust-route-audit rust-worker-reconcile
 	@echo "Rust API, worker, route, and reconciliation gates passed."
 
 public-bundle-audit:

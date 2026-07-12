@@ -6,8 +6,9 @@ targets = [
 all-features = true
 
 [advisories]
-unmaintained = "workspace"
+unmaintained = "all"
 unsound = "all"
+yanked = "deny"
 
 [bans]
 multiple-versions = "warn"

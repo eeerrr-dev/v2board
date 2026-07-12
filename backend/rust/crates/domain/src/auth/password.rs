@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString};
+use argon2::{
+    Argon2, Params, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString,
+};
 use sha2::{Digest, Sha256};
 use tokio::sync::Semaphore;
 use uuid::Uuid;
@@ -68,18 +70,29 @@ pub fn verify_password(
     stored_hash: &str,
 ) -> bool {
     match algo {
-        Some("md5") => format!("{:x}", md5::compute(password)) == stored_hash,
+        Some("md5") => {
+            let digest = md5::compute(password);
+            verify_legacy_password_hex(&digest.0, stored_hash)
+        }
         Some("sha256") => {
             let mut hasher = Sha256::new();
             hasher.update(password.as_bytes());
-            hex::encode(hasher.finalize()) == stored_hash
+            verify_legacy_password_hex(&hasher.finalize(), stored_hash)
         }
         Some("md5salt") => {
             let salt = salt.unwrap_or_default();
-            format!("{:x}", md5::compute(format!("{password}{salt}"))) == stored_hash
+            let digest = md5::compute(format!("{password}{salt}"));
+            verify_legacy_password_hex(&digest.0, stored_hash)
         }
         _ => verify_modern_password(password, stored_hash),
     }
+}
+
+fn verify_legacy_password_hex(expected: &[u8], stored_hash: &str) -> bool {
+    let Ok(stored) = hex::decode(stored_hash) else {
+        return false;
+    };
+    v2board_compat::constant_time_bytes_eq(expected, &stored)
 }
 
 fn verify_modern_password(password: &str, stored_hash: &str) -> bool {
@@ -109,5 +122,27 @@ pub fn hash_password(password: &str) -> Result<String, ApiError> {
 }
 
 pub(super) fn password_needs_rehash(algo: Option<&str>, stored_hash: &str) -> bool {
-    algo.is_some() || !stored_hash.starts_with("$argon2id$")
+    if algo.is_some() {
+        return true;
+    }
+    let Ok(hash) = PasswordHash::new(stored_hash) else {
+        return true;
+    };
+    if hash.algorithm.as_str() != "argon2id" || hash.version != Some(19) {
+        return true;
+    }
+    let sufficiently_strong = hash
+        .params
+        .get_decimal("m")
+        .is_some_and(|value| value >= Params::DEFAULT_M_COST)
+        && hash
+            .params
+            .get_decimal("t")
+            .is_some_and(|value| value >= Params::DEFAULT_T_COST)
+        && hash
+            .params
+            .get_decimal("p")
+            .is_some_and(|value| value >= Params::DEFAULT_P_COST)
+        && hash.hash.as_ref().is_some_and(|output| output.len() >= 32);
+    !sufficiently_strong
 }

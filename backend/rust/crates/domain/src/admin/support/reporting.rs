@@ -2,6 +2,7 @@ use super::*;
 
 #[derive(Debug, FromRow)]
 pub(in super::super) struct UserDumpRow {
+    pub(in super::super) id: i64,
     pub(in super::super) email: String,
     pub(in super::super) balance: i64,
     pub(in super::super) commission_balance: i64,

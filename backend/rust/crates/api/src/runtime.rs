@@ -9,7 +9,7 @@ use arc_swap::ArcSwap;
 use axum::{
     Json,
     extract::{ConnectInfo, Request, State},
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, HeaderValue, StatusCode, header},
     middleware::Next,
     response::{IntoResponse, Response},
 };
@@ -129,6 +129,7 @@ pub(crate) fn build_http_client(config: &AppConfig) -> anyhow::Result<reqwest::C
     Ok(reqwest::Client::builder()
         .connect_timeout(StdDuration::from_secs(config.http_connect_timeout_seconds))
         .timeout(StdDuration::from_secs(config.http_request_timeout_seconds))
+        .https_only(true)
         .redirect(reqwest::redirect::Policy::limited(5))
         .tcp_keepalive(StdDuration::from_secs(60))
         .user_agent(format!("v2board-rust/{}", env!("CARGO_PKG_VERSION")))
@@ -212,12 +213,9 @@ pub(crate) async fn reset_admin_password(
 pub(crate) fn init_tracing() {
     let env_filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("v2board_api=info,tower_http=info"));
-    let production = std::env::var("V2BOARD_ENV").ok().is_some_and(|value| {
-        matches!(
-            value.trim().to_ascii_lowercase().as_str(),
-            "production" | "prod"
-        )
-    });
+    let production =
+        v2board_config::RuntimeEnvironment::parse(std::env::var("V2BOARD_ENV").ok().as_deref())
+            .is_ok_and(v2board_config::RuntimeEnvironment::is_production);
     if production {
         tracing_subscriber::registry()
             .with(env_filter)
@@ -300,6 +298,107 @@ pub(crate) async fn trusted_client_ip_middleware(
     let client_ip = resolve_client_ip(peer.ip(), request.headers(), &config.trusted_proxy_cidrs);
     request.extensions_mut().insert(ClientIp(client_ip));
     next.run(request).await
+}
+
+/// Enforces HTTPS without trusting forwarding headers from arbitrary clients.
+/// Only a directly connected peer inside `trusted_proxy_cidrs` may describe the
+/// original transport. Redirects use the configured canonical app URL rather
+/// than the untrusted Host header.
+pub(crate) async fn enforce_https_middleware(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    request: Request,
+    next: Next,
+) -> Response {
+    if https_enforcement_exempt_path(request.uri().path()) {
+        return next.run(request).await;
+    }
+    let config = state.config_snapshot();
+    let https = request_uses_https(peer.ip(), request.headers(), &config.trusted_proxy_cidrs);
+    if config.force_https && !https {
+        let Some(location) = https_redirect_location(&config, request.uri()) else {
+            tracing::error!("force_https app_url could not be converted to a redirect URL");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        };
+        let mut response = StatusCode::PERMANENT_REDIRECT.into_response();
+        response.headers_mut().insert(header::LOCATION, location);
+        response.headers_mut().insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("no-store, max-age=0"),
+        );
+        return response;
+    }
+
+    let mut response = next.run(request).await;
+    if https {
+        response.headers_mut().insert(
+            header::STRICT_TRANSPORT_SECURITY,
+            HeaderValue::from_static("max-age=31536000; includeSubDomains"),
+        );
+    }
+    response
+}
+
+fn https_enforcement_exempt_path(path: &str) -> bool {
+    matches!(path, "/healthz" | "/readyz")
+}
+
+fn request_uses_https(peer: IpAddr, headers: &HeaderMap, trusted_proxies: &[ipnet::IpNet]) -> bool {
+    if !trusted_proxies
+        .iter()
+        .any(|network| network.contains(&peer))
+    {
+        return false;
+    }
+    if headers.contains_key("forwarded") {
+        return forwarded_proto(headers).is_some_and(|proto| proto.eq_ignore_ascii_case("https"));
+    }
+    x_forwarded_proto(headers).is_some_and(|proto| proto.eq_ignore_ascii_case("https"))
+}
+
+fn forwarded_proto(headers: &HeaderMap) -> Option<&str> {
+    let mut nearest = None;
+    for value in headers.get_all("forwarded") {
+        let value = value.to_str().ok()?;
+        for element in value.split(',') {
+            let proto = element.split(';').find_map(|parameter| {
+                let (name, value) = parameter.trim().split_once('=')?;
+                name.trim()
+                    .eq_ignore_ascii_case("proto")
+                    .then_some(value.trim().trim_matches('"'))
+            })?;
+            if !matches!(proto.to_ascii_lowercase().as_str(), "http" | "https") {
+                return None;
+            }
+            nearest = Some(proto);
+        }
+    }
+    nearest
+}
+
+fn x_forwarded_proto(headers: &HeaderMap) -> Option<&str> {
+    let mut nearest = None;
+    for value in headers.get_all("x-forwarded-proto") {
+        let value = value.to_str().ok()?;
+        for proto in value.split(',').map(str::trim) {
+            if !matches!(proto.to_ascii_lowercase().as_str(), "http" | "https") {
+                return None;
+            }
+            nearest = Some(proto);
+        }
+    }
+    nearest
+}
+
+fn https_redirect_location(config: &AppConfig, uri: &axum::http::Uri) -> Option<HeaderValue> {
+    let mut target = reqwest::Url::parse(config.app_url.as_deref()?).ok()?;
+    if target.scheme() != "https" || target.host_str().is_none() {
+        return None;
+    }
+    target.set_path(uri.path());
+    target.set_query(uri.query());
+    target.set_fragment(None);
+    HeaderValue::from_str(target.as_str()).ok()
 }
 
 pub(crate) async fn request_timeout_middleware(
@@ -434,7 +533,10 @@ mod tests {
 
     use axum::http::HeaderMap;
 
-    use super::{request_timeout_exempt, resolve_client_ip};
+    use super::{
+        https_enforcement_exempt_path, request_timeout_exempt, request_uses_https,
+        resolve_client_ip,
+    };
 
     fn proxy_networks(values: &[&str]) -> Vec<ipnet::IpNet> {
         values.iter().map(|value| value.parse().unwrap()).collect()
@@ -495,6 +597,40 @@ mod tests {
     }
 
     #[test]
+    fn forwarded_transport_is_honored_only_from_a_trusted_proxy() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-proto", "https".parse().unwrap());
+        assert!(!request_uses_https(
+            "203.0.113.10".parse().unwrap(),
+            &headers,
+            &proxy_networks(&["10.0.0.0/8"]),
+        ));
+        assert!(request_uses_https(
+            "10.0.0.1".parse().unwrap(),
+            &headers,
+            &proxy_networks(&["10.0.0.0/8"]),
+        ));
+
+        headers.insert(
+            "forwarded",
+            "for=198.51.100.7;proto=http, for=10.0.0.2;proto=https"
+                .parse()
+                .unwrap(),
+        );
+        assert!(request_uses_https(
+            "10.0.0.1".parse().unwrap(),
+            &headers,
+            &proxy_networks(&["10.0.0.0/8"]),
+        ));
+        headers.insert("forwarded", "for=10.0.0.2;proto=ftp".parse().unwrap());
+        assert!(!request_uses_https(
+            "10.0.0.1".parse().unwrap(),
+            &headers,
+            &proxy_networks(&["10.0.0.0/8"]),
+        ));
+    }
+
+    #[test]
     fn only_the_synchronous_mail_probe_is_exempt_from_request_deadlines() {
         assert!(!request_timeout_exempt(
             "/api/v1/admin/user/sendMail",
@@ -514,5 +650,13 @@ mod tests {
         ));
         assert!(!request_timeout_exempt("/api/v1/user/order/save", "admin"));
         assert!(!request_timeout_exempt("/api/v1/user/info", "admin"));
+    }
+
+    #[test]
+    fn internal_health_probes_are_the_only_https_enforcement_exceptions() {
+        assert!(https_enforcement_exempt_path("/healthz"));
+        assert!(https_enforcement_exempt_path("/readyz"));
+        assert!(!https_enforcement_exempt_path("/"));
+        assert!(!https_enforcement_exempt_path("/api/v1/user/info"));
     }
 }

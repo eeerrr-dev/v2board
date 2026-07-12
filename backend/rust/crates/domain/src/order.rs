@@ -4,7 +4,8 @@ use chrono::Utc;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sqlx::{FromRow, MySqlPool};
+use sha2::{Digest, Sha256};
+use sqlx::{FromRow, MySql, MySqlPool, Transaction};
 use v2board_compat::ApiError;
 use v2board_config::AppConfig;
 
@@ -39,7 +40,8 @@ use payment_integrations::{
 const GIB: i64 = 1_073_741_824;
 const UNFINISHED_ORDER_UNIQUE_KEY: &str = "uniq_unfinished_order_per_user";
 const PAYMENT_SETTLEMENT_ORDER_SQL: &str = r#"
-    SELECT id, status, total_amount, handling_amount, user_id, payment_id, callback_no
+    SELECT id, status, total_amount, handling_amount, user_id, payment_id,
+           callback_no, callback_no_hash
     FROM v2_order
     WHERE trade_no = ?
     LIMIT 1
@@ -59,8 +61,8 @@ const PAYMENT_NOTIFY_LOOKUP_SQL: &str = r#"
     WHERE payment = ? AND uuid = ?
     LIMIT 1
 "#;
-const PAYMENT_CONFIG_FOR_UPDATE_SQL: &str =
-    "SELECT payment, CAST(config AS CHAR) FROM v2_payment WHERE id = ? LIMIT 1 FOR UPDATE";
+const PAYMENT_ACTIVE_CONFIG_FOR_SHARE_SQL: &str = "SELECT payment, CAST(config AS CHAR) FROM v2_payment \
+     WHERE id = ? AND enable = 1 AND archived_at IS NULL LIMIT 1 FOR SHARE";
 const UNFINISHED_ORDER_FOR_UPDATE_SQL: &str =
     "SELECT id FROM v2_order WHERE user_id = ? AND status IN (0, 1) LIMIT 1 FOR UPDATE";
 #[derive(Clone)]
@@ -143,6 +145,7 @@ struct UserForOrder {
     discount: Option<i32>,
     commission_type: i8,
     commission_rate: Option<i32>,
+    traffic_epoch: i64,
     u: i64,
     d: i64,
     transfer_enable: i64,
@@ -192,7 +195,7 @@ struct OrderForCheckout {
     surplus_order_ids: Option<String>,
 }
 
-#[derive(Debug, Clone, FromRow)]
+#[derive(Clone, FromRow)]
 struct PaymentForCheckout {
     id: i32,
     payment: String,
@@ -221,6 +224,10 @@ pub struct PaymentNotifyResponse {
     /// once (a gateway replay leaves this `None`). Mirrors `PaymentController::handle`,
     /// which sends the message only inside the `status !== 0` guard.
     pub paid_notice: Option<PaidOrderNotice>,
+    /// Set only when authenticated money arrived for an order that can no
+    /// longer make the normal pending -> paid transition. The event is already
+    /// durable in v2_payment_reconciliation when this notice is returned.
+    pub late_payment_notice: Option<LatePaymentNotice>,
 }
 
 /// The order fields Laravel's `PaymentController::handle` reads to build the admin
@@ -232,6 +239,24 @@ pub struct PaidOrderNotice {
 }
 
 #[derive(Debug, Clone)]
+pub struct LatePaymentNotice {
+    pub trade_no: String,
+    pub trade_no_hash: String,
+    pub callback_no: String,
+    pub callback_no_hash: String,
+    pub reason: &'static str,
+    pub order_status: i8,
+    pub expected_amount: i64,
+    pub settled_amount: Option<i64>,
+}
+
+#[derive(Debug, Default)]
+struct PaymentSettlementNotices {
+    paid: Option<PaidOrderNotice>,
+    late: Option<LatePaymentNotice>,
+}
+
+#[derive(Clone)]
 pub struct PaymentNotifyInput {
     pub params: HashMap<String, String>,
     pub body: Vec<u8>,
@@ -259,20 +284,53 @@ struct ExpectedPaymentBinding {
     callback_no: Option<String>,
 }
 
+fn payment_callback_identity_matches(
+    bound_callback_no: Option<&str>,
+    bound_callback_no_hash: Option<&[u8]>,
+    callback_no: &str,
+) -> bool {
+    let callback_no_hash = payment_identifier_hash(callback_no);
+    bound_callback_no_hash.map_or_else(
+        || bound_callback_no == Some(callback_no),
+        |bound_hash| bound_hash == callback_no_hash,
+    )
+}
+
 fn payment_binding_matches(
     expected: &ExpectedPaymentBinding,
     order_user_id: i64,
     payment_id: Option<i32>,
     bound_callback_no: Option<&str>,
+    bound_callback_no_hash: Option<&[u8]>,
 ) -> bool {
     Some(expected.payment_id) == payment_id
         && expected
             .user_id
             .is_none_or(|user_id| user_id == order_user_id)
-        && expected
-            .callback_no
-            .as_deref()
-            .is_none_or(|callback_no| bound_callback_no == Some(callback_no))
+        && expected.callback_no.as_deref().is_none_or(|callback_no| {
+            payment_callback_identity_matches(
+                bound_callback_no,
+                bound_callback_no_hash,
+                callback_no,
+            )
+        })
+}
+
+fn is_ordinary_payment_replay(
+    status: i8,
+    bound_callback_no: Option<&str>,
+    bound_callback_no_hash: Option<&[u8]>,
+    callback_no: &str,
+) -> bool {
+    matches!(status, 1 | 3 | 4)
+        && payment_callback_identity_matches(bound_callback_no, bound_callback_no_hash, callback_no)
+}
+
+fn should_emit_late_payment_notice(rows_affected: u64) -> bool {
+    // MySQL reports one affected row for INSERT and two for the duplicate-key
+    // UPDATE that increments occurrence_count. Notify operators only for the
+    // first durable observation of a provider transaction.
+    rows_affected == 1
 }
 
 fn payment_amount_matches(
@@ -282,6 +340,90 @@ fn payment_amount_matches(
 ) -> bool {
     order_amount_cents.checked_add(handling_amount_cents.unwrap_or_default())
         == Some(settled_amount_cents)
+}
+
+struct PaymentReconciliation<'a> {
+    payment_id: i32,
+    provider: &'a str,
+    trade_no: &'a str,
+    callback_no: &'a str,
+    reason: &'a str,
+    order_status: i8,
+    expected_amount: i64,
+    settled_amount: Option<i64>,
+}
+
+pub(super) fn payment_identifier_hash(value: &str) -> [u8; 32] {
+    Sha256::digest(value.as_bytes()).into()
+}
+
+pub(super) fn bounded_payment_identifier(value: &str) -> String {
+    const MAX_BYTES: usize = 255;
+    let mut bounded = String::with_capacity(value.len().min(MAX_BYTES));
+    for character in value.chars() {
+        if character.len_utf8() == 4 {
+            let escaped = format!("\\u{{{:X}}}", u32::from(character));
+            if bounded.len() + escaped.len() > MAX_BYTES {
+                break;
+            }
+            bounded.push_str(&escaped);
+        } else {
+            let mut bytes = [0_u8; 4];
+            let encoded = character.encode_utf8(&mut bytes);
+            if bounded.len() + encoded.len() > MAX_BYTES {
+                break;
+            }
+            bounded.push_str(encoded);
+        }
+    }
+    bounded
+}
+
+fn bounded_payment_audit_identity(value: &str) -> (String, String) {
+    (
+        bounded_payment_identifier(value),
+        hex::encode(payment_identifier_hash(value)),
+    )
+}
+
+async fn upsert_payment_reconciliation(
+    tx: &mut Transaction<'_, MySql>,
+    record: PaymentReconciliation<'_>,
+) -> Result<u64, ApiError> {
+    let now = Utc::now().timestamp();
+    let trade_no_hash = payment_identifier_hash(record.trade_no);
+    let callback_no_hash = payment_identifier_hash(record.callback_no);
+    let trade_no = bounded_payment_identifier(record.trade_no);
+    let callback_no = bounded_payment_identifier(record.callback_no);
+    let result = sqlx::query(
+        r#"
+        INSERT INTO v2_payment_reconciliation (
+            payment_id, provider, trade_no, trade_no_hash,
+            callback_no, callback_no_hash, reason, order_status,
+            expected_amount, settled_amount, occurrence_count,
+            first_seen_at, last_seen_at, resolved_at, resolution
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, NULL, NULL) AS new
+        ON DUPLICATE KEY UPDATE
+            occurrence_count = v2_payment_reconciliation.occurrence_count + 1,
+            last_seen_at = new.last_seen_at
+        "#,
+    )
+    .bind(record.payment_id)
+    .bind(record.provider)
+    .bind(trade_no)
+    .bind(trade_no_hash.as_slice())
+    .bind(callback_no)
+    .bind(callback_no_hash.as_slice())
+    .bind(record.reason)
+    .bind(record.order_status)
+    .bind(record.expected_amount)
+    .bind(record.settled_amount)
+    .bind(now)
+    .bind(now)
+    .execute(&mut **tx)
+    .await?;
+    Ok(result.rows_affected())
 }
 
 fn payable_amount_cents(
@@ -334,16 +476,10 @@ impl OrderService {
         }
 
         let mut tx = self.db.begin().await?;
-        // Serialize order creation on the user row before checking the invariant.
-        // Checking first leaves a classic write-skew window: two transactions can
-        // both observe zero unfinished orders, then queue on this same user lock and
-        // each insert after it is released. The generated-column unique index is the
-        // final database guard for writers that do not use this service.
-        let user = find_user_for_order(&mut tx, user_id).await?;
-        // This is a locking read, not a snapshot read. Consequently the first
-        // consistent read in build_plan_order happens only after its plan-row
-        // lock is acquired and observes every reservation committed by the
-        // previous holder of that lock.
+        // Order lifecycle transactions use one global lock order: unfinished/
+        // target order first, then user, then plan/payment. The generated-column
+        // unique key remains the authoritative write-skew guard when two empty
+        // range locks coexist under InnoDB gap-lock semantics.
         let incomplete_order_id: Option<i64> = sqlx::query_scalar(UNFINISHED_ORDER_FOR_UPDATE_SQL)
             .bind(user_id)
             .fetch_optional(&mut *tx)
@@ -353,6 +489,7 @@ impl OrderService {
                 "You have an unpaid or pending order, please try again later or cancel it",
             ));
         }
+        let user = find_user_for_order(&mut tx, user_id).await?;
 
         let trade_no = generate_order_no();
         let now = Utc::now().timestamp();
@@ -437,7 +574,7 @@ impl OrderService {
                 handling_fee_fixed,
                 handling_fee_percent
             FROM v2_payment
-            WHERE id = ?
+            WHERE id = ? AND archived_at IS NULL
             LIMIT 1
             "#,
         )
@@ -469,16 +606,15 @@ impl OrderService {
         }
         let expected_config = serde_json::from_str::<Value>(&payment.config)
             .map_err(|_| ApiError::legacy("Payment config is invalid"))?;
-        // Bind under the same payment-row lock and lock order used by admin
-        // save/drop. Either checkout wins and admin observes the pending binding,
-        // or admin wins and this stale checkout aborts before contacting the new
-        // gateway. This prevents deletion/config mutation from racing every
-        // provider, not only Payment Element.
+        // A shared payment-version lock lets unrelated checkouts use the same
+        // gateway concurrently while serializing an archive/toggle. The exact
+        // immutable driver/config snapshot must still be active before binding.
         let mut bind_tx = self.db.begin().await?;
-        let current_payment = sqlx::query_as::<_, (String, String)>(PAYMENT_CONFIG_FOR_UPDATE_SQL)
-            .bind(payment.id)
-            .fetch_optional(&mut *bind_tx)
-            .await?;
+        let current_payment =
+            sqlx::query_as::<_, (String, String)>(PAYMENT_ACTIVE_CONFIG_FOR_SHARE_SQL)
+                .bind(payment.id)
+                .fetch_optional(&mut *bind_tx)
+                .await?;
         if !payment_config_snapshot_matches(current_payment, &payment.payment, &expected_config) {
             bind_tx.rollback().await?;
             return Err(ApiError::legacy(
@@ -488,7 +624,8 @@ impl OrderService {
         let updated = sqlx::query(
             r#"
             UPDATE v2_order
-            SET payment_id = ?, handling_amount = ?, callback_no = NULL, updated_at = ?
+            SET payment_id = ?, handling_amount = ?, callback_no = NULL,
+                callback_no_hash = NULL, updated_at = ?
             WHERE id = ? AND status = 0 AND payment_id <=> ? AND callback_no <=> ?
             "#,
         )
@@ -549,7 +686,7 @@ impl OrderService {
                    notify_domain, handling_fee_fixed,
                    handling_fee_percent
             FROM v2_payment
-            WHERE id = ? AND payment = 'StripeCredit'
+            WHERE id = ? AND payment = 'StripeCredit' AND archived_at IS NULL
             LIMIT 1
             "#,
         )
@@ -585,33 +722,37 @@ impl OrderService {
         let (intent_id, prepared) =
             stripe_credit_prepare(&payment, &payment_order, reusable_intent).await?;
         // The Stripe network call stays outside a database transaction. Once it
-        // returns, take the same payment-row lock used by admin save/drop, verify
-        // the exact driver/config snapshot, and bind the intent before releasing
-        // that lock. This closes the prepare-vs-config-edit gap without holding a
-        // row lock across an external request.
+        // returns, a shared payment-version lock verifies that the exact immutable
+        // driver/config snapshot remains active before binding the intent. An
+        // archive that won the race makes this path cancel the new intent.
         let expected_config = serde_json::from_str::<Value>(&payment.config)
             .map_err(|_| ApiError::legacy("Payment config is invalid"))?;
         let mut bind_tx = self.db.begin().await?;
-        let current_payment = sqlx::query_as::<_, (String, String)>(PAYMENT_CONFIG_FOR_UPDATE_SQL)
-            .bind(payment.id)
-            .fetch_optional(&mut *bind_tx)
-            .await?;
+        let current_payment =
+            sqlx::query_as::<_, (String, String)>(PAYMENT_ACTIVE_CONFIG_FOR_SHARE_SQL)
+                .bind(payment.id)
+                .fetch_optional(&mut *bind_tx)
+                .await?;
         let payment_changed =
             !payment_config_snapshot_matches(current_payment, "StripeCredit", &expected_config);
         let binding_state = if payment_changed {
             bind_tx.rollback().await?;
             "payment_changed"
         } else {
+            let intent_label = bounded_payment_identifier(&intent_id);
+            let intent_hash = payment_identifier_hash(&intent_id);
             let updated = sqlx::query(
                 r#"
                 UPDATE v2_order
-                SET payment_id = ?, handling_amount = ?, callback_no = ?, updated_at = ?
+                SET payment_id = ?, handling_amount = ?, callback_no = ?,
+                    callback_no_hash = ?, updated_at = ?
                 WHERE id = ? AND status = 0 AND payment_id <=> ? AND callback_no <=> ?
                 "#,
             )
             .bind(payment.id)
             .bind(handling_amount)
-            .bind(&intent_id)
+            .bind(intent_label)
+            .bind(intent_hash.as_slice())
             .bind(Utc::now().timestamp())
             .bind(order.0)
             .bind(order.4)
@@ -720,10 +861,10 @@ impl OrderService {
             .fetch_optional(&self.db)
             .await?
             .ok_or_else(|| ApiError::legacy("gate is not found"))?;
-        // `enable` gates new checkouts only. An authenticated callback can arrive
-        // after an operator disables any gateway; rejecting it would strand money
-        // already accepted by the provider. Admin mutations/deletion are guarded
-        // while a pending order remains bound to this payment id.
+        // `enable` and `archived_at` gate new checkouts only. An authenticated
+        // callback can arrive after an operator archives any gateway version;
+        // rejecting it would strand money already accepted by the provider. The
+        // row's driver/config/UUID are immutable and retained for this purpose.
 
         let outcome = self.verify_payment_notify(&payment, &input).await?;
         let PaymentNotifyOutcome::Verified(verified) = outcome else {
@@ -733,6 +874,7 @@ impl OrderService {
                     PaymentNotifyOutcome::Verified(_) => unreachable!(),
                 },
                 paid_notice: None,
+                late_payment_notice: None,
             });
         };
         let expected_binding = ExpectedPaymentBinding {
@@ -743,10 +885,11 @@ impl OrderService {
             // generate their callback ids only after checkout.
             callback_no: (payment.payment == "StripeCredit").then(|| verified.callback_no.clone()),
         };
-        let paid_notice = self
+        let notices = self
             .paid_by_trade_no(
                 &verified.trade_no,
                 &verified.callback_no,
+                &payment.payment,
                 &expected_binding,
                 verified.settled_amount_cents,
             )
@@ -755,7 +898,8 @@ impl OrderService {
             body: verified
                 .custom_result
                 .unwrap_or_else(|| "success".to_string()),
-            paid_notice,
+            paid_notice: notices.paid,
+            late_payment_notice: notices.late,
         })
     }
 
@@ -987,9 +1131,10 @@ impl OrderService {
         &self,
         trade_no: &str,
         callback_no: &str,
+        provider: &str,
         expected_binding: &ExpectedPaymentBinding,
         settled_amount_cents: Option<i64>,
-    ) -> Result<Option<PaidOrderNotice>, ApiError> {
+    ) -> Result<PaymentSettlementNotices, ApiError> {
         // Commit the paid mark in its OWN transaction first, mirroring Laravel's
         // OrderService::paid() which save()s status=1 before dispatching OrderHandleJob.
         // A gateway-confirmed payment must be durable even if opening the order later
@@ -998,6 +1143,16 @@ impl OrderService {
         let total_amount;
         {
             let mut tx = self.db.begin().await?;
+            let payment_exists: Option<i32> =
+                sqlx::query_scalar("SELECT id FROM v2_payment WHERE id = ? LIMIT 1 FOR SHARE")
+                    .bind(expected_binding.payment_id)
+                    .fetch_optional(&mut *tx)
+                    .await?;
+            if payment_exists.is_none() {
+                return Err(ApiError::legacy(
+                    "Payment verification material no longer exists",
+                ));
+            }
             let Some((
                 order_id,
                 status,
@@ -1006,41 +1161,172 @@ impl OrderService {
                 order_user_id,
                 payment_id,
                 bound_callback_no,
-            )) =
-                sqlx::query_as::<_, (i64, i8, i64, Option<i64>, i64, Option<i32>, Option<String>)>(
-                    PAYMENT_SETTLEMENT_ORDER_SQL,
-                )
-                .bind(trade_no)
-                .fetch_optional(&mut *tx)
-                .await?
+                bound_callback_no_hash,
+            )) = sqlx::query_as::<
+                _,
+                (
+                    i64,
+                    i8,
+                    i64,
+                    Option<i64>,
+                    i64,
+                    Option<i32>,
+                    Option<String>,
+                    Option<Vec<u8>>,
+                ),
+            >(PAYMENT_SETTLEMENT_ORDER_SQL)
+            .bind(trade_no)
+            .fetch_optional(&mut *tx)
+            .await?
             else {
-                return Err(ApiError::legacy("Order does not exist"));
+                let rows_affected = upsert_payment_reconciliation(
+                    &mut tx,
+                    PaymentReconciliation {
+                        payment_id: expected_binding.payment_id,
+                        provider,
+                        trade_no,
+                        callback_no,
+                        reason: "order_not_found",
+                        order_status: -1,
+                        expected_amount: 0,
+                        settled_amount: settled_amount_cents,
+                    },
+                )
+                .await?;
+                tx.commit().await?;
+                let (trade_no_label, trade_no_hash) = bounded_payment_audit_identity(trade_no);
+                let (callback_no_label, callback_no_hash) =
+                    bounded_payment_audit_identity(callback_no);
+                tracing::error!(
+                    trade_no = %trade_no_label,
+                    trade_no_hash,
+                    callback_no = %callback_no_label,
+                    callback_no_hash,
+                    provider,
+                    reason = "order_not_found",
+                    "authenticated payment requires reconciliation"
+                );
+                return Ok(PaymentSettlementNotices {
+                    paid: None,
+                    late: should_emit_late_payment_notice(rows_affected).then_some(
+                        LatePaymentNotice {
+                            trade_no: trade_no_label,
+                            trade_no_hash,
+                            callback_no: callback_no_label,
+                            callback_no_hash,
+                            reason: "order_not_found",
+                            order_status: -1,
+                            expected_amount: 0,
+                            settled_amount: settled_amount_cents,
+                        },
+                    ),
+                });
             };
             // Every callback must still belong to the payment method currently
             // bound to this exact locked row. This closes the method-switch TOCTOU
             // gap for all gateways. Stripe additionally checks authenticated user
             // metadata, and Payment Element checks its pre-bound intent id.
-            if !payment_binding_matches(
+            let binding_matches = payment_binding_matches(
                 expected_binding,
                 order_user_id,
                 payment_id,
                 bound_callback_no.as_deref(),
-            ) {
+                bound_callback_no_hash.as_deref(),
+            );
+            let amount_matches = settled_amount_cents.is_none_or(|settled_amount_cents| {
+                payment_amount_matches(amount, handling_amount, settled_amount_cents)
+            });
+            let previously_reconciled = if binding_matches && amount_matches && status == 0 {
+                let callback_no_hash = payment_identifier_hash(callback_no);
+                sqlx::query_scalar::<_, bool>(
+                    "SELECT EXISTS(SELECT 1 FROM v2_payment_reconciliation \
+                     WHERE payment_id = ? AND callback_no_hash = ?)",
+                )
+                .bind(expected_binding.payment_id)
+                .bind(callback_no_hash.as_slice())
+                .fetch_one(&mut *tx)
+                .await?
+            } else {
+                false
+            };
+            let reconciliation_reason = if !binding_matches {
+                Some("payment_binding_mismatch")
+            } else if !amount_matches {
+                Some("settled_amount_mismatch")
+            } else if previously_reconciled {
+                Some("previously_reconciled")
+            } else if status != 0 {
+                let ordinary_replay = is_ordinary_payment_replay(
+                    status,
+                    bound_callback_no.as_deref(),
+                    bound_callback_no_hash.as_deref(),
+                    callback_no,
+                );
+                if ordinary_replay {
+                    let callback_no_hash = payment_identifier_hash(callback_no);
+                    if bound_callback_no_hash.as_deref() != Some(callback_no_hash.as_slice()) {
+                        sqlx::query("UPDATE v2_order SET callback_no_hash = ? WHERE id = ?")
+                            .bind(callback_no_hash.as_slice())
+                            .bind(order_id)
+                            .execute(&mut *tx)
+                            .await?;
+                    }
+                    tx.commit().await?;
+                    return Ok(PaymentSettlementNotices::default());
+                }
+                Some("order_not_pending")
+            } else {
+                None
+            };
+            if let Some(reason) = reconciliation_reason {
+                let expected_amount = amount
+                    .checked_add(handling_amount.unwrap_or_default())
+                    .ok_or_else(|| {
+                        ApiError::legacy("Payment amount is outside the supported range")
+                    })?;
+                let rows_affected = upsert_payment_reconciliation(
+                    &mut tx,
+                    PaymentReconciliation {
+                        payment_id: expected_binding.payment_id,
+                        provider,
+                        trade_no,
+                        callback_no,
+                        reason,
+                        order_status: status,
+                        expected_amount,
+                        settled_amount: settled_amount_cents,
+                    },
+                )
+                .await?;
                 tx.commit().await?;
-                return Ok(None);
-            }
-            if status != 0 {
-                // Already paid/opened/cancelled: idempotent no-op, safe on gateway replay.
-                // Laravel's `handle()` returns early here without the `成功收款` message, so
-                // report `None` and the caller suppresses the admin notification.
-                tx.commit().await?;
-                return Ok(None);
-            }
-            if let Some(settled_amount_cents) = settled_amount_cents
-                && !payment_amount_matches(amount, handling_amount, settled_amount_cents)
-            {
-                tx.rollback().await?;
-                return Err(ApiError::legacy("Payment amount does not match the order"));
+                let (trade_no_label, trade_no_hash) = bounded_payment_audit_identity(trade_no);
+                let (callback_no_label, callback_no_hash) =
+                    bounded_payment_audit_identity(callback_no);
+                tracing::error!(
+                    trade_no = %trade_no_label,
+                    trade_no_hash,
+                    callback_no = %callback_no_label,
+                    callback_no_hash,
+                    provider,
+                    order_status = status,
+                    reason,
+                    "authenticated payment requires reconciliation"
+                );
+                return Ok(PaymentSettlementNotices {
+                    paid: None,
+                    late: should_emit_late_payment_notice(rows_affected).then_some(
+                        LatePaymentNotice {
+                            trade_no: trade_no_label,
+                            trade_no_hash,
+                            callback_no: callback_no_label,
+                            callback_no_hash,
+                            reason,
+                            order_status: status,
+                            expected_amount,
+                            settled_amount: settled_amount_cents,
+                        },
+                    ),
+                });
             }
             mark_order_paid(&mut tx, order_id, callback_no, Utc::now().timestamp()).await?;
             tx.commit().await?;
@@ -1058,10 +1344,13 @@ impl OrderService {
                 "order marked paid but opening failed; check_order will retry"
             );
         }
-        Ok(Some(PaidOrderNotice {
-            trade_no: trade_no.to_string(),
-            total_amount,
-        }))
+        Ok(PaymentSettlementNotices {
+            paid: Some(PaidOrderNotice {
+                trade_no: trade_no.to_string(),
+                total_amount,
+            }),
+            late: None,
+        })
     }
 }
 #[cfg(test)]

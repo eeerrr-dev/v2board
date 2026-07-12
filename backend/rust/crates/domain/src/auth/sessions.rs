@@ -8,16 +8,39 @@ use uuid::Uuid;
 use v2board_compat::ApiError;
 use v2board_db as db;
 
-use super::{AuthService, cache_key, legacy_guid};
+use super::{AuthService, cache_key, legacy_guid, validation::validate_password};
 
-#[derive(Debug, Serialize)]
+const MAX_SESSION_METADATA_BYTES: usize = 256 * 1024;
+const MAX_SESSION_METADATA_ENTRIES: usize = 100;
+const MAX_SESSION_IP_BYTES: usize = 64;
+const MAX_SESSION_USER_AGENT_BYTES: usize = 512;
+const AUTH_STEP_UP_KEY_PREFIX: &str = "AUTH_STEP_UP_";
+const STEP_UP_LIMIT_USER_PREFIX: &str = "AUTH_STEP_UP_LIMIT_USER_";
+const STEP_UP_LIMIT_IP_PREFIX: &str = "AUTH_STEP_UP_LIMIT_IP_";
+
+pub(super) const RESERVE_STEP_UP_ATTEMPT_SCRIPT: &str = r#"
+local user_count = tonumber(redis.call('GET', KEYS[1]) or '0')
+local ip_count = tonumber(redis.call('GET', KEYS[2]) or '0')
+if user_count >= tonumber(ARGV[1]) or ip_count >= tonumber(ARGV[2]) then
+    return 0
+end
+for index = 1, 2 do
+    local count = redis.call('INCR', KEYS[index])
+    if count == 1 then
+        redis.call('EXPIRE', KEYS[index], ARGV[3])
+    end
+end
+return 1
+"#;
+
+#[derive(Serialize)]
 pub struct AuthData {
     pub token: String,
     pub is_admin: i8,
     pub auth_data: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub(super) struct AuthClaims {
     id: i64,
     session: String,
@@ -27,14 +50,14 @@ pub(super) struct AuthClaims {
     pub(super) session_epoch: i64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 struct OpaqueSessionIdentity {
     id: i64,
     session: String,
     session_epoch: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SessionMeta {
     ip: Option<String>,
     login_at: i64,
@@ -45,15 +68,19 @@ pub struct SessionMeta {
     token_hash: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     expires_at: Option<i64>,
+    #[serde(default)]
+    password_authenticated: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Clone, Serialize)]
 pub struct AuthUser {
     pub id: i64,
     pub email: String,
     pub is_admin: i8,
     pub is_staff: i8,
     pub session_id: String,
+    pub authenticated_at: i64,
+    pub password_authenticated: bool,
 }
 
 impl AuthService {
@@ -92,8 +119,26 @@ impl AuthService {
         let token_value = token_value.ok_or_else(|| ApiError::legacy("Token error"))?;
         let (user_id, session_epoch) =
             parse_temp_token(&token_value).ok_or_else(|| ApiError::legacy("Token error"))?;
-        self.auth_data_for_user(user_id, Some(session_epoch), ip, user_agent)
+        self.auth_data_for_user(user_id, Some(session_epoch), ip, user_agent, false)
             .await
+    }
+
+    pub(super) async fn auth_data_for_user(
+        &self,
+        user_id: i64,
+        expected_session_epoch: Option<i64>,
+        ip: Option<String>,
+        user_agent: Option<String>,
+        password_authenticated: bool,
+    ) -> Result<AuthData, ApiError> {
+        self.auth_data_for_user_inner(
+            user_id,
+            expected_session_epoch,
+            ip,
+            user_agent,
+            password_authenticated,
+        )
+        .await
     }
 
     pub fn login_redirect_url(&self, token: &str, redirect: Option<&str>) -> String {
@@ -118,12 +163,13 @@ impl AuthService {
         }
     }
 
-    pub(super) async fn auth_data_for_user(
+    async fn auth_data_for_user_inner(
         &self,
         user_id: i64,
         expected_session_epoch: Option<i64>,
         ip: Option<String>,
         user_agent: Option<String>,
+        password_authenticated: bool,
     ) -> Result<AuthData, ApiError> {
         let user = db::user::find_user_for_auth_by_id(&self.db, user_id)
             .await?
@@ -143,7 +189,15 @@ impl AuthService {
         self.legacy_jwt_deadline().await?;
 
         let session = Uuid::new_v4().simple().to_string();
-        let expires_at = now.saturating_add(self.config.auth_session_ttl_seconds as i64);
+        let session_ttl_seconds = session_ttl_seconds(
+            self.config.auth_session_ttl_seconds,
+            self.config.privileged_auth_session_ttl_seconds,
+            user.is_admin,
+            user.is_staff,
+        );
+        let expires_at = now.saturating_add(session_ttl_seconds as i64);
+        let ip = ip.map(|value| truncate_utf8(value, MAX_SESSION_IP_BYTES));
+        let user_agent = user_agent.map(|value| truncate_utf8(value, MAX_SESSION_USER_AGENT_BYTES));
         let mut auth_data = None;
         for _ in 0..3 {
             let candidate = generate_auth_token()?;
@@ -162,8 +216,10 @@ impl AuthService {
                         auth_data: String::new(),
                         token_hash: Some(token_hash),
                         expires_at: Some(expires_at),
+                        password_authenticated,
                     },
                     &candidate,
+                    session_ttl_seconds,
                 )
                 .await?;
             if inserted {
@@ -206,15 +262,17 @@ impl AuthService {
         if user.banned != 0 || user.session_epoch != claims.session_epoch {
             return Err(ApiError::unauthorized());
         }
-        if !self.check_session(claims.id, &claims.session).await? {
+        let Some(session_meta) = self.session_meta(claims.id, &claims.session).await? else {
             return Err(ApiError::unauthorized());
-        }
+        };
         Ok(AuthUser {
             id: user.id,
             email: user.email,
             is_admin: user.is_admin,
             is_staff: user.is_staff,
             session_id: claims.session,
+            authenticated_at: session_meta.login_at,
+            password_authenticated: session_meta.password_authenticated,
         })
     }
 
@@ -274,6 +332,109 @@ impl AuthService {
         Ok(true)
     }
 
+    /// Re-verifies a privileged user's password and issues a short-lived token
+    /// bound to the currently authenticated session. Deployments can enable the
+    /// corresponding mutation gate after their admin client has learned to send
+    /// the returned token in `x-v2board-step-up`.
+    pub async fn create_privileged_step_up(
+        &self,
+        user_id: i64,
+        session_id: &str,
+        password: &str,
+        client_ip: Option<&str>,
+    ) -> Result<String, ApiError> {
+        validate_password(password)?;
+        let limiter_keys = step_up_limiter_keys(user_id, client_ip);
+        let mut limiter_conn = self.redis.clone();
+        let reserved = redis::Script::new(RESERVE_STEP_UP_ATTEMPT_SCRIPT)
+            .key(&limiter_keys[0])
+            .key(&limiter_keys[1])
+            .arg(self.config.privileged_step_up_max_attempts)
+            .arg(
+                self.config
+                    .privileged_step_up_max_attempts
+                    .saturating_mul(5),
+            )
+            .arg(self.config.privileged_step_up_attempt_window_seconds)
+            .invoke_async::<i64>(&mut limiter_conn)
+            .await?;
+        if reserved != 1 {
+            return Err(ApiError::legacy(
+                "Too many password verification attempts; try again later",
+            ));
+        }
+        let user = db::user::find_user_for_auth_by_id(&self.db, user_id)
+            .await?
+            .ok_or_else(ApiError::unauthorized)?;
+        if user.banned != 0 || (user.is_admin == 0 && user.is_staff == 0) {
+            return Err(ApiError::unauthorized());
+        }
+        if !self
+            .password_kdf
+            .verify(
+                user.password_algo.as_deref(),
+                user.password_salt.as_deref(),
+                password,
+                &user.password,
+            )
+            .await?
+        {
+            return Err(ApiError::legacy("Incorrect email or password"));
+        }
+        if !self.check_session(user_id, session_id).await? {
+            return Err(ApiError::unauthorized());
+        }
+        let mut limiter_conn = self.redis.clone();
+        if let Err(error) = redis::cmd("DEL")
+            .arg(&limiter_keys)
+            .query_async::<i64>(&mut limiter_conn)
+            .await
+        {
+            tracing::warn!(?error, "step-up limiter success cleanup failed");
+        }
+
+        for _ in 0..3 {
+            let token = generate_auth_token()?;
+            let key = step_up_key(&token);
+            let value = serde_json::to_string(&(user_id, session_id))
+                .map_err(|_| ApiError::internal("step-up identity encode error"))?;
+            let mut conn = self.redis.clone();
+            let inserted: Option<String> = redis::cmd("SET")
+                .arg(key)
+                .arg(value)
+                .arg("EX")
+                .arg(self.config.privileged_step_up_ttl_seconds)
+                .arg("NX")
+                .query_async(&mut conn)
+                .await?;
+            if inserted.is_some() {
+                return Ok(token);
+            }
+        }
+        Err(ApiError::internal("could not allocate a step-up token"))
+    }
+
+    pub async fn verify_privileged_step_up(
+        &self,
+        user_id: i64,
+        session_id: &str,
+        token: &str,
+    ) -> Result<bool, ApiError> {
+        if token.is_empty() || token.len() > 256 {
+            return Ok(false);
+        }
+        let mut conn = self.redis.clone();
+        let value: Option<String> = conn.get(step_up_key(token)).await?;
+        let Some(value) = value else {
+            return Ok(false);
+        };
+        let Ok((bound_user_id, bound_session_id)) = serde_json::from_str::<(i64, String)>(&value)
+        else {
+            return Ok(false);
+        };
+        Ok(bound_user_id == user_id && bound_session_id == session_id)
+    }
+
     fn decode_legacy_auth_data(&self, token: &str) -> Result<AuthClaims, ApiError> {
         let mut validation = Validation::new(Algorithm::HS256);
         validation.validate_exp = false;
@@ -294,6 +455,7 @@ impl AuthService {
         session_epoch: i64,
         meta: SessionMeta,
         auth_data: &str,
+        ttl_seconds: u64,
     ) -> Result<bool, ApiError> {
         let sessions_key = user_sessions_key(user_id);
         let auth_keys_key = user_auth_keys_key(user_id);
@@ -314,8 +476,10 @@ impl AuthService {
             .arg(session_id)
             .arg(meta)
             .arg(identity)
-            .arg(self.config.auth_session_ttl_seconds)
+            .arg(ttl_seconds)
             .arg(Utc::now().timestamp())
+            .arg(self.config.auth_session_max_per_user)
+            .arg(AUTH_SESSION_KEY_PREFIX)
             .invoke_async::<i64>(&mut conn)
             .await?;
         Ok(inserted == 1)
@@ -352,8 +516,27 @@ impl AuthService {
     }
 
     async fn check_session(&self, user_id: i64, session_id: &str) -> Result<bool, ApiError> {
+        Ok(self.session_meta(user_id, session_id).await?.is_some())
+    }
+
+    async fn session_meta(
+        &self,
+        user_id: i64,
+        session_id: &str,
+    ) -> Result<Option<SessionMeta>, ApiError> {
         let sessions = self.load_sessions(user_id).await?;
-        Ok(sessions.contains_key(session_id))
+        let Some(value) = sessions.get(session_id).cloned() else {
+            return Ok(None);
+        };
+        let meta =
+            serde_json::from_value::<SessionMeta>(value).map_err(|_| ApiError::unauthorized())?;
+        if meta
+            .expires_at
+            .is_some_and(|expires_at| expires_at <= Utc::now().timestamp())
+        {
+            return Ok(None);
+        }
+        Ok(Some(meta))
     }
 
     async fn load_sessions(
@@ -371,9 +554,49 @@ pub(super) fn decode_session_metadata(
     value: Option<&str>,
 ) -> Result<serde_json::Map<String, serde_json::Value>, ApiError> {
     match value {
-        Some(value) => serde_json::from_str(value)
-            .map_err(|error| ApiError::internal(format!("session metadata decode error: {error}"))),
+        Some(value) => {
+            if value.len() > MAX_SESSION_METADATA_BYTES {
+                return Err(ApiError::internal(
+                    "session metadata exceeds its size limit",
+                ));
+            }
+            let sessions =
+                serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(value).map_err(
+                    |error| ApiError::internal(format!("session metadata decode error: {error}")),
+                )?;
+            if sessions.len() > MAX_SESSION_METADATA_ENTRIES {
+                return Err(ApiError::internal(
+                    "session metadata exceeds its entry limit",
+                ));
+            }
+            Ok(sessions)
+        }
         None => Ok(serde_json::Map::new()),
+    }
+}
+
+pub(super) fn truncate_utf8(mut value: String, maximum_bytes: usize) -> String {
+    if value.len() <= maximum_bytes {
+        return value;
+    }
+    let mut boundary = maximum_bytes;
+    while !value.is_char_boundary(boundary) {
+        boundary -= 1;
+    }
+    value.truncate(boundary);
+    value
+}
+
+pub(super) fn session_ttl_seconds(
+    ordinary: u64,
+    privileged: u64,
+    is_admin: i8,
+    is_staff: i8,
+) -> u64 {
+    if is_admin != 0 || is_staff != 0 {
+        privileged
+    } else {
+        ordinary
     }
 }
 
@@ -395,6 +618,18 @@ fn auth_token_hash(auth_data: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(auth_data.as_bytes());
     hex::encode(hasher.finalize())
+}
+
+fn step_up_key(token: &str) -> String {
+    format!("{AUTH_STEP_UP_KEY_PREFIX}{}", auth_token_hash(token))
+}
+
+pub(super) fn step_up_limiter_keys(user_id: i64, client_ip: Option<&str>) -> [String; 2] {
+    let ip_hash = auth_token_hash(client_ip.unwrap_or("unknown"));
+    [
+        format!("{STEP_UP_LIMIT_USER_PREFIX}{user_id}"),
+        format!("{STEP_UP_LIMIT_IP_PREFIX}{ip_hash}"),
+    ]
 }
 
 pub(super) fn auth_session_key(auth_data: &str) -> String {
@@ -438,12 +673,46 @@ if current then
         sessions = decoded
     end
 end
+local function remove_session(session_id, meta)
+    if type(meta) == 'table' and meta['token_hash'] then
+        local auth_key = ARGV[7] .. meta['token_hash']
+        redis.call('DEL', auth_key)
+        redis.call('SREM', KEYS[3], auth_key)
+    end
+    sessions[session_id] = nil
+end
 for session_id, meta in pairs(sessions) do
     if type(meta) == 'table' and meta['expires_at'] and tonumber(meta['expires_at']) <= tonumber(ARGV[5]) then
-        sessions[session_id] = nil
+        remove_session(session_id, meta)
     end
 end
 sessions[ARGV[1]] = cjson.decode(ARGV[2])
+local count = 0
+for _ in pairs(sessions) do
+    count = count + 1
+end
+while count > tonumber(ARGV[6]) do
+    local oldest_id = nil
+    local oldest_login = nil
+    for session_id, meta in pairs(sessions) do
+        if session_id ~= ARGV[1] then
+            local login_at = 0
+            if type(meta) == 'table' and meta['login_at'] then
+                login_at = tonumber(meta['login_at']) or 0
+            end
+            if oldest_id == nil or login_at < oldest_login or
+                (login_at == oldest_login and session_id < oldest_id) then
+                oldest_id = session_id
+                oldest_login = login_at
+            end
+        end
+    end
+    if oldest_id == nil then
+        break
+    end
+    remove_session(oldest_id, sessions[oldest_id])
+    count = count - 1
+end
 redis.call('SET', KEYS[1], cjson.encode(sessions), 'EX', ARGV[4])
 redis.call('SADD', KEYS[3], KEYS[2])
 redis.call('EXPIRE', KEYS[3], ARGV[4])

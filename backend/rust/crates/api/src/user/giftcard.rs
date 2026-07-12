@@ -37,6 +37,7 @@ struct GiftUserRow {
     balance: i32,
     expired_at: Option<i64>,
     transfer_enable: i64,
+    traffic_epoch: i64,
     u: i64,
     d: i64,
     plan_id: Option<i32>,
@@ -46,6 +47,13 @@ pub(super) const GIFTCARD_FOR_UPDATE_SQL: &str = r#"
 SELECT id, `type`, value, plan_id, limit_use, started_at, ended_at
 FROM v2_giftcard
 WHERE code = ?
+LIMIT 1
+FOR UPDATE
+"#;
+pub(super) const GIFTCARD_USER_ORDER_RANGE_SQL: &str = r#"
+SELECT id
+FROM v2_order
+WHERE user_id = ? AND status IN (0, 1)
 LIMIT 1
 FOR UPDATE
 "#;
@@ -68,8 +76,16 @@ pub(crate) async fn redeem_giftcard(
     )?;
     let now = Utc::now().timestamp();
     let mut tx = state.db.begin().await?;
+    // All subscription writers acquire the unfinished-order range before the
+    // user row.  Gift-card types 1-4 do not inspect or reject that order; this
+    // is only a serialization read so their externally visible behavior stays
+    // unchanged while type 5 cannot deadlock with order creation/cancellation.
+    let _: Option<i64> = sqlx::query_scalar(GIFTCARD_USER_ORDER_RANGE_SQL)
+        .bind(auth_user.id)
+        .fetch_optional(&mut *tx)
+        .await?;
     let mut user = sqlx::query_as::<_, GiftUserRow>(
-        "SELECT id, balance, expired_at, transfer_enable, u, d, plan_id FROM v2_user WHERE id = ? LIMIT 1 FOR UPDATE",
+        "SELECT id, balance, expired_at, transfer_enable, traffic_epoch, u, d, plan_id FROM v2_user WHERE id = ? LIMIT 1 FOR UPDATE",
     )
     .bind(auth_user.id)
     .fetch_optional(&mut *tx)
@@ -135,6 +151,9 @@ pub(crate) async fn redeem_giftcard(
                 .ok_or_else(|| ApiError::legacy("Gift card traffic exceeds the supported range"))?;
         }
         4 => {
+            user.traffic_epoch = user.traffic_epoch.checked_add(1).ok_or_else(|| {
+                ApiError::internal("user traffic epoch exceeds the supported range")
+            })?;
             user.u = 0;
             user.d = 0;
         }
@@ -176,6 +195,9 @@ pub(crate) async fn redeem_giftcard(
             device_limit = plan.device_limit;
             apply_plan_card = true;
             user.transfer_enable = checked_gib_bytes(plan.transfer_enable)?;
+            user.traffic_epoch = user.traffic_epoch.checked_add(1).ok_or_else(|| {
+                ApiError::internal("user traffic epoch exceeds the supported range")
+            })?;
             user.u = 0;
             user.d = 0;
             user.expired_at = if value == 0 {
@@ -190,7 +212,7 @@ pub(crate) async fn redeem_giftcard(
     sqlx::query(
         r#"
         UPDATE v2_user
-        SET balance = ?, expired_at = ?, transfer_enable = ?, u = ?, d = ?,
+        SET balance = ?, expired_at = ?, transfer_enable = ?, traffic_epoch = ?, u = ?, d = ?,
             plan_id = ?, group_id = COALESCE(?, group_id),
             device_limit = IF(?, ?, device_limit), updated_at = ?
         WHERE id = ?
@@ -199,6 +221,7 @@ pub(crate) async fn redeem_giftcard(
     .bind(user.balance)
     .bind(user.expired_at)
     .bind(user.transfer_enable)
+    .bind(user.traffic_epoch)
     .bind(user.u)
     .bind(user.d)
     .bind(user.plan_id)

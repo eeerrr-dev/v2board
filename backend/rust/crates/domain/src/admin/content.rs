@@ -1,5 +1,14 @@
 use super::*;
 
+pub(super) fn validate_ticket_message_length(message: &str) -> Result<(), ApiError> {
+    if message.len() > 65_535 {
+        return Err(validation_error("message", "工单回复内容过长"));
+    }
+    Ok(())
+}
+
+const GENERATED_CODE_MAX_ROWS: usize = 1_000;
+
 #[derive(Clone, Copy)]
 enum GeneratedCodeTable {
     Coupon,
@@ -52,29 +61,40 @@ async fn insert_generated_codes(
     Ok(())
 }
 
-async fn unique_giftcard_codes(
+async fn insert_unique_generated_code_batch(
     tx: &mut Transaction<'_, MySql>,
+    table: GeneratedCodeTable,
+    field_values: &[(&'static str, AdminSqlValue)],
     count: usize,
+    length: usize,
+    now: i64,
 ) -> Result<Vec<String>, ApiError> {
     for _ in 0..8 {
-        let codes = unique_random_codes(count, 16);
-        let mut query = QueryBuilder::<MySql>::new("SELECT code FROM v2_giftcard WHERE code IN (");
-        let mut separated = query.separated(", ");
-        for code in &codes {
-            separated.push_bind(code);
-        }
-        query.push(")");
-        let existing = query
-            .build_query_scalar::<String>()
-            .fetch_all(&mut **tx)
-            .await?;
-        if existing.is_empty() {
-            return Ok(codes);
+        let codes = unique_random_codes(count, length);
+        match insert_generated_codes(tx, table, field_values, &codes, now).await {
+            Ok(()) => return Ok(codes),
+            Err(ApiError::Database(error)) if is_unique_violation(&error) => continue,
+            Err(error) => return Err(error),
         }
     }
     Err(ApiError::internal(
-        "could not allocate a collision-free giftcard code batch",
+        "could not allocate a collision-free generated code batch",
     ))
+}
+
+fn is_unique_violation(error: &sqlx::Error) -> bool {
+    error
+        .as_database_error()
+        .is_some_and(|error| error.is_unique_violation())
+}
+
+fn duplicate_code_error(error: ApiError, field: &str, message: &str) -> ApiError {
+    match error {
+        ApiError::Database(error) if is_unique_violation(&error) => {
+            ApiError::validation_field(field, message)
+        }
+        error => error,
+    }
 }
 
 const TICKET_NOTIFICATION_GATE_TTL_SECONDS: u64 = 1800;
@@ -432,7 +452,9 @@ impl AdminService {
         // acting admin, reopens the ticket (status = 0), sets reply_status based
         // on authorship, and notifies the owner by email (deduped 30 min).
         let id = required_i64(params, "id")?;
+        let ticket_id = i32::try_from(id).map_err(|_| ApiError::legacy("工单不存在"))?;
         let message = required_string(params, "message")?;
+        validate_ticket_message_length(&message)?;
         let admin_id = self.current_admin_id(params).await?;
         let (ticket_user_id, subject): (i64, String) =
             sqlx::query_as("SELECT user_id, subject FROM v2_ticket WHERE id = ? LIMIT 1")
@@ -440,7 +462,6 @@ impl AdminService {
                 .fetch_optional(&self.db)
                 .await?
                 .ok_or_else(|| ApiError::legacy("工单不存在"))?;
-        let reply_status = i64::from(admin_id != ticket_user_id);
         let prepared_notification = self
             .prepare_ticket_reply_notification(ticket_user_id, &subject, &message)
             .await;
@@ -458,24 +479,25 @@ impl AdminService {
         let now = Utc::now().timestamp();
         let transaction_result: Result<(), ApiError> = async {
             let mut tx = self.db.begin().await?;
-            sqlx::query(
-                "INSERT INTO v2_ticket_message (user_id, ticket_id, message, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-            )
-            .bind(admin_id)
-            .bind(id)
-            .bind(&message)
-            .bind(now)
-            .bind(now)
-            .execute(&mut *tx)
-            .await?;
-            sqlx::query(
-                "UPDATE v2_ticket SET status = 0, reply_status = ?, updated_at = ? WHERE id = ?",
-            )
-            .bind(reply_status)
-            .bind(now)
-            .bind(id)
-            .execute(&mut *tx)
-            .await?;
+            let target =
+                match v2board_db::ticket::lock_operator_reply_target(&mut tx, ticket_id).await? {
+                    v2board_db::ticket::OperatorReplyTargetOutcome::Locked(target) => target,
+                    v2board_db::ticket::OperatorReplyTargetOutcome::NotFound => {
+                        return Err(ApiError::legacy("工单不存在"));
+                    }
+                    v2board_db::ticket::OperatorReplyTargetOutcome::OtherOpenTicketExists => {
+                        return Err(ApiError::legacy(
+                            "用户存在其他未解决工单，无法重新打开该工单",
+                        ));
+                    }
+                };
+            if target.user_id != ticket_user_id {
+                return Err(ApiError::internal(
+                    "ticket owner changed while preparing an admin reply",
+                ));
+            }
+            v2board_db::ticket::apply_operator_reply(&mut tx, &target, admin_id, &message, now)
+                .await?;
             if let Some(notification) = notification.as_ref() {
                 let recipients = vec![notification.email.clone()];
                 let actor = format!("ticket:{ticket_user_id}");
@@ -631,11 +653,14 @@ impl AdminService {
     }
 
     pub(super) async fn ticket_close(&self, id: i64) -> Result<AdminOutput, ApiError> {
-        sqlx::query("UPDATE v2_ticket SET status = 1, updated_at = ? WHERE id = ?")
-            .bind(Utc::now().timestamp())
-            .bind(id)
-            .execute(&self.db)
+        if let Ok(ticket_id) = i32::try_from(id) {
+            v2board_db::ticket::close_ticket_as_operator(
+                &self.db,
+                ticket_id,
+                Utc::now().timestamp(),
+            )
             .await?;
+        }
         Ok(AdminOutput::Data(json!(true)))
     }
 
@@ -721,13 +746,19 @@ impl AdminService {
             let field_values = coupon_field_values(params);
             let count = usize::try_from(count)
                 .map_err(|_| ApiError::validation_field("generate_count", "生成数量格式有误"))?;
-            let codes = unique_random_codes(count, 8);
+            if count > GENERATED_CODE_MAX_ROWS {
+                return Err(ApiError::validation_field(
+                    "generate_count",
+                    "单次最多生成 1000 张优惠券",
+                ));
+            }
             let mut tx = self.db.begin().await?;
-            insert_generated_codes(
+            let codes = insert_unique_generated_code_batch(
                 &mut tx,
                 GeneratedCodeTable::Coupon,
                 &field_values,
-                &codes,
+                count,
+                8,
                 now,
             )
             .await?;
@@ -792,11 +823,17 @@ impl AdminService {
             if let Some(code) = optional_string(params, "code") {
                 values.push(("code", AdminSqlValue::Text(code)));
             }
-            self.update_row("v2_coupon", id, &values, now).await?;
-        } else {
-            let code = optional_string(params, "code").unwrap_or_else(|| random_char(8));
+            self.update_row("v2_coupon", id, &values, now)
+                .await
+                .map_err(|error| duplicate_code_error(error, "code", "优惠码已存在"))?;
+        } else if let Some(code) = optional_string(params, "code") {
             values.push(("code", AdminSqlValue::Text(code)));
-            self.insert_row("v2_coupon", &values, now).await?;
+            self.insert_row("v2_coupon", &values, now)
+                .await
+                .map_err(|error| duplicate_code_error(error, "code", "优惠码已存在"))?;
+        } else {
+            self.insert_generated_single_code("v2_coupon", &values, 8, now)
+                .await?;
         }
         Ok(AdminOutput::Data(json!(true)))
     }
@@ -814,13 +851,19 @@ impl AdminService {
             let field_values = giftcard_field_values(params);
             let count = usize::try_from(count)
                 .map_err(|_| ApiError::validation_field("generate_count", "生成数量格式有误"))?;
+            if count > GENERATED_CODE_MAX_ROWS {
+                return Err(ApiError::validation_field(
+                    "generate_count",
+                    "单次最多生成 1000 张礼品卡",
+                ));
+            }
             let mut tx = self.db.begin().await?;
-            let codes = unique_giftcard_codes(&mut tx, count).await?;
-            insert_generated_codes(
+            let codes = insert_unique_generated_code_batch(
                 &mut tx,
                 GeneratedCodeTable::Giftcard,
                 &field_values,
-                &codes,
+                count,
+                16,
                 now,
             )
             .await?;
@@ -895,11 +938,17 @@ impl AdminService {
             if let Some(code) = optional_string(params, "code") {
                 values.push(("code", AdminSqlValue::Text(code)));
             }
-            self.update_row("v2_giftcard", id, &values, now).await?;
-        } else {
-            let code = optional_string(params, "code").unwrap_or_else(|| random_char(16));
+            self.update_row("v2_giftcard", id, &values, now)
+                .await
+                .map_err(|error| duplicate_code_error(error, "code", "礼品卡卡密已存在"))?;
+        } else if let Some(code) = optional_string(params, "code") {
             values.push(("code", AdminSqlValue::Text(code)));
-            self.insert_row("v2_giftcard", &values, now).await?;
+            self.insert_row("v2_giftcard", &values, now)
+                .await
+                .map_err(|error| duplicate_code_error(error, "code", "礼品卡卡密已存在"))?;
+        } else {
+            self.insert_generated_single_code("v2_giftcard", &values, 16, now)
+                .await?;
         }
         Ok(AdminOutput::Data(json!(true)))
     }
@@ -930,6 +979,27 @@ impl AdminService {
         builder.push(")");
         builder.build().execute(&self.db).await?;
         Ok(())
+    }
+
+    async fn insert_generated_single_code(
+        &self,
+        table: &str,
+        values: &[(&str, AdminSqlValue)],
+        length: usize,
+        now: i64,
+    ) -> Result<(), ApiError> {
+        for _ in 0..8 {
+            let mut candidate = values.to_vec();
+            candidate.push(("code", AdminSqlValue::Text(random_char(length))));
+            match self.insert_row(table, &candidate, now).await {
+                Ok(()) => return Ok(()),
+                Err(ApiError::Database(error)) if is_unique_violation(&error) => continue,
+                Err(error) => return Err(error),
+            }
+        }
+        Err(ApiError::internal(
+            "could not allocate a collision-free generated code",
+        ))
     }
 
     /// Builds and runs a dynamic `UPDATE ... SET ..., updated_at WHERE id = ?`.
@@ -975,7 +1045,13 @@ mod generated_code_tests {
 
         let source = include_str!("content.rs");
         assert!(source.contains("builder.push_values(codes"));
-        assert!(source.contains("SELECT code FROM v2_giftcard WHERE code IN ("));
+        assert!(source.contains("insert_unique_generated_code_batch"));
+        assert!(source.contains("is_unique_violation"));
+        let coupon_migration = include_str!("../../../../migrations/0014_coupon_code_unique.sql");
+        let giftcard_migration =
+            include_str!("../../../../migrations/0015_giftcard_code_unique.sql");
+        assert!(coupon_migration.contains("ADD UNIQUE KEY `uniq_coupon_code` (`code`)"));
+        assert!(giftcard_migration.contains("ADD UNIQUE KEY `uniq_giftcard_code` (`code`)"));
         let retired_row_loop = ["for _ in 0..", "count"].concat();
         assert!(!source.contains(&retired_row_loop));
     }

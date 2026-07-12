@@ -3,7 +3,7 @@ use std::time::Duration;
 use axum::{
     Router,
     extract::Request,
-    http::{HeaderMap, HeaderName, Method, header},
+    http::{HeaderMap, HeaderName, HeaderValue, Method, header},
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -20,7 +20,10 @@ use v2board_config::AppConfig;
 
 use crate::{
     localization::language_middleware,
-    runtime::{AppState, request_timeout_middleware, trusted_client_ip_middleware},
+    runtime::{
+        AppState, enforce_https_middleware, request_timeout_middleware,
+        trusted_client_ip_middleware,
+    },
 };
 
 const X_REQUEST_ID: &str = "x-request-id";
@@ -29,9 +32,8 @@ const MAX_REQUEST_BODY_BYTES: usize = 8 * 1024 * 1024;
 /// Preserve cross-origin API clients while keeping authentication explicit in
 /// the Authorization header. The API has no cookie-auth contract, so enabling
 /// ambient credentials would only broaden future CSRF exposure.
-fn cors_layer() -> CorsLayer {
-    CorsLayer::new()
-        .allow_origin(AllowOrigin::mirror_request())
+fn cors_layer(state: AppState) -> CorsLayer {
+    let cors = CorsLayer::new()
         .allow_methods([Method::GET, Method::POST, Method::OPTIONS, Method::HEAD])
         .allow_headers([
             header::ORIGIN,
@@ -40,9 +42,19 @@ fn cors_layer() -> CorsLayer {
             header::AUTHORIZATION,
             HeaderName::from_static("x-request-with"),
             HeaderName::from_static(X_REQUEST_ID),
+            HeaderName::from_static("x-v2board-step-up"),
         ])
         .expose_headers([HeaderName::from_static(X_REQUEST_ID)])
-        .max_age(Duration::from_secs(10080))
+        .max_age(Duration::from_secs(10080));
+    cors.allow_origin(AllowOrigin::predicate(move |origin, _request| {
+        cors_origin_allowed(&state.config_snapshot().cors_allowed_origins, origin)
+    }))
+}
+
+fn cors_origin_allowed(allowed_origins: &[String], origin: &HeaderValue) -> bool {
+    allowed_origins
+        .iter()
+        .any(|allowed| allowed.as_bytes() == origin.as_bytes())
 }
 
 pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
@@ -61,7 +73,9 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
         );
     let request_id_header = HeaderName::from_static(X_REQUEST_ID);
     let middleware_state = state.clone();
+    let https_state = state.clone();
     let timeout_state = state.clone();
+    let cors_state = state.clone();
     let request_timeout = Duration::from_secs(config.api_request_timeout_seconds);
 
     Router::new()
@@ -105,6 +119,10 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
         .route(
             "/api/v1/passport/auth/forget",
             post(crate::auth::forget_password),
+        )
+        .route(
+            "/api/v1/passport/auth/stepUp",
+            post(crate::auth::privileged_step_up),
         )
         .route(
             "/api/v1/passport/auth/getQuickLoginUrl",
@@ -254,9 +272,10 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
         .fallback(crate::fallback::dynamic_fallback)
         .with_state(state)
         .layer(middleware::from_fn(cache_static_assets))
+        .layer(middleware::from_fn(security_response_headers))
         .layer(middleware::from_fn(language_middleware))
         .layer(CompressionLayer::new())
-        .layer(cors_layer())
+        .layer(cors_layer(cors_state))
         .layer(middleware::from_fn_with_state(
             timeout_state,
             request_timeout_middleware,
@@ -286,6 +305,10 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
             }),
         )
         .layer(middleware::from_fn_with_state(
+            https_state,
+            enforce_https_middleware,
+        ))
+        .layer(middleware::from_fn_with_state(
             middleware_state,
             trusted_client_ip_middleware,
         ))
@@ -294,9 +317,52 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
             header::COOKIE,
             header::SET_COOKIE,
             HeaderName::from_static("x-telegram-bot-api-secret-token"),
+            HeaderName::from_static("x-v2board-server-token"),
+            HeaderName::from_static("x-v2board-step-up"),
         ]))
         .layer(SetRequestIdLayer::new(request_id_header, MakeRequestUuid))
         .layer(middleware::from_fn(sanitize_request_id))
+}
+
+async fn security_response_headers(request: Request, next: Next) -> Response {
+    let path = request.uri().path().to_string();
+    let mut response = next.run(request).await;
+    apply_security_response_headers(&path, response.headers_mut());
+    response
+}
+
+fn apply_security_response_headers(path: &str, headers: &mut HeaderMap) {
+    headers.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    headers.insert(
+        header::X_FRAME_OPTIONS,
+        HeaderValue::from_static("SAMEORIGIN"),
+    );
+    // This CSP directive is additive to X-Frame-Options and deliberately does
+    // not constrain script/style sources, so operator-provided custom HTML
+    // remains compatible while modern browsers still enforce frame isolation.
+    headers.insert(
+        header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static("frame-ancestors 'self'"),
+    );
+    headers.insert(
+        header::REFERRER_POLICY,
+        HeaderValue::from_static("no-referrer"),
+    );
+    headers.insert(
+        HeaderName::from_static("permissions-policy"),
+        HeaderValue::from_static("camera=(), microphone=(), geolocation=()"),
+    );
+    if path.starts_with("/api/") {
+        headers.insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("no-store, max-age=0"),
+        );
+        headers.insert(header::PRAGMA, HeaderValue::from_static("no-cache"));
+        headers.insert(header::EXPIRES, HeaderValue::from_static("0"));
+    }
 }
 
 async fn sanitize_request_id(mut request: Request, next: Next) -> Response {
@@ -377,7 +443,10 @@ fn is_content_hashed_asset(path: &str) -> bool {
 mod tests {
     use axum::http::{HeaderMap, HeaderValue};
 
-    use super::{X_REQUEST_ID, is_content_hashed_asset, valid_request_id, valid_request_id_header};
+    use super::{
+        X_REQUEST_ID, apply_security_response_headers, cors_origin_allowed,
+        is_content_hashed_asset, valid_request_id, valid_request_id_header,
+    };
 
     #[test]
     fn public_asset_gate_accepts_only_flat_content_hashed_files() {
@@ -405,5 +474,37 @@ mod tests {
         headers.append(X_REQUEST_ID, HeaderValue::from_static("first"));
         headers.append(X_REQUEST_ID, HeaderValue::from_static("second"));
         assert!(!valid_request_id_header(&headers));
+    }
+
+    #[test]
+    fn cors_origin_match_uses_the_current_exact_allowlist() {
+        let origin = HeaderValue::from_static("https://app.example.test");
+        assert!(cors_origin_allowed(
+            &["https://app.example.test".to_string()],
+            &origin
+        ));
+        assert!(!cors_origin_allowed(
+            &["https://other.example.test".to_string()],
+            &origin
+        ));
+        assert!(!cors_origin_allowed(&[], &origin));
+    }
+
+    #[test]
+    fn api_responses_are_never_cacheable_and_all_responses_are_hardened() {
+        let mut headers = HeaderMap::new();
+        apply_security_response_headers("/api/v1/passport/auth/login", &mut headers);
+        assert_eq!(headers.get("cache-control").unwrap(), "no-store, max-age=0");
+        assert_eq!(headers.get("x-content-type-options").unwrap(), "nosniff");
+        assert_eq!(headers.get("referrer-policy").unwrap(), "no-referrer");
+        assert_eq!(
+            headers.get("content-security-policy").unwrap(),
+            "frame-ancestors 'self'"
+        );
+
+        let mut asset_headers = HeaderMap::new();
+        apply_security_response_headers("/assets/user/index-deadbeef.js", &mut asset_headers);
+        assert!(asset_headers.get("cache-control").is_none());
+        assert_eq!(asset_headers.get("x-frame-options").unwrap(), "SAMEORIGIN");
     }
 }

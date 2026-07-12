@@ -6,13 +6,15 @@ use uuid::Uuid;
 use v2board_config::{app_now, app_timezone};
 
 use crate::{
-    lease::{SCHEDULER_LOCK_TTL_SECS, SchedulerLock, release_scheduler_lock, run_task_with_lease},
+    lease::{SCHEDULER_LOCK_TTL_SECS, SchedulerLock, release_scheduler_lock, run_with_lease},
     state::WorkerState,
     time::timestamp_before,
 };
 
 pub(crate) const TRAFFIC_RESET_LOCK_KEY: &str = "traffic_reset_lock";
 const TRAFFIC_UPDATE_SCHEDULER_LOCK_KEY: &str = "RUST_SCHEDULER_LOCK_traffic_update";
+const RESET_LOCK_IO_TIMEOUT: Duration = Duration::from_secs(5);
+const RESET_USER_BATCH_SIZE: i64 = 500;
 
 #[derive(Debug, Clone, FromRow)]
 struct ResetUserRow {
@@ -24,29 +26,31 @@ struct ResetUserRow {
 async fn acquire_traffic_reset_lock(state: &WorkerState) -> anyhow::Result<SchedulerLock> {
     let token = Uuid::new_v4().to_string();
     loop {
-        let mut conn = state.redis.get_multiplexed_async_connection().await?;
-        // This is the barrier between accounting and reset. A running traffic
-        // job owns its scheduler lease until every SQL commit is done.
-        // Redis executes this check-and-set atomically, so a new traffic job can
-        // only start before the barrier (and make us wait) or after it (and see
-        // TRAFFIC_RESET_LOCK_KEY and exit without applying anything).
-        let acquired: i64 = redis::Script::new(
-            r#"
-            if redis.call("EXISTS", KEYS[1]) == 1
-                or redis.call("EXISTS", KEYS[2]) == 1 then
+        let acquired: i64 = tokio::time::timeout(RESET_LOCK_IO_TIMEOUT, async {
+            let mut conn = state.redis.get_multiplexed_async_connection().await?;
+            // This is an availability barrier; quota_epoch is the durable
+            // correctness fence. Redis executes the two-key admission check
+            // atomically so ordinary runs avoid producing stale reports.
+            redis::Script::new(
+                r#"
+                if redis.call("EXISTS", KEYS[1]) == 1
+                    or redis.call("EXISTS", KEYS[2]) == 1 then
+                    return 0
+                end
+                local result = redis.call("SET", KEYS[1], ARGV[1], "NX", "EX", ARGV[2])
+                if result then return 1 end
                 return 0
-            end
-            local result = redis.call("SET", KEYS[1], ARGV[1], "NX", "EX", ARGV[2])
-            if result then return 1 end
-            return 0
-            "#,
-        )
-        .key(TRAFFIC_RESET_LOCK_KEY)
-        .key(TRAFFIC_UPDATE_SCHEDULER_LOCK_KEY)
-        .arg(&token)
-        .arg(SCHEDULER_LOCK_TTL_SECS)
-        .invoke_async(&mut conn)
-        .await?;
+                "#,
+            )
+            .key(TRAFFIC_RESET_LOCK_KEY)
+            .key(TRAFFIC_UPDATE_SCHEDULER_LOCK_KEY)
+            .arg(&token)
+            .arg(SCHEDULER_LOCK_TTL_SECS)
+            .invoke_async(&mut conn)
+            .await
+        })
+        .await
+        .map_err(|_| anyhow::anyhow!("timed out acquiring traffic reset barrier"))??;
         if acquired == 1 {
             return Ok(SchedulerLock {
                 key: TRAFFIC_RESET_LOCK_KEY.to_string(),
@@ -59,9 +63,10 @@ async fn acquire_traffic_reset_lock(state: &WorkerState) -> anyhow::Result<Sched
 
 pub(crate) async fn run_traffic(state: &WorkerState) -> anyhow::Result<()> {
     let reset_lock = acquire_traffic_reset_lock(state).await?;
-    let reset_state = state.clone();
-    let task_handle = tokio::spawn(async move { reset_traffic_inner(&reset_state).await });
-    let result = run_task_with_lease(task_handle, state, &reset_lock).await;
+    // Keep reset work in the lease-owning future. Dropping this future on loss
+    // of the outer scheduler lease cancels the database work instead of
+    // detaching an unmonitored child task.
+    let result = run_with_lease(reset_traffic_inner(state), state, &reset_lock).await;
     if let Err(release_error) = release_scheduler_lock(state, reset_lock).await {
         if result.is_ok() {
             return Err(release_error);
@@ -73,40 +78,67 @@ pub(crate) async fn run_traffic(state: &WorkerState) -> anyhow::Result<()> {
 
 async fn reset_traffic_inner(state: &WorkerState) -> anyhow::Result<()> {
     let now = Utc::now().timestamp();
+    let reset_key = app_now().format("%Y-%m-%d").to_string();
     // INNER JOIN, not LEFT JOIN: ResetTraffic.php groups existing plans by
     // reset_traffic_method and only resets users whose plan_id is in one of those
     // GROUP_CONCAT lists (`whereIn('plan_id', $planIds)`). A user with a NULL or
     // orphaned plan_id is never in any list, so it is never reset. The join keeps
     // only users backed by a real plan; a matched row with a NULL method genuinely
     // means "plan exists but method is NULL" and falls through to the config default.
-    let users = sqlx::query_as::<_, ResetUserRow>(
-        r#"
-        SELECT u.id, u.expired_at, p.reset_traffic_method
-        FROM v2_user u
-        INNER JOIN v2_plan p ON p.id = u.plan_id
-        WHERE u.expired_at IS NOT NULL
-          AND u.expired_at > ?
-        "#,
-    )
-    .bind(now)
-    .fetch_all(&state.db)
-    .await?;
-    let ids = users
-        .into_iter()
-        .filter(|user| should_reset_user(user, state.config.reset_traffic_method))
-        .map(|user| user.id)
-        .collect::<Vec<_>>();
-    if !ids.is_empty() {
-        let mut builder =
-            QueryBuilder::<MySql>::new("UPDATE v2_user SET u = 0, d = 0 WHERE id IN (");
-        {
-            let mut separated = builder.separated(", ");
-            for id in ids {
-                separated.push_bind(id);
+    let mut after_id = 0_i64;
+    loop {
+        let mut tx = state.db.begin().await?;
+        let users = sqlx::query_as::<_, ResetUserRow>(
+            r#"
+            SELECT u.id, u.expired_at, p.reset_traffic_method
+            FROM v2_user u
+            INNER JOIN v2_plan p ON p.id = u.plan_id
+            WHERE u.id > ?
+              AND u.expired_at IS NOT NULL
+              AND u.expired_at > ?
+            ORDER BY u.id
+            LIMIT ?
+            FOR UPDATE
+            "#,
+        )
+        .bind(after_id)
+        .bind(now)
+        .bind(RESET_USER_BATCH_SIZE)
+        .fetch_all(&mut *tx)
+        .await?;
+        let Some(last_id) = users.last().map(|user| user.id) else {
+            tx.commit().await?;
+            break;
+        };
+        let ids = users
+            .iter()
+            .filter(|user| should_reset_user(user, state.config.reset_traffic_method))
+            .map(|user| user.id)
+            .collect::<Vec<_>>();
+        if !ids.is_empty() {
+            let mut builder = QueryBuilder::<MySql>::new(
+                "UPDATE v2_user SET traffic_epoch = traffic_epoch + 1, \
+                 u = 0, d = 0, scheduled_traffic_reset_key = ",
+            );
+            builder.push_bind(&reset_key);
+            builder.push(", updated_at = ");
+            builder.push_bind(now);
+            builder.push(" WHERE id IN (");
+            {
+                let mut separated = builder.separated(", ");
+                for id in ids {
+                    separated.push_bind(id);
+                }
             }
+            builder.push(
+                ") AND (scheduled_traffic_reset_key IS NULL OR scheduled_traffic_reset_key <> ",
+            );
+            builder.push_bind(&reset_key);
+            builder.push(")");
+            builder.build().execute(&mut *tx).await?;
         }
-        builder.push(")");
-        builder.build().execute(&state.db).await?;
+        tx.commit().await?;
+        after_id = last_id;
     }
     Ok(())
 }

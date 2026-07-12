@@ -42,8 +42,8 @@ async fn main() -> anyhow::Result<()> {
         anyhow::bail!("unknown v2board-api command: {command}");
     }
 
-    let config = AppConfig::from_env();
     init_tracing();
+    let config = AppConfig::try_from_env()?;
     let db = connect_mysql(&config.database_url).await?;
     if command.as_deref() == Some("migrate") {
         migrate_mysql(&db).await?;
@@ -55,7 +55,12 @@ async fn main() -> anyhow::Result<()> {
         return reset_admin_password(&db, &config, &password_kdf).await;
     }
     let redis = redis::Client::open(config.redis_url.clone())?;
-    let auth_redis = redis::aio::ConnectionManager::new(redis.clone()).await?;
+    let auth_redis = tokio::time::timeout(
+        std::time::Duration::from_secs(config.http_connect_timeout_seconds),
+        redis::aio::ConnectionManager::new(redis.clone()),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("timed out establishing the Redis connection manager"))??;
     let http = build_http_client(&config)?;
     let smtp = SmtpTransportCache::default();
     let state = AppState::new(

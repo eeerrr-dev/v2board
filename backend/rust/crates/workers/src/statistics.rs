@@ -7,6 +7,24 @@ const STAT_ORDER_TOTAL_SQL: &str = "SELECT CAST(COALESCE(SUM(total_amount), 0) A
 const STAT_PAID_TOTAL_SQL: &str = "SELECT CAST(COALESCE(SUM(total_amount), 0) AS CHAR) FROM v2_order WHERE paid_at >= ? AND paid_at < ? AND status NOT IN (0, 2)";
 const STAT_COMMISSION_TOTAL_SQL: &str = "SELECT CAST(COALESCE(SUM(get_amount), 0) AS CHAR) FROM v2_commission_log WHERE created_at >= ? AND created_at < ?";
 const STAT_TRANSFER_TOTAL_SQL: &str = "SELECT CAST(COALESCE(SUM(u) + SUM(d), 0) AS CHAR) FROM v2_stat_server WHERE created_at >= ? AND created_at < ?";
+const STAT_UPSERT_SQL: &str = r#"
+INSERT INTO v2_stat
+    (record_at, record_type, order_count, order_total, commission_count,
+     commission_total, paid_count, paid_total, register_count, invite_count,
+     transfer_used_total, created_at, updated_at)
+VALUES (?, 'd', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) AS incoming
+ON DUPLICATE KEY UPDATE
+    order_count = incoming.order_count,
+    order_total = incoming.order_total,
+    commission_count = incoming.commission_count,
+    commission_total = incoming.commission_total,
+    paid_count = incoming.paid_count,
+    paid_total = incoming.paid_total,
+    register_count = incoming.register_count,
+    invite_count = incoming.invite_count,
+    transfer_used_total = incoming.transfer_used_total,
+    updated_at = incoming.updated_at
+"#;
 
 fn exact_i64_aggregate(value: &str, metric: &str) -> anyhow::Result<i64> {
     let exact = value
@@ -85,40 +103,21 @@ pub(crate) async fn run(state: &WorkerState) -> anyhow::Result<()> {
             .await?,
         "traffic total",
     )?;
-    sqlx::query(
-        r#"
-        INSERT INTO v2_stat
-            (record_at, record_type, order_count, order_total, commission_count,
-             commission_total, paid_count, paid_total, register_count, invite_count,
-             transfer_used_total, created_at, updated_at)
-        VALUES (?, 'd', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-            order_count = VALUES(order_count),
-            order_total = VALUES(order_total),
-            commission_count = VALUES(commission_count),
-            commission_total = VALUES(commission_total),
-            paid_count = VALUES(paid_count),
-            paid_total = VALUES(paid_total),
-            register_count = VALUES(register_count),
-            invite_count = VALUES(invite_count),
-            transfer_used_total = VALUES(transfer_used_total),
-            updated_at = VALUES(updated_at)
-        "#,
-    )
-    .bind(start_at)
-    .bind(order_count)
-    .bind(order_total)
-    .bind(commission_count)
-    .bind(commission_total)
-    .bind(paid_count)
-    .bind(paid_total)
-    .bind(register_count)
-    .bind(invite_count)
-    .bind(transfer_used_total.to_string())
-    .bind(Utc::now().timestamp())
-    .bind(Utc::now().timestamp())
-    .execute(&state.db)
-    .await?;
+    sqlx::query(STAT_UPSERT_SQL)
+        .bind(start_at)
+        .bind(order_count)
+        .bind(order_total)
+        .bind(commission_count)
+        .bind(commission_total)
+        .bind(paid_count)
+        .bind(paid_total)
+        .bind(register_count)
+        .bind(invite_count)
+        .bind(transfer_used_total.to_string())
+        .bind(Utc::now().timestamp())
+        .bind(Utc::now().timestamp())
+        .execute(&state.db)
+        .await?;
     Ok(())
 }
 
@@ -158,5 +157,12 @@ mod tests {
         assert!(exact_i64_aggregate("9223372036854775808", "test").is_err());
         assert!(exact_i64_aggregate("-9223372036854775809", "test").is_err());
         assert!(exact_i64_aggregate("not-a-number", "test").is_err());
+    }
+
+    #[test]
+    fn statistic_upsert_uses_mysql_new_row_alias() {
+        assert!(STAT_UPSERT_SQL.contains("AS incoming"));
+        assert!(STAT_UPSERT_SQL.contains("incoming.order_count"));
+        assert!(!STAT_UPSERT_SQL.contains("VALUES(order_count)"));
     }
 }

@@ -14,6 +14,26 @@ use crate::{
     validation::{required_field, required_trimmed},
 };
 
+const MAX_TICKET_SUBJECT_CHARS: usize = 255;
+const MAX_TICKET_MESSAGE_BYTES: usize = 65_535;
+
+fn validate_ticket_subject(subject: &str) -> Result<(), ApiError> {
+    if subject.chars().count() > MAX_TICKET_SUBJECT_CHARS {
+        return Err(ApiError::validation_field(
+            "subject",
+            "Ticket subject is too long",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_ticket_message(field: &str, message: &str) -> Result<(), ApiError> {
+    if message.len() > MAX_TICKET_MESSAGE_BYTES {
+        return Err(ApiError::validation_field(field, "Message is too long"));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Deserialize)]
 pub(crate) struct TicketFetchQuery {
     id: Option<i32>,
@@ -56,6 +76,7 @@ pub(crate) async fn ticket_save(
         "subject",
         "Ticket subject cannot be empty",
     )?;
+    validate_ticket_subject(subject)?;
     let level = payload
         .level
         .ok_or_else(|| ApiError::validation_field("level", "Ticket level cannot be empty"))?;
@@ -70,28 +91,35 @@ pub(crate) async fn ticket_save(
         "message",
         "Message cannot be empty",
     )?;
-    if v2board_db::ticket::count_open_tickets(&state.db, user.id).await? > 0 {
-        return Err(ApiError::legacy("There are other unresolved tickets"));
-    }
-    match state.config_snapshot().ticket_status {
-        0 => {}
-        1 => {
-            if v2board_db::ticket::count_paid_orders(&state.db, user.id).await? == 0 {
-                return Err(ApiError::legacy("请先购买套餐"));
-            }
-        }
+    validate_ticket_message("message", message)?;
+    let require_paid_order = match state.config_snapshot().ticket_status {
+        0 => false,
+        1 => true,
         2 => return Err(ApiError::legacy("当前套餐不允许发起工单")),
         _ => return Err(ApiError::legacy("未知的工单状态")),
-    }
-    v2board_db::ticket::create_ticket(
+    };
+    let outcome = v2board_db::ticket::create_ticket(
         &state.db,
         user.id,
         subject,
         level,
         message,
         Utc::now().timestamp(),
+        require_paid_order,
     )
     .await?;
+    match outcome {
+        v2board_db::ticket::TicketCreateOutcome::Created => {}
+        v2board_db::ticket::TicketCreateOutcome::OpenTicketExists => {
+            return Err(ApiError::legacy("There are other unresolved tickets"));
+        }
+        v2board_db::ticket::TicketCreateOutcome::PaidOrderRequired => {
+            return Err(ApiError::legacy("请先购买套餐"));
+        }
+        v2board_db::ticket::TicketCreateOutcome::UserNotFound => {
+            return Err(ApiError::legacy("The user does not exist"));
+        }
+    }
     Ok(legacy_data(true))
 }
 
@@ -112,23 +140,26 @@ pub(crate) async fn ticket_reply(
         .id
         .ok_or_else(|| ApiError::legacy("Invalid parameter"))?;
     let message = required_trimmed(payload.message.as_deref(), "Message cannot be empty")?;
-    let ticket = v2board_db::ticket::find_ticket_for_reply(&state.db, user.id, id)
-        .await?
-        .ok_or_else(|| ApiError::legacy("Ticket does not exist"))?;
-    if ticket.status != 0 {
-        return Err(ApiError::legacy(
-            "The ticket is closed and cannot be replied",
-        ));
+    validate_ticket_message("message", message)?;
+    let outcome =
+        v2board_db::ticket::reply_ticket(&state.db, id, user.id, message, Utc::now().timestamp())
+            .await?;
+    match outcome {
+        v2board_db::ticket::UserTicketReplyOutcome::Replied => {}
+        v2board_db::ticket::UserTicketReplyOutcome::NotFound => {
+            return Err(ApiError::legacy("Ticket does not exist"));
+        }
+        v2board_db::ticket::UserTicketReplyOutcome::Closed => {
+            return Err(ApiError::legacy(
+                "The ticket is closed and cannot be replied",
+            ));
+        }
+        v2board_db::ticket::UserTicketReplyOutcome::AwaitingOperator => {
+            return Err(ApiError::legacy(
+                "Please wait for the technical enginneer to reply",
+            ));
+        }
     }
-    if let Some(last) = v2board_db::ticket::find_last_message(&state.db, id).await?
-        && last.user_id == user.id
-    {
-        return Err(ApiError::legacy(
-            "Please wait for the technical enginneer to reply",
-        ));
-    }
-    v2board_db::ticket::reply_ticket(&state.db, id, user.id, message, Utc::now().timestamp())
-        .await?;
     Ok(legacy_data(true))
 }
 
@@ -180,6 +211,15 @@ pub(crate) async fn ticket_withdraw(
         "withdraw_account",
         "The withdrawal account cannot be empty",
     )?;
+    if method.chars().count() > MAX_TICKET_SUBJECT_CHARS {
+        return Err(ApiError::validation_field(
+            "withdraw_method",
+            "The withdrawal method is too long",
+        ));
+    }
+    let withdrawal_message =
+        format!("Withdrawal method：{method}\r\nWithdrawal account：{account}");
+    validate_ticket_message("withdraw_account", &withdrawal_message)?;
     let config = state.config_snapshot();
     if config.withdraw_close_enable {
         return Err(ApiError::legacy(
@@ -202,7 +242,7 @@ pub(crate) async fn ticket_withdraw(
             config.commission_withdraw_limit
         )));
     }
-    v2board_db::ticket::create_withdraw_ticket(
+    let outcome = v2board_db::ticket::create_withdraw_ticket(
         &state.db,
         user.id,
         method,
@@ -210,5 +250,33 @@ pub(crate) async fn ticket_withdraw(
         Utc::now().timestamp(),
     )
     .await?;
+    match outcome {
+        v2board_db::ticket::TicketCreateOutcome::Created => {}
+        v2board_db::ticket::TicketCreateOutcome::OpenTicketExists => {
+            return Err(ApiError::legacy("There are other unresolved tickets"));
+        }
+        v2board_db::ticket::TicketCreateOutcome::UserNotFound => {
+            return Err(ApiError::legacy("The user does not exist"));
+        }
+        v2board_db::ticket::TicketCreateOutcome::PaidOrderRequired => {
+            return Err(ApiError::internal(
+                "withdrawal ticket unexpectedly required a paid order",
+            ));
+        }
+    }
     Ok(legacy_data(true))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ticket_lengths_match_mysql_column_boundaries() {
+        assert!(validate_ticket_subject(&"界".repeat(255)).is_ok());
+        assert!(validate_ticket_subject(&"界".repeat(256)).is_err());
+        assert!(validate_ticket_message("message", &"a".repeat(65_535)).is_ok());
+        assert!(validate_ticket_message("message", &"a".repeat(65_536)).is_err());
+        assert!(validate_ticket_message("message", &"界".repeat(21_846)).is_err());
+    }
 }

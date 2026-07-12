@@ -3,6 +3,12 @@ use std::collections::HashMap;
 use axum::{body::to_bytes, extract::Request, http::header};
 use v2board_compat::ApiError;
 
+const MAX_PARAMETER_COUNT: usize = 4096;
+const MAX_PARAMETER_KEY_BYTES: usize = 512;
+const MAX_PARAMETER_VALUE_BYTES: usize = 256 * 1024;
+const MAX_FORWARDED_HEADER_COUNT: usize = 128;
+const MAX_FORWARDED_HEADER_VALUE_BYTES: usize = 16 * 1024;
+
 pub(crate) async fn payment_request_input(
     request: Request,
     method: &str,
@@ -11,16 +17,7 @@ pub(crate) async fn payment_request_input(
     if let Some(query) = request.uri().query().filter(|query| !query.is_empty()) {
         params.extend(parse_urlencoded_params(query)?);
     }
-    let headers = request
-        .headers()
-        .iter()
-        .filter_map(|(key, value)| {
-            value
-                .to_str()
-                .ok()
-                .map(|value| (key.as_str().to_ascii_lowercase(), value.to_string()))
-        })
-        .collect::<HashMap<_, _>>();
+    let headers = bounded_payment_headers(request.headers())?;
     let content_type = request
         .headers()
         .get(header::CONTENT_TYPE)
@@ -31,6 +28,7 @@ pub(crate) async fn payment_request_input(
         .await
         .map_err(|_| ApiError::bad_request("Invalid payment notify body"))?;
     if body.is_empty() {
+        validate_params(&params, "Invalid payment notify body")?;
         return Ok(v2board_domain::order::PaymentNotifyInput {
             params,
             body: Vec::new(),
@@ -51,6 +49,7 @@ pub(crate) async fn payment_request_input(
             .map_err(|_| ApiError::bad_request("Invalid payment notify body"))?;
         params.extend(parse_urlencoded_params(body)?);
     }
+    validate_params(&params, "Invalid payment notify body")?;
     Ok(v2board_domain::order::PaymentNotifyInput {
         params,
         body: body.to_vec(),
@@ -88,6 +87,7 @@ pub(crate) async fn admin_request_params(
         .await
         .map_err(|_| ApiError::bad_request("Invalid admin request body"))?;
     if body.is_empty() {
+        validate_params(&params, "Invalid admin request body")?;
         return Ok(params);
     }
     if content_type.contains("application/json") || body.first() == Some(&b'{') {
@@ -99,6 +99,7 @@ pub(crate) async fn admin_request_params(
             .map_err(|_| ApiError::bad_request("Invalid admin request body"))?;
         params.extend(parse_urlencoded_params(body)?);
     }
+    validate_params(&params, "Invalid admin request body")?;
     Ok(params)
 }
 
@@ -150,8 +151,44 @@ pub(crate) fn flatten_admin_json(
 }
 
 pub(crate) fn parse_urlencoded_params(value: &str) -> Result<HashMap<String, String>, ApiError> {
-    serde_urlencoded::from_str::<HashMap<String, String>>(value)
-        .map_err(|_| ApiError::bad_request("Invalid payment notify body"))
+    let params = serde_urlencoded::from_str::<HashMap<String, String>>(value)
+        .map_err(|_| ApiError::bad_request("Invalid payment notify body"))?;
+    validate_params(&params, "Invalid payment notify body")?;
+    Ok(params)
+}
+
+fn validate_params(
+    params: &HashMap<String, String>,
+    message: &'static str,
+) -> Result<(), ApiError> {
+    if params.len() > MAX_PARAMETER_COUNT
+        || params.iter().any(|(key, value)| {
+            key.len() > MAX_PARAMETER_KEY_BYTES || value.len() > MAX_PARAMETER_VALUE_BYTES
+        })
+    {
+        return Err(ApiError::bad_request(message));
+    }
+    Ok(())
+}
+
+fn bounded_payment_headers(
+    headers: &axum::http::HeaderMap,
+) -> Result<HashMap<String, String>, ApiError> {
+    if headers.len() > MAX_FORWARDED_HEADER_COUNT {
+        return Err(ApiError::bad_request("Invalid payment notify headers"));
+    }
+    headers
+        .iter()
+        .map(|(key, value)| {
+            let value = value
+                .to_str()
+                .map_err(|_| ApiError::bad_request("Invalid payment notify headers"))?;
+            if value.len() > MAX_FORWARDED_HEADER_VALUE_BYTES {
+                return Err(ApiError::bad_request("Invalid payment notify headers"));
+            }
+            Ok((key.as_str().to_ascii_lowercase(), value.to_string()))
+        })
+        .collect()
 }
 
 fn parse_json_object_params(bytes: &[u8]) -> Result<HashMap<String, String>, ApiError> {
@@ -212,7 +249,9 @@ fn json_scalar_to_string(value: &serde_json::Value) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::raw_json_payment_notify;
+    use std::collections::HashMap;
+
+    use super::{MAX_PARAMETER_COUNT, raw_json_payment_notify, validate_params};
 
     #[test]
     fn signed_json_payment_bodies_are_not_preparsed() {
@@ -229,5 +268,20 @@ mod tests {
         }
         assert!(!raw_json_payment_notify("CoinPayments"));
         assert!(!raw_json_payment_notify("EPay"));
+    }
+
+    #[test]
+    fn decoded_parameter_maps_have_count_and_field_limits() {
+        let mut params = HashMap::new();
+        params.insert("key".to_string(), "value".to_string());
+        assert!(validate_params(&params, "invalid").is_ok());
+
+        let oversized = (0..=MAX_PARAMETER_COUNT)
+            .map(|index| (index.to_string(), String::new()))
+            .collect::<HashMap<_, _>>();
+        assert!(validate_params(&oversized, "invalid").is_err());
+
+        params.insert("x".repeat(513), String::new());
+        assert!(validate_params(&params, "invalid").is_err());
     }
 }

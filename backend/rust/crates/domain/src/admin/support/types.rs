@@ -1,6 +1,6 @@
 use super::*;
 
-#[derive(Debug, FromRow)]
+#[derive(FromRow)]
 pub(in super::super) struct PaymentRow {
     pub(in super::super) id: i64,
     pub(in super::super) name: String,

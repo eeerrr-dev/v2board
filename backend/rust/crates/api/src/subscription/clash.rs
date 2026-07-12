@@ -127,7 +127,7 @@ pub(super) fn resolve_clash_template_source(
 }
 
 fn parse_clash_yaml_template(name: &str, body: &str) -> Result<Value, ApiError> {
-    let template = serde_yaml_ng::from_str::<Value>(body).map_err(|error| {
+    let template = serde_saphyr::from_str::<Value>(body).map_err(|error| {
         ApiError::internal(format!("failed to parse Clash template {name}: {error}"))
     })?;
     validate_clash_template_root(template, name)
@@ -382,9 +382,9 @@ pub(super) fn render_clash_document(
     }
 
     // Laravel str_replace('$app_name', ...) after dumping the YAML. Whitespace
-    // and scalar quoting are presentation details; serde_yaml_ng owns the YAML
+    // and scalar quoting are presentation details; serde_saphyr owns the YAML
     // grammar and escaping so generated documents remain parseable.
-    serde_yaml_ng::to_string(&config)
+    serde_saphyr::to_string(&config)
         .map(|document| document.replace("$app_name", app_name))
         .map_err(|error| {
             ApiError::internal(format!("failed to render Clash subscription: {error}"))

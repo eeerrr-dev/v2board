@@ -50,6 +50,22 @@ fn persisted_traffic_accumulation_rejects_i64_overflow() {
     assert!(checked_traffic_pair(0, i64::MIN, 0, -1).is_err());
 }
 
+#[test]
+fn traffic_statistics_use_bounded_atomic_upserts() {
+    let source = include_str!("traffic.rs");
+    let start = source.find("async fn persist_traffic_stats").unwrap();
+    let end = source[start..]
+        .find("pub(super) fn checked_traffic_pair")
+        .map(|offset| start + offset)
+        .unwrap();
+    let stats = &source[start..end];
+    assert!(stats.contains("entries.chunks(TRAFFIC_REPORT_SQL_BATCH_SIZE)"));
+    assert!(stats.contains("AS incoming ON DUPLICATE KEY UPDATE"));
+    assert!(stats.contains("v2_stat_user.u + incoming.u"));
+    assert!(!stats.contains("SELECT id, u, d"));
+    assert!(!stats.contains("UPDATE v2_stat_user SET"));
+}
+
 fn object(value: serde_json::Value) -> serde_json::Map<String, serde_json::Value> {
     value.as_object().cloned().unwrap()
 }

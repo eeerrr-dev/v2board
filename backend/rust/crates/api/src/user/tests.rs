@@ -3,8 +3,8 @@ use v2board_config::AppConfig;
 
 use super::{
     giftcard::{
-        GIFTCARD_FOR_UPDATE_SQL, checked_add_cents, checked_add_giftcard_days, checked_gib_bytes,
-        giftcard_plan_has_capacity,
+        GIFTCARD_FOR_UPDATE_SQL, GIFTCARD_USER_ORDER_RANGE_SQL, checked_add_cents,
+        checked_add_giftcard_days, checked_gib_bytes, giftcard_plan_has_capacity,
     },
     invite::{checked_pagination_values, checked_transfer_balances, validate_pagination},
     subscription::{checked_reset_subscription_expiry, reset_day, reset_day_by_month_first_day},
@@ -100,6 +100,24 @@ fn commission_transfer_checks_both_balance_columns() {
 #[test]
 fn giftcard_redemption_serializes_on_the_card_row() {
     assert!(GIFTCARD_FOR_UPDATE_SQL.trim_end().ends_with("FOR UPDATE"));
+}
+
+#[test]
+fn giftcard_mutations_lock_the_order_range_before_the_user() {
+    assert!(GIFTCARD_USER_ORDER_RANGE_SQL.contains("status IN (0, 1)"));
+    assert!(
+        GIFTCARD_USER_ORDER_RANGE_SQL
+            .trim_end()
+            .ends_with("FOR UPDATE")
+    );
+    let source = include_str!("giftcard.rs");
+    let range_lock = source
+        .find("sqlx::query_scalar(GIFTCARD_USER_ORDER_RANGE_SQL)")
+        .unwrap();
+    let user_lock = source
+        .find("FROM v2_user WHERE id = ? LIMIT 1 FOR UPDATE")
+        .unwrap();
+    assert!(range_lock < user_lock);
 }
 
 #[test]

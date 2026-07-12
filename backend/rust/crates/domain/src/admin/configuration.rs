@@ -1,5 +1,30 @@
 use super::*;
 
+const BULK_MAIL_MAX_RECIPIENTS: usize = 50_000;
+const REDACTED_SECRET: &str = "********";
+const CONFIG_SECRET_KEYS: &[&str] = &[
+    "server_token",
+    "email_password",
+    "telegram_bot_token",
+    "recaptcha_key",
+];
+
+fn redacted_secret(value: Option<&str>) -> Option<&'static str> {
+    value
+        .filter(|value| !value.is_empty())
+        .map(|_| REDACTED_SECRET)
+}
+
+fn without_redacted_config_secrets(params: &HashMap<String, String>) -> HashMap<String, String> {
+    params
+        .iter()
+        .filter(|(key, value)| {
+            !(CONFIG_SECRET_KEYS.contains(&key.as_str()) && value.as_str() == REDACTED_SECRET)
+        })
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect()
+}
+
 impl AdminService {
     pub(super) fn config_fetch(&self, key: Option<&str>) -> Result<AdminOutput, ApiError> {
         let data = json!({
@@ -56,7 +81,7 @@ impl AdminService {
             },
             "server": {
                 "server_api_url": self.config.server_api_url,
-                "server_token": self.config.server_token,
+                "server_token": redacted_secret(self.config.server_token.as_deref()),
                 "server_pull_interval": self.config.server_pull_interval,
                 "server_push_interval": self.config.server_push_interval,
                 "server_node_report_min_traffic": self.config.server_node_report_min_traffic,
@@ -68,13 +93,13 @@ impl AdminService {
                 "email_host": self.config.email_host,
                 "email_port": self.config.email_port,
                 "email_username": self.config.email_username,
-                "email_password": self.config.email_password,
+                "email_password": redacted_secret(self.config.email_password.as_deref()),
                 "email_encryption": self.config.email_encryption,
                 "email_from_address": self.config.email_from_address,
             },
             "telegram": {
                 "telegram_bot_enable": bool_i(self.config.telegram_bot_enable),
-                "telegram_bot_token": self.config.telegram_bot_token,
+                "telegram_bot_token": redacted_secret(self.config.telegram_bot_token.as_deref()),
                 "telegram_discuss_link": self.config.telegram_discuss_link,
             },
             "app": {
@@ -93,7 +118,7 @@ impl AdminService {
                 "email_whitelist_suffix": self.config.email_whitelist_suffix,
                 "email_gmail_limit_enable": bool_i(self.config.email_gmail_limit_enable),
                 "recaptcha_enable": bool_i(self.config.recaptcha_enable),
-                "recaptcha_key": self.config.recaptcha_key,
+                "recaptcha_key": redacted_secret(self.config.recaptcha_key.as_deref()),
                 "recaptcha_site_key": self.config.recaptcha_site_key,
                 "register_limit_by_ip_enable": bool_i(self.config.register_limit_by_ip_enable),
                 "register_limit_count": self.config.register_limit_count,
@@ -117,9 +142,24 @@ impl AdminService {
     ) -> Result<AdminOutput, ApiError> {
         // ConfigSave validates the payload (enums, urls, secure_path/server_token
         // length, deposit_bounus format) and 422s before anything is written.
-        validate_config_params(params)?;
+        let params = without_redacted_config_secrets(params);
+        validate_config_params(&params)?;
+        let server_token = params
+            .get("server_token")
+            .map(String::as_str)
+            .or(self.config.server_token.as_deref());
+        let force_https = params
+            .get("force_https")
+            .map(|value| truthy(Some(value)))
+            .unwrap_or(self.config.force_https);
+        let app_url = params
+            .get("app_url")
+            .map(String::as_str)
+            .or(self.config.app_url.as_deref());
+        self.config
+            .validate_security_update(server_token, force_https, app_url)
+            .map_err(|error| ApiError::legacy(format!("配置安全校验失败: {error}")))?;
         let path = self.config.runtime_paths.config.clone();
-        let params = params.clone();
         tokio::task::spawn_blocking(move || {
             update_config_atomic(path, |config| {
                 merge_config_params(config, &params);
@@ -186,18 +226,31 @@ impl AdminService {
             return Ok(AdminOutput::Data(json!(true)));
         }
 
-        let emails = self
-            .filtered_user_emails_in_tx(&clauses, staff_scoped, &mut tx)
-            .await?;
-        if emails.is_empty() {
-            tx.commit().await?;
-            return Ok(AdminOutput::Data(json!(true)));
-        }
-
         let envelope = self.prepare_notify_mail(&subject, &content)?;
-        enqueue_prepared_mail(&mut tx, &batch_key, &envelope, &emails, now)
-            .await
-            .map_err(mail_outbox_api_error)?;
+        let mut after_id = 0_i64;
+        let mut recipient_count = 0_usize;
+        loop {
+            let recipients = self
+                .filtered_user_email_page_in_tx(&clauses, staff_scoped, after_id, &mut tx)
+                .await?;
+            let Some(last_id) = recipients.last().map(|(id, _)| *id) else {
+                break;
+            };
+            recipient_count = recipient_count.saturating_add(recipients.len());
+            if recipient_count > BULK_MAIL_MAX_RECIPIENTS {
+                return Err(ApiError::legacy(
+                    "单次最多向 50000 个用户发送邮件，请缩小筛选范围",
+                ));
+            }
+            let emails = recipients
+                .into_iter()
+                .map(|(_, email)| email)
+                .collect::<Vec<_>>();
+            enqueue_prepared_mail(&mut tx, &batch_key, &envelope, &emails, now)
+                .await
+                .map_err(mail_outbox_api_error)?;
+            after_id = last_id;
+        }
         tx.commit().await?;
         Ok(AdminOutput::Data(json!(true)))
     }
@@ -268,11 +321,15 @@ impl AdminService {
             .body(body)
             .map_err(|_| ApiError::legacy("Email content is invalid"))?;
 
-        self.smtp
-            .transport(&transport_settings)?
-            .send(email)
-            .await
-            .map_err(|error| ApiError::legacy(format!("Email send failed: {error}")))?;
+        let transport = self.smtp.transport(&transport_settings)?;
+        let send = transport.send(email);
+        tokio::time::timeout(
+            std::time::Duration::from_secs(self.config.http_request_timeout_seconds),
+            send,
+        )
+        .await
+        .map_err(|_| ApiError::legacy("Email send timed out"))?
+        .map_err(|error| ApiError::legacy(format!("Email send failed: {error}")))?;
         Ok(())
     }
 
@@ -282,7 +339,9 @@ impl AdminService {
     ) -> Result<AdminOutput, ApiError> {
         let token = params
             .get("telegram_bot_token")
-            .filter(|value| !value.trim().is_empty())
+            .map(String::as_str)
+            .filter(|value| !value.trim().is_empty() && *value != REDACTED_SECRET)
+            .or(self.config.telegram_bot_token.as_deref())
             .ok_or_else(|| ApiError::legacy("Telegram bot token cannot be empty"))?;
         let hook_url = format!(
             "{}/api/v1/guest/telegram/webhook",
@@ -293,28 +352,34 @@ impl AdminService {
                 .trim_end_matches('/')
         );
         let secret_token = telegram_webhook_secret(&self.config.app_key, token);
-        let me = self
+        let me_response = self
             .http
             .get(format!("https://api.telegram.org/bot{token}/getMe"))
             .send()
             .await
-            .map_err(|_| ApiError::legacy("Telegram request failed"))?
-            .json::<Value>()
-            .await
             .map_err(|_| ApiError::legacy("Telegram request failed"))?;
+        let me: Value = crate::http_response::bounded_json(
+            me_response,
+            crate::http_response::MAX_EXTERNAL_RESPONSE_BYTES,
+            "Telegram request failed",
+        )
+        .await?;
         if me.get("ok").and_then(Value::as_bool) != Some(true) {
             return Err(ApiError::legacy("Telegram token is invalid"));
         }
-        let result = self
+        let result_response = self
             .http
             .post(format!("https://api.telegram.org/bot{token}/setWebhook"))
             .json(&json!({ "url": hook_url, "secret_token": secret_token }))
             .send()
             .await
-            .map_err(|_| ApiError::legacy("Telegram request failed"))?
-            .json::<Value>()
-            .await
             .map_err(|_| ApiError::legacy("Telegram request failed"))?;
+        let result: Value = crate::http_response::bounded_json(
+            result_response,
+            crate::http_response::MAX_EXTERNAL_RESPONSE_BYTES,
+            "Telegram request failed",
+        )
+        .await?;
         if result.get("ok").and_then(Value::as_bool) != Some(true) {
             return Err(ApiError::legacy("Telegram webhook failed"));
         }
@@ -329,4 +394,33 @@ pub(super) fn bulk_mail_payload_hash(params: &HashMap<String, String>) -> String
         .map(|(key, value)| (key.as_str(), value.as_str()))
         .collect::<BTreeMap<_, _>>();
     hash_mail_payload(&canonical)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn configured_secrets_are_fixed_width_and_redacted_submissions_are_noops() {
+        assert_eq!(
+            redacted_secret(Some("highly-sensitive")),
+            Some(REDACTED_SECRET)
+        );
+        assert_eq!(redacted_secret(None), None);
+        let params = HashMap::from([
+            ("server_token".to_string(), REDACTED_SECRET.to_string()),
+            ("email_password".to_string(), "rotated".to_string()),
+            ("app_name".to_string(), "V2Board".to_string()),
+        ]);
+        let filtered = without_redacted_config_secrets(&params);
+        assert!(!filtered.contains_key("server_token"));
+        assert_eq!(
+            filtered.get("email_password").map(String::as_str),
+            Some("rotated")
+        );
+        assert_eq!(
+            filtered.get("app_name").map(String::as_str),
+            Some("V2Board")
+        );
+    }
 }

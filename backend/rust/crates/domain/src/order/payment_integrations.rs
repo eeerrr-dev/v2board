@@ -52,23 +52,24 @@ static PAYMENT_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
     reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(30))
+        .https_only(true)
         .redirect(reqwest::redirect::Policy::limited(3))
         .build()
         .expect("static payment HTTP client configuration must be valid")
 });
 #[derive(Debug, Clone, Copy)]
-struct PaymentHttpClient {
+pub(super) struct PaymentHttpClient {
     user_agent: &'static str,
 }
 
 impl PaymentHttpClient {
-    fn get<U: reqwest::IntoUrl>(self, url: U) -> reqwest::RequestBuilder {
+    pub(super) fn get<U: reqwest::IntoUrl>(self, url: U) -> reqwest::RequestBuilder {
         PAYMENT_HTTP_CLIENT
             .get(url)
             .header(reqwest::header::USER_AGENT, self.user_agent)
     }
 
-    fn post<U: reqwest::IntoUrl>(self, url: U) -> reqwest::RequestBuilder {
+    pub(super) fn post<U: reqwest::IntoUrl>(self, url: U) -> reqwest::RequestBuilder {
         PAYMENT_HTTP_CLIENT
             .post(url)
             .header(reqwest::header::USER_AGENT, self.user_agent)
@@ -143,7 +144,7 @@ pub(super) fn epay_notify(
         "{:x}",
         md5::compute(format!("{}{}", canonical_query(&signed), key))
     );
-    if expected != *sign {
+    if !verify_legacy_md5_hex(&expected, sign) {
         return Err(ApiError::legacy("Payment notify signature is invalid"));
     }
     if params
@@ -198,7 +199,7 @@ pub(super) async fn mgate_pay(
     );
     params.insert("sign".to_string(), signature);
     let base_url = config_required(&config, "mgate_url")?;
-    let result = payment_http_client("MGate")
+    let response = payment_http_client("MGate")
         .post(format!(
             "{}/v1/gateway/fetch",
             base_url.trim_end_matches('/')
@@ -210,10 +211,13 @@ pub(super) async fn mgate_pay(
         .body(form_query(&params)?)
         .send()
         .await
-        .map_err(|_| ApiError::legacy("网络异常"))?
-        .json::<serde_json::Value>()
-        .await
-        .map_err(|_| ApiError::legacy("接口请求失败"))?;
+        .map_err(|_| ApiError::legacy("网络异常"))?;
+    let result: Value = crate::http_response::bounded_json(
+        response,
+        crate::http_response::MAX_EXTERNAL_RESPONSE_BYTES,
+        "接口请求失败",
+    )
+    .await?;
 
     if result
         .pointer("/data/trade_no")
@@ -268,7 +272,7 @@ pub(super) async fn bepusdt_pay(
     }
 
     let base_url = config_required(&config, "bepusdt_url")?;
-    let result = payment_http_client("BEPUSDT")
+    let response = payment_http_client("BEPUSDT")
         .post(format!(
             "{}/api/v1/order/create-transaction",
             base_url.trim_end_matches('/')
@@ -276,10 +280,13 @@ pub(super) async fn bepusdt_pay(
         .json(&json_params)
         .send()
         .await
-        .map_err(|_| ApiError::legacy("网络异常"))?
-        .json::<serde_json::Value>()
-        .await
-        .map_err(|_| ApiError::legacy("接口请求失败"))?;
+        .map_err(|_| ApiError::legacy("网络异常"))?;
+    let result: Value = crate::http_response::bounded_json(
+        response,
+        crate::http_response::MAX_EXTERNAL_RESPONSE_BYTES,
+        "接口请求失败",
+    )
+    .await?;
     if result
         .get("status_code")
         .and_then(|value| value.as_i64())
@@ -321,8 +328,20 @@ pub(super) fn mgate_notify(
         "{:x}",
         md5::compute(format!("{}{}", form_query(&signed)?, secret))
     );
-    if expected != *sign {
+    if !verify_legacy_md5_hex(&expected, sign) {
         return Err(ApiError::legacy("Payment notify signature is invalid"));
+    }
+    if let Some(status) = params
+        .get("status")
+        .or_else(|| params.get("trade_status"))
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        && !matches!(
+            status.to_ascii_lowercase().as_str(),
+            "1" | "2" | "paid" | "success" | "succeeded" | "trade_success"
+        )
+    {
+        return Ok(PaymentNotifyOutcome::Ignored("failed".to_string()));
     }
     let trade_no = signed
         .remove("out_trade_no")
@@ -363,7 +382,7 @@ pub(super) fn bepusdt_notify(
         "{:x}",
         md5::compute(format!("{}{}", canonical_query(&signed), api_token))
     );
-    if expected != *sign {
+    if !verify_legacy_md5_hex(&expected, sign) {
         return Ok(PaymentNotifyOutcome::Ignored(
             "cannot pass verification".to_string(),
         ));
@@ -490,7 +509,7 @@ pub(super) async fn coinbase_pay(
         ("local_price[currency]".to_string(), "CNY".to_string()),
         ("metadata[outTradeNo]".to_string(), order.trade_no.clone()),
     ]);
-    let result = payment_http_client("Coinbase")
+    let response = payment_http_client("Coinbase")
         .post(config_required(&config, "coinbase_url")?)
         .header(
             "X-CC-Api-Key",
@@ -504,10 +523,13 @@ pub(super) async fn coinbase_pay(
         .body(form_query(&params)?)
         .send()
         .await
-        .map_err(|_| ApiError::legacy("Payment gateway request failed"))?
-        .json::<Value>()
-        .await
         .map_err(|_| ApiError::legacy("Payment gateway request failed"))?;
+    let result: Value = crate::http_response::bounded_json(
+        response,
+        crate::http_response::MAX_EXTERNAL_RESPONSE_BYTES,
+        "Payment gateway request failed",
+    )
+    .await?;
     let hosted_url = result
         .pointer("/data/hosted_url")
         .and_then(Value::as_str)
@@ -572,7 +594,7 @@ pub(super) async fn btcpay_pay(
     });
     let base = config_required(&config, "btcpay_url")?;
     let store_id = config_required(&config, "btcpay_storeId")?;
-    let result = payment_http_client("BTCPay")
+    let response = payment_http_client("BTCPay")
         .post(format!(
             "{}api/v1/stores/{store_id}/invoices",
             ensure_trailing_slash(&base)
@@ -584,10 +606,13 @@ pub(super) async fn btcpay_pay(
         .json(&payload)
         .send()
         .await
-        .map_err(|_| ApiError::legacy("Payment gateway request failed"))?
-        .json::<Value>()
-        .await
         .map_err(|_| ApiError::legacy("Payment gateway request failed"))?;
+    let result: Value = crate::http_response::bounded_json(
+        response,
+        crate::http_response::MAX_EXTERNAL_RESPONSE_BYTES,
+        "Payment gateway request failed",
+    )
+    .await?;
     let checkout_link = result
         .get("checkoutLink")
         .and_then(Value::as_str)
@@ -628,7 +653,7 @@ pub(super) async fn btcpay_notify(
         .ok_or_else(|| ApiError::legacy("Payment notify callback_no is missing"))?;
     let base = config_required(&config, "btcpay_url")?;
     let store_id = config_required(&config, "btcpay_storeId")?;
-    let invoice = payment_http_client("BTCPay")
+    let response = payment_http_client("BTCPay")
         .get(format!(
             "{}api/v1/stores/{store_id}/invoices/{invoice_id}",
             ensure_trailing_slash(&base)
@@ -641,10 +666,13 @@ pub(super) async fn btcpay_notify(
         .await
         .map_err(|_| ApiError::legacy("Payment gateway request failed"))?
         .error_for_status()
-        .map_err(|_| ApiError::legacy("Payment gateway request failed"))?
-        .json::<Value>()
-        .await
         .map_err(|_| ApiError::legacy("Payment gateway request failed"))?;
+    let invoice: Value = crate::http_response::bounded_json(
+        response,
+        crate::http_response::MAX_EXTERNAL_RESPONSE_BYTES,
+        "Payment gateway request failed",
+    )
+    .await?;
     let settlement = btcpay_invoice_settlement(&invoice, invoice_id)?;
     Ok(PaymentNotifyOutcome::Verified(VerifiedPaymentNotify {
         trade_no: settlement.trade_no,
@@ -719,10 +747,13 @@ pub(super) async fn wechat_pay_native_pay(
         .body(xml_from_params(&params)?)
         .send()
         .await
-        .map_err(|_| ApiError::legacy("Payment gateway request failed"))?
-        .text()
-        .await
         .map_err(|_| ApiError::legacy("Payment gateway request failed"))?;
+    let response = crate::http_response::bounded_text(
+        response,
+        crate::http_response::MAX_EXTERNAL_RESPONSE_BYTES,
+        "Payment gateway request failed",
+    )
+    .await?;
     let response_params = quick_xml::de::from_str::<WechatUnifiedOrderResponse>(&response)
         .map_err(|_| ApiError::legacy("Payment gateway response is invalid"))?;
     if response_params.return_code != "SUCCESS" {
@@ -760,7 +791,7 @@ pub(super) fn wechat_pay_native_notify(
         .filter(|(key, value)| key.as_str() != "sign" && !value.is_empty())
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect::<BTreeMap<_, _>>();
-    if wechat_sign(&signed, &api_key) != *sign {
+    if !verify_legacy_md5_hex(&wechat_sign(&signed, &api_key), sign) {
         return Err(ApiError::legacy("HMAC signature does not match"));
     }
     if input.params.get("return_code").map(String::as_str) != Some("SUCCESS")
@@ -828,17 +859,20 @@ pub(super) async fn alipay_f2f_pay(
         &canonical_query(&params),
     )?;
     params.insert("sign".to_string(), signature);
-    let response = payment_http_client("AlipayF2F")
+    let upstream = payment_http_client("AlipayF2F")
         .get(format!(
             "https://openapi.alipay.com/gateway.do?{}",
             form_query(&params)?
         ))
         .send()
         .await
-        .map_err(|_| ApiError::legacy("从支付宝请求失败"))?
-        .json::<Value>()
-        .await
         .map_err(|_| ApiError::legacy("从支付宝请求失败"))?;
+    let response: Value = crate::http_response::bounded_json(
+        upstream,
+        crate::http_response::MAX_EXTERNAL_RESPONSE_BYTES,
+        "从支付宝请求失败",
+    )
+    .await?;
     let response = response
         .get("alipay_trade_precreate_response")
         .ok_or_else(|| ApiError::legacy("从支付宝请求失败"))?;
@@ -1075,6 +1109,19 @@ fn verify_hmac_sha512_hex(
     Ok(mac.verify_slice(&signature).is_ok())
 }
 
+pub(super) fn verify_legacy_md5_hex(expected: &str, supplied: &str) -> bool {
+    let Ok(expected) = hex::decode(expected) else {
+        return false;
+    };
+    let Ok(supplied) = hex::decode(supplied) else {
+        return false;
+    };
+    if expected.len() != 16 || supplied.len() != 16 {
+        return false;
+    }
+    v2board_compat::constant_time_bytes_eq(&expected, &supplied)
+}
+
 fn header_value(headers: &HashMap<String, String>, name: &str) -> Option<String> {
     headers
         .get(&name.to_ascii_lowercase())
@@ -1210,7 +1257,7 @@ pub(super) fn form_query(params: &BTreeMap<String, String>) -> Result<String, Ap
         .map_err(|_| ApiError::internal("failed to encode payment query"))
 }
 
-fn payment_http_client(user_agent: &'static str) -> PaymentHttpClient {
+pub(super) fn payment_http_client(user_agent: &'static str) -> PaymentHttpClient {
     PaymentHttpClient { user_agent }
 }
 

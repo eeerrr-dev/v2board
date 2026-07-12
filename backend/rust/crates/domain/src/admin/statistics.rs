@@ -142,6 +142,21 @@ impl AdminService {
         )
         .fetch_one(&self.db)
         .await?;
+        let payment_reconciliation_pending_total: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM v2_payment_reconciliation WHERE resolved_at IS NULL",
+        )
+        .fetch_one(&self.db)
+        .await?;
+        let payment_reconciliation_pending_amount: String = sqlx::query_scalar(
+            "SELECT CAST(COALESCE(SUM(COALESCE(settled_amount, expected_amount)), 0) AS CHAR) \
+             FROM v2_payment_reconciliation WHERE resolved_at IS NULL",
+        )
+        .fetch_one(&self.db)
+        .await?;
+        let payment_reconciliation_pending_amount = exact_stat_sum_i64(
+            &payment_reconciliation_pending_amount,
+            "Payment reconciliation amount",
+        )?;
         let commission_month_payout = self.commission_payout_between(month, now).await?;
         let commission_last_month_payout =
             self.commission_payout_between(last_month, month).await?;
@@ -153,6 +168,8 @@ impl AdminService {
             "day_register_total": day_register_total,
             "ticket_pending_total": ticket_pending_total,
             "commission_pending_total": commission_pending_total,
+            "payment_reconciliation_pending_total": payment_reconciliation_pending_total,
+            "payment_reconciliation_pending_amount": payment_reconciliation_pending_amount,
             "day_income": day_income,
             "last_month_income": last_month_income,
             "commission_month_payout": commission_month_payout,

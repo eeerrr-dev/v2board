@@ -28,7 +28,7 @@ use self::{
         server_v2_config_value,
     },
     repository::load_server_node,
-    request::{required_i32_param, server_request_input, validate_server_token},
+    request::{required_i32_param, server_identity, server_request_input, validate_server_token},
     response::{raw_value_response, server_fail_response},
     traffic::{server_alive, server_alive_list, server_push},
     users::{server_tidalab_user, server_uniproxy_user},
@@ -42,9 +42,10 @@ pub(super) async fn server_v1(
 ) -> Result<Response, ApiError> {
     let input = server_request_input(request).await?;
     let config = state.config_snapshot();
-    validate_server_token(&config, &input.params)?;
     let class = class.to_ascii_lowercase();
     let action = action.to_ascii_lowercase();
+    let identity = server_identity(&class, &input.params)?;
+    validate_server_token(&state.db, &config, &headers, &input.params, &identity).await?;
 
     match (class.as_str(), action.as_str()) {
         ("uniproxy", "user") => server_uniproxy_user(&state, &headers, &input.params).await,
@@ -117,7 +118,13 @@ pub(super) async fn server_v2_config(
 ) -> Result<Response, ApiError> {
     let input = server_request_input(request).await?;
     let config = state.config_snapshot();
-    if let Err(error) = validate_server_token(&config, &input.params) {
+    let identity = match server_identity("v2node", &input.params) {
+        Ok(identity) => identity,
+        Err(error) => return Ok(server_fail_response(error.to_string())),
+    };
+    if let Err(error) =
+        validate_server_token(&state.db, &config, &headers, &input.params, &identity).await
+    {
         return Ok(server_fail_response(error.to_string()));
     }
     let node_id = match required_i32_param(&input.params, "node_id") {

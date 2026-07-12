@@ -1,5 +1,8 @@
 use v2board_compat::ApiError;
 
+pub(super) const MAX_EMAIL_CHARS: usize = 64;
+pub(super) const MAX_PASSWORD_CHARS: usize = 128;
+
 /// Laravel `AuthRegister`/`CommSendEmailVerify` validate `email => required|email:strict`.
 /// The FormRequest fires before the controller body, returning HTTP 422 with the field message.
 pub(super) fn validate_email(email: &str) -> Result<(), ApiError> {
@@ -16,7 +19,20 @@ pub(super) fn validate_email(email: &str) -> Result<(), ApiError> {
             "Email format is incorrect",
         ));
     }
+    if email.chars().count() > MAX_EMAIL_CHARS {
+        return Err(ApiError::validation_field(
+            "email",
+            "Email format is incorrect",
+        ));
+    }
     Ok(())
+}
+
+/// Authentication identifiers use one canonical cache/rate-limit spelling.
+/// MySQL's email uniqueness lookup is case-insensitive in the native schema,
+/// so the same spelling is safe for the database lookup as well.
+pub(super) fn normalize_email(email: &str) -> String {
+    email.trim().to_ascii_lowercase()
 }
 
 /// Laravel `AuthRegister` validates `password => required|min:8` (character count, not bytes).
@@ -28,6 +44,12 @@ pub(super) fn validate_password(password: &str) -> Result<(), ApiError> {
         ));
     }
     if password.chars().count() < 8 {
+        return Err(ApiError::validation_field(
+            "password",
+            "Password must be greater than 8 digits",
+        ));
+    }
+    if password.chars().count() > MAX_PASSWORD_CHARS {
         return Err(ApiError::validation_field(
             "password",
             "Password must be greater than 8 digits",
@@ -87,6 +109,12 @@ pub(super) fn validate_change_password(
             "Old password cannot be empty",
         ));
     }
+    if old_password.chars().count() > MAX_PASSWORD_CHARS {
+        return Err(ApiError::validation_field(
+            "old_password",
+            "The old password is wrong",
+        ));
+    }
     if new_password.is_empty() {
         return Err(ApiError::validation_field(
             "new_password",
@@ -94,6 +122,12 @@ pub(super) fn validate_change_password(
         ));
     }
     if new_password.chars().count() < 8 {
+        return Err(ApiError::validation_field(
+            "new_password",
+            "Password must be greater than 8 digits",
+        ));
+    }
+    if new_password.chars().count() > MAX_PASSWORD_CHARS {
         return Err(ApiError::validation_field(
             "new_password",
             "Password must be greater than 8 digits",

@@ -169,9 +169,23 @@ services:
     environment:
       <<: *rust-environment
       RUST_LOG: ${RUST_WORKER_LOG:-v2board_workers=info}
+      V2BOARD_WORKER_HEALTH_FILE: /tmp/v2board-worker-health
+      V2BOARD_WORKER_HEALTH_MAX_AGE_SECONDS: "30"
     depends_on:
       rust-api:
         condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          last=$$(cat "$${V2BOARD_WORKER_HEALTH_FILE}") &&
+          now=$$(date +%s) && age=$$((now - last)) &&
+          test "$$age" -ge 0 &&
+          test "$$age" -le "$${V2BOARD_WORKER_HEALTH_MAX_AGE_SECONDS}"
+      interval: 10s
+      timeout: 3s
+      start_period: 180s
+      retries: 6
     volumes: *rust-volumes
 
   frontend:
@@ -233,6 +247,10 @@ services:
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
+      # Local migrations run as the scoped application user. MySQL 8.4 enables
+      # binary logging by default and otherwise requires SUPER to create the
+      # rolling-deploy compatibility trigger in migration 0043.
+      - --log-bin-trust-function-creators=1
     environment:
       MYSQL_DATABASE: v2board
       MYSQL_USER: v2board

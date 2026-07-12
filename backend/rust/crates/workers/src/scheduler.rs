@@ -6,7 +6,7 @@ use v2board_config::app_now;
 
 use crate::{
     commission,
-    lease::{SchedulerLock, acquire_scheduler_lock, release_scheduler_lock, run_task_with_lease},
+    lease::{SchedulerLock, acquire_scheduler_lock, release_scheduler_lock, run_with_lease},
     metrics::{mark_scheduler_alive, record_worker_metric},
     orders, reminders, renewal, reset,
     state::WorkerState,
@@ -132,7 +132,7 @@ pub(crate) async fn run_schedule_loop(
         // The next tick is computed only after this execution completes. If a
         // job runs across one or more scheduled instants, those historical ticks
         // are intentionally skipped rather than replayed in a burst.
-        run_scheduled_tick(job, &state, tick).await;
+        run_scheduled_tick(job, &state, tick).await?;
     }
 }
 
@@ -180,7 +180,11 @@ fn scheduled_task_by_name(name: &str) -> Option<ScheduledTask> {
     }
 }
 
-async fn run_scheduled_tick(job: ScheduledJob, state: &WorkerState, tick: DateTime<FixedOffset>) {
+async fn run_scheduled_tick(
+    job: ScheduledJob,
+    state: &WorkerState,
+    tick: DateTime<FixedOffset>,
+) -> anyhow::Result<()> {
     tracing::info!(job = job.name, %tick, "received scheduled job");
     if let Err(error) = mark_scheduler_alive(state).await {
         tracing::warn!(?error, "failed to update scheduler heartbeat");
@@ -193,7 +197,7 @@ async fn run_scheduled_tick(job: ScheduledJob, state: &WorkerState, tick: DateTi
                 job = job.name,
                 "scheduled job skipped because another worker owns it"
             );
-            return;
+            return Ok(());
         }
         Err(error) => {
             tracing::error!(
@@ -202,7 +206,7 @@ async fn run_scheduled_tick(job: ScheduledJob, state: &WorkerState, tick: DateTi
                 "failed to acquire scheduled job lock"
             );
             let _ = record_worker_metric(state, job.name, false).await;
-            return;
+            return Err(error);
         }
     };
 
@@ -210,28 +214,20 @@ async fn run_scheduled_tick(job: ScheduledJob, state: &WorkerState, tick: DateTi
     // task before the original TTL can expire and a second scheduler can overlap
     // it; dropping an in-flight SQL transaction rolls it back.
     let job_result = run_scheduled_job_with_lease(job.task, state, &scheduler_lock).await;
-    if let Err(error) = release_scheduler_lock(state, scheduler_lock).await {
-        tracing::warn!(
-            job = job.name,
-            ?error,
-            "failed to release scheduled job lock"
-        );
-    }
+    let release_result = release_scheduler_lock(state, scheduler_lock).await;
     match job_result {
         Ok(()) => {
-            if let Err(error) = record_worker_metric(state, job.name, true).await {
-                tracing::warn!(
-                    job = job.name,
-                    ?error,
-                    "failed to record scheduled job metric"
-                );
-            }
+            record_worker_metric(state, job.name, true).await?;
         }
         Err(error) => {
             tracing::error!(job = job.name, ?error, "scheduled job failed");
             let _ = record_worker_metric(state, job.name, false).await;
+            release_result?;
+            return Err(error);
         }
     }
+    release_result?;
+    Ok(())
 }
 
 async fn run_scheduled_job(task: ScheduledTask, state: &WorkerState) -> anyhow::Result<()> {
@@ -257,9 +253,7 @@ async fn run_scheduled_job_with_lease(
     state: &WorkerState,
     scheduler_lock: &SchedulerLock,
 ) -> anyhow::Result<()> {
-    let job_state = state.clone();
-    let task_handle = tokio::spawn(async move { run_scheduled_job(task, &job_state).await });
-    run_task_with_lease(task_handle, state, scheduler_lock).await
+    run_with_lease(run_scheduled_job(task, state), state, scheduler_lock).await
 }
 
 #[cfg(test)]
@@ -335,5 +329,12 @@ mod tests {
             let schedule = Schedule::from_str(job.expression).unwrap();
             assert!(next_scheduled_tick(&schedule, exact_tick).unwrap() > exact_tick);
         }
+    }
+
+    #[test]
+    fn scheduled_loop_propagates_tick_failures_to_the_worker_supervisor() {
+        let source = include_str!("scheduler.rs");
+        assert!(source.contains("run_scheduled_tick(job, &state, tick).await?"));
+        assert!(source.contains("return Err(error);"));
     }
 }

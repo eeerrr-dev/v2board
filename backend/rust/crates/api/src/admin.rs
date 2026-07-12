@@ -9,7 +9,7 @@ use uuid::Uuid;
 use v2board_compat::{ApiError, legacy_data, legacy_page};
 
 use crate::{
-    auth::{require_admin, require_staff},
+    auth::{require_admin, require_privileged_step_up, require_staff},
     request_params::admin_request_params,
     route_paths::matches_current_admin_api,
     runtime::AppState,
@@ -36,9 +36,23 @@ pub(crate) async fn dispatch_admin_get(
     if !matches_current_admin_api(&config, request_path) {
         return Err(ApiError::not_found("Not Found"));
     }
-    let _admin = require_admin(state, headers, params.get("auth_data").cloned()).await?;
+    let admin = require_admin(state, headers, params.get("auth_data").cloned()).await?;
+    if sensitive_admin_get(admin_path) {
+        require_privileged_step_up(state, headers, &admin).await?;
+    }
     let service = state.admin_service(config);
     admin_response(service.get(admin_path, params).await?)
+}
+
+fn sensitive_admin_get(path: &str) -> bool {
+    // Node credentials contain a live control-plane bearer, while the global
+    // reconciliation ledger contains provider transaction identifiers and
+    // financial exception details. Configuration/payment reads are redacted by
+    // the domain layer and therefore do not expose secrets after ordinary auth.
+    matches!(
+        path.trim_matches('/'),
+        "server/manage/getNodes" | "order/reconciliation/fetch"
+    )
 }
 
 pub(crate) async fn admin_post(
@@ -63,6 +77,7 @@ pub(crate) async fn dispatch_admin_post(
     let headers = request.headers().clone();
     let mut params = admin_request_params(request).await?;
     let admin = require_admin(state, &headers, params.get("auth_data").cloned()).await?;
+    require_privileged_step_up(state, &headers, &admin).await?;
     params.insert("_admin_email".to_string(), admin.email);
     if admin_path.trim_matches('/') == "user/sendMail" {
         params.insert(
@@ -106,6 +121,7 @@ pub(crate) async fn staff_post(
     let headers = request.headers().clone();
     let mut params = admin_request_params(request).await?;
     let staff = require_staff(&state, &headers, params.get("auth_data").cloned()).await?;
+    require_privileged_step_up(&state, &headers, &staff).await?;
     params.insert("_admin_email".to_string(), staff.email);
     if staff_path.trim_matches('/') == "user/sendMail" {
         params.insert(
@@ -211,5 +227,14 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert("idempotency-key", HeaderValue::from_bytes(&[0xff]).unwrap());
         assert!(mail_idempotency_key(&headers).is_err());
+    }
+
+    #[test]
+    fn node_control_plane_credentials_require_recent_password_authentication() {
+        assert!(sensitive_admin_get("server/manage/getNodes"));
+        assert!(sensitive_admin_get("/server/manage/getNodes/"));
+        assert!(sensitive_admin_get("order/reconciliation/fetch"));
+        assert!(!sensitive_admin_get("config/fetch"));
+        assert!(!sensitive_admin_get("payment/fetch"));
     }
 }

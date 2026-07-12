@@ -61,7 +61,7 @@ rules:
         EmptyProxyGroupPolicy::Drop,
         ProxyGroupSelectionPolicy::PhpRegex,
     )
-    .expect("serde_yaml_ng serializes JSON-compatible values");
+    .expect("serde_saphyr serializes JSON-compatible values");
 
     // The operator's own group and rules survive, generated proxies are merged
     // into both the proxies list and the custom group, and $app_name is
@@ -72,7 +72,7 @@ rules:
     assert!(!rendered.contains("$app_name"));
     assert!(rendered.contains("mixed-port"));
 
-    let reparsed = serde_yaml_ng::from_str::<Value>(&rendered).expect("rendered YAML roundtrips");
+    let reparsed = serde_saphyr::from_str::<Value>(&rendered).expect("rendered YAML roundtrips");
     assert_eq!(reparsed["mixed-port"], json!(7890));
     assert_eq!(
         reparsed["proxy-groups"][0]["proxies"],
@@ -89,7 +89,7 @@ fn clash_custom_json_template_still_parses_as_yaml_superset() {
     // Existing JSON-encoded custom templates keep working, since YAML is a
     // superset of JSON.
     let custom_json = r#"{"rules": ["MATCH,DIRECT"], "proxy-groups": []}"#;
-    let template = serde_yaml_ng::from_str::<Value>(custom_json).expect("JSON is valid YAML");
+    let template = serde_saphyr::from_str::<Value>(custom_json).expect("JSON is valid YAML");
     assert_eq!(template["rules"][0], json!("MATCH,DIRECT"));
 }
 
@@ -208,7 +208,7 @@ fn clash_custom_regex_groups_filter_nodes_and_drop_empty_groups() {
         ProxyGroupSelectionPolicy::PhpRegex,
     )
     .expect("valid PHP regex filters render");
-    let config = serde_yaml_ng::from_str::<Value>(&rendered).expect("valid YAML");
+    let config = serde_saphyr::from_str::<Value>(&rendered).expect("valid YAML");
     let groups = config["proxy-groups"].as_array().expect("proxy groups");
 
     assert_eq!(groups.len(), 4);
@@ -287,7 +287,7 @@ rules:
     let empty_rendered = render_client_app_config(template.clone(), "user-uuid", &[])
         .expect("custom app template preserves empty groups");
     let empty_config =
-        serde_yaml_ng::from_str::<Value>(&empty_rendered).expect("valid empty custom YAML");
+        serde_saphyr::from_str::<Value>(&empty_rendered).expect("valid empty custom YAML");
     assert_eq!(
         empty_config["proxy-groups"].as_array().map(Vec::len),
         Some(2)
@@ -300,7 +300,7 @@ rules:
 
     let rendered = render_client_app_config(template, "user-uuid", &[vmess])
         .expect("custom app template renders");
-    let config = serde_yaml_ng::from_str::<Value>(&rendered).expect("valid YAML");
+    let config = serde_saphyr::from_str::<Value>(&rendered).expect("valid YAML");
 
     assert_eq!(config["mixed-port"], json!(17890));
     assert_eq!(config["custom-marker"], json!(true));
@@ -427,8 +427,8 @@ fn client_app_config_uses_complete_classic_clash_proxies() {
         "user-uuid",
         &[vmess, unsupported],
     )
-    .expect("client app config renders through serde_yaml_ng");
-    let config = serde_yaml_ng::from_str::<Value>(&rendered).expect("valid YAML");
+    .expect("client app config renders through serde_saphyr");
+    let config = serde_saphyr::from_str::<Value>(&rendered).expect("valid YAML");
 
     assert_eq!(config["mixed-port"], json!(7890));
     assert_eq!(config["allow-lan"], json!(true));
@@ -463,8 +463,8 @@ fn client_app_config_uses_complete_classic_clash_proxies() {
 #[test]
 fn client_app_config_keeps_full_policy_without_usable_proxies() {
     let rendered = render_client_app_config(complete_clash_template(), "user-uuid", &[])
-        .expect("empty client app config renders through serde_yaml_ng");
-    let config = serde_yaml_ng::from_str::<Value>(&rendered).expect("valid YAML");
+        .expect("empty client app config renders through serde_saphyr");
+    let config = serde_saphyr::from_str::<Value>(&rendered).expect("valid YAML");
 
     assert_eq!(config["proxies"], json!([]));
     let rules = config["rules"].as_array().expect("full app rules");

@@ -11,7 +11,7 @@ use redis::AsyncCommands;
 use rust_decimal::Decimal;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 use sqlx::{AssertSqlSafe, FromRow, MySql, MySqlPool, QueryBuilder, Transaction, types::Json};
 use uuid::Uuid;
 use v2board_compat::ApiError;
@@ -104,12 +104,8 @@ fn route_save_validation(params: &HashMap<String, String>) -> Option<ApiError> {
     }
 }
 
-fn pending_order_blocks_payment_update(
-    has_pending_order: bool,
-    driver_changed: bool,
-    config_changed: bool,
-) -> bool {
-    has_pending_order && (driver_changed || config_changed)
+fn payment_verification_version_blocks_update(driver_changed: bool, config_changed: bool) -> bool {
+    driver_changed || config_changed
 }
 
 #[derive(Clone)]
@@ -163,6 +159,7 @@ impl AdminService {
             "user/fetch" => self.user_fetch(&params).await,
             "user/getUserInfoById" => self.user_detail(required_i64(&params, "id")?).await,
             "order/fetch" => self.order_fetch(&params).await,
+            "order/reconciliation/fetch" => self.payment_reconciliation_fetch(&params).await,
             "notice/fetch" => self.notice_fetch().await,
             "ticket/fetch" => self.ticket_fetch(&params, false).await,
             "coupon/fetch" => self.coupon_fetch(&params).await,
@@ -211,10 +208,7 @@ impl AdminService {
             "payment/save" => self.payment_save(&params).await,
             "payment/drop" => self.payment_drop(required_i64(&params, "id")?).await,
             "payment/show" => self.payment_show(required_i64(&params, "id")?).await,
-            "payment/sort" => {
-                self.sort_ids("v2_payment", &array_param(&params, "ids")?)
-                    .await
-            }
+            "payment/sort" => self.payment_sort(&array_param(&params, "ids")?).await,
             "notice/save" => self.notice_save(&params).await,
             "notice/update" => self.notice_update(&params).await,
             "notice/drop" => {
@@ -315,15 +309,7 @@ impl AdminService {
             "user/allDel" => self.user_bulk_delete(&params).await,
             "user/setInviteUser" => self.user_set_invite(&params).await,
             _ if is_server_path(&path, "save") => self.server_save(&path, &params).await,
-            _ if is_server_path(&path, "drop") => {
-                let table = server_table_from_path(&path)?;
-                self.delete_by_id(
-                    table,
-                    required_i64(&params, "id")?,
-                    ApiError::legacy("节点ID不存在"),
-                )
-                .await
-            }
+            _ if is_server_path(&path, "drop") => self.server_drop(&path, &params).await,
             _ if is_server_path(&path, "update") => {
                 let table = server_table_from_path(&path)?;
                 self.toggle_or_set_show(

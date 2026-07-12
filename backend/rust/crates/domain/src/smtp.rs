@@ -1,4 +1,7 @@
-use std::sync::{Arc, RwLock};
+use std::{
+    sync::{Arc, RwLock},
+    time::Duration,
+};
 
 use lettre::{AsyncSmtpTransport, Tokio1Executor, transport::smtp::authentication::Credentials};
 use v2board_compat::ApiError;
@@ -85,6 +88,7 @@ fn build_transport(
     if let Some(port) = settings.port {
         builder = builder.port(port);
     }
+    builder = builder.timeout(Some(Duration::from_secs(30)));
     if let (Some(username), Some(password)) = (&settings.username, &settings.password) {
         builder = builder.credentials(Credentials::new(username.clone(), password.clone()));
     }

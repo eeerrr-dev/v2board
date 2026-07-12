@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use axum::{
     Json,
@@ -10,7 +10,7 @@ use redis::AsyncCommands;
 use rust_decimal::{Decimal, RoundingStrategy, prelude::ToPrimitive};
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use sqlx::{MySql, Transaction};
+use sqlx::{MySql, QueryBuilder, Transaction};
 use uuid::Uuid;
 use v2board_compat::ApiError;
 
@@ -18,9 +18,12 @@ use crate::{json_value::value_to_i64, runtime::AppState};
 
 use super::{
     ParsedTrafficEntries, ServerNodeRow, TrafficEntry,
+    config::parse_i32_json_list,
     repository::{load_server_node, load_uniproxy_node},
     request::required_i32_param,
 };
+
+const TRAFFIC_REPORT_SQL_BATCH_SIZE: usize = 500;
 
 // Merge every user's per-node alive-IP bucket in Redis itself. Reports from
 // different nodes can race; a client-side GET/SET loop loses one of those
@@ -119,6 +122,11 @@ pub(super) async fn server_push(
     };
 
     let report_token = traffic_report_token(headers, params)?;
+    if state.config_snapshot().server_require_idempotency_key && report_token.is_none() {
+        return Err(ApiError::bad_request(
+            "Traffic report idempotency key is required",
+        ));
+    }
     let parsed = parse_traffic_entries(body, params, report_token.is_some())?;
     if parsed.ignored_rows != 0 || parsed.defaulted_counters != 0 {
         tracing::warn!(
@@ -628,23 +636,96 @@ async fn persist_durable_traffic_report(
         return Ok(());
     }
 
+    // The user rows are the serialization point between report acceptance and
+    // every subscription mutation that resets traffic. Capturing the epoch
+    // while those rows are locked gives each item one unambiguous quota period.
+    // It also prevents a compromised node from charging users outside the
+    // groups currently assigned to that node.
+    let epochs = lock_report_users(&mut tx, node, entries).await?;
+    let mut items = Vec::with_capacity(entries.len());
     for entry in entries {
-        sqlx::query(
-            r#"
-            INSERT INTO v2_server_traffic_report_item (report_key, user_id, u, d)
-            VALUES (?, ?, ?, ?)
-            "#,
-        )
-        .bind(report_key)
-        .bind(entry.user_id)
-        .bind(charged_bytes(entry.u, rate)?)
-        .bind(charged_bytes(entry.d, rate)?)
-        .execute(&mut *tx)
-        .await?;
+        let epoch = *epochs
+            .get(&entry.user_id)
+            .ok_or_else(|| ApiError::bad_request("Traffic report contains an unauthorized user"))?;
+        items.push((
+            entry.user_id,
+            epoch,
+            charged_bytes(entry.u, rate)?,
+            charged_bytes(entry.d, rate)?,
+        ));
+    }
+    for chunk in items.chunks(TRAFFIC_REPORT_SQL_BATCH_SIZE) {
+        let mut builder = QueryBuilder::<MySql>::new(
+            "INSERT INTO v2_server_traffic_report_item \
+             (report_key, user_id, traffic_epoch, u, d) ",
+        );
+        builder.push_values(chunk, |mut row, (user_id, epoch, u, d)| {
+            row.push_bind(report_key)
+                .push_bind(*user_id)
+                .push_bind(*epoch)
+                .push_bind(*u)
+                .push_bind(*d);
+        });
+        builder.build().execute(&mut *tx).await?;
     }
     persist_traffic_stats(&mut tx, node, node_type, entries, rate).await?;
     tx.commit().await?;
     Ok(())
+}
+
+async fn lock_report_users(
+    tx: &mut Transaction<'_, MySql>,
+    node: &ServerNodeRow,
+    entries: &[TrafficEntry],
+) -> Result<BTreeMap<i64, i64>, ApiError> {
+    let user_ids = entries
+        .iter()
+        .map(|entry| entry.user_id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    if user_ids.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    let group_ids = parse_i32_json_list(Some(&node.group_id));
+    if group_ids.is_empty() {
+        return Err(ApiError::bad_request(
+            "Traffic report contains an unauthorized user",
+        ));
+    }
+
+    let mut epochs = BTreeMap::new();
+    for user_chunk in user_ids.chunks(TRAFFIC_REPORT_SQL_BATCH_SIZE) {
+        let mut builder =
+            QueryBuilder::<MySql>::new("SELECT id, traffic_epoch FROM v2_user WHERE id IN (");
+        {
+            let mut separated = builder.separated(", ");
+            for user_id in user_chunk {
+                separated.push_bind(*user_id);
+            }
+        }
+        builder.push(") AND group_id IN (");
+        {
+            let mut separated = builder.separated(", ");
+            for group_id in &group_ids {
+                separated.push_bind(*group_id);
+            }
+        }
+        builder.push(") ORDER BY id FOR UPDATE");
+        for (user_id, epoch) in builder
+            .build_query_as::<(i64, i64)>()
+            .fetch_all(&mut **tx)
+            .await?
+        {
+            epochs.insert(user_id, epoch);
+        }
+    }
+    if epochs.len() != user_ids.len() {
+        return Err(ApiError::bad_request(
+            "Traffic report contains an unauthorized user",
+        ));
+    }
+    Ok(epochs)
 }
 
 async fn persist_traffic_stats(
@@ -659,97 +740,75 @@ async fn persist_traffic_stats(
     let mut total_u = 0_i64;
     let mut total_d = 0_i64;
     for entry in entries {
-        total_u = total_u.checked_add(entry.u).ok_or_else(|| {
-            ApiError::bad_request("Server traffic total is outside the supported range")
-        })?;
-        total_d = total_d.checked_add(entry.d).ok_or_else(|| {
-            ApiError::bad_request("Server traffic total is outside the supported range")
-        })?;
-        let existing = sqlx::query_as::<_, (i64, i64, i64)>(
-            r#"
-            SELECT id, u, d
-            FROM v2_stat_user
-            WHERE server_rate = ? AND user_id = ? AND record_at = ?
-            LIMIT 1
-            FOR UPDATE
-            "#,
-        )
-        .bind(rate)
-        .bind(entry.user_id)
-        .bind(record_at)
-        .fetch_optional(&mut **tx)
-        .await?;
-        if let Some((id, current_u, current_d)) = existing {
-            let (u, d) = checked_traffic_pair(current_u, current_d, entry.u, entry.d)?;
-            sqlx::query("UPDATE v2_stat_user SET u = ?, d = ?, updated_at = ? WHERE id = ?")
-                .bind(u)
-                .bind(d)
-                .bind(now)
-                .bind(id)
-                .execute(&mut **tx)
-                .await?;
-        } else {
-            sqlx::query(
-                r#"
-                INSERT INTO v2_stat_user
-                    (user_id, server_rate, u, d, record_type, record_at, created_at, updated_at)
-                VALUES (?, ?, ?, ?, 'd', ?, ?, ?)
-                "#,
-            )
-            .bind(entry.user_id)
-            .bind(rate)
-            .bind(entry.u)
-            .bind(entry.d)
-            .bind(record_at)
-            .bind(now)
-            .bind(now)
-            .execute(&mut **tx)
-            .await?;
-        }
+        (total_u, total_d) = checked_traffic_pair(total_u, total_d, entry.u, entry.d)?;
     }
 
-    let existing = sqlx::query_as::<_, (i64, i64, i64)>(
+    // A single row-alias upsert per fixed-size chunk replaces the former
+    // SELECT + UPDATE/INSERT round trip for every user.  The unique statistics
+    // key serializes concurrent node reports, while strict MySQL arithmetic
+    // rejects rather than wraps a signed BIGINT overflow.
+    for chunk in entries.chunks(TRAFFIC_REPORT_SQL_BATCH_SIZE) {
+        let mut builder = QueryBuilder::<MySql>::new(
+            "INSERT INTO v2_stat_user \
+             (user_id, server_rate, u, d, record_type, record_at, created_at, updated_at) ",
+        );
+        builder.push_values(chunk, |mut row, entry| {
+            row.push_bind(entry.user_id)
+                .push_bind(rate)
+                .push_bind(entry.u)
+                .push_bind(entry.d)
+                .push_bind("d")
+                .push_bind(record_at)
+                .push_bind(now)
+                .push_bind(now);
+        });
+        builder.push(
+            " AS incoming ON DUPLICATE KEY UPDATE \
+             u = v2_stat_user.u + incoming.u, \
+             d = v2_stat_user.d + incoming.d, \
+             updated_at = incoming.updated_at",
+        );
+        builder
+            .build()
+            .execute(&mut **tx)
+            .await
+            .map_err(traffic_stat_write_error)?;
+    }
+
+    sqlx::query(
         r#"
-        SELECT id, u, d
-        FROM v2_stat_server
-        WHERE server_id = ? AND server_type = ? AND record_at = ?
-        LIMIT 1
-        FOR UPDATE
+        INSERT INTO v2_stat_server
+            (server_id, server_type, u, d, record_type, record_at, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'd', ?, ?, ?) AS incoming
+        ON DUPLICATE KEY UPDATE
+            u = v2_stat_server.u + incoming.u,
+            d = v2_stat_server.d + incoming.d,
+            updated_at = incoming.updated_at
         "#,
     )
     .bind(node.id)
     .bind(node_type)
+    .bind(total_u)
+    .bind(total_d)
     .bind(record_at)
-    .fetch_optional(&mut **tx)
-    .await?;
-    if let Some((id, current_u, current_d)) = existing {
-        let (u, d) = checked_traffic_pair(current_u, current_d, total_u, total_d)?;
-        sqlx::query("UPDATE v2_stat_server SET u = ?, d = ?, updated_at = ? WHERE id = ?")
-            .bind(u)
-            .bind(d)
-            .bind(now)
-            .bind(id)
-            .execute(&mut **tx)
-            .await?;
-    } else {
-        sqlx::query(
-            r#"
-            INSERT INTO v2_stat_server
-                (server_id, server_type, u, d, record_type, record_at, created_at, updated_at)
-            VALUES (?, ?, ?, ?, 'd', ?, ?, ?)
-            "#,
-        )
-        .bind(node.id)
-        .bind(node_type)
-        .bind(total_u)
-        .bind(total_d)
-        .bind(record_at)
-        .bind(now)
-        .bind(now)
-        .execute(&mut **tx)
-        .await?;
-    }
+    .bind(now)
+    .bind(now)
+    .execute(&mut **tx)
+    .await
+    .map_err(traffic_stat_write_error)?;
     Ok(())
+}
+
+fn traffic_stat_write_error(error: sqlx::Error) -> ApiError {
+    let is_overflow = error
+        .as_database_error()
+        .and_then(|error| error.code())
+        .is_some_and(|code| matches!(code.as_ref(), "1264" | "1690"));
+    if is_overflow {
+        ApiError::bad_request("Server traffic total is outside the supported range")
+    } else {
+        ApiError::Database(error)
+    }
 }
 
 pub(super) fn checked_traffic_pair(

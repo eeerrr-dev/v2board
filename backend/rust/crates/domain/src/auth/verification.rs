@@ -10,11 +10,18 @@ use crate::smtp::SmtpSettings;
 use super::validation::validate_email;
 use super::{AuthService, cache_key};
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct EmailVerifyInput {
     pub email: String,
     pub isforget: Option<i32>,
     pub recaptcha_data: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum LimitedEmailCodeResult {
+    Consumed,
+    Incorrect,
+    Limited,
 }
 
 impl AuthService {
@@ -120,17 +127,28 @@ impl AuthService {
         Ok(consumed == 1)
     }
 
-    pub(super) async fn increment_counter_with_ttl(
+    pub(super) async fn consume_email_code_with_failure_limit(
         &self,
-        key: &str,
+        email: &str,
+        code: &str,
+        limit_key: &str,
+        limit: i64,
         ttl_seconds: u64,
-    ) -> Result<i64, ApiError> {
+    ) -> Result<LimitedEmailCodeResult, ApiError> {
         let mut conn = self.redis.clone();
-        Ok(redis::Script::new(INCREMENT_WITH_TTL_SCRIPT)
-            .key(key)
+        let result = redis::Script::new(CONSUME_VALUE_WITH_FAILURE_LIMIT_SCRIPT)
+            .key(cache_key("EMAIL_VERIFY_CODE", email))
+            .key(limit_key)
+            .arg(code)
+            .arg(limit.max(1))
             .arg(ttl_seconds.max(1))
-            .invoke_async(&mut conn)
-            .await?)
+            .invoke_async::<i64>(&mut conn)
+            .await?;
+        Ok(match result {
+            1 => LimitedEmailCodeResult::Consumed,
+            -1 => LimitedEmailCodeResult::Limited,
+            _ => LimitedEmailCodeResult::Incorrect,
+        })
     }
 
     async fn check_and_increment_limit(
@@ -185,6 +203,9 @@ impl AuthService {
     }
 
     pub(super) async fn verify_recaptcha(&self, token: Option<&str>) -> Result<(), ApiError> {
+        if token.is_some_and(|value| value.len() > 4096) {
+            return Err(ApiError::legacy("Invalid code is incorrect"));
+        }
         if !self.config.recaptcha_enable {
             return Ok(());
         }
@@ -201,7 +222,7 @@ impl AuthService {
         let request_body =
             serde_urlencoded::to_string([("secret", secret), ("response", response)])
                 .map_err(|_| ApiError::legacy("Invalid code is incorrect"))?;
-        let body: serde_json::Value = self
+        let response = self
             .http
             .post("https://www.google.com/recaptcha/api/siteverify")
             .header(
@@ -211,10 +232,13 @@ impl AuthService {
             .body(request_body)
             .send()
             .await
-            .map_err(|_| ApiError::legacy("Invalid code is incorrect"))?
-            .json()
-            .await
             .map_err(|_| ApiError::legacy("Invalid code is incorrect"))?;
+        let body: serde_json::Value = crate::http_response::bounded_json(
+            response,
+            crate::http_response::MAX_EXTERNAL_RESPONSE_BYTES,
+            "Invalid code is incorrect",
+        )
+        .await?;
         if body
             .get("success")
             .and_then(serde_json::Value::as_bool)
@@ -245,11 +269,15 @@ impl AuthService {
             .header(ContentType::TEXT_HTML)
             .body(body.to_string())
             .map_err(|error| ApiError::legacy(format!("Build mail failed: {error}")))?;
-        self.smtp
-            .transport(&settings)?
-            .send(email)
-            .await
-            .map_err(|error| ApiError::legacy(format!("Send mail failed: {error}")))?;
+        let transport = self.smtp.transport(&settings)?;
+        let delivery = transport.send(email);
+        tokio::time::timeout(
+            std::time::Duration::from_secs(self.config.http_request_timeout_seconds),
+            delivery,
+        )
+        .await
+        .map_err(|_| ApiError::legacy("Send mail timed out"))?
+        .map_err(|error| ApiError::legacy(format!("Send mail failed: {error}")))?;
         Ok(())
     }
 }
@@ -259,14 +287,6 @@ fn six_digit_code() -> String {
     let number = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) % 900_000 + 100_000;
     number.to_string()
 }
-
-const INCREMENT_WITH_TTL_SCRIPT: &str = r#"
-local value = redis.call('INCR', KEYS[1])
-if value == 1 or redis.call('TTL', KEYS[1]) < 0 then
-    redis.call('EXPIRE', KEYS[1], ARGV[1])
-end
-return value
-"#;
 
 const CHECK_AND_INCREMENT_LIMIT_SCRIPT: &str = r#"
 local current = tonumber(redis.call('GET', KEYS[1]) or '0')
@@ -278,6 +298,22 @@ if value == 1 or redis.call('TTL', KEYS[1]) < 0 then
     redis.call('EXPIRE', KEYS[1], ARGV[2])
 end
 return 1
+"#;
+
+pub(super) const CONSUME_VALUE_WITH_FAILURE_LIMIT_SCRIPT: &str = r#"
+local current = tonumber(redis.call('GET', KEYS[2]) or '0')
+if current >= tonumber(ARGV[2]) then
+    return -1
+end
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+    redis.call('DEL', KEYS[1])
+    return 1
+end
+local value = redis.call('INCR', KEYS[2])
+if value == 1 or redis.call('TTL', KEYS[2]) < 0 then
+    redis.call('EXPIRE', KEYS[2], ARGV[3])
+end
+return 0
 "#;
 
 const CONSUME_VALUE_SCRIPT: &str = r#"

@@ -396,6 +396,30 @@ pub(crate) async fn payment_notify(
             tracing::warn!(?error, "payment success telegram notify failed");
         }
     }
+    if let Some(notice) = &result.late_payment_notice
+        && let Some(bot_token) = state.config_snapshot().telegram_bot_token.clone()
+    {
+        let settled = notice
+            .settled_amount
+            .map(format_paid_amount_yuan)
+            .unwrap_or_else(|| "网关未提供".to_string());
+        let message = format!(
+            "🚨收到需人工核对的已认证付款\n———————————————\n订单号：{}\n订单摘要：{}\n交易号：{}\n交易摘要：{}\n原因：{}\n订单状态：{}\n应付：{}元\n实付：{}元",
+            notice.trade_no,
+            notice.trade_no_hash,
+            notice.callback_no,
+            notice.callback_no_hash,
+            notice.reason,
+            notice.order_status,
+            format_paid_amount_yuan(notice.expected_amount),
+            settled,
+        );
+        if let Err(error) =
+            send_telegram_message_with_admin(&state, &bot_token, &message, false).await
+        {
+            tracing::warn!(?error, "late payment reconciliation telegram notify failed");
+        }
+    }
     Ok(result.body.into_response())
 }
 

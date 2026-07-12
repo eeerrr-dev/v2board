@@ -1,53 +1,153 @@
 use super::*;
 
+const SERVER_GROUP_LOCK_BATCH_SIZE: usize = 500;
+
+fn parse_server_group_ids(raw: &str) -> Result<Vec<i64>, ApiError> {
+    let Value::Array(values) = serde_json::from_str::<Value>(raw)
+        .map_err(|_| ApiError::validation_field("group_id", "节点组格式不正确"))?
+    else {
+        return Err(ApiError::validation_field("group_id", "节点组格式不正确"));
+    };
+    let mut ids = Vec::with_capacity(values.len());
+    for value in values {
+        let id = value
+            .as_i64()
+            .or_else(|| value.as_str().and_then(|value| value.parse::<i64>().ok()))
+            .filter(|id| *id > 0)
+            .ok_or_else(|| ApiError::validation_field("group_id", "节点组格式不正确"))?;
+        ids.push(id);
+    }
+    ids.sort_unstable();
+    ids.dedup();
+    if ids.is_empty() {
+        return Err(ApiError::validation_field("group_id", "节点组不能为空"));
+    }
+    Ok(ids)
+}
+
+fn requested_server_group_ids(params: &HashMap<String, String>) -> Result<Vec<i64>, ApiError> {
+    parse_server_group_ids(&required_json_array_string(params, "group_id")?)
+}
+
+async fn lock_server_groups(
+    tx: &mut Transaction<'_, MySql>,
+    group_ids: &[i64],
+) -> Result<(), ApiError> {
+    let mut found = 0_usize;
+    for chunk in group_ids.chunks(SERVER_GROUP_LOCK_BATCH_SIZE) {
+        let mut builder =
+            QueryBuilder::<MySql>::new("SELECT id FROM v2_server_group WHERE id IN (");
+        let mut ids = builder.separated(", ");
+        for id in chunk {
+            ids.push_bind(*id);
+        }
+        ids.push_unseparated(") ORDER BY id FOR SHARE");
+        found += builder
+            .build_query_scalar::<i64>()
+            .fetch_all(&mut **tx)
+            .await?
+            .len();
+    }
+    if found != group_ids.len() {
+        return Err(ApiError::legacy("节点组不存在"));
+    }
+    Ok(())
+}
+
+async fn server_table_uses_group(
+    tx: &mut Transaction<'_, MySql>,
+    table: &str,
+    group_id: i64,
+) -> Result<bool, ApiError> {
+    let numeric = group_id.to_string();
+    let string = serde_json::to_string(&numeric)
+        .map_err(|_| ApiError::internal("failed to encode server group id"))?;
+    let sql = AssertSqlSafe(format!(
+        "SELECT id FROM {table} \
+         WHERE JSON_CONTAINS(group_id, ?) OR JSON_CONTAINS(group_id, ?) \
+         LIMIT 1 FOR SHARE"
+    ));
+    Ok(sqlx::query_scalar::<_, i64>(sql)
+        .bind(numeric)
+        .bind(string)
+        .fetch_optional(&mut **tx)
+        .await?
+        .is_some())
+}
+
 impl AdminService {
+    pub(super) async fn server_drop(
+        &self,
+        path: &str,
+        params: &HashMap<String, String>,
+    ) -> Result<AdminOutput, ApiError> {
+        let table = server_table_from_path(path)?;
+        let kind = server_kind_from_path(path)?;
+        let id = required_i64(params, "id")?;
+        let mut tx = self.db.begin().await?;
+        let result = sqlx::query(AssertSqlSafe(format!("DELETE FROM {table} WHERE id = ?")))
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        if result.rows_affected() == 0 {
+            return Err(ApiError::legacy("节点ID不存在"));
+        }
+        sqlx::query("DELETE FROM v2_server_credential WHERE node_type = ? AND node_id = ?")
+            .bind(kind)
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(AdminOutput::Data(json!(true)))
+    }
+
     pub(super) async fn server_group_drop(
         &self,
         params: &HashMap<String, String>,
     ) -> Result<AdminOutput, ApiError> {
-        // Ports GroupController::drop (:58-90): reject while any vmess/vless node,
-        // plan, or user still references the group.
+        // Reject while any node, plan, or user still references the group.  The
+        // group row is the serialization point: node/plan writers first take a
+        // shared group lock, so none can create a late reference after these
+        // checks and before the delete.
         let id = required_i64(params, "id")?;
+        let mut tx = self.db.begin().await?;
         let exists: Option<i64> =
-            sqlx::query_scalar("SELECT id FROM v2_server_group WHERE id = ? LIMIT 1")
+            sqlx::query_scalar("SELECT id FROM v2_server_group WHERE id = ? LIMIT 1 FOR UPDATE")
                 .bind(id)
-                .fetch_optional(&self.db)
+                .fetch_optional(&mut *tx)
                 .await?;
         if exists.is_none() {
             return Err(ApiError::legacy("组不存在"));
         }
-        for table in ["v2_server_vmess", "v2_server_vless"] {
-            let group_ids: Vec<String> =
-                sqlx::query_scalar(AssertSqlSafe(format!("SELECT group_id FROM {table}")))
-                    .fetch_all(&self.db)
-                    .await?;
-            if group_ids
-                .iter()
-                .any(|group_id| group_id_contains(group_id, id))
-            {
+        for (_, table) in SERVER_TABLES {
+            if server_table_uses_group(&mut tx, table, id).await? {
                 return Err(ApiError::legacy("该组已被节点所使用，无法删除"));
             }
         }
         let plan_used: Option<i64> =
-            sqlx::query_scalar("SELECT id FROM v2_plan WHERE group_id = ? LIMIT 1")
+            sqlx::query_scalar("SELECT id FROM v2_plan WHERE group_id = ? LIMIT 1 FOR SHARE")
                 .bind(id)
-                .fetch_optional(&self.db)
+                .fetch_optional(&mut *tx)
                 .await?;
         if plan_used.is_some() {
             return Err(ApiError::legacy("该组已被订阅所使用，无法删除"));
         }
         let user_used: Option<i64> =
-            sqlx::query_scalar("SELECT id FROM v2_user WHERE group_id = ? LIMIT 1")
+            sqlx::query_scalar("SELECT id FROM v2_user WHERE group_id = ? LIMIT 1 FOR SHARE")
                 .bind(id)
-                .fetch_optional(&self.db)
+                .fetch_optional(&mut *tx)
                 .await?;
         if user_used.is_some() {
             return Err(ApiError::legacy("该组已被用户所使用，无法删除"));
         }
-        sqlx::query("DELETE FROM v2_server_group WHERE id = ?")
+        let deleted = sqlx::query("DELETE FROM v2_server_group WHERE id = ?")
             .bind(id)
-            .execute(&self.db)
+            .execute(&mut *tx)
             .await?;
+        if deleted.rows_affected() != 1 {
+            return Err(ApiError::legacy("组不存在"));
+        }
+        tx.commit().await?;
         Ok(AdminOutput::Data(json!(true)))
     }
 
@@ -228,7 +328,15 @@ impl AdminService {
             .clone()
             .or_else(|| self.config.app_url.clone())
             .unwrap_or_default();
-        let install_api_key = self.config.server_token.clone().unwrap_or_default();
+        let credential_rows = sqlx::query_as::<_, (String, i32, i64)>(
+            "SELECT node_type, node_id, credential_epoch FROM v2_server_credential",
+        )
+        .fetch_all(&self.db)
+        .await?
+        .into_iter()
+        .map(|(node_type, node_id, epoch)| ((node_type, i64::from(node_id)), epoch))
+        .collect::<HashMap<_, _>>();
+        let credential_master = self.config.server_token.as_deref().unwrap_or_default();
         // Hydrate node health from the cache keys the node API writes, keyed on
         // `parent_id ?? id`. Ports ServerService::mergeData (:407-421); the read is
         // best-effort so a Redis outage still returns the node list. Fetch every
@@ -310,12 +418,24 @@ impl AdminService {
             object.insert("last_check_at".to_string(), json!(last_check_at));
             object.insert("last_push_at".to_string(), json!(last_push_at));
             object.insert("available_status".to_string(), json!(available_status));
+            let normalized_type = node_type.to_ascii_lowercase();
+            let scoped_token = credential_rows
+                .get(&(normalized_type.clone(), id))
+                .and_then(|epoch| {
+                    crate::server_credentials::derive_node_token(
+                        credential_master,
+                        &normalized_type,
+                        i32::try_from(id).ok()?,
+                        *epoch,
+                    )
+                });
+            object.insert("api_key".to_string(), json!(scoped_token.as_deref()));
             if node_type == "V2NODE" {
                 let install_command = format!(
                     "wget -N https://raw.githubusercontent.com/wyx2685/v2node/master/script/install.sh && bash install.sh --api-host {} --node-id {} --api-key {}",
                     escapeshellarg(&install_api_host),
                     id,
-                    escapeshellarg(&install_api_key)
+                    escapeshellarg(scoped_token.as_deref().unwrap_or_default())
                 );
                 object.insert("install_command".to_string(), json!(install_command));
             }
@@ -335,8 +455,12 @@ impl AdminService {
         let table = server_table_from_path(path)?;
         let kind = server_kind_from_path(path)?;
         let now = Utc::now().timestamp();
+        let group_ids = requested_server_group_ids(params)?;
         let values = server_save_values(kind, params)?;
-        if let Some(id) = optional_i64(params, "id") {
+        let rotate_credential = truthy(params.get("rotate_credential"));
+        let mut tx = self.db.begin().await?;
+        lock_server_groups(&mut tx, &group_ids).await?;
+        let node_id = if let Some(id) = optional_i64(params, "id") {
             let mut builder = QueryBuilder::<MySql>::new(format!("UPDATE {table} SET "));
             let mut first = true;
             for (column, value) in &values {
@@ -351,10 +475,11 @@ impl AdminService {
             builder.push_bind(now);
             builder.push(" WHERE id = ");
             builder.push_bind(id);
-            let result = builder.build().execute(&self.db).await?;
+            let result = builder.build().execute(&mut *tx).await?;
             if result.rows_affected() == 0 {
                 return Err(ApiError::legacy("服务器不存在"));
             }
+            i32::try_from(id).map_err(|_| ApiError::legacy("服务器不存在"))?
         } else {
             let mut builder = QueryBuilder::<MySql>::new(format!("INSERT INTO {table} ("));
             let mut columns = builder.separated(", ");
@@ -371,8 +496,28 @@ impl AdminService {
             placeholders.push_bind(now);
             placeholders.push_bind(now);
             builder.push(")");
-            builder.build().execute(&self.db).await?;
-        }
+            let result = builder.build().execute(&mut *tx).await?;
+            i32::try_from(result.last_insert_id())
+                .map_err(|_| ApiError::internal("server id exceeds the supported range"))?
+        };
+        sqlx::query(
+            r#"
+            INSERT INTO v2_server_credential
+                (node_type, node_id, credential_epoch, updated_at)
+            VALUES (?, ?, 0, ?)
+            ON DUPLICATE KEY UPDATE
+                credential_epoch = IF(?, credential_epoch + 1, credential_epoch),
+                updated_at = ?
+            "#,
+        )
+        .bind(kind)
+        .bind(node_id)
+        .bind(now)
+        .bind(rotate_credential)
+        .bind(now)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
         Ok(AdminOutput::Data(json!(true)))
     }
 
@@ -385,6 +530,14 @@ impl AdminService {
         let kind = server_kind_from_path(path)?;
         let id = required_i64(params, "id")?;
         let columns = server_copy_columns(kind)?;
+        let source_group_ids: Option<String> = sqlx::query_scalar(AssertSqlSafe(format!(
+            "SELECT group_id FROM {table} WHERE id = ? LIMIT 1"
+        )))
+        .bind(id)
+        .fetch_optional(&self.db)
+        .await?;
+        let source_group_ids = source_group_ids.ok_or_else(|| ApiError::legacy("服务器不存在"))?;
+        let group_ids = parse_server_group_ids(&source_group_ids)?;
         let mut builder = QueryBuilder::<MySql>::new(format!("INSERT INTO {table} ("));
         let mut insert_columns = builder.separated(", ");
         for column in columns {
@@ -409,10 +562,26 @@ impl AdminService {
         select_columns.push("`updated_at`");
         builder.push(format!(" FROM {table} WHERE id = "));
         builder.push_bind(id);
-        let result = builder.build().execute(&self.db).await?;
+        builder.push(" AND group_id = ");
+        builder.push_bind(&source_group_ids);
+        let mut tx = self.db.begin().await?;
+        lock_server_groups(&mut tx, &group_ids).await?;
+        let result = builder.build().execute(&mut *tx).await?;
         if result.rows_affected() == 0 {
             return Err(ApiError::legacy("服务器不存在"));
         }
+        let node_id = i32::try_from(result.last_insert_id())
+            .map_err(|_| ApiError::internal("server id exceeds the supported range"))?;
+        sqlx::query(
+            "INSERT INTO v2_server_credential \
+             (node_type, node_id, credential_epoch, updated_at) VALUES (?, ?, 0, ?)",
+        )
+        .bind(kind)
+        .bind(node_id)
+        .bind(Utc::now().timestamp())
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
         Ok(AdminOutput::Data(json!(true)))
     }
 
@@ -439,5 +608,30 @@ impl AdminService {
             }
         }
         Ok(AdminOutput::Data(json!(true)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn node_group_references_are_nonempty_positive_and_canonicalized() {
+        assert_eq!(parse_server_group_ids(r#"[3,"1",3]"#).unwrap(), vec![1, 3]);
+        for invalid in ["[]", "{}", "1", r#"["missing"]"#, "[0]", "[-1]"] {
+            assert!(
+                parse_server_group_ids(invalid).is_err(),
+                "accepted {invalid}"
+            );
+        }
+    }
+
+    #[test]
+    fn group_mutations_use_one_lock_protocol_for_every_node_table() {
+        let source = include_str!("servers.rs");
+        assert!(source.contains("lock_server_groups(&mut tx, &group_ids)"));
+        assert!(source.contains("for (_, table) in SERVER_TABLES"));
+        assert!(source.contains("JSON_CONTAINS(group_id, ?)"));
+        assert!(source.contains("LIMIT 1 FOR SHARE"));
     }
 }

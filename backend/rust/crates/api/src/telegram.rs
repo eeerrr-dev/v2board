@@ -32,7 +32,9 @@ pub(crate) async fn telegram_webhook(
         .headers()
         .get("x-telegram-bot-api-secret-token")
         .and_then(|value| value.to_str().ok());
-    if supplied != Some(expected.as_str()) {
+    if !supplied
+        .is_some_and(|supplied| v2board_compat::constant_time_secret_eq(&expected, supplied))
+    {
         return Err(ApiError::Http {
             status: StatusCode::UNAUTHORIZED,
             message: "Unauthorized".to_string(),
@@ -140,7 +142,14 @@ async fn telegram_chat_join_request(
         .map_err(|error| {
             ApiError::legacy(format!("Telegram request failed: {}", error.without_url()))
         })?;
-    if !response.status().is_success() {
+    let status = response.status();
+    v2board_domain::http_response::bounded_bytes(
+        response,
+        v2board_domain::http_response::MAX_EXTERNAL_RESPONSE_BYTES,
+        "Telegram request failed",
+    )
+    .await?;
+    if !status.is_success() {
         return Err(ApiError::legacy("Telegram request failed"));
     }
     Ok(())
@@ -430,35 +439,18 @@ async fn reply_ticket_by_admin(
     user_id: i64,
     message: &str,
 ) -> Result<(), ApiError> {
-    let Some(ticket_user_id) =
-        sqlx::query_scalar::<_, i64>("SELECT user_id FROM v2_ticket WHERE id = ? LIMIT 1")
-            .bind(ticket_id)
-            .fetch_optional(&state.db)
-            .await?
-    else {
-        return Err(ApiError::legacy("工单不存在"));
-    };
     let now = Utc::now().timestamp();
-    let reply_status = if user_id != ticket_user_id { 1 } else { 0 };
-    let mut tx = state.db.begin().await?;
-    sqlx::query(
-        "INSERT INTO v2_ticket_message (user_id, ticket_id, message, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-    )
-    .bind(user_id)
-    .bind(ticket_id)
-    .bind(message)
-    .bind(now)
-    .bind(now)
-    .execute(&mut *tx)
-    .await?;
-    sqlx::query("UPDATE v2_ticket SET status = 0, reply_status = ?, updated_at = ? WHERE id = ?")
-        .bind(reply_status)
-        .bind(now)
-        .bind(ticket_id)
-        .execute(&mut *tx)
-        .await?;
-    tx.commit().await?;
-    Ok(())
+    match v2board_db::ticket::reply_ticket_as_operator(&state.db, ticket_id, user_id, message, now)
+        .await?
+    {
+        v2board_db::ticket::OperatorReplyTargetOutcome::Locked(_) => Ok(()),
+        v2board_db::ticket::OperatorReplyTargetOutcome::NotFound => {
+            Err(ApiError::legacy("工单不存在"))
+        }
+        v2board_db::ticket::OperatorReplyTargetOutcome::OtherOpenTicketExists => Err(
+            ApiError::legacy("用户存在其他未解决工单，无法重新打开该工单"),
+        ),
+    }
 }
 
 async fn telegram_user_by_chat_id(
@@ -516,7 +508,7 @@ async fn telegram_bot_username(
     client: &reqwest::Client,
     bot_token: &str,
 ) -> Result<String, TelegramCommandError> {
-    let value = client
+    let response = client
         .get(format!("https://api.telegram.org/bot{bot_token}/getMe"))
         .send()
         .await
@@ -525,15 +517,14 @@ async fn telegram_bot_username(
                 "Telegram request failed: {}",
                 error.without_url()
             ))
-        })?
-        .json::<serde_json::Value>()
-        .await
-        .map_err(|error| {
-            TelegramCommandError::without_chat(format!(
-                "Telegram response failed: {}",
-                error.without_url()
-            ))
         })?;
+    let value: serde_json::Value = v2board_domain::http_response::bounded_json(
+        response,
+        v2board_domain::http_response::MAX_EXTERNAL_RESPONSE_BYTES,
+        "Telegram response failed",
+    )
+    .await
+    .map_err(|_| TelegramCommandError::without_chat("Telegram response failed"))?;
     value
         .get("result")
         .and_then(|result| result.get("username"))
@@ -574,7 +565,15 @@ async fn telegram_send_message(
                 format!("Telegram request failed: {}", error.without_url()),
             )
         })?;
-    if !response.status().is_success() {
+    let status = response.status();
+    v2board_domain::http_response::bounded_bytes(
+        response,
+        v2board_domain::http_response::MAX_EXTERNAL_RESPONSE_BYTES,
+        "Telegram request failed",
+    )
+    .await
+    .map_err(|_| TelegramCommandError::new(chat_id, "Telegram response failed"))?;
+    if !status.is_success() {
         return Err(TelegramCommandError::new(
             chat_id,
             "Telegram request failed",

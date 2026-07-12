@@ -37,6 +37,8 @@ jobs:
     name: Rust fmt, clippy, test
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      CARGO_BUILD_WARNINGS: deny
     defaults:
       run:
         working-directory: backend/rust
@@ -67,7 +69,7 @@ jobs:
       - name: Enforce Rust dependency sources, licenses, and bans
         run: |
           cargo install cargo-deny --version 0.19.9 --locked
-          cargo deny check bans licenses sources
+          cargo deny --locked check advisories bans licenses sources
 
       - name: Reject unused Rust dependencies
         run: |
@@ -149,6 +151,9 @@ jobs:
       - name: Start the production-shaped stack and apply real migrations
         run: make deploy-smoke
 
+      - name: Verify production invariants against disposable MySQL and Redis state
+        run: make rust-integration
+
       - name: Reconcile scheduled worker side effects against MySQL and Redis
         run: make rust-worker-reconcile
 
@@ -176,15 +181,18 @@ jobs:
       - name: Assert retired runtimes stay isolated
         run: make runtime-isolation-audit
 
-      - name: Build Rust + frontend non-root image
-        run: docker build --target production --tag v2board-native:ci --file Dockerfile.rust .
-
-      - name: Assert runtime identity and contents
+      - name: Build independently probed API and worker images
         run: |
-          test "$(docker image inspect --format '{{.Config.User}}' v2board-native:ci)" = "v2board:v2board"
-          docker run --rm --entrypoint /bin/sh v2board-native:ci -eu -c '
+          docker build --target production-api --tag v2board-api:ci --file Dockerfile.rust .
+          docker build --target production-worker --tag v2board-worker:ci --file Dockerfile.rust .
+
+      - name: Assert API runtime identity, contents, and probe
+        run: |
+          test "$(docker image inspect --format '{{.Config.User}}' v2board-api:ci)" = "v2board:v2board"
+          docker image inspect --format '{{json .Config.Healthcheck.Test}}' v2board-api:ci | grep -q /readyz
+          docker run --rm --entrypoint /bin/sh v2board-api:ci -eu -c '
             test -x /usr/local/bin/v2board-api
-            test -x /usr/local/bin/v2board-workers
+            test ! -e /usr/local/bin/v2board-workers
             test -f /opt/v2board/frontend/current/user/index.html
             test -f /opt/v2board/frontend/current/admin/index.html
             ! command -v php >/dev/null 2>&1
@@ -196,4 +204,19 @@ jobs:
               -name "components"".chunk.css" -o -name "vendors"".async.js" -o \
               -name "components"".async.js" \
             \) | grep -q .
+          '
+
+      - name: Assert worker runtime identity, contents, logging, and probe
+        run: |
+          test "$(docker image inspect --format '{{.Config.User}}' v2board-worker:ci)" = "v2board:v2board"
+          docker image inspect --format '{{json .Config.Healthcheck.Test}}' v2board-worker:ci | grep -q V2BOARD_WORKER_HEALTH_FILE
+          docker image inspect --format '{{json .Config.Env}}' v2board-worker:ci | grep -q v2board_workers=info
+          docker run --rm --entrypoint /bin/sh v2board-worker:ci -eu -c '
+            test -x /usr/local/bin/v2board-workers
+            test ! -e /usr/local/bin/v2board-api
+            test ! -e /opt/v2board/frontend/current/user/index.html
+            ! command -v php >/dev/null 2>&1
+            ! command -v composer >/dev/null 2>&1
+            test ! -e /reference
+            test ! -e /references
           '

@@ -3,6 +3,11 @@ use rust_decimal::{RoundingStrategy, prelude::ToPrimitive};
 use tokio::task::JoinSet;
 
 const USER_DELETE_SQL_BATCH_SIZE: usize = 500;
+const USER_MUTATION_PAGE_SIZE: i64 = 500;
+const USER_BULK_MAX_ROWS: usize = 10_000;
+const USER_CSV_PAGE_SIZE: i64 = 500;
+const USER_CSV_MAX_ROWS: usize = 50_000;
+const GENERATED_USER_MAX_ROWS: usize = 1_000;
 const SESSION_CLEANUP_CONCURRENCY: usize = 8;
 
 pub(super) fn decimal_gib_filter_bytes(value: &str) -> Result<i64, ApiError> {
@@ -89,42 +94,77 @@ impl AdminService {
         Ok(clauses)
     }
 
-    /// Returns the ids of the users matching the request `filter[]` (used by ban
-    /// and allDel to stay scoped, like UserController::ban/allDel).
-    async fn filtered_user_ids(
+    /// Returns one primary-key page of users matching the request filter. Bulk
+    /// mutations advance this cursor after every bounded database/cache batch
+    /// instead of retaining the whole account table in memory.
+    async fn filtered_user_id_page(
         &self,
-        params: &HashMap<String, String>,
+        clauses: &[UserFilterClause],
         staff_scoped: bool,
+        after_id: i64,
     ) -> Result<Vec<i64>, ApiError> {
-        let clauses = self.user_filter_clauses(params).await?;
         let mut builder = QueryBuilder::<MySql>::new("SELECT u.id FROM v2_user u WHERE 1 = 1");
         if staff_scoped {
             builder.push(" AND u.is_admin = 0 AND u.is_staff = 0");
         }
-        push_user_where(&mut builder, &clauses);
-        let ids = builder
+        push_user_where(&mut builder, clauses);
+        builder.push(" AND u.id > ");
+        builder.push_bind(after_id);
+        builder.push(" ORDER BY u.id LIMIT ");
+        builder.push_bind(USER_MUTATION_PAGE_SIZE);
+        Ok(builder
             .build_query_scalar::<i64>()
             .fetch_all(&self.db)
-            .await?;
-        Ok(ids)
+            .await?)
     }
 
-    /// Fetches every user matching the admin list filter through the caller's
-    /// transaction, so the selected recipients and every outbox insert commit
-    /// as one unit. Staff remains scoped away from admin/staff recipients.
-    pub(super) async fn filtered_user_emails_in_tx(
+    async fn filtered_user_ids_bounded(
         &self,
         clauses: &[UserFilterClause],
         staff_scoped: bool,
+    ) -> Result<Vec<i64>, ApiError> {
+        let mut ids = Vec::new();
+        let mut after_id = 0_i64;
+        loop {
+            let page = self
+                .filtered_user_id_page(clauses, staff_scoped, after_id)
+                .await?;
+            let Some(last_id) = page.last().copied() else {
+                break;
+            };
+            if ids.len().saturating_add(page.len()) > USER_BULK_MAX_ROWS {
+                return Err(ApiError::legacy(
+                    "单次最多批量操作 10000 个用户，请缩小筛选范围",
+                ));
+            }
+            ids.extend(page);
+            after_id = last_id;
+        }
+        Ok(ids)
+    }
+
+    /// Fetches one recipient page through the caller's transaction. The cursor
+    /// and all outbox inserts share that transaction, preserving the atomic
+    /// audience snapshot without an unbounded email vector.
+    pub(super) async fn filtered_user_email_page_in_tx(
+        &self,
+        clauses: &[UserFilterClause],
+        staff_scoped: bool,
+        after_id: i64,
         tx: &mut Transaction<'_, MySql>,
-    ) -> Result<Vec<String>, ApiError> {
-        let mut builder = QueryBuilder::<MySql>::new("SELECT u.email FROM v2_user u WHERE 1 = 1");
+    ) -> Result<Vec<(i64, String)>, ApiError> {
+        let mut builder =
+            QueryBuilder::<MySql>::new("SELECT u.id, u.email FROM v2_user u WHERE 1 = 1");
         if staff_scoped {
             builder.push(" AND u.is_admin = 0 AND u.is_staff = 0");
         }
         push_user_where(&mut builder, clauses);
+        builder.push(" AND u.id > ");
+        builder.push_bind(after_id);
+        builder.push(" ORDER BY u.id LIMIT ");
+        builder.push_bind(USER_MUTATION_PAGE_SIZE);
         Ok(builder
-            .build_query_scalar::<String>()
+            .build_query_as::<(i64, String)>()
             .fetch_all(&mut **tx)
             .await?)
     }
@@ -287,6 +327,24 @@ impl AdminService {
             users.build().execute(&mut **tx).await?;
         }
         Ok(())
+    }
+
+    async fn lock_users_for_update(
+        tx: &mut Transaction<'_, MySql>,
+        user_ids: &[i64],
+    ) -> Result<usize, ApiError> {
+        let mut found = 0_usize;
+        for user_ids in user_ids.chunks(USER_DELETE_SQL_BATCH_SIZE) {
+            let mut builder = QueryBuilder::<MySql>::new("SELECT id FROM v2_user WHERE id IN (");
+            push_id_binds(&mut builder, user_ids);
+            builder.push(") ORDER BY id FOR UPDATE");
+            found += builder
+                .build_query_scalar::<i64>()
+                .fetch_all(&mut **tx)
+                .await?
+                .len();
+        }
+        Ok(found)
     }
 
     pub(super) async fn user_fetch(
@@ -516,7 +574,13 @@ impl AdminService {
             values.push(("password_algo", AdminSqlValue::Null));
         }
 
-        let revokes_sessions = password_changed || optional_i64(params, "banned") == Some(1);
+        // Any privilege assignment invalidates sessions issued under the old
+        // role. A newly promoted staff/admin user must not keep a 30-day user
+        // session, and a demoted account must lose privileged step-up tokens.
+        let role_changed = params.contains_key("is_admin") || params.contains_key("is_staff");
+        let revokes_sessions =
+            password_changed || optional_i64(params, "banned") == Some(1) || role_changed;
+        let resets_traffic = params.contains_key("u") || params.contains_key("d");
 
         let mut builder = QueryBuilder::<MySql>::new("UPDATE v2_user SET ");
         let mut first = true;
@@ -530,6 +594,9 @@ impl AdminService {
         }
         if revokes_sessions {
             builder.push(", `session_epoch` = `session_epoch` + 1");
+        }
+        if resets_traffic {
+            builder.push(", `traffic_epoch` = `traffic_epoch` + 1");
         }
         builder.push(", `updated_at` = ");
         builder.push_bind(Utc::now().timestamp());
@@ -616,6 +683,7 @@ impl AdminService {
             values.push(("password_algo", AdminSqlValue::Null));
         }
         let revokes_sessions = password_changed || optional_i64(params, "banned") == Some(1);
+        let resets_traffic = params.contains_key("u") || params.contains_key("d");
 
         let mut builder = QueryBuilder::<MySql>::new("UPDATE v2_user SET ");
         let mut first = true;
@@ -629,6 +697,9 @@ impl AdminService {
         }
         if revokes_sessions {
             builder.push(", `session_epoch` = `session_epoch` + 1");
+        }
+        if resets_traffic {
+            builder.push(", `traffic_epoch` = `traffic_epoch` + 1");
         }
         builder.push(", `updated_at` = ");
         builder.push_bind(Utc::now().timestamp());
@@ -655,21 +726,23 @@ impl AdminService {
     ) -> Result<AdminOutput, ApiError> {
         // Staff safety remains scoped to non-admin/non-staff users. The durable epoch check is
         // deliberately stronger than the retired implementation's Redis-only admin revocation.
-        let ids = self.filtered_user_ids(params, true).await?;
+        let clauses = self.user_filter_clauses(params).await?;
+        let ids = self.filtered_user_ids_bounded(&clauses, true).await?;
         if ids.is_empty() {
             return Ok(AdminOutput::Data(json!(true)));
         }
-        let mut builder = QueryBuilder::<MySql>::new(
-            "UPDATE v2_user SET banned = 1, session_epoch = session_epoch + 1, updated_at = ",
-        );
-        builder.push_bind(Utc::now().timestamp());
-        builder.push(" WHERE id IN (");
-        let mut separated = builder.separated(", ");
-        for id in &ids {
-            separated.push_bind(*id);
+        let mut tx = self.db.begin().await?;
+        for ids in ids.chunks(USER_DELETE_SQL_BATCH_SIZE) {
+            let mut builder = QueryBuilder::<MySql>::new(
+                "UPDATE v2_user SET banned = 1, session_epoch = session_epoch + 1, updated_at = ",
+            );
+            builder.push_bind(Utc::now().timestamp());
+            builder.push(" WHERE id IN (");
+            push_id_binds(&mut builder, ids);
+            builder.push(")");
+            builder.build().execute(&mut *tx).await?;
         }
-        builder.push(")");
-        builder.build().execute(&self.db).await?;
+        tx.commit().await?;
         self.remove_user_sessions_bounded(&ids).await;
         Ok(AdminOutput::Data(json!(true)))
     }
@@ -776,6 +849,12 @@ impl AdminService {
         }
         let count = usize::try_from(count)
             .map_err(|_| ApiError::validation_field("generate_count", "生成数量格式有误"))?;
+        if count > GENERATED_USER_MAX_ROWS {
+            return Err(ApiError::validation_field(
+                "generate_count",
+                "单次最多生成 1000 个用户",
+            ));
+        }
         let suffix = required_string(params, "email_suffix")?;
         let input_password = params
             .get("password")
@@ -866,53 +945,7 @@ impl AdminService {
         // real here — the Laravel row reads a `devce_limit` typo that always
         // produced an empty column.
         let clauses = self.user_filter_clauses(params).await?;
-        let mut builder = QueryBuilder::<MySql>::new(
-            "SELECT u.email AS email, u.balance AS balance, \
-             u.commission_balance AS commission_balance, u.transfer_enable AS transfer_enable, \
-             u.u AS u, u.d AS d, u.device_limit AS device_limit, u.expired_at AS expired_at, \
-             p.name AS plan_name, u.token AS token \
-             FROM v2_user u LEFT JOIN v2_plan p ON p.id = u.plan_id WHERE 1 = 1",
-        );
-        push_user_where(&mut builder, &clauses);
-        builder.push(" ORDER BY u.id ASC");
-        let rows = builder
-            .build_query_as::<UserDumpRow>()
-            .fetch_all(&self.db)
-            .await?;
-
-        let rows = rows.into_iter().map(|row| {
-            let expire = row
-                .expired_at
-                .map(local_datetime)
-                .unwrap_or_else(|| "长期有效".to_string());
-            let balance = row.balance as f64 / 100.0;
-            let commission = row.commission_balance as f64 / 100.0;
-            let transfer = if row.transfer_enable != 0 {
-                row.transfer_enable as f64 / GIB as f64
-            } else {
-                0.0
-            };
-            let device = row
-                .device_limit
-                .map(|value| value.to_string())
-                .unwrap_or_default();
-            let used = i128::from(row.u) + i128::from(row.d);
-            let not_use = (i128::from(row.transfer_enable) - used) as f64 / GIB as f64;
-            let plan = row.plan_name.unwrap_or_else(|| "无订阅".to_string());
-            let url = self.config.subscribe_url_for_token(&row.token);
-            vec![
-                row.email,
-                balance.to_string(),
-                commission.to_string(),
-                transfer.to_string(),
-                device,
-                not_use.to_string(),
-                expire,
-                plan,
-                url,
-            ]
-        });
-        let body = csv_export(
+        let mut csv = CsvExportWriter::new(
             &[
                 "邮箱",
                 "余额",
@@ -924,9 +957,73 @@ impl AdminService {
                 "订阅计划",
                 "订阅地址",
             ],
-            rows,
             true,
         )?;
+        let mut after_id = 0_i64;
+        let mut exported = 0_usize;
+        loop {
+            let mut builder = QueryBuilder::<MySql>::new(
+                "SELECT u.id AS id, u.email AS email, u.balance AS balance, \
+                 u.commission_balance AS commission_balance, u.transfer_enable AS transfer_enable, \
+                 u.u AS u, u.d AS d, u.device_limit AS device_limit, u.expired_at AS expired_at, \
+                 p.name AS plan_name, u.token AS token \
+                 FROM v2_user u LEFT JOIN v2_plan p ON p.id = u.plan_id WHERE 1 = 1",
+            );
+            push_user_where(&mut builder, &clauses);
+            builder.push(" AND u.id > ");
+            builder.push_bind(after_id);
+            builder.push(" ORDER BY u.id ASC LIMIT ");
+            builder.push_bind(USER_CSV_PAGE_SIZE);
+            let rows = builder
+                .build_query_as::<UserDumpRow>()
+                .fetch_all(&self.db)
+                .await?;
+            let Some(last_id) = rows.last().map(|row| row.id) else {
+                break;
+            };
+            exported = exported
+                .checked_add(rows.len())
+                .ok_or_else(|| ApiError::legacy("导出用户数量超出支持范围，请缩小筛选范围"))?;
+            if exported > USER_CSV_MAX_ROWS {
+                return Err(ApiError::legacy(
+                    "单次最多导出 50000 个用户，请缩小筛选范围",
+                ));
+            }
+            for row in rows {
+                let expire = row
+                    .expired_at
+                    .map(local_datetime)
+                    .unwrap_or_else(|| "长期有效".to_string());
+                let balance = row.balance as f64 / 100.0;
+                let commission = row.commission_balance as f64 / 100.0;
+                let transfer = if row.transfer_enable != 0 {
+                    row.transfer_enable as f64 / GIB as f64
+                } else {
+                    0.0
+                };
+                let device = row
+                    .device_limit
+                    .map(|value| value.to_string())
+                    .unwrap_or_default();
+                let used = i128::from(row.u) + i128::from(row.d);
+                let not_use = (i128::from(row.transfer_enable) - used) as f64 / GIB as f64;
+                let plan = row.plan_name.unwrap_or_else(|| "无订阅".to_string());
+                let url = self.config.subscribe_url_for_token(&row.token);
+                csv.write_row(vec![
+                    row.email,
+                    balance.to_string(),
+                    commission.to_string(),
+                    transfer.to_string(),
+                    device,
+                    not_use.to_string(),
+                    expire,
+                    plan,
+                    url,
+                ])?;
+            }
+            after_id = last_id;
+        }
+        let body = csv.finish()?;
         Ok(AdminOutput::Csv {
             filename: "users.csv".to_string(),
             body,
@@ -944,22 +1041,24 @@ impl AdminService {
         if column != "banned" {
             return Err(ApiError::legacy("Invalid user flag"));
         }
-        let ids = self.filtered_user_ids(params, false).await?;
+        let clauses = self.user_filter_clauses(params).await?;
+        let ids = self.filtered_user_ids_bounded(&clauses, false).await?;
         if ids.is_empty() {
             return Ok(AdminOutput::Data(json!(true)));
         }
-        let mut builder = QueryBuilder::<MySql>::new("UPDATE v2_user SET banned = ");
-        builder.push_bind(value);
-        builder.push(", session_epoch = session_epoch + 1");
-        builder.push(", updated_at = ");
-        builder.push_bind(Utc::now().timestamp());
-        builder.push(" WHERE id IN (");
-        let mut separated = builder.separated(", ");
-        for id in &ids {
-            separated.push_bind(*id);
+        let mut tx = self.db.begin().await?;
+        for ids in ids.chunks(USER_DELETE_SQL_BATCH_SIZE) {
+            let mut builder = QueryBuilder::<MySql>::new("UPDATE v2_user SET banned = ");
+            builder.push_bind(value);
+            builder.push(", session_epoch = session_epoch + 1");
+            builder.push(", updated_at = ");
+            builder.push_bind(Utc::now().timestamp());
+            builder.push(" WHERE id IN (");
+            push_id_binds(&mut builder, ids);
+            builder.push(")");
+            builder.build().execute(&mut *tx).await?;
         }
-        builder.push(")");
-        builder.build().execute(&self.db).await?;
+        tx.commit().await?;
         self.remove_user_sessions_bounded(&ids).await;
         Ok(AdminOutput::Data(json!(true)))
     }
@@ -971,16 +1070,18 @@ impl AdminService {
         // Ports UserController::allDel (:328-359): scoped to the request filter,
         // cascading orders / invite codes / tickets and detaching referrals for
         // each user inside a single transaction, then deleting the matched users.
-        let ids = sorted_unique_user_ids(self.filtered_user_ids(params, false).await?);
+        let clauses = self.user_filter_clauses(params).await?;
+        let ids = sorted_unique_user_ids(self.filtered_user_ids_bounded(&clauses, false).await?);
         if ids.is_empty() {
             return Ok(AdminOutput::Data(json!(true)));
         }
         let mut tx = self.db.begin().await?;
-        if Self::users_have_pending_stripe_intents_in_tx(&mut tx, &ids).await? {
+        if Self::lock_user_orders_and_find_pending_stripe(&mut tx, &ids).await? {
             return Err(ApiError::legacy(
                 "所选用户仍有待支付的 Stripe 订单，请先取消订单",
             ));
         }
+        Self::lock_users_for_update(&mut tx, &ids).await?;
         self.delete_users_cascade(&mut tx, &ids).await?;
         tx.commit().await?;
         self.remove_user_sessions_bounded(&ids).await;
@@ -989,18 +1090,14 @@ impl AdminService {
 
     pub(super) async fn del_user(&self, id: i64) -> Result<AdminOutput, ApiError> {
         // Ports UserController::delUser (:361-391): single-user cascade delete.
-        let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM v2_user WHERE id = ? LIMIT 1")
-            .bind(id)
-            .fetch_optional(&self.db)
-            .await?;
-        if exists.is_none() {
-            return Err(ApiError::legacy("用户不存在"));
-        }
         let mut tx = self.db.begin().await?;
-        if Self::users_have_pending_stripe_intents_in_tx(&mut tx, &[id]).await? {
+        if Self::lock_user_orders_and_find_pending_stripe(&mut tx, &[id]).await? {
             return Err(ApiError::legacy(
                 "该用户仍有待支付的 Stripe 订单，请先取消订单",
             ));
+        }
+        if Self::lock_users_for_update(&mut tx, &[id]).await? != 1 {
+            return Err(ApiError::legacy("用户不存在"));
         }
         self.delete_users_cascade(&mut tx, &[id]).await?;
         tx.commit().await?;
@@ -1008,7 +1105,7 @@ impl AdminService {
         Ok(AdminOutput::Data(json!(true)))
     }
 
-    async fn users_have_pending_stripe_intents_in_tx(
+    async fn lock_user_orders_and_find_pending_stripe(
         tx: &mut sqlx::Transaction<'_, MySql>,
         user_ids: &[i64],
     ) -> Result<bool, ApiError> {
@@ -1016,21 +1113,33 @@ impl AdminService {
             return Ok(false);
         }
         for user_ids in user_ids.chunks(USER_DELETE_SQL_BATCH_SIZE) {
-            let mut builder = QueryBuilder::<MySql>::new(
-                "SELECT callback_no FROM v2_order WHERE status = 0 AND user_id IN (",
-            );
-            push_id_binds(&mut builder, user_ids);
-            builder.push(") ORDER BY user_id, id FOR UPDATE");
-            let callback_numbers = builder
-                .build_query_scalar::<Option<String>>()
-                .fetch_all(&mut **tx)
-                .await?;
-            if callback_numbers
-                .iter()
-                .flatten()
-                .any(|callback_no| callback_no.starts_with("pi_"))
-            {
-                return Ok(true);
+            let mut after_order_id = 0_i64;
+            loop {
+                let mut builder = QueryBuilder::<MySql>::new(
+                    "SELECT id, status, callback_no FROM v2_order WHERE user_id IN (",
+                );
+                push_id_binds(&mut builder, user_ids);
+                builder.push(") AND id > ");
+                builder.push_bind(after_order_id);
+                builder.push(" ORDER BY id LIMIT ");
+                builder.push_bind(USER_MUTATION_PAGE_SIZE);
+                builder.push(" FOR UPDATE");
+                let rows = builder
+                    .build_query_as::<(i64, i8, Option<String>)>()
+                    .fetch_all(&mut **tx)
+                    .await?;
+                let Some(last_id) = rows.last().map(|(id, _, _)| *id) else {
+                    break;
+                };
+                if rows.iter().any(|(_, status, callback_no)| {
+                    *status == 0
+                        && callback_no
+                            .as_deref()
+                            .is_some_and(|callback_no| callback_no.starts_with("pi_"))
+                }) {
+                    return Ok(true);
+                }
+                after_order_id = last_id;
             }
         }
         Ok(false)

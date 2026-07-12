@@ -862,16 +862,14 @@ async fn fetch_exchange_rate(
     url: impl reqwest::IntoUrl,
     currency: &str,
 ) -> Option<Decimal> {
-    let value = client
-        .get(url)
-        .send()
-        .await
-        .ok()?
-        .error_for_status()
-        .ok()?
-        .json::<Value>()
-        .await
-        .ok()?;
+    let response = client.get(url).send().await.ok()?.error_for_status().ok()?;
+    let value: Value = crate::http_response::bounded_json(
+        response,
+        crate::http_response::MAX_EXTERNAL_RESPONSE_BYTES,
+        "Exchange-rate response is invalid",
+    )
+    .await
+    .ok()?;
     value
         .get("rates")
         .and_then(|rates| rates.get(currency))
@@ -1068,10 +1066,12 @@ pub(in crate::order) async fn stripe_cancel_intent(
 
 async fn stripe_response(response: reqwest::Response) -> Result<Value, ApiError> {
     let status = response.status();
-    let text = response
-        .text()
-        .await
-        .map_err(|_| ApiError::legacy("Payment gateway request failed"))?;
+    let text = crate::http_response::bounded_text(
+        response,
+        crate::http_response::MAX_EXTERNAL_RESPONSE_BYTES,
+        "Payment gateway request failed",
+    )
+    .await?;
     let value = serde_json::from_str::<Value>(&text).unwrap_or_else(|_| json!({ "raw": text }));
     if !status.is_success() {
         let message = value

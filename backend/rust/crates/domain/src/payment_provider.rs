@@ -17,7 +17,10 @@ pub struct PaymentProviderField {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaymentProviderFieldKind {
     Input,
+    Secret,
 }
+
+pub const REDACTED_PAYMENT_SECRET: &str = "********";
 
 const fn input_field(
     key: &'static str,
@@ -32,12 +35,25 @@ const fn input_field(
     }
 }
 
+const fn secret_field(
+    key: &'static str,
+    label: &'static str,
+    description: &'static str,
+) -> PaymentProviderField {
+    PaymentProviderField {
+        key,
+        label,
+        description,
+        kind: PaymentProviderFieldKind::Secret,
+    }
+}
+
 pub const PAYMENT_PROVIDER_MANIFESTS: &[PaymentProviderManifest] = &[
     PaymentProviderManifest {
         code: "AlipayF2F",
         fields: &[
             input_field("app_id", "支付宝APPID", ""),
-            input_field("private_key", "支付宝私钥", ""),
+            secret_field("private_key", "支付宝私钥", ""),
             input_field("public_key", "支付宝公钥", ""),
             input_field("product_name", "自定义商品名称", "将会体现在支付宝账单中"),
         ],
@@ -50,7 +66,11 @@ pub const PAYMENT_PROVIDER_MANIFESTS: &[PaymentProviderManifest] = &[
                 "API 地址",
                 "您的 BEPUSDT API 接口地址(例如: https://xxx.com)",
             ),
-            input_field("bepusdt_apitoken", "API Token", "您的 BEPUSDT API Token"),
+            secret_field(
+                "bepusdt_apitoken",
+                "API Token",
+                "您的 BEPUSDT API Token。兼容旧网关协议：签名算法为 MD5；仅通过 HTTPS 使用并优先迁移到支持 HMAC/非对称签名的网关。",
+            ),
             input_field("bepusdt_trade_type", "交易类型", "您的 BEPUSDT 交易类型"),
         ],
     },
@@ -59,12 +79,12 @@ pub const PAYMENT_PROVIDER_MANIFESTS: &[PaymentProviderManifest] = &[
         fields: &[
             input_field("btcpay_url", "API接口所在网址(包含最后的斜杠)", ""),
             input_field("btcpay_storeId", "storeId", ""),
-            input_field(
+            secret_field(
                 "btcpay_api_key",
                 "API KEY",
                 "个人设置中的API KEY(非商店设置中的)",
             ),
-            input_field("btcpay_webhook_key", "WEBHOOK KEY", ""),
+            secret_field("btcpay_webhook_key", "WEBHOOK KEY", ""),
         ],
     },
     PaymentProviderManifest {
@@ -75,7 +95,7 @@ pub const PAYMENT_PROVIDER_MANIFESTS: &[PaymentProviderManifest] = &[
                 "Merchant ID",
                 "商户 ID，填写您在 Account Settings 中得到的 ID",
             ),
-            input_field(
+            secret_field(
                 "coinpayments_ipn_secret",
                 "IPN Secret",
                 "通知密钥，填写您在 Merchant Settings 中自行设置的值",
@@ -91,8 +111,8 @@ pub const PAYMENT_PROVIDER_MANIFESTS: &[PaymentProviderManifest] = &[
         code: "Coinbase",
         fields: &[
             input_field("coinbase_url", "接口地址", ""),
-            input_field("coinbase_api_key", "API KEY", ""),
-            input_field("coinbase_webhook_key", "WEBHOOK KEY", ""),
+            secret_field("coinbase_api_key", "API KEY", ""),
+            secret_field("coinbase_webhook_key", "WEBHOOK KEY", ""),
         ],
     },
     PaymentProviderManifest {
@@ -100,7 +120,11 @@ pub const PAYMENT_PROVIDER_MANIFESTS: &[PaymentProviderManifest] = &[
         fields: &[
             input_field("url", "URL", ""),
             input_field("pid", "PID", ""),
-            input_field("key", "KEY", ""),
+            secret_field(
+                "key",
+                "KEY",
+                "兼容旧网关协议：签名算法为 MD5；仅通过 HTTPS 使用并优先迁移到支持 HMAC/非对称签名的网关。",
+            ),
             input_field("type", "TYPE", "支付类型，如: alipay, wxpay, qqpay"),
         ],
     },
@@ -109,7 +133,11 @@ pub const PAYMENT_PROVIDER_MANIFESTS: &[PaymentProviderManifest] = &[
         fields: &[
             input_field("mgate_url", "API地址", ""),
             input_field("mgate_app_id", "APPID", ""),
-            input_field("mgate_app_secret", "AppSecret", ""),
+            secret_field(
+                "mgate_app_secret",
+                "AppSecret",
+                "兼容旧网关协议：签名算法为 MD5；仅通过 HTTPS 使用并优先迁移到支持 HMAC/非对称签名的网关。",
+            ),
             input_field("mgate_source_currency", "源货币", "默认CNY"),
         ],
     },
@@ -121,8 +149,8 @@ pub const PAYMENT_PROVIDER_MANIFESTS: &[PaymentProviderManifest] = &[
                 "货币单位",
                 "请使用符合ISO 4217标准的三位字母，例如GBP",
             ),
-            input_field("stripe_sk_live", "SK_LIVE", ""),
-            input_field("stripe_webhook_key", "WebHook密钥签名", "whsec_...."),
+            secret_field("stripe_sk_live", "SK_LIVE", ""),
+            secret_field("stripe_webhook_key", "WebHook密钥签名", "whsec_...."),
             input_field(
                 "payment_method",
                 "支付方式",
@@ -134,17 +162,17 @@ pub const PAYMENT_PROVIDER_MANIFESTS: &[PaymentProviderManifest] = &[
         code: "StripeAlipay",
         fields: &[
             input_field("currency", "货币单位", ""),
-            input_field("stripe_sk_live", "SK_LIVE", ""),
-            input_field("stripe_webhook_key", "WebHook密钥签名", ""),
+            secret_field("stripe_sk_live", "SK_LIVE", ""),
+            secret_field("stripe_webhook_key", "WebHook密钥签名", ""),
         ],
     },
     PaymentProviderManifest {
         code: "StripeCheckout",
         fields: &[
             input_field("currency", "货币单位", ""),
-            input_field("stripe_sk_live", "SK_LIVE", "API 密钥"),
+            secret_field("stripe_sk_live", "SK_LIVE", "API 密钥"),
             input_field("stripe_pk_live", "PK_LIVE", "API 公钥"),
-            input_field("stripe_webhook_key", "WebHook 密钥签名", ""),
+            secret_field("stripe_webhook_key", "WebHook 密钥签名", ""),
             input_field(
                 "stripe_custom_field_name",
                 "自定义字段名称",
@@ -156,17 +184,17 @@ pub const PAYMENT_PROVIDER_MANIFESTS: &[PaymentProviderManifest] = &[
         code: "StripeCredit",
         fields: &[
             input_field("currency", "货币单位", ""),
-            input_field("stripe_sk_live", "SK_LIVE", ""),
+            secret_field("stripe_sk_live", "SK_LIVE", ""),
             input_field("stripe_pk_live", "PK_LIVE", ""),
-            input_field("stripe_webhook_key", "WebHook密钥签名", ""),
+            secret_field("stripe_webhook_key", "WebHook密钥签名", ""),
         ],
     },
     PaymentProviderManifest {
         code: "StripeWepay",
         fields: &[
             input_field("currency", "货币单位", ""),
-            input_field("stripe_sk_live", "SK_LIVE", ""),
-            input_field("stripe_webhook_key", "WebHook密钥签名", ""),
+            secret_field("stripe_sk_live", "SK_LIVE", ""),
+            secret_field("stripe_webhook_key", "WebHook密钥签名", ""),
         ],
     },
     PaymentProviderManifest {
@@ -174,7 +202,11 @@ pub const PAYMENT_PROVIDER_MANIFESTS: &[PaymentProviderManifest] = &[
         fields: &[
             input_field("app_id", "APPID", "绑定微信支付商户的APPID"),
             input_field("mch_id", "商户号", "微信支付商户号"),
-            input_field("api_key", "APIKEY(v1)", ""),
+            secret_field(
+                "api_key",
+                "APIKEY(v1)",
+                "微信支付 v1 兼容模式使用 MD5；新部署应优先采用支持现代签名的支付接口。",
+            ),
         ],
     },
 ];
@@ -190,6 +222,59 @@ pub fn payment_provider_codes() -> Vec<&'static str> {
         .iter()
         .map(|provider| provider.code)
         .collect()
+}
+
+pub fn payment_provider_uses_legacy_md5(code: &str) -> bool {
+    matches!(
+        code,
+        "BEasyPaymentUSDT" | "EPay" | "MGate" | "WechatPayNative"
+    )
+}
+
+pub fn payment_provider_security_warning(code: &str) -> Option<&'static str> {
+    payment_provider_uses_legacy_md5(code).then_some(
+        "Legacy MD5 signature protocol: require HTTPS and migrate to a provider with HMAC or asymmetric signatures when available.",
+    )
+}
+
+pub fn redact_payment_config(code: &str, config: &Value) -> Value {
+    let Some(source) = config.as_object() else {
+        return Value::Object(Map::new());
+    };
+    let Some(provider) = payment_provider_manifest(code) else {
+        // Compatibility may retain an old external provider code. Its schema is
+        // unknown, so every stored value is potentially secret; preserve only
+        // field names for operator orientation.
+        return Value::Object(
+            source
+                .keys()
+                .map(|key| {
+                    (
+                        key.clone(),
+                        Value::String(REDACTED_PAYMENT_SECRET.to_string()),
+                    )
+                })
+                .collect(),
+        );
+    };
+    let mut redacted = Map::new();
+    for field in provider.fields {
+        let Some(value) = source.get(field.key) else {
+            continue;
+        };
+        let value = match field.kind {
+            PaymentProviderFieldKind::Secret if !value.is_null() && value.as_str() != Some("") => {
+                Value::String(REDACTED_PAYMENT_SECRET.to_string())
+            }
+            PaymentProviderFieldKind::Secret => Value::String(String::new()),
+            PaymentProviderFieldKind::Input => value
+                .as_str()
+                .map(|value| Value::String(value.to_string()))
+                .unwrap_or_else(|| Value::String(REDACTED_PAYMENT_SECRET.to_string())),
+        };
+        redacted.insert(field.key.to_string(), value);
+    }
+    Value::Object(redacted)
 }
 
 pub fn payment_provider_form(code: &str, config: Option<&Value>) -> Value {
@@ -212,7 +297,7 @@ pub fn payment_provider_form(code: &str, config: Option<&Value>) -> Value {
 
 fn field_type_name(kind: PaymentProviderFieldKind) -> &'static str {
     match kind {
-        PaymentProviderFieldKind::Input => "input",
+        PaymentProviderFieldKind::Input | PaymentProviderFieldKind::Secret => "input",
     }
 }
 
@@ -260,5 +345,63 @@ mod tests {
             "支付类型，如: alipay, wxpay, qqpay"
         );
         assert_eq!(form["type"]["value"], "alipay");
+        assert!(form["key"]["description"].as_str().unwrap().contains("MD5"));
+    }
+
+    #[test]
+    fn legacy_md5_providers_are_explicitly_classified() {
+        for code in ["BEasyPaymentUSDT", "EPay", "MGate", "WechatPayNative"] {
+            assert!(payment_provider_uses_legacy_md5(code));
+            assert!(payment_provider_security_warning(code).is_some());
+        }
+        assert!(!payment_provider_uses_legacy_md5("StripeCheckout"));
+        assert!(payment_provider_security_warning("StripeCheckout").is_none());
+    }
+
+    #[test]
+    fn payment_secrets_are_redacted_without_hiding_public_configuration() {
+        let redacted = redact_payment_config(
+            "StripeCheckout",
+            &json!({
+                "currency": "usd",
+                "stripe_sk_live": "sk_live_secret",
+                "stripe_pk_live": "pk_live_public",
+                "stripe_webhook_key": "whsec_secret"
+            }),
+        );
+        assert_eq!(redacted["currency"], "usd");
+        assert_eq!(redacted["stripe_pk_live"], "pk_live_public");
+        assert_eq!(redacted["stripe_sk_live"], REDACTED_PAYMENT_SECRET);
+        assert_eq!(redacted["stripe_webhook_key"], REDACTED_PAYMENT_SECRET);
+    }
+
+    #[test]
+    fn redaction_fails_closed_for_non_string_secrets_and_unknown_providers() {
+        let known = redact_payment_config(
+            "StripeCheckout",
+            &json!({
+                "stripe_sk_live": { "nested": "secret" },
+                "stripe_webhook_key": 42,
+                "currency": "usd",
+                "undeclared_secret": "must not be returned"
+            }),
+        );
+        assert_eq!(known["stripe_sk_live"], REDACTED_PAYMENT_SECRET);
+        assert_eq!(known["stripe_webhook_key"], REDACTED_PAYMENT_SECRET);
+        assert!(known.get("undeclared_secret").is_none());
+
+        let malformed_public = redact_payment_config(
+            "StripeCheckout",
+            &json!({ "stripe_pk_live": { "embedded_secret": "must not escape" } }),
+        );
+        assert_eq!(malformed_public["stripe_pk_live"], REDACTED_PAYMENT_SECRET);
+        assert!(!malformed_public.to_string().contains("must not escape"));
+
+        let unknown = redact_payment_config(
+            "ExternalLegacyProvider",
+            &json!({ "token": "secret", "nested": { "private": true } }),
+        );
+        assert_eq!(unknown["token"], REDACTED_PAYMENT_SECRET);
+        assert_eq!(unknown["nested"], REDACTED_PAYMENT_SECRET);
     }
 }

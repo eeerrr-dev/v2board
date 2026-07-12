@@ -1,9 +1,10 @@
 use super::commerce::{
-    PENDING_PAYMENT_ORDER_SQL, optional_nonnegative_i32, parse_payment_config,
-    required_nonnegative_i32,
+    optional_nonnegative_i32, parse_payment_config, payment_config_input,
+    reconciliation_resolution, reconciliation_resolved_filter, required_nonnegative_i32,
+    resolve_redacted_payment_config,
 };
 use super::configuration::bulk_mail_payload_hash;
-use super::content::TICKET_NOTIFICATION_GATE_RELEASE_SCRIPT;
+use super::content::{TICKET_NOTIFICATION_GATE_RELEASE_SCRIPT, validate_ticket_message_length};
 use super::users::decimal_gib_filter_bytes;
 use super::*;
 use crate::mail::outbox::{mail_message_id, prepared_mail_payload_hash};
@@ -43,18 +44,133 @@ fn route_save_accepts_valid_payload() {
 }
 
 #[test]
-fn pending_payment_order_blocks_driver_or_config_changes_only() {
-    assert!(pending_order_blocks_payment_update(true, true, false));
-    assert!(pending_order_blocks_payment_update(true, false, true));
-    assert!(!pending_order_blocks_payment_update(true, false, false));
-    assert!(!pending_order_blocks_payment_update(false, true, true));
+fn admin_ticket_reply_respects_mysql_text_limit() {
+    assert!(validate_ticket_message_length(&"a".repeat(65_535)).is_ok());
+    assert!(validate_ticket_message_length(&"a".repeat(65_536)).is_err());
 }
 
 #[test]
-fn pending_payment_query_covers_every_gateway_binding() {
-    assert!(PENDING_PAYMENT_ORDER_SQL.contains("payment_id = ? AND status = 0"));
-    assert!(!PENDING_PAYMENT_ORDER_SQL.contains("callback_no"));
-    assert!(!PENDING_PAYMENT_ORDER_SQL.contains("Stripe"));
+fn every_payment_row_is_an_immutable_verification_version() {
+    assert!(payment_verification_version_blocks_update(true, false));
+    assert!(payment_verification_version_blocks_update(false, true));
+    assert!(!payment_verification_version_blocks_update(false, false));
+}
+
+#[test]
+fn redacted_payment_secret_preserves_only_an_existing_same_provider_value() {
+    let submitted = json!({
+        "currency": "usd",
+        "stripe_sk_live": crate::payment_provider::REDACTED_PAYMENT_SECRET,
+        "stripe_pk_live": "pk_new",
+        "stripe_webhook_key": crate::payment_provider::REDACTED_PAYMENT_SECRET,
+    });
+    let current = r#"{"currency":"eur","stripe_sk_live":"sk_existing","stripe_pk_live":"pk_old","stripe_webhook_key":"whsec_existing"}"#;
+    let resolved = resolve_redacted_payment_config(
+        "StripeCheckout",
+        Some(("StripeCheckout", current)),
+        submitted.clone(),
+    )
+    .unwrap();
+    assert_eq!(resolved["stripe_sk_live"], "sk_existing");
+    assert_eq!(resolved["stripe_webhook_key"], "whsec_existing");
+    assert_eq!(resolved["stripe_pk_live"], "pk_new");
+    assert!(resolve_redacted_payment_config("StripeCheckout", None, submitted).is_err());
+}
+
+#[test]
+fn built_in_payment_text_fields_never_coerce_numeric_or_boolean_looking_values() {
+    let input = params(&[
+        ("config[pid]", "00123"),
+        ("config[key]", "true"),
+        ("config[type]", "null"),
+    ]);
+    let config = payment_config_input(&input, "EPay");
+    assert_eq!(config["pid"], "00123");
+    assert_eq!(config["key"], "true");
+    assert_eq!(config["type"], "null");
+}
+
+#[test]
+fn redacted_known_config_round_trip_preserves_exact_legacy_json_types() {
+    let current = r#"{"currency":"usd","stripe_sk_live":"secret","stripe_pk_live":{"malformed":"private"},"stripe_webhook_key":null}"#;
+    let submitted = json!({
+        "currency": "usd",
+        "stripe_sk_live": crate::payment_provider::REDACTED_PAYMENT_SECRET,
+        "stripe_pk_live": crate::payment_provider::REDACTED_PAYMENT_SECRET,
+        "stripe_webhook_key": "",
+    });
+    let resolved = resolve_redacted_payment_config(
+        "StripeCheckout",
+        Some(("StripeCheckout", current)),
+        submitted,
+    )
+    .unwrap();
+    assert_eq!(resolved, serde_json::from_str::<Value>(current).unwrap());
+}
+
+#[test]
+fn absent_optional_payment_fields_stay_absent_on_metadata_round_trip() {
+    let current = r#"{"currency":"usd","stripe_sk_live":"secret","stripe_pk_live":"public","stripe_webhook_key":"whsec"}"#;
+    let submitted = json!({
+        "currency": "usd",
+        "stripe_sk_live": crate::payment_provider::REDACTED_PAYMENT_SECRET,
+        "stripe_pk_live": "public",
+        "stripe_webhook_key": crate::payment_provider::REDACTED_PAYMENT_SECRET,
+        "stripe_custom_field_name": "",
+    });
+    let resolved = resolve_redacted_payment_config(
+        "StripeCheckout",
+        Some(("StripeCheckout", current)),
+        submitted,
+    )
+    .unwrap();
+    assert_eq!(resolved, serde_json::from_str::<Value>(current).unwrap());
+}
+
+#[test]
+fn unknown_payment_provider_redaction_round_trip_preserves_hidden_values() {
+    let current = r#"{"token":"secret","nested":{"private":true}}"#;
+    let resolved = resolve_redacted_payment_config(
+        "ExternalLegacy",
+        Some(("ExternalLegacy", current)),
+        json!({
+            "token": crate::payment_provider::REDACTED_PAYMENT_SECRET,
+            "nested": crate::payment_provider::REDACTED_PAYMENT_SECRET,
+        }),
+    )
+    .unwrap();
+    assert_eq!(resolved, serde_json::from_str::<Value>(current).unwrap());
+    assert!(
+        resolve_redacted_payment_config(
+            "ExternalLegacy",
+            None,
+            json!({ "token": crate::payment_provider::REDACTED_PAYMENT_SECRET }),
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn reconciliation_list_defaults_open_and_validates_resolution_filter() {
+    assert_eq!(reconciliation_resolved_filter(&HashMap::new()).unwrap(), 0);
+    assert_eq!(
+        reconciliation_resolved_filter(&params(&[("resolved", "resolved")])).unwrap(),
+        1
+    );
+    assert_eq!(
+        reconciliation_resolved_filter(&params(&[("resolved", "all")])).unwrap(),
+        2
+    );
+    assert!(reconciliation_resolved_filter(&params(&[("resolved", "maybe")])).is_err());
+}
+
+#[test]
+fn payment_reconciliation_resolution_is_structured_bounded_and_actor_scoped() {
+    let encoded = reconciliation_resolution("admin@example.test", "refunded by provider").unwrap();
+    let decoded: Value = serde_json::from_str(&encoded).unwrap();
+    assert_eq!(decoded["actor"], "admin@example.test");
+    assert_eq!(decoded["note"], "refunded by provider");
+    assert!(reconciliation_resolution("admin@example.test", &"x".repeat(161)).is_err());
 }
 
 #[test]
@@ -138,6 +254,23 @@ fn prepared_mail_payload_identity_covers_envelope_and_recipient() {
         first,
         prepared_mail_payload_hash(&envelope, &["two@example.test".to_string()])
     );
+}
+
+#[test]
+fn admin_smtp_probe_has_an_end_to_end_deadline() {
+    let source = include_str!("configuration.rs");
+    let start = source.find("async fn send_test_mail").unwrap();
+    let probe = &source[start..];
+    assert!(probe.contains("tokio::time::timeout"));
+    assert!(probe.contains("http_request_timeout_seconds"));
+}
+
+#[test]
+fn admin_config_security_is_validated_before_atomic_persistence() {
+    let source = include_str!("configuration.rs");
+    let validation = source.find("validate_security_update").unwrap();
+    let persistence = source.find("update_config_atomic").unwrap();
+    assert!(validation < persistence);
 }
 
 #[test]

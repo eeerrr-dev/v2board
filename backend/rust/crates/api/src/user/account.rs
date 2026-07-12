@@ -73,7 +73,7 @@ pub(crate) async fn user_update(
     Ok(legacy_data(true))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub(crate) struct ChangePasswordRequest {
     old_password: String,
     new_password: String,

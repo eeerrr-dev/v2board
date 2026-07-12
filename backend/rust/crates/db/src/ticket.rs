@@ -39,17 +39,34 @@ pub struct TicketDetailRow {
     pub message: Vec<TicketMessageRow>,
 }
 
-#[derive(Debug, Clone, FromRow)]
-pub struct TicketStatusRow {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TicketCreateOutcome {
+    Created,
+    OpenTicketExists,
+    PaidOrderRequired,
+    UserNotFound,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UserTicketReplyOutcome {
+    Replied,
+    NotFound,
+    Closed,
+    AwaitingOperator,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperatorReplyTarget {
     pub id: i32,
     pub user_id: i64,
     pub subject: String,
-    pub status: i8,
 }
 
-#[derive(Debug, Clone, FromRow)]
-pub struct LastTicketMessageRow {
-    pub user_id: i64,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OperatorReplyTargetOutcome {
+    Locked(OperatorReplyTarget),
+    NotFound,
+    OtherOpenTicketExists,
 }
 
 pub async fn fetch_tickets(pool: &MySqlPool, user_id: i64) -> Result<Vec<TicketRow>, sqlx::Error> {
@@ -156,12 +173,32 @@ pub async fn create_ticket(
     level: i8,
     message: &str,
     now: i64,
-) -> Result<(), sqlx::Error> {
+    require_paid_order: bool,
+) -> Result<TicketCreateOutcome, sqlx::Error> {
     let mut tx = pool.begin().await?;
-    let ticket_id = insert_ticket(&mut tx, user_id, subject, level, now).await?;
+    if !lock_user(&mut tx, user_id).await? {
+        tx.rollback().await?;
+        return Ok(TicketCreateOutcome::UserNotFound);
+    }
+    if open_ticket_exists(&mut tx, user_id, None).await? {
+        tx.rollback().await?;
+        return Ok(TicketCreateOutcome::OpenTicketExists);
+    }
+    if require_paid_order && count_paid_orders_in_tx(&mut tx, user_id).await? == 0 {
+        tx.rollback().await?;
+        return Ok(TicketCreateOutcome::PaidOrderRequired);
+    }
+    let ticket_id = match insert_ticket(&mut tx, user_id, subject, level, now).await {
+        Ok(ticket_id) => ticket_id,
+        Err(error) if is_unique_violation(&error) => {
+            tx.rollback().await?;
+            return Ok(TicketCreateOutcome::OpenTicketExists);
+        }
+        Err(error) => return Err(error),
+    };
     insert_message(&mut tx, user_id, ticket_id, message, now).await?;
     tx.commit().await?;
-    Ok(())
+    Ok(TicketCreateOutcome::Created)
 }
 
 pub async fn create_withdraw_ticket(
@@ -170,51 +207,21 @@ pub async fn create_withdraw_ticket(
     withdraw_method: &str,
     withdraw_account: &str,
     now: i64,
-) -> Result<(), sqlx::Error> {
+) -> Result<TicketCreateOutcome, sqlx::Error> {
     let subject = "[Commission Withdrawal Request] This ticket is opened by the system";
     let message =
         format!("Withdrawal method：{withdraw_method}\r\nWithdrawal account：{withdraw_account}");
-    create_ticket(pool, user_id, subject, 2, &message, now).await
+    create_ticket(pool, user_id, subject, 2, &message, now, false).await
 }
 
-pub async fn count_open_tickets(pool: &MySqlPool, user_id: i64) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar("SELECT COUNT(*) FROM v2_ticket WHERE status = 0 AND user_id = ?")
-        .bind(user_id)
-        .fetch_one(pool)
-        .await
-}
-
-pub async fn count_paid_orders(pool: &MySqlPool, user_id: i64) -> Result<i64, sqlx::Error> {
+async fn count_paid_orders_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    user_id: i64,
+) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar("SELECT COUNT(*) FROM v2_order WHERE user_id = ? AND status IN (3, 4)")
         .bind(user_id)
-        .fetch_one(pool)
+        .fetch_one(&mut **tx)
         .await
-}
-
-pub async fn find_ticket_for_reply(
-    pool: &MySqlPool,
-    user_id: i64,
-    ticket_id: i32,
-) -> Result<Option<TicketStatusRow>, sqlx::Error> {
-    sqlx::query_as::<_, TicketStatusRow>(
-        "SELECT id, user_id, subject, status FROM v2_ticket WHERE id = ? AND user_id = ? LIMIT 1",
-    )
-    .bind(ticket_id)
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await
-}
-
-pub async fn find_last_message(
-    pool: &MySqlPool,
-    ticket_id: i32,
-) -> Result<Option<LastTicketMessageRow>, sqlx::Error> {
-    sqlx::query_as::<_, LastTicketMessageRow>(
-        "SELECT user_id FROM v2_ticket_message WHERE ticket_id = ? ORDER BY id DESC LIMIT 1",
-    )
-    .bind(ticket_id)
-    .fetch_optional(pool)
-    .await
 }
 
 pub async fn reply_ticket(
@@ -223,16 +230,53 @@ pub async fn reply_ticket(
     user_id: i64,
     message: &str,
     now: i64,
-) -> Result<(), sqlx::Error> {
+) -> Result<UserTicketReplyOutcome, sqlx::Error> {
     let mut tx = pool.begin().await?;
+    if !lock_user(&mut tx, user_id).await? {
+        tx.rollback().await?;
+        return Ok(UserTicketReplyOutcome::NotFound);
+    }
+    let ticket = sqlx::query_as::<_, (i32, i8)>(
+        "SELECT id, status FROM v2_ticket WHERE id = ? AND user_id = ? LIMIT 1 FOR UPDATE",
+    )
+    .bind(ticket_id)
+    .bind(user_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some((_, status)) = ticket else {
+        tx.rollback().await?;
+        return Ok(UserTicketReplyOutcome::NotFound);
+    };
+    if status != 0 {
+        tx.rollback().await?;
+        return Ok(UserTicketReplyOutcome::Closed);
+    }
+    let last_user_id = sqlx::query_scalar::<_, i64>(
+        "SELECT user_id FROM v2_ticket_message WHERE ticket_id = ? ORDER BY id DESC LIMIT 1",
+    )
+    .bind(ticket_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if last_user_id == Some(user_id) {
+        tx.rollback().await?;
+        return Ok(UserTicketReplyOutcome::AwaitingOperator);
+    }
     insert_message(&mut tx, user_id, ticket_id, message, now).await?;
-    sqlx::query("UPDATE v2_ticket SET reply_status = 0, updated_at = ? WHERE id = ?")
+    let updated = sqlx::query(
+        "UPDATE v2_ticket SET reply_status = 0, updated_at = ? WHERE id = ? AND user_id = ? AND status = 0",
+    )
         .bind(now)
         .bind(ticket_id)
+        .bind(user_id)
         .execute(&mut *tx)
         .await?;
+    if updated.rows_affected() != 1 {
+        return Err(sqlx::Error::Protocol(
+            "ticket state changed while applying a user reply".to_string(),
+        ));
+    }
     tx.commit().await?;
-    Ok(())
+    Ok(UserTicketReplyOutcome::Replied)
 }
 
 pub async fn close_ticket(
@@ -241,14 +285,200 @@ pub async fn close_ticket(
     ticket_id: i32,
     now: i64,
 ) -> Result<bool, sqlx::Error> {
-    let result =
-        sqlx::query("UPDATE v2_ticket SET status = 1, updated_at = ? WHERE id = ? AND user_id = ?")
-            .bind(now)
+    let mut tx = pool.begin().await?;
+    if !lock_user(&mut tx, user_id).await? {
+        tx.rollback().await?;
+        return Ok(false);
+    }
+    let exists = sqlx::query_scalar::<_, i32>(
+        "SELECT id FROM v2_ticket WHERE id = ? AND user_id = ? LIMIT 1 FOR UPDATE",
+    )
+    .bind(ticket_id)
+    .bind(user_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if exists.is_none() {
+        tx.rollback().await?;
+        return Ok(false);
+    }
+    let result = sqlx::query(
+        "UPDATE v2_ticket SET status = 1, updated_at = ? WHERE id = ? AND user_id = ? AND status = 0",
+    )
+    .bind(now)
+    .bind(ticket_id)
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(result.rows_affected() == 1)
+}
+
+pub async fn lock_operator_reply_target(
+    tx: &mut Transaction<'_, MySql>,
+    ticket_id: i32,
+) -> Result<OperatorReplyTargetOutcome, sqlx::Error> {
+    let Some(user_id) =
+        sqlx::query_scalar::<_, i64>("SELECT user_id FROM v2_ticket WHERE id = ? LIMIT 1")
             .bind(ticket_id)
+            .fetch_optional(&mut **tx)
+            .await?
+    else {
+        return Ok(OperatorReplyTargetOutcome::NotFound);
+    };
+    if !lock_user(tx, user_id).await? {
+        return Ok(OperatorReplyTargetOutcome::NotFound);
+    }
+    let target = sqlx::query_as::<_, (i32, i64, String)>(
+        "SELECT id, user_id, subject FROM v2_ticket WHERE id = ? LIMIT 1 FOR UPDATE",
+    )
+    .bind(ticket_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some((id, locked_user_id, subject)) = target else {
+        return Ok(OperatorReplyTargetOutcome::NotFound);
+    };
+    if locked_user_id != user_id {
+        return Err(sqlx::Error::Protocol(
+            "ticket owner changed while locking an operator reply".to_string(),
+        ));
+    }
+    if open_ticket_exists(tx, user_id, Some(ticket_id)).await? {
+        return Ok(OperatorReplyTargetOutcome::OtherOpenTicketExists);
+    }
+    Ok(OperatorReplyTargetOutcome::Locked(OperatorReplyTarget {
+        id,
+        user_id,
+        subject,
+    }))
+}
+
+pub async fn apply_operator_reply(
+    tx: &mut Transaction<'_, MySql>,
+    target: &OperatorReplyTarget,
+    operator_id: i64,
+    message: &str,
+    now: i64,
+) -> Result<(), sqlx::Error> {
+    insert_message(tx, operator_id, target.id, message, now).await?;
+    let reply_status = i8::from(operator_id != target.user_id);
+    let result = sqlx::query(
+        "UPDATE v2_ticket SET status = 0, reply_status = ?, updated_at = ? WHERE id = ? AND user_id = ?",
+    )
+    .bind(reply_status)
+    .bind(now)
+    .bind(target.id)
+    .bind(target.user_id)
+    .execute(&mut **tx)
+    .await?;
+    if result.rows_affected() != 1 {
+        return Err(sqlx::Error::Protocol(
+            "ticket state changed while applying an operator reply".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+pub async fn reply_ticket_as_operator(
+    pool: &MySqlPool,
+    ticket_id: i32,
+    operator_id: i64,
+    message: &str,
+    now: i64,
+) -> Result<OperatorReplyTargetOutcome, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let target = lock_operator_reply_target(&mut tx, ticket_id).await?;
+    let OperatorReplyTargetOutcome::Locked(ref locked) = target else {
+        tx.rollback().await?;
+        return Ok(target);
+    };
+    apply_operator_reply(&mut tx, locked, operator_id, message, now).await?;
+    tx.commit().await?;
+    Ok(target)
+}
+
+pub async fn close_ticket_as_operator(
+    pool: &MySqlPool,
+    ticket_id: i32,
+    now: i64,
+) -> Result<bool, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let Some(user_id) =
+        sqlx::query_scalar::<_, i64>("SELECT user_id FROM v2_ticket WHERE id = ? LIMIT 1")
+            .bind(ticket_id)
+            .fetch_optional(&mut *tx)
+            .await?
+    else {
+        tx.rollback().await?;
+        return Ok(false);
+    };
+    if !lock_user(&mut tx, user_id).await? {
+        tx.rollback().await?;
+        return Ok(false);
+    }
+    let exists = sqlx::query_scalar::<_, i32>(
+        "SELECT id FROM v2_ticket WHERE id = ? AND user_id = ? LIMIT 1 FOR UPDATE",
+    )
+    .bind(ticket_id)
+    .bind(user_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if exists.is_none() {
+        tx.rollback().await?;
+        return Ok(false);
+    }
+    sqlx::query(
+        "UPDATE v2_ticket SET status = 1, updated_at = ? WHERE id = ? AND user_id = ? AND status = 0",
+    )
+    .bind(now)
+    .bind(ticket_id)
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(true)
+}
+
+async fn lock_user(tx: &mut Transaction<'_, MySql>, user_id: i64) -> Result<bool, sqlx::Error> {
+    Ok(
+        sqlx::query_scalar::<_, i64>("SELECT id FROM v2_user WHERE id = ? LIMIT 1 FOR UPDATE")
             .bind(user_id)
-            .execute(pool)
-            .await?;
-    Ok(result.rows_affected() > 0)
+            .fetch_optional(&mut **tx)
+            .await?
+            .is_some(),
+    )
+}
+
+async fn open_ticket_exists(
+    tx: &mut Transaction<'_, MySql>,
+    user_id: i64,
+    excluding_ticket_id: Option<i32>,
+) -> Result<bool, sqlx::Error> {
+    let id = match excluding_ticket_id {
+        Some(ticket_id) => {
+            sqlx::query_scalar::<_, i32>(
+                "SELECT id FROM v2_ticket WHERE user_id = ? AND status = 0 AND id <> ? LIMIT 1",
+            )
+            .bind(user_id)
+            .bind(ticket_id)
+            .fetch_optional(&mut **tx)
+            .await?
+        }
+        None => {
+            sqlx::query_scalar::<_, i32>(
+                "SELECT id FROM v2_ticket WHERE user_id = ? AND status = 0 LIMIT 1",
+            )
+            .bind(user_id)
+            .fetch_optional(&mut **tx)
+            .await?
+        }
+    };
+    Ok(id.is_some())
+}
+
+fn is_unique_violation(error: &sqlx::Error) -> bool {
+    error
+        .as_database_error()
+        .is_some_and(|error| error.is_unique_violation())
 }
 
 async fn insert_ticket(
@@ -295,4 +525,25 @@ async fn insert_message(
     .execute(&mut **tx)
     .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn ticket_state_machine_has_database_and_transaction_guards() {
+        let source = include_str!("ticket.rs");
+        assert!(source.contains("SELECT id FROM v2_user WHERE id = ? LIMIT 1 FOR UPDATE"));
+        assert!(source.contains("WHERE id = ? AND user_id = ? LIMIT 1 FOR UPDATE"));
+        assert!(source.contains("AND status = 0"));
+        assert!(source.contains("rows_affected() != 1"));
+        assert!(source.contains("OtherOpenTicketExists"));
+
+        let preflight = include_str!("../../../migrations/0010_business_invariants.sql");
+        let ticket_migration = include_str!("../../../migrations/0018_ticket_open_invariants.sql");
+        let message_migration = include_str!("../../../migrations/0019_ticket_message_index.sql");
+        assert!(preflight.contains("user has multiple open tickets"));
+        assert!(ticket_migration.contains("GENERATED ALWAYS AS"));
+        assert!(ticket_migration.contains("uniq_ticket_open_user"));
+        assert!(message_migration.contains("idx_ticket_message_ticket_id_id"));
+    }
 }

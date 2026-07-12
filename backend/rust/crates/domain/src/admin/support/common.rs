@@ -17,32 +17,59 @@ pub(in super::super) fn csv_export(
     rows: impl IntoIterator<Item = Vec<String>>,
     include_utf8_bom: bool,
 ) -> Result<String, ApiError> {
-    let mut writer = csv::WriterBuilder::new()
-        .has_headers(false)
-        .terminator(csv::Terminator::CRLF)
-        .from_writer(Vec::new());
-    writer
-        .write_record(headers)
-        .map_err(|_| ApiError::internal("failed to write CSV header"))?;
+    let mut writer = CsvExportWriter::new(headers, include_utf8_bom)?;
     for row in rows {
+        writer.write_row(row)?;
+    }
+    writer.finish()
+}
+
+pub(in super::super) struct CsvExportWriter {
+    writer: csv::Writer<Vec<u8>>,
+    include_utf8_bom: bool,
+}
+
+impl CsvExportWriter {
+    pub(in super::super) fn new(
+        headers: &[&str],
+        include_utf8_bom: bool,
+    ) -> Result<Self, ApiError> {
+        let mut writer = csv::WriterBuilder::new()
+            .has_headers(false)
+            .terminator(csv::Terminator::CRLF)
+            .from_writer(Vec::new());
+        writer
+            .write_record(headers)
+            .map_err(|_| ApiError::internal("failed to write CSV header"))?;
+        Ok(Self {
+            writer,
+            include_utf8_bom,
+        })
+    }
+
+    pub(in super::super) fn write_row(&mut self, row: Vec<String>) -> Result<(), ApiError> {
         let safe_row = row
             .into_iter()
             .map(|value| neutralize_spreadsheet_formula(&value))
             .collect::<Vec<_>>();
-        writer
+        self.writer
             .write_record(safe_row)
-            .map_err(|_| ApiError::internal("failed to write CSV row"))?;
+            .map_err(|_| ApiError::internal("failed to write CSV row"))
     }
-    let bytes = writer
-        .into_inner()
-        .map_err(|_| ApiError::internal("failed to finalize CSV export"))?;
-    let body = String::from_utf8(bytes)
-        .map_err(|_| ApiError::internal("CSV export was not valid UTF-8"))?;
-    Ok(if include_utf8_bom {
-        format!("\u{feff}{body}")
-    } else {
-        body
-    })
+
+    pub(in super::super) fn finish(self) -> Result<String, ApiError> {
+        let bytes = self
+            .writer
+            .into_inner()
+            .map_err(|_| ApiError::internal("failed to finalize CSV export"))?;
+        let body = String::from_utf8(bytes)
+            .map_err(|_| ApiError::internal("CSV export was not valid UTF-8"))?;
+        Ok(if self.include_utf8_bom {
+            format!("\u{feff}{body}")
+        } else {
+            body
+        })
+    }
 }
 
 fn neutralize_spreadsheet_formula(value: &str) -> String {
@@ -381,8 +408,8 @@ pub(in super::super) fn truthy(value: Option<&String>) -> bool {
     )
 }
 
-pub(in super::super) fn random_short() -> String {
-    Uuid::new_v4().simple().to_string()[..8].to_string()
+pub(in super::super) fn random_payment_uuid() -> String {
+    Uuid::new_v4().simple().to_string()
 }
 
 pub(in super::super) fn random_token() -> String {

@@ -2,17 +2,25 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use v2board_compat::ApiError;
 
 use super::{
+    credentials::{RELEASE_LOGIN_ATTEMPT_SCRIPT, RESERVE_LOGIN_ATTEMPT_SCRIPT, login_limiter_keys},
     password::{PasswordKdf, hash_password, password_needs_rehash, verify_password},
-    registration::{checked_trial_expired_at, checked_trial_transfer_bytes},
+    registration::{
+        MAX_EMAIL_CODE_BYTES, MAX_INVITE_CODE_BYTES, MAX_RECAPTCHA_DATA_BYTES,
+        RELEASE_REGISTRATION_SLOT_SCRIPT, RESERVE_REGISTRATION_SLOT_SCRIPT, RegisterInput,
+        checked_trial_expired_at, checked_trial_transfer_bytes,
+        validate_registration_auxiliary_inputs,
+    },
     sessions::{
-        ADD_OPAQUE_SESSION_SCRIPT, AUTH_SESSION_KEY_PREFIX, AuthClaims, auth_session_key,
-        decode_session_metadata, effective_legacy_jwt_cutoff, generate_auth_token,
-        looks_like_legacy_jwt, parse_temp_token,
+        ADD_OPAQUE_SESSION_SCRIPT, AUTH_SESSION_KEY_PREFIX, AuthClaims,
+        RESERVE_STEP_UP_ATTEMPT_SCRIPT, auth_session_key, decode_session_metadata,
+        effective_legacy_jwt_cutoff, generate_auth_token, looks_like_legacy_jwt, parse_temp_token,
+        session_ttl_seconds, step_up_limiter_keys, truncate_utf8,
     },
     validation::{
-        is_valid_email, validate_change_password, validate_email, validate_forget,
+        is_valid_email, normalize_email, validate_change_password, validate_email, validate_forget,
         validate_password,
     },
+    verification::CONSUME_VALUE_WITH_FAILURE_LIMIT_SCRIPT,
 };
 
 #[test]
@@ -26,6 +34,47 @@ fn trial_plan_math_rejects_negative_and_overflowing_configuration() {
     assert!(checked_trial_expired_at(100, -1).is_err());
     assert!(checked_trial_expired_at(100, i64::MAX).is_err());
     assert!(checked_trial_expired_at(i64::MAX, 1).is_err());
+}
+
+#[test]
+fn step_up_attempts_are_atomically_bounded_by_user_and_ip() {
+    for fragment in ["GET', KEYS[1]", "GET', KEYS[2]", "INCR", "EXPIRE"] {
+        assert!(RESERVE_STEP_UP_ATTEMPT_SCRIPT.contains(fragment));
+    }
+    let first = step_up_limiter_keys(7, Some("203.0.113.9"));
+    let same = step_up_limiter_keys(7, Some("203.0.113.9"));
+    let other_user = step_up_limiter_keys(8, Some("203.0.113.9"));
+    assert_eq!(first, same);
+    assert_ne!(first[0], other_user[0]);
+    assert_eq!(first[1], other_user[1]);
+    assert!(!first[1].contains("203.0.113.9"));
+}
+
+#[test]
+fn privileged_users_receive_the_short_session_ttl() {
+    assert_eq!(
+        session_ttl_seconds(30 * 86_400, 12 * 3_600, 0, 0),
+        30 * 86_400
+    );
+    assert_eq!(
+        session_ttl_seconds(30 * 86_400, 12 * 3_600, 1, 0),
+        12 * 3_600
+    );
+    assert_eq!(
+        session_ttl_seconds(30 * 86_400, 12 * 3_600, 0, 1),
+        12 * 3_600
+    );
+}
+
+#[test]
+fn password_reset_code_consumption_and_failure_limit_share_one_redis_script() {
+    let script = CONSUME_VALUE_WITH_FAILURE_LIMIT_SCRIPT;
+    let limit_check = script.find("current >=").unwrap();
+    let code_check = script.find("GET', KEYS[1]").unwrap();
+    let failure_increment = script.find("INCR', KEYS[2]").unwrap();
+    assert!(limit_check < code_check && code_check < failure_increment);
+    assert!(script.contains("DEL', KEYS[1]"));
+    assert!(script.contains("EXPIRE', KEYS[2]"));
 }
 
 #[test]
@@ -48,6 +97,8 @@ fn validate_email_reports_validation_error_with_laravel_messages() {
     let malformed = validate_email("bad").unwrap_err();
     assert_eq!(malformed.to_string(), "Email format is incorrect");
     assert!(matches!(malformed, ApiError::Validation { .. }));
+    assert!(validate_email(&format!("{}@x.io", "a".repeat(60))).is_err());
+    assert_eq!(normalize_email(" User@Example.COM "), "user@example.com");
 }
 
 #[test]
@@ -62,6 +113,19 @@ fn validate_password_counts_characters_not_bytes() {
         validate_password("").unwrap_err().to_string(),
         "Password can not be empty"
     );
+    assert!(validate_password(&"x".repeat(129)).is_err());
+}
+
+#[test]
+fn login_limiter_keys_normalize_and_hash_pii() {
+    let first = login_limiter_keys(" User@Example.COM ", Some("203.0.113.7"));
+    let second = login_limiter_keys("user@example.com", Some("203.0.113.7"));
+    assert_eq!(first, second);
+    assert!(first.iter().all(|key| !key.contains("example.com")));
+    assert!(first.iter().all(|key| !key.contains("203.0.113.7")));
+    assert!(RESERVE_LOGIN_ATTEMPT_SCRIPT.contains("account_count >= tonumber(ARGV[1])"));
+    assert!(RESERVE_LOGIN_ATTEMPT_SCRIPT.contains("redis.call('INCR', KEYS[index])"));
+    assert!(RELEASE_LOGIN_ATTEMPT_SCRIPT.contains("redis.call('DECR', KEYS[index])"));
 }
 
 #[test]
@@ -159,6 +223,38 @@ fn new_passwords_use_argon2id_and_legacy_hashes_request_an_upgrade() {
     assert!(verify_password(None, None, password, &bcrypt));
     assert!(password_needs_rehash(None, &bcrypt));
     assert!(password_needs_rehash(Some("md5"), "not-relevant"));
+
+    let weak = hash.replace("m=19456,t=2,p=1", "m=4096,t=1,p=1");
+    assert!(password_needs_rehash(None, &weak));
+    let old_version = hash.replace("v=19", "v=16");
+    assert!(password_needs_rehash(None, &old_version));
+    let wrong_variant = hash.replacen("$argon2id$", "$argon2i$", 1);
+    assert!(password_needs_rehash(None, &wrong_variant));
+}
+
+#[test]
+fn legacy_password_hex_is_strictly_decoded_and_case_insensitive() {
+    let password = "legacy-password";
+    let md5 = format!("{:x}", md5::compute(password));
+    assert!(verify_password(
+        Some("md5"),
+        None,
+        password,
+        &md5.to_ascii_uppercase()
+    ));
+    assert!(!verify_password(Some("md5"), None, password, "not-hex"));
+    assert!(!verify_password(Some("md5"), None, password, "00"));
+
+    let mut hasher = sha2::Sha256::new();
+    use sha2::Digest as _;
+    hasher.update(password.as_bytes());
+    let sha256 = hex::encode(hasher.finalize());
+    assert!(verify_password(
+        Some("sha256"),
+        None,
+        password,
+        &sha256.to_ascii_uppercase()
+    ));
 }
 
 #[tokio::test]
@@ -217,6 +313,22 @@ fn missing_session_metadata_is_empty_but_corruption_fails_closed() {
     ));
     let decoded = decode_session_metadata(Some(r#"{"session":{"expires_at":1}}"#)).unwrap();
     assert!(decoded.contains_key("session"));
+
+    let oversized_map = (0..101)
+        .map(|index| (index.to_string(), serde_json::json!({})))
+        .collect::<serde_json::Map<_, _>>();
+    let encoded = serde_json::to_string(&oversized_map).unwrap();
+    assert!(matches!(
+        decode_session_metadata(Some(&encoded)),
+        Err(ApiError::Internal(_))
+    ));
+}
+
+#[test]
+fn session_metadata_truncation_preserves_utf8_boundaries() {
+    assert_eq!(truncate_utf8("short".to_string(), 10), "short");
+    assert_eq!(truncate_utf8("ab中文".to_string(), 6), "ab中");
+    assert_eq!(truncate_utf8("中文".to_string(), 2), "");
 }
 
 #[test]
@@ -240,19 +352,73 @@ fn opaque_session_script_sets_absolute_ttl_without_storing_the_bearer() {
     assert!(ADD_OPAQUE_SESSION_SCRIPT.contains("'NX'"));
     assert!(ADD_OPAQUE_SESSION_SCRIPT.contains("'EX', ARGV[4]"));
     assert!(!ADD_OPAQUE_SESSION_SCRIPT.contains("auth_data"));
+    assert!(ADD_OPAQUE_SESSION_SCRIPT.contains("while count > tonumber(ARGV[6])"));
+    assert!(ADD_OPAQUE_SESSION_SCRIPT.contains("redis.call('SREM', KEYS[3], auth_key)"));
 }
 
 #[test]
-fn registration_limiter_failure_is_best_effort_after_commit() {
+fn registration_limiter_atomically_reserves_and_releases_only_its_own_slot() {
+    assert!(RESERVE_REGISTRATION_SLOT_SCRIPT.contains("ZREMRANGEBYSCORE"));
+    assert!(RESERVE_REGISTRATION_SLOT_SCRIPT.contains("ZCARD"));
+    assert!(RESERVE_REGISTRATION_SLOT_SCRIPT.contains("ZADD"));
+    assert!(RESERVE_REGISTRATION_SLOT_SCRIPT.contains("EXPIREAT"));
+    assert!(RELEASE_REGISTRATION_SLOT_SCRIPT.contains("ZREM"));
+    assert!(!RELEASE_REGISTRATION_SLOT_SCRIPT.contains("DECR"));
+
     let source = include_str!("registration.rs");
     let commit = source.find("tx.commit().await?").unwrap();
-    let limiter_warning = source
-        .find("registration IP limiter update failed after committed account creation")
-        .unwrap();
     let auth_data = source.find("self.auth_data_for_user").unwrap();
-    assert!(commit < limiter_warning);
-    assert!(limiter_warning < auth_data);
-    assert!(source.contains("duration_minutes_to_seconds(self.config.register_limit_expire)"));
-    let best_effort = source[commit..auth_data].find("if let Err(error)").unwrap() + commit;
-    assert!(!source[best_effort..auth_data].contains(".await?"));
+    let reserve = source.find("reserve_registration_slot").unwrap();
+    let release = source.find("release_registration_slot").unwrap();
+    assert!(reserve < commit);
+    assert!(release < auth_data);
+    assert!(source.contains("duration_minutes_to_seconds("));
+    assert!(source.contains("self.config.register_limit_expire"));
+    assert!(source.contains("REGISTER_IP_RATE_LIMIT_V2"));
+}
+
+#[test]
+fn invitation_code_consumption_is_locked_and_guarded() {
+    let source = include_str!("registration.rs");
+    assert!(source.contains("WHERE code = ? AND status = 0 LIMIT 1 FOR UPDATE"));
+    assert!(source.contains("WHERE id = ? AND status = 0"));
+    assert!(source.contains("result.rows_affected() != 1"));
+    assert!(!source.contains("email = ? LIMIT 1 FOR UPDATE"));
+    assert!(source.contains("is_email_unique_violation"));
+    assert!(
+        source.find("consume_invite_code").unwrap() < source.find("INSERT INTO v2_user").unwrap()
+    );
+}
+
+#[test]
+fn registration_auxiliary_inputs_are_bounded_before_expensive_work() {
+    let valid = RegisterInput {
+        email: "user@example.com".to_string(),
+        password: "password".to_string(),
+        invite_code: Some("a".repeat(MAX_INVITE_CODE_BYTES)),
+        email_code: Some("123456".to_string()),
+        recaptcha_data: Some("r".repeat(MAX_RECAPTCHA_DATA_BYTES)),
+    };
+    assert!(validate_registration_auxiliary_inputs(&valid).is_ok());
+
+    let mut oversized = valid.clone();
+    oversized.invite_code = Some("a".repeat(MAX_INVITE_CODE_BYTES + 1));
+    assert!(validate_registration_auxiliary_inputs(&oversized).is_err());
+    oversized = valid.clone();
+    oversized.email_code = Some("1".repeat(MAX_EMAIL_CODE_BYTES + 1));
+    assert!(validate_registration_auxiliary_inputs(&oversized).is_err());
+    oversized = valid;
+    oversized.recaptcha_data = Some("r".repeat(MAX_RECAPTCHA_DATA_BYTES + 1));
+    assert!(validate_registration_auxiliary_inputs(&oversized).is_err());
+
+    let source = include_str!("registration.rs");
+    let bounds = source
+        .find("validate_registration_auxiliary_inputs(&input)?")
+        .unwrap();
+    let reserve = source
+        .find("self.reserve_registration_slot(ip.as_deref())")
+        .unwrap();
+    let hash = source.find("self.password_kdf.hash").unwrap();
+    assert!(bounds < reserve);
+    assert!(bounds < hash);
 }

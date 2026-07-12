@@ -8,7 +8,7 @@ members = [
   "crates/domain",
   "crates/workers",
 ]
-resolver = "2"
+resolver = "3"
 
 [workspace.package]
 edition = "2024"
@@ -16,48 +16,52 @@ license = "MIT"
 repository = "https://github.com/v2board/v2board"
 rust-version = "1.97.0"
 
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
 [workspace.dependencies]
-anyhow = "1"
-arc-swap = "1"
-argon2 = "0.5"
-axum = { version = "0.8", features = ["macros"] }
-base64 = "0.22"
-bcrypt = "0.19"
-chrono = { version = "0.4", features = ["serde"] }
-cron = "0.17"
-crc32fast = "1"
-csv = "1"
-dotenvy = "0.15"
-getrandom = "0.4"
-hex = "0.4"
-hmac = "0.13"
-ipnet = "2"
-jsonwebtoken = { version = "10", default-features = false, features = ["aws_lc_rs"] }
-lettre = { version = "0.11.22", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls", "rustls-platform-verifier", "ring", "pool"] }
-md5 = "0.8"
+anyhow = "1.0.103"
+arc-swap = "1.9.2"
+argon2 = "0.5.3"
+axum = { version = "0.8.9", features = ["macros"] }
+base64 = "0.22.1"
+bcrypt = "0.19.2"
+chrono = { version = "0.4.45", features = ["serde"] }
+cron = "0.17.0"
+crc32fast = "1.5.0"
+csv = "1.4.0"
+dotenvy = "0.15.7"
+getrandom = "0.4.3"
+hex = "0.4.3"
+hmac = "0.13.0"
+ipnet = "2.12.0"
+jsonwebtoken = { version = "10.4.0", default-features = false, features = ["aws_lc_rs"] }
+lettre = { version = "0.11.22", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls", "rustls-platform-verifier", "aws-lc-rs", "pool"] }
+md5 = "0.8.1"
 openssl = "0.10.81"
-percent-encoding = "2"
+percent-encoding = "2.3.2"
 quick-xml = { version = "0.41.0", features = ["serialize"] }
-redis = { version = "1", default-features = false, features = ["tokio-comp", "connection-manager", "script"] }
+redis = { version = "1.3.0", default-features = false, features = ["tokio-comp", "tokio-rustls-comp", "connection-manager", "script"] }
 regex = "1.13.0"
-reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls"] }
-rmp-serde = "1"
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls", "stream"] }
+rmp-serde = "1.3.1"
 rust_decimal = { version = "1.42.1", default-features = false, features = ["std"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-serde_urlencoded = "0.7"
-# Parses operator-provided `custom.clash.yaml`/`custom.stash.yaml` overrides the
-# way Laravel's Symfony\Yaml does. `serde_yaml_ng` is the maintained,
-# API-compatible continuation of the deprecated `serde_yaml` crate; JSON object
-# key order is intentionally not treated as an external byte-level contract.
-serde_yaml_ng = "0.10"
-sha1 = "0.11"
-sha2 = "0.11"
-sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls", "mysql", "json", "chrono", "rust_decimal", "macros", "migrate"] }
-thiserror = "2"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "net", "time", "sync", "fs"] }
-tower-http = { version = "0.7", features = ["compression-br", "compression-gzip", "cors", "fs", "limit", "request-id", "sensitive-headers", "timeout", "trace"] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
-uuid = { version = "1", features = ["v4"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+serde_urlencoded = "0.7.1"
+# Pure-safe YAML 1.2 parser/serializer for operator-provided Clash/Stash
+# overrides. It avoids the archived unsafe-libyaml chain; compatibility is
+# guarded by subscription round-trip and rendered-contract tests.
+serde-saphyr = "0.0.29"
+sha1 = "0.11.0"
+sha2 = "0.11.0"
+subtle = "2.6.1"
+sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls-aws-lc-rs", "mysql", "json", "chrono", "rust_decimal", "macros", "migrate"] }
+syn = { version = "2.0.117", features = ["full", "visit"] }
+thiserror = "2.0.18"
+tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread", "signal", "net", "time", "sync", "fs"] }
+tower-http = { version = "0.7.0", features = ["compression-br", "compression-gzip", "cors", "fs", "limit", "request-id", "sensitive-headers", "timeout", "trace"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt", "json"] }
+uuid = { version = "1.23.4", features = ["v4"] }
 url = "2.5.8"

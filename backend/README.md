@@ -38,6 +38,7 @@ Run all Cargo commands through the repository Docker workflow:
 ```bash
 make rust-check
 make rust-test
+make rust-integration
 make rust-route-audit
 make rust-worker-reconcile
 make rust-target-gate
@@ -48,8 +49,33 @@ make rust-target-gate
 every required API route is represented by Rust. Its five deliberately retired
 endpoints (the package-theme API and pre-PaymentIntent Stripe key endpoint) are
 an exact, self-validating list—not runtime fallbacks. The audit does not boot,
-call, or deploy the reference backend. `worker-reconcile` checks only the live
-Rust worker's MySQL/Redis outcomes.
+call, or deploy the reference backend. `rust-integration` applies every migration
+to a disposable database, prepares statically recoverable runtime SQL against
+that schema, and exercises the accounting, invitation, ticket, payment, node,
+auth-limit, lease, and worker-health invariants against real MySQL and isolated
+Redis state. It drops that database and flushes only Redis DB 15 after the run.
+`worker-reconcile` checks the live Rust worker's MySQL/Redis outcomes.
+
+The workspace targets Rust 1.97 with Edition 2024 and Cargo resolver 3. Every
+member inherits the workspace MSRV and lint policy; `unsafe` code is forbidden.
+CI denies compiler warnings for ordinary builds as well as Clippy, verifies the
+locked dependency graph, and checks RustSec advisories, licenses, sources, and
+unused dependencies.
+
+Rustls consumers use AWS-LC consistently: reqwest/jsonwebtoken select it
+directly, lettre uses its `aws-lc-rs` provider feature, and SQLx uses
+`tls-rustls-aws-lc-rs` with WebPKI roots. This avoids installing competing
+ring/AWS-LC rustls providers in one process while retaining verified HTTPS,
+SMTP STARTTLS/SMTPS, Redis `rediss://`, and MySQL TLS support.
+
+The database layer currently uses runtime SQLx queries. `rust-integration`
+parses the Rust AST, sends every statically recoverable `sqlx::query*` statement
+through MySQL PREPARE after migrations, and pins an explicit per-file inventory
+for dynamic SQL/QueryBuilder sites. A future compile-time SQL migration may
+convert static statements to `query!`/`query_as!`, generate and commit workspace
+`.sqlx` metadata, and then enable `cargo sqlx prepare --workspace --check` as one
+atomic change; enabling that command before conversion would validate no runtime
+queries.
 
 Local Compose sets `V2BOARD_ENV=local` and `V2BOARD_SEED_LOCAL=1`. Its one-shot
 `rust-migrate` service runs schema migrations and creates the minimal
@@ -61,13 +87,32 @@ never enables the local seed.
 
 ## Operations
 
-The default production image command runs `v2board-api`; run the same image with
-`/usr/local/bin/v2board-workers` for background work. Before rolling out API or
-worker replicas, run the image once as an explicit migration job:
+`Dockerfile.rust` has separate `production-api` and `production-worker` targets
+with process-appropriate contents, logging, and health checks. The compatibility
+target `production` aliases `production-api`. Build and deploy both targets;
+before rolling out either, run the API image once as a serialized migration job:
 
 ```bash
-v2board-api migrate
+docker build --target production-api -t v2board-api -f Dockerfile.rust .
+docker build --target production-worker -t v2board-worker -f Dockerfile.rust .
+docker run --rm \
+  -e DATABASE_URL='mysql://user:password@db.example.com:3306/v2board?ssl-mode=VERIFY_IDENTITY' \
+  -e REDIS_URL='rediss://cache.example.com:6380/1' \
+  -e APP_URL='https://app.example.com' \
+  -e APP_KEY='<inject-at-least-32-random-bytes>' \
+  -e V2BOARD_SERVER_TOKEN='<inject-a-different-32-byte-random-secret>' \
+  -e V2BOARD_TRUSTED_PROXY_CIDRS='10.42.0.10/32' \
+  v2board-api v2board-api migrate
 ```
+
+The bracketed values are secret-manager placeholders, not reusable credentials.
+They are deliberately rejected by production validation; replace them through
+the deployment secret store before running the command.
+Production startup rejects plaintext datastore URLs: MySQL must use
+`ssl-mode=VERIFY_IDENTITY` (and `ssl-ca` when the provider CA is not in the
+platform trust store), while Redis must use `rediss://`. The selected SQLx and
+Redis rustls features support these URL forms. Local Compose deliberately uses
+plaintext only inside its isolated development network.
 
 The command is safe to repeat because SQLx records completed migrations, but it
 must be serialized by the deployment platform. Database pool capacity and
@@ -77,11 +122,73 @@ lifetimes are controlled by `V2BOARD_DATABASE_MIN_CONNECTIONS`,
 `V2BOARD_DATABASE_IDLE_TIMEOUT_SECONDS`, and
 `V2BOARD_DATABASE_MAX_LIFETIME_SECONDS`.
 
-`GET /healthz` is the process liveness probe. `GET /readyz` fails closed until
+Forward migrations introduced by this hardening pass (versions 9–43) keep at
+most one irreversible MySQL DDL statement per SQLx migration file. MySQL can
+implicitly commit an `ALTER`/`CREATE`; splitting those statements means a later
+metadata-lock, storage, or compatibility failure resumes at its own unrecorded
+version instead of replaying an already committed earlier DDL. The production
+invariant gate rejects any future version that violates this boundary.
+
+Payment methods are immutable verification versions. Rotating a provider or
+secret means archiving the old row and creating a new one; archive never removes
+the old callback UUID or verification material. New checkout/form/list paths
+exclude archived versions, while authenticated callbacks continue resolving
+them. Operators can inspect every unresolved callback, including unknown order
+numbers, through `GET /api/v1/{admin_path}/order/reconciliation/fetch` (password
+step-up required) and resolve an item with the existing `order/update`
+`reconciliation_id` flow.
+
+Migration 0042 appends the nullable order callback digest with
+`ALGORITHM=INSTANT` and does not scan or rewrite the order table. Existing paid
+rows retain a NULL digest until an exact provider replay, when the locked row is
+backfilled lazily. A MySQL release that cannot perform this metadata-only change
+fails the migration instead of silently copying a large production table.
+Migration 0043 bridges a rolling deployment: if an older API updates only the
+legacy callback column, a database trigger derives its matching digest; newer
+writers that submit both the bounded label and full raw digest retain the latter.
+The serialized migration principal therefore needs MySQL `ALTER` and `TRIGGER`
+privileges before this rollout. When binary logging is enabled, MySQL also
+requires either an administrator-capable migration principal or the DBA-managed
+`log_bin_trust_function_creators=ON` setting; without one of those it rejects
+trigger creation with error 1419. A missing privilege or server setting fails
+migration startup closed, before application traffic is admitted. The canonical
+local Docker workflow enables that setting so development migrations can remain
+scoped to the non-root `v2board` account.
+
+For the API, `GET /healthz` is the process liveness probe and `GET /readyz` fails closed until
 MySQL is reachable and every applied migration version, success flag, and
 checksum exactly matches the migrations embedded in the running binary, Redis
 responds, and both immutable frontend entry points are present. Deploy traffic
 only after `/readyz` succeeds.
+
+The worker has no HTTP listener. Its image health check reads a timestamp file
+written only after bounded MySQL and Redis probes succeed. Each scheduler/outbox
+loop also refreshes its own field in the Redis
+`RUST_WORKER_LOOP_HEARTBEAT_AT` hash. An unexpected loop exit or panic terminates
+the worker so the deployment platform restarts the complete process instead of
+leaving a partially dead scheduler. Shutdown is bounded to 30 seconds by
+default; tune it with `V2BOARD_WORKER_SHUTDOWN_TIMEOUT_SECONDS` (1–600). The
+heartbeat interval is controlled by
+`V2BOARD_WORKER_HEARTBEAT_INTERVAL_SECONDS` (1–300); keep the image health max
+age greater than twice this interval.
+
+The outbox loop performs bounded retention cleanup every six hours. Terminal
+mail-outbox rows, scrubbed/empty mail batches, and mail logs are retained for 90
+days by default (`V2BOARD_MAIL_RETENTION_DAYS`, 1–3650). Applied traffic-report
+idempotency records use
+`V2BOARD_IDEMPOTENCY_RETENTION_DAYS` (default 90, 1–3650). A client must never
+replay an idempotency key after that configured window. Set
+`V2BOARD_WORKER_CLEANUP_INTERVAL_SECONDS` (60–604800) to control cleanup
+frequency. Cleanup deletes at most 1,000 rows from each table per pass and never
+deletes pending or leased work; one cleanup cycle runs at most ten passes per
+table so a backlog is drained without one unbounded transaction.
+
+A scheduled business-task error (traffic settlement, order opening,
+commission, renewal, reset, statistics, ticket, or reminder selection) is fatal
+to that loop and therefore to the supervised worker process. It is recorded in
+Redis metrics first. This makes a broken target table, permission, or invariant
+observable as a restart/failure instead of allowing dependency probes to report
+a partially dead worker as healthy.
 
 Before migration 3 adds the one-unfinished-order-per-user constraint, the
 migrator checks legacy data and refuses to continue if any user has multiple
@@ -99,6 +206,117 @@ ORDER BY user_id;
 
 Back up the database, then complete or explicitly resolve each affected order
 according to its real payment state before rerunning `v2board-api migrate`.
+
+Migrations 10 and 12 also stop before their first persistent DDL statement when
+legacy data would violate a new uniqueness or relational invariant. The MySQL
+duplicate-key error names
+`business_invariant_preflight_failed` or
+`relational_integrity_preflight_failed`; it does not identify the offending row.
+Run the matching diagnostics below against a backup/read replica before changing
+production data.
+
+Migration 10 duplicate/state diagnostics:
+
+```sql
+SELECT 'coupon.code' AS invariant_name, code AS conflicting_value, COUNT(*) AS row_count
+FROM v2_coupon GROUP BY code HAVING COUNT(*) > 1
+UNION ALL
+SELECT 'giftcard.code', code, COUNT(*)
+FROM v2_giftcard GROUP BY code HAVING COUNT(*) > 1
+UNION ALL
+SELECT 'invite_code.code', code, COUNT(*)
+FROM v2_invite_code GROUP BY code HAVING COUNT(*) > 1
+UNION ALL
+SELECT 'payment.driver_uuid', CONCAT(payment, ':', uuid), COUNT(*)
+FROM v2_payment GROUP BY payment, uuid HAVING COUNT(*) > 1
+UNION ALL
+SELECT 'ticket.one_open_per_user', CAST(user_id AS CHAR), COUNT(*)
+FROM v2_ticket WHERE status = 0 GROUP BY user_id HAVING COUNT(*) > 1;
+```
+
+Migration 12 scalar relationship diagnostics (`child_id` is the row to
+investigate; deposit orders with `plan_id = 0` are intentionally excluded):
+
+```sql
+SELECT 'plan.group_id' AS relation_name, p.id AS child_id, p.group_id AS missing_id
+FROM v2_plan p LEFT JOIN v2_server_group g ON g.id = p.group_id WHERE g.id IS NULL
+UNION ALL
+SELECT 'user.plan_id', u.id, u.plan_id
+FROM v2_user u LEFT JOIN v2_plan p ON p.id = u.plan_id
+WHERE u.plan_id IS NOT NULL AND p.id IS NULL
+UNION ALL
+SELECT 'user.group_id', u.id, u.group_id
+FROM v2_user u LEFT JOIN v2_server_group g ON g.id = u.group_id
+WHERE u.group_id IS NOT NULL AND g.id IS NULL
+UNION ALL
+SELECT 'order.user_id', o.id, o.user_id
+FROM v2_order o LEFT JOIN v2_user u ON u.id = o.user_id WHERE u.id IS NULL
+UNION ALL
+SELECT 'order.plan_id', o.id, o.plan_id
+FROM v2_order o LEFT JOIN v2_plan p ON p.id = o.plan_id
+WHERE o.plan_id <> 0 AND p.id IS NULL
+UNION ALL
+SELECT 'giftcard.plan_id', c.id, c.plan_id
+FROM v2_giftcard c LEFT JOIN v2_plan p ON p.id = c.plan_id
+WHERE c.plan_id IS NOT NULL AND p.id IS NULL
+UNION ALL
+SELECT 'invite_code.user_id', c.id, c.user_id
+FROM v2_invite_code c LEFT JOIN v2_user u ON u.id = c.user_id WHERE u.id IS NULL
+UNION ALL
+SELECT 'ticket.user_id', t.id, t.user_id
+FROM v2_ticket t LEFT JOIN v2_user u ON u.id = t.user_id WHERE u.id IS NULL
+UNION ALL
+SELECT 'ticket_message.ticket_id', m.id, m.ticket_id
+FROM v2_ticket_message m LEFT JOIN v2_ticket t ON t.id = m.ticket_id WHERE t.id IS NULL
+UNION ALL
+SELECT 'giftcard_redemption.user_id', r.giftcard_id, r.user_id
+FROM v2_giftcard_redemption r LEFT JOIN v2_user u ON u.id = r.user_id WHERE u.id IS NULL
+UNION ALL
+SELECT 'traffic_report_item.user_id', 0, i.user_id
+FROM v2_server_traffic_report_item i LEFT JOIN v2_user u ON u.id = i.user_id
+WHERE u.id IS NULL;
+```
+
+Node group JSON must be a non-empty array of positive existing group IDs. This
+query reports malformed members and missing groups across every node table:
+
+```sql
+WITH nodes AS (
+    SELECT 'shadowsocks' AS node_type, id, group_id FROM v2_server_shadowsocks
+    UNION ALL SELECT 'vmess', id, group_id FROM v2_server_vmess
+    UNION ALL SELECT 'trojan', id, group_id FROM v2_server_trojan
+    UNION ALL SELECT 'tuic', id, group_id FROM v2_server_tuic
+    UNION ALL SELECT 'hysteria', id, group_id FROM v2_server_hysteria
+    UNION ALL SELECT 'vless', id, group_id FROM v2_server_vless
+    UNION ALL SELECT 'anytls', id, group_id FROM v2_server_anytls
+    UNION ALL SELECT 'v2node', id, group_id FROM v2_server_v2node
+), members AS (
+    SELECT n.node_type, n.id, n.group_id, member.value AS member
+    FROM nodes n
+    LEFT JOIN JSON_TABLE(
+        IF(JSON_VALID(n.group_id) AND JSON_TYPE(n.group_id) = 'ARRAY', n.group_id, JSON_ARRAY()),
+        '$[*]' COLUMNS (value JSON PATH '$' NULL ON ERROR)
+    ) member ON TRUE
+)
+SELECT m.node_type, m.id, m.group_id, m.member
+FROM members m
+LEFT JOIN v2_server_group g
+  ON g.id = CAST(JSON_UNQUOTE(m.member) AS UNSIGNED)
+WHERE IF(
+        JSON_VALID(m.group_id),
+        JSON_TYPE(m.group_id) <> 'ARRAY' OR JSON_LENGTH(m.group_id) = 0,
+        TRUE
+      )
+   OR m.member IS NULL
+   OR JSON_TYPE(m.member) NOT IN ('INTEGER', 'STRING')
+   OR JSON_UNQUOTE(m.member) NOT REGEXP '^[1-9][0-9]*$'
+   OR g.id IS NULL;
+```
+
+Do not delete duplicate or orphan rows blindly. Resolve them according to the
+real payment, ownership, redemption, and support history, take another backup,
+rerun the diagnostics until they return no rows, and only then retry the
+serialized migration job.
 
 Reset an administrator password with an ephemeral secret environment variable:
 
@@ -121,6 +339,96 @@ Redis with `SET NX` and always enforces the earlier of the stored and configured
 values, so a restart, configuration change, or lost Redis key cannot move the
 window later. Keep the value at `0` for an immediate opaque-token cutover.
 Deleting all Redis session state intentionally signs every device out.
+
+Admin and staff sessions use the independently configurable
+`V2BOARD_PRIVILEGED_AUTH_SESSION_TTL_SECONDS` (30 minutes by default), which must
+remain shorter than the ordinary session TTL. A compatible step-up endpoint is
+available at `POST /api/v1/passport/auth/stepUp`: send the current Authorization
+token plus `password`, then send the returned opaque token in
+`x-v2board-step-up`. Production enables this gate by default. A session created
+by a real password login satisfies the first
+`V2BOARD_PRIVILEGED_STEP_UP_TTL_SECONDS` window (30 minutes by default), matching
+the default privileged-session lifetime so the bundled admin never enters a
+write-only-403 state. A deliberately longer session must use the endpoint/header
+after that window or the operator must re-authenticate. Token/quick
+login sessions do not receive that grace period. Setting
+`V2BOARD_PRIVILEGED_STEP_UP_ENABLE=false` is an explicit compatibility escape
+hatch with residual account-takeover risk, not the production recommendation.
+Password re-verification is a deployable first step, not phishing-resistant
+MFA; a subsequent WebAuthn/TOTP implementation should issue the same bound
+step-up token only after the second factor, preserving the mutation gate.
+
+Admin configuration reads never return stored credentials. Configured server,
+SMTP, Telegram, reCAPTCHA, and payment-provider secrets are represented by the fixed
+`********` sentinel; posting that sentinel preserves the existing value, while
+posting a different non-empty value rotates it. Telegram webhook setup uses the
+stored token, so the browser never needs to receive it again. Node credentials
+and generated install commands remain intentionally retrievable for deployment,
+but `server/manage/getNodes` additionally requires the recent-password gate.
+
+Production enables registration IP limiting by default; local development does
+not. `V2BOARD_REGISTER_LIMIT_BY_IP_ENABLE` remains an explicit override. The
+limiter is an abuse-control layer, not a substitute for optional email
+verification or reCAPTCHA.
+
+Browser CORS is deny-by-default beyond the canonical `APP_URL` origin. Add
+explicit HTTP(S) origins with `V2BOARD_CORS_ALLOWED_ORIGINS` (comma separated)
+for trusted third-party browser clients. Wildcards, URL paths, credentials,
+queries, and fragments are rejected; non-browser clients without an Origin
+header are unaffected, and credentialed CORS remains disabled.
+
+Production also defaults `force_https` to true and refuses to start without a
+canonical HTTPS `APP_URL` and a narrowly scoped `trusted_proxy_cidrs`/
+`V2BOARD_TRUSTED_PROXY_CIDRS` entry. Only those proxy peers may assert the
+original HTTPS transport; application responses then include HSTS. Liveness and
+readiness probes are intentionally exempt so the orchestrator can probe the
+loopback HTTP listener. An explicit `V2BOARD_FORCE_HTTPS=false` override is for
+specialized TLS-in-process/private deployments and transfers transport security
+responsibility to the operator.
+
+Authenticated payment callbacks that arrive after cancellation/expiry, refer
+to an unknown local trade, use a second provider transaction id, fail the
+locked order/payment/user binding, or carry a settled amount different from the
+exact payable amount are recorded in
+`v2_payment_reconciliation`. Admin order-list rows expose the unresolved count,
+order detail exposes the complete ledger, and the statistics summary exposes
+the unresolved count and amount. Resolve an investigated entry through the
+existing admin `order/update` route with `reconciliation_id` and `resolution`;
+the backend records the acting administrator and timestamp, rejects conflicting
+second resolutions, and treats an identical retry idempotently. A resolution is
+an audit acknowledgement only—it never silently opens, refunds, or rewrites the
+order.
+
+Once a payment method has any order history, the admin API refuses to
+physically delete its routing UUID or change its driver/verification config;
+disable it and create a new method to rotate credentials. Display metadata and
+fees remain editable. This preserves the exact historical verification
+material needed to authenticate a callback that arrives after cancellation,
+expiry, or a long delivery delay.
+
+`EPay`, `MGate`, `BEasyPaymentUSDT`, and `WechatPayNative` are explicitly marked
+as legacy-MD5 protocol integrations in admin payment metadata/forms. Their
+signatures remain for upstream compatibility, but operators must use HTTPS and
+prefer a provider with HMAC or asymmetric signatures for new deployments.
+
+### Node credential rollout
+
+New production deployments use node-scoped `n1_...` credentials from the
+start: read each node's derived credential from admin
+`server/manage/getNodes`, configure it only on that reporter, and attach a
+stable `Idempotency-Key` (or `report_id`/`idempotency_key`) to every retryable
+traffic batch. Never reuse a key for different payload bytes.
+
+For an existing fleet, temporarily set
+`V2BOARD_SERVER_LEGACY_TOKEN_ENABLE=true` while reporters are upgraded; the API
+logs every accepted global-token request. Roll nodes one by one to their scoped
+token and stable batch IDs, verify traffic/report health, then remove the flag
+(production defaults it to false) and keep
+`V2BOARD_SERVER_REQUIRE_IDEMPOTENCY_KEY=true`. Setting
+`rotate_credential=1` on the existing admin server save/update contract
+increments that node's credential epoch and immediately invalidates only that
+node's previous token; fetch and deploy the replacement without rotating the
+master token or disrupting sibling nodes.
 
 The API keeps the established `/api/v1` and `/api/v2` external contracts where
 real clients and integrations depend on them. Compatibility decisions come from

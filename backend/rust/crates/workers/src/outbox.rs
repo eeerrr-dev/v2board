@@ -15,6 +15,11 @@ const MAIL_OUTBOX_MAX_ATTEMPTS: u32 = 8;
 const MAIL_OUTBOX_POLL_INTERVAL: Duration = Duration::from_secs(1);
 const MAIL_OUTBOX_ERROR_INTERVAL: Duration = Duration::from_secs(2);
 const MAIL_OUTBOX_SMTP_TIMEOUT: Duration = Duration::from_secs(60);
+const DEFAULT_MAIL_RETENTION_DAYS: u64 = 90;
+const DEFAULT_IDEMPOTENCY_RETENTION_DAYS: u64 = 90;
+const DEFAULT_CLEANUP_INTERVAL_SECONDS: u64 = 6 * 60 * 60;
+const CLEANUP_BATCH_SIZE: i64 = 1_000;
+const CLEANUP_MAX_BATCHES_PER_TABLE: usize = 10;
 const MAIL_OUTBOX_CLAIM_SQL: &str = r#"
 SELECT item.id, item.batch_key, batch.sender, batch.template_name, item.recipient,
        batch.subject, batch.body, item.message_id, item.attempt_count
@@ -54,6 +59,69 @@ WHERE batch.batch_key = ?
         AND item.failed_at IS NULL
   )
 "#;
+const MAIL_OUTBOX_RETENTION_SQL: &str = r#"
+DELETE FROM v2_mail_outbox
+WHERE failed_at IS NOT NULL AND failed_at < ?
+ORDER BY failed_at, id
+LIMIT ?
+"#;
+const MAIL_OUTBOX_BATCH_RETENTION_SQL: &str = r#"
+DELETE FROM v2_mail_outbox_batch
+WHERE sender IS NULL
+  AND subject IS NULL
+  AND body IS NULL
+  AND updated_at < ?
+  AND NOT EXISTS (
+      SELECT 1 FROM v2_mail_outbox AS item
+      WHERE item.batch_key = v2_mail_outbox_batch.batch_key
+  )
+ORDER BY updated_at
+LIMIT ?
+"#;
+const MAIL_LOG_RETENTION_SQL: &str = r#"
+DELETE FROM v2_mail_log
+WHERE created_at < ?
+ORDER BY created_at, id
+LIMIT ?
+"#;
+const TRAFFIC_REPORT_RETENTION_SQL: &str = r#"
+DELETE FROM v2_server_traffic_report
+WHERE applied_at IS NOT NULL AND applied_at < ?
+ORDER BY applied_at
+LIMIT ?
+"#;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RetentionConfig {
+    mail_retention: Duration,
+    idempotency_retention: Duration,
+    cleanup_interval: Duration,
+}
+
+impl RetentionConfig {
+    fn from_env() -> anyhow::Result<Self> {
+        Ok(Self {
+            mail_retention: days(parse_bounded_env(
+                "V2BOARD_MAIL_RETENTION_DAYS",
+                DEFAULT_MAIL_RETENTION_DAYS,
+                1,
+                3_650,
+            )?)?,
+            idempotency_retention: days(parse_bounded_env(
+                "V2BOARD_IDEMPOTENCY_RETENTION_DAYS",
+                DEFAULT_IDEMPOTENCY_RETENTION_DAYS,
+                1,
+                3_650,
+            )?)?,
+            cleanup_interval: Duration::from_secs(parse_bounded_env(
+                "V2BOARD_WORKER_CLEANUP_INTERVAL_SECONDS",
+                DEFAULT_CLEANUP_INTERVAL_SECONDS,
+                60,
+                7 * 86_400,
+            )?),
+        })
+    }
+}
 
 #[derive(Debug, Clone, FromRow)]
 struct MailOutboxItem {
@@ -78,9 +146,25 @@ pub(crate) async fn run_loop(
     state: WorkerState,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) -> anyhow::Result<()> {
+    let retention = RetentionConfig::from_env()?;
+    let mut next_cleanup = tokio::time::Instant::now();
     loop {
         if *shutdown.borrow() {
             return Ok(());
+        }
+        if tokio::time::Instant::now() >= next_cleanup {
+            let cleanup_delay = match cleanup_retained_state(&state, retention).await {
+                Ok(deleted) if deleted > 0 => {
+                    tracing::info!(deleted, "cleaned retained worker state");
+                    retention.cleanup_interval
+                }
+                Ok(_) => retention.cleanup_interval,
+                Err(error) => {
+                    tracing::warn!(?error, "worker state retention cleanup failed");
+                    MAIL_OUTBOX_ERROR_INTERVAL
+                }
+            };
+            next_cleanup = tokio::time::Instant::now() + cleanup_delay;
         }
         let delay = match run_mail_outbox_batch(&state).await {
             Ok(0) => MAIL_OUTBOX_POLL_INTERVAL,
@@ -114,6 +198,70 @@ pub(crate) async fn run_loop(
             }
         }
     }
+}
+
+async fn cleanup_retained_state(
+    state: &WorkerState,
+    retention: RetentionConfig,
+) -> anyhow::Result<u64> {
+    let now = Utc::now().timestamp();
+    let mail_cutoff = retention_cutoff(now, retention.mail_retention)?;
+    let idempotency_cutoff = retention_cutoff(now, retention.idempotency_retention)?;
+    let mut deleted = 0_u64;
+    for (sql, cutoff) in [
+        (MAIL_OUTBOX_RETENTION_SQL, mail_cutoff),
+        (MAIL_OUTBOX_BATCH_RETENTION_SQL, mail_cutoff),
+        (MAIL_LOG_RETENTION_SQL, mail_cutoff),
+        (TRAFFIC_REPORT_RETENTION_SQL, idempotency_cutoff),
+    ] {
+        for _ in 0..CLEANUP_MAX_BATCHES_PER_TABLE {
+            let affected = sqlx::query(sql)
+                .bind(cutoff)
+                .bind(CLEANUP_BATCH_SIZE)
+                .execute(&state.db)
+                .await?
+                .rows_affected();
+            deleted = deleted.saturating_add(affected);
+            if affected < CLEANUP_BATCH_SIZE as u64 {
+                break;
+            }
+        }
+    }
+    Ok(deleted)
+}
+
+fn retention_cutoff(now: i64, retention: Duration) -> anyhow::Result<i64> {
+    let seconds = i64::try_from(retention.as_secs())
+        .map_err(|_| anyhow::anyhow!("retention duration is too large"))?;
+    now.checked_sub(seconds)
+        .ok_or_else(|| anyhow::anyhow!("retention cutoff underflow"))
+}
+
+fn days(value: u64) -> anyhow::Result<Duration> {
+    value
+        .checked_mul(86_400)
+        .map(Duration::from_secs)
+        .ok_or_else(|| anyhow::anyhow!("retention days overflow"))
+}
+
+fn parse_bounded_env(name: &str, default: u64, minimum: u64, maximum: u64) -> anyhow::Result<u64> {
+    let Some(raw) = std::env::var_os(name) else {
+        return Ok(default);
+    };
+    let raw = raw
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("{name} must be valid UTF-8"))?;
+    parse_bounded_value(name, raw, minimum, maximum)
+}
+
+fn parse_bounded_value(name: &str, raw: &str, minimum: u64, maximum: u64) -> anyhow::Result<u64> {
+    let value = raw
+        .parse::<u64>()
+        .map_err(|_| anyhow::anyhow!("{name} must be an integer"))?;
+    if !(minimum..=maximum).contains(&value) {
+        anyhow::bail!("{name} must be between {minimum} and {maximum}");
+    }
+    Ok(value)
 }
 
 async fn run_mail_outbox_batch(state: &WorkerState) -> anyhow::Result<usize> {
@@ -429,5 +577,28 @@ mod tests {
         assert_eq!(migration.matches("`template_name` varchar(255)").count(), 1);
         assert!(migration.contains("user/kind/business-day reminder occurrences"));
         assert!(migration.contains("replace pre-send Redis cooldowns"));
+    }
+
+    #[test]
+    fn retention_cleanup_never_deletes_pending_work() {
+        assert!(MAIL_OUTBOX_RETENTION_SQL.contains("failed_at IS NOT NULL"));
+        assert!(MAIL_OUTBOX_BATCH_RETENTION_SQL.contains("NOT EXISTS"));
+        assert!(TRAFFIC_REPORT_RETENTION_SQL.contains("applied_at IS NOT NULL"));
+        assert!(MAIL_OUTBOX_RETENTION_SQL.contains("LIMIT ?"));
+        assert!(MAIL_OUTBOX_BATCH_RETENTION_SQL.contains("LIMIT ?"));
+        assert!(TRAFFIC_REPORT_RETENTION_SQL.contains("LIMIT ?"));
+    }
+
+    #[test]
+    fn retention_configuration_is_strict_and_bounded() {
+        assert_eq!(parse_bounded_value("test", "90", 1, 3_650).unwrap(), 90);
+        assert!(parse_bounded_value("test", "0", 1, 3_650).is_err());
+        assert!(parse_bounded_value("test", "3651", 1, 3_650).is_err());
+        assert!(parse_bounded_value("test", "many", 1, 3_650).is_err());
+        assert_eq!(
+            retention_cutoff(100_000, Duration::from_secs(1)).unwrap(),
+            99_999
+        );
+        assert!(retention_cutoff(i64::MIN, Duration::from_secs(1)).is_err());
     }
 }

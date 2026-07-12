@@ -8,7 +8,8 @@ use v2board_db::plan::PlanRow;
 
 use super::{
     CouponRow, DraftOrder, GIB, OrderForCheckout, OrderService, PaymentForCheckout,
-    SurplusOrderRow, UNFINISHED_ORDER_UNIQUE_KEY, UserForOrder,
+    SurplusOrderRow, UNFINISHED_ORDER_UNIQUE_KEY, UserForOrder, bounded_payment_identifier,
+    payment_identifier_hash,
 };
 
 pub(super) fn checked_add_cents(
@@ -532,13 +533,13 @@ impl OrderService {
         let now = Utc::now().timestamp();
         match order.period.as_str() {
             "onetime_price" => buy_by_one_time(&mut user, &plan, surplus_ids.is_some())?,
-            "reset_price" => reset_traffic(&mut user),
+            "reset_price" => reset_traffic(&mut user)?,
             period => buy_by_period(&mut user, &order, &plan, period, now)?,
         }
         match order.r#type {
-            1 if self.config.new_order_event_id == 1 => reset_traffic(&mut user),
-            2 if self.config.renew_order_event_id == 1 => reset_traffic(&mut user),
-            3 if self.config.change_order_event_id == 1 => reset_traffic(&mut user),
+            1 if self.config.new_order_event_id == 1 => reset_traffic(&mut user)?,
+            2 if self.config.renew_order_event_id == 1 => reset_traffic(&mut user)?,
+            3 if self.config.change_order_event_id == 1 => reset_traffic(&mut user)?,
             _ => {}
         }
         user.speed_limit = plan.speed_limit;
@@ -807,15 +808,18 @@ pub(super) async fn mark_order_paid(
     callback_no: &str,
     now: i64,
 ) -> Result<(), sqlx::Error> {
+    let callback_no_label = bounded_payment_identifier(callback_no);
+    let callback_no_hash = payment_identifier_hash(callback_no);
     sqlx::query(
         r#"
         UPDATE v2_order
-        SET status = 1, paid_at = ?, callback_no = ?, updated_at = ?
+        SET status = 1, paid_at = ?, callback_no = ?, callback_no_hash = ?, updated_at = ?
         WHERE id = ? AND status = 0
         "#,
     )
     .bind(now)
-    .bind(callback_no)
+    .bind(callback_no_label)
+    .bind(callback_no_hash.as_slice())
     .bind(now)
     .bind(order_id)
     .execute(&mut **tx)
@@ -849,6 +853,7 @@ async fn save_opened_user(
         UPDATE v2_user
         SET
             balance = ?,
+            traffic_epoch = ?,
             u = ?,
             d = ?,
             transfer_enable = ?,
@@ -862,6 +867,7 @@ async fn save_opened_user(
         "#,
     )
     .bind(user.balance)
+    .bind(user.traffic_epoch)
     .bind(user.u)
     .bind(user.d)
     .bind(user.transfer_enable)
@@ -944,13 +950,13 @@ pub(super) fn buy_by_period(
     user.transfer_enable = transfer_enable;
     user.device_limit = plan.device_limit;
     if user.expired_at.is_none() || order.r#type == 1 {
-        reset_traffic(user);
+        reset_traffic(user)?;
     }
     if order.r#type == 2
         && let Some(expired_at) = user.expired_at
         && is_same_local_month_day(expired_at, now)
     {
-        reset_traffic(user);
+        reset_traffic(user)?;
     }
     user.plan_id = Some(plan.id);
     user.group_id = Some(plan.group_id);
@@ -978,7 +984,7 @@ pub(super) fn buy_by_one_time(
                 })?;
         }
     }
-    reset_traffic(user);
+    reset_traffic(user)?;
     user.transfer_enable = transfer_enable;
     user.device_limit = plan.device_limit;
     user.plan_id = Some(plan.id);
@@ -987,9 +993,14 @@ pub(super) fn buy_by_one_time(
     Ok(())
 }
 
-fn reset_traffic(user: &mut UserForOrder) {
+fn reset_traffic(user: &mut UserForOrder) -> Result<(), ApiError> {
+    user.traffic_epoch = user
+        .traffic_epoch
+        .checked_add(1)
+        .ok_or_else(|| ApiError::internal("user traffic epoch exceeds the supported range"))?;
     user.u = 0;
     user.d = 0;
+    Ok(())
 }
 
 fn is_available(user: &UserForOrder) -> bool {
@@ -1212,6 +1223,7 @@ SELECT
     discount,
     commission_type,
     commission_rate,
+    traffic_epoch,
     u,
     d,
     transfer_enable,

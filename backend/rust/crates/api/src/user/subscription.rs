@@ -99,6 +99,7 @@ pub(crate) async fn user_new_period(
     if config.allow_new_period == 0 {
         return Err(ApiError::legacy("Renewal is not allowed"));
     }
+    let mut tx = state.db.begin().await?;
     let row = sqlx::query_as::<_, UserPeriodRow>(
         r#"
         SELECT u.plan_id, u.transfer_enable, u.u, u.d, u.expired_at, p.reset_traffic_method
@@ -106,10 +107,11 @@ pub(crate) async fn user_new_period(
         LEFT JOIN v2_plan p ON p.id = u.plan_id
         WHERE u.id = ?
         LIMIT 1
+        FOR UPDATE
         "#,
     )
     .bind(user.id)
-    .fetch_optional(&state.db)
+    .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| ApiError::legacy("The user does not exist"))?;
     let used = row
@@ -158,12 +160,21 @@ pub(crate) async fn user_new_period(
     if let Some(next_expired_at) =
         checked_reset_subscription_expiry(expired_at, reset_day, period, Utc::now().timestamp())?
     {
-        sqlx::query("UPDATE v2_user SET expired_at = ?, u = 0, d = 0, updated_at = ? WHERE id = ?")
-            .bind(next_expired_at)
-            .bind(Utc::now().timestamp())
-            .bind(user.id)
-            .execute(&state.db)
-            .await?;
+        let updated = sqlx::query(
+            "UPDATE v2_user SET expired_at = ?, traffic_epoch = traffic_epoch + 1, \
+             u = 0, d = 0, updated_at = ? WHERE id = ?",
+        )
+        .bind(next_expired_at)
+        .bind(Utc::now().timestamp())
+        .bind(user.id)
+        .execute(&mut *tx)
+        .await?;
+        if updated.rows_affected() != 1 {
+            return Err(ApiError::internal(
+                "subscription period update lost its user row",
+            ));
+        }
+        tx.commit().await?;
         Ok(legacy_data(true))
     } else {
         Err(ApiError::legacy(

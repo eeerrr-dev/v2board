@@ -88,19 +88,20 @@ pub(crate) async fn telegram_bot_info(
         .as_deref()
         .filter(|value| !value.is_empty())
         .ok_or_else(|| ApiError::legacy("Telegram bot is not configured"))?;
-    let body: serde_json::Value = state
+    let response = state
         .http
         .get(format!("https://api.telegram.org/bot{token}/getMe"))
         .send()
         .await
         .map_err(|error| {
             ApiError::legacy(format!("Telegram request failed: {}", error.without_url()))
-        })?
-        .json()
-        .await
-        .map_err(|error| {
-            ApiError::legacy(format!("Telegram response failed: {}", error.without_url()))
         })?;
+    let body: serde_json::Value = v2board_domain::http_response::bounded_json(
+        response,
+        v2board_domain::http_response::MAX_EXTERNAL_RESPONSE_BYTES,
+        "Telegram response failed",
+    )
+    .await?;
     let username = body
         .get("result")
         .and_then(|result| result.get("username"))

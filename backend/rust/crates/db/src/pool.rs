@@ -117,16 +117,43 @@ pub async fn connect_mysql_with_config(
         .idle_timeout(Some(config.idle_timeout))
         .max_lifetime(Some(config.max_lifetime))
         .test_before_acquire(true)
+        .after_connect(|connection, _metadata| {
+            Box::pin(async move {
+                // Business logic uses Unix timestamps, strict integer writes and
+                // explicit locking reads. Pin every pooled session so a server
+                // default change cannot silently alter those semantics between
+                // replicas or reconnects.
+                sqlx::query("SET SESSION time_zone = '+00:00'")
+                    .execute(&mut *connection)
+                    .await?;
+                sqlx::query("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci")
+                    .execute(&mut *connection)
+                    .await?;
+                sqlx::query(
+                    "SET SESSION sql_mode = \
+                     'STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'",
+                )
+                .execute(&mut *connection)
+                .await?;
+                sqlx::query("SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+                    .execute(&mut *connection)
+                    .await?;
+                Ok(())
+            })
+        })
         .connect(database_url)
         .await?;
     Ok(pool)
 }
 
 pub async fn migrate_mysql(pool: &DbPool) -> Result<(), DbInitError> {
+    // Validate this before touching schema state. A production deployment must
+    // never turn a misspelled migration job into the well-known local admin.
+    let should_seed_local = local_seed_enabled()?;
     preflight_unfinished_order_uniqueness(pool).await?;
     preflight_giftcard_redemptions(pool).await?;
     MIGRATOR.run(pool).await?;
-    if local_seed_enabled() {
+    if should_seed_local {
         seed_local(pool).await?;
     }
     Ok(())
@@ -304,10 +331,32 @@ fn env_u64(key: &str, default: u64) -> Result<u64, DbInitError> {
     Ok(value)
 }
 
-fn local_seed_enabled() -> bool {
-    std::env::var("V2BOARD_SEED_LOCAL")
-        .ok()
-        .is_some_and(|value| matches!(value.trim(), "1" | "true" | "TRUE" | "yes" | "YES"))
+fn local_seed_enabled() -> Result<bool, DbInitError> {
+    local_seed_enabled_for(
+        std::env::var("V2BOARD_SEED_LOCAL").ok().as_deref(),
+        std::env::var("V2BOARD_ENV").ok().as_deref(),
+    )
+}
+
+fn local_seed_enabled_for(
+    seed_value: Option<&str>,
+    environment: Option<&str>,
+) -> Result<bool, DbInitError> {
+    let enabled = seed_value
+        .is_some_and(|value| matches!(value.trim(), "1" | "true" | "TRUE" | "yes" | "YES"));
+    let production = environment.is_some_and(|value| {
+        matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "prod" | "production"
+        )
+    });
+    if enabled && production {
+        return Err(DbInitError::Configuration(
+            "V2BOARD_SEED_LOCAL must not be enabled when V2BOARD_ENV is prod/production"
+                .to_string(),
+        ));
+    }
+    Ok(enabled)
 }
 
 async fn seed_local(pool: &MySqlPool) -> Result<(), DbInitError> {
@@ -565,27 +614,32 @@ mod tests {
         assert!(migration.contains("DROP TABLE `v2_traffic_batch`"));
     }
 
-    #[sqlx::test(migrations = "../../migrations")]
-    #[ignore = "requires a disposable MySQL server via DATABASE_URL"]
-    async fn migration_readiness_tracks_the_real_sqlx_table(pool: MySqlPool) {
-        assert!(migrations_current(&pool).await.unwrap());
+    #[test]
+    fn relational_integrity_migration_is_fail_closed_and_preserves_deposits() {
+        let preflight = include_str!("../../../migrations/0012_relational_integrity.sql");
+        let order = include_str!("../../../migrations/0022_order_relational_integrity.sql");
+        let plan = include_str!("../../../migrations/0023_plan_group_integrity.sql");
+        let user = include_str!("../../../migrations/0024_user_relational_integrity.sql");
+        let ticket_message = include_str!("../../../migrations/0028_ticket_message_integrity.sql");
+        let node = include_str!("../../../migrations/0032_shadowsocks_group_json.sql");
+        assert!(preflight.contains("relational_integrity_preflight_failed"));
+        assert!(order.contains("CASE WHEN `plan_id` = 0 THEN NULL"));
+        assert!(order.contains("fk_order_plan_non_deposit"));
+        assert!(plan.contains("fk_plan_group"));
+        assert!(user.contains("fk_user_plan"));
+        assert!(ticket_message.contains("fk_ticket_message_ticket"));
+        assert!(node.contains("JSON_TYPE(`group_id`) = 'ARRAY'"));
+        assert!(node.contains("JSON_LENGTH(`group_id`) > 0"));
+    }
 
-        let latest = MIGRATOR
-            .iter()
-            .map(|migration| migration.version)
-            .max()
-            .unwrap();
-        sqlx::query("DELETE FROM _sqlx_migrations WHERE version = ?")
-            .bind(latest)
-            .execute(&pool)
-            .await
-            .unwrap();
-        assert!(!migrations_current(&pool).await.unwrap());
-
-        sqlx::query("DROP TABLE _sqlx_migrations")
-            .execute(&pool)
-            .await
-            .unwrap();
-        assert!(migrations_current(&pool).await.is_err());
+    #[test]
+    fn production_environment_rejects_the_known_local_seed() {
+        for environment in ["prod", "PROD", "production", "Production"] {
+            let error = local_seed_enabled_for(Some("1"), Some(environment)).unwrap_err();
+            assert!(error.to_string().contains("must not be enabled"));
+        }
+        assert!(local_seed_enabled_for(Some("true"), Some("local")).unwrap());
+        assert!(!local_seed_enabled_for(Some("0"), Some("production")).unwrap());
+        assert!(!local_seed_enabled_for(None, Some("production")).unwrap());
     }
 }

@@ -1,5 +1,6 @@
 use serde::Serialize;
 use sqlx::{FromRow, MySql, MySqlPool, Transaction};
+use uuid::Uuid;
 
 const VALID_COMMISSION_SUM_SQL: &str = "SELECT CAST(COALESCE(SUM(get_amount), 0) AS CHAR) FROM v2_commission_log WHERE invite_user_id = ?";
 const PENDING_COMMISSION_SUM_SQL: &str = r#"
@@ -63,12 +64,20 @@ pub async fn create_invite_code(
     now: i64,
 ) -> Result<bool, sqlx::Error> {
     let mut tx = pool.begin().await?;
-    let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM v2_invite_code WHERE user_id = ? AND status = 0 FOR UPDATE",
-    )
-    .bind(user_id)
-    .fetch_one(&mut *tx)
-    .await?;
+    let user_exists =
+        sqlx::query_scalar::<_, i64>("SELECT id FROM v2_user WHERE id = ? LIMIT 1 FOR UPDATE")
+            .bind(user_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    if user_exists.is_none() {
+        tx.rollback().await?;
+        return Ok(false);
+    }
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM v2_invite_code WHERE user_id = ? AND status = 0")
+            .bind(user_id)
+            .fetch_one(&mut *tx)
+            .await?;
     if count >= limit {
         tx.rollback().await?;
         return Ok(false);
@@ -170,18 +179,36 @@ async fn insert_invite_code(
     user_id: i64,
     now: i64,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
-        INSERT INTO v2_invite_code (user_id, code, status, pv, created_at, updated_at)
-        VALUES (?, SUBSTRING(MD5(CONCAT(UUID(), RAND())), 1, 8), 0, 0, ?, ?)
-        "#,
-    )
-    .bind(user_id)
-    .bind(now)
-    .bind(now)
-    .execute(&mut **tx)
-    .await?;
-    Ok(())
+    for _ in 0..8 {
+        let code = random_invite_code();
+        let result = sqlx::query(
+            r#"
+            INSERT INTO v2_invite_code (user_id, code, status, pv, created_at, updated_at)
+            VALUES (?, ?, 0, 0, ?, ?)
+            "#,
+        )
+        .bind(user_id)
+        .bind(code)
+        .bind(now)
+        .bind(now)
+        .execute(&mut **tx)
+        .await;
+        match result {
+            Ok(_) => return Ok(()),
+            Err(error)
+                if error
+                    .as_database_error()
+                    .is_some_and(|error| error.is_unique_violation()) => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Err(sqlx::Error::Protocol(
+        "could not allocate a unique invitation code after 8 attempts".to_string(),
+    ))
+}
+
+fn random_invite_code() -> String {
+    Uuid::new_v4().simple().to_string()[..8].to_string()
 }
 
 #[cfg(test)]
@@ -207,5 +234,15 @@ mod tests {
         assert!(exact_i64_aggregate("9223372036854775808", "test").is_err());
         assert!(exact_i64_aggregate("-9223372036854775809", "test").is_err());
         assert!(exact_i64_aggregate("not-a-number", "test").is_err());
+    }
+
+    #[test]
+    fn generated_invite_codes_keep_the_eight_character_contract() {
+        let code = random_invite_code();
+        assert_eq!(code.len(), 8);
+        assert!(code.bytes().all(|byte| byte.is_ascii_hexdigit()));
+
+        let migration = include_str!("../../../migrations/0016_invite_code_invariants.sql");
+        assert!(migration.contains("ADD UNIQUE KEY `uniq_invite_code` (`code`)"));
     }
 }

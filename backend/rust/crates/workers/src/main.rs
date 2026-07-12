@@ -35,7 +35,7 @@ use crate::state::WorkerState;
 async fn main() -> anyhow::Result<()> {
     runtime::init_tracing();
 
-    let config = Arc::new(AppConfig::from_env());
+    let config = Arc::new(AppConfig::try_from_env()?);
     let db = v2board_db::connect_mysql(&config.database_url).await?;
     let redis = redis::Client::open(config.redis_url.clone())?;
     let state = WorkerState::new(config, db, redis, SmtpTransportCache::default());

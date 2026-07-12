@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, time::Duration};
 
 use chrono::Utc;
 use redis::AsyncCommands;
@@ -9,6 +9,7 @@ use crate::{reset::TRAFFIC_RESET_LOCK_KEY, state::WorkerState};
 #[derive(FromRow)]
 struct DurableTrafficItem {
     user_id: i64,
+    traffic_epoch: i64,
     u: i64,
     d: i64,
 }
@@ -16,6 +17,7 @@ struct DurableTrafficItem {
 #[derive(Debug, FromRow)]
 struct LockedTrafficUser {
     id: i64,
+    traffic_epoch: i64,
     u: i64,
     d: i64,
 }
@@ -28,10 +30,17 @@ struct TrafficUpdate {
 }
 
 const TRAFFIC_SQL_BATCH_SIZE: usize = 250;
+const TRAFFIC_DRAIN_BUDGET: Duration = Duration::from_secs(45);
+const TRAFFIC_MAX_REPORTS_PER_TICK: usize = 10_000;
 
 pub(crate) async fn run(state: &WorkerState) -> anyhow::Result<()> {
-    let mut conn = state.redis.get_multiplexed_async_connection().await?;
-    if conn.exists::<_, bool>(TRAFFIC_RESET_LOCK_KEY).await? {
+    let reset_in_progress = tokio::time::timeout(Duration::from_secs(5), async {
+        let mut conn = state.redis.get_multiplexed_async_connection().await?;
+        conn.exists::<_, bool>(TRAFFIC_RESET_LOCK_KEY).await
+    })
+    .await
+    .map_err(|_| anyhow::anyhow!("timed out checking the traffic reset barrier"))??;
+    if reset_in_progress {
         return Ok(());
     }
     apply_durable_traffic_reports(state).await
@@ -42,9 +51,12 @@ fn is_internal_traffic_report_key(report_key: &str) -> bool {
 }
 
 async fn apply_durable_traffic_reports(state: &WorkerState) -> anyhow::Result<()> {
-    // Bound each tick so one busy report queue cannot monopolize the scheduler.
-    // Remaining reports are safe for the next tick or another worker.
-    for _ in 0..100 {
+    // Drain for a bounded wall-clock budget rather than the former hard limit of
+    // 100 reports/minute. The item count within a report is independently
+    // batched, so a burst cannot grow one SQL statement without bound.
+    let deadline = tokio::time::Instant::now() + TRAFFIC_DRAIN_BUDGET;
+    let mut processed = 0_usize;
+    while processed < TRAFFIC_MAX_REPORTS_PER_TICK && tokio::time::Instant::now() < deadline {
         let mut tx = state.db.begin().await?;
         let report_key = sqlx::query_scalar::<_, String>(
             r#"
@@ -64,7 +76,7 @@ async fn apply_durable_traffic_reports(state: &WorkerState) -> anyhow::Result<()
         };
         let items = sqlx::query_as::<_, DurableTrafficItem>(
             r#"
-            SELECT user_id, u, d
+            SELECT user_id, traffic_epoch, u, d
             FROM v2_server_traffic_report_item
             WHERE report_key = ?
             ORDER BY user_id
@@ -73,7 +85,7 @@ async fn apply_durable_traffic_reports(state: &WorkerState) -> anyhow::Result<()
         .bind(&report_key)
         .fetch_all(&mut *tx)
         .await?;
-        apply_traffic_items(&mut tx, &items).await?;
+        let stale_items = apply_traffic_items(&mut tx, &items).await?;
         if is_internal_traffic_report_key(&report_key) {
             // Implicit reports have a fresh unguessable key for every
             // upload, so their applied header cannot deduplicate a replay. Drop
@@ -112,6 +124,20 @@ async fn apply_durable_traffic_reports(state: &WorkerState) -> anyhow::Result<()
                 .await?;
         }
         tx.commit().await?;
+        processed += 1;
+        if stale_items > 0 {
+            tracing::info!(
+                report_key,
+                stale_items,
+                "discarded traffic from an earlier quota epoch"
+            );
+        }
+    }
+    if processed == TRAFFIC_MAX_REPORTS_PER_TICK || tokio::time::Instant::now() >= deadline {
+        tracing::warn!(
+            processed,
+            "traffic drain reached its per-tick safety budget"
+        );
     }
     Ok(())
 }
@@ -119,10 +145,10 @@ async fn apply_durable_traffic_reports(state: &WorkerState) -> anyhow::Result<()
 async fn apply_traffic_items(
     tx: &mut Transaction<'_, MySql>,
     items: &[DurableTrafficItem],
-) -> anyhow::Result<()> {
+) -> anyhow::Result<usize> {
     let aggregated = aggregate_traffic_items(items)?;
     if aggregated.is_empty() {
-        return Ok(());
+        return Ok(0);
     }
 
     // Every worker acquires user locks in ascending id order, including across chunks. Each
@@ -130,7 +156,8 @@ async fn apply_traffic_items(
     // creating a deadlock cycle and keeping the report transaction all-or-nothing.
     let mut locked = BTreeMap::new();
     for chunk in aggregated.chunks(TRAFFIC_SQL_BATCH_SIZE) {
-        let mut builder = QueryBuilder::<MySql>::new("SELECT id, u, d FROM v2_user WHERE id IN (");
+        let mut builder =
+            QueryBuilder::<MySql>::new("SELECT id, traffic_epoch, u, d FROM v2_user WHERE id IN (");
         let mut separated = builder.separated(", ");
         for item in chunk {
             separated.push_bind(item.user_id);
@@ -146,10 +173,15 @@ async fn apply_traffic_items(
     }
 
     let mut updates = Vec::with_capacity(locked.len());
+    let mut stale_items = 0_usize;
     for item in aggregated {
         let Some(current) = locked.get(&item.user_id) else {
             continue;
         };
+        if current.traffic_epoch != item.traffic_epoch {
+            stale_items += 1;
+            continue;
+        }
         let (u, d) = checked_traffic_totals(current.u, current.d, item.u, item.d)
             .ok_or_else(|| anyhow::anyhow!("user traffic exceeds the supported range"))?;
         updates.push(TrafficUpdate {
@@ -163,21 +195,33 @@ async fn apply_traffic_items(
     for chunk in updates.chunks(TRAFFIC_SQL_BATCH_SIZE) {
         update_traffic_chunk(tx, chunk, now).await?;
     }
-    Ok(())
+    Ok(stale_items)
 }
 
 fn aggregate_traffic_items(
     items: &[DurableTrafficItem],
 ) -> anyhow::Result<Vec<DurableTrafficItem>> {
-    let mut aggregated = BTreeMap::<i64, (i64, i64)>::new();
+    let mut aggregated = BTreeMap::<i64, (i64, i64, i64)>::new();
     for item in items {
-        let totals = aggregated.entry(item.user_id).or_insert((0, 0));
-        *totals = checked_traffic_totals(totals.0, totals.1, item.u, item.d)
+        let totals = aggregated
+            .entry(item.user_id)
+            .or_insert((item.traffic_epoch, 0, 0));
+        if totals.0 != item.traffic_epoch {
+            anyhow::bail!("traffic report contains multiple quota epochs for one user");
+        }
+        let (u, d) = checked_traffic_totals(totals.1, totals.2, item.u, item.d)
             .ok_or_else(|| anyhow::anyhow!("traffic report exceeds the supported range"))?;
+        totals.1 = u;
+        totals.2 = d;
     }
     Ok(aggregated
         .into_iter()
-        .map(|(user_id, (u, d))| DurableTrafficItem { user_id, u, d })
+        .map(|(user_id, (traffic_epoch, u, d))| DurableTrafficItem {
+            user_id,
+            traffic_epoch,
+            u,
+            d,
+        })
         .collect())
 }
 
@@ -247,16 +291,19 @@ mod tests {
         let aggregated = aggregate_traffic_items(&[
             DurableTrafficItem {
                 user_id: 9,
+                traffic_epoch: 4,
                 u: 1,
                 d: 2,
             },
             DurableTrafficItem {
                 user_id: 2,
+                traffic_epoch: 7,
                 u: 3,
                 d: 4,
             },
             DurableTrafficItem {
                 user_id: 9,
+                traffic_epoch: 4,
                 u: 5,
                 d: 6,
             },
@@ -273,11 +320,13 @@ mod tests {
             aggregate_traffic_items(&[
                 DurableTrafficItem {
                     user_id: 1,
+                    traffic_epoch: 0,
                     u: i64::MAX,
                     d: 0,
                 },
                 DurableTrafficItem {
                     user_id: 1,
+                    traffic_epoch: 0,
                     u: 1,
                     d: 0,
                 },
@@ -311,5 +360,15 @@ mod tests {
         assert!(!is_internal_traffic_report_key(&"a".repeat(64)));
         let migration = include_str!("../../../migrations/0004_traffic_report_sha256.sql");
         assert!(migration.contains("ON DELETE CASCADE"));
+    }
+
+    #[test]
+    fn traffic_epoch_migration_fences_reset_periods() {
+        let migration = include_str!("../../../migrations/0009_traffic_quota_epoch.sql");
+        assert!(migration.contains("`traffic_epoch` bigint NOT NULL DEFAULT 0"));
+        let item_migration = include_str!("../../../migrations/0013_traffic_report_epoch.sql");
+        assert!(item_migration.contains("`traffic_epoch` bigint NOT NULL DEFAULT 0"));
+        let source = include_str!("traffic.rs");
+        assert!(source.contains("current.traffic_epoch != item.traffic_epoch"));
     }
 }

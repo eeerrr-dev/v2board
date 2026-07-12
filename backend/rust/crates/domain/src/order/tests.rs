@@ -8,10 +8,11 @@ use super::payment_integrations::{
     add_stripe_settlement_metadata, alipay_f2f_notify, alipay_sign, bepusdt_notify,
     btcpay_invoice_settlement, btcpay_notify, canonical_query, coinbase_notify,
     coinpayments_notify, decimal_amount_cents, epay_notify, exchange_rate_cache_decision,
-    form_query, hmac_sha256_hex, hmac_sha512_hex, mgate_notify,
+    form_query, hmac_sha256_hex, hmac_sha512_hex, mgate_notify, payment_http_client,
     reusable_stripe_credit_intent_matches, stripe_all_notify, stripe_checkout_notify,
     stripe_payment_amount, stripe_payment_intent_notify, stripe_source_charge_params,
-    stripe_source_notify, url_origin, wechat_pay_native_notify, wechat_sign, xml_from_params,
+    stripe_source_notify, url_origin, verify_legacy_md5_hex, wechat_pay_native_notify, wechat_sign,
+    xml_from_params,
 };
 use super::*;
 
@@ -49,9 +50,9 @@ fn every_settlement_requires_the_current_payment_binding() {
         user_id: None,
         callback_no: None,
     };
-    assert!(payment_binding_matches(&expected, 9, Some(5), None));
-    assert!(!payment_binding_matches(&expected, 9, Some(6), None));
-    assert!(!payment_binding_matches(&expected, 9, None, None));
+    assert!(payment_binding_matches(&expected, 9, Some(5), None, None));
+    assert!(!payment_binding_matches(&expected, 9, Some(6), None, None));
+    assert!(!payment_binding_matches(&expected, 9, None, None, None));
 }
 
 #[test]
@@ -61,23 +62,28 @@ fn stripe_credit_settlement_keeps_user_and_exact_intent_binding() {
         user_id: Some(9),
         callback_no: Some("pi_current".to_string()),
     };
+    let current = payment_identifier_hash("pi_current");
+    let superseded = payment_identifier_hash("pi_superseded");
     assert!(payment_binding_matches(
         &expected,
         9,
         Some(5),
         Some("pi_current"),
+        Some(current.as_slice()),
     ));
     assert!(!payment_binding_matches(
         &expected,
         10,
         Some(5),
         Some("pi_current"),
+        Some(current.as_slice()),
     ));
     assert!(!payment_binding_matches(
         &expected,
         9,
         Some(5),
         Some("pi_superseded"),
+        Some(superseded.as_slice()),
     ));
 }
 
@@ -87,6 +93,89 @@ fn settlement_amount_includes_the_locked_orders_handling_fee() {
     assert!(payment_amount_matches(1_234, None, 1_234));
     assert!(!payment_amount_matches(1_000, Some(234), 1_233));
     assert!(!payment_amount_matches(i64::MAX, Some(1), i64::MIN));
+}
+
+#[test]
+fn callback_replay_and_second_provider_transaction_are_distinct() {
+    let first = payment_identifier_hash("provider-tx-1");
+    assert!(is_ordinary_payment_replay(
+        1,
+        Some("provider-tx-1"),
+        Some(first.as_slice()),
+        "provider-tx-1"
+    ));
+    assert!(!is_ordinary_payment_replay(
+        1,
+        Some("provider-tx-1"),
+        Some(first.as_slice()),
+        "provider-tx-2"
+    ));
+    assert!(!is_ordinary_payment_replay(
+        2,
+        Some("provider-tx-1"),
+        Some(first.as_slice()),
+        "provider-tx-1"
+    ));
+    assert!(!is_ordinary_payment_replay(0, None, None, "provider-tx-1"));
+    assert!(is_ordinary_payment_replay(
+        3,
+        Some("provider-tx-1"),
+        None,
+        "provider-tx-1"
+    ));
+    let stale = payment_identifier_hash("old-provider-tx");
+    assert!(!is_ordinary_payment_replay(
+        3,
+        Some("provider-tx-1"),
+        Some(stale.as_slice()),
+        "provider-tx-1"
+    ));
+    let long = "A".repeat(300);
+    let long_hash = payment_identifier_hash(&long);
+    assert!(!is_ordinary_payment_replay(
+        3,
+        Some(&"A".repeat(255)),
+        Some(long_hash.as_slice()),
+        &"A".repeat(255),
+    ));
+    assert!(!is_ordinary_payment_replay(
+        3,
+        Some("provider-tx-2"),
+        Some(stale.as_slice()),
+        "provider-tx-1"
+    ));
+}
+
+#[test]
+fn provider_identifiers_keep_bounded_utf8_labels_and_full_hashes() {
+    let raw = format!("prefix-🚀{}", "界".repeat(100));
+    let label = bounded_payment_identifier(&raw);
+    assert!(label.len() <= 255);
+    assert!(label.contains("\\u{1F680}"));
+    assert!(!label.contains('🚀'));
+    assert_eq!(payment_identifier_hash(&raw).len(), 32);
+    let (audit_label, audit_hash) = bounded_payment_audit_identity(&raw);
+    assert_eq!(audit_label, label);
+    assert_eq!(audit_hash.len(), 64);
+    assert!(audit_hash.bytes().all(|byte| byte.is_ascii_hexdigit()));
+    let migration = include_str!("../../../../migrations/0042_order_callback_identity.sql");
+    assert!(migration.contains("callback_no_hash"));
+    assert!(!migration.contains("UPDATE `v2_order`"));
+    let bridge = include_str!("../../../../migrations/0043_legacy_callback_identity_bridge.sql");
+    assert!(bridge.contains("NEW.`callback_no_hash` <=> OLD.`callback_no_hash`"));
+    assert!(bridge.contains("UNHEX(SHA2(NEW.`callback_no`, 256))"));
+}
+
+#[test]
+fn late_payment_notification_is_idempotent_after_the_ledger_upsert() {
+    assert!(should_emit_late_payment_notice(1));
+    assert!(!should_emit_late_payment_notice(2));
+    let migration = include_str!("../../../../migrations/0011_payment_reconciliation.sql");
+    assert!(migration.contains("UNIQUE KEY `uniq_payment_reconciliation_callback`"));
+    assert!(migration.contains("`reason` varchar(64) NOT NULL"));
+    let implementation = include_str!("../order.rs");
+    assert!(implementation.contains("occurrence_count ="));
+    assert!(implementation.contains("occurrence_count + 1"));
 }
 
 #[test]
@@ -103,7 +192,7 @@ fn settlement_query_locks_binding_and_amount_in_one_row_snapshot() {
         "handling_amount",
         "user_id",
         "payment_id",
-        "callback_no",
+        "callback_no_hash",
         "FOR UPDATE",
     ] {
         assert!(PAYMENT_SETTLEMENT_ORDER_SQL.contains(required));
@@ -117,8 +206,10 @@ fn callback_lookup_does_not_filter_out_a_disabled_in_flight_gateway() {
 }
 
 #[test]
-fn payment_binding_rejects_deleted_driver_or_config_snapshots() {
-    assert!(PAYMENT_CONFIG_FOR_UPDATE_SQL.contains("FOR UPDATE"));
+fn payment_binding_rejects_archived_driver_or_config_snapshots_without_a_global_exclusive_lock() {
+    assert!(PAYMENT_ACTIVE_CONFIG_FOR_SHARE_SQL.contains("FOR SHARE"));
+    assert!(PAYMENT_ACTIVE_CONFIG_FOR_SHARE_SQL.contains("archived_at IS NULL"));
+    assert!(PAYMENT_ACTIVE_CONFIG_FOR_SHARE_SQL.contains("enable = 1"));
     let expected = json!({"secret": "old", "nested": {"enabled": true}});
     assert!(payment_config_snapshot_matches(
         Some(("Coinbase".to_string(), expected.to_string())),
@@ -172,6 +263,15 @@ fn pay_and_notify_dispatch_cover_provider_registry() {
     }
 }
 
+#[tokio::test]
+async fn payment_http_client_rejects_plaintext_gateway_urls() {
+    let result = payment_http_client("transport-test")
+        .get("http://127.0.0.1:9/plaintext-is-forbidden")
+        .send()
+        .await;
+    assert!(result.is_err());
+}
+
 #[test]
 fn epay_notify_fixture_verifies_signature_and_extracts_trade_numbers() {
     let payment = fixture_payment("EPay", json!({ "key": "epay-secret" }));
@@ -197,10 +297,27 @@ fn epay_notify_fixture_verifies_signature_and_extracts_trade_numbers() {
 }
 
 #[test]
+fn legacy_md5_signature_comparison_is_hex_strict_and_case_insensitive() {
+    let digest = "00112233445566778899aabbccddeeff";
+    assert!(verify_legacy_md5_hex(digest, digest));
+    assert!(verify_legacy_md5_hex(
+        digest,
+        "00112233445566778899AABBCCDDEEFF"
+    ));
+    assert!(!verify_legacy_md5_hex(
+        digest,
+        "00112233445566778899aabbccddee00"
+    ));
+    assert!(!verify_legacy_md5_hex(digest, "not-hex"));
+    assert!(!verify_legacy_md5_hex(digest, "0011"));
+}
+
+#[test]
 fn mgate_notify_fixture_verifies_signature_and_extracts_trade_numbers() {
     let payment = fixture_payment("MGate", json!({ "mgate_app_secret": "mgate-secret" }));
     let mut signed = BTreeMap::from([
         ("out_trade_no".to_string(), "T202607060002".to_string()),
+        ("status".to_string(), "success".to_string()),
         ("total_amount".to_string(), "1234".to_string()),
         ("trade_no".to_string(), "MGATE-CALLBACK-1".to_string()),
     ]);
@@ -219,6 +336,50 @@ fn mgate_notify_fixture_verifies_signature_and_extracts_trade_numbers() {
 
     assert_eq!(verified.trade_no, "T202607060002");
     assert_eq!(verified.callback_no, "MGATE-CALLBACK-1");
+    assert_eq!(verified.settled_amount_cents, Some(1_234));
+}
+
+#[test]
+fn mgate_notify_rejects_a_signed_non_success_status() {
+    let payment = fixture_payment("MGate", json!({ "mgate_app_secret": "mgate-secret" }));
+    let mut signed = BTreeMap::from([
+        ("out_trade_no".to_string(), "T202607060002".to_string()),
+        ("status".to_string(), "failed".to_string()),
+        ("total_amount".to_string(), "1234".to_string()),
+        ("trade_no".to_string(), "MGATE-CALLBACK-2".to_string()),
+    ]);
+    let sign = format!(
+        "{:x}",
+        md5::compute(format!(
+            "{}{}",
+            form_query(&signed).unwrap(),
+            "mgate-secret"
+        ))
+    );
+    signed.insert("sign".to_string(), sign);
+    let outcome = mgate_notify(&payment, &signed.into_iter().collect()).unwrap();
+    assert!(matches!(outcome, PaymentNotifyOutcome::Ignored(_)));
+}
+
+#[test]
+fn mgate_notify_keeps_statusless_legacy_callbacks_compatible() {
+    let payment = fixture_payment("MGate", json!({ "mgate_app_secret": "mgate-secret" }));
+    let mut signed = BTreeMap::from([
+        ("out_trade_no".to_string(), "T202607060002".to_string()),
+        ("total_amount".to_string(), "1234".to_string()),
+        ("trade_no".to_string(), "MGATE-CALLBACK-LEGACY".to_string()),
+    ]);
+    let sign = format!(
+        "{:x}",
+        md5::compute(format!(
+            "{}{}",
+            form_query(&signed).unwrap(),
+            "mgate-secret"
+        ))
+    );
+    signed.insert("sign".to_string(), sign);
+    let verified = unwrap_verified(mgate_notify(&payment, &signed.into_iter().collect()).unwrap());
+    assert_eq!(verified.callback_no, "MGATE-CALLBACK-LEGACY");
     assert_eq!(verified.settled_amount_cents, Some(1_234));
 }
 
@@ -1294,11 +1455,13 @@ fn stripe_credit_notify_rejects_gateway_currency_or_binding_mismatch() {
         user_id: verified.authenticated_user_id,
         callback_no: Some(verified.callback_no),
     };
+    let callback_no_hash = payment_identifier_hash("pi_credit_1");
     assert!(!payment_binding_matches(
         &expected,
         9,
         Some(1),
         Some("pi_credit_1"),
+        Some(callback_no_hash.as_slice()),
     ));
 }
 
@@ -1813,6 +1976,7 @@ fn user_grant_fixture() -> UserForOrder {
         discount: None,
         commission_type: 0,
         commission_rate: None,
+        traffic_epoch: 0,
         u: 9 * GIB,
         d: GIB,
         transfer_enable: 50 * GIB,

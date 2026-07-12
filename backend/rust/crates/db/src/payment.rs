@@ -27,7 +27,7 @@ pub async fn fetch_enabled_payment_methods(
             handling_fee_fixed,
             CAST(handling_fee_percent AS CHAR) AS handling_fee_percent
         FROM v2_payment
-        WHERE enable = 1
+        WHERE enable = 1 AND archived_at IS NULL
         ORDER BY sort ASC
         "#,
     )
@@ -65,5 +65,13 @@ mod tests {
         };
         let value = serde_json::to_value(&row).unwrap();
         assert!(value["handling_fee_percent"].is_null());
+    }
+
+    #[test]
+    fn webhook_routing_key_is_unique_per_payment_driver() {
+        let migration = include_str!("../../../migrations/0017_payment_driver_uuid_unique.sql");
+        assert!(
+            migration.contains("ADD UNIQUE KEY `uniq_payment_driver_uuid` (`payment`, `uuid`)")
+        );
     }
 }
