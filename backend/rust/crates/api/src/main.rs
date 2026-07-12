@@ -6,6 +6,7 @@ use v2board_domain::{auth::PasswordKdf, smtp::SmtpTransportCache};
 
 mod admin;
 mod auth;
+mod cli;
 mod client;
 mod codec;
 mod commerce;
@@ -29,30 +30,73 @@ use runtime::{AppState, build_http_client, init_tracing, reset_admin_password, s
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let command = std::env::args().nth(1);
-    if matches!(command.as_deref(), Some("--help" | "-h")) {
-        println!(
-            "v2board-api\n\nCommands:\n  migrate                       Apply database migrations and local seed\n  reset-admin-password <email>  Read the new password from V2BOARD_NEW_PASSWORD"
-        );
+    let command = cli::parse()?;
+    if matches!(&command, cli::Command::Help) {
+        cli::print_help();
         return Ok(());
-    }
-    if let Some(command) = command.as_deref()
-        && !matches!(command, "migrate" | "reset-admin-password")
-    {
-        anyhow::bail!("unknown v2board-api command: {command}");
     }
 
     init_tracing();
+    match &command {
+        cli::Command::ProvisionValidate { manifest } => {
+            let spec = v2board_provision::load_provision_spec(manifest)?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "valid": true,
+                    "schema_version": spec.schema_version,
+                    "operation_id": spec.operation_id,
+                    "reference_commit": v2board_provision::LEGACY_REFERENCE_COMMIT,
+                    "manifest_binding_hmac_sha256": spec.manifest_binding_hmac_sha256(),
+                    "secrets_redacted": true
+                }))?
+            );
+            return Ok(());
+        }
+        cli::Command::ProvisionInspect { manifest } => {
+            let spec = v2board_provision::load_provision_spec(manifest)?;
+            let inspection = v2board_provision::build_inspection(
+                &spec,
+                v2board_provision::InspectionMode::Online,
+            )
+            .await?;
+            println!("{}", serde_json::to_string_pretty(&inspection)?);
+            if !inspection.passed() {
+                anyhow::bail!(
+                    "online provision compatibility inspection is blocked; see the JSON report"
+                );
+            }
+            return Ok(());
+        }
+        cli::Command::ProvisionPlan { manifest } => {
+            let spec = v2board_provision::load_provision_spec(manifest)?;
+            let plan = v2board_provision::build_inspection(
+                &spec,
+                v2board_provision::InspectionMode::FencedFinal,
+            )
+            .await?;
+            println!("{}", serde_json::to_string_pretty(&plan)?);
+            if !plan.passed() {
+                anyhow::bail!("fenced final provision plan is blocked; see the JSON report");
+            }
+            return Ok(());
+        }
+        cli::Command::Serve
+        | cli::Command::Migrate
+        | cli::Command::ResetAdminPassword { .. }
+        | cli::Command::Help => {}
+    }
+
     let config = AppConfig::try_from_env()?;
     let db = connect_mysql(&config.database_url).await?;
-    if command.as_deref() == Some("migrate") {
+    if matches!(&command, cli::Command::Migrate) {
         migrate_mysql(&db).await?;
         println!("database migrations applied");
         return Ok(());
     }
     let password_kdf = PasswordKdf::new(config.password_kdf_max_parallel);
-    if command.as_deref() == Some("reset-admin-password") {
-        return reset_admin_password(&db, &config, &password_kdf).await;
+    if let cli::Command::ResetAdminPassword { email } = command {
+        return reset_admin_password(&db, &config, &password_kdf, &email).await;
     }
     let redis = redis::Client::open(config.redis_url.clone())?;
     let auth_redis = tokio::time::timeout(

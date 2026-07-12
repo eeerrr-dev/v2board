@@ -15,6 +15,7 @@ backend/rust/
   crates/config/    native JSON/environment configuration
   crates/db/        SQLx access and local development seed
   crates/domain/    business rules and external integrations
+  crates/provision/ versioned lifecycle spec validation and bounded read-only preflight
   crates/workers/   scheduler and background jobs
   crates/contract/  static reference route audit + worker reconciliation
 ```
@@ -87,10 +88,134 @@ never enables the local seed.
 
 ## Operations
 
+### Current read-only lifecycle boundary
+
+The only legacy lifecycle commands currently implemented are read-only:
+
+```text
+v2board-api provision validate --manifest <path>
+v2board-api provision inspect --manifest <path>
+v2board-api provision plan --manifest <path>
+```
+
+`validate` checks the secret-bearing file's type, size and Unix permissions,
+strict JSON v2 structure, complete file-only AppConfig key/type inventory, fixed
+`manual_only` / `logout_all` / `discard_ephemeral_after_fence` /
+`maintenance_cutover` decisions, `assert_none` for Stripe and temporary
+subscription tokens, the same AppConfig semantics used at runtime, and
+additional v2 URL/range/path checks. It does not connect to a datastore and is
+not a complete deployment validation.
+
+`inspect` runs the online read-only compatibility inventory while the legacy
+system may still be serving. Its scope is
+`online_read_only_compatibility_inspection` and its verdict is
+`compatible|blocked`. It does not enter maintenance. `plan` is the fenced final
+read-only check and must be run only after the operator has explicitly chosen a
+maintenance window and completed writer/reporter fencing, traffic and queue
+drain, a consistent backup, and an isolated restore proof. Its scope is
+`fenced_read_only_final_plan` and its verdict is
+`ready_for_confirmation|blocked`.
+
+Both checks connect to the declared source MySQL/Redis services, the target
+MySQL `bootstrap_database_url`, and the target Redis logical DB. They do not
+copy data, drain Redis, create the target database/account/schema, generate node
+credentials, materialize `config.json`, create a journal, restore a backup, or
+cut traffic over. MySQL versions are server-detected rather than supplied by
+the operator: the source must be MySQL/Percona 5.7+, the bootstrap server must
+be MySQL 8.4+, and both the database named by `application_database_url` and the
+decoded application `'user'@'host'` account must not exist. The bootstrap
+principal must be able to prove both facts through `information_schema` and
+`mysql.user`. The operator does not pre-create them. A future `apply`, only after final
+confirmation, must use the bootstrap credentials to create that database with
+`utf8mb4/utf8mb4_unicode_ci`, create/restrict the application principal, and
+install the native schema. `application_account_host` is the explicit client
+source in MySQL's `'user'@'host'` account identity, not the DSN server host; only
+an exact hostname, exact IP, or canonical IPv4 CIDR is accepted, never `%` or `_`
+wildcards. `require_database_absent=true` and `require_account_absent=true` are
+mandatory. Future creation must not use `IF NOT EXISTS`; only a journal-bound
+resume may reuse objects created by that same operation. Bootstrap credentials must never enter runtime
+configuration. Redis has no corresponding create-logical-database operation;
+the selected target DB/namespace must already be empty and is never made empty
+with `FLUSHDB`.
+
+Both reports include a redacted `operation_id`, `manifest_binding_hmac_sha256`,
+`report_sha256`, and `apply_available=false`. The manifest binding is an HMAC of
+the exact secret-file bytes under an independent `lifecycle_audit_key`; changing
+any endpoint, credential, backup reference, runtime value, or even JSON spacing
+invalidates it. The audit key must also differ from app/node and target datastore
+passwords. The report digest hashes the canonical payload, including that
+binding and inspected server identities, while `report_sha256` is empty; it is
+not the `sha256sum` of the final printed JSON.
+
+The frozen orchestration is: online `inspect` passes; the operator first
+confirms whether to enter maintenance; the system is fenced/drained/backed up
+and restore-tested; final `plan` passes and displays the redacted creation,
+conversion, downtime, proof, and rollback summary; then the operator confirms
+the exact `operation_id + report_sha256`; only then may a future `apply` write a
+journal and create/migrate the target. A changed or rerun report invalidates the
+old confirmation. The repository has no `provision apply` command: the current
+lifecycle boundary is `apply_available=false`. Static capability gaps are listed
+in `implementation_blockers`, so the current online command fails closed as
+`blocked/resolve_blockers`; it cannot return a successful `compatible` exit code
+until apply and those proofs exist. The v2 runtime object covers only file-backed
+AppConfig keys. Database-pool settings, worker lifecycle/retention settings, and
+runtime/rules/frontend path bootstrap remain deployment inputs and are not yet
+materialized or promoted. Operator-declared legacy cache/prefix/subscription
+facts and unclassified source Redis keys are not yet machine-proven, so they
+also remain apply blockers.
+
+The bounded legacy path accepts only topology that looks standalone: MySQL
+`server_uuid` values must be valid, non-nil, and different, with no detected
+replication channel, group member, or binlog replica client; Redis endpoints
+must have valid, different `run_id` values and report master role, zero connected
+replicas, and cluster mode disabled. These checks prevent single-node inventory
+from declaring a replica/cluster empty, but cannot prove offline or unregistered
+replicas or the underlying storage failure domain. That stronger topology proof
+therefore remains an `implementation_blocker`.
+
+The legacy permanent subscription credential is MySQL `v2_user.token`, which
+must retain its exact value. Redis `otp_`/`otpn_` entries are expiring temporary
+subscription mappings, while a TOTP URL can be generated without writing any
+Redis key and only later populate a short-lived `totp_` verification cache.
+Conversely, the Redis `v2board_upload_traffic` and
+`v2board_download_traffic` hashes contain traffic already accepted from nodes
+but not yet committed to MySQL `u/d`; they are authoritative pending increments,
+not disposable cache. See the manifest guide for the drain/window rules.
+
+The tracked [v2 example](../docs/examples/legacy-migration.v2.example.json) is a
+public, placeholder-bearing template and intentionally cannot be run directly.
+Copy it outside the repository, review and fill every field rather than only the
+`REPLACE` markers, generate a new operation UUID, keep it out of version control,
+and restrict it to its owner:
+
+```bash
+cp docs/examples/legacy-migration.v2.example.json /secure/private/legacy-migration.json
+chmod 600 /secure/private/legacy-migration.json
+v2board-api provision validate --manifest /secure/private/legacy-migration.json
+v2board-api provision inspect --manifest /secure/private/legacy-migration.json
+# Only after compatible + explicit maintenance entry + fence/drain/backup/restore proof:
+v2board-api provision plan --manifest /secure/private/legacy-migration.json
+```
+
+Percent-encode special characters in datastore URL credentials. Plaintext source
+MySQL/Redis URLs are acceptable only over a trusted private network or encrypted
+tunnel; production targets require authenticated TLS. These commands are review
+and preflight aids under the
+[detailed manifest guide](../docs/legacy-migration-manifest.md) and frozen
+[installation and upgrade contract](../docs/upgrade-invariants.md), not a
+supported migration workflow.
+
+### Native schema runner
+
 `Dockerfile.rust` has separate `production-api` and `production-worker` targets
 with process-appropriate contents, logging, and health checks. The compatibility
 target `production` aliases `production-api`. Build and deploy both targets;
 before rolling out either, run the API image once as a serialized migration job:
+
+`v2board-api migrate` is only the native SQLx schema runner for a confirmed empty
+database or known native lineage. It is not a legacy adoption command and must
+never be pointed at the pinned reference database. It also does not by itself
+constitute the staged production fresh-install workflow required by the contract.
 
 ```bash
 docker build --target production-api -t v2board-api -f Dockerfile.rust .
@@ -419,16 +544,21 @@ start: read each node's derived credential from admin
 stable `Idempotency-Key` (or `report_id`/`idempotency_key`) to every retryable
 traffic batch. Never reuse a key for different payload bytes.
 
-For an existing fleet, temporarily set
-`V2BOARD_SERVER_LEGACY_TOKEN_ENABLE=true` while reporters are upgraded; the API
-logs every accepted global-token request. Roll nodes one by one to their scoped
-token and stable batch IDs, verify traffic/report health, then remove the flag
-(production defaults it to false) and keep
-`V2BOARD_SERVER_REQUIRE_IDEMPOTENCY_KEY=true`. Setting
-`rotate_credential=1` on the existing admin server save/update contract
-increments that node's credential epoch and immediately invalidates only that
-node's previous token; fetch and deploy the replacement without rotating the
-master token or disrupting sibling nodes.
+The pinned-reference migration uses a maintenance cutover rather than an online
+global-token compatibility window. Stop the old API, workers, scheduler, and all
+node reporters; drain queues and reconcile both legacy Redis traffic hashes
+before conversion. Keep `V2BOARD_SERVER_LEGACY_TOKEN_ENABLE=false` and
+`V2BOARD_SERVER_REQUIRE_IDEMPOTENCY_KEY=true` on the target, fetch each node's
+scoped token, then update its endpoint/token and stable batch IDs while reporters
+remain stopped. Verify config/users retrieval and exactly-once traffic charging
+for every node before resuming it. The current read-only preflight reports node
+inventory and this requirement but performs none of those operations.
+
+For ordinary post-migration credential rotation, setting `rotate_credential=1`
+on the existing admin server save/update contract increments that node's
+credential epoch and immediately invalidates only that node's previous token;
+fetch and deploy the replacement without rotating the master token or disrupting
+sibling nodes.
 
 The API keeps the established `/api/v1` and `/api/v2` external contracts where
 real clients and integrations depend on them. Compatibility decisions come from

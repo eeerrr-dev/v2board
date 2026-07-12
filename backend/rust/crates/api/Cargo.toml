@@ -41,3 +41,4 @@ v2board-compat = { version = "0.1.0", path = "../compat" }
 v2board-config = { version = "0.1.0", path = "../config" }
 v2board-db = { version = "0.1.0", path = "../db" }
 v2board-domain = { version = "0.1.0", path = "../domain" }
+v2board-provision = { version = "0.1.0", path = "../provision" }

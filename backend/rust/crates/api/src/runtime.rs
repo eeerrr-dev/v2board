@@ -140,16 +140,14 @@ pub(crate) async fn reset_admin_password(
     db: &DbPool,
     config: &AppConfig,
     password_kdf: &PasswordKdf,
+    email: &str,
 ) -> anyhow::Result<()> {
-    let email = std::env::args()
-        .nth(2)
-        .map(|email| email.trim().to_string())
-        .filter(|email| !email.is_empty())
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "usage: V2BOARD_NEW_PASSWORD=<secret> v2board-api reset-admin-password <email>"
-            )
-        })?;
+    let email = email.trim();
+    if email.is_empty() {
+        anyhow::bail!(
+            "usage: V2BOARD_NEW_PASSWORD=<secret> v2board-api reset-admin-password <email>"
+        );
+    }
     let password = std::env::var("V2BOARD_NEW_PASSWORD")
         .ok()
         .filter(|password| password.chars().count() >= 8)
@@ -164,7 +162,7 @@ pub(crate) async fn reset_admin_password(
     let user_id = sqlx::query_scalar::<_, i64>(
         "SELECT id FROM v2_user WHERE email = ? AND is_admin = 1 LIMIT 1 FOR UPDATE",
     )
-    .bind(&email)
+    .bind(email)
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| anyhow::anyhow!("admin account not found: {email}"))?;

@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeSet,
     env, fs,
     io::{self, Write},
     path::{Path, PathBuf},
@@ -15,6 +16,121 @@ use serde_json::{Map, Value};
 /// timestamp arithmetic inside a small, predictable range.
 pub const MAX_CONFIG_DURATION_MINUTES: i64 = 365 * 24 * 60;
 const DEFAULT_PRIVILEGED_SESSION_TTL_SECONDS: i64 = 30 * 60;
+const CONFIGURATION_SOURCE_KEY: &str = "configuration_source";
+const FILE_ONLY_CONFIGURATION_SOURCE: &str = "file_only";
+
+/// Every application-behavior key required by the version-1 file-only runtime
+/// document. Database and Redis URLs are supplied by the lifecycle target and
+/// are required in the materialized file in addition to this list.
+pub const FILE_ONLY_RUNTIME_KEYS_V1: &[&str] = &[
+    "configuration_source",
+    "environment",
+    "bind_addr",
+    "cors_allowed_origins",
+    "trusted_proxy_cidrs",
+    "http_connect_timeout_seconds",
+    "http_request_timeout_seconds",
+    "api_request_timeout_seconds",
+    "password_kdf_max_parallel",
+    "auth_session_ttl_seconds",
+    "privileged_auth_session_ttl_seconds",
+    "auth_session_max_per_user",
+    "privileged_step_up_enable",
+    "privileged_step_up_ttl_seconds",
+    "privileged_step_up_max_attempts",
+    "privileged_step_up_attempt_window_seconds",
+    "legacy_auth_params_enable",
+    "legacy_jwt_cutoff_unix",
+    "app_key",
+    "app_name",
+    "app_url",
+    "app_description",
+    "logo",
+    "tos_url",
+    "force_https",
+    "email_verify",
+    "email_template",
+    "email_host",
+    "email_port",
+    "email_username",
+    "email_password",
+    "email_encryption",
+    "email_from_address",
+    "stop_register",
+    "invite_force",
+    "invite_never_expire",
+    "email_whitelist_enable",
+    "email_whitelist_suffix",
+    "email_gmail_limit_enable",
+    "recaptcha_enable",
+    "recaptcha_site_key",
+    "recaptcha_key",
+    "register_limit_by_ip_enable",
+    "register_limit_count",
+    "register_limit_expire",
+    "telegram_bot_enable",
+    "telegram_bot_token",
+    "telegram_discuss_id",
+    "telegram_channel_id",
+    "telegram_discuss_link",
+    "commission_withdraw_method",
+    "withdraw_close_enable",
+    "currency",
+    "currency_symbol",
+    "commission_distribution_enable",
+    "commission_auto_check_enable",
+    "commission_distribution_l1",
+    "commission_distribution_l2",
+    "commission_distribution_l3",
+    "subscribe_url",
+    "subscribe_path",
+    "show_subscribe_method",
+    "show_subscribe_expire",
+    "show_info_to_server_enable",
+    "allow_new_period",
+    "reset_traffic_method",
+    "try_out_enable",
+    "try_out_plan_id",
+    "try_out_hour",
+    "plan_change_enable",
+    "surplus_enable",
+    "invite_commission",
+    "commission_first_time_enable",
+    "new_order_event_id",
+    "renew_order_event_id",
+    "change_order_event_id",
+    "deposit_bounus",
+    "invite_gen_limit",
+    "ticket_status",
+    "commission_withdraw_limit",
+    "server_token",
+    "server_legacy_token_enable",
+    "server_require_idempotency_key",
+    "server_api_url",
+    "server_push_interval",
+    "server_pull_interval",
+    "server_node_report_min_traffic",
+    "server_device_online_min_traffic",
+    "device_limit_mode",
+    "server_log_enable",
+    "server_v2ray_domain",
+    "server_v2ray_protocol",
+    "frontend_theme_color",
+    "frontend_background_url",
+    "frontend_custom_html",
+    "frontend_admin_path",
+    "secure_path",
+    "safe_mode_enable",
+    "password_limit_enable",
+    "password_limit_count",
+    "password_limit_expire",
+    "windows_version",
+    "windows_download_url",
+    "macos_version",
+    "macos_download_url",
+    "android_version",
+    "android_download_url",
+];
 
 /// Convert a validated minute setting to seconds. The clamp is a final defense
 /// for manually constructed `AppConfig` values in embedders/tests; normal file
@@ -212,9 +328,10 @@ impl AppConfig {
         Self::try_from_runtime_paths(RuntimePaths::from_env())
     }
 
-    /// Reloads the exact runtime config file used by this snapshot. Environment
-    /// overrides remain authoritative, while runtime paths cannot jump to a
-    /// different file because another thread mutates process environment.
+    /// Reloads the exact runtime config file used by this snapshot. Ordinary
+    /// installs retain environment overrides; a lifecycle-generated
+    /// `configuration_source=file_only` snapshot ignores value overrides.
+    /// Runtime paths cannot jump to a different file during reload.
     pub fn reload(&self) -> io::Result<Self> {
         Self::try_from_runtime_paths(self.runtime_paths.clone())
     }
@@ -226,13 +343,31 @@ impl AppConfig {
                 format!("failed to load {}: {error}", runtime_paths.config.display()),
             )
         })?;
+        Self::try_from_config_map(file_config, runtime_paths)
+    }
+
+    /// Builds and validates a runtime snapshot from an already parsed JSON
+    /// document. Lifecycle tooling uses this to prove that a complete,
+    /// file-only document has the same semantics the API and worker will load,
+    /// without staging or writing the eventual runtime file.
+    pub fn try_from_config_map(
+        file_config: Map<String, Value>,
+        runtime_paths: RuntimePaths,
+    ) -> io::Result<Self> {
         validate_scalar_config(&file_config)?;
-        let environment = RuntimeEnvironment::parse(env_opt("V2BOARD_ENV").as_deref())
-            .map_err(|message| io::Error::new(io::ErrorKind::InvalidInput, message))?;
-        let app_key = resolve_app_key(environment, env_opt("APP_KEY"))
-            .map_err(|message| io::Error::new(io::ErrorKind::InvalidInput, message))?;
-        let database_url = env_or("DATABASE_URL", "mysql://v2board:v2board@mysql:3306/v2board");
-        let redis_url = env_or("REDIS_URL", "redis://redis:6379/1");
+        let environment = RuntimeEnvironment::parse(
+            config_or_env(&file_config, "environment", "V2BOARD_ENV").as_deref(),
+        )
+        .map_err(|message| io::Error::new(io::ErrorKind::InvalidInput, message))?;
+        let app_key = resolve_app_key(
+            environment,
+            config_or_env(&file_config, "app_key", "APP_KEY"),
+        )
+        .map_err(|message| io::Error::new(io::ErrorKind::InvalidInput, message))?;
+        let database_url = config_or_env(&file_config, "database_url", "DATABASE_URL")
+            .unwrap_or_else(|| "mysql://v2board:v2board@mysql:3306/v2board".to_string());
+        let redis_url = config_or_env(&file_config, "redis_url", "REDIS_URL")
+            .unwrap_or_else(|| "redis://redis:6379/1".to_string());
         validate_datastore_transport(environment, &database_url, &redis_url)?;
         let server_token = config_or_env(&file_config, "server_token", "V2BOARD_SERVER_TOKEN");
         validate_production_secret(environment, "server_token", server_token.as_deref())?;
@@ -309,7 +444,8 @@ impl AppConfig {
 
         Ok(Self {
             environment,
-            bind_addr: env_or("RUST_BIND_ADDR", "0.0.0.0:8080"),
+            bind_addr: config_or_env(&file_config, "bind_addr", "RUST_BIND_ADDR")
+                .unwrap_or_else(|| "0.0.0.0:8080".to_string()),
             database_url,
             redis_url,
             cors_allowed_origins,
@@ -855,13 +991,6 @@ impl RuntimePaths {
     }
 }
 
-fn env_or(key: &str, default: &str) -> String {
-    env::var(key)
-        .ok()
-        .filter(|value| !value.trim().is_empty() && value != "null")
-        .unwrap_or_else(|| default.to_string())
-}
-
 const fn register_ip_limit_default(environment: RuntimeEnvironment) -> bool {
     environment.is_production()
 }
@@ -989,7 +1118,7 @@ fn load_cors_allowed_origins(
     config: &Map<String, Value>,
     app_url: Option<&str>,
 ) -> io::Result<Vec<String>> {
-    let configured = env_opt("V2BOARD_CORS_ALLOWED_ORIGINS")
+    let configured = environment_value(config, "V2BOARD_CORS_ALLOWED_ORIGINS")
         .map(|value| parse_list(&value))
         .or_else(|| {
             config.get("cors_allowed_origins").map(|value| match value {
@@ -1121,6 +1250,7 @@ fn is_obvious_secret_placeholder(value: &str) -> bool {
 /// malformed integer silently selected its default. Security controls must not
 /// fail open this way.
 fn validate_scalar_config(config: &Map<String, Value>) -> io::Result<()> {
+    validate_configuration_source(config)?;
     const BOOL_SETTINGS: &[(&str, &str)] = &[
         ("force_https", "V2BOARD_FORCE_HTTPS"),
         ("email_verify", "V2BOARD_EMAIL_VERIFY"),
@@ -1395,7 +1525,7 @@ fn scalar_setting(
     config_key: &str,
     env_key: &str,
 ) -> io::Result<Option<String>> {
-    if let Some(value) = env_opt(env_key) {
+    if let Some(value) = environment_value(config, env_key) {
         return Ok(Some(value));
     }
     let Some(value) = config.get(config_key) else {
@@ -1405,7 +1535,8 @@ fn scalar_setting(
         Value::String(value) => Ok(Some(value.trim().to_string())),
         Value::Number(value) => Ok(Some(value.to_string())),
         Value::Bool(value) => Ok(Some(if *value { "true" } else { "false" }.to_string())),
-        Value::Null | Value::Array(_) | Value::Object(_) => Err(invalid_setting(
+        Value::Null => Ok(None),
+        Value::Array(_) | Value::Object(_) => Err(invalid_setting(
             config_key,
             "must be a scalar string, number, or boolean",
         )),
@@ -1574,7 +1705,7 @@ fn crc32b_hex(bytes: &[u8]) -> String {
 }
 
 fn config_or_env(config: &Map<String, Value>, config_key: &str, env_key: &str) -> Option<String> {
-    env_opt(env_key).or_else(|| {
+    environment_value(config, env_key).or_else(|| {
         config
             .get(config_key)
             .and_then(config_value_string)
@@ -1645,18 +1776,68 @@ fn config_list(
     env_key: &str,
     default: &[&str],
 ) -> Vec<String> {
-    env_opt(env_key)
-        .map(|value| parse_list(&value))
-        .or_else(|| {
-            config.get(config_key).map(|value| match value {
-                Value::Array(items) => items.iter().filter_map(config_value_string).collect(),
-                value => config_value_string(value)
-                    .map(|value| parse_list(&value))
-                    .unwrap_or_default(),
-            })
-        })
-        .filter(|items| !items.is_empty())
-        .unwrap_or_else(|| default.iter().map(|item| (*item).to_string()).collect())
+    if let Some(value) = environment_value(config, env_key) {
+        return parse_list(&value);
+    }
+    if let Some(value) = config.get(config_key) {
+        return match value {
+            // An explicit empty JSON array means empty. Treating it as missing
+            // would silently resurrect built-in operator defaults after a
+            // provision spec deliberately disabled every item.
+            Value::Array(items) => items.iter().filter_map(config_value_string).collect(),
+            value => config_value_string(value)
+                .map(|value| parse_list(&value))
+                .unwrap_or_default(),
+        };
+    }
+    default.iter().map(|item| (*item).to_string()).collect()
+}
+
+fn environment_value(config: &Map<String, Value>, env_key: &str) -> Option<String> {
+    (!configuration_is_file_only(config))
+        .then(|| env_opt(env_key))
+        .flatten()
+}
+
+fn configuration_is_file_only(config: &Map<String, Value>) -> bool {
+    config.get(CONFIGURATION_SOURCE_KEY).and_then(Value::as_str)
+        == Some(FILE_ONLY_CONFIGURATION_SOURCE)
+}
+
+fn validate_configuration_source(config: &Map<String, Value>) -> io::Result<()> {
+    match config.get(CONFIGURATION_SOURCE_KEY) {
+        None => Ok(()),
+        Some(Value::String(value)) if value == FILE_ONLY_CONFIGURATION_SOURCE => {
+            let expected = FILE_ONLY_RUNTIME_KEYS_V1
+                .iter()
+                .copied()
+                .chain(["database_url", "redis_url"])
+                .collect::<BTreeSet<_>>();
+            let actual = config.keys().map(String::as_str).collect::<BTreeSet<_>>();
+            let missing = expected.difference(&actual).copied().collect::<Vec<_>>();
+            if !missing.is_empty() {
+                return Err(invalid_setting(
+                    CONFIGURATION_SOURCE_KEY,
+                    &format!("file_only document is missing keys: {}", missing.join(", ")),
+                ));
+            }
+            let unknown = actual.difference(&expected).copied().collect::<Vec<_>>();
+            if !unknown.is_empty() {
+                return Err(invalid_setting(
+                    CONFIGURATION_SOURCE_KEY,
+                    &format!(
+                        "file_only document contains unsupported keys: {}",
+                        unknown.join(", ")
+                    ),
+                ));
+            }
+            Ok(())
+        }
+        Some(_) => Err(invalid_setting(
+            CONFIGURATION_SOURCE_KEY,
+            "must be the exact string file_only when present",
+        )),
+    }
 }
 
 fn parse_bool(value: &str) -> bool {
@@ -2027,6 +2208,38 @@ mod tests {
         assert_eq!(
             config_list(&config, "domains", "V2BOARD_TEST_UNUSED_LIST", &[]),
             vec!["example.com", "example.org"]
+        );
+
+        let empty = serde_json::json!({ "domains": [] })
+            .as_object()
+            .expect("object")
+            .clone();
+        assert!(
+            config_list(
+                &empty,
+                "domains",
+                "V2BOARD_TEST_UNUSED_LIST",
+                &["default.example"]
+            )
+            .is_empty(),
+            "an explicit empty list must not restore built-in defaults"
+        );
+    }
+
+    #[test]
+    fn file_only_configuration_ignores_value_environment() {
+        assert!(env::var("PATH").is_ok(), "test process must have PATH");
+        let config = serde_json::json!({
+            "configuration_source": "file_only",
+            "app_name": "From file"
+        })
+        .as_object()
+        .expect("object")
+        .clone();
+        assert_eq!(environment_value(&config, "PATH"), None);
+        assert_eq!(
+            config_or_env(&config, "app_name", "PATH").as_deref(),
+            Some("From file")
         );
     }
 

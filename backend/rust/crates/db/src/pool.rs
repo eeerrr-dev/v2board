@@ -100,6 +100,10 @@ pub enum DbInitError {
     SeedLockUnavailable,
     #[error("lost the local seed lock before it could be released")]
     SeedLockLost,
+    #[error(
+        "database contains tables but no native SQLx migration lineage; ordinary migrate cannot adopt a legacy or unknown schema—use the reviewed provision workflow"
+    )]
+    UnboundMigrationTarget,
 }
 
 pub async fn connect_mysql(database_url: &str) -> Result<DbPool, DbInitError> {
@@ -150,6 +154,7 @@ pub async fn migrate_mysql(pool: &DbPool) -> Result<(), DbInitError> {
     // Validate this before touching schema state. A production deployment must
     // never turn a misspelled migration job into the well-known local admin.
     let should_seed_local = local_seed_enabled()?;
+    reject_unbound_migration_target(pool).await?;
     preflight_unfinished_order_uniqueness(pool).await?;
     preflight_giftcard_redemptions(pool).await?;
     MIGRATOR.run(pool).await?;
@@ -157,6 +162,18 @@ pub async fn migrate_mysql(pool: &DbPool) -> Result<(), DbInitError> {
         seed_local(pool).await?;
     }
     Ok(())
+}
+
+async fn reject_unbound_migration_target(pool: &DbPool) -> Result<(), DbInitError> {
+    let table_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE'",
+    )
+    .fetch_one(pool)
+    .await?;
+    if table_count == 0 || table_exists(pool, "_sqlx_migrations").await? {
+        return Ok(());
+    }
+    Err(DbInitError::UnboundMigrationTarget)
 }
 
 async fn preflight_giftcard_redemptions(pool: &DbPool) -> Result<(), DbInitError> {
