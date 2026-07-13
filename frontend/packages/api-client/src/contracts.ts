@@ -430,7 +430,7 @@ export const adminUserSchema = adminUserBaseSchema.extend({
   subscribe_url: z.string(),
 });
 export const adminUserDetailSchema = adminUserBaseSchema.extend({
-  invite_user: z.looseObject({ email: z.string().optional() }).optional(),
+  invite_user: z.looseObject({ email: z.string().optional() }).nullable().optional(),
 });
 
 export const adminUserTrafficSchema = z.looseObject({

@@ -1017,6 +1017,14 @@ describe('createApiClient', () => {
       total_used: 3221225472,
       invite_user_email: 'invite@example.com',
     });
+
+    mock.resetHandlers();
+    mock.onGet('/admin-path/user/getUserInfoById?id=1').reply(200, {
+      data: { ...rawUser, invite_user: null },
+    });
+    const userWithoutInviter = await getUserInfoById(client, 1);
+    expect(userWithoutInviter.invite_user).toBeNull();
+    expect(userWithoutInviter).not.toHaveProperty('invite_user_email');
   });
 
   it('submits legacy server-manage sort payloads as JSON', async () => {

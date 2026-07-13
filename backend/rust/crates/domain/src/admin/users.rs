@@ -442,10 +442,11 @@ impl AdminService {
                 'remarks', u.remarks, 'last_login_ip', u.last_login_ip,
                 'password_algo', u.password_algo, 'password_salt', u.password_salt,
                 'telegram_id', u.telegram_id,
-                'last_login_at', u.last_login_at, 'created_at', u.created_at, 'updated_at', u.updated_at,
-                'invite_user', CASE WHEN i.id IS NULL THEN NULL
-                    ELSE jsonb_build_object('id', i.id, 'email', i.email) END
-            )
+                'last_login_at', u.last_login_at, 'created_at', u.created_at, 'updated_at', u.updated_at
+            ) || CASE WHEN i.id IS NULL THEN '{}'::jsonb
+                ELSE jsonb_build_object(
+                    'invite_user', jsonb_build_object('id', i.id, 'email', i.email)
+                ) END
             FROM v2_user u
             LEFT JOIN v2_plan p ON p.id = u.plan_id
             LEFT JOIN v2_user i ON i.id = u.invite_user_id
@@ -1218,6 +1219,20 @@ mod tests {
     #[test]
     fn deletion_ids_are_sorted_and_deduplicated_for_stable_locking() {
         assert_eq!(sorted_unique_user_ids(vec![9, 2, 9, 4]), vec![2, 4, 9]);
+    }
+
+    #[test]
+    fn user_detail_omits_an_absent_inviter_like_the_legacy_contract() {
+        let source = include_str!("users.rs");
+        let detail_start = source.find("pub(super) async fn user_detail").unwrap();
+        let detail_end = source[detail_start..]
+            .find("pub(super) async fn staff_user_detail")
+            .map(|offset| detail_start + offset)
+            .unwrap();
+        let detail = &source[detail_start..detail_end];
+
+        assert!(detail.contains("CASE WHEN i.id IS NULL THEN '{}'::jsonb"));
+        assert!(!detail.contains("'invite_user', CASE WHEN i.id IS NULL THEN NULL"));
     }
 
     #[test]
