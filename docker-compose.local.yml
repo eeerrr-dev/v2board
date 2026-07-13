@@ -46,17 +46,6 @@ x-rust-volumes: &rust-volumes
   - rust-target:/app/target
   - v2board-runtime:/var/lib/v2board
 
-# The Oracle Linux/MySQL integration runner must not reuse native artifacts
-# linked in the Debian development image. Registry and git downloads are safe
-# to share; the compiled target directory is deliberately isolated.
-x-legacy-rust-volumes: &legacy-rust-volumes
-  - ./backend/rust:/src/backend/rust:ro
-  - ./deploy/systemd:/src/deploy/systemd:ro
-  - rust-cargo-registry:/usr/local/cargo/registry
-  - rust-cargo-git:/usr/local/cargo/git
-  - legacy-rust-target:/app/target
-  - v2board-runtime:/var/lib/v2board
-
 x-frontend-volumes: &frontend-volumes
   - ./frontend:/src/frontend:ro
   - frontend-workspace:/app/frontend
@@ -367,95 +356,6 @@ services:
     volumes:
       - redis-data:/data
 
-  legacy-mysql:
-    profiles: ["legacy-integration"]
-    logging: *local-logging
-    image: mysql:8.4.6@sha256:869218921e61d6c3c89820955d63cca42971f0e3e6c1e2792247bbd944ebc6e9
-    environment:
-      MYSQL_DATABASE: v2board
-      MYSQL_ROOT_PASSWORD: legacy-root-test-password
-    healthcheck:
-      test:
-        - CMD-SHELL
-        - mysqladmin ping -h 127.0.0.1 -uroot -p"$${MYSQL_ROOT_PASSWORD}" --silent
-      interval: 5s
-      timeout: 5s
-      retries: 30
-    tmpfs:
-      - /var/lib/mysql
-    volumes:
-      - ./references/wyx2685-v2board/database/install.sql:/docker-entrypoint-initdb.d/001-install.sql:ro
-      - ./backend/rust/test-fixtures/legacy-mysql-reader.sql:/docker-entrypoint-initdb.d/002-reader.sql:ro
-      - ./backend/rust/test-fixtures/legacy-mysql-seed.sql:/docker-entrypoint-initdb.d/003-seed.sql:ro
-
-  legacy-mysql-restore:
-    profiles: ["legacy-integration"]
-    logging: *local-logging
-    image: mysql:8.4.6@sha256:869218921e61d6c3c89820955d63cca42971f0e3e6c1e2792247bbd944ebc6e9
-    environment:
-      MYSQL_ROOT_PASSWORD: restore-root-test-password
-    healthcheck:
-      test:
-        - CMD-SHELL
-        - mysqladmin ping -h 127.0.0.1 -uroot -p"$${MYSQL_ROOT_PASSWORD}" --silent
-      interval: 5s
-      timeout: 5s
-      retries: 30
-    tmpfs:
-      - /var/lib/mysql
-
-  legacy-mysql80:
-    profiles: ["legacy-integration"]
-    logging: *local-logging
-    image: mysql:8.0.44@sha256:9c3380eac945af0736031b200027f581925927c81e010056214a4bd6b6693714
-    environment:
-      MYSQL_DATABASE: v2board
-      MYSQL_ROOT_PASSWORD: legacy80-root-test-password
-    healthcheck:
-      test:
-        - CMD-SHELL
-        - mysqladmin ping -h 127.0.0.1 -uroot -p"$${MYSQL_ROOT_PASSWORD}" --silent
-      interval: 5s
-      timeout: 5s
-      retries: 30
-    tmpfs:
-      - /var/lib/mysql
-    volumes:
-      - ./references/wyx2685-v2board/database/install.sql:/docker-entrypoint-initdb.d/001-install.sql:ro
-      - ./backend/rust/test-fixtures/legacy-mysql-reader.sql:/docker-entrypoint-initdb.d/002-reader.sql:ro
-      - ./backend/rust/test-fixtures/legacy-mysql-seed.sql:/docker-entrypoint-initdb.d/003-seed.sql:ro
-
-  legacy-test-runner:
-    profiles: ["legacy-integration"]
-    logging: *local-logging
-    build:
-      context: .
-      dockerfile: Dockerfile.rust
-      target: legacy-integration
-    image: v2board-legacy-integration
-    init: true
-    working_dir: /src/backend/rust
-    entrypoint: ["bash"]
-    volumes: *legacy-rust-volumes
-
-  legacy-redis:
-    profiles: ["legacy-integration"]
-    logging: *local-logging
-    image: redis:8.8.0-alpine@sha256:9d317178eceac8454a2284a9e6df2466b93c745529947f0cd42a0fa9609d7005
-    command:
-      - redis-server
-      - --save
-      - ""
-      - --appendonly
-      - "no"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 2s
-      timeout: 2s
-      retries: 30
-    tmpfs:
-      - /data
-
   mailpit:
     logging: *local-logging
     image: axllent/mailpit:v1.30.3@sha256:956d688cbd13dca36c72d8e94c34d6d1cdf4a005aa6aa4ff6edaaac56c34d8df
@@ -486,5 +386,4 @@ volumes:
   rust-cargo-registry:
   rust-cargo-git:
   rust-target:
-  legacy-rust-target:
   v2board-runtime:

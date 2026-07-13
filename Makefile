@@ -1,15 +1,9 @@
 .PHONY: up down reset sync logs ps shell doctor \
-	rust-check rust-test rust-integration rust-lifecycle-ledger-integration rust-legacy-mysql-integration rust-legacy-backup-integration rust-legacy-converter-integration rust-legacy-postgres-integration rust-legacy-redis-integration rust-route-audit rust-worker-reconcile rust-target-gate \
-	bare-metal-fault-matrix-plan bare-metal-fault-matrix-audit bare-metal-fault-matrix-verify-guest bare-metal-fault-matrix \
+	rust-check rust-test rust-integration rust-route-audit rust-worker-reconcile rust-target-gate \
 	public-bundle-audit runtime-isolation-audit native-database-audit native-release-audit frontend-source-audit parity-config-audit ui-sync-audit \
 	deploy-smoke visual-smoke interaction-parity accessibility-smoke behavior-parity \
 	reference-oracle-check reference-oracle-up reference-oracle-down \
 	clean-frontend-runs clean-host clean-host-apply mailpit-ui admin-url
-
-# Integration lanes share disposable service identities inside one Compose
-# project. Keep a single make invocation strictly sequential; every lane also
-# uses a unique database where the datastore permits it.
-.NOTPARALLEL: rust-integration rust-lifecycle-ledger-integration rust-legacy-mysql-integration rust-legacy-backup-integration rust-legacy-converter-integration rust-legacy-postgres-integration rust-legacy-redis-integration
 
 DC := $(shell \
 	if docker compose version >/dev/null 2>&1; then echo "docker compose"; else echo ""; fi)
@@ -33,14 +27,6 @@ VISUAL_PARITY_VIEWPORTS ?= desktop mobile
 PARITY_WORKERS ?=
 INTERACTION_PARITY_ARTIFACT_DIR ?= /app/frontend/.cache/interaction-parity
 A11Y_SMOKE_SCENARIOS ?= a11y-user-login a11y-admin-login a11y-user-dashboard a11y-admin-users
-BARE_METAL_MATRIX_ADAPTER ?=
-BARE_METAL_MATRIX_MANIFEST ?=
-BARE_METAL_MATRIX_RELEASE ?=
-BARE_METAL_MATRIX_GUEST_BINARY ?=
-BARE_METAL_MATRIX_REVISION ?=
-BARE_METAL_MATRIX_OUTPUT ?=
-BARE_METAL_MATRIX_HARD_RESET ?= not-run
-
 INTERACTION_PARITY_SCENARIOS ?= user-login-form-language user-login-language-persistence user-home-root-page-state user-register-form-state user-forget-form-state admin-root-page-state admin-login-form-state \
 	admin-system-queue-state user-dashboard-header-language-dropdown user-session-expired-redirect user-auth-401-no-redirect user-dashboard-dark-mode-persistence user-dashboard-subscribe-drawer user-dashboard-subscribe-import-links \
 	user-dashboard-subscribe-import-ios-ua user-dashboard-subscribe-import-android-ua user-dashboard-subscribe-import-macos-ua user-dashboard-subscribe-import-windows-ua user-dashboard-notice-carousel user-dashboard-reset-package-confirm user-dashboard-new-period-confirm user-dashboard-alert-links \
@@ -127,106 +113,7 @@ rust-test:
 	$(DCF) run --rm -T --no-deps --entrypoint bash rust-api -lc \
 		'. /usr/local/cargo/env; cargo test --workspace --locked'
 
-bare-metal-fault-matrix-plan:
-	@backend/rust/scripts/run-bare-metal-fault-matrix-supervisor.sh \
-		--hard-reset "$(BARE_METAL_MATRIX_HARD_RESET)"
-
-bare-metal-fault-matrix-audit:
-	@bash -n \
-		backend/rust/scripts/run-bare-metal-fault-matrix-supervisor.sh \
-		backend/rust/test-fixtures/legacy-fault-matrix/cleanup-guest.sh
-	@backend/rust/scripts/run-bare-metal-fault-matrix-supervisor.sh >/dev/null
-	@if backend/rust/scripts/run-bare-metal-fault-matrix-supervisor.sh --execute >/dev/null 2>&1; then \
-		echo 'matrix supervisor accepted an incomplete destructive invocation'; exit 1; \
-	fi
-	@if backend/rust/scripts/run-bare-metal-fault-matrix-supervisor.sh --execute \
-		--guest-binary /definitely-missing/v2board-matrix-guest >/dev/null 2>&1; then \
-		echo 'matrix supervisor accepted a missing guest binary'; exit 1; \
-	fi
-	@if backend/rust/test-fixtures/legacy-fault-matrix/cleanup-guest.sh \
-		--expected-guest-id audit-missing-marker >/dev/null 2>&1; then \
-		echo 'matrix guest cleanup accepted a host without its disposable marker'; exit 1; \
-	fi
-	@! rg -n 'v2board-bare-metal-fault-matrix|bare-metal-fault-matrix' \
-		Dockerfile.rust deploy/systemd
-	@rg -Fqx 'required-features = ["bare-metal-fault-matrix"]' \
-		backend/rust/crates/lifecycle/Cargo.toml
-	@rg -Fqx 'ConditionPathExists=/etc/v2board/bare-metal-fault-matrix-disposable.json' \
-		backend/rust/test-fixtures/legacy-fault-matrix/systemd/v2board-fault-matrix-guest.service
-	@rg -Fq '.process_alive_before_reset == true' \
-		backend/rust/scripts/run-bare-metal-fault-matrix-supervisor.sh
-	@rg -Fq 'hard_reset_complete_case_count -eq $$hard_reset_expected_case_count' \
-		backend/rust/scripts/run-bare-metal-fault-matrix-supervisor.sh
-	@rg -Fq 'bare-metal-fault-matrix-verify-guest' \
-		backend/rust/scripts/run-bare-metal-fault-matrix-supervisor.sh
-	@rg -Fq '.production_capability_available == false' \
-		backend/rust/scripts/run-bare-metal-fault-matrix-supervisor.sh
-	@rg -Fq '.machine.machine_id_sha256 == $$machine_id_sha256' \
-		backend/rust/scripts/run-bare-metal-fault-matrix-supervisor.sh
-	@! rg -n '^\[Install\]$$' \
-		backend/rust/test-fixtures/legacy-fault-matrix/systemd/*.service
-	$(DCF) build rust-api
-	$(DCF) run --rm -T --no-deps --entrypoint bash rust-api -lc \
-		'. /usr/local/cargo/env; set -eu; \
-		 cargo check --locked -p v2board-lifecycle --no-default-features --bin v2board-lifecycle; \
-		 cargo clippy --locked -p v2board-lifecycle --features bare-metal-fault-matrix \
-			--bin v2board-bare-metal-fault-matrix-guest --tests -- -D warnings; \
-		 cargo test --locked -p v2board-lifecycle --features bare-metal-fault-matrix \
-			--bin v2board-bare-metal-fault-matrix-guest; \
-		 cargo test --locked -p v2board-provision --features bare-metal-fault-matrix \
-			bare_metal_fault_matrix::tests'
-	@echo 'Bare-metal matrix scripts fail closed and test-only fixtures are absent from production release inputs.'
-
-bare-metal-fault-matrix-verify-guest:
-	@test -n "$(BARE_METAL_MATRIX_GUEST_BINARY)" || \
-		{ echo 'BARE_METAL_MATRIX_GUEST_BINARY is required'; exit 64; }
-	@case "$(BARE_METAL_MATRIX_GUEST_BINARY)" in /*) ;; \
-		*) echo 'BARE_METAL_MATRIX_GUEST_BINARY must be absolute'; exit 64 ;; esac
-	@test -f "$(BARE_METAL_MATRIX_GUEST_BINARY)" && test ! -L "$(BARE_METAL_MATRIX_GUEST_BINARY)" || \
-		{ echo 'BARE_METAL_MATRIX_GUEST_BINARY must be a regular non-symlink file'; exit 64; }
-	@test -n "$(BARE_METAL_MATRIX_REVISION)" || \
-		{ echo 'BARE_METAL_MATRIX_REVISION is required'; exit 64; }
-	@test "$$(git rev-parse HEAD)" = "$(BARE_METAL_MATRIX_REVISION)" || \
-		{ echo 'BARE_METAL_MATRIX_REVISION must equal clean HEAD'; exit 65; }
-	@test -z "$$(git status --porcelain=v1 --untracked-files=all)" || \
-		{ echo 'guest rebuild verification requires a clean worktree'; exit 65; }
-	$(DCF) build rust-api
-	$(DCF) run --rm -T --no-deps --entrypoint bash \
-		-v "$(BARE_METAL_MATRIX_GUEST_BINARY):/matrix-input/v2board-bare-metal-fault-matrix-guest:ro" \
-		rust-api -lc \
-		'. /usr/local/cargo/env; set -eu; \
-		 cargo build --release --locked -p v2board-lifecycle --features bare-metal-fault-matrix \
-			--bin v2board-bare-metal-fault-matrix-guest; \
-		 cmp /app/target/release/v2board-bare-metal-fault-matrix-guest \
-			/matrix-input/v2board-bare-metal-fault-matrix-guest'
-
-bare-metal-fault-matrix: bare-metal-fault-matrix-audit
-	@test -n "$(BARE_METAL_MATRIX_ADAPTER)" || \
-		{ echo 'BARE_METAL_MATRIX_ADAPTER is required'; exit 64; }
-	@test -n "$(BARE_METAL_MATRIX_MANIFEST)" || \
-		{ echo 'BARE_METAL_MATRIX_MANIFEST is required'; exit 64; }
-	@test -n "$(BARE_METAL_MATRIX_RELEASE)" || \
-		{ echo 'BARE_METAL_MATRIX_RELEASE is required'; exit 64; }
-	@test -n "$(BARE_METAL_MATRIX_GUEST_BINARY)" || \
-		{ echo 'BARE_METAL_MATRIX_GUEST_BINARY is required'; exit 64; }
-	@case "$(BARE_METAL_MATRIX_GUEST_BINARY)" in /*) ;; \
-		*) echo 'BARE_METAL_MATRIX_GUEST_BINARY must be absolute'; exit 64 ;; esac
-	@test -f "$(BARE_METAL_MATRIX_GUEST_BINARY)" && test ! -L "$(BARE_METAL_MATRIX_GUEST_BINARY)" || \
-		{ echo 'BARE_METAL_MATRIX_GUEST_BINARY must be a regular non-symlink file'; exit 64; }
-	@test -n "$(BARE_METAL_MATRIX_REVISION)" || \
-		{ echo 'BARE_METAL_MATRIX_REVISION is required'; exit 64; }
-	@test -n "$(BARE_METAL_MATRIX_OUTPUT)" || \
-		{ echo 'BARE_METAL_MATRIX_OUTPUT is required'; exit 64; }
-	@backend/rust/scripts/run-bare-metal-fault-matrix-supervisor.sh --execute \
-		--adapter "$(BARE_METAL_MATRIX_ADAPTER)" \
-		--manifest "$(BARE_METAL_MATRIX_MANIFEST)" \
-		--release "$(BARE_METAL_MATRIX_RELEASE)" \
-		--guest-binary "$(BARE_METAL_MATRIX_GUEST_BINARY)" \
-		--revision "$(BARE_METAL_MATRIX_REVISION)" \
-		--output "$(BARE_METAL_MATRIX_OUTPUT)" \
-		--hard-reset "$(BARE_METAL_MATRIX_HARD_RESET)"
-
-rust-integration: rust-lifecycle-ledger-integration rust-legacy-mysql-integration rust-legacy-converter-integration rust-legacy-postgres-integration rust-legacy-redis-integration
+rust-integration:
 	$(DCF) build rust-api
 	$(DCF) up -d --wait postgres clickhouse redis
 	$(DCF) exec -T postgres dropdb --force --if-exists -U v2board v2board_analytics_test
@@ -249,167 +136,6 @@ rust-integration: rust-lifecycle-ledger-integration rust-legacy-mysql-integratio
 		 cargo test --locked -p v2board-analytics --test outbox_roundtrip; \
 		 cargo build --locked -p v2board-workers; \
 		 cargo run --locked -p v2board-contract -- production-invariants'
-
-rust-lifecycle-ledger-integration:
-	$(DCF) build rust-api
-	$(DCF) up -d --wait postgres
-	@set -eu; \
-		database=v2board_lifecycle_ledger_test; \
-		migration_role=v2_lifecycle_migration; \
-		api_role=v2_lifecycle_api; \
-		worker_role=v2_lifecycle_worker; \
-		cleanup() { \
-			$(DCF) exec -T postgres dropdb --force --if-exists -U v2board "$$database" >/dev/null 2>&1 || true; \
-			$(DCF) exec -T postgres psql -v ON_ERROR_STOP=1 -U v2board -d postgres \
-				-c "DROP ROLE IF EXISTS $$api_role" \
-				-c "DROP ROLE IF EXISTS $$worker_role" \
-				-c "DROP ROLE IF EXISTS $$migration_role" >/dev/null 2>&1 || true; \
-		}; \
-		trap cleanup EXIT INT TERM; \
-		cleanup; \
-		$(DCF) exec -T postgres psql -v ON_ERROR_STOP=1 -U v2board -d postgres \
-			-c "CREATE ROLE $$migration_role LOGIN PASSWORD 'migration-test-password' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT" \
-			-c "CREATE ROLE $$api_role LOGIN PASSWORD 'api-test-password' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT" \
-			-c "CREATE ROLE $$worker_role LOGIN PASSWORD 'worker-test-password' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT"; \
-		$(DCF) exec -T postgres createdb -U v2board -O "$$migration_role" "$$database"; \
-		$(DCF) run --rm -T --no-deps --entrypoint bash \
-			-e RUST_INTEGRATION_LIFECYCLE_DATABASE_URL=postgresql://$$migration_role:migration-test-password@postgres:5432/$$database \
-			-e RUST_INTEGRATION_LIFECYCLE_API_DATABASE_URL=postgresql://$$api_role:api-test-password@postgres:5432/$$database \
-			-e RUST_INTEGRATION_LIFECYCLE_WORKER_DATABASE_URL=postgresql://$$worker_role:worker-test-password@postgres:5432/$$database \
-		rust-api -lc \
-		'. /usr/local/cargo/env; bash scripts/run-exact-ignored-test.sh v2board-provision \
-		 lifecycle_ledger::tests::postgres_lifecycle_ledger_is_atomic_idempotent_and_fail_closed'
-
-rust-legacy-mysql-integration:
-	@set -eu; \
-		cleanup() { $(DCF) rm -sf legacy-mysql legacy-mysql80 legacy-mysql-restore >/dev/null 2>&1 || true; }; \
-		trap cleanup EXIT INT TERM; \
-		$(DCF) build rust-api legacy-test-runner; \
-		cleanup; \
-		$(DCF) up -d --wait legacy-mysql legacy-mysql80 legacy-mysql-restore; \
-		$(DCF) run --rm -T --no-deps --entrypoint bash \
-			-e V2BOARD_LEGACY_MYSQL_TEST_URL=mysql://v2board_reader:v2board-reader-test-password@legacy-mysql:3306/v2board \
-			-e V2BOARD_LEGACY_FIXTURE_DATABASE_URL=mysql://root:legacy-root-test-password@legacy-mysql:3306/v2board \
-			rust-api -lc \
-			'. /usr/local/cargo/env; \
-			 bash scripts/run-exact-ignored-test.sh v2board-provision inspect::tests::legacy_inspection_pool_keeps_the_same_raw_snapshot_session; \
-			 bash scripts/run-exact-ignored-test.sh v2board-provision inspect::tests::pinned_mysql8_source_supports_the_complete_query_surface; \
-			 bash scripts/run-exact-ignored-test.sh v2board-provision legacy_copy::tests::mysql_json_object_preserves_integer_decimal_unicode_and_nul_fixture; \
-			 bash scripts/run-exact-ignored-test.sh v2board-provision native_legacy_source::tests::mysql_super_read_only_fence_is_durable_exact_and_retryable'; \
-		$(DCF) run --rm -T --no-deps --entrypoint bash \
-			-e V2BOARD_LEGACY_MYSQL_TEST_URL=mysql://v2board_reader:v2board-reader-test-password@legacy-mysql80:3306/v2board \
-			-e V2BOARD_LEGACY_FIXTURE_DATABASE_URL=mysql://root:legacy80-root-test-password@legacy-mysql80:3306/v2board \
-			rust-api -lc \
-			'. /usr/local/cargo/env; \
-			 bash scripts/run-exact-ignored-test.sh v2board-provision inspect::tests::legacy_inspection_pool_keeps_the_same_raw_snapshot_session; \
-			 bash scripts/run-exact-ignored-test.sh v2board-provision inspect::tests::pinned_mysql8_source_supports_the_complete_query_surface; \
-			 bash scripts/run-exact-ignored-test.sh v2board-provision legacy_copy::tests::mysql_json_object_preserves_integer_decimal_unicode_and_nul_fixture; \
-			 bash scripts/run-exact-ignored-test.sh v2board-provision native_legacy_source::tests::mysql_super_read_only_fence_is_durable_exact_and_retryable'; \
-		$(DCF) run --rm -T --no-deps --entrypoint bash \
-			-e V2BOARD_BACKUP_E2E_SOURCE_URL=mysql://v2board_reader:v2board-reader-test-password@legacy-mysql:3306/v2board \
-			-e V2BOARD_BACKUP_E2E_RESTORE_URL=mysql://root:restore-root-test-password@legacy-mysql-restore:3306/v2board_restore \
-			-e V2BOARD_BACKUP_E2E_AGE_IDENTITY_PATH=/tmp/v2board-age/identity.txt \
-			-e V2BOARD_BACKUP_E2E_AGE_RECIPIENT_PATH=/tmp/v2board-age/recipient.txt \
-			legacy-test-runner -lc \
-			'set -eu; install -d -m 0700 /tmp/v2board-age; \
-			 age-keygen -o /tmp/v2board-age/identity.txt >/dev/null; \
-			 age-keygen -y /tmp/v2board-age/identity.txt > /tmp/v2board-age/recipient.txt; \
-			 . /usr/local/cargo/env; \
-			 bash scripts/run-exact-ignored-test.sh v2board-provision legacy_backup::tests::real_age_stream_dump_restore_preserves_the_reference_fingerprint'; \
-		$(DCF) run --rm -T --no-deps --entrypoint bash \
-			-e V2BOARD_BACKUP_E2E_SOURCE_URL=mysql://v2board_reader:v2board-reader-test-password@legacy-mysql80:3306/v2board \
-			-e V2BOARD_BACKUP_E2E_RESTORE_URL=mysql://root:restore-root-test-password@legacy-mysql-restore:3306/v2board_restore \
-			-e V2BOARD_BACKUP_E2E_AGE_IDENTITY_PATH=/tmp/v2board-age/identity.txt \
-			-e V2BOARD_BACKUP_E2E_AGE_RECIPIENT_PATH=/tmp/v2board-age/recipient.txt \
-			legacy-test-runner -lc \
-			'set -eu; install -d -m 0700 /tmp/v2board-age; \
-			 age-keygen -o /tmp/v2board-age/identity.txt >/dev/null; \
-			 age-keygen -y /tmp/v2board-age/identity.txt > /tmp/v2board-age/recipient.txt; \
-			 . /usr/local/cargo/env; \
-			 bash scripts/run-exact-ignored-test.sh v2board-provision legacy_backup::tests::real_age_stream_dump_restore_preserves_the_reference_fingerprint'
-
-rust-legacy-backup-integration: rust-legacy-mysql-integration
-	@:
-
-# This target intentionally follows the MySQL/backup gate so both tests own
-# the same disposable Compose source container sequentially, even under -j.
-rust-legacy-converter-integration: rust-legacy-mysql-integration
-	@set -eu; \
-		database84v4=v2board_legacy_converter84_v4_test_$$$$; \
-		database84v5=v2board_legacy_converter84_v5_test_$$$$; \
-		database80v4=v2board_legacy_converter80_v4_test_$$$$; \
-		database80v5=v2board_legacy_converter80_v5_test_$$$$; \
-		clickhouse84v4=v2board_legacy_converter84_v4_test_$$$$; \
-		clickhouse84v5=v2board_legacy_converter84_v5_test_$$$$; \
-		clickhouse80v4=v2board_legacy_converter80_v4_test_$$$$; \
-		clickhouse80v5=v2board_legacy_converter80_v5_test_$$$$; \
-		cleanup() { \
-			$(DCF) rm -sf legacy-mysql legacy-mysql80 >/dev/null 2>&1 || true; \
-			for database in "$$database84v4" "$$database84v5" "$$database80v4" "$$database80v5"; do \
-				$(DCF) exec -T postgres dropdb --force --if-exists -U v2board "$$database" >/dev/null 2>&1 || true; \
-			done; \
-			for database in "$$clickhouse84v4" "$$clickhouse84v5" "$$clickhouse80v4" "$$clickhouse80v5"; do \
-				$(DCF) exec -T clickhouse clickhouse-client --user v2board_analytics --password v2board \
-					--query "DROP DATABASE IF EXISTS $$database SYNC" >/dev/null 2>&1 || true; \
-			done; \
-		}; \
-		run_case() { \
-			$(DCF) exec -T postgres createdb -U v2board "$$3"; \
-			$(DCF) exec -T clickhouse clickhouse-client --user v2board_analytics --password v2board \
-				--query "CREATE DATABASE $$4"; \
-			$(DCF) run --rm -T --no-deps --entrypoint bash \
-				-e V2BOARD_LEGACY_CONVERTER_SCHEMA_VERSION="$$2" \
-				-e V2BOARD_LEGACY_CONVERTER_MYSQL_URL=mysql://v2board_reader:v2board-reader-test-password@"$$1":3306/v2board \
-				-e V2BOARD_LEGACY_CONVERTER_POSTGRES_URL=postgresql://v2board:v2board@postgres:5432/"$$3" \
-				-e V2BOARD_LEGACY_CONVERTER_CLICKHOUSE_URL=http://clickhouse:8123 \
-				-e V2BOARD_LEGACY_CONVERTER_CLICKHOUSE_DATABASE="$$4" \
-				-e V2BOARD_LEGACY_CONVERTER_CLICKHOUSE_USERNAME=v2board_analytics \
-				-e V2BOARD_LEGACY_CONVERTER_CLICKHOUSE_PASSWORD=v2board \
-				rust-api -lc \
-				'. /usr/local/cargo/env; bash scripts/run-exact-ignored-test.sh v2board-provision \
-				 legacy_copy::tests::all_legacy_tables_follow_strategy_to_postgres_project_clickhouse_and_retry_exactly'; \
-		}; \
-		trap cleanup EXIT INT TERM; \
-		$(DCF) build rust-api; \
-		$(DCF) up -d --wait postgres clickhouse; \
-		cleanup; \
-		$(DCF) up -d --wait legacy-mysql legacy-mysql80; \
-		run_case legacy-mysql 4 "$$database84v4" "$$clickhouse84v4"; \
-		run_case legacy-mysql 5 "$$database84v5" "$$clickhouse84v5"; \
-		run_case legacy-mysql80 4 "$$database80v4" "$$clickhouse80v4"; \
-		run_case legacy-mysql80 5 "$$database80v5" "$$clickhouse80v5"
-
-rust-legacy-redis-integration:
-	@set -eu; \
-		cleanup() { $(DCF) rm -sf legacy-redis >/dev/null 2>&1 || true; }; \
-		trap cleanup EXIT INT TERM; \
-		$(DCF) build rust-api; \
-		cleanup; \
-		$(DCF) up -d --wait legacy-redis; \
-		$(DCF) run --rm -T --no-deps --entrypoint bash \
-			-e V2BOARD_LEGACY_REDIS_TEST_URL=redis://legacy-redis:6379/0 \
-			rust-api -lc \
-			'. /usr/local/cargo/env; bash scripts/run-exact-ignored-test.sh v2board-provision \
-			 native_legacy_source::tests::redis_traffic_freeze_is_atomic_retry_exact_and_preserves_direction_presence'
-
-rust-legacy-postgres-integration:
-	$(DCF) build rust-api
-	$(DCF) up -d --wait postgres
-	@set -eu; \
-		database=v2board_legacy_copy_test_$$$$; \
-		cleanup() { \
-			$(DCF) exec -T postgres dropdb --force --if-exists -U v2board "$$database" >/dev/null 2>&1 || true; \
-		}; \
-		trap cleanup EXIT INT TERM; \
-		cleanup; \
-		$(DCF) exec -T postgres createdb -U v2board "$$database"; \
-		$(DCF) run --rm -T --no-deps --entrypoint bash \
-			-e V2BOARD_TRAFFIC_FOLD_POSTGRES_URL=postgresql://v2board:v2board@postgres:5432/$$database \
-			-e V2BOARD_RUNTIME_ACL_TEST_POSTGRES_URL=postgresql://v2board:v2board@postgres:5432/$$database \
-			rust-api -lc \
-			'. /usr/local/cargo/env; \
-			 bash scripts/run-exact-ignored-test.sh v2board-provision legacy_copy::tests::postgres_traffic_fold_is_atomic_append_only_and_retry_exact; \
-			 bash scripts/run-exact-ignored-test.sh v2board-provision postgres_runtime_grants::tests::postgres_18_catalog_proves_exact_acl_and_detects_protected_grant'
 
 rust-route-audit:
 	$(DCF) build rust-api
@@ -471,14 +197,14 @@ native-database-audit:
 	matches="$$(printf '%s\n' "$$graph" | rg 'sqlx-mysql|v2board-provision|v2board-lifecycle' || true)"; \
 	if [ -n "$$matches" ]; then echo "$$matches"; exit 1; fi
 	@graph="$$( $(DCF) run --rm -T --no-deps --entrypoint bash rust-api -lc \
-		'. /usr/local/cargo/env; cargo tree --locked -e normal -p v2board-lifecycle' \
+		'. /usr/local/cargo/env; cargo tree --locked -e normal -p v2board-lifecycle -p v2board-provision' \
 		)" || exit $$?; \
-	printf '%s\n' "$$graph" | rg -q 'v2board-provision'; \
-	printf '%s\n' "$$graph" | rg -q 'sqlx-mysql'
+	matches="$$(printf '%s\n' "$$graph" | rg 'sqlx-mysql|redis|clickhouse' || true)"; \
+	if [ -n "$$matches" ]; then echo "$$matches"; exit 1; fi
 	@test ! -d backend/rust/migrations || \
 		test -z "$$(find backend/rust/migrations -type f -print -quit)"
 	@rg -q 'migrations-postgres' backend/rust/crates/db/src/pool.rs
-	@echo "API/worker/schema graphs exclude MySQL; only the isolated lifecycle graph contains the adapter."
+	@echo "API/worker/schema graphs exclude migration crates and MySQL; lifecycle/provision graphs exclude live datastore adapters."
 
 native-release-audit:
 	@test -f deploy/systemd/v2board-api.service

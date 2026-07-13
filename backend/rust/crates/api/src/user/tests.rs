@@ -103,10 +103,14 @@ fn giftcard_redemption_serializes_on_the_card_row() {
     assert!(GIFTCARD_FOR_UPDATE_SQL.contains("lower(code) = lower($1)"));
     let baseline = include_str!("../../../../migrations-postgres/0001_initial.sql");
     let extension = include_str!(
-        "../../../../migrations-postgres/0002_legacy_lifecycle_and_analytics_admission.sql"
+        "../../../../migrations-postgres/0002_giftcard_provenance_and_analytics_admission.sql"
     );
     assert!(baseline.contains("uniq_giftcard_code_canonical"));
     assert!(extension.contains("created_at_provenance = 'legacy_unknown'"));
+    assert!(extension.contains("CREATE TABLE v2_analytics_admission_policy"));
+    assert!(extension.contains("CREATE TABLE v2_analytics_admission_state"));
+    assert!(!extension.contains("v2_lifecycle_"));
+    assert!(!extension.contains("v2_legacy_traffic_fold"));
 }
 
 #[test]

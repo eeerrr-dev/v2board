@@ -576,7 +576,7 @@ mod tests {
     fn postgres_migrations_are_independent_from_the_mysql_lineage() {
         let baseline = include_str!("../../../migrations-postgres/0001_initial.sql");
         let extension = include_str!(
-            "../../../migrations-postgres/0002_legacy_lifecycle_and_analytics_admission.sql"
+            "../../../migrations-postgres/0002_giftcard_provenance_and_analytics_admission.sql"
         );
         let operator_authority =
             include_str!("../../../migrations-postgres/0003_operator_config_authority.sql");
@@ -586,10 +586,15 @@ mod tests {
         assert!(baseline.contains("CREATE TABLE v2_system_installation"));
         assert!(baseline.contains("CREATE TABLE v2_analytics_outbox"));
         assert!(!baseline.contains("CREATE TABLE v2_lifecycle_operation"));
-        assert!(extension.contains("CREATE TABLE v2_lifecycle_operation"));
-        assert!(extension.contains("CREATE TABLE v2_lifecycle_event"));
-        assert!(extension.contains("lifecycle events are append-only"));
+        assert!(!extension.contains("v2_lifecycle_"));
+        assert!(!extension.contains("v2_legacy_copy_checkpoint"));
+        assert!(!extension.contains("v2_legacy_traffic_fold"));
+        assert!(!extension.contains("source_redis"));
         assert!(extension.contains("created_at_provenance = 'legacy_unknown'"));
+        assert!(extension.contains("CREATE TABLE v2_analytics_admission_policy"));
+        assert!(extension.contains("CREATE TABLE v2_analytics_admission_state"));
+        assert!(extension.contains("CREATE FUNCTION v2_guard_analytics_admission_policy"));
+        assert!(extension.contains("CREATE FUNCTION v2_guard_analytics_admission_state"));
         assert!(operator_authority.contains("CREATE TABLE v2_operator_config_revision"));
         assert!(operator_authority.contains("format_version SMALLINT NOT NULL"));
         assert!(operator_authority.contains("operator configuration revisions are immutable"));

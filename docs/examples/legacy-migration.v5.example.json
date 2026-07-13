@@ -4,14 +4,15 @@
   "kind": "legacy_reference_migration",
   "lifecycle_audit_key": "REPLACE_WITH_INDEPENDENT_32_BYTE_LIFECYCLE_AUDIT_KEY",
   "source": {
-    "database_url": "mysql://legacy_readonly:REPLACE@127.0.0.1:3306/v2board?ssl-mode=DISABLED",
-    "database_fence_url": "mysql://legacy_fence:REPLACE_WITH_INDEPENDENT_FENCE_PASSWORD@127.0.0.1:3306?ssl-mode=DISABLED",
-    "redis_default_url": "redis://legacy_lifecycle:REPLACE_WITH_DEDICATED_FULL_ACCESS_PASSWORD@127.0.0.1:6379/0",
-    "redis_cache_url": "redis://legacy_lifecycle:REPLACE_WITH_DEDICATED_FULL_ACCESS_PASSWORD@127.0.0.1:6379/1",
-    "redis_connection_prefix": "v2board_database_",
-    "redis_cache_prefix": "v2board_cache",
-    "redis_horizon_prefix": "REPLACE_WITH_EXACT_LARAVEL_HORIZON_PREFIX",
-    "transport_security": "trusted_maintenance_network"
+    "format": "age_encrypted_mysql8_mysqldump",
+    "encrypted_mysql_dump_path": "/secure/private/v2board/legacy-mysql.sql.age",
+    "encrypted_mysql_dump_sha256": "REPLACE_WITH_64_LOWERCASE_HEX_ENCRYPTED_DUMP_SHA256",
+    "age_identity_path": "/run/v2board-lifecycle-secrets/REPLACE_WITH_OPERATION_UUID/age-identity",
+    "age_identity_sha256": "REPLACE_WITH_64_LOWERCASE_HEX_AGE_IDENTITY_SHA256",
+    "isolated_restore_database_url": "mysql://restore_admin:REPLACE@isolated-restore.invalid:3306/v2board_restore?ssl-mode=VERIFY_IDENTITY",
+    "isolated_restore_transport_security": "verified_tls",
+    "command_timeout_seconds": 86400,
+    "maximum_encrypted_dump_bytes": 274877906944
   },
   "target": {
     "postgres": {
@@ -19,6 +20,8 @@
       "migration_database_url": "postgresql://v2board_migration:REPLACE_WITH_MIGRATION_PASSWORD@new-postgres18.invalid:5432/v2board?sslmode=verify-full",
       "api_database_url": "postgresql://v2board_api:REPLACE_WITH_API_PASSWORD@new-postgres18.invalid:5432/v2board?sslmode=verify-full",
       "worker_database_url": "postgresql://v2board_worker:REPLACE_WITH_WORKER_PASSWORD@new-postgres18.invalid:5432/v2board?sslmode=verify-full",
+      "require_database_absent": true,
+      "require_roles_absent": true,
       "external_access": {
         "pg_hba_evidence": "REPLACE_WITH_PG_HBA_CHANGE_REFERENCE",
         "network_policy_evidence": "REPLACE_WITH_POSTGRES_NETWORK_POLICY_REFERENCE"
@@ -45,6 +48,8 @@
       },
       "raw_retention_days": 90,
       "aggregate_retention_days": 730,
+      "require_database_absent": true,
+      "require_principals_absent": true,
       "network_policy_evidence": "REPLACE_WITH_CLICKHOUSE_NETWORK_POLICY_REFERENCE",
       "privileges": {
         "evidence": "REPLACE_WITH_CLICKHOUSE_GRANT_REVIEW_REFERENCE"
@@ -70,7 +75,10 @@
       "stale_after_seconds": 30,
       "capacity_evidence": "REPLACE_WITH_DEDICATED_POSTGRESQL_CAPACITY_OR_QUOTA_EVIDENCE"
     },
-    "redis_url": "rediss://:REPLACE_WITH_REDIS_PASSWORD@new-redis.invalid:6380/1"
+    "redis_url": "rediss://:REPLACE_WITH_REDIS_PASSWORD@new-redis.invalid:6380/1",
+    "api_runtime_config_path": "/var/lib/v2board/api/config.json",
+    "worker_runtime_config_path": "/var/lib/v2board/worker/config.json",
+    "require_empty_redis": true
   },
   "runtime": {
     "configuration_source": "file_only",
@@ -183,54 +191,32 @@
     "android_download_url": null
   },
   "decisions": {
+    "legacy_runtime_files": "rebuild_from_manifest",
+    "legacy_redis": "discard_all_without_inspection",
+    "legacy_stripe": {
+      "configuration": "discard",
+      "unfinished_orders": "discard",
+      "provider_objects": "ignore_uninspected"
+    },
+    "failed_jobs": "discard",
     "nodes": "discard_and_manual_rebuild",
     "legacy_traffic_details": "discard",
     "legacy_operational_logs": "discard",
-    "legacy_custom_rules": "none"
+    "legacy_theme": "discard",
+    "legacy_custom_rules": "none",
+    "mysql_business_data": "preserve",
+    "mysql_persisted_user_traffic": "preserve",
+    "permanent_subscription_tokens": "preserve",
+    "non_stripe_payment_configuration": "preserve"
   },
   "execution": {
     "release": {
       "release_id": "REPLACE_WITH_CONTENT_RELEASE_ID",
+      "archive_path": "/secure/private/v2board/v2board-native-linux-amd64.tar.gz",
       "archive_sha256": "REPLACE_WITH_64_LOWERCASE_HEX_RELEASE_ARCHIVE_SHA256"
     },
-    "systemd": {
-      "legacy_writer_units": [
-        "REPLACE_WITH_LEGACY_WRITER.service"
-      ],
-      "legacy_worker_units": [
-        "REPLACE_WITH_LEGACY_QUEUE_WORKER.service"
-      ],
-      "legacy_scheduler_units": [
-        "REPLACE_WITH_LEGACY_SCHEDULER.timer",
-        "REPLACE_WITH_LEGACY_SCHEDULER.service"
-      ]
-    },
-    "source_control": {
-      "datastores": {
-        "mysql": {
-          "unit": "REPLACE_WITH_DEDICATED_MYSQL.service"
-        },
-        "default_redis": {
-          "unit": "REPLACE_WITH_DEDICATED_REDIS.service"
-        },
-        "cache_redis": {
-          "unit": "REPLACE_WITH_DEDICATED_REDIS.service"
-        }
-      }
-    },
-    "receipts": {
-      "release_archive": {
-        "sha256": "REPLACE_WITH_64_LOWERCASE_HEX_RELEASE_RECEIPT_SHA256"
-      }
-    },
-    "backup": {
-      "backup_reference": "REPLACE_WITH_BACKUP_REFERENCE_WITHOUT_CREDENTIALS",
-      "encryption_recipient_sha256": "REPLACE_WITH_64_LOWERCASE_HEX_RECIPIENT_SHA256",
-      "decryption_identity_sha256": "REPLACE_WITH_64_LOWERCASE_HEX_IDENTITY_SHA256",
-      "isolated_restore_database_url": "mysql://restore_admin:REPLACE@isolated-restore.invalid:3306/v2board_restore?ssl-mode=VERIFY_IDENTITY",
-      "isolated_restore_transport_security": "verified_tls",
-      "command_timeout_seconds": 86400,
-      "maximum_encrypted_backup_bytes": 274877906944
-    }
+    "failure_policy": "wipe_unactivated_target_and_restart_from_same_dump",
+    "activation_policy": "activate_once_after_full_verification",
+    "converter_policy_marker": "v2board.cold-import.v1:discard-stripe-payments;discard-unfinished-stripe-orders;scrub-retained-stripe-order-bindings"
   }
 }

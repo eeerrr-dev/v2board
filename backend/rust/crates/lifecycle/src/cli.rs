@@ -13,18 +13,8 @@ pub(crate) enum Command {
         release_id: String,
         sha256: String,
     },
-    Authorize {
-        manifest: PathBuf,
-        inspect_review_sha256: String,
-        output: PathBuf,
-    },
     Apply {
         manifest: PathBuf,
-        authorization: PathBuf,
-    },
-    Resume {
-        manifest: PathBuf,
-        authorization: PathBuf,
     },
     Help,
 }
@@ -38,13 +28,15 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> anyhow::Result<Command>
     match args.as_slice() {
         [flag] if matches!(flag.as_str(), "--help" | "-h") => Ok(Command::Help),
         [action, flag, manifest]
-            if flag == "--manifest" && matches!(action.as_str(), "validate" | "inspect") =>
+            if flag == "--manifest"
+                && matches!(action.as_str(), "validate" | "inspect" | "apply") =>
         {
             let manifest = PathBuf::from(manifest);
             match action.as_str() {
                 "validate" => Ok(Command::Validate { manifest }),
                 "inspect" => Ok(Command::Inspect { manifest }),
-                _ => unreachable!("guard accepts every lifecycle action"),
+                "apply" => Ok(Command::Apply { manifest }),
+                _ => unreachable!("guard covers every accepted action"),
             }
         }
         [
@@ -66,49 +58,6 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> anyhow::Result<Command>
                 sha256: sha256.clone(),
             })
         }
-        [
-            action,
-            manifest_flag,
-            manifest,
-            report_flag,
-            review_sha256,
-            output_flag,
-            output,
-        ] if action == "authorize"
-            && manifest_flag == "--manifest"
-            && report_flag == "--inspect-review-sha256"
-            && output_flag == "--output" =>
-        {
-            Ok(Command::Authorize {
-                manifest: PathBuf::from(manifest),
-                inspect_review_sha256: review_sha256.clone(),
-                output: PathBuf::from(output),
-            })
-        }
-        [
-            action,
-            manifest_flag,
-            manifest,
-            authorization_flag,
-            authorization,
-        ] if matches!(action.as_str(), "apply" | "resume")
-            && manifest_flag == "--manifest"
-            && authorization_flag == "--authorization" =>
-        {
-            let manifest = PathBuf::from(manifest);
-            let authorization = PathBuf::from(authorization);
-            if action == "apply" {
-                Ok(Command::Apply {
-                    manifest,
-                    authorization,
-                })
-            } else {
-                Ok(Command::Resume {
-                    manifest,
-                    authorization,
-                })
-            }
-        }
         _ => anyhow::bail!(
             "invalid command; run v2board-lifecycle --help for the supported command grammar"
         ),
@@ -117,7 +66,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> anyhow::Result<Command>
 
 pub(crate) fn print_help() {
     println!(
-        "v2board-lifecycle\n\nDisposable lifecycle commands:\n  validate --manifest <path>\n      Strictly validate a complete lifecycle JSON without connecting\n\n  inspect --manifest <path>\n      Run the online read-only compatibility inspection; compatible never means ready to migrate\n\n  inspect-release-archive --archive <absolute-path> --release-id <id> --sha256 <sha256>\n      Run the mutation-free native archive contract inspector; this does not authorize migration\n\n  authorize --manifest <path> --inspect-review-sha256 <sha256> --output <absolute-path>\n      Re-run the reviewed online inspection and require the stable identity/schema/policy binding\n      before the operator types the exact operation_id\n\n  apply --manifest <path> --authorization <absolute-path>\n      Start the one irreversible operation bound to the reviewed inspection and authorization\n\n  resume --manifest <path> --authorization <absolute-path>\n      Forward-recover that same durable operation; this is not a second cutover decision\n\nThis binary is deliberately separate from v2board-api and v2board-workers. It is the only binary\nthat can contain the legacy MySQL source adapter. Apply and resume fail closed while the production\nfault-injection gate remains disabled."
+        "v2board-lifecycle\n\nArchive-first cold-import commands:\n  validate --manifest <path>\n      Strictly validate the unique schema-v5 loss policy without connecting anywhere\n\n  inspect --manifest <path>\n      Read and hash the immutable encrypted MySQL dump, age identity, and native release\n      without contacting legacy MySQL, legacy Redis, Stripe, or mutating a target\n\n  inspect-release-archive --archive <absolute-path> --release-id <id> --sha256 <sha256>\n      Run the mutation-free native release archive contract inspector\n\n  apply --manifest <path>\n      Reserved cold-import entry; currently fails closed before writes\n\nThe operator stops the old site and creates the immutable encrypted MySQL dump before this tool is\nused. A failed, unactivated import is wiped and restarted from the same dump. Production apply is\ncurrently fail-closed until the importer and operation-owned cleanup integration gate pass."
     );
 }
 
@@ -128,54 +77,33 @@ mod tests {
     use super::{Command, parse_args};
 
     #[test]
-    fn accepts_manifest_and_authorization_commands() {
-        assert_eq!(
-            parse_args(["validate", "--manifest", "/secure/operation.json"].map(str::to_owned))
-                .unwrap(),
-            Command::Validate {
-                manifest: PathBuf::from("/secure/operation.json")
-            }
-        );
-        assert_eq!(
-            parse_args(
-                [
-                    "apply",
-                    "--manifest",
-                    "operation.json",
-                    "--authorization",
-                    "/secure/authorization.json",
-                ]
-                .map(str::to_owned),
-            )
-            .unwrap(),
-            Command::Apply {
-                manifest: PathBuf::from("operation.json"),
-                authorization: PathBuf::from("/secure/authorization.json"),
-            }
-        );
-        assert_eq!(
-            parse_args(
-                [
-                    "resume",
-                    "--manifest",
-                    "operation.json",
-                    "--authorization",
-                    "/secure/authorization.json",
-                ]
-                .map(str::to_owned),
-            )
-            .unwrap(),
-            Command::Resume {
-                manifest: PathBuf::from("operation.json"),
-                authorization: PathBuf::from("/secure/authorization.json"),
-            }
-        );
-        assert_eq!(
-            parse_args(["inspect", "--manifest", "operation.json"].map(str::to_owned)).unwrap(),
-            Command::Inspect {
-                manifest: PathBuf::from("operation.json")
-            }
-        );
+    fn accepts_the_small_archive_first_grammar() {
+        for (action, expected) in [
+            (
+                "validate",
+                Command::Validate {
+                    manifest: PathBuf::from("/secure/operation.json"),
+                },
+            ),
+            (
+                "inspect",
+                Command::Inspect {
+                    manifest: PathBuf::from("/secure/operation.json"),
+                },
+            ),
+            (
+                "apply",
+                Command::Apply {
+                    manifest: PathBuf::from("/secure/operation.json"),
+                },
+            ),
+        ] {
+            assert_eq!(
+                parse_args([action, "--manifest", "/secure/operation.json"].map(str::to_owned))
+                    .unwrap(),
+                expected
+            );
+        }
         assert_eq!(
             parse_args(
                 [
@@ -196,7 +124,12 @@ mod tests {
                 sha256: "a".repeat(64),
             }
         );
-        assert_eq!(
+    }
+
+    #[test]
+    fn rejects_authorize_resume_and_old_apply_grammar() {
+        assert!(parse_args(std::iter::empty()).is_err());
+        assert!(
             parse_args(
                 [
                     "authorize",
@@ -207,39 +140,7 @@ mod tests {
                     "--output",
                     "/secure/authorization.json",
                 ]
-                .map(str::to_owned),
-            )
-            .unwrap(),
-            Command::Authorize {
-                manifest: PathBuf::from("operation.json"),
-                inspect_review_sha256: "a".repeat(64),
-                output: PathBuf::from("/secure/authorization.json"),
-            }
-        );
-    }
-
-    #[test]
-    fn rejects_runtime_and_legacy_api_grammars() {
-        assert!(parse_args(std::iter::empty()).is_err());
-        assert!(parse_args(["serve"].map(str::to_owned)).is_err());
-        assert!(parse_args(["plan", "--manifest", "operation.json"].map(str::to_owned)).is_err());
-        assert!(
-            parse_args(["provision", "inspect", "--manifest", "operation.json"].map(str::to_owned))
-                .is_err()
-        );
-        assert!(parse_args(["apply", "--manifest", "operation.json"].map(str::to_owned)).is_err());
-        assert!(
-            parse_args(
-                [
-                    "inspect-release-archive",
-                    "--release-id",
-                    "release-a",
-                    "--archive",
-                    "/secure/native-release.tar.gz",
-                    "--sha256",
-                    &"a".repeat(64),
-                ]
-                .map(str::to_owned),
+                .map(str::to_owned)
             )
             .is_err()
         );
@@ -247,12 +148,25 @@ mod tests {
             parse_args(
                 [
                     "resume",
-                    "--authorization",
-                    "/secure/authorization.json",
                     "--manifest",
                     "operation.json",
+                    "--authorization",
+                    "/secure/authorization.json",
                 ]
-                .map(str::to_owned),
+                .map(str::to_owned)
+            )
+            .is_err()
+        );
+        assert!(
+            parse_args(
+                [
+                    "apply",
+                    "--manifest",
+                    "operation.json",
+                    "--authorization",
+                    "/secure/authorization.json",
+                ]
+                .map(str::to_owned)
             )
             .is_err()
         );

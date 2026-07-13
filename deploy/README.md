@@ -29,8 +29,8 @@ Do not treat a checksum downloaded from the same untrusted channel as artifact a
 
 Verify `(cd <staged-release> && sha256sum --check SHA256SUMS)` before changing any symlink. Never
 compile on the server. The separately exported `v2board-lifecycle` tool is not part of this release;
-it is staged only for the initial one-shot operation. After the completion ledger commits, the
-operator removes it manually with the exact root-only argv returned by the command.
+it is staged only for the initial one-shot operation and removed by the operator after accepted
+activation. Removing the tool is not migration proof and does not require live-source credentials.
 
 CI additionally submits the packed, root-owned archive to
 `v2board-lifecycle inspect-release-archive`; that read-only command uses the same archive parser as
@@ -98,49 +98,38 @@ API and worker refuse to start when the PostgreSQL ledger is not exactly current
 also requires PostgreSQL and Redis; ClickHouse failure only makes analytics stale and grows the
 PostgreSQL outbox.
 
-Fresh install is not yet production-supported. Legacy `apply`/`resume` grammar and executor exist
-but remain fail-closed through the single typed production capability until the repository's real
-crash/lost-ACK matrix is complete.
+Fresh install is not yet production-supported. Legacy archive-first `apply` remains fail-closed through
+the typed production capability until its dump/restore/conversion/cleanup gates and final security
+audit are complete. Legacy v5 has no authorization-file or resume path.
 Do not manually create targets or reinterpret a passing read-only report as permission to write.
 
-## Initial legacy retirement
+## Initial legacy cold import
 
-The legacy migration is one offline operation in one maintenance window. It must not implement CDC,
-dual-write, shadow reads, gradual traffic release, or a MySQL runtime fallback. After final
-online inspection, the operator authorizes the exact operation and stable review binding once; the
-authorization separately records the complete confirmation-time report digest. The one-shot apply then
-performs the whole transition without another pause:
+Legacy migration is one offline operation in one maintenance window. It must not implement CDC,
+dual-write, shadow reads, gradual traffic release, or a MySQL runtime fallback.
 
-1. stop and fence the old API writers, scheduler, and temporary-link issuer; disable worker restart,
-   let the existing workers drain and reconcile pending traffic and business work, then stop them
-   (schema v4 proves the source node inventory is empty; schema v5 binds the old inventory for
-   discard, discards legacy per-user/per-node traffic details plus `v2_log`/`v2_mail_log`, and
-   requires the operator to stop old external node processes before rebuilding them; every discarded
-   source remains covered by the full fingerprint, encrypted archive, and per-table pre-authority
-   discard proof);
-2. take and restore-test one consistent source recovery set, run the final read-only recheck, then
-   bulk-convert into empty PostgreSQL/ClickHouse targets while every old and new writer stays down;
-3. verify exact values, relationships, sequences, configs, and analytics projection; schema v5 must
-   retain `v2_stat`, every existing user field, and `v2_payment` including its verification config and
-   original `enable` value—migration must never disable payment methods by default; activate the
-   native API and worker exactly once;
-4. immediately mask and stop the dedicated MySQL 8 and old Redis units and remove their
-   network access, then prove all three old credentials are unreachable;
-5. after the completion ledger succeeds, run the returned root cleanup argv to remove
-   `v2board-lifecycle`; separately remove one-shot MySQL client/source credentials from the
-   production server, while permanently retaining the encrypted cold archive with its SHA-256 and
-   the operation journal plus signed migration-report receipts.
+1. The operator stops the old API, workers, scheduler, payment ingress and external node reporters
+   outside the importer.
+2. The operator creates one complete Oracle MySQL 8 dump, age-encrypts it, records its SHA-256 and
+   removes any temporary plaintext.
+3. `validate` checks the strict v5 manifest. `inspect` safely opens and hashes the encrypted dump,
+   age identity and native release; it validates static restore/target declarations but does not contact
+   the old site or live targets.
+4. Once the production gate is open, `apply` restores that dump into an operation-owned isolated MySQL,
+   converts retained rows, verifies target values, installs role-owned config and activates the native
+   API/worker only after every pre-activation check passes.
+5. Before activation, failure cleanup deletes the isolated restore and all unactivated target objects;
+   a new operation then restarts from the same immutable dump. There is no `authorize` or `resume`.
 
-Completion must prove `source_retired=true`, MySQL and both old Redis endpoints are unreachable,
-source access is permanently disabled, legacy runtime compatibility is disabled, and PostgreSQL is
-the only transactional authority. The lifecycle tool may then be removed manually with the returned
-root argv; its absence is not part of completion proof. Completion does not claim an internal
-`DROP USER` after the dedicated database process has already been permanently stopped.
-The cleanup argv removes only the one-shot binary; it must not remove the operation journal,
-report receipts, or encrypted archive.
+Old Redis is never read. Pending Redis traffic, queue/failed work, sessions, OTP, temporary links,
+cache/locks and Horizon metadata are explicitly discarded. Stripe configuration and unfinished Stripe
+orders are discarded without contacting Stripe; terminal Stripe order history is retained with active
+provider bindings cleared. Non-Stripe payment configuration remains ordinary retained business data,
+and user balance is never automatically refunded or adjusted.
 
-After activation, recovery is PostgreSQL/ClickHouse restore or forward repair. Restarting MySQL is
-not a supported rollback.
+The operator is responsible for permanently retiring the old site after acceptance. The encrypted dump
+remains the checksummed cold archive. After activation, recovery is PostgreSQL/ClickHouse restore or
+forward repair; restarting MySQL is not a supported rollback.
 
 ## Logs and shutdown
 

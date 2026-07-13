@@ -52,37 +52,6 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     && install -Dm0755 /app/target/release/v2board-lifecycle \
         /out/v2board-lifecycle
 
-FROM development AS legacy-age-tools
-
-RUN apt-get update && apt-get install -y --no-install-recommends age \
-    && rm -rf /var/lib/apt/lists/*
-
-FROM mysql:8.4.6@sha256:869218921e61d6c3c89820955d63cca42971f0e3e6c1e2792247bbd944ebc6e9 AS legacy-integration
-
-ENV CARGO_HOME=/usr/local/cargo \
-    CARGO_TARGET_DIR=/app/target \
-    RUST_BACKTRACE=1 \
-    RUSTUP_HOME=/usr/local/rustup \
-    PATH=/usr/local/cargo/bin:$PATH
-
-RUN microdnf install -y \
-        ca-certificates \
-        gcc \
-        gcc-c++ \
-        git \
-        make \
-        openssl-devel \
-        pkgconf-pkg-config \
-    && microdnf clean all \
-    && install -d -m 0777 /app/target
-
-COPY --from=development /usr/local/cargo/ /usr/local/cargo/
-COPY --from=development /usr/local/rustup/ /usr/local/rustup/
-COPY --from=legacy-age-tools /usr/bin/age /usr/bin/age
-COPY --from=legacy-age-tools /usr/bin/age-keygen /usr/bin/age-keygen
-
-WORKDIR /src/backend/rust
-
 FROM scratch AS lifecycle-tool
 
 COPY --from=lifecycle-builder /out/v2board-lifecycle /v2board-lifecycle

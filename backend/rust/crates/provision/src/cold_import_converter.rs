@@ -1,11 +1,9 @@
-//! Deterministic, one-shot conversion core for the pinned legacy database.
+//! Deterministic conversion contract for the pinned legacy MySQL dump.
 //!
 //! This module deliberately contains no CDC, dual-write, shadow-read, or
-//! gradual-cutover path. A caller must bind it to one fenced, repeatable-read
-//! source snapshot and to a durable operation journal before the target is
-//! mutated. The SQL adapters and lifecycle orchestration live outside this
-//! module; the registry and state checks here are the auditable conversion
-//! contract shared by those adapters.
+//! gradual-cutover path. A caller binds it to one restored immutable dump and
+//! an empty operation-owned target. It contains no live-source, Redis, provider,
+//! authorization-file, or resume capability.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -13,16 +11,19 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
 use sha2::{Digest, Sha256, Sha384};
 
+use crate::cold_import_policy::{
+    COLD_IMPORT_POLICY_MARKER, LegacyOrderBinding, LegacyOrderDisposition, LegacyOrderPolicyError,
+    classify_legacy_order, is_legacy_stripe_payment_driver,
+};
+
 pub const LEGACY_CONVERTER_PROFILE: &str =
     "wyx2685-v2board@7e77de9f4873b317157490529f7be7d6f8a62421";
 pub const LEGACY_SEMANTIC_SCHEMA_SHA256: &str =
     "4b5eaec681531751c79b48188e5a1c665df4f660dffbb88d6853cea6cf04801e";
 pub const LEGACY_INSTALL_SQL_SHA256: &str =
     "04b04531037b9e0b6f2a6b02194a8f1bc102789af8ee7be963fd721d51bca8e2";
-pub const TARGET_POSTGRES_LINEAGE: &str = "migrations-postgres/v3";
-pub const TARGET_POSTGRES_LINEAGE_SHA256: &str =
-    "42c3b476a08d2259ea4bccb27676dd47dc35b5b169c90aa81f445bc29fe117c6";
-pub const CONVERTER_REGISTRY_VERSION: u32 = 3;
+pub const TARGET_POSTGRES_LINEAGE: &str = "migrations-postgres/v5-archive-first-cold-import";
+pub const CONVERTER_REGISTRY_VERSION: u32 = 5;
 pub const DEFAULT_BATCH_SIZE: u32 = 1_000;
 pub const MAX_BATCH_SIZE: u32 = 100_000;
 pub const POSTGRES_MAX_BIND_PARAMETERS: usize = 65_535;
@@ -30,49 +31,36 @@ pub const POSTGRES_MAX_BIND_PARAMETERS: usize = 65_535;
 /// use zero: `NO_AUTO_VALUE_ON_ZERO` allowed explicitly inserted zero ids.
 pub const INITIAL_SOURCE_ID_CURSOR: i64 = i64::MIN;
 
-/// The copy policy is part of the durable conversion identity. Schema v4
-/// preserves the original all-table converter. Schema v5 deliberately starts
-/// the new node, traffic-detail, and operational-log surfaces empty; the
-/// authoritative user counters, durable daily business aggregate, and frozen
-/// Redis tail are still preserved separately.
+/// The only supported conversion policy. Schema v5 starts node,
+/// traffic-detail, and operational-log surfaces empty while preserving the
+/// business data and MySQL-persisted user counters declared by the manifest.
 #[derive(
     Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize,
 )]
 #[serde(rename_all = "snake_case")]
-pub enum LegacyConversionStrategy {
+pub enum ColdImportConversionStrategy {
     #[default]
-    PreserveAll,
-    DiscardNodesTrafficDetailsAndOperationalLogs,
+    ArchiveFirstV5,
 }
 
-impl LegacyConversionStrategy {
+impl ColdImportConversionStrategy {
     pub fn for_schema_version(schema_version: u32) -> Result<Self, ConverterError> {
         match schema_version {
-            4 => Ok(Self::PreserveAll),
-            5 => Ok(Self::DiscardNodesTrafficDetailsAndOperationalLogs),
+            5 => Ok(Self::ArchiveFirstV5),
             version => Err(ConverterError::UnsupportedConversionSchemaVersion(version)),
         }
     }
 
     pub const fn stable_name(self) -> &'static str {
-        match self {
-            Self::PreserveAll => "preserve_all",
-            Self::DiscardNodesTrafficDetailsAndOperationalLogs => {
-                "discard_nodes_traffic_details_and_operational_logs"
-            }
-        }
-    }
-
-    pub const fn is_preserve_all(&self) -> bool {
-        matches!(self, Self::PreserveAll)
+        "archive_first_v5"
     }
 
     pub fn copies_base_table(self, mapping: &TableMapping) -> bool {
-        self == Self::PreserveAll || !V5_DISCARDED_BASE_TABLES.contains(&mapping.source)
+        !V5_DISCARDED_BASE_TABLES.contains(&mapping.source)
     }
 
     pub fn builds_derived_mapping(self, mapping: &DerivedMapping) -> bool {
-        self == Self::PreserveAll || !V5_DISCARDED_DERIVED_TARGETS.contains(&mapping.target)
+        !V5_DISCARDED_DERIVED_TARGETS.contains(&mapping.target)
     }
 }
 
@@ -84,9 +72,9 @@ const TARGET_POSTGRES_MIGRATIONS: &[(i64, &str, &[u8])] = &[
     ),
     (
         2,
-        "0002_legacy_lifecycle_and_analytics_admission.sql",
+        "0002_giftcard_provenance_and_analytics_admission.sql",
         include_bytes!(
-            "../../../migrations-postgres/0002_legacy_lifecycle_and_analytics_admission.sql"
+            "../../../migrations-postgres/0002_giftcard_provenance_and_analytics_admission.sql"
         ),
     ),
     (
@@ -985,12 +973,11 @@ pub const NODE_CREDENTIAL_SOURCES: &[(&str, &str)] = &[
     ("v2node", "v2_server_v2node"),
 ];
 
-/// Schema-v5 source facts which remain covered by the fenced source
-/// fingerprint and final discard proofs but are intentionally not copied.
+/// Whole tables intentionally omitted from the archive-first target.
 /// `v2_user`, `v2_payment`, `v2_server_group`, and the durable historical
-/// aggregate `v2_stat` are protected business data and are deliberately absent
-/// from this list. In particular, schema v5 preserves every payment row and its
-/// original `enable` value.
+/// aggregate `v2_stat` remain in the row-mapping inventory. The adapter applies
+/// the separately versioned Stripe row policy within `v2_payment`/`v2_order`;
+/// non-Stripe payment rows and their original `enable` values remain exact.
 pub const V5_DISCARDED_BASE_TABLES: &[&str] = &[
     "v2_log",
     "v2_mail_log",
@@ -1010,7 +997,7 @@ pub const V5_DISCARDED_BASE_TABLES: &[&str] = &[
 pub const V5_DISCARDED_DERIVED_TARGETS: &[&str] = &["v2_server_credential"];
 
 pub fn copied_table_mappings(
-    strategy: LegacyConversionStrategy,
+    strategy: ColdImportConversionStrategy,
 ) -> impl Iterator<Item = &'static TableMapping> {
     TABLE_MAPPINGS
         .iter()
@@ -1018,7 +1005,7 @@ pub fn copied_table_mappings(
 }
 
 pub fn discarded_table_mappings(
-    strategy: LegacyConversionStrategy,
+    strategy: ColdImportConversionStrategy,
 ) -> impl Iterator<Item = &'static TableMapping> {
     TABLE_MAPPINGS
         .iter()
@@ -1026,7 +1013,7 @@ pub fn discarded_table_mappings(
 }
 
 pub fn built_derived_mappings(
-    strategy: LegacyConversionStrategy,
+    strategy: ColdImportConversionStrategy,
 ) -> impl Iterator<Item = &'static DerivedMapping> {
     DERIVED_MAPPINGS
         .iter()
@@ -1034,7 +1021,7 @@ pub fn built_derived_mappings(
 }
 
 pub fn discarded_derived_mappings(
-    strategy: LegacyConversionStrategy,
+    strategy: ColdImportConversionStrategy,
 ) -> impl Iterator<Item = &'static DerivedMapping> {
     DERIVED_MAPPINGS
         .iter()
@@ -1108,17 +1095,11 @@ pub const SCALAR_REFERENCES: &[ScalarReference] = &[
     },
 ];
 
-/// Native-only tables that a legacy bulk conversion must leave empty. The
-/// lifecycle bootstrap owns `v2_system_installation`; the other tables start
-/// empty because no corresponding durable legacy fact exists.
+/// Native-only tables that a cold import must leave empty. Installation
+/// activation owns `v2_system_installation`; no legacy source fact populates
+/// the remaining runtime tables.
 pub const TARGET_ONLY_TABLES: &[&str] = &[
     "v2_system_installation",
-    "v2_lifecycle_operation",
-    "v2_lifecycle_event",
-    "v2_lifecycle_activation_commit",
-    "v2_legacy_copy_checkpoint",
-    "v2_legacy_traffic_fold_item",
-    "v2_legacy_traffic_fold",
     "v2_payment_reconciliation",
     "v2_mail_outbox_batch",
     "v2_mail_outbox",
@@ -1142,7 +1123,7 @@ pub const TARGET_GENERATED_COLUMNS: &[(&str, &[&str])] = &[
     ("v2_ticket", &["open_user_id"]),
 ];
 
-pub const DRAINED_SOURCE_TABLES: &[&str] = &["failed_jobs"];
+pub const DISCARDED_SOURCE_TABLES: &[&str] = &["failed_jobs"];
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub enum SourceValue {
@@ -1207,7 +1188,7 @@ pub enum ConverterError {
         column: String,
         index: usize,
     },
-    #[error("batch ids for {table} are not strictly increasing after checkpoint {after_id}")]
+    #[error("batch ids for {table} are not strictly increasing after cursor {after_id}")]
     NonMonotonicBatch { table: String, after_id: i64 },
     #[error("batch size {0} is outside 1..={MAX_BATCH_SIZE}")]
     InvalidBatchSize(u32),
@@ -1219,12 +1200,12 @@ pub enum ConverterError {
     UnsupportedConversionSchemaVersion(u32),
     #[error("source snapshot fingerprint must be lowercase SHA-256")]
     InvalidSnapshotFingerprint,
-    #[error("checkpoint binding does not match this conversion run")]
-    CheckpointBindingMismatch,
-    #[error("checkpoint phase transition is not monotonic")]
-    CheckpointRegression,
+    #[error("conversion binding does not match this cold-import run")]
+    RunBindingMismatch,
     #[error("target row conflicts with the expected canonical row")]
     RetryConflict,
+    #[error(transparent)]
+    StripePolicy(#[from] LegacyOrderPolicyError),
     #[error("{table}.{column} references missing {referenced_table} id {id}")]
     MissingIdReference {
         table: String,
@@ -1241,9 +1222,6 @@ pub fn mapping_for_source(table: &str) -> Option<&'static TableMapping> {
 }
 
 pub fn audit_registry() -> Result<(), ConverterError> {
-    if target_postgres_lineage_sha256() != TARGET_POSTGRES_LINEAGE_SHA256 {
-        return registry_error("target PostgreSQL migration lineage digest changed");
-    }
     let expected_source_tables = [
         "v2_commission_log",
         "v2_coupon",
@@ -1508,11 +1486,11 @@ pub fn target_postgres_lineage_sha256() -> String {
 }
 
 pub fn registry_sha256() -> Result<String, ConverterError> {
-    registry_sha256_for_strategy(LegacyConversionStrategy::PreserveAll)
+    registry_sha256_for_strategy(ColdImportConversionStrategy::ArchiveFirstV5)
 }
 
 pub fn registry_sha256_for_strategy(
-    strategy: LegacyConversionStrategy,
+    strategy: ColdImportConversionStrategy,
 ) -> Result<String, ConverterError> {
     audit_registry()?;
     let mut digest = Sha256::new();
@@ -1522,7 +1500,7 @@ pub fn registry_sha256_for_strategy(
     digest_field(&mut digest, LEGACY_SEMANTIC_SCHEMA_SHA256.as_bytes());
     digest_field(&mut digest, LEGACY_INSTALL_SQL_SHA256.as_bytes());
     digest_field(&mut digest, TARGET_POSTGRES_LINEAGE.as_bytes());
-    digest_field(&mut digest, TARGET_POSTGRES_LINEAGE_SHA256.as_bytes());
+    digest_field(&mut digest, target_postgres_lineage_sha256().as_bytes());
     for mapping in TABLE_MAPPINGS {
         digest_field(&mut digest, mapping.order.to_string().as_bytes());
         digest_field(&mut digest, mapping.source.as_bytes());
@@ -1572,29 +1550,32 @@ pub fn registry_sha256_for_strategy(
         }
         digest_field(&mut digest, mapping.rule.as_bytes());
     }
-    // Do not append anything for PreserveAll: schema-v4 bindings and
-    // checkpoints retain their exact historical registry identity. Schema v5
-    // adds a domain-separated, fully enumerated policy identity.
-    if strategy == LegacyConversionStrategy::DiscardNodesTrafficDetailsAndOperationalLogs {
-        digest_field(&mut digest, b"schema-v5-conversion-strategy-v2");
-        digest_field(&mut digest, strategy.stable_name().as_bytes());
-        for table in V5_DISCARDED_BASE_TABLES {
-            digest_field(&mut digest, b"discard-base-table");
-            digest_field(&mut digest, table.as_bytes());
-        }
-        for target in V5_DISCARDED_DERIVED_TARGETS {
-            digest_field(&mut digest, b"discard-derived-target");
-            digest_field(&mut digest, target.as_bytes());
-        }
-        digest_field(
-            &mut digest,
-            b"preserve-v2-server-group-v2-stat-v2-user-counters-and-fold-frozen-redis-traffic;discard-v2-log-v2-mail-log",
-        );
+    digest_field(
+        &mut digest,
+        b"archive-first-schema-v5-conversion-strategy-v1",
+    );
+    digest_field(&mut digest, strategy.stable_name().as_bytes());
+    digest_field(&mut digest, COLD_IMPORT_POLICY_MARKER.as_bytes());
+    for table in V5_DISCARDED_BASE_TABLES {
+        digest_field(&mut digest, b"discard-base-table");
+        digest_field(&mut digest, table.as_bytes());
     }
+    for target in V5_DISCARDED_DERIVED_TARGETS {
+        digest_field(&mut digest, b"discard-derived-target");
+        digest_field(&mut digest, target.as_bytes());
+    }
+    for table in DISCARDED_SOURCE_TABLES {
+        digest_field(&mut digest, b"discard-source-table");
+        digest_field(&mut digest, table.as_bytes());
+    }
+    digest_field(
+        &mut digest,
+        b"preserve-mysql-persisted-v2-user-u-d-and-permanent-token;never-fold-legacy-redis",
+    );
     Ok(hex::encode(digest.finalize()))
 }
 
-pub fn transform_row(
+fn transform_row(
     mapping: &TableMapping,
     source: &SourceRow,
 ) -> Result<CanonicalRow, ConverterError> {
@@ -1633,6 +1614,137 @@ pub fn transform_row(
         required_source_value(mapping, source, column.source)?;
     }
     Ok(target)
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ColdImportRowDisposition {
+    Discard,
+    Retain(CanonicalRow),
+}
+
+/// The only public base-row conversion entry point. It makes the destructive
+/// Stripe policy impossible to bypass accidentally when the importer is
+/// implemented: Stripe payment rows are omitted, status 0/1 Stripe orders are
+/// omitted, and status 2/3/4 Stripe history is detached from provider fields.
+pub fn transform_cold_import_row(
+    mapping: &TableMapping,
+    source: &SourceRow,
+    stripe_payment_ids: &BTreeSet<i32>,
+) -> Result<ColdImportRowDisposition, ConverterError> {
+    match mapping.source {
+        "v2_payment" => {
+            let driver = required_source_value(mapping, source, "payment")?;
+            let SourceValue::Text(driver) = driver else {
+                return Err(ConverterError::TypeMismatch {
+                    table: mapping.source.to_string(),
+                    column: "payment".to_string(),
+                    actual: source_kind(driver),
+                });
+            };
+            if is_legacy_stripe_payment_driver(driver) {
+                Ok(ColdImportRowDisposition::Discard)
+            } else {
+                transform_row(mapping, source).map(ColdImportRowDisposition::Retain)
+            }
+        }
+        "v2_order" => {
+            let status = source_i16(mapping, source, "status")?;
+            let payment_id = source_optional_i32(mapping, source, "payment_id")?;
+            let callback_no = source_optional_text(mapping, source, "callback_no")?;
+            match classify_legacy_order(
+                LegacyOrderBinding {
+                    status,
+                    payment_id,
+                    callback_no,
+                },
+                stripe_payment_ids,
+            )? {
+                LegacyOrderDisposition::DiscardUnfinishedStripe => {
+                    Ok(ColdImportRowDisposition::Discard)
+                }
+                LegacyOrderDisposition::RetainUnchanged(_) => {
+                    transform_row(mapping, source).map(ColdImportRowDisposition::Retain)
+                }
+                LegacyOrderDisposition::RetainScrubbedStripe(_) => {
+                    let mut row = transform_row(mapping, source)?;
+                    row.insert("payment_id".to_string(), CanonicalValue::Null);
+                    row.insert("callback_no".to_string(), CanonicalValue::Null);
+                    row.insert("callback_no_hash".to_string(), CanonicalValue::Null);
+                    Ok(ColdImportRowDisposition::Retain(row))
+                }
+            }
+        }
+        _ => transform_row(mapping, source).map(ColdImportRowDisposition::Retain),
+    }
+}
+
+fn source_i16(
+    mapping: &TableMapping,
+    source: &SourceRow,
+    column: &str,
+) -> Result<i16, ConverterError> {
+    let value = required_source_value(mapping, source, column)?;
+    let converted = match value {
+        SourceValue::I64(value) => i16::try_from(*value).ok(),
+        SourceValue::U64(value) => i16::try_from(*value).ok(),
+        _ => None,
+    };
+    converted.ok_or_else(|| ConverterError::TypeMismatch {
+        table: mapping.source.to_string(),
+        column: column.to_string(),
+        actual: source_kind(value),
+    })
+}
+
+fn source_optional_i32(
+    mapping: &TableMapping,
+    source: &SourceRow,
+    column: &str,
+) -> Result<Option<i32>, ConverterError> {
+    let value = required_source_value(mapping, source, column)?;
+    match value {
+        SourceValue::Null => Ok(None),
+        SourceValue::I64(value) => {
+            i32::try_from(*value)
+                .map(Some)
+                .map_err(|_| ConverterError::TypeMismatch {
+                    table: mapping.source.to_string(),
+                    column: column.to_string(),
+                    actual: "i64",
+                })
+        }
+        SourceValue::U64(value) => {
+            i32::try_from(*value)
+                .map(Some)
+                .map_err(|_| ConverterError::TypeMismatch {
+                    table: mapping.source.to_string(),
+                    column: column.to_string(),
+                    actual: "u64",
+                })
+        }
+        other => Err(ConverterError::TypeMismatch {
+            table: mapping.source.to_string(),
+            column: column.to_string(),
+            actual: source_kind(other),
+        }),
+    }
+}
+
+fn source_optional_text(
+    mapping: &TableMapping,
+    source: &SourceRow,
+    column: &str,
+) -> Result<Option<String>, ConverterError> {
+    let value = required_source_value(mapping, source, column)?;
+    match value {
+        SourceValue::Null => Ok(None),
+        SourceValue::Text(value) => Ok(Some(value.clone())),
+        other => Err(ConverterError::TypeMismatch {
+            table: mapping.source.to_string(),
+            column: column.to_string(),
+            actual: source_kind(other),
+        }),
+    }
 }
 
 fn source_column_names(mapping: &TableMapping) -> BTreeSet<&str> {
@@ -2025,21 +2137,17 @@ pub struct ConversionRunBinding {
     pub source_snapshot_sha256: String,
     pub source_schema_sha256: String,
     pub registry_sha256: String,
-    #[serde(
-        default,
-        skip_serializing_if = "LegacyConversionStrategy::is_preserve_all"
-    )]
-    pub strategy: LegacyConversionStrategy,
+    pub strategy: ColdImportConversionStrategy,
 }
 
 impl ConversionRunBinding {
     pub fn validate(&self) -> Result<(), ConverterError> {
         let operation_id = uuid::Uuid::parse_str(&self.operation_id)
-            .map_err(|_| ConverterError::CheckpointBindingMismatch)?;
+            .map_err(|_| ConverterError::RunBindingMismatch)?;
         let installation_id = uuid::Uuid::parse_str(&self.target_installation_id)
-            .map_err(|_| ConverterError::CheckpointBindingMismatch)?;
+            .map_err(|_| ConverterError::RunBindingMismatch)?;
         if operation_id.is_nil() || installation_id.is_nil() {
-            return Err(ConverterError::CheckpointBindingMismatch);
+            return Err(ConverterError::RunBindingMismatch);
         }
         if self.source_schema_sha256 != LEGACY_SEMANTIC_SCHEMA_SHA256 {
             return Err(ConverterError::SourceSchemaMismatch);
@@ -2048,7 +2156,7 @@ impl ConversionRunBinding {
             return Err(ConverterError::InvalidSnapshotFingerprint);
         }
         if self.registry_sha256 != registry_sha256_for_strategy(self.strategy)? {
-            return Err(ConverterError::CheckpointBindingMismatch);
+            return Err(ConverterError::RunBindingMismatch);
         }
         Ok(())
     }
@@ -2061,36 +2169,35 @@ pub enum ConversionPhase {
     ApplyDeferredReferences,
     BuildDerivedRows,
     ResetSequences,
-    FoldFrozenTraffic,
     VerifyAllValues,
     Complete,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ExecutionStep {
+    IndexDiscardedStripePayments,
     CopyBaseTable(&'static TableMapping),
     ApplyDeferredReferences(&'static TableMapping),
     BuildDerivedRows(&'static DerivedMapping),
     ResetSequence(&'static TableMapping),
-    FoldFrozenTraffic,
     VerifyBaseTable(&'static TableMapping),
     VerifyDerivedTable(&'static DerivedMapping),
     Complete,
 }
 
 /// Returns the only supported converter order. Copy steps use keyset batches;
-/// every target batch is inserted-or-compared before its durable checkpoint is
-/// advanced. Deferred self references and derived tables therefore never race
-/// an absent base id, and sequences move only after all explicit ids exist.
+/// every target batch is inserted and verified within the current disposable
+/// attempt. Deferred self references and derived tables therefore never race an
+/// absent base id, and sequences move only after all explicit ids exist.
 pub fn execution_steps() -> Result<Vec<ExecutionStep>, ConverterError> {
-    execution_steps_for_strategy(LegacyConversionStrategy::PreserveAll)
+    execution_steps_for_strategy(ColdImportConversionStrategy::ArchiveFirstV5)
 }
 
 pub fn execution_steps_for_strategy(
-    strategy: LegacyConversionStrategy,
+    strategy: ColdImportConversionStrategy,
 ) -> Result<Vec<ExecutionStep>, ConverterError> {
     audit_registry()?;
-    let mut steps = Vec::new();
+    let mut steps = vec![ExecutionStep::IndexDiscardedStripePayments];
     steps.extend(copied_table_mappings(strategy).map(ExecutionStep::CopyBaseTable));
     steps.extend(
         copied_table_mappings(strategy)
@@ -2098,52 +2205,13 @@ pub fn execution_steps_for_strategy(
             .map(ExecutionStep::ApplyDeferredReferences),
     );
     steps.extend(built_derived_mappings(strategy).map(ExecutionStep::BuildDerivedRows));
-    // Every sequence is reset. Discarded schema-v5 targets are proven empty,
+    // Every sequence is reset. Discarded targets are proven empty,
     // so this deterministically makes their first future identity value 1.
     steps.extend(TABLE_MAPPINGS.iter().map(ExecutionStep::ResetSequence));
-    steps.push(ExecutionStep::FoldFrozenTraffic);
     steps.extend(copied_table_mappings(strategy).map(ExecutionStep::VerifyBaseTable));
     steps.extend(built_derived_mappings(strategy).map(ExecutionStep::VerifyDerivedTable));
     steps.push(ExecutionStep::Complete);
     Ok(steps)
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ConversionCheckpoint {
-    pub binding: ConversionRunBinding,
-    pub phase: ConversionPhase,
-    pub table_order: u16,
-    pub table: String,
-    pub last_source_id: i64,
-    pub source_rows_seen: u64,
-    pub target_rows_verified: u64,
-    pub rolling_sha256: String,
-}
-
-impl ConversionCheckpoint {
-    pub fn validate_resume(
-        &self,
-        expected: &ConversionRunBinding,
-        previous: Option<&Self>,
-    ) -> Result<(), ConverterError> {
-        expected.validate()?;
-        if &self.binding != expected || !is_lower_sha256(&self.rolling_sha256) {
-            return Err(ConverterError::CheckpointBindingMismatch);
-        }
-        if let Some(previous) = previous {
-            let regressed = self.phase < previous.phase
-                || (self.phase == previous.phase && self.table_order < previous.table_order)
-                || (self.phase == previous.phase
-                    && self.table_order == previous.table_order
-                    && self.last_source_id < previous.last_source_id)
-                || self.source_rows_seen < previous.source_rows_seen
-                || self.target_rows_verified < previous.target_rows_verified;
-            if regressed {
-                return Err(ConverterError::CheckpointRegression);
-            }
-        }
-        Ok(())
-    }
 }
 
 pub fn validate_batch_ids(
@@ -2328,14 +2396,100 @@ mod tests {
                 .iter()
                 .filter(|step| matches!(step, ExecutionStep::CopyBaseTable(_)))
                 .count(),
-            27
+            14
+        );
+        assert_eq!(
+            steps.first(),
+            Some(&ExecutionStep::IndexDiscardedStripePayments)
         );
         assert_eq!(steps.last(), Some(&ExecutionStep::Complete));
     }
 
     #[test]
+    fn public_row_conversion_enforces_the_stripe_policy() {
+        let stripe_ids = BTreeSet::from([7]);
+
+        let mut stripe_payment = complete_source_row(&PAYMENT);
+        stripe_payment.insert(
+            "payment".to_string(),
+            SourceValue::Text("StripeCredit".to_string()),
+        );
+        assert_eq!(
+            transform_cold_import_row(&PAYMENT, &stripe_payment, &stripe_ids).unwrap(),
+            ColdImportRowDisposition::Discard
+        );
+
+        let mut manual_payment = stripe_payment.clone();
+        manual_payment.insert("payment".to_string(), SourceValue::Text("EPay".to_string()));
+        assert!(matches!(
+            transform_cold_import_row(&PAYMENT, &manual_payment, &stripe_ids).unwrap(),
+            ColdImportRowDisposition::Retain(_)
+        ));
+
+        let mut order = complete_source_row(&ORDER);
+        order.insert("payment_id".to_string(), SourceValue::I64(7));
+        order.insert(
+            "callback_no".to_string(),
+            SourceValue::Text("pi_legacy".to_string()),
+        );
+        for status in [0, 1] {
+            order.insert("status".to_string(), SourceValue::I64(status));
+            assert_eq!(
+                transform_cold_import_row(&ORDER, &order, &stripe_ids).unwrap(),
+                ColdImportRowDisposition::Discard
+            );
+        }
+        for status in [2, 3, 4] {
+            order.insert("status".to_string(), SourceValue::I64(status));
+            let ColdImportRowDisposition::Retain(row) =
+                transform_cold_import_row(&ORDER, &order, &stripe_ids).unwrap()
+            else {
+                panic!("terminal Stripe history must be retained");
+            };
+            assert_eq!(row.get("payment_id"), Some(&CanonicalValue::Null));
+            assert_eq!(row.get("callback_no"), Some(&CanonicalValue::Null));
+            assert_eq!(row.get("callback_no_hash"), Some(&CanonicalValue::Null));
+        }
+        order.insert("status".to_string(), SourceValue::I64(5));
+        assert!(matches!(
+            transform_cold_import_row(&ORDER, &order, &stripe_ids),
+            Err(ConverterError::StripePolicy(
+                LegacyOrderPolicyError::UnsupportedStripeStatus(5)
+            ))
+        ));
+    }
+
+    fn complete_source_row(mapping: &TableMapping) -> SourceRow {
+        let mut row = SourceRow::new();
+        for column in mapping.direct_columns {
+            row.insert((*column).to_string(), SourceValue::I64(1));
+        }
+        for column in mapping.transformed_columns {
+            let value = match column.rule {
+                ColumnRule::ExactDecimal => SourceValue::Text("1".to_string()),
+                ColumnRule::Json(JsonShape::Any) => SourceValue::Text("{}".to_string()),
+                ColumnRule::Json(JsonShape::Array) => SourceValue::Text("[]".to_string()),
+                ColumnRule::Json(JsonShape::Object) => SourceValue::Text("{}".to_string()),
+                ColumnRule::TextAsJsonString => SourceValue::Text("value".to_string()),
+                ColumnRule::PositiveIdArray {
+                    require_non_empty, ..
+                } => SourceValue::Text(if require_non_empty { "[1]" } else { "[]" }.to_string()),
+                ColumnRule::Direct => SourceValue::I64(1),
+            };
+            row.insert(column.source.to_string(), value);
+        }
+        for column in mapping.deferred_columns {
+            row.insert(column.source.to_string(), SourceValue::Null);
+        }
+        for column in mapping.consumed_source_columns {
+            row.insert(column.source.to_string(), SourceValue::Null);
+        }
+        row
+    }
+
+    #[test]
     fn schema_v5_strategy_discards_only_audited_operational_history() {
-        let strategy = LegacyConversionStrategy::for_schema_version(5).expect("schema v5");
+        let strategy = ColdImportConversionStrategy::for_schema_version(5).expect("schema v5");
         assert_eq!(
             copied_table_mappings(strategy)
                 .map(|mapping| mapping.source)
@@ -2355,34 +2509,27 @@ mod tests {
         assert_eq!(discarded_table_mappings(strategy).count(), 13);
         assert_eq!(built_derived_mappings(strategy).count(), 1);
         assert_eq!(discarded_derived_mappings(strategy).count(), 1);
-        assert_ne!(
-            registry_sha256().expect("v4 registry"),
+        assert_eq!(
+            registry_sha256().expect("registry"),
             registry_sha256_for_strategy(strategy).expect("v5 registry")
         );
-        assert_eq!(
-            LegacyConversionStrategy::for_schema_version(4).expect("schema v4"),
-            LegacyConversionStrategy::PreserveAll
-        );
+        assert!(ColdImportConversionStrategy::for_schema_version(4).is_err());
 
-        let mut v4_binding = ConversionRunBinding {
+        let binding = ConversionRunBinding {
             operation_id: uuid::Uuid::from_u128(1).to_string(),
             target_installation_id: uuid::Uuid::from_u128(2).to_string(),
             source_snapshot_sha256: "a".repeat(64),
             source_schema_sha256: LEGACY_SEMANTIC_SCHEMA_SHA256.to_string(),
-            registry_sha256: registry_sha256().expect("v4 registry"),
-            strategy: LegacyConversionStrategy::PreserveAll,
+            registry_sha256: registry_sha256().expect("registry"),
+            strategy,
         };
-        let v4_json = serde_json::to_value(&v4_binding).expect("v4 binding JSON");
-        assert!(v4_json.get("strategy").is_none());
-        v4_binding.strategy = strategy;
-        v4_binding.registry_sha256 = registry_sha256_for_strategy(strategy).expect("v5 registry");
-        v4_binding.validate().expect("v5 binding");
+        binding.validate().expect("v5 binding");
         assert_eq!(
-            serde_json::to_value(&v4_binding)
+            serde_json::to_value(&binding)
                 .expect("v5 binding JSON")
                 .get("strategy")
                 .and_then(Value::as_str),
-            Some("discard_nodes_traffic_details_and_operational_logs")
+            Some("archive_first_v5")
         );
     }
 
@@ -2504,31 +2651,17 @@ mod tests {
     }
 
     #[test]
-    fn checkpoint_is_bound_and_monotonic() {
-        let binding = ConversionRunBinding {
+    fn conversion_run_is_bound_to_the_unique_registry() {
+        let mut binding = ConversionRunBinding {
             operation_id: uuid::Uuid::from_u128(1).to_string(),
             target_installation_id: uuid::Uuid::from_u128(2).to_string(),
             source_snapshot_sha256: "a".repeat(64),
             source_schema_sha256: LEGACY_SEMANTIC_SCHEMA_SHA256.to_string(),
             registry_sha256: registry_sha256().expect("registry hash"),
-            strategy: LegacyConversionStrategy::PreserveAll,
+            strategy: ColdImportConversionStrategy::ArchiveFirstV5,
         };
-        let first = ConversionCheckpoint {
-            binding: binding.clone(),
-            phase: ConversionPhase::CopyBaseTables,
-            table_order: 10,
-            table: "v2_server_group".to_string(),
-            last_source_id: 4,
-            source_rows_seen: 4,
-            target_rows_verified: 4,
-            rolling_sha256: "b".repeat(64),
-        };
-        first.validate_resume(&binding, None).expect("first");
-        let mut regressed = first.clone();
-        regressed.last_source_id = 3;
-        assert_eq!(
-            regressed.validate_resume(&binding, Some(&first)),
-            Err(ConverterError::CheckpointRegression)
-        );
+        binding.validate().expect("valid binding");
+        binding.registry_sha256 = "b".repeat(64);
+        assert_eq!(binding.validate(), Err(ConverterError::RunBindingMismatch));
     }
 }
