@@ -18,7 +18,7 @@ use crate::state::WorkerState;
 const REMINDER_PAGE_SIZE: i64 = 500;
 const EXPIRE_REMINDER_CANDIDATES_SQL: &str = r#"
 SELECT id, email
-FROM v2_user
+FROM users
 WHERE COALESCE(remind_expire, 0) <> 0
   AND expired_at IS NOT NULL
   AND expired_at > $1
@@ -31,7 +31,7 @@ LIMIT $4
 
 const TRAFFIC_REMINDER_CANDIDATES_SQL: &str = r#"
 SELECT id, email
-FROM v2_user
+FROM users
 WHERE COALESCE(remind_traffic, 0) <> 0
   AND (expired_at IS NULL OR expired_at >= $1)
   AND (CAST(u AS DECIMAL(65, 0)) + CAST(d AS DECIMAL(65, 0))) > 0
@@ -294,7 +294,7 @@ mod tests {
         assert!(!source.contains(concat!("enqueue_prepared_", "mail")));
         assert!(!source.contains(concat!("LAST_SEND_EMAIL_", "REMIND_TRAFFIC")));
         assert!(!source.contains(concat!("send_email", "_inner")));
-        assert!(!source.contains(concat!("v2_mail", "_log")));
+        assert!(!source.contains(concat!("mail", "_log")));
         assert!(!source.contains(concat!("Async", "Transport")));
         assert!(!source.contains(concat!("tokio::time", "::sleep")));
         assert!(!source.contains(concat!("set", "_ex")));

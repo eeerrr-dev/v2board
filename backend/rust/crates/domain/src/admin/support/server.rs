@@ -4,14 +4,14 @@ use base64::{Engine as _, engine::general_purpose};
 // Order matches ServerService::getAllServers() array_merge concatenation, so the
 // getNodes list (before its stable sort by `sort`) preserves Laravel tie order.
 pub(in super::super) const SERVER_TABLES: &[(&str, &str)] = &[
-    ("shadowsocks", "v2_server_shadowsocks"),
-    ("vmess", "v2_server_vmess"),
-    ("trojan", "v2_server_trojan"),
-    ("tuic", "v2_server_tuic"),
-    ("hysteria", "v2_server_hysteria"),
-    ("vless", "v2_server_vless"),
-    ("anytls", "v2_server_anytls"),
-    ("v2node", "v2_server_v2node"),
+    ("shadowsocks", "server_shadowsocks"),
+    ("vmess", "server_vmess"),
+    ("trojan", "server_trojan"),
+    ("tuic", "server_tuic"),
+    ("hysteria", "server_hysteria"),
+    ("vless", "server_vless"),
+    ("anytls", "server_anytls"),
+    ("v2node", "server_v2node"),
 ];
 
 const SERVER_SHADOWSOCKS_COLUMNS: &[&str] = &[

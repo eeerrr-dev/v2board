@@ -165,7 +165,7 @@ async fn handle_telegram_chat_join_request(
     let user = sqlx::query_as::<_, v2board_db::user::UserAccessRow>(
         r#"
         SELECT id, token, uuid, group_id, plan_id, banned, u, d, transfer_enable, expired_at, commission_balance
-        FROM v2_user
+        FROM users
         WHERE telegram_id = $1
         LIMIT 1
         "#,
@@ -266,7 +266,7 @@ async fn telegram_bind(
     let user = sqlx::query_as::<_, TelegramUserRow>(
         r#"
         SELECT id, email, telegram_id, is_admin, is_staff, u, d, transfer_enable
-        FROM v2_user
+        FROM users
         WHERE token = $1
         LIMIT 1
         "#,
@@ -282,7 +282,7 @@ async fn telegram_bind(
             "该账号已经绑定了Telegram账号",
         ));
     }
-    let updated = sqlx::query("UPDATE v2_user SET telegram_id = $1, updated_at = $2 WHERE id = $3")
+    let updated = sqlx::query("UPDATE users SET telegram_id = $1, updated_at = $2 WHERE id = $3")
         .bind(chat_id)
         .bind(Utc::now().timestamp())
         .bind(user.id)
@@ -460,7 +460,7 @@ async fn telegram_user_by_chat_id(
     Ok(sqlx::query_as::<_, TelegramUserRow>(
         r#"
         SELECT id, email, telegram_id, is_admin, is_staff, u, d, transfer_enable
-        FROM v2_user
+        FROM users
         WHERE telegram_id = $1
         LIMIT 1
         "#,
@@ -482,7 +482,7 @@ pub(crate) async fn send_telegram_message_with_admin(
     let users = sqlx::query_as::<_, TelegramAdminRecipient>(
         r#"
         SELECT telegram_id
-        FROM v2_user
+        FROM users
         WHERE telegram_id IS NOT NULL
           AND (is_admin = 1 OR ($1 = 1 AND is_staff = 1))
         "#,

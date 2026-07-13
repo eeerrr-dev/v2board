@@ -116,7 +116,7 @@ impl AuthService {
 
             let user_id = sqlx::query_scalar::<_, i64>(
                 r#"
-                INSERT INTO v2_user (
+                INSERT INTO users (
                     invite_user_id, email, password, uuid, token, transfer_enable, device_limit,
                     group_id, plan_id, speed_limit, expired_at, last_login_at, created_at, updated_at
                 )
@@ -174,7 +174,7 @@ impl AuthService {
                 ));
             }
             sqlx::query(
-                "UPDATE v2_invite_code SET pv = pv + 1, updated_at = $1 \
+                "UPDATE invite_code SET pv = pv + 1, updated_at = $1 \
                  WHERE lower(code) = lower($2)",
             )
             .bind(Utc::now().timestamp())
@@ -194,7 +194,7 @@ impl AuthService {
             return Ok(None);
         };
         let row = sqlx::query_as::<_, InviteCodeRow>(
-            "SELECT id, user_id FROM v2_invite_code \
+            "SELECT id, user_id FROM invite_code \
              WHERE lower(code) = lower($1) AND status = 0 LIMIT 1 FOR UPDATE",
         )
         .bind(code)
@@ -208,7 +208,7 @@ impl AuthService {
         };
         if !self.config.invite_never_expire {
             let result = sqlx::query(
-                "UPDATE v2_invite_code SET status = 1, updated_at = $1 WHERE id = $2 AND status = 0",
+                "UPDATE invite_code SET status = 1, updated_at = $1 WHERE id = $2 AND status = 0",
             )
             .bind(Utc::now().timestamp())
             .bind(row.id)
@@ -278,7 +278,7 @@ impl AuthService {
         let Some(plan) = sqlx::query_as::<_, TrialPlanRow>(
             r#"
             SELECT id, group_id, transfer_enable, device_limit, speed_limit
-            FROM v2_plan
+            FROM plan
             WHERE id = $1
             LIMIT 1
             "#,

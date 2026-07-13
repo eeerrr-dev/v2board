@@ -37,9 +37,9 @@ async fn postgres_outbox_to_clickhouse_is_retryable_end_to_end() {
     migrate_clickhouse(&clickhouse, now).await.unwrap();
     let installation_id = Uuid::parse_str("40aa4a80-eb4b-4b25-9c3b-e17ed047873d").unwrap();
     sqlx::query(
-        "INSERT INTO v2_system_installation \
-         (singleton, installation_id, lineage, state, created_at, activated_at) \
-         VALUES (1, $1, 'native', 'active', $2, $2)",
+        "INSERT INTO system_installation \
+         (singleton, installation_id, created_at) \
+         VALUES (1, $1, $2)",
     )
     .bind(installation_id)
     .bind(now)
@@ -121,7 +121,7 @@ async fn postgres_outbox_to_clickhouse_is_retryable_end_to_end() {
     mark_batch_published(&pool, &batch, now + 1).await.unwrap();
 
     let published: Option<i64> =
-        sqlx::query_scalar("SELECT published_at FROM v2_analytics_outbox WHERE event_id = $1")
+        sqlx::query_scalar("SELECT published_at FROM analytics_outbox WHERE event_id = $1")
             .bind(&event.event_id)
             .fetch_one(&pool)
             .await
@@ -134,7 +134,7 @@ async fn postgres_outbox_to_clickhouse_is_retryable_end_to_end() {
     enqueue_event(&mut tx, &event, now + 2).await.unwrap();
     tx.commit().await.unwrap();
     let count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM v2_analytics_outbox WHERE event_id = $1")
+        sqlx::query_scalar("SELECT COUNT(*) FROM analytics_outbox WHERE event_id = $1")
             .bind(&event.event_id)
             .fetch_one(&pool)
             .await
@@ -200,7 +200,7 @@ async fn postgres_outbox_to_clickhouse_is_retryable_end_to_end() {
     let mut tx = pool.begin().await.unwrap();
     enqueue_event(&mut tx, &outage_event, now).await.unwrap();
     tx.commit().await.unwrap();
-    sqlx::query("UPDATE v2_analytics_outbox SET created_at = $1 WHERE event_id = $2")
+    sqlx::query("UPDATE analytics_outbox SET created_at = $1 WHERE event_id = $2")
         .bind(now - 7_200)
         .bind(&outage_event.event_id)
         .execute(&pool)
@@ -221,7 +221,7 @@ async fn postgres_outbox_to_clickhouse_is_retryable_end_to_end() {
     ));
     tx.rollback().await.unwrap();
     let blocked_count: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM v2_analytics_outbox WHERE event_id = $1")
+        sqlx::query_scalar("SELECT count(*) FROM analytics_outbox WHERE event_id = $1")
             .bind(&blocked_event.event_id)
             .fetch_one(&pool)
             .await
@@ -325,7 +325,7 @@ async fn postgres_outbox_to_clickhouse_is_retryable_end_to_end() {
         (&pending.event_id, 1),
     ] {
         let count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM v2_analytics_outbox WHERE event_id = $1")
+            sqlx::query_scalar("SELECT COUNT(*) FROM analytics_outbox WHERE event_id = $1")
                 .bind(event_id)
                 .fetch_one(&pool)
                 .await
@@ -347,7 +347,7 @@ async fn postgres_outbox_to_clickhouse_is_retryable_end_to_end() {
         .map(|event| event.event_id.clone())
         .collect::<Vec<_>>();
     let bulk_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM v2_analytics_outbox WHERE event_id = ANY($1)")
+        sqlx::query_scalar("SELECT COUNT(*) FROM analytics_outbox WHERE event_id = ANY($1)")
             .bind(&bulk_ids)
             .fetch_one(&pool)
             .await
@@ -372,7 +372,7 @@ async fn postgres_outbox_to_clickhouse_is_retryable_end_to_end() {
             .await
             .unwrap();
     sqlx::query(
-        "UPDATE v2_analytics_admission_state SET \
+        "UPDATE analytics_admission_state SET \
              pressure_state = 'soft_pressure', generation = generation + 1, \
              sampled_at = $1, state_changed_at = $1, accounted_pending_rows = 3000, \
              soft_window_started_at = $1, soft_window_admitted_rows = 99999, \
@@ -400,7 +400,7 @@ async fn postgres_outbox_to_clickhouse_is_retryable_end_to_end() {
         .map(|event| event.event_id.clone())
         .collect::<Vec<_>>();
     let soft_count: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM v2_analytics_outbox WHERE event_id = ANY($1)")
+        sqlx::query_scalar("SELECT count(*) FROM analytics_outbox WHERE event_id = ANY($1)")
             .bind(&soft_ids)
             .fetch_one(&pool)
             .await
@@ -410,7 +410,7 @@ async fn postgres_outbox_to_clickhouse_is_retryable_end_to_end() {
     // Two concurrent producers at the final row below hard capacity serialize
     // on the singleton: exactly one commits and one fails closed.
     sqlx::query(
-        "UPDATE v2_analytics_admission_state SET \
+        "UPDATE analytics_admission_state SET \
              pressure_state = 'normal', generation = generation + 1, \
              sampled_at = $1, state_changed_at = $1, accounted_pending_rows = 3998, \
              soft_window_started_at = $1, soft_window_admitted_rows = 0, \
@@ -429,7 +429,7 @@ async fn postgres_outbox_to_clickhouse_is_retryable_end_to_end() {
     assert_eq!(usize::from(first) + usize::from(second), 1);
     let concurrent_ids = vec![concurrent_a.event_id, concurrent_b.event_id];
     let concurrent_count: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM v2_analytics_outbox WHERE event_id = ANY($1)")
+        sqlx::query_scalar("SELECT count(*) FROM analytics_outbox WHERE event_id = ANY($1)")
             .bind(&concurrent_ids)
             .fetch_one(&pool)
             .await

@@ -98,7 +98,7 @@ async fn main() -> anyhow::Result<()> {
     } else {
         // Local development has an explicit, disposable bootstrap path so a
         // fresh `make reset` remains self-contained. Production authority is
-        // seeded by the lifecycle command before either long-lived role starts.
+        // seeded during initial database preparation before either long-lived role starts.
         operator_config::ensure_authority(&db, installation_id, &config).await
     };
     let authority = match authority_result {

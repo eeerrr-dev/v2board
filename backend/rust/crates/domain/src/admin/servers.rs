@@ -33,7 +33,7 @@ async fn lock_server_groups(tx: &mut DbTransaction<'_>, group_ids: &[i64]) -> Re
     let mut found = 0_usize;
     for chunk in group_ids.chunks(SERVER_GROUP_LOCK_BATCH_SIZE) {
         let mut builder =
-            QueryBuilder::<Postgres>::new("SELECT id::bigint FROM v2_server_group WHERE id IN (");
+            QueryBuilder::<Postgres>::new("SELECT id::bigint FROM server_group WHERE id IN (");
         let mut ids = builder.separated(", ");
         for id in chunk {
             ids.push_bind(*id);
@@ -86,7 +86,7 @@ impl AdminService {
         if result.rows_affected() == 0 {
             return Err(ApiError::legacy("节点ID不存在"));
         }
-        sqlx::query("DELETE FROM v2_server_credential WHERE node_type = $1 AND node_id = $2")
+        sqlx::query("DELETE FROM server_credential WHERE node_type = $1 AND node_id = $2")
             .bind(kind)
             .bind(id)
             .execute(&mut *tx)
@@ -106,7 +106,7 @@ impl AdminService {
         let id = required_i64(params, "id")?;
         let mut tx = self.db.begin().await?;
         let exists: Option<i32> =
-            sqlx::query_scalar("SELECT id FROM v2_server_group WHERE id = $1 LIMIT 1 FOR UPDATE")
+            sqlx::query_scalar("SELECT id FROM server_group WHERE id = $1 LIMIT 1 FOR UPDATE")
                 .bind(id)
                 .fetch_optional(&mut *tx)
                 .await?;
@@ -119,7 +119,7 @@ impl AdminService {
             }
         }
         let plan_used: Option<i32> =
-            sqlx::query_scalar("SELECT id FROM v2_plan WHERE group_id = $1 LIMIT 1 FOR SHARE")
+            sqlx::query_scalar("SELECT id FROM plan WHERE group_id = $1 LIMIT 1 FOR SHARE")
                 .bind(id)
                 .fetch_optional(&mut *tx)
                 .await?;
@@ -127,14 +127,14 @@ impl AdminService {
             return Err(ApiError::legacy("该组已被订阅所使用，无法删除"));
         }
         let user_used: Option<i64> =
-            sqlx::query_scalar("SELECT id FROM v2_user WHERE group_id = $1 LIMIT 1 FOR SHARE")
+            sqlx::query_scalar("SELECT id FROM users WHERE group_id = $1 LIMIT 1 FOR SHARE")
                 .bind(id)
                 .fetch_optional(&mut *tx)
                 .await?;
         if user_used.is_some() {
             return Err(ApiError::legacy("该组已被用户所使用，无法删除"));
         }
-        let deleted = sqlx::query("DELETE FROM v2_server_group WHERE id = $1")
+        let deleted = sqlx::query("DELETE FROM server_group WHERE id = $1")
             .bind(id)
             .execute(&mut *tx)
             .await?;
@@ -173,7 +173,7 @@ impl AdminService {
                 SELECT jsonb_build_object(
                     'id', id, 'name', name, 'created_at', created_at, 'updated_at', updated_at
                 )
-                FROM v2_server_group
+                FROM server_group
                 WHERE id = $1
                 LIMIT 1
                 "#,
@@ -191,10 +191,10 @@ impl AdminService {
             r#"
             SELECT jsonb_build_object(
                 'id', id, 'name', name, 'created_at', created_at, 'updated_at', updated_at,
-                'user_count', (SELECT COUNT(*) FROM v2_user WHERE group_id = v2_server_group.id),
+                'user_count', (SELECT COUNT(*) FROM users WHERE group_id = server_group.id),
                 'server_count', 0
             )
-            FROM v2_server_group
+            FROM server_group
             ORDER BY id ASC
             "#,
         )
@@ -220,7 +220,7 @@ impl AdminService {
     ) -> Result<AdminOutput, ApiError> {
         let now = Utc::now().timestamp();
         if let Some(id) = optional_i64(params, "id") {
-            sqlx::query("UPDATE v2_server_group SET name = $1, updated_at = $2 WHERE id = $3")
+            sqlx::query("UPDATE server_group SET name = $1, updated_at = $2 WHERE id = $3")
                 .bind(required_string(params, "name")?)
                 .bind(now)
                 .bind(id)
@@ -228,7 +228,7 @@ impl AdminService {
                 .await?;
         } else {
             sqlx::query(
-                "INSERT INTO v2_server_group (name, created_at, updated_at) VALUES ($1, $2, $3)",
+                "INSERT INTO server_group (name, created_at, updated_at) VALUES ($1, $2, $3)",
             )
             .bind(required_string(params, "name")?)
             .bind(now)
@@ -249,7 +249,7 @@ impl AdminService {
                 'action', action, 'action_value', action_value,
                 'created_at', created_at, 'updated_at', updated_at
             )
-            FROM v2_server_route
+            FROM server_route
             ORDER BY id ASC
             "#
             )
@@ -280,7 +280,7 @@ impl AdminService {
         let action_value = optional_string(params, "action_value").map(Value::String);
         if let Some(id) = optional_i64(params, "id") {
             sqlx::query(
-                "UPDATE v2_server_route SET remarks = $1, \"match\" = $2, action = $3, action_value = $4, updated_at = $5 WHERE id = $6",
+                "UPDATE server_route SET remarks = $1, \"match\" = $2, action = $3, action_value = $4, updated_at = $5 WHERE id = $6",
             )
             .bind(required_string(params, "remarks")?)
             .bind(Json(matches))
@@ -292,7 +292,7 @@ impl AdminService {
             .await?;
         } else {
             sqlx::query(
-                "INSERT INTO v2_server_route (remarks, \"match\", action, action_value, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)",
+                "INSERT INTO server_route (remarks, \"match\", action, action_value, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)",
             )
             .bind(required_string(params, "remarks")?)
             .bind(Json(matches))
@@ -324,7 +324,7 @@ impl AdminService {
             .or_else(|| self.config.app_url.clone())
             .unwrap_or_default();
         let credential_rows = sqlx::query_as::<_, (String, i32, i64)>(
-            "SELECT node_type, node_id, credential_epoch FROM v2_server_credential",
+            "SELECT node_type, node_id, credential_epoch FROM server_credential",
         )
         .fetch_all(&self.db)
         .await?
@@ -498,13 +498,13 @@ impl AdminService {
         };
         sqlx::query(
             r#"
-            INSERT INTO v2_server_credential
+            INSERT INTO server_credential
                 (node_type, node_id, credential_epoch, updated_at)
             VALUES ($1, $2, 0, $3)
             ON CONFLICT (node_type, node_id) DO UPDATE SET
                 credential_epoch = CASE WHEN $4
-                    THEN v2_server_credential.credential_epoch + 1
-                    ELSE v2_server_credential.credential_epoch END,
+                    THEN server_credential.credential_epoch + 1
+                    ELSE server_credential.credential_epoch END,
                 updated_at = EXCLUDED.updated_at
             "#,
         )
@@ -573,7 +573,7 @@ impl AdminService {
             .await?
             .ok_or_else(|| ApiError::legacy("服务器不存在"))?;
         sqlx::query(
-            "INSERT INTO v2_server_credential \
+            "INSERT INTO server_credential \
              (node_type, node_id, credential_epoch, updated_at) VALUES ($1, $2, 0, $3)",
         )
         .bind(kind)

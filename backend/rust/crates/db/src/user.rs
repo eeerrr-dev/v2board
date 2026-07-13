@@ -93,7 +93,7 @@ pub async fn find_user_for_auth(
     sqlx::query_as::<_, UserAuthRow>(
         r#"
         SELECT id, email, password, password_algo, password_salt, session_epoch, token, banned, is_admin, is_staff
-        FROM v2_user
+        FROM users
         WHERE lower(btrim(email)) = lower(btrim($1))
         LIMIT 1
         "#,
@@ -110,7 +110,7 @@ pub async fn find_user_for_auth_by_id(
     sqlx::query_as::<_, UserAuthRow>(
         r#"
         SELECT id, email, password, password_algo, password_salt, session_epoch, token, banned, is_admin, is_staff
-        FROM v2_user
+        FROM users
         WHERE id = $1
         LIMIT 1
         "#,
@@ -141,7 +141,7 @@ pub async fn find_user_info(pool: &PgPool, id: i64) -> Result<Option<UserInfoRow
             commission_rate,
             telegram_id,
             uuid
-        FROM v2_user
+        FROM users
         WHERE id = $1
         LIMIT 1
         "#,
@@ -182,7 +182,7 @@ pub async fn find_user_subscribe(
     sqlx::query_as::<_, UserSubscribeRow>(
         r#"
         SELECT plan_id, token, expired_at, u, d, transfer_enable, device_limit, email, uuid
-        FROM v2_user
+        FROM users
         WHERE id = $1
         LIMIT 1
         "#,
@@ -199,7 +199,7 @@ pub async fn find_user_access(
     sqlx::query_as::<_, UserAccessRow>(
         r#"
         SELECT id, token, uuid, group_id, plan_id, banned, u, d, transfer_enable, expired_at, commission_balance
-        FROM v2_user
+        FROM users
         WHERE id = $1
         LIMIT 1
         "#,
@@ -216,7 +216,7 @@ pub async fn find_user_access_by_token(
     sqlx::query_as::<_, UserAccessRow>(
         r#"
         SELECT id, token, uuid, group_id, plan_id, banned, u, d, transfer_enable, expired_at, commission_balance
-        FROM v2_user
+        FROM users
         WHERE token = $1
         LIMIT 1
         "#,
@@ -236,7 +236,7 @@ pub async fn update_preferences(
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
-        UPDATE v2_user
+        UPDATE users
         SET
             auto_renewal = COALESCE($1, auto_renewal),
             remind_expire = COALESCE($2, remind_expire),
@@ -256,12 +256,11 @@ pub async fn update_preferences(
 }
 
 pub async fn clear_telegram_id(pool: &PgPool, id: i64, now: i64) -> Result<bool, sqlx::Error> {
-    let result =
-        sqlx::query("UPDATE v2_user SET telegram_id = NULL, updated_at = $1 WHERE id = $2")
-            .bind(now)
-            .bind(id)
-            .execute(pool)
-            .await?;
+    let result = sqlx::query("UPDATE users SET telegram_id = NULL, updated_at = $1 WHERE id = $2")
+        .bind(now)
+        .bind(id)
+        .execute(pool)
+        .await?;
     Ok(result.rows_affected() > 0)
 }
 
@@ -273,7 +272,7 @@ pub async fn update_security(
     now: i64,
 ) -> Result<bool, sqlx::Error> {
     let result =
-        sqlx::query("UPDATE v2_user SET uuid = $1, token = $2, updated_at = $3 WHERE id = $4")
+        sqlx::query("UPDATE users SET uuid = $1, token = $2, updated_at = $3 WHERE id = $4")
             .bind(uuid)
             .bind(token)
             .bind(now)
@@ -291,7 +290,7 @@ pub async fn update_password(
 ) -> Result<bool, sqlx::Error> {
     let result = sqlx::query(
         r#"
-        UPDATE v2_user
+        UPDATE users
         SET password = $1, password_algo = NULL, password_salt = NULL,
             session_epoch = session_epoch + 1, updated_at = $2
         WHERE id = $3
@@ -315,7 +314,7 @@ pub async fn change_password_if_current(
 ) -> Result<bool, sqlx::Error> {
     let result = sqlx::query(
         r#"
-        UPDATE v2_user
+        UPDATE users
         SET password = $1, password_algo = NULL, password_salt = NULL,
             session_epoch = session_epoch + 1, updated_at = $2
         WHERE id = $3 AND password = $4 AND session_epoch = $5
@@ -342,7 +341,7 @@ pub async fn rehash_password(
 ) -> Result<bool, sqlx::Error> {
     let result = sqlx::query(
         r#"
-        UPDATE v2_user
+        UPDATE users
         SET password = $1, password_algo = NULL, password_salt = NULL, updated_at = $2
         WHERE id = $3 AND password = $4
         "#,
@@ -358,7 +357,7 @@ pub async fn rehash_password(
 
 pub async fn count_pending_orders(pool: &PgPool, user_id: i64) -> Result<i64, sqlx::Error> {
     let count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM v2_order WHERE status = 0 AND user_id = $1")
+        sqlx::query_scalar("SELECT COUNT(*) FROM orders WHERE status = 0 AND user_id = $1")
             .bind(user_id)
             .fetch_one(pool)
             .await?;
@@ -367,7 +366,7 @@ pub async fn count_pending_orders(pool: &PgPool, user_id: i64) -> Result<i64, sq
 
 pub async fn count_pending_tickets(pool: &PgPool, user_id: i64) -> Result<i64, sqlx::Error> {
     let count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM v2_ticket WHERE status = 0 AND user_id = $1")
+        sqlx::query_scalar("SELECT COUNT(*) FROM ticket WHERE status = 0 AND user_id = $1")
             .bind(user_id)
             .fetch_one(pool)
             .await?;
@@ -375,7 +374,7 @@ pub async fn count_pending_tickets(pool: &PgPool, user_id: i64) -> Result<i64, s
 }
 
 pub async fn count_invited_users(pool: &PgPool, user_id: i64) -> Result<i64, sqlx::Error> {
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM v2_user WHERE invite_user_id = $1")
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE invite_user_id = $1")
         .bind(user_id)
         .fetch_one(pool)
         .await?;

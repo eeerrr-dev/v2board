@@ -390,13 +390,13 @@ mod postgres_integer_bind_tests {
 
     #[test]
     fn dynamic_assignments_use_the_same_exact_integer_casts() {
-        let mut builder = QueryBuilder::<Postgres>::new("UPDATE v2_user SET banned = ");
+        let mut builder = QueryBuilder::<Postgres>::new("UPDATE users SET banned = ");
         push_admin_sql_bind(&mut builder, "banned", &AdminSqlValue::Integer(1));
         builder.push(", balance = ");
         push_admin_sql_bind(&mut builder, "balance", &AdminSqlValue::Integer(10));
         assert_eq!(
             builder.sql(),
-            "UPDATE v2_user SET banned = CAST($1 AS SMALLINT), balance = CAST($2 AS INTEGER)"
+            "UPDATE users SET banned = CAST($1 AS SMALLINT), balance = CAST($2 AS INTEGER)"
         );
     }
 }

@@ -48,7 +48,7 @@ pub(crate) async fn user_transfer(
     let now = Utc::now().timestamp();
     let mut tx = state.db.begin().await?;
     let current = sqlx::query_as::<_, TransferUserRow>(
-        "SELECT commission_balance, balance, invite_user_id FROM v2_user WHERE id = $1 LIMIT 1 FOR UPDATE",
+        "SELECT commission_balance, balance, invite_user_id FROM users WHERE id = $1 LIMIT 1 FOR UPDATE",
     )
     .bind(user.id)
     .fetch_optional(&mut *tx)
@@ -60,7 +60,7 @@ pub(crate) async fn user_transfer(
         payload.transfer_amount,
     )?;
     sqlx::query(
-        "UPDATE v2_user SET commission_balance = $1, balance = $2, updated_at = $3 WHERE id = $4",
+        "UPDATE users SET commission_balance = $1, balance = $2, updated_at = $3 WHERE id = $4",
     )
     .bind(commission_balance)
     .bind(balance)
@@ -75,14 +75,14 @@ pub(crate) async fn user_transfer(
     let mut order_commission_balance = 0i32;
     if let Some(invite_user_id) = current.invite_user_id {
         let inviter = sqlx::query_as::<_, TransferInviterRow>(
-            "SELECT commission_type, commission_rate FROM v2_user WHERE id = $1 LIMIT 1",
+            "SELECT commission_type, commission_rate FROM users WHERE id = $1 LIMIT 1",
         )
         .bind(invite_user_id)
         .fetch_optional(&mut *tx)
         .await?;
         if let Some(inviter) = inviter {
             let has_valid_order: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM v2_order WHERE user_id = $1 AND status NOT IN (0, 2)",
+                "SELECT COUNT(*) FROM orders WHERE user_id = $1 AND status NOT IN (0, 2)",
             )
             .bind(user.id)
             .fetch_one(&mut *tx)
@@ -105,7 +105,7 @@ pub(crate) async fn user_transfer(
 
     sqlx::query(
         r#"
-        INSERT INTO v2_order (
+        INSERT INTO orders (
             user_id, invite_user_id, plan_id, period, trade_no, total_amount, surplus_amount,
             "type", status, callback_no, commission_status, commission_balance, created_at, updated_at
         )

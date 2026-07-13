@@ -31,13 +31,13 @@ pub(super) async fn credit_user_balance(
     overflow_message: &'static str,
 ) -> Result<(), ApiError> {
     let current_balance: i32 =
-        sqlx::query_scalar("SELECT balance FROM v2_user WHERE id = $1 LIMIT 1 FOR UPDATE")
+        sqlx::query_scalar("SELECT balance FROM users WHERE id = $1 LIMIT 1 FOR UPDATE")
             .bind(user_id)
             .fetch_optional(&mut **tx)
             .await?
             .ok_or_else(|| ApiError::legacy("The user does not exist"))?;
     let new_balance = checked_add_cents(current_balance, credit, overflow_message)?;
-    sqlx::query("UPDATE v2_user SET balance = $1, updated_at = $2 WHERE id = $3")
+    sqlx::query("UPDATE users SET balance = $1, updated_at = $2 WHERE id = $3")
         .bind(new_balance)
         .bind(Utc::now().timestamp())
         .bind(user_id)
@@ -183,7 +183,7 @@ impl OrderService {
                 limit_period::text AS limit_period,
                 started_at,
                 ended_at
-            FROM v2_coupon
+            FROM coupon
             WHERE lower(code) = lower($1)
             LIMIT 1
             FOR UPDATE
@@ -213,11 +213,10 @@ impl OrderService {
             if limit_use <= 0 {
                 return Err(ApiError::legacy("Coupon failed"));
             }
-            let result =
-                sqlx::query("UPDATE v2_coupon SET limit_use = limit_use - 1 WHERE id = $1")
-                    .bind(coupon.id)
-                    .execute(&mut **tx)
-                    .await?;
+            let result = sqlx::query("UPDATE coupon SET limit_use = limit_use - 1 WHERE id = $1")
+                .bind(coupon.id)
+                .execute(&mut **tx)
+                .await?;
             if result.rows_affected() == 0 {
                 return Err(ApiError::legacy("Coupon failed"));
             }
@@ -277,7 +276,7 @@ impl OrderService {
             let Some(last_order) = sqlx::query_as::<_, SurplusOrderRow>(
                 r#"
                 SELECT id, period, total_amount, balance_amount, surplus_amount, refund_amount, created_at
-                FROM v2_order
+                FROM orders
                 WHERE user_id = $1 AND period = 'onetime_price' AND status = 3
                 ORDER BY id DESC
                 LIMIT 1
@@ -313,7 +312,7 @@ impl OrderService {
         let rows = sqlx::query_as::<_, SurplusOrderRow>(
             r#"
             SELECT id, period, total_amount, balance_amount, surplus_amount, refund_amount, created_at
-            FROM v2_order
+            FROM orders
             WHERE user_id = $1
               AND period != 'reset_price'
               AND period != 'onetime_price'
@@ -433,7 +432,7 @@ impl OrderService {
             .ok_or_else(|| ApiError::internal("balance deduction is outside the integer range"))?;
         let result = sqlx::query(
             r#"
-            UPDATE v2_user
+            UPDATE users
             SET balance = balance - $1, updated_at = $2
             WHERE id = $3 AND balance >= $4
             "#,
@@ -508,7 +507,7 @@ impl OrderService {
                 "Deposit credit exceeds the supported balance range",
             )
             .await?;
-            sqlx::query("UPDATE v2_order SET status = 3, updated_at = $1 WHERE id = $2")
+            sqlx::query("UPDATE orders SET status = 3, updated_at = $1 WHERE id = $2")
                 .bind(Utc::now().timestamp())
                 .bind(order.id)
                 .execute(&mut **tx)
@@ -548,7 +547,7 @@ impl OrderService {
         }
         user.speed_limit = plan.speed_limit;
         save_opened_user(tx, &user).await?;
-        sqlx::query("UPDATE v2_order SET status = 3, updated_at = $1 WHERE id = $2")
+        sqlx::query("UPDATE orders SET status = 3, updated_at = $1 WHERE id = $2")
             .bind(Utc::now().timestamp())
             .bind(order.id)
             .execute(&mut **tx)
@@ -621,7 +620,7 @@ async fn validate_coupon(
         let used_count: i64 = sqlx::query_scalar(
             r#"
             SELECT COUNT(*)
-            FROM v2_order
+            FROM orders
             WHERE coupon_id = $1 AND user_id = $2 AND status NOT IN (0, 2)
             "#,
         )
@@ -692,7 +691,7 @@ pub(super) fn commission_amount(
 
 async fn have_valid_order(tx: &mut DbTransaction<'_>, user_id: i64) -> Result<bool, sqlx::Error> {
     let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM v2_order WHERE user_id = $1 AND status NOT IN (0, 2)",
+        "SELECT COUNT(*) FROM orders WHERE user_id = $1 AND status NOT IN (0, 2)",
     )
     .bind(user_id)
     .fetch_one(&mut **tx)
@@ -708,13 +707,13 @@ async fn fetch_surplus_order_ids(
     let sql = if include_one_time {
         r#"
         SELECT id
-        FROM v2_order
+        FROM orders
         WHERE user_id = $1 AND period != 'reset_price' AND status = 3
         "#
     } else {
         r#"
         SELECT id
-        FROM v2_order
+        FROM orders
         WHERE user_id = $1
           AND period != 'reset_price'
           AND period != 'onetime_price'
@@ -743,7 +742,7 @@ pub(super) async fn insert_order(
     let commission_balance = round_cents(draft.commission_balance)?;
     let result = sqlx::query(
         r#"
-        INSERT INTO v2_order (
+        INSERT INTO orders (
             invite_user_id,
             user_id,
             plan_id,
@@ -810,7 +809,7 @@ pub(super) async fn mark_order_paid(
     let callback_no_hash = payment_identifier_hash(callback_no);
     sqlx::query(
         r#"
-        UPDATE v2_order
+        UPDATE orders
         SET status = 1, paid_at = $1, callback_no = $2, callback_no_hash = $3, updated_at = $4
         WHERE id = $5 AND status = 0
         "#,
@@ -828,7 +827,7 @@ pub(super) async fn mark_order_paid(
 async fn mark_surplus_orders(tx: &mut DbTransaction<'_>, ids: &[i64]) -> Result<(), sqlx::Error> {
     for chunk in ids.chunks(500) {
         let mut builder =
-            QueryBuilder::<Postgres>::new("UPDATE v2_order SET status = 4 WHERE id IN (");
+            QueryBuilder::<Postgres>::new("UPDATE orders SET status = 4 WHERE id IN (");
         let mut separated = builder.separated(", ");
         for id in chunk {
             separated.push_bind(id);
@@ -845,7 +844,7 @@ async fn save_opened_user(
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
-        UPDATE v2_user
+        UPDATE users
         SET
             balance = $1,
             traffic_epoch = $2,
@@ -1238,7 +1237,7 @@ SELECT
     plan_id,
     speed_limit,
     expired_at
-FROM v2_user
+FROM users
 WHERE id = $1
 LIMIT 1
 FOR UPDATE

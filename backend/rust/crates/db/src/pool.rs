@@ -90,17 +90,17 @@ pub enum DbInitError {
     #[error("lost the local seed lock before it could be released")]
     SeedLockLost,
     #[error(
-        "database contains tables but no native PostgreSQL SQLx migration lineage; ordinary migrate cannot adopt a legacy or unknown schema—use the reviewed lifecycle workflow"
+        "database contains tables but no PostgreSQL SQLx migration ledger; refusing to adopt an unknown schema"
     )]
-    UnboundMigrationTarget,
+    UnpreparedMigrationTarget,
     #[error(
-        "production PostgreSQL schema changes require the reviewed lifecycle apply workflow; ordinary migrate can only verify an already-current bound native database"
+        "production PostgreSQL schema must be prepared by the one-shot import/install path; ordinary migrate only verifies an already-current database"
     )]
-    ProductionLifecycleRequired,
-    #[error("PostgreSQL SQLx migration ledger is not an exact valid prefix of this binary")]
-    InvalidMigrationLineage,
-    #[error("PostgreSQL installation binding is missing or is not uniquely active")]
-    InstallationBindingMissing,
+    ProductionDatabasePreparationRequired,
+    #[error("PostgreSQL SQLx migration ledger does not match this binary")]
+    InvalidMigrationLedger,
+    #[error("PostgreSQL installation identity is missing or is not unique")]
+    InstallationIdentityMissing,
     #[error("native runtime requires PostgreSQL 18.x, but the server reports version_num {0}")]
     UnsupportedPostgresVersion(i32),
 }
@@ -183,12 +183,12 @@ async fn validate_migration_target(pool: &DbPool, production: bool) -> Result<()
     .await?;
     if table_count == 0 {
         if production {
-            return Err(DbInitError::ProductionLifecycleRequired);
+            return Err(DbInitError::ProductionDatabasePreparationRequired);
         }
         return Ok(());
     }
     if !table_exists(pool, "_sqlx_migrations").await? {
-        return Err(DbInitError::UnboundMigrationTarget);
+        return Err(DbInitError::UnpreparedMigrationTarget);
     }
     let applied = sqlx::query_as::<_, (i64, Vec<u8>, bool)>(
         "SELECT version, checksum, success FROM _sqlx_migrations ORDER BY version",
@@ -201,23 +201,22 @@ async fn validate_migration_target(pool: &DbPool, production: bool) -> Result<()
         .map(|migration| (migration.version, migration.checksum.as_ref()))
         .collect::<Vec<_>>();
     if !migration_records_valid_prefix(&applied, &embedded) {
-        return Err(DbInitError::InvalidMigrationLineage);
+        return Err(DbInitError::InvalidMigrationLedger);
     }
     if production && !migration_records_current(&applied, &embedded) {
-        return Err(DbInitError::ProductionLifecycleRequired);
+        return Err(DbInitError::ProductionDatabasePreparationRequired);
     }
-    let installation_active = if table_exists(pool, "v2_system_installation").await? {
+    let installation_present = if table_exists(pool, "system_installation").await? {
         sqlx::query_scalar::<_, bool>(
-            "SELECT COUNT(*) = 1 FROM v2_system_installation \
-             WHERE singleton = 1 AND state = 'active' AND activated_at IS NOT NULL",
+            "SELECT COUNT(*) = 1 FROM system_installation WHERE singleton = 1",
         )
         .fetch_one(pool)
         .await?
     } else {
         false
     };
-    if !installation_active {
-        return Err(DbInitError::InstallationBindingMissing);
+    if !installation_present {
+        return Err(DbInitError::InstallationIdentityMissing);
     }
     Ok(())
 }
@@ -254,13 +253,9 @@ pub async fn migrations_current(pool: &DbPool) -> Result<bool, sqlx::Error> {
     Ok(migration_records_current(&applied, &embedded))
 }
 
-/// Returns the immutable identity of the one active installation.
-///
-/// `singleton = 1` is the table primary key, so `fetch_one` means exactly one
-/// active row: pending, retired, missing, or unbootstrapped installations fail
-/// closed with `RowNotFound`.
+/// Returns the immutable identity of this installation.
 pub async fn installation_id(pool: &DbPool) -> Result<Uuid, sqlx::Error> {
-    sqlx::query_scalar("SELECT installation_id FROM v2_system_installation WHERE state = 'active'")
+    sqlx::query_scalar("SELECT installation_id FROM system_installation WHERE singleton = 1")
         .fetch_one(pool)
         .await
 }
@@ -374,34 +369,33 @@ async fn seed_local(pool: &PgPool) -> Result<(), DbInitError> {
 async fn seed_local_locked(connection: &mut PgConnection) -> Result<(), DbInitError> {
     let now = Utc::now().timestamp();
     let installation_exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM v2_system_installation)")
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM system_installation)")
             .fetch_one(&mut *connection)
             .await?;
     if !installation_exists {
         sqlx::query(
             r#"
-            INSERT INTO v2_system_installation (
-                singleton, installation_id, lineage, state, created_at, activated_at
+            INSERT INTO system_installation (
+                singleton, installation_id, created_at
             )
-            VALUES (1, $1, 'native', 'active', $2, $3)
+            VALUES (1, $1, $2)
             "#,
         )
         .bind(Uuid::new_v4())
-        .bind(now)
         .bind(now)
         .execute(&mut *connection)
         .await?;
     }
     let current_admin_exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM v2_user WHERE lower(btrim(email)) = lower(btrim($1)))",
+        "SELECT EXISTS(SELECT 1 FROM users WHERE lower(btrim(email)) = lower(btrim($1)))",
     )
     .bind(LOCAL_SEED_ADMIN_EMAIL)
     .fetch_one(&mut *connection)
     .await?;
     if !current_admin_exists {
         sqlx::query(
-            "UPDATE v2_user SET email = $1, updated_at = $2 \
-             WHERE id = (SELECT id FROM v2_user \
+            "UPDATE users SET email = $1, updated_at = $2 \
+             WHERE id = (SELECT id FROM users \
                          WHERE lower(btrim(email)) = lower(btrim($3)) AND is_admin = 1 LIMIT 1)",
         )
         .bind(LOCAL_SEED_ADMIN_EMAIL)
@@ -424,7 +418,7 @@ async fn seed_local_locked(connection: &mut PgConnection) -> Result<(), DbInitEr
     );
     sqlx::query(
         r#"
-        INSERT INTO v2_user (
+        INSERT INTO users (
             email, password, uuid, token, is_admin, created_at, updated_at
         )
         VALUES ($1, $2, $3, $4, 1, $5, $6)
@@ -442,9 +436,9 @@ async fn seed_local_locked(connection: &mut PgConnection) -> Result<(), DbInitEr
 
     sqlx::query(
         r#"
-        INSERT INTO v2_server_group (name, created_at, updated_at)
+        INSERT INTO server_group (name, created_at, updated_at)
         SELECT 'Default Group', $1, $2
-        WHERE NOT EXISTS (SELECT 1 FROM v2_server_group)
+        WHERE NOT EXISTS (SELECT 1 FROM server_group)
         "#,
     )
     .bind(now)
@@ -452,19 +446,19 @@ async fn seed_local_locked(connection: &mut PgConnection) -> Result<(), DbInitEr
     .execute(&mut *connection)
     .await?;
 
-    let group_id: i32 = sqlx::query_scalar("SELECT id FROM v2_server_group ORDER BY id LIMIT 1")
+    let group_id: i32 = sqlx::query_scalar("SELECT id FROM server_group ORDER BY id LIMIT 1")
         .fetch_one(&mut *connection)
         .await?;
     sqlx::query(
         r#"
-        INSERT INTO v2_plan (
+        INSERT INTO plan (
             group_id, transfer_enable, name, show, sort, renew, content,
             month_price, quarter_price, half_year_price, year_price,
             onetime_price, created_at, updated_at
         )
         SELECT $1, 100, 'Test Plan', 1, 1, 1, 'Local Rust test plan',
                100, 280, 540, 1000, 9900, $2, $3
-        WHERE NOT EXISTS (SELECT 1 FROM v2_plan)
+        WHERE NOT EXISTS (SELECT 1 FROM plan)
         "#,
     )
     .bind(group_id)
@@ -475,12 +469,12 @@ async fn seed_local_locked(connection: &mut PgConnection) -> Result<(), DbInitEr
 
     sqlx::query(
         r#"
-        INSERT INTO v2_knowledge (
+        INSERT INTO knowledge (
             language, category, title, body, sort, show, created_at, updated_at
         )
         SELECT 'zh-CN', '使用文档', '本地开发环境快速开始',
                $1, 1, 1, $2, $3
-        WHERE NOT EXISTS (SELECT 1 FROM v2_knowledge)
+        WHERE NOT EXISTS (SELECT 1 FROM knowledge)
         "#,
     )
     .bind(format!(
@@ -573,33 +567,22 @@ mod tests {
     }
 
     #[test]
-    fn postgres_migrations_are_independent_from_the_mysql_lineage() {
+    fn postgres_schema_is_one_final_state_baseline() {
         let baseline = include_str!("../../../migrations-postgres/0001_initial.sql");
-        let extension = include_str!(
-            "../../../migrations-postgres/0002_giftcard_provenance_and_analytics_admission.sql"
-        );
-        let operator_authority =
-            include_str!("../../../migrations-postgres/0003_operator_config_authority.sql");
         assert!(baseline.contains("PostgreSQL 18"));
         assert!(baseline.contains("GENERATED BY DEFAULT AS IDENTITY"));
         assert!(baseline.contains("uniq_unfinished_order_per_user"));
-        assert!(baseline.contains("CREATE TABLE v2_system_installation"));
-        assert!(baseline.contains("CREATE TABLE v2_analytics_outbox"));
-        assert!(!baseline.contains("CREATE TABLE v2_lifecycle_operation"));
-        assert!(!extension.contains("v2_lifecycle_"));
-        assert!(!extension.contains("v2_legacy_copy_checkpoint"));
-        assert!(!extension.contains("v2_legacy_traffic_fold"));
-        assert!(!extension.contains("source_redis"));
-        assert!(extension.contains("created_at_provenance = 'legacy_unknown'"));
-        assert!(extension.contains("CREATE TABLE v2_analytics_admission_policy"));
-        assert!(extension.contains("CREATE TABLE v2_analytics_admission_state"));
-        assert!(extension.contains("CREATE FUNCTION v2_guard_analytics_admission_policy"));
-        assert!(extension.contains("CREATE FUNCTION v2_guard_analytics_admission_state"));
-        assert!(operator_authority.contains("CREATE TABLE v2_operator_config_revision"));
-        assert!(operator_authority.contains("format_version SMALLINT NOT NULL"));
-        assert!(operator_authority.contains("operator configuration revisions are immutable"));
-        let executable_sql = [baseline, extension, operator_authority]
-            .join("\n")
+        assert!(baseline.contains("CREATE TABLE system_installation"));
+        assert!(baseline.contains("CREATE TABLE analytics_outbox"));
+        assert!(baseline.contains("created_at_provenance = 'legacy_unknown'"));
+        assert!(baseline.contains("CREATE TABLE analytics_admission_policy"));
+        assert!(baseline.contains("CREATE TABLE analytics_admission_state"));
+        assert!(baseline.contains("CREATE FUNCTION guard_analytics_admission_policy"));
+        assert!(baseline.contains("CREATE FUNCTION guard_analytics_admission_state"));
+        assert!(baseline.contains("CREATE TABLE operator_config_revision"));
+        assert!(baseline.contains("format_version SMALLINT NOT NULL"));
+        assert!(baseline.contains("operator configuration revisions are immutable"));
+        let executable_sql = baseline
             .lines()
             .filter(|line| !line.trim_start().starts_with("--"))
             .collect::<Vec<_>>()

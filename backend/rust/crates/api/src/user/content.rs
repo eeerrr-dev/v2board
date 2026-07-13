@@ -65,7 +65,7 @@ pub(crate) async fn knowledge_categories(
     let _user = require_user(&state, &headers, query.auth_data).await?;
     let language = query.language.as_deref().unwrap_or("zh-CN");
     let categories = sqlx::query_scalar::<_, String>(
-        "SELECT category FROM v2_knowledge WHERE language = $1 AND \"show\" = 1 GROUP BY category ORDER BY category ASC",
+        "SELECT category FROM knowledge WHERE language = $1 AND \"show\" = 1 GROUP BY category ORDER BY category ASC",
     )
     .bind(language)
     .fetch_all(&state.db)

@@ -12,7 +12,7 @@ const HMAC_DOMAIN: &[u8] = b"v2board/operator-config/hmac-sha256/v1\0";
 const KEY_DERIVATION_DOMAIN: &[u8] = b"v2board/operator-config/key/v1\0";
 pub const OPERATOR_CONFIG_FORMAT_VERSION: i16 = 1;
 const API_ACK_SQL: &str = r#"
-    INSERT INTO v2_operator_config_api_ack
+    INSERT INTO operator_config_api_ack
         (singleton, installation_id, observed_revision, applied_revision,
          status, error_code, observed_at)
     VALUES (1, $1, $2, $3, $4, $5, $6)
@@ -24,7 +24,7 @@ const API_ACK_SQL: &str = r#"
         observed_at = EXCLUDED.observed_at
     "#;
 const WORKER_ACK_SQL: &str = r#"
-    INSERT INTO v2_operator_config_worker_ack
+    INSERT INTO operator_config_worker_ack
         (singleton, installation_id, observed_revision, applied_revision,
          status, error_code, observed_at)
     VALUES (1, $1, $2, $3, $4, $5, $6)
@@ -169,8 +169,8 @@ pub async fn ensure_initial_authority_exact(
     let (state_exists, revision_exists) = sqlx::query_as::<_, (bool, bool)>(
         r#"
         SELECT
-            EXISTS (SELECT 1 FROM v2_operator_config_state),
-            EXISTS (SELECT 1 FROM v2_operator_config_revision)
+            EXISTS (SELECT 1 FROM operator_config_state),
+            EXISTS (SELECT 1 FROM operator_config_revision)
         "#,
     )
     .fetch_one(db)
@@ -228,8 +228,8 @@ pub async fn load_active(
         SELECT r.revision, r.revision_id, r.format_version, r.installation_id, r.public_config,
                r.secret_nonce, r.secret_ciphertext, r.secret_tag,
                r.config_hmac_sha256
-        FROM v2_operator_config_state AS s
-        JOIN v2_operator_config_revision AS r
+        FROM operator_config_state AS s
+        JOIN operator_config_revision AS r
           ON r.revision = s.active_revision
          AND r.installation_id = s.installation_id
         WHERE s.singleton = 1
@@ -387,7 +387,7 @@ pub async fn commit(
     let actor = normalized_actor(actor);
     let mut tx = db.begin().await?;
     let active = sqlx::query_as::<_, (Uuid, i64)>(
-        "SELECT installation_id, active_revision FROM v2_operator_config_state WHERE singleton = 1 FOR UPDATE",
+        "SELECT installation_id, active_revision FROM operator_config_state WHERE singleton = 1 FOR UPDATE",
     )
     .fetch_optional(&mut *tx)
     .await?;
@@ -406,7 +406,7 @@ pub async fn commit(
 
     let revision = sqlx::query_scalar::<_, i64>(
         r#"
-        INSERT INTO v2_operator_config_revision
+        INSERT INTO operator_config_revision
             (revision_id, format_version, installation_id, public_config, secret_nonce,
              secret_ciphertext, secret_tag, config_hmac_sha256, created_by, created_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
@@ -430,7 +430,7 @@ pub async fn commit(
         Some(previous) => {
             let changed = sqlx::query(
                 r#"
-                UPDATE v2_operator_config_state
+                UPDATE operator_config_state
                 SET active_revision = $1, updated_at = $2
                 WHERE singleton = 1 AND installation_id = $3 AND active_revision = $4
                 "#,
@@ -450,7 +450,7 @@ pub async fn commit(
         }
         None => {
             sqlx::query(
-                "INSERT INTO v2_operator_config_state (singleton, installation_id, active_revision, updated_at) VALUES (1, $1, $2, $3)",
+                "INSERT INTO operator_config_state (singleton, installation_id, active_revision, updated_at) VALUES (1, $1, $2, $3)",
             )
             .bind(installation_id)
             .bind(revision)

@@ -3,10 +3,10 @@ use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 const VALID_COMMISSION_SUM_SQL: &str =
-    "SELECT COALESCE(SUM(get_amount), 0)::text FROM v2_commission_log WHERE invite_user_id = $1";
+    "SELECT COALESCE(SUM(get_amount), 0)::text FROM commission_log WHERE invite_user_id = $1";
 const PENDING_COMMISSION_SUM_SQL: &str = r#"
     SELECT COALESCE(SUM(commission_balance), 0)::text
-    FROM v2_order
+    FROM orders
     WHERE status = 3 AND commission_status = 0 AND invite_user_id = $1
 "#;
 
@@ -66,7 +66,7 @@ pub async fn create_invite_code(
 ) -> Result<bool, sqlx::Error> {
     let mut tx = pool.begin().await?;
     let user_exists =
-        sqlx::query_scalar::<_, i64>("SELECT id FROM v2_user WHERE id = $1 LIMIT 1 FOR UPDATE")
+        sqlx::query_scalar::<_, i64>("SELECT id FROM users WHERE id = $1 LIMIT 1 FOR UPDATE")
             .bind(user_id)
             .fetch_optional(&mut *tx)
             .await?;
@@ -75,7 +75,7 @@ pub async fn create_invite_code(
         return Ok(false);
     }
     let count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM v2_invite_code WHERE user_id = $1 AND status = 0")
+        sqlx::query_scalar("SELECT COUNT(*) FROM invite_code WHERE user_id = $1 AND status = 0")
             .bind(user_id)
             .fetch_one(&mut *tx)
             .await?;
@@ -92,7 +92,7 @@ pub async fn fetch_invite(pool: &PgPool, user_id: i64) -> Result<InviteFetchRow,
     let codes = sqlx::query_as::<_, InviteCodeRow>(
         r#"
         SELECT id, user_id, code, status, pv, created_at, updated_at
-        FROM v2_invite_code
+        FROM invite_code
         WHERE user_id = $1 AND status = 0
         ORDER BY id ASC
         "#,
@@ -101,13 +101,13 @@ pub async fn fetch_invite(pool: &PgPool, user_id: i64) -> Result<InviteFetchRow,
     .fetch_all(pool)
     .await?;
     let user = sqlx::query_as::<_, InviteUserRow>(
-        "SELECT commission_rate, commission_balance FROM v2_user WHERE id = $1 LIMIT 1",
+        "SELECT commission_rate, commission_balance FROM users WHERE id = $1 LIMIT 1",
     )
     .bind(user_id)
     .fetch_optional(pool)
     .await?;
     let registered: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM v2_user WHERE invite_user_id = $1")
+        sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE invite_user_id = $1")
             .bind(user_id)
             .fetch_one(pool)
             .await?;
@@ -153,7 +153,7 @@ pub async fn fetch_commission_details(
     offset: i64,
 ) -> Result<(Vec<CommissionDetailRow>, i64), sqlx::Error> {
     let total: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM v2_commission_log WHERE invite_user_id = $1 AND get_amount > 0",
+        "SELECT COUNT(*) FROM commission_log WHERE invite_user_id = $1 AND get_amount > 0",
     )
     .bind(user_id)
     .fetch_one(pool)
@@ -161,7 +161,7 @@ pub async fn fetch_commission_details(
     let rows = sqlx::query_as::<_, CommissionDetailRow>(
         r#"
         SELECT id, trade_no, order_amount, get_amount, created_at
-        FROM v2_commission_log
+        FROM commission_log
         WHERE invite_user_id = $1 AND get_amount > 0
         ORDER BY created_at DESC
         LIMIT $2 OFFSET $3
@@ -184,7 +184,7 @@ async fn insert_invite_code(
         let code = random_invite_code();
         let result = sqlx::query(
             r#"
-            INSERT INTO v2_invite_code (user_id, code, status, pv, created_at, updated_at)
+            INSERT INTO invite_code (user_id, code, status, pv, created_at, updated_at)
             VALUES ($1, $2, 0, 0, $3, $4)
             "#,
         )

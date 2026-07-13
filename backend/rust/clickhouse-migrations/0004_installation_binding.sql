@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS v2_installation_binding
+CREATE TABLE IF NOT EXISTS installation_binding
 (
     singleton UInt8,
     installation_id UUID,

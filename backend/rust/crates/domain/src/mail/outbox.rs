@@ -165,7 +165,7 @@ pub async fn reserve_mail_outbox_batch(
 ) -> Result<bool, MailOutboxError> {
     let inserted = sqlx::query(
         r#"
-        INSERT INTO v2_mail_outbox_batch
+        INSERT INTO mail_outbox_batch
             (batch_key, payload_hash, actor, created_at, updated_at)
         VALUES ($1, $2, $3, $4, $5)
         ON CONFLICT (batch_key) DO NOTHING
@@ -184,7 +184,7 @@ pub async fn reserve_mail_outbox_batch(
         return Ok(true);
     }
     let existing_hash: String = sqlx::query_scalar(
-        "SELECT payload_hash FROM v2_mail_outbox_batch WHERE batch_key = $1 FOR UPDATE",
+        "SELECT payload_hash FROM mail_outbox_batch WHERE batch_key = $1 FOR UPDATE",
     )
     .bind(batch_key)
     .fetch_one(&mut **tx)
@@ -216,7 +216,7 @@ pub async fn enqueue_prepared_mail(
 
     let updated = sqlx::query(
         r#"
-        UPDATE v2_mail_outbox_batch
+        UPDATE mail_outbox_batch
         SET sender = $1, template_name = $2, subject = $3, body = $4, updated_at = $5
         WHERE batch_key = $6
         "#,
@@ -234,7 +234,7 @@ pub async fn enqueue_prepared_mail(
     }
     for chunk in deliveries.chunks(100) {
         let mut builder = QueryBuilder::<Postgres>::new(
-            "INSERT INTO v2_mail_outbox (batch_key, recipient, message_id, attempt_count, available_at, created_at, updated_at) ",
+            "INSERT INTO mail_outbox (batch_key, recipient, message_id, attempt_count, available_at, created_at, updated_at) ",
         );
         builder.push_values(chunk, |mut row, (recipient, message_id)| {
             row.push_bind(batch_key)
@@ -300,7 +300,7 @@ pub async fn enqueue_mail_outbox_occurrences(
     let claim_actor = format!("outbox-enqueue:{}", Uuid::new_v4());
     for chunk in validated.chunks(MAIL_OUTBOX_ENQUEUE_CHUNK_SIZE) {
         let mut builder = QueryBuilder::<Postgres>::new(
-            "INSERT INTO v2_mail_outbox_batch (batch_key, payload_hash, actor, sender, template_name, subject, body, created_at, updated_at) ",
+            "INSERT INTO mail_outbox_batch (batch_key, payload_hash, actor, sender, template_name, subject, body, created_at, updated_at) ",
         );
         builder.push_values(chunk, |mut row, occurrence| {
             row.push_bind(&occurrence.batch_key)
@@ -320,7 +320,7 @@ pub async fn enqueue_mail_outbox_occurrences(
     let mut claimed_rows = HashMap::with_capacity(validated.len());
     for chunk in validated.chunks(MAIL_OUTBOX_ENQUEUE_CHUNK_SIZE) {
         let mut builder = QueryBuilder::<Postgres>::new(
-            "SELECT batch_key, payload_hash, actor FROM v2_mail_outbox_batch WHERE batch_key IN (",
+            "SELECT batch_key, payload_hash, actor FROM mail_outbox_batch WHERE batch_key IN (",
         );
         let mut keys = builder.separated(", ");
         for occurrence in chunk {
@@ -344,7 +344,7 @@ pub async fn enqueue_mail_outbox_occurrences(
     )?;
 
     for chunk in fresh.chunks(MAIL_OUTBOX_ENQUEUE_CHUNK_SIZE) {
-        let mut builder = QueryBuilder::<Postgres>::new("UPDATE v2_mail_outbox_batch SET actor = ");
+        let mut builder = QueryBuilder::<Postgres>::new("UPDATE mail_outbox_batch SET actor = ");
         builder
             .push_bind(actor)
             .push(" WHERE actor = ")
@@ -362,7 +362,7 @@ pub async fn enqueue_mail_outbox_occurrences(
     }
     for chunk in fresh.chunks(MAIL_OUTBOX_ENQUEUE_CHUNK_SIZE) {
         let mut builder = QueryBuilder::<Postgres>::new(
-            "INSERT INTO v2_mail_outbox (batch_key, recipient, message_id, attempt_count, available_at, created_at, updated_at) ",
+            "INSERT INTO mail_outbox (batch_key, recipient, message_id, attempt_count, available_at, created_at, updated_at) ",
         );
         builder.push_values(chunk, |mut row, occurrence| {
             row.push_bind(&occurrence.batch_key)
@@ -607,13 +607,13 @@ mod tests {
             .find("ON CONFLICT (batch_key) DO NOTHING")
             .unwrap();
         let locked_read = implementation
-            .find(concat!("payload_hash, actor ", "FROM v2_mail_outbox_batch"))
+            .find(concat!("payload_hash, actor ", "FROM mail_outbox_batch"))
             .unwrap();
         assert!(claim < locked_read);
         assert!(implementation.contains("ON CONFLICT (batch_key) DO NOTHING"));
         assert!(!implementation.contains(concat!("VALUES", "(batch_key)")));
         assert!(implementation.contains(concat!(") FOR ", "UPDATE")));
         assert!(implementation.contains(concat!("for chunk in fresh.", "chunks")));
-        assert!(implementation.contains(concat!("INSERT INTO v2_mail_", "outbox (batch_key")));
+        assert!(implementation.contains(concat!("INSERT INTO mail_", "outbox (batch_key")));
     }
 }

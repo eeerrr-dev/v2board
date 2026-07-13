@@ -25,7 +25,7 @@ pub(in super::super) enum FilterBind {
     Text(String),
 }
 
-/// Whitelisted v2_user columns usable in a filter[] key or a sort. Guards the
+/// Whitelisted users columns usable in a filter[] key or a sort. Guards the
 /// dynamically-built WHERE/ORDER BY clauses against SQL injection.
 pub(in super::super) fn user_column(key: &str) -> Option<&'static str> {
     const COLUMNS: &[&str] = &[
@@ -142,7 +142,7 @@ pub(in super::super) enum OrderFilterClause {
     },
 }
 
-/// Whitelisted v2_order columns usable in a filter[] key. Guards the dynamically
+/// Whitelisted orders columns usable in a filter[] key. Guards the dynamically
 /// built WHERE clause (OrderController::filter trusts the raw request key).
 pub(in super::super) fn order_column(key: &str) -> Option<&'static str> {
     const COLUMNS: &[&str] = &[

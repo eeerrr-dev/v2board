@@ -23,8 +23,8 @@ const CLEANUP_MAX_BATCHES_PER_TABLE: usize = 10;
 const MAIL_OUTBOX_CLAIM_SQL: &str = r#"
 SELECT item.id, item.batch_key, batch.sender, batch.template_name, item.recipient,
        batch.subject, batch.body, item.message_id, item.attempt_count
-FROM v2_mail_outbox AS item
-JOIN v2_mail_outbox_batch AS batch ON batch.batch_key = item.batch_key
+FROM mail_outbox AS item
+JOIN mail_outbox_batch AS batch ON batch.batch_key = item.batch_key
 WHERE item.failed_at IS NULL
   AND item.available_at <= $1
   AND (item.lease_expires_at IS NULL OR item.lease_expires_at <= $2)
@@ -34,27 +34,27 @@ LIMIT $4
 FOR UPDATE SKIP LOCKED
 "#;
 const MAIL_OUTBOX_ACK_SQL: &str = r#"
-DELETE FROM v2_mail_outbox
+DELETE FROM mail_outbox
 WHERE id = $1 AND lease_token = $2 AND failed_at IS NULL
 "#;
 const MAIL_OUTBOX_LOG_SQL: &str = r#"
-INSERT INTO v2_mail_log
+INSERT INTO mail_log
     (email, subject, template_name, error, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6)
 "#;
 const MAIL_OUTBOX_FAILURE_SQL: &str = r#"
-UPDATE v2_mail_outbox
+UPDATE mail_outbox
 SET attempt_count = $1, available_at = $2, failed_at = $3, last_error = $4,
     lease_token = NULL, lease_expires_at = NULL, updated_at = $5
 WHERE id = $6 AND lease_token = $7 AND failed_at IS NULL
 "#;
 const MAIL_OUTBOX_CLEAR_ENVELOPE_SQL: &str = r#"
-UPDATE v2_mail_outbox_batch AS batch
+UPDATE mail_outbox_batch AS batch
 SET sender = NULL, subject = NULL, body = NULL, updated_at = $1
 WHERE batch.batch_key = $2
   AND NOT EXISTS (
       SELECT 1
-      FROM v2_mail_outbox AS item
+      FROM mail_outbox AS item
       WHERE item.batch_key = batch.batch_key
         AND item.failed_at IS NULL
   )
@@ -62,55 +62,55 @@ WHERE batch.batch_key = $2
 const MAIL_OUTBOX_RETENTION_SQL: &str = r#"
 WITH doomed AS (
     SELECT id
-    FROM v2_mail_outbox
+    FROM mail_outbox
     WHERE failed_at IS NOT NULL AND failed_at < $1
     ORDER BY failed_at, id
     LIMIT $2
 )
-DELETE FROM v2_mail_outbox AS item
+DELETE FROM mail_outbox AS item
 USING doomed
 WHERE item.id = doomed.id
 "#;
 const MAIL_OUTBOX_BATCH_RETENTION_SQL: &str = r#"
 WITH doomed AS (
   SELECT batch.batch_key
-  FROM v2_mail_outbox_batch AS batch
+  FROM mail_outbox_batch AS batch
   WHERE batch.sender IS NULL
   AND batch.subject IS NULL
   AND batch.body IS NULL
   AND batch.updated_at < $1
   AND NOT EXISTS (
-      SELECT 1 FROM v2_mail_outbox AS item
+      SELECT 1 FROM mail_outbox AS item
       WHERE item.batch_key = batch.batch_key
   )
   ORDER BY batch.updated_at, batch.batch_key
   LIMIT $2
 )
-DELETE FROM v2_mail_outbox_batch AS batch
+DELETE FROM mail_outbox_batch AS batch
 USING doomed
 WHERE batch.batch_key = doomed.batch_key
 "#;
 const MAIL_LOG_RETENTION_SQL: &str = r#"
 WITH doomed AS (
     SELECT id
-    FROM v2_mail_log
+    FROM mail_log
     WHERE created_at < $1
     ORDER BY created_at, id
     LIMIT $2
 )
-DELETE FROM v2_mail_log AS log
+DELETE FROM mail_log AS log
 USING doomed
 WHERE log.id = doomed.id
 "#;
 const TRAFFIC_REPORT_RETENTION_SQL: &str = r#"
 WITH doomed AS (
     SELECT report_key
-    FROM v2_server_traffic_report
+    FROM server_traffic_report
     WHERE applied_at IS NOT NULL AND applied_at < $1
     ORDER BY applied_at, report_key
     LIMIT $2
 )
-DELETE FROM v2_server_traffic_report AS report
+DELETE FROM server_traffic_report AS report
 USING doomed
 WHERE report.report_key = doomed.report_key
 "#;
@@ -359,7 +359,7 @@ async fn claim_mail_outbox_batch(state: &WorkerState) -> anyhow::Result<Option<C
 
     let lease_token = Uuid::new_v4().to_string();
     let lease_expires_at = checked_mail_outbox_timestamp(now, MAIL_OUTBOX_LEASE_SECS)?;
-    let mut builder = QueryBuilder::<Postgres>::new("UPDATE v2_mail_outbox SET lease_token = ");
+    let mut builder = QueryBuilder::<Postgres>::new("UPDATE mail_outbox SET lease_token = ");
     builder
         .push_bind(&lease_token)
         .push(", lease_expires_at = ")
@@ -497,7 +497,7 @@ async fn lock_mail_batch(
     batch_key: &str,
 ) -> anyhow::Result<()> {
     let found = sqlx::query_scalar::<_, String>(
-        "SELECT batch_key FROM v2_mail_outbox_batch WHERE batch_key = $1 FOR UPDATE",
+        "SELECT batch_key FROM mail_outbox_batch WHERE batch_key = $1 FOR UPDATE",
     )
     .bind(batch_key)
     .fetch_optional(&mut **tx)
@@ -537,7 +537,7 @@ mod tests {
 
     #[test]
     fn mail_outbox_claim_is_batched_leased_and_non_blocking() {
-        assert!(MAIL_OUTBOX_CLAIM_SQL.contains("JOIN v2_mail_outbox_batch"));
+        assert!(MAIL_OUTBOX_CLAIM_SQL.contains("JOIN mail_outbox_batch"));
         assert!(MAIL_OUTBOX_CLAIM_SQL.contains("ORDER BY item.id"));
         assert!(MAIL_OUTBOX_CLAIM_SQL.contains("lease_expires_at"));
         assert!(MAIL_OUTBOX_CLAIM_SQL.contains("FOR UPDATE SKIP LOCKED"));
@@ -565,7 +565,7 @@ mod tests {
         assert!(MAIL_OUTBOX_ACK_SQL.trim_start().starts_with("DELETE"));
         assert!(MAIL_OUTBOX_ACK_SQL.contains("lease_token = $2"));
         assert!(MAIL_OUTBOX_FAILURE_SQL.contains("lease_token = $7"));
-        assert!(MAIL_OUTBOX_LOG_SQL.contains("INSERT INTO v2_mail_log"));
+        assert!(MAIL_OUTBOX_LOG_SQL.contains("INSERT INTO mail_log"));
         assert!(MAIL_OUTBOX_LOG_SQL.contains("template_name"));
         assert!(MAIL_OUTBOX_CLEAR_ENVELOPE_SQL.contains("sender = NULL"));
         assert!(MAIL_OUTBOX_CLEAR_ENVELOPE_SQL.contains("subject = NULL"));
@@ -612,15 +612,15 @@ mod tests {
     #[test]
     fn mail_outbox_migration_has_durable_identity_and_delivery_state() {
         let migration = include_str!("../../../migrations-postgres/0001_initial.sql");
-        assert!(migration.contains("CREATE TABLE v2_mail_outbox_batch"));
-        assert!(migration.contains("CREATE TABLE v2_mail_outbox"));
+        assert!(migration.contains("CREATE TABLE mail_outbox_batch"));
+        assert!(migration.contains("CREATE TABLE mail_outbox"));
         assert!(migration.contains("uniq_mail_outbox_batch_recipient"));
         assert!(migration.contains("message_id VARCHAR(255) NOT NULL"));
         assert!(migration.contains("lease_expires_at BIGINT"));
         assert!(migration.contains("idx_mail_outbox_claim"));
         let batch = migration
-            .split_once("CREATE TABLE v2_mail_outbox_batch (")
-            .and_then(|(_, rest)| rest.split_once("CREATE TABLE v2_mail_outbox ("))
+            .split_once("CREATE TABLE mail_outbox_batch (")
+            .and_then(|(_, rest)| rest.split_once("CREATE TABLE mail_outbox ("))
             .map(|(batch, _)| batch)
             .expect("mail outbox batch table must precede the recipient table");
         assert_eq!(batch.matches("body TEXT").count(), 1);

@@ -79,7 +79,7 @@ impl AuthService {
         let code = legacy_guid(false);
         let key = cache_key("TEMP_TOKEN", &code);
         let session_epoch: i64 = sqlx::query_scalar(
-            "SELECT session_epoch FROM v2_user WHERE id = $1 AND banned = 0 LIMIT 1",
+            "SELECT session_epoch FROM users WHERE id = $1 AND banned = 0 LIMIT 1",
         )
         .bind(user_id)
         .fetch_optional(&self.db)

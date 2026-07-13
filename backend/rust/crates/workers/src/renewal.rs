@@ -7,7 +7,7 @@ use crate::{batch::finish_item_batch, state::WorkerState, time::timestamp_after}
 const RENEWAL_CANDIDATE_PAGE_SIZE: i64 = 250;
 const RENEWAL_CANDIDATE_SQL: &str = r#"
 SELECT id
-FROM v2_user
+FROM users
 WHERE auto_renewal <> 0
   AND plan_id IS NOT NULL
   AND expired_at IS NOT NULL
@@ -19,7 +19,7 @@ LIMIT $4
 "#;
 const RENEWAL_LOCKED_USER_SQL: &str = r#"
 SELECT id, balance, plan_id, expired_at
-FROM v2_user
+FROM users
 WHERE id = $1
   AND auto_renewal <> 0
   AND plan_id IS NOT NULL
@@ -30,7 +30,7 @@ LIMIT 1
 FOR UPDATE
 "#;
 const RENEWAL_UPDATE_SQL: &str = r#"
-UPDATE v2_user
+UPDATE users
 SET balance = balance - $1, expired_at = $2, updated_at = $3
 WHERE id = $4
   AND auto_renewal <> 0
@@ -102,7 +102,7 @@ async fn renew_user(state: &WorkerState, user_id: i64) -> anyhow::Result<()> {
     let latest_period = sqlx::query_scalar::<_, String>(
         r#"
         SELECT period
-        FROM v2_order
+        FROM orders
         WHERE user_id = $1
           AND period NOT IN ('reset_price', 'onetime_price', 'deposit')
           AND status = 3
@@ -133,7 +133,7 @@ async fn renew_user(state: &WorkerState, user_id: i64) -> anyhow::Result<()> {
         r#"
         SELECT id, renew, month_price, quarter_price, half_year_price, year_price,
                two_year_price, three_year_price
-        FROM v2_plan
+        FROM plan
         WHERE id = $1
         LIMIT 1
         FOR SHARE
@@ -176,7 +176,7 @@ async fn renew_user(state: &WorkerState, user_id: i64) -> anyhow::Result<()> {
     }
     sqlx::query(
         r#"
-        INSERT INTO v2_order
+        INSERT INTO orders
             (user_id, plan_id, "type", period, trade_no, total_amount, balance_amount, status, created_at, updated_at)
         VALUES ($1, $2, 2, $3, $4, 0, $5, 3, $6, $7)
         "#,
@@ -241,7 +241,7 @@ async fn disable_auto_renewal(
     now: i64,
 ) -> anyhow::Result<()> {
     sqlx::query(
-        "UPDATE v2_user SET auto_renewal = 0, updated_at = $1 WHERE id = $2 AND auto_renewal <> 0",
+        "UPDATE users SET auto_renewal = 0, updated_at = $1 WHERE id = $2 AND auto_renewal <> 0",
     )
     .bind(now)
     .bind(user_id)

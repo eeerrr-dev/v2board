@@ -74,6 +74,61 @@ visual, interaction, database, and native runtime artifacts in Docker volumes.
   pinned git submodule mounted read-only for compatibility tests. Never COPY it
   into an image, source tree, runtime volume, Vite input, or deploy release.
 
+## Pre-Release MySQL Import Direction
+
+The native product has not been released or installed in production. There is
+no prior native install, migration schema, or upgrade contract to preserve.
+Unpublished lifecycle code, examples, and PostgreSQL/ClickHouse migrations may be
+consolidated in place; do not add compatibility branches, aliases, bridge
+migrations, or tombstone tables for local-only history.
+
+There is exactly one legacy-data path:
+
+1. stop writes to the old site;
+2. export one complete MySQL 8 dump without modifying the old database;
+3. load that dump into a disposable MySQL 8 engine used only as converter
+   input;
+4. deterministically transform the retained rows into a brand-new PostgreSQL
+   database; ClickHouse starts with an empty native event history, and a
+   brand-new empty Redis is used for native runtime state;
+5. generate the new API and worker configuration files from explicit target
+   values; and
+6. verify the new installation, then start it.
+
+The old MySQL database is never a migration target and is never mutated by the
+importer. Loading the dump into staging is import processing, not recovery. Do
+not design or add migration rollback, source fencing, CDC, dual-write, shadow
+reads, compatibility windows, authorization files, journals, checkpoints,
+resume, operation recovery, or cleanup/restart state machines. A failed import
+has no resumable migration state: discard that new incomplete target, correct
+the input or importer, and run the same simple import again against a new empty
+target. This is not restoration of the untouched old database.
+
+The current dump-to-staging converter does require one temporary MySQL 8 engine
+during the import, but it is not a production dependency and does not have to be
+installed permanently on the new server. It may run as a one-off container on
+the migration/new host, on a disposable VM, or on another temporary private host
+reachable by the importer. Stop and delete it after success or failure; the
+native server and long-running runtime contain only PostgreSQL, ClickHouse, and
+Redis.
+
+Legacy MySQL source tables retain their real `v2_*` names. Native PostgreSQL and
+ClickHouse target tables are first-release names without that prefix; use
+`users` and `orders` instead of the PostgreSQL keywords `user` and `order`, and
+otherwise remove `v2_`. Converter metadata must always label source and target
+names separately. Do not add rename migrations, aliases, views, or compatibility
+tables for unpublished prefixed target names.
+
+The importer never reads old Redis and never contacts Stripe. Old Redis state,
+Stripe configuration, and unfinished Stripe orders are fixed accepted losses;
+terminal Stripe orders may remain only as provider-detached business history.
+Do not make these fixed decisions configurable per run. Do not add speculative
+fresh-install or native-upgrade lifecycle formats before the first release.
+Migration code, documentation, examples, and tests must describe only this one
+current import contract and must not retain retired schema names or workflows.
+These pre-release installation rules do not relax the permanent external API,
+integration, or frontend behavior contracts below.
+
 ## Frontend Contract Direction
 
 The user and admin applications are fully redesigned shadcn surfaces. The old

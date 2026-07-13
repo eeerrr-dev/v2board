@@ -199,12 +199,15 @@ native-database-audit:
 	@graph="$$( $(DCF) run --rm -T --no-deps --entrypoint bash rust-api -lc \
 		'. /usr/local/cargo/env; cargo tree --locked -e normal -p v2board-lifecycle -p v2board-provision' \
 		)" || exit $$?; \
-	matches="$$(printf '%s\n' "$$graph" | rg 'sqlx-mysql|redis|clickhouse' || true)"; \
+	matches="$$(printf '%s\n' "$$graph" | rg 'redis|clickhouse' || true)"; \
 	if [ -n "$$matches" ]; then echo "$$matches"; exit 1; fi
 	@test ! -d backend/rust/migrations || \
 		test -z "$$(find backend/rust/migrations -type f -print -quit)"
+	@matches="$$(rg -n '\bv2_[a-z0-9_]+' \
+		backend/rust/migrations-postgres backend/rust/clickhouse-migrations || true)"; \
+	if [ -n "$$matches" ]; then echo "Native database objects must not use the legacy v2_ source prefix:"; echo "$$matches"; exit 1; fi
 	@rg -q 'migrations-postgres' backend/rust/crates/db/src/pool.rs
-	@echo "API/worker/schema graphs exclude migration crates and MySQL; lifecycle/provision graphs exclude live datastore adapters."
+	@echo "API/worker/schema graphs exclude migration crates and MySQL; native schema names are unprefixed; any staging MySQL adapter remains confined to import tooling."
 
 native-release-audit:
 	@test -f deploy/systemd/v2board-api.service

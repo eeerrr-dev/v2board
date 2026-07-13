@@ -26,7 +26,7 @@ pub async fn fetch_enabled_payment_methods(
             icon,
             handling_fee_fixed,
             handling_fee_percent::text AS handling_fee_percent
-        FROM v2_payment
+        FROM payment
         WHERE enable = 1 AND archived_at IS NULL
         ORDER BY sort ASC NULLS FIRST
         "#,

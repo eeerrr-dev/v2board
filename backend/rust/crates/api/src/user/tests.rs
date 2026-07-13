@@ -102,15 +102,10 @@ fn giftcard_redemption_serializes_on_the_card_row() {
     assert!(GIFTCARD_FOR_UPDATE_SQL.trim_end().ends_with("FOR UPDATE"));
     assert!(GIFTCARD_FOR_UPDATE_SQL.contains("lower(code) = lower($1)"));
     let baseline = include_str!("../../../../migrations-postgres/0001_initial.sql");
-    let extension = include_str!(
-        "../../../../migrations-postgres/0002_giftcard_provenance_and_analytics_admission.sql"
-    );
     assert!(baseline.contains("uniq_giftcard_code_canonical"));
-    assert!(extension.contains("created_at_provenance = 'legacy_unknown'"));
-    assert!(extension.contains("CREATE TABLE v2_analytics_admission_policy"));
-    assert!(extension.contains("CREATE TABLE v2_analytics_admission_state"));
-    assert!(!extension.contains("v2_lifecycle_"));
-    assert!(!extension.contains("v2_legacy_traffic_fold"));
+    assert!(baseline.contains("created_at_provenance = 'legacy_unknown'"));
+    assert!(baseline.contains("CREATE TABLE analytics_admission_policy"));
+    assert!(baseline.contains("CREATE TABLE analytics_admission_state"));
 }
 
 #[test]
@@ -126,7 +121,7 @@ fn giftcard_mutations_lock_the_order_range_before_the_user() {
         .find("sqlx::query_scalar(GIFTCARD_USER_ORDER_RANGE_SQL)")
         .unwrap();
     let user_lock = source
-        .find("FROM v2_user WHERE id = $1 LIMIT 1 FOR UPDATE")
+        .find("FROM users WHERE id = $1 LIMIT 1 FOR UPDATE")
         .unwrap();
     assert!(range_lock < user_lock);
 }

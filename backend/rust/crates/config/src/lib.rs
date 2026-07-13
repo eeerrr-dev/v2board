@@ -47,7 +47,7 @@ pub const BOOT_ONLY_RUNTIME_KEYS_V1: &[&str] = &[
 ];
 
 /// Every application-behavior key required by the version-1 file-only runtime
-/// document. Database and Redis URLs are supplied by the lifecycle target and
+/// document. Database and Redis URLs are supplied by the target configuration and
 /// are required in the materialized file in addition to this list.
 pub const FILE_ONLY_RUNTIME_KEYS_V1: &[&str] = &[
     "configuration_source",
@@ -304,7 +304,7 @@ pub enum RuntimeEnvironment {
 }
 
 /// Selects the only datastore credential set a long-lived process may load.
-/// The lifecycle manifest is shared operator input, but its materialized
+/// The MySQL import manifest is shared operator input, but its materialized
 /// runtime documents are deliberately role-specific.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RuntimeRole {
@@ -551,7 +551,7 @@ impl AppConfig {
     }
 
     /// Reloads the exact runtime config file used by this snapshot. Ordinary
-    /// installs retain environment overrides; a lifecycle-generated
+    /// installs retain environment overrides; a generated file-only
     /// `configuration_source=file_only` snapshot ignores value overrides.
     /// Runtime paths cannot jump to a different file during reload.
     pub fn reload(&self) -> io::Result<Self> {
@@ -1957,8 +1957,8 @@ pub fn postgres_principal_name(url: &url::Url) -> io::Result<String> {
         .map_err(|_| invalid_setting("PostgreSQL URL username", "must be valid UTF-8"))
 }
 
-/// Return the exact decoded database component accepted by the native
-/// lifecycle. Requiring one unquoted identifier avoids treating a trailing
+/// Return the exact decoded database component accepted by native configuration.
+/// Requiring one unquoted identifier avoids treating a trailing
 /// slash or alternate percent-encoding as an equivalent target during a
 /// split-brain check when SQLx could interpret it differently.
 pub fn postgres_database_name(url: &url::Url) -> io::Result<String> {
@@ -1977,7 +1977,7 @@ pub fn postgres_database_name(url: &url::Url) -> io::Result<String> {
 }
 
 /// Reject PostgreSQL URI query forms that can override the authority/path
-/// inspected by lifecycle and security checks. SQLx accepts libpq-style
+/// inspected by connection and security checks. SQLx accepts libpq-style
 /// identity overrides (`host`, `dbname`, `user`, ...) and both `sslmode` and
 /// `ssl-mode`; accepting them here would let the validated URL describe one
 /// endpoint while the driver connects to another.
@@ -2042,16 +2042,16 @@ pub fn validate_postgres_connection_query(
 
 fn validate_node_report_contract(
     environment: RuntimeEnvironment,
-    lifecycle_managed: bool,
+    file_only_config: bool,
     server_require_idempotency_key: bool,
 ) -> io::Result<()> {
-    if !environment.is_production() && !lifecycle_managed {
+    if !environment.is_production() && !file_only_config {
         return Ok(());
     }
     if !server_require_idempotency_key {
         return Err(invalid_setting(
             "server authentication",
-            "production and lifecycle-managed installs require scoped node credentials and idempotency keys",
+            "production and file-only configurations require scoped node credentials and idempotency keys",
         ));
     }
     Ok(())
@@ -2174,7 +2174,7 @@ fn validate_production_secret(
     Ok(())
 }
 
-/// Cross-field checks shared by every full-runtime source: lifecycle manifest,
+/// Cross-field checks shared by every full-runtime source: MySQL import manifest,
 /// database authority overlay, and admin-save candidate. Keeping these checks
 /// here ensures a candidate cannot pass one ingestion path and fail only after
 /// it has become the active revision.

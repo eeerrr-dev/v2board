@@ -200,22 +200,20 @@ pub async fn install_analytics_admission_policy(
     }
     let policy_sha256 = analytics_admission_policy_sha256(policy)?;
     let mut tx = pool.begin().await?;
-    let installations = sqlx::query_as::<_, (Uuid, String)>(
-        "SELECT installation_id, state FROM v2_system_installation \
+    let installations = sqlx::query_scalar::<_, Uuid>(
+        "SELECT installation_id FROM system_installation \
          WHERE singleton = 1 FOR SHARE",
     )
     .fetch_all(&mut *tx)
     .await?;
-    let [(observed_installation_id, installation_state)] = installations.as_slice() else {
+    let [observed_installation_id] = installations.as_slice() else {
         return Err(AnalyticsAdmissionError::MissingOrMismatchedPolicy);
     };
-    if *observed_installation_id != installation_id
-        || !matches!(installation_state.as_str(), "pending" | "active")
-    {
+    if *observed_installation_id != installation_id {
         return Err(AnalyticsAdmissionError::MissingOrMismatchedPolicy);
     }
     let inserted = sqlx::query(
-        "INSERT INTO v2_analytics_admission_policy (\
+        "INSERT INTO analytics_admission_policy (\
              singleton, installation_id, policy_sha256, recovery_pending_rows, \
              soft_pending_rows, hard_pending_rows, recovery_relation_bytes, \
              soft_relation_bytes, hard_relation_bytes, recovery_oldest_age_seconds, \
@@ -268,7 +266,7 @@ pub async fn install_analytics_admission_policy(
             installed_at,
         );
         sqlx::query(
-            "INSERT INTO v2_analytics_admission_state (\
+            "INSERT INTO analytics_admission_state (\
                  singleton, installation_id, pressure_state, generation, sampled_at, \
                  state_changed_at, pending_rows, oldest_pending_created_at, relation_heap_bytes, \
                  relation_index_bytes, relation_toast_bytes, relation_total_bytes, database_bytes, \
@@ -328,7 +326,7 @@ pub async fn refresh_analytics_admission(
         state.soft_window_admitted_rows
     };
     sqlx::query(
-        "UPDATE v2_analytics_admission_state SET \
+        "UPDATE analytics_admission_state SET \
              pressure_state = $1, generation = generation + 1, sampled_at = $2, \
              state_changed_at = CASE WHEN pressure_state IS DISTINCT FROM $1 THEN $2 ELSE state_changed_at END, \
              pending_rows = $3, oldest_pending_created_at = $4, relation_heap_bytes = $5, \
@@ -442,7 +440,7 @@ pub(crate) async fn admit_analytics_rows(
         window_rows
     };
     sqlx::query(
-        "UPDATE v2_analytics_admission_state SET \
+        "UPDATE analytics_admission_state SET \
              pressure_state = $1, generation = generation + 1, \
              state_changed_at = CASE WHEN pressure_state IS DISTINCT FROM $1 THEN $2 ELSE state_changed_at END, \
              accounted_pending_rows = $3, accounted_relation_bytes = $4, \
@@ -478,7 +476,7 @@ pub(crate) async fn release_terminal_rows(
     let rows =
         to_i64(u64::try_from(terminal_rows).map_err(|_| AnalyticsAdmissionError::Overflow)?)?;
     let updated = sqlx::query(
-        "UPDATE v2_analytics_admission_state SET \
+        "UPDATE analytics_admission_state SET \
              generation = generation + 1, \
              accounted_pending_rows = greatest(0, accounted_pending_rows - $1), \
              last_transition_reason = 'relay_terminal_rows', \
@@ -564,11 +562,11 @@ async fn exact_metrics(
         "WITH backlog AS ( \
              SELECT count(*)::bigint AS pending_rows, \
                     min(created_at) AS oldest_pending_created_at \
-             FROM v2_analytics_outbox \
+             FROM analytics_outbox \
              WHERE published_at IS NULL AND quarantined_at IS NULL \
          ), target AS ( \
              SELECT oid, reltoastrelid FROM pg_class \
-             WHERE oid = 'public.v2_analytics_outbox'::regclass \
+             WHERE oid = 'public.analytics_outbox'::regclass \
          ), measured AS ( \
              SELECT oid, \
                     CASE WHEN reltoastrelid = 0 THEN 0 \
@@ -908,7 +906,7 @@ const POLICY_SELECT: &str = "SELECT installation_id, policy_sha256, recovery_pen
     hard_oldest_age_seconds, database_capacity_bytes, hard_min_headroom_bytes, \
     soft_min_headroom_bytes, recovery_min_headroom_bytes, event_reservation_bytes, \
     soft_max_new_rows_per_second, sample_interval_seconds, stale_after_seconds, capacity_evidence \
-    FROM v2_analytics_admission_policy WHERE singleton = 1";
+    FROM analytics_admission_policy WHERE singleton = 1";
 
 const POLICY_SELECT_FOR_SHARE: &str = "SELECT installation_id, policy_sha256, recovery_pending_rows, \
     soft_pending_rows, hard_pending_rows, recovery_relation_bytes, soft_relation_bytes, \
@@ -916,21 +914,21 @@ const POLICY_SELECT_FOR_SHARE: &str = "SELECT installation_id, policy_sha256, re
     hard_oldest_age_seconds, database_capacity_bytes, hard_min_headroom_bytes, \
     soft_min_headroom_bytes, recovery_min_headroom_bytes, event_reservation_bytes, \
     soft_max_new_rows_per_second, sample_interval_seconds, stale_after_seconds, capacity_evidence \
-    FROM v2_analytics_admission_policy WHERE singleton = 1 FOR SHARE";
+    FROM analytics_admission_policy WHERE singleton = 1 FOR SHARE";
 
 const STATE_SELECT: &str = "SELECT installation_id, pressure_state, generation, sampled_at, \
     state_changed_at, pending_rows, oldest_pending_created_at, relation_heap_bytes, \
     relation_index_bytes, relation_toast_bytes, relation_total_bytes, database_bytes, \
     capacity_headroom_bytes, accounted_pending_rows, accounted_relation_bytes, \
     soft_window_started_at, soft_window_admitted_rows, last_transition_reason \
-    FROM v2_analytics_admission_state WHERE singleton = 1";
+    FROM analytics_admission_state WHERE singleton = 1";
 
 const STATE_SELECT_FOR_UPDATE: &str = "SELECT installation_id, pressure_state, generation, sampled_at, \
     state_changed_at, pending_rows, oldest_pending_created_at, relation_heap_bytes, \
     relation_index_bytes, relation_toast_bytes, relation_total_bytes, database_bytes, \
     capacity_headroom_bytes, accounted_pending_rows, accounted_relation_bytes, \
     soft_window_started_at, soft_window_admitted_rows, last_transition_reason \
-    FROM v2_analytics_admission_state WHERE singleton = 1 FOR UPDATE";
+    FROM analytics_admission_state WHERE singleton = 1 FOR UPDATE";
 
 #[cfg(test)]
 mod tests {

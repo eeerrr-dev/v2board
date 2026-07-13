@@ -447,7 +447,7 @@ pub(crate) async fn reset_admin_password(
         .map_err(|error| anyhow::anyhow!(error.to_string()))?;
     let mut tx = db.begin().await?;
     let user_id = sqlx::query_scalar::<_, i64>(
-        "SELECT id FROM v2_user \
+        "SELECT id FROM users \
          WHERE lower(btrim(email)) = lower(btrim($1)) AND is_admin = 1 LIMIT 1 FOR UPDATE",
     )
     .bind(email)
@@ -456,7 +456,7 @@ pub(crate) async fn reset_admin_password(
     .ok_or_else(|| anyhow::anyhow!("admin account not found: {email}"))?;
     let result = sqlx::query(
         r#"
-        UPDATE v2_user
+        UPDATE users
         SET password = $1, password_algo = NULL, password_salt = NULL,
             session_epoch = session_epoch + 1, updated_at = $2
         WHERE id = $3 AND is_admin = 1

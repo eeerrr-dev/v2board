@@ -72,7 +72,7 @@ impl AdminService {
                     format!("email {op} $1")
                 };
                 let invite_id: Option<i64> = sqlx::query_scalar(AssertSqlSafe(format!(
-                    "SELECT id FROM v2_user WHERE {predicate} LIMIT 1"
+                    "SELECT id FROM users WHERE {predicate} LIMIT 1"
                 )))
                 .bind(&value)
                 .fetch_optional(&self.db)
@@ -114,7 +114,7 @@ impl AdminService {
         staff_scoped: bool,
         after_id: i64,
     ) -> Result<Vec<i64>, ApiError> {
-        let mut builder = QueryBuilder::<Postgres>::new("SELECT u.id FROM v2_user u WHERE 1 = 1");
+        let mut builder = QueryBuilder::<Postgres>::new("SELECT u.id FROM users u WHERE 1 = 1");
         if staff_scoped {
             builder.push(" AND u.is_admin = 0 AND u.is_staff = 0");
         }
@@ -165,7 +165,7 @@ impl AdminService {
         tx: &mut DbTransaction<'_>,
     ) -> Result<Vec<(i64, String)>, ApiError> {
         let mut builder =
-            QueryBuilder::<Postgres>::new("SELECT u.id, u.email FROM v2_user u WHERE 1 = 1");
+            QueryBuilder::<Postgres>::new("SELECT u.id, u.email FROM users u WHERE 1 = 1");
         if staff_scoped {
             builder.push(" AND u.is_admin = 0 AND u.is_staff = 0");
         }
@@ -286,13 +286,11 @@ impl AdminService {
         params: &HashMap<String, String>,
     ) -> Result<i64, ApiError> {
         let email = required_string(params, "_admin_email")?;
-        sqlx::query_scalar::<_, i64>(
-            "SELECT id FROM v2_user WHERE LOWER(email) = LOWER($1) LIMIT 1",
-        )
-        .bind(email)
-        .fetch_optional(&self.db)
-        .await?
-        .ok_or_else(|| ApiError::legacy("管理员不存在"))
+        sqlx::query_scalar::<_, i64>("SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1")
+            .bind(email)
+            .fetch_optional(&self.db)
+            .await?
+            .ok_or_else(|| ApiError::legacy("管理员不存在"))
     }
 
     /// Set-based cascade shared by delUser and allDel. Every chunk follows the same table order
@@ -303,39 +301,38 @@ impl AdminService {
         user_ids: &[i64],
     ) -> Result<(), ApiError> {
         for user_ids in user_ids.chunks(USER_DELETE_SQL_BATCH_SIZE) {
-            let mut orders =
-                QueryBuilder::<Postgres>::new("DELETE FROM v2_order WHERE user_id IN (");
+            let mut orders = QueryBuilder::<Postgres>::new("DELETE FROM orders WHERE user_id IN (");
             push_id_binds(&mut orders, user_ids);
             orders.push(")");
             orders.build().execute(&mut **tx).await?;
 
             let mut invites =
-                QueryBuilder::<Postgres>::new("DELETE FROM v2_invite_code WHERE user_id IN (");
+                QueryBuilder::<Postgres>::new("DELETE FROM invite_code WHERE user_id IN (");
             push_id_binds(&mut invites, user_ids);
             invites.push(")");
             invites.build().execute(&mut **tx).await?;
 
             let mut messages = QueryBuilder::<Postgres>::new(
-                "DELETE FROM v2_ticket_message tm USING v2_ticket t WHERE t.id = tm.ticket_id AND t.user_id IN (",
+                "DELETE FROM ticket_message tm USING ticket t WHERE t.id = tm.ticket_id AND t.user_id IN (",
             );
             push_id_binds(&mut messages, user_ids);
             messages.push(")");
             messages.build().execute(&mut **tx).await?;
 
             let mut tickets =
-                QueryBuilder::<Postgres>::new("DELETE FROM v2_ticket WHERE user_id IN (");
+                QueryBuilder::<Postgres>::new("DELETE FROM ticket WHERE user_id IN (");
             push_id_binds(&mut tickets, user_ids);
             tickets.push(")");
             tickets.build().execute(&mut **tx).await?;
 
             let mut referrals = QueryBuilder::<Postgres>::new(
-                "UPDATE v2_user SET invite_user_id = NULL WHERE invite_user_id IN (",
+                "UPDATE users SET invite_user_id = NULL WHERE invite_user_id IN (",
             );
             push_id_binds(&mut referrals, user_ids);
             referrals.push(")");
             referrals.build().execute(&mut **tx).await?;
 
-            let mut users = QueryBuilder::<Postgres>::new("DELETE FROM v2_user WHERE id IN (");
+            let mut users = QueryBuilder::<Postgres>::new("DELETE FROM users WHERE id IN (");
             push_id_binds(&mut users, user_ids);
             users.push(")");
             users.build().execute(&mut **tx).await?;
@@ -349,7 +346,7 @@ impl AdminService {
     ) -> Result<usize, ApiError> {
         let mut found = 0_usize;
         for user_ids in user_ids.chunks(USER_DELETE_SQL_BATCH_SIZE) {
-            let mut builder = QueryBuilder::<Postgres>::new("SELECT id FROM v2_user WHERE id IN (");
+            let mut builder = QueryBuilder::<Postgres>::new("SELECT id FROM users WHERE id IN (");
             push_id_binds(&mut builder, user_ids);
             builder.push(") ORDER BY id FOR UPDATE");
             found += builder
@@ -370,7 +367,7 @@ impl AdminService {
         let (sort_expr, direction) = user_sort(params);
 
         let mut count_builder =
-            QueryBuilder::<Postgres>::new("SELECT COUNT(*) FROM v2_user u WHERE 1 = 1");
+            QueryBuilder::<Postgres>::new("SELECT COUNT(*) FROM users u WHERE 1 = 1");
         push_user_where(&mut count_builder, &clauses);
         let total: i64 = count_builder
             .build_query_scalar()
@@ -397,8 +394,8 @@ impl AdminService {
                 'telegram_id', u.telegram_id,
                 'last_login_at', u.last_login_at, 'created_at', u.created_at, 'updated_at', u.updated_at
             )
-            FROM v2_user u
-            LEFT JOIN v2_plan p ON p.id = u.plan_id
+            FROM users u
+            LEFT JOIN plan p ON p.id = u.plan_id
             WHERE 1 = 1
             "#,
         );
@@ -447,9 +444,9 @@ impl AdminService {
                 ELSE jsonb_build_object(
                     'invite_user', jsonb_build_object('id', i.id, 'email', i.email)
                 ) END
-            FROM v2_user u
-            LEFT JOIN v2_plan p ON p.id = u.plan_id
-            LEFT JOIN v2_user i ON i.id = u.invite_user_id
+            FROM users u
+            LEFT JOIN plan p ON p.id = u.plan_id
+            LEFT JOIN users i ON i.id = u.invite_user_id
             WHERE u.id = $1
             LIMIT 1
             "#,
@@ -482,8 +479,8 @@ impl AdminService {
                 'telegram_id', u.telegram_id,
                 'last_login_at', u.last_login_at, 'created_at', u.created_at, 'updated_at', u.updated_at
             )
-            FROM v2_user u
-            LEFT JOIN v2_plan p ON p.id = u.plan_id
+            FROM users u
+            LEFT JOIN plan p ON p.id = u.plan_id
             WHERE u.id = $1 AND u.is_admin = 0 AND u.is_staff = 0
             LIMIT 1
             "#,
@@ -501,7 +498,7 @@ impl AdminService {
         // Ports UserController::update (laravel .../Admin/UserController.php:125-172).
         let id = required_i64(params, "id")?;
         let current_email: String =
-            sqlx::query_scalar("SELECT email FROM v2_user WHERE id = $1 LIMIT 1")
+            sqlx::query_scalar("SELECT email FROM users WHERE id = $1 LIMIT 1")
                 .bind(id)
                 .fetch_optional(&self.db)
                 .await?
@@ -509,7 +506,7 @@ impl AdminService {
         let email = required_string(params, "email")?;
         if email != current_email {
             let taken: Option<i64> =
-                sqlx::query_scalar("SELECT id FROM v2_user WHERE LOWER(email) = LOWER($1) LIMIT 1")
+                sqlx::query_scalar("SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1")
                     .bind(&email)
                     .fetch_optional(&self.db)
                     .await?;
@@ -551,7 +548,7 @@ impl AdminService {
         if params.contains_key("plan_id") {
             if let Some(plan_id) = optional_i64(params, "plan_id") {
                 let plan_group: Option<i32> =
-                    sqlx::query_scalar("SELECT group_id FROM v2_plan WHERE id = $1 LIMIT 1")
+                    sqlx::query_scalar("SELECT group_id FROM plan WHERE id = $1 LIMIT 1")
                         .bind(plan_id)
                         .fetch_optional(&self.db)
                         .await?
@@ -575,7 +572,7 @@ impl AdminService {
         {
             Some(invite_email) => {
                 if let Some(invite_id) = sqlx::query_scalar::<_, i64>(
-                    "SELECT id FROM v2_user WHERE LOWER(email) = LOWER($1) LIMIT 1",
+                    "SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1",
                 )
                 .bind(invite_email)
                 .fetch_optional(&self.db)
@@ -604,7 +601,7 @@ impl AdminService {
             password_changed || optional_i64(params, "banned") == Some(1) || role_changed;
         let resets_traffic = params.contains_key("u") || params.contains_key("d");
 
-        let mut builder = QueryBuilder::<Postgres>::new("UPDATE v2_user SET ");
+        let mut builder = QueryBuilder::<Postgres>::new("UPDATE users SET ");
         let mut first = true;
         for (column, value) in &values {
             if !first {
@@ -641,7 +638,7 @@ impl AdminService {
         // non-admin/non-staff users.
         let id = required_i64(params, "id")?;
         let current_email: String = sqlx::query_scalar(
-            "SELECT email FROM v2_user WHERE id = $1 AND is_admin = 0 AND is_staff = 0 LIMIT 1",
+            "SELECT email FROM users WHERE id = $1 AND is_admin = 0 AND is_staff = 0 LIMIT 1",
         )
         .bind(id)
         .fetch_optional(&self.db)
@@ -650,7 +647,7 @@ impl AdminService {
         let email = required_string(params, "email")?;
         if email != current_email {
             let taken: Option<i64> =
-                sqlx::query_scalar("SELECT id FROM v2_user WHERE LOWER(email) = LOWER($1) LIMIT 1")
+                sqlx::query_scalar("SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1")
                     .bind(&email)
                     .fetch_optional(&self.db)
                     .await?;
@@ -680,7 +677,7 @@ impl AdminService {
         if params.contains_key("plan_id") {
             if let Some(plan_id) = optional_i64(params, "plan_id") {
                 let plan_group: Option<i32> =
-                    sqlx::query_scalar("SELECT group_id FROM v2_plan WHERE id = $1 LIMIT 1")
+                    sqlx::query_scalar("SELECT group_id FROM plan WHERE id = $1 LIMIT 1")
                         .bind(plan_id)
                         .fetch_optional(&self.db)
                         .await?
@@ -707,7 +704,7 @@ impl AdminService {
         let revokes_sessions = password_changed || optional_i64(params, "banned") == Some(1);
         let resets_traffic = params.contains_key("u") || params.contains_key("d");
 
-        let mut builder = QueryBuilder::<Postgres>::new("UPDATE v2_user SET ");
+        let mut builder = QueryBuilder::<Postgres>::new("UPDATE users SET ");
         let mut first = true;
         for (column, value) in &values {
             if !first {
@@ -756,7 +753,7 @@ impl AdminService {
         let mut tx = self.db.begin().await?;
         for ids in ids.chunks(USER_DELETE_SQL_BATCH_SIZE) {
             let mut builder = QueryBuilder::<Postgres>::new(
-                "UPDATE v2_user SET banned = 1, session_epoch = session_epoch + 1, updated_at = ",
+                "UPDATE users SET banned = 1, session_epoch = session_epoch + 1, updated_at = ",
             );
             builder.push_bind(Utc::now().timestamp());
             builder.push(" WHERE id IN (");
@@ -770,7 +767,7 @@ impl AdminService {
     }
 
     pub(super) async fn user_reset_secret(&self, id: i64) -> Result<AdminOutput, ApiError> {
-        sqlx::query("UPDATE v2_user SET token = $1, uuid = $2, updated_at = $3 WHERE id = $4")
+        sqlx::query("UPDATE users SET token = $1, uuid = $2, updated_at = $3 WHERE id = $4")
             .bind(random_token())
             .bind(Uuid::new_v4().to_string())
             .bind(Utc::now().timestamp())
@@ -792,7 +789,7 @@ impl AdminService {
         };
         let row: (i64, Option<i64>, Option<i64>, Option<i64>) = sqlx::query_as(
             "SELECT id::BIGINT, group_id::BIGINT, transfer_enable, device_limit::BIGINT \
-             FROM v2_plan WHERE id = $1::BIGINT LIMIT 1",
+             FROM plan WHERE id = $1::BIGINT LIMIT 1",
         )
         .bind(plan_id)
         .fetch_optional(&self.db)
@@ -843,7 +840,7 @@ impl AdminService {
             let suffix = required_string(params, "email_suffix")?;
             let email = format!("{prefix}@{suffix}");
             let exists: Option<i64> =
-                sqlx::query_scalar("SELECT id FROM v2_user WHERE LOWER(email) = LOWER($1) LIMIT 1")
+                sqlx::query_scalar("SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1")
                     .bind(&email)
                     .fetch_optional(&self.db)
                     .await?;
@@ -858,7 +855,7 @@ impl AdminService {
             let hash = self.password_kdf.hash(&password_plain).await?;
             sqlx::query(
                 r#"
-                INSERT INTO v2_user (
+                INSERT INTO users (
                     email, plan_id, group_id, transfer_enable, device_limit, expired_at,
                     uuid, token, password, password_algo, created_at, updated_at
                 )
@@ -925,7 +922,7 @@ impl AdminService {
         let mut tx = self.db.begin().await?;
         let mut insert = QueryBuilder::<Postgres>::new(
             r#"
-            INSERT INTO v2_user (
+            INSERT INTO users (
                 email, plan_id, group_id, transfer_enable, device_limit, expired_at,
                 uuid, token, password, password_algo, created_at, updated_at
             )
@@ -1005,7 +1002,7 @@ impl AdminService {
                  u.commission_balance AS commission_balance, u.transfer_enable AS transfer_enable, \
                  u.u AS u, u.d AS d, u.device_limit AS device_limit, u.expired_at AS expired_at, \
                  p.name AS plan_name, u.token AS token \
-                 FROM v2_user u LEFT JOIN v2_plan p ON p.id = u.plan_id WHERE 1 = 1",
+                 FROM users u LEFT JOIN plan p ON p.id = u.plan_id WHERE 1 = 1",
             );
             push_user_where(&mut builder, &clauses);
             builder.push(" AND u.id > ");
@@ -1086,7 +1083,7 @@ impl AdminService {
         }
         let mut tx = self.db.begin().await?;
         for ids in ids.chunks(USER_DELETE_SQL_BATCH_SIZE) {
-            let mut builder = QueryBuilder::<Postgres>::new("UPDATE v2_user SET banned = CAST(");
+            let mut builder = QueryBuilder::<Postgres>::new("UPDATE users SET banned = CAST(");
             builder.push_bind(value);
             builder.push("::BIGINT AS SMALLINT), session_epoch = session_epoch + 1");
             builder.push(", updated_at = ");
@@ -1154,7 +1151,7 @@ impl AdminService {
             let mut after_order_id = 0_i64;
             loop {
                 let mut builder = QueryBuilder::<Postgres>::new(
-                    "SELECT id, status, callback_no FROM v2_order WHERE user_id IN (",
+                    "SELECT id, status, callback_no FROM orders WHERE user_id IN (",
                 );
                 push_id_binds(&mut builder, user_ids);
                 builder.push(") AND id > ");
@@ -1189,7 +1186,7 @@ impl AdminService {
     ) -> Result<AdminOutput, ApiError> {
         let user_id = required_i64(params, "user_id")?;
         let invite_user_id = optional_i64(params, "invite_user_id");
-        sqlx::query("UPDATE v2_user SET invite_user_id = $1, updated_at = $2 WHERE id = $3")
+        sqlx::query("UPDATE users SET invite_user_id = $1, updated_at = $2 WHERE id = $3")
             .bind(invite_user_id)
             .bind(Utc::now().timestamp())
             .bind(user_id)
@@ -1240,12 +1237,12 @@ mod tests {
         let source = include_str!("users.rs");
         let production = source.split("#[cfg(test)]").next().unwrap();
         for sql in [
-            "DELETE FROM v2_order WHERE user_id IN (",
-            "DELETE FROM v2_invite_code WHERE user_id IN (",
+            "DELETE FROM orders WHERE user_id IN (",
+            "DELETE FROM invite_code WHERE user_id IN (",
             "t.user_id IN (",
-            "DELETE FROM v2_ticket WHERE user_id IN (",
+            "DELETE FROM ticket WHERE user_id IN (",
             "WHERE invite_user_id IN (",
-            "DELETE FROM v2_user WHERE id IN (",
+            "DELETE FROM users WHERE id IN (",
         ] {
             assert!(production.contains(sql), "missing set-based cascade: {sql}");
         }

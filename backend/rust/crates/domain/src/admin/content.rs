@@ -34,8 +34,8 @@ async fn insert_generated_codes(
         return Ok(());
     }
     let mut builder = match table {
-        GeneratedCodeTable::Coupon => QueryBuilder::<Postgres>::new("INSERT INTO v2_coupon ("),
-        GeneratedCodeTable::Giftcard => QueryBuilder::<Postgres>::new("INSERT INTO v2_giftcard ("),
+        GeneratedCodeTable::Coupon => QueryBuilder::<Postgres>::new("INSERT INTO coupon ("),
+        GeneratedCodeTable::Giftcard => QueryBuilder::<Postgres>::new("INSERT INTO giftcard ("),
     };
     let mut columns = builder.separated(", ");
     for (column, _) in field_values {
@@ -119,7 +119,7 @@ struct TicketReplyNotification {
 impl AdminService {
     pub(super) async fn notice_fetch(&self) -> Result<AdminOutput, ApiError> {
         let rows = sqlx::query_as::<_, NoticeRaw>(
-            "SELECT id, title, content, img_url, tags::text AS tags, \"show\", created_at, updated_at FROM v2_notice ORDER BY id DESC",
+            "SELECT id, title, content, img_url, tags::text AS tags, \"show\", created_at, updated_at FROM notice ORDER BY id DESC",
         )
         .fetch_all(&self.db)
         .await?;
@@ -140,7 +140,7 @@ impl AdminService {
             .map(Json);
         if let Some(id) = optional_i64(params, "id") {
             sqlx::query(
-                "UPDATE v2_notice SET title = $1, content = $2, img_url = $3, tags = $4, updated_at = $5 WHERE id = $6",
+                "UPDATE notice SET title = $1, content = $2, img_url = $3, tags = $4, updated_at = $5 WHERE id = $6",
             )
             .bind(required_string(params, "title")?)
             .bind(required_string(params, "content")?)
@@ -152,7 +152,7 @@ impl AdminService {
             .await?;
         } else {
             sqlx::query(
-                "INSERT INTO v2_notice (title, content, img_url, tags, \"show\", created_at, updated_at) VALUES ($1, $2, $3, $4, 1, $5, $6)",
+                "INSERT INTO notice (title, content, img_url, tags, \"show\", created_at, updated_at) VALUES ($1, $2, $3, $4, 1, $5, $6)",
             )
             .bind(required_string(params, "title")?)
             .bind(required_string(params, "content")?)
@@ -192,11 +192,11 @@ impl AdminService {
         }
         if values.is_empty() {
             return self
-                .toggle("v2_notice", "show", id, ApiError::legacy("公告不存在"))
+                .toggle("notice", "show", id, ApiError::legacy("公告不存在"))
                 .await;
         }
 
-        let mut builder = QueryBuilder::<Postgres>::new("UPDATE v2_notice SET ");
+        let mut builder = QueryBuilder::<Postgres>::new("UPDATE notice SET ");
         let mut first = true;
         for (column, value) in &values {
             if !first {
@@ -230,7 +230,7 @@ impl AdminService {
                     'body', body, 'sort', sort, 'show', "show", 'created_at', created_at,
                     'updated_at', updated_at
                 )
-                FROM v2_knowledge
+                FROM knowledge
                 WHERE id = $1
                 LIMIT 1
                 "#,
@@ -248,7 +248,7 @@ impl AdminService {
                 'id', id, 'category', category, 'title', title, 'sort', sort, 'show', "show",
                 'updated_at', updated_at
             )
-            FROM v2_knowledge
+            FROM knowledge
             ORDER BY sort ASC NULLS FIRST
             "#
             )
@@ -258,7 +258,7 @@ impl AdminService {
 
     pub(super) async fn knowledge_categories(&self) -> Result<AdminOutput, ApiError> {
         let rows = sqlx::query_scalar::<_, String>(
-            "SELECT DISTINCT category FROM v2_knowledge ORDER BY category ASC",
+            "SELECT DISTINCT category FROM knowledge ORDER BY category ASC",
         )
         .fetch_all(&self.db)
         .await?;
@@ -276,7 +276,7 @@ impl AdminService {
         if let Some(id) = optional_i64(params, "id") {
             sqlx::query(
                 r#"
-                UPDATE v2_knowledge
+                UPDATE knowledge
                 SET language = $1, category = $2, title = $3, body = $4, updated_at = $5
                 WHERE id = $6
                 "#,
@@ -292,7 +292,7 @@ impl AdminService {
         } else {
             sqlx::query(
                 r#"
-                INSERT INTO v2_knowledge (language, category, title, body, created_at, updated_at)
+                INSERT INTO knowledge (language, category, title, body, created_at, updated_at)
                 VALUES ($1, $2, $3, $4, $5, $6)
                 "#,
             )
@@ -321,11 +321,11 @@ impl AdminService {
                     'id', id, 'user_id', user_id, 'subject', subject, 'level', level,
                     'status', status, 'reply_status', reply_status,
                     'last_reply_user_id', (
-                        SELECT user_id FROM v2_ticket_message WHERE ticket_id = v2_ticket.id ORDER BY id DESC LIMIT 1
+                        SELECT user_id FROM ticket_message WHERE ticket_id = ticket.id ORDER BY id DESC LIMIT 1
                     ),
                     'created_at', created_at, 'updated_at', updated_at
                 )
-                FROM v2_ticket
+                FROM ticket
                 WHERE id = $1
                 LIMIT 1
                 "#,
@@ -341,11 +341,11 @@ impl AdminService {
                 SELECT jsonb_build_object(
                     'id', id, 'user_id', user_id, 'ticket_id', ticket_id, 'message', message,
                     'is_me', user_id <> (
-                        SELECT user_id FROM v2_ticket WHERE id = v2_ticket_message.ticket_id
+                        SELECT user_id FROM ticket WHERE id = ticket_message.ticket_id
                     ),
                     'created_at', created_at, 'updated_at', updated_at
                 )
-                FROM v2_ticket_message
+                FROM ticket_message
                 WHERE ticket_id = $1
                 ORDER BY id ASC
                 "#,
@@ -403,7 +403,7 @@ impl AdminService {
         let user_id = if !staff && params.contains_key("email") {
             let email = params.get("email").cloned().unwrap_or_default();
             sqlx::query_scalar::<_, i64>(
-                "SELECT id FROM v2_user WHERE LOWER(email) = LOWER($1) LIMIT 1",
+                "SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1",
             )
             .bind(email)
             .fetch_optional(&self.db)
@@ -414,7 +414,7 @@ impl AdminService {
 
         let pagination = page(params)?;
         let mut count_builder =
-            QueryBuilder::<Postgres>::new("SELECT COUNT(*) FROM v2_ticket WHERE 1 = 1");
+            QueryBuilder::<Postgres>::new("SELECT COUNT(*) FROM ticket WHERE 1 = 1");
         apply_filters(&mut count_builder, status, &reply_statuses, user_id);
         let total: i64 = count_builder
             .build_query_scalar()
@@ -427,11 +427,11 @@ impl AdminService {
                 'id', id, 'user_id', user_id, 'subject', subject, 'level', level,
                 'status', status, 'reply_status', reply_status,
                 'last_reply_user_id', (
-                    SELECT user_id FROM v2_ticket_message WHERE ticket_id = v2_ticket.id ORDER BY id DESC LIMIT 1
+                    SELECT user_id FROM ticket_message WHERE ticket_id = ticket.id ORDER BY id DESC LIMIT 1
                 ),
                 'created_at', created_at, 'updated_at', updated_at
             )
-            FROM v2_ticket
+            FROM ticket
             WHERE 1 = 1
             "#,
         );
@@ -462,7 +462,7 @@ impl AdminService {
         validate_ticket_message_length(&message)?;
         let admin_id = self.current_admin_id(params).await?;
         let (ticket_user_id, subject): (i64, String) =
-            sqlx::query_as("SELECT user_id, subject FROM v2_ticket WHERE id = $1 LIMIT 1")
+            sqlx::query_as("SELECT user_id, subject FROM ticket WHERE id = $1 LIMIT 1")
                 .bind(id)
                 .fetch_optional(&self.db)
                 .await?
@@ -547,7 +547,7 @@ impl AdminService {
         message: &str,
     ) -> Option<(String, PreparedMailEnvelope)> {
         let email: Option<String> =
-            match sqlx::query_scalar("SELECT email FROM v2_user WHERE id = $1 LIMIT 1")
+            match sqlx::query_scalar("SELECT email FROM users WHERE id = $1 LIMIT 1")
                 .bind(user_id)
                 .fetch_optional(&self.db)
                 .await
@@ -667,7 +667,7 @@ impl AdminService {
         params: &HashMap<String, String>,
     ) -> Result<AdminOutput, ApiError> {
         let pagination = page(params)?;
-        let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM v2_coupon")
+        let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM coupon")
             .fetch_one(&self.db)
             .await?;
         let data = fetch_json_list_page(
@@ -680,7 +680,7 @@ impl AdminService {
                 'limit_plan_ids', CAST(limit_plan_ids AS JSONB), 'limit_period', CAST(limit_period AS JSONB),
                 'started_at', started_at, 'ended_at', ended_at, 'created_at', created_at, 'updated_at', updated_at
             )
-            FROM v2_coupon
+            FROM coupon
             {}
             LIMIT $1 OFFSET $2
             "#,
@@ -698,7 +698,7 @@ impl AdminService {
         params: &HashMap<String, String>,
     ) -> Result<AdminOutput, ApiError> {
         let pagination = page(params)?;
-        let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM v2_giftcard")
+        let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM giftcard")
             .fetch_one(&self.db)
             .await?;
         let data = fetch_json_list_page(
@@ -711,14 +711,14 @@ impl AdminService {
                 'used_user_ids', COALESCE(
                     (
                         SELECT jsonb_agg(redemption.user_id)
-                        FROM v2_giftcard_redemption AS redemption
-                        WHERE redemption.giftcard_id = v2_giftcard.id
+                        FROM giftcard_redemption AS redemption
+                        WHERE redemption.giftcard_id = giftcard.id
                     ),
                     '[]'::jsonb
                 ),
                 'started_at', started_at, 'ended_at', ended_at, 'created_at', created_at, 'updated_at', updated_at
             )
-            FROM v2_giftcard
+            FROM giftcard
             {}
             LIMIT $1 OFFSET $2
             "#,
@@ -821,16 +821,16 @@ impl AdminService {
             if let Some(code) = optional_string(params, "code") {
                 values.push(("code", AdminSqlValue::Text(code)));
             }
-            self.update_row("v2_coupon", id, &values, now)
+            self.update_row("coupon", id, &values, now)
                 .await
                 .map_err(|error| duplicate_code_error(error, "code", "优惠码已存在"))?;
         } else if let Some(code) = optional_string(params, "code") {
             values.push(("code", AdminSqlValue::Text(code)));
-            self.insert_row("v2_coupon", &values, now)
+            self.insert_row("coupon", &values, now)
                 .await
                 .map_err(|error| duplicate_code_error(error, "code", "优惠码已存在"))?;
         } else {
-            self.insert_generated_single_code("v2_coupon", &values, 8, now)
+            self.insert_generated_single_code("coupon", &values, 8, now)
                 .await?;
         }
         Ok(AdminOutput::Data(json!(true)))
@@ -926,7 +926,7 @@ impl AdminService {
         let mut values = giftcard_field_values(params);
         if let Some(id) = optional_i64(params, "id") {
             let exists: Option<i32> =
-                sqlx::query_scalar("SELECT id FROM v2_giftcard WHERE id = $1 LIMIT 1")
+                sqlx::query_scalar("SELECT id FROM giftcard WHERE id = $1 LIMIT 1")
                     .bind(id)
                     .fetch_optional(&self.db)
                     .await?;
@@ -936,16 +936,16 @@ impl AdminService {
             if let Some(code) = optional_string(params, "code") {
                 values.push(("code", AdminSqlValue::Text(code)));
             }
-            self.update_row("v2_giftcard", id, &values, now)
+            self.update_row("giftcard", id, &values, now)
                 .await
                 .map_err(|error| duplicate_code_error(error, "code", "礼品卡卡密已存在"))?;
         } else if let Some(code) = optional_string(params, "code") {
             values.push(("code", AdminSqlValue::Text(code)));
-            self.insert_row("v2_giftcard", &values, now)
+            self.insert_row("giftcard", &values, now)
                 .await
                 .map_err(|error| duplicate_code_error(error, "code", "礼品卡卡密已存在"))?;
         } else {
-            self.insert_generated_single_code("v2_giftcard", &values, 16, now)
+            self.insert_generated_single_code("giftcard", &values, 16, now)
                 .await?;
         }
         Ok(AdminOutput::Data(json!(true)))

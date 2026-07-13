@@ -19,34 +19,34 @@ const RETENTION_DELETE_BATCH_SIZE: i64 = 5_000;
 const RETENTION_MAX_BATCHES_PER_TABLE: usize = 20;
 const STAT_USER_RETENTION_SQL: &str = r#"
 WITH doomed AS (
-    SELECT id FROM v2_stat_user
+    SELECT id FROM stat_user
     WHERE record_at < $1
     ORDER BY record_at, id
     LIMIT $2
 )
-DELETE FROM v2_stat_user AS target
+DELETE FROM stat_user AS target
 USING doomed
 WHERE target.id = doomed.id
 "#;
 const STAT_SERVER_RETENTION_SQL: &str = r#"
 WITH doomed AS (
-    SELECT id FROM v2_stat_server
+    SELECT id FROM stat_server
     WHERE record_at < $1
     ORDER BY record_at, id
     LIMIT $2
 )
-DELETE FROM v2_stat_server AS target
+DELETE FROM stat_server AS target
 USING doomed
 WHERE target.id = doomed.id
 "#;
 const SYSTEM_LOG_RETENTION_SQL: &str = r#"
 WITH doomed AS (
-    SELECT id FROM v2_log
+    SELECT id FROM log
     WHERE created_at < $1
     ORDER BY created_at, id
     LIMIT $2
 )
-DELETE FROM v2_log AS target
+DELETE FROM log AS target
 USING doomed
 WHERE target.id = doomed.id
 "#;
@@ -126,8 +126,8 @@ async fn reset_traffic_inner(state: &WorkerState) -> anyhow::Result<()> {
         let users = sqlx::query_as::<_, ResetUserRow>(
             r#"
             SELECT u.id, u.expired_at, p.reset_traffic_method
-            FROM v2_user u
-            INNER JOIN v2_plan p ON p.id = u.plan_id
+            FROM users u
+            INNER JOIN plan p ON p.id = u.plan_id
             WHERE u.id > $1
               AND u.expired_at IS NOT NULL
               AND u.expired_at > $2
@@ -152,7 +152,7 @@ async fn reset_traffic_inner(state: &WorkerState) -> anyhow::Result<()> {
             .collect::<Vec<_>>();
         if !ids.is_empty() {
             let mut builder = QueryBuilder::<Postgres>::new(
-                "UPDATE v2_user SET traffic_epoch = traffic_epoch + 1, \
+                "UPDATE users SET traffic_epoch = traffic_epoch + 1, \
                  u = 0, d = 0, scheduled_traffic_reset_key = ",
             );
             builder.push_bind(&reset_key);

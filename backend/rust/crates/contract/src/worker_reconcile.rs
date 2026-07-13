@@ -57,7 +57,7 @@ pub async fn run() -> Result<()> {
 
     let durable_traffic_pending = count(
         &pool,
-        "SELECT COUNT(*) FROM v2_server_traffic_report WHERE applied_at IS NULL",
+        "SELECT COUNT(*) FROM server_traffic_report WHERE applied_at IS NULL",
     )
     .await?;
     checks.push(ReconcileCheck::new(
@@ -75,8 +75,7 @@ pub async fn run() -> Result<()> {
         true,
     ));
 
-    let pending_paid_orders =
-        count(&pool, "SELECT COUNT(*) FROM v2_order WHERE status = 1").await?;
+    let pending_paid_orders = count(&pool, "SELECT COUNT(*) FROM orders WHERE status = 1").await?;
     checks.push(ReconcileCheck::new(
         "paid_orders_opened",
         pending_paid_orders == 0,
@@ -86,7 +85,7 @@ pub async fn run() -> Result<()> {
 
     let expired_unpaid_orders = count_with_i64(
         &pool,
-        "SELECT COUNT(*) FROM v2_order WHERE status = 0 AND created_at <= $1",
+        "SELECT COUNT(*) FROM orders WHERE status = 0 AND created_at <= $1",
         now.saturating_sub(7_200),
     )
     .await?;
@@ -103,7 +102,7 @@ pub async fn run() -> Result<()> {
         SELECT COUNT(*)
         FROM (
             SELECT user_id
-            FROM v2_order
+            FROM orders
             WHERE status IN (0, 1)
             GROUP BY user_id
             HAVING COUNT(*) > 1
@@ -122,13 +121,13 @@ pub async fn run() -> Result<()> {
         &pool,
         r#"
         SELECT COUNT(*)
-        FROM v2_ticket t
+        FROM ticket t
         WHERE t.status = 0
           AND t.reply_status = 1
           AND t.updated_at <= $1
           AND (
             SELECT tm.user_id
-            FROM v2_ticket_message tm
+            FROM ticket_message tm
             WHERE tm.ticket_id = t.id
             ORDER BY tm.id DESC
             LIMIT 1
@@ -148,7 +147,7 @@ pub async fn run() -> Result<()> {
         &pool,
         r#"
         SELECT COUNT(*)
-        FROM v2_order
+        FROM orders
         WHERE commission_status = 1
           AND invite_user_id IS NOT NULL
         "#,
@@ -164,7 +163,7 @@ pub async fn run() -> Result<()> {
     let yesterday = yesterday_start_timestamp();
     let stat_exists = count_with_i64(
         &pool,
-        "SELECT COUNT(*) FROM v2_stat WHERE record_at = $1",
+        "SELECT COUNT(*) FROM stat WHERE record_at = $1",
         yesterday,
     )
     .await?;

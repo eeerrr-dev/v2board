@@ -190,7 +190,7 @@ pub async fn enqueue_events(
     let mut inserted_rows = 0_u64;
     for chunk in unique.chunks(ENQUEUE_CHUNK_ROWS) {
         let mut insert = QueryBuilder::<Postgres>::new(
-            "INSERT INTO v2_analytics_outbox \
+            "INSERT INTO analytics_outbox \
              (event_id, event_name, schema_major, report_key, partition_month, \
               occurred_at, payload, payload_sha256, table_generation, created_at) ",
         );
@@ -220,7 +220,7 @@ pub async fn enqueue_events(
             SELECT event_id, event_name, schema_major, report_key,
                    partition_month, occurred_at, payload, payload_sha256,
                    table_generation
-            FROM v2_analytics_outbox
+            FROM analytics_outbox
             WHERE event_id = ANY($1)
             FOR SHARE
             "#,
@@ -298,7 +298,7 @@ pub async fn claim_delivery_batch(
     let seed = sqlx::query_as::<_, (String, i16, NaiveDate, i32)>(
         r#"
         SELECT event_name, schema_major, partition_month, table_generation
-        FROM v2_analytics_outbox
+        FROM analytics_outbox
         WHERE published_at IS NULL
           AND quarantined_at IS NULL
           AND delivery_batch_id IS NULL
@@ -317,7 +317,7 @@ pub async fn claim_delivery_batch(
     let rows = sqlx::query_as::<_, UnclaimedRow>(
         r#"
         SELECT outbox_id, event_id, payload_sha256
-        FROM v2_analytics_outbox
+        FROM analytics_outbox
         WHERE published_at IS NULL
           AND quarantined_at IS NULL
           AND delivery_batch_id IS NULL
@@ -354,7 +354,7 @@ pub async fn claim_delivery_batch(
     let row_count = i32::try_from(rows.len()).map_err(|_| OutboxError::RowCountOverflow)?;
     sqlx::query(
         r#"
-        INSERT INTO v2_analytics_delivery_batch
+        INSERT INTO analytics_delivery_batch
             (batch_id, event_name, schema_major, partition_month, table_generation,
              row_count, content_sha256, insert_settings_sha256, state,
              lease_owner, lease_expires_at, attempt_count, created_at)
@@ -379,7 +379,7 @@ pub async fn claim_delivery_batch(
     let row_numbers = (0..row_count).collect::<Vec<_>>();
     let assigned = sqlx::query(
         r#"
-        UPDATE v2_analytics_outbox AS outbox
+        UPDATE analytics_outbox AS outbox
         SET delivery_batch_id = $1, batch_row_number = assignments.row_number
         FROM UNNEST($2::BIGINT[], $3::INTEGER[])
              AS assignments(outbox_id, row_number)
@@ -412,7 +412,7 @@ async fn claim_existing_batch(
     let batch_id = sqlx::query_scalar::<_, Uuid>(
         r#"
         SELECT batch_id
-        FROM v2_analytics_delivery_batch
+        FROM analytics_delivery_batch
         WHERE published_at IS NULL
           AND quarantined_at IS NULL
           AND state IN ('ready', 'publishing')
@@ -430,7 +430,7 @@ async fn claim_existing_batch(
     };
     sqlx::query(
         r#"
-        UPDATE v2_analytics_delivery_batch
+        UPDATE analytics_delivery_batch
         SET state = 'publishing', lease_owner = $1, lease_expires_at = $2,
             attempt_count = attempt_count + 1
         WHERE batch_id = $3
@@ -456,7 +456,7 @@ async fn load_claimed_batch(
         SELECT batch_id, event_name, schema_major, partition_month,
                table_generation, content_sha256, insert_settings_sha256, row_count,
                lease_expires_at, created_at, state
-        FROM v2_analytics_delivery_batch
+        FROM analytics_delivery_batch
         WHERE batch_id = $1 AND lease_owner = $2
         "#,
     )
@@ -470,7 +470,7 @@ async fn load_claimed_batch(
         SELECT outbox_id, event_id, event_name, schema_major, report_key,
                partition_month, occurred_at, payload, payload_sha256,
                batch_row_number
-        FROM v2_analytics_outbox
+        FROM analytics_outbox
         WHERE delivery_batch_id = $1
         ORDER BY batch_row_number
         "#,
@@ -551,7 +551,7 @@ pub async fn mark_batch_published(
     let mut tx = pool.begin().await?;
     let updated = sqlx::query(
         r#"
-        UPDATE v2_analytics_delivery_batch
+        UPDATE analytics_delivery_batch
         SET state = 'published', published_at = $1,
             lease_owner = NULL, lease_expires_at = NULL, last_error = NULL
         WHERE batch_id = $2 AND lease_owner = $3
@@ -571,7 +571,7 @@ pub async fn mark_batch_published(
     }
     let events = sqlx::query(
         r#"
-        UPDATE v2_analytics_outbox
+        UPDATE analytics_outbox
         SET published_at = $1
         WHERE delivery_batch_id = $2 AND published_at IS NULL
           AND quarantined_at IS NULL
@@ -598,7 +598,7 @@ pub async fn release_batch_for_retry(
 ) -> Result<(), OutboxError> {
     let updated = sqlx::query(
         r#"
-        UPDATE v2_analytics_delivery_batch
+        UPDATE analytics_delivery_batch
         SET state = 'ready', lease_owner = NULL, lease_expires_at = NULL,
             last_error = LEFT($1, 2000)
         WHERE batch_id = $2 AND lease_owner = $3
@@ -628,7 +628,7 @@ pub async fn quarantine_batch(
     let mut tx = pool.begin().await?;
     let updated = sqlx::query(
         r#"
-        UPDATE v2_analytics_delivery_batch
+        UPDATE analytics_delivery_batch
         SET state = 'quarantined', quarantined_at = $1,
             quarantine_reason = LEFT($2, 2000),
             lease_owner = NULL, lease_expires_at = NULL
@@ -649,7 +649,7 @@ pub async fn quarantine_batch(
     }
     let events = sqlx::query(
         r#"
-        UPDATE v2_analytics_outbox
+        UPDATE analytics_outbox
         SET quarantined_at = $1
         WHERE delivery_batch_id = $2 AND published_at IS NULL
         "#,
@@ -676,7 +676,7 @@ pub async fn outbox_backlog(pool: &sqlx::PgPool) -> Result<OutboxBacklog, Outbox
         r#"
         SELECT COUNT(*)::BIGINT AS pending_rows,
                MIN(created_at) AS oldest_pending_created_at
-        FROM v2_analytics_outbox
+        FROM analytics_outbox
         WHERE published_at IS NULL AND quarantined_at IS NULL
         "#,
     )
@@ -709,7 +709,7 @@ pub async fn prune_published_outbox(
         r#"
         WITH candidates AS (
             SELECT outbox_id
-            FROM v2_analytics_outbox
+            FROM analytics_outbox
             WHERE published_at IS NOT NULL
               AND published_at < $1
               AND quarantined_at IS NULL
@@ -717,7 +717,7 @@ pub async fn prune_published_outbox(
             LIMIT $2
             FOR UPDATE SKIP LOCKED
         )
-        DELETE FROM v2_analytics_outbox AS outbox
+        DELETE FROM analytics_outbox AS outbox
         USING candidates
         WHERE outbox.outbox_id = candidates.outbox_id
           AND outbox.published_at IS NOT NULL
@@ -735,20 +735,20 @@ pub async fn prune_published_outbox(
         r#"
         WITH candidates AS (
             SELECT batch.batch_id
-            FROM v2_analytics_delivery_batch AS batch
+            FROM analytics_delivery_batch AS batch
             WHERE batch.state = 'published'
               AND batch.published_at IS NOT NULL
               AND batch.published_at < $1
               AND NOT EXISTS (
                   SELECT 1
-                  FROM v2_analytics_outbox AS outbox
+                  FROM analytics_outbox AS outbox
                   WHERE outbox.delivery_batch_id = batch.batch_id
               )
             ORDER BY batch.published_at, batch.batch_id
             LIMIT $2
             FOR UPDATE SKIP LOCKED
         )
-        DELETE FROM v2_analytics_delivery_batch AS batch
+        DELETE FROM analytics_delivery_batch AS batch
         USING candidates
         WHERE batch.batch_id = candidates.batch_id
           AND batch.state = 'published'
@@ -756,7 +756,7 @@ pub async fn prune_published_outbox(
           AND batch.published_at < $1
           AND NOT EXISTS (
               SELECT 1
-              FROM v2_analytics_outbox AS outbox
+              FROM analytics_outbox AS outbox
               WHERE outbox.delivery_batch_id = batch.batch_id
           )
         "#,

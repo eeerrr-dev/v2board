@@ -29,7 +29,7 @@ pub async fn find_visible_notice(pool: &PgPool, id: i32) -> Result<Option<Notice
     let row = sqlx::query_as::<_, RawNoticeRow>(
         r#"
         SELECT id, title, content, show, img_url, tags::text AS tags, created_at, updated_at
-        FROM v2_notice
+        FROM notice
         WHERE id = $1 AND show = 1
         LIMIT 1
         "#,
@@ -46,13 +46,13 @@ pub async fn fetch_visible_notices(
     page_size: i64,
     offset: i64,
 ) -> Result<(Vec<NoticeRow>, i64), sqlx::Error> {
-    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM v2_notice WHERE show = 1")
+    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM notice WHERE show = 1")
         .fetch_one(pool)
         .await?;
     let rows = sqlx::query_as::<_, RawNoticeRow>(
         r#"
         SELECT id, title, content, show, img_url, tags::text AS tags, created_at, updated_at
-        FROM v2_notice
+        FROM notice
         WHERE show = 1
         ORDER BY created_at DESC
         LIMIT $1 OFFSET $2

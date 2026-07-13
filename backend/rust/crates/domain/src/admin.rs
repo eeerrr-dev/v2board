@@ -208,7 +208,7 @@ impl AdminService {
             "plan/drop" => self.plan_drop(&params).await,
             "plan/update" => self.plan_update(&params).await,
             "plan/sort" => {
-                self.sort_ids("v2_plan", &array_param(&params, "plan_ids")?)
+                self.sort_ids("plan", &array_param(&params, "plan_ids")?)
                     .await
             }
             "payment/getPaymentForm" => self.payment_form(&params).await,
@@ -220,7 +220,7 @@ impl AdminService {
             "notice/update" => self.notice_update(&params).await,
             "notice/drop" => {
                 self.delete_by_id(
-                    "v2_notice",
+                    "notice",
                     required_i64(&params, "id")?,
                     ApiError::legacy("公告不存在"),
                 )
@@ -228,7 +228,7 @@ impl AdminService {
             }
             "notice/show" => {
                 self.toggle(
-                    "v2_notice",
+                    "notice",
                     "show",
                     required_i64(&params, "id")?,
                     ApiError::legacy("公告不存在"),
@@ -238,7 +238,7 @@ impl AdminService {
             "knowledge/save" => self.knowledge_save(&params).await,
             "knowledge/drop" => {
                 self.delete_by_id(
-                    "v2_knowledge",
+                    "knowledge",
                     required_i64(&params, "id")?,
                     ApiError::legacy("知识不存在"),
                 )
@@ -246,7 +246,7 @@ impl AdminService {
             }
             "knowledge/show" => {
                 self.toggle(
-                    "v2_knowledge",
+                    "knowledge",
                     "show",
                     required_i64(&params, "id")?,
                     ApiError::legacy("知识不存在"),
@@ -254,7 +254,7 @@ impl AdminService {
                 .await
             }
             "knowledge/sort" => {
-                self.sort_ids("v2_knowledge", &array_param(&params, "knowledge_ids")?)
+                self.sort_ids("knowledge", &array_param(&params, "knowledge_ids")?)
                     .await
             }
             "ticket/reply" => self.ticket_reply(&params).await,
@@ -262,7 +262,7 @@ impl AdminService {
             "coupon/generate" => self.coupon_generate(&params).await,
             "coupon/drop" => {
                 self.delete_by_id(
-                    "v2_coupon",
+                    "coupon",
                     required_i64(&params, "id")?,
                     ApiError::legacy("优惠券不存在"),
                 )
@@ -270,7 +270,7 @@ impl AdminService {
             }
             "coupon/show" => {
                 self.toggle(
-                    "v2_coupon",
+                    "coupon",
                     "show",
                     required_i64(&params, "id")?,
                     ApiError::legacy("优惠券不存在"),
@@ -280,7 +280,7 @@ impl AdminService {
             "giftcard/generate" => self.giftcard_generate(&params).await,
             "giftcard/drop" => {
                 self.delete_by_id(
-                    "v2_giftcard",
+                    "giftcard",
                     required_i64(&params, "id")?,
                     ApiError::not_found("礼品卡不存在"),
                 )
@@ -291,7 +291,7 @@ impl AdminService {
             "server/route/save" => self.server_route_save(&params).await,
             "server/route/drop" => {
                 self.delete_by_id(
-                    "v2_server_route",
+                    "server_route",
                     required_i64(&params, "id")?,
                     ApiError::legacy("路由不存在"),
                 )
@@ -363,7 +363,7 @@ impl AdminService {
             "notice/update" => self.notice_update(&params).await,
             "notice/drop" => {
                 self.delete_by_id(
-                    "v2_notice",
+                    "notice",
                     required_i64(&params, "id")?,
                     ApiError::legacy("公告不存在"),
                 )

@@ -30,57 +30,23 @@ pub const CLICKHOUSE_MIGRATIONS: &[ClickHouseMigration] = &[
     },
     ClickHouseMigration {
         version: 4,
-        name: "reported_retry_dedup",
-        sql: include_str!("../../../clickhouse-migrations/0004_reported_retry_dedup.sql"),
+        name: "installation_binding",
+        sql: include_str!("../../../clickhouse-migrations/0004_installation_binding.sql"),
     },
     ClickHouseMigration {
         version: 5,
-        name: "accounted_retry_dedup",
-        sql: include_str!("../../../clickhouse-migrations/0005_accounted_retry_dedup.sql"),
+        name: "traffic_reported_daily_v1",
+        sql: include_str!("../../../clickhouse-migrations/0005_traffic_reported_daily_v1.sql"),
     },
     ClickHouseMigration {
         version: 6,
-        name: "reported_batch_index",
-        sql: include_str!("../../../clickhouse-migrations/0006_reported_batch_index.sql"),
+        name: "traffic_accounted_daily_v1",
+        sql: include_str!("../../../clickhouse-migrations/0006_traffic_accounted_daily_v1.sql"),
     },
     ClickHouseMigration {
         version: 7,
-        name: "accounted_batch_index",
-        sql: include_str!("../../../clickhouse-migrations/0007_accounted_batch_index.sql"),
-    },
-    ClickHouseMigration {
-        version: 8,
-        name: "materialize_reported_batch_index",
-        sql: include_str!(
-            "../../../clickhouse-migrations/0008_materialize_reported_batch_index.sql"
-        ),
-    },
-    ClickHouseMigration {
-        version: 9,
-        name: "materialize_accounted_batch_index",
-        sql: include_str!(
-            "../../../clickhouse-migrations/0009_materialize_accounted_batch_index.sql"
-        ),
-    },
-    ClickHouseMigration {
-        version: 10,
-        name: "installation_binding",
-        sql: include_str!("../../../clickhouse-migrations/0010_installation_binding.sql"),
-    },
-    ClickHouseMigration {
-        version: 11,
-        name: "traffic_reported_daily_v1",
-        sql: include_str!("../../../clickhouse-migrations/0011_traffic_reported_daily_v1.sql"),
-    },
-    ClickHouseMigration {
-        version: 12,
-        name: "traffic_accounted_daily_v1",
-        sql: include_str!("../../../clickhouse-migrations/0012_traffic_accounted_daily_v1.sql"),
-    },
-    ClickHouseMigration {
-        version: 13,
         name: "retention_binding",
-        sql: include_str!("../../../clickhouse-migrations/0013_retention_binding.sql"),
+        sql: include_str!("../../../clickhouse-migrations/0007_retention_binding.sql"),
     },
 ];
 
@@ -110,9 +76,7 @@ pub enum ClickHouseMigrationError {
     IncompleteLineage { expected: usize, observed: usize },
     #[error("ClickHouse {observed} is unsupported; analytics requires 26.3.x")]
     UnsupportedVersion { observed: String },
-    #[error(
-        "ClickHouse target database has {table_count} table(s) but no v2_schema_migration ledger"
-    )]
+    #[error("ClickHouse target database has {table_count} table(s) but no schema_migration ledger")]
     UnmanagedNonEmptyDatabase { table_count: u64 },
     #[error("ClickHouse target has a pre-existing schema ledger without a valid bootstrap entry")]
     IncompleteLedger,
@@ -270,7 +234,7 @@ pub async fn migrate_clickhouse(
 
     ensure_supported_version(client).await?;
 
-    let ledger_preexisting = table_exists(client, "v2_schema_migration").await?;
+    let ledger_preexisting = table_exists(client, "schema_migration").await?;
     let preexisting_tables = table_names(client).await?;
     if !ledger_preexisting {
         if !preexisting_tables.is_empty() {
@@ -289,7 +253,7 @@ pub async fn migrate_clickhouse(
     // a crash between CREATE TABLE and the version-1 ledger insert.
     client
         .query(
-            "ALTER TABLE v2_schema_migration MODIFY SETTING \
+            "ALTER TABLE schema_migration MODIFY SETTING \
              non_replicated_deduplication_window = 10000",
         )
         .execute()
@@ -299,7 +263,7 @@ pub async fn migrate_clickhouse(
     let initial_prefix = validate_ledger_lineage(client, false).await?;
     if ledger_preexisting && initial_prefix == 0 {
         let tables = table_names(client).await?;
-        if tables.len() != 1 || tables[0] != "v2_schema_migration" {
+        if tables.len() != 1 || tables[0] != "schema_migration" {
             return Err(ClickHouseMigrationError::IncompleteLedger);
         }
     }
@@ -351,7 +315,7 @@ pub async fn bind_clickhouse_installation(
             return Err(ClickHouseMigrationError::InstallationBindingConflict);
         }
         let mut insert = client
-            .insert::<NewInstallationBinding>("v2_installation_binding")
+            .insert::<NewInstallationBinding>("installation_binding")
             .await?
             .with_setting(
                 "insert_deduplication_token",
@@ -376,7 +340,7 @@ pub async fn bind_clickhouse_installation(
 /// restricted to an empty projection: ClickHouse DDL is not transactional, so
 /// a crash is recovered by re-applying the idempotent TTL clauses before the
 /// single deduplicated binding row is written. Once bound, changing either
-/// value requires an explicit native-upgrade migration rather than silently
+/// value requires an explicit future schema change rather than silently
 /// shortening retained history.
 pub async fn configure_clickhouse_retention(
     client: &clickhouse::Client,
@@ -404,7 +368,7 @@ pub async fn configure_clickhouse_retention(
         }
         verify_retention_ttl(client, raw_retention_days, aggregate_retention_days).await?;
         let mut insert = client
-            .insert::<NewRetentionBinding>("v2_retention_binding")
+            .insert::<NewRetentionBinding>("retention_binding")
             .await?
             .with_setting(
                 "insert_deduplication_token",
@@ -444,13 +408,13 @@ pub async fn clickhouse_projection_counts(
     Ok(client
         .query(
             "SELECT \
-             coalesce((SELECT count() FROM v2_traffic_reported_v1), toUInt64(0)) \
+             coalesce((SELECT count() FROM traffic_reported_v1), toUInt64(0)) \
                  AS reported_raw_rows, \
-             coalesce((SELECT count() FROM v2_traffic_accounted_v1), toUInt64(0)) \
+             coalesce((SELECT count() FROM traffic_accounted_v1), toUInt64(0)) \
                  AS accounted_raw_rows, \
-             coalesce((SELECT count() FROM v2_traffic_reported_daily_v1), toUInt64(0)) \
+             coalesce((SELECT count() FROM traffic_reported_daily_v1), toUInt64(0)) \
                  AS reported_daily_rows, \
-             coalesce((SELECT count() FROM v2_traffic_accounted_daily_v1), toUInt64(0)) \
+             coalesce((SELECT count() FROM traffic_accounted_daily_v1), toUInt64(0)) \
                  AS accounted_daily_rows",
         )
         .fetch_one::<ClickHouseProjectionCounts>()
@@ -476,9 +440,9 @@ async fn raw_fact_installations(
     Ok(client
         .query(
             "SELECT DISTINCT installation_id FROM ( \
-                 SELECT installation_id FROM v2_traffic_reported_v1 \
+                 SELECT installation_id FROM traffic_reported_v1 \
                  UNION ALL \
-                 SELECT installation_id FROM v2_traffic_accounted_v1 \
+                 SELECT installation_id FROM traffic_accounted_v1 \
              ) ORDER BY installation_id LIMIT 2",
         )
         .fetch_all::<InstallationIdRow>()
@@ -542,7 +506,7 @@ async fn retention_binding_rows(
     Ok(client
         .query(
             "SELECT singleton, installation_id, raw_retention_days, aggregate_retention_days \
-             FROM v2_retention_binding ORDER BY singleton, installation_id, raw_retention_days, \
+             FROM retention_binding ORDER BY singleton, installation_id, raw_retention_days, \
              aggregate_retention_days",
         )
         .fetch_all::<RetentionBindingRow>()
@@ -630,7 +594,7 @@ async fn installation_binding_rows(
 ) -> Result<Vec<InstallationBindingRow>, ClickHouseMigrationError> {
     Ok(client
         .query(
-            "SELECT singleton, installation_id FROM v2_installation_binding \
+            "SELECT singleton, installation_id FROM installation_binding \
              ORDER BY singleton, installation_id",
         )
         .fetch_all::<InstallationBindingRow>()
@@ -722,7 +686,7 @@ async fn ledger_rows(
 ) -> Result<Vec<LedgerRow>, ClickHouseMigrationError> {
     Ok(client
         .query(
-            "SELECT version, name, checksum FROM v2_schema_migration \
+            "SELECT version, name, checksum FROM schema_migration \
              ORDER BY version, applied_at_unix, checksum, name",
         )
         .fetch_all::<LedgerRow>()
@@ -801,7 +765,7 @@ async fn insert_migration_ledger_row(
         migration.version, checksum
     );
     let mut insert = client
-        .insert::<AppliedMigration<'_>>("v2_schema_migration")
+        .insert::<AppliedMigration<'_>>("schema_migration")
         .await?
         .with_setting("insert_deduplication_token", token)
         .with_setting("async_insert", "0")
@@ -824,50 +788,36 @@ async fn validate_migration_effect(
 ) -> Result<(), ClickHouseMigrationError> {
     match version {
         1 => validate_ledger_table(client).await,
-        2 => validate_event_table_shape(
+        2 => validate_event_table(
             client,
-            "v2_traffic_reported_v1",
+            "traffic_reported_v1",
             "installation_id, user_id, accounting_date, accepted_at_unix, event_id, ingest_batch_id, batch_row_number",
             REPORTED_COLUMNS,
         )
-        .await
-        .map(|_| ()),
-        3 => validate_event_table_shape(
+        .await,
+        3 => validate_event_table(
             client,
-            "v2_traffic_accounted_v1",
+            "traffic_accounted_v1",
             "installation_id, user_id, accounting_date, accounted_at_unix, event_id, ingest_batch_id, batch_row_number",
             ACCOUNTED_COLUMNS,
         )
-        .await
-        .map(|_| ()),
-        4 => validate_event_deduplication(client, "v2_traffic_reported_v1").await,
-        5 => validate_event_deduplication(client, "v2_traffic_accounted_v1").await,
-        6 => validate_event_index(client, "v2_traffic_reported_v1").await,
-        7 => validate_event_index(client, "v2_traffic_accounted_v1").await,
-        8 => {
-            validate_event_index(client, "v2_traffic_reported_v1").await?;
-            validate_no_pending_mutation(client, "v2_traffic_reported_v1").await
-        }
-        9 => {
-            validate_event_index(client, "v2_traffic_accounted_v1").await?;
-            validate_no_pending_mutation(client, "v2_traffic_accounted_v1").await
-        }
-        10 => validate_installation_binding_table(client).await,
-        11 => validate_daily_aggregate_table(
+        .await,
+        4 => validate_installation_binding_table(client).await,
+        5 => validate_daily_aggregate_table(
             client,
-            "v2_traffic_reported_daily_v1",
+            "traffic_reported_daily_v1",
             "installation_id, accounting_date, user_id, server_id, server_type, rate_text, rate_decimal_10_2, table_generation, ingest_batch_id, batch_aggregate_row_number",
             REPORTED_DAILY_COLUMNS,
         )
         .await,
-        12 => validate_daily_aggregate_table(
+        6 => validate_daily_aggregate_table(
             client,
-            "v2_traffic_accounted_daily_v1",
+            "traffic_accounted_daily_v1",
             "installation_id, accounting_date, user_id, server_id, server_type, rate_text, rate_decimal_10_2, outcome, table_generation, ingest_batch_id, batch_aggregate_row_number",
             ACCOUNTED_DAILY_COLUMNS,
         )
         .await,
-        13 => validate_retention_binding_table(client).await,
+        7 => validate_retention_binding_table(client).await,
         _ => Err(ClickHouseMigrationError::UnknownLedgerVersion { version }),
     }
 }
@@ -886,31 +836,29 @@ async fn validate_clickhouse_schema(
     validate_ledger_table(client).await?;
     validate_event_table(
         client,
-        "v2_traffic_reported_v1",
+        "traffic_reported_v1",
         "installation_id, user_id, accounting_date, accepted_at_unix, event_id, ingest_batch_id, batch_row_number",
         REPORTED_COLUMNS,
     )
     .await?;
     validate_event_table(
         client,
-        "v2_traffic_accounted_v1",
+        "traffic_accounted_v1",
         "installation_id, user_id, accounting_date, accounted_at_unix, event_id, ingest_batch_id, batch_row_number",
         ACCOUNTED_COLUMNS,
     )
     .await?;
-    validate_no_pending_mutation(client, "v2_traffic_reported_v1").await?;
-    validate_no_pending_mutation(client, "v2_traffic_accounted_v1").await?;
     validate_installation_binding_table(client).await?;
     validate_daily_aggregate_table(
         client,
-        "v2_traffic_reported_daily_v1",
+        "traffic_reported_daily_v1",
         "installation_id, accounting_date, user_id, server_id, server_type, rate_text, rate_decimal_10_2, table_generation, ingest_batch_id, batch_aggregate_row_number",
         REPORTED_DAILY_COLUMNS,
     )
     .await?;
     validate_daily_aggregate_table(
         client,
-        "v2_traffic_accounted_daily_v1",
+        "traffic_accounted_daily_v1",
         "installation_id, accounting_date, user_id, server_id, server_type, rate_text, rate_decimal_10_2, outcome, table_generation, ingest_batch_id, batch_aggregate_row_number",
         ACCOUNTED_DAILY_COLUMNS,
     )
@@ -924,7 +872,7 @@ async fn validate_ledger_table(
 ) -> Result<(), ClickHouseMigrationError> {
     let state = validate_table(
         client,
-        "v2_schema_migration",
+        "schema_migration",
         "MergeTree",
         "",
         "version, applied_at_unix, checksum",
@@ -936,7 +884,7 @@ async fn validate_ledger_table(
         .contains(REQUIRED_DEDUPLICATION_WINDOW)
     {
         return Err(schema_error(
-            "v2_schema_migration",
+            "schema_migration",
             "schema-ledger retry deduplication is not explicitly enabled",
         ));
     }
@@ -1032,34 +980,12 @@ async fn validate_event_index(
     Ok(())
 }
 
-async fn validate_no_pending_mutation(
-    client: &clickhouse::Client,
-    table: &str,
-) -> Result<(), ClickHouseMigrationError> {
-    let pending = client
-        .query(
-            "SELECT count() AS value FROM system.mutations \
-             WHERE database = currentDatabase() AND table = ? AND is_done = 0",
-        )
-        .bind(table)
-        .fetch_one::<CountValue>()
-        .await?
-        .value;
-    if pending != 0 {
-        return Err(schema_error(
-            table,
-            "index materialization mutation is still pending",
-        ));
-    }
-    Ok(())
-}
-
 async fn validate_installation_binding_table(
     client: &clickhouse::Client,
 ) -> Result<(), ClickHouseMigrationError> {
     let state = validate_table(
         client,
-        "v2_installation_binding",
+        "installation_binding",
         "MergeTree",
         "",
         "singleton, installation_id",
@@ -1074,7 +1000,7 @@ async fn validate_installation_binding_table(
             .contains("CONSTRAINT chk_single_installation_binding CHECK singleton = 1")
     {
         return Err(schema_error(
-            "v2_installation_binding",
+            "installation_binding",
             "singleton constraint or retry deduplication setting drifted",
         ));
     }
@@ -1086,7 +1012,7 @@ async fn validate_retention_binding_table(
 ) -> Result<(), ClickHouseMigrationError> {
     let state = validate_table(
         client,
-        "v2_retention_binding",
+        "retention_binding",
         "MergeTree",
         "",
         "singleton, installation_id",
@@ -1102,7 +1028,7 @@ async fn validate_retention_binding_table(
     ] {
         if !create.contains(required) {
             return Err(schema_error(
-                "v2_retention_binding",
+                "retention_binding",
                 "retention constraints or retry deduplication setting drifted",
             ));
         }
@@ -1204,20 +1130,18 @@ fn schema_error(table: &str, detail: &str) -> ClickHouseMigrationError {
 }
 
 const EXPECTED_TABLES: &[&str] = &[
-    "v2_installation_binding",
-    "v2_retention_binding",
-    "v2_schema_migration",
-    "v2_traffic_accounted_v1",
-    "v2_traffic_accounted_daily_v1",
-    "v2_traffic_reported_v1",
-    "v2_traffic_reported_daily_v1",
+    "installation_binding",
+    "retention_binding",
+    "schema_migration",
+    "traffic_accounted_v1",
+    "traffic_accounted_daily_v1",
+    "traffic_reported_v1",
+    "traffic_reported_daily_v1",
 ];
 
-const RAW_RETENTION_TABLES: &[&str] = &["v2_traffic_reported_v1", "v2_traffic_accounted_v1"];
-const AGGREGATE_RETENTION_TABLES: &[&str] = &[
-    "v2_traffic_reported_daily_v1",
-    "v2_traffic_accounted_daily_v1",
-];
+const RAW_RETENTION_TABLES: &[&str] = &["traffic_reported_v1", "traffic_accounted_v1"];
+const AGGREGATE_RETENTION_TABLES: &[&str] =
+    &["traffic_reported_daily_v1", "traffic_accounted_daily_v1"];
 
 const LEDGER_COLUMNS: &[(&str, &str)] = &[
     ("version", "UInt64"),
@@ -1375,31 +1299,21 @@ mod tests {
                     .sql
                     .contains("PARTITION BY (table_generation, toYYYYMM")
             );
+            assert!(
+                migration
+                    .sql
+                    .contains("non_replicated_deduplication_window")
+            );
+            assert!(migration.sql.contains("idx_ingest_batch_id"));
         }
         assert!(
             CLICKHOUSE_MIGRATIONS[3]
                 .sql
-                .contains("non_replicated_deduplication_window")
+                .contains("installation_binding")
         );
-        assert!(
-            CLICKHOUSE_MIGRATIONS[4]
-                .sql
-                .contains("non_replicated_deduplication_window")
-        );
-        assert!(CLICKHOUSE_MIGRATIONS[5].sql.contains("idx_ingest_batch_id"));
-        assert!(CLICKHOUSE_MIGRATIONS[6].sql.contains("idx_ingest_batch_id"));
-        assert!(
-            CLICKHOUSE_MIGRATIONS[9]
-                .sql
-                .contains("v2_installation_binding")
-        );
-        assert!(CLICKHOUSE_MIGRATIONS[10].sql.contains("SummingMergeTree"));
-        assert!(CLICKHOUSE_MIGRATIONS[11].sql.contains("SummingMergeTree"));
-        assert!(
-            CLICKHOUSE_MIGRATIONS[12]
-                .sql
-                .contains("v2_retention_binding")
-        );
+        assert!(CLICKHOUSE_MIGRATIONS[4].sql.contains("SummingMergeTree"));
+        assert!(CLICKHOUSE_MIGRATIONS[5].sql.contains("SummingMergeTree"));
+        assert!(CLICKHOUSE_MIGRATIONS[6].sql.contains("retention_binding"));
         assert_eq!(clickhouse_schema_lineage_sha256().len(), 64);
     }
 

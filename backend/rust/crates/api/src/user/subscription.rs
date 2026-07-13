@@ -102,7 +102,7 @@ pub(crate) async fn user_new_period(
     let row = sqlx::query_as::<_, UserPeriodRow>(
         r#"
         SELECT u.plan_id, u.transfer_enable, u.u, u.d, u.expired_at
-        FROM v2_user u
+        FROM users u
         WHERE u.id = $1
         LIMIT 1
         FOR UPDATE OF u
@@ -131,7 +131,7 @@ pub(crate) async fn user_new_period(
     // subscription writer lock order explicitly: user first, then the existing
     // plan whose reset method controls this mutation.
     let plan_reset_method = sqlx::query_scalar::<_, Option<i16>>(
-        "SELECT reset_traffic_method FROM v2_plan WHERE id = $1 FOR SHARE",
+        "SELECT reset_traffic_method FROM plan WHERE id = $1 FOR SHARE",
     )
     .bind(plan_id)
     .fetch_optional(&mut *tx)
@@ -165,7 +165,7 @@ pub(crate) async fn user_new_period(
         checked_reset_subscription_expiry(expired_at, reset_day, period, Utc::now().timestamp())?
     {
         let updated = sqlx::query(
-            "UPDATE v2_user SET expired_at = $1, traffic_epoch = traffic_epoch + 1, \
+            "UPDATE users SET expired_at = $1, traffic_epoch = traffic_epoch + 1, \
              u = 0, d = 0, updated_at = $2 WHERE id = $3",
         )
         .bind(next_expired_at)

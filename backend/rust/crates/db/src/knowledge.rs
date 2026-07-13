@@ -30,7 +30,7 @@ pub async fn find_knowledge(pool: &PgPool, id: i32) -> Result<Option<KnowledgeRo
     sqlx::query_as::<_, KnowledgeRow>(
         r#"
         SELECT id, language, category, title, body, sort, show, created_at, updated_at
-        FROM v2_knowledge
+        FROM knowledge
         WHERE id = $1 AND show = 1
         LIMIT 1
         "#,
@@ -50,7 +50,7 @@ pub async fn fetch_knowledge(
         sqlx::query_as::<_, KnowledgeSummaryRow>(
             r#"
             SELECT id, category, title, sort, show, updated_at
-            FROM v2_knowledge
+            FROM knowledge
             WHERE language = $1 AND show = 1 AND (title ILIKE $2 OR body ILIKE $3)
             ORDER BY sort ASC NULLS FIRST
             "#,
@@ -64,7 +64,7 @@ pub async fn fetch_knowledge(
         sqlx::query_as::<_, KnowledgeSummaryRow>(
             r#"
             SELECT id, category, title, sort, show, updated_at
-            FROM v2_knowledge
+            FROM knowledge
             WHERE language = $1 AND show = 1
             ORDER BY sort ASC NULLS FIRST
             "#,

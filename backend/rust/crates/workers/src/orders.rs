@@ -5,7 +5,7 @@ use crate::{batch::finish_item_batch, state::WorkerState};
 const ORDER_CANDIDATE_PAGE_SIZE: i64 = 250;
 const ORDER_CANDIDATE_SQL: &str = r#"
 SELECT id, trade_no
-FROM v2_order
+FROM orders
 WHERE status IN (0, 1) AND id > $1
 ORDER BY id
 LIMIT $2

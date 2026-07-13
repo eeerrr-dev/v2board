@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS v2_traffic_reported_daily_v1
+CREATE TABLE IF NOT EXISTS traffic_accounted_daily_v1
 (
     installation_id UUID,
     accounting_date Date,
@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS v2_traffic_reported_daily_v1
     server_type LowCardinality(String),
     rate_text String,
     rate_decimal_10_2 Decimal(10, 2),
+    outcome LowCardinality(String),
     table_generation UInt32,
     ingest_batch_id UUID,
     batch_aggregate_row_number UInt32,
@@ -27,6 +28,7 @@ ORDER BY
     server_type,
     rate_text,
     rate_decimal_10_2,
+    outcome,
     table_generation,
     ingest_batch_id,
     batch_aggregate_row_number

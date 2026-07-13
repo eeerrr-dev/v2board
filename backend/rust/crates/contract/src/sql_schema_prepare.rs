@@ -72,30 +72,30 @@ pub async fn run(pool: &PgPool) -> Result<()> {
 
 async fn assert_dynamic_tables(pool: &PgPool) -> Result<()> {
     const TABLES: &[&str] = &[
-        "v2_plan",
-        "v2_payment",
-        "v2_notice",
-        "v2_knowledge",
-        "v2_coupon",
-        "v2_giftcard",
-        "v2_server_group",
-        "v2_server_route",
-        "v2_user",
-        "v2_server_shadowsocks",
-        "v2_server_vmess",
-        "v2_server_trojan",
-        "v2_server_tuic",
-        "v2_server_vless",
-        "v2_server_hysteria",
-        "v2_server_anytls",
-        "v2_server_v2node",
-        "v2_mail_outbox",
-        "v2_mail_outbox_batch",
-        "v2_mail_log",
-        "v2_analytics_delivery_batch",
-        "v2_analytics_outbox",
-        "v2_server_traffic_report",
-        "v2_server_traffic_report_item",
+        "plan",
+        "payment",
+        "notice",
+        "knowledge",
+        "coupon",
+        "giftcard",
+        "server_group",
+        "server_route",
+        "users",
+        "server_shadowsocks",
+        "server_vmess",
+        "server_trojan",
+        "server_tuic",
+        "server_vless",
+        "server_hysteria",
+        "server_anytls",
+        "server_v2node",
+        "mail_outbox",
+        "mail_outbox_batch",
+        "mail_log",
+        "analytics_delivery_batch",
+        "analytics_outbox",
+        "server_traffic_report",
+        "server_traffic_report_item",
     ];
     for table in TABLES {
         let id_columns: i64 = sqlx::query_scalar(
@@ -104,12 +104,12 @@ async fn assert_dynamic_tables(pool: &PgPool) -> Result<()> {
             FROM information_schema.columns
             WHERE table_schema = current_schema() AND table_name = $1
               AND column_name = CASE
-                    WHEN table_name = 'v2_mail_outbox_batch' THEN 'batch_key'
+                    WHEN table_name = 'mail_outbox_batch' THEN 'batch_key'
                     WHEN table_name IN (
-                        'v2_server_traffic_report', 'v2_server_traffic_report_item'
+                        'server_traffic_report', 'server_traffic_report_item'
                     ) THEN 'report_key'
-                    WHEN table_name = 'v2_analytics_delivery_batch' THEN 'batch_id'
-                    WHEN table_name = 'v2_analytics_outbox' THEN 'outbox_id'
+                    WHEN table_name = 'analytics_delivery_batch' THEN 'batch_id'
+                    WHEN table_name = 'analytics_outbox' THEN 'outbox_id'
                     ELSE 'id'
                   END
             "#,

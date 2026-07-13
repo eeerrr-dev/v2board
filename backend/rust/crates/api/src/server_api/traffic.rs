@@ -187,7 +187,7 @@ pub(super) async fn server_alive_list(
     let user_ids = sqlx::query_scalar::<_, i64>(
         r#"
         SELECT id
-        FROM v2_user
+        FROM users
         WHERE CAST(u AS DECIMAL(30,0)) + CAST(d AS DECIMAL(30,0))
               < CAST(transfer_enable AS DECIMAL(30,0))
           AND (expired_at >= $1 OR expired_at IS NULL)
@@ -619,7 +619,7 @@ async fn persist_durable_traffic_report(
     let mut tx = state.db.begin().await?;
     let inserted = match sqlx::query(
         r#"
-        INSERT INTO v2_server_traffic_report
+        INSERT INTO server_traffic_report
             (report_key, payload_hash, node_id, node_type, rate_text, rate_decimal_10_2,
              identity_kind, accepted_at, accounting_date, applied_at, created_at, updated_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULL, $10, $11)
@@ -651,7 +651,7 @@ async fn persist_durable_traffic_report(
     };
     if !inserted {
         let existing_hash: String = sqlx::query_scalar(
-            "SELECT payload_hash FROM v2_server_traffic_report WHERE report_key = $1 FOR UPDATE",
+            "SELECT payload_hash FROM server_traffic_report WHERE report_key = $1 FOR UPDATE",
         )
         .bind(report_key)
         .fetch_one(&mut *tx)
@@ -687,7 +687,7 @@ async fn persist_durable_traffic_report(
     }
     for chunk in items.chunks(TRAFFIC_REPORT_SQL_BATCH_SIZE) {
         let mut builder = QueryBuilder::<Postgres>::new(
-            "INSERT INTO v2_server_traffic_report_item \
+            "INSERT INTO server_traffic_report_item \
              (report_key, user_id, traffic_epoch, raw_u, raw_d, charged_u, charged_d) ",
         );
         builder.push_values(chunk, |mut row, item| {
@@ -833,7 +833,7 @@ async fn lock_report_users(
     let mut epochs = BTreeMap::new();
     for user_chunk in user_ids.chunks(TRAFFIC_REPORT_SQL_BATCH_SIZE) {
         let mut builder =
-            QueryBuilder::<Postgres>::new("SELECT id, traffic_epoch FROM v2_user WHERE id IN (");
+            QueryBuilder::<Postgres>::new("SELECT id, traffic_epoch FROM users WHERE id IN (");
         {
             let mut separated = builder.separated(", ");
             for user_id in user_chunk {
@@ -885,7 +885,7 @@ async fn persist_traffic_stats(
     // rejects rather than wraps a signed BIGINT overflow.
     for chunk in entries.chunks(TRAFFIC_REPORT_SQL_BATCH_SIZE) {
         let mut builder = QueryBuilder::<Postgres>::new(
-            "INSERT INTO v2_stat_user \
+            "INSERT INTO stat_user \
              (user_id, server_rate, u, d, record_type, record_at, created_at, updated_at) ",
         );
         builder.push_values(chunk, |mut row, entry| {
@@ -900,8 +900,8 @@ async fn persist_traffic_stats(
         });
         builder.push(
             " ON CONFLICT (server_rate, user_id, record_at) DO UPDATE SET \
-             u = v2_stat_user.u + EXCLUDED.u, \
-             d = v2_stat_user.d + EXCLUDED.d, \
+             u = stat_user.u + EXCLUDED.u, \
+             d = stat_user.d + EXCLUDED.d, \
              updated_at = EXCLUDED.updated_at",
         );
         builder
@@ -913,12 +913,12 @@ async fn persist_traffic_stats(
 
     sqlx::query(
         r#"
-        INSERT INTO v2_stat_server
+        INSERT INTO stat_server
             (server_id, server_type, u, d, record_type, record_at, created_at, updated_at)
         VALUES ($1, $2, $3, $4, 'd', $5, $6, $7)
         ON CONFLICT (server_id, server_type, record_at) DO UPDATE SET
-            u = v2_stat_server.u + EXCLUDED.u,
-            d = v2_stat_server.d + EXCLUDED.d,
+            u = stat_server.u + EXCLUDED.u,
+            d = stat_server.d + EXCLUDED.d,
             updated_at = EXCLUDED.updated_at
         "#,
     )

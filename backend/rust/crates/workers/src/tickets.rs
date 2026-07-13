@@ -7,13 +7,13 @@ const AUTO_CLOSE_MAX_BATCHES: usize = 20;
 const AUTO_CLOSE_TICKETS_SQL: &str = r#"
     WITH candidates AS (
         SELECT t.id
-        FROM v2_ticket AS t
+        FROM ticket AS t
         WHERE t.status = 0
           AND t.updated_at <= $2
           AND t.reply_status = 1
           AND COALESCE((
               SELECT tm.user_id
-              FROM v2_ticket_message tm
+              FROM ticket_message tm
               WHERE tm.ticket_id = t.id
               ORDER BY tm.id DESC
               LIMIT 1
@@ -22,7 +22,7 @@ const AUTO_CLOSE_TICKETS_SQL: &str = r#"
         LIMIT $3
         FOR UPDATE SKIP LOCKED
     )
-    UPDATE v2_ticket AS t
+    UPDATE ticket AS t
     SET status = 1, updated_at = $1
     FROM candidates
     WHERE t.id = candidates.id AND t.status = 0

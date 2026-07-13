@@ -35,12 +35,12 @@ async fn main() -> anyhow::Result<()> {
         }
         let postgres = sqlx::PgPool::connect(&postgres_url).await?;
         let installations = sqlx::query_scalar::<_, Uuid>(
-            "SELECT installation_id FROM v2_system_installation WHERE state = 'active'",
+            "SELECT installation_id FROM system_installation WHERE singleton = 1",
         )
         .fetch_all(&postgres)
         .await?;
         let [installation_id] = installations.as_slice() else {
-            anyhow::bail!("local PostgreSQL must contain exactly one active installation")
+            anyhow::bail!("local PostgreSQL must contain exactly one installation identity")
         };
         let raw_retention_days = required_u32("V2BOARD_CLICKHOUSE_RAW_RETENTION_DAYS")?;
         let aggregate_retention_days = required_u32("V2BOARD_CLICKHOUSE_AGGREGATE_RETENTION_DAYS")?;

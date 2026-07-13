@@ -6,30 +6,24 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use hmac::{Hmac, KeyInit, Mac};
 use percent_encoding::percent_decode_str;
 use serde::{
     Deserialize, Serialize,
     de::{self, MapAccess, SeqAccess, Visitor},
 };
 use serde_json::{Map, Value};
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 use url::Url;
-use uuid::Uuid;
 use v2board_config::{
     AppConfig, BOOT_ONLY_RUNTIME_KEYS_V1, FILE_ONLY_RUNTIME_KEYS_V1, RuntimePaths,
 };
 
-use crate::cold_import_policy::COLD_IMPORT_POLICY_MARKER;
+use crate::mysql_import_converter::MYSQL_IMPORT_SCHEMA_VERSION;
 
-pub const LEGACY_REFERENCE_COMMIT: &str = "7e77de9f4873b317157490529f7be7d6f8a62421";
+pub const MYSQL_SOURCE_REFERENCE_COMMIT: &str = "7e77de9f4873b317157490529f7be7d6f8a62421";
 
 const MAX_MANIFEST_BYTES: u64 = 2 * 1024 * 1024;
-const LEGACY_SCHEMA_VERSION: u32 = 5;
-const COLD_IMPORT_MANIFEST_HMAC_DOMAIN: &[u8] =
-    b"v2board-provision-cold-import-manifest-v5-archive-first-v1\0";
-
 const BOOL_RUNTIME_KEYS: &[&str] = &[
     "privileged_step_up_enable",
     "force_https",
@@ -99,202 +93,59 @@ const LIST_RUNTIME_KEYS: &[&str] = &[
     "deposit_bounus",
 ];
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ProvisionKind {
-    FreshInstall,
-    LegacyReferenceMigration,
-    NativeUpgrade,
-}
-
 #[derive(Clone, Debug)]
-pub struct ProvisionSpec {
+pub struct MysqlImportSpec {
     pub schema_version: u32,
-    pub operation_id: String,
-    pub kind: ProvisionKind,
-    flow: ProvisionFlow,
-    manifest_binding_hmac_sha256: String,
-}
-
-#[derive(Clone, Debug)]
-enum ProvisionFlow {
-    LegacyColdImport(Box<LegacyColdImportSpec>),
-}
-
-#[derive(Clone, Debug)]
-pub struct LegacyColdImportSpec {
-    pub source: ColdImportSourceSpec,
+    pub source: MysqlDumpSourceSpec,
     pub target: Map<String, Value>,
     pub runtime: Map<String, Value>,
-    pub decisions: LegacyColdImportDecisionSpec,
-    pub execution: ColdImportExecutionSpec,
+    manifest_sha256: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct LegacyColdImportDocument {
+struct MysqlImportDocument {
     schema_version: u32,
-    operation_id: String,
-    kind: ProvisionKind,
-    lifecycle_audit_key: String,
-    source: ColdImportSourceSpec,
+    source: MysqlDumpSourceSpec,
     target: Map<String, Value>,
     runtime: Map<String, Value>,
-    decisions: LegacyColdImportDecisionSpec,
-    execution: ColdImportExecutionSpec,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct ColdImportSourceSpec {
-    pub format: ColdImportArchiveFormat,
-    pub encrypted_mysql_dump_path: PathBuf,
-    pub encrypted_mysql_dump_sha256: String,
-    pub age_identity_path: PathBuf,
-    pub age_identity_sha256: String,
-    pub isolated_restore_database_url: String,
-    pub isolated_restore_transport_security: SourceTransportSecurity,
-    pub command_timeout_seconds: u64,
-    pub maximum_encrypted_dump_bytes: u64,
+pub struct MysqlDumpSourceSpec {
+    pub dump_path: PathBuf,
+    pub dump_sha256: String,
+    pub staging_database_url: String,
+    pub staging_transport_security: StagingTransportSecurity,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ColdImportArchiveFormat {
-    AgeEncryptedMysql8Mysqldump,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SourceTransportSecurity {
+pub enum StagingTransportSecurity {
     VerifiedTls,
     TrustedMaintenanceNetwork,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct LegacyColdImportDecisionSpec {
-    pub legacy_redis: LegacyRedisDecision,
-    pub legacy_stripe: LegacyStripeDecisionSpec,
-    pub failed_jobs: DiscardDecision,
-    pub nodes: NodeDecision,
-    pub legacy_traffic_details: DiscardDecision,
-    pub legacy_operational_logs: DiscardDecision,
-    pub legacy_runtime_files: LegacyRuntimeFileDecision,
-    pub legacy_theme: DiscardDecision,
-    pub legacy_custom_rules: LegacyCustomRuleDecision,
-    pub mysql_business_data: PreserveDecision,
-    pub mysql_persisted_user_traffic: PreserveDecision,
-    pub permanent_subscription_tokens: PreserveDecision,
-    pub non_stripe_payment_configuration: PreserveDecision,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum LegacyRedisDecision {
-    DiscardAllWithoutInspection,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct LegacyStripeDecisionSpec {
-    pub configuration: DiscardDecision,
-    pub unfinished_orders: DiscardDecision,
-    pub provider_objects: StripeProviderObjectDecision,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum StripeProviderObjectDecision {
-    IgnoreUninspected,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum DiscardDecision {
-    Discard,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PreserveDecision {
-    Preserve,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum NodeDecision {
-    DiscardAndManualRebuild,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum LegacyRuntimeFileDecision {
-    RebuildFromManifest,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum LegacyCustomRuleDecision {
-    None,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct ColdImportExecutionSpec {
-    pub release: ColdImportReleaseSpec,
-    pub failure_policy: ColdImportFailurePolicy,
-    pub activation_policy: ColdImportActivationPolicy,
-    pub converter_policy_marker: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct ColdImportReleaseSpec {
-    pub release_id: String,
-    pub archive_path: PathBuf,
-    pub archive_sha256: String,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ColdImportFailurePolicy {
-    WipeUnactivatedTargetAndRestartFromSameDump,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ColdImportActivationPolicy {
-    ActivateOnceAfterFullVerification,
-}
-
 #[derive(Debug, Error)]
-pub enum ProvisionSpecError {
+pub enum MysqlImportSpecError {
     #[error("manifest could not be read safely")]
     Read,
     #[error("manifest must be a regular non-symlink file no larger than 2 MiB")]
     UnsafeFile,
     #[error("manifest contains invalid JSON or an unsupported field shape: {0}")]
     Json(String),
-    #[error("manifest kind is invalid")]
-    InvalidKind,
     #[error("{0}")]
     Invalid(String),
 }
 
-#[derive(Deserialize)]
-struct ManifestProbe {
-    schema_version: u32,
-    operation_id: String,
-    kind: ProvisionKind,
-    lifecycle_audit_key: String,
-}
-
-pub fn load_provision_spec(path: impl AsRef<Path>) -> Result<ProvisionSpec, ProvisionSpecError> {
+pub fn load_mysql_import_spec(
+    path: impl AsRef<Path>,
+) -> Result<MysqlImportSpec, MysqlImportSpecError> {
     let path = path.as_ref();
-    let mut file = File::open(path).map_err(|_| ProvisionSpecError::Read)?;
-    let opened = file.metadata().map_err(|_| ProvisionSpecError::Read)?;
-    let path_metadata = fs::symlink_metadata(path).map_err(|_| ProvisionSpecError::Read)?;
+    let mut file = File::open(path).map_err(|_| MysqlImportSpecError::Read)?;
+    let opened = file.metadata().map_err(|_| MysqlImportSpecError::Read)?;
+    let path_metadata = fs::symlink_metadata(path).map_err(|_| MysqlImportSpecError::Read)?;
     if !opened.file_type().is_file()
         || !path_metadata.file_type().is_file()
         || path_metadata.file_type().is_symlink()
@@ -304,13 +155,13 @@ pub fn load_provision_spec(path: impl AsRef<Path>) -> Result<ProvisionSpec, Prov
         || opened.len() > MAX_MANIFEST_BYTES
         || opened.permissions().mode() & 0o077 != 0
     {
-        return Err(ProvisionSpecError::UnsafeFile);
+        return Err(MysqlImportSpecError::UnsafeFile);
     }
     let mut bytes = Vec::with_capacity(opened.len() as usize);
     file.read_to_end(&mut bytes)
-        .map_err(|_| ProvisionSpecError::Read)?;
-    let opened_after = file.metadata().map_err(|_| ProvisionSpecError::Read)?;
-    let after = fs::symlink_metadata(path).map_err(|_| ProvisionSpecError::Read)?;
+        .map_err(|_| MysqlImportSpecError::Read)?;
+    let opened_after = file.metadata().map_err(|_| MysqlImportSpecError::Read)?;
+    let after = fs::symlink_metadata(path).map_err(|_| MysqlImportSpecError::Read)?;
     if bytes.len() as u64 != opened.len()
         || opened.dev() != opened_after.dev()
         || opened.ino() != opened_after.ino()
@@ -321,124 +172,52 @@ pub fn load_provision_spec(path: impl AsRef<Path>) -> Result<ProvisionSpec, Prov
         || !after.file_type().is_file()
         || after.file_type().is_symlink()
     {
-        return Err(ProvisionSpecError::UnsafeFile);
+        return Err(MysqlImportSpecError::UnsafeFile);
     }
-    parse_provision_spec(&bytes)
+    parse_mysql_import_spec(&bytes)
 }
 
-fn parse_provision_spec(bytes: &[u8]) -> Result<ProvisionSpec, ProvisionSpecError> {
+fn parse_mysql_import_spec(bytes: &[u8]) -> Result<MysqlImportSpec, MysqlImportSpecError> {
     if bytes.is_empty() || bytes.len() as u64 > MAX_MANIFEST_BYTES {
-        return Err(ProvisionSpecError::UnsafeFile);
+        return Err(MysqlImportSpecError::UnsafeFile);
     }
     let raw = serde_json::from_slice::<UniqueJson>(bytes)
-        .map_err(|error| ProvisionSpecError::Json(error.to_string()))?
+        .map_err(|error| MysqlImportSpecError::Json(error.to_string()))?
         .0;
-    let probe: ManifestProbe = serde_json::from_value(raw.clone())
-        .map_err(|error| ProvisionSpecError::Json(error.to_string()))?;
-    validate_operation_id(&probe.operation_id)?;
-    validate_audit_key(&probe.lifecycle_audit_key)?;
-
-    let audit_key = probe.lifecycle_audit_key.as_bytes();
-    let flow = match probe.kind {
-        ProvisionKind::LegacyReferenceMigration => {
-            if probe.schema_version != LEGACY_SCHEMA_VERSION {
-                return Err(ProvisionSpecError::Invalid(
-                    "legacy_reference_migration accepts only the archive-first schema_version 5"
-                        .to_string(),
-                ));
-            }
-            let document: LegacyColdImportDocument = serde_json::from_value(raw.clone())
-                .map_err(|error| ProvisionSpecError::Json(error.to_string()))?;
-            if document.schema_version != probe.schema_version
-                || document.operation_id != probe.operation_id
-                || document.kind != probe.kind
-                || document.lifecycle_audit_key != probe.lifecycle_audit_key
-            {
-                return Err(ProvisionSpecError::Invalid(
-                    "manifest changed while it was parsed".to_string(),
-                ));
-            }
-            validate_legacy_document(&document)?;
-            ProvisionFlow::LegacyColdImport(Box::new(LegacyColdImportSpec {
-                source: document.source,
-                target: document.target,
-                runtime: document.runtime,
-                decisions: document.decisions,
-                execution: document.execution,
-            }))
-        }
-        ProvisionKind::FreshInstall | ProvisionKind::NativeUpgrade => {
-            return Err(ProvisionSpecError::Invalid(
-                "fresh_install and native_upgrade lifecycle manifests are not implemented; only legacy_reference_migration schema_version 5 is accepted"
-                    .to_string(),
-            ));
-        }
-    };
-    let mut hmac = <Hmac<Sha256> as KeyInit>::new_from_slice(audit_key)
-        .map_err(|_| ProvisionSpecError::Invalid("lifecycle audit key is invalid".to_string()))?;
-    hmac.update(COLD_IMPORT_MANIFEST_HMAC_DOMAIN);
-    hmac.update(bytes);
-    Ok(ProvisionSpec {
-        schema_version: probe.schema_version,
-        operation_id: probe.operation_id,
-        kind: probe.kind,
-        flow,
-        manifest_binding_hmac_sha256: hex::encode(hmac.finalize().into_bytes()),
+    let document: MysqlImportDocument = serde_json::from_value(raw)
+        .map_err(|error| MysqlImportSpecError::Json(error.to_string()))?;
+    if document.schema_version != MYSQL_IMPORT_SCHEMA_VERSION {
+        return Err(MysqlImportSpecError::Invalid(
+            "schema_version must equal the single pre-release MySQL import schema version 1"
+                .to_string(),
+        ));
+    }
+    validate_document(&document)?;
+    Ok(MysqlImportSpec {
+        schema_version: document.schema_version,
+        source: document.source,
+        target: document.target,
+        runtime: document.runtime,
+        manifest_sha256: hex::encode(Sha256::digest(bytes)),
     })
 }
 
-fn validate_legacy_document(document: &LegacyColdImportDocument) -> Result<(), ProvisionSpecError> {
+fn validate_document(document: &MysqlImportDocument) -> Result<(), MysqlImportSpecError> {
     validate_source(&document.source)?;
     let target = validate_target(&document.target)?;
-    validate_runtime(&document.runtime, &target)?;
-    validate_release(&document.execution.release)?;
-    if document.execution.converter_policy_marker != COLD_IMPORT_POLICY_MARKER {
-        return Err(ProvisionSpecError::Invalid(format!(
-            "execution.converter_policy_marker must equal {COLD_IMPORT_POLICY_MARKER}"
-        )));
-    }
-    Ok(())
+    validate_runtime(&document.runtime, &target)
 }
 
-fn validate_source(source: &ColdImportSourceSpec) -> Result<(), ProvisionSpecError> {
-    validate_absolute_normalized_path(
-        &source.encrypted_mysql_dump_path,
-        "source.encrypted_mysql_dump_path",
-    )?;
-    validate_absolute_normalized_path(&source.age_identity_path, "source.age_identity_path")?;
-    if source.encrypted_mysql_dump_path == source.age_identity_path {
-        return Err(ProvisionSpecError::Invalid(
-            "the encrypted dump and age identity paths must be different".to_string(),
-        ));
-    }
-    validate_sha256(
-        &source.encrypted_mysql_dump_sha256,
-        "source.encrypted_mysql_dump_sha256",
-    )?;
-    validate_sha256(&source.age_identity_sha256, "source.age_identity_sha256")?;
-    if !(60..=172_800).contains(&source.command_timeout_seconds) {
-        return Err(ProvisionSpecError::Invalid(
-            "source.command_timeout_seconds must be between 60 and 172800".to_string(),
-        ));
-    }
-    if !(1024..=1024_u64.pow(4)).contains(&source.maximum_encrypted_dump_bytes) {
-        return Err(ProvisionSpecError::Invalid(
-            "source.maximum_encrypted_dump_bytes must be between 1 KiB and 1 TiB".to_string(),
-        ));
-    }
-    let url = parse_url(
-        &source.isolated_restore_database_url,
-        "source.isolated_restore_database_url",
-    )?;
-    let username = strict_percent_decode(
-        url.username(),
-        "source.isolated_restore_database_url username",
-    )?;
+fn validate_source(source: &MysqlDumpSourceSpec) -> Result<(), MysqlImportSpecError> {
+    validate_absolute_normalized_path(&source.dump_path, "source.dump_path")?;
+    validate_sha256(&source.dump_sha256, "source.dump_sha256")?;
+    let url = parse_url(&source.staging_database_url, "source.staging_database_url")?;
+    let username = strict_percent_decode(url.username(), "source.staging_database_url username")?;
     let password = strict_percent_decode(
         url.password().unwrap_or_default(),
-        "source.isolated_restore_database_url password",
+        "source.staging_database_url password",
     )?;
-    let path = strict_percent_decode(url.path(), "source.isolated_restore_database_url database")?;
+    let path = strict_percent_decode(url.path(), "source.staging_database_url database")?;
     let database = path.strip_prefix('/').unwrap_or_default();
     if url.scheme() != "mysql"
         || url.host_str().is_none()
@@ -449,16 +228,16 @@ fn validate_source(source: &ColdImportSourceSpec) -> Result<(), ProvisionSpecErr
         || !valid_datastore_identifier(database)
         || url.fragment().is_some()
     {
-        return Err(ProvisionSpecError::Invalid(
-            "source.isolated_restore_database_url must name an isolated MySQL database with host, username, and non-placeholder password".to_string(),
+        return Err(MysqlImportSpecError::Invalid(
+            "source.staging_database_url must name a migration-only disposable MySQL staging database with host, username, and non-placeholder password".to_string(),
         ));
     }
     let ssl_mode = validate_mysql_connection_query(&url)?;
-    if source.isolated_restore_transport_security == SourceTransportSecurity::VerifiedTls
+    if source.staging_transport_security == StagingTransportSecurity::VerifiedTls
         && ssl_mode.as_deref() != Some("verify_identity")
     {
-        return Err(ProvisionSpecError::Invalid(
-            "verified_tls isolated restore requires ssl-mode=VERIFY_IDENTITY".to_string(),
+        return Err(MysqlImportSpecError::Invalid(
+            "verified_tls staging MySQL requires ssl-mode=VERIFY_IDENTITY".to_string(),
         ));
     }
     Ok(())
@@ -466,7 +245,7 @@ fn validate_source(source: &ColdImportSourceSpec) -> Result<(), ProvisionSpecErr
 
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct ValidatedColdImportTarget {
+struct ValidatedImportTarget {
     postgres: ValidatedPostgresTarget,
     clickhouse: ValidatedClickHouseTarget,
     analytics_admission: ValidatedAnalyticsAdmission,
@@ -550,11 +329,11 @@ struct ValidatedAnalyticsAdmission {
 
 fn validate_target(
     target: &Map<String, Value>,
-) -> Result<ValidatedColdImportTarget, ProvisionSpecError> {
-    let target = serde_json::from_value::<ValidatedColdImportTarget>(Value::Object(target.clone()))
-        .map_err(|error| ProvisionSpecError::Json(error.to_string()))?;
+) -> Result<ValidatedImportTarget, MysqlImportSpecError> {
+    let target = serde_json::from_value::<ValidatedImportTarget>(Value::Object(target.clone()))
+        .map_err(|error| MysqlImportSpecError::Json(error.to_string()))?;
     if !target.postgres.require_database_absent || !target.postgres.require_roles_absent {
-        return Err(ProvisionSpecError::Invalid(
+        return Err(MysqlImportSpecError::Invalid(
             "target PostgreSQL database and roles must be declared absent".to_string(),
         ));
     }
@@ -569,7 +348,7 @@ fn validate_target(
         .iter()
         .any(|candidate| postgres_endpoint(candidate) != endpoint)
     {
-        return Err(ProvisionSpecError::Invalid(
+        return Err(MysqlImportSpecError::Invalid(
             "all target PostgreSQL URLs must use one host and port".to_string(),
         ));
     }
@@ -580,7 +359,7 @@ fn validate_target(
             .iter()
             .any(|url| postgres_database(url).ok().as_deref() != Some(&target_database))
     {
-        return Err(ProvisionSpecError::Invalid(
+        return Err(MysqlImportSpecError::Invalid(
             "PostgreSQL bootstrap database must differ while migration/API/worker use one target database"
                 .to_string(),
         ));
@@ -599,7 +378,7 @@ fn validate_target(
         })
         .collect::<Result<BTreeSet<_>, _>>()?;
     if usernames.len() != 4 || passwords.len() != 4 {
-        return Err(ProvisionSpecError::Invalid(
+        return Err(MysqlImportSpecError::Invalid(
             "PostgreSQL bootstrap/migration/API/worker principals and secrets must be distinct"
                 .to_string(),
         ));
@@ -617,7 +396,7 @@ fn validate_target(
     validate_analytics_admission(&target.analytics_admission)?;
     validate_target_redis(&target.redis_url)?;
     if !target.require_empty_redis {
-        return Err(ProvisionSpecError::Invalid(
+        return Err(MysqlImportSpecError::Invalid(
             "target.require_empty_redis must be true".to_string(),
         ));
     }
@@ -635,7 +414,7 @@ fn validate_target(
     ] {
         validate_absolute_normalized_path(actual, field)?;
         if actual != expected {
-            return Err(ProvisionSpecError::Invalid(format!(
+            return Err(MysqlImportSpecError::Invalid(format!(
                 "{field} must equal {}",
                 expected.display()
             )));
@@ -644,7 +423,7 @@ fn validate_target(
     Ok(target)
 }
 
-fn validate_postgres_url(value: &str) -> Result<Url, ProvisionSpecError> {
+fn validate_postgres_url(value: &str) -> Result<Url, MysqlImportSpecError> {
     let url = parse_url(value, "target.postgres URL")?;
     let username = strict_percent_decode(url.username(), "target.postgres URL username")?;
     let password = strict_percent_decode(
@@ -658,14 +437,14 @@ fn validate_postgres_url(value: &str) -> Result<Url, ProvisionSpecError> {
         || contains_placeholder(&password)
         || url.fragment().is_some()
     {
-        return Err(ProvisionSpecError::Invalid(
+        return Err(MysqlImportSpecError::Invalid(
             "target PostgreSQL URLs require host, database, valid principal, and non-placeholder password"
                 .to_string(),
         ));
     }
     postgres_database(&url)?;
     v2board_config::validate_postgres_connection_query(&url, true).map_err(|_| {
-        ProvisionSpecError::Invalid(
+        MysqlImportSpecError::Invalid(
             "target PostgreSQL URLs require exactly one canonical sslmode=verify-full and no connection override or duplicate query parameters"
                 .to_string(),
         )
@@ -680,11 +459,11 @@ fn postgres_endpoint(url: &Url) -> (String, u16) {
     )
 }
 
-fn postgres_database(url: &Url) -> Result<String, ProvisionSpecError> {
+fn postgres_database(url: &Url) -> Result<String, MysqlImportSpecError> {
     let path = strict_percent_decode(url.path(), "target.postgres URL database")?;
     let value = path.strip_prefix('/').unwrap_or_default();
     if !valid_postgres_identifier(value) {
-        return Err(ProvisionSpecError::Invalid(
+        return Err(MysqlImportSpecError::Invalid(
             "target PostgreSQL database names must be unquoted identifiers of at most 63 bytes"
                 .to_string(),
         ));
@@ -692,13 +471,13 @@ fn postgres_database(url: &Url) -> Result<String, ProvisionSpecError> {
     Ok(value.to_string())
 }
 
-fn postgres_principal(value: &str) -> Result<String, ProvisionSpecError> {
+fn postgres_principal(value: &str) -> Result<String, MysqlImportSpecError> {
     let url = Url::parse(value).map_err(|_| {
-        ProvisionSpecError::Invalid("validated PostgreSQL URL became invalid".to_string())
+        MysqlImportSpecError::Invalid("validated PostgreSQL URL became invalid".to_string())
     })?;
     let username = strict_percent_decode(url.username(), "target.postgres URL username")?;
     if !valid_postgres_identifier(&username) {
-        return Err(ProvisionSpecError::Invalid(
+        return Err(MysqlImportSpecError::Invalid(
             "target PostgreSQL principal is invalid".to_string(),
         ));
     }
@@ -707,7 +486,7 @@ fn postgres_principal(value: &str) -> Result<String, ProvisionSpecError> {
 
 fn validate_clickhouse_target(
     clickhouse: &ValidatedClickHouseTarget,
-) -> Result<(), ProvisionSpecError> {
+) -> Result<(), MysqlImportSpecError> {
     let endpoint = parse_url(&clickhouse.endpoint, "target.clickhouse.endpoint")?;
     if endpoint.scheme() != "https"
         || endpoint.host_str().is_none()
@@ -718,7 +497,7 @@ fn validate_clickhouse_target(
         || endpoint.fragment().is_some()
         || !valid_datastore_identifier(&clickhouse.database)
     {
-        return Err(ProvisionSpecError::Invalid(
+        return Err(MysqlImportSpecError::Invalid(
             "target ClickHouse requires a credential-free HTTPS origin and an unquoted database identifier"
                 .to_string(),
         ));
@@ -736,7 +515,7 @@ fn validate_clickhouse_target(
             || principal.password.len() < 32
             || contains_placeholder(&principal.password)
         {
-            return Err(ProvisionSpecError::Invalid(
+            return Err(MysqlImportSpecError::Invalid(
                 "ClickHouse principals require valid identifiers and non-placeholder secrets"
                     .to_string(),
             ));
@@ -745,7 +524,7 @@ fn validate_clickhouse_target(
         passwords.insert(principal.password.as_str());
     }
     if usernames.len() != 4 || passwords.len() != 4 {
-        return Err(ProvisionSpecError::Invalid(
+        return Err(MysqlImportSpecError::Invalid(
             "ClickHouse bootstrap/schema/writer/reader principals and secrets must be distinct"
                 .to_string(),
         ));
@@ -756,7 +535,7 @@ fn validate_clickhouse_target(
         || !clickhouse.require_database_absent
         || !clickhouse.require_principals_absent
     {
-        return Err(ProvisionSpecError::Invalid(
+        return Err(MysqlImportSpecError::Invalid(
             "ClickHouse target must be empty and use 1..=36500 day ordered retention".to_string(),
         ));
     }
@@ -772,7 +551,7 @@ fn validate_clickhouse_target(
 
 fn validate_analytics_admission(
     policy: &ValidatedAnalyticsAdmission,
-) -> Result<(), ProvisionSpecError> {
+) -> Result<(), MysqlImportSpecError> {
     let values = [
         policy.recovery_pending_rows,
         policy.soft_pending_rows,
@@ -810,7 +589,7 @@ fn validate_analytics_admission(
         || !(policy.sample_interval_seconds.saturating_mul(2)..=600)
             .contains(&policy.stale_after_seconds)
     {
-        return Err(ProvisionSpecError::Invalid(
+        return Err(MysqlImportSpecError::Invalid(
             "analytics admission thresholds are unordered or outside the supported signed range"
                 .to_string(),
         ));
@@ -821,7 +600,7 @@ fn validate_analytics_admission(
     )
 }
 
-fn validate_target_redis(value: &str) -> Result<(), ProvisionSpecError> {
+fn validate_target_redis(value: &str) -> Result<(), MysqlImportSpecError> {
     let url = parse_url(value, "target.redis_url")?;
     let path = strict_percent_decode(url.path(), "target.redis_url database")?;
     let database = path.strip_prefix('/').unwrap_or_default();
@@ -839,7 +618,7 @@ fn validate_target_redis(value: &str) -> Result<(), ProvisionSpecError> {
         || password.len() < 16
         || contains_placeholder(&password)
     {
-        return Err(ProvisionSpecError::Invalid(
+        return Err(MysqlImportSpecError::Invalid(
             "target Redis must be a non-placeholder rediss URL with password and explicit logical database"
                 .to_string(),
         ));
@@ -847,9 +626,9 @@ fn validate_target_redis(value: &str) -> Result<(), ProvisionSpecError> {
     Ok(())
 }
 
-fn validate_evidence(value: &str, field: &str) -> Result<(), ProvisionSpecError> {
+fn validate_evidence(value: &str, field: &str) -> Result<(), MysqlImportSpecError> {
     if !(8..=1024).contains(&value.trim().len()) || contains_placeholder(value) {
-        return Err(ProvisionSpecError::Invalid(format!(
+        return Err(MysqlImportSpecError::Invalid(format!(
             "{field} must contain explicit 8..=1024 byte evidence"
         )));
     }
@@ -872,8 +651,8 @@ fn valid_postgres_identifier(value: &str) -> bool {
 
 fn validate_runtime(
     runtime: &Map<String, Value>,
-    target: &ValidatedColdImportTarget,
-) -> Result<(), ProvisionSpecError> {
+    target: &ValidatedImportTarget,
+) -> Result<(), MysqlImportSpecError> {
     let expected = FILE_ONLY_RUNTIME_KEYS_V1
         .iter()
         .copied()
@@ -882,14 +661,14 @@ fn validate_runtime(
     if runtime.get("configuration_source").and_then(Value::as_str) != Some("file_only")
         || runtime.get("environment").and_then(Value::as_str) != Some("production")
     {
-        return Err(ProvisionSpecError::Invalid(
+        return Err(MysqlImportSpecError::Invalid(
             "runtime must use configuration_source=file_only and environment=production"
                 .to_string(),
         ));
     }
     for key in BOOL_RUNTIME_KEYS {
         if !runtime.get(*key).is_some_and(Value::is_boolean) {
-            return Err(ProvisionSpecError::Invalid(format!(
+            return Err(MysqlImportSpecError::Invalid(format!(
                 "runtime.{key} must be a JSON boolean"
             )));
         }
@@ -900,7 +679,7 @@ fn validate_runtime(
             continue;
         }
         if !value.is_some_and(|value| value.as_i64().is_some()) {
-            return Err(ProvisionSpecError::Invalid(format!(
+            return Err(MysqlImportSpecError::Invalid(format!(
                 "runtime.{key} must be a JSON integer"
             )));
         }
@@ -911,7 +690,7 @@ fn validate_runtime(
             .and_then(Value::as_str)
             .is_some_and(valid_decimal_text)
         {
-            return Err(ProvisionSpecError::Invalid(format!(
+            return Err(MysqlImportSpecError::Invalid(format!(
                 "runtime.{key} must be an exact non-negative decimal string"
             )));
         }
@@ -922,7 +701,7 @@ fn validate_runtime(
                 .as_array()
                 .is_some_and(|items| items.iter().all(Value::is_string))
         }) {
-            return Err(ProvisionSpecError::Invalid(format!(
+            return Err(MysqlImportSpecError::Invalid(format!(
                 "runtime.{key} must be an array of strings"
             )));
         }
@@ -936,7 +715,7 @@ fn validate_runtime(
             continue;
         }
         if !value.is_null() && !value.is_string() {
-            return Err(ProvisionSpecError::Invalid(format!(
+            return Err(MysqlImportSpecError::Invalid(format!(
                 "runtime.{key} must be a string or null"
             )));
         }
@@ -945,7 +724,7 @@ fn validate_runtime(
         || runtime.get("force_https") != Some(&Value::Bool(true))
         || runtime.get("server_require_idempotency_key") != Some(&Value::Bool(true))
     {
-        return Err(ProvisionSpecError::Invalid(
+        return Err(MysqlImportSpecError::Invalid(
             "production runtime requires loopback bind, HTTPS, and node idempotency keys"
                 .to_string(),
         ));
@@ -958,7 +737,7 @@ fn validate_runtime(
         || contains_placeholder(app_key)
         || contains_placeholder(server_token)
     {
-        return Err(ProvisionSpecError::Invalid(
+        return Err(MysqlImportSpecError::Invalid(
             "runtime app_key and server_token must be distinct non-placeholder secrets of at least 32 bytes"
                 .to_string(),
         ));
@@ -1003,7 +782,7 @@ fn validate_runtime(
         runtime_paths(target.api_runtime_config_path.clone()),
     )
     .map_err(|error| {
-        ProvisionSpecError::Invalid(format!(
+        MysqlImportSpecError::Invalid(format!(
             "runtime is not loadable by the typed API parser: {error}"
         ))
     })?;
@@ -1012,12 +791,12 @@ fn validate_runtime(
         runtime_paths(target.worker_runtime_config_path.clone()),
     )
     .map_err(|error| {
-        ProvisionSpecError::Invalid(format!(
+        MysqlImportSpecError::Invalid(format!(
             "runtime is not loadable by the typed worker parser: {error}"
         ))
     })?;
     if api.operator_config_map() != worker.operator_config_map() {
-        return Err(ProvisionSpecError::Invalid(
+        return Err(MysqlImportSpecError::Invalid(
             "API and worker normalized different operator configuration".to_string(),
         ));
     }
@@ -1026,14 +805,14 @@ fn validate_runtime(
         runtime_paths(target.api_runtime_config_path.clone()),
     )
     .map_err(|error| {
-        ProvisionSpecError::Invalid(format!("derived API boot config is invalid: {error}"))
+        MysqlImportSpecError::Invalid(format!("derived API boot config is invalid: {error}"))
     })?;
     AppConfig::try_from_worker_boot_config_map(
         boot_runtime_config(&worker_runtime, true)?,
         runtime_paths(target.worker_runtime_config_path.clone()),
     )
     .map_err(|error| {
-        ProvisionSpecError::Invalid(format!("derived worker boot config is invalid: {error}"))
+        MysqlImportSpecError::Invalid(format!("derived worker boot config is invalid: {error}"))
     })?;
     Ok(())
 }
@@ -1058,7 +837,7 @@ fn inject_runtime_datastore(
 fn boot_runtime_config(
     full: &Map<String, Value>,
     worker: bool,
-) -> Result<Map<String, Value>, ProvisionSpecError> {
+) -> Result<Map<String, Value>, MysqlImportSpecError> {
     let mut boot = BOOT_ONLY_RUNTIME_KEYS_V1
         .iter()
         .filter(|key| **key != "configuration_scope")
@@ -1067,7 +846,7 @@ fn boot_runtime_config(
                 .cloned()
                 .map(|value| ((*key).to_string(), value))
                 .ok_or_else(|| {
-                    ProvisionSpecError::Invalid(format!("derived boot config is missing {key}"))
+                    MysqlImportSpecError::Invalid(format!("derived boot config is missing {key}"))
                 })
         })
         .collect::<Result<Map<_, _>, _>>()?;
@@ -1085,7 +864,7 @@ fn boot_runtime_config(
             boot.insert(
                 key.to_string(),
                 full.get(key).cloned().ok_or_else(|| {
-                    ProvisionSpecError::Invalid(format!(
+                    MysqlImportSpecError::Invalid(format!(
                         "derived worker boot config is missing {key}"
                     ))
                 })?,
@@ -1103,59 +882,20 @@ fn runtime_paths(config: PathBuf) -> RuntimePaths {
     }
 }
 
-fn validate_release(release: &ColdImportReleaseSpec) -> Result<(), ProvisionSpecError> {
-    if release.release_id.is_empty()
-        || matches!(release.release_id.as_str(), "." | "..")
-        || release.release_id.len() > 128
-        || !release
-            .release_id
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
-        || contains_placeholder(&release.release_id)
-    {
-        return Err(ProvisionSpecError::Invalid(
-            "execution.release.release_id is invalid".to_string(),
-        ));
-    }
-    validate_absolute_normalized_path(&release.archive_path, "execution.release.archive_path")?;
-    validate_sha256(&release.archive_sha256, "execution.release.archive_sha256")
-}
-
-fn validate_operation_id(operation_id: &str) -> Result<(), ProvisionSpecError> {
-    let parsed = Uuid::parse_str(operation_id).map_err(|_| {
-        ProvisionSpecError::Invalid("operation_id must be a lowercase UUID".to_string())
-    })?;
-    if parsed.hyphenated().to_string() != operation_id || parsed.is_nil() {
-        return Err(ProvisionSpecError::Invalid(
-            "operation_id must be a non-nil lowercase hyphenated UUID".to_string(),
-        ));
-    }
-    Ok(())
-}
-
-fn validate_audit_key(key: &str) -> Result<(), ProvisionSpecError> {
-    if key.len() < 32 || contains_placeholder(key) {
-        return Err(ProvisionSpecError::Invalid(
-            "lifecycle_audit_key must be a non-placeholder secret of at least 32 bytes".to_string(),
-        ));
-    }
-    Ok(())
-}
-
-fn validate_sha256(value: &str, field: &str) -> Result<(), ProvisionSpecError> {
+fn validate_sha256(value: &str, field: &str) -> Result<(), MysqlImportSpecError> {
     if value.len() != 64
         || !value
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
     {
-        return Err(ProvisionSpecError::Invalid(format!(
+        return Err(MysqlImportSpecError::Invalid(format!(
             "{field} must be 64 lowercase hexadecimal characters"
         )));
     }
     Ok(())
 }
 
-fn validate_absolute_normalized_path(path: &Path, field: &str) -> Result<(), ProvisionSpecError> {
+fn validate_absolute_normalized_path(path: &Path, field: &str) -> Result<(), MysqlImportSpecError> {
     if !path.is_absolute()
         || path.components().any(|component| {
             matches!(
@@ -1164,24 +904,24 @@ fn validate_absolute_normalized_path(path: &Path, field: &str) -> Result<(), Pro
             )
         })
     {
-        return Err(ProvisionSpecError::Invalid(format!(
+        return Err(MysqlImportSpecError::Invalid(format!(
             "{field} must be an absolute normalized path"
         )));
     }
     Ok(())
 }
 
-fn parse_url(value: &str, field: &str) -> Result<Url, ProvisionSpecError> {
+fn parse_url(value: &str, field: &str) -> Result<Url, MysqlImportSpecError> {
     if contains_placeholder(value) {
-        return Err(ProvisionSpecError::Invalid(format!(
+        return Err(MysqlImportSpecError::Invalid(format!(
             "{field} contains a placeholder"
         )));
     }
     Url::parse(value)
-        .map_err(|_| ProvisionSpecError::Invalid(format!("{field} is not a valid URL")))
+        .map_err(|_| MysqlImportSpecError::Invalid(format!("{field} is not a valid URL")))
 }
 
-fn strict_percent_decode(value: &str, field: &str) -> Result<String, ProvisionSpecError> {
+fn strict_percent_decode(value: &str, field: &str) -> Result<String, MysqlImportSpecError> {
     let bytes = value.as_bytes();
     let mut index = 0;
     while index < bytes.len() {
@@ -1190,7 +930,7 @@ fn strict_percent_decode(value: &str, field: &str) -> Result<String, ProvisionSp
                 || !bytes[index + 1].is_ascii_hexdigit()
                 || !bytes[index + 2].is_ascii_hexdigit()
             {
-                return Err(ProvisionSpecError::Invalid(format!(
+                return Err(MysqlImportSpecError::Invalid(format!(
                     "{field} contains invalid percent encoding"
                 )));
             }
@@ -1203,23 +943,23 @@ fn strict_percent_decode(value: &str, field: &str) -> Result<String, ProvisionSp
         .decode_utf8()
         .map(|decoded| decoded.into_owned())
         .map_err(|_| {
-            ProvisionSpecError::Invalid(format!("{field} contains non-UTF-8 percent encoding"))
+            MysqlImportSpecError::Invalid(format!("{field} contains non-UTF-8 percent encoding"))
         })
 }
 
-fn validate_mysql_connection_query(url: &Url) -> Result<Option<String>, ProvisionSpecError> {
+fn validate_mysql_connection_query(url: &Url) -> Result<Option<String>, MysqlImportSpecError> {
     let mut seen = BTreeSet::new();
     let mut ssl_mode = None;
     for (key, value) in url.query_pairs() {
         let lowercase = key.to_ascii_lowercase();
         if key.as_ref() != lowercase {
-            return Err(ProvisionSpecError::Invalid(
+            return Err(MysqlImportSpecError::Invalid(
                 "MySQL URL query parameter names must use canonical lowercase spelling".to_string(),
             ));
         }
         let canonical = lowercase.replace('_', "-");
         if !seen.insert(canonical.clone()) {
-            return Err(ProvisionSpecError::Invalid(
+            return Err(MysqlImportSpecError::Invalid(
                 "MySQL URL duplicate or aliased query parameters are forbidden".to_string(),
             ));
         }
@@ -1236,12 +976,12 @@ fn validate_mysql_connection_query(url: &Url) -> Result<Option<String>, Provisio
                 | "password"
                 | "socket"
         ) {
-            return Err(ProvisionSpecError::Invalid(
+            return Err(MysqlImportSpecError::Invalid(
                 "MySQL URL connection identity overrides are forbidden".to_string(),
             ));
         }
         if key.as_ref() == "sslmode" || key.as_ref() == "ssl_mode" {
-            return Err(ProvisionSpecError::Invalid(
+            return Err(MysqlImportSpecError::Invalid(
                 "MySQL URL sslmode aliases are forbidden; use ssl-mode".to_string(),
             ));
         }
@@ -1288,12 +1028,12 @@ fn require_exact_keys(
     object: &Map<String, Value>,
     expected: &BTreeSet<&str>,
     field: &str,
-) -> Result<(), ProvisionSpecError> {
+) -> Result<(), MysqlImportSpecError> {
     let actual = object.keys().map(String::as_str).collect::<BTreeSet<_>>();
     if actual != *expected {
         let missing = expected.difference(&actual).copied().collect::<Vec<_>>();
         let unknown = actual.difference(expected).copied().collect::<Vec<_>>();
-        return Err(ProvisionSpecError::Invalid(format!(
+        return Err(MysqlImportSpecError::Invalid(format!(
             "{field} keys are incomplete or unknown; missing={missing:?}, unknown={unknown:?}"
         )));
     }
@@ -1304,22 +1044,16 @@ fn string_field<'a>(
     object: &'a Map<String, Value>,
     key: &str,
     parent: &str,
-) -> Result<&'a str, ProvisionSpecError> {
+) -> Result<&'a str, MysqlImportSpecError> {
     object
         .get(key)
         .and_then(Value::as_str)
-        .ok_or_else(|| ProvisionSpecError::Invalid(format!("{parent}.{key} must be a string")))
+        .ok_or_else(|| MysqlImportSpecError::Invalid(format!("{parent}.{key} must be a string")))
 }
 
-impl ProvisionSpec {
-    pub fn manifest_binding_hmac_sha256(&self) -> &str {
-        &self.manifest_binding_hmac_sha256
-    }
-
-    pub fn legacy_cold_import(&self) -> Option<&LegacyColdImportSpec> {
-        match &self.flow {
-            ProvisionFlow::LegacyColdImport(spec) => Some(spec.as_ref()),
-        }
+impl MysqlImportSpec {
+    pub fn manifest_sha256(&self) -> &str {
+        &self.manifest_sha256
     }
 }
 
@@ -1507,22 +1241,14 @@ mod tests {
         runtime
     }
 
-    fn legacy_document() -> Value {
+    fn import_document() -> Value {
         json!({
-            "schema_version": 5,
-            "operation_id": "1184a083-bd4e-4c16-bad1-6968a1d83e45",
-            "kind": "legacy_reference_migration",
-            "lifecycle_audit_key": "lifecycle-audit-key-32-bytes-long!!",
+            "schema_version": 1,
             "source": {
-                "format": "age_encrypted_mysql8_mysqldump",
-                "encrypted_mysql_dump_path": "/secure/legacy.sql.age",
-                "encrypted_mysql_dump_sha256": "a".repeat(64),
-                "age_identity_path": "/run/secrets/age-identity",
-                "age_identity_sha256": "b".repeat(64),
-                "isolated_restore_database_url": "mysql://restore:J0isolatedRestoreSecret@restore.internal:3306/v2board_restore?ssl-mode=VERIFY_IDENTITY",
-                "isolated_restore_transport_security": "verified_tls",
-                "command_timeout_seconds": 3600,
-                "maximum_encrypted_dump_bytes": 1_073_741_824_u64
+                "dump_path": "/secure/legacy.sql",
+                "dump_sha256": "a".repeat(64),
+                "staging_database_url": "mysql://staging:J0stagingImportSecret@staging.internal:3306/v2board_staging?ssl-mode=VERIFY_IDENTITY",
+                "staging_transport_security": "verified_tls"
             },
             "target": {
                 "postgres": {
@@ -1576,168 +1302,101 @@ mod tests {
                 "worker_runtime_config_path": "/var/lib/v2board/worker/config.json",
                 "require_empty_redis": true
             },
-            "runtime": runtime(),
-            "decisions": {
-                "legacy_redis": "discard_all_without_inspection",
-                "legacy_stripe": {
-                    "configuration": "discard",
-                    "unfinished_orders": "discard",
-                    "provider_objects": "ignore_uninspected"
-                },
-                "failed_jobs": "discard",
-                "nodes": "discard_and_manual_rebuild",
-                "legacy_traffic_details": "discard",
-                "legacy_operational_logs": "discard",
-                "legacy_runtime_files": "rebuild_from_manifest",
-                "legacy_theme": "discard",
-                "legacy_custom_rules": "none",
-                "mysql_business_data": "preserve",
-                "mysql_persisted_user_traffic": "preserve",
-                "permanent_subscription_tokens": "preserve",
-                "non_stripe_payment_configuration": "preserve"
-            },
-            "execution": {
-                "release": {
-                    "release_id": "release-a",
-                    "archive_path": "/secure/native-release.tar.gz",
-                    "archive_sha256": "c".repeat(64)
-                },
-                "failure_policy": "wipe_unactivated_target_and_restart_from_same_dump",
-                "activation_policy": "activate_once_after_full_verification",
-                "converter_policy_marker": COLD_IMPORT_POLICY_MARKER
-            }
+            "runtime": runtime()
         })
     }
 
     #[test]
-    fn accepts_the_unique_archive_first_v5_shape() {
-        let spec = parse_provision_spec(&serde_json::to_vec(&legacy_document()).unwrap()).unwrap();
-        assert_eq!(spec.schema_version, 5);
-        assert_eq!(spec.kind, ProvisionKind::LegacyReferenceMigration);
-        assert!(spec.legacy_cold_import().is_some());
-        assert_eq!(spec.manifest_binding_hmac_sha256().len(), 64);
+    fn accepts_the_single_pre_release_import_shape() {
+        let spec =
+            parse_mysql_import_spec(&serde_json::to_vec(&import_document()).unwrap()).unwrap();
+        assert_eq!(spec.schema_version, 1);
+        assert_eq!(spec.manifest_sha256().len(), 64);
     }
 
     #[test]
-    fn rejects_live_source_and_legacy_redis_fields() {
-        let mut document = legacy_document();
-        let source = document["source"].as_object_mut().unwrap();
-        source.insert(
-            "database_url".to_string(),
-            json!("mysql://legacy@localhost/v2board"),
-        );
-        source.insert("redis_default_url".to_string(), json!("redis://legacy/0"));
-        let error = parse_provision_spec(&serde_json::to_vec(&document).unwrap()).unwrap_err();
-        assert!(error.to_string().contains("unknown field"));
-    }
-
-    #[test]
-    fn rejects_v4_and_an_old_v5_decision_shape() {
-        let mut v4 = legacy_document();
-        v4["schema_version"] = json!(4);
-        assert!(parse_provision_spec(&serde_json::to_vec(&v4).unwrap()).is_err());
-
-        let mut old_v5 = legacy_document();
-        old_v5["decisions"] = json!({
-            "nodes": "discard_and_manual_rebuild",
-            "legacy_traffic_details": "discard"
-        });
-        assert!(parse_provision_spec(&serde_json::to_vec(&old_v5).unwrap()).is_err());
-    }
-
-    #[test]
-    fn every_accepted_loss_is_required() {
-        for field in [
-            "legacy_redis",
-            "legacy_stripe",
-            "failed_jobs",
-            "nodes",
-            "legacy_traffic_details",
-            "legacy_operational_logs",
-            "legacy_runtime_files",
-            "legacy_theme",
-        ] {
-            let mut document = legacy_document();
-            document["decisions"].as_object_mut().unwrap().remove(field);
-            assert!(
-                parse_provision_spec(&serde_json::to_vec(&document).unwrap()).is_err(),
-                "missing loss decision {field} must fail closed"
-            );
+    fn accepts_only_schema_version_one_and_known_fields() {
+        for version in [0, 2] {
+            let mut document = import_document();
+            document["schema_version"] = json!(version);
+            assert!(parse_mysql_import_spec(&serde_json::to_vec(&document).unwrap()).is_err());
         }
+        let mut document = import_document();
+        document
+            .as_object_mut()
+            .unwrap()
+            .insert("unknown_field".to_string(), json!(true));
+        assert!(parse_mysql_import_spec(&serde_json::to_vec(&document).unwrap()).is_err());
     }
 
     #[test]
-    fn converter_policy_identity_is_manifest_bound() {
-        let mut document = legacy_document();
-        document["execution"]["converter_policy_marker"] = json!("old-policy");
-        let error = parse_provision_spec(&serde_json::to_vec(&document).unwrap()).unwrap_err();
-        assert!(error.to_string().contains("converter_policy_marker"));
-    }
-
-    #[test]
-    fn duplicate_keys_fail_and_hmac_binds_exact_file_bytes() {
-        let document = legacy_document();
+    fn duplicate_keys_fail_and_sha256_binds_exact_file_bytes() {
+        let document = import_document();
         let compact = serde_json::to_vec(&document).unwrap();
         let pretty = serde_json::to_vec_pretty(&document).unwrap();
-        let compact_binding = parse_provision_spec(&compact)
+        let compact_binding = parse_mysql_import_spec(&compact)
             .unwrap()
-            .manifest_binding_hmac_sha256()
+            .manifest_sha256()
             .to_string();
-        let pretty_binding = parse_provision_spec(&pretty)
+        let pretty_binding = parse_mysql_import_spec(&pretty)
             .unwrap()
-            .manifest_binding_hmac_sha256()
+            .manifest_sha256()
             .to_string();
         assert_ne!(compact_binding, pretty_binding);
 
         let duplicate = String::from_utf8(compact).unwrap().replacen(
-            "\"schema_version\":5",
-            "\"schema_version\":5,\"schema_version\":5",
+            "\"schema_version\":1",
+            "\"schema_version\":1,\"schema_version\":1",
             1,
         );
-        let error = parse_provision_spec(duplicate.as_bytes()).unwrap_err();
+        let error = parse_mysql_import_spec(duplicate.as_bytes()).unwrap_err();
         assert!(error.to_string().contains("duplicate JSON key"));
     }
 
     #[test]
     fn target_runtime_and_tls_shapes_fail_closed() {
-        let mut missing_analytics = legacy_document();
+        let mut missing_analytics = import_document();
         missing_analytics["target"]["analytics_admission"]
             .as_object_mut()
             .unwrap()
             .remove("capacity_evidence");
-        assert!(parse_provision_spec(&serde_json::to_vec(&missing_analytics).unwrap()).is_err());
+        assert!(parse_mysql_import_spec(&serde_json::to_vec(&missing_analytics).unwrap()).is_err());
 
-        let mut unknown_nested = legacy_document();
+        let mut unknown_nested = import_document();
         unknown_nested["target"]["clickhouse"]
             .as_object_mut()
             .unwrap()
-            .insert("legacy_mode".to_string(), json!(true));
-        assert!(parse_provision_spec(&serde_json::to_vec(&unknown_nested).unwrap()).is_err());
+            .insert("unknown_field".to_string(), json!(true));
+        assert!(parse_mysql_import_spec(&serde_json::to_vec(&unknown_nested).unwrap()).is_err());
 
-        let mut wrong_runtime_type = legacy_document();
+        let mut wrong_runtime_type = import_document();
         wrong_runtime_type["runtime"]["force_https"] = json!("true");
-        assert!(parse_provision_spec(&serde_json::to_vec(&wrong_runtime_type).unwrap()).is_err());
+        assert!(
+            parse_mysql_import_spec(&serde_json::to_vec(&wrong_runtime_type).unwrap()).is_err()
+        );
 
-        let mut duplicate_postgres_tls = legacy_document();
+        let mut duplicate_postgres_tls = import_document();
         duplicate_postgres_tls["target"]["postgres"]["api_database_url"] = json!(
             "postgresql://api:C3apiRuntimeSecret@postgres.acme.internal:5432/v2board?sslmode=disable&sslmode=verify-full"
         );
         assert!(
-            parse_provision_spec(&serde_json::to_vec(&duplicate_postgres_tls).unwrap()).is_err()
+            parse_mysql_import_spec(&serde_json::to_vec(&duplicate_postgres_tls).unwrap()).is_err()
         );
 
-        let mut duplicate_mysql_tls = legacy_document();
-        duplicate_mysql_tls["source"]["isolated_restore_database_url"] = json!(
-            "mysql://restore:J0isolatedRestoreSecret@restore.internal:3306/v2board_restore?ssl_mode=DISABLED&ssl-mode=VERIFY_IDENTITY"
+        let mut duplicate_mysql_tls = import_document();
+        duplicate_mysql_tls["source"]["staging_database_url"] = json!(
+            "mysql://staging:J0stagingImportSecret@staging.internal:3306/v2board_staging?ssl_mode=DISABLED&ssl-mode=VERIFY_IDENTITY"
         );
-        assert!(parse_provision_spec(&serde_json::to_vec(&duplicate_mysql_tls).unwrap()).is_err());
+        assert!(
+            parse_mysql_import_spec(&serde_json::to_vec(&duplicate_mysql_tls).unwrap()).is_err()
+        );
     }
 
     #[test]
     fn encoded_credentials_are_decoded_before_validation_and_identity_comparison() {
-        let mut encoded_special_characters = legacy_document();
-        encoded_special_characters["source"]["isolated_restore_database_url"] = json!(
-            "mysql://restore:J0isolated%40RestoreSecret@restore.internal:3306/v2board_restore?ssl-mode=VERIFY_IDENTITY"
+        let mut encoded_special_characters = import_document();
+        encoded_special_characters["source"]["staging_database_url"] = json!(
+            "mysql://staging:J0staging%40ImportSecret@staging.internal:3306/v2board_staging?ssl-mode=VERIFY_IDENTITY"
         );
         encoded_special_characters["target"]["postgres"]["api_database_url"] = json!(
             "postgresql://api:C3api%40RuntimeSecret@postgres.acme.internal:5432/v2board?sslmode=verify-full"
@@ -1745,54 +1404,40 @@ mod tests {
         encoded_special_characters["target"]["redis_url"] =
             json!("rediss://:I9redis%40RuntimeSecret@redis.acme.internal:6380/1");
         assert!(
-            parse_provision_spec(&serde_json::to_vec(&encoded_special_characters).unwrap()).is_ok()
+            parse_mysql_import_spec(&serde_json::to_vec(&encoded_special_characters).unwrap())
+                .is_ok()
         );
 
-        let mut encoded_placeholder = legacy_document();
+        let mut encoded_placeholder = import_document();
         encoded_placeholder["target"]["postgres"]["api_database_url"] = json!(
             "postgresql://api:C3api%52eplaceSecret@postgres.acme.internal:5432/v2board?sslmode=verify-full"
         );
-        assert!(parse_provision_spec(&serde_json::to_vec(&encoded_placeholder).unwrap()).is_err());
+        assert!(
+            parse_mysql_import_spec(&serde_json::to_vec(&encoded_placeholder).unwrap()).is_err()
+        );
 
-        let mut encoded_duplicate = legacy_document();
+        let mut encoded_duplicate = import_document();
         encoded_duplicate["target"]["postgres"]["migration_database_url"] = json!(
             "postgresql://migration:A1bootstrap%53ecret@postgres.acme.internal:5432/v2board?sslmode=verify-full"
         );
-        assert!(parse_provision_spec(&serde_json::to_vec(&encoded_duplicate).unwrap()).is_err());
+        assert!(parse_mysql_import_spec(&serde_json::to_vec(&encoded_duplicate).unwrap()).is_err());
 
         assert!(strict_percent_decode("%GG", "test").is_err());
     }
 
     #[test]
-    fn postgres_identifiers_and_release_ids_are_path_safe() {
-        let mut long_principal = legacy_document();
+    fn postgres_identifiers_are_unquoted_and_bounded() {
+        let mut long_principal = import_document();
         long_principal["target"]["postgres"]["bootstrap_database_url"] = json!(format!(
             "postgresql://{}:A1bootstrapSecret@postgres.acme.internal:5432/postgres?sslmode=verify-full",
             "a".repeat(64)
         ));
-        assert!(parse_provision_spec(&serde_json::to_vec(&long_principal).unwrap()).is_err());
+        assert!(parse_mysql_import_spec(&serde_json::to_vec(&long_principal).unwrap()).is_err());
 
-        let mut folded_principal = legacy_document();
+        let mut folded_principal = import_document();
         folded_principal["target"]["postgres"]["api_database_url"] = json!(
             "postgresql://%41pi:C3apiRuntimeSecret@postgres.acme.internal:5432/v2board?sslmode=verify-full"
         );
-        assert!(parse_provision_spec(&serde_json::to_vec(&folded_principal).unwrap()).is_err());
-
-        for release_id in [".", ".."] {
-            let mut document = legacy_document();
-            document["execution"]["release"]["release_id"] = json!(release_id);
-            assert!(parse_provision_spec(&serde_json::to_vec(&document).unwrap()).is_err());
-        }
-    }
-
-    #[test]
-    fn unimplemented_fresh_and_native_manifests_are_rejected() {
-        for kind in ["fresh_install", "native_upgrade"] {
-            let mut document = legacy_document();
-            document["schema_version"] = json!(3);
-            document["kind"] = json!(kind);
-            let error = parse_provision_spec(&serde_json::to_vec(&document).unwrap()).unwrap_err();
-            assert!(error.to_string().contains("not implemented"));
-        }
+        assert!(parse_mysql_import_spec(&serde_json::to_vec(&folded_principal).unwrap()).is_err());
     }
 }

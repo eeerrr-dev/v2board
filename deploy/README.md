@@ -28,15 +28,14 @@ unresolved production distribution/retention requirements, not properties suppli
 Do not treat a checksum downloaded from the same untrusted channel as artifact authenticity.
 
 Verify `(cd <staged-release> && sha256sum --check SHA256SUMS)` before changing any symlink. Never
-compile on the server. The separately exported `v2board-lifecycle` tool is not part of this release;
-it is staged only for the initial one-shot operation and removed by the operator after accepted
-activation. Removing the tool is not migration proof and does not require live-source credentials.
+compile on the server. The separately exported `v2board-lifecycle` utility is not part of the
+long-running release; its MySQL commands inspect the initial import inputs, and CI separately uses its
+release-archive audit before discarding the utility.
 
 CI additionally submits the packed, root-owned archive to
-`v2board-lifecycle inspect-release-archive`; that read-only command uses the same archive parser as
-manifest-bound lifecycle admission and verifies the complete tar tree, both frontend links, internal
-checksums and systemd contract. Passing it proves archive shape and integrity, not authenticity and
-not permission to install or migrate.
+`v2board-lifecycle inspect-release-archive`; this standalone deployment check verifies the complete tar
+tree, both frontend links, internal checksums and systemd contract. It is independent of the MySQL import
+manifest. Passing it proves archive shape and integrity, not authenticity.
 
 ## Operating-system identities and paths
 
@@ -50,7 +49,7 @@ install -d -m 0700 -o v2board-worker -g v2board-worker /var/lib/v2board/worker
 install -d -m 0755 -o root -g root /var/lib/v2board/rules /opt/v2board/releases
 ```
 
-The lifecycle writes complete role-specific documents atomically:
+The initial importer writes complete role-specific documents atomically:
 
 ```text
 /var/lib/v2board/api/config.json       v2board-api:v2board-api 0600
@@ -81,45 +80,44 @@ to that transient unit. Remove the source credential file when the command compl
 
 ## Intended activation order
 
-Once a lifecycle operation is production-supported, the activation order is fixed:
+After the initial database and configuration have been fully verified, native service activation is fixed:
 
-1. verify the outer archive digest, internal `SHA256SUMS`, release identity, backups, and configs;
-2. run the serialized PostgreSQL and ClickHouse schema lifecycle commands with the exact staged
+1. verify the outer archive digest, internal `SHA256SUMS`, release identity, available runtime backups,
+   and configs;
+2. run the serialized PostgreSQL and ClickHouse schema commands with the exact staged
    binaries;
 3. atomically point `/opt/v2board/current` at the staged release;
 4. start `v2board-api.service` and require `GET /readyz` to pass;
 5. start `v2board-worker.service` and require systemd `READY=1` plus a healthy watchdog;
-6. retain the prior native release only for the explicitly supported native rollback window.
-
-These steps document the target contract; they are not a substitute for the missing general
-fresh-install/native-upgrade/rollback executor and must not be performed to bypass its closed gate.
+6. on later native deployments, retain the prior immutable frontend release for the documented
+   `current`/`previous` asset window.
 
 API and worker refuse to start when the PostgreSQL ledger is not exactly current. Worker readiness
 also requires PostgreSQL and Redis; ClickHouse failure only makes analytics stale and grows the
 PostgreSQL outbox.
 
-Fresh install is not yet production-supported. Legacy archive-first `apply` remains fail-closed through
-the typed production capability until its dump/restore/conversion/cleanup gates and final security
-audit are complete. Legacy v5 has no authorization-file or resume path.
-Do not manually create targets or reinterpret a passing read-only report as permission to write.
+## Initial MySQL import
 
-## Initial legacy cold import
+There is one offline `mysql-import.v1` path:
 
-Legacy migration is one offline operation in one maintenance window. It must not implement CDC,
-dual-write, shadow reads, gradual traffic release, or a MySQL runtime fallback.
+1. The operator stops the old API, workers, scheduler, payment ingress and external node reporters.
+2. The operator exports all business tables and rows from Oracle MySQL 8 into one dump and records its
+   SHA-256. The old database is not modified.
+3. The dump is loaded into a temporary, disposable MySQL 8 engine that runs no old trigger, routine or event.
+4. The converter copies the fixed retained rows into a brand-new PostgreSQL 18 database. ClickHouse
+   starts without old events and the new Redis starts empty.
+5. The importer generates the API and worker configs from explicit `target` and `runtime` values.
+6. Data, role configs, database schemas and service prerequisites are verified before activation.
 
-1. The operator stops the old API, workers, scheduler, payment ingress and external node reporters
-   outside the importer.
-2. The operator creates one complete Oracle MySQL 8 dump, age-encrypts it, records its SHA-256 and
-   removes any temporary plaintext.
-3. `validate` checks the strict v5 manifest. `inspect` safely opens and hashes the encrypted dump,
-   age identity and native release; it validates static restore/target declarations but does not contact
-   the old site or live targets.
-4. Once the production gate is open, `apply` restores that dump into an operation-owned isolated MySQL,
-   converts retained rows, verifies target values, installs role-owned config and activates the native
-   API/worker only after every pre-activation check passes.
-5. Before activation, failure cleanup deletes the isolated restore and all unactivated target objects;
-   a new operation then restarts from the same immutable dump. There is no `authorize` or `resume`.
+The staging engine is migration-only. It may run as a one-off container on the migration/new host, on a
+disposable VM, or on another temporary private host; it is stopped and deleted after success or failure.
+The new production machine does not need a permanent MySQL installation or service. Legacy source tables
+keep their `v2_*` names, while native PostgreSQL/ClickHouse target tables are unprefixed (`users` and
+`orders` avoid PostgreSQL keyword conflicts).
+
+The repository currently provides `validate` and read-only `inspect` for this manifest. The executor
+for dump → staging → PostgreSQL conversion is not connected, so the repository cannot yet claim that a
+production import can be executed. Do not substitute manual partial writes for the missing executor.
 
 Old Redis is never read. Pending Redis traffic, queue/failed work, sessions, OTP, temporary links,
 cache/locks and Horizon metadata are explicitly discarded. Stripe configuration and unfinished Stripe
@@ -127,9 +125,13 @@ orders are discarded without contacting Stripe; terminal Stripe order history is
 provider bindings cleared. Non-Stripe payment configuration remains ordinary retained business data,
 and user balance is never automatically refunded or adjusted.
 
-The operator is responsible for permanently retiring the old site after acceptance. The encrypted dump
-remains the checksummed cold archive. After activation, recovery is PostgreSQL/ClickHouse restore or
-forward repair; restarting MySQL is not a supported rollback.
+If an import attempt fails, discard its staging database and incomplete new target, correct the problem,
+and run the same conversion again into a new empty target. This is not recovery of the untouched old
+database and keeps no resumable intermediate state. After native service starts, normal PostgreSQL
+backup/PITR and ClickHouse replay apply as ordinary runtime operations, not as MySQL-import stages.
+
+The operator permanently retires the old site only after the new result is accepted. Full data and
+command details are in the [MySQL import guide](../docs/mysql-import.md).
 
 ## Logs and shutdown
 

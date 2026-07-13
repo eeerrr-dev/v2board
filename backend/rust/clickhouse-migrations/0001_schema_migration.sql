@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS v2_schema_migration
+CREATE TABLE IF NOT EXISTS schema_migration
 (
     version UInt64,
     name String,

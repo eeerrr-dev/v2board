@@ -55,7 +55,7 @@ pub async fn find_coupon(pool: &PgPool, code: &str) -> Result<Option<CouponRow>,
             ended_at,
             created_at,
             updated_at
-        FROM v2_coupon
+        FROM coupon
         WHERE lower(code) = lower($1)
         LIMIT 1
         "#,
@@ -74,7 +74,7 @@ pub async fn count_user_coupon_uses(
     sqlx::query_scalar(
         r#"
         SELECT COUNT(*)
-        FROM v2_order
+        FROM orders
         WHERE coupon_id = $1 AND user_id = $2 AND status NOT IN (0, 2)
         "#,
     )

@@ -60,9 +60,9 @@ sha1 = "0.11.0"
 sha2 = "0.11.0"
 subtle = "2.6.1"
 tar = { version = "0.4.46", default-features = false }
-# PostgreSQL is the only native runtime datastore. The archive-first lifecycle
-# contract never links a live legacy MySQL adapter; restore/import support stays
-# behind the closed production capability until its isolated executor lands.
+# PostgreSQL is the only native runtime datastore. The one-time pre-release
+# importer may read a dump through disposable staging MySQL, but MySQL is never
+# linked into the API, worker, or analytics runtime.
 sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls-aws-lc-rs", "postgres", "json", "chrono", "rust_decimal", "uuid", "macros", "migrate"] }
 clickhouse = { version = "0.15.1", default-features = false, features = ["lz4", "rustls-tls", "uuid", "chrono"] }
 syn = { version = "2.0.117", features = ["full", "visit"] }

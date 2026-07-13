@@ -64,7 +64,7 @@ fn server_node_sql(node_type: &str) -> Option<&'static str> {
                    NULL AS obfs_password, NULL AS padding_scheme,
                    NULL::SMALLINT AS allow_insecure, NULL AS server_name,
                    NULL::INTEGER AS up_mbps, NULL::INTEGER AS down_mbps
-            FROM v2_server_shadowsocks
+            FROM server_shadowsocks
             WHERE id = $1
             LIMIT 1
             "#,
@@ -83,7 +83,7 @@ fn server_node_sql(node_type: &str) -> Option<&'static str> {
                    NULL AS obfs, NULL AS obfs_settings, NULL AS obfs_password,
                    NULL AS padding_scheme, NULL::SMALLINT AS allow_insecure, NULL AS server_name,
                    NULL::INTEGER AS up_mbps, NULL::INTEGER AS down_mbps
-            FROM v2_server_vmess
+            FROM server_vmess
             WHERE id = $1
             LIMIT 1
             "#,
@@ -104,7 +104,7 @@ fn server_node_sql(node_type: &str) -> Option<&'static str> {
                    NULL AS obfs_settings, NULL AS obfs_password, NULL AS padding_scheme,
                    allow_insecure, server_name,
                    NULL::INTEGER AS up_mbps, NULL::INTEGER AS down_mbps
-            FROM v2_server_trojan
+            FROM server_trojan
             WHERE id = $1
             LIMIT 1
             "#,
@@ -124,7 +124,7 @@ fn server_node_sql(node_type: &str) -> Option<&'static str> {
                    NULL AS obfs, NULL AS obfs_settings, NULL AS obfs_password,
                    NULL AS padding_scheme, NULL::SMALLINT AS allow_insecure, NULL AS server_name,
                    NULL::INTEGER AS up_mbps, NULL::INTEGER AS down_mbps
-            FROM v2_server_vless
+            FROM server_vless
             WHERE id = $1
             LIMIT 1
             "#,
@@ -142,7 +142,7 @@ fn server_node_sql(node_type: &str) -> Option<&'static str> {
                    NULL AS obfs, NULL AS obfs_settings, NULL AS obfs_password,
                    NULL AS padding_scheme, insecure AS allow_insecure, server_name,
                    NULL::INTEGER AS up_mbps, NULL::INTEGER AS down_mbps
-            FROM v2_server_tuic
+            FROM server_tuic
             WHERE id = $1
             LIMIT 1
             "#,
@@ -161,7 +161,7 @@ fn server_node_sql(node_type: &str) -> Option<&'static str> {
                    NULL AS cipher, obfs, NULL AS obfs_settings, obfs_password,
                    NULL AS padding_scheme, insecure AS allow_insecure, server_name,
                    up_mbps, down_mbps
-            FROM v2_server_hysteria
+            FROM server_hysteria
             WHERE id = $1
             LIMIT 1
             "#,
@@ -181,7 +181,7 @@ fn server_node_sql(node_type: &str) -> Option<&'static str> {
                    NULL AS cipher, NULL AS obfs, NULL AS obfs_settings, NULL AS obfs_password,
                    padding_scheme::text AS padding_scheme, insecure AS allow_insecure, server_name,
                    NULL::INTEGER AS up_mbps, NULL::INTEGER AS down_mbps
-            FROM v2_server_anytls
+            FROM server_anytls
             WHERE id = $1
             LIMIT 1
             "#,
@@ -199,7 +199,7 @@ fn server_node_sql(node_type: &str) -> Option<&'static str> {
                    padding_scheme::text AS padding_scheme,
                    NULL::SMALLINT AS allow_insecure, NULL AS server_name,
                    up_mbps, down_mbps
-            FROM v2_server_v2node
+            FROM server_v2node
             WHERE id = $1
             LIMIT 1
             "#,
@@ -216,7 +216,7 @@ pub(super) async fn server_available_users(
         return Ok(Vec::new());
     }
     let mut builder = QueryBuilder::<Postgres>::new(
-        "SELECT id, uuid, speed_limit, device_limit FROM v2_user WHERE group_id IN (",
+        "SELECT id, uuid, speed_limit, device_limit FROM users WHERE group_id IN (",
     );
     {
         let mut separated = builder.separated(", ");

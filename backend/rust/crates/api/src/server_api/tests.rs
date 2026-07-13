@@ -61,9 +61,9 @@ fn traffic_statistics_use_bounded_atomic_upserts() {
     let stats = &source[start..end];
     assert!(stats.contains("entries.chunks(TRAFFIC_REPORT_SQL_BATCH_SIZE)"));
     assert!(stats.contains("ON CONFLICT (server_rate, user_id, record_at)"));
-    assert!(stats.contains("v2_stat_user.u + EXCLUDED.u"));
+    assert!(stats.contains("stat_user.u + EXCLUDED.u"));
     assert!(!stats.contains("SELECT id, u, d"));
-    assert!(!stats.contains("UPDATE v2_stat_user SET"));
+    assert!(!stats.contains("UPDATE stat_user SET"));
 }
 
 #[test]

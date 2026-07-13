@@ -202,7 +202,7 @@ pub async fn project_or_verify_batch(
             }
             if !raw_present {
                 let mut insert = client
-                    .insert::<ReportedRow>("v2_traffic_reported_v1")
+                    .insert::<ReportedRow>("traffic_reported_v1")
                     .await?
                     .with_setting(
                         "insert_deduplication_token",
@@ -218,7 +218,7 @@ pub async fn project_or_verify_batch(
             }
             if !daily_present {
                 let mut insert = client
-                    .insert::<ReportedDailyRow>("v2_traffic_reported_daily_v1")
+                    .insert::<ReportedDailyRow>("traffic_reported_daily_v1")
                     .await?
                     .with_setting(
                         "insert_deduplication_token",
@@ -267,7 +267,7 @@ pub async fn project_or_verify_batch(
             }
             if !raw_present {
                 let mut insert = client
-                    .insert::<AccountedRow>("v2_traffic_accounted_v1")
+                    .insert::<AccountedRow>("traffic_accounted_v1")
                     .await?
                     .with_setting(
                         "insert_deduplication_token",
@@ -283,7 +283,7 @@ pub async fn project_or_verify_batch(
             }
             if !daily_present {
                 let mut insert = client
-                    .insert::<AccountedDailyRow>("v2_traffic_accounted_daily_v1")
+                    .insert::<AccountedDailyRow>("traffic_accounted_daily_v1")
                     .await?
                     .with_setting(
                         "insert_deduplication_token",
@@ -349,7 +349,7 @@ async fn reported_verification_rows(
                     rate_text, rate_decimal_10_2, raw_u, raw_d, charged_u, charged_d, \
                     accepted_at_unix, accounting_date, accounting_timezone, ingest_batch_id, \
                     batch_row_number, outbox_payload_sha256, table_generation, ingested_at_unix \
-             FROM v2_traffic_reported_v1 \
+             FROM traffic_reported_v1 \
              WHERE table_generation = ? \
                AND accounting_date >= toDate(?) AND accounting_date < toDate(?) \
                AND ingest_batch_id = toUUID(?) \
@@ -376,7 +376,7 @@ async fn accounted_verification_rows(
                     accepted_at_unix, accounting_date, accounting_timezone, accounted_at_unix, \
                     outcome, u_after, d_after, ingest_batch_id, batch_row_number, \
                     outbox_payload_sha256, table_generation, ingested_at_unix \
-             FROM v2_traffic_accounted_v1 \
+             FROM traffic_accounted_v1 \
              WHERE table_generation = ? \
                AND accounting_date >= toDate(?) AND accounting_date < toDate(?) \
                AND ingest_batch_id = toUUID(?) \
@@ -400,7 +400,7 @@ async fn reported_daily_verification_rows(
             "SELECT installation_id, accounting_date, user_id, server_id, server_type, \
                     rate_text, rate_decimal_10_2, table_generation, ingest_batch_id, \
                     batch_aggregate_row_number, event_count, raw_u, raw_d, charged_u, charged_d \
-             FROM v2_traffic_reported_daily_v1 \
+             FROM traffic_reported_daily_v1 \
              WHERE table_generation = ? \
                AND accounting_date >= toDate(?) AND accounting_date < toDate(?) \
                AND ingest_batch_id = toUUID(?) \
@@ -424,7 +424,7 @@ async fn accounted_daily_verification_rows(
             "SELECT installation_id, accounting_date, user_id, server_id, server_type, \
                     rate_text, rate_decimal_10_2, outcome, table_generation, ingest_batch_id, \
                     batch_aggregate_row_number, event_count, raw_u, raw_d, charged_u, charged_d \
-             FROM v2_traffic_accounted_daily_v1 \
+             FROM traffic_accounted_daily_v1 \
              WHERE table_generation = ? \
                AND accounting_date >= toDate(?) AND accounting_date < toDate(?) \
                AND ingest_batch_id = toUUID(?) \

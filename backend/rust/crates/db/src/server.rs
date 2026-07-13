@@ -177,7 +177,7 @@ SELECT
     name, rate, 'shadowsocks' AS type, host, port::text AS port,
     tags::text AS tags, sort, updated_at,
     jsonb_build_object('cipher', cipher, 'obfs', obfs, 'obfs_settings', obfs_settings, 'created_at', created_at)::text AS extra
-FROM v2_server_shadowsocks
+FROM server_shadowsocks
 WHERE show = 1
 UNION ALL
 SELECT
@@ -185,7 +185,7 @@ SELECT
     name, rate, 'vmess' AS type, host, port::text AS port,
     tags::text AS tags, sort, updated_at,
     jsonb_build_object('network', network, 'tls', tls, 'network_settings', "networkSettings", 'tls_settings', "tlsSettings")::text AS extra
-FROM v2_server_vmess
+FROM server_vmess
 WHERE show = 1
 UNION ALL
 SELECT
@@ -193,7 +193,7 @@ SELECT
     name, rate, 'trojan' AS type, host, port::text AS port,
     tags::text AS tags, sort, updated_at,
     jsonb_build_object('network', network, 'network_settings', network_settings, 'allow_insecure', allow_insecure, 'server_name', server_name)::text AS extra
-FROM v2_server_trojan
+FROM server_trojan
 WHERE show = 1
 UNION ALL
 SELECT
@@ -201,7 +201,7 @@ SELECT
     name, rate, 'tuic' AS type, host, port::text AS port,
     tags::text AS tags, sort, updated_at,
     jsonb_build_object('server_name', server_name, 'insecure', insecure, 'disable_sni', disable_sni, 'udp_relay_mode', udp_relay_mode, 'zero_rtt_handshake', zero_rtt_handshake, 'congestion_control', congestion_control)::text AS extra
-FROM v2_server_tuic
+FROM server_tuic
 WHERE show = 1
 UNION ALL
 SELECT
@@ -209,7 +209,7 @@ SELECT
     name, rate, 'hysteria' AS type, host, port::text AS port,
     tags::text AS tags, sort, updated_at,
     jsonb_build_object('version', version, 'up_mbps', up_mbps, 'down_mbps', down_mbps, 'obfs', obfs, 'obfs_password', obfs_password, 'server_name', server_name, 'insecure', insecure)::text AS extra
-FROM v2_server_hysteria
+FROM server_hysteria
 WHERE show = 1
 UNION ALL
 SELECT
@@ -217,7 +217,7 @@ SELECT
     name, rate, 'vless' AS type, host, port::text AS port,
     tags::text AS tags, sort, updated_at,
     jsonb_build_object('tls', tls, 'tls_settings', tls_settings, 'flow', flow, 'network', network, 'network_settings', network_settings, 'encryption', encryption, 'encryption_settings', encryption_settings)::text AS extra
-FROM v2_server_vless
+FROM server_vless
 WHERE show = 1
 UNION ALL
 SELECT
@@ -225,7 +225,7 @@ SELECT
     name, rate, 'anytls' AS type, host, port::text AS port,
     tags::text AS tags, sort, updated_at,
     jsonb_build_object('server_name', server_name, 'insecure', insecure, 'padding_scheme', padding_scheme)::text AS extra
-FROM v2_server_anytls
+FROM server_anytls
 WHERE show = 1
 UNION ALL
 SELECT
@@ -241,7 +241,7 @@ SELECT
         'down_mbps', down_mbps, 'obfs', obfs, 'obfs_password', obfs_password,
         'padding_scheme', padding_scheme
     )::text AS extra
-FROM v2_server_v2node
+FROM server_v2node
 WHERE show = 1
 "#;
 

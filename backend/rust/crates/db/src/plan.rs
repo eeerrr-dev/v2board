@@ -54,18 +54,18 @@ pub const PLAN_CAPACITY_USAGE_SQL: &str = r#"
 SELECT
     (
         SELECT COUNT(*)
-        FROM v2_user AS active_user
+        FROM users AS active_user
         WHERE active_user.plan_id = $1
           AND (active_user.expired_at >= EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT OR active_user.expired_at IS NULL)
     ) + (
         SELECT COUNT(DISTINCT pending_order.user_id)
-        FROM v2_order AS pending_order
+        FROM orders AS pending_order
         WHERE pending_order.plan_id = $2
           AND pending_order.status IN (0, 1)
           AND pending_order.type IN (1, 3)
           AND NOT EXISTS (
               SELECT 1
-              FROM v2_user AS reserved_user
+              FROM users AS reserved_user
               WHERE reserved_user.id = pending_order.user_id
                 AND reserved_user.plan_id = pending_order.plan_id
                 AND (
@@ -113,7 +113,7 @@ pub async fn fetch_visible_plans(pool: &PgPool) -> Result<Vec<PlanRow>, sqlx::Er
             capacity_limit,
             created_at,
             updated_at
-        FROM v2_plan
+        FROM plan
         WHERE show = 1
         ORDER BY sort ASC NULLS FIRST
         "#,
@@ -126,7 +126,7 @@ pub async fn count_active_users_by_plan(pool: &PgPool) -> Result<HashMap<i32, i6
     let rows = sqlx::query_as::<_, PlanActiveCountRow>(
         r#"
         SELECT plan_id, COUNT(*) AS count
-        FROM v2_user
+        FROM users
         WHERE plan_id IS NOT NULL
           AND (expired_at >= EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT OR expired_at IS NULL)
         GROUP BY plan_id
@@ -151,7 +151,7 @@ pub async fn count_capacity_usage_by_plan(pool: &PgPool) -> Result<HashMap<i32, 
         SELECT plan_id, SUM(slot_count)::BIGINT AS count
         FROM (
             SELECT plan_id, COUNT(*) AS slot_count
-            FROM v2_user
+            FROM users
             WHERE plan_id IS NOT NULL
               AND (expired_at >= EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT OR expired_at IS NULL)
             GROUP BY plan_id
@@ -159,12 +159,12 @@ pub async fn count_capacity_usage_by_plan(pool: &PgPool) -> Result<HashMap<i32, 
             UNION ALL
 
             SELECT pending_order.plan_id, COUNT(DISTINCT pending_order.user_id) AS slot_count
-            FROM v2_order AS pending_order
+            FROM orders AS pending_order
             WHERE pending_order.status IN (0, 1)
               AND pending_order.type IN (1, 3)
               AND NOT EXISTS (
                   SELECT 1
-                  FROM v2_user AS reserved_user
+                  FROM users AS reserved_user
                   WHERE reserved_user.id = pending_order.user_id
                     AND reserved_user.plan_id = pending_order.plan_id
                     AND (
@@ -216,7 +216,7 @@ SELECT
     capacity_limit,
     created_at,
     updated_at
-FROM v2_plan
+FROM plan
 WHERE id = $1
 LIMIT 1
 "#;

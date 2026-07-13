@@ -78,11 +78,11 @@ pub(super) async fn server_deepbwork_config(
         .await?
         .ok_or_else(|| ApiError::legacy("节点不存在"))?;
     // The shared node row already carries tls_settings/network_settings; dnsSettings and
-    // ruleSettings live only on v2_server_vmess, so fetch just those two extra columns.
+    // ruleSettings live only on server_vmess, so fetch just those two extra columns.
     let (dns_settings_raw, rule_settings_raw) =
         sqlx::query_as::<_, (Option<String>, Option<String>)>(
             "SELECT \"dnsSettings\"::text, \"ruleSettings\"::text \
-             FROM v2_server_vmess WHERE id = $1 LIMIT 1",
+             FROM server_vmess WHERE id = $1 LIMIT 1",
         )
         .bind(node_id)
         .fetch_optional(&state.db)
@@ -518,7 +518,7 @@ async fn server_routes(
         let mut builder = QueryBuilder::<Postgres>::new(
             "SELECT id, \"match\"::text AS match_text, action, \
              action_value::text AS action_value \
-             FROM v2_server_route WHERE id IN (",
+             FROM server_route WHERE id IN (",
         );
         let mut separated = builder.separated(", ");
         for route_id in chunk {

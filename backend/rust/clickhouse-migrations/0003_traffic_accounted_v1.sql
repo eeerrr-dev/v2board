@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS v2_traffic_accounted_v1
+CREATE TABLE IF NOT EXISTS traffic_accounted_v1
 (
     event_id String,
     schema_major UInt16,
@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS v2_traffic_accounted_v1
     batch_row_number UInt32,
     outbox_payload_sha256 String,
     table_generation UInt32,
-    ingested_at_unix Int64
+    ingested_at_unix Int64,
+    INDEX idx_ingest_batch_id ingest_batch_id TYPE bloom_filter(0.001) GRANULARITY 1
 )
 ENGINE = MergeTree
 PARTITION BY (table_generation, toYYYYMM(accounting_date))
@@ -41,4 +42,6 @@ ORDER BY
     ingest_batch_id,
     batch_row_number
 )
-SETTINGS index_granularity = 8192
+SETTINGS
+    index_granularity = 8192,
+    non_replicated_deduplication_window = 10000

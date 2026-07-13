@@ -1,9 +1,7 @@
-//! Deterministic conversion contract for the pinned legacy MySQL dump.
+//! Deterministic import contract for the pinned source MySQL dump.
 //!
-//! This module deliberately contains no CDC, dual-write, shadow-read, or
-//! gradual-cutover path. A caller binds it to one restored immutable dump and
-//! an empty operation-owned target. It contains no live-source, Redis, provider,
-//! authorization-file, or resume capability.
+//! The pre-release schema v1 imports one immutable dump into one empty target.
+//! The mapping and loss policy below are the complete MySQL import contract.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -11,19 +9,20 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
 use sha2::{Digest, Sha256, Sha384};
 
-use crate::cold_import_policy::{
-    COLD_IMPORT_POLICY_MARKER, LegacyOrderBinding, LegacyOrderDisposition, LegacyOrderPolicyError,
+use crate::mysql_import_policy::{
+    LegacyOrderBinding, LegacyOrderDisposition, LegacyOrderPolicyError, MYSQL_IMPORT_POLICY_MARKER,
     classify_legacy_order, is_legacy_stripe_payment_driver,
 };
 
-pub const LEGACY_CONVERTER_PROFILE: &str =
+pub const MYSQL_IMPORT_SOURCE_PROFILE: &str =
     "wyx2685-v2board@7e77de9f4873b317157490529f7be7d6f8a62421";
-pub const LEGACY_SEMANTIC_SCHEMA_SHA256: &str =
+pub const MYSQL_SOURCE_SCHEMA_SHA256: &str =
     "4b5eaec681531751c79b48188e5a1c665df4f660dffbb88d6853cea6cf04801e";
-pub const LEGACY_INSTALL_SQL_SHA256: &str =
+pub const MYSQL_SOURCE_INSTALL_SQL_SHA256: &str =
     "04b04531037b9e0b6f2a6b02194a8f1bc102789af8ee7be963fd721d51bca8e2";
-pub const TARGET_POSTGRES_LINEAGE: &str = "migrations-postgres/v5-archive-first-cold-import";
-pub const CONVERTER_REGISTRY_VERSION: u32 = 5;
+pub const MYSQL_IMPORT_SCHEMA_VERSION: u32 = 1;
+pub const TARGET_POSTGRES_SCHEMA_ID: &str = "migrations-postgres/mysql-import-v1";
+pub const MYSQL_IMPORT_REGISTRY_VERSION: u32 = 1;
 pub const DEFAULT_BATCH_SIZE: u32 = 1_000;
 pub const MAX_BATCH_SIZE: u32 = 100_000;
 pub const POSTGRES_MAX_BIND_PARAMETERS: usize = 65_535;
@@ -31,71 +30,18 @@ pub const POSTGRES_MAX_BIND_PARAMETERS: usize = 65_535;
 /// use zero: `NO_AUTO_VALUE_ON_ZERO` allowed explicitly inserted zero ids.
 pub const INITIAL_SOURCE_ID_CURSOR: i64 = i64::MIN;
 
-/// The only supported conversion policy. Schema v5 starts node,
-/// traffic-detail, and operational-log surfaces empty while preserving the
-/// business data and MySQL-persisted user counters declared by the manifest.
-#[derive(
-    Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum ColdImportConversionStrategy {
-    #[default]
-    ArchiveFirstV5,
-}
-
-impl ColdImportConversionStrategy {
-    pub fn for_schema_version(schema_version: u32) -> Result<Self, ConverterError> {
-        match schema_version {
-            5 => Ok(Self::ArchiveFirstV5),
-            version => Err(ConverterError::UnsupportedConversionSchemaVersion(version)),
-        }
-    }
-
-    pub const fn stable_name(self) -> &'static str {
-        "archive_first_v5"
-    }
-
-    pub fn copies_base_table(self, mapping: &TableMapping) -> bool {
-        !V5_DISCARDED_BASE_TABLES.contains(&mapping.source)
-    }
-
-    pub fn builds_derived_mapping(self, mapping: &DerivedMapping) -> bool {
-        !V5_DISCARDED_DERIVED_TARGETS.contains(&mapping.target)
-    }
-}
-
-const TARGET_POSTGRES_MIGRATIONS: &[(i64, &str, &[u8])] = &[
-    (
-        1,
-        "0001_initial.sql",
-        include_bytes!("../../../migrations-postgres/0001_initial.sql"),
-    ),
-    (
-        2,
-        "0002_giftcard_provenance_and_analytics_admission.sql",
-        include_bytes!(
-            "../../../migrations-postgres/0002_giftcard_provenance_and_analytics_admission.sql"
-        ),
-    ),
-    (
-        3,
-        "0003_operator_config_authority.sql",
-        include_bytes!("../../../migrations-postgres/0003_operator_config_authority.sql"),
-    ),
-];
+const TARGET_POSTGRES_MIGRATIONS: &[(i64, &str, &[u8])] = &[(
+    1,
+    "0001_initial.sql",
+    include_bytes!("../../../migrations-postgres/0001_initial.sql"),
+)];
 
 const DECIMAL: ColumnRule = ColumnRule::ExactDecimal;
 const JSON_ANY: ColumnRule = ColumnRule::Json(JsonShape::Any);
 const JSON_ARRAY: ColumnRule = ColumnRule::Json(JsonShape::Array);
-const JSON_STRING: ColumnRule = ColumnRule::TextAsJsonString;
 const ID_ARRAY_I32: ColumnRule = ColumnRule::PositiveIdArray {
     maximum: i32::MAX as u64,
     require_non_empty: false,
-    output: JsonOutput::Json,
-};
-const NON_EMPTY_ID_ARRAY_I32: ColumnRule = ColumnRule::PositiveIdArray {
-    maximum: i32::MAX as u64,
-    require_non_empty: true,
     output: JsonOutput::Json,
 };
 const ID_ARRAY_I64_AS_TEXT: ColumnRule = ColumnRule::PositiveIdArray {
@@ -108,7 +54,6 @@ const ID_ARRAY_I64_AS_TEXT: ColumnRule = ColumnRule::PositiveIdArray {
 pub enum JsonShape {
     Any,
     Array,
-    Object,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -119,15 +64,10 @@ pub enum JsonOutput {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ColumnRule {
-    /// Preserve the typed value exactly. The SQL adapter is responsible for
-    /// lossless width conversion and must never route integers through f64.
-    Direct,
     /// Parse and bind a base-10 fixed-point value without a binary float.
     ExactDecimal,
     /// Parse legacy JSON text and require the declared top-level shape.
     Json(JsonShape),
-    /// Preserve legacy text as a JSON string (not as parsed JSON).
-    TextAsJsonString,
     /// Normalize positive decimal-string members to JSON integer numbers.
     PositiveIdArray {
         maximum: u64,
@@ -141,10 +81,12 @@ pub struct TransformColumn {
     pub source: &'static str,
     pub target: &'static str,
     pub rule: ColumnRule,
-    /// An optional target table whose `id` set must contain every member.
+    /// Optional source/target tables whose `id` sets must contain every member.
     /// Reference validation is a pre-copy and final-verification obligation;
-    /// row transformation alone cannot prove it.
-    pub referenced_table: Option<&'static str>,
+    /// row transformation alone cannot prove it. Both names are explicit
+    /// because only the legacy source carries the `v2_*` prefix.
+    pub source_referenced_table: Option<&'static str>,
+    pub referenced_target_table: Option<&'static str>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -164,7 +106,8 @@ pub struct AddedColumn {
 pub struct DeferredColumn {
     pub source: &'static str,
     pub target: &'static str,
-    pub referenced_table: &'static str,
+    pub source_referenced_table: &'static str,
+    pub referenced_target_table: &'static str,
     pub reason: &'static str,
 }
 
@@ -199,7 +142,6 @@ pub struct TableMapping {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DerivedMappingKind {
     GiftcardRedemptions,
-    NodeCredentials,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -223,16 +165,20 @@ pub enum ScalarReferenceRule {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ScalarReference {
-    pub table: &'static str,
+    /// Legacy MySQL endpoint used by pre-copy validation.
+    pub source_table: &'static str,
+    /// Native PostgreSQL endpoint used by final verification.
+    pub target_table: &'static str,
     pub column: &'static str,
-    pub referenced_table: &'static str,
+    pub source_referenced_table: &'static str,
+    pub target_referenced_table: &'static str,
     pub rule: ScalarReferenceRule,
 }
 
 const SERVER_GROUP: TableMapping = TableMapping {
     order: 10,
     source: "v2_server_group",
-    target: "v2_server_group",
+    target: "server_group",
     identity_width: IdentityWidth::I32,
     direct_columns: &["id", "name", "created_at", "updated_at"],
     transformed_columns: &[],
@@ -244,7 +190,7 @@ const SERVER_GROUP: TableMapping = TableMapping {
 const PLAN: TableMapping = TableMapping {
     order: 20,
     source: "v2_plan",
-    target: "v2_plan",
+    target: "plan",
     identity_width: IdentityWidth::I32,
     direct_columns: &[
         "id",
@@ -279,7 +225,7 @@ const PLAN: TableMapping = TableMapping {
 const PAYMENT: TableMapping = TableMapping {
     order: 30,
     source: "v2_payment",
-    target: "v2_payment",
+    target: "payment",
     identity_width: IdentityWidth::I32,
     direct_columns: &[
         "id",
@@ -299,13 +245,15 @@ const PAYMENT: TableMapping = TableMapping {
             source: "config",
             target: "config",
             rule: JSON_ANY,
-            referenced_table: None,
+            source_referenced_table: None,
+            referenced_target_table: None,
         },
         TransformColumn {
             source: "handling_fee_percent",
             target: "handling_fee_percent",
             rule: DECIMAL,
-            referenced_table: None,
+            source_referenced_table: None,
+            referenced_target_table: None,
         },
     ],
     added_columns: &[AddedColumn {
@@ -320,7 +268,7 @@ const PAYMENT: TableMapping = TableMapping {
 const COUPON: TableMapping = TableMapping {
     order: 40,
     source: "v2_coupon",
-    target: "v2_coupon",
+    target: "coupon",
     identity_width: IdentityWidth::I32,
     direct_columns: &[
         "id",
@@ -341,13 +289,15 @@ const COUPON: TableMapping = TableMapping {
             source: "limit_plan_ids",
             target: "limit_plan_ids",
             rule: ID_ARRAY_I32,
-            referenced_table: Some("v2_plan"),
+            source_referenced_table: Some("v2_plan"),
+            referenced_target_table: Some("plan"),
         },
         TransformColumn {
             source: "limit_period",
             target: "limit_period",
             rule: JSON_ARRAY,
-            referenced_table: None,
+            source_referenced_table: None,
+            referenced_target_table: None,
         },
     ],
     added_columns: &[],
@@ -358,7 +308,7 @@ const COUPON: TableMapping = TableMapping {
 const USER: TableMapping = TableMapping {
     order: 50,
     source: "v2_user",
-    target: "v2_user",
+    target: "users",
     identity_width: IdentityWidth::I64,
     direct_columns: &[
         "id",
@@ -416,7 +366,8 @@ const USER: TableMapping = TableMapping {
     deferred_columns: &[DeferredColumn {
         source: "invite_user_id",
         target: "invite_user_id",
-        referenced_table: "v2_user",
+        source_referenced_table: "v2_user",
+        referenced_target_table: "users",
         reason: "self references are patched after every user id exists; NULL and cycles remain exact",
     }],
     consumed_source_columns: &[],
@@ -425,7 +376,7 @@ const USER: TableMapping = TableMapping {
 const ORDER: TableMapping = TableMapping {
     order: 60,
     source: "v2_order",
-    target: "v2_order",
+    target: "orders",
     identity_width: IdentityWidth::I64,
     direct_columns: &[
         "id",
@@ -456,7 +407,8 @@ const ORDER: TableMapping = TableMapping {
         source: "surplus_order_ids",
         target: "surplus_order_ids",
         rule: ID_ARRAY_I64_AS_TEXT,
-        referenced_table: Some("v2_order"),
+        source_referenced_table: Some("v2_order"),
+        referenced_target_table: Some("orders"),
     }],
     added_columns: &[AddedColumn {
         target: "callback_no_hash",
@@ -470,7 +422,7 @@ const ORDER: TableMapping = TableMapping {
 const COMMISSION_LOG: TableMapping = TableMapping {
     order: 70,
     source: "v2_commission_log",
-    target: "v2_commission_log",
+    target: "commission_log",
     identity_width: IdentityWidth::I64,
     direct_columns: &[
         "id",
@@ -491,7 +443,7 @@ const COMMISSION_LOG: TableMapping = TableMapping {
 const INVITE_CODE: TableMapping = TableMapping {
     order: 80,
     source: "v2_invite_code",
-    target: "v2_invite_code",
+    target: "invite_code",
     identity_width: IdentityWidth::I32,
     direct_columns: &[
         "id",
@@ -511,7 +463,7 @@ const INVITE_CODE: TableMapping = TableMapping {
 const GIFTCARD: TableMapping = TableMapping {
     order: 90,
     source: "v2_giftcard",
-    target: "v2_giftcard",
+    target: "giftcard",
     identity_width: IdentityWidth::I32,
     direct_columns: &[
         "id",
@@ -531,16 +483,16 @@ const GIFTCARD: TableMapping = TableMapping {
     deferred_columns: &[],
     consumed_source_columns: &[ConsumedSourceColumn {
         source: "used_user_ids",
-        reason: "expanded by the v2_giftcard_redemption derived mapping",
+        reason: "expanded by the giftcard_redemption target mapping",
     }],
 };
 
 macro_rules! direct_table {
-    ($name:ident, $order:literal, $table:literal, $width:ident, [$($column:literal),+ $(,)?]) => {
+    ($name:ident, $order:literal, $source:literal, $target:literal, $width:ident, [$($column:literal),+ $(,)?]) => {
         const $name: TableMapping = TableMapping {
             order: $order,
-            source: $table,
-            target: $table,
+            source: $source,
+            target: $target,
             identity_width: IdentityWidth::$width,
             direct_columns: &[$($column),+],
             transformed_columns: &[],
@@ -555,6 +507,7 @@ direct_table!(
     KNOWLEDGE,
     100,
     "v2_knowledge",
+    "knowledge",
     I32,
     [
         "id",
@@ -572,7 +525,7 @@ direct_table!(
 const NOTICE: TableMapping = TableMapping {
     order: 110,
     source: "v2_notice",
-    target: "v2_notice",
+    target: "notice",
     identity_width: IdentityWidth::I32,
     direct_columns: &[
         "id",
@@ -587,7 +540,8 @@ const NOTICE: TableMapping = TableMapping {
         source: "tags",
         target: "tags",
         rule: JSON_ARRAY,
-        referenced_table: None,
+        source_referenced_table: None,
+        referenced_target_table: None,
     }],
     added_columns: &[],
     deferred_columns: &[],
@@ -598,6 +552,7 @@ direct_table!(
     TICKET,
     120,
     "v2_ticket",
+    "ticket",
     I64,
     [
         "id",
@@ -615,6 +570,7 @@ direct_table!(
     TICKET_MESSAGE,
     130,
     "v2_ticket_message",
+    "ticket_message",
     I64,
     [
         "id",
@@ -627,45 +583,10 @@ direct_table!(
 );
 
 direct_table!(
-    LOG,
-    140,
-    "v2_log",
-    I64,
-    [
-        "id",
-        "title",
-        "level",
-        "host",
-        "uri",
-        "method",
-        "data",
-        "ip",
-        "context",
-        "created_at",
-        "updated_at"
-    ]
-);
-
-direct_table!(
-    MAIL_LOG,
-    150,
-    "v2_mail_log",
-    I64,
-    [
-        "id",
-        "email",
-        "subject",
-        "template_name",
-        "error",
-        "created_at",
-        "updated_at"
-    ]
-);
-
-direct_table!(
     STAT,
-    160,
+    140,
     "v2_stat",
+    "stat",
     I64,
     [
         "id",
@@ -685,225 +606,6 @@ direct_table!(
     ]
 );
 
-direct_table!(
-    STAT_SERVER,
-    170,
-    "v2_stat_server",
-    I64,
-    [
-        "id",
-        "server_id",
-        "server_type",
-        "u",
-        "d",
-        "record_type",
-        "record_at",
-        "created_at",
-        "updated_at"
-    ]
-);
-
-const STAT_USER: TableMapping = TableMapping {
-    order: 180,
-    source: "v2_stat_user",
-    target: "v2_stat_user",
-    identity_width: IdentityWidth::I64,
-    direct_columns: &[
-        "id",
-        "user_id",
-        "u",
-        "d",
-        "record_type",
-        "record_at",
-        "created_at",
-        "updated_at",
-    ],
-    transformed_columns: &[TransformColumn {
-        source: "server_rate",
-        target: "server_rate",
-        rule: DECIMAL,
-        referenced_table: None,
-    }],
-    added_columns: &[],
-    deferred_columns: &[],
-    consumed_source_columns: &[],
-};
-
-const SERVER_ROUTE: TableMapping = TableMapping {
-    order: 190,
-    source: "v2_server_route",
-    target: "v2_server_route",
-    identity_width: IdentityWidth::I32,
-    direct_columns: &["id", "remarks", "action", "created_at", "updated_at"],
-    transformed_columns: &[
-        TransformColumn {
-            source: "match",
-            target: "match",
-            rule: JSON_ARRAY,
-            referenced_table: None,
-        },
-        TransformColumn {
-            source: "action_value",
-            target: "action_value",
-            rule: JSON_STRING,
-            referenced_table: None,
-        },
-    ],
-    added_columns: &[],
-    deferred_columns: &[],
-    consumed_source_columns: &[],
-};
-
-macro_rules! node_table {
-    (
-        $name:ident, $order:literal, $table:literal,
-        direct [$($direct:literal),+ $(,)?],
-        json [$($json:literal),* $(,)?]
-    ) => {
-        const $name: TableMapping = TableMapping {
-            order: $order,
-            source: $table,
-            target: $table,
-            identity_width: IdentityWidth::I32,
-            direct_columns: &[$($direct),+],
-            transformed_columns: &[
-                TransformColumn {
-                    source: "group_id",
-                    target: "group_id",
-                    rule: NON_EMPTY_ID_ARRAY_I32,
-                    referenced_table: Some("v2_server_group"),
-                },
-                TransformColumn {
-                    source: "route_id",
-                    target: "route_id",
-                    rule: ID_ARRAY_I32,
-                    // Legacy deliberately tolerated deleted/missing optional
-                    // routes. Preserve the ids; do not invent or drop them.
-                    referenced_table: None,
-                },
-                TransformColumn {
-                    source: "tags",
-                    target: "tags",
-                    rule: JSON_ARRAY,
-                    referenced_table: None,
-                },
-                $(TransformColumn {
-                    source: $json,
-                    target: $json,
-                    rule: JSON_ANY,
-                    referenced_table: None,
-                },)*
-            ],
-            added_columns: &[],
-            deferred_columns: &[],
-            consumed_source_columns: &[],
-        };
-    };
-}
-
-node_table!(
-    SERVER_SHADOWSOCKS,
-    200,
-    "v2_server_shadowsocks",
-    direct [
-        "id", "parent_id", "name", "rate", "host", "port", "server_port", "cipher", "obfs",
-        "show", "sort", "created_at", "updated_at"
-    ],
-    json ["obfs_settings"]
-);
-
-node_table!(
-    SERVER_VMESS,
-    210,
-    "v2_server_vmess",
-    direct [
-        "id", "name", "parent_id", "host", "port", "server_port", "tls", "rate", "network",
-        "show", "sort", "created_at", "updated_at"
-    ],
-    json [
-        "rules",
-        "networkSettings",
-        "tlsSettings",
-        "ruleSettings",
-        "dnsSettings"
-    ]
-);
-
-node_table!(
-    SERVER_TROJAN,
-    220,
-    "v2_server_trojan",
-    direct [
-        "id", "parent_id", "name", "rate", "host", "port", "server_port", "network",
-        "allow_insecure", "server_name", "show", "sort", "created_at", "updated_at"
-    ],
-    json ["network_settings"]
-);
-
-node_table!(
-    SERVER_TUIC,
-    230,
-    "v2_server_tuic",
-    direct [
-        "id", "name", "parent_id", "host", "port", "server_port", "rate", "show", "sort",
-        "server_name", "insecure", "disable_sni", "udp_relay_mode", "zero_rtt_handshake",
-        "congestion_control", "created_at", "updated_at"
-    ],
-    json []
-);
-
-node_table!(
-    SERVER_HYSTERIA,
-    240,
-    "v2_server_hysteria",
-    direct [
-        "id", "version", "name", "parent_id", "host", "port", "server_port", "rate", "show",
-        "sort", "up_mbps", "down_mbps", "obfs", "obfs_password", "server_name", "insecure",
-        "created_at", "updated_at"
-    ],
-    json []
-);
-
-node_table!(
-    SERVER_VLESS,
-    250,
-    "v2_server_vless",
-    direct [
-        "id", "name", "parent_id", "host", "port", "server_port", "tls", "flow", "network",
-        "encryption", "rate", "show", "sort", "created_at", "updated_at"
-    ],
-    json ["tls_settings", "network_settings", "encryption_settings"]
-);
-
-node_table!(
-    SERVER_ANYTLS,
-    260,
-    "v2_server_anytls",
-    direct [
-        "id", "name", "parent_id", "host", "port", "server_port", "rate", "show", "sort",
-        "server_name", "insecure", "created_at", "updated_at"
-    ],
-    json ["padding_scheme"]
-);
-
-node_table!(
-    SERVER_V2NODE,
-    270,
-    "v2_server_v2node",
-    direct [
-        "id", "name", "parent_id", "host", "listen_ip", "port", "server_port", "rate", "show",
-        "sort", "protocol", "tls", "flow", "network", "encryption", "disable_sni",
-        "udp_relay_mode", "zero_rtt_handshake", "congestion_control", "cipher", "up_mbps",
-        "down_mbps", "obfs", "obfs_password", "created_at", "updated_at"
-    ],
-    json [
-        "tls_settings",
-        "network_settings",
-        "encryption_settings",
-        "padding_scheme"
-    ]
-);
-
 pub const TABLE_MAPPINGS: &[TableMapping] = &[
     SERVER_GROUP,
     PLAN,
@@ -918,67 +620,25 @@ pub const TABLE_MAPPINGS: &[TableMapping] = &[
     NOTICE,
     TICKET,
     TICKET_MESSAGE,
-    LOG,
-    MAIL_LOG,
     STAT,
-    STAT_SERVER,
-    STAT_USER,
-    SERVER_ROUTE,
-    SERVER_SHADOWSOCKS,
-    SERVER_VMESS,
-    SERVER_TROJAN,
-    SERVER_TUIC,
-    SERVER_HYSTERIA,
-    SERVER_VLESS,
-    SERVER_ANYTLS,
-    SERVER_V2NODE,
 ];
 
-pub const DERIVED_MAPPINGS: &[DerivedMapping] = &[
-    DerivedMapping {
-        order: 280,
-        target: "v2_giftcard_redemption",
-        kind: DerivedMappingKind::GiftcardRedemptions,
-        source_tables: &["v2_giftcard", "v2_user"],
-        key_columns: &["giftcard_id", "user_id"],
-        rule: "expand distinct used_user_ids; every id must exist; created_at=0 and created_at_provenance=legacy_unknown",
-    },
-    DerivedMapping {
-        order: 290,
-        target: "v2_server_credential",
-        kind: DerivedMappingKind::NodeCredentials,
-        source_tables: &[
-            "v2_server_shadowsocks",
-            "v2_server_vmess",
-            "v2_server_trojan",
-            "v2_server_tuic",
-            "v2_server_hysteria",
-            "v2_server_vless",
-            "v2_server_anytls",
-            "v2_server_v2node",
-        ],
-        key_columns: &["node_type", "node_id"],
-        rule: "one row per source node; credential_epoch=0; updated_at=source node updated_at",
-    },
-];
+pub const DERIVED_MAPPINGS: &[DerivedMapping] = &[DerivedMapping {
+    order: 150,
+    target: "giftcard_redemption",
+    kind: DerivedMappingKind::GiftcardRedemptions,
+    source_tables: &["v2_giftcard", "v2_user"],
+    key_columns: &["giftcard_id", "user_id"],
+    rule: "expand distinct used_user_ids; every id must exist; created_at=0 and created_at_provenance=legacy_unknown",
+}];
 
-pub const NODE_CREDENTIAL_SOURCES: &[(&str, &str)] = &[
-    ("shadowsocks", "v2_server_shadowsocks"),
-    ("vmess", "v2_server_vmess"),
-    ("trojan", "v2_server_trojan"),
-    ("tuic", "v2_server_tuic"),
-    ("hysteria", "v2_server_hysteria"),
-    ("vless", "v2_server_vless"),
-    ("anytls", "v2_server_anytls"),
-    ("v2node", "v2_server_v2node"),
-];
-
-/// Whole tables intentionally omitted from the archive-first target.
-/// `v2_user`, `v2_payment`, `v2_server_group`, and the durable historical
-/// aggregate `v2_stat` remain in the row-mapping inventory. The adapter applies
-/// the separately versioned Stripe row policy within `v2_payment`/`v2_order`;
-/// non-Stripe payment rows and their original `enable` values remain exact.
-pub const V5_DISCARDED_BASE_TABLES: &[&str] = &[
+/// Whole tables intentionally omitted from the target.
+/// Legacy sources `v2_user`, `v2_payment`, `v2_server_group`, and `v2_stat`
+/// remain in the row-mapping inventory. The adapter applies the fixed Stripe
+/// row policy within source `v2_payment`/`v2_order`; non-Stripe payment rows and
+/// their original `enable` values remain exact in unprefixed native targets.
+pub const DISCARDED_SOURCE_TABLES: &[&str] = &[
+    "failed_jobs",
     "v2_log",
     "v2_mail_log",
     "v2_stat_server",
@@ -994,136 +654,144 @@ pub const V5_DISCARDED_BASE_TABLES: &[&str] = &[
     "v2_server_v2node",
 ];
 
-pub const V5_DISCARDED_DERIVED_TARGETS: &[&str] = &["v2_server_credential"];
+/// Native PostgreSQL tables whose legacy contents are fixed losses. These
+/// names are deliberately independent from `DISCARDED_SOURCE_TABLES`: legacy
+/// MySQL keeps its `v2_*` names while the first native schema is unprefixed.
+pub const DISCARDED_TARGET_TABLES: &[&str] = &[
+    "log",
+    "mail_log",
+    "stat_server",
+    "stat_user",
+    "server_route",
+    "server_shadowsocks",
+    "server_vmess",
+    "server_trojan",
+    "server_tuic",
+    "server_hysteria",
+    "server_vless",
+    "server_anytls",
+    "server_v2node",
+    "server_credential",
+];
 
-pub fn copied_table_mappings(
-    strategy: ColdImportConversionStrategy,
-) -> impl Iterator<Item = &'static TableMapping> {
-    TABLE_MAPPINGS
-        .iter()
-        .filter(move |mapping| strategy.copies_base_table(mapping))
+pub fn copied_table_mappings() -> impl Iterator<Item = &'static TableMapping> {
+    TABLE_MAPPINGS.iter()
 }
 
-pub fn discarded_table_mappings(
-    strategy: ColdImportConversionStrategy,
-) -> impl Iterator<Item = &'static TableMapping> {
-    TABLE_MAPPINGS
-        .iter()
-        .filter(move |mapping| !strategy.copies_base_table(mapping))
+/// Native PostgreSQL tables that must be proven empty after conversion.
+/// `failed_jobs` has no native target table, while `server_credential` is a
+/// native-only derived table that must also start empty.
+pub fn discarded_target_tables() -> impl Iterator<Item = &'static str> {
+    DISCARDED_TARGET_TABLES.iter().copied()
 }
 
-pub fn built_derived_mappings(
-    strategy: ColdImportConversionStrategy,
-) -> impl Iterator<Item = &'static DerivedMapping> {
-    DERIVED_MAPPINGS
-        .iter()
-        .filter(move |mapping| strategy.builds_derived_mapping(mapping))
-}
-
-pub fn discarded_derived_mappings(
-    strategy: ColdImportConversionStrategy,
-) -> impl Iterator<Item = &'static DerivedMapping> {
-    DERIVED_MAPPINGS
-        .iter()
-        .filter(move |mapping| !strategy.builds_derived_mapping(mapping))
+pub fn built_derived_mappings() -> impl Iterator<Item = &'static DerivedMapping> {
+    DERIVED_MAPPINGS.iter()
 }
 
 /// Scalar relationships that must be proven before copy and again against the
-/// target. Historical ids intentionally lacking a PostgreSQL FK (for example
-/// commission/stat rows and optional deleted route ids) are value-verified but
-/// are not silently re-parented.
+/// target. Historical ids intentionally lacking a PostgreSQL FK are
+/// value-verified but are not silently re-parented.
 pub const SCALAR_REFERENCES: &[ScalarReference] = &[
     ScalarReference {
-        table: "v2_plan",
+        source_table: "v2_plan",
+        target_table: "plan",
         column: "group_id",
-        referenced_table: "v2_server_group",
+        source_referenced_table: "v2_server_group",
+        target_referenced_table: "server_group",
         rule: ScalarReferenceRule::Required,
     },
     ScalarReference {
-        table: "v2_user",
+        source_table: "v2_user",
+        target_table: "users",
         column: "invite_user_id",
-        referenced_table: "v2_user",
+        source_referenced_table: "v2_user",
+        target_referenced_table: "users",
         rule: ScalarReferenceRule::Nullable,
     },
     ScalarReference {
-        table: "v2_user",
+        source_table: "v2_user",
+        target_table: "users",
         column: "group_id",
-        referenced_table: "v2_server_group",
+        source_referenced_table: "v2_server_group",
+        target_referenced_table: "server_group",
         rule: ScalarReferenceRule::Nullable,
     },
     ScalarReference {
-        table: "v2_user",
+        source_table: "v2_user",
+        target_table: "users",
         column: "plan_id",
-        referenced_table: "v2_plan",
+        source_referenced_table: "v2_plan",
+        target_referenced_table: "plan",
         rule: ScalarReferenceRule::Nullable,
     },
     ScalarReference {
-        table: "v2_order",
+        source_table: "v2_order",
+        target_table: "orders",
         column: "user_id",
-        referenced_table: "v2_user",
+        source_referenced_table: "v2_user",
+        target_referenced_table: "users",
         rule: ScalarReferenceRule::Required,
     },
     ScalarReference {
-        table: "v2_order",
+        source_table: "v2_order",
+        target_table: "orders",
         column: "plan_id",
-        referenced_table: "v2_plan",
+        source_referenced_table: "v2_plan",
+        target_referenced_table: "plan",
         rule: ScalarReferenceRule::ZeroMeansNoReference,
     },
+    // Validate source orders against the complete payment id set. After the
+    // Stripe policy runs, every retained non-null id names a retained payment.
     ScalarReference {
-        table: "v2_invite_code",
-        column: "user_id",
-        referenced_table: "v2_user",
-        rule: ScalarReferenceRule::Required,
-    },
-    ScalarReference {
-        table: "v2_giftcard",
-        column: "plan_id",
-        referenced_table: "v2_plan",
+        source_table: "v2_order",
+        target_table: "orders",
+        column: "payment_id",
+        source_referenced_table: "v2_payment",
+        target_referenced_table: "payment",
         rule: ScalarReferenceRule::Nullable,
     },
     ScalarReference {
-        table: "v2_ticket",
+        source_table: "v2_invite_code",
+        target_table: "invite_code",
         column: "user_id",
-        referenced_table: "v2_user",
+        source_referenced_table: "v2_user",
+        target_referenced_table: "users",
         rule: ScalarReferenceRule::Required,
     },
     ScalarReference {
-        table: "v2_ticket_message",
-        column: "ticket_id",
-        referenced_table: "v2_ticket",
+        source_table: "v2_giftcard",
+        target_table: "giftcard",
+        column: "plan_id",
+        source_referenced_table: "v2_plan",
+        target_referenced_table: "plan",
+        rule: ScalarReferenceRule::Nullable,
+    },
+    ScalarReference {
+        source_table: "v2_ticket",
+        target_table: "ticket",
+        column: "user_id",
+        source_referenced_table: "v2_user",
+        target_referenced_table: "users",
         rule: ScalarReferenceRule::Required,
     },
-];
-
-/// Native-only tables that a cold import must leave empty. Installation
-/// activation owns `v2_system_installation`; no legacy source fact populates
-/// the remaining runtime tables.
-pub const TARGET_ONLY_TABLES: &[&str] = &[
-    "v2_system_installation",
-    "v2_payment_reconciliation",
-    "v2_mail_outbox_batch",
-    "v2_mail_outbox",
-    "v2_analytics_admission_policy",
-    "v2_analytics_admission_state",
-    "v2_operator_config_revision",
-    "v2_operator_config_state",
-    "v2_operator_config_api_ack",
-    "v2_operator_config_worker_ack",
-    "v2_analytics_delivery_batch",
-    "v2_analytics_outbox",
-    "v2_server_traffic_report",
-    "v2_server_traffic_report_item",
+    ScalarReference {
+        source_table: "v2_ticket_message",
+        target_table: "ticket_message",
+        column: "ticket_id",
+        source_referenced_table: "v2_ticket",
+        target_referenced_table: "ticket",
+        rule: ScalarReferenceRule::Required,
+    },
 ];
 
 /// Columns intentionally omitted from inserts because PostgreSQL derives them
 /// from preserved legacy values. Final verification must still compare their
 /// evaluated meaning.
 pub const TARGET_GENERATED_COLUMNS: &[(&str, &[&str])] = &[
-    ("v2_order", &["referenced_plan_id", "unfinished_user_id"]),
-    ("v2_ticket", &["open_user_id"]),
+    ("orders", &["referenced_plan_id", "unfinished_user_id"]),
+    ("ticket", &["open_user_id"]),
 ];
-
-pub const DISCARDED_SOURCE_TABLES: &[&str] = &["failed_jobs"];
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub enum SourceValue {
@@ -1196,16 +864,12 @@ pub enum ConverterError {
     TargetBatchParameterLimit { parameters: usize },
     #[error("source schema hash does not match the pinned profile")]
     SourceSchemaMismatch,
-    #[error("manifest schema version {0} has no legacy conversion strategy")]
-    UnsupportedConversionSchemaVersion(u32),
-    #[error("source snapshot fingerprint must be lowercase SHA-256")]
-    InvalidSnapshotFingerprint,
-    #[error("conversion binding does not match this cold-import run")]
-    RunBindingMismatch,
-    #[error("target row conflicts with the expected canonical row")]
-    RetryConflict,
+    #[error("dump SHA-256 must be 64 lowercase hexadecimal characters")]
+    InvalidDumpSha256,
+    #[error("conversion input binding does not match the converter")]
+    InputBindingMismatch,
     #[error(transparent)]
-    StripePolicy(#[from] LegacyOrderPolicyError),
+    OrderPolicy(#[from] LegacyOrderPolicyError),
     #[error("{table}.{column} references missing {referenced_table} id {id}")]
     MissingIdReference {
         table: String,
@@ -1228,28 +892,33 @@ pub fn audit_registry() -> Result<(), ConverterError> {
         "v2_giftcard",
         "v2_invite_code",
         "v2_knowledge",
-        "v2_log",
-        "v2_mail_log",
         "v2_notice",
         "v2_order",
         "v2_payment",
         "v2_plan",
-        "v2_server_anytls",
         "v2_server_group",
-        "v2_server_hysteria",
-        "v2_server_route",
-        "v2_server_shadowsocks",
-        "v2_server_trojan",
-        "v2_server_tuic",
-        "v2_server_v2node",
-        "v2_server_vless",
-        "v2_server_vmess",
         "v2_stat",
-        "v2_stat_server",
-        "v2_stat_user",
         "v2_ticket",
         "v2_ticket_message",
         "v2_user",
+    ]
+    .into_iter()
+    .collect::<BTreeSet<_>>();
+    let expected_target_tables = [
+        "commission_log",
+        "coupon",
+        "giftcard",
+        "invite_code",
+        "knowledge",
+        "notice",
+        "orders",
+        "payment",
+        "plan",
+        "server_group",
+        "stat",
+        "ticket",
+        "ticket_message",
+        "users",
     ]
     .into_iter()
     .collect::<BTreeSet<_>>();
@@ -1309,7 +978,8 @@ pub fn audit_registry() -> Result<(), ConverterError> {
         for column in mapping.deferred_columns {
             validate_identifier(column.source)?;
             validate_identifier(column.target)?;
-            validate_identifier(column.referenced_table)?;
+            validate_identifier(column.source_referenced_table)?;
+            validate_identifier(column.referenced_target_table)?;
             if !source_columns.insert(column.source) || !target_columns.insert(column.target) {
                 return registry_error(format!(
                     "duplicate deferred column {}.{}",
@@ -1345,6 +1015,11 @@ pub fn audit_registry() -> Result<(), ConverterError> {
     if seen_sources != expected_source_tables {
         return registry_error("source table registry differs from the pinned core inventory");
     }
+    if seen_targets != expected_target_tables {
+        return registry_error(
+            "target table registry differs from the unprefixed native inventory",
+        );
+    }
     if !TABLE_MAPPINGS
         .windows(2)
         .all(|pair| pair[0].order < pair[1].order)
@@ -1353,20 +1028,30 @@ pub fn audit_registry() -> Result<(), ConverterError> {
     }
     for mapping in TABLE_MAPPINGS {
         for column in mapping.transformed_columns {
-            if column
-                .referenced_table
-                .is_some_and(|table| !seen_targets.contains(table))
-            {
-                return registry_error(format!(
-                    "{}.{} references an unregistered target table",
-                    mapping.source, column.source
-                ));
+            match (
+                column.source_referenced_table,
+                column.referenced_target_table,
+            ) {
+                (None, None) => {}
+                (Some(source_table), Some(target_table))
+                    if TABLE_MAPPINGS.iter().any(|candidate| {
+                        candidate.source == source_table && candidate.target == target_table
+                    }) => {}
+                _ => {
+                    return registry_error(format!(
+                        "{}.{} has mismatched source/target reference metadata",
+                        mapping.source, column.source
+                    ));
+                }
             }
         }
         for column in mapping.deferred_columns {
-            if !seen_targets.contains(column.referenced_table) {
+            if !TABLE_MAPPINGS.iter().any(|candidate| {
+                candidate.source == column.source_referenced_table
+                    && candidate.target == column.referenced_target_table
+            }) {
                 return registry_error(format!(
-                    "{}.{} defers to an unregistered target table",
+                    "{}.{} has mismatched deferred source/target reference metadata",
                     mapping.source, column.source
                 ));
             }
@@ -1406,50 +1091,58 @@ pub fn audit_registry() -> Result<(), ConverterError> {
         }
     }
     for reference in SCALAR_REFERENCES {
-        validate_identifier(reference.table)?;
+        validate_identifier(reference.source_table)?;
+        validate_identifier(reference.target_table)?;
         validate_identifier(reference.column)?;
-        validate_identifier(reference.referenced_table)?;
-        if !seen_targets.contains(reference.table)
-            || !seen_targets.contains(reference.referenced_table)
+        validate_identifier(reference.source_referenced_table)?;
+        validate_identifier(reference.target_referenced_table)?;
+        if !seen_sources.contains(reference.source_table)
+            || !seen_sources.contains(reference.source_referenced_table)
+            || !seen_targets.contains(reference.target_table)
+            || !seen_targets.contains(reference.target_referenced_table)
+            || !TABLE_MAPPINGS.iter().any(|mapping| {
+                mapping.source == reference.source_table && mapping.target == reference.target_table
+            })
+            || !TABLE_MAPPINGS.iter().any(|mapping| {
+                mapping.source == reference.source_referenced_table
+                    && mapping.target == reference.target_referenced_table
+            })
         {
             return registry_error(format!(
-                "scalar reference {}.{} names an unregistered table",
-                reference.table, reference.column
+                "scalar reference {} -> {}.{} names an unregistered source or target table",
+                reference.source_table, reference.target_table, reference.column
             ));
         }
     }
-    let discarded_sources = V5_DISCARDED_BASE_TABLES
+    let discarded_sources = DISCARDED_SOURCE_TABLES
         .iter()
         .copied()
         .collect::<BTreeSet<_>>();
-    let expected_discarded_sources = [
-        "v2_log",
-        "v2_mail_log",
-        "v2_server_anytls",
-        "v2_server_hysteria",
-        "v2_server_route",
-        "v2_server_shadowsocks",
-        "v2_server_trojan",
-        "v2_server_tuic",
-        "v2_server_v2node",
-        "v2_server_vless",
-        "v2_server_vmess",
-        "v2_stat_server",
-        "v2_stat_user",
-    ]
-    .into_iter()
-    .collect::<BTreeSet<_>>();
-    if discarded_sources != expected_discarded_sources
-        || !discarded_sources.is_subset(&seen_sources)
-        || V5_DISCARDED_DERIVED_TARGETS != ["v2_server_credential"]
+    if discarded_sources.len() != DISCARDED_SOURCE_TABLES.len()
+        || !discarded_sources.is_disjoint(&seen_sources)
     {
-        return registry_error("schema-v5 discard inventory is not the audited policy");
+        return registry_error("schema-v1 discard inventory is not the audited policy");
+    }
+    for table in DISCARDED_SOURCE_TABLES {
+        validate_identifier(table)?;
+    }
+    let discarded_targets = DISCARDED_TARGET_TABLES
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    if discarded_targets.len() != DISCARDED_TARGET_TABLES.len()
+        || !discarded_targets.is_disjoint(&seen_targets)
+    {
+        return registry_error("schema-v1 discarded target inventory is not unique and disjoint");
+    }
+    for table in DISCARDED_TARGET_TABLES {
+        validate_identifier(table)?;
     }
     if ["v2_user", "v2_payment", "v2_server_group", "v2_stat"]
         .iter()
         .any(|table| discarded_sources.contains(table))
     {
-        return registry_error("schema-v5 discards protected durable business data");
+        return registry_error("schema-v1 discards protected durable business data");
     }
     Ok(())
 }
@@ -1470,13 +1163,11 @@ fn registry_error<T>(message: impl Into<String>) -> Result<T, ConverterError> {
     Err(ConverterError::Registry(message.into()))
 }
 
-/// Domain-separated identity of the complete ordered PostgreSQL migration
-/// lineage. Each entry binds its version, immutable filename, and SQLx-style
-/// SHA-384 content checksum; adding a migration necessarily changes this
-/// digest without rewriting a historical migration.
-pub fn target_postgres_lineage_sha256() -> String {
+/// Domain-separated identity of the current pre-release PostgreSQL schema.
+/// Each entry binds its version, filename, and SQLx-style SHA-384 checksum.
+pub fn target_postgres_schema_sha256() -> String {
     let mut digest = Sha256::new();
-    digest.update(b"v2board.postgres-target-lineage.v1\0");
+    digest.update(b"v2board.mysql-import.postgres-schema.v1\0");
     for (version, name, sql) in TARGET_POSTGRES_MIGRATIONS {
         digest.update(version.to_be_bytes());
         digest_field(&mut digest, name.as_bytes());
@@ -1486,21 +1177,15 @@ pub fn target_postgres_lineage_sha256() -> String {
 }
 
 pub fn registry_sha256() -> Result<String, ConverterError> {
-    registry_sha256_for_strategy(ColdImportConversionStrategy::ArchiveFirstV5)
-}
-
-pub fn registry_sha256_for_strategy(
-    strategy: ColdImportConversionStrategy,
-) -> Result<String, ConverterError> {
     audit_registry()?;
     let mut digest = Sha256::new();
-    digest.update(b"v2board-legacy-converter-registry-v1\0");
-    digest.update(CONVERTER_REGISTRY_VERSION.to_be_bytes());
-    digest_field(&mut digest, LEGACY_CONVERTER_PROFILE.as_bytes());
-    digest_field(&mut digest, LEGACY_SEMANTIC_SCHEMA_SHA256.as_bytes());
-    digest_field(&mut digest, LEGACY_INSTALL_SQL_SHA256.as_bytes());
-    digest_field(&mut digest, TARGET_POSTGRES_LINEAGE.as_bytes());
-    digest_field(&mut digest, target_postgres_lineage_sha256().as_bytes());
+    digest.update(b"v2board-mysql-import-registry-v1\0");
+    digest.update(MYSQL_IMPORT_REGISTRY_VERSION.to_be_bytes());
+    digest_field(&mut digest, MYSQL_IMPORT_SOURCE_PROFILE.as_bytes());
+    digest_field(&mut digest, MYSQL_SOURCE_SCHEMA_SHA256.as_bytes());
+    digest_field(&mut digest, MYSQL_SOURCE_INSTALL_SQL_SHA256.as_bytes());
+    digest_field(&mut digest, TARGET_POSTGRES_SCHEMA_ID.as_bytes());
+    digest_field(&mut digest, target_postgres_schema_sha256().as_bytes());
     for mapping in TABLE_MAPPINGS {
         digest_field(&mut digest, mapping.order.to_string().as_bytes());
         digest_field(&mut digest, mapping.source.as_bytes());
@@ -1516,7 +1201,11 @@ pub fn registry_sha256_for_strategy(
             digest_field(&mut digest, format!("{:?}", column.rule).as_bytes());
             digest_field(
                 &mut digest,
-                column.referenced_table.unwrap_or("").as_bytes(),
+                column.source_referenced_table.unwrap_or("").as_bytes(),
+            );
+            digest_field(
+                &mut digest,
+                column.referenced_target_table.unwrap_or("").as_bytes(),
             );
         }
         for column in mapping.added_columns {
@@ -1529,7 +1218,8 @@ pub fn registry_sha256_for_strategy(
             digest_field(&mut digest, b"deferred");
             digest_field(&mut digest, column.source.as_bytes());
             digest_field(&mut digest, column.target.as_bytes());
-            digest_field(&mut digest, column.referenced_table.as_bytes());
+            digest_field(&mut digest, column.source_referenced_table.as_bytes());
+            digest_field(&mut digest, column.referenced_target_table.as_bytes());
             digest_field(&mut digest, column.reason.as_bytes());
         }
         for column in mapping.consumed_source_columns {
@@ -1550,23 +1240,31 @@ pub fn registry_sha256_for_strategy(
         }
         digest_field(&mut digest, mapping.rule.as_bytes());
     }
-    digest_field(
-        &mut digest,
-        b"archive-first-schema-v5-conversion-strategy-v1",
-    );
-    digest_field(&mut digest, strategy.stable_name().as_bytes());
-    digest_field(&mut digest, COLD_IMPORT_POLICY_MARKER.as_bytes());
-    for table in V5_DISCARDED_BASE_TABLES {
-        digest_field(&mut digest, b"discard-base-table");
-        digest_field(&mut digest, table.as_bytes());
-    }
-    for target in V5_DISCARDED_DERIVED_TARGETS {
-        digest_field(&mut digest, b"discard-derived-target");
-        digest_field(&mut digest, target.as_bytes());
-    }
+    digest_field(&mut digest, b"mysql-import-schema-v1");
+    digest_field(&mut digest, MYSQL_IMPORT_POLICY_MARKER.as_bytes());
     for table in DISCARDED_SOURCE_TABLES {
         digest_field(&mut digest, b"discard-source-table");
         digest_field(&mut digest, table.as_bytes());
+    }
+    for table in DISCARDED_TARGET_TABLES {
+        digest_field(&mut digest, b"empty-target-table");
+        digest_field(&mut digest, table.as_bytes());
+    }
+    for reference in SCALAR_REFERENCES {
+        digest_field(&mut digest, b"scalar-reference");
+        digest_field(&mut digest, reference.source_table.as_bytes());
+        digest_field(&mut digest, reference.target_table.as_bytes());
+        digest_field(&mut digest, reference.column.as_bytes());
+        digest_field(&mut digest, reference.source_referenced_table.as_bytes());
+        digest_field(&mut digest, reference.target_referenced_table.as_bytes());
+        digest_field(&mut digest, format!("{:?}", reference.rule).as_bytes());
+    }
+    for (table, columns) in TARGET_GENERATED_COLUMNS {
+        digest_field(&mut digest, b"generated-target-columns");
+        digest_field(&mut digest, table.as_bytes());
+        for column in *columns {
+            digest_field(&mut digest, column.as_bytes());
+        }
     }
     digest_field(
         &mut digest,
@@ -1617,20 +1315,21 @@ fn transform_row(
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ColdImportRowDisposition {
+pub enum MysqlImportRowDisposition {
     Discard,
     Retain(CanonicalRow),
 }
 
-/// The only public base-row conversion entry point. It makes the destructive
-/// Stripe policy impossible to bypass accidentally when the importer is
-/// implemented: Stripe payment rows are omitted, status 0/1 Stripe orders are
-/// omitted, and status 2/3/4 Stripe history is detached from provider fields.
-pub fn transform_cold_import_row(
+/// The only public base-row conversion entry point. Orders are checked against
+/// the complete source payment index before the fixed Stripe loss policy is
+/// applied: Stripe payment rows and status 0/1 Stripe orders are omitted, while
+/// status 2/3/4 Stripe history is detached from provider fields.
+pub fn transform_mysql_import_row(
     mapping: &TableMapping,
     source: &SourceRow,
+    known_payment_ids: &BTreeSet<i32>,
     stripe_payment_ids: &BTreeSet<i32>,
-) -> Result<ColdImportRowDisposition, ConverterError> {
+) -> Result<MysqlImportRowDisposition, ConverterError> {
     match mapping.source {
         "v2_payment" => {
             let driver = required_source_value(mapping, source, "payment")?;
@@ -1642,9 +1341,9 @@ pub fn transform_cold_import_row(
                 });
             };
             if is_legacy_stripe_payment_driver(driver) {
-                Ok(ColdImportRowDisposition::Discard)
+                Ok(MysqlImportRowDisposition::Discard)
             } else {
-                transform_row(mapping, source).map(ColdImportRowDisposition::Retain)
+                transform_row(mapping, source).map(MysqlImportRowDisposition::Retain)
             }
         }
         "v2_order" => {
@@ -1657,24 +1356,25 @@ pub fn transform_cold_import_row(
                     payment_id,
                     callback_no,
                 },
+                known_payment_ids,
                 stripe_payment_ids,
             )? {
                 LegacyOrderDisposition::DiscardUnfinishedStripe => {
-                    Ok(ColdImportRowDisposition::Discard)
+                    Ok(MysqlImportRowDisposition::Discard)
                 }
                 LegacyOrderDisposition::RetainUnchanged(_) => {
-                    transform_row(mapping, source).map(ColdImportRowDisposition::Retain)
+                    transform_row(mapping, source).map(MysqlImportRowDisposition::Retain)
                 }
                 LegacyOrderDisposition::RetainScrubbedStripe(_) => {
                     let mut row = transform_row(mapping, source)?;
                     row.insert("payment_id".to_string(), CanonicalValue::Null);
                     row.insert("callback_no".to_string(), CanonicalValue::Null);
                     row.insert("callback_no_hash".to_string(), CanonicalValue::Null);
-                    Ok(ColdImportRowDisposition::Retain(row))
+                    Ok(MysqlImportRowDisposition::Retain(row))
                 }
             }
         }
-        _ => transform_row(mapping, source).map(ColdImportRowDisposition::Retain),
+        _ => transform_row(mapping, source).map(MysqlImportRowDisposition::Retain),
     }
 }
 
@@ -1805,7 +1505,6 @@ fn apply_rule(
         return Ok(CanonicalValue::Null);
     }
     match column.rule {
-        ColumnRule::Direct => Ok(direct_value(source)),
         ColumnRule::ExactDecimal => {
             let text = match source {
                 SourceValue::Decimal(value) | SourceValue::Text(value) => value,
@@ -1829,10 +1528,6 @@ fn apply_rule(
                 });
             }
             Ok(CanonicalValue::Json(value))
-        }
-        ColumnRule::TextAsJsonString => {
-            let text = source_text(mapping, column, source)?;
-            Ok(CanonicalValue::Json(Value::String(text.to_string())))
         }
         ColumnRule::PositiveIdArray {
             maximum,
@@ -1899,7 +1594,6 @@ fn json_shape_matches(value: &Value, shape: JsonShape) -> bool {
     match shape {
         JsonShape::Any => true,
         JsonShape::Array => value.is_array(),
-        JsonShape::Object => value.is_object(),
     }
 }
 
@@ -1998,8 +1692,8 @@ pub fn source_batch_sql(mapping: &TableMapping) -> Result<String, ConverterError
     ))
 }
 
-pub fn target_insert_if_absent_sql(mapping: &TableMapping) -> Result<String, ConverterError> {
-    target_batch_insert_if_absent_sql(mapping, 1)
+pub fn target_insert_sql(mapping: &TableMapping) -> Result<String, ConverterError> {
+    target_batch_insert_sql(mapping, 1)
 }
 
 pub fn maximum_rows_per_target_insert(mapping: &TableMapping) -> Result<usize, ConverterError> {
@@ -2013,7 +1707,7 @@ pub fn maximum_rows_per_target_insert(mapping: &TableMapping) -> Result<usize, C
     Ok(POSTGRES_MAX_BIND_PARAMETERS / column_count)
 }
 
-pub fn target_batch_insert_if_absent_sql(
+pub fn target_batch_insert_sql(
     mapping: &TableMapping,
     row_count: usize,
 ) -> Result<String, ConverterError> {
@@ -2054,9 +1748,8 @@ pub fn target_batch_insert_if_absent_sql(
         .collect::<Vec<_>>()
         .join(", ");
     Ok(format!(
-        "INSERT INTO {} ({quoted}) VALUES {parameters} ON CONFLICT ({}) DO NOTHING",
-        postgres_identifier(mapping.target),
-        postgres_identifier("id")
+        "INSERT INTO {} ({quoted}) VALUES {parameters}",
+        postgres_identifier(mapping.target)
     ))
 }
 
@@ -2075,27 +1768,7 @@ pub fn target_compare_row_sql(mapping: &TableMapping) -> Result<String, Converte
 }
 
 pub fn deferred_user_inviter_sql() -> &'static str {
-    "UPDATE \"v2_user\" SET \"invite_user_id\" = $2 WHERE \"id\" = $1 AND \"invite_user_id\" IS NOT DISTINCT FROM $3"
-}
-
-/// Builds the deterministic target-side derivation for native scoped node
-/// credential epochs. This runs only after every node table has been copied
-/// and value-verified. A retry must compare all four values for conflicts.
-pub fn node_credential_rows_sql() -> Result<String, ConverterError> {
-    audit_registry()?;
-    let rows = NODE_CREDENTIAL_SOURCES
-        .iter()
-        .map(|(node_type, table)| {
-            format!(
-                "SELECT '{node_type}'::text AS node_type, id AS node_id, 0::bigint AS credential_epoch, updated_at FROM {}",
-                postgres_identifier(table)
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(" UNION ALL ");
-    Ok(format!(
-        "INSERT INTO \"v2_server_credential\" (node_type, node_id, credential_epoch, updated_at) {rows} ON CONFLICT (node_type, node_id) DO NOTHING"
-    ))
+    "UPDATE \"users\" SET \"invite_user_id\" = $2 WHERE \"id\" = $1 AND \"invite_user_id\" IS NOT DISTINCT FROM $3"
 }
 
 pub fn sequence_reset_sql(mapping: &TableMapping) -> Result<String, ConverterError> {
@@ -2131,86 +1804,61 @@ fn postgres_identifier(identifier: &str) -> String {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ConversionRunBinding {
-    pub operation_id: String,
-    pub target_installation_id: String,
-    pub source_snapshot_sha256: String,
+pub struct MysqlImportInputBinding {
+    pub dump_sha256: String,
     pub source_schema_sha256: String,
     pub registry_sha256: String,
-    pub strategy: ColdImportConversionStrategy,
 }
 
-impl ConversionRunBinding {
+impl MysqlImportInputBinding {
     pub fn validate(&self) -> Result<(), ConverterError> {
-        let operation_id = uuid::Uuid::parse_str(&self.operation_id)
-            .map_err(|_| ConverterError::RunBindingMismatch)?;
-        let installation_id = uuid::Uuid::parse_str(&self.target_installation_id)
-            .map_err(|_| ConverterError::RunBindingMismatch)?;
-        if operation_id.is_nil() || installation_id.is_nil() {
-            return Err(ConverterError::RunBindingMismatch);
-        }
-        if self.source_schema_sha256 != LEGACY_SEMANTIC_SCHEMA_SHA256 {
+        if self.source_schema_sha256 != MYSQL_SOURCE_SCHEMA_SHA256 {
             return Err(ConverterError::SourceSchemaMismatch);
         }
-        if !is_lower_sha256(&self.source_snapshot_sha256) {
-            return Err(ConverterError::InvalidSnapshotFingerprint);
+        if !is_lower_sha256(&self.dump_sha256) {
+            return Err(ConverterError::InvalidDumpSha256);
         }
-        if self.registry_sha256 != registry_sha256_for_strategy(self.strategy)? {
-            return Err(ConverterError::RunBindingMismatch);
+        if self.registry_sha256 != registry_sha256()? {
+            return Err(ConverterError::InputBindingMismatch);
         }
         Ok(())
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ConversionPhase {
-    CopyBaseTables,
-    ApplyDeferredReferences,
-    BuildDerivedRows,
-    ResetSequences,
-    VerifyAllValues,
-    Complete,
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ExecutionStep {
-    IndexDiscardedStripePayments,
+pub enum MysqlImportStep {
+    /// Index every source payment id and the Stripe subset before orders.
+    IndexPaymentProviders,
     CopyBaseTable(&'static TableMapping),
     ApplyDeferredReferences(&'static TableMapping),
     BuildDerivedRows(&'static DerivedMapping),
     ResetSequence(&'static TableMapping),
     VerifyBaseTable(&'static TableMapping),
     VerifyDerivedTable(&'static DerivedMapping),
+    VerifyDiscardedTargetEmpty(&'static str),
     Complete,
 }
 
-/// Returns the only supported converter order. Copy steps use keyset batches;
-/// every target batch is inserted and verified within the current disposable
-/// attempt. Deferred self references and derived tables therefore never race an
-/// absent base id, and sequences move only after all explicit ids exist.
-pub fn execution_steps() -> Result<Vec<ExecutionStep>, ConverterError> {
-    execution_steps_for_strategy(ColdImportConversionStrategy::ArchiveFirstV5)
-}
-
-pub fn execution_steps_for_strategy(
-    strategy: ColdImportConversionStrategy,
-) -> Result<Vec<ExecutionStep>, ConverterError> {
+/// Returns the only supported converter order. Copy steps use keyset batches.
+/// Deferred self references and derived tables run only after their base ids
+/// exist, and sequences move only after all explicit ids have been inserted.
+pub fn mysql_import_steps() -> Result<Vec<MysqlImportStep>, ConverterError> {
     audit_registry()?;
-    let mut steps = vec![ExecutionStep::IndexDiscardedStripePayments];
-    steps.extend(copied_table_mappings(strategy).map(ExecutionStep::CopyBaseTable));
+    let mut steps = vec![MysqlImportStep::IndexPaymentProviders];
+    steps.extend(copied_table_mappings().map(MysqlImportStep::CopyBaseTable));
     steps.extend(
-        copied_table_mappings(strategy)
+        copied_table_mappings()
             .filter(|mapping| !mapping.deferred_columns.is_empty())
-            .map(ExecutionStep::ApplyDeferredReferences),
+            .map(MysqlImportStep::ApplyDeferredReferences),
     );
-    steps.extend(built_derived_mappings(strategy).map(ExecutionStep::BuildDerivedRows));
-    // Every sequence is reset. Discarded targets are proven empty,
-    // so this deterministically makes their first future identity value 1.
-    steps.extend(TABLE_MAPPINGS.iter().map(ExecutionStep::ResetSequence));
-    steps.extend(copied_table_mappings(strategy).map(ExecutionStep::VerifyBaseTable));
-    steps.extend(built_derived_mappings(strategy).map(ExecutionStep::VerifyDerivedTable));
-    steps.push(ExecutionStep::Complete);
+    steps.extend(built_derived_mappings().map(MysqlImportStep::BuildDerivedRows));
+    // Every retained-table sequence is reset. Discarded targets are proven
+    // empty in the fresh baseline, so their untouched sequences still begin at 1.
+    steps.extend(TABLE_MAPPINGS.iter().map(MysqlImportStep::ResetSequence));
+    steps.extend(copied_table_mappings().map(MysqlImportStep::VerifyBaseTable));
+    steps.extend(built_derived_mappings().map(MysqlImportStep::VerifyDerivedTable));
+    steps.extend(discarded_target_tables().map(MysqlImportStep::VerifyDiscardedTargetEmpty));
+    steps.push(MysqlImportStep::Complete);
     Ok(steps)
 }
 
@@ -2261,7 +1909,7 @@ pub fn canonical_rows_sha256(
     audit_registry()?;
     let columns = target_insert_columns(mapping);
     let mut digest = Sha256::new();
-    digest.update(b"v2board-legacy-converter-canonical-rows-v1\0");
+    digest.update(b"v2board-mysql-import-canonical-rows-v1\0");
     digest_field(&mut digest, mapping.target.as_bytes());
     for row in rows {
         for column in &columns {
@@ -2278,21 +1926,10 @@ pub fn canonical_rows_sha256(
     Ok(hex::encode(digest.finalize()))
 }
 
-pub fn retry_accepts_existing(
-    expected: &CanonicalRow,
-    existing: &CanonicalRow,
-) -> Result<(), ConverterError> {
-    if expected == existing {
-        Ok(())
-    } else {
-        Err(ConverterError::RetryConflict)
-    }
-}
-
 /// Expands legacy set-valued redemption ids without inventing a historical
 /// timestamp. The PostgreSQL baseline explicitly reserves `(0,
-/// "legacy_unknown")` for this representation. Output is sorted and deduped
-/// for deterministic retry, while malformed or missing users fail closed.
+/// "legacy_unknown")` for this representation. Output is sorted and deduped;
+/// malformed or missing users fail closed.
 pub fn expand_giftcard_redemptions(
     giftcard_id: i32,
     used_user_ids: &SourceValue,
@@ -2311,7 +1948,8 @@ pub fn expand_giftcard_redemptions(
             require_non_empty: false,
             output: JsonOutput::Json,
         },
-        referenced_table: Some("v2_user"),
+        source_referenced_table: Some("v2_user"),
+        referenced_target_table: Some("users"),
     };
     let text = source_text(mapping, &column, used_user_ids)?;
     let normalized = normalize_id_array(mapping, &column, text, i64::MAX as u64, false)?;
@@ -2388,25 +2026,38 @@ mod tests {
     #[test]
     fn registry_is_complete_and_stable() {
         audit_registry().expect("registry");
-        assert_eq!(TABLE_MAPPINGS.len(), 27);
+        assert_eq!(TABLE_MAPPINGS.len(), 14);
         assert_eq!(registry_sha256().expect("hash").len(), 64);
-        let steps = execution_steps().expect("steps");
+        let steps = mysql_import_steps().expect("steps");
         assert_eq!(
             steps
                 .iter()
-                .filter(|step| matches!(step, ExecutionStep::CopyBaseTable(_)))
+                .filter(|step| matches!(step, MysqlImportStep::CopyBaseTable(_)))
                 .count(),
             14
         );
         assert_eq!(
-            steps.first(),
-            Some(&ExecutionStep::IndexDiscardedStripePayments)
+            steps
+                .iter()
+                .filter(|step| matches!(step, MysqlImportStep::VerifyDiscardedTargetEmpty(_)))
+                .count(),
+            14
         );
-        assert_eq!(steps.last(), Some(&ExecutionStep::Complete));
+        assert_eq!(steps.first(), Some(&MysqlImportStep::IndexPaymentProviders));
+        assert_eq!(steps.last(), Some(&MysqlImportStep::Complete));
+        assert!(SCALAR_REFERENCES.contains(&ScalarReference {
+            source_table: "v2_order",
+            target_table: "orders",
+            column: "payment_id",
+            source_referenced_table: "v2_payment",
+            target_referenced_table: "payment",
+            rule: ScalarReferenceRule::Nullable,
+        }));
     }
 
     #[test]
     fn public_row_conversion_enforces_the_stripe_policy() {
+        let payment_ids = BTreeSet::from([7, 99]);
         let stripe_ids = BTreeSet::from([7]);
 
         let mut stripe_payment = complete_source_row(&PAYMENT);
@@ -2415,15 +2066,17 @@ mod tests {
             SourceValue::Text("StripeCredit".to_string()),
         );
         assert_eq!(
-            transform_cold_import_row(&PAYMENT, &stripe_payment, &stripe_ids).unwrap(),
-            ColdImportRowDisposition::Discard
+            transform_mysql_import_row(&PAYMENT, &stripe_payment, &payment_ids, &stripe_ids)
+                .unwrap(),
+            MysqlImportRowDisposition::Discard
         );
 
         let mut manual_payment = stripe_payment.clone();
         manual_payment.insert("payment".to_string(), SourceValue::Text("EPay".to_string()));
         assert!(matches!(
-            transform_cold_import_row(&PAYMENT, &manual_payment, &stripe_ids).unwrap(),
-            ColdImportRowDisposition::Retain(_)
+            transform_mysql_import_row(&PAYMENT, &manual_payment, &payment_ids, &stripe_ids)
+                .unwrap(),
+            MysqlImportRowDisposition::Retain(_)
         ));
 
         let mut order = complete_source_row(&ORDER);
@@ -2435,14 +2088,14 @@ mod tests {
         for status in [0, 1] {
             order.insert("status".to_string(), SourceValue::I64(status));
             assert_eq!(
-                transform_cold_import_row(&ORDER, &order, &stripe_ids).unwrap(),
-                ColdImportRowDisposition::Discard
+                transform_mysql_import_row(&ORDER, &order, &payment_ids, &stripe_ids).unwrap(),
+                MysqlImportRowDisposition::Discard
             );
         }
         for status in [2, 3, 4] {
             order.insert("status".to_string(), SourceValue::I64(status));
-            let ColdImportRowDisposition::Retain(row) =
-                transform_cold_import_row(&ORDER, &order, &stripe_ids).unwrap()
+            let MysqlImportRowDisposition::Retain(row) =
+                transform_mysql_import_row(&ORDER, &order, &payment_ids, &stripe_ids).unwrap()
             else {
                 panic!("terminal Stripe history must be retained");
             };
@@ -2452,11 +2105,20 @@ mod tests {
         }
         order.insert("status".to_string(), SourceValue::I64(5));
         assert!(matches!(
-            transform_cold_import_row(&ORDER, &order, &stripe_ids),
-            Err(ConverterError::StripePolicy(
+            transform_mysql_import_row(&ORDER, &order, &payment_ids, &stripe_ids),
+            Err(ConverterError::OrderPolicy(
                 LegacyOrderPolicyError::UnsupportedStripeStatus(5)
             ))
         ));
+
+        order.insert("status".to_string(), SourceValue::I64(3));
+        order.insert("payment_id".to_string(), SourceValue::I64(404));
+        assert_eq!(
+            transform_mysql_import_row(&ORDER, &order, &payment_ids, &stripe_ids),
+            Err(ConverterError::OrderPolicy(
+                LegacyOrderPolicyError::UnknownPaymentId(404)
+            ))
+        );
     }
 
     fn complete_source_row(mapping: &TableMapping) -> SourceRow {
@@ -2469,12 +2131,9 @@ mod tests {
                 ColumnRule::ExactDecimal => SourceValue::Text("1".to_string()),
                 ColumnRule::Json(JsonShape::Any) => SourceValue::Text("{}".to_string()),
                 ColumnRule::Json(JsonShape::Array) => SourceValue::Text("[]".to_string()),
-                ColumnRule::Json(JsonShape::Object) => SourceValue::Text("{}".to_string()),
-                ColumnRule::TextAsJsonString => SourceValue::Text("value".to_string()),
                 ColumnRule::PositiveIdArray {
                     require_non_empty, ..
                 } => SourceValue::Text(if require_non_empty { "[1]" } else { "[]" }.to_string()),
-                ColumnRule::Direct => SourceValue::I64(1),
             };
             row.insert(column.source.to_string(), value);
         }
@@ -2488,49 +2147,86 @@ mod tests {
     }
 
     #[test]
-    fn schema_v5_strategy_discards_only_audited_operational_history() {
-        let strategy = ColdImportConversionStrategy::for_schema_version(5).expect("schema v5");
+    fn schema_v1_discards_only_audited_operational_history() {
+        assert_eq!(MYSQL_IMPORT_SCHEMA_VERSION, 1);
         assert_eq!(
-            copied_table_mappings(strategy)
+            copied_table_mappings()
                 .map(|mapping| mapping.source)
                 .collect::<BTreeSet<_>>(),
             TABLE_MAPPINGS
                 .iter()
                 .map(|mapping| mapping.source)
-                .filter(|table| !V5_DISCARDED_BASE_TABLES.contains(table))
                 .collect()
         );
-        assert!(copied_table_mappings(strategy).any(|mapping| mapping.source == "v2_server_group"));
-        assert!(copied_table_mappings(strategy).any(|mapping| mapping.source == "v2_stat"));
-        assert!(copied_table_mappings(strategy).any(|mapping| mapping.source == "v2_user"));
-        assert!(copied_table_mappings(strategy).any(|mapping| mapping.source == "v2_payment"));
-        assert!(discarded_table_mappings(strategy).any(|mapping| mapping.source == "v2_log"));
-        assert!(discarded_table_mappings(strategy).any(|mapping| mapping.source == "v2_mail_log"));
-        assert_eq!(discarded_table_mappings(strategy).count(), 13);
-        assert_eq!(built_derived_mappings(strategy).count(), 1);
-        assert_eq!(discarded_derived_mappings(strategy).count(), 1);
-        assert_eq!(
-            registry_sha256().expect("registry"),
-            registry_sha256_for_strategy(strategy).expect("v5 registry")
+        assert!(copied_table_mappings().any(|mapping| mapping.source == "v2_server_group"));
+        assert!(copied_table_mappings().any(|mapping| mapping.source == "v2_stat"));
+        assert!(copied_table_mappings().any(|mapping| mapping.source == "v2_user"));
+        assert!(copied_table_mappings().any(|mapping| mapping.source == "v2_payment"));
+        assert!(
+            TABLE_MAPPINGS
+                .iter()
+                .all(|mapping| !mapping.target.starts_with("v2_"))
         );
-        assert!(ColdImportConversionStrategy::for_schema_version(4).is_err());
+        assert!(
+            DERIVED_MAPPINGS
+                .iter()
+                .all(|mapping| !mapping.target.starts_with("v2_"))
+        );
+        assert!(
+            DISCARDED_TARGET_TABLES
+                .iter()
+                .all(|table| !table.starts_with("v2_"))
+        );
+        assert_eq!(
+            DISCARDED_SOURCE_TABLES,
+            [
+                "failed_jobs",
+                "v2_log",
+                "v2_mail_log",
+                "v2_stat_server",
+                "v2_stat_user",
+                "v2_server_route",
+                "v2_server_shadowsocks",
+                "v2_server_vmess",
+                "v2_server_trojan",
+                "v2_server_tuic",
+                "v2_server_hysteria",
+                "v2_server_vless",
+                "v2_server_anytls",
+                "v2_server_v2node",
+            ]
+        );
+        assert_eq!(discarded_target_tables().count(), 14);
+        assert_eq!(
+            discarded_target_tables().collect::<BTreeSet<_>>(),
+            BTreeSet::from([
+                "log",
+                "mail_log",
+                "server_anytls",
+                "server_credential",
+                "server_hysteria",
+                "server_route",
+                "server_shadowsocks",
+                "server_trojan",
+                "server_tuic",
+                "server_v2node",
+                "server_vless",
+                "server_vmess",
+                "stat_server",
+                "stat_user",
+            ])
+        );
+        for table in DISCARDED_SOURCE_TABLES {
+            assert!(mapping_for_source(table).is_none());
+        }
+        assert_eq!(built_derived_mappings().count(), 1);
 
-        let binding = ConversionRunBinding {
-            operation_id: uuid::Uuid::from_u128(1).to_string(),
-            target_installation_id: uuid::Uuid::from_u128(2).to_string(),
-            source_snapshot_sha256: "a".repeat(64),
-            source_schema_sha256: LEGACY_SEMANTIC_SCHEMA_SHA256.to_string(),
+        let binding = MysqlImportInputBinding {
+            dump_sha256: "a".repeat(64),
+            source_schema_sha256: MYSQL_SOURCE_SCHEMA_SHA256.to_string(),
             registry_sha256: registry_sha256().expect("registry"),
-            strategy,
         };
-        binding.validate().expect("v5 binding");
-        assert_eq!(
-            serde_json::to_value(&binding)
-                .expect("v5 binding JSON")
-                .get("strategy")
-                .and_then(Value::as_str),
-            Some("archive_first_v5")
-        );
+        binding.validate().expect("schema-v1 binding");
     }
 
     #[test]
@@ -2585,49 +2281,25 @@ mod tests {
     }
 
     #[test]
-    fn retry_requires_full_canonical_equality() {
-        let mut expected = CanonicalRow::new();
-        expected.insert("id".to_string(), CanonicalValue::I64(7));
-        expected.insert(
-            "token".to_string(),
-            CanonicalValue::Text("permanent".to_string()),
-        );
-        assert!(retry_accepts_existing(&expected, &expected).is_ok());
-
-        let mut conflict = expected.clone();
-        conflict.insert(
-            "token".to_string(),
-            CanonicalValue::Text("changed".to_string()),
-        );
-        assert_eq!(
-            retry_accepts_existing(&expected, &conflict),
-            Err(ConverterError::RetryConflict)
-        );
-    }
-
-    #[test]
-    fn sql_is_keyset_and_conflict_is_not_an_update() {
+    fn sql_is_keyset_and_requires_an_empty_target() {
         let user = mapping_for_source("v2_user").expect("user");
         let source_sql = source_batch_sql(user).expect("source sql");
         assert!(source_sql.contains("WHERE `id` > ? ORDER BY `id` ASC LIMIT ?"));
         assert!(!source_sql.contains("OFFSET"));
         assert_eq!(INITIAL_SOURCE_ID_CURSOR, i64::MIN);
 
-        let target_sql = target_insert_if_absent_sql(user).expect("target sql");
-        assert!(target_sql.ends_with("ON CONFLICT (\"id\") DO NOTHING"));
-        assert!(!target_sql.contains("DO UPDATE"));
+        let target_sql = target_insert_sql(user).expect("target sql");
+        assert!(source_sql.contains("FROM `v2_user`"));
+        assert!(target_sql.starts_with("INSERT INTO \"users\""));
+        assert!(target_sql.contains(" VALUES ("));
         assert!(!target_sql.contains("invite_user_id"));
 
-        let target_batch = target_batch_insert_if_absent_sql(user, 3).expect("target batch");
+        let target_batch = target_batch_insert_sql(user, 3).expect("target batch");
         assert!(target_batch.contains("), ($"));
         assert!(
             maximum_rows_per_target_insert(user).expect("target batch limit")
                 >= DEFAULT_BATCH_SIZE as usize
         );
-
-        let credentials = node_credential_rows_sql().expect("credential SQL");
-        assert_eq!(credentials.matches("SELECT '").count(), 8);
-        assert!(credentials.ends_with("ON CONFLICT (node_type, node_id) DO NOTHING"));
 
         let reset = sequence_reset_sql(user).expect("sequence reset");
         assert!(reset.contains("GREATEST(COALESCE(MAX(id), 1), 1)"));
@@ -2651,17 +2323,17 @@ mod tests {
     }
 
     #[test]
-    fn conversion_run_is_bound_to_the_unique_registry() {
-        let mut binding = ConversionRunBinding {
-            operation_id: uuid::Uuid::from_u128(1).to_string(),
-            target_installation_id: uuid::Uuid::from_u128(2).to_string(),
-            source_snapshot_sha256: "a".repeat(64),
-            source_schema_sha256: LEGACY_SEMANTIC_SCHEMA_SHA256.to_string(),
+    fn conversion_input_is_bound_to_the_unique_registry() {
+        let mut binding = MysqlImportInputBinding {
+            dump_sha256: "a".repeat(64),
+            source_schema_sha256: MYSQL_SOURCE_SCHEMA_SHA256.to_string(),
             registry_sha256: registry_sha256().expect("registry hash"),
-            strategy: ColdImportConversionStrategy::ArchiveFirstV5,
         };
         binding.validate().expect("valid binding");
         binding.registry_sha256 = "b".repeat(64);
-        assert_eq!(binding.validate(), Err(ConverterError::RunBindingMismatch));
+        assert_eq!(
+            binding.validate(),
+            Err(ConverterError::InputBindingMismatch)
+        );
     }
 }

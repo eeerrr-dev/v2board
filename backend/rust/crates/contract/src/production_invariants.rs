@@ -129,7 +129,7 @@ async fn run_isolated_checks(
             "freshly applied migration ledger is not current"
         );
         installation_identity_invariant(pool).await?;
-        pass("installation identity is explicit, active, immutable, and fail-closed");
+        pass("installation identity is explicit, unique, and immutable");
         install_contract_operator_config_authority(pool, integration_redis_url).await?;
         pass("operator configuration authority is explicit and authenticated");
         install_contract_analytics_admission(pool).await?;
@@ -237,18 +237,18 @@ async fn install_contract_operator_config_authority(pool: &PgPool, redis_url: &s
 
 async fn schema_invariants(pool: &PgPool) -> Result<()> {
     for (table, index) in [
-        ("v2_coupon", "uniq_coupon_code"),
-        ("v2_giftcard", "uniq_giftcard_code"),
-        ("v2_invite_code", "uniq_invite_code"),
-        ("v2_payment", "uniq_payment_driver_uuid"),
-        ("v2_order", "uniq_unfinished_order_per_user"),
-        ("v2_ticket", "uniq_ticket_open_user"),
+        ("coupon", "uniq_coupon_code"),
+        ("giftcard", "uniq_giftcard_code"),
+        ("invite_code", "uniq_invite_code"),
+        ("payment", "uniq_payment_driver_uuid"),
+        ("orders", "uniq_unfinished_order_per_user"),
+        ("ticket", "uniq_ticket_open_user"),
         (
-            "v2_payment_reconciliation",
+            "payment_reconciliation",
             "uniq_payment_reconciliation_callback",
         ),
-        ("v2_analytics_outbox", "uniq_analytics_event_id"),
-        ("v2_analytics_outbox", "uniq_analytics_batch_row"),
+        ("analytics_outbox", "uniq_analytics_event_id"),
+        ("analytics_outbox", "uniq_analytics_batch_row"),
     ] {
         let unique_columns: i64 = sqlx::query_scalar(
             r#"
@@ -267,20 +267,20 @@ async fn schema_invariants(pool: &PgPool) -> Result<()> {
         ensure!(unique_columns > 0, "missing unique index {table}.{index}");
     }
     for (table, column) in [
-        ("v2_user", "traffic_epoch"),
-        ("v2_server_traffic_report_item", "traffic_epoch"),
-        ("v2_ticket", "open_user_id"),
-        ("v2_server_credential", "credential_epoch"),
-        ("v2_payment", "archived_at"),
-        ("v2_payment_reconciliation", "trade_no_hash"),
-        ("v2_payment_reconciliation", "callback_no_hash"),
-        ("v2_order", "callback_no_hash"),
-        ("v2_system_installation", "installation_id"),
-        ("v2_analytics_outbox", "delivery_batch_id"),
-        ("v2_server_traffic_report", "identity_kind"),
-        ("v2_server_traffic_report", "accounting_date"),
-        ("v2_server_traffic_report_item", "raw_u"),
-        ("v2_server_traffic_report_item", "charged_u"),
+        ("users", "traffic_epoch"),
+        ("server_traffic_report_item", "traffic_epoch"),
+        ("ticket", "open_user_id"),
+        ("server_credential", "credential_epoch"),
+        ("payment", "archived_at"),
+        ("payment_reconciliation", "trade_no_hash"),
+        ("payment_reconciliation", "callback_no_hash"),
+        ("orders", "callback_no_hash"),
+        ("system_installation", "installation_id"),
+        ("analytics_outbox", "delivery_batch_id"),
+        ("server_traffic_report", "identity_kind"),
+        ("server_traffic_report", "accounting_date"),
+        ("server_traffic_report_item", "raw_u"),
+        ("server_traffic_report_item", "charged_u"),
     ] {
         let count: i64 = sqlx::query_scalar(
             r#"
@@ -304,8 +304,8 @@ async fn schema_invariants(pool: &PgPool) -> Result<()> {
         JOIN pg_namespace AS namespace ON namespace.oid = source_table.relnamespace
         WHERE namespace.nspname = current_schema()
           AND constraint_row.contype = 'f'
-          AND source_table.relname = 'v2_payment_reconciliation'
-          AND target_table.relname = 'v2_payment'
+          AND source_table.relname = 'payment_reconciliation'
+          AND target_table.relname = 'payment'
           AND constraint_row.confdeltype = 'r'
         "#,
     )
@@ -320,7 +320,7 @@ async fn schema_invariants(pool: &PgPool) -> Result<()> {
         SELECT data_type
         FROM information_schema.columns
         WHERE table_schema = current_schema()
-          AND table_name = 'v2_payment_reconciliation'
+          AND table_name = 'payment_reconciliation'
           AND column_name = 'expected_amount'
         "#,
     )
@@ -362,28 +362,18 @@ async fn installation_identity_invariant(pool: &PgPool) -> Result<()> {
     let now = Utc::now().timestamp();
     sqlx::query(
         r#"
-        INSERT INTO v2_system_installation
-            (singleton, installation_id, lineage, state, created_at)
-        VALUES (1, $1, 'native', 'pending', $2)
+        INSERT INTO system_installation
+            (singleton, installation_id, created_at)
+        VALUES (1, $1, $2)
         "#,
     )
     .bind(expected)
     .bind(now)
     .execute(pool)
     .await?;
-    ensure!(
-        matches!(installation_id(pool).await, Err(sqlx::Error::RowNotFound)),
-        "a pending installation was accepted as active"
-    );
-    sqlx::query(
-        "UPDATE v2_system_installation SET state = 'active', activated_at = $1 WHERE singleton = 1",
-    )
-    .bind(now)
-    .execute(pool)
-    .await?;
     ensure!(installation_id(pool).await? == expected);
     ensure!(
-        sqlx::query("UPDATE v2_system_installation SET installation_id = $1 WHERE singleton = 1")
+        sqlx::query("UPDATE system_installation SET installation_id = $1 WHERE singleton = 1")
             .bind(Uuid::new_v4())
             .execute(pool)
             .await
@@ -391,14 +381,15 @@ async fn installation_identity_invariant(pool: &PgPool) -> Result<()> {
         "installation UUID was mutable"
     );
     ensure!(
-        sqlx::query("UPDATE v2_system_installation SET state = 'pending' WHERE singleton = 1")
+        sqlx::query("UPDATE system_installation SET created_at = $1 WHERE singleton = 1")
+            .bind(now + 1)
             .execute(pool)
             .await
             .is_err(),
-        "installation state moved backwards"
+        "installation creation time was mutable"
     );
     ensure!(
-        sqlx::query("DELETE FROM v2_system_installation WHERE singleton = 1")
+        sqlx::query("DELETE FROM system_installation WHERE singleton = 1")
             .execute(pool)
             .await
             .is_err(),
@@ -413,7 +404,7 @@ async fn partial_unique_behavior(pool: &PgPool) -> Result<()> {
     let trade_no = Uuid::new_v4().hyphenated().to_string();
     sqlx::query(
         r#"
-        INSERT INTO v2_order (
+        INSERT INTO orders (
             user_id, plan_id, type, period, trade_no, total_amount, status,
             commission_status, commission_balance, created_at, updated_at
         ) VALUES ($1, 0, 1, 'deposit', $2, 0, 0, 0, 0, $3, $4)
@@ -428,7 +419,7 @@ async fn partial_unique_behavior(pool: &PgPool) -> Result<()> {
     ensure!(
         sqlx::query(
             r#"
-            INSERT INTO v2_order (
+            INSERT INTO orders (
                 user_id, plan_id, type, period, trade_no, total_amount, status,
                 commission_status, commission_balance, created_at, updated_at
             ) VALUES ($1, 0, 1, 'deposit', $2, 0, 1, 0, 0, $3, $4)
@@ -443,14 +434,14 @@ async fn partial_unique_behavior(pool: &PgPool) -> Result<()> {
         .is_err(),
         "partial unique order index allowed two unfinished orders"
     );
-    sqlx::query("UPDATE v2_order SET status = 2 WHERE trade_no = $1")
+    sqlx::query("UPDATE orders SET status = 2 WHERE trade_no = $1")
         .bind(&trade_no)
         .execute(pool)
         .await?;
 
     let ticket_id: i64 = sqlx::query_scalar(
         r#"
-        INSERT INTO v2_ticket
+        INSERT INTO ticket
             (user_id, subject, level, status, reply_status, created_at, updated_at)
         VALUES ($1, 'first', 0, 0, 0, $2, $3)
         RETURNING id
@@ -464,7 +455,7 @@ async fn partial_unique_behavior(pool: &PgPool) -> Result<()> {
     ensure!(
         sqlx::query(
             r#"
-            INSERT INTO v2_ticket
+            INSERT INTO ticket
                 (user_id, subject, level, status, reply_status, created_at, updated_at)
             VALUES ($1, 'second', 0, 0, 0, $2, $3)
             "#,
@@ -477,7 +468,7 @@ async fn partial_unique_behavior(pool: &PgPool) -> Result<()> {
         .is_err(),
         "partial unique ticket index allowed two open tickets"
     );
-    sqlx::query("UPDATE v2_ticket SET status = 1 WHERE id = $1")
+    sqlx::query("UPDATE ticket SET status = 1 WHERE id = $1")
         .bind(ticket_id)
         .execute(pool)
         .await?;
@@ -523,7 +514,7 @@ async fn analytics_outbox_invariant(pool: &PgPool) -> Result<()> {
     ensure!(retry.batch_id == batch.batch_id && retry.lease_owner == replacement_owner);
     mark_batch_published(pool, &retry, now + 2).await?;
     let published: bool = sqlx::query_scalar(
-        "SELECT published_at IS NOT NULL FROM v2_analytics_outbox WHERE event_id = $1",
+        "SELECT published_at IS NOT NULL FROM analytics_outbox WHERE event_id = $1",
     )
     .bind(&event.event_id)
     .fetch_one(pool)
@@ -542,7 +533,7 @@ async fn traffic_epoch_invariant(
     redis_url: &str,
 ) -> Result<()> {
     let user_id = insert_user(pool, "traffic", "not-used").await?;
-    sqlx::query("UPDATE v2_user SET u = 11, d = 13 WHERE id = $1")
+    sqlx::query("UPDATE users SET u = 11, d = 13 WHERE id = $1")
         .bind(user_id)
         .execute(pool)
         .await?;
@@ -550,7 +541,7 @@ async fn traffic_epoch_invariant(
     let stale_key = random_traffic_key();
     insert_traffic_report(pool, &stale_key, user_id, 0, 101, 103).await?;
     let reset = sqlx::query(
-        "UPDATE v2_user SET u = 0, d = 0, traffic_epoch = traffic_epoch + 1 WHERE id = $1",
+        "UPDATE users SET u = 0, d = 0, traffic_epoch = traffic_epoch + 1 WHERE id = $1",
     )
     .bind(user_id)
     .execute(pool)
@@ -562,7 +553,7 @@ async fn traffic_epoch_invariant(
 
     run_worker_once(database_url, database_name, redis_url, "traffic_update").await?;
     let (u, d, epoch): (i64, i64, i64) =
-        sqlx::query_as("SELECT u, d, traffic_epoch FROM v2_user WHERE id = $1")
+        sqlx::query_as("SELECT u, d, traffic_epoch FROM users WHERE id = $1")
             .bind(user_id)
             .fetch_one(pool)
             .await?;
@@ -575,7 +566,7 @@ async fn traffic_epoch_invariant(
     let current_key = random_traffic_key();
     insert_traffic_report(pool, &current_key, user_id, epoch, 7, 9).await?;
     run_worker_once(database_url, database_name, redis_url, "traffic_update").await?;
-    let (u, d): (i64, i64) = sqlx::query_as("SELECT u, d FROM v2_user WHERE id = $1")
+    let (u, d): (i64, i64) = sqlx::query_as("SELECT u, d FROM users WHERE id = $1")
         .bind(user_id)
         .fetch_one(pool)
         .await?;
@@ -597,7 +588,7 @@ async fn insert_traffic_report(
 ) -> Result<()> {
     let now = Utc::now().timestamp();
     sqlx::query(
-        "INSERT INTO v2_server_traffic_report \
+        "INSERT INTO server_traffic_report \
          (report_key, payload_hash, node_id, node_type, rate_text, rate_decimal_10_2,
           identity_kind, accepted_at, accounting_date, applied_at, created_at, updated_at) \
          VALUES ($1, $2, 1, 'contract', '1', 1.00, 'explicit', $3, $4, NULL, $5, $6)",
@@ -611,7 +602,7 @@ async fn insert_traffic_report(
     .execute(pool)
     .await?;
     sqlx::query(
-        "INSERT INTO v2_server_traffic_report_item \
+        "INSERT INTO server_traffic_report_item \
          (report_key, user_id, traffic_epoch, raw_u, raw_d, charged_u, charged_d)
          VALUES ($1, $2, $3, $4, $5, $6, $7)",
     )
@@ -629,16 +620,15 @@ async fn insert_traffic_report(
 
 async fn assert_report_consumed(pool: &PgPool, report_key: &str) -> Result<()> {
     let applied_at: Option<i64> =
-        sqlx::query_scalar("SELECT applied_at FROM v2_server_traffic_report WHERE report_key = $1")
+        sqlx::query_scalar("SELECT applied_at FROM server_traffic_report WHERE report_key = $1")
             .bind(report_key)
             .fetch_one(pool)
             .await?;
-    let item_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM v2_server_traffic_report_item WHERE report_key = $1",
-    )
-    .bind(report_key)
-    .fetch_one(pool)
-    .await?;
+    let item_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM server_traffic_report_item WHERE report_key = $1")
+            .bind(report_key)
+            .fetch_one(pool)
+            .await?;
     ensure!(applied_at.is_some(), "traffic report was not acknowledged");
     ensure!(
         item_count == 0,
@@ -652,7 +642,7 @@ async fn invite_single_consumption(pool: &PgPool, redis_url: &str) -> Result<()>
     let invite_code = Uuid::new_v4().simple().to_string();
     let now = Utc::now().timestamp();
     sqlx::query(
-        "INSERT INTO v2_invite_code (user_id, code, status, pv, created_at, updated_at) \
+        "INSERT INTO invite_code (user_id, code, status, pv, created_at, updated_at) \
          VALUES ($1, $2, 0, 0, $3, $4)",
     )
     .bind(inviter_id)
@@ -699,11 +689,11 @@ async fn invite_single_consumption(pool: &PgPool, redis_url: &str) -> Result<()>
         (success, rejected) == (1, 5),
         "invite code admitted {success} registrations"
     );
-    let status: i16 = sqlx::query_scalar("SELECT status FROM v2_invite_code WHERE code = $1")
+    let status: i16 = sqlx::query_scalar("SELECT status FROM invite_code WHERE code = $1")
         .bind(&invite_code)
         .fetch_one(pool)
         .await?;
-    let invited: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM v2_user WHERE invite_user_id = $1")
+    let invited: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE invite_user_id = $1")
         .bind(inviter_id)
         .fetch_one(pool)
         .await?;
@@ -754,7 +744,7 @@ async fn ticket_state_machine(
         "one-open-ticket invariant failed"
     );
     let first_ticket: i64 =
-        sqlx::query_scalar("SELECT id FROM v2_ticket WHERE user_id = $1 AND status = 0")
+        sqlx::query_scalar("SELECT id FROM ticket WHERE user_id = $1 AND status = 0")
             .bind(user_id)
             .fetch_one(pool)
             .await?;
@@ -778,7 +768,7 @@ async fn ticket_state_machine(
         "failed to create reply-race ticket"
     );
     let race_ticket: i64 =
-        sqlx::query_scalar("SELECT id FROM v2_ticket WHERE user_id = $1 AND status = 0")
+        sqlx::query_scalar("SELECT id FROM ticket WHERE user_id = $1 AND status = 0")
             .bind(user_id)
             .fetch_one(pool)
             .await?;
@@ -803,7 +793,7 @@ async fn ticket_state_machine(
         reply == UserTicketReplyOutcome::Replied,
         "fresh user reply lost its row lock"
     );
-    let race_status: i16 = sqlx::query_scalar("SELECT status FROM v2_ticket WHERE id = $1")
+    let race_status: i16 = sqlx::query_scalar("SELECT status FROM ticket WHERE id = $1")
         .bind(race_ticket)
         .fetch_one(pool)
         .await?;
@@ -828,13 +818,13 @@ async fn ticket_state_machine(
         "failed to create stale ticket"
     );
     let stale_ticket: i64 =
-        sqlx::query_scalar("SELECT id FROM v2_ticket WHERE user_id = $1 AND status = 0")
+        sqlx::query_scalar("SELECT id FROM ticket WHERE user_id = $1 AND status = 0")
             .bind(user_id)
             .fetch_one(pool)
             .await?;
     insert_operator_reply(pool, stale_ticket, now - 90_000).await?;
     run_worker_once(database_url, database_name, redis_url, "check_ticket").await?;
-    let stale_status: i16 = sqlx::query_scalar("SELECT status FROM v2_ticket WHERE id = $1")
+    let stale_status: i16 = sqlx::query_scalar("SELECT status FROM ticket WHERE id = $1")
         .bind(stale_ticket)
         .fetch_one(pool)
         .await?;
@@ -847,7 +837,7 @@ async fn ticket_state_machine(
 
 async fn insert_operator_reply(pool: &PgPool, ticket_id: i64, timestamp: i64) -> Result<()> {
     sqlx::query(
-        "INSERT INTO v2_ticket_message (user_id, ticket_id, message, created_at, updated_at) \
+        "INSERT INTO ticket_message (user_id, ticket_id, message, created_at, updated_at) \
          VALUES (0, $1, 'operator reply', $2, $3)",
     )
     .bind(ticket_id)
@@ -855,7 +845,7 @@ async fn insert_operator_reply(pool: &PgPool, ticket_id: i64, timestamp: i64) ->
     .bind(timestamp)
     .execute(pool)
     .await?;
-    sqlx::query("UPDATE v2_ticket SET status = 0, reply_status = 1, updated_at = $1 WHERE id = $2")
+    sqlx::query("UPDATE ticket SET status = 0, reply_status = 1, updated_at = $1 WHERE id = $2")
         .bind(timestamp)
         .bind(ticket_id)
         .execute(pool)
@@ -873,7 +863,7 @@ async fn late_payment_reconciliation(
     let now = Utc::now().timestamp();
     let payment_id: i32 = sqlx::query_scalar(
         r#"
-        INSERT INTO v2_payment (
+        INSERT INTO payment (
             uuid, payment, name, config, enable, created_at, updated_at
         ) VALUES ($1, 'EPay', 'integration EPay', $2, 1, $3, $4)
         RETURNING id
@@ -892,7 +882,7 @@ async fn late_payment_reconciliation(
     let trade_no = Uuid::new_v4().hyphenated().to_string();
     sqlx::query(
         r#"
-        INSERT INTO v2_order (
+        INSERT INTO orders (
             user_id, plan_id, payment_id, type, period, trade_no, total_amount,
             status, commission_status, commission_balance, created_at, updated_at
         ) VALUES ($1, 0, $2, 1, 'deposit', $3, 1234, 2, 0, 0, $4, $5)
@@ -994,8 +984,8 @@ async fn late_payment_reconciliation(
         SELECT
             COUNT(*),
             COALESCE(MAX(occurrence_count), 0)::BIGINT,
-            (SELECT status FROM v2_order WHERE trade_no = $1)
-        FROM v2_payment_reconciliation
+            (SELECT status FROM orders WHERE trade_no = $1)
+        FROM payment_reconciliation
         WHERE payment_id = $2 AND callback_no = 'EPAY-LATE-INTEGRATION'
         "#,
     )
@@ -1045,7 +1035,7 @@ async fn late_payment_reconciliation(
     let (reason, expected_amount, settled_amount): (String, i64, Option<i64>) = sqlx::query_as(
         r#"
         SELECT reason, expected_amount, settled_amount
-        FROM v2_payment_reconciliation
+        FROM payment_reconciliation
         WHERE payment_id = $1 AND callback_no = 'EPAY-AMOUNT-MISMATCH'
         "#,
     )
@@ -1100,7 +1090,7 @@ async fn late_payment_reconciliation(
     );
     let (unknown_reason, stored_trade_no, stored_callback_no): (String, String, String) =
         sqlx::query_as(
-            "SELECT reason, trade_no, callback_no FROM v2_payment_reconciliation \
+            "SELECT reason, trade_no, callback_no FROM payment_reconciliation \
              WHERE payment_id = $1 AND callback_no_hash = $2",
         )
         .bind(payment_id)
@@ -1117,7 +1107,7 @@ async fn late_payment_reconciliation(
     );
     let trade_hash_matches: bool = sqlx::query_scalar(
         "SELECT trade_no_hash = $1 \
-         FROM v2_payment_reconciliation \
+         FROM payment_reconciliation \
          WHERE payment_id = $2 AND callback_no_hash = $3",
     )
     .bind(sha256_bytes(&missing_trade_no))
@@ -1130,7 +1120,7 @@ async fn late_payment_reconciliation(
         "bounded reconciliation label did not retain the raw trade identity hash"
     );
     let archived_state: (i16, Option<i64>) =
-        sqlx::query_as("SELECT enable, archived_at FROM v2_payment WHERE id = $1")
+        sqlx::query_as("SELECT enable, archived_at FROM payment WHERE id = $1")
             .bind(payment_id)
             .fetch_one(pool)
             .await?;
@@ -1162,7 +1152,7 @@ async fn late_payment_reconciliation(
     let paid_trade_no = Uuid::new_v4().hyphenated().to_string();
     sqlx::query(
         r#"
-        INSERT INTO v2_order (
+        INSERT INTO orders (
             user_id, plan_id, payment_id, type, period, trade_no, total_amount,
             status, commission_status, commission_balance, created_at, updated_at
         ) VALUES ($1, 0, $2, 1, 'deposit', $3, 200, 0, 0, 0, $4, $5)
@@ -1212,7 +1202,7 @@ async fn late_payment_reconciliation(
     ) = sqlx::query_as(
         "SELECT status, callback_no, OCTET_LENGTH(callback_no), \
                     callback_no_hash = $1 \
-             FROM v2_order WHERE trade_no = $2",
+             FROM orders WHERE trade_no = $2",
     )
     .bind(sha256_bytes(&paid_callback_no))
     .bind(&paid_trade_no)
@@ -1234,7 +1224,7 @@ async fn late_payment_reconciliation(
         "oversized callback hash did not make an exact provider replay idempotent"
     );
     let unexpected_reconciliation: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM v2_payment_reconciliation \
+        "SELECT COUNT(*) FROM payment_reconciliation \
          WHERE payment_id = $1 AND callback_no_hash = $2",
     )
     .bind(payment_id)
@@ -1253,7 +1243,7 @@ async fn node_identity_epoch(pool: &PgPool) -> Result<()> {
     let node_id = 700_000 + i32::from(Uuid::new_v4().as_bytes()[0]);
     let now = Utc::now().timestamp();
     sqlx::query(
-        "INSERT INTO v2_server_credential \
+        "INSERT INTO server_credential \
          (node_type, node_id, credential_epoch, updated_at) VALUES ('v2node', $1, 0, $2)",
     )
     .bind(node_id)
@@ -1262,7 +1252,7 @@ async fn node_identity_epoch(pool: &PgPool) -> Result<()> {
     .await?;
     let master = "integration-only-node-master-key-with-enough-entropy";
     let epoch: i64 = sqlx::query_scalar(
-        "SELECT credential_epoch FROM v2_server_credential WHERE node_type = 'v2node' AND node_id = $1",
+        "SELECT credential_epoch FROM server_credential WHERE node_type = 'v2node' AND node_id = $1",
     )
     .bind(node_id)
     .fetch_one(pool)
@@ -1280,7 +1270,7 @@ async fn node_identity_epoch(pool: &PgPool) -> Result<()> {
     ensure!(!verify_node_token(master, "vmess", node_id, epoch, &token));
 
     sqlx::query(
-        "UPDATE v2_server_credential SET credential_epoch = credential_epoch + 1, updated_at = $1 \
+        "UPDATE server_credential SET credential_epoch = credential_epoch + 1, updated_at = $1 \
          WHERE node_type = 'v2node' AND node_id = $2",
     )
     .bind(now + 1)
@@ -1288,7 +1278,7 @@ async fn node_identity_epoch(pool: &PgPool) -> Result<()> {
     .execute(pool)
     .await?;
     let revoked_epoch: i64 = sqlx::query_scalar(
-        "SELECT credential_epoch FROM v2_server_credential WHERE node_type = 'v2node' AND node_id = $1",
+        "SELECT credential_epoch FROM server_credential WHERE node_type = 'v2node' AND node_id = $1",
     )
     .bind(node_id)
     .fetch_one(pool)
@@ -1353,7 +1343,7 @@ async fn auth_rate_limits(pool: &PgPool, database_url: &str, redis_url: &str) ->
         }
     }
     let persisted_same_email: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM v2_user WHERE email = $1")
+        sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE email = $1")
             .bind(&same_email)
             .fetch_one(pool)
             .await?;
@@ -1693,7 +1683,7 @@ async fn insert_user(pool: &PgPool, label: &str, password: &str) -> Result<i64> 
 async fn insert_user_with_email(pool: &PgPool, email: &str, password: &str) -> Result<i64> {
     let now = Utc::now().timestamp();
     sqlx::query_scalar(
-        "INSERT INTO v2_user (email, password, uuid, token, created_at, updated_at) \
+        "INSERT INTO users (email, password, uuid, token, created_at, updated_at) \
          VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
     )
     .bind(email)

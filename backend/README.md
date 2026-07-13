@@ -5,10 +5,11 @@ PostgreSQL transactions, ClickHouse analytics projection, Redis-backed sessions/
 subscriptions, admin operations and background work. There is no PHP/Laravel runtime, dual-server
 mode or native MySQL backend.
 
-The pinned project under `references/wyx2685-v2board` is read-only compatibility evidence. A complete
-Oracle MySQL 8.0/8.4 dump may be read only after age decryption into an operation-owned isolated restore;
-the importer never connects to a live old database. Reference code, schema or packaged frontend assets
-are never deployed.
+The pinned project under `references/wyx2685-v2board` is read-only compatibility evidence. The one-time
+importer reads a complete Oracle MySQL 8.0/8.4 dump through a temporary, disposable MySQL 8 engine; it
+never connects to or modifies the live old database. That engine may run in a one-off container or on a
+separate disposable host and is deleted after the import; no MySQL service belongs to the native runtime.
+Reference code, schema or packaged frontend assets are never deployed.
 
 ## Runtime architecture
 
@@ -35,13 +36,13 @@ integrity, replay and failure semantics.
 The fixed single-node ClickHouse topology has serialized, crash-recoverable schema migration, exact
 lineage/installation checks and manifest-bound raw/aggregate TTL. HA/Keeper is a separate availability
 deployment choice; standalone evidence must not be extrapolated to a replicated topology. Runtime
-secret isolation or one successful datastore test does not open a lifecycle apply gate.
+secret isolation or one successful datastore test does not prove that the MySQL importer is complete.
 
 ## Workspace
 
 ```text
 backend/rust/
-  migrations-postgres/       PostgreSQL final-state baseline and forward SQLx migrations
+  migrations-postgres/       current pre-release PostgreSQL baseline
   clickhouse-migrations/     independent ClickHouse schema lineage
   resources/rules/           embedded subscription rule templates
   crates/analytics/          typed events, PostgreSQL outbox and ClickHouse relay/schema
@@ -49,8 +50,8 @@ backend/rust/
   crates/config/             native JSON/environment configuration
   crates/db/                 PostgreSQL-only runtime access
   crates/domain/             business rules and external integrations
-  crates/provision/          strict legacy-v5 validation, archive inspection, loss policy and closed capability
-  crates/lifecycle/          disposable archive-inspection/cold-import CLI; production importer not linked
+  crates/provision/          mysql-import.v1 validation and fixed converter policy
+  crates/lifecycle/          disposable MySQL-import CLI; production importer not linked
   crates/workers/            scheduler, durable work and analytics relay
   crates/contract/           route, SQL and production invariant gates
 ```
@@ -80,12 +81,12 @@ make rust-target-gate
 ```
 
 `make rust-integration` exercises the native PostgreSQL, ClickHouse and Redis lanes, including
-ClickHouse lost-ack/outbox replay and live production invariants. The unique v5 manifest/archive/loss
-policy is covered by Rust tests; encrypted-dump isolated-restore conversion and pre-activation cleanup
-integration are intentionally absent and keep production apply closed. No legacy Redis service exists.
+ClickHouse lost-ack/outbox replay and live production invariants. The single `mysql-import.v1`
+manifest, fixed row conversion and loss policy are covered by Rust tests; the real dump → staging →
+PostgreSQL integration is not yet linked, so production import is unavailable. No legacy Redis service exists.
 `make rust-route-audit` reads the pinned reference only as contract evidence.
 `make native-database-audit` rejects MySQL driver/dialect use in native runtime crates and in the current
-inspection-only lifecycle graph. A future isolated restore adapter cannot enter native runtime graphs.
+inspection-only import graph. The one-time staging adapter cannot enter native runtime graphs.
 
 Do not run host Cargo commands that create `target/` in the repository. The workspace targets Rust
 1.97, Edition 2024 and Cargo resolver 3; `unsafe` is forbidden, CI denies warnings and validates the
@@ -95,19 +96,18 @@ Local Compose pins PostgreSQL 18.4 and ClickHouse 26.3.17.4 images by content di
 plaintext only inside the isolated Docker network and one local account per service for convenience;
 those shortcuts are not production topology.
 
-The native PostgreSQL migration lineage is still pre-release and was consolidated in place before
-its first supported production release. Disposable local Docker PostgreSQL volumes created by older
-local-only commits are therefore not checksum-compatible with the current baseline. After confirming
-that such a volume contains no data you need, recreate it with `make reset`; this is a local development
-instruction, not a production upgrade procedure.
+No native version has been released or installed. PostgreSQL and ClickHouse migrations therefore form
+one editable initial baseline; local-only history receives no compatibility migrations. Disposable
+Docker volumes created from an older baseline may be recreated with `make reset` after confirming they
+contain no needed development data.
 
 ## Production configuration and principals
 
-The accepted legacy-v5 lifecycle manifest derives two `configuration_source: "file_only"` documents:
+The `mysql-import.v1` manifest derives two `configuration_source: "file_only"` documents:
 `/var/lib/v2board/api/config.json` and `/var/lib/v2board/worker/config.json`. The API and worker use
 explicit role loaders; missing, unknown, wrong-role, placeholder or invalid typed values are
-rejected. Validation derives and checks both maps; the future cold importer must install them atomically
-inside its single apply. That production write path is not linked while the typed gate is closed.
+rejected. Validation derives and checks both maps; the importer installs them only after data conversion
+has passed. That production write path is not linked because the executor does not yet exist.
 
 Long-running runtime configuration includes:
 
@@ -140,10 +140,10 @@ frontend tree, systemd units, release metadata and checksums. The intended bare-
 the payload under `/opt/v2board/releases/<release-id>` and atomically updates
 `/opt/v2board/current`; the server never builds the project and does not require Docker.
 
-The repository does not yet ship a general production fresh-install, native-upgrade or rollback
-executor. Legacy v5 currently supplies strict archive inspection and a typed closed capability, not a
-linked production cold importer. Exporting or verifying the payload is therefore not permission to
-hand-install it or reinterpret the documented target layout as a supported upgrade.
+The first production installation is created only by the one-time MySQL importer. That importer is not
+yet linked for production writes, so exporting or verifying a payload is not permission to hand-create
+the initial database. Native release archive inspection is a deployment check and is not part of the
+MySQL import manifest.
 
 Before starting a native release, run serialized one-shot schema jobs with the exact release
 artifacts and secrets:
@@ -156,10 +156,9 @@ v2board-analytics-schema
 `v2board-api migrate` loads the API runtime config and, in production, additionally requires a
 transient migration URL from the `v2board-migration-database-url` systemd credential or
 `V2BOARD_MIGRATION_DATABASE_URL_FILE`. That principal must target the same PostgreSQL database,
-use `sslmode=verify-full`, and differ from the API principal and declared worker principal. Ordinary
-production migrate rejects an empty database and only accepts a valid native migration prefix with
-an active installation. While the lifecycle apply production gate remains closed it additionally requires the ledger to be
-exactly current, so ordinary migrate cannot apply production initialization or forward-upgrade DDL.
+use `sslmode=verify-full`, and differ from the API principal and declared worker principal. The MySQL
+importer owns the empty-database baseline; the ordinary runtime command cannot substitute for the
+converter or manufacture a partially initialized target.
 
 `v2board-analytics-schema` uses only the following transient variables:
 
@@ -175,121 +174,59 @@ The schema password may instead use the `v2board-clickhouse-schema-password` sys
 Direct value environment variables remain a local/CI compatibility path and must not be persisted
 in a production unit or shell history.
 
-It applies the independent ClickHouse ledger idempotently. Neither native schema command converts a
-legacy MySQL 8 database, creates the full production principal topology or constitutes a
-supported lifecycle apply.
+It applies the independent ClickHouse ledger idempotently. Neither schema command converts a MySQL 8
+dump or creates the full production principal topology.
 
 Local Compose runs `rust-migrate` and `clickhouse-migrate` as one-shot services. The local PostgreSQL
 migration job may create the documented development-only `admin@example.com` seed when
 `V2BOARD_SEED_LOCAL=1`; production never enables that seed.
 
-## Lifecycle schema v5
+## MySQL import v1
 
-The current CLI accepts only the archive-first legacy-v5 schema. Fresh-install and native-upgrade v3
-files remain future design examples and are rejected by both `validate` and `inspect`:
+There is one pre-release data path and one manifest example:
+[mysql-import.v1](../docs/examples/mysql-import.v1.example.json). The operator stops the old site,
+exports a complete Oracle MySQL 8.0/8.4 dump, loads it into a disposable staging MySQL, converts the
+fixed retained rows into a brand-new PostgreSQL database, starts ClickHouse and Redis empty, generates
+new role configs, verifies the result and starts the native services.
 
-- [fresh install example](../docs/examples/fresh-install.v3.example.json);
-- [legacy migration v5 example](../docs/examples/legacy-migration.v5.example.json);
-- [native upgrade example](../docs/examples/native-upgrade.v3.example.json).
+Staging is a temporary MySQL 8 engine, not a permanent component of the new machine. It can run as a
+one-off container on the migration/new host, on a disposable VM, or on another private host reachable by
+the importer, and is removed with its temporary data after success or failure. The legacy MySQL source
+keeps its real `v2_*` table names; native PostgreSQL and ClickHouse targets are unprefixed, using `users`
+and `orders` for the two PostgreSQL keyword conflicts.
 
 The disposable CLI commands are:
 
 ```bash
-v2board-lifecycle validate --manifest /secure/private/operation.json
-v2board-lifecycle inspect --manifest /secure/private/operation.json
-v2board-lifecycle inspect-release-archive --archive /secure/native-release.tar.gz --release-id <id> --sha256 <sha256>
-v2board-lifecycle apply --manifest /secure/private/operation.json
+v2board-lifecycle validate --manifest /secure/private/mysql-import.json
+v2board-lifecycle inspect --manifest /secure/private/mysql-import.json
 ```
 
-`inspect-release-archive` is mutation-free and uses the same archive contract as lifecycle admission;
-it neither replaces the manifest-bound archive digest nor authorizes a migration. Legacy v5 has no
-`authorize` or `resume` stage. Its typed production capability currently keeps `apply` fail-closed
-before any target write.
+The manifest contains only `schema_version: 1`, `source`, `target` and `runtime`. It rejects duplicate,
+unknown and missing keys, validates both role configs through their real typed parsers, and records the
+exact manifest SHA-256. It contains secrets and must be a regular non-symlink file without Unix
+group/world permissions.
 
-`v2board-lifecycle` is deliberately absent from the long-running native release. It is staged only
-for the one migration operation and removed by the operator after accepted activation. Tool removal is
-not migration proof and does not depend on live-source reachability. API/worker dependency graphs contain
-neither the lifecycle crate nor `sqlx-mysql`.
+`source` contains the dump path, dump SHA-256, staging MySQL URL and transport policy. It does not contain
+a live old-MySQL URL, old Redis URL, Stripe credential, service unit, release archive or per-run loss
+choices. `inspect` reads and hashes the dump but does not contact the old system, old Redis or Stripe and
+does not mutate a target. There is currently no production write command or executor; the repository
+cannot claim a production import until the real dump → staging → PostgreSQL path passes end-to-end tests.
 
-The manifest contains secrets and must be a 1-byte-to-2-MiB regular non-symlink file with no Unix
-group/world permissions. It rejects duplicate/unknown/missing keys and binds the exact file bytes to
-an independent lifecycle audit key using the cold-import v5 HMAC domain.
+The fixed converter preserves durable business rows, permanent user tokens, MySQL-persisted traffic and
+balances. It discards old Redis, failed jobs, old nodes/routes/credentials, detailed legacy traffic,
+operational logs, themes and runtime files. Stripe configuration and status 0/1 Stripe orders are
+discarded; status 2/3/4 Stripe history is retained with provider bindings cleared. The importer never
+contacts Stripe. Non-Stripe payment configuration and unfinished orders remain ordinary retained data.
 
-Legacy v5 uses its own cold-import HMAC domain; authorization, stage-journal and receipt material from
-retired schemas is not accepted.
+The importer does not modify the old MySQL database. Staging is disposable conversion input, not a
+recovery system. If conversion fails, the incomplete new target is discarded and the same simple import
+is run again from the dump into a new empty target; no persistent intermediate state is kept.
 
-`validate` is offline syntax/semantic validation. Legacy `inspect` safely opens and hashes the encrypted
-dump, age identity and native release; it validates static isolated-restore/target declarations but does
-not connect to the restore database, a live target, old MySQL or old Redis. There is no public `plan`,
-authorization-file or checkpoint-resume shortcut.
-
-The typed production capability rejects legacy `apply` before writes and reports
-`apply_available=false` with the incomplete importer/operation-owned-cleanup blocker. Passing
-`validate` or archive inspection is not permission to create targets, copy data or cut over manually.
-
-### Fresh install
-
-This is a future target contract; the current lifecycle binary rejects fresh-install manifests.
-
-The target spec declares:
-
-- a PostgreSQL 18 bootstrap URL plus distinct migration/API/worker URLs;
-- absent PostgreSQL database and migration/API/worker roles, `C.UTF-8` collation/ctype and external
-  `pg_hba`/network evidence; the bootstrap role already exists and has reviewed create privileges;
-- a ClickHouse 26.3 endpoint plus an existing bootstrap principal and absent target database plus
-  schema/writer/reader principals, standalone topology, least-privilege evidence and explicit
-  raw/aggregate retention;
-- an empty TLS Redis logical DB/namespace;
-- one complete manually reviewed runtime section that derives strict API and worker file-only maps.
-
-The operator supplies bootstrap connections; an enabled journaled apply creates the target databases
-and long-lived principals. Do not pre-create those target objects or use `IF NOT EXISTS` to hide an
-unknown prior operation.
-
-### Legacy reference migration
-
-The only supported source identity is pinned commit
-`7e77de9f4873b317157490529f7be7d6f8a62421`. The operator stops the old site first, exports the
-complete Oracle MySQL 8.0/8.4 database, age-encrypts it and binds the encrypted bytes by SHA-256.
-MySQL 5.7, Percona, MariaDB and compatible proxies are rejected when the dump is restored into the
-isolated inspection database. The target is always fresh PostgreSQL 18 + ClickHouse 26.3 + Redis.
-
-The importer has no live source MySQL URL, legacy Redis URL/prefix, source systemd unit or datastore
-fence credential. It never reads old Redis. Pending traffic, queues/failed work, sessions, OTP,
-temporary subscription links, caches, locks and Horizon metadata are all covered by the explicit
-`discard_all_without_inspection` decision. Permanent `v2_user.token`, MySQL-persisted `u/d`, balance,
-plans and other retained business values are still verified.
-
-Stripe is a deliberate row-level exception: Stripe payment configurations and status 0/1 Stripe
-orders are excluded. Status 2/3/4 Stripe order history remains with `payment_id=NULL` and
-`callback_no=NULL`; user balances are preserved exactly, with no refund or compensation. The importer
-does not call Stripe or inspect provider-side objects. Non-Stripe payment configuration and unfinished
-orders remain ordinary retained business data.
-
-Nodes, routes, credentials, per-user/per-node traffic details and old request/mail logs do not enter
-the native target. New runtime files are rebuilt from the manifest rather than copied from `.env`, PHP,
-theme or custom scripts. ClickHouse starts at an empty native event epoch.
-
-This is one offline cold import, not CDC or coexistence. Before activation, failure cleanup removes the
-operation-owned isolated restore and every unactivated target object, then a new operation starts from
-the exact same encrypted dump. There is no resume. After activation, recovery uses PostgreSQL/
-ClickHouse backup or forward repair, never a restarted MySQL service.
-
-See the [legacy v5 guide](../docs/legacy-migration-manifest.md) and
-[lifecycle contract](../docs/upgrade-invariants.md). Production apply remains disabled until the
-archive-first integration gates and final security audit pass.
-
-### Native upgrade
-
-This is a future target contract; the current lifecycle binary rejects native-upgrade manifests.
-
-The manifest binds installation UUID, current/target build IDs, monotonic PostgreSQL and ClickHouse
-schema epochs, runtime principals and maintenance strategy. Destructive changes, TTL shortening,
-drops and repartitions are explicit impact lists. A destructive plan additionally requires operator
-allowance, impact review, backup/restore proof and a second confirmation bound to a prior v3 report.
-
-Native inspection and apply are not implemented; the CLI rejects the manifest before reporting it as
-valid.
+`v2board-lifecycle` is absent from the long-running native release and is removed after accepted import.
+API/worker dependency graphs contain neither the lifecycle crate nor `sqlx-mysql`. See the
+[import guide](../docs/mysql-import.md) and
+[fixed import contract](../docs/mysql-import-invariants.md).
 
 ## Analytics pipeline
 
@@ -338,8 +275,8 @@ monitoring.
 
 New logins use 256-bit opaque bearer tokens; Redis stores only SHA-256 lookup keys with absolute TTL.
 Password change, ban, staff/admin reset and explicit revocation delete lookups and advance the durable
-session epoch. The selected legacy migration performs a full logout; the native runtime contains no
-legacy JWT decoder, query/form authentication fallback or cutoff setting.
+session epoch. `mysql-import.v1` does not import sessions, so every user signs in again; the native
+runtime contains no old JWT decoder, query/form authentication fallback or cutoff setting.
 
 Privileged sessions have a shorter TTL and password step-up through
 `POST /api/v1/passport/auth/stepUp`; disabling the gate is an explicit compatibility escape hatch,
@@ -348,7 +285,7 @@ posting that sentinel preserves the existing secret.
 
 Payment method config is immutable verification history. Rotate by archiving the old row and creating
 a new one; callbacks can still resolve archived rows. Invalid, late, mismatched or under-specified
-signed callbacks enter `v2_payment_reconciliation` and never silently open an order.
+signed callbacks enter `payment_reconciliation` and never silently open an order.
 
 New nodes use scoped `n1_...` credentials and a stable `Idempotency-Key` per retryable payload. A key
 must never be reused with different bytes. Rotating one node credential advances only that node epoch.

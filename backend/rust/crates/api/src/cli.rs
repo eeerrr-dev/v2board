@@ -27,7 +27,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> anyhow::Result<Command>
 
 pub(crate) fn print_help() {
     println!(
-        "v2board-api\n\nCommands:\n  migrate\n      Apply native PostgreSQL migrations (never a legacy adoption command)\n\n  reset-admin-password <email>\n      Read the new password from a systemd credential or V2BOARD_NEW_PASSWORD_FILE\n\nLegacy source inspection is intentionally absent from this runtime binary. Use the disposable\nv2board-lifecycle binary for lifecycle validate/inspect/plan operations."
+        "v2board-api\n\nCommands:\n  migrate\n      Apply native PostgreSQL migrations\n\n  reset-admin-password <email>\n      Read the new password from a systemd credential or V2BOARD_NEW_PASSWORD_FILE\n\nMySQL import checks are intentionally absent from this runtime binary. Use the disposable\nv2board-lifecycle binary for validate/inspect operations."
     );
 }
 
@@ -51,13 +51,15 @@ mod tests {
     }
 
     #[test]
-    fn rejects_lifecycle_commands() {
+    fn rejects_import_commands() {
         assert!(
-            parse_args(["provision", "inspect", "--manifest", "operation.json"].map(str::to_owned))
-                .is_err()
+            parse_args(
+                ["provision", "inspect", "--manifest", "mysql-import.json"].map(str::to_owned)
+            )
+            .is_err()
         );
         assert!(
-            parse_args(["inspect", "--manifest", "operation.json"].map(str::to_owned)).is_err()
+            parse_args(["inspect", "--manifest", "mysql-import.json"].map(str::to_owned)).is_err()
         );
     }
 }

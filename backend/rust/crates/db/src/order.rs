@@ -194,7 +194,7 @@ pub async fn find_order_status(
     user_id: i64,
     trade_no: &str,
 ) -> Result<Option<i16>, sqlx::Error> {
-    sqlx::query_scalar("SELECT status FROM v2_order WHERE user_id = $1 AND trade_no = $2 LIMIT 1")
+    sqlx::query_scalar("SELECT status FROM orders WHERE user_id = $1 AND trade_no = $2 LIMIT 1")
         .bind(user_id)
         .bind(trade_no)
         .fetch_optional(pool)
@@ -207,7 +207,7 @@ pub async fn find_cancel_candidate(
     trade_no: &str,
 ) -> Result<Option<CancelCandidate>, sqlx::Error> {
     sqlx::query_as::<_, CancelCandidateRow>(
-        "SELECT status, balance_amount, payment_id, callback_no FROM v2_order WHERE user_id = $1 AND trade_no = $2 LIMIT 1",
+        "SELECT status, balance_amount, payment_id, callback_no FROM orders WHERE user_id = $1 AND trade_no = $2 LIMIT 1",
     )
     .bind(user_id)
     .bind(trade_no)
@@ -235,7 +235,7 @@ pub async fn cancel_pending_order(
     let mut tx = pool.begin().await?;
     let result = sqlx::query(
         r#"
-        UPDATE v2_order SET status = 2, updated_at = $1
+        UPDATE orders SET status = 2, updated_at = $1
         WHERE user_id = $2 AND trade_no = $3 AND status = 0
           AND payment_id IS NOT DISTINCT FROM $4
           AND callback_no IS NOT DISTINCT FROM $5
@@ -256,7 +256,7 @@ pub async fn cancel_pending_order(
 
     if let Some(balance_amount) = balance_amount.filter(|amount| *amount > 0) {
         let current_balance: i32 =
-            sqlx::query_scalar("SELECT balance FROM v2_user WHERE id = $1 LIMIT 1 FOR UPDATE")
+            sqlx::query_scalar("SELECT balance FROM users WHERE id = $1 LIMIT 1 FOR UPDATE")
                 .bind(user_id)
                 .fetch_optional(&mut *tx)
                 .await?
@@ -264,7 +264,7 @@ pub async fn cancel_pending_order(
         let new_balance = current_balance
             .checked_add(balance_amount)
             .ok_or(CancelPendingOrderError::BalanceOverflow)?;
-        sqlx::query("UPDATE v2_user SET balance = $1, updated_at = $2 WHERE id = $3")
+        sqlx::query("UPDATE users SET balance = $1, updated_at = $2 WHERE id = $3")
             .bind(new_balance)
             .bind(now)
             .bind(user_id)
@@ -448,7 +448,7 @@ SELECT
     paid_at,
     created_at,
     updated_at
-FROM v2_order
+FROM orders
 WHERE user_id = $1 AND status = $2
 ORDER BY created_at DESC
 "#;
@@ -479,7 +479,7 @@ SELECT
     paid_at,
     created_at,
     updated_at
-FROM v2_order
+FROM orders
 WHERE user_id = $1
 ORDER BY created_at DESC
 "#;
@@ -510,7 +510,7 @@ SELECT
     paid_at,
     created_at,
     updated_at
-FROM v2_order
+FROM orders
 WHERE user_id = $1 AND trade_no = $2
 LIMIT 1
 "#;
@@ -541,7 +541,7 @@ SELECT
     paid_at,
     created_at,
     updated_at
-FROM v2_order
+FROM orders
 WHERE user_id =
 "#;
 
@@ -569,7 +569,7 @@ SELECT
     capacity_limit,
     created_at,
     updated_at
-FROM v2_plan
+FROM plan
 WHERE id IN (
 "#;
 

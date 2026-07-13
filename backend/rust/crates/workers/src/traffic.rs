@@ -90,7 +90,7 @@ async fn apply_durable_traffic_reports(state: &WorkerState) -> anyhow::Result<()
             SELECT report_key, payload_hash, node_id, node_type, rate_text,
                    rate_decimal_10_2::text AS rate_decimal_10_2,
                    identity_kind, accepted_at, accounting_date
-            FROM v2_server_traffic_report
+            FROM server_traffic_report
             WHERE applied_at IS NULL
             ORDER BY created_at, report_key
             LIMIT 1
@@ -106,7 +106,7 @@ async fn apply_durable_traffic_reports(state: &WorkerState) -> anyhow::Result<()
         let items = sqlx::query_as::<_, DurableTrafficItem>(
             r#"
             SELECT user_id, traffic_epoch, raw_u, raw_d, charged_u, charged_d
-            FROM v2_server_traffic_report_item
+            FROM server_traffic_report_item
             WHERE report_key = $1
             ORDER BY user_id
             "#,
@@ -131,7 +131,7 @@ async fn apply_durable_traffic_reports(state: &WorkerState) -> anyhow::Result<()
             // upload, so their applied header cannot deduplicate a replay. Drop
             // it with its FK-cascaded items in the same accounting transaction.
             let deleted = sqlx::query(
-                "DELETE FROM v2_server_traffic_report WHERE report_key = $1 AND applied_at IS NULL",
+                "DELETE FROM server_traffic_report WHERE report_key = $1 AND applied_at IS NULL",
             )
             .bind(&report.report_key)
             .execute(&mut *tx)
@@ -143,7 +143,7 @@ async fn apply_durable_traffic_reports(state: &WorkerState) -> anyhow::Result<()
             let now = Utc::now().timestamp();
             let updated = sqlx::query(
                 r#"
-                UPDATE v2_server_traffic_report
+                UPDATE server_traffic_report
                 SET applied_at = $1, updated_at = $2
                 WHERE report_key = $3 AND applied_at IS NULL
                 "#,
@@ -158,7 +158,7 @@ async fn apply_durable_traffic_reports(state: &WorkerState) -> anyhow::Result<()
             }
             // Explicit keys are replay identities. Retain the applied header,
             // but payload rows are no longer needed after the atomic commit.
-            sqlx::query("DELETE FROM v2_server_traffic_report_item WHERE report_key = $1")
+            sqlx::query("DELETE FROM server_traffic_report_item WHERE report_key = $1")
                 .bind(&report.report_key)
                 .execute(&mut *tx)
                 .await?;
@@ -204,7 +204,7 @@ async fn apply_traffic_items(
     let mut locked = BTreeMap::new();
     for chunk in aggregated.chunks(TRAFFIC_SQL_BATCH_SIZE) {
         let mut builder = QueryBuilder::<Postgres>::new(
-            "SELECT id, traffic_epoch, u, d FROM v2_user WHERE id IN (",
+            "SELECT id, traffic_epoch, u, d FROM users WHERE id IN (",
         );
         let mut separated = builder.separated(", ");
         for item in chunk {
@@ -363,7 +363,7 @@ async fn update_traffic_chunk(
     if updates.is_empty() {
         return Ok(());
     }
-    let mut builder = QueryBuilder::<Postgres>::new("UPDATE v2_user SET u = CASE id ");
+    let mut builder = QueryBuilder::<Postgres>::new("UPDATE users SET u = CASE id ");
     for update in updates {
         builder.push("WHEN ");
         builder.push_bind(update.user_id);
@@ -493,7 +493,7 @@ mod tests {
         let source = include_str!("traffic.rs");
         let production = source.split("#[cfg(test)]").next().unwrap();
         assert!(production.contains(") ORDER BY id FOR UPDATE"));
-        assert!(production.contains("UPDATE v2_user SET u = CASE id"));
+        assert!(production.contains("UPDATE users SET u = CASE id"));
         assert!(production.contains("enqueue_events(tx, &events, accounted_at)"));
         assert!(!production.contains("enqueue_event(tx, &event, accounted_at)"));
         assert!(!production.contains("WHERE id = $1 LIMIT 1 FOR UPDATE"));
@@ -502,8 +502,8 @@ mod tests {
     #[test]
     fn traffic_migration_contains_durable_report_ledgers() {
         let migration = include_str!("../../../migrations-postgres/0001_initial.sql");
-        assert!(migration.contains("CREATE TABLE v2_server_traffic_report"));
-        assert!(migration.contains("CREATE TABLE v2_server_traffic_report_item"));
+        assert!(migration.contains("CREATE TABLE server_traffic_report"));
+        assert!(migration.contains("CREATE TABLE server_traffic_report_item"));
     }
 
     #[test]

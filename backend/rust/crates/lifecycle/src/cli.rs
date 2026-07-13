@@ -13,9 +13,6 @@ pub(crate) enum Command {
         release_id: String,
         sha256: String,
     },
-    Apply {
-        manifest: PathBuf,
-    },
     Help,
 }
 
@@ -28,14 +25,12 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> anyhow::Result<Command>
     match args.as_slice() {
         [flag] if matches!(flag.as_str(), "--help" | "-h") => Ok(Command::Help),
         [action, flag, manifest]
-            if flag == "--manifest"
-                && matches!(action.as_str(), "validate" | "inspect" | "apply") =>
+            if flag == "--manifest" && matches!(action.as_str(), "validate" | "inspect") =>
         {
             let manifest = PathBuf::from(manifest);
             match action.as_str() {
                 "validate" => Ok(Command::Validate { manifest }),
                 "inspect" => Ok(Command::Inspect { manifest }),
-                "apply" => Ok(Command::Apply { manifest }),
                 _ => unreachable!("guard covers every accepted action"),
             }
         }
@@ -66,7 +61,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> anyhow::Result<Command>
 
 pub(crate) fn print_help() {
     println!(
-        "v2board-lifecycle\n\nArchive-first cold-import commands:\n  validate --manifest <path>\n      Strictly validate the unique schema-v5 loss policy without connecting anywhere\n\n  inspect --manifest <path>\n      Read and hash the immutable encrypted MySQL dump, age identity, and native release\n      without contacting legacy MySQL, legacy Redis, Stripe, or mutating a target\n\n  inspect-release-archive --archive <absolute-path> --release-id <id> --sha256 <sha256>\n      Run the mutation-free native release archive contract inspector\n\n  apply --manifest <path>\n      Reserved cold-import entry; currently fails closed before writes\n\nThe operator stops the old site and creates the immutable encrypted MySQL dump before this tool is\nused. A failed, unactivated import is wiped and restarted from the same dump. Production apply is\ncurrently fail-closed until the importer and operation-owned cleanup integration gate pass."
+        "v2board-lifecycle\n\nMySQL import checks:\n  validate --manifest <path>\n      Validate the single pre-release schema-v1 import manifest without connecting anywhere\n\n  inspect --manifest <path>\n      Safely read and hash the manifest-bound MySQL dump without contacting old MySQL,\n      old Redis, Stripe, the temporary staging MySQL engine, or any target\n\nIndependent deployment check:\n  inspect-release-archive --archive <absolute-path> --release-id <id> --sha256 <sha256>\n      Validate a native release archive without mutating the filesystem"
     );
 }
 
@@ -77,29 +72,23 @@ mod tests {
     use super::{Command, parse_args};
 
     #[test]
-    fn accepts_the_small_archive_first_grammar() {
+    fn accepts_import_checks() {
         for (action, expected) in [
             (
                 "validate",
                 Command::Validate {
-                    manifest: PathBuf::from("/secure/operation.json"),
+                    manifest: PathBuf::from("/secure/mysql-import.json"),
                 },
             ),
             (
                 "inspect",
                 Command::Inspect {
-                    manifest: PathBuf::from("/secure/operation.json"),
-                },
-            ),
-            (
-                "apply",
-                Command::Apply {
-                    manifest: PathBuf::from("/secure/operation.json"),
+                    manifest: PathBuf::from("/secure/mysql-import.json"),
                 },
             ),
         ] {
             assert_eq!(
-                parse_args([action, "--manifest", "/secure/operation.json"].map(str::to_owned))
+                parse_args([action, "--manifest", "/secure/mysql-import.json"].map(str::to_owned))
                     .unwrap(),
                 expected
             );
@@ -127,48 +116,11 @@ mod tests {
     }
 
     #[test]
-    fn rejects_authorize_resume_and_old_apply_grammar() {
+    fn rejects_malformed_commands() {
         assert!(parse_args(std::iter::empty()).is_err());
         assert!(
-            parse_args(
-                [
-                    "authorize",
-                    "--manifest",
-                    "operation.json",
-                    "--inspect-review-sha256",
-                    &"a".repeat(64),
-                    "--output",
-                    "/secure/authorization.json",
-                ]
-                .map(str::to_owned)
-            )
-            .is_err()
-        );
-        assert!(
-            parse_args(
-                [
-                    "resume",
-                    "--manifest",
-                    "operation.json",
-                    "--authorization",
-                    "/secure/authorization.json",
-                ]
-                .map(str::to_owned)
-            )
-            .is_err()
-        );
-        assert!(
-            parse_args(
-                [
-                    "apply",
-                    "--manifest",
-                    "operation.json",
-                    "--authorization",
-                    "/secure/authorization.json",
-                ]
-                .map(str::to_owned)
-            )
-            .is_err()
+            parse_args(["inspect", "--wrong-flag", "mysql-import.json"].map(str::to_owned))
+                .is_err()
         );
     }
 }

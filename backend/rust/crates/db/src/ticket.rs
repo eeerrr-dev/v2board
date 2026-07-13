@@ -81,14 +81,14 @@ pub async fn fetch_tickets(pool: &PgPool, user_id: i64) -> Result<Vec<TicketRow>
             t.reply_status,
             (
                 SELECT tm.user_id
-                FROM v2_ticket_message tm
+                FROM ticket_message tm
                 WHERE tm.ticket_id = t.id
                 ORDER BY tm.id DESC
                 LIMIT 1
             ) AS last_reply_user_id,
             t.created_at,
             t.updated_at
-        FROM v2_ticket t
+        FROM ticket t
         WHERE t.user_id = $1
         ORDER BY t.created_at DESC
         "#,
@@ -114,14 +114,14 @@ pub async fn fetch_ticket_detail(
             t.reply_status,
             (
                 SELECT tm.user_id
-                FROM v2_ticket_message tm
+                FROM ticket_message tm
                 WHERE tm.ticket_id = t.id
                 ORDER BY tm.id DESC
                 LIMIT 1
             ) AS last_reply_user_id,
             t.created_at,
             t.updated_at
-        FROM v2_ticket t
+        FROM ticket t
         WHERE t.id = $1 AND t.user_id = $2
         LIMIT 1
         "#,
@@ -143,7 +143,7 @@ pub async fn fetch_ticket_detail(
             user_id = $1 AS is_me,
             created_at,
             updated_at
-        FROM v2_ticket_message
+        FROM ticket_message
         WHERE ticket_id = $2
         ORDER BY id ASC
         "#,
@@ -218,7 +218,7 @@ async fn count_paid_orders_in_tx(
     tx: &mut Transaction<'_, Postgres>,
     user_id: i64,
 ) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar("SELECT COUNT(*) FROM v2_order WHERE user_id = $1 AND status IN (3, 4)")
+    sqlx::query_scalar("SELECT COUNT(*) FROM orders WHERE user_id = $1 AND status IN (3, 4)")
         .bind(user_id)
         .fetch_one(&mut **tx)
         .await
@@ -237,7 +237,7 @@ pub async fn reply_ticket(
         return Ok(UserTicketReplyOutcome::NotFound);
     }
     let ticket = sqlx::query_as::<_, (i64, i16)>(
-        "SELECT id, status FROM v2_ticket WHERE id = $1 AND user_id = $2 LIMIT 1 FOR UPDATE",
+        "SELECT id, status FROM ticket WHERE id = $1 AND user_id = $2 LIMIT 1 FOR UPDATE",
     )
     .bind(ticket_id)
     .bind(user_id)
@@ -252,7 +252,7 @@ pub async fn reply_ticket(
         return Ok(UserTicketReplyOutcome::Closed);
     }
     let last_user_id = sqlx::query_scalar::<_, i64>(
-        "SELECT user_id FROM v2_ticket_message WHERE ticket_id = $1 ORDER BY id DESC LIMIT 1",
+        "SELECT user_id FROM ticket_message WHERE ticket_id = $1 ORDER BY id DESC LIMIT 1",
     )
     .bind(ticket_id)
     .fetch_optional(&mut *tx)
@@ -263,7 +263,7 @@ pub async fn reply_ticket(
     }
     insert_message(&mut tx, user_id, ticket_id, message, now).await?;
     let updated = sqlx::query(
-        "UPDATE v2_ticket SET reply_status = 0, updated_at = $1 WHERE id = $2 AND user_id = $3 AND status = 0",
+        "UPDATE ticket SET reply_status = 0, updated_at = $1 WHERE id = $2 AND user_id = $3 AND status = 0",
     )
         .bind(now)
         .bind(ticket_id)
@@ -291,7 +291,7 @@ pub async fn close_ticket(
         return Ok(false);
     }
     let exists = sqlx::query_scalar::<_, i64>(
-        "SELECT id FROM v2_ticket WHERE id = $1 AND user_id = $2 LIMIT 1 FOR UPDATE",
+        "SELECT id FROM ticket WHERE id = $1 AND user_id = $2 LIMIT 1 FOR UPDATE",
     )
     .bind(ticket_id)
     .bind(user_id)
@@ -302,7 +302,7 @@ pub async fn close_ticket(
         return Ok(false);
     }
     let result = sqlx::query(
-        "UPDATE v2_ticket SET status = 1, updated_at = $1 WHERE id = $2 AND user_id = $3 AND status = 0",
+        "UPDATE ticket SET status = 1, updated_at = $1 WHERE id = $2 AND user_id = $3 AND status = 0",
     )
     .bind(now)
     .bind(ticket_id)
@@ -318,7 +318,7 @@ pub async fn lock_operator_reply_target(
     ticket_id: i64,
 ) -> Result<OperatorReplyTargetOutcome, sqlx::Error> {
     let Some(user_id) =
-        sqlx::query_scalar::<_, i64>("SELECT user_id FROM v2_ticket WHERE id = $1 LIMIT 1")
+        sqlx::query_scalar::<_, i64>("SELECT user_id FROM ticket WHERE id = $1 LIMIT 1")
             .bind(ticket_id)
             .fetch_optional(&mut **tx)
             .await?
@@ -329,7 +329,7 @@ pub async fn lock_operator_reply_target(
         return Ok(OperatorReplyTargetOutcome::NotFound);
     }
     let target = sqlx::query_as::<_, (i64, i64, String)>(
-        "SELECT id, user_id, subject FROM v2_ticket WHERE id = $1 LIMIT 1 FOR UPDATE",
+        "SELECT id, user_id, subject FROM ticket WHERE id = $1 LIMIT 1 FOR UPDATE",
     )
     .bind(ticket_id)
     .fetch_optional(&mut **tx)
@@ -362,7 +362,7 @@ pub async fn apply_operator_reply(
     insert_message(tx, operator_id, target.id, message, now).await?;
     let reply_status = i16::from(operator_id != target.user_id);
     let result = sqlx::query(
-        "UPDATE v2_ticket SET status = 0, reply_status = $1, updated_at = $2 WHERE id = $3 AND user_id = $4",
+        "UPDATE ticket SET status = 0, reply_status = $1, updated_at = $2 WHERE id = $3 AND user_id = $4",
     )
     .bind(reply_status)
     .bind(now)
@@ -403,7 +403,7 @@ pub async fn close_ticket_as_operator(
 ) -> Result<bool, sqlx::Error> {
     let mut tx = pool.begin().await?;
     let Some(user_id) =
-        sqlx::query_scalar::<_, i64>("SELECT user_id FROM v2_ticket WHERE id = $1 LIMIT 1")
+        sqlx::query_scalar::<_, i64>("SELECT user_id FROM ticket WHERE id = $1 LIMIT 1")
             .bind(ticket_id)
             .fetch_optional(&mut *tx)
             .await?
@@ -416,7 +416,7 @@ pub async fn close_ticket_as_operator(
         return Ok(false);
     }
     let exists = sqlx::query_scalar::<_, i64>(
-        "SELECT id FROM v2_ticket WHERE id = $1 AND user_id = $2 LIMIT 1 FOR UPDATE",
+        "SELECT id FROM ticket WHERE id = $1 AND user_id = $2 LIMIT 1 FOR UPDATE",
     )
     .bind(ticket_id)
     .bind(user_id)
@@ -427,7 +427,7 @@ pub async fn close_ticket_as_operator(
         return Ok(false);
     }
     sqlx::query(
-        "UPDATE v2_ticket SET status = 1, updated_at = $1 WHERE id = $2 AND user_id = $3 AND status = 0",
+        "UPDATE ticket SET status = 1, updated_at = $1 WHERE id = $2 AND user_id = $3 AND status = 0",
     )
     .bind(now)
     .bind(ticket_id)
@@ -440,7 +440,7 @@ pub async fn close_ticket_as_operator(
 
 async fn lock_user(tx: &mut Transaction<'_, Postgres>, user_id: i64) -> Result<bool, sqlx::Error> {
     Ok(
-        sqlx::query_scalar::<_, i64>("SELECT id FROM v2_user WHERE id = $1 LIMIT 1 FOR UPDATE")
+        sqlx::query_scalar::<_, i64>("SELECT id FROM users WHERE id = $1 LIMIT 1 FOR UPDATE")
             .bind(user_id)
             .fetch_optional(&mut **tx)
             .await?
@@ -453,24 +453,25 @@ async fn open_ticket_exists(
     user_id: i64,
     excluding_ticket_id: Option<i64>,
 ) -> Result<bool, sqlx::Error> {
-    let id =
-        match excluding_ticket_id {
-            Some(ticket_id) => sqlx::query_scalar::<_, i64>(
-                "SELECT id FROM v2_ticket WHERE user_id = $1 AND status = 0 AND id <> $2 LIMIT 1",
+    let id = match excluding_ticket_id {
+        Some(ticket_id) => {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT id FROM ticket WHERE user_id = $1 AND status = 0 AND id <> $2 LIMIT 1",
             )
             .bind(user_id)
             .bind(ticket_id)
             .fetch_optional(&mut **tx)
-            .await?,
-            None => {
-                sqlx::query_scalar::<_, i64>(
-                    "SELECT id FROM v2_ticket WHERE user_id = $1 AND status = 0 LIMIT 1",
-                )
-                .bind(user_id)
-                .fetch_optional(&mut **tx)
-                .await?
-            }
-        };
+            .await?
+        }
+        None => {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT id FROM ticket WHERE user_id = $1 AND status = 0 LIMIT 1",
+            )
+            .bind(user_id)
+            .fetch_optional(&mut **tx)
+            .await?
+        }
+    };
     Ok(id.is_some())
 }
 
@@ -489,7 +490,7 @@ async fn insert_ticket(
 ) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar(
         r#"
-        INSERT INTO v2_ticket (user_id, subject, level, status, reply_status, created_at, updated_at)
+        INSERT INTO ticket (user_id, subject, level, status, reply_status, created_at, updated_at)
         VALUES ($1, $2, $3, 0, 0, $4, $5)
         RETURNING id
         "#,
@@ -512,7 +513,7 @@ async fn insert_message(
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
-        INSERT INTO v2_ticket_message (user_id, ticket_id, message, created_at, updated_at)
+        INSERT INTO ticket_message (user_id, ticket_id, message, created_at, updated_at)
         VALUES ($1, $2, $3, $4, $5)
         "#,
     )
@@ -531,7 +532,7 @@ mod tests {
     #[test]
     fn ticket_state_machine_has_database_and_transaction_guards() {
         let source = include_str!("ticket.rs");
-        assert!(source.contains("SELECT id FROM v2_user WHERE id = $1 LIMIT 1 FOR UPDATE"));
+        assert!(source.contains("SELECT id FROM users WHERE id = $1 LIMIT 1 FOR UPDATE"));
         assert!(source.contains("WHERE id = $1 AND user_id = $2 LIMIT 1 FOR UPDATE"));
         assert!(source.contains("AND status = 0"));
         assert!(source.contains("rows_affected() != 1"));

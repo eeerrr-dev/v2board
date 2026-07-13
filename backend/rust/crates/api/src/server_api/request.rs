@@ -120,7 +120,7 @@ pub(super) async fn validate_server_token(
         .filter(|value| !value.is_empty())
         .ok_or_else(|| ApiError::legacy("token is error"))?;
     let credential_epoch = sqlx::query_scalar::<_, i64>(
-        "SELECT credential_epoch FROM v2_server_credential \
+        "SELECT credential_epoch FROM server_credential \
          WHERE node_type = $1 AND node_id = $2 LIMIT 1",
     )
     .bind(&identity.node_type)

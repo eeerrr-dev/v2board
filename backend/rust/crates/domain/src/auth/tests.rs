@@ -374,7 +374,7 @@ fn invitation_code_consumption_is_locked_and_guarded() {
     let migration = include_str!("../../../../migrations-postgres/0001_initial.sql");
     assert!(migration.contains("uniq_invite_code_canonical"));
     assert!(
-        source.find("consume_invite_code").unwrap() < source.find("INSERT INTO v2_user").unwrap()
+        source.find("consume_invite_code").unwrap() < source.find("INSERT INTO users").unwrap()
     );
 }
 

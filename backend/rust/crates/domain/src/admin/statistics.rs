@@ -1,9 +1,9 @@
 use super::*;
 use rust_decimal::prelude::ToPrimitive;
 
-const ORDER_INCOME_SUM_SQL: &str = "SELECT CAST(COALESCE(SUM(total_amount), 0) AS TEXT) FROM v2_order \
+const ORDER_INCOME_SUM_SQL: &str = "SELECT CAST(COALESCE(SUM(total_amount), 0) AS TEXT) FROM orders \
      WHERE created_at >= $1 AND created_at < $2 AND status NOT IN (0, 2)";
-const COMMISSION_PAYOUT_SUM_SQL: &str = "SELECT CAST(COALESCE(SUM(get_amount), 0) AS TEXT) FROM v2_commission_log \
+const COMMISSION_PAYOUT_SUM_SQL: &str = "SELECT CAST(COALESCE(SUM(get_amount), 0) AS TEXT) FROM commission_log \
      WHERE created_at >= $1 AND created_at < $2";
 
 #[derive(Debug, Default)]
@@ -110,7 +110,7 @@ impl AdminService {
         let month = first_day_of_month();
         let last_month = first_day_of_previous_month();
 
-        let online_user: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM v2_user WHERE t >= $1")
+        let online_user: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE t >= $1")
             .bind(now.saturating_sub(600))
             .fetch_one(&self.db)
             .await?;
@@ -118,38 +118,37 @@ impl AdminService {
         let day_income = self.order_income_between(today, now).await?;
         let last_month_income = self.order_income_between(last_month, month).await?;
         let month_register_total: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM v2_user WHERE created_at >= $1 AND created_at < $2",
+            "SELECT COUNT(*) FROM users WHERE created_at >= $1 AND created_at < $2",
         )
         .bind(month)
         .bind(now)
         .fetch_one(&self.db)
         .await?;
         let day_register_total: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM v2_user WHERE created_at >= $1 AND created_at < $2",
+            "SELECT COUNT(*) FROM users WHERE created_at >= $1 AND created_at < $2",
         )
         .bind(today)
         .bind(now)
         .fetch_one(&self.db)
         .await?;
-        let ticket_pending_total: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM v2_ticket WHERE status = 0 AND reply_status = 0",
-        )
-        .fetch_one(&self.db)
-        .await?;
+        let ticket_pending_total: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM ticket WHERE status = 0 AND reply_status = 0")
+                .fetch_one(&self.db)
+                .await?;
         let commission_pending_total: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM v2_order WHERE commission_status = 0 AND invite_user_id IS NOT NULL \
+            "SELECT COUNT(*) FROM orders WHERE commission_status = 0 AND invite_user_id IS NOT NULL \
              AND status NOT IN (0, 2) AND commission_balance > 0",
         )
         .fetch_one(&self.db)
         .await?;
         let payment_reconciliation_pending_total: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM v2_payment_reconciliation WHERE resolved_at IS NULL",
+            "SELECT COUNT(*) FROM payment_reconciliation WHERE resolved_at IS NULL",
         )
         .fetch_one(&self.db)
         .await?;
         let payment_reconciliation_pending_amount: String = sqlx::query_scalar(
             "SELECT CAST(COALESCE(SUM(COALESCE(settled_amount, expected_amount)), 0) AS TEXT) \
-             FROM v2_payment_reconciliation WHERE resolved_at IS NULL",
+             FROM payment_reconciliation WHERE resolved_at IS NULL",
         )
         .fetch_one(&self.db)
         .await?;
@@ -203,7 +202,7 @@ impl AdminService {
             (start_of_yesterday(), start_of_today())
         };
         let rows: Vec<(i64, String, i64, i64)> = sqlx::query_as(
-            "SELECT server_id::BIGINT, server_type, u, d FROM v2_stat_server \
+            "SELECT server_id::BIGINT, server_type, u, d FROM stat_server \
              WHERE record_at >= $1 AND record_at < $2 AND record_type = 'd' \
              ORDER BY (CAST(u AS NUMERIC(30,0)) + CAST(d AS NUMERIC(30,0))) DESC LIMIT 15",
         )
@@ -247,7 +246,7 @@ impl AdminService {
         };
         let rows: Vec<(i64, f64, i64, i64, Option<String>)> = sqlx::query_as(
             "SELECT s.user_id, CAST(s.server_rate AS DOUBLE PRECISION), s.u, s.d, u.email \
-             FROM v2_stat_user s LEFT JOIN v2_user u ON u.id = s.user_id \
+             FROM stat_user s LEFT JOIN users u ON u.id = s.user_id \
              WHERE s.record_at >= $1 AND s.record_at < $2 AND s.record_type = 'd' \
              ORDER BY (CAST(s.u AS NUMERIC(30,0)) + CAST(s.d AS NUMERIC(30,0))) DESC LIMIT 30",
         )
@@ -296,7 +295,7 @@ impl AdminService {
         let rows: Vec<(i64, i64, i64, i64, i64, i64)> = sqlx::query_as(
             "SELECT record_at, register_count::BIGINT, paid_total, paid_count::BIGINT, \
                     commission_total, commission_count::BIGINT \
-             FROM v2_stat WHERE record_type = 'd' ORDER BY record_at DESC LIMIT 31",
+             FROM stat WHERE record_type = 'd' ORDER BY record_at DESC LIMIT 31",
         )
         .fetch_all(&self.db)
         .await?;
@@ -334,7 +333,7 @@ impl AdminService {
     ) -> Result<AdminOutput, ApiError> {
         let user_id = required_i64(params, "user_id")?;
         let pagination = page(params)?;
-        let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM v2_stat_user WHERE user_id = $1")
+        let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stat_user WHERE user_id = $1")
             .bind(user_id)
             .fetch_one(&self.db)
             .await?;
@@ -342,7 +341,7 @@ impl AdminService {
             &self.db,
             r#"
             SELECT jsonb_build_object('record_at', record_at, 'u', u, 'd', d, 'server_rate', server_rate)
-            FROM v2_stat_user
+            FROM stat_user
             WHERE user_id = $1
             ORDER BY record_at DESC
             LIMIT $2 OFFSET $3
@@ -366,12 +365,12 @@ impl AdminService {
             .map(str::trim)
             .filter(|value| !value.is_empty());
         let total: i64 = if let Some(record_type) = record_type {
-            sqlx::query_scalar("SELECT COUNT(*) FROM v2_stat WHERE record_type = $1")
+            sqlx::query_scalar("SELECT COUNT(*) FROM stat WHERE record_type = $1")
                 .bind(record_type)
                 .fetch_one(&self.db)
                 .await?
         } else {
-            sqlx::query_scalar("SELECT COUNT(*) FROM v2_stat")
+            sqlx::query_scalar("SELECT COUNT(*) FROM stat")
                 .fetch_one(&self.db)
                 .await?
         };
@@ -388,7 +387,7 @@ impl AdminService {
                     'transfer_used_total', transfer_used_total,
                     'created_at', created_at, 'updated_at', updated_at
                 )
-                FROM v2_stat
+                FROM stat
                 WHERE record_type = $1
                 ORDER BY record_at DESC
                 LIMIT $2 OFFSET $3
@@ -411,7 +410,7 @@ impl AdminService {
                     'transfer_used_total', transfer_used_total,
                     'created_at', created_at, 'updated_at', updated_at
                 )
-                FROM v2_stat
+                FROM stat
                 ORDER BY record_at DESC
                 LIMIT $1 OFFSET $2
                 "#,
@@ -583,7 +582,7 @@ impl AdminService {
         }
 
         let mut count_builder =
-            QueryBuilder::<Postgres>::new("SELECT COUNT(*) FROM v2_log WHERE 1 = 1");
+            QueryBuilder::<Postgres>::new("SELECT COUNT(*) FROM log WHERE 1 = 1");
         push_log_filters(&mut count_builder, &entries);
         let total: i64 = count_builder
             .build_query_scalar()
@@ -597,7 +596,7 @@ impl AdminService {
                 'method', method, 'data', data, 'ip', ip, 'context', context,
                 'created_at', created_at, 'updated_at', updated_at
             )
-            FROM v2_log
+            FROM log
             WHERE 1 = 1
             "#,
         );
