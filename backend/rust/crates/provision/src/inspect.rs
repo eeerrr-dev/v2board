@@ -22,6 +22,9 @@ use crate::manifest::{
     NativeUpgradeDecisionSpec, NativeUpgradeImpactSpec, PostgresTargetSpec, ProvisionFlow,
     ProvisionKind, ProvisionSpec, SourceSpec, SourceTransportSecurity, TargetSpec,
 };
+use crate::native_activation::{
+    ReadOnlyReleaseArchiveInspection, inspect_release_archive_read_only,
+};
 use crate::native_legacy_source::{
     PreAuthorizationSourceControlInspection, SourceError, inspect_pre_authorization_source_control,
 };
@@ -73,6 +76,7 @@ const MAX_REDIS_SCAN_PAGE_BYTES: usize = 4 * 1024 * 1024;
 const LEGACY_JSON_SCAN_PAGE_SIZE: usize = 1_000;
 const LEGACY_JSON_REFERENCE_BATCH_SIZE: usize = 1_000;
 const CONVERTER_AVAILABLE: bool = true;
+const PROVISION_REPORT_VERSION: u32 = 5;
 
 #[derive(Serialize)]
 pub struct ProvisionPlan {
@@ -100,6 +104,7 @@ pub struct ProvisionPlan {
     pub node_inventory: Option<PreAuthorizationNodeInventorySummary>,
     pub backup_restore: Option<BackupRestorePrerequisiteInspection>,
     pub source_control: Option<PreAuthorizationSourceControlInspection>,
+    pub release_archive: Option<ReadOnlyReleaseArchiveInspection>,
     pub native_upgrade: Option<NativeUpgradeInspection>,
     pub implementation_blockers: Vec<String>,
     pub blockers: Vec<String>,
@@ -604,7 +609,7 @@ async fn build_fresh_install_inspection(
             .to_string(),
     ];
     let plan = ProvisionPlan {
-        report_version: 4,
+        report_version: PROVISION_REPORT_VERSION,
         scope: mode.scope(),
         kind: spec.kind,
         converter_available: CONVERTER_AVAILABLE,
@@ -627,6 +632,7 @@ async fn build_fresh_install_inspection(
         node_inventory: None,
         backup_restore: None,
         source_control: None,
+        release_archive: None,
         native_upgrade: None,
         implementation_blockers,
         blockers,
@@ -643,6 +649,11 @@ async fn build_legacy_migration_inspection(
     attestations: Option<&LegacyAttestationSpec>,
     mode: InspectionMode,
 ) -> Result<ProvisionPlan, ProvisionPlanError> {
+    // This is a complete, streaming inspection of the immutable input archive.
+    // It deliberately runs before any source connection is opened. A malformed
+    // archive is reported as a reviewable plan blocker and never reaches apply.
+    let release_archive_result =
+        (spec.schema_version == 4).then(|| inspect_release_archive_read_only(spec));
     let pool_config = inspection_pool_config();
     let source_pool = connect_legacy_mysql_with_config(&source.database_url, &pool_config)
         .await
@@ -848,6 +859,17 @@ async fn build_legacy_migration_inspection(
                 .into(),
         );
     }
+    let release_archive = match release_archive_result {
+        Some(Ok(inspection)) => Some(inspection),
+        Some(Err(_)) => {
+            blockers.push(
+                "native release archive failed the complete read-only structure, checksum, and systemd-contract preflight"
+                    .into(),
+            );
+            None
+        }
+        None => None,
+    };
 
     let runtime_evidence_is_journaled =
         spec.schema_version == 4 && spec.legacy_apply_execution().is_some();
@@ -950,7 +972,7 @@ async fn build_legacy_migration_inspection(
             && source_access.visible_non_source_schema_count == 0,
     };
     let plan = ProvisionPlan {
-        report_version: 4,
+        report_version: PROVISION_REPORT_VERSION,
         scope: mode.scope(),
         kind: spec.kind,
         converter_available: CONVERTER_AVAILABLE,
@@ -973,6 +995,7 @@ async fn build_legacy_migration_inspection(
         node_inventory,
         backup_restore,
         source_control,
+        release_archive,
         native_upgrade: None,
         implementation_blockers,
         blockers,
@@ -1164,7 +1187,7 @@ fn build_native_upgrade_plan(
     finalize_plan(
         spec,
         ProvisionPlan {
-            report_version: 4,
+            report_version: PROVISION_REPORT_VERSION,
             scope: mode.scope(),
             kind: spec.kind,
             converter_available: CONVERTER_AVAILABLE,
@@ -1187,6 +1210,7 @@ fn build_native_upgrade_plan(
             node_inventory: None,
             backup_restore: None,
             source_control: None,
+            release_archive: None,
             native_upgrade: Some(native_upgrade),
             implementation_blockers,
             blockers,
@@ -1309,6 +1333,7 @@ fn legacy_inspection_sections_complete(plan: &ProvisionPlan) -> bool {
         && plan.node_inventory.is_some()
         && plan.backup_restore.is_some()
         && plan.source_control.is_some()
+        && plan.release_archive.is_some()
         && plan.native_upgrade.is_none()
 }
 
@@ -1355,7 +1380,7 @@ fn inspection_review_binding_bytes(plan: &ProvisionPlan) -> Vec<u8> {
         })
     });
     serde_json::to_vec(&serde_json::json!({
-        "review_version": 1,
+        "review_version": 2,
         "report_version": plan.report_version,
         "scope": plan.scope,
         "kind": plan.kind,
@@ -1369,6 +1394,7 @@ fn inspection_review_binding_bytes(plan: &ProvisionPlan) -> Vec<u8> {
         "target_redis": plan.target_redis,
         "source_redis_identity": source_redis_identity,
         "source_control": plan.source_control,
+        "release_archive": plan.release_archive,
         "node_inventory": node_inventory,
         "backup_restore": backup_restore,
         "implementation_blockers": plan.implementation_blockers,
@@ -1763,6 +1789,33 @@ impl ProvisionPlan {
             && self.operation_id == spec.operation_id
             && self.scope == InspectionMode::Online.scope()
             && self.passed()
+            && self.review_binding_sha256.len() == 64
+            && self.review_binding_hmac_sha256.len() == 64
+            && self.report_sha256.len() == 64
+            && self.report_binding_hmac_sha256.len() == 64
+    }
+
+    /// Matrix-only admission uses the same live inspection but permits exactly
+    /// the global safety-audit blocker that this matrix is designed to clear.
+    /// No datastore, topology, converter, or structural blocker is relaxed.
+    #[cfg(feature = "bare-metal-fault-matrix")]
+    pub(crate) fn ready_for_bare_metal_fault_matrix_authorization(
+        &self,
+        spec: &ProvisionSpec,
+    ) -> bool {
+        let expected_implementation_blocker = production_legacy_apply_implementation_blockers();
+        self.kind == ProvisionKind::LegacyReferenceMigration
+            && spec.kind == ProvisionKind::LegacyReferenceMigration
+            && self.operation_id == spec.operation_id
+            && self.scope == InspectionMode::Online.scope()
+            && self.converter_available
+            && !self.apply_available
+            && self.verdict == PreflightVerdict::Blocked
+            && self.next_action == NextAction::ResolveBlockers
+            && legacy_inspection_sections_complete(self)
+            && self.implementation_blockers == expected_implementation_blocker
+            && self.implementation_blockers.len() == 1
+            && self.blockers.is_empty()
             && self.review_binding_sha256.len() == 64
             && self.review_binding_hmac_sha256.len() == 64
             && self.report_sha256.len() == 64
@@ -3869,7 +3922,7 @@ mod tests {
     #[test]
     fn review_binding_excludes_live_observations_but_keeps_operation_identity() {
         let mut plan = ProvisionPlan {
-            report_version: 4,
+            report_version: PROVISION_REPORT_VERSION,
             scope: InspectionMode::Online.scope(),
             kind: ProvisionKind::LegacyReferenceMigration,
             converter_available: true,
@@ -3892,6 +3945,7 @@ mod tests {
             node_inventory: None,
             backup_restore: None,
             source_control: None,
+            release_archive: None,
             native_upgrade: None,
             implementation_blockers: Vec::new(),
             blockers: Vec::new(),

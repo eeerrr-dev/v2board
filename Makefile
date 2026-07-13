@@ -1,5 +1,6 @@
 .PHONY: up down reset sync logs ps shell doctor \
 	rust-check rust-test rust-integration rust-lifecycle-ledger-integration rust-legacy-mysql-integration rust-legacy-backup-integration rust-legacy-converter-integration rust-legacy-postgres-integration rust-legacy-redis-integration rust-route-audit rust-worker-reconcile rust-target-gate \
+	bare-metal-fault-matrix-plan bare-metal-fault-matrix-audit bare-metal-fault-matrix-verify-guest bare-metal-fault-matrix \
 	public-bundle-audit runtime-isolation-audit native-database-audit native-release-audit frontend-source-audit parity-config-audit ui-sync-audit \
 	deploy-smoke visual-smoke interaction-parity accessibility-smoke behavior-parity \
 	reference-oracle-check reference-oracle-up reference-oracle-down \
@@ -32,6 +33,13 @@ VISUAL_PARITY_VIEWPORTS ?= desktop mobile
 PARITY_WORKERS ?=
 INTERACTION_PARITY_ARTIFACT_DIR ?= /app/frontend/.cache/interaction-parity
 A11Y_SMOKE_SCENARIOS ?= a11y-user-login a11y-admin-login a11y-user-dashboard a11y-admin-users
+BARE_METAL_MATRIX_ADAPTER ?=
+BARE_METAL_MATRIX_MANIFEST ?=
+BARE_METAL_MATRIX_RELEASE ?=
+BARE_METAL_MATRIX_GUEST_BINARY ?=
+BARE_METAL_MATRIX_REVISION ?=
+BARE_METAL_MATRIX_OUTPUT ?=
+BARE_METAL_MATRIX_HARD_RESET ?= not-run
 
 INTERACTION_PARITY_SCENARIOS ?= user-login-form-language user-login-language-persistence user-home-root-page-state user-register-form-state user-forget-form-state admin-root-page-state admin-login-form-state \
 	admin-system-queue-state user-dashboard-header-language-dropdown user-session-expired-redirect user-auth-401-no-redirect user-dashboard-dark-mode-persistence user-dashboard-subscribe-drawer user-dashboard-subscribe-import-links \
@@ -118,6 +126,105 @@ rust-test:
 	$(DCF) build rust-api
 	$(DCF) run --rm -T --no-deps --entrypoint bash rust-api -lc \
 		'. /usr/local/cargo/env; cargo test --workspace --locked'
+
+bare-metal-fault-matrix-plan:
+	@backend/rust/scripts/run-bare-metal-fault-matrix-supervisor.sh \
+		--hard-reset "$(BARE_METAL_MATRIX_HARD_RESET)"
+
+bare-metal-fault-matrix-audit:
+	@bash -n \
+		backend/rust/scripts/run-bare-metal-fault-matrix-supervisor.sh \
+		backend/rust/test-fixtures/legacy-fault-matrix/cleanup-guest.sh
+	@backend/rust/scripts/run-bare-metal-fault-matrix-supervisor.sh >/dev/null
+	@if backend/rust/scripts/run-bare-metal-fault-matrix-supervisor.sh --execute >/dev/null 2>&1; then \
+		echo 'matrix supervisor accepted an incomplete destructive invocation'; exit 1; \
+	fi
+	@if backend/rust/scripts/run-bare-metal-fault-matrix-supervisor.sh --execute \
+		--guest-binary /definitely-missing/v2board-matrix-guest >/dev/null 2>&1; then \
+		echo 'matrix supervisor accepted a missing guest binary'; exit 1; \
+	fi
+	@if backend/rust/test-fixtures/legacy-fault-matrix/cleanup-guest.sh \
+		--expected-guest-id audit-missing-marker >/dev/null 2>&1; then \
+		echo 'matrix guest cleanup accepted a host without its disposable marker'; exit 1; \
+	fi
+	@! rg -n 'v2board-bare-metal-fault-matrix|bare-metal-fault-matrix' \
+		Dockerfile.rust deploy/systemd
+	@rg -Fqx 'required-features = ["bare-metal-fault-matrix"]' \
+		backend/rust/crates/lifecycle/Cargo.toml
+	@rg -Fqx 'ConditionPathExists=/etc/v2board/bare-metal-fault-matrix-disposable.json' \
+		backend/rust/test-fixtures/legacy-fault-matrix/systemd/v2board-fault-matrix-guest.service
+	@rg -Fq '.process_alive_before_reset == true' \
+		backend/rust/scripts/run-bare-metal-fault-matrix-supervisor.sh
+	@rg -Fq 'hard_reset_complete_case_count -eq $$hard_reset_expected_case_count' \
+		backend/rust/scripts/run-bare-metal-fault-matrix-supervisor.sh
+	@rg -Fq 'bare-metal-fault-matrix-verify-guest' \
+		backend/rust/scripts/run-bare-metal-fault-matrix-supervisor.sh
+	@rg -Fq '.production_capability_available == false' \
+		backend/rust/scripts/run-bare-metal-fault-matrix-supervisor.sh
+	@rg -Fq '.machine.machine_id_sha256 == $$machine_id_sha256' \
+		backend/rust/scripts/run-bare-metal-fault-matrix-supervisor.sh
+	@! rg -n '^\[Install\]$$' \
+		backend/rust/test-fixtures/legacy-fault-matrix/systemd/*.service
+	$(DCF) build rust-api
+	$(DCF) run --rm -T --no-deps --entrypoint bash rust-api -lc \
+		'. /usr/local/cargo/env; set -eu; \
+		 cargo check --locked -p v2board-lifecycle --no-default-features --bin v2board-lifecycle; \
+		 cargo clippy --locked -p v2board-lifecycle --features bare-metal-fault-matrix \
+			--bin v2board-bare-metal-fault-matrix-guest --tests -- -D warnings; \
+		 cargo test --locked -p v2board-lifecycle --features bare-metal-fault-matrix \
+			--bin v2board-bare-metal-fault-matrix-guest; \
+		 cargo test --locked -p v2board-provision --features bare-metal-fault-matrix \
+			bare_metal_fault_matrix::tests'
+	@echo 'Bare-metal matrix scripts fail closed and test-only fixtures are absent from production release inputs.'
+
+bare-metal-fault-matrix-verify-guest:
+	@test -n "$(BARE_METAL_MATRIX_GUEST_BINARY)" || \
+		{ echo 'BARE_METAL_MATRIX_GUEST_BINARY is required'; exit 64; }
+	@case "$(BARE_METAL_MATRIX_GUEST_BINARY)" in /*) ;; \
+		*) echo 'BARE_METAL_MATRIX_GUEST_BINARY must be absolute'; exit 64 ;; esac
+	@test -f "$(BARE_METAL_MATRIX_GUEST_BINARY)" && test ! -L "$(BARE_METAL_MATRIX_GUEST_BINARY)" || \
+		{ echo 'BARE_METAL_MATRIX_GUEST_BINARY must be a regular non-symlink file'; exit 64; }
+	@test -n "$(BARE_METAL_MATRIX_REVISION)" || \
+		{ echo 'BARE_METAL_MATRIX_REVISION is required'; exit 64; }
+	@test "$$(git rev-parse HEAD)" = "$(BARE_METAL_MATRIX_REVISION)" || \
+		{ echo 'BARE_METAL_MATRIX_REVISION must equal clean HEAD'; exit 65; }
+	@test -z "$$(git status --porcelain=v1 --untracked-files=all)" || \
+		{ echo 'guest rebuild verification requires a clean worktree'; exit 65; }
+	$(DCF) build rust-api
+	$(DCF) run --rm -T --no-deps --entrypoint bash \
+		-v "$(BARE_METAL_MATRIX_GUEST_BINARY):/matrix-input/v2board-bare-metal-fault-matrix-guest:ro" \
+		rust-api -lc \
+		'. /usr/local/cargo/env; set -eu; \
+		 cargo build --release --locked -p v2board-lifecycle --features bare-metal-fault-matrix \
+			--bin v2board-bare-metal-fault-matrix-guest; \
+		 cmp /app/target/release/v2board-bare-metal-fault-matrix-guest \
+			/matrix-input/v2board-bare-metal-fault-matrix-guest'
+
+bare-metal-fault-matrix: bare-metal-fault-matrix-audit
+	@test -n "$(BARE_METAL_MATRIX_ADAPTER)" || \
+		{ echo 'BARE_METAL_MATRIX_ADAPTER is required'; exit 64; }
+	@test -n "$(BARE_METAL_MATRIX_MANIFEST)" || \
+		{ echo 'BARE_METAL_MATRIX_MANIFEST is required'; exit 64; }
+	@test -n "$(BARE_METAL_MATRIX_RELEASE)" || \
+		{ echo 'BARE_METAL_MATRIX_RELEASE is required'; exit 64; }
+	@test -n "$(BARE_METAL_MATRIX_GUEST_BINARY)" || \
+		{ echo 'BARE_METAL_MATRIX_GUEST_BINARY is required'; exit 64; }
+	@case "$(BARE_METAL_MATRIX_GUEST_BINARY)" in /*) ;; \
+		*) echo 'BARE_METAL_MATRIX_GUEST_BINARY must be absolute'; exit 64 ;; esac
+	@test -f "$(BARE_METAL_MATRIX_GUEST_BINARY)" && test ! -L "$(BARE_METAL_MATRIX_GUEST_BINARY)" || \
+		{ echo 'BARE_METAL_MATRIX_GUEST_BINARY must be a regular non-symlink file'; exit 64; }
+	@test -n "$(BARE_METAL_MATRIX_REVISION)" || \
+		{ echo 'BARE_METAL_MATRIX_REVISION is required'; exit 64; }
+	@test -n "$(BARE_METAL_MATRIX_OUTPUT)" || \
+		{ echo 'BARE_METAL_MATRIX_OUTPUT is required'; exit 64; }
+	@backend/rust/scripts/run-bare-metal-fault-matrix-supervisor.sh --execute \
+		--adapter "$(BARE_METAL_MATRIX_ADAPTER)" \
+		--manifest "$(BARE_METAL_MATRIX_MANIFEST)" \
+		--release "$(BARE_METAL_MATRIX_RELEASE)" \
+		--guest-binary "$(BARE_METAL_MATRIX_GUEST_BINARY)" \
+		--revision "$(BARE_METAL_MATRIX_REVISION)" \
+		--output "$(BARE_METAL_MATRIX_OUTPUT)" \
+		--hard-reset "$(BARE_METAL_MATRIX_HARD_RESET)"
 
 rust-integration: rust-lifecycle-ledger-integration rust-legacy-mysql-integration rust-legacy-converter-integration rust-legacy-postgres-integration rust-legacy-redis-integration
 	$(DCF) build rust-api

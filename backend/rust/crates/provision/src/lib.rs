@@ -1,5 +1,7 @@
 mod apply_authorization;
 pub mod apply_journal;
+#[cfg(feature = "bare-metal-fault-matrix")]
+pub mod bare_metal_fault_matrix;
 mod inspect;
 pub mod legacy_apply;
 mod legacy_apply_capability;
@@ -23,6 +25,9 @@ pub use inspect::{
     LegacyJsonIdArrayColumnInspection, LegacyJsonIdArrayInspection, NativeUpgradeInspection,
     NextAction, PostgresInspection, PreflightVerdict, ProvisionPlan, ProvisionPlanError,
     SourceRedisInspection, TargetRedisInspection, build_inspection, build_plan,
+};
+pub use legacy_apply_capability::{
+    PRODUCTION_LEGACY_APPLY_CAPABILITY, ProductionLegacyApplyCapability,
 };
 pub use manifest::{
     LEGACY_REFERENCE_COMMIT, NativeUpgradeImpactSpec, ProvisionKind, ProvisionSpec,

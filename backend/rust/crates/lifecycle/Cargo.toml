@@ -9,8 +9,31 @@ rust-version.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = []
+bare-metal-fault-matrix = [
+  "dep:flate2",
+  "dep:serde",
+  "dep:sha2",
+  "dep:tar",
+  "dep:url",
+  "dep:uuid",
+  "v2board-provision/bare-metal-fault-matrix",
+]
+
 [dependencies]
 anyhow.workspace = true
+flate2 = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
 serde_json.workspace = true
+sha2 = { workspace = true, optional = true }
+tar = { workspace = true, optional = true }
 tokio.workspace = true
+url = { workspace = true, optional = true }
+uuid = { workspace = true, optional = true }
 v2board-provision = { version = "0.1.0", path = "../provision" }
+
+[[bin]]
+name = "v2board-bare-metal-fault-matrix-guest"
+path = "src/bin/v2board-bare-metal-fault-matrix-guest.rs"
+required-features = ["bare-metal-fault-matrix"]

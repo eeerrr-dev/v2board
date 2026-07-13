@@ -4405,7 +4405,7 @@ pub(crate) mod tests {
         let plan = crate::inspect::build_inspection(&spec, crate::inspect::InspectionMode::Online)
             .await
             .expect("metadata-only native plan");
-        assert_eq!(plan.report_version, 4);
+        assert_eq!(plan.report_version, 5);
         assert_eq!(plan.report_sha256.len(), 64);
         assert_eq!(plan.report_binding_hmac_sha256.len(), 64);
         assert!(plan.converter_available);

@@ -1,0 +1,33 @@
+[Unit]
+Description=V2Board disposable bare-metal fault-matrix guest
+Documentation=file:///opt/v2board/fault-matrix/README.md
+ConditionPathExists=/etc/v2board/bare-metal-fault-matrix-disposable.json
+ConditionPathExists=/run/v2board-fault-matrix/guest.env
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Destructive test-only fixture. Never install this through the production
+# release and never enable it at boot. The external adapter rewrites guest.env
+# atomically before each start/resume invocation.
+Type=exec
+User=root
+Group=root
+WorkingDirectory=/var/lib/v2board/fault-matrix
+EnvironmentFile=/run/v2board-fault-matrix/guest.env
+ExecStart=/opt/v2board/fault-matrix/v2board-bare-metal-fault-matrix-guest ${V2BOARD_MATRIX_ACTION} --case ${V2BOARD_MATRIX_CASE}
+Restart=no
+TimeoutStartSec=infinity
+TimeoutStopSec=15s
+KillMode=control-group
+SendSIGKILL=yes
+UMask=0077
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=v2board-fault-matrix-guest
+
+# The real production executor must control systemd and the source/target
+# datastores, so this disposable VM fixture cannot use the production service
+# sandbox. The external supervisor and machine-bound marker are the boundary.
+NoNewPrivileges=false
+PrivateTmp=true

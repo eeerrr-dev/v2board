@@ -115,7 +115,10 @@ field 拒绝，不会静默覆盖派生值。
 - `release` 只填写安全的 content release ID 和 archive 的 64 位小写 SHA-256；archive 输入固定为 operation
   目录的 `inputs/native-release.tar.gz`，部署根固定为 `/opt/v2board/releases`，原子入口固定为
   `/opt/v2board/current`。该 archive 必须是 `root:root 0400` 的 regular file（不能是 symlink）；工具在同一
-  已打开 inode 上完成 digest、结构化 tar 校验与安全解包，不接受可写的“待会再改”输入。
+  已打开 inode 上完成 digest、结构化 tar 校验与安全解包，不接受可写的“待会再改”输入。Online 与
+  FencedFinal inspection 都会先以纯只读流式方式验证完整 tar 虚拟树、类型/权限/限额、RELEASE、所有常规
+  文件的 `SHA256SUMS` 全覆盖、前端入口和仓库内已通过 `systemd-analyze` 的 canonical unit 精确字节；真正
+  start 还会在创建 journal、停旧服务或写 target 之前再次执行同一预检。预检不解包，也不写 `/opt`。
 - `systemd` 只填写全部旧 writer/worker/scheduler
   unit 必须分类列出、全局唯一，且不能冒充新版 unit。每个 scheduler 必须同时声明同 stem 的 `.timer`
   与实际 `.service`，preflight 会核对 `Triggers/TriggeredBy`。授权后的第一步对 API、timer 和被触发的
@@ -386,6 +389,38 @@ Docker `make rust-integration` 还固定运行 Oracle MySQL 8.4 完整 inspectio
 `age + mysqldump + mysql` 加密备份/隔离恢复/二次重物化、Redis Lua 原子流量冻结与精确重试、PostgreSQL
 traffic fold/ACL，以及 PostgreSQL → ClickHouse outbox replay。这些是真实 datastore 集成门，但不能冒充
 Linux systemd、宿主机掉电、ENOSPC、inode/挂载丢失和网络分区的裸机证据。
+
+### 裸机 fault matrix runner（证据工具，不是完成证据）
+
+仓库提供 feature-gated guest runner、test-only systemd fixture 和 guest 外部 supervisor。先运行
+`make bare-metal-fault-matrix-plan` 只会打印计划，不连接 guest；真实执行必须显式填写
+`BARE_METAL_MATRIX_ADAPTER`、`BARE_METAL_MATRIX_MANIFEST`、`BARE_METAL_MATRIX_RELEASE`、
+`BARE_METAL_MATRIX_GUEST_BINARY`、`BARE_METAL_MATRIX_REVISION`、`BARE_METAL_MATRIX_OUTPUT`
+后运行 `make bare-metal-fault-matrix`。Make 会从该 clean revision 在固定 Docker Rust 环境重新构建
+feature-gated guest，并与所给 artifact 逐字节比较；stale guest 即使自带一致 SHA 也不能通过。
+该复核由 supervisor 自身强制调用独立的 `bare-metal-fault-matrix-verify-guest` target，直接执行脚本也
+不能绕过。guest catalog 还必须证明全局 production capability 仍为 unavailable，summary 只记录这个
+实测值，不宣称 fault matrix 自动修改了生产开关。
+adapter 合同和 disposable marker/清理边界见
+`backend/rust/test-fixtures/legacy-fault-matrix/README.md`。
+
+supervisor 从 guest `list-cases` 获取当前 revision 已显式挂钩的 composition-operation group 闭集及 digest，
+不把场景数写死；当前实现是 19 组、每组三种模式（共 57 case），但监督器只信 catalog 而不信这个数字。
+每个 case 都要求独立 snapshot reset、machine-bound disposable marker、fsync ready record、外部中断、
+同一 operation/run 的 forward resume、permanent ledger/source retirement/native readiness 证明。最终
+`summary.json` 绑定 source revision、release、manifest、guest binary、adapter、fault-point set 和每个 case 的摘要，并
+分别记录 `expected_case_count`、`complete_case_count`。只有 exact closure 才能生成通过汇总。
+
+这 57 项只证明每个 composition group 的进入前、成功后 ACK 丢失和成功后外部终止恢复，不等于已经覆盖
+group 内部每一个副作用之间的掉电窗。例如 source fence/drain、backup/restore、target bootstrap、双角色配置
+安装和 API/worker 分步启动仍包含更细的 datastore/receipt/systemd primitive。必须继续把 catalog 下沉到这些
+内部 commit 边界，并在真实 Linux/systemd 虚拟机上完成、复核 revision-bound evidence 后，才可能评审生产
+capability；runner 存在、57 项代码测试通过或只跑 composition-group matrix 都不能打开生产迁移。
+
+默认 `hard_reset.status=not_run`。`BARE_METAL_MATRIX_HARD_RESET=adapter` 会另外执行全部可硬重启点，并
+要求 hypervisor event ID 和变化的 Linux boot ID；`manual` 只生成 `not_run` 请求，人工文字、截图或自写
+receipt 不能算通过。该 runner 的存在或一次局部运行都不会修改 production capability，也不能代替仍需
+执行和复核的真实裸机故障集合。
 
 普通 `v2board-api migrate` 只运行已确认 native PostgreSQL lineage 的 SQLx migration；它不是 legacy
 adoption/converter 命令，绝不能指向旧 MySQL 或未知 PostgreSQL 数据库。

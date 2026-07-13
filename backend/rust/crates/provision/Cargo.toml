@@ -9,6 +9,13 @@ rust-version.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = []
+# Compiles the destructive bare-metal fault harness into a dedicated matrix
+# binary. Production binaries never enable this feature and therefore contain
+# neither the controller nor calls to its injection hooks.
+bare-metal-fault-matrix = []
+
 [dependencies]
 hex.workspace = true
 hmac.workspace = true

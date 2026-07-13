@@ -2,7 +2,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     ffi::{OsStr, OsString},
     fs::{self, File, OpenOptions},
-    io::{self, Read, Seek, SeekFrom, Write},
+    io::{self, BufReader, Read, Seek, SeekFrom, Write},
     os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt, symlink},
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -4003,22 +4003,14 @@ fn verify_materialized_release_tree(
     )?;
     let api_text = read_bounded_regular_utf8(&api_unit, 128 * 1024)?;
     let worker_text = read_bounded_regular_utf8(&worker_unit, 128 * 1024)?;
-    if !api_text.contains("ExecStart=/opt/v2board/current/bin/v2board-api")
-        || !api_text.contains("User=v2board-api")
-        || !api_text.contains("Group=v2board-api")
-        || !api_text.contains("V2BOARD_CONFIG_PATH=/var/lib/v2board/api/config.json")
-        || api_text.contains("0.0.0.0:8080")
-        || !worker_text.contains("ExecStart=/opt/v2board/current/bin/v2board-workers")
-        || !worker_text.contains("User=v2board-worker")
-        || !worker_text.contains("Group=v2board-worker")
-        || !worker_text.contains("V2BOARD_CONFIG_PATH=/var/lib/v2board/worker/config.json")
-        || !worker_text.contains("Type=notify")
-        || !worker_text.contains("WatchdogSec=30s")
-    {
-        return Err(ExecutorError::sanitized("release_systemd_contract_invalid"));
-    }
+    validate_release_systemd_contract(&api_text, &worker_text)?;
     release_tree_digest(&canonical)
 }
+
+const CANONICAL_API_UNIT_BYTES: &[u8] =
+    include_bytes!("../../../../../deploy/systemd/v2board-api.service");
+const CANONICAL_WORKER_UNIT_BYTES: &[u8] =
+    include_bytes!("../../../../../deploy/systemd/v2board-worker.service");
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct NativeReleaseMetadata {
@@ -4026,7 +4018,13 @@ struct NativeReleaseMetadata {
 }
 
 fn read_release_metadata(root: &Path) -> Result<NativeReleaseMetadata, ExecutorError> {
-    let text = read_bounded_regular_utf8(&root.join("RELEASE"), 64 * 1024)?;
+    let bytes = read_regular_limited(&root.join("RELEASE"), 64 * 1024)?;
+    parse_release_metadata(&bytes)
+}
+
+fn parse_release_metadata(bytes: &[u8]) -> Result<NativeReleaseMetadata, ExecutorError> {
+    let text = std::str::from_utf8(bytes)
+        .map_err(|_| ExecutorError::sanitized("release_text_not_utf8"))?;
     if text.contains('\r') || text.as_bytes().contains(&0) {
         return Err(ExecutorError::sanitized("release_metadata_invalid"));
     }
@@ -4071,8 +4069,93 @@ fn read_release_metadata(root: &Path) -> Result<NativeReleaseMetadata, ExecutorE
     })
 }
 
+/// Fully read-only verification of the exact manifest-bound native release.
+/// It opens one root-owned archive inode, hashes and indexes that same file,
+/// and never creates an extraction directory or writes under `/opt`.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ReadOnlyReleaseArchiveInspection {
+    pub release_id: String,
+    pub archive_sha256: String,
+    pub source_revision: String,
+    pub entry_count: u64,
+    pub regular_file_count: u64,
+    pub internal_checksum_count: u64,
+    pub virtual_tree_sha256: String,
+    pub complete_structure_verified: bool,
+    pub internal_sha256sums_verified: bool,
+    pub systemd_contract_verified: bool,
+    pub target_filesystem_unchanged: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum IndexedReleaseEntryKind {
+    Regular,
+    Directory,
+    Symlink,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct IndexedReleaseEntry {
+    kind: IndexedReleaseEntryKind,
+    mode: u32,
+    size: u64,
+    sha256: Option<String>,
+    captured: Option<Vec<u8>>,
+    link_target: Option<PathBuf>,
+}
+
+/// Admission-time archive verification. The immutable receipt, archive inode,
+/// manifest hash, every tar entry, and every internal checksum are bound into
+/// the returned inspection. This function has no target mutation path.
+pub(crate) fn inspect_release_archive_read_only(
+    spec: &ProvisionSpec,
+) -> Result<ReadOnlyReleaseArchiveInspection, ExecutorError> {
+    let execution = spec
+        .legacy_apply_execution()
+        .ok_or_else(|| ExecutorError::sanitized("release_execution_missing"))?;
+    let release = ReleaseArtifactSpec::new(
+        &execution.release.release_id,
+        &execution.release.archive_sha256,
+    )
+    .map_err(|_| ExecutorError::sanitized("release_binding_invalid"))?;
+    let receipt = ReceiptBinding::new(
+        execution.receipts.release_archive.path.clone(),
+        execution.receipts.release_archive.sha256.clone(),
+    )
+    .map_err(|_| ExecutorError::sanitized("release_receipt_binding_invalid"))?;
+    load_external_receipt(
+        &receipt,
+        &spec.operation_id,
+        ExternalReceiptKind::ReleaseArchiveVerified,
+        release.external_archive_sha256(),
+    )?;
+    let archive_path = &execution.release.archive_path;
+    let mut file = open_root_owned_release_archive(archive_path)?;
+    let archive_sha256 = hash_open_release_archive(&mut file)?;
+    if archive_sha256 != execution.release.archive_sha256 {
+        return Err(ExecutorError::sanitized("release_archive_digest_mismatch"));
+    }
+    let inspection =
+        inspect_open_release_archive(&mut file, &execution.release.release_id, &archive_sha256)?;
+    if hash_open_release_archive(&mut file)? != archive_sha256 {
+        return Err(ExecutorError::sanitized(
+            "release_archive_changed_during_inspection",
+        ));
+    }
+    let opened = file
+        .metadata()
+        .map_err(|_| ExecutorError::sanitized("release_archive_metadata_failed"))?;
+    let current = fs::symlink_metadata(archive_path)
+        .map_err(|_| ExecutorError::sanitized("release_archive_metadata_failed"))?;
+    if opened.dev() != current.dev() || opened.ino() != current.ino() {
+        return Err(ExecutorError::sanitized("release_archive_path_replaced"));
+    }
+    Ok(inspection)
+}
+
+const MAX_RELEASE_ARCHIVE_BYTES: u64 = 32 * 1024 * 1024 * 1024;
+
 fn open_root_owned_release_archive(path: &Path) -> Result<File, ExecutorError> {
-    const MAX_ARCHIVE_BYTES: u64 = 32 * 1024 * 1024 * 1024;
     let file =
         File::open(path).map_err(|_| ExecutorError::sanitized("release_archive_open_failed"))?;
     let metadata = file
@@ -4088,7 +4171,7 @@ fn open_root_owned_release_archive(path: &Path) -> Result<File, ExecutorError> {
         || metadata.uid() != 0
         || metadata.permissions().mode() & 0o777 != 0o400
         || metadata.len() == 0
-        || metadata.len() > MAX_ARCHIVE_BYTES
+        || metadata.len() > MAX_RELEASE_ARCHIVE_BYTES
     {
         return Err(ExecutorError::sanitized("release_archive_unsafe"));
     }
@@ -4100,6 +4183,7 @@ fn hash_open_release_archive(file: &mut File) -> Result<String, ExecutorError> {
         .map_err(|_| ExecutorError::sanitized("release_archive_seek_failed"))?;
     let mut digest = Sha256::new();
     let mut buffer = [0_u8; 64 * 1024];
+    let mut total = 0_u64;
     loop {
         let count = file
             .read(&mut buffer)
@@ -4107,10 +4191,541 @@ fn hash_open_release_archive(file: &mut File) -> Result<String, ExecutorError> {
         if count == 0 {
             break;
         }
+        total = total
+            .checked_add(count as u64)
+            .ok_or_else(|| ExecutorError::sanitized("release_archive_size_overflow"))?;
+        if total > MAX_RELEASE_ARCHIVE_BYTES {
+            return Err(ExecutorError::sanitized("release_archive_unsafe"));
+        }
         digest.update(&buffer[..count]);
     }
     file.seek(SeekFrom::Start(0))
         .map_err(|_| ExecutorError::sanitized("release_archive_seek_failed"))?;
+    Ok(hex::encode(digest.finalize()))
+}
+
+fn inspect_open_release_archive(
+    file: &mut File,
+    release_id: &str,
+    archive_sha256: &str,
+) -> Result<ReadOnlyReleaseArchiveInspection, ExecutorError> {
+    const MAX_RELEASE_FILE_BYTES: u64 = 8 * 1024 * 1024 * 1024;
+    const MAX_RELEASE_UNPACKED_BYTES: u64 = 32 * 1024 * 1024 * 1024;
+    const MAX_SHA256SUMS_BYTES: u64 = 32 * 1024 * 1024;
+    const FORBIDDEN_LEGACY_FILES: &[&str] = &[
+        "umi.js",
+        "umi.css",
+        "components.chunk.css",
+        "vendors.async.js",
+        "components.async.js",
+        "env.example.js",
+        "custom.css",
+        "custom.js",
+    ];
+
+    file.seek(SeekFrom::Start(0))
+        .map_err(|_| ExecutorError::sanitized("release_archive_seek_failed"))?;
+    let compressed_size = file
+        .metadata()
+        .map_err(|_| ExecutorError::sanitized("release_archive_metadata_failed"))?
+        .len();
+    let decoder = flate2::bufread::GzDecoder::new(BufReader::new(&mut *file));
+    let mut archive = tar::Archive::new(decoder);
+    let entries = archive
+        .entries()
+        .map_err(|_| ExecutorError::sanitized("release_archive_entries_invalid"))?;
+    let mut indexed = BTreeMap::<PathBuf, IndexedReleaseEntry>::new();
+    let mut total_size = 0_u64;
+    let mut entry_count = 0_usize;
+    for entry in entries {
+        let mut entry =
+            entry.map_err(|_| ExecutorError::sanitized("release_archive_entry_invalid"))?;
+        entry_count = entry_count.saturating_add(1);
+        if entry_count > MAX_RELEASE_ENTRIES {
+            return Err(ExecutorError::sanitized("release_archive_too_many_entries"));
+        }
+        let entry_type = entry.header().entry_type();
+        let kind = match entry_type {
+            EntryType::Regular => IndexedReleaseEntryKind::Regular,
+            EntryType::Directory => IndexedReleaseEntryKind::Directory,
+            EntryType::Symlink => IndexedReleaseEntryKind::Symlink,
+            _ => {
+                return Err(ExecutorError::sanitized(
+                    "release_archive_entry_type_forbidden",
+                ));
+            }
+        };
+        let path = entry
+            .path()
+            .map_err(|_| ExecutorError::sanitized("release_archive_path_invalid"))?;
+        let normalized = normalize_release_archive_path(path.as_ref())?;
+        if normalized.as_os_str().is_empty() {
+            if kind != IndexedReleaseEntryKind::Directory {
+                return Err(ExecutorError::sanitized("release_archive_path_empty"));
+            }
+            continue;
+        }
+        if normalized.to_str().is_none()
+            || normalized
+                .file_name()
+                .and_then(OsStr::to_str)
+                .is_some_and(|name| FORBIDDEN_LEGACY_FILES.contains(&name))
+            || indexed.contains_key(&normalized)
+        {
+            return Err(ExecutorError::sanitized("release_archive_path_invalid"));
+        }
+        let mode = entry
+            .header()
+            .mode()
+            .map_err(|_| ExecutorError::sanitized("release_archive_mode_invalid"))?;
+        let expected_mode = match kind {
+            IndexedReleaseEntryKind::Directory => 0o755,
+            IndexedReleaseEntryKind::Symlink => 0o777,
+            IndexedReleaseEntryKind::Regular if normalized.parent() == Some(Path::new("bin")) => {
+                0o755
+            }
+            IndexedReleaseEntryKind::Regular => 0o644,
+        };
+        if mode != expected_mode {
+            return Err(ExecutorError::sanitized("release_archive_mode_invalid"));
+        }
+        let size = entry.size();
+        if size > MAX_RELEASE_FILE_BYTES || (kind != IndexedReleaseEntryKind::Regular && size != 0)
+        {
+            return Err(ExecutorError::sanitized(
+                "release_archive_entry_size_invalid",
+            ));
+        }
+        total_size = total_size
+            .checked_add(size)
+            .ok_or_else(|| ExecutorError::sanitized("release_archive_size_overflow"))?;
+        if total_size > MAX_RELEASE_UNPACKED_BYTES {
+            return Err(ExecutorError::sanitized(
+                "release_archive_unpacked_size_exceeded",
+            ));
+        }
+
+        let (sha256, captured, link_target) = match kind {
+            IndexedReleaseEntryKind::Regular => {
+                if entry.link_name_bytes().is_some() {
+                    return Err(ExecutorError::sanitized(
+                        "release_archive_unexpected_link_target",
+                    ));
+                }
+                let capture_limit = match normalized.to_str() {
+                    Some("SHA256SUMS") => Some(MAX_SHA256SUMS_BYTES),
+                    Some("RELEASE") => Some(64 * 1024),
+                    Some("systemd/v2board-api.service" | "systemd/v2board-worker.service") => {
+                        Some(128 * 1024)
+                    }
+                    _ => None,
+                };
+                if capture_limit.is_some_and(|limit| size == 0 || size > limit) {
+                    return Err(ExecutorError::sanitized(
+                        "release_archive_contract_file_size_invalid",
+                    ));
+                }
+                let mut digest = Sha256::new();
+                let mut captured = capture_limit.map(|_| Vec::with_capacity(size as usize));
+                let mut read_size = 0_u64;
+                let mut buffer = [0_u8; 64 * 1024];
+                loop {
+                    let count = entry.read(&mut buffer).map_err(|_| {
+                        ExecutorError::sanitized("release_archive_entry_read_failed")
+                    })?;
+                    if count == 0 {
+                        break;
+                    }
+                    read_size = read_size
+                        .checked_add(count as u64)
+                        .ok_or_else(|| ExecutorError::sanitized("release_archive_size_overflow"))?;
+                    digest.update(&buffer[..count]);
+                    if let Some(bytes) = captured.as_mut() {
+                        bytes.extend_from_slice(&buffer[..count]);
+                    }
+                }
+                if read_size != size {
+                    return Err(ExecutorError::sanitized(
+                        "release_archive_entry_size_mismatch",
+                    ));
+                }
+                (Some(hex::encode(digest.finalize())), captured, None)
+            }
+            IndexedReleaseEntryKind::Directory => {
+                if entry.link_name_bytes().is_some() {
+                    return Err(ExecutorError::sanitized(
+                        "release_archive_unexpected_link_target",
+                    ));
+                }
+                (None, None, None)
+            }
+            IndexedReleaseEntryKind::Symlink => {
+                validate_release_archive_symlink(&normalized, &entry)?;
+                let target = entry
+                    .link_name()
+                    .map_err(|_| {
+                        ExecutorError::sanitized("release_archive_symlink_target_invalid")
+                    })?
+                    .ok_or_else(|| {
+                        ExecutorError::sanitized("release_archive_symlink_target_missing")
+                    })?
+                    .into_owned();
+                (None, None, Some(target))
+            }
+        };
+        indexed.insert(
+            normalized,
+            IndexedReleaseEntry {
+                kind,
+                mode,
+                size,
+                sha256,
+                captured,
+                link_target,
+            },
+        );
+    }
+    // `tar` stops at its end markers. Drain the gzip member and prove that the
+    // only remaining uncompressed tar padding is zero, then prove there is no
+    // second gzip member or opaque compressed suffix outside the indexed tree.
+    let mut decoder = archive.into_inner();
+    let mut trailing = [0_u8; 64 * 1024];
+    loop {
+        let count = decoder
+            .read(&mut trailing)
+            .map_err(|_| ExecutorError::sanitized("release_archive_trailer_invalid"))?;
+        if count == 0 {
+            break;
+        }
+        if trailing[..count].iter().any(|byte| *byte != 0) {
+            return Err(ExecutorError::sanitized("release_archive_trailing_payload"));
+        }
+    }
+    let mut compressed = decoder.into_inner();
+    if !compressed.buffer().is_empty()
+        || compressed
+            .stream_position()
+            .map_err(|_| ExecutorError::sanitized("release_archive_seek_failed"))?
+            != compressed_size
+    {
+        return Err(ExecutorError::sanitized(
+            "release_archive_compressed_suffix",
+        ));
+    }
+    if indexed.is_empty() {
+        return Err(ExecutorError::sanitized("release_archive_empty"));
+    }
+    validate_indexed_release_parents(&indexed)?;
+    require_exact_indexed_children(
+        &indexed,
+        Path::new(""),
+        &["bin", "frontend", "systemd", "RELEASE", "SHA256SUMS"],
+    )?;
+    require_exact_indexed_children(
+        &indexed,
+        Path::new("bin"),
+        &["v2board-api", "v2board-workers", "v2board-analytics-schema"],
+    )?;
+    require_exact_indexed_children(
+        &indexed,
+        Path::new("systemd"),
+        &["v2board-api.service", "v2board-worker.service"],
+    )?;
+    require_exact_indexed_children(
+        &indexed,
+        Path::new("frontend"),
+        &["current", "previous", "releases"],
+    )?;
+    for path in [
+        "bin/v2board-api",
+        "bin/v2board-workers",
+        "bin/v2board-analytics-schema",
+    ] {
+        let binary =
+            require_indexed_kind(&indexed, Path::new(path), IndexedReleaseEntryKind::Regular)?;
+        if binary.size == 0 || binary.mode & 0o111 == 0 {
+            return Err(ExecutorError::sanitized("release_archive_binary_invalid"));
+        }
+    }
+    for path in ["frontend/current", "frontend/previous"] {
+        let link =
+            require_indexed_kind(&indexed, Path::new(path), IndexedReleaseEntryKind::Symlink)?;
+        let resolved = resolve_indexed_release_link(Path::new(path), link)?;
+        require_indexed_kind(&indexed, &resolved, IndexedReleaseEntryKind::Directory)?;
+        if path == "frontend/current" {
+            for index in [
+                resolved.join("user/index.html"),
+                resolved.join("admin/index.html"),
+            ] {
+                let file =
+                    require_indexed_kind(&indexed, &index, IndexedReleaseEntryKind::Regular)?;
+                if !(1..=1024 * 1024).contains(&file.size) {
+                    return Err(ExecutorError::sanitized("release_archive_frontend_invalid"));
+                }
+            }
+        }
+    }
+
+    let metadata = require_indexed_kind(
+        &indexed,
+        Path::new("RELEASE"),
+        IndexedReleaseEntryKind::Regular,
+    )?;
+    let release_metadata = parse_release_metadata(
+        metadata
+            .captured
+            .as_deref()
+            .ok_or_else(|| ExecutorError::sanitized("release_metadata_missing"))?,
+    )?;
+    let api_unit = captured_indexed_utf8(&indexed, "systemd/v2board-api.service")?;
+    let worker_unit = captured_indexed_utf8(&indexed, "systemd/v2board-worker.service")?;
+    validate_release_systemd_contract(&api_unit, &worker_unit)?;
+    let internal_checksum_count = verify_indexed_sha256sums(&indexed)?;
+    let virtual_tree_sha256 = indexed_release_tree_sha256(&indexed)?;
+    let regular_file_count = indexed
+        .values()
+        .filter(|entry| entry.kind == IndexedReleaseEntryKind::Regular)
+        .count();
+    Ok(ReadOnlyReleaseArchiveInspection {
+        release_id: release_id.to_string(),
+        archive_sha256: archive_sha256.to_string(),
+        source_revision: release_metadata.source_revision,
+        entry_count: u64::try_from(indexed.len())
+            .map_err(|_| ExecutorError::sanitized("release_archive_too_many_entries"))?,
+        regular_file_count: u64::try_from(regular_file_count)
+            .map_err(|_| ExecutorError::sanitized("release_archive_too_many_entries"))?,
+        internal_checksum_count,
+        virtual_tree_sha256,
+        complete_structure_verified: true,
+        internal_sha256sums_verified: true,
+        systemd_contract_verified: true,
+        target_filesystem_unchanged: true,
+    })
+}
+
+fn validate_indexed_release_parents(
+    indexed: &BTreeMap<PathBuf, IndexedReleaseEntry>,
+) -> Result<(), ExecutorError> {
+    for path in indexed.keys() {
+        let mut parent = path.parent();
+        while let Some(value) = parent {
+            if value.as_os_str().is_empty() {
+                break;
+            }
+            require_indexed_kind(indexed, value, IndexedReleaseEntryKind::Directory)?;
+            parent = value.parent();
+        }
+    }
+    Ok(())
+}
+
+fn require_exact_indexed_children(
+    indexed: &BTreeMap<PathBuf, IndexedReleaseEntry>,
+    parent: &Path,
+    expected: &[&str],
+) -> Result<(), ExecutorError> {
+    let mut actual = indexed
+        .keys()
+        .filter(|path| path.parent() == Some(parent))
+        .map(|path| {
+            path.file_name()
+                .and_then(OsStr::to_str)
+                .map(ToString::to_string)
+                .ok_or_else(|| ExecutorError::sanitized("release_archive_path_invalid"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    actual.sort();
+    let mut expected = expected.iter().map(ToString::to_string).collect::<Vec<_>>();
+    expected.sort();
+    if actual != expected {
+        return Err(ExecutorError::sanitized(
+            "release_archive_directory_entries_invalid",
+        ));
+    }
+    Ok(())
+}
+
+fn require_indexed_kind<'a>(
+    indexed: &'a BTreeMap<PathBuf, IndexedReleaseEntry>,
+    path: &Path,
+    kind: IndexedReleaseEntryKind,
+) -> Result<&'a IndexedReleaseEntry, ExecutorError> {
+    let entry = indexed
+        .get(path)
+        .ok_or_else(|| ExecutorError::sanitized("release_archive_required_entry_missing"))?;
+    if entry.kind != kind {
+        return Err(ExecutorError::sanitized(
+            "release_archive_required_entry_type_invalid",
+        ));
+    }
+    Ok(entry)
+}
+
+fn resolve_indexed_release_link(
+    path: &Path,
+    entry: &IndexedReleaseEntry,
+) -> Result<PathBuf, ExecutorError> {
+    let target = entry
+        .link_target
+        .as_ref()
+        .ok_or_else(|| ExecutorError::sanitized("release_archive_symlink_target_missing"))?;
+    let mut resolved = path
+        .parent()
+        .ok_or_else(|| ExecutorError::sanitized("release_archive_symlink_parent_missing"))?
+        .to_path_buf();
+    for component in target.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::Normal(component) => resolved.push(component),
+            std::path::Component::ParentDir => {
+                if !resolved.pop() {
+                    return Err(ExecutorError::sanitized(
+                        "release_archive_symlink_escaped_root",
+                    ));
+                }
+            }
+            std::path::Component::RootDir | std::path::Component::Prefix(_) => {
+                return Err(ExecutorError::sanitized(
+                    "release_archive_symlink_target_absolute",
+                ));
+            }
+        }
+    }
+    Ok(resolved)
+}
+
+fn captured_indexed_utf8(
+    indexed: &BTreeMap<PathBuf, IndexedReleaseEntry>,
+    path: &str,
+) -> Result<String, ExecutorError> {
+    let entry = require_indexed_kind(indexed, Path::new(path), IndexedReleaseEntryKind::Regular)?;
+    let bytes = entry
+        .captured
+        .as_deref()
+        .ok_or_else(|| ExecutorError::sanitized("release_archive_contract_file_missing"))?;
+    let text = std::str::from_utf8(bytes)
+        .map_err(|_| ExecutorError::sanitized("release_text_not_utf8"))?;
+    if text.contains('\r') || text.as_bytes().contains(&0) {
+        return Err(ExecutorError::sanitized("release_systemd_contract_invalid"));
+    }
+    Ok(text.to_string())
+}
+
+fn validate_release_systemd_contract(
+    api_text: &str,
+    worker_text: &str,
+) -> Result<(), ExecutorError> {
+    // The source-owned units are independently checked with systemd-analyze.
+    // Exact bytes bind the archive to that syntax-checked, fully hardened
+    // contract without writing a temporary unit during this read-only pass.
+    if api_text.as_bytes() != CANONICAL_API_UNIT_BYTES
+        || worker_text.as_bytes() != CANONICAL_WORKER_UNIT_BYTES
+    {
+        return Err(ExecutorError::sanitized("release_systemd_contract_invalid"));
+    }
+    Ok(())
+}
+
+fn verify_indexed_sha256sums(
+    indexed: &BTreeMap<PathBuf, IndexedReleaseEntry>,
+) -> Result<u64, ExecutorError> {
+    let manifest = require_indexed_kind(
+        indexed,
+        Path::new("SHA256SUMS"),
+        IndexedReleaseEntryKind::Regular,
+    )?;
+    let text = std::str::from_utf8(
+        manifest
+            .captured
+            .as_deref()
+            .ok_or_else(|| ExecutorError::sanitized("release_sha256sums_missing"))?,
+    )
+    .map_err(|_| ExecutorError::sanitized("release_sha256sums_invalid"))?;
+    if text.is_empty() || text.contains('\r') || text.as_bytes().contains(&0) {
+        return Err(ExecutorError::sanitized("release_sha256sums_invalid"));
+    }
+    let mut covered = BTreeSet::new();
+    for line in text.lines() {
+        if line.len() < 67 {
+            return Err(ExecutorError::sanitized("release_sha256sums_invalid"));
+        }
+        let (digest, remainder) = line.split_at(64);
+        if !digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            || !remainder.starts_with("  ")
+        {
+            return Err(ExecutorError::sanitized("release_sha256sums_invalid"));
+        }
+        let path = normalize_release_archive_path(Path::new(&remainder[2..]))?;
+        if path.as_os_str().is_empty()
+            || path == Path::new("SHA256SUMS")
+            || !covered.insert(path.clone())
+        {
+            return Err(ExecutorError::sanitized("release_sha256sums_invalid"));
+        }
+        let entry = require_indexed_kind(indexed, &path, IndexedReleaseEntryKind::Regular)?;
+        if entry.sha256.as_deref() != Some(digest) {
+            return Err(ExecutorError::sanitized("release_internal_checksum_failed"));
+        }
+    }
+    let expected = indexed
+        .iter()
+        .filter_map(|(path, entry)| {
+            (entry.kind == IndexedReleaseEntryKind::Regular && path != Path::new("SHA256SUMS"))
+                .then_some(path.clone())
+        })
+        .collect::<BTreeSet<_>>();
+    if covered != expected {
+        return Err(ExecutorError::sanitized(
+            "release_sha256sums_coverage_incomplete",
+        ));
+    }
+    u64::try_from(covered.len())
+        .map_err(|_| ExecutorError::sanitized("release_archive_too_many_entries"))
+}
+
+fn indexed_release_tree_sha256(
+    indexed: &BTreeMap<PathBuf, IndexedReleaseEntry>,
+) -> Result<String, ExecutorError> {
+    let mut digest = Sha256::new();
+    digest.update(b"v2board-native-release-archive-index-v1\0");
+    for (path, entry) in indexed {
+        let path = path
+            .to_str()
+            .ok_or_else(|| ExecutorError::sanitized("release_archive_path_invalid"))?;
+        digest.update((path.len() as u64).to_be_bytes());
+        digest.update(path.as_bytes());
+        digest.update(entry.mode.to_be_bytes());
+        digest.update(entry.size.to_be_bytes());
+        match entry.kind {
+            IndexedReleaseEntryKind::Regular => {
+                digest.update(b"F");
+                digest.update(
+                    entry
+                        .sha256
+                        .as_deref()
+                        .ok_or_else(|| {
+                            ExecutorError::sanitized("release_archive_entry_digest_missing")
+                        })?
+                        .as_bytes(),
+                );
+            }
+            IndexedReleaseEntryKind::Directory => digest.update(b"D"),
+            IndexedReleaseEntryKind::Symlink => {
+                digest.update(b"L");
+                let target = entry
+                    .link_target
+                    .as_ref()
+                    .and_then(|target| target.to_str())
+                    .ok_or_else(|| {
+                        ExecutorError::sanitized("release_archive_symlink_target_invalid")
+                    })?;
+                digest.update((target.len() as u64).to_be_bytes());
+                digest.update(target.as_bytes());
+            }
+        }
+    }
     Ok(hex::encode(digest.finalize()))
 }
 
@@ -5139,6 +5754,185 @@ mod tests {
         let encoder = builder.into_inner().expect("finish tar");
         encoder.finish().expect("finish gzip");
         path
+    }
+
+    #[derive(Clone, Copy)]
+    enum CompleteArchiveMutation {
+        None,
+        InternalChecksum,
+        SystemdUnit,
+        UnexpectedRootEntry,
+        CompressedSuffix,
+        InvalidMode,
+    }
+
+    fn write_complete_release_archive(mutation: CompleteArchiveMutation) -> PathBuf {
+        let path = test_path("complete-release.tar.gz");
+        let mut files = BTreeMap::<&str, Vec<u8>>::from([
+            ("bin/v2board-api", b"api-binary".to_vec()),
+            ("bin/v2board-workers", b"worker-binary".to_vec()),
+            (
+                "bin/v2board-analytics-schema",
+                b"analytics-schema-binary".to_vec(),
+            ),
+            (
+                "frontend/releases/content-a/user/index.html",
+                b"<html>user</html>".to_vec(),
+            ),
+            (
+                "frontend/releases/content-a/admin/index.html",
+                b"<html>admin</html>".to_vec(),
+            ),
+            (
+                "systemd/v2board-api.service",
+                CANONICAL_API_UNIT_BYTES.to_vec(),
+            ),
+            (
+                "systemd/v2board-worker.service",
+                CANONICAL_WORKER_UNIT_BYTES.to_vec(),
+            ),
+            (
+                "RELEASE",
+                concat!(
+                    "format=v2board-native-release-v1\n",
+                    "source_revision=0123456789abcdef0123456789abcdef01234567\n",
+                    "target_os=linux\n",
+                    "target_arch=amd64\n"
+                )
+                .as_bytes()
+                .to_vec(),
+            ),
+        ]);
+        if matches!(mutation, CompleteArchiveMutation::SystemdUnit) {
+            files
+                .get_mut("systemd/v2board-api.service")
+                .expect("API unit")
+                .extend_from_slice(b"# unreviewed drift\n");
+        }
+        if matches!(mutation, CompleteArchiveMutation::UnexpectedRootEntry) {
+            files.insert("unexpected", b"unexpected".to_vec());
+        }
+        let mut checksums = files
+            .iter()
+            .map(|(path, bytes)| format!("{}  {path}\n", hex::encode(Sha256::digest(bytes))))
+            .collect::<String>();
+        if matches!(mutation, CompleteArchiveMutation::InternalChecksum) {
+            let replacement = if checksums.starts_with('0') { "1" } else { "0" };
+            checksums.replace_range(0..1, replacement);
+        }
+        files.insert("SHA256SUMS", checksums.into_bytes());
+
+        let file = File::create(&path).expect("complete archive file");
+        let encoder = GzEncoder::new(file, Compression::default());
+        let mut builder = tar::Builder::new(encoder);
+        for directory in [
+            "bin",
+            "frontend",
+            "frontend/releases",
+            "frontend/releases/content-a",
+            "frontend/releases/content-a/user",
+            "frontend/releases/content-a/admin",
+            "systemd",
+        ] {
+            let mut header = tar::Header::new_gnu();
+            header.set_entry_type(EntryType::Directory);
+            header.set_mode(0o755);
+            header.set_size(0);
+            header.set_path(directory).expect("directory path");
+            header.set_cksum();
+            builder
+                .append(&header, io::empty())
+                .expect("append directory");
+        }
+        for (entry_path, bytes) in files {
+            let mut header = tar::Header::new_gnu();
+            header.set_entry_type(EntryType::Regular);
+            let mut mode = if entry_path.starts_with("bin/") {
+                0o755
+            } else {
+                0o644
+            };
+            if matches!(mutation, CompleteArchiveMutation::InvalidMode)
+                && entry_path == "bin/v2board-api"
+            {
+                mode = 0o100;
+            }
+            header.set_mode(mode);
+            header.set_size(bytes.len() as u64);
+            header.set_path(entry_path).expect("file path");
+            header.set_cksum();
+            builder
+                .append(&header, bytes.as_slice())
+                .expect("append file");
+        }
+        for link in ["frontend/current", "frontend/previous"] {
+            let mut header = tar::Header::new_gnu();
+            header.set_entry_type(EntryType::Symlink);
+            header.set_mode(0o777);
+            header.set_size(0);
+            header.set_path(link).expect("symlink path");
+            header
+                .set_link_name("releases/content-a")
+                .expect("symlink target");
+            header.set_cksum();
+            builder
+                .append(&header, io::empty())
+                .expect("append symlink");
+        }
+        let encoder = builder.into_inner().expect("finish complete tar");
+        let mut file = encoder.finish().expect("finish complete gzip");
+        if matches!(mutation, CompleteArchiveMutation::CompressedSuffix) {
+            file.write_all(b"opaque-suffix")
+                .expect("append compressed suffix");
+        }
+        path
+    }
+
+    #[test]
+    fn read_only_release_inspection_verifies_the_complete_virtual_tree() {
+        let archive = write_complete_release_archive(CompleteArchiveMutation::None);
+        let mut file = File::open(&archive).expect("open complete archive");
+        let inspection = inspect_open_release_archive(
+            &mut file,
+            "release-a",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        )
+        .expect("complete archive inspection");
+        assert_eq!(inspection.entry_count, 18);
+        assert_eq!(inspection.regular_file_count, 9);
+        assert_eq!(inspection.internal_checksum_count, 8);
+        assert_eq!(
+            inspection.source_revision,
+            "0123456789abcdef0123456789abcdef01234567"
+        );
+        assert!(inspection.complete_structure_verified);
+        assert!(inspection.internal_sha256sums_verified);
+        assert!(inspection.systemd_contract_verified);
+        assert!(inspection.target_filesystem_unchanged);
+        fs::remove_file(archive).expect("remove complete archive");
+    }
+
+    #[test]
+    fn read_only_release_inspection_rejects_checksum_unit_and_tree_drift() {
+        for mutation in [
+            CompleteArchiveMutation::InternalChecksum,
+            CompleteArchiveMutation::SystemdUnit,
+            CompleteArchiveMutation::UnexpectedRootEntry,
+            CompleteArchiveMutation::CompressedSuffix,
+            CompleteArchiveMutation::InvalidMode,
+        ] {
+            let archive = write_complete_release_archive(mutation);
+            let mut file = File::open(&archive).expect("open invalid archive");
+            assert!(
+                inspect_open_release_archive(
+                    &mut file,
+                    "release-a",
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                )
+                .is_err()
+            );
+            fs::remove_file(archive).expect("remove invalid archive");
+        }
     }
 
     #[test]

@@ -40,6 +40,7 @@ x-rust-worker-environment: &rust-worker-environment
 
 x-rust-volumes: &rust-volumes
   - ./backend/rust:/src/backend/rust:ro
+  - ./deploy/systemd:/src/deploy/systemd:ro
   - rust-cargo-registry:/usr/local/cargo/registry
   - rust-cargo-git:/usr/local/cargo/git
   - rust-target:/app/target
@@ -50,6 +51,7 @@ x-rust-volumes: &rust-volumes
 # to share; the compiled target directory is deliberately isolated.
 x-legacy-rust-volumes: &legacy-rust-volumes
   - ./backend/rust:/src/backend/rust:ro
+  - ./deploy/systemd:/src/deploy/systemd:ro
   - rust-cargo-registry:/usr/local/cargo/registry
   - rust-cargo-git:/usr/local/cargo/git
   - legacy-rust-target:/app/target
@@ -209,6 +211,7 @@ services:
       - "${RUST_API_PORT:-8000}:8080"
     volumes:
       - ./backend/rust:/src/backend/rust:ro
+      - ./deploy/systemd:/src/deploy/systemd:ro
       - rust-cargo-registry:/usr/local/cargo/registry
       - rust-cargo-git:/usr/local/cargo/git
       - rust-target:/app/target

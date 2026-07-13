@@ -104,6 +104,48 @@ impl ApplyAuthorization {
         if !inspection.ready_for_legacy_authorization(spec) {
             return Err(ApplyAuthorizationError::InspectionNotReady);
         }
+        Self::issue_from_ready_inspection(spec, inspection, now_unix)
+    }
+
+    /// Issues a real, HMAC-bound authorization from the normal online
+    /// inspection for a feature-only matrix guest. The inspection may contain
+    /// only the global matrix/safety-audit blocker; no operational blocker is
+    /// ignored and the normal production capability remains unavailable.
+    #[cfg(feature = "bare-metal-fault-matrix")]
+    pub fn issue_bare_metal_fault_matrix(
+        spec: &ProvisionSpec,
+        inspection: &ProvisionPlan,
+        confirmed_operation_id: &str,
+        now_unix: i64,
+    ) -> Result<Self, ApplyAuthorizationError> {
+        if crate::bare_metal_fault_matrix::require_installed_fault_case(&spec.operation_id).is_err()
+        {
+            return Err(ApplyAuthorizationError::InspectionNotReady);
+        }
+        if spec.kind != ProvisionKind::LegacyReferenceMigration {
+            return Err(ApplyAuthorizationError::WrongProvisionKind);
+        }
+        if confirmed_operation_id != spec.operation_id {
+            return Err(ApplyAuthorizationError::ConfirmationMismatch);
+        }
+        if now_unix < 0
+            || now_unix
+                .checked_add(AUTHORIZATION_LIFETIME_SECONDS)
+                .is_none()
+        {
+            return Err(ApplyAuthorizationError::InvalidTimestamp);
+        }
+        if !inspection.ready_for_bare_metal_fault_matrix_authorization(spec) {
+            return Err(ApplyAuthorizationError::InspectionNotReady);
+        }
+        Self::issue_from_ready_inspection(spec, inspection, now_unix)
+    }
+
+    fn issue_from_ready_inspection(
+        spec: &ProvisionSpec,
+        inspection: &ProvisionPlan,
+        now_unix: i64,
+    ) -> Result<Self, ApplyAuthorizationError> {
         let target_redis = inspection
             .target_redis
             .as_ref()

@@ -9,6 +9,35 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use sqlx::{MySqlPool, PgPool};
 
+#[cfg(feature = "bare-metal-fault-matrix")]
+use crate::bare_metal_fault_matrix::{
+    BareMetalFaultPoint, FaultMatrixError, require_installed_fault_case,
+};
+
+#[cfg(feature = "bare-metal-fault-matrix")]
+macro_rules! matrix_before {
+    ($point:ident) => {
+        matrix_before_impl(BareMetalFaultPoint::$point).await?;
+    };
+}
+
+#[cfg(not(feature = "bare-metal-fault-matrix"))]
+macro_rules! matrix_before {
+    ($point:ident) => {};
+}
+
+#[cfg(feature = "bare-metal-fault-matrix")]
+macro_rules! matrix_after_success {
+    ($point:ident) => {
+        matrix_after_success_impl(BareMetalFaultPoint::$point).await?;
+    };
+}
+
+#[cfg(not(feature = "bare-metal-fault-matrix"))]
+macro_rules! matrix_after_success {
+    ($point:ident) => {};
+}
+
 use crate::{
     ApplyAuthorization, ProvisionPlan, ProvisionSpec,
     apply_journal::{
@@ -52,9 +81,9 @@ use crate::{
     manifest::{ProvisionFlow, SourceSpec, TargetSpec},
     native_activation::{
         BareMetalActivationExecutor, DenyNativeAuthorityCommitter, NativeActivationPolicy,
-        ProcessCommandRunner, ReceiptBinding, start_native_units_after_authority,
-        verify_native_runtime_after_cutover, verify_native_units_stopped_before_authority,
-        verify_release_artifact_for_one_shot,
+        ProcessCommandRunner, ReceiptBinding, inspect_release_archive_read_only,
+        start_native_units_after_authority, verify_native_runtime_after_cutover,
+        verify_native_units_stopped_before_authority, verify_release_artifact_for_one_shot,
     },
     native_legacy_source::{
         BareMetalLegacySource, BareMetalRetirementObserver, VerifiedFrozenTrafficReceipt,
@@ -62,10 +91,33 @@ use crate::{
     },
     native_node_cutover::NativeNodeCutover,
     target_activation::{
-        ReleaseArtifactSpec, TargetActivationExecutor, TargetRedisInspectionBinding,
+        ExecutorError, ReleaseArtifactSpec, TargetActivationExecutor, TargetRedisInspectionBinding,
         bootstrap_empty_initial_targets, materialize_role_configs,
     },
 };
+
+#[cfg(feature = "bare-metal-fault-matrix")]
+pub(crate) const WIRED_BARE_METAL_FAULT_POINTS: &[BareMetalFaultPoint] = &[
+    BareMetalFaultPoint::SourceFenceCommit,
+    BareMetalFaultPoint::SourceDrainCommit,
+    BareMetalFaultPoint::BackupArchivePublish,
+    BareMetalFaultPoint::ArchiveMaterializationPublish,
+    BareMetalFaultPoint::TargetHostBootstrap,
+    BareMetalFaultPoint::PostgresSchemaBootstrap,
+    BareMetalFaultPoint::LifecycleLedgerBootstrap,
+    BareMetalFaultPoint::LifecycleJournalMirror,
+    BareMetalFaultPoint::PostgresBulkCopy,
+    BareMetalFaultPoint::ClickhouseProjectionCommit,
+    BareMetalFaultPoint::ReleaseArtifactReconcile,
+    BareMetalFaultPoint::RuntimeConfigInstall,
+    BareMetalFaultPoint::NativeAuthorityCommit,
+    BareMetalFaultPoint::ArchiveMaterializationDestroy,
+    BareMetalFaultPoint::NativeServicesStart,
+    BareMetalFaultPoint::NodeActivationCommit,
+    BareMetalFaultPoint::SourceRetirementCommit,
+    BareMetalFaultPoint::LifecycleCompletionCommit,
+    BareMetalFaultPoint::RuntimeDecryptionIdentityDestroy,
+];
 
 pub use crate::legacy_apply_capability::{
     PRODUCTION_LEGACY_APPLY_CAPABILITY, ProductionLegacyApplyBlocker,
@@ -154,6 +206,11 @@ pub enum ProductionLegacyApplyEntryError {
         action: &'static str,
         reason: &'static str,
     },
+    #[cfg(feature = "bare-metal-fault-matrix")]
+    #[error(transparent)]
+    FaultMatrix(#[from] FaultMatrixError),
+    #[error("native release archive failed the complete read-only admission preflight")]
+    ReleasePreflight(#[source] ExecutorError),
     #[error(transparent)]
     Apply(#[from] LegacyApplyError),
 }
@@ -167,6 +224,10 @@ pub async fn start_production_legacy_apply(
     now_unix: i64,
 ) -> Result<LegacyApplyResult, ProductionLegacyApplyEntryError> {
     require_production_entry_capability("apply", spec)?;
+    // Complete release validation must precede opening the lifecycle journal,
+    // constructing an executor, fencing the source, or writing any target.
+    inspect_release_archive_read_only(spec)
+        .map_err(ProductionLegacyApplyEntryError::ReleasePreflight)?;
     let journal_root = &spec
         .legacy_apply_execution()
         .expect("capability requires schema-v4 execution")
@@ -199,6 +260,56 @@ pub async fn resume_production_legacy_apply(
         .map_err(Into::into)
 }
 
+/// Feature-only start entry for the destructive matrix guest.
+#[cfg(feature = "bare-metal-fault-matrix")]
+pub async fn start_bare_metal_fault_matrix_legacy_apply(
+    spec: &ProvisionSpec,
+    authorization: &ApplyAuthorization,
+    authorization_file_sha256: &str,
+    now_unix: i64,
+) -> Result<LegacyApplyResult, ProductionLegacyApplyEntryError> {
+    require_installed_fault_case(&spec.operation_id)?;
+    inspect_release_archive_read_only(spec)
+        .map_err(ProductionLegacyApplyEntryError::ReleasePreflight)?;
+    let journal_root = &spec
+        .legacy_apply_execution()
+        .ok_or(ProductionLegacyApplyEntryError::Capability {
+            action: "matrix_apply",
+            reason: "matrix_requires_schema_v4_legacy_execution",
+        })?
+        .journal
+        .root;
+    let mut executor =
+        ProductionLegacyApplyExecutor::for_resume(authorization, authorization_file_sha256);
+    start_legacy_apply(spec, authorization, now_unix, journal_root, &mut executor)
+        .await
+        .map_err(Into::into)
+}
+
+/// Feature-only resume entry. An exact existing ready record consumes the
+/// selected hook across process restarts, preventing a second injection.
+#[cfg(feature = "bare-metal-fault-matrix")]
+pub async fn resume_bare_metal_fault_matrix_legacy_apply(
+    spec: &ProvisionSpec,
+    authorization: &ApplyAuthorization,
+    authorization_file_sha256: &str,
+) -> Result<LegacyApplyResult, ProductionLegacyApplyEntryError> {
+    require_installed_fault_case(&spec.operation_id)?;
+    let journal_root = &spec
+        .legacy_apply_execution()
+        .ok_or(ProductionLegacyApplyEntryError::Capability {
+            action: "matrix_resume",
+            reason: "matrix_requires_schema_v4_legacy_execution",
+        })?
+        .journal
+        .root;
+    let mut executor =
+        ProductionLegacyApplyExecutor::for_resume(authorization, authorization_file_sha256);
+    resume_legacy_apply(spec, authorization, journal_root, &mut executor)
+        .await
+        .map_err(Into::into)
+}
+
 fn require_production_entry_capability(
     action: &'static str,
     spec: &ProvisionSpec,
@@ -221,7 +332,10 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
         Box::pin(async move {
             let mut source = BareMetalLegacySource::from_manifest(spec)
                 .map_err(|_| failed(ApplyOutcomeCode::FenceUncertain, "source_policy_invalid"))?;
-            source.fence_source(spec, head).await
+            matrix_before!(SourceFenceCommit);
+            let proof = source.fence_source(spec, head).await?;
+            matrix_after_success!(SourceFenceCommit);
+            Ok(proof)
         })
     }
 
@@ -233,7 +347,10 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
         Box::pin(async move {
             let mut source = BareMetalLegacySource::from_manifest(spec)
                 .map_err(|_| failed(ApplyOutcomeCode::DrainIncomplete, "source_policy_invalid"))?;
-            source.drain_source(spec, head).await
+            matrix_before!(SourceDrainCommit);
+            let proof = source.drain_source(spec, head).await?;
+            matrix_after_success!(SourceDrainCommit);
+            Ok(proof)
         })
     }
 
@@ -265,7 +382,10 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
             require_targets_still_empty(self.authorized_redis.as_ref(), &admitted)?;
             let mut source = BareMetalLegacySource::from_manifest(spec)
                 .map_err(|_| failed(ApplyOutcomeCode::BackupInvalid, "source_policy_invalid"))?;
-            source.backup_and_restore_test(spec, head).await
+            matrix_before!(BackupArchivePublish);
+            let proof = source.backup_and_restore_test(spec, head).await?;
+            matrix_after_success!(BackupArchivePublish);
+            Ok(proof)
         })
     }
 
@@ -314,6 +434,7 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
                 self.authorized_redis.as_ref(),
                 traffic.receipt(),
             )?;
+            matrix_before!(ArchiveMaterializationPublish);
             let materialization = ensure_verified_archive_materialization(
                 spec,
                 ArchiveMaterializationAnchor::Journal(head),
@@ -325,6 +446,7 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
                     "archive_materialization_failed",
                 )
             })?;
+            matrix_after_success!(ArchiveMaterializationPublish);
             let mut source = BareMetalLegacySource::from_manifest(spec)
                 .map_err(|_| failed(ApplyOutcomeCode::FenceUncertain, "source_policy_invalid"))?;
             source
@@ -348,6 +470,7 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
     ) -> ApplyFuture<'a, Result<VerifiedStageProof, StageFailure>> {
         Box::pin(async move {
             let redis_binding = self.redis_binding(spec, permit).await?;
+            matrix_before!(TargetHostBootstrap);
             let bootstrapped = {
                 let mut host = activation_executor(spec, permit)?;
                 bootstrap_empty_initial_targets(spec, permit, redis_binding, &mut host).map_err(
@@ -359,6 +482,7 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
                     },
                 )?
             };
+            matrix_after_success!(TargetHostBootstrap);
             tokio::task::block_in_place(|| {
                 tokio::runtime::Handle::current().block_on(async {
                     let target = legacy_target(spec)?;
@@ -367,6 +491,7 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
                         .map_err(|_| {
                             failed(ApplyOutcomeCode::IoFailure, "postgres_connect_failed")
                         })?;
+                    matrix_before!(PostgresSchemaBootstrap);
                     bootstrap_postgres_schema(&pool, spec, permit)
                         .await
                         .map_err(|_| {
@@ -375,6 +500,7 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
                                 "postgres_baseline_bootstrap_failed",
                             )
                         })?;
+                    matrix_after_success!(PostgresSchemaBootstrap);
                     let operation_exists: bool = sqlx::query_scalar(
                         "SELECT EXISTS (SELECT 1 FROM v2_lifecycle_operation WHERE operation_id::text = $1)",
                     )
@@ -410,6 +536,7 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
                                 "lifecycle_binding_invalid",
                             )
                         })?;
+                        matrix_before!(LifecycleLedgerBootstrap);
                         bootstrap_lifecycle_ledger(&pool, spec, permit, history, &binding)
                             .await
                             .map_err(|_| {
@@ -418,6 +545,7 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
                                     "lifecycle_ledger_bootstrap_failed",
                                 )
                             })?;
+                        matrix_after_success!(LifecycleLedgerBootstrap);
                     }
                     VerifiedStageProof::new(bootstrapped.target_proof_sha256().to_string())
                         .map_err(|_| {
@@ -447,7 +575,10 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
             let pool = PgPool::connect(&target.postgres.migration_database_url)
                 .await
                 .map_err(|_| failed(ApplyOutcomeCode::IoFailure, "postgres_connect_failed"))?;
-            reconcile_mirrored_history(&pool, spec, history, &authorization_audit).await
+            matrix_before!(LifecycleJournalMirror);
+            reconcile_mirrored_history(&pool, spec, history, &authorization_audit).await?;
+            matrix_after_success!(LifecycleJournalMirror);
+            Ok(())
         })
     }
 
@@ -457,7 +588,9 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
         permit: &'a DurableTargetMutationPermit,
     ) -> ApplyFuture<'a, Result<VerifiedStageProof, StageFailure>> {
         Box::pin(async move {
+            matrix_before!(PostgresBulkCopy);
             let verification = execute_or_verify_copy(spec, permit, true).await?;
+            matrix_after_success!(PostgresBulkCopy);
             stage_proof_for_copy(&verification)
         })
     }
@@ -505,7 +638,8 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
                     "postgres_report_checkpoint_mismatch",
                 ));
             }
-            project_legacy_clickhouse(spec, permit, &verification)
+            matrix_before!(ClickhouseProjectionCommit);
+            let proof = project_legacy_clickhouse(spec, permit, &verification)
                 .await
                 .map_err(|_| {
                     failed(
@@ -519,7 +653,9 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
                         ApplyOutcomeCode::ConversionFailed,
                         "clickhouse_projection_proof_invalid",
                     )
-                })
+                })?;
+            matrix_after_success!(ClickhouseProjectionCommit);
+            Ok(proof)
         })
     }
 
@@ -535,6 +671,7 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
                 &execution.release.archive_sha256,
             )
             .map_err(|_| failed(ApplyOutcomeCode::IoFailure, "release_binding_invalid"))?;
+            matrix_before!(ReleaseArtifactReconcile);
             tokio::task::block_in_place(|| verify_release_artifact_for_one_shot(spec)).map_err(
                 |_| {
                     failed(
@@ -543,6 +680,7 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
                     )
                 },
             )?;
+            matrix_after_success!(ReleaseArtifactReconcile);
             let mut host = activation_executor(spec, permit)?;
             let release_proof = host
                 .verify_release_artifact(&spec.operation_id, &release)
@@ -558,9 +696,11 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
                     "runtime_config_materialization_failed",
                 )
             })?;
+            matrix_before!(RuntimeConfigInstall);
             let receipt = host.install_role_configs_atomically(&bundle).map_err(|_| {
                 failed(ApplyOutcomeCode::IoFailure, "runtime_config_install_failed")
             })?;
+            matrix_after_success!(RuntimeConfigInstall);
             let verification = host.verify_role_configs(&bundle, &receipt).map_err(|_| {
                 failed(
                     ApplyOutcomeCode::VerificationMismatch,
@@ -805,6 +945,7 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
                     "authority_proof_binding_invalid",
                 )
             })?;
+            matrix_before!(NativeAuthorityCommit);
             let commit = commit_native_activation(
                 &pool,
                 spec,
@@ -820,6 +961,7 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
                     "authority_commit_failed_or_ambiguous",
                 )
             })?;
+            matrix_after_success!(NativeAuthorityCommit);
             Ok(commit.native_authority_binding().clone())
         })
     }
@@ -830,6 +972,7 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
         permit: &'a DurableNativeStartPermit,
     ) -> ApplyFuture<'a, Result<VerifiedStageProof, StageFailure>> {
         Box::pin(async move {
+            matrix_before!(ArchiveMaterializationDestroy);
             destroy_verified_archive_materialization_after_authority(spec, permit)
                 .await
                 .map_err(|_| {
@@ -838,6 +981,7 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
                         "archive_materialization_cleanup_failed",
                     )
                 })?;
+            matrix_after_success!(ArchiveMaterializationDestroy);
             let target = legacy_target(spec)?;
             let pool = PgPool::connect(&target.postgres.migration_database_url)
                 .await
@@ -894,6 +1038,7 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
                     "authority_ledger_binding_mismatch",
                 ));
             }
+            matrix_before!(NativeServicesStart);
             let services =
                 tokio::task::block_in_place(|| start_native_units_after_authority(spec, permit))
                     .map_err(|_| {
@@ -902,6 +1047,7 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
                             "native_service_start_or_readiness_failed",
                         )
                     })?;
+            matrix_after_success!(NativeServicesStart);
             let nodes =
                 NativeNodeCutover::new(spec, &pool, permit.installation_id()).map_err(|_| {
                     failed(
@@ -909,6 +1055,7 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
                         "node_cutover_binding_invalid",
                     )
                 })?;
+            matrix_before!(NodeActivationCommit);
             let activated = nodes
                 .complete_empty_inventory_after_native_authority(
                     authority.node_cutover_report_sha256(),
@@ -922,6 +1069,7 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
                         "post_authority_node_activation_failed",
                     )
                 })?;
+            matrix_after_success!(NodeActivationCommit);
             proof_from_serializable(
                 b"v2board-native-service-and-node-start-v1\0",
                 &(
@@ -945,7 +1093,10 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
         Box::pin(async move {
             let mut source = BareMetalLegacySource::from_manifest(spec)
                 .map_err(|_| failed(ApplyOutcomeCode::RetirementFailed, "source_policy_invalid"))?;
-            source.retire_local_source(spec, permit)
+            matrix_before!(SourceRetirementCommit);
+            let proof = source.retire_local_source(spec, permit)?;
+            matrix_after_success!(SourceRetirementCommit);
+            Ok(proof)
         })
     }
 
@@ -1082,6 +1233,7 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
             })?;
             // The permanent database fact must precede destruction of either
             // disposable recovery input.
+            matrix_before!(LifecycleCompletionCommit);
             complete_lifecycle_ledger(&pool, spec, completed, &proof, &authorization_audit)
                 .await
                 .map_err(|_| {
@@ -1090,6 +1242,8 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
                         "permanent_completion_ledger_failed",
                     )
                 })?;
+            matrix_after_success!(LifecycleCompletionCommit);
+            matrix_before!(RuntimeDecryptionIdentityDestroy);
             cleanup_runtime_decryption_identity_after_completion(spec, completed).map_err(
                 |_| {
                     failed(
@@ -1098,6 +1252,7 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
                     )
                 },
             )?;
+            matrix_after_success!(RuntimeDecryptionIdentityDestroy);
             Ok(())
         })
     }
@@ -1522,6 +1677,24 @@ fn target_drift() -> StageFailure {
         ApplyOutcomeCode::TargetDrift,
         "fenced_target_no_longer_empty",
     )
+}
+
+#[cfg(feature = "bare-metal-fault-matrix")]
+async fn matrix_before_impl(point: BareMetalFaultPoint) -> Result<(), StageFailure> {
+    crate::bare_metal_fault_matrix::before(point)
+        .await
+        .map_err(|error| {
+            StageFailure::sanitized(ApplyOutcomeCode::ProcessInterrupted, error.sanitized_code())
+        })
+}
+
+#[cfg(feature = "bare-metal-fault-matrix")]
+async fn matrix_after_success_impl(point: BareMetalFaultPoint) -> Result<(), StageFailure> {
+    crate::bare_metal_fault_matrix::after_success(point)
+        .await
+        .map_err(|error| {
+            StageFailure::sanitized(ApplyOutcomeCode::ProcessInterrupted, error.sanitized_code())
+        })
 }
 
 fn failed(outcome: ApplyOutcomeCode, code: &'static str) -> StageFailure {
