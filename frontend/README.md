@@ -57,13 +57,16 @@ dist-deploy/
     user/{index.html,manifest.json,<content-hashed files>}
     admin/{index.html,manifest.json,<content-hashed files>}
   current -> releases/<content-id>
-  previous -> releases/<previous-content-id>
+  previous -> releases/<previous-content-id-or-current-on-first-publication>
 ```
 
 每个 manifest 只有一个入口，所有 JS/CSS/字体/图片以扁平的内容哈希文件名发布。HTML 中只
-保留严格校验的 runtime-config token；Rust 在请求时注入品牌、语言和动态后台路径。
+保留严格校验的 runtime-config token；Rust 在请求时注入品牌、语言和动态后台路径。`content-id`
+按两个应用全部已验证文件的规范路径和真实字节计算，不只信任 Vite 文件名或 manifest/index 文本。
 发布使用原子 symlink 切换，并只保留 current/previous 两代，因此失败构建不会破坏最后
-一个可用 release，滚动发布间的在途静态请求也可以从 previous 完成。
+一个可用 release，滚动发布间的在途静态请求也可以从 previous 完成。首次发布没有真实旧代，两个
+链接都指向同一不可变 content ID；第二次发布后 `previous` 才代表真实上一代。这里的 fallback 只覆盖
+单个 frontend tree，不构成 outer native release、跨实例或集群回滚保证。
 
 运行 `make deploy-smoke` 验证 release 结构、Rust HTML 注入、资源路由和旧 bundle
 隔离；运行 `make visual-smoke` 用 Docker 内 Chromium 检查桌面与移动布局。

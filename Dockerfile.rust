@@ -117,6 +117,8 @@ RUN test "${TARGETOS}" = linux \
     && test -x bin/v2board-workers \
     && test -x bin/v2board-analytics-schema \
     && test -L frontend/current \
+    && test -L frontend/previous \
+    && test "$(readlink frontend/previous)" = "$(readlink frontend/current)" \
     && test -f frontend/current/user/index.html \
     && test -f frontend/current/admin/index.html \
     && test -f systemd/v2board-api.service \

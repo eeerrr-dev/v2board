@@ -58,7 +58,9 @@ describe('admin Vite configuration', () => {
     expect(deployViteConfigSource).toContain('cssCodeSplit: true');
     expect(deployViteConfigSource).toContain("manifest: 'manifest.json'");
     expect(deployViteConfigSource).toContain('modulePreload: { polyfill: false }');
-    expect(deployViteConfigSource).toContain("input: path.resolve(import.meta.dirname, 'index.html')");
+    expect(deployViteConfigSource).toContain(
+      "input: path.resolve(import.meta.dirname, 'index.html')",
+    );
     expect(deployViteConfigSource).toContain("entryFileNames: '[name]-[hash].js'");
     expect(deployViteConfigSource).toContain("chunkFileNames: '[name]-[hash].js'");
     expect(deployViteConfigSource).toContain("assetFileNames: 'asset-[hash][extname]'");
@@ -114,8 +116,7 @@ describe('admin Vite configuration', () => {
     expect(publish).toBeGreaterThan(validation);
     expect(buildDeploySource).toContain('async function publishBuild(source, target, releaseId)');
     expect(buildDeploySource).toContain('await rename(pendingPath, releasePath)');
-    expect(buildDeploySource).toContain("await replaceDeployLink(target, 'current', releaseName)");
-    expect(buildDeploySource).toContain("await replaceDeployLink(target, 'previous', current)");
+    expect(buildDeploySource).toContain('await publishReleaseLinks(target, releaseName)');
     expect(buildDeploySource).not.toContain(
       'await rm(deployRoot, { recursive: true, force: true })',
     );

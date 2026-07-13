@@ -1,24 +1,10 @@
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { Copy, QrCode } from 'lucide-react';
+import { Copy, Import as ImportIcon, QrCode } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { copyText } from '@v2board/config/clipboard';
 import { getSiteTitle } from '@/lib/runtime-config';
 import { toast } from '@/lib/toast';
-import clashForAndroidIcon from '../assets/images/icon/Clash For Android.png';
-import clashForWindowsIcon from '../assets/images/icon/Clash For Windows.png';
-import clashMetaForAndroidIcon from '../assets/images/icon/ClashMeta For Android.png';
-import clashMetaForWindowsIcon from '../assets/images/icon/ClashMeta For Windows.png';
-import clashMetaIcon from '../assets/images/icon/ClashMeta.png';
-import clashXIcon from '../assets/images/icon/ClashX.png';
-import hiddifyIcon from '../assets/images/icon/Hiddify.png';
-import nekoBoxForAndroidIcon from '../assets/images/icon/NekoBox For Android.png';
-import quantumultXIcon from '../assets/images/icon/QuantumultX.png';
-import shadowrocketIcon from '../assets/images/icon/Shadowrocket.png';
-import singBoxIcon from '../assets/images/icon/Sing-box.png';
-import stashIcon from '../assets/images/icon/Stash.png';
-import surfboardIcon from '../assets/images/icon/Surfboard.png';
-import surgeIcon from '../assets/images/icon/Surge.png';
 
 interface DashboardSubscribeMenuProps {
   onOpenQr: () => void;
@@ -31,30 +17,13 @@ interface DashboardSubscribeMenuProps {
 const SUBSCRIBE_MENU_ROW_CLASS =
   'flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50';
 
-const SUBSCRIBE_TARGET_ICONS: Record<string, string> = {
-  'Clash For Android': clashForAndroidIcon,
-  'Clash For Windows': clashForWindowsIcon,
-  'ClashMeta For Android': clashMetaForAndroidIcon,
-  'ClashMeta For Windows': clashMetaForWindowsIcon,
-  ClashMeta: clashMetaIcon,
-  ClashX: clashXIcon,
-  Hiddify: hiddifyIcon,
-  'NekoBox For Android': nekoBoxForAndroidIcon,
-  QuantumultX: quantumultXIcon,
-  Shadowrocket: shadowrocketIcon,
-  'Sing-box': singBoxIcon,
-  Stash: stashIcon,
-  Surfboard: surfboardIcon,
-  Surge: surgeIcon,
-};
-
 export function DashboardSubscribeMenu({ onOpenQr, subscribeUrl }: DashboardSubscribeMenuProps) {
   const { t } = useTranslation();
   // React Compiler memoizes this derivation; no manual useMemo needed.
   const subscribeTargets = subscribeUrl ? getSubscribeTargets(subscribeUrl) : [];
 
   const copyUrl = async () => {
-    if (await copyText(subscribeUrl)) toast.success(t($ => $.dashboard.copy_success));
+    if (await copyText(subscribeUrl)) toast.success(t(($) => $.dashboard.copy_success));
   };
 
   return (
@@ -66,7 +35,7 @@ export function DashboardSubscribeMenu({ onOpenQr, subscribeUrl }: DashboardSubs
         onClick={copyUrl}
       >
         <Copy className="size-4 text-muted-foreground" />
-        <span>{t($ => $.dashboard.copy_subscribe)}</span>
+        <span>{t(($) => $.dashboard.copy_subscribe)}</span>
       </button>
       <button
         type="button"
@@ -75,7 +44,7 @@ export function DashboardSubscribeMenu({ onOpenQr, subscribeUrl }: DashboardSubs
         onClick={onOpenQr}
       >
         <QrCode className="size-4 text-muted-foreground" />
-        <span>{t($ => $.dashboard.scan_qrcode_subscribe)}</span>
+        <span>{t(($) => $.dashboard.scan_qrcode_subscribe)}</span>
       </button>
       {subscribeTargets.map((target) => (
         <button
@@ -88,22 +57,20 @@ export function DashboardSubscribeMenu({ onOpenQr, subscribeUrl }: DashboardSubs
             window.location.href = target.href;
           }}
         >
-          <img
-            className="size-5 rounded-sm"
-            src={SUBSCRIBE_TARGET_ICONS[target.title]}
-            alt=""
-            loading="lazy"
-            decoding="async"
+          <ImportIcon
+            className="size-5 text-muted-foreground"
+            aria-hidden="true"
+            focusable="false"
           />
           <span>
-            {t($ => $.dashboard.import_to)} {target.title}
+            {t(($) => $.dashboard.import_to)} {target.title}
           </span>
         </button>
       ))}
       <div className="px-1 pb-1 pt-2">
         <Button asChild className="w-full">
           <Link to="/knowledge" data-testid="dashboard-subscribe-tutorial">
-            {t($ => $.dashboard.use_tutorial)}
+            {t(($) => $.dashboard.use_tutorial)}
           </Link>
         </Button>
       </div>

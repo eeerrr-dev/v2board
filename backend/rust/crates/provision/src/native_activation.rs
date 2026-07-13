@@ -4236,14 +4236,34 @@ pub(crate) fn inspect_release_archive_read_only(
         ExternalReceiptKind::ReleaseArchiveVerified,
         release.external_archive_sha256(),
     )?;
-    let archive_path = &execution.release.archive_path;
+    inspect_bound_release_archive_read_only(&execution.release.archive_path, &release)
+}
+
+/// Standalone, mutation-free audit of a native release archive against the
+/// same inode, digest, tar-tree, checksum, frontend, and systemd contract used
+/// by lifecycle admission. This does not issue an authorization or replace the
+/// manifest-bound external receipt required by apply/resume.
+pub fn inspect_native_release_archive_read_only(
+    archive_path: &Path,
+    release_id: &str,
+    expected_archive_sha256: &str,
+) -> Result<ReadOnlyReleaseArchiveInspection, ExecutorError> {
+    let release = ReleaseArtifactSpec::new(release_id, expected_archive_sha256)
+        .map_err(|_| ExecutorError::sanitized("release_binding_invalid"))?;
+    inspect_bound_release_archive_read_only(archive_path, &release)
+}
+
+fn inspect_bound_release_archive_read_only(
+    archive_path: &Path,
+    release: &ReleaseArtifactSpec,
+) -> Result<ReadOnlyReleaseArchiveInspection, ExecutorError> {
     let mut file = open_root_owned_release_archive(archive_path)?;
     let archive_sha256 = hash_open_release_archive(&mut file)?;
-    if archive_sha256 != execution.release.archive_sha256 {
+    if archive_sha256 != release.external_archive_sha256() {
         return Err(ExecutorError::sanitized("release_archive_digest_mismatch"));
     }
     let inspection =
-        inspect_open_release_archive(&mut file, &execution.release.release_id, &archive_sha256)?;
+        inspect_open_release_archive(&mut file, release.release_id(), &archive_sha256)?;
     if hash_open_release_archive(&mut file)? != archive_sha256 {
         return Err(ExecutorError::sanitized(
             "release_archive_changed_during_inspection",

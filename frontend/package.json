@@ -20,7 +20,7 @@
     "typecheck": "pnpm -r --parallel typecheck",
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write \"**/*.{ts,tsx,json,md,css}\"",
-    "test": "pnpm -r --parallel test",
+    "test": "node --test scripts/*.test.mjs && pnpm -r --parallel test",
     "visual-smoke": "node scripts/visual-smoke.mjs",
     "parity": "playwright test"
   },

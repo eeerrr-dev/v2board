@@ -92,6 +92,8 @@ jobs:
         working-directory: frontend
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          submodules: recursive
 
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
         with:
@@ -210,6 +212,11 @@ jobs:
           test -x native-release/bin/v2board-analytics-schema
           test "$(find native-release/bin -maxdepth 1 -type f | wc -l)" -eq 3
           test -L native-release/frontend/current
+          test -L native-release/frontend/previous
+          # A clean build has no historical generation. Both links intentionally
+          # name the same immutable content ID; this is not cross-instance retention.
+          test "$(readlink native-release/frontend/previous)" = \
+            "$(readlink native-release/frontend/current)"
           test -f native-release/frontend/current/user/index.html
           test -f native-release/frontend/current/admin/index.html
           test -f native-release/systemd/v2board-api.service
@@ -247,6 +254,31 @@ jobs:
           tar --sort=name --mtime='UTC 2020-01-01' --owner=0 --group=0 --numeric-owner \
             -C native-release -czf v2board-native-linux-amd64.tar.gz .
           sha256sum v2board-native-linux-amd64.tar.gz > v2board-native-linux-amd64.tar.gz.sha256
+
+      - name: Admit the real release archive through the lifecycle inspector
+        run: |
+          archive_sha256="$(sha256sum v2board-native-linux-amd64.tar.gz | cut -d ' ' -f 1)"
+          audit_archive="${RUNNER_TEMP}/v2board-native-release-inspection.tar.gz"
+          sudo install -o root -g root -m 0400 \
+            v2board-native-linux-amd64.tar.gz "${audit_archive}"
+          inspection="$(sudo "$(pwd)/lifecycle-tool/v2board-lifecycle" \
+            inspect-release-archive \
+            --archive "${audit_archive}" \
+            --release-id "ci-${GITHUB_SHA}" \
+            --sha256 "${archive_sha256}")"
+          jq -e \
+            --arg release_id "ci-${GITHUB_SHA}" \
+            --arg archive_sha256 "${archive_sha256}" \
+            '.release_id == $release_id and
+             .archive_sha256 == $archive_sha256 and
+             .complete_structure_verified == true and
+             .internal_sha256sums_verified == true and
+             .systemd_contract_verified == true and
+             .target_filesystem_unchanged == true' <<<"${inspection}"
+
+      - name: Remove the root-owned release-inspection copy
+        if: always()
+        run: sudo rm -f "${RUNNER_TEMP}/v2board-native-release-inspection.tar.gz"
 
       - name: Upload the native release
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

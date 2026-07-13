@@ -169,6 +169,7 @@ export async function dashboardSubscribeImportLinksState(page) {
         dataTestId: item.getAttribute('data-testid') ?? '',
         iconCount: item.querySelectorAll('i').length,
         imageCount: item.querySelectorAll('img').length,
+        vectorCount: item.querySelectorAll('svg').length,
         subscribeTarget: item.getAttribute('data-subscribe-target') ?? '',
         text: (item.textContent ?? '').trim().replace(/\s+/g, ' '),
       }));

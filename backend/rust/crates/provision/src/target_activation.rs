@@ -526,7 +526,7 @@ impl ReleaseArtifactSpec {
         let release_id = release_id.into();
         if !valid_release_id(&release_id) {
             return Err(TargetActivationError::InvalidRelease(
-                "release_id must be 1-128 safe ASCII characters and not start with a dot",
+                "release_id must be 1-128 safe ASCII characters without dot segments",
             ));
         }
         let external_archive_sha256 = external_archive_sha256.into();
@@ -2016,6 +2016,7 @@ fn valid_release_id(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 128
         && !value.starts_with('.')
+        && !value.contains("..")
         && value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
@@ -2366,6 +2367,7 @@ mod tests {
             Path::new("/opt/v2board/releases/2026.07.12-abc123")
         );
         assert!(ReleaseArtifactSpec::new("../escape", digest()).is_err());
+        assert!(ReleaseArtifactSpec::new("release..escape", digest()).is_err());
         assert!(ReleaseArtifactSpec::new(".hidden", digest()).is_err());
         assert!(ReleaseArtifactSpec::new("valid", digest().to_ascii_uppercase()).is_err());
     }

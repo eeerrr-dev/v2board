@@ -254,7 +254,7 @@ describe('legacy class names never appear in source', () => {
   it('bans packaged-bundle CSS-module hashes and packaged theme asset paths', () => {
     // from: tickets/detail.test.tsx (content___DW5w1 / input___1j_ND /
     // tag___12_9H) and dashboard.test.tsx (oneClickSubscribe___2t9Xg,
-    // /theme/default/assets/ — client icons must be source-imported).
+    // /theme/default/assets/ and copied source-owned client icon directories).
     expect(
       violations([
         {
@@ -263,7 +263,12 @@ describe('legacy class names never appear in source', () => {
         },
         {
           pattern: /\/theme\/default\/assets\//,
-          why: 'packaged legacy theme asset paths are banned — import assets from source',
+          why: 'packaged legacy theme asset paths are banned',
+        },
+        {
+          pattern: /assets\/images\/icon\//,
+          scope: ['pages/dashboard-subscribe-menu.tsx'],
+          why: 'all subscribe targets use one Lucide Import glyph, not copied client artwork',
         },
       ]),
     ).toEqual([]);

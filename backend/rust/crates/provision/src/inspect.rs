@@ -1865,7 +1865,11 @@ impl ProvisionPlan {
             && self.blockers.is_empty()
     }
 
-    pub(crate) fn ready_for_legacy_authorization(&self, spec: &ProvisionSpec) -> bool {
+    /// Returns whether this exact online inspection may reach the CLI's human
+    /// confirmation boundary. Keeping the prompt and authorization writer on
+    /// this same predicate prevents a blocked production capability from being
+    /// described to the operator as ready.
+    pub fn ready_for_legacy_authorization(&self, spec: &ProvisionSpec) -> bool {
         self.kind == ProvisionKind::LegacyReferenceMigration
             && spec.kind == ProvisionKind::LegacyReferenceMigration
             && self.operation_id == spec.operation_id

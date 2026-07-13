@@ -274,14 +274,16 @@ export function assertUsefulInteraction(label, result, target) {
       !JSON.stringify(result.opened?.itemTexts).includes('Hiddify') ||
       !JSON.stringify(result.opened?.itemTexts).includes('Sing-box') ||
       !result.opened?.items?.some(
-        (item) => item.text?.includes('Hiddify') && item.imageCount >= 1,
+        (item) =>
+          item.text?.includes('Hiddify') && (item.imageCount ?? 0) + (item.vectorCount ?? 0) >= 1,
       ) ||
       !result.opened?.items?.some(
-        (item) => item.text?.includes('Sing-box') && item.imageCount >= 1,
+        (item) =>
+          item.text?.includes('Sing-box') && (item.imageCount ?? 0) + (item.vectorCount ?? 0) >= 1,
       ))
   ) {
     throw new Error(
-      `dashboard subscribe import links did not match legacy state: ${JSON.stringify(result)}`,
+      `dashboard subscribe import links did not expose the required targets: ${JSON.stringify(result)}`,
     );
   }
   if (

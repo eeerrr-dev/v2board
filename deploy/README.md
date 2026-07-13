@@ -22,10 +22,21 @@ systemd/v2board-api.service
 systemd/v2board-worker.service
 ```
 
+The checksum proves byte integrity only. The current workflow does not publish an independently
+verifiable signature or provenance attestation, and its CI artifact retention is 14 days; those are
+unresolved production distribution/retention requirements, not properties supplied by this guide.
+Do not treat a checksum downloaded from the same untrusted channel as artifact authenticity.
+
 Verify `(cd <staged-release> && sha256sum --check SHA256SUMS)` before changing any symlink. Never
 compile on the server. The separately exported `v2board-lifecycle` tool is not part of this release;
 it is staged only for the initial one-shot operation. After the completion ledger commits, the
 operator removes it manually with the exact root-only argv returned by the command.
+
+CI additionally submits the packed, root-owned archive to
+`v2board-lifecycle inspect-release-archive`; that read-only command uses the same archive parser as
+manifest-bound lifecycle admission and verifies the complete tar tree, both frontend links, internal
+checksums and systemd contract. Passing it proves archive shape and integrity, not authenticity and
+not permission to install or migrate.
 
 ## Operating-system identities and paths
 
@@ -68,9 +79,9 @@ Use a transient `systemd-run --wait --collect` unit with `LoadCredential=` and t
 the corresponding runtime. Non-secret ClickHouse endpoint/database/username values may be supplied
 to that transient unit. Remove the source credential file when the command completes.
 
-## Activation order
+## Intended activation order
 
-For an already supported native release, the order is fixed:
+Once a lifecycle operation is production-supported, the activation order is fixed:
 
 1. verify the outer archive digest, internal `SHA256SUMS`, release identity, backups, and configs;
 2. run the serialized PostgreSQL and ClickHouse schema lifecycle commands with the exact staged
@@ -79,6 +90,9 @@ For an already supported native release, the order is fixed:
 4. start `v2board-api.service` and require `GET /readyz` to pass;
 5. start `v2board-worker.service` and require systemd `READY=1` plus a healthy watchdog;
 6. retain the prior native release only for the explicitly supported native rollback window.
+
+These steps document the target contract; they are not a substitute for the missing general
+fresh-install/native-upgrade/rollback executor and must not be performed to bypass its closed gate.
 
 API and worker refuse to start when the PostgreSQL ledger is not exactly current. Worker readiness
 also requires PostgreSQL and Redis; ClickHouse failure only makes analytics stale and grows the

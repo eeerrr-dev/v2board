@@ -9,6 +9,29 @@ use std::{
 async fn main() -> anyhow::Result<()> {
     match cli::parse()? {
         cli::Command::Help => cli::print_help(),
+        cli::Command::InspectReleaseArchive {
+            archive,
+            release_id,
+            sha256,
+        } => {
+            if !archive.is_absolute()
+                || archive.components().any(|component| {
+                    matches!(
+                        component,
+                        std::path::Component::CurDir | std::path::Component::ParentDir
+                    )
+                })
+            {
+                anyhow::bail!("--archive must be an absolute normalized path");
+            }
+            let inspection =
+                v2board_provision::native_activation::inspect_native_release_archive_read_only(
+                    &archive,
+                    &release_id,
+                    &sha256,
+                )?;
+            println!("{}", serde_json::to_string_pretty(&inspection)?);
+        }
         cli::Command::Validate { manifest } => {
             let spec = v2board_provision::load_provision_spec(manifest)?;
             let apply_capability = v2board_provision::production_legacy_apply::production_legacy_apply_capability_for_spec(&spec);
@@ -71,6 +94,11 @@ async fn main() -> anyhow::Result<()> {
             if inspection.review_binding_sha256 != inspect_review_sha256 {
                 anyhow::bail!(
                     "the current source/target identity, schema, or policy no longer matches the reviewed inspection binding"
+                );
+            }
+            if !inspection.ready_for_legacy_authorization(&spec) {
+                anyhow::bail!(
+                    "the current online inspection is blocked and cannot authorize apply; no confirmation was requested"
                 );
             }
             eprintln!(

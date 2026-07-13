@@ -48,7 +48,7 @@ backend/rust/
   crates/config/             native JSON/environment configuration
   crates/db/                 PostgreSQL-only runtime access
   crates/domain/             business rules and external integrations
-  crates/provision/          lifecycle v3/v4 validation, inspection and journaled executors
+  crates/provision/          lifecycle v3/v4/v5 validation, inspection and journaled executors
   crates/lifecycle/          disposable CLI and the only legacy MySQL source-adapter binary
   crates/workers/            scheduler, durable work and analytics relay
   crates/contract/           route, SQL and production invariant gates
@@ -96,7 +96,7 @@ those shortcuts are not production topology.
 
 ## Production configuration and principals
 
-One lifecycle manifest (fresh/native v3 or legacy v4) derives two `configuration_source: "file_only"` documents:
+One lifecycle manifest (fresh/native v3 or legacy v4/v5) derives two `configuration_source: "file_only"` documents:
 `/var/lib/v2board/api/config.json` and `/var/lib/v2board/worker/config.json`. The API and worker use
 explicit role loaders; missing, unknown, wrong-role, placeholder or invalid typed values are
 rejected. Validation derives and checks both maps; the legacy executor installs them atomically only
@@ -129,9 +129,14 @@ The runtime sets PostgreSQL timezone UTC, `search_path=public` and transaction i
 
 Docker remains the reproducible local/CI builder, not the production runtime. Export
 `Dockerfile.rust` target `native-release` to obtain the three native Linux binaries, validated
-frontend tree, systemd units, release metadata and checksums. The server verifies and installs this
-payload under `/opt/v2board/releases/<release-id>`, then atomically updates `/opt/v2board/current`.
-It never builds the project and does not require Docker.
+frontend tree, systemd units, release metadata and checksums. The intended bare-metal layout installs
+the payload under `/opt/v2board/releases/<release-id>` and atomically updates
+`/opt/v2board/current`; the server never builds the project and does not require Docker.
+
+The repository does not yet ship a general production fresh-install, native-upgrade or rollback
+executor. The journaled release activation that exists is part of the legacy one-shot executor and
+remains behind the closed production capability. Exporting or verifying the payload is therefore not
+authorization to hand-install it or reinterpret the documented target layout as a supported upgrade.
 
 Before starting a native release, run serialized one-shot schema jobs with the exact release
 artifacts and secrets:
@@ -171,12 +176,14 @@ Local Compose runs `rust-migrate` and `clickhouse-migrate` as one-shot services.
 migration job may create the documented development-only `admin@example.com` seed when
 `V2BOARD_SEED_LOCAL=1`; production never enables that seed.
 
-## Lifecycle schema v3/v4
+## Lifecycle schema v3/v4/v5
 
-Only three strict, kind-tagged manifests exist:
+Only three strict lifecycle kinds exist; the legacy kind has a current v5 schema and a frozen v4
+compatibility schema:
 
 - [fresh install example](../docs/examples/fresh-install.v3.example.json);
-- [legacy migration example](../docs/examples/legacy-migration.v4.example.json);
+- [legacy migration v5 example](../docs/examples/legacy-migration.v5.example.json);
+- [frozen legacy migration v4 compatibility example](../docs/examples/legacy-migration.v4.example.json);
 - [native upgrade example](../docs/examples/native-upgrade.v3.example.json).
 
 The disposable CLI commands are:
@@ -184,13 +191,16 @@ The disposable CLI commands are:
 ```bash
 v2board-lifecycle validate --manifest /secure/private/operation.json
 v2board-lifecycle inspect --manifest /secure/private/operation.json
+v2board-lifecycle inspect-release-archive --archive /secure/native-release.tar.gz --release-id <id> --sha256 <sha256>
 v2board-lifecycle authorize --manifest /secure/private/operation.json --inspect-review-sha256 <sha256> --output <bound-path>
 v2board-lifecycle apply --manifest /secure/private/operation.json --authorization <bound-path>
 v2board-lifecycle resume --manifest /secure/private/operation.json --authorization <bound-path>
 ```
 
-The last three commands are present and wired, but the single typed production capability currently
-keeps authorization readiness, apply, and resume fail-closed.
+`inspect-release-archive` is mutation-free and uses the same archive contract as lifecycle admission;
+it neither replaces the manifest-bound external receipt nor authorizes a migration. The last three
+commands are present and wired, but the single typed production capability currently keeps
+authorization readiness, apply, and resume fail-closed.
 
 `v2board-lifecycle` is deliberately absent from the long-running native release. It is staged only
 for the one migration operation; after the completion ledger commits, the result returns the exact
@@ -199,7 +209,7 @@ the lifecycle crate nor `sqlx-mysql`.
 
 The manifest contains secrets and must be a 1-byte-to-1-MiB regular non-symlink file with no Unix
 group/world permissions. It rejects duplicate/unknown/missing keys and binds the exact file bytes to
-an independent lifecycle audit key using the schema-specific v3 or v4 HMAC domain.
+an independent lifecycle audit key using the schema-specific v3, v4 or v5 HMAC domain.
 
 `validate` is offline syntax/semantic validation. `inspect` is the online read-only inventory before
 maintenance. There is no public `plan` shortcut. The legacy executor performs full post-fence source
@@ -209,8 +219,9 @@ Legacy migration has one human decision: whether to start the irreversible one-s
 the exact `operation_id + stable review_binding_sha256`. Authorization stores that stable digest as
 `inspect_review_sha256` and separately records the confirmation-time full report digest as
 `authorized_snapshot_report_sha256`. It does not pause for another confirmation inside
-the maintenance window. Fresh install and future native destructive upgrades retain their own
-separate confirmation rules.
+the maintenance window. While the production capability is closed, `authorize` rejects the refreshed
+inspection before printing that confirmation prompt or reading operator input. Fresh install and
+future native destructive upgrades retain their own separate confirmation rules.
 
 The CLI parses legacy `apply` and same-operation `resume`, but one typed production capability
 rejects both before writes. Validate output, inspection verdict/next-action, authorization readiness,
@@ -244,16 +255,23 @@ The only supported source identity is pinned commit
 in a read-only session; MySQL 5.7, Percona, MariaDB and compatible proxies are rejected. The target
 is always fresh PostgreSQL 18 + ClickHouse 26.3 + Redis.
 
-The config is manual-only: old `.env`, PHP config, theme and custom scripts are inventoried but not
-executed, merged or imported. Sessions use `logout_all`. Stripe inventory must be zero. Temporary
+The config is manual-only: the lifecycle tool does not scan, execute, merge, import or infer arbitrary
+old `.env`, PHP config, theme or custom-script files. The operator must inventory and dispose of those
+filesystem artifacts outside the manifest; the manifest binds the target values and explicit discard
+decisions, not a machine-verified checksum list of arbitrary legacy files. Sessions use `logout_all`.
+Every `v2_payment` row whose driver starts with `stripe` case-insensitively blocks inspection regardless
+of its `enable` value; unfinished Stripe orders and provider-side objects also require separate operator
+disposition. Temporary
 subscription URL mappings/cache are deliberately invalidated at cutover; permanent `v2_user.token`
 values are copied exactly. Old Redis traffic hashes, queues and failed work must be durably drained
 and reconciled before ephemeral cache is discarded. The repository contains the panel API consumed
 by nodes, but not the external V2bX/XrayR processes or a node-side process controller. Legacy
-migration therefore requires an empty node inventory; any source node produces the stable
-`external_node_coordinator_unavailable` preflight blocker before maintenance. The manifest accepts
-only `inventory=[]` plus `not_required_no_nodes`; before and after native authority the executor proves
-all eight PostgreSQL node tables and `v2_server_credential` remain empty with the same proof hash.
+migration v4 therefore remains empty-node-only: any source node produces the stable
+`external_node_coordinator_unavailable` blocker. Sites with source nodes must use v5, which fingerprints
+and explicitly discards the eight node tables plus route/credential data, requires the old remote node
+processes to be disabled during cutover, and starts from an empty native node inventory for manual
+rebuild. Across the 27 base tables, v5 copies and verifies 14 business tables and proves that 13 selected
+node, traffic-detail and transient-log tables were not copied; v4 preserves its frozen all-table behavior.
 
 This is one offline maintenance operation, not CDC or coexistence. It has no MySQL replication,
 dual-write, shadow-read, staged traffic release or MySQL runtime rollback. After final verification,
@@ -263,14 +281,15 @@ archive. After the permanent PostgreSQL ledger commits, the result returns a roo
 cleanup argv for `v2board-lifecycle`; executable removal is not part of the completion proof.
 Post-cutover recovery uses PostgreSQL/ClickHouse or forward repair, never a restarted MySQL service.
 
-See the [legacy v4 guide](../docs/legacy-migration-manifest.md) and
+See the [legacy v4/v5 guide](../docs/legacy-migration-manifest.md) and
 [frozen lifecycle contract](../docs/upgrade-invariants.md). The converter, ownership proof, journal,
 target bootstrap, config promotion, backup binding and one-shot cutover executor are connected, but
 production apply remains disabled until the required real bare-metal crash/lost-ACK matrix passes.
-`make rust-integration` exercises the disposable data path on both MySQL 8.0.44 and 8.4.6: all 27
-seeded legacy tables are copied and value-verified in PostgreSQL 18, durable checkpoints are replayed
-without duplication, and ClickHouse 26.3 is migrated, installation-bound, kept at an empty native
-event epoch, then verified through the read-only cutover readback.
+`make rust-integration` exercises both v4 and v5 disposable data paths on MySQL 8.0.44 and 8.4.6:
+v4 copies and value-verifies all 27 seeded legacy tables, while v5 copies 14 and records typed-row
+discard proofs plus empty-target proofs for 13. Durable checkpoints are replayed without duplication,
+and ClickHouse 26.3 is migrated, installation-bound, kept at an empty native event epoch, then verified
+through the read-only cutover readback.
 
 ### Native upgrade
 

@@ -430,7 +430,7 @@ rust-target-gate: rust-check rust-test rust-integration rust-route-audit rust-wo
 	@echo "Rust API, worker, route, and reconciliation gates passed."
 
 public-bundle-audit:
-	@paths='backend/rust/target frontend/dist frontend/dist-deploy frontend/.cache frontend/coverage frontend/apps/user/dist frontend/apps/admin/dist public/theme/default public/assets/admin native-release lifecycle-tool v2board-native-linux-amd64.tar.gz v2board-native-linux-amd64.tar.gz.sha256'; \
+	@paths='backend/rust/target frontend/.pnpm-store frontend/dist frontend/dist-deploy frontend/.cache frontend/coverage frontend/apps/user/dist frontend/apps/admin/dist public/theme/default public/assets/admin native-release lifecycle-tool v2board-native-linux-amd64.tar.gz v2board-native-linux-amd64.tar.gz.sha256'; \
 	found=0; \
 	for path in $$paths; do \
 		if [ -e "$$path" ]; then echo "Host-generated deploy/build output found: $$path"; found=1; fi; \
@@ -487,6 +487,7 @@ native-release-audit:
 	@rg -q '^COPY --from=lifecycle-builder /out/v2board-lifecycle /v2board-lifecycle$$' Dockerfile.rust
 	@rg -q '^FROM scratch AS native-release$$' Dockerfile.rust
 	@rg -q '^COPY --from=native-release-assembler /release/ /$$' Dockerfile.rust
+	@rg -Fq 'test -L frontend/previous' Dockerfile.rust
 	@if rg -n '^FROM .* AS production(-api|-worker|-base|-lifecycle)?$$|^(HEALTHCHECK|ENTRYPOINT|CMD|VOLUME) ' Dockerfile.rust; then \
 		echo "Dockerfile.rust must export a filesystem payload, not a production runtime image."; exit 1; \
 	fi
@@ -506,6 +507,7 @@ native-release-audit:
 	@rg -q '^  native-release:$$' .github/workflows/native-ci.yml
 	@rg -q -- '--target native-release' .github/workflows/native-ci.yml
 	@rg -q -- '--output type=local,dest=native-release' .github/workflows/native-ci.yml
+	@rg -Fq 'inspect-release-archive' .github/workflows/native-ci.yml
 	@echo "Bare-metal release export and hardened systemd unit contracts are present."
 
 frontend-source-audit:

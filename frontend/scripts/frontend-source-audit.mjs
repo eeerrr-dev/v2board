@@ -1,8 +1,10 @@
+import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import { extname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const frontendRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
+const repositoryRoot = resolve(frontendRoot, '..');
 const roots = [
   'apps/user/src',
   'apps/admin/src',
@@ -10,6 +12,10 @@ const roots = [
   'packages/config/src',
   'packages/i18n/src',
   'packages/types/src',
+];
+const referenceAssetRoots = [
+  'references/wyx2685-v2board/public/theme/default/assets',
+  'references/wyx2685-v2board/public/assets/admin',
 ];
 const standaloneFiles = [
   'apps/user/index.html',
@@ -21,13 +27,16 @@ const standaloneFiles = [
 ];
 const sourceExtensions = new Set(['.css', '.html', '.ts', '.tsx']);
 
-function isRuntimeSource(path) {
+function isRuntimeFile(path) {
   return (
-    sourceExtensions.has(extname(path)) &&
     !path.endsWith('.d.ts') &&
     !/\.(?:behavior\.)?test\.[cm]?[jt]sx?$/.test(path) &&
     !path.split('/').includes('test')
   );
+}
+
+function isRuntimeSource(path) {
+  return isRuntimeFile(path) && sourceExtensions.has(extname(path));
 }
 
 async function collectFiles(directory, files = []) {
@@ -37,10 +46,28 @@ async function collectFiles(directory, files = []) {
       await collectFiles(absolutePath, files);
     } else {
       const path = relative(frontendRoot, absolutePath).split(sep).join('/');
-      if (isRuntimeSource(path)) files.push(path);
+      if (isRuntimeFile(path)) files.push(path);
     }
   }
   return files;
+}
+
+async function collectAbsoluteFiles(directory, files = []) {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const absolutePath = resolve(directory, entry.name);
+    if (entry.isDirectory()) {
+      await collectAbsoluteFiles(absolutePath, files);
+    } else {
+      files.push(absolutePath);
+    }
+  }
+  return files;
+}
+
+async function sha256(path) {
+  return createHash('sha256')
+    .update(await readFile(path))
+    .digest('hex');
 }
 
 const rules = [
@@ -94,11 +121,43 @@ const rules = [
   },
 ];
 
-const files = [
+const runtimeFiles = [
   ...(await Promise.all(roots.map((root) => collectFiles(resolve(frontendRoot, root))))).flat(),
   ...standaloneFiles,
 ].sort();
+const files = runtimeFiles.filter(isRuntimeSource);
 const violations = [];
+
+let referenceAssetFiles = [];
+try {
+  referenceAssetFiles = (
+    await Promise.all(
+      referenceAssetRoots.map((root) => collectAbsoluteFiles(resolve(repositoryRoot, root))),
+    )
+  ).flat();
+} catch (error) {
+  if (error?.code !== 'ENOENT') throw error;
+  violations.push(
+    'references/wyx2685-v2board: pinned reference assets are unavailable; run `git submodule update --init --recursive` before the source audit',
+  );
+}
+
+const referencePathsByDigest = new Map();
+for (const path of referenceAssetFiles) {
+  const digest = await sha256(path);
+  const paths = referencePathsByDigest.get(digest) ?? [];
+  paths.push(relative(repositoryRoot, path).split(sep).join('/'));
+  referencePathsByDigest.set(digest, paths);
+}
+
+for (const path of runtimeFiles) {
+  const digest = await sha256(resolve(frontendRoot, path));
+  const matchingReferencePaths = referencePathsByDigest.get(digest);
+  if (matchingReferencePaths === undefined) continue;
+  violations.push(
+    `${path}: copied pinned-reference asset (sha256 ${digest}) also exists at ${matchingReferencePaths.join(', ')}`,
+  );
+}
 
 for (const path of files) {
   const contents = await readFile(resolve(frontendRoot, path), 'utf8');
@@ -116,5 +175,7 @@ if (violations.length > 0) {
   console.error(violations.join('\n'));
   process.exitCode = 1;
 } else {
-  console.log(`Frontend source isolation audit passed (${files.length} runtime source files).`);
+  console.log(
+    `Frontend source isolation audit passed (${files.length} text sources and ${runtimeFiles.length - files.length} binary assets).`,
+  );
 }

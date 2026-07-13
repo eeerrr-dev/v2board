@@ -8,6 +8,11 @@ pub(crate) enum Command {
     Inspect {
         manifest: PathBuf,
     },
+    InspectReleaseArchive {
+        archive: PathBuf,
+        release_id: String,
+        sha256: String,
+    },
     Authorize {
         manifest: PathBuf,
         inspect_review_sha256: String,
@@ -41,6 +46,25 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> anyhow::Result<Command>
                 "inspect" => Ok(Command::Inspect { manifest }),
                 _ => unreachable!("guard accepts every lifecycle action"),
             }
+        }
+        [
+            action,
+            archive_flag,
+            archive,
+            release_id_flag,
+            release_id,
+            sha256_flag,
+            sha256,
+        ] if action == "inspect-release-archive"
+            && archive_flag == "--archive"
+            && release_id_flag == "--release-id"
+            && sha256_flag == "--sha256" =>
+        {
+            Ok(Command::InspectReleaseArchive {
+                archive: PathBuf::from(archive),
+                release_id: release_id.clone(),
+                sha256: sha256.clone(),
+            })
         }
         [
             action,
@@ -93,7 +117,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> anyhow::Result<Command>
 
 pub(crate) fn print_help() {
     println!(
-        "v2board-lifecycle\n\nDisposable lifecycle commands:\n  validate --manifest <path>\n      Strictly validate a complete lifecycle JSON without connecting\n\n  inspect --manifest <path>\n      Run the online read-only compatibility inspection; compatible never means ready to migrate\n\n  authorize --manifest <path> --inspect-review-sha256 <sha256> --output <absolute-path>\n      Re-run the reviewed online inspection and require the stable identity/schema/policy binding\n      before the operator types the exact operation_id\n\n  apply --manifest <path> --authorization <absolute-path>\n      Start the one irreversible operation bound to the reviewed inspection and authorization\n\n  resume --manifest <path> --authorization <absolute-path>\n      Forward-recover that same durable operation; this is not a second cutover decision\n\nThis binary is deliberately separate from v2board-api and v2board-workers. It is the only binary\nthat can contain the legacy MySQL source adapter. Apply and resume fail closed while the production\nfault-injection gate remains disabled."
+        "v2board-lifecycle\n\nDisposable lifecycle commands:\n  validate --manifest <path>\n      Strictly validate a complete lifecycle JSON without connecting\n\n  inspect --manifest <path>\n      Run the online read-only compatibility inspection; compatible never means ready to migrate\n\n  inspect-release-archive --archive <absolute-path> --release-id <id> --sha256 <sha256>\n      Run the mutation-free native archive contract inspector; this does not authorize migration\n\n  authorize --manifest <path> --inspect-review-sha256 <sha256> --output <absolute-path>\n      Re-run the reviewed online inspection and require the stable identity/schema/policy binding\n      before the operator types the exact operation_id\n\n  apply --manifest <path> --authorization <absolute-path>\n      Start the one irreversible operation bound to the reviewed inspection and authorization\n\n  resume --manifest <path> --authorization <absolute-path>\n      Forward-recover that same durable operation; this is not a second cutover decision\n\nThis binary is deliberately separate from v2board-api and v2board-workers. It is the only binary\nthat can contain the legacy MySQL source adapter. Apply and resume fail closed while the production\nfault-injection gate remains disabled."
     );
 }
 
@@ -155,6 +179,26 @@ mod tests {
         assert_eq!(
             parse_args(
                 [
+                    "inspect-release-archive",
+                    "--archive",
+                    "/secure/native-release.tar.gz",
+                    "--release-id",
+                    "release-a",
+                    "--sha256",
+                    &"a".repeat(64),
+                ]
+                .map(str::to_owned),
+            )
+            .unwrap(),
+            Command::InspectReleaseArchive {
+                archive: PathBuf::from("/secure/native-release.tar.gz"),
+                release_id: "release-a".to_string(),
+                sha256: "a".repeat(64),
+            }
+        );
+        assert_eq!(
+            parse_args(
+                [
                     "authorize",
                     "--manifest",
                     "operation.json",
@@ -184,6 +228,21 @@ mod tests {
                 .is_err()
         );
         assert!(parse_args(["apply", "--manifest", "operation.json"].map(str::to_owned)).is_err());
+        assert!(
+            parse_args(
+                [
+                    "inspect-release-archive",
+                    "--release-id",
+                    "release-a",
+                    "--archive",
+                    "/secure/native-release.tar.gz",
+                    "--sha256",
+                    &"a".repeat(64),
+                ]
+                .map(str::to_owned),
+            )
+            .is_err()
+        );
         assert!(
             parse_args(
                 [

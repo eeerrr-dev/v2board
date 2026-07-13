@@ -136,7 +136,9 @@ describe('user Vite dev optimizer', () => {
     expect(sharedViteConfigSource).toContain("'content-length': '0'");
     expect(sharedViteConfigSource).not.toContain('export function stripViteClientPlugin()');
     expect(sharedViteConfigSource).not.toContain('export function legacyViteClientStubPlugin()');
-    expect(sharedViteConfigSource).not.toContain('export function rejectPackagedUserAssetsPlugin()');
+    expect(sharedViteConfigSource).not.toContain(
+      'export function rejectPackagedUserAssetsPlugin()',
+    );
     expect(sharedViteConfigSource).not.toContain('export function themeRuntimeAssetsPlugin()');
     expect(sharedViteConfigSource).not.toContain('USER_THEME_PACKAGED_BUNDLE_ASSET.test(url)');
     expect(sharedViteConfigSource).not.toContain('components\\.chunk\\.css');
@@ -158,7 +160,9 @@ describe('user Vite dev optimizer', () => {
     expect(deployViteConfigSource).toContain('modulePreload: { polyfill: false }');
     expect(deployViteConfigSource).toContain('rolldownOptions: {');
     expect(deployViteConfigSource).toContain("base: '/assets/user/'");
-    expect(deployViteConfigSource).toContain("input: path.resolve(import.meta.dirname, 'index.html')");
+    expect(deployViteConfigSource).toContain(
+      "input: path.resolve(import.meta.dirname, 'index.html')",
+    );
     expect(deployViteConfigSource).toContain("entryFileNames: '[name]-[hash].js'");
     expect(deployViteConfigSource).toContain("chunkFileNames: '[name]-[hash].js'");
     expect(deployViteConfigSource).toContain("assetFileNames: 'asset-[hash][extname]'");
@@ -198,8 +202,8 @@ describe('user Vite dev optimizer', () => {
     expect(buildDeploySource).toContain("const userStageOut = join(stageRoot, 'user')");
     expect(buildDeploySource).toContain('process.env.V2BOARD_DEPLOY_ROOT');
     expect(buildDeploySource).toContain("publicBase: '/assets/user/'");
-    expect(buildDeploySource).toContain("const releaseName = `releases/${releaseId}`");
-    expect(buildDeploySource).toContain("await replaceDeployLink(target, 'current', releaseName)");
+    expect(buildDeploySource).toContain('const releaseName = `releases/${releaseId}`');
+    expect(buildDeploySource).toContain('await publishReleaseLinks(target, releaseName)');
     expect(buildDeploySource).not.toContain('dashboard.blade.php');
     expect(buildDeploySource).not.toContain('backend/laravel');
   });

@@ -1,21 +1,20 @@
 import { execSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import {
   chmod,
   lstat,
   mkdir,
   mkdtemp,
   readFile,
-  readlink,
   readdir,
   rename,
   rm,
   stat,
-  symlink,
 } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { brotliCompressSync, gzipSync } from 'node:zlib';
+import { releaseIdFromBuilds } from './release-content-id.mjs';
+import { publishReleaseLinks } from './release-publication.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dir, '..');
@@ -75,7 +74,10 @@ try {
 
   const userSize = await du(userStageOut);
   const adminSize = await du(adminStageOut);
-  const releaseId = releaseIdFromBuilds(userBuild, adminBuild);
+  const releaseId = await releaseIdFromBuilds([
+    { name: 'user', outDir: userStageOut, files: userBuild.validatedFiles },
+    { name: 'admin', outDir: adminStageOut, files: adminBuild.validatedFiles },
+  ]);
   await normalizeReleasePermissions(stageRoot);
   const publication = await publishBuild(stageRoot, deployRoot, releaseId);
 
@@ -116,14 +118,17 @@ async function validateViteBuild({ label, outDir, publicBase, requiresCustomHtml
       throw new Error(`${label} manifest import does not resolve to a chunk: ${key}`);
     }
     if (ancestry.includes(key)) {
-      throw new Error(`${label} manifest contains an import cycle: ${[...ancestry, key].join(' -> ')}`);
+      throw new Error(
+        `${label} manifest contains an import cycle: ${[...ancestry, key].join(' -> ')}`,
+      );
     }
 
     visitedChunks.add(key);
     await validateManifestAsset(`${label} chunk ${key}`, chunk.file, outDir, referencedFiles);
     for (const field of ['css', 'assets']) {
       const values = chunk[field] ?? [];
-      if (!Array.isArray(values)) throw new Error(`${label} manifest ${key}.${field} must be an array`);
+      if (!Array.isArray(values))
+        throw new Error(`${label} manifest ${key}.${field} must be an array`);
       for (const asset of values) {
         await validateManifestAsset(
           `${label} chunk ${key}.${field}`,
@@ -189,12 +194,7 @@ async function validateViteBuild({ label, outDir, publicBase, requiresCustomHtml
 
   for (const asset of referencedFiles) {
     if (!asset.endsWith('.css')) continue;
-    await assertCssUrlsExist(
-      `${label} CSS ${asset}`,
-      join(outDir, asset),
-      outDir,
-      publicBase,
-    );
+    await assertCssUrlsExist(`${label} CSS ${asset}`, join(outDir, asset), outDir, publicBase);
   }
 
   const initialBundle = await measureInitialJavaScript(label, manifest, entries[0][0], outDir);
@@ -211,12 +211,27 @@ async function validateViteBuild({ label, outDir, publicBase, requiresCustomHtml
     );
   }
 
+  const validatedFiles = [...referencedFiles].sort();
+  const outputFiles = await collectBuildFiles(outDir);
+  if (
+    outputFiles.length !== validatedFiles.length ||
+    outputFiles.some((path, index) => path !== validatedFiles[index])
+  ) {
+    const expected = new Set(validatedFiles);
+    const actual = new Set(outputFiles);
+    const unverified = outputFiles.filter((path) => !expected.has(path));
+    const missing = validatedFiles.filter((path) => !actual.has(path));
+    throw new Error(
+      `${label} output does not exactly match its verified manifest graph` +
+        ` (unverified: ${unverified.join(', ') || 'none'}; missing: ${missing.join(', ') || 'none'})`,
+    );
+  }
+
   return {
-    files: referencedFiles.size,
+    files: validatedFiles.length,
     initialGzip: initialBundle.gzip,
     initialBrotli: initialBundle.brotli,
-    indexSource,
-    manifestSource,
+    validatedFiles,
   };
 }
 
@@ -231,7 +246,8 @@ async function measureInitialJavaScript(label, manifest, entryKey, outDir) {
     if (!isRecord(chunk)) throw new Error(`${label} initial import is missing: ${key}`);
     if (typeof chunk.file === 'string' && chunk.file.endsWith('.js')) files.add(chunk.file);
     const imports = chunk.imports ?? [];
-    if (!Array.isArray(imports)) throw new Error(`${label} manifest ${key}.imports must be an array`);
+    if (!Array.isArray(imports))
+      throw new Error(`${label} manifest ${key}.imports must be an array`);
     for (const importedKey of imports) visit(importedKey);
   }
 
@@ -301,22 +317,7 @@ async function validateHtmlAssets(label, html, outDir, publicBase) {
   return urls;
 }
 
-function releaseIdFromBuilds(userBuild, adminBuild) {
-  return createHash('sha256')
-    .update('user\0')
-    .update(userBuild.manifestSource)
-    .update('\0')
-    .update(userBuild.indexSource)
-    .update('\0admin\0')
-    .update(adminBuild.manifestSource)
-    .update('\0')
-    .update(adminBuild.indexSource)
-    .digest('hex')
-    .slice(0, 20);
-}
-
 async function publishBuild(source, target, releaseId) {
-  const releases = join(target, 'releases');
   const releaseName = `releases/${releaseId}`;
   const releasePath = join(target, releaseName);
   const pendingPath = `${releasePath}.tmp`;
@@ -328,15 +329,7 @@ async function publishBuild(source, target, releaseId) {
   }
   await normalizeReleasePermissions(releasePath);
 
-  const current = await readDeployLink(target, 'current');
-  if (current !== releaseName) {
-    if (current) await replaceDeployLink(target, 'previous', current);
-    else await rm(join(target, 'previous'), { force: true });
-    await replaceDeployLink(target, 'current', releaseName);
-  }
-
-  const previous = await readDeployLink(target, 'previous');
-  await pruneOldReleases(releases, new Set([releaseName, previous].filter(Boolean)));
+  const previous = await publishReleaseLinks(target, releaseName);
   return { release: releaseName, previous };
 }
 
@@ -354,43 +347,6 @@ async function normalizeReleasePermissions(directory) {
   }
 }
 
-async function readDeployLink(target, name) {
-  const linkPath = join(target, name);
-  try {
-    const link = await readlink(linkPath);
-    if (!/^releases\/[a-f0-9]{20}$/.test(link)) {
-      throw new Error(`Deploy ${name} link has an unsafe target: ${link}`);
-    }
-    await stat(join(target, link));
-    return link;
-  } catch (error) {
-    if (error?.code === 'ENOENT') return null;
-    throw error;
-  }
-}
-
-async function replaceDeployLink(target, name, linkTarget) {
-  const temporary = join(target, `.${name}-${process.pid}-${Date.now()}`);
-  await symlink(linkTarget, temporary);
-  try {
-    await rename(temporary, join(target, name));
-  } finally {
-    await rm(temporary, { force: true });
-  }
-}
-
-async function pruneOldReleases(releases, retainedLinks) {
-  const retainedNames = new Set(
-    [...retainedLinks].map((link) => (typeof link === 'string' ? basename(link) : '')),
-  );
-  for (const entry of await readdir(releases, { withFileTypes: true })) {
-    if (!entry.isDirectory() || !/^[a-f0-9]{20}$/.test(entry.name)) continue;
-    if (!retainedNames.has(entry.name)) {
-      await rm(join(releases, entry.name), { recursive: true, force: true });
-    }
-  }
-}
-
 async function rejectLegacyArtifacts(directory, rootDirectory = directory) {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
@@ -403,6 +359,20 @@ async function rejectLegacyArtifacts(directory, rootDirectory = directory) {
     }
     if (entry.isDirectory()) await rejectLegacyArtifacts(path, rootDirectory);
   }
+}
+
+async function collectBuildFiles(directory, rootDirectory = directory, files = []) {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) {
+      await collectBuildFiles(path, rootDirectory, files);
+    } else if (entry.isFile()) {
+      files.push(relative(rootDirectory, path).split(sep).join('/'));
+    } else {
+      throw new Error(`Deploy build contains an unsupported filesystem entry: ${path}`);
+    }
+  }
+  return files.sort();
 }
 
 function assertExactlyOnce(source, value, label) {
@@ -451,7 +421,8 @@ async function assertCssUrlsExist(label, cssFile, outDir, publicBase) {
     if (!(await isRegularFile(assetPath))) missing.push(url);
   }
 
-  if (missing.length) throw new Error(`${label} references missing deploy assets: ${missing.join(', ')}`);
+  if (missing.length)
+    throw new Error(`${label} references missing deploy assets: ${missing.join(', ')}`);
 }
 
 async function pathExists(path) {

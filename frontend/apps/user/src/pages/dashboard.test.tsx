@@ -120,7 +120,12 @@ vi.mock('embla-carousel-react', () => {
 });
 
 vi.mock('react-router', () => ({
-  Link: ({ to, onClick, children, ...rest }: { to: string } & Omit<ComponentProps<'a'>, 'href'>) => (
+  Link: ({
+    to,
+    onClick,
+    children,
+    ...rest
+  }: { to: string } & Omit<ComponentProps<'a'>, 'href'>) => (
     <a
       href={to}
       onClick={(event) => {
@@ -434,10 +439,14 @@ describe('DashboardPage shadcn shell actions', () => {
     const menu = screen.getByTestId('dashboard-subscribe-menu');
     expect(screen.getByTestId('dashboard-subscribe-copy')).toHaveTextContent('复制订阅地址');
     const hiddify = within(menu).getByRole('button', { name: /导入到 Hiddify/ });
-    const hiddifyIcon = hiddify.querySelector('img');
-    expect(hiddifyIcon?.getAttribute('src')).toContain('Hiddify.png');
-    expect(hiddifyIcon).toHaveAttribute('loading', 'lazy');
-    expect(hiddifyIcon).toHaveAttribute('decoding', 'async');
+    const targetButtons = within(menu).getAllByTestId('dashboard-subscribe-target');
+    const targetIcons = targetButtons.map((button) => button.querySelector('svg'));
+    const hiddifyIcon = hiddify.querySelector('svg');
+    expect(hiddifyIcon).toHaveClass('size-5');
+    expect(hiddifyIcon).toHaveAttribute('aria-hidden', 'true');
+    expect(targetIcons).toHaveLength(targetButtons.length);
+    for (const icon of targetIcons) expect(icon).toHaveClass('lucide-import');
+    for (const button of targetButtons) expect(button.querySelector('img')).not.toBeInTheDocument();
 
     await user.click(screen.getByTestId('dashboard-subscribe-copy'));
     expect(mocks.copyText).toHaveBeenCalledWith('https://example.test/sub');
