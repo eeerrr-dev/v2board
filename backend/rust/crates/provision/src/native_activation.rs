@@ -3234,6 +3234,99 @@ fn securely_remove_secret_file(path: &Path) -> Result<(), ExecutorError> {
     .map_err(|_| ExecutorError::sanitized("secret_file_parent_sync_failed"))
 }
 
+fn cleanup_config_rollback_artifacts(
+    operation_id: &str,
+) -> Result<ConfigRollbackCleanupProof, ExecutorError> {
+    cleanup_config_rollback_artifacts_for_paths(
+        operation_id,
+        &[Path::new(API_CONFIG_PATH), Path::new(WORKER_CONFIG_PATH)],
+    )
+}
+
+fn cleanup_config_rollback_artifacts_for_paths(
+    operation_id: &str,
+    active_paths: &[&Path],
+) -> Result<ConfigRollbackCleanupProof, ExecutorError> {
+    let mut artifacts = Vec::with_capacity(6);
+    for active in active_paths {
+        let parent = active
+            .parent()
+            .ok_or_else(|| ExecutorError::sanitized("config_parent_missing"))?;
+        let name = active
+            .file_name()
+            .and_then(OsStr::to_str)
+            .ok_or_else(|| ExecutorError::sanitized("config_name_invalid"))?;
+        let backup = parent.join(format!(".{name}.{operation_id}.previous"));
+        let absent = parent.join(format!(".{name}.{operation_id}.absent"));
+        let temporary = parent.join(format!(".{name}.{operation_id}.tmp"));
+
+        remove_config_backup_after_forward_success(active, &backup)?;
+        securely_remove_secret_file_if_present(&absent)?;
+        securely_remove_secret_file_if_present(&temporary)?;
+        sync_directory(parent)
+            .map_err(|_| ExecutorError::sanitized("config_cleanup_parent_sync_failed"))?;
+        artifacts.extend([backup, absent, temporary]);
+    }
+    for artifact in &artifacts {
+        match fs::symlink_metadata(artifact) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Ok(_) => return Err(ExecutorError::sanitized("config_cleanup_artifact_remains")),
+            Err(_) => {
+                return Err(ExecutorError::sanitized(
+                    "config_cleanup_artifact_probe_failed",
+                ));
+            }
+        }
+    }
+    Ok(ConfigRollbackCleanupProof {
+        operation_id: operation_id.to_string(),
+        artifact_count: artifacts.len() as u8,
+        all_artifacts_absent: true,
+        parent_directories_fsynced: true,
+    })
+}
+
+fn remove_config_backup_after_forward_success(
+    active: &Path,
+    backup: &Path,
+) -> Result<(), ExecutorError> {
+    let backup_metadata = match fs::symlink_metadata(backup) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(_) => return Err(ExecutorError::sanitized("config_backup_inspect_failed")),
+    };
+    if !backup_metadata.file_type().is_file()
+        || backup_metadata.file_type().is_symlink()
+        || backup_metadata.permissions().mode() & 0o077 != 0
+    {
+        return Err(ExecutorError::sanitized("config_backup_unsafe"));
+    }
+    let active_metadata = fs::symlink_metadata(active)
+        .map_err(|_| ExecutorError::sanitized("config_active_inspect_failed"))?;
+    if !active_metadata.file_type().is_file() || active_metadata.file_type().is_symlink() {
+        return Err(ExecutorError::sanitized("config_active_unsafe"));
+    }
+
+    if active_metadata.dev() == backup_metadata.dev()
+        && active_metadata.ino() == backup_metadata.ino()
+    {
+        // An already-exact boot config can be hard-linked as its own rollback
+        // snapshot. Wiping that inode would corrupt the active file; unlinking
+        // only the redundant name is sufficient because its content is the
+        // current boot-only document, not a retired plaintext baseline.
+        fs::remove_file(backup)
+            .map_err(|_| ExecutorError::sanitized("config_backup_unlink_failed"))?;
+        sync_directory(
+            backup
+                .parent()
+                .ok_or_else(|| ExecutorError::sanitized("config_parent_missing"))?,
+        )
+        .map_err(|_| ExecutorError::sanitized("config_cleanup_parent_sync_failed"))
+    } else {
+        securely_remove_secret_file(backup)
+    }
+}
+
 fn prepare_private_runtime_dir(path: &Path) -> Result<(), ExecutorError> {
     if !path.is_absolute() {
         return Err(ExecutorError::sanitized("runtime_secret_dir_relative"));
@@ -3623,10 +3716,22 @@ fn recent_regular_health_file(path: &Path) -> Result<bool, ExecutorError> {
 pub(crate) struct PostAuthorityNativeServiceReport {
     pub api: ServiceReadinessProof,
     pub worker: ServiceReadinessProof,
+    pub config_rollback_cleanup: ConfigRollbackCleanupProof,
     pub release_archive_sha256: String,
     pub release_source_revision: String,
     pub authority_nodes_generation: u64,
     pub authority_nodes_event_sha256: String,
+}
+
+/// Forward-only cleanup proof emitted only after both native roles have passed
+/// readiness. It is serialized into the journaled native-start stage proof, so
+/// a success cannot leave a plaintext pre-cutover config backup behind.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct ConfigRollbackCleanupProof {
+    pub operation_id: String,
+    pub artifact_count: u8,
+    pub all_artifacts_absent: bool,
+    pub parent_directories_fsynced: bool,
 }
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -3721,9 +3826,11 @@ pub(crate) fn start_native_units_after_authority(
         systemd_notify_ready: Some(true),
         watchdog_healthy: Some(true),
     };
+    let config_rollback_cleanup = cleanup_config_rollback_artifacts(permit.operation_id())?;
     Ok(PostAuthorityNativeServiceReport {
         api,
         worker,
+        config_rollback_cleanup,
         release_archive_sha256: release.external_archive_sha256().to_string(),
         release_source_revision: release_metadata.source_revision,
         authority_nodes_generation: permit
@@ -5716,6 +5823,57 @@ mod tests {
             .arg("postgresql://user@db/v2board")
             .secret_env("PGPASSWORD", "top-secret");
         request.validate().expect("secret-free argv");
+    }
+
+    #[test]
+    fn forward_success_cleanup_removes_all_config_rollback_artifacts_without_corrupting_active() {
+        let root = test_path("config-cleanup");
+        let api_dir = root.join("api");
+        let worker_dir = root.join("worker");
+        fs::create_dir_all(&api_dir).expect("API fixture directory");
+        fs::create_dir_all(&worker_dir).expect("Worker fixture directory");
+        let api = api_dir.join("config.json");
+        let worker = worker_dir.join("config.json");
+        write_new_owner_file(&api, b"api-boot\n", 0o600).expect("API boot config");
+        write_new_owner_file(&worker, b"worker-boot\n", 0o600).expect("Worker boot config");
+
+        let artifact = |active: &Path, suffix: &str| {
+            active
+                .parent()
+                .expect("parent")
+                .join(format!(".config.json.{OPERATION_ID}.{suffix}"))
+        };
+        write_new_owner_file(
+            &artifact(&api, "previous"),
+            b"old-full-plaintext-secret\n",
+            0o600,
+        )
+        .expect("old API backup");
+        fs::hard_link(&worker, artifact(&worker, "previous"))
+            .expect("already-exact Worker hard link");
+        for active in [&api, &worker] {
+            write_new_owner_file(&artifact(active, "absent"), b"absent\n", 0o600)
+                .expect("absent marker");
+            write_new_owner_file(&artifact(active, "tmp"), b"temporary-secret\n", 0o600)
+                .expect("temporary config");
+        }
+
+        let proof = cleanup_config_rollback_artifacts_for_paths(
+            OPERATION_ID,
+            &[api.as_path(), worker.as_path()],
+        )
+        .expect("forward cleanup");
+        assert_eq!(proof.artifact_count, 6);
+        assert!(proof.all_artifacts_absent);
+        assert!(proof.parent_directories_fsynced);
+        assert_eq!(fs::read(&api).expect("API remains"), b"api-boot\n");
+        assert_eq!(fs::read(&worker).expect("Worker remains"), b"worker-boot\n");
+        for active in [&api, &worker] {
+            for suffix in ["previous", "absent", "tmp"] {
+                assert!(!artifact(active, suffix).exists());
+            }
+        }
+        fs::remove_dir_all(root).expect("remove config cleanup fixture");
     }
 
     fn test_path(label: &str) -> PathBuf {

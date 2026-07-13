@@ -38,7 +38,7 @@ impl AdminService {
                 "invite_never_expire": bool_i(self.config.invite_never_expire),
                 "commission_first_time_enable": bool_i(self.config.commission_first_time_enable),
                 "commission_auto_check_enable": bool_i(self.config.commission_auto_check_enable),
-                "commission_withdraw_limit": self.config.commission_withdraw_limit,
+                "commission_withdraw_limit": self.config.commission_withdraw_limit.normalize().to_string(),
                 "commission_withdraw_method": self.config.commission_withdraw_method,
                 "withdraw_close_enable": bool_i(self.config.withdraw_close_enable),
                 "commission_distribution_enable": bool_i(self.config.commission_distribution_enable),
@@ -57,7 +57,7 @@ impl AdminService {
                 "subscribe_path": self.config.subscribe_path,
                 "try_out_plan_id": self.config.try_out_plan_id,
                 // Ported from ConfigController::fetch (laravel .../Admin/ConfigController.php:103).
-                "try_out_hour": self.config.try_out_hour,
+                "try_out_hour": self.config.try_out_hour.normalize().to_string(),
                 "tos_url": self.config.tos_url,
                 "currency": self.config.currency,
                 "currency_symbol": self.config.currency_symbol,
@@ -142,7 +142,15 @@ impl AdminService {
     ) -> Result<AdminOutput, ApiError> {
         // ConfigSave validates the payload (enums, urls, secure_path/server_token
         // length, deposit_bounus format) and 422s before anything is written.
-        let params = without_redacted_config_secrets(params);
+        let actor = params
+            .get("_admin_email")
+            .map(|email| format!("admin:{}", email.trim()))
+            .unwrap_or_else(|| "admin:unknown".to_string());
+        let mut params = without_redacted_config_secrets(params);
+        // The fetch response exposes the effective fallback path. Posting that
+        // unchanged value must remain a no-op even when an old installation's
+        // fallback is shorter than today's explicit-path validation rule.
+        drop_unchanged_effective_secure_path(&mut params, &self.config.admin_path());
         validate_config_params(&params)?;
         let server_token = params
             .get("server_token")
@@ -159,23 +167,54 @@ impl AdminService {
         self.config
             .validate_security_update(server_token, force_https, app_url)
             .map_err(|error| ApiError::legacy(format!("配置安全校验失败: {error}")))?;
-        let path = self.config.runtime_paths.config.clone();
-        tokio::task::spawn_blocking(move || {
-            update_config_atomic(path, |config| {
-                merge_config_params(config, &params);
-                Ok(())
-            })
+        let expected_revision = self
+            .config
+            .operator_revision()
+            .ok_or_else(|| ApiError::internal("operator configuration authority is not active"))?;
+        let mut candidate = self.config.operator_config_map();
+        merge_config_params(&mut candidate, &params);
+        let current = self.config.clone();
+        let candidate_config = tokio::task::spawn_blocking(move || {
+            current.with_operator_config(&candidate, expected_revision)
         })
         .await
         .map_err(|error| {
-            tracing::error!(?error, "config writer task failed");
-            ApiError::internal("configuration writer is unavailable")
+            tracing::error!(?error, "config validation task failed");
+            ApiError::internal("configuration validator is unavailable")
         })?
         .map_err(|error| {
-            tracing::error!(?error, "failed to update runtime configuration");
-            ApiError::legacy("修改失败")
+            tracing::warn!(?error, "rejected invalid operator configuration candidate");
+            ApiError::legacy(format!("配置校验失败: {error}"))
         })?;
-        Ok(AdminOutput::Data(json!(true)))
+        let normalized = candidate_config.operator_config_map();
+        if normalized == self.config.operator_config_map() {
+            return Ok(AdminOutput::Data(json!(true)));
+        }
+        let installation_id = match self.installation_id {
+            Some(installation_id) => installation_id,
+            None => v2board_db::installation_id(&self.db).await?,
+        };
+        let committed = operator_config::commit(
+            &self.db,
+            installation_id,
+            &self.config.app_key,
+            Some(expected_revision),
+            &normalized,
+            &actor,
+        )
+        .await
+        .map_err(|error| match error {
+            operator_config::OperatorConfigError::Conflict { .. } => {
+                ApiError::bad_request("配置已被其他请求更新，请刷新后重试")
+            }
+            error => {
+                tracing::error!(?error, "failed to commit operator configuration");
+                ApiError::internal("operator configuration commit failed")
+            }
+        })?;
+        Ok(AdminOutput::ConfigSaved {
+            config: Box::new(candidate_config.at_operator_revision(committed.revision)),
+        })
     }
 
     pub(super) async fn test_send_mail(
@@ -384,6 +423,18 @@ impl AdminService {
             return Err(ApiError::legacy("Telegram webhook failed"));
         }
         Ok(AdminOutput::Data(json!(true)))
+    }
+}
+
+pub(super) fn drop_unchanged_effective_secure_path(
+    params: &mut HashMap<String, String>,
+    effective_admin_path: &str,
+) {
+    if params
+        .get("secure_path")
+        .is_some_and(|path| path.trim_matches('/') == effective_admin_path)
+    {
+        params.remove("secure_path");
     }
 }
 

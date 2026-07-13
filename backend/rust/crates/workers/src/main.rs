@@ -28,7 +28,10 @@ mod traffic;
 use std::{env, sync::Arc};
 
 use v2board_config::AppConfig;
-use v2board_domain::smtp::SmtpTransportCache;
+use v2board_domain::{
+    operator_config::{self, OperatorConfigConsumer, OperatorConfigError},
+    smtp::SmtpTransportCache,
+};
 
 use crate::state::WorkerState;
 
@@ -36,14 +39,43 @@ use crate::state::WorkerState;
 async fn main() -> anyhow::Result<()> {
     runtime::init_tracing();
 
-    let config = Arc::new(AppConfig::try_from_worker_env()?);
-    let db = v2board_db::connect_postgres(&config.database_url).await?;
+    let bootstrap = AppConfig::try_from_worker_boot_env()?;
+    let db = v2board_db::connect_postgres(&bootstrap.database_url).await?;
     if !v2board_db::migrations_current(&db).await? {
         anyhow::bail!(
             "refusing to start worker commands against a PostgreSQL schema that is not exactly current"
         );
     }
     let installation_id = v2board_db::installation_id(&db).await?;
+    let authority =
+        match operator_config::load_active(&db, installation_id, &bootstrap.app_key).await {
+            Ok(Some(authority)) => authority,
+            Ok(None) => return Err(OperatorConfigError::MissingAuthority.into()),
+            Err(error) => {
+                if let Some((observed_revision, error_code)) = error.observed_rejection() {
+                    let _ = operator_config::acknowledge(
+                        &db,
+                        installation_id,
+                        OperatorConfigConsumer::Worker,
+                        observed_revision,
+                        None,
+                        Some(error_code),
+                    )
+                    .await;
+                }
+                return Err(error.into());
+            }
+        };
+    let config = Arc::new(bootstrap.with_operator_config(&authority.values, authority.revision)?);
+    operator_config::acknowledge(
+        &db,
+        installation_id,
+        OperatorConfigConsumer::Worker,
+        authority.revision,
+        Some(authority.revision),
+        None,
+    )
+    .await?;
     let redis = redis::Client::open(config.redis_url.clone())?;
     let state = WorkerState::new(
         config,

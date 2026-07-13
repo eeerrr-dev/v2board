@@ -98,12 +98,48 @@ pub(in super::super) fn config_save_whitelisted(base: &str) -> bool {
 pub(in super::super) fn validate_config_params(
     params: &HashMap<String, String>,
 ) -> Result<(), ApiError> {
+    // `secure_path` is the live admin route, so an explicitly submitted empty
+    // value must never be interpreted as "unset/use the fallback".  The fetch
+    // round-trip of an unchanged fallback path is removed before validation.
+    if params
+        .get("secure_path")
+        .is_some_and(|value| value.trim().is_empty())
+    {
+        return Err(validation_error("secure_path", "后台路径不能为空"));
+    }
+
     let value = |key: &str| -> Option<&str> {
         params
             .get(key)
             .map(|value| value.trim())
             .filter(|value| !value.is_empty())
     };
+
+    // These settings have exactly two accepted wire shapes: indexed form
+    // (`field[0]=...`) or the literal `field=[]` used to clear the list.  A
+    // bare scalar is ambiguous (and was previously parsed as a comma list by
+    // AppConfig), so reject it instead of silently changing its meaning.
+    for key in [
+        "deposit_bounus",
+        "commission_withdraw_method",
+        "email_whitelist_suffix",
+    ] {
+        let indexed = params
+            .keys()
+            .filter(|raw_key| raw_key.starts_with(&format!("{key}[")))
+            .collect::<Vec<_>>();
+        if indexed
+            .iter()
+            .any(|raw_key| bracket_index(raw_key, key).is_none())
+        {
+            return Err(validation_error(key, "数组参数格式有误"));
+        }
+        if let Some(raw) = params.get(key)
+            && (raw.trim() != "[]" || !indexed.is_empty())
+        {
+            return Err(validation_error(key, "数组参数格式有误"));
+        }
+    }
 
     const IN_0_1: &[&str] = &[
         "invite_force",
@@ -226,6 +262,30 @@ pub(in super::super) fn validate_config_params(
             {
                 return Err(validation_error(key, "分钟数必须在安全范围内"));
             }
+            let (minimum, maximum) = match *key {
+                "show_subscribe_expire" | "register_limit_expire" | "password_limit_expire" => {
+                    (1, MAX_CONFIG_DURATION_MINUTES)
+                }
+                "server_pull_interval" | "server_push_interval" => (1, i64::from(i32::MAX)),
+                "register_limit_count" | "password_limit_count" => (1, i64::MAX),
+                "invite_commission"
+                | "try_out_plan_id"
+                | "server_node_report_min_traffic"
+                | "server_device_online_min_traffic" => (0, i64::from(i32::MAX)),
+                "invite_gen_limit" => (0, i64::MAX),
+                _ => (i64::MIN, i64::MAX),
+            };
+            if !(minimum..=maximum).contains(&parsed) {
+                return Err(validation_error(key, "参数超出支持范围"));
+            }
+        }
+    }
+    if let Some(port) = value("email_port") {
+        let port = port
+            .parse::<u16>()
+            .map_err(|_| validation_error("email_port", "端口格式有误"))?;
+        if port == 0 {
+            return Err(validation_error("email_port", "端口必须在1到65535之间"));
         }
     }
     const NUMERICS: &[&str] = &[
@@ -236,22 +296,34 @@ pub(in super::super) fn validate_config_params(
         "commission_distribution_l3",
     ];
     for key in NUMERICS {
-        if let Some(value) = value(key)
-            && value.parse::<f64>().is_err()
-        {
-            return Err(validation_error(key, "参数格式有误"));
+        if let Some(value) = value(key) {
+            let parsed = value
+                .parse::<Decimal>()
+                .map_err(|_| validation_error(key, "参数格式有误"))?;
+            if parsed.is_sign_negative() {
+                return Err(validation_error(key, "参数不能为负数"));
+            }
+            let maximum = match *key {
+                "try_out_hour" => Decimal::from(i64::MAX) / Decimal::from(3_600),
+                "commission_withdraw_limit" => Decimal::from(i64::MAX) / Decimal::from(100),
+                _ => Decimal::MAX,
+            };
+            if parsed > maximum {
+                return Err(validation_error(key, "参数超出支持范围"));
+            }
         }
     }
 
     // deposit_bounus[] tiers must match `<amount>:<bounus>` (empty tiers allowed).
     for tier in json_array_param(params, "deposit_bounus") {
         let Value::String(tier) = tier else {
-            continue;
+            return Err(validation_error("deposit_bounus", "数组参数格式有误"));
         };
+        let tier = tier.trim();
         if tier.is_empty() {
             continue;
         }
-        if !is_deposit_bounus_tier(&tier) {
+        if !is_deposit_bounus_tier(tier) {
             return Err(validation_error(
                 "deposit_bounus",
                 "充值奖励格式不正确，必须为充值金额:奖励金额",
@@ -474,16 +546,38 @@ pub(in super::super) fn merge_config_params(
             if !config_save_whitelisted(base) {
                 continue;
             }
-            arrays
-                .entry(base.to_string())
-                .or_default()
-                .insert(index, json_scalar(value));
+            let value = value.trim();
+            if !value.is_empty() {
+                arrays
+                    .entry(base.to_string())
+                    .or_default()
+                    .insert(index, Value::String(value.to_string()));
+            } else {
+                // Preserve an explicitly submitted, all-empty array as an
+                // empty list rather than falling back to the previous value.
+                arrays.entry(base.to_string()).or_default();
+            }
             continue;
         }
         if !config_save_whitelisted(key) {
             continue;
         }
-        config.insert(key.clone(), json_scalar(value));
+        if matches!(
+            key.as_str(),
+            "deposit_bounus" | "commission_withdraw_method" | "email_whitelist_suffix"
+        ) && value.trim() == "[]"
+        {
+            config.insert(key.clone(), Value::Array(Vec::new()));
+            continue;
+        }
+        if key == "email_port" && value.trim().is_empty() {
+            config.insert(key.clone(), Value::Null);
+            continue;
+        }
+        // Preserve the submitted lexical value until AppConfig performs typed
+        // parsing. This avoids f64 round-trips for exact decimals and prevents
+        // numeric-looking passwords/tokens from losing leading zeroes.
+        config.insert(key.clone(), Value::String(value.clone()));
     }
     for (key, values) in arrays {
         config.insert(key, Value::Array(values.into_values().collect()));

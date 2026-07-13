@@ -25,6 +25,7 @@ use v2board_db::{DbPoolConfig, installation_id, migrations_current};
 use v2board_domain::{
     admin::{AdminOutput, AdminService},
     auth::{AuthService, PasswordKdf, RegisterInput, hash_password},
+    operator_config,
     order::{OrderService, PaymentNotifyInput},
     server_credentials::{derive_node_token, verify_node_token},
     smtp::SmtpTransportCache,
@@ -36,6 +37,7 @@ const DEFAULT_ROOT_DATABASE_URL: &str = "postgresql://v2board:v2board@postgres:5
 const DEFAULT_RUNTIME_REDIS_URL: &str = "redis://redis:6379/1";
 const DEFAULT_INTEGRATION_REDIS_URL: &str = "redis://redis:6379/15";
 const DEFAULT_WORKER_BIN: &str = "/app/target/debug/v2board-workers";
+const INTEGRATION_APP_KEY: &str = "integration-only-app-key-with-at-least-thirty-two-bytes";
 
 pub async fn run() -> Result<()> {
     let root_database_url = env_or(
@@ -128,6 +130,8 @@ async fn run_isolated_checks(
         );
         installation_identity_invariant(pool).await?;
         pass("installation identity is explicit, active, immutable, and fail-closed");
+        install_contract_operator_config_authority(pool, integration_redis_url).await?;
+        pass("operator configuration authority is explicit and authenticated");
         install_contract_analytics_admission(pool).await?;
         pass("analytics admission policy is installation-bound and measurable");
         schema_invariants(pool).await?;
@@ -209,6 +213,25 @@ async fn install_contract_analytics_admission(pool: &PgPool) -> Result<()> {
     install_analytics_admission_policy(pool, installation_id, &policy, now).await?;
     let snapshot = refresh_analytics_admission(pool).await?.snapshot;
     ensure!(snapshot.sample_fresh && snapshot.pending_rows == 0);
+    Ok(())
+}
+
+async fn install_contract_operator_config_authority(pool: &PgPool, redis_url: &str) -> Result<()> {
+    let config = integration_config(pool, redis_url)?;
+    let installation_id = installation_id(pool).await?;
+    let candidate = config.operator_config_map();
+    let snapshot = operator_config::ensure_initial_authority_exact(
+        pool,
+        installation_id,
+        &config.app_key,
+        &candidate,
+        "contract:bootstrap",
+    )
+    .await?;
+    ensure!(
+        snapshot.revision == 1 && snapshot.values == candidate,
+        "fresh operator configuration authority was not seeded exactly"
+    );
     Ok(())
 }
 
@@ -1529,10 +1552,7 @@ async fn worker_health_process(
         .env("V2BOARD_RUNTIME_ROOT", runtime_root)
         .env("V2BOARD_WORKER_HEALTH_FILE", &health_file)
         .env("V2BOARD_WORKER_HEARTBEAT_INTERVAL_SECONDS", "1")
-        .env(
-            "APP_KEY",
-            "integration-only-worker-app-key-with-at-least-thirty-two-bytes",
-        )
+        .env("APP_KEY", INTEGRATION_APP_KEY)
         .env("RUST_LOG", "v2board_workers=error")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -1655,7 +1675,7 @@ fn integration_config(_pool: &PgPool, redis_url: &str) -> Result<AppConfig> {
     let mut config = AppConfig::try_from_api_env().context("load integration AppConfig")?;
     config.environment = RuntimeEnvironment::Testing;
     config.redis_url = redis_url.to_string();
-    config.app_key = "integration-only-app-key-with-at-least-thirty-two-bytes".to_string();
+    config.app_key = INTEGRATION_APP_KEY.to_string();
     config.stop_register = false;
     config.email_verify = false;
     config.recaptcha_enable = false;
@@ -1707,10 +1727,7 @@ async fn run_worker_once(
             .env("V2BOARD_ENV", "testing")
             .env("V2BOARD_SEED_LOCAL", "0")
             .env("V2BOARD_RUNTIME_ROOT", runtime_root)
-            .env(
-                "APP_KEY",
-                "integration-only-worker-app-key-with-at-least-thirty-two-bytes",
-            )
+            .env("APP_KEY", INTEGRATION_APP_KEY)
             .env("RUST_LOG", "v2board_workers=error")
             .output()
             .with_context(|| format!("execute {worker_bin} run-once {job}"))?;

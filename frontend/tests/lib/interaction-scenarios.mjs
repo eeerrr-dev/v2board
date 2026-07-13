@@ -1,6 +1,7 @@
 import {
   runAdminConfigSaveFailureMatrixInteraction,
   runAdminConfigTabsInteraction,
+  runAdminConfigUnchangedBlurInteraction,
 } from './runners/admin/config.mjs';
 import { runAccessibilitySmokeInteraction } from './runners/accessibility.mjs';
 import {
@@ -676,6 +677,11 @@ export const interactions = [
   {
     label: 'admin-config-tabs',
     run: runAdminConfigTabsInteraction,
+    scenarioLabel: 'admin-config',
+  },
+  {
+    label: 'admin-config-unchanged-blur',
+    run: runAdminConfigUnchangedBlurInteraction,
     scenarioLabel: 'admin-config',
   },
   {

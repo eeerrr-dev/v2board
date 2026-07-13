@@ -2195,7 +2195,7 @@ mod tests {
     #[test]
     fn embedded_lineage_matches_the_frozen_converter_binding() {
         verify_target_lineage_binding().expect("lineage digest");
-        assert_eq!(expected_target_tables().len(), 46);
+        assert_eq!(expected_target_tables().len(), 50);
     }
 
     #[test]

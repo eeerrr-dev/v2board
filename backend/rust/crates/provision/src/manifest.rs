@@ -17,7 +17,8 @@ use sha2::Sha256;
 use url::Url;
 use uuid::Uuid;
 use v2board_config::{
-    AppConfig, FILE_ONLY_RUNTIME_KEYS_V1, MAX_CONFIG_DURATION_MINUTES, RuntimePaths,
+    AppConfig, BOOT_ONLY_RUNTIME_KEYS_V1, FILE_ONLY_RUNTIME_KEYS_V1, MAX_CONFIG_DURATION_MINUTES,
+    OPERATOR_CONFIG_KEYS_V1, RuntimePaths,
 };
 
 pub const LEGACY_REFERENCE_COMMIT: &str = "7e77de9f4873b317157490529f7be7d6f8a62421";
@@ -63,6 +64,7 @@ const BOOL_RUNTIME_KEYS: &[&str] = &[
     "commission_distribution_enable",
     "commission_auto_check_enable",
     "show_info_to_server_enable",
+    "try_out_enable",
     "plan_change_enable",
     "surplus_enable",
     "commission_first_time_enable",
@@ -90,16 +92,13 @@ const INTEGER_RUNTIME_KEYS: &[&str] = &[
     "show_subscribe_expire",
     "allow_new_period",
     "reset_traffic_method",
-    "try_out_enable",
     "try_out_plan_id",
-    "try_out_hour",
     "invite_commission",
     "new_order_event_id",
     "renew_order_event_id",
     "change_order_event_id",
     "invite_gen_limit",
     "ticket_status",
-    "commission_withdraw_limit",
     "server_push_interval",
     "server_pull_interval",
     "server_node_report_min_traffic",
@@ -108,6 +107,8 @@ const INTEGER_RUNTIME_KEYS: &[&str] = &[
     "password_limit_count",
     "password_limit_expire",
 ];
+
+const DECIMAL_RUNTIME_KEYS: &[&str] = &["try_out_hour", "commission_withdraw_limit"];
 
 const LIST_RUNTIME_KEYS: &[&str] = &[
     "cors_allowed_origins",
@@ -124,6 +125,21 @@ pub struct ProvisionSpec {
     lifecycle_audit_key: String,
     pub(crate) flow: ProvisionFlow,
     manifest_binding_hmac_sha256: String,
+}
+
+/// Exact dynamic configuration normalized by the native typed parser from the
+/// single operator-maintained manifest. The inner map deliberately stays
+/// private so callers cannot construct an unvalidated authority candidate.
+/// This value contains integration secrets and therefore must never implement
+/// `Debug` or `Serialize`.
+pub struct NormalizedOperatorConfigCandidate {
+    values: Map<String, Value>,
+}
+
+impl NormalizedOperatorConfigCandidate {
+    pub fn as_map(&self) -> &Map<String, Value> {
+        &self.values
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1215,8 +1231,34 @@ fn validate_spec(spec: &ProvisionSpec) -> Result<(), ProvisionSpecError> {
             "runtime app_key and server_token must differ from datastore passwords",
         ));
     }
-    AppConfig::try_from_api_config_map(
-        spec.materialized_api_runtime_config()?,
+    let operator = spec.normalized_operator_config_candidate()?;
+    let expected_operator = OPERATOR_CONFIG_KEYS_V1
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    let actual_operator = operator
+        .as_map()
+        .keys()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    if actual_operator != expected_operator {
+        return Err(ProvisionSpecError::RuntimeSemantics(
+            "typed operator candidate does not have the exact version-1 key set".to_string(),
+        ));
+    }
+
+    let api_boot = spec.materialized_api_runtime_config()?;
+    let worker_boot = spec.materialized_worker_runtime_config()?;
+    if OPERATOR_CONFIG_KEYS_V1
+        .iter()
+        .any(|key| api_boot.contains_key(*key) || worker_boot.contains_key(*key))
+    {
+        return Err(ProvisionSpecError::RuntimeSemantics(
+            "long-lived role document contains dynamic operator configuration".to_string(),
+        ));
+    }
+    AppConfig::try_from_api_boot_config_map(
+        api_boot,
         RuntimePaths {
             config: spec.api_runtime_config_path().to_path_buf(),
             frontend: PathBuf::from("/opt/v2board/frontend"),
@@ -1224,8 +1266,8 @@ fn validate_spec(spec: &ProvisionSpec) -> Result<(), ProvisionSpecError> {
         },
     )
     .map_err(|error| ProvisionSpecError::RuntimeSemantics(error.to_string()))?;
-    AppConfig::try_from_worker_config_map(
-        spec.materialized_worker_runtime_config()?,
+    AppConfig::try_from_worker_boot_config_map(
+        worker_boot,
         RuntimePaths {
             config: spec.worker_runtime_config_path().to_path_buf(),
             frontend: PathBuf::from("/opt/v2board/frontend"),
@@ -2210,6 +2252,20 @@ fn validate_runtime(runtime: &Map<String, Value>) -> Result<(), ProvisionSpecErr
             return Err(ProvisionSpecError::RuntimeType((*key).to_string()));
         }
     }
+    for key in DECIMAL_RUNTIME_KEYS {
+        let value = runtime.get(*key);
+        let lossless_decimal = match value {
+            Some(Value::String(value)) => value.trim().parse::<rust_decimal::Decimal>().is_ok(),
+            // Historical schema-v3 manifests used integer JSON values. Keep
+            // accepting those exact integers, but never pass a JSON float
+            // through binary floating-point conversion.
+            Some(Value::Number(value)) => value.as_i64().is_some(),
+            _ => false,
+        };
+        if !lossless_decimal {
+            return Err(ProvisionSpecError::RuntimeType((*key).to_string()));
+        }
+    }
     for key in LIST_RUNTIME_KEYS {
         if !runtime.get(*key).is_some_and(|value| {
             value
@@ -2222,6 +2278,7 @@ fn validate_runtime(runtime: &Map<String, Value>) -> Result<(), ProvisionSpecErr
     for (key, value) in runtime {
         if BOOL_RUNTIME_KEYS.contains(&key.as_str())
             || INTEGER_RUNTIME_KEYS.contains(&key.as_str())
+            || DECIMAL_RUNTIME_KEYS.contains(&key.as_str())
             || LIST_RUNTIME_KEYS.contains(&key.as_str())
         {
             continue;
@@ -2265,7 +2322,6 @@ fn validate_runtime_values(runtime: &Map<String, Value>) -> Result<(), Provision
         ("show_subscribe_method", 0, 2),
         ("ticket_status", 0, 2),
         ("reset_traffic_method", 0, 4),
-        ("try_out_enable", 0, 1),
         ("allow_new_period", 0, 1),
         ("new_order_event_id", 0, 1),
         ("renew_order_event_id", 0, 1),
@@ -3246,9 +3302,10 @@ impl ProvisionSpec {
         Some(mac)
     }
 
-    pub fn materialized_api_runtime_config(
-        &self,
-    ) -> Result<Map<String, Value>, ProvisionSpecError> {
+    /// Private full materialization used only while validating and normalizing
+    /// the one operator-maintained manifest. It must never be installed as a
+    /// long-lived role file because it contains the dynamic secret baseline.
+    fn full_api_runtime_config(&self) -> Result<Map<String, Value>, ProvisionSpecError> {
         let mut runtime = self.runtime().clone();
         let (database_url, peer_database_url, redis_url) = match &self.flow {
             ProvisionFlow::FreshInstall { target, .. }
@@ -3276,9 +3333,9 @@ impl ProvisionSpec {
         Ok(runtime)
     }
 
-    pub fn materialized_worker_runtime_config(
-        &self,
-    ) -> Result<Map<String, Value>, ProvisionSpecError> {
+    /// Worker counterpart of [`Self::full_api_runtime_config`]. The full map is
+    /// short-lived typed-validation input only and is never serialized.
+    fn full_worker_runtime_config(&self) -> Result<Map<String, Value>, ProvisionSpecError> {
         let mut runtime = self.runtime().clone();
         let (
             database_url,
@@ -3336,6 +3393,119 @@ impl ProvisionSpec {
             Value::String(writer.password.clone()),
         );
         Ok(runtime)
+    }
+
+    /// Returns the exact dynamic authority derived from both independently
+    /// typed role views. A manifest is rejected unless the normalized API and
+    /// Worker candidates are byte-for-byte equal as JSON values.
+    pub fn normalized_operator_config_candidate(
+        &self,
+    ) -> Result<NormalizedOperatorConfigCandidate, ProvisionSpecError> {
+        let api = AppConfig::try_from_api_config_map(
+            self.full_api_runtime_config()?,
+            RuntimePaths {
+                config: self.api_runtime_config_path().to_path_buf(),
+                frontend: PathBuf::from("/opt/v2board/frontend"),
+                rules: PathBuf::from("/var/lib/v2board/rules"),
+            },
+        )
+        .map_err(|error| ProvisionSpecError::RuntimeSemantics(error.to_string()))?;
+        let worker = AppConfig::try_from_worker_config_map(
+            self.full_worker_runtime_config()?,
+            RuntimePaths {
+                config: self.worker_runtime_config_path().to_path_buf(),
+                frontend: PathBuf::from("/opt/v2board/frontend"),
+                rules: PathBuf::from("/var/lib/v2board/rules"),
+            },
+        )
+        .map_err(|error| ProvisionSpecError::RuntimeSemantics(error.to_string()))?;
+        let values = api.operator_config_map();
+        if values != worker.operator_config_map() {
+            return Err(ProvisionSpecError::RuntimeSemantics(
+                "API and Worker normalized different operator configuration candidates".to_string(),
+            ));
+        }
+        Ok(NormalizedOperatorConfigCandidate { values })
+    }
+
+    fn boot_runtime_base(&self) -> Map<String, Value> {
+        let mut boot = BOOT_ONLY_RUNTIME_KEYS_V1
+            .iter()
+            .filter_map(|key| {
+                self.runtime()
+                    .get(*key)
+                    .cloned()
+                    .map(|value| ((*key).to_string(), value))
+            })
+            .collect::<Map<_, _>>();
+        boot.insert(
+            "configuration_source".to_string(),
+            Value::String("file_only".to_string()),
+        );
+        boot.insert(
+            "configuration_scope".to_string(),
+            Value::String("boot_only".to_string()),
+        );
+        boot
+    }
+
+    /// Exact long-lived API boot document. Dynamic configuration and all four
+    /// operator secrets are absent; the lifecycle process seeds them directly
+    /// into PostgreSQL before either service can start.
+    pub fn materialized_api_runtime_config(
+        &self,
+    ) -> Result<Map<String, Value>, ProvisionSpecError> {
+        let full = self.full_api_runtime_config()?;
+        let mut boot = self.boot_runtime_base();
+        for key in [
+            "runtime_role",
+            "database_url",
+            "peer_database_principal",
+            "redis_url",
+        ] {
+            let value = full.get(key).cloned().ok_or_else(|| {
+                ProvisionSpecError::RuntimeSemantics(format!(
+                    "API boot materialization is missing {key}"
+                ))
+            })?;
+            boot.insert(key.to_string(), value);
+        }
+        Ok(boot)
+    }
+
+    /// Exact long-lived Worker boot document. It includes only the Worker
+    /// datastore credentials needed to reach the encrypted shared authority;
+    /// no dynamic integration secret is ever disclosed to this file.
+    pub fn materialized_worker_runtime_config(
+        &self,
+    ) -> Result<Map<String, Value>, ProvisionSpecError> {
+        let full = self.full_worker_runtime_config()?;
+        let mut boot = self.boot_runtime_base();
+        for key in [
+            "runtime_role",
+            "database_url",
+            "peer_database_principal",
+            "redis_url",
+            "clickhouse_url",
+            "clickhouse_database",
+            "clickhouse_writer_username",
+            "clickhouse_writer_password",
+        ] {
+            let value = full.get(key).cloned().ok_or_else(|| {
+                ProvisionSpecError::RuntimeSemantics(format!(
+                    "Worker boot materialization is missing {key}"
+                ))
+            })?;
+            boot.insert(key.to_string(), value);
+        }
+        Ok(boot)
+    }
+
+    pub(crate) fn operator_app_key(&self) -> &str {
+        self.runtime()
+            .get("app_key")
+            .and_then(Value::as_str)
+            .expect("validated runtime.app_key is a string")
     }
 
     pub(crate) fn runtime(&self) -> &Map<String, Value> {
@@ -3481,6 +3651,8 @@ pub(crate) mod tests {
                 Value::Bool(false)
             } else if INTEGER_RUNTIME_KEYS.contains(key) {
                 Value::from(1)
+            } else if DECIMAL_RUNTIME_KEYS.contains(key) {
+                Value::String("1".to_string())
             } else if LIST_RUNTIME_KEYS.contains(key) {
                 Value::Array(Vec::new())
             } else {
@@ -4310,7 +4482,31 @@ pub(crate) mod tests {
         ] {
             let spec = load_document(&document).expect("valid v3 document");
             assert_eq!(spec.kind, expected_kind);
+            let operator = spec
+                .normalized_operator_config_candidate()
+                .expect("one exact typed operator candidate");
+            assert_eq!(
+                operator
+                    .as_map()
+                    .keys()
+                    .map(String::as_str)
+                    .collect::<BTreeSet<_>>(),
+                OPERATOR_CONFIG_KEYS_V1
+                    .iter()
+                    .copied()
+                    .collect::<BTreeSet<_>>()
+            );
+            assert_eq!(
+                operator.as_map()["try_out_hour"],
+                Value::String("1".to_string())
+            );
+            assert_eq!(
+                operator.as_map()["commission_withdraw_limit"],
+                Value::String("1".to_string())
+            );
             let api = spec.materialized_api_runtime_config().expect("API config");
+            assert_eq!(api["configuration_source"], "file_only");
+            assert_eq!(api["configuration_scope"], "boot_only");
             for key in [
                 "runtime_role",
                 "database_url",
@@ -4330,7 +4526,13 @@ pub(crate) mod tests {
             ] {
                 assert!(!api.contains_key(forbidden), "API leaked {forbidden}");
             }
-            AppConfig::try_from_api_config_map(
+            for forbidden in OPERATOR_CONFIG_KEYS_V1 {
+                assert!(
+                    !api.contains_key(*forbidden),
+                    "API leaked operator {forbidden}"
+                );
+            }
+            AppConfig::try_from_api_boot_config_map(
                 api,
                 RuntimePaths {
                     config: PathBuf::from("/var/lib/v2board/api/config.json"),
@@ -4343,6 +4545,8 @@ pub(crate) mod tests {
             let worker = spec
                 .materialized_worker_runtime_config()
                 .expect("worker config");
+            assert_eq!(worker["configuration_source"], "file_only");
+            assert_eq!(worker["configuration_scope"], "boot_only");
             for key in [
                 "runtime_role",
                 "database_url",
@@ -4362,7 +4566,13 @@ pub(crate) mod tests {
             ] {
                 assert!(!worker.contains_key(forbidden), "worker leaked {forbidden}");
             }
-            AppConfig::try_from_worker_config_map(
+            for forbidden in OPERATOR_CONFIG_KEYS_V1 {
+                assert!(
+                    !worker.contains_key(*forbidden),
+                    "worker leaked operator {forbidden}"
+                );
+            }
+            AppConfig::try_from_worker_boot_config_map(
                 worker,
                 RuntimePaths {
                     config: PathBuf::from("/var/lib/v2board/worker/config.json"),
@@ -4380,6 +4590,42 @@ pub(crate) mod tests {
         let mut native_with_target = native_document();
         native_with_target["target"] = target();
         assert!(load_document(&native_with_target).is_err());
+    }
+
+    #[test]
+    fn decimal_runtime_values_are_lossless_and_boolean_trial_flag_is_typed() {
+        let exact = "1234567890123.123456789012345";
+        let mut document = fresh_document();
+        document["runtime"]["try_out_enable"] = Value::Bool(true);
+        document["runtime"]["try_out_hour"] = Value::String(exact.to_string());
+        document["runtime"]["commission_withdraw_limit"] = Value::from(100);
+        let spec = load_document(&document).expect("lossless decimal strings are valid");
+        let operator = spec
+            .normalized_operator_config_candidate()
+            .expect("typed exact operator candidate");
+        assert_eq!(operator.as_map()["try_out_enable"], Value::Bool(true));
+        assert_eq!(
+            operator.as_map()["try_out_hour"],
+            Value::String(exact.to_string())
+        );
+        assert_eq!(
+            operator.as_map()["commission_withdraw_limit"],
+            Value::String("100".to_string())
+        );
+
+        let mut floating = fresh_document();
+        floating["runtime"]["try_out_hour"] = serde_json::json!(1.5);
+        assert!(matches!(
+            load_document(&floating),
+            Err(ProvisionSpecError::RuntimeType(key)) if key == "try_out_hour"
+        ));
+
+        let mut integer_boolean = fresh_document();
+        integer_boolean["runtime"]["try_out_enable"] = Value::from(1);
+        assert!(matches!(
+            load_document(&integer_boolean),
+            Err(ProvisionSpecError::RuntimeType(key)) if key == "try_out_enable"
+        ));
     }
 
     #[test]

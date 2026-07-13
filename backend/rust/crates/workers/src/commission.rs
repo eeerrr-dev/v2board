@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use chrono::Utc;
+use rust_decimal::{Decimal, prelude::ToPrimitive};
 use sqlx::{FromRow, Postgres, Transaction};
 use v2board_config::AppConfig;
 
@@ -298,7 +299,8 @@ fn commission_shares(config: &AppConfig) -> Vec<i32> {
 fn parse_share(value: Option<&str>) -> i32 {
     value
         .map(str::trim)
-        .and_then(|value| value.parse::<i32>().ok())
+        .and_then(|value| value.parse::<Decimal>().ok())
+        .and_then(|value| value.trunc().to_i32())
         .unwrap_or(0)
 }
 
@@ -415,5 +417,8 @@ mod tests {
         assert_eq!(parse_share(Some("")), 0);
         assert_eq!(parse_share(Some("abc")), 0);
         assert_eq!(parse_share(Some(" 40 ")), 40);
+        assert_eq!(parse_share(Some("50.5")), 50);
+        assert_eq!(parse_share(Some("-50.5")), -50);
+        assert_eq!(parse_share(Some("9999999999999999999999999999")), 0);
     }
 }

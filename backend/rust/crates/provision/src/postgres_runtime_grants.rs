@@ -1,10 +1,13 @@
 //! Frozen PostgreSQL runtime ACL policy for the native API and worker.
 //!
 //! The migration principal owns the schema and lifecycle state. Runtime
-//! principals deliberately share the current business-table DML allowlist;
-//! lifecycle, copy-checkpoint, and legacy-fold provenance stays invisible to
-//! both. New tables and sequences fail closed until this policy is reviewed and
-//! re-applied by a lifecycle operation.
+//! principals deliberately share the current business-table DML allowlist,
+//! while operator configuration uses an asymmetric boundary: only the API can
+//! publish a revision and advance the active pointer, and each role can update
+//! only its own application acknowledgement. Lifecycle, copy-checkpoint, and
+//! legacy-fold provenance stays invisible to both. New tables and sequences
+//! fail closed until this policy is reviewed and re-applied by a lifecycle
+//! operation.
 
 use std::collections::BTreeSet;
 
@@ -20,6 +23,13 @@ pub(crate) const RUNTIME_READ_ONLY_TABLES: &[&str] = &[
 ];
 
 pub(crate) const RUNTIME_ADMISSION_STATE_TABLES: &[&str] = &["v2_analytics_admission_state"];
+
+pub(crate) const RUNTIME_OPERATOR_REVISION_TABLES: &[&str] = &["v2_operator_config_revision"];
+
+pub(crate) const RUNTIME_API_OPERATOR_STATE_TABLES: &[&str] =
+    &["v2_operator_config_state", "v2_operator_config_api_ack"];
+
+pub(crate) const RUNTIME_WORKER_OPERATOR_STATE_TABLES: &[&str] = &["v2_operator_config_worker_ack"];
 
 pub(crate) const RUNTIME_HIDDEN_TABLES: &[&str] = &[
     "v2_lifecycle_operation",
@@ -167,16 +177,23 @@ pub async fn apply_frozen_runtime_grants(
         .iter()
         .copied()
         .collect::<BTreeSet<_>>();
-    let mut sequence_names = Vec::with_capacity(owned_sequences.len());
+    let operator_revision = RUNTIME_OPERATOR_REVISION_TABLES
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    let mut shared_sequence_names = Vec::with_capacity(owned_sequences.len());
+    let mut api_sequence_names = Vec::new();
     for row in owned_sequences {
         let sequence_name: String = row.try_get("sequence_name")?;
         let table_name: String = row.try_get("table_name")?;
         if mutable.contains(table_name.as_str()) {
-            sequence_names.push(sequence_name);
+            shared_sequence_names.push(sequence_name);
+        } else if operator_revision.contains(table_name.as_str()) {
+            api_sequence_names.push(sequence_name);
         }
     }
-    if !sequence_names.is_empty() {
-        let sequences = sequence_names
+    if !shared_sequence_names.is_empty() {
+        let sequences = shared_sequence_names
             .iter()
             .map(|name| qualified_identifier("public", name))
             .collect::<Vec<_>>()
@@ -187,6 +204,20 @@ pub async fn apply_frozen_runtime_grants(
             quote_identifier(&roles.worker)
         );
         let statement = format!("GRANT USAGE ON SEQUENCE {sequences} TO {runtime_roles}");
+        sqlx::query(sqlx::AssertSqlSafe(statement))
+            .execute(&mut *transaction)
+            .await?;
+    }
+    if !api_sequence_names.is_empty() {
+        let sequences = api_sequence_names
+            .iter()
+            .map(|name| qualified_identifier("public", name))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let statement = format!(
+            "GRANT USAGE ON SEQUENCE {sequences} TO {}",
+            quote_identifier(&roles.api)
+        );
         sqlx::query(sqlx::AssertSqlSafe(statement))
             .execute(&mut *transaction)
             .await?;
@@ -255,6 +286,10 @@ fn runtime_grant_statements(schema: &str, database: &str, roles: &RuntimeRoleNam
     let runtime_roles = format!("{api}, {worker}");
     let read_only = qualified_table_list("public", RUNTIME_READ_ONLY_TABLES);
     let admission_state = qualified_table_list("public", RUNTIME_ADMISSION_STATE_TABLES);
+    let operator_revision = qualified_table_list("public", RUNTIME_OPERATOR_REVISION_TABLES);
+    let api_operator_state = qualified_table_list("public", RUNTIME_API_OPERATOR_STATE_TABLES);
+    let worker_operator_state =
+        qualified_table_list("public", RUNTIME_WORKER_OPERATOR_STATE_TABLES);
     let mutable = qualified_table_list("public", RUNTIME_MUTABLE_TABLES);
     vec![
         format!("REVOKE CONNECT, TEMPORARY ON DATABASE {database} FROM PUBLIC"),
@@ -273,6 +308,12 @@ fn runtime_grant_statements(schema: &str, database: &str, roles: &RuntimeRoleNam
         format!("REVOKE CREATE ON SCHEMA {schema} FROM {runtime_roles}"),
         format!("GRANT SELECT ON TABLE {read_only} TO {runtime_roles}"),
         format!("GRANT SELECT, UPDATE ON TABLE {admission_state} TO {runtime_roles}"),
+        format!(
+            "GRANT SELECT ON TABLE {operator_revision}, {api_operator_state}, {worker_operator_state} TO {runtime_roles}"
+        ),
+        format!("GRANT INSERT ON TABLE {operator_revision} TO {api}"),
+        format!("GRANT INSERT, UPDATE ON TABLE {api_operator_state} TO {api}"),
+        format!("GRANT INSERT, UPDATE ON TABLE {worker_operator_state} TO {worker}"),
         format!("GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE {mutable} TO {runtime_roles}"),
     ]
 }
@@ -288,6 +329,21 @@ pub(crate) fn runtime_acl_catalog_sql(schema: &str, roles: &RuntimeRoleNames) ->
                 .iter()
                 .map(|table| (*table, "admission_state")),
         )
+        .chain(
+            RUNTIME_OPERATOR_REVISION_TABLES
+                .iter()
+                .map(|table| (*table, "operator_revision")),
+        )
+        .chain(
+            RUNTIME_API_OPERATOR_STATE_TABLES
+                .iter()
+                .map(|table| (*table, "api_operator_state")),
+        )
+        .chain(
+            RUNTIME_WORKER_OPERATOR_STATE_TABLES
+                .iter()
+                .map(|table| (*table, "worker_operator_state")),
+        )
         .chain(RUNTIME_HIDDEN_TABLES.iter().map(|table| (*table, "hidden")))
         .chain(
             RUNTIME_MUTABLE_TABLES
@@ -298,6 +354,8 @@ pub(crate) fn runtime_acl_catalog_sql(schema: &str, roles: &RuntimeRoleNames) ->
         .collect::<Vec<_>>()
         .join(", ");
     let migration_literal = quote_literal(&roles.migration);
+    let api_literal = quote_literal(&roles.api);
+    let worker_literal = quote_literal(&roles.worker);
     let runtime_roles = [&roles.api, &roles.worker]
         .into_iter()
         .map(|role| format!("({})", quote_literal(role)))
@@ -348,6 +406,35 @@ pub(crate) fn runtime_acl_catalog_sql(schema: &str, roles: &RuntimeRoleNames) ->
                AND NOT has_table_privilege(runtime_role.role_name, expected.table_oid, 'TRUNCATE') \
                AND NOT has_table_privilege(runtime_role.role_name, expected.table_oid, 'REFERENCES') \
                AND NOT has_table_privilege(runtime_role.role_name, expected.table_oid, 'TRIGGER') \
+             WHEN 'operator_revision' THEN \
+               has_table_privilege(runtime_role.role_name, expected.table_oid, 'SELECT') \
+               AND (has_table_privilege(runtime_role.role_name, expected.table_oid, 'INSERT') \
+                    = (runtime_role.role_name = {api_literal})) \
+               AND NOT has_table_privilege(runtime_role.role_name, expected.table_oid, 'UPDATE') \
+               AND NOT has_table_privilege(runtime_role.role_name, expected.table_oid, 'DELETE') \
+               AND NOT has_table_privilege(runtime_role.role_name, expected.table_oid, 'TRUNCATE') \
+               AND NOT has_table_privilege(runtime_role.role_name, expected.table_oid, 'REFERENCES') \
+               AND NOT has_table_privilege(runtime_role.role_name, expected.table_oid, 'TRIGGER') \
+             WHEN 'api_operator_state' THEN \
+               has_table_privilege(runtime_role.role_name, expected.table_oid, 'SELECT') \
+               AND (has_table_privilege(runtime_role.role_name, expected.table_oid, 'INSERT') \
+                    = (runtime_role.role_name = {api_literal})) \
+               AND (has_table_privilege(runtime_role.role_name, expected.table_oid, 'UPDATE') \
+                    = (runtime_role.role_name = {api_literal})) \
+               AND NOT has_table_privilege(runtime_role.role_name, expected.table_oid, 'DELETE') \
+               AND NOT has_table_privilege(runtime_role.role_name, expected.table_oid, 'TRUNCATE') \
+               AND NOT has_table_privilege(runtime_role.role_name, expected.table_oid, 'REFERENCES') \
+               AND NOT has_table_privilege(runtime_role.role_name, expected.table_oid, 'TRIGGER') \
+             WHEN 'worker_operator_state' THEN \
+               has_table_privilege(runtime_role.role_name, expected.table_oid, 'SELECT') \
+               AND (has_table_privilege(runtime_role.role_name, expected.table_oid, 'INSERT') \
+                    = (runtime_role.role_name = {worker_literal})) \
+               AND (has_table_privilege(runtime_role.role_name, expected.table_oid, 'UPDATE') \
+                    = (runtime_role.role_name = {worker_literal})) \
+               AND NOT has_table_privilege(runtime_role.role_name, expected.table_oid, 'DELETE') \
+               AND NOT has_table_privilege(runtime_role.role_name, expected.table_oid, 'TRUNCATE') \
+               AND NOT has_table_privilege(runtime_role.role_name, expected.table_oid, 'REFERENCES') \
+               AND NOT has_table_privilege(runtime_role.role_name, expected.table_oid, 'TRIGGER') \
              WHEN 'mutable' THEN \
                has_table_privilege(runtime_role.role_name, expected.table_oid, 'SELECT') \
                AND has_table_privilege(runtime_role.role_name, expected.table_oid, 'INSERT') \
@@ -369,9 +456,23 @@ pub(crate) fn runtime_acl_catalog_sql(schema: &str, roles: &RuntimeRoleNames) ->
            FROM expected_table AS expected CROSS JOIN runtime_role \
            WHERE expected.table_oid IS NOT NULL \
          ), \
+         column_acl AS ( \
+           SELECT NOT EXISTS ( \
+             SELECT 1 \
+             FROM expected_table AS expected \
+             JOIN pg_attribute AS attribute ON attribute.attrelid = expected.table_oid \
+               AND attribute.attnum > 0 AND NOT attribute.attisdropped \
+             CROSS JOIN LATERAL aclexplode(attribute.attacl) AS acl \
+             LEFT JOIN pg_roles AS grantee ON grantee.oid = acl.grantee \
+             WHERE acl.grantee = 0 \
+                OR grantee.rolname IN (SELECT role_name FROM runtime_role) \
+           ) AS exact \
+         ), \
          sequence_acl AS ( \
            SELECT COALESCE(bool_and( \
-             CASE WHEN expected.policy = 'mutable' THEN \
+             CASE WHEN expected.policy = 'mutable' \
+                    OR (expected.policy = 'operator_revision' \
+                        AND runtime_role.role_name = {api_literal}) THEN \
                has_sequence_privilege(runtime_role.role_name, sequence.oid, 'USAGE') \
                AND NOT has_sequence_privilege(runtime_role.role_name, sequence.oid, 'SELECT') \
                AND NOT has_sequence_privilege(runtime_role.role_name, sequence.oid, 'UPDATE') \
@@ -421,16 +522,27 @@ pub(crate) fn runtime_acl_catalog_sql(schema: &str, roles: &RuntimeRoleNames) ->
              CROSS JOIN LATERAL aclexplode(COALESCE(namespace.nspacl, acldefault('n', namespace.nspowner))) AS acl \
              WHERE namespace.nspname = {schema_literal} AND acl.grantee = 0 \
                AND acl.privilege_type IN ('USAGE', 'CREATE') \
+           ) \
+           AND NOT EXISTS ( \
+             SELECT 1 FROM pg_auth_members AS membership \
+             WHERE membership.member IN ( \
+                     SELECT oid FROM pg_roles \
+                     WHERE rolname IN (SELECT role_name FROM runtime_role) \
+                   ) \
+                OR membership.roleid IN ( \
+                     SELECT oid FROM pg_roles \
+                     WHERE rolname IN (SELECT role_name FROM runtime_role) \
+                   ) \
            ) AS exact \
            FROM runtime_role \
          ) \
          SELECT shape.schema_state, \
-           (shape.schema_state = 'empty' OR table_acl.exact) AS table_acl_exact, \
+           (shape.schema_state = 'empty' OR (table_acl.exact AND column_acl.exact)) AS table_acl_exact, \
            (shape.schema_state = 'empty' OR table_acl.protected_exact) AS protected_acl_exact, \
            sequence_acl.exact AS sequence_acl_exact, \
            default_acl.fail_closed AS default_acl_fail_closed, \
            runtime_boundary.exact AS runtime_boundary_acl_exact \
-         FROM shape CROSS JOIN table_acl CROSS JOIN sequence_acl CROSS JOIN default_acl \
+         FROM shape CROSS JOIN table_acl CROSS JOIN column_acl CROSS JOIN sequence_acl CROSS JOIN default_acl \
            CROSS JOIN runtime_boundary"
     )
 }
@@ -459,6 +571,103 @@ fn quote_literal(value: &str) -> String {
 mod tests {
     use super::*;
 
+    fn operator_revision_insert_sql(
+        revision_id: &str,
+        format_version: i16,
+        created_by: &str,
+    ) -> String {
+        format!(
+            "INSERT INTO public.v2_operator_config_revision (\
+             revision_id, format_version, installation_id, public_config, secret_nonce, \
+             secret_ciphertext, secret_tag, config_hmac_sha256, created_by, created_at) \
+             SELECT {}::uuid, {format_version}, installation_id, '{{}}'::jsonb, \
+             decode(repeat('00', 12), 'hex'), decode('01', 'hex'), \
+             decode(repeat('00', 16), 'hex'), repeat('a', 64), {}, 1000 \
+             FROM public.v2_system_installation WHERE singleton = 1 \
+             RETURNING revision",
+            quote_literal(revision_id),
+            quote_literal(created_by),
+        )
+    }
+
+    async fn insert_operator_revision(
+        transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        revision_id: &str,
+        created_by: &str,
+    ) -> i64 {
+        let statement = operator_revision_insert_sql(revision_id, 1, created_by);
+        sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(statement))
+            .fetch_one(&mut **transaction)
+            .await
+            .expect("insert structurally valid operator revision")
+    }
+
+    async fn assert_sql_rejected(
+        transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        statement: &str,
+        expected_sqlstate: &str,
+        expected_marker: Option<&str>,
+    ) {
+        const SAVEPOINT: &str = "operator_config_expected_rejection";
+        sqlx::query(sqlx::AssertSqlSafe(format!("SAVEPOINT {SAVEPOINT}")))
+            .execute(&mut **transaction)
+            .await
+            .expect("create expected-rejection savepoint");
+        let result = sqlx::query(sqlx::AssertSqlSafe(statement))
+            .execute(&mut **transaction)
+            .await;
+        let error = match result {
+            Ok(_) => {
+                sqlx::query(sqlx::AssertSqlSafe(format!(
+                    "ROLLBACK TO SAVEPOINT {SAVEPOINT}"
+                )))
+                .execute(&mut **transaction)
+                .await
+                .expect("roll back unexpectedly accepted statement");
+                sqlx::query(sqlx::AssertSqlSafe(format!(
+                    "RELEASE SAVEPOINT {SAVEPOINT}"
+                )))
+                .execute(&mut **transaction)
+                .await
+                .expect("release unexpectedly accepted statement savepoint");
+                panic!("statement unexpectedly succeeded: {statement}");
+            }
+            Err(error) => error,
+        };
+        let database_error = error
+            .as_database_error()
+            .expect("expected PostgreSQL to reject the statement");
+        let sqlstate = database_error.code().map(|code| code.into_owned());
+        let diagnostic = format!(
+            "{} {}",
+            database_error.constraint().unwrap_or_default(),
+            database_error.message()
+        );
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "ROLLBACK TO SAVEPOINT {SAVEPOINT}"
+        )))
+        .execute(&mut **transaction)
+        .await
+        .expect("roll back expected rejection");
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "RELEASE SAVEPOINT {SAVEPOINT}"
+        )))
+        .execute(&mut **transaction)
+        .await
+        .expect("release expected-rejection savepoint");
+        assert_eq!(
+            sqlstate.as_deref(),
+            Some(expected_sqlstate),
+            "unexpected SQLSTATE for {statement}: {diagnostic}"
+        );
+        if let Some(expected_marker) = expected_marker {
+            assert!(
+                diagnostic.contains(expected_marker),
+                "expected PostgreSQL diagnostic to contain {expected_marker:?}, got {diagnostic:?}"
+            );
+        }
+    }
+
     #[test]
     fn frozen_acl_tables_exactly_cover_the_embedded_migration_lineage() {
         let migrations = [
@@ -466,6 +675,7 @@ mod tests {
             include_str!(
                 "../../../migrations-postgres/0002_legacy_lifecycle_and_analytics_admission.sql"
             ),
+            include_str!("../../../migrations-postgres/0003_operator_config_authority.sql"),
         ];
         let mut actual = migrations
             .iter()
@@ -479,6 +689,9 @@ mod tests {
         let policy = RUNTIME_READ_ONLY_TABLES
             .iter()
             .chain(RUNTIME_ADMISSION_STATE_TABLES)
+            .chain(RUNTIME_OPERATOR_REVISION_TABLES)
+            .chain(RUNTIME_API_OPERATOR_STATE_TABLES)
+            .chain(RUNTIME_WORKER_OPERATOR_STATE_TABLES)
             .chain(RUNTIME_HIDDEN_TABLES)
             .chain(RUNTIME_MUTABLE_TABLES)
             .map(|table| (*table).to_string())
@@ -488,6 +701,9 @@ mod tests {
             policy.len(),
             RUNTIME_READ_ONLY_TABLES.len()
                 + RUNTIME_ADMISSION_STATE_TABLES.len()
+                + RUNTIME_OPERATOR_REVISION_TABLES.len()
+                + RUNTIME_API_OPERATOR_STATE_TABLES.len()
+                + RUNTIME_WORKER_OPERATOR_STATE_TABLES.len()
                 + RUNTIME_HIDDEN_TABLES.len()
                 + RUNTIME_MUTABLE_TABLES.len(),
             "ACL policy sets must not overlap"
@@ -506,7 +722,13 @@ mod tests {
         assert!(sql.contains("v2_legacy_traffic_fold_item"));
         assert!(sql.contains("v2_analytics_admission_state"));
         assert!(sql.contains("WHEN 'admission_state'"));
+        assert!(sql.contains("WHEN 'operator_revision'"));
+        assert!(sql.contains("WHEN 'api_operator_state'"));
+        assert!(sql.contains("WHEN 'worker_operator_state'"));
         assert!(sql.contains("aclexplode(defaults.defaclacl)"));
+        assert!(sql.contains("pg_attribute"));
+        assert!(sql.contains("aclexplode(attribute.attacl)"));
+        assert!(sql.contains("pg_auth_members"));
         assert!(sql.contains("has_sequence_privilege"));
         assert!(sql.contains("'v2_migration'"));
         assert!(sql.contains("runtime_boundary_acl_exact"));
@@ -531,6 +753,18 @@ mod tests {
                 "GRANT SELECT, UPDATE ON TABLE \"public\".\"v2_analytics_admission_state\""
             )
         );
+        assert!(sql.contains(
+            "GRANT INSERT ON TABLE \"public\".\"v2_operator_config_revision\" TO \"v2_api\""
+        ));
+        assert!(sql.contains(
+            "GRANT INSERT, UPDATE ON TABLE \"public\".\"v2_operator_config_state\", \"public\".\"v2_operator_config_api_ack\" TO \"v2_api\""
+        ));
+        assert!(sql.contains(
+            "GRANT INSERT, UPDATE ON TABLE \"public\".\"v2_operator_config_worker_ack\" TO \"v2_worker\""
+        ));
+        assert!(!sql.contains(
+            "GRANT INSERT, UPDATE ON TABLE \"public\".\"v2_operator_config_worker_ack\" TO \"v2_api\""
+        ));
         assert!(!sql.contains(
             "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE \"public\".\"v2_analytics_admission_state\""
         ));
@@ -584,17 +818,44 @@ mod tests {
                 .await
                 .expect("apply runtime ACL statement");
         }
+        let owned_sequences = sqlx::query_as::<_, (String, String)>(
+            "SELECT sequence.relname, owner_table.relname \
+             FROM pg_class AS sequence \
+             JOIN pg_namespace AS sequence_namespace ON sequence_namespace.oid = sequence.relnamespace \
+             JOIN pg_depend AS dependency ON dependency.objid = sequence.oid \
+                  AND dependency.classid = 'pg_class'::regclass \
+                  AND dependency.refclassid = 'pg_class'::regclass \
+                  AND dependency.deptype IN ('a', 'i') \
+             JOIN pg_class AS owner_table ON owner_table.oid = dependency.refobjid \
+             JOIN pg_namespace AS owner_namespace ON owner_namespace.oid = owner_table.relnamespace \
+             WHERE sequence.relkind = 'S' \
+               AND sequence_namespace.nspname = 'public' \
+               AND owner_namespace.nspname = 'public'",
+        )
+        .fetch_all(&mut *transaction)
+        .await
+        .expect("inspect identity sequences");
         let runtime_roles = format!(
             "{}, {}",
             quote_identifier(&roles.api),
             quote_identifier(&roles.worker)
         );
-        sqlx::query(sqlx::AssertSqlSafe(format!(
-            "GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO {runtime_roles}"
-        )))
-        .execute(&mut *transaction)
-        .await
-        .expect("grant identity sequence usage");
+        for (sequence, table) in owned_sequences {
+            let grantee = if RUNTIME_MUTABLE_TABLES.contains(&table.as_str()) {
+                runtime_roles.clone()
+            } else if RUNTIME_OPERATOR_REVISION_TABLES.contains(&table.as_str()) {
+                quote_identifier(&roles.api)
+            } else {
+                continue;
+            };
+            sqlx::query(sqlx::AssertSqlSafe(format!(
+                "GRANT USAGE ON SEQUENCE {} TO {grantee}",
+                qualified_identifier("public", &sequence),
+            )))
+            .execute(&mut *transaction)
+            .await
+            .expect("grant exact identity sequence usage");
+        }
 
         let verification = runtime_acl_catalog_sql("public", &roles);
         let row = sqlx::query(sqlx::AssertSqlSafe(verification.as_str()))
@@ -649,6 +910,84 @@ mod tests {
         .await
         .expect("remove forbidden admission-state grant");
 
+        for (grant, revoke) in [
+            (
+                format!(
+                    "GRANT UPDATE (active_revision) ON TABLE public.v2_operator_config_state TO {}",
+                    quote_identifier(&roles.worker)
+                ),
+                format!(
+                    "REVOKE UPDATE (active_revision) ON TABLE public.v2_operator_config_state FROM {}",
+                    quote_identifier(&roles.worker)
+                ),
+            ),
+            (
+                format!(
+                    "GRANT UPDATE (revision_id) ON TABLE public.v2_operator_config_revision TO {}",
+                    quote_identifier(&roles.api)
+                ),
+                format!(
+                    "REVOKE UPDATE (revision_id) ON TABLE public.v2_operator_config_revision FROM {}",
+                    quote_identifier(&roles.api)
+                ),
+            ),
+            (
+                "GRANT UPDATE (active_revision) ON TABLE public.v2_operator_config_state TO PUBLIC"
+                    .to_string(),
+                "REVOKE UPDATE (active_revision) ON TABLE public.v2_operator_config_state FROM PUBLIC"
+                    .to_string(),
+            ),
+        ] {
+            sqlx::query(sqlx::AssertSqlSafe(grant))
+                .execute(&mut *transaction)
+                .await
+                .expect("inject forbidden column grant");
+            let row = sqlx::query(sqlx::AssertSqlSafe(verification.as_str()))
+                .fetch_one(&mut *transaction)
+                .await
+                .expect("detect forbidden column grant");
+            assert!(!row.get::<bool, _>("table_acl_exact"));
+            sqlx::query(sqlx::AssertSqlSafe(revoke))
+                .execute(&mut *transaction)
+                .await
+                .expect("remove forbidden column grant");
+            let row = sqlx::query(sqlx::AssertSqlSafe(verification.as_str()))
+                .fetch_one(&mut *transaction)
+                .await
+                .expect("verify exact ACL after column revoke");
+            assert!(row.get::<bool, _>("table_acl_exact"));
+        }
+
+        let group = format!("v2_acl_group_{suffix}");
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "CREATE ROLE {} NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT",
+            quote_identifier(&group)
+        )))
+        .execute(&mut *transaction)
+        .await
+        .expect("create test group role");
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "GRANT {} TO {}",
+            quote_identifier(&group),
+            quote_identifier(&roles.worker)
+        )))
+        .execute(&mut *transaction)
+        .await
+        .expect("inject forbidden runtime role membership");
+        let row = sqlx::query(sqlx::AssertSqlSafe(verification.as_str()))
+            .fetch_one(&mut *transaction)
+            .await
+            .expect("detect forbidden runtime role membership");
+        assert!(!row.get::<bool, _>("runtime_boundary_acl_exact"));
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "REVOKE {} FROM {}",
+            quote_identifier(&group),
+            quote_identifier(&roles.worker)
+        )))
+        .execute(&mut *transaction)
+        .await
+        .expect("remove forbidden runtime role membership");
+
         sqlx::query(sqlx::AssertSqlSafe(format!(
             "GRANT SELECT ON TABLE public.v2_lifecycle_operation TO {}",
             quote_identifier(&roles.api)
@@ -656,11 +995,257 @@ mod tests {
         .execute(&mut *transaction)
         .await
         .expect("inject forbidden protected grant");
-        let row = sqlx::query(sqlx::AssertSqlSafe(verification))
+        let row = sqlx::query(sqlx::AssertSqlSafe(verification.as_str()))
             .fetch_one(&mut *transaction)
             .await
             .expect("re-run catalog verifier");
         assert!(!row.get::<bool, _>("protected_acl_exact"));
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "REVOKE SELECT ON TABLE public.v2_lifecycle_operation FROM {}",
+            quote_identifier(&roles.api)
+        )))
+        .execute(&mut *transaction)
+        .await
+        .expect("remove forbidden protected grant");
+        let row = sqlx::query(sqlx::AssertSqlSafe(verification.as_str()))
+            .fetch_one(&mut *transaction)
+            .await
+            .expect("verify exact ACL before role DML checks");
+        assert!(row.get::<bool, _>("protected_acl_exact"));
+
+        // Granting the disposable roles to the migration session happens only
+        // after the exact-membership catalog proof. It lets this same
+        // connection exercise the effective privileges with SET LOCAL ROLE;
+        // the outer transaction removes both memberships and all fixture rows.
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "GRANT {}, {} TO {}",
+            quote_identifier(&roles.api),
+            quote_identifier(&roles.worker),
+            quote_identifier(&roles.migration),
+        )))
+        .execute(&mut *transaction)
+        .await
+        .expect("allow migration session to assume disposable runtime roles");
+
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "SET LOCAL ROLE {}",
+            quote_identifier(&roles.api)
+        )))
+        .execute(&mut *transaction)
+        .await
+        .expect("assume API role");
+        let revision_one = insert_operator_revision(
+            &mut transaction,
+            "00000000-0000-0000-0000-00000000a101",
+            "acl-api",
+        )
+        .await;
+        let revision_two = insert_operator_revision(
+            &mut transaction,
+            "00000000-0000-0000-0000-00000000a102",
+            "acl-api",
+        )
+        .await;
+        let revision_three = insert_operator_revision(
+            &mut transaction,
+            "00000000-0000-0000-0000-00000000a103",
+            "acl-api",
+        )
+        .await;
+        assert!(revision_one < revision_two && revision_two < revision_three);
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "INSERT INTO public.v2_operator_config_state (\
+             singleton, installation_id, active_revision, updated_at) \
+             SELECT 1, installation_id, {revision_one}, 1000 \
+             FROM public.v2_system_installation WHERE singleton = 1"
+        )))
+        .execute(&mut *transaction)
+        .await
+        .expect("API inserts operator state");
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "UPDATE public.v2_operator_config_state \
+             SET active_revision = {revision_two}, updated_at = 1001 \
+             WHERE singleton = 1"
+        )))
+        .execute(&mut *transaction)
+        .await
+        .expect("API advances operator state");
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "INSERT INTO public.v2_operator_config_api_ack (\
+             singleton, installation_id, observed_revision, applied_revision, \
+             status, error_code, observed_at) \
+             SELECT 1, installation_id, {revision_two}, {revision_two}, \
+                    'applied', NULL, 1001 \
+             FROM public.v2_system_installation WHERE singleton = 1"
+        )))
+        .execute(&mut *transaction)
+        .await
+        .expect("API inserts its acknowledgement");
+        let api_worker_ack = format!(
+            "INSERT INTO public.v2_operator_config_worker_ack (\
+             singleton, installation_id, observed_revision, applied_revision, \
+             status, error_code, observed_at) \
+             SELECT 1, installation_id, {revision_two}, {revision_two}, \
+                    'applied', NULL, 1001 \
+             FROM public.v2_system_installation WHERE singleton = 1"
+        );
+        assert_sql_rejected(&mut transaction, &api_worker_ack, "42501", None).await;
+        sqlx::query("RESET ROLE")
+            .execute(&mut *transaction)
+            .await
+            .expect("leave API role");
+
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "SET LOCAL ROLE {}",
+            quote_identifier(&roles.worker)
+        )))
+        .execute(&mut *transaction)
+        .await
+        .expect("assume worker role");
+        let observed_active: i64 = sqlx::query_scalar(
+            "SELECT revision.revision \
+             FROM public.v2_operator_config_state AS state \
+             JOIN public.v2_operator_config_revision AS revision \
+               ON revision.revision = state.active_revision \
+              AND revision.installation_id = state.installation_id \
+             WHERE state.singleton = 1",
+        )
+        .fetch_one(&mut *transaction)
+        .await
+        .expect("worker reads active authority");
+        assert_eq!(observed_active, revision_two);
+        sqlx::query(sqlx::AssertSqlSafe(api_worker_ack.clone()))
+            .execute(&mut *transaction)
+            .await
+            .expect("worker inserts its acknowledgement");
+        let updated = sqlx::query(
+            "UPDATE public.v2_operator_config_worker_ack \
+             SET observed_at = 1002 WHERE singleton = 1",
+        )
+        .execute(&mut *transaction)
+        .await
+        .expect("worker updates its acknowledgement");
+        assert_eq!(updated.rows_affected(), 1);
+        let worker_revision =
+            operator_revision_insert_sql("00000000-0000-0000-0000-00000000a104", 1, "acl-worker");
+        assert_sql_rejected(&mut transaction, &worker_revision, "42501", None).await;
+        let worker_state_advance = format!(
+            "UPDATE public.v2_operator_config_state \
+             SET active_revision = {revision_three}, updated_at = 1003 \
+             WHERE singleton = 1"
+        );
+        assert_sql_rejected(&mut transaction, &worker_state_advance, "42501", None).await;
+        assert_sql_rejected(
+            &mut transaction,
+            "UPDATE public.v2_operator_config_api_ack \
+             SET observed_at = 1003 WHERE singleton = 1",
+            "42501",
+            None,
+        )
+        .await;
+        sqlx::query("RESET ROLE")
+            .execute(&mut *transaction)
+            .await
+            .expect("leave worker role");
+
+        let invalid_format = operator_revision_insert_sql(
+            "00000000-0000-0000-0000-00000000a105",
+            2,
+            "acl-migration",
+        );
+        assert_sql_rejected(
+            &mut transaction,
+            &invalid_format,
+            "23514",
+            Some("chk_operator_config_format_version"),
+        )
+        .await;
+        let revision_update = format!(
+            "UPDATE public.v2_operator_config_revision \
+             SET created_at = created_at + 1 WHERE revision = {revision_one}"
+        );
+        assert_sql_rejected(
+            &mut transaction,
+            &revision_update,
+            "P0001",
+            Some("operator configuration revisions are immutable"),
+        )
+        .await;
+        let revision_delete = format!(
+            "DELETE FROM public.v2_operator_config_revision WHERE revision = {revision_one}"
+        );
+        assert_sql_rejected(
+            &mut transaction,
+            &revision_delete,
+            "P0001",
+            Some("operator configuration revisions are immutable"),
+        )
+        .await;
+        let state_rollback = format!(
+            "UPDATE public.v2_operator_config_state \
+             SET active_revision = {revision_one} WHERE singleton = 1"
+        );
+        assert_sql_rejected(
+            &mut transaction,
+            &state_rollback,
+            "P0001",
+            Some("operator configuration revision cannot move backwards"),
+        )
+        .await;
+        assert_sql_rejected(
+            &mut transaction,
+            "DELETE FROM public.v2_operator_config_state WHERE singleton = 1",
+            "P0001",
+            Some("operator configuration state cannot be deleted"),
+        )
+        .await;
+        assert_sql_rejected(
+            &mut transaction,
+            "UPDATE public.v2_operator_config_state \
+             SET installation_id = '00000000-0000-0000-0000-00000000f00d'::uuid \
+             WHERE singleton = 1",
+            "P0001",
+            Some("operator configuration state identity cannot change"),
+        )
+        .await;
+        let invalid_applied_ack = format!(
+            "UPDATE public.v2_operator_config_worker_ack \
+             SET observed_revision = {revision_three}, applied_revision = {revision_two}, \
+                 status = 'applied', error_code = NULL, observed_at = 1003 \
+             WHERE singleton = 1"
+        );
+        assert_sql_rejected(
+            &mut transaction,
+            &invalid_applied_ack,
+            "23514",
+            Some("chk_operator_config_worker_ack_status"),
+        )
+        .await;
+        let invalid_rejected_ack = format!(
+            "UPDATE public.v2_operator_config_worker_ack \
+             SET observed_revision = {revision_three}, applied_revision = {revision_three}, \
+                 status = 'rejected', error_code = 'invalid_config', observed_at = 1003 \
+             WHERE singleton = 1"
+        );
+        assert_sql_rejected(
+            &mut transaction,
+            &invalid_rejected_ack,
+            "23514",
+            Some("chk_operator_config_worker_ack_status"),
+        )
+        .await;
+        let ack_rollback = format!(
+            "UPDATE public.v2_operator_config_worker_ack \
+             SET observed_revision = {revision_one}, applied_revision = {revision_one}, \
+                 observed_at = 1003 WHERE singleton = 1"
+        );
+        assert_sql_rejected(
+            &mut transaction,
+            &ack_rollback,
+            "P0001",
+            Some("operator configuration acknowledgement cannot move backwards"),
+        )
+        .await;
         transaction.rollback().await.expect("rollback ACL fixture");
     }
 }

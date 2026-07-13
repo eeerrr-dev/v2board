@@ -401,8 +401,12 @@ pub(in super::super) fn json_scalar(value: &str) -> Value {
         Value::Bool(false)
     } else if let Ok(value) = value.parse::<i64>() {
         json!(value)
-    } else if let Ok(value) = value.parse::<f64>() {
-        json!(value)
+    } else if let Ok(value) = value.parse::<f64>()
+        && value.is_finite()
+    {
+        serde_json::Number::from_f64(value)
+            .map(Value::Number)
+            .unwrap_or_else(|| Value::String(value.to_string()))
     } else {
         json!(value)
     }

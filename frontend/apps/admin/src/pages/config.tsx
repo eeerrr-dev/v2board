@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm, useWatch, type Control } from 'react-hook-form';
 import { z } from 'zod';
@@ -37,6 +37,7 @@ type ConfigGroupKey = keyof AdminConfigGroups;
 
 type ConfigFieldValue = string | number | string[] | null | undefined;
 type ConfigSectionValues = Record<string, ConfigFieldValue>;
+type SerializedConfigSave = <T>(operation: () => Promise<T>) => Promise<T>;
 
 const SECTION_FIELDS = {
   site: [
@@ -193,7 +194,7 @@ interface FormCtx {
   control: Control<ConfigSectionValues>;
   get: (group: ConfigGroupKey, field: string) => ConfigFieldValue;
   isSaving: (field: string) => boolean;
-  save: (group: ConfigGroupKey, field: string, value: ConfigFieldValue) => void;
+  save: (group: ConfigGroupKey, field: string, value: ConfigFieldValue) => Promise<void>;
 }
 
 function SystemConfigPage() {
@@ -203,24 +204,29 @@ function SystemConfigPage() {
   const webhook = useSetTelegramWebhookMutation();
   const testMail = useTestSendMailMutation();
   const [active, setActive] = useState<ConfigGroupKey>('site');
+  const saveTail = useRef<Promise<void>>(Promise.resolve());
+  const serializeConfigSave = useCallback(<T,>(operation: () => Promise<T>): Promise<T> => {
+    const result = saveTail.current.then(operation);
+    saveTail.current = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }, []);
 
-  const sendTestMail = () => {
-    testMail.mutate(undefined, {
-      onSuccess: (result) => {
-        const log = result.log;
-        if (log?.error) {
-          toast.error('发送失败', { description: log.error });
-        } else {
-          toast.success('发送成功', { description: `收信地址：${log?.email ?? ''}` });
-        }
-      },
-    });
+  const sendTestMail = async () => {
+    const result = await testMail.mutateAsync();
+    const log = result.log;
+    if (log?.error) {
+      toast.error('发送失败', { description: log.error });
+    } else {
+      toast.success('发送成功', { description: `收信地址：${log?.email ?? ''}` });
+    }
   };
 
-  const setWebhook = () => {
-    webhook.mutate(undefined, {
-      onSuccess: () => toast.success('webhook 设置成功'),
-    });
+  const setWebhook = async (telegramBotToken: string) => {
+    await webhook.mutateAsync(telegramBotToken);
+    toast.success('webhook 设置成功');
   };
 
   if (config.isError) {
@@ -298,6 +304,7 @@ function SystemConfigPage() {
               testMailPending={testMail.isPending}
               onSetWebhook={setWebhook}
               webhookPending={webhook.isPending}
+              serializeConfigSave={serializeConfigSave}
               refreshConfig={async () => {
                 const result = await config.refetch();
                 if (result.isError || !result.data) {
@@ -348,16 +355,18 @@ function SystemConfigSectionForm({
   testMailPending,
   onSetWebhook,
   webhookPending,
+  serializeConfigSave,
   refreshConfig,
 }: {
   group: ConfigGroupKey;
   config: AdminConfig;
   plans?: Plan[];
   emailTemplates?: string[];
-  onTestMail: () => void;
+  onTestMail: () => Promise<void>;
   testMailPending: boolean;
-  onSetWebhook: () => void;
+  onSetWebhook: (telegramBotToken: string) => Promise<void>;
   webhookPending: boolean;
+  serializeConfigSave: SerializedConfigSave;
   refreshConfig: () => Promise<AdminConfig>;
 }) {
   const saveConfig = useSaveSystemConfigMutation();
@@ -369,9 +378,18 @@ function SystemConfigSectionForm({
   });
   const values = useWatch({ control: form.control });
   const [pendingFields, setPendingFields] = useState<ReadonlySet<string>>(() => new Set());
-  const queuedSaves = useRef(new Map<string, { generation: number; value: ConfigFieldValue }>());
+  const [actionPending, setActionPending] = useState(false);
+  const queuedSaves = useRef(
+    new Map<
+      string,
+      { generation: number; value: ConfigFieldValue; draftValue: ConfigFieldValue }
+    >(),
+  );
   const drainingFields = useRef(new Set<string>());
+  const drainPromises = useRef(new Map<string, Promise<void>>());
+  const saveFailures = useRef(new Map<string, { generation: number; error: unknown }>());
   const saveGenerations = useRef<Record<string, number>>({});
+  const canonicalValues = useRef<ConfigSectionValues>({ ...serverValues });
   const refreshTail = useRef<Promise<void>>(Promise.resolve());
   const mounted = useRef(true);
 
@@ -386,6 +404,11 @@ function SystemConfigSectionForm({
     }
     for (const field of queuedSaves.current.keys()) {
       if (Object.hasOwn(currentValues, field)) nextValues[field] = currentValues[field];
+    }
+    for (const [field, value] of Object.entries(serverValues)) {
+      if (!drainingFields.current.has(field) && !queuedSaves.current.has(field)) {
+        canonicalValues.current[field] = value;
+      }
     }
     form.reset(nextValues, { keepDirtyValues: true, keepErrors: true });
   }, [form, serverValues]);
@@ -408,66 +431,100 @@ function SystemConfigSectionForm({
     return refresh;
   };
 
-  const drainField = async (field: string) => {
-    if (drainingFields.current.has(field)) return;
+  const drainField = (field: string): Promise<void> => {
+    const existing = drainPromises.current.get(field);
+    if (existing) return existing;
+
     drainingFields.current.add(field);
     if (mounted.current) setPendingFields((current) => new Set(current).add(field));
 
-    try {
-      let queued = queuedSaves.current.get(field);
-      while (queued) {
-        queuedSaves.current.delete(field);
-        const { generation, value } = queued;
+    const drain = (async () => {
+      try {
+        let queued = queuedSaves.current.get(field);
+        while (queued) {
+          queuedSaves.current.delete(field);
+          const { generation, value, draftValue } = queued;
 
-        try {
-          await saveConfig.mutateAsync({ [field]: value } as Partial<AdminConfigFlat>);
-          // A newer local value already supersedes this response. Persist it
-          // immediately and avoid a full-config refresh that can only be stale.
-          if ((saveGenerations.current[field] ?? 0) !== generation) {
-            queued = queuedSaves.current.get(field);
-            continue;
-          }
+          try {
+            const outcome = await serializeConfigSave(async () => {
+              await saveConfig.mutateAsync({ [field]: value } as Partial<AdminConfigFlat>);
+              // A newer local value already supersedes this response. Persist it
+              // immediately and avoid a full-config refresh that can only be stale.
+              if ((saveGenerations.current[field] ?? 0) !== generation) {
+                return 'superseded' as const;
+              }
 
-          const refreshed = await refreshInOrder();
-          if (
-            mounted.current &&
-            (saveGenerations.current[field] ?? 0) === generation &&
-            !queuedSaves.current.has(field)
-          ) {
-            const canonicalValue = getConfigSectionValues(refreshed, group)[field];
-            form.resetField(field, { defaultValue: canonicalValue });
-            toast.success('保存成功');
-          }
-        } catch (error) {
-          // A failed superseded request must not block or annotate the newer
-          // value waiting behind it. Only the queue tail owns inline feedback.
-          if (
-            mounted.current &&
-            (saveGenerations.current[field] ?? 0) === generation &&
-            !queuedSaves.current.has(field)
-          ) {
-            form.setError(field, {
-              type: 'server',
-              message: getErrorPresentation(error).message,
+              saveFailures.current.delete(field);
+              if (field === 'secure_path') {
+                replaceAdminSecurePath(toText(value));
+                return 'redirected' as const;
+              }
+
+              const refreshed = await refreshInOrder();
+              if (
+                mounted.current &&
+                (saveGenerations.current[field] ?? 0) === generation &&
+                !queuedSaves.current.has(field)
+              ) {
+                const canonicalValue = getConfigSectionValues(refreshed, group)[field];
+                canonicalValues.current[field] = canonicalValue;
+                // Do not overwrite text entered while this request was in flight.
+                // Its eventual blur will enqueue a new revision against the now
+                // current canonical value.
+                if (configValuesEqual(form.getValues(field), draftValue)) {
+                  form.resetField(field, { defaultValue: canonicalValue });
+                }
+                toast.success('保存成功');
+              }
+              return 'applied' as const;
             });
+            if (outcome === 'superseded') {
+              queued = queuedSaves.current.get(field);
+              continue;
+            }
+            if (outcome === 'redirected') {
+              return;
+            }
+          } catch (error) {
+            // A failed superseded request must not block or annotate the newer
+            // value waiting behind it. Only the queue tail owns inline feedback.
+            if (
+              mounted.current &&
+              (saveGenerations.current[field] ?? 0) === generation &&
+              !queuedSaves.current.has(field)
+            ) {
+              saveFailures.current.set(field, { generation, error });
+              form.setError(field, {
+                type: 'server',
+                message: getErrorPresentation(error).message,
+              });
+            }
           }
-        }
 
-        queued = queuedSaves.current.get(field);
+          queued = queuedSaves.current.get(field);
+        }
+      } finally {
+        drainingFields.current.delete(field);
+        drainPromises.current.delete(field);
+        if (mounted.current) {
+          setPendingFields((current) => {
+            const next = new Set(current);
+            next.delete(field);
+            return next;
+          });
+        }
       }
-    } finally {
-      drainingFields.current.delete(field);
-      if (mounted.current) {
-        setPendingFields((current) => {
-          const next = new Set(current);
-          next.delete(field);
-          return next;
-        });
-      }
-    }
+    })();
+
+    drainPromises.current.set(field, drain);
+    return drain;
   };
 
-  const saveField = (requestedGroup: ConfigGroupKey, field: string, value: ConfigFieldValue) => {
+  const saveField = (
+    requestedGroup: ConfigGroupKey,
+    field: string,
+    value: ConfigFieldValue,
+  ): Promise<void> => {
     const allowedFields: readonly string[] = SECTION_FIELDS[group];
     if (requestedGroup !== group || !allowedFields.includes(field)) {
       throw new Error(`配置字段「${field}」不属于「${group}」分组`);
@@ -477,14 +534,78 @@ function SystemConfigSectionForm({
     const fieldValue = SECTION_SCHEMAS[group].safeParse({ [field]: value });
     if (!payloadValue.success || !fieldValue.success) {
       form.setError(field, { type: 'validate', message: '请输入有效的配置值' });
-      return;
+      return Promise.resolve();
+    }
+    if (field === 'secure_path' && toText(payloadValue.data).trim() === '') {
+      form.setError(field, { type: 'validate', message: '后台路径不能为空' });
+      return Promise.resolve();
+    }
+
+    if (
+      !queuedSaves.current.has(field) &&
+      !drainingFields.current.has(field) &&
+      configValuesEqual(payloadValue.data, canonicalValues.current[field])
+    ) {
+      saveFailures.current.delete(field);
+      form.clearErrors(field);
+      return Promise.resolve();
     }
 
     const generation = (saveGenerations.current[field] ?? 0) + 1;
     saveGenerations.current[field] = generation;
-    queuedSaves.current.set(field, { generation, value: payloadValue.data });
+    queuedSaves.current.set(field, {
+      generation,
+      value: payloadValue.data,
+      draftValue: form.getValues(field),
+    });
+    saveFailures.current.delete(field);
     form.clearErrors(field);
-    void drainField(field);
+    return drainField(field);
+  };
+
+  const flushFields = async (fields: readonly string[]) => {
+    for (const field of fields) {
+      if (
+        form.getFieldState(field).isDirty &&
+        !queuedSaves.current.has(field) &&
+        !drainingFields.current.has(field)
+      ) {
+        await saveField(group, field, form.getValues(field));
+      }
+    }
+
+    while (true) {
+      const pending = fields
+        .map((field) => drainPromises.current.get(field))
+        .filter((promise): promise is Promise<void> => Boolean(promise));
+      if (pending.length === 0) break;
+      await Promise.all(pending);
+    }
+
+    return !fields.some((field) => saveFailures.current.has(field));
+  };
+
+  const runTestMail = async () => {
+    setActionPending(true);
+    try {
+      if (await flushFields(SECTION_FIELDS.email)) await onTestMail();
+    } catch {
+      // Mutation failures are presented by the shared query error boundary.
+    } finally {
+      if (mounted.current) setActionPending(false);
+    }
+  };
+
+  const runSetWebhook = async () => {
+    setActionPending(true);
+    try {
+      if (!(await flushFields(['telegram_bot_token']))) return;
+      await onSetWebhook(toText(form.getValues('telegram_bot_token')));
+    } catch {
+      // Mutation failures are presented by the shared query error boundary.
+    } finally {
+      if (mounted.current) setActionPending(false);
+    }
   };
 
   const ctx: FormCtx = {
@@ -492,7 +613,7 @@ function SystemConfigSectionForm({
     get: (requestedGroup, field) => (requestedGroup === group ? values[field] : undefined),
     isSaving: (field) => pendingFields.has(field),
     save: (requestedGroup, field, value) => {
-      saveField(requestedGroup, field, value);
+      return saveField(requestedGroup, field, value);
     },
   };
 
@@ -520,12 +641,18 @@ function SystemConfigSectionForm({
         <EmailSection
           ctx={ctx}
           templates={emailTemplates}
-          onTest={onTestMail}
-          testing={testMailPending}
+          onTest={() => void runTestMail()}
+          testing={testMailPending || actionPending}
         />
       );
     case 'telegram':
-      return <TelegramSection ctx={ctx} onWebhook={onSetWebhook} webhookPending={webhookPending} />;
+      return (
+        <TelegramSection
+          ctx={ctx}
+          onWebhook={() => void runSetWebhook()}
+          webhookPending={webhookPending || actionPending}
+        />
+      );
     case 'app':
       return <AppSection ctx={ctx} />;
   }
@@ -604,7 +731,7 @@ function SwitchRow({
                 onCheckedChange={(checked) => {
                   const value = checked ? 1 : 0;
                   controlField.onChange(value);
-                  ctx.save(group, field, value);
+                  void ctx.save(group, field, value);
                 }}
                 aria-label={title}
                 aria-invalid={fieldState.invalid}
@@ -659,11 +786,16 @@ function TextRow({
                 aria-label={title}
                 aria-invalid={fieldState.invalid}
                 data-testid={`config-${field}`}
+                disabled={field === 'secure_path' && ctx.isSaving(field)}
                 value={toText(controlField.value)}
                 onChange={(event) => controlField.onChange(event.target.value)}
                 onBlur={(event) => {
                   controlField.onBlur();
-                  ctx.save(group, field, coerce ? coerce(event.target.value) : event.target.value);
+                  void ctx.save(
+                    group,
+                    field,
+                    coerce ? coerce(event.target.value) : event.target.value,
+                  );
                 }}
               />
               {suffix ? (
@@ -720,7 +852,11 @@ function TextareaRow({
               onChange={(event) => controlField.onChange(event.target.value)}
               onBlur={(event) => {
                 controlField.onBlur();
-                ctx.save(group, field, coerce ? coerce(event.target.value) : event.target.value);
+                void ctx.save(
+                  group,
+                  field,
+                  coerce ? coerce(event.target.value) : event.target.value,
+                );
               }}
             />
             <FieldError errors={[fieldState.error]} />
@@ -769,7 +905,7 @@ function SelectRow({
                 value={current}
                 onValueChange={(value) => {
                   controlField.onChange(value);
-                  ctx.save(group, field, value);
+                  void ctx.save(group, field, value);
                 }}
               >
                 <SelectTrigger
@@ -1190,7 +1326,7 @@ function DepositSection({ ctx }: { ctx: FormCtx }) {
         field="deposit_bounus"
         title="充值奖励"
         description="充值一定金额可以获得的奖励。"
-        placeholder={'请输入 充值金额:奖励金额,逗号分割\n如 50:18,100:38, 200:88'}
+        placeholder={'请输入 充值金额:奖励金额,逗号分割\n如 50:18,100:38,200:88'}
         rows={2}
         coerce={splitComma}
       />
@@ -1643,7 +1779,7 @@ function AppEntryRow({
                 onChange={(event) => field.onChange(event.target.value)}
                 onBlur={(event) => {
                   field.onBlur();
-                  ctx.save('app', versionField, event.target.value);
+                  void ctx.save('app', versionField, event.target.value);
                 }}
               />
               <FieldError errors={[fieldState.error]} />
@@ -1666,7 +1802,7 @@ function AppEntryRow({
                 onChange={(event) => field.onChange(event.target.value)}
                 onBlur={(event) => {
                   field.onBlur();
-                  ctx.save('app', urlField, event.target.value);
+                  void ctx.save('app', urlField, event.target.value);
                 }}
               />
               <FieldError errors={[fieldState.error]} />
@@ -1686,7 +1822,28 @@ function toText(value: unknown) {
 }
 
 function splitComma(value: string) {
-  return value.split(',');
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function configValuesEqual(left: ConfigFieldValue, right: ConfigFieldValue) {
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) && Array.isArray(right) && toText(left) === toText(right);
+  }
+  return toText(left) === toText(right);
+}
+
+export function adminSecurePathLocation(securePath: string, currentHash: string) {
+  const normalizedPath = securePath.trim().replace(/^\/+|\/+$/g, '');
+  if (!normalizedPath) throw new Error('后台路径不能为空');
+  const hash = currentHash || '#/config/system';
+  return `/${normalizedPath}${hash.startsWith('#') ? hash : `#${hash}`}`;
+}
+
+function replaceAdminSecurePath(securePath: string) {
+  window.location.replace(adminSecurePathLocation(securePath, window.location.hash));
 }
 
 export function parseBackendInteger(value: string) {

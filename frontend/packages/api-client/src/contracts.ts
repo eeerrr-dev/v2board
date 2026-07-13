@@ -570,6 +570,16 @@ const configResetTrafficSchema = z.union([
     .transform((value) => configIntegerByString[value]),
 ]);
 const configNullableNumberSchema = z.union([z.null(), configNumberSchema]);
+// PostgreSQL authority emits exact decimals as strings. Keep their lexical
+// value instead of round-tripping through IEEE-754 in the admin form.
+const configDecimalStringSchema = z.union([
+  z
+    .string()
+    .trim()
+    .regex(/^-?(?:\d+\.?\d*|\.\d+)$/),
+  z.number().finite().transform(String),
+]);
+const configNullableDecimalStringSchema = configDecimalStringSchema.nullable();
 const configNullableStringSchema = z.union([z.string(), z.null()]);
 const configStringSchema = z.union([z.string(), z.number().transform(String)]);
 const commaSeparatedStringArraySchema = z.union([
@@ -590,7 +600,7 @@ const inviteConfigSchema = z.looseObject({
   invite_never_expire: configFlagSchema,
   commission_first_time_enable: configFlagSchema,
   commission_auto_check_enable: configFlagSchema,
-  commission_withdraw_limit: configNullableNumberSchema,
+  commission_withdraw_limit: configNullableDecimalStringSchema,
   commission_withdraw_method: commaSeparatedStringArraySchema,
   withdraw_close_enable: configFlagSchema,
   commission_distribution_enable: configFlagSchema,
@@ -608,7 +618,7 @@ const siteConfigSchema = z.looseObject({
   subscribe_url: configNullableStringSchema,
   subscribe_path: configNullableStringSchema,
   try_out_plan_id: configNullableNumberSchema,
-  try_out_hour: configNumberSchema,
+  try_out_hour: configDecimalStringSchema,
   tos_url: configNullableStringSchema,
   currency: z.string(),
   currency_symbol: z.string(),
@@ -642,7 +652,10 @@ const serverConfigSchema = z.looseObject({
   device_limit_mode: configFlagSchema,
 });
 const emailConfigSchema = z.looseObject({
-  email_template: z.string(),
+  email_template: z
+    .string()
+    .nullable()
+    .transform((value) => value ?? 'default'),
   email_host: configNullableStringSchema,
   email_port: z.union([z.string(), z.number().transform(String), z.null()]),
   email_username: configNullableStringSchema,

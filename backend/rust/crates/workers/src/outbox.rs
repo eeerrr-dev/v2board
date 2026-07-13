@@ -289,10 +289,13 @@ fn parse_bounded_value(name: &str, raw: &str, minimum: u64, maximum: u64) -> any
 }
 
 async fn run_mail_outbox_batch(state: &WorkerState) -> anyhow::Result<usize> {
-    let Some(batch) = claim_mail_outbox_batch(state).await? else {
+    // Authority health is a precondition for touching durable outbox state.
+    // Claiming first would mutate lease/attempt metadata even though no SMTP
+    // side effect is permitted while the active revision cannot be applied.
+    let state = state.snapshot_config_for_job().await?;
+    let Some(batch) = claim_mail_outbox_batch(&state).await? else {
         return Ok(0);
     };
-    let state = state.snapshot_config_for_job().await;
     let total = batch.items.len();
     let mut failed = 0_usize;
     let mut first_error = None;
@@ -539,6 +542,22 @@ mod tests {
         assert!(MAIL_OUTBOX_CLAIM_SQL.contains("lease_expires_at"));
         assert!(MAIL_OUTBOX_CLAIM_SQL.contains("FOR UPDATE SKIP LOCKED"));
         assert!(MAIL_OUTBOX_CLAIM_SQL.contains("attempt_count < $3"));
+    }
+
+    #[test]
+    fn operator_authority_is_checked_before_outbox_claim_mutates_a_lease() {
+        let source = include_str!("outbox.rs");
+        let start = source
+            .find("async fn run_mail_outbox_batch")
+            .expect("outbox batch runner");
+        let body = &source[start..];
+        let authority = body
+            .find("snapshot_config_for_job().await?")
+            .expect("authority precondition");
+        let claim = body
+            .find("claim_mail_outbox_batch(&state).await?")
+            .expect("durable claim");
+        assert!(authority < claim);
     }
 
     #[test]

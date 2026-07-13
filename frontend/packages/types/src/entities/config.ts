@@ -59,7 +59,7 @@ export interface AdminConfigFlat {
   password_limit_count: number;
   password_limit_expire: number;
   try_out_plan_id: number | string | null;
-  try_out_hour: number;
+  try_out_hour: number | string;
   plan_change_enable: 0 | 1;
   reset_traffic_method: 0 | 1 | 2 | 3 | 4;
   surplus_enable: 0 | 1;

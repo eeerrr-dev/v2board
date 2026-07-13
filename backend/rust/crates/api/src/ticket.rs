@@ -5,6 +5,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use chrono::Utc;
+use rust_decimal::Decimal;
 use serde::Deserialize;
 use v2board_compat::{ApiError, LegacyEnvelope, legacy_data};
 
@@ -16,6 +17,12 @@ use crate::{
 
 const MAX_TICKET_SUBJECT_CHARS: usize = 255;
 const MAX_TICKET_MESSAGE_BYTES: usize = 65_535;
+
+fn commission_balance_meets_minimum(balance_cents: i64, minimum_yuan: Decimal) -> bool {
+    minimum_yuan
+        .checked_mul(Decimal::from(100))
+        .is_some_and(|minimum_cents| Decimal::from(balance_cents) >= minimum_cents)
+}
 
 fn validate_ticket_subject(subject: &str) -> Result<(), ApiError> {
     if subject.chars().count() > MAX_TICKET_SUBJECT_CHARS {
@@ -236,7 +243,10 @@ pub(crate) async fn ticket_withdraw(
     let access = v2board_db::user::find_user_access(&state.db, user.id)
         .await?
         .ok_or_else(|| ApiError::legacy("The user does not exist"))?;
-    if config.commission_withdraw_limit > access.commission_balance / 100 {
+    if !commission_balance_meets_minimum(
+        i64::from(access.commission_balance),
+        config.commission_withdraw_limit,
+    ) {
         return Err(ApiError::legacy(format!(
             "The current required minimum withdrawal commission is {}",
             config.commission_withdraw_limit
@@ -278,5 +288,14 @@ mod tests {
         assert!(validate_ticket_message("message", &"a".repeat(65_535)).is_ok());
         assert!(validate_ticket_message("message", &"a".repeat(65_536)).is_err());
         assert!(validate_ticket_message("message", &"界".repeat(21_846)).is_err());
+    }
+
+    #[test]
+    fn decimal_withdraw_minimum_is_compared_exactly_in_cents() {
+        let minimum = Decimal::new(1005, 2);
+        assert!(!commission_balance_meets_minimum(1_004, minimum));
+        assert!(commission_balance_meets_minimum(1_005, minimum));
+        assert!(commission_balance_meets_minimum(1_006, minimum));
+        assert!(!commission_balance_meets_minimum(i64::MAX, Decimal::MAX));
     }
 }

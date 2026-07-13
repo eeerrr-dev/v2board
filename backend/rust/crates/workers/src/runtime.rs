@@ -283,6 +283,7 @@ async fn probe_dependencies(state: &WorkerState) -> anyhow::Result<()> {
     if !migrations_current {
         anyhow::bail!("database migrations do not match the worker binary");
     }
+    state.refresh_operator_config().await?;
     let mut conn = tokio::time::timeout(
         DEPENDENCY_PROBE_TIMEOUT,
         state.redis.get_multiplexed_async_connection(),

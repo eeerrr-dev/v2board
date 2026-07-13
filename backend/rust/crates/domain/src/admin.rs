@@ -15,9 +15,7 @@ use sha2::{Digest, Sha256};
 use sqlx::{AssertSqlSafe, FromRow, Postgres, QueryBuilder, types::Json};
 use uuid::Uuid;
 use v2board_compat::ApiError;
-use v2board_config::{
-    AppConfig, MAX_CONFIG_DURATION_MINUTES, app_now, app_timezone, update_config_atomic,
-};
+use v2board_config::{AppConfig, MAX_CONFIG_DURATION_MINUTES, app_now, app_timezone};
 use v2board_db::{DbPool, DbTransaction};
 
 use crate::payment_provider::{payment_provider_codes, payment_provider_form};
@@ -28,6 +26,7 @@ use crate::{
         mail_payload_hash as hash_mail_payload, prepared_mail_payload_hash,
         reserve_mail_outbox_batch, validate_mail_recipient, validate_mail_sender,
     },
+    operator_config,
     order::{OrderService, commission_amount_cents},
     smtp::{SmtpSettings, SmtpTransportCache},
 };
@@ -112,6 +111,7 @@ fn payment_verification_version_blocks_update(driver_changed: bool, config_chang
 #[derive(Clone)]
 pub struct AdminService {
     db: DbPool,
+    installation_id: Option<Uuid>,
     redis: redis::Client,
     config: Arc<AppConfig>,
     http: reqwest::Client,
@@ -119,11 +119,11 @@ pub struct AdminService {
     smtp: SmtpTransportCache,
 }
 
-#[derive(Debug)]
 pub enum AdminOutput {
     Data(Value),
     Page { data: Vec<Value>, total: i64 },
     Csv { filename: String, body: String },
+    ConfigSaved { config: Box<AppConfig> },
 }
 
 impl AdminService {
@@ -137,12 +137,18 @@ impl AdminService {
     ) -> Self {
         Self {
             db,
+            installation_id: None,
             redis,
             config,
             http,
             password_kdf,
             smtp,
         }
+    }
+
+    pub fn with_installation_id(mut self, installation_id: Uuid) -> Self {
+        self.installation_id = Some(installation_id);
+        self
     }
 
     pub async fn get(

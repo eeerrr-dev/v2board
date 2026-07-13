@@ -22,6 +22,7 @@ hmac.workspace = true
 ipnet.workspace = true
 percent-encoding.workspace = true
 redis.workspace = true
+rust_decimal.workspace = true
 clickhouse.workspace = true
 flate2.workspace = true
 serde.workspace = true

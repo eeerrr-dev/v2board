@@ -17,7 +17,7 @@ Percona、MariaDB 和兼容代理均会被拒绝。MySQL 绝不是新版 runtime
 - 旧 Oracle MySQL 8 与两个旧 Redis 逻辑库的只读连接；
 - PostgreSQL bootstrap/migration/API/worker 四个 principal 的连接；
 - ClickHouse bootstrap/schema/writer/reader 四个 principal、retention 和网络证据；
-- 空 target Redis、公共行为配置和明确的迁移决策；API/worker 两个最终 runtime 路径由 v4 固定派生，
+- 空 target Redis、公共行为配置和明确的迁移决策；API/worker 两个最终 boot runtime 路径由 v4 固定派生，
   不要求操作者重复填写。
 - 不可变 release 的 ID/digest、旧 systemd 单元与备份/隔离恢复输入。journal、receipt、
   release archive、runtime secret、staging 和 retirement state 等内部路径由 `operation_id` 唯一生成，不再手填。
@@ -26,10 +26,34 @@ Percona、MariaDB 和兼容代理均会被拒绝。MySQL 绝不是新版 runtime
 `runtime` 的每个目标值都由操作者明确填写；数据库、Redis、文件和现场版本等可探测事实仍必须自动
 检查，不能靠清单中的自报值绕过。
 
-目标 datastore 连接由清单分别物化到 API/worker file-only map；`validate/inspect` 只验证这两个 map，
+`try_out_enable` 是 JSON boolean；`try_out_hour` 与 `commission_withdraw_limit` 为避免浮点损失，canonical
+manifest 使用十进制 JSON string。历史 v3 的整数 JSON 值仍可精确读取，但任何 JSON 浮点 number 都拒绝，
+最终 PostgreSQL authority 一律保存 native Decimal 规范化后的 string。
+
+目标 datastore 连接由清单分别物化到 API/worker `file_only + boot_only` map；`validate/inspect` 既用私有
+完整 role view 规范化并逐值比对唯一 operator candidate，也验证最终两个最小 boot map，
 已接线的 legacy executor 仅在 journaled one-shot apply 内原子写入文件。production fault gate 未解除时
 不会写文件。bootstrap 和 schema/migration 凭据只供 lifecycle job 使用，不得进入长期 API/worker runtime。
 API map 不含 worker URL 或任何 ClickHouse 凭据；worker map 不含 API URL、reader 或 DDL 凭据。
+
+两个 `0600` role file 不是后台配置的长期双写目标。它们只携带各自最小启动凭据与共同 `APP_KEY`，不含
+任何 operator 字段或动态 secret。lifecycle 在目标 installation 行建立后、服务启动前，以 migration
+principal 将短期内存中的规范化 candidate 直接加密写入 PostgreSQL，不生成 seed 文件。首次写入要求
+revision/state 都不存在；崩溃重试必须解密、验 HMAC 并与 candidate 精确比较，错值、孤儿 revision 或
+state 漂移直接阻断。API 启动只加载该 authority；只有 API 完成 typed apply 与 API ack 后才启动 Worker；
+Worker 必须解密并应用同一个 active revision、
+写入自己的 ack 才 ready，不能以 boot 文件默认值降级运行。此后管理后台所有动态系统配置都只
+生成 PostgreSQL 新 revision，不改写两个 role file。
+
+native authority 已提交且 API/Worker 均 ready 后，forward-only 路径必须安全清除两目录内本 operation 的
+`.previous`、`.absent`、`.tmp` 配置回滚 artifact，fsync 父目录，并把“六个 artifact 均不存在”的结果纳入
+journaled native-start stage proof；否则旧 `.previous` 可能继续保存迁移前的完整 plaintext 配置。
+
+公开配置与 `server_token`、SMTP password、Telegram bot token、reCAPTCHA key 分开保存；四项 secret 使用
+由 `APP_KEY` 派生的 AES-256-GCM key 加密，revision 还绑定 installation、随机 revision identity、公开配置
+摘要与完整 candidate HMAC。保存先完成全量 typed/cross-field 校验，再在一个事务中插入不可变 revision 并
+CAS 推进 active pointer；失败不会留下“文件已坏但接口返回失败”的半提交。API/Worker 数据库权限分别只
+允许写自己的 ack，Worker 没有发布或激活配置的权限。
 
 要进入未来 one-shot apply，清单必须是 `schema_version: 4` 且 kind 必须是
 `legacy_reference_migration`。旧 v3 仍可严格 `validate/inspect`，用于复查已有文件，但它没有

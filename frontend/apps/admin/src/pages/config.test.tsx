@@ -1,7 +1,11 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import ConfigPage, { isBackendEnabled, parseBackendInteger } from './config';
+import ConfigPage, {
+  adminSecurePathLocation,
+  isBackendEnabled,
+  parseBackendInteger,
+} from './config';
 
 // The config surface is a redesigned shadcn island (PageShell + section nav +
 // Card sections of labeled shadcn controls) replacing the antd tabs / OneUI
@@ -174,15 +178,11 @@ vi.mock('@/lib/queries', () => ({
     isPending: false,
   }),
   useSetTelegramWebhookMutation: () => ({
-    mutate: (payload: unknown, options?: { onSuccess?: (data: unknown) => void }) => {
-      void Promise.resolve(mocks.webhookMutateAsync(payload)).then(options?.onSuccess);
-    },
+    mutateAsync: mocks.webhookMutateAsync,
     isPending: false,
   }),
   useTestSendMailMutation: () => ({
-    mutate: (payload: unknown, options?: { onSuccess?: (data: unknown) => void }) => {
-      void Promise.resolve(mocks.testMailMutateAsync(payload)).then(options?.onSuccess);
-    },
+    mutateAsync: mocks.testMailMutateAsync,
     isPending: false,
   }),
 }));
@@ -210,6 +210,7 @@ beforeEach(() => {
   mocks.testMailMutateAsync.mockReset().mockResolvedValue({ data: true, log: { email: 'a@b.c' } });
   mocks.toastSuccess.mockReset();
   mocks.toastError.mockReset();
+  window.history.replaceState({}, '', '/admin-path#/config/system');
   // Radix Select pointer + scroll shims for happy-dom.
   window.HTMLElement.prototype.scrollIntoView = vi.fn();
   window.HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
@@ -239,6 +240,54 @@ describe('SystemConfigPage', () => {
 
     await waitFor(() =>
       expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ app_name: 'My New Site' }),
+    );
+  });
+
+  it('does not save or refetch when an unchanged text field blurs', async () => {
+    const user = userEvent.setup();
+    render(<ConfigPage />);
+
+    await user.click(screen.getByTestId('config-app_name'));
+    await user.tab();
+
+    expect(mocks.saveMutateAsync).not.toHaveBeenCalled();
+    expect(mocks.refetch).not.toHaveBeenCalled();
+  });
+
+  it('serializes saves across configuration sections', async () => {
+    let resolveFirstSave!: () => void;
+    mocks.saveMutateAsync
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveFirstSave = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(undefined);
+    const user = userEvent.setup();
+    render(<ConfigPage />);
+
+    const appName = screen.getByTestId('config-app_name');
+    await user.clear(appName);
+    await user.type(appName, '串行保存一');
+    await user.tab();
+    await waitFor(() =>
+      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ app_name: '串行保存一' }),
+    );
+
+    await user.click(screen.getByTestId('config-tab-invite'));
+    const inviteLimit = screen.getByTestId('config-invite_gen_limit');
+    await user.clear(inviteLimit);
+    await user.type(inviteLimit, '9');
+    await user.tab();
+    await waitFor(() =>
+      expect(inviteLimit.closest('[data-slot="field"]')).toHaveAttribute('aria-busy', 'true'),
+    );
+    expect(mocks.saveMutateAsync).toHaveBeenCalledTimes(1);
+
+    act(() => resolveFirstSave());
+    await waitFor(() =>
+      expect(mocks.saveMutateAsync).toHaveBeenNthCalledWith(2, { invite_gen_limit: 9 }),
     );
   });
 
@@ -283,7 +332,7 @@ describe('SystemConfigPage', () => {
     );
   });
 
-  it('splits comma fields into an array before saving', async () => {
+  it('trims comma fields and removes empty entries before saving', async () => {
     const user = userEvent.setup();
     render(<ConfigPage />);
 
@@ -291,13 +340,27 @@ describe('SystemConfigPage', () => {
     // email_whitelist_enable = 1 → the suffix field is shown.
     const input = screen.getByTestId('config-email_whitelist_suffix');
     await user.clear(input);
-    await user.type(input, 'a.com,b.com');
+    await user.type(input, ' a.com, b.com, ,');
     await user.tab();
 
     await waitFor(() =>
       expect(mocks.saveMutateAsync).toHaveBeenCalledWith({
         email_whitelist_suffix: ['a.com', 'b.com'],
       }),
+    );
+  });
+
+  it('saves a cleared comma field as a real empty array', async () => {
+    const user = userEvent.setup();
+    render(<ConfigPage />);
+
+    await user.click(screen.getByTestId('config-tab-invite'));
+    const input = screen.getByTestId('config-commission_withdraw_method');
+    await user.clear(input);
+    await user.tab();
+
+    await waitFor(() =>
+      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ commission_withdraw_method: [] }),
     );
   });
 
@@ -318,6 +381,38 @@ describe('SystemConfigPage', () => {
     await waitFor(() => expect(mocks.refetch).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(input).toHaveValue('服务端规范化名称'));
     expect(mocks.toastSuccess).toHaveBeenCalledWith('保存成功');
+  });
+
+  it('does not overwrite text entered while an earlier save is in flight', async () => {
+    const canonicalConfig = makeConfig();
+    canonicalConfig.site.app_name = '已保存的第一版';
+    let resolveSave!: () => void;
+    mocks.saveMutateAsync.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSave = () => {
+            mocks.configData = canonicalConfig;
+            resolve();
+          };
+        }),
+    );
+    const user = userEvent.setup();
+    render(<ConfigPage />);
+
+    const input = screen.getByTestId('config-app_name');
+    await user.clear(input);
+    await user.type(input, '已保存的第一版');
+    await user.tab();
+    await waitFor(() => expect(mocks.saveMutateAsync).toHaveBeenCalledTimes(1));
+
+    await user.click(input);
+    await user.clear(input);
+    await user.type(input, '尚未失焦的第二版');
+    act(() => resolveSave());
+
+    await waitFor(() => expect(mocks.refetch).toHaveBeenCalledTimes(1));
+    expect(input).toHaveValue('尚未失焦的第二版');
+    expect(mocks.saveMutateAsync).toHaveBeenCalledTimes(1);
   });
 
   it('queues the latest same-field value and never lets an older refresh reset it', async () => {
@@ -388,6 +483,42 @@ describe('SystemConfigPage', () => {
     expect(input).toHaveValue('需要保留的草稿');
     expect(mocks.refetch).not.toHaveBeenCalled();
     expect(mocks.toastSuccess).not.toHaveBeenCalled();
+  });
+
+  it('replaces the outer admin path after secure_path saves without refetching the old path', async () => {
+    const user = userEvent.setup();
+    render(<ConfigPage />);
+
+    await user.click(screen.getByTestId('config-tab-safe'));
+    const input = screen.getByTestId('config-secure_path');
+    await user.clear(input);
+    await user.type(input, 'next-admin');
+    await user.tab();
+
+    await waitFor(() =>
+      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ secure_path: 'next-admin' }),
+    );
+    await waitFor(() => expect(window.location.pathname).toBe('/next-admin'));
+    expect(window.location.hash).toBe('#/config/system');
+    expect(mocks.refetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects an empty secure_path without invalidating the current admin route', async () => {
+    const user = userEvent.setup();
+    render(<ConfigPage />);
+
+    await user.click(screen.getByTestId('config-tab-safe'));
+    const input = screen.getByTestId('config-secure_path');
+    await user.clear(input);
+    await user.tab();
+
+    const field = input.closest('[data-slot="field"]');
+    expect(field).not.toBeNull();
+    expect(await within(field as HTMLElement).findByRole('alert')).toHaveTextContent(
+      '后台路径不能为空',
+    );
+    expect(mocks.saveMutateAsync).not.toHaveBeenCalled();
+    expect(window.location.pathname).toBe('/admin-path');
   });
 
   it('gates sections when their dependent query fails and exposes a scoped retry', async () => {
@@ -464,17 +595,81 @@ describe('SystemConfigPage', () => {
     expect(screen.queryByTestId('config-recaptcha_key')).not.toBeInTheDocument();
   });
 
-  it('triggers the telegram webhook and test-mail side effects', async () => {
+  it('passes the current Telegram token to the webhook action', async () => {
     const user = userEvent.setup();
     render(<ConfigPage />);
 
     await user.click(screen.getByTestId('config-tab-telegram'));
     await user.click(screen.getByTestId('config-set-webhook'));
-    await waitFor(() => expect(mocks.webhookMutateAsync).toHaveBeenCalled());
+    await waitFor(() => expect(mocks.webhookMutateAsync).toHaveBeenCalledWith('0000000000:token'));
+  });
+
+  it('waits for the Telegram token save and authoritative refresh before setting webhook', async () => {
+    let resolveSave!: () => void;
+    mocks.saveMutateAsync.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+    render(<ConfigPage />);
+
+    await user.click(screen.getByTestId('config-tab-telegram'));
+    const token = screen.getByTestId('config-telegram_bot_token');
+    await user.clear(token);
+    await user.type(token, '1111111111:current-token');
+    await user.click(screen.getByTestId('config-set-webhook'));
+
+    await waitFor(() =>
+      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({
+        telegram_bot_token: '1111111111:current-token',
+      }),
+    );
+    expect(mocks.webhookMutateAsync).not.toHaveBeenCalled();
+
+    const canonicalConfig = makeConfig();
+    canonicalConfig.telegram.telegram_bot_token = '1111111111:current-token';
+    mocks.configData = canonicalConfig;
+    act(() => resolveSave());
+
+    await waitFor(() => expect(mocks.refetch).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(mocks.webhookMutateAsync).toHaveBeenCalledWith('1111111111:current-token'),
+    );
+  });
+
+  it('waits for the email section save and activation before testing mail', async () => {
+    let resolveSave!: () => void;
+    mocks.saveMutateAsync.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+    render(<ConfigPage />);
 
     await user.click(screen.getByTestId('config-tab-email'));
+    const fromAddress = screen.getByTestId('config-email_from_address');
+    await user.clear(fromAddress);
+    await user.type(fromAddress, 'fresh@example.com');
     await user.click(screen.getByTestId('config-test-mail'));
-    await waitFor(() => expect(mocks.testMailMutateAsync).toHaveBeenCalled());
+
+    await waitFor(() =>
+      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({
+        email_from_address: 'fresh@example.com',
+      }),
+    );
+    expect(mocks.testMailMutateAsync).not.toHaveBeenCalled();
+
+    const canonicalConfig = makeConfig();
+    canonicalConfig.email.email_from_address = 'fresh@example.com';
+    mocks.configData = canonicalConfig;
+    act(() => resolveSave());
+
+    await waitFor(() => expect(mocks.refetch).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mocks.testMailMutateAsync).toHaveBeenCalledWith());
   });
 });
 
@@ -490,5 +685,12 @@ describe('backend coercion helpers', () => {
   it('parses integer fields with parseInt semantics', () => {
     expect(parseBackendInteger('12px')).toBe(12);
     expect(Number.isNaN(parseBackendInteger(''))).toBe(true);
+  });
+
+  it('builds the canonical same-origin secure-path location without a trailing slash', () => {
+    expect(adminSecurePathLocation('/new-admin/', '#/config/system')).toBe(
+      '/new-admin#/config/system',
+    );
+    expect(adminSecurePathLocation('new-admin', '')).toBe('/new-admin#/config/system');
   });
 });

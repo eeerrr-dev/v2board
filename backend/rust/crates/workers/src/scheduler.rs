@@ -231,10 +231,11 @@ async fn run_scheduled_tick(
 }
 
 async fn run_scheduled_job(task: ScheduledTask, state: &WorkerState) -> anyhow::Result<()> {
-    // Each job gets one immutable snapshot. A valid edit becomes the shared
-    // last-known-good value; a malformed edit is logged and this job continues
-    // consistently on the previous snapshot.
-    let state = state.snapshot_config_for_job().await;
+    // Each job gets one immutable, currently acknowledged snapshot. The
+    // last-known-good copy remains available for recovery diagnostics, but a
+    // changed authority that cannot be verified must skip side effects instead
+    // of silently executing with stale commission/reset/mail policy.
+    let state = state.snapshot_config_for_job().await?;
     match task {
         ScheduledTask::TrafficUpdate => traffic::run(&state).await,
         ScheduledTask::Statistics => statistics::run(&state).await,

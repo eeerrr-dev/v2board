@@ -22,6 +22,7 @@ import {
   generateUser,
   fetchPlans,
   knowledgeDetail,
+  saveConfig,
   savePlan,
   savePayment,
   sendMailToUsers,
@@ -1148,6 +1149,77 @@ describe('createApiClient', () => {
     expect(result.email_whitelist_suffix).toEqual(['safe.example']);
   });
 
+  it('normalizes only a null admin email template to the default template', async () => {
+    const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
+    const mock = new AxiosMockAdapter(client.axios);
+    const config = makeAdminConfig();
+    mock.onGet('/admin-path/config/fetch').reply(200, {
+      data: {
+        ...config,
+        email: { ...config.email, email_template: null },
+      },
+    });
+
+    await expect(fetchConfig(client)).resolves.toMatchObject({
+      email: { email_template: 'default' },
+      email_template: 'default',
+    });
+  });
+
+  it('preserves exact operator decimals as strings', async () => {
+    const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
+    const mock = new AxiosMockAdapter(client.axios);
+    const config = makeAdminConfig();
+    mock.onGet('/admin-path/config/fetch').reply(200, {
+      data: {
+        ...config,
+        invite: {
+          ...config.invite,
+          commission_withdraw_limit: '9007199254740993.125',
+        },
+        site: { ...config.site, try_out_hour: '0.1234567890123456789012345678' },
+      },
+    });
+
+    await expect(fetchConfig(client)).resolves.toMatchObject({
+      commission_withdraw_limit: '9007199254740993.125',
+      try_out_hour: '0.1234567890123456789012345678',
+    });
+  });
+
+  it('still rejects missing admin email-template and other malformed config fields', async () => {
+    const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
+    const mock = new AxiosMockAdapter(client.axios);
+    const config = makeAdminConfig();
+    const emailWithoutTemplate: Record<string, unknown> = { ...config.email };
+    delete emailWithoutTemplate.email_template;
+
+    mock.onGet('/admin-path/config/fetch').replyOnce(200, {
+      data: { ...config, email: emailWithoutTemplate },
+    });
+    mock.onGet('/admin-path/config/fetch').replyOnce(200, {
+      data: { ...config, site: { ...config.site, app_name: null } },
+    });
+
+    await expect(fetchConfig(client)).rejects.toBeInstanceOf(ApiContractError);
+    await expect(fetchConfig(client)).rejects.toBeInstanceOf(ApiContractError);
+  });
+
+  it('preserves bracket encoding for populated config arrays and marks empty arrays explicitly', async () => {
+    const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onPost('/admin-path/config/save').reply(200, { data: true });
+
+    await saveConfig(client, {
+      email_whitelist_suffix: ['example.com', 'example.org'],
+      commission_withdraw_method: [],
+    });
+
+    expect(mock.history.post[0]?.data).toBe(
+      'email_whitelist_suffix[0]=example.com&email_whitelist_suffix[1]=example.org&commission_withdraw_method=%5B%5D',
+    );
+  });
+
   it('passes the legacy config key when a page requests a single config group', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
@@ -1197,6 +1269,16 @@ describe('createApiClient', () => {
     await setTelegramWebhook(client);
 
     expect(mock.history.post[0]?.data).toBe('');
+  });
+
+  it('sets the telegram webhook with the explicit current token', async () => {
+    const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onPost('/admin-path/config/setTelegramWebhook').reply(200, { data: true });
+
+    await setTelegramWebhook(client, 'current-token');
+
+    expect(mock.history.post[0]?.data).toBe('telegram_bot_token=current-token');
   });
 
   it('sends the original empty test-mail request and preserves its log envelope', async () => {

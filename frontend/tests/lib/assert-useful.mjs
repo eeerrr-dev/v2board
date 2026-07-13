@@ -1003,6 +1003,9 @@ export function assertUsefulInteraction(label, result, target) {
   ) {
     throw new Error('admin config tabs did not change active tab');
   }
+  if (label === 'admin-config-unchanged-blur' && result.configSaveDelta !== 0) {
+    throw new Error(`unchanged admin config blur unexpectedly saved: ${JSON.stringify(result)}`);
+  }
   if (
     label === 'admin-config-save-failure-matrix' &&
     (!jsonIncludes(result.before?.activeTabs, '站点') ||

@@ -1,4 +1,5 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use rust_decimal::Decimal;
 use v2board_compat::ApiError;
 
 use super::{
@@ -28,11 +29,18 @@ fn trial_plan_math_rejects_negative_and_overflowing_configuration() {
     assert!(checked_trial_transfer_bytes(-1).is_err());
     assert!(checked_trial_transfer_bytes(i64::MAX).is_err());
 
-    assert_eq!(checked_trial_expired_at(100, 0).unwrap(), 3_700);
-    assert_eq!(checked_trial_expired_at(100, 2).unwrap(), 7_300);
-    assert!(checked_trial_expired_at(100, -1).is_err());
-    assert!(checked_trial_expired_at(100, i64::MAX).is_err());
-    assert!(checked_trial_expired_at(i64::MAX, 1).is_err());
+    assert_eq!(checked_trial_expired_at(100, Decimal::ZERO).unwrap(), 3_700);
+    assert_eq!(
+        checked_trial_expired_at(100, Decimal::from(2)).unwrap(),
+        7_300
+    );
+    assert_eq!(
+        checked_trial_expired_at(100, Decimal::new(15, 1)).unwrap(),
+        5_500
+    );
+    assert!(checked_trial_expired_at(100, Decimal::NEGATIVE_ONE).is_err());
+    assert!(checked_trial_expired_at(100, Decimal::MAX).is_err());
+    assert!(checked_trial_expired_at(i64::MAX, Decimal::ONE).is_err());
 }
 
 #[test]

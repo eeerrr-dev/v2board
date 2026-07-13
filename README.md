@@ -66,29 +66,50 @@ mask 并停用本机 MySQL 8 和旧 Redis，使用旧凭据主动证明访问已
 接入生产。completion 成功后命令结果会输出 root 人工清理 argv，由操作者删除一次性 lifecycle 工具；
 一次性 MySQL client 与 source credential 另行清理。工具是否已删除不影响已经落盘的迁移成功证明。
 
-## 单一人工清单、双运行时配置
+## 单一人工清单、双启动配置、单一动态权威源
 
 操作者只手工维护一个 lifecycle JSON manifest（旧版迁移固定为 schema v4）；旧 `.env`、Laravel 配置和 theme 脚本都不自动
-导入。清单中的公共行为配置会分别与 API/worker 所需的最小 datastore 凭据组合，形成两个严格文档：
+导入。清单中的行为配置只在 lifecycle 进程内分别经过 API/Worker 完整 typed 解析，并证明规范化结果完全
+一致；长期落盘的只有各角色最小 boot 字段与 datastore 凭据，形成两个严格的启动文档：
 `/var/lib/v2board/api/config.json` 和 `/var/lib/v2board/worker/config.json`。生产 executor 已实现按角色
 分目录、owner/mode 校验、no-clobber 原子安装和回读验证；总 apply 门禁关闭时不会执行这些写入。
+
+这两个 `0600` 文件只负责角色隔离的数据库、Redis、ClickHouse、`APP_KEY`、监听与网络策略等启动材料，
+不含任何动态 operator 字段或其四个敏感设置。lifecycle 在 installation 行建立后、启动服务前，使用
+migration principal 和 manifest 中的 `APP_KEY` 把同一个规范化 candidate 直接加密写为 PostgreSQL 首个
+active revision，不生成 API-only seed 文件。崩溃续跑只接受解密、HMAC 验证后与 candidate 完全相同的
+已有 snapshot；任何错值、孤儿 revision 或 state 漂移都阻断。API/Worker 在 active revision 存在并完成
+解密、typed 校验和各自 applied 回执前不进入 ready。此后管理后台的动态
+系统配置只提交到 PostgreSQL 的不可变、单调 revision，API 和 Worker 都读取同一个 active pointer，不再
+分别改写两个角色文件。
+
+公开设置与四个敏感设置分开存放；`server_token`、SMTP password、Telegram bot token 和 reCAPTCHA key
+使用由 `APP_KEY` 派生的 AES-256-GCM key 加密，公开 JSON 不含这些 key。保存先在内存中构造完整 typed
+candidate 并校验，revision insert 与 active pointer CAS 在同一事务提交；失败不会改变 active revision。
+API/Worker 各写自己的 applied/rejected 回执，且数据库权限不允许一方伪造另一方回执。
+native authority 已提交且 API/Worker 都 ready 后，forward-only 启动阶段会安全删除本 operation 的
+`.previous`、`.absent`、`.tmp` role-config artifact、fsync 两个父目录，并将清理证明写入 stage digest；
+成功态不会遗留可能含旧完整 plaintext 配置的回滚文件。
 
 两个生产文档都使用：
 
 ```json
 {
-  "configuration_source": "file_only"
+  "configuration_source": "file_only",
+  "configuration_scope": "boot_only"
 }
 ```
 
-上面只是模式标记，**不是可直接启动的完整配置**。`file_only` 要求精确 key 集合、正确
-`runtime_role` 和完整公共字段；缺 key、未知 key、错类型、非法 secret、错配 role 或 malformed JSON
+上面只是启动配置的模式标记，**不是可直接启动的完整配置**。`file_only` 要求精确 key 集合、正确
+`runtime_role` 和完整 boot 字段；缺 key、未知 key、错类型、非法额外 secret、错配 role 或 malformed JSON
 都会失败关闭，值型环境变量也不能覆盖文件。API 文档只含 API PostgreSQL URL、worker 的非秘密
 principal 名和 Redis；worker 文档只含 worker PostgreSQL URL、API 的非秘密 principal 名、Redis 与
 ClickHouse writer。API 不接收任何 ClickHouse 凭据，worker 不接收 API URL 或 ClickHouse reader。
+数据库 active operator map 的字段优先于值型环境变量，因此后台保存 `APP_URL` 等动态项不会出现“保存
+成功但仍被环境变量覆盖”的假成功；基础设施字段不属于 operator map，也不能由后台修改。
 
-bootstrap/schema/migration 一次性凭据、systemd watchdog 路径和连接池大小等进程编排参数不属于长期
-应用配置，继续由 systemd credential/部署平台注入，且不会从旧系统迁移。
+bootstrap/schema/migration 一次性凭据、runtime path、systemd watchdog 路径和连接池大小等进程编排参数
+不进入角色 JSON，继续由固定 systemd unit、credential 或部署平台注入，且不会从旧系统迁移。
 
 两个文件都包含 secret，必须分别由对应 Unix 用户拥有，并以原子替换方式更新：
 

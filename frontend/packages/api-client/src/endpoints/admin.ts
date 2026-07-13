@@ -169,8 +169,17 @@ export const fetchConfig = async (client: ApiClient, key?: string, config?: Quer
     await adminGet(client, '/config/fetch', adminConfigSchema, key ? { key } : undefined, config),
   );
 
+function serializeConfigForSave(data: Partial<AdminConfigFlat>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(data).map(([key, value]) => [
+      key,
+      Array.isArray(value) && value.length === 0 ? '[]' : value,
+    ]),
+  );
+}
+
 export const saveConfig = (client: ApiClient, data: Partial<AdminConfigFlat>) =>
-  adminPostTrue(client, '/config/save', data);
+  adminPostTrue(client, '/config/save', serializeConfigForSave(data));
 
 export const getEmailTemplate = (client: ApiClient, config?: QueryRequestConfig) =>
   adminGet(client, '/config/getEmailTemplate', stringArraySchema, undefined, config);

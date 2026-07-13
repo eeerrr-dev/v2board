@@ -2,7 +2,11 @@ use std::net::SocketAddr;
 
 use v2board_config::AppConfig;
 use v2board_db::{connect_postgres, migrate_postgres, migrations_current};
-use v2board_domain::{auth::PasswordKdf, smtp::SmtpTransportCache};
+use v2board_domain::{
+    auth::PasswordKdf,
+    operator_config::{self, OperatorConfigConsumer},
+    smtp::SmtpTransportCache,
+};
 
 mod admin;
 mod auth;
@@ -59,7 +63,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     init_tracing();
-    let config = AppConfig::try_from_api_env()?;
+    let config = AppConfig::try_from_api_boot_env()?;
     let database_url = if matches!(&command, cli::Command::Migrate) {
         migration_database_url(&config, migration_database_secret)?
     } else {
@@ -85,6 +89,45 @@ async fn main() -> anyhow::Result<()> {
             .await;
     }
     let installation_id = v2board_db::installation_id(&db).await?;
+    let authority_result = if config.environment.is_production() {
+        operator_config::load_active(&db, installation_id, &config.app_key)
+            .await
+            .and_then(|authority| {
+                authority.ok_or(operator_config::OperatorConfigError::MissingAuthority)
+            })
+    } else {
+        // Local development has an explicit, disposable bootstrap path so a
+        // fresh `make reset` remains self-contained. Production authority is
+        // seeded by the lifecycle command before either long-lived role starts.
+        operator_config::ensure_authority(&db, installation_id, &config).await
+    };
+    let authority = match authority_result {
+        Ok(authority) => authority,
+        Err(error) => {
+            if let Some((observed_revision, error_code)) = error.observed_rejection() {
+                let _ = operator_config::acknowledge(
+                    &db,
+                    installation_id,
+                    OperatorConfigConsumer::Api,
+                    observed_revision,
+                    None,
+                    Some(error_code),
+                )
+                .await;
+            }
+            return Err(error.into());
+        }
+    };
+    let config = config.with_operator_config(&authority.values, authority.revision)?;
+    operator_config::acknowledge(
+        &db,
+        installation_id,
+        OperatorConfigConsumer::Api,
+        authority.revision,
+        Some(authority.revision),
+        None,
+    )
+    .await?;
     let redis = redis::Client::open(config.redis_url.clone())?;
     let auth_redis = tokio::time::timeout(
         std::time::Duration::from_secs(config.http_connect_timeout_seconds),

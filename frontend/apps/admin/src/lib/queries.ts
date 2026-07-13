@@ -311,7 +311,7 @@ function useInvalidatingMutation<TVariables, TData>(
 
 export function useSetTelegramWebhookMutation() {
   return useMutation({
-    mutationFn: () => admin.setTelegramWebhook(apiClient),
+    mutationFn: (telegramBotToken: string) => admin.setTelegramWebhook(apiClient, telegramBotToken),
   });
 }
 

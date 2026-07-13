@@ -19,10 +19,10 @@ pub const LEGACY_SEMANTIC_SCHEMA_SHA256: &str =
     "4b5eaec681531751c79b48188e5a1c665df4f660dffbb88d6853cea6cf04801e";
 pub const LEGACY_INSTALL_SQL_SHA256: &str =
     "04b04531037b9e0b6f2a6b02194a8f1bc102789af8ee7be963fd721d51bca8e2";
-pub const TARGET_POSTGRES_LINEAGE: &str = "migrations-postgres/v2";
+pub const TARGET_POSTGRES_LINEAGE: &str = "migrations-postgres/v3";
 pub const TARGET_POSTGRES_LINEAGE_SHA256: &str =
-    "2b3ac5c043a36438ae9e9547635ed463176e30c59b41b97a44b99d847434effd";
-pub const CONVERTER_REGISTRY_VERSION: u32 = 2;
+    "42c3b476a08d2259ea4bccb27676dd47dc35b5b169c90aa81f445bc29fe117c6";
+pub const CONVERTER_REGISTRY_VERSION: u32 = 3;
 pub const DEFAULT_BATCH_SIZE: u32 = 1_000;
 pub const MAX_BATCH_SIZE: u32 = 100_000;
 pub const POSTGRES_MAX_BIND_PARAMETERS: usize = 65_535;
@@ -42,6 +42,11 @@ const TARGET_POSTGRES_MIGRATIONS: &[(i64, &str, &[u8])] = &[
         include_bytes!(
             "../../../migrations-postgres/0002_legacy_lifecycle_and_analytics_admission.sql"
         ),
+    ),
+    (
+        3,
+        "0003_operator_config_authority.sql",
+        include_bytes!("../../../migrations-postgres/0003_operator_config_authority.sql"),
     ),
 ];
 
@@ -1017,6 +1022,10 @@ pub const TARGET_ONLY_TABLES: &[&str] = &[
     "v2_mail_outbox",
     "v2_analytics_admission_policy",
     "v2_analytics_admission_state",
+    "v2_operator_config_revision",
+    "v2_operator_config_state",
+    "v2_operator_config_api_ack",
+    "v2_operator_config_worker_ack",
     "v2_analytics_delivery_batch",
     "v2_analytics_outbox",
     "v2_server_traffic_report",

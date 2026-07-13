@@ -371,6 +371,11 @@ const DYNAMIC_SQLX_SITES: &[DynamicSite] = &[
         coverage: "operator whitelist and admin user filter interaction parity",
     },
     DynamicSite {
+        source: "crates/domain/src/operator_config.rs",
+        count: 1,
+        coverage: "fixed API/worker acknowledgement variants, unit tests, and PostgreSQL 18 role-isolation tests",
+    },
+    DynamicSite {
         source: "crates/domain/src/order/lifecycle.rs",
         count: 1,
         coverage: "variable ID batch and payment lifecycle integration",

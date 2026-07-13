@@ -1,4 +1,5 @@
 use chrono::Utc;
+use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde::Deserialize;
 use v2board_compat::ApiError;
 use v2board_config::duration_minutes_to_seconds;
@@ -382,13 +383,20 @@ pub(super) fn checked_trial_transfer_bytes(transfer_gib: i64) -> Result<i64, Api
         .ok_or_else(|| ApiError::legacy("Trial plan traffic allowance exceeds the supported range"))
 }
 
-pub(super) fn checked_trial_expired_at(now: i64, try_out_hour: i64) -> Result<i64, ApiError> {
-    if try_out_hour < 0 {
+pub(super) fn checked_trial_expired_at(now: i64, try_out_hour: Decimal) -> Result<i64, ApiError> {
+    if try_out_hour.is_sign_negative() {
         return Err(ApiError::legacy("Trial plan duration must not be negative"));
     }
-    let seconds = try_out_hour
-        .max(1)
-        .checked_mul(3_600)
+    let hours = if try_out_hour.is_zero() {
+        Decimal::ONE
+    } else {
+        try_out_hour
+    };
+    let seconds = hours
+        .checked_mul(Decimal::from(3_600))
+        .ok_or_else(|| ApiError::legacy("Trial plan duration exceeds the supported range"))?
+        .trunc()
+        .to_i64()
         .ok_or_else(|| ApiError::legacy("Trial plan duration exceeds the supported range"))?;
     now.checked_add(seconds)
         .ok_or_else(|| ApiError::legacy("Trial plan expiry exceeds the supported range"))

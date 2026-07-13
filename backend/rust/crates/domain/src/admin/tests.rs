@@ -3,7 +3,7 @@ use super::commerce::{
     reconciliation_resolution, reconciliation_resolved_filter, required_nonnegative_i32,
     resolve_redacted_payment_config,
 };
-use super::configuration::bulk_mail_payload_hash;
+use super::configuration::{bulk_mail_payload_hash, drop_unchanged_effective_secure_path};
 use super::content::{TICKET_NOTIFICATION_GATE_RELEASE_SCRIPT, validate_ticket_message_length};
 use super::users::decimal_gib_filter_bytes;
 use super::*;
@@ -266,11 +266,139 @@ fn admin_smtp_probe_has_an_end_to_end_deadline() {
 }
 
 #[test]
-fn admin_config_security_is_validated_before_atomic_persistence() {
+fn admin_config_is_typed_and_security_validated_before_revision_commit() {
     let source = include_str!("configuration.rs");
-    let validation = source.find("validate_security_update").unwrap();
-    let persistence = source.find("update_config_atomic").unwrap();
-    assert!(validation < persistence);
+    let security = source.find("validate_security_update").unwrap();
+    let typed = source.find("with_operator_config").unwrap();
+    let commit = source.find("operator_config::commit").unwrap();
+    assert!(security < commit);
+    assert!(typed < commit);
+    assert!(!source.contains("update_config_atomic"));
+}
+
+#[test]
+fn config_candidate_validation_rejects_lossy_or_unsafe_scalars() {
+    for (key, invalid) in [
+        ("email_port", "smtp"),
+        ("email_port", "0"),
+        ("email_port", "65536"),
+        ("try_out_hour", "NaN"),
+        ("commission_withdraw_limit", "inf"),
+        ("server_push_interval", "-1"),
+        ("server_node_report_min_traffic", "-1"),
+        ("register_limit_count", "-1"),
+    ] {
+        assert!(
+            validate_config_params(&params(&[(key, invalid)])).is_err(),
+            "{key}={invalid} must fail before commit"
+        );
+    }
+}
+
+#[test]
+fn config_save_rejects_an_explicit_empty_secure_path_but_drops_an_unchanged_fallback() {
+    for empty in ["", " ", "\t\n"] {
+        let error = validate_config_params(&params(&[("secure_path", empty)]))
+            .expect_err("an explicit empty admin path must be a 422 validation error");
+        let (message, errors) = validation_parts(error);
+        assert_eq!(message, "后台路径不能为空");
+        assert_eq!(errors["secure_path"], vec!["后台路径不能为空"]);
+    }
+
+    let mut unchanged_fallback = params(&[("secure_path", "/old123/")]);
+    drop_unchanged_effective_secure_path(&mut unchanged_fallback, "old123");
+    assert!(!unchanged_fallback.contains_key("secure_path"));
+    validate_config_params(&unchanged_fallback)
+        .expect("an unchanged effective fallback remains a no-op");
+
+    let mut empty = params(&[("secure_path", "")]);
+    drop_unchanged_effective_secure_path(&mut empty, "old123");
+    assert!(empty.contains_key("secure_path"));
+}
+
+#[test]
+fn config_merge_preserves_exact_decimals_and_only_declared_empty_lists() {
+    let exact = "0.1234567890123456789012345678";
+    let input = params(&[
+        ("try_out_hour", exact),
+        ("commission_withdraw_limit", "10.05"),
+        ("commission_distribution_l1", exact),
+        ("deposit_bounus", "[]"),
+        ("commission_withdraw_method", "[]"),
+        ("email_whitelist_suffix", "[]"),
+        ("app_name", "[]"),
+        ("email_password", "00001234"),
+    ]);
+    validate_config_params(&input).expect("exact decimal candidate");
+    let mut merged = Map::new();
+    merge_config_params(&mut merged, &input);
+    assert_eq!(merged["try_out_hour"], Value::String(exact.to_string()));
+    assert_eq!(
+        merged["commission_distribution_l1"],
+        Value::String(exact.to_string())
+    );
+    assert_eq!(
+        merged["email_password"],
+        Value::String("00001234".to_string())
+    );
+    for key in [
+        "deposit_bounus",
+        "commission_withdraw_method",
+        "email_whitelist_suffix",
+    ] {
+        assert_eq!(merged[key], Value::Array(Vec::new()));
+    }
+    assert_eq!(merged["app_name"], Value::String("[]".to_string()));
+}
+
+#[test]
+fn config_arrays_reject_bare_scalars_and_normalize_indexed_items() {
+    for key in [
+        "deposit_bounus",
+        "commission_withdraw_method",
+        "email_whitelist_suffix",
+    ] {
+        assert!(validate_config_params(&params(&[(key, "one,two")])).is_err());
+        assert!(validate_config_params(&params(&[(key, "[]")])).is_ok());
+    }
+
+    let input = params(&[
+        ("commission_withdraw_method[0]", "  Alipay  "),
+        ("commission_withdraw_method[1]", "   "),
+        ("commission_withdraw_method[2]", "USDT"),
+    ]);
+    validate_config_params(&input).expect("indexed array");
+    let mut merged = Map::new();
+    merge_config_params(&mut merged, &input);
+    assert_eq!(
+        merged["commission_withdraw_method"],
+        serde_json::json!(["Alipay", "USDT"])
+    );
+
+    assert!(
+        validate_config_params(&params(&[
+            ("email_whitelist_suffix", "[]"),
+            ("email_whitelist_suffix[0]", "example.com"),
+        ]))
+        .is_err()
+    );
+}
+
+#[test]
+fn clearing_email_port_normalizes_only_that_optional_scalar_to_null() {
+    let mut merged = serde_json::json!({
+        "email_port": 587,
+        "email_host": "smtp.example.com"
+    })
+    .as_object()
+    .expect("object")
+    .clone();
+    merge_config_params(
+        &mut merged,
+        &params(&[("email_port", ""), ("email_host", "")]),
+    );
+    assert_eq!(merged["email_port"], Value::Null);
+    assert_eq!(merged["email_host"], Value::String(String::new()));
 }
 
 #[test]

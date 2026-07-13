@@ -10,7 +10,7 @@ use chrono::{DateTime, FixedOffset, Utc};
 use ipnet::IpNet;
 use percent_encoding::percent_decode_str;
 use rust_decimal::{Decimal, prelude::ToPrimitive};
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 
 /// Operator-entered minute durations are bounded to one year. This is long
 /// enough for every subscription/rate-limit use while keeping Redis expiry and
@@ -19,6 +19,32 @@ pub const MAX_CONFIG_DURATION_MINUTES: i64 = 365 * 24 * 60;
 const DEFAULT_PRIVILEGED_SESSION_TTL_SECONDS: i64 = 30 * 60;
 const CONFIGURATION_SOURCE_KEY: &str = "configuration_source";
 const FILE_ONLY_CONFIGURATION_SOURCE: &str = "file_only";
+const CONFIGURATION_SCOPE_KEY: &str = "configuration_scope";
+const BOOT_ONLY_CONFIGURATION_SCOPE: &str = "boot_only";
+const OPERATOR_AUTHORITY_MARKER: &str = "_v2board_operator_authority_v1";
+
+/// Exact common key set for a long-lived role-owned bootstrap document.  The
+/// worker validator additionally requires its four ClickHouse writer keys.
+/// Dynamic behavior and integration secrets deliberately live only in the
+/// PostgreSQL operator authority and therefore cannot leak back into these
+/// files after initial materialization.
+pub const BOOT_ONLY_RUNTIME_KEYS_V1: &[&str] = &[
+    "configuration_source",
+    "configuration_scope",
+    "runtime_role",
+    "environment",
+    "bind_addr",
+    "cors_allowed_origins",
+    "trusted_proxy_cidrs",
+    "http_connect_timeout_seconds",
+    "http_request_timeout_seconds",
+    "api_request_timeout_seconds",
+    "password_kdf_max_parallel",
+    "app_key",
+    "database_url",
+    "peer_database_principal",
+    "redis_url",
+];
 
 /// Every application-behavior key required by the version-1 file-only runtime
 /// document. Database and Redis URLs are supplied by the lifecycle target and
@@ -41,6 +67,112 @@ pub const FILE_ONLY_RUNTIME_KEYS_V1: &[&str] = &[
     "privileged_step_up_max_attempts",
     "privileged_step_up_attempt_window_seconds",
     "app_key",
+    "app_name",
+    "app_url",
+    "app_description",
+    "logo",
+    "tos_url",
+    "force_https",
+    "email_verify",
+    "email_template",
+    "email_host",
+    "email_port",
+    "email_username",
+    "email_password",
+    "email_encryption",
+    "email_from_address",
+    "stop_register",
+    "invite_force",
+    "invite_never_expire",
+    "email_whitelist_enable",
+    "email_whitelist_suffix",
+    "email_gmail_limit_enable",
+    "recaptcha_enable",
+    "recaptcha_site_key",
+    "recaptcha_key",
+    "register_limit_by_ip_enable",
+    "register_limit_count",
+    "register_limit_expire",
+    "telegram_bot_enable",
+    "telegram_bot_token",
+    "telegram_discuss_id",
+    "telegram_channel_id",
+    "telegram_discuss_link",
+    "commission_withdraw_method",
+    "withdraw_close_enable",
+    "currency",
+    "currency_symbol",
+    "commission_distribution_enable",
+    "commission_auto_check_enable",
+    "commission_distribution_l1",
+    "commission_distribution_l2",
+    "commission_distribution_l3",
+    "subscribe_url",
+    "subscribe_path",
+    "show_subscribe_method",
+    "show_subscribe_expire",
+    "show_info_to_server_enable",
+    "allow_new_period",
+    "reset_traffic_method",
+    "try_out_enable",
+    "try_out_plan_id",
+    "try_out_hour",
+    "plan_change_enable",
+    "surplus_enable",
+    "invite_commission",
+    "commission_first_time_enable",
+    "new_order_event_id",
+    "renew_order_event_id",
+    "change_order_event_id",
+    "deposit_bounus",
+    "invite_gen_limit",
+    "ticket_status",
+    "commission_withdraw_limit",
+    "server_token",
+    "server_require_idempotency_key",
+    "server_api_url",
+    "server_push_interval",
+    "server_pull_interval",
+    "server_node_report_min_traffic",
+    "server_device_online_min_traffic",
+    "device_limit_mode",
+    "server_log_enable",
+    "server_v2ray_domain",
+    "server_v2ray_protocol",
+    "frontend_theme_color",
+    "frontend_background_url",
+    "frontend_custom_html",
+    "frontend_admin_path",
+    "secure_path",
+    "safe_mode_enable",
+    "password_limit_enable",
+    "password_limit_count",
+    "password_limit_expire",
+    "windows_version",
+    "windows_download_url",
+    "macos_version",
+    "macos_download_url",
+    "android_version",
+    "android_download_url",
+];
+
+/// Application behavior owned by the versioned operator-configuration
+/// authority.  Bootstrap-only credentials and process topology (database,
+/// Redis, ClickHouse, listener, paths, environment, and `app_key`) are
+/// deliberately absent: changing those values requires a coordinated restart.
+///
+/// Keep this list in lockstep with [`AppConfig::operator_config_map`].  A
+/// snapshot read from PostgreSQL is rejected if it contains a key outside this
+/// set, preventing a database row from becoming an undocumented override for a
+/// boot-bound setting.
+pub const OPERATOR_CONFIG_KEYS_V1: &[&str] = &[
+    "auth_session_ttl_seconds",
+    "privileged_auth_session_ttl_seconds",
+    "auth_session_max_per_user",
+    "privileged_step_up_enable",
+    "privileged_step_up_ttl_seconds",
+    "privileged_step_up_max_attempts",
+    "privileged_step_up_attempt_window_seconds",
     "app_name",
     "app_url",
     "app_description",
@@ -180,6 +312,19 @@ pub enum RuntimeRole {
     Worker,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ConfigParseMode {
+    FullRuntime,
+    BootOnly,
+    OperatorAuthority,
+}
+
+impl ConfigParseMode {
+    const fn is_operator_authority(self) -> bool {
+        matches!(self, Self::OperatorAuthority)
+    }
+}
+
 impl RuntimeRole {
     const fn file_value(self) -> &'static str {
         match self {
@@ -233,6 +378,7 @@ impl RuntimeEnvironment {
 // the complete secret-bearing configuration.
 #[derive(Clone)]
 pub struct AppConfig {
+    operator_revision: Option<i64>,
     pub runtime_role: RuntimeRole,
     pub environment: RuntimeEnvironment,
     pub bind_addr: String,
@@ -283,6 +429,8 @@ pub struct AppConfig {
     pub register_limit_expire: i64,
     pub telegram_bot_enable: bool,
     pub telegram_bot_token: Option<String>,
+    pub telegram_discuss_id: Option<String>,
+    pub telegram_channel_id: Option<String>,
     pub telegram_discuss_link: Option<String>,
     pub commission_withdraw_method: Vec<String>,
     pub withdraw_close_enable: bool,
@@ -300,8 +448,9 @@ pub struct AppConfig {
     pub show_info_to_server_enable: bool,
     pub allow_new_period: i32,
     pub reset_traffic_method: i32,
+    pub try_out_enable: bool,
     pub try_out_plan_id: i32,
-    pub try_out_hour: i64,
+    pub try_out_hour: Decimal,
     pub plan_change_enable: bool,
     pub surplus_enable: bool,
     pub invite_commission: i32,
@@ -312,7 +461,7 @@ pub struct AppConfig {
     pub deposit_bounus: Vec<String>,
     pub invite_gen_limit: i64,
     pub ticket_status: i32,
-    pub commission_withdraw_limit: i32,
+    pub commission_withdraw_limit: Decimal,
     pub server_token: Option<String>,
     pub server_require_idempotency_key: bool,
     pub server_api_url: Option<String>,
@@ -348,17 +497,32 @@ impl AppConfig {
     }
 
     pub fn try_from_api_env() -> io::Result<Self> {
-        Self::try_from_env_for_role(RuntimeRole::Api)
+        Self::try_from_env_for_role(RuntimeRole::Api, ConfigParseMode::FullRuntime)
     }
 
     pub fn try_from_worker_env() -> io::Result<Self> {
-        Self::try_from_env_for_role(RuntimeRole::Worker)
+        Self::try_from_env_for_role(RuntimeRole::Worker, ConfigParseMode::FullRuntime)
+    }
+
+    /// Parses the role-owned bootstrap document used by a long-lived API
+    /// process. The returned snapshot is intentionally incomplete and may only
+    /// be used to connect to PostgreSQL and load a full operator revision.
+    pub fn try_from_api_boot_env() -> io::Result<Self> {
+        Self::try_from_env_for_role(RuntimeRole::Api, ConfigParseMode::BootOnly)
+    }
+
+    /// Worker equivalent of [`Self::try_from_api_boot_env`].
+    pub fn try_from_worker_boot_env() -> io::Result<Self> {
+        Self::try_from_env_for_role(RuntimeRole::Worker, ConfigParseMode::BootOnly)
     }
 
     /// Loads a complete configuration snapshot without panicking. Long-lived
     /// processes use this path for hot reloads so a malformed external edit can
     /// be rejected while the last-known-good snapshot remains active.
-    fn try_from_env_for_role(runtime_role: RuntimeRole) -> io::Result<Self> {
+    fn try_from_env_for_role(
+        runtime_role: RuntimeRole,
+        parse_mode: ConfigParseMode,
+    ) -> io::Result<Self> {
         let env_path = env_path(&["V2BOARD_ENV_PATH", "RUST_ENV_PATH"]);
         if let Some(path) = env_path.as_ref() {
             if !path.is_file() {
@@ -372,8 +536,11 @@ impl AppConfig {
             })?;
         }
         validate_role_environment(runtime_role)?;
-        let config =
-            Self::try_from_runtime_paths(runtime_role, RuntimePaths::from_env(runtime_role))?;
+        let config = Self::try_from_runtime_paths(
+            runtime_role,
+            RuntimePaths::from_env(runtime_role),
+            parse_mode,
+        )?;
         if env_path.is_some() && config.environment.is_production() {
             return Err(invalid_setting(
                 "V2BOARD_ENV_PATH",
@@ -388,7 +555,197 @@ impl AppConfig {
     /// `configuration_source=file_only` snapshot ignores value overrides.
     /// Runtime paths cannot jump to a different file during reload.
     pub fn reload(&self) -> io::Result<Self> {
-        let next = Self::try_from_runtime_paths(self.runtime_role, self.runtime_paths.clone())?;
+        let next = Self::try_from_runtime_paths(
+            self.runtime_role,
+            self.runtime_paths.clone(),
+            ConfigParseMode::FullRuntime,
+        )?;
+        self.validate_reload_compatible(&next)?;
+        Ok(next)
+    }
+
+    /// PostgreSQL revision that supplied the dynamic operator portion of this
+    /// snapshot. `None` is only valid for the parsed bootstrap snapshot before
+    /// the API initializes authority (or before the worker loads it).
+    pub const fn operator_revision(&self) -> Option<i64> {
+        self.operator_revision
+    }
+
+    /// Attaches the database revision to a snapshot that has already passed
+    /// typed validation. Revision identifiers are generated by PostgreSQL and
+    /// are therefore positive by construction.
+    pub fn at_operator_revision(mut self, revision: i64) -> Self {
+        debug_assert!(revision > 0);
+        self.operator_revision = Some(revision);
+        self
+    }
+
+    /// Returns a complete, typed operator snapshot. Optional values remain
+    /// explicit JSON nulls so a committed clear cannot later fall through to an
+    /// environment variable or a role-specific bootstrap default.
+    pub fn operator_config_map(&self) -> Map<String, Value> {
+        let mut values = json_object(json!({
+            "auth_session_ttl_seconds": self.auth_session_ttl_seconds,
+            "privileged_auth_session_ttl_seconds": self.privileged_auth_session_ttl_seconds,
+            "auth_session_max_per_user": self.auth_session_max_per_user,
+            "privileged_step_up_enable": self.privileged_step_up_enable,
+            "privileged_step_up_ttl_seconds": self.privileged_step_up_ttl_seconds,
+            "privileged_step_up_max_attempts": self.privileged_step_up_max_attempts,
+            "privileged_step_up_attempt_window_seconds": self.privileged_step_up_attempt_window_seconds,
+            "app_name": self.app_name,
+            "app_url": self.app_url,
+            "app_description": self.app_description,
+            "logo": self.logo,
+            "tos_url": self.tos_url,
+            "force_https": self.force_https,
+            "email_verify": self.email_verify,
+            "email_template": self.email_template,
+            "email_host": self.email_host,
+            "email_port": self.email_port,
+            "email_username": self.email_username,
+            "email_password": self.email_password,
+            "email_encryption": self.email_encryption,
+            "email_from_address": self.email_from_address,
+            "stop_register": self.stop_register,
+            "invite_force": self.invite_force,
+            "invite_never_expire": self.invite_never_expire,
+            "email_whitelist_enable": self.email_whitelist_enable,
+            "email_whitelist_suffix": self.email_whitelist_suffix,
+            "email_gmail_limit_enable": self.email_gmail_limit_enable,
+            "recaptcha_enable": self.recaptcha_enable,
+            "recaptcha_site_key": self.recaptcha_site_key,
+            "recaptcha_key": self.recaptcha_key,
+            "register_limit_by_ip_enable": self.register_limit_by_ip_enable,
+            "register_limit_count": self.register_limit_count,
+            "register_limit_expire": self.register_limit_expire,
+        }));
+        values.extend(json_object(json!({
+            "telegram_bot_enable": self.telegram_bot_enable,
+            "telegram_bot_token": self.telegram_bot_token,
+            "telegram_discuss_id": self.telegram_discuss_id,
+            "telegram_channel_id": self.telegram_channel_id,
+            "telegram_discuss_link": self.telegram_discuss_link,
+            "commission_withdraw_method": self.commission_withdraw_method,
+            "withdraw_close_enable": self.withdraw_close_enable,
+            "currency": self.currency,
+            "currency_symbol": self.currency_symbol,
+            "commission_distribution_enable": self.commission_distribution_enable,
+            "commission_auto_check_enable": self.commission_auto_check_enable,
+            "commission_distribution_l1": self.commission_distribution_l1,
+            "commission_distribution_l2": self.commission_distribution_l2,
+            "commission_distribution_l3": self.commission_distribution_l3,
+            "subscribe_url": self.subscribe_url,
+            "subscribe_path": self.subscribe_path,
+            "show_subscribe_method": self.show_subscribe_method,
+            "show_subscribe_expire": self.show_subscribe_expire,
+            "show_info_to_server_enable": self.show_info_to_server_enable,
+            "allow_new_period": self.allow_new_period,
+            "reset_traffic_method": self.reset_traffic_method,
+            "try_out_enable": self.try_out_enable,
+            "try_out_plan_id": self.try_out_plan_id,
+            "try_out_hour": self.try_out_hour.normalize().to_string(),
+            "plan_change_enable": self.plan_change_enable,
+            "surplus_enable": self.surplus_enable,
+            "invite_commission": self.invite_commission,
+            "commission_first_time_enable": self.commission_first_time_enable,
+            "new_order_event_id": self.new_order_event_id,
+            "renew_order_event_id": self.renew_order_event_id,
+            "change_order_event_id": self.change_order_event_id,
+        })));
+        values.extend(json_object(json!({
+            "deposit_bounus": self.deposit_bounus,
+            "invite_gen_limit": self.invite_gen_limit,
+            "ticket_status": self.ticket_status,
+            "commission_withdraw_limit": self.commission_withdraw_limit.normalize().to_string(),
+            "server_token": self.server_token,
+            "server_require_idempotency_key": self.server_require_idempotency_key,
+            "server_api_url": self.server_api_url,
+            "server_push_interval": self.server_push_interval,
+            "server_pull_interval": self.server_pull_interval,
+            "server_node_report_min_traffic": self.server_node_report_min_traffic,
+            "server_device_online_min_traffic": self.server_device_online_min_traffic,
+            "device_limit_mode": self.device_limit_mode,
+            "server_log_enable": self.server_log_enable,
+            "server_v2ray_domain": self.server_v2ray_domain,
+            "server_v2ray_protocol": self.server_v2ray_protocol,
+            "frontend_theme_color": self.frontend_theme_color,
+            "frontend_background_url": self.frontend_background_url,
+            "frontend_custom_html": self.frontend_custom_html,
+            "frontend_admin_path": self.frontend_admin_path,
+            "secure_path": self.secure_path,
+            "safe_mode_enable": self.safe_mode_enable,
+            "password_limit_enable": self.password_limit_enable,
+            "password_limit_count": self.password_limit_count,
+            "password_limit_expire": self.password_limit_expire,
+            "windows_version": self.windows_version,
+            "windows_download_url": self.windows_download_url,
+            "macos_version": self.macos_version,
+            "macos_download_url": self.macos_download_url,
+            "android_version": self.android_version,
+            "android_download_url": self.android_download_url,
+        })));
+        values
+    }
+
+    /// Applies a complete authoritative operator snapshot on top of the role's
+    /// bootstrap file, then runs the same typed and cross-field validation as a
+    /// cold start. The current active snapshot supplies the restart-bound
+    /// comparison, so a malformed or boot-bound candidate never becomes live.
+    pub fn with_operator_config(
+        &self,
+        operator: &Map<String, Value>,
+        revision: i64,
+    ) -> io::Result<Self> {
+        if revision <= 0 {
+            return Err(invalid_setting("operator revision", "must be positive"));
+        }
+        if self
+            .operator_revision
+            .is_some_and(|active_revision| revision < active_revision)
+        {
+            return Err(invalid_setting(
+                "operator revision",
+                "must not move backwards from the active revision",
+            ));
+        }
+        for key in operator.keys() {
+            if !OPERATOR_CONFIG_KEYS_V1.contains(&key.as_str()) {
+                return Err(invalid_setting(
+                    "operator configuration",
+                    &format!("contains unsupported key {key}"),
+                ));
+            }
+        }
+        if let Some(missing) = OPERATOR_CONFIG_KEYS_V1
+            .iter()
+            .find(|key| !operator.contains_key(**key))
+        {
+            return Err(invalid_setting(
+                "operator configuration",
+                &format!("is missing required key {missing}"),
+            ));
+        }
+
+        let mut merged = load_config(&self.runtime_paths.config).map_err(|error| {
+            io::Error::new(
+                error.kind(),
+                format!(
+                    "failed to load {}: {error}",
+                    self.runtime_paths.config.display()
+                ),
+            )
+        })?;
+        for (key, value) in operator {
+            merged.insert(key.clone(), value.clone());
+        }
+        merged.insert(OPERATOR_AUTHORITY_MARKER.to_string(), Value::Bool(true));
+        let mut next = Self::try_from_config_map_for_role(
+            self.runtime_role,
+            merged,
+            self.runtime_paths.clone(),
+            ConfigParseMode::OperatorAuthority,
+        )?;
+        next.operator_revision = Some(revision);
         self.validate_reload_compatible(&next)?;
         Ok(next)
     }
@@ -418,10 +775,8 @@ impl AppConfig {
         restart_bound!(http_request_timeout_seconds);
         restart_bound!(api_request_timeout_seconds);
         restart_bound!(password_kdf_max_parallel);
+        restart_bound!(app_key);
         restart_bound!(runtime_paths);
-        if self.admin_path() != next.admin_path() {
-            restart_required.push("admin_path");
-        }
         if restart_required.is_empty() {
             Ok(())
         } else {
@@ -438,6 +793,7 @@ impl AppConfig {
     fn try_from_runtime_paths(
         runtime_role: RuntimeRole,
         runtime_paths: RuntimePaths,
+        parse_mode: ConfigParseMode,
     ) -> io::Result<Self> {
         let file_config = load_config(&runtime_paths.config).map_err(|error| {
             io::Error::new(
@@ -445,7 +801,7 @@ impl AppConfig {
                 format!("failed to load {}: {error}", runtime_paths.config.display()),
             )
         })?;
-        Self::try_from_config_map_for_role(runtime_role, file_config, runtime_paths)
+        Self::try_from_config_map_for_role(runtime_role, file_config, runtime_paths, parse_mode)
     }
 
     /// Builds and validates a runtime snapshot from an already parsed JSON
@@ -456,26 +812,78 @@ impl AppConfig {
         file_config: Map<String, Value>,
         runtime_paths: RuntimePaths,
     ) -> io::Result<Self> {
-        Self::try_from_config_map_for_role(RuntimeRole::Api, file_config, runtime_paths)
+        Self::try_from_config_map_for_role(
+            RuntimeRole::Api,
+            file_config,
+            runtime_paths,
+            ConfigParseMode::FullRuntime,
+        )
     }
 
     pub fn try_from_worker_config_map(
         file_config: Map<String, Value>,
         runtime_paths: RuntimePaths,
     ) -> io::Result<Self> {
-        Self::try_from_config_map_for_role(RuntimeRole::Worker, file_config, runtime_paths)
+        Self::try_from_config_map_for_role(
+            RuntimeRole::Worker,
+            file_config,
+            runtime_paths,
+            ConfigParseMode::FullRuntime,
+        )
+    }
+
+    pub fn try_from_api_boot_config_map(
+        file_config: Map<String, Value>,
+        runtime_paths: RuntimePaths,
+    ) -> io::Result<Self> {
+        Self::try_from_config_map_for_role(
+            RuntimeRole::Api,
+            file_config,
+            runtime_paths,
+            ConfigParseMode::BootOnly,
+        )
+    }
+
+    pub fn try_from_worker_boot_config_map(
+        file_config: Map<String, Value>,
+        runtime_paths: RuntimePaths,
+    ) -> io::Result<Self> {
+        Self::try_from_config_map_for_role(
+            RuntimeRole::Worker,
+            file_config,
+            runtime_paths,
+            ConfigParseMode::BootOnly,
+        )
     }
 
     fn try_from_config_map_for_role(
         runtime_role: RuntimeRole,
         file_config: Map<String, Value>,
         runtime_paths: RuntimePaths,
+        parse_mode: ConfigParseMode,
     ) -> io::Result<Self> {
-        validate_scalar_config(&file_config, runtime_role)?;
+        if file_config.contains_key(OPERATOR_AUTHORITY_MARKER)
+            && !parse_mode.is_operator_authority()
+        {
+            return Err(invalid_setting(
+                OPERATOR_AUTHORITY_MARKER,
+                "is reserved for the internal authority overlay",
+            ));
+        }
+        validate_scalar_config(&file_config, runtime_role, parse_mode)?;
         let environment = RuntimeEnvironment::parse(
             config_or_env(&file_config, "environment", "V2BOARD_ENV").as_deref(),
         )
         .map_err(|message| io::Error::new(io::ErrorKind::InvalidInput, message))?;
+        if parse_mode == ConfigParseMode::BootOnly
+            && environment.is_production()
+            && !configuration_is_boot_only(&file_config)
+        {
+            return Err(invalid_setting(
+                CONFIGURATION_SCOPE_KEY,
+                "production boot parsing requires a file_only boot_only document",
+            ));
+        }
         let app_key = resolve_app_key(
             environment,
             config_or_env(&file_config, "app_key", "APP_KEY"),
@@ -524,7 +932,9 @@ impl AppConfig {
             &redis_url,
         )?;
         let server_token = config_or_env(&file_config, "server_token", "V2BOARD_SERVER_TOKEN");
-        validate_production_secret(environment, "server_token", server_token.as_deref())?;
+        if parse_mode != ConfigParseMode::BootOnly {
+            validate_production_secret(environment, "server_token", server_token.as_deref())?;
+        }
         let bind_addr = config_or_env(&file_config, "bind_addr", "RUST_BIND_ADDR")
             .unwrap_or_else(|| "0.0.0.0:8080".to_string());
         if environment.is_production() && bind_addr != "127.0.0.1:8080" {
@@ -544,11 +954,13 @@ impl AppConfig {
         );
         let app_url = config_or_env(&file_config, "app_url", "APP_URL");
         let cors_allowed_origins = load_cors_allowed_origins(&file_config, app_url.as_deref())?;
-        validate_https_configuration(
-            force_https,
-            app_url.as_deref(),
-            !trusted_proxy_cidrs.is_empty(),
-        )?;
+        if parse_mode != ConfigParseMode::BootOnly {
+            validate_https_configuration(
+                force_https,
+                app_url.as_deref(),
+                !trusted_proxy_cidrs.is_empty(),
+            )?;
+        }
 
         let auth_session_ttl_seconds = config_i64(
             &file_config,
@@ -609,13 +1021,16 @@ impl AppConfig {
             "V2BOARD_SERVER_REQUIRE_IDEMPOTENCY_KEY",
             environment.is_production(),
         );
-        validate_node_report_contract(
-            environment,
-            configuration_is_file_only(&file_config),
-            server_require_idempotency_key,
-        )?;
+        if parse_mode != ConfigParseMode::BootOnly {
+            validate_node_report_contract(
+                environment,
+                configuration_is_file_only(&file_config),
+                server_require_idempotency_key,
+            )?;
+        }
 
-        Ok(Self {
+        let snapshot = Self {
+            operator_revision: None,
             runtime_role,
             environment,
             bind_addr,
@@ -686,7 +1101,8 @@ impl AppConfig {
             tos_url: config_or_env(&file_config, "tos_url", "V2BOARD_TOS_URL"),
             force_https,
             email_verify: config_bool(&file_config, "email_verify", "V2BOARD_EMAIL_VERIFY", false),
-            email_template: config_or_env(&file_config, "email_template", "V2BOARD_EMAIL_TEMPLATE"),
+            email_template: config_or_env(&file_config, "email_template", "V2BOARD_EMAIL_TEMPLATE")
+                .or_else(|| Some("default".to_string())),
             email_host: config_or_env(&file_config, "email_host", "V2BOARD_EMAIL_HOST"),
             email_port: config_or_env(&file_config, "email_port", "V2BOARD_EMAIL_PORT")
                 .and_then(|value| value.parse::<i32>().ok()),
@@ -785,6 +1201,16 @@ impl AppConfig {
                 "telegram_bot_token",
                 "V2BOARD_TELEGRAM_BOT_TOKEN",
             ),
+            telegram_discuss_id: config_or_env(
+                &file_config,
+                "telegram_discuss_id",
+                "V2BOARD_TELEGRAM_DISCUSS_ID",
+            ),
+            telegram_channel_id: config_or_env(
+                &file_config,
+                "telegram_channel_id",
+                "V2BOARD_TELEGRAM_CHANNEL_ID",
+            ),
             telegram_discuss_link: config_or_env(
                 &file_config,
                 "telegram_discuss_link",
@@ -871,13 +1297,24 @@ impl AppConfig {
                 "V2BOARD_RESET_TRAFFIC_METHOD",
                 0,
             ),
+            try_out_enable: config_bool(
+                &file_config,
+                "try_out_enable",
+                "V2BOARD_TRY_OUT_ENABLE",
+                false,
+            ),
             try_out_plan_id: config_i32(
                 &file_config,
                 "try_out_plan_id",
                 "V2BOARD_TRY_OUT_PLAN_ID",
                 0,
             ),
-            try_out_hour: config_i64(&file_config, "try_out_hour", "V2BOARD_TRY_OUT_HOUR", 1),
+            try_out_hour: config_decimal(
+                &file_config,
+                "try_out_hour",
+                "V2BOARD_TRY_OUT_HOUR",
+                Decimal::ONE,
+            )?,
             plan_change_enable: config_bool(
                 &file_config,
                 "plan_change_enable",
@@ -933,12 +1370,12 @@ impl AppConfig {
                 5,
             ),
             ticket_status: config_i32(&file_config, "ticket_status", "V2BOARD_TICKET_STATUS", 0),
-            commission_withdraw_limit: config_i32(
+            commission_withdraw_limit: config_decimal(
                 &file_config,
                 "commission_withdraw_limit",
                 "V2BOARD_COMMISSION_WITHDRAW_LIMIT",
-                100,
-            ),
+                Decimal::from(100),
+            )?,
             server_token,
             server_require_idempotency_key,
             server_api_url: config_or_env(&file_config, "server_api_url", "V2BOARD_SERVER_API_URL"),
@@ -1060,7 +1497,11 @@ impl AppConfig {
                 "android_download_url",
                 "V2BOARD_ANDROID_DOWNLOAD_URL",
             ),
-        })
+        };
+        if parse_mode != ConfigParseMode::BootOnly {
+            validate_operator_dependencies(&snapshot)?;
+        }
+        Ok(snapshot)
     }
 
     pub fn subscribe_url_for_token(&self, token: &str) -> String {
@@ -1733,6 +2174,47 @@ fn validate_production_secret(
     Ok(())
 }
 
+/// Cross-field checks shared by every full-runtime source: lifecycle manifest,
+/// database authority overlay, and admin-save candidate. Keeping these checks
+/// here ensures a candidate cannot pass one ingestion path and fail only after
+/// it has become the active revision.
+fn validate_operator_dependencies(config: &AppConfig) -> io::Result<()> {
+    let configured = |value: Option<&str>| value.is_some_and(|value| !value.trim().is_empty());
+
+    if config.recaptcha_enable
+        && (!configured(config.recaptcha_site_key.as_deref())
+            || !configured(config.recaptcha_key.as_deref()))
+    {
+        return Err(invalid_setting(
+            "recaptcha_enable",
+            "requires both recaptcha_site_key and recaptcha_key",
+        ));
+    }
+    if config.telegram_bot_enable && !configured(config.telegram_bot_token.as_deref()) {
+        return Err(invalid_setting(
+            "telegram_bot_enable",
+            "requires telegram_bot_token",
+        ));
+    }
+    if config.email_verify
+        && (!configured(config.email_host.as_deref())
+            || !configured(config.email_from_address.as_deref()))
+    {
+        return Err(invalid_setting(
+            "email_verify",
+            "requires email_host and email_from_address",
+        ));
+    }
+    if configured(config.email_username.as_deref()) != configured(config.email_password.as_deref())
+    {
+        return Err(invalid_setting(
+            "email credentials",
+            "email_username and email_password must be configured together",
+        ));
+    }
+    Ok(())
+}
+
 fn is_obvious_secret_placeholder(value: &str) -> bool {
     let value = value.trim();
     if value.is_empty()
@@ -1765,8 +2247,9 @@ fn is_obvious_secret_placeholder(value: &str) -> bool {
 fn validate_scalar_config(
     config: &Map<String, Value>,
     runtime_role: RuntimeRole,
+    parse_mode: ConfigParseMode,
 ) -> io::Result<()> {
-    validate_configuration_source(config, runtime_role)?;
+    validate_configuration_source(config, runtime_role, parse_mode)?;
     const BOOL_SETTINGS: &[(&str, &str)] = &[
         ("force_https", "V2BOARD_FORCE_HTTPS"),
         ("email_verify", "V2BOARD_EMAIL_VERIFY"),
@@ -1797,6 +2280,7 @@ fn validate_scalar_config(
             "show_info_to_server_enable",
             "V2BOARD_SHOW_INFO_TO_SERVER_ENABLE",
         ),
+        ("try_out_enable", "V2BOARD_TRY_OUT_ENABLE"),
         ("plan_change_enable", "V2BOARD_PLAN_CHANGE_ENABLE"),
         ("surplus_enable", "V2BOARD_SURPLUS_ENABLE"),
         (
@@ -1864,17 +2348,12 @@ fn validate_scalar_config(
         ("allow_new_period", "V2BOARD_ALLOW_NEW_PERIOD"),
         ("reset_traffic_method", "V2BOARD_RESET_TRAFFIC_METHOD"),
         ("try_out_plan_id", "V2BOARD_TRY_OUT_PLAN_ID"),
-        ("try_out_hour", "V2BOARD_TRY_OUT_HOUR"),
         ("invite_commission", "V2BOARD_INVITE_COMMISSION"),
         ("new_order_event_id", "V2BOARD_NEW_ORDER_EVENT_ID"),
         ("renew_order_event_id", "V2BOARD_RENEW_ORDER_EVENT_ID"),
         ("change_order_event_id", "V2BOARD_CHANGE_ORDER_EVENT_ID"),
         ("invite_gen_limit", "V2BOARD_INVITE_GEN_LIMIT"),
         ("ticket_status", "V2BOARD_TICKET_STATUS"),
-        (
-            "commission_withdraw_limit",
-            "V2BOARD_COMMISSION_WITHDRAW_LIMIT",
-        ),
         ("server_push_interval", "V2BOARD_SERVER_PUSH_INTERVAL"),
         ("server_pull_interval", "V2BOARD_SERVER_PULL_INTERVAL"),
         (
@@ -1900,7 +2379,6 @@ fn validate_scalar_config(
         "renew_order_event_id",
         "change_order_event_id",
         "ticket_status",
-        "commission_withdraw_limit",
         "server_push_interval",
         "server_pull_interval",
         "server_node_report_min_traffic",
@@ -1928,6 +2406,30 @@ fn validate_scalar_config(
                 value
                     .parse::<i64>()
                     .map_err(|_| invalid_setting(config_key, "must be an integer"))?;
+            }
+        }
+    }
+    for (config_key, env_key, maximum) in [
+        (
+            "try_out_hour",
+            "V2BOARD_TRY_OUT_HOUR",
+            Decimal::from(i64::MAX) / Decimal::from(3_600),
+        ),
+        (
+            "commission_withdraw_limit",
+            "V2BOARD_COMMISSION_WITHDRAW_LIMIT",
+            Decimal::from(i64::MAX) / Decimal::from(100),
+        ),
+    ] {
+        if let Some(value) = scalar_setting(config, config_key, env_key)? {
+            let value = value
+                .parse::<Decimal>()
+                .map_err(|_| invalid_setting(config_key, "must be a finite decimal number"))?;
+            if value.is_sign_negative() || value > maximum {
+                return Err(invalid_setting(
+                    config_key,
+                    "must be non-negative and within the supported range",
+                ));
             }
         }
     }
@@ -2025,7 +2527,9 @@ fn scalar_setting(
     config_key: &str,
     env_key: &str,
 ) -> io::Result<Option<String>> {
-    if let Some(value) = environment_value(config, env_key) {
+    if !operator_value_is_authoritative(config, config_key)
+        && let Some(value) = environment_value(config, env_key)
+    {
         return Ok(Some(value));
     }
     let Some(value) = config.get(config_key) else {
@@ -2070,6 +2574,13 @@ fn invalid_setting(config_key: &str, message: &str) -> io::Error {
         io::ErrorKind::InvalidInput,
         format!("{config_key} {message}"),
     )
+}
+
+fn json_object(value: Value) -> Map<String, Value> {
+    value
+        .as_object()
+        .expect("operator configuration literal is an object")
+        .clone()
 }
 
 /// Reads the native runtime configuration. A missing file is an empty document;
@@ -2205,6 +2716,12 @@ fn crc32b_hex(bytes: &[u8]) -> String {
 }
 
 fn config_or_env(config: &Map<String, Value>, config_key: &str, env_key: &str) -> Option<String> {
+    if operator_value_is_authoritative(config, config_key) {
+        return config
+            .get(config_key)
+            .and_then(config_value_string)
+            .filter(|value| !value.is_empty());
+    }
     environment_value(config, env_key).or_else(|| {
         config
             .get(config_key)
@@ -2246,6 +2763,20 @@ fn config_i64(config: &Map<String, Value>, config_key: &str, env_key: &str, defa
         .unwrap_or(default)
 }
 
+fn config_decimal(
+    config: &Map<String, Value>,
+    config_key: &str,
+    env_key: &str,
+    default: Decimal,
+) -> io::Result<Decimal> {
+    let Some(value) = config_or_env(config, config_key, env_key) else {
+        return Ok(default);
+    };
+    value
+        .parse::<Decimal>()
+        .map_err(|_| invalid_setting(config_key, "must be a finite decimal number"))
+}
+
 fn config_duration_minutes(
     config: &Map<String, Value>,
     config_key: &str,
@@ -2276,7 +2807,9 @@ fn config_list(
     env_key: &str,
     default: &[&str],
 ) -> Vec<String> {
-    if let Some(value) = environment_value(config, env_key) {
+    if !operator_value_is_authoritative(config, config_key)
+        && let Some(value) = environment_value(config, env_key)
+    {
         return parse_list(&value);
     }
     if let Some(value) = config.get(config_key) {
@@ -2293,6 +2826,14 @@ fn config_list(
     default.iter().map(|item| (*item).to_string()).collect()
 }
 
+fn operator_value_is_authoritative(config: &Map<String, Value>, key: &str) -> bool {
+    config
+        .get(OPERATOR_AUTHORITY_MARKER)
+        .and_then(Value::as_bool)
+        == Some(true)
+        && OPERATOR_CONFIG_KEYS_V1.contains(&key)
+}
+
 fn environment_value(config: &Map<String, Value>, env_key: &str) -> Option<String> {
     (!configuration_is_file_only(config))
         .then(|| env_opt(env_key))
@@ -2304,9 +2845,16 @@ fn configuration_is_file_only(config: &Map<String, Value>) -> bool {
         == Some(FILE_ONLY_CONFIGURATION_SOURCE)
 }
 
+fn configuration_is_boot_only(config: &Map<String, Value>) -> bool {
+    configuration_is_file_only(config)
+        && config.get(CONFIGURATION_SCOPE_KEY).and_then(Value::as_str)
+            == Some(BOOT_ONLY_CONFIGURATION_SCOPE)
+}
+
 fn validate_configuration_source(
     config: &Map<String, Value>,
     runtime_role: RuntimeRole,
+    parse_mode: ConfigParseMode,
 ) -> io::Result<()> {
     match config.get(CONFIGURATION_SOURCE_KEY) {
         None => Ok(()),
@@ -2321,16 +2869,45 @@ fn validate_configuration_source(
                     ),
                 ));
             }
-            let mut expected = FILE_ONLY_RUNTIME_KEYS_V1
-                .iter()
-                .copied()
-                .chain([
-                    "runtime_role",
-                    "database_url",
-                    "peer_database_principal",
-                    "redis_url",
-                ])
-                .collect::<BTreeSet<_>>();
+            let boot_only = config.get(CONFIGURATION_SCOPE_KEY).and_then(Value::as_str)
+                == Some(BOOT_ONLY_CONFIGURATION_SCOPE);
+            match parse_mode {
+                ConfigParseMode::BootOnly if !boot_only => {
+                    return Err(invalid_setting(
+                        CONFIGURATION_SCOPE_KEY,
+                        "must be the exact string boot_only for the boot parser",
+                    ));
+                }
+                ConfigParseMode::FullRuntime if config.contains_key(CONFIGURATION_SCOPE_KEY) => {
+                    return Err(invalid_setting(
+                        CONFIGURATION_SCOPE_KEY,
+                        "is not supported by the full-runtime parser",
+                    ));
+                }
+                ConfigParseMode::OperatorAuthority
+                | ConfigParseMode::BootOnly
+                | ConfigParseMode::FullRuntime => {}
+            }
+            let mut expected = if boot_only {
+                BOOT_ONLY_RUNTIME_KEYS_V1
+                    .iter()
+                    .copied()
+                    .collect::<BTreeSet<_>>()
+            } else {
+                FILE_ONLY_RUNTIME_KEYS_V1
+                    .iter()
+                    .copied()
+                    .chain([
+                        "runtime_role",
+                        "database_url",
+                        "peer_database_principal",
+                        "redis_url",
+                    ])
+                    .collect::<BTreeSet<_>>()
+            };
+            if parse_mode.is_operator_authority() && boot_only {
+                expected.extend(OPERATOR_CONFIG_KEYS_V1.iter().copied());
+            }
             if runtime_role == RuntimeRole::Worker {
                 expected.extend([
                     "clickhouse_url",
@@ -2339,7 +2916,10 @@ fn validate_configuration_source(
                     "clickhouse_writer_password",
                 ]);
             }
-            let actual = config.keys().map(String::as_str).collect::<BTreeSet<_>>();
+            let mut actual = config.keys().map(String::as_str).collect::<BTreeSet<_>>();
+            if parse_mode.is_operator_authority() {
+                actual.remove(OPERATOR_AUTHORITY_MARKER);
+            }
             let missing = expected.difference(&actual).copied().collect::<Vec<_>>();
             if !missing.is_empty() {
                 return Err(invalid_setting(
@@ -2418,6 +2998,69 @@ fn yuan_to_cents(value: &str) -> Option<i32> {
 mod tests {
     use super::*;
     use std::sync::{Arc, Barrier};
+
+    fn file_only_document(role: RuntimeRole) -> Map<String, Value> {
+        let mut config = FILE_ONLY_RUNTIME_KEYS_V1
+            .iter()
+            .map(|key| ((*key).to_string(), Value::Null))
+            .collect::<Map<_, _>>();
+        config.insert(
+            "configuration_source".to_string(),
+            Value::String("file_only".to_string()),
+        );
+        config.insert(
+            "runtime_role".to_string(),
+            Value::String(role.file_value().to_string()),
+        );
+        config.insert("database_url".to_string(), Value::Null);
+        config.insert("peer_database_principal".to_string(), Value::Null);
+        config.insert("redis_url".to_string(), Value::Null);
+        config.insert(
+            "server_require_idempotency_key".to_string(),
+            Value::Bool(true),
+        );
+        if role == RuntimeRole::Worker {
+            for key in [
+                "clickhouse_url",
+                "clickhouse_database",
+                "clickhouse_writer_username",
+                "clickhouse_writer_password",
+            ] {
+                config.insert(key.to_string(), Value::Null);
+            }
+        }
+        config
+    }
+
+    fn boot_only_document(role: RuntimeRole) -> Map<String, Value> {
+        let mut config = BOOT_ONLY_RUNTIME_KEYS_V1
+            .iter()
+            .map(|key| ((*key).to_string(), Value::Null))
+            .collect::<Map<_, _>>();
+        config.insert(
+            "configuration_source".to_string(),
+            Value::String("file_only".to_string()),
+        );
+        config.insert(
+            "configuration_scope".to_string(),
+            Value::String("boot_only".to_string()),
+        );
+        config.insert(
+            "runtime_role".to_string(),
+            Value::String(role.file_value().to_string()),
+        );
+        if role == RuntimeRole::Worker {
+            for key in [
+                "clickhouse_url",
+                "clickhouse_database",
+                "clickhouse_writer_username",
+                "clickhouse_writer_password",
+            ] {
+                config.insert(key.to_string(), Value::Null);
+            }
+        }
+        config
+    }
 
     #[test]
     fn one_shot_secret_files_are_single_line_regular_files() {
@@ -2537,7 +3180,12 @@ mod tests {
             .as_object()
             .expect("object")
             .clone();
-        let error = validate_scalar_config(&invalid_bool, RuntimeRole::Api).unwrap_err();
+        let error = validate_scalar_config(
+            &invalid_bool,
+            RuntimeRole::Api,
+            ConfigParseMode::FullRuntime,
+        )
+        .unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
         assert!(error.to_string().contains("recaptcha_enable"));
 
@@ -2545,25 +3193,125 @@ mod tests {
             .as_object()
             .expect("object")
             .clone();
-        assert!(validate_scalar_config(&invalid_integer, RuntimeRole::Api).is_err());
+        assert!(
+            validate_scalar_config(
+                &invalid_integer,
+                RuntimeRole::Api,
+                ConfigParseMode::FullRuntime
+            )
+            .is_err()
+        );
 
         let out_of_range = serde_json::json!({ "auth_session_max_per_user": 101 })
             .as_object()
             .expect("object")
             .clone();
-        assert!(validate_scalar_config(&out_of_range, RuntimeRole::Api).is_err());
+        assert!(
+            validate_scalar_config(
+                &out_of_range,
+                RuntimeRole::Api,
+                ConfigParseMode::FullRuntime
+            )
+            .is_err()
+        );
 
         let overflowing_i32 = serde_json::json!({ "server_push_interval": 2147483648_i64 })
             .as_object()
             .expect("object")
             .clone();
-        assert!(validate_scalar_config(&overflowing_i32, RuntimeRole::Api).is_err());
+        assert!(
+            validate_scalar_config(
+                &overflowing_i32,
+                RuntimeRole::Api,
+                ConfigParseMode::FullRuntime
+            )
+            .is_err()
+        );
 
         let structural = serde_json::json!({ "force_https": [] })
             .as_object()
             .expect("object")
             .clone();
-        assert!(validate_scalar_config(&structural, RuntimeRole::Api).is_err());
+        assert!(
+            validate_scalar_config(&structural, RuntimeRole::Api, ConfigParseMode::FullRuntime)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn enabled_integrations_require_their_complete_credentials() {
+        let paths = || RuntimePaths {
+            config: PathBuf::from("/tmp/not-read-by-config-map-parser.json"),
+            frontend: PathBuf::from("/tmp/frontend"),
+            rules: PathBuf::from("/tmp/rules"),
+        };
+        let parse = |value: Value| {
+            AppConfig::try_from_api_config_map(value.as_object().expect("object").clone(), paths())
+        };
+
+        assert!(parse(json!({ "recaptcha_enable": true })).is_err());
+        assert!(
+            parse(json!({
+                "recaptcha_enable": true,
+                "recaptcha_site_key": "site",
+                "recaptcha_key": "secret"
+            }))
+            .is_ok()
+        );
+        assert!(parse(json!({ "telegram_bot_enable": true })).is_err());
+        assert!(
+            parse(json!({
+                "telegram_bot_enable": true,
+                "telegram_bot_token": "token"
+            }))
+            .is_ok()
+        );
+        assert!(parse(json!({ "email_verify": true })).is_err());
+        assert!(
+            parse(json!({
+                "email_verify": true,
+                "email_host": "smtp.example.com",
+                "email_from_address": "noreply@example.com"
+            }))
+            .is_ok()
+        );
+        assert!(parse(json!({ "email_username": "user" })).is_err());
+        assert!(parse(json!({ "email_password": "password" })).is_err());
+        assert!(
+            parse(json!({
+                "email_username": "user",
+                "email_password": "password"
+            }))
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn optional_email_port_can_be_cleared_to_null() {
+        let paths = RuntimePaths {
+            config: PathBuf::from("/tmp/not-read-by-config-map-parser.json"),
+            frontend: PathBuf::from("/tmp/frontend"),
+            rules: PathBuf::from("/tmp/rules"),
+        };
+        let configured = AppConfig::try_from_api_config_map(
+            json!({ "email_port": 587 })
+                .as_object()
+                .expect("object")
+                .clone(),
+            paths.clone(),
+        )
+        .expect("configured port");
+        assert_eq!(configured.email_port, Some(587));
+
+        let cleared = AppConfig::try_from_api_config_map(
+            json!({ "email_port": null })
+                .as_object()
+                .expect("object")
+                .clone(),
+            paths,
+        )
+        .expect("cleared port");
+        assert_eq!(cleared.email_port, None);
     }
 
     #[test]
@@ -2721,8 +3469,12 @@ mod tests {
             .expect("object")
             .clone();
         save_config_atomic(&path, &initial).expect("initial config");
-        let snapshot = AppConfig::try_from_runtime_paths(RuntimeRole::Api, runtime_paths)
-            .expect("initial snapshot");
+        let snapshot = AppConfig::try_from_runtime_paths(
+            RuntimeRole::Api,
+            runtime_paths,
+            ConfigParseMode::FullRuntime,
+        )
+        .expect("initial snapshot");
         assert_eq!(snapshot.ticket_status, 17);
         assert_eq!(snapshot.privileged_auth_session_ttl_seconds, 30 * 60);
         assert_eq!(
@@ -2811,54 +3563,171 @@ mod tests {
     }
 
     #[test]
-    fn file_only_documents_are_strictly_bound_to_one_runtime_role() {
-        fn document(role: RuntimeRole) -> Map<String, Value> {
-            let mut config = FILE_ONLY_RUNTIME_KEYS_V1
-                .iter()
-                .map(|key| ((*key).to_string(), Value::Null))
-                .collect::<Map<_, _>>();
-            config.insert(
-                "configuration_source".to_string(),
-                Value::String("file_only".to_string()),
-            );
-            config.insert(
-                "runtime_role".to_string(),
-                Value::String(role.file_value().to_string()),
-            );
-            config.insert("database_url".to_string(), Value::Null);
-            config.insert("peer_database_principal".to_string(), Value::Null);
-            config.insert("redis_url".to_string(), Value::Null);
-            if role == RuntimeRole::Worker {
-                for key in [
-                    "clickhouse_url",
-                    "clickhouse_database",
-                    "clickhouse_writer_username",
-                    "clickhouse_writer_password",
-                ] {
-                    config.insert(key.to_string(), Value::Null);
-                }
-            }
-            config
-        }
+    fn operator_values_override_environment_without_changing_boot_precedence() {
+        let path = env::var("PATH").expect("test process must have PATH");
+        let mut config = serde_json::json!({ "app_name": "From file" })
+            .as_object()
+            .expect("object")
+            .clone();
+        assert_eq!(
+            config_or_env(&config, "app_name", "PATH").as_deref(),
+            Some(path.as_str()),
+            "ordinary boot documents retain the established environment override"
+        );
+        config.insert(OPERATOR_AUTHORITY_MARKER.to_string(), Value::Bool(true));
+        assert_eq!(
+            config_or_env(&config, "app_name", "PATH").as_deref(),
+            Some("From file"),
+            "the versioned operator snapshot is authoritative"
+        );
 
-        let api = document(RuntimeRole::Api);
-        validate_configuration_source(&api, RuntimeRole::Api).expect("API document");
-        assert!(validate_configuration_source(&api, RuntimeRole::Worker).is_err());
+        let runtime_paths = RuntimePaths {
+            config: PathBuf::from("/tmp/not-read-by-parser.json"),
+            frontend: PathBuf::from("/tmp/frontend"),
+            rules: PathBuf::from("/tmp/rules"),
+        };
+        assert!(AppConfig::try_from_api_config_map(config, runtime_paths).is_err());
+    }
+
+    #[test]
+    fn file_only_api_and_worker_accept_only_internal_operator_overlay() {
+        for role in [RuntimeRole::Api, RuntimeRole::Worker] {
+            let root = env::temp_dir().join(format!(
+                "v2board-operator-overlay-test-{}-{}-{}",
+                std::process::id(),
+                role.file_value(),
+                CONFIG_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+            ));
+            let paths = RuntimePaths {
+                config: root.join("config.json"),
+                frontend: root.join("frontend"),
+                rules: root.join("rules"),
+            };
+            let document = boot_only_document(role);
+            save_config_atomic(&paths.config, &document).expect("write role boot document");
+            let baseline = match role {
+                RuntimeRole::Api => {
+                    AppConfig::try_from_api_boot_config_map(document, paths.clone())
+                        .expect("API boot")
+                }
+                RuntimeRole::Worker => {
+                    AppConfig::try_from_worker_boot_config_map(document, paths.clone())
+                        .expect("worker boot")
+                }
+            };
+            let mut operator = baseline.operator_config_map();
+            operator.insert(
+                "app_name".to_string(),
+                Value::String(format!("authority-{}", role.file_value())),
+            );
+            operator.insert("try_out_hour".to_string(), Value::String("1.5".to_string()));
+            operator.insert(
+                "commission_withdraw_limit".to_string(),
+                Value::String("10.05".to_string()),
+            );
+            operator.insert(
+                "server_require_idempotency_key".to_string(),
+                Value::Bool(true),
+            );
+            let applied = baseline
+                .with_operator_config(&operator, 7)
+                .expect("internal authority overlay");
+            assert_eq!(applied.operator_revision(), Some(7));
+            assert_eq!(applied.app_name, format!("authority-{}", role.file_value()));
+            assert_eq!(applied.try_out_hour, Decimal::new(15, 1));
+            assert_eq!(applied.commission_withdraw_limit, Decimal::new(1005, 2));
+            assert_eq!(
+                applied.operator_config_map()["commission_withdraw_limit"],
+                Value::String("10.05".to_string())
+            );
+            fs::remove_dir_all(root).expect("remove overlay test root");
+        }
+    }
+
+    #[test]
+    fn operator_revision_cannot_move_backwards_in_memory() {
+        let root = env::temp_dir().join(format!(
+            "v2board-operator-monotonic-test-{}-{}",
+            std::process::id(),
+            CONFIG_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        let paths = RuntimePaths {
+            config: root.join("config.json"),
+            frontend: root.join("frontend"),
+            rules: root.join("rules"),
+        };
+        save_config_atomic(&paths.config, &Map::new()).expect("write boot document");
+        let baseline = AppConfig::try_from_api_config_map(Map::new(), paths)
+            .expect("boot snapshot")
+            .at_operator_revision(9);
+        let operator = baseline.operator_config_map();
+        let error = match baseline.with_operator_config(&operator, 8) {
+            Ok(_) => panic!("revision rollback must be rejected"),
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("must not move backwards"));
+        fs::remove_dir_all(root).expect("remove monotonic test root");
+    }
+
+    #[test]
+    fn file_only_documents_are_strictly_bound_to_one_runtime_role() {
+        let api = file_only_document(RuntimeRole::Api);
+        validate_configuration_source(&api, RuntimeRole::Api, ConfigParseMode::FullRuntime)
+            .expect("API document");
+        assert!(
+            validate_configuration_source(&api, RuntimeRole::Worker, ConfigParseMode::FullRuntime)
+                .is_err()
+        );
 
         let mut api_with_worker_secret = api;
         api_with_worker_secret.insert(
             "clickhouse_writer_password".to_string(),
             Value::String("must-not-load".to_string()),
         );
-        assert!(validate_configuration_source(&api_with_worker_secret, RuntimeRole::Api).is_err());
+        assert!(
+            validate_configuration_source(
+                &api_with_worker_secret,
+                RuntimeRole::Api,
+                ConfigParseMode::FullRuntime,
+            )
+            .is_err()
+        );
 
-        let mut worker = document(RuntimeRole::Worker);
-        validate_configuration_source(&worker, RuntimeRole::Worker).expect("worker document");
+        let mut worker = file_only_document(RuntimeRole::Worker);
+        validate_configuration_source(&worker, RuntimeRole::Worker, ConfigParseMode::FullRuntime)
+            .expect("worker document");
         worker.insert(
             "clickhouse_reader_password".to_string(),
             Value::String("must-not-load".to_string()),
         );
-        assert!(validate_configuration_source(&worker, RuntimeRole::Worker).is_err());
+        assert!(
+            validate_configuration_source(
+                &worker,
+                RuntimeRole::Worker,
+                ConfigParseMode::FullRuntime,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn boot_only_documents_reject_dynamic_operator_keys_and_full_parser() {
+        let paths = RuntimePaths {
+            config: PathBuf::from("/tmp/not-read-by-config-map-parser.json"),
+            frontend: PathBuf::from("/tmp/frontend"),
+            rules: PathBuf::from("/tmp/rules"),
+        };
+        let api = boot_only_document(RuntimeRole::Api);
+        AppConfig::try_from_api_boot_config_map(api.clone(), paths.clone())
+            .expect("exact API bootstrap document");
+        assert!(AppConfig::try_from_api_config_map(api.clone(), paths.clone()).is_err());
+
+        let mut leaked_secret = api;
+        leaked_secret.insert(
+            "telegram_bot_token".to_string(),
+            Value::String("must-live-in-database".to_string()),
+        );
+        assert!(AppConfig::try_from_api_boot_config_map(leaked_secret, paths).is_err());
     }
 
     #[test]

@@ -16,6 +16,7 @@ chrono.workspace = true
 cron.workspace = true
 lettre.workspace = true
 redis.workspace = true
+rust_decimal.workspace = true
 sqlx.workspace = true
 tokio.workspace = true
 tracing.workspace = true

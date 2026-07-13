@@ -87,13 +87,21 @@ pub(crate) async fn dispatch_admin_post(
     }
     let service = state.admin_service(config);
     let output = service.post(admin_path, params).await?;
-    if admin_path.trim_matches('/') == "config/save" {
-        state.reload_config().await.map_err(|error| {
-            tracing::error!(?error, "saved configuration could not be activated");
-            ApiError::internal("saved configuration could not be activated")
-        })?;
+    match output {
+        v2board_domain::admin::AdminOutput::ConfigSaved { config } => {
+            config_activation_response(state.activate_operator_config(*config).await)
+        }
+        output => admin_response(output),
     }
-    admin_response(output)
+}
+
+fn config_activation_response(applied: bool) -> Result<Response, ApiError> {
+    if !applied {
+        return Err(ApiError::service_unavailable(
+            "配置已提交，但当前 API 未能激活新配置；服务将自动重试，请稍后刷新",
+        ));
+    }
+    Ok(legacy_data(true).into_response())
 }
 
 pub(crate) async fn staff_get(
@@ -193,6 +201,9 @@ pub(crate) fn admin_response(
             );
             Ok(response)
         }
+        v2board_domain::admin::AdminOutput::ConfigSaved { .. } => Err(ApiError::internal(
+            "saved configuration was not activated by the admin dispatcher",
+        )),
     }
 }
 
@@ -236,5 +247,21 @@ mod tests {
         assert!(sensitive_admin_get("order/reconciliation/fetch"));
         assert!(!sensitive_admin_get("config/fetch"));
         assert!(!sensitive_admin_get("payment/fetch"));
+    }
+
+    #[test]
+    fn config_save_never_reports_success_before_the_revision_is_applied() {
+        assert!(config_activation_response(true).is_ok());
+
+        let Err(error) = config_activation_response(false) else {
+            panic!("an unapplied committed revision must not return data:true");
+        };
+        match error {
+            ApiError::Http { status, message } => {
+                assert_eq!(status, axum::http::StatusCode::SERVICE_UNAVAILABLE);
+                assert!(message.contains("未能激活"));
+            }
+            other => panic!("expected an explicit service-unavailable error, got {other:?}"),
+        }
     }
 }

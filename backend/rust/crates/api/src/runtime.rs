@@ -2,6 +2,7 @@ use std::{
     io,
     net::{IpAddr, SocketAddr},
     sync::Arc,
+    sync::atomic::{AtomicBool, AtomicI64, Ordering},
     time::Duration as StdDuration,
 };
 
@@ -23,6 +24,7 @@ use v2board_db::{DbPool, migrations_current};
 use v2board_domain::{
     admin::AdminService,
     auth::{AuthService, PasswordKdf},
+    operator_config::{self, OperatorConfigConsumer},
     smtp::SmtpTransportCache,
 };
 
@@ -30,6 +32,8 @@ use v2board_domain::{
 pub(crate) struct AppState {
     config: Arc<ArcSwap<AppConfig>>,
     config_reload: Arc<tokio::sync::Mutex<()>>,
+    pending_operator_ack: Arc<AtomicI64>,
+    operator_authority_healthy: Arc<AtomicBool>,
     pub(crate) db: DbPool,
     pub(crate) installation_id: Uuid,
     pub(crate) redis: redis::Client,
@@ -57,6 +61,8 @@ impl AppState {
         Self {
             config: Arc::new(ArcSwap::from_pointee(config)),
             config_reload: Arc::new(tokio::sync::Mutex::new(())),
+            pending_operator_ack: Arc::new(AtomicI64::new(0)),
+            operator_authority_healthy: Arc::new(AtomicBool::new(true)),
             db,
             installation_id,
             redis,
@@ -87,6 +93,7 @@ impl AppState {
             self.password_kdf.clone(),
             self.smtp.clone(),
         )
+        .with_installation_id(self.installation_id)
     }
 
     pub(crate) fn config_snapshot(&self) -> Arc<AppConfig> {
@@ -98,13 +105,239 @@ impl AppState {
         // post-save reload with an older snapshot it started reading earlier.
         let _guard = self.config_reload.lock().await;
         let current = self.config_snapshot();
-        let config = Arc::new(
-            tokio::task::spawn_blocking(move || current.reload())
+        let snapshot =
+            match operator_config::load_active(&self.db, self.installation_id, &current.app_key)
                 .await
-                .map_err(|error| io::Error::other(error.to_string()))??,
-        );
+            {
+                Ok(Some(snapshot)) => snapshot,
+                Ok(None) => {
+                    self.operator_authority_healthy
+                        .store(false, Ordering::Release);
+                    return Err(io::Error::other(
+                        "operator configuration authority is missing",
+                    ));
+                }
+                Err(error) => {
+                    self.operator_authority_healthy
+                        .store(false, Ordering::Release);
+                    if let Some((observed_revision, error_code)) = error.observed_rejection()
+                        && current
+                            .operator_revision()
+                            .is_none_or(|revision| revision < observed_revision)
+                        && let Err(ack_error) = operator_config::acknowledge(
+                            &self.db,
+                            self.installation_id,
+                            OperatorConfigConsumer::Api,
+                            observed_revision,
+                            current.operator_revision(),
+                            Some(error_code),
+                        )
+                        .await
+                    {
+                        tracing::error!(
+                            ?ack_error,
+                            observed_revision,
+                            "failed to acknowledge rejected API operator configuration"
+                        );
+                    }
+                    return Err(io::Error::other(error.to_string()));
+                }
+            };
+        if current.operator_revision() == Some(snapshot.revision) {
+            if self.pending_operator_ack.load(Ordering::Acquire) == snapshot.revision {
+                operator_config::acknowledge(
+                    &self.db,
+                    self.installation_id,
+                    OperatorConfigConsumer::Api,
+                    snapshot.revision,
+                    Some(snapshot.revision),
+                    None,
+                )
+                .await
+                .map_err(|error| io::Error::other(error.to_string()))?;
+                self.pending_operator_ack.store(0, Ordering::Release);
+            }
+            self.operator_authority_healthy
+                .store(true, Ordering::Release);
+            return Ok(current);
+        }
+        let observed_revision = snapshot.revision;
+        let reload_base = current.clone();
+        let values = snapshot.values;
+        let config = match tokio::task::spawn_blocking(move || {
+            reload_base.with_operator_config(&values, observed_revision)
+        })
+        .await
+        .map_err(|error| io::Error::other(error.to_string()))?
+        {
+            Ok(config) => Arc::new(config),
+            Err(error) => {
+                self.operator_authority_healthy
+                    .store(false, Ordering::Release);
+                let _ = operator_config::acknowledge(
+                    &self.db,
+                    self.installation_id,
+                    OperatorConfigConsumer::Api,
+                    observed_revision,
+                    current.operator_revision(),
+                    Some("typed_validation_failed"),
+                )
+                .await;
+                return Err(error);
+            }
+        };
         self.config.store(config.clone());
+        self.operator_authority_healthy
+            .store(true, Ordering::Release);
+        if let Err(error) = operator_config::acknowledge(
+            &self.db,
+            self.installation_id,
+            OperatorConfigConsumer::Api,
+            observed_revision,
+            Some(observed_revision),
+            None,
+        )
+        .await
+        {
+            self.pending_operator_ack
+                .store(observed_revision, Ordering::Release);
+            return Err(io::Error::other(error.to_string()));
+        }
+        self.pending_operator_ack.store(0, Ordering::Release);
         Ok(config)
+    }
+
+    /// Applies the already-validated committed revision before acknowledging it.
+    /// If the ACK connection fails after commit, the active ArcSwap snapshot is
+    /// retained (it matches PostgreSQL), readiness is degraded, and the normal
+    /// poller retries only that pending acknowledgement until it succeeds. The
+    /// return value reports only whether the PostgreSQL-active revision entered
+    /// ArcSwap; a failed acknowledgement does not turn an applied revision into
+    /// an activation failure.
+    pub(crate) async fn activate_operator_config(&self, config: AppConfig) -> bool {
+        let _guard = self.config_reload.lock().await;
+        let incoming_revision = config
+            .operator_revision()
+            .expect("committed operator config has a revision");
+        let current = self.config_snapshot();
+        let authority =
+            match operator_config::load_active(&self.db, self.installation_id, &current.app_key)
+                .await
+            {
+                Ok(Some(authority)) => authority,
+                Ok(None) => {
+                    self.operator_authority_healthy
+                        .store(false, Ordering::Release);
+                    tracing::error!("operator configuration authority disappeared after save");
+                    return false;
+                }
+                Err(error) => {
+                    self.operator_authority_healthy
+                        .store(false, Ordering::Release);
+                    if let Some((observed_revision, error_code)) = error.observed_rejection()
+                        && current
+                            .operator_revision()
+                            .is_none_or(|revision| revision < observed_revision)
+                    {
+                        let _ = operator_config::acknowledge(
+                            &self.db,
+                            self.installation_id,
+                            OperatorConfigConsumer::Api,
+                            observed_revision,
+                            current.operator_revision(),
+                            Some(error_code),
+                        )
+                        .await;
+                    }
+                    tracing::error!(
+                        ?error,
+                        "failed to authenticate active operator configuration"
+                    );
+                    return false;
+                }
+            };
+        let active_revision = authority.revision;
+        let source = match activation_source(
+            current.operator_revision(),
+            incoming_revision,
+            active_revision,
+        ) {
+            Ok(source) => source,
+            Err(()) => {
+                self.operator_authority_healthy
+                    .store(false, Ordering::Release);
+                tracing::error!(
+                    memory_revision = current.operator_revision(),
+                    active_revision,
+                    "database operator revision moved backwards"
+                );
+                return false;
+            }
+        };
+        let target = match source {
+            ActivationSource::Current => current.clone(),
+            ActivationSource::Incoming => Arc::new(config),
+            ActivationSource::Authority => {
+                let reload_base = current.clone();
+                let values = authority.values;
+                match tokio::task::spawn_blocking(move || {
+                    reload_base.with_operator_config(&values, active_revision)
+                })
+                .await
+                {
+                    Ok(Ok(config)) => Arc::new(config),
+                    Ok(Err(error)) => {
+                        self.operator_authority_healthy
+                            .store(false, Ordering::Release);
+                        let _ = operator_config::acknowledge(
+                            &self.db,
+                            self.installation_id,
+                            OperatorConfigConsumer::Api,
+                            active_revision,
+                            current.operator_revision(),
+                            Some("typed_validation_failed"),
+                        )
+                        .await;
+                        tracing::error!(
+                            ?error,
+                            active_revision,
+                            "rejected superseding operator configuration"
+                        );
+                        return false;
+                    }
+                    Err(error) => {
+                        self.operator_authority_healthy
+                            .store(false, Ordering::Release);
+                        tracing::error!(?error, "operator validation task failed");
+                        return false;
+                    }
+                }
+            }
+        };
+        if target.operator_revision() != current.operator_revision() {
+            self.config.store(target);
+        }
+        self.operator_authority_healthy
+            .store(true, Ordering::Release);
+        if source == ActivationSource::Current
+            && self.pending_operator_ack.load(Ordering::Acquire) != active_revision
+        {
+            return true;
+        }
+        let acknowledgement = operator_config::acknowledge(
+            &self.db,
+            self.installation_id,
+            OperatorConfigConsumer::Api,
+            active_revision,
+            Some(active_revision),
+            None,
+        )
+        .await;
+        finish_applied_operator_activation(
+            &self.pending_operator_ack,
+            active_revision,
+            acknowledgement,
+        )
     }
 
     pub(crate) fn spawn_config_reloader(&self) -> tokio::task::JoinHandle<()> {
@@ -131,6 +364,49 @@ impl AppState {
                 }
             }
         })
+    }
+}
+
+fn finish_applied_operator_activation(
+    pending_operator_ack: &AtomicI64,
+    active_revision: i64,
+    acknowledgement: Result<(), operator_config::OperatorConfigError>,
+) -> bool {
+    match acknowledgement {
+        Ok(()) => pending_operator_ack.store(0, Ordering::Release),
+        Err(error) => {
+            pending_operator_ack.store(active_revision, Ordering::Release);
+            tracing::error!(
+                ?error,
+                active_revision,
+                "operator config is active but its API acknowledgement is pending retry"
+            );
+        }
+    }
+    true
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ActivationSource {
+    Current,
+    Incoming,
+    Authority,
+}
+
+fn activation_source(
+    current: Option<i64>,
+    incoming: i64,
+    authority: i64,
+) -> Result<ActivationSource, ()> {
+    let current = current.unwrap_or(0);
+    if authority < current {
+        Err(())
+    } else if authority == current {
+        Ok(ActivationSource::Current)
+    } else if authority == incoming {
+        Ok(ActivationSource::Incoming)
+    } else {
+        Ok(ActivationSource::Authority)
     }
 }
 
@@ -286,6 +562,9 @@ pub(crate) async fn readyz(State(state): State<AppState>) -> Response {
     let redis = redis.is_ok_and(|result| result.as_deref() == Ok("PONG"));
     let frontend = user_index.is_ok_and(|metadata| metadata.is_file())
         && admin_index.is_ok_and(|metadata| metadata.is_file());
+    let operator_config_acknowledged = state.pending_operator_ack.load(Ordering::Acquire) == 0;
+    let operator_config_authority_healthy =
+        state.operator_authority_healthy.load(Ordering::Acquire);
     let analytics_admission = match analytics_admission {
         Ok(Ok(snapshot)) => json!({
             "observed": true,
@@ -342,13 +621,19 @@ pub(crate) async fn readyz(State(state): State<AppState>) -> Response {
         }
         Err(_) => json!({ "observed": false, "error": "timeout" }),
     };
-    let ok = db && redis && frontend;
+    let ok = db
+        && redis
+        && frontend
+        && operator_config_acknowledged
+        && operator_config_authority_healthy;
     let body = Json(json!({
         "ok": ok,
         "checks": {
             "database": db,
             "redis": redis,
             "frontend": frontend,
+            "operator_config_acknowledged": operator_config_acknowledged,
+            "operator_config_authority_healthy": operator_config_authority_healthy,
             "analytics_admission": analytics_admission,
         }
     }));
@@ -608,9 +893,46 @@ mod tests {
     use axum::http::HeaderMap;
 
     use super::{
+        ActivationSource, activation_source, finish_applied_operator_activation,
         https_enforcement_exempt_path, request_timeout_exempt, request_uses_https,
         resolve_client_ip,
     };
+    use std::sync::atomic::{AtomicI64, Ordering};
+    use v2board_domain::operator_config::OperatorConfigError;
+
+    #[test]
+    fn operator_activation_uses_the_database_active_revision_monotonically() {
+        assert_eq!(
+            activation_source(None, 1, 1),
+            Ok(ActivationSource::Incoming)
+        );
+        assert_eq!(
+            activation_source(Some(7), 7, 7),
+            Ok(ActivationSource::Current)
+        );
+        assert_eq!(activation_source(Some(8), 7, 7), Err(()));
+        assert_eq!(
+            activation_source(Some(1), 2, 3),
+            Ok(ActivationSource::Authority),
+            "a delayed revision-2 response must apply and acknowledge DB-active revision 3"
+        );
+    }
+
+    #[test]
+    fn operator_activation_ack_failure_stays_applied_and_marks_readiness_pending() {
+        let pending = AtomicI64::new(0);
+        assert!(finish_applied_operator_activation(
+            &pending,
+            9,
+            Err(OperatorConfigError::Invalid(
+                "acknowledgement unavailable".to_string()
+            )),
+        ));
+        assert_eq!(pending.load(Ordering::Acquire), 9);
+
+        assert!(finish_applied_operator_activation(&pending, 9, Ok(())));
+        assert_eq!(pending.load(Ordering::Acquire), 0);
+    }
 
     fn proxy_networks(values: &[&str]) -> Vec<ipnet::IpNet> {
         values.iter().map(|value| value.parse().unwrap()).collect()

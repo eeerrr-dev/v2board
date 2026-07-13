@@ -42,3 +42,13 @@ export async function runAdminConfigSaveFailureMatrixInteraction(page) {
     edited,
   };
 }
+
+export async function runAdminConfigUnchangedBlurInteraction(page) {
+  const initialSaveCount = page.__visualParityAdminConfigSaveCount ?? 0;
+  await clickVisibleAt(page, adminConfigFieldInputSelector, 0);
+  await blurVisibleAt(page, adminConfigFieldInputSelector, 0);
+  await page.waitForTimeout(350);
+  return {
+    configSaveDelta: (page.__visualParityAdminConfigSaveCount ?? 0) - initialSaveCount,
+  };
+}

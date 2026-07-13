@@ -8,6 +8,7 @@
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use sqlx::{MySqlPool, PgPool};
+use v2board_domain::operator_config;
 
 #[cfg(feature = "bare-metal-fault-matrix")]
 use crate::bare_metal_fault_matrix::{
@@ -130,6 +131,19 @@ struct AuthorizedRedisIdentity {
     target_database_index: u32,
     source_default_run_id: String,
     source_cache_run_id: String,
+}
+
+/// Secret-free, retry-stable evidence that the one manifest-derived dynamic
+/// candidate was installed directly into the encrypted PostgreSQL authority.
+/// These fields are included in the runtime-materialization stage digest.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct InitialOperatorAuthorityProof {
+    operation_id: String,
+    installation_id: String,
+    revision: i64,
+    revision_id: String,
+    format_version: i16,
+    config_hmac_sha256: String,
 }
 
 impl AuthorizedRedisIdentity {
@@ -707,9 +721,15 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
                     "runtime_config_verification_failed",
                 )
             })?;
+            // No seed file is ever written. The short-lived, typed candidate
+            // derived from the manifest goes straight through the migration
+            // principal into the encrypted append-only authority. On a crash
+            // retry, the domain helper accepts only the exact existing value
+            // and rejects mismatches or orphan rows.
+            let operator_authority = ensure_initial_operator_authority(spec, permit).await?;
             proof_from_serializable(
                 b"v2board-runtime-materialization-v1\0",
-                &(release_proof, receipt, verification),
+                &(release_proof, receipt, verification, operator_authority),
                 ApplyOutcomeCode::VerificationMismatch,
                 "runtime_materialization_proof_failed",
             )
@@ -1568,6 +1588,75 @@ fn proof_from_serializable(
     digest.update((bytes.len() as u64).to_be_bytes());
     digest.update(bytes);
     VerifiedStageProof::new(hex::encode(digest.finalize())).map_err(|_| failed(outcome, code))
+}
+
+async fn ensure_initial_operator_authority(
+    spec: &ProvisionSpec,
+    permit: &DurableTargetMutationPermit,
+) -> Result<InitialOperatorAuthorityProof, StageFailure> {
+    let target = legacy_target(spec)?;
+    let installation_id = uuid::Uuid::parse_str(permit.installation_id()).map_err(|_| {
+        failed(
+            ApplyOutcomeCode::VerificationMismatch,
+            "operator_authority_installation_id_invalid",
+        )
+    })?;
+    let pool = PgPool::connect(&target.postgres.migration_database_url)
+        .await
+        .map_err(|_| {
+            failed(
+                ApplyOutcomeCode::IoFailure,
+                "operator_authority_postgres_connect_failed",
+            )
+        })?;
+    let lifecycle_installation = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT installation_id FROM v2_system_installation WHERE singleton = 1",
+    )
+    .fetch_optional(&pool)
+    .await
+    .map_err(|_| {
+        failed(
+            ApplyOutcomeCode::IoFailure,
+            "operator_authority_installation_read_failed",
+        )
+    })?;
+    if lifecycle_installation != Some(installation_id) {
+        return Err(failed(
+            ApplyOutcomeCode::TargetDrift,
+            "operator_authority_installation_mismatch",
+        ));
+    }
+
+    let candidate = spec.normalized_operator_config_candidate().map_err(|_| {
+        failed(
+            ApplyOutcomeCode::VerificationMismatch,
+            "operator_authority_candidate_invalid",
+        )
+    })?;
+    let actor = format!("lifecycle:{}", spec.operation_id);
+    let snapshot = operator_config::ensure_initial_authority_exact(
+        &pool,
+        installation_id,
+        spec.operator_app_key(),
+        candidate.as_map(),
+        &actor,
+    )
+    .await
+    .map_err(|_| {
+        failed(
+            ApplyOutcomeCode::TargetDrift,
+            "operator_authority_seed_or_exact_reconcile_failed",
+        )
+    })?;
+
+    Ok(InitialOperatorAuthorityProof {
+        operation_id: spec.operation_id.clone(),
+        installation_id: permit.installation_id().to_string(),
+        revision: snapshot.revision,
+        revision_id: snapshot.revision_id.hyphenated().to_string(),
+        format_version: snapshot.format_version,
+        config_hmac_sha256: snapshot.config_hmac_sha256,
+    })
 }
 
 fn require_targets_still_empty(
