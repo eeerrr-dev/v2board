@@ -74,6 +74,13 @@ impl ApiError {
         }
     }
 
+    pub fn service_unavailable(message: impl Into<String>) -> Self {
+        Self::Http {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            message: message.into(),
+        }
+    }
+
     pub fn internal(message: impl Into<String>) -> Self {
         Self::Internal(message.into())
     }

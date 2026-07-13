@@ -1166,8 +1166,14 @@ pub fn one_shot_secret(
     let explicit_path = env::var_os(file_environment)
         .filter(|value| !value.is_empty())
         .map(PathBuf::from);
-    if explicit_path.as_ref().is_some_and(|path| !path.is_absolute()) {
-        return Err(invalid_setting(file_environment, "must be an absolute path"));
+    if explicit_path
+        .as_ref()
+        .is_some_and(|path| !path.is_absolute())
+    {
+        return Err(invalid_setting(
+            file_environment,
+            "must be an absolute path",
+        ));
     }
     let credential_path = env::var_os("CREDENTIALS_DIRECTORY")
         .filter(|value| !value.is_empty())

@@ -108,6 +108,24 @@ pub(crate) async fn run(state: WorkerState) -> anyhow::Result<()> {
         let heartbeat_interval = runtime_config.heartbeat_interval;
         loops.spawn(async move {
             (
+                analytics::ADMISSION_JOB_NAME,
+                run_loop_with_heartbeat(
+                    analytics::ADMISSION_JOB_NAME,
+                    heartbeat_state,
+                    heartbeat_interval,
+                    analytics::run_admission_loop(state, shutdown),
+                )
+                .await,
+            )
+        });
+    }
+    {
+        let state = state.clone();
+        let heartbeat_state = state.clone();
+        let shutdown = shutdown_rx.clone();
+        let heartbeat_interval = runtime_config.heartbeat_interval;
+        loops.spawn(async move {
+            (
                 outbox::JOB_NAME,
                 run_loop_with_heartbeat(
                     outbox::JOB_NAME,

@@ -3,15 +3,20 @@ use std::time::Duration;
 use chrono::Utc;
 use uuid::Uuid;
 use v2board_analytics::{
-    BatchProjectionError, ClaimedBatch, ClickHouseMigrationError, OutboxError,
-    bind_clickhouse_installation, claim_delivery_batch, clickhouse_client, mark_batch_published,
-    outbox_backlog, project_or_verify_batch, quarantine_batch, release_batch_for_retry,
+    AnalyticsAdmissionError, AnalyticsPressureState, BatchProjectionError, ClaimedBatch,
+    ClickHouseMigrationError, OutboxError, bind_clickhouse_installation, claim_delivery_batch,
+    clickhouse_client, mark_batch_published, outbox_backlog, project_or_verify_batch,
+    quarantine_batch, refresh_analytics_admission, release_batch_for_retry,
     verify_clickhouse_runtime_ready,
 };
 
-use crate::{metrics::record_worker_metric, state::WorkerState};
+use crate::{
+    metrics::{record_analytics_admission_metrics, record_worker_metric},
+    state::WorkerState,
+};
 
 pub(crate) const JOB_NAME: &str = "analytics_outbox";
+pub(crate) const ADMISSION_JOB_NAME: &str = "analytics_admission";
 
 const MAX_BATCH_ROWS: i64 = 10_000;
 const LEASE_SECONDS: i64 = 300;
@@ -25,6 +30,106 @@ const SCHEMA_READINESS_TIMEOUT: Duration = Duration::from_secs(60);
 const CLICKHOUSE_OPERATION_TIMEOUT: Duration = Duration::from_secs(240);
 const RETRY_BASE_DELAY: Duration = Duration::from_secs(1);
 const RETRY_MAX_DELAY: Duration = Duration::from_secs(60);
+
+pub(crate) async fn run_admission_loop(
+    state: WorkerState,
+    mut shutdown: tokio::sync::watch::Receiver<bool>,
+) -> anyhow::Result<()> {
+    let mut observed_state = None;
+    loop {
+        if *shutdown.borrow() {
+            return Ok(());
+        }
+        let interval = match tokio::time::timeout(
+            DATABASE_OPERATION_TIMEOUT,
+            refresh_analytics_admission(&state.db),
+        )
+        .await
+        {
+            Ok(Ok(refresh)) => {
+                let snapshot = &refresh.snapshot;
+                if observed_state != Some(snapshot.pressure_state) {
+                    log_admission_transition(snapshot.pressure_state, snapshot);
+                    observed_state = Some(snapshot.pressure_state);
+                }
+                if let Err(error) = record_analytics_admission_metrics(&state, snapshot).await {
+                    tracing::warn!(
+                        job = ADMISSION_JOB_NAME,
+                        ?error,
+                        "failed to record analytics admission metrics"
+                    );
+                }
+                Duration::from_secs(snapshot.sample_interval_seconds)
+            }
+            Ok(Err(error)) => {
+                log_admission_refresh_error(&error);
+                record_admission_failure_best_effort(&state, "refresh_failed").await;
+                Duration::from_secs(1)
+            }
+            Err(_) => {
+                tracing::error!(
+                    job = ADMISSION_JOB_NAME,
+                    "analytics admission refresh timed out; producers will fail closed when the sample expires"
+                );
+                record_admission_failure_best_effort(&state, "refresh_timeout").await;
+                Duration::from_secs(1)
+            }
+        };
+        if wait_or_shutdown(&mut shutdown, interval).await {
+            return Ok(());
+        }
+    }
+}
+
+async fn record_admission_failure_best_effort(state: &WorkerState, reason: &str) {
+    if let Err(error) = crate::metrics::record_analytics_admission_failure(state, reason).await {
+        tracing::warn!(
+            job = ADMISSION_JOB_NAME,
+            ?error,
+            "failed to record analytics admission observation failure"
+        );
+    }
+}
+
+fn log_admission_transition(
+    pressure: AnalyticsPressureState,
+    snapshot: &v2board_analytics::AnalyticsAdmissionSnapshot,
+) {
+    match pressure {
+        AnalyticsPressureState::Normal => tracing::info!(
+            job = ADMISSION_JOB_NAME,
+            pending_rows = snapshot.pending_rows,
+            relation_total_bytes = snapshot.relation_total_bytes,
+            capacity_headroom_bytes = snapshot.capacity_headroom_bytes,
+            reason = snapshot.last_transition_reason,
+            "analytics admission is normal"
+        ),
+        AnalyticsPressureState::SoftPressure => tracing::warn!(
+            job = ADMISSION_JOB_NAME,
+            pending_rows = snapshot.pending_rows,
+            relation_total_bytes = snapshot.relation_total_bytes,
+            capacity_headroom_bytes = snapshot.capacity_headroom_bytes,
+            reason = snapshot.last_transition_reason,
+            "analytics admission entered soft pressure; new traffic analytics writes are rate limited"
+        ),
+        AnalyticsPressureState::HardStop => tracing::error!(
+            job = ADMISSION_JOB_NAME,
+            pending_rows = snapshot.pending_rows,
+            relation_total_bytes = snapshot.relation_total_bytes,
+            capacity_headroom_bytes = snapshot.capacity_headroom_bytes,
+            reason = snapshot.last_transition_reason,
+            "analytics admission hard-stopped new traffic writes; relay draining remains active"
+        ),
+    }
+}
+
+fn log_admission_refresh_error(error: &AnalyticsAdmissionError) {
+    tracing::error!(
+        job = ADMISSION_JOB_NAME,
+        ?error,
+        "analytics admission refresh failed; producers will fail closed when the sample expires"
+    );
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ProjectionFailureDisposition {
@@ -264,7 +369,7 @@ pub(crate) async fn run_loop(
                         log_outbox_error("mark published", Some(batch.batch_id), &error);
                         record_metric_best_effort(&state, false);
                         match &error {
-                            OutboxError::Database(_) => {
+                            OutboxError::Database(_) | OutboxError::Admission(_) => {
                                 release_for_retry(&state, &batch, &error.to_string()).await;
                             }
                             OutboxError::ManifestConflict { .. } => {
@@ -417,7 +522,10 @@ fn projection_failure_disposition(error: &BatchProjectionError) -> ProjectionFai
         | BatchProjectionError::PayloadConflict { .. }
         | BatchProjectionError::ProjectionConflict { .. }
         | BatchProjectionError::InstallationConflict { .. }
-        | BatchProjectionError::InvalidField { .. } => ProjectionFailureDisposition::Quarantine,
+        | BatchProjectionError::InvalidField { .. }
+        | BatchProjectionError::AggregateOverflow { .. } => {
+            ProjectionFailureDisposition::Quarantine
+        }
     }
 }
 
@@ -441,10 +549,11 @@ fn log_schema_readiness_error(operation: &str, error: &ClickHouseMigrationError)
 
 fn outbox_failure_severity(error: &OutboxError) -> OutboxFailureSeverity {
     match error {
-        OutboxError::Database(_) | OutboxError::LeaseLost { .. } => {
-            OutboxFailureSeverity::Transient
-        }
-        OutboxError::EventConflict { .. }
+        OutboxError::Database(_)
+        | OutboxError::Admission(AnalyticsAdmissionError::Database(_))
+        | OutboxError::LeaseLost { .. } => OutboxFailureSeverity::Transient,
+        OutboxError::Admission(_)
+        | OutboxError::EventConflict { .. }
         | OutboxError::InvalidBatchSize
         | OutboxError::InvalidLease
         | OutboxError::InvalidPartitionMonth
@@ -578,10 +687,11 @@ mod tests {
                     ".with_timeouts(Some(Duration::from_secs(30)), Some(Duration::from_secs(90)))"
                 )
                 .count(),
-            2
+            4
         );
         assert!(CLICKHOUSE_OPERATION_TIMEOUT.as_secs() < LEASE_SECONDS as u64);
-        assert!(90 < CLICKHOUSE_OPERATION_TIMEOUT.as_secs());
+        // Each event kind writes at most one raw and one daily projection.
+        assert!(2 * 90 < CLICKHOUSE_OPERATION_TIMEOUT.as_secs());
         assert!(BACKLOG_OBSERVATION_INTERVAL >= Duration::from_secs(60));
     }
 }

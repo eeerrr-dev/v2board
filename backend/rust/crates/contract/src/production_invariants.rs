@@ -16,7 +16,8 @@ use tokio::task::JoinSet;
 use url::Url;
 use uuid::Uuid;
 use v2board_analytics::{
-    AnalyticsEvent, OutboxError, claim_delivery_batch, enqueue_event, mark_batch_published,
+    AnalyticsAdmissionPolicy, AnalyticsEvent, OutboxError, claim_delivery_batch, enqueue_event,
+    install_analytics_admission_policy, mark_batch_published, refresh_analytics_admission,
     release_batch_for_retry,
 };
 use v2board_config::{AppConfig, RuntimeEnvironment};
@@ -127,6 +128,8 @@ async fn run_isolated_checks(
         );
         installation_identity_invariant(pool).await?;
         pass("installation identity is explicit, active, immutable, and fail-closed");
+        install_contract_analytics_admission(pool).await?;
+        pass("analytics admission policy is installation-bound and measurable");
         schema_invariants(pool).await?;
         pass("fresh migrations and production schema constraints");
 
@@ -177,6 +180,36 @@ async fn run_isolated_checks(
         (Ok(()), Err(cleanup)) => Err(cleanup),
         (Ok(()), Ok(())) => Ok(()),
     }
+}
+
+async fn install_contract_analytics_admission(pool: &PgPool) -> Result<()> {
+    let now = Utc::now().timestamp();
+    let installation_id = installation_id(pool).await?;
+    let gib = 1024_u64 * 1024 * 1024;
+    let policy = AnalyticsAdmissionPolicy {
+        recovery_pending_rows: 750_000,
+        soft_pending_rows: 1_000_000,
+        hard_pending_rows: 2_000_000,
+        recovery_relation_bytes: 20 * gib,
+        soft_relation_bytes: 30 * gib,
+        hard_relation_bytes: 40 * gib,
+        recovery_oldest_age_seconds: 300,
+        soft_oldest_age_seconds: 900,
+        hard_oldest_age_seconds: 3_600,
+        database_capacity_bytes: 128 * gib,
+        hard_min_headroom_bytes: 16 * gib,
+        soft_min_headroom_bytes: 32 * gib,
+        recovery_min_headroom_bytes: 48 * gib,
+        event_reservation_bytes: 4_096,
+        soft_max_new_rows_per_second: 100_000,
+        sample_interval_seconds: 1,
+        stale_after_seconds: 30,
+        capacity_evidence: "disposable production-invariant PostgreSQL quota".to_owned(),
+    };
+    install_analytics_admission_policy(pool, installation_id, &policy, now).await?;
+    let snapshot = refresh_analytics_admission(pool).await?.snapshot;
+    ensure!(snapshot.sample_fresh && snapshot.pending_rows == 0);
+    Ok(())
 }
 
 async fn schema_invariants(pool: &PgPool) -> Result<()> {

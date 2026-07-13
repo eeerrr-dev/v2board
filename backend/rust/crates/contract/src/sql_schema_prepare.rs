@@ -38,16 +38,8 @@ pub async fn run(pool: &PgPool) -> Result<()> {
 
     let mut connection = pool.acquire().await?;
     let mut prepared = 0_usize;
-    let mut legacy_adapter_exclusions = 0_usize;
     let mut prepare_failures = Vec::new();
     for query in inventory.static_queries {
-        // The native runtime inventory deliberately scans db::pool, but the
-        // one explicitly named legacy-source connector uses five MySQL session
-        // statements. They are read-only provision inputs, never native SQL.
-        if query.source == "crates/db/src/pool.rs" && is_legacy_mysql_adapter_sql(&query.sql) {
-            legacy_adapter_exclusions += 1;
-            continue;
-        }
         let result = connection
             .prepare(AssertSqlSafe(query.sql.clone()).into_sql_str())
             .await;
@@ -61,10 +53,6 @@ pub async fn run(pool: &PgPool) -> Result<()> {
         }
     }
     ensure!(
-        legacy_adapter_exclusions == 5,
-        "expected exactly five audited legacy MySQL adapter exclusions, found {legacy_adapter_exclusions}"
-    );
-    ensure!(
         prepare_failures.is_empty(),
         "PostgreSQL failed to prepare {} static native runtime queries:\n{}",
         prepare_failures.len(),
@@ -75,7 +63,7 @@ pub async fn run(pool: &PgPool) -> Result<()> {
         "only {prepared} static runtime queries were discovered"
     );
     println!(
-        "SQL schema prepare inventory: {prepared} static queries prepared; {} dynamic sqlx calls and {} QueryBuilder sites explicitly inventoried; {legacy_adapter_exclusions} legacy adapter exclusions.",
+        "SQL schema prepare inventory: {prepared} static queries prepared; {} dynamic sqlx calls and {} QueryBuilder sites explicitly inventoried; native runtime has no MySQL SQL exclusions.",
         inventory.dynamic_sqlx.values().sum::<usize>(),
         inventory.query_builders.values().sum::<usize>(),
     );
@@ -353,6 +341,11 @@ struct DynamicSite {
 
 const DYNAMIC_SQLX_SITES: &[DynamicSite] = &[
     DynamicSite {
+        source: "crates/analytics/src/admission.rs",
+        count: 2,
+        coverage: "fixed policy/state SELECT variants plus PostgreSQL admission integration tests",
+    },
+    DynamicSite {
         source: "crates/api/src/server_api/repository.rs",
         count: 1,
         coverage: "all node variants are collected as indirect static SQL and server API contracts",
@@ -518,17 +511,4 @@ fn compact_sql(sql: &str) -> String {
     } else {
         format!("{}…", &compact[..240])
     }
-}
-
-fn is_legacy_mysql_adapter_sql(sql: &str) -> bool {
-    let sql = sql.trim_start();
-    [
-        "SET SESSION time_zone",
-        "SET NAMES utf8mb4",
-        "SET SESSION sql_mode",
-        "SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ",
-        "SET SESSION TRANSACTION READ ONLY",
-    ]
-    .iter()
-    .any(|prefix| sql.starts_with(prefix))
 }

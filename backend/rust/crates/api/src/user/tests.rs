@@ -101,8 +101,12 @@ fn commission_transfer_checks_both_balance_columns() {
 fn giftcard_redemption_serializes_on_the_card_row() {
     assert!(GIFTCARD_FOR_UPDATE_SQL.trim_end().ends_with("FOR UPDATE"));
     assert!(GIFTCARD_FOR_UPDATE_SQL.contains("lower(code) = lower($1)"));
-    let migration = include_str!("../../../../migrations-postgres/0001_initial.sql");
-    assert!(migration.contains("uniq_giftcard_code_canonical"));
+    let baseline = include_str!("../../../../migrations-postgres/0001_initial.sql");
+    let extension = include_str!(
+        "../../../../migrations-postgres/0002_legacy_lifecycle_and_analytics_admission.sql"
+    );
+    assert!(baseline.contains("uniq_giftcard_code_canonical"));
+    assert!(extension.contains("created_at_provenance = 'legacy_unknown'"));
 }
 
 #[test]

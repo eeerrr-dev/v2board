@@ -2,8 +2,8 @@ use std::{
     collections::BTreeSet,
     fs, io,
     io::Read,
-    net::SocketAddr,
-    path::{Path, PathBuf},
+    net::{IpAddr, SocketAddr},
+    path::{Component, Path, PathBuf},
 };
 
 use hmac::{Hmac, KeyInit, Mac};
@@ -28,7 +28,24 @@ const MAX_SPEC_BYTES: u64 = 1024 * 1024;
 // no lifecycle path may acquire new behavior from an implicit default.
 const RUNTIME_KEYS_V1: &[&str] = FILE_ONLY_RUNTIME_KEYS_V1;
 const MANIFEST_HMAC_DOMAIN_V3: &[u8] = b"v2board-provision-manifest-v3\0";
+const MANIFEST_HMAC_DOMAIN_V4: &[u8] = b"v2board-provision-manifest-v4\0";
 pub(crate) const REPORT_HMAC_DOMAIN_V3: &[u8] = b"v2board-provision-report-v3\0";
+pub(crate) const REPORT_HMAC_DOMAIN_V4: &[u8] = b"v2board-provision-report-v4\0";
+const APPLY_AUTHORIZATION_HMAC_DOMAIN_V3: &[u8] = b"v2board-provision-apply-authorization-v3\0";
+const LEGACY_EXECUTION_HMAC_DOMAIN_V1: &[u8] = b"v2board-provision-legacy-execution-v1\0";
+const LEGACY_RUNTIME_RECEIPT_HMAC_DOMAIN_V1: &[u8] =
+    b"v2board-provision-legacy-runtime-receipt-v1\0";
+
+const LIFECYCLE_STATE_ROOT: &str = "/var/lib/v2board/lifecycle";
+const LIFECYCLE_SECRET_ROOT: &str = "/run/v2board-lifecycle-secrets";
+const JOURNAL_ROOT: &str = "/var/lib/v2board/lifecycle/journal";
+const ACTIVATION_STATE_ROOT: &str = "/var/lib/v2board/lifecycle/activation";
+const RELEASES_ROOT: &str = "/opt/v2board/releases";
+const CURRENT_RELEASE_PATH: &str = "/opt/v2board/current";
+const API_UNIT: &str = "v2board-api.service";
+const WORKER_UNIT: &str = "v2board-worker.service";
+const API_READY_URL: &str = "http://127.0.0.1:8080/readyz";
+const WORKER_HEALTH_PATH: &str = "/run/v2board-worker/health";
 
 const BOOL_RUNTIME_KEYS: &[&str] = &[
     "privileged_step_up_enable",
@@ -117,6 +134,10 @@ pub enum ProvisionKind {
     NativeUpgrade,
 }
 
+// A provision manifest is loaded once per lifecycle process. Keeping each flow's
+// validated fields together avoids extra indirection across security-sensitive
+// validation and binding code for no meaningful steady-state memory saving.
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum ProvisionFlow {
     FreshInstall {
         target: TargetSpec,
@@ -130,7 +151,8 @@ pub(crate) enum ProvisionFlow {
         target: TargetSpec,
         runtime: Map<String, Value>,
         decisions: LegacyDecisionSpec,
-        attestations: LegacyAttestationSpec,
+        attestations: Option<LegacyAttestationSpec>,
+        execution: Option<Box<LegacyExecutionSpec>>,
     },
     NativeUpgrade {
         current: NativeInstallationSpec,
@@ -145,14 +167,15 @@ pub(crate) enum ProvisionFlow {
 #[serde(deny_unknown_fields)]
 pub struct SourceSpec {
     pub database_url: String,
+    #[serde(default)]
+    pub database_fence_url: Option<String>,
     pub redis_default_url: String,
     pub redis_cache_url: String,
     pub redis_connection_prefix: String,
     pub redis_cache_prefix: String,
+    #[serde(default)]
+    pub redis_horizon_prefix: String,
     pub legacy_cache_driver: LegacyCacheDriver,
-    pub legacy_show_subscribe_method: i32,
-    pub legacy_show_subscribe_expire_minutes: i64,
-    pub legacy_subscription_issuance_stopped_at_unix: i64,
     pub transport_security: SourceTransportSecurity,
 }
 
@@ -162,7 +185,7 @@ pub enum LegacyCacheDriver {
     Redis,
 }
 
-#[derive(Clone, Copy, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SourceTransportSecurity {
     VerifiedTls,
@@ -174,10 +197,34 @@ pub enum SourceTransportSecurity {
 pub struct TargetSpec {
     pub postgres: PostgresTargetSpec,
     pub clickhouse: ClickHouseTargetSpec,
+    pub analytics_admission: AnalyticsAdmissionSpec,
     pub redis_url: String,
     pub api_runtime_config_path: PathBuf,
     pub worker_runtime_config_path: PathBuf,
     pub require_empty_redis: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AnalyticsAdmissionSpec {
+    pub recovery_pending_rows: u64,
+    pub soft_pending_rows: u64,
+    pub hard_pending_rows: u64,
+    pub recovery_relation_bytes: u64,
+    pub soft_relation_bytes: u64,
+    pub hard_relation_bytes: u64,
+    pub recovery_oldest_age_seconds: u64,
+    pub soft_oldest_age_seconds: u64,
+    pub hard_oldest_age_seconds: u64,
+    pub database_capacity_bytes: u64,
+    pub hard_min_headroom_bytes: u64,
+    pub soft_min_headroom_bytes: u64,
+    pub recovery_min_headroom_bytes: u64,
+    pub event_reservation_bytes: u64,
+    pub soft_max_new_rows_per_second: u64,
+    pub sample_interval_seconds: u64,
+    pub stale_after_seconds: u64,
+    pub capacity_evidence: String,
 }
 
 #[derive(Deserialize)]
@@ -251,62 +298,68 @@ pub struct FreshInstallAttestationSpec {
     pub external_controls_reviewed: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct LegacyDecisionSpec {
     pub legacy_configuration: LegacyConfigurationDecision,
     pub sessions: SessionDecision,
     pub legacy_cache: LegacyCacheDecision,
     pub legacy_stripe: LegacyStripeDecision,
-    pub legacy_subscription_tokens: LegacySubscriptionTokenDecision,
+    pub temporary_subscription_links: TemporarySubscriptionLinkDecision,
     pub nodes: NodeDecision,
     pub legacy_theme: LegacyThemeDecision,
     pub legacy_custom_rules: LegacyCustomRulesDecision,
 }
 
-#[derive(Clone, Copy, Deserialize, Eq, PartialEq)]
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LegacyDecisionSpecV4 {
+    legacy_custom_rules: LegacyCustomRulesDecision,
+}
+
+#[derive(Clone, Copy, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LegacyConfigurationDecision {
     ManualOnly,
 }
 
-#[derive(Clone, Copy, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionDecision {
     LogoutAll,
 }
 
-#[derive(Clone, Copy, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LegacyCacheDecision {
     DiscardEphemeralAfterFence,
 }
 
-#[derive(Clone, Copy, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LegacyStripeDecision {
     AssertNone,
 }
 
-#[derive(Clone, Copy, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum LegacySubscriptionTokenDecision {
-    AssertNone,
+pub enum TemporarySubscriptionLinkDecision {
+    InvalidateAtCutover,
 }
 
-#[derive(Clone, Copy, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NodeDecision {
     OneShotOfflineCutover,
 }
 
-#[derive(Clone, Copy, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LegacyThemeDecision {
     DiscardConfirmed,
 }
 
-#[derive(Clone, Copy, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LegacyCustomRulesDecision {
     None,
@@ -322,6 +375,214 @@ pub struct LegacyAttestationSpec {
     pub legacy_queues_drained: bool,
     pub backup_reference: Option<String>,
     pub restore_tested: bool,
+}
+
+/// Bare-metal inputs for one irreversible legacy cutover. This section is
+/// present only in schema v4. Runtime observations and completion claims do
+/// not belong here: their content hashes are appended to the durable journal
+/// after the corresponding action actually succeeds.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LegacyExecutionSpec {
+    #[serde(skip)]
+    pub journal: LegacyJournalExecutionSpec,
+    pub release: LegacyReleaseExecutionSpec,
+    pub systemd: LegacySystemdExecutionSpec,
+    pub source_control: LegacySourceControlExecutionSpec,
+    pub receipts: LegacyReceiptExecutionSpec,
+    pub backup: LegacyBackupExecutionSpec,
+    pub nodes: LegacyNodeExecutionSpec,
+    #[serde(skip)]
+    pub source_retirement: LegacySourceRetirementExecutionSpec,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LegacyJournalExecutionSpec {
+    #[serde(skip)]
+    pub root: PathBuf,
+    #[serde(skip)]
+    pub authorization_path: PathBuf,
+    #[serde(skip)]
+    pub activation_state_root: PathBuf,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LegacyReleaseExecutionSpec {
+    pub release_id: String,
+    #[serde(skip)]
+    pub archive_path: PathBuf,
+    pub archive_sha256: String,
+    #[serde(skip)]
+    pub releases_root: PathBuf,
+    #[serde(skip)]
+    pub current_symlink: PathBuf,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LegacySystemdExecutionSpec {
+    #[serde(skip)]
+    pub api_unit: String,
+    #[serde(skip)]
+    pub worker_unit: String,
+    #[serde(skip)]
+    pub api_ready_url: String,
+    #[serde(skip)]
+    pub worker_health_path: PathBuf,
+    pub legacy_writer_units: Vec<String>,
+    pub legacy_worker_units: Vec<String>,
+    pub legacy_scheduler_units: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LegacySourceControlExecutionSpec {
+    pub datastores: LegacySourceDatastoreControlSet,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LegacySourceDatastoreControlSet {
+    pub mysql: LegacySourceDatastoreControlSpec,
+    pub default_redis: LegacySourceDatastoreControlSpec,
+    pub cache_redis: LegacySourceDatastoreControlSpec,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LegacySourceDatastoreControlSpec {
+    pub unit: String,
+}
+
+/// The release receipt is an immutable input and therefore has an exact
+/// pre-authorized digest. Every other path is an output slot: binding a future
+/// `completed=true` receipt digest before the action happened would be a false
+/// proof. The executor must hash-chain the file after it is created.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LegacyReceiptExecutionSpec {
+    pub release_archive: ImmutableReceiptSpec,
+    #[serde(skip)]
+    pub source_fence_path: PathBuf,
+    #[serde(skip)]
+    pub source_drain_path: PathBuf,
+    #[serde(skip)]
+    pub backup_restore_path: PathBuf,
+    #[serde(skip)]
+    pub redis_fence_armed_path: PathBuf,
+    #[serde(skip)]
+    pub redis_fence_path: PathBuf,
+    #[serde(skip)]
+    pub datastore_fence_armed_path: PathBuf,
+    #[serde(skip)]
+    pub datastore_fence_path: PathBuf,
+    #[serde(skip)]
+    pub source_retirement_path: PathBuf,
+    #[serde(skip)]
+    pub runtime_compatibility_disabled_path: PathBuf,
+    #[serde(skip)]
+    pub postgres_authority_path: PathBuf,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ImmutableReceiptSpec {
+    #[serde(skip)]
+    pub path: PathBuf,
+    pub sha256: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LegacyBackupExecutionSpec {
+    #[serde(skip)]
+    pub mode: LegacyBackupMode,
+    pub backup_reference: String,
+    #[serde(skip)]
+    pub encrypted_backup_output_path: PathBuf,
+    #[serde(skip)]
+    pub encryption_recipient_path: PathBuf,
+    pub encryption_recipient_sha256: String,
+    #[serde(skip)]
+    pub decryption_identity_path: PathBuf,
+    pub decryption_identity_sha256: String,
+    #[serde(skip)]
+    pub isolated_restore_state_path: PathBuf,
+    pub isolated_restore_database_url: String,
+    pub isolated_restore_transport_security: SourceTransportSecurity,
+    pub command_timeout_seconds: u64,
+    pub maximum_encrypted_backup_bytes: u64,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LegacyBackupMode {
+    #[default]
+    MysqlLogicalDumpAndIsolatedRestore,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[allow(dead_code)] // Each stage consumes its variant only when that executor is wired.
+pub(crate) enum LegacyRuntimeReceiptKind {
+    SourceFence,
+    SourceDrain,
+    BackupRestore,
+    RedisFenceArmed,
+    RedisFence,
+    DatastoreFenceArmed,
+    DatastoreFence,
+    SourceRetirement,
+    RuntimeCompatibilityDisabled,
+    PostgresAuthority,
+}
+
+impl LegacyRuntimeReceiptKind {
+    const fn domain_label(self) -> &'static [u8] {
+        match self {
+            Self::SourceFence => b"source_fence",
+            Self::SourceDrain => b"source_drain",
+            Self::BackupRestore => b"backup_restore",
+            Self::RedisFenceArmed => b"redis_fence_armed",
+            Self::RedisFence => b"redis_fence",
+            Self::DatastoreFenceArmed => b"datastore_fence_armed",
+            Self::DatastoreFence => b"datastore_fence",
+            Self::SourceRetirement => b"source_retirement",
+            Self::RuntimeCompatibilityDisabled => b"runtime_compatibility_disabled",
+            Self::PostgresAuthority => b"postgres_authority",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LegacyNodeExecutionSpec {
+    pub activation_transport: LegacyNodeActivationTransportSpec,
+    pub inventory: Vec<LegacyNodeIdentitySpec>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LegacyNodeIdentitySpec {
+    pub node_type: String,
+    pub node_id: i32,
+    pub credential_epoch: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum LegacyNodeActivationTransportSpec {
+    NotRequiredNoNodes,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LegacySourceRetirementExecutionSpec {
+    #[serde(skip)]
+    pub lifecycle_tool_path: PathBuf,
+    #[serde(skip)]
+    pub retirement_probe_state_path: PathBuf,
 }
 
 #[derive(Deserialize)]
@@ -419,7 +680,7 @@ struct FreshInstallDocument {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct LegacyMigrationDocument {
+struct LegacyMigrationDocumentV3 {
     schema_version: u32,
     operation_id: String,
     kind: ProvisionKind,
@@ -430,6 +691,30 @@ struct LegacyMigrationDocument {
     runtime: Map<String, Value>,
     decisions: LegacyDecisionSpec,
     attestations: LegacyAttestationSpec,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LegacyMigrationDocumentV4 {
+    schema_version: u32,
+    operation_id: String,
+    kind: ProvisionKind,
+    lifecycle_audit_key: String,
+    source: SourceSpec,
+    target: TargetSpec,
+    runtime: Map<String, Value>,
+    decisions: LegacyDecisionSpecV4,
+    execution: LegacyExecutionDocumentV4,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LegacyExecutionDocumentV4 {
+    release: LegacyReleaseExecutionSpec,
+    systemd: LegacySystemdExecutionSpec,
+    source_control: LegacySourceControlExecutionSpec,
+    receipts: LegacyReceiptExecutionSpec,
+    backup: LegacyBackupExecutionSpec,
 }
 
 #[derive(Deserialize)]
@@ -460,7 +745,7 @@ pub enum ProvisionSpecError {
     Read(#[source] io::Error),
     #[error("provision spec is not valid strict JSON: {0}")]
     Json(#[source] serde_json::Error),
-    #[error("unsupported provision spec schema_version; expected 3")]
+    #[error("unsupported provision spec schema_version; expected 3 or 4")]
     SchemaVersion,
     #[error("operation_id must be a UUID")]
     OperationId,
@@ -506,15 +791,21 @@ pub fn load_provision_spec(path: impl AsRef<Path>) -> Result<ProvisionSpec, Prov
     file.read_to_end(&mut bytes)
         .map_err(ProvisionSpecError::Read)?;
     let unique = serde_json::from_slice::<UniqueJson>(&bytes).map_err(ProvisionSpecError::Json)?;
-    if unique.0.get("schema_version").and_then(Value::as_u64) != Some(3) {
+    let schema_version = unique
+        .0
+        .get("schema_version")
+        .and_then(Value::as_u64)
+        .and_then(|value| u32::try_from(value).ok())
+        .ok_or(ProvisionSpecError::SchemaVersion)?;
+    if !matches!(schema_version, 3 | 4) {
         return Err(ProvisionSpecError::SchemaVersion);
     }
     let kind = serde_json::from_value::<ProvisionKind>(
         unique.0.get("kind").cloned().unwrap_or(Value::Null),
     )
     .map_err(ProvisionSpecError::Json)?;
-    let mut spec = match kind {
-        ProvisionKind::FreshInstall => {
+    let mut spec = match (schema_version, kind) {
+        (3, ProvisionKind::FreshInstall) => {
             let document = serde_json::from_value::<FreshInstallDocument>(unique.0)
                 .map_err(ProvisionSpecError::Json)?;
             ProvisionSpec {
@@ -531,8 +822,8 @@ pub fn load_provision_spec(path: impl AsRef<Path>) -> Result<ProvisionSpec, Prov
                 manifest_binding_hmac_sha256: String::new(),
             }
         }
-        ProvisionKind::LegacyReferenceMigration => {
-            let document = serde_json::from_value::<LegacyMigrationDocument>(unique.0)
+        (3, ProvisionKind::LegacyReferenceMigration) => {
+            let document = serde_json::from_value::<LegacyMigrationDocumentV3>(unique.0)
                 .map_err(ProvisionSpecError::Json)?;
             ProvisionSpec {
                 schema_version: document.schema_version,
@@ -545,12 +836,36 @@ pub fn load_provision_spec(path: impl AsRef<Path>) -> Result<ProvisionSpec, Prov
                     target: document.target,
                     runtime: document.runtime,
                     decisions: document.decisions,
-                    attestations: document.attestations,
+                    attestations: Some(document.attestations),
+                    execution: None,
                 },
                 manifest_binding_hmac_sha256: String::new(),
             }
         }
-        ProvisionKind::NativeUpgrade => {
+        (4, ProvisionKind::LegacyReferenceMigration) => {
+            let mut value = unique.0;
+            hydrate_legacy_v4_target(&mut value)?;
+            let document = serde_json::from_value::<LegacyMigrationDocumentV4>(value)
+                .map_err(ProvisionSpecError::Json)?;
+            let execution = hydrate_legacy_execution(&document.operation_id, document.execution);
+            ProvisionSpec {
+                schema_version: document.schema_version,
+                operation_id: document.operation_id,
+                kind: document.kind,
+                lifecycle_audit_key: document.lifecycle_audit_key,
+                flow: ProvisionFlow::LegacyReferenceMigration {
+                    reference_commit: LEGACY_REFERENCE_COMMIT.to_string(),
+                    source: document.source,
+                    target: document.target,
+                    runtime: document.runtime,
+                    decisions: hydrate_legacy_v4_decisions(document.decisions),
+                    attestations: None,
+                    execution: Some(Box::new(execution)),
+                },
+                manifest_binding_hmac_sha256: String::new(),
+            }
+        }
+        (3, ProvisionKind::NativeUpgrade) => {
             let document = serde_json::from_value::<NativeUpgradeDocument>(unique.0)
                 .map_err(ProvisionSpecError::Json)?;
             ProvisionSpec {
@@ -568,18 +883,296 @@ pub fn load_provision_spec(path: impl AsRef<Path>) -> Result<ProvisionSpec, Prov
                 manifest_binding_hmac_sha256: String::new(),
             }
         }
+        (4, ProvisionKind::FreshInstall | ProvisionKind::NativeUpgrade) => {
+            return Err(ProvisionSpecError::Validation(
+                "schema_version 4 currently defines execution inputs only for legacy_reference_migration",
+            ));
+        }
+        _ => return Err(ProvisionSpecError::SchemaVersion),
     };
     validate_spec(&spec)?;
+    validate_manifest_execution_separation(path, &spec)?;
     let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(spec.lifecycle_audit_key.as_bytes())
         .expect("HMAC accepts keys of any length");
-    mac.update(MANIFEST_HMAC_DOMAIN_V3);
+    mac.update(match spec.schema_version {
+        3 => MANIFEST_HMAC_DOMAIN_V3,
+        4 => MANIFEST_HMAC_DOMAIN_V4,
+        _ => return Err(ProvisionSpecError::SchemaVersion),
+    });
     mac.update(&bytes);
+    if spec.schema_version == 4 {
+        mac.update(&[0]);
+        mac.update(&legacy_v4_hydrated_facts(&spec)?);
+    }
     spec.manifest_binding_hmac_sha256 = hex::encode(mac.finalize().into_bytes());
     Ok(spec)
 }
 
+#[derive(Serialize)]
+struct LegacyV4HydratedFacts<'a> {
+    binding_version: u32,
+    reference_commit: &'a str,
+    decisions: &'a LegacyDecisionSpec,
+    execution: &'a LegacyExecutionSpec,
+}
+
+fn legacy_v4_hydrated_facts(spec: &ProvisionSpec) -> Result<Vec<u8>, ProvisionSpecError> {
+    let ProvisionFlow::LegacyReferenceMigration {
+        reference_commit,
+        decisions,
+        execution: Some(execution),
+        ..
+    } = &spec.flow
+    else {
+        return Err(ProvisionSpecError::Validation(
+            "schema v4 hydrated legacy facts are unavailable",
+        ));
+    };
+    serde_json::to_vec(&LegacyV4HydratedFacts {
+        binding_version: 1,
+        reference_commit,
+        decisions,
+        execution,
+    })
+    .map_err(ProvisionSpecError::Json)
+}
+
+/// Schema v4 accepts only facts and choices. Values fixed by the one-shot
+/// product contract are inserted after strict raw JSON parsing, and both the
+/// raw bytes and the complete hydrated facts are HMAC-bound. Explicitly
+/// writing one is rejected instead of silently accepting a second
+/// source of truth. Schema v3 remains byte-for-byte compatible.
+fn hydrate_legacy_v4_target(value: &mut Value) -> Result<(), ProvisionSpecError> {
+    let root = value.as_object_mut().ok_or(ProvisionSpecError::Validation(
+        "schema v4 manifest must be a JSON object",
+    ))?;
+    let source = object_at_mut(root, "source")?;
+    insert_derived(source, "legacy_cache_driver", Value::String("redis".into()))?;
+
+    let target = object_at_mut(root, "target")?;
+    for (key, value) in [
+        (
+            "api_runtime_config_path",
+            Value::String("/var/lib/v2board/api/config.json".into()),
+        ),
+        (
+            "worker_runtime_config_path",
+            Value::String("/var/lib/v2board/worker/config.json".into()),
+        ),
+        ("require_empty_redis", Value::Bool(true)),
+    ] {
+        insert_derived(target, key, value)?;
+    }
+
+    let postgres = object_at_mut(target, "postgres")?;
+    for (key, value) in [
+        ("database_collation", Value::String("C.UTF-8".into())),
+        ("database_ctype", Value::String("C.UTF-8".into())),
+        ("require_database_absent", Value::Bool(true)),
+        ("require_roles_absent", Value::Bool(true)),
+    ] {
+        insert_derived(postgres, key, value)?;
+    }
+    let external_access = object_at_mut(postgres, "external_access")?;
+    insert_derived(
+        external_access,
+        "pg_hba_managed_externally",
+        Value::Bool(true),
+    )?;
+    insert_derived(
+        external_access,
+        "network_policy_managed_externally",
+        Value::Bool(true),
+    )?;
+
+    let clickhouse = object_at_mut(target, "clickhouse")?;
+    for key in [
+        "require_database_absent",
+        "require_principals_absent",
+        "require_standalone_non_replicated",
+    ] {
+        insert_derived(clickhouse, key, Value::Bool(true))?;
+    }
+    let privileges = object_at_mut(clickhouse, "privileges")?;
+    for key in [
+        "bootstrap_manages_database_and_principals",
+        "schema_has_ddl_metadata_read_and_ledger_write_only",
+        "writer_is_insert_and_verify_only",
+        "reader_is_select_only",
+    ] {
+        insert_derived(privileges, key, Value::Bool(true))?;
+    }
+    Ok(())
+}
+
+fn object_at_mut<'a>(
+    parent: &'a mut serde_json::Map<String, Value>,
+    key: &'static str,
+) -> Result<&'a mut serde_json::Map<String, Value>, ProvisionSpecError> {
+    parent
+        .get_mut(key)
+        .and_then(Value::as_object_mut)
+        .ok_or(ProvisionSpecError::Validation(
+            "schema v4 source, target, and nested target declarations must be JSON objects",
+        ))
+}
+
+fn insert_derived(
+    object: &mut serde_json::Map<String, Value>,
+    key: &'static str,
+    value: Value,
+) -> Result<(), ProvisionSpecError> {
+    if object.contains_key(key) {
+        return Err(ProvisionSpecError::Validation(
+            "schema v4 must omit fixed or derived target fields",
+        ));
+    }
+    object.insert(key.to_string(), value);
+    Ok(())
+}
+
+/// Fill paths and fixed one-shot policies that are part of the schema-v4
+/// implementation contract, rather than operator choices. Keeping these
+/// values out of the manifest prevents a hand-edited file from restating (and
+/// potentially mistyping) values already bound by `operation_id` and the
+/// installed lifecycle release.
+fn hydrate_legacy_v4_decisions(decisions: LegacyDecisionSpecV4) -> LegacyDecisionSpec {
+    LegacyDecisionSpec {
+        legacy_configuration: LegacyConfigurationDecision::ManualOnly,
+        sessions: SessionDecision::LogoutAll,
+        legacy_cache: LegacyCacheDecision::DiscardEphemeralAfterFence,
+        legacy_stripe: LegacyStripeDecision::AssertNone,
+        temporary_subscription_links: TemporarySubscriptionLinkDecision::InvalidateAtCutover,
+        nodes: NodeDecision::OneShotOfflineCutover,
+        legacy_theme: LegacyThemeDecision::DiscardConfirmed,
+        legacy_custom_rules: decisions.legacy_custom_rules,
+    }
+}
+
+fn hydrate_legacy_execution(
+    operation_id: &str,
+    input: LegacyExecutionDocumentV4,
+) -> LegacyExecutionSpec {
+    let mut execution = LegacyExecutionSpec {
+        journal: LegacyJournalExecutionSpec::default(),
+        release: input.release,
+        systemd: input.systemd,
+        source_control: input.source_control,
+        receipts: input.receipts,
+        backup: input.backup,
+        nodes: LegacyNodeExecutionSpec {
+            activation_transport: LegacyNodeActivationTransportSpec::NotRequiredNoNodes,
+            inventory: Vec::new(),
+        },
+        source_retirement: LegacySourceRetirementExecutionSpec::default(),
+    };
+    let operation_root = Path::new(LIFECYCLE_STATE_ROOT)
+        .join("operations")
+        .join(operation_id);
+
+    execution.journal.root = PathBuf::from(JOURNAL_ROOT);
+    execution.journal.authorization_path = operation_root.join("authorization.json");
+    execution.journal.activation_state_root = PathBuf::from(ACTIVATION_STATE_ROOT);
+
+    execution.release.archive_path = operation_root.join("inputs/native-release.tar.gz");
+    execution.release.releases_root = PathBuf::from(RELEASES_ROOT);
+    execution.release.current_symlink = PathBuf::from(CURRENT_RELEASE_PATH);
+
+    execution.systemd.api_unit = API_UNIT.to_string();
+    execution.systemd.worker_unit = WORKER_UNIT.to_string();
+    execution.systemd.api_ready_url = API_READY_URL.to_string();
+    execution.systemd.worker_health_path = PathBuf::from(WORKER_HEALTH_PATH);
+
+    let receipt_root = operation_root.join("receipts");
+    execution.receipts.release_archive.path = receipt_root.join("release-archive.json");
+    execution.receipts.source_fence_path = receipt_root.join("source-fence.json");
+    execution.receipts.source_drain_path = receipt_root.join("source-drain.json");
+    execution.receipts.backup_restore_path = receipt_root.join("backup-restore.json");
+    execution.receipts.redis_fence_armed_path = receipt_root.join("redis-fence-armed.json");
+    execution.receipts.redis_fence_path = receipt_root.join("redis-fence.json");
+    execution.receipts.datastore_fence_armed_path = receipt_root.join("datastore-fence-armed.json");
+    execution.receipts.datastore_fence_path = receipt_root.join("datastore-fence.json");
+    execution.receipts.source_retirement_path = receipt_root.join("source-retirement.json");
+    execution.receipts.runtime_compatibility_disabled_path =
+        receipt_root.join("runtime-compatibility-disabled.json");
+    execution.receipts.postgres_authority_path = receipt_root.join("postgres-authority.json");
+
+    execution.backup.mode = LegacyBackupMode::MysqlLogicalDumpAndIsolatedRestore;
+    execution.backup.encrypted_backup_output_path =
+        operation_root.join("outputs/legacy-backup.age");
+    execution.backup.encryption_recipient_path = operation_root.join("inputs/backup-recipient.txt");
+    execution.backup.decryption_identity_path = Path::new(LIFECYCLE_SECRET_ROOT)
+        .join(operation_id)
+        .join("age-identity");
+    execution.backup.isolated_restore_state_path =
+        operation_root.join("outputs/isolated-restore-state.json");
+
+    execution.source_retirement.lifecycle_tool_path =
+        PathBuf::from("/opt/v2board/lifecycle/v2board-lifecycle");
+    execution.source_retirement.retirement_probe_state_path =
+        operation_root.join("outputs/retirement-probe.json");
+    execution
+}
+
+fn validate_manifest_execution_separation(
+    manifest_path: &Path,
+    spec: &ProvisionSpec,
+) -> Result<(), ProvisionSpecError> {
+    let Some(execution) = spec.legacy_apply_execution() else {
+        return Ok(());
+    };
+    let manifest = fs::canonicalize(manifest_path).map_err(ProvisionSpecError::Metadata)?;
+    let receipts = &execution.receipts;
+    let restore_state_name = execution
+        .backup
+        .isolated_restore_state_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or(ProvisionSpecError::Validation(
+            "isolated restore state path requires a UTF-8 file name",
+        ))?;
+    let archive_materialization_state_path = execution
+        .backup
+        .isolated_restore_state_path
+        .with_file_name(format!(".{restore_state_name}.archive-materialization"));
+    let declared = [
+        execution.journal.root.as_path(),
+        execution.journal.authorization_path.as_path(),
+        execution.journal.activation_state_root.as_path(),
+        execution.release.archive_path.as_path(),
+        execution.release.releases_root.as_path(),
+        execution.release.current_symlink.as_path(),
+        receipts.release_archive.path.as_path(),
+        receipts.source_fence_path.as_path(),
+        receipts.source_drain_path.as_path(),
+        receipts.backup_restore_path.as_path(),
+        receipts.redis_fence_armed_path.as_path(),
+        receipts.redis_fence_path.as_path(),
+        receipts.datastore_fence_armed_path.as_path(),
+        receipts.datastore_fence_path.as_path(),
+        receipts.source_retirement_path.as_path(),
+        receipts.runtime_compatibility_disabled_path.as_path(),
+        receipts.postgres_authority_path.as_path(),
+        execution.backup.encrypted_backup_output_path.as_path(),
+        execution.backup.encryption_recipient_path.as_path(),
+        execution.backup.decryption_identity_path.as_path(),
+        execution.backup.isolated_restore_state_path.as_path(),
+        archive_materialization_state_path.as_path(),
+        execution
+            .source_retirement
+            .retirement_probe_state_path
+            .as_path(),
+    ];
+    if declared.contains(&manifest.as_path()) {
+        return Err(ProvisionSpecError::Validation(
+            "the lifecycle manifest must not alias any journal, release, receipt, backup, node, or retirement path",
+        ));
+    }
+    Ok(())
+}
+
 fn validate_spec(spec: &ProvisionSpec) -> Result<(), ProvisionSpecError> {
-    if spec.schema_version != 3 {
+    if !matches!(spec.schema_version, 3 | 4) {
         return Err(ProvisionSpecError::SchemaVersion);
     }
     Uuid::parse_str(&spec.operation_id).map_err(|_| ProvisionSpecError::OperationId)?;
@@ -598,13 +1191,28 @@ fn validate_spec(spec: &ProvisionSpec) -> Result<(), ProvisionSpecError> {
         ));
     }
     validate_flow(spec)?;
-    if spec
-        .target_secret_values()?
+    let datastore_secrets = spec.target_secret_values()?;
+    if datastore_secrets
         .iter()
         .any(|secret| secret == &spec.lifecycle_audit_key)
     {
         return Err(ProvisionSpecError::Validation(
             "lifecycle_audit_key must be different from target datastore passwords",
+        ));
+    }
+    if datastore_secrets.iter().collect::<BTreeSet<_>>().len() != datastore_secrets.len() {
+        return Err(ProvisionSpecError::Validation(
+            "target and isolated-restore secrets must be pairwise distinct",
+        ));
+    }
+    if ["app_key", "server_token"].iter().any(|key| {
+        runtime
+            .get(*key)
+            .and_then(Value::as_str)
+            .is_some_and(|value| datastore_secrets.iter().any(|secret| secret == value))
+    }) {
+        return Err(ProvisionSpecError::Validation(
+            "runtime app_key and server_token must differ from datastore passwords",
         ));
     }
     AppConfig::try_from_api_config_map(
@@ -644,8 +1252,10 @@ fn validate_flow(spec: &ProvisionSpec) -> Result<(), ProvisionSpecError> {
             reference_commit,
             source,
             target,
+            runtime,
             decisions,
             attestations,
+            execution,
             ..
         } => {
             if reference_commit != LEGACY_REFERENCE_COMMIT {
@@ -656,8 +1266,8 @@ fn validate_flow(spec: &ProvisionSpec) -> Result<(), ProvisionSpecError> {
                 || decisions.sessions != SessionDecision::LogoutAll
                 || decisions.legacy_cache != LegacyCacheDecision::DiscardEphemeralAfterFence
                 || decisions.legacy_stripe != LegacyStripeDecision::AssertNone
-                || decisions.legacy_subscription_tokens
-                    != LegacySubscriptionTokenDecision::AssertNone
+                || decisions.temporary_subscription_links
+                    != TemporarySubscriptionLinkDecision::InvalidateAtCutover
                 || decisions.nodes != NodeDecision::OneShotOfflineCutover
                 || decisions.legacy_theme != LegacyThemeDecision::DiscardConfirmed
                 || !matches!(
@@ -666,14 +1276,33 @@ fn validate_flow(spec: &ProvisionSpec) -> Result<(), ProvisionSpecError> {
                 )
             {
                 return Err(ProvisionSpecError::Validation(
-                    "legacy migration decisions must use manual config, logout-all, discard-fenced cache, zero Stripe/tokens, and one-shot offline cutover",
+                    "legacy migration decisions must use manual config, logout-all, discard-fenced cache, zero Stripe, invalidated temporary subscription links, and one-shot offline cutover",
                 ));
             }
             validate_legacy_source(source, target)?;
             validate_target(target)?;
+            if !matches!(
+                runtime.get("show_subscribe_method").and_then(Value::as_i64),
+                Some(0 | 1)
+            ) {
+                return Err(ProvisionSpecError::Validation(
+                    "legacy migration target runtime.show_subscribe_method must be 0 or 1 so old temporary URLs are invalid at cutover",
+                ));
+            }
+            match (spec.schema_version, execution, attestations) {
+                (3, None, Some(_)) => {}
+                (4, Some(execution), None) => {
+                    validate_legacy_execution(&spec.operation_id, source, execution)?;
+                }
+                _ => {
+                    return Err(ProvisionSpecError::Validation(
+                        "legacy execution inputs are required by schema_version 4 and forbidden in schema_version 3",
+                    ));
+                }
+            }
             if attestations
-                .backup_reference
-                .as_deref()
+                .as_ref()
+                .and_then(|attestations| attestations.backup_reference.as_deref())
                 .is_some_and(|reference| is_placeholder(reference, 8))
             {
                 return Err(ProvisionSpecError::Validation(
@@ -699,42 +1328,558 @@ fn validate_flow(spec: &ProvisionSpec) -> Result<(), ProvisionSpecError> {
     Ok(())
 }
 
+fn validate_legacy_execution(
+    operation_id: &str,
+    source: &SourceSpec,
+    execution: &LegacyExecutionSpec,
+) -> Result<(), ProvisionSpecError> {
+    let journal = &execution.journal;
+    if journal.root != Path::new(JOURNAL_ROOT)
+        || journal.activation_state_root != Path::new(ACTIVATION_STATE_ROOT)
+    {
+        return Err(ProvisionSpecError::Validation(
+            "legacy execution journal and activation roots must use the frozen /var/lib/v2board/lifecycle locations",
+        ));
+    }
+    validate_absolute_normalized_path(&journal.root)?;
+    validate_absolute_normalized_path(&journal.activation_state_root)?;
+    validate_operation_private_path(operation_id, &journal.authorization_path)?;
+
+    let release = &execution.release;
+    if !valid_release_id(&release.release_id)
+        || !is_lower_hex(&release.archive_sha256, 64)
+        || release.releases_root != Path::new(RELEASES_ROOT)
+        || release.current_symlink != Path::new(CURRENT_RELEASE_PATH)
+    {
+        return Err(ProvisionSpecError::Validation(
+            "legacy release must bind a safe release_id, lowercase archive SHA-256, and the frozen release/current paths",
+        ));
+    }
+    validate_absolute_normalized_path(&release.releases_root)?;
+    validate_absolute_normalized_path(&release.current_symlink)?;
+    validate_operation_private_path(operation_id, &release.archive_path)?;
+
+    let systemd = &execution.systemd;
+    if systemd.api_unit != API_UNIT
+        || systemd.worker_unit != WORKER_UNIT
+        || systemd.api_ready_url != API_READY_URL
+        || systemd.worker_health_path != Path::new(WORKER_HEALTH_PATH)
+    {
+        return Err(ProvisionSpecError::Validation(
+            "legacy systemd target units, API readiness URL, and worker health path must match the frozen bare-metal release contract",
+        ));
+    }
+    validate_absolute_normalized_path(&systemd.worker_health_path)?;
+    validate_legacy_source_units(systemd)?;
+    validate_legacy_source_control(source, systemd, &execution.source_control)?;
+
+    let receipts = &execution.receipts;
+    if !is_lower_hex(&receipts.release_archive.sha256, 64) {
+        return Err(ProvisionSpecError::Validation(
+            "the immutable release archive receipt requires a lowercase SHA-256",
+        ));
+    }
+    let receipt_paths: [&Path; 11] = [
+        receipts.release_archive.path.as_path(),
+        receipts.source_fence_path.as_path(),
+        receipts.source_drain_path.as_path(),
+        receipts.backup_restore_path.as_path(),
+        receipts.redis_fence_armed_path.as_path(),
+        receipts.redis_fence_path.as_path(),
+        receipts.datastore_fence_armed_path.as_path(),
+        receipts.datastore_fence_path.as_path(),
+        receipts.source_retirement_path.as_path(),
+        receipts.runtime_compatibility_disabled_path.as_path(),
+        receipts.postgres_authority_path.as_path(),
+    ];
+    for path in receipt_paths {
+        validate_operation_private_path(operation_id, path)?;
+    }
+    require_unique_paths(
+        &receipt_paths,
+        "legacy receipt paths must be pairwise distinct",
+    )?;
+
+    let backup = &execution.backup;
+    if backup.mode != LegacyBackupMode::MysqlLogicalDumpAndIsolatedRestore
+        || !valid_opaque_reference(&backup.backup_reference)
+        || !is_lower_hex(&backup.encryption_recipient_sha256, 64)
+        || !is_lower_hex(&backup.decryption_identity_sha256, 64)
+        || backup.encryption_recipient_sha256 == backup.decryption_identity_sha256
+        || !(300..=604_800).contains(&backup.command_timeout_seconds)
+        || !(16 * 1024 * 1024..=16 * 1024_u64.pow(4))
+            .contains(&backup.maximum_encrypted_backup_bytes)
+    {
+        return Err(ProvisionSpecError::Validation(
+            "legacy backup must use an encrypted MySQL logical dump, an empty isolated restore, full verification, and cleanup",
+        ));
+    }
+    validate_operation_private_path(operation_id, &backup.encrypted_backup_output_path)?;
+    validate_operation_private_path(operation_id, &backup.encryption_recipient_path)?;
+    validate_backup_identity_path(operation_id, &backup.decryption_identity_path)?;
+    validate_operation_private_path(operation_id, &backup.isolated_restore_state_path)?;
+    validate_mysql_url(
+        &backup.isolated_restore_database_url,
+        "execution.backup.isolated_restore_database_url",
+    )?;
+    let restore_database =
+        Url::parse(&backup.isolated_restore_database_url).expect("validated isolated restore URL");
+    let restore_database = strict_percent_decode(
+        restore_database
+            .path()
+            .strip_prefix('/')
+            .unwrap_or_default(),
+    )?;
+    if matches!(
+        restore_database.to_ascii_lowercase().as_str(),
+        "mysql" | "information_schema" | "performance_schema" | "sys"
+    ) {
+        return Err(ProvisionSpecError::Validation(
+            "isolated restore database must not name a MySQL system schema",
+        ));
+    }
+    if backup.isolated_restore_transport_security == SourceTransportSecurity::VerifiedTls
+        && !mysql_url_verifies_identity(&backup.isolated_restore_database_url)
+    {
+        return Err(ProvisionSpecError::Validation(
+            "verified isolated restore transport requires MySQL VERIFY_IDENTITY",
+        ));
+    }
+    if datastore_identity(&backup.isolated_restore_database_url)?
+        == datastore_identity(&source.database_url)?
+    {
+        return Err(ProvisionSpecError::Validation(
+            "the isolated restore database must not alias the legacy source database",
+        ));
+    }
+    let source_password = Url::parse(&source.database_url)
+        .expect("validated source URL")
+        .password()
+        .map(strict_percent_decode)
+        .transpose()?
+        .unwrap_or_default();
+    let restore_password = Url::parse(&backup.isolated_restore_database_url)
+        .expect("validated restore URL")
+        .password()
+        .map(strict_percent_decode)
+        .transpose()?
+        .unwrap_or_default();
+    if source_password == restore_password {
+        return Err(ProvisionSpecError::Validation(
+            "the isolated restore credential must be independent from the legacy source credential",
+        ));
+    }
+
+    let nodes = &execution.nodes;
+    if !nodes.inventory.is_empty()
+        || !matches!(
+            nodes.activation_transport,
+            LegacyNodeActivationTransportSpec::NotRequiredNoNodes
+        )
+    {
+        return Err(ProvisionSpecError::Validation(
+            "schema-v4 legacy migration requires an empty node inventory and not_required_no_nodes because external node activation is outside this repository",
+        ));
+    }
+
+    let retirement = &execution.source_retirement;
+    if !matches!(
+        retirement.lifecycle_tool_path.to_str(),
+        Some("/usr/local/sbin/v2board-lifecycle")
+            | Some("/opt/v2board/lifecycle/v2board-lifecycle")
+    ) {
+        return Err(ProvisionSpecError::Validation(
+            "legacy source retirement requires an allowed disposable lifecycle tool path",
+        ));
+    }
+    validate_absolute_normalized_path(&retirement.lifecycle_tool_path)?;
+    validate_operation_private_path(operation_id, &retirement.retirement_probe_state_path)?;
+
+    let restore_state_name = backup
+        .isolated_restore_state_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or(ProvisionSpecError::Validation(
+            "isolated restore state path requires a UTF-8 file name",
+        ))?;
+    let archive_materialization_state_path = backup
+        .isolated_restore_state_path
+        .with_file_name(format!(".{restore_state_name}.archive-materialization"));
+    validate_operation_private_path(operation_id, &archive_materialization_state_path)?;
+    let all_file_paths: [&Path; 19] = [
+        journal.authorization_path.as_path(),
+        release.archive_path.as_path(),
+        receipts.release_archive.path.as_path(),
+        receipts.source_fence_path.as_path(),
+        receipts.source_drain_path.as_path(),
+        receipts.backup_restore_path.as_path(),
+        receipts.redis_fence_armed_path.as_path(),
+        receipts.redis_fence_path.as_path(),
+        receipts.datastore_fence_armed_path.as_path(),
+        receipts.datastore_fence_path.as_path(),
+        receipts.source_retirement_path.as_path(),
+        receipts.runtime_compatibility_disabled_path.as_path(),
+        receipts.postgres_authority_path.as_path(),
+        backup.encrypted_backup_output_path.as_path(),
+        backup.encryption_recipient_path.as_path(),
+        backup.decryption_identity_path.as_path(),
+        backup.isolated_restore_state_path.as_path(),
+        archive_materialization_state_path.as_path(),
+        retirement.retirement_probe_state_path.as_path(),
+    ];
+    require_unique_paths(
+        &all_file_paths,
+        "legacy execution file paths must not alias one another",
+    )?;
+    let mut all_declared_paths = vec![
+        journal.root.as_path(),
+        journal.activation_state_root.as_path(),
+        release.releases_root.as_path(),
+        release.current_symlink.as_path(),
+        Path::new("/var/lib/v2board/api/config.json"),
+        Path::new("/var/lib/v2board/worker/config.json"),
+        retirement.lifecycle_tool_path.as_path(),
+        systemd.worker_health_path.as_path(),
+    ];
+    all_declared_paths.extend(all_file_paths);
+    require_unique_paths(
+        &all_declared_paths,
+        "legacy execution paths must not alias journal, release, config, lifecycle-tool, health, input, or output paths",
+    )?;
+    Ok(())
+}
+
+fn validate_legacy_source_units(
+    systemd: &LegacySystemdExecutionSpec,
+) -> Result<(), ProvisionSpecError> {
+    if systemd.legacy_writer_units.is_empty()
+        || systemd.legacy_worker_units.is_empty()
+        || systemd.legacy_scheduler_units.is_empty()
+        || systemd
+            .legacy_writer_units
+            .iter()
+            .chain(&systemd.legacy_worker_units)
+            .any(|unit| !unit.ends_with(".service"))
+        || !systemd
+            .legacy_scheduler_units
+            .iter()
+            .any(|unit| unit.ends_with(".timer"))
+        || !systemd
+            .legacy_scheduler_units
+            .iter()
+            .any(|unit| unit.ends_with(".service"))
+        || !scheduler_units_are_exact_pairs(&systemd.legacy_scheduler_units)
+    {
+        return Err(ProvisionSpecError::Validation(
+            "legacy source control requires nonempty writer/worker services and both the dedicated scheduler timer and its triggered service",
+        ));
+    }
+    let units = systemd
+        .legacy_writer_units
+        .iter()
+        .chain(&systemd.legacy_worker_units)
+        .chain(&systemd.legacy_scheduler_units)
+        .collect::<Vec<_>>();
+    if units.iter().any(|unit| {
+        !valid_systemd_unit_name(unit) || matches!(unit.as_str(), API_UNIT | WORKER_UNIT)
+    }) {
+        return Err(ProvisionSpecError::Validation(
+            "legacy source systemd units must use safe unique service/timer names and must not name native units",
+        ));
+    }
+    if units
+        .iter()
+        .map(|unit| unit.as_str())
+        .collect::<BTreeSet<_>>()
+        .len()
+        != units.len()
+    {
+        return Err(ProvisionSpecError::Validation(
+            "legacy source systemd units must be pairwise distinct across writer, worker, and scheduler roles",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_legacy_source_control(
+    source: &SourceSpec,
+    systemd: &LegacySystemdExecutionSpec,
+    control: &LegacySourceControlExecutionSpec,
+) -> Result<(), ProvisionSpecError> {
+    if [
+        source.redis_connection_prefix.as_str(),
+        source.redis_cache_prefix.as_str(),
+    ]
+    .into_iter()
+    .any(|prefix| !valid_redis_physical_prefix(prefix, true))
+    {
+        return Err(ProvisionSpecError::Validation(
+            "schema_version 4 requires the exact nonempty Laravel Redis connection and cache prefixes",
+        ));
+    }
+    if !valid_redis_physical_prefix(&source.redis_horizon_prefix, true) {
+        return Err(ProvisionSpecError::Validation(
+            "schema_version 4 requires the exact nonempty Laravel Horizon Redis prefix",
+        ));
+    }
+    if [
+        source.database_url.as_str(),
+        source
+            .database_fence_url
+            .as_deref()
+            .ok_or(ProvisionSpecError::Validation(
+                "schema_version 4 requires source.database_fence_url for the durable MySQL write fence",
+            ))?,
+        source.redis_default_url.as_str(),
+        source.redis_cache_url.as_str(),
+    ]
+    .into_iter()
+    .any(|url| !url_uses_literal_loopback(url))
+    {
+        return Err(ProvisionSpecError::Validation(
+            "schema_version 4 local_dedicated_systemd source datastores require literal loopback URLs; remote or managed sources need a future provider-specific automation adapter",
+        ));
+    }
+    let datastore_units = [
+        &control.datastores.mysql,
+        &control.datastores.default_redis,
+        &control.datastores.cache_redis,
+    ];
+    for redis_url in [&source.redis_default_url, &source.redis_cache_url] {
+        let parsed = Url::parse(redis_url)
+            .map_err(|_| ProvisionSpecError::Validation("source Redis fence URL must be valid"))?;
+        if parsed.username().is_empty() || parsed.username() == "default" {
+            return Err(ProvisionSpecError::Validation(
+                "schema_version 4 source Redis URLs must use a dedicated named lifecycle ACL user with the reviewed full-access drain/fence grant",
+            ));
+        }
+    }
+    let legacy_runtime_units = systemd
+        .legacy_writer_units
+        .iter()
+        .chain(&systemd.legacy_worker_units)
+        .chain(&systemd.legacy_scheduler_units)
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    for datastore in datastore_units {
+        let unit = datastore.unit.as_str();
+        if !valid_systemd_unit_name(unit)
+            || !unit.ends_with(".service")
+            || matches!(unit, API_UNIT | WORKER_UNIT)
+            || legacy_runtime_units.contains(unit)
+        {
+            return Err(ProvisionSpecError::Validation(
+                "local source datastore units must be dedicated .service names disjoint from legacy and native runtime units",
+            ));
+        }
+    }
+    let mysql_unit = control.datastores.mysql.unit.as_str();
+    let default_redis_unit = control.datastores.default_redis.unit.as_str();
+    let cache_redis_unit = control.datastores.cache_redis.unit.as_str();
+    if mysql_unit == default_redis_unit || mysql_unit == cache_redis_unit {
+        return Err(ProvisionSpecError::Validation(
+            "the dedicated MySQL unit must be distinct from every Redis unit",
+        ));
+    }
+    let redis_same_process = redis_service_identity(&source.redis_default_url)?
+        == redis_service_identity(&source.redis_cache_url)?;
+    if (default_redis_unit == cache_redis_unit) != redis_same_process {
+        return Err(ProvisionSpecError::Validation(
+            "default and cache Redis must name the same systemd unit exactly when their URLs name the same local Redis process",
+        ));
+    }
+    Ok(())
+}
+
+fn url_uses_literal_loopback(value: &str) -> bool {
+    Url::parse(value)
+        .ok()
+        .and_then(|url| normalized_url_host(url.host_str()?).parse::<IpAddr>().ok())
+        .is_some_and(|address| address.is_loopback())
+}
+
+fn redis_service_identity(value: &str) -> Result<(String, u16), ProvisionSpecError> {
+    let url = Url::parse(value)
+        .map_err(|_| ProvisionSpecError::Validation("source Redis URL is invalid"))?;
+    let host = url.host_str().ok_or(ProvisionSpecError::Validation(
+        "source Redis URL has no host",
+    ))?;
+    let port = url
+        .port_or_known_default()
+        .ok_or(ProvisionSpecError::Validation(
+            "source Redis URL has no port",
+        ))?;
+    Ok((normalized_url_host(host).to_ascii_lowercase(), port))
+}
+
+fn normalized_url_host(host: &str) -> &str {
+    host.strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+        .unwrap_or(host)
+}
+
+fn valid_systemd_unit_name(value: &str) -> bool {
+    (1..=255).contains(&value.len())
+        && !value.starts_with('.')
+        && !value.contains("..")
+        && matches!(
+            value.rsplit_once('.').map(|(_, suffix)| suffix),
+            Some("service" | "timer")
+        )
+        && value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b':' | b'_' | b'-' | b'.' | b'@')
+        })
+}
+
+pub(crate) fn scheduler_units_are_exact_pairs(units: &[String]) -> bool {
+    let inventory = units.iter().map(String::as_str).collect::<BTreeSet<_>>();
+    !units.is_empty()
+        && units.len().is_multiple_of(2)
+        && units.iter().all(|unit| {
+            scheduler_unit_counterpart(unit)
+                .is_some_and(|counterpart| inventory.contains(counterpart.as_str()))
+        })
+}
+
+pub(crate) fn scheduler_unit_counterpart(unit: &str) -> Option<String> {
+    unit.strip_suffix(".timer")
+        .map(|stem| format!("{stem}.service"))
+        .or_else(|| {
+            unit.strip_suffix(".service")
+                .map(|stem| format!("{stem}.timer"))
+        })
+}
+
+fn valid_release_id(value: &str) -> bool {
+    (1..=128).contains(&value.len())
+        && !value.starts_with('.')
+        && !value.contains("..")
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+}
+
+fn valid_opaque_reference(value: &str) -> bool {
+    let value = value.trim();
+    (8..=1024).contains(&value.len())
+        && value == value.trim()
+        && !is_placeholder(value, 8)
+        && !value.chars().any(char::is_control)
+        && Url::parse(value)
+            .ok()
+            .is_none_or(|url| url.username().is_empty() && url.password().is_none())
+}
+
+fn validate_absolute_normalized_path(path: &Path) -> Result<(), ProvisionSpecError> {
+    let Some(text) = path.to_str() else {
+        return Err(ProvisionSpecError::Validation(
+            "legacy execution paths must be UTF-8 absolute paths",
+        ));
+    };
+    if !path.is_absolute()
+        || text.len() > 4096
+        || text.ends_with('/')
+        || path.components().any(|component| {
+            matches!(
+                component,
+                Component::CurDir | Component::ParentDir | Component::Prefix(_)
+            )
+        })
+    {
+        return Err(ProvisionSpecError::Validation(
+            "legacy execution paths must be normalized absolute paths without dot components or trailing slash",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_operation_private_path(
+    operation_id: &str,
+    path: &Path,
+) -> Result<(), ProvisionSpecError> {
+    validate_absolute_normalized_path(path)?;
+    let private_root = Path::new(LIFECYCLE_STATE_ROOT);
+    if path == private_root
+        || !path.starts_with(private_root)
+        || !path
+            .components()
+            .any(|component| component.as_os_str() == operation_id)
+    {
+        return Err(ProvisionSpecError::Validation(
+            "operation files and directories must be under /var/lib/v2board/lifecycle and contain the exact operation_id path component",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_backup_identity_path(
+    operation_id: &str,
+    path: &Path,
+) -> Result<(), ProvisionSpecError> {
+    validate_absolute_normalized_path(path)?;
+    let expected = Path::new(LIFECYCLE_SECRET_ROOT)
+        .join(operation_id)
+        .join("age-identity");
+    if path != expected {
+        return Err(ProvisionSpecError::Validation(
+            "backup decryption identity must be supplied separately at /run/v2board-lifecycle-secrets/<operation_id>/age-identity",
+        ));
+    }
+    Ok(())
+}
+
+fn require_unique_paths(paths: &[&Path], message: &'static str) -> Result<(), ProvisionSpecError> {
+    if paths.iter().copied().collect::<BTreeSet<_>>().len() != paths.len() {
+        return Err(ProvisionSpecError::Validation(message));
+    }
+    Ok(())
+}
+
 fn validate_legacy_source(
     source: &SourceSpec,
     target: &TargetSpec,
 ) -> Result<(), ProvisionSpecError> {
     validate_mysql_url(&source.database_url, "source.database_url")?;
+    if let Some(database_fence_url) = &source.database_fence_url {
+        validate_mysql_fence_url(database_fence_url)?;
+        if mysql_server_endpoint_identity(database_fence_url)?
+            != mysql_server_endpoint_identity(&source.database_url)?
+        {
+            return Err(ProvisionSpecError::Validation(
+                "source.database_fence_url must name the exact same MySQL server endpoint as source.database_url",
+            ));
+        }
+        let reader = Url::parse(&source.database_url).expect("validated source URL");
+        let fence = Url::parse(database_fence_url).expect("validated source fence URL");
+        if reader.username() == fence.username() || reader.password() == fence.password() {
+            return Err(ProvisionSpecError::Validation(
+                "source.database_fence_url must use a username and password independent from the read-only source credential",
+            ));
+        }
+    }
     validate_redis_url(&source.redis_default_url, "source.redis_default_url")?;
     validate_redis_url(&source.redis_cache_url, "source.redis_cache_url")?;
     if [&source.redis_connection_prefix, &source.redis_cache_prefix]
         .iter()
-        .any(|prefix| {
-            prefix.chars().any(|character| {
-                character.is_control() || matches!(character, '*' | '?' | '[' | ']' | '\\')
-            })
-        })
+        .any(|prefix| !valid_redis_physical_prefix(prefix, false))
+        || (!source.redis_horizon_prefix.is_empty()
+            && !valid_redis_physical_prefix(&source.redis_horizon_prefix, true))
     {
         return Err(ProvisionSpecError::Validation(
-            "source Redis prefixes must not contain glob or control characters",
+            "source Redis prefixes must not contain glob/control characters; a declared Horizon prefix must be nonempty",
         ));
     }
     if source.transport_security == SourceTransportSecurity::VerifiedTls
         && (!mysql_url_verifies_identity(&source.database_url)
+            || source
+                .database_fence_url
+                .as_deref()
+                .is_some_and(|url| !mysql_url_verifies_identity(url))
             || !redis_url_uses_tls(&source.redis_default_url)
             || !redis_url_uses_tls(&source.redis_cache_url))
     {
         return Err(ProvisionSpecError::Validation(
             "source verified_tls requires MySQL VERIFY_IDENTITY and rediss:// for both Redis databases",
-        ));
-    }
-    if !(0..=2).contains(&source.legacy_show_subscribe_method) {
-        return Err(ProvisionSpecError::Validation(
-            "source.legacy_show_subscribe_method must be 0, 1, or 2",
-        ));
-    }
-    if !(1..=525_600).contains(&source.legacy_show_subscribe_expire_minutes) {
-        return Err(ProvisionSpecError::Validation(
-            "source.legacy_show_subscribe_expire_minutes must be between 1 and 525600",
         ));
     }
     let target_redis_identity = datastore_identity(&target.redis_url)?;
@@ -746,6 +1891,14 @@ fn validate_legacy_source(
         ));
     }
     Ok(())
+}
+
+fn valid_redis_physical_prefix(value: &str, require_nonempty: bool) -> bool {
+    (!require_nonempty || !value.is_empty())
+        && value.len() <= 1024
+        && !value.chars().any(|character| {
+            character.is_control() || matches!(character, '*' | '?' | '[' | ']' | '\\')
+        })
 }
 
 fn validate_target(target: &TargetSpec) -> Result<(), ProvisionSpecError> {
@@ -769,10 +1922,58 @@ fn validate_target(target: &TargetSpec) -> Result<(), ProvisionSpecError> {
     }
     validate_target_postgres(&target.postgres)?;
     validate_target_clickhouse(&target.clickhouse)?;
+    validate_analytics_admission(&target.analytics_admission)?;
     validate_redis_url(&target.redis_url, "target.redis_url")?;
     if !redis_url_uses_tls(&target.redis_url) {
         return Err(ProvisionSpecError::Validation(
             "target.redis_url must use rediss:// with certificate verification",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_analytics_admission(policy: &AnalyticsAdmissionSpec) -> Result<(), ProvisionSpecError> {
+    let values = [
+        policy.recovery_pending_rows,
+        policy.soft_pending_rows,
+        policy.hard_pending_rows,
+        policy.recovery_relation_bytes,
+        policy.soft_relation_bytes,
+        policy.hard_relation_bytes,
+        policy.recovery_oldest_age_seconds,
+        policy.soft_oldest_age_seconds,
+        policy.hard_oldest_age_seconds,
+        policy.database_capacity_bytes,
+        policy.hard_min_headroom_bytes,
+        policy.soft_min_headroom_bytes,
+        policy.recovery_min_headroom_bytes,
+        policy.event_reservation_bytes,
+        policy.soft_max_new_rows_per_second,
+        policy.sample_interval_seconds,
+        policy.stale_after_seconds,
+    ];
+    let ordered = policy.recovery_pending_rows < policy.soft_pending_rows
+        && policy.soft_pending_rows < policy.hard_pending_rows
+        && policy.recovery_relation_bytes < policy.soft_relation_bytes
+        && policy.soft_relation_bytes < policy.hard_relation_bytes
+        && policy.recovery_oldest_age_seconds < policy.soft_oldest_age_seconds
+        && policy.soft_oldest_age_seconds < policy.hard_oldest_age_seconds
+        && policy.hard_min_headroom_bytes < policy.soft_min_headroom_bytes
+        && policy.soft_min_headroom_bytes < policy.recovery_min_headroom_bytes;
+    if values.iter().any(|value| i64::try_from(*value).is_err())
+        || !ordered
+        || policy.database_capacity_bytes <= policy.recovery_min_headroom_bytes
+        || policy.event_reservation_bytes == 0
+        || policy.event_reservation_bytes > policy.hard_relation_bytes
+        || !(100_000..=10_000_000).contains(&policy.soft_max_new_rows_per_second)
+        || !(1..=60).contains(&policy.sample_interval_seconds)
+        || !(policy.sample_interval_seconds.saturating_mul(2)..=600)
+            .contains(&policy.stale_after_seconds)
+        || is_placeholder(&policy.capacity_evidence, 8)
+        || policy.capacity_evidence.len() > 1024
+    {
+        return Err(ProvisionSpecError::Validation(
+            "analytics admission thresholds must be ordered, fit signed PostgreSQL integers, reserve one event, bind a 100000..=10000000-row soft window, keep a sample fresh within 600 seconds, and include capacity evidence",
         ));
     }
     Ok(())
@@ -1508,6 +2709,47 @@ fn validate_mysql_url(value: &str, field: &'static str) -> Result<(), ProvisionS
     Ok(())
 }
 
+fn validate_mysql_fence_url(value: &str) -> Result<(), ProvisionSpecError> {
+    let url = Url::parse(value).map_err(|_| {
+        ProvisionSpecError::Validation("source.database_fence_url must be a valid mysql:// URL")
+    })?;
+    let username = strict_percent_decode(url.username())?;
+    let password = url
+        .password()
+        .map(strict_percent_decode)
+        .transpose()?
+        .unwrap_or_default();
+    if url.scheme() != "mysql"
+        || url.host_str().is_none()
+        || !matches!(url.path(), "" | "/")
+        || username.is_empty()
+        || password.is_empty()
+        || url.fragment().is_some()
+        || is_placeholder(&password, 1)
+    {
+        return Err(ProvisionSpecError::Validation(
+            "source.database_fence_url must include host, independent username/password, and no default database",
+        ));
+    }
+    validate_mysql_connection_query(&url)?;
+    Ok(())
+}
+
+fn mysql_server_endpoint_identity(value: &str) -> Result<(String, u16), ProvisionSpecError> {
+    let url = Url::parse(value)
+        .map_err(|_| ProvisionSpecError::Validation("MySQL server endpoint URL must be valid"))?;
+    let host = url
+        .host_str()
+        .map(normalized_url_host)
+        .ok_or(ProvisionSpecError::Validation(
+            "MySQL server endpoint URL must include a host",
+        ))?;
+    Ok((
+        host.to_string(),
+        url.port_or_known_default().unwrap_or(3306),
+    ))
+}
+
 fn validate_mysql_connection_query(url: &Url) -> Result<Option<String>, ProvisionSpecError> {
     let mut seen = BTreeSet::new();
     let mut ssl_mode = None;
@@ -1927,6 +3169,83 @@ impl ProvisionSpec {
         &self.manifest_binding_hmac_sha256
     }
 
+    /// Returns the complete, HMAC-bound bare-metal intent only for a schema
+    /// v4 legacy migration. Schema v3 remains loadable for validate/inspect,
+    /// but deliberately has no apply execution accessor.
+    pub fn legacy_apply_execution(&self) -> Option<&LegacyExecutionSpec> {
+        match &self.flow {
+            ProvisionFlow::LegacyReferenceMigration {
+                execution: Some(execution),
+                ..
+            } if self.schema_version == 4 => Some(execution.as_ref()),
+            _ => None,
+        }
+    }
+
+    /// A scoped binding for constructors that only need execution policy.
+    /// The whole raw manifest remains bound by `manifest_binding_hmac_sha256`.
+    pub fn legacy_execution_binding_hmac_sha256(&self) -> Option<String> {
+        let execution = self.legacy_apply_execution()?;
+        let bytes =
+            serde_json::to_vec(execution).expect("LegacyExecutionSpec serialization cannot fail");
+        let mut mac =
+            <Hmac<Sha256> as KeyInit>::new_from_slice(self.lifecycle_audit_key.as_bytes())
+                .expect("HMAC accepts keys of any length");
+        mac.update(LEGACY_EXECUTION_HMAC_DOMAIN_V1);
+        mac.update(self.operation_id.as_bytes());
+        mac.update(&[0]);
+        mac.update(&bytes);
+        Some(hex::encode(mac.finalize().into_bytes()))
+    }
+
+    /// Binds evidence produced after authorization without exposing the audit
+    /// key or pretending the evidence digest existed in the manifest. Only a
+    /// schema-v4 legacy operation can mint or verify this scoped receipt MAC.
+    pub(crate) fn source_receipt_binding_hmac_sha256(
+        &self,
+        kind: LegacyRuntimeReceiptKind,
+        canonical_bytes: &[u8],
+    ) -> Option<String> {
+        let mac = self.source_receipt_mac(kind, canonical_bytes)?;
+        Some(hex::encode(mac.finalize().into_bytes()))
+    }
+
+    pub(crate) fn verify_source_receipt_binding_hmac_sha256(
+        &self,
+        kind: LegacyRuntimeReceiptKind,
+        canonical_bytes: &[u8],
+        expected_hex: &str,
+    ) -> bool {
+        if !is_lower_hex(expected_hex, 64) {
+            return false;
+        }
+        let Ok(expected) = hex::decode(expected_hex) else {
+            return false;
+        };
+        self.source_receipt_mac(kind, canonical_bytes)
+            .is_some_and(|mac| mac.verify_slice(&expected).is_ok())
+    }
+
+    fn source_receipt_mac(
+        &self,
+        kind: LegacyRuntimeReceiptKind,
+        canonical_bytes: &[u8],
+    ) -> Option<Hmac<Sha256>> {
+        self.legacy_apply_execution()?;
+        let mut mac =
+            <Hmac<Sha256> as KeyInit>::new_from_slice(self.lifecycle_audit_key.as_bytes())
+                .expect("HMAC accepts keys of any length");
+        mac.update(LEGACY_RUNTIME_RECEIPT_HMAC_DOMAIN_V1);
+        mac.update(kind.domain_label());
+        mac.update(&[0]);
+        mac.update(self.operation_id.as_bytes());
+        mac.update(&[0]);
+        mac.update(self.manifest_binding_hmac_sha256.as_bytes());
+        mac.update(&[0]);
+        mac.update(canonical_bytes);
+        Some(mac)
+    }
+
     pub fn materialized_api_runtime_config(
         &self,
     ) -> Result<Map<String, Value>, ProvisionSpecError> {
@@ -2051,14 +3370,46 @@ impl ProvisionSpec {
         let mut mac =
             <Hmac<Sha256> as KeyInit>::new_from_slice(self.lifecycle_audit_key.as_bytes())
                 .expect("HMAC accepts keys of any length");
-        mac.update(REPORT_HMAC_DOMAIN_V3);
+        mac.update(match self.schema_version {
+            3 => REPORT_HMAC_DOMAIN_V3,
+            4 => REPORT_HMAC_DOMAIN_V4,
+            _ => unreachable!("validated provision schema"),
+        });
         mac.update(bytes);
         hex::encode(mac.finalize().into_bytes())
     }
 
+    pub(crate) fn apply_authorization_binding_hmac_sha256(&self, bytes: &[u8]) -> String {
+        let mut mac =
+            <Hmac<Sha256> as KeyInit>::new_from_slice(self.lifecycle_audit_key.as_bytes())
+                .expect("HMAC accepts keys of any length");
+        mac.update(APPLY_AUTHORIZATION_HMAC_DOMAIN_V3);
+        mac.update(bytes);
+        hex::encode(mac.finalize().into_bytes())
+    }
+
+    pub(crate) fn verify_apply_authorization_binding_hmac_sha256(
+        &self,
+        bytes: &[u8],
+        expected_hex: &str,
+    ) -> bool {
+        let Ok(expected) = hex::decode(expected_hex) else {
+            return false;
+        };
+        let mut mac =
+            <Hmac<Sha256> as KeyInit>::new_from_slice(self.lifecycle_audit_key.as_bytes())
+                .expect("HMAC accepts keys of any length");
+        mac.update(APPLY_AUTHORIZATION_HMAC_DOMAIN_V3);
+        mac.update(bytes);
+        mac.verify_slice(&expected).is_ok()
+    }
+
     fn target_secret_values(&self) -> Result<Vec<String>, ProvisionSpecError> {
         let mut secrets = Vec::new();
-        let mut add_url_password = |value: &str| -> Result<(), ProvisionSpecError> {
+        fn add_url_password(
+            secrets: &mut Vec<String>,
+            value: &str,
+        ) -> Result<(), ProvisionSpecError> {
             if let Some(password) = Url::parse(value)
                 .expect("validated datastore URL")
                 .password()
@@ -2066,7 +3417,7 @@ impl ProvisionSpec {
                 secrets.push(strict_percent_decode(password)?);
             }
             Ok(())
-        };
+        }
         match &self.flow {
             ProvisionFlow::FreshInstall { target, .. }
             | ProvisionFlow::LegacyReferenceMigration { target, .. } => {
@@ -2077,7 +3428,7 @@ impl ProvisionSpec {
                     &target.postgres.worker_database_url,
                     &target.redis_url,
                 ] {
-                    add_url_password(value)?;
+                    add_url_password(&mut secrets, value)?;
                 }
                 for principal in [
                     &target.clickhouse.bootstrap_principal,
@@ -2095,7 +3446,7 @@ impl ProvisionSpec {
                     &current.worker_database_url,
                     &current.redis_url,
                 ] {
-                    add_url_password(value)?;
+                    add_url_password(&mut secrets, value)?;
                 }
                 for principal in [
                     &current.clickhouse_schema_principal,
@@ -2106,12 +3457,18 @@ impl ProvisionSpec {
                 }
             }
         }
+        if let Some(execution) = self.legacy_apply_execution() {
+            add_url_password(
+                &mut secrets,
+                &execution.backup.isolated_restore_database_url,
+            )?;
+        }
         Ok(secrets)
     }
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -2225,6 +3582,26 @@ mod tests {
         serde_json::json!({
             "postgres": postgres_target(),
             "clickhouse": clickhouse_target(),
+            "analytics_admission": {
+                "recovery_pending_rows": 750000,
+                "soft_pending_rows": 1000000,
+                "hard_pending_rows": 2000000,
+                "recovery_relation_bytes": 3221225472_u64,
+                "soft_relation_bytes": 4294967296_u64,
+                "hard_relation_bytes": 8589934592_u64,
+                "recovery_oldest_age_seconds": 120,
+                "soft_oldest_age_seconds": 300,
+                "hard_oldest_age_seconds": 1800,
+                "database_capacity_bytes": 68719476736_u64,
+                "hard_min_headroom_bytes": 8589934592_u64,
+                "soft_min_headroom_bytes": 17179869184_u64,
+                "recovery_min_headroom_bytes": 21474836480_u64,
+                "event_reservation_bytes": 4096,
+                "soft_max_new_rows_per_second": 100000,
+                "sample_interval_seconds": 1,
+                "stale_after_seconds": 10,
+                "capacity_evidence": "dedicated-postgresql-volume-quota-ticket-1042"
+            },
             "redis_url": "rediss://:redis-target-secret-0123456789@redis.company.net/1",
             "api_runtime_config_path": "/var/lib/v2board/api/config.json",
             "worker_runtime_config_path": "/var/lib/v2board/worker/config.json",
@@ -2260,15 +3637,14 @@ mod tests {
         document.as_object_mut().expect("document").insert(
             "source".to_string(),
             serde_json::json!({
-                "database_url": "mysql://legacy_readonly:legacy-secret@legacy-db.company.net/v2board",
-                "redis_default_url": "redis://legacy-redis.company.net/0",
-                "redis_cache_url": "redis://legacy-redis.company.net/1",
+                "database_url": "mysql://legacy_readonly:legacy-secret@127.0.0.1:3306/v2board",
+                "database_fence_url": "mysql://legacy_fence:independent-fence-secret@127.0.0.1:3306",
+                "redis_default_url": "redis://legacy_lifecycle:redis-lifecycle-secret@127.0.0.1:6379/0",
+                "redis_cache_url": "redis://legacy_lifecycle:redis-lifecycle-secret@127.0.0.1:6379/1",
                 "redis_connection_prefix": "v2board_database_",
                 "redis_cache_prefix": "v2board_cache",
+                "redis_horizon_prefix": "v2board_horizon:",
                 "legacy_cache_driver": "redis",
-                "legacy_show_subscribe_method": 0,
-                "legacy_show_subscribe_expire_minutes": 5,
-                "legacy_subscription_issuance_stopped_at_unix": 0,
                 "transport_security": "trusted_maintenance_network"
             }),
         );
@@ -2277,7 +3653,7 @@ mod tests {
             "sessions": "logout_all",
             "legacy_cache": "discard_ephemeral_after_fence",
             "legacy_stripe": "assert_none",
-            "legacy_subscription_tokens": "assert_none",
+            "temporary_subscription_links": "invalidate_at_cutover",
             "nodes": "one_shot_offline_cutover",
             "legacy_theme": "discard_confirmed",
             "legacy_custom_rules": "none"
@@ -2291,6 +3667,141 @@ mod tests {
             "restore_tested": false
         });
         document
+    }
+
+    fn legacy_execution() -> Value {
+        serde_json::json!({
+            "release": {
+                "release_id": "2026.07.12-content-abc123",
+                "archive_sha256": "a".repeat(64)
+            },
+            "systemd": {
+                "legacy_writer_units": ["php-fpm-v2board.service"],
+                "legacy_worker_units": ["v2board-legacy-queue.service"],
+                "legacy_scheduler_units": [
+                    "v2board-legacy-scheduler.timer",
+                    "v2board-legacy-scheduler.service"
+                ]
+            },
+            "source_control": {
+                "datastores": {
+                    "mysql": {
+                        "unit": "mysql-v2board.service"
+                    },
+                    "default_redis": {
+                        "unit": "redis-v2board.service"
+                    },
+                    "cache_redis": {
+                        "unit": "redis-v2board.service"
+                    }
+                }
+            },
+            "receipts": {
+                "release_archive": {
+                    "sha256": "b".repeat(64)
+                }
+            },
+            "backup": {
+                "backup_reference": "vault:legacy/backup-20260712",
+                "encryption_recipient_sha256": "c".repeat(64),
+                "decryption_identity_sha256": "e".repeat(64),
+                "isolated_restore_database_url": "mysql://restore_admin:isolated-restore-secret@restore-db.company.net/v2board_restore?ssl-mode=VERIFY_IDENTITY",
+                "isolated_restore_transport_security": "verified_tls",
+                "command_timeout_seconds": 86400,
+                "maximum_encrypted_backup_bytes": 274877906944_u64
+            },
+            "nodes": {
+                "activation_transport": {
+                    "kind": "not_required_no_nodes"
+                },
+                "inventory": []
+            }
+        })
+    }
+
+    fn legacy_v4_document() -> Value {
+        let mut document = legacy_document();
+        document["schema_version"] = Value::from(4);
+        document
+            .as_object_mut()
+            .expect("document")
+            .remove("attestations");
+        document
+            .as_object_mut()
+            .expect("document")
+            .insert("execution".to_string(), legacy_execution());
+        remove_legacy_v4_derived_inputs(&mut document);
+        document
+    }
+
+    fn remove_legacy_v4_derived_inputs(document: &mut Value) {
+        document
+            .as_object_mut()
+            .expect("document")
+            .remove("reference_commit");
+        let custom_rules = document["decisions"]["legacy_custom_rules"].clone();
+        document["decisions"] = serde_json::json!({
+            "legacy_custom_rules": custom_rules
+        });
+        document["execution"]
+            .as_object_mut()
+            .expect("execution")
+            .remove("nodes");
+        document["source"]
+            .as_object_mut()
+            .expect("source")
+            .remove("legacy_cache_driver");
+        let target = document["target"].as_object_mut().expect("target");
+        for key in [
+            "api_runtime_config_path",
+            "worker_runtime_config_path",
+            "require_empty_redis",
+        ] {
+            target.remove(key);
+        }
+        let postgres = target["postgres"].as_object_mut().expect("PostgreSQL");
+        for key in [
+            "database_collation",
+            "database_ctype",
+            "require_database_absent",
+            "require_roles_absent",
+        ] {
+            postgres.remove(key);
+        }
+        let external_access = postgres["external_access"]
+            .as_object_mut()
+            .expect("PostgreSQL external access");
+        external_access.remove("pg_hba_managed_externally");
+        external_access.remove("network_policy_managed_externally");
+        let clickhouse = target["clickhouse"].as_object_mut().expect("ClickHouse");
+        for key in [
+            "require_database_absent",
+            "require_principals_absent",
+            "require_standalone_non_replicated",
+        ] {
+            clickhouse.remove(key);
+        }
+        let privileges = clickhouse["privileges"]
+            .as_object_mut()
+            .expect("ClickHouse privileges");
+        for key in [
+            "bootstrap_manages_database_and_principals",
+            "schema_has_ddl_metadata_read_and_ledger_write_only",
+            "writer_is_insert_and_verify_only",
+            "reader_is_select_only",
+        ] {
+            privileges.remove(key);
+        }
+    }
+
+    pub(crate) fn legacy_spec_for_orchestration() -> ProvisionSpec {
+        load_document(&legacy_v4_document()).expect("valid shared legacy test manifest")
+    }
+
+    pub(crate) fn legacy_spec_for_orchestration_operation(operation_id: &str) -> ProvisionSpec {
+        let mut document = legacy_v4_document();
+        document["operation_id"] = Value::String(operation_id.to_string());
+        load_document(&document).expect("valid operation-bound legacy test manifest")
     }
 
     fn native_document() -> Value {
@@ -2489,6 +4000,308 @@ mod tests {
     }
 
     #[test]
+    fn v4_legacy_execution_is_complete_strict_and_hmac_bound() {
+        let document = legacy_v4_document();
+        let spec = load_document(&document).expect("valid v4 legacy execution manifest");
+        assert_eq!(spec.schema_version, 4);
+        let execution = spec
+            .legacy_apply_execution()
+            .expect("v4 exposes apply intent");
+        assert_eq!(execution.release.release_id, "2026.07.12-content-abc123");
+        assert_eq!(
+            execution.journal.root,
+            Path::new("/var/lib/v2board/lifecycle/journal")
+        );
+        assert!(execution.nodes.inventory.is_empty());
+        assert!(matches!(
+            execution.nodes.activation_transport,
+            LegacyNodeActivationTransportSpec::NotRequiredNoNodes
+        ));
+        let ProvisionFlow::LegacyReferenceMigration {
+            reference_commit,
+            decisions,
+            ..
+        } = &spec.flow
+        else {
+            panic!("legacy flow");
+        };
+        assert_eq!(reference_commit, LEGACY_REFERENCE_COMMIT);
+        assert!(decisions.legacy_configuration == LegacyConfigurationDecision::ManualOnly);
+        assert!(decisions.sessions == SessionDecision::LogoutAll);
+        assert!(decisions.legacy_cache == LegacyCacheDecision::DiscardEphemeralAfterFence);
+        assert!(decisions.legacy_stripe == LegacyStripeDecision::AssertNone);
+        assert!(
+            decisions.temporary_subscription_links
+                == TemporarySubscriptionLinkDecision::InvalidateAtCutover
+        );
+        assert!(decisions.nodes == NodeDecision::OneShotOfflineCutover);
+        assert!(decisions.legacy_theme == LegacyThemeDecision::DiscardConfirmed);
+        let hydrated_facts: Value = serde_json::from_slice(
+            &legacy_v4_hydrated_facts(&spec).expect("hydrated facts binding"),
+        )
+        .expect("hydrated facts JSON");
+        assert_eq!(
+            hydrated_facts["reference_commit"],
+            Value::String(LEGACY_REFERENCE_COMMIT.to_string())
+        );
+        assert_eq!(
+            hydrated_facts["execution"]["nodes"]["activation_transport"]["kind"],
+            Value::String("not_required_no_nodes".to_string())
+        );
+        assert_eq!(spec.manifest_binding_hmac_sha256().len(), 64);
+        let first = spec
+            .legacy_execution_binding_hmac_sha256()
+            .expect("scoped execution binding");
+        assert_eq!(first.len(), 64);
+        let receipt = spec
+            .source_receipt_binding_hmac_sha256(
+                LegacyRuntimeReceiptKind::SourceFence,
+                br#"{"status":"fenced"}"#,
+            )
+            .expect("v4 legacy receipt binding");
+        assert!(spec.verify_source_receipt_binding_hmac_sha256(
+            LegacyRuntimeReceiptKind::SourceFence,
+            br#"{"status":"fenced"}"#,
+            &receipt,
+        ));
+        assert!(!spec.verify_source_receipt_binding_hmac_sha256(
+            LegacyRuntimeReceiptKind::SourceDrain,
+            br#"{"status":"fenced"}"#,
+            &receipt,
+        ));
+        assert!(!spec.verify_source_receipt_binding_hmac_sha256(
+            LegacyRuntimeReceiptKind::SourceFence,
+            br#"{"status":"changed"}"#,
+            &receipt,
+        ));
+        let journal_bound_receipt = spec
+            .source_receipt_binding_hmac_sha256(
+                LegacyRuntimeReceiptKind::SourceFence,
+                br#"{"journal_anchor_event_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","result_checkpoint":"maintenance_fenced"}"#,
+            )
+            .expect("journal-bound source receipt");
+        assert!(!spec.verify_source_receipt_binding_hmac_sha256(
+            LegacyRuntimeReceiptKind::SourceFence,
+            br#"{"journal_anchor_event_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","result_checkpoint":"maintenance_fenced"}"#,
+            &journal_bound_receipt,
+        ));
+
+        let mut changed = document.clone();
+        changed["execution"]["release"]["release_id"] =
+            Value::String("2026.07.12-content-def456".to_string());
+        let second = load_document(&changed)
+            .expect("changed valid execution")
+            .legacy_execution_binding_hmac_sha256()
+            .expect("scoped execution binding");
+        assert_ne!(first, second);
+
+        let v3 = load_document(&legacy_document()).expect("v3 remains readable");
+        assert!(v3.legacy_apply_execution().is_none());
+        assert!(v3.legacy_execution_binding_hmac_sha256().is_none());
+        assert!(
+            v3.source_receipt_binding_hmac_sha256(
+                LegacyRuntimeReceiptKind::SourceFence,
+                b"receipt"
+            )
+            .is_none()
+        );
+
+        let mut method_two_reuse = legacy_v4_document();
+        method_two_reuse["runtime"]["show_subscribe_method"] = Value::from(2);
+        assert!(matches!(
+            load_document(&method_two_reuse),
+            Err(ProvisionSpecError::Validation(
+                "legacy migration target runtime.show_subscribe_method must be 0 or 1 so old temporary URLs are invalid at cutover"
+            ))
+        ));
+
+        let mut obsolete_source_hint = legacy_v4_document();
+        obsolete_source_hint["source"]["legacy_show_subscribe_method"] = Value::from(0);
+        assert!(load_document(&obsolete_source_hint).is_err());
+    }
+
+    #[test]
+    fn v4_rejects_unknown_fields_aliases_and_unbound_paths() {
+        let mut restated_fixed_target = legacy_v4_document();
+        restated_fixed_target["target"]["require_empty_redis"] = Value::Bool(true);
+        assert!(matches!(
+            load_document(&restated_fixed_target),
+            Err(ProvisionSpecError::Validation(
+                "schema v4 must omit fixed or derived target fields"
+            ))
+        ));
+
+        let mut restated_source_policy = legacy_v4_document();
+        restated_source_policy["source"]["legacy_cache_driver"] =
+            Value::String("redis".to_string());
+        assert!(matches!(
+            load_document(&restated_source_policy),
+            Err(ProvisionSpecError::Validation(
+                "schema v4 must omit fixed or derived target fields"
+            ))
+        ));
+
+        let mut unknown = legacy_v4_document();
+        unknown["execution"]["release"]["future_default"] = Value::Bool(true);
+        assert!(load_document(&unknown).is_err());
+
+        let mut wrong_operation = legacy_v4_document();
+        wrong_operation["execution"]["receipts"]["source_fence_path"] = Value::String(
+            "/var/lib/v2board/lifecycle/operations/another-operation/source-fence.json".to_string(),
+        );
+        assert!(load_document(&wrong_operation).is_err());
+
+        let mut restated_reference = legacy_v4_document();
+        restated_reference["reference_commit"] = Value::String(LEGACY_REFERENCE_COMMIT.to_string());
+        assert_unknown_field(&restated_reference, "reference_commit");
+
+        for (field, value) in [
+            ("legacy_configuration", "manual_only"),
+            ("sessions", "logout_all"),
+            ("legacy_cache", "discard_ephemeral_after_fence"),
+            ("legacy_stripe", "assert_none"),
+            ("temporary_subscription_links", "invalidate_at_cutover"),
+            ("nodes", "one_shot_offline_cutover"),
+            ("legacy_theme", "discard_confirmed"),
+        ] {
+            let mut restated_decision = legacy_v4_document();
+            restated_decision["decisions"][field] = Value::String(value.to_string());
+            assert_unknown_field(&restated_decision, field);
+        }
+
+        let mut restated_nodes = legacy_v4_document();
+        restated_nodes["execution"]["nodes"] = serde_json::json!({
+            "activation_transport": {"kind": "not_required_no_nodes"},
+            "inventory": []
+        });
+        assert_unknown_field(&restated_nodes, "nodes");
+
+        let mut duplicate_unit = legacy_v4_document();
+        duplicate_unit["execution"]["systemd"]["legacy_worker_units"] =
+            serde_json::json!(["php-fpm-v2board.service"]);
+        assert!(load_document(&duplicate_unit).is_err());
+
+        let mut guessed_horizon = legacy_v4_document();
+        guessed_horizon["source"]["redis_horizon_prefix"] = Value::String(String::new());
+        assert!(load_document(&guessed_horizon).is_err());
+
+        let mut external_managed = legacy_v4_document();
+        external_managed["execution"]["source_control"]["datastores"]["mysql"] =
+            serde_json::json!({"management": "external_managed", "unit": null});
+        assert!(load_document(&external_managed).is_err());
+
+        let mut remote_local_unit = legacy_v4_document();
+        remote_local_unit["source"]["database_url"] = Value::String(
+            "mysql://legacy_readonly:legacy-secret@managed-db.invalid/v2board".to_string(),
+        );
+        assert!(load_document(&remote_local_unit).is_err());
+
+        let mut split_one_redis_process = legacy_v4_document();
+        split_one_redis_process["execution"]["source_control"]["datastores"]["cache_redis"]["unit"] =
+            Value::String("another-redis.service".to_string());
+        assert!(load_document(&split_one_redis_process).is_err());
+
+        let mut future_outcome_input = legacy_v4_document();
+        future_outcome_input["execution"]["source_control"]["provider_fence_receipts"] =
+            serde_json::json!([]);
+        assert!(load_document(&future_outcome_input).is_err());
+
+        let mut co_located_decryption_key = legacy_v4_document();
+        co_located_decryption_key["execution"]["backup"]["decryption_identity_path"] =
+            Value::String(format!(
+                "/var/lib/v2board/lifecycle/operations/{}/inputs/age-identity",
+                co_located_decryption_key["operation_id"]
+                    .as_str()
+                    .expect("operation")
+            ));
+        assert!(load_document(&co_located_decryption_key).is_err());
+
+        let mut unsafe_backup_bound = legacy_v4_document();
+        unsafe_backup_bound["execution"]["backup"]["command_timeout_seconds"] = Value::from(299);
+        assert!(load_document(&unsafe_backup_bound).is_err());
+
+        let mut system_restore_database = legacy_v4_document();
+        system_restore_database["execution"]["backup"]["isolated_restore_database_url"] =
+            Value::String(
+                "mysql://restore_admin:isolated-restore-secret@restore-db.company.net/mysql?ssl-mode=VERIFY_IDENTITY"
+                    .into(),
+            );
+        assert!(load_document(&system_restore_database).is_err());
+    }
+
+    #[test]
+    fn literal_ipv6_loopback_and_redis_identity_are_bracket_normalized() {
+        assert!(url_uses_literal_loopback(
+            "mysql://readonly:secret@[::1]:3306/v2board"
+        ));
+        assert_eq!(
+            redis_service_identity("redis://[::1]:6379/0").expect("IPv6 Redis identity"),
+            ("::1".to_string(), 6379)
+        );
+        assert_eq!(
+            redis_service_identity("redis://LOCALHOST:6379/1").expect("hostname Redis identity"),
+            ("localhost".to_string(), 6379)
+        );
+    }
+
+    #[test]
+    fn v4_hydrates_empty_node_policy_and_rejects_node_input() {
+        let mut document = legacy_v4_document();
+        let spec = load_document(&document).expect("derived no-node transport");
+        let nodes = &spec.legacy_apply_execution().expect("execution").nodes;
+        assert!(nodes.inventory.is_empty());
+        assert!(matches!(
+            nodes.activation_transport,
+            LegacyNodeActivationTransportSpec::NotRequiredNoNodes
+        ));
+
+        document["execution"]["nodes"] = serde_json::json!({
+            "activation_transport": {"kind": "not_required_no_nodes"},
+            "inventory": []
+        });
+        assert!(load_document(&document).is_err());
+    }
+
+    #[test]
+    fn v4_requires_exact_nonempty_redis_prefixes_while_v3_remains_compatible() {
+        for field in ["redis_connection_prefix", "redis_cache_prefix"] {
+            let mut v4 = legacy_v4_document();
+            v4["source"][field] = Value::String(String::new());
+            assert!(load_document(&v4).is_err(), "v4 accepted empty {field}");
+        }
+
+        let mut v3 = legacy_document();
+        v3["source"]["redis_connection_prefix"] = Value::String(String::new());
+        v3["source"]["redis_cache_prefix"] = Value::String(String::new());
+        load_document(&v3).expect("v3 preserves historical empty-prefix compatibility");
+    }
+
+    #[test]
+    fn v3_and_v4_shapes_cannot_be_reinterpreted() {
+        let mut v3_with_execution = legacy_document();
+        v3_with_execution["execution"] = legacy_execution();
+        assert!(load_document(&v3_with_execution).is_err());
+
+        let mut v4_with_attestation = legacy_v4_document();
+        v4_with_attestation["attestations"] = serde_json::json!({
+            "source_writers_stopped": true,
+            "source_workers_stopped": true,
+            "node_reporters_stopped": true,
+            "legacy_queues_drained": true,
+            "backup_reference": "pretend-backup",
+            "restore_tested": true
+        });
+        assert!(load_document(&v4_with_attestation).is_err());
+
+        let mut fresh_v4 = fresh_document();
+        fresh_v4["schema_version"] = Value::from(4);
+        assert!(matches!(
+            load_document(&fresh_v4),
+            Err(ProvisionSpecError::Validation(_))
+        ));
+    }
+
+    #[test]
     fn all_three_v3_kinds_materialize_role_isolated_runtime_documents() {
         for (expected_kind, document) in [
             (ProvisionKind::FreshInstall, fresh_document()),
@@ -2592,10 +4405,10 @@ mod tests {
         let plan = crate::inspect::build_inspection(&spec, crate::inspect::InspectionMode::Online)
             .await
             .expect("metadata-only native plan");
-        assert_eq!(plan.report_version, 3);
+        assert_eq!(plan.report_version, 4);
         assert_eq!(plan.report_sha256.len(), 64);
         assert_eq!(plan.report_binding_hmac_sha256.len(), 64);
-        assert!(!plan.converter_available);
+        assert!(plan.converter_available);
         assert!(!plan.apply_available);
         assert!(!plan.passed());
         assert!(matches!(
@@ -2633,8 +4446,36 @@ mod tests {
         assert!(error.to_string().contains("duplicate JSON key"));
     }
 
+    #[test]
+    fn legacy_scheduler_inventory_requires_exact_timer_service_pairs() {
+        assert!(scheduler_units_are_exact_pairs(&[
+            "legacy-scheduler.timer".to_string(),
+            "legacy-scheduler.service".to_string(),
+        ]));
+        assert!(!scheduler_units_are_exact_pairs(&[
+            "legacy-scheduler.timer".to_string(),
+            "different-scheduler.service".to_string(),
+        ]));
+        assert!(!scheduler_units_are_exact_pairs(&[
+            "legacy-scheduler.timer".to_string(),
+        ]));
+    }
+
     fn load_document(document: &Value) -> Result<ProvisionSpec, ProvisionSpecError> {
         load_bytes(&serde_json::to_vec(document).expect("JSON"))
+    }
+
+    fn assert_unknown_field(document: &Value, field: &str) {
+        let error = match load_document(document) {
+            Ok(_) => panic!("v4 accepted restated fixed field {field}"),
+            Err(error) => error,
+        };
+        let message = error.to_string();
+        assert!(
+            message.contains("unknown field"),
+            "unexpected error: {message}"
+        );
+        assert!(message.contains(field), "unexpected error: {message}");
     }
 
     fn load_bytes(bytes: &[u8]) -> Result<ProvisionSpec, ProvisionSpecError> {

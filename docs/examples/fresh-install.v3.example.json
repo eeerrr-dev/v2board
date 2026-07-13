@@ -53,6 +53,26 @@
         "evidence": "REPLACE_WITH_CLICKHOUSE_GRANT_REVIEW_REFERENCE"
       }
     },
+    "analytics_admission": {
+      "recovery_pending_rows": 750000,
+      "soft_pending_rows": 1000000,
+      "hard_pending_rows": 2000000,
+      "recovery_relation_bytes": 3221225472,
+      "soft_relation_bytes": 4294967296,
+      "hard_relation_bytes": 8589934592,
+      "recovery_oldest_age_seconds": 120,
+      "soft_oldest_age_seconds": 300,
+      "hard_oldest_age_seconds": 1800,
+      "database_capacity_bytes": 68719476736,
+      "hard_min_headroom_bytes": 8589934592,
+      "soft_min_headroom_bytes": 17179869184,
+      "recovery_min_headroom_bytes": 21474836480,
+      "event_reservation_bytes": 4096,
+      "soft_max_new_rows_per_second": 100000,
+      "sample_interval_seconds": 5,
+      "stale_after_seconds": 30,
+      "capacity_evidence": "REPLACE_WITH_DEDICATED_POSTGRESQL_CAPACITY_OR_QUOTA_EVIDENCE"
+    },
     "redis_url": "rediss://:REPLACE_WITH_REDIS_PASSWORD@new-redis.invalid:6380/1",
     "api_runtime_config_path": "/var/lib/v2board/api/config.json",
     "worker_runtime_config_path": "/var/lib/v2board/worker/config.json",

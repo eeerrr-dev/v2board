@@ -16,13 +16,17 @@ ipnet.workspace = true
 percent-encoding.workspace = true
 redis.workspace = true
 clickhouse.workspace = true
+flate2.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 sqlx = { workspace = true, features = ["mysql", "postgres"] }
 thiserror.workspace = true
+tar.workspace = true
 tokio.workspace = true
 url.workspace = true
 uuid.workspace = true
+v2board-analytics = { version = "0.1.0", path = "../analytics" }
 v2board-config = { version = "0.1.0", path = "../config" }
 v2board-db = { version = "0.1.0", path = "../db" }
+v2board-domain = { version = "0.1.0", path = "../domain" }

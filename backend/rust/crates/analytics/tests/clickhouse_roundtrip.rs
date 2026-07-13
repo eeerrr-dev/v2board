@@ -6,7 +6,8 @@ use v2board_analytics::{
     AccountedOutcome, AccountedTrafficEvent, BatchProjectionError, CLICKHOUSE_MIGRATIONS,
     ClaimedBatch, DeliveryBatchState, IdentityKind, OutboxRecord, ProjectionStatus,
     ReportedTrafficEvent, TrafficEventCore, bind_clickhouse_installation, clickhouse_client,
-    migrate_clickhouse, project_or_verify_batch, verify_clickhouse_runtime_ready,
+    configure_clickhouse_retention, migrate_clickhouse, project_or_verify_batch,
+    verify_clickhouse_runtime_ready,
 };
 
 #[derive(Debug, Deserialize, Row)]
@@ -18,6 +19,15 @@ struct BatchCount {
 struct LedgerCount {
     rows: u64,
     versions: u64,
+}
+
+#[derive(Debug, Deserialize, Row)]
+struct DailyTotals {
+    events: u64,
+    raw_u: u64,
+    raw_d: u64,
+    charged_u: u64,
+    charged_d: u64,
 }
 
 #[tokio::test]
@@ -84,6 +94,9 @@ async fn schema_bootstrap_recovers_and_concurrent_jobs_remain_exact() {
     } else {
         installation_b
     };
+    configure_clickhouse_retention(&first, winner, 90, 730, now)
+        .await
+        .unwrap();
     verify_clickhouse_runtime_ready(&first, winner)
         .await
         .unwrap();
@@ -165,6 +178,33 @@ async fn clickhouse_schema_and_ambiguous_retry_round_trip() {
     migrate_clickhouse(&client, now).await.unwrap();
     let installation_id = Uuid::parse_str("40aa4a80-eb4b-4b25-9c3b-e17ed047873d").unwrap();
     bind_clickhouse_installation(&client, installation_id, now)
+        .await
+        .unwrap();
+    configure_clickhouse_retention(&client, installation_id, 90, 730, now)
+        .await
+        .unwrap();
+    verify_clickhouse_runtime_ready(&client, installation_id)
+        .await
+        .unwrap();
+    client
+        .query(
+            "ALTER TABLE v2_traffic_reported_v1 \
+             MODIFY TTL accounting_date + toIntervalDay(91) DELETE",
+        )
+        .execute()
+        .await
+        .unwrap();
+    assert!(
+        verify_clickhouse_runtime_ready(&client, installation_id)
+            .await
+            .is_err()
+    );
+    client
+        .query(
+            "ALTER TABLE v2_traffic_reported_v1 \
+             MODIFY TTL accounting_date + toIntervalDay(90) DELETE",
+        )
+        .execute()
         .await
         .unwrap();
     verify_clickhouse_runtime_ready(&client, installation_id)
@@ -321,6 +361,27 @@ async fn clickhouse_schema_and_ambiguous_retry_round_trip() {
         .await
         .unwrap();
     assert_eq!(count.rows, 1);
+    // Both contenders attempted the same raw batch with the same stable
+    // deduplication token. Dependent materialized-view behavior is part of the
+    // contract: the SummingMergeTree total must also be exactly once.
+    let reported_daily = client
+        .query(
+            "SELECT sum(event_count) AS events, sum(raw_u) AS raw_u, sum(raw_d) AS raw_d, \
+                    sum(charged_u) AS charged_u, sum(charged_d) AS charged_d \
+             FROM v2_traffic_reported_daily_v1 \
+             WHERE installation_id = toUUID(?) AND accounting_date = toDate(?) AND user_id = ?",
+        )
+        .bind(installation_id.to_string())
+        .bind(chrono::Utc::now().format("%Y-%m-%d").to_string())
+        .bind(user_id + 1)
+        .fetch_one::<DailyTotals>()
+        .await
+        .unwrap();
+    assert_eq!(reported_daily.events, 1);
+    assert_eq!(reported_daily.raw_u, 300);
+    assert_eq!(reported_daily.raw_d, 400);
+    assert_eq!(reported_daily.charged_u, 300);
+    assert_eq!(reported_daily.charged_d, 400);
 
     client
         .query(
@@ -412,4 +473,22 @@ async fn clickhouse_schema_and_ambiguous_retry_round_trip() {
             .unwrap(),
         ProjectionStatus::AlreadyPresentAndVerified
     );
+    let accounted_daily = client
+        .query(
+            "SELECT sum(event_count) AS events, sum(raw_u) AS raw_u, sum(raw_d) AS raw_d, \
+                    sum(charged_u) AS charged_u, sum(charged_d) AS charged_d \
+             FROM v2_traffic_accounted_daily_v1 \
+             WHERE installation_id = toUUID(?) AND accounting_date = toDate(?) AND user_id = ?",
+        )
+        .bind(installation_id.to_string())
+        .bind(chrono::Utc::now().format("%Y-%m-%d").to_string())
+        .bind(user_id + 2)
+        .fetch_one::<DailyTotals>()
+        .await
+        .unwrap();
+    assert_eq!(accounted_daily.events, 1);
+    assert_eq!(accounted_daily.raw_u, 500);
+    assert_eq!(accounted_daily.raw_d, 600);
+    assert_eq!(accounted_daily.charged_u, 625);
+    assert_eq!(accounted_daily.charged_d, 750);
 }

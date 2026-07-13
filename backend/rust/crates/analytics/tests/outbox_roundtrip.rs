@@ -1,9 +1,12 @@
 use uuid::Uuid;
 use v2board_analytics::{
-    IdentityKind, ProjectionStatus, ReportedTrafficEvent, TrafficEventCore,
-    bind_clickhouse_installation, claim_delivery_batch, clickhouse_client, enqueue_event,
-    enqueue_events, mark_batch_published, migrate_clickhouse, project_or_verify_batch,
-    prune_published_outbox, quarantine_batch, release_batch_for_retry,
+    AnalyticsAdmissionError, AnalyticsAdmissionPolicy, AnalyticsPressureState, IdentityKind,
+    OutboxError, ProjectionStatus, ReportedTrafficEvent, TrafficEventCore,
+    bind_clickhouse_installation, claim_delivery_batch, clickhouse_client,
+    configure_clickhouse_retention, enqueue_event, enqueue_events,
+    inspect_analytics_admission_exact, install_analytics_admission_policy, mark_batch_published,
+    migrate_clickhouse, project_or_verify_batch, prune_published_outbox, quarantine_batch,
+    refresh_analytics_admission, release_batch_for_retry, verify_clickhouse_bound_contract,
 };
 
 static POSTGRES_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations-postgres");
@@ -33,7 +36,30 @@ async fn postgres_outbox_to_clickhouse_is_retryable_end_to_end() {
     let now = chrono::Utc::now().timestamp();
     migrate_clickhouse(&clickhouse, now).await.unwrap();
     let installation_id = Uuid::parse_str("40aa4a80-eb4b-4b25-9c3b-e17ed047873d").unwrap();
+    sqlx::query(
+        "INSERT INTO v2_system_installation \
+         (singleton, installation_id, lineage, state, created_at, activated_at) \
+         VALUES (1, $1, 'native', 'active', $2, $2)",
+    )
+    .bind(installation_id)
+    .bind(now)
+    .execute(&pool)
+    .await
+    .unwrap();
+    install_analytics_admission_policy(&pool, installation_id, &test_policy(), now)
+        .await
+        .unwrap();
+    let initial = refresh_analytics_admission(&pool).await.unwrap().snapshot;
+    assert_eq!(initial.pressure_state, AnalyticsPressureState::Normal);
+    assert_eq!(initial.pending_rows, 0);
+    assert_eq!(
+        initial.relation_heap_bytes + initial.relation_index_bytes + initial.relation_toast_bytes,
+        initial.relation_total_bytes
+    );
     bind_clickhouse_installation(&clickhouse, installation_id, now)
+        .await
+        .unwrap();
+    configure_clickhouse_retention(&clickhouse, installation_id, 90, 730, now)
         .await
         .unwrap();
 
@@ -167,6 +193,70 @@ async fn postgres_outbox_to_clickhouse_is_retryable_end_to_end() {
         .await
         .unwrap();
 
+    // Model a prolonged ClickHouse outage without dropping PostgreSQL events:
+    // the exact oldest age moves admission to hard-stop, the producer rolls
+    // back, and the relay can still terminally acknowledge the accepted row.
+    let outage_event = derived_event(&event, "hard-outage", 90);
+    let mut tx = pool.begin().await.unwrap();
+    enqueue_event(&mut tx, &outage_event, now).await.unwrap();
+    tx.commit().await.unwrap();
+    sqlx::query("UPDATE v2_analytics_outbox SET created_at = $1 WHERE event_id = $2")
+        .bind(now - 7_200)
+        .bind(&outage_event.event_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let hard = refresh_analytics_admission(&pool).await.unwrap().snapshot;
+    assert_eq!(hard.pressure_state, AnalyticsPressureState::HardStop);
+    assert!(
+        hard.oldest_pending_age_seconds
+            .is_some_and(|age| age >= 3_600)
+    );
+
+    let blocked_event = derived_event(&event, "hard-blocked", 91);
+    let mut tx = pool.begin().await.unwrap();
+    assert!(matches!(
+        enqueue_event(&mut tx, &blocked_event, now).await,
+        Err(OutboxError::Admission(AnalyticsAdmissionError::HardStop))
+    ));
+    tx.rollback().await.unwrap();
+    let blocked_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM v2_analytics_outbox WHERE event_id = $1")
+            .bind(&blocked_event.event_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(blocked_count, 0);
+
+    let outage_batch = claim_delivery_batch(&pool, Uuid::new_v4(), now, 300, 10_000)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(outage_batch.rows[0].event.event_id, outage_event.event_id);
+    mark_batch_published(&pool, &outage_batch, now)
+        .await
+        .unwrap();
+    let recovered = refresh_analytics_admission(&pool).await.unwrap().snapshot;
+    assert_eq!(recovered.pressure_state, AnalyticsPressureState::Normal);
+    assert_eq!(recovered.pending_rows, 0);
+
+    let mut tx = pool.begin().await.unwrap();
+    enqueue_event(&mut tx, &blocked_event, now + 1)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let recovered_batch = claim_delivery_batch(&pool, Uuid::new_v4(), now + 1, 300, 10_000)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        recovered_batch.rows[0].event.event_id,
+        blocked_event.event_id
+    );
+    mark_batch_published(&pool, &recovered_batch, now + 1)
+        .await
+        .unwrap();
+
     // Retention is bounded and terminal-only. A strict cutoff keeps the
     // boundary row, while pending and quarantined state can never match.
     let old = derived_event(&event, "prune-old", 101);
@@ -272,6 +362,142 @@ async fn postgres_outbox_to_clickhouse_is_retryable_end_to_end() {
     let mut tx = pool.begin().await.unwrap();
     assert!(enqueue_events(&mut tx, &[conflict], now + 7).await.is_err());
     tx.rollback().await.unwrap();
+
+    // Soft pressure uses a serialized one-second reservation window. Inject a
+    // near-full window through the migration owner and prove the attempted
+    // outbox inserts roll back instead of exceeding the configured rate.
+    let database_now: i64 =
+        sqlx::query_scalar("SELECT floor(extract(epoch FROM clock_timestamp()))::bigint")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    sqlx::query(
+        "UPDATE v2_analytics_admission_state SET \
+             pressure_state = 'soft_pressure', generation = generation + 1, \
+             sampled_at = $1, state_changed_at = $1, accounted_pending_rows = 3000, \
+             soft_window_started_at = $1, soft_window_admitted_rows = 99999, \
+             last_transition_reason = 'integration_soft_window' \
+         WHERE singleton = 1",
+    )
+    .bind(database_now)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let soft_limited = [
+        derived_event(&event, "soft-limited-a", 92),
+        derived_event(&event, "soft-limited-b", 93),
+    ];
+    let mut tx = pool.begin().await.unwrap();
+    assert!(matches!(
+        enqueue_events(&mut tx, &soft_limited, now + 8).await,
+        Err(OutboxError::Admission(
+            AnalyticsAdmissionError::SoftRateLimited
+        ))
+    ));
+    tx.rollback().await.unwrap();
+    let soft_ids = soft_limited
+        .iter()
+        .map(|event| event.event_id.clone())
+        .collect::<Vec<_>>();
+    let soft_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM v2_analytics_outbox WHERE event_id = ANY($1)")
+            .bind(&soft_ids)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(soft_count, 0);
+
+    // Two concurrent producers at the final row below hard capacity serialize
+    // on the singleton: exactly one commits and one fails closed.
+    sqlx::query(
+        "UPDATE v2_analytics_admission_state SET \
+             pressure_state = 'normal', generation = generation + 1, \
+             sampled_at = $1, state_changed_at = $1, accounted_pending_rows = 3998, \
+             soft_window_started_at = $1, soft_window_admitted_rows = 0, \
+             last_transition_reason = 'integration_concurrency_boundary' \
+         WHERE singleton = 1",
+    )
+    .bind(database_now)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let concurrent_a = derived_event(&event, "capacity-concurrent-a", 94);
+    let concurrent_b = derived_event(&event, "capacity-concurrent-b", 95);
+    let first = enqueue_and_commit(&pool, concurrent_a.clone(), now + 9);
+    let second = enqueue_and_commit(&pool, concurrent_b.clone(), now + 9);
+    let (first, second) = tokio::join!(first, second);
+    assert_eq!(usize::from(first) + usize::from(second), 1);
+    let concurrent_ids = vec![concurrent_a.event_id, concurrent_b.event_id];
+    let concurrent_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM v2_analytics_outbox WHERE event_id = ANY($1)")
+            .bind(&concurrent_ids)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(concurrent_count, 1);
+
+    while let Some(batch) = claim_delivery_batch(&pool, Uuid::new_v4(), now + 10, 300, 10_000)
+        .await
+        .unwrap()
+    {
+        mark_batch_published(&pool, &batch, now + 10).await.unwrap();
+    }
+    let final_snapshot = refresh_analytics_admission(&pool).await.unwrap().snapshot;
+    assert_eq!(
+        final_snapshot.pressure_state,
+        AnalyticsPressureState::Normal
+    );
+    assert_eq!(final_snapshot.pending_rows, 0);
+    let read_only = inspect_analytics_admission_exact(&pool).await.unwrap();
+    assert_eq!(read_only.pressure_state, AnalyticsPressureState::Normal);
+    assert!(read_only.sample_fresh);
+    assert_eq!(read_only.pending_rows, 0);
+    verify_clickhouse_bound_contract(&clickhouse, installation_id, 90, 730)
+        .await
+        .unwrap();
+}
+
+async fn enqueue_and_commit(
+    pool: &sqlx::PgPool,
+    event: v2board_analytics::AnalyticsEvent,
+    created_at: i64,
+) -> bool {
+    let mut tx = pool.begin().await.unwrap();
+    match enqueue_event(&mut tx, &event, created_at).await {
+        Ok(()) => {
+            tx.commit().await.unwrap();
+            true
+        }
+        Err(OutboxError::Admission(AnalyticsAdmissionError::HardStop)) => {
+            tx.rollback().await.unwrap();
+            false
+        }
+        Err(error) => panic!("unexpected concurrent admission result: {error}"),
+    }
+}
+
+fn test_policy() -> AnalyticsAdmissionPolicy {
+    let gib = 1024_u64 * 1024 * 1024;
+    AnalyticsAdmissionPolicy {
+        recovery_pending_rows: 2_500,
+        soft_pending_rows: 3_000,
+        hard_pending_rows: 4_000,
+        recovery_relation_bytes: 20 * gib,
+        soft_relation_bytes: 30 * gib,
+        hard_relation_bytes: 40 * gib,
+        recovery_oldest_age_seconds: 60,
+        soft_oldest_age_seconds: 300,
+        hard_oldest_age_seconds: 3_600,
+        database_capacity_bytes: 128 * gib,
+        hard_min_headroom_bytes: 16 * gib,
+        soft_min_headroom_bytes: 32 * gib,
+        recovery_min_headroom_bytes: 48 * gib,
+        event_reservation_bytes: 4_096,
+        soft_max_new_rows_per_second: 100_000,
+        sample_interval_seconds: 1,
+        stale_after_seconds: 30,
+        capacity_evidence: "disposable PostgreSQL integration database quota".to_owned(),
+    }
 }
 
 fn derived_event(

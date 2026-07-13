@@ -1,9 +1,14 @@
 .PHONY: up down reset sync logs ps shell doctor \
-	rust-check rust-test rust-integration rust-route-audit rust-worker-reconcile rust-target-gate \
+	rust-check rust-test rust-integration rust-lifecycle-ledger-integration rust-legacy-mysql-integration rust-legacy-backup-integration rust-legacy-converter-integration rust-legacy-postgres-integration rust-legacy-redis-integration rust-route-audit rust-worker-reconcile rust-target-gate \
 	public-bundle-audit runtime-isolation-audit native-database-audit native-release-audit frontend-source-audit parity-config-audit ui-sync-audit \
 	deploy-smoke visual-smoke interaction-parity accessibility-smoke behavior-parity \
 	reference-oracle-check reference-oracle-up reference-oracle-down \
 	clean-frontend-runs clean-host clean-host-apply mailpit-ui admin-url
+
+# Integration lanes share disposable service identities inside one Compose
+# project. Keep a single make invocation strictly sequential; every lane also
+# uses a unique database where the datastore permits it.
+.NOTPARALLEL: rust-integration rust-lifecycle-ledger-integration rust-legacy-mysql-integration rust-legacy-backup-integration rust-legacy-converter-integration rust-legacy-postgres-integration rust-legacy-redis-integration
 
 DC := $(shell \
 	if docker compose version >/dev/null 2>&1; then echo "docker compose"; else echo ""; fi)
@@ -114,7 +119,7 @@ rust-test:
 	$(DCF) run --rm -T --no-deps --entrypoint bash rust-api -lc \
 		'. /usr/local/cargo/env; cargo test --workspace --locked'
 
-rust-integration:
+rust-integration: rust-lifecycle-ledger-integration rust-legacy-mysql-integration rust-legacy-converter-integration rust-legacy-postgres-integration rust-legacy-redis-integration
 	$(DCF) build rust-api
 	$(DCF) up -d --wait postgres clickhouse redis
 	$(DCF) exec -T postgres dropdb --force --if-exists -U v2board v2board_analytics_test
@@ -137,6 +142,168 @@ rust-integration:
 		 cargo test --locked -p v2board-analytics --test outbox_roundtrip; \
 		 cargo build --locked -p v2board-workers; \
 		 cargo run --locked -p v2board-contract -- production-invariants'
+
+rust-lifecycle-ledger-integration:
+	$(DCF) build rust-api
+	$(DCF) up -d --wait postgres
+	@set -eu; \
+		database=v2board_lifecycle_ledger_test; \
+		migration_role=v2_lifecycle_migration; \
+		api_role=v2_lifecycle_api; \
+		worker_role=v2_lifecycle_worker; \
+		cleanup() { \
+			$(DCF) exec -T postgres dropdb --force --if-exists -U v2board "$$database" >/dev/null 2>&1 || true; \
+			$(DCF) exec -T postgres psql -v ON_ERROR_STOP=1 -U v2board -d postgres \
+				-c "DROP ROLE IF EXISTS $$api_role" \
+				-c "DROP ROLE IF EXISTS $$worker_role" \
+				-c "DROP ROLE IF EXISTS $$migration_role" >/dev/null 2>&1 || true; \
+		}; \
+		trap cleanup EXIT INT TERM; \
+		cleanup; \
+		$(DCF) exec -T postgres psql -v ON_ERROR_STOP=1 -U v2board -d postgres \
+			-c "CREATE ROLE $$migration_role LOGIN PASSWORD 'migration-test-password' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT" \
+			-c "CREATE ROLE $$api_role LOGIN PASSWORD 'api-test-password' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT" \
+			-c "CREATE ROLE $$worker_role LOGIN PASSWORD 'worker-test-password' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT"; \
+		$(DCF) exec -T postgres createdb -U v2board -O "$$migration_role" "$$database"; \
+		$(DCF) run --rm -T --no-deps --entrypoint bash \
+			-e RUST_INTEGRATION_LIFECYCLE_DATABASE_URL=postgresql://$$migration_role:migration-test-password@postgres:5432/$$database \
+			-e RUST_INTEGRATION_LIFECYCLE_API_DATABASE_URL=postgresql://$$api_role:api-test-password@postgres:5432/$$database \
+			-e RUST_INTEGRATION_LIFECYCLE_WORKER_DATABASE_URL=postgresql://$$worker_role:worker-test-password@postgres:5432/$$database \
+		rust-api -lc \
+		'. /usr/local/cargo/env; bash scripts/run-exact-ignored-test.sh v2board-provision \
+		 lifecycle_ledger::tests::postgres_lifecycle_ledger_is_atomic_idempotent_and_fail_closed'
+
+rust-legacy-mysql-integration:
+	@set -eu; \
+		cleanup() { $(DCF) rm -sf legacy-mysql legacy-mysql80 legacy-mysql-restore >/dev/null 2>&1 || true; }; \
+		trap cleanup EXIT INT TERM; \
+		$(DCF) build rust-api legacy-test-runner; \
+		cleanup; \
+		$(DCF) up -d --wait legacy-mysql legacy-mysql80 legacy-mysql-restore; \
+		$(DCF) run --rm -T --no-deps --entrypoint bash \
+			-e V2BOARD_LEGACY_MYSQL_TEST_URL=mysql://v2board_reader:v2board-reader-test-password@legacy-mysql:3306/v2board \
+			-e V2BOARD_LEGACY_FIXTURE_DATABASE_URL=mysql://root:legacy-root-test-password@legacy-mysql:3306/v2board \
+			rust-api -lc \
+			'. /usr/local/cargo/env; \
+			 bash scripts/run-exact-ignored-test.sh v2board-provision inspect::tests::legacy_inspection_pool_keeps_the_same_raw_snapshot_session; \
+			 bash scripts/run-exact-ignored-test.sh v2board-provision inspect::tests::pinned_mysql8_source_supports_the_complete_query_surface; \
+			 bash scripts/run-exact-ignored-test.sh v2board-provision legacy_copy::tests::mysql_json_object_preserves_integer_decimal_unicode_and_nul_fixture; \
+			 bash scripts/run-exact-ignored-test.sh v2board-provision native_legacy_source::tests::mysql_super_read_only_fence_is_durable_exact_and_retryable'; \
+		$(DCF) run --rm -T --no-deps --entrypoint bash \
+			-e V2BOARD_LEGACY_MYSQL_TEST_URL=mysql://v2board_reader:v2board-reader-test-password@legacy-mysql80:3306/v2board \
+			-e V2BOARD_LEGACY_FIXTURE_DATABASE_URL=mysql://root:legacy80-root-test-password@legacy-mysql80:3306/v2board \
+			rust-api -lc \
+			'. /usr/local/cargo/env; \
+			 bash scripts/run-exact-ignored-test.sh v2board-provision inspect::tests::legacy_inspection_pool_keeps_the_same_raw_snapshot_session; \
+			 bash scripts/run-exact-ignored-test.sh v2board-provision inspect::tests::pinned_mysql8_source_supports_the_complete_query_surface; \
+			 bash scripts/run-exact-ignored-test.sh v2board-provision legacy_copy::tests::mysql_json_object_preserves_integer_decimal_unicode_and_nul_fixture; \
+			 bash scripts/run-exact-ignored-test.sh v2board-provision native_legacy_source::tests::mysql_super_read_only_fence_is_durable_exact_and_retryable'; \
+		$(DCF) run --rm -T --no-deps --entrypoint bash \
+			-e V2BOARD_BACKUP_E2E_SOURCE_URL=mysql://v2board_reader:v2board-reader-test-password@legacy-mysql:3306/v2board \
+			-e V2BOARD_BACKUP_E2E_RESTORE_URL=mysql://root:restore-root-test-password@legacy-mysql-restore:3306/v2board_restore \
+			-e V2BOARD_BACKUP_E2E_AGE_IDENTITY_PATH=/tmp/v2board-age/identity.txt \
+			-e V2BOARD_BACKUP_E2E_AGE_RECIPIENT_PATH=/tmp/v2board-age/recipient.txt \
+			legacy-test-runner -lc \
+			'set -eu; install -d -m 0700 /tmp/v2board-age; \
+			 age-keygen -o /tmp/v2board-age/identity.txt >/dev/null; \
+			 age-keygen -y /tmp/v2board-age/identity.txt > /tmp/v2board-age/recipient.txt; \
+			 . /usr/local/cargo/env; \
+			 bash scripts/run-exact-ignored-test.sh v2board-provision legacy_backup::tests::real_age_stream_dump_restore_preserves_the_reference_fingerprint'; \
+		$(DCF) run --rm -T --no-deps --entrypoint bash \
+			-e V2BOARD_BACKUP_E2E_SOURCE_URL=mysql://v2board_reader:v2board-reader-test-password@legacy-mysql80:3306/v2board \
+			-e V2BOARD_BACKUP_E2E_RESTORE_URL=mysql://root:restore-root-test-password@legacy-mysql-restore:3306/v2board_restore \
+			-e V2BOARD_BACKUP_E2E_AGE_IDENTITY_PATH=/tmp/v2board-age/identity.txt \
+			-e V2BOARD_BACKUP_E2E_AGE_RECIPIENT_PATH=/tmp/v2board-age/recipient.txt \
+			legacy-test-runner -lc \
+			'set -eu; install -d -m 0700 /tmp/v2board-age; \
+			 age-keygen -o /tmp/v2board-age/identity.txt >/dev/null; \
+			 age-keygen -y /tmp/v2board-age/identity.txt > /tmp/v2board-age/recipient.txt; \
+			 . /usr/local/cargo/env; \
+			 bash scripts/run-exact-ignored-test.sh v2board-provision legacy_backup::tests::real_age_stream_dump_restore_preserves_the_reference_fingerprint'
+
+rust-legacy-backup-integration: rust-legacy-mysql-integration
+	@:
+
+# This target intentionally follows the MySQL/backup gate so both tests own
+# the same disposable Compose source container sequentially, even under -j.
+rust-legacy-converter-integration: rust-legacy-mysql-integration
+	@set -eu; \
+		database84=v2board_legacy_converter84_test_$$$$; \
+		database80=v2board_legacy_converter80_test_$$$$; \
+		clickhouse84=v2board_legacy_converter84_test_$$$$; \
+		clickhouse80=v2board_legacy_converter80_test_$$$$; \
+		cleanup() { \
+			$(DCF) rm -sf legacy-mysql legacy-mysql80 >/dev/null 2>&1 || true; \
+			$(DCF) exec -T postgres dropdb --force --if-exists -U v2board "$$database84" >/dev/null 2>&1 || true; \
+			$(DCF) exec -T postgres dropdb --force --if-exists -U v2board "$$database80" >/dev/null 2>&1 || true; \
+			$(DCF) exec -T clickhouse clickhouse-client --user v2board_analytics --password v2board \
+				--query "DROP DATABASE IF EXISTS $$clickhouse84 SYNC" >/dev/null 2>&1 || true; \
+			$(DCF) exec -T clickhouse clickhouse-client --user v2board_analytics --password v2board \
+				--query "DROP DATABASE IF EXISTS $$clickhouse80 SYNC" >/dev/null 2>&1 || true; \
+		}; \
+		trap cleanup EXIT INT TERM; \
+		$(DCF) build rust-api; \
+		$(DCF) up -d --wait postgres clickhouse; \
+		cleanup; \
+		$(DCF) up -d --wait legacy-mysql legacy-mysql80; \
+		$(DCF) exec -T postgres createdb -U v2board "$$database84"; \
+		$(DCF) exec -T clickhouse clickhouse-client --user v2board_analytics --password v2board \
+			--query "CREATE DATABASE $$clickhouse84"; \
+		$(DCF) run --rm -T --no-deps --entrypoint bash \
+			-e V2BOARD_LEGACY_CONVERTER_MYSQL_URL=mysql://v2board_reader:v2board-reader-test-password@legacy-mysql:3306/v2board \
+			-e V2BOARD_LEGACY_CONVERTER_POSTGRES_URL=postgresql://v2board:v2board@postgres:5432/$$database84 \
+			-e V2BOARD_LEGACY_CONVERTER_CLICKHOUSE_URL=http://clickhouse:8123 \
+			-e V2BOARD_LEGACY_CONVERTER_CLICKHOUSE_DATABASE=$$clickhouse84 \
+			-e V2BOARD_LEGACY_CONVERTER_CLICKHOUSE_USERNAME=v2board_analytics \
+			-e V2BOARD_LEGACY_CONVERTER_CLICKHOUSE_PASSWORD=v2board \
+			rust-api -lc \
+			'. /usr/local/cargo/env; bash scripts/run-exact-ignored-test.sh v2board-provision \
+			 legacy_copy::tests::all_legacy_tables_copy_to_postgres_project_clickhouse_and_retry_exactly'; \
+		$(DCF) exec -T postgres createdb -U v2board "$$database80"; \
+		$(DCF) exec -T clickhouse clickhouse-client --user v2board_analytics --password v2board \
+			--query "CREATE DATABASE $$clickhouse80"; \
+		$(DCF) run --rm -T --no-deps --entrypoint bash \
+			-e V2BOARD_LEGACY_CONVERTER_MYSQL_URL=mysql://v2board_reader:v2board-reader-test-password@legacy-mysql80:3306/v2board \
+			-e V2BOARD_LEGACY_CONVERTER_POSTGRES_URL=postgresql://v2board:v2board@postgres:5432/$$database80 \
+			-e V2BOARD_LEGACY_CONVERTER_CLICKHOUSE_URL=http://clickhouse:8123 \
+			-e V2BOARD_LEGACY_CONVERTER_CLICKHOUSE_DATABASE=$$clickhouse80 \
+			-e V2BOARD_LEGACY_CONVERTER_CLICKHOUSE_USERNAME=v2board_analytics \
+			-e V2BOARD_LEGACY_CONVERTER_CLICKHOUSE_PASSWORD=v2board \
+			rust-api -lc \
+			'. /usr/local/cargo/env; bash scripts/run-exact-ignored-test.sh v2board-provision \
+			 legacy_copy::tests::all_legacy_tables_copy_to_postgres_project_clickhouse_and_retry_exactly'
+
+rust-legacy-redis-integration:
+	@set -eu; \
+		cleanup() { $(DCF) rm -sf legacy-redis >/dev/null 2>&1 || true; }; \
+		trap cleanup EXIT INT TERM; \
+		$(DCF) build rust-api; \
+		cleanup; \
+		$(DCF) up -d --wait legacy-redis; \
+		$(DCF) run --rm -T --no-deps --entrypoint bash \
+			-e V2BOARD_LEGACY_REDIS_TEST_URL=redis://legacy-redis:6379/0 \
+			rust-api -lc \
+			'. /usr/local/cargo/env; bash scripts/run-exact-ignored-test.sh v2board-provision \
+			 native_legacy_source::tests::redis_traffic_freeze_is_atomic_retry_exact_and_preserves_direction_presence'
+
+rust-legacy-postgres-integration:
+	$(DCF) build rust-api
+	$(DCF) up -d --wait postgres
+	@set -eu; \
+		database=v2board_legacy_copy_test_$$$$; \
+		cleanup() { \
+			$(DCF) exec -T postgres dropdb --force --if-exists -U v2board "$$database" >/dev/null 2>&1 || true; \
+		}; \
+		trap cleanup EXIT INT TERM; \
+		cleanup; \
+		$(DCF) exec -T postgres createdb -U v2board "$$database"; \
+		$(DCF) run --rm -T --no-deps --entrypoint bash \
+			-e V2BOARD_TRAFFIC_FOLD_POSTGRES_URL=postgresql://v2board:v2board@postgres:5432/$$database \
+			-e V2BOARD_RUNTIME_ACL_TEST_POSTGRES_URL=postgresql://v2board:v2board@postgres:5432/$$database \
+			rust-api -lc \
+			'. /usr/local/cargo/env; \
+			 bash scripts/run-exact-ignored-test.sh v2board-provision legacy_copy::tests::postgres_traffic_fold_is_atomic_append_only_and_retry_exact; \
+			 bash scripts/run-exact-ignored-test.sh v2board-provision postgres_runtime_grants::tests::postgres_18_catalog_proves_exact_acl_and_detects_protected_grant'
 
 rust-route-audit:
 	$(DCF) build rust-api

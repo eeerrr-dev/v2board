@@ -1,4 +1,8 @@
-use v2board_analytics::{clickhouse_client, migrate_clickhouse};
+use uuid::Uuid;
+use v2board_analytics::{
+    bind_clickhouse_installation, clickhouse_client, configure_clickhouse_retention,
+    migrate_clickhouse,
+};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -21,9 +25,49 @@ async fn main() -> anyhow::Result<()> {
         password.as_deref(),
     )?;
     let client = clickhouse_client(&url, &database, &username, password.as_deref());
-    migrate_clickhouse(&client, chrono::Utc::now().timestamp()).await?;
+    let now_unix = chrono::Utc::now().timestamp();
+    migrate_clickhouse(&client, now_unix).await?;
+    if let Some(postgres_url) = optional("V2BOARD_CLICKHOUSE_BIND_POSTGRES_URL") {
+        if environment != v2board_config::RuntimeEnvironment::Local {
+            anyhow::bail!(
+                "V2BOARD_CLICKHOUSE_BIND_POSTGRES_URL is a local Docker bootstrap convenience only"
+            );
+        }
+        let postgres = sqlx::PgPool::connect(&postgres_url).await?;
+        let installations = sqlx::query_scalar::<_, Uuid>(
+            "SELECT installation_id FROM v2_system_installation WHERE state = 'active'",
+        )
+        .fetch_all(&postgres)
+        .await?;
+        let [installation_id] = installations.as_slice() else {
+            anyhow::bail!("local PostgreSQL must contain exactly one active installation")
+        };
+        let raw_retention_days = required_u32("V2BOARD_CLICKHOUSE_RAW_RETENTION_DAYS")?;
+        let aggregate_retention_days = required_u32("V2BOARD_CLICKHOUSE_AGGREGATE_RETENTION_DAYS")?;
+        bind_clickhouse_installation(&client, *installation_id, now_unix).await?;
+        configure_clickhouse_retention(
+            &client,
+            *installation_id,
+            raw_retention_days,
+            aggregate_retention_days,
+            now_unix,
+        )
+        .await?;
+    }
     println!("ClickHouse analytics migrations applied");
     Ok(())
+}
+
+fn optional(name: &'static str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+}
+
+fn required_u32(name: &'static str) -> anyhow::Result<u32> {
+    required(name)?
+        .parse::<u32>()
+        .map_err(|_| anyhow::anyhow!("{name} must be an unsigned integer"))
 }
 
 fn required(name: &'static str) -> anyhow::Result<String> {

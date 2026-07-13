@@ -24,8 +24,8 @@ systemd/v2board-worker.service
 
 Verify `(cd <staged-release> && sha256sum --check SHA256SUMS)` before changing any symlink. Never
 compile on the server. The separately exported `v2board-lifecycle` tool is not part of this release;
-it is staged only for the initial one-shot operation and removed immediately after source
-retirement.
+it is staged only for the initial one-shot operation. After the completion ledger commits, the
+operator removes it manually with the exact root-only argv returned by the command.
 
 ## Operating-system identities and paths
 
@@ -84,31 +84,38 @@ API and worker refuse to start when the PostgreSQL ledger is not exactly current
 also requires PostgreSQL and Redis; ClickHouse failure only makes analytics stale and grows the
 PostgreSQL outbox.
 
-Fresh install and legacy migration are not yet production-supported because lifecycle `apply` is
-absent. Do not manually create targets or reinterpret a passing read-only report as permission to
-write.
+Fresh install is not yet production-supported. Legacy `apply`/`resume` grammar and executor exist
+but remain fail-closed through the single typed production capability until the repository's real
+crash/lost-ACK matrix is complete.
+Do not manually create targets or reinterpret a passing read-only report as permission to write.
 
 ## Initial legacy retirement
 
 The legacy migration is one offline operation in one maintenance window. It must not implement CDC,
 dual-write, shadow reads, gradual traffic release, or a MySQL runtime fallback. After final
-online inspection, the operator authorizes the exact operation/report once. The one-shot apply then
+online inspection, the operator authorizes the exact operation and stable review binding once; the
+authorization separately records the complete confirmation-time report digest. The one-shot apply then
 performs the whole transition without another pause:
 
-1. stop and fence the old API writers, workers, scheduler, temporary-link issuer, and every node
-   reporter; drain and reconcile pending traffic and business work;
+1. stop and fence the old API writers, scheduler, and temporary-link issuer; disable worker restart,
+   let the existing workers drain and reconcile pending traffic and business work, then stop them
+   (preflight has already proved the source node inventory is empty);
 2. take and restore-test one consistent source recovery set, run the final read-only recheck, then
    bulk-convert into empty PostgreSQL/ClickHouse targets while every old and new writer stays down;
-3. verify exact values, relationships, sequences, configs, analytics projection, and all offline node
-   credentials; activate the native API, worker, and reporters exactly once;
-4. immediately stop and disable MySQL/MariaDB and the old Redis, revoke source accounts, and remove
-   their network access;
-5. remove `v2board-lifecycle` and every MySQL client/source credential from the production server,
-   retaining only an encrypted cold archive with its SHA-256 and the signed migration report.
+3. verify exact values, relationships, sequences, configs, and analytics projection; activate the
+   native API and worker exactly once;
+4. immediately mask and stop the dedicated MySQL 8 and old Redis units and remove their
+   network access, then prove all three old credentials are unreachable;
+5. after the completion ledger succeeds, run the returned root cleanup argv to remove
+   `v2board-lifecycle`; separately remove one-shot MySQL client/source credentials from the
+   production server, retaining only an encrypted cold archive with its SHA-256 and the signed
+   migration report.
 
-Completion must prove `source_retired=true`, MySQL is unreachable, source credentials are revoked,
-the lifecycle tool is absent, legacy runtime compatibility is disabled, and PostgreSQL is the only
-transactional authority.
+Completion must prove `source_retired=true`, MySQL and both old Redis endpoints are unreachable,
+source access is permanently disabled, legacy runtime compatibility is disabled, and PostgreSQL is
+the only transactional authority. The lifecycle tool may then be removed manually with the returned
+root argv; its absence is not part of completion proof. Completion does not claim an internal
+`DROP USER` after the dedicated database process has already been permanently stopped.
 
 After activation, recovery is PostgreSQL/ClickHouse restore or forward repair. Restarting MySQL is
 not a supported rollback.

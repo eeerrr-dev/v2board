@@ -3,10 +3,10 @@
 `backend/rust` is the only production backend runtime. It owns HTTP APIs, frontend delivery,
 PostgreSQL transactions, ClickHouse analytics projection, Redis-backed sessions/leases, payments,
 subscriptions, admin operations and background work. There is no PHP/Laravel runtime, dual-server
-mode or native MySQL/MariaDB backend.
+mode or native MySQL backend.
 
 The pinned project under `references/wyx2685-v2board` is read-only compatibility evidence. Its
-MySQL/MariaDB database may be inspected only by the legacy provision source adapter; reference code,
+Oracle MySQL 8.0/8.4 database may be inspected only by the legacy provision source adapter; reference code,
 schema or packaged frontend assets are never deployed.
 
 ## Runtime architecture
@@ -24,17 +24,17 @@ schema or packaged frontend assets are never deployed.
 - API/worker never synchronously dual-write PostgreSQL and ClickHouse. A PostgreSQL transaction writes
   the business result and typed outbox; the analytics relay publishes later.
 
-Short ClickHouse failures do not synchronously block authentication, order, payment or traffic
-accounting; analytics becomes stale/unavailable and the PostgreSQL outbox grows until replay
-succeeds. Safe long-outage capacity/backpressure is not implemented and remains a production apply
-blocker. See
+Short ClickHouse failures do not synchronously block authentication, order or payment. Traffic
+accounting continues inside the manifest-bound normal/soft PostgreSQL outbox budget; hard row/byte/
+age/headroom pressure fails only analytics-producing traffic transactions before commit while the
+relay keeps draining. Exact sampling and hysteresis reopen traffic automatically after recovery. See
 [the persistence invariants](../docs/postgresql-clickhouse-invariants.md) for ownership, batch
 integrity, replay and failure semantics.
 
-ClickHouse TTL/archive/HA are also incomplete. The fixed single-node topology now has serialized,
-crash-recoverable schema migration, exact lineage checks and installation binding; those guarantees
-do not extend to a future replicated/HA topology without Keeper-backed coordination. Runtime secret
-isolation does not make any lifecycle flow apply-capable; all three remain fail-closed.
+The fixed single-node ClickHouse topology has serialized, crash-recoverable schema migration, exact
+lineage/installation checks and manifest-bound raw/aggregate TTL. HA/Keeper is a separate availability
+deployment choice; standalone evidence must not be extrapolated to a replicated topology. Runtime
+secret isolation or one successful datastore test does not open a lifecycle apply gate.
 
 ## Workspace
 
@@ -48,7 +48,7 @@ backend/rust/
   crates/config/             native JSON/environment configuration
   crates/db/                 PostgreSQL-only runtime access
   crates/domain/             business rules and external integrations
-  crates/provision/          lifecycle v3 validation and bounded read-only preflight
+  crates/provision/          lifecycle v3/v4 validation, inspection and journaled executors
   crates/lifecycle/          disposable CLI and the only legacy MySQL source-adapter binary
   crates/workers/            scheduler, durable work and analytics relay
   crates/contract/           route, SQL and production invariant gates
@@ -78,11 +78,13 @@ make rust-worker-reconcile
 make rust-target-gate
 ```
 
-`make rust-integration` starts PostgreSQL, ClickHouse and Redis, applies the PostgreSQL and
-ClickHouse schema lineages to isolated targets, exercises ClickHouse lost-ack/outbox replay and runs
-the live PostgreSQL production invariants. `make rust-route-audit` reads the pinned reference only as
-contract evidence. `make native-database-audit` rejects MySQL driver/dialect use in native runtime
-crates while allowing the isolated provision source adapter.
+`make rust-integration` starts isolated PostgreSQL, ClickHouse, Redis and pinned Oracle MySQL 8.4
+targets. It exercises the complete legacy MySQL inspection surface, exact JSON boundaries, atomic
+Redis traffic freezing, age-encrypted `mysqldump`/restore and rematerialization, PostgreSQL traffic
+fold/ACL checks, ClickHouse lost-ack/outbox replay and the live production invariants.
+`make rust-route-audit` reads the pinned reference only as contract evidence.
+`make native-database-audit` rejects MySQL driver/dialect use in native runtime crates while allowing
+the isolated provision source adapter and its Docker-only integration image.
 
 Do not run host Cargo commands that create `target/` in the repository. The workspace targets Rust
 1.97, Edition 2024 and Cargo resolver 3; `unsafe` is forbidden, CI denies warnings and validates the
@@ -94,10 +96,11 @@ those shortcuts are not production topology.
 
 ## Production configuration and principals
 
-One lifecycle v3 manifest derives two `configuration_source: "file_only"` documents:
+One lifecycle manifest (fresh/native v3 or legacy v4) derives two `configuration_source: "file_only"` documents:
 `/var/lib/v2board/api/config.json` and `/var/lib/v2board/worker/config.json`. The API and worker use
 explicit role loaders; missing, unknown, wrong-role, placeholder or invalid typed values are
-rejected. The CLI validates both maps but does not yet write them or apply a lifecycle operation.
+rejected. Validation derives and checks both maps; the legacy executor installs them atomically only
+inside the journaled one-shot apply, which remains disabled by the production fault gate.
 
 Long-running runtime configuration includes:
 
@@ -143,7 +146,7 @@ transient migration URL from the `v2board-migration-database-url` systemd creden
 `V2BOARD_MIGRATION_DATABASE_URL_FILE`. That principal must target the same PostgreSQL database,
 use `sslmode=verify-full`, and differ from the API principal and declared worker principal. Ordinary
 production migrate rejects an empty database and only accepts a valid native migration prefix with
-an active installation. Until lifecycle apply exists it additionally requires the ledger to be
+an active installation. While the lifecycle apply production gate remains closed it additionally requires the ledger to be
 exactly current, so ordinary migrate cannot apply production initialization or forward-upgrade DDL.
 
 `v2board-analytics-schema` uses only the following transient variables:
@@ -161,19 +164,19 @@ Direct value environment variables remain a local/CI compatibility path and must
 in a production unit or shell history.
 
 It applies the independent ClickHouse ledger idempotently. Neither native schema command converts a
-legacy MySQL/MariaDB database, creates the full production principal topology or constitutes a
+legacy MySQL 8 database, creates the full production principal topology or constitutes a
 supported lifecycle apply.
 
 Local Compose runs `rust-migrate` and `clickhouse-migrate` as one-shot services. The local PostgreSQL
 migration job may create the documented development-only `admin@example.com` seed when
 `V2BOARD_SEED_LOCAL=1`; production never enables that seed.
 
-## Lifecycle schema v3
+## Lifecycle schema v3/v4
 
 Only three strict, kind-tagged manifests exist:
 
 - [fresh install example](../docs/examples/fresh-install.v3.example.json);
-- [legacy migration example](../docs/examples/legacy-migration.v3.example.json);
+- [legacy migration example](../docs/examples/legacy-migration.v4.example.json);
 - [native upgrade example](../docs/examples/native-upgrade.v3.example.json).
 
 The disposable CLI commands are:
@@ -181,30 +184,39 @@ The disposable CLI commands are:
 ```bash
 v2board-lifecycle validate --manifest /secure/private/operation.json
 v2board-lifecycle inspect --manifest /secure/private/operation.json
-v2board-lifecycle plan --manifest /secure/private/operation.json
+v2board-lifecycle authorize --manifest /secure/private/operation.json --inspect-review-sha256 <sha256> --output <bound-path>
+v2board-lifecycle apply --manifest /secure/private/operation.json --authorization <bound-path>
+v2board-lifecycle resume --manifest /secure/private/operation.json --authorization <bound-path>
 ```
 
+The last three commands are present and wired, but the single typed production capability currently
+keeps authorization readiness, apply, and resume fail-closed.
+
 `v2board-lifecycle` is deliberately absent from the long-running native release. It is staged only
-for the one migration operation and deleted after source retirement; API/worker dependency graphs
-contain neither the lifecycle crate nor `sqlx-mysql`.
+for the one migration operation; after the completion ledger commits, the result returns the exact
+root-only argv for the operator to remove it manually. API/worker dependency graphs contain neither
+the lifecycle crate nor `sqlx-mysql`.
 
 The manifest contains secrets and must be a 1-byte-to-1-MiB regular non-symlink file with no Unix
 group/world permissions. It rejects duplicate/unknown/missing keys and binds the exact file bytes to
-an independent lifecycle audit key using the v3 HMAC domain.
+an independent lifecycle audit key using the schema-specific v3 or v4 HMAC domain.
 
 `validate` is offline syntax/semantic validation. `inspect` is the online read-only inventory before
-maintenance. The standalone `plan` command currently exposes the same fenced final recheck for
-development review. A future legacy apply runs that recheck internally after fencing and before its
-first mutation.
+maintenance. There is no public `plan` shortcut. The legacy executor performs full post-fence source
+admission before the immutable backup, then a short post-backup identity/target-empty seal internally.
 
 Legacy migration has one human decision: whether to start the irreversible one-shot apply against
-the exact `operation_id + inspect report_sha256`. It does not pause for another confirmation inside
+the exact `operation_id + stable review_binding_sha256`. Authorization stores that stable digest as
+`inspect_review_sha256` and separately records the confirmation-time full report digest as
+`authorized_snapshot_report_sha256`. It does not pause for another confirmation inside
 the maintenance window. Fresh install and future native destructive upgrades retain their own
 separate confirmation rules.
 
-There is currently no `apply` command. All three flows intentionally report
-`converter_available=false`, `apply_available=false`, `verdict=blocked` and
-`next_action=resolve_blockers`; the report lists implementation and site-specific blockers. Passing
+The CLI parses legacy `apply` and same-operation `resume`, but one typed production capability
+rejects both before writes. Validate output, inspection verdict/next-action, authorization readiness,
+apply, and resume all derive from that same value. Legacy reports truthfully expose `converter_available=true` while
+`apply_available=false`, `verdict=blocked` and `next_action=resolve_blockers`; fresh/native retain
+their own implementation blockers. Passing
 `validate`, or seeing individual target checks pass, is not permission to create targets, copy data
 or cut over manually.
 
@@ -221,35 +233,44 @@ The target spec declares:
 - an empty TLS Redis logical DB/namespace;
 - one complete manually reviewed runtime section that derives strict API and worker file-only maps.
 
-The operator supplies bootstrap connections; a future journaled apply creates the target databases
+The operator supplies bootstrap connections; an enabled journaled apply creates the target databases
 and long-lived principals. Do not pre-create those target objects or use `IF NOT EXISTS` to hide an
 unknown prior operation.
 
 ### Legacy reference migration
 
 The only supported source identity is pinned commit
-`7e77de9f4873b317157490529f7be7d6f8a62421`. The adapter opens MySQL/Percona 5.7+ or
-MariaDB 10.2+ only in a read-only session. The target is always fresh PostgreSQL 18 + ClickHouse
-26.3 + Redis.
+`7e77de9f4873b317157490529f7be7d6f8a62421`. The adapter accepts only Oracle MySQL 8.0 or 8.4
+in a read-only session; MySQL 5.7, Percona, MariaDB and compatible proxies are rejected. The target
+is always fresh PostgreSQL 18 + ClickHouse 26.3 + Redis.
 
 The config is manual-only: old `.env`, PHP config, theme and custom scripts are inventoried but not
-executed, merged or imported. Sessions use `logout_all`. Stripe and temporary subscription token
-inventories must be zero. Old Redis traffic hashes, queues and failed work must be durably drained
-and reconciled before ephemeral cache is discarded. All node reporters remain stopped while every
-node is bulk-reconfigured from the legacy global token to a scoped token and stable idempotency key;
-service resumes only after all nodes pass offline verification.
+executed, merged or imported. Sessions use `logout_all`. Stripe inventory must be zero. Temporary
+subscription URL mappings/cache are deliberately invalidated at cutover; permanent `v2_user.token`
+values are copied exactly. Old Redis traffic hashes, queues and failed work must be durably drained
+and reconciled before ephemeral cache is discarded. The repository contains the panel API consumed
+by nodes, but not the external V2bX/XrayR processes or a node-side process controller. Legacy
+migration therefore requires an empty node inventory; any source node produces the stable
+`external_node_coordinator_unavailable` preflight blocker before maintenance. The manifest accepts
+only `inventory=[]` plus `not_required_no_nodes`; before and after native authority the executor proves
+all eight PostgreSQL node tables and `v2_server_credential` remain empty with the same proof hash.
 
 This is one offline maintenance operation, not CDC or coexistence. It has no MySQL replication,
 dual-write, shadow-read, staged traffic release or MySQL runtime rollback. After final verification,
-the operation starts the native services once, revokes source credentials, network-isolates and
-permanently stops MySQL/MariaDB and old Redis, deletes `v2board-lifecycle`, and retains only an
-encrypted checksummed cold archive. Post-cutover recovery uses PostgreSQL/ClickHouse or forward
-repair, never a restarted MySQL service.
+the operation starts the native services once, permanently masks MySQL 8 and old Redis, and
+retains the actually decrypted-and-restore-tested encrypted backup as the only checksummed cold
+archive. After the permanent PostgreSQL ledger commits, the result returns a root-only manual
+cleanup argv for `v2board-lifecycle`; executable removal is not part of the completion proof.
+Post-cutover recovery uses PostgreSQL/ClickHouse or forward repair, never a restarted MySQL service.
 
-See the [legacy v3 guide](../docs/legacy-migration-manifest.md) and
-[frozen lifecycle contract](../docs/upgrade-invariants.md). The MySQL-to-PostgreSQL converter,
-complete ownership proof, journal, target bootstrap, config promotion, backup binding, rollback and
-cutover are still unimplemented blockers.
+See the [legacy v4 guide](../docs/legacy-migration-manifest.md) and
+[frozen lifecycle contract](../docs/upgrade-invariants.md). The converter, ownership proof, journal,
+target bootstrap, config promotion, backup binding and one-shot cutover executor are connected, but
+production apply remains disabled until the required real bare-metal crash/lost-ACK matrix passes.
+`make rust-integration` exercises the disposable data path on both MySQL 8.0.44 and 8.4.6: all 27
+seeded legacy tables are copied and value-verified in PostgreSQL 18, durable checkpoints are replayed
+without duplication, and ClickHouse 26.3 is migrated, installation-bound, kept at an empty native
+event epoch, then verified through the read-only cutover readback.
 
 ### Native upgrade
 
@@ -298,9 +319,11 @@ Relevant bounds include:
 - `V2BOARD_IDEMPOTENCY_RETENTION_DAYS`.
 
 Cleanup is bounded and never deletes analytics replay history, pending or leased work. Analytics
-relay failure retries without making PostgreSQL/Redis worker health fail, but prolonged outage can
-still exhaust PostgreSQL until capacity/watermark/backpressure gates are implemented. Outbox
-age/rows/bytes and ClickHouse merge/part pressure must be monitored separately.
+relay failure retries without making PostgreSQL/Redis worker health fail. A separate admission loop
+samples exact pending rows/oldest age, heap/index/TOAST/total relation bytes, database bytes and
+manifest-bound headroom; `/readyz` and `RUST_ANALYTICS_ADMISSION` expose the state without removing
+unrelated API traffic. ClickHouse merge/part pressure and host disk/WAL still require infrastructure
+monitoring.
 
 ## Authentication and operational contracts
 

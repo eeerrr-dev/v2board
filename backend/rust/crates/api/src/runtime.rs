@@ -17,6 +17,7 @@ use chrono::Utc;
 use serde_json::json;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 use uuid::Uuid;
+use v2board_analytics::{AnalyticsPressureState, analytics_admission_snapshot};
 use v2board_config::AppConfig;
 use v2board_db::{DbPool, migrations_current};
 use v2board_domain::{
@@ -160,7 +161,9 @@ pub(crate) async fn reset_admin_password(
     let password = password
         .filter(|password| password.chars().count() >= 8)
         .ok_or_else(|| {
-            anyhow::anyhow!("the one-shot administrator password must contain at least 8 characters")
+            anyhow::anyhow!(
+                "the one-shot administrator password must contain at least 8 characters"
+            )
         })?;
     let password_hash = password_kdf
         .hash(&password)
@@ -262,6 +265,8 @@ pub(crate) async fn readyz(State(state): State<AppState>) -> Response {
             .await
     };
     let redis = tokio::time::timeout(deadline, redis);
+    let analytics_admission =
+        tokio::time::timeout(deadline, analytics_admission_snapshot(&state.db));
     let config = state.config_snapshot();
     let user_index = tokio::fs::metadata(
         config
@@ -275,15 +280,77 @@ pub(crate) async fn readyz(State(state): State<AppState>) -> Response {
             .frontend
             .join("current/admin/index.html"),
     );
-    let (db, redis, user_index, admin_index) = tokio::join!(db, redis, user_index, admin_index);
+    let (db, redis, analytics_admission, user_index, admin_index) =
+        tokio::join!(db, redis, analytics_admission, user_index, admin_index);
     let db = db.is_ok_and(|result| result.is_ok_and(|current| current));
     let redis = redis.is_ok_and(|result| result.as_deref() == Ok("PONG"));
     let frontend = user_index.is_ok_and(|metadata| metadata.is_file())
         && admin_index.is_ok_and(|metadata| metadata.is_file());
+    let analytics_admission = match analytics_admission {
+        Ok(Ok(snapshot)) => json!({
+            "observed": true,
+            "policy_sha256": snapshot.policy_sha256,
+            "installation_id": snapshot.installation_id.to_string(),
+            "pressure_state": snapshot.pressure_state.as_str(),
+            "traffic_writes_available": snapshot.sample_fresh
+                && snapshot.pressure_state != AnalyticsPressureState::HardStop,
+            "sample_fresh": snapshot.sample_fresh,
+            "sample_age_seconds": snapshot.sample_age_seconds,
+            "generation": snapshot.generation,
+            "pending_rows": snapshot.pending_rows,
+            "accounted_pending_rows": snapshot.accounted_pending_rows,
+            "oldest_pending_age_seconds": snapshot.oldest_pending_age_seconds,
+            "relation_heap_bytes": snapshot.relation_heap_bytes,
+            "relation_index_bytes": snapshot.relation_index_bytes,
+            "relation_toast_bytes": snapshot.relation_toast_bytes,
+            "relation_total_bytes": snapshot.relation_total_bytes,
+            "accounted_relation_bytes": snapshot.accounted_relation_bytes,
+            "database_bytes": snapshot.database_bytes,
+            "capacity_headroom_bytes": snapshot.capacity_headroom_bytes,
+            "last_transition_reason": snapshot.last_transition_reason,
+            "thresholds": {
+                "pending_rows": {
+                    "recovery": snapshot.recovery_pending_rows,
+                    "soft": snapshot.soft_pending_rows,
+                    "hard": snapshot.hard_pending_rows,
+                },
+                "relation_bytes": {
+                    "recovery": snapshot.recovery_relation_bytes,
+                    "soft": snapshot.soft_relation_bytes,
+                    "hard": snapshot.hard_relation_bytes,
+                },
+                "oldest_age_seconds": {
+                    "recovery": snapshot.recovery_oldest_age_seconds,
+                    "soft": snapshot.soft_oldest_age_seconds,
+                    "hard": snapshot.hard_oldest_age_seconds,
+                },
+                "database_capacity_bytes": snapshot.database_capacity_bytes,
+                "minimum_headroom_bytes": {
+                    "hard": snapshot.hard_min_headroom_bytes,
+                    "soft": snapshot.soft_min_headroom_bytes,
+                    "recovery": snapshot.recovery_min_headroom_bytes,
+                },
+                "event_reservation_bytes": snapshot.event_reservation_bytes,
+                "soft_max_new_rows_per_second": snapshot.soft_max_new_rows_per_second,
+                "sample_interval_seconds": snapshot.sample_interval_seconds,
+                "stale_after_seconds": snapshot.stale_after_seconds,
+            },
+        }),
+        Ok(Err(error)) => {
+            tracing::warn!(?error, "analytics admission readiness observation failed");
+            json!({ "observed": false, "error": "unavailable" })
+        }
+        Err(_) => json!({ "observed": false, "error": "timeout" }),
+    };
     let ok = db && redis && frontend;
     let body = Json(json!({
         "ok": ok,
-        "checks": { "database": db, "redis": redis, "frontend": frontend }
+        "checks": {
+            "database": db,
+            "redis": redis,
+            "frontend": frontend,
+            "analytics_admission": analytics_admission,
+        }
     }));
     if ok {
         body.into_response()

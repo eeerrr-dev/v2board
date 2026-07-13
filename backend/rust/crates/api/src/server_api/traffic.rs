@@ -780,8 +780,33 @@ fn traffic_analytics_event_error(error: v2board_analytics::EventValidationError)
 }
 
 fn traffic_analytics_outbox_error(error: v2board_analytics::OutboxError) -> ApiError {
-    tracing::error!(?error, "failed to enqueue the traffic analytics event");
-    ApiError::internal("failed to persist traffic analytics event")
+    use v2board_analytics::{AnalyticsAdmissionError, OutboxError};
+
+    match error {
+        OutboxError::Admission(error @ AnalyticsAdmissionError::SoftRateLimited) => {
+            tracing::warn!(?error, "traffic analytics soft-pressure rate limit reached");
+            ApiError::too_many_requests(
+                "Traffic ingestion is temporarily rate limited; retry later",
+            )
+        }
+        OutboxError::Admission(
+            error @ (AnalyticsAdmissionError::HardStop
+            | AnalyticsAdmissionError::MissingOrMismatchedPolicy
+            | AnalyticsAdmissionError::InvalidState),
+        ) => {
+            tracing::warn!(
+                ?error,
+                "traffic analytics admission refused the transaction"
+            );
+            ApiError::service_unavailable(
+                "Traffic ingestion is temporarily unavailable; retry later",
+            )
+        }
+        error => {
+            tracing::error!(?error, "failed to enqueue the traffic analytics event");
+            ApiError::internal("failed to persist traffic analytics event")
+        }
+    }
 }
 
 async fn lock_report_users(
@@ -971,4 +996,43 @@ pub(super) fn charged_bytes(bytes: i64, rate: Decimal) -> Result<i64, ApiError> 
         .ok_or_else(|| {
             ApiError::bad_request("Server traffic charge is outside the supported range")
         })
+}
+
+#[cfg(test)]
+mod admission_tests {
+    use axum::{http::StatusCode, response::IntoResponse};
+    use v2board_analytics::{AnalyticsAdmissionError, OutboxError};
+
+    use super::traffic_analytics_outbox_error;
+
+    #[test]
+    fn traffic_hard_capacity_refusals_are_retryable_service_unavailable() {
+        for error in [
+            AnalyticsAdmissionError::HardStop,
+            AnalyticsAdmissionError::MissingOrMismatchedPolicy,
+            AnalyticsAdmissionError::InvalidState,
+        ] {
+            let response =
+                traffic_analytics_outbox_error(OutboxError::Admission(error)).into_response();
+            assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        }
+    }
+
+    #[test]
+    fn traffic_soft_pressure_uses_rate_limit_status() {
+        let response = traffic_analytics_outbox_error(OutboxError::Admission(
+            AnalyticsAdmissionError::SoftRateLimited,
+        ))
+        .into_response();
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    }
+
+    #[test]
+    fn admission_integrity_failures_are_not_mislabeled_as_capacity_pressure() {
+        let response = traffic_analytics_outbox_error(OutboxError::Admission(
+            AnalyticsAdmissionError::Overflow,
+        ))
+        .into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
 }

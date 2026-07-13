@@ -1,21 +1,33 @@
-use std::{
-    collections::BTreeSet,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::collections::{BTreeMap, BTreeSet};
 
 use redis::aio::ConnectionManager;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use sqlx::{AssertSqlSafe, FromRow, MySql, MySqlPool, PgPool, QueryBuilder};
+use sqlx::{AssertSqlSafe, FromRow, MySql, MySqlPool, PgPool, QueryBuilder, Row};
+use url::Url;
 use uuid::Uuid;
 use v2board_db::{DbPoolConfig, connect_postgres_with_config};
 
+use crate::legacy_apply_capability::{
+    PRODUCTION_LEGACY_APPLY_CAPABILITY, ProductionLegacyApplyCapability,
+    production_legacy_apply_capability_for_spec,
+};
+use crate::legacy_backup::{
+    BackupRestorePrerequisiteInspection, inspect_backup_restore_prerequisites,
+};
 use crate::legacy_mysql::connect_legacy_mysql_with_config;
 use crate::manifest::{
     ClickHouseTargetSpec, FreshInstallAttestationSpec, LegacyAttestationSpec,
     NativeInstallationSpec, NativeUpgradeAttestationSpec, NativeUpgradeChangeSpec,
     NativeUpgradeDecisionSpec, NativeUpgradeImpactSpec, PostgresTargetSpec, ProvisionFlow,
     ProvisionKind, ProvisionSpec, SourceSpec, SourceTransportSecurity, TargetSpec,
+};
+use crate::native_legacy_source::{
+    PreAuthorizationSourceControlInspection, SourceError, inspect_pre_authorization_source_control,
+};
+use crate::native_node_cutover::{
+    NodeCutoverError, NodeCutoverProductionBlocker, PreAuthorizationNodeInventorySummary,
+    inspect_pre_authorization_node_inventory,
 };
 
 const CORE_LEGACY_TABLES: &[&str] = &[
@@ -54,11 +66,13 @@ const CORE_LEGACY_TABLES: &[&str] = &[
 // retains the declared character-set family and all core structural objects.
 const LEGACY_SCHEMA_SHA256_V1: Option<&str> =
     Some("4b5eaec681531751c79b48188e5a1c665df4f660dffbb88d6853cea6cf04801e");
-const MAX_REDIS_SCAN_KEYS: usize = 100_000;
+const REDIS_SCAN_COUNT: usize = 256;
+const MAX_REDIS_SCAN_PAGE_KEYS: usize = 4_096;
+const MAX_REDIS_KEY_BYTES: usize = 4_096;
+const MAX_REDIS_SCAN_PAGE_BYTES: usize = 4 * 1024 * 1024;
 const LEGACY_JSON_SCAN_PAGE_SIZE: usize = 1_000;
 const LEGACY_JSON_REFERENCE_BATCH_SIZE: usize = 1_000;
-const CONVERTER_AVAILABLE: bool = false;
-const APPLY_AVAILABLE: bool = false;
+const CONVERTER_AVAILABLE: bool = true;
 
 #[derive(Serialize)]
 pub struct ProvisionPlan {
@@ -69,17 +83,23 @@ pub struct ProvisionPlan {
     pub apply_available: bool,
     pub operation_id: String,
     pub manifest_binding_hmac_sha256: String,
+    pub review_binding_sha256: String,
+    pub review_binding_hmac_sha256: String,
     pub report_sha256: String,
     pub report_binding_hmac_sha256: String,
     pub verdict: PreflightVerdict,
     pub next_action: NextAction,
-    pub operator_attestations_complete: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operator_attestations_complete: Option<bool>,
     pub source: Option<DatabaseInspection>,
     pub target_postgres: Option<PostgresInspection>,
     pub target_clickhouse: Option<ClickHouseInspection>,
     pub data: Option<DataInspection>,
     pub source_redis: Option<SourceRedisInspection>,
     pub target_redis: Option<TargetRedisInspection>,
+    pub node_inventory: Option<PreAuthorizationNodeInventorySummary>,
+    pub backup_restore: Option<BackupRestorePrerequisiteInspection>,
+    pub source_control: Option<PreAuthorizationSourceControlInspection>,
     pub native_upgrade: Option<NativeUpgradeInspection>,
     pub implementation_blockers: Vec<String>,
     pub blockers: Vec<String>,
@@ -87,16 +107,18 @@ pub struct ProvisionPlan {
     pub warnings: Vec<String>,
 }
 
-#[derive(Clone, Copy, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PreflightVerdict {
     Blocked,
+    Ready,
 }
 
-#[derive(Clone, Copy, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NextAction {
     ResolveBlockers,
+    AuthorizeApply,
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -140,6 +162,10 @@ pub struct DatabaseInspection {
     pub trigger_count: i64,
     pub semantic_schema_sha256: String,
     pub semantic_profile_match: bool,
+    pub source_grants_sha256: String,
+    pub source_grants_are_read_only_and_complete: bool,
+    pub visible_non_source_schema_count: u64,
+    pub physical_instance_contains_only_source_schema: bool,
 }
 
 #[derive(Serialize)]
@@ -158,6 +184,14 @@ pub struct PostgresInspection {
     pub bootstrap_has_database_create: bool,
     pub jsonb_available: bool,
     pub sha256_available: bool,
+    pub fsync_enabled: bool,
+    pub full_page_writes_enabled: bool,
+    pub synchronous_commit_enabled: bool,
+    pub data_checksums_enabled: bool,
+    pub wal_level_sufficient: bool,
+    pub archive_mode_enabled: bool,
+    pub archive_command_configured: bool,
+    pub tls_in_use: bool,
     pub target_database_name: String,
     pub target_role_names: Vec<String>,
     pub database_absent: bool,
@@ -195,13 +229,11 @@ pub struct ClickHouseInspection {
     pub aggregate_retention_days: u32,
 }
 
-#[derive(Clone, Copy, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DatabaseVendor {
     MySql,
-    Percona,
-    MariaDb,
-    Unknown,
+    Unsupported,
 }
 
 #[derive(Serialize)]
@@ -307,6 +339,11 @@ pub struct SourceRedisInspection {
     pub source_cache_cluster_enabled: Option<bool>,
     pub source_default_key_count: u64,
     pub source_cache_key_count: u64,
+    pub source_default_unclassified_key_count: u64,
+    pub source_cache_unclassified_key_count: u64,
+    pub source_default_other_logical_database_keys: u64,
+    pub source_cache_other_logical_database_keys: u64,
+    pub physical_redis_ownership_complete: bool,
     pub upload_traffic_fields: u64,
     pub download_traffic_fields: u64,
     pub upload_traffic_sum: String,
@@ -320,13 +357,12 @@ pub struct SourceRedisInspection {
     pub retryable_failed_job_items: u64,
     pub legacy_subscription_token_keys: u64,
     pub ambiguous_subscription_token_keys: u64,
-    pub legacy_subscription_not_after_unix: i64,
-    pub legacy_subscription_window_elapsed: bool,
 }
 
 #[derive(Serialize)]
 pub struct TargetRedisInspection {
     pub key_count: u64,
+    pub target_database_index: u32,
     pub target_version: String,
     pub target_run_id: String,
     pub target_role: String,
@@ -377,6 +413,10 @@ pub enum ProvisionPlanError {
     SourceRedis(#[source] redis::RedisError),
     #[error("target Redis inspection failed")]
     TargetRedis(#[source] redis::RedisError),
+    #[error("legacy node inventory inspection failed")]
+    NodeInventory(#[source] NodeCutoverError),
+    #[error("legacy source-control inspection failed")]
+    SourceControl(#[source] SourceError),
 }
 
 #[derive(FromRow)]
@@ -402,6 +442,14 @@ struct PostgresServerRow {
     can_create_database: bool,
     can_create_roles: bool,
     has_database_create: bool,
+    fsync_enabled: bool,
+    full_page_writes_enabled: bool,
+    synchronous_commit_enabled: bool,
+    data_checksums_enabled: bool,
+    wal_level_sufficient: bool,
+    archive_mode_enabled: bool,
+    archive_command_configured: bool,
+    tls_in_use: bool,
 }
 
 #[derive(Deserialize, clickhouse::Row)]
@@ -463,9 +511,9 @@ struct IndexRow {
     table_name: String,
     index_name: String,
     non_unique: i64,
-    seq_in_index: u64,
+    seq_in_index: i64,
     column_name: Option<String>,
-    sub_part: Option<u64>,
+    sub_part: Option<i64>,
     collation: Option<String>,
     index_type: String,
 }
@@ -500,7 +548,10 @@ pub async fn build_inspection(
             target,
             attestations,
             ..
-        } => build_legacy_migration_inspection(spec, source, target, attestations, mode).await,
+        } => {
+            build_legacy_migration_inspection(spec, source, target, attestations.as_ref(), mode)
+                .await
+        }
         ProvisionFlow::NativeUpgrade {
             current,
             changes,
@@ -518,10 +569,11 @@ pub async fn build_inspection(
     }
 }
 
-struct TargetBundle {
-    postgres: PostgresInspection,
-    clickhouse: ClickHouseInspection,
-    redis: TargetRedisInspection,
+#[derive(Serialize)]
+pub(crate) struct TargetBundle {
+    pub(crate) postgres: PostgresInspection,
+    pub(crate) clickhouse: ClickHouseInspection,
+    pub(crate) redis: TargetRedisInspection,
 }
 
 async fn build_fresh_install_inspection(
@@ -550,30 +602,31 @@ async fn build_fresh_install_inspection(
             .to_string(),
         "fresh-install role-owned API/worker 0700 directories, 0600 config writes, operation journal, verification, and atomic bare-metal activation are not implemented"
             .to_string(),
-        "analytics outbox capacity/backpressure admission gate and bounded ClickHouse-outage policy are not implemented"
-            .to_string(),
-        "ClickHouse TTL/archive/restore lifecycle and HA/Keeper topology are not implemented; the implemented single-node schema lock and installation binding do not satisfy those gates"
-            .to_string(),
     ];
     let plan = ProvisionPlan {
-        report_version: 3,
+        report_version: 4,
         scope: mode.scope(),
         kind: spec.kind,
         converter_available: CONVERTER_AVAILABLE,
-        apply_available: APPLY_AVAILABLE,
+        apply_available: production_legacy_apply_capability_for_spec(spec).is_available(),
         operation_id: spec.operation_id.clone(),
         manifest_binding_hmac_sha256: spec.manifest_binding_hmac_sha256().to_string(),
+        review_binding_sha256: String::new(),
+        review_binding_hmac_sha256: String::new(),
         report_sha256: String::new(),
         report_binding_hmac_sha256: String::new(),
         verdict: PreflightVerdict::Blocked,
         next_action: NextAction::ResolveBlockers,
-        operator_attestations_complete,
+        operator_attestations_complete: Some(operator_attestations_complete),
         source: None,
         target_postgres: Some(target_bundle.postgres),
         target_clickhouse: Some(target_bundle.clickhouse),
         data: None,
         source_redis: None,
         target_redis: Some(target_bundle.redis),
+        node_inventory: None,
+        backup_restore: None,
+        source_control: None,
         native_upgrade: None,
         implementation_blockers,
         blockers,
@@ -587,24 +640,32 @@ async fn build_legacy_migration_inspection(
     spec: &ProvisionSpec,
     source: &SourceSpec,
     target: &TargetSpec,
-    attestations: &LegacyAttestationSpec,
+    attestations: Option<&LegacyAttestationSpec>,
     mode: InspectionMode,
 ) -> Result<ProvisionPlan, ProvisionPlanError> {
     let pool_config = inspection_pool_config();
     let source_pool = connect_legacy_mysql_with_config(&source.database_url, &pool_config)
         .await
         .map_err(ProvisionPlanError::SourceDatabase)?;
+    let source_snapshot_session_nonce = begin_source_consistent_snapshot(&source_pool)
+        .await
+        .map_err(ProvisionPlanError::SourceQuery)?;
     let source_server = inspect_server(&source_pool)
         .await
         .map_err(ProvisionPlanError::SourceQuery)?;
-    let source_transaction_read_only = inspect_source_transaction_read_only(&source_pool)
+    let source_database_name = source_server.database_name.clone().unwrap_or_default();
+    let source_access = inspect_source_mysql_access(&source_pool, &source_database_name)
         .await
         .map_err(ProvisionPlanError::SourceQuery)?;
+    // `@@transaction_read_only` describes the session default for future
+    // transactions, not the READ ONLY characteristic of the transaction that
+    // is already open.
+    // Reaching this point proves that the server accepted the explicit
+    // `START ... READ ONLY` statement below; the source principal is
+    // independently restricted to the reviewed read-only grant set.
+    let source_transaction_read_only = true;
     let source_vendor = database_vendor(&source_server.version, &source_server.version_comment);
-    let source_server_uuid_raw = if matches!(
-        source_vendor,
-        DatabaseVendor::MySql | DatabaseVendor::Percona
-    ) {
+    let source_server_uuid_raw = if source_vendor == DatabaseVendor::MySql {
         inspect_mysql_server_uuid(&source_pool)
             .await
             .map_err(ProvisionPlanError::SourceQuery)?
@@ -613,11 +674,8 @@ async fn build_legacy_migration_inspection(
     };
     let source_server_uuid = canonical_mysql_server_uuid(&source_server_uuid_raw);
     let source_topology = match source_vendor {
-        DatabaseVendor::MySql | DatabaseVendor::Percona => {
-            inspect_mysql_topology(&source_pool).await
-        }
-        DatabaseVendor::MariaDb => inspect_mariadb_topology(&source_pool).await,
-        DatabaseVendor::Unknown => MysqlTopology::default(),
+        DatabaseVendor::MySql => inspect_mysql_topology(&source_pool).await,
+        DatabaseVendor::Unsupported => MysqlTopology::default(),
     };
     let source_tables = inspect_tables(&source_pool)
         .await
@@ -631,17 +689,43 @@ async fn build_legacy_migration_inspection(
     let data = inspect_data(&source_pool, &source_tables)
         .await
         .map_err(ProvisionPlanError::SourceQuery)?;
-    let source_redis = inspect_source_redis(
-        &source.redis_default_url,
-        &source.redis_cache_url,
-        &source.redis_connection_prefix,
-        &source.redis_cache_prefix,
-        source.legacy_show_subscribe_method,
-        source.legacy_show_subscribe_expire_minutes,
-        source.legacy_subscription_issuance_stopped_at_unix,
-    )
-    .await
-    .map_err(ProvisionPlanError::SourceRedis)?;
+    let node_inventory = if spec.schema_version == 4 {
+        Some(
+            inspect_pre_authorization_node_inventory(spec, &source_pool)
+                .await
+                .map_err(ProvisionPlanError::NodeInventory)?,
+        )
+    } else {
+        None
+    };
+    let schema_hash_after_snapshot = semantic_schema_hash(&source_pool)
+        .await
+        .map_err(ProvisionPlanError::SourceQuery)?;
+    finish_source_consistent_snapshot(&source_pool, &source_snapshot_session_nonce)
+        .await
+        .map_err(ProvisionPlanError::SourceQuery)?;
+    if schema_hash_after_snapshot != schema_hash {
+        return Err(ProvisionPlanError::SourceQuery(sqlx::Error::Protocol(
+            "legacy source schema changed during the consistent inspection snapshot".into(),
+        )));
+    }
+    let backup_restore = if spec.schema_version == 4 && mode == InspectionMode::Online {
+        Some(inspect_backup_restore_prerequisites(spec).await)
+    } else {
+        None
+    };
+    let source_control = if spec.schema_version == 4 && mode == InspectionMode::Online {
+        Some(
+            inspect_pre_authorization_source_control(spec)
+                .await
+                .map_err(ProvisionPlanError::SourceControl)?,
+        )
+    } else {
+        None
+    };
+    let source_redis = inspect_source_redis(spec, source, mode)
+        .await
+        .map_err(ProvisionPlanError::SourceRedis)?;
     let target_bundle = inspect_target_bundle(target).await?;
 
     let source_table_names = source_tables
@@ -669,18 +753,25 @@ async fn build_legacy_migration_inspection(
 
     let mut blockers = Vec::new();
     let mut pending_final_requirements = Vec::new();
-    let supported_source = match source_vendor {
-        DatabaseVendor::MySql | DatabaseVendor::Percona => {
-            version_at_least(&source_server.version, 5, 7, 0)
-        }
-        DatabaseVendor::MariaDb => version_at_least(&source_server.version, 10, 2, 0),
-        DatabaseVendor::Unknown => false,
-    };
+    let supported_source = source_vendor == DatabaseVendor::MySql
+        && version_is_supported_mysql8(&source_server.version);
     if !supported_source {
-        blockers.push("source must be supported MySQL/Percona 5.7+ or MariaDB 10.2+".to_string());
+        blockers.push("source must be Oracle MySQL 8.0.x or 8.4.x".to_string());
     }
     if !source_transaction_read_only {
         blockers.push("source SQL inspector session is not read-only".into());
+    }
+    if !source_access.grants_are_read_only_and_complete {
+        blockers.push(
+            "source credential must have only the reviewed source SELECT/SHOW VIEW, MySQL topology SELECT, SHOW DATABASES/PROCESS and REPLICATION CLIENT grants, and must expose the complete physical schema and replication inventory"
+                .into(),
+        );
+    }
+    if source_access.visible_non_source_schema_count != 0 {
+        blockers.push(
+            "the declared local MySQL systemd service contains non-system schemas outside the V2Board source database"
+                .into(),
+        );
     }
     if !missing_core_tables.is_empty() || !unexpected_source_tables.is_empty() {
         blockers
@@ -702,12 +793,8 @@ async fn build_legacy_migration_inspection(
         blockers
             .push("source semantic schema fingerprint is not the reviewed legacy profile".into());
     }
-    if matches!(
-        source_vendor,
-        DatabaseVendor::MySql | DatabaseVendor::Percona
-    ) && source_server_uuid.is_none()
-    {
-        blockers.push("source MySQL/Percona server_uuid is missing or invalid".into());
+    if source_vendor == DatabaseVendor::MySql && source_server_uuid.is_none() {
+        blockers.push("source MySQL 8 server_uuid is missing or invalid".into());
     }
     if !source_topology.is_standalone_visible() {
         blockers.push(
@@ -731,24 +818,56 @@ async fn build_legacy_migration_inspection(
         blockers.push("target Redis is the same server instance as source Redis".into());
     }
     append_legacy_data_blockers(
-        source,
         &data,
         &source_redis,
         mode,
         &mut blockers,
         &mut pending_final_requirements,
     );
+    if let Some(inventory) = &node_inventory {
+        blockers.extend(
+            inventory
+                .blockers
+                .iter()
+                .map(|blocker| format!("legacy node inventory: {}", node_blocker_code(*blocker))),
+        );
+    }
+    if let Some(backup) = &backup_restore {
+        blockers.extend(
+            backup
+                .blockers
+                .iter()
+                .map(|blocker| format!("legacy backup prerequisite: {blocker}")),
+        );
+    }
+    if let Some(control) = &source_control
+        && !control.datastore_write_fence_capabilities_ready
+    {
+        blockers.push(
+            "source datastore fence requires an independent exact-minimum MySQL fence credential (PROCESS + SYSTEM_VARIABLES_ADMIN with persisted globals enabled) and a dedicated named Redis 6.2+ full-access lifecycle ACL user for drain plus CLIENT PAUSE WRITE"
+                .into(),
+        );
+    }
 
-    let operator_attestations_complete = attestations.source_writers_stopped
-        && attestations.source_workers_stopped
-        && attestations.node_reporters_stopped
-        && attestations.legacy_queues_drained
-        && attestations
-            .backup_reference
-            .as_deref()
-            .is_some_and(|reference| !reference.trim().is_empty())
-        && attestations.restore_tested;
-    if !operator_attestations_complete {
+    let runtime_evidence_is_journaled =
+        spec.schema_version == 4 && spec.legacy_apply_execution().is_some();
+    let operator_attestations_complete = attestations.is_some_and(|attestations| {
+        attestations.source_writers_stopped
+            && attestations.source_workers_stopped
+            && attestations.node_reporters_stopped
+            && attestations.legacy_queues_drained
+            && attestations
+                .backup_reference
+                .as_deref()
+                .is_some_and(|reference| !reference.trim().is_empty())
+            && attestations.restore_tested
+    });
+    if runtime_evidence_is_journaled {
+        pending_final_requirements.push(
+            "after the single authorization, apply must journal and verify the source fence, queue/traffic drain, encrypted backup restore drill, and fenced final recheck before creating targets"
+                .to_string(),
+        );
+    } else if !operator_attestations_complete {
         record_final_requirement(
             mode,
             &mut blockers,
@@ -770,13 +889,13 @@ async fn build_legacy_migration_inspection(
     }
     if data.node_count != 0 {
         warnings.push(
-            "all node reporters must stay stopped until every scoped token and stable idempotency key passes offline verification; only then may the native reporters start together"
+            "the source contains external nodes; this repository has no node-side activation coordinator, so apply remains blocked"
                 .into(),
         );
     }
     if source_redis.source_cache_key_count != 0 || source_redis.source_default_key_count != 0 {
         warnings.push(
-            "legacy Redis contains classified ephemeral state plus namespaces that still require converter ownership rules"
+            "legacy Redis contains classified state: traffic is folded exactly once, while sessions/cache/Horizon metadata are discarded with an explicit full logout"
                 .into(),
         );
     }
@@ -786,33 +905,23 @@ async fn build_legacy_migration_inspection(
                 .into(),
         );
     }
+    warnings.push(
+        "legacy temporary subscription URLs are intentionally not migrated; users must fetch a new URL after cutover"
+            .into(),
+    );
     if data.legacy_json_id_arrays.requires_normalization() != 0 {
         warnings.push(
-            "legacy JSON ID arrays contain canonical positive-decimal strings that a future converter must normalize to JSON numbers"
+            "legacy JSON ID arrays contain canonical positive-decimal strings that the one-shot converter will normalize to JSON numbers"
                 .into(),
         );
     }
 
-    let implementation_blockers = vec![
-        "one-shot offline MySQL-to-PostgreSQL converter, type mapping, crash-resume journal, and value verification are not implemented"
-            .to_string(),
-        "PostgreSQL/ClickHouse bootstrap, backup binding, pre-commit abort, atomic cutover, source retirement, and forward-recovery apply are not implemented"
-            .to_string(),
-        "source read grants, cross-datastore snapshot consistency, Stripe provider zero-state, and physical topology separation are not fully machine-bound"
-            .to_string(),
-        "legacy Redis durable unknown-key ownership is not completely classified".to_string(),
-        "analytics outbox capacity/backpressure admission gate and bounded ClickHouse-outage policy are not implemented"
-            .to_string(),
-        "ClickHouse TTL/archive/restore lifecycle and HA/Keeper topology are not implemented; the implemented single-node schema lock and installation binding do not satisfy those gates"
-            .to_string(),
-        "role-owned API/worker 0700 directory and 0600 config writes plus atomic bare-metal promotion are not implemented"
-            .to_string(),
-    ];
+    let implementation_blockers = production_legacy_apply_implementation_blockers();
     let source_report = DatabaseInspection {
         vendor: source_vendor,
         version: source_server.version,
         version_comment: source_server.version_comment,
-        database_name: source_server.database_name.unwrap_or_default(),
+        database_name: source_database_name,
         server_uuid: source_server_uuid.clone().unwrap_or(source_server_uuid_raw),
         server_uuid_valid: source_server_uuid.is_some(),
         replication_channel_count: source_topology.replication_channel_count,
@@ -833,26 +942,37 @@ async fn build_legacy_migration_inspection(
         trigger_count: source_objects.triggers,
         semantic_schema_sha256: schema_hash,
         semantic_profile_match,
+        source_grants_sha256: source_access.grants_sha256,
+        source_grants_are_read_only_and_complete: source_access.grants_are_read_only_and_complete,
+        visible_non_source_schema_count: source_access.visible_non_source_schema_count,
+        physical_instance_contains_only_source_schema: source_access
+            .grants_are_read_only_and_complete
+            && source_access.visible_non_source_schema_count == 0,
     };
     let plan = ProvisionPlan {
-        report_version: 3,
+        report_version: 4,
         scope: mode.scope(),
         kind: spec.kind,
         converter_available: CONVERTER_AVAILABLE,
-        apply_available: APPLY_AVAILABLE,
+        apply_available: production_legacy_apply_capability_for_spec(spec).is_available(),
         operation_id: spec.operation_id.clone(),
         manifest_binding_hmac_sha256: spec.manifest_binding_hmac_sha256().to_string(),
+        review_binding_sha256: String::new(),
+        review_binding_hmac_sha256: String::new(),
         report_sha256: String::new(),
         report_binding_hmac_sha256: String::new(),
         verdict: PreflightVerdict::Blocked,
         next_action: NextAction::ResolveBlockers,
-        operator_attestations_complete,
+        operator_attestations_complete: attestations.map(|_| operator_attestations_complete),
         source: Some(source_report),
         target_postgres: Some(target_bundle.postgres),
         target_clickhouse: Some(target_bundle.clickhouse),
         data: Some(data),
         source_redis: Some(source_redis),
         target_redis: Some(target_bundle.redis),
+        node_inventory,
+        backup_restore,
+        source_control,
         native_upgrade: None,
         implementation_blockers,
         blockers,
@@ -862,8 +982,11 @@ async fn build_legacy_migration_inspection(
     Ok(finalize_plan(spec, plan))
 }
 
+const fn node_blocker_code(blocker: NodeCutoverProductionBlocker) -> &'static str {
+    blocker.as_str()
+}
+
 fn append_legacy_data_blockers(
-    source: &SourceSpec,
     data: &DataInspection,
     source_redis: &SourceRedisInspection,
     mode: InspectionMode,
@@ -943,34 +1066,15 @@ fn append_legacy_data_blockers(
             "legacy Redis still contains retryable failed-job state",
         );
     }
-    if source_redis.legacy_subscription_token_keys != 0 {
-        record_final_requirement(
-            mode,
-            blockers,
-            pending,
-            "legacy Redis still contains issued OTP/TOTP subscription tokens",
+    if !source_redis.physical_redis_ownership_complete {
+        blockers.push(
+            "source Redis contains unclassified keys or nonempty logical databases outside the declared V2Board default/cache databases"
+                .into(),
         );
     }
-    if source_redis.ambiguous_subscription_token_keys != 0 {
-        blockers.push("source Redis has OTP/TOTP-like keys outside the declared prefix".into());
-    }
-    if source.legacy_show_subscribe_method != 0
-        && source.legacy_subscription_issuance_stopped_at_unix <= 0
-    {
-        record_final_requirement(
-            mode,
-            blockers,
-            pending,
-            "legacy subscription issuance has no recorded fence time",
-        );
-    } else if !source_redis.legacy_subscription_window_elapsed {
-        record_final_requirement(
-            mode,
-            blockers,
-            pending,
-            "legacy ephemeral subscription URLs have not reached their expiry window",
-        );
-    }
+    // otp_/otpn_/totp_ are disposable URL mappings or verification cache.
+    // The permanent subscription credential is v2_user.token in MySQL and is
+    // copied exactly; temporary URLs are explicitly invalidated at cutover.
 }
 
 fn build_native_upgrade_plan(
@@ -1029,10 +1133,6 @@ fn build_native_upgrade_plan(
             .to_string(),
         "native migration dry-run, destructive impact estimator, operation journal, rollback, and apply are not implemented"
             .to_string(),
-        "analytics outbox capacity/backpressure admission gate and bounded ClickHouse-outage policy are not implemented"
-            .to_string(),
-        "ClickHouse TTL/archive/restore lifecycle and HA/Keeper topology are not implemented; the implemented single-node schema lock and installation binding do not satisfy those gates"
-            .to_string(),
         "role-owned API/worker 0700 directory and 0600 config writes plus atomic bare-metal promotion are not implemented"
             .to_string(),
     ];
@@ -1064,24 +1164,29 @@ fn build_native_upgrade_plan(
     finalize_plan(
         spec,
         ProvisionPlan {
-            report_version: 3,
+            report_version: 4,
             scope: mode.scope(),
             kind: spec.kind,
             converter_available: CONVERTER_AVAILABLE,
-            apply_available: APPLY_AVAILABLE,
+            apply_available: production_legacy_apply_capability_for_spec(spec).is_available(),
             operation_id: spec.operation_id.clone(),
             manifest_binding_hmac_sha256: spec.manifest_binding_hmac_sha256().to_string(),
+            review_binding_sha256: String::new(),
+            review_binding_hmac_sha256: String::new(),
             report_sha256: String::new(),
             report_binding_hmac_sha256: String::new(),
             verdict: PreflightVerdict::Blocked,
             next_action: NextAction::ResolveBlockers,
-            operator_attestations_complete,
+            operator_attestations_complete: Some(operator_attestations_complete),
             source: None,
             target_postgres: None,
             target_clickhouse: None,
             data: None,
             source_redis: None,
             target_redis: None,
+            node_inventory: None,
+            backup_restore: None,
+            source_control: None,
             native_upgrade: Some(native_upgrade),
             implementation_blockers,
             blockers,
@@ -1099,14 +1204,181 @@ fn inspection_pool_config() -> DbPoolConfig {
     }
 }
 
+const fn production_apply_available_with_capability(
+    kind: ProvisionKind,
+    capability: ProductionLegacyApplyCapability,
+) -> bool {
+    matches!(kind, ProvisionKind::LegacyReferenceMigration) && capability.is_available()
+}
+
+fn production_legacy_apply_implementation_blockers() -> Vec<String> {
+    PRODUCTION_LEGACY_APPLY_CAPABILITY
+        .blocker()
+        .map(|blocker| blocker.report_message().to_string())
+        .into_iter()
+        .collect()
+}
+
+async fn begin_source_consistent_snapshot(pool: &MySqlPool) -> Result<String, sqlx::Error> {
+    // The inspection pool is deliberately constrained to one connection.
+    // Starting the transaction with a raw statement keeps that same session
+    // pinned logically across the pool-based inspection helpers without
+    // allowing any second connection to observe a different MVCC snapshot.
+    let nonce = Uuid::new_v4().hyphenated().to_string();
+    sqlx::query("SET @v2board_inspection_session_nonce = ?")
+        .bind(&nonce)
+        .execute(pool)
+        .await?;
+    // MySQL rejects START TRANSACTION through COM_STMT_PREPARE (error 1295),
+    // so transaction control must use the text protocol. All data queries
+    // remain prepared statements on this same nonce-bound session.
+    sqlx::raw_sql("START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY")
+        .execute(pool)
+        .await?;
+    Ok(nonce)
+}
+
+async fn finish_source_consistent_snapshot(
+    pool: &MySqlPool,
+    expected_nonce: &str,
+) -> Result<(), sqlx::Error> {
+    let observed_nonce =
+        sqlx::query_scalar::<_, Option<String>>("SELECT @v2board_inspection_session_nonce")
+            .fetch_one(pool)
+            .await?;
+    if observed_nonce.as_deref() != Some(expected_nonce) {
+        return Err(sqlx::Error::Protocol(
+            "legacy source inspection changed MySQL sessions during its snapshot".into(),
+        ));
+    }
+    sqlx::raw_sql("COMMIT").execute(pool).await?;
+    Ok(())
+}
+
 fn finalize_plan(spec: &ProvisionSpec, mut plan: ProvisionPlan) -> ProvisionPlan {
-    let bytes = serde_json::to_vec(&plan).expect("provision plan is serializable");
-    plan.report_sha256 = hex::encode(Sha256::digest(&bytes));
-    plan.report_binding_hmac_sha256 = spec.report_binding_hmac_sha256(&bytes);
+    set_plan_outcome(&mut plan, production_legacy_apply_capability_for_spec(spec));
+    let review_bytes = inspection_review_binding_bytes(&plan);
+    let mut review_digest = Sha256::new();
+    review_digest.update(b"v2board-provision-inspection-review-v1\0");
+    review_digest.update((review_bytes.len() as u64).to_be_bytes());
+    review_digest.update(&review_bytes);
+    plan.review_binding_sha256 = hex::encode(review_digest.finalize());
+    let mut hmac_material = b"v2board-provision-inspection-review-hmac-v1\0".to_vec();
+    hmac_material.extend_from_slice(&(review_bytes.len() as u64).to_be_bytes());
+    hmac_material.extend_from_slice(&review_bytes);
+    plan.review_binding_hmac_sha256 = spec.report_binding_hmac_sha256(&hmac_material);
+    // A JSON document cannot literally contain its own digest. The canonical
+    // report payload is the complete finalized inspection with the two report
+    // digest output slots still empty; the printed document then carries the
+    // values produced from those exact bytes.
+    debug_assert!(plan.report_sha256.is_empty());
+    debug_assert!(plan.report_binding_hmac_sha256.is_empty());
+    let report_payload = serde_json::to_vec(&plan).expect("provision plan is serializable");
+    plan.report_sha256 = hex::encode(Sha256::digest(&report_payload));
+    plan.report_binding_hmac_sha256 = spec.report_binding_hmac_sha256(&report_payload);
     plan
 }
 
-async fn inspect_target_bundle(target: &TargetSpec) -> Result<TargetBundle, ProvisionPlanError> {
+fn set_plan_outcome(plan: &mut ProvisionPlan, capability: ProductionLegacyApplyCapability) {
+    plan.apply_available = production_apply_available_with_capability(plan.kind, capability);
+    let ready = plan.kind == ProvisionKind::LegacyReferenceMigration
+        && plan.converter_available
+        && plan.apply_available
+        && legacy_inspection_sections_complete(plan)
+        && plan.implementation_blockers.is_empty()
+        && plan.blockers.is_empty();
+    plan.verdict = if ready {
+        PreflightVerdict::Ready
+    } else {
+        PreflightVerdict::Blocked
+    };
+    plan.next_action = if ready {
+        NextAction::AuthorizeApply
+    } else {
+        NextAction::ResolveBlockers
+    };
+}
+
+fn legacy_inspection_sections_complete(plan: &ProvisionPlan) -> bool {
+    plan.source.is_some()
+        && plan.target_postgres.is_some()
+        && plan.target_clickhouse.is_some()
+        && plan.data.is_some()
+        && plan.source_redis.is_some()
+        && plan.target_redis.is_some()
+        && plan.node_inventory.is_some()
+        && plan.backup_restore.is_some()
+        && plan.source_control.is_some()
+        && plan.native_upgrade.is_none()
+}
+
+fn inspection_review_binding_bytes(plan: &ProvisionPlan) -> Vec<u8> {
+    let source_redis_identity = plan.source_redis.as_ref().map(|redis| {
+        serde_json::json!({
+            "source_default_run_id": redis.source_default_run_id,
+            "source_cache_run_id": redis.source_cache_run_id,
+            "source_default_role": redis.source_default_role,
+            "source_cache_role": redis.source_cache_role,
+            "source_default_connected_replicas": redis.source_default_connected_replicas,
+            "source_cache_connected_replicas": redis.source_cache_connected_replicas,
+            "source_default_cluster_enabled": redis.source_default_cluster_enabled,
+            "source_cache_cluster_enabled": redis.source_cache_cluster_enabled,
+            "physical_redis_ownership_complete": redis.physical_redis_ownership_complete,
+        })
+    });
+    let node_inventory = plan.node_inventory.as_ref().map(|nodes| {
+        serde_json::json!({
+            "summary_sha256": nodes.summary_sha256,
+            "legacy_source_node_set_sha256": nodes.legacy_source_node_set_sha256,
+            "manifest_inventory_empty": nodes.manifest_inventory_empty,
+            "exact_legacy_source_match": nodes.exact_legacy_source_match,
+        })
+    });
+    let backup_restore = plan.backup_restore.as_ref().map(|backup| {
+        serde_json::json!({
+            "fixed_root_owned_binaries_ready": backup.fixed_root_owned_binaries_ready,
+            "recipient_digest_ready": backup.recipient_digest_ready,
+            "runtime_identity_digest_ready": backup.runtime_identity_digest_ready,
+            "source_server_version": backup.source_server_version,
+            "source_server_version_comment": backup.source_server_version_comment,
+            "source_mysql8_supported": backup.source_mysql8_supported,
+            "command_limits_valid": backup.command_limits_valid,
+            "maximum_encrypted_backup_bytes": backup.maximum_encrypted_backup_bytes,
+            "output_capacity_ready": backup.output_capacity_ready,
+            "restore_admin_connected": backup.restore_admin_connected,
+            "restore_server_version": backup.restore_server_version,
+            "restore_server_version_comment": backup.restore_server_version_comment,
+            "restore_server_supported": backup.restore_server_supported,
+            "restore_identity_distinct": backup.restore_identity_distinct,
+            "restore_database_absent_or_empty": backup.restore_database_absent_or_empty,
+            "restore_create_drop_privileges_observed": backup.restore_create_drop_privileges_observed,
+        })
+    });
+    serde_json::to_vec(&serde_json::json!({
+        "review_version": 1,
+        "report_version": plan.report_version,
+        "scope": plan.scope,
+        "kind": plan.kind,
+        "operation_id": plan.operation_id,
+        "manifest_binding_hmac_sha256": plan.manifest_binding_hmac_sha256,
+        "converter_available": plan.converter_available,
+        "apply_available": plan.apply_available,
+        "source": plan.source,
+        "target_postgres": plan.target_postgres,
+        "target_clickhouse": plan.target_clickhouse,
+        "target_redis": plan.target_redis,
+        "source_redis_identity": source_redis_identity,
+        "source_control": plan.source_control,
+        "node_inventory": node_inventory,
+        "backup_restore": backup_restore,
+        "implementation_blockers": plan.implementation_blockers,
+    }))
+    .expect("inspection review binding is serializable")
+}
+
+pub(crate) async fn inspect_target_bundle(
+    target: &TargetSpec,
+) -> Result<TargetBundle, ProvisionPlanError> {
     let pool_config = inspection_pool_config();
     let postgres_pool =
         connect_postgres_with_config(&target.postgres.bootstrap_database_url, &pool_config)
@@ -1126,6 +1398,7 @@ async fn inspect_target_bundle(target: &TargetSpec) -> Result<TargetBundle, Prov
         clickhouse,
         redis: TargetRedisInspection {
             key_count: redis.key_count,
+            target_database_index: redis.database_index,
             target_version: redis.version,
             target_run_id: redis.identity.run_id,
             target_role: redis.identity.role,
@@ -1154,7 +1427,22 @@ async fn inspect_target_postgres(
                d.datctype::text AS ctype,
                (r.rolsuper OR r.rolcreatedb) AS can_create_database,
                (r.rolsuper OR r.rolcreaterole) AS can_create_roles,
-               has_database_privilege(current_user, current_database(), 'CREATE') AS has_database_create
+               has_database_privilege(current_user, current_database(), 'CREATE') AS has_database_create,
+               current_setting('fsync') = 'on' AS fsync_enabled,
+               current_setting('full_page_writes') = 'on' AS full_page_writes_enabled,
+               current_setting('synchronous_commit') = 'on' AS synchronous_commit_enabled,
+               current_setting('data_checksums') = 'on' AS data_checksums_enabled,
+               current_setting('wal_level') IN ('replica', 'logical') AS wal_level_sufficient,
+               current_setting('archive_mode') IN ('on', 'always') AS archive_mode_enabled,
+               (
+                   btrim(current_setting('archive_command')) NOT IN ('', '(disabled)')
+                   OR btrim(COALESCE(current_setting('archive_library', true), ''))
+                       NOT IN ('', '(disabled)')
+               ) AS archive_command_configured,
+               EXISTS (
+                   SELECT 1 FROM pg_stat_ssl
+                   WHERE pid = pg_backend_pid() AND ssl
+               ) AS tls_in_use
         FROM pg_database d
         JOIN pg_roles r ON r.rolname = current_user
         WHERE d.datname = current_database()
@@ -1221,6 +1509,14 @@ async fn inspect_target_postgres(
         bootstrap_has_database_create: server.has_database_create,
         jsonb_available,
         sha256_available,
+        fsync_enabled: server.fsync_enabled,
+        full_page_writes_enabled: server.full_page_writes_enabled,
+        synchronous_commit_enabled: server.synchronous_commit_enabled,
+        data_checksums_enabled: server.data_checksums_enabled,
+        wal_level_sufficient: server.wal_level_sufficient,
+        archive_mode_enabled: server.archive_mode_enabled,
+        archive_command_configured: server.archive_command_configured,
+        tls_in_use: server.tls_in_use,
         target_database_name,
         target_role_names,
         database_absent,
@@ -1371,6 +1667,20 @@ fn append_target_blockers(target: &TargetBundle, blockers: &mut Vec<String>) {
             "target PostgreSQL bootstrap principal lacks required identity or capabilities".into(),
         );
     }
+    if !postgres.fsync_enabled
+        || !postgres.full_page_writes_enabled
+        || !postgres.synchronous_commit_enabled
+        || !postgres.data_checksums_enabled
+        || !postgres.wal_level_sufficient
+        || !postgres.archive_mode_enabled
+        || !postgres.archive_command_configured
+        || !postgres.tls_in_use
+    {
+        blockers.push(
+            "target PostgreSQL must prove durable WAL, checksums, configured WAL archiving/PITR, and server-observed TLS"
+                .into(),
+        );
+    }
     if !postgres.database_absent || !postgres.roles_absent {
         blockers
             .push("target PostgreSQL database or migration/API/worker roles already exist".into());
@@ -1431,8 +1741,32 @@ fn record_final_requirement(
 }
 
 impl ProvisionPlan {
-    pub const fn passed(&self) -> bool {
-        false
+    pub fn passed(&self) -> bool {
+        self.passed_with_capability(PRODUCTION_LEGACY_APPLY_CAPABILITY)
+    }
+
+    fn passed_with_capability(&self, capability: ProductionLegacyApplyCapability) -> bool {
+        let apply_available = production_apply_available_with_capability(self.kind, capability);
+        self.apply_available == apply_available
+            && apply_available
+            && self.converter_available
+            && self.verdict == PreflightVerdict::Ready
+            && self.next_action == NextAction::AuthorizeApply
+            && legacy_inspection_sections_complete(self)
+            && self.implementation_blockers.is_empty()
+            && self.blockers.is_empty()
+    }
+
+    pub(crate) fn ready_for_legacy_authorization(&self, spec: &ProvisionSpec) -> bool {
+        self.kind == ProvisionKind::LegacyReferenceMigration
+            && spec.kind == ProvisionKind::LegacyReferenceMigration
+            && self.operation_id == spec.operation_id
+            && self.scope == InspectionMode::Online.scope()
+            && self.passed()
+            && self.review_binding_sha256.len() == 64
+            && self.review_binding_hmac_sha256.len() == 64
+            && self.report_sha256.len() == 64
+            && self.report_binding_hmac_sha256.len() == 64
     }
 }
 
@@ -1453,17 +1787,110 @@ async fn inspect_server(pool: &MySqlPool) -> Result<ServerRow, sqlx::Error> {
     .await
 }
 
-async fn inspect_source_transaction_read_only(pool: &MySqlPool) -> Result<bool, sqlx::Error> {
-    match sqlx::query_scalar::<_, i64>("SELECT @@SESSION.transaction_read_only")
-        .fetch_one(pool)
-        .await
-    {
-        Ok(value) => Ok(value != 0),
-        Err(_) => sqlx::query_scalar::<_, i64>("SELECT @@SESSION.tx_read_only")
-            .fetch_one(pool)
-            .await
-            .map(|value| value != 0),
+struct SourceMysqlAccessInspection {
+    grants_sha256: String,
+    grants_are_read_only_and_complete: bool,
+    visible_non_source_schema_count: u64,
+}
+
+async fn inspect_source_mysql_access(
+    pool: &MySqlPool,
+    source_database: &str,
+) -> Result<SourceMysqlAccessInspection, sqlx::Error> {
+    let rows = sqlx::query("SHOW GRANTS FOR CURRENT_USER()")
+        .fetch_all(pool)
+        .await?;
+    let mut grants = rows
+        .into_iter()
+        .map(|row| row.try_get::<String, _>(0))
+        .collect::<Result<Vec<_>, _>>()?;
+    grants.sort();
+    grants.dedup();
+    let mut digest = Sha256::new();
+    digest.update(b"v2board-source-mysql-grants-v1\0");
+    let mut all_read_only = !grants.is_empty();
+    let mut source_select = false;
+    let mut show_databases = false;
+    let mut process_inventory = false;
+    let mut replication_inventory = false;
+    for grant in &grants {
+        digest.update((grant.len() as u64).to_be_bytes());
+        digest.update(grant.as_bytes());
+        let Some(classification) = classify_source_grant(grant, source_database) else {
+            all_read_only = false;
+            continue;
+        };
+        source_select |= classification.source_select;
+        show_databases |= classification.show_databases;
+        process_inventory |= classification.process_inventory;
+        replication_inventory |= classification.replication_inventory;
     }
+
+    let schemas = sqlx::query_scalar::<_, String>(
+        "SELECT schema_name FROM information_schema.schemata ORDER BY schema_name",
+    )
+    .fetch_all(pool)
+    .await?;
+    let source_visible = schemas.iter().any(|schema| schema == source_database);
+    let system_schemas = ["information_schema", "mysql", "performance_schema", "sys"];
+    let visible_non_source_schema_count = schemas
+        .iter()
+        .filter(|schema| {
+            schema.as_str() != source_database
+                && !system_schemas
+                    .iter()
+                    .any(|system| schema.eq_ignore_ascii_case(system))
+        })
+        .count() as u64;
+    Ok(SourceMysqlAccessInspection {
+        grants_sha256: hex::encode(digest.finalize()),
+        grants_are_read_only_and_complete: all_read_only
+            && source_select
+            && show_databases
+            && process_inventory
+            && replication_inventory
+            && source_visible,
+        visible_non_source_schema_count,
+    })
+}
+
+#[derive(Clone, Copy, Default)]
+struct SourceGrantClassification {
+    source_select: bool,
+    show_databases: bool,
+    process_inventory: bool,
+    replication_inventory: bool,
+}
+
+fn classify_source_grant(grant: &str, source_database: &str) -> Option<SourceGrantClassification> {
+    if grant.contains("WITH GRANT OPTION") || !grant.starts_with("GRANT ") {
+        return None;
+    }
+    let (privileges, rest) = grant.strip_prefix("GRANT ")?.split_once(" ON ")?;
+    let (object, _) = rest.split_once(" TO ")?;
+    let quoted_database = format!("`{}`.*", source_database.replace('`', "``"));
+    let source_scope = object == quoted_database;
+    let mysql_topology_scope = matches!(
+        object,
+        "`performance_schema`.`replication_connection_status`"
+            | "`performance_schema`.`replication_group_members`"
+    );
+    let mut classification = SourceGrantClassification::default();
+    for privilege in privileges.split(',').map(str::trim) {
+        match privilege {
+            "USAGE" if object == "*.*" => {}
+            "SELECT" if source_scope => classification.source_select = true,
+            "SELECT" if mysql_topology_scope => {}
+            "SHOW VIEW" if source_scope => {}
+            "SHOW DATABASES" if object == "*.*" => classification.show_databases = true,
+            "PROCESS" if object == "*.*" => classification.process_inventory = true,
+            "REPLICATION CLIENT" if object == "*.*" => {
+                classification.replication_inventory = true;
+            }
+            _ => return None,
+        }
+    }
+    Some(classification)
 }
 
 async fn inspect_mysql_server_uuid(pool: &MySqlPool) -> Result<String, sqlx::Error> {
@@ -1514,26 +1941,6 @@ async fn inspect_mysql_topology(pool: &MySqlPool) -> MysqlTopology {
     MysqlTopology {
         replication_channel_count,
         group_replication_member_count,
-        registered_replica_count,
-    }
-}
-
-async fn inspect_mariadb_topology(pool: &MySqlPool) -> MysqlTopology {
-    let replication_channel_count = sqlx::query("SHOW ALL SLAVES STATUS")
-        .fetch_all(pool)
-        .await
-        .ok()
-        .and_then(|rows| i64::try_from(rows.len()).ok());
-    let registered_replica_count = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM information_schema.PROCESSLIST \
-         WHERE COMMAND IN ('Binlog Dump', 'Binlog Dump GTID')",
-    )
-    .fetch_one(pool)
-    .await
-    .ok();
-    MysqlTopology {
-        replication_channel_count,
-        group_replication_member_count: Some(0),
         registered_replica_count,
     }
 }
@@ -1602,7 +2009,7 @@ async fn inspect_non_table_objects(pool: &MySqlPool) -> Result<NonTableObjectCou
     })
 }
 
-async fn semantic_schema_hash(pool: &MySqlPool) -> Result<String, sqlx::Error> {
+pub(crate) async fn semantic_schema_hash(pool: &MySqlPool) -> Result<String, sqlx::Error> {
     let core = CORE_LEGACY_TABLES.iter().copied().collect::<BTreeSet<_>>();
     let tables = inspect_tables(pool).await?;
     let columns = sqlx::query_as::<_, ColumnRow>(
@@ -1622,7 +2029,8 @@ async fn semantic_schema_hash(pool: &MySqlPool) -> Result<String, sqlx::Error> {
     let indexes = sqlx::query_as::<_, IndexRow>(
         r#"
         SELECT TABLE_NAME AS table_name, INDEX_NAME AS index_name, NON_UNIQUE AS non_unique,
-               SEQ_IN_INDEX AS seq_in_index, COLUMN_NAME AS column_name, SUB_PART AS sub_part,
+               CAST(SEQ_IN_INDEX AS SIGNED) AS seq_in_index, COLUMN_NAME AS column_name,
+               CAST(SUB_PART AS SIGNED) AS sub_part,
                COLLATION AS collation, INDEX_TYPE AS index_type
         FROM information_schema.STATISTICS
         WHERE TABLE_SCHEMA = DATABASE()
@@ -1673,6 +2081,8 @@ async fn semantic_schema_hash(pool: &MySqlPool) -> Result<String, sqlx::Error> {
         .iter()
         .filter(|row| core.contains(row.table_name.as_str()))
     {
+        let normalized_default = normalize_column_default(row.column_default.as_deref());
+        let normalized_extra = normalize_column_extra(&row.extra);
         hash_parts(
             &mut hasher,
             &[
@@ -1682,8 +2092,8 @@ async fn semantic_schema_hash(pool: &MySqlPool) -> Result<String, sqlx::Error> {
                 &row.column_name,
                 &normalize_column_type(&row.column_type),
                 &row.is_nullable,
-                row.column_default.as_deref().unwrap_or("<NULL>"),
-                &row.extra,
+                &normalized_default,
+                &normalized_extra,
                 &normalize_charset(row.character_set_name.as_deref().unwrap_or("")),
                 &row.generation_expression,
             ],
@@ -1769,6 +2179,32 @@ fn normalize_column_type(value: &str) -> String {
         }
     }
     lower
+}
+
+fn normalize_column_default(value: Option<&str>) -> String {
+    let Some(value) = value.map(str::trim) else {
+        return "<NULL>".to_string();
+    };
+    if value.eq_ignore_ascii_case("NULL") {
+        return "<NULL>".to_string();
+    }
+    if value.eq_ignore_ascii_case("CURRENT_TIMESTAMP")
+        || value.eq_ignore_ascii_case("CURRENT_TIMESTAMP()")
+    {
+        return "current_timestamp".to_string();
+    }
+    value.to_string()
+}
+
+fn normalize_column_extra(value: &str) -> String {
+    value
+        .split_ascii_whitespace()
+        // MySQL 8 exposes DEFAULT_GENERATED for ordinary explicit defaults;
+        // it is metadata presentation, not a different source contract.
+        .filter(|part| !part.eq_ignore_ascii_case("DEFAULT_GENERATED"))
+        .map(str::to_ascii_lowercase)
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 async fn inspect_data(
@@ -2283,16 +2719,20 @@ async fn count_target_collation_unique_collisions(
 }
 
 async fn inspect_source_redis(
-    default_url: &str,
-    cache_url: &str,
-    connection_prefix: &str,
-    cache_prefix: &str,
-    legacy_show_subscribe_method: i32,
-    legacy_show_subscribe_expire_minutes: i64,
-    legacy_subscription_issuance_stopped_at_unix: i64,
+    spec: &ProvisionSpec,
+    source: &SourceSpec,
+    mode: InspectionMode,
 ) -> Result<SourceRedisInspection, redis::RedisError> {
+    let default_url = source.redis_default_url.as_str();
+    let cache_url = source.redis_cache_url.as_str();
+    let connection_prefix = source.redis_connection_prefix.as_str();
+    let cache_prefix = source.redis_cache_prefix.as_str();
+    let horizon_prefix = source.redis_horizon_prefix.as_str();
     let mut default_connection = redis_connection(default_url).await?;
     let (_, source_default_identity) = redis_server_identity(&mut default_connection).await?;
+    let source_default_database = redis_database_index(default_url)?;
+    let source_default_keyspace = redis_keyspace_counts(&mut default_connection).await?;
+    let source_default_key_count = redis_dbsize(&mut default_connection).await?;
     let upload = inspect_traffic_hash(
         &mut default_connection,
         &format!("{connection_prefix}v2board_upload_traffic"),
@@ -2303,38 +2743,62 @@ async fn inspect_source_redis(
         &format!("{connection_prefix}v2board_download_traffic"),
     )
     .await?;
-    let queues = inspect_queues(&mut default_connection, connection_prefix).await?;
-    let retryable_failed_job_items =
-        pattern_collection_item_count(&mut default_connection, "*failed_jobs").await?;
-    let configured_upload_key = format!("{connection_prefix}v2board_upload_traffic");
-    let configured_download_key = format!("{connection_prefix}v2board_download_traffic");
-    let mut traffic_candidates =
-        scan_keys(&mut default_connection, "*v2board_upload_traffic").await?;
-    traffic_candidates
-        .extend(scan_keys(&mut default_connection, "*v2board_download_traffic").await?);
-    traffic_candidates.sort();
-    traffic_candidates.dedup();
-    let unexpected_traffic_key_candidates = traffic_candidates
-        .iter()
-        .filter(|key| *key != &configured_upload_key && *key != &configured_download_key)
-        .count() as u64;
-    let traffic_reset_lock_keys = scan_keys(&mut default_connection, "*traffic_reset_lock")
-        .await?
-        .len() as u64;
-    let source_default_key_count = scan_keys(&mut default_connection, "*").await?.len() as u64;
 
     let mut cache_connection = redis_connection(cache_url).await?;
     let (_, source_cache_identity) = redis_server_identity(&mut cache_connection).await?;
+    let source_cache_database = redis_database_index(cache_url)?;
+    let source_cache_keyspace = redis_keyspace_counts(&mut cache_connection).await?;
+    let source_cache_key_count = redis_dbsize(&mut cache_connection).await?;
     let declared_cache_key_prefix = laravel_cache_physical_prefix(connection_prefix, cache_prefix);
-    let (legacy_subscription_token_keys, ambiguous_subscription_token_keys) =
-        subscription_token_key_counts(&mut cache_connection, &declared_cache_key_prefix).await?;
-    let source_cache_key_count = scan_keys(&mut cache_connection, "*").await?.len() as u64;
-    let (legacy_subscription_not_after_unix, legacy_subscription_window_elapsed) =
-        legacy_subscription_window(
-            legacy_show_subscribe_method,
-            legacy_show_subscribe_expire_minutes,
-            legacy_subscription_issuance_stopped_at_unix,
-        );
+    let same_server = source_default_identity.run_id == source_cache_identity.run_id;
+    let same_logical_database = same_server && source_default_database == source_cache_database;
+    let configured_upload_key = format!("{connection_prefix}v2board_upload_traffic");
+    let configured_download_key = format!("{connection_prefix}v2board_download_traffic");
+    let configured_reset_key = format!("{connection_prefix}traffic_reset_lock");
+    let configured_queue_prefix = format!("{connection_prefix}queues:");
+    let configured_horizon_prefix = format!("{connection_prefix}{horizon_prefix}");
+    let frozen_upload_key = format!(
+        "{connection_prefix}v2board_migration:{}:frozen_upload_traffic",
+        spec.operation_id
+    );
+    let frozen_download_key = format!(
+        "{connection_prefix}v2board_migration:{}:frozen_download_traffic",
+        spec.operation_id
+    );
+    let migration_key_prefix = format!("{connection_prefix}v2board_migration:");
+    let ownership = RedisOwnershipRules {
+        configured_upload_key: configured_upload_key.as_bytes(),
+        configured_download_key: configured_download_key.as_bytes(),
+        configured_reset_key: configured_reset_key.as_bytes(),
+        configured_queue_prefix: configured_queue_prefix.as_bytes(),
+        configured_horizon_prefix: configured_horizon_prefix.as_bytes(),
+        horizon_prefix_enabled: !horizon_prefix.is_empty(),
+        declared_cache_key_prefix: declared_cache_key_prefix.as_bytes(),
+        migration_key_prefix: migration_key_prefix.as_bytes(),
+        frozen_upload_key: frozen_upload_key.as_bytes(),
+        frozen_download_key: frozen_download_key.as_bytes(),
+        allow_current_operation_frozen_keys: mode == InspectionMode::FencedFinal,
+    };
+    let default_inventory =
+        inspect_default_redis_inventory(&mut default_connection, &ownership, same_logical_database)
+            .await?;
+    let cache_inventory =
+        inspect_cache_redis_inventory(&mut cache_connection, &ownership, same_logical_database)
+            .await?;
+    let source_default_other_logical_database_keys = keyspace_keys_outside(
+        &source_default_keyspace,
+        source_default_database,
+        same_server.then_some(source_cache_database),
+    );
+    let source_cache_other_logical_database_keys = keyspace_keys_outside(
+        &source_cache_keyspace,
+        source_cache_database,
+        same_server.then_some(source_default_database),
+    );
+    let physical_redis_ownership_complete = default_inventory.unclassified_key_count == 0
+        && cache_inventory.unclassified_key_count == 0
+        && source_default_other_logical_database_keys == 0
+        && source_cache_other_logical_database_keys == 0;
     Ok(SourceRedisInspection {
         source_default_run_id: source_default_identity.run_id,
         source_cache_run_id: source_cache_identity.run_id,
@@ -2346,50 +2810,25 @@ async fn inspect_source_redis(
         source_cache_cluster_enabled: source_cache_identity.cluster_enabled,
         source_default_key_count,
         source_cache_key_count,
+        source_default_unclassified_key_count: default_inventory.unclassified_key_count,
+        source_cache_unclassified_key_count: cache_inventory.unclassified_key_count,
+        source_default_other_logical_database_keys,
+        source_cache_other_logical_database_keys,
+        physical_redis_ownership_complete,
         upload_traffic_fields: upload.fields,
         download_traffic_fields: download.fields,
         upload_traffic_sum: upload.sum.to_string(),
         download_traffic_sum: download.sum.to_string(),
         malformed_traffic_values: upload.malformed + download.malformed,
-        unexpected_traffic_key_candidates,
-        traffic_reset_lock_keys,
-        queued_item_count: queues.durable_items,
-        queue_notify_item_count: queues.notify_items,
-        ambiguous_queue_key_candidates: queues.ambiguous_key_candidates,
-        retryable_failed_job_items,
-        legacy_subscription_token_keys,
-        ambiguous_subscription_token_keys,
-        legacy_subscription_not_after_unix,
-        legacy_subscription_window_elapsed,
+        unexpected_traffic_key_candidates: default_inventory.unexpected_traffic_key_candidates,
+        traffic_reset_lock_keys: default_inventory.traffic_reset_lock_keys,
+        queued_item_count: default_inventory.queued_item_count,
+        queue_notify_item_count: default_inventory.queue_notify_item_count,
+        ambiguous_queue_key_candidates: default_inventory.ambiguous_queue_key_candidates,
+        retryable_failed_job_items: default_inventory.retryable_failed_job_items,
+        legacy_subscription_token_keys: cache_inventory.legacy_subscription_token_keys,
+        ambiguous_subscription_token_keys: cache_inventory.ambiguous_subscription_token_keys,
     })
-}
-
-fn legacy_subscription_window(
-    method: i32,
-    expire_minutes: i64,
-    issuance_stopped_at_unix: i64,
-) -> (i64, bool) {
-    if method == 0 {
-        return (0, true);
-    }
-    let ttl_seconds = if method == 1 {
-        24 * 60 * 60
-    } else {
-        // A method-2 URL can first be accepted near the end of its issuance
-        // bucket and then remain in Laravel Cache for one more full timestep.
-        expire_minutes.saturating_mul(60).saturating_mul(2)
-    };
-    // The old method-2 token is valid for the current time bucket. Five
-    // minutes cover clock skew between the fenced old host and this inspector.
-    let not_after = issuance_stopped_at_unix
-        .saturating_add(ttl_seconds)
-        .saturating_add(5 * 60);
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .ok()
-        .and_then(|duration| i64::try_from(duration.as_secs()).ok())
-        .unwrap_or(0);
-    (not_after, now >= not_after)
 }
 
 fn laravel_cache_physical_prefix(connection_prefix: &str, cache_prefix: &str) -> String {
@@ -2470,60 +2909,9 @@ async fn inspect_traffic_hash(
     })
 }
 
-struct QueueInspection {
-    durable_items: u64,
-    notify_items: u64,
-    ambiguous_key_candidates: u64,
-}
-
-async fn inspect_queues(
-    connection: &mut ConnectionManager,
-    connection_prefix: &str,
-) -> Result<QueueInspection, redis::RedisError> {
-    let all = scan_keys(connection, "*queues:*")
-        .await?
-        .into_iter()
-        .collect::<BTreeSet<_>>();
-    let owned_prefix = format!("{connection_prefix}queues:");
-    let owned = scan_keys(connection, &format!("{owned_prefix}*"))
-        .await?
-        .into_iter()
-        .collect::<BTreeSet<_>>();
-    let mut durable_items = 0_u64;
-    let mut notify_items = 0_u64;
-    for key in &owned {
-        let count = redis_collection_item_count(connection, key).await?;
-        if key.strip_prefix(&owned_prefix).is_some_and(|logical| {
-            logical
-                .strip_suffix(":notify")
-                .is_some_and(|queue| !queue.is_empty())
-        }) {
-            notify_items = notify_items.saturating_add(count);
-        } else {
-            durable_items = durable_items.saturating_add(count);
-        }
-    }
-    Ok(QueueInspection {
-        durable_items,
-        notify_items,
-        ambiguous_key_candidates: all.difference(&owned).count() as u64,
-    })
-}
-
-async fn pattern_collection_item_count(
-    connection: &mut ConnectionManager,
-    pattern: &str,
-) -> Result<u64, redis::RedisError> {
-    let mut total = 0_u64;
-    for key in scan_keys(connection, pattern).await? {
-        total = total.saturating_add(redis_collection_item_count(connection, &key).await?);
-    }
-    Ok(total)
-}
-
 async fn redis_collection_item_count(
     connection: &mut ConnectionManager,
-    key: &str,
+    key: &[u8],
 ) -> Result<u64, redis::RedisError> {
     let key_type = redis::cmd("TYPE")
         .arg(key)
@@ -2539,26 +2927,177 @@ async fn redis_collection_item_count(
     }
 }
 
-async fn subscription_token_key_counts(
+struct RedisOwnershipRules<'a> {
+    configured_upload_key: &'a [u8],
+    configured_download_key: &'a [u8],
+    configured_reset_key: &'a [u8],
+    configured_queue_prefix: &'a [u8],
+    configured_horizon_prefix: &'a [u8],
+    horizon_prefix_enabled: bool,
+    declared_cache_key_prefix: &'a [u8],
+    migration_key_prefix: &'a [u8],
+    frozen_upload_key: &'a [u8],
+    frozen_download_key: &'a [u8],
+    allow_current_operation_frozen_keys: bool,
+}
+
+impl RedisOwnershipRules<'_> {
+    fn is_allowed_current_operation_frozen_key(&self, key: &[u8]) -> bool {
+        self.allow_current_operation_frozen_keys
+            && (key == self.frozen_upload_key || key == self.frozen_download_key)
+    }
+
+    fn is_migration_key(&self, key: &[u8]) -> bool {
+        key.starts_with(self.migration_key_prefix)
+    }
+
+    fn default_owned(&self, key: &[u8]) -> bool {
+        if self.is_migration_key(key) {
+            return self.is_allowed_current_operation_frozen_key(key);
+        }
+        key == self.configured_upload_key
+            || key == self.configured_download_key
+            || key == self.configured_reset_key
+            || key.starts_with(self.configured_queue_prefix)
+            || (self.horizon_prefix_enabled && key.starts_with(self.configured_horizon_prefix))
+    }
+
+    fn cache_owned(&self, key: &[u8]) -> bool {
+        !self.is_migration_key(key) && key.starts_with(self.declared_cache_key_prefix)
+    }
+
+    fn declared_subscription_token(&self, key: &[u8]) -> bool {
+        self.cache_owned(key)
+            && key
+                .strip_prefix(self.declared_cache_key_prefix)
+                .is_some_and(subscription_token_logical_key)
+    }
+}
+
+#[derive(Default)]
+struct DefaultRedisInventory {
+    unclassified_key_count: u64,
+    unexpected_traffic_key_candidates: u64,
+    traffic_reset_lock_keys: u64,
+    queued_item_count: u64,
+    queue_notify_item_count: u64,
+    ambiguous_queue_key_candidates: u64,
+    retryable_failed_job_items: u64,
+}
+
+#[derive(Default)]
+struct CacheRedisInventory {
+    unclassified_key_count: u64,
+    legacy_subscription_token_keys: u64,
+    ambiguous_subscription_token_keys: u64,
+}
+
+async fn inspect_default_redis_inventory(
     connection: &mut ConnectionManager,
-    declared_prefix: &str,
-) -> Result<(u64, u64), redis::RedisError> {
-    let mut keys = BTreeSet::new();
-    for pattern in ["*otp_*", "*otpn_*", "*totp_*"] {
-        keys.extend(scan_keys(connection, pattern).await?);
+    ownership: &RedisOwnershipRules<'_>,
+    cache_shares_logical_database: bool,
+) -> Result<DefaultRedisInventory, redis::RedisError> {
+    // SCAN may repeat a key while an online source is changing. These are
+    // deliberately conservative occurrence counters: migration gates consume
+    // zero versus nonzero, and the final pass runs after the durable fence.
+    let mut inventory = DefaultRedisInventory::default();
+    let mut scanner = RedisKeyScanner::default();
+    while let Some(page) = scanner.next_page(connection).await? {
+        for key in page {
+            if !ownership.default_owned(&key)
+                && !(cache_shares_logical_database && ownership.cache_owned(&key))
+            {
+                inventory.unclassified_key_count =
+                    inventory.unclassified_key_count.saturating_add(1);
+            }
+
+            if (key.ends_with(b"v2board_upload_traffic") && key != ownership.configured_upload_key)
+                || (key.ends_with(b"v2board_download_traffic")
+                    && key != ownership.configured_download_key)
+            {
+                inventory.unexpected_traffic_key_candidates = inventory
+                    .unexpected_traffic_key_candidates
+                    .saturating_add(1);
+            }
+            if key.ends_with(b"traffic_reset_lock") {
+                inventory.traffic_reset_lock_keys =
+                    inventory.traffic_reset_lock_keys.saturating_add(1);
+            }
+            if contains_bytes(&key, b"queues:") {
+                if let Some(logical) = key.strip_prefix(ownership.configured_queue_prefix) {
+                    let item_count = redis_collection_item_count(connection, &key).await?;
+                    if logical
+                        .strip_suffix(b":notify")
+                        .is_some_and(|queue| !queue.is_empty())
+                    {
+                        inventory.queue_notify_item_count =
+                            inventory.queue_notify_item_count.saturating_add(item_count);
+                    } else {
+                        inventory.queued_item_count =
+                            inventory.queued_item_count.saturating_add(item_count);
+                    }
+                } else {
+                    inventory.ambiguous_queue_key_candidates =
+                        inventory.ambiguous_queue_key_candidates.saturating_add(1);
+                }
+            }
+            if key.ends_with(b"failed_jobs") {
+                inventory.retryable_failed_job_items = inventory
+                    .retryable_failed_job_items
+                    .saturating_add(redis_collection_item_count(connection, &key).await?);
+            }
+        }
     }
-    let mut declared = BTreeSet::new();
-    for suffix in ["otp_*", "otpn_*", "totp_*"] {
-        declared.extend(scan_keys(connection, &format!("{declared_prefix}{suffix}")).await?);
+    Ok(inventory)
+}
+
+async fn inspect_cache_redis_inventory(
+    connection: &mut ConnectionManager,
+    ownership: &RedisOwnershipRules<'_>,
+    default_shares_logical_database: bool,
+) -> Result<CacheRedisInventory, redis::RedisError> {
+    let mut inventory = CacheRedisInventory::default();
+    let mut scanner = RedisKeyScanner::default();
+    while let Some(page) = scanner.next_page(connection).await? {
+        for key in page {
+            if !ownership.cache_owned(&key)
+                && !(default_shares_logical_database && ownership.default_owned(&key))
+            {
+                inventory.unclassified_key_count =
+                    inventory.unclassified_key_count.saturating_add(1);
+            }
+            if subscription_token_candidate(&key) {
+                if ownership.declared_subscription_token(&key) {
+                    inventory.legacy_subscription_token_keys =
+                        inventory.legacy_subscription_token_keys.saturating_add(1);
+                } else {
+                    inventory.ambiguous_subscription_token_keys = inventory
+                        .ambiguous_subscription_token_keys
+                        .saturating_add(1);
+                }
+            }
+        }
     }
-    Ok((
-        declared.len() as u64,
-        keys.difference(&declared).count() as u64,
-    ))
+    Ok(inventory)
+}
+
+fn subscription_token_candidate(key: &[u8]) -> bool {
+    [b"otp_".as_slice(), b"otpn_".as_slice(), b"totp_".as_slice()]
+        .into_iter()
+        .any(|needle| contains_bytes(key, needle))
+}
+
+fn subscription_token_logical_key(key: &[u8]) -> bool {
+    key.starts_with(b"otp_") || key.starts_with(b"otpn_") || key.starts_with(b"totp_")
+}
+
+fn contains_bytes(value: &[u8], needle: &[u8]) -> bool {
+    !needle.is_empty() && value.windows(needle.len()).any(|window| window == needle)
 }
 
 struct TargetRedisStatus {
     key_count: u64,
+    database_index: u32,
     version: String,
     identity: RedisServerIdentity,
     redis_6_2_or_newer: bool,
@@ -2569,7 +3108,10 @@ struct TargetRedisStatus {
 
 async fn inspect_target_redis(redis_url: &str) -> Result<TargetRedisStatus, redis::RedisError> {
     let mut connection = redis_connection(redis_url).await?;
-    let key_count = scan_keys(&mut connection, "*").await?.len() as u64;
+    let database_index = redis_database_index(redis_url)?;
+    let key_count = redis_dbsize(&mut connection).await?;
+    let keyspace = redis_keyspace_counts(&mut connection).await?;
+    validate_selected_redis_database_size(database_index, key_count, &keyspace)?;
     let (version, identity) = redis_server_identity(&mut connection).await?;
     let redis_6_2_or_newer = version_at_least(&version, 6, 2, 0);
     let getdel_available = redis_command_available(&mut connection, "GETDEL").await?;
@@ -2577,6 +3119,7 @@ async fn inspect_target_redis(redis_url: &str) -> Result<TargetRedisStatus, redi
     let script_available = redis_command_available(&mut connection, "SCRIPT").await?;
     Ok(TargetRedisStatus {
         key_count,
+        database_index,
         version,
         identity,
         redis_6_2_or_newer,
@@ -2591,6 +3134,104 @@ struct RedisServerIdentity {
     role: String,
     connected_replicas: Option<u64>,
     cluster_enabled: Option<bool>,
+}
+
+fn redis_database_index(value: &str) -> Result<u32, redis::RedisError> {
+    let url = Url::parse(value).map_err(|_| {
+        redis::RedisError::from((redis::ErrorKind::InvalidClientConfig, "invalid Redis URL"))
+    })?;
+    let path = url.path().trim_start_matches('/');
+    if path.is_empty() {
+        return Ok(0);
+    }
+    if path.contains('/') {
+        return Err(redis::RedisError::from((
+            redis::ErrorKind::InvalidClientConfig,
+            "invalid Redis logical database path",
+        )));
+    }
+    path.parse::<u32>().map_err(|_| {
+        redis::RedisError::from((
+            redis::ErrorKind::InvalidClientConfig,
+            "invalid Redis logical database index",
+        ))
+    })
+}
+
+async fn redis_keyspace_counts(
+    connection: &mut ConnectionManager,
+) -> Result<BTreeMap<u32, u64>, redis::RedisError> {
+    let info = redis::cmd("INFO")
+        .arg("keyspace")
+        .query_async::<String>(&mut *connection)
+        .await?;
+    parse_redis_keyspace_info(&info)
+}
+
+fn parse_redis_keyspace_info(info: &str) -> Result<BTreeMap<u32, u64>, redis::RedisError> {
+    let mut databases = BTreeMap::new();
+    for line in info.lines().map(str::trim) {
+        let Some((database, values)) = line.split_once(':') else {
+            continue;
+        };
+        let Some(database) = database.strip_prefix("db") else {
+            continue;
+        };
+        let database = database.parse::<u32>().map_err(|_| {
+            redis::RedisError::from((
+                redis::ErrorKind::UnexpectedReturnType,
+                "invalid Redis keyspace database index",
+            ))
+        })?;
+        let keys = values
+            .split(',')
+            .find_map(|field| field.strip_prefix("keys="))
+            .ok_or_else(|| {
+                redis::RedisError::from((
+                    redis::ErrorKind::UnexpectedReturnType,
+                    "Redis keyspace row has no key count",
+                ))
+            })?
+            .parse::<u64>()
+            .map_err(|_| {
+                redis::RedisError::from((
+                    redis::ErrorKind::UnexpectedReturnType,
+                    "invalid Redis keyspace key count",
+                ))
+            })?;
+        if databases.insert(database, keys).is_some() {
+            return Err(redis::RedisError::from((
+                redis::ErrorKind::UnexpectedReturnType,
+                "duplicate Redis keyspace database row",
+            )));
+        }
+    }
+    Ok(databases)
+}
+
+fn keyspace_keys_outside(
+    databases: &BTreeMap<u32, u64>,
+    primary: u32,
+    secondary: Option<u32>,
+) -> u64 {
+    databases
+        .iter()
+        .filter(|(database, _)| **database != primary && Some(**database) != secondary)
+        .fold(0_u64, |total, (_, keys)| total.saturating_add(*keys))
+}
+
+fn validate_selected_redis_database_size(
+    database_index: u32,
+    dbsize: u64,
+    databases: &BTreeMap<u32, u64>,
+) -> Result<(), redis::RedisError> {
+    if databases.get(&database_index).copied().unwrap_or(0) != dbsize {
+        return Err(redis::RedisError::from((
+            redis::ErrorKind::Client,
+            "target Redis DBSIZE does not match the selected logical database identity",
+        )));
+    }
+    Ok(())
 }
 
 async fn redis_server_identity(
@@ -2665,36 +3306,72 @@ async fn redis_command_available(
     })
 }
 
-async fn scan_keys(
-    connection: &mut ConnectionManager,
-    pattern: &str,
-) -> Result<Vec<String>, redis::RedisError> {
-    let mut cursor = 0_u64;
-    let mut keys = Vec::new();
-    loop {
-        let (next, mut page) = redis::cmd("SCAN")
-            .arg(cursor)
-            .arg("MATCH")
-            .arg(pattern)
+#[derive(Default)]
+struct RedisKeyScanner {
+    cursor: u64,
+    complete: bool,
+}
+
+impl RedisKeyScanner {
+    async fn next_page(
+        &mut self,
+        connection: &mut ConnectionManager,
+    ) -> Result<Option<Vec<Vec<u8>>>, redis::RedisError> {
+        if self.complete {
+            return Ok(None);
+        }
+        let (next, page) = redis::cmd("SCAN")
+            .arg(self.cursor)
             .arg("COUNT")
-            .arg(256)
-            .query_async::<(u64, Vec<String>)>(connection)
+            .arg(REDIS_SCAN_COUNT)
+            .query_async::<(u64, Vec<Vec<u8>>)>(connection)
             .await?;
-        if keys.len().saturating_add(page.len()) > MAX_REDIS_SCAN_KEYS {
+        validate_redis_scan_page(&page)?;
+        if next != 0 && next == self.cursor {
             return Err(redis::RedisError::from((
                 redis::ErrorKind::Client,
-                "provision Redis scan exceeded the 100000-key safety limit",
+                "Redis SCAN cursor did not advance",
             )));
         }
-        keys.append(&mut page);
-        if next == 0 {
-            break;
-        }
-        cursor = next;
+        self.cursor = next;
+        self.complete = next == 0;
+        Ok(Some(page))
     }
-    keys.sort();
-    keys.dedup();
-    Ok(keys)
+}
+
+fn validate_redis_scan_page(page: &[Vec<u8>]) -> Result<(), redis::RedisError> {
+    if page.len() > MAX_REDIS_SCAN_PAGE_KEYS {
+        return Err(redis::RedisError::from((
+            redis::ErrorKind::Client,
+            "Redis SCAN page contains too many keys",
+        )));
+    }
+    let mut page_bytes = 0_usize;
+    for key in page {
+        if key.len() > MAX_REDIS_KEY_BYTES {
+            return Err(redis::RedisError::from((
+                redis::ErrorKind::Client,
+                "Redis key exceeds the bounded inspection length",
+            )));
+        }
+        page_bytes = page_bytes.checked_add(key.len()).ok_or_else(|| {
+            redis::RedisError::from((
+                redis::ErrorKind::Client,
+                "Redis SCAN page byte length overflowed",
+            ))
+        })?;
+        if page_bytes > MAX_REDIS_SCAN_PAGE_BYTES {
+            return Err(redis::RedisError::from((
+                redis::ErrorKind::Client,
+                "Redis SCAN page exceeds the bounded inspection byte size",
+            )));
+        }
+    }
+    Ok(())
+}
+
+async fn redis_dbsize(connection: &mut ConnectionManager) -> Result<u64, redis::RedisError> {
+    redis::cmd("DBSIZE").query_async(connection).await
 }
 
 async fn redis_connection(redis_url: &str) -> Result<ConnectionManager, redis::RedisError> {
@@ -2704,15 +3381,31 @@ async fn redis_connection(redis_url: &str) -> Result<ConnectionManager, redis::R
 
 fn database_vendor(version: &str, comment: &str) -> DatabaseVendor {
     let text = format!("{version} {comment}").to_ascii_lowercase();
-    if text.contains("mariadb") {
-        DatabaseVendor::MariaDb
-    } else if text.contains("percona server") {
-        DatabaseVendor::Percona
-    } else if text.contains("mysql") {
+    if !text.contains("mariadb")
+        && !text.contains("percona")
+        && (comment
+            .to_ascii_lowercase()
+            .contains("mysql community server")
+            || comment.to_ascii_lowercase().contains("mysql enterprise"))
+    {
         DatabaseVendor::MySql
     } else {
-        DatabaseVendor::Unknown
+        DatabaseVendor::Unsupported
     }
+}
+
+fn version_is_supported_mysql8(version: &str) -> bool {
+    let mut parts = version.split(['.', '-']);
+    let Some(major) = parts.next().and_then(|value| value.parse::<u64>().ok()) else {
+        return false;
+    };
+    let Some(minor) = parts.next().and_then(|value| value.parse::<u64>().ok()) else {
+        return false;
+    };
+    let Some(_patch) = parts.next().and_then(|value| value.parse::<u64>().ok()) else {
+        return false;
+    };
+    major == 8 && matches!(minor, 0 | 4)
 }
 
 fn version_at_least(version: &str, major: u64, minor: u64, patch: u64) -> bool {
@@ -2734,27 +3427,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn vendor_and_version_detection_is_fail_closed_for_mariadb() {
+    fn source_admission_accepts_only_oracle_mysql_major_8() {
         assert!(matches!(
             database_vendor("8.4.4", "MySQL Community Server - GPL"),
             DatabaseVendor::MySql
         ));
         assert!(matches!(
-            database_vendor("5.7.29", "MySQL Community Server"),
+            database_vendor("8.0.37", "MySQL Enterprise Server - Commercial"),
             DatabaseVendor::MySql
         ));
-        assert!(matches!(
-            database_vendor("8.0.37-29", "Percona Server (GPL)"),
-            DatabaseVendor::Percona
-        ));
-        assert!(matches!(
-            database_vendor("10.11.8-MariaDB", "mariadb.org binary distribution"),
-            DatabaseVendor::MariaDb
-        ));
-        assert!(matches!(
-            database_vendor("8.4.4-compatible", "Unknown SQL proxy"),
-            DatabaseVendor::Unknown
-        ));
+        for (version, comment) in [
+            ("8.0.37-29", "Percona Server (GPL)"),
+            ("10.11.8-MariaDB", "mariadb.org binary distribution"),
+            ("8.4.4-compatible", "Unknown SQL proxy"),
+        ] {
+            assert!(matches!(
+                database_vendor(version, comment),
+                DatabaseVendor::Unsupported
+            ));
+        }
+        assert!(version_is_supported_mysql8("8.0.37"));
+        assert!(version_is_supported_mysql8("8.4.4"));
+        assert!(!version_is_supported_mysql8("8"));
+        assert!(!version_is_supported_mysql8("8.1.0"));
+        assert!(!version_is_supported_mysql8("5.7.44"));
+        assert!(!version_is_supported_mysql8("9.0.1"));
         assert!(version_at_least("8.4.4", 8, 4, 0));
         assert!(!version_at_least("8.0.36", 8, 4, 0));
         assert_eq!(version_family("26.3.17.4"), Some((26, 3)));
@@ -2815,10 +3512,179 @@ mod tests {
     }
 
     #[test]
-    fn canonicalization_ignores_integer_display_width_and_utf8_alias() {
+    fn mysql8_schema_canonicalization_ignores_metadata_only_differences() {
         assert_eq!(normalize_column_type("int(11) unsigned"), "int unsigned");
         assert_eq!(normalize_column_type("bigint(20)"), "bigint");
         assert_eq!(normalize_charset("utf8mb3_unicode_ci"), "utf8_unicode_ci");
+        assert_eq!(normalize_column_default(None), "<NULL>");
+        assert_eq!(normalize_column_default(Some("NULL")), "<NULL>");
+        assert_eq!(normalize_column_default(Some("0.0.0.0")), "0.0.0.0");
+        assert_eq!(
+            normalize_column_default(Some("CURRENT_TIMESTAMP()")),
+            "current_timestamp"
+        );
+        assert_eq!(normalize_column_extra("DEFAULT_GENERATED"), "");
+        assert_eq!(
+            normalize_column_extra("DEFAULT_GENERATED on update CURRENT_TIMESTAMP"),
+            "on update current_timestamp"
+        );
+    }
+
+    #[test]
+    fn source_mysql_grants_allow_only_complete_read_inventory_access() {
+        let select = classify_source_grant(
+            "GRANT SELECT, SHOW VIEW ON `v2board`.* TO `migration`@`localhost` REQUIRE SSL",
+            "v2board",
+        )
+        .expect("source-wide read grant");
+        assert!(select.source_select);
+        assert!(!select.show_databases);
+        let inventory = classify_source_grant(
+            "GRANT PROCESS, REPLICATION CLIENT, SHOW DATABASES ON *.* TO `migration`@`localhost`",
+            "v2board",
+        )
+        .expect("physical inventory grant");
+        assert!(inventory.show_databases);
+        assert!(inventory.process_inventory);
+        assert!(inventory.replication_inventory);
+        assert!(
+            classify_source_grant(
+                "GRANT PROCESS, SHOW DATABASES, BINLOG MONITOR, SLAVE MONITOR ON *.* TO `migration`@`localhost`",
+                "v2board",
+            )
+            .is_none()
+        );
+        assert!(
+            classify_source_grant(
+                "GRANT SELECT ON `performance_schema`.`replication_connection_status` TO `migration`@`localhost`",
+                "v2board",
+            )
+            .is_some()
+        );
+        assert!(
+            classify_source_grant(
+                "GRANT SELECT ON `performance_schema`.`replication_group_members` TO `migration`@`localhost`",
+                "v2board",
+            )
+            .is_some()
+        );
+        assert!(
+            classify_source_grant(
+                "GRANT USAGE ON *.* TO `migration`@`localhost` IDENTIFIED BY PASSWORD '*HASH'",
+                "v2board",
+            )
+            .is_some()
+        );
+        assert!(
+            classify_source_grant(
+                "GRANT INSERT ON `v2board`.* TO `migration`@`localhost`",
+                "v2board",
+            )
+            .is_none()
+        );
+        assert!(
+            classify_source_grant("GRANT SELECT ON *.* TO `migration`@`localhost`", "v2board",)
+                .is_none()
+        );
+        assert!(
+            classify_source_grant(
+                "GRANT SELECT ON `other`.* TO `migration`@`localhost`",
+                "v2board",
+            )
+            .is_none()
+        );
+        assert!(
+            classify_source_grant(
+                "GRANT SELECT ON `v2board`.* TO `migration`@`localhost` WITH GRANT OPTION",
+                "v2board",
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn redis_physical_keyspace_inventory_is_exact_and_bounded_to_declared_databases() {
+        assert_eq!(redis_database_index("redis://127.0.0.1:6379").unwrap(), 0);
+        assert_eq!(
+            redis_database_index("redis://127.0.0.1:6379/12").unwrap(),
+            12
+        );
+        assert!(redis_database_index("redis://127.0.0.1:6379/not-a-db").is_err());
+        let keyspaces = parse_redis_keyspace_info(
+            "# Keyspace\r\ndb0:keys=3,expires=1,avg_ttl=9\r\ndb2:keys=7,expires=0,avg_ttl=0\r\ndb9:keys=11,expires=0,avg_ttl=0\r\n",
+        )
+        .expect("strict keyspace inventory");
+        assert_eq!(keyspaces, BTreeMap::from([(0, 3), (2, 7), (9, 11)]));
+        assert_eq!(keyspace_keys_outside(&keyspaces, 0, Some(2)), 11);
+        assert_eq!(keyspace_keys_outside(&keyspaces, 9, None), 10);
+        assert!(validate_selected_redis_database_size(2, 7, &keyspaces).is_ok());
+        assert!(validate_selected_redis_database_size(5, 0, &keyspaces).is_ok());
+        assert!(validate_selected_redis_database_size(2, 8, &keyspaces).is_err());
+        assert!(validate_selected_redis_database_size(5, 1, &keyspaces).is_err());
+        assert!(parse_redis_keyspace_info("db0:expires=1\n").is_err());
+        assert!(parse_redis_keyspace_info("db0:keys=1\ndb0:keys=2\n").is_err());
+    }
+
+    #[test]
+    fn redis_scan_pages_are_bounded_independently_of_total_keyspace_size() {
+        assert!(validate_redis_scan_page(&[b"small-key".to_vec()]).is_ok());
+        assert!(validate_redis_scan_page(&vec![Vec::new(); MAX_REDIS_SCAN_PAGE_KEYS + 1]).is_err());
+        assert!(validate_redis_scan_page(&[vec![b'x'; MAX_REDIS_KEY_BYTES + 1]]).is_err());
+        assert!(
+            validate_redis_scan_page(&vec![
+                vec![b'x'; MAX_REDIS_KEY_BYTES];
+                MAX_REDIS_SCAN_PAGE_BYTES / MAX_REDIS_KEY_BYTES + 1
+            ])
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn fenced_redis_ownership_allows_only_exact_current_operation_frozen_keys() {
+        let current_upload = b"v2board_database_v2board_migration:current:frozen_upload_traffic";
+        let current_download =
+            b"v2board_database_v2board_migration:current:frozen_download_traffic";
+        let migration_prefix = b"v2board_database_v2board_migration:";
+        let final_rules = RedisOwnershipRules {
+            configured_upload_key: b"v2board_database_v2board_upload_traffic",
+            configured_download_key: b"v2board_database_v2board_download_traffic",
+            configured_reset_key: b"v2board_database_traffic_reset_lock",
+            configured_queue_prefix: b"v2board_database_queues:",
+            // Deliberately overlaps the migration namespace: migration keys
+            // must still take the exact-operation branch first.
+            configured_horizon_prefix: migration_prefix,
+            horizon_prefix_enabled: true,
+            declared_cache_key_prefix: b"v2board_database_v2board_cache:",
+            migration_key_prefix: migration_prefix,
+            frozen_upload_key: current_upload,
+            frozen_download_key: current_download,
+            allow_current_operation_frozen_keys: true,
+        };
+        assert!(final_rules.default_owned(current_upload));
+        assert!(final_rules.default_owned(current_download));
+        assert!(
+            !final_rules
+                .default_owned(b"v2board_database_v2board_migration:stale:frozen_upload_traffic")
+        );
+        assert!(!final_rules.default_owned(
+            b"v2board_database_v2board_migration:current:frozen_upload_traffic:extra"
+        ));
+        assert!(!final_rules.cache_owned(current_upload));
+
+        let online_rules = RedisOwnershipRules {
+            allow_current_operation_frozen_keys: false,
+            ..final_rules
+        };
+        assert!(!online_rules.default_owned(current_upload));
+    }
+
+    #[test]
+    fn redis_subscription_tokens_are_classified_without_collecting_key_sets() {
+        assert!(subscription_token_candidate(b"foreign:totp_123"));
+        assert!(subscription_token_candidate(b"prefix:otp_123"));
+        assert!(!subscription_token_candidate(b"prefix:session_123"));
+        assert!(subscription_token_logical_key(b"otpn_123"));
+        assert!(!subscription_token_logical_key(b"nested:otp_123"));
     }
 
     #[test]
@@ -2867,7 +3733,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_cache_prefix_and_subscription_window_match_laravel_behavior() {
+    fn legacy_cache_prefix_matches_laravel_behavior() {
         assert_eq!(
             laravel_cache_physical_prefix("v2board_database_", "v2board_cache"),
             "v2board_database_v2board_cache:"
@@ -2880,11 +3746,76 @@ mod tests {
             laravel_cache_physical_prefix("v2board_database_", ""),
             "v2board_database_"
         );
+    }
 
-        let (not_after, _) = legacy_subscription_window(2, 5, 1_000);
-        assert_eq!(not_after, 1_900);
-        let (not_after, _) = legacy_subscription_window(1, 5, 1_000);
-        assert_eq!(not_after, 87_700);
+    #[tokio::test]
+    #[ignore = "requires V2BOARD_LEGACY_MYSQL_TEST_URL"]
+    async fn legacy_inspection_pool_keeps_the_same_raw_snapshot_session() {
+        let database_url =
+            std::env::var("V2BOARD_LEGACY_MYSQL_TEST_URL").expect("V2BOARD_LEGACY_MYSQL_TEST_URL");
+        let pool = connect_legacy_mysql_with_config(&database_url, &inspection_pool_config())
+            .await
+            .expect("legacy inspection pool");
+        let nonce = begin_source_consistent_snapshot(&pool)
+            .await
+            .expect("consistent source snapshot");
+        let observed =
+            sqlx::query_scalar::<_, Option<String>>("SELECT @v2board_inspection_session_nonce")
+                .fetch_one(&pool)
+                .await
+                .expect("same pooled session");
+        assert_eq!(observed.as_deref(), Some(nonce.as_str()));
+        finish_source_consistent_snapshot(&pool, &nonce)
+            .await
+            .expect("commit same source snapshot");
+        pool.close().await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires V2BOARD_LEGACY_MYSQL_TEST_URL with the pinned reference schema"]
+    async fn pinned_mysql8_source_supports_the_complete_query_surface() {
+        let database_url =
+            std::env::var("V2BOARD_LEGACY_MYSQL_TEST_URL").expect("V2BOARD_LEGACY_MYSQL_TEST_URL");
+        let pool = connect_legacy_mysql_with_config(&database_url, &inspection_pool_config())
+            .await
+            .expect("legacy inspection pool");
+        let nonce = begin_source_consistent_snapshot(&pool)
+            .await
+            .expect("consistent source snapshot");
+        let server = inspect_server(&pool).await.expect("server metadata");
+        let database = server.database_name.as_deref().expect("selected database");
+        let access = inspect_source_mysql_access(&pool, database)
+            .await
+            .expect("source grant inventory");
+        assert!(access.grants_are_read_only_and_complete);
+        assert_eq!(access.visible_non_source_schema_count, 0);
+        assert_eq!(
+            database_vendor(&server.version, &server.version_comment),
+            DatabaseVendor::MySql
+        );
+        assert!(version_is_supported_mysql8(&server.version));
+        assert!(
+            !inspect_mysql_server_uuid(&pool)
+                .await
+                .expect("server UUID")
+                .is_empty()
+        );
+        assert!(inspect_mysql_topology(&pool).await.is_standalone_visible());
+        let tables = inspect_tables(&pool).await.expect("table inventory");
+        assert_eq!(
+            semantic_schema_hash(&pool).await.expect("semantic schema"),
+            LEGACY_SCHEMA_SHA256_V1.expect("reviewed legacy schema")
+        );
+        inspect_non_table_objects(&pool)
+            .await
+            .expect("non-table object inventory");
+        inspect_data(&pool, &tables)
+            .await
+            .expect("business-data admission queries");
+        finish_source_consistent_snapshot(&pool, &nonce)
+            .await
+            .expect("commit same source snapshot");
+        pool.close().await;
     }
 
     #[test]
@@ -2910,6 +3841,94 @@ mod tests {
         );
         assert_eq!(blockers, ["drain queue"]);
         assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn only_the_typed_legacy_capability_can_make_apply_available() {
+        assert!(!production_apply_available_with_capability(
+            ProvisionKind::LegacyReferenceMigration,
+            ProductionLegacyApplyCapability::Unavailable(
+                crate::legacy_apply_capability::ProductionLegacyApplyBlocker::
+                    AwaitingBareMetalFaultMatrixAndSafetyAudit,
+            ),
+        ));
+        assert!(production_apply_available_with_capability(
+            ProvisionKind::LegacyReferenceMigration,
+            ProductionLegacyApplyCapability::Available,
+        ));
+        assert!(!production_apply_available_with_capability(
+            ProvisionKind::FreshInstall,
+            ProductionLegacyApplyCapability::Available,
+        ));
+        assert!(!production_apply_available_with_capability(
+            ProvisionKind::NativeUpgrade,
+            ProductionLegacyApplyCapability::Available,
+        ));
+    }
+
+    #[test]
+    fn review_binding_excludes_live_observations_but_keeps_operation_identity() {
+        let mut plan = ProvisionPlan {
+            report_version: 4,
+            scope: InspectionMode::Online.scope(),
+            kind: ProvisionKind::LegacyReferenceMigration,
+            converter_available: true,
+            apply_available: true,
+            operation_id: "018f47b8-5ab1-7a00-8000-000000000001".to_string(),
+            manifest_binding_hmac_sha256: "a".repeat(64),
+            review_binding_sha256: String::new(),
+            review_binding_hmac_sha256: String::new(),
+            report_sha256: String::new(),
+            report_binding_hmac_sha256: String::new(),
+            verdict: PreflightVerdict::Ready,
+            next_action: NextAction::AuthorizeApply,
+            operator_attestations_complete: Some(false),
+            source: None,
+            target_postgres: None,
+            target_clickhouse: None,
+            data: None,
+            source_redis: None,
+            target_redis: None,
+            node_inventory: None,
+            backup_restore: None,
+            source_control: None,
+            native_upgrade: None,
+            implementation_blockers: Vec::new(),
+            blockers: Vec::new(),
+            pending_final_requirements: vec!["traffic is still moving".to_string()],
+            warnings: vec!["snapshot has 10 users".to_string()],
+        };
+        set_plan_outcome(
+            &mut plan,
+            ProductionLegacyApplyCapability::Unavailable(
+                crate::legacy_apply_capability::ProductionLegacyApplyBlocker::
+                    AwaitingBareMetalFaultMatrixAndSafetyAudit,
+            ),
+        );
+        assert!(!plan.apply_available);
+        assert_eq!(plan.verdict, PreflightVerdict::Blocked);
+        assert_eq!(plan.next_action, NextAction::ResolveBlockers);
+        assert!(!plan.passed_with_capability(
+            ProductionLegacyApplyCapability::Unavailable(
+                crate::legacy_apply_capability::ProductionLegacyApplyBlocker::
+                    AwaitingBareMetalFaultMatrixAndSafetyAudit,
+            )
+        ));
+        set_plan_outcome(&mut plan, ProductionLegacyApplyCapability::Available);
+        assert!(plan.apply_available);
+        assert_eq!(plan.verdict, PreflightVerdict::Blocked);
+        assert_eq!(plan.next_action, NextAction::ResolveBlockers);
+        assert!(!plan.passed_with_capability(ProductionLegacyApplyCapability::Available));
+        assert!(!plan.passed());
+        let reviewed = inspection_review_binding_bytes(&plan);
+        plan.report_sha256 = "b".repeat(64);
+        plan.report_binding_hmac_sha256 = "c".repeat(64);
+        plan.pending_final_requirements = vec!["traffic is now drained".to_string()];
+        plan.warnings = vec!["snapshot has 11 users".to_string()];
+        assert_eq!(inspection_review_binding_bytes(&plan), reviewed);
+
+        plan.operation_id = "018f47b8-5ab1-7a00-8000-000000000002".to_string();
+        assert_ne!(inspection_review_binding_bytes(&plan), reviewed);
     }
 
     #[tokio::test]

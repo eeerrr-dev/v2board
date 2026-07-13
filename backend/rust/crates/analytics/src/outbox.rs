@@ -6,6 +6,7 @@ use sqlx::{FromRow, Postgres, QueryBuilder, Transaction};
 use uuid::Uuid;
 
 use crate::AnalyticsEvent;
+use crate::admission::{AnalyticsAdmissionError, admit_analytics_rows, release_terminal_rows};
 
 const INSERT_SETTINGS: &str = concat!(
     "async_insert=0\n",
@@ -18,6 +19,7 @@ const INSERT_SETTINGS: &str = concat!(
     "stable_outbox_order=1\n",
 );
 const ENQUEUE_CHUNK_ROWS: usize = 1_000;
+const MAX_ENQUEUE_ROWS: usize = 100_000;
 const MAX_PRUNE_ROWS: i64 = 100_000;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -63,6 +65,8 @@ pub struct OutboxBacklog {
 
 #[derive(Debug, thiserror::Error)]
 pub enum OutboxError {
+    #[error(transparent)]
+    Admission(#[from] AnalyticsAdmissionError),
     #[error("analytics outbox database operation failed: {0}")]
     Database(#[from] sqlx::Error),
     #[error("analytics event id {event_id} already exists with different immutable content")]
@@ -158,6 +162,9 @@ pub async fn enqueue_events(
     events: &[AnalyticsEvent],
     created_at: i64,
 ) -> Result<(), OutboxError> {
+    if events.len() > MAX_ENQUEUE_ROWS {
+        return Err(OutboxError::InvalidBatchSize);
+    }
     if events.is_empty() {
         return Ok(());
     }
@@ -180,6 +187,7 @@ pub async fn enqueue_events(
         }
     }
 
+    let mut inserted_rows = 0_u64;
     for chunk in unique.chunks(ENQUEUE_CHUNK_ROWS) {
         let mut insert = QueryBuilder::<Postgres>::new(
             "INSERT INTO v2_analytics_outbox \
@@ -199,7 +207,9 @@ pub async fn enqueue_events(
                 .push_bind(created_at);
         });
         insert.push(" ON CONFLICT (event_id) DO NOTHING");
-        insert.build().execute(&mut **tx).await?;
+        inserted_rows = inserted_rows
+            .checked_add(insert.build().execute(&mut **tx).await?.rows_affected())
+            .ok_or(OutboxError::RowCountOverflow)?;
 
         let ids = chunk
             .iter()
@@ -240,6 +250,9 @@ pub async fn enqueue_events(
             }
         }
     }
+    let inserted_rows =
+        usize::try_from(inserted_rows).map_err(|_| OutboxError::RowCountOverflow)?;
+    admit_analytics_rows(tx, inserted_rows, created_at).await?;
     Ok(())
 }
 
@@ -573,6 +586,7 @@ pub async fn mark_batch_published(
             batch_id: batch.batch_id,
         });
     }
+    release_terminal_rows(&mut tx, batch.rows.len()).await?;
     tx.commit().await?;
     Ok(())
 }
@@ -649,6 +663,7 @@ pub async fn quarantine_batch(
             batch_id: batch.batch_id,
         });
     }
+    release_terminal_rows(&mut tx, batch.rows.len()).await?;
     tx.commit().await?;
     Ok(())
 }

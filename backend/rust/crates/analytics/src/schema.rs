@@ -67,6 +67,21 @@ pub const CLICKHOUSE_MIGRATIONS: &[ClickHouseMigration] = &[
         name: "installation_binding",
         sql: include_str!("../../../clickhouse-migrations/0010_installation_binding.sql"),
     },
+    ClickHouseMigration {
+        version: 11,
+        name: "traffic_reported_daily_v1",
+        sql: include_str!("../../../clickhouse-migrations/0011_traffic_reported_daily_v1.sql"),
+    },
+    ClickHouseMigration {
+        version: 12,
+        name: "traffic_accounted_daily_v1",
+        sql: include_str!("../../../clickhouse-migrations/0012_traffic_accounted_daily_v1.sql"),
+    },
+    ClickHouseMigration {
+        version: 13,
+        name: "retention_binding",
+        sql: include_str!("../../../clickhouse-migrations/0013_retention_binding.sql"),
+    },
 ];
 
 const SUPPORTED_CLICKHOUSE_MAJOR: u64 = 26;
@@ -109,6 +124,18 @@ pub enum ClickHouseMigrationError {
     InvalidInstallationBinding,
     #[error("ClickHouse database is already bound to a different installation")]
     InstallationBindingConflict,
+    #[error("ClickHouse retention binding is missing")]
+    MissingRetentionBinding,
+    #[error("ClickHouse retention binding is duplicated or malformed")]
+    InvalidRetentionBinding,
+    #[error("ClickHouse retention is already bound to different values or installation")]
+    RetentionBindingConflict,
+    #[error("ClickHouse retention must be nonzero, aggregate >= raw, and at most 36500 days")]
+    InvalidRetention,
+    #[error(
+        "ClickHouse retention may be bound only while raw and aggregate analytics tables are empty"
+    )]
+    NonEmptyBeforeRetentionBinding,
     #[error("ClickHouse schema invariant failed for {table}: {detail}")]
     SchemaInvariant { table: String, detail: String },
     #[error("ClickHouse migration failed: {0}")]
@@ -185,6 +212,42 @@ struct NewInstallationBinding {
     singleton: u8,
     #[serde(with = "clickhouse::serde::uuid")]
     installation_id: Uuid,
+    bound_at_unix: i64,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Row, Serialize)]
+pub struct ClickHouseProjectionCounts {
+    pub reported_raw_rows: u64,
+    pub accounted_raw_rows: u64,
+    pub reported_daily_rows: u64,
+    pub accounted_daily_rows: u64,
+}
+
+impl ClickHouseProjectionCounts {
+    pub const fn is_empty(self) -> bool {
+        self.reported_raw_rows == 0
+            && self.accounted_raw_rows == 0
+            && self.reported_daily_rows == 0
+            && self.accounted_daily_rows == 0
+    }
+}
+
+#[derive(Debug, Deserialize, Row)]
+struct RetentionBindingRow {
+    singleton: u8,
+    #[serde(with = "clickhouse::serde::uuid")]
+    installation_id: Uuid,
+    raw_retention_days: u32,
+    aggregate_retention_days: u32,
+}
+
+#[derive(Debug, Row, Serialize)]
+struct NewRetentionBinding {
+    singleton: u8,
+    #[serde(with = "clickhouse::serde::uuid")]
+    installation_id: Uuid,
+    raw_retention_days: u32,
+    aggregate_retention_days: u32,
     bound_at_unix: i64,
 }
 
@@ -276,7 +339,7 @@ pub async fn bind_clickhouse_installation(
     installation_id: Uuid,
     now_unix: i64,
 ) -> Result<(), ClickHouseMigrationError> {
-    validate_runtime_schema(client).await?;
+    validate_runtime_schema_structure(client).await?;
     let rows = installation_binding_rows(client).await?;
     if rows.is_empty() {
         let fact_installations = raw_fact_installations(client).await?;
@@ -308,6 +371,105 @@ pub async fn bind_clickhouse_installation(
     verify_installation_binding(client, installation_id).await
 }
 
+/// Configure the exact raw/daily-aggregate retention contract and bind it to
+/// the same installation as PostgreSQL. The first application is deliberately
+/// restricted to an empty projection: ClickHouse DDL is not transactional, so
+/// a crash is recovered by re-applying the idempotent TTL clauses before the
+/// single deduplicated binding row is written. Once bound, changing either
+/// value requires an explicit native-upgrade migration rather than silently
+/// shortening retained history.
+pub async fn configure_clickhouse_retention(
+    client: &clickhouse::Client,
+    installation_id: Uuid,
+    raw_retention_days: u32,
+    aggregate_retention_days: u32,
+    now_unix: i64,
+) -> Result<(), ClickHouseMigrationError> {
+    validate_retention_days(raw_retention_days, aggregate_retention_days)?;
+    validate_runtime_schema_structure(client).await?;
+    verify_installation_binding(client, installation_id).await?;
+
+    let bindings = retention_binding_rows(client).await?;
+    if bindings.is_empty() {
+        if !clickhouse_projection_counts(client).await?.is_empty() {
+            return Err(ClickHouseMigrationError::NonEmptyBeforeRetentionBinding);
+        }
+        apply_retention_ttl(client, RAW_RETENTION_TABLES, raw_retention_days).await?;
+        apply_retention_ttl(client, AGGREGATE_RETENTION_TABLES, aggregate_retention_days).await?;
+        // A schema principal racing a writer is outside the supported topology,
+        // but recheck immediately before sealing so such a violation fails
+        // closed instead of blessing ungoverned rows.
+        if !clickhouse_projection_counts(client).await?.is_empty() {
+            return Err(ClickHouseMigrationError::NonEmptyBeforeRetentionBinding);
+        }
+        verify_retention_ttl(client, raw_retention_days, aggregate_retention_days).await?;
+        let mut insert = client
+            .insert::<NewRetentionBinding>("v2_retention_binding")
+            .await?
+            .with_setting(
+                "insert_deduplication_token",
+                "v2board.analytics-retention-binding.v1",
+            )
+            .with_setting("async_insert", "0")
+            .with_setting("wait_end_of_query", "1");
+        insert
+            .write(&NewRetentionBinding {
+                singleton: 1,
+                installation_id,
+                raw_retention_days,
+                aggregate_retention_days,
+                bound_at_unix: now_unix,
+            })
+            .await?;
+        insert.end().await?;
+    }
+
+    verify_retention_binding(
+        client,
+        installation_id,
+        raw_retention_days,
+        aggregate_retention_days,
+    )
+    .await?;
+    verify_retention_ttl(client, raw_retention_days, aggregate_retention_days).await
+}
+
+/// Exact raw and future daily-aggregate row counts. The one-shot legacy
+/// migration requires all four values to remain zero through its projection
+/// checkpoint; legacy daily summaries are preserved in PostgreSQL instead of
+/// being misrepresented as native raw events.
+pub async fn clickhouse_projection_counts(
+    client: &clickhouse::Client,
+) -> Result<ClickHouseProjectionCounts, ClickHouseMigrationError> {
+    Ok(client
+        .query(
+            "SELECT \
+             coalesce((SELECT count() FROM v2_traffic_reported_v1), toUInt64(0)) \
+                 AS reported_raw_rows, \
+             coalesce((SELECT count() FROM v2_traffic_accounted_v1), toUInt64(0)) \
+                 AS accounted_raw_rows, \
+             coalesce((SELECT count() FROM v2_traffic_reported_daily_v1), toUInt64(0)) \
+                 AS reported_daily_rows, \
+             coalesce((SELECT count() FROM v2_traffic_accounted_daily_v1), toUInt64(0)) \
+                 AS accounted_daily_rows",
+        )
+        .fetch_one::<ClickHouseProjectionCounts>()
+        .await?)
+}
+
+/// Domain-separated digest of the exact embedded ClickHouse lineage. This is
+/// stable across hosts and excludes application timestamps.
+pub fn clickhouse_schema_lineage_sha256() -> String {
+    let mut digest = Sha256::new();
+    digest.update(b"v2board.clickhouse-schema-lineage.v1\0");
+    for migration in CLICKHOUSE_MIGRATIONS {
+        digest.update(migration.version.to_be_bytes());
+        digest_field(&mut digest, migration.name.as_bytes());
+        digest_field(&mut digest, checksum(migration.sql.as_bytes()).as_bytes());
+    }
+    hex::encode(digest.finalize())
+}
+
 async fn raw_fact_installations(
     client: &clickhouse::Client,
 ) -> Result<Vec<Uuid>, ClickHouseMigrationError> {
@@ -332,16 +494,135 @@ pub async fn verify_clickhouse_runtime_ready(
     client: &clickhouse::Client,
     installation_id: Uuid,
 ) -> Result<(), ClickHouseMigrationError> {
-    validate_runtime_schema(client).await?;
-    verify_installation_binding(client, installation_id).await
+    validate_runtime_schema_structure(client).await?;
+    verify_installation_binding(client, installation_id).await?;
+    let binding = exact_retention_binding(client).await?;
+    if binding.installation_id != installation_id {
+        return Err(ClickHouseMigrationError::RetentionBindingConflict);
+    }
+    verify_retention_ttl(
+        client,
+        binding.raw_retention_days,
+        binding.aggregate_retention_days,
+    )
+    .await
 }
 
-async fn validate_runtime_schema(
+/// Read-only lifecycle verification of the exact manifest-bound ClickHouse
+/// contract. Unlike configure/bind this function can never repair drift.
+pub async fn verify_clickhouse_bound_contract(
+    client: &clickhouse::Client,
+    installation_id: Uuid,
+    raw_retention_days: u32,
+    aggregate_retention_days: u32,
+) -> Result<(), ClickHouseMigrationError> {
+    validate_runtime_schema_structure(client).await?;
+    verify_installation_binding(client, installation_id).await?;
+    verify_retention_binding(
+        client,
+        installation_id,
+        raw_retention_days,
+        aggregate_retention_days,
+    )
+    .await?;
+    verify_retention_ttl(client, raw_retention_days, aggregate_retention_days).await
+}
+
+async fn validate_runtime_schema_structure(
     client: &clickhouse::Client,
 ) -> Result<(), ClickHouseMigrationError> {
     ensure_supported_version(client).await?;
     validate_ledger_lineage(client, true).await?;
     validate_clickhouse_schema(client).await
+}
+
+async fn retention_binding_rows(
+    client: &clickhouse::Client,
+) -> Result<Vec<RetentionBindingRow>, ClickHouseMigrationError> {
+    Ok(client
+        .query(
+            "SELECT singleton, installation_id, raw_retention_days, aggregate_retention_days \
+             FROM v2_retention_binding ORDER BY singleton, installation_id, raw_retention_days, \
+             aggregate_retention_days",
+        )
+        .fetch_all::<RetentionBindingRow>()
+        .await?)
+}
+
+async fn exact_retention_binding(
+    client: &clickhouse::Client,
+) -> Result<RetentionBindingRow, ClickHouseMigrationError> {
+    let mut rows = retention_binding_rows(client).await?;
+    if rows.is_empty() {
+        return Err(ClickHouseMigrationError::MissingRetentionBinding);
+    }
+    if rows.len() != 1 || rows[0].singleton != 1 {
+        return Err(ClickHouseMigrationError::InvalidRetentionBinding);
+    }
+    Ok(rows.remove(0))
+}
+
+async fn verify_retention_binding(
+    client: &clickhouse::Client,
+    installation_id: Uuid,
+    raw_retention_days: u32,
+    aggregate_retention_days: u32,
+) -> Result<(), ClickHouseMigrationError> {
+    let binding = exact_retention_binding(client).await?;
+    if binding.installation_id != installation_id
+        || binding.raw_retention_days != raw_retention_days
+        || binding.aggregate_retention_days != aggregate_retention_days
+    {
+        return Err(ClickHouseMigrationError::RetentionBindingConflict);
+    }
+    Ok(())
+}
+
+fn validate_retention_days(raw: u32, aggregate: u32) -> Result<(), ClickHouseMigrationError> {
+    if raw == 0 || aggregate < raw || aggregate > 36_500 {
+        return Err(ClickHouseMigrationError::InvalidRetention);
+    }
+    Ok(())
+}
+
+async fn apply_retention_ttl(
+    client: &clickhouse::Client,
+    tables: &[&str],
+    days: u32,
+) -> Result<(), ClickHouseMigrationError> {
+    for table in tables {
+        client
+            .query(&format!(
+                "ALTER TABLE {table} MODIFY TTL accounting_date + toIntervalDay({days}) DELETE"
+            ))
+            .execute()
+            .await?;
+    }
+    Ok(())
+}
+
+async fn verify_retention_ttl(
+    client: &clickhouse::Client,
+    raw_retention_days: u32,
+    aggregate_retention_days: u32,
+) -> Result<(), ClickHouseMigrationError> {
+    validate_retention_days(raw_retention_days, aggregate_retention_days)?;
+    for (tables, days) in [
+        (RAW_RETENTION_TABLES, raw_retention_days),
+        (AGGREGATE_RETENTION_TABLES, aggregate_retention_days),
+    ] {
+        let expected = format!("TTL accounting_date + toIntervalDay({days})");
+        for table in tables {
+            let state = table_state(client, table).await?;
+            let normalized = normalize_sql(&state.create_table_query);
+            if normalized.matches(" TTL ").count() != 1
+                || !normalized.contains(&format!(" {expected} "))
+            {
+                return Err(schema_error(table, "retention TTL is missing or drifted"));
+            }
+        }
+    }
+    Ok(())
 }
 
 async fn installation_binding_rows(
@@ -572,6 +853,21 @@ async fn validate_migration_effect(
             validate_no_pending_mutation(client, "v2_traffic_accounted_v1").await
         }
         10 => validate_installation_binding_table(client).await,
+        11 => validate_daily_aggregate_table(
+            client,
+            "v2_traffic_reported_daily_v1",
+            "installation_id, accounting_date, user_id, server_id, server_type, rate_text, rate_decimal_10_2, table_generation, ingest_batch_id, batch_aggregate_row_number",
+            REPORTED_DAILY_COLUMNS,
+        )
+        .await,
+        12 => validate_daily_aggregate_table(
+            client,
+            "v2_traffic_accounted_daily_v1",
+            "installation_id, accounting_date, user_id, server_id, server_type, rate_text, rate_decimal_10_2, outcome, table_generation, ingest_batch_id, batch_aggregate_row_number",
+            ACCOUNTED_DAILY_COLUMNS,
+        )
+        .await,
+        13 => validate_retention_binding_table(client).await,
         _ => Err(ClickHouseMigrationError::UnknownLedgerVersion { version }),
     }
 }
@@ -605,6 +901,21 @@ async fn validate_clickhouse_schema(
     validate_no_pending_mutation(client, "v2_traffic_reported_v1").await?;
     validate_no_pending_mutation(client, "v2_traffic_accounted_v1").await?;
     validate_installation_binding_table(client).await?;
+    validate_daily_aggregate_table(
+        client,
+        "v2_traffic_reported_daily_v1",
+        "installation_id, accounting_date, user_id, server_id, server_type, rate_text, rate_decimal_10_2, table_generation, ingest_batch_id, batch_aggregate_row_number",
+        REPORTED_DAILY_COLUMNS,
+    )
+    .await?;
+    validate_daily_aggregate_table(
+        client,
+        "v2_traffic_accounted_daily_v1",
+        "installation_id, accounting_date, user_id, server_id, server_type, rate_text, rate_decimal_10_2, outcome, table_generation, ingest_batch_id, batch_aggregate_row_number",
+        ACCOUNTED_DAILY_COLUMNS,
+    )
+    .await?;
+    validate_retention_binding_table(client).await?;
     Ok(())
 }
 
@@ -770,6 +1081,62 @@ async fn validate_installation_binding_table(
     Ok(())
 }
 
+async fn validate_retention_binding_table(
+    client: &clickhouse::Client,
+) -> Result<(), ClickHouseMigrationError> {
+    let state = validate_table(
+        client,
+        "v2_retention_binding",
+        "MergeTree",
+        "",
+        "singleton, installation_id",
+        RETENTION_BINDING_COLUMNS,
+    )
+    .await?;
+    let create = normalize_sql(&state.create_table_query);
+    for required in [
+        REQUIRED_DEDUPLICATION_WINDOW,
+        "CONSTRAINT chk_single_retention_binding CHECK singleton = 1",
+        "CONSTRAINT chk_raw_retention_positive CHECK raw_retention_days > 0",
+        "CONSTRAINT chk_aggregate_retention_order CHECK aggregate_retention_days >= raw_retention_days",
+    ] {
+        if !create.contains(required) {
+            return Err(schema_error(
+                "v2_retention_binding",
+                "retention constraints or retry deduplication setting drifted",
+            ));
+        }
+    }
+    Ok(())
+}
+
+async fn validate_daily_aggregate_table(
+    client: &clickhouse::Client,
+    table: &str,
+    sorting_key: &str,
+    columns: &[(&str, &str)],
+) -> Result<(), ClickHouseMigrationError> {
+    let state = validate_table(
+        client,
+        table,
+        "SummingMergeTree",
+        "(table_generation, toYYYYMM(accounting_date))",
+        sorting_key,
+        columns,
+    )
+    .await?;
+    let create = normalize_sql(&state.create_table_query);
+    if !create.contains("SummingMergeTree((event_count, raw_u, raw_d, charged_u, charged_d))")
+        || !create.contains(REQUIRED_DEDUPLICATION_WINDOW)
+    {
+        return Err(schema_error(
+            table,
+            "daily aggregate summation columns or retry deduplication drifted",
+        ));
+    }
+    Ok(())
+}
+
 async fn validate_table(
     client: &clickhouse::Client,
     table: &str,
@@ -778,21 +1145,7 @@ async fn validate_table(
     sorting_key: &str,
     expected_columns: &[(&str, &str)],
 ) -> Result<TableState, ClickHouseMigrationError> {
-    let states = client
-        .query(
-            "SELECT engine, partition_key, sorting_key, create_table_query \
-             FROM system.tables WHERE database = currentDatabase() AND name = ?",
-        )
-        .bind(table)
-        .fetch_all::<TableState>()
-        .await?;
-    if states.len() != 1 {
-        return Err(schema_error(table, "table is missing or duplicated"));
-    }
-    let state = states
-        .into_iter()
-        .next()
-        .ok_or_else(|| schema_error(table, "table state disappeared during validation"))?;
+    let state = table_state(client, table).await?;
     if state.engine != engine
         || state.partition_key != partition_key
         || state.sorting_key != sorting_key
@@ -823,6 +1176,26 @@ async fn validate_table(
     Ok(state)
 }
 
+async fn table_state(
+    client: &clickhouse::Client,
+    table: &str,
+) -> Result<TableState, ClickHouseMigrationError> {
+    let mut states = client
+        .query(
+            "SELECT engine, partition_key, sorting_key, create_table_query \
+             FROM system.tables WHERE database = currentDatabase() AND name = ?",
+        )
+        .bind(table)
+        .fetch_all::<TableState>()
+        .await?;
+    if states.len() != 1 {
+        return Err(schema_error(table, "table is missing or duplicated"));
+    }
+    states
+        .pop()
+        .ok_or_else(|| schema_error(table, "table state disappeared during validation"))
+}
+
 fn schema_error(table: &str, detail: &str) -> ClickHouseMigrationError {
     ClickHouseMigrationError::SchemaInvariant {
         table: table.to_owned(),
@@ -832,9 +1205,18 @@ fn schema_error(table: &str, detail: &str) -> ClickHouseMigrationError {
 
 const EXPECTED_TABLES: &[&str] = &[
     "v2_installation_binding",
+    "v2_retention_binding",
     "v2_schema_migration",
     "v2_traffic_accounted_v1",
+    "v2_traffic_accounted_daily_v1",
     "v2_traffic_reported_v1",
+    "v2_traffic_reported_daily_v1",
+];
+
+const RAW_RETENTION_TABLES: &[&str] = &["v2_traffic_reported_v1", "v2_traffic_accounted_v1"];
+const AGGREGATE_RETENTION_TABLES: &[&str] = &[
+    "v2_traffic_reported_daily_v1",
+    "v2_traffic_accounted_daily_v1",
 ];
 
 const LEDGER_COLUMNS: &[(&str, &str)] = &[
@@ -847,6 +1229,14 @@ const LEDGER_COLUMNS: &[(&str, &str)] = &[
 const INSTALLATION_BINDING_COLUMNS: &[(&str, &str)] = &[
     ("singleton", "UInt8"),
     ("installation_id", "UUID"),
+    ("bound_at_unix", "Int64"),
+];
+
+const RETENTION_BINDING_COLUMNS: &[(&str, &str)] = &[
+    ("singleton", "UInt8"),
+    ("installation_id", "UUID"),
+    ("raw_retention_days", "UInt32"),
+    ("aggregate_retention_days", "UInt32"),
     ("bound_at_unix", "Int64"),
 ];
 
@@ -908,12 +1298,58 @@ const ACCOUNTED_COLUMNS: &[(&str, &str)] = &[
     ("ingested_at_unix", "Int64"),
 ];
 
+const REPORTED_DAILY_COLUMNS: &[(&str, &str)] = &[
+    ("installation_id", "UUID"),
+    ("accounting_date", "Date"),
+    ("user_id", "UInt64"),
+    ("server_id", "UInt64"),
+    ("server_type", "LowCardinality(String)"),
+    ("rate_text", "String"),
+    ("rate_decimal_10_2", "Decimal(10, 2)"),
+    ("table_generation", "UInt32"),
+    ("ingest_batch_id", "UUID"),
+    ("batch_aggregate_row_number", "UInt32"),
+    ("event_count", "UInt64"),
+    ("raw_u", "UInt64"),
+    ("raw_d", "UInt64"),
+    ("charged_u", "UInt64"),
+    ("charged_d", "UInt64"),
+];
+
+const ACCOUNTED_DAILY_COLUMNS: &[(&str, &str)] = &[
+    ("installation_id", "UUID"),
+    ("accounting_date", "Date"),
+    ("user_id", "UInt64"),
+    ("server_id", "UInt64"),
+    ("server_type", "LowCardinality(String)"),
+    ("rate_text", "String"),
+    ("rate_decimal_10_2", "Decimal(10, 2)"),
+    ("outcome", "LowCardinality(String)"),
+    ("table_generation", "UInt32"),
+    ("ingest_batch_id", "UUID"),
+    ("batch_aggregate_row_number", "UInt32"),
+    ("event_count", "UInt64"),
+    ("raw_u", "UInt64"),
+    ("raw_d", "UInt64"),
+    ("charged_u", "UInt64"),
+    ("charged_d", "UInt64"),
+];
+
 fn checksum(bytes: &[u8]) -> String {
     let mut digest = Sha256::new();
     digest.update(b"v2board.clickhouse-migration.v1\0");
     digest.update((bytes.len() as u64).to_be_bytes());
     digest.update(bytes);
     hex::encode(digest.finalize())
+}
+
+fn digest_field(digest: &mut Sha256, bytes: &[u8]) {
+    digest.update((bytes.len() as u64).to_be_bytes());
+    digest.update(bytes);
+}
+
+fn normalize_sql(sql: &str) -> String {
+    format!(" {} ", sql.split_whitespace().collect::<Vec<_>>().join(" "))
 }
 
 #[cfg(test)]
@@ -957,6 +1393,31 @@ mod tests {
                 .sql
                 .contains("v2_installation_binding")
         );
+        assert!(CLICKHOUSE_MIGRATIONS[10].sql.contains("SummingMergeTree"));
+        assert!(CLICKHOUSE_MIGRATIONS[11].sql.contains("SummingMergeTree"));
+        assert!(
+            CLICKHOUSE_MIGRATIONS[12]
+                .sql
+                .contains("v2_retention_binding")
+        );
+        assert_eq!(clickhouse_schema_lineage_sha256().len(), 64);
+    }
+
+    #[test]
+    fn retention_values_are_fail_closed() {
+        assert!(validate_retention_days(90, 730).is_ok());
+        assert!(matches!(
+            validate_retention_days(0, 730),
+            Err(ClickHouseMigrationError::InvalidRetention)
+        ));
+        assert!(matches!(
+            validate_retention_days(731, 730),
+            Err(ClickHouseMigrationError::InvalidRetention)
+        ));
+        assert!(matches!(
+            validate_retention_days(90, 36_501),
+            Err(ClickHouseMigrationError::InvalidRetention)
+        ));
     }
 
     #[test]

@@ -68,6 +68,9 @@ async fn main() -> anyhow::Result<()> {
     let db = connect_postgres(&database_url).await?;
     if matches!(&command, cli::Command::Migrate) {
         migrate_postgres(&db, config.environment.is_production()).await?;
+        if !config.environment.is_production() {
+            install_local_analytics_admission(&db).await?;
+        }
         println!("database migration lineage verified and any permitted migrations applied");
         return Ok(());
     }
@@ -78,14 +81,8 @@ async fn main() -> anyhow::Result<()> {
     }
     let password_kdf = PasswordKdf::new(config.password_kdf_max_parallel);
     if let cli::Command::ResetAdminPassword { email } = command {
-        return reset_admin_password(
-            &db,
-            &config,
-            &password_kdf,
-            &email,
-            admin_password_secret,
-        )
-        .await;
+        return reset_admin_password(&db, &config, &password_kdf, &email, admin_password_secret)
+            .await;
     }
     let installation_id = v2board_db::installation_id(&db).await?;
     let redis = redis::Client::open(config.redis_url.clone())?;
@@ -122,6 +119,39 @@ async fn main() -> anyhow::Result<()> {
     let _ = config_reloader.await;
     server_result?;
 
+    Ok(())
+}
+
+async fn install_local_analytics_admission(db: &sqlx::PgPool) -> anyhow::Result<()> {
+    let installation_id = v2board_db::installation_id(db).await?;
+    let now: i64 =
+        sqlx::query_scalar("SELECT floor(extract(epoch FROM clock_timestamp()))::bigint")
+            .fetch_one(db)
+            .await?;
+    let gib = 1024_u64 * 1024 * 1024;
+    let policy = v2board_analytics::AnalyticsAdmissionPolicy {
+        recovery_pending_rows: 750_000,
+        soft_pending_rows: 1_000_000,
+        hard_pending_rows: 2_000_000,
+        recovery_relation_bytes: 3 * gib,
+        soft_relation_bytes: 4 * gib,
+        hard_relation_bytes: 8 * gib,
+        recovery_oldest_age_seconds: 120,
+        soft_oldest_age_seconds: 300,
+        hard_oldest_age_seconds: 1_800,
+        database_capacity_bytes: 64 * gib,
+        hard_min_headroom_bytes: 8 * gib,
+        soft_min_headroom_bytes: 16 * gib,
+        recovery_min_headroom_bytes: 20 * gib,
+        event_reservation_bytes: 4_096,
+        soft_max_new_rows_per_second: 100_000,
+        sample_interval_seconds: 1,
+        stale_after_seconds: 10,
+        capacity_evidence: "local Docker PostgreSQL volume development budget".to_owned(),
+    };
+    v2board_analytics::install_analytics_admission_policy(db, installation_id, &policy, now)
+        .await?;
+    v2board_analytics::refresh_analytics_admission(db).await?;
     Ok(())
 }
 
