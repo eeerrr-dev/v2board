@@ -45,7 +45,7 @@ struct GiftUserRow {
 
 pub(super) const GIFTCARD_FOR_UPDATE_SQL: &str = r#"
 SELECT id, "type", value, plan_id, limit_use, started_at, ended_at
-FROM giftcard
+FROM gift_card
 WHERE lower(code) = lower($1)
 LIMIT 1
 FOR UPDATE
@@ -108,7 +108,7 @@ pub(crate) async fn redeem_giftcard(
         ));
     }
     let already_redeemed: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM giftcard_redemption WHERE giftcard_id = $1 AND user_id = $2)",
+        "SELECT EXISTS(SELECT 1 FROM gift_card_redemption WHERE giftcard_id = $1 AND user_id = $2)",
     )
     .bind(giftcard.id)
     .bind(auth_user.id)
@@ -234,14 +234,14 @@ pub(crate) async fn redeem_giftcard(
     .execute(&mut *tx)
     .await?;
     sqlx::query(
-        "INSERT INTO giftcard_redemption (giftcard_id, user_id, created_at) VALUES ($1, $2, $3)",
+        "INSERT INTO gift_card_redemption (giftcard_id, user_id, created_at) VALUES ($1, $2, $3)",
     )
     .bind(giftcard.id)
     .bind(auth_user.id)
     .bind(now)
     .execute(&mut *tx)
     .await?;
-    sqlx::query("UPDATE giftcard SET limit_use = $1, updated_at = $2 WHERE id = $3")
+    sqlx::query("UPDATE gift_card SET limit_use = $1, updated_at = $2 WHERE id = $3")
         .bind(giftcard.limit_use.map(|limit| limit - 1))
         .bind(now)
         .bind(giftcard.id)

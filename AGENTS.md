@@ -86,8 +86,8 @@ There is exactly one legacy-data path:
 
 1. stop writes to the old site;
 2. export one complete MySQL 8 dump without modifying the old database;
-3. load that dump into a disposable MySQL 8 engine used only as converter
-   input;
+3. on the stopped old production host, load that dump into a separate,
+   disposable MySQL 8 engine used only as converter input;
 4. deterministically transform the retained rows into a brand-new PostgreSQL
    database; ClickHouse starts with an empty native event history, and a
    brand-new empty Redis is used for native runtime state;
@@ -104,20 +104,24 @@ has no resumable migration state: discard that new incomplete target, correct
 the input or importer, and run the same simple import again against a new empty
 target. This is not restoration of the untouched old database.
 
-The current dump-to-staging converter does require one temporary MySQL 8 engine
-during the import, but it is not a production dependency and does not have to be
-installed permanently on the new server. It may run as a one-off container on
-the migration/new host, on a disposable VM, or on another temporary private host
-reachable by the importer. Stop and delete it after success or failure; the
-native server and long-running runtime contain only PostgreSQL, ClickHouse, and
-Redis.
+The default cutover topology runs the temporary MySQL 8 engine and converter on
+the stopped old production host. Staging must be a separate instance with its
+own data directory or volume, port/socket, credentials, and loopback-only bind;
+never create it inside the source MySQL instance or mount the source data
+directory. The converter writes outbound to the new PostgreSQL target through a
+temporary migration principal. The new production host never runs staging or
+MySQL. If the old host lacks capacity, use a disposable migration VM instead.
+Stop and delete staging after success or failure; the native server and
+long-running runtime contain only PostgreSQL, ClickHouse, and Redis.
 
 Legacy MySQL source tables retain their real `v2_*` names. Native PostgreSQL and
 ClickHouse target tables are first-release names without that prefix; use
-`users` and `orders` instead of the PostgreSQL keywords `user` and `order`, and
-otherwise remove `v2_`. Converter metadata must always label source and target
-names separately. Do not add rename migrations, aliases, views, or compatibility
-tables for unpublished prefixed target names.
+`users` and `orders` instead of the PostgreSQL keywords `user` and `order`.
+The other non-mechanical PostgreSQL target names are `payment_method`,
+`gift_card`, `gift_card_redemption`, `system_log`, `server_traffic`, and
+`user_traffic`; `stat` remains `stat`. Converter metadata must always label
+source and target names separately. Do not add rename migrations, aliases,
+views, or compatibility tables for unpublished target names.
 
 The importer never reads old Redis and never contacts Stripe. Old Redis state,
 Stripe configuration, and unfinished Stripe orders are fixed accepted losses;

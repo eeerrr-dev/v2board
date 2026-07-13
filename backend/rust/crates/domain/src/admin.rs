@@ -280,7 +280,7 @@ impl AdminService {
             "giftcard/generate" => self.giftcard_generate(&params).await,
             "giftcard/drop" => {
                 self.delete_by_id(
-                    "giftcard",
+                    "gift_card",
                     required_i64(&params, "id")?,
                     ApiError::not_found("礼品卡不存在"),
                 )

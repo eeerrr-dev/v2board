@@ -7,8 +7,10 @@ mode or native MySQL backend.
 
 The pinned project under `references/wyx2685-v2board` is read-only compatibility evidence. The one-time
 importer reads a complete Oracle MySQL 8.0/8.4 dump through a temporary, disposable MySQL 8 engine; it
-never connects to or modifies the live old database. That engine may run in a one-off container or on a
-separate disposable host and is deleted after the import; no MySQL service belongs to the native runtime.
+never connects to or modifies the live old database. After the old site stops writing, the default topology
+runs a separate loopback-only staging instance and the converter on that old host; a disposable migration VM
+is the fallback when the old host lacks capacity. The new production host never runs MySQL. Staging is deleted
+after the import, and no MySQL service belongs to the native runtime.
 Reference code, schema or packaged frontend assets are never deployed.
 
 ## Runtime architecture
@@ -81,9 +83,11 @@ make rust-target-gate
 ```
 
 `make rust-integration` exercises the native PostgreSQL, ClickHouse and Redis lanes, including
-ClickHouse lost-ack/outbox replay and live production invariants. The single `mysql-import.v1`
-manifest, fixed row conversion and loss policy are covered by Rust tests; the real dump → staging →
-PostgreSQL integration is not yet linked, so production import is unavailable. No legacy Redis service exists.
+ClickHouse lost-ack/outbox replay and live production invariants. It also prepares every generated
+MySQL-import target query against a freshly migrated disposable PostgreSQL database and verifies the
+derived and fixed-empty target tables. The single `mysql-import.v1` manifest, fixed row conversion
+and loss policy are covered by Rust tests; the real dump → staging → PostgreSQL integration is not yet
+linked, so production import is unavailable. No legacy Redis service exists.
 `make rust-route-audit` reads the pinned reference only as contract evidence.
 `make native-database-audit` rejects MySQL driver/dialect use in native runtime crates and in the current
 inspection-only import graph. The one-time staging adapter cannot enter native runtime graphs.
@@ -189,11 +193,13 @@ exports a complete Oracle MySQL 8.0/8.4 dump, loads it into a disposable staging
 fixed retained rows into a brand-new PostgreSQL database, starts ClickHouse and Redis empty, generates
 new role configs, verifies the result and starts the native services.
 
-Staging is a temporary MySQL 8 engine, not a permanent component of the new machine. It can run as a
-one-off container on the migration/new host, on a disposable VM, or on another private host reachable by
-the importer, and is removed with its temporary data after success or failure. The legacy MySQL source
-keeps its real `v2_*` table names; native PostgreSQL and ClickHouse targets are unprefixed, using `users`
-and `orders` for the two PostgreSQL keyword conflicts.
+Staging is a temporary MySQL 8 engine on the stopped old production host, not a component of the new
+machine. It is a second instance with a separate data directory or volume, port/socket, credentials and
+loopback-only bind; it must not be created inside the source instance or mount the source data directory.
+The converter writes outbound to the new PostgreSQL target with a temporary migration principal. Use a
+disposable migration VM only when the old host lacks capacity, and remove staging data after success or
+failure. The legacy MySQL source keeps its real `v2_*` table names; native PostgreSQL and ClickHouse targets
+are unprefixed, using `users` and `orders` for the two PostgreSQL keyword conflicts.
 
 The disposable CLI commands are:
 
@@ -207,7 +213,7 @@ unknown and missing keys, validates both role configs through their real typed p
 exact manifest SHA-256. It contains secrets and must be a regular non-symlink file without Unix
 group/world permissions.
 
-`source` contains the dump path, dump SHA-256, staging MySQL URL and transport policy. It does not contain
+`source` contains the dump path, dump SHA-256 and a loopback-only staging MySQL URL. It does not contain
 a live old-MySQL URL, old Redis URL, Stripe credential, service unit, release archive or per-run loss
 choices. `inspect` reads and hashes the dump but does not contact the old system, old Redis or Stripe and
 does not mutate a target. There is currently no production write command or executor; the repository

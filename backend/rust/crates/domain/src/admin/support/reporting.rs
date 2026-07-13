@@ -93,7 +93,7 @@ pub(in super::super) fn node_available_status(
     }
 }
 
-/// Maps a `stat_server.server_type` onto the canonical node-table key used
+/// Maps a `server_traffic.server_type` onto the canonical node-table key used
 /// for name resolution. Legacy stats recorded vmess nodes as `v2ray`.
 pub(in super::super) fn normalize_stat_server_type(server_type: &str) -> String {
     match server_type {

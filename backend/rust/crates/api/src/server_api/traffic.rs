@@ -885,7 +885,7 @@ async fn persist_traffic_stats(
     // rejects rather than wraps a signed BIGINT overflow.
     for chunk in entries.chunks(TRAFFIC_REPORT_SQL_BATCH_SIZE) {
         let mut builder = QueryBuilder::<Postgres>::new(
-            "INSERT INTO stat_user \
+            "INSERT INTO user_traffic \
              (user_id, server_rate, u, d, record_type, record_at, created_at, updated_at) ",
         );
         builder.push_values(chunk, |mut row, entry| {
@@ -900,8 +900,8 @@ async fn persist_traffic_stats(
         });
         builder.push(
             " ON CONFLICT (server_rate, user_id, record_at) DO UPDATE SET \
-             u = stat_user.u + EXCLUDED.u, \
-             d = stat_user.d + EXCLUDED.d, \
+             u = user_traffic.u + EXCLUDED.u, \
+             d = user_traffic.d + EXCLUDED.d, \
              updated_at = EXCLUDED.updated_at",
         );
         builder
@@ -913,12 +913,12 @@ async fn persist_traffic_stats(
 
     sqlx::query(
         r#"
-        INSERT INTO stat_server
+        INSERT INTO server_traffic
             (server_id, server_type, u, d, record_type, record_at, created_at, updated_at)
         VALUES ($1, $2, $3, $4, 'd', $5, $6, $7)
         ON CONFLICT (server_id, server_type, record_at) DO UPDATE SET
-            u = stat_server.u + EXCLUDED.u,
-            d = stat_server.d + EXCLUDED.d,
+            u = server_traffic.u + EXCLUDED.u,
+            d = server_traffic.d + EXCLUDED.d,
             updated_at = EXCLUDED.updated_at
         "#,
     )

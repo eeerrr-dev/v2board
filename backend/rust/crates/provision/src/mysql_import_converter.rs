@@ -150,6 +150,9 @@ pub struct DerivedMapping {
     pub target: &'static str,
     pub kind: DerivedMappingKind,
     pub source_tables: &'static [&'static str],
+    /// Complete target row written by the derived mapping. The live PostgreSQL
+    /// schema gate prepares base inserts and verifies every column listed here.
+    pub target_columns: &'static [&'static str],
     pub key_columns: &'static [&'static str],
     pub rule: &'static str,
 }
@@ -225,7 +228,7 @@ const PLAN: TableMapping = TableMapping {
 const PAYMENT: TableMapping = TableMapping {
     order: 30,
     source: "v2_payment",
-    target: "payment",
+    target: "payment_method",
     identity_width: IdentityWidth::I32,
     direct_columns: &[
         "id",
@@ -463,7 +466,7 @@ const INVITE_CODE: TableMapping = TableMapping {
 const GIFTCARD: TableMapping = TableMapping {
     order: 90,
     source: "v2_giftcard",
-    target: "giftcard",
+    target: "gift_card",
     identity_width: IdentityWidth::I32,
     direct_columns: &[
         "id",
@@ -483,7 +486,7 @@ const GIFTCARD: TableMapping = TableMapping {
     deferred_columns: &[],
     consumed_source_columns: &[ConsumedSourceColumn {
         source: "used_user_ids",
-        reason: "expanded by the giftcard_redemption target mapping",
+        reason: "expanded by the gift_card_redemption target mapping",
     }],
 };
 
@@ -625,9 +628,15 @@ pub const TABLE_MAPPINGS: &[TableMapping] = &[
 
 pub const DERIVED_MAPPINGS: &[DerivedMapping] = &[DerivedMapping {
     order: 150,
-    target: "giftcard_redemption",
+    target: "gift_card_redemption",
     kind: DerivedMappingKind::GiftcardRedemptions,
     source_tables: &["v2_giftcard", "v2_user"],
+    target_columns: &[
+        "giftcard_id",
+        "user_id",
+        "created_at",
+        "created_at_provenance",
+    ],
     key_columns: &["giftcard_id", "user_id"],
     rule: "expand distinct used_user_ids; every id must exist; created_at=0 and created_at_provenance=legacy_unknown",
 }];
@@ -658,10 +667,10 @@ pub const DISCARDED_SOURCE_TABLES: &[&str] = &[
 /// names are deliberately independent from `DISCARDED_SOURCE_TABLES`: legacy
 /// MySQL keeps its `v2_*` names while the first native schema is unprefixed.
 pub const DISCARDED_TARGET_TABLES: &[&str] = &[
-    "log",
+    "system_log",
     "mail_log",
-    "stat_server",
-    "stat_user",
+    "server_traffic",
+    "user_traffic",
     "server_route",
     "server_shadowsocks",
     "server_vmess",
@@ -748,7 +757,7 @@ pub const SCALAR_REFERENCES: &[ScalarReference] = &[
         target_table: "orders",
         column: "payment_id",
         source_referenced_table: "v2_payment",
-        target_referenced_table: "payment",
+        target_referenced_table: "payment_method",
         rule: ScalarReferenceRule::Nullable,
     },
     ScalarReference {
@@ -761,7 +770,7 @@ pub const SCALAR_REFERENCES: &[ScalarReference] = &[
     },
     ScalarReference {
         source_table: "v2_giftcard",
-        target_table: "giftcard",
+        target_table: "gift_card",
         column: "plan_id",
         source_referenced_table: "v2_plan",
         target_referenced_table: "plan",
@@ -907,12 +916,12 @@ pub fn audit_registry() -> Result<(), ConverterError> {
     let expected_target_tables = [
         "commission_log",
         "coupon",
-        "giftcard",
+        "gift_card",
         "invite_code",
         "knowledge",
         "notice",
         "orders",
-        "payment",
+        "payment_method",
         "plan",
         "server_group",
         "stat",
@@ -1071,9 +1080,12 @@ pub fn audit_registry() -> Result<(), ConverterError> {
     }
     for mapping in DERIVED_MAPPINGS {
         validate_identifier(mapping.target)?;
-        if mapping.source_tables.is_empty() || mapping.key_columns.is_empty() {
+        if mapping.source_tables.is_empty()
+            || mapping.target_columns.is_empty()
+            || mapping.key_columns.is_empty()
+        {
             return registry_error(format!(
-                "derived mapping {} has no source or key",
+                "derived mapping {} has no source, target columns, or key",
                 mapping.target
             ));
         }
@@ -1086,8 +1098,24 @@ pub fn audit_registry() -> Result<(), ConverterError> {
                 ));
             }
         }
+        let mut target_columns = BTreeSet::new();
+        for column in mapping.target_columns {
+            validate_identifier(column)?;
+            if !target_columns.insert(*column) {
+                return registry_error(format!(
+                    "derived mapping {} repeats target column {column}",
+                    mapping.target
+                ));
+            }
+        }
         for column in mapping.key_columns {
             validate_identifier(column)?;
+            if !target_columns.contains(column) {
+                return registry_error(format!(
+                    "derived mapping {} key column {column} is not a target column",
+                    mapping.target
+                ));
+            }
         }
     }
     for reference in SCALAR_REFERENCES {
@@ -1235,7 +1263,12 @@ pub fn registry_sha256() -> Result<String, ConverterError> {
         for table in mapping.source_tables {
             digest_field(&mut digest, table.as_bytes());
         }
+        for column in mapping.target_columns {
+            digest_field(&mut digest, b"target-column");
+            digest_field(&mut digest, column.as_bytes());
+        }
         for column in mapping.key_columns {
+            digest_field(&mut digest, b"key-column");
             digest_field(&mut digest, column.as_bytes());
         }
         digest_field(&mut digest, mapping.rule.as_bytes());
@@ -2050,7 +2083,7 @@ mod tests {
             target_table: "orders",
             column: "payment_id",
             source_referenced_table: "v2_payment",
-            target_referenced_table: "payment",
+            target_referenced_table: "payment_method",
             rule: ScalarReferenceRule::Nullable,
         }));
     }
@@ -2200,7 +2233,7 @@ mod tests {
         assert_eq!(
             discarded_target_tables().collect::<BTreeSet<_>>(),
             BTreeSet::from([
-                "log",
+                "system_log",
                 "mail_log",
                 "server_anytls",
                 "server_credential",
@@ -2212,8 +2245,8 @@ mod tests {
                 "server_v2node",
                 "server_vless",
                 "server_vmess",
-                "stat_server",
-                "stat_user",
+                "server_traffic",
+                "user_traffic",
             ])
         );
         for table in DISCARDED_SOURCE_TABLES {

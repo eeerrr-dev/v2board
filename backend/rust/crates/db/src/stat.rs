@@ -23,7 +23,7 @@ pub async fn fetch_traffic_logs(
             record_at,
             user_id,
             server_rate::text AS server_rate
-        FROM stat_user
+        FROM user_traffic
         WHERE user_id = $1 AND record_at >= $2
         ORDER BY record_at DESC
         "#,

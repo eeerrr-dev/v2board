@@ -35,7 +35,7 @@ async fn insert_generated_codes(
     }
     let mut builder = match table {
         GeneratedCodeTable::Coupon => QueryBuilder::<Postgres>::new("INSERT INTO coupon ("),
-        GeneratedCodeTable::Giftcard => QueryBuilder::<Postgres>::new("INSERT INTO giftcard ("),
+        GeneratedCodeTable::Giftcard => QueryBuilder::<Postgres>::new("INSERT INTO gift_card ("),
     };
     let mut columns = builder.separated(", ");
     for (column, _) in field_values {
@@ -698,7 +698,7 @@ impl AdminService {
         params: &HashMap<String, String>,
     ) -> Result<AdminOutput, ApiError> {
         let pagination = page(params)?;
-        let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM giftcard")
+        let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM gift_card")
             .fetch_one(&self.db)
             .await?;
         let data = fetch_json_list_page(
@@ -711,14 +711,14 @@ impl AdminService {
                 'used_user_ids', COALESCE(
                     (
                         SELECT jsonb_agg(redemption.user_id)
-                        FROM giftcard_redemption AS redemption
-                        WHERE redemption.giftcard_id = giftcard.id
+                        FROM gift_card_redemption AS redemption
+                        WHERE redemption.giftcard_id = gift_card.id
                     ),
                     '[]'::jsonb
                 ),
                 'started_at', started_at, 'ended_at', ended_at, 'created_at', created_at, 'updated_at', updated_at
             )
-            FROM giftcard
+            FROM gift_card
             {}
             LIMIT $1 OFFSET $2
             "#,
@@ -926,7 +926,7 @@ impl AdminService {
         let mut values = giftcard_field_values(params);
         if let Some(id) = optional_i64(params, "id") {
             let exists: Option<i32> =
-                sqlx::query_scalar("SELECT id FROM giftcard WHERE id = $1 LIMIT 1")
+                sqlx::query_scalar("SELECT id FROM gift_card WHERE id = $1 LIMIT 1")
                     .bind(id)
                     .fetch_optional(&self.db)
                     .await?;
@@ -936,16 +936,16 @@ impl AdminService {
             if let Some(code) = optional_string(params, "code") {
                 values.push(("code", AdminSqlValue::Text(code)));
             }
-            self.update_row("giftcard", id, &values, now)
+            self.update_row("gift_card", id, &values, now)
                 .await
                 .map_err(|error| duplicate_code_error(error, "code", "礼品卡卡密已存在"))?;
         } else if let Some(code) = optional_string(params, "code") {
             values.push(("code", AdminSqlValue::Text(code)));
-            self.insert_row("giftcard", &values, now)
+            self.insert_row("gift_card", &values, now)
                 .await
                 .map_err(|error| duplicate_code_error(error, "code", "礼品卡卡密已存在"))?;
         } else {
-            self.insert_generated_single_code("giftcard", &values, 16, now)
+            self.insert_generated_single_code("gift_card", &values, 16, now)
                 .await?;
         }
         Ok(AdminOutput::Data(json!(true)))
@@ -1047,7 +1047,7 @@ mod generated_code_tests {
         assert!(source.contains("is_unique_violation"));
         let baseline = include_str!("../../../../migrations-postgres/0001_initial.sql");
         assert!(baseline.contains("uniq_coupon_code"));
-        assert!(baseline.contains("uniq_giftcard_code"));
+        assert!(baseline.contains("uniq_gift_card_code"));
         let retired_row_loop = ["for _ in 0..", "count"].concat();
         assert!(!source.contains(&retired_row_loop));
     }

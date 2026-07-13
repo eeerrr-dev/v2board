@@ -19,34 +19,34 @@ const RETENTION_DELETE_BATCH_SIZE: i64 = 5_000;
 const RETENTION_MAX_BATCHES_PER_TABLE: usize = 20;
 const STAT_USER_RETENTION_SQL: &str = r#"
 WITH doomed AS (
-    SELECT id FROM stat_user
+    SELECT id FROM user_traffic
     WHERE record_at < $1
     ORDER BY record_at, id
     LIMIT $2
 )
-DELETE FROM stat_user AS target
+DELETE FROM user_traffic AS target
 USING doomed
 WHERE target.id = doomed.id
 "#;
 const STAT_SERVER_RETENTION_SQL: &str = r#"
 WITH doomed AS (
-    SELECT id FROM stat_server
+    SELECT id FROM server_traffic
     WHERE record_at < $1
     ORDER BY record_at, id
     LIMIT $2
 )
-DELETE FROM stat_server AS target
+DELETE FROM server_traffic AS target
 USING doomed
 WHERE target.id = doomed.id
 "#;
 const SYSTEM_LOG_RETENTION_SQL: &str = r#"
 WITH doomed AS (
-    SELECT id FROM log
+    SELECT id FROM system_log
     WHERE created_at < $1
     ORDER BY created_at, id
     LIMIT $2
 )
-DELETE FROM log AS target
+DELETE FROM system_log AS target
 USING doomed
 WHERE target.id = doomed.id
 "#;

@@ -21,9 +21,10 @@ PostgreSQL native runtime 与 ClickHouse 投影已经接线。当前一次性工
   事务数据库。只有经过容量门禁证明 SQL outbox 无法满足要求后，消息流才可作为独立
   架构变更提出。
 - MySQL importer 只读取完整 dump 导入的一次性 staging MySQL 8.0/8.4 engine；不连接或修改
-  live 旧 MySQL。临时 engine 可位于迁移/新主机的一次性容器、临时 VM 或其他受控私网主机，完成
-  后删除；新生产 runtime 不安装或保留 MySQL 服务。MySQL 5.7、Percona、MariaDB 和兼容代理全部
-  拒绝。source patch version 不改变 PostgreSQL target。
+  live 旧 MySQL。staging 和 converter 默认在停写后的旧生产机运行，使用独立 data directory、
+  端口、凭据和仅本机监听的第二 instance；旧机容量不足时使用一次性迁移 VM。完成后删除 staging，
+  新生产 runtime 不运行 MySQL。MySQL 5.7、Percona、MariaDB 和兼容代理全部拒绝。source patch
+  version 不改变 PostgreSQL target。
 
 初始本地镜像固定 PostgreSQL 18.4 和 ClickHouse 26.3 LTS 的最新安全补丁。镜像还必须
 固定内容 digest；补丁升级通过正常依赖更新和回归门禁完成，不能使用浮动 `latest`。
@@ -208,8 +209,9 @@ analytics reader；当前常驻进程只有 worker 得到 writer。
 
 1. 操作者停止旧 API、worker、scheduler、支付入口和远端节点报告者；
 2. 从 Oracle MySQL 8 导出全部业务表和行，记录 dump SHA-256，旧数据库保持不变；
-3. 把 dump 导入一次性 staging MySQL 8 engine，且不运行旧 trigger、routine 或 event；该 engine
-   可以位于独立迁移主机，完成后删除，不是新服务器的长期依赖；
+3. 在停写后的旧生产机把 dump 导入隔离的一次性 staging MySQL 8 engine，且不运行旧 trigger、
+   routine 或 event；staging 使用独立 data directory/volume、端口、凭据并仅本机监听，旧机容量
+   不足时才使用一次性迁移 VM；
 4. 在全新的 PostgreSQL 18 target 上运行当前 baseline，并转换固定保留行；
 5. ClickHouse 从空 native event history 开始，新 Redis 从空状态开始；
 6. 从 `target` 和 `runtime` 生成 API/worker 两份 `file_only + boot_only` 配置；

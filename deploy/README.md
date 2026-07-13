@@ -103,17 +103,20 @@ There is one offline `mysql-import.v1` path:
 1. The operator stops the old API, workers, scheduler, payment ingress and external node reporters.
 2. The operator exports all business tables and rows from Oracle MySQL 8 into one dump and records its
    SHA-256. The old database is not modified.
-3. The dump is loaded into a temporary, disposable MySQL 8 engine that runs no old trigger, routine or event.
+3. On the stopped old production host, the dump is loaded into a separate, disposable MySQL 8 engine that
+   runs no old trigger, routine or event.
 4. The converter copies the fixed retained rows into a brand-new PostgreSQL 18 database. ClickHouse
    starts without old events and the new Redis starts empty.
 5. The importer generates the API and worker configs from explicit `target` and `runtime` values.
 6. Data, role configs, database schemas and service prerequisites are verified before activation.
 
-The staging engine is migration-only. It may run as a one-off container on the migration/new host, on a
-disposable VM, or on another temporary private host; it is stopped and deleted after success or failure.
-The new production machine does not need a permanent MySQL installation or service. Legacy source tables
-keep their `v2_*` names, while native PostgreSQL/ClickHouse target tables are unprefixed (`users` and
-`orders` avoid PostgreSQL keyword conflicts).
+The staging engine and converter run by default on the stopped old production host. Staging is a second,
+loopback-only instance with a separate data directory or volume, port/socket and credentials; it must not be
+created inside the source instance or mount the source data directory. The converter connects outbound to the
+new PostgreSQL target with a temporary migration principal. If the old host lacks capacity, use a disposable
+migration VM instead. Staging is stopped and deleted after success or failure, and the new production machine
+never runs MySQL. Legacy source tables keep their `v2_*` names, while native PostgreSQL/ClickHouse target tables
+are unprefixed (`users` and `orders` avoid PostgreSQL keyword conflicts).
 
 The repository currently provides `validate` and read-only `inspect` for this manifest. The executor
 for dump → staging → PostgreSQL conversion is not connected, so the repository cannot yet claim that a

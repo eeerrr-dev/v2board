@@ -238,9 +238,9 @@ async fn install_contract_operator_config_authority(pool: &PgPool, redis_url: &s
 async fn schema_invariants(pool: &PgPool) -> Result<()> {
     for (table, index) in [
         ("coupon", "uniq_coupon_code"),
-        ("giftcard", "uniq_giftcard_code"),
+        ("gift_card", "uniq_gift_card_code"),
         ("invite_code", "uniq_invite_code"),
-        ("payment", "uniq_payment_driver_uuid"),
+        ("payment_method", "uniq_payment_method_driver_uuid"),
         ("orders", "uniq_unfinished_order_per_user"),
         ("ticket", "uniq_ticket_open_user"),
         (
@@ -271,7 +271,7 @@ async fn schema_invariants(pool: &PgPool) -> Result<()> {
         ("server_traffic_report_item", "traffic_epoch"),
         ("ticket", "open_user_id"),
         ("server_credential", "credential_epoch"),
-        ("payment", "archived_at"),
+        ("payment_method", "archived_at"),
         ("payment_reconciliation", "trade_no_hash"),
         ("payment_reconciliation", "callback_no_hash"),
         ("orders", "callback_no_hash"),
@@ -305,7 +305,7 @@ async fn schema_invariants(pool: &PgPool) -> Result<()> {
         WHERE namespace.nspname = current_schema()
           AND constraint_row.contype = 'f'
           AND source_table.relname = 'payment_reconciliation'
-          AND target_table.relname = 'payment'
+          AND target_table.relname = 'payment_method'
           AND constraint_row.confdeltype = 'r'
         "#,
     )
@@ -863,7 +863,7 @@ async fn late_payment_reconciliation(
     let now = Utc::now().timestamp();
     let payment_id: i32 = sqlx::query_scalar(
         r#"
-        INSERT INTO payment (
+        INSERT INTO payment_method (
             uuid, payment, name, config, enable, created_at, updated_at
         ) VALUES ($1, 'EPay', 'integration EPay', $2, 1, $3, $4)
         RETURNING id
@@ -1120,7 +1120,7 @@ async fn late_payment_reconciliation(
         "bounded reconciliation label did not retain the raw trade identity hash"
     );
     let archived_state: (i16, Option<i64>) =
-        sqlx::query_as("SELECT enable, archived_at FROM payment WHERE id = $1")
+        sqlx::query_as("SELECT enable, archived_at FROM payment_method WHERE id = $1")
             .bind(payment_id)
             .fetch_one(pool)
             .await?;

@@ -3561,8 +3561,10 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "sqlx",
  "tar",
  "thiserror",
+ "tokio",
  "url",
  "v2board-config",
 ]

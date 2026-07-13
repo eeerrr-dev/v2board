@@ -20,3 +20,7 @@ thiserror.workspace = true
 tar.workspace = true
 url.workspace = true
 v2board-config = { version = "0.1.0", path = "../config" }
+
+[dev-dependencies]
+sqlx.workspace = true
+tokio.workspace = true

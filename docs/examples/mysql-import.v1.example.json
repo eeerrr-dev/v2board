@@ -3,8 +3,7 @@
   "source": {
     "dump_path": "/secure/private/v2board/legacy-mysql.sql",
     "dump_sha256": "REPLACE_WITH_64_LOWERCASE_HEX_DUMP_SHA256",
-    "staging_database_url": "mysql://staging_admin:REPLACE_WITH_STAGING_PASSWORD@staging-mysql.invalid:3306/v2board_staging?ssl-mode=VERIFY_IDENTITY",
-    "staging_transport_security": "verified_tls"
+    "staging_database_url": "mysql://staging_admin:REPLACE_WITH_STAGING_PASSWORD@127.0.0.1:3307/v2board_staging"
   },
   "target": {
     "postgres": {

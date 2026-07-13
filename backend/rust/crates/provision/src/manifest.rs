@@ -14,7 +14,7 @@ use serde::{
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
-use url::Url;
+use url::{Host, Url};
 use v2board_config::{
     AppConfig, BOOT_ONLY_RUNTIME_KEYS_V1, FILE_ONLY_RUNTIME_KEYS_V1, RuntimePaths,
 };
@@ -117,14 +117,6 @@ pub struct MysqlDumpSourceSpec {
     pub dump_path: PathBuf,
     pub dump_sha256: String,
     pub staging_database_url: String,
-    pub staging_transport_security: StagingTransportSecurity,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum StagingTransportSecurity {
-    VerifiedTls,
-    TrustedMaintenanceNetwork,
 }
 
 #[derive(Debug, Error)]
@@ -232,15 +224,28 @@ fn validate_source(source: &MysqlDumpSourceSpec) -> Result<(), MysqlImportSpecEr
             "source.staging_database_url must name a migration-only disposable MySQL staging database with host, username, and non-placeholder password".to_string(),
         ));
     }
-    let ssl_mode = validate_mysql_connection_query(&url)?;
-    if source.staging_transport_security == StagingTransportSecurity::VerifiedTls
-        && ssl_mode.as_deref() != Some("verify_identity")
-    {
+    validate_mysql_connection_query(&url)?;
+    if !is_loopback_host(&url) {
         return Err(MysqlImportSpecError::Invalid(
-            "verified_tls staging MySQL requires ssl-mode=VERIFY_IDENTITY".to_string(),
+            "staging MySQL must use localhost, 127.0.0.0/8, or ::1 on the migration host"
+                .to_string(),
         ));
     }
     Ok(())
+}
+
+fn is_loopback_host(url: &Url) -> bool {
+    match url.host() {
+        Some(Host::Domain(host)) => {
+            host.eq_ignore_ascii_case("localhost")
+                || host
+                    .parse::<std::net::IpAddr>()
+                    .is_ok_and(|address| address.is_loopback())
+        }
+        Some(Host::Ipv4(host)) => host.is_loopback(),
+        Some(Host::Ipv6(host)) => host.is_loopback(),
+        None => false,
+    }
 }
 
 #[derive(Clone, Deserialize)]
@@ -1247,8 +1252,7 @@ mod tests {
             "source": {
                 "dump_path": "/secure/legacy.sql",
                 "dump_sha256": "a".repeat(64),
-                "staging_database_url": "mysql://staging:J0stagingImportSecret@staging.internal:3306/v2board_staging?ssl-mode=VERIFY_IDENTITY",
-                "staging_transport_security": "verified_tls"
+                "staging_database_url": "mysql://staging:J0stagingImportSecret@127.0.0.1:3307/v2board_staging"
             },
             "target": {
                 "postgres": {
@@ -1312,6 +1316,14 @@ mod tests {
             parse_mysql_import_spec(&serde_json::to_vec(&import_document()).unwrap()).unwrap();
         assert_eq!(spec.schema_version, 1);
         assert_eq!(spec.manifest_sha256().len(), 64);
+
+        for host in ["localhost", "127.0.0.1", "127.20.30.40", "[::1]"] {
+            let mut loopback = import_document();
+            loopback["source"]["staging_database_url"] = json!(format!(
+                "mysql://staging:J0stagingImportSecret@{host}:3307/v2board_staging"
+            ));
+            assert!(parse_mysql_import_spec(&serde_json::to_vec(&loopback).unwrap()).is_ok());
+        }
     }
 
     #[test]
@@ -1385,19 +1397,37 @@ mod tests {
 
         let mut duplicate_mysql_tls = import_document();
         duplicate_mysql_tls["source"]["staging_database_url"] = json!(
-            "mysql://staging:J0stagingImportSecret@staging.internal:3306/v2board_staging?ssl_mode=DISABLED&ssl-mode=VERIFY_IDENTITY"
+            "mysql://staging:J0stagingImportSecret@127.0.0.1:3307/v2board_staging?ssl_mode=DISABLED&ssl-mode=VERIFY_IDENTITY"
         );
         assert!(
             parse_mysql_import_spec(&serde_json::to_vec(&duplicate_mysql_tls).unwrap()).is_err()
+        );
+
+        let mut remote_staging = import_document();
+        remote_staging["source"]["staging_database_url"] = json!(
+            "mysql://staging:J0stagingImportSecret@staging.internal:3307/v2board_staging?ssl-mode=VERIFY_IDENTITY"
+        );
+        assert!(parse_mysql_import_spec(&serde_json::to_vec(&remote_staging).unwrap()).is_err());
+
+        let mut retired_transport_choice = import_document();
+        retired_transport_choice["source"]
+            .as_object_mut()
+            .unwrap()
+            .insert(
+                "staging_transport_security".to_string(),
+                json!("loopback_only"),
+            );
+        assert!(
+            parse_mysql_import_spec(&serde_json::to_vec(&retired_transport_choice).unwrap())
+                .is_err()
         );
     }
 
     #[test]
     fn encoded_credentials_are_decoded_before_validation_and_identity_comparison() {
         let mut encoded_special_characters = import_document();
-        encoded_special_characters["source"]["staging_database_url"] = json!(
-            "mysql://staging:J0staging%40ImportSecret@staging.internal:3306/v2board_staging?ssl-mode=VERIFY_IDENTITY"
-        );
+        encoded_special_characters["source"]["staging_database_url"] =
+            json!("mysql://staging:J0staging%40ImportSecret@127.0.0.1:3307/v2board_staging");
         encoded_special_characters["target"]["postgres"]["api_database_url"] = json!(
             "postgresql://api:C3api%40RuntimeSecret@postgres.acme.internal:5432/v2board?sslmode=verify-full"
         );

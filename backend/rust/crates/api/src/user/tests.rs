@@ -102,7 +102,7 @@ fn giftcard_redemption_serializes_on_the_card_row() {
     assert!(GIFTCARD_FOR_UPDATE_SQL.trim_end().ends_with("FOR UPDATE"));
     assert!(GIFTCARD_FOR_UPDATE_SQL.contains("lower(code) = lower($1)"));
     let baseline = include_str!("../../../../migrations-postgres/0001_initial.sql");
-    assert!(baseline.contains("uniq_giftcard_code_canonical"));
+    assert!(baseline.contains("uniq_gift_card_code_canonical"));
     assert!(baseline.contains("created_at_provenance = 'legacy_unknown'"));
     assert!(baseline.contains("CREATE TABLE analytics_admission_policy"));
     assert!(baseline.contains("CREATE TABLE analytics_admission_state"));

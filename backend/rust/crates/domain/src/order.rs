@@ -60,11 +60,11 @@ const PAYMENT_NOTIFY_LOOKUP_SQL: &str = r#"
         notify_domain,
         handling_fee_fixed,
         handling_fee_percent
-    FROM payment
+    FROM payment_method
     WHERE payment = $1 AND uuid = $2
     LIMIT 1
 "#;
-const PAYMENT_ACTIVE_CONFIG_FOR_SHARE_SQL: &str = "SELECT payment, CAST(config AS TEXT) FROM payment \
+const PAYMENT_ACTIVE_CONFIG_FOR_SHARE_SQL: &str = "SELECT payment, CAST(config AS TEXT) FROM payment_method \
      WHERE id = $1 AND enable = 1 AND archived_at IS NULL LIMIT 1 FOR SHARE";
 const UNFINISHED_ORDER_FOR_UPDATE_SQL: &str =
     "SELECT id FROM orders WHERE user_id = $1 AND status IN (0, 1) LIMIT 1 FOR UPDATE";
@@ -574,7 +574,7 @@ impl OrderService {
                 notify_domain,
                 handling_fee_fixed,
                 handling_fee_percent
-            FROM payment
+            FROM payment_method
             WHERE id = $1 AND archived_at IS NULL
             LIMIT 1
             "#,
@@ -688,7 +688,7 @@ impl OrderService {
             SELECT id, payment, enable, uuid, CAST(config AS TEXT) AS config,
                    notify_domain, handling_fee_fixed,
                    handling_fee_percent
-            FROM payment
+            FROM payment_method
             WHERE id = $1 AND payment = 'StripeCredit' AND archived_at IS NULL
             LIMIT 1
             "#,
@@ -808,7 +808,7 @@ impl OrderService {
             return Ok(true);
         }
         let row = sqlx::query_as::<_, (String, String)>(
-            "SELECT payment, CAST(config AS TEXT) FROM payment WHERE id = $1 LIMIT 1",
+            "SELECT payment, CAST(config AS TEXT) FROM payment_method WHERE id = $1 LIMIT 1",
         )
         .bind(payment_id)
         .fetch_optional(&self.db)
@@ -1149,7 +1149,7 @@ impl OrderService {
         {
             let mut tx = self.db.begin().await?;
             let payment_exists: Option<i32> =
-                sqlx::query_scalar("SELECT id FROM payment WHERE id = $1 LIMIT 1 FOR SHARE")
+                sqlx::query_scalar("SELECT id FROM payment_method WHERE id = $1 LIMIT 1 FOR SHARE")
                     .bind(expected_binding.payment_id)
                     .fetch_optional(&mut *tx)
                     .await?;

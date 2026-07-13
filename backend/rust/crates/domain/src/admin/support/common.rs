@@ -455,11 +455,11 @@ pub(in super::super) fn server_kind_from_path(path: &str) -> Result<&str, ApiErr
 pub(in super::super) fn ensure_safe_table(table: &str) -> Result<(), ApiError> {
     let allowed = [
         "plan",
-        "payment",
+        "payment_method",
         "notice",
         "knowledge",
         "coupon",
-        "giftcard",
+        "gift_card",
         "server_group",
         "server_route",
         "users",

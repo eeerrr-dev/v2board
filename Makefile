@@ -132,6 +132,7 @@ rust-integration:
 		-e RUST_INTEGRATION_REDIS_URL=redis://redis:6379/15 \
 		rust-api -lc \
 		'set -eu; . /usr/local/cargo/env; \
+		 cargo test --locked -p v2board-provision --test postgres_target_schema; \
 		 cargo test --locked -p v2board-analytics --test clickhouse_roundtrip; \
 		 cargo test --locked -p v2board-analytics --test outbox_roundtrip; \
 		 cargo build --locked -p v2board-workers; \

@@ -494,7 +494,7 @@ impl AdminService {
                    CAST(handling_fee_percent AS DOUBLE PRECISION) AS handling_fee_percent,
                    uuid, CAST(config AS TEXT) AS config, notify_domain, enable, sort,
                    created_at, updated_at
-            FROM payment
+            FROM payment_method
             WHERE archived_at IS NULL
             ORDER BY sort ASC NULLS FIRST
             "#,
@@ -560,7 +560,7 @@ impl AdminService {
         let mut payment = params.get("payment").cloned().unwrap_or_default();
         let config = if let Some(id) = optional_i64(params, "id") {
             let (stored_payment, raw_config) = sqlx::query_as::<_, (String, String)>(
-                "SELECT payment, CAST(config AS TEXT) FROM payment \
+                "SELECT payment, CAST(config AS TEXT) FROM payment_method \
                  WHERE id = $1 AND archived_at IS NULL LIMIT 1",
             )
             .bind(id)
@@ -638,7 +638,7 @@ impl AdminService {
         if let Some(id) = optional_i64(params, "id") {
             let mut tx = self.db.begin().await?;
             let current = sqlx::query_as::<_, (String, String)>(
-                "SELECT payment, CAST(config AS TEXT) FROM payment \
+                "SELECT payment, CAST(config AS TEXT) FROM payment_method \
                  WHERE id = $1 AND archived_at IS NULL LIMIT 1 FOR UPDATE",
             )
             .bind(id)
@@ -660,7 +660,7 @@ impl AdminService {
             }
             sqlx::query(
                 r#"
-                UPDATE payment
+                UPDATE payment_method
                 SET name = $1, icon = $2, payment = $3, config = $4, notify_domain = $5,
                     handling_fee_fixed = CAST($6::BIGINT AS INTEGER),
                     handling_fee_percent = $7, updated_at = $8
@@ -683,7 +683,7 @@ impl AdminService {
             let config_value = resolve_redacted_payment_config(&payment, None, submitted_config)?;
             sqlx::query(
                 r#"
-                INSERT INTO payment (
+                INSERT INTO payment_method (
                     name, icon, payment, uuid, config, notify_domain, handling_fee_fixed,
                     handling_fee_percent, enable, sort, created_at, updated_at
                 )
@@ -713,7 +713,7 @@ impl AdminService {
     pub(super) async fn payment_drop(&self, id: i64) -> Result<AdminOutput, ApiError> {
         let mut tx = self.db.begin().await?;
         let exists: Option<i32> = sqlx::query_scalar(
-            "SELECT id FROM payment \
+            "SELECT id FROM payment_method \
                  WHERE id = $1 AND archived_at IS NULL LIMIT 1 FOR UPDATE",
         )
         .bind(id)
@@ -724,7 +724,7 @@ impl AdminService {
         }
         let now = Utc::now().timestamp();
         let archived = sqlx::query(
-            "UPDATE payment \
+            "UPDATE payment_method \
              SET enable = 0, archived_at = COALESCE(archived_at, $1), updated_at = $2 \
              WHERE id = $3 AND archived_at IS NULL",
         )
@@ -741,7 +741,7 @@ impl AdminService {
         let mut tx = self.db.begin().await?;
         for (index, id) in ids.iter().enumerate() {
             sqlx::query(
-                "UPDATE payment SET sort = CAST($1::BIGINT AS INTEGER), updated_at = $2 \
+                "UPDATE payment_method SET sort = CAST($1::BIGINT AS INTEGER), updated_at = $2 \
                  WHERE id = $3::BIGINT AND archived_at IS NULL",
             )
             .bind((index + 1) as i64)
@@ -760,7 +760,7 @@ impl AdminService {
         // with pending orders: it stops new checkouts, while authenticated
         // in-flight callbacks continue using the immutable driver/config binding.
         let updated = sqlx::query(
-            "UPDATE payment \
+            "UPDATE payment_method \
              SET enable = CASE WHEN enable = 1 THEN 0::SMALLINT ELSE 1::SMALLINT END, updated_at = $1 \
              WHERE id = $2::BIGINT AND archived_at IS NULL",
         )
@@ -844,7 +844,7 @@ impl AdminService {
                 'resolution', r.resolution
             )
             FROM payment_reconciliation r
-            JOIN payment p ON p.id = r.payment_id
+            JOIN payment_method p ON p.id = r.payment_id
             WHERE (
                 $1::SMALLINT = 2
                 OR ($2::SMALLINT = 0 AND r.resolved_at IS NULL)
@@ -1468,7 +1468,7 @@ impl AdminService {
             return Err(ApiError::legacy("该订阅下存在用户无法删除"));
         }
         let has_giftcard: Option<i32> =
-            sqlx::query_scalar("SELECT id FROM giftcard WHERE plan_id = $1 LIMIT 1 FOR UPDATE")
+            sqlx::query_scalar("SELECT id FROM gift_card WHERE plan_id = $1 LIMIT 1 FOR UPDATE")
                 .bind(id)
                 .fetch_optional(&mut *tx)
                 .await?;

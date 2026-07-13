@@ -10,5 +10,5 @@ pub use inspect::{
 };
 pub use manifest::{
     MYSQL_SOURCE_REFERENCE_COMMIT, MysqlDumpSourceSpec, MysqlImportSpec, MysqlImportSpecError,
-    StagingTransportSecurity, load_mysql_import_spec,
+    load_mysql_import_spec,
 };

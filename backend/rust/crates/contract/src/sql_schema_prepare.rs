@@ -73,11 +73,11 @@ pub async fn run(pool: &PgPool) -> Result<()> {
 async fn assert_dynamic_tables(pool: &PgPool) -> Result<()> {
     const TABLES: &[&str] = &[
         "plan",
-        "payment",
+        "payment_method",
         "notice",
         "knowledge",
         "coupon",
-        "giftcard",
+        "gift_card",
         "server_group",
         "server_route",
         "users",

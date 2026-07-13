@@ -202,7 +202,7 @@ impl AdminService {
             (start_of_yesterday(), start_of_today())
         };
         let rows: Vec<(i64, String, i64, i64)> = sqlx::query_as(
-            "SELECT server_id::BIGINT, server_type, u, d FROM stat_server \
+            "SELECT server_id::BIGINT, server_type, u, d FROM server_traffic \
              WHERE record_at >= $1 AND record_at < $2 AND record_type = 'd' \
              ORDER BY (CAST(u AS NUMERIC(30,0)) + CAST(d AS NUMERIC(30,0))) DESC LIMIT 15",
         )
@@ -246,7 +246,7 @@ impl AdminService {
         };
         let rows: Vec<(i64, f64, i64, i64, Option<String>)> = sqlx::query_as(
             "SELECT s.user_id, CAST(s.server_rate AS DOUBLE PRECISION), s.u, s.d, u.email \
-             FROM stat_user s LEFT JOIN users u ON u.id = s.user_id \
+             FROM user_traffic s LEFT JOIN users u ON u.id = s.user_id \
              WHERE s.record_at >= $1 AND s.record_at < $2 AND s.record_type = 'd' \
              ORDER BY (CAST(s.u AS NUMERIC(30,0)) + CAST(s.d AS NUMERIC(30,0))) DESC LIMIT 30",
         )
@@ -333,7 +333,7 @@ impl AdminService {
     ) -> Result<AdminOutput, ApiError> {
         let user_id = required_i64(params, "user_id")?;
         let pagination = page(params)?;
-        let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stat_user WHERE user_id = $1")
+        let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM user_traffic WHERE user_id = $1")
             .bind(user_id)
             .fetch_one(&self.db)
             .await?;
@@ -341,7 +341,7 @@ impl AdminService {
             &self.db,
             r#"
             SELECT jsonb_build_object('record_at', record_at, 'u', u, 'd', d, 'server_rate', server_rate)
-            FROM stat_user
+            FROM user_traffic
             WHERE user_id = $1
             ORDER BY record_at DESC
             LIMIT $2 OFFSET $3
@@ -582,7 +582,7 @@ impl AdminService {
         }
 
         let mut count_builder =
-            QueryBuilder::<Postgres>::new("SELECT COUNT(*) FROM log WHERE 1 = 1");
+            QueryBuilder::<Postgres>::new("SELECT COUNT(*) FROM system_log WHERE 1 = 1");
         push_log_filters(&mut count_builder, &entries);
         let total: i64 = count_builder
             .build_query_scalar()
@@ -596,7 +596,7 @@ impl AdminService {
                 'method', method, 'data', data, 'ip', ip, 'context', context,
                 'created_at', created_at, 'updated_at', updated_at
             )
-            FROM log
+            FROM system_log
             WHERE 1 = 1
             "#,
         );

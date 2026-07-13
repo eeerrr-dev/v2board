@@ -6,7 +6,7 @@ use crate::{state::WorkerState, time::timestamp_before};
 const STAT_ORDER_TOTAL_SQL: &str = "SELECT CAST(COALESCE(SUM(total_amount), 0) AS TEXT) FROM orders WHERE created_at >= $1 AND created_at < $2";
 const STAT_PAID_TOTAL_SQL: &str = "SELECT CAST(COALESCE(SUM(total_amount), 0) AS TEXT) FROM orders WHERE paid_at >= $1 AND paid_at < $2 AND status NOT IN (0, 2)";
 const STAT_COMMISSION_TOTAL_SQL: &str = "SELECT CAST(COALESCE(SUM(get_amount), 0) AS TEXT) FROM commission_log WHERE created_at >= $1 AND created_at < $2";
-const STAT_TRANSFER_TOTAL_SQL: &str = "SELECT CAST(COALESCE(SUM(u) + SUM(d), 0) AS TEXT) FROM stat_server WHERE created_at >= $1 AND created_at < $2";
+const STAT_TRANSFER_TOTAL_SQL: &str = "SELECT CAST(COALESCE(SUM(u) + SUM(d), 0) AS TEXT) FROM server_traffic WHERE created_at >= $1 AND created_at < $2";
 const STAT_UPSERT_SQL: &str = r#"
 INSERT INTO stat
     (record_at, record_type, order_count, order_total, commission_count,

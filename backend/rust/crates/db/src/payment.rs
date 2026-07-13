@@ -26,7 +26,7 @@ pub async fn fetch_enabled_payment_methods(
             icon,
             handling_fee_fixed,
             handling_fee_percent::text AS handling_fee_percent
-        FROM payment
+        FROM payment_method
         WHERE enable = 1 AND archived_at IS NULL
         ORDER BY sort ASC NULLS FIRST
         "#,
@@ -70,6 +70,8 @@ mod tests {
     #[test]
     fn webhook_routing_key_is_unique_per_payment_driver() {
         let migration = include_str!("../../../migrations-postgres/0001_initial.sql");
-        assert!(migration.contains("CONSTRAINT uniq_payment_driver_uuid UNIQUE (payment, uuid)"));
+        assert!(
+            migration.contains("CONSTRAINT uniq_payment_method_driver_uuid UNIQUE (payment, uuid)")
+        );
     }
 }
