@@ -1,4 +1,4 @@
-//! Concrete schema-v4, bare-metal one-shot executor.
+//! Concrete schema-v4/schema-v5 bare-metal one-shot executor.
 //!
 //! This is the only production composition of the generic lifecycle state
 //! machine. Every method reconstructs its inputs from the fsync journal,
@@ -67,11 +67,16 @@ use crate::{
         verify_legacy_clickhouse_projection_read_only,
     },
     legacy_converter::{
-        ConversionRunBinding, DEFAULT_BATCH_SIZE, LEGACY_SEMANTIC_SCHEMA_SHA256, registry_sha256,
+        ConversionRunBinding, DEFAULT_BATCH_SIZE, LEGACY_SEMANTIC_SCHEMA_SHA256,
+        LegacyConversionStrategy, registry_sha256_for_strategy,
     },
     legacy_copy::{
         LegacyCopyAdapter, LegacyCopyVerification, PostgresDurableCopyCheckpointSink,
         legacy_copy_verification_sha256, load_verified_frozen_traffic,
+    },
+    legacy_report_receipt::{
+        persist_clickhouse_projection_report, persist_postgres_verification_report,
+        verify_durable_report_receipts, verify_postgres_verification_receipt,
     },
     lifecycle_ledger::{
         AuthorizationAuditBinding, CompletionProofBinding, LifecycleLedgerBinding,
@@ -244,7 +249,7 @@ pub async fn start_production_legacy_apply(
         .map_err(ProductionLegacyApplyEntryError::ReleasePreflight)?;
     let journal_root = &spec
         .legacy_apply_execution()
-        .expect("capability requires schema-v4 execution")
+        .expect("capability requires schema-v4 or schema-v5 execution")
         .journal
         .root;
     let mut executor =
@@ -264,7 +269,7 @@ pub async fn resume_production_legacy_apply(
     require_production_entry_capability("resume", spec)?;
     let journal_root = &spec
         .legacy_apply_execution()
-        .expect("capability requires schema-v4 execution")
+        .expect("capability requires schema-v4 or schema-v5 execution")
         .journal
         .root;
     let mut executor =
@@ -623,6 +628,23 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
                     "postgres_independent_report_mismatch",
                 ));
             }
+            if spec.schema_version == 5 {
+                let history = verified_history(spec, permit.inspect_review_sha256())?;
+                let receipt_sha256 =
+                    persist_postgres_verification_report(spec, permit, &history, &verification)
+                        .map_err(|_| {
+                            failed(
+                                ApplyOutcomeCode::VerificationMismatch,
+                                "postgres_verification_receipt_invalid",
+                            )
+                        })?;
+                if receipt_sha256 != proof.report_sha256() {
+                    return Err(failed(
+                        ApplyOutcomeCode::VerificationMismatch,
+                        "postgres_verification_receipt_hash_mismatch",
+                    ));
+                }
+            }
             Ok(proof)
         })
     }
@@ -652,23 +674,58 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
                     "postgres_report_checkpoint_mismatch",
                 ));
             }
+            let history = if spec.schema_version == 5 {
+                let history = verified_history(spec, permit.inspect_review_sha256())?;
+                verify_postgres_verification_receipt(
+                    spec,
+                    &history,
+                    permit.installation_id(),
+                    permit.source_fingerprint_sha256(),
+                    &copy_sha,
+                )
+                .map_err(|_| {
+                    failed(
+                        ApplyOutcomeCode::VerificationMismatch,
+                        "postgres_verification_receipt_missing_or_invalid",
+                    )
+                })?;
+                Some(history)
+            } else {
+                None
+            };
             matrix_before!(ClickhouseProjectionCommit);
-            let proof = project_legacy_clickhouse(spec, permit, &verification)
+            let projection = project_legacy_clickhouse(spec, permit, &verification)
                 .await
                 .map_err(|_| {
                     failed(
                         ApplyOutcomeCode::ConversionFailed,
                         "clickhouse_exact_projection_failed",
                     )
-                })?
-                .stage_proof()
-                .map_err(|_| {
+                })?;
+            matrix_after_success!(ClickhouseProjectionCommit);
+            let proof = if let Some(history) = history.as_deref() {
+                let report_sha256 =
+                    persist_clickhouse_projection_report(spec, permit, history, &projection)
+                        .map_err(|_| {
+                            failed(
+                                ApplyOutcomeCode::VerificationMismatch,
+                                "clickhouse_projection_receipt_invalid",
+                            )
+                        })?;
+                VerifiedStageProof::new(report_sha256).map_err(|_| {
                     failed(
                         ApplyOutcomeCode::ConversionFailed,
                         "clickhouse_projection_proof_invalid",
                     )
-                })?;
-            matrix_after_success!(ClickhouseProjectionCommit);
+                })?
+            } else {
+                projection.stage_proof().map_err(|_| {
+                    failed(
+                        ApplyOutcomeCode::ConversionFailed,
+                        "clickhouse_projection_proof_invalid",
+                    )
+                })?
+            };
             Ok(proof)
         })
     }
@@ -753,12 +810,19 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
                         "node_cutover_binding_invalid",
                     )
                 })?;
-            let report = nodes.verify_empty_before_authority().await.map_err(|_| {
-                failed(
-                    ApplyOutcomeCode::ActivationFailed,
-                    "node_offline_verification_failed",
-                )
-            })?;
+            let report = nodes
+                .verify_empty_target_before_authority()
+                .await
+                .map_err(|_| {
+                    failed(
+                        ApplyOutcomeCode::ActivationFailed,
+                        if spec.schema_version == 4 {
+                            "node_offline_verification_failed"
+                        } else {
+                            "empty_target_node_verification_failed"
+                        },
+                    )
+                })?;
             VerifiedStageProof::new(report.report_sha256().to_string()).map_err(|_| {
                 failed(
                     ApplyOutcomeCode::ActivationFailed,
@@ -789,6 +853,22 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
                     ApplyOutcomeCode::ActivationFailed,
                     "activation_journal_binding_mismatch",
                 ));
+            }
+            if spec.schema_version == 5 {
+                verify_durable_report_receipts(
+                    spec,
+                    &history,
+                    permit.installation_id(),
+                    permit.source_fingerprint_sha256(),
+                    &data,
+                    &analytics,
+                )
+                .map_err(|_| {
+                    failed(
+                        ApplyOutcomeCode::VerificationMismatch,
+                        "pre_authority_report_receipts_invalid",
+                    )
+                })?;
             }
 
             let postgres_verification = execute_or_verify_copy(spec, permit, false).await?;
@@ -828,16 +908,19 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
                         "pre_authority_node_binding_invalid",
                     )
                 })?;
-            let observed_nodes =
-                node_cutover
-                    .verify_empty_before_authority()
-                    .await
-                    .map_err(|_| {
-                        failed(
-                            ApplyOutcomeCode::ActivationFailed,
-                            "pre_authority_node_offline_reverification_failed",
-                        )
-                    })?;
+            let observed_nodes = node_cutover
+                .verify_empty_target_before_authority()
+                .await
+                .map_err(|_| {
+                    failed(
+                        ApplyOutcomeCode::ActivationFailed,
+                        if spec.schema_version == 4 {
+                            "pre_authority_node_offline_reverification_failed"
+                        } else {
+                            "pre_authority_empty_target_node_reverification_failed"
+                        },
+                    )
+                })?;
             if observed_nodes.report_sha256() != nodes {
                 return Err(failed(
                     ApplyOutcomeCode::ActivationFailed,
@@ -1076,8 +1159,8 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
                     )
                 })?;
             matrix_before!(NodeActivationCommit);
-            let activated = nodes
-                .complete_empty_inventory_after_native_authority(
+            let node_completion = nodes
+                .complete_empty_target_after_native_authority(
                     authority.node_cutover_report_sha256(),
                     permit,
                     &services.api,
@@ -1086,22 +1169,42 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
                 .map_err(|_| {
                     failed(
                         ApplyOutcomeCode::ActivationFailed,
-                        "post_authority_node_activation_failed",
+                        if spec.schema_version == 4 {
+                            "post_authority_node_activation_failed"
+                        } else {
+                            "post_authority_empty_target_node_completion_failed"
+                        },
                     )
                 })?;
             matrix_after_success!(NodeActivationCommit);
-            proof_from_serializable(
-                b"v2board-native-service-and-node-start-v1\0",
-                &(
-                    services,
-                    activated.report_sha256(),
-                    activated.activation_request_id(),
-                    activated.activated_node_set_sha256(),
-                    activated.node_count(),
-                ),
-                ApplyOutcomeCode::ActivationFailed,
-                "native_start_report_hash_failed",
-            )
+            if spec.schema_version == 4 {
+                proof_from_serializable(
+                    b"v2board-native-service-and-node-start-v1\0",
+                    &(
+                        services,
+                        node_completion.report_sha256(),
+                        node_completion.completion_request_id(),
+                        node_completion.target_node_set_sha256(),
+                        node_completion.target_node_count(),
+                    ),
+                    ApplyOutcomeCode::ActivationFailed,
+                    "native_start_report_hash_failed",
+                )
+            } else {
+                proof_from_serializable(
+                    b"v2board-native-service-and-empty-target-node-completion-v2\0",
+                    &(
+                        services,
+                        node_completion.report_sha256(),
+                        node_completion.completion_request_id(),
+                        node_completion.target_node_set_sha256(),
+                        node_completion.target_node_count(),
+                        node_completion.outcome(),
+                    ),
+                    ApplyOutcomeCode::ActivationFailed,
+                    "native_start_report_hash_failed",
+                )
+            }
         })
     }
 
@@ -1126,6 +1229,24 @@ impl LegacyApplyExecutor for ProductionLegacyApplyExecutor {
         permit: &'a CompletionRecoveryPermit,
     ) -> ApplyFuture<'a, Result<CompletionEvidence, StageFailure>> {
         Box::pin(async move {
+            if spec.schema_version == 5 {
+                let history = verified_history(spec, permit.inspect_review_sha256())?;
+                let authority = permit.native_authority_binding();
+                verify_durable_report_receipts(
+                    spec,
+                    &history,
+                    permit.installation_id(),
+                    permit.source_fingerprint_sha256(),
+                    authority.data_verification_report_sha256(),
+                    authority.analytics_projection_report_sha256(),
+                )
+                .map_err(|_| {
+                    failed(
+                        ApplyOutcomeCode::VerificationMismatch,
+                        "completion_report_receipts_invalid",
+                    )
+                })?;
+            }
             let target = legacy_target(spec)?;
             let pool = PgPool::connect(&target.postgres.migration_database_url)
                 .await
@@ -1387,17 +1508,25 @@ async fn execute_or_verify_copy(
     let target_pool = PgPool::connect(&target.postgres.migration_database_url)
         .await
         .map_err(|_| failed(ApplyOutcomeCode::IoFailure, "postgres_connect_failed"))?;
+    let strategy =
+        LegacyConversionStrategy::for_schema_version(spec.schema_version).map_err(|_| {
+            failed(
+                ApplyOutcomeCode::VerificationMismatch,
+                "converter_strategy_invalid",
+            )
+        })?;
     let binding = ConversionRunBinding {
         operation_id: permit.operation_id().to_string(),
         target_installation_id: permit.installation_id().to_string(),
         source_snapshot_sha256: permit.source_fingerprint_sha256().to_string(),
         source_schema_sha256: LEGACY_SEMANTIC_SCHEMA_SHA256.to_string(),
-        registry_sha256: registry_sha256().map_err(|_| {
+        registry_sha256: registry_sha256_for_strategy(strategy).map_err(|_| {
             failed(
                 ApplyOutcomeCode::VerificationMismatch,
                 "converter_registry_invalid",
             )
         })?,
+        strategy,
     };
     let mut adapter =
         LegacyCopyAdapter::new(&source_pool, &target_pool, binding, DEFAULT_BATCH_SIZE)

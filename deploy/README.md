@@ -99,23 +99,31 @@ performs the whole transition without another pause:
 
 1. stop and fence the old API writers, scheduler, and temporary-link issuer; disable worker restart,
    let the existing workers drain and reconcile pending traffic and business work, then stop them
-   (preflight has already proved the source node inventory is empty);
+   (schema v4 proves the source node inventory is empty; schema v5 binds the old inventory for
+   discard, discards legacy per-user/per-node traffic details plus `v2_log`/`v2_mail_log`, and
+   requires the operator to stop old external node processes before rebuilding them; every discarded
+   source remains covered by the full fingerprint, encrypted archive, and per-table pre-authority
+   discard proof);
 2. take and restore-test one consistent source recovery set, run the final read-only recheck, then
    bulk-convert into empty PostgreSQL/ClickHouse targets while every old and new writer stays down;
-3. verify exact values, relationships, sequences, configs, and analytics projection; activate the
+3. verify exact values, relationships, sequences, configs, and analytics projection; schema v5 must
+   retain `v2_stat`, every existing user field, and `v2_payment` including its verification config and
+   original `enable` value—migration must never disable payment methods by default; activate the
    native API and worker exactly once;
 4. immediately mask and stop the dedicated MySQL 8 and old Redis units and remove their
    network access, then prove all three old credentials are unreachable;
 5. after the completion ledger succeeds, run the returned root cleanup argv to remove
    `v2board-lifecycle`; separately remove one-shot MySQL client/source credentials from the
-   production server, retaining only an encrypted cold archive with its SHA-256 and the signed
-   migration report.
+   production server, while permanently retaining the encrypted cold archive with its SHA-256 and
+   the operation journal plus signed migration-report receipts.
 
 Completion must prove `source_retired=true`, MySQL and both old Redis endpoints are unreachable,
 source access is permanently disabled, legacy runtime compatibility is disabled, and PostgreSQL is
 the only transactional authority. The lifecycle tool may then be removed manually with the returned
 root argv; its absence is not part of completion proof. Completion does not claim an internal
 `DROP USER` after the dedicated database process has already been permanently stopped.
+The cleanup argv removes only the one-shot binary; it must not remove the operation journal,
+report receipts, or encrypted archive.
 
 After activation, recovery is PostgreSQL/ClickHouse restore or forward repair. Restarting MySQL is
 not a supported rollback.

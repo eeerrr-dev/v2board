@@ -41,8 +41,10 @@ use crate::{
     legacy_backup::{
         VerifiedBackupArchive, perform_backup_restore, verify_persisted_backup_archive,
     },
-    legacy_converter::{DEFAULT_BATCH_SIZE, LEGACY_SEMANTIC_SCHEMA_SHA256},
-    legacy_copy::fingerprint_legacy_source,
+    legacy_converter::{
+        DEFAULT_BATCH_SIZE, LEGACY_SEMANTIC_SCHEMA_SHA256, LegacyConversionStrategy,
+    },
+    legacy_copy::fingerprint_legacy_source_for_strategy,
     manifest::{
         LegacyRuntimeReceiptKind, ProvisionFlow, SourceSpec, scheduler_unit_counterpart,
         scheduler_units_are_exact_pairs,
@@ -1243,9 +1245,13 @@ impl BareMetalLegacySource {
             return Err(SourceError::TargetEvidence);
         }
         let (source, _, _) = legacy_backup(spec)?;
+        let strategy = legacy_conversion_strategy(spec)?;
         verify_units_stopped(&mut *self.runner, self.policy.units.writers(), true)?;
-        let (fingerprint, source_schema_sha256) =
-            fingerprint_mysql_and_schema(archive_materialization_database_url).await?;
+        let (fingerprint, source_schema_sha256) = fingerprint_mysql_and_schema_for_strategy(
+            archive_materialization_database_url,
+            strategy,
+        )
+        .await?;
         let archive = verify_persisted_backup_archive(spec).map_err(|_| SourceError::Backup)?;
         if fingerprint != archive.source_fingerprint_sha256()
             || source_schema_sha256 != LEGACY_SEMANTIC_SCHEMA_SHA256
@@ -1273,7 +1279,7 @@ impl BareMetalLegacySource {
                     active_transactions,
                     replication_channels,
                     group_replication_members,
-                ) = arm_mysql_durable_write_fence(source).await?;
+                ) = arm_mysql_durable_write_fence(source, strategy).await?;
                 if live_fingerprint != archive.source_fingerprint_sha256()
                     || live_schema != LEGACY_SEMANTIC_SCHEMA_SHA256
                     || active_transactions != 0
@@ -1478,17 +1484,43 @@ async fn mysql_endpoint_reachable(database_url: &str) -> Result<bool, SourceErro
 
 async fn arm_mysql_durable_write_fence(
     source: &SourceSpec,
+    strategy: LegacyConversionStrategy,
 ) -> Result<(String, String, u64, u64, u64), SourceError> {
     let fence_url = source
         .database_fence_url
         .as_deref()
         .ok_or(SourceError::InvalidPolicy)?;
-    arm_mysql_durable_write_fence_urls(fence_url, &source.database_url).await
+    match strategy {
+        LegacyConversionStrategy::PreserveAll => {
+            arm_mysql_durable_write_fence_urls(fence_url, &source.database_url).await
+        }
+        LegacyConversionStrategy::DiscardNodesTrafficDetailsAndOperationalLogs => {
+            arm_mysql_durable_write_fence_urls_for_strategy(
+                fence_url,
+                &source.database_url,
+                strategy,
+            )
+            .await
+        }
+    }
 }
 
 async fn arm_mysql_durable_write_fence_urls(
     fence_url: &str,
     reader_url: &str,
+) -> Result<(String, String, u64, u64, u64), SourceError> {
+    arm_mysql_durable_write_fence_urls_for_strategy(
+        fence_url,
+        reader_url,
+        LegacyConversionStrategy::PreserveAll,
+    )
+    .await
+}
+
+async fn arm_mysql_durable_write_fence_urls_for_strategy(
+    fence_url: &str,
+    reader_url: &str,
+    strategy: LegacyConversionStrategy,
 ) -> Result<(String, String, u64, u64, u64), SourceError> {
     let fence_pool = MySqlPoolOptions::new()
         .max_connections(1)
@@ -1521,7 +1553,8 @@ async fn arm_mysql_durable_write_fence_urls(
         }
         tokio::time::sleep(QUEUE_DRAIN_POLL).await;
     };
-    let (fingerprint, schema) = fingerprint_mysql_and_schema(reader_url).await?;
+    let (fingerprint, schema) =
+        fingerprint_mysql_and_schema_for_strategy(reader_url, strategy).await?;
     let source_pool = MySqlPoolOptions::new()
         .max_connections(1)
         .acquire_timeout(DATASTORE_TIMEOUT)
@@ -1705,6 +1738,13 @@ fn legacy_source(spec: &ProvisionSpec) -> Result<&SourceSpec, SourceError> {
         ProvisionFlow::LegacyReferenceMigration { source, .. } => Ok(source),
         _ => Err(SourceError::WrongProvisionKind),
     }
+}
+
+fn legacy_conversion_strategy(
+    spec: &ProvisionSpec,
+) -> Result<LegacyConversionStrategy, SourceError> {
+    LegacyConversionStrategy::for_schema_version(spec.schema_version)
+        .map_err(|_| SourceError::InvalidPolicy)
 }
 
 fn legacy_backup(spec: &ProvisionSpec) -> Result<(&SourceSpec, &str, &str), SourceError> {
@@ -4179,7 +4219,7 @@ fn unix_now() -> Result<i64, SourceError> {
         .ok_or(SourceError::ReceiptInvalid)
 }
 
-fn read_owner_only_file(path: &Path, maximum: u64) -> Result<Vec<u8>, SourceError> {
+pub(crate) fn read_owner_only_file(path: &Path, maximum: u64) -> Result<Vec<u8>, SourceError> {
     let path_metadata = fs::symlink_metadata(path).map_err(|_| SourceError::ReceiptInvalid)?;
     if !path_metadata.file_type().is_file()
         || path_metadata.file_type().is_symlink()
@@ -4217,7 +4257,7 @@ fn write_owner_only_create_new_bounded(
     publish_owner_only_no_clobber(path, bytes, maximum)
 }
 
-fn publish_owner_only_no_clobber(
+pub(crate) fn publish_owner_only_no_clobber(
     path: &Path,
     bytes: &[u8],
     maximum: u64,
@@ -4270,7 +4310,7 @@ fn publish_owner_only_no_clobber(
     publish_owner_only_no_clobber(path, bytes, maximum)
 }
 
-fn existing_receipt_file(path: &Path) -> Result<Option<PathBuf>, SourceError> {
+pub(crate) fn existing_receipt_file(path: &Path) -> Result<Option<PathBuf>, SourceError> {
     let partial = receipt_partial_path(path)?;
     reconcile_receipt_writing(path, &partial)?;
     let final_metadata = optional_metadata(path)?;
@@ -4500,8 +4540,41 @@ pub async fn fingerprint_mysql(database_url: &str) -> Result<String, SourceError
         .map(|(fingerprint, _)| fingerprint)
 }
 
+pub(crate) async fn fingerprint_mysql_for_strategy(
+    database_url: &str,
+    strategy: LegacyConversionStrategy,
+) -> Result<String, SourceError> {
+    match strategy {
+        LegacyConversionStrategy::PreserveAll => fingerprint_mysql(database_url).await,
+        LegacyConversionStrategy::DiscardNodesTrafficDetailsAndOperationalLogs => {
+            fingerprint_mysql_and_schema_for_strategy(database_url, strategy)
+                .await
+                .map(|(fingerprint, _)| fingerprint)
+        }
+    }
+}
+
 pub(crate) async fn fingerprint_mysql_and_schema(
     database_url: &str,
+) -> Result<(String, String), SourceError> {
+    fingerprint_mysql_and_schema_inner(database_url, LegacyConversionStrategy::PreserveAll).await
+}
+
+pub(crate) async fn fingerprint_mysql_and_schema_for_strategy(
+    database_url: &str,
+    strategy: LegacyConversionStrategy,
+) -> Result<(String, String), SourceError> {
+    match strategy {
+        LegacyConversionStrategy::PreserveAll => fingerprint_mysql_and_schema(database_url).await,
+        LegacyConversionStrategy::DiscardNodesTrafficDetailsAndOperationalLogs => {
+            fingerprint_mysql_and_schema_inner(database_url, strategy).await
+        }
+    }
+}
+
+async fn fingerprint_mysql_and_schema_inner(
+    database_url: &str,
+    strategy: LegacyConversionStrategy,
 ) -> Result<(String, String), SourceError> {
     let pool = MySqlPoolOptions::new()
         .max_connections(1)
@@ -4512,7 +4585,7 @@ pub(crate) async fn fingerprint_mysql_and_schema(
     let schema_before = semantic_schema_hash(&pool)
         .await
         .map_err(|_| SourceError::Mysql)?;
-    let fingerprint = fingerprint_mysql_pool(&pool).await?;
+    let fingerprint = fingerprint_mysql_pool(&pool, strategy).await?;
     let schema_after = semantic_schema_hash(&pool)
         .await
         .map_err(|_| SourceError::Mysql)?;
@@ -4523,7 +4596,10 @@ pub(crate) async fn fingerprint_mysql_and_schema(
     Ok((fingerprint, schema_after))
 }
 
-async fn fingerprint_mysql_pool(pool: &MySqlPool) -> Result<String, SourceError> {
+async fn fingerprint_mysql_pool(
+    pool: &MySqlPool,
+    strategy: LegacyConversionStrategy,
+) -> Result<String, SourceError> {
     let failed_jobs_before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM `failed_jobs`")
         .fetch_one(pool)
         .await
@@ -4531,9 +4607,10 @@ async fn fingerprint_mysql_pool(pool: &MySqlPool) -> Result<String, SourceError>
     if failed_jobs_before != 0 {
         return Err(SourceError::SourceDrift);
     }
-    let (_, fingerprint) = fingerprint_legacy_source(pool, DEFAULT_BATCH_SIZE)
-        .await
-        .map_err(|_| SourceError::Mysql)?;
+    let (_, fingerprint) =
+        fingerprint_legacy_source_for_strategy(pool, DEFAULT_BATCH_SIZE, strategy)
+            .await
+            .map_err(|_| SourceError::Mysql)?;
     let failed_jobs_after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM `failed_jobs`")
         .fetch_one(pool)
         .await

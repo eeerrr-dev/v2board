@@ -30,12 +30,17 @@ const MAX_SPEC_BYTES: u64 = 1024 * 1024;
 const RUNTIME_KEYS_V1: &[&str] = FILE_ONLY_RUNTIME_KEYS_V1;
 const MANIFEST_HMAC_DOMAIN_V3: &[u8] = b"v2board-provision-manifest-v3\0";
 const MANIFEST_HMAC_DOMAIN_V4: &[u8] = b"v2board-provision-manifest-v4\0";
+const MANIFEST_HMAC_DOMAIN_V5: &[u8] = b"v2board-provision-manifest-v5\0";
 pub(crate) const REPORT_HMAC_DOMAIN_V3: &[u8] = b"v2board-provision-report-v3\0";
 pub(crate) const REPORT_HMAC_DOMAIN_V4: &[u8] = b"v2board-provision-report-v4\0";
+pub(crate) const REPORT_HMAC_DOMAIN_V5: &[u8] = b"v2board-provision-report-v5\0";
 const APPLY_AUTHORIZATION_HMAC_DOMAIN_V3: &[u8] = b"v2board-provision-apply-authorization-v3\0";
 const LEGACY_EXECUTION_HMAC_DOMAIN_V1: &[u8] = b"v2board-provision-legacy-execution-v1\0";
+const LEGACY_EXECUTION_HMAC_DOMAIN_V2: &[u8] = b"v2board-provision-legacy-execution-v2\0";
 const LEGACY_RUNTIME_RECEIPT_HMAC_DOMAIN_V1: &[u8] =
     b"v2board-provision-legacy-runtime-receipt-v1\0";
+const LEGACY_RUNTIME_RECEIPT_HMAC_DOMAIN_V2: &[u8] =
+    b"v2board-provision-legacy-runtime-receipt-v2\0";
 
 const LIFECYCLE_STATE_ROOT: &str = "/var/lib/v2board/lifecycle";
 const LIFECYCLE_SECRET_ROOT: &str = "/run/v2board-lifecycle-secrets";
@@ -314,8 +319,7 @@ pub struct FreshInstallAttestationSpec {
     pub external_controls_reviewed: bool,
 }
 
-#[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Serialize)]
 pub struct LegacyDecisionSpec {
     pub legacy_configuration: LegacyConfigurationDecision,
     pub sessions: SessionDecision,
@@ -323,13 +327,39 @@ pub struct LegacyDecisionSpec {
     pub legacy_stripe: LegacyStripeDecision,
     pub temporary_subscription_links: TemporarySubscriptionLinkDecision,
     pub nodes: NodeDecision,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub legacy_traffic_details: Option<LegacyTrafficDetailsDecision>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub legacy_operational_logs: Option<LegacyOperationalLogsDecision>,
     pub legacy_theme: LegacyThemeDecision,
     pub legacy_custom_rules: LegacyCustomRulesDecision,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct LegacyDecisionSpecV3 {
+    legacy_configuration: LegacyConfigurationDecision,
+    sessions: SessionDecision,
+    legacy_cache: LegacyCacheDecision,
+    legacy_stripe: LegacyStripeDecision,
+    temporary_subscription_links: TemporarySubscriptionLinkDecision,
+    nodes: NodeDecision,
+    legacy_theme: LegacyThemeDecision,
+    legacy_custom_rules: LegacyCustomRulesDecision,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct LegacyDecisionSpecV4 {
+    legacy_custom_rules: LegacyCustomRulesDecision,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LegacyDecisionSpecV5 {
+    nodes: NodeDecision,
+    legacy_traffic_details: LegacyTrafficDetailsDecision,
+    legacy_operational_logs: LegacyOperationalLogsDecision,
     legacy_custom_rules: LegacyCustomRulesDecision,
 }
 
@@ -367,6 +397,19 @@ pub enum TemporarySubscriptionLinkDecision {
 #[serde(rename_all = "snake_case")]
 pub enum NodeDecision {
     OneShotOfflineCutover,
+    DiscardAndManualRebuild,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LegacyTrafficDetailsDecision {
+    Discard,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LegacyOperationalLogsDecision {
+    Discard,
 }
 
 #[derive(Clone, Copy, Deserialize, Eq, PartialEq, Serialize)]
@@ -394,7 +437,7 @@ pub struct LegacyAttestationSpec {
 }
 
 /// Bare-metal inputs for one irreversible legacy cutover. This section is
-/// present only in schema v4. Runtime observations and completion claims do
+/// present in schema v4 and v5. Runtime observations and completion claims do
 /// not belong here: their content hashes are appended to the durable journal
 /// after the corresponding action actually succeeds.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -408,6 +451,8 @@ pub struct LegacyExecutionSpec {
     pub receipts: LegacyReceiptExecutionSpec,
     pub backup: LegacyBackupExecutionSpec,
     pub nodes: LegacyNodeExecutionSpec,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub legacy_traffic_details: Option<LegacyTrafficDetailsDecision>,
     #[serde(skip)]
     pub source_retirement: LegacySourceRetirementExecutionSpec,
 }
@@ -500,6 +545,15 @@ pub struct LegacyReceiptExecutionSpec {
     pub runtime_compatibility_disabled_path: PathBuf,
     #[serde(skip)]
     pub postgres_authority_path: PathBuf,
+    /// Schema-v5-only durable preimage for the PostgreSQL value-verification
+    /// report. Derived from the operation ID; never supplied by the operator
+    /// and never serialized into the frozen schema-v4 execution binding.
+    #[serde(skip)]
+    pub postgres_verification_path: Option<PathBuf>,
+    /// Schema-v5-only durable preimage for the ClickHouse projection report.
+    /// See `postgres_verification_path` for the compatibility rationale.
+    #[serde(skip)]
+    pub clickhouse_projection_path: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -552,6 +606,8 @@ pub(crate) enum LegacyRuntimeReceiptKind {
     SourceRetirement,
     RuntimeCompatibilityDisabled,
     PostgresAuthority,
+    PostgresVerificationReport,
+    ClickHouseProjectionReport,
 }
 
 impl LegacyRuntimeReceiptKind {
@@ -567,7 +623,16 @@ impl LegacyRuntimeReceiptKind {
             Self::SourceRetirement => b"source_retirement",
             Self::RuntimeCompatibilityDisabled => b"runtime_compatibility_disabled",
             Self::PostgresAuthority => b"postgres_authority",
+            Self::PostgresVerificationReport => b"postgres_verification_report",
+            Self::ClickHouseProjectionReport => b"clickhouse_projection_report",
         }
+    }
+
+    const fn schema_v5_only(self) -> bool {
+        matches!(
+            self,
+            Self::PostgresVerificationReport | Self::ClickHouseProjectionReport
+        )
     }
 }
 
@@ -590,6 +655,7 @@ pub struct LegacyNodeIdentitySpec {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum LegacyNodeActivationTransportSpec {
     NotRequiredNoNodes,
+    DiscardAndManualRebuild,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -705,7 +771,7 @@ struct LegacyMigrationDocumentV3 {
     source: SourceSpec,
     target: TargetSpec,
     runtime: Map<String, Value>,
-    decisions: LegacyDecisionSpec,
+    decisions: LegacyDecisionSpecV3,
     attestations: LegacyAttestationSpec,
 }
 
@@ -720,6 +786,20 @@ struct LegacyMigrationDocumentV4 {
     target: TargetSpec,
     runtime: Map<String, Value>,
     decisions: LegacyDecisionSpecV4,
+    execution: LegacyExecutionDocumentV4,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LegacyMigrationDocumentV5 {
+    schema_version: u32,
+    operation_id: String,
+    kind: ProvisionKind,
+    lifecycle_audit_key: String,
+    source: SourceSpec,
+    target: TargetSpec,
+    runtime: Map<String, Value>,
+    decisions: LegacyDecisionSpecV5,
     execution: LegacyExecutionDocumentV4,
 }
 
@@ -761,7 +841,7 @@ pub enum ProvisionSpecError {
     Read(#[source] io::Error),
     #[error("provision spec is not valid strict JSON: {0}")]
     Json(#[source] serde_json::Error),
-    #[error("unsupported provision spec schema_version; expected 3 or 4")]
+    #[error("unsupported provision spec schema_version; expected 3, 4, or 5")]
     SchemaVersion,
     #[error("operation_id must be a UUID")]
     OperationId,
@@ -813,7 +893,7 @@ pub fn load_provision_spec(path: impl AsRef<Path>) -> Result<ProvisionSpec, Prov
         .and_then(Value::as_u64)
         .and_then(|value| u32::try_from(value).ok())
         .ok_or(ProvisionSpecError::SchemaVersion)?;
-    if !matches!(schema_version, 3 | 4) {
+    if !matches!(schema_version, 3..=5) {
         return Err(ProvisionSpecError::SchemaVersion);
     }
     let kind = serde_json::from_value::<ProvisionKind>(
@@ -851,7 +931,7 @@ pub fn load_provision_spec(path: impl AsRef<Path>) -> Result<ProvisionSpec, Prov
                     source: document.source,
                     target: document.target,
                     runtime: document.runtime,
-                    decisions: document.decisions,
+                    decisions: hydrate_legacy_v3_decisions(document.decisions),
                     attestations: Some(document.attestations),
                     execution: None,
                 },
@@ -863,7 +943,13 @@ pub fn load_provision_spec(path: impl AsRef<Path>) -> Result<ProvisionSpec, Prov
             hydrate_legacy_v4_target(&mut value)?;
             let document = serde_json::from_value::<LegacyMigrationDocumentV4>(value)
                 .map_err(ProvisionSpecError::Json)?;
-            let execution = hydrate_legacy_execution(&document.operation_id, document.execution);
+            let execution = hydrate_legacy_execution(
+                &document.operation_id,
+                document.execution,
+                LegacyNodeActivationTransportSpec::NotRequiredNoNodes,
+                None,
+                false,
+            );
             ProvisionSpec {
                 schema_version: document.schema_version,
                 operation_id: document.operation_id,
@@ -875,6 +961,36 @@ pub fn load_provision_spec(path: impl AsRef<Path>) -> Result<ProvisionSpec, Prov
                     target: document.target,
                     runtime: document.runtime,
                     decisions: hydrate_legacy_v4_decisions(document.decisions),
+                    attestations: None,
+                    execution: Some(Box::new(execution)),
+                },
+                manifest_binding_hmac_sha256: String::new(),
+            }
+        }
+        (5, ProvisionKind::LegacyReferenceMigration) => {
+            let mut value = unique.0;
+            hydrate_legacy_v4_target(&mut value)?;
+            let document = serde_json::from_value::<LegacyMigrationDocumentV5>(value)
+                .map_err(ProvisionSpecError::Json)?;
+            let decisions = hydrate_legacy_v5_decisions(document.decisions);
+            let execution = hydrate_legacy_execution(
+                &document.operation_id,
+                document.execution,
+                LegacyNodeActivationTransportSpec::DiscardAndManualRebuild,
+                Some(LegacyTrafficDetailsDecision::Discard),
+                true,
+            );
+            ProvisionSpec {
+                schema_version: document.schema_version,
+                operation_id: document.operation_id,
+                kind: document.kind,
+                lifecycle_audit_key: document.lifecycle_audit_key,
+                flow: ProvisionFlow::LegacyReferenceMigration {
+                    reference_commit: LEGACY_REFERENCE_COMMIT.to_string(),
+                    source: document.source,
+                    target: document.target,
+                    runtime: document.runtime,
+                    decisions,
                     attestations: None,
                     execution: Some(Box::new(execution)),
                 },
@@ -904,6 +1020,11 @@ pub fn load_provision_spec(path: impl AsRef<Path>) -> Result<ProvisionSpec, Prov
                 "schema_version 4 currently defines execution inputs only for legacy_reference_migration",
             ));
         }
+        (5, ProvisionKind::FreshInstall | ProvisionKind::NativeUpgrade) => {
+            return Err(ProvisionSpecError::Validation(
+                "schema_version 5 currently defines discard-policy execution inputs only for legacy_reference_migration",
+            ));
+        }
         _ => return Err(ProvisionSpecError::SchemaVersion),
     };
     validate_spec(&spec)?;
@@ -913,12 +1034,16 @@ pub fn load_provision_spec(path: impl AsRef<Path>) -> Result<ProvisionSpec, Prov
     mac.update(match spec.schema_version {
         3 => MANIFEST_HMAC_DOMAIN_V3,
         4 => MANIFEST_HMAC_DOMAIN_V4,
+        5 => MANIFEST_HMAC_DOMAIN_V5,
         _ => return Err(ProvisionSpecError::SchemaVersion),
     });
     mac.update(&bytes);
     if spec.schema_version == 4 {
         mac.update(&[0]);
         mac.update(&legacy_v4_hydrated_facts(&spec)?);
+    } else if spec.schema_version == 5 {
+        mac.update(&[0]);
+        mac.update(&legacy_v5_hydrated_facts(&spec)?);
     }
     spec.manifest_binding_hmac_sha256 = hex::encode(mac.finalize().into_bytes());
     Ok(spec)
@@ -926,6 +1051,14 @@ pub fn load_provision_spec(path: impl AsRef<Path>) -> Result<ProvisionSpec, Prov
 
 #[derive(Serialize)]
 struct LegacyV4HydratedFacts<'a> {
+    binding_version: u32,
+    reference_commit: &'a str,
+    decisions: &'a LegacyDecisionSpec,
+    execution: &'a LegacyExecutionSpec,
+}
+
+#[derive(Serialize)]
+struct LegacyV5HydratedFacts<'a> {
     binding_version: u32,
     reference_commit: &'a str,
     decisions: &'a LegacyDecisionSpec,
@@ -946,6 +1079,27 @@ fn legacy_v4_hydrated_facts(spec: &ProvisionSpec) -> Result<Vec<u8>, ProvisionSp
     };
     serde_json::to_vec(&LegacyV4HydratedFacts {
         binding_version: 1,
+        reference_commit,
+        decisions,
+        execution,
+    })
+    .map_err(ProvisionSpecError::Json)
+}
+
+fn legacy_v5_hydrated_facts(spec: &ProvisionSpec) -> Result<Vec<u8>, ProvisionSpecError> {
+    let ProvisionFlow::LegacyReferenceMigration {
+        reference_commit,
+        decisions,
+        execution: Some(execution),
+        ..
+    } = &spec.flow
+    else {
+        return Err(ProvisionSpecError::Validation(
+            "schema v5 hydrated legacy facts are unavailable",
+        ));
+    };
+    serde_json::to_vec(&LegacyV5HydratedFacts {
+        binding_version: 3,
         reference_commit,
         decisions,
         execution,
@@ -1052,6 +1206,21 @@ fn insert_derived(
 /// values out of the manifest prevents a hand-edited file from restating (and
 /// potentially mistyping) values already bound by `operation_id` and the
 /// installed lifecycle release.
+fn hydrate_legacy_v3_decisions(decisions: LegacyDecisionSpecV3) -> LegacyDecisionSpec {
+    LegacyDecisionSpec {
+        legacy_configuration: decisions.legacy_configuration,
+        sessions: decisions.sessions,
+        legacy_cache: decisions.legacy_cache,
+        legacy_stripe: decisions.legacy_stripe,
+        temporary_subscription_links: decisions.temporary_subscription_links,
+        nodes: decisions.nodes,
+        legacy_traffic_details: None,
+        legacy_operational_logs: None,
+        legacy_theme: decisions.legacy_theme,
+        legacy_custom_rules: decisions.legacy_custom_rules,
+    }
+}
+
 fn hydrate_legacy_v4_decisions(decisions: LegacyDecisionSpecV4) -> LegacyDecisionSpec {
     LegacyDecisionSpec {
         legacy_configuration: LegacyConfigurationDecision::ManualOnly,
@@ -1060,6 +1229,23 @@ fn hydrate_legacy_v4_decisions(decisions: LegacyDecisionSpecV4) -> LegacyDecisio
         legacy_stripe: LegacyStripeDecision::AssertNone,
         temporary_subscription_links: TemporarySubscriptionLinkDecision::InvalidateAtCutover,
         nodes: NodeDecision::OneShotOfflineCutover,
+        legacy_traffic_details: None,
+        legacy_operational_logs: None,
+        legacy_theme: LegacyThemeDecision::DiscardConfirmed,
+        legacy_custom_rules: decisions.legacy_custom_rules,
+    }
+}
+
+fn hydrate_legacy_v5_decisions(decisions: LegacyDecisionSpecV5) -> LegacyDecisionSpec {
+    LegacyDecisionSpec {
+        legacy_configuration: LegacyConfigurationDecision::ManualOnly,
+        sessions: SessionDecision::LogoutAll,
+        legacy_cache: LegacyCacheDecision::DiscardEphemeralAfterFence,
+        legacy_stripe: LegacyStripeDecision::AssertNone,
+        temporary_subscription_links: TemporarySubscriptionLinkDecision::InvalidateAtCutover,
+        nodes: decisions.nodes,
+        legacy_traffic_details: Some(decisions.legacy_traffic_details),
+        legacy_operational_logs: Some(decisions.legacy_operational_logs),
         legacy_theme: LegacyThemeDecision::DiscardConfirmed,
         legacy_custom_rules: decisions.legacy_custom_rules,
     }
@@ -1068,6 +1254,9 @@ fn hydrate_legacy_v4_decisions(decisions: LegacyDecisionSpecV4) -> LegacyDecisio
 fn hydrate_legacy_execution(
     operation_id: &str,
     input: LegacyExecutionDocumentV4,
+    activation_transport: LegacyNodeActivationTransportSpec,
+    legacy_traffic_details: Option<LegacyTrafficDetailsDecision>,
+    durable_report_receipts: bool,
 ) -> LegacyExecutionSpec {
     let mut execution = LegacyExecutionSpec {
         journal: LegacyJournalExecutionSpec::default(),
@@ -1077,9 +1266,10 @@ fn hydrate_legacy_execution(
         receipts: input.receipts,
         backup: input.backup,
         nodes: LegacyNodeExecutionSpec {
-            activation_transport: LegacyNodeActivationTransportSpec::NotRequiredNoNodes,
+            activation_transport,
             inventory: Vec::new(),
         },
+        legacy_traffic_details,
         source_retirement: LegacySourceRetirementExecutionSpec::default(),
     };
     let operation_root = Path::new(LIFECYCLE_STATE_ROOT)
@@ -1112,6 +1302,12 @@ fn hydrate_legacy_execution(
     execution.receipts.runtime_compatibility_disabled_path =
         receipt_root.join("runtime-compatibility-disabled.json");
     execution.receipts.postgres_authority_path = receipt_root.join("postgres-authority.json");
+    if durable_report_receipts {
+        execution.receipts.postgres_verification_path =
+            Some(receipt_root.join("postgres-verification-report.json"));
+        execution.receipts.clickhouse_projection_path =
+            Some(receipt_root.join("clickhouse-projection-report.json"));
+    }
 
     execution.backup.mode = LegacyBackupMode::MysqlLogicalDumpAndIsolatedRestore;
     execution.backup.encrypted_backup_output_path =
@@ -1151,7 +1347,7 @@ fn validate_manifest_execution_separation(
         .backup
         .isolated_restore_state_path
         .with_file_name(format!(".{restore_state_name}.archive-materialization"));
-    let declared = [
+    let mut declared = vec![
         execution.journal.root.as_path(),
         execution.journal.authorization_path.as_path(),
         execution.journal.activation_state_root.as_path(),
@@ -1179,6 +1375,18 @@ fn validate_manifest_execution_separation(
             .retirement_probe_state_path
             .as_path(),
     ];
+    declared.extend(
+        receipts
+            .postgres_verification_path
+            .iter()
+            .map(PathBuf::as_path),
+    );
+    declared.extend(
+        receipts
+            .clickhouse_projection_path
+            .iter()
+            .map(PathBuf::as_path),
+    );
     if declared.contains(&manifest.as_path()) {
         return Err(ProvisionSpecError::Validation(
             "the lifecycle manifest must not alias any journal, release, receipt, backup, node, or retirement path",
@@ -1188,7 +1396,7 @@ fn validate_manifest_execution_separation(
 }
 
 fn validate_spec(spec: &ProvisionSpec) -> Result<(), ProvisionSpecError> {
-    if !matches!(spec.schema_version, 3 | 4) {
+    if !matches!(spec.schema_version, 3..=5) {
         return Err(ProvisionSpecError::SchemaVersion);
     }
     Uuid::parse_str(&spec.operation_id).map_err(|_| ProvisionSpecError::OperationId)?;
@@ -1310,16 +1518,47 @@ fn validate_flow(spec: &ProvisionSpec) -> Result<(), ProvisionSpecError> {
                 || decisions.legacy_stripe != LegacyStripeDecision::AssertNone
                 || decisions.temporary_subscription_links
                     != TemporarySubscriptionLinkDecision::InvalidateAtCutover
-                || decisions.nodes != NodeDecision::OneShotOfflineCutover
                 || decisions.legacy_theme != LegacyThemeDecision::DiscardConfirmed
                 || !matches!(
                     decisions.legacy_custom_rules,
                     LegacyCustomRulesDecision::None | LegacyCustomRulesDecision::DiscardConfirmed
                 )
             {
-                return Err(ProvisionSpecError::Validation(
-                    "legacy migration decisions must use manual config, logout-all, discard-fenced cache, zero Stripe, invalidated temporary subscription links, and one-shot offline cutover",
-                ));
+                return Err(if matches!(spec.schema_version, 3 | 4) {
+                    ProvisionSpecError::Validation(
+                        "legacy migration decisions must use manual config, logout-all, discard-fenced cache, zero Stripe, invalidated temporary subscription links, and one-shot offline cutover",
+                    )
+                } else {
+                    ProvisionSpecError::Validation(
+                        "legacy migration decisions must use manual config, logout-all, discard-fenced cache, zero Stripe, and invalidated temporary subscription links",
+                    )
+                });
+            }
+            let schema_decisions_are_valid = match spec.schema_version {
+                3 | 4 => {
+                    decisions.nodes == NodeDecision::OneShotOfflineCutover
+                        && decisions.legacy_traffic_details.is_none()
+                        && decisions.legacy_operational_logs.is_none()
+                }
+                5 => {
+                    decisions.nodes == NodeDecision::DiscardAndManualRebuild
+                        && decisions.legacy_traffic_details
+                            == Some(LegacyTrafficDetailsDecision::Discard)
+                        && decisions.legacy_operational_logs
+                            == Some(LegacyOperationalLogsDecision::Discard)
+                }
+                _ => false,
+            };
+            if !schema_decisions_are_valid {
+                return Err(if matches!(spec.schema_version, 3 | 4) {
+                    ProvisionSpecError::Validation(
+                        "legacy migration decisions must use manual config, logout-all, discard-fenced cache, zero Stripe, invalidated temporary subscription links, and one-shot offline cutover",
+                    )
+                } else {
+                    ProvisionSpecError::Validation(
+                        "legacy migration node, traffic-detail, and operational-log decisions do not match the selected schema version",
+                    )
+                });
             }
             validate_legacy_source(source, target)?;
             validate_target(target)?;
@@ -1334,11 +1573,28 @@ fn validate_flow(spec: &ProvisionSpec) -> Result<(), ProvisionSpecError> {
             match (spec.schema_version, execution, attestations) {
                 (3, None, Some(_)) => {}
                 (4, Some(execution), None) => {
-                    validate_legacy_execution(&spec.operation_id, source, execution)?;
+                    validate_legacy_execution(
+                        &spec.operation_id,
+                        source,
+                        execution,
+                        LegacyNodeActivationTransportSpec::NotRequiredNoNodes,
+                        None,
+                        false,
+                    )?;
+                }
+                (5, Some(execution), None) => {
+                    validate_legacy_execution(
+                        &spec.operation_id,
+                        source,
+                        execution,
+                        LegacyNodeActivationTransportSpec::DiscardAndManualRebuild,
+                        Some(LegacyTrafficDetailsDecision::Discard),
+                        true,
+                    )?;
                 }
                 _ => {
                     return Err(ProvisionSpecError::Validation(
-                        "legacy execution inputs are required by schema_version 4 and forbidden in schema_version 3",
+                        "legacy execution inputs are required by schema_version 4 and 5 and forbidden in schema_version 3",
                     ));
                 }
             }
@@ -1374,6 +1630,9 @@ fn validate_legacy_execution(
     operation_id: &str,
     source: &SourceSpec,
     execution: &LegacyExecutionSpec,
+    expected_node_transport: LegacyNodeActivationTransportSpec,
+    expected_traffic_details: Option<LegacyTrafficDetailsDecision>,
+    durable_report_receipts: bool,
 ) -> Result<(), ProvisionSpecError> {
     let journal = &execution.journal;
     if journal.root != Path::new(JOURNAL_ROOT)
@@ -1421,7 +1680,14 @@ fn validate_legacy_execution(
             "the immutable release archive receipt requires a lowercase SHA-256",
         ));
     }
-    let receipt_paths: [&Path; 11] = [
+    if receipts.postgres_verification_path.is_some() != durable_report_receipts
+        || receipts.clickhouse_projection_path.is_some() != durable_report_receipts
+    {
+        return Err(ProvisionSpecError::Validation(
+            "schema-v5 requires both derived durable report receipt paths and schema-v4 forbids them",
+        ));
+    }
+    let mut receipt_paths = vec![
         receipts.release_archive.path.as_path(),
         receipts.source_fence_path.as_path(),
         receipts.source_drain_path.as_path(),
@@ -1434,7 +1700,19 @@ fn validate_legacy_execution(
         receipts.runtime_compatibility_disabled_path.as_path(),
         receipts.postgres_authority_path.as_path(),
     ];
-    for path in receipt_paths {
+    receipt_paths.extend(
+        receipts
+            .postgres_verification_path
+            .iter()
+            .map(PathBuf::as_path),
+    );
+    receipt_paths.extend(
+        receipts
+            .clickhouse_projection_path
+            .iter()
+            .map(PathBuf::as_path),
+    );
+    for path in &receipt_paths {
         validate_operation_private_path(operation_id, path)?;
     }
     require_unique_paths(
@@ -1514,14 +1792,21 @@ fn validate_legacy_execution(
 
     let nodes = &execution.nodes;
     if !nodes.inventory.is_empty()
-        || !matches!(
-            nodes.activation_transport,
-            LegacyNodeActivationTransportSpec::NotRequiredNoNodes
-        )
+        || nodes.activation_transport != expected_node_transport
+        || execution.legacy_traffic_details != expected_traffic_details
     {
-        return Err(ProvisionSpecError::Validation(
-            "schema-v4 legacy migration requires an empty node inventory and not_required_no_nodes because external node activation is outside this repository",
-        ));
+        return Err(match expected_node_transport {
+            LegacyNodeActivationTransportSpec::NotRequiredNoNodes => {
+                ProvisionSpecError::Validation(
+                    "schema-v4 legacy migration requires an empty node inventory and not_required_no_nodes because external node activation is outside this repository",
+                )
+            }
+            LegacyNodeActivationTransportSpec::DiscardAndManualRebuild => {
+                ProvisionSpecError::Validation(
+                    "schema-v5 legacy migration requires an empty target node inventory and discard_and_manual_rebuild; source inventory must come from inspection",
+                )
+            }
+        });
     }
 
     let retirement = &execution.source_retirement;
@@ -1548,7 +1833,7 @@ fn validate_legacy_execution(
         .isolated_restore_state_path
         .with_file_name(format!(".{restore_state_name}.archive-materialization"));
     validate_operation_private_path(operation_id, &archive_materialization_state_path)?;
-    let all_file_paths: [&Path; 19] = [
+    let mut all_file_paths = vec![
         journal.authorization_path.as_path(),
         release.archive_path.as_path(),
         receipts.release_archive.path.as_path(),
@@ -1569,6 +1854,18 @@ fn validate_legacy_execution(
         archive_materialization_state_path.as_path(),
         retirement.retirement_probe_state_path.as_path(),
     ];
+    all_file_paths.extend(
+        receipts
+            .postgres_verification_path
+            .iter()
+            .map(PathBuf::as_path),
+    );
+    all_file_paths.extend(
+        receipts
+            .clickhouse_projection_path
+            .iter()
+            .map(PathBuf::as_path),
+    );
     require_unique_paths(
         &all_file_paths,
         "legacy execution file paths must not alias one another",
@@ -1656,12 +1953,12 @@ fn validate_legacy_source_control(
     .any(|prefix| !valid_redis_physical_prefix(prefix, true))
     {
         return Err(ProvisionSpecError::Validation(
-            "schema_version 4 requires the exact nonempty Laravel Redis connection and cache prefixes",
+            "executable legacy schemas require the exact nonempty Laravel Redis connection and cache prefixes",
         ));
     }
     if !valid_redis_physical_prefix(&source.redis_horizon_prefix, true) {
         return Err(ProvisionSpecError::Validation(
-            "schema_version 4 requires the exact nonempty Laravel Horizon Redis prefix",
+            "executable legacy schemas require the exact nonempty Laravel Horizon Redis prefix",
         ));
     }
     if [
@@ -1670,7 +1967,7 @@ fn validate_legacy_source_control(
             .database_fence_url
             .as_deref()
             .ok_or(ProvisionSpecError::Validation(
-                "schema_version 4 requires source.database_fence_url for the durable MySQL write fence",
+                "executable legacy schemas require source.database_fence_url for the durable MySQL write fence",
             ))?,
         source.redis_default_url.as_str(),
         source.redis_cache_url.as_str(),
@@ -1679,7 +1976,7 @@ fn validate_legacy_source_control(
     .any(|url| !url_uses_literal_loopback(url))
     {
         return Err(ProvisionSpecError::Validation(
-            "schema_version 4 local_dedicated_systemd source datastores require literal loopback URLs; remote or managed sources need a future provider-specific automation adapter",
+            "executable legacy schemas require literal-loopback local_dedicated_systemd source datastores; remote or managed sources need a future provider-specific automation adapter",
         ));
     }
     let datastore_units = [
@@ -1692,7 +1989,7 @@ fn validate_legacy_source_control(
             .map_err(|_| ProvisionSpecError::Validation("source Redis fence URL must be valid"))?;
         if parsed.username().is_empty() || parsed.username() == "default" {
             return Err(ProvisionSpecError::Validation(
-                "schema_version 4 source Redis URLs must use a dedicated named lifecycle ACL user with the reviewed full-access drain/fence grant",
+                "executable legacy schemas require source Redis URLs to use a dedicated named lifecycle ACL user with the reviewed full-access drain/fence grant",
             ));
         }
     }
@@ -3225,15 +3522,15 @@ impl ProvisionSpec {
         &self.manifest_binding_hmac_sha256
     }
 
-    /// Returns the complete, HMAC-bound bare-metal intent only for a schema
-    /// v4 legacy migration. Schema v3 remains loadable for validate/inspect,
-    /// but deliberately has no apply execution accessor.
+    /// Returns the complete, HMAC-bound bare-metal intent for schema-v4 and
+    /// schema-v5 legacy migrations. Schema v3 remains loadable for
+    /// validate/inspect, but deliberately has no apply execution accessor.
     pub fn legacy_apply_execution(&self) -> Option<&LegacyExecutionSpec> {
         match &self.flow {
             ProvisionFlow::LegacyReferenceMigration {
                 execution: Some(execution),
                 ..
-            } if self.schema_version == 4 => Some(execution.as_ref()),
+            } if matches!(self.schema_version, 4 | 5) => Some(execution.as_ref()),
             _ => None,
         }
     }
@@ -3247,7 +3544,11 @@ impl ProvisionSpec {
         let mut mac =
             <Hmac<Sha256> as KeyInit>::new_from_slice(self.lifecycle_audit_key.as_bytes())
                 .expect("HMAC accepts keys of any length");
-        mac.update(LEGACY_EXECUTION_HMAC_DOMAIN_V1);
+        mac.update(match self.schema_version {
+            4 => LEGACY_EXECUTION_HMAC_DOMAIN_V1,
+            5 => LEGACY_EXECUTION_HMAC_DOMAIN_V2,
+            _ => return None,
+        });
         mac.update(self.operation_id.as_bytes());
         mac.update(&[0]);
         mac.update(&bytes);
@@ -3256,7 +3557,8 @@ impl ProvisionSpec {
 
     /// Binds evidence produced after authorization without exposing the audit
     /// key or pretending the evidence digest existed in the manifest. Only a
-    /// schema-v4 legacy operation can mint or verify this scoped receipt MAC.
+    /// schema-v4 or schema-v5 legacy operation can mint or verify this scoped
+    /// receipt MAC.
     pub(crate) fn source_receipt_binding_hmac_sha256(
         &self,
         kind: LegacyRuntimeReceiptKind,
@@ -3288,10 +3590,17 @@ impl ProvisionSpec {
         canonical_bytes: &[u8],
     ) -> Option<Hmac<Sha256>> {
         self.legacy_apply_execution()?;
+        if kind.schema_v5_only() && self.schema_version != 5 {
+            return None;
+        }
         let mut mac =
             <Hmac<Sha256> as KeyInit>::new_from_slice(self.lifecycle_audit_key.as_bytes())
                 .expect("HMAC accepts keys of any length");
-        mac.update(LEGACY_RUNTIME_RECEIPT_HMAC_DOMAIN_V1);
+        mac.update(match self.schema_version {
+            4 => LEGACY_RUNTIME_RECEIPT_HMAC_DOMAIN_V1,
+            5 => LEGACY_RUNTIME_RECEIPT_HMAC_DOMAIN_V2,
+            _ => return None,
+        });
         mac.update(kind.domain_label());
         mac.update(&[0]);
         mac.update(self.operation_id.as_bytes());
@@ -3543,6 +3852,7 @@ impl ProvisionSpec {
         mac.update(match self.schema_version {
             3 => REPORT_HMAC_DOMAIN_V3,
             4 => REPORT_HMAC_DOMAIN_V4,
+            5 => REPORT_HMAC_DOMAIN_V5,
             _ => unreachable!("validated provision schema"),
         });
         mac.update(bytes);
@@ -3906,6 +4216,18 @@ pub(crate) mod tests {
         document
     }
 
+    fn legacy_v5_document() -> Value {
+        let mut document = legacy_v4_document();
+        document["schema_version"] = Value::from(5);
+        document["decisions"] = serde_json::json!({
+            "nodes": "discard_and_manual_rebuild",
+            "legacy_traffic_details": "discard",
+            "legacy_operational_logs": "discard",
+            "legacy_custom_rules": "none"
+        });
+        document
+    }
+
     fn remove_legacy_v4_derived_inputs(document: &mut Value) {
         document
             .as_object_mut()
@@ -3974,6 +4296,12 @@ pub(crate) mod tests {
         let mut document = legacy_v4_document();
         document["operation_id"] = Value::String(operation_id.to_string());
         load_document(&document).expect("valid operation-bound legacy test manifest")
+    }
+
+    pub(crate) fn legacy_v5_spec_for_orchestration_operation(operation_id: &str) -> ProvisionSpec {
+        let mut document = legacy_v5_document();
+        document["operation_id"] = Value::String(operation_id.to_string());
+        load_document(&document).expect("valid operation-bound schema-v5 legacy test manifest")
     }
 
     fn native_document() -> Value {
@@ -4189,6 +4517,7 @@ pub(crate) mod tests {
             execution.nodes.activation_transport,
             LegacyNodeActivationTransportSpec::NotRequiredNoNodes
         ));
+        assert!(execution.legacy_traffic_details.is_none());
         let ProvisionFlow::LegacyReferenceMigration {
             reference_commit,
             decisions,
@@ -4207,11 +4536,51 @@ pub(crate) mod tests {
                 == TemporarySubscriptionLinkDecision::InvalidateAtCutover
         );
         assert!(decisions.nodes == NodeDecision::OneShotOfflineCutover);
+        assert!(decisions.legacy_traffic_details.is_none());
+        assert!(decisions.legacy_operational_logs.is_none());
         assert!(decisions.legacy_theme == LegacyThemeDecision::DiscardConfirmed);
-        let hydrated_facts: Value = serde_json::from_slice(
-            &legacy_v4_hydrated_facts(&spec).expect("hydrated facts binding"),
-        )
-        .expect("hydrated facts JSON");
+
+        #[derive(Serialize)]
+        struct HistoricalV4Decisions {
+            legacy_configuration: LegacyConfigurationDecision,
+            sessions: SessionDecision,
+            legacy_cache: LegacyCacheDecision,
+            legacy_stripe: LegacyStripeDecision,
+            temporary_subscription_links: TemporarySubscriptionLinkDecision,
+            nodes: NodeDecision,
+            legacy_theme: LegacyThemeDecision,
+            legacy_custom_rules: LegacyCustomRulesDecision,
+        }
+        #[derive(Serialize)]
+        struct HistoricalV4HydratedFacts<'a> {
+            binding_version: u32,
+            reference_commit: &'a str,
+            decisions: HistoricalV4Decisions,
+            execution: &'a LegacyExecutionSpec,
+        }
+        let hydrated_fact_bytes = legacy_v4_hydrated_facts(&spec).expect("hydrated facts binding");
+        let historical_fact_bytes = serde_json::to_vec(&HistoricalV4HydratedFacts {
+            binding_version: 1,
+            reference_commit,
+            decisions: HistoricalV4Decisions {
+                legacy_configuration: decisions.legacy_configuration,
+                sessions: decisions.sessions,
+                legacy_cache: decisions.legacy_cache,
+                legacy_stripe: decisions.legacy_stripe,
+                temporary_subscription_links: decisions.temporary_subscription_links,
+                nodes: decisions.nodes,
+                legacy_theme: decisions.legacy_theme,
+                legacy_custom_rules: decisions.legacy_custom_rules,
+            },
+            execution,
+        })
+        .expect("historical v4 facts serialize");
+        assert_eq!(
+            hydrated_fact_bytes, historical_fact_bytes,
+            "schema v4 hydrated fact bytes must remain historical-byte compatible"
+        );
+        let hydrated_facts: Value =
+            serde_json::from_slice(&hydrated_fact_bytes).expect("hydrated facts JSON");
         assert_eq!(
             hydrated_facts["reference_commit"],
             Value::String(LEGACY_REFERENCE_COMMIT.to_string())
@@ -4220,6 +4589,26 @@ pub(crate) mod tests {
             hydrated_facts["execution"]["nodes"]["activation_transport"]["kind"],
             Value::String("not_required_no_nodes".to_string())
         );
+        assert!(
+            hydrated_facts["decisions"]
+                .get("legacy_traffic_details")
+                .is_none(),
+            "schema v4 hydrated bytes must not gain a schema-v5 field"
+        );
+        assert!(
+            hydrated_facts["decisions"]
+                .get("legacy_operational_logs")
+                .is_none(),
+            "schema v4 hydrated bytes must not gain a schema-v5 field"
+        );
+        assert!(
+            hydrated_facts["execution"]
+                .get("legacy_traffic_details")
+                .is_none(),
+            "schema v4 execution bytes must not gain a schema-v5 field"
+        );
+        assert!(execution.receipts.postgres_verification_path.is_none());
+        assert!(execution.receipts.clickhouse_projection_path.is_none());
         assert_eq!(spec.manifest_binding_hmac_sha256().len(), 64);
         let first = spec
             .legacy_execution_binding_hmac_sha256()
@@ -4257,6 +4646,14 @@ pub(crate) mod tests {
             br#"{"journal_anchor_event_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","result_checkpoint":"maintenance_fenced"}"#,
             &journal_bound_receipt,
         ));
+        assert!(
+            spec.source_receipt_binding_hmac_sha256(
+                LegacyRuntimeReceiptKind::PostgresVerificationReport,
+                b"v5-only",
+            )
+            .is_none(),
+            "schema v4 must not mint a schema-v5 report receipt"
+        );
 
         let mut changed = document.clone();
         changed["execution"]["release"]["release_id"] =
@@ -4290,6 +4687,121 @@ pub(crate) mod tests {
         let mut obsolete_source_hint = legacy_v4_document();
         obsolete_source_hint["source"]["legacy_show_subscribe_method"] = Value::from(0);
         assert!(load_document(&obsolete_source_hint).is_err());
+    }
+
+    #[test]
+    fn v5_binds_explicit_discard_policies_without_operator_inventory() {
+        let document = legacy_v5_document();
+        let spec = load_document(&document).expect("valid v5 discard migration manifest");
+        assert_eq!(spec.schema_version, 5);
+        let execution = spec
+            .legacy_apply_execution()
+            .expect("v5 exposes apply intent");
+        assert!(execution.nodes.inventory.is_empty());
+        assert!(matches!(
+            execution.nodes.activation_transport,
+            LegacyNodeActivationTransportSpec::DiscardAndManualRebuild
+        ));
+        assert!(execution.legacy_traffic_details == Some(LegacyTrafficDetailsDecision::Discard));
+        assert_eq!(
+            execution
+                .receipts
+                .postgres_verification_path
+                .as_deref()
+                .and_then(Path::file_name)
+                .and_then(|name| name.to_str()),
+            Some("postgres-verification-report.json")
+        );
+        assert_eq!(
+            execution
+                .receipts
+                .clickhouse_projection_path
+                .as_deref()
+                .and_then(Path::file_name)
+                .and_then(|name| name.to_str()),
+            Some("clickhouse-projection-report.json")
+        );
+        assert!(
+            spec.source_receipt_binding_hmac_sha256(
+                LegacyRuntimeReceiptKind::PostgresVerificationReport,
+                b"report",
+            )
+            .is_some()
+        );
+
+        let ProvisionFlow::LegacyReferenceMigration { decisions, .. } = &spec.flow else {
+            panic!("legacy flow");
+        };
+        assert!(decisions.nodes == NodeDecision::DiscardAndManualRebuild);
+        assert!(decisions.legacy_traffic_details == Some(LegacyTrafficDetailsDecision::Discard));
+        assert!(decisions.legacy_operational_logs == Some(LegacyOperationalLogsDecision::Discard));
+
+        let hydrated_facts: Value = serde_json::from_slice(
+            &legacy_v5_hydrated_facts(&spec).expect("v5 hydrated facts binding"),
+        )
+        .expect("hydrated facts JSON");
+        assert_eq!(hydrated_facts["binding_version"], Value::from(3));
+        assert_eq!(
+            hydrated_facts["decisions"]["nodes"],
+            Value::String("discard_and_manual_rebuild".to_string())
+        );
+        assert_eq!(
+            hydrated_facts["decisions"]["legacy_traffic_details"],
+            Value::String("discard".to_string())
+        );
+        assert_eq!(
+            hydrated_facts["decisions"]["legacy_operational_logs"],
+            Value::String("discard".to_string())
+        );
+        assert_eq!(
+            hydrated_facts["execution"]["nodes"]["activation_transport"]["kind"],
+            Value::String("discard_and_manual_rebuild".to_string())
+        );
+        assert_eq!(
+            hydrated_facts["execution"]["legacy_traffic_details"],
+            Value::String("discard".to_string())
+        );
+
+        let v4 = load_document(&legacy_v4_document()).expect("unchanged v4 manifest");
+        assert_ne!(
+            spec.manifest_binding_hmac_sha256(),
+            v4.manifest_binding_hmac_sha256(),
+            "schema-v5 manifest binding has an independent domain"
+        );
+        assert_ne!(
+            spec.legacy_execution_binding_hmac_sha256(),
+            v4.legacy_execution_binding_hmac_sha256(),
+            "schema-v5 execution binding has an independent domain"
+        );
+
+        let mut operator_inventory = document.clone();
+        operator_inventory["execution"]["nodes"] = serde_json::json!({
+            "activation_transport": {"kind": "discard_and_manual_rebuild"},
+            "inventory": [{"node_type": "v2ray", "node_id": 7, "credential_epoch": 1}]
+        });
+        assert_unknown_field(&operator_inventory, "nodes");
+
+        for field in ["nodes", "legacy_traffic_details", "legacy_operational_logs"] {
+            let mut missing_decision = document.clone();
+            missing_decision["decisions"]
+                .as_object_mut()
+                .expect("decisions")
+                .remove(field);
+            assert!(
+                load_document(&missing_decision).is_err(),
+                "v5 accepted missing explicit decision {field}"
+            );
+        }
+
+        let mut legacy_node_policy = document;
+        legacy_node_policy["decisions"]["nodes"] =
+            Value::String("one_shot_offline_cutover".to_string());
+        assert!(matches!(
+            load_document(&legacy_node_policy),
+            Err(ProvisionSpecError::Validation(
+                "legacy migration node, traffic-detail, and operational-log decisions do not match the selected schema version"
+            ))
+        ));
     }
 
     #[test]
@@ -4334,6 +4846,8 @@ pub(crate) mod tests {
             ("legacy_stripe", "assert_none"),
             ("temporary_subscription_links", "invalidate_at_cutover"),
             ("nodes", "one_shot_offline_cutover"),
+            ("legacy_traffic_details", "discard"),
+            ("legacy_operational_logs", "discard"),
             ("legacy_theme", "discard_confirmed"),
         ] {
             let mut restated_decision = legacy_v4_document();

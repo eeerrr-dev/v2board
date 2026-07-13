@@ -10,8 +10,9 @@ use crate::{
         DurableTargetMutationPermit, NativeAuthorityBinding, backup_reference_sha256,
     },
     legacy_converter::{
-        DERIVED_MAPPINGS, TABLE_MAPPINGS, TARGET_ONLY_TABLES, TARGET_POSTGRES_LINEAGE_SHA256,
-        registry_sha256, target_postgres_lineage_sha256,
+        DERIVED_MAPPINGS, LegacyConversionStrategy, TABLE_MAPPINGS, TARGET_ONLY_TABLES,
+        TARGET_POSTGRES_LINEAGE_SHA256, registry_sha256_for_strategy,
+        target_postgres_lineage_sha256,
     },
 };
 
@@ -364,7 +365,7 @@ pub async fn bootstrap_lifecycle_ledger(
     let installation_id = parse_uuid(permit.installation_id())?;
     let created_at = unix_seconds(history[0].recorded_at_unix_ms())?;
     let updated_at = unix_seconds(head.recorded_at_unix_ms())?;
-    let converter_registry_sha256 = registry_sha256()?;
+    let converter_registry_sha256 = converter_registry_sha256_for_spec(spec)?;
 
     let mut tx = begin_durable_transaction(pool).await?;
     let installation_inserted = sqlx::query(
@@ -501,7 +502,7 @@ pub async fn mirror_lifecycle_snapshot(
     }
     verify_bootstrapped_schema(pool).await?;
     let operation_id = validate_snapshot_binding(spec, snapshot)?;
-    let converter_registry_sha256 = registry_sha256()?;
+    let converter_registry_sha256 = converter_registry_sha256_for_spec(spec)?;
     let mut tx = begin_durable_transaction(pool).await?;
     let head = lock_operation_head(&mut tx, operation_id).await?;
     if !operation_binding_matches(
@@ -626,7 +627,7 @@ pub async fn commit_native_activation(
 
     let operation_id = validate_snapshot_binding(spec, snapshot)?;
     let installation_id = parse_uuid(permit.installation_id())?;
-    let converter_registry_sha256 = registry_sha256()?;
+    let converter_registry_sha256 = converter_registry_sha256_for_spec(spec)?;
     let mut tx = begin_durable_transaction(pool).await?;
     let head = lock_operation_head(&mut tx, operation_id).await?;
     if !operation_binding_matches(
@@ -754,7 +755,7 @@ pub async fn observe_native_activation_commit(
         return Err(LifecycleLedgerError::ActivationCheckpointRequired);
     }
     let operation_id = validate_snapshot_binding(spec, snapshot)?;
-    let converter_registry_sha256 = registry_sha256()?;
+    let converter_registry_sha256 = converter_registry_sha256_for_spec(spec)?;
     let mut tx = pool.begin().await?;
     sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
         .execute(&mut *tx)
@@ -865,7 +866,7 @@ pub async fn complete_lifecycle_ledger(
         return Err(LifecycleLedgerError::InvalidJournalHistory);
     }
     let operation_id = validate_snapshot_binding(spec, snapshot)?;
-    let converter_registry_sha256 = registry_sha256()?;
+    let converter_registry_sha256 = converter_registry_sha256_for_spec(spec)?;
     let mut tx = begin_durable_transaction(pool).await?;
     let head = lock_operation_head(&mut tx, operation_id).await?;
     let installation = lock_installation(&mut tx, head.installation_id).await?;
@@ -1128,6 +1129,22 @@ fn verify_target_lineage_binding() -> Result<(), LifecycleLedgerError> {
         return Err(LifecycleLedgerError::TargetLineageBindingMismatch);
     }
     Ok(())
+}
+
+/// Selects the converter policy already fixed by the typed manifest. Keeping
+/// `PreserveAll` on schema v4 is compatibility-critical: its registry digest
+/// is the original v1 digest, so existing durable ledger rows and checkpoints
+/// retain their byte-for-byte identity. Schema v5 receives the distinct,
+/// domain-separated discard-policy digest.
+fn converter_registry_sha256_for_spec(
+    spec: &ProvisionSpec,
+) -> Result<String, LifecycleLedgerError> {
+    if spec.legacy_apply_execution().is_none() {
+        return Err(LifecycleLedgerError::BindingMismatch);
+    }
+    let strategy = LegacyConversionStrategy::for_schema_version(spec.schema_version)?;
+    let registry_sha256 = registry_sha256_for_strategy(strategy)?;
+    Ok(registry_sha256)
 }
 
 async fn require_public_schema(pool: &PgPool) -> Result<(), LifecycleLedgerError> {
@@ -2024,7 +2041,8 @@ mod tests {
         apply_journal::{ApplyJournal, ApplyJournalBinding},
         legacy_converter::{
             ConversionCheckpoint, ConversionPhase, ConversionRunBinding,
-            LEGACY_SEMANTIC_SCHEMA_SHA256,
+            LEGACY_SEMANTIC_SCHEMA_SHA256, LegacyConversionStrategy, registry_sha256,
+            registry_sha256_for_strategy,
         },
         legacy_copy::{DurableCopyCheckpointSink, PostgresDurableCopyCheckpointSink},
         manifest::{ProvisionFlow, tests::legacy_spec_for_orchestration},
@@ -2196,6 +2214,31 @@ mod tests {
     fn embedded_lineage_matches_the_frozen_converter_binding() {
         verify_target_lineage_binding().expect("lineage digest");
         assert_eq!(expected_target_tables().len(), 50);
+    }
+
+    #[test]
+    fn lifecycle_registry_keeps_v4_identity_and_separates_v5_policy() {
+        let mut spec = legacy_spec_for_orchestration();
+        assert_eq!(spec.schema_version, 4);
+        assert_eq!(
+            converter_registry_sha256_for_spec(&spec).expect("schema-v4 registry"),
+            registry_sha256().expect("frozen schema-v4 registry")
+        );
+
+        spec.schema_version = 5;
+        assert_eq!(
+            converter_registry_sha256_for_spec(&spec).expect("schema-v5 registry"),
+            registry_sha256_for_strategy(
+                LegacyConversionStrategy::DiscardNodesTrafficDetailsAndOperationalLogs,
+            )
+            .expect("discard-policy registry")
+        );
+
+        spec.schema_version = 3;
+        assert!(matches!(
+            converter_registry_sha256_for_spec(&spec),
+            Err(LifecycleLedgerError::BindingMismatch)
+        ));
     }
 
     #[test]
@@ -2461,6 +2504,7 @@ mod tests {
             source_snapshot_sha256: SOURCE_FINGERPRINT.to_string(),
             source_schema_sha256: LEGACY_SEMANTIC_SCHEMA_SHA256.to_string(),
             registry_sha256: registry_sha256().expect("converter registry hash"),
+            strategy: LegacyConversionStrategy::PreserveAll,
         };
         let complete_copy = ConversionCheckpoint {
             binding: conversion_binding,

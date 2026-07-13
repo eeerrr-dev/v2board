@@ -1,10 +1,14 @@
 //! Exact ClickHouse stage for the offline, one-shot legacy migration.
 //!
-//! Legacy `v2_stat`, `v2_stat_server`, and `v2_stat_user` rows are durable
-//! daily summaries, not native raw analytics events. They remain value-for-
-//! value in PostgreSQL and are intentionally never expanded into fabricated
-//! ClickHouse facts. ClickHouse starts at an explicitly empty native event
-//! epoch and receives only events produced after native activation.
+//! Legacy daily summaries are not native raw analytics events and are never
+//! expanded into fabricated ClickHouse facts. Schema v4 retains all three
+//! summary tables value-for-value in PostgreSQL. Schema v5 retains the durable
+//! business aggregate (`v2_stat`) while deliberately discarding the historical
+//! per-user and per-server traffic detail tables. ClickHouse starts at an
+//! explicitly empty native event epoch in both flows and receives only events
+//! produced after native activation. The surrounding PostgreSQL verification
+//! report also proves schema v5 did not copy legacy operational logs; those logs
+//! are not analytics input and are never represented as ClickHouse statistics.
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -24,17 +28,24 @@ use crate::{
     ProvisionSpec,
     apply_journal::DurableTargetMutationPermit,
     legacy_apply::{LegacyApplyError, VerifiedStageProof},
-    legacy_converter::TABLE_MAPPINGS,
+    legacy_converter::{
+        LegacyConversionStrategy, TABLE_MAPPINGS, built_derived_mappings, copied_table_mappings,
+        discarded_derived_mappings, discarded_table_mappings,
+    },
     legacy_copy::{
-        LegacyCopyError, LegacyCopyVerification, TableVerification, legacy_copy_verification_sha256,
+        DiscardedTableVerification, LegacyCopyError, LegacyCopyVerification, TableVerification,
+        legacy_copy_verification_sha256,
     },
     manifest::{AnalyticsAdmissionSpec, ProvisionFlow, TargetSpec},
 };
 
-const REPORT_DOMAIN: &[u8] = b"v2board.legacy-clickhouse-projection-report.v2\0";
+const REPORT_DOMAIN_V2: &[u8] = b"v2board.legacy-clickhouse-projection-report.v2\0";
+const REPORT_DOMAIN_V3: &[u8] = b"v2board.legacy-clickhouse-projection-report.v3\0";
 const READBACK_DOMAIN: &[u8] = b"v2board.legacy-clickhouse-readback-report.v1\0";
-const REPORT_VERSION: u32 = 2;
-const LEGACY_STAT_TABLES: &[&str] = &["v2_stat", "v2_stat_server", "v2_stat_user"];
+const REPORT_VERSION_V4: u32 = 2;
+const REPORT_VERSION_V5: u32 = 3;
+const LEGACY_STAT_TABLES_V4: &[&str] = &["v2_stat", "v2_stat_server", "v2_stat_user"];
+const LEGACY_DISCARDED_TRAFFIC_STAT_TABLES_V5: &[&str] = &["v2_stat_server", "v2_stat_user"];
 
 /// A typed return value is retained so any future production gap can disable
 /// apply without changing the caller contract. The current implementation has
@@ -69,6 +80,26 @@ pub struct LegacyStatisticsProof {
     pub row_count: u64,
     pub primary_key_sha256: String,
     pub canonical_sha256: String,
+    pub authority: &'static str,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LegacyStatisticsDisposition {
+    PreserveBusinessAggregateDiscardTrafficDetails,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct LegacyDiscardedStatisticsProof {
+    pub table: String,
+    pub source_row_count: u64,
+    pub source_max_id: Option<i64>,
+    /// Domain- and source-table-bound digest of ordered, typed source rows; no
+    /// legacy-to-PostgreSQL value conversion participates in this digest.
+    pub source_typed_rows_sha256: String,
+    pub target_row_count: u64,
+    pub target_sequence_last_value: i64,
+    pub target_sequence_is_called: bool,
     pub authority: &'static str,
 }
 
@@ -115,7 +146,12 @@ pub struct LegacyClickHouseProjectionReport {
     pub clickhouse_before_binding: ClickHouseProjectionCounts,
     pub clickhouse_after_binding: ClickHouseProjectionCounts,
     pub legacy_statistics: Vec<LegacyStatisticsProof>,
-    pub legacy_daily_statistics_preserved_in_postgres: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub legacy_daily_statistics_preserved_in_postgres: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub legacy_statistics_disposition: Option<LegacyStatisticsDisposition>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub discarded_legacy_statistics: Option<Vec<LegacyDiscardedStatisticsProof>>,
     pub historical_clickhouse_raw_events_synthesized: bool,
     pub clickhouse_native_event_epoch_starts_empty: bool,
     pub offline_outbox_admission_is_read_only_and_empty: bool,
@@ -178,7 +214,7 @@ impl VerifiedLegacyClickHouseReadback {
 
 #[derive(Debug, thiserror::Error)]
 pub enum LegacyClickHouseStageError {
-    #[error("ClickHouse projection requires the schema-v4 legacy flow")]
+    #[error("ClickHouse projection requires the executable schema-v4 or schema-v5 legacy flow")]
     WrongFlow,
     #[error("ClickHouse projection permit does not match the manifest or PostgreSQL checkpoint")]
     PermitBinding,
@@ -216,8 +252,9 @@ pub async fn project_legacy_clickhouse(
     postgres_verification: &LegacyCopyVerification,
 ) -> Result<VerifiedLegacyClickHouseProjection, LegacyClickHouseStageError> {
     let target = legacy_target(spec)?;
-    if spec.schema_version != 4
-        || spec.legacy_apply_execution().is_none()
+    let strategy = LegacyConversionStrategy::for_schema_version(spec.schema_version)
+        .map_err(|_| LegacyClickHouseStageError::PermitBinding)?;
+    if spec.legacy_apply_execution().is_none()
         || spec.operation_id != permit.operation_id()
         || Uuid::parse_str(permit.installation_id()).is_err()
     {
@@ -227,7 +264,7 @@ pub async fn project_legacy_clickhouse(
     if permit.checkpoint_proof_sha256() != Some(postgres_verification_sha256.as_str()) {
         return Err(LegacyClickHouseStageError::PermitBinding);
     }
-    let legacy_statistics = verify_postgres_report(postgres_verification)?;
+    let verified_postgres = verify_postgres_report(postgres_verification, strategy)?;
 
     let postgres = PgPool::connect(&target.postgres.migration_database_url).await?;
     verify_installation_reservation(&postgres, permit.installation_id()).await?;
@@ -298,7 +335,12 @@ pub async fn project_legacy_clickhouse(
     }
 
     let report = LegacyClickHouseProjectionReport {
-        report_version: REPORT_VERSION,
+        report_version: match strategy {
+            LegacyConversionStrategy::PreserveAll => REPORT_VERSION_V4,
+            LegacyConversionStrategy::DiscardNodesTrafficDetailsAndOperationalLogs => {
+                REPORT_VERSION_V5
+            }
+        },
         operation_id: spec.operation_id.clone(),
         installation_id: permit.installation_id().to_string(),
         permit_generation: permit.generation(),
@@ -316,8 +358,11 @@ pub async fn project_legacy_clickhouse(
         postgres_ledgers_after,
         clickhouse_before_binding,
         clickhouse_after_binding,
-        legacy_statistics,
-        legacy_daily_statistics_preserved_in_postgres: true,
+        legacy_statistics: verified_postgres.legacy_statistics,
+        legacy_daily_statistics_preserved_in_postgres: verified_postgres
+            .legacy_daily_statistics_preserved_in_postgres,
+        legacy_statistics_disposition: verified_postgres.legacy_statistics_disposition,
+        discarded_legacy_statistics: verified_postgres.discarded_legacy_statistics,
         historical_clickhouse_raw_events_synthesized: false,
         clickhouse_native_event_epoch_starts_empty: true,
         offline_outbox_admission_is_read_only_and_empty: true,
@@ -338,8 +383,7 @@ pub async fn verify_legacy_clickhouse_projection_read_only(
     original_projection_report_sha256: &str,
 ) -> Result<VerifiedLegacyClickHouseReadback, LegacyClickHouseStageError> {
     let target = legacy_target(spec)?;
-    if spec.schema_version != 4
-        || spec.legacy_apply_execution().is_none()
+    if spec.legacy_apply_execution().is_none()
         || !is_lower_hex_sha256(original_projection_report_sha256)
     {
         return Err(LegacyClickHouseStageError::InvalidOriginalProjectionProof);
@@ -426,11 +470,22 @@ pub fn report_sha256(
     report: &LegacyClickHouseProjectionReport,
 ) -> Result<String, serde_json::Error> {
     let encoded = serde_json::to_vec(report)?;
+    Ok(report_sha256_from_bytes(report.report_version, &encoded))
+}
+
+/// Hashes the exact serialized ClickHouse projection-report preimage. Schema
+/// v5 stores those bytes durably before the journal advances, while schema v4
+/// continues to use the same frozen v2 domain and serialization.
+pub(crate) fn report_sha256_from_bytes(report_version: u32, encoded: &[u8]) -> String {
     let mut digest = Sha256::new();
-    digest.update(REPORT_DOMAIN);
+    digest.update(if report_version == REPORT_VERSION_V4 {
+        REPORT_DOMAIN_V2
+    } else {
+        REPORT_DOMAIN_V3
+    });
     digest.update((encoded.len() as u64).to_be_bytes());
     digest.update(encoded);
-    Ok(hex::encode(digest.finalize()))
+    hex::encode(digest.finalize())
 }
 
 fn legacy_target(spec: &ProvisionSpec) -> Result<&TargetSpec, LegacyClickHouseStageError> {
@@ -496,9 +551,33 @@ fn admission_proof(
     })
 }
 
+struct VerifiedPostgresReport {
+    legacy_statistics: Vec<LegacyStatisticsProof>,
+    legacy_daily_statistics_preserved_in_postgres: Option<bool>,
+    legacy_statistics_disposition: Option<LegacyStatisticsDisposition>,
+    discarded_legacy_statistics: Option<Vec<LegacyDiscardedStatisticsProof>>,
+}
+
 fn verify_postgres_report(
     verification: &LegacyCopyVerification,
-) -> Result<Vec<LegacyStatisticsProof>, LegacyClickHouseStageError> {
+    expected_strategy: LegacyConversionStrategy,
+) -> Result<VerifiedPostgresReport, LegacyClickHouseStageError> {
+    if verification.strategy != expected_strategy {
+        return Err(LegacyClickHouseStageError::PostgresVerification);
+    }
+    match expected_strategy {
+        LegacyConversionStrategy::PreserveAll => verify_postgres_report_v4(verification),
+        LegacyConversionStrategy::DiscardNodesTrafficDetailsAndOperationalLogs => {
+            verify_postgres_report_v5(verification)
+        }
+    }
+}
+
+/// Keep the schema-v4 acceptance contract unchanged. In particular, this is
+/// the original all-table verifier rather than a newly tightened variant.
+fn verify_postgres_report_v4(
+    verification: &LegacyCopyVerification,
+) -> Result<VerifiedPostgresReport, LegacyClickHouseStageError> {
     if verification.base_tables.len() != TABLE_MAPPINGS.len()
         || verification.derived_tables.iter().any(|table| {
             table.expected_count != table.target_count
@@ -517,11 +596,11 @@ fn verify_postgres_report(
             return Err(LegacyClickHouseStageError::PostgresVerification);
         }
     }
-    LEGACY_STAT_TABLES
+    let legacy_statistics = LEGACY_STAT_TABLES_V4
         .iter()
         .map(|name| {
             let table = exact_table(&verification.base_tables, name)?;
-            Ok(LegacyStatisticsProof {
+            Ok::<LegacyStatisticsProof, LegacyClickHouseStageError>(LegacyStatisticsProof {
                 table: table.table.clone(),
                 row_count: table.target_count,
                 primary_key_sha256: table.target_primary_key_sha256.clone(),
@@ -529,7 +608,136 @@ fn verify_postgres_report(
                 authority: "postgresql_value_verified_legacy_daily_summary",
             })
         })
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(VerifiedPostgresReport {
+        legacy_statistics,
+        legacy_daily_statistics_preserved_in_postgres: Some(true),
+        legacy_statistics_disposition: None,
+        discarded_legacy_statistics: None,
+    })
+}
+
+fn verify_postgres_report_v5(
+    verification: &LegacyCopyVerification,
+) -> Result<VerifiedPostgresReport, LegacyClickHouseStageError> {
+    let strategy = LegacyConversionStrategy::DiscardNodesTrafficDetailsAndOperationalLogs;
+    let copied_mappings = copied_table_mappings(strategy).collect::<Vec<_>>();
+    if verification.base_tables.len() != copied_mappings.len()
+        || !verification.traffic_fold.applied_exactly_once
+    {
+        return Err(LegacyClickHouseStageError::PostgresVerification);
+    }
+    for (observed, mapping) in verification.base_tables.iter().zip(copied_mappings) {
+        if observed.table != mapping.target
+            || observed.source_count != observed.target_count
+            || observed.source_primary_key_sha256 != observed.target_primary_key_sha256
+            || observed.source_canonical_sha256 != observed.target_canonical_sha256
+        {
+            return Err(LegacyClickHouseStageError::PostgresVerification);
+        }
+    }
+
+    let built_derived = built_derived_mappings(strategy).collect::<Vec<_>>();
+    if verification.derived_tables.len() != built_derived.len() {
+        return Err(LegacyClickHouseStageError::PostgresVerification);
+    }
+    for (observed, mapping) in verification.derived_tables.iter().zip(built_derived) {
+        if observed.target != mapping.target
+            || observed.expected_count != observed.target_count
+            || observed.expected_sha256 != observed.target_sha256
+        {
+            return Err(LegacyClickHouseStageError::PostgresVerification);
+        }
+    }
+
+    let discarded_mappings = discarded_table_mappings(strategy).collect::<Vec<_>>();
+    if verification.discarded_base_tables.len() != discarded_mappings.len() {
+        return Err(LegacyClickHouseStageError::PostgresVerification);
+    }
+    for (observed, mapping) in verification
+        .discarded_base_tables
+        .iter()
+        .zip(discarded_mappings)
+    {
+        if observed.source != mapping.source
+            || observed.target != mapping.target
+            || observed.target_count != 0
+            || observed.target_sequence_last_value != 1
+            || observed.target_sequence_is_called
+            || (observed.source_count == 0) != observed.source_max_id.is_none()
+            || !is_lower_hex_sha256(&observed.source_typed_rows_sha256)
+        {
+            return Err(LegacyClickHouseStageError::PostgresVerification);
+        }
+    }
+
+    let discarded_derived = discarded_derived_mappings(strategy).collect::<Vec<_>>();
+    if verification.discarded_derived_targets.len() != discarded_derived.len() {
+        return Err(LegacyClickHouseStageError::PostgresVerification);
+    }
+    for (observed, mapping) in verification
+        .discarded_derived_targets
+        .iter()
+        .zip(discarded_derived)
+    {
+        let source_count = mapping
+            .source_tables
+            .iter()
+            .try_fold(0_u64, |total, source| {
+                let proof = exact_discarded_table(&verification.discarded_base_tables, source)?;
+                total
+                    .checked_add(proof.source_count)
+                    .ok_or(LegacyClickHouseStageError::PostgresVerification)
+            })?;
+        let source_tables_match = observed.source_tables.len() == mapping.source_tables.len()
+            && observed
+                .source_tables
+                .iter()
+                .zip(mapping.source_tables)
+                .all(|(observed, expected)| observed == expected);
+        if observed.target != mapping.target
+            || !source_tables_match
+            || observed.source_count != source_count
+            || !is_lower_hex_sha256(&observed.source_proof_sha256)
+            || observed.target_count != 0
+        {
+            return Err(LegacyClickHouseStageError::PostgresVerification);
+        }
+    }
+
+    let table = exact_table(&verification.base_tables, "v2_stat")?;
+    let legacy_statistics = vec![LegacyStatisticsProof {
+        table: table.table.clone(),
+        row_count: table.target_count,
+        primary_key_sha256: table.target_primary_key_sha256.clone(),
+        canonical_sha256: table.target_canonical_sha256.clone(),
+        authority: "postgresql_value_verified_legacy_daily_business_summary",
+    }];
+    let discarded_legacy_statistics = LEGACY_DISCARDED_TRAFFIC_STAT_TABLES_V5
+        .iter()
+        .map(|name| {
+            let table = exact_discarded_table(&verification.discarded_base_tables, name)?;
+            Ok(LegacyDiscardedStatisticsProof {
+                table: table.target.clone(),
+                source_row_count: table.source_count,
+                source_max_id: table.source_max_id,
+                source_typed_rows_sha256: table.source_typed_rows_sha256.clone(),
+                target_row_count: table.target_count,
+                target_sequence_last_value: table.target_sequence_last_value,
+                target_sequence_is_called: table.target_sequence_is_called,
+                authority: "hmac_bound_postgresql_empty_target_discard_proof",
+            })
+        })
+        .collect::<Result<Vec<_>, LegacyClickHouseStageError>>()?;
+
+    Ok(VerifiedPostgresReport {
+        legacy_statistics,
+        legacy_daily_statistics_preserved_in_postgres: None,
+        legacy_statistics_disposition: Some(
+            LegacyStatisticsDisposition::PreserveBusinessAggregateDiscardTrafficDetails,
+        ),
+        discarded_legacy_statistics: Some(discarded_legacy_statistics),
+    })
 }
 
 fn exact_table<'a>(
@@ -537,6 +745,20 @@ fn exact_table<'a>(
     name: &str,
 ) -> Result<&'a TableVerification, LegacyClickHouseStageError> {
     let mut matching = tables.iter().filter(|table| table.table == name);
+    let Some(table) = matching.next() else {
+        return Err(LegacyClickHouseStageError::PostgresVerification);
+    };
+    if matching.next().is_some() {
+        return Err(LegacyClickHouseStageError::PostgresVerification);
+    }
+    Ok(table)
+}
+
+fn exact_discarded_table<'a>(
+    tables: &'a [DiscardedTableVerification],
+    name: &str,
+) -> Result<&'a DiscardedTableVerification, LegacyClickHouseStageError> {
+    let mut matching = tables.iter().filter(|table| table.source == name);
     let Some(table) = matching.next() else {
         return Err(LegacyClickHouseStageError::PostgresVerification);
     };
@@ -588,6 +810,36 @@ async fn verify_installation_reservation(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::legacy_copy::{
+        DerivedVerification, DiscardedDerivedVerification, TrafficFoldVerification,
+    };
+
+    #[derive(Serialize)]
+    struct LegacyV4ProjectionReport<'a> {
+        report_version: u32,
+        operation_id: &'a str,
+        installation_id: &'a str,
+        permit_generation: u64,
+        permit_event_sha256: &'a str,
+        postgres_verification_report_sha256: &'a str,
+        clickhouse_schema_migration_count: usize,
+        clickhouse_schema_lineage_sha256: &'a str,
+        raw_retention_days: u32,
+        aggregate_retention_days: u32,
+        analytics_admission_policy: &'a AnalyticsAdmissionPolicy,
+        analytics_admission_policy_sha256: &'a str,
+        analytics_admission_before: &'a AnalyticsAdmissionProof,
+        analytics_admission_after: &'a AnalyticsAdmissionProof,
+        postgres_ledgers_before: &'a PostgresAnalyticsLedgerCounts,
+        postgres_ledgers_after: &'a PostgresAnalyticsLedgerCounts,
+        clickhouse_before_binding: &'a ClickHouseProjectionCounts,
+        clickhouse_after_binding: &'a ClickHouseProjectionCounts,
+        legacy_statistics: &'a [LegacyStatisticsProof],
+        legacy_daily_statistics_preserved_in_postgres: bool,
+        historical_clickhouse_raw_events_synthesized: bool,
+        clickhouse_native_event_epoch_starts_empty: bool,
+        offline_outbox_admission_is_read_only_and_empty: bool,
+    }
 
     #[test]
     fn production_blockers_are_empty_after_all_producers_use_admission() {
@@ -607,9 +859,127 @@ mod tests {
     }
 
     #[test]
-    fn projection_report_hash_is_domain_separated_and_deterministic() {
-        let report = LegacyClickHouseProjectionReport {
-            report_version: REPORT_VERSION,
+    fn schema_v4_projection_report_serialization_and_hash_remain_legacy_exact() {
+        let report = test_projection_report_v4();
+        let legacy = LegacyV4ProjectionReport {
+            report_version: report.report_version,
+            operation_id: &report.operation_id,
+            installation_id: &report.installation_id,
+            permit_generation: report.permit_generation,
+            permit_event_sha256: &report.permit_event_sha256,
+            postgres_verification_report_sha256: &report.postgres_verification_report_sha256,
+            clickhouse_schema_migration_count: report.clickhouse_schema_migration_count,
+            clickhouse_schema_lineage_sha256: &report.clickhouse_schema_lineage_sha256,
+            raw_retention_days: report.raw_retention_days,
+            aggregate_retention_days: report.aggregate_retention_days,
+            analytics_admission_policy: &report.analytics_admission_policy,
+            analytics_admission_policy_sha256: &report.analytics_admission_policy_sha256,
+            analytics_admission_before: &report.analytics_admission_before,
+            analytics_admission_after: &report.analytics_admission_after,
+            postgres_ledgers_before: &report.postgres_ledgers_before,
+            postgres_ledgers_after: &report.postgres_ledgers_after,
+            clickhouse_before_binding: &report.clickhouse_before_binding,
+            clickhouse_after_binding: &report.clickhouse_after_binding,
+            legacy_statistics: &report.legacy_statistics,
+            legacy_daily_statistics_preserved_in_postgres: report
+                .legacy_daily_statistics_preserved_in_postgres
+                .expect("schema-v4 report preserves the legacy true field"),
+            historical_clickhouse_raw_events_synthesized: report
+                .historical_clickhouse_raw_events_synthesized,
+            clickhouse_native_event_epoch_starts_empty: report
+                .clickhouse_native_event_epoch_starts_empty,
+            offline_outbox_admission_is_read_only_and_empty: report
+                .offline_outbox_admission_is_read_only_and_empty,
+        };
+        let current_bytes = serde_json::to_vec(&report).unwrap();
+        let legacy_bytes = serde_json::to_vec(&legacy).unwrap();
+        assert_eq!(current_bytes, legacy_bytes);
+        let mut legacy_digest = Sha256::new();
+        legacy_digest.update(REPORT_DOMAIN_V2);
+        legacy_digest.update((legacy_bytes.len() as u64).to_be_bytes());
+        legacy_digest.update(legacy_bytes);
+        assert_eq!(
+            report_sha256(&report).unwrap(),
+            hex::encode(legacy_digest.finalize())
+        );
+    }
+
+    #[test]
+    fn schema_v5_verification_keeps_business_stat_and_proves_traffic_detail_discard() {
+        let verification = test_v5_verification();
+        let verified = verify_postgres_report(
+            &verification,
+            LegacyConversionStrategy::DiscardNodesTrafficDetailsAndOperationalLogs,
+        )
+        .unwrap();
+
+        assert_eq!(verification.base_tables.len(), 14);
+        assert_eq!(verification.discarded_base_tables.len(), 13);
+        assert_eq!(verification.derived_tables.len(), 1);
+        assert_eq!(verification.discarded_derived_targets.len(), 1);
+        assert_eq!(verified.legacy_statistics.len(), 1);
+        assert_eq!(verified.legacy_statistics[0].table, "v2_stat");
+        assert_eq!(verified.legacy_daily_statistics_preserved_in_postgres, None);
+        assert_eq!(
+            verified.legacy_statistics_disposition,
+            Some(LegacyStatisticsDisposition::PreserveBusinessAggregateDiscardTrafficDetails)
+        );
+        let discarded = verified.discarded_legacy_statistics.unwrap();
+        assert_eq!(
+            discarded
+                .iter()
+                .map(|proof| proof.table.as_str())
+                .collect::<Vec<_>>(),
+            vec!["v2_stat_server", "v2_stat_user"]
+        );
+        assert!(discarded.iter().all(|proof| proof.target_row_count == 0));
+    }
+
+    #[test]
+    fn schema_v5_report_omits_v4_flag_and_names_typed_discard_digest() {
+        let mut report = test_projection_report_v4();
+        report.report_version = REPORT_VERSION_V5;
+        report.legacy_daily_statistics_preserved_in_postgres = None;
+        report.legacy_statistics_disposition =
+            Some(LegacyStatisticsDisposition::PreserveBusinessAggregateDiscardTrafficDetails);
+        report.discarded_legacy_statistics = Some(vec![LegacyDiscardedStatisticsProof {
+            table: "v2_stat_user".to_string(),
+            source_row_count: 2,
+            source_max_id: Some(2),
+            source_typed_rows_sha256: "d".repeat(64),
+            target_row_count: 0,
+            target_sequence_last_value: 1,
+            target_sequence_is_called: false,
+            authority: "hmac_bound_postgresql_empty_target_discard_proof",
+        }]);
+
+        let serialized = serde_json::to_value(&report).unwrap();
+        assert!(
+            serialized
+                .get("legacy_daily_statistics_preserved_in_postgres")
+                .is_none()
+        );
+        let proof = &serialized["discarded_legacy_statistics"][0];
+        assert_eq!(proof["source_typed_rows_sha256"], "d".repeat(64));
+        assert!(proof.get("source_canonical_sha256").is_none());
+    }
+
+    #[test]
+    fn schema_v5_rejects_nonempty_discarded_postgres_target() {
+        let mut verification = test_v5_verification();
+        verification.discarded_base_tables[0].target_count = 1;
+        assert!(matches!(
+            verify_postgres_report(
+                &verification,
+                LegacyConversionStrategy::DiscardNodesTrafficDetailsAndOperationalLogs,
+            ),
+            Err(LegacyClickHouseStageError::PostgresVerification)
+        ));
+    }
+
+    fn test_projection_report_v4() -> LegacyClickHouseProjectionReport {
+        LegacyClickHouseProjectionReport {
+            report_version: REPORT_VERSION_V4,
             operation_id: Uuid::from_u128(1).to_string(),
             installation_id: Uuid::from_u128(2).to_string(),
             permit_generation: 8,
@@ -644,16 +1014,99 @@ mod tests {
                 accounted_daily_rows: 0,
             },
             legacy_statistics: Vec::new(),
-            legacy_daily_statistics_preserved_in_postgres: true,
+            legacy_daily_statistics_preserved_in_postgres: Some(true),
+            legacy_statistics_disposition: None,
+            discarded_legacy_statistics: None,
             historical_clickhouse_raw_events_synthesized: false,
             clickhouse_native_event_epoch_starts_empty: true,
             offline_outbox_admission_is_read_only_and_empty: true,
-        };
-        assert_eq!(
-            report_sha256(&report).unwrap(),
-            report_sha256(&report).unwrap()
-        );
-        assert_eq!(report_sha256(&report).unwrap().len(), 64);
+        }
+    }
+
+    fn test_v5_verification() -> LegacyCopyVerification {
+        let strategy = LegacyConversionStrategy::DiscardNodesTrafficDetailsAndOperationalLogs;
+        let base_tables = copied_table_mappings(strategy)
+            .map(|mapping| matching_table_verification(mapping.target))
+            .collect();
+        let derived_tables = built_derived_mappings(strategy)
+            .map(|mapping| DerivedVerification {
+                target: mapping.target.to_string(),
+                expected_count: 2,
+                target_count: 2,
+                expected_sha256: "c".repeat(64),
+                target_sha256: "c".repeat(64),
+            })
+            .collect();
+        let discarded_base_tables = discarded_table_mappings(strategy)
+            .map(|mapping| DiscardedTableVerification {
+                source: mapping.source.to_string(),
+                target: mapping.target.to_string(),
+                source_count: 3,
+                source_max_id: Some(3),
+                source_typed_rows_sha256: "d".repeat(64),
+                target_count: 0,
+                target_sequence_last_value: 1,
+                target_sequence_is_called: false,
+            })
+            .collect::<Vec<_>>();
+        let discarded_derived_targets = discarded_derived_mappings(strategy)
+            .map(|mapping| DiscardedDerivedVerification {
+                target: mapping.target.to_string(),
+                source_tables: mapping
+                    .source_tables
+                    .iter()
+                    .map(|table| (*table).to_string())
+                    .collect(),
+                source_count: mapping.source_tables.len() as u64 * 3,
+                source_proof_sha256: "e".repeat(64),
+                target_count: 0,
+            })
+            .collect();
+        LegacyCopyVerification {
+            strategy,
+            base_tables,
+            derived_tables,
+            discarded_base_tables,
+            discarded_derived_targets,
+            traffic_fold: test_traffic_fold_verification(),
+        }
+    }
+
+    fn matching_table_verification(table: &str) -> TableVerification {
+        TableVerification {
+            table: table.to_string(),
+            source_count: 1,
+            target_count: 1,
+            source_primary_key_sha256: "a".repeat(64),
+            target_primary_key_sha256: "a".repeat(64),
+            source_canonical_sha256: "b".repeat(64),
+            target_canonical_sha256: "b".repeat(64),
+        }
+    }
+
+    fn test_traffic_fold_verification() -> TrafficFoldVerification {
+        TrafficFoldVerification {
+            operation_id: Uuid::from_u128(1).to_string(),
+            target_installation_id: Uuid::from_u128(2).to_string(),
+            source_default_run_id: "legacy-run".to_string(),
+            source_drain_receipt_sha256: "a".repeat(64),
+            source_drained_journal_generation: 1,
+            source_drained_journal_event_sha256: "b".repeat(64),
+            source_drained_report_sha256: "c".repeat(64),
+            fenced_at: 1_700_000_000,
+            upload_fields: 0,
+            download_fields: 0,
+            sorted_user_delta_count: 0,
+            sorted_user_delta_sha256: "d".repeat(64),
+            upload_delta_sum: "0".to_string(),
+            download_delta_sum: "0".to_string(),
+            ledger_item_count: 0,
+            ledger_items_sha256: "e".repeat(64),
+            fold_verification_sha256: "f".repeat(64),
+            seal_sha256: "0".repeat(64),
+            applied_at: 1_700_000_001,
+            applied_exactly_once: true,
+        }
     }
 
     fn test_admission_policy() -> AnalyticsAdmissionPolicy {

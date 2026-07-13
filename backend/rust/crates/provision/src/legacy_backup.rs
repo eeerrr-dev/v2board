@@ -34,12 +34,13 @@ use crate::{
         DurableNativeStartPermit, DurableTargetMutationPermit, backup_reference_sha256,
     },
     legacy_apply::BackupRestoreProof,
-    legacy_converter::LEGACY_SEMANTIC_SCHEMA_SHA256,
+    legacy_converter::{LEGACY_SEMANTIC_SCHEMA_SHA256, LegacyConversionStrategy},
     manifest::{LegacyRuntimeReceiptKind, ProvisionFlow, SourceSpec},
     native_legacy_source::{
-        VerifiedFrozenTrafficReceipt, fingerprint_mysql, fingerprint_mysql_and_schema,
-        remove_verified_frozen_traffic_receipt, verify_frozen_traffic_receipt,
-        verify_frozen_traffic_receipt_bytes, verify_redis_fence_for_backup,
+        VerifiedFrozenTrafficReceipt, fingerprint_mysql_and_schema_for_strategy,
+        fingerprint_mysql_for_strategy, remove_verified_frozen_traffic_receipt,
+        verify_frozen_traffic_receipt, verify_frozen_traffic_receipt_bytes,
+        verify_redis_fence_for_backup,
     },
 };
 
@@ -1182,7 +1183,7 @@ pub async fn inspect_backup_restore_prerequisites(
             restore_identity_distinct: false,
             restore_database_absent_or_empty: false,
             restore_create_drop_privileges_observed: false,
-            blockers: vec!["schema-v4 backup execution policy is unavailable".into()],
+            blockers: vec!["legacy backup execution policy is unavailable".into()],
         };
     };
     let policy = &execution.backup;
@@ -1446,6 +1447,7 @@ pub(crate) async fn perform_backup_restore(
     head: &ApplyJournalSnapshot,
 ) -> Result<BackupRestoreProof, BackupError> {
     let source = legacy_source(spec)?;
+    let strategy = legacy_conversion_strategy(spec)?;
     let execution = spec
         .legacy_apply_execution()
         .ok_or(BackupError::InvalidPolicy)?;
@@ -1494,7 +1496,7 @@ pub(crate) async fn perform_backup_restore(
     let restore_server_identity =
         mysql_server_identity(&admin_url(&policy.isolated_restore_database_url)?).await?;
     verify_mysql8_server_identity(&restore_server_identity)?;
-    let source_fingerprint = fingerprint_mysql(&source.database_url)
+    let source_fingerprint = fingerprint_mysql_for_strategy(&source.database_url, strategy)
         .await
         .map_err(|_| BackupError::Database)?;
     let source_identity_sha256 = domain_hash(
@@ -1697,7 +1699,7 @@ pub(crate) async fn perform_backup_restore(
         .await
         .map_err(|_| BackupError::DumpFailed)??;
         scratch.remove()?;
-        let after_dump = fingerprint_mysql(&source.database_url)
+        let after_dump = fingerprint_mysql_for_strategy(&source.database_url, strategy)
             .await
             .map_err(|_| BackupError::Database)?;
         if after_dump != source_fingerprint {
@@ -1788,12 +1790,16 @@ pub(crate) async fn perform_backup_restore(
                     && frame.mysql_dump_bytes > 0 =>
             {
                 async {
-                    let restored = fingerprint_mysql(&policy.isolated_restore_database_url)
-                        .await
-                        .map_err(|_| BackupError::RestoreFailed)?;
-                    let source_after = fingerprint_mysql(&source.database_url)
-                        .await
-                        .map_err(|_| BackupError::Database)?;
+                    let restored = fingerprint_mysql_for_strategy(
+                        &policy.isolated_restore_database_url,
+                        strategy,
+                    )
+                    .await
+                    .map_err(|_| BackupError::RestoreFailed)?;
+                    let source_after =
+                        fingerprint_mysql_for_strategy(&source.database_url, strategy)
+                            .await
+                            .map_err(|_| BackupError::Database)?;
                     if source_after != source_fingerprint {
                         Err(BackupError::SourceDrift)
                     } else if restored != source_fingerprint {
@@ -1938,6 +1944,7 @@ pub(crate) async fn ensure_verified_archive_materialization(
     anchor: ArchiveMaterializationAnchor<'_>,
 ) -> Result<VerifiedArchiveMaterialization, BackupError> {
     let archive = verify_persisted_backup_archive(spec)?;
+    let strategy = legacy_conversion_strategy(spec)?;
     verify_materialization_anchor(spec, &archive, anchor)?;
     let execution = spec
         .legacy_apply_execution()
@@ -1977,7 +1984,12 @@ pub(crate) async fn ensure_verified_archive_materialization(
     let database_present =
         restore_database_exists(&policy.isolated_restore_database_url, &endpoint.database).await?;
     let exact = if database_present {
-        match fingerprint_mysql_and_schema(&policy.isolated_restore_database_url).await {
+        match fingerprint_mysql_and_schema_for_strategy(
+            &policy.isolated_restore_database_url,
+            strategy,
+        )
+        .await
+        {
             Ok((fingerprint, schema))
                 if fingerprint == archive.source_fingerprint_sha256()
                     && schema == LEGACY_SEMANTIC_SCHEMA_SHA256 =>
@@ -2001,9 +2013,10 @@ pub(crate) async fn ensure_verified_archive_materialization(
         }
         restore_archive_materialization(spec, &archive, &endpoint).await?;
     }
-    let (fingerprint, schema) = fingerprint_mysql_and_schema(&policy.isolated_restore_database_url)
-        .await
-        .map_err(|_| BackupError::RestoreMismatch)?;
+    let (fingerprint, schema) =
+        fingerprint_mysql_and_schema_for_strategy(&policy.isolated_restore_database_url, strategy)
+            .await
+            .map_err(|_| BackupError::RestoreMismatch)?;
     if fingerprint != archive.source_fingerprint_sha256() || schema != LEGACY_SEMANTIC_SCHEMA_SHA256
     {
         return Err(BackupError::RestoreMismatch);
@@ -2539,6 +2552,13 @@ fn legacy_source(spec: &ProvisionSpec) -> Result<&SourceSpec, BackupError> {
         ProvisionFlow::LegacyReferenceMigration { source, .. } => Ok(source),
         _ => Err(BackupError::InvalidPolicy),
     }
+}
+
+fn legacy_conversion_strategy(
+    spec: &ProvisionSpec,
+) -> Result<LegacyConversionStrategy, BackupError> {
+    LegacyConversionStrategy::for_schema_version(spec.schema_version)
+        .map_err(|_| BackupError::InvalidPolicy)
 }
 
 fn verify_state_base(
@@ -3499,14 +3519,19 @@ mod tests {
             )
             .expect("decrypt frame and feed only SQL to isolated MySQL 8");
         assert_eq!(restored_frame, written_frame);
-        assert_eq!(
-            fingerprint_mysql(&source_url)
-                .await
-                .expect("source fingerprint"),
-            fingerprint_mysql(&restore_url)
-                .await
-                .expect("restored fingerprint")
-        );
+        for strategy in [
+            LegacyConversionStrategy::PreserveAll,
+            LegacyConversionStrategy::DiscardNodesTrafficDetailsAndOperationalLogs,
+        ] {
+            assert_eq!(
+                fingerprint_mysql_for_strategy(&source_url, strategy)
+                    .await
+                    .expect("source strategy fingerprint"),
+                fingerprint_mysql_for_strategy(&restore_url, strategy)
+                    .await
+                    .expect("restored strategy fingerprint")
+            );
+        }
         cleanup_owned_restore(&restore_url, &restore.database)
             .await
             .expect("drop first verified restore");
@@ -3523,14 +3548,19 @@ mod tests {
             )
             .expect("re-materialize the same encrypted archive after source loss");
         assert_eq!(recovered_frame, written_frame);
-        assert_eq!(
-            fingerprint_mysql(&source_url)
-                .await
-                .expect("source fingerprint after re-materialization"),
-            fingerprint_mysql(&restore_url)
-                .await
-                .expect("re-materialized fingerprint")
-        );
+        for strategy in [
+            LegacyConversionStrategy::PreserveAll,
+            LegacyConversionStrategy::DiscardNodesTrafficDetailsAndOperationalLogs,
+        ] {
+            assert_eq!(
+                fingerprint_mysql_for_strategy(&source_url, strategy)
+                    .await
+                    .expect("source fingerprint after re-materialization"),
+                fingerprint_mysql_for_strategy(&restore_url, strategy)
+                    .await
+                    .expect("re-materialized strategy fingerprint")
+            );
+        }
         cleanup_owned_restore(&restore_url, &restore.database)
             .await
             .expect("destroy archive materialization");

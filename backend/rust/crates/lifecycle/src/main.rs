@@ -55,7 +55,7 @@ async fn main() -> anyhow::Result<()> {
             let spec = v2board_provision::load_provision_spec(manifest)?;
             let execution = spec.legacy_apply_execution().ok_or_else(|| {
                 anyhow::anyhow!(
-                    "authorization requires a schema_version 4 legacy manifest with execution inputs"
+                    "authorization requires a schema_version 4 or 5 legacy manifest with typed execution inputs"
                 )
             })?;
             if output != execution.journal.authorization_path {
@@ -150,7 +150,9 @@ fn require_exact_authorization_path(
 ) -> anyhow::Result<()> {
     let expected = &spec
         .legacy_apply_execution()
-        .ok_or_else(|| anyhow::anyhow!("schema-v4 legacy execution inputs are required"))?
+        .ok_or_else(|| {
+            anyhow::anyhow!("schema-v4 or schema-v5 legacy execution inputs are required")
+        })?
         .journal
         .authorization_path;
     if supplied != expected {

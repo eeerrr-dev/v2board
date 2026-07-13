@@ -437,7 +437,7 @@ impl NativeActivationPolicy {
         })
     }
 
-    /// Narrow policy used by the schema-v4 one-shot executor before native
+    /// Narrow policy used by the executable legacy one-shot flow before native
     /// authority is committed.  Only the immutable release receipt is
     /// consumed by target/bootstrap and runtime-materialization methods.  The
     /// duplicated bindings deliberately cannot authorize any of the retired

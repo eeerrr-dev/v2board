@@ -23,12 +23,13 @@ use url::Url;
 use crate::legacy_converter::{
     CanonicalRow, CanonicalValue, ColumnRule, ConversionCheckpoint, ConversionPhase,
     ConversionRunBinding, ConverterError, DEFAULT_BATCH_SIZE, DERIVED_MAPPINGS,
-    INITIAL_SOURCE_ID_CURSOR, LEGACY_SEMANTIC_SCHEMA_SHA256, LegacyGiftcardRedemptionRow,
-    MAX_BATCH_SIZE, NODE_CREDENTIAL_SOURCES, SourceRow, SourceValue, TABLE_MAPPINGS,
-    TARGET_GENERATED_COLUMNS, TARGET_POSTGRES_LINEAGE_SHA256, TableMapping, audit_registry,
-    canonical_rows_sha256, expand_giftcard_redemptions, mapping_for_source,
+    INITIAL_SOURCE_ID_CURSOR, LEGACY_SEMANTIC_SCHEMA_SHA256, LegacyConversionStrategy,
+    LegacyGiftcardRedemptionRow, MAX_BATCH_SIZE, NODE_CREDENTIAL_SOURCES, SourceRow, SourceValue,
+    TABLE_MAPPINGS, TARGET_GENERATED_COLUMNS, TARGET_POSTGRES_LINEAGE_SHA256, TableMapping,
+    audit_registry, canonical_rows_sha256, copied_table_mappings, discarded_derived_mappings,
+    discarded_table_mappings, expand_giftcard_redemptions, mapping_for_source,
     maximum_rows_per_target_insert, node_credential_rows_sql, registry_sha256,
-    retry_accepts_existing, sequence_reset_sql, transform_row,
+    registry_sha256_for_strategy, retry_accepts_existing, sequence_reset_sql, transform_row,
 };
 use crate::{
     apply_journal::{ApplyCheckpoint, ApplyJournalSnapshot, backup_reference_sha256},
@@ -44,6 +45,8 @@ const TARGET_JSON_ALIAS: &str = "v2board_target_row";
 const COPY_ROLLING_DOMAIN: &[u8] = b"v2board-legacy-copy-rolling-v1\0";
 const FULL_ROW_DOMAIN: &[u8] = b"v2board-legacy-copy-full-row-v1\0";
 const SOURCE_FINGERPRINT_DOMAIN: &[u8] = b"v2board-legacy-source-fingerprint-v1\0";
+const SOURCE_FINGERPRINT_V5_DOMAIN: &[u8] = b"v2board-legacy-source-fingerprint-v2\0";
+const DISCARD_PROOF_DOMAIN: &[u8] = b"v2board-legacy-discard-proof-v1\0";
 const PRIMARY_KEY_DOMAIN: &[u8] = b"v2board-legacy-copy-primary-key-v1\0";
 const CHECKPOINT_RECORD_DOMAIN: &[u8] = b"v2board-legacy-copy-checkpoint-record-v1\0";
 const FROZEN_TRAFFIC_DELTA_DOMAIN: &[u8] = b"v2board-frozen-traffic-user-deltas-v1\0";
@@ -123,6 +126,10 @@ pub enum LegacyCopyError {
     GiftcardIdRange,
     #[error("node credential derivation does not exactly match copied nodes")]
     NodeCredentialMismatch,
+    #[error("schema-v5 discarded target table {table} must remain empty, found {row_count} rows")]
+    DiscardTargetNotEmpty { table: String, row_count: u64 },
+    #[error("schema-v5 discarded target identity sequence {table}.id is not reset to start at 1")]
+    DiscardSequenceNotReset { table: String },
     #[error("generated target value {table}.{column} cannot be derived from the source row")]
     GeneratedValue { table: String, column: String },
     #[error(
@@ -503,8 +510,10 @@ pub struct LegacySourceFingerprint {
 
 /// Immutable linkage between the HMAC-bound Redis receipt and the exact
 /// filesystem journal event that declared the legacy source drained. The
-/// formal MySQL fingerprint deliberately remains the canonical 27-table
-/// fingerprint; this is an additional source fact, never folded into it.
+/// formal MySQL fingerprint always covers all 27 tables: v4 preserves its
+/// historical canonical serialization, while v5 canonically transforms only
+/// retained tables and hashes discarded typed source rows directly. This is an
+/// additional source fact, never folded into it.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct SourceDrainJournalBinding {
     pub generation: u64,
@@ -1196,20 +1205,27 @@ impl LegacySourceSnapshot {
     async fn canonical_fingerprint(
         &mut self,
         batch_size: u32,
+        strategy: LegacyConversionStrategy,
     ) -> Result<LegacySourceFingerprint, LegacyCopyError> {
         if batch_size == 0 || batch_size > MAX_BATCH_SIZE {
             return Err(ConverterError::InvalidBatchSize(batch_size).into());
         }
         audit_registry()?;
-        let registry = registry_sha256()?;
-        let mut digest = Sha256::new();
-        digest.update(SOURCE_FINGERPRINT_DOMAIN);
-        digest_field(&mut digest, LEGACY_SEMANTIC_SCHEMA_SHA256.as_bytes());
-        digest_field(&mut digest, registry.as_bytes());
+        let (mut digest, strategy_registry) = source_fingerprint_digest(strategy)?;
         let mut row_count = 0_u64;
         for mapping in TABLE_MAPPINGS {
             digest_field(&mut digest, mapping.source.as_bytes());
             digest_field(&mut digest, mapping.target.as_bytes());
+            if strategy == LegacyConversionStrategy::DiscardNodesTrafficDetailsAndOperationalLogs {
+                digest_field(
+                    &mut digest,
+                    if strategy.copies_base_table(mapping) {
+                        b"canonical-retained-row"
+                    } else {
+                        b"raw-discarded-row"
+                    },
+                );
+            }
             let mut table_rows = 0_u64;
             let mut after = INITIAL_SOURCE_ID_CURSOR;
             loop {
@@ -1218,10 +1234,8 @@ impl LegacySourceSnapshot {
                     break;
                 }
                 for source in &source_rows {
-                    let expected = expected_full_row(mapping, source)?;
-                    validate_canonical_row_for_postgres(mapping.target, &expected)?;
-                    digest_serializable(&mut digest, &expected)?;
-                    if mapping.source == "v2_giftcard" {
+                    digest_source_fingerprint_row(&mut digest, mapping, source, strategy)?;
+                    if strategy.copies_base_table(mapping) && mapping.source == "v2_giftcard" {
                         let used = source.get("used_user_ids").ok_or_else(|| {
                             ConverterError::MissingColumn {
                                 table: mapping.source.to_string(),
@@ -1257,7 +1271,7 @@ impl LegacySourceSnapshot {
         }
         Ok(LegacySourceFingerprint {
             semantic_schema_sha256: LEGACY_SEMANTIC_SCHEMA_SHA256.to_string(),
-            converter_registry_sha256: registry,
+            converter_registry_sha256: strategy_registry,
             table_count: TABLE_MAPPINGS.len(),
             row_count,
             canonical_sha256: hex::encode(digest.finalize()),
@@ -1336,6 +1350,55 @@ impl LegacySourceSnapshot {
     }
 }
 
+fn source_fingerprint_digest(
+    strategy: LegacyConversionStrategy,
+) -> Result<(Sha256, String), LegacyCopyError> {
+    let strategy_registry = registry_sha256_for_strategy(strategy)?;
+    let mut digest = Sha256::new();
+    match strategy {
+        LegacyConversionStrategy::PreserveAll => {
+            // This is the exact schema-v4 prefix. Do not append a strategy or
+            // disposition marker: its historical fingerprint bytes are a
+            // durable backup/checkpoint contract.
+            digest.update(SOURCE_FINGERPRINT_DOMAIN);
+            digest_field(&mut digest, LEGACY_SEMANTIC_SCHEMA_SHA256.as_bytes());
+            digest_field(&mut digest, registry_sha256()?.as_bytes());
+        }
+        LegacyConversionStrategy::DiscardNodesTrafficDetailsAndOperationalLogs => {
+            // Schema v5 needs a new serialization: retained rows are bound by
+            // their PostgreSQL canonical values, while intentionally discarded
+            // rows are bound as the complete typed MySQL source row without
+            // invoking obsolete node, traffic-detail, or operational-log
+            // transforms.
+            digest.update(SOURCE_FINGERPRINT_V5_DOMAIN);
+            digest_field(&mut digest, LEGACY_SEMANTIC_SCHEMA_SHA256.as_bytes());
+            digest_field(&mut digest, strategy_registry.as_bytes());
+            digest_field(&mut digest, strategy.stable_name().as_bytes());
+        }
+    }
+    Ok((digest, strategy_registry))
+}
+
+fn digest_source_fingerprint_row(
+    digest: &mut Sha256,
+    mapping: &TableMapping,
+    source: &SourceRow,
+    strategy: LegacyConversionStrategy,
+) -> Result<(), LegacyCopyError> {
+    if strategy.copies_base_table(mapping) {
+        let expected = expected_full_row(mapping, source)?;
+        validate_canonical_row_for_postgres(mapping.target, &expected)?;
+        digest_serializable(digest, &expected)
+    } else {
+        // `read_batch` has already proved that this row contains exactly every
+        // registry-owned source column and that its selected id matches the
+        // typed row id. Hash that complete source fact directly. In particular,
+        // malformed JSON inside a discarded node column remains evidence; it
+        // is not interpreted as data destined for PostgreSQL.
+        digest_serializable(digest, source)
+    }
+}
+
 fn build_traffic_fold_plan(
     binding: &ConversionRunBinding,
     traffic: &VerifiedFrozenTrafficBatch,
@@ -1407,9 +1470,21 @@ pub async fn fingerprint_legacy_source(
     pool: &MySqlPool,
     batch_size: u32,
 ) -> Result<(SourceSnapshotIdentity, LegacySourceFingerprint), LegacyCopyError> {
+    fingerprint_legacy_source_for_strategy(pool, batch_size, LegacyConversionStrategy::PreserveAll)
+        .await
+}
+
+pub async fn fingerprint_legacy_source_for_strategy(
+    pool: &MySqlPool,
+    batch_size: u32,
+    strategy: LegacyConversionStrategy,
+) -> Result<(SourceSnapshotIdentity, LegacySourceFingerprint), LegacyCopyError> {
     let mut snapshot = LegacySourceSnapshot::begin_read_only(pool).await?;
     let identity = snapshot.identity().clone();
-    let fingerprint = snapshot.canonical_fingerprint(batch_size).await?;
+    // Every strategy fingerprints all 27 source tables. Discard is an audited
+    // target policy, never permission to ignore source facts. Schema v5 hashes
+    // discarded rows in their complete typed source representation.
+    let fingerprint = snapshot.canonical_fingerprint(batch_size, strategy).await?;
     snapshot.commit().await?;
     Ok((identity, fingerprint))
 }
@@ -2069,6 +2144,48 @@ impl<'a> PostgresCopyTarget<'a> {
         })
     }
 
+    async fn verify_discard_targets_empty(
+        &self,
+        strategy: LegacyConversionStrategy,
+    ) -> Result<(), LegacyCopyError> {
+        for table in discarded_table_mappings(strategy)
+            .map(|mapping| mapping.target)
+            .chain(discarded_derived_mappings(strategy).map(|mapping| mapping.target))
+        {
+            let row_count = self.table_count(table).await?;
+            if row_count != 0 {
+                return Err(LegacyCopyError::DiscardTargetNotEmpty {
+                    table: table.to_string(),
+                    row_count,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    async fn identity_sequence_state(&self, table: &str) -> Result<(i64, bool), LegacyCopyError> {
+        let relation = sqlx::query_as::<_, (String, String)>(
+            "SELECT namespace.nspname, class.relname \
+             FROM pg_class class \
+             JOIN pg_namespace namespace ON namespace.oid = class.relnamespace \
+             WHERE class.oid = pg_get_serial_sequence($1, 'id')::regclass",
+        )
+        .bind(table)
+        .fetch_one(self.pool)
+        .await
+        .map_err(LegacyCopyError::Target)?;
+        let quoted_relation = format!(
+            "\"{}\".\"{}\"",
+            relation.0.replace('"', "\"\""),
+            relation.1.replace('"', "\"\"")
+        );
+        let sql = format!("SELECT last_value, is_called FROM {quoted_relation}");
+        sqlx::query_as::<_, (i64, bool)>(sqlx::AssertSqlSafe(sql))
+            .fetch_one(self.pool)
+            .await
+            .map_err(LegacyCopyError::Target)
+    }
+
     pub async fn apply_user_inviter_batch(
         &self,
         source_rows: &[SourceRow],
@@ -2617,6 +2734,31 @@ pub struct DerivedVerification {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct DiscardedTableVerification {
+    pub source: String,
+    pub target: String,
+    pub source_count: u64,
+    pub source_max_id: Option<i64>,
+    /// Domain- and source-table-bound digest of the ordered source rows serialized
+    /// with their typed `SourceValue` representation, without conversion.
+    pub source_typed_rows_sha256: String,
+    pub target_count: u64,
+    /// `last_value=1,is_called=false` means the first post-migration identity
+    /// allocation is exactly 1.
+    pub target_sequence_last_value: i64,
+    pub target_sequence_is_called: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct DiscardedDerivedVerification {
+    pub target: String,
+    pub source_tables: Vec<String>,
+    pub source_count: u64,
+    pub source_proof_sha256: String,
+    pub target_count: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct TrafficFoldVerification {
     pub operation_id: String,
     pub target_installation_id: String,
@@ -2642,8 +2784,14 @@ pub struct TrafficFoldVerification {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct LegacyCopyVerification {
+    #[serde(skip_serializing_if = "LegacyConversionStrategy::is_preserve_all")]
+    pub strategy: LegacyConversionStrategy,
     pub base_tables: Vec<TableVerification>,
     pub derived_tables: Vec<DerivedVerification>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub discarded_base_tables: Vec<DiscardedTableVerification>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub discarded_derived_targets: Vec<DiscardedDerivedVerification>,
     pub traffic_fold: TrafficFoldVerification,
 }
 
@@ -2750,13 +2898,21 @@ impl<'a> LegacyCopyAdapter<'a> {
         // Recompute the same full value fingerprint on every process start,
         // including resume. A row-value change with identical counts must not
         // be hidden behind a previously durable copy prefix.
-        let observed_source = self.source.canonical_fingerprint(self.batch_size).await?;
+        let observed_source = self
+            .source
+            .canonical_fingerprint(self.batch_size, self.binding.strategy)
+            .await?;
         if observed_source.canonical_sha256 != self.binding.source_snapshot_sha256
             || observed_source.semantic_schema_sha256 != self.binding.source_schema_sha256
             || observed_source.converter_registry_sha256 != self.binding.registry_sha256
         {
             return Err(LegacyCopyError::SourceFingerprintMismatch);
         }
+        // Recheck on every process start, including a mid-copy resume, before
+        // another target mutation can be accepted.
+        self.target
+            .verify_discard_targets_empty(self.binding.strategy)
+            .await?;
         let durable = sink
             .load(&self.binding)
             .await
@@ -2792,7 +2948,8 @@ impl<'a> LegacyCopyAdapter<'a> {
             return Err(LegacyCopyError::UnsupportedResumeCheckpoint);
         }
 
-        for (index, mapping) in TABLE_MAPPINGS.iter().enumerate() {
+        let copied_mappings = copied_table_mappings(self.binding.strategy).collect::<Vec<_>>();
+        for (index, mapping) in copied_mappings.iter().copied().enumerate() {
             if mapping.order < checkpoint.table_order {
                 continue;
             }
@@ -2853,7 +3010,7 @@ impl<'a> LegacyCopyAdapter<'a> {
                 checkpoint = next;
                 after_id = last_id;
             }
-            let next_mapping = TABLE_MAPPINGS.get(index + 1);
+            let next_mapping = copied_mappings.get(index + 1).copied();
             let next = if let Some(next_mapping) = next_mapping {
                 ConversionCheckpoint {
                     binding: self.binding.clone(),
@@ -2887,7 +3044,7 @@ impl<'a> LegacyCopyAdapter<'a> {
     }
 
     async fn prevalidate_source(&mut self) -> Result<(), LegacyCopyError> {
-        for mapping in TABLE_MAPPINGS {
+        for mapping in copied_table_mappings(self.binding.strategy) {
             let columns = full_target_columns(mapping);
             let mut after = INITIAL_SOURCE_ID_CURSOR;
             loop {
@@ -2931,7 +3088,10 @@ impl<'a> LegacyCopyAdapter<'a> {
         &mut self,
         traffic: Option<&TrafficFoldPlan>,
     ) -> Result<(), LegacyCopyError> {
-        for mapping in TABLE_MAPPINGS {
+        self.target
+            .verify_discard_targets_empty(self.binding.strategy)
+            .await?;
+        for mapping in copied_table_mappings(self.binding.strategy) {
             let mut after = INITIAL_SOURCE_ID_CURSOR;
             let mut source_count = 0_u64;
             loop {
@@ -3008,8 +3168,8 @@ impl<'a> LegacyCopyAdapter<'a> {
             .source
             .prevalidate_frozen_traffic(&self.binding, traffic)
             .await?;
-        let first_mapping = TABLE_MAPPINGS
-            .first()
+        let first_mapping = copied_table_mappings(self.binding.strategy)
+            .next()
             .ok_or_else(|| ConverterError::Registry("empty converter registry".to_string()))?;
         let mut checkpoint = self.copy_base_tables(sink, &traffic_plan).await?;
 
@@ -3029,8 +3189,14 @@ impl<'a> LegacyCopyAdapter<'a> {
         if checkpoint.phase == ConversionPhase::BuildDerivedRows {
             self.copy_giftcard_redemptions().await?;
             self.verify_giftcard_redemptions().await?;
-            self.derive_node_credentials().await?;
-            self.verify_node_credentials().await?;
+            if self.binding.strategy == LegacyConversionStrategy::PreserveAll {
+                self.derive_node_credentials().await?;
+                self.verify_node_credentials().await?;
+            } else {
+                self.target
+                    .verify_discard_targets_empty(self.binding.strategy)
+                    .await?;
+            }
             checkpoint = self
                 .advance_stage_checkpoint(
                     sink,
@@ -3147,7 +3313,7 @@ impl<'a> LegacyCopyAdapter<'a> {
         }
         let mut rolling = initial_rolling_sha256(&self.binding)?;
         let mut rows_seen = 0_u64;
-        for mapping in TABLE_MAPPINGS {
+        for mapping in copied_table_mappings(self.binding.strategy) {
             if mapping.order > checkpoint.table_order {
                 break;
             }
@@ -3379,8 +3545,126 @@ impl<'a> LegacyCopyAdapter<'a> {
         traffic: &TrafficFoldPlan,
     ) -> Result<Vec<TableVerification>, LegacyCopyError> {
         let mut reports = Vec::with_capacity(TABLE_MAPPINGS.len());
-        for mapping in TABLE_MAPPINGS {
+        for mapping in copied_table_mappings(self.binding.strategy) {
             reports.push(self.verify_base_table(mapping, traffic).await?);
+        }
+        Ok(reports)
+    }
+
+    async fn verify_discarded_base_tables(
+        &mut self,
+    ) -> Result<Vec<DiscardedTableVerification>, LegacyCopyError> {
+        let mut reports = Vec::new();
+        for mapping in discarded_table_mappings(self.binding.strategy) {
+            let mut after = INITIAL_SOURCE_ID_CURSOR;
+            let mut source_count = 0_u64;
+            let mut source_max_id = None;
+            let mut source_digest = Sha256::new();
+            source_digest.update(DISCARD_PROOF_DOMAIN);
+            digest_field(&mut source_digest, mapping.source.as_bytes());
+            loop {
+                let source_rows = self
+                    .source
+                    .read_batch(mapping, after, self.batch_size)
+                    .await?;
+                if source_rows.is_empty() {
+                    break;
+                }
+                for source in &source_rows {
+                    digest_serializable(&mut source_digest, source)?;
+                }
+                source_count = source_count
+                    .checked_add(source_rows.len() as u64)
+                    .ok_or(LegacyCopyError::SourceFingerprintMismatch)?;
+                let last_id = source_i64(
+                    source_rows
+                        .last()
+                        .ok_or(LegacyCopyError::SourceFingerprintMismatch)?,
+                    "id",
+                    mapping.source,
+                )?;
+                source_max_id = Some(last_id);
+                after = last_id;
+            }
+            if source_count != self.source.table_count(mapping).await? {
+                return Err(LegacyCopyError::SourceFingerprintMismatch);
+            }
+            let target_count = self.target.table_count(mapping.target).await?;
+            if target_count != 0 {
+                return Err(LegacyCopyError::DiscardTargetNotEmpty {
+                    table: mapping.target.to_string(),
+                    row_count: target_count,
+                });
+            }
+            let (target_sequence_last_value, target_sequence_is_called) =
+                self.target.identity_sequence_state(mapping.target).await?;
+            if target_sequence_last_value != 1 || target_sequence_is_called {
+                return Err(LegacyCopyError::DiscardSequenceNotReset {
+                    table: mapping.target.to_string(),
+                });
+            }
+            reports.push(DiscardedTableVerification {
+                source: mapping.source.to_string(),
+                target: mapping.target.to_string(),
+                source_count,
+                source_max_id,
+                source_typed_rows_sha256: hex::encode(source_digest.finalize()),
+                target_count,
+                target_sequence_last_value,
+                target_sequence_is_called,
+            });
+        }
+        Ok(reports)
+    }
+
+    async fn verify_discarded_derived_targets(
+        &self,
+        base_proofs: &[DiscardedTableVerification],
+    ) -> Result<Vec<DiscardedDerivedVerification>, LegacyCopyError> {
+        let mut reports = Vec::new();
+        for mapping in discarded_derived_mappings(self.binding.strategy) {
+            let mut source_count = 0_u64;
+            let mut digest = Sha256::new();
+            digest.update(DISCARD_PROOF_DOMAIN);
+            digest_field(&mut digest, mapping.target.as_bytes());
+            for source_table in mapping.source_tables {
+                let proof = base_proofs
+                    .iter()
+                    .find(|proof| proof.source == *source_table)
+                    .ok_or(LegacyCopyError::SourceFingerprintMismatch)?;
+                source_count = source_count
+                    .checked_add(proof.source_count)
+                    .ok_or(LegacyCopyError::SourceFingerprintMismatch)?;
+                digest_field(&mut digest, source_table.as_bytes());
+                digest_field(&mut digest, proof.source_count.to_string().as_bytes());
+                digest_field(
+                    &mut digest,
+                    proof
+                        .source_max_id
+                        .unwrap_or(INITIAL_SOURCE_ID_CURSOR)
+                        .to_string()
+                        .as_bytes(),
+                );
+                digest_field(&mut digest, proof.source_typed_rows_sha256.as_bytes());
+            }
+            let target_count = self.target.table_count(mapping.target).await?;
+            if target_count != 0 {
+                return Err(LegacyCopyError::DiscardTargetNotEmpty {
+                    table: mapping.target.to_string(),
+                    row_count: target_count,
+                });
+            }
+            reports.push(DiscardedDerivedVerification {
+                target: mapping.target.to_string(),
+                source_tables: mapping
+                    .source_tables
+                    .iter()
+                    .map(|table| (*table).to_string())
+                    .collect(),
+                source_count,
+                source_proof_sha256: hex::encode(digest.finalize()),
+                target_count,
+            });
         }
         Ok(reports)
     }
@@ -3390,14 +3674,21 @@ impl<'a> LegacyCopyAdapter<'a> {
         traffic: &TrafficFoldPlan,
     ) -> Result<LegacyCopyVerification, LegacyCopyError> {
         let base_tables = self.verify_all_base_tables(traffic).await?;
-        let derived_tables = vec![
-            self.verify_giftcard_redemptions().await?,
-            self.verify_node_credentials().await?,
-        ];
+        let mut derived_tables = vec![self.verify_giftcard_redemptions().await?];
+        if self.binding.strategy == LegacyConversionStrategy::PreserveAll {
+            derived_tables.push(self.verify_node_credentials().await?);
+        }
+        let discarded_base_tables = self.verify_discarded_base_tables().await?;
+        let discarded_derived_targets = self
+            .verify_discarded_derived_targets(&discarded_base_tables)
+            .await?;
         let traffic_fold = self.target.verify_frozen_traffic(traffic).await?;
         Ok(LegacyCopyVerification {
+            strategy: self.binding.strategy,
             base_tables,
             derived_tables,
+            discarded_base_tables,
+            discarded_derived_targets,
             traffic_fold,
         })
     }
@@ -3962,8 +4253,8 @@ fn traffic_fold_seal_sha256(
 fn initial_checkpoint(
     binding: &ConversionRunBinding,
 ) -> Result<ConversionCheckpoint, LegacyCopyError> {
-    let first = TABLE_MAPPINGS
-        .first()
+    let first = copied_table_mappings(binding.strategy)
+        .next()
         .ok_or_else(|| ConverterError::Registry("empty converter registry".to_string()))?;
     Ok(ConversionCheckpoint {
         binding: binding.clone(),
@@ -4133,6 +4424,13 @@ fn checkpoint_record_sha256(
         checkpoint.binding.source_schema_sha256.as_bytes(),
     );
     digest_field(&mut digest, checkpoint.binding.registry_sha256.as_bytes());
+    if checkpoint.binding.strategy != LegacyConversionStrategy::PreserveAll {
+        digest_field(&mut digest, b"conversion_strategy");
+        digest_field(
+            &mut digest,
+            checkpoint.binding.strategy.stable_name().as_bytes(),
+        );
+    }
     digest_field(&mut digest, phase_name(checkpoint.phase).as_bytes());
     digest_field(&mut digest, checkpoint.table_order.to_string().as_bytes());
     digest_field(&mut digest, checkpoint.table.as_bytes());
@@ -4158,12 +4456,17 @@ fn checkpoint_record_sha256(
 }
 
 fn initial_rolling_sha256(binding: &ConversionRunBinding) -> Result<String, LegacyCopyError> {
+    binding.validate()?;
     let mut digest = Sha256::new();
     digest.update(COPY_ROLLING_DOMAIN);
     digest_field(&mut digest, binding.operation_id.as_bytes());
     digest_field(&mut digest, binding.target_installation_id.as_bytes());
     digest_field(&mut digest, binding.source_snapshot_sha256.as_bytes());
-    digest_field(&mut digest, registry_sha256()?.as_bytes());
+    digest_field(&mut digest, binding.registry_sha256.as_bytes());
+    if binding.strategy != LegacyConversionStrategy::PreserveAll {
+        digest_field(&mut digest, b"conversion_strategy");
+        digest_field(&mut digest, binding.strategy.stable_name().as_bytes());
+    }
     Ok(hex::encode(digest.finalize()))
 }
 
@@ -4217,10 +4520,17 @@ pub fn legacy_copy_verification_sha256(
             table: "copy_verification".to_string(),
             message: error.to_string(),
         })?;
+    Ok(legacy_copy_verification_sha256_from_bytes(&encoded))
+}
+
+/// Hashes the exact serialized PostgreSQL verification-report preimage. This
+/// is kept separate from serialization so the schema-v5 durable receipt can
+/// prove that its retained JSON bytes are the bytes named by the journal.
+pub(crate) fn legacy_copy_verification_sha256_from_bytes(encoded: &[u8]) -> String {
     let mut digest = Sha256::new();
     digest.update(FULL_ROW_DOMAIN);
-    digest_field(&mut digest, &encoded);
-    Ok(hex::encode(digest.finalize()))
+    digest_field(&mut digest, encoded);
+    hex::encode(digest.finalize())
 }
 
 fn digest_primary_keys(
@@ -4298,6 +4608,7 @@ mod tests {
             source_schema_sha256: crate::legacy_converter::LEGACY_SEMANTIC_SCHEMA_SHA256
                 .to_string(),
             registry_sha256: registry_sha256().expect("registry"),
+            strategy: LegacyConversionStrategy::PreserveAll,
         }
     }
 
@@ -4372,6 +4683,124 @@ mod tests {
         assert!(!sql.to_ascii_lowercase().contains("float"));
         assert!(!sql.contains("WITH CONSISTENT SNAPSHOT"));
         assert!(sql.contains("WHERE `id` > ? ORDER BY `id` ASC LIMIT ?"));
+    }
+
+    #[test]
+    fn schema_v4_source_fingerprint_serialization_is_byte_identical() {
+        let mapping = mapping_for_source("v2_payment").expect("payment mapping");
+        let mut source = SourceRow::new();
+        for column in source_columns(mapping) {
+            source.insert(column.to_string(), SourceValue::Null);
+        }
+        source.insert("id".to_string(), SourceValue::I64(1));
+        source.insert("config".to_string(), SourceValue::Text("{}".to_string()));
+
+        let mut historical = Sha256::new();
+        historical.update(SOURCE_FINGERPRINT_DOMAIN);
+        digest_field(&mut historical, LEGACY_SEMANTIC_SCHEMA_SHA256.as_bytes());
+        digest_field(
+            &mut historical,
+            registry_sha256().expect("v4 registry").as_bytes(),
+        );
+        digest_field(&mut historical, mapping.source.as_bytes());
+        digest_field(&mut historical, mapping.target.as_bytes());
+        let canonical = expected_full_row(mapping, &source).expect("canonical payment");
+        validate_canonical_row_for_postgres(mapping.target, &canonical)
+            .expect("valid PostgreSQL row");
+        digest_serializable(&mut historical, &canonical).expect("historical row digest");
+        digest_field(&mut historical, b"1");
+
+        let (mut current, registry) =
+            source_fingerprint_digest(LegacyConversionStrategy::PreserveAll).expect("v4 digest");
+        assert_eq!(registry, registry_sha256().expect("v4 registry"));
+        digest_field(&mut current, mapping.source.as_bytes());
+        digest_field(&mut current, mapping.target.as_bytes());
+        digest_source_fingerprint_row(
+            &mut current,
+            mapping,
+            &source,
+            LegacyConversionStrategy::PreserveAll,
+        )
+        .expect("v4 row digest");
+        digest_field(&mut current, b"1");
+
+        assert_eq!(historical.finalize(), current.finalize());
+    }
+
+    #[test]
+    fn schema_v5_source_fingerprint_raw_binds_malformed_discarded_node_json() {
+        let mapping = mapping_for_source("v2_server_shadowsocks").expect("node mapping");
+        let mut source = SourceRow::new();
+        for column in source_columns(mapping) {
+            source.insert(column.to_string(), SourceValue::Null);
+        }
+        source.insert("id".to_string(), SourceValue::I64(1));
+        source.insert("group_id".to_string(), SourceValue::Text("[1]".to_string()));
+        source.insert("route_id".to_string(), SourceValue::Text("[]".to_string()));
+        source.insert("tags".to_string(), SourceValue::Text("[]".to_string()));
+        source.insert(
+            "obfs_settings".to_string(),
+            SourceValue::Text("obsolete-not-json".to_string()),
+        );
+        assert!(transform_row(mapping, &source).is_err());
+
+        let mut first = Sha256::new();
+        digest_source_fingerprint_row(
+            &mut first,
+            mapping,
+            &source,
+            LegacyConversionStrategy::DiscardNodesTrafficDetailsAndOperationalLogs,
+        )
+        .expect("raw source fingerprint row");
+        let mut changed = source.clone();
+        changed.insert(
+            "obfs_settings".to_string(),
+            SourceValue::Text("different-obsolete-not-json".to_string()),
+        );
+        let mut second = Sha256::new();
+        digest_source_fingerprint_row(
+            &mut second,
+            mapping,
+            &changed,
+            LegacyConversionStrategy::DiscardNodesTrafficDetailsAndOperationalLogs,
+        )
+        .expect("changed raw source fingerprint row");
+        assert_ne!(first.finalize(), second.finalize());
+
+        let mut v4 = Sha256::new();
+        assert!(
+            digest_source_fingerprint_row(
+                &mut v4,
+                mapping,
+                &source,
+                LegacyConversionStrategy::PreserveAll,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn schema_v5_source_fingerprint_still_rejects_malformed_retained_rows() {
+        let mapping = mapping_for_source("v2_payment").expect("payment mapping");
+        let mut source = SourceRow::new();
+        for column in source_columns(mapping) {
+            source.insert(column.to_string(), SourceValue::Null);
+        }
+        source.insert("id".to_string(), SourceValue::I64(1));
+        source.insert(
+            "config".to_string(),
+            SourceValue::Text("retained-not-json".to_string()),
+        );
+        let mut digest = Sha256::new();
+        assert!(
+            digest_source_fingerprint_row(
+                &mut digest,
+                mapping,
+                &source,
+                LegacyConversionStrategy::DiscardNodesTrafficDetailsAndOperationalLogs,
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -4498,6 +4927,11 @@ mod tests {
             next,
             advance_rolling_sha256(&initial, "v2_user", 9, &"b".repeat(64)).expect("same")
         );
+
+        let mut v5 = binding;
+        v5.strategy = LegacyConversionStrategy::DiscardNodesTrafficDetailsAndOperationalLogs;
+        v5.registry_sha256 = registry_sha256_for_strategy(v5.strategy).expect("v5 registry");
+        assert_ne!(initial, initial_rolling_sha256(&v5).expect("v5 initial"));
     }
 
     #[test]
@@ -4854,15 +5288,21 @@ mod tests {
             applied_exactly_once: true,
         };
         let first = legacy_copy_verification_sha256(&LegacyCopyVerification {
+            strategy: LegacyConversionStrategy::PreserveAll,
             base_tables: Vec::new(),
             derived_tables: Vec::new(),
+            discarded_base_tables: Vec::new(),
+            discarded_derived_targets: Vec::new(),
             traffic_fold: traffic.clone(),
         })
         .expect("first report hash");
         traffic.source_drain_receipt_sha256 = "6".repeat(64);
         let second = legacy_copy_verification_sha256(&LegacyCopyVerification {
+            strategy: LegacyConversionStrategy::PreserveAll,
             base_tables: Vec::new(),
             derived_tables: Vec::new(),
+            discarded_base_tables: Vec::new(),
+            discarded_derived_targets: Vec::new(),
             traffic_fold: traffic,
         })
         .expect("second report hash");
@@ -4947,7 +5387,13 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "requires seeded disposable MySQL 8 plus empty PostgreSQL 18 and ClickHouse fixture databases"]
-    async fn all_legacy_tables_copy_to_postgres_project_clickhouse_and_retry_exactly() {
+    async fn all_legacy_tables_follow_strategy_to_postgres_project_clickhouse_and_retry_exactly() {
+        let schema_version = std::env::var("V2BOARD_LEGACY_CONVERTER_SCHEMA_VERSION")
+            .unwrap_or_else(|_| "4".to_string())
+            .parse::<u32>()
+            .expect("V2BOARD_LEGACY_CONVERTER_SCHEMA_VERSION must be 4 or 5");
+        let strategy = LegacyConversionStrategy::for_schema_version(schema_version)
+            .expect("V2BOARD_LEGACY_CONVERTER_SCHEMA_VERSION must be 4 or 5");
         let mysql_url = std::env::var("V2BOARD_LEGACY_CONVERTER_MYSQL_URL")
             .expect("V2BOARD_LEGACY_CONVERTER_MYSQL_URL");
         let postgres_url = std::env::var("V2BOARD_LEGACY_CONVERTER_POSTGRES_URL")
@@ -4975,13 +5421,16 @@ mod tests {
             .await
             .expect("apply PostgreSQL converter baseline");
 
-        let (_, source_fingerprint) = fingerprint_legacy_source(&source, 2)
+        let (_, source_fingerprint) = fingerprint_legacy_source_for_strategy(&source, 2, strategy)
             .await
             .expect("fingerprint all seeded source rows");
         assert_eq!(source_fingerprint.table_count, TABLE_MAPPINGS.len());
         assert_eq!(source_fingerprint.row_count, 28);
         let mut conversion_binding = binding();
         conversion_binding.source_snapshot_sha256 = source_fingerprint.canonical_sha256;
+        conversion_binding.registry_sha256 =
+            registry_sha256_for_strategy(strategy).expect("strategy registry");
+        conversion_binding.strategy = strategy;
         let backup_reference_sha256 =
             install_converter_lifecycle_fixture(&target, &conversion_binding).await;
         let traffic = verified_traffic_batch(BTreeMap::new(), BTreeMap::new());
@@ -4995,23 +5444,64 @@ mod tests {
         let (first_checkpoint, first_verification) = first
             .execute(&mut first_sink, &traffic)
             .await
-            .expect("copy every seeded legacy table");
+            .expect("apply selected legacy table strategy");
         assert_eq!(first_checkpoint.phase, ConversionPhase::Complete);
-        assert_eq!(first_verification.base_tables.len(), TABLE_MAPPINGS.len());
+        let copied_table_count = copied_table_mappings(strategy).count();
+        assert_eq!(first_verification.strategy, strategy);
+        assert_eq!(first_verification.base_tables.len(), copied_table_count);
         assert!(first_verification.base_tables.iter().all(|table| {
             table.source_count > 0
                 && table.source_count == table.target_count
                 && table.source_primary_key_sha256 == table.target_primary_key_sha256
                 && table.source_canonical_sha256 == table.target_canonical_sha256
         }));
-        assert_eq!(
-            first_verification
-                .derived_tables
-                .iter()
-                .map(|table| (table.target.as_str(), table.target_count))
-                .collect::<BTreeMap<_, _>>(),
-            BTreeMap::from([("v2_giftcard_redemption", 2), ("v2_server_credential", 8)])
-        );
+        let derived_counts = first_verification
+            .derived_tables
+            .iter()
+            .map(|table| (table.target.as_str(), table.target_count))
+            .collect::<BTreeMap<_, _>>();
+        match strategy {
+            LegacyConversionStrategy::PreserveAll => {
+                assert_eq!(copied_table_count, TABLE_MAPPINGS.len());
+                assert_eq!(
+                    derived_counts,
+                    BTreeMap::from([("v2_giftcard_redemption", 2), ("v2_server_credential", 8),])
+                );
+                assert!(first_verification.discarded_base_tables.is_empty());
+                assert!(first_verification.discarded_derived_targets.is_empty());
+            }
+            LegacyConversionStrategy::DiscardNodesTrafficDetailsAndOperationalLogs => {
+                assert_eq!(copied_table_count, 14);
+                assert_eq!(
+                    derived_counts,
+                    BTreeMap::from([("v2_giftcard_redemption", 2)])
+                );
+                assert_eq!(first_verification.discarded_base_tables.len(), 13);
+                assert!(
+                    first_verification
+                        .discarded_base_tables
+                        .iter()
+                        .all(|table| {
+                            table.source_count > 0
+                                && table.source_max_id.is_some()
+                                && is_lower_sha256(&table.source_typed_rows_sha256)
+                                && table.target_count == 0
+                                && table.target_sequence_last_value == 1
+                                && !table.target_sequence_is_called
+                        })
+                );
+                assert_eq!(first_verification.discarded_derived_targets.len(), 1);
+                let credential = &first_verification.discarded_derived_targets[0];
+                assert_eq!(credential.target, "v2_server_credential");
+                assert_eq!(
+                    credential.source_tables.len(),
+                    NODE_CREDENTIAL_SOURCES.len()
+                );
+                assert_eq!(credential.source_count, 8);
+                assert!(is_lower_sha256(&credential.source_proof_sha256));
+                assert_eq!(credential.target_count, 0);
+            }
+        }
         assert!(first_verification.traffic_fold.applied_exactly_once);
         first
             .finish_source_snapshot()
@@ -5028,14 +5518,31 @@ mod tests {
         assert_eq!(users[1].1, Some(1));
         assert_eq!(users[0].2, "00000000000000000000000000000001");
         assert_eq!(users[0].3, "主用户 ☃");
-        let payment_config: serde_json::Value =
-            sqlx::query_scalar("SELECT config FROM v2_payment WHERE id = 1")
-                .fetch_one(&target)
-                .await
-                .expect("read converted payment JSON");
+        let (payment_config, payment_enable) = sqlx::query_as::<_, (serde_json::Value, i16)>(
+            "SELECT config, enable FROM v2_payment WHERE id = 1",
+        )
+        .fetch_one(&target)
+        .await
+        .expect("read converted payment JSON and enable state");
         assert_eq!(
             payment_config,
             serde_json::json!({"merchant": "legacy", "enabled": true})
+        );
+        assert_eq!(payment_enable, 1, "migration must not disable payment rows");
+        let operational_log_counts = sqlx::query_as::<_, (i64, i64)>(
+            "SELECT (SELECT count(*) FROM v2_log)::bigint, \
+                    (SELECT count(*) FROM v2_mail_log)::bigint",
+        )
+        .fetch_one(&target)
+        .await
+        .expect("count legacy operational-log targets");
+        assert_eq!(
+            operational_log_counts,
+            if strategy == LegacyConversionStrategy::PreserveAll {
+                (1, 1)
+            } else {
+                (0, 0)
+            }
         );
         let coupon_plans: serde_json::Value =
             sqlx::query_scalar("SELECT limit_plan_ids FROM v2_coupon WHERE id = 1")
@@ -5050,12 +5557,33 @@ mod tests {
         .await
         .expect("read derived gift-card redemptions");
         assert_eq!(redemptions, vec![(1, 1), (1, 2)]);
+        let retained_counts = sqlx::query_as::<_, (i64, i64, i64)>(
+            "SELECT (SELECT count(*) FROM v2_user)::bigint, \
+                    (SELECT count(*) FROM v2_server_group)::bigint, \
+                    (SELECT count(*) FROM v2_stat)::bigint",
+        )
+        .fetch_one(&target)
+        .await
+        .expect("read retained schema-v5 authorities");
+        assert_eq!(retained_counts, (2, 1, 1));
+        let credential_count: i64 = sqlx::query_scalar("SELECT count(*) FROM v2_server_credential")
+            .fetch_one(&target)
+            .await
+            .expect("count projected node credentials");
+        assert_eq!(
+            credential_count,
+            if strategy == LegacyConversionStrategy::PreserveAll {
+                8
+            } else {
+                0
+            }
+        );
         let checkpoint_rows_before: i64 =
             sqlx::query_scalar("SELECT count(*) FROM v2_legacy_copy_checkpoint")
                 .fetch_one(&target)
                 .await
                 .expect("count durable converter checkpoints");
-        assert!(checkpoint_rows_before > i64::from(TABLE_MAPPINGS.len() as u32));
+        assert!(checkpoint_rows_before > i64::from(copied_table_count as u32));
 
         let mut retry_sink =
             PostgresDurableCopyCheckpointSink::new(&target, backup_reference_sha256)
@@ -5080,9 +5608,18 @@ mod tests {
                 .expect("recount durable converter checkpoints");
         assert_eq!(checkpoint_rows_after, checkpoint_rows_before);
 
-        let mut spec = crate::manifest::tests::legacy_spec_for_orchestration_operation(
-            &conversion_binding.operation_id,
-        );
+        let mut spec = match strategy {
+            LegacyConversionStrategy::PreserveAll => {
+                crate::manifest::tests::legacy_spec_for_orchestration_operation(
+                    &conversion_binding.operation_id,
+                )
+            }
+            LegacyConversionStrategy::DiscardNodesTrafficDetailsAndOperationalLogs => {
+                crate::manifest::tests::legacy_v5_spec_for_orchestration_operation(
+                    &conversion_binding.operation_id,
+                )
+            }
+        };
         let ProvisionFlow::LegacyReferenceMigration {
             target: target_spec,
             ..
@@ -5106,19 +5643,66 @@ mod tests {
         )
         .await
         .expect("project the empty native ClickHouse epoch");
-        assert_eq!(projection.report().legacy_statistics.len(), 3);
-        assert!(
-            projection
-                .report()
-                .legacy_statistics
-                .iter()
-                .all(|proof| proof.row_count == 1)
-        );
-        assert!(
-            projection
-                .report()
-                .legacy_daily_statistics_preserved_in_postgres
-        );
+        match strategy {
+            LegacyConversionStrategy::PreserveAll => {
+                assert_eq!(projection.report().report_version, 2);
+                assert_eq!(projection.report().legacy_statistics.len(), 3);
+                assert!(
+                    projection
+                        .report()
+                        .legacy_statistics
+                        .iter()
+                        .all(|proof| proof.row_count == 1)
+                );
+                assert_eq!(
+                    projection
+                        .report()
+                        .legacy_daily_statistics_preserved_in_postgres,
+                    Some(true)
+                );
+                assert!(projection.report().legacy_statistics_disposition.is_none());
+                assert!(projection.report().discarded_legacy_statistics.is_none());
+            }
+            LegacyConversionStrategy::DiscardNodesTrafficDetailsAndOperationalLogs => {
+                assert_eq!(projection.report().report_version, 3);
+                assert_eq!(projection.report().legacy_statistics.len(), 1);
+                assert_eq!(projection.report().legacy_statistics[0].table, "v2_stat");
+                assert_eq!(projection.report().legacy_statistics[0].row_count, 1);
+                assert_eq!(
+                    projection
+                        .report()
+                        .legacy_daily_statistics_preserved_in_postgres,
+                    None
+                );
+                assert_eq!(
+                    projection.report().legacy_statistics_disposition,
+                    Some(
+                        crate::legacy_clickhouse::LegacyStatisticsDisposition::PreserveBusinessAggregateDiscardTrafficDetails
+                    )
+                );
+                let discarded = projection
+                    .report()
+                    .discarded_legacy_statistics
+                    .as_ref()
+                    .expect("schema-v5 discarded statistics proofs");
+                assert_eq!(discarded.len(), 2);
+                assert_eq!(
+                    discarded
+                        .iter()
+                        .map(|proof| proof.table.as_str())
+                        .collect::<BTreeSet<_>>(),
+                    BTreeSet::from(["v2_stat_server", "v2_stat_user"])
+                );
+                assert!(discarded.iter().all(|proof| {
+                    proof.source_row_count == 1
+                        && proof.source_max_id.is_some()
+                        && is_lower_sha256(&proof.source_typed_rows_sha256)
+                        && proof.target_row_count == 0
+                        && proof.target_sequence_last_value == 1
+                        && !proof.target_sequence_is_called
+                }));
+            }
+        }
         assert!(
             !projection
                 .report()

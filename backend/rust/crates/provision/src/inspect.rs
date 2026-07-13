@@ -29,8 +29,8 @@ use crate::native_legacy_source::{
     PreAuthorizationSourceControlInspection, SourceError, inspect_pre_authorization_source_control,
 };
 use crate::native_node_cutover::{
-    NodeCutoverError, NodeCutoverProductionBlocker, PreAuthorizationNodeInventorySummary,
-    inspect_pre_authorization_node_inventory,
+    LegacyNodeMigrationOutcome, NodeCutoverError, NodeCutoverProductionBlocker,
+    PreAuthorizationNodeInventorySummary, inspect_pre_authorization_node_inventory,
 };
 
 const CORE_LEGACY_TABLES: &[&str] = &[
@@ -258,6 +258,8 @@ pub struct DataInspection {
     pub relational_integrity_violations: i64,
     pub node_group_violations: i64,
     pub target_collation_unique_collisions: i64,
+    #[serde(skip)]
+    stat_server_target_collation_unique_collisions: i64,
     pub legacy_json_id_arrays: LegacyJsonIdArrayInspection,
 }
 
@@ -294,6 +296,16 @@ impl LegacyJsonIdArrayInspection {
         .fold(0_i64, |total, column| {
             total.saturating_add(column.violations)
         })
+    }
+
+    fn retained_requires_normalization_after_node_discard(&self) -> i64 {
+        self.requires_normalization()
+            .saturating_sub(self.node_group_ids.requires_normalization)
+    }
+
+    fn retained_violations_after_node_discard(&self) -> i64 {
+        self.violations()
+            .saturating_sub(self.node_group_ids.violations)
     }
 }
 
@@ -652,8 +664,9 @@ async fn build_legacy_migration_inspection(
     // This is a complete, streaming inspection of the immutable input archive.
     // It deliberately runs before any source connection is opened. A malformed
     // archive is reported as a reviewable plan blocker and never reaches apply.
+    let has_legacy_execution = spec.legacy_apply_execution().is_some();
     let release_archive_result =
-        (spec.schema_version == 4).then(|| inspect_release_archive_read_only(spec));
+        has_legacy_execution.then(|| inspect_release_archive_read_only(spec));
     let pool_config = inspection_pool_config();
     let source_pool = connect_legacy_mysql_with_config(&source.database_url, &pool_config)
         .await
@@ -700,7 +713,7 @@ async fn build_legacy_migration_inspection(
     let data = inspect_data(&source_pool, &source_tables)
         .await
         .map_err(ProvisionPlanError::SourceQuery)?;
-    let node_inventory = if spec.schema_version == 4 {
+    let node_inventory = if has_legacy_execution {
         Some(
             inspect_pre_authorization_node_inventory(spec, &source_pool)
                 .await
@@ -720,12 +733,12 @@ async fn build_legacy_migration_inspection(
             "legacy source schema changed during the consistent inspection snapshot".into(),
         )));
     }
-    let backup_restore = if spec.schema_version == 4 && mode == InspectionMode::Online {
+    let backup_restore = if has_legacy_execution && mode == InspectionMode::Online {
         Some(inspect_backup_restore_prerequisites(spec).await)
     } else {
         None
     };
-    let source_control = if spec.schema_version == 4 && mode == InspectionMode::Online {
+    let source_control = if has_legacy_execution && mode == InspectionMode::Online {
         Some(
             inspect_pre_authorization_source_control(spec)
                 .await
@@ -828,9 +841,13 @@ async fn build_legacy_migration_inspection(
     {
         blockers.push("target Redis is the same server instance as source Redis".into());
     }
+    let discards_legacy_nodes_and_traffic_details = node_inventory.as_ref().is_some_and(|nodes| {
+        nodes.planned_outcome == Some(LegacyNodeMigrationOutcome::DiscardAndManualRebuild)
+    });
     append_legacy_data_blockers(
         &data,
         &source_redis,
+        discards_legacy_nodes_and_traffic_details,
         mode,
         &mut blockers,
         &mut pending_final_requirements,
@@ -871,8 +888,7 @@ async fn build_legacy_migration_inspection(
         None => None,
     };
 
-    let runtime_evidence_is_journaled =
-        spec.schema_version == 4 && spec.legacy_apply_execution().is_some();
+    let runtime_evidence_is_journaled = has_legacy_execution;
     let operator_attestations_complete = attestations.is_some_and(|attestations| {
         attestations.source_writers_stopped
             && attestations.source_workers_stopped
@@ -909,11 +925,21 @@ async fn build_legacy_migration_inspection(
         warnings
             .push("unfinished non-Stripe orders will require preserved payable bindings".into());
     }
-    if data.node_count != 0 {
-        warnings.push(
-            "the source contains external nodes; this repository has no node-side activation coordinator, so apply remains blocked"
-                .into(),
-        );
+    if let Some(inventory) = &node_inventory {
+        match inventory.planned_outcome {
+            None | Some(LegacyNodeMigrationOutcome::RequireEmptySource)
+                if inventory.node_count != 0 =>
+            {
+                warnings.push(
+                    "the schema-v4 source contains external nodes and remains blocked because that policy requires an empty source inventory"
+                        .into(),
+                );
+            }
+            Some(LegacyNodeMigrationOutcome::DiscardAndManualRebuild) => warnings.push(
+                schema_v5_discard_warning(inventory.legacy_nodes_to_discard.unwrap_or_default()),
+            ),
+            None | Some(LegacyNodeMigrationOutcome::RequireEmptySource) => {}
+        }
     }
     if source_redis.source_cache_key_count != 0 || source_redis.source_default_key_count != 0 {
         warnings.push(
@@ -931,9 +957,24 @@ async fn build_legacy_migration_inspection(
         "legacy temporary subscription URLs are intentionally not migrated; users must fetch a new URL after cutover"
             .into(),
     );
-    if data.legacy_json_id_arrays.requires_normalization() != 0 {
+    let retained_json_normalizations = if discards_legacy_nodes_and_traffic_details {
+        data.legacy_json_id_arrays
+            .retained_requires_normalization_after_node_discard()
+    } else {
+        data.legacy_json_id_arrays.requires_normalization()
+    };
+    if retained_json_normalizations != 0 {
         warnings.push(
             "legacy JSON ID arrays contain canonical positive-decimal strings that the one-shot converter will normalize to JSON numbers"
+                .into(),
+        );
+    }
+    if discards_legacy_nodes_and_traffic_details
+        && (data.legacy_json_id_arrays.node_group_ids.violations != 0
+            || data.stat_server_target_collation_unique_collisions != 0)
+    {
+        warnings.push(
+            "schema-v5 observed malformed legacy node group arrays or v2_stat_server collation collisions; they are bound in inspection evidence but do not block because those rows are intentionally discarded"
                 .into(),
         );
     }
@@ -1005,6 +1046,12 @@ async fn build_legacy_migration_inspection(
     Ok(finalize_plan(spec, plan))
 }
 
+fn schema_v5_discard_warning(legacy_node_count: u64) -> String {
+    format!(
+        "schema-v5 will intentionally exclude {legacy_node_count} legacy nodes, every legacy node route, legacy server/user traffic details, v2_log, and v2_mail_log; the native target starts with zero nodes and requires manual node rebuild"
+    )
+}
+
 const fn node_blocker_code(blocker: NodeCutoverProductionBlocker) -> &'static str {
     blocker.as_str()
 }
@@ -1012,6 +1059,7 @@ const fn node_blocker_code(blocker: NodeCutoverProductionBlocker) -> &'static st
 fn append_legacy_data_blockers(
     data: &DataInspection,
     source_redis: &SourceRedisInspection,
+    discards_legacy_nodes_and_traffic_details: bool,
     mode: InspectionMode,
     blockers: &mut Vec<String>,
     pending: &mut Vec<String>,
@@ -1036,15 +1084,26 @@ fn append_legacy_data_blockers(
     if data.failed_job_count != 0 {
         record_final_requirement(mode, blockers, pending, "legacy failed_jobs is not empty");
     }
-    if data.legacy_json_id_arrays.violations() != 0 {
+    let retained_json_violations = if discards_legacy_nodes_and_traffic_details {
+        data.legacy_json_id_arrays
+            .retained_violations_after_node_discard()
+    } else {
+        data.legacy_json_id_arrays.violations()
+    };
+    if retained_json_violations != 0 {
         blockers.push(
             "legacy JSON ID arrays contain format, target-range, or missing-reference violations"
                 .into(),
         );
     }
+    let retained_collation_collisions = retained_target_collation_collisions(
+        data.target_collation_unique_collisions,
+        data.stat_server_target_collation_unique_collisions,
+        discards_legacy_nodes_and_traffic_details,
+    );
     if data.business_invariant_violations != 0
         || data.relational_integrity_violations != 0
-        || data.target_collation_unique_collisions != 0
+        || retained_collation_collisions != 0
     {
         blockers.push("legacy data does not satisfy native migration preflights".into());
     }
@@ -1098,6 +1157,18 @@ fn append_legacy_data_blockers(
     // otp_/otpn_/totp_ are disposable URL mappings or verification cache.
     // The permanent subscription credential is v2_user.token in MySQL and is
     // copied exactly; temporary URLs are explicitly invalidated at cutover.
+}
+
+fn retained_target_collation_collisions(
+    total: i64,
+    discarded_stat_server: i64,
+    discards_legacy_traffic_details: bool,
+) -> i64 {
+    if discards_legacy_traffic_details {
+        total.saturating_sub(discarded_stat_server)
+    } else {
+        total
+    }
 }
 
 fn build_native_upgrade_plan(
@@ -1352,12 +1423,23 @@ fn inspection_review_binding_bytes(plan: &ProvisionPlan) -> Vec<u8> {
         })
     });
     let node_inventory = plan.node_inventory.as_ref().map(|nodes| {
-        serde_json::json!({
+        let mut binding = serde_json::json!({
             "summary_sha256": nodes.summary_sha256,
             "legacy_source_node_set_sha256": nodes.legacy_source_node_set_sha256,
             "manifest_inventory_empty": nodes.manifest_inventory_empty,
             "exact_legacy_source_match": nodes.exact_legacy_source_match,
-        })
+        });
+        if let Some(planned_outcome) = nodes.planned_outcome {
+            let object = binding.as_object_mut().expect("node binding is an object");
+            object.insert("node_count".into(), nodes.node_count.into());
+            object.insert("nodes".into(), serde_json::json!(&nodes.nodes));
+            object.insert("planned_outcome".into(), serde_json::json!(planned_outcome));
+            object.insert(
+                "legacy_nodes_to_discard".into(),
+                serde_json::json!(nodes.legacy_nodes_to_discard),
+            );
+        }
+        binding
     });
     let backup_restore = plan.backup_restore.as_ref().map(|backup| {
         serde_json::json!({
@@ -2396,7 +2478,7 @@ async fn inspect_data(
     let relational_integrity_violations =
         count_relational_integrity_violations(pool, &names).await?;
     let node_group_violations = legacy_json_id_arrays.node_group_ids.violations;
-    let target_collation_unique_collisions =
+    let target_collation_collisions =
         count_target_collation_unique_collisions(pool, &names).await?;
     Ok(DataInspection {
         unfinished_orders,
@@ -2413,7 +2495,8 @@ async fn inspect_data(
         business_invariant_violations,
         relational_integrity_violations,
         node_group_violations,
-        target_collation_unique_collisions,
+        target_collation_unique_collisions: target_collation_collisions.total,
+        stat_server_target_collation_unique_collisions: target_collation_collisions.stat_server,
         legacy_json_id_arrays,
     })
 }
@@ -2723,10 +2806,16 @@ fn count_missing_reference_violations(ids: &[i64], existing: &BTreeSet<i64>) -> 
         .fold(0_i64, |total, _| total.saturating_add(1))
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct TargetCollationCollisionCounts {
+    total: i64,
+    stat_server: i64,
+}
+
 async fn count_target_collation_unique_collisions(
     pool: &MySqlPool,
     tables: &BTreeSet<&str>,
-) -> Result<i64, sqlx::Error> {
+) -> Result<TargetCollationCollisionCounts, sqlx::Error> {
     let checks = [
         (
             "v2_coupon",
@@ -2761,14 +2850,17 @@ async fn count_target_collation_unique_collisions(
             "SELECT COUNT(*) FROM (SELECT server_id, CONVERT(server_type USING utf8mb4) COLLATE utf8mb4_unicode_ci AS server_kind, record_at FROM v2_stat_server GROUP BY server_id, server_kind, record_at HAVING COUNT(*) > 1) AS collisions",
         ),
     ];
-    let mut total = 0_i64;
+    let mut counts = TargetCollationCollisionCounts::default();
     for (table, query) in checks {
         if tables.contains(table) {
-            total =
-                total.saturating_add(sqlx::query_scalar::<_, i64>(query).fetch_one(pool).await?);
+            let collisions = sqlx::query_scalar::<_, i64>(query).fetch_one(pool).await?;
+            counts.total = counts.total.saturating_add(collisions);
+            if table == "v2_stat_server" {
+                counts.stat_server = counts.stat_server.saturating_add(collisions);
+            }
         }
     }
-    Ok(total)
+    Ok(counts)
 }
 
 async fn inspect_source_redis(
@@ -3480,6 +3572,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn schema_v5_warning_names_every_user_confirmed_discard_surface() {
+        let warning = schema_v5_discard_warning(8);
+        for required in [
+            "8 legacy nodes",
+            "legacy node route",
+            "legacy server/user traffic details",
+            "v2_log",
+            "v2_mail_log",
+            "manual node rebuild",
+        ] {
+            assert!(warning.contains(required), "warning omitted {required}");
+        }
+    }
+
+    #[test]
     fn source_admission_accepts_only_oracle_mysql_major_8() {
         assert!(matches!(
             database_vendor("8.4.4", "MySQL Community Server - GPL"),
@@ -3894,6 +4001,25 @@ mod tests {
         );
         assert_eq!(blockers, ["drain queue"]);
         assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn schema_v5_ignores_only_violations_owned_by_discarded_node_data() {
+        let mut arrays = LegacyJsonIdArrayInspection::default();
+        arrays.node_group_ids.violations = 3;
+        arrays.node_group_ids.requires_normalization = 2;
+        arrays.coupon_limit_plan_ids.violations = 5;
+        arrays.coupon_limit_plan_ids.requires_normalization = 4;
+
+        assert_eq!(arrays.violations(), 8);
+        assert_eq!(arrays.retained_violations_after_node_discard(), 5);
+        assert_eq!(arrays.requires_normalization(), 6);
+        assert_eq!(
+            arrays.retained_requires_normalization_after_node_discard(),
+            4
+        );
+        assert_eq!(retained_target_collation_collisions(9, 7, true), 2);
+        assert_eq!(retained_target_collation_collisions(9, 7, false), 9);
     }
 
     #[test]

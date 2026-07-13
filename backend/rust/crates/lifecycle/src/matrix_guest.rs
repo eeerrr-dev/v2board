@@ -323,9 +323,9 @@ async fn run_guest(action: GuestAction, fault_case_id: &str) -> anyhow::Result<(
     if spec.operation_id != marker.operation_id {
         anyhow::bail!("hydrated manifest operation does not match disposable marker");
     }
-    let execution = spec
-        .legacy_apply_execution()
-        .ok_or_else(|| anyhow::anyhow!("matrix requires a schema-v4 legacy execution"))?;
+    let execution = spec.legacy_apply_execution().ok_or_else(|| {
+        anyhow::anyhow!("matrix requires a schema-v4 or schema-v5 legacy execution")
+    })?;
     validate_unit_allowlist(
         UnitPolicy {
             api: &execution.systemd.api_unit,
@@ -547,11 +547,15 @@ fn validate_disposable_manifest(root: &Value, marker: &DisposableMarker) -> anyh
     let object = root
         .as_object()
         .ok_or_else(|| anyhow::anyhow!("matrix manifest must be an object"))?;
-    if object.get("schema_version").and_then(Value::as_u64) != Some(4)
-        || object.get("kind").and_then(Value::as_str) != Some("legacy_reference_migration")
+    if !matches!(
+        object.get("schema_version").and_then(Value::as_u64),
+        Some(4 | 5)
+    ) || object.get("kind").and_then(Value::as_str) != Some("legacy_reference_migration")
         || object.get("operation_id").and_then(Value::as_str) != Some(marker.operation_id.as_str())
     {
-        anyhow::bail!("matrix manifest must be the marker-bound schema-v4 legacy operation");
+        anyhow::bail!(
+            "matrix manifest must be the marker-bound schema-v4 or schema-v5 legacy operation"
+        );
     }
 
     let source = object_at(object, "source")?;
@@ -1475,6 +1479,11 @@ mod tests {
             }
         });
         validate_disposable_manifest(&manifest, &marker).unwrap();
+        manifest["schema_version"] = Value::from(5);
+        validate_disposable_manifest(&manifest, &marker).unwrap();
+        manifest["schema_version"] = Value::from(3);
+        assert!(validate_disposable_manifest(&manifest, &marker).is_err());
+        manifest["schema_version"] = Value::from(4);
         manifest["source"]["database_url"] =
             Value::String("mysql://u:p@192.0.2.1/v2board_matrix_source".to_string());
         assert!(validate_disposable_manifest(&manifest, &marker).is_err());

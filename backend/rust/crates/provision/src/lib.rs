@@ -10,6 +10,7 @@ pub mod legacy_clickhouse;
 pub mod legacy_converter;
 pub mod legacy_copy;
 mod legacy_mysql;
+mod legacy_report_receipt;
 pub mod lifecycle_ledger;
 mod manifest;
 pub mod native_activation;

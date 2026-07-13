@@ -30,6 +30,52 @@ pub const POSTGRES_MAX_BIND_PARAMETERS: usize = 65_535;
 /// use zero: `NO_AUTO_VALUE_ON_ZERO` allowed explicitly inserted zero ids.
 pub const INITIAL_SOURCE_ID_CURSOR: i64 = i64::MIN;
 
+/// The copy policy is part of the durable conversion identity. Schema v4
+/// preserves the original all-table converter. Schema v5 deliberately starts
+/// the new node, traffic-detail, and operational-log surfaces empty; the
+/// authoritative user counters, durable daily business aggregate, and frozen
+/// Redis tail are still preserved separately.
+#[derive(
+    Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum LegacyConversionStrategy {
+    #[default]
+    PreserveAll,
+    DiscardNodesTrafficDetailsAndOperationalLogs,
+}
+
+impl LegacyConversionStrategy {
+    pub fn for_schema_version(schema_version: u32) -> Result<Self, ConverterError> {
+        match schema_version {
+            4 => Ok(Self::PreserveAll),
+            5 => Ok(Self::DiscardNodesTrafficDetailsAndOperationalLogs),
+            version => Err(ConverterError::UnsupportedConversionSchemaVersion(version)),
+        }
+    }
+
+    pub const fn stable_name(self) -> &'static str {
+        match self {
+            Self::PreserveAll => "preserve_all",
+            Self::DiscardNodesTrafficDetailsAndOperationalLogs => {
+                "discard_nodes_traffic_details_and_operational_logs"
+            }
+        }
+    }
+
+    pub const fn is_preserve_all(&self) -> bool {
+        matches!(self, Self::PreserveAll)
+    }
+
+    pub fn copies_base_table(self, mapping: &TableMapping) -> bool {
+        self == Self::PreserveAll || !V5_DISCARDED_BASE_TABLES.contains(&mapping.source)
+    }
+
+    pub fn builds_derived_mapping(self, mapping: &DerivedMapping) -> bool {
+        self == Self::PreserveAll || !V5_DISCARDED_DERIVED_TARGETS.contains(&mapping.target)
+    }
+}
+
 const TARGET_POSTGRES_MIGRATIONS: &[(i64, &str, &[u8])] = &[
     (
         1,
@@ -939,6 +985,62 @@ pub const NODE_CREDENTIAL_SOURCES: &[(&str, &str)] = &[
     ("v2node", "v2_server_v2node"),
 ];
 
+/// Schema-v5 source facts which remain covered by the fenced source
+/// fingerprint and final discard proofs but are intentionally not copied.
+/// `v2_user`, `v2_payment`, `v2_server_group`, and the durable historical
+/// aggregate `v2_stat` are protected business data and are deliberately absent
+/// from this list. In particular, schema v5 preserves every payment row and its
+/// original `enable` value.
+pub const V5_DISCARDED_BASE_TABLES: &[&str] = &[
+    "v2_log",
+    "v2_mail_log",
+    "v2_stat_server",
+    "v2_stat_user",
+    "v2_server_route",
+    "v2_server_shadowsocks",
+    "v2_server_vmess",
+    "v2_server_trojan",
+    "v2_server_tuic",
+    "v2_server_hysteria",
+    "v2_server_vless",
+    "v2_server_anytls",
+    "v2_server_v2node",
+];
+
+pub const V5_DISCARDED_DERIVED_TARGETS: &[&str] = &["v2_server_credential"];
+
+pub fn copied_table_mappings(
+    strategy: LegacyConversionStrategy,
+) -> impl Iterator<Item = &'static TableMapping> {
+    TABLE_MAPPINGS
+        .iter()
+        .filter(move |mapping| strategy.copies_base_table(mapping))
+}
+
+pub fn discarded_table_mappings(
+    strategy: LegacyConversionStrategy,
+) -> impl Iterator<Item = &'static TableMapping> {
+    TABLE_MAPPINGS
+        .iter()
+        .filter(move |mapping| !strategy.copies_base_table(mapping))
+}
+
+pub fn built_derived_mappings(
+    strategy: LegacyConversionStrategy,
+) -> impl Iterator<Item = &'static DerivedMapping> {
+    DERIVED_MAPPINGS
+        .iter()
+        .filter(move |mapping| strategy.builds_derived_mapping(mapping))
+}
+
+pub fn discarded_derived_mappings(
+    strategy: LegacyConversionStrategy,
+) -> impl Iterator<Item = &'static DerivedMapping> {
+    DERIVED_MAPPINGS
+        .iter()
+        .filter(move |mapping| !strategy.builds_derived_mapping(mapping))
+}
+
 /// Scalar relationships that must be proven before copy and again against the
 /// target. Historical ids intentionally lacking a PostgreSQL FK (for example
 /// commission/stat rows and optional deleted route ids) are value-verified but
@@ -1042,7 +1144,7 @@ pub const TARGET_GENERATED_COLUMNS: &[(&str, &[&str])] = &[
 
 pub const DRAINED_SOURCE_TABLES: &[&str] = &["failed_jobs"];
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub enum SourceValue {
     Null,
     I64(i64),
@@ -1113,6 +1215,8 @@ pub enum ConverterError {
     TargetBatchParameterLimit { parameters: usize },
     #[error("source schema hash does not match the pinned profile")]
     SourceSchemaMismatch,
+    #[error("manifest schema version {0} has no legacy conversion strategy")]
+    UnsupportedConversionSchemaVersion(u32),
     #[error("source snapshot fingerprint must be lowercase SHA-256")]
     InvalidSnapshotFingerprint,
     #[error("checkpoint binding does not match this conversion run")]
@@ -1336,6 +1440,39 @@ pub fn audit_registry() -> Result<(), ConverterError> {
             ));
         }
     }
+    let discarded_sources = V5_DISCARDED_BASE_TABLES
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    let expected_discarded_sources = [
+        "v2_log",
+        "v2_mail_log",
+        "v2_server_anytls",
+        "v2_server_hysteria",
+        "v2_server_route",
+        "v2_server_shadowsocks",
+        "v2_server_trojan",
+        "v2_server_tuic",
+        "v2_server_v2node",
+        "v2_server_vless",
+        "v2_server_vmess",
+        "v2_stat_server",
+        "v2_stat_user",
+    ]
+    .into_iter()
+    .collect::<BTreeSet<_>>();
+    if discarded_sources != expected_discarded_sources
+        || !discarded_sources.is_subset(&seen_sources)
+        || V5_DISCARDED_DERIVED_TARGETS != ["v2_server_credential"]
+    {
+        return registry_error("schema-v5 discard inventory is not the audited policy");
+    }
+    if ["v2_user", "v2_payment", "v2_server_group", "v2_stat"]
+        .iter()
+        .any(|table| discarded_sources.contains(table))
+    {
+        return registry_error("schema-v5 discards protected durable business data");
+    }
     Ok(())
 }
 
@@ -1371,6 +1508,12 @@ pub fn target_postgres_lineage_sha256() -> String {
 }
 
 pub fn registry_sha256() -> Result<String, ConverterError> {
+    registry_sha256_for_strategy(LegacyConversionStrategy::PreserveAll)
+}
+
+pub fn registry_sha256_for_strategy(
+    strategy: LegacyConversionStrategy,
+) -> Result<String, ConverterError> {
     audit_registry()?;
     let mut digest = Sha256::new();
     digest.update(b"v2board-legacy-converter-registry-v1\0");
@@ -1428,6 +1571,25 @@ pub fn registry_sha256() -> Result<String, ConverterError> {
             digest_field(&mut digest, column.as_bytes());
         }
         digest_field(&mut digest, mapping.rule.as_bytes());
+    }
+    // Do not append anything for PreserveAll: schema-v4 bindings and
+    // checkpoints retain their exact historical registry identity. Schema v5
+    // adds a domain-separated, fully enumerated policy identity.
+    if strategy == LegacyConversionStrategy::DiscardNodesTrafficDetailsAndOperationalLogs {
+        digest_field(&mut digest, b"schema-v5-conversion-strategy-v2");
+        digest_field(&mut digest, strategy.stable_name().as_bytes());
+        for table in V5_DISCARDED_BASE_TABLES {
+            digest_field(&mut digest, b"discard-base-table");
+            digest_field(&mut digest, table.as_bytes());
+        }
+        for target in V5_DISCARDED_DERIVED_TARGETS {
+            digest_field(&mut digest, b"discard-derived-target");
+            digest_field(&mut digest, target.as_bytes());
+        }
+        digest_field(
+            &mut digest,
+            b"preserve-v2-server-group-v2-stat-v2-user-counters-and-fold-frozen-redis-traffic;discard-v2-log-v2-mail-log",
+        );
     }
     Ok(hex::encode(digest.finalize()))
 }
@@ -1863,6 +2025,11 @@ pub struct ConversionRunBinding {
     pub source_snapshot_sha256: String,
     pub source_schema_sha256: String,
     pub registry_sha256: String,
+    #[serde(
+        default,
+        skip_serializing_if = "LegacyConversionStrategy::is_preserve_all"
+    )]
+    pub strategy: LegacyConversionStrategy,
 }
 
 impl ConversionRunBinding {
@@ -1880,7 +2047,7 @@ impl ConversionRunBinding {
         if !is_lower_sha256(&self.source_snapshot_sha256) {
             return Err(ConverterError::InvalidSnapshotFingerprint);
         }
-        if self.registry_sha256 != registry_sha256()? {
+        if self.registry_sha256 != registry_sha256_for_strategy(self.strategy)? {
             return Err(ConverterError::CheckpointBindingMismatch);
         }
         Ok(())
@@ -1916,24 +2083,27 @@ pub enum ExecutionStep {
 /// advanced. Deferred self references and derived tables therefore never race
 /// an absent base id, and sequences move only after all explicit ids exist.
 pub fn execution_steps() -> Result<Vec<ExecutionStep>, ConverterError> {
+    execution_steps_for_strategy(LegacyConversionStrategy::PreserveAll)
+}
+
+pub fn execution_steps_for_strategy(
+    strategy: LegacyConversionStrategy,
+) -> Result<Vec<ExecutionStep>, ConverterError> {
     audit_registry()?;
     let mut steps = Vec::new();
-    steps.extend(TABLE_MAPPINGS.iter().map(ExecutionStep::CopyBaseTable));
+    steps.extend(copied_table_mappings(strategy).map(ExecutionStep::CopyBaseTable));
     steps.extend(
-        TABLE_MAPPINGS
-            .iter()
+        copied_table_mappings(strategy)
             .filter(|mapping| !mapping.deferred_columns.is_empty())
             .map(ExecutionStep::ApplyDeferredReferences),
     );
-    steps.extend(DERIVED_MAPPINGS.iter().map(ExecutionStep::BuildDerivedRows));
+    steps.extend(built_derived_mappings(strategy).map(ExecutionStep::BuildDerivedRows));
+    // Every sequence is reset. Discarded schema-v5 targets are proven empty,
+    // so this deterministically makes their first future identity value 1.
     steps.extend(TABLE_MAPPINGS.iter().map(ExecutionStep::ResetSequence));
     steps.push(ExecutionStep::FoldFrozenTraffic);
-    steps.extend(TABLE_MAPPINGS.iter().map(ExecutionStep::VerifyBaseTable));
-    steps.extend(
-        DERIVED_MAPPINGS
-            .iter()
-            .map(ExecutionStep::VerifyDerivedTable),
-    );
+    steps.extend(copied_table_mappings(strategy).map(ExecutionStep::VerifyBaseTable));
+    steps.extend(built_derived_mappings(strategy).map(ExecutionStep::VerifyDerivedTable));
     steps.push(ExecutionStep::Complete);
     Ok(steps)
 }
@@ -2164,6 +2334,59 @@ mod tests {
     }
 
     #[test]
+    fn schema_v5_strategy_discards_only_audited_operational_history() {
+        let strategy = LegacyConversionStrategy::for_schema_version(5).expect("schema v5");
+        assert_eq!(
+            copied_table_mappings(strategy)
+                .map(|mapping| mapping.source)
+                .collect::<BTreeSet<_>>(),
+            TABLE_MAPPINGS
+                .iter()
+                .map(|mapping| mapping.source)
+                .filter(|table| !V5_DISCARDED_BASE_TABLES.contains(table))
+                .collect()
+        );
+        assert!(copied_table_mappings(strategy).any(|mapping| mapping.source == "v2_server_group"));
+        assert!(copied_table_mappings(strategy).any(|mapping| mapping.source == "v2_stat"));
+        assert!(copied_table_mappings(strategy).any(|mapping| mapping.source == "v2_user"));
+        assert!(copied_table_mappings(strategy).any(|mapping| mapping.source == "v2_payment"));
+        assert!(discarded_table_mappings(strategy).any(|mapping| mapping.source == "v2_log"));
+        assert!(discarded_table_mappings(strategy).any(|mapping| mapping.source == "v2_mail_log"));
+        assert_eq!(discarded_table_mappings(strategy).count(), 13);
+        assert_eq!(built_derived_mappings(strategy).count(), 1);
+        assert_eq!(discarded_derived_mappings(strategy).count(), 1);
+        assert_ne!(
+            registry_sha256().expect("v4 registry"),
+            registry_sha256_for_strategy(strategy).expect("v5 registry")
+        );
+        assert_eq!(
+            LegacyConversionStrategy::for_schema_version(4).expect("schema v4"),
+            LegacyConversionStrategy::PreserveAll
+        );
+
+        let mut v4_binding = ConversionRunBinding {
+            operation_id: uuid::Uuid::from_u128(1).to_string(),
+            target_installation_id: uuid::Uuid::from_u128(2).to_string(),
+            source_snapshot_sha256: "a".repeat(64),
+            source_schema_sha256: LEGACY_SEMANTIC_SCHEMA_SHA256.to_string(),
+            registry_sha256: registry_sha256().expect("v4 registry"),
+            strategy: LegacyConversionStrategy::PreserveAll,
+        };
+        let v4_json = serde_json::to_value(&v4_binding).expect("v4 binding JSON");
+        assert!(v4_json.get("strategy").is_none());
+        v4_binding.strategy = strategy;
+        v4_binding.registry_sha256 = registry_sha256_for_strategy(strategy).expect("v5 registry");
+        v4_binding.validate().expect("v5 binding");
+        assert_eq!(
+            serde_json::to_value(&v4_binding)
+                .expect("v5 binding JSON")
+                .get("strategy")
+                .and_then(Value::as_str),
+            Some("discard_nodes_traffic_details_and_operational_logs")
+        );
+    }
+
+    #[test]
     fn permanent_user_credentials_and_counters_are_direct() {
         let user = mapping_for_source("v2_user").expect("user mapping");
         for column in [
@@ -2288,6 +2511,7 @@ mod tests {
             source_snapshot_sha256: "a".repeat(64),
             source_schema_sha256: LEGACY_SEMANTIC_SCHEMA_SHA256.to_string(),
             registry_sha256: registry_sha256().expect("registry hash"),
+            strategy: LegacyConversionStrategy::PreserveAll,
         };
         let first = ConversionCheckpoint {
             binding: binding.clone(),

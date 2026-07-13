@@ -335,50 +335,49 @@ rust-legacy-backup-integration: rust-legacy-mysql-integration
 # the same disposable Compose source container sequentially, even under -j.
 rust-legacy-converter-integration: rust-legacy-mysql-integration
 	@set -eu; \
-		database84=v2board_legacy_converter84_test_$$$$; \
-		database80=v2board_legacy_converter80_test_$$$$; \
-		clickhouse84=v2board_legacy_converter84_test_$$$$; \
-		clickhouse80=v2board_legacy_converter80_test_$$$$; \
+		database84v4=v2board_legacy_converter84_v4_test_$$$$; \
+		database84v5=v2board_legacy_converter84_v5_test_$$$$; \
+		database80v4=v2board_legacy_converter80_v4_test_$$$$; \
+		database80v5=v2board_legacy_converter80_v5_test_$$$$; \
+		clickhouse84v4=v2board_legacy_converter84_v4_test_$$$$; \
+		clickhouse84v5=v2board_legacy_converter84_v5_test_$$$$; \
+		clickhouse80v4=v2board_legacy_converter80_v4_test_$$$$; \
+		clickhouse80v5=v2board_legacy_converter80_v5_test_$$$$; \
 		cleanup() { \
 			$(DCF) rm -sf legacy-mysql legacy-mysql80 >/dev/null 2>&1 || true; \
-			$(DCF) exec -T postgres dropdb --force --if-exists -U v2board "$$database84" >/dev/null 2>&1 || true; \
-			$(DCF) exec -T postgres dropdb --force --if-exists -U v2board "$$database80" >/dev/null 2>&1 || true; \
+			for database in "$$database84v4" "$$database84v5" "$$database80v4" "$$database80v5"; do \
+				$(DCF) exec -T postgres dropdb --force --if-exists -U v2board "$$database" >/dev/null 2>&1 || true; \
+			done; \
+			for database in "$$clickhouse84v4" "$$clickhouse84v5" "$$clickhouse80v4" "$$clickhouse80v5"; do \
+				$(DCF) exec -T clickhouse clickhouse-client --user v2board_analytics --password v2board \
+					--query "DROP DATABASE IF EXISTS $$database SYNC" >/dev/null 2>&1 || true; \
+			done; \
+		}; \
+		run_case() { \
+			$(DCF) exec -T postgres createdb -U v2board "$$3"; \
 			$(DCF) exec -T clickhouse clickhouse-client --user v2board_analytics --password v2board \
-				--query "DROP DATABASE IF EXISTS $$clickhouse84 SYNC" >/dev/null 2>&1 || true; \
-			$(DCF) exec -T clickhouse clickhouse-client --user v2board_analytics --password v2board \
-				--query "DROP DATABASE IF EXISTS $$clickhouse80 SYNC" >/dev/null 2>&1 || true; \
+				--query "CREATE DATABASE $$4"; \
+			$(DCF) run --rm -T --no-deps --entrypoint bash \
+				-e V2BOARD_LEGACY_CONVERTER_SCHEMA_VERSION="$$2" \
+				-e V2BOARD_LEGACY_CONVERTER_MYSQL_URL=mysql://v2board_reader:v2board-reader-test-password@"$$1":3306/v2board \
+				-e V2BOARD_LEGACY_CONVERTER_POSTGRES_URL=postgresql://v2board:v2board@postgres:5432/"$$3" \
+				-e V2BOARD_LEGACY_CONVERTER_CLICKHOUSE_URL=http://clickhouse:8123 \
+				-e V2BOARD_LEGACY_CONVERTER_CLICKHOUSE_DATABASE="$$4" \
+				-e V2BOARD_LEGACY_CONVERTER_CLICKHOUSE_USERNAME=v2board_analytics \
+				-e V2BOARD_LEGACY_CONVERTER_CLICKHOUSE_PASSWORD=v2board \
+				rust-api -lc \
+				'. /usr/local/cargo/env; bash scripts/run-exact-ignored-test.sh v2board-provision \
+				 legacy_copy::tests::all_legacy_tables_follow_strategy_to_postgres_project_clickhouse_and_retry_exactly'; \
 		}; \
 		trap cleanup EXIT INT TERM; \
 		$(DCF) build rust-api; \
 		$(DCF) up -d --wait postgres clickhouse; \
 		cleanup; \
 		$(DCF) up -d --wait legacy-mysql legacy-mysql80; \
-		$(DCF) exec -T postgres createdb -U v2board "$$database84"; \
-		$(DCF) exec -T clickhouse clickhouse-client --user v2board_analytics --password v2board \
-			--query "CREATE DATABASE $$clickhouse84"; \
-		$(DCF) run --rm -T --no-deps --entrypoint bash \
-			-e V2BOARD_LEGACY_CONVERTER_MYSQL_URL=mysql://v2board_reader:v2board-reader-test-password@legacy-mysql:3306/v2board \
-			-e V2BOARD_LEGACY_CONVERTER_POSTGRES_URL=postgresql://v2board:v2board@postgres:5432/$$database84 \
-			-e V2BOARD_LEGACY_CONVERTER_CLICKHOUSE_URL=http://clickhouse:8123 \
-			-e V2BOARD_LEGACY_CONVERTER_CLICKHOUSE_DATABASE=$$clickhouse84 \
-			-e V2BOARD_LEGACY_CONVERTER_CLICKHOUSE_USERNAME=v2board_analytics \
-			-e V2BOARD_LEGACY_CONVERTER_CLICKHOUSE_PASSWORD=v2board \
-			rust-api -lc \
-			'. /usr/local/cargo/env; bash scripts/run-exact-ignored-test.sh v2board-provision \
-			 legacy_copy::tests::all_legacy_tables_copy_to_postgres_project_clickhouse_and_retry_exactly'; \
-		$(DCF) exec -T postgres createdb -U v2board "$$database80"; \
-		$(DCF) exec -T clickhouse clickhouse-client --user v2board_analytics --password v2board \
-			--query "CREATE DATABASE $$clickhouse80"; \
-		$(DCF) run --rm -T --no-deps --entrypoint bash \
-			-e V2BOARD_LEGACY_CONVERTER_MYSQL_URL=mysql://v2board_reader:v2board-reader-test-password@legacy-mysql80:3306/v2board \
-			-e V2BOARD_LEGACY_CONVERTER_POSTGRES_URL=postgresql://v2board:v2board@postgres:5432/$$database80 \
-			-e V2BOARD_LEGACY_CONVERTER_CLICKHOUSE_URL=http://clickhouse:8123 \
-			-e V2BOARD_LEGACY_CONVERTER_CLICKHOUSE_DATABASE=$$clickhouse80 \
-			-e V2BOARD_LEGACY_CONVERTER_CLICKHOUSE_USERNAME=v2board_analytics \
-			-e V2BOARD_LEGACY_CONVERTER_CLICKHOUSE_PASSWORD=v2board \
-			rust-api -lc \
-			'. /usr/local/cargo/env; bash scripts/run-exact-ignored-test.sh v2board-provision \
-			 legacy_copy::tests::all_legacy_tables_copy_to_postgres_project_clickhouse_and_retry_exactly'
+		run_case legacy-mysql 4 "$$database84v4" "$$clickhouse84v4"; \
+		run_case legacy-mysql 5 "$$database84v5" "$$clickhouse84v5"; \
+		run_case legacy-mysql80 4 "$$database80v4" "$$clickhouse80v4"; \
+		run_case legacy-mysql80 5 "$$database80v5" "$$clickhouse80v5"
 
 rust-legacy-redis-integration:
 	@set -eu; \

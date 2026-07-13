@@ -1,4 +1,4 @@
-use crate::{ProvisionKind, ProvisionSpec};
+use crate::{ProvisionKind, ProvisionSpec, manifest::LegacyNodeActivationTransportSpec};
 
 /// The single production capability decision for the destructive legacy
 /// migration path. Keeping the unavailable reason in the value prevents the
@@ -26,8 +26,9 @@ impl ProductionLegacyApplyCapability {
 pub enum ProductionLegacyApplyBlocker {
     AwaitingBareMetalFaultMatrixAndSafetyAudit,
     WrongProvisionKind,
-    SchemaV4ExecutionRequired,
-    NonEmptyNodeInventoryUnsupported,
+    SchemaV4OrV5ExecutionRequired,
+    EmbeddedTargetNodeInventoryMustBeEmpty,
+    NodeCutoverPolicyUnsupported,
 }
 
 impl ProductionLegacyApplyBlocker {
@@ -39,11 +40,14 @@ impl ProductionLegacyApplyBlocker {
             Self::WrongProvisionKind => {
                 "production one-shot apply is available only for legacy_reference_migration"
             }
-            Self::SchemaV4ExecutionRequired => {
-                "production one-shot apply requires a schema-v4 legacy execution manifest"
+            Self::SchemaV4OrV5ExecutionRequired => {
+                "production one-shot apply requires a schema-v4 or schema-v5 legacy execution manifest"
             }
-            Self::NonEmptyNodeInventoryUnsupported => {
-                "production one-shot apply currently supports only an empty node inventory"
+            Self::EmbeddedTargetNodeInventoryMustBeEmpty => {
+                "production one-shot apply requires an empty embedded target node inventory"
+            }
+            Self::NodeCutoverPolicyUnsupported => {
+                "production one-shot apply requires the schema-v4 empty-source policy or the schema-v5 discard-and-manual-rebuild policy"
             }
         }
     }
@@ -71,15 +75,34 @@ pub fn production_legacy_apply_capability_for_spec(
     }
     let Some(execution) = spec.legacy_apply_execution() else {
         return ProductionLegacyApplyCapability::Unavailable(
-            ProductionLegacyApplyBlocker::SchemaV4ExecutionRequired,
+            ProductionLegacyApplyBlocker::SchemaV4OrV5ExecutionRequired,
         );
     };
     if !execution.nodes.inventory.is_empty() {
         return ProductionLegacyApplyCapability::Unavailable(
-            ProductionLegacyApplyBlocker::NonEmptyNodeInventoryUnsupported,
+            ProductionLegacyApplyBlocker::EmbeddedTargetNodeInventoryMustBeEmpty,
+        );
+    }
+    if !supported_node_cutover_policy(spec.schema_version, &execution.nodes.activation_transport) {
+        return ProductionLegacyApplyCapability::Unavailable(
+            ProductionLegacyApplyBlocker::NodeCutoverPolicyUnsupported,
         );
     }
     PRODUCTION_LEGACY_APPLY_CAPABILITY
+}
+
+fn supported_node_cutover_policy(
+    schema_version: u32,
+    transport: &LegacyNodeActivationTransportSpec,
+) -> bool {
+    matches!(
+        (schema_version, transport),
+        (4, LegacyNodeActivationTransportSpec::NotRequiredNoNodes)
+            | (
+                5,
+                LegacyNodeActivationTransportSpec::DiscardAndManualRebuild
+            )
+    )
 }
 
 #[cfg(test)]
@@ -93,5 +116,25 @@ mod tests {
             PRODUCTION_LEGACY_APPLY_CAPABILITY.blocker(),
             Some(ProductionLegacyApplyBlocker::AwaitingBareMetalFaultMatrixAndSafetyAudit)
         );
+    }
+
+    #[test]
+    fn v4_and_v5_admit_only_their_exact_node_cutover_policies() {
+        assert!(supported_node_cutover_policy(
+            4,
+            &LegacyNodeActivationTransportSpec::NotRequiredNoNodes,
+        ));
+        assert!(!supported_node_cutover_policy(
+            4,
+            &LegacyNodeActivationTransportSpec::DiscardAndManualRebuild,
+        ));
+        assert!(supported_node_cutover_policy(
+            5,
+            &LegacyNodeActivationTransportSpec::DiscardAndManualRebuild,
+        ));
+        assert!(!supported_node_cutover_policy(
+            5,
+            &LegacyNodeActivationTransportSpec::NotRequiredNoNodes,
+        ));
     }
 }
