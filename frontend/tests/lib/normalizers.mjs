@@ -811,6 +811,24 @@ export function normalizeInteractionResult(label, result) {
     };
     return Object.fromEntries(
       Object.entries(normalized).map(([key, value]) => {
+        if (key === 'routeFetchDelta' && label.startsWith('admin-server-route-')) {
+          // A successful invalidation/refetch is contractual; its exact request
+          // count is target-specific cache timing and therefore Tier 2.
+          return [key, Number(value) >= 1];
+        }
+        if (key === 'saveRequests' && label.startsWith('admin-server-route-')) {
+          return [
+            key,
+            (value ?? []).map((request) => {
+              if (!request || typeof request !== 'object') return request;
+              return Object.fromEntries(
+                Object.entries(request).filter(
+                  ([field]) => field !== 'created_at' && field !== 'updated_at',
+                ),
+              );
+            }),
+          ];
+        }
         if (label === 'admin-server-group-edit-modal' && key === 'saveRequests') {
           return [
             key,

@@ -12,6 +12,7 @@ import {
 import {
   clickFirstVisible,
   clickFirstVisibleText,
+  clickFirstVisibleTextStable,
   clickFirstVisibleTextInViewport,
   clickVisibleAt,
   dispatchFirstVisibleTextClick,
@@ -108,7 +109,7 @@ export async function runAdminOrderStatusDropdownInteraction(page) {
   if ((await markPaid.count()) > 0) {
     await markPaid.click();
   } else {
-    await clickFirstVisibleText(page, adminMenuItemSelector, ['已支付']);
+    await clickFirstVisibleTextStable(page, adminMenuItemSelector, ['已支付']);
   }
   await waitForVisibleElementsHidden(page, adminOrderMenuSelector);
   const closed = await adminOrderStatusDropdownState(page);
@@ -128,7 +129,7 @@ export async function runAdminOrderCommissionDropdownInteraction(page) {
   await page.waitForSelector(adminMenuItemSelector, { state: 'visible', timeout: 5_000 });
   const opened = await adminOrderCommissionDropdownState(page);
   // The `无效` item text is identical in both DOMs, so exact-match click works.
-  await clickFirstVisibleText(page, adminMenuItemSelector, ['无效']);
+  await clickFirstVisibleTextStable(page, adminMenuItemSelector, ['无效']);
   await waitForVisibleElementsHidden(page, adminOrderMenuSelector);
   const closed = await adminOrderCommissionDropdownState(page);
   return {

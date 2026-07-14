@@ -1,6 +1,7 @@
 import {
   clickFirstVisible,
   clickFirstVisibleText,
+  clickFirstVisibleTextStable,
   clickVisibleAt,
   fillVisibleAt,
   waitForPagePropertyAtLeast,
@@ -111,7 +112,11 @@ export async function runInviteWithdrawModalInteraction(page) {
   });
   await page.waitForTimeout(100);
   const dropdown = await inviteFinanceDialogState(page);
-  await clickFirstVisibleText(page, '[data-testid="invite-select-content"] [role="option"], .ant-select-dropdown-menu-item', ['Alipay']);
+  await clickFirstVisibleTextStable(
+    page,
+    '[data-testid="invite-select-content"] [role="option"], .ant-select-dropdown-menu-item',
+    ['Alipay'],
+  );
   await waitForVisibleElementsHidden(page, '[data-testid="invite-select-content"], .ant-select-dropdown');
   await fillVisibleAt(page, '[data-testid="invite-dialog"] input:not([disabled]), .ant-modal input.ant-input', 0, 'parity-account@example.com');
   await page.waitForTimeout(100);
@@ -168,7 +173,11 @@ export async function runInviteFinanceSubmitMatrixInteraction(page) {
     'Alipay',
   );
   const withdrawDropdown = await inviteFinanceDialogState(page);
-  await clickFirstVisibleText(page, '[data-testid="invite-select-content"] [role="option"], .ant-select-dropdown-menu-item', ['Alipay']);
+  await clickFirstVisibleTextStable(
+    page,
+    '[data-testid="invite-select-content"] [role="option"], .ant-select-dropdown-menu-item',
+    ['Alipay'],
+  );
   await waitForVisibleElementsHidden(page, '[data-testid="invite-select-content"], .ant-select-dropdown');
   await fillVisibleAt(page, '[data-testid="invite-dialog"] input:not([disabled]), .ant-modal input.ant-input', 0, 'fail-account');
   const withdrawFailureFilled = await inviteFinanceDialogState(page);
@@ -194,7 +203,11 @@ export async function runInviteFinanceSubmitMatrixInteraction(page) {
     '[data-testid="invite-select-content"] [role="option"], .ant-select-dropdown-menu-item',
     'USDT',
   );
-  await clickFirstVisibleText(page, '[data-testid="invite-select-content"] [role="option"], .ant-select-dropdown-menu-item', ['USDT']);
+  await clickFirstVisibleTextStable(
+    page,
+    '[data-testid="invite-select-content"] [role="option"], .ant-select-dropdown-menu-item',
+    ['USDT'],
+  );
   await waitForVisibleElementsHidden(page, '[data-testid="invite-select-content"], .ant-select-dropdown');
   await fillVisibleAt(page, '[data-testid="invite-dialog"] input:not([disabled]), .ant-modal input.ant-input', 0, 'success-account');
   const withdrawSuccessFilled = await inviteFinanceDialogState(page);

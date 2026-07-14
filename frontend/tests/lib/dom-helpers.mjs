@@ -699,7 +699,7 @@ export async function selectLegacyFormOption(
   try {
     await openLegacySelectByLabel(page, rootSelector, labelText);
     await waitForVisibleText(page, adminSelectOptionSelector, optionTexts[0]);
-    await clickFirstVisibleText(page, adminSelectOptionSelector, optionTexts);
+    await clickFirstVisibleTextStable(page, adminSelectOptionSelector, optionTexts);
     if (waitForHidden) {
       try {
         await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);

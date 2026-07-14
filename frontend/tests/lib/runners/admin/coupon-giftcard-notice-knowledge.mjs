@@ -223,7 +223,7 @@ export async function runAdminGiftcardCreateModalInteraction(page) {
   await openAdminOverlaySelectTrigger(page, 'giftcard-type', 0);
   await waitForVisibleText(page, adminSelectOptionSelector, '兑换订阅套餐');
   const typeDropdown = await adminGiftcardModalState(page);
-  await clickFirstVisibleText(page, adminSelectOptionSelector, ['兑换订阅套餐']);
+  await clickFirstVisibleTextStable(page, adminSelectOptionSelector, ['兑换订阅套餐']);
   await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
   await fillAdminOverlayInputBySelector(
     page,
@@ -235,7 +235,7 @@ export async function runAdminGiftcardCreateModalInteraction(page) {
   await openAdminOverlaySelectTrigger(page, 'giftcard-plan', 1);
   await waitForVisibleText(page, adminSelectOptionSelector, 'Pro');
   const planDropdown = await adminGiftcardModalState(page);
-  await clickFirstVisibleText(page, adminSelectOptionSelector, ['Pro']);
+  await clickFirstVisibleTextStable(page, adminSelectOptionSelector, ['Pro']);
   await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
   await fillAdminOverlayInputBySelector(
     page,
@@ -495,7 +495,7 @@ export async function runAdminKnowledgeCreateDrawerInteraction(page) {
   await openAdminOverlaySelectTrigger(page, 'knowledge-language', 0);
   await waitForVisibleText(page, adminSelectOptionSelector, 'English');
   const languageDropdown = await adminKnowledgeDrawerState(page);
-  await clickFirstVisibleText(page, adminSelectOptionSelector, ['English']);
+  await clickFirstVisibleTextStable(page, adminSelectOptionSelector, ['English']);
   await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
   await fillAdminOverlayInputBySelector(
     page,
@@ -536,7 +536,7 @@ export async function runAdminKnowledgeSaveFailureInteraction(page) {
   await fillVisibleAt(page, adminDrawerInputSelector, 1, 'Parity');
   await openAdminOverlaySelectTrigger(page, 'knowledge-language', 0);
   await waitForVisibleText(page, adminSelectOptionSelector, 'English');
-  await clickFirstVisibleText(page, adminSelectOptionSelector, ['English']);
+  await clickFirstVisibleTextStable(page, adminSelectOptionSelector, ['English']);
   await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
   await fillAdminOverlayInputBySelector(
     page,

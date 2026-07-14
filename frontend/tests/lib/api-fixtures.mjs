@@ -393,6 +393,19 @@ export async function installApiFixtures(page, scenario, target, interaction = {
         requestData,
       ];
     }
+    if (adminEndpoint === '/server/route/fetch') {
+      page.__visualParityAdminServerRouteFetchCount =
+        (page.__visualParityAdminServerRouteFetchCount ?? 0) + 1;
+    }
+    if (adminEndpoint === '/server/route/save') {
+      page.__visualParityLastAdminServerRouteSave = requestData;
+      page.__visualParityAdminServerRouteSaveCount =
+        (page.__visualParityAdminServerRouteSaveCount ?? 0) + 1;
+      page.__visualParityAdminServerRouteSaveRequests = [
+        ...(page.__visualParityAdminServerRouteSaveRequests ?? []),
+        requestData,
+      ];
+    }
     if (adminEndpoint === '/server/manage/getNodes') {
       page.__visualParityAdminServerNodeFetchCount =
         (page.__visualParityAdminServerNodeFetchCount ?? 0) + 1;

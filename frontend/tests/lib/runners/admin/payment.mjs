@@ -1,5 +1,6 @@
 import {
   clickFirstVisibleText,
+  clickFirstVisibleTextStable,
   fillVisibleAt,
   openLegacySelectByLabel,
   clickFirstVisible,
@@ -55,7 +56,7 @@ export async function runAdminPaymentCreateModalInteraction(page) {
     timeout: 5_000,
   });
   const dropdown = await adminPaymentModalState(page);
-  await clickFirstVisibleText(page, adminSelectOptionSelector, ['StripeCheckout']);
+  await clickFirstVisibleTextStable(page, adminSelectOptionSelector, ['StripeCheckout']);
   await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
   await page.waitForFunction(() => document.body.textContent.includes('Secret Key'), null, {
     timeout: 5_000,

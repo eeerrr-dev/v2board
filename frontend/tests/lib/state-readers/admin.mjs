@@ -1,6 +1,7 @@
 import {
   clickFirstVisible,
   clickFirstVisibleText,
+  clickFirstVisibleTextStable,
   clickFirstVisibleTextInViewport,
   clickVisibleAt,
   dispatchFirstVisibleTextClick,
@@ -88,7 +89,7 @@ export async function openAdminPlanRowEditor(page, rowText) {
   if (!usedInline) {
     await clickAdminOrderRowAction(page, rowText, '操作');
     await waitForVisibleText(page, '.ant-dropdown-menu-item a', '编辑');
-    await clickFirstVisibleText(page, '.ant-dropdown-menu-item a', ['编辑']);
+    await clickFirstVisibleTextStable(page, '.ant-dropdown-menu-item a', ['编辑']);
   }
 }
 
@@ -220,7 +221,7 @@ export async function openAdminNodeRowEditor(page, rowText) {
   if (actionsTestId) {
     await page.click(`[data-testid="${actionsTestId}"]`);
     await waitForVisibleText(page, adminMenuItemSelector, '编辑');
-    await clickFirstVisibleText(page, adminMenuItemSelector, ['编辑']);
+    await clickFirstVisibleTextStable(page, adminMenuItemSelector, ['编辑']);
   } else {
     await clickAdminTableRowDropdownAction(page, rowText, '编辑');
   }
@@ -253,7 +254,7 @@ export async function selectAdminNodeGroupDefault(page) {
   if (!usedCheckbox) {
     await openLegacySelectByLabel(page, '.ant-drawer-open', '权限组');
     await waitForVisibleText(page, adminSelectOptionSelector, 'Default');
-    await clickFirstVisibleText(page, adminSelectOptionSelector, ['Default']);
+    await clickFirstVisibleTextStable(page, adminSelectOptionSelector, ['Default']);
     await waitForVisibleElementsHidden(page, adminSelectDropdownSelector).catch(() => undefined);
   }
 }
@@ -1920,45 +1921,5 @@ export async function clickAdminTableRowDropdownAction(page, rowText, actionText
     trigger.click();
   }, rowText);
   await waitForVisibleText(page, '.ant-dropdown-menu-item', actionText);
-  const point = await page.evaluate((targetActionText) => {
-    const normalizeText = (value) =>
-      String(value ?? '')
-        .trim()
-        .replace(/\s+/g, ' ');
-    const isVisible = (element) => {
-      const rect = element.getBoundingClientRect();
-      const style = window.getComputedStyle(element);
-      return (
-        rect.width > 0 &&
-        rect.height > 0 &&
-        style.display !== 'none' &&
-        style.visibility !== 'hidden' &&
-        !element.closest('.ant-dropdown-hidden')
-      );
-    };
-    const isInViewport = (element) => {
-      if (!isVisible(element)) return false;
-      const rect = element.getBoundingClientRect();
-      return (
-        rect.bottom > 0 &&
-        rect.right > 0 &&
-        rect.top < window.innerHeight &&
-        rect.left < window.innerWidth
-      );
-    };
-    const elements = Array.from(document.querySelectorAll('.ant-dropdown-menu-item a')).filter(
-      (element) => normalizeText(element.textContent) === normalizeText(targetActionText),
-    );
-    const element = elements.find(isInViewport) ?? elements.find(isVisible);
-    if (!element) {
-      throw new Error(`No visible admin table row dropdown action ${targetActionText}`);
-    }
-    element.scrollIntoView({ block: 'center', inline: 'center' });
-    const rect = element.getBoundingClientRect();
-    return {
-      x: rect.left + rect.width / 2,
-      y: rect.top + rect.height / 2,
-    };
-  }, actionText);
-  await page.mouse.click(point.x, point.y);
+  await clickFirstVisibleTextStable(page, '.ant-dropdown-menu-item a', [actionText]);
 }

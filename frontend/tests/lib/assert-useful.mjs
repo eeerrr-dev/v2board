@@ -78,6 +78,15 @@ function hasExpectedStripePreparationContract(result, target) {
   return false;
 }
 
+function hasExactObjectKeys(value, expectedKeys) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const actualKeys = Object.keys(value);
+  return (
+    actualKeys.length === expectedKeys.length &&
+    expectedKeys.every((key) => Object.hasOwn(value, key))
+  );
+}
+
 export function hasUsefulDarkModeStyleSnapshot(state) {
   const snapshot = state?.styleSnapshot;
   return Boolean(
@@ -1577,6 +1586,20 @@ export function assertUsefulInteraction(label, result, target) {
       !JSON.stringify(result.edited?.inputValues).includes('geosite:created') ||
       !JSON.stringify(result.edited?.inputValues).includes('9.9.9.9') ||
       !JSON.stringify(result.edited?.selectedValues).includes('指定DNS服务器进行解析') ||
+      result.saveRequests?.length !== 1 ||
+      !hasExactObjectKeys(result.saveRequests?.[0], [
+        'remarks',
+        'match[0]',
+        'match[1]',
+        'action',
+        'action_value',
+      ]) ||
+      result.saveRequests?.[0]?.remarks !== 'Parity Created Route' ||
+      result.saveRequests?.[0]?.['match[0]'] !== 'domain:created.example.com' ||
+      result.saveRequests?.[0]?.['match[1]'] !== 'geosite:created' ||
+      result.saveRequests?.[0]?.action !== 'dns' ||
+      result.saveRequests?.[0]?.action_value !== '9.9.9.9' ||
+      result.routeFetchDelta < 1 ||
       result.closed?.modalCount !== 0)
   ) {
     throw new Error(
@@ -1605,6 +1628,23 @@ export function assertUsefulInteraction(label, result, target) {
       !JSON.stringify(result.edited?.selectedValues).includes('指定DNS服务器进行解析') ||
       !jsonIncludes(result.edited?.buttons, '取 消') ||
       !jsonIncludes(result.edited?.buttons, '提 交') ||
+      result.saveRequests?.length !== 1 ||
+      !hasExactObjectKeys(result.saveRequests?.[0], [
+        'id',
+        'remarks',
+        'match[0]',
+        'match[1]',
+        'action',
+        'action_value',
+        ...(target === 'oracle' ? ['created_at', 'updated_at'] : []),
+      ]) ||
+      String(result.saveRequests?.[0]?.id) !== '1' ||
+      result.saveRequests?.[0]?.remarks !== 'Parity Edited Route' ||
+      result.saveRequests?.[0]?.['match[0]'] !== 'domain:edited.example.com' ||
+      result.saveRequests?.[0]?.['match[1]'] !== 'geosite:openai' ||
+      result.saveRequests?.[0]?.action !== 'dns' ||
+      result.saveRequests?.[0]?.action_value !== '1.1.1.1' ||
+      result.routeFetchDelta < 1 ||
       result.closed?.modalCount !== 0)
   ) {
     throw new Error(

@@ -11,6 +11,7 @@ import {
   fillVisibleAt,
   clickVisibleAt,
   clickFirstVisibleText,
+  clickFirstVisibleTextStable,
   waitForVisibleElementsHidden,
   waitForPagePropertyAtLeast,
   selectLegacyFormOption,
@@ -63,12 +64,12 @@ export async function runAdminPlanCreateDrawerInteraction(page) {
   await clickVisibleAt(page, adminDrawerSelectTriggerSelector, 0);
   await waitForVisibleText(page, adminSelectOptionSelector, 'Default');
   const groupDropdown = await adminPlanDrawerState(page);
-  await clickFirstVisibleText(page, adminSelectOptionSelector, ['Default']);
+  await clickFirstVisibleTextStable(page, adminSelectOptionSelector, ['Default']);
   await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
   await clickVisibleAt(page, adminDrawerSelectTriggerSelector, 1);
   await waitForVisibleText(page, adminSelectOptionSelector, '按月重置');
   const resetDropdown = await adminPlanDrawerState(page);
-  await clickFirstVisibleText(page, adminSelectOptionSelector, ['按月重置']);
+  await clickFirstVisibleTextStable(page, adminSelectOptionSelector, ['按月重置']);
   await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
   await clickFirstVisible(page, adminPlanForceUpdateSelector);
   await page.waitForTimeout(100);
@@ -157,7 +158,7 @@ export async function runAdminPlanResetMethodMatrixInteraction(page) {
   await openLegacySelectByLabel(page, adminDrawerOpenSelector, '流量重置方式');
   await waitForVisibleText(page, adminSelectOptionSelector, '每年1月1日');
   const resetDropdown = await adminPlanDrawerState(page);
-  await clickFirstVisibleText(page, adminSelectOptionSelector, ['每月1号']);
+  await clickFirstVisibleTextStable(page, adminSelectOptionSelector, ['每月1号']);
   await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
   const monthlyFirst = await adminPlanDrawerState(page);
   await selectLegacyFormOption(page, adminDrawerOpenSelector, '流量重置方式', ['不重置']);
@@ -231,7 +232,7 @@ export async function runAdminPlanEditDrawerInteraction(page) {
   await clickVisibleAt(page, adminDrawerSelectTriggerSelector, 1);
   await waitForVisibleText(page, adminSelectOptionSelector, '不重置');
   const resetDropdown = await adminPlanDrawerState(page);
-  await clickFirstVisibleText(page, adminSelectOptionSelector, ['不重置']);
+  await clickFirstVisibleTextStable(page, adminSelectOptionSelector, ['不重置']);
   await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
   await clickFirstVisible(page, adminPlanForceUpdateSelector);
   await page.waitForTimeout(100);
@@ -278,7 +279,7 @@ export async function runAdminMutationFailureMatrixInteraction(page) {
   await deleteAdminRowWithConfirm(page, 'Pro', 'plan-delete-', async () => {
     await clickAdminOrderRowAction(page, 'Pro', '操作');
     await waitForVisibleText(page, '.ant-dropdown-menu-item', '删除');
-    await clickFirstVisibleText(page, '.ant-dropdown-menu-item', ['删除']);
+    await clickFirstVisibleTextStable(page, '.ant-dropdown-menu-item', ['删除']);
   });
   await waitForPagePropertyAtLeast(page, '__visualParityAdminPlanDropCount', 1);
   await page.waitForTimeout(350);

@@ -17,6 +17,7 @@ import {
 import {
   waitForVisibleText,
   clickFirstVisibleText,
+  clickFirstVisibleTextStable,
   fillVisibleAt,
   visibleCount,
   selectLegacyFormOption,
@@ -24,7 +25,6 @@ import {
   waitForVisibleElementsHidden,
   clickFirstVisible,
   openLegacySelectByLabel,
-  clickVisibleAt,
 } from '../../dom-helpers.mjs';
 import {
   adminMenuItemSelector,
@@ -38,8 +38,8 @@ import {
   adminOverlayOpenSelector,
   adminSelectOptionSelector,
   adminSelectDropdownSelector,
-  adminModalFooterButtonSelector,
   adminServerGroupSubmitSelector,
+  adminServerRouteSubmitSelector,
 } from '../../selectors.mjs';
 import { jsonIncludes, clonePageRequests } from '../../json-util.mjs';
 
@@ -159,7 +159,7 @@ export async function runAdminServerNodeSaveFailureInteraction(page) {
   await openAdminNodeAddMenu(page);
   await waitForVisibleText(page, adminMenuItemSelector,'VLess');
   const menuOpened = await adminServerNodeDrawerState(page);
-  await clickFirstVisibleText(page, adminMenuItemSelector, ['VLess']);
+  await clickVisibleAdminNodeType(page, 'VLess');
   await page.waitForSelector(adminDrawerOpenSelector, {
     state: 'visible',
     timeout: 5_000,
@@ -405,6 +405,7 @@ export async function runAdminServerEditNodeDrawerInteraction(page) {
 }
 
 export async function runAdminServerRouteEditModalInteraction(page) {
+  const initialRouteFetchCount = page.__visualParityAdminServerRouteFetchCount ?? 0;
   const before = await adminServerRouteModalState(page);
   await openAdminInlineRowEditor(page, 'Block ads', 'server-route-edit-', () =>
     clickAdminOrderRowAction(page, 'Block ads', '编辑'),
@@ -435,18 +436,37 @@ export async function runAdminServerRouteEditModalInteraction(page) {
   await openLegacySelectByLabel(page, adminOverlayOpenSelector, '动作');
   await waitForVisibleText(page, adminSelectOptionSelector, '指定DNS服务器进行解析');
   const actionDropdown = await adminServerRouteModalState(page);
-  await clickFirstVisibleText(page, adminSelectOptionSelector, ['指定DNS服务器进行解析']);
+  await clickFirstVisibleTextStable(page, adminSelectOptionSelector, [
+    '指定DNS服务器进行解析',
+  ]);
   await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
+  await waitForVisibleText(page, adminFormLabelSelector, 'DNS服务器');
   await fillVisibleAt(page, adminDrawerInputSelector, 2, '1.1.1.1');
   await page.waitForTimeout(100);
   const edited = await adminServerRouteModalState(page);
-  await clickVisibleAt(page, adminModalFooterButtonSelector, 0);
+  await clickFirstVisible(page, adminServerRouteSubmitSelector);
+  await waitForPagePropertyAtLeast(page, '__visualParityAdminServerRouteSaveCount', 1);
   await waitForVisibleElementsHidden(page, adminDialogOpenSelector);
+  await waitForPagePropertyAtLeast(
+    page,
+    '__visualParityAdminServerRouteFetchCount',
+    initialRouteFetchCount + 1,
+  );
   const closed = await adminServerRouteModalState(page);
-  return { actionDropdown, before, closed, edited, opened };
+  return {
+    actionDropdown,
+    before,
+    closed,
+    edited,
+    opened,
+    routeFetchDelta:
+      (page.__visualParityAdminServerRouteFetchCount ?? 0) - initialRouteFetchCount,
+    saveRequests: clonePageRequests(page.__visualParityAdminServerRouteSaveRequests),
+  };
 }
 
 export async function runAdminServerRouteCreateModalInteraction(page) {
+  const initialRouteFetchCount = page.__visualParityAdminServerRouteFetchCount ?? 0;
   const before = await adminServerRouteModalState(page);
   await clickFirstVisibleText(page, 'button', ['添加路由']);
   await page.waitForSelector(adminDialogOpenSelector, {
@@ -465,15 +485,33 @@ export async function runAdminServerRouteCreateModalInteraction(page) {
   await openLegacySelectByLabel(page, adminOverlayOpenSelector, '动作');
   await waitForVisibleText(page, adminSelectOptionSelector, '指定DNS服务器进行解析');
   const actionDropdown = await adminServerRouteModalState(page);
-  await clickFirstVisibleText(page, adminSelectOptionSelector, ['指定DNS服务器进行解析']);
+  await clickFirstVisibleTextStable(page, adminSelectOptionSelector, [
+    '指定DNS服务器进行解析',
+  ]);
   await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
+  await waitForVisibleText(page, adminFormLabelSelector, 'DNS服务器');
   await fillVisibleAt(page, adminDrawerInputSelector, 2, '9.9.9.9');
   await page.waitForTimeout(100);
   const edited = await adminServerRouteModalState(page);
-  await clickVisibleAt(page, adminModalFooterButtonSelector, 0);
+  await clickFirstVisible(page, adminServerRouteSubmitSelector);
+  await waitForPagePropertyAtLeast(page, '__visualParityAdminServerRouteSaveCount', 1);
   await waitForVisibleElementsHidden(page, adminDialogOpenSelector);
+  await waitForPagePropertyAtLeast(
+    page,
+    '__visualParityAdminServerRouteFetchCount',
+    initialRouteFetchCount + 1,
+  );
   const closed = await adminServerRouteModalState(page);
-  return { actionDropdown, before, closed, edited, opened };
+  return {
+    actionDropdown,
+    before,
+    closed,
+    edited,
+    opened,
+    routeFetchDelta:
+      (page.__visualParityAdminServerRouteFetchCount ?? 0) - initialRouteFetchCount,
+    saveRequests: clonePageRequests(page.__visualParityAdminServerRouteSaveRequests),
+  };
 }
 
 export async function runAdminServerGroupCreateModalInteraction(page) {

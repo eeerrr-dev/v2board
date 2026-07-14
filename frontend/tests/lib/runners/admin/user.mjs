@@ -134,7 +134,7 @@ export async function runAdminUsersPaginationMatrixInteraction(page) {
   await openAdminUserPageSizeChanger(page);
   await waitForVisibleText(page, adminSelectOptionSelector, '50 条/页');
   const sizeDropdown = await legacySelectDropdownState(page, adminSelectDropdownSelector);
-  await clickFirstVisibleText(page, adminSelectOptionSelector, ['50 条/页']);
+  await clickFirstVisibleTextStable(page, adminSelectOptionSelector, ['50 条/页']);
   await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
   await waitForPageProperty(page, '__visualParityLastAdminUserFetchQuery');
   await page.waitForTimeout(250);

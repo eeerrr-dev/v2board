@@ -11,7 +11,7 @@ import {
   clickFirstVisibleWithPointer,
   firstInputValue,
   visibleTexts,
-  clickFirstVisibleText,
+  clickFirstVisibleTextStable,
   fillVisibleAt,
   waitForVisibleElementCountAtLeast,
   visibleCount,
@@ -63,7 +63,7 @@ export async function runLoginLanguagePersistenceInteraction(page) {
   const navigation = page
     .waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 3_000 })
     .catch(() => undefined);
-  await clickFirstVisibleText(page, languageMenuItemSelector, ['English']);
+  await clickFirstVisibleTextStable(page, languageMenuItemSelector, ['English']);
   await navigation;
   await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined);
   await page.waitForTimeout(500);

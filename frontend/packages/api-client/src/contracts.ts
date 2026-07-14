@@ -577,7 +577,7 @@ const configDecimalStringSchema = z.union([
     .string()
     .trim()
     .regex(/^-?(?:\d+\.?\d*|\.\d+)$/),
-  z.number().finite().transform(String),
+  z.number().transform(String),
 ]);
 const configNullableDecimalStringSchema = configDecimalStringSchema.nullable();
 const configNullableStringSchema = z.union([z.string(), z.null()]);
