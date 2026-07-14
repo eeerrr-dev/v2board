@@ -316,6 +316,7 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
             header::AUTHORIZATION,
             header::COOKIE,
             header::SET_COOKIE,
+            HeaderName::from_static("cf-connecting-ip"),
             HeaderName::from_static("x-telegram-bot-api-secret-token"),
             HeaderName::from_static("x-v2board-server-token"),
             HeaderName::from_static("x-v2board-step-up"),

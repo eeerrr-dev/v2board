@@ -1,11 +1,13 @@
 use axum::{
     body::Body,
-    http::{HeaderMap, HeaderValue, Method, StatusCode, header, uri::Authority},
+    http::{HeaderMap, HeaderValue, Method, StatusCode, header},
     response::Response,
 };
 use serde_json::{Value, json};
 use tokio::fs;
 use v2board_config::AppConfig;
+
+use crate::runtime::host_matches_app_url;
 
 const RUNTIME_CONFIG_TOKEN: &str = "__V2BOARD_RUNTIME_CONFIG__";
 const CUSTOM_HTML_MARKER: &str = "<!-- V2BOARD_CUSTOM_HTML -->";
@@ -139,27 +141,6 @@ fn safe_mode_host_allowed(config: &AppConfig, headers: &HeaderMap) -> bool {
         .get(header::HOST)
         .and_then(|host| host.to_str().ok())
         .is_some_and(|host| host_matches_app_url(app_url, host))
-}
-
-fn host_matches_app_url(app_url: &str, request_host: &str) -> bool {
-    let Ok(expected) = reqwest::Url::parse(app_url) else {
-        return false;
-    };
-    let Some(expected_host) = expected.host_str() else {
-        return false;
-    };
-    let Ok(actual) = request_host.parse::<Authority>() else {
-        return false;
-    };
-    if !actual.host().eq_ignore_ascii_case(expected_host) {
-        return false;
-    }
-
-    match (expected.port(), expected.port_or_known_default()) {
-        (Some(expected_port), _) => actual.port_u16() == Some(expected_port),
-        (None, Some(default_port)) => actual.port_u16().is_none_or(|port| port == default_port),
-        (None, None) => actual.port_u16().is_none(),
-    }
 }
 
 fn text_body(method: &Method, content: impl Into<String>) -> Body {

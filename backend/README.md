@@ -21,6 +21,10 @@ Reference code, schema or packaged frontend assets are never deployed.
 - Redis stores session lookup, rate limits, leases, locks, worker heartbeat and bounded cache; it is
   not a business ledger.
 - API and worker use separate PostgreSQL principals against the same database.
+- A remotely-managed named Cloudflare Tunnel, running under the supplied same-host systemd unit,
+  is the only public ingress. Its only public hostname route targets
+  `http://127.0.0.1:8080`; the host does not install Nginx or expose 80/443/8080.
+  Rust still owns frontend delivery, compression, cache policy, CORS and security response headers.
 - ClickHouse schema migrator and outbox writer are separate least-privilege principals. The relay
   writer has raw-table `INSERT` plus the narrow `SELECT` needed to verify its immutable batches, but
   no DDL. The one-shot schema principal is removed after provisioning; no reader principal or secret
@@ -149,9 +153,16 @@ The runtime sets PostgreSQL timezone UTC, `search_path=public` and transaction i
 
 Docker remains the reproducible local/CI builder, not the production runtime. Export
 `Dockerfile.rust` target `native-release` to obtain the three native Linux binaries, validated
-frontend tree, systemd units, release metadata and checksums. The intended bare-metal layout installs
-the payload under `/opt/v2board/releases/<release-id>` and atomically updates
-`/opt/v2board/current`; the server never builds the project and does not require Docker.
+frontend tree, three canonical systemd units, release metadata and checksums, packaged as
+`v2board-native-debian-13-amd64.tar.gz`. The intended
+bare-metal layout installs the payload under `/opt/v2board/releases/<release-id>` and atomically updates
+`/opt/v2board/current`; the server never builds the project and does not require Docker. Production is
+Debian 13 amd64 only and installs `cloudflared` from Cloudflare's stable apt repository. For ingress, the
+release carries only `v2board-cloudflared.service`: systemd injects the root-only remotely-managed connector
+token through `LoadCredential=`, while hostname, service URL, and Always Use HTTPS remain fixed in
+Cloudflare. A route-free `{}` `SetCredential` is passed as the explicit config solely to disable implicit
+local-file discovery; there is no operator-managed local tunnel YAML. Production accepts exactly
+`trusted_proxy_cidrs: ["127.0.0.1/32"]` for this same-host topology.
 
 The first production installation is created only by the one-time MySQL importer. Exporting or verifying
 a payload is not permission to hand-create a partial initial database; run the complete lifecycle

@@ -973,11 +973,12 @@ impl AppConfig {
         if environment.is_production() && bind_addr != "127.0.0.1:8080" {
             return Err(invalid_setting(
                 "bind_addr",
-                "bare-metal production must bind 127.0.0.1:8080 behind the TLS reverse proxy",
+                "bare-metal production must bind 127.0.0.1:8080 behind same-host cloudflared",
             ));
         }
 
         let trusted_proxy_cidrs = parse_trusted_proxy_cidrs(&file_config)?;
+        validate_production_proxy_topology(environment, &trusted_proxy_cidrs)?;
 
         let force_https = config_bool(
             &file_config,
@@ -989,6 +990,7 @@ impl AppConfig {
         let cors_allowed_origins = load_cors_allowed_origins(&file_config, app_url.as_deref())?;
         if parse_mode != ConfigParseMode::BootOnly {
             validate_https_configuration(
+                environment,
                 force_https,
                 app_url.as_deref(),
                 !trusted_proxy_cidrs.is_empty(),
@@ -1595,7 +1597,12 @@ impl AppConfig {
         app_url: Option<&str>,
     ) -> io::Result<()> {
         validate_production_secret(self.environment, "server_token", server_token)?;
-        validate_https_configuration(force_https, app_url, !self.trusted_proxy_cidrs.is_empty())
+        validate_https_configuration(
+            self.environment,
+            force_https,
+            app_url,
+            !self.trusted_proxy_cidrs.is_empty(),
+        )
     }
 }
 
@@ -1791,10 +1798,17 @@ fn resolve_app_key(
 }
 
 fn validate_https_configuration(
+    environment: RuntimeEnvironment,
     force_https: bool,
     app_url: Option<&str>,
     has_trusted_proxy: bool,
 ) -> io::Result<()> {
+    if environment.is_production() && !force_https {
+        return Err(invalid_setting(
+            "force_https",
+            "must remain enabled for the fixed production Cloudflare Tunnel ingress",
+        ));
+    }
     if !force_https {
         return Ok(());
     }
@@ -1823,7 +1837,7 @@ fn validate_https_configuration(
     if !has_trusted_proxy {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "trusted_proxy_cidrs is required when force_https is enabled",
+            "trusted_proxy_cidrs must identify same-host cloudflared when force_https is enabled",
         ));
     }
     Ok(())
@@ -2242,6 +2256,25 @@ fn parse_trusted_proxy_cidrs(config: &Map<String, Value>) -> io::Result<Vec<IpNe
         })
     })
     .collect()
+}
+
+fn validate_production_proxy_topology(
+    environment: RuntimeEnvironment,
+    trusted_proxy_cidrs: &[IpNet],
+) -> io::Result<()> {
+    if !environment.is_production() {
+        return Ok(());
+    }
+    let loopback_cloudflared = "127.0.0.1/32"
+        .parse::<IpNet>()
+        .expect("canonical loopback cloudflared CIDR");
+    if trusted_proxy_cidrs.len() != 1 || trusted_proxy_cidrs[0] != loopback_cloudflared {
+        return Err(invalid_setting(
+            "trusted_proxy_cidrs",
+            "bare-metal production must trust exactly same-host cloudflared at 127.0.0.1/32",
+        ));
+    }
+    Ok(())
 }
 
 fn validate_production_secret(
@@ -3586,15 +3619,82 @@ mod tests {
     }
 
     #[test]
-    fn force_https_requires_a_canonical_https_app_url() {
-        assert!(validate_https_configuration(false, None, false).is_ok());
-        assert!(validate_https_configuration(true, None, true).is_err());
-        assert!(validate_https_configuration(true, Some("http://example.com"), true).is_err());
+    fn production_locks_https_and_requires_a_canonical_app_url() {
         assert!(
-            validate_https_configuration(true, Some("https://user@example.com"), true).is_err()
+            validate_https_configuration(RuntimeEnvironment::Development, false, None, false)
+                .is_ok()
         );
-        assert!(validate_https_configuration(true, Some("https://example.com"), false).is_err());
-        assert!(validate_https_configuration(true, Some("https://example.com"), true).is_ok());
+        assert!(
+            validate_https_configuration(
+                RuntimeEnvironment::Production,
+                false,
+                Some("https://example.com"),
+                true,
+            )
+            .is_err()
+        );
+        assert!(
+            validate_https_configuration(RuntimeEnvironment::Development, true, None, true)
+                .is_err()
+        );
+        assert!(
+            validate_https_configuration(
+                RuntimeEnvironment::Development,
+                true,
+                Some("http://example.com"),
+                true,
+            )
+            .is_err()
+        );
+        assert!(
+            validate_https_configuration(
+                RuntimeEnvironment::Development,
+                true,
+                Some("https://user@example.com"),
+                true,
+            )
+            .is_err()
+        );
+        assert!(
+            validate_https_configuration(
+                RuntimeEnvironment::Development,
+                true,
+                Some("https://example.com"),
+                false,
+            )
+            .is_err()
+        );
+        assert!(
+            validate_https_configuration(
+                RuntimeEnvironment::Production,
+                true,
+                Some("https://example.com"),
+                true,
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn operator_updates_cannot_disable_production_https() {
+        let paths = RuntimePaths {
+            config: PathBuf::from("/tmp/not-read-by-config-map-parser.json"),
+            frontend: PathBuf::from("/tmp/frontend"),
+            rules: PathBuf::from("/tmp/rules"),
+        };
+        let mut config =
+            AppConfig::try_from_api_config_map(Map::new(), paths).expect("development config");
+        config.environment = RuntimeEnvironment::Production;
+        config.trusted_proxy_cidrs = vec!["127.0.0.1/32".parse().unwrap()];
+
+        let error = config
+            .validate_security_update(
+                Some("0123456789abcdef0123456789abcdef"),
+                false,
+                Some("https://panel.example.com"),
+            )
+            .expect_err("production force_https must be immutable");
+        assert!(error.to_string().contains("force_https"));
     }
 
     #[test]
@@ -4090,6 +4190,28 @@ mod tests {
             .expect("object")
             .clone();
         assert!(parse_trusted_proxy_cidrs(&invalid).is_err());
+    }
+
+    #[test]
+    fn production_trusts_only_same_host_cloudflared() {
+        let loopback = "127.0.0.1/32".parse::<IpNet>().unwrap();
+        let private_network = "10.0.0.0/8".parse::<IpNet>().unwrap();
+
+        assert!(
+            validate_production_proxy_topology(RuntimeEnvironment::Production, &[loopback]).is_ok()
+        );
+        assert!(
+            validate_production_proxy_topology(RuntimeEnvironment::Production, &[private_network])
+                .is_err()
+        );
+        assert!(
+            validate_production_proxy_topology(
+                RuntimeEnvironment::Production,
+                &[loopback, private_network]
+            )
+            .is_err()
+        );
+        assert!(validate_production_proxy_topology(RuntimeEnvironment::Development, &[]).is_ok());
     }
 
     #[test]

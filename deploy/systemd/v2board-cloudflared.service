@@ -1,0 +1,62 @@
+[Unit]
+Description=V2Board Cloudflare Tunnel ingress
+Wants=network-online.target v2board-api.service v2board-worker.service
+After=network-online.target v2board-api.service v2board-worker.service
+StartLimitIntervalSec=60s
+StartLimitBurst=5
+
+[Service]
+Type=notify
+NotifyAccess=main
+User=cloudflared
+Group=cloudflared
+WorkingDirectory=/var/lib/cloudflared
+
+SetCredential=cloudflared-remote-only-config:{}
+LoadCredential=cloudflared-tunnel-token:/etc/v2board/cloudflared/tunnel-token
+ExecStartPre=/usr/bin/test -s %d/cloudflared-remote-only-config
+ExecStartPre=/usr/bin/test -s %d/cloudflared-tunnel-token
+ExecStart=/usr/bin/cloudflared tunnel --config %d/cloudflared-remote-only-config --no-autoupdate --loglevel info run --token-file %d/cloudflared-tunnel-token
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=60s
+TimeoutStopSec=30s
+KillSignal=SIGTERM
+UMask=0077
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=v2board-cloudflared
+
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateDevices=true
+PrivateMounts=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectProc=invisible
+ProtectSystem=strict
+ProcSubset=pid
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RemoveIPC=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+DevicePolicy=closed
+LimitNOFILE=65536
+TasksMax=4096
+
+[Install]
+WantedBy=multi-user.target

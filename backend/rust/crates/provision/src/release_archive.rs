@@ -23,6 +23,8 @@ const MAX_SYSTEMD_UNIT_BYTES: u64 = 128 * 1024;
 
 const CANONICAL_API_UNIT_BYTES: &[u8] =
     include_bytes!("../../../../../deploy/systemd/v2board-api.service");
+const CANONICAL_CLOUDFLARED_UNIT_BYTES: &[u8] =
+    include_bytes!("../../../../../deploy/systemd/v2board-cloudflared.service");
 const CANONICAL_WORKER_UNIT_BYTES: &[u8] =
     include_bytes!("../../../../../deploy/systemd/v2board-worker.service");
 
@@ -261,9 +263,11 @@ fn inspect_open_archive(
                 let capture_limit = match path.to_str() {
                     Some("SHA256SUMS") => Some(MAX_SHA256SUMS_BYTES),
                     Some("RELEASE") => Some(MAX_RELEASE_METADATA_BYTES),
-                    Some("systemd/v2board-api.service" | "systemd/v2board-worker.service") => {
-                        Some(MAX_SYSTEMD_UNIT_BYTES)
-                    }
+                    Some(
+                        "systemd/v2board-api.service"
+                        | "systemd/v2board-cloudflared.service"
+                        | "systemd/v2board-worker.service",
+                    ) => Some(MAX_SYSTEMD_UNIT_BYTES),
                     _ => None,
                 };
                 if capture_limit.is_some_and(|limit| size == 0 || size > limit) {
@@ -375,7 +379,11 @@ fn inspect_open_archive(
     require_exact_children(
         &indexed,
         Path::new("systemd"),
-        &["v2board-api.service", "v2board-worker.service"],
+        &[
+            "v2board-api.service",
+            "v2board-cloudflared.service",
+            "v2board-worker.service",
+        ],
     )?;
     require_exact_children(
         &indexed,
@@ -410,6 +418,8 @@ fn inspect_open_archive(
     }
     let source_revision = parse_release_metadata(captured_utf8(&indexed, "RELEASE")?)?;
     if captured_bytes(&indexed, "systemd/v2board-api.service")? != CANONICAL_API_UNIT_BYTES
+        || captured_bytes(&indexed, "systemd/v2board-cloudflared.service")?
+            != CANONICAL_CLOUDFLARED_UNIT_BYTES
         || captured_bytes(&indexed, "systemd/v2board-worker.service")?
             != CANONICAL_WORKER_UNIT_BYTES
     {
@@ -623,16 +633,23 @@ fn parse_release_metadata(text: &str) -> Result<String, ReleaseArchiveError> {
             || value.is_empty()
             || !matches!(
                 key,
-                "format" | "source_revision" | "target_os" | "target_arch"
+                "format"
+                    | "source_revision"
+                    | "target_os"
+                    | "target_distribution"
+                    | "target_distribution_version"
+                    | "target_arch"
             )
             || fields.insert(key, value).is_some()
         {
             return Err(ReleaseArchiveError::new("release_metadata_field_invalid"));
         }
     }
-    if fields.len() != 4
+    if fields.len() != 6
         || fields.get("format") != Some(&"v2board-native-release-v1")
         || fields.get("target_os") != Some(&"linux")
+        || fields.get("target_distribution") != Some(&"debian")
+        || fields.get("target_distribution_version") != Some(&"13")
         || fields.get("target_arch") != Some(&"amd64")
     {
         return Err(ReleaseArchiveError::new(
@@ -766,6 +783,7 @@ mod tests {
         InternalChecksum,
         MissingChecksum,
         SystemdUnit,
+        CloudflaredUnit,
         UnexpectedRootEntry,
         CompressedSuffix,
         SecondGzipMember,
@@ -802,6 +820,10 @@ mod tests {
                 CANONICAL_API_UNIT_BYTES.to_vec(),
             ),
             (
+                "systemd/v2board-cloudflared.service",
+                CANONICAL_CLOUDFLARED_UNIT_BYTES.to_vec(),
+            ),
+            (
                 "systemd/v2board-worker.service",
                 CANONICAL_WORKER_UNIT_BYTES.to_vec(),
             ),
@@ -811,6 +833,8 @@ mod tests {
                     "format=v2board-native-release-v1\n",
                     "source_revision=0123456789abcdef0123456789abcdef01234567\n",
                     "target_os=linux\n",
+                    "target_distribution=debian\n",
+                    "target_distribution_version=13\n",
                     "target_arch=amd64\n"
                 )
                 .as_bytes()
@@ -821,6 +845,12 @@ mod tests {
             files
                 .get_mut("systemd/v2board-api.service")
                 .expect("API unit")
+                .extend_from_slice(b"# drift\n");
+        }
+        if matches!(mutation, ArchiveMutation::CloudflaredUnit) {
+            files
+                .get_mut("systemd/v2board-cloudflared.service")
+                .expect("cloudflared unit")
                 .extend_from_slice(b"# drift\n");
         }
         if matches!(mutation, ArchiveMutation::UnexpectedRootEntry) {
@@ -957,9 +987,9 @@ mod tests {
     fn complete_release_tree_is_verified() {
         let archive = write_complete_archive(ArchiveMutation::None);
         let inspection = inspect_fixture(&archive).expect("valid release archive");
-        assert_eq!(inspection.entry_count, 18);
-        assert_eq!(inspection.regular_file_count, 9);
-        assert_eq!(inspection.internal_checksum_count, 8);
+        assert_eq!(inspection.entry_count, 19);
+        assert_eq!(inspection.regular_file_count, 10);
+        assert_eq!(inspection.internal_checksum_count, 9);
         assert_eq!(
             inspection.source_revision,
             "0123456789abcdef0123456789abcdef01234567"
@@ -976,6 +1006,7 @@ mod tests {
             ArchiveMutation::InternalChecksum,
             ArchiveMutation::MissingChecksum,
             ArchiveMutation::SystemdUnit,
+            ArchiveMutation::CloudflaredUnit,
             ArchiveMutation::UnexpectedRootEntry,
             ArchiveMutation::CompressedSuffix,
             ArchiveMutation::SecondGzipMember,

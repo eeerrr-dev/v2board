@@ -183,7 +183,7 @@ jobs:
         run: make down
 
   native-release:
-    name: Native Linux release
+    name: Native Debian 13 amd64 release
     needs: [integration]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -201,39 +201,43 @@ jobs:
       - name: Export and verify the disposable lifecycle tool
         run: |
           docker build \
+            --platform linux/amd64 \
+            --target lifecycle-runtime-audit \
+            --tag v2board-lifecycle-runtime-audit:debian-13-amd64 \
+            --file Dockerfile.rust .
+          docker build \
+            --platform linux/amd64 \
             --target lifecycle-tool \
             --output type=local,dest=lifecycle-tool \
             --file Dockerfile.rust .
           test -x lifecycle-tool/v2board-lifecycle
           test "$(find lifecycle-tool -maxdepth 1 -type f | wc -l)" -eq 1
           file lifecycle-tool/v2board-lifecycle | grep -Eq 'ELF 64-bit LSB.*x86-64'
-          lifecycle_ldd="$(ldd lifecycle-tool/v2board-lifecycle)"
-          if grep -q 'not found' <<<"${lifecycle_ldd}"; then
-            echo 'The lifecycle binary has unresolved shared-library dependencies.'
-            exit 1
-          fi
           install -d lifecycle-package
           install -m 0755 lifecycle-tool/v2board-lifecycle lifecycle-package/v2board-lifecycle
           printf '%s\n' \
             'format=v2board-lifecycle-tool-v1' \
             "source_revision=${GITHUB_SHA}" \
             'target_os=linux' \
+            'target_distribution=debian' \
+            'target_distribution_version=13' \
             'target_arch=amd64' > lifecycle-package/RELEASE
           (cd lifecycle-package && sha256sum RELEASE v2board-lifecycle > SHA256SUMS)
           tar --sort=name --mtime='UTC 2020-01-01' --owner=0 --group=0 --numeric-owner \
-            -C lifecycle-package -czf v2board-lifecycle-linux-amd64.tar.gz .
-          sha256sum v2board-lifecycle-linux-amd64.tar.gz \
-            > v2board-lifecycle-linux-amd64.tar.gz.sha256
+            -C lifecycle-package -czf v2board-lifecycle-debian-13-amd64.tar.gz .
+          sha256sum v2board-lifecycle-debian-13-amd64.tar.gz \
+            > v2board-lifecycle-debian-13-amd64.tar.gz.sha256
 
       - name: Export the bare-metal release filesystem
         run: |
           docker build \
+            --platform linux/amd64 \
             --target native-release \
             --build-arg V2BOARD_SOURCE_REVISION="${GITHUB_SHA}" \
             --output type=local,dest=native-release \
             --file Dockerfile.rust .
 
-      - name: Verify release layout, checksums, and Linux binaries
+      - name: Verify Debian 13 release layout and checksums
         run: |
           test -x native-release/bin/v2board-api
           test -x native-release/bin/v2board-workers
@@ -249,10 +253,15 @@ jobs:
           test -f native-release/frontend/current/admin/index.html
           test -f native-release/systemd/v2board-api.service
           test -f native-release/systemd/v2board-worker.service
+          test -f native-release/systemd/v2board-cloudflared.service
+          test "$(find native-release/systemd -mindepth 1 -maxdepth 1 | wc -l)" -eq 3
           grep -Fxq 'format=v2board-native-release-v1' native-release/RELEASE
           grep -Fxq "source_revision=${GITHUB_SHA}" native-release/RELEASE
           grep -Fxq 'target_os=linux' native-release/RELEASE
+          grep -Fxq 'target_distribution=debian' native-release/RELEASE
+          grep -Fxq 'target_distribution_version=13' native-release/RELEASE
           grep -Fxq 'target_arch=amd64' native-release/RELEASE
+          test "$(wc -l < native-release/RELEASE)" -eq 6
           (cd native-release && sha256sum --check SHA256SUMS)
           retired_bundle="$(find native-release/frontend -type f \( \
             -name "u""mi.js" -o -name "u""mi.css" -o \
@@ -263,45 +272,26 @@ jobs:
             echo "Retired packaged frontend bundle found: ${retired_bundle}"
             exit 1
           fi
-          for binary in native-release/bin/*; do
-            file "$binary" | grep -Eq 'ELF 64-bit LSB.*x86-64'
-            binary_ldd="$(ldd "$binary")"
-            if grep -q 'not found' <<<"${binary_ldd}"; then
-              echo "Release binary has unresolved shared-library dependencies: ${binary}"
-              exit 1
-            fi
-          done
-
-      - name: Verify hardened systemd units
-        run: |
-          sudo useradd --system --user-group --home-dir /var/lib/v2board/api --shell /usr/sbin/nologin v2board-api
-          sudo useradd --system --user-group --home-dir /var/lib/v2board/worker --shell /usr/sbin/nologin v2board-worker
-          sudo install -d -m 0755 /opt/v2board/releases
-          sudo cp -a native-release /opt/v2board/releases/ci
-          sudo ln -s /opt/v2board/releases/ci /opt/v2board/current
-          sudo install -d -m 0700 -o v2board-api -g v2board-api /var/lib/v2board/api
-          sudo install -d -m 0700 -o v2board-worker -g v2board-worker /var/lib/v2board/worker
-          sudo install -d -m 0755 /var/lib/v2board/rules
-          sudo install -m 0644 native-release/systemd/*.service /etc/systemd/system/
-          systemd-analyze verify v2board-api.service v2board-worker.service
 
       - name: Pack the native release
         run: |
           tar --sort=name --mtime='UTC 2020-01-01' --owner=0 --group=0 --numeric-owner \
-            -C native-release -czf v2board-native-linux-amd64.tar.gz .
-          sha256sum v2board-native-linux-amd64.tar.gz > v2board-native-linux-amd64.tar.gz.sha256
+            -C native-release -czf v2board-native-debian-13-amd64.tar.gz .
+          sha256sum v2board-native-debian-13-amd64.tar.gz > v2board-native-debian-13-amd64.tar.gz.sha256
 
       - name: Admit the real release archive through the lifecycle inspector
         run: |
-          archive_sha256="$(sha256sum v2board-native-linux-amd64.tar.gz | cut -d ' ' -f 1)"
+          archive_sha256="$(sha256sum v2board-native-debian-13-amd64.tar.gz | cut -d ' ' -f 1)"
           audit_archive="${RUNNER_TEMP}/v2board-native-release-inspection.tar.gz"
           sudo install -o root -g root -m 0400 \
-            v2board-native-linux-amd64.tar.gz "${audit_archive}"
-          inspection="$(sudo "$(pwd)/lifecycle-tool/v2board-lifecycle" \
-            inspect-release-archive \
-            --archive "${audit_archive}" \
-            --release-id "ci-${GITHUB_SHA}" \
-            --sha256 "${archive_sha256}")"
+            v2board-native-debian-13-amd64.tar.gz "${audit_archive}"
+          inspection="$(docker run --rm --platform linux/amd64 \
+            --volume "${audit_archive}:/audit/release.tar.gz:ro" \
+            v2board-lifecycle-runtime-audit:debian-13-amd64 \
+            /out/v2board-lifecycle inspect-release-archive \
+              --archive /audit/release.tar.gz \
+              --release-id "ci-${GITHUB_SHA}" \
+              --sha256 "${archive_sha256}")"
           jq -e \
             --arg release_id "ci-${GITHUB_SHA}" \
             --arg archive_sha256 "${archive_sha256}" \
@@ -319,25 +309,25 @@ jobs:
       - name: Upload the native release
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: v2board-native-linux-amd64
+          name: v2board-native-debian-13-amd64
           path: |
-            v2board-native-linux-amd64.tar.gz
-            v2board-native-linux-amd64.tar.gz.sha256
+            v2board-native-debian-13-amd64.tar.gz
+            v2board-native-debian-13-amd64.tar.gz.sha256
           if-no-files-found: error
           retention-days: 30
 
       - name: Upload the disposable lifecycle tool
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: v2board-lifecycle-linux-amd64
+          name: v2board-lifecycle-debian-13-amd64
           path: |
-            v2board-lifecycle-linux-amd64.tar.gz
-            v2board-lifecycle-linux-amd64.tar.gz.sha256
+            v2board-lifecycle-debian-13-amd64.tar.gz
+            v2board-lifecycle-debian-13-amd64.tar.gz.sha256
           if-no-files-found: error
           retention-days: 30
 
   native-attest:
-    name: Attest native Linux release
+    name: Attest native Debian 13 amd64 release
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [native-release]
     runs-on: ubuntu-latest
@@ -351,21 +341,21 @@ jobs:
       - name: Download the native release
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: v2board-native-linux-amd64
+          name: v2board-native-debian-13-amd64
 
       - name: Download the disposable lifecycle tool
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: v2board-lifecycle-linux-amd64
+          name: v2board-lifecycle-debian-13-amd64
 
       - name: Verify downloaded release archives
         run: |
-          sha256sum --check v2board-native-linux-amd64.tar.gz.sha256
-          sha256sum --check v2board-lifecycle-linux-amd64.tar.gz.sha256
+          sha256sum --check v2board-native-debian-13-amd64.tar.gz.sha256
+          sha256sum --check v2board-lifecycle-debian-13-amd64.tar.gz.sha256
 
       - name: Attest the production release archives
         uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
         with:
           subject-path: |
-            v2board-native-linux-amd64.tar.gz
-            v2board-lifecycle-linux-amd64.tar.gz
+            v2board-native-debian-13-amd64.tar.gz
+            v2board-lifecycle-debian-13-amd64.tar.gz

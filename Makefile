@@ -1,6 +1,6 @@
 .PHONY: up down reset sync logs ps shell doctor \
 	rust-check rust-test rust-integration rust-route-audit rust-worker-reconcile rust-target-gate \
-	public-bundle-audit runtime-isolation-audit native-database-audit native-release-audit frontend-source-audit parity-config-audit ui-sync-audit \
+	public-bundle-audit runtime-isolation-audit native-database-audit cloudflared-config-audit native-release-audit frontend-source-audit parity-config-audit ui-sync-audit \
 	deploy-smoke visual-smoke interaction-parity accessibility-smoke behavior-parity \
 	reference-oracle-check reference-oracle-up reference-oracle-down \
 	clean-frontend-runs clean-host clean-host-apply mailpit-ui admin-url
@@ -173,7 +173,7 @@ rust-target-gate: rust-check rust-test rust-integration rust-route-audit rust-wo
 	@echo "Rust API, worker, route, and reconciliation gates passed."
 
 public-bundle-audit:
-	@paths='backend/rust/target frontend/.pnpm-store frontend/dist frontend/dist-deploy frontend/.cache frontend/coverage frontend/apps/user/dist frontend/apps/admin/dist public/theme/default public/assets/admin native-release lifecycle-tool lifecycle-package v2board-native-linux-amd64.tar.gz v2board-native-linux-amd64.tar.gz.sha256 v2board-lifecycle-linux-amd64.tar.gz v2board-lifecycle-linux-amd64.tar.gz.sha256'; \
+	@paths='backend/rust/target frontend/.pnpm-store frontend/dist frontend/dist-deploy frontend/.cache frontend/coverage frontend/apps/user/dist frontend/apps/admin/dist public/theme/default public/assets/admin native-release lifecycle-tool lifecycle-package v2board-native-debian-13-amd64.tar.gz v2board-native-debian-13-amd64.tar.gz.sha256 v2board-lifecycle-debian-13-amd64.tar.gz v2board-lifecycle-debian-13-amd64.tar.gz.sha256'; \
 	found=0; \
 	for path in $$paths; do \
 		if [ -e "$$path" ]; then echo "Host-generated deploy/build output found: $$path"; found=1; fi; \
@@ -221,23 +221,80 @@ native-database-audit:
 	@rg -q 'migrations-postgres' backend/rust/crates/db/src/pool.rs
 	@echo "API/worker/analytics graphs exclude lifecycle, provision, and MySQL; native schema names are unprefixed; only lifecycle directly reads the stopped legacy MySQL source and bootstraps the new targets."
 
-native-release-audit:
+cloudflared-config-audit:
+	@test -f deploy/systemd/v2board-cloudflared.service
+	@rg -Fqx 'Wants=network-online.target v2board-api.service v2board-worker.service' deploy/systemd/v2board-cloudflared.service
+	@rg -Fqx 'After=network-online.target v2board-api.service v2board-worker.service' deploy/systemd/v2board-cloudflared.service
+	@rg -Fqx 'Type=notify' deploy/systemd/v2board-cloudflared.service
+	@rg -Fqx 'NotifyAccess=main' deploy/systemd/v2board-cloudflared.service
+	@rg -Fqx 'User=cloudflared' deploy/systemd/v2board-cloudflared.service
+	@rg -Fqx 'Group=cloudflared' deploy/systemd/v2board-cloudflared.service
+	@rg -Fqx 'WorkingDirectory=/var/lib/cloudflared' deploy/systemd/v2board-cloudflared.service
+	@rg -Fqx 'SetCredential=cloudflared-remote-only-config:{}' deploy/systemd/v2board-cloudflared.service
+	@rg -Fqx 'LoadCredential=cloudflared-tunnel-token:/etc/v2board/cloudflared/tunnel-token' deploy/systemd/v2board-cloudflared.service
+	@rg -Fqx 'ExecStartPre=/usr/bin/test -s %d/cloudflared-remote-only-config' deploy/systemd/v2board-cloudflared.service
+	@rg -Fqx 'ExecStartPre=/usr/bin/test -s %d/cloudflared-tunnel-token' deploy/systemd/v2board-cloudflared.service
+	@rg -Fqx 'ExecStart=/usr/bin/cloudflared tunnel --config %d/cloudflared-remote-only-config --no-autoupdate --loglevel info run --token-file %d/cloudflared-tunnel-token' deploy/systemd/v2board-cloudflared.service
+	@test "$$(rg -c '^SetCredential=' deploy/systemd/v2board-cloudflared.service)" -eq 1
+	@test "$$(rg -c '^LoadCredential=' deploy/systemd/v2board-cloudflared.service)" -eq 1
+	@test "$$(rg -c '^ExecStart=' deploy/systemd/v2board-cloudflared.service)" -eq 1
+	@test "$$(rg -o -- '--config' deploy/systemd/v2board-cloudflared.service | wc -l | tr -d ' ')" -eq 1
+	@if rg -n '^Environment=.*(TOKEN|TUNNEL|CREDENTIAL)|--token[[:space:]=]|--url([[:space:]=]|$$)' deploy/systemd/v2board-cloudflared.service; then \
+		echo "Tunnel credentials and remotely-managed ingress must not be replaced by environment or local configuration."; exit 1; \
+	fi
+	@for setting in \
+		'NoNewPrivileges=true' \
+		'CapabilityBoundingSet=' \
+		'AmbientCapabilities=' \
+		'PrivateDevices=true' \
+		'PrivateMounts=true' \
+		'PrivateTmp=true' \
+		'ProtectHome=true' \
+		'ProtectProc=invisible' \
+		'ProtectSystem=strict' \
+		'RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6' \
+		'RestrictNamespaces=true' \
+		'SystemCallArchitectures=native' \
+		'SystemCallFilter=@system-service' \
+		'DevicePolicy=closed'; do \
+		rg -Fqx "$$setting" deploy/systemd/v2board-cloudflared.service || exit 1; \
+	done
+	@echo "Remotely-managed Cloudflare Tunnel credential and hardened systemd contract are present."
+
+native-release-audit: cloudflared-config-audit
+	docker build --platform linux/amd64 --target native-release-runtime-audit \
+		--build-arg V2BOARD_SOURCE_REVISION=0000000000000000000000000000000000000000 \
+		--file Dockerfile.rust .
 	@test -f deploy/systemd/v2board-api.service
 	@test -f deploy/systemd/v2board-worker.service
+	@test -f deploy/systemd/v2board-cloudflared.service
 	@rg -q '^FROM scratch AS lifecycle-tool$$' Dockerfile.rust
-	@rg -q '^COPY --from=lifecycle-builder /out/v2board-lifecycle /v2board-lifecycle$$' Dockerfile.rust
+	@rg -q '^COPY --from=lifecycle-runtime-audit /out/v2board-lifecycle /v2board-lifecycle$$' Dockerfile.rust
 	@rg -q '^FROM scratch AS native-release$$' Dockerfile.rust
-	@rg -q '^COPY --from=native-release-assembler /release/ /$$' Dockerfile.rust
+	@rg -q '^COPY --from=native-release-runtime-audit /release/ /$$' Dockerfile.rust
+	@rg -Fq 'FROM --platform=$$BUILDPLATFORM rust:$${RUST_VERSION}-trixie@sha256:8e117cab45b7e67c5d146456107cd0f8bf87df3a668e5cf142be6984cf900ca0 AS development' Dockerfile.rust
+	@rg -Fq 'FROM --platform=$$BUILDPLATFORM node:$${NODE_VERSION}-trixie-slim@sha256:ae91dcc111a68c9d2d81ff2a17bda61be126426176fde6fe7d08ab13b7f50573 AS frontend-builder' Dockerfile.rust
+	@test "$$(rg -Fxc 'FROM debian:trixie-slim@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd AS native-runtime-audit-base' Dockerfile.rust)" -eq 1
+	@test "$$(rg -Fxc 'FROM debian:trixie-slim@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd AS native-release-assembler' Dockerfile.rust)" -eq 1
+	@if rg -n 'bookworm' Dockerfile.rust; then echo "Native build stages must stay on Debian 13."; exit 1; fi
+	@rg -Fq 'test "$${TARGETARCH}" = amd64' Dockerfile.rust
+	@rg -Fqx 'ARG V2BOARD_SOURCE_REVISION' Dockerfile.rust
+	@rg -Fq "'target_distribution=debian'" Dockerfile.rust
+	@rg -Fq "'target_distribution_version=13'" Dockerfile.rust
+	@rg -Fq 'find bin frontend systemd RELEASE -type f -print0' Dockerfile.rust
 	@rg -Fq 'test -L frontend/previous' Dockerfile.rust
+	@retired_ingress="$$(printf '%s%s' ngi nx)"; \
+		matches="$$(rg -ni "$$retired_ingress" Dockerfile.rust Makefile docker-compose.local.yml .github/workflows/native-ci.yml || true)"; \
+		if [ -n "$$matches" ]; then echo "Retired reverse-proxy release residue found:"; echo "$$matches"; exit 1; fi
 	@if rg -n '^FROM .* AS production(-api|-worker|-base|-lifecycle)?$$|^(HEALTHCHECK|ENTRYPOINT|CMD|VOLUME) ' Dockerfile.rust; then \
 		echo "Dockerfile.rust must export a filesystem payload, not a production runtime image."; exit 1; \
 	fi
-	@for unit in deploy/systemd/v2board-api.service deploy/systemd/v2board-worker.service; do \
-		rg -Fqx 'NoNewPrivileges=true' "$$unit"; \
-		rg -Fqx 'ProtectSystem=strict' "$$unit"; \
-		rg -Fqx 'ProtectHome=true' "$$unit"; \
-		rg -Fqx 'PrivateTmp=true' "$$unit"; \
-		rg -Fqx 'CapabilityBoundingSet=' "$$unit"; \
+	@for unit in deploy/systemd/v2board-api.service deploy/systemd/v2board-worker.service deploy/systemd/v2board-cloudflared.service; do \
+		rg -Fqx 'NoNewPrivileges=true' "$$unit" || exit 1; \
+		rg -Fqx 'ProtectSystem=strict' "$$unit" || exit 1; \
+		rg -Fqx 'ProtectHome=true' "$$unit" || exit 1; \
+		rg -Fqx 'PrivateTmp=true' "$$unit" || exit 1; \
+		rg -Fqx 'CapabilityBoundingSet=' "$$unit" || exit 1; \
 	done
 	@rg -Fqx 'User=v2board-api' deploy/systemd/v2board-api.service
 	@rg -Fqx 'ReadWritePaths=/var/lib/v2board/api' deploy/systemd/v2board-api.service
@@ -248,6 +305,7 @@ native-release-audit:
 	@rg -q '^  native-release:$$' .github/workflows/native-ci.yml
 	@rg -q '^  native-attest:$$' .github/workflows/native-ci.yml
 	@rg -q -- '--target native-release' .github/workflows/native-ci.yml
+	@test "$$(rg -c -- '--platform linux/amd64' .github/workflows/native-ci.yml)" -eq 4
 	@rg -q -- '--output type=local,dest=native-release' .github/workflows/native-ci.yml
 	@rg -Fq 'inspect-release-archive' .github/workflows/native-ci.yml
 	@test "$$(rg -Fxc "      - 'deploy/**'" .github/workflows/native-ci.yml)" -eq 2
@@ -262,7 +320,7 @@ native-release-audit:
 	fi
 	@sed -n '/^  native-attest:$$/,$$p' .github/workflows/native-ci.yml | rg -Fq 'id-token: write'
 	@sed -n '/^  native-attest:$$/,$$p' .github/workflows/native-ci.yml | rg -Fq 'attestations: write'
-	@echo "Bare-metal release export and hardened systemd unit contracts are present."
+	@echo "Debian 13 amd64 bare-metal release, runtime ABI, and hardened systemd contracts are present."
 
 frontend-source-audit:
 	$(DCF) build frontend-build
@@ -295,7 +353,7 @@ reference-oracle-down:
 	$(REFERENCE_DCF) stop reference-oracle >/dev/null 2>&1 || true
 	$(REFERENCE_DCF) rm -f reference-oracle >/dev/null 2>&1 || true
 
-deploy-smoke:
+deploy-smoke: cloudflared-config-audit
 	$(DCF) up -d --build --wait postgres clickhouse redis rust-api
 	$(FRONTEND_RUN) \
 		-e "DEPLOY_SMOKE_BASE_URL=$(SOURCE_BASE_URL)" \

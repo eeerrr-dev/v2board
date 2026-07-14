@@ -4070,7 +4070,7 @@ mod tests {
         set_document_value(
             &mut document,
             "/runtime/trusted_proxy_cidrs",
-            serde_json::json!(["10.0.0.0/8"]),
+            serde_json::json!(["127.0.0.1/32"]),
         );
 
         let manifest_path = root.join("mysql-import.v1.json");

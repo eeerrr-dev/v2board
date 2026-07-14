@@ -40,17 +40,22 @@ visual, interaction, database, and native runtime artifacts in Docker volumes.
 - `docker-compose.local.yml` is the canonical tracked local workflow.
   `docker-compose.yml` is ignored and only for personal overrides.
 - Docker is only a local development, build, CI, and test boundary. Production
-  runs exported native Linux binaries and the source-built frontend directly on
-  the server under systemd; do not add production Compose files, container
-  runtime dependencies, or production image deployment instructions.
-- Production consists only of `backend/rust` plus the source-built frontend.
-  Do not add a second backend, server-side template layer, or duplicate worker
-  and scheduler runtime.
+  supports only Debian 13 (Trixie) amd64 and runs the Debian-13-built native
+  binaries plus the source-built frontend directly under systemd; do not add
+  another operating system or Debian version, production Compose files,
+  container runtime dependencies, or production image deployment instructions.
+- The production application consists only of `backend/rust` plus the
+  source-built frontend. The official stable-APT `cloudflared` package runs the
+  one remotely managed named Cloudflare Tunnel and is the only public ingress;
+  it connects outbound and forwards the one canonical public hostname to Rust
+  at `http://127.0.0.1:8080`. The host has no public HTTP/HTTPS listener. Do not
+  add Nginx, a second ingress, backend, server-side template layer, or duplicate
+  worker and scheduler runtime.
 - Source-owned frontend code lives under `frontend/apps/*/src`.
 - Source-built deploy artifacts live in the Docker `frontend-deploy` volume at
   `/app/frontend-deploy` during local/CI builds, outside the mutable frontend
   workspace; do not write `dist-deploy/` on the host. A release export installs
-  that validated tree at `/opt/v2board/frontend` on the server.
+  that validated tree at `/opt/v2board/current/frontend` on the server.
 - The deploy root contains immutable `releases/<content-id>/{user,admin}` trees
   plus atomic `current`/`previous` symlinks. Rust reads the production tree
   directly and read-only through `V2BOARD_FRONTEND_DIR`, renders HTML from `current`, and serves hashed
@@ -60,6 +65,39 @@ visual, interaction, database, and native runtime artifacts in Docker volumes.
   `/var/lib/v2board`, never in a source directory. Production API and worker use
   distinct Unix users and `0600` role-owned config files; container mount
   isolation is not a production security boundary.
+- `deploy/systemd/v2board-cloudflared.service` is the only tracked production
+  ingress service and is shipped read-only with every native release. Its
+  remotely managed Tunnel token is an operator-owned root-only systemd
+  credential and never release content, configuration, an environment value,
+  or a command-line literal. The unit's route-free `{}` `SetCredential` and
+  explicit `--config` path disable cloudflared's implicit local-config search;
+  this sentinel must contain no tunnel, hostname, ingress, or origin setting.
+  Do not add an operator-managed local Tunnel configuration or a second
+  Cloudflare connection mode.
+- The Cloudflare route must map exactly the canonical `app_url` hostname to
+  `http://127.0.0.1:8080`, leave HTTP Host Header empty so the visitor Host is
+  preserved, and enable Cloudflare Always Use HTTPS. Production runtime
+  `trusted_proxy_cidrs` is exactly `["127.0.0.1/32"]`. Rust accepts a visitor IP
+  only from the single, strict `CF-Connecting-IP` value delivered by that local
+  peer; it never trusts `Forwarded`, `X-Forwarded-For`, or
+  `X-Forwarded-Proto`. Cloudflare must not remove visitor-IP headers, overwrite
+  them with Pseudo IPv4, place a Worker/stacked proxy before this route, or put
+  Cloudflare Access in front of the public application. WAF rules must not issue
+  interactive challenges to `/api/v1/guest/payment/notify/*`,
+  `/api/v1/guest/telegram/webhook`, `/api/v1/client/*`, `/api/v1/server/*`, or
+  `/api/v2/server/config`.
+- Cloudflare owns public TLS, CDN, WAF, DDoS protection, HTTP-to-HTTPS redirects,
+  and edge logs. Rust continues to own HTML/assets, compression, cache policy,
+  CORS, security headers, and the loopback-only `/healthz` and `/readyz` probes.
+  The Tunnel must never expose those probes or publish any database service.
+  Activation must prove that the canonical public `http://` URL receives a
+  Cloudflare 3xx to the exact `https://` authority and path; an HTTP response
+  from Rust is an activation failure.
+  Keep Cloudflare caching on the origin-header-respecting default; never add
+  Cache Everything for HTML, API, auth, payment, or webhook traffic. If HTTP
+  Logpush is enabled, select the path-only field, never the full URI/query,
+  Referer, request headers, or cookies, so subscription, verification, and
+  payment secrets do not enter durable edge logs.
 - Visual and interaction reports live in Docker artifact volumes under
   `/app/frontend/.cache/`; do not write parity reports on the host.
 - Production deployment is manifest-driven: the build validates each Vite
@@ -461,6 +499,8 @@ For new redesigned surfaces, do not use:
   `pnpm --filter @v2board/user typecheck` or the relevant app typecheck.
 - Route/scenario changes: run `make parity-config-audit`.
 - Deploy path or public asset changes: run `make deploy-smoke`.
+- Cloudflare Tunnel service or production-ingress changes: run
+  `make cloudflared-config-audit` and `make deploy-smoke`.
 - Redesigned behavior changes: run focused `make interaction-parity` shards.
 - Visual/layout changes: use focused `make visual-smoke` for a browser-rendered
   smoke of the deployed assets.

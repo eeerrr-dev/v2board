@@ -4,7 +4,10 @@ ARG RUST_VERSION=1.97.0
 ARG NODE_VERSION=24
 ARG PNPM_VERSION=11.11.0
 
-FROM rust:${RUST_VERSION}-bookworm@sha256:7d0723df719e7f213b69dc7c8c595985c3f4b060cfbee4f7bc0e347a86fe3b6a AS development
+FROM --platform=$BUILDPLATFORM rust:${RUST_VERSION}-trixie@sha256:8e117cab45b7e67c5d146456107cd0f8bf87df3a668e5cf142be6984cf900ca0 AS development
+
+ARG BUILDARCH
+ARG TARGETARCH
 
 ENV CARGO_HOME=/usr/local/cargo \
     CARGO_TARGET_DIR=/app/target \
@@ -12,14 +15,28 @@ ENV CARGO_HOME=/usr/local/cargo \
     PATH=/usr/local/cargo/bin:$PATH \
     V2BOARD_RUNTIME_ROOT=/var/lib/v2board
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN set -eu; \
+    ssl_dev_package=libssl-dev; \
+    cross_packages=''; \
+    if [ "${BUILDARCH}" != "${TARGETARCH}" ]; then \
+        test "${TARGETARCH}" = amd64; \
+        dpkg --add-architecture amd64; \
+        ssl_dev_package=libssl-dev:amd64; \
+        cross_packages='gcc-x86-64-linux-gnu libc6-dev-amd64-cross'; \
+    fi; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
         pkg-config \
-        libssl-dev \
-    && rm -rf /var/lib/apt/lists/* \
-    && rustup component add clippy rustfmt \
-    && install -d -m 0777 \
+        ${ssl_dev_package} \
+        ${cross_packages}; \
+    rm -rf /var/lib/apt/lists/*; \
+    rustup component add clippy rustfmt; \
+    if [ "${BUILDARCH}" != "${TARGETARCH}" ]; then \
+        rustup target add x86_64-unknown-linux-gnu; \
+    fi; \
+    install -d -m 0777 \
         /app/target \
         /var/lib/v2board/api \
         /var/lib/v2board/worker \
@@ -30,33 +47,86 @@ EXPOSE 8080
 
 FROM development AS rust-builder
 
+ARG BUILDARCH
+ARG TARGETARCH
+
 COPY backend/rust/ ./
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/app/target \
-    cargo build --release --locked --bins \
-        -p v2board-api -p v2board-workers -p v2board-analytics \
-    && install -Dm0755 /app/target/release/v2board-api /out/v2board-api \
-    && install -Dm0755 /app/target/release/v2board-workers /out/v2board-workers \
-    && install -Dm0755 /app/target/release/v2board-analytics-schema \
+    set -eu; \
+    cargo_target_args=''; \
+    release_dir=/app/target/release; \
+    if [ "${BUILDARCH}" != "${TARGETARCH}" ]; then \
+        test "${TARGETARCH}" = amd64; \
+        export AR_x86_64_unknown_linux_gnu=x86_64-linux-gnu-ar; \
+        export CC_x86_64_unknown_linux_gnu=x86_64-linux-gnu-gcc; \
+        export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=x86_64-linux-gnu-gcc; \
+        export PKG_CONFIG_ALLOW_CROSS=1; \
+        export PKG_CONFIG_LIBDIR=/usr/lib/x86_64-linux-gnu/pkgconfig; \
+        cargo_target_args='--target x86_64-unknown-linux-gnu'; \
+        release_dir=/app/target/x86_64-unknown-linux-gnu/release; \
+    fi; \
+    cargo build --release --locked --bins ${cargo_target_args} \
+        -p v2board-api -p v2board-workers -p v2board-analytics; \
+    install -Dm0755 "${release_dir}/v2board-api" /out/v2board-api; \
+    install -Dm0755 "${release_dir}/v2board-workers" /out/v2board-workers; \
+    install -Dm0755 "${release_dir}/v2board-analytics-schema" \
         /out/v2board-analytics-schema
 
 FROM development AS lifecycle-builder
+
+ARG BUILDARCH
+ARG TARGETARCH
 
 COPY backend/rust/ ./
 COPY deploy/systemd/ /src/deploy/systemd/
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/app/target \
-    cargo build --release --locked -p v2board-lifecycle \
-    && install -Dm0755 /app/target/release/v2board-lifecycle \
+    set -eu; \
+    cargo_target_args=''; \
+    release_dir=/app/target/release; \
+    if [ "${BUILDARCH}" != "${TARGETARCH}" ]; then \
+        test "${TARGETARCH}" = amd64; \
+        export AR_x86_64_unknown_linux_gnu=x86_64-linux-gnu-ar; \
+        export CC_x86_64_unknown_linux_gnu=x86_64-linux-gnu-gcc; \
+        export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=x86_64-linux-gnu-gcc; \
+        export PKG_CONFIG_ALLOW_CROSS=1; \
+        export PKG_CONFIG_LIBDIR=/usr/lib/x86_64-linux-gnu/pkgconfig; \
+        cargo_target_args='--target x86_64-unknown-linux-gnu'; \
+        release_dir=/app/target/x86_64-unknown-linux-gnu/release; \
+    fi; \
+    cargo build --release --locked ${cargo_target_args} -p v2board-lifecycle; \
+    install -Dm0755 "${release_dir}/v2board-lifecycle" \
         /out/v2board-lifecycle
+
+FROM debian:trixie-slim@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd AS native-runtime-audit-base
+
+RUN test "$(cut -d. -f1 /etc/debian_version)" = 13 \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        file \
+        libssl3t64 \
+        systemd \
+    && rm -rf /var/lib/apt/lists/*
+
+FROM native-runtime-audit-base AS lifecycle-runtime-audit
+
+COPY --from=lifecycle-builder /out/ /out/
+
+RUN test -x /out/v2board-lifecycle \
+    && file /out/v2board-lifecycle | grep -Eq 'ELF 64-bit LSB.*x86-64' \
+    && ldd /out/v2board-lifecycle > /tmp/v2board-lifecycle.ldd \
+    && ! grep -q 'not found' /tmp/v2board-lifecycle.ldd \
+    && /out/v2board-lifecycle --help >/dev/null
 
 FROM scratch AS lifecycle-tool
 
-COPY --from=lifecycle-builder /out/v2board-lifecycle /v2board-lifecycle
+COPY --from=lifecycle-runtime-audit /out/v2board-lifecycle /v2board-lifecycle
 
-FROM node:${NODE_VERSION}-bookworm-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5 AS frontend-builder
+FROM --platform=$BUILDPLATFORM node:${NODE_VERSION}-trixie-slim@sha256:ae91dcc111a68c9d2d81ff2a17bda61be126426176fde6fe7d08ab13b7f50573 AS frontend-builder
 
 ARG PNPM_VERSION
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
@@ -69,11 +139,11 @@ RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
     && pnpm install --frozen-lockfile \
     && pnpm build:deploy
 
-FROM debian:bookworm-slim@sha256:60eac759739651111db372c07be67863818726f754804b8707c90979bda511df AS native-release-assembler
+FROM debian:trixie-slim@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd AS native-release-assembler
 
 ARG TARGETOS
 ARG TARGETARCH
-ARG V2BOARD_SOURCE_REVISION=unknown
+ARG V2BOARD_SOURCE_REVISION
 
 WORKDIR /release
 COPY --from=rust-builder /out/ /release/bin/
@@ -81,7 +151,10 @@ COPY --from=frontend-builder /build/frontend/dist-deploy/ /release/frontend/
 COPY deploy/systemd/ /release/systemd/
 
 RUN test "${TARGETOS}" = linux \
-    && test -n "${TARGETARCH}" \
+    && test "${TARGETARCH}" = amd64 \
+    && test "${#V2BOARD_SOURCE_REVISION}" = 40 \
+    && case "${V2BOARD_SOURCE_REVISION}" in *[!0-9a-f]*) exit 1;; esac \
+    && test "$(cut -d. -f1 /etc/debian_version)" = 13 \
     && test -x bin/v2board-api \
     && test -x bin/v2board-workers \
     && test -x bin/v2board-analytics-schema \
@@ -92,19 +165,54 @@ RUN test "${TARGETOS}" = linux \
     && test -f frontend/current/admin/index.html \
     && test -f systemd/v2board-api.service \
     && test -f systemd/v2board-worker.service \
+    && test -f systemd/v2board-cloudflared.service \
+    && test "$(find systemd -mindepth 1 -maxdepth 1 | wc -l)" = 3 \
     && printf '%s\n' \
         'format=v2board-native-release-v1' \
         "source_revision=${V2BOARD_SOURCE_REVISION}" \
         "target_os=${TARGETOS}" \
+        'target_distribution=debian' \
+        'target_distribution_version=13' \
         "target_arch=${TARGETARCH}" \
         > RELEASE \
+    && test "$(wc -l < RELEASE)" = 6 \
     && find bin frontend systemd RELEASE -type f -print0 \
         | sort -z \
         | xargs -0 sha256sum > SHA256SUMS
 
+FROM native-runtime-audit-base AS native-release-runtime-audit
+
+COPY --from=native-release-assembler /release/ /release/
+
+RUN set -eu; \
+    groupadd --system v2board-api; \
+    useradd --system --gid v2board-api --home-dir /var/lib/v2board/api \
+        --shell /usr/sbin/nologin v2board-api; \
+    groupadd --system v2board-worker; \
+    useradd --system --gid v2board-worker --home-dir /var/lib/v2board/worker \
+        --shell /usr/sbin/nologin v2board-worker; \
+    groupadd --system cloudflared; \
+    useradd --system --gid cloudflared --home-dir /var/lib/cloudflared \
+        --shell /usr/sbin/nologin cloudflared; \
+    install -d -m 0755 /opt/v2board; \
+    ln -s /release /opt/v2board/current; \
+    install -d -m 0700 -o v2board-api -g v2board-api /var/lib/v2board/api; \
+    install -d -m 0700 -o v2board-worker -g v2board-worker /var/lib/v2board/worker; \
+    install -d -m 0750 -o cloudflared -g cloudflared /var/lib/cloudflared; \
+    install -d -m 0755 /var/lib/v2board/rules; \
+    install -m 0755 /usr/bin/true /usr/bin/cloudflared; \
+    for binary in /release/bin/*; do \
+        file "${binary}" | grep -Eq 'ELF 64-bit LSB.*x86-64'; \
+        ldd_output="$(ldd "${binary}")"; \
+        if printf '%s\n' "${ldd_output}" | grep -q 'not found'; then exit 1; fi; \
+    done; \
+    systemd-analyze verify /release/systemd/*.service
+
 # Export this stage with:
-# docker build --target native-release --output type=local,dest=<directory> .
+# docker build --target native-release \
+#   --build-arg V2BOARD_SOURCE_REVISION=<40-lowercase-hex-git-sha> \
+#   --output type=local,dest=<directory> .
 # It is an installable filesystem payload, not a runnable container image.
 FROM scratch AS native-release
 
-COPY --from=native-release-assembler /release/ /
+COPY --from=native-release-runtime-audit /release/ /

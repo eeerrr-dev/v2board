@@ -10,7 +10,7 @@ use arc_swap::ArcSwap;
 use axum::{
     Json,
     extract::{ConnectInfo, Request, State},
-    http::{HeaderMap, HeaderValue, StatusCode, header},
+    http::{HeaderMap, HeaderValue, StatusCode, header, uri::Authority},
     middleware::Next,
     response::{IntoResponse, Response},
 };
@@ -656,6 +656,21 @@ pub(crate) async fn readyz(State(state): State<AppState>) -> Response {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct ClientIp(pub(crate) IpAddr);
 
+const CF_CONNECTING_IP: &str = "cf-connecting-ip";
+const PRODUCTION_PROBE_HOST: &str = "127.0.0.1:8080";
+const FORWARDING_METADATA_HEADERS: [&str; 10] = [
+    CF_CONNECTING_IP,
+    "cf-connecting-ipv6",
+    "cf-pseudo-ipv4",
+    "forwarded",
+    "true-client-ip",
+    "x-forwarded-for",
+    "x-forwarded-host",
+    "x-forwarded-port",
+    "x-forwarded-proto",
+    "x-real-ip",
+];
+
 pub(crate) async fn trusted_client_ip_middleware(
     State(state): State<AppState>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
@@ -663,15 +678,27 @@ pub(crate) async fn trusted_client_ip_middleware(
     next: Next,
 ) -> Response {
     let config = state.config_snapshot();
-    let client_ip = resolve_client_ip(peer.ip(), request.headers(), &config.trusted_proxy_cidrs);
+    let peer_ip = peer.ip();
+    let client_ip = if https_enforcement_exempt_path(request.uri().path()) {
+        match direct_probe_client_ip(peer_ip, request.headers(), &config.trusted_proxy_cidrs) {
+            Ok(client_ip) => client_ip,
+            Err(status) => return status.into_response(),
+        }
+    } else {
+        match public_client_ip(peer_ip, request.headers(), &config.trusted_proxy_cidrs) {
+            Ok(client_ip) => client_ip,
+            Err(status) => return status.into_response(),
+        }
+    };
+    strip_forwarding_metadata(request.headers_mut());
     request.extensions_mut().insert(ClientIp(client_ip));
     next.run(request).await
 }
 
-/// Enforces HTTPS without trusting forwarding headers from arbitrary clients.
-/// Only a directly connected peer inside `trusted_proxy_cidrs` may describe the
-/// original transport. Redirects use the configured canonical app URL rather
-/// than the untrusted Host header.
+/// Enforces the fixed public Cloudflare HTTPS origin without consulting generic
+/// forwarding headers. A request is externally canonical only when the local
+/// cloudflared peer is trusted and its preserved Host matches the configured
+/// HTTPS application authority. Redirects never reflect an untrusted Host.
 pub(crate) async fn enforce_https_middleware(
     State(state): State<AppState>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
@@ -682,7 +709,12 @@ pub(crate) async fn enforce_https_middleware(
         return next.run(request).await;
     }
     let config = state.config_snapshot();
-    let https = request_uses_https(peer.ip(), request.headers(), &config.trusted_proxy_cidrs);
+    let https = request_uses_canonical_https(
+        peer.ip(),
+        request.headers(),
+        &config.trusted_proxy_cidrs,
+        config.app_url.as_deref(),
+    );
     if config.force_https && !https {
         let Some(location) = https_redirect_location(&config, request.uri()) else {
             tracing::error!("force_https app_url could not be converted to a redirect URL");
@@ -711,51 +743,40 @@ fn https_enforcement_exempt_path(path: &str) -> bool {
     matches!(path, "/healthz" | "/readyz")
 }
 
-fn request_uses_https(peer: IpAddr, headers: &HeaderMap, trusted_proxies: &[ipnet::IpNet]) -> bool {
-    if !trusted_proxies
-        .iter()
-        .any(|network| network.contains(&peer))
-    {
+fn direct_probe_client_ip(
+    peer: IpAddr,
+    headers: &HeaderMap,
+    trusted_proxies: &[ipnet::IpNet],
+) -> Result<IpAddr, StatusCode> {
+    if trusted_proxies.is_empty() {
+        return Ok(peer);
+    }
+    let direct_host =
+        strict_single_header(headers, header::HOST.as_str()) == Some(PRODUCTION_PROBE_HOST);
+    if peer.is_loopback() && direct_host && !headers.contains_key(CF_CONNECTING_IP) {
+        Ok(peer)
+    } else {
+        Err(StatusCode::NOT_FOUND)
+    }
+}
+
+fn request_uses_canonical_https(
+    peer: IpAddr,
+    headers: &HeaderMap,
+    trusted_proxies: &[ipnet::IpNet],
+    app_url: Option<&str>,
+) -> bool {
+    if !trusted_proxy_peer(peer, trusted_proxies) {
         return false;
     }
-    if headers.contains_key("forwarded") {
-        return forwarded_proto(headers).is_some_and(|proto| proto.eq_ignore_ascii_case("https"));
+    let Some(app_url) = app_url else {
+        return false;
+    };
+    if !reqwest::Url::parse(app_url).is_ok_and(|url| url.scheme() == "https") {
+        return false;
     }
-    x_forwarded_proto(headers).is_some_and(|proto| proto.eq_ignore_ascii_case("https"))
-}
-
-fn forwarded_proto(headers: &HeaderMap) -> Option<&str> {
-    let mut nearest = None;
-    for value in headers.get_all("forwarded") {
-        let value = value.to_str().ok()?;
-        for element in value.split(',') {
-            let proto = element.split(';').find_map(|parameter| {
-                let (name, value) = parameter.trim().split_once('=')?;
-                name.trim()
-                    .eq_ignore_ascii_case("proto")
-                    .then_some(value.trim().trim_matches('"'))
-            })?;
-            if !matches!(proto.to_ascii_lowercase().as_str(), "http" | "https") {
-                return None;
-            }
-            nearest = Some(proto);
-        }
-    }
-    nearest
-}
-
-fn x_forwarded_proto(headers: &HeaderMap) -> Option<&str> {
-    let mut nearest = None;
-    for value in headers.get_all("x-forwarded-proto") {
-        let value = value.to_str().ok()?;
-        for proto in value.split(',').map(str::trim) {
-            if !matches!(proto.to_ascii_lowercase().as_str(), "http" | "https") {
-                return None;
-            }
-            nearest = Some(proto);
-        }
-    }
-    nearest
+    strict_single_header(headers, header::HOST.as_str())
+        .is_some_and(|request_host| host_matches_app_url(app_url, request_host))
 }
 
 fn https_redirect_location(config: &AppConfig, uri: &axum::http::Uri) -> Option<HeaderValue> {
@@ -793,79 +814,72 @@ fn request_timeout_exempt(path: &str, admin_path: &str) -> bool {
     path == format!("/api/v1/{admin_path}/config/testSendMail")
 }
 
+fn public_client_ip(
+    peer: IpAddr,
+    headers: &HeaderMap,
+    trusted_proxies: &[ipnet::IpNet],
+) -> Result<IpAddr, StatusCode> {
+    resolve_client_ip(peer, headers, trusted_proxies).ok_or(StatusCode::BAD_REQUEST)
+}
+
 fn resolve_client_ip(
     peer: IpAddr,
     headers: &HeaderMap,
     trusted_proxies: &[ipnet::IpNet],
-) -> IpAddr {
-    if !trusted_proxies
-        .iter()
-        .any(|network| network.contains(&peer))
-    {
-        return peer;
+) -> Option<IpAddr> {
+    if trusted_proxies.is_empty() {
+        return Some(peer);
     }
-    forwarded_chain(headers)
-        .or_else(|| x_forwarded_for_chain(headers))
-        .map(|chain| nearest_untrusted_hop(peer, &chain, trusted_proxies))
-        .unwrap_or(peer)
-}
-
-fn nearest_untrusted_hop(
-    peer: IpAddr,
-    chain: &[IpAddr],
-    trusted_proxies: &[ipnet::IpNet],
-) -> IpAddr {
-    let mut current = peer;
-    for hop in chain.iter().rev() {
-        if !trusted_proxies
-            .iter()
-            .any(|network| network.contains(&current))
-        {
-            break;
-        }
-        current = *hop;
-    }
-    current
-}
-
-fn forwarded_chain(headers: &HeaderMap) -> Option<Vec<IpAddr>> {
-    let mut chain = Vec::new();
-    for value in headers.get_all("forwarded") {
-        let value = value.to_str().ok()?;
-        for element in value.split(',') {
-            let node = element.split(';').find_map(|parameter| {
-                let (name, value) = parameter.trim().split_once('=')?;
-                name.trim()
-                    .eq_ignore_ascii_case("for")
-                    .then_some(value.trim())
-            })?;
-            chain.push(parse_forwarded_node(node)?);
-        }
-    }
-    (!chain.is_empty()).then_some(chain)
-}
-
-fn x_forwarded_for_chain(headers: &HeaderMap) -> Option<Vec<IpAddr>> {
-    let mut chain = Vec::new();
-    for value in headers.get_all("x-forwarded-for") {
-        let value = value.to_str().ok()?;
-        for node in value.split(',') {
-            chain.push(parse_forwarded_node(node.trim())?);
-        }
-    }
-    (!chain.is_empty()).then_some(chain)
-}
-
-fn parse_forwarded_node(value: &str) -> Option<IpAddr> {
-    let value = value.trim().trim_matches('"');
-    if value.eq_ignore_ascii_case("unknown") || value.starts_with('_') {
+    if !trusted_proxy_peer(peer, trusted_proxies) {
         return None;
     }
-    value
-        .parse::<IpAddr>()
-        .ok()
-        .or_else(|| value.parse::<SocketAddr>().ok().map(|address| address.ip()))
-        .or_else(|| value.strip_prefix('[')?.strip_suffix(']')?.parse().ok())
+    let value = strict_single_header(headers, CF_CONNECTING_IP)?;
+    if value.is_empty() || value.trim() != value {
+        return None;
+    }
+    value.parse().ok()
+}
+
+fn trusted_proxy_peer(peer: IpAddr, trusted_proxies: &[ipnet::IpNet]) -> bool {
+    trusted_proxies
+        .iter()
+        .any(|network| network.contains(&peer))
+}
+
+fn strict_single_header<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+    let mut values = headers.get_all(name).iter();
+    let value = values.next()?;
+    if values.next().is_some() {
+        return None;
+    }
+    value.to_str().ok()
+}
+
+fn strip_forwarding_metadata(headers: &mut HeaderMap) {
+    for name in FORWARDING_METADATA_HEADERS {
+        headers.remove(name);
+    }
+}
+
+pub(crate) fn host_matches_app_url(app_url: &str, request_host: &str) -> bool {
+    let Ok(expected) = reqwest::Url::parse(app_url) else {
+        return false;
+    };
+    let Some(expected_host) = expected.host_str() else {
+        return false;
+    };
+    let Ok(actual) = request_host.parse::<Authority>() else {
+        return false;
+    };
+    if !actual.host().eq_ignore_ascii_case(expected_host) {
+        return false;
+    }
+
+    match (expected.port(), expected.port_or_known_default()) {
+        (Some(expected_port), _) => actual.port_u16() == Some(expected_port),
+        (None, Some(default_port)) => actual.port_u16().is_none_or(|port| port == default_port),
+        (None, None) => actual.port_u16().is_none(),
+    }
 }
 
 pub(crate) async fn shutdown_signal() {
@@ -899,12 +913,13 @@ pub(crate) async fn shutdown_signal() {
 mod tests {
     use std::net::IpAddr;
 
-    use axum::http::HeaderMap;
+    use axum::http::{HeaderMap, HeaderValue, header};
 
     use super::{
-        ActivationSource, activation_source, finish_applied_operator_activation,
-        https_enforcement_exempt_path, request_timeout_exempt, request_uses_https,
-        resolve_client_ip,
+        ActivationSource, CF_CONNECTING_IP, FORWARDING_METADATA_HEADERS, PRODUCTION_PROBE_HOST,
+        activation_source, direct_probe_client_ip, finish_applied_operator_activation,
+        https_enforcement_exempt_path, public_client_ip, request_timeout_exempt,
+        request_uses_canonical_https, resolve_client_ip, strip_forwarding_metadata,
     };
     use std::sync::atomic::{AtomicI64, Ordering};
     use v2board_domain::operator_config::OperatorConfigError;
@@ -948,91 +963,218 @@ mod tests {
     }
 
     #[test]
-    fn untrusted_peers_cannot_spoof_forwarding_headers() {
+    fn configured_proxy_mode_rejects_untrusted_peers_and_local_mode_uses_the_peer() {
         let mut headers = HeaderMap::new();
+        headers.insert(CF_CONNECTING_IP, "192.0.2.10".parse().unwrap());
+        headers.insert("forwarded", "for=192.0.2.11;proto=https".parse().unwrap());
         headers.insert("x-forwarded-for", "198.51.100.7".parse().unwrap());
         let peer = "203.0.113.10".parse().unwrap();
         assert_eq!(
-            resolve_client_ip(peer, &headers, &proxy_networks(&["10.0.0.0/8"])),
-            peer
+            public_client_ip(peer, &headers, &proxy_networks(&["10.0.0.0/8"])),
+            Err(axum::http::StatusCode::BAD_REQUEST)
         );
-    }
+        assert_eq!(public_client_ip(peer, &headers, &[]), Ok(peer));
 
-    #[test]
-    fn trusted_proxy_walk_stops_at_the_nearest_untrusted_hop() {
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            "x-forwarded-for",
-            "192.0.2.99, 198.51.100.7, 10.0.0.2".parse().unwrap(),
-        );
-        let client = resolve_client_ip(
-            "10.0.0.1".parse().unwrap(),
-            &headers,
-            &proxy_networks(&["10.0.0.0/8"]),
-        );
-        assert_eq!(client, "198.51.100.7".parse::<IpAddr>().unwrap());
-    }
-
-    #[test]
-    fn forwarded_header_supports_quoted_ipv6_with_a_port() {
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            "forwarded",
-            "for=\"[2001:db8::42]:443\";proto=https, for=10.0.0.2"
-                .parse()
-                .unwrap(),
-        );
-        let client = resolve_client_ip(
-            "10.0.0.1".parse().unwrap(),
-            &headers,
-            &proxy_networks(&["10.0.0.0/8"]),
-        );
-        assert_eq!(client, "2001:db8::42".parse::<IpAddr>().unwrap());
-    }
-
-    #[test]
-    fn malformed_forwarding_chain_falls_back_to_the_peer() {
-        let mut headers = HeaderMap::new();
-        headers.insert("x-forwarded-for", "198.51.100.7, unknown".parse().unwrap());
-        let peer = "10.0.0.1".parse().unwrap();
+        let alternate_loopback = "127.0.0.2".parse().unwrap();
         assert_eq!(
-            resolve_client_ip(peer, &headers, &proxy_networks(&["10.0.0.0/8"])),
-            peer
+            public_client_ip(
+                alternate_loopback,
+                &headers,
+                &proxy_networks(&["127.0.0.1/32"]),
+            ),
+            Err(axum::http::StatusCode::BAD_REQUEST)
         );
     }
 
     #[test]
-    fn forwarded_transport_is_honored_only_from_a_trusted_proxy() {
+    fn trusted_cloudflared_uses_one_strict_cf_connecting_ip_value() {
         let mut headers = HeaderMap::new();
+        let peer = "127.0.0.1".parse().unwrap();
+        let trusted = proxy_networks(&["127.0.0.1/32"]);
+
+        headers.insert(CF_CONNECTING_IP, "198.51.100.7".parse().unwrap());
+        assert_eq!(
+            public_client_ip(peer, &headers, &trusted),
+            Ok("198.51.100.7".parse::<IpAddr>().unwrap())
+        );
+        headers.insert(CF_CONNECTING_IP, "2001:db8::42".parse().unwrap());
+        assert_eq!(
+            public_client_ip(peer, &headers, &trusted),
+            Ok("2001:db8::42".parse::<IpAddr>().unwrap())
+        );
+    }
+
+    #[test]
+    fn trusted_cloudflared_rejects_missing_malformed_or_ambiguous_client_ip() {
+        let peer = "127.0.0.1".parse().unwrap();
+        let trusted = proxy_networks(&["127.0.0.1/32"]);
+        assert_eq!(
+            public_client_ip(peer, &HeaderMap::new(), &trusted),
+            Err(axum::http::StatusCode::BAD_REQUEST)
+        );
+
+        for value in [
+            "",
+            " 198.51.100.7",
+            "198.51.100.7 ",
+            "198.51.100.7, 192.0.2.10",
+            "198.51.100.7:443",
+            "unknown",
+        ] {
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                CF_CONNECTING_IP,
+                HeaderValue::from_bytes(value.as_bytes()).unwrap(),
+            );
+            assert_eq!(
+                public_client_ip(peer, &headers, &trusted),
+                Err(axum::http::StatusCode::BAD_REQUEST),
+                "value={value:?}"
+            );
+        }
+
+        let mut duplicate = HeaderMap::new();
+        duplicate.append(CF_CONNECTING_IP, "198.51.100.7".parse().unwrap());
+        duplicate.append(CF_CONNECTING_IP, "192.0.2.10".parse().unwrap());
+        assert_eq!(
+            public_client_ip(peer, &duplicate, &trusted),
+            Err(axum::http::StatusCode::BAD_REQUEST)
+        );
+    }
+
+    #[test]
+    fn generic_forwarding_headers_do_not_change_client_ip_or_canonical_https() {
+        let mut canonical_headers = HeaderMap::new();
+        canonical_headers.insert(header::HOST, "panel.example.com".parse().unwrap());
+        let mut headers = canonical_headers.clone();
+        headers.insert("forwarded", "for=192.0.2.10;proto=https".parse().unwrap());
+        headers.insert("x-forwarded-for", "192.0.2.11".parse().unwrap());
         headers.insert("x-forwarded-proto", "https".parse().unwrap());
-        assert!(!request_uses_https(
-            "203.0.113.10".parse().unwrap(),
+        let peer = "127.0.0.1".parse().unwrap();
+        let trusted = proxy_networks(&["127.0.0.1/32"]);
+
+        assert_eq!(resolve_client_ip(peer, &headers, &trusted), None);
+        assert_eq!(
+            request_uses_canonical_https(
+                peer,
+                &headers,
+                &trusted,
+                Some("https://panel.example.com"),
+            ),
+            request_uses_canonical_https(
+                peer,
+                &canonical_headers,
+                &trusted,
+                Some("https://panel.example.com"),
+            )
+        );
+
+        headers.insert(CF_CONNECTING_IP, "198.51.100.7".parse().unwrap());
+        assert_eq!(
+            resolve_client_ip(peer, &headers, &trusted),
+            Some("198.51.100.7".parse().unwrap())
+        );
+    }
+
+    #[test]
+    fn canonical_https_requires_the_trusted_peer_and_exact_app_url_host() {
+        let peer = "127.0.0.1".parse().unwrap();
+        let trusted = proxy_networks(&["127.0.0.1/32"]);
+        let mut headers = HeaderMap::new();
+        headers.insert(header::HOST, "PANEL.example.com:443".parse().unwrap());
+        assert!(request_uses_canonical_https(
+            peer,
             &headers,
-            &proxy_networks(&["10.0.0.0/8"]),
+            &trusted,
+            Some("https://panel.example.com"),
         ));
-        assert!(request_uses_https(
-            "10.0.0.1".parse().unwrap(),
+        assert!(!request_uses_canonical_https(
+            "127.0.0.2".parse().unwrap(),
             &headers,
-            &proxy_networks(&["10.0.0.0/8"]),
+            &trusted,
+            Some("https://panel.example.com"),
+        ));
+        assert!(!request_uses_canonical_https(
+            peer,
+            &headers,
+            &trusted,
+            Some("http://panel.example.com"),
         ));
 
-        headers.insert(
-            "forwarded",
-            "for=198.51.100.7;proto=http, for=10.0.0.2;proto=https"
-                .parse()
-                .unwrap(),
+        headers.insert(header::HOST, "attacker.example".parse().unwrap());
+        assert!(!request_uses_canonical_https(
+            peer,
+            &headers,
+            &trusted,
+            Some("https://panel.example.com"),
+        ));
+
+        headers.insert(header::HOST, "panel.example.com".parse().unwrap());
+        headers.append(header::HOST, "panel.example.com".parse().unwrap());
+        assert!(!request_uses_canonical_https(
+            peer,
+            &headers,
+            &trusted,
+            Some("https://panel.example.com"),
+        ));
+    }
+
+    #[test]
+    fn production_probes_require_the_exact_direct_loopback_origin() {
+        let loopback = "127.0.0.1".parse().unwrap();
+        let remote = "192.0.2.10".parse().unwrap();
+        let trusted = proxy_networks(&["127.0.0.1/32"]);
+        let mut headers = HeaderMap::new();
+
+        assert_eq!(direct_probe_client_ip(remote, &headers, &[]), Ok(remote));
+        assert_eq!(
+            direct_probe_client_ip(loopback, &headers, &trusted),
+            Err(axum::http::StatusCode::NOT_FOUND)
         );
-        assert!(request_uses_https(
-            "10.0.0.1".parse().unwrap(),
-            &headers,
-            &proxy_networks(&["10.0.0.0/8"]),
-        ));
-        headers.insert("forwarded", "for=10.0.0.2;proto=ftp".parse().unwrap());
-        assert!(!request_uses_https(
-            "10.0.0.1".parse().unwrap(),
-            &headers,
-            &proxy_networks(&["10.0.0.0/8"]),
-        ));
+
+        headers.insert(header::HOST, PRODUCTION_PROBE_HOST.parse().unwrap());
+        assert_eq!(
+            direct_probe_client_ip(loopback, &headers, &trusted),
+            Ok(loopback)
+        );
+        assert_eq!(
+            direct_probe_client_ip(remote, &headers, &trusted),
+            Err(axum::http::StatusCode::NOT_FOUND)
+        );
+
+        headers.insert(header::HOST, "panel.example.com".parse().unwrap());
+        assert_eq!(
+            direct_probe_client_ip(loopback, &headers, &trusted),
+            Err(axum::http::StatusCode::NOT_FOUND)
+        );
+
+        headers.insert(header::HOST, PRODUCTION_PROBE_HOST.parse().unwrap());
+        headers.insert(CF_CONNECTING_IP, "198.51.100.7".parse().unwrap());
+        assert_eq!(
+            direct_probe_client_ip(loopback, &headers, &trusted),
+            Err(axum::http::StatusCode::NOT_FOUND)
+        );
+
+        headers.remove(CF_CONNECTING_IP);
+        headers.append(header::HOST, PRODUCTION_PROBE_HOST.parse().unwrap());
+        assert_eq!(
+            direct_probe_client_ip(loopback, &headers, &trusted),
+            Err(axum::http::StatusCode::NOT_FOUND)
+        );
+    }
+
+    #[test]
+    fn parsed_forwarding_metadata_is_not_exposed_to_handlers() {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::HOST, "panel.example.com".parse().unwrap());
+        for name in FORWARDING_METADATA_HEADERS {
+            headers.insert(name, "198.51.100.7".parse().unwrap());
+        }
+        strip_forwarding_metadata(&mut headers);
+        assert_eq!(headers.get(header::HOST).unwrap(), "panel.example.com");
+        for name in FORWARDING_METADATA_HEADERS {
+            assert!(!headers.contains_key(name), "header={name}");
+        }
     }
 
     #[test]

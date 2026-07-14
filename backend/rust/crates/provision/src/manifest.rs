@@ -754,11 +754,15 @@ fn validate_runtime(
         }
     }
     if runtime.get("bind_addr").and_then(Value::as_str) != Some("127.0.0.1:8080")
+        || runtime
+            .get("trusted_proxy_cidrs")
+            .and_then(Value::as_array)
+            .is_none_or(|cidrs| cidrs.len() != 1 || cidrs[0].as_str() != Some("127.0.0.1/32"))
         || runtime.get("force_https") != Some(&Value::Bool(true))
         || runtime.get("server_require_idempotency_key") != Some(&Value::Bool(true))
     {
         return Err(MysqlImportSpecError::Invalid(
-            "production runtime requires loopback bind, HTTPS, and node idempotency keys"
+            "production runtime requires loopback bind, same-host cloudflared trust, HTTPS, and node idempotency keys"
                 .to_string(),
         ));
     }
@@ -1374,7 +1378,7 @@ mod tests {
             "cors_allowed_origins".to_string(),
             json!(["https://panel.acme.internal"]),
         );
-        runtime.insert("trusted_proxy_cidrs".to_string(), json!(["10.0.0.0/8"]));
+        runtime.insert("trusted_proxy_cidrs".to_string(), json!(["127.0.0.1/32"]));
         runtime
     }
 
@@ -1512,6 +1516,17 @@ mod tests {
         assert!(
             parse_mysql_import_spec(&serde_json::to_vec(&wrong_runtime_type).unwrap()).is_err()
         );
+
+        let mut remote_cloudflared_peer = import_document();
+        remote_cloudflared_peer["runtime"]["trusted_proxy_cidrs"] = json!(["10.0.0.0/8"]);
+        assert!(
+            parse_mysql_import_spec(&serde_json::to_vec(&remote_cloudflared_peer).unwrap())
+                .is_err()
+        );
+
+        let mut disabled_https = import_document();
+        disabled_https["runtime"]["force_https"] = json!(false);
+        assert!(parse_mysql_import_spec(&serde_json::to_vec(&disabled_https).unwrap()).is_err());
 
         let mut duplicate_postgres_tls = import_document();
         duplicate_postgres_tls["target"]["postgres"]["api_database_url"] = json!(
