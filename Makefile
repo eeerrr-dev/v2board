@@ -119,8 +119,8 @@ rust-integration:
 	$(DCF) --profile migration-test up -d --wait --force-recreate legacy-mysql-source postgres-import-target redis-import-target
 	$(DCF) exec -T postgres dropdb --force --if-exists -U v2board v2board_analytics_test
 	$(DCF) exec -T postgres createdb -U v2board v2board_analytics_test
-	$(DCF) exec -T postgres dropdb --force --if-exists -U v2board v2board_mysql_import_test
-	$(DCF) exec -T postgres createdb -U v2board v2board_mysql_import_test
+	$(DCF) exec -T postgres dropdb --force --if-exists -U v2board v2board_import_target_test
+	$(DCF) exec -T postgres createdb -U v2board v2board_import_target_test
 	$(DCF) exec -T postgres dropdb --force --if-exists -U v2board v2board_schema_test
 	$(DCF) exec -T postgres createdb -U v2board v2board_schema_test
 	$(DCF) exec -T clickhouse clickhouse-client --user v2board_analytics --password v2board \
@@ -137,7 +137,7 @@ rust-integration:
 		-e RUST_INTEGRATION_REDIS_URL=redis://redis:6379/15 \
 		-e RUST_INTEGRATION_LEGACY_MYSQL_URL=mysql://legacy_reader:LegacySourceReadOnlyTestSecret-32-bytes@legacy-mysql-source:3306/v2board_legacy \
 		-e RUST_INTEGRATION_LEGACY_MYSQL_FIXTURE_ADMIN_URL=mysql://root:root-import-test-secret@legacy-mysql-source:3306/v2board_legacy \
-		-e RUST_INTEGRATION_MYSQL_IMPORT_DATABASE_URL=postgresql://v2board:v2board@postgres:5432/v2board_mysql_import_test \
+		-e RUST_INTEGRATION_IMPORT_POSTGRES_URL=postgresql://v2board:v2board@postgres:5432/v2board_import_target_test \
 		-e RUST_INTEGRATION_SCHEMA_DATABASE_URL=postgresql://v2board:v2board@postgres:5432/v2board_schema_test \
 		-e RUST_INTEGRATION_EXECUTE_DATABASE_ROOT_URL=postgresql://import_bootstrap:ImportBootstrapTestSecret-32-bytes@postgres-import-target:5432/postgres \
 		-e RUST_INTEGRATION_EXECUTE_REDIS_URL=redis://import_bootstrap:RedisImportBootstrapTestSecret-32-bytes@redis-import-target:6379/0 \

@@ -4419,7 +4419,7 @@ mod tests {
         let (Ok(mysql_url), Ok(mysql_fixture_admin_url), Ok(postgres_url)) = (
             std::env::var("RUST_INTEGRATION_LEGACY_MYSQL_URL"),
             std::env::var("RUST_INTEGRATION_LEGACY_MYSQL_FIXTURE_ADMIN_URL"),
-            std::env::var("RUST_INTEGRATION_MYSQL_IMPORT_DATABASE_URL"),
+            std::env::var("RUST_INTEGRATION_IMPORT_POSTGRES_URL"),
         ) else {
             return;
         };
