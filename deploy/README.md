@@ -76,10 +76,10 @@ The same CI job publishes a separate `v2board-lifecycle-linux-amd64` artifact co
 `v2board-lifecycle-linux-amd64.tar.gz` and its external SHA-256. Verify that outer digest, unpack the
 archive, run `sha256sum --check SHA256SUMS`, and confirm `RELEASE` names the expected source revision
 before transferring the executable to the stopped old host. The tool has the same Debian 12 compatible
-Linux amd64, glibc and `libssl3` ABI boundary as the native release. If the old host is incompatible,
-run it with the staging database on the documented disposable migration VM; do not compile source on a
-production machine. The lifecycle artifact is disposable and is not installed into the long-running
-new release.
+Linux amd64, glibc and `libssl3` ABI boundary as the native release. Confirm that boundary against the old
+host before cutover; an incompatible old host requires a separately verified compatible lifecycle build,
+not moving MySQL onto the new production machine or compiling source during cutover. The lifecycle artifact
+is disposable and is not installed into the long-running new release.
 
 ## Operating-system identities and paths
 
@@ -150,10 +150,12 @@ There is one offline `mysql-import.v1` path:
 
 1. The operator stops the old API, workers, scheduler, payment ingress and external node reporters.
 2. The operator exports all business tables and rows from Oracle MySQL 8 into one dump and records its
-   SHA-256. The old database is not modified.
-3. On the stopped old production host, the dump is loaded into a separate, disposable MySQL 8 engine that
-   runs no old trigger, routine or event.
-4. The converter copies the fixed retained rows into a brand-new PostgreSQL 18 database. ClickHouse
+   SHA-256. The dump is retained as a protected backup artifact; the old database is not modified.
+3. On the stopped old production host, lifecycle uses a dedicated `SELECT`-only account to establish one
+   `REPEATABLE READ`, `READ ONLY`, consistent snapshot of the original MySQL database; it rejects extra
+   grants/roles/`GRANT OPTION` and requires InnoDB for every imported table.
+4. The converter reads typed MySQL rows, explicitly validates/transforms them, and uses parameterized
+   PostgreSQL writes to copy the fixed retained rows into a brand-new PostgreSQL 18 database. ClickHouse
    starts without old events; the dedicated Redis 8.8 target starts empty with `/0`, `noeviction`, a
    disabled default user and a writable external `aclfile`.
 5. The importer generates the API and worker configs plus an import report under the old host's
@@ -161,15 +163,13 @@ There is one offline `mysql-import.v1` path:
 6. The operator securely transfers the two configs to the new host, installs them at the fixed role-owned
    paths, and verifies data, role configs, database schemas and service prerequisites before activation.
 
-The staging engine and converter run by default on the stopped old production host. Staging is a second,
-loopback-only instance with a separate data directory or volume, port/socket and credentials; it must not be
-created inside the source instance or mount the source data directory. The converter connects outbound to the
-new PostgreSQL target with a temporary migration principal. If the old host lacks capacity, use a disposable
-migration VM instead. Staging is stopped and deleted after success or failure, and the new production machine
-never runs MySQL. Legacy source tables keep their `v2_*` names, while native PostgreSQL/ClickHouse target tables
+The converter runs on the stopped old production host and reaches the source only through the manifest's
+loopback-only `source.database_url`. The dump is never loaded for conversion and MySQL SQL is never sent to
+PostgreSQL. The converter connects outbound to the new PostgreSQL target with a temporary migration
+principal. The new production machine never runs MySQL. Legacy source tables keep their `v2_*` names, while native PostgreSQL/ClickHouse target tables
 are unprefixed (`users` and `orders` avoid PostgreSQL keyword conflicts).
 
-Run the disposable utility on the stopped old host after loading the dump into staging:
+Run the disposable utility on the stopped old host after the dump and read-only source account are ready:
 
 ```bash
 v2board-lifecycle validate --manifest /secure/private/mysql-import.json
@@ -180,8 +180,9 @@ v2board-lifecycle execute --manifest /secure/private/mysql-import.json
 `execute` requires absent PostgreSQL/ClickHouse targets, a new empty Redis and a nonexistent
 `config_output_directory` under an existing root-owned `0700` non-symlink parent. Run lifecycle as root; a
 different local user's `0600`/`0700` paths are deliberately rejected. It creates the directory as `0700` and emits
-`api.config.json`, `worker.config.json` and `import-report.json` as `0600`. It never connects to the live old
-MySQL, old Redis or Stripe. The manifest's one-shot `redis_bootstrap_url` is never emitted: execute creates
+`api.config.json`, `worker.config.json` and `import-report.json` as `0600`. It connects to old MySQL only
+through the dedicated `SELECT`-only account and never connects to old Redis or Stripe. The manifest's one-shot
+`redis_bootstrap_url` is never emitted: execute creates
 distinct API/worker ACL users, limits them to their installation and role key patterns, performs
 `ACL SAVE` then `ACL LOAD`, and reconnects for positive and negative probes before writing their separate
 runtime `redis_url` values. This complete command is the only write path; do not substitute manual partial writes.
@@ -192,8 +193,9 @@ orders are discarded without contacting Stripe; terminal Stripe order history is
 provider bindings cleared. Non-Stripe payment configuration remains ordinary retained business data,
 and user balance is never automatically refunded or adjusted.
 
-If an import attempt fails, delete its staging database, incomplete new PostgreSQL/ClickHouse/Redis targets
-and output directory, correct the problem, and run the same conversion again into fresh empty targets. This
+If an import attempt fails, delete its incomplete new PostgreSQL/ClickHouse/Redis targets and output
+directory, correct the problem, and run the same conversion again from the stopped source into fresh empty
+targets. This
 is not recovery of the untouched old database and keeps no resumable intermediate state; there is no import
 rollback, resume, checkpoint, recovery or cleanup/restart workflow. After native service starts, normal
 PostgreSQL backup/PITR is ordinary runtime operation, not a MySQL-import stage. ClickHouse history is
@@ -201,8 +203,9 @@ sacrificial: an empty rebuild continues only unpublished and new events, with no
 
 The operator permanently retires the old site only after the new result is accepted. Full data and
 command details are in the [MySQL import guide](../docs/mysql-import.md). After acceptance, delete the
-old-host lifecycle binary, staging engine, manifest and config-output copy; revoke or rotate the external
-PostgreSQL/ClickHouse/Redis bootstrap credentials. Keep or destroy the dump only under a separate protected
+old-host lifecycle binary, manifest and config-output copy; revoke the source MySQL read-only account and
+revoke or rotate the external PostgreSQL/ClickHouse/Redis bootstrap credentials. Keep or destroy the dump
+only under a separate protected
 backup policy, never as part of a secret-bearing migration workspace.
 
 ## Logs and shutdown

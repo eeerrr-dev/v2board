@@ -46,7 +46,6 @@ pub struct MysqlImportInspection {
     pub old_mysql_contacted: bool,
     pub old_redis_contacted: bool,
     pub stripe_provider_contacted: bool,
-    pub staging_mysql_contacted: bool,
     pub target_mutated: bool,
     pub report_sha256: String,
 }
@@ -85,7 +84,6 @@ pub fn inspect_mysql_import(
         old_mysql_contacted: false,
         old_redis_contacted: false,
         stripe_provider_contacted: false,
-        staging_mysql_contacted: false,
         target_mutated: false,
         report_sha256: String::new(),
     };
@@ -188,6 +186,7 @@ fn accepted_losses() -> MysqlImportLossReport {
             "failed_jobs",
             "old nodes, routes, and credentials, which are rebuilt manually",
             "legacy MySQL v2_stat_user and v2_stat_server traffic-detail rows",
+            "optional legacy v2_tutorial upgrade residue",
             "old ClickHouse event history",
             "old operational logs and mail history",
             "old theme assets and runtime files",

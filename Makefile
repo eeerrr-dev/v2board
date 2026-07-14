@@ -116,7 +116,7 @@ rust-test:
 rust-integration:
 	$(DCF) build rust-api
 	$(DCF) up -d --wait postgres clickhouse redis
-	$(DCF) --profile migration-test up -d --wait --force-recreate mysql-import-staging postgres-import-target redis-import-target
+	$(DCF) --profile migration-test up -d --wait --force-recreate legacy-mysql-source postgres-import-target redis-import-target
 	$(DCF) exec -T postgres dropdb --force --if-exists -U v2board v2board_analytics_test
 	$(DCF) exec -T postgres createdb -U v2board v2board_analytics_test
 	$(DCF) exec -T postgres dropdb --force --if-exists -U v2board v2board_mysql_import_test
@@ -135,14 +135,15 @@ rust-integration:
 		-e RUST_INTEGRATION_CLICKHOUSE_USERNAME=v2board_analytics \
 		-e RUST_INTEGRATION_CLICKHOUSE_PASSWORD=v2board \
 		-e RUST_INTEGRATION_REDIS_URL=redis://redis:6379/15 \
-		-e RUST_INTEGRATION_MYSQL_URL=mysql://staging:J0stagingImportSecret-32-bytes-long@mysql-import-staging:3306/v2board_staging \
+		-e RUST_INTEGRATION_LEGACY_MYSQL_URL=mysql://legacy_reader:LegacySourceReadOnlyTestSecret-32-bytes@legacy-mysql-source:3306/v2board_legacy \
+		-e RUST_INTEGRATION_LEGACY_MYSQL_FIXTURE_ADMIN_URL=mysql://root:root-import-test-secret@legacy-mysql-source:3306/v2board_legacy \
 		-e RUST_INTEGRATION_MYSQL_IMPORT_DATABASE_URL=postgresql://v2board:v2board@postgres:5432/v2board_mysql_import_test \
 		-e RUST_INTEGRATION_SCHEMA_DATABASE_URL=postgresql://v2board:v2board@postgres:5432/v2board_schema_test \
 		-e RUST_INTEGRATION_EXECUTE_DATABASE_ROOT_URL=postgresql://import_bootstrap:ImportBootstrapTestSecret-32-bytes@postgres-import-target:5432/postgres \
 		-e RUST_INTEGRATION_EXECUTE_REDIS_URL=redis://import_bootstrap:RedisImportBootstrapTestSecret-32-bytes@redis-import-target:6379/0 \
 		rust-api -lc \
 		'set -euo pipefail; . /usr/local/cargo/env; \
-		 cargo test --locked -p v2board-lifecycle pinned_source_schema_matches_oracle_mysql_8_staging; \
+		 cargo test --locked -p v2board-lifecycle imported_source_schema_matches_oracle_mysql_8_legacy_fixture; \
 		 cargo test --locked -p v2board-lifecycle representative_mysql_rows_copy_into_fresh_postgres; \
 		 RUST_INTEGRATION_DATABASE_URL="$$RUST_INTEGRATION_SCHEMA_DATABASE_URL" cargo test --locked -p v2board-provision --test postgres_target_schema; \
 		 cargo test --locked -p v2board-lifecycle -- --list | grep -Fx "mysql_import::tests::full_execute_bootstraps_and_retires_every_principal: test"; \
@@ -151,7 +152,7 @@ rust-integration:
 		 cargo test --locked -p v2board-analytics --test outbox_roundtrip; \
 		 cargo build --locked -p v2board-workers; \
 		 cargo run --locked -p v2board-contract -- production-invariants'
-	$(DCF) --profile migration-test stop mysql-import-staging postgres-import-target redis-import-target
+	$(DCF) --profile migration-test stop legacy-mysql-source postgres-import-target redis-import-target
 
 rust-route-audit:
 	$(DCF) build rust-api
@@ -218,7 +219,7 @@ native-database-audit:
 		backend/rust/migrations-postgres backend/rust/clickhouse-migrations || true)"; \
 	if [ -n "$$matches" ]; then echo "Native database objects must not use the legacy v2_ source prefix:"; echo "$$matches"; exit 1; fi
 	@rg -q 'migrations-postgres' backend/rust/crates/db/src/pool.rs
-	@echo "API/worker/analytics graphs exclude lifecycle, provision, and MySQL; native schema names are unprefixed; the MySQL staging adapter is confined to disposable lifecycle tooling, which may use Redis and ClickHouse for target preflight/bootstrap."
+	@echo "API/worker/analytics graphs exclude lifecycle, provision, and MySQL; native schema names are unprefixed; only lifecycle directly reads the stopped legacy MySQL source and bootstraps the new targets."
 
 native-release-audit:
 	@test -f deploy/systemd/v2board-api.service

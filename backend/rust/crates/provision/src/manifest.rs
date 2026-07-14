@@ -8,7 +8,7 @@ use std::{
 
 use percent_encoding::percent_decode_str;
 use serde::{
-    Deserialize, Serialize,
+    Deserialize,
     de::{self, MapAccess, SeqAccess, Visitor},
 };
 use serde_json::{Map, Value};
@@ -93,10 +93,10 @@ const LIST_RUNTIME_KEYS: &[&str] = &[
     "deposit_bounus",
 ];
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct MysqlImportSpec {
     pub schema_version: u32,
-    pub source: MysqlDumpSourceSpec,
+    pub source: MysqlImportSourceSpec,
     pub target: Map<String, Value>,
     pub runtime: Map<String, Value>,
     manifest_sha256: String,
@@ -159,21 +159,21 @@ pub struct MysqlImportAnalyticsAdmissionPlan {
     pub capacity_evidence: String,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct MysqlImportDocument {
     schema_version: u32,
-    source: MysqlDumpSourceSpec,
+    source: MysqlImportSourceSpec,
     target: Map<String, Value>,
     runtime: Map<String, Value>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct MysqlDumpSourceSpec {
+pub struct MysqlImportSourceSpec {
     pub dump_path: PathBuf,
     pub dump_sha256: String,
-    pub staging_database_url: String,
+    pub database_url: String,
 }
 
 #[derive(Debug, Error)]
@@ -263,16 +263,16 @@ fn validate_document(document: &MysqlImportDocument) -> Result<(), MysqlImportSp
     validate_runtime(&document.runtime, &target)
 }
 
-fn validate_source(source: &MysqlDumpSourceSpec) -> Result<(), MysqlImportSpecError> {
+fn validate_source(source: &MysqlImportSourceSpec) -> Result<(), MysqlImportSpecError> {
     validate_absolute_normalized_path(&source.dump_path, "source.dump_path")?;
     validate_sha256(&source.dump_sha256, "source.dump_sha256")?;
-    let url = parse_url(&source.staging_database_url, "source.staging_database_url")?;
-    let username = strict_percent_decode(url.username(), "source.staging_database_url username")?;
+    let url = parse_url(&source.database_url, "source.database_url")?;
+    let username = strict_percent_decode(url.username(), "source.database_url username")?;
     let password = strict_percent_decode(
         url.password().unwrap_or_default(),
-        "source.staging_database_url password",
+        "source.database_url password",
     )?;
-    let path = strict_percent_decode(url.path(), "source.staging_database_url database")?;
+    let path = strict_percent_decode(url.path(), "source.database_url database")?;
     let database = path.strip_prefix('/').unwrap_or_default();
     if url.scheme() != "mysql"
         || url.host_str().is_none()
@@ -284,13 +284,13 @@ fn validate_source(source: &MysqlDumpSourceSpec) -> Result<(), MysqlImportSpecEr
         || url.fragment().is_some()
     {
         return Err(MysqlImportSpecError::Invalid(
-            "source.staging_database_url must name a migration-only disposable MySQL staging database with host, username, and non-placeholder password".to_string(),
+            "source.database_url must name the legacy MySQL database through a dedicated read-only account with host, username, and non-placeholder password".to_string(),
         ));
     }
     validate_mysql_connection_query(&url)?;
     if !is_loopback_host(&url) {
         return Err(MysqlImportSpecError::Invalid(
-            "staging MySQL must use localhost, 127.0.0.0/8, or ::1 on the migration host"
+            "legacy MySQL must use localhost, 127.0.0.0/8, or ::1 because lifecycle runs on the old production host"
                 .to_string(),
         ));
     }
@@ -1384,7 +1384,7 @@ mod tests {
             "source": {
                 "dump_path": "/secure/legacy.sql",
                 "dump_sha256": "a".repeat(64),
-                "staging_database_url": "mysql://staging:J0stagingImportSecret@127.0.0.1:3307/v2board_staging"
+                "database_url": "mysql://legacy_reader:J0legacyReadOnlySecret@127.0.0.1:3306/v2board"
             },
             "target": {
                 "postgres": {
@@ -1443,8 +1443,8 @@ mod tests {
 
         for host in ["localhost", "127.0.0.1", "127.20.30.40", "[::1]"] {
             let mut loopback = import_document();
-            loopback["source"]["staging_database_url"] = json!(format!(
-                "mysql://staging:J0stagingImportSecret@{host}:3307/v2board_staging"
+            loopback["source"]["database_url"] = json!(format!(
+                "mysql://legacy_reader:J0legacyReadOnlySecret@{host}:3306/v2board"
             ));
             assert!(parse_mysql_import_spec(&serde_json::to_vec(&loopback).unwrap()).is_ok());
         }
@@ -1485,7 +1485,9 @@ mod tests {
             "\"schema_version\":1,\"schema_version\":1",
             1,
         );
-        let error = parse_mysql_import_spec(duplicate.as_bytes()).unwrap_err();
+        let error = parse_mysql_import_spec(duplicate.as_bytes())
+            .err()
+            .expect("duplicate manifest keys must fail");
         assert!(error.to_string().contains("duplicate JSON key"));
     }
 
@@ -1529,31 +1531,18 @@ mod tests {
         );
 
         let mut duplicate_mysql_tls = import_document();
-        duplicate_mysql_tls["source"]["staging_database_url"] = json!(
-            "mysql://staging:J0stagingImportSecret@127.0.0.1:3307/v2board_staging?ssl_mode=DISABLED&ssl-mode=VERIFY_IDENTITY"
+        duplicate_mysql_tls["source"]["database_url"] = json!(
+            "mysql://legacy_reader:J0legacyReadOnlySecret@127.0.0.1:3306/v2board?ssl_mode=DISABLED&ssl-mode=VERIFY_IDENTITY"
         );
         assert!(
             parse_mysql_import_spec(&serde_json::to_vec(&duplicate_mysql_tls).unwrap()).is_err()
         );
 
-        let mut remote_staging = import_document();
-        remote_staging["source"]["staging_database_url"] = json!(
-            "mysql://staging:J0stagingImportSecret@staging.internal:3307/v2board_staging?ssl-mode=VERIFY_IDENTITY"
+        let mut remote_source = import_document();
+        remote_source["source"]["database_url"] = json!(
+            "mysql://legacy_reader:J0legacyReadOnlySecret@legacy.internal:3306/v2board?ssl-mode=VERIFY_IDENTITY"
         );
-        assert!(parse_mysql_import_spec(&serde_json::to_vec(&remote_staging).unwrap()).is_err());
-
-        let mut retired_transport_choice = import_document();
-        retired_transport_choice["source"]
-            .as_object_mut()
-            .unwrap()
-            .insert(
-                "staging_transport_security".to_string(),
-                json!("loopback_only"),
-            );
-        assert!(
-            parse_mysql_import_spec(&serde_json::to_vec(&retired_transport_choice).unwrap())
-                .is_err()
-        );
+        assert!(parse_mysql_import_spec(&serde_json::to_vec(&remote_source).unwrap()).is_err());
 
         let mut retired_redis_name = import_document();
         let target = retired_redis_name["target"].as_object_mut().unwrap();
@@ -1581,8 +1570,8 @@ mod tests {
     #[test]
     fn encoded_credentials_are_decoded_before_validation_and_identity_comparison() {
         let mut encoded_special_characters = import_document();
-        encoded_special_characters["source"]["staging_database_url"] =
-            json!("mysql://staging:J0staging%40ImportSecret@127.0.0.1:3307/v2board_staging");
+        encoded_special_characters["source"]["database_url"] =
+            json!("mysql://legacy_reader:J0legacy%40ReadOnlySecret@127.0.0.1:3306/v2board");
         encoded_special_characters["target"]["postgres"]["api_database_url"] = json!(
             "postgresql://api:C3api%40RuntimeSecret@postgres.acme.internal:5432/v2board?sslmode=verify-full"
         );

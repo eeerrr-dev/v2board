@@ -115,3 +115,18 @@ INSERT INTO v2_log (
 INSERT INTO failed_jobs (
     id, connection, queue, payload, exception, failed_at
 ) VALUES (1, 'redis', 'default', '{}', 'discarded failure', CURRENT_TIMESTAMP);
+
+-- Some upgraded legacy installations retain this unused, empty table even
+-- though current installs and the application no longer use it. The importer
+-- allowlists its presence and discards it without inspecting its schema/rows.
+CREATE TABLE v2_tutorial (
+    id int NOT NULL AUTO_INCREMENT,
+    category_id int NOT NULL,
+    title varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+    steps text,
+    `show` tinyint(1) NOT NULL DEFAULT '0',
+    sort int DEFAULT NULL,
+    created_at int NOT NULL,
+    updated_at int NOT NULL,
+    PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

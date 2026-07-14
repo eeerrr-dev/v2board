@@ -6,11 +6,10 @@ subscriptions, admin operations and background work. There is no PHP/Laravel run
 mode or native MySQL backend.
 
 The pinned project under `references/wyx2685-v2board` is read-only compatibility evidence. The one-time
-importer reads a complete Oracle MySQL 8.0/8.4 dump through a temporary, disposable MySQL 8 engine; it
-never connects to or modifies the live old database. After the old site stops writing, the default topology
-runs a separate loopback-only staging instance and the converter on that old host; a disposable migration VM
-is the fallback when the old host lacks capacity. The new production host never runs MySQL. Staging is deleted
-after the import, and no MySQL service belongs to the native runtime.
+importer runs on the stopped old host and reads the original Oracle MySQL 8.0/8.4 database through a
+dedicated `SELECT`-only account and a server-enforced read-only consistent snapshot. The complete dump is a
+protected backup artifact, not converter input. The importer never mutates the old database; the new
+production host never runs MySQL, and no MySQL service belongs to the native runtime.
 Reference code, schema or packaged frontend assets are never deployed.
 
 ## Runtime architecture
@@ -90,7 +89,7 @@ derived and fixed-empty target tables. The single `mysql-import.v1` manifest, fi
 loss policy and executable importer are covered by Rust gates. No legacy Redis service exists.
 `make rust-route-audit` reads the pinned reference only as contract evidence.
 `make native-database-audit` rejects MySQL driver/dialect use in native runtime crates and in the current
-API/worker/analytics dependency graphs. The MySQL driver and staging adapter are allowed only in the
+API/worker/analytics dependency graphs. The MySQL source adapter is allowed only in the
 disposable lifecycle/provision import graph.
 
 Do not run host Cargo commands that create `target/` in the repository. The workspace targets Rust
@@ -205,16 +204,18 @@ migration job may create the documented development-only `admin@example.com` see
 
 There is one pre-release data path and one manifest example:
 [mysql-import.v1](../docs/examples/mysql-import.v1.example.json). The operator stops the old site,
-exports a complete Oracle MySQL 8.0/8.4 dump, loads it into a disposable staging MySQL, converts the
-fixed retained rows into a brand-new PostgreSQL database, starts ClickHouse and Redis empty, generates
+exports a complete Oracle MySQL 8.0/8.4 dump as a protected backup, then uses lifecycle on that stopped
+host to read the original database through a dedicated `SELECT`-only account. The converter transforms
+the fixed retained rows into a brand-new PostgreSQL database, starts ClickHouse and Redis empty, generates
 new role configs, verifies the result and starts the native services.
 
-Staging is a temporary MySQL 8 engine on the stopped old production host, not a component of the new
-machine. It is a second instance with a separate data directory or volume, port/socket, credentials and
-loopback-only bind; it must not be created inside the source instance or mount the source data directory.
-The converter writes outbound to the new PostgreSQL target with a temporary migration principal. Use a
-disposable migration VM only when the old host lacks capacity, and remove staging data after success or
-failure. The legacy MySQL source keeps its real `v2_*` table names; native PostgreSQL and ClickHouse targets
+The converter establishes one `REPEATABLE READ`, `READ ONLY`, consistent MySQL snapshot before schema
+inspection or row conversion, rejects every extra grant/role/`GRANT OPTION`, requires InnoDB for every
+imported source table, then writes outbound to the new PostgreSQL target with a temporary migration
+principal. It does not parse the dump or send MySQL SQL to PostgreSQL: the MySQL driver returns typed rows,
+the converter validates and maps each field explicitly, and the PostgreSQL driver performs parameterized
+batch inserts. The new machine never runs MySQL. The legacy source keeps its real `v2_*` table names;
+native PostgreSQL and ClickHouse targets
 are unprefixed, using `users` and `orders` for the two PostgreSQL keyword conflicts.
 
 The disposable CLI commands are:
@@ -230,16 +231,21 @@ unknown and missing keys, validates both role configs through their real typed p
 exact manifest SHA-256. It contains secrets and must be a root-owned regular non-symlink file without
 Unix group/world permissions; the dump follows the same ownership boundary.
 
-`source` contains the dump path, dump SHA-256 and a loopback-only staging MySQL URL. It does not contain
-a live old-MySQL URL, old Redis URL, Stripe credential, service unit, release archive or per-run loss
-choices. `inspect` reads and hashes the dump but does not contact the old system, old Redis or Stripe and
-does not mutate a target. `execute` reads the already-loaded staging database, requires a dedicated empty
-PostgreSQL 18 cluster, absent PostgreSQL/ClickHouse targets and a whole-instance-empty dedicated Redis 8.8 `/0`, performs the fixed conversion, saves/reloads and probes isolated API/worker Redis ACL users, and emits the secure
-config/report bundle. It is the only production write command; manual partial writes are not a second path.
+`source` contains the dump path, dump SHA-256 and a loopback-only `database_url` for the stopped legacy
+MySQL using a dedicated `SELECT`-only account. It does not contain an old Redis URL, Stripe credential,
+service unit, release archive or per-run loss choices. `inspect` reads and hashes the dump but does not
+contact the source database, old Redis or Stripe and does not mutate a target. `execute` reads the source
+through the read-only snapshot, requires a dedicated empty PostgreSQL 18 cluster, absent
+PostgreSQL/ClickHouse targets and a whole-instance-empty dedicated Redis 8.8 `/0`, performs the fixed
+conversion, saves/reloads and probes isolated API/worker Redis ACL users, and emits the secure config/report
+bundle. It is the only production write command; manual partial writes are not a second path.
 The report deliberately separates `inspected_dump_sha256` (the file the tool inspected) from
-`converted_snapshot_sha256` (final retained content including deferred relationships, table counts, and
-fixed-discard counts actually derived from staging); it does not fake a cryptographic
-binding across the operator-run MySQL load boundary.
+`imported_source_schema_sha256` (only the 14 imported source-table schemas) and
+`converted_snapshot_sha256` (final retained content including deferred relationships and imported table
+counts plus the separately represented whole-table-discard presence decisions); it does not falsely claim
+the dump hash proves the independently read snapshot. Discard-only tables are presence-audited but not
+schema-bound, row-scanned or counted; `v2_tutorial` is an allowed optional legacy residue and is discarded
+as a whole if present.
 
 The fixed converter preserves durable business rows, permanent user tokens, MySQL-persisted traffic and
 balances. It discards old Redis, failed jobs, old nodes/routes/credentials, detailed legacy traffic,
@@ -247,14 +253,14 @@ operational logs, themes and runtime files. Stripe configuration and status 0/1 
 discarded; status 2/3/4 Stripe history is retained with provider bindings cleared. The importer never
 contacts Stripe. Non-Stripe payment configuration and unfinished orders remain ordinary retained data.
 
-The importer does not modify the old MySQL database. Staging is disposable conversion input, not a
-recovery system. If conversion fails, delete staging, the incomplete new PostgreSQL/ClickHouse/Redis targets
-and any output directory, then run the same simple import again from the dump into fresh empty targets.
-There is no resume, rollback, checkpoint, recovery or cleanup/restart state machine.
+The importer does not modify the old MySQL database. If conversion fails, delete the incomplete new
+PostgreSQL/ClickHouse/Redis targets and any output directory, then run the same simple import again from the
+same stopped source into fresh empty targets. There is no resume, rollback, checkpoint, recovery or
+cleanup/restart state machine.
 
 `v2board-lifecycle` is absent from the long-running native release. After accepted import, delete it,
-the staging engine, manifest and old-host config-output copy; revoke or rotate the external PostgreSQL,
-ClickHouse and Redis bootstrap credentials. Treat the dump under a separate protected backup policy rather
+the manifest and old-host config-output copy; revoke the source MySQL read-only account and revoke or rotate
+the external PostgreSQL, ClickHouse and Redis bootstrap credentials. Treat the dump under a separate protected backup policy rather
 than retaining the secret-bearing migration workspace.
 API/worker dependency graphs contain neither the lifecycle crate nor `sqlx-mysql`. See the
 [import guide](../docs/mysql-import.md) and

@@ -66,7 +66,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> anyhow::Result<Command>
 
 pub(crate) fn print_help() {
     println!(
-        "v2board-lifecycle\n\nMySQL import:\n  validate --manifest <path>\n      Validate the single pre-release schema-v1 import manifest without connecting anywhere\n\n  inspect --manifest <path>\n      Safely read and hash the manifest-bound MySQL dump without contacting old MySQL,\n      old Redis, Stripe, the temporary staging MySQL engine, or any target\n\n  execute --manifest <path>\n      Convert the already-loaded disposable staging MySQL into one absent PostgreSQL/\n      ClickHouse target, verify empty Redis, and emit the native boot configs and report\n\nIndependent deployment check:\n  inspect-release-archive --archive <absolute-path> --release-id <id> --sha256 <sha256>\n      Validate a native release archive without mutating the filesystem"
+        "v2board-lifecycle\n\nMySQL import:\n  validate --manifest <path>\n      Validate the single pre-release schema-v1 import manifest without connecting anywhere\n\n  inspect --manifest <path>\n      Safely read and hash the manifest-bound backup dump without contacting old MySQL,\n      old Redis, Stripe, or any target\n\n  execute --manifest <path>\n      Read the stopped legacy MySQL through a local read-only snapshot, convert typed rows\n      into one absent PostgreSQL/ClickHouse target, initialize empty Redis, and emit configs\n\nIndependent deployment check:\n  inspect-release-archive --archive <absolute-path> --release-id <id> --sha256 <sha256>\n      Validate a native release archive without mutating the filesystem"
     );
 }
 

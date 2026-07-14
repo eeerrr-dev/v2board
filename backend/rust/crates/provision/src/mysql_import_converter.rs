@@ -1,7 +1,8 @@
-//! Deterministic import contract for the pinned source MySQL dump.
+//! Deterministic import contract for the pinned legacy MySQL source profile.
 //!
-//! The pre-release schema v1 imports one immutable dump into one empty target.
-//! The mapping and loss policy below are the complete MySQL import contract.
+//! The pre-release schema v1 reads one stopped database snapshot into one empty
+//! target. The separate dump is backup evidence, not converter input. The
+//! mapping and loss policy below are the complete MySQL import contract.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -16,8 +17,11 @@ use crate::mysql_import_policy::{
 
 pub const MYSQL_IMPORT_SOURCE_PROFILE: &str =
     "wyx2685-v2board@7e77de9f4873b317157490529f7be7d6f8a62421";
-pub const MYSQL_SOURCE_SCHEMA_SHA256: &str =
-    "f2c1e14169a728325bb8073b8ffe1f31bb13c8913318fdb10710ae0a99a9e8cf";
+/// Schema identity of only the source tables that contribute retained rows.
+/// Discard-only tables are deliberately excluded so harmless legacy residue
+/// cannot change or block the typed import contract.
+pub const MYSQL_IMPORTED_SOURCE_SCHEMA_SHA256: &str =
+    "264b474fcd7af15fdeca1ac335a3613e166ebfc6a884745eb5f82af3107c7afb";
 pub const MYSQL_SOURCE_INSTALL_SQL_SHA256: &str =
     "04b04531037b9e0b6f2a6b02194a8f1bc102789af8ee7be963fd721d51bca8e2";
 pub const MYSQL_IMPORT_SCHEMA_VERSION: u32 = 1;
@@ -662,6 +666,9 @@ pub const DISCARDED_SOURCE_TABLES: &[&str] = &[
     "v2_server_vless",
     "v2_server_anytls",
     "v2_server_v2node",
+    // Older upgraded installations can retain this now-unused table. Its
+    // presence is audited, but neither its schema nor its rows are scanned.
+    "v2_tutorial",
 ];
 
 /// Native PostgreSQL tables whose legacy contents are fixed losses. These
@@ -1195,7 +1202,7 @@ pub fn registry_sha256() -> Result<String, ConverterError> {
     digest.update(b"v2board-mysql-import-registry-v1\0");
     digest.update(MYSQL_IMPORT_REGISTRY_VERSION.to_be_bytes());
     digest_field(&mut digest, MYSQL_IMPORT_SOURCE_PROFILE.as_bytes());
-    digest_field(&mut digest, MYSQL_SOURCE_SCHEMA_SHA256.as_bytes());
+    digest_field(&mut digest, MYSQL_IMPORTED_SOURCE_SCHEMA_SHA256.as_bytes());
     digest_field(&mut digest, MYSQL_SOURCE_INSTALL_SQL_SHA256.as_bytes());
     digest_field(&mut digest, TARGET_POSTGRES_SCHEMA_ID.as_bytes());
     digest_field(&mut digest, target_postgres_schema_sha256().as_bytes());
@@ -2128,6 +2135,7 @@ mod tests {
                 "v2_server_vless",
                 "v2_server_anytls",
                 "v2_server_v2node",
+                "v2_tutorial",
             ]
         );
         assert_eq!(discarded_target_tables().count(), 14);

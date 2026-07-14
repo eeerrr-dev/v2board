@@ -31,7 +31,6 @@ async fn main() -> anyhow::Result<()> {
                     "old_mysql_contacted": false,
                     "old_redis_contacted": false,
                     "stripe_provider_contacted": false,
-                    "staging_mysql_contacted": false,
                     "target_mutated": false,
                     "secrets_redacted": true
                 }))?

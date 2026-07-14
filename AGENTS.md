@@ -85,10 +85,12 @@ migrations, or tombstone tables for local-only history.
 There is exactly one legacy-data path:
 
 1. stop writes to the old site;
-2. export one complete MySQL 8 dump without modifying the old database;
-3. on the stopped old production host, load that dump into a separate,
-   disposable MySQL 8 engine used only as converter input;
-4. deterministically transform the retained rows into a brand-new dedicated
+2. export one complete MySQL 8 dump as a protected backup artifact without
+   modifying the old database;
+3. on the stopped old production host, run the converter with a dedicated
+   `SELECT`-only account against the original MySQL database;
+4. inside one `REPEATABLE READ`, `READ ONLY`, consistent snapshot,
+   deterministically transform the retained rows into a brand-new dedicated
    PostgreSQL 18 cluster whose only initial non-template database is `postgres`;
    ClickHouse starts with an empty native event history, and a brand-new
    dedicated Redis 8.8 instance is empty across every logical database and uses
@@ -99,35 +101,45 @@ There is exactly one legacy-data path:
 6. verify the new installation, then start it.
 
 The old MySQL database is never a migration target and is never mutated by the
-importer. Loading the dump into staging is import processing, not recovery. Do
-not design or add migration rollback, source fencing, CDC, dual-write, shadow
-reads, compatibility windows, authorization files, journals, checkpoints,
+importer. The dump is a complete backup and file-integrity artifact; it is not
+loaded for conversion and its MySQL SQL is never sent to PostgreSQL. The Rust
+converter reads typed MySQL rows, validates and transforms them explicitly, and
+writes parameterized rows through the PostgreSQL driver. Do not design or add
+migration rollback, source fencing, CDC, dual-write, shadow reads,
+compatibility windows, authorization files, journals, checkpoints,
 resume, operation recovery, or cleanup/restart state machines. A failed import
-has no resumable migration state: delete its staging engine, incomplete new
-PostgreSQL/ClickHouse/Redis targets, and configuration output directory; correct
+has no resumable migration state: delete the incomplete new
+PostgreSQL/ClickHouse/Redis targets and configuration output directory; correct
 the input or importer; and run the same simple import again against fresh empty
 targets. This is not restoration of the untouched old database.
 
-The default cutover topology runs the temporary MySQL 8 engine and converter on
-the stopped old production host. Staging must be a separate instance with its
-own data directory or volume, port/socket, credentials, and loopback-only bind;
-never create it inside the source MySQL instance or mount the source data
-directory. The converter writes outbound to the new PostgreSQL target through a
-temporary migration principal. The new production host never runs staging or
-MySQL. If the old host lacks capacity, use a disposable migration VM instead.
-Stop and delete staging after success or failure; the native server and
+The converter runs on the stopped old production host and connects to the local
+legacy MySQL through the manifest's loopback-only `source.database_url`. That
+principal must have only database-level `SELECT`: execute rejects every extra
+grant, assigned/enabled role, and `GRANT OPTION`. The importer also establishes
+and verifies a server-enforced read-only consistent snapshot before schema
+inspection or row conversion, and every imported source table must be InnoDB.
+It writes outbound to the new PostgreSQL target through a temporary migration
+principal. The new production host never runs MySQL. The native server and
 long-running runtime contain only PostgreSQL, ClickHouse, and Redis.
 
-`v2board-lifecycle execute` is the only import write path. It reads the already
-loaded staging database, requires the dedicated PostgreSQL cluster plus absent
-PostgreSQL/ClickHouse targets and a new whole-instance-empty dedicated Redis
+`v2board-lifecycle execute` is the only import write path. It reads the stopped
+legacy database through the read-only snapshot, requires the dedicated
+PostgreSQL cluster plus absent PostgreSQL/ClickHouse targets and a new
+whole-instance-empty dedicated Redis
 `/0`, and creates `api.config.json`, `worker.config.json`, and
 `import-report.json` under the old host's manifest-bound output directory. The
-report distinguishes the inspected dump-file SHA-256 from the converted staging
-snapshot SHA-256; the latter binds final retained content (including deferred
-inviter relationships) and fixed-discard counts. Never claim that the former
-proves which manually loaded staging database was read. The importer never
-treats that old-host directory as the new machine's
+report distinguishes the inspected backup dump-file SHA-256 from the converted
+source snapshot SHA-256. `imported_source_schema_sha256` hashes only the 14
+imported source-table schemas, including their required InnoDB engine; the snapshot hash binds final retained content
+(including deferred inviter relationships), imported row counts, and the
+separately represented whole-table-discard presence decisions. Discard-only
+tables are presence-audited but not schema-bound, row-scanned, or counted.
+`v2_tutorial` is
+an allowed optional legacy residue and is discarded as a whole if present.
+Never claim that the dump hash proves the contents of the independently read
+source snapshot. The importer never treats that old-host directory as the new
+machine's
 `/var/lib/v2board`; the operator installs the two runtime configs as
 `/var/lib/v2board/api/config.json` and `/var/lib/v2board/worker/config.json` with
 their respective Unix identities. Do not hand-write a partial target as an

@@ -15,7 +15,7 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use sqlx::{
-    AssertSqlSafe, Column, Executor, MySqlConnection, PgPool, Postgres, QueryBuilder, Row,
+    AssertSqlSafe, Column, Executor, MySql, MySqlConnection, PgPool, Postgres, QueryBuilder, Row,
     SqlSafeStr, TypeInfo, ValueRef,
     mysql::{MySqlPoolOptions, MySqlRow},
     postgres::PgPoolOptions,
@@ -34,11 +34,12 @@ use v2board_provision::{
     mysql_import_converter::{
         CanonicalRow, CanonicalValue, DEFAULT_BATCH_SIZE, DISCARDED_SOURCE_TABLES,
         INITIAL_SOURCE_ID_CURSOR, IdentityWidth, LegacyGiftcardRedemptionRow,
-        MYSQL_SOURCE_SCHEMA_SHA256, MysqlImportRowDisposition, POSTGRES_MAX_BIND_PARAMETERS,
-        SCALAR_REFERENCES, ScalarReferenceRule, SourceRow, SourceValue, TABLE_MAPPINGS,
-        TableMapping, audit_registry, canonical_rows_sha256, copied_table_mappings,
-        discarded_target_tables, expand_giftcard_redemptions, registry_sha256, sequence_reset_sql,
-        source_batch_sql, target_batch_insert_sql, transform_mysql_import_row, validate_batch_ids,
+        MYSQL_IMPORTED_SOURCE_SCHEMA_SHA256, MysqlImportRowDisposition,
+        POSTGRES_MAX_BIND_PARAMETERS, SCALAR_REFERENCES, ScalarReferenceRule, SourceRow,
+        SourceValue, TABLE_MAPPINGS, TableMapping, audit_registry, canonical_rows_sha256,
+        copied_table_mappings, discarded_target_tables, expand_giftcard_redemptions,
+        registry_sha256, sequence_reset_sql, source_batch_sql, target_batch_insert_sql,
+        transform_mysql_import_row, validate_batch_ids,
     },
     mysql_import_policy::is_legacy_stripe_payment_driver,
 };
@@ -148,7 +149,7 @@ pub(crate) struct MysqlImportExecutionReport {
     schema_version: u32,
     manifest_sha256: String,
     inspected_dump_sha256: String,
-    source_schema_sha256: String,
+    imported_source_schema_sha256: String,
     converter_registry_sha256: String,
     converted_snapshot_sha256: String,
     installation_id: String,
@@ -162,6 +163,7 @@ pub(crate) struct MysqlImportExecutionReport {
     redis_acl_persisted: bool,
     redis_runtime_acl_isolated: bool,
     redis_bootstrap_credential_emitted: bool,
+    old_mysql_contacted: bool,
     old_mysql_mutated: bool,
     old_redis_contacted: bool,
     stripe_provider_contacted: bool,
@@ -180,8 +182,14 @@ struct ImportedTableReport {
 #[derive(Debug, Serialize)]
 struct DiscardedTableReport {
     source: String,
-    source_rows: u64,
+    present: bool,
+    rows_scanned: bool,
     policy: &'static str,
+}
+
+struct SourceSchemaInspection {
+    imported_schema_sha256: String,
+    discarded_tables: Vec<DiscardedTableReport>,
 }
 
 fn converted_snapshot_sha256(
@@ -202,7 +210,8 @@ fn converted_snapshot_sha256(
     for table in discarded_tables {
         digest_import_report_field(&mut digest, b"discarded");
         digest_import_report_field(&mut digest, table.source.as_bytes());
-        digest_import_report_field(&mut digest, table.source_rows.to_string().as_bytes());
+        digest_import_report_field(&mut digest, table.present.to_string().as_bytes());
+        digest_import_report_field(&mut digest, table.rows_scanned.to_string().as_bytes());
         digest_import_report_field(&mut digest, table.policy.as_bytes());
     }
     hex::encode(digest.finalize())
@@ -269,20 +278,25 @@ async fn execute_validated(
     let source_pool = MySqlPoolOptions::new()
         .min_connections(1)
         .max_connections(1)
-        .connect(&spec.source.staging_database_url)
+        .connect(&spec.source.database_url)
         .await?;
     let mut source = source_pool.acquire().await?;
-    verify_mysql_vendor_and_version(&mut source).await?;
     begin_mysql_read_snapshot(&mut source).await?;
-    let source_schema_sha256 = inspect_source_schema(&mut source).await?;
-    if source_schema_sha256 != MYSQL_SOURCE_SCHEMA_SHA256 {
+    verify_mysql_vendor_and_version(&mut source).await?;
+    verify_mysql_source_principal(&mut source, &spec.source.database_url).await?;
+    let source_schema = inspect_source_schema(&mut source).await?;
+    if source_schema.imported_schema_sha256 != MYSQL_IMPORTED_SOURCE_SCHEMA_SHA256 {
         anyhow::bail!(
-            "staging MySQL schema does not match the pinned source profile: expected {}, observed {}",
-            MYSQL_SOURCE_SCHEMA_SHA256,
-            source_schema_sha256
+            "imported legacy MySQL schema does not match the pinned source profile: expected {}, observed {}",
+            MYSQL_IMPORTED_SOURCE_SCHEMA_SHA256,
+            source_schema.imported_schema_sha256
         );
     }
     validate_source_relationships(&mut source).await?;
+    let SourceSchemaInspection {
+        imported_schema_sha256,
+        discarded_tables,
+    } = source_schema;
 
     let postgres = PostgresIdentity::from_plan(&plan)?;
     preflight_postgres_absent(&postgres).await?;
@@ -309,7 +323,6 @@ async fn execute_validated(
     .await?;
 
     let imported_tables = copy_business_data(&mut source, &target).await?;
-    let discarded_tables = inspect_discarded_source_tables(&mut source).await?;
     let converted_snapshot_sha256 = converted_snapshot_sha256(&imported_tables, &discarded_tables);
     commit_mysql_read_snapshot(&mut source).await?;
     drop(source);
@@ -346,7 +359,7 @@ async fn execute_validated(
         schema_version: spec.schema_version,
         manifest_sha256: spec.manifest_sha256().to_string(),
         inspected_dump_sha256: inspection.mysql_dump.sha256,
-        source_schema_sha256,
+        imported_source_schema_sha256: imported_schema_sha256,
         converter_registry_sha256: registry_sha256()?,
         converted_snapshot_sha256,
         installation_id: installation_id.to_string(),
@@ -360,6 +373,7 @@ async fn execute_validated(
         redis_acl_persisted: true,
         redis_runtime_acl_isolated: true,
         redis_bootstrap_credential_emitted: false,
+        old_mysql_contacted: true,
         old_mysql_mutated: false,
         old_redis_contacted: false,
         stripe_provider_contacted: false,
@@ -1771,7 +1785,80 @@ async fn verify_mysql_vendor_and_version(source: &mut MySqlConnection) -> anyhow
         || !lowercase.contains("mysql")
     {
         anyhow::bail!(
-            "staging engine must be Oracle MySQL 8.0.x or 8.4.x, observed {version} ({comment})"
+            "legacy source engine must be Oracle MySQL 8.0.x or 8.4.x, observed {version} ({comment})"
+        );
+    }
+    Ok(())
+}
+
+async fn verify_mysql_source_principal(
+    source: &mut MySqlConnection,
+    database_url: &str,
+) -> anyhow::Result<()> {
+    let url = Url::parse(database_url)?;
+    let expected_username = percent_decode_str(url.username()).decode_utf8()?;
+    let expected_database = percent_decode_str(url.path().trim_start_matches('/')).decode_utf8()?;
+    let (current_user, current_database): (String, Option<String>) =
+        sqlx::query_as("SELECT CURRENT_USER(), DATABASE()")
+            .fetch_one(&mut *source)
+            .await?;
+    let authenticated_username = current_user
+        .rsplit_once('@')
+        .map(|(username, _)| username)
+        .ok_or_else(|| anyhow::anyhow!("legacy MySQL returned an invalid CURRENT_USER identity"))?;
+    if authenticated_username != expected_username
+        || current_database.as_deref() != Some(&expected_database)
+    {
+        anyhow::bail!(
+            "legacy MySQL authenticated identity or selected database differs from source.database_url"
+        );
+    }
+
+    let enabled_roles = sqlx::query_as::<_, (String, String)>(
+        "SELECT role_name, role_host FROM information_schema.enabled_roles",
+    )
+    .fetch_all(&mut *source)
+    .await?;
+    if !enabled_roles.is_empty() {
+        anyhow::bail!("legacy MySQL source account must not have any enabled role");
+    }
+
+    let grant_rows = sqlx::query("SHOW GRANTS FOR CURRENT_USER")
+        .fetch_all(&mut *source)
+        .await?;
+    let mut grants = Vec::with_capacity(grant_rows.len());
+    for row in grant_rows {
+        grants.push(row.try_get::<String, _>(0)?);
+    }
+    validate_mysql_source_grants(&grants, &expected_database)
+}
+
+fn validate_mysql_source_grants(grants: &[String], database: &str) -> anyhow::Result<()> {
+    let usage_prefix = "GRANT USAGE ON *.* TO ";
+    let select_prefix = format!("GRANT SELECT ON `{database}`.* TO ");
+    let mut saw_usage = false;
+    let mut saw_select = false;
+    for grant in grants {
+        let recipient = if let Some(recipient) = grant.strip_prefix(usage_prefix) {
+            saw_usage = true;
+            recipient
+        } else if let Some(recipient) = grant.strip_prefix(&select_prefix) {
+            saw_select = true;
+            recipient
+        } else {
+            anyhow::bail!(
+                "legacy MySQL source account must have only USAGE and database-level SELECT"
+            );
+        };
+        if recipient.is_empty() || recipient.contains(" WITH ") {
+            anyhow::bail!(
+                "legacy MySQL source account must not have GRANT OPTION or account resource grants"
+            );
+        }
+    }
+    if !saw_usage || !saw_select {
+        anyhow::bail!(
+            "legacy MySQL source account must have exactly database-level SELECT plus implicit USAGE"
         );
     }
     Ok(())
@@ -1792,9 +1879,7 @@ async fn begin_mysql_read_snapshot(source: &mut MySqlConnection) -> anyhow::Resu
             .fetch_one(&mut *source)
             .await?;
     if !isolation.eq_ignore_ascii_case("REPEATABLE-READ") || read_only != 1 {
-        anyhow::bail!(
-            "staging MySQL did not enter the required read-only repeatable-read snapshot"
-        );
+        anyhow::bail!("legacy MySQL did not enter the required read-only repeatable-read snapshot");
     }
     Ok(())
 }
@@ -1804,7 +1889,9 @@ async fn commit_mysql_read_snapshot(source: &mut MySqlConnection) -> anyhow::Res
     Ok(())
 }
 
-async fn inspect_source_schema(source: &mut MySqlConnection) -> anyhow::Result<String> {
+async fn inspect_source_schema(
+    source: &mut MySqlConnection,
+) -> anyhow::Result<SourceSchemaInspection> {
     let actual_tables = sqlx::query_scalar::<_, String>(
         "SELECT table_name FROM information_schema.tables \
          WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE' ORDER BY table_name",
@@ -1813,28 +1900,25 @@ async fn inspect_source_schema(source: &mut MySqlConnection) -> anyhow::Result<S
     .await?
     .into_iter()
     .collect::<BTreeSet<_>>();
-    let expected_tables = TABLE_MAPPINGS
-        .iter()
-        .map(|mapping| mapping.source.to_string())
-        .chain(
-            DISCARDED_SOURCE_TABLES
-                .iter()
-                .map(|table| (*table).to_string()),
-        )
-        .collect::<BTreeSet<_>>();
-    if actual_tables != expected_tables {
-        let missing = expected_tables
-            .difference(&actual_tables)
-            .cloned()
-            .collect::<Vec<_>>();
-        let unexpected = actual_tables
-            .difference(&expected_tables)
-            .cloned()
-            .collect::<Vec<_>>();
-        anyhow::bail!(
-            "staging schema table inventory drifted; missing={missing:?}, unexpected={unexpected:?}"
-        );
+    let imported_tables = validate_source_table_inventory(&actual_tables)?;
+    let mut engines_query = QueryBuilder::<MySql>::new(
+        "SELECT table_name, COALESCE(engine, '') FROM information_schema.tables \
+         WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE' AND table_name IN (",
+    );
+    {
+        let mut separated = engines_query.separated(", ");
+        for table in &imported_tables {
+            separated.push_bind(table);
+        }
     }
+    engines_query.push(") ORDER BY table_name");
+    let imported_engines = engines_query
+        .build_query_as::<(String, String)>()
+        .fetch_all(&mut *source)
+        .await?
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
+    validate_source_table_engines(&imported_tables, &imported_engines)?;
 
     for mapping in TABLE_MAPPINGS {
         let actual = sqlx::query_scalar::<_, String>(
@@ -1852,7 +1936,7 @@ async fn inspect_source_schema(source: &mut MySqlConnection) -> anyhow::Result<S
             .collect::<BTreeSet<_>>();
         if actual != expected {
             anyhow::bail!(
-                "staging source columns drifted for {}: expected={expected:?}, observed={actual:?}",
+                "legacy source columns drifted for {}: expected={expected:?}, observed={actual:?}",
                 mapping.source
             );
         }
@@ -1870,26 +1954,47 @@ async fn inspect_source_schema(source: &mut MySqlConnection) -> anyhow::Result<S
         String,
         String,
     );
-    let columns = sqlx::query_as::<_, ColumnDescriptor>(
+    let mut columns_query = QueryBuilder::<MySql>::new(
         "SELECT table_name, ordinal_position, column_name, column_type, is_nullable, \
                 COALESCE(CAST(column_default AS CHAR), '<NULL>'), extra, \
                 COALESCE(character_set_name, ''), COALESCE(collation_name, ''), column_key \
-         FROM information_schema.columns WHERE table_schema = DATABASE() \
-         ORDER BY table_name, ordinal_position",
-    )
-    .fetch_all(&mut *source)
-    .await?;
+         FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name IN (",
+    );
+    {
+        let mut separated = columns_query.separated(", ");
+        for table in &imported_tables {
+            separated.push_bind(table);
+        }
+    }
+    columns_query.push(") ORDER BY table_name, ordinal_position");
+    let columns = columns_query
+        .build_query_as::<ColumnDescriptor>()
+        .fetch_all(&mut *source)
+        .await?;
     type IndexDescriptor = (String, String, i32, u32, String, i64, String);
-    let indexes = sqlx::query_as::<_, IndexDescriptor>(
+    let mut indexes_query = QueryBuilder::<MySql>::new(
         "SELECT table_name, index_name, non_unique, seq_in_index, column_name, \
                 COALESCE(sub_part, 0), index_type \
-         FROM information_schema.statistics WHERE table_schema = DATABASE() \
-         ORDER BY table_name, index_name, seq_in_index",
-    )
-    .fetch_all(&mut *source)
-    .await?;
+         FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name IN (",
+    );
+    {
+        let mut separated = indexes_query.separated(", ");
+        for table in &imported_tables {
+            separated.push_bind(table);
+        }
+    }
+    indexes_query.push(") ORDER BY table_name, index_name, seq_in_index");
+    let indexes = indexes_query
+        .build_query_as::<IndexDescriptor>()
+        .fetch_all(&mut *source)
+        .await?;
     let mut digest = Sha256::new();
     digest.update(b"v2board.mysql-import.source-schema.v1\0");
+    digest.update(b"tables\0");
+    for table in &imported_tables {
+        schema_digest_fields(&mut digest, [table.clone(), "InnoDB".to_string()]);
+    }
+    digest.update(b"columns\0");
     for row in columns {
         schema_digest_fields(
             &mut digest,
@@ -1922,7 +2027,70 @@ async fn inspect_source_schema(source: &mut MySqlConnection) -> anyhow::Result<S
             ],
         );
     }
-    Ok(hex::encode(digest.finalize()))
+    let discarded_tables = DISCARDED_SOURCE_TABLES
+        .iter()
+        .map(|table| DiscardedTableReport {
+            source: (*table).to_string(),
+            present: actual_tables.contains(*table),
+            rows_scanned: false,
+            policy: "allowlisted_full_table_discard_without_row_scan",
+        })
+        .collect();
+    Ok(SourceSchemaInspection {
+        imported_schema_sha256: hex::encode(digest.finalize()),
+        discarded_tables,
+    })
+}
+
+fn validate_source_table_inventory(
+    actual_tables: &BTreeSet<String>,
+) -> anyhow::Result<BTreeSet<String>> {
+    let imported_tables = TABLE_MAPPINGS
+        .iter()
+        .map(|mapping| mapping.source.to_string())
+        .collect::<BTreeSet<_>>();
+    let allowed_tables = imported_tables
+        .iter()
+        .cloned()
+        .chain(
+            DISCARDED_SOURCE_TABLES
+                .iter()
+                .map(|table| (*table).to_string()),
+        )
+        .collect::<BTreeSet<_>>();
+    let missing = imported_tables
+        .difference(actual_tables)
+        .cloned()
+        .collect::<Vec<_>>();
+    let unexpected = actual_tables
+        .difference(&allowed_tables)
+        .cloned()
+        .collect::<Vec<_>>();
+    if !missing.is_empty() || !unexpected.is_empty() {
+        anyhow::bail!(
+            "legacy source table inventory is unsupported; missing imported tables={missing:?}, unexpected tables={unexpected:?}"
+        );
+    }
+    Ok(imported_tables)
+}
+
+fn validate_source_table_engines(
+    imported_tables: &BTreeSet<String>,
+    imported_engines: &BTreeMap<String, String>,
+) -> anyhow::Result<()> {
+    if imported_engines.keys().collect::<BTreeSet<_>>()
+        != imported_tables.iter().collect::<BTreeSet<_>>()
+    {
+        anyhow::bail!("legacy source storage-engine inventory is incomplete");
+    }
+    for (table, engine) in imported_engines {
+        if !engine.eq_ignore_ascii_case("InnoDB") {
+            anyhow::bail!(
+                "legacy source imported table {table} must use InnoDB for the consistent snapshot"
+            );
+        }
+    }
+    Ok(())
 }
 
 fn schema_digest_fields<const N: usize>(digest: &mut Sha256, fields: [String; N]) {
@@ -1961,7 +2129,7 @@ async fn validate_source_relationships(source: &mut MySqlConnection) -> anyhow::
             .await?;
         if invalid != 0 {
             anyhow::bail!(
-                "staging table {} has {invalid} non-positive business identity row(s); native identities must be positive",
+                "legacy source table {} has {invalid} non-positive business identity row(s); native identities must be positive",
                 mapping.source
             );
         }
@@ -1994,7 +2162,7 @@ async fn validate_source_relationships(source: &mut MySqlConnection) -> anyhow::
             .await?;
         if invalid != 0 {
             anyhow::bail!(
-                "staging relationship {}.{} -> {} has {invalid} invalid row(s)",
+                "legacy source relationship {}.{} -> {} has {invalid} invalid row(s)",
                 reference.source_table,
                 reference.column,
                 reference.source_referenced_table
@@ -2002,25 +2170,6 @@ async fn validate_source_relationships(source: &mut MySqlConnection) -> anyhow::
         }
     }
     Ok(())
-}
-
-async fn inspect_discarded_source_tables(
-    source: &mut MySqlConnection,
-) -> anyhow::Result<Vec<DiscardedTableReport>> {
-    let mut reports = Vec::with_capacity(DISCARDED_SOURCE_TABLES.len());
-    for table in DISCARDED_SOURCE_TABLES {
-        let sql = format!("SELECT COUNT(*) FROM `{table}`");
-        let rows: i64 = sqlx::query_scalar(AssertSqlSafe(sql).into_sql_str())
-            .fetch_one(&mut *source)
-            .await?;
-        reports.push(DiscardedTableReport {
-            source: (*table).to_string(),
-            source_rows: u64::try_from(rows)
-                .map_err(|_| anyhow::anyhow!("negative row count for discarded table {table}"))?,
-            policy: "fixed_full_table_discard",
-        });
-    }
-    Ok(reports)
 }
 
 async fn copy_business_data(
@@ -2243,7 +2392,7 @@ fn decode_mysql_value(row: &MySqlRow, index: usize) -> anyhow::Result<SourceValu
         return Ok(SourceValue::Bytes(value));
     }
     anyhow::bail!(
-        "unsupported staging MySQL type {} at column {}",
+        "unsupported legacy MySQL type {} at column {}",
         type_name,
         row.column(index).name()
     )
@@ -3547,6 +3696,75 @@ mod tests {
     const EXECUTE_CLICKHOUSE_SCHEMA_ROLE: &str = "v2board_execute_schema";
     const EXECUTE_CLICKHOUSE_WRITER_ROLE: &str = "v2board_execute_writer";
 
+    #[test]
+    fn source_grants_allow_only_database_select_without_roles_or_grant_option() {
+        let expected = vec![
+            "GRANT USAGE ON *.* TO `legacy_reader`@`%`".to_string(),
+            "GRANT SELECT ON `v2board_legacy`.* TO `legacy_reader`@`%`".to_string(),
+        ];
+        assert!(validate_mysql_source_grants(&expected, "v2board_legacy").is_ok());
+
+        for extra in [
+            "GRANT INSERT ON `v2board_legacy`.* TO `legacy_reader`@`%`",
+            "GRANT `legacy_writer`@`%` TO `legacy_reader`@`%`",
+            "GRANT SELECT ON *.* TO `legacy_reader`@`%`",
+        ] {
+            let mut excessive = expected.clone();
+            excessive.push(extra.to_string());
+            assert!(validate_mysql_source_grants(&excessive, "v2board_legacy").is_err());
+        }
+
+        let grantable = vec![
+            expected[0].clone(),
+            "GRANT SELECT ON `v2board_legacy`.* TO `legacy_reader`@`%` WITH GRANT OPTION"
+                .to_string(),
+        ];
+        assert!(validate_mysql_source_grants(&grantable, "v2board_legacy").is_err());
+    }
+
+    #[test]
+    fn source_inventory_requires_imported_tables_and_only_allowlists_known_discards() {
+        let imported = TABLE_MAPPINGS
+            .iter()
+            .map(|mapping| mapping.source.to_string())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            validate_source_table_inventory(&imported).unwrap(),
+            imported
+        );
+
+        let mut with_optional_residue = imported.clone();
+        with_optional_residue.insert("v2_tutorial".to_string());
+        assert!(validate_source_table_inventory(&with_optional_residue).is_ok());
+
+        let mut unknown = imported.clone();
+        unknown.insert("unreviewed_legacy_table".to_string());
+        assert!(validate_source_table_inventory(&unknown).is_err());
+
+        let mut missing = imported;
+        missing.remove(TABLE_MAPPINGS[0].source);
+        assert!(validate_source_table_inventory(&missing).is_err());
+    }
+
+    #[test]
+    fn every_imported_source_table_must_use_innodb() {
+        let imported = TABLE_MAPPINGS
+            .iter()
+            .map(|mapping| mapping.source.to_string())
+            .collect::<BTreeSet<_>>();
+        let mut engines = imported
+            .iter()
+            .map(|table| (table.clone(), "InnoDB".to_string()))
+            .collect::<BTreeMap<_, _>>();
+        assert!(validate_source_table_engines(&imported, &engines).is_ok());
+
+        engines.insert(TABLE_MAPPINGS[0].source.to_string(), "MyISAM".to_string());
+        assert!(validate_source_table_engines(&imported, &engines).is_err());
+        engines.insert(TABLE_MAPPINGS[0].source.to_string(), "InnoDB".to_string());
+        engines.remove(TABLE_MAPPINGS[1].source);
+        assert!(validate_source_table_engines(&imported, &engines).is_err());
+    }
+
     fn postgres_role_url(
         bootstrap_url: &str,
         role: &str,
@@ -3599,9 +3817,9 @@ mod tests {
         );
         set_document_value(
             &mut document,
-            "/source/staging_database_url",
+            "/source/database_url",
             Value::String(
-                "mysql://staging:StagingManifestSecret-32-bytes@127.0.0.1:3307/v2board_staging"
+                "mysql://legacy_reader:LegacySourceManifestSecret-32-bytes@127.0.0.1:3306/v2board"
                     .to_string(),
             ),
         );
@@ -3702,7 +3920,7 @@ mod tests {
             )?),
         );
         validate_emitted_runtime_configs(&production_api, &production_worker)?;
-        spec.source.staging_database_url = mysql_url.to_string();
+        spec.source.database_url = mysql_url.to_string();
 
         let migration_url = postgres_role_url(
             postgres_root_url,
@@ -3870,19 +4088,22 @@ mod tests {
         anyhow::ensure!(report.converter_registry_sha256.len() == 64);
         anyhow::ensure!(report.imported_tables.len() == TABLE_MAPPINGS.len() + 1);
         anyhow::ensure!(report.discarded_tables.len() == DISCARDED_SOURCE_TABLES.len());
-        for source in ["v2_log", "failed_jobs"] {
+        for source in ["v2_log", "failed_jobs", "v2_tutorial"] {
             let discarded = report
                 .discarded_tables
                 .iter()
                 .find(|table| table.source == source)
                 .ok_or_else(|| anyhow::anyhow!("missing discard report for {source}"))?;
-            anyhow::ensure!(discarded.source_rows == 1);
+            anyhow::ensure!(discarded.present);
+            anyhow::ensure!(!discarded.rows_scanned);
+            anyhow::ensure!(discarded.policy.contains("without_row_scan"));
         }
         anyhow::ensure!(report.clickhouse_started_empty);
         anyhow::ensure!(report.redis_started_empty);
         anyhow::ensure!(report.redis_acl_persisted);
         anyhow::ensure!(report.redis_runtime_acl_isolated);
         anyhow::ensure!(!report.redis_bootstrap_credential_emitted);
+        anyhow::ensure!(report.old_mysql_contacted);
         anyhow::ensure!(!report.old_mysql_mutated);
         anyhow::ensure!(!report.old_redis_contacted);
         anyhow::ensure!(!report.stripe_provider_contacted);
@@ -4091,8 +4312,8 @@ mod tests {
         else {
             return;
         };
-        let mysql_url = std::env::var("RUST_INTEGRATION_MYSQL_URL")
-            .expect("full execute test requires RUST_INTEGRATION_MYSQL_URL");
+        let mysql_url = std::env::var("RUST_INTEGRATION_LEGACY_MYSQL_URL")
+            .expect("full execute test requires RUST_INTEGRATION_LEGACY_MYSQL_URL");
         let clickhouse_url = std::env::var("RUST_INTEGRATION_CLICKHOUSE_URL")
             .expect("full execute test requires RUST_INTEGRATION_CLICKHOUSE_URL");
         let clickhouse_username = std::env::var("RUST_INTEGRATION_CLICKHOUSE_USERNAME")
@@ -4136,8 +4357,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn pinned_source_schema_matches_oracle_mysql_8_staging() {
-        let Ok(database_url) = std::env::var("RUST_INTEGRATION_MYSQL_URL") else {
+    async fn imported_source_schema_matches_oracle_mysql_8_legacy_fixture() {
+        let Ok(database_url) = std::env::var("RUST_INTEGRATION_LEGACY_MYSQL_URL") else {
             return;
         };
         let source_pool = MySqlPoolOptions::new()
@@ -4148,23 +4369,56 @@ mod tests {
             .unwrap();
         let mut source = source_pool.acquire().await.unwrap();
         verify_mysql_vendor_and_version(&mut source).await.unwrap();
-        begin_mysql_read_snapshot(&mut source).await.unwrap();
+        verify_mysql_source_principal(&mut source, &database_url)
+            .await
+            .unwrap();
         assert!(
             sqlx::query("UPDATE v2_server_group SET name = name WHERE id = -1")
                 .execute(&mut *source)
                 .await
                 .is_err(),
-            "the staging snapshot must reject writes even when the principal has write grants"
+            "the legacy source fixture principal must have SELECT-only grants"
         );
+        begin_mysql_read_snapshot(&mut source).await.unwrap();
         let observed = inspect_source_schema(&mut source).await.unwrap();
         commit_mysql_read_snapshot(&mut source).await.unwrap();
-        assert_eq!(observed, MYSQL_SOURCE_SCHEMA_SHA256);
+        assert_eq!(
+            observed.imported_schema_sha256,
+            MYSQL_IMPORTED_SOURCE_SCHEMA_SHA256
+        );
+        assert!(
+            observed
+                .discarded_tables
+                .iter()
+                .any(|table| table.source == "v2_tutorial" && table.present && !table.rows_scanned)
+        );
+
+        if let Ok(admin_url) = std::env::var("RUST_INTEGRATION_LEGACY_MYSQL_FIXTURE_ADMIN_URL") {
+            let admin_pool = MySqlPoolOptions::new()
+                .min_connections(1)
+                .max_connections(1)
+                .connect(&admin_url)
+                .await
+                .unwrap();
+            let mut admin = admin_pool.acquire().await.unwrap();
+            begin_mysql_read_snapshot(&mut admin).await.unwrap();
+            let error = verify_mysql_source_principal(&mut admin, &admin_url)
+                .await
+                .expect_err("the fixture administrator must not pass the SELECT-only source gate");
+            assert!(
+                error
+                    .to_string()
+                    .contains("only USAGE and database-level SELECT")
+            );
+            commit_mysql_read_snapshot(&mut admin).await.unwrap();
+        }
     }
 
     #[tokio::test]
     async fn representative_mysql_rows_copy_into_fresh_postgres() {
-        let (Ok(mysql_url), Ok(postgres_url)) = (
-            std::env::var("RUST_INTEGRATION_MYSQL_URL"),
+        let (Ok(mysql_url), Ok(mysql_fixture_admin_url), Ok(postgres_url)) = (
+            std::env::var("RUST_INTEGRATION_LEGACY_MYSQL_URL"),
+            std::env::var("RUST_INTEGRATION_LEGACY_MYSQL_FIXTURE_ADMIN_URL"),
             std::env::var("RUST_INTEGRATION_MYSQL_IMPORT_DATABASE_URL"),
         ) else {
             return;
@@ -4186,8 +4440,11 @@ mod tests {
         verify_mysql_vendor_and_version(&mut source).await.unwrap();
         begin_mysql_read_snapshot(&mut source).await.unwrap();
         assert_eq!(
-            inspect_source_schema(&mut source).await.unwrap(),
-            MYSQL_SOURCE_SCHEMA_SHA256
+            inspect_source_schema(&mut source)
+                .await
+                .unwrap()
+                .imported_schema_sha256,
+            MYSQL_IMPORTED_SOURCE_SCHEMA_SHA256
         );
         validate_source_relationships(&mut source).await.unwrap();
         POSTGRES_MIGRATOR.run(&target).await.unwrap();
@@ -4269,22 +4526,25 @@ mod tests {
         .unwrap();
         assert_eq!(next_group_id, 2);
 
-        (&mut *source)
-            .execute("SET SESSION TRANSACTION_READ_ONLY = 0")
+        let admin_pool = MySqlPoolOptions::new()
+            .min_connections(1)
+            .max_connections(1)
+            .connect(&mysql_fixture_admin_url)
             .await
             .unwrap();
-        (&mut *source).execute("START TRANSACTION").await.unwrap();
+        let mut admin = admin_pool.acquire().await.unwrap();
+        (&mut *admin).execute("START TRANSACTION").await.unwrap();
         sqlx::query(
             "INSERT INTO v2_server_group (id, name, created_at, updated_at) VALUES (-1, 'invalid identity', 1, 1)",
         )
-        .execute(&mut *source)
+        .execute(&mut *admin)
         .await
         .unwrap();
-        let error = validate_source_relationships(&mut source)
+        let error = validate_source_relationships(&mut admin)
             .await
             .expect_err("non-positive source identities must fail before target writes");
         assert!(error.to_string().contains("non-positive business identity"));
-        (&mut *source).execute("ROLLBACK").await.unwrap();
+        (&mut *admin).execute("ROLLBACK").await.unwrap();
     }
 
     #[test]
