@@ -69,9 +69,9 @@ mod tests {
 
     #[test]
     fn webhook_routing_key_is_unique_per_payment_driver() {
-        let migration = include_str!("../../../migrations-postgres/0001_initial.sql");
+        let finalize = include_str!("../../../migrations-postgres/0002_import_finalize.sql");
         assert!(
-            migration.contains("CONSTRAINT uniq_payment_method_driver_uuid UNIQUE (payment, uuid)")
+            finalize.contains("CONSTRAINT uniq_payment_method_driver_uuid UNIQUE (payment, uuid)")
         );
     }
 }

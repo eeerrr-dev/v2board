@@ -371,8 +371,8 @@ fn invitation_code_consumption_is_locked_and_guarded() {
     assert!(source.contains("result.rows_affected() != 1"));
     assert!(!source.contains("email = $1 LIMIT 1 FOR UPDATE"));
     assert!(source.contains("is_email_unique_violation"));
-    let migration = include_str!("../../../../migrations-postgres/0001_initial.sql");
-    assert!(migration.contains("uniq_invite_code_canonical"));
+    let finalize = include_str!("../../../../migrations-postgres/0002_import_finalize.sql");
+    assert!(finalize.contains("uniq_invite_code_canonical"));
     assert!(
         source.find("consume_invite_code").unwrap() < source.find("INSERT INTO users").unwrap()
     );

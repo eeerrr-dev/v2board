@@ -213,8 +213,20 @@ The converter establishes one `REPEATABLE READ`, `READ ONLY`, consistent MySQL s
 inspection or row conversion, rejects every extra grant/role/`GRANT OPTION`, requires InnoDB for every
 imported source table, then writes outbound to the new PostgreSQL target with a temporary migration
 principal. It does not parse the dump or send MySQL SQL to PostgreSQL: the MySQL driver returns typed rows,
-the converter validates and maps each field explicitly, and the PostgreSQL driver performs parameterized
-batch inserts. The new machine never runs MySQL. The legacy source keeps its real `v2_*` table names;
+the converter validates and maps each field explicitly, and the PostgreSQL driver gives every target table
+exactly one `COPY FROM STDIN` stream. Each source table uses one primary-key-ordered streaming `SELECT`;
+the gift-card source stream deterministically feeds its base and derived redemption targets.
+Memory is bounded to the current decoded row, byte-bounded COPY send buffers, and a hard-capped 4,096-entry
+payment-id classification index required by the fixed Stripe order policy. Those
+buffers are not PostgreSQL batches, and there is no fixed 1,000-row or other bulk
+`INSERT` path. No intermediate COPY/CSV or other row-transfer file is written. After every retained
+table has completed COPY, `execute` creates the deferred business/cross-row unique constraints, secondary
+indexes, and foreign keys, resets the
+affected sequences, runs `ANALYZE`, and scans each retained target table exactly once in primary-key order
+to compare its canonical representation with the source-derived canonical expectation accumulated during
+conversion. The old host and PostgreSQL target use authenticated TLS over a same-datacenter private
+network. There is no bulk-`INSERT` fallback, per-batch target verification, selectable transfer mode, or
+second transfer path. The new machine never runs MySQL. The legacy source keeps its real `v2_*` table names;
 native PostgreSQL and ClickHouse targets
 are unprefixed, using `users` and `orders` for the two PostgreSQL keyword conflicts.
 
@@ -241,7 +253,7 @@ conversion, saves/reloads and probes isolated API/worker Redis ACL users, and em
 bundle. It is the only production write command; manual partial writes are not a second path.
 The report deliberately separates `inspected_dump_sha256` (the file the tool inspected) from
 `imported_source_schema_sha256` (only the 14 imported source-table schemas) and
-`converted_snapshot_sha256` (final retained content including deferred relationships and imported table
+`converted_snapshot_sha256` (final retained content including inviter relationships and imported table
 counts plus the separately represented whole-table-discard presence decisions); it does not falsely claim
 the dump hash proves the independently read snapshot. Discard-only tables are presence-audited but not
 schema-bound, row-scanned or counted; `v2_tutorial` is an allowed optional legacy residue and is discarded

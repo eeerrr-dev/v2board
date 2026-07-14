@@ -5,14 +5,16 @@ use std::{
     os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
     path::Path,
     str::FromStr,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
+use anyhow::Context;
 use chrono::Utc;
+use futures_util::TryStreamExt;
 use percent_encoding::percent_decode_str;
 use rust_decimal::Decimal;
 use serde::Serialize;
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, value::RawValue};
 use sha2::{Digest, Sha256};
 use sqlx::{
     AssertSqlSafe, Column, Executor, MySql, MySqlConnection, PgPool, Postgres, QueryBuilder, Row,
@@ -32,14 +34,14 @@ use v2board_config::{AppConfig, RuntimePaths};
 use v2board_provision::{
     MysqlImportExecutionPlan, MysqlImportSpec, inspect_mysql_import,
     mysql_import_converter::{
-        CanonicalRow, CanonicalValue, DEFAULT_BATCH_SIZE, DISCARDED_SOURCE_TABLES,
-        INITIAL_SOURCE_ID_CURSOR, IdentityWidth, LegacyGiftcardRedemptionRow,
-        MYSQL_IMPORTED_SOURCE_SCHEMA_SHA256, MysqlImportRowDisposition,
-        POSTGRES_MAX_BIND_PARAMETERS, SCALAR_REFERENCES, ScalarReferenceRule, SourceRow,
-        SourceValue, TABLE_MAPPINGS, TableMapping, audit_registry, canonical_rows_sha256,
-        copied_table_mappings, discarded_target_tables, expand_giftcard_redemptions,
-        registry_sha256, sequence_reset_sql, source_batch_sql, target_batch_insert_sql,
-        transform_mysql_import_row, validate_batch_ids,
+        CanonicalJson, CanonicalRow, CanonicalRowsHasher, CanonicalValue, DERIVED_MAPPINGS,
+        DISCARDED_SOURCE_TABLES, DerivedMapping, IdentityWidth, LegacyGiftcardRedemptionRow,
+        MYSQL_IMPORTED_SOURCE_SCHEMA_SHA256, MysqlImportRowDisposition, SCALAR_REFERENCES,
+        SOURCE_ID_LOWER_BOUND, ScalarReferenceRule, SourceRow, SourceValue, TABLE_MAPPINGS,
+        TableMapping, audit_registry, copied_table_mappings, derived_target_copy_sql,
+        derived_target_verify_stream_sql, discarded_target_tables, expand_giftcard_redemptions,
+        registry_sha256, sequence_reset_sql, source_stream_sql, target_columns_in_order,
+        target_copy_sql, target_verify_stream_sql, transform_mysql_import_row,
     },
     mysql_import_policy::is_legacy_stripe_payment_driver,
 };
@@ -57,10 +59,10 @@ const REQUIRED_CLICKHOUSE_MAJOR: u64 = 26;
 const REQUIRED_CLICKHOUSE_MINOR: u64 = 3;
 const REQUIRED_REDIS_MAJOR: u64 = 8;
 const REQUIRED_REDIS_MINOR: u64 = 8;
-const GIFTCARD_REDEMPTION_BIND_PARAMETERS: usize = 4;
-const MAX_GIFTCARD_REDEMPTIONS_PER_INSERT: usize =
-    POSTGRES_MAX_BIND_PARAMETERS / GIFTCARD_REDEMPTION_BIND_PARAMETERS;
-const MAX_GIFTCARD_REFERENCE_IDS_PER_QUERY: usize = 10_000;
+const COPY_SEND_BUFFER_BYTES: usize = 4 * 1024 * 1024;
+const MAX_COPY_ROW_BYTES: usize = 16 * 1024 * 1024;
+const COPY_PROGRESS_ROWS: u64 = 100_000;
+const MAX_LEGACY_PAYMENT_METHODS: usize = 4_096;
 const API_REDIS_RW_KEY_PATTERNS: &[&str] = &[
     "AUTH_SESSION_*",
     "USER_SESSIONS_*",
@@ -222,25 +224,6 @@ fn digest_import_report_field(digest: &mut Sha256, field: &[u8]) {
     digest.update(field);
 }
 
-fn finalize_users_retained_sha256(base_sha256: &str, inviter_sha256: &str) -> String {
-    let mut digest = Sha256::new();
-    digest.update(b"v2board.mysql-import.users-final.v1\0");
-    digest_import_report_field(&mut digest, base_sha256.as_bytes());
-    digest_import_report_field(&mut digest, inviter_sha256.as_bytes());
-    hex::encode(digest.finalize())
-}
-
-fn digest_user_inviter_row(digest: &mut Sha256, user_id: i64, invite_user_id: Option<i64>) {
-    digest_import_report_field(digest, user_id.to_string().as_bytes());
-    match invite_user_id {
-        Some(inviter) => {
-            digest_import_report_field(digest, b"some");
-            digest_import_report_field(digest, inviter.to_string().as_bytes());
-        }
-        None => digest_import_report_field(digest, b"none"),
-    }
-}
-
 struct PostgresIdentity {
     bootstrap: Url,
     migration: Url,
@@ -310,7 +293,7 @@ async fn execute_validated(
         .connect(plan.postgres.migration_database_url.as_str())
         .await?;
     verify_postgres_target_contract(&target, &postgres.database).await?;
-    POSTGRES_MIGRATOR.run(&target).await?;
+    POSTGRES_MIGRATOR.run_to(1, &target).await?;
 
     let installation_id = Uuid::new_v4();
     let now = Utc::now().timestamp();
@@ -323,10 +306,14 @@ async fn execute_validated(
     .await?;
 
     let imported_tables = copy_business_data(&mut source, &target).await?;
-    let converted_snapshot_sha256 = converted_snapshot_sha256(&imported_tables, &discarded_tables);
     commit_mysql_read_snapshot(&mut source).await?;
     drop(source);
     source_pool.close().await;
+    eprintln!("mysql-import PostgreSQL finalize phase started");
+    POSTGRES_MIGRATOR.run(&target).await?;
+    finalize_and_verify_business_data(&target, &imported_tables).await?;
+    eprintln!("mysql-import PostgreSQL finalize phase completed");
+    let converted_snapshot_sha256 = converted_snapshot_sha256(&imported_tables, &discarded_tables);
     install_admission(&target, installation_id, now, &plan).await?;
     v2board_domain::operator_config::seed_initial_authority(
         &target,
@@ -2111,7 +2098,6 @@ fn mapping_source_columns(mapping: &TableMapping) -> Vec<&str> {
                 .iter()
                 .map(|column| column.source),
         )
-        .chain(mapping.deferred_columns.iter().map(|column| column.source))
         .chain(
             mapping
                 .consumed_source_columns
@@ -2119,6 +2105,18 @@ fn mapping_source_columns(mapping: &TableMapping) -> Vec<&str> {
                 .map(|column| column.source),
         )
         .collect()
+}
+
+fn mapping_has_source_column(mapping: &TableMapping, name: &str) -> bool {
+    mapping.direct_columns.contains(&name)
+        || mapping
+            .transformed_columns
+            .iter()
+            .any(|column| column.source == name)
+        || mapping
+            .consumed_source_columns
+            .iter()
+            .any(|column| column.source == name)
 }
 
 async fn validate_source_relationships(source: &mut MySqlConnection) -> anyhow::Result<()> {
@@ -2176,45 +2174,73 @@ async fn copy_business_data(
     source: &mut MySqlConnection,
     target: &PgPool,
 ) -> anyhow::Result<Vec<ImportedTableReport>> {
-    let payments =
-        sqlx::query_as::<_, (i32, String)>("SELECT id, payment FROM v2_payment ORDER BY id")
-            .fetch_all(&mut *source)
-            .await?;
-    let known_payment_ids = payments.iter().map(|(id, _)| *id).collect::<BTreeSet<_>>();
-    let stripe_payment_ids = payments
-        .iter()
-        .filter(|(_, driver)| is_legacy_stripe_payment_driver(driver))
-        .map(|(id, _)| *id)
-        .collect::<BTreeSet<_>>();
-
+    let mut known_payment_ids = BTreeSet::new();
+    let mut stripe_payment_ids = BTreeSet::new();
     let mut reports = Vec::with_capacity(TABLE_MAPPINGS.len() + 1);
+    let mut giftcard_redemptions = None;
     for mapping in copied_table_mappings() {
-        reports.push(
-            copy_base_table(
+        if mapping.source == "v2_giftcard" {
+            let (giftcards, redemptions) = copy_giftcards_and_redemptions(
                 &mut *source,
                 target,
                 mapping,
                 &known_payment_ids,
                 &stripe_payment_ids,
             )
-            .await?,
-        );
+            .await?;
+            reports.push(giftcards);
+            giftcard_redemptions = Some(redemptions);
+        } else {
+            reports.push(
+                copy_base_table(
+                    &mut *source,
+                    target,
+                    mapping,
+                    &mut known_payment_ids,
+                    &mut stripe_payment_ids,
+                )
+                .await?,
+            );
+        }
     }
-    let inviter_sha256 = apply_deferred_user_inviters(&mut *source, target).await?;
-    let users = reports
-        .iter_mut()
-        .find(|report| report.target == "users")
-        .ok_or_else(|| anyhow::anyhow!("converter registry omitted the users report"))?;
-    users.retained_sha256 = finalize_users_retained_sha256(&users.retained_sha256, &inviter_sha256);
-    reports.push(build_giftcard_redemptions(&mut *source, target).await?);
-    validate_transformed_references(target).await?;
+    reports.push(giftcard_redemptions.ok_or_else(|| {
+        anyhow::anyhow!("converter registry omitted the gift-card source mapping")
+    })?);
+    Ok(reports)
+}
 
+async fn finalize_and_verify_business_data(
+    target: &PgPool,
+    reports: &[ImportedTableReport],
+) -> anyhow::Result<()> {
     for mapping in TABLE_MAPPINGS {
         ensure_sequence_headroom(target, mapping).await?;
     }
+    eprintln!("mysql-import PostgreSQL sequence reset started");
     for mapping in TABLE_MAPPINGS {
         execute_dynamic(target, sequence_reset_sql(mapping)?).await?;
     }
+    eprintln!("mysql-import PostgreSQL ANALYZE started");
+    sqlx::query("ANALYZE").execute(target).await?;
+    eprintln!("mysql-import PostgreSQL canonical verification started");
+
+    for mapping in TABLE_MAPPINGS {
+        let report = reports
+            .iter()
+            .find(|report| report.target == mapping.target)
+            .ok_or_else(|| anyhow::anyhow!("converter report omitted target {}", mapping.target))?;
+        verify_target_table(target, mapping, report).await?;
+    }
+    let derived = DERIVED_MAPPINGS
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("converter registry omitted derived mapping"))?;
+    let report = reports
+        .iter()
+        .find(|report| report.target == derived.target)
+        .ok_or_else(|| anyhow::anyhow!("converter report omitted target {}", derived.target))?;
+    verify_derived_target_table(target, derived, report).await?;
+    validate_transformed_references(target).await?;
+
     for table in discarded_target_tables() {
         let sql = format!("SELECT COUNT(*) FROM {}", postgres_identifier(table));
         let count: i64 = sqlx::query_scalar(AssertSqlSafe(sql).into_sql_str())
@@ -2224,7 +2250,7 @@ async fn copy_business_data(
             anyhow::bail!("fixed-discard target {table} contains {count} row(s)");
         }
     }
-    Ok(reports)
+    Ok(())
 }
 
 async fn ensure_sequence_headroom(target: &PgPool, mapping: &TableMapping) -> anyhow::Result<()> {
@@ -2258,80 +2284,151 @@ async fn copy_base_table(
     source: &mut MySqlConnection,
     target: &PgPool,
     mapping: &TableMapping,
-    known_payment_ids: &BTreeSet<i32>,
-    stripe_payment_ids: &BTreeSet<i32>,
+    known_payment_ids: &mut BTreeSet<i32>,
+    stripe_payment_ids: &mut BTreeSet<i32>,
 ) -> anyhow::Result<ImportedTableReport> {
-    let sql = source_batch_sql(mapping)?;
-    let mut cursor = INITIAL_SOURCE_ID_CURSOR;
+    let sql = source_stream_sql(mapping)?;
+    let copy_sql = target_copy_sql(mapping)?;
+    let columns = target_columns_in_order(mapping);
+    let mut target_connection = target.acquire().await?;
+    target_connection.close_on_drop();
+    let mut copy = target_connection.copy_in_raw(&copy_sql).await?;
+    if !copy.is_textual()
+        || copy.num_columns() != columns.len()
+        || (0..copy.num_columns()).any(|index| !copy.column_is_textual(index))
+    {
+        let _ = copy.abort("v2board import COPY format mismatch").await;
+        anyhow::bail!("PostgreSQL COPY format mismatch for {}", mapping.target);
+    }
+
+    let mut previous_id = SOURCE_ID_LOWER_BOUND;
     let mut source_rows = 0_u64;
-    let mut retained_rows = 0_u64;
     let mut discarded_rows = 0_u64;
-    let mut digest = Sha256::new();
-    digest.update(b"v2board.mysql-import.retained-table.v1\0");
-    digest.update(mapping.target.as_bytes());
+    let mut retained = CanonicalRowsHasher::for_mapping(mapping)?;
+    let mut buffer = Vec::with_capacity(COPY_SEND_BUFFER_BYTES);
+    let mut bytes_sent = 0_u64;
+    let started_at = Instant::now();
+    let mut next_progress = COPY_PROGRESS_ROWS;
 
-    loop {
-        let rows = sqlx::query(AssertSqlSafe(sql.clone()).into_sql_str())
-            .bind(cursor)
-            .bind(DEFAULT_BATCH_SIZE)
-            .fetch_all(&mut *source)
-            .await?;
-        if rows.is_empty() {
-            break;
-        }
-        let source_batch = rows
-            .iter()
-            .map(|row| decode_mysql_row(mapping, row))
-            .collect::<Result<Vec<_>, _>>()?;
-        cursor = validate_batch_ids(mapping, cursor, &source_batch, DEFAULT_BATCH_SIZE)?;
-        source_rows += source_batch.len() as u64;
+    let stream_result: anyhow::Result<()> = async {
+        let mut rows = sqlx::query(AssertSqlSafe(sql).into_sql_str()).fetch(&mut *source);
+        while let Some(row) = rows.try_next().await? {
+            let source_row = decode_mysql_row(mapping, &row)?;
+            previous_id = next_source_id(mapping, previous_id, &source_row)?;
+            source_rows = source_rows
+                .checked_add(1)
+                .ok_or_else(|| anyhow::anyhow!("source row count overflow"))?;
+            index_legacy_payment(mapping, &source_row, known_payment_ids, stripe_payment_ids)?;
 
-        let mut retained = Vec::with_capacity(source_batch.len());
-        for row in &source_batch {
-            match transform_mysql_import_row(mapping, row, known_payment_ids, stripe_payment_ids)? {
-                MysqlImportRowDisposition::Discard => discarded_rows += 1,
-                MysqlImportRowDisposition::Retain(row) => retained.push(row),
+            match transform_mysql_import_row(
+                mapping,
+                &source_row,
+                &*known_payment_ids,
+                &*stripe_payment_ids,
+            )? {
+                MysqlImportRowDisposition::Discard => {
+                    discarded_rows = discarded_rows.checked_add(1).ok_or_else(|| {
+                        anyhow::anyhow!("discarded row count overflow for {}", mapping.source)
+                    })?;
+                }
+                MysqlImportRowDisposition::Retain(row) => {
+                    let encoded = encode_copy_row(mapping.target, &columns, &row)?;
+                    retained.update_row(&row)?;
+                    if !buffer.is_empty()
+                        && buffer.len().saturating_add(encoded.len()) > COPY_SEND_BUFFER_BYTES
+                    {
+                        bytes_sent = bytes_sent
+                            .checked_add(buffer.len() as u64)
+                            .ok_or_else(|| anyhow::anyhow!("COPY byte count overflow"))?;
+                        copy.send(std::mem::take(&mut buffer)).await?;
+                        buffer = Vec::with_capacity(COPY_SEND_BUFFER_BYTES);
+                    }
+                    if encoded.len() > COPY_SEND_BUFFER_BYTES {
+                        bytes_sent = bytes_sent
+                            .checked_add(encoded.len() as u64)
+                            .ok_or_else(|| anyhow::anyhow!("COPY byte count overflow"))?;
+                        copy.send(encoded).await?;
+                    } else {
+                        buffer.extend_from_slice(&encoded);
+                    }
+                }
+            }
+            if source_rows >= next_progress {
+                report_copy_progress(mapping.target, source_rows, bytes_sent, started_at);
+                next_progress = next_progress.saturating_add(COPY_PROGRESS_ROWS);
             }
         }
-        if !retained.is_empty() {
-            insert_canonical_rows(target, mapping, &retained).await?;
-            verify_inserted_rows(target, mapping, &retained).await?;
-            let batch_hash = canonical_rows_sha256(mapping, &retained)?;
-            digest.update((retained.len() as u64).to_be_bytes());
-            digest.update(batch_hash.as_bytes());
-            retained_rows += retained.len() as u64;
+        drop(rows);
+        if !buffer.is_empty() {
+            bytes_sent = bytes_sent
+                .checked_add(buffer.len() as u64)
+                .ok_or_else(|| anyhow::anyhow!("COPY byte count overflow"))?;
+            copy.send(std::mem::take(&mut buffer)).await?;
         }
+        Ok(())
     }
-    let target_sql = format!(
-        "SELECT COUNT(*) FROM {}",
-        postgres_identifier(mapping.target)
-    );
-    let target_count: i64 = sqlx::query_scalar(AssertSqlSafe(target_sql).into_sql_str())
-        .fetch_one(target)
-        .await?;
-    if u64::try_from(target_count).ok() != Some(retained_rows) {
+    .await;
+    if let Err(error) = stream_result {
+        let _ = copy.abort("v2board import COPY stream failed").await;
+        return Err(error.context(format!("COPY {} -> {}", mapping.source, mapping.target)));
+    }
+
+    let (retained_rows, retained_sha256) = retained.finish();
+    let copied_rows = copy.finish().await?;
+    if copied_rows != retained_rows {
         anyhow::bail!(
-            "target row count mismatch for {}: expected {retained_rows}, observed {target_count}",
+            "PostgreSQL COPY row count mismatch for {}: expected {retained_rows}, observed {copied_rows}",
             mapping.target
         );
     }
+    report_copy_progress(mapping.target, source_rows, bytes_sent, started_at);
     Ok(ImportedTableReport {
         source: mapping.source.to_string(),
         target: mapping.target.to_string(),
         source_rows,
         retained_rows,
         discarded_rows,
-        retained_sha256: hex::encode(digest.finalize()),
+        retained_sha256,
     })
+}
+
+fn index_legacy_payment(
+    mapping: &TableMapping,
+    row: &SourceRow,
+    known_payment_ids: &mut BTreeSet<i32>,
+    stripe_payment_ids: &mut BTreeSet<i32>,
+) -> anyhow::Result<()> {
+    if mapping.source != "v2_payment" {
+        return Ok(());
+    }
+    let id = match row.get("id") {
+        Some(SourceValue::I64(value)) => i32::try_from(*value)?,
+        Some(SourceValue::U64(value)) => i32::try_from(*value)?,
+        _ => anyhow::bail!("legacy payment row has no integer id"),
+    };
+    let driver = match row.get("payment") {
+        Some(SourceValue::Text(value)) => value,
+        _ => anyhow::bail!("legacy payment row has no text driver"),
+    };
+    anyhow::ensure!(
+        !known_payment_ids.contains(&id),
+        "legacy payment stream contains duplicate id {id}"
+    );
+    anyhow::ensure!(
+        known_payment_ids.len() < MAX_LEGACY_PAYMENT_METHODS,
+        "legacy payment table exceeds the fixed {MAX_LEGACY_PAYMENT_METHODS}-row classification safety bound"
+    );
+    known_payment_ids.insert(id);
+    if is_legacy_stripe_payment_driver(driver) {
+        stripe_payment_ids.insert(id);
+    }
+    Ok(())
 }
 
 fn decode_mysql_row(mapping: &TableMapping, row: &MySqlRow) -> anyhow::Result<SourceRow> {
     let mut decoded = BTreeMap::new();
-    let expected = mapping_source_columns(mapping)
-        .into_iter()
-        .collect::<BTreeSet<_>>();
     for (index, column) in row.columns().iter().enumerate() {
-        if !expected.contains(column.name()) {
+        if !mapping_has_source_column(mapping, column.name()) {
             anyhow::bail!(
                 "source query for {} returned unexpected column {}",
                 mapping.source,
@@ -2341,6 +2438,20 @@ fn decode_mysql_row(mapping: &TableMapping, row: &MySqlRow) -> anyhow::Result<So
         decoded.insert(column.name().to_string(), decode_mysql_value(row, index)?);
     }
     Ok(decoded)
+}
+
+fn next_source_id(mapping: &TableMapping, previous: i64, row: &SourceRow) -> anyhow::Result<i64> {
+    let current = match row.get("id") {
+        Some(SourceValue::I64(value)) => *value,
+        Some(SourceValue::U64(value)) => i64::try_from(*value)?,
+        _ => anyhow::bail!("source stream for {} has no integer id", mapping.source),
+    };
+    anyhow::ensure!(
+        current > previous,
+        "source stream for {} is not strictly ordered by id after {previous}",
+        mapping.source
+    );
+    Ok(current)
 }
 
 fn decode_mysql_value(row: &MySqlRow, index: usize) -> anyhow::Result<SourceValue> {
@@ -2398,180 +2509,221 @@ fn decode_mysql_value(row: &MySqlRow, index: usize) -> anyhow::Result<SourceValu
     )
 }
 
-fn target_columns(mapping: &TableMapping) -> Vec<&str> {
-    mapping
-        .direct_columns
-        .iter()
-        .copied()
-        .chain(
-            mapping
-                .transformed_columns
-                .iter()
-                .map(|column| column.target),
-        )
-        .chain(mapping.added_columns.iter().map(|column| column.target))
-        .collect()
-}
-
-async fn insert_canonical_rows(
-    target: &PgPool,
-    mapping: &TableMapping,
-    rows: &[CanonicalRow],
-) -> anyhow::Result<()> {
-    // Retain the converter's parameter-limit audit even though QueryBuilder
-    // emits literal NULLs rather than assigning them an incorrect bind type.
-    target_batch_insert_sql(mapping, rows.len())?;
-    let columns = target_columns(mapping);
-    let mut prepared = Vec::with_capacity(rows.len());
-    for row in rows {
-        prepared.push(
-            columns
-                .iter()
-                .map(|column| prepare_target_value(row.get(*column).expect("audited row")))
-                .collect::<Result<Vec<_>, _>>()?,
-        );
-    }
-
-    let mut builder = QueryBuilder::<Postgres>::new(format!(
-        "INSERT INTO {} (",
-        postgres_identifier(mapping.target)
-    ));
-    {
-        let mut separated = builder.separated(", ");
-        for column in &columns {
-            separated.push(postgres_identifier(column));
-        }
-    }
-    builder.push(") ");
-    builder.push_values(&prepared, |mut values, row| {
-        for value in row {
-            match value {
-                PreparedTargetValue::Null => {
-                    values.push("NULL");
-                }
-                PreparedTargetValue::Integer(value) => {
-                    values.push_bind(*value);
-                }
-                PreparedTargetValue::Decimal(value) => {
-                    values.push_bind(*value);
-                }
-                PreparedTargetValue::Text(value) => {
-                    values.push_bind(value);
-                }
-                PreparedTargetValue::Bytes(value) => {
-                    values.push_bind(value);
-                }
-                PreparedTargetValue::Json(value) => {
-                    values.push_bind(Json(value));
-                }
-            }
-        }
-    });
-    builder.build().execute(target).await?;
-    Ok(())
-}
-
-enum PreparedTargetValue {
-    Null,
-    Integer(i64),
-    Decimal(Decimal),
-    Text(String),
-    Bytes(Vec<u8>),
-    Json(Value),
-}
-
-fn prepare_target_value(value: &CanonicalValue) -> anyhow::Result<PreparedTargetValue> {
-    Ok(match value {
-        CanonicalValue::Null => PreparedTargetValue::Null,
-        CanonicalValue::I64(value) => PreparedTargetValue::Integer(*value),
-        CanonicalValue::U64(value) => PreparedTargetValue::Integer(i64::try_from(*value)?),
-        CanonicalValue::Decimal(value) => PreparedTargetValue::Decimal(Decimal::from_str(value)?),
-        CanonicalValue::Text(value) => PreparedTargetValue::Text(value.clone()),
-        CanonicalValue::Bytes(value) => PreparedTargetValue::Bytes(value.clone()),
-        CanonicalValue::Json(value) => PreparedTargetValue::Json(value.clone()),
-    })
-}
-
-async fn verify_inserted_rows(
-    target: &PgPool,
-    mapping: &TableMapping,
-    expected: &[CanonicalRow],
-) -> anyhow::Result<()> {
-    let columns = target_columns(mapping);
-    let selected = columns
-        .iter()
-        .map(|column| postgres_identifier(column))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let ids = expected
-        .iter()
-        .map(canonical_id)
-        .collect::<Result<Vec<_>, _>>()?;
-    let sql = format!(
-        "SELECT {selected} FROM {} WHERE id::bigint = ANY($1) ORDER BY id",
-        postgres_identifier(mapping.target)
-    );
-    let rows = sqlx::query(AssertSqlSafe(sql).into_sql_str())
-        .bind(&ids)
-        .fetch_all(target)
-        .await?;
-    if rows.len() != expected.len() {
+fn encode_copy_row(table: &str, columns: &[&str], row: &CanonicalRow) -> anyhow::Result<Vec<u8>> {
+    if row.len() != columns.len() {
         anyhow::bail!(
-            "target batch verification count mismatch for {}",
-            mapping.target
+            "canonical COPY row for {table} has {} columns; expected {}",
+            row.len(),
+            columns.len()
         );
     }
-    for (row, expected) in rows.iter().zip(expected) {
-        for (index, column) in columns.iter().enumerate() {
-            verify_postgres_value(row, index, expected.get(*column).expect("audited row"))
-                .map_err(|error| {
-                    anyhow::anyhow!(
-                        "target value mismatch for {}.{}: {error}",
-                        mapping.target,
-                        column
-                    )
-                })?;
+    let mut encoded = Vec::new();
+    for (index, column) in columns.iter().enumerate() {
+        if index != 0 {
+            encoded.push(b',');
         }
+        let value = row
+            .get(*column)
+            .ok_or_else(|| anyhow::anyhow!("canonical COPY row for {table} lacks {column}"))?;
+        if matches!(value, CanonicalValue::Null) {
+            encoded.extend_from_slice(b"\\N");
+            continue;
+        }
+        let value = canonical_copy_text(table, column, value)?;
+        encoded.push(b'"');
+        for byte in value {
+            if byte == b'"' {
+                encoded.push(b'"');
+            }
+            encoded.push(byte);
+        }
+        encoded.push(b'"');
     }
-    Ok(())
+    encoded.push(b'\n');
+    if encoded.len() > MAX_COPY_ROW_BYTES {
+        anyhow::bail!(
+            "canonical COPY row for {table} exceeds the {}-byte safety limit",
+            MAX_COPY_ROW_BYTES
+        );
+    }
+    Ok(encoded)
 }
 
-fn canonical_id(row: &CanonicalRow) -> anyhow::Result<i64> {
-    match row.get("id") {
-        Some(CanonicalValue::I64(value)) => Ok(*value),
-        Some(CanonicalValue::U64(value)) => Ok(i64::try_from(*value)?),
-        _ => anyhow::bail!("canonical row has no signed-compatible id"),
-    }
-}
-
-fn verify_postgres_value(
-    row: &sqlx::postgres::PgRow,
-    index: usize,
-    expected: &CanonicalValue,
-) -> anyhow::Result<()> {
-    if matches!(expected, CanonicalValue::Null) {
-        if !row.try_get_raw(index)?.is_null() {
-            anyhow::bail!("expected NULL");
+fn canonical_copy_text(
+    table: &str,
+    column: &str,
+    value: &CanonicalValue,
+) -> anyhow::Result<Vec<u8>> {
+    let bytes = match value {
+        CanonicalValue::Null => unreachable!("NULL has dedicated COPY framing"),
+        CanonicalValue::I64(value) => value.to_string().into_bytes(),
+        CanonicalValue::U64(value) => i64::try_from(*value)
+            .with_context(|| format!("{table}.{column} exceeds PostgreSQL BIGINT"))?
+            .to_string()
+            .into_bytes(),
+        CanonicalValue::Decimal(value) => {
+            let normalized = Decimal::from_str(value)?.normalize().to_string();
+            anyhow::ensure!(
+                normalized == *value,
+                "{table}.{column} is not a canonical exact decimal"
+            );
+            normalized.into_bytes()
         }
-        return Ok(());
-    }
-    let matches = match expected {
-        CanonicalValue::Null => unreachable!(),
-        CanonicalValue::I64(expected) => postgres_integer(row, index)? == *expected,
-        CanonicalValue::U64(expected) => {
-            u64::try_from(postgres_integer(row, index)?).ok() == Some(*expected)
+        CanonicalValue::Text(value) => {
+            ensure_no_nul(table, column, value)?;
+            value.as_bytes().to_vec()
         }
-        CanonicalValue::Decimal(expected) => {
-            row.try_get::<Decimal, _>(index)?.normalize().to_string() == *expected
+        CanonicalValue::Bytes(value) => format!("\\x{}", hex::encode(value)).into_bytes(),
+        CanonicalValue::Json(value) => {
+            ensure_json_has_no_nul(table, column, value)?;
+            value.to_compact_json()?.into_bytes()
         }
-        CanonicalValue::Text(expected) => row.try_get::<String, _>(index)? == *expected,
-        CanonicalValue::Bytes(expected) => row.try_get::<Vec<u8>, _>(index)? == *expected,
-        CanonicalValue::Json(expected) => row.try_get::<Json<Value>, _>(index)?.0 == *expected,
     };
-    if !matches {
-        anyhow::bail!("value differs");
-    }
+    Ok(bytes)
+}
+
+fn ensure_no_nul(table: &str, column: &str, value: &str) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        !value.contains('\0'),
+        "{table}.{column} contains U+0000, which PostgreSQL text cannot store"
+    );
     Ok(())
+}
+
+fn ensure_json_has_no_nul(table: &str, column: &str, value: &CanonicalJson) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        !value.contains_nul(),
+        "{table}.{column} contains U+0000, which PostgreSQL JSONB cannot store"
+    );
+    Ok(())
+}
+
+fn report_copy_progress(table: &str, rows: u64, bytes: u64, started_at: Instant) {
+    let elapsed = started_at.elapsed().as_secs_f64().max(0.001);
+    eprintln!(
+        "mysql-import COPY table={table} rows={rows} mib={:.1} elapsed_s={:.1} rows_per_s={:.0}",
+        bytes as f64 / (1024.0 * 1024.0),
+        elapsed,
+        rows as f64 / elapsed,
+    );
+}
+
+async fn verify_target_table(
+    target: &PgPool,
+    mapping: &TableMapping,
+    report: &ImportedTableReport,
+) -> anyhow::Result<()> {
+    let columns = target_columns_in_order(mapping);
+    verify_target_stream(
+        target,
+        mapping.target,
+        &columns,
+        target_verify_stream_sql(mapping)?,
+        report,
+    )
+    .await
+}
+
+async fn verify_derived_target_table(
+    target: &PgPool,
+    mapping: &DerivedMapping,
+    report: &ImportedTableReport,
+) -> anyhow::Result<()> {
+    verify_target_stream(
+        target,
+        mapping.target,
+        mapping.target_columns,
+        derived_target_verify_stream_sql(mapping)?,
+        report,
+    )
+    .await
+}
+
+async fn verify_target_stream(
+    target: &PgPool,
+    table: &str,
+    columns: &[&str],
+    sql: String,
+    report: &ImportedTableReport,
+) -> anyhow::Result<()> {
+    let mut hasher = CanonicalRowsHasher::new(table, columns)?;
+    let started_at = Instant::now();
+    let mut next_progress = COPY_PROGRESS_ROWS;
+    let mut rows = sqlx::query(AssertSqlSafe(sql).into_sql_str()).fetch(target);
+    while let Some(row) = rows.try_next().await? {
+        hasher.update_row(&decode_postgres_row(table, columns, &row)?)?;
+        if hasher.rows() >= next_progress {
+            report_verify_progress(table, hasher.rows(), started_at);
+            next_progress = next_progress.saturating_add(COPY_PROGRESS_ROWS);
+        }
+    }
+    let (rows, sha256) = hasher.finish();
+    report_verify_progress(table, rows, started_at);
+    anyhow::ensure!(
+        rows == report.retained_rows,
+        "target row count mismatch for {table}: expected {}, observed {rows}",
+        report.retained_rows
+    );
+    anyhow::ensure!(
+        sha256 == report.retained_sha256,
+        "target canonical hash mismatch for {table}: COPY did not preserve the transformed source rows"
+    );
+    Ok(())
+}
+
+fn report_verify_progress(table: &str, rows: u64, started_at: Instant) {
+    let elapsed = started_at.elapsed().as_secs_f64().max(0.001);
+    eprintln!(
+        "mysql-import verify table={table} rows={rows} elapsed_s={elapsed:.1} rows_per_s={:.0}",
+        rows as f64 / elapsed,
+    );
+}
+
+fn decode_postgres_row(
+    table: &str,
+    columns: &[&str],
+    row: &sqlx::postgres::PgRow,
+) -> anyhow::Result<CanonicalRow> {
+    anyhow::ensure!(
+        row.len() == columns.len(),
+        "target verification query for {table} returned an unexpected column count"
+    );
+    let mut decoded = CanonicalRow::new();
+    for (index, column) in columns.iter().enumerate() {
+        let value = if row.try_get_raw(index)?.is_null() {
+            CanonicalValue::Null
+        } else {
+            match row
+                .column(index)
+                .type_info()
+                .name()
+                .to_ascii_uppercase()
+                .as_str()
+            {
+                "INT2" | "INT4" | "INT8" => CanonicalValue::I64(postgres_integer(row, index)?),
+                "NUMERIC" => CanonicalValue::Decimal(
+                    row.try_get::<Decimal, _>(index)?.normalize().to_string(),
+                ),
+                "BYTEA" => CanonicalValue::Bytes(row.try_get(index)?),
+                "JSON" | "JSONB" => {
+                    let value = row.try_get::<Json<Box<RawValue>>, _>(index)?.0;
+                    CanonicalValue::Json(CanonicalJson::parse(value.get()).map_err(|error| {
+                        anyhow::anyhow!(
+                            "could not decode exact PostgreSQL JSON for {table}.{column}: {error}"
+                        )
+                    })?)
+                }
+                _ => CanonicalValue::Text(row.try_get(index).with_context(|| {
+                    format!(
+                        "unsupported PostgreSQL type {} for {table}.{column}",
+                        row.column(index).type_info().name()
+                    )
+                })?),
+            }
+        };
+        decoded.insert((*column).to_string(), value);
+    }
+    Ok(decoded)
 }
 
 fn postgres_integer(row: &sqlx::postgres::PgRow, index: usize) -> anyhow::Result<i64> {
@@ -2587,193 +2739,222 @@ fn postgres_integer(row: &sqlx::postgres::PgRow, index: usize) -> anyhow::Result
     anyhow::bail!("target integer has an unsupported PostgreSQL type")
 }
 
-async fn apply_deferred_user_inviters(
+async fn copy_giftcards_and_redemptions(
     source: &mut MySqlConnection,
     target: &PgPool,
-) -> anyhow::Result<String> {
-    let mut cursor = INITIAL_SOURCE_ID_CURSOR;
-    let mut expected_non_null = 0_i64;
-    let mut digest = Sha256::new();
-    digest.update(b"v2board.mysql-import.user-inviters.v1\0");
-    loop {
-        let rows = sqlx::query_as::<_, (i32, Option<i32>)>(
-            "SELECT id, invite_user_id FROM v2_user WHERE id > ? ORDER BY id LIMIT ?",
-        )
-        .bind(cursor)
-        .bind(DEFAULT_BATCH_SIZE)
-        .fetch_all(&mut *source)
-        .await?;
-        if rows.is_empty() {
-            break;
-        }
-        cursor = i64::from(rows.last().expect("non-empty batch").0);
-        let expected = rows
-            .iter()
-            .map(|(id, inviter)| (i64::from(*id), inviter.map(i64::from)))
-            .collect::<Vec<_>>();
-        let non_null = expected
-            .iter()
-            .filter_map(|(id, inviter)| inviter.map(|inviter| (*id, inviter)))
-            .collect::<Vec<_>>();
-        expected_non_null += non_null.len() as i64;
-        if !non_null.is_empty() {
-            let mut builder = QueryBuilder::<Postgres>::new(
-                "UPDATE users AS u SET invite_user_id = v.invite_user_id FROM (",
-            );
-            builder.push_values(&non_null, |mut values, (id, inviter)| {
-                values.push_bind(*id).push_bind(*inviter);
-            });
-            builder.push(") AS v(id, invite_user_id) WHERE u.id = v.id");
-            let changed = builder.build().execute(target).await?.rows_affected();
-            if changed != non_null.len() as u64 {
-                anyhow::bail!("deferred user inviter update did not match every source user");
-            }
-        }
-        let ids = expected.iter().map(|(id, _)| *id).collect::<Vec<_>>();
-        let observed = sqlx::query_as::<_, (i64, Option<i64>)>(
-            "SELECT id, invite_user_id FROM users WHERE id = ANY($1) ORDER BY id",
-        )
-        .bind(&ids)
-        .fetch_all(target)
-        .await?;
-        if observed != expected {
-            anyhow::bail!("deferred user inviter values differ from the source snapshot");
-        }
-        for (user_id, invite_user_id) in expected {
-            digest_user_inviter_row(&mut digest, user_id, invite_user_id);
-        }
-    }
-    let actual_non_null: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE invite_user_id IS NOT NULL")
-            .fetch_one(target)
-            .await?;
-    if actual_non_null != expected_non_null {
-        anyhow::bail!(
-            "deferred user inviter count mismatch: expected {expected_non_null}, observed {actual_non_null}"
-        );
-    }
-    Ok(hex::encode(digest.finalize()))
-}
-
-async fn build_giftcard_redemptions(
-    source: &mut MySqlConnection,
-    target: &PgPool,
-) -> anyhow::Result<ImportedTableReport> {
-    let mut digest = Sha256::new();
-    digest.update(b"v2board.mysql-import.giftcard-redemptions.v1\0");
-    let mut cursor = INITIAL_SOURCE_ID_CURSOR;
-    let mut source_rows = 0_u64;
-    let mut retained_rows = 0_u64;
-    loop {
-        let giftcards = sqlx::query_as::<_, (i32, Option<String>)>(
-            "SELECT id, used_user_ids FROM v2_giftcard \
-             WHERE id > ? ORDER BY id LIMIT ?",
-        )
-        .bind(cursor)
-        .bind(DEFAULT_BATCH_SIZE)
-        .fetch_all(&mut *source)
-        .await?;
-        if giftcards.is_empty() {
-            break;
-        }
-        cursor = i64::from(giftcards.last().expect("non-empty batch").0);
-        source_rows = source_rows
-            .checked_add(giftcards.len() as u64)
-            .ok_or_else(|| anyhow::anyhow!("gift-card source row count overflow"))?;
-        for (giftcard_id, used_user_ids) in giftcards {
-            let source_value = used_user_ids
-                .map(SourceValue::Text)
-                .unwrap_or(SourceValue::Null);
-            let redemptions = expand_giftcard_redemptions(giftcard_id, &source_value)?;
-            validate_giftcard_redemption_users(target, &redemptions).await?;
-            for row in &redemptions {
-                digest_giftcard_redemption(&mut digest, row);
-            }
-            for chunk in redemptions.chunks(MAX_GIFTCARD_REDEMPTIONS_PER_INSERT) {
-                insert_giftcard_redemptions(target, chunk).await?;
-            }
-            retained_rows = retained_rows
-                .checked_add(redemptions.len() as u64)
-                .ok_or_else(|| anyhow::anyhow!("gift-card redemption row count overflow"))?;
-        }
-    }
-    let actual: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM gift_card_redemption")
-        .fetch_one(target)
-        .await?;
-    if u64::try_from(actual).ok() != Some(retained_rows) {
-        anyhow::bail!("gift-card redemption target count mismatch");
-    }
-    Ok(ImportedTableReport {
-        source: "v2_giftcard.used_user_ids".to_string(),
-        target: "gift_card_redemption".to_string(),
-        source_rows,
-        retained_rows,
-        discarded_rows: 0,
-        retained_sha256: hex::encode(digest.finalize()),
-    })
-}
-
-async fn validate_giftcard_redemption_users(
-    target: &PgPool,
-    rows: &[LegacyGiftcardRedemptionRow],
-) -> anyhow::Result<()> {
-    let expected = rows.iter().map(|row| row.user_id).collect::<BTreeSet<_>>();
-    let ids = expected.iter().copied().collect::<Vec<_>>();
-    let mut observed = BTreeSet::new();
-    for chunk in ids.chunks(MAX_GIFTCARD_REFERENCE_IDS_PER_QUERY) {
-        observed.extend(
-            sqlx::query_scalar::<_, i64>("SELECT id FROM users WHERE id = ANY($1)")
-                .bind(chunk)
-                .fetch_all(target)
-                .await?,
-        );
-    }
-    if observed != expected {
-        let missing = expected
-            .difference(&observed)
-            .next()
-            .copied()
-            .unwrap_or_default();
-        anyhow::bail!("v2_giftcard.used_user_ids references missing v2_user id {missing}");
-    }
-    Ok(())
-}
-
-async fn insert_giftcard_redemptions(
-    target: &PgPool,
-    rows: &[LegacyGiftcardRedemptionRow],
-) -> anyhow::Result<()> {
-    if rows.is_empty() || rows.len() > MAX_GIFTCARD_REDEMPTIONS_PER_INSERT {
-        anyhow::bail!("invalid gift-card redemption insert batch size");
-    }
-    let mut builder = QueryBuilder::<Postgres>::new(
-        "INSERT INTO gift_card_redemption \
-         (giftcard_id, user_id, created_at, created_at_provenance) ",
+    mapping: &TableMapping,
+    known_payment_ids: &BTreeSet<i32>,
+    stripe_payment_ids: &BTreeSet<i32>,
+) -> anyhow::Result<(ImportedTableReport, ImportedTableReport)> {
+    anyhow::ensure!(
+        mapping.source == "v2_giftcard",
+        "gift-card COPY received source {}",
+        mapping.source
     );
-    builder.push_values(rows, |mut values, row| {
-        values
-            .push_bind(row.giftcard_id)
-            .push_bind(row.user_id)
-            .push_bind(row.created_at)
-            .push_bind(&row.created_at_provenance);
-    });
-    let inserted = builder.build().execute(target).await?.rows_affected();
-    if inserted != rows.len() as u64 {
-        anyhow::bail!("gift-card redemption insert did not write every derived row");
+    let derived = DERIVED_MAPPINGS
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("converter registry omitted gift-card redemptions"))?;
+    let columns = target_columns_in_order(mapping);
+    let base_copy_sql = target_copy_sql(mapping)?;
+    let derived_copy_sql = derived_target_copy_sql(derived)?;
+    let mut base_connection = target.acquire().await?;
+    base_connection.close_on_drop();
+    let mut derived_connection = target.acquire().await?;
+    derived_connection.close_on_drop();
+    let mut base_copy = base_connection.copy_in_raw(&base_copy_sql).await?;
+    let mut derived_copy = derived_connection.copy_in_raw(&derived_copy_sql).await?;
+    if !base_copy.is_textual()
+        || base_copy.num_columns() != columns.len()
+        || (0..base_copy.num_columns()).any(|index| !base_copy.column_is_textual(index))
+    {
+        let _ = base_copy.abort("v2board import COPY format mismatch").await;
+        let _ = derived_copy
+            .abort("v2board import COPY format mismatch")
+            .await;
+        anyhow::bail!("PostgreSQL COPY format mismatch for {}", mapping.target);
     }
-    Ok(())
+    if !derived_copy.is_textual()
+        || derived_copy.num_columns() != derived.target_columns.len()
+        || (0..derived_copy.num_columns()).any(|index| !derived_copy.column_is_textual(index))
+    {
+        let _ = base_copy.abort("v2board import COPY format mismatch").await;
+        let _ = derived_copy
+            .abort("v2board import COPY format mismatch")
+            .await;
+        anyhow::bail!("PostgreSQL COPY format mismatch for {}", derived.target);
+    }
+
+    let mut base_retained = CanonicalRowsHasher::for_mapping(mapping)?;
+    let mut derived_retained = CanonicalRowsHasher::new(derived.target, derived.target_columns)?;
+    let mut previous_id = SOURCE_ID_LOWER_BOUND;
+    let mut source_rows = 0_u64;
+    let mut base_buffer = Vec::with_capacity(COPY_SEND_BUFFER_BYTES);
+    let mut derived_buffer = Vec::with_capacity(COPY_SEND_BUFFER_BYTES);
+    let mut base_bytes_sent = 0_u64;
+    let mut derived_bytes_sent = 0_u64;
+    let started_at = Instant::now();
+    let mut next_progress = COPY_PROGRESS_ROWS;
+
+    let stream_result: anyhow::Result<()> = async {
+        let sql = source_stream_sql(mapping)?;
+        let mut rows = sqlx::query(AssertSqlSafe(sql).into_sql_str()).fetch(&mut *source);
+        while let Some(row) = rows.try_next().await? {
+            let source_row = decode_mysql_row(mapping, &row)?;
+            previous_id = next_source_id(mapping, previous_id, &source_row)?;
+            source_rows = source_rows
+                .checked_add(1)
+                .ok_or_else(|| anyhow::anyhow!("gift-card source row count overflow"))?;
+
+            let base_row = match transform_mysql_import_row(
+                mapping,
+                &source_row,
+                known_payment_ids,
+                stripe_payment_ids,
+            )? {
+                MysqlImportRowDisposition::Retain(row) => row,
+                MysqlImportRowDisposition::Discard => {
+                    anyhow::bail!("gift-card base mapping unexpectedly discarded a row")
+                }
+            };
+            let encoded = encode_copy_row(mapping.target, &columns, &base_row)?;
+            base_retained.update_row(&base_row)?;
+            if !base_buffer.is_empty()
+                && base_buffer.len().saturating_add(encoded.len()) > COPY_SEND_BUFFER_BYTES
+            {
+                base_bytes_sent = base_bytes_sent
+                    .checked_add(base_buffer.len() as u64)
+                    .ok_or_else(|| anyhow::anyhow!("gift-card COPY byte count overflow"))?;
+                base_copy.send(std::mem::take(&mut base_buffer)).await?;
+                base_buffer = Vec::with_capacity(COPY_SEND_BUFFER_BYTES);
+            }
+            if encoded.len() > COPY_SEND_BUFFER_BYTES {
+                base_bytes_sent = base_bytes_sent
+                    .checked_add(encoded.len() as u64)
+                    .ok_or_else(|| anyhow::anyhow!("gift-card COPY byte count overflow"))?;
+                base_copy.send(encoded).await?;
+            } else {
+                base_buffer.extend_from_slice(&encoded);
+            }
+
+            let giftcard_id = match source_row.get("id") {
+                Some(SourceValue::I64(value)) => i32::try_from(*value)?,
+                Some(SourceValue::U64(value)) => i32::try_from(*value)?,
+                _ => anyhow::bail!("gift-card source row has no integer id"),
+            };
+            let used_user_ids = source_row
+                .get("used_user_ids")
+                .ok_or_else(|| anyhow::anyhow!("gift-card source row lacks used_user_ids"))?;
+            for redemption in expand_giftcard_redemptions(giftcard_id, used_user_ids)? {
+                let row = giftcard_redemption_canonical(&redemption);
+                let encoded = encode_copy_row(derived.target, derived.target_columns, &row)?;
+                derived_retained.update_row(&row)?;
+                if !derived_buffer.is_empty()
+                    && derived_buffer.len().saturating_add(encoded.len()) > COPY_SEND_BUFFER_BYTES
+                {
+                    derived_bytes_sent = derived_bytes_sent
+                        .checked_add(derived_buffer.len() as u64)
+                        .ok_or_else(|| anyhow::anyhow!("redemption COPY byte count overflow"))?;
+                    derived_copy
+                        .send(std::mem::take(&mut derived_buffer))
+                        .await?;
+                    derived_buffer = Vec::with_capacity(COPY_SEND_BUFFER_BYTES);
+                }
+                if encoded.len() > COPY_SEND_BUFFER_BYTES {
+                    derived_bytes_sent = derived_bytes_sent
+                        .checked_add(encoded.len() as u64)
+                        .ok_or_else(|| anyhow::anyhow!("redemption COPY byte count overflow"))?;
+                    derived_copy.send(encoded).await?;
+                } else {
+                    derived_buffer.extend_from_slice(&encoded);
+                }
+            }
+            if source_rows >= next_progress {
+                report_copy_progress(mapping.target, source_rows, base_bytes_sent, started_at);
+                next_progress = next_progress.saturating_add(COPY_PROGRESS_ROWS);
+            }
+        }
+        drop(rows);
+        if !base_buffer.is_empty() {
+            base_bytes_sent = base_bytes_sent
+                .checked_add(base_buffer.len() as u64)
+                .ok_or_else(|| anyhow::anyhow!("gift-card COPY byte count overflow"))?;
+            base_copy.send(std::mem::take(&mut base_buffer)).await?;
+        }
+        if !derived_buffer.is_empty() {
+            derived_bytes_sent = derived_bytes_sent
+                .checked_add(derived_buffer.len() as u64)
+                .ok_or_else(|| anyhow::anyhow!("redemption COPY byte count overflow"))?;
+            derived_copy
+                .send(std::mem::take(&mut derived_buffer))
+                .await?;
+        }
+        Ok(())
+    }
+    .await;
+    if let Err(error) = stream_result {
+        let _ = base_copy.abort("v2board import COPY stream failed").await;
+        let _ = derived_copy
+            .abort("v2board import COPY stream failed")
+            .await;
+        return Err(error.context("COPY v2_giftcard -> gift_card and gift_card_redemption"));
+    }
+    let (base_retained_rows, base_retained_sha256) = base_retained.finish();
+    let (derived_retained_rows, derived_retained_sha256) = derived_retained.finish();
+    let (base_copied_rows, derived_copied_rows) =
+        tokio::join!(base_copy.finish(), derived_copy.finish());
+    let base_copied_rows = base_copied_rows?;
+    let derived_copied_rows = derived_copied_rows?;
+    anyhow::ensure!(
+        base_copied_rows == base_retained_rows,
+        "gift-card COPY row count mismatch: expected {base_retained_rows}, observed {base_copied_rows}"
+    );
+    anyhow::ensure!(
+        derived_copied_rows == derived_retained_rows,
+        "gift-card redemption COPY row count mismatch: expected {derived_retained_rows}, observed {derived_copied_rows}"
+    );
+    report_copy_progress(mapping.target, source_rows, base_bytes_sent, started_at);
+    report_copy_progress(
+        derived.target,
+        derived_retained_rows,
+        derived_bytes_sent,
+        started_at,
+    );
+    Ok((
+        ImportedTableReport {
+            source: mapping.source.to_string(),
+            target: mapping.target.to_string(),
+            source_rows,
+            retained_rows: base_retained_rows,
+            discarded_rows: 0,
+            retained_sha256: base_retained_sha256,
+        },
+        ImportedTableReport {
+            source: "v2_giftcard.used_user_ids".to_string(),
+            target: derived.target.to_string(),
+            source_rows,
+            retained_rows: derived_retained_rows,
+            discarded_rows: 0,
+            retained_sha256: derived_retained_sha256,
+        },
+    ))
 }
 
-fn digest_giftcard_redemption(digest: &mut Sha256, row: &LegacyGiftcardRedemptionRow) {
-    for field in [
-        row.giftcard_id.to_string(),
-        row.user_id.to_string(),
-        row.created_at.to_string(),
-        row.created_at_provenance.clone(),
-    ] {
-        digest.update((field.len() as u64).to_be_bytes());
-        digest.update(field.as_bytes());
-    }
+fn giftcard_redemption_canonical(row: &LegacyGiftcardRedemptionRow) -> CanonicalRow {
+    CanonicalRow::from([
+        (
+            "giftcard_id".to_string(),
+            CanonicalValue::I64(i64::from(row.giftcard_id)),
+        ),
+        ("user_id".to_string(), CanonicalValue::I64(row.user_id)),
+        (
+            "created_at".to_string(),
+            CanonicalValue::I64(row.created_at),
+        ),
+        (
+            "created_at_provenance".to_string(),
+            CanonicalValue::Text(row.created_at_provenance.clone()),
+        ),
+    ])
 }
 
 async fn validate_transformed_references(target: &PgPool) -> anyhow::Result<()> {
@@ -4447,9 +4628,13 @@ mod tests {
             MYSQL_IMPORTED_SOURCE_SCHEMA_SHA256
         );
         validate_source_relationships(&mut source).await.unwrap();
-        POSTGRES_MIGRATOR.run(&target).await.unwrap();
+        POSTGRES_MIGRATOR.run_to(1, &target).await.unwrap();
         let reports = copy_business_data(&mut source, &target).await.unwrap();
         commit_mysql_read_snapshot(&mut source).await.unwrap();
+        POSTGRES_MIGRATOR.run(&target).await.unwrap();
+        finalize_and_verify_business_data(&target, &reports)
+            .await
+            .unwrap();
 
         let payment = reports
             .iter()
@@ -4481,17 +4666,15 @@ mod tests {
             .unwrap();
         assert_eq!(redemptions.retained_rows, 2);
         assert!(
-            validate_giftcard_redemption_users(
-                &target,
-                &[LegacyGiftcardRedemptionRow {
-                    giftcard_id: 1,
-                    user_id: 9_999_999,
-                    created_at: 0,
-                    created_at_provenance: "legacy_unknown".to_string(),
-                }],
+            sqlx::query(
+                "INSERT INTO gift_card_redemption \
+                 (giftcard_id, user_id, created_at, created_at_provenance) \
+                 VALUES (1, 9999999, 0, 'legacy_unknown')",
             )
+            .execute(&target)
             .await
-            .is_err()
+            .is_err(),
+            "the finalized foreign key must reject a missing user"
         );
 
         let payment_drivers =
@@ -4500,6 +4683,15 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(payment_drivers, ["Manual"]);
+        let exact_payment_numbers = sqlx::query_as::<_, (bool, bool)>(
+            "SELECT (config->>'exact')::numeric = 9007199254740993.25, \
+                    (config->>'scientific')::numeric = 1230 \
+             FROM payment_method WHERE id = 1",
+        )
+        .fetch_one(&target)
+        .await
+        .unwrap();
+        assert_eq!(exact_payment_numbers, (true, true));
         let order_bindings = sqlx::query_as::<_, (String, Option<i32>, Option<String>)>(
             "SELECT trade_no, payment_id, callback_no FROM orders ORDER BY id",
         )
@@ -4517,6 +4709,17 @@ mod tests {
                 ("trade-stripe-complete".to_string(), None, None),
             ]
         );
+        let notice_content: String = sqlx::query_scalar("SELECT content FROM notice WHERE id = 1")
+            .fetch_one(&target)
+            .await
+            .unwrap();
+        assert_eq!(notice_content, "\\N, \"quoted\"\r\nline\\tail");
+        let member_remarks: Option<String> =
+            sqlx::query_scalar("SELECT remarks FROM users WHERE id = 2")
+                .fetch_one(&target)
+                .await
+                .unwrap();
+        assert_eq!(member_remarks.as_deref(), Some(""));
         let next_group_id: i32 = sqlx::query_scalar(
             "INSERT INTO server_group (name, created_at, updated_at) \
              VALUES ('sequence-check', 1, 1) RETURNING id",
@@ -4548,14 +4751,51 @@ mod tests {
     }
 
     #[test]
-    fn target_version_and_redemption_batch_contracts_are_pinned() {
+    fn target_version_and_copy_memory_contracts_are_pinned() {
         assert_eq!(clickhouse_major_minor("26.3.17.4"), Some((26, 3)));
         assert_eq!(clickhouse_major_minor("26.4.1.1"), Some((26, 4)));
         assert_eq!(clickhouse_major_minor("invalid"), None);
         assert_eq!(REQUIRED_POSTGRES_MAJOR, 18);
         assert_eq!(REQUIRED_POSTGRES_LOCALE_PROVIDER, "b");
         assert_eq!(REQUIRED_POSTGRES_BUILTIN_LOCALE, "C.UTF-8");
-        assert_eq!(MAX_GIFTCARD_REDEMPTIONS_PER_INSERT, 16_383);
+        assert_eq!(COPY_SEND_BUFFER_BYTES, 4 * 1024 * 1024);
+        assert_eq!(MAX_COPY_ROW_BYTES, 16 * 1024 * 1024);
+        assert_eq!(MAX_LEGACY_PAYMENT_METHODS, 4_096);
+    }
+
+    #[test]
+    fn legacy_payment_classifier_has_a_fixed_memory_bound() {
+        let mapping = TABLE_MAPPINGS
+            .iter()
+            .find(|mapping| mapping.source == "v2_payment")
+            .expect("payment mapping");
+        let mut known = BTreeSet::new();
+        let mut stripe = BTreeSet::new();
+        for id in 1..=MAX_LEGACY_PAYMENT_METHODS {
+            let row = SourceRow::from([
+                ("id".to_string(), SourceValue::I64(id as i64)),
+                (
+                    "payment".to_string(),
+                    SourceValue::Text("Manual".to_string()),
+                ),
+            ]);
+            index_legacy_payment(mapping, &row, &mut known, &mut stripe).unwrap();
+        }
+        let overflow = SourceRow::from([
+            (
+                "id".to_string(),
+                SourceValue::I64(MAX_LEGACY_PAYMENT_METHODS as i64 + 1),
+            ),
+            (
+                "payment".to_string(),
+                SourceValue::Text("StripeCheckout".to_string()),
+            ),
+        ]);
+        let error = index_legacy_payment(mapping, &overflow, &mut known, &mut stripe)
+            .expect_err("the payment index must fail closed at its fixed bound");
+        assert!(error.to_string().contains("classification safety bound"));
+        assert_eq!(known.len(), MAX_LEGACY_PAYMENT_METHODS);
+        assert!(stripe.is_empty());
     }
 
     #[test]
@@ -4580,24 +4820,45 @@ mod tests {
     }
 
     #[test]
-    fn final_users_hash_binds_the_exact_inviter_graph() {
-        let base = "1".repeat(64);
-        let mut left = Sha256::new();
-        left.update(b"v2board.mysql-import.user-inviters.v1\0");
-        digest_user_inviter_row(&mut left, 1, Some(2));
-        digest_user_inviter_row(&mut left, 2, None);
-        let left = finalize_users_retained_sha256(&base, &hex::encode(left.finalize()));
-
-        let mut right = Sha256::new();
-        right.update(b"v2board.mysql-import.user-inviters.v1\0");
-        digest_user_inviter_row(&mut right, 1, None);
-        digest_user_inviter_row(&mut right, 2, Some(1));
-        let right = finalize_users_retained_sha256(&base, &hex::encode(right.finalize()));
-
-        assert_ne!(
-            left, right,
-            "equal counts must not hide a different inviter graph"
+    fn csv_copy_encoding_distinguishes_null_empty_and_hostile_text() {
+        let columns = ["null_value", "empty", "text", "bytes", "json"];
+        let row = CanonicalRow::from([
+            ("null_value".to_string(), CanonicalValue::Null),
+            ("empty".to_string(), CanonicalValue::Text(String::new())),
+            (
+                "text".to_string(),
+                CanonicalValue::Text("\\N,\"quote\"\r\nline\\tail".to_string()),
+            ),
+            ("bytes".to_string(), CanonicalValue::Bytes(vec![0, 255])),
+            (
+                "json".to_string(),
+                CanonicalValue::Json(CanonicalJson::parse(r#"{"quote":"a\"b"}"#).unwrap()),
+            ),
+        ]);
+        let encoded = String::from_utf8(encode_copy_row("fixture", &columns, &row).unwrap())
+            .expect("COPY CSV is UTF-8");
+        assert_eq!(
+            encoded,
+            concat!(
+                "\\N,\"\",\"\\N,\"\"quote\"\"\r\nline\\tail\",",
+                "\"\\x00ff\",\"{\"\"quote\"\":\"\"a\\",
+                "\"\"",
+                "b\"\"}\"\n",
+            )
         );
+    }
+
+    #[test]
+    fn csv_copy_encoding_rejects_nul_and_unrepresentable_unsigned_integer() {
+        for value in [
+            CanonicalValue::Text("bad\0text".to_string()),
+            CanonicalValue::Json(CanonicalJson::parse(r#"{"bad":"\u0000"}"#).unwrap()),
+            CanonicalValue::Json(CanonicalJson::parse(r#"{"\u0000":true}"#).unwrap()),
+            CanonicalValue::U64(u64::MAX),
+        ] {
+            let row = CanonicalRow::from([("value".to_string(), value)]);
+            assert!(encode_copy_row("fixture", &["value"], &row).is_err());
+        }
     }
 
     #[test]

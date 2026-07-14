@@ -668,8 +668,8 @@ fn coupon_discount_values_fail_closed_for_legacy_invalid_rows() {
 fn coupon_lookup_preserves_legacy_case_insensitive_identity() {
     let source = include_str!("lifecycle.rs");
     assert!(source.contains("WHERE lower(code) = lower($1)"));
-    let migration = include_str!("../../../../migrations-postgres/0001_initial.sql");
-    assert!(migration.contains("uniq_coupon_code_canonical"));
+    let finalize = include_str!("../../../../migrations-postgres/0002_import_finalize.sql");
+    assert!(finalize.contains("uniq_coupon_code_canonical"));
 }
 
 #[test]
@@ -2274,19 +2274,19 @@ fn add_period_time_floors_past_base_to_now_and_passes_through_unknown_period() {
 fn unfinished_order_invariant_has_both_lock_and_database_guard() {
     assert!(USER_FOR_ORDER_SQL.contains("FOR UPDATE"));
     assert!(UNFINISHED_ORDER_FOR_UPDATE_SQL.ends_with("FOR UPDATE"));
-    let migration = include_str!("../../../../migrations-postgres/0001_initial.sql");
-    assert!(migration.contains(UNFINISHED_ORDER_UNIQUE_KEY));
-    assert!(migration.contains("status"));
-    assert!(migration.contains("user_id"));
-    assert!(migration.contains("0, 1"));
+    let finalize = include_str!("../../../../migrations-postgres/0002_import_finalize.sql");
+    assert!(finalize.contains(UNFINISHED_ORDER_UNIQUE_KEY));
+    assert!(finalize.contains("status"));
+    assert!(finalize.contains("user_id"));
+    assert!(finalize.contains("0, 1"));
 }
 
 #[test]
 fn pending_payment_guards_have_a_selective_database_index() {
-    let migration = include_str!("../../../../migrations-postgres/0001_initial.sql");
-    assert!(migration.contains("idx_order_payment_status"));
-    assert!(migration.contains("payment_id"));
-    assert!(migration.contains("status"));
+    let finalize = include_str!("../../../../migrations-postgres/0002_import_finalize.sql");
+    assert!(finalize.contains("idx_order_payment_status"));
+    assert!(finalize.contains("payment_id"));
+    assert!(finalize.contains("status"));
 }
 
 #[test]

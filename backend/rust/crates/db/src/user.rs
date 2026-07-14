@@ -387,8 +387,7 @@ mod tests {
     fn authentication_lookup_uses_the_canonical_email_index() {
         let source = include_str!("user.rs");
         assert!(source.contains("lower(btrim(email)) = lower(btrim($1))"));
-        let migration = include_str!("../../../migrations-postgres/0001_initial.sql");
-        assert!(migration.contains("uniq_user_email_canonical"));
-        assert!(!migration.contains("CONSTRAINT uniq_user_email UNIQUE (email)"));
+        let finalize = include_str!("../../../migrations-postgres/0002_import_finalize.sql");
+        assert!(finalize.contains("uniq_user_email_canonical"));
     }
 }

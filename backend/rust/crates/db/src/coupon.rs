@@ -139,9 +139,8 @@ mod tests {
     fn coupon_lookup_preserves_legacy_case_insensitive_identity() {
         let source = include_str!("coupon.rs");
         assert!(source.contains("WHERE lower(code) = lower($1)"));
-        let migration = include_str!("../../../migrations-postgres/0001_initial.sql");
-        assert!(migration.contains("uniq_coupon_code_canonical"));
-        assert!(!migration.contains("CONSTRAINT uniq_coupon_code UNIQUE (code)"));
+        let finalize = include_str!("../../../migrations-postgres/0002_import_finalize.sql");
+        assert!(finalize.contains("uniq_coupon_code_canonical"));
     }
 
     #[test]

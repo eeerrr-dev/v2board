@@ -313,8 +313,8 @@ mod tests {
         assert!(COMMISSION_AUTO_CHECK_SQL.contains("FOR UPDATE SKIP LOCKED"));
         assert!(COMMISSION_CLAIM_SQL.contains("ORDER BY id"));
         assert!(COMMISSION_CLAIM_SQL.contains("FOR UPDATE SKIP LOCKED"));
-        let migration = include_str!("../../../migrations-postgres/0001_initial.sql");
-        assert!(migration.contains("idx_commission_claim"));
+        let finalize = include_str!("../../../migrations-postgres/0002_import_finalize.sql");
+        assert!(finalize.contains("idx_commission_claim"));
     }
 
     fn inviter(id: i64, invited_by: Option<i64>) -> InviterRow {

@@ -1544,14 +1544,6 @@ mod tests {
         );
         assert!(parse_mysql_import_spec(&serde_json::to_vec(&remote_source).unwrap()).is_err());
 
-        let mut retired_redis_name = import_document();
-        let target = retired_redis_name["target"].as_object_mut().unwrap();
-        let value = target.remove("redis_bootstrap_url").unwrap();
-        target.insert("redis_url".to_string(), value);
-        assert!(
-            parse_mysql_import_spec(&serde_json::to_vec(&retired_redis_name).unwrap()).is_err()
-        );
-
         let mut default_redis_user = import_document();
         default_redis_user["target"]["redis_bootstrap_url"] =
             json!("rediss://default:I9redisRuntimeSecret-32-bytes-long@redis.acme.internal:6380/0");

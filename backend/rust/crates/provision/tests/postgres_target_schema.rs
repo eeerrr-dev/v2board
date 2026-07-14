@@ -3,8 +3,8 @@ use std::collections::HashSet;
 use sqlx::{AssertSqlSafe, Executor, SqlSafeStr};
 use v2board_provision::mysql_import_converter::{
     DERIVED_MAPPINGS, TABLE_MAPPINGS, TARGET_GENERATED_COLUMNS, audit_registry,
-    deferred_user_inviter_sql, discarded_target_tables, sequence_reset_sql, target_compare_row_sql,
-    target_insert_sql,
+    derived_target_copy_sql, derived_target_verify_stream_sql, discarded_target_tables,
+    sequence_reset_sql, target_columns_in_order, target_copy_sql, target_verify_stream_sql,
 };
 
 static POSTGRES_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations-postgres");
@@ -47,15 +47,35 @@ async fn mysql_import_registry_matches_fresh_postgres_schema() {
         .await
         .expect("acquire the PostgreSQL schema-check connection");
     let mut prepared = 0_usize;
+    let mut copy_contracts = 0_usize;
     for mapping in TABLE_MAPPINGS {
+        let copy_sql = target_copy_sql(mapping).expect("build COPY SQL");
+        let quoted_columns = target_columns_in_order(mapping)
+            .iter()
+            .map(|column| format!("\"{column}\""))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let expected_copy_sql = format!(
+            "COPY \"{}\" ({quoted_columns}) FROM STDIN WITH (FORMAT csv, DELIMITER ',', QUOTE '\"', ESCAPE '\"', NULL E'\\\\N', HEADER false, ENCODING 'UTF8', ON_ERROR stop)",
+            mapping.target
+        );
+        assert_eq!(
+            copy_sql, expected_copy_sql,
+            "MySQL import COPY shape drifted for {} -> {}",
+            mapping.source, mapping.target
+        );
+        assert!(
+            !copy_sql.contains(';') && !copy_sql.contains('\n') && !copy_sql.contains("--"),
+            "MySQL import COPY SQL must remain one registry-owned statement for {} -> {}",
+            mapping.source,
+            mapping.target
+        );
+        copy_contracts += 1;
+
         for (purpose, sql) in [
             (
-                "insert",
-                target_insert_sql(mapping).expect("build insert SQL"),
-            ),
-            (
-                "compare",
-                target_compare_row_sql(mapping).expect("build compare SQL"),
+                "verification stream",
+                target_verify_stream_sql(mapping).expect("build verification-stream SQL"),
             ),
             (
                 "sequence reset",
@@ -74,11 +94,26 @@ async fn mysql_import_registry_matches_fresh_postgres_schema() {
             prepared += 1;
         }
     }
-    connection
-        .prepare(AssertSqlSafe(deferred_user_inviter_sql()).into_sql_str())
-        .await
-        .expect("prepare deferred MySQL import user inviter query");
-    prepared += 1;
+    for mapping in DERIVED_MAPPINGS {
+        let copy_sql = derived_target_copy_sql(mapping).expect("build derived COPY SQL");
+        assert!(copy_sql.starts_with(&format!("COPY \"{}\" (", mapping.target)));
+        assert!(copy_sql.ends_with("ENCODING 'UTF8', ON_ERROR stop)"));
+        assert!(!copy_sql.contains(';') && !copy_sql.contains('\n') && !copy_sql.contains("--"));
+        copy_contracts += 1;
+
+        let verify_sql = derived_target_verify_stream_sql(mapping)
+            .expect("build derived verification-stream SQL");
+        connection
+            .prepare(AssertSqlSafe(verify_sql).into_sql_str())
+            .await
+            .unwrap_or_else(|error| {
+                panic!(
+                    "prepare derived MySQL import verification query for {}: {error}",
+                    mapping.target
+                )
+            });
+        prepared += 1;
+    }
     drop(connection);
 
     for mapping in DERIVED_MAPPINGS {
@@ -145,19 +180,11 @@ async fn mysql_import_registry_matches_fresh_postgres_schema() {
         );
     }
 
-    for (table, canonical, retired_exact) in [
-        ("users", "uniq_user_email_canonical", "uniq_user_email"),
-        ("coupon", "uniq_coupon_code_canonical", "uniq_coupon_code"),
-        (
-            "invite_code",
-            "uniq_invite_code_canonical",
-            "uniq_invite_code",
-        ),
-        (
-            "gift_card",
-            "uniq_gift_card_code_canonical",
-            "uniq_gift_card_code",
-        ),
+    for (table, canonical) in [
+        ("users", "uniq_user_email_canonical"),
+        ("coupon", "uniq_coupon_code_canonical"),
+        ("invite_code", "uniq_invite_code_canonical"),
+        ("gift_card", "uniq_gift_card_code_canonical"),
     ] {
         let indexes = sqlx::query_scalar::<_, String>(
             r#"
@@ -173,10 +200,6 @@ async fn mysql_import_registry_matches_fresh_postgres_schema() {
         .into_iter()
         .collect::<HashSet<_>>();
         assert!(indexes.contains(canonical), "missing {table}.{canonical}");
-        assert!(
-            !indexes.contains(retired_exact),
-            "redundant exact index {table}.{retired_exact} remains"
-        );
     }
 
     for table in discarded_target_tables() {
@@ -326,8 +349,12 @@ async fn mysql_import_registry_matches_fresh_postgres_schema() {
         "a rejected worker acknowledgement requires an error code",
     );
 
-    assert_eq!(prepared, TABLE_MAPPINGS.len() * 3 + 1);
+    assert_eq!(
+        copy_contracts,
+        TABLE_MAPPINGS.len() + DERIVED_MAPPINGS.len()
+    );
+    assert_eq!(prepared, TABLE_MAPPINGS.len() * 2 + DERIVED_MAPPINGS.len());
     println!(
-        "MySQL import schema inventory: {prepared} generated target queries prepared; derived and fixed-empty targets verified"
+        "MySQL import schema inventory: {copy_contracts} COPY contracts audited and {prepared} generated target queries prepared; derived and fixed-empty targets verified"
     );
 }

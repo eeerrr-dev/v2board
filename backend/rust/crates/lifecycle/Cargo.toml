@@ -13,6 +13,7 @@ workspace = true
 anyhow.workspace = true
 chrono.workspace = true
 clickhouse.workspace = true
+futures-util.workspace = true
 hex.workspace = true
 percent-encoding.workspace = true
 redis.workspace = true

@@ -20,7 +20,8 @@ INSERT INTO v2_payment (
     handling_fee_fixed, handling_fee_percent, enable, sort, created_at, updated_at
 ) VALUES
     (1, '11111111111111111111111111111111', 'Manual', 'Manual payment', NULL,
-     '{"account":"migration-test"}', NULL, 10, 1.25, 1, 1, 1700000000, 1700000000),
+     '{"account":"migration-test","exact":9007199254740993.25,"scientific":1.2300e3}', NULL,
+     10, 1.25, 1, 1, 1700000000, 1700000000),
     (2, '22222222222222222222222222222222', 'StripeCheckout', 'Discarded Stripe', NULL,
      '{"secret_key":"must-not-migrate"}', NULL, 0, 0.00, 1, 2, 1700000000, 1700000000);
 
@@ -48,7 +49,7 @@ INSERT INTO v2_user (
      0, NULL, 0, NULL, 0, 1700000000, 0, 0, 107374182400, 5,
      0, 0, NULL, 0, NULL, '00000000-0000-0000-0000-000000000002',
      1, 1, NULL, 0, 1, 1, '22222222222222222222222222222222',
-     1800000000, NULL, 1700000000, 1700000000);
+     1800000000, '', 1700000000, 1700000000);
 
 INSERT INTO v2_order (
     id, invite_user_id, user_id, plan_id, coupon_id, payment_id, type, period,
@@ -87,7 +88,11 @@ INSERT INTO v2_knowledge (
 ) VALUES (1, 'zh-CN', 'guide', 'Getting started', 'Body', 1, 1, 1700000000, 1700000000);
 
 INSERT INTO v2_notice (id, title, content, `show`, img_url, tags, created_at, updated_at)
-VALUES (1, 'Notice', 'Content', 1, NULL, '["弹窗"]', 1700000000, 1700000000);
+VALUES (
+    1, 'Notice',
+    CONCAT(CHAR(92), 'N, "quoted"', CHAR(13), CHAR(10), 'line', CHAR(92), 'tail'),
+    1, NULL, '["弹窗"]', 1700000000, 1700000000
+);
 
 INSERT INTO v2_ticket (
     id, user_id, subject, level, status, reply_status, created_at, updated_at

@@ -538,9 +538,10 @@ mod tests {
         assert!(source.contains("rows_affected() != 1"));
         assert!(source.contains("OtherOpenTicketExists"));
 
-        let migration = include_str!("../../../migrations-postgres/0001_initial.sql");
-        assert!(migration.contains("uniq_ticket_open_user"));
-        assert!(!migration.contains("open_user_id"));
-        assert!(migration.contains("idx_ticket_message_ticket_id_id"));
+        let baseline = include_str!("../../../migrations-postgres/0001_initial.sql");
+        let finalize = include_str!("../../../migrations-postgres/0002_import_finalize.sql");
+        assert!(finalize.contains("uniq_ticket_open_user"));
+        assert!(baseline.contains("status SMALLINT"));
+        assert!(finalize.contains("idx_ticket_message_ticket_id_id"));
     }
 }

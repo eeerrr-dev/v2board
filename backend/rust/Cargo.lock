@@ -3551,6 +3551,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "clickhouse",
+ "futures-util",
  "hex",
  "percent-encoding",
  "redis",

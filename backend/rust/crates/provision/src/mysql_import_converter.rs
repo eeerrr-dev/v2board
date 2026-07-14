@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
-use serde_json::{Number, Value};
+use serde_json::{Number, Value, value::RawValue};
 use sha2::{Digest, Sha256, Sha384};
 
 use crate::mysql_import_policy::{
@@ -27,19 +27,23 @@ pub const MYSQL_SOURCE_INSTALL_SQL_SHA256: &str =
 pub const MYSQL_IMPORT_SCHEMA_VERSION: u32 = 1;
 pub const TARGET_POSTGRES_SCHEMA_ID: &str = "migrations-postgres/mysql-import-v1";
 pub const MYSQL_IMPORT_REGISTRY_VERSION: u32 = 1;
-pub const DEFAULT_BATCH_SIZE: u32 = 1_000;
-pub const MAX_BATCH_SIZE: u32 = 100_000;
-pub const POSTGRES_MAX_BIND_PARAMETERS: usize = 65_535;
 /// Native identities are positive. The source preflight rejects every
-/// non-positive business primary key before any target is created, so keyset
-/// scans start at the exact lower bound of the accepted domain.
-pub const INITIAL_SOURCE_ID_CURSOR: i64 = 0;
+/// non-positive business primary key before any target is created, so ordered
+/// source streams start at the exact lower bound of the accepted domain.
+pub const SOURCE_ID_LOWER_BOUND: i64 = 0;
 
-const TARGET_POSTGRES_MIGRATIONS: &[(i64, &str, &[u8])] = &[(
-    1,
-    "0001_initial.sql",
-    include_bytes!("../../../migrations-postgres/0001_initial.sql"),
-)];
+const TARGET_POSTGRES_MIGRATIONS: &[(i64, &str, &[u8])] = &[
+    (
+        1,
+        "0001_initial.sql",
+        include_bytes!("../../../migrations-postgres/0001_initial.sql"),
+    ),
+    (
+        2,
+        "0002_import_finalize.sql",
+        include_bytes!("../../../migrations-postgres/0002_import_finalize.sql"),
+    ),
+];
 
 const DECIMAL: ColumnRule = ColumnRule::ExactDecimal;
 const JSON_ANY: ColumnRule = ColumnRule::Json(JsonShape::Any);
@@ -108,15 +112,6 @@ pub struct AddedColumn {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct DeferredColumn {
-    pub source: &'static str,
-    pub target: &'static str,
-    pub source_referenced_table: &'static str,
-    pub referenced_target_table: &'static str,
-    pub reason: &'static str,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ConsumedSourceColumn {
     pub source: &'static str,
     pub reason: &'static str,
@@ -139,7 +134,6 @@ pub struct TableMapping {
     pub direct_columns: &'static [&'static str],
     pub transformed_columns: &'static [TransformColumn],
     pub added_columns: &'static [AddedColumn],
-    pub deferred_columns: &'static [DeferredColumn],
     /// Source columns consumed by a derived target rather than the base row.
     pub consumed_source_columns: &'static [ConsumedSourceColumn],
 }
@@ -155,8 +149,8 @@ pub struct DerivedMapping {
     pub target: &'static str,
     pub kind: DerivedMappingKind,
     pub source_tables: &'static [&'static str],
-    /// Complete target row written by the derived mapping. The live PostgreSQL
-    /// schema gate prepares base inserts and verifies every column listed here.
+    /// Complete target row written by the derived COPY stream. The live
+    /// PostgreSQL schema gate verifies every column listed here.
     pub target_columns: &'static [&'static str],
     pub key_columns: &'static [&'static str],
     pub rule: &'static str,
@@ -191,7 +185,6 @@ const SERVER_GROUP: TableMapping = TableMapping {
     direct_columns: &["id", "name", "created_at", "updated_at"],
     transformed_columns: &[],
     added_columns: &[],
-    deferred_columns: &[],
     consumed_source_columns: &[],
 };
 
@@ -226,7 +219,6 @@ const PLAN: TableMapping = TableMapping {
     ],
     transformed_columns: &[],
     added_columns: &[],
-    deferred_columns: &[],
     consumed_source_columns: &[],
 };
 
@@ -269,7 +261,6 @@ const PAYMENT: TableMapping = TableMapping {
         value: AddedValue::Null,
         provenance: "legacy payment rows are active history; native archival did not exist",
     }],
-    deferred_columns: &[],
     consumed_source_columns: &[],
 };
 
@@ -309,7 +300,6 @@ const COUPON: TableMapping = TableMapping {
         },
     ],
     added_columns: &[],
-    deferred_columns: &[],
     consumed_source_columns: &[],
 };
 
@@ -320,6 +310,7 @@ const USER: TableMapping = TableMapping {
     identity_width: IdentityWidth::I64,
     direct_columns: &[
         "id",
+        "invite_user_id",
         "telegram_id",
         "email",
         "password",
@@ -371,13 +362,6 @@ const USER: TableMapping = TableMapping {
             provenance: "legacy reset scheduling has no durable per-user key",
         },
     ],
-    deferred_columns: &[DeferredColumn {
-        source: "invite_user_id",
-        target: "invite_user_id",
-        source_referenced_table: "v2_user",
-        referenced_target_table: "users",
-        reason: "self references are patched after every user id exists; NULL and cycles remain exact",
-    }],
     consumed_source_columns: &[],
 };
 
@@ -423,7 +407,6 @@ const ORDER: TableMapping = TableMapping {
         value: AddedValue::Null,
         provenance: "legacy orders predate native callback hash capture",
     }],
-    deferred_columns: &[],
     consumed_source_columns: &[],
 };
 
@@ -444,7 +427,6 @@ const COMMISSION_LOG: TableMapping = TableMapping {
     ],
     transformed_columns: &[],
     added_columns: &[],
-    deferred_columns: &[],
     consumed_source_columns: &[],
 };
 
@@ -464,7 +446,6 @@ const INVITE_CODE: TableMapping = TableMapping {
     ],
     transformed_columns: &[],
     added_columns: &[],
-    deferred_columns: &[],
     consumed_source_columns: &[],
 };
 
@@ -488,7 +469,6 @@ const GIFTCARD: TableMapping = TableMapping {
     ],
     transformed_columns: &[],
     added_columns: &[],
-    deferred_columns: &[],
     consumed_source_columns: &[ConsumedSourceColumn {
         source: "used_user_ids",
         reason: "expanded by the gift_card_redemption target mapping",
@@ -505,7 +485,6 @@ macro_rules! direct_table {
             direct_columns: &[$($column),+],
             transformed_columns: &[],
             added_columns: &[],
-            deferred_columns: &[],
             consumed_source_columns: &[],
         };
     };
@@ -552,7 +531,6 @@ const NOTICE: TableMapping = TableMapping {
         referenced_target_table: None,
     }],
     added_columns: &[],
-    deferred_columns: &[],
     consumed_source_columns: &[],
 };
 
@@ -802,7 +780,7 @@ pub const SCALAR_REFERENCES: &[ScalarReference] = &[
     },
 ];
 
-/// Columns intentionally omitted from inserts because PostgreSQL derives them
+/// Columns intentionally omitted from COPY because PostgreSQL derives them
 /// from preserved legacy values. Final verification must still compare their
 /// evaluated meaning.
 pub const TARGET_GENERATED_COLUMNS: &[(&str, &[&str])] = &[("orders", &["referenced_plan_id"])];
@@ -817,8 +795,7 @@ pub enum SourceValue {
     Bytes(Vec<u8>),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", content = "value", rename_all = "snake_case")]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CanonicalValue {
     Null,
     I64(i64),
@@ -826,7 +803,120 @@ pub enum CanonicalValue {
     Decimal(String),
     Text(String),
     Bytes(Vec<u8>),
-    Json(Value),
+    Json(CanonicalJson),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalJson(ExactJsonValue);
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum ExactJsonValue {
+    Null,
+    Bool(bool),
+    Number(String),
+    String(String),
+    Array(Vec<Self>),
+    Object(BTreeMap<String, Self>),
+}
+
+impl CanonicalJson {
+    pub fn parse(text: &str) -> Result<Self, String> {
+        let raw = serde_json::from_str::<Box<RawValue>>(text).map_err(|error| error.to_string())?;
+        parse_exact_json_value(&raw).map(Self)
+    }
+
+    fn from_serde_value(value: &Value) -> Result<Self, String> {
+        let encoded = serde_json::to_string(value).map_err(|error| error.to_string())?;
+        Self::parse(&encoded)
+    }
+
+    fn is_array(&self) -> bool {
+        matches!(self.0, ExactJsonValue::Array(_))
+    }
+
+    pub fn to_compact_json(&self) -> Result<String, serde_json::Error> {
+        let mut encoded = String::new();
+        write_exact_json_value(&mut encoded, &self.0)?;
+        Ok(encoded)
+    }
+
+    pub fn contains_nul(&self) -> bool {
+        exact_json_contains_nul(&self.0)
+    }
+}
+
+fn parse_exact_json_value(raw: &RawValue) -> Result<ExactJsonValue, String> {
+    let text = raw.get().trim();
+    match text.as_bytes().first().copied() {
+        Some(b'n') if text == "null" => Ok(ExactJsonValue::Null),
+        Some(b't') if text == "true" => Ok(ExactJsonValue::Bool(true)),
+        Some(b'f') if text == "false" => Ok(ExactJsonValue::Bool(false)),
+        Some(b'\"') => serde_json::from_str(text)
+            .map(ExactJsonValue::String)
+            .map_err(|error| error.to_string()),
+        Some(b'[') => serde_json::from_str::<Vec<Box<RawValue>>>(text)
+            .map_err(|error| error.to_string())?
+            .iter()
+            .map(|value| parse_exact_json_value(value))
+            .collect::<Result<Vec<_>, _>>()
+            .map(ExactJsonValue::Array),
+        Some(b'{') => serde_json::from_str::<BTreeMap<String, Box<RawValue>>>(text)
+            .map_err(|error| error.to_string())?
+            .into_iter()
+            .map(|(key, value)| parse_exact_json_value(&value).map(|value| (key, value)))
+            .collect::<Result<BTreeMap<_, _>, _>>()
+            .map(ExactJsonValue::Object),
+        Some(_) => canonical_json_number(text)
+            .map(ExactJsonValue::Number)
+            .ok_or_else(|| "number cannot be represented exactly".to_string()),
+        None => Err("JSON value is empty".to_string()),
+    }
+}
+
+fn write_exact_json_value(
+    output: &mut String,
+    value: &ExactJsonValue,
+) -> Result<(), serde_json::Error> {
+    match value {
+        ExactJsonValue::Null => output.push_str("null"),
+        ExactJsonValue::Bool(value) => output.push_str(if *value { "true" } else { "false" }),
+        ExactJsonValue::Number(value) => output.push_str(value),
+        ExactJsonValue::String(value) => output.push_str(&serde_json::to_string(value)?),
+        ExactJsonValue::Array(values) => {
+            output.push('[');
+            for (index, value) in values.iter().enumerate() {
+                if index != 0 {
+                    output.push(',');
+                }
+                write_exact_json_value(output, value)?;
+            }
+            output.push(']');
+        }
+        ExactJsonValue::Object(values) => {
+            output.push('{');
+            for (index, (key, value)) in values.iter().enumerate() {
+                if index != 0 {
+                    output.push(',');
+                }
+                output.push_str(&serde_json::to_string(key)?);
+                output.push(':');
+                write_exact_json_value(output, value)?;
+            }
+            output.push('}');
+        }
+    }
+    Ok(())
+}
+
+fn exact_json_contains_nul(value: &ExactJsonValue) -> bool {
+    match value {
+        ExactJsonValue::String(value) => value.contains('\0'),
+        ExactJsonValue::Array(values) => values.iter().any(exact_json_contains_nul),
+        ExactJsonValue::Object(values) => values
+            .iter()
+            .any(|(key, value)| key.contains('\0') || exact_json_contains_nul(value)),
+        ExactJsonValue::Null | ExactJsonValue::Bool(_) | ExactJsonValue::Number(_) => false,
+    }
 }
 
 pub type SourceRow = BTreeMap<String, SourceValue>;
@@ -870,12 +960,12 @@ pub enum ConverterError {
         column: String,
         index: usize,
     },
-    #[error("batch ids for {table} are not strictly increasing after cursor {after_id}")]
-    NonMonotonicBatch { table: String, after_id: i64 },
-    #[error("batch size {0} is outside 1..={MAX_BATCH_SIZE}")]
-    InvalidBatchSize(u32),
-    #[error("target batch has {parameters} bind parameters, above PostgreSQL's supported limit")]
-    TargetBatchParameterLimit { parameters: usize },
+    #[error("{table}.{column} integer {value} cannot be represented by PostgreSQL BIGINT")]
+    IntegerOutOfRange {
+        table: String,
+        column: String,
+        value: u64,
+    },
     #[error(transparent)]
     OrderPolicy(#[from] LegacyOrderPolicyError),
 }
@@ -976,18 +1066,6 @@ pub fn audit_registry() -> Result<(), ConverterError> {
                 ));
             }
         }
-        for column in mapping.deferred_columns {
-            validate_identifier(column.source)?;
-            validate_identifier(column.target)?;
-            validate_identifier(column.source_referenced_table)?;
-            validate_identifier(column.referenced_target_table)?;
-            if !source_columns.insert(column.source) || !target_columns.insert(column.target) {
-                return registry_error(format!(
-                    "duplicate deferred column {}.{}",
-                    mapping.source, column.source
-                ));
-            }
-        }
         for column in mapping.consumed_source_columns {
             validate_identifier(column.source)?;
             if !source_columns.insert(column.source) {
@@ -1044,17 +1122,6 @@ pub fn audit_registry() -> Result<(), ConverterError> {
                         mapping.source, column.source
                     ));
                 }
-            }
-        }
-        for column in mapping.deferred_columns {
-            if !TABLE_MAPPINGS.iter().any(|candidate| {
-                candidate.source == column.source_referenced_table
-                    && candidate.target == column.referenced_target_table
-            }) {
-                return registry_error(format!(
-                    "{}.{} has mismatched deferred source/target reference metadata",
-                    mapping.source, column.source
-                ));
             }
         }
     }
@@ -1238,14 +1305,6 @@ pub fn registry_sha256() -> Result<String, ConverterError> {
             digest_field(&mut digest, format!("{:?}", column.value).as_bytes());
             digest_field(&mut digest, column.provenance.as_bytes());
         }
-        for column in mapping.deferred_columns {
-            digest_field(&mut digest, b"deferred");
-            digest_field(&mut digest, column.source.as_bytes());
-            digest_field(&mut digest, column.target.as_bytes());
-            digest_field(&mut digest, column.source_referenced_table.as_bytes());
-            digest_field(&mut digest, column.referenced_target_table.as_bytes());
-            digest_field(&mut digest, column.reason.as_bytes());
-        }
         for column in mapping.consumed_source_columns {
             digest_field(&mut digest, b"consumed");
             digest_field(&mut digest, column.source.as_bytes());
@@ -1306,9 +1365,8 @@ fn transform_row(
     mapping: &TableMapping,
     source: &SourceRow,
 ) -> Result<CanonicalRow, ConverterError> {
-    let expected = source_column_names(mapping);
     for column in source.keys() {
-        if !expected.contains(column.as_str()) {
+        if !mapping_has_source_column(mapping, column) {
             return Err(ConverterError::UnconsumedColumn {
                 table: mapping.source.to_string(),
                 column: column.clone(),
@@ -1332,11 +1390,8 @@ fn transform_row(
         };
         target.insert(column.target.to_string(), value);
     }
-    // Deferred and consumed columns must still be present in the source row so
-    // a partial SELECT cannot accidentally look complete.
-    for column in mapping.deferred_columns {
-        required_source_value(mapping, source, column.source)?;
-    }
+    // Consumed columns must still be present in the source row so a partial
+    // SELECT cannot accidentally look complete.
     for column in mapping.consumed_source_columns {
         required_source_value(mapping, source, column.source)?;
     }
@@ -1476,8 +1531,16 @@ fn source_optional_text(
     }
 }
 
-fn source_column_names(mapping: &TableMapping) -> BTreeSet<&str> {
-    source_columns_in_order(mapping).into_iter().collect()
+fn mapping_has_source_column(mapping: &TableMapping, name: &str) -> bool {
+    mapping.direct_columns.contains(&name)
+        || mapping
+            .transformed_columns
+            .iter()
+            .any(|column| column.source == name)
+        || mapping
+            .consumed_source_columns
+            .iter()
+            .any(|column| column.source == name)
 }
 
 fn source_columns_in_order(mapping: &TableMapping) -> Vec<&str> {
@@ -1491,7 +1554,6 @@ fn source_columns_in_order(mapping: &TableMapping) -> Vec<&str> {
                 .iter()
                 .map(|column| column.source),
         )
-        .chain(mapping.deferred_columns.iter().map(|column| column.source))
         .chain(
             mapping
                 .consumed_source_columns
@@ -1548,7 +1610,7 @@ fn apply_rule(
         }
         ColumnRule::Json(shape) => {
             let text = source_text(mapping, column, source)?;
-            let value = parse_json(mapping, column, text)?;
+            let value = parse_canonical_json(mapping, column, text)?;
             if !json_shape_matches(&value, shape) {
                 return Err(ConverterError::InvalidJson {
                     table: mapping.source.to_string(),
@@ -1566,7 +1628,13 @@ fn apply_rule(
             let text = source_text(mapping, column, source)?;
             let value = normalize_id_array(mapping, column, text, maximum, require_non_empty)?;
             match output {
-                JsonOutput::Json => Ok(CanonicalValue::Json(value)),
+                JsonOutput::Json => CanonicalJson::from_serde_value(&value)
+                    .map(CanonicalValue::Json)
+                    .map_err(|message| ConverterError::InvalidJson {
+                        table: mapping.source.to_string(),
+                        column: column.source.to_string(),
+                        message,
+                    }),
                 JsonOutput::CanonicalText => Ok(CanonicalValue::Text(value.to_string())),
             }
         }
@@ -1607,19 +1675,19 @@ fn source_kind(value: &SourceValue) -> &'static str {
     }
 }
 
-fn parse_json(
+fn parse_canonical_json(
     mapping: &TableMapping,
     column: &TransformColumn,
     text: &str,
-) -> Result<Value, ConverterError> {
-    serde_json::from_str(text).map_err(|error| ConverterError::InvalidJson {
+) -> Result<CanonicalJson, ConverterError> {
+    CanonicalJson::parse(text).map_err(|message| ConverterError::InvalidJson {
         table: mapping.source.to_string(),
         column: column.source.to_string(),
-        message: error.to_string(),
+        message,
     })
 }
 
-fn json_shape_matches(value: &Value, shape: JsonShape) -> bool {
+fn json_shape_matches(value: &CanonicalJson, shape: JsonShape) -> bool {
     match shape {
         JsonShape::Any => true,
         JsonShape::Array => value.is_array(),
@@ -1633,7 +1701,11 @@ fn normalize_id_array(
     maximum: u64,
     require_non_empty: bool,
 ) -> Result<Value, ConverterError> {
-    let value = parse_json(mapping, column, text)?;
+    let value: Value = serde_json::from_str(text).map_err(|error| ConverterError::InvalidJson {
+        table: mapping.source.to_string(),
+        column: column.source.to_string(),
+        message: error.to_string(),
+    })?;
     let members = value
         .as_array()
         .ok_or_else(|| ConverterError::InvalidJson {
@@ -1708,7 +1780,7 @@ fn normalize_decimal(value: &str) -> Option<String> {
     }
 }
 
-pub fn source_batch_sql(mapping: &TableMapping) -> Result<String, ConverterError> {
+pub fn source_stream_sql(mapping: &TableMapping) -> Result<String, ConverterError> {
     audit_registry()?;
     let columns = source_columns_in_order(mapping)
         .into_iter()
@@ -1716,88 +1788,68 @@ pub fn source_batch_sql(mapping: &TableMapping) -> Result<String, ConverterError
         .collect::<Vec<_>>()
         .join(", ");
     Ok(format!(
-        "SELECT {columns} FROM {} WHERE `id` > ? ORDER BY `id` ASC LIMIT ?",
+        "SELECT {columns} FROM {} ORDER BY `id` ASC",
         mysql_identifier(mapping.source)
     ))
 }
 
-pub fn target_insert_sql(mapping: &TableMapping) -> Result<String, ConverterError> {
-    target_batch_insert_sql(mapping, 1)
-}
-
-pub fn maximum_rows_per_target_insert(mapping: &TableMapping) -> Result<usize, ConverterError> {
-    let column_count = target_insert_columns(mapping).len();
-    if column_count == 0 {
-        return registry_error(format!(
-            "target table {} has no insert columns",
-            mapping.target
-        ));
-    }
-    Ok(POSTGRES_MAX_BIND_PARAMETERS / column_count)
-}
-
-pub fn target_batch_insert_sql(
-    mapping: &TableMapping,
-    row_count: usize,
-) -> Result<String, ConverterError> {
+pub fn target_copy_sql(mapping: &TableMapping) -> Result<String, ConverterError> {
     audit_registry()?;
-    if row_count == 0 || row_count > MAX_BATCH_SIZE as usize {
-        return Err(ConverterError::InvalidBatchSize(
-            u32::try_from(row_count).unwrap_or(u32::MAX),
-        ));
-    }
-    let columns = target_insert_columns(mapping);
-    let maximum_rows = maximum_rows_per_target_insert(mapping)?;
-    let parameter_count =
-        columns
-            .len()
-            .checked_mul(row_count)
-            .ok_or(ConverterError::TargetBatchParameterLimit {
-                parameters: usize::MAX,
-            })?;
-    if row_count > maximum_rows || parameter_count > POSTGRES_MAX_BIND_PARAMETERS {
-        return Err(ConverterError::TargetBatchParameterLimit {
-            parameters: parameter_count,
-        });
-    }
+    Ok(copy_sql(mapping.target, &target_columns_in_order(mapping)))
+}
+
+pub fn derived_target_copy_sql(mapping: &DerivedMapping) -> Result<String, ConverterError> {
+    audit_registry()?;
+    Ok(copy_sql(mapping.target, mapping.target_columns))
+}
+
+fn copy_sql(table: &str, columns: &[&str]) -> String {
     let quoted = columns
         .iter()
         .map(|column| postgres_identifier(column))
         .collect::<Vec<_>>()
         .join(", ");
-    let parameters = (0..row_count)
-        .map(|row| {
-            let first = row * columns.len() + 1;
-            let values = (first..first + columns.len())
-                .map(|index| format!("${index}"))
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("({values})")
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-    Ok(format!(
-        "INSERT INTO {} ({quoted}) VALUES {parameters}",
-        postgres_identifier(mapping.target)
+    format!(
+        "COPY {} ({quoted}) FROM STDIN WITH (FORMAT csv, DELIMITER ',', QUOTE '\"', ESCAPE '\"', NULL E'\\\\N', HEADER false, ENCODING 'UTF8', ON_ERROR stop)",
+        postgres_identifier(table)
+    )
+}
+
+pub fn target_verify_stream_sql(mapping: &TableMapping) -> Result<String, ConverterError> {
+    audit_registry()?;
+    Ok(verify_stream_sql(
+        mapping.target,
+        &target_columns_in_order(mapping),
+        &["id"],
     ))
 }
 
-pub fn target_compare_row_sql(mapping: &TableMapping) -> Result<String, ConverterError> {
+pub fn derived_target_verify_stream_sql(
+    mapping: &DerivedMapping,
+) -> Result<String, ConverterError> {
     audit_registry()?;
-    let columns = target_insert_columns(mapping)
+    Ok(verify_stream_sql(
+        mapping.target,
+        mapping.target_columns,
+        mapping.key_columns,
+    ))
+}
+
+fn verify_stream_sql(table: &str, columns: &[&str], key_columns: &[&str]) -> String {
+    let columns = columns
         .iter()
         .map(|column| postgres_identifier(column))
         .collect::<Vec<_>>()
         .join(", ");
-    Ok(format!(
-        "SELECT {columns} FROM {} WHERE {} = $1",
-        postgres_identifier(mapping.target),
-        postgres_identifier("id")
-    ))
-}
-
-pub fn deferred_user_inviter_sql() -> &'static str {
-    "UPDATE \"users\" SET \"invite_user_id\" = $2 WHERE \"id\" = $1 AND \"invite_user_id\" IS NOT DISTINCT FROM $3"
+    let order = key_columns
+        .iter()
+        .map(|column| format!("{} ASC", postgres_identifier(column)))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "SELECT {columns} FROM {} ORDER BY {order}",
+        postgres_identifier(table)
+    )
 }
 
 pub fn sequence_reset_sql(mapping: &TableMapping) -> Result<String, ConverterError> {
@@ -1809,7 +1861,7 @@ pub fn sequence_reset_sql(mapping: &TableMapping) -> Result<String, ConverterErr
     ))
 }
 
-fn target_insert_columns(mapping: &TableMapping) -> Vec<&str> {
+pub fn target_columns_in_order(mapping: &TableMapping) -> Vec<&str> {
     mapping
         .direct_columns
         .iter()
@@ -1832,68 +1884,79 @@ fn postgres_identifier(identifier: &str) -> String {
     format!("\"{identifier}\"")
 }
 
-pub fn validate_batch_ids(
-    mapping: &TableMapping,
-    after_id: i64,
-    rows: &[SourceRow],
-    batch_size: u32,
-) -> Result<i64, ConverterError> {
-    if batch_size == 0 || batch_size > MAX_BATCH_SIZE {
-        return Err(ConverterError::InvalidBatchSize(batch_size));
-    }
-    if rows.len() > batch_size as usize {
-        return Err(ConverterError::InvalidBatchSize(batch_size));
-    }
-    let mut previous = after_id;
-    for row in rows {
-        let id = match row.get("id") {
-            Some(SourceValue::I64(id)) => *id,
-            Some(SourceValue::U64(id)) => {
-                i64::try_from(*id).map_err(|_| ConverterError::NonMonotonicBatch {
-                    table: mapping.target.to_string(),
-                    after_id,
-                })?
-            }
-            _ => {
-                return Err(ConverterError::NonMonotonicBatch {
-                    table: mapping.target.to_string(),
-                    after_id,
-                });
-            }
-        };
-        if id <= previous {
-            return Err(ConverterError::NonMonotonicBatch {
-                table: mapping.target.to_string(),
-                after_id,
-            });
-        }
-        previous = id;
-    }
-    Ok(previous)
+/// Streaming canonical digest for the typed rows written to and read back from
+/// PostgreSQL. Transport framing is deliberately excluded.
+pub struct CanonicalRowsHasher {
+    table: String,
+    columns: Vec<String>,
+    rows: u64,
+    digest: Sha256,
 }
 
-pub fn canonical_rows_sha256(
-    mapping: &TableMapping,
-    rows: &[CanonicalRow],
-) -> Result<String, ConverterError> {
-    audit_registry()?;
-    let columns = target_insert_columns(mapping);
-    let mut digest = Sha256::new();
-    digest.update(b"v2board-mysql-import-canonical-rows-v1\0");
-    digest_field(&mut digest, mapping.target.as_bytes());
-    for row in rows {
-        for column in &columns {
-            digest_field(&mut digest, column.as_bytes());
-            let value = row
-                .get(*column)
-                .ok_or_else(|| ConverterError::MissingColumn {
-                    table: mapping.target.to_string(),
-                    column: (*column).to_string(),
-                })?;
-            digest_canonical_value(&mut digest, value);
-        }
+impl CanonicalRowsHasher {
+    pub fn for_mapping(mapping: &TableMapping) -> Result<Self, ConverterError> {
+        audit_registry()?;
+        Self::new(mapping.target, &target_columns_in_order(mapping))
     }
-    Ok(hex::encode(digest.finalize()))
+
+    pub fn new(table: &str, columns: &[&str]) -> Result<Self, ConverterError> {
+        validate_identifier(table)?;
+        if columns.is_empty() {
+            return registry_error(format!("target table {table} has no COPY columns"));
+        }
+        let mut seen = BTreeSet::new();
+        let mut digest = Sha256::new();
+        digest.update(b"v2board-mysql-import-canonical-rows-v2\0");
+        digest_field(&mut digest, table.as_bytes());
+        for column in columns {
+            validate_identifier(column)?;
+            if !seen.insert(*column) {
+                return registry_error(format!("target table {table} repeats column {column}"));
+            }
+            digest_field(&mut digest, column.as_bytes());
+        }
+        Ok(Self {
+            table: table.to_string(),
+            columns: columns.iter().map(|column| (*column).to_string()).collect(),
+            rows: 0,
+            digest,
+        })
+    }
+
+    pub fn update_row(&mut self, row: &CanonicalRow) -> Result<(), ConverterError> {
+        if row.len() != self.columns.len() {
+            return registry_error(format!(
+                "target row for {} has {} columns; expected {}",
+                self.table,
+                row.len(),
+                self.columns.len()
+            ));
+        }
+        digest_field(&mut self.digest, b"row");
+        for column in &self.columns {
+            let value = row
+                .get(column)
+                .ok_or_else(|| ConverterError::MissingColumn {
+                    table: self.table.clone(),
+                    column: column.clone(),
+                })?;
+            digest_canonical_value(&mut self.digest, &self.table, column, value)?;
+        }
+        self.rows = self.rows.checked_add(1).ok_or_else(|| {
+            ConverterError::Registry(format!("row count overflow for {}", self.table))
+        })?;
+        Ok(())
+    }
+
+    pub fn rows(&self) -> u64 {
+        self.rows
+    }
+
+    pub fn finish(mut self) -> (u64, String) {
+        digest_field(&mut self.digest, b"end");
+        digest_field(&mut self.digest, &self.rows.to_be_bytes());
+        (self.rows, hex::encode(self.digest.finalize()))
+    }
 }
 
 /// Expands legacy set-valued redemption ids without inventing a historical
@@ -1947,11 +2010,27 @@ pub fn expand_giftcard_redemptions(
     Ok(rows)
 }
 
-fn digest_canonical_value(digest: &mut Sha256, value: &CanonicalValue) {
+fn digest_canonical_value(
+    digest: &mut Sha256,
+    table: &str,
+    column: &str,
+    value: &CanonicalValue,
+) -> Result<(), ConverterError> {
     match value {
         CanonicalValue::Null => digest_field(digest, b"null"),
-        CanonicalValue::I64(value) => digest_field(digest, format!("i:{value}").as_bytes()),
-        CanonicalValue::U64(value) => digest_field(digest, format!("u:{value}").as_bytes()),
+        CanonicalValue::I64(value) => {
+            digest_field(digest, b"integer");
+            digest_field(digest, value.to_string().as_bytes());
+        }
+        CanonicalValue::U64(value) => {
+            let value = i64::try_from(*value).map_err(|_| ConverterError::IntegerOutOfRange {
+                table: table.to_string(),
+                column: column.to_string(),
+                value: *value,
+            })?;
+            digest_field(digest, b"integer");
+            digest_field(digest, value.to_string().as_bytes());
+        }
         CanonicalValue::Decimal(value) => digest_field(digest, format!("d:{value}").as_bytes()),
         CanonicalValue::Text(value) => {
             digest_field(digest, b"text");
@@ -1963,9 +2042,85 @@ fn digest_canonical_value(digest: &mut Sha256, value: &CanonicalValue) {
         }
         CanonicalValue::Json(value) => {
             digest_field(digest, b"json");
-            digest_field(digest, value.to_string().as_bytes());
+            digest_json_value(digest, &value.0);
         }
     }
+    Ok(())
+}
+
+fn digest_json_value(digest: &mut Sha256, value: &ExactJsonValue) {
+    match value {
+        ExactJsonValue::Null => digest_field(digest, b"null"),
+        ExactJsonValue::Bool(value) => {
+            digest_field(digest, if *value { b"true" } else { b"false" });
+        }
+        ExactJsonValue::Number(value) => {
+            digest_field(digest, b"number");
+            digest_field(digest, value.as_bytes());
+        }
+        ExactJsonValue::String(value) => {
+            digest_field(digest, b"string");
+            digest_field(digest, value.as_bytes());
+        }
+        ExactJsonValue::Array(values) => {
+            digest_field(digest, b"array");
+            digest_field(digest, &(values.len() as u64).to_be_bytes());
+            for value in values {
+                digest_json_value(digest, value);
+            }
+        }
+        ExactJsonValue::Object(values) => {
+            digest_field(digest, b"object");
+            digest_field(digest, &(values.len() as u64).to_be_bytes());
+            for (key, value) in values {
+                digest_field(digest, key.as_bytes());
+                digest_json_value(digest, value);
+            }
+        }
+    }
+}
+
+/// Canonicalizes one already-validated JSON number by exact base-10 value.
+/// PostgreSQL JSONB stores JSON numbers as NUMERIC, so spelling differences
+/// such as `1.2300e3` and `1230` must hash equally without passing through f64.
+fn canonical_json_number(value: &str) -> Option<String> {
+    let (negative, unsigned) = value
+        .strip_prefix('-')
+        .map_or((false, value), |unsigned| (true, unsigned));
+    let (mantissa, explicit_exponent) = unsigned
+        .split_once(['e', 'E'])
+        .map_or((unsigned, "0"), |parts| parts);
+    let explicit_exponent = explicit_exponent.parse::<i64>().ok()?;
+    let (integer, fraction) = mantissa
+        .split_once('.')
+        .map_or((mantissa, ""), |parts| parts);
+    if integer.is_empty()
+        || !integer.bytes().all(|byte| byte.is_ascii_digit())
+        || !fraction.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+    let fraction_len = i64::try_from(fraction.len()).ok()?;
+    let mut exponent = explicit_exponent.checked_sub(fraction_len)?;
+    let mut digits = String::with_capacity(integer.len().checked_add(fraction.len())?);
+    digits.push_str(integer);
+    digits.push_str(fraction);
+    let first_nonzero = digits.bytes().position(|byte| byte != b'0');
+    let Some(first_nonzero) = first_nonzero else {
+        return Some("0".to_string());
+    };
+    let significant = &digits[first_nonzero..];
+    let trailing_zeroes = significant
+        .bytes()
+        .rev()
+        .take_while(|byte| *byte == b'0')
+        .count();
+    exponent = exponent.checked_add(i64::try_from(trailing_zeroes).ok()?)?;
+    let significant = &significant[..significant.len() - trailing_zeroes];
+    Some(format!(
+        "{}{significant}e{exponent}",
+        if negative { "-" } else { "" }
+    ))
 }
 
 fn digest_field(digest: &mut Sha256, value: &[u8]) {
@@ -2074,9 +2229,6 @@ mod tests {
             };
             row.insert(column.source.to_string(), value);
         }
-        for column in mapping.deferred_columns {
-            row.insert(column.source.to_string(), SourceValue::Null);
-        }
         for column in mapping.consumed_source_columns {
             row.insert(column.source.to_string(), SourceValue::Null);
         }
@@ -2184,7 +2336,7 @@ mod tests {
         ] {
             assert!(user.direct_columns.contains(&column), "missing {column}");
         }
-        assert_eq!(user.deferred_columns[0].source, "invite_user_id");
+        assert!(user.direct_columns.contains(&"invite_user_id"));
     }
 
     #[test]
@@ -2216,28 +2368,115 @@ mod tests {
     }
 
     #[test]
-    fn sql_is_keyset_and_requires_an_empty_target() {
+    fn sql_is_one_ordered_source_and_copy_stream_per_table() {
         let user = mapping_for_source("v2_user").expect("user");
-        let source_sql = source_batch_sql(user).expect("source sql");
-        assert!(source_sql.contains("WHERE `id` > ? ORDER BY `id` ASC LIMIT ?"));
+        let source_sql = source_stream_sql(user).expect("source sql");
+        assert!(source_sql.ends_with("FROM `v2_user` ORDER BY `id` ASC"));
+        assert!(!source_sql.contains("LIMIT"));
         assert!(!source_sql.contains("OFFSET"));
-        assert_eq!(INITIAL_SOURCE_ID_CURSOR, 0);
+        assert_eq!(SOURCE_ID_LOWER_BOUND, 0);
 
-        let target_sql = target_insert_sql(user).expect("target sql");
+        let target_sql = target_copy_sql(user).expect("target sql");
         assert!(source_sql.contains("FROM `v2_user`"));
-        assert!(target_sql.starts_with("INSERT INTO \"users\""));
-        assert!(target_sql.contains(" VALUES ("));
-        assert!(!target_sql.contains("invite_user_id"));
+        assert!(target_sql.starts_with("COPY \"users\""));
+        assert!(target_sql.contains("\"invite_user_id\""));
+        assert!(target_sql.contains("NULL E'\\\\N'"));
+        assert!(!target_sql.contains("INSERT"));
 
-        let target_batch = target_batch_insert_sql(user, 3).expect("target batch");
-        assert!(target_batch.contains("), ($"));
-        assert!(
-            maximum_rows_per_target_insert(user).expect("target batch limit")
-                >= DEFAULT_BATCH_SIZE as usize
-        );
+        let verify = target_verify_stream_sql(user).expect("verify sql");
+        assert!(verify.starts_with("SELECT \"id\", \"invite_user_id\""));
+        assert!(verify.ends_with("FROM \"users\" ORDER BY \"id\" ASC"));
 
         let reset = sequence_reset_sql(user).expect("sequence reset");
         assert!(reset.contains("GREATEST(COALESCE(MAX(id), 1), 1)"));
+    }
+
+    #[test]
+    fn canonical_hash_is_stable_across_independent_streams() {
+        let user = mapping_for_source("v2_user").expect("user");
+        let rows = [
+            transform_row(user, &complete_source_row(user)).expect("first row"),
+            transform_row(user, &complete_source_row(user)).expect("second row"),
+        ];
+        let mut expected = CanonicalRowsHasher::for_mapping(user).expect("expected hasher");
+        expected.update_row(&rows[0]).expect("first row");
+        expected.update_row(&rows[1]).expect("second row");
+
+        let mut streamed = CanonicalRowsHasher::for_mapping(user).expect("stream hasher");
+        streamed.update_row(&rows[0]).expect("first row");
+        streamed.update_row(&rows[1]).expect("second row");
+        assert_eq!(streamed.finish(), expected.finish());
+    }
+
+    #[test]
+    fn canonical_hash_matches_postgres_integer_and_json_semantics() {
+        let columns = ["integer", "document"];
+        let left = CanonicalRow::from([
+            ("integer".to_string(), CanonicalValue::U64(7)),
+            (
+                "document".to_string(),
+                CanonicalValue::Json(CanonicalJson::parse(r#"{"b":2,"a":1}"#).unwrap()),
+            ),
+        ]);
+        let right = CanonicalRow::from([
+            ("integer".to_string(), CanonicalValue::I64(7)),
+            (
+                "document".to_string(),
+                CanonicalValue::Json(CanonicalJson::parse(r#"{"a":1,"b":2}"#).unwrap()),
+            ),
+        ]);
+        let mut left_hash = CanonicalRowsHasher::new("fixture", &columns).unwrap();
+        left_hash.update_row(&left).unwrap();
+        let mut right_hash = CanonicalRowsHasher::new("fixture", &columns).unwrap();
+        right_hash.update_row(&right).unwrap();
+        assert_eq!(left_hash.finish(), right_hash.finish());
+    }
+
+    #[test]
+    fn json_numbers_remain_exact_and_hash_by_postgres_numeric_value() {
+        let source = CanonicalJson::parse(
+            r#"{"big":9007199254740993.25,"exponent":1.2300e3,"one":1.00,"zero":-0.0}"#,
+        )
+        .unwrap();
+        let target = CanonicalJson::parse(
+            r#"{"zero":0,"one":1.0,"exponent":1230.0,"big":9007199254740993.25}"#,
+        )
+        .unwrap();
+        assert!(
+            source
+                .to_compact_json()
+                .unwrap()
+                .contains("900719925474099325e-2")
+        );
+        assert_eq!(canonical_json_number("1e3").as_deref(), Some("1e3"));
+        assert_eq!(canonical_json_number("1000").as_deref(), Some("1e3"));
+        assert_eq!(canonical_json_number("1.00").as_deref(), Some("1e0"));
+        assert_eq!(canonical_json_number("-0.0").as_deref(), Some("0"));
+
+        let columns = ["document"];
+        let mut source_hash = CanonicalRowsHasher::new("fixture", &columns).unwrap();
+        source_hash
+            .update_row(&CanonicalRow::from([(
+                "document".to_string(),
+                CanonicalValue::Json(source),
+            )]))
+            .unwrap();
+        let mut target_hash = CanonicalRowsHasher::new("fixture", &columns).unwrap();
+        target_hash
+            .update_row(&CanonicalRow::from([(
+                "document".to_string(),
+                CanonicalValue::Json(target),
+            )]))
+            .unwrap();
+        assert_eq!(source_hash.finish(), target_hash.finish());
+    }
+
+    #[test]
+    fn exact_json_matches_jsonb_object_key_semantics() {
+        let duplicate = CanonicalJson::parse(r#"{"a":1,"\u0061":2}"#).unwrap();
+        let collapsed = CanonicalJson::parse(r#"{"a":2}"#).unwrap();
+        assert_eq!(duplicate, collapsed);
+        assert_eq!(duplicate.to_compact_json().unwrap(), r#"{"a":2e0}"#);
     }
 
     #[test]

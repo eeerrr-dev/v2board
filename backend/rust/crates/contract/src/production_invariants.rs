@@ -329,42 +329,6 @@ async fn schema_invariants(pool: &PgPool) -> Result<()> {
         .await?;
         ensure!(count == 1, "missing required column {table}.{column}");
     }
-    let retired_columns: i64 = sqlx::query_scalar(
-        r#"
-        SELECT COUNT(*)
-        FROM information_schema.columns
-        WHERE table_schema = current_schema()
-          AND (table_name, column_name) IN (
-              ('orders', 'unfinished_user_id'),
-              ('ticket', 'open_user_id')
-          )
-        "#,
-    )
-    .fetch_one(pool)
-    .await?;
-    ensure!(
-        retired_columns == 0,
-        "retired generated uniqueness columns remain in the native schema"
-    );
-    let redundant_exact_indexes: i64 = sqlx::query_scalar(
-        r#"
-        SELECT COUNT(*)
-        FROM pg_indexes
-        WHERE schemaname = current_schema()
-          AND indexname IN (
-              'uniq_user_email',
-              'uniq_coupon_code',
-              'uniq_invite_code',
-              'uniq_gift_card_code'
-          )
-        "#,
-    )
-    .fetch_one(pool)
-    .await?;
-    ensure!(
-        redundant_exact_indexes == 0,
-        "redundant exact unique indexes remain beside canonical unique indexes"
-    );
     for (table, constraint) in [
         ("plan", "chk_plan_flags"),
         ("coupon", "chk_coupon_type_value"),

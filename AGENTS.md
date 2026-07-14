@@ -90,8 +90,10 @@ There is exactly one legacy-data path:
 3. on the stopped old production host, run the converter with a dedicated
    `SELECT`-only account against the original MySQL database;
 4. inside one `REPEATABLE READ`, `READ ONLY`, consistent snapshot,
-   deterministically transform the retained rows into a brand-new dedicated
-   PostgreSQL 18 cluster whose only initial non-template database is `postgres`;
+   deterministically transform the retained rows and stream each table directly
+   through PostgreSQL `COPY FROM STDIN` over the same-datacenter private network
+   into a brand-new dedicated PostgreSQL 18 cluster whose only initial
+   non-template database is `postgres`;
    ClickHouse starts with an empty native event history, and a brand-new
    dedicated Redis 8.8 instance is empty across every logical database and uses
    canonical database `/0` for native runtime state;
@@ -104,7 +106,25 @@ The old MySQL database is never a migration target and is never mutated by the
 importer. The dump is a complete backup and file-integrity artifact; it is not
 loaded for conversion and its MySQL SQL is never sent to PostgreSQL. The Rust
 converter reads typed MySQL rows, validates and transforms them explicitly, and
-writes parameterized rows through the PostgreSQL driver. Do not design or add
+streams each target table through exactly one PostgreSQL `COPY FROM STDIN`.
+Each source table uses one primary-key-ordered streaming MySQL `SELECT`; the
+gift-card stream deterministically feeds both its base target and derived
+redemption target. Memory is bounded to the
+current decoded row, byte-bounded COPY send buffers, and a hard-capped
+4,096-entry payment-id classification index required by the fixed Stripe order
+policy. These buffers are not
+PostgreSQL batches, and there is no fixed 1,000-row or other batched
+`INSERT` path. The converter never writes an intermediate COPY/CSV or other
+row-transfer file to either host. After every retained table has completed
+COPY, `execute` creates the deferred business/cross-row unique constraints,
+secondary indexes, and foreign keys, resets
+all affected sequences, runs `ANALYZE`, and then scans each retained target
+table exactly once in primary-key order to compare its canonical representation
+with the source-derived canonical expectation accumulated during conversion.
+The old host and the new PostgreSQL target must communicate over a
+same-datacenter private network while retaining the required authenticated TLS.
+Do not add a bulk-`INSERT` fallback, per-batch target verification, a second
+transfer strategy, or a selectable transfer-mode setting. Do not design or add
 migration rollback, source fencing, CDC, dual-write, shadow reads,
 compatibility windows, authorization files, journals, checkpoints,
 resume, operation recovery, or cleanup/restart state machines. A failed import
@@ -132,7 +152,7 @@ whole-instance-empty dedicated Redis
 report distinguishes the inspected backup dump-file SHA-256 from the converted
 source snapshot SHA-256. `imported_source_schema_sha256` hashes only the 14
 imported source-table schemas, including their required InnoDB engine; the snapshot hash binds final retained content
-(including deferred inviter relationships), imported row counts, and the
+(including inviter relationships), imported row counts, and the
 separately represented whole-table-discard presence decisions. Discard-only
 tables are presence-audited but not schema-bound, row-scanned, or counted.
 `v2_tutorial` is
