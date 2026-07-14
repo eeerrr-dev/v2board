@@ -116,8 +116,13 @@ rust-test:
 rust-integration:
 	$(DCF) build rust-api
 	$(DCF) up -d --wait postgres clickhouse redis
+	$(DCF) --profile migration-test up -d --wait --force-recreate mysql-import-staging postgres-import-target redis-import-target
 	$(DCF) exec -T postgres dropdb --force --if-exists -U v2board v2board_analytics_test
 	$(DCF) exec -T postgres createdb -U v2board v2board_analytics_test
+	$(DCF) exec -T postgres dropdb --force --if-exists -U v2board v2board_mysql_import_test
+	$(DCF) exec -T postgres createdb -U v2board v2board_mysql_import_test
+	$(DCF) exec -T postgres dropdb --force --if-exists -U v2board v2board_schema_test
+	$(DCF) exec -T postgres createdb -U v2board v2board_schema_test
 	$(DCF) exec -T clickhouse clickhouse-client --user v2board_analytics --password v2board \
 		--query 'DROP DATABASE IF EXISTS v2board_analytics_test SYNC'
 	$(DCF) exec -T clickhouse clickhouse-client --user v2board_analytics --password v2board \
@@ -130,13 +135,23 @@ rust-integration:
 		-e RUST_INTEGRATION_CLICKHOUSE_USERNAME=v2board_analytics \
 		-e RUST_INTEGRATION_CLICKHOUSE_PASSWORD=v2board \
 		-e RUST_INTEGRATION_REDIS_URL=redis://redis:6379/15 \
+		-e RUST_INTEGRATION_MYSQL_URL=mysql://staging:J0stagingImportSecret-32-bytes-long@mysql-import-staging:3306/v2board_staging \
+		-e RUST_INTEGRATION_MYSQL_IMPORT_DATABASE_URL=postgresql://v2board:v2board@postgres:5432/v2board_mysql_import_test \
+		-e RUST_INTEGRATION_SCHEMA_DATABASE_URL=postgresql://v2board:v2board@postgres:5432/v2board_schema_test \
+		-e RUST_INTEGRATION_EXECUTE_DATABASE_ROOT_URL=postgresql://import_bootstrap:ImportBootstrapTestSecret-32-bytes@postgres-import-target:5432/postgres \
+		-e RUST_INTEGRATION_EXECUTE_REDIS_URL=redis://import_bootstrap:RedisImportBootstrapTestSecret-32-bytes@redis-import-target:6379/0 \
 		rust-api -lc \
-		'set -eu; . /usr/local/cargo/env; \
-		 cargo test --locked -p v2board-provision --test postgres_target_schema; \
+		'set -euo pipefail; . /usr/local/cargo/env; \
+		 cargo test --locked -p v2board-lifecycle pinned_source_schema_matches_oracle_mysql_8_staging; \
+		 cargo test --locked -p v2board-lifecycle representative_mysql_rows_copy_into_fresh_postgres; \
+		 RUST_INTEGRATION_DATABASE_URL="$$RUST_INTEGRATION_SCHEMA_DATABASE_URL" cargo test --locked -p v2board-provision --test postgres_target_schema; \
+		 cargo test --locked -p v2board-lifecycle -- --list | grep -Fx "mysql_import::tests::full_execute_bootstraps_and_retires_every_principal: test"; \
+		 cargo test --locked -p v2board-lifecycle mysql_import::tests::full_execute_bootstraps_and_retires_every_principal -- --exact; \
 		 cargo test --locked -p v2board-analytics --test clickhouse_roundtrip; \
 		 cargo test --locked -p v2board-analytics --test outbox_roundtrip; \
 		 cargo build --locked -p v2board-workers; \
 		 cargo run --locked -p v2board-contract -- production-invariants'
+	$(DCF) --profile migration-test stop mysql-import-staging postgres-import-target redis-import-target
 
 rust-route-audit:
 	$(DCF) build rust-api
@@ -157,7 +172,7 @@ rust-target-gate: rust-check rust-test rust-integration rust-route-audit rust-wo
 	@echo "Rust API, worker, route, and reconciliation gates passed."
 
 public-bundle-audit:
-	@paths='backend/rust/target frontend/.pnpm-store frontend/dist frontend/dist-deploy frontend/.cache frontend/coverage frontend/apps/user/dist frontend/apps/admin/dist public/theme/default public/assets/admin native-release lifecycle-tool v2board-native-linux-amd64.tar.gz v2board-native-linux-amd64.tar.gz.sha256'; \
+	@paths='backend/rust/target frontend/.pnpm-store frontend/dist frontend/dist-deploy frontend/.cache frontend/coverage frontend/apps/user/dist frontend/apps/admin/dist public/theme/default public/assets/admin native-release lifecycle-tool lifecycle-package v2board-native-linux-amd64.tar.gz v2board-native-linux-amd64.tar.gz.sha256 v2board-lifecycle-linux-amd64.tar.gz v2board-lifecycle-linux-amd64.tar.gz.sha256'; \
 	found=0; \
 	for path in $$paths; do \
 		if [ -e "$$path" ]; then echo "Host-generated deploy/build output found: $$path"; found=1; fi; \
@@ -197,18 +212,13 @@ native-database-audit:
 		)" || exit $$?; \
 	matches="$$(printf '%s\n' "$$graph" | rg 'sqlx-mysql|v2board-provision|v2board-lifecycle' || true)"; \
 	if [ -n "$$matches" ]; then echo "$$matches"; exit 1; fi
-	@graph="$$( $(DCF) run --rm -T --no-deps --entrypoint bash rust-api -lc \
-		'. /usr/local/cargo/env; cargo tree --locked -e normal -p v2board-lifecycle -p v2board-provision' \
-		)" || exit $$?; \
-	matches="$$(printf '%s\n' "$$graph" | rg 'redis|clickhouse' || true)"; \
-	if [ -n "$$matches" ]; then echo "$$matches"; exit 1; fi
 	@test ! -d backend/rust/migrations || \
 		test -z "$$(find backend/rust/migrations -type f -print -quit)"
 	@matches="$$(rg -n '\bv2_[a-z0-9_]+' \
 		backend/rust/migrations-postgres backend/rust/clickhouse-migrations || true)"; \
 	if [ -n "$$matches" ]; then echo "Native database objects must not use the legacy v2_ source prefix:"; echo "$$matches"; exit 1; fi
 	@rg -q 'migrations-postgres' backend/rust/crates/db/src/pool.rs
-	@echo "API/worker/schema graphs exclude migration crates and MySQL; native schema names are unprefixed; any staging MySQL adapter remains confined to import tooling."
+	@echo "API/worker/analytics graphs exclude lifecycle, provision, and MySQL; native schema names are unprefixed; the MySQL staging adapter is confined to disposable lifecycle tooling, which may use Redis and ClickHouse for target preflight/bootstrap."
 
 native-release-audit:
 	@test -f deploy/systemd/v2board-api.service
@@ -235,9 +245,22 @@ native-release-audit:
 	@rg -Fqx 'WatchdogSec=30s' deploy/systemd/v2board-worker.service
 	@rg -Fqx 'ReadWritePaths=/var/lib/v2board/worker' deploy/systemd/v2board-worker.service
 	@rg -q '^  native-release:$$' .github/workflows/native-ci.yml
+	@rg -q '^  native-attest:$$' .github/workflows/native-ci.yml
 	@rg -q -- '--target native-release' .github/workflows/native-ci.yml
 	@rg -q -- '--output type=local,dest=native-release' .github/workflows/native-ci.yml
 	@rg -Fq 'inspect-release-archive' .github/workflows/native-ci.yml
+	@test "$$(rg -Fxc "      - 'deploy/**'" .github/workflows/native-ci.yml)" -eq 2
+	@test "$$(rg -Fxc "      - 'docs/**'" .github/workflows/native-ci.yml)" -eq 2
+	@test "$$(rg -Fxc "      - '.dockerignore'" .github/workflows/native-ci.yml)" -eq 2
+	@test "$$(rg -Fxc "      - '.gitattributes'" .github/workflows/native-ci.yml)" -eq 2
+	@test "$$(rg -Fxc "      - '.devcontainer/**'" .github/workflows/native-ci.yml)" -eq 2
+	@test "$$(rg -Fxc "      - '.github/**'" .github/workflows/native-ci.yml)" -eq 2
+	@if sed -n '/^  native-release:$$/,/^  native-attest:$$/p' .github/workflows/native-ci.yml | \
+		rg -q 'id-token: write|attestations: write'; then \
+		echo "Pull-request release builds must not receive attestation credentials."; exit 1; \
+	fi
+	@sed -n '/^  native-attest:$$/,$$p' .github/workflows/native-ci.yml | rg -Fq 'id-token: write'
+	@sed -n '/^  native-attest:$$/,$$p' .github/workflows/native-ci.yml | rg -Fq 'attestations: write'
 	@echo "Bare-metal release export and hardened systemd unit contracts are present."
 
 frontend-source-audit:

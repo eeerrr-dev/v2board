@@ -5,7 +5,7 @@ use std::sync::{
 
 use arc_swap::ArcSwap;
 use uuid::Uuid;
-use v2board_config::AppConfig;
+use v2board_config::{AppConfig, RedisKeyspace};
 use v2board_db::DbPool;
 use v2board_domain::{
     operator_config::{self, OperatorConfigConsumer, OperatorConfigError},
@@ -20,6 +20,7 @@ pub(crate) struct WorkerState {
     pending_operator_ack: Arc<AtomicI64>,
     pub(crate) db: DbPool,
     pub(crate) installation_id: Uuid,
+    pub(crate) redis_keys: RedisKeyspace,
     pub(crate) redis: redis::Client,
     pub(crate) smtp: SmtpTransportCache,
 }
@@ -39,9 +40,14 @@ impl WorkerState {
             pending_operator_ack: Arc::new(AtomicI64::new(0)),
             db,
             installation_id,
+            redis_keys: RedisKeyspace::new(installation_id),
             redis,
             smtp,
         }
+    }
+
+    pub(crate) fn redis_key(&self, logical_key: &str) -> String {
+        self.redis_keys.key(logical_key)
     }
 
     /// Refreshes the worker's last-known-good snapshot from the shared
@@ -163,6 +169,7 @@ impl WorkerState {
             pending_operator_ack: self.pending_operator_ack.clone(),
             db: self.db.clone(),
             installation_id: self.installation_id,
+            redis_keys: self.redis_keys.clone(),
             redis: self.redis.clone(),
             smtp: self.smtp.clone(),
         })

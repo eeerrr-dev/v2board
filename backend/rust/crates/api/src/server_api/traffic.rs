@@ -27,6 +27,10 @@ use super::{
 };
 
 const TRAFFIC_REPORT_SQL_BATCH_SIZE: usize = 500;
+const REDIS_MGET_BATCH_SIZE: usize = 500;
+pub(super) const ALIVE_CACHE_SCRIPT_BATCH_SIZE: usize = 64;
+pub(super) const ALIVE_CACHE_MAX_IPS_PER_USER: usize = 256;
+pub(super) const ALIVE_CACHE_MAX_USER_PAYLOAD_BYTES: usize = 16 * 1024;
 
 #[derive(Debug, Clone)]
 struct AcceptedTrafficItem {
@@ -41,12 +45,17 @@ struct AcceptedTrafficItem {
 // Merge every user's per-node alive-IP bucket in Redis itself. Reports from
 // different nodes can race; a client-side GET/SET loop loses one of those
 // updates and also costs two network round trips per user. This bounded script
-// makes the merge atomic and sends the whole report once.
+// makes each bounded batch atomic and sends each user's payload only once.
 pub(super) const ALIVE_CACHE_UPDATE_SCRIPT: &str = r#"
 local node_bucket = ARGV[1]
 local now = tonumber(ARGV[2])
 local device_limit_mode = tonumber(ARGV[3])
 
+if #KEYS == 0 or #KEYS > 64 or #ARGV ~= #KEYS + 3 then
+    return redis.error_reply('alive-IP batch exceeds its fixed bounds')
+end
+
+local prepared = {}
 for index, key in ipairs(KEYS) do
     local value = {}
     local current = redis.call('GET', key)
@@ -60,6 +69,9 @@ for index, key in ipairs(KEYS) do
     local ok, aliveips = pcall(cjson.decode, ARGV[index + 3])
     if not ok or type(aliveips) ~= 'table' then
         return redis.error_reply('invalid alive-IP payload')
+    end
+    if #aliveips > 256 then
+        return redis.error_reply('alive-IP user payload exceeds its fixed bound')
     end
     value[node_bucket] = { aliveips = aliveips, lastupdateAt = now }
 
@@ -77,6 +89,16 @@ for index, key in ipairs(KEYS) do
     end
     for _, bucket in ipairs(stale) do
         value[bucket] = nil
+    end
+
+    local bucket_count = 0
+    for bucket in pairs(value) do
+        if bucket ~= 'alive_ip' then
+            bucket_count = bucket_count + 1
+        end
+    end
+    if bucket_count > 32 then
+        return redis.error_reply('alive-IP cache exceeds its active-node bound')
     end
 
     local alive_count = 0
@@ -105,7 +127,11 @@ for index, key in ipairs(KEYS) do
     end
 
     value.alive_ip = alive_count
-    redis.call('SET', key, cjson.encode(value), 'EX', 120)
+    prepared[index] = cjson.encode(value)
+end
+
+for index, key in ipairs(KEYS) do
+    redis.call('SET', key, prepared[index], 'EX', 120)
 end
 
 return #KEYS
@@ -152,14 +178,14 @@ pub(super) async fn server_push(
     }
     let entries = parsed.entries;
     server_cache_count(
-        &state.redis,
+        state,
         "ONLINE_USER",
         &node_type,
         node.id,
         entries.len() as i64,
     )
     .await?;
-    server_cache_timestamp(&state.redis, "LAST_PUSH_AT", &node_type, node.id).await?;
+    server_cache_timestamp(state, "LAST_PUSH_AT", &node_type, node.id).await?;
     if !entries.is_empty() {
         // Success means the complete report (charged deltas + daily statistics) is
         // durably committed. The worker applies user counters exactly once. Older
@@ -201,17 +227,19 @@ pub(super) async fn server_alive_list(
 
     let mut conn = state.redis.get_multiplexed_async_connection().await?;
     let mut alive = serde_json::Map::new();
-    let keys = user_ids
-        .iter()
-        .map(|user_id| format!("ALIVE_IP_USER_{user_id}"))
-        .collect::<Vec<_>>();
-    let cached = conn.mget::<_, Vec<Option<String>>>(&keys).await?;
-    for (user_id, value) in user_ids.into_iter().zip(cached) {
-        if let Some(value) = value
-            && let Ok(value) = serde_json::from_str::<serde_json::Value>(&value)
-            && let Some(alive_ip) = value.get("alive_ip").and_then(value_to_i64)
-        {
-            alive.insert(user_id.to_string(), json!(alive_ip));
+    for user_ids in user_ids.chunks(REDIS_MGET_BATCH_SIZE) {
+        let keys = user_ids
+            .iter()
+            .map(|user_id| state.redis_key(&format!("ALIVE_IP_USER_{user_id}")))
+            .collect::<Vec<_>>();
+        let cached = conn.mget::<_, Vec<Option<String>>>(&keys).await?;
+        for (user_id, value) in user_ids.iter().copied().zip(cached) {
+            if let Some(value) = value
+                && let Ok(value) = serde_json::from_str::<serde_json::Value>(&value)
+                && let Some(alive_ip) = value.get("alive_ip").and_then(value_to_i64)
+            {
+                alive.insert(user_id.to_string(), json!(alive_ip));
+            }
         }
     }
     Ok(Json(json!({ "alive": alive })).into_response())
@@ -239,31 +267,41 @@ pub(super) async fn server_alive(
         let Some(ips) = ips.as_array() else {
             continue;
         };
-        updates.push((
-            format!("ALIVE_IP_USER_{user_id}"),
-            serde_json::to_string(ips)
-                .expect("an alive-IP serde_json::Value array is always serializable"),
-        ));
+        if ips.len() > ALIVE_CACHE_MAX_IPS_PER_USER {
+            return Err(ApiError::bad_request(
+                "Alive-IP user payload exceeds the supported entry limit",
+            ));
+        }
+        let ips = serde_json::to_string(ips)
+            .expect("an alive-IP serde_json::Value array is always serializable");
+        if ips.len() > ALIVE_CACHE_MAX_USER_PAYLOAD_BYTES {
+            return Err(ApiError::bad_request(
+                "Alive-IP user payload exceeds the supported size limit",
+            ));
+        }
+        updates.push((state.redis_key(&format!("ALIVE_IP_USER_{user_id}")), ips));
     }
     if !updates.is_empty() {
         let mut conn = state.redis.get_multiplexed_async_connection().await?;
         let script = redis::Script::new(ALIVE_CACHE_UPDATE_SCRIPT);
-        let mut invocation = script.prepare_invoke();
-        for (key, _) in &updates {
-            invocation.key(key);
-        }
-        invocation.arg(node_bucket).arg(now).arg(device_limit_mode);
-        for (_, ips) in &updates {
-            invocation.arg(ips);
-        }
-        let updated = invocation.invoke_async::<i64>(&mut conn).await?;
-        let expected = i64::try_from(updates.len()).map_err(|_| {
-            ApiError::internal("Alive-IP update count is outside the supported range")
-        })?;
-        if updated != expected {
-            return Err(ApiError::internal(
-                "Alive-IP cache update returned an unexpected count",
-            ));
+        for batch in updates.chunks(ALIVE_CACHE_SCRIPT_BATCH_SIZE) {
+            let mut invocation = script.prepare_invoke();
+            for (key, _) in batch {
+                invocation.key(key);
+            }
+            invocation.arg(&node_bucket).arg(now).arg(device_limit_mode);
+            for (_, ips) in batch {
+                invocation.arg(ips);
+            }
+            let updated = invocation.invoke_async::<i64>(&mut conn).await?;
+            let expected = i64::try_from(batch.len()).map_err(|_| {
+                ApiError::internal("Alive-IP update count is outside the supported range")
+            })?;
+            if updated != expected {
+                return Err(ApiError::internal(
+                    "Alive-IP cache update returned an unexpected count",
+                ));
+            }
         }
     }
     Ok(Json(json!({ "data": true })).into_response())
@@ -313,27 +351,27 @@ pub(super) fn count_alive_ips(
 }
 
 pub(super) async fn server_cache_timestamp(
-    redis: &redis::Client,
+    state: &AppState,
     suffix: &str,
     node_type: &str,
     node_id: i32,
 ) -> Result<(), ApiError> {
-    server_cache_count(redis, suffix, node_type, node_id, Utc::now().timestamp()).await
+    server_cache_count(state, suffix, node_type, node_id, Utc::now().timestamp()).await
 }
 
 async fn server_cache_count(
-    redis: &redis::Client,
+    state: &AppState,
     suffix: &str,
     node_type: &str,
     node_id: i32,
     value: i64,
 ) -> Result<(), ApiError> {
-    let key = format!(
+    let key = state.redis_key(&format!(
         "SERVER_{}_{}_{node_id}",
         node_type.to_ascii_uppercase(),
         suffix
-    );
-    let mut conn = redis.get_multiplexed_async_connection().await?;
+    ));
+    let mut conn = state.redis.get_multiplexed_async_connection().await?;
     let _: () = conn.set_ex(key, value, 3600).await?;
     Ok(())
 }

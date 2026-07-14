@@ -398,10 +398,10 @@ pub async fn configure_clickhouse_retention(
     verify_retention_ttl(client, raw_retention_days, aggregate_retention_days).await
 }
 
-/// Exact raw and future daily-aggregate row counts. The one-shot legacy
-/// migration requires all four values to remain zero through its projection
-/// checkpoint; legacy daily summaries are preserved in PostgreSQL instead of
-/// being misrepresented as native raw events.
+/// Exact raw and immutable batch-daily row counts. The one-shot import verifies
+/// all four tables are empty before native events can start; legacy daily
+/// summaries remain in PostgreSQL instead of being misrepresented as native
+/// raw events.
 pub async fn clickhouse_projection_counts(
     client: &clickhouse::Client,
 ) -> Result<ClickHouseProjectionCounts, ClickHouseMigrationError> {
@@ -453,7 +453,8 @@ async fn raw_fact_installations(
 }
 
 /// Per-batch fail-closed readiness check. This is intentionally read-only:
-/// schema binding may occur only during the worker's startup/recovery phase.
+/// schema and installation binding belong exclusively to provisioning, never
+/// to an API or worker runtime credential.
 pub async fn verify_clickhouse_runtime_ready(
     client: &clickhouse::Client,
     installation_id: Uuid,
@@ -806,14 +807,14 @@ async fn validate_migration_effect(
         5 => validate_daily_aggregate_table(
             client,
             "traffic_reported_daily",
-            "installation_id, accounting_date, user_id, server_id, server_type, rate_text, rate_decimal_10_2, table_generation, ingest_batch_id, batch_aggregate_row_number",
+            "installation_id, schema_major, accounting_date, user_id, server_id, server_type, rate_text, rate_decimal_10_2, ingest_batch_id, batch_aggregate_row_number",
             REPORTED_DAILY_COLUMNS,
         )
         .await,
         6 => validate_daily_aggregate_table(
             client,
             "traffic_accounted_daily",
-            "installation_id, accounting_date, user_id, server_id, server_type, rate_text, rate_decimal_10_2, outcome, table_generation, ingest_batch_id, batch_aggregate_row_number",
+            "installation_id, schema_major, accounting_date, user_id, server_id, server_type, rate_text, rate_decimal_10_2, outcome, ingest_batch_id, batch_aggregate_row_number",
             ACCOUNTED_DAILY_COLUMNS,
         )
         .await,
@@ -852,14 +853,14 @@ async fn validate_clickhouse_schema(
     validate_daily_aggregate_table(
         client,
         "traffic_reported_daily",
-        "installation_id, accounting_date, user_id, server_id, server_type, rate_text, rate_decimal_10_2, table_generation, ingest_batch_id, batch_aggregate_row_number",
+        "installation_id, schema_major, accounting_date, user_id, server_id, server_type, rate_text, rate_decimal_10_2, ingest_batch_id, batch_aggregate_row_number",
         REPORTED_DAILY_COLUMNS,
     )
     .await?;
     validate_daily_aggregate_table(
         client,
         "traffic_accounted_daily",
-        "installation_id, accounting_date, user_id, server_id, server_type, rate_text, rate_decimal_10_2, outcome, table_generation, ingest_batch_id, batch_aggregate_row_number",
+        "installation_id, schema_major, accounting_date, user_id, server_id, server_type, rate_text, rate_decimal_10_2, outcome, ingest_batch_id, batch_aggregate_row_number",
         ACCOUNTED_DAILY_COLUMNS,
     )
     .await?;
@@ -912,7 +913,7 @@ async fn validate_event_table_shape(
         client,
         table,
         "MergeTree",
-        "(table_generation, toYYYYMM(accounting_date))",
+        "toYYYYMM(accounting_date)",
         sorting_key,
         expected_columns,
     )
@@ -1045,22 +1046,20 @@ async fn validate_daily_aggregate_table(
     let state = validate_table(
         client,
         table,
-        "SummingMergeTree",
-        "(table_generation, toYYYYMM(accounting_date))",
+        "MergeTree",
+        "toYYYYMM(accounting_date)",
         sorting_key,
         columns,
     )
     .await?;
     let create = normalize_sql(&state.create_table_query);
-    if !create.contains("SummingMergeTree((event_count, raw_u, raw_d, charged_u, charged_d))")
-        || !create.contains(REQUIRED_DEDUPLICATION_WINDOW)
-    {
+    if !create.contains(REQUIRED_DEDUPLICATION_WINDOW) {
         return Err(schema_error(
             table,
-            "daily aggregate summation columns or retry deduplication drifted",
+            "daily batch aggregate retry deduplication drifted",
         ));
     }
-    Ok(())
+    validate_event_index(client, table).await
 }
 
 async fn validate_table(
@@ -1186,7 +1185,6 @@ const REPORTED_COLUMNS: &[(&str, &str)] = &[
     ("ingest_batch_id", "UUID"),
     ("batch_row_number", "UInt32"),
     ("outbox_payload_sha256", "String"),
-    ("table_generation", "UInt32"),
     ("ingested_at_unix", "Int64"),
 ];
 
@@ -1217,19 +1215,18 @@ const ACCOUNTED_COLUMNS: &[(&str, &str)] = &[
     ("ingest_batch_id", "UUID"),
     ("batch_row_number", "UInt32"),
     ("outbox_payload_sha256", "String"),
-    ("table_generation", "UInt32"),
     ("ingested_at_unix", "Int64"),
 ];
 
 const REPORTED_DAILY_COLUMNS: &[(&str, &str)] = &[
     ("installation_id", "UUID"),
+    ("schema_major", "UInt16"),
     ("accounting_date", "Date"),
     ("user_id", "UInt64"),
     ("server_id", "UInt64"),
     ("server_type", "LowCardinality(String)"),
     ("rate_text", "String"),
     ("rate_decimal_10_2", "Decimal(10, 2)"),
-    ("table_generation", "UInt32"),
     ("ingest_batch_id", "UUID"),
     ("batch_aggregate_row_number", "UInt32"),
     ("event_count", "UInt64"),
@@ -1241,6 +1238,7 @@ const REPORTED_DAILY_COLUMNS: &[(&str, &str)] = &[
 
 const ACCOUNTED_DAILY_COLUMNS: &[(&str, &str)] = &[
     ("installation_id", "UUID"),
+    ("schema_major", "UInt16"),
     ("accounting_date", "Date"),
     ("user_id", "UInt64"),
     ("server_id", "UInt64"),
@@ -1248,7 +1246,6 @@ const ACCOUNTED_DAILY_COLUMNS: &[(&str, &str)] = &[
     ("rate_text", "String"),
     ("rate_decimal_10_2", "Decimal(10, 2)"),
     ("outcome", "LowCardinality(String)"),
-    ("table_generation", "UInt32"),
     ("ingest_batch_id", "UUID"),
     ("batch_aggregate_row_number", "UInt32"),
     ("event_count", "UInt64"),
@@ -1293,11 +1290,7 @@ mod tests {
         for migration in &CLICKHOUSE_MIGRATIONS[1..=2] {
             assert!(migration.sql.contains("ENGINE = MergeTree"));
             assert!(!migration.sql.contains("ReplacingMergeTree"));
-            assert!(
-                migration
-                    .sql
-                    .contains("PARTITION BY (table_generation, toYYYYMM")
-            );
+            assert!(migration.sql.contains("PARTITION BY toYYYYMM"));
             assert!(
                 migration
                     .sql
@@ -1310,8 +1303,12 @@ mod tests {
                 .sql
                 .contains("installation_binding")
         );
-        assert!(CLICKHOUSE_MIGRATIONS[4].sql.contains("SummingMergeTree"));
-        assert!(CLICKHOUSE_MIGRATIONS[5].sql.contains("SummingMergeTree"));
+        for migration in &CLICKHOUSE_MIGRATIONS[4..=5] {
+            assert!(migration.sql.contains("ENGINE = MergeTree"));
+            assert!(!migration.sql.contains("SummingMergeTree"));
+            assert!(migration.sql.contains("schema_major UInt16"));
+            assert!(migration.sql.contains("idx_ingest_batch_id"));
+        }
         assert!(CLICKHOUSE_MIGRATIONS[6].sql.contains("retention_binding"));
         assert_eq!(clickhouse_schema_lineage_sha256().len(), 64);
     }

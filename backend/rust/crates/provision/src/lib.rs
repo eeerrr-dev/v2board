@@ -9,6 +9,7 @@ pub use inspect::{
     MysqlImportLossReport, MysqlImportPreservationReport, inspect_mysql_import,
 };
 pub use manifest::{
-    MYSQL_SOURCE_REFERENCE_COMMIT, MysqlDumpSourceSpec, MysqlImportSpec, MysqlImportSpecError,
-    load_mysql_import_spec,
+    MYSQL_SOURCE_REFERENCE_COMMIT, MysqlDumpSourceSpec, MysqlImportAnalyticsAdmissionPlan,
+    MysqlImportClickHousePlan, MysqlImportExecutionPlan, MysqlImportPostgresPlan, MysqlImportSpec,
+    MysqlImportSpecError, load_mysql_import_spec,
 };

@@ -141,6 +141,7 @@ mod tests {
         assert!(source.contains("WHERE lower(code) = lower($1)"));
         let migration = include_str!("../../../migrations-postgres/0001_initial.sql");
         assert!(migration.contains("uniq_coupon_code_canonical"));
+        assert!(!migration.contains("CONSTRAINT uniq_coupon_code UNIQUE (code)"));
     }
 
     #[test]

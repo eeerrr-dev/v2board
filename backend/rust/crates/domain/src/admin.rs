@@ -15,7 +15,9 @@ use sha2::{Digest, Sha256};
 use sqlx::{AssertSqlSafe, FromRow, Postgres, QueryBuilder, types::Json};
 use uuid::Uuid;
 use v2board_compat::ApiError;
-use v2board_config::{AppConfig, MAX_CONFIG_DURATION_MINUTES, app_now, app_timezone};
+use v2board_config::{
+    AppConfig, MAX_CONFIG_DURATION_MINUTES, RedisKeyspace, app_now, app_timezone,
+};
 use v2board_db::{DbPool, DbTransaction};
 
 use crate::payment_provider::{payment_provider_codes, payment_provider_form};
@@ -39,6 +41,8 @@ mod servers;
 mod statistics;
 mod support;
 mod users;
+
+const REDIS_MGET_BATCH_SIZE: usize = 500;
 
 use support::*;
 
@@ -111,7 +115,8 @@ fn payment_verification_version_blocks_update(driver_changed: bool, config_chang
 #[derive(Clone)]
 pub struct AdminService {
     db: DbPool,
-    installation_id: Option<Uuid>,
+    installation_id: Uuid,
+    redis_keys: RedisKeyspace,
     redis: redis::Client,
     config: Arc<AppConfig>,
     http: reqwest::Client,
@@ -130,6 +135,7 @@ impl AdminService {
     pub fn new(
         db: DbPool,
         redis: redis::Client,
+        installation_id: Uuid,
         config: Arc<AppConfig>,
         http: reqwest::Client,
         password_kdf: PasswordKdf,
@@ -137,7 +143,8 @@ impl AdminService {
     ) -> Self {
         Self {
             db,
-            installation_id: None,
+            installation_id,
+            redis_keys: RedisKeyspace::new(installation_id),
             redis,
             config,
             http,
@@ -146,9 +153,8 @@ impl AdminService {
         }
     }
 
-    pub fn with_installation_id(mut self, installation_id: Uuid) -> Self {
-        self.installation_id = Some(installation_id);
-        self
+    pub(super) fn redis_key(&self, logical_key: &str) -> String {
+        self.redis_keys.key(logical_key)
     }
 
     pub async fn get(

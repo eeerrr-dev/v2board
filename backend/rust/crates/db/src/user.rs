@@ -389,5 +389,6 @@ mod tests {
         assert!(source.contains("lower(btrim(email)) = lower(btrim($1))"));
         let migration = include_str!("../../../migrations-postgres/0001_initial.sql");
         assert!(migration.contains("uniq_user_email_canonical"));
+        assert!(!migration.contains("CONSTRAINT uniq_user_email UNIQUE (email)"));
     }
 }

@@ -28,7 +28,7 @@ pub(super) async fn server_uniproxy_user(
     params: &HashMap<String, String>,
 ) -> Result<Response, ApiError> {
     let (node_type, node) = load_uniproxy_node(state, params).await?;
-    server_cache_timestamp(&state.redis, "LAST_CHECK_AT", &node_type, node.id).await?;
+    server_cache_timestamp(state, "LAST_CHECK_AT", &node_type, node.id).await?;
     let users =
         server_available_users(&state.db, parse_i32_json_list(Some(&node.group_id))).await?;
     raw_value_response(
@@ -48,7 +48,7 @@ pub(super) async fn server_tidalab_user(
     let Some(node) = load_server_node(&state.db, node_type, node_id).await? else {
         return Err(ApiError::legacy("fail"));
     };
-    server_cache_timestamp(&state.redis, "LAST_CHECK_AT", node_type, node.id).await?;
+    server_cache_timestamp(state, "LAST_CHECK_AT", node_type, node.id).await?;
     let users =
         server_available_users(&state.db, parse_i32_json_list(Some(&node.group_id))).await?;
     let data = match node_type {

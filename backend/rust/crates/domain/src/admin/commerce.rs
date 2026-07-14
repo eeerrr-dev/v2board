@@ -958,7 +958,7 @@ impl AdminService {
             let mut value = entry.get("value").cloned().unwrap_or_default();
             if key == "email" {
                 let user_id: Option<i64> = sqlx::query_scalar(
-                    "SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1",
+                    "SELECT id FROM users WHERE lower(btrim(email)) = lower(btrim($1)) LIMIT 1",
                 )
                 .bind(format!("%{value}%"))
                 .fetch_optional(&self.db)
@@ -1291,11 +1291,12 @@ impl AdminService {
         // Resolve the stable key before entering the locking transaction.  The
         // row is loaded again only after the user's unfinished-order range has
         // been locked, preserving the global order -> user -> plan sequence.
-        let user_id: Option<i64> =
-            sqlx::query_scalar("SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1")
-                .bind(email)
-                .fetch_optional(&self.db)
-                .await?;
+        let user_id: Option<i64> = sqlx::query_scalar(
+            "SELECT id FROM users WHERE lower(btrim(email)) = lower(btrim($1)) LIMIT 1",
+        )
+        .bind(email)
+        .fetch_optional(&self.db)
+        .await?;
         let user_id = user_id.ok_or_else(|| ApiError::legacy("该用户不存在"))?;
         let mut tx = self.db.begin().await?;
         let has_incomplete: Option<i64> = sqlx::query_scalar(ADMIN_ASSIGN_UNFINISHED_ORDER_SQL)

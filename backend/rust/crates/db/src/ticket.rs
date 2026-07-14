@@ -539,8 +539,8 @@ mod tests {
         assert!(source.contains("OtherOpenTicketExists"));
 
         let migration = include_str!("../../../migrations-postgres/0001_initial.sql");
-        assert!(migration.contains("GENERATED ALWAYS AS"));
         assert!(migration.contains("uniq_ticket_open_user"));
+        assert!(!migration.contains("open_user_id"));
         assert!(migration.contains("idx_ticket_message_ticket_id_id"));
     }
 }

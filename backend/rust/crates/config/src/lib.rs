@@ -1,7 +1,7 @@
 use std::{
     collections::BTreeSet,
     env, fs,
-    io::{self, Write},
+    io::{self, Read, Write},
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
 };
@@ -10,7 +10,39 @@ use chrono::{DateTime, FixedOffset, Utc};
 use ipnet::IpNet;
 use percent_encoding::percent_decode_str;
 use rust_decimal::{Decimal, prelude::ToPrimitive};
+use serde::{
+    Deserialize, Deserializer,
+    de::{self, MapAccess, SeqAccess, Visitor},
+};
 use serde_json::{Map, Value, json};
+use uuid::Uuid;
+
+/// Installation-bound Redis key namespace shared by the API and worker.
+///
+/// Redis is deliberately disposable, but sharing one Redis service or logical
+/// database must never let two native installations read, delete, or lock each
+/// other's state. The immutable PostgreSQL installation identity supplies that
+/// boundary without adding an operator-controlled alias or compatibility key.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RedisKeyspace {
+    prefix: String,
+}
+
+impl RedisKeyspace {
+    pub fn new(installation_id: Uuid) -> Self {
+        Self {
+            prefix: format!("v2board:{installation_id}:"),
+        }
+    }
+
+    pub fn key(&self, logical_key: &str) -> String {
+        format!("{}{logical_key}", self.prefix)
+    }
+
+    pub fn pattern(&self, logical_pattern: &str) -> String {
+        self.key(logical_pattern)
+    }
+}
 
 /// Operator-entered minute durations are bounded to one year. This is long
 /// enough for every subscription/rate-limit use while keeping Redis expiry and
@@ -22,6 +54,7 @@ const FILE_ONLY_CONFIGURATION_SOURCE: &str = "file_only";
 const CONFIGURATION_SCOPE_KEY: &str = "configuration_scope";
 const BOOT_ONLY_CONFIGURATION_SCOPE: &str = "boot_only";
 const OPERATOR_AUTHORITY_MARKER: &str = "_v2board_operator_authority_v1";
+const MAX_CONFIG_FILE_BYTES: u64 = 2 * 1024 * 1024;
 
 /// Exact common key set for a long-lived role-owned bootstrap document.  The
 /// worker validator additionally requires its four ClickHouse writer keys.
@@ -1887,6 +1920,7 @@ fn validate_datastore_transport(
             "must use the redis or rediss URL scheme",
         ));
     }
+    validate_redis_url(&redis, environment.is_production())?;
     if let Some(writer) = clickhouse_writer {
         let clickhouse = url::Url::parse(&writer.url).map_err(|_| {
             invalid_setting(
@@ -1945,6 +1979,71 @@ fn validate_datastore_transport(
         ));
     }
     Ok(())
+}
+
+/// Redis URI parsing is stricter than `redis::Client::open`: security checks
+/// must cover the exact endpoint and database the driver will select, with no
+/// alternate query/fragment form that can escape the reviewed boundary.
+fn validate_redis_url(redis: &url::Url, production: bool) -> io::Result<()> {
+    if redis.host_str().is_none() {
+        return Err(invalid_setting("REDIS_URL", "must include a host"));
+    }
+    if redis.query().is_some() || redis.fragment().is_some() {
+        return Err(invalid_setting(
+            "REDIS_URL",
+            "must not contain a query or fragment",
+        ));
+    }
+
+    let database_component = redis.path().strip_prefix('/').unwrap_or_default();
+    let database = (!database_component.is_empty()
+        && database_component.bytes().all(|byte| byte.is_ascii_digit()))
+    .then_some(database_component.parse::<u32>().ok())
+    .flatten();
+    if production && (database != Some(0) || database_component != "0") {
+        return Err(invalid_setting(
+            "REDIS_URL",
+            "must use canonical database /0 on a dedicated Redis instance in production; the installation keyspace supplies in-instance namespacing, not shared-instance isolation",
+        ));
+    }
+
+    if !production {
+        return Ok(());
+    }
+
+    let username = percent_decode_str(redis.username())
+        .decode_utf8()
+        .map_err(|_| invalid_setting("REDIS_URL username", "must be valid UTF-8"))?;
+    if !valid_datastore_identifier(&username) || username == "default" {
+        return Err(invalid_setting(
+            "REDIS_URL username",
+            "must name an explicit non-default ACL principal in production",
+        ));
+    }
+
+    let encoded_password = redis.password().ok_or_else(|| {
+        invalid_setting(
+            "REDIS_URL",
+            "must include an explicit password in production",
+        )
+    })?;
+    let password = percent_decode_str(encoded_password)
+        .decode_utf8()
+        .map_err(|_| invalid_setting("REDIS_URL password", "must be valid UTF-8"))?;
+    if password
+        .chars()
+        .any(|character| matches!(character, '\r' | '\n' | '\0'))
+    {
+        return Err(invalid_setting(
+            "REDIS_URL password",
+            "must not contain control delimiters",
+        ));
+    }
+    validate_production_secret(
+        RuntimeEnvironment::Production,
+        "REDIS_URL password",
+        Some(password.as_ref()),
+    )
 }
 
 /// URL usernames are percent-encoded components. Security comparisons must use
@@ -2584,20 +2683,192 @@ fn json_object(value: Value) -> Map<String, Value> {
 }
 
 /// Reads the native runtime configuration. A missing file is an empty document;
-/// malformed JSON and non-object roots are surfaced to callers instead of being
-/// interpreted as partially valid configuration.
+/// an existing file must be a bounded, owner-only regular file whose identity
+/// and length remain stable for the entire read. Malformed JSON, duplicate keys,
+/// and non-object roots are surfaced instead of being interpreted as partially
+/// valid configuration.
 pub fn load_config(path: impl AsRef<Path>) -> io::Result<Map<String, Value>> {
-    let bytes = match fs::read(path) {
-        Ok(bytes) => bytes,
+    let path = path.as_ref();
+    let before = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Map::new()),
         Err(error) => return Err(error),
     };
-    let value = serde_json::from_slice::<Value>(&bytes)
+    validate_config_file_metadata(&before)?;
+
+    let mut file = fs::File::open(path)?;
+    let opened = file.metadata()?;
+    validate_config_file_metadata(&opened)?;
+    if !same_config_file(&before, &opened) {
+        return Err(config_file_changed());
+    }
+
+    let mut bytes = Vec::with_capacity(usize::try_from(opened.len()).unwrap_or_default());
+    (&mut file)
+        .take(MAX_CONFIG_FILE_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_CONFIG_FILE_BYTES || bytes.len() as u64 != opened.len() {
+        return Err(config_file_changed());
+    }
+
+    let opened_after = file.metadata()?;
+    let after = fs::symlink_metadata(path)?;
+    validate_config_file_metadata(&opened_after)?;
+    validate_config_file_metadata(&after)?;
+    if !same_config_file(&opened, &opened_after) || !same_config_file(&opened, &after) {
+        return Err(config_file_changed());
+    }
+
+    let value = serde_json::from_slice::<UniqueJson>(&bytes)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
     value
+        .0
         .as_object()
         .cloned()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "config root must be an object"))
+}
+
+fn validate_config_file_metadata(metadata: &fs::Metadata) -> io::Result<()> {
+    if !metadata.file_type().is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "config must be a regular non-symlink file",
+        ));
+    }
+    if metadata.len() > MAX_CONFIG_FILE_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("config exceeds the {MAX_CONFIG_FILE_BYTES}-byte limit"),
+        ));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        if metadata.permissions().mode() & 0o077 != 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "config must not grant group or world permissions",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn same_config_file(left: &fs::Metadata, right: &fs::Metadata) -> bool {
+    if !left.file_type().is_file() || !right.file_type().is_file() || left.len() != right.len() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+
+        left.dev() == right.dev() && left.ino() == right.ino()
+    }
+    #[cfg(not(unix))]
+    true
+}
+
+fn config_file_changed() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidData,
+        "config identity or length changed while it was being read",
+    )
+}
+
+struct UniqueJson(Value);
+
+impl<'de> Deserialize<'de> for UniqueJson {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_any(UniqueJsonVisitor)
+    }
+}
+
+struct UniqueJsonVisitor;
+
+impl<'de> Visitor<'de> for UniqueJsonVisitor {
+    type Value = UniqueJson;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("JSON without duplicate object keys")
+    }
+
+    fn visit_bool<E>(self, value: bool) -> Result<Self::Value, E> {
+        Ok(UniqueJson(Value::Bool(value)))
+    }
+
+    fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E> {
+        Ok(UniqueJson(Value::Number(value.into())))
+    }
+
+    fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E> {
+        Ok(UniqueJson(Value::Number(value.into())))
+    }
+
+    fn visit_f64<E>(self, value: f64) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        serde_json::Number::from_f64(value)
+            .map(Value::Number)
+            .map(UniqueJson)
+            .ok_or_else(|| E::custom("JSON number must be finite"))
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(UniqueJson(Value::String(value.to_string())))
+    }
+
+    fn visit_string<E>(self, value: String) -> Result<Self::Value, E> {
+        Ok(UniqueJson(Value::String(value)))
+    }
+
+    fn visit_none<E>(self) -> Result<Self::Value, E> {
+        Ok(UniqueJson(Value::Null))
+    }
+
+    fn visit_unit<E>(self) -> Result<Self::Value, E> {
+        Ok(UniqueJson(Value::Null))
+    }
+
+    fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        UniqueJson::deserialize(deserializer)
+    }
+
+    fn visit_seq<A>(self, mut sequence: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        let mut values = Vec::new();
+        while let Some(value) = sequence.next_element::<UniqueJson>()? {
+            values.push(value.0);
+        }
+        Ok(UniqueJson(Value::Array(values)))
+    }
+
+    fn visit_map<A>(self, mut object: A) -> Result<Self::Value, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        let mut values = Map::new();
+        while let Some(key) = object.next_key::<String>()? {
+            if values.contains_key(&key) {
+                return Err(de::Error::custom(format!("duplicate JSON key: {key}")));
+            }
+            let value = object.next_value::<UniqueJson>()?;
+            values.insert(key, value.0);
+        }
+        Ok(UniqueJson(Value::Object(values)))
+    }
 }
 
 /// Atomically replaces the native runtime configuration while holding the same
@@ -3414,6 +3685,77 @@ mod tests {
     }
 
     #[test]
+    fn missing_config_remains_an_empty_local_document() {
+        let path = env::temp_dir().join(format!(
+            "v2board-config-missing-test-{}-{}",
+            std::process::id(),
+            CONFIG_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        assert_eq!(load_config(path).expect("missing config"), Map::new());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn config_loader_rejects_symlinks_and_group_or_world_permissions() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+
+        let root = env::temp_dir().join(format!(
+            "v2board-config-file-boundary-test-{}-{}",
+            std::process::id(),
+            CONFIG_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        let target = root.join("target.json");
+        let link = root.join("config.json");
+        save_config_atomic(&target, &Map::new()).expect("write target");
+        symlink(&target, &link).expect("create config symlink");
+        assert!(load_config(&link).is_err());
+
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o640))
+            .expect("make target group-readable");
+        let error = load_config(&target).expect_err("permissive config must fail");
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn config_loader_rejects_duplicate_keys_at_every_object_depth() {
+        let root = env::temp_dir().join(format!(
+            "v2board-config-duplicate-test-{}-{}",
+            std::process::id(),
+            CONFIG_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        let path = root.join("config.json");
+        save_config_atomic(&path, &Map::new()).expect("create owner-only config");
+        fs::write(&path, br#"{"outer":{"key":1,"key":2}}"#).expect("write duplicate JSON");
+
+        let error = load_config(&path).expect_err("duplicate key must fail");
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert!(error.to_string().contains("duplicate JSON key: key"));
+
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn config_loader_rejects_oversized_files_before_parsing() {
+        let root = env::temp_dir().join(format!(
+            "v2board-config-size-test-{}-{}",
+            std::process::id(),
+            CONFIG_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        let path = root.join("config.json");
+        save_config_atomic(&path, &Map::new()).expect("create owner-only config");
+        fs::write(&path, vec![b' '; MAX_CONFIG_FILE_BYTES as usize + 1])
+            .expect("write oversized config");
+
+        let error = load_config(&path).expect_err("oversized config must fail");
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert!(error.to_string().contains("exceeds"));
+
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
     fn locked_updates_do_not_lose_concurrent_keys() {
         let root = env::temp_dir().join(format!(
             "v2board-config-lock-test-{}-{}",
@@ -3752,6 +4094,9 @@ mod tests {
 
     #[test]
     fn production_datastores_require_verified_transport() {
+        const REDIS: &str =
+            "rediss://api_runtime:0123456789abcdef0123456789abcdef@cache.example.test/0";
+
         fn production_clickhouse(url: &str) -> ClickHouseWriterConfig {
             ClickHouseWriterConfig {
                 url: url.to_string(),
@@ -3766,7 +4111,7 @@ mod tests {
                 "postgresql://api:secret@db.example.test/v2board?sslmode=verify-full",
                 "worker",
                 Some(&production_clickhouse("https://analytics.example.test")),
-                "rediss://cache.example.test/1",
+                REDIS,
             )
             .is_ok()
         );
@@ -3776,7 +4121,7 @@ mod tests {
                 "postgresql://api:secret@db.example.test/v2board",
                 "worker",
                 Some(&production_clickhouse("https://analytics.example.test")),
-                "rediss://cache.example.test/1",
+                REDIS,
             )
             .is_err()
         );
@@ -3786,7 +4131,7 @@ mod tests {
                 "postgresql://api:secret@db.example.test/v2board?sslmode=verify-full",
                 "worker",
                 Some(&production_clickhouse("http://analytics.example.test")),
-                "rediss://cache.example.test/1",
+                REDIS,
             )
             .is_err()
         );
@@ -3821,9 +4166,55 @@ mod tests {
                 "postgresql://api:secret@db.example.test/v2board?sslmode=verify-full",
                 "worker",
                 None,
-                "rediss://cache.example.test/1",
+                REDIS,
             )
             .is_ok()
+        );
+    }
+
+    #[test]
+    fn production_redis_url_has_one_canonical_isolated_authority() {
+        let valid = url::Url::parse(
+            "rediss://api_runtime:0123456789abcdef0123456789abcdef@cache.example.test:6380/0",
+        )
+        .unwrap();
+        assert!(validate_redis_url(&valid, true).is_ok());
+
+        for invalid in [
+            "rediss://:0123456789abcdef0123456789abcdef@cache.example.test",
+            "rediss://:0123456789abcdef0123456789abcdef@cache.example.test/",
+            "rediss://:0123456789abcdef0123456789abcdef@cache.example.test/01",
+            "rediss://:short@cache.example.test/1",
+            "rediss://cache.example.test/1",
+            "rediss://default:0123456789abcdef0123456789abcdef@cache.example.test/0",
+            "rediss://:0123456789abcdef0123456789abcdef@cache.example.test/%31",
+            "rediss://:0123456789abcdef0123456789abcdef@cache.example.test/1",
+            "rediss://:0123456789abcdef0123456789abcdef@cache.example.test/1?db=2",
+            "rediss://:0123456789abcdef0123456789abcdef@cache.example.test/1#other",
+        ] {
+            let parsed = url::Url::parse(invalid).unwrap();
+            assert!(
+                validate_redis_url(&parsed, true).is_err(),
+                "accepted {invalid}"
+            );
+        }
+
+        let local = url::Url::parse("redis://redis/0").unwrap();
+        assert!(validate_redis_url(&local, false).is_ok());
+    }
+
+    #[test]
+    fn redis_keyspace_is_bound_to_the_immutable_installation_id() {
+        let first = RedisKeyspace::new(Uuid::from_u128(1));
+        let second = RedisKeyspace::new(Uuid::from_u128(2));
+        assert_eq!(
+            first.key("AUTH_SESSION_deadbeef"),
+            "v2board:00000000-0000-0000-0000-000000000001:AUTH_SESSION_deadbeef"
+        );
+        assert_ne!(first.key("shared"), second.key("shared"));
+        assert_eq!(
+            first.pattern("RUST_SCHEDULER_LOCK_*"),
+            first.key("RUST_SCHEDULER_LOCK_*")
         );
     }
 

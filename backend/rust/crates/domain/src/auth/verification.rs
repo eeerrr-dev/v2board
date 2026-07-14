@@ -43,7 +43,7 @@ impl AuthService {
         // Laravel RateLimiter: 3 attempts per IP in a fixed 60s window, `abort(429)` on exceed
         // (CommController:33-36). INCR + expire-on-first mirrors `Cache::add` + `increment`.
         if let Some(ip) = ip.as_deref() {
-            let key = cache_key("SEND_EMAIL_VERIFY_LIMIT", ip);
+            let key = self.redis_key(&cache_key("SEND_EMAIL_VERIFY_LIMIT", ip));
             if !self.check_and_increment_limit(&key, 3, 60).await? {
                 return Err(ApiError::too_many_requests(
                     "Too many requests, please try again later.",
@@ -66,9 +66,9 @@ impl AuthService {
             }
             _ => {}
         }
-        let last_key = cache_key("LAST_SEND_EMAIL_VERIFY_TIMESTAMP", &cache_email);
+        let last_key = self.redis_key(&cache_key("LAST_SEND_EMAIL_VERIFY_TIMESTAMP", &cache_email));
         let code = six_digit_code();
-        let code_key = cache_key("EMAIL_VERIFY_CODE", &cache_email);
+        let code_key = self.redis_key(&cache_key("EMAIL_VERIFY_CODE", &cache_email));
         if !self.reserve_email_code(&code_key, &last_key, &code).await? {
             return Err(ApiError::legacy(
                 "Email verification code has been sent, please request again later",
@@ -121,7 +121,7 @@ impl AuthService {
         };
         let mut conn = self.redis.clone();
         let consumed = redis::Script::new(CONSUME_VALUE_SCRIPT)
-            .key(cache_key("EMAIL_VERIFY_CODE", email))
+            .key(self.redis_key(&cache_key("EMAIL_VERIFY_CODE", email)))
             .arg(code)
             .invoke_async::<i64>(&mut conn)
             .await?;
@@ -138,7 +138,7 @@ impl AuthService {
     ) -> Result<LimitedEmailCodeResult, ApiError> {
         let mut conn = self.redis.clone();
         let result = redis::Script::new(CONSUME_VALUE_WITH_FAILURE_LIMIT_SCRIPT)
-            .key(cache_key("EMAIL_VERIFY_CODE", email))
+            .key(self.redis_key(&cache_key("EMAIL_VERIFY_CODE", email)))
             .key(limit_key)
             .arg(code)
             .arg(limit.max(1))

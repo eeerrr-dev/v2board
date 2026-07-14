@@ -88,11 +88,14 @@ There is exactly one legacy-data path:
 2. export one complete MySQL 8 dump without modifying the old database;
 3. on the stopped old production host, load that dump into a separate,
    disposable MySQL 8 engine used only as converter input;
-4. deterministically transform the retained rows into a brand-new PostgreSQL
-   database; ClickHouse starts with an empty native event history, and a
-   brand-new empty Redis is used for native runtime state;
-5. generate the new API and worker configuration files from explicit target
-   values; and
+4. deterministically transform the retained rows into a brand-new dedicated
+   PostgreSQL 18 cluster whose only initial non-template database is `postgres`;
+   ClickHouse starts with an empty native event history, and a brand-new
+   dedicated Redis 8.8 instance is empty across every logical database and uses
+   canonical database `/0` for native runtime state;
+5. on the old host, generate the new API and worker configuration files plus an
+   import report in a new root-owned `config_output_directory`, then securely
+   install the two configs at their fixed role-owned paths on the new host; and
 6. verify the new installation, then start it.
 
 The old MySQL database is never a migration target and is never mutated by the
@@ -100,9 +103,10 @@ importer. Loading the dump into staging is import processing, not recovery. Do
 not design or add migration rollback, source fencing, CDC, dual-write, shadow
 reads, compatibility windows, authorization files, journals, checkpoints,
 resume, operation recovery, or cleanup/restart state machines. A failed import
-has no resumable migration state: discard that new incomplete target, correct
-the input or importer, and run the same simple import again against a new empty
-target. This is not restoration of the untouched old database.
+has no resumable migration state: delete its staging engine, incomplete new
+PostgreSQL/ClickHouse/Redis targets, and configuration output directory; correct
+the input or importer; and run the same simple import again against fresh empty
+targets. This is not restoration of the untouched old database.
 
 The default cutover topology runs the temporary MySQL 8 engine and converter on
 the stopped old production host. Staging must be a separate instance with its
@@ -113,6 +117,41 @@ temporary migration principal. The new production host never runs staging or
 MySQL. If the old host lacks capacity, use a disposable migration VM instead.
 Stop and delete staging after success or failure; the native server and
 long-running runtime contain only PostgreSQL, ClickHouse, and Redis.
+
+`v2board-lifecycle execute` is the only import write path. It reads the already
+loaded staging database, requires the dedicated PostgreSQL cluster plus absent
+PostgreSQL/ClickHouse targets and a new whole-instance-empty dedicated Redis
+`/0`, and creates `api.config.json`, `worker.config.json`, and
+`import-report.json` under the old host's manifest-bound output directory. The
+report distinguishes the inspected dump-file SHA-256 from the converted staging
+snapshot SHA-256; the latter binds final retained content (including deferred
+inviter relationships) and fixed-discard counts. Never claim that the former
+proves which manually loaded staging database was read. The importer never
+treats that old-host directory as the new machine's
+`/var/lib/v2board`; the operator installs the two runtime configs as
+`/var/lib/v2board/api/config.json` and `/var/lib/v2board/worker/config.json` with
+their respective Unix identities. Do not hand-write a partial target as an
+alternative to `execute`.
+
+Every mapped legacy business-table primary key must be a positive integer.
+Reject any source `id <= 0` during the read-snapshot preflight, before any
+target write; do not coerce or preserve non-positive identities.
+
+The manifest field `target.redis_bootstrap_url` is a one-shot, explicit
+non-`default` Redis ACL administrator; it is never copied into a runtime config
+or report. The dedicated Redis 8.8 target must start with exactly that user and
+a disabled, non-passwordless `default` user, use `/0`, run `noeviction`, and
+configure a writable external `aclfile`. `execute` creates random, distinct API
+and worker ACL users, limits both to the installation keyspace, gives the API
+read/write access only to API-owned keys plus read-only worker metrics, and
+gives the worker read/write access only to scheduler, reset, heartbeat, metrics,
+admission, and analytics keys. It must `ACL SAVE`, `ACL LOAD`, reconnect with
+both generated credentials, and prove positive and negative command/key access
+before emitting them as the two standard runtime `redis_url` values. Runtime
+users may use `PING` and `INFO memory`, but never `CONFIG`, `DBSIZE`, `SELECT`,
+`FLUSH*`, `ACL`, or arbitrary `EVAL`. Rotate or revoke the external bootstrap
+credential after installation acceptance; do not turn that operator action into
+an importer recovery state machine.
 
 Legacy MySQL source tables retain their real `v2_*` names. Native PostgreSQL and
 ClickHouse target tables are first-release names without that prefix; use

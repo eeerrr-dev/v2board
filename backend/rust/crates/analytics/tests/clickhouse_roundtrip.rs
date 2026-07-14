@@ -7,7 +7,7 @@ use v2board_analytics::{
     ClaimedBatch, DeliveryBatchState, IdentityKind, OutboxRecord, ProjectionStatus,
     ReportedTrafficEvent, TrafficEventCore, bind_clickhouse_installation, clickhouse_client,
     configure_clickhouse_retention, migrate_clickhouse, project_or_verify_batch,
-    verify_clickhouse_runtime_ready,
+    read_applied_daily_traffic, verify_clickhouse_runtime_ready,
 };
 
 #[derive(Debug, Deserialize, Row)]
@@ -210,6 +210,28 @@ async fn clickhouse_schema_and_ambiguous_retry_round_trip() {
     verify_clickhouse_runtime_ready(&client, installation_id)
         .await
         .unwrap();
+    client
+        .query("ALTER TABLE traffic_reported_daily DROP INDEX idx_ingest_batch_id")
+        .execute()
+        .await
+        .unwrap();
+    assert!(
+        verify_clickhouse_runtime_ready(&client, installation_id)
+            .await
+            .is_err()
+    );
+    client
+        .query(
+            "ALTER TABLE traffic_reported_daily \
+             ADD INDEX idx_ingest_batch_id ingest_batch_id \
+             TYPE bloom_filter(0.001) GRANULARITY 1",
+        )
+        .execute()
+        .await
+        .unwrap();
+    verify_clickhouse_runtime_ready(&client, installation_id)
+        .await
+        .unwrap();
 
     let batch_id = Uuid::new_v4();
     let user_id = u64::from(batch_id.as_bytes()[0]) + 1;
@@ -241,7 +263,6 @@ async fn clickhouse_schema_and_ambiguous_retry_round_trip() {
         event_name: event.event_name.clone(),
         schema_major: event.schema_major,
         partition_month,
-        table_generation: 1,
         content_sha256: "0".repeat(64),
         insert_settings_sha256: "0".repeat(64),
         lease_owner: Uuid::new_v4(),
@@ -317,7 +338,6 @@ async fn clickhouse_schema_and_ambiguous_retry_round_trip() {
         schema_major: concurrent_event.schema_major,
         partition_month: NaiveDate::parse_from_str(&concurrent_event.partition_month, "%Y-%m-%d")
             .unwrap(),
-        table_generation: 1,
         content_sha256: "0".repeat(64),
         insert_settings_sha256: "0".repeat(64),
         lease_owner: Uuid::new_v4(),
@@ -339,11 +359,9 @@ async fn clickhouse_schema_and_ambiguous_retry_round_trip() {
     let count = client
         .query(
             "SELECT count() AS rows FROM traffic_reported \
-             WHERE table_generation = ? \
-               AND accounting_date >= toDate(?) AND accounting_date < addMonths(toDate(?), 1) \
+             WHERE accounting_date >= toDate(?) AND accounting_date < addMonths(toDate(?), 1) \
                AND ingest_batch_id = toUUID(?)",
         )
-        .bind(concurrent_batch.table_generation)
         .bind(
             concurrent_batch
                 .partition_month
@@ -361,9 +379,9 @@ async fn clickhouse_schema_and_ambiguous_retry_round_trip() {
         .await
         .unwrap();
     assert_eq!(count.rows, 1);
-    // Both contenders attempted the same raw batch with the same stable
-    // deduplication token. Dependent materialized-view behavior is part of the
-    // contract: the SummingMergeTree total must also be exactly once.
+    // Both contenders attempted the same raw and daily batch aggregates with
+    // stable, domain-separated deduplication tokens. Both projections must be
+    // exactly once without relying on background merges.
     let reported_daily = client
         .query(
             "SELECT sum(event_count) AS events, sum(raw_u) AS raw_u, sum(raw_d) AS raw_d, \
@@ -387,12 +405,10 @@ async fn clickhouse_schema_and_ambiguous_retry_round_trip() {
         .query(
             "INSERT INTO traffic_reported \
              SELECT * FROM traffic_reported \
-             WHERE table_generation = ? \
-               AND accounting_date >= toDate(?) AND accounting_date < addMonths(toDate(?), 1) \
+             WHERE accounting_date >= toDate(?) AND accounting_date < addMonths(toDate(?), 1) \
                AND ingest_batch_id = toUUID(?) \
              SETTINGS insert_deduplicate = 0",
         )
-        .bind(concurrent_batch.table_generation)
         .bind(
             concurrent_batch
                 .partition_month
@@ -448,7 +464,6 @@ async fn clickhouse_schema_and_ambiguous_retry_round_trip() {
         schema_major: accounted_event.schema_major,
         partition_month: NaiveDate::parse_from_str(&accounted_event.partition_month, "%Y-%m-%d")
             .unwrap(),
-        table_generation: 1,
         content_sha256: "0".repeat(64),
         insert_settings_sha256: "0".repeat(64),
         lease_owner: Uuid::new_v4(),
@@ -491,4 +506,34 @@ async fn clickhouse_schema_and_ambiguous_retry_round_trip() {
     assert_eq!(accounted_daily.raw_d, 600);
     assert_eq!(accounted_daily.charged_u, 625);
     assert_eq!(accounted_daily.charged_d, 750);
+
+    let accounting_date = chrono::Utc::now().date_naive();
+    let read_model = read_applied_daily_traffic(
+        &client,
+        installation_id,
+        1,
+        user_id + 2,
+        accounting_date,
+        accounting_date.succ_opt().unwrap(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(read_model.len(), 1);
+    assert_eq!(read_model[0].accounting_date, accounting_date);
+    assert_eq!(read_model[0].event_count, 1);
+    assert_eq!(read_model[0].charged_u, 625);
+    assert_eq!(read_model[0].charged_d, 750);
+    assert!(
+        read_applied_daily_traffic(
+            &client,
+            installation_id,
+            2,
+            user_id + 2,
+            accounting_date,
+            accounting_date.succ_opt().unwrap(),
+        )
+        .await
+        .unwrap()
+        .is_empty()
+    );
 }

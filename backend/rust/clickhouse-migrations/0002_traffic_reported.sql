@@ -22,12 +22,11 @@ CREATE TABLE IF NOT EXISTS traffic_reported
     ingest_batch_id UUID,
     batch_row_number UInt32,
     outbox_payload_sha256 String,
-    table_generation UInt32,
     ingested_at_unix Int64,
     INDEX idx_ingest_batch_id ingest_batch_id TYPE bloom_filter(0.001) GRANULARITY 1
 )
 ENGINE = MergeTree
-PARTITION BY (table_generation, toYYYYMM(accounting_date))
+PARTITION BY toYYYYMM(accounting_date)
 ORDER BY
 (
     installation_id,

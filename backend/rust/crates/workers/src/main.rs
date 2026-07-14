@@ -77,6 +77,12 @@ async fn main() -> anyhow::Result<()> {
     )
     .await?;
     let redis = redis::Client::open(config.redis_url.clone())?;
+    tokio::time::timeout(
+        std::time::Duration::from_secs(config.http_connect_timeout_seconds),
+        v2board_domain::redis_runtime::verify_redis_runtime(&redis, config.environment),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("timed out verifying the Redis runtime policy"))??;
     let state = WorkerState::new(
         config,
         db,

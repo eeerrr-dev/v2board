@@ -67,7 +67,7 @@ impl AdminService {
                 let predicate = if op == "like" {
                     "email ILIKE $1".to_string()
                 } else if matches!(op, "=" | "<>") {
-                    format!("LOWER(email) {op} LOWER($1)")
+                    format!("lower(btrim(email)) {op} lower(btrim($1))")
                 } else {
                     format!("email {op} $1")
                 };
@@ -210,24 +210,26 @@ impl AdminService {
                 return Ok(());
             }
         };
-        let keys = cache_rows
-            .iter()
-            .map(|(_, id)| format!("ALIVE_IP_USER_{id}"))
-            .collect::<Vec<_>>();
-        let cached = match conn.mget::<_, Vec<Option<String>>>(&keys).await {
-            Ok(cached) => cached,
-            Err(error) => {
-                tracing::warn!(?error, "admin user device-cache batch read failed");
-                return Ok(());
-            }
-        };
-        for ((index, _), raw) in cache_rows.into_iter().zip(cached) {
-            if let Some(raw) = raw
-                && let Some(object) = users[index].as_object_mut()
-            {
-                let (alive_ip, ips) = parse_alive_ip(&raw);
-                object.insert("alive_ip".to_string(), json!(alive_ip));
-                object.insert("ips".to_string(), json!(ips));
+        for cache_rows in cache_rows.chunks(REDIS_MGET_BATCH_SIZE) {
+            let keys = cache_rows
+                .iter()
+                .map(|(_, id)| self.redis_key(&format!("ALIVE_IP_USER_{id}")))
+                .collect::<Vec<_>>();
+            let cached = match conn.mget::<_, Vec<Option<String>>>(&keys).await {
+                Ok(cached) => cached,
+                Err(error) => {
+                    tracing::warn!(?error, "admin user device-cache batch read failed");
+                    return Ok(());
+                }
+            };
+            for ((index, _), raw) in cache_rows.iter().copied().zip(cached) {
+                if let Some(raw) = raw
+                    && let Some(object) = users[index].as_object_mut()
+                {
+                    let (alive_ip, ips) = parse_alive_ip(&raw);
+                    object.insert("alive_ip".to_string(), json!(alive_ip));
+                    object.insert("ips".to_string(), json!(ips));
+                }
             }
         }
         Ok(())
@@ -237,7 +239,8 @@ impl AdminService {
     /// Best-effort: the durable database epoch remains authoritative if Redis is unavailable.
     async fn remove_user_sessions(&self, user_id: i64) {
         if let Err(error) =
-            crate::auth::remove_user_sessions_from_client(&self.redis, user_id).await
+            crate::auth::remove_user_sessions_from_client(&self.redis, &self.redis_keys, user_id)
+                .await
         {
             tracing::warn!(
                 ?error,
@@ -255,10 +258,12 @@ impl AdminService {
             let mut tasks = JoinSet::new();
             for user_id in chunk {
                 let redis = self.redis.clone();
+                let redis_keys = self.redis_keys.clone();
                 let user_id = *user_id;
                 tasks.spawn(async move {
                     let result =
-                        crate::auth::remove_user_sessions_from_client(&redis, user_id).await;
+                        crate::auth::remove_user_sessions_from_client(&redis, &redis_keys, user_id)
+                            .await;
                     (user_id, result)
                 });
             }
@@ -286,11 +291,13 @@ impl AdminService {
         params: &HashMap<String, String>,
     ) -> Result<i64, ApiError> {
         let email = required_string(params, "_admin_email")?;
-        sqlx::query_scalar::<_, i64>("SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1")
-            .bind(email)
-            .fetch_optional(&self.db)
-            .await?
-            .ok_or_else(|| ApiError::legacy("管理员不存在"))
+        sqlx::query_scalar::<_, i64>(
+            "SELECT id FROM users WHERE lower(btrim(email)) = lower(btrim($1)) LIMIT 1",
+        )
+        .bind(email)
+        .fetch_optional(&self.db)
+        .await?
+        .ok_or_else(|| ApiError::legacy("管理员不存在"))
     }
 
     /// Set-based cascade shared by delUser and allDel. Every chunk follows the same table order
@@ -505,11 +512,12 @@ impl AdminService {
                 .ok_or_else(|| ApiError::legacy("用户不存在"))?;
         let email = required_string(params, "email")?;
         if email != current_email {
-            let taken: Option<i64> =
-                sqlx::query_scalar("SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1")
-                    .bind(&email)
-                    .fetch_optional(&self.db)
-                    .await?;
+            let taken: Option<i64> = sqlx::query_scalar(
+                "SELECT id FROM users WHERE lower(btrim(email)) = lower(btrim($1)) LIMIT 1",
+            )
+            .bind(&email)
+            .fetch_optional(&self.db)
+            .await?;
             if taken.is_some() {
                 return Err(ApiError::legacy("邮箱已被使用"));
             }
@@ -572,7 +580,7 @@ impl AdminService {
         {
             Some(invite_email) => {
                 if let Some(invite_id) = sqlx::query_scalar::<_, i64>(
-                    "SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1",
+                    "SELECT id FROM users WHERE lower(btrim(email)) = lower(btrim($1)) LIMIT 1",
                 )
                 .bind(invite_email)
                 .fetch_optional(&self.db)
@@ -646,11 +654,12 @@ impl AdminService {
         .ok_or_else(|| ApiError::legacy("用户不存在"))?;
         let email = required_string(params, "email")?;
         if email != current_email {
-            let taken: Option<i64> =
-                sqlx::query_scalar("SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1")
-                    .bind(&email)
-                    .fetch_optional(&self.db)
-                    .await?;
+            let taken: Option<i64> = sqlx::query_scalar(
+                "SELECT id FROM users WHERE lower(btrim(email)) = lower(btrim($1)) LIMIT 1",
+            )
+            .bind(&email)
+            .fetch_optional(&self.db)
+            .await?;
             if taken.is_some() {
                 return Err(ApiError::legacy("邮箱已被使用"));
             }
@@ -839,11 +848,12 @@ impl AdminService {
         if let Some(prefix) = optional_string(params, "email_prefix") {
             let suffix = required_string(params, "email_suffix")?;
             let email = format!("{prefix}@{suffix}");
-            let exists: Option<i64> =
-                sqlx::query_scalar("SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1")
-                    .bind(&email)
-                    .fetch_optional(&self.db)
-                    .await?;
+            let exists: Option<i64> = sqlx::query_scalar(
+                "SELECT id FROM users WHERE lower(btrim(email)) = lower(btrim($1)) LIMIT 1",
+            )
+            .bind(&email)
+            .fetch_optional(&self.db)
+            .await?;
             if exists.is_some() {
                 return Err(ApiError::legacy("邮箱已存在于系统中"));
             }

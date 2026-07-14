@@ -108,7 +108,7 @@ pub(in super::super) fn push_user_where(
                 if *op == "like" {
                     builder.push(format!("u.{column}::text ILIKE "));
                 } else if *column == "email" && matches!(*op, "=" | "<>") {
-                    builder.push(format!("LOWER(u.email) {op} LOWER("));
+                    builder.push(format!("lower(btrim(u.email)) {op} lower(btrim("));
                 } else {
                     builder.push(format!("u.{column} {op} "));
                 }
@@ -121,7 +121,7 @@ pub(in super::super) fn push_user_where(
                     }
                 }
                 if *column == "email" && *op != "like" && matches!(*op, "=" | "<>") {
-                    builder.push(")");
+                    builder.push("))");
                 }
             }
             UserFilterClause::IsNull { column } => {

@@ -228,7 +228,7 @@ impl AuthService {
         let Some(ip) = ip.filter(|_| self.config.register_limit_by_ip_enable) else {
             return Ok(None);
         };
-        let key = cache_key("REGISTER_IP_RATE_LIMIT_V2", ip);
+        let key = self.redis_key(&cache_key("REGISTER_IP_RATE_LIMIT_V2", ip));
         let token = legacy_guid(false);
         let now = Utc::now().timestamp();
         let ttl = i64::try_from(duration_minutes_to_seconds(
@@ -340,10 +340,7 @@ pub(super) fn validate_registration_auxiliary_inputs(
 fn is_email_unique_violation(error: &sqlx::Error) -> bool {
     error.as_database_error().is_some_and(|error| {
         error.is_unique_violation()
-            && matches!(
-                error.constraint(),
-                Some("uniq_user_email" | "uniq_user_email_canonical")
-            )
+            && matches!(error.constraint(), Some("uniq_user_email_canonical"))
     })
 }
 

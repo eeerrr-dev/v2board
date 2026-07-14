@@ -403,7 +403,7 @@ impl AdminService {
         let user_id = if !staff && params.contains_key("email") {
             let email = params.get("email").cloned().unwrap_or_default();
             sqlx::query_scalar::<_, i64>(
-                "SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1",
+                "SELECT id FROM users WHERE lower(btrim(email)) = lower(btrim($1)) LIMIT 1",
             )
             .bind(email)
             .fetch_optional(&self.db)
@@ -590,7 +590,7 @@ impl AdminService {
         &self,
         user_id: i64,
     ) -> Option<TicketNotificationGate> {
-        let key = format!("ticket_sendEmailNotify_{user_id}");
+        let key = self.redis_key(&format!("ticket_sendEmailNotify_{user_id}"));
         let token = Uuid::new_v4().to_string();
         let mut conn = match self.redis.get_multiplexed_async_connection().await {
             Ok(conn) => conn,
@@ -1046,8 +1046,10 @@ mod generated_code_tests {
         assert!(source.contains("insert_unique_generated_code_batch"));
         assert!(source.contains("is_unique_violation"));
         let baseline = include_str!("../../../../migrations-postgres/0001_initial.sql");
-        assert!(baseline.contains("uniq_coupon_code"));
-        assert!(baseline.contains("uniq_gift_card_code"));
+        assert!(baseline.contains("uniq_coupon_code_canonical"));
+        assert!(baseline.contains("uniq_gift_card_code_canonical"));
+        assert!(!baseline.contains("CONSTRAINT uniq_coupon_code UNIQUE (code)"));
+        assert!(!baseline.contains("CONSTRAINT uniq_gift_card_code UNIQUE (code)"));
         let retired_row_loop = ["for _ in 0..", "count"].concat();
         assert!(!source.contains(&retired_row_loop));
     }

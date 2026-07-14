@@ -5,5 +5,6 @@ pub mod mail;
 pub mod operator_config;
 pub mod order;
 pub mod payment_provider;
+pub mod redis_runtime;
 pub mod server_credentials;
 pub mod smtp;

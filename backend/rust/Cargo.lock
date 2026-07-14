@@ -3468,8 +3468,10 @@ dependencies = [
  "ipnet",
  "percent-encoding",
  "rust_decimal",
+ "serde",
  "serde_json",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -3547,7 +3549,22 @@ name = "v2board-lifecycle"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
+ "clickhouse",
+ "hex",
+ "percent-encoding",
+ "redis",
+ "rust_decimal",
+ "serde",
  "serde_json",
+ "sha2 0.11.0",
+ "sqlx",
+ "tokio",
+ "url",
+ "uuid",
+ "v2board-analytics",
+ "v2board-config",
+ "v2board-domain",
  "v2board-provision",
 ]
 

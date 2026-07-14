@@ -66,11 +66,11 @@ pub(crate) async fn telegram_webhook(
     let Ok(update) = serde_json::from_value::<TelegramUpdate>(payload) else {
         return Ok(Json(json!({ "data": true })));
     };
-    let update_key = format!(
+    let update_key = state.redis_key(&format!(
         "TELEGRAM_UPDATE_{}_{id}",
         &expected[..16],
         id = update.update_id
-    );
+    ));
     if !claim_telegram_update(&state, &update_key).await? {
         return Ok(Json(json!({ "data": true })));
     }
@@ -590,7 +590,7 @@ async fn resolve_subscribe_token_for_telegram_bind(
         0 => Ok(token.to_string()),
         1 => {
             let mut conn = state.auth_redis.clone();
-            conn.get::<_, Option<String>>(format!("otpn_{token}"))
+            conn.get::<_, Option<String>>(state.redis_key(&format!("otpn_{token}")))
                 .await?
                 .ok_or_else(|| forbidden("token is error"))
         }

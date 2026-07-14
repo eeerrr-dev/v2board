@@ -19,7 +19,7 @@ use serde_json::json;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 use uuid::Uuid;
 use v2board_analytics::{AnalyticsPressureState, analytics_admission_snapshot};
-use v2board_config::AppConfig;
+use v2board_config::{AppConfig, RedisKeyspace};
 use v2board_db::{DbPool, migrations_current};
 use v2board_domain::{
     admin::AdminService,
@@ -36,6 +36,7 @@ pub(crate) struct AppState {
     operator_authority_healthy: Arc<AtomicBool>,
     pub(crate) db: DbPool,
     pub(crate) installation_id: Uuid,
+    pub(crate) redis_keys: RedisKeyspace,
     pub(crate) redis: redis::Client,
     pub(crate) auth_redis: redis::aio::ConnectionManager,
     pub(crate) http: reqwest::Client,
@@ -65,6 +66,7 @@ impl AppState {
             operator_authority_healthy: Arc::new(AtomicBool::new(true)),
             db,
             installation_id,
+            redis_keys: RedisKeyspace::new(installation_id),
             redis,
             auth_redis,
             http,
@@ -77,6 +79,7 @@ impl AppState {
         AuthService::new(
             self.db.clone(),
             self.auth_redis.clone(),
+            self.installation_id,
             self.config_snapshot(),
             self.http.clone(),
             self.password_kdf.clone(),
@@ -88,16 +91,20 @@ impl AppState {
         AdminService::new(
             self.db.clone(),
             self.redis.clone(),
+            self.installation_id,
             config,
             self.http.clone(),
             self.password_kdf.clone(),
             self.smtp.clone(),
         )
-        .with_installation_id(self.installation_id)
     }
 
     pub(crate) fn config_snapshot(&self) -> Arc<AppConfig> {
         self.config.load_full()
+    }
+
+    pub(crate) fn redis_key(&self, logical_key: &str) -> String {
+        self.redis_keys.key(logical_key)
     }
 
     pub(crate) async fn reload_config(&self) -> io::Result<Arc<AppConfig>> {
@@ -474,8 +481,10 @@ pub(crate) async fn reset_admin_password(
 
     match redis::Client::open(config.redis_url.clone()) {
         Ok(redis) => {
+            let redis_keys = RedisKeyspace::new(v2board_db::installation_id(db).await?);
             if let Err(error) =
-                v2board_domain::auth::remove_user_sessions_from_client(&redis, user_id).await
+                v2board_domain::auth::remove_user_sessions_from_client(&redis, &redis_keys, user_id)
+                    .await
             {
                 tracing::warn!(
                     user_id,

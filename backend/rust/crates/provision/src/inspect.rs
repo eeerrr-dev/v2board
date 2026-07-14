@@ -55,7 +55,9 @@ pub struct MysqlImportInspection {
 pub enum MysqlImportInspectionError {
     #[error("{field} could not be opened or read safely")]
     FileRead { field: &'static str },
-    #[error("{field} must be a non-empty regular non-symlink file with owner-only permissions")]
+    #[error(
+        "{field} must be a non-empty root-owned regular non-symlink file with owner-only permissions"
+    )]
     UnsafeFile { field: &'static str },
     #[error("{field} exceeds the supported size limit")]
     FileTooLarge { field: &'static str },
@@ -104,6 +106,7 @@ fn inspect_file(
         || path_metadata.file_type().is_symlink()
         || path_metadata.len() == 0
         || !owner_only
+        || path_metadata.uid() != 0
     {
         return Err(MysqlImportInspectionError::UnsafeFile { field });
     }
@@ -114,7 +117,10 @@ fn inspect_file(
     let opened = file
         .metadata()
         .map_err(|_| MysqlImportInspectionError::FileRead { field })?;
-    if opened.dev() != path_metadata.dev() || opened.ino() != path_metadata.ino() {
+    if opened.dev() != path_metadata.dev()
+        || opened.ino() != path_metadata.ino()
+        || opened.uid() != 0
+    {
         return Err(MysqlImportInspectionError::UnsafeFile { field });
     }
 
@@ -143,7 +149,14 @@ fn inspect_file(
 
     let after =
         fs::symlink_metadata(path).map_err(|_| MysqlImportInspectionError::FileRead { field })?;
-    if opened.dev() != after.dev() || opened.ino() != after.ino() || opened.len() != after.len() {
+    if opened.dev() != after.dev()
+        || opened.ino() != after.ino()
+        || opened.len() != after.len()
+        || !after.file_type().is_file()
+        || after.file_type().is_symlink()
+        || after.uid() != 0
+        || after.permissions().mode() & 0o077 != 0
+    {
         return Err(MysqlImportInspectionError::UnsafeFile { field });
     }
     Ok(ImmutableFileInspection {
@@ -196,6 +209,7 @@ fn preserved_data() -> MysqlImportPreservationReport {
         transformed: vec![
             "legacy MySQL v2_* source tables map to unprefixed native PostgreSQL targets",
             "explicit manifest target/runtime values generate new API and worker configuration",
+            "the one-shot Redis bootstrap credential is not emitted; execute creates persisted, distinct API and worker ACL credentials",
             "retained Stripe order history has provider payment and callback bindings cleared",
         ],
     }
@@ -263,6 +277,12 @@ mod tests {
         let joined = preserved.exact_or_semantic.join(" ");
         assert!(joined.contains("non-Stripe payment configuration"));
         assert!(joined.contains("subscription tokens"));
+        assert!(
+            preserved
+                .transformed
+                .iter()
+                .any(|item| item.contains("distinct API and worker ACL credentials"))
+        );
     }
 
     #[test]

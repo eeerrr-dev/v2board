@@ -88,10 +88,6 @@ pub enum OperatorConfigError {
     },
     #[error("operator configuration authority has not been initialized")]
     MissingAuthority,
-    #[error(
-        "existing operator configuration revision {revision} differs from the requested initial candidate"
-    )]
-    InitialAuthorityMismatch { revision: i64 },
 }
 
 impl OperatorConfigError {
@@ -150,58 +146,17 @@ pub async fn ensure_authority(
     }
 }
 
-/// Lifecycle-only, crash-resumable initialization. A retry succeeds only when
-/// the already-active revision authenticates and is exactly the candidate the
-/// caller intended to seed. State/revision drift is never "repaired" by adding
-/// another row because that would hide an incomplete or tampered bootstrap.
-pub async fn ensure_initial_authority_exact(
+/// Lifecycle-only seed for a fresh target. Both authority tables must be empty;
+/// the candidate is committed exactly once and an existing or partial authority
+/// is an error rather than a resumable state.
+pub async fn seed_initial_authority(
     db: &DbPool,
     installation_id: Uuid,
     app_key: &str,
     candidate: &Map<String, Value>,
     actor: &str,
 ) -> Result<OperatorConfigSnapshot, OperatorConfigError> {
-    validate_complete_key_set(candidate)?;
-    if let Some(snapshot) = load_active(db, installation_id, app_key).await? {
-        return exact_initial_snapshot(snapshot, candidate);
-    }
-
-    let (state_exists, revision_exists) = sqlx::query_as::<_, (bool, bool)>(
-        r#"
-        SELECT
-            EXISTS (SELECT 1 FROM operator_config_state),
-            EXISTS (SELECT 1 FROM operator_config_revision)
-        "#,
-    )
-    .fetch_one(db)
-    .await?;
-    if state_exists || revision_exists {
-        return Err(OperatorConfigError::Integrity(
-            "operator configuration authority contains orphaned or mismatched rows",
-        ));
-    }
-
-    match commit(db, installation_id, app_key, None, candidate, actor).await {
-        Ok(snapshot) => Ok(snapshot),
-        Err(commit_error) => match load_active(db, installation_id, app_key).await {
-            Ok(Some(snapshot)) => exact_initial_snapshot(snapshot, candidate),
-            Ok(None) => Err(commit_error),
-            Err(load_error) => Err(load_error),
-        },
-    }
-}
-
-fn exact_initial_snapshot(
-    snapshot: OperatorConfigSnapshot,
-    candidate: &Map<String, Value>,
-) -> Result<OperatorConfigSnapshot, OperatorConfigError> {
-    if snapshot.values == *candidate {
-        Ok(snapshot)
-    } else {
-        Err(OperatorConfigError::InitialAuthorityMismatch {
-            revision: snapshot.revision,
-        })
-    }
+    commit_inner(db, installation_id, app_key, None, candidate, actor, true).await
 }
 
 /// Reads, authenticates, and decrypts the one active operator revision. An
@@ -381,11 +336,53 @@ pub async fn commit(
     candidate: &Map<String, Value>,
     actor: &str,
 ) -> Result<OperatorConfigSnapshot, OperatorConfigError> {
+    commit_inner(
+        db,
+        installation_id,
+        app_key,
+        expected_revision,
+        candidate,
+        actor,
+        false,
+    )
+    .await
+}
+
+async fn commit_inner(
+    db: &DbPool,
+    installation_id: Uuid,
+    app_key: &str,
+    expected_revision: Option<i64>,
+    candidate: &Map<String, Value>,
+    actor: &str,
+    require_empty_authority: bool,
+) -> Result<OperatorConfigSnapshot, OperatorConfigError> {
     validate_complete_key_set(candidate)?;
     let encrypted = encrypt_revision(app_key, installation_id, candidate)?;
     let now = chrono::Utc::now().timestamp();
     let actor = normalized_actor(actor);
     let mut tx = db.begin().await?;
+    if require_empty_authority {
+        sqlx::query(
+            "LOCK TABLE operator_config_state, operator_config_revision IN SHARE ROW EXCLUSIVE MODE",
+        )
+        .execute(&mut *tx)
+        .await?;
+        let (state_exists, revision_exists) = sqlx::query_as::<_, (bool, bool)>(
+            r#"
+            SELECT
+                EXISTS (SELECT 1 FROM operator_config_state),
+                EXISTS (SELECT 1 FROM operator_config_revision)
+            "#,
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+        if state_exists || revision_exists {
+            return Err(OperatorConfigError::Integrity(
+                "operator configuration authority is not empty",
+            ));
+        }
+    }
     let active = sqlx::query_as::<_, (Uuid, i64)>(
         "SELECT installation_id, active_revision FROM operator_config_state WHERE singleton = 1 FOR UPDATE",
     )

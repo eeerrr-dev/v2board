@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use redis::aio::ConnectionManager;
 use uuid::Uuid;
-use v2board_config::AppConfig;
+use v2board_config::{AppConfig, RedisKeyspace};
 use v2board_db::DbPool;
 
 use crate::smtp::SmtpTransportCache;
@@ -24,6 +24,7 @@ use crate::smtp::SmtpTransportCache;
 pub struct AuthService {
     db: DbPool,
     redis: ConnectionManager,
+    redis_keys: RedisKeyspace,
     config: Arc<AppConfig>,
     http: reqwest::Client,
     password_kdf: PasswordKdf,
@@ -34,6 +35,7 @@ impl AuthService {
     pub fn new(
         db: DbPool,
         redis: ConnectionManager,
+        installation_id: Uuid,
         config: Arc<AppConfig>,
         http: reqwest::Client,
         password_kdf: PasswordKdf,
@@ -42,11 +44,16 @@ impl AuthService {
         Self {
             db,
             redis,
+            redis_keys: RedisKeyspace::new(installation_id),
             config,
             http,
             password_kdf,
             smtp,
         }
+    }
+
+    fn redis_key(&self, logical_key: &str) -> String {
+        self.redis_keys.key(logical_key)
     }
 }
 

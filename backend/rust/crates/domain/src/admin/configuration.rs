@@ -190,10 +190,7 @@ impl AdminService {
         if normalized == self.config.operator_config_map() {
             return Ok(AdminOutput::Data(json!(true)));
         }
-        let installation_id = match self.installation_id {
-            Some(installation_id) => installation_id,
-            None => v2board_db::installation_id(&self.db).await?,
-        };
+        let installation_id = self.installation_id;
         let committed = operator_config::commit(
             &self.db,
             installation_id,

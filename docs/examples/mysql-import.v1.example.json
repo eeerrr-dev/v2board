@@ -12,11 +12,7 @@
       "api_database_url": "postgresql://v2board_api:REPLACE_WITH_API_PASSWORD@new-postgres18.invalid:5432/v2board?sslmode=verify-full",
       "worker_database_url": "postgresql://v2board_worker:REPLACE_WITH_WORKER_PASSWORD@new-postgres18.invalid:5432/v2board?sslmode=verify-full",
       "require_database_absent": true,
-      "require_roles_absent": true,
-      "external_access": {
-        "pg_hba_evidence": "REPLACE_WITH_PG_HBA_CHANGE_REFERENCE",
-        "network_policy_evidence": "REPLACE_WITH_POSTGRES_NETWORK_POLICY_REFERENCE"
-      }
+      "require_roles_absent": true
     },
     "clickhouse": {
       "endpoint": "https://new-clickhouse263.invalid",
@@ -33,18 +29,10 @@
         "username": "v2board_ch_writer",
         "password": "REPLACE_WITH_CH_WRITER_PASSWORD"
       },
-      "reader_principal": {
-        "username": "v2board_ch_reader",
-        "password": "REPLACE_WITH_CH_READER_PASSWORD"
-      },
       "raw_retention_days": 90,
       "aggregate_retention_days": 730,
       "require_database_absent": true,
-      "require_principals_absent": true,
-      "network_policy_evidence": "REPLACE_WITH_CLICKHOUSE_NETWORK_POLICY_REFERENCE",
-      "privileges": {
-        "evidence": "REPLACE_WITH_CLICKHOUSE_GRANT_REVIEW_REFERENCE"
-      }
+      "require_principals_absent": true
     },
     "analytics_admission": {
       "recovery_pending_rows": 750000,
@@ -66,9 +54,8 @@
       "stale_after_seconds": 30,
       "capacity_evidence": "REPLACE_WITH_DEDICATED_POSTGRESQL_CAPACITY_OR_QUOTA_EVIDENCE"
     },
-    "redis_url": "rediss://:REPLACE_WITH_REDIS_PASSWORD@new-redis.invalid:6380/1",
-    "api_runtime_config_path": "/var/lib/v2board/api/config.json",
-    "worker_runtime_config_path": "/var/lib/v2board/worker/config.json",
+    "redis_bootstrap_url": "rediss://import_bootstrap:REPLACE_WITH_REDIS_BOOTSTRAP_PASSWORD@new-redis.invalid:6380/0",
+    "config_output_directory": "/secure/private/v2board-import-output",
     "require_empty_redis": true
   },
   "runtime": {

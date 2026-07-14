@@ -56,7 +56,7 @@ pub(crate) async fn user_subscribe(
         ),
         None => None,
     };
-    let alive_ip = alive_ip(&state.redis, user.id).await?;
+    let alive_ip = alive_ip(&state, user.id).await?;
     let config = state.config_snapshot();
     let reset_day = reset_day(subscribe.expired_at, plan.as_ref(), &config);
     let subscribe_url = subscribe_url_for_user(&state, user.id, &subscribe.token).await?;
@@ -296,8 +296,8 @@ async fn resolve_one_time_subscribe_token(
 ) -> Result<String, ApiError> {
     let mut conn = state.auth_redis.clone();
     redis::Script::new(CONSUME_SUBSCRIBE_TOKEN_SCRIPT)
-        .key(format!("otpn_{token}"))
-        .arg("otp_")
+        .key(state.redis_key(&format!("otpn_{token}")))
+        .arg(state.redis_key("otp_"))
         .invoke_async::<Option<String>>(&mut conn)
         .await?
         .ok_or_else(|| forbidden("token is error"))
@@ -307,7 +307,7 @@ pub(crate) async fn resolve_totp_subscribe_token(
     state: &AppState,
     token: &str,
 ) -> Result<String, ApiError> {
-    let cache_key = format!("totp_{token}");
+    let cache_key = state.redis_key(&format!("totp_{token}"));
     let mut conn = state.auth_redis.clone();
     if let Some(user_token) = conn.get::<_, Option<String>>(&cache_key).await? {
         return Ok(user_token);
@@ -368,8 +368,8 @@ async fn one_time_subscribe_token(state: &AppState, token: &str) -> Result<Strin
     let new_token = safe_base64_encode(&raw);
     let mut conn = state.auth_redis.clone();
     Ok(redis::Script::new(MINT_SUBSCRIBE_TOKEN_SCRIPT)
-        .key(format!("otp_{token}"))
-        .arg("otpn_")
+        .key(state.redis_key(&format!("otp_{token}")))
+        .arg(state.redis_key("otpn_"))
         .arg(token)
         .arg(&new_token)
         .arg(86_400)
@@ -408,9 +408,9 @@ fn totp_subscribe_token(config: &AppConfig, user_id: i64, token: &str) -> Result
     Ok(safe_base64_encode(format!("{user_id}:{hash}").as_bytes()))
 }
 
-async fn alive_ip(redis: &redis::Client, user_id: i64) -> Result<i64, ApiError> {
-    let key = format!("ALIVE_IP_USER_{user_id}");
-    let mut conn = redis.get_multiplexed_async_connection().await?;
+async fn alive_ip(state: &AppState, user_id: i64) -> Result<i64, ApiError> {
+    let key = state.redis_key(&format!("ALIVE_IP_USER_{user_id}"));
+    let mut conn = state.redis.get_multiplexed_async_connection().await?;
     let current: Option<String> = conn.get(key).await?;
     let Some(current) = current else {
         return Ok(0);

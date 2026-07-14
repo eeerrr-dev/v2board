@@ -77,7 +77,7 @@ impl AuthService {
         redirect: Option<&str>,
     ) -> Result<String, ApiError> {
         let code = legacy_guid(false);
-        let key = cache_key("TEMP_TOKEN", &code);
+        let key = self.redis_key(&cache_key("TEMP_TOKEN", &code));
         let session_epoch: i64 = sqlx::query_scalar(
             "SELECT session_epoch FROM users WHERE id = $1 AND banned = 0 LIMIT 1",
         )
@@ -97,7 +97,7 @@ impl AuthService {
         ip: Option<String>,
         user_agent: Option<String>,
     ) -> Result<AuthData, ApiError> {
-        let key = cache_key("TEMP_TOKEN", verify);
+        let key = self.redis_key(&cache_key("TEMP_TOKEN", verify));
         let mut conn = self.redis.clone();
         let token_value: Option<String> = redis::cmd("GETDEL")
             .arg(&key)
@@ -277,22 +277,22 @@ impl AuthService {
     }
 
     pub async fn remove_session(&self, user_id: i64, session_id: &str) -> Result<bool, ApiError> {
-        let sessions_key = user_sessions_key(user_id);
-        let auth_keys_key = user_auth_keys_key(user_id);
+        let sessions_key = self.redis_key(&user_sessions_key(user_id));
+        let auth_keys_key = self.redis_key(&user_auth_keys_key(user_id));
         let mut conn = self.redis.clone();
         redis::Script::new(REMOVE_SESSION_SCRIPT)
             .key(sessions_key)
             .key(auth_keys_key)
             .arg(session_id)
-            .arg(AUTH_SESSION_KEY_PREFIX)
+            .arg(self.redis_key(AUTH_SESSION_KEY_PREFIX))
             .invoke_async::<i64>(&mut conn)
             .await?;
         Ok(true)
     }
 
     pub async fn remove_all_sessions(&self, user_id: i64) -> Result<bool, ApiError> {
-        let sessions_key = user_sessions_key(user_id);
-        let auth_keys_key = user_auth_keys_key(user_id);
+        let sessions_key = self.redis_key(&user_sessions_key(user_id));
+        let auth_keys_key = self.redis_key(&user_auth_keys_key(user_id));
         let mut conn = self.redis.clone();
         redis::Script::new(REMOVE_ALL_SESSIONS_SCRIPT)
             .key(sessions_key)
@@ -314,7 +314,7 @@ impl AuthService {
         client_ip: Option<&str>,
     ) -> Result<String, ApiError> {
         validate_password(password)?;
-        let limiter_keys = step_up_limiter_keys(user_id, client_ip);
+        let limiter_keys = step_up_limiter_keys(user_id, client_ip).map(|key| self.redis_key(&key));
         let mut limiter_conn = self.redis.clone();
         let reserved = redis::Script::new(RESERVE_STEP_UP_ATTEMPT_SCRIPT)
             .key(&limiter_keys[0])
@@ -365,7 +365,7 @@ impl AuthService {
 
         for _ in 0..3 {
             let token = generate_auth_token()?;
-            let key = step_up_key(&token);
+            let key = self.redis_key(&step_up_key(&token));
             let value = serde_json::to_string(&(user_id, session_id))
                 .map_err(|_| ApiError::internal("step-up identity encode error"))?;
             let mut conn = self.redis.clone();
@@ -394,7 +394,7 @@ impl AuthService {
             return Ok(false);
         }
         let mut conn = self.redis.clone();
-        let value: Option<String> = conn.get(step_up_key(token)).await?;
+        let value: Option<String> = conn.get(self.redis_key(&step_up_key(token))).await?;
         let Some(value) = value else {
             return Ok(false);
         };
@@ -414,9 +414,9 @@ impl AuthService {
         auth_data: &str,
         ttl_seconds: u64,
     ) -> Result<bool, ApiError> {
-        let sessions_key = user_sessions_key(user_id);
-        let auth_keys_key = user_auth_keys_key(user_id);
-        let auth_key = auth_session_key(auth_data);
+        let sessions_key = self.redis_key(&user_sessions_key(user_id));
+        let auth_keys_key = self.redis_key(&user_auth_keys_key(user_id));
+        let auth_key = self.redis_key(&auth_session_key(auth_data));
         let meta = serde_json::to_string(&meta)
             .map_err(|error| ApiError::internal(format!("session encode error: {error}")))?;
         let identity = serde_json::to_string(&OpaqueSessionIdentity {
@@ -436,7 +436,7 @@ impl AuthService {
             .arg(ttl_seconds)
             .arg(Utc::now().timestamp())
             .arg(self.config.auth_session_max_per_user)
-            .arg(AUTH_SESSION_KEY_PREFIX)
+            .arg(self.redis_key(AUTH_SESSION_KEY_PREFIX))
             .invoke_async::<i64>(&mut conn)
             .await?;
         Ok(inserted == 1)
@@ -447,7 +447,9 @@ impl AuthService {
         auth_data: &str,
     ) -> Result<Option<OpaqueSessionIdentity>, ApiError> {
         let mut conn = self.redis.clone();
-        let value: Option<String> = conn.get(auth_session_key(auth_data)).await?;
+        let value: Option<String> = conn
+            .get(self.redis_key(&auth_session_key(auth_data)))
+            .await?;
         match value {
             Some(value) => serde_json::from_str(&value).map(Some).map_err(|error| {
                 ApiError::internal(format!("session identity decode error: {error}"))
@@ -484,7 +486,7 @@ impl AuthService {
         &self,
         user_id: i64,
     ) -> Result<serde_json::Map<String, serde_json::Value>, ApiError> {
-        let key = user_sessions_key(user_id);
+        let key = self.redis_key(&user_sessions_key(user_id));
         let mut conn = self.redis.clone();
         let current: Option<String> = conn.get(key).await?;
         decode_session_metadata(current.as_deref())
@@ -541,9 +543,9 @@ pub(super) fn session_ttl_seconds(
     }
 }
 
-// Bare `KEY_unique` names are the native Redis contract. The read-only reference
-// applied deployment-specific cache prefixes outside its key helper; those prefixes
-// are not part of this runtime and are intentionally neither read nor dual-written.
+// These helpers return logical names only. AuthService binds every name to the
+// immutable installation keyspace before it reaches Redis; the empty pre-release
+// Redis has no legacy prefix or dual-read contract to preserve.
 fn user_sessions_key(user_id: i64) -> String {
     format!("USER_SESSIONS_{user_id}")
 }
@@ -688,12 +690,13 @@ return #auth_keys
 /// the user-visible session metadata.
 pub async fn remove_user_sessions_from_client(
     redis: &redis::Client,
+    redis_keys: &v2board_config::RedisKeyspace,
     user_id: i64,
 ) -> Result<(), redis::RedisError> {
     let mut conn = redis.get_multiplexed_async_connection().await?;
     redis::Script::new(REMOVE_ALL_SESSIONS_SCRIPT)
-        .key(user_sessions_key(user_id))
-        .key(user_auth_keys_key(user_id))
+        .key(redis_keys.key(&user_sessions_key(user_id)))
+        .key(redis_keys.key(&user_auth_keys_key(user_id)))
         .invoke_async::<i64>(&mut conn)
         .await?;
     Ok(())

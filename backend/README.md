@@ -16,15 +16,16 @@ Reference code, schema or packaged frontend assets are never deployed.
 ## Runtime architecture
 
 - PostgreSQL 18 is the only authoritative transactional database.
-- ClickHouse 26.3 LTS stores derived, rebuildable analytics facts; aggregate projections are added
-  only by an explicit, versioned ClickHouse migration after their retry semantics are proven.
+- ClickHouse 26.3 LTS stores expendable derived analytics facts. Current projections can be recreated
+  from their schema, but discarded historical facts are not promised to be replayed; aggregate projections
+  are added only by an explicit, versioned migration after their retry semantics are proven.
 - Redis stores session lookup, rate limits, leases, locks, worker heartbeat and bounded cache; it is
   not a business ledger.
 - API and worker use separate PostgreSQL principals against the same database.
 - ClickHouse schema migrator and outbox writer are separate least-privilege principals. The relay
   writer has raw-table `INSERT` plus the narrow `SELECT` needed to verify its immutable batches, but
-  no DDL. A reader principal may be provisioned for a future analytics consumer, but the current API
-  does not receive it.
+  no DDL. The one-shot schema principal is removed after provisioning; no reader principal or secret
+  is created until a real analytics consumer exists.
 - API/worker never synchronously dual-write PostgreSQL and ClickHouse. A PostgreSQL transaction writes
   the business result and typed outbox; the analytics relay publishes later.
 
@@ -33,9 +34,9 @@ accounting continues inside the manifest-bound normal/soft PostgreSQL outbox bud
 age/headroom pressure fails only analytics-producing traffic transactions before commit while the
 relay keeps draining. Exact sampling and hysteresis reopen traffic automatically after recovery. See
 [the persistence invariants](../docs/postgresql-clickhouse-invariants.md) for ownership, batch
-integrity, replay and failure semantics.
+integrity, retry and failure semantics.
 
-The fixed single-node ClickHouse topology has serialized, crash-recoverable schema migration, exact
+The fixed single-node ClickHouse topology has serialized, idempotent schema migration, exact
 lineage/installation checks and manifest-bound raw/aggregate TTL. HA/Keeper is a separate availability
 deployment choice; standalone evidence must not be extrapolated to a replicated topology. Runtime
 secret isolation or one successful datastore test does not prove that the MySQL importer is complete.
@@ -53,7 +54,7 @@ backend/rust/
   crates/db/                 PostgreSQL-only runtime access
   crates/domain/             business rules and external integrations
   crates/provision/          mysql-import.v1 validation and fixed converter policy
-  crates/lifecycle/          disposable MySQL-import CLI; production importer not linked
+  crates/lifecycle/          disposable validate/inspect/execute MySQL-import CLI
   crates/workers/            scheduler, durable work and analytics relay
   crates/contract/           route, SQL and production invariant gates
 ```
@@ -83,14 +84,14 @@ make rust-target-gate
 ```
 
 `make rust-integration` exercises the native PostgreSQL, ClickHouse and Redis lanes, including
-ClickHouse lost-ack/outbox replay and live production invariants. It also prepares every generated
+ClickHouse lost-ack/outbox retry handling and live production invariants. It also prepares every generated
 MySQL-import target query against a freshly migrated disposable PostgreSQL database and verifies the
-derived and fixed-empty target tables. The single `mysql-import.v1` manifest, fixed row conversion
-and loss policy are covered by Rust tests; the real dump → staging → PostgreSQL integration is not yet
-linked, so production import is unavailable. No legacy Redis service exists.
+derived and fixed-empty target tables. The single `mysql-import.v1` manifest, fixed row conversion,
+loss policy and executable importer are covered by Rust gates. No legacy Redis service exists.
 `make rust-route-audit` reads the pinned reference only as contract evidence.
 `make native-database-audit` rejects MySQL driver/dialect use in native runtime crates and in the current
-inspection-only import graph. The one-time staging adapter cannot enter native runtime graphs.
+API/worker/analytics dependency graphs. The MySQL driver and staging adapter are allowed only in the
+disposable lifecycle/provision import graph.
 
 Do not run host Cargo commands that create `target/` in the repository. The workspace targets Rust
 1.97, Edition 2024 and Cargo resolver 3; `unsafe` is forbidden, CI denies warnings and validates the
@@ -107,11 +108,14 @@ contain no needed development data.
 
 ## Production configuration and principals
 
-The `mysql-import.v1` manifest derives two `configuration_source: "file_only"` documents:
-`/var/lib/v2board/api/config.json` and `/var/lib/v2board/worker/config.json`. The API and worker use
-explicit role loaders; missing, unknown, wrong-role, placeholder or invalid typed values are
-rejected. Validation derives and checks both maps; the importer installs them only after data conversion
-has passed. That production write path is not linked because the executor does not yet exist.
+The `mysql-import.v1` manifest derives two `configuration_source: "file_only"` documents. After data
+conversion and target verification pass, the importer creates `api.config.json`, `worker.config.json`
+and `import-report.json` in the old host's manifest-bound `config_output_directory`; lifecycle runs as root,
+the input files and existing output parent are root-owned, the new directory is `0700`, and each file is
+`0600`. The operator securely transfers the two role configs and installs them as
+`/var/lib/v2board/api/config.json` and `/var/lib/v2board/worker/config.json` on the new host. The API and
+worker use explicit role loaders; missing, unknown, wrong-role, placeholder or invalid typed values are
+rejected. The importer does not pretend that an old-host output path is the new machine's `/var/lib`.
 
 Long-running runtime configuration includes:
 
@@ -119,9 +123,15 @@ Long-running runtime configuration includes:
 - worker: its PostgreSQL `database_url`, the non-secret API role name, `redis_url`, and the
   ClickHouse writer endpoint/database/credential.
 
-Production PostgreSQL URLs require `sslmode=verify-full`, Redis requires `rediss://`, and ClickHouse
+Production PostgreSQL uses a dedicated PostgreSQL 18 cluster whose only initial non-template database is
+`postgres`; its bootstrap URL must target `/postgres`, and every URL requires `sslmode=verify-full`.
+Redis requires a dedicated 8.8 `rediss://.../0` instance that is empty across all logical databases,
+has a disabled default user and a writable external `aclfile`; the manifest supplies only
+`redis_bootstrap_url`, while execute persists distinct least-privilege API/worker ACL users and emits
+their separate `redis_url` values. ClickHouse
 requires HTTPS. API and worker PostgreSQL usernames must differ. Bootstrap and schema/migration
-credentials and the ClickHouse reader credential must not be retained in either runtime file.
+credentials must not be retained in either runtime file. No ClickHouse reader credential exists in
+the initial production topology.
 Each file is `0600` and owned by its dedicated Unix user inside that user's `0700` directory.
 Sharing a writable parent directory defeats atomic-rename isolation and is forbidden in production.
 
@@ -144,13 +154,19 @@ frontend tree, systemd units, release metadata and checksums. The intended bare-
 the payload under `/opt/v2board/releases/<release-id>` and atomically updates
 `/opt/v2board/current`; the server never builds the project and does not require Docker.
 
-The first production installation is created only by the one-time MySQL importer. That importer is not
-yet linked for production writes, so exporting or verifying a payload is not permission to hand-create
-the initial database. Native release archive inspection is a deployment check and is not part of the
-MySQL import manifest.
+The first production installation is created only by the one-time MySQL importer. Exporting or verifying
+a payload is not permission to hand-create a partial initial database; run the complete lifecycle
+`execute` command against fresh targets. Native release archive inspection is a deployment check and is
+not part of the MySQL import manifest.
 
-Before starting a native release, run serialized one-shot schema jobs with the exact release
-artifacts and secrets:
+The initial imported release is already at the exact PostgreSQL and ClickHouse lineage embedded in the
+lifecycle binary. Do not rerun either schema command after a successful import: the PostgreSQL migration
+owner is intentionally `NOLOGIN` with no password and the temporary ClickHouse schema user has been
+dropped. Install the generated runtime configs, perform read-only exact-lineage/readiness checks, and
+start the services.
+
+Only a future release that actually adds a migration runs serialized one-shot schema jobs with that
+release's exact artifacts and newly supplied transient secrets:
 
 ```text
 v2board-api migrate
@@ -206,18 +222,24 @@ The disposable CLI commands are:
 ```bash
 v2board-lifecycle validate --manifest /secure/private/mysql-import.json
 v2board-lifecycle inspect --manifest /secure/private/mysql-import.json
+v2board-lifecycle execute --manifest /secure/private/mysql-import.json
 ```
 
 The manifest contains only `schema_version: 1`, `source`, `target` and `runtime`. It rejects duplicate,
 unknown and missing keys, validates both role configs through their real typed parsers, and records the
-exact manifest SHA-256. It contains secrets and must be a regular non-symlink file without Unix
-group/world permissions.
+exact manifest SHA-256. It contains secrets and must be a root-owned regular non-symlink file without
+Unix group/world permissions; the dump follows the same ownership boundary.
 
 `source` contains the dump path, dump SHA-256 and a loopback-only staging MySQL URL. It does not contain
 a live old-MySQL URL, old Redis URL, Stripe credential, service unit, release archive or per-run loss
 choices. `inspect` reads and hashes the dump but does not contact the old system, old Redis or Stripe and
-does not mutate a target. There is currently no production write command or executor; the repository
-cannot claim a production import until the real dump → staging → PostgreSQL path passes end-to-end tests.
+does not mutate a target. `execute` reads the already-loaded staging database, requires a dedicated empty
+PostgreSQL 18 cluster, absent PostgreSQL/ClickHouse targets and a whole-instance-empty dedicated Redis 8.8 `/0`, performs the fixed conversion, saves/reloads and probes isolated API/worker Redis ACL users, and emits the secure
+config/report bundle. It is the only production write command; manual partial writes are not a second path.
+The report deliberately separates `inspected_dump_sha256` (the file the tool inspected) from
+`converted_snapshot_sha256` (final retained content including deferred relationships, table counts, and
+fixed-discard counts actually derived from staging); it does not fake a cryptographic
+binding across the operator-run MySQL load boundary.
 
 The fixed converter preserves durable business rows, permanent user tokens, MySQL-persisted traffic and
 balances. It discards old Redis, failed jobs, old nodes/routes/credentials, detailed legacy traffic,
@@ -226,10 +248,14 @@ discarded; status 2/3/4 Stripe history is retained with provider bindings cleare
 contacts Stripe. Non-Stripe payment configuration and unfinished orders remain ordinary retained data.
 
 The importer does not modify the old MySQL database. Staging is disposable conversion input, not a
-recovery system. If conversion fails, the incomplete new target is discarded and the same simple import
-is run again from the dump into a new empty target; no persistent intermediate state is kept.
+recovery system. If conversion fails, delete staging, the incomplete new PostgreSQL/ClickHouse/Redis targets
+and any output directory, then run the same simple import again from the dump into fresh empty targets.
+There is no resume, rollback, checkpoint, recovery or cleanup/restart state machine.
 
-`v2board-lifecycle` is absent from the long-running native release and is removed after accepted import.
+`v2board-lifecycle` is absent from the long-running native release. After accepted import, delete it,
+the staging engine, manifest and old-host config-output copy; revoke or rotate the external PostgreSQL,
+ClickHouse and Redis bootstrap credentials. Treat the dump under a separate protected backup policy rather
+than retaining the secret-bearing migration workspace.
 API/worker dependency graphs contain neither the lifecycle crate nor `sqlx-mysql`. See the
 [import guide](../docs/mysql-import.md) and
 [fixed import contract](../docs/mysql-import-invariants.md).
@@ -243,13 +269,15 @@ idempotency state and the analytics outbox row commit in one PostgreSQL transact
 The relay claims bounded rows with `FOR UPDATE SKIP LOCKED`, freezes an immutable delivery batch,
 inserts to an append-only ClickHouse MergeTree table and verifies the entire batch before marking it
 published in PostgreSQL. An uncertain acknowledgement retries the same ID/content/order. Partial or
-conflicting writes are quarantined for generation rebuild, not patched into an authority claim.
+conflicting writes are quarantined, not patched into an authority claim; if projection integrity
+cannot be established, the disposable ClickHouse database starts again from an empty schema.
 
 PostgreSQL stores raw and charged bytes explicitly; ClickHouse never recomputes billing with Float.
-Reported and accounted events remain separate facts. Runtime pruning is disabled: PostgreSQL keeps
-published replay history until a second drilled archive/backup and generation-replay orchestrator
-exist. That deliberate retention is recovery evidence, not a substitute for the still-missing
-capacity budget and restore drill.
+Reported and accounted events remain separate facts. Published outbox evidence is retained for a
+fixed seven days for short-term verification, audit and event-id collision detection. The production
+worker deletes at most 10,000 expired published rows every five minutes; pending and quarantined rows
+are never eligible. This window is not an automatic replay guarantee, and expired analytics history
+is explicitly disposable.
 
 ## Health and worker behavior
 
@@ -270,8 +298,9 @@ Relevant bounds include:
 - `V2BOARD_MAIL_RETENTION_DAYS`;
 - `V2BOARD_IDEMPOTENCY_RETENTION_DAYS`.
 
-Cleanup is bounded and never deletes analytics replay history, pending or leased work. Analytics
-relay failure retries without making PostgreSQL/Redis worker health fail. A separate admission loop
+Cleanup is bounded; it deletes only expired published analytics evidence and never pending,
+quarantined or leased work. Analytics relay failure retries without making PostgreSQL/Redis worker
+health fail. A separate admission loop
 samples exact pending rows/oldest age, heap/index/TOAST/total relation bytes, database bytes and
 manifest-bound headroom; `/readyz` and `RUST_ANALYTICS_ADMISSION` expose the state without removing
 unrelated API traffic. ClickHouse merge/part pressure and host disk/WAL still require infrastructure

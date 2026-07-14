@@ -4,6 +4,7 @@ use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitEx
 
 use crate::{
     analytics,
+    lease::{acquire_scheduler_lock, release_scheduler_lock, run_with_lease},
     metrics::record_worker_loop_heartbeat,
     outbox,
     scheduler::{SCHEDULED_JOBS, run_schedule_loop},
@@ -11,6 +12,7 @@ use crate::{
 };
 
 const HEALTH_JOB_NAME: &str = "worker_health";
+const SINGLETON_JOB_NAME: &str = "worker_singleton";
 const DEFAULT_HEALTH_FILE: &str = "/run/v2board-worker/health";
 const DEFAULT_HEARTBEAT_INTERVAL_SECONDS: u64 = 10;
 const DEFAULT_SHUTDOWN_TIMEOUT_SECONDS: u64 = 30;
@@ -60,11 +62,25 @@ pub(crate) fn init_tracing() {
 pub(crate) async fn run(state: WorkerState) -> anyhow::Result<()> {
     let runtime_config = WorkerRuntimeConfig::from_env()?;
     probe_dependencies(&state).await?;
+    let singleton_lock = acquire_scheduler_lock(&state, SINGLETON_JOB_NAME)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("another native worker process owns the installation"))?;
     write_health_heartbeat(&runtime_config.health_file).await?;
     systemd_notify("READY=1\nSTATUS=PostgreSQL, migration ledger, and Redis are ready")?;
     tracing::info!("v2board rust worker starting");
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     let mut loops = tokio::task::JoinSet::new();
+    {
+        let state = state.clone();
+        let singleton_lock = singleton_lock.clone();
+        let shutdown = shutdown_rx.clone();
+        loops.spawn(async move {
+            (
+                SINGLETON_JOB_NAME,
+                run_with_lease(wait_for_shutdown(shutdown), &state, &singleton_lock).await,
+            )
+        });
+    }
     for job in SCHEDULED_JOBS.iter().copied() {
         let state = state.clone();
         let heartbeat_state = state.clone();
@@ -173,14 +189,31 @@ pub(crate) async fn run(state: WorkerState) -> anyhow::Result<()> {
             "worker shutdown deadline exceeded; aborting remaining loops"
         );
         loops.shutdown().await;
+        let _ = release_scheduler_lock(&state, singleton_lock.clone()).await;
         if failure.is_none() {
             anyhow::bail!("worker shutdown deadline exceeded");
         }
     }
+    let singleton_release = release_scheduler_lock(&state, singleton_lock).await;
     if let Some(error) = failure {
+        if let Err(release_error) = singleton_release {
+            tracing::warn!(?release_error, "failed to release worker singleton lease");
+        }
         return Err(error);
     }
+    singleton_release?;
     Ok(())
+}
+
+async fn wait_for_shutdown(mut shutdown: tokio::sync::watch::Receiver<bool>) -> anyhow::Result<()> {
+    loop {
+        if *shutdown.borrow() {
+            return Ok(());
+        }
+        if shutdown.changed().await.is_err() {
+            return Ok(());
+        }
+    }
 }
 
 async fn run_loop_with_heartbeat<F>(
@@ -417,5 +450,13 @@ mod tests {
         assert!(probe.contains("v2board_db::migrations_current"));
         assert!(probe.contains("if !migrations_current"));
         assert!(probe.contains("DEPENDENCY_PROBE_TIMEOUT"));
+    }
+
+    #[test]
+    fn worker_runtime_owns_and_monitors_the_installation_lease() {
+        let source = include_str!("runtime.rs");
+        assert!(source.contains("acquire_scheduler_lock(&state, SINGLETON_JOB_NAME)"));
+        assert!(source.contains("run_with_lease(wait_for_shutdown(shutdown)"));
+        assert!(source.contains("release_scheduler_lock(&state, singleton_lock"));
     }
 }

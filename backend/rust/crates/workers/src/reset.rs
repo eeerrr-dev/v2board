@@ -60,6 +60,8 @@ struct ResetUserRow {
 
 async fn acquire_traffic_reset_lock(state: &WorkerState) -> anyhow::Result<SchedulerLock> {
     let token = Uuid::new_v4().to_string();
+    let reset_lock_key = state.redis_key(TRAFFIC_RESET_LOCK_KEY);
+    let traffic_update_lock_key = state.redis_key(TRAFFIC_UPDATE_SCHEDULER_LOCK_KEY);
     loop {
         let acquired: i64 = tokio::time::timeout(RESET_LOCK_IO_TIMEOUT, async {
             let mut conn = state.redis.get_multiplexed_async_connection().await?;
@@ -77,8 +79,8 @@ async fn acquire_traffic_reset_lock(state: &WorkerState) -> anyhow::Result<Sched
                 return 0
                 "#,
             )
-            .key(TRAFFIC_RESET_LOCK_KEY)
-            .key(TRAFFIC_UPDATE_SCHEDULER_LOCK_KEY)
+            .key(&reset_lock_key)
+            .key(&traffic_update_lock_key)
             .arg(&token)
             .arg(SCHEDULER_LOCK_TTL_SECS)
             .invoke_async(&mut conn)
@@ -88,7 +90,7 @@ async fn acquire_traffic_reset_lock(state: &WorkerState) -> anyhow::Result<Sched
         .map_err(|_| anyhow::anyhow!("timed out acquiring traffic reset barrier"))??;
         if acquired == 1 {
             return Ok(SchedulerLock {
-                key: TRAFFIC_RESET_LOCK_KEY.to_string(),
+                key: reset_lock_key,
                 token,
             });
         }

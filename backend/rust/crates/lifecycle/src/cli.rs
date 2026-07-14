@@ -8,6 +8,9 @@ pub(crate) enum Command {
     Inspect {
         manifest: PathBuf,
     },
+    Execute {
+        manifest: PathBuf,
+    },
     InspectReleaseArchive {
         archive: PathBuf,
         release_id: String,
@@ -25,12 +28,14 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> anyhow::Result<Command>
     match args.as_slice() {
         [flag] if matches!(flag.as_str(), "--help" | "-h") => Ok(Command::Help),
         [action, flag, manifest]
-            if flag == "--manifest" && matches!(action.as_str(), "validate" | "inspect") =>
+            if flag == "--manifest"
+                && matches!(action.as_str(), "validate" | "inspect" | "execute") =>
         {
             let manifest = PathBuf::from(manifest);
             match action.as_str() {
                 "validate" => Ok(Command::Validate { manifest }),
                 "inspect" => Ok(Command::Inspect { manifest }),
+                "execute" => Ok(Command::Execute { manifest }),
                 _ => unreachable!("guard covers every accepted action"),
             }
         }
@@ -61,7 +66,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> anyhow::Result<Command>
 
 pub(crate) fn print_help() {
     println!(
-        "v2board-lifecycle\n\nMySQL import checks:\n  validate --manifest <path>\n      Validate the single pre-release schema-v1 import manifest without connecting anywhere\n\n  inspect --manifest <path>\n      Safely read and hash the manifest-bound MySQL dump without contacting old MySQL,\n      old Redis, Stripe, the temporary staging MySQL engine, or any target\n\nIndependent deployment check:\n  inspect-release-archive --archive <absolute-path> --release-id <id> --sha256 <sha256>\n      Validate a native release archive without mutating the filesystem"
+        "v2board-lifecycle\n\nMySQL import:\n  validate --manifest <path>\n      Validate the single pre-release schema-v1 import manifest without connecting anywhere\n\n  inspect --manifest <path>\n      Safely read and hash the manifest-bound MySQL dump without contacting old MySQL,\n      old Redis, Stripe, the temporary staging MySQL engine, or any target\n\n  execute --manifest <path>\n      Convert the already-loaded disposable staging MySQL into one absent PostgreSQL/\n      ClickHouse target, verify empty Redis, and emit the native boot configs and report\n\nIndependent deployment check:\n  inspect-release-archive --archive <absolute-path> --release-id <id> --sha256 <sha256>\n      Validate a native release archive without mutating the filesystem"
     );
 }
 
@@ -83,6 +88,12 @@ mod tests {
             (
                 "inspect",
                 Command::Inspect {
+                    manifest: PathBuf::from("/secure/mysql-import.json"),
+                },
+            ),
+            (
+                "execute",
+                Command::Execute {
                     manifest: PathBuf::from("/secure/mysql-import.json"),
                 },
             ),

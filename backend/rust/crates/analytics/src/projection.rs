@@ -63,7 +63,6 @@ struct ReportedRow {
     ingest_batch_id: Uuid,
     batch_row_number: u32,
     outbox_payload_sha256: String,
-    table_generation: u32,
     ingested_at_unix: i64,
 }
 
@@ -98,7 +97,6 @@ struct AccountedRow {
     ingest_batch_id: Uuid,
     batch_row_number: u32,
     outbox_payload_sha256: String,
-    table_generation: u32,
     ingested_at_unix: i64,
 }
 
@@ -106,6 +104,7 @@ struct AccountedRow {
 struct ReportedDailyRow {
     #[serde(with = "clickhouse::serde::uuid")]
     installation_id: Uuid,
+    schema_major: u16,
     #[serde(with = "clickhouse::serde::chrono::date")]
     accounting_date: NaiveDate,
     user_id: u64,
@@ -113,7 +112,6 @@ struct ReportedDailyRow {
     server_type: String,
     rate_text: String,
     rate_decimal_10_2: i64,
-    table_generation: u32,
     #[serde(with = "clickhouse::serde::uuid")]
     ingest_batch_id: Uuid,
     batch_aggregate_row_number: u32,
@@ -128,6 +126,7 @@ struct ReportedDailyRow {
 struct AccountedDailyRow {
     #[serde(with = "clickhouse::serde::uuid")]
     installation_id: Uuid,
+    schema_major: u16,
     #[serde(with = "clickhouse::serde::chrono::date")]
     accounting_date: NaiveDate,
     user_id: u64,
@@ -136,7 +135,6 @@ struct AccountedDailyRow {
     rate_text: String,
     rate_decimal_10_2: i64,
     outcome: String,
-    table_generation: u32,
     #[serde(with = "clickhouse::serde::uuid")]
     ingest_batch_id: Uuid,
     batch_aggregate_row_number: u32,
@@ -150,13 +148,13 @@ struct AccountedDailyRow {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct ReportedDailyKey {
     installation_id: Uuid,
+    schema_major: u16,
     accounting_date: NaiveDate,
     user_id: u64,
     server_id: u64,
     server_type: String,
     rate_text: String,
     rate_decimal_10_2: i64,
-    table_generation: u32,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -348,14 +346,12 @@ async fn reported_verification_rows(
                     identity_kind, user_id, traffic_epoch, server_id, server_type, \
                     rate_text, rate_decimal_10_2, raw_u, raw_d, charged_u, charged_d, \
                     accepted_at_unix, accounting_date, accounting_timezone, ingest_batch_id, \
-                    batch_row_number, outbox_payload_sha256, table_generation, ingested_at_unix \
+                    batch_row_number, outbox_payload_sha256, ingested_at_unix \
              FROM traffic_reported \
-             WHERE table_generation = ? \
-               AND accounting_date >= toDate(?) AND accounting_date < toDate(?) \
+             WHERE accounting_date >= toDate(?) AND accounting_date < toDate(?) \
                AND ingest_batch_id = toUUID(?) \
              ORDER BY batch_row_number",
         )
-        .bind(batch.table_generation)
         .bind(month_start)
         .bind(month_end)
         .bind(batch.batch_id.to_string())
@@ -375,14 +371,12 @@ async fn accounted_verification_rows(
                     rate_text, rate_decimal_10_2, raw_u, raw_d, charged_u, charged_d, \
                     accepted_at_unix, accounting_date, accounting_timezone, accounted_at_unix, \
                     outcome, u_after, d_after, ingest_batch_id, batch_row_number, \
-                    outbox_payload_sha256, table_generation, ingested_at_unix \
+                    outbox_payload_sha256, ingested_at_unix \
              FROM traffic_accounted \
-             WHERE table_generation = ? \
-               AND accounting_date >= toDate(?) AND accounting_date < toDate(?) \
+             WHERE accounting_date >= toDate(?) AND accounting_date < toDate(?) \
                AND ingest_batch_id = toUUID(?) \
              ORDER BY batch_row_number",
         )
-        .bind(batch.table_generation)
         .bind(month_start)
         .bind(month_end)
         .bind(batch.batch_id.to_string())
@@ -397,16 +391,14 @@ async fn reported_daily_verification_rows(
     let (month_start, month_end) = verification_month_bounds(batch);
     client
         .query(
-            "SELECT installation_id, accounting_date, user_id, server_id, server_type, \
-                    rate_text, rate_decimal_10_2, table_generation, ingest_batch_id, \
+            "SELECT installation_id, schema_major, accounting_date, user_id, server_id, server_type, \
+                    rate_text, rate_decimal_10_2, ingest_batch_id, \
                     batch_aggregate_row_number, event_count, raw_u, raw_d, charged_u, charged_d \
              FROM traffic_reported_daily \
-             WHERE table_generation = ? \
-               AND accounting_date >= toDate(?) AND accounting_date < toDate(?) \
+             WHERE accounting_date >= toDate(?) AND accounting_date < toDate(?) \
                AND ingest_batch_id = toUUID(?) \
              ORDER BY batch_aggregate_row_number",
         )
-        .bind(batch.table_generation)
         .bind(month_start)
         .bind(month_end)
         .bind(batch.batch_id.to_string())
@@ -421,16 +413,14 @@ async fn accounted_daily_verification_rows(
     let (month_start, month_end) = verification_month_bounds(batch);
     client
         .query(
-            "SELECT installation_id, accounting_date, user_id, server_id, server_type, \
-                    rate_text, rate_decimal_10_2, outcome, table_generation, ingest_batch_id, \
+            "SELECT installation_id, schema_major, accounting_date, user_id, server_id, server_type, \
+                    rate_text, rate_decimal_10_2, outcome, ingest_batch_id, \
                     batch_aggregate_row_number, event_count, raw_u, raw_d, charged_u, charged_d \
              FROM traffic_accounted_daily \
-             WHERE table_generation = ? \
-               AND accounting_date >= toDate(?) AND accounting_date < toDate(?) \
+             WHERE accounting_date >= toDate(?) AND accounting_date < toDate(?) \
                AND ingest_batch_id = toUUID(?) \
              ORDER BY batch_aggregate_row_number",
         )
-        .bind(batch.table_generation)
         .bind(month_start)
         .bind(month_end)
         .bind(batch.batch_id.to_string())
@@ -500,8 +490,6 @@ fn reported_row(
         ingest_batch_id: batch.batch_id,
         batch_row_number: record.batch_row_number,
         outbox_payload_sha256: record.event.payload_sha256.clone(),
-        table_generation: u32::try_from(batch.table_generation)
-            .map_err(|_| invalid("table_generation"))?,
         ingested_at_unix: batch.created_at,
     })
 }
@@ -562,8 +550,6 @@ fn accounted_row(
         ingest_batch_id: batch.batch_id,
         batch_row_number: record.batch_row_number,
         outbox_payload_sha256: record.event.payload_sha256.clone(),
-        table_generation: u32::try_from(batch.table_generation)
-            .map_err(|_| invalid("table_generation"))?,
         ingested_at_unix: batch.created_at,
     })
 }
@@ -576,13 +562,13 @@ fn reported_daily_rows(
     for row in rows {
         let key = ReportedDailyKey {
             installation_id: row.installation_id,
+            schema_major: row.schema_major,
             accounting_date: row.accounting_date,
             user_id: row.user_id,
             server_id: row.server_id,
             server_type: row.server_type.clone(),
             rate_text: row.rate_text.clone(),
             rate_decimal_10_2: row.rate_decimal_10_2,
-            table_generation: row.table_generation,
         };
         add_daily_sums(
             grouped.entry(key).or_default(),
@@ -599,13 +585,13 @@ fn reported_daily_rows(
         .map(|(index, (key, sums))| {
             Ok(ReportedDailyRow {
                 installation_id: key.installation_id,
+                schema_major: key.schema_major,
                 accounting_date: key.accounting_date,
                 user_id: key.user_id,
                 server_id: key.server_id,
                 server_type: key.server_type,
                 rate_text: key.rate_text,
                 rate_decimal_10_2: key.rate_decimal_10_2,
-                table_generation: key.table_generation,
                 ingest_batch_id: batch.batch_id,
                 batch_aggregate_row_number: u32::try_from(index)
                     .map_err(|_| aggregate_overflow(batch.batch_id))?,
@@ -628,13 +614,13 @@ fn accounted_daily_rows(
         let key = AccountedDailyKey {
             common: ReportedDailyKey {
                 installation_id: row.installation_id,
+                schema_major: row.schema_major,
                 accounting_date: row.accounting_date,
                 user_id: row.user_id,
                 server_id: row.server_id,
                 server_type: row.server_type.clone(),
                 rate_text: row.rate_text.clone(),
                 rate_decimal_10_2: row.rate_decimal_10_2,
-                table_generation: row.table_generation,
             },
             outcome: row.outcome.clone(),
         };
@@ -653,6 +639,7 @@ fn accounted_daily_rows(
         .map(|(index, (key, sums))| {
             Ok(AccountedDailyRow {
                 installation_id: key.common.installation_id,
+                schema_major: key.common.schema_major,
                 accounting_date: key.common.accounting_date,
                 user_id: key.common.user_id,
                 server_id: key.common.server_id,
@@ -660,7 +647,6 @@ fn accounted_daily_rows(
                 rate_text: key.common.rate_text,
                 rate_decimal_10_2: key.common.rate_decimal_10_2,
                 outcome: key.outcome,
-                table_generation: key.common.table_generation,
                 ingest_batch_id: batch.batch_id,
                 batch_aggregate_row_number: u32::try_from(index)
                     .map_err(|_| aggregate_overflow(batch.batch_id))?,
@@ -787,7 +773,6 @@ mod tests {
             event_name: REPORTED_EVENT_NAME.to_string(),
             schema_major: 1,
             partition_month: NaiveDate::from_ymd_opt(2026, 7, 1).unwrap(),
-            table_generation: 1,
             content_sha256: "a".repeat(64),
             insert_settings_sha256: "b".repeat(64),
             lease_owner: Uuid::from_u128(8),
@@ -819,7 +804,6 @@ mod tests {
             ingest_batch_id: batch_id,
             batch_row_number: 0,
             outbox_payload_sha256: "d".repeat(64),
-            table_generation: 1,
             ingested_at_unix: 1,
         };
         let rows = reported_daily_rows(

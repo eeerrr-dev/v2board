@@ -4,7 +4,7 @@ use chrono::Utc;
 use uuid::Uuid;
 use v2board_analytics::{
     AnalyticsAdmissionError, AnalyticsPressureState, BatchProjectionError, ClaimedBatch,
-    ClickHouseMigrationError, OutboxError, bind_clickhouse_installation, claim_delivery_batch,
+    ClickHouseMigrationError, OutboxError, claim_delivery_batch, cleanup_published_outbox,
     clickhouse_client, mark_batch_published, outbox_backlog, project_or_verify_batch,
     quarantine_batch, refresh_analytics_admission, release_batch_for_retry,
     verify_clickhouse_runtime_ready,
@@ -22,6 +22,9 @@ const MAX_BATCH_ROWS: i64 = 10_000;
 const LEASE_SECONDS: i64 = 300;
 const IDLE_INTERVAL: Duration = Duration::from_secs(1);
 const BACKLOG_OBSERVATION_INTERVAL: Duration = Duration::from_secs(300);
+const PUBLISHED_CLEANUP_INTERVAL: Duration = Duration::from_secs(5 * 60);
+const PUBLISHED_RETENTION_SECONDS: i64 = 7 * 24 * 60 * 60;
+const PUBLISHED_CLEANUP_MAX_ROWS: i64 = 10_000;
 const DATABASE_OPERATION_TIMEOUT: Duration = Duration::from_secs(15);
 const SCHEMA_READINESS_TIMEOUT: Duration = Duration::from_secs(60);
 // `project_or_verify_batch` caps each insert's final acknowledgement at 90s.
@@ -190,6 +193,7 @@ pub(crate) async fn run_loop(
     let lease_owner = Uuid::new_v4();
     let mut backoff = RetryBackoff::new(lease_owner);
     let mut next_backlog_observation = tokio::time::Instant::now();
+    let mut next_published_cleanup = tokio::time::Instant::now();
     let mut schema_ready = false;
 
     loop {
@@ -200,14 +204,14 @@ pub(crate) async fn run_loop(
             observe_backlog_best_effort(&state);
             next_backlog_observation = tokio::time::Instant::now() + BACKLOG_OBSERVATION_INTERVAL;
         }
+        if tokio::time::Instant::now() >= next_published_cleanup {
+            cleanup_published_history(&state).await;
+            next_published_cleanup = tokio::time::Instant::now() + PUBLISHED_CLEANUP_INTERVAL;
+        }
         if !schema_ready {
             match tokio::time::timeout(
                 SCHEMA_READINESS_TIMEOUT,
-                bind_clickhouse_installation(
-                    &client,
-                    state.installation_id,
-                    Utc::now().timestamp(),
-                ),
+                verify_clickhouse_runtime_ready(&client, state.installation_id),
             )
             .await
             {
@@ -220,7 +224,7 @@ pub(crate) async fn run_loop(
                     backoff.reset();
                 }
                 Ok(Err(error)) => {
-                    log_schema_readiness_error("startup/bind", &error);
+                    log_schema_readiness_error("startup", &error);
                     record_metric_best_effort(&state, false);
                     if wait_or_shutdown(&mut shutdown, backoff.next_delay()).await {
                         return Ok(());
@@ -230,7 +234,7 @@ pub(crate) async fn run_loop(
                 Err(_) => {
                     tracing::warn!(
                         job = JOB_NAME,
-                        "ClickHouse schema and installation binding check timed out"
+                        "ClickHouse schema and installation readiness check timed out"
                     );
                     record_metric_best_effort(&state, false);
                     if wait_or_shutdown(&mut shutdown, backoff.next_delay()).await {
@@ -385,7 +389,8 @@ pub(crate) async fn run_loop(
                             | OutboxError::InvalidLease
                             | OutboxError::InvalidPartitionMonth
                             | OutboxError::RowCountOverflow
-                            | OutboxError::InvalidPruneLimit => {}
+                            | OutboxError::InvalidPublishedRetention
+                            | OutboxError::InvalidPublishedCleanupLimit => {}
                         }
                         if wait_or_shutdown(&mut shutdown, backoff.next_delay()).await {
                             return Ok(());
@@ -514,6 +519,37 @@ async fn quarantine_integrity_failure(state: &WorkerState, batch: &ClaimedBatch,
     }
 }
 
+async fn cleanup_published_history(state: &WorkerState) {
+    let now = Utc::now().timestamp();
+    match tokio::time::timeout(
+        DATABASE_OPERATION_TIMEOUT,
+        cleanup_published_outbox(
+            &state.db,
+            now,
+            PUBLISHED_RETENTION_SECONDS,
+            PUBLISHED_CLEANUP_MAX_ROWS,
+        ),
+    )
+    .await
+    {
+        Ok(Ok(cleaned)) if cleaned.outbox_rows > 0 || cleaned.delivery_batches > 0 => {
+            tracing::info!(
+                job = JOB_NAME,
+                outbox_rows = cleaned.outbox_rows,
+                delivery_batches = cleaned.delivery_batches,
+                retention_seconds = PUBLISHED_RETENTION_SECONDS,
+                "cleaned expired published analytics evidence"
+            );
+        }
+        Ok(Ok(_)) => {}
+        Ok(Err(error)) => log_outbox_error("cleanup published evidence", None, &error),
+        Err(_) => tracing::warn!(
+            job = JOB_NAME,
+            "analytics published-evidence cleanup timed out"
+        ),
+    }
+}
+
 fn projection_failure_disposition(error: &BatchProjectionError) -> ProjectionFailureDisposition {
     match error {
         BatchProjectionError::ClickHouse(_) => ProjectionFailureDisposition::Retry,
@@ -559,7 +595,8 @@ fn outbox_failure_severity(error: &OutboxError) -> OutboxFailureSeverity {
         | OutboxError::InvalidPartitionMonth
         | OutboxError::ManifestConflict { .. }
         | OutboxError::RowCountOverflow
-        | OutboxError::InvalidPruneLimit => OutboxFailureSeverity::Integrity,
+        | OutboxError::InvalidPublishedRetention
+        | OutboxError::InvalidPublishedCleanupLimit => OutboxFailureSeverity::Integrity,
     }
 }
 
@@ -693,5 +730,17 @@ mod tests {
         // Each event kind writes at most one raw and one daily projection.
         assert!(2 * 90 < CLICKHOUSE_OPERATION_TIMEOUT.as_secs());
         assert!(BACKLOG_OBSERVATION_INTERVAL >= Duration::from_secs(60));
+        assert_eq!(PUBLISHED_RETENTION_SECONDS, 7 * 24 * 60 * 60);
+        assert_eq!(PUBLISHED_CLEANUP_MAX_ROWS, 10_000);
+        assert_eq!(PUBLISHED_CLEANUP_INTERVAL, Duration::from_secs(5 * 60));
+        assert!(
+            (v2board_analytics::MIN_PUBLISHED_RETENTION_SECONDS
+                ..=v2board_analytics::MAX_PUBLISHED_RETENTION_SECONDS)
+                .contains(&PUBLISHED_RETENTION_SECONDS)
+        );
+        assert!(
+            (1..=v2board_analytics::MAX_PUBLISHED_CLEANUP_ROWS)
+                .contains(&PUBLISHED_CLEANUP_MAX_ROWS)
+        );
     }
 }

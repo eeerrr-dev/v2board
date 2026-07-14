@@ -242,6 +242,7 @@ mod tests {
         assert!(code.bytes().all(|byte| byte.is_ascii_hexdigit()));
 
         let migration = include_str!("../../../migrations-postgres/0001_initial.sql");
-        assert!(migration.contains("CONSTRAINT uniq_invite_code UNIQUE (code)"));
+        assert!(migration.contains("uniq_invite_code_canonical"));
+        assert!(!migration.contains("CONSTRAINT uniq_invite_code UNIQUE (code)"));
     }
 }

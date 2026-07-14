@@ -1,12 +1,12 @@
 use uuid::Uuid;
 use v2board_analytics::{
     AnalyticsAdmissionError, AnalyticsAdmissionPolicy, AnalyticsPressureState, IdentityKind,
-    OutboxError, ProjectionStatus, ReportedTrafficEvent, TrafficEventCore,
-    bind_clickhouse_installation, claim_delivery_batch, clickhouse_client,
-    configure_clickhouse_retention, enqueue_event, enqueue_events,
+    MIN_PUBLISHED_RETENTION_SECONDS, OutboxError, ProjectionStatus, ReportedTrafficEvent,
+    TrafficEventCore, bind_clickhouse_installation, claim_delivery_batch, cleanup_published_outbox,
+    clickhouse_client, configure_clickhouse_retention, enqueue_event, enqueue_events,
     inspect_analytics_admission_exact, install_analytics_admission_policy, mark_batch_published,
-    migrate_clickhouse, project_or_verify_batch, prune_published_outbox, quarantine_batch,
-    refresh_analytics_admission, release_batch_for_retry, verify_clickhouse_bound_contract,
+    migrate_clickhouse, project_or_verify_batch, quarantine_batch, refresh_analytics_admission,
+    release_batch_for_retry, verify_clickhouse_bound_contract,
 };
 
 static POSTGRES_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations-postgres");
@@ -259,37 +259,36 @@ async fn postgres_outbox_to_clickhouse_is_retryable_end_to_end() {
 
     // Retention is bounded and terminal-only. A strict cutoff keeps the
     // boundary row, while pending and quarantined state can never match.
-    let old = derived_event(&event, "prune-old", 101);
+    let retention_seconds = MIN_PUBLISHED_RETENTION_SECONDS;
+    let old = derived_event(&event, "cleanup-old", 101);
     let mut tx = pool.begin().await.unwrap();
-    enqueue_event(&mut tx, &old, now - 200).await.unwrap();
+    enqueue_event(&mut tx, &old, now).await.unwrap();
     tx.commit().await.unwrap();
     let old_batch = claim_delivery_batch(&pool, Uuid::new_v4(), now, 300, 10_000)
         .await
         .unwrap()
         .unwrap();
     assert_eq!(old_batch.rows[0].event.event_id, old.event_id);
-    mark_batch_published(&pool, &old_batch, now - 100)
+    mark_batch_published(&pool, &old_batch, now - retention_seconds - 1)
         .await
         .unwrap();
 
-    let boundary = derived_event(&event, "prune-boundary", 102);
+    let boundary = derived_event(&event, "cleanup-boundary", 102);
     let mut tx = pool.begin().await.unwrap();
-    enqueue_event(&mut tx, &boundary, now - 100).await.unwrap();
+    enqueue_event(&mut tx, &boundary, now).await.unwrap();
     tx.commit().await.unwrap();
     let boundary_batch = claim_delivery_batch(&pool, Uuid::new_v4(), now, 300, 10_000)
         .await
         .unwrap()
         .unwrap();
     assert_eq!(boundary_batch.rows[0].event.event_id, boundary.event_id);
-    mark_batch_published(&pool, &boundary_batch, now - 50)
+    mark_batch_published(&pool, &boundary_batch, now - retention_seconds)
         .await
         .unwrap();
 
-    let quarantined = derived_event(&event, "prune-quarantined", 103);
+    let quarantined = derived_event(&event, "cleanup-quarantined", 103);
     let mut tx = pool.begin().await.unwrap();
-    enqueue_event(&mut tx, &quarantined, now - 200)
-        .await
-        .unwrap();
+    enqueue_event(&mut tx, &quarantined, now).await.unwrap();
     tx.commit().await.unwrap();
     let quarantined_batch = claim_delivery_batch(&pool, Uuid::new_v4(), now, 300, 10_000)
         .await
@@ -302,22 +301,22 @@ async fn postgres_outbox_to_clickhouse_is_retryable_end_to_end() {
     quarantine_batch(
         &pool,
         &quarantined_batch,
-        now - 100,
+        now - retention_seconds - 1,
         "integration integrity quarantine",
     )
     .await
     .unwrap();
 
-    let pending = derived_event(&event, "prune-pending", 104);
+    let pending = derived_event(&event, "cleanup-pending", 104);
     let mut tx = pool.begin().await.unwrap();
-    enqueue_event(&mut tx, &pending, now - 200).await.unwrap();
+    enqueue_event(&mut tx, &pending, now).await.unwrap();
     tx.commit().await.unwrap();
 
-    let pruned = prune_published_outbox(&pool, now - 50, 10_000)
+    let cleaned = cleanup_published_outbox(&pool, now, retention_seconds, 10_000)
         .await
         .unwrap();
-    assert_eq!(pruned.outbox_rows, 1);
-    assert_eq!(pruned.delivery_batches, 1);
+    assert_eq!(cleaned.outbox_rows, 1);
+    assert_eq!(cleaned.delivery_batches, 1);
     for (event_id, expected) in [
         (&old.event_id, 0_i64),
         (&boundary.event_id, 1),

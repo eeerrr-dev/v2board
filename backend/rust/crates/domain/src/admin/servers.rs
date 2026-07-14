@@ -354,41 +354,49 @@ impl AdminService {
             .iter()
             .flat_map(|(node_type, _, check_id)| {
                 [
-                    format!("SERVER_{node_type}_ONLINE_USER_{check_id}"),
-                    format!("SERVER_{node_type}_LAST_CHECK_AT_{check_id}"),
-                    format!("SERVER_{node_type}_LAST_PUSH_AT_{check_id}"),
+                    self.redis_key(&format!("SERVER_{node_type}_ONLINE_USER_{check_id}")),
+                    self.redis_key(&format!("SERVER_{node_type}_LAST_CHECK_AT_{check_id}")),
+                    self.redis_key(&format!("SERVER_{node_type}_LAST_PUSH_AT_{check_id}")),
                 ]
             })
             .collect::<Vec<_>>();
         let mut health_values = vec![None; health_keys.len()];
         if !health_keys.is_empty() {
             match self.redis.get_multiplexed_async_connection().await {
-                Ok(mut conn) => match conn.mget::<_, Vec<Option<String>>>(&health_keys).await {
-                    Ok(values) => {
-                        let mut malformed = 0_usize;
-                        health_values = values
-                            .into_iter()
-                            .map(|value| {
-                                value.and_then(|value| match value.parse::<i64>() {
-                                    Ok(value) => Some(value),
-                                    Err(_) => {
-                                        malformed += 1;
-                                        None
-                                    }
-                                })
-                            })
-                            .collect();
-                        if malformed > 0 {
-                            tracing::warn!(
-                                malformed,
-                                "admin server health cache contained invalid integers"
-                            );
+                Ok(mut conn) => {
+                    let mut malformed = 0_usize;
+                    for (batch_index, keys) in health_keys.chunks(REDIS_MGET_BATCH_SIZE).enumerate()
+                    {
+                        match conn.mget::<_, Vec<Option<String>>>(keys).await {
+                            Ok(values) => {
+                                let offset = batch_index * REDIS_MGET_BATCH_SIZE;
+                                for (index, value) in values.into_iter().enumerate() {
+                                    health_values[offset + index] =
+                                        value.and_then(|value| match value.parse::<i64>() {
+                                            Ok(value) => Some(value),
+                                            Err(_) => {
+                                                malformed += 1;
+                                                None
+                                            }
+                                        });
+                                }
+                            }
+                            Err(error) => {
+                                tracing::warn!(
+                                    ?error,
+                                    "admin server health-cache batch read failed"
+                                );
+                                break;
+                            }
                         }
                     }
-                    Err(error) => {
-                        tracing::warn!(?error, "admin server health-cache batch read failed");
+                    if malformed > 0 {
+                        tracing::warn!(
+                            malformed,
+                            "admin server health cache contained invalid integers"
+                        );
                     }
-                },
+                }
                 Err(error) => {
                     tracing::warn!(?error, "admin server health-cache connection unavailable");
                 }

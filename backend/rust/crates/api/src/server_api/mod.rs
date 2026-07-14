@@ -34,6 +34,8 @@ use self::{
     users::{server_tidalab_user, server_uniproxy_user},
 };
 
+const REDIS_MGET_BATCH_SIZE: usize = 500;
+
 pub(super) async fn server_v1(
     State(state): State<AppState>,
     Path((class, action)): Path<(String, String)>,
@@ -155,39 +157,41 @@ pub(super) async fn server_v2_config(
 ///
 /// Call this from `main.rs` immediately after `fetch_available_servers`, on a `mut` binding.
 pub(super) async fn hydrate_online_status(
-    redis: &redis::Client,
+    state: &AppState,
     servers: &mut [AvailableServerRow],
 ) -> Result<(), ApiError> {
     if servers.is_empty() {
         return Ok(());
     }
-    let mut conn = redis.get_multiplexed_async_connection().await?;
+    let mut conn = state.redis.get_multiplexed_async_connection().await?;
     let now = Utc::now().timestamp();
-    let keys = servers
-        .iter()
-        .map(|server| {
-            let check_id = server.parent_id.unwrap_or(server.id);
-            format!(
-                "SERVER_{}_LAST_CHECK_AT_{check_id}",
-                server.r#type.to_ascii_uppercase()
-            )
-        })
-        .collect::<Vec<_>>();
-    let last_check_values = conn.mget::<_, Vec<Option<i64>>>(&keys).await?;
-    for (server, last_check_at) in servers.iter_mut().zip(last_check_values) {
-        server.last_check_at = last_check_at;
-        // ServerService.php:245 — is_online = (time() - 300 > last_check_at) ? 0 : 1; a missing
-        // key (null) compares as 0 in PHP, i.e. offline.
-        let is_online = server_online_status(now, last_check_at);
-        server.is_online = is_online;
-        // cache_key is `{type}-{id}-{updated_at}-{is_online}` — rewrite only the last segment.
-        // Take an owned prefix first so the borrow ends before the reassignment.
-        if let Some(prefix) = server
-            .cache_key
-            .rsplit_once('-')
-            .map(|(prefix, _)| prefix.to_owned())
-        {
-            server.cache_key = format!("{prefix}-{is_online}");
+    for servers in servers.chunks_mut(REDIS_MGET_BATCH_SIZE) {
+        let keys = servers
+            .iter()
+            .map(|server| {
+                let check_id = server.parent_id.unwrap_or(server.id);
+                state.redis_key(&format!(
+                    "SERVER_{}_LAST_CHECK_AT_{check_id}",
+                    server.r#type.to_ascii_uppercase()
+                ))
+            })
+            .collect::<Vec<_>>();
+        let last_check_values = conn.mget::<_, Vec<Option<i64>>>(&keys).await?;
+        for (server, last_check_at) in servers.iter_mut().zip(last_check_values) {
+            server.last_check_at = last_check_at;
+            // ServerService.php:245 — is_online = (time() - 300 > last_check_at) ? 0 : 1; a missing
+            // key (null) compares as 0 in PHP, i.e. offline.
+            let is_online = server_online_status(now, last_check_at);
+            server.is_online = is_online;
+            // cache_key is `{type}-{id}-{updated_at}-{is_online}` — rewrite only the last segment.
+            // Take an owned prefix first so the borrow ends before the reassignment.
+            if let Some(prefix) = server
+                .cache_key
+                .rsplit_once('-')
+                .map(|(prefix, _)| prefix.to_owned())
+            {
+                server.cache_key = format!("{prefix}-{is_online}");
+            }
         }
     }
     Ok(())

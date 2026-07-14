@@ -518,27 +518,27 @@ impl AdminService {
             .await
             .map_err(|_| ApiError::internal("failed to connect redis for worker metrics"))?;
         let schedule_last_seen_at = conn
-            .get::<_, Option<i64>>("SCHEDULE_LAST_CHECK_AT_")
+            .get::<_, Option<i64>>(self.redis_key("SCHEDULE_LAST_CHECK_AT_"))
             .await
             .map_err(|_| ApiError::internal("failed to read scheduler heartbeat"))?;
         let totals = conn
-            .hgetall::<_, BTreeMap<String, i64>>("RUST_WORKER_JOBS_TOTAL")
+            .hgetall::<_, BTreeMap<String, i64>>(self.redis_key("RUST_WORKER_JOBS_TOTAL"))
             .await
             .map_err(|_| ApiError::internal("failed to read worker totals"))?;
         let failed = conn
-            .hgetall::<_, BTreeMap<String, i64>>("RUST_WORKER_JOBS_FAILED")
+            .hgetall::<_, BTreeMap<String, i64>>(self.redis_key("RUST_WORKER_JOBS_FAILED"))
             .await
             .map_err(|_| ApiError::internal("failed to read worker failures"))?;
         let last_run_at = conn
-            .hgetall::<_, BTreeMap<String, i64>>("RUST_WORKER_LAST_RUN_AT")
+            .hgetall::<_, BTreeMap<String, i64>>(self.redis_key("RUST_WORKER_LAST_RUN_AT"))
             .await
             .map_err(|_| ApiError::internal("failed to read worker last run"))?;
         let last_success_at = conn
-            .hgetall::<_, BTreeMap<String, i64>>("RUST_WORKER_LAST_SUCCESS_AT")
+            .hgetall::<_, BTreeMap<String, i64>>(self.redis_key("RUST_WORKER_LAST_SUCCESS_AT"))
             .await
             .map_err(|_| ApiError::internal("failed to read worker last success"))?;
         let last_failure_at = conn
-            .hgetall::<_, BTreeMap<String, i64>>("RUST_WORKER_LAST_FAILURE_AT")
+            .hgetall::<_, BTreeMap<String, i64>>(self.redis_key("RUST_WORKER_LAST_FAILURE_AT"))
             .await
             .map_err(|_| ApiError::internal("failed to read worker last failure"))?;
         Ok(WorkerSnapshot {

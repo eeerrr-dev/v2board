@@ -8,22 +8,32 @@ on:
       - 'frontend/**'
       - 'Dockerfile.rust'
       - 'Dockerfile.frontend'
+      - '.dockerignore'
+      - '.gitattributes'
+      - '.devcontainer/**'
       - 'docker-compose.local.yml'
       - 'Makefile'
+      - 'deploy/**'
+      - 'docs/**'
       - '.gitmodules'
       - 'references/**'
-      - '.github/workflows/native-ci.yml'
+      - '.github/**'
   pull_request:
     paths:
       - 'backend/rust/**'
       - 'frontend/**'
       - 'Dockerfile.rust'
       - 'Dockerfile.frontend'
+      - '.dockerignore'
+      - '.gitattributes'
+      - '.devcontainer/**'
       - 'docker-compose.local.yml'
       - 'Makefile'
+      - 'deploy/**'
+      - 'docs/**'
       - '.gitmodules'
       - 'references/**'
-      - '.github/workflows/native-ci.yml'
+      - '.github/**'
 
 permissions:
   contents: read
@@ -177,6 +187,8 @@ jobs:
     needs: [integration]
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
@@ -195,7 +207,23 @@ jobs:
           test -x lifecycle-tool/v2board-lifecycle
           test "$(find lifecycle-tool -maxdepth 1 -type f | wc -l)" -eq 1
           file lifecycle-tool/v2board-lifecycle | grep -Eq 'ELF 64-bit LSB.*x86-64'
-          ! ldd lifecycle-tool/v2board-lifecycle | grep -q 'not found'
+          lifecycle_ldd="$(ldd lifecycle-tool/v2board-lifecycle)"
+          if grep -q 'not found' <<<"${lifecycle_ldd}"; then
+            echo 'The lifecycle binary has unresolved shared-library dependencies.'
+            exit 1
+          fi
+          install -d lifecycle-package
+          install -m 0755 lifecycle-tool/v2board-lifecycle lifecycle-package/v2board-lifecycle
+          printf '%s\n' \
+            'format=v2board-lifecycle-tool-v1' \
+            "source_revision=${GITHUB_SHA}" \
+            'target_os=linux' \
+            'target_arch=amd64' > lifecycle-package/RELEASE
+          (cd lifecycle-package && sha256sum RELEASE v2board-lifecycle > SHA256SUMS)
+          tar --sort=name --mtime='UTC 2020-01-01' --owner=0 --group=0 --numeric-owner \
+            -C lifecycle-package -czf v2board-lifecycle-linux-amd64.tar.gz .
+          sha256sum v2board-lifecycle-linux-amd64.tar.gz \
+            > v2board-lifecycle-linux-amd64.tar.gz.sha256
 
       - name: Export the bare-metal release filesystem
         run: |
@@ -226,14 +254,22 @@ jobs:
           grep -Fxq 'target_os=linux' native-release/RELEASE
           grep -Fxq 'target_arch=amd64' native-release/RELEASE
           (cd native-release && sha256sum --check SHA256SUMS)
-          ! find native-release/frontend -type f \( \
+          retired_bundle="$(find native-release/frontend -type f \( \
             -name "u""mi.js" -o -name "u""mi.css" -o \
             -name "components"".chunk.css" -o -name "vendors"".async.js" -o \
             -name "components"".async.js" \
-          \) | grep -q .
+          \) -print -quit)"
+          if [ -n "${retired_bundle}" ]; then
+            echo "Retired packaged frontend bundle found: ${retired_bundle}"
+            exit 1
+          fi
           for binary in native-release/bin/*; do
             file "$binary" | grep -Eq 'ELF 64-bit LSB.*x86-64'
-            ! ldd "$binary" | grep -q 'not found'
+            binary_ldd="$(ldd "$binary")"
+            if grep -q 'not found' <<<"${binary_ldd}"; then
+              echo "Release binary has unresolved shared-library dependencies: ${binary}"
+              exit 1
+            fi
           done
 
       - name: Verify hardened systemd units
@@ -288,4 +324,48 @@ jobs:
             v2board-native-linux-amd64.tar.gz
             v2board-native-linux-amd64.tar.gz.sha256
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
+
+      - name: Upload the disposable lifecycle tool
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: v2board-lifecycle-linux-amd64
+          path: |
+            v2board-lifecycle-linux-amd64.tar.gz
+            v2board-lifecycle-linux-amd64.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+  native-attest:
+    name: Attest native Linux release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [native-release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download the native release
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: v2board-native-linux-amd64
+
+      - name: Download the disposable lifecycle tool
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: v2board-lifecycle-linux-amd64
+
+      - name: Verify downloaded release archives
+        run: |
+          sha256sum --check v2board-native-linux-amd64.tar.gz.sha256
+          sha256sum --check v2board-lifecycle-linux-amd64.tar.gz.sha256
+
+      - name: Attest the production release archives
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
+        with:
+          subject-path: |
+            v2board-native-linux-amd64.tar.gz
+            v2board-lifecycle-linux-amd64.tar.gz

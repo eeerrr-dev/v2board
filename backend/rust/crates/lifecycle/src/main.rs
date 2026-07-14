@@ -1,6 +1,8 @@
 mod cli;
+mod mysql_import;
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     match cli::parse()? {
         cli::Command::Help => cli::print_help(),
         cli::Command::InspectReleaseArchive {
@@ -39,6 +41,11 @@ fn main() -> anyhow::Result<()> {
             let spec = v2board_provision::load_mysql_import_spec(manifest)?;
             let inspection = v2board_provision::inspect_mysql_import(&spec)?;
             println!("{}", serde_json::to_string_pretty(&inspection)?);
+        }
+        cli::Command::Execute { manifest } => {
+            let spec = v2board_provision::load_mysql_import_spec(manifest)?;
+            let report = mysql_import::execute(&spec).await?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
         }
     }
     Ok(())

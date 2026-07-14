@@ -10,10 +10,11 @@ use super::{
     response::{etag_matches, sha1_hex},
     server_online_status,
     traffic::{
-        ALIVE_CACHE_UPDATE_SCRIPT, charged_bytes, checked_traffic_pair, count_alive_ips,
-        implicit_traffic_report_key, parse_server_rate, parse_traffic_entries,
-        traffic_cache_entry_is_stale, traffic_entries_from_value, traffic_report_key,
-        traffic_report_payload_hash, traffic_report_token,
+        ALIVE_CACHE_MAX_IPS_PER_USER, ALIVE_CACHE_MAX_USER_PAYLOAD_BYTES,
+        ALIVE_CACHE_SCRIPT_BATCH_SIZE, ALIVE_CACHE_UPDATE_SCRIPT, charged_bytes,
+        checked_traffic_pair, count_alive_ips, implicit_traffic_report_key, parse_server_rate,
+        parse_traffic_entries, traffic_cache_entry_is_stale, traffic_entries_from_value,
+        traffic_report_key, traffic_report_payload_hash, traffic_report_token,
     },
     users::{legacy_tidalab_user_response, server_user_without_uuid},
 };
@@ -40,7 +41,17 @@ fn alive_cache_updates_are_atomic_and_batched_in_redis() {
     assert!(ALIVE_CACHE_UPDATE_SCRIPT.contains("for index, key in ipairs(KEYS)"));
     assert!(ALIVE_CACHE_UPDATE_SCRIPT.contains("value[node_bucket]"));
     assert!(ALIVE_CACHE_UPDATE_SCRIPT.contains("value.alive_ip = alive_count"));
+    assert!(ALIVE_CACHE_UPDATE_SCRIPT.contains("prepared[index] = cjson.encode(value)"));
     assert!(ALIVE_CACHE_UPDATE_SCRIPT.contains("redis.call('SET'"));
+    assert!(ALIVE_CACHE_UPDATE_SCRIPT.contains("#KEYS > 64"));
+    assert!(ALIVE_CACHE_UPDATE_SCRIPT.contains("#aliveips > 256"));
+    assert!(ALIVE_CACHE_UPDATE_SCRIPT.contains("bucket_count > 32"));
+    assert_eq!(ALIVE_CACHE_SCRIPT_BATCH_SIZE, 64);
+    assert_eq!(ALIVE_CACHE_MAX_IPS_PER_USER, 256);
+    assert_eq!(ALIVE_CACHE_MAX_USER_PAYLOAD_BYTES, 16 * 1024);
+    let source = include_str!("traffic.rs");
+    assert!(source.contains("updates.chunks(ALIVE_CACHE_SCRIPT_BATCH_SIZE)"));
+    assert!(source.contains("user_ids.chunks(REDIS_MGET_BATCH_SIZE)"));
 }
 
 #[test]

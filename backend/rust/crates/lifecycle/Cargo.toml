@@ -11,5 +11,20 @@ workspace = true
 
 [dependencies]
 anyhow.workspace = true
+chrono.workspace = true
+clickhouse.workspace = true
+hex.workspace = true
+percent-encoding.workspace = true
+redis.workspace = true
+rust_decimal.workspace = true
+serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
+sqlx = { workspace = true, features = ["mysql", "postgres"] }
+tokio.workspace = true
+url.workspace = true
+uuid.workspace = true
+v2board-analytics = { version = "0.1.0", path = "../analytics" }
+v2board-config = { version = "0.1.0", path = "../config" }
+v2board-domain = { version = "0.1.0", path = "../domain" }
 v2board-provision = { version = "0.1.0", path = "../provision" }

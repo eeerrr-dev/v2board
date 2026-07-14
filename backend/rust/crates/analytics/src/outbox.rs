@@ -20,7 +20,9 @@ const INSERT_SETTINGS: &str = concat!(
 );
 const ENQUEUE_CHUNK_ROWS: usize = 1_000;
 const MAX_ENQUEUE_ROWS: usize = 100_000;
-const MAX_PRUNE_ROWS: i64 = 100_000;
+pub const MIN_PUBLISHED_RETENTION_SECONDS: i64 = 24 * 60 * 60;
+pub const MAX_PUBLISHED_RETENTION_SECONDS: i64 = 90 * 24 * 60 * 60;
+pub const MAX_PUBLISHED_CLEANUP_ROWS: i64 = 100_000;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DeliveryBatchState {
@@ -41,7 +43,6 @@ pub struct ClaimedBatch {
     pub event_name: String,
     pub schema_major: i16,
     pub partition_month: NaiveDate,
-    pub table_generation: i32,
     pub content_sha256: String,
     pub insert_settings_sha256: String,
     pub lease_owner: Uuid,
@@ -52,7 +53,7 @@ pub struct ClaimedBatch {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct PruneResult {
+pub struct PublishedCleanupResult {
     pub outbox_rows: u64,
     pub delivery_batches: u64,
 }
@@ -83,8 +84,10 @@ pub enum OutboxError {
     LeaseLost { batch_id: Uuid },
     #[error("analytics batch row count exceeds the supported range")]
     RowCountOverflow,
-    #[error("analytics outbox prune limit must be between 1 and 100000")]
-    InvalidPruneLimit,
+    #[error("analytics published retention must be between 1 and 90 days")]
+    InvalidPublishedRetention,
+    #[error("analytics published cleanup limit must be between 1 and 100000")]
+    InvalidPublishedCleanupLimit,
 }
 
 #[derive(Debug, FromRow)]
@@ -93,7 +96,6 @@ struct BatchRow {
     event_name: String,
     schema_major: i16,
     partition_month: NaiveDate,
-    table_generation: i32,
     content_sha256: String,
     insert_settings_sha256: String,
     row_count: i32,
@@ -133,7 +135,6 @@ struct ExistingEventRow {
     occurred_at: i64,
     payload: serde_json::Value,
     payload_sha256: String,
-    table_generation: i32,
 }
 
 #[derive(Debug, FromRow)]
@@ -192,7 +193,7 @@ pub async fn enqueue_events(
         let mut insert = QueryBuilder::<Postgres>::new(
             "INSERT INTO analytics_outbox \
              (event_id, event_name, schema_major, report_key, partition_month, \
-              occurred_at, payload, payload_sha256, table_generation, created_at) ",
+              occurred_at, payload, payload_sha256, created_at) ",
         );
         insert.push_values(chunk, |mut row, (event, partition_month)| {
             row.push_bind(&event.event_id)
@@ -203,7 +204,6 @@ pub async fn enqueue_events(
                 .push_bind(event.occurred_at)
                 .push_bind(&event.payload)
                 .push_bind(&event.payload_sha256)
-                .push_bind(1_i32)
                 .push_bind(created_at);
         });
         insert.push(" ON CONFLICT (event_id) DO NOTHING");
@@ -218,8 +218,7 @@ pub async fn enqueue_events(
         let stored = sqlx::query_as::<_, ExistingEventRow>(
             r#"
             SELECT event_id, event_name, schema_major, report_key,
-                   partition_month, occurred_at, payload, payload_sha256,
-                   table_generation
+                   partition_month, occurred_at, payload, payload_sha256
             FROM analytics_outbox
             WHERE event_id = ANY($1)
             FOR SHARE
@@ -241,7 +240,6 @@ pub async fn enqueue_events(
                     && row.occurred_at == event.occurred_at
                     && row.payload == event.payload
                     && row.payload_sha256 == event.payload_sha256
-                    && row.table_generation == 1
             });
             if !matches {
                 return Err(OutboxError::EventConflict {
@@ -295,9 +293,9 @@ pub async fn claim_delivery_batch(
         return Ok(Some(batch));
     }
 
-    let seed = sqlx::query_as::<_, (String, i16, NaiveDate, i32)>(
+    let seed = sqlx::query_as::<_, (String, i16, NaiveDate)>(
         r#"
-        SELECT event_name, schema_major, partition_month, table_generation
+        SELECT event_name, schema_major, partition_month
         FROM analytics_outbox
         WHERE published_at IS NULL
           AND quarantined_at IS NULL
@@ -309,7 +307,7 @@ pub async fn claim_delivery_batch(
     )
     .fetch_optional(&mut *tx)
     .await?;
-    let Some((event_name, schema_major, partition_month, table_generation)) = seed else {
+    let Some((event_name, schema_major, partition_month)) = seed else {
         tx.commit().await?;
         return Ok(None);
     };
@@ -324,16 +322,14 @@ pub async fn claim_delivery_batch(
           AND event_name = $1
           AND schema_major = $2
           AND partition_month = $3
-          AND table_generation = $4
         ORDER BY outbox_id
-        LIMIT $5
+        LIMIT $4
         FOR UPDATE SKIP LOCKED
         "#,
     )
     .bind(&event_name)
     .bind(schema_major)
     .bind(partition_month)
-    .bind(table_generation)
     .bind(max_rows)
     .fetch_all(&mut *tx)
     .await?;
@@ -355,17 +351,16 @@ pub async fn claim_delivery_batch(
     sqlx::query(
         r#"
         INSERT INTO analytics_delivery_batch
-            (batch_id, event_name, schema_major, partition_month, table_generation,
-             row_count, content_sha256, insert_settings_sha256, state,
-             lease_owner, lease_expires_at, attempt_count, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'publishing', $9, $10, 1, $11)
+            (batch_id, event_name, schema_major, partition_month, row_count,
+             content_sha256, insert_settings_sha256, state, lease_owner,
+             lease_expires_at, attempt_count, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'publishing', $8, $9, 1, $10)
         "#,
     )
     .bind(batch_id)
     .bind(&event_name)
     .bind(schema_major)
     .bind(partition_month)
-    .bind(table_generation)
     .bind(row_count)
     .bind(&content_sha256)
     .bind(&insert_settings_sha256)
@@ -454,7 +449,7 @@ async fn load_claimed_batch(
     let batch = sqlx::query_as::<_, BatchRow>(
         r#"
         SELECT batch_id, event_name, schema_major, partition_month,
-               table_generation, content_sha256, insert_settings_sha256, row_count,
+               content_sha256, insert_settings_sha256, row_count,
                lease_expires_at, created_at, state
         FROM analytics_delivery_batch
         WHERE batch_id = $1 AND lease_owner = $2
@@ -532,7 +527,6 @@ async fn load_claimed_batch(
         event_name: batch.event_name,
         schema_major: batch.schema_major,
         partition_month: batch.partition_month,
-        table_generation: batch.table_generation,
         content_sha256: batch.content_sha256,
         insert_settings_sha256: batch.insert_settings_sha256,
         lease_owner,
@@ -688,22 +682,21 @@ pub async fn outbox_backlog(pool: &sqlx::PgPool) -> Result<OutboxBacklog, Outbox
     })
 }
 
-/// Delete a bounded slice of terminal, successfully published history older
-/// than `published_before`. Pending and quarantined events are never eligible.
+/// Delete a bounded slice of terminal, successfully published history after a
+/// fixed retention window. Pending and quarantined events are never eligible.
 /// Delivery batches are removed only after their final outbox reference is
 /// gone, preserving the PostgreSQL foreign-key direction under partial runs.
 ///
-/// The caller must choose a cutoff older than every supported producer retry
-/// and replay window. Once an event identity is pruned, PostgreSQL no longer
-/// acts as its permanent idempotency tombstone.
-pub async fn prune_published_outbox(
+/// Published analytics are disposable evidence rather than a business ledger.
+/// The bounded policy prevents that evidence from growing without limit while
+/// retaining a short verification and audit window.
+pub async fn cleanup_published_outbox(
     pool: &sqlx::PgPool,
-    published_before: i64,
+    now: i64,
+    retention_seconds: i64,
     max_rows: i64,
-) -> Result<PruneResult, OutboxError> {
-    if !(1..=MAX_PRUNE_ROWS).contains(&max_rows) {
-        return Err(OutboxError::InvalidPruneLimit);
-    }
+) -> Result<PublishedCleanupResult, OutboxError> {
+    let published_before = published_cleanup_cutoff(now, retention_seconds, max_rows)?;
     let mut tx = pool.begin().await?;
     let deleted_outbox = sqlx::query(
         r#"
@@ -767,10 +760,26 @@ pub async fn prune_published_outbox(
     .await?
     .rows_affected();
     tx.commit().await?;
-    Ok(PruneResult {
+    Ok(PublishedCleanupResult {
         outbox_rows: deleted_outbox,
         delivery_batches: deleted_batches,
     })
+}
+
+fn published_cleanup_cutoff(
+    now: i64,
+    retention_seconds: i64,
+    max_rows: i64,
+) -> Result<i64, OutboxError> {
+    if !(MIN_PUBLISHED_RETENTION_SECONDS..=MAX_PUBLISHED_RETENTION_SECONDS)
+        .contains(&retention_seconds)
+    {
+        return Err(OutboxError::InvalidPublishedRetention);
+    }
+    if !(1..=MAX_PUBLISHED_CLEANUP_ROWS).contains(&max_rows) {
+        return Err(OutboxError::InvalidPublishedCleanupLimit);
+    }
+    Ok(now.saturating_sub(retention_seconds))
 }
 
 fn batch_content_hash<'a>(rows: impl IntoIterator<Item = (u32, &'a str, &'a str)>) -> String {
@@ -804,5 +813,43 @@ mod tests {
         assert_eq!(first, batch_content_hash([(0, "a", "1"), (1, "b", "2")]));
         assert_ne!(first, batch_content_hash([(0, "b", "2"), (1, "a", "1")]));
         assert_ne!(first, batch_content_hash([(0, "a", "1"), (1, "b", "3")]));
+    }
+
+    #[test]
+    fn published_cleanup_policy_is_bounded() {
+        let now = 10_000_000;
+        assert_eq!(
+            published_cleanup_cutoff(now, MIN_PUBLISHED_RETENTION_SECONDS, 1).unwrap(),
+            now - MIN_PUBLISHED_RETENTION_SECONDS
+        );
+        assert_eq!(
+            published_cleanup_cutoff(
+                now,
+                MAX_PUBLISHED_RETENTION_SECONDS,
+                MAX_PUBLISHED_CLEANUP_ROWS,
+            )
+            .unwrap(),
+            now - MAX_PUBLISHED_RETENTION_SECONDS
+        );
+        assert!(matches!(
+            published_cleanup_cutoff(now, MIN_PUBLISHED_RETENTION_SECONDS - 1, 1),
+            Err(OutboxError::InvalidPublishedRetention)
+        ));
+        assert!(matches!(
+            published_cleanup_cutoff(now, MAX_PUBLISHED_RETENTION_SECONDS + 1, 1),
+            Err(OutboxError::InvalidPublishedRetention)
+        ));
+        assert!(matches!(
+            published_cleanup_cutoff(now, MIN_PUBLISHED_RETENTION_SECONDS, 0),
+            Err(OutboxError::InvalidPublishedCleanupLimit)
+        ));
+        assert!(matches!(
+            published_cleanup_cutoff(
+                now,
+                MIN_PUBLISHED_RETENTION_SECONDS,
+                MAX_PUBLISHED_CLEANUP_ROWS + 1,
+            ),
+            Err(OutboxError::InvalidPublishedCleanupLimit)
+        ));
     }
 }

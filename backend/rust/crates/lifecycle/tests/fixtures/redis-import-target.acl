@@ -1,0 +1,2 @@
+user default off sanitize-payload resetchannels -@all
+user import_bootstrap on sanitize-payload >RedisImportBootstrapTestSecret-32-bytes ~* &* +@all

@@ -1,8 +1,8 @@
 //! Pure, versioned row-disposition policy for the fixed-loss MySQL import.
 //!
 //! This module deliberately performs no database or provider I/O. It defines the
-//! mandatory policy contract that a future importer must apply to the frozen
-//! MySQL rows during conversion and verification.
+//! mandatory policy contract the importer applies to frozen MySQL rows during
+//! conversion and verification.
 
 use std::collections::BTreeSet;
 

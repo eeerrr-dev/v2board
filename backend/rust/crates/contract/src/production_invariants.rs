@@ -20,13 +20,14 @@ use v2board_analytics::{
     install_analytics_admission_policy, mark_batch_published, refresh_analytics_admission,
     release_batch_for_retry,
 };
-use v2board_config::{AppConfig, RuntimeEnvironment};
+use v2board_config::{AppConfig, RedisKeyspace, RuntimeEnvironment};
 use v2board_db::{DbPoolConfig, installation_id, migrations_current};
 use v2board_domain::{
     admin::{AdminOutput, AdminService},
     auth::{AuthService, PasswordKdf, RegisterInput, hash_password},
     operator_config,
     order::{OrderService, PaymentNotifyInput},
+    redis_runtime::verify_redis_runtime,
     server_credentials::{derive_node_token, verify_node_token},
     smtp::SmtpTransportCache,
 };
@@ -149,6 +150,8 @@ async fn run_isolated_checks(
         invite_single_consumption(pool, integration_redis_url).await?;
         pass("single-use invite remains single-use under concurrency");
         flush_redis(&integration_redis).await?;
+        verify_redis_runtime(&integration_redis, RuntimeEnvironment::Production).await?;
+        pass("production Redis policy is verifiably noeviction");
 
         ticket_state_machine(pool, database_url, database_name, integration_redis_url).await?;
         pass("one-open-ticket and reply/auto-close serialization");
@@ -163,7 +166,7 @@ async fn run_isolated_checks(
         redis_lease_ownership(&integration_redis).await?;
         pass("a stale worker lease owner cannot renew or release a replacement lease");
 
-        worker_health_process(database_url, database_name, integration_redis_url).await?;
+        worker_health_process(pool, database_url, database_name, integration_redis_url).await?;
         pass("a live isolated worker publishes health and per-loop heartbeats");
 
         late_payment_reconciliation(pool, database_url, integration_redis_url).await?;
@@ -220,7 +223,7 @@ async fn install_contract_operator_config_authority(pool: &PgPool, redis_url: &s
     let config = integration_config(pool, redis_url)?;
     let installation_id = installation_id(pool).await?;
     let candidate = config.operator_config_map();
-    let snapshot = operator_config::ensure_initial_authority_exact(
+    let snapshot = operator_config::seed_initial_authority(
         pool,
         installation_id,
         &config.app_key,
@@ -232,14 +235,45 @@ async fn install_contract_operator_config_authority(pool: &PgPool, redis_url: &s
         snapshot.revision == 1 && snapshot.values == candidate,
         "fresh operator configuration authority was not seeded exactly"
     );
+    let reseed = operator_config::seed_initial_authority(
+        pool,
+        installation_id,
+        &config.app_key,
+        &candidate,
+        "contract:reseed",
+    )
+    .await;
+    ensure!(
+        matches!(
+            reseed,
+            Err(operator_config::OperatorConfigError::Integrity(
+                "operator configuration authority is not empty"
+            ))
+        ),
+        "operator configuration authority accepted a second initial seed"
+    );
+    let (state_rows, revision_rows) = sqlx::query_as::<_, (i64, i64)>(
+        r#"
+        SELECT
+            (SELECT COUNT(*) FROM operator_config_state),
+            (SELECT COUNT(*) FROM operator_config_revision)
+        "#,
+    )
+    .fetch_one(pool)
+    .await?;
+    ensure!(
+        (state_rows, revision_rows) == (1, 1),
+        "rejected operator configuration reseed changed authority rows"
+    );
     Ok(())
 }
 
 async fn schema_invariants(pool: &PgPool) -> Result<()> {
     for (table, index) in [
-        ("coupon", "uniq_coupon_code"),
-        ("gift_card", "uniq_gift_card_code"),
-        ("invite_code", "uniq_invite_code"),
+        ("coupon", "uniq_coupon_code_canonical"),
+        ("gift_card", "uniq_gift_card_code_canonical"),
+        ("invite_code", "uniq_invite_code_canonical"),
+        ("users", "uniq_user_email_canonical"),
         ("payment_method", "uniq_payment_method_driver_uuid"),
         ("orders", "uniq_unfinished_order_per_user"),
         ("ticket", "uniq_ticket_open_user"),
@@ -269,12 +303,12 @@ async fn schema_invariants(pool: &PgPool) -> Result<()> {
     for (table, column) in [
         ("users", "traffic_epoch"),
         ("server_traffic_report_item", "traffic_epoch"),
-        ("ticket", "open_user_id"),
         ("server_credential", "credential_epoch"),
         ("payment_method", "archived_at"),
         ("payment_reconciliation", "trade_no_hash"),
         ("payment_reconciliation", "callback_no_hash"),
         ("orders", "callback_no_hash"),
+        ("orders", "referenced_plan_id"),
         ("system_installation", "installation_id"),
         ("analytics_outbox", "delivery_batch_id"),
         ("server_traffic_report", "identity_kind"),
@@ -294,6 +328,97 @@ async fn schema_invariants(pool: &PgPool) -> Result<()> {
         .fetch_one(pool)
         .await?;
         ensure!(count == 1, "missing required column {table}.{column}");
+    }
+    let retired_columns: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND (table_name, column_name) IN (
+              ('orders', 'unfinished_user_id'),
+              ('ticket', 'open_user_id')
+          )
+        "#,
+    )
+    .fetch_one(pool)
+    .await?;
+    ensure!(
+        retired_columns == 0,
+        "retired generated uniqueness columns remain in the native schema"
+    );
+    let redundant_exact_indexes: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM pg_indexes
+        WHERE schemaname = current_schema()
+          AND indexname IN (
+              'uniq_user_email',
+              'uniq_coupon_code',
+              'uniq_invite_code',
+              'uniq_gift_card_code'
+          )
+        "#,
+    )
+    .fetch_one(pool)
+    .await?;
+    ensure!(
+        redundant_exact_indexes == 0,
+        "redundant exact unique indexes remain beside canonical unique indexes"
+    );
+    for (table, constraint) in [
+        ("plan", "chk_plan_flags"),
+        ("coupon", "chk_coupon_type_value"),
+        ("users", "chk_user_role_flags"),
+        ("users", "chk_user_traffic_nonnegative"),
+        ("orders", "chk_order_status"),
+        ("orders", "chk_order_amounts_nonnegative"),
+        ("ticket", "chk_ticket_status"),
+        ("stat", "chk_stat_counts_nonnegative"),
+        ("server_traffic", "chk_server_traffic_nonnegative"),
+        ("user_traffic", "chk_user_traffic_history_nonnegative"),
+    ] {
+        let validated: bool = sqlx::query_scalar(
+            r#"
+            SELECT COALESCE(bool_and(constraint_row.convalidated), false)
+            FROM pg_constraint AS constraint_row
+            JOIN pg_class AS source_table ON source_table.oid = constraint_row.conrelid
+            JOIN pg_namespace AS namespace ON namespace.oid = source_table.relnamespace
+            WHERE namespace.nspname = current_schema()
+              AND source_table.relname = $1
+              AND constraint_row.conname = $2
+              AND constraint_row.contype = 'c'
+            "#,
+        )
+        .bind(table)
+        .bind(constraint)
+        .fetch_one(pool)
+        .await?;
+        ensure!(validated, "missing validated check {table}.{constraint}");
+    }
+    for (table, index) in [
+        (
+            "analytics_delivery_batch",
+            "idx_analytics_batch_published_cleanup",
+        ),
+        ("analytics_outbox", "idx_analytics_outbox_published_cleanup"),
+    ] {
+        let count: i64 = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*)
+            FROM pg_indexes
+            WHERE schemaname = current_schema()
+              AND tablename = $1
+              AND indexname = $2
+            "#,
+        )
+        .bind(table)
+        .bind(index)
+        .fetch_one(pool)
+        .await?;
+        ensure!(
+            count == 1,
+            "missing published cleanup index {table}.{index}"
+        );
     }
     let reconciliation_payment_fk: i64 = sqlx::query_scalar(
         r#"
@@ -407,7 +532,7 @@ async fn partial_unique_behavior(pool: &PgPool) -> Result<()> {
         INSERT INTO orders (
             user_id, plan_id, type, period, trade_no, total_amount, status,
             commission_status, commission_balance, created_at, updated_at
-        ) VALUES ($1, 0, 1, 'deposit', $2, 0, 0, 0, 0, $3, $4)
+        ) VALUES ($1, 0, 9, 'deposit', $2, 0, 0, 0, 0, $3, $4)
         "#,
     )
     .bind(user_id)
@@ -422,7 +547,7 @@ async fn partial_unique_behavior(pool: &PgPool) -> Result<()> {
             INSERT INTO orders (
                 user_id, plan_id, type, period, trade_no, total_amount, status,
                 commission_status, commission_balance, created_at, updated_at
-            ) VALUES ($1, 0, 1, 'deposit', $2, 0, 1, 0, 0, $3, $4)
+            ) VALUES ($1, 0, 9, 'deposit', $2, 0, 1, 0, 0, $3, $4)
             "#,
         )
         .bind(user_id)
@@ -901,6 +1026,7 @@ async fn late_payment_reconciliation(
     let admin = AdminService::new(
         pool.clone(),
         redis::Client::open(redis_url)?,
+        installation_id(pool).await?,
         Arc::new(integration_config(pool, redis_url)?),
         reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(2))
@@ -1304,6 +1430,7 @@ async fn node_identity_epoch(pool: &PgPool) -> Result<()> {
 
 async fn auth_rate_limits(pool: &PgPool, database_url: &str, redis_url: &str) -> Result<()> {
     let redis = redis::Client::open(redis_url)?;
+    let redis_keys = RedisKeyspace::new(installation_id(pool).await?);
     flush_redis(&redis).await?;
 
     let same_email = format!("same-email-{}@example.test", Uuid::new_v4().simple());
@@ -1400,7 +1527,7 @@ async fn auth_rate_limits(pool: &PgPool, database_url: &str, redis_url: &str) ->
     );
     let mut conn = redis.get_multiplexed_async_connection().await?;
     let registration_slots: i64 = conn
-        .zcard(format!("REGISTER_IP_RATE_LIMIT_V2_{registration_ip}"))
+        .zcard(redis_keys.key(&format!("REGISTER_IP_RATE_LIMIT_V2_{registration_ip}")))
         .await?;
     ensure!(
         registration_slots == 3,
@@ -1453,7 +1580,9 @@ async fn auth_rate_limits(pool: &PgPool, database_url: &str, redis_url: &str) ->
         (incorrect, login_limited) == (3, 6),
         "login limiter admitted {incorrect} concurrent password checks"
     );
-    let keys: Vec<String> = conn.keys("PASSWORD_ERROR_LIMIT_*").await?;
+    let keys: Vec<String> = conn
+        .keys(redis_keys.pattern("PASSWORD_ERROR_LIMIT_*"))
+        .await?;
     ensure!(
         keys.len() == 3,
         "login limiter did not maintain all three dimensions"
@@ -1525,6 +1654,7 @@ async fn redis_lease_ownership(redis: &redis::Client) -> Result<()> {
 }
 
 async fn worker_health_process(
+    pool: &PgPool,
     database_url: &str,
     database_name: &str,
     redis_url: &str,
@@ -1549,7 +1679,8 @@ async fn worker_health_process(
         .spawn()
         .with_context(|| format!("spawn isolated worker process {worker_bin}"))?;
 
-    let result = wait_for_worker_health(&mut child, &health_file, redis_url).await;
+    let redis_keys = RedisKeyspace::new(installation_id(pool).await?);
+    let result = wait_for_worker_health(&mut child, &health_file, redis_url, &redis_keys).await;
     if child.try_wait()?.is_none() {
         child
             .kill()
@@ -1564,6 +1695,7 @@ async fn wait_for_worker_health(
     child: &mut std::process::Child,
     health_file: &Path,
     redis_url: &str,
+    redis_keys: &RedisKeyspace,
 ) -> Result<()> {
     let redis = redis::Client::open(redis_url)?;
     let expected = [
@@ -1584,8 +1716,9 @@ async fn wait_for_worker_health(
             bail!("isolated worker exited before becoming healthy: {status}");
         }
         let mut conn = redis.get_multiplexed_async_connection().await?;
-        let heartbeats: BTreeMap<String, i64> =
-            conn.hgetall("RUST_WORKER_LOOP_HEARTBEAT_AT").await?;
+        let heartbeats: BTreeMap<String, i64> = conn
+            .hgetall(redis_keys.key("RUST_WORKER_LOOP_HEARTBEAT_AT"))
+            .await?;
         let now = Utc::now().timestamp();
         let all_recent = expected.iter().all(|name| {
             heartbeats
@@ -1651,6 +1784,7 @@ async fn auth_service(pool: &PgPool, redis_url: &str, config: AppConfig) -> Resu
     Ok(AuthService::new(
         pool.clone(),
         manager,
+        installation_id(pool).await?,
         Arc::new(config),
         reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(2))

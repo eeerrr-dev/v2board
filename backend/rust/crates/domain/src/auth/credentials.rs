@@ -70,7 +70,7 @@ impl AuthService {
         let email = normalize_email(email);
 
         let password_error_limit = if self.config.password_limit_enable {
-            let keys = login_limiter_keys(&email, ip.as_deref());
+            let keys = login_limiter_keys(&email, ip.as_deref()).map(|key| self.redis_key(&key));
             if !self.reserve_login_attempt(&keys).await? {
                 return Err(ApiError::legacy(format!(
                     "There are too many password errors, please try again after {} minutes.",
@@ -214,7 +214,7 @@ impl AuthService {
         // case-insensitive; the PostgreSQL repository preserves the same identity rule.
         let email = input.email.trim();
         let cache_email = email.to_ascii_lowercase();
-        let limit_key = cache_key("FORGET_REQUEST_LIMIT", &cache_email);
+        let limit_key = self.redis_key(&cache_key("FORGET_REQUEST_LIMIT", &cache_email));
         match self
             .consume_email_code_with_failure_limit(
                 &cache_email,

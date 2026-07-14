@@ -102,6 +102,63 @@ pub struct MysqlImportSpec {
     manifest_sha256: String,
 }
 
+/// Fully validated, secret-bearing execution inputs for the disposable
+/// lifecycle binary. This value must never be formatted with `Debug` or
+/// serialized as a report: it contains every transient datastore credential.
+pub struct MysqlImportExecutionPlan {
+    pub postgres: MysqlImportPostgresPlan,
+    pub clickhouse: MysqlImportClickHousePlan,
+    pub analytics_admission: MysqlImportAnalyticsAdmissionPlan,
+    pub redis_bootstrap_url: String,
+    pub config_output_directory: PathBuf,
+    pub api_boot_config: Map<String, Value>,
+    pub worker_boot_config: Map<String, Value>,
+    pub operator_config: Map<String, Value>,
+    pub app_key: String,
+}
+
+pub struct MysqlImportPostgresPlan {
+    pub bootstrap_database_url: String,
+    pub migration_database_url: String,
+    pub api_database_url: String,
+    pub worker_database_url: String,
+}
+
+pub struct MysqlImportClickHousePlan {
+    pub endpoint: String,
+    pub database: String,
+    pub bootstrap_username: String,
+    pub bootstrap_password: String,
+    pub schema_username: String,
+    pub schema_password: String,
+    pub writer_username: String,
+    pub writer_password: String,
+    pub raw_retention_days: u32,
+    pub aggregate_retention_days: u32,
+}
+
+#[derive(Clone)]
+pub struct MysqlImportAnalyticsAdmissionPlan {
+    pub recovery_pending_rows: u64,
+    pub soft_pending_rows: u64,
+    pub hard_pending_rows: u64,
+    pub recovery_relation_bytes: u64,
+    pub soft_relation_bytes: u64,
+    pub hard_relation_bytes: u64,
+    pub recovery_oldest_age_seconds: u64,
+    pub soft_oldest_age_seconds: u64,
+    pub hard_oldest_age_seconds: u64,
+    pub database_capacity_bytes: u64,
+    pub hard_min_headroom_bytes: u64,
+    pub soft_min_headroom_bytes: u64,
+    pub recovery_min_headroom_bytes: u64,
+    pub event_reservation_bytes: u64,
+    pub soft_max_new_rows_per_second: u64,
+    pub sample_interval_seconds: u64,
+    pub stale_after_seconds: u64,
+    pub capacity_evidence: String,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct MysqlImportDocument {
@@ -123,7 +180,7 @@ pub struct MysqlDumpSourceSpec {
 pub enum MysqlImportSpecError {
     #[error("manifest could not be read safely")]
     Read,
-    #[error("manifest must be a regular non-symlink file no larger than 2 MiB")]
+    #[error("manifest must be a root-owned regular non-symlink file no larger than 2 MiB")]
     UnsafeFile,
     #[error("manifest contains invalid JSON or an unsupported field shape: {0}")]
     Json(String),
@@ -146,6 +203,8 @@ pub fn load_mysql_import_spec(
         || opened.len() == 0
         || opened.len() > MAX_MANIFEST_BYTES
         || opened.permissions().mode() & 0o077 != 0
+        || opened.uid() != 0
+        || path_metadata.uid() != 0
     {
         return Err(MysqlImportSpecError::UnsafeFile);
     }
@@ -163,6 +222,10 @@ pub fn load_mysql_import_spec(
         || opened.len() != after.len()
         || !after.file_type().is_file()
         || after.file_type().is_symlink()
+        || opened_after.permissions().mode() & 0o077 != 0
+        || after.permissions().mode() & 0o077 != 0
+        || opened_after.uid() != 0
+        || after.uid() != 0
     {
         return Err(MysqlImportSpecError::UnsafeFile);
     }
@@ -254,9 +317,8 @@ struct ValidatedImportTarget {
     postgres: ValidatedPostgresTarget,
     clickhouse: ValidatedClickHouseTarget,
     analytics_admission: ValidatedAnalyticsAdmission,
-    redis_url: String,
-    api_runtime_config_path: PathBuf,
-    worker_runtime_config_path: PathBuf,
+    redis_bootstrap_url: String,
+    config_output_directory: PathBuf,
     require_empty_redis: bool,
 }
 
@@ -269,14 +331,6 @@ struct ValidatedPostgresTarget {
     worker_database_url: String,
     require_database_absent: bool,
     require_roles_absent: bool,
-    external_access: ValidatedPostgresExternalAccess,
-}
-
-#[derive(Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ValidatedPostgresExternalAccess {
-    pg_hba_evidence: String,
-    network_policy_evidence: String,
 }
 
 #[derive(Clone, Deserialize)]
@@ -287,13 +341,10 @@ struct ValidatedClickHouseTarget {
     bootstrap_principal: ValidatedPrincipal,
     schema_principal: ValidatedPrincipal,
     writer_principal: ValidatedPrincipal,
-    reader_principal: ValidatedPrincipal,
     raw_retention_days: u32,
     aggregate_retention_days: u32,
     require_database_absent: bool,
     require_principals_absent: bool,
-    network_policy_evidence: String,
-    privileges: ValidatedPrivilegeEvidence,
 }
 
 #[derive(Clone, Deserialize)]
@@ -301,12 +352,6 @@ struct ValidatedClickHouseTarget {
 struct ValidatedPrincipal {
     username: String,
     password: String,
-}
-
-#[derive(Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ValidatedPrivilegeEvidence {
-    evidence: String,
 }
 
 #[derive(Clone, Deserialize)]
@@ -359,6 +404,12 @@ fn validate_target(
     }
     let bootstrap_database = postgres_database(&postgres_urls[0])?;
     let target_database = postgres_database(&postgres_urls[1])?;
+    if bootstrap_database != "postgres" {
+        return Err(MysqlImportSpecError::Invalid(
+            "PostgreSQL bootstrap URL must use the postgres maintenance database of a dedicated empty cluster"
+                .to_string(),
+        ));
+    }
     if bootstrap_database == target_database
         || postgres_urls[2..]
             .iter()
@@ -388,42 +439,22 @@ fn validate_target(
                 .to_string(),
         ));
     }
-    validate_evidence(
-        &target.postgres.external_access.pg_hba_evidence,
-        "target.postgres.external_access.pg_hba_evidence",
-    )?;
-    validate_evidence(
-        &target.postgres.external_access.network_policy_evidence,
-        "target.postgres.external_access.network_policy_evidence",
-    )?;
-
     validate_clickhouse_target(&target.clickhouse)?;
     validate_analytics_admission(&target.analytics_admission)?;
-    validate_target_redis(&target.redis_url)?;
+    validate_target_redis(&target.redis_bootstrap_url)?;
     if !target.require_empty_redis {
         return Err(MysqlImportSpecError::Invalid(
             "target.require_empty_redis must be true".to_string(),
         ));
     }
-    for (actual, expected, field) in [
-        (
-            &target.api_runtime_config_path,
-            Path::new("/var/lib/v2board/api/config.json"),
-            "target.api_runtime_config_path",
-        ),
-        (
-            &target.worker_runtime_config_path,
-            Path::new("/var/lib/v2board/worker/config.json"),
-            "target.worker_runtime_config_path",
-        ),
-    ] {
-        validate_absolute_normalized_path(actual, field)?;
-        if actual != expected {
-            return Err(MysqlImportSpecError::Invalid(format!(
-                "{field} must equal {}",
-                expected.display()
-            )));
-        }
+    validate_absolute_normalized_path(
+        &target.config_output_directory,
+        "target.config_output_directory",
+    )?;
+    if target.config_output_directory == Path::new("/") {
+        return Err(MysqlImportSpecError::Invalid(
+            "target.config_output_directory must not be the filesystem root".to_string(),
+        ));
     }
     Ok(target)
 }
@@ -511,7 +542,6 @@ fn validate_clickhouse_target(
         &clickhouse.bootstrap_principal,
         &clickhouse.schema_principal,
         &clickhouse.writer_principal,
-        &clickhouse.reader_principal,
     ];
     let mut usernames = BTreeSet::new();
     let mut passwords = BTreeSet::new();
@@ -528,9 +558,9 @@ fn validate_clickhouse_target(
         usernames.insert(principal.username.as_str());
         passwords.insert(principal.password.as_str());
     }
-    if usernames.len() != 4 || passwords.len() != 4 {
+    if usernames.len() != 3 || passwords.len() != 3 {
         return Err(MysqlImportSpecError::Invalid(
-            "ClickHouse bootstrap/schema/writer/reader principals and secrets must be distinct"
+            "ClickHouse bootstrap/schema/writer principals and secrets must be distinct"
                 .to_string(),
         ));
     }
@@ -544,14 +574,7 @@ fn validate_clickhouse_target(
             "ClickHouse target must be empty and use 1..=36500 day ordered retention".to_string(),
         ));
     }
-    validate_evidence(
-        &clickhouse.network_policy_evidence,
-        "target.clickhouse.network_policy_evidence",
-    )?;
-    validate_evidence(
-        &clickhouse.privileges.evidence,
-        "target.clickhouse.privileges.evidence",
-    )
+    Ok(())
 }
 
 fn validate_analytics_admission(
@@ -606,25 +629,30 @@ fn validate_analytics_admission(
 }
 
 fn validate_target_redis(value: &str) -> Result<(), MysqlImportSpecError> {
-    let url = parse_url(value, "target.redis_url")?;
-    let path = strict_percent_decode(url.path(), "target.redis_url database")?;
+    let url = parse_url(value, "target.redis_bootstrap_url")?;
+    let username = strict_percent_decode(url.username(), "target.redis_bootstrap_url username")?;
+    let path = strict_percent_decode(url.path(), "target.redis_bootstrap_url database")?;
     let database = path.strip_prefix('/').unwrap_or_default();
+    let database_number = database.parse::<u32>().ok();
     let password = strict_percent_decode(
         url.password().unwrap_or_default(),
-        "target.redis_url password",
+        "target.redis_bootstrap_url password",
     )?;
     if url.scheme() != "rediss"
         || url.host_str().is_none()
+        || !valid_datastore_identifier(&username)
+        || username == "default"
         || database.is_empty()
-        || database.parse::<u32>().is_err()
+        || database_number != Some(0)
+        || url.path() != "/0"
         || url.query().is_some()
         || url.fragment().is_some()
         || url.password().is_none()
-        || password.len() < 16
+        || password.len() < 32
         || contains_placeholder(&password)
     {
         return Err(MysqlImportSpecError::Invalid(
-            "target Redis must be a non-placeholder rediss URL with password and explicit logical database"
+            "target Redis must use an explicit non-default bootstrap ACL username, a dedicated non-placeholder rediss endpoint, a password of at least 32 bytes, and canonical database /0"
                 .to_string(),
         ));
     }
@@ -756,7 +784,7 @@ fn validate_runtime(
         "api",
         &target.postgres.api_database_url,
         &worker_principal,
-        &target.redis_url,
+        &target.redis_bootstrap_url,
     );
     let mut worker_runtime = runtime.clone();
     inject_runtime_datastore(
@@ -764,7 +792,7 @@ fn validate_runtime(
         "worker",
         &target.postgres.worker_database_url,
         &api_principal,
-        &target.redis_url,
+        &target.redis_bootstrap_url,
     );
     worker_runtime.insert(
         "clickhouse_url".to_string(),
@@ -784,7 +812,7 @@ fn validate_runtime(
     );
     let api = AppConfig::try_from_api_config_map(
         api_runtime.clone(),
-        runtime_paths(target.api_runtime_config_path.clone()),
+        runtime_paths(PathBuf::from("/var/lib/v2board/api/config.json")),
     )
     .map_err(|error| {
         MysqlImportSpecError::Invalid(format!(
@@ -793,7 +821,7 @@ fn validate_runtime(
     })?;
     let worker = AppConfig::try_from_worker_config_map(
         worker_runtime.clone(),
-        runtime_paths(target.worker_runtime_config_path.clone()),
+        runtime_paths(PathBuf::from("/var/lib/v2board/worker/config.json")),
     )
     .map_err(|error| {
         MysqlImportSpecError::Invalid(format!(
@@ -807,14 +835,14 @@ fn validate_runtime(
     }
     AppConfig::try_from_api_boot_config_map(
         boot_runtime_config(&api_runtime, false)?,
-        runtime_paths(target.api_runtime_config_path.clone()),
+        runtime_paths(PathBuf::from("/var/lib/v2board/api/config.json")),
     )
     .map_err(|error| {
         MysqlImportSpecError::Invalid(format!("derived API boot config is invalid: {error}"))
     })?;
     AppConfig::try_from_worker_boot_config_map(
         boot_runtime_config(&worker_runtime, true)?,
-        runtime_paths(target.worker_runtime_config_path.clone()),
+        runtime_paths(PathBuf::from("/var/lib/v2board/worker/config.json")),
     )
     .map_err(|error| {
         MysqlImportSpecError::Invalid(format!("derived worker boot config is invalid: {error}"))
@@ -1060,6 +1088,110 @@ impl MysqlImportSpec {
     pub fn manifest_sha256(&self) -> &str {
         &self.manifest_sha256
     }
+
+    /// Rebuild the already-validated typed plan used by the one-shot executor.
+    /// Keeping this derivation here ensures `validate`, `inspect`, and
+    /// `execute` share exactly one manifest grammar and one runtime parser.
+    pub fn execution_plan(&self) -> Result<MysqlImportExecutionPlan, MysqlImportSpecError> {
+        let target = validate_target(&self.target)?;
+        validate_runtime(&self.runtime, &target)?;
+
+        let api_principal = postgres_principal(&target.postgres.api_database_url)?;
+        let worker_principal = postgres_principal(&target.postgres.worker_database_url)?;
+        let mut api_runtime = self.runtime.clone();
+        inject_runtime_datastore(
+            &mut api_runtime,
+            "api",
+            &target.postgres.api_database_url,
+            &worker_principal,
+            &target.redis_bootstrap_url,
+        );
+        let mut worker_runtime = self.runtime.clone();
+        inject_runtime_datastore(
+            &mut worker_runtime,
+            "worker",
+            &target.postgres.worker_database_url,
+            &api_principal,
+            &target.redis_bootstrap_url,
+        );
+        worker_runtime.insert(
+            "clickhouse_url".to_string(),
+            Value::String(target.clickhouse.endpoint.clone()),
+        );
+        worker_runtime.insert(
+            "clickhouse_database".to_string(),
+            Value::String(target.clickhouse.database.clone()),
+        );
+        worker_runtime.insert(
+            "clickhouse_writer_username".to_string(),
+            Value::String(target.clickhouse.writer_principal.username.clone()),
+        );
+        worker_runtime.insert(
+            "clickhouse_writer_password".to_string(),
+            Value::String(target.clickhouse.writer_principal.password.clone()),
+        );
+
+        let api = AppConfig::try_from_api_config_map(
+            api_runtime.clone(),
+            runtime_paths(PathBuf::from("/var/lib/v2board/api/config.json")),
+        )
+        .map_err(|error| {
+            MysqlImportSpecError::Invalid(format!(
+                "runtime is not loadable by the typed API parser: {error}"
+            ))
+        })?;
+        let operator_config = api.operator_config_map();
+        let app_key = string_field(&self.runtime, "app_key", "runtime")?.to_string();
+
+        Ok(MysqlImportExecutionPlan {
+            postgres: MysqlImportPostgresPlan {
+                bootstrap_database_url: target.postgres.bootstrap_database_url,
+                migration_database_url: target.postgres.migration_database_url,
+                api_database_url: target.postgres.api_database_url,
+                worker_database_url: target.postgres.worker_database_url,
+            },
+            clickhouse: MysqlImportClickHousePlan {
+                endpoint: target.clickhouse.endpoint,
+                database: target.clickhouse.database,
+                bootstrap_username: target.clickhouse.bootstrap_principal.username,
+                bootstrap_password: target.clickhouse.bootstrap_principal.password,
+                schema_username: target.clickhouse.schema_principal.username,
+                schema_password: target.clickhouse.schema_principal.password,
+                writer_username: target.clickhouse.writer_principal.username,
+                writer_password: target.clickhouse.writer_principal.password,
+                raw_retention_days: target.clickhouse.raw_retention_days,
+                aggregate_retention_days: target.clickhouse.aggregate_retention_days,
+            },
+            analytics_admission: MysqlImportAnalyticsAdmissionPlan {
+                recovery_pending_rows: target.analytics_admission.recovery_pending_rows,
+                soft_pending_rows: target.analytics_admission.soft_pending_rows,
+                hard_pending_rows: target.analytics_admission.hard_pending_rows,
+                recovery_relation_bytes: target.analytics_admission.recovery_relation_bytes,
+                soft_relation_bytes: target.analytics_admission.soft_relation_bytes,
+                hard_relation_bytes: target.analytics_admission.hard_relation_bytes,
+                recovery_oldest_age_seconds: target.analytics_admission.recovery_oldest_age_seconds,
+                soft_oldest_age_seconds: target.analytics_admission.soft_oldest_age_seconds,
+                hard_oldest_age_seconds: target.analytics_admission.hard_oldest_age_seconds,
+                database_capacity_bytes: target.analytics_admission.database_capacity_bytes,
+                hard_min_headroom_bytes: target.analytics_admission.hard_min_headroom_bytes,
+                soft_min_headroom_bytes: target.analytics_admission.soft_min_headroom_bytes,
+                recovery_min_headroom_bytes: target.analytics_admission.recovery_min_headroom_bytes,
+                event_reservation_bytes: target.analytics_admission.event_reservation_bytes,
+                soft_max_new_rows_per_second: target
+                    .analytics_admission
+                    .soft_max_new_rows_per_second,
+                sample_interval_seconds: target.analytics_admission.sample_interval_seconds,
+                stale_after_seconds: target.analytics_admission.stale_after_seconds,
+                capacity_evidence: target.analytics_admission.capacity_evidence,
+            },
+            redis_bootstrap_url: target.redis_bootstrap_url,
+            config_output_directory: target.config_output_directory,
+            api_boot_config: boot_runtime_config(&api_runtime, false)?,
+            worker_boot_config: boot_runtime_config(&worker_runtime, true)?,
+            operator_config,
+            app_key,
+        })
+    }
 }
 
 struct UniqueJson(Value);
@@ -1261,11 +1393,7 @@ mod tests {
                     "api_database_url": "postgresql://api:C3apiRuntimeSecret@postgres.acme.internal:5432/v2board?sslmode=verify-full",
                     "worker_database_url": "postgresql://worker:D4workerRuntimeSecret@postgres.acme.internal:5432/v2board?sslmode=verify-full",
                     "require_database_absent": true,
-                    "require_roles_absent": true,
-                    "external_access": {
-                        "pg_hba_evidence": "change-ticket-1042",
-                        "network_policy_evidence": "network-policy-review-1042"
-                    }
+                    "require_roles_absent": true
                 },
                 "clickhouse": {
                     "endpoint": "https://clickhouse.acme.internal",
@@ -1273,13 +1401,10 @@ mod tests {
                     "bootstrap_principal": {"username": "ch_bootstrap", "password": "E5clickhouseBootstrapSecretMaterial32"},
                     "schema_principal": {"username": "ch_schema", "password": "F6clickhouseSchemaSecretMaterialValue32"},
                     "writer_principal": {"username": "ch_writer", "password": "G7clickhouseWriterSecretMaterialValue32"},
-                    "reader_principal": {"username": "ch_reader", "password": "H8clickhouseReaderSecretMaterialValue32"},
                     "raw_retention_days": 90,
                     "aggregate_retention_days": 730,
                     "require_database_absent": true,
-                    "require_principals_absent": true,
-                    "network_policy_evidence": "clickhouse-network-review-1042",
-                    "privileges": {"evidence": "clickhouse-grant-review-1042"}
+                    "require_principals_absent": true
                 },
                 "analytics_admission": {
                     "recovery_pending_rows": 750000,
@@ -1301,9 +1426,8 @@ mod tests {
                     "stale_after_seconds": 30,
                     "capacity_evidence": "dedicated-postgresql-volume-quota-1042"
                 },
-                "redis_url": "rediss://:I9redisRuntimeSecret@redis.acme.internal:6380/1",
-                "api_runtime_config_path": "/var/lib/v2board/api/config.json",
-                "worker_runtime_config_path": "/var/lib/v2board/worker/config.json",
+                "redis_bootstrap_url": "rediss://import_bootstrap:I9redisRuntimeSecret-32-bytes-long@redis.acme.internal:6380/0",
+                "config_output_directory": "/secure/private/v2board-import-output",
                 "require_empty_redis": true
             },
             "runtime": runtime()
@@ -1395,6 +1519,15 @@ mod tests {
             parse_mysql_import_spec(&serde_json::to_vec(&duplicate_postgres_tls).unwrap()).is_err()
         );
 
+        let mut shared_postgres_cluster = import_document();
+        shared_postgres_cluster["target"]["postgres"]["bootstrap_database_url"] = json!(
+            "postgresql://bootstrap:A1bootstrapSecret@postgres.acme.internal:5432/maintenance?sslmode=verify-full"
+        );
+        assert!(
+            parse_mysql_import_spec(&serde_json::to_vec(&shared_postgres_cluster).unwrap())
+                .is_err()
+        );
+
         let mut duplicate_mysql_tls = import_document();
         duplicate_mysql_tls["source"]["staging_database_url"] = json!(
             "mysql://staging:J0stagingImportSecret@127.0.0.1:3307/v2board_staging?ssl_mode=DISABLED&ssl-mode=VERIFY_IDENTITY"
@@ -1421,6 +1554,28 @@ mod tests {
             parse_mysql_import_spec(&serde_json::to_vec(&retired_transport_choice).unwrap())
                 .is_err()
         );
+
+        let mut retired_redis_name = import_document();
+        let target = retired_redis_name["target"].as_object_mut().unwrap();
+        let value = target.remove("redis_bootstrap_url").unwrap();
+        target.insert("redis_url".to_string(), value);
+        assert!(
+            parse_mysql_import_spec(&serde_json::to_vec(&retired_redis_name).unwrap()).is_err()
+        );
+
+        let mut default_redis_user = import_document();
+        default_redis_user["target"]["redis_bootstrap_url"] =
+            json!("rediss://default:I9redisRuntimeSecret-32-bytes-long@redis.acme.internal:6380/0");
+        assert!(
+            parse_mysql_import_spec(&serde_json::to_vec(&default_redis_user).unwrap()).is_err()
+        );
+
+        let mut missing_redis_user = import_document();
+        missing_redis_user["target"]["redis_bootstrap_url"] =
+            json!("rediss://:I9redisRuntimeSecret-32-bytes-long@redis.acme.internal:6380/0");
+        assert!(
+            parse_mysql_import_spec(&serde_json::to_vec(&missing_redis_user).unwrap()).is_err()
+        );
     }
 
     #[test]
@@ -1431,8 +1586,9 @@ mod tests {
         encoded_special_characters["target"]["postgres"]["api_database_url"] = json!(
             "postgresql://api:C3api%40RuntimeSecret@postgres.acme.internal:5432/v2board?sslmode=verify-full"
         );
-        encoded_special_characters["target"]["redis_url"] =
-            json!("rediss://:I9redis%40RuntimeSecret@redis.acme.internal:6380/1");
+        encoded_special_characters["target"]["redis_bootstrap_url"] = json!(
+            "rediss://import_bootstrap:I9redis%40RuntimeSecret-32-bytes-long@redis.acme.internal:6380/0"
+        );
         assert!(
             parse_mysql_import_spec(&serde_json::to_vec(&encoded_special_characters).unwrap())
                 .is_ok()

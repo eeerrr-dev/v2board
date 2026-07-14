@@ -63,7 +63,8 @@ const TRAFFIC_MAX_REPORTS_PER_TICK: usize = 10_000;
 pub(crate) async fn run(state: &WorkerState) -> anyhow::Result<()> {
     let reset_in_progress = tokio::time::timeout(Duration::from_secs(5), async {
         let mut conn = state.redis.get_multiplexed_async_connection().await?;
-        conn.exists::<_, bool>(TRAFFIC_RESET_LOCK_KEY).await
+        conn.exists::<_, bool>(state.redis_key(TRAFFIC_RESET_LOCK_KEY))
+            .await
     })
     .await
     .map_err(|_| anyhow::anyhow!("timed out checking the traffic reset barrier"))??;

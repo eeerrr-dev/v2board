@@ -40,6 +40,7 @@ x-rust-worker-environment: &rust-worker-environment
 
 x-rust-volumes: &rust-volumes
   - ./backend/rust:/src/backend/rust:ro
+  - ./docs:/src/docs:ro
   - ./deploy/systemd:/src/deploy/systemd:ro
   - rust-cargo-registry:/usr/local/cargo/registry
   - rust-cargo-git:/usr/local/cargo/git
@@ -200,6 +201,7 @@ services:
       - "${RUST_API_PORT:-8000}:8080"
     volumes:
       - ./backend/rust:/src/backend/rust:ro
+      - ./docs:/src/docs:ro
       - ./deploy/systemd:/src/deploy/systemd:ro
       - rust-cargo-registry:/usr/local/cargo/registry
       - rust-cargo-git:/usr/local/cargo/git
@@ -294,6 +296,86 @@ services:
     ports:
       - "8001:8001"
     volumes: *reference-frontend-volumes
+
+  # Test-only Oracle MySQL staging. It is never started by the normal local
+  # stack and has no production role; rust-integration recreates it from the
+  # pinned read-only legacy schema plus representative conversion rows.
+  mysql-import-staging:
+    profiles: ["migration-test"]
+    logging: *local-logging
+    image: mysql:8.4.10@sha256:c831a0f11348d402b43d77453e17d770be2eef356615a2823fe0f5a0d6c8b9af
+    environment:
+      MYSQL_DATABASE: v2board_staging
+      MYSQL_ROOT_PASSWORD: root-import-test-secret
+      MYSQL_USER: staging
+      MYSQL_PASSWORD: J0stagingImportSecret-32-bytes-long
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+    restart: "no"
+    tmpfs:
+      - /var/lib/mysql
+    volumes:
+      - ./references/wyx2685-v2board/database/install.sql:/docker-entrypoint-initdb.d/001-install.sql:ro
+      - ./backend/rust/crates/lifecycle/tests/fixtures/mysql-import-seed.sql:/docker-entrypoint-initdb.d/002-seed.sql:ro
+
+  # Test-only dedicated PostgreSQL 18 target for the full importer execute
+  # path. It deliberately contains only the postgres maintenance database;
+  # tmpfs and forced recreation make the production empty-cluster preflight
+  # testable without touching the normal local database service.
+  postgres-import-target:
+    profiles: ["migration-test"]
+    logging: *local-logging
+    image: postgres:18.4-bookworm@sha256:d9c83446333daec3f0588cc709adb80c26090b7f9f0f7ec8d43c243385d79818
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: import_bootstrap
+      POSTGRES_PASSWORD: ImportBootstrapTestSecret-32-bytes
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=C.UTF-8 --data-checksums
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U import_bootstrap -d postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+    restart: "no"
+    tmpfs:
+      - /var/lib/postgresql
+
+  # Test-only fresh Redis target for the full importer execute path. A tmpfs
+  # keeps it whole-instance empty on every forced recreation without touching
+  # the normal local Redis service or its development data.
+  redis-import-target:
+    profiles: ["migration-test"]
+    logging: *local-logging
+    image: redis:8.8.0-alpine@sha256:9d317178eceac8454a2284a9e6df2466b93c745529947f0cd42a0fa9609d7005
+    command:
+      - sh
+      - -ec
+      - |
+        cp /bootstrap/users.acl /data/users.acl
+        exec redis-server --save '' --appendonly no --maxmemory-policy noeviction --aclfile /data/users.acl
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "redis-cli",
+          "--user",
+          "import_bootstrap",
+          "--pass",
+          "RedisImportBootstrapTestSecret-32-bytes",
+          "--no-auth-warning",
+          "ping",
+        ]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    restart: "no"
+    volumes:
+      - ./backend/rust/crates/lifecycle/tests/fixtures/redis-import-target.acl:/bootstrap/users.acl:ro
+    tmpfs:
+      - /data
 
   postgres:
     logging: *local-logging

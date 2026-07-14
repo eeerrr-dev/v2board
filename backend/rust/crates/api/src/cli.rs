@@ -27,7 +27,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> anyhow::Result<Command>
 
 pub(crate) fn print_help() {
     println!(
-        "v2board-api\n\nCommands:\n  migrate\n      Apply native PostgreSQL migrations\n\n  reset-admin-password <email>\n      Read the new password from a systemd credential or V2BOARD_NEW_PASSWORD_FILE\n\nMySQL import checks are intentionally absent from this runtime binary. Use the disposable\nv2board-lifecycle binary for validate/inspect operations."
+        "v2board-api\n\nCommands:\n  migrate\n      Apply native PostgreSQL migrations\n\n  reset-admin-password <email>\n      Read the new password from a systemd credential or V2BOARD_NEW_PASSWORD_FILE\n\nMySQL import commands are intentionally absent from this runtime binary. Use the disposable\nv2board-lifecycle binary for validate/inspect/execute operations."
     );
 }
 

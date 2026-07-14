@@ -5,6 +5,7 @@ use chrono::Utc;
 use redis::AsyncCommands;
 use serde_json::{Value, json};
 use sqlx::PgPool;
+use v2board_config::RedisKeyspace;
 
 pub async fn run() -> Result<()> {
     let database_url = env_or(
@@ -14,13 +15,14 @@ pub async fn run() -> Result<()> {
     let redis_url = env_or("REDIS_URL", "redis://redis:6379/1");
     let strict = env_bool("WORKER_RECONCILE_STRICT", true);
     let pool = PgPool::connect(&database_url).await?;
+    let redis_keys = RedisKeyspace::new(v2board_db::installation_id(&pool).await?);
     let redis = redis::Client::open(redis_url.as_str())?;
     let mut conn = redis.get_multiplexed_async_connection().await?;
     let now = Utc::now().timestamp();
     let mut checks = Vec::new();
 
     let heartbeat = conn
-        .get::<_, Option<i64>>("SCHEDULE_LAST_CHECK_AT_")
+        .get::<_, Option<i64>>(redis_keys.key("SCHEDULE_LAST_CHECK_AT_"))
         .await?
         .unwrap_or_default();
     let heartbeat_age = (heartbeat > 0).then_some(now.saturating_sub(heartbeat));
@@ -32,7 +34,7 @@ pub async fn run() -> Result<()> {
     ));
 
     let last_runs = conn
-        .hgetall::<_, BTreeMap<String, i64>>("RUST_WORKER_LAST_RUN_AT")
+        .hgetall::<_, BTreeMap<String, i64>>(redis_keys.key("RUST_WORKER_LAST_RUN_AT"))
         .await?;
     for job in ["traffic_update", "check_order", "check_ticket"] {
         let recent = last_runs
@@ -47,11 +49,33 @@ pub async fn run() -> Result<()> {
         ));
     }
 
-    let scheduler_locks = conn.keys::<_, Vec<String>>("RUST_SCHEDULER_LOCK_*").await?;
+    let mut scheduler_locks = Vec::new();
+    {
+        let mut lock_scan = conn
+            .scan_match::<_, String>(redis_keys.pattern("RUST_SCHEDULER_LOCK_*"))
+            .await?;
+        while let Some(key) = lock_scan.next_item().await {
+            scheduler_locks.push(key?);
+        }
+    }
+    scheduler_locks.sort();
+    let singleton_lock = redis_keys.key("RUST_SCHEDULER_LOCK_worker_singleton");
+    let singleton_owned = scheduler_locks.iter().any(|key| key == &singleton_lock);
+    let active_job_locks = scheduler_locks
+        .iter()
+        .filter(|key| *key != &singleton_lock)
+        .cloned()
+        .collect::<Vec<_>>();
     checks.push(ReconcileCheck::new(
         "scheduler_locks_released",
-        scheduler_locks.is_empty(),
-        json!({ "locks": scheduler_locks }),
+        active_job_locks.is_empty(),
+        json!({ "locks": active_job_locks }),
+        true,
+    ));
+    checks.push(ReconcileCheck::new(
+        "worker_singleton_owned",
+        singleton_owned,
+        json!({ "key": singleton_lock, "owned": singleton_owned }),
         true,
     ));
 
@@ -67,7 +91,9 @@ pub async fn run() -> Result<()> {
         true,
     ));
 
-    let traffic_reset_lock_exists = conn.exists::<_, bool>("traffic_reset_lock").await?;
+    let traffic_reset_lock_exists = conn
+        .exists::<_, bool>(redis_keys.key("traffic_reset_lock"))
+        .await?;
     checks.push(ReconcileCheck::new(
         "traffic_reset_lock_absent",
         !traffic_reset_lock_exists,

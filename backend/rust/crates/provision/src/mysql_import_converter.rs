@@ -17,7 +17,7 @@ use crate::mysql_import_policy::{
 pub const MYSQL_IMPORT_SOURCE_PROFILE: &str =
     "wyx2685-v2board@7e77de9f4873b317157490529f7be7d6f8a62421";
 pub const MYSQL_SOURCE_SCHEMA_SHA256: &str =
-    "4b5eaec681531751c79b48188e5a1c665df4f660dffbb88d6853cea6cf04801e";
+    "f2c1e14169a728325bb8073b8ffe1f31bb13c8913318fdb10710ae0a99a9e8cf";
 pub const MYSQL_SOURCE_INSTALL_SQL_SHA256: &str =
     "04b04531037b9e0b6f2a6b02194a8f1bc102789af8ee7be963fd721d51bca8e2";
 pub const MYSQL_IMPORT_SCHEMA_VERSION: u32 = 1;
@@ -26,9 +26,10 @@ pub const MYSQL_IMPORT_REGISTRY_VERSION: u32 = 1;
 pub const DEFAULT_BATCH_SIZE: u32 = 1_000;
 pub const MAX_BATCH_SIZE: u32 = 100_000;
 pub const POSTGRES_MAX_BIND_PARAMETERS: usize = 65_535;
-/// The first keyset query starts below every signed legacy identity. Do not
-/// use zero: `NO_AUTO_VALUE_ON_ZERO` allowed explicitly inserted zero ids.
-pub const INITIAL_SOURCE_ID_CURSOR: i64 = i64::MIN;
+/// Native identities are positive. The source preflight rejects every
+/// non-positive business primary key before any target is created, so keyset
+/// scans start at the exact lower bound of the accepted domain.
+pub const INITIAL_SOURCE_ID_CURSOR: i64 = 0;
 
 const TARGET_POSTGRES_MIGRATIONS: &[(i64, &str, &[u8])] = &[(
     1,
@@ -797,10 +798,7 @@ pub const SCALAR_REFERENCES: &[ScalarReference] = &[
 /// Columns intentionally omitted from inserts because PostgreSQL derives them
 /// from preserved legacy values. Final verification must still compare their
 /// evaluated meaning.
-pub const TARGET_GENERATED_COLUMNS: &[(&str, &[&str])] = &[
-    ("orders", &["referenced_plan_id", "unfinished_user_id"]),
-    ("ticket", &["open_user_id"]),
-];
+pub const TARGET_GENERATED_COLUMNS: &[(&str, &[&str])] = &[("orders", &["referenced_plan_id"])];
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub enum SourceValue {
@@ -871,21 +869,8 @@ pub enum ConverterError {
     InvalidBatchSize(u32),
     #[error("target batch has {parameters} bind parameters, above PostgreSQL's supported limit")]
     TargetBatchParameterLimit { parameters: usize },
-    #[error("source schema hash does not match the pinned profile")]
-    SourceSchemaMismatch,
-    #[error("dump SHA-256 must be 64 lowercase hexadecimal characters")]
-    InvalidDumpSha256,
-    #[error("conversion input binding does not match the converter")]
-    InputBindingMismatch,
     #[error(transparent)]
     OrderPolicy(#[from] LegacyOrderPolicyError),
-    #[error("{table}.{column} references missing {referenced_table} id {id}")]
-    MissingIdReference {
-        table: String,
-        column: String,
-        referenced_table: String,
-        id: u64,
-    },
 }
 
 pub fn mapping_for_source(table: &str) -> Option<&'static TableMapping> {
@@ -1218,6 +1203,10 @@ pub fn registry_sha256() -> Result<String, ConverterError> {
         digest_field(&mut digest, mapping.order.to_string().as_bytes());
         digest_field(&mut digest, mapping.source.as_bytes());
         digest_field(&mut digest, mapping.target.as_bytes());
+        digest_field(
+            &mut digest,
+            format!("{:?}", mapping.identity_width).as_bytes(),
+        );
         for column in mapping.direct_columns {
             digest_field(&mut digest, b"direct");
             digest_field(&mut digest, column.as_bytes());
@@ -1836,69 +1825,10 @@ fn postgres_identifier(identifier: &str) -> String {
     format!("\"{identifier}\"")
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct MysqlImportInputBinding {
-    pub dump_sha256: String,
-    pub source_schema_sha256: String,
-    pub registry_sha256: String,
-}
-
-impl MysqlImportInputBinding {
-    pub fn validate(&self) -> Result<(), ConverterError> {
-        if self.source_schema_sha256 != MYSQL_SOURCE_SCHEMA_SHA256 {
-            return Err(ConverterError::SourceSchemaMismatch);
-        }
-        if !is_lower_sha256(&self.dump_sha256) {
-            return Err(ConverterError::InvalidDumpSha256);
-        }
-        if self.registry_sha256 != registry_sha256()? {
-            return Err(ConverterError::InputBindingMismatch);
-        }
-        Ok(())
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum MysqlImportStep {
-    /// Index every source payment id and the Stripe subset before orders.
-    IndexPaymentProviders,
-    CopyBaseTable(&'static TableMapping),
-    ApplyDeferredReferences(&'static TableMapping),
-    BuildDerivedRows(&'static DerivedMapping),
-    ResetSequence(&'static TableMapping),
-    VerifyBaseTable(&'static TableMapping),
-    VerifyDerivedTable(&'static DerivedMapping),
-    VerifyDiscardedTargetEmpty(&'static str),
-    Complete,
-}
-
-/// Returns the only supported converter order. Copy steps use keyset batches.
-/// Deferred self references and derived tables run only after their base ids
-/// exist, and sequences move only after all explicit ids have been inserted.
-pub fn mysql_import_steps() -> Result<Vec<MysqlImportStep>, ConverterError> {
-    audit_registry()?;
-    let mut steps = vec![MysqlImportStep::IndexPaymentProviders];
-    steps.extend(copied_table_mappings().map(MysqlImportStep::CopyBaseTable));
-    steps.extend(
-        copied_table_mappings()
-            .filter(|mapping| !mapping.deferred_columns.is_empty())
-            .map(MysqlImportStep::ApplyDeferredReferences),
-    );
-    steps.extend(built_derived_mappings().map(MysqlImportStep::BuildDerivedRows));
-    // Every retained-table sequence is reset. Discarded targets are proven
-    // empty in the fresh baseline, so their untouched sequences still begin at 1.
-    steps.extend(TABLE_MAPPINGS.iter().map(MysqlImportStep::ResetSequence));
-    steps.extend(copied_table_mappings().map(MysqlImportStep::VerifyBaseTable));
-    steps.extend(built_derived_mappings().map(MysqlImportStep::VerifyDerivedTable));
-    steps.extend(discarded_target_tables().map(MysqlImportStep::VerifyDiscardedTargetEmpty));
-    steps.push(MysqlImportStep::Complete);
-    Ok(steps)
-}
-
 pub fn validate_batch_ids(
     mapping: &TableMapping,
     after_id: i64,
-    rows: &[CanonicalRow],
+    rows: &[SourceRow],
     batch_size: u32,
 ) -> Result<i64, ConverterError> {
     if batch_size == 0 || batch_size > MAX_BATCH_SIZE {
@@ -1910,8 +1840,8 @@ pub fn validate_batch_ids(
     let mut previous = after_id;
     for row in rows {
         let id = match row.get("id") {
-            Some(CanonicalValue::I64(id)) => *id,
-            Some(CanonicalValue::U64(id)) => {
+            Some(SourceValue::I64(id)) => *id,
+            Some(SourceValue::U64(id)) => {
                 i64::try_from(*id).map_err(|_| ConverterError::NonMonotonicBatch {
                     table: mapping.target.to_string(),
                     after_id,
@@ -1966,7 +1896,6 @@ pub fn canonical_rows_sha256(
 pub fn expand_giftcard_redemptions(
     giftcard_id: i32,
     used_user_ids: &SourceValue,
-    known_user_ids: &BTreeSet<u64>,
 ) -> Result<Vec<LegacyGiftcardRedemptionRow>, ConverterError> {
     if matches!(used_user_ids, SourceValue::Null) {
         return Ok(Vec::new());
@@ -1999,14 +1928,6 @@ pub fn expand_giftcard_redemptions(
         .collect::<Result<BTreeSet<_>, _>>()?;
     let mut rows = Vec::with_capacity(ids.len());
     for user_id in &ids {
-        if !known_user_ids.contains(user_id) {
-            return Err(ConverterError::MissingIdReference {
-                table: "v2_giftcard".to_string(),
-                column: "used_user_ids".to_string(),
-                referenced_table: "v2_user".to_string(),
-                id: *user_id,
-            });
-        }
         rows.push(LegacyGiftcardRedemptionRow {
             giftcard_id,
             user_id: i64::try_from(*user_id).map_err(|_| {
@@ -2045,13 +1966,6 @@ fn digest_field(digest: &mut Sha256, value: &[u8]) {
     digest.update(value);
 }
 
-fn is_lower_sha256(value: &str) -> bool {
-    value.len() == 64
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2061,23 +1975,6 @@ mod tests {
         audit_registry().expect("registry");
         assert_eq!(TABLE_MAPPINGS.len(), 14);
         assert_eq!(registry_sha256().expect("hash").len(), 64);
-        let steps = mysql_import_steps().expect("steps");
-        assert_eq!(
-            steps
-                .iter()
-                .filter(|step| matches!(step, MysqlImportStep::CopyBaseTable(_)))
-                .count(),
-            14
-        );
-        assert_eq!(
-            steps
-                .iter()
-                .filter(|step| matches!(step, MysqlImportStep::VerifyDiscardedTargetEmpty(_)))
-                .count(),
-            14
-        );
-        assert_eq!(steps.first(), Some(&MysqlImportStep::IndexPaymentProviders));
-        assert_eq!(steps.last(), Some(&MysqlImportStep::Complete));
         assert!(SCALAR_REFERENCES.contains(&ScalarReference {
             source_table: "v2_order",
             target_table: "orders",
@@ -2195,6 +2092,10 @@ mod tests {
         assert!(copied_table_mappings().any(|mapping| mapping.source == "v2_stat"));
         assert!(copied_table_mappings().any(|mapping| mapping.source == "v2_user"));
         assert!(copied_table_mappings().any(|mapping| mapping.source == "v2_payment"));
+        assert_eq!(
+            TARGET_GENERATED_COLUMNS,
+            &[("orders", &["referenced_plan_id"] as &[&str])]
+        );
         assert!(
             TABLE_MAPPINGS
                 .iter()
@@ -2253,13 +2154,6 @@ mod tests {
             assert!(mapping_for_source(table).is_none());
         }
         assert_eq!(built_derived_mappings().count(), 1);
-
-        let binding = MysqlImportInputBinding {
-            dump_sha256: "a".repeat(64),
-            source_schema_sha256: MYSQL_SOURCE_SCHEMA_SHA256.to_string(),
-            registry_sha256: registry_sha256().expect("registry"),
-        };
-        binding.validate().expect("schema-v1 binding");
     }
 
     #[test]
@@ -2319,7 +2213,7 @@ mod tests {
         let source_sql = source_batch_sql(user).expect("source sql");
         assert!(source_sql.contains("WHERE `id` > ? ORDER BY `id` ASC LIMIT ?"));
         assert!(!source_sql.contains("OFFSET"));
-        assert_eq!(INITIAL_SOURCE_ID_CURSOR, i64::MIN);
+        assert_eq!(INITIAL_SOURCE_ID_CURSOR, 0);
 
         let target_sql = target_insert_sql(user).expect("target sql");
         assert!(source_sql.contains("FROM `v2_user`"));
@@ -2340,33 +2234,11 @@ mod tests {
 
     #[test]
     fn giftcard_redemptions_have_explicit_unknown_time_provenance() {
-        let users = [7_u64, 9].into_iter().collect::<BTreeSet<_>>();
-        let rows =
-            expand_giftcard_redemptions(3, &SourceValue::Text(r#"[9,"7",9]"#.to_string()), &users)
-                .expect("redemptions");
+        let rows = expand_giftcard_redemptions(3, &SourceValue::Text(r#"[9,"7",9]"#.to_string()))
+            .expect("redemptions");
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].user_id, 7);
         assert_eq!(rows[0].created_at, 0);
         assert_eq!(rows[0].created_at_provenance, "legacy_unknown");
-
-        assert!(
-            expand_giftcard_redemptions(3, &SourceValue::Text("[10]".to_string()), &users,)
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn conversion_input_is_bound_to_the_unique_registry() {
-        let mut binding = MysqlImportInputBinding {
-            dump_sha256: "a".repeat(64),
-            source_schema_sha256: MYSQL_SOURCE_SCHEMA_SHA256.to_string(),
-            registry_sha256: registry_sha256().expect("registry hash"),
-        };
-        binding.validate().expect("valid binding");
-        binding.registry_sha256 = "b".repeat(64);
-        assert_eq!(
-            binding.validate(),
-            Err(ConverterError::InputBindingMismatch)
-        );
     }
 }

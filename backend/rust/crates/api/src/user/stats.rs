@@ -44,7 +44,7 @@ pub(crate) async fn server_fetch(
     }
     let mut servers =
         v2board_db::server::fetch_available_servers(&state.db, access.group_id).await?;
-    crate::server_api::hydrate_online_status(&state.redis, &mut servers).await?;
+    crate::server_api::hydrate_online_status(&state, &mut servers).await?;
     Ok(legacy_data(servers))
 }
 

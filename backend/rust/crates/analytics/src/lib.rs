@@ -8,6 +8,7 @@ mod client;
 mod event;
 mod outbox;
 mod projection;
+mod reader;
 mod schema;
 
 pub use admission::{
@@ -23,11 +24,14 @@ pub use event::{
     TrafficEventCore, deterministic_event_id,
 };
 pub use outbox::{
-    ClaimedBatch, DeliveryBatchState, OutboxBacklog, OutboxError, OutboxRecord, PruneResult,
-    claim_delivery_batch, enqueue_event, enqueue_events, mark_batch_published, outbox_backlog,
-    prune_published_outbox, quarantine_batch, release_batch_for_retry,
+    ClaimedBatch, DeliveryBatchState, MAX_PUBLISHED_CLEANUP_ROWS, MAX_PUBLISHED_RETENTION_SECONDS,
+    MIN_PUBLISHED_RETENTION_SECONDS, OutboxBacklog, OutboxError, OutboxRecord,
+    PublishedCleanupResult, claim_delivery_batch, cleanup_published_outbox, enqueue_event,
+    enqueue_events, mark_batch_published, outbox_backlog, quarantine_batch,
+    release_batch_for_retry,
 };
 pub use projection::{BatchProjectionError, ProjectionStatus, project_or_verify_batch};
+pub use reader::{AnalyticsReadError, AppliedDailyTraffic, read_applied_daily_traffic};
 pub use schema::{
     CLICKHOUSE_MIGRATIONS, ClickHouseMigrationError, ClickHouseProjectionCounts,
     bind_clickhouse_installation, clickhouse_projection_counts, clickhouse_schema_lineage_sha256,
