@@ -128,7 +128,7 @@ async fn schema_bootstrap_recovers_and_concurrent_jobs_remain_exact() {
     let fact_installation = Uuid::new_v4();
     facts
         .query(
-            "INSERT INTO traffic_reported_v1 (installation_id) \
+            "INSERT INTO traffic_reported (installation_id) \
              VALUES (toUUID(?))",
         )
         .bind(fact_installation.to_string())
@@ -188,7 +188,7 @@ async fn clickhouse_schema_and_ambiguous_retry_round_trip() {
         .unwrap();
     client
         .query(
-            "ALTER TABLE traffic_reported_v1 \
+            "ALTER TABLE traffic_reported \
              MODIFY TTL accounting_date + toIntervalDay(91) DELETE",
         )
         .execute()
@@ -201,7 +201,7 @@ async fn clickhouse_schema_and_ambiguous_retry_round_trip() {
     );
     client
         .query(
-            "ALTER TABLE traffic_reported_v1 \
+            "ALTER TABLE traffic_reported \
              MODIFY TTL accounting_date + toIntervalDay(90) DELETE",
         )
         .execute()
@@ -271,7 +271,7 @@ async fn clickhouse_schema_and_ambiguous_retry_round_trip() {
     );
     client
         .query(
-            "ALTER TABLE traffic_reported_v1 UPDATE raw_u = raw_u + 1 \
+            "ALTER TABLE traffic_reported UPDATE raw_u = raw_u + 1 \
              WHERE ingest_batch_id = toUUID(?) SETTINGS mutations_sync = 2",
         )
         .bind(batch.batch_id.to_string())
@@ -338,7 +338,7 @@ async fn clickhouse_schema_and_ambiguous_retry_round_trip() {
     second.unwrap();
     let count = client
         .query(
-            "SELECT count() AS rows FROM traffic_reported_v1 \
+            "SELECT count() AS rows FROM traffic_reported \
              WHERE table_generation = ? \
                AND accounting_date >= toDate(?) AND accounting_date < addMonths(toDate(?), 1) \
                AND ingest_batch_id = toUUID(?)",
@@ -368,7 +368,7 @@ async fn clickhouse_schema_and_ambiguous_retry_round_trip() {
         .query(
             "SELECT sum(event_count) AS events, sum(raw_u) AS raw_u, sum(raw_d) AS raw_d, \
                     sum(charged_u) AS charged_u, sum(charged_d) AS charged_d \
-             FROM traffic_reported_daily_v1 \
+             FROM traffic_reported_daily \
              WHERE installation_id = toUUID(?) AND accounting_date = toDate(?) AND user_id = ?",
         )
         .bind(installation_id.to_string())
@@ -385,8 +385,8 @@ async fn clickhouse_schema_and_ambiguous_retry_round_trip() {
 
     client
         .query(
-            "INSERT INTO traffic_reported_v1 \
-             SELECT * FROM traffic_reported_v1 \
+            "INSERT INTO traffic_reported \
+             SELECT * FROM traffic_reported \
              WHERE table_generation = ? \
                AND accounting_date >= toDate(?) AND accounting_date < addMonths(toDate(?), 1) \
                AND ingest_batch_id = toUUID(?) \
@@ -477,7 +477,7 @@ async fn clickhouse_schema_and_ambiguous_retry_round_trip() {
         .query(
             "SELECT sum(event_count) AS events, sum(raw_u) AS raw_u, sum(raw_d) AS raw_d, \
                     sum(charged_u) AS charged_u, sum(charged_d) AS charged_d \
-             FROM traffic_accounted_daily_v1 \
+             FROM traffic_accounted_daily \
              WHERE installation_id = toUUID(?) AND accounting_date = toDate(?) AND user_id = ?",
         )
         .bind(installation_id.to_string())

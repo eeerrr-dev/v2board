@@ -20,13 +20,13 @@ pub const CLICKHOUSE_MIGRATIONS: &[ClickHouseMigration] = &[
     },
     ClickHouseMigration {
         version: 2,
-        name: "traffic_reported_v1",
-        sql: include_str!("../../../clickhouse-migrations/0002_traffic_reported_v1.sql"),
+        name: "traffic_reported",
+        sql: include_str!("../../../clickhouse-migrations/0002_traffic_reported.sql"),
     },
     ClickHouseMigration {
         version: 3,
-        name: "traffic_accounted_v1",
-        sql: include_str!("../../../clickhouse-migrations/0003_traffic_accounted_v1.sql"),
+        name: "traffic_accounted",
+        sql: include_str!("../../../clickhouse-migrations/0003_traffic_accounted.sql"),
     },
     ClickHouseMigration {
         version: 4,
@@ -35,13 +35,13 @@ pub const CLICKHOUSE_MIGRATIONS: &[ClickHouseMigration] = &[
     },
     ClickHouseMigration {
         version: 5,
-        name: "traffic_reported_daily_v1",
-        sql: include_str!("../../../clickhouse-migrations/0005_traffic_reported_daily_v1.sql"),
+        name: "traffic_reported_daily",
+        sql: include_str!("../../../clickhouse-migrations/0005_traffic_reported_daily.sql"),
     },
     ClickHouseMigration {
         version: 6,
-        name: "traffic_accounted_daily_v1",
-        sql: include_str!("../../../clickhouse-migrations/0006_traffic_accounted_daily_v1.sql"),
+        name: "traffic_accounted_daily",
+        sql: include_str!("../../../clickhouse-migrations/0006_traffic_accounted_daily.sql"),
     },
     ClickHouseMigration {
         version: 7,
@@ -408,13 +408,13 @@ pub async fn clickhouse_projection_counts(
     Ok(client
         .query(
             "SELECT \
-             coalesce((SELECT count() FROM traffic_reported_v1), toUInt64(0)) \
+             coalesce((SELECT count() FROM traffic_reported), toUInt64(0)) \
                  AS reported_raw_rows, \
-             coalesce((SELECT count() FROM traffic_accounted_v1), toUInt64(0)) \
+             coalesce((SELECT count() FROM traffic_accounted), toUInt64(0)) \
                  AS accounted_raw_rows, \
-             coalesce((SELECT count() FROM traffic_reported_daily_v1), toUInt64(0)) \
+             coalesce((SELECT count() FROM traffic_reported_daily), toUInt64(0)) \
                  AS reported_daily_rows, \
-             coalesce((SELECT count() FROM traffic_accounted_daily_v1), toUInt64(0)) \
+             coalesce((SELECT count() FROM traffic_accounted_daily), toUInt64(0)) \
                  AS accounted_daily_rows",
         )
         .fetch_one::<ClickHouseProjectionCounts>()
@@ -440,9 +440,9 @@ async fn raw_fact_installations(
     Ok(client
         .query(
             "SELECT DISTINCT installation_id FROM ( \
-                 SELECT installation_id FROM traffic_reported_v1 \
+                 SELECT installation_id FROM traffic_reported \
                  UNION ALL \
-                 SELECT installation_id FROM traffic_accounted_v1 \
+                 SELECT installation_id FROM traffic_accounted \
              ) ORDER BY installation_id LIMIT 2",
         )
         .fetch_all::<InstallationIdRow>()
@@ -790,14 +790,14 @@ async fn validate_migration_effect(
         1 => validate_ledger_table(client).await,
         2 => validate_event_table(
             client,
-            "traffic_reported_v1",
+            "traffic_reported",
             "installation_id, user_id, accounting_date, accepted_at_unix, event_id, ingest_batch_id, batch_row_number",
             REPORTED_COLUMNS,
         )
         .await,
         3 => validate_event_table(
             client,
-            "traffic_accounted_v1",
+            "traffic_accounted",
             "installation_id, user_id, accounting_date, accounted_at_unix, event_id, ingest_batch_id, batch_row_number",
             ACCOUNTED_COLUMNS,
         )
@@ -805,14 +805,14 @@ async fn validate_migration_effect(
         4 => validate_installation_binding_table(client).await,
         5 => validate_daily_aggregate_table(
             client,
-            "traffic_reported_daily_v1",
+            "traffic_reported_daily",
             "installation_id, accounting_date, user_id, server_id, server_type, rate_text, rate_decimal_10_2, table_generation, ingest_batch_id, batch_aggregate_row_number",
             REPORTED_DAILY_COLUMNS,
         )
         .await,
         6 => validate_daily_aggregate_table(
             client,
-            "traffic_accounted_daily_v1",
+            "traffic_accounted_daily",
             "installation_id, accounting_date, user_id, server_id, server_type, rate_text, rate_decimal_10_2, outcome, table_generation, ingest_batch_id, batch_aggregate_row_number",
             ACCOUNTED_DAILY_COLUMNS,
         )
@@ -836,14 +836,14 @@ async fn validate_clickhouse_schema(
     validate_ledger_table(client).await?;
     validate_event_table(
         client,
-        "traffic_reported_v1",
+        "traffic_reported",
         "installation_id, user_id, accounting_date, accepted_at_unix, event_id, ingest_batch_id, batch_row_number",
         REPORTED_COLUMNS,
     )
     .await?;
     validate_event_table(
         client,
-        "traffic_accounted_v1",
+        "traffic_accounted",
         "installation_id, user_id, accounting_date, accounted_at_unix, event_id, ingest_batch_id, batch_row_number",
         ACCOUNTED_COLUMNS,
     )
@@ -851,14 +851,14 @@ async fn validate_clickhouse_schema(
     validate_installation_binding_table(client).await?;
     validate_daily_aggregate_table(
         client,
-        "traffic_reported_daily_v1",
+        "traffic_reported_daily",
         "installation_id, accounting_date, user_id, server_id, server_type, rate_text, rate_decimal_10_2, table_generation, ingest_batch_id, batch_aggregate_row_number",
         REPORTED_DAILY_COLUMNS,
     )
     .await?;
     validate_daily_aggregate_table(
         client,
-        "traffic_accounted_daily_v1",
+        "traffic_accounted_daily",
         "installation_id, accounting_date, user_id, server_id, server_type, rate_text, rate_decimal_10_2, outcome, table_generation, ingest_batch_id, batch_aggregate_row_number",
         ACCOUNTED_DAILY_COLUMNS,
     )
@@ -1133,15 +1133,14 @@ const EXPECTED_TABLES: &[&str] = &[
     "installation_binding",
     "retention_binding",
     "schema_migration",
-    "traffic_accounted_v1",
-    "traffic_accounted_daily_v1",
-    "traffic_reported_v1",
-    "traffic_reported_daily_v1",
+    "traffic_accounted",
+    "traffic_accounted_daily",
+    "traffic_reported",
+    "traffic_reported_daily",
 ];
 
-const RAW_RETENTION_TABLES: &[&str] = &["traffic_reported_v1", "traffic_accounted_v1"];
-const AGGREGATE_RETENTION_TABLES: &[&str] =
-    &["traffic_reported_daily_v1", "traffic_accounted_daily_v1"];
+const RAW_RETENTION_TABLES: &[&str] = &["traffic_reported", "traffic_accounted"];
+const AGGREGATE_RETENTION_TABLES: &[&str] = &["traffic_reported_daily", "traffic_accounted_daily"];
 
 const LEDGER_COLUMNS: &[(&str, &str)] = &[
     ("version", "UInt64"),

@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS traffic_accounted_daily_v1
+CREATE TABLE IF NOT EXISTS traffic_accounted_daily
 (
     installation_id UUID,
     accounting_date Date,

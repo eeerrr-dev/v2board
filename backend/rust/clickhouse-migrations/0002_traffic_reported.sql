@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS traffic_reported_v1
+CREATE TABLE IF NOT EXISTS traffic_reported
 (
     event_id String,
     schema_major UInt16,
