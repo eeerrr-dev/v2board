@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { matchPath } from 'react-router';
 import { getNormalizedHashPath, type HashRouteOptions } from '@v2board/config';
 
 const options: HashRouteOptions = {
+  matchRoute: (route, path, end) => matchPath({ path: route, end }, path),
   authenticatedFallback: '/dashboard',
   authenticatedPublicFallbackRoutes: [],
   guestFallback: '/login',

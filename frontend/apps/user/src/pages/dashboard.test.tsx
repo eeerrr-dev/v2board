@@ -3,7 +3,11 @@ import type { ComponentProps, ReactNode } from 'react';
 import { screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/render';
-import { createTestTranslation } from '@/test/i18next-selector';
+import {
+  createTestTranslation,
+  type TranslationInput,
+  type TranslationValues,
+} from '@/test/i18next-selector';
 import { setRuntimeConfig } from '@/test/runtime-config';
 import DashboardPage from './dashboard';
 
@@ -14,7 +18,7 @@ const mocks = vi.hoisted(() => ({
     'common.confirm': '确定',
     'common.error_title': '加载失败',
     'common.retry': '重试',
-    'dashboard.alert_open_ticket_suffix': '条工单正在处理中',
+    'dashboard.alert_open_ticket': '<strong>{{count}}</strong> 条工单正在处理中',
     'dashboard.alert_pending_order': '还有没支付的订单',
     'dashboard.alert_traffic_rate': '当前已使用流量达 {rate}%',
     'dashboard.alert_view': '立即查看',
@@ -145,6 +149,11 @@ vi.mock('react-router', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => createTestTranslation(mocks.labels),
+  // Trans resolves like t() with markup tags stripped: the bolded count is
+  // presentation, and the assertions read textContent either way.
+  Trans: ({ i18nKey, values }: { i18nKey: TranslationInput; values?: TranslationValues }) => (
+    <>{createTestTranslation(mocks.labels).t(i18nKey, values).replace(/<[^>]+>/g, '')}</>
+  ),
 }));
 
 vi.mock('@/components/ui/dialog', () => ({

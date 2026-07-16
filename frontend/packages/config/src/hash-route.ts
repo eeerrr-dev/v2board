@@ -1,3 +1,8 @@
+export interface HashRouteMatch {
+  /** The pattern-matched prefix of the path (react-router's `pathnameBase`). */
+  pathnameBase: string;
+}
+
 export interface HashRouteOptions {
   authenticatedFallback: string;
   authenticatedPublicFallbackRoutes?: readonly string[];
@@ -6,6 +11,14 @@ export interface HashRouteOptions {
   routes: readonly string[];
   authStorageKey?: string;
   nestedPrefixes?: readonly string[];
+  /**
+   * Route-pattern matcher. Each app injects react-router's `matchPath`
+   * (`(route, path, end) => matchPath({ path: route, end }, path)`) so this
+   * pre-router hash normalization can never disagree with the router's own
+   * matching semantics; the package stays router-free. `end` mirrors
+   * matchPath's flag: exact match versus prefix match.
+   */
+  matchRoute: (route: string, path: string, end: boolean) => HashRouteMatch | null;
 }
 
 function normalizePath(path: string): string {
@@ -14,39 +27,28 @@ function normalizePath(path: string): string {
   return next.startsWith('/') ? next : `/${next}`;
 }
 
-function routePattern(route: string): RegExp {
-  const escaped = route.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/:[^/]+/g, '[^/]+');
-  return new RegExp(`^${escaped}$`);
-}
-
-function routePrefixLength(path: string, route: string): number | null {
+function routePrefixLength(path: string, route: string, options: HashRouteOptions): number | null {
   if (route === '/') return null;
-  if (!route.includes(':')) return path.startsWith(`${route}/`) ? route.length : null;
-  const escaped = route.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/:[^/]+/g, '[^/]+');
-  return new RegExp(`^(${escaped})(?=/)`).exec(path)?.[1]?.length ?? null;
+  const base = options.matchRoute(route, path, false)?.pathnameBase;
+  return base && path.startsWith(`${base}/`) ? base.length : null;
 }
 
-function isKnownRoute(path: string, routes: readonly string[]): boolean {
-  return routes.some(
-    (route) => route === path || (route.includes(':') && routePattern(route).test(path)),
-  );
+function isKnownRoute(path: string, options: HashRouteOptions): boolean {
+  return options.routes.some((route) => options.matchRoute(route, path, true) !== null);
 }
 
-function recoverNestedPrefix(
-  path: string,
-  prefixes: readonly string[],
-  routes: readonly string[],
-): string | null {
+function recoverNestedPrefix(path: string, options: HashRouteOptions): string | null {
+  const prefixes = options.nestedPrefixes ?? options.publicRoutes;
   let current = path;
   while (true) {
     let length = 0;
     for (const prefix of prefixes) {
-      const next = routePrefixLength(current, prefix);
+      const next = routePrefixLength(current, prefix, options);
       if (next !== null && next > length) length = next;
     }
     if (!length) return null;
     current = normalizePath(current.slice(length));
-    if (isKnownRoute(current, routes)) return current;
+    if (isKnownRoute(current, options)) return current;
   }
 }
 
@@ -57,16 +59,11 @@ export function getNormalizedHashPath(routeSource: string, options: HashRouteOpt
   const hasAuth =
     typeof window !== 'undefined' &&
     Boolean(window.localStorage.getItem(options.authStorageKey ?? 'authorization'));
-  const nestedPrefixes = options.nestedPrefixes ?? options.publicRoutes;
   const normalizedRawPath = normalizePath(rawPath);
-  const recoveredNestedPath = recoverNestedPrefix(
-    normalizedRawPath,
-    nestedPrefixes,
-    options.routes,
-  );
+  const recoveredNestedPath = recoverNestedPrefix(normalizedRawPath, options);
   let path = recoveredNestedPath ?? normalizedRawPath;
 
-  if (!isKnownRoute(path, options.routes)) {
+  if (!isKnownRoute(path, options)) {
     path = hasAuth ? options.authenticatedFallback : options.guestFallback;
   } else if (
     hasAuth &&

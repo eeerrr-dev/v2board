@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 import type { SelectorParam } from 'i18next';
 import {
   AlertCircle,
@@ -149,7 +149,11 @@ export default function DashboardPage() {
               <Bell className="size-4 text-warning" />
               <AlertDescription className="sm:flex sm:flex-row sm:items-center sm:gap-2">
                 <span>
-                  <strong>{openTicketCount}</strong> {t($ => $.dashboard.alert_open_ticket_suffix)}
+                  <Trans
+                    i18nKey={$ => $.dashboard.alert_open_ticket}
+                    values={{ count: openTicketCount }}
+                    components={{ strong: <strong /> }}
+                  />
                 </span>
                 <Link
                   to="/ticket"

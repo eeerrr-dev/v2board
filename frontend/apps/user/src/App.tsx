@@ -62,6 +62,7 @@ export const USER_APP_LAYOUT_ROUTE_PATHS = [
 ] as const;
 
 export const USER_HASH_ROUTE_OPTIONS = {
+  matchRoute: (route: string, path: string, end: boolean) => matchPath({ path: route, end }, path),
   authenticatedFallback: '/dashboard',
   authenticatedPublicFallbackRoutes: [],
   guestFallback: '/login',

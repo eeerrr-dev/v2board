@@ -13,7 +13,7 @@ import { AdminLayout } from './admin-layout';
 // (#sidebar OneUI classes, darkreader, the header search overlay, avatar
 // document-click, dead loading/search/title props) are retired. What stays
 // covered is behavior: navigation targets, the user.info/email fetch, active +
-// title routing, logout, scroll-to-top, and the dark-mode toggle outcome.
+// title routing, logout, router scroll management, and the dark-mode toggle outcome.
 
 const mocks = vi.hoisted(() => ({
   location: { pathname: '/dashboard' } as { pathname: string },
@@ -22,6 +22,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('react-router', () => ({
+  // Scroll management is delegated to the router; the shell only mounts it.
+  ScrollRestoration: () => <div data-testid="scroll-restoration" />,
   Link: ({
     to,
     onClick,
@@ -82,7 +84,6 @@ describe('AdminLayout', () => {
       writable: true,
       value: 1024,
     });
-    Object.defineProperty(window, 'scrollTo', { configurable: true, value: vi.fn() });
   });
 
   afterEach(() => {
@@ -180,9 +181,9 @@ describe('AdminLayout', () => {
     expect(screen.queryByRole('navigation', { name: '主导航' })).not.toBeInTheDocument();
   });
 
-  it('scrolls to the top on mount', () => {
+  it('mounts router scroll management', () => {
     renderShell();
-    expect(window.scrollTo).toHaveBeenCalledWith(0, 0);
+    expect(screen.getByTestId('scroll-restoration')).toBeInTheDocument();
   });
 
   it('toggles the desktop sidebar through the global keyboard shortcut', () => {

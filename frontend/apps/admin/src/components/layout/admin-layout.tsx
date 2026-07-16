@@ -1,5 +1,5 @@
-import { Suspense, useEffect, useState, type ComponentType, type SVGProps } from 'react';
-import { Link, useLocation } from 'react-router';
+import { Suspense, useState, type ComponentType, type SVGProps } from 'react';
+import { Link, ScrollRestoration, useLocation } from 'react-router';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import {
   BarChart3,
@@ -214,16 +214,16 @@ function AdminLayoutContent() {
   const siteTitle = getAdminTitle();
   const title = findActiveTitle(location.pathname);
 
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, [location.pathname]);
-
   return (
     <SidebarProvider
       id="page-container"
       defaultOpen={sidebarDefaultOpen}
       className="text-foreground"
     >
+      {/* Router-driven scroll management: new navigations start at the top
+          (what the old scrollTo effect did) and back/forward restores the
+          previous position instead of losing it. */}
+      <ScrollRestoration />
       <AdminSidebar siteTitle={siteTitle} email={userInfo.email} />
 
       <SidebarInset>

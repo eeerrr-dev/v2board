@@ -2,26 +2,40 @@ import { admin, INLINE_MUTATION_ERROR_META } from '@v2board/api-client';
 import {
   keepPreviousData,
   queryOptions,
+  skipToken,
   useMutation,
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
 import { apiClient } from './api';
 
+// Shared prefixes for every filtered list plus its detail records. Mutations
+// invalidate through these constants so a future key rename cannot silently
+// miss the raw-literal copies.
+const usersScope = ['admin', 'users'] as const;
+const userScope = ['admin', 'user'] as const;
+const ordersScope = ['admin', 'orders'] as const;
+const orderScope = ['admin', 'order'] as const;
+const ticketsScope = ['admin', 'tickets'] as const;
+const ticketScope = ['admin', 'ticket'] as const;
+const noticesScope = ['admin', 'notices'] as const;
+const couponsScope = ['admin', 'coupons'] as const;
+const giftcardsScope = ['admin', 'giftcards'] as const;
+
 export const adminKeys = {
   config: (key?: string) => ['admin', 'config', key] as const,
   stat: ['admin', 'stat'] as const,
-  users: (filters: unknown) => ['admin', 'users', filters] as const,
-  user: (id: number | null | undefined) => ['admin', 'user', id] as const,
-  orders: (filters: unknown) => ['admin', 'orders', filters] as const,
-  order: (id: number | undefined) => ['admin', 'order', id] as const,
+  users: (filters: unknown) => [...usersScope, filters] as const,
+  user: (id: number | null | undefined) => [...userScope, id] as const,
+  orders: (filters: unknown) => [...ordersScope, filters] as const,
+  order: (id: number | undefined) => [...orderScope, id] as const,
   plans: ['admin', 'plans'] as const,
   payments: ['admin', 'payments'] as const,
-  notices: (filters: unknown) => ['admin', 'notices', filters] as const,
-  tickets: (filters: unknown) => ['admin', 'tickets', filters] as const,
-  ticket: (id: number | string | undefined) => ['admin', 'ticket', id] as const,
-  coupons: (filters: unknown) => ['admin', 'coupons', filters] as const,
-  giftcards: (filters: unknown) => ['admin', 'giftcards', filters] as const,
+  notices: (filters: unknown) => [...noticesScope, filters] as const,
+  tickets: (filters: unknown) => [...ticketsScope, filters] as const,
+  ticket: (id: number | string | undefined) => [...ticketScope, id] as const,
+  coupons: (filters: unknown) => [...couponsScope, filters] as const,
+  giftcards: (filters: unknown) => [...giftcardsScope, filters] as const,
   knowledge: ['admin', 'knowledge'] as const,
   knowledgeDetail: (id: number | undefined) => ['admin', 'knowledge', 'detail', id] as const,
   knowledgeCategories: ['admin', 'knowledge', 'categories'] as const,
@@ -83,10 +97,10 @@ export const adminQueryOptions = {
   userTraffic: (userId: number | undefined, query: Omit<admin.AdminUserTrafficQuery, 'user_id'>) =>
     queryOptions({
       queryKey: adminKeys.statUserTraffic(userId, query),
-      queryFn: ({ signal }) => {
-        if (userId == null) throw new Error('User id is required');
-        return admin.statUser(apiClient, { user_id: userId, ...query }, { signal });
-      },
+      queryFn:
+        userId == null
+          ? skipToken
+          : ({ signal }) => admin.statUser(apiClient, { user_id: userId, ...query }, { signal }),
       placeholderData: keepPreviousData,
     }),
   config: (key?: string) =>
@@ -115,10 +129,9 @@ export const adminQueryOptions = {
   paymentForm: (payment: string | undefined, id?: number) =>
     queryOptions({
       queryKey: adminKeys.paymentForm(payment, id),
-      queryFn: ({ signal }) => {
-        if (!payment) throw new Error('Payment method is required');
-        return admin.paymentForm(apiClient, payment, id, { signal });
-      },
+      queryFn: !payment
+        ? skipToken
+        : ({ signal }) => admin.paymentForm(apiClient, payment, id, { signal }),
       staleTime: 5 * 60_000,
     }),
   users: (query: admin.AdminPageQuery) =>
@@ -136,18 +149,13 @@ export const adminQueryOptions = {
   order: (id: number | undefined) =>
     queryOptions({
       queryKey: adminKeys.order(id),
-      queryFn: ({ signal }) => {
-        if (id == null) throw new Error('Order id is required');
-        return admin.orderDetail(apiClient, id, { signal });
-      },
+      queryFn: id == null ? skipToken : ({ signal }) => admin.orderDetail(apiClient, id, { signal }),
     }),
   user: (id: number | null | undefined) =>
     queryOptions({
       queryKey: adminKeys.user(id),
-      queryFn: ({ signal }) => {
-        if (id == null) throw new Error('User id is required');
-        return admin.getUserInfoById(apiClient, id, { signal });
-      },
+      queryFn:
+        id == null ? skipToken : ({ signal }) => admin.getUserInfoById(apiClient, id, { signal }),
     }),
   notices: (query: admin.AdminPageQuery) =>
     queryOptions({
@@ -164,10 +172,8 @@ export const adminQueryOptions = {
   ticket: (id: number | string | undefined) =>
     queryOptions({
       queryKey: adminKeys.ticket(id),
-      queryFn: ({ signal }) => {
-        if (id == null) throw new Error('Ticket id is required');
-        return admin.ticketDetail(apiClient, id, { signal });
-      },
+      queryFn:
+        id == null ? skipToken : ({ signal }) => admin.ticketDetail(apiClient, id, { signal }),
       // Poll only while the ticket is open and fetchable: a closed ticket
       // (status 1) or an errored fetch self-stops instead of re-requesting
       // every 5s for as long as the detail view stays mounted.
@@ -194,10 +200,8 @@ export const adminQueryOptions = {
   knowledgeDetail: (id: number | undefined) =>
     queryOptions({
       queryKey: adminKeys.knowledgeDetail(id),
-      queryFn: ({ signal }) => {
-        if (id == null) throw new Error('Knowledge id is required');
-        return admin.knowledgeDetail(apiClient, id, { signal });
-      },
+      queryFn:
+        id == null ? skipToken : ({ signal }) => admin.knowledgeDetail(apiClient, id, { signal }),
     }),
   knowledgeCategories: () =>
     queryOptions({
@@ -251,7 +255,7 @@ export const useAdminUserTraffic = (
   query: Omit<admin.AdminUserTrafficQuery, 'user_id'>,
   enabled: boolean,
 ) =>
-  useQuery({ ...adminQueryOptions.userTraffic(userId, query), enabled: enabled && userId != null });
+  useQuery({ ...adminQueryOptions.userTraffic(userId, query), enabled });
 export const useConfig = (key?: string) => useQuery(adminQueryOptions.config(key));
 export const useAdminPlans = () => useQuery(adminQueryOptions.plans());
 export const useAdminPayments = () => useQuery(adminQueryOptions.payments());
@@ -262,24 +266,18 @@ export const usePaymentForm = (
   id: number | undefined,
   enabled: boolean,
 ) =>
-  useQuery({
-    ...adminQueryOptions.paymentForm(payment, id),
-    enabled: enabled && Boolean(payment),
-  });
+  useQuery({ ...adminQueryOptions.paymentForm(payment, id), enabled });
 export const useAdminUsers = (query: admin.AdminPageQuery) =>
   useQuery(adminQueryOptions.users(query));
 export const useAdminOrders = (query: admin.AdminPageQuery & { is_commission?: 0 | 1 }) =>
   useQuery(adminQueryOptions.orders(query));
-export const useAdminOrderDetail = (id?: number) =>
-  useQuery({ ...adminQueryOptions.order(id), enabled: id != null });
-export const useAdminUserInfo = (id?: number | null) =>
-  useQuery({ ...adminQueryOptions.user(id), enabled: id != null });
+export const useAdminOrderDetail = (id?: number) => useQuery(adminQueryOptions.order(id));
+export const useAdminUserInfo = (id?: number | null) => useQuery(adminQueryOptions.user(id));
 export const useAdminNotices = (query: admin.AdminPageQuery) =>
   useQuery(adminQueryOptions.notices(query));
 export const useAdminTickets = (query: admin.AdminPageQuery) =>
   useQuery(adminQueryOptions.tickets(query));
-export const useAdminTicket = (id?: number | string) =>
-  useQuery({ ...adminQueryOptions.ticket(id), enabled: id != null });
+export const useAdminTicket = (id?: number | string) => useQuery(adminQueryOptions.ticket(id));
 export const useAdminCoupons = (query: admin.AdminPageQuery) =>
   useQuery(adminQueryOptions.coupons(query));
 export const useAdminGiftcards = (query: admin.AdminPageQuery) =>
@@ -288,7 +286,7 @@ export const useAdminKnowledge = () => useQuery(adminQueryOptions.knowledge());
 export const useAdminKnowledgeDetail = (id: number | undefined, open: boolean) =>
   useQuery({
     ...adminQueryOptions.knowledgeDetail(id),
-    enabled: open && id != null,
+    enabled: open,
   });
 export const useAdminKnowledgeCategories = () => useQuery(adminQueryOptions.knowledgeCategories());
 export const useServerNodes = () => useQuery(adminQueryOptions.serverNodes());
@@ -355,8 +353,8 @@ export function useUpdateUserMutation() {
   return useInvalidatingMutation(
     (data: Parameters<typeof admin.updateUser>[1]) => admin.updateUser(apiClient, data),
     [
-      ['admin', 'users'],
-      ['admin', 'user'],
+      usersScope,
+      userScope,
     ],
   );
 }
@@ -364,7 +362,7 @@ export function useUpdateUserMutation() {
 export function useDeleteUserMutation() {
   return useInvalidatingMutation(
     (id: number) => admin.deleteUser(apiClient, id),
-    [['admin', 'users']],
+    [usersScope],
   );
 }
 
@@ -372,8 +370,8 @@ export function useResetUserSecretMutation() {
   return useInvalidatingMutation(
     (id: number) => admin.resetUserSecret(apiClient, id),
     [
-      ['admin', 'users'],
-      ['admin', 'user'],
+      usersScope,
+      userScope,
     ],
   );
 }
@@ -381,7 +379,7 @@ export function useResetUserSecretMutation() {
 export function useGenerateUserMutation() {
   return useInvalidatingMutation(
     (data: Parameters<typeof admin.generateUser>[1]) => admin.generateUser(apiClient, data),
-    [['admin', 'users']],
+    [usersScope],
     INLINE_MUTATION_ERROR_META,
   );
 }
@@ -403,28 +401,28 @@ export function useSendMailToUsersMutation() {
 export function useBanUsersMutation() {
   return useInvalidatingMutation(
     (filter?: admin.AdminFilter[]) => admin.banUsers(apiClient, filter),
-    [['admin', 'users']],
+    [usersScope],
   );
 }
 
 export function useDeleteAllUsersMutation() {
   return useInvalidatingMutation(
     (filter?: admin.AdminFilter[]) => admin.deleteAllUsers(apiClient, filter),
-    [['admin', 'users']],
+    [usersScope],
   );
 }
 
 export function useMarkOrderPaidMutation() {
   return useInvalidatingMutation(
     (tradeNo: string) => admin.paidOrder(apiClient, tradeNo),
-    [['admin', 'orders']],
+    [ordersScope],
   );
 }
 
 export function useCancelOrderMutation() {
   return useInvalidatingMutation(
     (tradeNo: string) => admin.cancelOrder(apiClient, tradeNo),
-    [['admin', 'orders']],
+    [ordersScope],
   );
 }
 
@@ -433,8 +431,8 @@ export function useUpdateOrderMutation() {
     (vars: { tradeNo: string; key: 'commission_status' | 'status'; value: string | number }) =>
       admin.updateOrder(apiClient, vars.tradeNo, vars.key, vars.value),
     [
-      ['admin', 'orders'],
-      ['admin', 'order'],
+      ordersScope,
+      orderScope,
     ],
   );
 }
@@ -442,7 +440,7 @@ export function useUpdateOrderMutation() {
 export function useAssignOrderMutation() {
   return useInvalidatingMutation(
     (data: Parameters<typeof admin.assignOrder>[1]) => admin.assignOrder(apiClient, data),
-    [['admin', 'orders']],
+    [ordersScope],
     INLINE_MUTATION_ERROR_META,
   );
 }
@@ -451,8 +449,8 @@ export function useReplyTicketMutation() {
   return useInvalidatingMutation(
     (data: Parameters<typeof admin.replyTicket>[1]) => admin.replyTicket(apiClient, data),
     [
-      ['admin', 'tickets'],
-      ['admin', 'ticket'],
+      ticketsScope,
+      ticketScope,
     ],
   );
 }
@@ -461,8 +459,8 @@ export function useCloseTicketMutation() {
   return useInvalidatingMutation(
     (id: number) => admin.closeTicket(apiClient, id),
     [
-      ['admin', 'tickets'],
-      ['admin', 'ticket'],
+      ticketsScope,
+      ticketScope,
     ],
   );
 }
@@ -470,21 +468,21 @@ export function useCloseTicketMutation() {
 export function useSaveNoticeMutation() {
   return useInvalidatingMutation(
     (data: Parameters<typeof admin.saveNotice>[1]) => admin.saveNotice(apiClient, data),
-    [['admin', 'notices']],
+    [noticesScope],
   );
 }
 
 export function useDropNoticeMutation() {
   return useInvalidatingMutation(
     (id: number) => admin.dropNotice(apiClient, id),
-    [['admin', 'notices']],
+    [noticesScope],
   );
 }
 
 export function useShowNoticeMutation() {
   return useInvalidatingMutation(
     (id: number) => admin.showNotice(apiClient, id),
-    [['admin', 'notices']],
+    [noticesScope],
   );
 }
 
@@ -533,35 +531,35 @@ export function useDropPaymentMutation() {
 export function useGenerateCouponMutation() {
   return useInvalidatingMutation(
     (data: Parameters<typeof admin.generateCoupon>[1]) => admin.generateCoupon(apiClient, data),
-    [['admin', 'coupons']],
+    [couponsScope],
   );
 }
 
 export function useDropCouponMutation() {
   return useInvalidatingMutation(
     (id: number) => admin.dropCoupon(apiClient, id),
-    [['admin', 'coupons']],
+    [couponsScope],
   );
 }
 
 export function useShowCouponMutation() {
   return useInvalidatingMutation(
     (id: number) => admin.showCoupon(apiClient, id),
-    [['admin', 'coupons']],
+    [couponsScope],
   );
 }
 
 export function useGenerateGiftcardMutation() {
   return useInvalidatingMutation(
     (data: Parameters<typeof admin.generateGiftcard>[1]) => admin.generateGiftcard(apiClient, data),
-    [['admin', 'giftcards']],
+    [giftcardsScope],
   );
 }
 
 export function useDropGiftcardMutation() {
   return useInvalidatingMutation(
     (id: number) => admin.dropGiftcard(apiClient, id),
-    [['admin', 'giftcards']],
+    [giftcardsScope],
   );
 }
 

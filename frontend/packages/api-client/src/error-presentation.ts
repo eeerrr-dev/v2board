@@ -1,6 +1,17 @@
+import { ApiContractError } from './client';
+
 export const INLINE_MUTATION_ERROR_META = {
   errorPresentation: 'inline',
 } as const;
+
+// Shared TanStack Query retry policy: transient transport failures (no status)
+// and server errors are worth at most two retries, while deterministic
+// outcomes — 4xx responses and response-contract violations — never are.
+export function shouldRetryQuery(failureCount: number, error: unknown): boolean {
+  if (error instanceof ApiContractError) return false;
+  const status = getErrorPresentation(error).status;
+  return failureCount < 2 && (status === undefined || status === 0 || status >= 500);
+}
 
 export type MutationErrorMeta = Readonly<Record<string, unknown>> | undefined;
 

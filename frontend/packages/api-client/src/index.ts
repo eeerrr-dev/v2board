@@ -15,6 +15,7 @@ export {
   getErrorPresentation,
   INLINE_MUTATION_ERROR_META,
   presentMutationError,
+  shouldRetryQuery,
 } from './error-presentation';
 export type { ErrorPresentation, MutationErrorMeta } from './error-presentation';
 export { adminFilterArraySchema } from './endpoints/admin';

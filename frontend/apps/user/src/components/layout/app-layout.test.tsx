@@ -50,6 +50,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('react-router', () => ({
   Outlet: () => <div data-outlet="true">Outlet content</div>,
+  // Scroll management is delegated to the router; the shell only mounts it.
+  ScrollRestoration: () => <div data-testid="scroll-restoration" />,
   // Nav items render as real <a> elements through SidebarMenuButton asChild;
   // the mock mirrors Link's real contract: the user onClick runs first on an
   // un-prevented event, and navigation is skipped entirely when that handler
@@ -248,21 +250,14 @@ describe('AppLayout shadcn app shell structure', () => {
 });
 
 describe('AppLayout shadcn app shell behavior', () => {
-  let scrollTo: ReturnType<typeof vi.fn>;
-
   beforeEach(() => {
     resetShellEnvironment();
-    scrollTo = vi.fn();
-    Object.defineProperty(window, 'scrollTo', {
-      configurable: true,
-      value: scrollTo,
-    });
   });
 
-  it('scrolls on route changes and toggles the collapsible desktop rail', async () => {
+  it('mounts router scroll management and toggles the collapsible desktop rail', async () => {
     const { container, user } = renderWithProviders(<AppLayout />);
 
-    expect(scrollTo).toHaveBeenCalledWith(0, 0);
+    expect(screen.getByTestId('scroll-restoration')).toBeInTheDocument();
     // The desktop rail keeps the #sidebar hook and renders no mobile Sheet.
     expect(container.querySelector('#sidebar')).not.toBeNull();
     expect(document.body.querySelector('[data-slot="sidebar"][data-mobile="true"]')).toBeNull();

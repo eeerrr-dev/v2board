@@ -1,7 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MutationCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { presentMutationError } from '@v2board/api-client';
+import { presentMutationError, shouldRetryQuery } from '@v2board/api-client';
 import { I18nextProvider } from 'react-i18next';
 import { createLazyI18n, installLocaleDocumentEnvironment } from '@v2board/i18n';
 import { RouterProvider } from 'react-router/dom';
@@ -12,7 +12,6 @@ import { applyAdminRuntimeConfig } from './lib/runtime-config';
 import { applyInitialDarkMode } from './lib/dark-mode';
 import { registerSessionCacheClearer, setupAuthSync } from './lib/auth';
 import { registerRouterNavigation } from './lib/router-navigation';
-import { shouldRetryAdminQuery } from './lib/query-retry';
 import { toast } from './lib/toast';
 import './styles/globals.css';
 
@@ -32,7 +31,7 @@ const queryClient = new QueryClient({
     queries: {
       staleTime: 30_000,
       refetchOnWindowFocus: false,
-      retry: shouldRetryAdminQuery,
+      retry: shouldRetryQuery,
     },
   },
 });

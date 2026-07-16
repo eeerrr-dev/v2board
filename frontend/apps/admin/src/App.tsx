@@ -69,6 +69,7 @@ function isAbortedQuery(error: unknown): boolean {
 }
 
 export const ADMIN_HASH_ROUTE_OPTIONS = {
+  matchRoute: (route: string, path: string, end: boolean) => matchPath({ path: route, end }, path),
   authenticatedFallback: '/dashboard',
   guestFallback: '/login',
   nestedPrefixes: ADMIN_ROUTE_PATHS,

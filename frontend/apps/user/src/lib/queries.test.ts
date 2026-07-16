@@ -11,6 +11,7 @@ function callHook<T>(hook: () => T): T {
 }
 
 const useMutation = vi.hoisted(() => vi.fn((options: unknown) => options));
+const skipTokenMock = vi.hoisted(() => Symbol('skipToken'));
 const useQuery = vi.hoisted(() => vi.fn((options: UseQueryOptions) => options));
 const invalidateQueries = vi.hoisted(() => vi.fn());
 const apiUser = vi.hoisted(() => ({
@@ -25,6 +26,7 @@ const apiUser = vi.hoisted(() => ({
 vi.mock('@tanstack/react-query', () => ({
   queryOptions: (options: unknown) => options,
   keepPreviousData: (previous: unknown) => previous,
+  skipToken: skipTokenMock,
   useMutation,
   useQuery,
   useQueryClient: () => ({
@@ -138,7 +140,7 @@ describe('user query state behavior', () => {
     });
 
     const disabled = callHook(() => useStripePaymentIntent(undefined, undefined)) as unknown as UseQueryOptions;
-    expect(disabled.enabled).toBe(false);
+    expect(disabled.queryFn).toBe(skipTokenMock);
     expect(disabled.staleTime).toBe(0);
     expect(disabled.gcTime).toBe(0);
 
@@ -218,14 +220,15 @@ describe('user query state behavior', () => {
     expect(userQueryOptions.plan(7).queryKey).toStrictEqual(['user', 'plan', 7]);
     expect(userQueryOptions.ticketDetail(3).queryKey).toStrictEqual(['user', 'ticket', 3]);
 
-    // The undefined keys stay inert because each wrapper hook gates `enabled`.
-    expect((callHook(() => useOrder(undefined)) as unknown as UseQueryOptions).enabled).toBe(false);
-    expect((callHook(() => usePlan(undefined)) as unknown as UseQueryOptions).enabled).toBe(false);
-    expect((callHook(() => useTicket(undefined)) as unknown as UseQueryOptions).enabled).toBe(false);
-    expect((callHook(() => useKnowledgeDetail(undefined, 'zh-CN')) as unknown as UseQueryOptions).enabled).toBe(
-      false,
-    );
-    expect((callHook(() => useOrder('T123')) as unknown as UseQueryOptions).enabled).toBe(true);
+    // The undefined keys stay inert because the factory swaps the queryFn for
+    // skipToken, so no wrapper hook needs its own `enabled` identity gate.
+    expect((callHook(() => useOrder(undefined)) as unknown as UseQueryOptions).queryFn).toBe(skipTokenMock);
+    expect((callHook(() => usePlan(undefined)) as unknown as UseQueryOptions).queryFn).toBe(skipTokenMock);
+    expect((callHook(() => useTicket(undefined)) as unknown as UseQueryOptions).queryFn).toBe(skipTokenMock);
+    expect(
+      (callHook(() => useKnowledgeDetail(undefined, 'zh-CN')) as unknown as UseQueryOptions).queryFn,
+    ).toBe(skipTokenMock);
+    expect((callHook(() => useOrder('T123')) as unknown as UseQueryOptions).queryFn).toBeTypeOf('function');
   });
 
   it('keeps the user/info and subscribe queryFns pure (chat reporting moved to QueryCache)', async () => {
@@ -362,16 +365,17 @@ describe('user query state behavior', () => {
   it('owns the order-status 3s self-stopping poll cadence inside useOrderStatus', async () => {
     const { useOrderStatus } = await import('./queries');
 
-    // The caller only decides whether to poll at all, via enabled.
+    // A missing trade number never reaches the network: skipToken, not a
+    // caller-side enabled gate, keeps the poll inert.
     const disabled = callHook(() => useOrderStatus(undefined)) as unknown as UseQueryOptions;
-    expect(disabled.enabled).toBe(false);
+    expect(disabled.queryFn).toBe(skipTokenMock);
 
     // The stop condition (leave pending status 0, or error) is intrinsic to the
     // /user/order/check poll, so it lives on the hook.
     const options = callHook(() => useOrderStatus('T123')) as unknown as UseQueryOptions & {
       refetchInterval: (query: { state: { status: string; data?: number } }) => number | false;
     };
-    expect(options.enabled).toBe(true);
+    expect(options.queryFn).toBeTypeOf('function');
     expect(options.refetchInterval({ state: { status: 'pending', data: undefined } })).toBe(3000);
     expect(options.refetchInterval({ state: { status: 'success', data: 0 } })).toBe(3000);
     expect(options.refetchInterval({ state: { status: 'success', data: 3 } })).toBe(false);

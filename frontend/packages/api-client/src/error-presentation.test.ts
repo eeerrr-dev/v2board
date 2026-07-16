@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ApiError } from './client';
-import { INLINE_MUTATION_ERROR_META, presentMutationError } from './error-presentation';
+import { ApiContractError, ApiError } from './client';
+import {
+  INLINE_MUTATION_ERROR_META,
+  presentMutationError,
+  shouldRetryQuery,
+} from './error-presentation';
 
 describe('mutation error presentation', () => {
   it.each([
@@ -33,5 +37,22 @@ describe('mutation error presentation', () => {
 
     expect(presentMutationError(new ApiError(403, 'expired'), undefined, notify)).toBe(false);
     expect(notify).not.toHaveBeenCalled();
+  });
+});
+
+describe('shouldRetryQuery', () => {
+  it('never retries deterministic response-contract failures', () => {
+    const error = new ApiContractError('/admin/ticket/fetch', { user_id: null }, new Error());
+    expect(shouldRetryQuery(0, error)).toBe(false);
+  });
+
+  it('retries transport and server failures at most twice', () => {
+    expect(shouldRetryQuery(0, new Error('network'))).toBe(true);
+    expect(shouldRetryQuery(1, new ApiError(500, 'server'))).toBe(true);
+    expect(shouldRetryQuery(2, new ApiError(503, 'server'))).toBe(false);
+  });
+
+  it('does not retry client errors', () => {
+    expect(shouldRetryQuery(0, new ApiError(422, 'invalid'))).toBe(false);
   });
 });

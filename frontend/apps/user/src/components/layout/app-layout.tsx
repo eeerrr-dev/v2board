@@ -1,5 +1,5 @@
-import { Suspense, useEffect, useState, type ComponentType, type SVGProps } from 'react';
-import { Link, useLocation, useNavigation } from 'react-router';
+import { Suspense, useState, type ComponentType, type SVGProps } from 'react';
+import { Link, ScrollRestoration, useLocation, useNavigation } from 'react-router';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import type { SelectorParam } from 'i18next';
 import { useTranslation } from 'react-i18next';
@@ -245,16 +245,16 @@ function AppLayoutContent({ loading, title: titleProp }: AppLayoutProps = {}) {
   // enable/disable label would misdescribe it.
   const themeControlLabel = t($ => $.common.toggle_theme);
 
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, [location.pathname]);
-
   return (
     <SidebarProvider
       id="page-container"
       defaultOpen={sidebarDefaultOpen}
       className="text-foreground"
     >
+      {/* Router-driven scroll management: new navigations start at the top
+          (what the old scrollTo effect did) and back/forward restores the
+          previous position instead of losing it. */}
+      <ScrollRestoration />
       {navPending ? (
         <div
           data-testid="route-pending-bar"

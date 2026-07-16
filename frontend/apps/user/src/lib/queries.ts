@@ -2,6 +2,7 @@ import { user } from '@v2board/api-client';
 import {
   keepPreviousData,
   queryOptions,
+  skipToken,
   useMutation,
   useQuery,
   useQueryClient,
@@ -78,8 +79,9 @@ export const userKeys = {
   ordersScope,
   orders: (status?: number) => [...ordersScope, status ?? 'all'] as const,
   // The id params are honestly `| undefined`: an unset route id lands a literal
-  // undefined in the key, inert because each use* wrapper gates `enabled` (never a
-  // `?? ''` sentinel, which would be a distinct, request-reaching key).
+  // undefined in the key, inert because the matching queryOptions factory swaps
+  // its queryFn for skipToken (never a `?? ''` sentinel, which would be a
+  // distinct, request-reaching key).
   orderDetail: (tradeNo: string | undefined) => [...ordersScope, 'detail', tradeNo] as const,
   orderStatus: (tradeNo: string | undefined) => [...ordersScope, 'status', tradeNo] as const,
   plans: ['user', 'plans'] as const,
@@ -144,12 +146,14 @@ export const userQueryOptions = {
   orderDetail: (tradeNo: string | undefined) =>
     queryOptions({
       queryKey: userKeys.orderDetail(tradeNo),
-      queryFn: ({ signal }) => user.orderDetail(apiClient, tradeNo as string, { signal }),
+      queryFn: !tradeNo
+        ? skipToken
+        : ({ signal }) => user.orderDetail(apiClient, tradeNo, { signal }),
     }),
   orderStatus: (tradeNo: string | undefined) =>
     queryOptions({
       queryKey: userKeys.orderStatus(tradeNo),
-      queryFn: ({ signal }) => user.checkOrder(apiClient, tradeNo as string, { signal }),
+      queryFn: !tradeNo ? skipToken : ({ signal }) => user.checkOrder(apiClient, tradeNo, { signal }),
     }),
   plans: () =>
     queryOptions({
@@ -159,7 +163,7 @@ export const userQueryOptions = {
   plan: (id: number | string | undefined) =>
     queryOptions({
       queryKey: userKeys.plan(id),
-      queryFn: ({ signal }) => user.fetchPlan(apiClient, id as number | string, { signal }),
+      queryFn: !id ? skipToken : ({ signal }) => user.fetchPlan(apiClient, id, { signal }),
     }),
   payments: () =>
     queryOptions({
@@ -179,7 +183,7 @@ export const userQueryOptions = {
   ticketDetail: (id: number | string | undefined) =>
     queryOptions({
       queryKey: userKeys.ticketDetail(id),
-      queryFn: ({ signal }) => user.ticketDetail(apiClient, id as number | string, { signal }),
+      queryFn: !id ? skipToken : ({ signal }) => user.ticketDetail(apiClient, id, { signal }),
     }),
   invite: () =>
     queryOptions({
@@ -201,8 +205,10 @@ export const userQueryOptions = {
   knowledgeDetail: (id: number | string | undefined, language: string) =>
     queryOptions({
       queryKey: userKeys.knowledgeDetail(id, language),
-      queryFn: ({ signal }) =>
-        user.knowledgeDetail(apiClient, id as number | string, language, { signal }),
+      queryFn:
+        id === undefined
+          ? skipToken
+          : ({ signal }) => user.knowledgeDetail(apiClient, id, language, { signal }),
     }),
   trafficLog: () =>
     queryOptions({
@@ -217,15 +223,15 @@ export const userQueryOptions = {
   stripePaymentIntent: (tradeNo: string | undefined, methodId: number | undefined) =>
     queryOptions({
       queryKey: userKeys.stripePaymentIntent(tradeNo, methodId),
-      queryFn: ({ signal }) =>
-        user.prepareStripePaymentIntent(
-          apiClient,
-          {
-            trade_no: tradeNo as string,
-            method: methodId as number,
-          },
-          { signal },
-        ),
+      queryFn:
+        !tradeNo || !methodId
+          ? skipToken
+          : ({ signal }) =>
+              user.prepareStripePaymentIntent(
+                apiClient,
+                { trade_no: tradeNo, method: methodId },
+                { signal },
+              ),
     }),
   servers: () =>
     queryOptions({
@@ -261,15 +267,11 @@ export const useSubscribe = (options?: QueryFreshnessOptions & { enabled?: boole
 export const useOrders = (status?: number) => useQuery(userQueryOptions.orders(status));
 
 export const useOrder = (tradeNo: string | undefined) =>
-  useQuery({
-    ...userQueryOptions.orderDetail(tradeNo),
-    enabled: Boolean(tradeNo),
-  });
+  useQuery(userQueryOptions.orderDetail(tradeNo));
 
 export const useOrderStatus = (tradeNo: string | undefined, options?: QueryFreshnessOptions) =>
   useQuery({
     ...userQueryOptions.orderStatus(tradeNo),
-    enabled: Boolean(tradeNo),
     // The poll's stop condition is intrinsic to /user/order/check, not a caller
     // choice: keep refetching every 3s while the order is still pending (status
     // 0 or not yet fetched) and self-stop the moment it leaves pending or the
@@ -281,11 +283,7 @@ export const useOrderStatus = (tradeNo: string | undefined, options?: QueryFresh
 
 export const usePlans = () => useQuery(userQueryOptions.plans());
 
-export const usePlan = (id: number | string | undefined) =>
-  useQuery({
-    ...userQueryOptions.plan(id),
-    enabled: Boolean(id),
-  });
+export const usePlan = (id: number | string | undefined) => useQuery(userQueryOptions.plan(id));
 
 export const usePaymentMethods = (options?: QueryFreshnessOptions & { enabled?: boolean }) =>
   useQuery({
@@ -305,7 +303,6 @@ export const useTicket = (id: number | string | undefined, options?: QueryFreshn
   const { refetchInterval, ...rest } = options ?? {};
   return useQuery({
     ...userQueryOptions.ticketDetail(id),
-    enabled: Boolean(id),
     // Like the order-status poll, the stop condition is intrinsic: a closed
     // ticket (status 1) or a missing/errored one must not keep re-requesting
     // for as long as the page stays mounted. Callers only pick the cadence.
@@ -337,10 +334,7 @@ export const useKnowledge = (language: string, keyword?: string) =>
   });
 
 export const useKnowledgeDetail = (id: number | string | undefined, language: string) =>
-  useQuery({
-    ...userQueryOptions.knowledgeDetail(id, language),
-    enabled: id !== undefined,
-  });
+  useQuery(userQueryOptions.knowledgeDetail(id, language));
 
 export const useTrafficLog = () => useQuery(userQueryOptions.trafficLog());
 
@@ -357,7 +351,7 @@ export function useStripePaymentIntent(
 ): UseQueryResult<StripePaymentIntent> {
   return useQuery({
     ...userQueryOptions.stripePaymentIntent(tradeNo, methodId),
-    enabled: Boolean(tradeNo && methodId) && options?.enabled !== false,
+    enabled: options?.enabled !== false,
     // A PaymentIntent is bound to the currently selected gateway in the order row.
     // Do not resurrect method A's cached client secret after A -> B -> A: B's
     // preparation has already canceled A. The server endpoint is idempotent and

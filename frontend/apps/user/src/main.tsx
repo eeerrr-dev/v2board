@@ -1,7 +1,7 @@
 import { lazy, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { presentMutationError } from '@v2board/api-client';
+import { presentMutationError, shouldRetryQuery } from '@v2board/api-client';
 import type { SubscribeInfo, UserInfo } from '@v2board/types';
 import { I18nextProvider } from 'react-i18next';
 import { createLazyI18n, installLocaleDocumentEnvironment } from '@v2board/i18n';
@@ -47,7 +47,10 @@ const queryClient = new QueryClient({
     },
   }),
   defaultOptions: {
-    queries: { retry: false, refetchOnWindowFocus: false },
+    // Retry only transient failures (network drop, 5xx) and never
+    // deterministic outcomes; the /login probe opts back out via its own
+    // per-query retry: false in userQueryOptions.checkLogin.
+    queries: { retry: shouldRetryQuery, refetchOnWindowFocus: false },
   },
 });
 
