@@ -47,7 +47,8 @@ vi.mock('react-i18next', () => ({
     }),
 }));
 
-vi.mock('@/lib/runtime-config', () => ({
+vi.mock('@/lib/runtime-config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/runtime-config')>()),
   getSiteTitle: () => 'V2Board',
 }));
 

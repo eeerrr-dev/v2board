@@ -71,6 +71,9 @@ export function buildAppViteConfig(options: AppViteOptions): UserConfig {
       host: '0.0.0.0',
       allowedHosts: ['frontend', 'host.docker.internal', 'localhost', '127.0.0.1'],
       hmr: true,
+      // Pre-transform the entry graph while the deterministic dep optimizer
+      // prepares, so the first browser request after startup is warm.
+      warmup: { clientFiles: ['./src/main.tsx'] },
       headers: {
         'Cache-Control': 'no-store, max-age=0',
       },

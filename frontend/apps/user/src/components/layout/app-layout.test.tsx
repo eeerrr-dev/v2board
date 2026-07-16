@@ -137,7 +137,8 @@ vi.mock('@/lib/dark-mode', async () => {
   };
 });
 
-vi.mock('@/lib/runtime-config', () => ({
+vi.mock('@/lib/runtime-config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/runtime-config')>()),
   getRuntimeConfig: () => ({ i18n: ['en-US', 'zh-CN'] }),
   getSiteTitle: () => mocks.title,
 }));

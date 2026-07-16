@@ -48,9 +48,17 @@ export default defineConfig({
   fullyParallel: workers > 1,
   workers,
   retries: 0,
+  // Unconditional: the Docker gate does not forward CI into the container, and
+  // local narrowing goes through INTERACTION_PARITY_SCENARIOS, never test.only.
+  // A committed .only would otherwise silently shrink the whole contract gate.
+  forbidOnly: true,
   reporter: [['list']],
   timeout: 120_000,
   expect: { timeout: 15_000 },
   grep,
+  use: {
+    trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
+  },
   projects: requestedViewports.map(project),
 });

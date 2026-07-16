@@ -74,7 +74,8 @@ vi.mock('@/lib/guest', () => ({
   }),
 }));
 
-vi.mock('@/lib/runtime-config', () => ({
+vi.mock('@/lib/runtime-config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/runtime-config')>()),
   getBackgroundUrl: () => '',
   getLogoUrl: () => '',
   getSiteTitle: () => mocks.settings.title,

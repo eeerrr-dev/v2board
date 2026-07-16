@@ -1,6 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
+import { renderHook } from '@testing-library/react';
 import type { PlaceholderDataFunction, UseQueryOptions } from '@tanstack/react-query';
 import type { KnowledgeCategory, SubscribeInfo, UserInfo } from '@v2board/types';
+
+// useQuery/useMutation are mocked to echo their options back, but the React
+// Compiler compiles these hooks (in tests exactly as in production), so every
+// hook call still needs a real React render context for its memo cache.
+function callHook<T>(hook: () => T): T {
+  return renderHook(hook).result.current;
+}
 
 const useMutation = vi.hoisted(() => vi.fn((options: unknown) => options));
 const useQuery = vi.hoisted(() => vi.fn((options: UseQueryOptions) => options));
@@ -58,8 +66,8 @@ describe('user query state behavior', () => {
     expect(apiUser.getSubscribe).toHaveBeenCalledWith(apiClient, { signal });
 
     // The hooks consume the same centralized definitions instead of redefining keys.
-    expect((useUserInfo() as unknown as UseQueryOptions).queryKey).toEqual(['user', 'info']);
-    expect((useSubscribe() as unknown as UseQueryOptions).queryKey).toEqual(['user', 'subscribe']);
+    expect((callHook(() => useUserInfo()) as unknown as UseQueryOptions).queryKey).toEqual(['user', 'info']);
+    expect((callHook(() => useSubscribe()) as unknown as UseQueryOptions).queryKey).toEqual(['user', 'subscribe']);
   });
 
   it('defines the login-session probe with a stable key and forwards TanStack aborts', async () => {
@@ -81,7 +89,7 @@ describe('user query state behavior', () => {
   it('keeps the previous knowledge list while a new search request is pending', async () => {
     const { useKnowledge } = await import('./queries');
 
-    const options = useKnowledge('zh-CN', 'new keyword') as unknown as UseQueryOptions<
+    const options = callHook(() => useKnowledge('zh-CN', 'new keyword')) as unknown as UseQueryOptions<
       KnowledgeCategory,
       Error,
       KnowledgeCategory,
@@ -113,7 +121,7 @@ describe('user query state behavior', () => {
   it('lets knowledge detail use the normal TanStack cache lifecycle', async () => {
     const { useKnowledgeDetail } = await import('./queries');
 
-    const options = useKnowledgeDetail(1, 'zh-CN') as unknown as UseQueryOptions;
+    const options = callHook(() => useKnowledgeDetail(1, 'zh-CN')) as unknown as UseQueryOptions;
 
     expect(options.gcTime).toBeUndefined();
   });
@@ -129,12 +137,12 @@ describe('user query state behavior', () => {
       currency: 'cny',
     });
 
-    const disabled = useStripePaymentIntent(undefined, undefined) as unknown as UseQueryOptions;
+    const disabled = callHook(() => useStripePaymentIntent(undefined, undefined)) as unknown as UseQueryOptions;
     expect(disabled.enabled).toBe(false);
     expect(disabled.staleTime).toBe(0);
     expect(disabled.gcTime).toBe(0);
 
-    const enabled = useStripePaymentIntent('ORDER123', 9) as unknown as UseQueryOptions;
+    const enabled = callHook(() => useStripePaymentIntent('ORDER123', 9)) as unknown as UseQueryOptions;
     expect(enabled.enabled).toBe(true);
     expect(enabled.queryKey).toEqual(['user', 'stripePaymentIntent', 'ORDER123', 9]);
     expect(enabled.staleTime).toBe(0);
@@ -147,9 +155,9 @@ describe('user query state behavior', () => {
       { signal },
     );
 
-    const optedOut = useStripePaymentIntent('ORDER123', 9, {
+    const optedOut = callHook(() => useStripePaymentIntent('ORDER123', 9, {
       enabled: false,
-    }) as unknown as UseQueryOptions;
+    })) as unknown as UseQueryOptions;
     expect(optedOut.enabled).toBe(false);
   });
 
@@ -158,13 +166,13 @@ describe('user query state behavior', () => {
 
     expect(userKeys.sessions).toEqual(['user', 'sessions']);
 
-    const options = useActiveSessions() as unknown as UseQueryOptions;
+    const options = callHook(() => useActiveSessions()) as unknown as UseQueryOptions;
     expect(options.queryKey).toEqual(['user', 'sessions']);
   });
 
   it('invalidates the session list after a revoke so the removed device disappears', async () => {
     const { useRemoveSessionMutation } = await import('./queries');
-    const mutation = useRemoveSessionMutation() as unknown as { onSuccess: () => void };
+    const mutation = callHook(() => useRemoveSessionMutation()) as unknown as { onSuccess: () => void };
 
     invalidateQueries.mockReset();
     expect(mutation.onSuccess()).toBeUndefined();
@@ -211,13 +219,13 @@ describe('user query state behavior', () => {
     expect(userQueryOptions.ticketDetail(3).queryKey).toStrictEqual(['user', 'ticket', 3]);
 
     // The undefined keys stay inert because each wrapper hook gates `enabled`.
-    expect((useOrder(undefined) as unknown as UseQueryOptions).enabled).toBe(false);
-    expect((usePlan(undefined) as unknown as UseQueryOptions).enabled).toBe(false);
-    expect((useTicket(undefined) as unknown as UseQueryOptions).enabled).toBe(false);
-    expect((useKnowledgeDetail(undefined, 'zh-CN') as unknown as UseQueryOptions).enabled).toBe(
+    expect((callHook(() => useOrder(undefined)) as unknown as UseQueryOptions).enabled).toBe(false);
+    expect((callHook(() => usePlan(undefined)) as unknown as UseQueryOptions).enabled).toBe(false);
+    expect((callHook(() => useTicket(undefined)) as unknown as UseQueryOptions).enabled).toBe(false);
+    expect((callHook(() => useKnowledgeDetail(undefined, 'zh-CN')) as unknown as UseQueryOptions).enabled).toBe(
       false,
     );
-    expect((useOrder('T123') as unknown as UseQueryOptions).enabled).toBe(true);
+    expect((callHook(() => useOrder('T123')) as unknown as UseQueryOptions).enabled).toBe(true);
   });
 
   it('keeps the user/info and subscribe queryFns pure (chat reporting moved to QueryCache)', async () => {
@@ -277,7 +285,7 @@ describe('user query state behavior', () => {
 
   it('invalidates all order queries after cancel so detail state is not kept stale', async () => {
     const { useCancelOrderMutation, userKeys } = await import('./queries');
-    const mutation = useCancelOrderMutation() as unknown as {
+    const mutation = callHook(() => useCancelOrderMutation()) as unknown as {
       onSuccess: () => void;
     };
 
@@ -298,7 +306,7 @@ describe('user query state behavior', () => {
 
     for (const name of ticketListMutations) {
       const factory = queries[name] as unknown as () => { onSuccess: () => void };
-      const mutation = factory();
+      const mutation = callHook(() => factory());
 
       invalidateQueries.mockReset();
       expect(mutation.onSuccess()).toBeUndefined();
@@ -320,7 +328,7 @@ describe('user query state behavior', () => {
 
     for (const name of userInfoMutations) {
       const factory = queries[name] as unknown as () => { onSuccess: () => void };
-      const mutation = factory();
+      const mutation = callHook(() => factory());
 
       invalidateQueries.mockReset();
       expect(mutation.onSuccess()).toBeUndefined();
@@ -333,7 +341,7 @@ describe('user query state behavior', () => {
 
   it('invalidates every cached credential projection after reset-subscribe', async () => {
     const { useResetSubscribeMutation } = await import('./queries');
-    const mutation = useResetSubscribeMutation() as unknown as { onSuccess: () => void };
+    const mutation = callHook(() => useResetSubscribeMutation()) as unknown as { onSuccess: () => void };
 
     invalidateQueries.mockReset();
     expect(mutation.onSuccess()).toBeUndefined();
@@ -344,10 +352,10 @@ describe('user query state behavior', () => {
   it('keeps the payment-method query off the per-mount refetch path while leaving plans live', async () => {
     const { usePaymentMethods, usePlans } = await import('./queries');
 
-    const payments = usePaymentMethods() as unknown as UseQueryOptions;
+    const payments = callHook(() => usePaymentMethods()) as unknown as UseQueryOptions;
     expect(payments.staleTime).toBe(5 * 60_000);
 
-    const plans = usePlans() as unknown as UseQueryOptions;
+    const plans = callHook(() => usePlans()) as unknown as UseQueryOptions;
     expect(plans.staleTime).toBeUndefined();
   });
 
@@ -355,12 +363,12 @@ describe('user query state behavior', () => {
     const { useOrderStatus } = await import('./queries');
 
     // The caller only decides whether to poll at all, via enabled.
-    const disabled = useOrderStatus(undefined) as unknown as UseQueryOptions;
+    const disabled = callHook(() => useOrderStatus(undefined)) as unknown as UseQueryOptions;
     expect(disabled.enabled).toBe(false);
 
     // The stop condition (leave pending status 0, or error) is intrinsic to the
     // /user/order/check poll, so it lives on the hook.
-    const options = useOrderStatus('T123') as unknown as UseQueryOptions & {
+    const options = callHook(() => useOrderStatus('T123')) as unknown as UseQueryOptions & {
       refetchInterval: (query: { state: { status: string; data?: number } }) => number | false;
     };
     expect(options.enabled).toBe(true);

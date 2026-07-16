@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { useSyncExternalStore } from 'react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ServersPage, {
@@ -109,6 +110,7 @@ const mocks = vi.hoisted(() => ({
   nodesError: false,
   routesError: false,
   blockerState: 'unblocked' as 'unblocked' | 'blocked' | 'proceeding',
+  blockerListeners: new Set<() => void>(),
   blockerProceed: vi.fn(),
   blockerReset: vi.fn(),
   useBlocker: vi.fn(),
@@ -214,10 +216,20 @@ beforeEach(() => {
   mocks.toastSuccess.mockReset();
   mocks.toastError.mockReset();
   mocks.blockerState = 'unblocked';
+  mocks.blockerListeners.clear();
   mocks.blockerProceed.mockReset();
   mocks.blockerReset.mockReset();
+  // Like the real useBlocker, the mock self-subscribes to blocker state: the
+  // compiled guard bails out of prop-unchanged parent re-renders, so a mutable
+  // module read without a subscription would never repaint the leave dialog.
   mocks.useBlocker.mockReset().mockImplementation(() => ({
-    state: mocks.blockerState,
+    state: useSyncExternalStore(
+      (onStoreChange) => {
+        mocks.blockerListeners.add(onStoreChange);
+        return () => mocks.blockerListeners.delete(onStoreChange);
+      },
+      () => mocks.blockerState,
+    ),
     location: undefined,
     proceed: mocks.blockerProceed,
     reset: mocks.blockerReset,
@@ -242,6 +254,13 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
 });
+
+function setBlockerState(next: typeof mocks.blockerState) {
+  mocks.blockerState = next;
+  act(() => {
+    for (const notify of mocks.blockerListeners) notify();
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Server groups — shadcn island DOM + save payload.
@@ -640,14 +659,13 @@ describe('ServerManagePage (shadcn island)', () => {
 
   it('blocks SPA navigation with the shadcn leave dialog while sorting', async () => {
     const user = userEvent.setup();
-    const view = render(<ServersPage />);
+    render(<ServersPage />);
 
     expect(mocks.useBlocker).toHaveBeenLastCalledWith(false);
     await user.click(screen.getByTestId('node-sort-toggle'));
     expect(mocks.useBlocker).toHaveBeenLastCalledWith(true);
 
-    mocks.blockerState = 'blocked';
-    view.rerender(<ServersPage />);
+    setBlockerState('blocked');
 
     expect(await screen.findByTestId('server-sort-leave-dialog')).toBeInTheDocument();
     expect(screen.getByText('节点排序还没有保存，是否离开')).toBeInTheDocument();
@@ -659,11 +677,10 @@ describe('ServerManagePage (shadcn island)', () => {
 
   it('proceeds through the blocked router navigation after confirmation', async () => {
     const user = userEvent.setup();
-    const view = render(<ServersPage />);
+    render(<ServersPage />);
 
     await user.click(screen.getByTestId('node-sort-toggle'));
-    mocks.blockerState = 'blocked';
-    view.rerender(<ServersPage />);
+    setBlockerState('blocked');
     await user.click(await screen.findByTestId('server-sort-leave'));
 
     expect(mocks.blockerProceed).toHaveBeenCalledOnce();

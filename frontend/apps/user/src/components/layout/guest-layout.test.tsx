@@ -7,7 +7,8 @@ import { GuestLayout } from './guest-layout';
 
 // The operator brand assets are configured in these tests so the pure shadcn
 // shell also covers its modern, tokenized customization layer.
-vi.mock('@/lib/runtime-config', () => ({
+vi.mock('@/lib/runtime-config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/runtime-config')>()),
   getBackgroundUrl: () => 'https://cdn.example.test/bg.jpg',
   getLogoUrl: () => 'https://cdn.example.test/logo.svg',
   getRuntimeConfig: () => ({ i18n: ['en-US', 'zh-CN'] }),

@@ -560,7 +560,12 @@ describe('ProfilePage shadcn account surface', () => {
 
     mocks.botInfoPending = false;
     mocks.botInfoError = true;
-    rerender(<ProfilePage />);
+    // The mocked bot-info hook has no store subscription (in production the
+    // TanStack query re-renders the card itself), and the compiled card bails
+    // out of parent-cascade re-renders — so remount and reopen to observe the
+    // error state, exactly as a fresh visit would.
+    rerender(<ProfilePage key="botinfo-error" />);
+    await user.click(screen.getByRole('button', { name: '立即开始' }));
 
     expect(screen.getByTestId('profile-telegram-bot-error')).toHaveTextContent('加载失败');
     expect(screen.queryByRole('status')).not.toBeInTheDocument();

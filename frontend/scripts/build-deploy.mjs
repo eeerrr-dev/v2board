@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process';
+import { execSync, spawn } from 'node:child_process';
 import {
   chmod,
   lstat,
@@ -46,16 +46,12 @@ try {
     stdio: 'inherit',
   });
 
-  execSync('pnpm -F @v2board/user exec vite build --config vite.config.deploy.ts', {
-    cwd: root,
-    env: { ...process.env, V2BOARD_DEPLOY_OUT_DIR: userStageOut },
-    stdio: 'inherit',
-  });
-  execSync('pnpm -F @v2board/admin exec vite build --config vite.config.deploy.ts', {
-    cwd: root,
-    env: { ...process.env, V2BOARD_DEPLOY_OUT_DIR: adminStageOut },
-    stdio: 'inherit',
-  });
+  // The two app builds share no state and write to disjoint stage dirs, so
+  // they run concurrently; output is buffered per build to stay attributable.
+  await Promise.all([
+    runViteBuild('@v2board/user', userStageOut),
+    runViteBuild('@v2board/admin', adminStageOut),
+  ]);
 
   const userBuild = await validateViteBuild({
     label: 'User',
@@ -94,6 +90,30 @@ try {
   if (publication.previous) console.log(`Previous: ${publication.previous}`);
 } finally {
   await rm(stageRoot, { recursive: true, force: true });
+}
+
+function runViteBuild(filter, outDir) {
+  return new Promise((resolvePromise, rejectPromise) => {
+    const child = spawn(
+      'pnpm',
+      ['-F', filter, 'exec', 'vite', 'build', '--config', 'vite.config.deploy.ts'],
+      {
+        cwd: root,
+        env: { ...process.env, V2BOARD_DEPLOY_OUT_DIR: outDir },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    const output = [];
+    child.stdout.on('data', (chunk) => output.push(chunk));
+    child.stderr.on('data', (chunk) => output.push(chunk));
+    child.on('error', rejectPromise);
+    child.on('close', (code) => {
+      process.stdout.write(`\n=== vite build ${filter} ===\n`);
+      process.stdout.write(Buffer.concat(output));
+      if (code === 0) resolvePromise();
+      else rejectPromise(new Error(`vite build for ${filter} exited with code ${code}`));
+    });
+  });
 }
 
 async function validateViteBuild({ label, outDir, publicBase, requiresCustomHtmlMarker }) {

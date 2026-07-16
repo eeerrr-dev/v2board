@@ -1,9 +1,12 @@
 import { defineConfig } from 'vitest/config';
-import react from '@vitejs/plugin-react';
+import react, { reactCompilerPreset } from '@vitejs/plugin-react';
+import babel from '@rolldown/plugin-babel';
 import path from 'node:path';
 
 export default defineConfig({
-  plugins: [react()],
+  // Mirror vite.config.ts: unit tests must exercise the same React Compiler
+  // output that dev and deploy builds ship, not unmemoized variants.
+  plugins: [react(), babel({ presets: [reactCompilerPreset()] })],
   resolve: { alias: { '@': path.resolve(import.meta.dirname, 'src') } },
   test: {
     environment: 'happy-dom',

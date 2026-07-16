@@ -54,7 +54,8 @@ vi.mock('recharts', async () => {
   };
 });
 
-vi.mock('@/lib/runtime-config', () => ({
+vi.mock('@/lib/runtime-config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/runtime-config')>()),
   getAdminApiBaseUrl: () => 'http://localhost/api/v1',
 }));
 vi.mock('@/lib/queries', () => ({
