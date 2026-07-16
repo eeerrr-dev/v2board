@@ -91,9 +91,9 @@ pub struct TransformColumn {
     pub target: &'static str,
     pub rule: ColumnRule,
     /// Optional source/target tables whose `id` sets must contain every member.
-    /// Reference validation is a pre-copy and final-verification obligation;
-    /// row transformation alone cannot prove it. Both names are explicit
-    /// because only the legacy source carries the `v2_*` prefix.
+    /// Reference membership cannot be proven during row transformation; it is
+    /// verified against the completed target after COPY. Both names are
+    /// explicit because only the legacy source carries the `v2_*` prefix.
     pub source_referenced_table: Option<&'static str>,
     pub referenced_target_table: Option<&'static str>,
 }

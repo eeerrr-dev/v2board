@@ -6,7 +6,7 @@ subscriptions, admin operations and background work. There is no PHP/Laravel run
 mode or native MySQL backend.
 
 The pinned project under `references/wyx2685-v2board` is read-only compatibility evidence. The one-time
-importer runs on the stopped old host and reads the original Oracle MySQL 8.0/8.4 database through a
+importer runs on the stopped old host and reads the original Oracle MySQL 8.0/8.3/8.4 database through a
 dedicated `SELECT`-only account and a server-enforced read-only consistent snapshot. The complete dump is a
 protected backup artifact, not converter input. The importer never mutates the old database; the new
 production host never runs MySQL, and no MySQL service belongs to the native runtime.
@@ -215,7 +215,7 @@ migration job may create the documented development-only `admin@example.com` see
 
 There is one pre-release data path and one manifest example:
 [mysql-import.v1](../docs/examples/mysql-import.v1.example.json). The operator stops the old site,
-exports a complete Oracle MySQL 8.0/8.4 dump as a protected backup, then uses lifecycle on that stopped
+exports a complete Oracle MySQL 8.0/8.3/8.4 dump as a protected backup, then uses lifecycle on that stopped
 host to read the original database through a dedicated `SELECT`-only account. The converter transforms
 the fixed retained rows into a brand-new PostgreSQL database, starts ClickHouse and Redis empty, generates
 new role configs, verifies the result and starts the native services.

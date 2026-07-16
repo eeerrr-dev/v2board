@@ -21,7 +21,7 @@ Vite + shadcn/ui 前端。PHP/Laravel 与旧打包前端不属于新版运行、
   worker 使用不同 ACL principal，worker 无权访问认证状态。
 
 MySQL 不是新版可选运行时。唯一允许的旧版数据库来源是
-`references/wyx2685-v2board` 所代表、且精确识别为 Oracle MySQL 8.0/8.4 的**只读 source**；
+`references/wyx2685-v2board` 所代表、且精确识别为 Oracle MySQL 8.0/8.3/8.4 的**只读 source**；
 MySQL 5.7、Percona 和 MariaDB 均不在迁移支持面内。converter 在停写后的旧生产机上直接读取
 原 MySQL 的只读一致性快照；新生产机和新版运行时都不安装、不保留 MySQL 服务。
 完整边界见 [PostgreSQL + ClickHouse 持久化不变量](docs/postgresql-clickhouse-invariants.md)。

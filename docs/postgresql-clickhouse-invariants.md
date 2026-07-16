@@ -3,7 +3,7 @@
 状态：**native runtime、分析投影与唯一的 `mysql-import.v1` 冷导入 executor 已实现。**
 
 本文件取代“新版运行时以 MySQL 8.4 为目标”的设计。旧版数据库来源固定为
-`references/wyx2685-v2board` 所代表的 Oracle MySQL 8.0/8.4；新版运行时不再把
+`references/wyx2685-v2board` 所代表的 Oracle MySQL 8.0/8.3/8.4；新版运行时不再把
 MySQL 作为可选后端。
 
 PostgreSQL native runtime 与 ClickHouse 投影已经接线。一次性 `v2board-lifecycle` 工具提供
@@ -25,7 +25,7 @@ PostgreSQL native runtime 与 ClickHouse 投影已经接线。一次性 `v2board
   事务数据库。只有经过容量门禁证明 SQL outbox 无法满足要求后，消息流才可作为独立
   架构变更提出。
 - MySQL importer 在停写后的旧生产机运行，通过专用 `SELECT`-only 账号和 server-enforced
-  `REPEATABLE READ`、`READ ONLY` consistent snapshot 读取原 Oracle MySQL 8.0/8.4。完整 dump
+  `REPEATABLE READ`、`READ ONLY` consistent snapshot 读取原 Oracle MySQL 8.0/8.3/8.4。完整 dump
   只作为受保护备份与文件完整性证据，不是 converter 输入。execute 拒绝额外 grant、role 和
   `GRANT OPTION`，并要求全部 imported source 表使用 InnoDB；新生产 runtime 不运行 MySQL。
   每张 MySQL 表只执行一条主键有序的 streaming `SELECT`；内存有明确上限：当前 decoded row、

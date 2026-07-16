@@ -1765,17 +1765,20 @@ async fn verify_mysql_vendor_and_version(source: &mut MySqlConnection) -> anyhow
         sqlx::query_as("SELECT VERSION(), @@version_comment")
             .fetch_one(&mut *source)
             .await?;
-    let lowercase = format!("{version} {comment}").to_ascii_lowercase();
-    if !(version.starts_with("8.0.") || version.starts_with("8.4."))
-        || lowercase.contains("mariadb")
-        || lowercase.contains("percona")
-        || !lowercase.contains("mysql")
-    {
+    if !is_supported_oracle_mysql_version(&version, &comment) {
         anyhow::bail!(
-            "legacy source engine must be Oracle MySQL 8.0.x or 8.4.x, observed {version} ({comment})"
+            "legacy source engine must be Oracle MySQL 8.0.x, 8.3.x, or 8.4.x, observed {version} ({comment})"
         );
     }
     Ok(())
+}
+
+fn is_supported_oracle_mysql_version(version: &str, comment: &str) -> bool {
+    let lowercase = format!("{version} {comment}").to_ascii_lowercase();
+    (version.starts_with("8.0.") || version.starts_with("8.3.") || version.starts_with("8.4."))
+        && !lowercase.contains("mariadb")
+        && !lowercase.contains("percona")
+        && lowercase.contains("mysql")
 }
 
 async fn verify_mysql_source_principal(
@@ -4720,6 +4723,12 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(member_remarks.as_deref(), Some(""));
+        let owner_telegram_id: Option<i64> =
+            sqlx::query_scalar("SELECT telegram_id FROM users WHERE id = 1")
+                .fetch_one(&target)
+                .await
+                .unwrap();
+        assert_eq!(owner_telegram_id, Some(10001));
         let next_group_id: i32 = sqlx::query_scalar(
             "INSERT INTO server_group (name, created_at, updated_at) \
              VALUES ('sequence-check', 1, 1) RETURNING id",
@@ -4748,6 +4757,34 @@ mod tests {
             .expect_err("non-positive source identities must fail before target writes");
         assert!(error.to_string().contains("non-positive business identity"));
         (&mut *admin).execute("ROLLBACK").await.unwrap();
+    }
+
+    #[test]
+    fn source_vendor_and_version_contract_is_pinned() {
+        for version in ["8.0.42", "8.3.0", "8.4.6"] {
+            assert!(is_supported_oracle_mysql_version(
+                version,
+                "MySQL Community Server - GPL"
+            ));
+        }
+        for version in ["5.7.44", "8.1.0", "8.2.0", "8.5.0", "9.0.0"] {
+            assert!(!is_supported_oracle_mysql_version(
+                version,
+                "MySQL Community Server - GPL"
+            ));
+        }
+        assert!(!is_supported_oracle_mysql_version(
+            "8.3.0-MariaDB",
+            "MariaDB Server"
+        ));
+        assert!(!is_supported_oracle_mysql_version(
+            "8.3.0-1",
+            "Percona Server for MySQL"
+        ));
+        assert!(!is_supported_oracle_mysql_version(
+            "8.3.0",
+            "Compatible Database Server"
+        ));
     }
 
     #[test]
