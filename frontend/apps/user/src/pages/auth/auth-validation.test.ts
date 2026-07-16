@@ -167,8 +167,8 @@ describe('auth validation localization', () => {
     const instance = createI18n();
     await instance.changeLanguage(locale);
 
-    expect(instance.t($ => $.auth.email_invalid)).toBe(expected.email);
-    expect(instance.t($ => $.auth.password_min)).toBe(expected.password);
-    expect(instance.t($ => $.auth.email_code_invalid)).toBe(expected.emailCode);
+    expect(instance.t(($) => $.auth.email_invalid)).toBe(expected.email);
+    expect(instance.t(($) => $.auth.password_min)).toBe(expected.password);
+    expect(instance.t(($) => $.auth.email_code_invalid)).toBe(expected.emailCode);
   });
 });

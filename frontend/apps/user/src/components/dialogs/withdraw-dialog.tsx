@@ -73,14 +73,14 @@ export function WithdrawDialog({ methods, children }: WithdrawDialogProps) {
       <DialogTrigger asChild>
         {children ?? (
           <Button type="button" variant="outline">
-            {t($ => $.invite.withdraw_button)}
+            {t(($) => $.invite.withdraw_button)}
           </Button>
         )}
       </DialogTrigger>
       <DialogContent className="sm:max-w-md" data-testid="invite-dialog">
         <DialogHeader>
-          <DialogTitle data-testid="invite-dialog-title">{t($ => $.invite.withdraw)}</DialogTitle>
-          <DialogDescription>{t($ => $.invite.withdraw_button)}</DialogDescription>
+          <DialogTitle data-testid="invite-dialog-title">{t(($) => $.invite.withdraw)}</DialogTitle>
+          <DialogDescription>{t(($) => $.invite.withdraw_button)}</DialogDescription>
         </DialogHeader>
 
         <form className="space-y-4" onSubmit={onSubmit} noValidate>
@@ -92,7 +92,7 @@ export function WithdrawDialog({ methods, children }: WithdrawDialogProps) {
               return (
                 <Field data-invalid={fieldState.invalid}>
                   <FieldLabel htmlFor={WITHDRAW_METHOD_ID}>
-                    {t($ => $.invite.withdraw_method)}
+                    {t(($) => $.invite.withdraw_method)}
                   </FieldLabel>
                   <Select
                     name={field.name}
@@ -108,7 +108,7 @@ export function WithdrawDialog({ methods, children }: WithdrawDialogProps) {
                       aria-describedby={fieldState.invalid ? errorId : undefined}
                       data-testid="invite-select-trigger"
                     >
-                      <SelectValue placeholder={t($ => $.invite.withdraw_method_placeholder)} />
+                      <SelectValue placeholder={t(($) => $.invite.withdraw_method_placeholder)} />
                     </SelectTrigger>
                     <SelectContent data-testid="invite-select-content">
                       {methods.map((item) => (
@@ -131,12 +131,12 @@ export function WithdrawDialog({ methods, children }: WithdrawDialogProps) {
               return (
                 <Field data-invalid={fieldState.invalid}>
                   <FieldLabel htmlFor={WITHDRAW_ACCOUNT_ID}>
-                    {t($ => $.invite.withdraw_account)}
+                    {t(($) => $.invite.withdraw_account)}
                   </FieldLabel>
                   <Input
                     {...field}
                     id={WITHDRAW_ACCOUNT_ID}
-                    placeholder={t($ => $.invite.withdraw_account_placeholder)}
+                    placeholder={t(($) => $.invite.withdraw_account_placeholder)}
                     aria-invalid={fieldState.invalid}
                     aria-describedby={fieldState.invalid ? errorId : undefined}
                   />
@@ -149,11 +149,11 @@ export function WithdrawDialog({ methods, children }: WithdrawDialogProps) {
           <DialogFooter data-testid="invite-dialog-footer">
             <DialogClose asChild>
               <Button type="button" variant="outline">
-                {t($ => $.common.cancel)}
+                {t(($) => $.common.cancel)}
               </Button>
             </DialogClose>
             <Button type="submit" loading={withdraw.isPending}>
-              {t($ => $.profile.confirm)}
+              {t(($) => $.profile.confirm)}
             </Button>
           </DialogFooter>
         </form>

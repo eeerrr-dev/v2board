@@ -15,9 +15,11 @@ export function AuthLanguageMenu() {
           type="button"
           data-testid="auth-language-trigger"
           aria-label={
-            currentLabel ? `${t($ => $.common.language)}: ${currentLabel}` : t($ => $.common.language)
+            currentLabel
+              ? `${t(($) => $.common.language)}: ${currentLabel}`
+              : t(($) => $.common.language)
           }
-          className="group inline-flex h-9 cursor-pointer items-center gap-1 rounded-md px-2 text-sm font-medium text-foreground underline-offset-4 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=open]:bg-accent"
+          className="group inline-flex h-9 cursor-pointer items-center gap-1 rounded-md px-2 text-sm font-medium text-foreground underline-offset-4 transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none data-[state=open]:bg-accent"
         >
           <span>{currentLabel}</span>
           <ChevronDown

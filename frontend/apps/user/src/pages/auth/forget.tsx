@@ -32,10 +32,10 @@ export default function ForgetPage() {
   return (
     <>
       <AuthPanel
-        title={t($ => $.auth.reset_title)}
-        description={t($ => $.auth.reset_description)}
+        title={t(($) => $.auth.reset_title)}
+        description={t(($) => $.auth.reset_description)}
         onSubmit={submit}
-        footer={<AuthFooterLink to="/login">{t($ => $.auth.return_to_login)}</AuthFooterLink>}
+        footer={<AuthFooterLink to="/login">{t(($) => $.auth.return_to_login)}</AuthFooterLink>}
       >
         {configLoading ? (
           <AuthLoadingState />
@@ -43,7 +43,7 @@ export default function ForgetPage() {
           <ErrorState data-testid="forget-config-error" onRetry={retryConfig} />
         ) : (
           <AuthFormStack>
-            <AuthField id="forget-email" label={t($ => $.auth.email)} error={errors.email}>
+            <AuthField id="forget-email" label={t(($) => $.auth.email)} error={errors.email}>
               <Input
                 id="forget-email"
                 type="email"
@@ -57,10 +57,12 @@ export default function ForgetPage() {
 
             <AuthEmailCodeField
               id="forget-email-code"
-              label={t($ => $.auth.email_code)}
-              buttonLabel={cooldownActive ? cooldownRemaining : t($ => $.auth.send_code)}
+              label={t(($) => $.auth.email_code)}
+              buttonLabel={cooldownActive ? cooldownRemaining : t(($) => $.auth.send_code)}
               buttonAriaLabel={
-                cooldownActive ? t($ => $.auth.code_sent, { seconds: cooldownRemaining }) : undefined
+                cooldownActive
+                  ? t(($) => $.auth.code_sent, { seconds: cooldownRemaining })
+                  : undefined
               }
               disabled={cooldownActive || isSendingCode}
               loading={isSendingCode}
@@ -71,17 +73,17 @@ export default function ForgetPage() {
 
             <AuthPasswordConfirmationFields
               passwordId="forget-password"
-              passwordLabel={t($ => $.auth.password)}
+              passwordLabel={t(($) => $.auth.password)}
               passwordInputProps={registerInput('password')}
               confirmId="forget-confirm-password"
-              confirmLabel={t($ => $.auth.confirm_password)}
+              confirmLabel={t(($) => $.auth.confirm_password)}
               confirmInputProps={registerInput('confirm_password')}
               passwordError={errors.password}
               confirmError={errors.confirmPassword}
             />
 
             <AuthSubmitButton loading={isPending} disabled={isPending}>
-              {t($ => $.auth.submit_reset)}
+              {t(($) => $.auth.submit_reset)}
             </AuthSubmitButton>
           </AuthFormStack>
         )}

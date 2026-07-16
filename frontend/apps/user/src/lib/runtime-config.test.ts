@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { copyText } from '@v2board/config/clipboard';
 import { setRuntimeConfig } from '@/test/runtime-config';
-import { applyRuntimeConfig, getBackgroundUrl, getLogoUrl, getRuntimeConfig } from './runtime-config';
+import {
+  applyRuntimeConfig,
+  getBackgroundUrl,
+  getLogoUrl,
+  getRuntimeConfig,
+} from './runtime-config';
 
 describe('runtime config bootstrap', () => {
   beforeEach(() => {

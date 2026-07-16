@@ -22,16 +22,16 @@ function SheetOverlay({ className, ...props }: ComponentProps<typeof SheetPrimit
 }
 
 const sheetVariants = cva(
-  'fixed z-50 flex flex-col gap-4 bg-background text-foreground shadow-lg transition ease-in-out data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:duration-200 data-[state=open]:duration-300 motion-reduce:animate-none!',
+  'fixed z-50 flex flex-col gap-4 bg-background text-foreground shadow-lg transition ease-in-out data-[state=closed]:animate-out data-[state=closed]:duration-200 data-[state=open]:animate-in data-[state=open]:duration-300 motion-reduce:animate-none!',
   {
     variants: {
       side: {
-        top: 'inset-x-0 top-0 border-b border-border data-[state=open]:slide-in-from-top data-[state=closed]:slide-out-to-top',
+        top: 'inset-x-0 top-0 border-b border-border data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top',
         bottom:
-          'inset-x-0 bottom-0 border-t border-border data-[state=open]:slide-in-from-bottom data-[state=closed]:slide-out-to-bottom',
-        left: 'inset-y-0 left-0 h-full w-3/4 border-r border-border data-[state=open]:slide-in-from-left data-[state=closed]:slide-out-to-left sm:max-w-sm',
+          'inset-x-0 bottom-0 border-t border-border data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom',
+        left: 'inset-y-0 left-0 h-full w-3/4 border-r border-border data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left sm:max-w-sm',
         right:
-          'inset-y-0 right-0 h-full w-3/4 border-l border-border data-[state=open]:slide-in-from-right data-[state=closed]:slide-out-to-right sm:max-w-sm',
+          'inset-y-0 right-0 h-full w-3/4 border-l border-border data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right sm:max-w-sm',
       },
     },
     defaultVariants: {
@@ -55,9 +55,9 @@ function SheetContent({ side = 'right', className, children, ...props }: SheetCo
         {...props}
       >
         {children}
-        <SheetPrimitive.Close className="absolute top-4 right-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none">
+        <SheetPrimitive.Close className="absolute top-4 right-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none disabled:pointer-events-none">
           <X className="size-4" />
-          <span className="sr-only">{t($ => $.common.close_dialog)}</span>
+          <span className="sr-only">{t(($) => $.common.close_dialog)}</span>
         </SheetPrimitive.Close>
       </SheetPrimitive.Content>
     </SheetPortal>

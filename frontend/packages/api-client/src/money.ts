@@ -17,10 +17,7 @@ function parseDecimal(value: string | number) {
  * This covers both decimal minor units (`scale = 100`) and non-decimal units
  * such as GiB (`scale = 1_073_741_824`).
  */
-export function decimalToScaledInteger(
-  value: string | number,
-  scale: number | bigint,
-): number {
+export function decimalToScaledInteger(value: string | number, scale: number | bigint): number {
   const factor = typeof scale === 'bigint' ? scale : BigInt(scale);
   if (factor <= 0n || (typeof scale === 'number' && !Number.isSafeInteger(scale))) {
     throw new RangeError('scale must be a positive safe integer');

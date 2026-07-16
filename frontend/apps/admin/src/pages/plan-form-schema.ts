@@ -10,10 +10,9 @@ import {
 const numberInput = z.union([z.string(), z.number()]);
 const nullableNumberInput = numberInput.nullable();
 const MAX_I32 = 2_147_483_647;
-const requiredIntegerInput = nullableNumberInput.refine(
-  (value) => !isBlankInput(value) && isIntegerInput(value),
-  '请输入整数',
-).refine((value) => Number(value) >= 0 && Number(value) <= MAX_I32, '数值超出可保存范围');
+const requiredIntegerInput = nullableNumberInput
+  .refine((value) => !isBlankInput(value) && isIntegerInput(value), '请输入整数')
+  .refine((value) => Number(value) >= 0 && Number(value) <= MAX_I32, '数值超出可保存范围');
 const optionalIntegerInput = nullableNumberInput
   .optional()
   .refine((value) => isEmptyInput(value) || isIntegerInput(value), '请输入整数')

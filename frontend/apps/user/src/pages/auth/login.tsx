@@ -18,20 +18,21 @@ export default function LoginPage() {
 
   return (
     <AuthPanel
-      title={t($ => $.auth.login_title)}
-      description={t($ => $.auth.login_description)}
+      title={t(($) => $.auth.login_title)}
+      description={t(($) => $.auth.login_description)}
       onSubmit={(event) => void submit(event)}
       onInput={clearError}
       footer={
         <>
-          {t($ => $.auth.no_account)} <AuthFooterLink to="/register">{t($ => $.auth.sign_up)}</AuthFooterLink>
+          {t(($) => $.auth.no_account)}{' '}
+          <AuthFooterLink to="/register">{t(($) => $.auth.sign_up)}</AuthFooterLink>
         </>
       }
     >
       <AuthFormStack>
         {error ? <AuthInlineError id="login-error">{error}</AuthInlineError> : null}
 
-        <AuthField id="login-email" label={t($ => $.auth.email)} error={emailError}>
+        <AuthField id="login-email" label={t(($) => $.auth.email)} error={emailError}>
           <Input
             id="login-email"
             type="email"
@@ -44,9 +45,9 @@ export default function LoginPage() {
         </AuthField>
         <div className="grid gap-3">
           <div className="flex items-center">
-            <Label htmlFor="login-password">{t($ => $.auth.password)}</Label>
+            <Label htmlFor="login-password">{t(($) => $.auth.password)}</Label>
             <AuthAuxiliaryLink to="/forgetpassword" className="ml-auto">
-              {t($ => $.auth.forget_password)}
+              {t(($) => $.auth.forget_password)}
             </AuthAuxiliaryLink>
           </div>
           <Input
@@ -62,7 +63,7 @@ export default function LoginPage() {
           <AuthFieldError id="login-password-error" message={passwordError} />
         </div>
 
-        <AuthSubmitButton loading={isPending}>{t($ => $.auth.submit_login)}</AuthSubmitButton>
+        <AuthSubmitButton loading={isPending}>{t(($) => $.auth.submit_login)}</AuthSubmitButton>
       </AuthFormStack>
     </AuthPanel>
   );

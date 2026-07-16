@@ -13,11 +13,19 @@ describe('confirm dialog', () => {
       'common.cancel': 'Cancel',
     } as const;
 
-    expect(getConfirmDialogDefaultText((selector) => zhCN[keyFromSelector(selector) as keyof typeof zhCN])).toEqual({
+    expect(
+      getConfirmDialogDefaultText(
+        (selector) => zhCN[keyFromSelector(selector) as keyof typeof zhCN],
+      ),
+    ).toEqual({
       confirmText: '确定',
       cancelText: '取消',
     });
-    expect(getConfirmDialogDefaultText((selector) => enUS[keyFromSelector(selector) as keyof typeof enUS])).toEqual({
+    expect(
+      getConfirmDialogDefaultText(
+        (selector) => enUS[keyFromSelector(selector) as keyof typeof enUS],
+      ),
+    ).toEqual({
       confirmText: 'Confirm',
       cancelText: 'Cancel',
     });

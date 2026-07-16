@@ -276,12 +276,9 @@ export function createDashboardPrefetchLoader(queryClient: QueryClient) {
 function RouteHydrateFallback() {
   const { t } = useTranslation();
   return (
-    <div
-      role="status"
-      className="flex min-h-screen items-center justify-center bg-background"
-    >
+    <div role="status" className="flex min-h-screen items-center justify-center bg-background">
       <Spinner className="size-6" />
-      <span className="sr-only">{t($ => $.common.loading)}</span>
+      <span className="sr-only">{t(($) => $.common.loading)}</span>
     </div>
   );
 }

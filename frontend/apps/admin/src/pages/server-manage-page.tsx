@@ -164,7 +164,7 @@ function NodeFilterMenu({
           type="button"
           aria-label="筛选"
           className={cn(
-            'ml-1 inline-flex size-6 items-center justify-center rounded-sm outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50',
+            'ml-1 inline-flex size-6 items-center justify-center rounded-sm transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50',
             active ? 'text-primary' : 'text-muted-foreground',
           )}
         >
@@ -225,7 +225,7 @@ function OnlineSortHeader({
   return (
     <button
       type="button"
-      className="inline-flex items-center gap-1.5 rounded-sm outline-none transition-colors select-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      className="inline-flex items-center gap-1.5 rounded-sm transition-colors outline-none select-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
       onClick={onCycle}
     >
       <HeaderTooltip title="在线人数">人数</HeaderTooltip>

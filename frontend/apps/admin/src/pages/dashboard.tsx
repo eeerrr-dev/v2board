@@ -66,8 +66,7 @@ export default function DashboardPage() {
   const config = useConfig('site');
   const currency = config.data?.site?.currency;
   const data = stat.data;
-  const queueHealthy =
-    queueStatus.data?.status === true || queueStatus.data?.status === 'running';
+  const queueHealthy = queueStatus.data?.status === true || queueStatus.data?.status === 'running';
   const dashboardQueries = [
     queueStatus,
     stat,
@@ -213,7 +212,7 @@ export default function DashboardPage() {
               kind="order"
               data={order.data ?? []}
               label="订单统计折线图"
-              className="h-[360px] min-w-0 w-full"
+              className="h-[360px] w-full min-w-0"
             />
           </ChartSuspense>
         </CardContent>
@@ -231,7 +230,7 @@ export default function DashboardPage() {
                   kind="ranking"
                   data={chart.data}
                   label={chart.title}
-                  className="h-[360px] min-w-0 w-full"
+                  className="h-[360px] w-full min-w-0"
                 />
               </ChartSuspense>
             </CardContent>

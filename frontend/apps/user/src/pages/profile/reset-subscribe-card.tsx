@@ -19,7 +19,7 @@ export function ResetSubscribeCard({ className }: { className?: string }) {
     // payload here; the shared mutation error presenter owns failures.
     resetSub.mutate(undefined, {
       onSuccess: () => {
-        toast.success(t($ => $.profile.reset_success));
+        toast.success(t(($) => $.profile.reset_success));
       },
     });
   };
@@ -32,14 +32,14 @@ export function ResetSubscribeCard({ className }: { className?: string }) {
             <RefreshCcw className="size-4" />
           </SectionIcon>
           <CardTitle className="text-lg" data-testid="profile-card-title">
-            {t($ => $.profile.reset_subscribe)}
+            {t(($) => $.profile.reset_subscribe)}
           </CardTitle>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
         <Alert data-testid="profile-reset-warning">
           <AlertCircle className="size-4" />
-          <AlertDescription>{t($ => $.profile.reset_subscribe_warning)}</AlertDescription>
+          <AlertDescription>{t(($) => $.profile.reset_subscribe_warning)}</AlertDescription>
         </Alert>
         <Button
           className="w-full sm:w-fit"
@@ -47,14 +47,14 @@ export function ResetSubscribeCard({ className }: { className?: string }) {
           variant="destructive"
           onClick={() => setConfirmOpen(true)}
         >
-          {t($ => $.profile.reset)}
+          {t(($) => $.profile.reset)}
         </Button>
       </CardContent>
 
       <ProfileConfirmDialog
         open={confirmOpen}
-        title={t($ => $.profile.reset_subscribe_confirm)}
-        description={t($ => $.profile.reset_subscribe_tip)}
+        title={t(($) => $.profile.reset_subscribe_confirm)}
+        description={t(($) => $.profile.reset_subscribe_tip)}
         onCancel={() => setConfirmOpen(false)}
         onConfirm={onConfirmReset}
       />

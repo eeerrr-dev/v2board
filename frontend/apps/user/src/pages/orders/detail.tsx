@@ -25,14 +25,14 @@ import { cn } from '@/lib/cn';
 import { useOrderCheckoutController } from './use-order-checkout-controller';
 
 const PERIOD_LABEL_KEY: Record<string, SelectorParam> = {
-  month_price: $ => $.plan.monthly,
-  quarter_price: $ => $.plan.quarterly,
-  half_year_price: $ => $.plan.half_year,
-  year_price: $ => $.plan.yearly,
-  two_year_price: $ => $.plan.two_year,
-  three_year_price: $ => $.plan.three_year,
-  onetime_price: $ => $.plan.onetime,
-  reset_price: $ => $.plan.reset,
+  month_price: ($) => $.plan.monthly,
+  quarter_price: ($) => $.plan.quarterly,
+  half_year_price: ($) => $.plan.half_year,
+  year_price: ($) => $.plan.yearly,
+  two_year_price: ($) => $.plan.two_year,
+  three_year_price: ($) => $.plan.three_year,
+  onetime_price: ($) => $.plan.onetime,
+  reset_price: ($) => $.plan.reset,
 };
 
 export default function OrderDetailPage() {
@@ -103,15 +103,17 @@ export default function OrderDetailPage() {
         <div className="space-y-6">
           {!isPending && <OrderResult status={order.status} />}
 
-          <OrderInfoCard title={t($ => $.order.product_info)} tradeTitle>
+          <OrderInfoCard title={t(($) => $.order.product_info)} tradeTitle>
             <div data-testid="order-info">
               {isDeposit ? (
-                <InfoRow label={t($ => $.order.product_name)}>{t($ => $.order.deposit)}</InfoRow>
+                <InfoRow label={t(($) => $.order.product_name)}>
+                  {t(($) => $.order.deposit)}
+                </InfoRow>
               ) : (
                 <>
-                  <InfoRow label={t($ => $.order.product_name)}>{order.plan?.name}</InfoRow>
-                  <InfoRow label={t($ => $.order.product_period)}>{periodLabel}</InfoRow>
-                  <InfoRow label={t($ => $.order.product_traffic)}>
+                  <InfoRow label={t(($) => $.order.product_name)}>{order.plan?.name}</InfoRow>
+                  <InfoRow label={t(($) => $.order.product_period)}>{periodLabel}</InfoRow>
+                  <InfoRow label={t(($) => $.order.product_traffic)}>
                     {transferEnable}
                     {' GB'}
                   </InfoRow>
@@ -120,7 +122,7 @@ export default function OrderDetailPage() {
             </div>
           </OrderInfoCard>
           <OrderInfoCard
-            title={t($ => $.order.info)}
+            title={t(($) => $.order.info)}
             tradeTitle
             options={
               isPending ? (
@@ -132,35 +134,37 @@ export default function OrderDetailPage() {
                   disabled={isCheckoutPending}
                   onClick={cancel.run}
                 >
-                  {t($ => $.order.cancel)}
+                  {t(($) => $.order.cancel)}
                 </Button>
               ) : null
             }
           >
             <div data-testid="order-info">
-              <InfoRow label={t($ => $.order.trade_no)}>{order.trade_no}</InfoRow>
+              <InfoRow label={t(($) => $.order.trade_no)}>{order.trade_no}</InfoRow>
               {order.discount_amount ? (
-                <InfoRow label={t($ => $.order.discount_amount)}>
+                <InfoRow label={t(($) => $.order.discount_amount)}>
                   {amountText(order.discount_amount)}
                 </InfoRow>
               ) : null}
               {order.surplus_amount ? (
-                <InfoRow label={t($ => $.order.surplus_used)}>
+                <InfoRow label={t(($) => $.order.surplus_used)}>
                   {amountText(order.surplus_amount)}
                 </InfoRow>
               ) : null}
               {order.refund_amount ? (
-                <InfoRow label={t($ => $.order.refund_amount)}>
+                <InfoRow label={t(($) => $.order.refund_amount)}>
                   {amountText(order.refund_amount)}
                 </InfoRow>
               ) : null}
               {order.balance_amount ? (
-                <InfoRow label={t($ => $.order.balance_used)}>
+                <InfoRow label={t(($) => $.order.balance_used)}>
                   {amountText(order.balance_amount)}
                 </InfoRow>
               ) : null}
-              {fee ? <InfoRow label={t($ => $.order.handling_fee)}>{amountText(fee)}</InfoRow> : null}
-              <InfoRow label={t($ => $.order.created_at)}>
+              {fee ? (
+                <InfoRow label={t(($) => $.order.handling_fee)}>{amountText(fee)}</InfoRow>
+              ) : null}
+              <InfoRow label={t(($) => $.order.created_at)}>
                 {formatBackendDateTime(order.created_at)}
               </InfoRow>
             </div>
@@ -170,7 +174,9 @@ export default function OrderDetailPage() {
             <>
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base leading-6">{t($ => $.order.payment_method)}</CardTitle>
+                  <CardTitle className="text-base leading-6">
+                    {t(($) => $.order.payment_method)}
+                  </CardTitle>
                 </CardHeader>
                 <CardContent className="p-6 pt-0">
                   {paymentMethodsState.isPending ? (
@@ -191,7 +197,7 @@ export default function OrderDetailPage() {
                     <EmptyState
                       className="min-h-24"
                       data-testid="payment-methods-empty"
-                      title={t($ => $.common.empty)}
+                      title={t(($) => $.common.empty)}
                     />
                   ) : (
                     <RadioGroup
@@ -246,7 +252,7 @@ export default function OrderDetailPage() {
                       size="sm"
                       onClick={stripePreparation.retry}
                     >
-                      {t($ => $.common.retry)}
+                      {t(($) => $.common.retry)}
                     </Button>
                   </AlertDescription>
                 </Alert>
@@ -254,8 +260,8 @@ export default function OrderDetailPage() {
 
               {isStripePayment && stripePaymentIntent && (
                 <>
-                  <h2 className="text-base font-semibold leading-6 text-foreground">
-                    {t($ => $.order.credit_card_title)}
+                  <h2 className="text-base leading-6 font-semibold text-foreground">
+                    {t(($) => $.order.credit_card_title)}
                   </h2>
                   <StripePaymentForm
                     key={stripePaymentIntent.client_secret}
@@ -266,7 +272,7 @@ export default function OrderDetailPage() {
                     onCompleteChange={setPaymentComplete}
                   />
                   <div className="mt-3 mb-5 text-sm text-muted-foreground">
-                    {t($ => $.order.credit_card_security)}
+                    {t(($) => $.order.credit_card_security)}
                   </div>
                 </>
               )}
@@ -278,13 +284,13 @@ export default function OrderDetailPage() {
           <aside data-testid="order-side">
             <Card data-testid="order-summary">
               <CardHeader>
-                <CardTitle className="text-base leading-6">{t($ => $.order.total)}</CardTitle>
+                <CardTitle className="text-base leading-6">{t(($) => $.order.total)}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 {isDeposit ? (
                   <div className="space-y-2 text-sm">
                     <div className="flex items-center justify-between gap-4">
-                      {t($ => $.order.deposit_bonus)}
+                      {t(($) => $.order.deposit_bonus)}
                       <div className="text-right font-medium">
                         {moneyText(order.bounus, symbol)}
                       </div>
@@ -295,7 +301,7 @@ export default function OrderDetailPage() {
                 {isDeposit ? (
                   <div className="border-b border-border pb-4 text-sm">
                     <div className="flex items-center justify-between gap-4">
-                      {t($ => $.order.deposit_received)}
+                      {t(($) => $.order.deposit_received)}
                       <div className="text-right font-medium">
                         {moneyText(order.get_amount, symbol)}
                       </div>
@@ -320,27 +326,29 @@ export default function OrderDetailPage() {
                 )}
 
                 {order.discount_amount ? (
-                  <AmountBlock label={t($ => $.order.discount)}>
+                  <AmountBlock label={t(($) => $.order.discount)}>
                     {moneyText(order.discount_amount, symbol)}
                   </AmountBlock>
                 ) : null}
                 {order.surplus_amount ? (
-                  <AmountBlock label={t($ => $.order.surplus)}>
+                  <AmountBlock label={t(($) => $.order.surplus)}>
                     {moneyText(order.surplus_amount, symbol)}
                   </AmountBlock>
                 ) : null}
                 {order.refund_amount ? (
-                  <AmountBlock label={t($ => $.order.refund)}>
+                  <AmountBlock label={t(($) => $.order.refund)}>
                     - {moneyText(order.refund_amount, symbol)}
                   </AmountBlock>
                 ) : null}
                 {fee ? (
-                  <AmountBlock label={t($ => $.order.handling_fee)}>
+                  <AmountBlock label={t(($) => $.order.handling_fee)}>
                     + {(fee / 100).toFixed(2)}
                   </AmountBlock>
                 ) : null}
 
-                <div className="pt-2 text-sm text-muted-foreground">{t($ => $.order.grand_total)}</div>
+                <div className="pt-2 text-sm text-muted-foreground">
+                  {t(($) => $.order.grand_total)}
+                </div>
                 <div className="text-3xl font-semibold tracking-normal text-card-foreground">
                   {symbol} {(grandTotal / 100).toFixed(2)} {currency}
                 </div>
@@ -354,7 +362,7 @@ export default function OrderDetailPage() {
                   }
                   onClick={onPay}
                 >
-                  {t($ => $.order.checkout)}
+                  {t(($) => $.order.checkout)}
                 </Button>
               </CardContent>
             </Card>
@@ -374,11 +382,15 @@ export default function OrderDetailPage() {
           showCloseButton={false}
         >
           <DialogHeader className="sr-only">
-            <DialogTitle>{t($ => $.order.checkout)}</DialogTitle>
-            <DialogDescription>{t($ => $.order.waiting_pay)}</DialogDescription>
+            <DialogTitle>{t(($) => $.order.checkout)}</DialogTitle>
+            <DialogDescription>{t(($) => $.order.waiting_pay)}</DialogDescription>
           </DialogHeader>
           {qrcode.payUrl && (
-            <div className="flex justify-center" role="img" aria-label={t($ => $.common.scan_qrcode)}>
+            <div
+              className="flex justify-center"
+              role="img"
+              aria-label={t(($) => $.common.scan_qrcode)}
+            >
               <QRCodeSVG value={qrcode.payUrl} size={250} />
             </div>
           )}
@@ -387,7 +399,7 @@ export default function OrderDetailPage() {
               className="text-center text-sm text-muted-foreground"
               data-testid="payment-qrcode-status"
             >
-              {t($ => $.order.waiting_pay)}
+              {t(($) => $.order.waiting_pay)}
             </p>
           </DialogFooter>
         </DialogContent>
@@ -461,22 +473,22 @@ function OrderResult({ status }: { status?: number }) {
       ? {
           icon: <Info className="size-8" />,
           status: 'info',
-          title: t($ => $.order.processing_title),
-          subtitle: t($ => $.order.processing),
+          title: t(($) => $.order.processing_title),
+          subtitle: t(($) => $.order.processing),
         }
       : status === 2
         ? {
             icon: <TriangleAlert className="size-8" />,
             status: 'warning',
-            title: t($ => $.common.cancelled),
-            subtitle: t($ => $.order.cancel_timeout),
+            title: t(($) => $.common.cancelled),
+            subtitle: t(($) => $.order.cancel_timeout),
           }
         : status === 3 || status === 4
           ? {
               icon: <CheckCircle2 className="size-8" />,
               status: 'success',
-              title: t($ => $.common.completed),
-              subtitle: t($ => $.order.success),
+              title: t(($) => $.common.completed),
+              subtitle: t(($) => $.order.success),
             }
           : {
               icon: <Info className="size-8" />,
@@ -499,7 +511,7 @@ function OrderResult({ status }: { status?: number }) {
           {result.icon}
         </div>
         <div className="space-y-1">
-          <div className="text-lg font-semibold leading-7">{result.title}</div>
+          <div className="text-lg leading-7 font-semibold">{result.title}</div>
           {result.subtitle ? (
             <div className="text-sm text-muted-foreground">{result.subtitle}</div>
           ) : null}
@@ -508,7 +520,7 @@ function OrderResult({ status }: { status?: number }) {
           <Button asChild>
             <Link to="/knowledge">
               <BookOpen className="size-4" />
-              {t($ => $.order.view_tutorial)}
+              {t(($) => $.order.view_tutorial)}
             </Link>
           </Button>
         )}

@@ -429,7 +429,7 @@ function TicketChat({ ticketId }: { ticketId: number | string }) {
       <div
         ref={chatRef}
         data-testid="ticket-chat-messages"
-        className="min-h-0 flex-1 space-y-4 overflow-y-auto break-words px-4 py-4"
+        className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 break-words"
       >
         {current?.message?.map((item, index) =>
           item.is_me ? (

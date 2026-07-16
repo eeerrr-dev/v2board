@@ -43,12 +43,12 @@ export default function TicketDetailPage() {
   const submitReply = (event?: SyntheticEvent<HTMLFormElement>) => {
     event?.preventDefault();
     if (reply.isPending) return;
-    const loadingToast = toast.loading(t($ => $.ticket.reply_sending));
+    const loadingToast = toast.loading(t(($) => $.ticket.reply_sending));
     reply.mutate(
       { id: ticketId as string, message: message || undefined },
       {
         onSuccess: () => {
-          toast.success(t($ => $.ticket.reply_success));
+          toast.success(t(($) => $.ticket.reply_success));
           setMessage('');
         },
         onSettled: () => toast.dismiss(loadingToast),
@@ -63,12 +63,12 @@ export default function TicketDetailPage() {
       ? missingTicketText
       : ticket.isError
         ? undefined
-        : t($ => $.common.loading);
+        : t(($) => $.common.loading);
 
   return (
     <div
       data-slot="ticket-detail"
-      className="flex min-h-svh animate-in flex-col bg-background text-foreground fade-in-0 slide-in-from-bottom-1 duration-200 motion-reduce:animate-none"
+      className="flex min-h-svh animate-in flex-col bg-background text-foreground duration-200 fade-in-0 slide-in-from-bottom-1 motion-reduce:animate-none"
       data-testid="ticket-detail"
     >
       <header className="border-b border-border px-4 py-3" data-testid="ticket-detail-header">
@@ -82,11 +82,7 @@ export default function TicketDetailPage() {
         </div>
       </header>
 
-      <div
-        className="flex-1 overflow-y-auto px-4 py-4"
-        data-testid="ticket-chat"
-        ref={chatRef}
-      >
+      <div className="flex-1 overflow-y-auto px-4 py-4" data-testid="ticket-chat" ref={chatRef}>
         <div className="space-y-4">
           {data?.message.map((item, index) => (
             <div
@@ -124,7 +120,7 @@ export default function TicketDetailPage() {
           className="border-t border-border bg-background p-4 text-center text-sm text-muted-foreground"
           data-testid="ticket-closed-notice"
         >
-          {t($ => $.ticket.closed_notice)}
+          {t(($) => $.ticket.closed_notice)}
         </div>
       ) : ticket.data ? (
         <form
@@ -138,14 +134,14 @@ export default function TicketDetailPage() {
               onChange={(event) => setMessage(event.target.value)}
               type="text"
               data-testid="ticket-reply-input"
-              placeholder={t($ => $.ticket.reply_placeholder)}
+              placeholder={t(($) => $.ticket.reply_placeholder)}
             />
             <Button
               type="submit"
               size="icon"
               data-testid="ticket-reply-send"
               loading={reply.isPending}
-              aria-label={t($ => $.ticket.reply_placeholder)}
+              aria-label={t(($) => $.ticket.reply_placeholder)}
             >
               <Send className="size-4" />
             </Button>

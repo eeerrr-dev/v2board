@@ -48,7 +48,7 @@ export function DashboardNoticeCarousel({ notices }: DashboardNoticeCarouselProp
       <Carousel
         data-testid="dashboard-notice-carousel"
         setApi={setApi}
-        aria-label={t($ => $.notice.title)}
+        aria-label={t(($) => $.notice.title)}
       >
         <CarouselContent>
           {notices.map((notice, index) => (
@@ -56,13 +56,9 @@ export function DashboardNoticeCarousel({ notices }: DashboardNoticeCarouselProp
               key={notice.id}
               data-testid="dashboard-notice-slide"
               data-active={index === selectedIndex ? 'true' : 'false'}
-              aria-label={`${t($ => $.notice.title)} ${index + 1} / ${notices.length}`}
+              aria-label={`${t(($) => $.notice.title)} ${index + 1} / ${notices.length}`}
             >
-              <NoticeCard
-                notice={notice}
-                active={index === selectedIndex}
-                onOpen={openNotice}
-              />
+              <NoticeCard notice={notice} active={index === selectedIndex} onOpen={openNotice} />
             </CarouselItem>
           ))}
         </CarouselContent>
@@ -70,7 +66,7 @@ export function DashboardNoticeCarousel({ notices }: DashboardNoticeCarouselProp
           <div
             data-testid="dashboard-notice-dots"
             role="group"
-            aria-label={t($ => $.notice.title)}
+            aria-label={t(($) => $.notice.title)}
             className="mt-3 flex h-auto justify-center gap-1"
           >
             {notices.map((notice, index) => (
@@ -79,11 +75,11 @@ export function DashboardNoticeCarousel({ notices }: DashboardNoticeCarouselProp
                 type="button"
                 data-testid="dashboard-notice-dot"
                 data-active={index === selectedIndex ? 'true' : 'false'}
-                aria-label={`${t($ => $.notice.title)} ${index + 1}`}
+                aria-label={`${t(($) => $.notice.title)} ${index + 1}`}
                 aria-current={index === selectedIndex ? 'true' : undefined}
                 onClick={() => api?.scrollTo(index)}
                 className={cn(
-                  'h-1.5 w-6 rounded-full bg-border transition-colors hover:bg-muted-foreground/40 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                  'h-1.5 w-6 rounded-full bg-border transition-colors hover:bg-muted-foreground/40 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
                   index === selectedIndex && 'bg-primary',
                 )}
               />
@@ -130,7 +126,7 @@ function NoticeCard({
     <button
       type="button"
       data-testid="dashboard-notice-card"
-      className="flex w-full flex-col overflow-hidden rounded-xl border border-border bg-card text-left text-card-foreground shadow-sm transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      className="flex w-full flex-col overflow-hidden rounded-xl border border-border bg-card text-left text-card-foreground shadow-sm transition-colors hover:bg-accent/40 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
       onClick={() => onOpen(notice)}
     >
       <div
@@ -154,7 +150,7 @@ function NoticeCard({
           </>
         ) : null}
         <div className="relative">
-          <Badge>{t($ => $.notice.title)}</Badge>
+          <Badge>{t(($) => $.notice.title)}</Badge>
           <div className={cn('mt-10 space-y-1', notice.img_url && 'text-white')}>
             <div className="line-clamp-2 text-lg font-semibold">{notice.title}</div>
             <div className={cn('text-sm text-muted-foreground', notice.img_url && 'text-white/75')}>

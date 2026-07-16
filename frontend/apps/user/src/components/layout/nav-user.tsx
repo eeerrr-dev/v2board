@@ -100,12 +100,12 @@ export function NavUser({ email }: NavUserProps) {
             <DropdownMenuGroup>
               <DropdownMenuItem onSelect={() => goto('/profile')}>
                 <UserRound className="size-4" />
-                {t($ => $.nav.profile)}
+                {t(($) => $.nav.profile)}
               </DropdownMenuItem>
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger data-testid="app-language-trigger">
                   <Languages className="size-4" />
-                  {t($ => $.common.language)}
+                  {t(($) => $.common.language)}
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent data-testid="app-language-menu" className="min-w-40">
                   <LanguageMenuItems activeIndicator itemClassName="whitespace-nowrap" />
@@ -121,7 +121,7 @@ export function NavUser({ email }: NavUserProps) {
               }}
             >
               <LogOut className="size-4" />
-              {t($ => $.common.logout)}
+              {t(($) => $.common.logout)}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

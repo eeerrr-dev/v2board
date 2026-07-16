@@ -37,15 +37,15 @@ export default function NodePage() {
       id: 'name',
       accessorKey: 'name',
       meta: { className: 'font-medium text-foreground' },
-      header: () => <span>{t($ => $.node.simple_name)}</span>,
+      header: () => <span>{t(($) => $.node.simple_name)}</span>,
       cell: ({ row }) => row.original.name,
     },
     {
       id: 'status',
       meta: { align: 'center' },
       header: () => (
-        <HeaderTooltip className="justify-center" title={t($ => $.node.status_tip)}>
-          {t($ => $.node.status)}
+        <HeaderTooltip className="justify-center" title={t(($) => $.node.status_tip)}>
+          {t(($) => $.node.status)}
         </HeaderTooltip>
       ),
       cell: ({ row }) => {
@@ -56,7 +56,7 @@ export default function NodePage() {
             showDot
             aria-label={online ? 'online' : 'offline'}
           >
-            {online ? t($ => $.node.online) : t($ => $.node.offline)}
+            {online ? t(($) => $.node.online) : t(($) => $.node.offline)}
           </StatusBadge>
         );
       },
@@ -65,15 +65,15 @@ export default function NodePage() {
       id: 'rate',
       meta: { align: 'center' },
       header: () => (
-        <HeaderTooltip className="justify-center" title={t($ => $.node.rate_tip)}>
-          {t($ => $.node.rate)}
+        <HeaderTooltip className="justify-center" title={t(($) => $.node.rate_tip)}>
+          {t(($) => $.node.rate)}
         </HeaderTooltip>
       ),
       cell: ({ row }) => <StatusBadge>{String(row.original.rate)} x</StatusBadge>,
     },
     {
       id: 'tags',
-      header: () => <span>{t($ => $.node.tags)}</span>,
+      header: () => <span>{t(($) => $.node.tags)}</span>,
       cell: ({ row }) =>
         row.original.tags?.length ? (
           <div className="flex flex-wrap gap-1.5">
@@ -100,7 +100,7 @@ export default function NodePage() {
           role="status"
         >
           <Spinner className="size-5 text-muted-foreground" />
-          <span className="sr-only">{t($ => $.common.loading)}</span>
+          <span className="sr-only">{t(($) => $.common.loading)}</span>
         </div>
       </PageShell>
     );
@@ -109,10 +109,7 @@ export default function NodePage() {
   if (subscribe.isError) {
     return (
       <PageShell data-testid="node-page">
-        <ErrorState
-          onRetry={() => void subscribe.refetch()}
-          data-testid="node-subscribe-error"
-        />
+        <ErrorState onRetry={() => void subscribe.refetch()} data-testid="node-subscribe-error" />
       </PageShell>
     );
   }
@@ -135,7 +132,7 @@ export default function NodePage() {
           <Server className="size-4" />
           <AlertDescription>
             <span className="flex flex-wrap items-center gap-1">
-              <span>{t($ => $.node.no_available)}</span>
+              <span>{t(($) => $.node.no_available)}</span>
               <Button
                 asChild
                 data-testid="node-empty-action"
@@ -143,7 +140,7 @@ export default function NodePage() {
                 className="h-auto p-0 text-sm"
               >
                 <Link to={to}>
-                  {subscribe.data?.plan_id ? t($ => $.node.renew) : t($ => $.node.subscribe)}
+                  {subscribe.data?.plan_id ? t(($) => $.node.renew) : t(($) => $.node.subscribe)}
                 </Link>
               </Button>
             </span>
@@ -170,7 +167,7 @@ export default function NodePage() {
                 'data-testid': 'service-table-scroll',
                 tabIndex: 0,
                 role: 'region',
-                'aria-label': t($ => $.nav.node),
+                'aria-label': t(($) => $.nav.node),
                 onScroll,
               }}
               virtualizer={{ enabled: servers.length > VIRTUALIZE_MIN_ROWS }}

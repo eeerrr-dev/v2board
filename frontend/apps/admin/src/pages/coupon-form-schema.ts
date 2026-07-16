@@ -108,12 +108,7 @@ export const giftcardEditorSchema = z
         validValue && values.type === 1
           ? decimalToCents(values.value as string | number)
           : Number(values.value);
-      if (
-        isBlankInput(values.value) ||
-        !validValue ||
-        storedValue < 0 ||
-        storedValue > MAX_I32
-      ) {
+      if (isBlankInput(values.value) || !validValue || storedValue < 0 || storedValue > MAX_I32) {
         context.addIssue({
           code: 'custom',
           path: ['value'],

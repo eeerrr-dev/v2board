@@ -125,10 +125,7 @@ describe('confirm dialog queued behavior', () => {
     // alert-dialog semantics rather than an Ant modal shim).
     const dialog = await screen.findByRole('alertdialog', { name: 'Hooked' });
     expect(dialog).toHaveAttribute('data-slot', 'alert-dialog-content');
-    expect(within(dialog).getByText('Hooked')).toHaveAttribute(
-      'data-slot',
-      'alert-dialog-title',
-    );
+    expect(within(dialog).getByText('Hooked')).toHaveAttribute('data-slot', 'alert-dialog-title');
     expect(within(dialog).getByText('Body copy')).toHaveAttribute(
       'data-slot',
       'alert-dialog-description',

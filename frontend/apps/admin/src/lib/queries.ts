@@ -149,7 +149,8 @@ export const adminQueryOptions = {
   order: (id: number | undefined) =>
     queryOptions({
       queryKey: adminKeys.order(id),
-      queryFn: id == null ? skipToken : ({ signal }) => admin.orderDetail(apiClient, id, { signal }),
+      queryFn:
+        id == null ? skipToken : ({ signal }) => admin.orderDetail(apiClient, id, { signal }),
     }),
   user: (id: number | null | undefined) =>
     queryOptions({
@@ -254,8 +255,7 @@ export const useAdminUserTraffic = (
   userId: number | undefined,
   query: Omit<admin.AdminUserTrafficQuery, 'user_id'>,
   enabled: boolean,
-) =>
-  useQuery({ ...adminQueryOptions.userTraffic(userId, query), enabled });
+) => useQuery({ ...adminQueryOptions.userTraffic(userId, query), enabled });
 export const useConfig = (key?: string) => useQuery(adminQueryOptions.config(key));
 export const useAdminPlans = () => useQuery(adminQueryOptions.plans());
 export const useAdminPayments = () => useQuery(adminQueryOptions.payments());
@@ -265,8 +265,7 @@ export const usePaymentForm = (
   payment: string | undefined,
   id: number | undefined,
   enabled: boolean,
-) =>
-  useQuery({ ...adminQueryOptions.paymentForm(payment, id), enabled });
+) => useQuery({ ...adminQueryOptions.paymentForm(payment, id), enabled });
 export const useAdminUsers = (query: admin.AdminPageQuery) =>
   useQuery(adminQueryOptions.users(query));
 export const useAdminOrders = (query: admin.AdminPageQuery & { is_commission?: 0 | 1 }) =>
@@ -352,27 +351,18 @@ export function useSortPlansMutation() {
 export function useUpdateUserMutation() {
   return useInvalidatingMutation(
     (data: Parameters<typeof admin.updateUser>[1]) => admin.updateUser(apiClient, data),
-    [
-      usersScope,
-      userScope,
-    ],
+    [usersScope, userScope],
   );
 }
 
 export function useDeleteUserMutation() {
-  return useInvalidatingMutation(
-    (id: number) => admin.deleteUser(apiClient, id),
-    [usersScope],
-  );
+  return useInvalidatingMutation((id: number) => admin.deleteUser(apiClient, id), [usersScope]);
 }
 
 export function useResetUserSecretMutation() {
   return useInvalidatingMutation(
     (id: number) => admin.resetUserSecret(apiClient, id),
-    [
-      usersScope,
-      userScope,
-    ],
+    [usersScope, userScope],
   );
 }
 
@@ -430,10 +420,7 @@ export function useUpdateOrderMutation() {
   return useInvalidatingMutation(
     (vars: { tradeNo: string; key: 'commission_status' | 'status'; value: string | number }) =>
       admin.updateOrder(apiClient, vars.tradeNo, vars.key, vars.value),
-    [
-      ordersScope,
-      orderScope,
-    ],
+    [ordersScope, orderScope],
   );
 }
 
@@ -448,20 +435,14 @@ export function useAssignOrderMutation() {
 export function useReplyTicketMutation() {
   return useInvalidatingMutation(
     (data: Parameters<typeof admin.replyTicket>[1]) => admin.replyTicket(apiClient, data),
-    [
-      ticketsScope,
-      ticketScope,
-    ],
+    [ticketsScope, ticketScope],
   );
 }
 
 export function useCloseTicketMutation() {
   return useInvalidatingMutation(
     (id: number) => admin.closeTicket(apiClient, id),
-    [
-      ticketsScope,
-      ticketScope,
-    ],
+    [ticketsScope, ticketScope],
   );
 }
 
@@ -473,17 +454,11 @@ export function useSaveNoticeMutation() {
 }
 
 export function useDropNoticeMutation() {
-  return useInvalidatingMutation(
-    (id: number) => admin.dropNotice(apiClient, id),
-    [noticesScope],
-  );
+  return useInvalidatingMutation((id: number) => admin.dropNotice(apiClient, id), [noticesScope]);
 }
 
 export function useShowNoticeMutation() {
-  return useInvalidatingMutation(
-    (id: number) => admin.showNotice(apiClient, id),
-    [noticesScope],
-  );
+  return useInvalidatingMutation((id: number) => admin.showNotice(apiClient, id), [noticesScope]);
 }
 
 /**
@@ -536,17 +511,11 @@ export function useGenerateCouponMutation() {
 }
 
 export function useDropCouponMutation() {
-  return useInvalidatingMutation(
-    (id: number) => admin.dropCoupon(apiClient, id),
-    [couponsScope],
-  );
+  return useInvalidatingMutation((id: number) => admin.dropCoupon(apiClient, id), [couponsScope]);
 }
 
 export function useShowCouponMutation() {
-  return useInvalidatingMutation(
-    (id: number) => admin.showCoupon(apiClient, id),
-    [couponsScope],
-  );
+  return useInvalidatingMutation((id: number) => admin.showCoupon(apiClient, id), [couponsScope]);
 }
 
 export function useGenerateGiftcardMutation() {

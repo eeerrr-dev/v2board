@@ -33,12 +33,12 @@ export function SessionsCard() {
 
   const onRevoke = (sessionId: string) => {
     void confirmDialog({
-      title: t($ => $.common.attention),
-      description: t($ => $.profile.session_revoke_confirm),
-      confirmText: t($ => $.profile.session_revoke),
+      title: t(($) => $.common.attention),
+      description: t(($) => $.profile.session_revoke_confirm),
+      confirmText: t(($) => $.profile.session_revoke),
       onConfirm: () =>
         removeSession.mutateAsync(sessionId).then(() => {
-          toast.success(t($ => $.profile.session_revoke_success));
+          toast.success(t(($) => $.profile.session_revoke_success));
         }),
     });
   };
@@ -52,9 +52,9 @@ export function SessionsCard() {
           </SectionIcon>
           <div className="space-y-1">
             <CardTitle className="text-lg" data-testid="profile-card-title">
-              {t($ => $.profile.active_sessions)}
+              {t(($) => $.profile.active_sessions)}
             </CardTitle>
-            <CardDescription>{t($ => $.profile.active_sessions_desc)}</CardDescription>
+            <CardDescription>{t(($) => $.profile.active_sessions_desc)}</CardDescription>
           </div>
         </div>
       </CardHeader>
@@ -62,7 +62,7 @@ export function SessionsCard() {
         {sessions.isLoading ? (
           <div className="flex items-center gap-2 px-6 pb-6 text-sm text-muted-foreground">
             <Spinner className="size-4" />
-            <span>{t($ => $.common.loading)}</span>
+            <span>{t(($) => $.common.loading)}</span>
           </div>
         ) : sessions.isError ? (
           <div className="px-6 pb-6">
@@ -76,18 +76,18 @@ export function SessionsCard() {
             className="px-6 pb-6 text-sm text-muted-foreground"
             data-testid="profile-sessions-empty"
           >
-            {t($ => $.profile.no_sessions)}
+            {t(($) => $.profile.no_sessions)}
           </div>
         ) : (
           <TableScroll className="pb-2">
             <Table className="min-w-[560px]">
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead>{t($ => $.profile.session_device)}</TableHead>
-                  <TableHead>{t($ => $.profile.session_ip)}</TableHead>
-                  <TableHead>{t($ => $.profile.session_login_at)}</TableHead>
+                  <TableHead>{t(($) => $.profile.session_device)}</TableHead>
+                  <TableHead>{t(($) => $.profile.session_ip)}</TableHead>
+                  <TableHead>{t(($) => $.profile.session_login_at)}</TableHead>
                   <TableHead className="text-right">
-                    <span className="sr-only">{t($ => $.profile.session_revoke)}</span>
+                    <span className="sr-only">{t(($) => $.profile.session_revoke)}</span>
                   </TableHead>
                 </TableRow>
               </TableHeader>
@@ -103,7 +103,7 @@ export function SessionsCard() {
                           </span>
                           {isCurrent ? (
                             <Badge variant="secondary" data-testid="profile-session-current">
-                              {t($ => $.profile.session_current)}
+                              {t(($) => $.profile.session_current)}
                             </Badge>
                           ) : null}
                         </div>
@@ -122,7 +122,7 @@ export function SessionsCard() {
                           data-testid="profile-session-revoke"
                           onClick={() => onRevoke(sessionId)}
                         >
-                          {t($ => $.profile.session_revoke)}
+                          {t(($) => $.profile.session_revoke)}
                         </Button>
                       </TableCell>
                     </TableRow>

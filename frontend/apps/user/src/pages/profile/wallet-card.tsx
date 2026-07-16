@@ -65,7 +65,7 @@ export function WalletCard() {
 
   const data = info.data;
   const currency = comm?.currency;
-  const depositPlaceholder = t($ => $.profile.deposit_placeholder, { currency });
+  const depositPlaceholder = t(($) => $.profile.deposit_placeholder, { currency });
 
   const openDeposit = () => {
     depositForm.reset({ amount: '' });
@@ -97,7 +97,7 @@ export function WalletCard() {
       <CardHeader className="gap-4">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-2">
-            <CardDescription>{t($ => $.profile.wallet)}</CardDescription>
+            <CardDescription>{t(($) => $.profile.wallet)}</CardDescription>
             <CardTitle
               className="text-4xl font-semibold tracking-normal text-foreground sm:text-5xl"
               data-testid="profile-card-title"
@@ -116,10 +116,10 @@ export function WalletCard() {
       <CardContent className="flex flex-col gap-5">
         <div className="flex flex-col gap-4 rounded-lg border border-border bg-muted/40 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
-            <div className="text-sm font-medium leading-5">{t($ => $.profile.auto_renewal)}</div>
+            <div className="text-sm leading-5 font-medium">{t(($) => $.profile.auto_renewal)}</div>
           </div>
           <ProfileSwitch
-            ariaLabel={t($ => $.profile.auto_renewal)}
+            ariaLabel={t(($) => $.profile.auto_renewal)}
             checked={data?.auto_renewal}
             loading={pending.auto_renewal}
             onChange={(checked) => void toggle('auto_renewal', checked ? 1 : 0)}
@@ -131,7 +131,7 @@ export function WalletCard() {
           size="lg"
           onClick={openDeposit}
         >
-          {t($ => $.profile.recharge)}
+          {t(($) => $.profile.recharge)}
         </Button>
       </CardContent>
 
@@ -145,7 +145,7 @@ export function WalletCard() {
           showCloseButton={false}
         >
           <DialogHeader>
-            <DialogTitle>{t($ => $.profile.recharge)}</DialogTitle>
+            <DialogTitle>{t(($) => $.profile.recharge)}</DialogTitle>
             <DialogDescription>{depositPlaceholder}</DialogDescription>
           </DialogHeader>
           <form className="grid gap-4" onSubmit={onDeposit} noValidate>
@@ -180,10 +180,10 @@ export function WalletCard() {
             />
             <DialogFooter>
               <Button type="button" variant="outline" onClick={closeDeposit}>
-                {t($ => $.common.cancel)}
+                {t(($) => $.common.cancel)}
               </Button>
               <Button type="submit" data-testid="profile-deposit-confirm">
-                {t($ => $.profile.confirm)}
+                {t(($) => $.profile.confirm)}
               </Button>
             </DialogFooter>
           </form>

@@ -138,6 +138,9 @@ jobs:
       - name: Audit route, interaction, and viewport coverage
         run: node scripts/parity-config-audit.mjs
 
+      - name: Check formatting
+        run: pnpm format:check
+
       - name: Lint
         run: pnpm lint
 

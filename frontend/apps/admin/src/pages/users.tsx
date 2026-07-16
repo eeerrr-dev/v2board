@@ -199,7 +199,7 @@ function SortableColumnHeader({
   return (
     <button
       type="button"
-      className="inline-flex items-center gap-1.5 rounded-sm outline-none transition-colors select-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      className="inline-flex items-center gap-1.5 rounded-sm transition-colors outline-none select-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
       onClick={onSort}
     >
       {label}
@@ -1124,11 +1124,7 @@ function GenerateUserModal({
 
         <form className="space-y-4" onSubmit={submit} noValidate>
           <FieldError errors={[formErrors.root?.serverError]} />
-          <FieldSet
-            data-invalid={Boolean(
-              formErrors.email_prefix || formErrors.email_suffix,
-            )}
-          >
+          <FieldSet data-invalid={Boolean(formErrors.email_prefix || formErrors.email_suffix)}>
             <FieldLegend variant="label">邮箱</FieldLegend>
             <div className="flex items-center gap-2">
               {!generateCount ? (
@@ -1165,9 +1161,7 @@ function GenerateUserModal({
                 )}
               />
             </div>
-            <FieldError
-              errors={[formErrors.email_prefix, formErrors.email_suffix]}
-            />
+            <FieldError errors={[formErrors.email_prefix, formErrors.email_suffix]} />
           </FieldSet>
           <Field>
             <FieldLabel htmlFor="generate-password">密码</FieldLabel>

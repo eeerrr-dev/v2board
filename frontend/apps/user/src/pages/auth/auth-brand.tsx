@@ -8,7 +8,7 @@ export function AuthPanelBrand({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        'flex min-w-0 items-center gap-2.5 text-lg font-semibold leading-none text-foreground',
+        'flex min-w-0 items-center gap-2.5 text-lg leading-none font-semibold text-foreground',
         className,
       )}
     >

@@ -42,9 +42,12 @@ export function useSendEmailVerifyFlow({
       {
         onSuccess: (sent) => {
           if (!sent) return;
-          toast.success(t($ => $.auth.email_code_sent_title), {
-            description: t($ => $.auth.email_code_sent_description),
-          });
+          toast.success(
+            t(($) => $.auth.email_code_sent_title),
+            {
+              description: t(($) => $.auth.email_code_sent_description),
+            },
+          );
           cooldown.start();
         },
       },

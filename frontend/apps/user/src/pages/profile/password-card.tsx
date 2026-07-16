@@ -55,13 +55,13 @@ export function PasswordCard() {
         },
         {
           onSuccess: () => {
-            toast.success(t($ => $.profile.change_password_success));
+            toast.success(t(($) => $.profile.change_password_success));
             void navigate('/login');
           },
         },
       );
     },
-    () => toast.error(t($ => $.profile.password_mismatch)),
+    () => toast.error(t(($) => $.profile.password_mismatch)),
   );
 
   return (
@@ -72,7 +72,7 @@ export function PasswordCard() {
             <KeyRound className="size-4" />
           </SectionIcon>
           <CardTitle className="text-lg" data-testid="profile-card-title">
-            {t($ => $.profile.change_password)}
+            {t(($) => $.profile.change_password)}
           </CardTitle>
         </div>
       </CardHeader>
@@ -86,13 +86,15 @@ export function PasswordCard() {
                 const errorId = `${OLD_PASSWORD_ID}-error`;
                 return (
                   <Field className="gap-2.5" data-invalid={fieldState.invalid}>
-                    <FieldLabel htmlFor={OLD_PASSWORD_ID}>{t($ => $.profile.old_password)}</FieldLabel>
+                    <FieldLabel htmlFor={OLD_PASSWORD_ID}>
+                      {t(($) => $.profile.old_password)}
+                    </FieldLabel>
                     <Input
                       {...field}
                       id={OLD_PASSWORD_ID}
                       type="password"
                       autoComplete="current-password"
-                      placeholder={t($ => $.profile.old_password_placeholder)}
+                      placeholder={t(($) => $.profile.old_password_placeholder)}
                       aria-invalid={fieldState.invalid}
                       aria-describedby={fieldState.invalid ? errorId : undefined}
                     />
@@ -108,13 +110,15 @@ export function PasswordCard() {
                 const errorId = `${NEW_PASSWORD_ID}-error`;
                 return (
                   <Field className="gap-2.5" data-invalid={fieldState.invalid}>
-                    <FieldLabel htmlFor={NEW_PASSWORD_ID}>{t($ => $.profile.new_password)}</FieldLabel>
+                    <FieldLabel htmlFor={NEW_PASSWORD_ID}>
+                      {t(($) => $.profile.new_password)}
+                    </FieldLabel>
                     <Input
                       {...field}
                       id={NEW_PASSWORD_ID}
                       type="password"
                       autoComplete="new-password"
-                      placeholder={t($ => $.profile.new_password_placeholder)}
+                      placeholder={t(($) => $.profile.new_password_placeholder)}
                       aria-invalid={fieldState.invalid}
                       aria-describedby={fieldState.invalid ? errorId : undefined}
                     />
@@ -131,14 +135,14 @@ export function PasswordCard() {
                 return (
                   <Field className="gap-2.5" data-invalid={fieldState.invalid}>
                     <FieldLabel htmlFor={CONFIRM_PASSWORD_ID}>
-                      {t($ => $.profile.new_password)}
+                      {t(($) => $.profile.new_password)}
                     </FieldLabel>
                     <Input
                       {...field}
                       id={CONFIRM_PASSWORD_ID}
                       type="password"
                       autoComplete="new-password"
-                      placeholder={t($ => $.profile.new_password_placeholder)}
+                      placeholder={t(($) => $.profile.new_password_placeholder)}
                       aria-invalid={fieldState.invalid}
                       aria-describedby={fieldState.invalid ? errorId : undefined}
                     />
@@ -154,7 +158,7 @@ export function PasswordCard() {
             data-testid="profile-password-save"
             loading={changePassword.isPending}
           >
-            {t($ => $.profile.save)}
+            {t(($) => $.profile.save)}
           </Button>
         </form>
       </CardContent>

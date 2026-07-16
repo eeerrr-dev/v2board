@@ -18,11 +18,13 @@ describe('RouteErrorBoundary white-screen guard', () => {
       { i18n: true },
     );
 
-    const failedLabel = i18n!.t($ => $.common.route_load_failed);
+    const failedLabel = i18n!.t(($) => $.common.route_load_failed);
     expect(screen.getByRole('alert')).toHaveTextContent(failedLabel);
-    expect(screen.getByRole('alert')).toHaveTextContent(i18n!.t($ => $.common.route_refresh_hint));
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      i18n!.t(($) => $.common.route_refresh_hint),
+    );
     expect(
-      screen.getByRole('button', { name: i18n!.t($ => $.common.refresh_page) }),
+      screen.getByRole('button', { name: i18n!.t(($) => $.common.refresh_page) }),
     ).toBeInTheDocument();
 
     rerender(
@@ -49,7 +51,7 @@ describe('RouteErrorBoundary white-screen guard', () => {
       { i18n: true },
     );
 
-    await user.click(screen.getByRole('button', { name: i18n!.t($ => $.common.refresh_page) }));
+    await user.click(screen.getByRole('button', { name: i18n!.t(($) => $.common.refresh_page) }));
 
     expect(reload).toHaveBeenCalledTimes(1);
 

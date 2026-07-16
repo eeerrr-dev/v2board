@@ -121,9 +121,7 @@ function Field({
   const register = useCallback((slot: FieldSlot, id: string | undefined) => {
     setSlotIds((current) => (current[slot] === id ? current : { ...current, [slot]: id }));
     return () => {
-      setSlotIds((current) =>
-        current[slot] === id ? { ...current, [slot]: undefined } : current,
-      );
+      setSlotIds((current) => (current[slot] === id ? { ...current, [slot]: undefined } : current));
     };
   }, []);
   const context = useMemo(() => ({ defaultIds, register }), [defaultIds, register]);
@@ -140,10 +138,7 @@ function Field({
           slotIds.description,
           invalid ? slotIds.error : undefined,
         )}
-        aria-errormessage={mergeAriaIds(
-          requestedErrorMessage,
-          invalid ? slotIds.error : undefined,
-        )}
+        aria-errormessage={mergeAriaIds(requestedErrorMessage, invalid ? slotIds.error : undefined)}
         aria-invalid={invalid || undefined}
         data-slot="field"
         data-invalid={dataInvalid}

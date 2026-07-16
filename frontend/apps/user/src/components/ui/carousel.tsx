@@ -110,9 +110,7 @@ export function Carousel({
   }, [api, setApi]);
 
   return (
-    <CarouselContext
-      value={{ activeSlides, carouselRef, api, orientation, selectedIndex }}
-    >
+    <CarouselContext value={{ activeSlides, carouselRef, api, orientation, selectedIndex }}>
       <div
         {...props}
         data-slot="carousel"

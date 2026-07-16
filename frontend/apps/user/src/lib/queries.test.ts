@@ -68,8 +68,14 @@ describe('user query state behavior', () => {
     expect(apiUser.getSubscribe).toHaveBeenCalledWith(apiClient, { signal });
 
     // The hooks consume the same centralized definitions instead of redefining keys.
-    expect((callHook(() => useUserInfo()) as unknown as UseQueryOptions).queryKey).toEqual(['user', 'info']);
-    expect((callHook(() => useSubscribe()) as unknown as UseQueryOptions).queryKey).toEqual(['user', 'subscribe']);
+    expect((callHook(() => useUserInfo()) as unknown as UseQueryOptions).queryKey).toEqual([
+      'user',
+      'info',
+    ]);
+    expect((callHook(() => useSubscribe()) as unknown as UseQueryOptions).queryKey).toEqual([
+      'user',
+      'subscribe',
+    ]);
   });
 
   it('defines the login-session probe with a stable key and forwards TanStack aborts', async () => {
@@ -91,7 +97,9 @@ describe('user query state behavior', () => {
   it('keeps the previous knowledge list while a new search request is pending', async () => {
     const { useKnowledge } = await import('./queries');
 
-    const options = callHook(() => useKnowledge('zh-CN', 'new keyword')) as unknown as UseQueryOptions<
+    const options = callHook(() =>
+      useKnowledge('zh-CN', 'new keyword'),
+    ) as unknown as UseQueryOptions<
       KnowledgeCategory,
       Error,
       KnowledgeCategory,
@@ -139,12 +147,16 @@ describe('user query state behavior', () => {
       currency: 'cny',
     });
 
-    const disabled = callHook(() => useStripePaymentIntent(undefined, undefined)) as unknown as UseQueryOptions;
+    const disabled = callHook(() =>
+      useStripePaymentIntent(undefined, undefined),
+    ) as unknown as UseQueryOptions;
     expect(disabled.queryFn).toBe(skipTokenMock);
     expect(disabled.staleTime).toBe(0);
     expect(disabled.gcTime).toBe(0);
 
-    const enabled = callHook(() => useStripePaymentIntent('ORDER123', 9)) as unknown as UseQueryOptions;
+    const enabled = callHook(() =>
+      useStripePaymentIntent('ORDER123', 9),
+    ) as unknown as UseQueryOptions;
     expect(enabled.enabled).toBe(true);
     expect(enabled.queryKey).toEqual(['user', 'stripePaymentIntent', 'ORDER123', 9]);
     expect(enabled.staleTime).toBe(0);
@@ -157,9 +169,11 @@ describe('user query state behavior', () => {
       { signal },
     );
 
-    const optedOut = callHook(() => useStripePaymentIntent('ORDER123', 9, {
-      enabled: false,
-    })) as unknown as UseQueryOptions;
+    const optedOut = callHook(() =>
+      useStripePaymentIntent('ORDER123', 9, {
+        enabled: false,
+      }),
+    ) as unknown as UseQueryOptions;
     expect(optedOut.enabled).toBe(false);
   });
 
@@ -174,7 +188,9 @@ describe('user query state behavior', () => {
 
   it('invalidates the session list after a revoke so the removed device disappears', async () => {
     const { useRemoveSessionMutation } = await import('./queries');
-    const mutation = callHook(() => useRemoveSessionMutation()) as unknown as { onSuccess: () => void };
+    const mutation = callHook(() => useRemoveSessionMutation()) as unknown as {
+      onSuccess: () => void;
+    };
 
     invalidateQueries.mockReset();
     expect(mutation.onSuccess()).toBeUndefined();
@@ -222,13 +238,22 @@ describe('user query state behavior', () => {
 
     // The undefined keys stay inert because the factory swaps the queryFn for
     // skipToken, so no wrapper hook needs its own `enabled` identity gate.
-    expect((callHook(() => useOrder(undefined)) as unknown as UseQueryOptions).queryFn).toBe(skipTokenMock);
-    expect((callHook(() => usePlan(undefined)) as unknown as UseQueryOptions).queryFn).toBe(skipTokenMock);
-    expect((callHook(() => useTicket(undefined)) as unknown as UseQueryOptions).queryFn).toBe(skipTokenMock);
+    expect((callHook(() => useOrder(undefined)) as unknown as UseQueryOptions).queryFn).toBe(
+      skipTokenMock,
+    );
+    expect((callHook(() => usePlan(undefined)) as unknown as UseQueryOptions).queryFn).toBe(
+      skipTokenMock,
+    );
+    expect((callHook(() => useTicket(undefined)) as unknown as UseQueryOptions).queryFn).toBe(
+      skipTokenMock,
+    );
     expect(
-      (callHook(() => useKnowledgeDetail(undefined, 'zh-CN')) as unknown as UseQueryOptions).queryFn,
+      (callHook(() => useKnowledgeDetail(undefined, 'zh-CN')) as unknown as UseQueryOptions)
+        .queryFn,
     ).toBe(skipTokenMock);
-    expect((callHook(() => useOrder('T123')) as unknown as UseQueryOptions).queryFn).toBeTypeOf('function');
+    expect((callHook(() => useOrder('T123')) as unknown as UseQueryOptions).queryFn).toBeTypeOf(
+      'function',
+    );
   });
 
   it('keeps the user/info and subscribe queryFns pure (chat reporting moved to QueryCache)', async () => {
@@ -344,7 +369,9 @@ describe('user query state behavior', () => {
 
   it('invalidates every cached credential projection after reset-subscribe', async () => {
     const { useResetSubscribeMutation } = await import('./queries');
-    const mutation = callHook(() => useResetSubscribeMutation()) as unknown as { onSuccess: () => void };
+    const mutation = callHook(() => useResetSubscribeMutation()) as unknown as {
+      onSuccess: () => void;
+    };
 
     invalidateQueries.mockReset();
     expect(mutation.onSuccess()).toBeUndefined();

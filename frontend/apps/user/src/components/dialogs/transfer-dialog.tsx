@@ -83,15 +83,15 @@ export function TransferDialog({ max, children }: TransferDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger asChild>
-        {children ?? <Button type="button">{t($ => $.invite.transfer)}</Button>}
+        {children ?? <Button type="button">{t(($) => $.invite.transfer)}</Button>}
       </DialogTrigger>
       <DialogContent className="sm:max-w-md" data-testid="invite-dialog">
         <DialogHeader>
           <DialogTitle data-testid="invite-dialog-title">
-            {t($ => $.dashboard.transfer_to_balance)}
+            {t(($) => $.dashboard.transfer_to_balance)}
           </DialogTitle>
           <DialogDescription>
-            {t($ => $.invite.current_commission_balance)}: {maxText}
+            {t(($) => $.invite.current_commission_balance)}: {maxText}
           </DialogDescription>
         </DialogHeader>
 
@@ -99,12 +99,12 @@ export function TransferDialog({ max, children }: TransferDialogProps) {
           <Alert variant="destructive" className="bg-card">
             <AlertCircle className="size-4" />
             <AlertDescription>
-              {t($ => $.invite.transfer_notice, { title: getSiteTitle() })}
+              {t(($) => $.invite.transfer_notice, { title: getSiteTitle() })}
             </AlertDescription>
           </Alert>
           <div className="space-y-2">
             <Label htmlFor="invite-transfer-current">
-              {t($ => $.invite.current_commission_balance)}
+              {t(($) => $.invite.current_commission_balance)}
             </Label>
             <Input id="invite-transfer-current" disabled value={maxText} readOnly />
           </div>
@@ -117,12 +117,12 @@ export function TransferDialog({ max, children }: TransferDialogProps) {
                 return (
                   <Field data-invalid={fieldState.invalid}>
                     <FieldLabel htmlFor={TRANSFER_AMOUNT_ID}>
-                      {t($ => $.invite.transfer_amount)}
+                      {t(($) => $.invite.transfer_amount)}
                     </FieldLabel>
                     <Input
                       {...field}
                       id={TRANSFER_AMOUNT_ID}
-                      placeholder={t($ => $.invite.transfer_placeholder)}
+                      placeholder={t(($) => $.invite.transfer_placeholder)}
                       aria-invalid={fieldState.invalid}
                       aria-describedby={fieldState.invalid ? errorId : undefined}
                     />
@@ -134,11 +134,11 @@ export function TransferDialog({ max, children }: TransferDialogProps) {
             <DialogFooter data-testid="invite-dialog-footer">
               <DialogClose asChild>
                 <Button type="button" variant="outline">
-                  {t($ => $.common.cancel)}
+                  {t(($) => $.common.cancel)}
                 </Button>
               </DialogClose>
               <Button type="submit" loading={transfer.isPending}>
-                {t($ => $.profile.confirm)}
+                {t(($) => $.profile.confirm)}
               </Button>
             </DialogFooter>
           </form>

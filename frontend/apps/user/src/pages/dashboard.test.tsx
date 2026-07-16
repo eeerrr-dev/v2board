@@ -152,7 +152,11 @@ vi.mock('react-i18next', () => ({
   // Trans resolves like t() with markup tags stripped: the bolded count is
   // presentation, and the assertions read textContent either way.
   Trans: ({ i18nKey, values }: { i18nKey: TranslationInput; values?: TranslationValues }) => (
-    <>{createTestTranslation(mocks.labels).t(i18nKey, values).replace(/<[^>]+>/g, '')}</>
+    <>
+      {createTestTranslation(mocks.labels)
+        .t(i18nKey, values)
+        .replace(/<[^>]+>/g, '')}
+    </>
   ),
 }));
 

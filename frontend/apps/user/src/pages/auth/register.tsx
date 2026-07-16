@@ -42,13 +42,13 @@ export default function RegisterPage() {
   return (
     <>
       <AuthPanel
-        title={t($ => $.auth.register_title)}
-        description={t($ => $.auth.register_description)}
+        title={t(($) => $.auth.register_title)}
+        description={t(($) => $.auth.register_description)}
         onSubmit={submit}
         footer={
           <>
-            {t($ => $.auth.have_account)}{' '}
-            <AuthFooterLink to="/login">{t($ => $.auth.sign_in)}</AuthFooterLink>
+            {t(($) => $.auth.have_account)}{' '}
+            <AuthFooterLink to="/login">{t(($) => $.auth.sign_in)}</AuthFooterLink>
           </>
         }
       >
@@ -61,8 +61,8 @@ export default function RegisterPage() {
             {hasEmailWhitelist ? (
               <AuthEmailWithSuffixField
                 id="register-email"
-                label={t($ => $.auth.email)}
-                selectLabel={t($ => $.auth.email_domain)}
+                label={t(($) => $.auth.email)}
+                selectLabel={t(($) => $.auth.email_domain)}
                 suffixes={emailSuffixes}
                 value={selectedEmailSuffix}
                 onChange={setEmailSuffix}
@@ -70,7 +70,7 @@ export default function RegisterPage() {
                 error={errors.email}
               />
             ) : (
-              <AuthField id="register-email" label={t($ => $.auth.email)} error={errors.email}>
+              <AuthField id="register-email" label={t(($) => $.auth.email)} error={errors.email}>
                 <Input
                   id="register-email"
                   type="email"
@@ -86,10 +86,12 @@ export default function RegisterPage() {
             {config?.is_email_verify ? (
               <AuthEmailCodeField
                 id="register-email-code"
-                label={t($ => $.auth.email_code)}
-                buttonLabel={cooldownActive ? cooldownRemaining : t($ => $.auth.send_code)}
+                label={t(($) => $.auth.email_code)}
+                buttonLabel={cooldownActive ? cooldownRemaining : t(($) => $.auth.send_code)}
                 buttonAriaLabel={
-                  cooldownActive ? t($ => $.auth.code_sent, { seconds: cooldownRemaining }) : undefined
+                  cooldownActive
+                    ? t(($) => $.auth.code_sent, { seconds: cooldownRemaining })
+                    : undefined
                 }
                 disabled={cooldownActive || isSendingCode}
                 loading={isSendingCode}
@@ -101,10 +103,10 @@ export default function RegisterPage() {
 
             <AuthPasswordConfirmationFields
               passwordId="register-password"
-              passwordLabel={t($ => $.auth.password)}
+              passwordLabel={t(($) => $.auth.password)}
               passwordInputProps={registerInput('password')}
               confirmId="register-confirm-password"
-              confirmLabel={t($ => $.auth.confirm_password)}
+              confirmLabel={t(($) => $.auth.confirm_password)}
               confirmInputProps={registerInput('confirm_password')}
               passwordError={errors.password}
               confirmError={errors.confirmPassword}
@@ -113,7 +115,9 @@ export default function RegisterPage() {
               id="register-invite-code"
               error={errors.inviteCode}
               label={
-                config?.is_invite_force ? t($ => $.auth.invite_code) : t($ => $.auth.invite_code_optional)
+                config?.is_invite_force
+                  ? t(($) => $.auth.invite_code)
+                  : t(($) => $.auth.invite_code_optional)
               }
             >
               <Input
@@ -141,7 +145,7 @@ export default function RegisterPage() {
               loading={isPending}
               disabled={isPending || Boolean(config?.tos_url && !tosChecked)}
             >
-              {t($ => $.auth.submit_register)}
+              {t(($) => $.auth.submit_register)}
             </AuthSubmitButton>
           </AuthFormStack>
         )}

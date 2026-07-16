@@ -10,9 +10,7 @@ export interface HashNavigationRedirectOptions {
   passthroughPaths?: string[];
 }
 
-export function hashNavigationRedirectPlugin(
-  options: HashNavigationRedirectOptions = {},
-): Plugin {
+export function hashNavigationRedirectPlugin(options: HashNavigationRedirectOptions = {}): Plugin {
   const passthroughPaths = new Set(options.passthroughPaths ?? []);
 
   return {

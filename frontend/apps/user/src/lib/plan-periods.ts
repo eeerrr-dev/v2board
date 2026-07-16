@@ -33,12 +33,12 @@ export const PURCHASABLE_PLAN_PERIODS: readonly PurchasablePlanPeriod[] = PLAN_P
 
 /** PlanPeriod -> canonical i18next selector. */
 export const PLAN_PERIOD_LABELS: Record<PlanPeriod, SelectorParam> = {
-  month_price: $ => $.plan.monthly,
-  quarter_price: $ => $.plan.quarterly,
-  half_year_price: $ => $.plan.half_year,
-  year_price: $ => $.plan.yearly,
-  two_year_price: $ => $.plan.two_year,
-  three_year_price: $ => $.plan.three_year,
-  onetime_price: $ => $.plan.onetime,
-  reset_price: $ => $.plan.reset,
+  month_price: ($) => $.plan.monthly,
+  quarter_price: ($) => $.plan.quarterly,
+  half_year_price: ($) => $.plan.half_year,
+  year_price: ($) => $.plan.yearly,
+  two_year_price: ($) => $.plan.two_year,
+  three_year_price: ($) => $.plan.three_year,
+  onetime_price: ($) => $.plan.onetime,
+  reset_price: ($) => $.plan.reset,
 };

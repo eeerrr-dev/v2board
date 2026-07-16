@@ -38,9 +38,9 @@ import { formatBackendDateMinuteSlash } from '@v2board/config/format';
 import { useCloseTicketMutation, useSaveTicketMutation, useTickets } from '@/lib/queries';
 
 const LEVELS: { value: TicketLevel; labelKey: SelectorParam }[] = [
-  { value: 0, labelKey: $ => $.ticket.level_low },
-  { value: 1, labelKey: $ => $.ticket.level_medium },
-  { value: 2, labelKey: $ => $.ticket.level_high },
+  { value: 0, labelKey: ($) => $.ticket.level_low },
+  { value: 1, labelKey: ($) => $.ticket.level_medium },
+  { value: 2, labelKey: ($) => $.ticket.level_high },
 ];
 
 const ticketLevelSchema = z.union([z.literal(0), z.literal(1), z.literal(2)]);
@@ -93,17 +93,17 @@ export default function TicketsPage() {
   const ticketColumns = [
     {
       meta: { className: 'font-medium text-foreground', headerClassName: 'w-16' },
-      header: t($ => $.ticket.col_id),
+      header: t(($) => $.ticket.col_id),
       cell: ({ row }) => row.original.id,
     },
     {
       meta: { className: 'max-w-[260px] truncate font-medium text-foreground' },
-      header: t($ => $.ticket.subject),
+      header: t(($) => $.ticket.subject),
       cell: ({ row }) => row.original.subject,
     },
     {
       meta: { className: 'text-muted-foreground' },
-      header: t($ => $.ticket.level),
+      header: t(($) => $.ticket.level),
       cell: ({ row }) => {
         const levelLabel = LEVELS[row.original.level]?.labelKey;
         return levelLabel ? t(levelLabel) : '';
@@ -111,7 +111,7 @@ export default function TicketsPage() {
     },
     {
       meta: { className: 'text-muted-foreground' },
-      header: t($ => $.ticket.status),
+      header: t(($) => $.ticket.status),
       cell: ({ row }) => (
         <TicketStatus
           closed={row.original.status === 1}
@@ -121,17 +121,17 @@ export default function TicketsPage() {
     },
     {
       meta: { className: 'text-muted-foreground' },
-      header: t($ => $.ticket.created_at_col),
+      header: t(($) => $.ticket.created_at_col),
       cell: ({ row }) => formatBackendDateMinuteSlash(row.original.created_at),
     },
     {
       meta: { className: 'text-muted-foreground' },
-      header: t($ => $.ticket.last_reply_col),
+      header: t(($) => $.ticket.last_reply_col),
       cell: ({ row }) => formatBackendDateMinuteSlash(row.original.updated_at),
     },
     {
       meta: { align: 'right', className: 'text-muted-foreground' },
-      header: t($ => $.ticket.action),
+      header: t(($) => $.ticket.action),
       cell: ({ row }) => (
         <div className="flex justify-end gap-1">
           <Button
@@ -143,7 +143,7 @@ export default function TicketsPage() {
             onClick={() => openTicket(row.original.id)}
           >
             <Eye className="size-3.5" />
-            {t($ => $.ticket.view)}
+            {t(($) => $.ticket.view)}
           </Button>
           <Button
             type="button"
@@ -154,7 +154,7 @@ export default function TicketsPage() {
             onClick={() => closeTicket(row.original.id)}
           >
             <XCircle className="size-3.5" />
-            {t($ => $.ticket.close_ticket)}
+            {t(($) => $.ticket.close_ticket)}
           </Button>
         </div>
       ),
@@ -179,9 +179,9 @@ export default function TicketsPage() {
     // AlertDialog before firing the mutation. The dialog owns the in-flight
     // loading state and swallows a rejected close.
     void confirmDialog({
-      title: t($ => $.common.attention),
-      description: t($ => $.ticket.confirm_close),
-      confirmText: t($ => $.ticket.close_ticket),
+      title: t(($) => $.common.attention),
+      description: t(($) => $.ticket.confirm_close),
+      confirmText: t(($) => $.ticket.close_ticket),
       onConfirm: () => close.mutateAsync(id),
     });
   };
@@ -199,11 +199,11 @@ export default function TicketsPage() {
         >
           <CardHeader className="gap-3 py-6 sm:flex sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-1.5">
-              <CardTitle>{t($ => $.ticket.history)}</CardTitle>
+              <CardTitle>{t(($) => $.ticket.history)}</CardTitle>
             </div>
             <Button type="button" data-testid="ticket-new-trigger" onClick={() => setOpen(true)}>
               <Plus className="size-4" />
-              {t($ => $.ticket.new)}
+              {t(($) => $.ticket.new)}
             </Button>
           </CardHeader>
           <CardContent className="p-0">
@@ -233,8 +233,8 @@ export default function TicketsPage() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-lg" data-testid="ticket-dialog">
           <DialogHeader>
-            <DialogTitle data-testid="ticket-dialog-title">{t($ => $.ticket.new)}</DialogTitle>
-            <DialogDescription>{t($ => $.ticket.message_placeholder)}</DialogDescription>
+            <DialogTitle data-testid="ticket-dialog-title">{t(($) => $.ticket.new)}</DialogTitle>
+            <DialogDescription>{t(($) => $.ticket.message_placeholder)}</DialogDescription>
           </DialogHeader>
           <form className="grid gap-4" onSubmit={saveTicket} noValidate>
             <Controller
@@ -242,13 +242,13 @@ export default function TicketsPage() {
               name="subject"
               render={({ field, fieldState }) => (
                 <Field data-invalid={fieldState.invalid}>
-                  <FieldLabel htmlFor={TICKET_SUBJECT_ID}>{t($ => $.ticket.subject)}</FieldLabel>
+                  <FieldLabel htmlFor={TICKET_SUBJECT_ID}>{t(($) => $.ticket.subject)}</FieldLabel>
                   <Input
                     {...field}
                     id={TICKET_SUBJECT_ID}
                     aria-invalid={fieldState.invalid}
                     aria-describedby={fieldState.error ? `${TICKET_SUBJECT_ID}-error` : undefined}
-                    placeholder={t($ => $.ticket.subject_placeholder)}
+                    placeholder={t(($) => $.ticket.subject_placeholder)}
                   />
                   <FieldError id={`${TICKET_SUBJECT_ID}-error`} errors={[fieldState.error]} />
                 </Field>
@@ -259,7 +259,7 @@ export default function TicketsPage() {
               name="level"
               render={({ field, fieldState }) => (
                 <Field data-invalid={fieldState.invalid}>
-                  <FieldLabel htmlFor={TICKET_LEVEL_ID}>{t($ => $.ticket.level_form)}</FieldLabel>
+                  <FieldLabel htmlFor={TICKET_LEVEL_ID}>{t(($) => $.ticket.level_form)}</FieldLabel>
                   <Select
                     name={field.name}
                     value={field.value === undefined ? undefined : String(field.value)}
@@ -273,7 +273,7 @@ export default function TicketsPage() {
                       data-testid="ticket-select-trigger"
                       onBlur={field.onBlur}
                     >
-                      <SelectValue placeholder={t($ => $.ticket.level_placeholder)} />
+                      <SelectValue placeholder={t(($) => $.ticket.level_placeholder)} />
                     </SelectTrigger>
                     <SelectContent data-testid="ticket-select-content">
                       {LEVELS.map((item) => (
@@ -292,14 +292,14 @@ export default function TicketsPage() {
               name="message"
               render={({ field, fieldState }) => (
                 <Field data-invalid={fieldState.invalid}>
-                  <FieldLabel htmlFor={TICKET_MESSAGE_ID}>{t($ => $.ticket.message)}</FieldLabel>
+                  <FieldLabel htmlFor={TICKET_MESSAGE_ID}>{t(($) => $.ticket.message)}</FieldLabel>
                   <Textarea
                     {...field}
                     id={TICKET_MESSAGE_ID}
                     rows={5}
                     aria-invalid={fieldState.invalid}
                     aria-describedby={fieldState.error ? `${TICKET_MESSAGE_ID}-error` : undefined}
-                    placeholder={t($ => $.ticket.message_placeholder)}
+                    placeholder={t(($) => $.ticket.message_placeholder)}
                   />
                   <FieldError id={`${TICKET_MESSAGE_ID}-error`} errors={[fieldState.error]} />
                 </Field>
@@ -307,10 +307,10 @@ export default function TicketsPage() {
             />
             <DialogFooter data-testid="ticket-dialog-footer">
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-                {t($ => $.common.cancel)}
+                {t(($) => $.common.cancel)}
               </Button>
               <Button type="submit" loading={save.isPending}>
-                {t($ => $.ticket.confirm)}
+                {t(($) => $.ticket.confirm)}
               </Button>
             </DialogFooter>
           </form>
@@ -322,7 +322,11 @@ export default function TicketsPage() {
 
 function TicketStatus({ closed, replied }: { closed: boolean; replied: boolean }) {
   const { t } = useTranslation();
-  const label = closed ? t($ => $.ticket.closed) : replied ? t($ => $.ticket.replied) : t($ => $.ticket.pending);
+  const label = closed
+    ? t(($) => $.ticket.closed)
+    : replied
+      ? t(($) => $.ticket.replied)
+      : t(($) => $.ticket.pending);
   const tone: StatusTone = closed ? 'success' : replied ? 'info' : 'destructive';
   return (
     <StatusBadge data-testid="ticket-status" tone={tone} showDot>

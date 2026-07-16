@@ -108,9 +108,9 @@ export function useOrderCheckoutController(tradeNo: string | undefined): OrderCh
   const paymentMethods = order ? (paymentsQuery.data ?? []) : [];
   const paymentMethodsError =
     paymentsQuery.error instanceof Error
-      ? paymentsQuery.error.message || t($ => $.common.error_title)
+      ? paymentsQuery.error.message || t(($) => $.common.error_title)
       : paymentsQuery.error
-        ? t($ => $.common.error_title)
+        ? t(($) => $.common.error_title)
         : null;
   const hasLoadedOrder = Boolean(order);
   const isLoading = isOrderPending;
@@ -212,13 +212,16 @@ export function useOrderCheckoutController(tradeNo: string | undefined): OrderCh
       try {
         const result = await stripePaymentRef.current?.confirm();
         if (!result || result.error) {
-          toast.error(result?.error ?? t($ => $.order.credit_card_check));
+          toast.error(result?.error ?? t(($) => $.order.credit_card_check));
           return;
         }
         setPollTradeNo(tradeNo);
-        toast.loading(t($ => $.order.stripe_verifying), { duration: 5000 });
+        toast.loading(
+          t(($) => $.order.stripe_verifying),
+          { duration: 5000 },
+        );
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : t($ => $.common.error_title));
+        toast.error(error instanceof Error ? error.message : t(($) => $.common.error_title));
       } finally {
         stripeConfirmingRef.current = false;
         setStripeConfirming(false);
@@ -237,13 +240,13 @@ export function useOrderCheckoutController(tradeNo: string | undefined): OrderCh
             setPayUrl(typeof result.data === 'string' ? result.data : undefined);
           } else if (result.type === 1 && typeof result.data === 'string') {
             window.location.href = result.data;
-            toast.info(t($ => $.order.redirecting_checkout));
+            toast.info(t(($) => $.order.redirecting_checkout));
           } else if (result.type === -1) {
             // Free / balance-covered order (backend total_amount <= 0): it settles
             // immediately with no gateway, so there is no QR or redirect. Without this
             // branch onPay fell through silently. Confirm it and refresh the order + account
             // state so the result card and balance render at once.
-            toast.success(t($ => $.order.success));
+            toast.success(t(($) => $.order.success));
             refreshAfterPayment();
           }
         },
@@ -255,9 +258,9 @@ export function useOrderCheckoutController(tradeNo: string | undefined): OrderCh
     const cancelTradeNo = order?.trade_no;
     if (!cancelTradeNo) return;
     void confirmDialog({
-      title: t($ => $.common.attention),
-      description: t($ => $.order.cancel_confirm),
-      confirmText: t($ => $.order.cancel),
+      title: t(($) => $.common.attention),
+      description: t(($) => $.order.cancel_confirm),
+      confirmText: t(($) => $.order.cancel),
       confirmButtonProps: { loading: cancelMutation.isPending },
       onConfirm: () => cancelMutation.mutateAsync(cancelTradeNo),
     });

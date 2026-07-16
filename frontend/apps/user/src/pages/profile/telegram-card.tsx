@@ -41,7 +41,7 @@ export function TelegramBindCard() {
     setConfirmOpen(false);
     unbindTelegram.mutate(undefined, {
       onSuccess: () => {
-        toast.success(t($ => $.profile.reset_success));
+        toast.success(t(($) => $.profile.reset_success));
       },
     });
   };
@@ -59,7 +59,7 @@ export function TelegramBindCard() {
                   <Send className="size-4" />
                 </SectionIcon>
                 <CardTitle className="text-lg" data-testid="profile-card-title">
-                  {t($ => $.profile.telegram_bind)}
+                  {t(($) => $.profile.telegram_bind)}
                 </CardTitle>
               </div>
               <Button
@@ -67,7 +67,7 @@ export function TelegramBindCard() {
                 size="sm"
                 onClick={() => setTelegramOpen(true)}
               >
-                {t($ => $.profile.start_now)}
+                {t(($) => $.profile.start_now)}
               </Button>
             </div>
           </CardHeader>
@@ -78,7 +78,7 @@ export function TelegramBindCard() {
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-1.5">
                 <CardTitle className="text-lg" data-testid="profile-card-title">
-                  {t($ => $.profile.telegram_bind)}
+                  {t(($) => $.profile.telegram_bind)}
                 </CardTitle>
                 <CardDescription data-testid="profile-telegram-id">
                   Telegram ID: {String(data.telegram_id)}
@@ -90,7 +90,7 @@ export function TelegramBindCard() {
                 size="sm"
                 onClick={() => setConfirmOpen(true)}
               >
-                {t($ => $.profile.telegram_unbind)}
+                {t(($) => $.profile.telegram_unbind)}
               </Button>
             </div>
           </CardHeader>
@@ -108,8 +108,8 @@ export function TelegramBindCard() {
       />
       <ProfileConfirmDialog
         open={confirmOpen}
-        title={t($ => $.profile.telegram_unbind_confirm)}
-        description={t($ => $.profile.telegram_unbind_tip)}
+        title={t(($) => $.profile.telegram_unbind_confirm)}
+        description={t(($) => $.profile.telegram_unbind_tip)}
         onCancel={() => setConfirmOpen(false)}
         onConfirm={onConfirmUnbind}
       />
@@ -132,12 +132,12 @@ export function TelegramDiscussCard() {
               <MessageCircle className="size-4" />
             </SectionIcon>
             <CardTitle className="text-lg" data-testid="profile-card-title">
-              {t($ => $.profile.telegram_discuss)}
+              {t(($) => $.profile.telegram_discuss)}
             </CardTitle>
           </div>
           <Button asChild size="sm">
             <a href={comm.telegram_discuss_link} target="_blank" rel="noreferrer">
-              {t($ => $.profile.join_now)}
+              {t(($) => $.profile.join_now)}
             </a>
           </Button>
         </div>
@@ -170,7 +170,7 @@ function TelegramBindDialog({
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
       <DialogContent data-testid="profile-telegram-bind-dialog" aria-describedby={undefined}>
         <DialogHeader>
-          <DialogTitle>{t($ => $.profile.telegram_bind)}</DialogTitle>
+          <DialogTitle>{t(($) => $.profile.telegram_bind)}</DialogTitle>
         </DialogHeader>
         {botError ? (
           <ErrorState onRetry={onRetry} data-testid="profile-telegram-bot-error" />
@@ -179,10 +179,10 @@ function TelegramBindDialog({
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-sm font-medium">
                 <Link2 className="size-4 text-muted-foreground" />
-                {t($ => $.profile.telegram_step1)}
+                {t(($) => $.profile.telegram_step1)}
               </div>
               <div className="text-sm text-muted-foreground">
-                {t($ => $.profile.telegram_search)}
+                {t(($) => $.profile.telegram_search)}
                 <a
                   href={`https://t.me/${botUsername}`}
                   className="ml-1 font-medium text-foreground underline underline-offset-4"
@@ -194,15 +194,18 @@ function TelegramBindDialog({
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-sm font-medium">
                 <Copy className="size-4 text-muted-foreground" />
-                {t($ => $.profile.telegram_step2)}
+                {t(($) => $.profile.telegram_step2)}
               </div>
-              <div className="text-sm text-muted-foreground">{t($ => $.profile.telegram_send)}</div>
+              <div className="text-sm text-muted-foreground">
+                {t(($) => $.profile.telegram_send)}
+              </div>
               <button
                 type="button"
                 className="flex w-full cursor-pointer rounded-md border border-border bg-muted px-3 py-2 text-left font-mono text-sm text-foreground"
                 data-testid="profile-copy-code"
                 onClick={async () => {
-                  if (await copyText(bindCommand)) toast.success(t($ => $.dashboard.copy_success));
+                  if (await copyText(bindCommand))
+                    toast.success(t(($) => $.dashboard.copy_success));
                 }}
               >
                 {bindCommand}
@@ -215,14 +218,14 @@ function TelegramBindDialog({
             role="status"
           >
             <Spinner />
-            <span>{t($ => $.common.loading)}</span>
+            <span>{t(($) => $.common.loading)}</span>
           </div>
         ) : (
           <ErrorState onRetry={onRetry} data-testid="profile-telegram-bot-error" />
         )}
         <DialogFooter>
           <Button data-testid="profile-telegram-bind-confirm" onClick={onClose}>
-            {t($ => $.profile.i_know)}
+            {t(($) => $.profile.i_know)}
           </Button>
         </DialogFooter>
       </DialogContent>

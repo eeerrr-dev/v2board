@@ -1,8 +1,4 @@
-import {
-  NAVIGATOR_LOCALES,
-  isSupportedLocale,
-  type SupportedLocale,
-} from './locale-registry';
+import { NAVIGATOR_LOCALES, isSupportedLocale, type SupportedLocale } from './locale-registry';
 
 export function normalizeSupportedLocale(
   locale: string | null | undefined,

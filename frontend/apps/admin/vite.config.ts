@@ -3,10 +3,7 @@ import react, { reactCompilerPreset } from '@vitejs/plugin-react';
 import babel from '@rolldown/plugin-babel';
 import tailwindcss from '@tailwindcss/vite';
 import path from 'node:path';
-import {
-  buildAppViteConfig,
-  hashNavigationRedirectPlugin,
-} from '@v2board/config/vite';
+import { buildAppViteConfig, hashNavigationRedirectPlugin } from '@v2board/config/vite';
 
 const adminDevPath = (process.env.VITE_DEV_ADMIN_PATH ?? 'admin').replace(/^\/+|\/+$/g, '');
 const adminPassthroughPaths = adminDevPath ? [`/${adminDevPath}`] : [];

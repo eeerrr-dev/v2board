@@ -106,7 +106,7 @@ function OrderChart({ data, label, className }: OrderChartProps) {
       config={config}
       initialDimension={CHART_INITIAL_DIMENSION}
       data-testid="admin-order-chart"
-      className={cn('h-[360px] min-h-[360px] min-w-0 w-full aspect-auto', className)}
+      className={cn('aspect-auto h-[360px] min-h-[360px] w-full min-w-0', className)}
     >
       <LineChart
         accessibilityLayer
@@ -150,7 +150,7 @@ function RankingChart({ data, label, className }: RankingChartProps) {
       config={rankingConfig}
       initialDimension={CHART_INITIAL_DIMENSION}
       data-testid="admin-ranking-chart"
-      className={cn('h-[360px] min-h-[360px] min-w-0 w-full aspect-auto', className)}
+      className={cn('aspect-auto h-[360px] min-h-[360px] w-full min-w-0', className)}
     >
       <BarChart
         accessibilityLayer

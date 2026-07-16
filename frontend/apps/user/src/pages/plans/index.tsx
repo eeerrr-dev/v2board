@@ -55,18 +55,18 @@ export default function PlansPage() {
   return (
     <PageShell data-testid="plans-page">
       <PageHeader
-        title={t($ => $.plan.pick_title)}
-        description={t($ => $.plan.pick_best_for_you)}
+        title={t(($) => $.plan.pick_title)}
+        description={t(($) => $.plan.pick_best_for_you)}
         actions={
           <SegmentedControl
             data-testid="plan-tabs"
-            aria-label={t($ => $.plan.pick_title)}
+            aria-label={t(($) => $.plan.pick_title)}
             value={filter}
             onValueChange={setFilter}
             items={[
-              { value: 'all', label: t($ => $.plan.filter_all) },
-              { value: 'period', label: t($ => $.plan.filter_period) },
-              { value: 'traffic', label: t($ => $.plan.filter_traffic) },
+              { value: 'all', label: t(($) => $.plan.filter_all) },
+              { value: 'period', label: t(($) => $.plan.filter_period) },
+              { value: 'traffic', label: t(($) => $.plan.filter_traffic) },
             ]}
           />
         }
@@ -81,7 +81,7 @@ export default function PlansPage() {
           </CardContent>
         </Card>
       ) : filtered.length === 0 ? (
-        <EmptyState data-testid="plan-empty" title={t($ => $.plan.no_plan)} />
+        <EmptyState data-testid="plan-empty" title={t(($) => $.plan.no_plan)} />
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {filtered.map((plan) => {
@@ -96,7 +96,7 @@ export default function PlansPage() {
               'group flex h-full w-full rounded-xl border border-border bg-card text-left text-card-foreground shadow-sm transition-all',
               isUnavailable
                 ? 'pointer-events-none opacity-60'
-                : 'hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-md focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                : 'hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-md focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
             );
 
             const cardBody = (
@@ -112,7 +112,7 @@ export default function PlansPage() {
                         className="whitespace-nowrap"
                         tone="warning"
                       >
-                        {t($ => $.plan.almost_sold_out)}
+                        {t(($) => $.plan.almost_sold_out)}
                       </StatusBadge>
                     ) : null}
                   </div>
@@ -132,7 +132,10 @@ export default function PlansPage() {
                       ) : (
                         <span data-testid="plan-price-unavailable">
                           {t(
-                            $ => $.errors["This payment period cannot be purchased, please choose another period"],
+                            ($) =>
+                              $.errors[
+                                'This payment period cannot be purchased, please choose another period'
+                              ],
                           )}
                         </span>
                       )}
@@ -157,10 +160,10 @@ export default function PlansPage() {
                     )}
                   >
                     {isSoldOut
-                      ? t($ => $.plan.sold_out)
+                      ? t(($) => $.plan.sold_out)
                       : isPriceUnavailable
-                        ? t($ => $.plan.select_other)
-                        : t($ => $.plan.buy_now)}
+                        ? t(($) => $.plan.select_other)
+                        : t(($) => $.plan.buy_now)}
                   </span>
                 </CardContent>
               </Card>

@@ -156,8 +156,8 @@ export function ConfirmDialogProvider() {
 
 export function getConfirmDialogDefaultText(translate: (selector: SelectorParam) => string) {
   return {
-    confirmText: translate($ => $.common.confirm),
-    cancelText: translate($ => $.common.cancel),
+    confirmText: translate(($) => $.common.confirm),
+    cancelText: translate(($) => $.common.cancel),
   };
 }
 

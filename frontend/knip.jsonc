@@ -1,5 +1,10 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
+  // Note: the tailwindStylesheet paths in .prettierrc.json are deliberately
+  // spelled without a ./ prefix. knip claims any ./-prefixed path string found
+  // in a known config file for the root workspace, which detaches the app
+  // stylesheet from the app's tailwind CSS compilation and falsely marks its
+  // @import children and the tailwindcss/tw-animate-css dependencies unused.
   // An export consumed by its own module is a visibility choice, not dead code;
   // only exports unused everywhere (including their own file) are reported.
   "ignoreExportsUsedInFile": true,

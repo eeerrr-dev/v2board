@@ -67,7 +67,7 @@ export function DashboardSubscribeMenu({ onOpenQr, subscribeUrl }: DashboardSubs
           </span>
         </button>
       ))}
-      <div className="px-1 pb-1 pt-2">
+      <div className="px-1 pt-2 pb-1">
         <Button asChild className="w-full">
           <Link to="/knowledge" data-testid="dashboard-subscribe-tutorial">
             {t(($) => $.dashboard.use_tutorial)}

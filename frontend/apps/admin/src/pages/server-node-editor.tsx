@@ -71,7 +71,11 @@ export function NodeEditor({
   });
   // useFormState, not the mutable nodeForm.formState proxy: the React Compiler
   // caches proxy reads, which freezes error/submit UI after the first render.
-  const { errors: nodeFormErrors, isSubmitting, isSubmitted } = useFormState({ control: nodeForm.control });
+  const {
+    errors: nodeFormErrors,
+    isSubmitting,
+    isSubmitted,
+  } = useFormState({ control: nodeForm.control });
   const values = useWatch({
     control: nodeForm.control,
     compute: (formValues) => formValues,
@@ -154,10 +158,7 @@ export function NodeEditor({
 
           <div className="space-y-5 px-4 pb-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <Field
-                className="sm:col-span-2"
-                data-invalid={Boolean(nodeFormErrors.name)}
-              >
+              <Field className="sm:col-span-2" data-invalid={Boolean(nodeFormErrors.name)}>
                 <FieldLabel htmlFor="node-name">节点名称</FieldLabel>
                 <Input
                   {...nodeForm.register('name')}
@@ -206,10 +207,7 @@ export function NodeEditor({
               />
             </Field>
 
-            <fieldset
-              className="min-w-0 space-y-2"
-              data-invalid={Boolean(nodeFormErrors.group_id)}
-            >
+            <fieldset className="min-w-0 space-y-2" data-invalid={Boolean(nodeFormErrors.group_id)}>
               <legend className="text-sm font-medium text-foreground">权限组</legend>
               <Controller
                 control={nodeForm.control}

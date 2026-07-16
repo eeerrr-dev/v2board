@@ -121,7 +121,10 @@ export function installLocaleDocumentEnvironment(
   return () => instance.off('languageChanged', onLanguageChanged);
 }
 
-function configureI18n(options: CreateI18nOptions, lazy: boolean): {
+function configureI18n(
+  options: CreateI18nOptions,
+  lazy: boolean,
+): {
   instance: I18nInstance;
   initialized: Promise<unknown>;
 } {

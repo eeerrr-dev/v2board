@@ -125,9 +125,9 @@ describe('admin data router', () => {
     // One pathless middleware branch gates every protected page (layer 1).
     expect(children.filter((route) => (route.middleware?.length ?? 0) > 0)).toHaveLength(1);
     expect(protectedBranch?.middleware).toHaveLength(1);
-    expect(
-      protectedBranch?.children?.some((route) => route.path === '/ticket/:ticket_id'),
-    ).toBe(true);
+    expect(protectedBranch?.children?.some((route) => route.path === '/ticket/:ticket_id')).toBe(
+      true,
+    );
     expect(dashboard?.lazy).toBeTypeOf('function');
     expect(login?.lazy).toBeTypeOf('function');
     expect(login?.loader).toBeTypeOf('function');
@@ -137,10 +137,7 @@ describe('admin data router', () => {
 
   it('redirects unauthenticated protected navigations before a page module renders', async () => {
     const middleware = createRequireAdminMiddleware(new QueryClient());
-    await expectRedirect(
-      () => runAuthMiddleware(middleware, '/order'),
-      '/login?redirect=%2Forder',
-    );
+    await expectRedirect(() => runAuthMiddleware(middleware, '/order'), '/login?redirect=%2Forder');
     expect(mocks.checkLogin).not.toHaveBeenCalled();
   });
 

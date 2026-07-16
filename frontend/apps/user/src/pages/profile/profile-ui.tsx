@@ -84,7 +84,7 @@ export function ProfileConfirmDialog({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel asChild>
-            <Button variant="outline">{t($ => $.common.cancel)}</Button>
+            <Button variant="outline">{t(($) => $.common.cancel)}</Button>
           </AlertDialogCancel>
           <AlertDialogAction asChild>
             <Button
@@ -94,7 +94,7 @@ export function ProfileConfirmDialog({
                 onConfirm();
               }}
             >
-              {t($ => $.profile.confirm)}
+              {t(($) => $.profile.confirm)}
             </Button>
           </AlertDialogAction>
         </AlertDialogFooter>

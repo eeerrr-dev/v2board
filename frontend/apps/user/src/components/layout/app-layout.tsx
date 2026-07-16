@@ -78,40 +78,40 @@ const NAV: NavGroup[] = [
   {
     id: 'primary',
     items: [
-      { to: '/dashboard', labelKey: $ => $.nav.dashboard, icon: Gauge },
-      { to: '/knowledge', labelKey: $ => $.nav.knowledge, icon: BookOpen },
+      { to: '/dashboard', labelKey: ($) => $.nav.dashboard, icon: Gauge },
+      { to: '/knowledge', labelKey: ($) => $.nav.knowledge, icon: BookOpen },
     ],
   },
   {
     id: 'subscribe',
-    labelKey: $ => $.nav.group_subscribe,
+    labelKey: ($) => $.nav.group_subscribe,
     items: [
-      { to: '/plan', labelKey: $ => $.nav.buy_subscribe, icon: ShoppingBag },
-      { to: '/node', labelKey: $ => $.nav.node, icon: Server },
+      { to: '/plan', labelKey: ($) => $.nav.buy_subscribe, icon: ShoppingBag },
+      { to: '/node', labelKey: ($) => $.nav.node, icon: Server },
     ],
   },
   {
     id: 'finance',
-    labelKey: $ => $.nav.group_finance,
+    labelKey: ($) => $.nav.group_finance,
     items: [
-      { to: '/order', labelKey: $ => $.nav.orders, icon: ReceiptText },
-      { to: '/invite', labelKey: $ => $.nav.invite, icon: UsersRound },
+      { to: '/order', labelKey: ($) => $.nav.orders, icon: ReceiptText },
+      { to: '/invite', labelKey: ($) => $.nav.invite, icon: UsersRound },
     ],
   },
   {
     id: 'user',
-    labelKey: $ => $.nav.group_user,
+    labelKey: ($) => $.nav.group_user,
     items: [
-      { to: '/profile', labelKey: $ => $.nav.profile, icon: UserRound },
-      { to: '/ticket', labelKey: $ => $.nav.tickets, icon: Headphones },
-      { to: '/traffic', labelKey: $ => $.nav.traffic, icon: Activity },
+      { to: '/profile', labelKey: ($) => $.nav.profile, icon: UserRound },
+      { to: '/ticket', labelKey: ($) => $.nav.tickets, icon: Headphones },
+      { to: '/traffic', labelKey: ($) => $.nav.traffic, icon: Activity },
     ],
   },
 ];
 
 const DETAIL_LABELS: { match: RegExp; labelKey: SelectorParam }[] = [
-  { match: /^\/order\/[^/]+$/, labelKey: $ => $.order.detail },
-  { match: /^\/plan\/[^/]+$/, labelKey: $ => $.plan.checkout_title },
+  { match: /^\/order\/[^/]+$/, labelKey: ($) => $.order.detail },
+  { match: /^\/plan\/[^/]+$/, labelKey: ($) => $.plan.checkout_title },
 ];
 
 const SIDEBAR_STATE_COOKIE = 'sidebar_state';
@@ -155,8 +155,8 @@ function AppSidebar({ siteTitle, email }: { siteTitle: string; email: string }) 
       id="sidebar"
       variant="sidebar"
       collapsible="icon"
-      sheetTitle={t($ => $.nav.primary_nav)}
-      sheetDescription={t($ => $.nav.mobile_nav_description)}
+      sheetTitle={t(($) => $.nav.primary_nav)}
+      sheetDescription={t(($) => $.nav.mobile_nav_description)}
     >
       {/* Wordmark-only brand (no logo chip) with the collapse trigger living in
           the sidebar itself. Collapsed, the wordmark hides and the size-8
@@ -167,15 +167,15 @@ function AppSidebar({ siteTitle, email }: { siteTitle: string; email: string }) 
           <Link
             to="/dashboard"
             onClick={closeMobile}
-            className="min-w-0 truncate rounded-md px-2 py-1 text-base font-semibold text-sidebar-foreground outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring group-data-[collapsible=icon]:hidden"
+            className="min-w-0 truncate rounded-md px-2 py-1 text-base font-semibold text-sidebar-foreground outline-hidden group-data-[collapsible=icon]:hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring"
           >
             {siteTitle}
           </Link>
-          <SidebarTrigger className="size-8 shrink-0" aria-label={t($ => $.nav.toggle_nav)} />
+          <SidebarTrigger className="size-8 shrink-0" aria-label={t(($) => $.nav.toggle_nav)} />
         </div>
       </SidebarHeader>
 
-      <SidebarContent role="navigation" aria-label={t($ => $.nav.primary_nav)}>
+      <SidebarContent role="navigation" aria-label={t(($) => $.nav.primary_nav)}>
         {NAV.map((group) => (
           <SidebarGroup key={group.id}>
             {group.labelKey ? (
@@ -243,7 +243,7 @@ function AppLayoutContent({ loading, title: titleProp }: AppLayoutProps = {}) {
   const title = titleProp ?? (activeLabel ? t(activeLabel) : '');
   // Static: the trigger opens a three-option theme menu, so a state-dependent
   // enable/disable label would misdescribe it.
-  const themeControlLabel = t($ => $.common.toggle_theme);
+  const themeControlLabel = t(($) => $.common.toggle_theme);
 
   return (
     <SidebarProvider
@@ -277,7 +277,7 @@ function AppLayoutContent({ loading, title: titleProp }: AppLayoutProps = {}) {
           <div className="mx-auto flex w-full max-w-6xl items-center gap-1 px-4 sm:px-6 lg:gap-2">
             {/* The desktop collapse control lives in the sidebar header; this
                 trigger only opens the mobile drawer. */}
-            <SidebarTrigger className="-ml-1 md:hidden" aria-label={t($ => $.nav.toggle_nav)} />
+            <SidebarTrigger className="-ml-1 md:hidden" aria-label={t(($) => $.nav.toggle_nav)} />
 
             <Separator
               orientation="vertical"
@@ -317,7 +317,7 @@ function AppLayoutContent({ loading, title: titleProp }: AppLayoutProps = {}) {
                       className="gap-2"
                     >
                       <Monitor className="size-4" />
-                      {t($ => $.common.theme_system)}
+                      {t(($) => $.common.theme_system)}
                     </DropdownMenuRadioItem>
                     <DropdownMenuRadioItem
                       value="light"
@@ -325,11 +325,11 @@ function AppLayoutContent({ loading, title: titleProp }: AppLayoutProps = {}) {
                       className="gap-2"
                     >
                       <Sun className="size-4" />
-                      {t($ => $.common.theme_light)}
+                      {t(($) => $.common.theme_light)}
                     </DropdownMenuRadioItem>
                     <DropdownMenuRadioItem value="dark" data-theme-option="dark" className="gap-2">
                       <Moon className="size-4" />
-                      {t($ => $.common.theme_dark)}
+                      {t(($) => $.common.theme_dark)}
                     </DropdownMenuRadioItem>
                   </DropdownMenuRadioGroup>
                 </DropdownMenuContent>
@@ -345,7 +345,7 @@ function AppLayoutContent({ loading, title: titleProp }: AppLayoutProps = {}) {
               className="flex w-full flex-1 items-center justify-center px-4 py-10"
             >
               <Spinner className="size-6" />
-              <span className="sr-only">{t($ => $.common.loading)}</span>
+              <span className="sr-only">{t(($) => $.common.loading)}</span>
             </div>
           </div>
         ) : (
@@ -364,12 +364,9 @@ function AppLayoutFallback() {
   const { t } = useTranslation();
   // Keep the same stable surface hook as the hydrated shell.
   return (
-    <div
-      role="status"
-      className="flex min-h-screen items-center justify-center bg-background"
-    >
+    <div role="status" className="flex min-h-screen items-center justify-center bg-background">
       <Spinner className="size-6" />
-      <span className="sr-only">{t($ => $.common.loading)}</span>
+      <span className="sr-only">{t(($) => $.common.loading)}</span>
     </div>
   );
 }

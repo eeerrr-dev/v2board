@@ -233,10 +233,7 @@ function DataTable<TData>({
   const rows = table.getRowModel().rows;
   const columnCount = table.getAllLeafColumns().length;
   const shouldVirtualize = Boolean(virtualizer?.enabled && rows.length > 0 && !empty);
-  const getVirtualRowKey = useCallback(
-    (index: number) => rows[index]?.id ?? index,
-    [rows],
-  );
+  const getVirtualRowKey = useCallback((index: number) => rows[index]?.id ?? index, [rows]);
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
     enabled: shouldVirtualize,
@@ -298,7 +295,7 @@ function DataTable<TData>({
                       <button
                         type="button"
                         data-slot="table-sort"
-                        className="inline-flex items-center gap-1.5 rounded-sm outline-none transition-colors select-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                        className="inline-flex items-center gap-1.5 rounded-sm transition-colors outline-none select-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
                         onClick={header.column.getToggleSortingHandler()}
                       >
                         {label}

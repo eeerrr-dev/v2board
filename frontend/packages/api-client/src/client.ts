@@ -319,8 +319,7 @@ function serializeForm(data: unknown, nullFormValue: 'omit' | 'empty'): string {
       parts.push(`${key}=${encodeURIComponent(String(value))}`);
     },
   };
-  const source =
-    nullFormValue === 'empty' ? replaceNullFormValues(data, new WeakMap()) : data;
+  const source = nullFormValue === 'empty' ? replaceNullFormValues(data, new WeakMap()) : data;
   axios.toFormData(source as object, target, {
     indexes: true,
     maxDepth: 20,
@@ -328,10 +327,7 @@ function serializeForm(data: unknown, nullFormValue: 'omit' | 'empty'): string {
   return parts.join('&');
 }
 
-function replaceNullFormValues(
-  value: unknown,
-  seen: WeakMap<object, unknown>,
-): unknown {
+function replaceNullFormValues(value: unknown, seen: WeakMap<object, unknown>): unknown {
   if (value === null) return '';
   if (value === undefined || typeof value !== 'object') return value;
   if (seen.has(value)) return seen.get(value);

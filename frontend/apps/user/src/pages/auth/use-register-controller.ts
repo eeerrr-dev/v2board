@@ -134,12 +134,12 @@ export function useRegisterController(): RegisterController {
     if (!validated.success) return;
     const formValues = validated.data;
     if (config?.tos_url && !tosChecked) {
-      toast.error(i18nGet('请求失败'), { description: t($ => $.auth.tos_required) });
+      toast.error(i18nGet('请求失败'), { description: t(($) => $.auth.tos_required) });
       return;
     }
     const inviteCode = formValues.invite_code || initialInviteCode || '';
     if (config?.is_invite_force && !inviteCode) {
-      toast.error(i18nGet('请求失败'), { description: t($ => $.auth.invite_code_required) });
+      toast.error(i18nGet('请求失败'), { description: t(($) => $.auth.invite_code_required) });
       return;
     }
     register(
@@ -164,7 +164,6 @@ export function useRegisterController(): RegisterController {
     }
     await submitForm(event);
   };
-
 
   return {
     config,

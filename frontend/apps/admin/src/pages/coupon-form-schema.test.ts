@@ -14,9 +14,9 @@ describe('coupon and gift-card value integrity', () => {
       false,
     );
     expect(couponEditorSchema.safeParse({ ...common, type: 2, value: '101' }).success).toBe(false);
-    expect(
-      couponEditorSchema.safeParse({ ...common, type: 1, value: '21474836.48' }).success,
-    ).toBe(false);
+    expect(couponEditorSchema.safeParse({ ...common, type: 1, value: '21474836.48' }).success).toBe(
+      false,
+    );
     expect(couponEditorSchema.safeParse({ ...common, type: 2, value: '25' }).success).toBe(true);
   });
 

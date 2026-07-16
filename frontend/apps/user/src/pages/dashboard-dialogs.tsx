@@ -59,7 +59,7 @@ export function DashboardConfirmDialog({ action, onClose }: DashboardConfirmDial
     newPeriod.mutate(undefined, {
       onSuccess: () => {
         void subscribe.refetch().then(() => {
-          toast.success(t($ => $.dashboard.new_period_success));
+          toast.success(t(($) => $.dashboard.new_period_success));
           onClose();
           void navigate('/dashboard');
         });
@@ -70,12 +70,12 @@ export function DashboardConfirmDialog({ action, onClose }: DashboardConfirmDial
   const confirmLoading = saveOrder.isPending || newPeriod.isPending;
   const confirmTitle =
     action === 'reset-package'
-      ? t($ => $.dashboard.reset_package_confirm_title)
-      : t($ => $.dashboard.new_period_confirm_title);
+      ? t(($) => $.dashboard.reset_package_confirm_title)
+      : t(($) => $.dashboard.new_period_confirm_title);
   const confirmContent =
     action === 'reset-package'
-      ? t($ => $.dashboard.reset_package_confirm_content)
-      : t($ => $.dashboard.new_period_confirm_content);
+      ? t(($) => $.dashboard.reset_package_confirm_content)
+      : t(($) => $.dashboard.new_period_confirm_content);
 
   return (
     <AlertDialog
@@ -92,7 +92,7 @@ export function DashboardConfirmDialog({ action, onClose }: DashboardConfirmDial
         <AlertDialogFooter>
           <AlertDialogCancel asChild>
             <Button type="button" variant="outline" disabled={confirmLoading}>
-              {t($ => $.common.cancel)}
+              {t(($) => $.common.cancel)}
             </Button>
           </AlertDialogCancel>
           <AlertDialogAction asChild>
@@ -106,7 +106,7 @@ export function DashboardConfirmDialog({ action, onClose }: DashboardConfirmDial
                 else confirmNewPeriod();
               }}
             >
-              {t($ => $.common.confirm)}
+              {t(($) => $.common.confirm)}
             </Button>
           </AlertDialogAction>
         </AlertDialogFooter>
@@ -138,7 +138,7 @@ export function DashboardSubscribeDialog({
           aria-describedby={undefined}
         >
           <DialogHeader className="px-5 pt-5">
-            <DialogTitle>{t($ => $.dashboard.shortcut_one_click)}</DialogTitle>
+            <DialogTitle>{t(($) => $.dashboard.shortcut_one_click)}</DialogTitle>
           </DialogHeader>
           <DashboardSubscribeMenu subscribeUrl={subscribeUrl} onOpenQr={() => setQrOpen(true)} />
         </DialogContent>
@@ -147,14 +147,14 @@ export function DashboardSubscribeDialog({
       <Dialog open={qrOpen} onOpenChange={setQrOpen}>
         <DialogContent data-testid="dashboard-dialog" className="sm:max-w-xs">
           <DialogHeader>
-            <DialogTitle>{t($ => $.dashboard.scan_qrcode_subscribe)}</DialogTitle>
-            <DialogDescription>{t($ => $.dashboard.qrcode_client_tip)}</DialogDescription>
+            <DialogTitle>{t(($) => $.dashboard.scan_qrcode_subscribe)}</DialogTitle>
+            <DialogDescription>{t(($) => $.dashboard.qrcode_client_tip)}</DialogDescription>
           </DialogHeader>
           <div
             className="flex justify-center"
             data-testid="dashboard-subscribe-qrcode-image"
             role="img"
-            aria-label={t($ => $.dashboard.scan_qrcode_subscribe)}
+            aria-label={t(($) => $.dashboard.scan_qrcode_subscribe)}
           >
             <QRCodeSVG value={subscribeUrl} />
           </div>

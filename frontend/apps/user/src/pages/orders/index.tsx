@@ -14,11 +14,11 @@ import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
 import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@/components/ui/table';
 
 const STATUS_LABEL: Record<number, { key: SelectorParam; status: string }> = {
-  0: { key: $ => $.order.status_unpaid, status: 'error' },
-  1: { key: $ => $.order.status_processing, status: 'processing' },
-  2: { key: $ => $.order.status_cancelled, status: 'default' },
-  3: { key: $ => $.order.status_completed, status: 'success' },
-  4: { key: $ => $.order.status_credit, status: 'default' },
+  0: { key: ($) => $.order.status_unpaid, status: 'error' },
+  1: { key: ($) => $.order.status_processing, status: 'processing' },
+  2: { key: ($) => $.order.status_cancelled, status: 'default' },
+  3: { key: ($) => $.order.status_completed, status: 'success' },
+  4: { key: ($) => $.order.status_credit, status: 'default' },
 };
 
 // Rebuilt from the canonical lib/plan-periods table (plan-periods.test.ts pins
@@ -35,18 +35,18 @@ export default function OrdersPage() {
   const orders = data ?? [];
   const orderColumns = [
     {
-      header: t($ => $.order.trade_no_col),
+      header: t(($) => $.order.trade_no_col),
       cell: ({ row }) => (
         <Link
           to={`/order/${row.original.trade_no}`}
-          className="text-left font-medium text-foreground underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="text-left font-medium text-foreground underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
         >
           {row.original.trade_no}
         </Link>
       ),
     },
     {
-      header: t($ => $.order.period),
+      header: t(($) => $.order.period),
       cell: ({ row }) => {
         const periodLabelKey = row.original.period ? PERIOD_LABEL[row.original.period] : undefined;
         const periodLabel = periodLabelKey ? t(periodLabelKey) : undefined;
@@ -57,11 +57,11 @@ export default function OrdersPage() {
       accessorKey: 'total_amount',
       sortingFn: 'basic',
       meta: { align: 'right', className: 'font-medium' },
-      header: t($ => $.order.amount),
+      header: t(($) => $.order.amount),
       cell: ({ row }) => formatCentsPlain(row.original.total_amount),
     },
     {
-      header: t($ => $.order.status),
+      header: t(($) => $.order.status),
       cell: ({ row }) => {
         const status = STATUS_LABEL[row.original.status];
         return <StatusPill status={status?.status}>{status ? t(status.key) : ''}</StatusPill>;
@@ -71,16 +71,16 @@ export default function OrdersPage() {
       accessorKey: 'created_at',
       sortingFn: 'basic',
       meta: { className: 'text-muted-foreground' },
-      header: t($ => $.order.created_at),
+      header: t(($) => $.order.created_at),
       cell: ({ row }) => formatBackendDateMinuteSlash(row.original.created_at),
     },
     {
       meta: { align: 'right' },
-      header: t($ => $.order.action_col),
+      header: t(($) => $.order.action_col),
       cell: ({ row }) => (
         <div className="flex justify-end gap-2">
           <Button asChild variant="ghost" size="sm">
-            <Link to={`/order/${row.original.trade_no}`}>{t($ => $.order.return)}</Link>
+            <Link to={`/order/${row.original.trade_no}`}>{t(($) => $.order.return)}</Link>
           </Button>
           <Button
             type="button"
@@ -89,7 +89,7 @@ export default function OrdersPage() {
             disabled={row.original.status !== 0}
             onClick={() => void onCancelOrder(row.original.trade_no)}
           >
-            {t($ => $.common.cancel)}
+            {t(($) => $.common.cancel)}
           </Button>
         </div>
       ),
@@ -98,9 +98,9 @@ export default function OrdersPage() {
 
   const onCancelOrder = (tradeNo: string) => {
     void confirmDialog({
-      title: t($ => $.common.attention),
-      description: t($ => $.order.cancel_confirm),
-      confirmText: t($ => $.order.cancel),
+      title: t(($) => $.common.attention),
+      description: t(($) => $.order.cancel_confirm),
+      confirmText: t(($) => $.order.cancel),
       confirmButtonProps: { loading: cancel.isPending },
       onConfirm: () => cancel.mutateAsync(tradeNo),
     });
@@ -113,7 +113,7 @@ export default function OrdersPage() {
           {loading ? (
             <div className="flex items-center gap-2 border-b border-border px-4 py-3 text-sm text-muted-foreground">
               <Spinner className="size-4" />
-              <span>{t($ => $.common.loading)}</span>
+              <span>{t(($) => $.common.loading)}</span>
             </div>
           ) : null}
 
@@ -129,7 +129,7 @@ export default function OrdersPage() {
               className="flex min-h-44 items-center justify-center px-6 text-sm text-muted-foreground"
               data-testid="orders-empty"
             >
-              {t($ => $.order.no_orders)}
+              {t(($) => $.order.no_orders)}
             </div>
           ) : (
             <DataTable

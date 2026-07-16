@@ -126,10 +126,10 @@ export default function PlanCheckoutPage() {
     const { unfinishedOrder } = ordersCheck;
     if (unfinishedOrder) {
       void confirmDialog({
-        title: t($ => $.common.attention),
-        description: t($ => $.plan.unfinished_order_confirm),
-        confirmText: t($ => $.plan.confirm_cancel_previous),
-        cancelText: t($ => $.plan.return_orders),
+        title: t(($) => $.common.attention),
+        description: t(($) => $.plan.unfinished_order_confirm),
+        confirmText: t(($) => $.plan.confirm_cancel_previous),
+        cancelText: t(($) => $.plan.return_orders),
         confirmButtonProps: { loading: cancelOrder.isPending },
         onConfirm: async () => {
           await cancelOrder.mutateAsync(unfinishedOrder.trade_no);
@@ -150,10 +150,14 @@ export default function PlanCheckoutPage() {
     if (!plan) return;
     const currentPeriod = period ?? getDefaultPeriod(plan);
     if (!isValidCheckoutPeriod(plan, currentPeriod) || hasInvalidCoupon(appliedCoupon)) return;
-    if (info?.plan_id && info.plan_id !== plan.id && !isSubscriptionExpired(subscribe?.expired_at)) {
+    if (
+      info?.plan_id &&
+      info.plan_id !== plan.id &&
+      !isSubscriptionExpired(subscribe?.expired_at)
+    ) {
       void confirmDialog({
-        title: t($ => $.common.attention),
-        description: t($ => $.plan.change_warning),
+        title: t(($) => $.common.attention),
+        description: t(($) => $.plan.change_warning),
         onConfirm: continueAfterUnfinishedOrderCheck,
       });
       return;
@@ -194,9 +198,9 @@ export default function PlanCheckoutPage() {
   }
   const totalAmount = Math.max(0, basePrice - discount);
   const validationError = !validPeriod
-    ? t($ => $.errors["This payment period cannot be purchased, please choose another period"])
+    ? t(($) => $.errors['This payment period cannot be purchased, please choose another period'])
     : invalidCoupon
-      ? t($ => $.errors["Coupon failed"])
+      ? t(($) => $.errors['Coupon failed'])
       : null;
   const canRenew = Boolean(plan.renew || info?.plan_id !== plan.id);
 
@@ -205,13 +209,13 @@ export default function PlanCheckoutPage() {
       <Card data-testid="plan-non-renewable">
         <CardContent className="flex min-h-64 flex-col items-center justify-center gap-4 text-center">
           <div className="space-y-2">
-            <h2 className="text-lg font-semibold leading-7 text-card-foreground">
-              {t($ => $.plan.cannot_renew_current)}
+            <h2 className="text-lg leading-7 font-semibold text-card-foreground">
+              {t(($) => $.plan.cannot_renew_current)}
             </h2>
-            <p className="text-sm text-muted-foreground">{t($ => $.plan.select_other)}</p>
+            <p className="text-sm text-muted-foreground">{t(($) => $.plan.select_other)}</p>
           </div>
           <Button asChild>
-            <Link to="/plan">{t($ => $.plan.select_other)}</Link>
+            <Link to="/plan">{t(($) => $.plan.select_other)}</Link>
           </Button>
         </CardContent>
       </Card>
@@ -236,7 +240,7 @@ export default function PlanCheckoutPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base leading-6">{t($ => $.plan.select_period)}</CardTitle>
+            <CardTitle className="text-base leading-6">{t(($) => $.plan.select_period)}</CardTitle>
           </CardHeader>
           <CardContent className="p-6 pt-0">
             <RadioGroup
@@ -275,18 +279,18 @@ export default function PlanCheckoutPage() {
               type="text"
               data-testid="coupon-input"
               value={couponCode}
-              placeholder={t($ => $.plan.coupon_question)}
+              placeholder={t(($) => $.plan.coupon_question)}
               onChange={(event) => setCouponCode(event.target.value)}
             />
             <Button loading={checkCoupon.isPending} onClick={onApplyCoupon} type="button">
-              {t($ => $.plan.verify)}
+              {t(($) => $.plan.verify)}
             </Button>
           </CardContent>
         </Card>
 
         <Card data-testid="checkout-summary">
           <CardHeader>
-            <CardTitle className="text-base leading-6">{t($ => $.plan.order_total)}</CardTitle>
+            <CardTitle className="text-base leading-6">{t(($) => $.plan.order_total)}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-start justify-between gap-4 border-b border-border pb-4 text-sm">
@@ -300,7 +304,7 @@ export default function PlanCheckoutPage() {
             </div>
             {appliedCoupon?.name ? (
               <div className="space-y-2 border-b border-border pb-4 text-sm">
-                <div className="text-muted-foreground">{t($ => $.plan.discount)}</div>
+                <div className="text-muted-foreground">{t(($) => $.plan.discount)}</div>
                 <div className="flex items-center justify-between gap-4">
                   <div>{appliedCoupon.name}</div>
                   <div className="text-right font-medium">
@@ -310,7 +314,7 @@ export default function PlanCheckoutPage() {
                 </div>
               </div>
             ) : null}
-            <div className="text-sm text-muted-foreground">{t($ => $.plan.grand_total)}</div>
+            <div className="text-sm text-muted-foreground">{t(($) => $.plan.grand_total)}</div>
             <div className="text-3xl font-semibold tracking-normal text-card-foreground">
               {symbol} {(totalAmount / 100).toFixed(2)} {currency}
             </div>
@@ -318,7 +322,7 @@ export default function PlanCheckoutPage() {
             info.plan_id !== plan.id &&
             !isSubscriptionExpired(subscribe?.expired_at) ? (
               <Alert>
-                <AlertDescription>{t($ => $.plan.change_warning)}</AlertDescription>
+                <AlertDescription>{t(($) => $.plan.change_warning)}</AlertDescription>
               </Alert>
             ) : null}
             {validationError ? (
@@ -333,7 +337,7 @@ export default function PlanCheckoutPage() {
                 data-testid="unfinished-orders-loading"
               >
                 <Spinner className="size-4" />
-                <span>{t($ => $.common.loading)}</span>
+                <span>{t(($) => $.common.loading)}</span>
               </div>
             ) : null}
             {orders.isError ? (
@@ -350,7 +354,7 @@ export default function PlanCheckoutPage() {
               disabled={validationError !== null || !orders.isSuccess}
               onClick={onSubmit}
             >
-              {t($ => $.plan.place_order)}
+              {t(($) => $.plan.place_order)}
             </Button>
           </CardContent>
         </Card>

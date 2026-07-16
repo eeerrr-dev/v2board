@@ -28,12 +28,12 @@ export function AuthPanel({
         <CardHeader className="gap-2 px-7 text-center sm:px-8">
           <h1
             data-slot="auth-title"
-            className="m-0 text-2xl font-bold leading-8 text-card-foreground"
+            className="m-0 text-2xl leading-8 font-bold text-card-foreground"
           >
             {title}
           </h1>
           {description ? (
-            <CardDescription className="mx-auto max-w-[30rem] text-balance leading-5">
+            <CardDescription className="mx-auto max-w-[30rem] leading-5 text-balance">
               {description}
             </CardDescription>
           ) : null}
@@ -42,7 +42,7 @@ export function AuthPanel({
           <form noValidate className={formClassName} {...formProps}>
             <div className="grid gap-6">
               {children}
-              <div className="text-balance text-center text-sm leading-6 text-muted-foreground">
+              <div className="text-center text-sm leading-6 text-balance text-muted-foreground">
                 {footer}
               </div>
             </div>
@@ -57,7 +57,7 @@ export function AuthFooterLink({ className, ...props }: LinkProps) {
   return (
     <Link
       className={cn(
-        'rounded-sm font-medium text-foreground underline underline-offset-4 transition-colors hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+        'rounded-sm font-medium text-foreground underline underline-offset-4 transition-colors hover:text-muted-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
         className,
       )}
       {...props}
@@ -69,7 +69,7 @@ export function AuthAuxiliaryLink({ className, ...props }: LinkProps) {
   return (
     <Link
       className={cn(
-        'rounded-sm text-sm font-normal text-foreground underline-offset-4 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+        'rounded-sm text-sm font-normal text-foreground underline-offset-4 transition-colors hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
         className,
       )}
       {...props}

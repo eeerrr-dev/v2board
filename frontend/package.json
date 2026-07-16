@@ -20,6 +20,7 @@
     "typecheck": "pnpm -r --parallel typecheck",
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write \"**/*.{ts,tsx,json,md,css}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,json,md,css}\"",
     "test": "node --test scripts/*.test.mjs && vitest run",
     "test:coverage": "node --test scripts/*.test.mjs && vitest run --coverage",
     "visual-smoke": "node scripts/visual-smoke.mjs",
@@ -39,6 +40,7 @@
     "globals": "^17.7.0",
     "knip": "catalog:",
     "prettier": "^3.9.5",
+    "prettier-plugin-tailwindcss": "^0.8.0",
     "typescript": "catalog:",
     "typescript-eslint": "^8.63.0",
     "vitest": "catalog:"

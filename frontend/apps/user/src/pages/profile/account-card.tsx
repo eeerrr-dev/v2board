@@ -15,7 +15,8 @@ export function AccountCard() {
   const data = info.data;
 
   const copyUuid = async () => {
-    if (data?.uuid && (await copyText(data.uuid))) toast.success(t($ => $.dashboard.copy_success));
+    if (data?.uuid && (await copyText(data.uuid)))
+      toast.success(t(($) => $.dashboard.copy_success));
   };
 
   return (
@@ -26,31 +27,31 @@ export function AccountCard() {
             <CircleUser className="size-4" />
           </SectionIcon>
           <CardTitle className="text-lg" data-testid="profile-card-title">
-            {t($ => $.profile.account)}
+            {t(($) => $.profile.account)}
           </CardTitle>
         </div>
       </CardHeader>
       <CardContent>
         <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
           <IdentityField
-            label={t($ => $.profile.email)}
+            label={t(($) => $.profile.email)}
             value={data?.email}
             testId="profile-account-email"
           />
           <IdentityField
-            label={t($ => $.profile.uuid)}
+            label={t(($) => $.profile.uuid)}
             value={data?.uuid}
             testId="profile-account-uuid"
-            copyLabel={data?.uuid ? t($ => $.common.copy) : undefined}
+            copyLabel={data?.uuid ? t(($) => $.common.copy) : undefined}
             onCopy={data?.uuid ? copyUuid : undefined}
           />
           <IdentityField
-            label={t($ => $.profile.created_at)}
+            label={t(($) => $.profile.created_at)}
             value={data?.created_at ? formatBackendDateTime(data.created_at) : undefined}
             testId="profile-account-created"
           />
           <IdentityField
-            label={t($ => $.profile.last_login)}
+            label={t(($) => $.profile.last_login)}
             value={data?.last_login_at ? formatBackendDateTime(data.last_login_at) : undefined}
             testId="profile-account-last-login"
           />
@@ -75,7 +76,7 @@ function IdentityField({
 }) {
   return (
     <div className="space-y-1">
-      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+      <div className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
         {label}
       </div>
       <div className="flex items-center gap-2 text-sm font-medium text-foreground">

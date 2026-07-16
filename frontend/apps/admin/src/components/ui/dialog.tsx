@@ -48,9 +48,9 @@ function DialogContent({
       >
         {children}
         {showCloseButton ? (
-          <DialogPrimitive.Close className="absolute top-4 right-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none">
+          <DialogPrimitive.Close className="absolute top-4 right-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none disabled:pointer-events-none">
             <X className="size-4" />
-            <span className="sr-only">{t($ => $.common.close_dialog)}</span>
+            <span className="sr-only">{t(($) => $.common.close_dialog)}</span>
           </DialogPrimitive.Close>
         ) : null}
       </DialogPrimitive.Content>

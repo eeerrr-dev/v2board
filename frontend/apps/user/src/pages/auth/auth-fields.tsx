@@ -70,7 +70,7 @@ export function AuthLoadingState() {
   return (
     <div className="flex min-h-64 items-center justify-center" role="status">
       <Spinner className="size-5 text-muted-foreground" />
-      <span className="sr-only">{t($ => $.common.loading)}</span>
+      <span className="sr-only">{t(($) => $.common.loading)}</span>
     </div>
   );
 }

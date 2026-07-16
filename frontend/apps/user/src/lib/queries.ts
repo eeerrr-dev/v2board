@@ -153,7 +153,9 @@ export const userQueryOptions = {
   orderStatus: (tradeNo: string | undefined) =>
     queryOptions({
       queryKey: userKeys.orderStatus(tradeNo),
-      queryFn: !tradeNo ? skipToken : ({ signal }) => user.checkOrder(apiClient, tradeNo, { signal }),
+      queryFn: !tradeNo
+        ? skipToken
+        : ({ signal }) => user.checkOrder(apiClient, tradeNo, { signal }),
     }),
   plans: () =>
     queryOptions({

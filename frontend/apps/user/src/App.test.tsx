@@ -277,7 +277,6 @@ describe('user route tree', () => {
     for (const route of [root, guestLayout!, protectedBranch!, appLayout!, ticketDetail!]) {
       expect(route.errorElement).toBeTruthy();
     }
-
   });
 });
 

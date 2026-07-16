@@ -33,7 +33,7 @@ function TosSentence({ url }: { url: string }) {
     <span />
   );
 
-  return <Trans i18nKey={$ => $.auth.tos_html} components={{ terms }} />;
+  return <Trans i18nKey={($) => $.auth.tos_html} components={{ terms }} />;
 }
 
 interface AuthTosFieldProps {

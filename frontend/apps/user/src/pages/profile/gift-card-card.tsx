@@ -34,14 +34,14 @@ export function GiftCardCard() {
       redeem.mutate(code, {
         onSuccess: (result) => {
           toast.success(
-            t($ => $.profile.redeem_success, {
+            t(($) => $.profile.redeem_success, {
               detail: redeemGiftcardText(result.type, result.value, t),
             }),
           );
         },
       });
     },
-    () => toast.error(t($ => $.profile.redeem_placeholder)),
+    () => toast.error(t(($) => $.profile.redeem_placeholder)),
   );
 
   return (
@@ -52,7 +52,7 @@ export function GiftCardCard() {
             <Gift className="size-4" />
           </SectionIcon>
           <CardTitle className="text-lg" data-testid="profile-card-title">
-            {t($ => $.profile.redeem_giftcard)}
+            {t(($) => $.profile.redeem_giftcard)}
           </CardTitle>
         </div>
       </CardHeader>
@@ -66,13 +66,13 @@ export function GiftCardCard() {
               return (
                 <Field className="gap-2.5" data-invalid={fieldState.invalid}>
                   <FieldLabel htmlFor={GIFT_CARD_CODE_ID}>
-                    {t($ => $.profile.redeem_giftcard)}
+                    {t(($) => $.profile.redeem_giftcard)}
                   </FieldLabel>
                   <Input
                     {...field}
                     id={GIFT_CARD_CODE_ID}
                     data-testid="profile-giftcard-input"
-                    placeholder={t($ => $.profile.redeem_placeholder)}
+                    placeholder={t(($) => $.profile.redeem_placeholder)}
                     autoComplete="one-time-code"
                     aria-invalid={fieldState.invalid}
                     aria-describedby={fieldState.invalid ? errorId : undefined}
@@ -88,7 +88,7 @@ export function GiftCardCard() {
             data-testid="profile-redeem-button"
             loading={redeem.isPending}
           >
-            {t($ => $.profile.redeem_submit)}
+            {t(($) => $.profile.redeem_submit)}
           </Button>
         </form>
       </CardContent>
@@ -96,26 +96,22 @@ export function GiftCardCard() {
   );
 }
 
-function redeemGiftcardText(
-  type: number,
-  value: number | null,
-  t: TFunction,
-) {
+function redeemGiftcardText(type: number, value: number | null, t: TFunction) {
   if (value === null) {
-    return type === 4 ? t($ => $.profile.redeem_reset) : t($ => $.profile.redeem_unknown);
+    return type === 4 ? t(($) => $.profile.redeem_reset) : t(($) => $.profile.redeem_unknown);
   }
   switch (type) {
     case 1:
-      return t($ => $.profile.redeem_balance, { amount: formatCentsPlain(value) });
+      return t(($) => $.profile.redeem_balance, { amount: formatCentsPlain(value) });
     case 2:
-      return t($ => $.profile.redeem_days, { days: value });
+      return t(($) => $.profile.redeem_days, { days: value });
     case 3:
-      return t($ => $.profile.redeem_traffic, { traffic: value });
+      return t(($) => $.profile.redeem_traffic, { traffic: value });
     case 4:
-      return t($ => $.profile.redeem_reset);
+      return t(($) => $.profile.redeem_reset);
     case 5:
-      return t($ => $.profile.redeem_plan_days, { days: value });
+      return t(($) => $.profile.redeem_plan_days, { days: value });
     default:
-      return t($ => $.profile.redeem_unknown);
+      return t(($) => $.profile.redeem_unknown);
   }
 }

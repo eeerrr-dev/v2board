@@ -213,8 +213,7 @@ describe('RegisterPage rendering', () => {
     expect(
       screen.getByText(
         (_content, element) =>
-          element?.id === 'register-tos-text' &&
-          element.textContent === '我已阅读并同意 服务条款',
+          element?.id === 'register-tos-text' && element.textContent === '我已阅读并同意 服务条款',
       ),
     ).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: '服务条款' })).toBeNull();

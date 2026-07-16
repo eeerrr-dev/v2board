@@ -111,7 +111,6 @@ export function useForgetController(): ForgetController {
     await submitForm(event);
   };
 
-
   return {
     configLoading,
     configError,

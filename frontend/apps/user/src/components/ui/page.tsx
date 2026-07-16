@@ -13,7 +13,7 @@ export function PageShell({
       ref={ref}
       data-slot="page-shell"
       className={cn(
-        'flex w-full animate-in flex-col gap-6 fade-in-0 slide-in-from-bottom-1 duration-200 motion-reduce:animate-none!',
+        'flex w-full animate-in flex-col gap-6 duration-200 fade-in-0 slide-in-from-bottom-1 motion-reduce:animate-none!',
         className,
       )}
       {...props}
@@ -39,15 +39,12 @@ export function PageHeader({
   return (
     <div
       data-slot="page-header"
-      className={cn(
-        'flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between',
-        className,
-      )}
+      className={cn('flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between', className)}
       {...props}
     >
       <div className="min-w-0 space-y-1.5">
         {eyebrow ? (
-          <div className="text-xs font-medium uppercase tracking-normal text-muted-foreground">
+          <div className="text-xs font-medium tracking-normal text-muted-foreground uppercase">
             {eyebrow}
           </div>
         ) : null}

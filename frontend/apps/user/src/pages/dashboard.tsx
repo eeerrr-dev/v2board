@@ -81,34 +81,32 @@ export default function DashboardPage() {
       id: 'tutorial',
       to: '/knowledge',
       icon: BookOpen,
-      titleKey: $ => $.dashboard.shortcut_tutorial,
-      descKey: $ => $.dashboard.shortcut_tutorial_desc,
+      titleKey: ($) => $.dashboard.shortcut_tutorial,
+      descKey: ($) => $.dashboard.shortcut_tutorial_desc,
       appendSiteTitle: true,
     },
     {
       id: 'subscribe',
       icon: LinkIcon,
-      titleKey: $ => $.dashboard.shortcut_one_click,
-      descKey: $ => $.dashboard.shortcut_one_click_desc,
+      titleKey: ($) => $.dashboard.shortcut_one_click,
+      descKey: ($) => $.dashboard.shortcut_one_click_desc,
       onClick: () => setSubscribeOpen(true),
     },
     {
       id: 'buy',
       to: vm.canRenew ? `/plan/${sub?.plan_id}` : '/plan',
       icon: vm.canRenew ? RefreshCcw : ShoppingBag,
-      titleKey: vm.canRenew
-        ? $ => $.dashboard.renew_subscribe
-        : $ => $.dashboard.shortcut_buy,
+      titleKey: vm.canRenew ? ($) => $.dashboard.renew_subscribe : ($) => $.dashboard.shortcut_buy,
       descKey: vm.canRenew
-        ? $ => $.dashboard.shortcut_renew_desc
-        : $ => $.dashboard.shortcut_buy_desc,
+        ? ($) => $.dashboard.shortcut_renew_desc
+        : ($) => $.dashboard.shortcut_buy_desc,
     },
     {
       id: 'support',
       to: '/ticket',
       icon: Headphones,
-      titleKey: $ => $.dashboard.shortcut_problem,
-      descKey: $ => $.dashboard.shortcut_problem_desc,
+      titleKey: ($) => $.dashboard.shortcut_problem,
+      descKey: ($) => $.dashboard.shortcut_problem_desc,
     },
   ];
 
@@ -128,13 +126,13 @@ export default function DashboardPage() {
             >
               <AlertCircle className="size-4 text-destructive" />
               <AlertDescription className="sm:flex sm:flex-row sm:items-center sm:gap-2">
-                <span>{t($ => $.dashboard.alert_pending_order)}</span>
+                <span>{t(($) => $.dashboard.alert_pending_order)}</span>
                 <Link
                   to="/order"
                   data-testid="dashboard-alert-link"
                   className="font-medium text-foreground underline-offset-4 hover:underline"
                 >
-                  {t($ => $.order.pay_now)}
+                  {t(($) => $.order.pay_now)}
                 </Link>
               </AlertDescription>
             </Alert>
@@ -150,7 +148,7 @@ export default function DashboardPage() {
               <AlertDescription className="sm:flex sm:flex-row sm:items-center sm:gap-2">
                 <span>
                   <Trans
-                    i18nKey={$ => $.dashboard.alert_open_ticket}
+                    i18nKey={($) => $.dashboard.alert_open_ticket}
                     values={{ count: openTicketCount }}
                     components={{ strong: <strong /> }}
                   />
@@ -160,7 +158,7 @@ export default function DashboardPage() {
                   data-testid="dashboard-alert-link"
                   className="font-medium text-foreground underline-offset-4 hover:underline"
                 >
-                  {t($ => $.dashboard.alert_view)}
+                  {t(($) => $.dashboard.alert_view)}
                 </Link>
               </AlertDescription>
             </Alert>
@@ -174,7 +172,7 @@ export default function DashboardPage() {
             >
               <AlertCircle className="size-4 text-info" />
               <AlertDescription className="sm:flex sm:flex-row sm:items-center sm:gap-2">
-                <span>{t($ => $.dashboard.alert_traffic_rate, { rate: vm.usedPctRounded })}</span>
+                <span>{t(($) => $.dashboard.alert_traffic_rate, { rate: vm.usedPctRounded })}</span>
                 {vm.trafficAlertResetAvailable ? (
                   <button
                     type="button"
@@ -182,7 +180,7 @@ export default function DashboardPage() {
                     className="font-medium text-foreground underline-offset-4 hover:underline"
                     onClick={requestResetPackage}
                   >
-                    {t($ => $.dashboard.buy_reset_package)}
+                    {t(($) => $.dashboard.buy_reset_package)}
                   </button>
                 ) : null}
               </AlertDescription>
@@ -203,7 +201,7 @@ export default function DashboardPage() {
           <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 border-b border-border pb-5">
             <div className="space-y-1">
               <CardTitle data-testid="dashboard-card-title" className="text-xl">
-                {t($ => $.dashboard.plan)}
+                {t(($) => $.dashboard.plan)}
               </CardTitle>
             </div>
             <span className="flex size-9 items-center justify-center rounded-md border border-border bg-background text-muted-foreground">
@@ -232,29 +230,35 @@ export default function DashboardPage() {
                     </h2>
                     {vm.expired ? (
                       <StatusBadge data-testid="dashboard-status-expired" tone="destructive">
-                        {t($ => $.dashboard.expired_label)}
+                        {t(($) => $.dashboard.expired_label)}
                       </StatusBadge>
                     ) : (
                       <StatusBadge data-testid="dashboard-status-active" tone="success">
                         <CheckCircle2 className="size-3" />
-                        {t($ => $.dashboard.active)}
+                        {t(($) => $.dashboard.active)}
                       </StatusBadge>
                     )}
                   </div>
                   {subscription.expired_at === null ? (
-                    <p className="text-sm text-muted-foreground">{t($ => $.dashboard.long_term)}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {t(($) => $.dashboard.long_term)}
+                    </p>
                   ) : vm.expired ? (
-                    <p className="text-sm text-muted-foreground">{t($ => $.dashboard.expired_label)}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {t(($) => $.dashboard.expired_label)}
+                    </p>
                   ) : (
                     <p className="text-sm leading-6 text-muted-foreground">
-                      {t($ => $.dashboard.expires_in, {
+                      {t(($) => $.dashboard.expires_in, {
                         date: formatBackendDateSlash(subscription.expired_at),
                         day: vm.daysLeft,
                       })}
                       {subscription.reset_day !== null
                         ? subscription.reset_day === 0
-                          ? t($ => $.dashboard.reset_today)
-                          : t($ => $.dashboard.reset_in_days, { reset_day: subscription.reset_day })
+                          ? t(($) => $.dashboard.reset_today)
+                          : t(($) => $.dashboard.reset_in_days, {
+                              reset_day: subscription.reset_day,
+                            })
                         : ''}
                     </p>
                   )}
@@ -263,7 +267,7 @@ export default function DashboardPage() {
                 <div className="space-y-3">
                   <Progress
                     data-testid="dashboard-progress"
-                    aria-label={t($ => $.dashboard.used_traffic, {
+                    aria-label={t(($) => $.dashboard.used_traffic, {
                       used: formatBytes(vm.used),
                       total: formatBytes(subscription.transfer_enable),
                     })}
@@ -283,7 +287,7 @@ export default function DashboardPage() {
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="rounded-lg border border-border bg-muted/30 p-3">
                       <p className="text-sm font-medium">
-                        {t($ => $.dashboard.used_traffic, {
+                        {t(($) => $.dashboard.used_traffic, {
                           used: formatBytes(vm.used),
                           total: formatBytes(subscription.transfer_enable),
                         })}
@@ -291,7 +295,7 @@ export default function DashboardPage() {
                     </div>
                     <div className="rounded-lg border border-border bg-muted/30 p-3">
                       <p className="text-sm font-medium">
-                        {t($ => $.dashboard.devices_online, {
+                        {t(($) => $.dashboard.devices_online, {
                           alive_ip: subscription.alive_ip,
                           device_limit: subscription.device_limit ?? '∞',
                         })}
@@ -300,13 +304,13 @@ export default function DashboardPage() {
                   </div>
                   <div className="sr-only">
                     <span>
-                      {t($ => $.dashboard.used_traffic, {
+                      {t(($) => $.dashboard.used_traffic, {
                         used: formatBytes(vm.used),
                         total: formatBytes(subscription.transfer_enable),
                       })}
                     </span>
                     <span>
-                      {t($ => $.dashboard.devices_online, {
+                      {t(($) => $.dashboard.devices_online, {
                         alive_ip: subscription.alive_ip,
                         device_limit: subscription.device_limit ?? '∞',
                       })}
@@ -317,20 +321,20 @@ export default function DashboardPage() {
                 <div className="flex flex-wrap gap-2">
                   {vm.resetAvailable ? (
                     <Button type="button" onClick={requestResetPackage}>
-                      {t($ => $.dashboard.buy_reset_package)}
+                      {t(($) => $.dashboard.buy_reset_package)}
                     </Button>
                   ) : null}
                   {vm.canNewPeriod ? (
                     <Button type="button" onClick={requestNewPeriod}>
-                      {t($ => $.dashboard.new_period)}
+                      {t(($) => $.dashboard.new_period)}
                     </Button>
                   ) : null}
                   {vm.expired ? (
                     <Button asChild>
                       <Link to={vm.canRenew ? `/plan/${subscription.plan_id}` : '/plan'}>
                         {vm.canRenew
-                          ? t($ => $.dashboard.renew_subscribe)
-                          : t($ => $.dashboard.buy_subscribe)}
+                          ? t(($) => $.dashboard.renew_subscribe)
+                          : t(($) => $.dashboard.buy_subscribe)}
                       </Link>
                     </Button>
                   ) : null}
@@ -340,10 +344,10 @@ export default function DashboardPage() {
               <Link
                 to="/plan"
                 data-testid="dashboard-empty-plan"
-                className="flex min-h-40 w-full flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-muted/30 text-center transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className="flex min-h-40 w-full flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-muted/30 text-center transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
               >
                 <Plus className="size-8 text-muted-foreground" />
-                <span className="text-sm font-medium">{t($ => $.dashboard.shortcut_buy)}</span>
+                <span className="text-sm font-medium">{t(($) => $.dashboard.shortcut_buy)}</span>
               </Link>
             )}
           </CardContent>
@@ -352,7 +356,7 @@ export default function DashboardPage() {
         <Card data-testid="dashboard-card" className="overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 border-b border-border pb-5">
             <CardTitle data-testid="dashboard-card-title" className="text-xl">
-              {t($ => $.dashboard.shortcuts)}
+              {t(($) => $.dashboard.shortcuts)}
             </CardTitle>
             <span className="flex size-9 items-center justify-center rounded-md border border-border bg-background text-muted-foreground">
               <Smartphone className="size-4" />
@@ -367,7 +371,9 @@ export default function DashboardPage() {
                     <Icon className="size-4" />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="grid truncate text-sm font-medium">{t(shortcut.titleKey)}</span>
+                    <span className="grid truncate text-sm font-medium">
+                      {t(shortcut.titleKey)}
+                    </span>
                     <span className="grid truncate text-sm leading-6 text-muted-foreground">
                       {t(shortcut.descKey)}
                       {shortcut.appendSiteTitle ? <> {siteTitle}</> : null}

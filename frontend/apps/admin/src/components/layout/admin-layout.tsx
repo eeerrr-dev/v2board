@@ -153,7 +153,7 @@ function AdminSidebar({ siteTitle, email }: { siteTitle: string; email: string }
           <Link
             to="/dashboard"
             onClick={closeMobile}
-            className="min-w-0 truncate rounded-md px-2 py-1 text-left text-base font-semibold text-sidebar-foreground outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring group-data-[collapsible=icon]:hidden"
+            className="min-w-0 truncate rounded-md px-2 py-1 text-left text-base font-semibold text-sidebar-foreground outline-hidden group-data-[collapsible=icon]:hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring"
           >
             {siteTitle}
           </Link>
@@ -302,10 +302,7 @@ function AdminLayoutContent() {
 
 function AdminLayoutFallback() {
   return (
-    <div
-      role="status"
-      className="flex min-h-screen items-center justify-center bg-background"
-    >
+    <div role="status" className="flex min-h-screen items-center justify-center bg-background">
       <Spinner className="size-6" />
       <span className="sr-only">正在加载</span>
     </div>

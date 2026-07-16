@@ -5,5 +5,5 @@ import { useTranslation } from 'react-i18next';
 // of the application.
 export function useEmptyDescription(): string {
   const { t } = useTranslation();
-  return t($ => $.common.empty);
+  return t(($) => $.common.empty);
 }

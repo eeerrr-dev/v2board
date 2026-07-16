@@ -50,13 +50,13 @@ export function RouteErrorFallback() {
         <Alert variant="destructive" className="text-left">
           <AlertCircle className="size-4" />
           <AlertDescription>
-            <span className="font-medium">{t($ => $.common.route_load_failed)}</span>
-            <span className="text-muted-foreground">{t($ => $.common.route_refresh_hint)}</span>
+            <span className="font-medium">{t(($) => $.common.route_load_failed)}</span>
+            <span className="text-muted-foreground">{t(($) => $.common.route_refresh_hint)}</span>
           </AlertDescription>
         </Alert>
         <Button type="button" className="mx-auto" onClick={() => window.location.reload()}>
           <RefreshCw className="size-4" />
-          {t($ => $.common.refresh_page)}
+          {t(($) => $.common.refresh_page)}
         </Button>
       </CardContent>
     </Card>

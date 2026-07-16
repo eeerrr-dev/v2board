@@ -3,7 +3,13 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import type { admin } from '@v2board/api-client';
 import type { Plan, PlanPeriod } from '@v2board/types';
 import { ArrowDown, ArrowUp, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
-import { type FieldPath, type FieldPathValue, useForm, useFormState, useWatch } from 'react-hook-form';
+import {
+  type FieldPath,
+  type FieldPathValue,
+  useForm,
+  useFormState,
+  useWatch,
+} from 'react-hook-form';
 import {
   useAdminPlans,
   useConfig,

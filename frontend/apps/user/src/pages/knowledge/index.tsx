@@ -71,7 +71,8 @@ export default function KnowledgePage() {
   const visibleDetail = detail.data ?? (detail.isFetching ? previousArticle : undefined);
   const detailVisible = selectedId !== undefined;
   const detailTitle =
-    visibleDetail?.title || (detail.isError ? t($ => $.common.error_title) : t($ => $.common.loading));
+    visibleDetail?.title ||
+    (detail.isError ? t(($) => $.common.error_title) : t(($) => $.common.loading));
   const emptyDescription = useEmptyDescription();
 
   // React Compiler memoizes this render (one markdown render per visible article).
@@ -89,7 +90,7 @@ export default function KnowledgePage() {
   };
 
   const copyMarkdownText = async (text: string) => {
-    if (await copyText(text)) toast.success(t($ => $.dashboard.copy_success));
+    if (await copyText(text)) toast.success(t(($) => $.dashboard.copy_success));
   };
 
   const jumpToArticle = (id: number | string) => {
@@ -131,15 +132,15 @@ export default function KnowledgePage() {
       <Card className="overflow-hidden" data-testid="knowledge-card">
         <CardHeader className="gap-4 sm:flex sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-2">
-            <CardTitle className="truncate text-xl">{t($ => $.nav.knowledge)}</CardTitle>
+            <CardTitle className="truncate text-xl">{t(($) => $.nav.knowledge)}</CardTitle>
             {articleCount > 0 ? <Badge variant="secondary">{articleCount}</Badge> : null}
           </div>
           <div className="relative w-full sm:max-w-sm" data-testid="knowledge-search-bar">
             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              aria-label={t($ => $.knowledge.search_placeholder)}
+              aria-label={t(($) => $.knowledge.search_placeholder)}
               className="pl-9"
-              placeholder={t($ => $.knowledge.search_placeholder)}
+              placeholder={t(($) => $.knowledge.search_placeholder)}
               value={searchValue}
               onChange={(event) => setSearchValue(event.target.value)}
             />
@@ -161,7 +162,7 @@ export default function KnowledgePage() {
           <CardContent className="flex items-center justify-center gap-2 py-14 text-sm text-muted-foreground">
             <span role="status" className="inline-flex items-center gap-2">
               <Spinner />
-              <span>{t($ => $.common.loading)}</span>
+              <span>{t(($) => $.common.loading)}</span>
             </span>
           </CardContent>
         </Card>
@@ -186,13 +187,13 @@ export default function KnowledgePage() {
                     <button
                       key={item.id}
                       type="button"
-                      className="flex w-full items-center gap-4 px-6 py-4 text-left transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                      className="flex w-full items-center gap-4 px-6 py-4 text-left transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
                       data-testid="knowledge-item"
                       onClick={() => openDetail(item)}
                     >
                       <span className="min-w-0 flex-1 space-y-1">
                         <span
-                          className="flex overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium text-foreground"
+                          className="flex overflow-hidden text-sm font-medium text-ellipsis whitespace-nowrap text-foreground"
                           data-testid="knowledge-item-title"
                         >
                           {item.title}
@@ -201,7 +202,7 @@ export default function KnowledgePage() {
                           className="flex text-xs text-muted-foreground"
                           data-testid="knowledge-item-date"
                         >
-                          {t($ => $.knowledge.last_update, {
+                          {t(($) => $.knowledge.last_update, {
                             date: formatBackendDateSlash(item.updated_at),
                           })}
                         </span>
@@ -220,7 +221,7 @@ export default function KnowledgePage() {
             className="py-14 text-center text-sm text-muted-foreground"
             data-testid="knowledge-empty"
           >
-            {deferredKeyword ? t($ => $.knowledge.no_results) : emptyDescription}
+            {deferredKeyword ? t(($) => $.knowledge.no_results) : emptyDescription}
           </CardContent>
         </Card>
       )}
@@ -242,10 +243,10 @@ export default function KnowledgePage() {
             </SheetTitle>
             <SheetDescription className={visibleDetail?.updated_at ? undefined : 'sr-only'}>
               {visibleDetail?.updated_at
-                ? t($ => $.knowledge.last_update, {
+                ? t(($) => $.knowledge.last_update, {
                     date: formatBackendDateSlash(visibleDetail.updated_at),
                   })
-                : t($ => $.common.loading)}
+                : t(($) => $.common.loading)}
             </SheetDescription>
           </SheetHeader>
           <div
@@ -255,7 +256,7 @@ export default function KnowledgePage() {
             {detail.isFetching ? (
               <div role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Spinner />
-                <span>{t($ => $.common.loading)}</span>
+                <span>{t(($) => $.common.loading)}</span>
               </div>
             ) : detail.isError ? (
               // A failed detail fetch must not sit on a blank body under a stuck

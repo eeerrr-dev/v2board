@@ -83,7 +83,12 @@ function defaultOrders() {
 }
 
 vi.mock('react-router', () => ({
-  Link: ({ to, onClick, children, ...rest }: { to: string } & Omit<ComponentProps<'a'>, 'href'>) => (
+  Link: ({
+    to,
+    onClick,
+    children,
+    ...rest
+  }: { to: string } & Omit<ComponentProps<'a'>, 'href'>) => (
     <a
       href={to}
       onClick={(event) => {

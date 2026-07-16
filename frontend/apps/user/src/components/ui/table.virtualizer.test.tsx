@@ -44,7 +44,9 @@ describe('DataTable virtualizer options', () => {
     });
     expect(captured.options?.getItemKey(0)).toBe('row-149');
 
-    await user.click(within(screen.getByRole('columnheader', { name: 'Name' })).getByRole('button'));
+    await user.click(
+      within(screen.getByRole('columnheader', { name: 'Name' })).getByRole('button'),
+    );
 
     expect(captured.options?.getItemKey(0)).toBe('row-000');
   });

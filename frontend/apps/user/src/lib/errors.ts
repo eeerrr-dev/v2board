@@ -1,8 +1,4 @@
-import {
-  isSupportedLocale,
-  translateLoadedError,
-  type SupportedLocale,
-} from '@v2board/i18n';
+import { isSupportedLocale, translateLoadedError, type SupportedLocale } from '@v2board/i18n';
 
 export function i18nGet(message: string): string {
   const locale = getCurrentLocale();
