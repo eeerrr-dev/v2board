@@ -20,13 +20,6 @@ trustPolicyExclude:
 catalogMode: strict
 cleanupUnusedCatalogs: true
 
-# eslint-plugin-react 7.37.5 is the current release and works with ESLint 10,
-# but its peer range has not yet been widened beyond ESLint 9. Keep strict peer
-# validation for every other package and document this single audited exception.
-peerDependencyRules:
-  allowedVersions:
-    'eslint-plugin-react>eslint': '10'
-
 overrides:
   '@types/node': 'catalog:'
 

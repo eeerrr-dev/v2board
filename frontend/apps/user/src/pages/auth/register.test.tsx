@@ -62,6 +62,7 @@ vi.mock('react-router', () => ({
 
 vi.mock('react-i18next', () => ({
   Trans: ({ components }: { components: { terms: ReactElement } }) => (
+    // eslint-disable-next-line @eslint-react/no-clone-element -- test double mirrors Trans's own cloneElement injection
     <>我已阅读并同意 {cloneElement(components.terms, {}, '服务条款')}</>
   ),
   useTranslation: () => createTestTranslation(mocks.labels),

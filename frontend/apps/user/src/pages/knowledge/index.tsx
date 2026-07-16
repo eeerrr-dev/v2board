@@ -267,6 +267,7 @@ export default function KnowledgePage() {
                 data-testid="knowledge-article"
                 onClick={handleMarkdownAction}
                 onKeyDown={handleMarkdownActionKeyDown}
+                // eslint-disable-next-line @eslint-react/dom-no-dangerously-set-innerhtml -- rendered and sanitized in renderBackendMarkdown
                 dangerouslySetInnerHTML={{ __html: renderedBody }}
               />
             )}

@@ -26,7 +26,7 @@ interface ChartContextValue {
 const ChartContext = React.createContext<ChartContextValue | null>(null);
 
 function useChart() {
-  const context = React.useContext(ChartContext);
+  const context = React.use(ChartContext);
   if (!context) throw new Error('useChart must be used within a <ChartContainer />');
   return context;
 }
@@ -72,6 +72,7 @@ function ChartStyle({ id, config }: { id: string; config: ChartConfig }) {
 
   return (
     <style
+      // eslint-disable-next-line @eslint-react/dom-no-dangerously-set-innerhtml -- theme CSS generated from the chart config, no user input
       dangerouslySetInnerHTML={{
         __html: Object.entries(THEMES)
           .map(

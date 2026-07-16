@@ -184,6 +184,30 @@ function planSelectItems(plans: PlanOption[], includeEmpty = false) {
   ];
 }
 
+function SortableColumnHeader({
+  label,
+  active,
+  direction,
+  onSort,
+}: {
+  label: string;
+  active: boolean;
+  direction?: 'ASC' | 'DESC';
+  onSort: () => void;
+}) {
+  const Icon = active ? (direction === 'ASC' ? ArrowUp : ArrowDown) : ChevronsUpDown;
+  return (
+    <button
+      type="button"
+      className="inline-flex items-center gap-1.5 rounded-sm outline-none transition-colors select-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      onClick={onSort}
+    >
+      {label}
+      <Icon className={cn('size-3.5', !active && 'opacity-50')} aria-hidden="true" />
+    </button>
+  );
+}
+
 export default function UsersPage() {
   const navigate = useNavigate();
   const [currentUnixTime, setCurrentUnixTime] = useState(() => Date.now() / 1000);
@@ -377,23 +401,14 @@ export default function UsersPage() {
     deleteAll.mutate(query.filter);
   };
 
-  const sortHeader = (label: string, key: string) => {
-    function SortHeader() {
-      const active = query.sort === key;
-      const Icon = active ? (query.sort_type === 'ASC' ? ArrowUp : ArrowDown) : ChevronsUpDown;
-      return (
-        <button
-          type="button"
-          className="inline-flex items-center gap-1.5 rounded-sm outline-none transition-colors select-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          onClick={() => sortBy(key)}
-        >
-          {label}
-          <Icon className={cn('size-3.5', !active && 'opacity-50')} aria-hidden="true" />
-        </button>
-      );
-    }
-    return SortHeader;
-  };
+  const sortHeader = (label: string, key: string) => () => (
+    <SortableColumnHeader
+      label={label}
+      active={query.sort === key}
+      direction={query.sort_type}
+      onSort={() => sortBy(key)}
+    />
+  );
 
   const renderEmail = (row: AdminUserRow) => {
     const onlineAt = (row as AdminUserRow & { t?: number | null }).t;

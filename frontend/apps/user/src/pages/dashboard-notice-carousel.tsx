@@ -106,6 +106,7 @@ export function DashboardNoticeCarousel({ notices }: DashboardNoticeCarouselProp
           {activeNotice?.content ? (
             <div
               className="custom-html-style max-h-[60vh] overflow-auto text-sm leading-6"
+              // eslint-disable-next-line @eslint-react/dom-no-dangerously-set-innerhtml -- backend HTML sanitized by sanitizeBackendHtml
               dangerouslySetInnerHTML={{ __html: sanitizeBackendHtml(activeNotice.content) }}
             />
           ) : null}

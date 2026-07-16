@@ -5,8 +5,8 @@ import {
   type KeyboardEvent,
   createContext,
   isValidElement,
+  use,
   useCallback,
-  useContext,
   useEffect,
   useState,
 } from 'react';
@@ -38,7 +38,7 @@ const CarouselContext = createContext<CarouselContextValue | null>(null);
 const CarouselItemPositionContext = createContext<{ index: number; size: number } | null>(null);
 
 export function useCarousel() {
-  const context = useContext(CarouselContext);
+  const context = use(CarouselContext);
   if (!context) {
     throw new Error('useCarousel must be used within a <Carousel>');
   }
@@ -144,6 +144,7 @@ export function Carousel({
 
 export function CarouselContent({ className, children, ...props }: ComponentProps<'div'>) {
   const { carouselRef, orientation } = useCarousel();
+  // eslint-disable-next-line @eslint-react/no-children-to-array -- slide position context needs the materialized list
   const items = Children.toArray(children);
   return (
     <div ref={carouselRef} data-slot="carousel-content" className="overflow-hidden">
@@ -173,7 +174,7 @@ export function CarouselItem({
   ...props
 }: ComponentProps<'div'>) {
   const { activeSlides, orientation, selectedIndex } = useCarousel();
-  const position = useContext(CarouselItemPositionContext);
+  const position = use(CarouselItemPositionContext);
   const index = position?.index ?? 0;
   const active = activeSlides.includes(index);
   const selected = selectedIndex === index;

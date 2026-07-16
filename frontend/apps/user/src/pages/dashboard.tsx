@@ -29,7 +29,7 @@ import {
   DashboardSubscribeDialog,
   type DashboardConfirmAction,
 } from './dashboard-dialogs';
-import { useDashboardSubscription } from './dashboard-subscription';
+import { deriveDashboardSubscription } from './dashboard-subscription';
 import { useCommConfig, useNotices, useSubscribe, useUserStat } from '@/lib/queries';
 import { formatBackendDateSlash, formatBytes } from '@v2board/config/format';
 import { cn } from '@/lib/cn';
@@ -61,7 +61,7 @@ export default function DashboardPage() {
   const sub = subscribe.data;
   const hasSubscribeData = Boolean(sub?.email);
   const hasPlan = Boolean(sub?.plan_id);
-  const vm = useDashboardSubscription(sub);
+  const vm = deriveDashboardSubscription(sub);
   const noticeList = notices.data ?? [];
   const subscribeUrl = typeof sub?.subscribe_url === 'string' ? sub.subscribe_url : '';
   const subscription = sub!;

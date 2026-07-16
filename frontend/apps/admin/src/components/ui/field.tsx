@@ -3,8 +3,8 @@ import {
   createContext,
   type ComponentProps,
   type ReactNode,
+  use,
   useCallback,
-  useContext,
   useEffect,
   useId,
   useMemo,
@@ -31,7 +31,7 @@ function mergeAriaIds(...ids: Array<string | undefined>) {
 }
 
 function useFieldSlotId(slot: FieldSlot, requestedId: string | undefined, present = true) {
-  const context = useContext(FieldContext);
+  const context = use(FieldContext);
   const id = present ? (requestedId ?? context?.defaultIds[slot]) : undefined;
 
   useEffect(() => context?.register(slot, id), [context, id, slot]);

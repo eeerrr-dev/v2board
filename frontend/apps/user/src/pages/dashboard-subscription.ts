@@ -18,7 +18,7 @@ export interface DashboardSubscriptionViewModel {
   canNewPeriod: boolean;
 }
 
-export function useDashboardSubscription(sub: Subscribe): DashboardSubscriptionViewModel {
+export function deriveDashboardSubscription(sub: Subscribe): DashboardSubscriptionViewModel {
   const hasPlan = Boolean(sub?.plan_id);
   const used = sub ? sub.u + sub.d : 0;
   const usedPct = sub?.transfer_enable ? (used / sub.transfer_enable) * 100 : 0;

@@ -1,6 +1,6 @@
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
-import react from 'eslint-plugin-react';
+import eslintReact from '@eslint-react/eslint-plugin';
 import reactHooks from 'eslint-plugin-react-hooks';
 import prettier from 'eslint-config-prettier';
 import globals from 'globals';
@@ -34,19 +34,19 @@ export default tseslint.config(
   },
   {
     files: ['**/*.{ts,tsx}'],
-    extends: [tseslint.configs.recommended],
+    // @eslint-react's recommended-typescript preset is the React 19-era
+    // replacement for eslint-plugin-react: JSX/DOM misuse rules without the
+    // prop-types/react-in-scope legacy, TypeScript-aware by design.
+    extends: [tseslint.configs.recommended, eslintReact.configs['recommended-typescript']],
     languageOptions: {
       parser: tseslint.parser,
       parserOptions: { ecmaVersion: 'latest', sourceType: 'module', ecmaFeatures: { jsx: true } },
       globals: { ...globals.browser, ...globals.node },
     },
     plugins: {
-      react,
       'react-hooks': reactHooks,
     },
-    settings: { react: { version: '19.2' } },
     rules: {
-      ...react.configs.recommended.rules,
       ...reactHooks.configs.recommended.rules,
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/consistent-type-imports': ['error', { prefer: 'type-imports' }],
@@ -62,11 +62,28 @@ export default tseslint.config(
       'no-empty': 'error',
       'no-undef': 'off',
       'no-unused-expressions': ['error', { allowShortCircuit: true, allowTernary: true }],
-      'react/jsx-key': 'error',
-      'react/no-unknown-property': ['error', { ignore: ['unselectable'] }],
-      'react/react-in-jsx-scope': 'off',
-      'react/prop-types': 'off',
-      'react/jsx-no-target-blank': 'error',
+      // eslint-plugin-react-hooks v7 ships the React Compiler's own
+      // diagnostics and owns the hooks/compiler domain here; disable
+      // @eslint-react's overlapping implementations so each violation
+      // reports once, from the authoritative plugin.
+      '@eslint-react/error-boundaries': 'off',
+      '@eslint-react/exhaustive-deps': 'off',
+      '@eslint-react/purity': 'off',
+      '@eslint-react/rules-of-hooks': 'off',
+      '@eslint-react/set-state-in-effect': 'off',
+      '@eslint-react/static-components': 'off',
+      '@eslint-react/unsupported-syntax': 'off',
+      '@eslint-react/use-memo': 'off',
+      // Not in the preset (TypeScript already rejects unknown JSX props);
+      // kept for the security outcome the old jsx-no-target-blank enforced.
+      '@eslint-react/dom-no-unsafe-target-blank': 'error',
+      // Every current index-key site is legitimate: static option/nav lists,
+      // options whose submitted value IS the index, id-less append-only chat
+      // messages, and a child-key fallback. The heuristic only adds noise here.
+      '@eslint-react/no-array-index-key': 'off',
+      // Existing refs carry domain names (saveTail, queuedSaves, mounted) that
+      // read better than a mechanical *Ref suffix.
+      '@eslint-react/naming-convention-ref-name': 'off',
       'react-hooks/exhaustive-deps': 'off',
       'react-hooks/immutability': 'off',
       'react-hooks/incompatible-library': 'off',

@@ -157,11 +157,9 @@ function downloadGeneratedCsv(prefix: 'COUPON' | 'GIFTCARD', buffer: unknown) {
   window.URL.revokeObjectURL(url);
 }
 
-function useCopy() {
-  return async (text: string) => {
-    if (await copyText(text)) toast.success('复制成功');
-    else toast.error('复制失败');
-  };
+async function copyWithToast(text: string) {
+  if (await copyText(text)) toast.success('复制成功');
+  else toast.error('复制失败');
 }
 
 function CopyableCode({
@@ -518,7 +516,6 @@ function CouponEditor({
 }
 
 function CouponsView() {
-  const copy = useCopy();
   const [query, setQuery] = useState<QueryState>({ current: 1, pageSize: 10 });
   const coupons = useAdminCoupons(query);
   const plans = useAdminPlans();
@@ -575,7 +572,7 @@ function CouponsView() {
     {
       id: 'code',
       header: () => <span>券码</span>,
-      cell: ({ row }) => <CopyableCode value={row.original.code} onCopy={copy} />,
+      cell: ({ row }) => <CopyableCode value={row.original.code} onCopy={copyWithToast} />,
     },
     {
       id: 'limit_use',
@@ -989,7 +986,6 @@ function GiftcardEditor({
 }
 
 function GiftcardsView() {
-  const copy = useCopy();
   const [query, setQuery] = useState<QueryState>({ current: 1, pageSize: 10 });
   const giftcards = useAdminGiftcards(query);
   const plans = useAdminPlans();
@@ -1082,7 +1078,7 @@ function GiftcardsView() {
     {
       id: 'code',
       header: () => <span>卡密</span>,
-      cell: ({ row }) => <CopyableCode value={row.original.code} onCopy={copy} />,
+      cell: ({ row }) => <CopyableCode value={row.original.code} onCopy={copyWithToast} />,
     },
     {
       id: 'limit_use',

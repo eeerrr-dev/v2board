@@ -1,7 +1,7 @@
 import {
   createContext,
+  use,
   useCallback,
-  useContext,
   useEffect,
   useEffectEvent,
   useMemo,
@@ -55,7 +55,7 @@ type SidebarContextProps = {
 const SidebarContext = createContext<SidebarContextProps | null>(null);
 
 function useSidebar() {
-  const context = useContext(SidebarContext);
+  const context = use(SidebarContext);
   if (!context) {
     throw new Error('useSidebar must be used within a SidebarProvider.');
   }
@@ -78,15 +78,15 @@ function SidebarProvider({
   const isMobile = useIsMobile();
   const [openMobile, setOpenMobile] = useState(false);
 
-  const [_open, _setOpen] = useState(defaultOpen);
-  const open = openProp ?? _open;
+  const [internalOpen, setInternalOpen] = useState(defaultOpen);
+  const open = openProp ?? internalOpen;
   const setOpen = useCallback(
     (value: boolean | ((value: boolean) => boolean)) => {
       const openState = typeof value === 'function' ? value(open) : value;
       if (setOpenProp) {
         setOpenProp(openState);
       } else {
-        _setOpen(openState);
+        setInternalOpen(openState);
       }
       document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
     },

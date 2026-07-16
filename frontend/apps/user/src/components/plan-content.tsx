@@ -32,6 +32,7 @@ export function PlanContent({ content, className, htmlClassName }: PlanContentPr
     return (
       <div
         className={cn(htmlClassName ?? className)}
+        // eslint-disable-next-line @eslint-react/dom-no-dangerously-set-innerhtml -- backend HTML sanitized by sanitizeBackendHtml
         dangerouslySetInnerHTML={{ __html: sanitizeBackendHtml(rawContent) }}
       />
     );
