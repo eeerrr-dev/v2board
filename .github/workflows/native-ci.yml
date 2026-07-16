@@ -144,8 +144,8 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Test
-        run: pnpm test
+      - name: Test with coverage
+        run: pnpm test:coverage
 
       - name: Build immutable deploy release
         run: pnpm build:deploy

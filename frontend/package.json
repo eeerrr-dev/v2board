@@ -20,7 +20,8 @@
     "typecheck": "pnpm -r --parallel typecheck",
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write \"**/*.{ts,tsx,json,md,css}\"",
-    "test": "node --test scripts/*.test.mjs && pnpm -r --parallel test",
+    "test": "node --test scripts/*.test.mjs && vitest run",
+    "test:coverage": "node --test scripts/*.test.mjs && vitest run --coverage",
     "visual-smoke": "node scripts/visual-smoke.mjs",
     "parity": "playwright test"
   },
@@ -31,6 +32,7 @@
     "@playwright/test": "^1.61.1",
     "@tanstack/eslint-plugin-query": "catalog:",
     "@types/node": "catalog:",
+    "@vitest/coverage-v8": "catalog:",
     "eslint": "^10.7.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react-hooks": "^7.1.1",
@@ -38,6 +40,7 @@
     "knip": "catalog:",
     "prettier": "^3.9.5",
     "typescript": "catalog:",
-    "typescript-eslint": "^8.63.0"
+    "typescript-eslint": "^8.63.0",
+    "vitest": "catalog:"
   }
 }
