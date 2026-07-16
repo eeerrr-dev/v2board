@@ -31,12 +31,9 @@ export default defineConfig({
         entryFileNames: '[name]-[hash].js',
         chunkFileNames: '[name]-[hash].js',
         assetFileNames: 'asset-[hash][extname]',
-        // Hashed asset URLs are release-independent and served immutable, so a
-        // byte-stable vendor chunk stays cached across releases instead of
-        // re-downloading with every app edit that renames the entry chunk.
-        codeSplitting: {
-          groups: [{ name: 'vendor', test: /node_modules/ }],
-        },
+        // No vendor grouping: a single node_modules chunk would pull vendors
+        // that only lazy routes use (e.g. recharts) into the eager graph and
+        // regress first paint behind one multi-megabyte chunk.
       },
     },
   },
