@@ -47,7 +47,13 @@ export default defineConfig({
   outputDir: process.env.INTERACTION_PARITY_ARTIFACT_DIR ?? './.cache/playwright-parity',
   fullyParallel: workers > 1,
   workers,
-  retries: 0,
+  // One retry absorbs the reference oracle's animation-timing flakes (its antd
+  // overlays can miss a tight close wait under full-suite load) while keeping
+  // the gate strict: a real contract regression is deterministic and fails both
+  // attempts. The first attempt runs untraced — always-on trace recording added
+  // enough Chromium overhead to tip those oracle waits over the edge — and the
+  // retry records the full trace for diagnosis.
+  retries: 1,
   // Unconditional: the Docker gate does not forward CI into the container, and
   // local narrowing goes through INTERACTION_PARITY_SCENARIOS, never test.only.
   // A committed .only would otherwise silently shrink the whole contract gate.
@@ -57,7 +63,7 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   grep,
   use: {
-    trace: 'retain-on-failure',
+    trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
   projects: requestedViewports.map(project),

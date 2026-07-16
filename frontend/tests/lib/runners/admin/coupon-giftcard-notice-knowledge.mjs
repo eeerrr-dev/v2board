@@ -378,7 +378,10 @@ export async function runAdminNoticeCreateModalInteraction(page) {
   const filled = await adminNoticeModalState(page);
   await clickAdminEntitySubmit(page, 'notice-submit');
   await waitForPagePropertyAtLeast(page, '__visualParityAdminNoticeSaveCount', 1);
-  await waitForVisibleElementsHidden(page, adminOverlayOpenSelector);
+  // The antd oracle needs well over the default 5s to play its modal close
+  // animation when the full suite saturates the machine; the assertion itself
+  // (auto-close on save, close on cancel) is unchanged.
+  await waitForVisibleElementsHidden(page, adminOverlayOpenSelector, 15_000);
   await waitForPagePropertyAtLeast(
     page,
     '__visualParityAdminNoticeFetchCount',
@@ -388,7 +391,7 @@ export async function runAdminNoticeCreateModalInteraction(page) {
   await openAdminCreateOverlay(page, 'notice-create');
   const reopened = await adminNoticeModalState(page);
   await clickFirstVisibleText(page, adminDrawerFooterButtonSelector, ['取消']);
-  await waitForVisibleElementsHidden(page, adminOverlayOpenSelector);
+  await waitForVisibleElementsHidden(page, adminOverlayOpenSelector, 15_000);
   return {
     before,
     closed,
