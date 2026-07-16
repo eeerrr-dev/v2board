@@ -9,7 +9,12 @@ export interface HashRouteOptions {
   guestFallback: string;
   publicRoutes: readonly string[];
   routes: readonly string[];
-  authStorageKey?: string;
+  /**
+   * The app's auth localStorage key (each app exports its own constant from
+   * lib/auth). Required so this pre-router gate can never silently read a
+   * different key than the app's session store.
+   */
+  authStorageKey: string;
   nestedPrefixes?: readonly string[];
   /**
    * Route-pattern matcher. Each app injects react-router's `matchPath`
@@ -58,7 +63,7 @@ export function getNormalizedHashPath(routeSource: string, options: HashRouteOpt
   const query = queryIndex >= 0 ? routeSource.slice(queryIndex) : '';
   const hasAuth =
     typeof window !== 'undefined' &&
-    Boolean(window.localStorage.getItem(options.authStorageKey ?? 'authorization'));
+    Boolean(window.localStorage.getItem(options.authStorageKey));
   const normalizedRawPath = normalizePath(rawPath);
   const recoveredNestedPath = recoverNestedPrefix(normalizedRawPath, options);
   let path = recoveredNestedPath ?? normalizedRawPath;

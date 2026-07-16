@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import { extname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { forbiddenLegacyNames } from './deploy-contract.mjs';
 
 const frontendRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const repositoryRoot = resolve(frontendRoot, '..');
@@ -91,8 +92,11 @@ const rules = [
   },
   {
     label: 'retired packaged frontend asset',
-    pattern:
-      /(?:\/theme\/default\/assets|\bumi\.(?:js|css)\b|components\.chunk\.css|vendors\.async\.js|components\.async\.js)/,
+    pattern: new RegExp(
+      `(?:/theme/default/assets|\\b(?:${forbiddenLegacyNames
+        .map((name) => name.replaceAll('.', '\\.'))
+        .join('|')})\\b)`,
+    ),
   },
   {
     label: 'retired runtime settings injection',

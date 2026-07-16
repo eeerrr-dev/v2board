@@ -1,3 +1,5 @@
+import { SUPPORTED_LOCALES } from '@v2board/i18n';
+
 export type RuntimeThemeColor = 'default' | 'darkblue' | 'black' | 'green';
 
 export interface RuntimeConfig {
@@ -17,7 +19,10 @@ const DEFAULT_RUNTIME_CONFIG = {
   background_url: '',
   description: 'V2Board',
   logo: '',
-  i18n: ['zh-CN', 'en-US', 'ja-JP', 'vi-VN', 'ko-KR', 'zh-TW'],
+  // The bundled locale registry is the authority for which locales exist; the
+  // Rust-injected list is intersected with it and kept set-equal by
+  // `make deploy-contract-audit`.
+  i18n: SUPPORTED_LOCALES.map((locale) => locale.code),
 } as const satisfies Required<RuntimeConfig>;
 const THEME_COLORS = new Set<RuntimeThemeColor>(['default', 'darkblue', 'black', 'green']);
 const THEME_META_COLORS: Record<RuntimeThemeColor, string> = {

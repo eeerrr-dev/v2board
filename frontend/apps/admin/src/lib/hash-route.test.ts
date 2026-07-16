@@ -4,6 +4,7 @@ import { getNormalizedHashPath, type HashRouteOptions } from '@v2board/config';
 
 const options: HashRouteOptions = {
   matchRoute: (route, path, end) => matchPath({ path: route, end }, path),
+  authStorageKey: 'authorization',
   authenticatedFallback: '/dashboard',
   authenticatedPublicFallbackRoutes: [],
   guestFallback: '/login',

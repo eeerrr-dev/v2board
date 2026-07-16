@@ -17,6 +17,7 @@ import { RequireAuth } from '@/components/layout/require-auth';
 import { RouteBoundaryOutlet, RouteErrorFallback } from '@/components/route-error-boundary';
 import { Spinner } from '@/components/ui/spinner';
 import {
+  AUTH_STORAGE_KEY,
   buildLoginRedirect,
   getAuthData,
   normalizeLoginRedirectTarget,
@@ -64,6 +65,7 @@ export const USER_APP_LAYOUT_ROUTE_PATHS = [
 
 export const USER_HASH_ROUTE_OPTIONS = {
   matchRoute: (route: string, path: string, end: boolean) => matchPath({ path: route, end }, path),
+  authStorageKey: AUTH_STORAGE_KEY,
   authenticatedFallback: '/dashboard',
   authenticatedPublicFallbackRoutes: [],
   guestFallback: '/login',

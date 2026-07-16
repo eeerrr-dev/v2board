@@ -1,3 +1,5 @@
+import { runtimeConfigToken } from './deploy-contract.mjs';
+
 const baseUrl = process.env.DEPLOY_SMOKE_BASE_URL ?? 'http://rust-api:8080';
 const adminPath = (process.env.DEPLOY_SMOKE_ADMIN_PATH ?? 'admin').replace(/^\/+|\/+$/g, '');
 
@@ -10,7 +12,7 @@ async function requireOk(url, label) {
 async function verifyShell(path, assetPrefix) {
   const response = await requireOk(new URL(path, baseUrl), path);
   const html = await response.text();
-  if (!html.includes('id="root"') || html.includes('__V2BOARD_RUNTIME_CONFIG__')) {
+  if (!html.includes('id="root"') || html.includes(runtimeConfigToken)) {
     throw new Error(`${path} did not render a resolved SPA shell`);
   }
 

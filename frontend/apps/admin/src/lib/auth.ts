@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from 'react';
 
-const AUTH_KEY = 'authorization';
+// Tier-1 pinned session key; also consumed by the pre-router hash gate via
+// ADMIN_HASH_ROUTE_OPTIONS.
+export const AUTH_KEY = 'authorization';
 
 export interface AdminLoginLoaderData {
   redirectTarget: string;

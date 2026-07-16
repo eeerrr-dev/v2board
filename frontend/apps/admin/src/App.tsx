@@ -14,7 +14,13 @@ import { AdminLayout } from '@/components/layout/admin-layout';
 import { RequireAuth } from '@/components/layout/require-auth';
 import { RouteBoundaryOutlet, RouteErrorFallback } from '@/components/route-error-boundary';
 import { Spinner } from '@/components/ui/spinner';
-import { buildLoginRedirect, getAuthData, logout, type AdminLoginLoaderData } from '@/lib/auth';
+import {
+  AUTH_KEY,
+  buildLoginRedirect,
+  getAuthData,
+  logout,
+  type AdminLoginLoaderData,
+} from '@/lib/auth';
 import { adminSessionQueryOptions } from '@/lib/session-queries';
 
 export const ADMIN_ROUTE_PATHS = [
@@ -71,6 +77,7 @@ function isAbortedQuery(error: unknown): boolean {
 
 export const ADMIN_HASH_ROUTE_OPTIONS = {
   matchRoute: (route: string, path: string, end: boolean) => matchPath({ path: route, end }, path),
+  authStorageKey: AUTH_KEY,
   authenticatedFallback: '/dashboard',
   guestFallback: '/login',
   nestedPrefixes: ADMIN_ROUTE_PATHS,

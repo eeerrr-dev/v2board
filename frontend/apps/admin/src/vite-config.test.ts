@@ -11,6 +11,10 @@ const sharedViteConfigSource = readFileSync(
   'utf8',
 );
 const buildDeploySource = readFileSync(join(here, '../../../scripts/build-deploy.mjs'), 'utf8');
+const deployContractSource = readFileSync(
+  join(here, '../../../scripts/deploy-contract.mjs'),
+  'utf8',
+);
 const adminDevTemplateSource = readFileSync(join(here, '../index.html'), 'utf8');
 const packageJson = JSON.parse(readFileSync(join(here, '../package.json'), 'utf8')) as {
   dependencies: Record<string, string>;
@@ -102,8 +106,8 @@ describe('admin Vite configuration', () => {
     expect(buildDeploySource).toContain('references missing deploy assets');
     expect(buildDeploySource).not.toContain('V2BOARD_DEPLOY_MODE');
     expect(buildDeploySource).not.toContain('finalizeOnly');
-    expect(buildDeploySource).toContain("'umi.css'");
-    expect(buildDeploySource).toContain("'umi.js'");
+    expect(deployContractSource).toContain("'umi.css'");
+    expect(deployContractSource).toContain("'umi.js'");
     expect(buildDeploySource).toContain("new Set(['i18n', 'images', 'theme', 'themes'])");
     expect(buildDeploySource).not.toContain('apps/admin/src/styles/themes');
     expect(buildDeploySource).not.toContain('adminThemeFiles');

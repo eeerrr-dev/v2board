@@ -1,6 +1,6 @@
 .PHONY: up down reset sync logs ps shell doctor \
 	rust-check rust-test rust-integration rust-route-audit rust-worker-reconcile rust-target-gate \
-	public-bundle-audit runtime-isolation-audit native-database-audit cloudflared-config-audit native-release-audit frontend-source-audit parity-config-audit ui-sync-audit \
+	public-bundle-audit runtime-isolation-audit native-database-audit cloudflared-config-audit native-release-audit frontend-source-audit parity-config-audit ui-sync-audit deploy-contract-audit \
 	deploy-smoke visual-smoke interaction-parity accessibility-smoke behavior-parity \
 	reference-oracle-check reference-oracle-up reference-oracle-down \
 	clean-frontend-runs clean-host clean-host-apply mailpit-ui admin-url
@@ -21,6 +21,11 @@ V2BOARD_FRONTEND_ADMIN_PATH ?= admin
 ADMIN_PATH ?= $(V2BOARD_FRONTEND_ADMIN_PATH)
 export V2BOARD_FRONTEND_ADMIN_PATH
 SOURCE_BASE_URL ?= http://rust-api:8080
+# Retired packaged-frontend bundle names. Canonical peer copies live in
+# frontend/scripts/deploy-contract.mjs (JS build/smoke/audit scripts) and
+# backend/rust/crates/provision/src/release_archive.rs (release inspection);
+# `make deploy-contract-audit` fails when any copy drifts.
+FORBIDDEN_LEGACY_NAMES := components.chunk.css vendors.async.js components.async.js custom.css custom.js env.example.js umi.css umi.js
 RUST_WORKER_RECONCILE_WAIT_SECONDS ?= 75
 RUST_WORKER_RECONCILE_STRICT ?= 1
 VISUAL_PARITY_VIEWPORTS ?= desktop mobile
@@ -101,6 +106,7 @@ doctor:
 	$(MAKE) --no-print-directory frontend-source-audit
 	$(MAKE) --no-print-directory parity-config-audit
 	$(MAKE) --no-print-directory ui-sync-audit
+	$(MAKE) --no-print-directory deploy-contract-audit
 	@echo "Docker configuration, host cleanliness, runtime isolation, parity configuration, and shared UI synchronization are valid."
 
 rust-check:
@@ -184,7 +190,7 @@ public-bundle-audit:
 runtime-isolation-audit:
 	@echo "Auditing production paths for retired PHP and packaged frontend runtime dependencies..."
 	@matches="$$(rg -n \
-		'backend/laravel|php artisan|composer(\.json| install)|laravel:|/theme/default/assets|umi\.(js|css)|components\.chunk\.css|vendors\.async\.js|components\.async\.js' \
+		'backend/laravel|php artisan|composer(\.json| install)|laravel:|/theme/default/assets|umi\.(js|css)|components\.chunk\.css|vendors\.async\.js|components\.async\.js|env\.example\.js|custom\.(css|js)' \
 		Dockerfile.rust Dockerfile.frontend docker-compose.local.yml .github .devcontainer \
 		--glob '!**/references/**' || true)"; \
 	if [ -n "$$matches" ]; then echo "$$matches"; exit 1; fi
@@ -337,6 +343,31 @@ ui-sync-audit:
 	$(FRONTEND_RUN) -v "$(CURDIR):/src:ro" frontend -lc \
 		'node /src/frontend/scripts/ui-sync-audit.mjs'
 
+# Cross-checks the deploy-seam constants that are deliberately encoded on both
+# sides of the frontend/Rust seam (defense in depth): forbidden legacy bundle
+# names, the runtime-config token, and the enabled locale set. Runs on the
+# host against tracked sources only.
+deploy-contract-audit:
+	@set -eu; \
+	js_names="$$(sed -n "/^export const forbiddenLegacyNames/,/^\]/p" frontend/scripts/deploy-contract.mjs | sed -n "s/^  '\(.*\)',$$/\1/p" | sort)"; \
+	rust_names="$$(sed -n '/fn is_forbidden_legacy_filename/,/^}$$/p' backend/rust/crates/provision/src/release_archive.rs | grep -o '"[^"]*"' | tr -d '"' | sort)"; \
+	make_names="$$(printf '%s\n' $(FORBIDDEN_LEGACY_NAMES) | sort)"; \
+	test -n "$$js_names"; test -n "$$rust_names"; \
+	[ "$$js_names" = "$$make_names" ] || { echo "frontend/scripts/deploy-contract.mjs forbidden names drifted from Makefile FORBIDDEN_LEGACY_NAMES"; exit 1; }; \
+	[ "$$rust_names" = "$$make_names" ] || { echo "release_archive.rs forbidden names drifted from Makefile FORBIDDEN_LEGACY_NAMES"; exit 1; }; \
+	token="$$(sed -n "s/^export const runtimeConfigToken = '\(.*\)';$$/\1/p" frontend/scripts/deploy-contract.mjs)"; \
+	test -n "$$token"; \
+	grep -qF "RUNTIME_CONFIG_TOKEN: &str = \"$$token\"" backend/rust/crates/api/src/frontend.rs || { echo "Rust RUNTIME_CONFIG_TOKEN drifted from deploy-contract.mjs"; exit 1; }; \
+	grep -qF "$$token" frontend/apps/user/index.html || { echo "user index.html lost the runtime-config token"; exit 1; }; \
+	grep -qF "$$token" frontend/apps/admin/index.html || { echo "admin index.html lost the runtime-config token"; exit 1; }; \
+	grep -qF "'$$token'" frontend/apps/user/src/lib/runtime-config.ts || { echo "user runtime-config.ts dev fallback drifted from deploy-contract.mjs"; exit 1; }; \
+	grep -qF "'$$token'" frontend/apps/admin/src/lib/runtime-config.ts || { echo "admin runtime-config.ts dev fallback drifted from deploy-contract.mjs"; exit 1; }; \
+	rust_locales="$$(sed -n 's/^const ENABLED_LOCALES.*\[\(.*\)\];$$/\1/p' backend/rust/crates/api/src/frontend.rs | tr -d '" ' | tr ',' '\n' | sort)"; \
+	frontend_locales="$$(grep -o "code: '[^']*'" frontend/packages/i18n/src/locale-registry.ts | sed "s/code: '//;s/'$$//" | sort)"; \
+	test -n "$$rust_locales"; test -n "$$frontend_locales"; \
+	[ "$$rust_locales" = "$$frontend_locales" ] || { echo "Rust ENABLED_LOCALES drifted from the frontend locale registry"; exit 1; }; \
+	echo "Deploy-seam contract copies are in lockstep."
+
 reference-oracle-check:
 	@test -f references/wyx2685-v2board/public/theme/default/dashboard.blade.php || { \
 		echo "Reference submodule is unavailable; run: git submodule update --init --recursive"; exit 1; }
@@ -353,7 +384,7 @@ reference-oracle-down:
 	$(REFERENCE_DCF) stop reference-oracle >/dev/null 2>&1 || true
 	$(REFERENCE_DCF) rm -f reference-oracle >/dev/null 2>&1 || true
 
-deploy-smoke: cloudflared-config-audit
+deploy-smoke: cloudflared-config-audit deploy-contract-audit
 	$(DCF) up -d --build --wait postgres clickhouse redis rust-api
 	$(FRONTEND_RUN) \
 		-e "DEPLOY_SMOKE_BASE_URL=$(SOURCE_BASE_URL)" \
@@ -364,7 +395,11 @@ deploy-smoke: cloudflared-config-audit
 		test -f /app/frontend-deploy/current/user/manifest.json; \
 		test -f /app/frontend-deploy/current/admin/index.html; \
 		test -f /app/frontend-deploy/current/admin/manifest.json; \
-		! find /app/frontend-deploy/current -type f \( -name "umi.js" -o -name "umi.css" -o -name "components.chunk.css" -o -name "vendors.async.js" -o -name "components.async.js" \) | grep -q .; \
+		for name in $(FORBIDDEN_LEGACY_NAMES); do \
+			if find /app/frontend-deploy/current -type f -name "$$name" | grep -q .; then \
+				echo "Forbidden legacy deploy artifact found: $$name"; exit 1; \
+			fi; \
+		done; \
 		node /src/frontend/scripts/deploy-smoke.mjs'
 
 visual-smoke: deploy-smoke

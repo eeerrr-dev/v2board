@@ -12,7 +12,12 @@ import {
 } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
-import { brotliCompressSync, gzipSync } from 'node:zlib';
+import { gzipSync } from 'node:zlib';
+import {
+  forbiddenLegacyNames,
+  hashedAssetNamePattern,
+  runtimeConfigToken,
+} from './deploy-contract.mjs';
 import { releaseIdFromBuilds } from './release-content-id.mjs';
 import { publishReleaseLinks } from './release-publication.mjs';
 
@@ -22,18 +27,8 @@ const deployRoot = process.env.V2BOARD_DEPLOY_ROOT
   ? resolve(process.env.V2BOARD_DEPLOY_ROOT)
   : resolve(root, 'dist-deploy');
 const releasesRoot = join(deployRoot, 'releases');
-const forbiddenLegacyNames = new Set([
-  'components.chunk.css',
-  'vendors.async.js',
-  'components.async.js',
-  'custom.css',
-  'custom.js',
-  'env.example.js',
-  'umi.css',
-  'umi.js',
-]);
+const forbiddenLegacyNameSet = new Set(forbiddenLegacyNames);
 const forbiddenLegacyDirectories = new Set(['i18n', 'images', 'theme', 'themes']);
-const runtimeConfigToken = '__V2BOARD_RUNTIME_CONFIG__';
 
 await mkdir(releasesRoot, { recursive: true });
 const stageRoot = await mkdtemp(join(releasesRoot, '.build-'));
@@ -250,7 +245,6 @@ async function validateViteBuild({ label, outDir, publicBase, requiresCustomHtml
   return {
     files: validatedFiles.length,
     initialGzip: initialBundle.gzip,
-    initialBrotli: initialBundle.brotli,
     validatedFiles,
   };
 }
@@ -273,13 +267,11 @@ async function measureInitialJavaScript(label, manifest, entryKey, outDir) {
 
   visit(entryKey);
   let gzip = 0;
-  let brotli = 0;
   for (const file of files) {
     const source = await readFile(join(outDir, safeAssetPath(`${label} initial chunk`, file)));
     gzip += gzipSync(source).byteLength;
-    brotli += brotliCompressSync(source).byteLength;
   }
-  return { gzip, brotli };
+  return { gzip };
 }
 
 async function validateManifestAsset(label, value, outDir, referencedFiles) {
@@ -308,11 +300,11 @@ function safeAssetPath(label, value) {
     decoded.startsWith('/') ||
     segments.some((segment) => !segment || segment === '.' || segment === '..') ||
     segments.length !== 1 ||
-    !/^[A-Za-z0-9._-]+-[A-Za-z0-9_-]{8,}\.[A-Za-z0-9.]+$/.test(decoded)
+    !hashedAssetNamePattern.test(decoded)
   ) {
     throw new Error(`${label} contains a non-hashed or unsafe asset path: ${value}`);
   }
-  if (forbiddenLegacyNames.has(basename(decoded))) {
+  if (forbiddenLegacyNameSet.has(basename(decoded))) {
     throw new Error(`${label} references forbidden legacy asset: ${value}`);
   }
   return decoded;
@@ -371,7 +363,7 @@ async function rejectLegacyArtifacts(directory, rootDirectory = directory) {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
     const relativePath = relative(rootDirectory, path).split(sep);
-    if (forbiddenLegacyNames.has(entry.name)) {
+    if (forbiddenLegacyNameSet.has(entry.name)) {
       throw new Error(`Unexpected legacy deploy artifact: ${path}`);
     }
     if (entry.isDirectory() && relativePath.some((part) => forbiddenLegacyDirectories.has(part))) {
