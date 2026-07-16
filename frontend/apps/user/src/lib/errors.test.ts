@@ -9,7 +9,6 @@ describe('error locale lookup', () => {
     createI18n();
     window.localStorage.clear();
     window.g_lang = undefined;
-    window.g_langSeparator = undefined;
   });
 
   afterEach(() => {

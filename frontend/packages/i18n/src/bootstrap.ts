@@ -59,7 +59,6 @@ export function prepareI18nLocale(
   const bootstrapLocale = cookieLocale ?? resolveNavigatorLocale(window.navigator);
   if (bootstrapLocale) setLocale(bootstrapLocale);
 
-  window.g_langSeparator = '-';
   const locale =
     resolveSupportedLocale(window.localStorage.getItem('umi_locale')) ??
     resolveSupportedLocale(window.g_lang) ??

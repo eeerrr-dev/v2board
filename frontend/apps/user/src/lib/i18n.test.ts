@@ -45,7 +45,6 @@ describe('i18n resources', () => {
     document.cookie = 'i18n=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
     window.localStorage.clear();
     window.g_lang = undefined;
-    window.g_langSeparator = undefined;
   });
 
   afterEach(() => {

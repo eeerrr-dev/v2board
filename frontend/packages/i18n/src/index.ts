@@ -19,8 +19,6 @@ declare global {
   interface Window {
     /** Public compatibility contract consumed by API requests and integrations. */
     g_lang?: string;
-    /** Public compatibility contract for locale values written by older clients. */
-    g_langSeparator?: string;
   }
 }
 
@@ -84,7 +82,6 @@ export function setLocale(locale: string | undefined): void {
   }
   const persisted = window.localStorage.getItem('umi_locale') || window.g_lang;
   if (normalized !== undefined && persisted === normalized && window.g_lang === normalized) return;
-  window.g_langSeparator = '-';
   window.g_lang = normalized;
   window.localStorage.setItem('umi_locale', normalized || '');
 }

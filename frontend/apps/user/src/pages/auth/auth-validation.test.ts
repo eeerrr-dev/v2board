@@ -159,7 +159,6 @@ describe('auth validation localization', () => {
   afterEach(() => {
     window.localStorage.removeItem('umi_locale');
     window.g_lang = undefined;
-    window.g_langSeparator = undefined;
   });
 
   it.each(localizedValidation)('localizes validation copy for %s', async (locale, expected) => {
