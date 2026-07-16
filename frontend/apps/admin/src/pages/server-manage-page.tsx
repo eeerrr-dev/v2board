@@ -76,6 +76,8 @@ import { NodeEditor } from './server-node-editor';
 
 function ServerSortNavigationGuard({ when }: { when: boolean }) {
   const blocker = useBlocker(when);
+  // Deliberate useCallback: useBeforeUnload re-subscribes the capture-phase
+  // window listener whenever this identity changes.
   const handleBeforeUnload = useCallback(
     (event: BeforeUnloadEvent) => {
       if (!when) return;

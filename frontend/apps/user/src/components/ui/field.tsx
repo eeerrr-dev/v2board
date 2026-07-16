@@ -130,7 +130,7 @@ function Field({
   const invalid = dataInvalid === true || dataInvalid === 'true';
 
   return (
-    <FieldContext.Provider value={context}>
+    <FieldContext value={context}>
       <div
         {...props}
         id={fieldId}
@@ -152,7 +152,7 @@ function Field({
       >
         {children}
       </div>
-    </FieldContext.Provider>
+    </FieldContext>
   );
 }
 

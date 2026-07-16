@@ -219,17 +219,14 @@ export default function UsersPage() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const planOptions = useMemo<PlanOption[]>(
-    () => (plansReady ? planData.map((plan) => ({ label: plan.name, value: plan.id })) : []),
-    [planData, plansReady],
-  );
+  const planOptions: PlanOption[] = plansReady
+    ? planData.map((plan) => ({ label: plan.name, value: plan.id }))
+    : [];
 
-  const groupMap = useMemo(() => {
-    const map = new Map<number, string>();
-    if (!groupsReady) return map;
-    for (const group of groupData) map.set(group.id, group.name);
-    return map;
-  }, [groupData, groupsReady]);
+  const groupMap = new Map<number, string>();
+  if (groupsReady) {
+    for (const group of groupData) groupMap.set(group.id, group.name);
+  }
 
   const filterFields = useMemo<FilterField[]>(
     () => [

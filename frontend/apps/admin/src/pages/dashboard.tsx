@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, type ReactNode } from 'react';
+import { lazy, Suspense, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
 import {
   AlertTriangle,
@@ -88,22 +88,10 @@ export default function DashboardPage() {
     navigate('/order');
   };
 
-  const serverTodayChart = useMemo(
-    () => buildRankingData(serverToday.data ?? [], (item) => item.server_name),
-    [serverToday.data],
-  );
-  const serverLastChart = useMemo(
-    () => buildRankingData(serverLast.data ?? [], (item) => item.server_name),
-    [serverLast.data],
-  );
-  const userTodayChart = useMemo(
-    () => buildRankingData(userToday.data ?? [], (item) => item.email),
-    [userToday.data],
-  );
-  const userLastChart = useMemo(
-    () => buildRankingData(userLast.data ?? [], (item) => item.email),
-    [userLast.data],
-  );
+  const serverTodayChart = buildRankingData(serverToday.data ?? [], (item) => item.server_name);
+  const serverLastChart = buildRankingData(serverLast.data ?? [], (item) => item.server_name);
+  const userTodayChart = buildRankingData(userToday.data ?? [], (item) => item.email);
+  const userLastChart = buildRankingData(userLast.data ?? [], (item) => item.email);
 
   const rankCharts = [
     { title: '今日节点流量排行', data: serverTodayChart },

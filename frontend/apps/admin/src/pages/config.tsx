@@ -370,6 +370,8 @@ function SystemConfigSectionForm({
   refreshConfig: () => Promise<AdminConfig>;
 }) {
   const saveConfig = useSaveSystemConfigMutation();
+  // Deliberate useMemo: serverValues identity feeds the draft-reset effect
+  // below; recomputing per render would clobber in-progress field edits.
   const serverValues = useMemo(() => getConfigSectionValues(config, group), [config, group]);
   const form = useForm<ConfigSectionValues>({
     resolver: zodResolver(SECTION_SCHEMAS[group]),

@@ -147,6 +147,8 @@ function PaymentEditor({
     Object.keys(definition).length > 0;
   const editorReady = open && !methodsLoading && !methodsError && !methodsEmpty && definitionReady;
 
+  // Deliberate useCallback: the payment-form hydration effect below keys on
+  // this identity; a per-render function would replay the hydration.
   const onSelectPaymentMethod = useCallback(
     (payment: string | undefined) => {
       if (!payment) return;

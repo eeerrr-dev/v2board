@@ -110,7 +110,7 @@ export function Carousel({
   }, [api, setApi]);
 
   return (
-    <CarouselContext.Provider
+    <CarouselContext
       value={{ activeSlides, carouselRef, api, orientation, selectedIndex }}
     >
       <div
@@ -138,7 +138,7 @@ export function Carousel({
           </span>
         ) : null}
       </div>
-    </CarouselContext.Provider>
+    </CarouselContext>
   );
 }
 
@@ -152,12 +152,12 @@ export function CarouselContent({ className, children, ...props }: ComponentProp
         {...props}
       >
         {items.map((child, index) => (
-          <CarouselItemPositionContext.Provider
+          <CarouselItemPositionContext
             key={isValidElement(child) && child.key !== null ? child.key : index}
             value={{ index, size: items.length }}
           >
             {child}
-          </CarouselItemPositionContext.Provider>
+          </CarouselItemPositionContext>
         ))}
       </div>
     </div>

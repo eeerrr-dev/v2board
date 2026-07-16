@@ -83,6 +83,9 @@ export default function AdminChart(props: AdminChartProps) {
 }
 
 function OrderChart({ data, label, className }: OrderChartProps) {
+  // Deliberate useMemo (not compiler-elided): recharts restarts its mount
+  // animation when the data/config prop identity changes, so these must stay
+  // referentially stable across unrelated parent re-renders.
   const model = useMemo(() => buildOrderChartModel(data), [data]);
   const config = useMemo<ChartConfig>(
     () =>
@@ -138,6 +141,8 @@ function OrderChart({ data, label, className }: OrderChartProps) {
 }
 
 function RankingChart({ data, label, className }: RankingChartProps) {
+  // Deliberate useMemo: stable rows identity keeps recharts from replaying
+  // its mount animation on unrelated parent re-renders.
   const rows = useMemo(() => [...data].reverse(), [data]);
 
   return (
