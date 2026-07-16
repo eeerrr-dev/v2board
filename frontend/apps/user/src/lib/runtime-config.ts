@@ -28,7 +28,27 @@ const THEME_META_COLORS: Record<RuntimeThemeColor, string> = {
 };
 const DARK_THEME_META_COLOR = '#171717';
 
+let cachedConfig: RuntimeConfig | undefined;
+
+// The Rust-injected JSON blob is immutable for the page lifetime, so it is
+// read, parsed, and validated exactly once; the frozen result is shared.
 export function getRuntimeConfig(): RuntimeConfig {
+  cachedConfig ??= freezeConfig(readRuntimeConfig());
+  return cachedConfig;
+}
+
+// Tests swap the injected DOM element between cases; production never does.
+export function resetRuntimeConfigForTests(): void {
+  cachedConfig = undefined;
+}
+
+function freezeConfig(config: RuntimeConfig): RuntimeConfig {
+  if (config.theme) Object.freeze(config.theme);
+  if (config.i18n) Object.freeze(config.i18n);
+  return Object.freeze(config);
+}
+
+function readRuntimeConfig(): RuntimeConfig {
   const element = document.getElementById('v2board-runtime-config');
   const source = element?.textContent?.trim();
   if (!source || source === '__V2BOARD_RUNTIME_CONFIG__') return cloneDefaults();

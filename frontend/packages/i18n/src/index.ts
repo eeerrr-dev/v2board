@@ -31,8 +31,13 @@ declare global {
 export function readCookie(name: string): string {
   if (typeof document === 'undefined') return '';
   return document.cookie.split('; ').reduce((value, item) => {
-    const [key, raw] = item.split('=');
-    if (key !== name || raw === undefined) return value;
+    // Split on the first '=' only: values written by other cookie owners may
+    // legitimately contain '=' (e.g. base64 padding) and must not be truncated.
+    const separator = item.indexOf('=');
+    if (separator === -1) return value;
+    const key = item.slice(0, separator);
+    const raw = item.slice(separator + 1);
+    if (key !== name) return value;
     try {
       return decodeURIComponent(raw);
     } catch {

@@ -1,6 +1,7 @@
-import type { AdminRuntimeConfig } from '@/lib/runtime-config';
+import { resetRuntimeConfigForTests, type AdminRuntimeConfig } from '@/lib/runtime-config';
 
 export function setAdminRuntimeConfig(config?: AdminRuntimeConfig): void {
+  resetRuntimeConfigForTests();
   document.getElementById('v2board-runtime-config')?.remove();
   if (config === undefined) return;
   const element = document.createElement('script');

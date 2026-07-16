@@ -8,21 +8,19 @@ const listeners = new Set<() => void>();
 export type ThemePreference = 'system' | 'light' | 'dark';
 
 // The persisted preference. The frontend-only `dark_mode` cookie stays the single
-// storage key: 'dark' → '1' and 'light' → '0' keep the persisted binary values, and
-// 'system' (or an absent/unknown cookie) means "follow the OS". Reading tolerates
-// both the words and the existing 1/0 values so users, the store, and the
-// pre-paint script in index.html and the React runtime agree.
+// storage key: '1'/'0' are the persisted binary values (the legacy frontend wrote
+// the same digits), and 'system' (or an absent/unknown cookie) means "follow the
+// OS". These three values are the complete alphabet — the store, the pre-paint
+// script in index.html, and the React runtime all read and write only them.
 export function readThemePreference(): ThemePreference {
   const raw = readCookie(DARK_MODE_KEY);
-  if (raw === '1' || raw === 'dark') return 'dark';
-  if (raw === '0' || raw === 'light') return 'light';
+  if (raw === '1') return 'dark';
+  if (raw === '0') return 'light';
   return 'system';
 }
 
-// Whether the OS currently asks for a dark UI. Guarded so SSR / a jsdom without
-// matchMedia degrade to light instead of throwing.
+// Whether the OS currently asks for a dark UI.
 export function systemPrefersDark(): boolean {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
   return window.matchMedia('(prefers-color-scheme: dark)').matches;
 }
 
@@ -60,11 +58,9 @@ function handleSystemThemeChange(): void {
 
 export function applyInitialDarkMode(): void {
   applyDarkMode(resolveDarkMode());
-  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
-    window
-      .matchMedia('(prefers-color-scheme: dark)')
-      .addEventListener('change', handleSystemThemeChange);
-  }
+  window
+    .matchMedia('(prefers-color-scheme: dark)')
+    .addEventListener('change', handleSystemThemeChange);
 }
 
 // Persist a preference and apply it immediately. 'system' re-defers to the OS.

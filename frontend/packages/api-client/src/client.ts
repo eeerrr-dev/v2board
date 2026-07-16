@@ -1,4 +1,5 @@
 import axios, {
+  AxiosHeaders,
   type AxiosError,
   type AxiosInstance,
   type AxiosRequestConfig,
@@ -265,7 +266,7 @@ function isEnvelopeObject(envelope: unknown): envelope is Record<string, unknown
   if (envelope === null || typeof envelope !== 'object' || Array.isArray(envelope)) return false;
   if (envelope instanceof ArrayBuffer) return false;
   if (ArrayBuffer.isView(envelope)) return false;
-  if (typeof Blob !== 'undefined' && envelope instanceof Blob) return false;
+  if (envelope instanceof Blob) return false;
   return true;
 }
 
@@ -279,13 +280,9 @@ function normalizeArrayBufferJsonResponse<T>(response: AxiosResponse<T>): AxiosR
   return response;
 }
 
-function getContentType(headers: unknown): string {
-  const maybeHeaders = headers as
-    { get?: (name: string) => unknown; [key: string]: unknown } | undefined;
+function getContentType(headers: AxiosResponse['headers']): string {
   const value =
-    typeof maybeHeaders?.get === 'function'
-      ? maybeHeaders.get('content-type')
-      : (maybeHeaders?.['content-type'] ?? maybeHeaders?.['Content-Type']);
+    headers instanceof AxiosHeaders ? headers.get('content-type') : headers['content-type'];
   return typeof value === 'string' ? value : String(value ?? '');
 }
 
@@ -303,8 +300,8 @@ function isPostRequest(method: string | undefined): boolean {
 function shouldFormEncode(data: unknown): data is Record<string, unknown> {
   if (!data || typeof data !== 'object') return false;
   if (data instanceof URLSearchParams) return false;
-  if (typeof FormData !== 'undefined' && data instanceof FormData) return false;
-  if (typeof Blob !== 'undefined' && data instanceof Blob) return false;
+  if (data instanceof FormData) return false;
+  if (data instanceof Blob) return false;
   if (data instanceof ArrayBuffer) return false;
   return true;
 }

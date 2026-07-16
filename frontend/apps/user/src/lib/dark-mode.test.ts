@@ -7,8 +7,8 @@ import {
   setThemePreference,
 } from './dark-mode';
 
-// A controllable `(prefers-color-scheme: dark)` stub — jsdom ships no matchMedia,
-// so tests that exercise the system preference install one and can flip it live.
+// A controllable `(prefers-color-scheme: dark)` stub so tests that exercise the
+// system preference can flip the OS theme live.
 function mockMatchMedia(dark: boolean) {
   const changeListeners = new Set<() => void>();
   const mql = {
@@ -36,14 +36,16 @@ describe('dark mode preference store', () => {
     vi.unstubAllGlobals();
   });
 
-  it('reads the tri-state preference, tolerating the legacy 1/0 values', () => {
+  it('reads the tri-state preference from the 1/0/system alphabet', () => {
     document.cookie = 'dark_mode=1;path=/';
     expect(readThemePreference()).toBe('dark');
     document.cookie = 'dark_mode=0;path=/';
     expect(readThemePreference()).toBe('light');
-    document.cookie = 'dark_mode=dark;path=/';
-    expect(readThemePreference()).toBe('dark');
     document.cookie = 'dark_mode=system;path=/';
+    expect(readThemePreference()).toBe('system');
+    // The word alphabet is retired: nothing ever wrote it, so unknown values
+    // fall back to following the OS.
+    document.cookie = 'dark_mode=dark;path=/';
     expect(readThemePreference()).toBe('system');
   });
 
@@ -135,7 +137,8 @@ describe('dark mode preference store', () => {
     expect(document.documentElement.classList.contains('dark')).toBe(false);
   });
 
-  it('treats a malformed cookie as system and stays light without matchMedia', () => {
+  it('treats a malformed cookie as system and follows a light OS', () => {
+    mockMatchMedia(false);
     document.cookie = 'dark_mode=%E0%A4%A;path=/';
 
     expect(() => applyInitialDarkMode()).not.toThrow();

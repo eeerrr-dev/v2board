@@ -301,12 +301,24 @@ export const useNotices = () => useQuery(userQueryOptions.notices());
 
 export const useTickets = () => useQuery(userQueryOptions.tickets());
 
-export const useTicket = (id: number | string | undefined, options?: QueryFreshnessOptions) =>
-  useQuery({
+export const useTicket = (id: number | string | undefined, options?: QueryFreshnessOptions) => {
+  const { refetchInterval, ...rest } = options ?? {};
+  return useQuery({
     ...userQueryOptions.ticketDetail(id),
     enabled: Boolean(id),
-    ...options,
+    // Like the order-status poll, the stop condition is intrinsic: a closed
+    // ticket (status 1) or a missing/errored one must not keep re-requesting
+    // for as long as the page stays mounted. Callers only pick the cadence.
+    refetchInterval:
+      typeof refetchInterval === 'number'
+        ? (query) =>
+            query.state.status === 'error' || query.state.data?.status === 1
+              ? false
+              : refetchInterval
+        : refetchInterval,
+    ...rest,
   });
+};
 
 export const useInvite = () => useQuery(userQueryOptions.invite());
 

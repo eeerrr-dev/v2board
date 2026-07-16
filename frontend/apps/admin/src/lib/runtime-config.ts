@@ -29,7 +29,26 @@ const ADMIN_THEME_META_COLORS: Record<string, string> = {
 };
 const DARK_THEME_META_COLOR = '#171717';
 
+let cachedConfig: AdminRuntimeConfig | undefined;
+
+// The Rust-injected JSON blob is immutable for the page lifetime, so it is
+// read, parsed, and validated exactly once; the frozen result is shared.
 export function getAdminRuntimeConfig(): AdminRuntimeConfig {
+  cachedConfig ??= freezeConfig(readAdminRuntimeConfig());
+  return cachedConfig;
+}
+
+// Tests swap the injected DOM element between cases; production never does.
+export function resetRuntimeConfigForTests(): void {
+  cachedConfig = undefined;
+}
+
+function freezeConfig(config: AdminRuntimeConfig): AdminRuntimeConfig {
+  if (config.theme) Object.freeze(config.theme);
+  return Object.freeze(config);
+}
+
+function readAdminRuntimeConfig(): AdminRuntimeConfig {
   const element = document.getElementById('v2board-runtime-config');
   const source = element?.textContent?.trim();
   if (!source || source === '__V2BOARD_RUNTIME_CONFIG__') return cloneDefaults();

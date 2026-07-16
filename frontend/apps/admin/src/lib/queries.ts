@@ -168,7 +168,11 @@ export const adminQueryOptions = {
         if (id == null) throw new Error('Ticket id is required');
         return admin.ticketDetail(apiClient, id, { signal });
       },
-      refetchInterval: 5_000,
+      // Poll only while the ticket is open and fetchable: a closed ticket
+      // (status 1) or an errored fetch self-stops instead of re-requesting
+      // every 5s for as long as the detail view stays mounted.
+      refetchInterval: (query) =>
+        query.state.status === 'error' || query.state.data?.status === 1 ? false : 5_000,
     }),
   coupons: (query: admin.AdminPageQuery) =>
     queryOptions({
