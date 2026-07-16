@@ -12,6 +12,7 @@ use thiserror::Error;
 use crate::MysqlImportSpec;
 
 const MAX_MYSQL_DUMP_BYTES: u64 = 1024 * 1024 * 1024 * 1024;
+const ROOT_UID: u32 = 0;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ImmutableFileInspection {
@@ -97,6 +98,16 @@ fn inspect_file(
     maximum_bytes: u64,
     field: &'static str,
 ) -> Result<ImmutableFileInspection, MysqlImportInspectionError> {
+    inspect_file_for_owner(path, expected_sha256, maximum_bytes, field, ROOT_UID)
+}
+
+fn inspect_file_for_owner(
+    path: &Path,
+    expected_sha256: &str,
+    maximum_bytes: u64,
+    field: &'static str,
+    required_uid: u32,
+) -> Result<ImmutableFileInspection, MysqlImportInspectionError> {
     let path_metadata =
         fs::symlink_metadata(path).map_err(|_| MysqlImportInspectionError::FileRead { field })?;
     let owner_only = path_metadata.permissions().mode() & 0o077 == 0;
@@ -104,7 +115,7 @@ fn inspect_file(
         || path_metadata.file_type().is_symlink()
         || path_metadata.len() == 0
         || !owner_only
-        || path_metadata.uid() != 0
+        || path_metadata.uid() != required_uid
     {
         return Err(MysqlImportInspectionError::UnsafeFile { field });
     }
@@ -117,7 +128,7 @@ fn inspect_file(
         .map_err(|_| MysqlImportInspectionError::FileRead { field })?;
     if opened.dev() != path_metadata.dev()
         || opened.ino() != path_metadata.ino()
-        || opened.uid() != 0
+        || opened.uid() != required_uid
     {
         return Err(MysqlImportInspectionError::UnsafeFile { field });
     }
@@ -152,7 +163,7 @@ fn inspect_file(
         || opened.len() != after.len()
         || !after.file_type().is_file()
         || after.file_type().is_symlink()
-        || after.uid() != 0
+        || after.uid() != required_uid
         || after.permissions().mode() & 0o077 != 0
     {
         return Err(MysqlImportInspectionError::UnsafeFile { field });
@@ -292,26 +303,52 @@ mod tests {
         fs::write(&path, bytes).expect("write dump");
         fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).expect("restrict dump");
         let digest = hex::encode(Sha256::digest(bytes));
+        let fixture_uid = fs::symlink_metadata(&path)
+            .expect("read dump metadata")
+            .uid();
+        assert_eq!(ROOT_UID, 0, "production dump owner must remain root");
 
         let inspected =
-            inspect_file(&path, &digest, 1024, "source.dump_path").expect("inspect dump");
+            inspect_file_for_owner(&path, &digest, 1024, "source.dump_path", fixture_uid)
+                .expect("inspect dump");
         assert_eq!(inspected.sha256, digest);
         assert_eq!(inspected.bytes, bytes.len() as u64);
+        if fixture_uid == ROOT_UID {
+            inspect_file(&path, &digest, 1024, "source.dump_path")
+                .expect("production inspection accepts root-owned dump");
+        } else {
+            assert!(matches!(
+                inspect_file(&path, &digest, 1024, "source.dump_path"),
+                Err(MysqlImportInspectionError::UnsafeFile { .. })
+            ));
+        }
         assert!(matches!(
-            inspect_file(&path, &"0".repeat(64), 1024, "source.dump_path"),
+            inspect_file_for_owner(
+                &path,
+                &"0".repeat(64),
+                1024,
+                "source.dump_path",
+                fixture_uid,
+            ),
             Err(MysqlImportInspectionError::DigestMismatch { .. })
+        ));
+
+        let other_uid = if fixture_uid == ROOT_UID { 1 } else { ROOT_UID };
+        assert!(matches!(
+            inspect_file_for_owner(&path, &digest, 1024, "source.dump_path", other_uid,),
+            Err(MysqlImportInspectionError::UnsafeFile { .. })
         ));
 
         symlink(&path, &link).expect("create symlink");
         assert!(matches!(
-            inspect_file(&link, &digest, 1024, "source.dump_path"),
+            inspect_file_for_owner(&link, &digest, 1024, "source.dump_path", fixture_uid,),
             Err(MysqlImportInspectionError::UnsafeFile { .. })
         ));
         fs::remove_file(&link).expect("remove symlink");
 
         fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).expect("loosen dump");
         assert!(matches!(
-            inspect_file(&path, &digest, 1024, "source.dump_path"),
+            inspect_file_for_owner(&path, &digest, 1024, "source.dump_path", fixture_uid,),
             Err(MysqlImportInspectionError::UnsafeFile { .. })
         ));
         fs::remove_file(&path).expect("remove dump");
