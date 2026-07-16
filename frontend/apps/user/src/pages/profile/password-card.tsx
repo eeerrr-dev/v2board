@@ -56,7 +56,7 @@ export function PasswordCard() {
         {
           onSuccess: () => {
             toast.success(t($ => $.profile.change_password_success));
-            navigate('/login');
+            void navigate('/login');
           },
         },
       );

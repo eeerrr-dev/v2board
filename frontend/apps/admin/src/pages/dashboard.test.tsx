@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildOrderChartModel } from '@/components/admin-chart';
 import DashboardPage from './dashboard';
+import type * as RuntimeConfigModule from '@/lib/runtime-config';
 
 // The dashboard is a redesigned shadcn island (shadcn Alerts + shortcut cards +
 // stat cards + token-aware shadcn/Recharts composition) replacing the OneUI block
@@ -55,7 +56,7 @@ vi.mock('recharts', async () => {
 });
 
 vi.mock('@/lib/runtime-config', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/runtime-config')>()),
+  ...(await importOriginal<typeof RuntimeConfigModule>()),
   getAdminApiBaseUrl: () => 'http://localhost/api/v1',
 }));
 vi.mock('@/lib/queries', () => ({

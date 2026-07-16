@@ -98,7 +98,7 @@ export function useForgetController(): ForgetController {
         password: validated.data.password,
         email_code: validated.data.email_code,
       },
-      { onSuccess: () => navigate('/login') },
+      { onSuccess: () => void navigate('/login') },
     );
   };
 

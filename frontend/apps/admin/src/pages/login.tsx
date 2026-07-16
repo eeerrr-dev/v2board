@@ -70,7 +70,7 @@ export default function LoginPage() {
           }
           setAuthData(result.auth_data);
           void queryClient.prefetchQuery(adminSessionQueryOptions.userInfo());
-          navigate(redirectTarget, { replace: true });
+          void navigate(redirectTarget, { replace: true });
         },
       },
     );

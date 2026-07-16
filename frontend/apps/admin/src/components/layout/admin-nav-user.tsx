@@ -82,7 +82,7 @@ export function AdminNavUser({ email }: AdminNavUserProps) {
               onSelect={() => {
                 setOpenMobile(false);
                 logout();
-                navigate('/login');
+                void navigate('/login');
               }}
             >
               <LogOut className="size-4" />

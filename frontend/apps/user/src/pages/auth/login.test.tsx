@@ -5,6 +5,7 @@ import type * as AuthModule from '@/lib/auth';
 import { renderWithProviders } from '@/test/render';
 import { createTestTranslation } from '@/test/i18next-selector';
 import LoginPage from './login';
+import type * as RuntimeConfigModule from '@/lib/runtime-config';
 
 const mocks = vi.hoisted(() => ({
   ApiError: class ApiError extends Error {
@@ -75,7 +76,7 @@ vi.mock('@/lib/guest', () => ({
 }));
 
 vi.mock('@/lib/runtime-config', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/runtime-config')>()),
+  ...(await importOriginal<typeof RuntimeConfigModule>()),
   getBackgroundUrl: () => '',
   getLogoUrl: () => '',
   getSiteTitle: () => mocks.settings.title,

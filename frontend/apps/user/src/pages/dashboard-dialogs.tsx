@@ -49,7 +49,7 @@ export function DashboardConfirmDialog({ action, onClose }: DashboardConfirmDial
       {
         onSuccess: (tradeNo) => {
           onClose();
-          navigate(`/order/${tradeNo}`);
+          void navigate(`/order/${tradeNo}`);
         },
       },
     );
@@ -61,7 +61,7 @@ export function DashboardConfirmDialog({ action, onClose }: DashboardConfirmDial
         void subscribe.refetch().then(() => {
           toast.success(t($ => $.dashboard.new_period_success));
           onClose();
-          navigate('/dashboard');
+          void navigate('/dashboard');
         });
       },
     });

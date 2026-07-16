@@ -150,7 +150,7 @@ export function useRegisterController(): RegisterController {
         email_code: config?.is_email_verify ? formValues.email_code : '',
         ...(recaptchaData ? { recaptcha_data: recaptchaData } : {}),
       },
-      { onSuccess: () => navigate('/login') },
+      { onSuccess: () => void navigate('/login') },
     );
   };
 

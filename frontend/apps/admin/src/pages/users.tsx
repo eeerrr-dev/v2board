@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ComponentProps } from 'react';
+import { useEffect, useState, type ComponentProps } from 'react';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -228,55 +228,52 @@ export default function UsersPage() {
     for (const group of groupData) groupMap.set(group.id, group.name);
   }
 
-  const filterFields = useMemo<FilterField[]>(
-    () => [
-      { key: 'email', title: '邮箱', condition: ['模糊'] },
-      { key: 'id', title: '用户ID', condition: ['=', '>=', '>', '<', '<='] },
-      ...(plansReady
-        ? [
-            {
-              key: 'plan_id',
-              title: '订阅',
-              condition: ['='],
-              type: 'select' as const,
-              options: [
-                { label: '无订阅', value: PLAN_NONE },
-                ...planOptions.map((plan) => ({ label: plan.label, value: plan.value })),
-              ],
-            },
-          ]
-        : []),
-      { key: 'transfer_enable', title: '流量', condition: ['>=', '>', '<', '<='] },
-      { key: 'd', title: '下行', condition: ['>=', '>', '<', '<='] },
-      { key: 'expired_at', title: '到期时间', condition: ['>=', '>', '<', '<='], type: 'date' },
-      { key: 'uuid', title: 'UUID', condition: ['='] },
-      { key: 'token', title: 'TOKEN', condition: ['='] },
-      {
-        key: 'banned',
-        title: '账号状态',
-        condition: ['='],
-        type: 'select',
-        options: [
-          { label: '正常', value: 0 },
-          { label: '封禁', value: 1 },
-        ],
-      },
-      { key: 'invite_by_email', title: '邀请人邮箱', condition: ['模糊'] },
-      { key: 'invite_user_id', title: '邀请人ID', condition: ['='] },
-      { key: 'remarks', title: '备注', condition: ['模糊'] },
-      {
-        key: 'is_admin',
-        title: '管理员',
-        condition: ['='],
-        type: 'select',
-        options: [
-          { label: '是', value: 1 },
-          { label: '否', value: 0 },
-        ],
-      },
-    ],
-    [planOptions, plansReady],
-  );
+  const filterFields: FilterField[] = [
+    { key: 'email', title: '邮箱', condition: ['模糊'] },
+    { key: 'id', title: '用户ID', condition: ['=', '>=', '>', '<', '<='] },
+    ...(plansReady
+      ? [
+          {
+            key: 'plan_id',
+            title: '订阅',
+            condition: ['='],
+            type: 'select' as const,
+            options: [
+              { label: '无订阅', value: PLAN_NONE },
+              ...planOptions.map((plan) => ({ label: plan.label, value: plan.value })),
+            ],
+          },
+        ]
+      : []),
+    { key: 'transfer_enable', title: '流量', condition: ['>=', '>', '<', '<='] },
+    { key: 'd', title: '下行', condition: ['>=', '>', '<', '<='] },
+    { key: 'expired_at', title: '到期时间', condition: ['>=', '>', '<', '<='], type: 'date' },
+    { key: 'uuid', title: 'UUID', condition: ['='] },
+    { key: 'token', title: 'TOKEN', condition: ['='] },
+    {
+      key: 'banned',
+      title: '账号状态',
+      condition: ['='],
+      type: 'select',
+      options: [
+        { label: '正常', value: 0 },
+        { label: '封禁', value: 1 },
+      ],
+    },
+    { key: 'invite_by_email', title: '邀请人邮箱', condition: ['模糊'] },
+    { key: 'invite_user_id', title: '邀请人ID', condition: ['='] },
+    { key: 'remarks', title: '备注', condition: ['模糊'] },
+    {
+      key: 'is_admin',
+      title: '管理员',
+      condition: ['='],
+      type: 'select',
+      options: [
+        { label: '是', value: 1 },
+        { label: '否', value: 0 },
+      ],
+    },
+  ];
 
   const data = users.data?.data ?? [];
   const total = users.data?.total ?? 0;
@@ -297,7 +294,7 @@ export default function UsersPage() {
       'v2board-admin-order-filter',
       JSON.stringify([{ key, condition, value }]),
     );
-    navigate('/order');
+    void navigate('/order');
   };
 
   const resetUserSecret = async (row: AdminUserRow) => {

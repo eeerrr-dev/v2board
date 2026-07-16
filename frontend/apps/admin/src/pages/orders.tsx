@@ -549,7 +549,7 @@ export default function OrdersPage() {
       'v2board-admin-user-filter',
       JSON.stringify([{ key, condition, value }]),
     );
-    navigate('/user');
+    void navigate('/user');
   };
 
   const statusValue = filterValue(query.filter, 'status') ?? 'all';

@@ -42,7 +42,7 @@ export function NavUser({ email }: NavUserProps) {
   const accountLabel = getAccountLabel(email);
 
   const goto = (to: string) => {
-    navigate(to);
+    void navigate(to);
     setOpenMobile(false);
   };
 
@@ -117,7 +117,7 @@ export function NavUser({ email }: NavUserProps) {
               variant="destructive"
               onSelect={() => {
                 logout();
-                navigate('/login');
+                void navigate('/login');
               }}
             >
               <LogOut className="size-4" />

@@ -187,7 +187,7 @@ export default function TicketsPage() {
   };
 
   const openTicket = (id: number) => {
-    navigate(`/ticket/${id}`);
+    void navigate(`/ticket/${id}`);
   };
 
   return (

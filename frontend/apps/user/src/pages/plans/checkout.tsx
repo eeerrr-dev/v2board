@@ -116,7 +116,7 @@ export default function PlanCheckoutPage() {
     if (appliedCoupon?.name) payload.coupon_code = appliedCoupon.code;
 
     saveOrderMutation.mutate(payload, {
-      onSuccess: (tradeNo) => navigate(`/order/${tradeNo}`),
+      onSuccess: (tradeNo) => void navigate(`/order/${tradeNo}`),
     });
   };
 

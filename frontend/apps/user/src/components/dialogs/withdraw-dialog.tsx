@@ -61,7 +61,7 @@ export function WithdrawDialog({ methods, children }: WithdrawDialogProps) {
       { withdraw_method: method, withdraw_account: account },
       {
         onSuccess: () => {
-          navigate('/ticket');
+          void navigate('/ticket');
           onOpenChange(false);
         },
       },

@@ -101,7 +101,19 @@ export default tseslint.config(
         ecmaFeatures: { jsx: true },
       },
     },
-    rules: { '@typescript-eslint/no-deprecated': 'error' },
+    rules: {
+      '@typescript-eslint/no-deprecated': 'error',
+      // Async-safety set (same type-aware scope). Dropped promises silently
+      // swallow rejections; intentional detachment must be spelled `void p`.
+      '@typescript-eslint/await-thenable': 'error',
+      '@typescript-eslint/no-floating-promises': 'error',
+      // Async JSX handlers (onClick etc.) are the standard React idiom, so
+      // attribute positions are exempt from the void-return check.
+      '@typescript-eslint/no-misused-promises': [
+        'error',
+        { checksVoidReturn: { attributes: false } },
+      ],
+    },
   },
   // Both redesigned apps run React Compiler. Keep its correctness diagnostics
   // enabled for every authored component so compilation never silently bails

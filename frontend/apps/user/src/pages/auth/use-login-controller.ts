@@ -70,7 +70,7 @@ export function useLoginController(): LoginController {
       // The saga dispatched user/getUserInfo with `put`, then immediately pushed — it never
       // waited for the user-info request to settle.
       void queryClient.prefetchQuery(userQueryOptions.info());
-      navigate(redirect);
+      void navigate(redirect);
     } catch (err) {
       const presentation = getErrorPresentation(err);
       // API teardown already owns a 403 and navigates to login. Do not race that
@@ -90,7 +90,7 @@ export function useLoginController(): LoginController {
     const finishLogin = (authData: string) => {
       if (!active) return;
       setAuthData(authData);
-      navigate(redirect);
+      void navigate(redirect);
     };
 
     // Redeem this verify token at most once per value (see pendingVerifyRedemptions):

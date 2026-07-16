@@ -85,7 +85,7 @@ export default function DashboardPage() {
       'v2board-admin-order-filter',
       JSON.stringify(PENDING_COMMISSION_ORDER_FILTER),
     );
-    navigate('/order');
+    void navigate('/order');
   };
 
   const serverTodayChart = buildRankingData(serverToday.data ?? [], (item) => item.server_name);

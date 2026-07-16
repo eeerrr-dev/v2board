@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/render';
 import { createTestTranslation } from '@/test/i18next-selector';
 import { AppLayout } from './app-layout';
+import type * as RuntimeConfigModule from '@/lib/runtime-config';
 
 const mocks = vi.hoisted(() => ({
   darkMode: false,
@@ -140,7 +141,7 @@ vi.mock('@/lib/dark-mode', async () => {
 });
 
 vi.mock('@/lib/runtime-config', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/runtime-config')>()),
+  ...(await importOriginal<typeof RuntimeConfigModule>()),
   getRuntimeConfig: () => ({ i18n: ['en-US', 'zh-CN'] }),
   getSiteTitle: () => mocks.title,
 }));

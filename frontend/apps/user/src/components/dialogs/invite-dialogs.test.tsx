@@ -5,6 +5,7 @@ import { renderWithProviders } from '@/test/render';
 import { createTestTranslation } from '@/test/i18next-selector';
 import { TransferDialog } from './transfer-dialog';
 import { WithdrawDialog } from './withdraw-dialog';
+import type * as RuntimeConfigModule from '@/lib/runtime-config';
 
 const mocks = vi.hoisted(() => ({
   invalidateQueries: vi.fn(),
@@ -48,7 +49,7 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('@/lib/runtime-config', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/runtime-config')>()),
+  ...(await importOriginal<typeof RuntimeConfigModule>()),
   getSiteTitle: () => 'V2Board',
 }));
 

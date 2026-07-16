@@ -84,7 +84,7 @@ export function WalletCard() {
         period: 'deposit',
         deposit_amount: amount,
       },
-      { onSuccess: (tradeNo) => navigate(`/order/${tradeNo}`) },
+      { onSuccess: (tradeNo) => void navigate(`/order/${tradeNo}`) },
     );
     closeDeposit();
   });
