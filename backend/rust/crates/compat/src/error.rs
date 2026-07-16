@@ -86,14 +86,6 @@ impl ApiError {
         Self::Internal(message.into())
     }
 
-    /// Laravel 422 validation error: `{message, errors:{field:[...]}}`.
-    pub fn validation(message: impl Into<String>, errors: IndexMap<String, Vec<String>>) -> Self {
-        Self::Validation {
-            message: message.into(),
-            errors,
-        }
-    }
-
     /// Single-field Laravel 422: `{message, errors:{field:[message]}}`. Mirrors a
     /// FormRequest that stops at the first failing rule (the common case): the same
     /// text is the top-level `message` and the field's sole error, matching Laravel's
