@@ -6,6 +6,7 @@ import {
   matchPath,
   redirect,
   type LoaderFunctionArgs,
+  type MiddlewareFunction,
   type RouteObject,
 } from 'react-router';
 import { getNormalizedHashPath } from '@v2board/config';
@@ -138,18 +139,20 @@ export function rootUserRouteLoader(): never {
 }
 
 // Auth is guarded in two layers and BOTH are load-bearing:
-//   1. This route loader gates ENTRY. On navigation it redirects an
-//      unauthenticated request to /login before the page renders, and warms the
-//      user/info query for authenticated entries. Loaders only run on
-//      navigation, so this layer alone cannot react to a logout that happens
-//      while the user is already on a guarded page.
+//   1. This route middleware gates NAVIGATION. It runs before the loaders of
+//      every navigation inside the protected branch (not just on entry, unlike
+//      the parent loader it replaced), redirecting an unauthenticated request
+//      to /login before any page renders and warming the user/info query for
+//      authenticated ones. Middleware only runs on navigation, so this layer
+//      alone cannot react to a logout that happens while the user is idle on a
+//      guarded page.
 //   2. <RequireAuth> (require-auth.tsx) gates the LIVE session. It subscribes to
 //      the auth store via useAuthData(), so a logout() (or token2Login) while a
 //      guarded page is mounted re-renders and <Navigate>s to /login.
-// Behavioral coverage: createRequireUserLoader tests in App.test.tsx (layer 1)
-// and require-auth.test.tsx (layer 2).
-export function createRequireUserLoader(queryClient: QueryClient) {
-  return async ({ request }: LoaderFunctionArgs) => {
+// Behavioral coverage: createRequireUserMiddleware tests in App.test.tsx
+// (layer 1) and require-auth.test.tsx (layer 2).
+export function createRequireUserMiddleware(queryClient: QueryClient): MiddlewareFunction {
+  return async ({ request }) => {
     const current = getRequestRoutePath(request);
 
     if (!getAuthData()) {
@@ -165,7 +168,6 @@ export function createRequireUserLoader(queryClient: QueryClient) {
       if (!getAuthData()) throw redirect('/login');
       throw error;
     }
-    return null;
   };
 }
 
@@ -250,16 +252,15 @@ export function createLoginLoader(queryClient: QueryClient) {
 }
 
 // Warms the dashboard's own queries while its lazy chunk is still downloading,
-// so the page paints from cache instead of firing them only after mount. It runs
-// in parallel with the AppLayout requireUser loader, so it guards auth itself —
-// an unauthenticated entry must not fire user-scoped queries (requireUser issues
-// the redirect). Fire-and-forget on purpose: prefetching must never delay the
-// route, and the page's own useQuery hooks dedupe onto these in-flight requests
-// on mount. Dashboard has no pinned fetch-order contract, so warming these four
-// in parallel is contract-safe.
+// so the page paints from cache instead of firing them only after mount. The
+// requireUser middleware has already redirected unauthenticated navigations
+// before any protected loader runs, so no auth re-check belongs here.
+// Fire-and-forget on purpose: prefetching must never delay the route, and the
+// page's own useQuery hooks dedupe onto these in-flight requests on mount.
+// Dashboard has no pinned fetch-order contract, so warming these four in
+// parallel is contract-safe.
 export function createDashboardPrefetchLoader(queryClient: QueryClient) {
   return (): null => {
-    if (!getAuthData()) return null;
     // prefetchQuery is the canonical detached warm-up API: it retains query
     // failures in cache for each surface's ErrorState and never rejects/toasts.
     void queryClient.prefetchQuery(userQueryOptions.subscribe());
@@ -295,7 +296,7 @@ function pageRoute(path: UserPageRoutePath, loader?: RouteObject['loader']): Rou
 }
 
 export function createUserRoutes(queryClient: QueryClient): RouteObject[] {
-  const requireUser = createRequireUserLoader(queryClient);
+  const requireUser = createRequireUserMiddleware(queryClient);
   const loginLoader = createLoginLoader(queryClient);
   const prefetchDashboard = createDashboardPrefetchLoader(queryClient);
 
@@ -320,31 +321,37 @@ export function createUserRoutes(queryClient: QueryClient): RouteObject[] {
           ),
         },
         {
-          loader: requireUser,
-          element: (
-            <RequireAuth>
-              <AppLayout />
-            </RequireAuth>
-          ),
-          errorElement: <RouteErrorFallback />,
-          children: USER_APP_LAYOUT_ROUTE_PATHS.map((path) =>
-            path === '/dashboard' ? pageRoute(path, prefetchDashboard) : pageRoute(path),
-          ),
-        },
-        {
-          path: '/ticket/:ticket_id',
-          loader: requireUser,
-          element: (
-            <RequireAuth>
-              <RouteBoundaryOutlet />
-            </RequireAuth>
-          ),
+          // One pathless gate for every protected branch: the middleware runs
+          // ahead of the loaders of each navigation in this subtree.
+          middleware: [requireUser],
           errorElement: <RouteErrorFallback />,
           children: [
             {
-              index: true,
-              lazy: lazyPage('/ticket/:ticket_id'),
+              element: (
+                <RequireAuth>
+                  <AppLayout />
+                </RequireAuth>
+              ),
               errorElement: <RouteErrorFallback />,
+              children: USER_APP_LAYOUT_ROUTE_PATHS.map((path) =>
+                path === '/dashboard' ? pageRoute(path, prefetchDashboard) : pageRoute(path),
+              ),
+            },
+            {
+              path: '/ticket/:ticket_id',
+              element: (
+                <RequireAuth>
+                  <RouteBoundaryOutlet />
+                </RequireAuth>
+              ),
+              errorElement: <RouteErrorFallback />,
+              children: [
+                {
+                  index: true,
+                  lazy: lazyPage('/ticket/:ticket_id'),
+                  errorElement: <RouteErrorFallback />,
+                },
+              ],
             },
           ],
         },

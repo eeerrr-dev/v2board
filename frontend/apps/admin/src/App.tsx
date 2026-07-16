@@ -5,6 +5,7 @@ import {
   matchPath,
   redirect,
   type LoaderFunctionArgs,
+  type MiddlewareFunction,
   type RouteObject,
 } from 'react-router';
 import { getNormalizedHashPath } from '@v2board/config';
@@ -136,8 +137,12 @@ export function unknownAdminRouteLoader({ request }: LoaderFunctionArgs): never 
   throw redirect(getAuthData() ? '/dashboard' : '/login');
 }
 
-export function createRequireAdminLoader(queryClient: QueryClient) {
-  return async ({ request }: LoaderFunctionArgs) => {
+// Route middleware on the protected subtree: it runs ahead of the loaders of
+// every navigation inside that branch (not just on entry, unlike the parent
+// loader it replaced). <RequireAuth> stays as the second layer, reacting to a
+// logout while a guarded page is already mounted.
+export function createRequireAdminMiddleware(queryClient: QueryClient): MiddlewareFunction {
+  return async ({ request }) => {
     const current = getRequestRoutePath(request);
     if (!getAuthData()) throw redirect(buildLoginRedirect(current));
 
@@ -150,7 +155,6 @@ export function createRequireAdminLoader(queryClient: QueryClient) {
     // The shell renders the authenticated identity, so it is route data rather
     // than an optional warm-up. A real failure belongs to the route boundary.
     await queryClient.ensureQueryData(adminSessionQueryOptions.userInfo());
-    return null;
   };
 }
 
@@ -232,7 +236,7 @@ function pageRoute(path: AdminRoutePath): RouteObject {
 }
 
 export function createAdminRoutes(queryClient: QueryClient): RouteObject[] {
-  const requireAdmin = createRequireAdminLoader(queryClient);
+  const requireAdmin = createRequireAdminMiddleware(queryClient);
   const loginLoader = createAdminLoginLoader(queryClient);
 
   return [
@@ -246,29 +250,35 @@ export function createAdminRoutes(queryClient: QueryClient): RouteObject[] {
         { path: '/', loader: rootAdminRouteLoader },
         { ...pageRoute('/login'), loader: loginLoader },
         {
-          loader: requireAdmin,
-          element: (
-            <RequireAuth>
-              <AdminLayout />
-            </RequireAuth>
-          ),
-          errorElement: <RouteErrorFallback />,
-          children: ADMIN_LAYOUT_ROUTE_PATHS.map(pageRoute),
-        },
-        {
-          path: '/ticket/:ticket_id',
-          loader: requireAdmin,
-          element: (
-            <RequireAuth>
-              <RouteBoundaryOutlet />
-            </RequireAuth>
-          ),
+          // One pathless gate for every protected branch: the middleware runs
+          // ahead of the loaders of each navigation in this subtree.
+          middleware: [requireAdmin],
           errorElement: <RouteErrorFallback />,
           children: [
             {
-              index: true,
-              lazy: lazyPage('/ticket/:ticket_id'),
+              element: (
+                <RequireAuth>
+                  <AdminLayout />
+                </RequireAuth>
+              ),
               errorElement: <RouteErrorFallback />,
+              children: ADMIN_LAYOUT_ROUTE_PATHS.map(pageRoute),
+            },
+            {
+              path: '/ticket/:ticket_id',
+              element: (
+                <RequireAuth>
+                  <RouteBoundaryOutlet />
+                </RequireAuth>
+              ),
+              errorElement: <RouteErrorFallback />,
+              children: [
+                {
+                  index: true,
+                  lazy: lazyPage('/ticket/:ticket_id'),
+                  errorElement: <RouteErrorFallback />,
+                },
+              ],
             },
           ],
         },

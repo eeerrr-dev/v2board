@@ -17,7 +17,7 @@ import {
   USER_HASH_ROUTE_OPTIONS,
   USER_ROUTE_PATHS,
   createLoginLoader,
-  createRequireUserLoader,
+  createRequireUserMiddleware,
   createUserRouter,
   createUserRoutes,
   rootUserRouteLoader,
@@ -65,6 +65,21 @@ function loaderArgs(routePath: string, signal?: AbortSignal): LoaderFunctionArgs
 
 type SyncLoader = (args: LoaderFunctionArgs) => unknown;
 
+type AuthMiddleware = ReturnType<typeof createRequireUserMiddleware>;
+
+/** Invokes the auth middleware the way the router does on a navigation. The
+ * gate relies on the router auto-advancing when next() is not called, so the
+ * stub fails loudly if the middleware ever starts calling next() itself. */
+function runAuthMiddleware(middleware: AuthMiddleware, routePath: string) {
+  const next = () => {
+    throw new Error('auth middleware must not call next()');
+  };
+  return middleware(
+    loaderArgs(routePath) as unknown as Parameters<AuthMiddleware>[0],
+    next as Parameters<AuthMiddleware>[1],
+  );
+}
+
 /** Runs a loader expected to throw a 302 redirect Response and returns it. */
 function catchRedirect(run: () => unknown): Response {
   let thrown: unknown;
@@ -109,12 +124,15 @@ function userRouteTree(queryClient = new QueryClient()) {
   const [root] = createUserRoutes(queryClient);
   if (!root) throw new Error('user route tree has no root route');
   const children = root.children ?? [];
+  const protectedBranch = children.find((route) => (route.middleware?.length ?? 0) > 0);
+  const protectedChildren = protectedBranch?.children ?? [];
   return {
     root,
     children,
     guestLayout: children.find((route) => elementType(route) === GuestLayout),
-    appLayout: children.find((route) => authGatedChildType(route) === AppLayout),
-    ticketDetail: children.find((route) => route.path === '/ticket/:ticket_id'),
+    protectedBranch,
+    appLayout: protectedChildren.find((route) => authGatedChildType(route) === AppLayout),
+    ticketDetail: protectedChildren.find((route) => route.path === '/ticket/:ticket_id'),
     catchAll: children.find((route) => route.path === '*'),
   };
 }
@@ -202,14 +220,20 @@ describe('user route tree', () => {
     ).toBe(true);
   });
 
-  it('mounts app pages under one shared RequireAuth-gated AppLayout with the entry loader', () => {
-    const { children, appLayout } = userRouteTree();
+  it('mounts app pages under one shared RequireAuth-gated AppLayout behind the auth middleware', () => {
+    const { children, protectedBranch, appLayout } = userRouteTree();
 
     expect(appLayout).toBeDefined();
-    expect(children.filter((route) => authGatedChildType(route) === AppLayout)).toHaveLength(1);
+    expect(
+      protectedBranch!.children!.filter((route) => authGatedChildType(route) === AppLayout),
+    ).toHaveLength(1);
     expect((appLayout!.element as ReactElement).key).toBeNull();
-    // Layer 1 of the auth gate: the entry loader (behavior covered below).
-    expect(typeof appLayout!.loader).toBe('function');
+    // Layer 1 of the auth gate: one pathless middleware branch guards every
+    // protected navigation (behavior covered below).
+    expect(children.filter((route) => (route.middleware?.length ?? 0) > 0)).toHaveLength(1);
+    expect(protectedBranch!.middleware).toHaveLength(1);
+    expect(typeof protectedBranch!.middleware?.[0]).toBe('function');
+    expect(appLayout!.loader).toBeUndefined();
     expect(appLayout!.children?.map((route) => route.path)).toEqual([
       ...USER_APP_LAYOUT_ROUTE_PATHS,
     ]);
@@ -221,17 +245,19 @@ describe('user route tree', () => {
     expect(USER_APP_LAYOUT_ROUTE_PATHS).not.toContain('/ticket/:ticket_id');
     expect(appLayout!.children?.some((route) => route.path === '/ticket/:ticket_id')).toBe(false);
     expect(ticketDetail).toBeDefined();
-    // Auth-gated like app pages, but rendered through a bare outlet — the
-    // original standalone chat window, not the shared shell.
+    // Auth-gated like app pages (it sits under the same middleware branch —
+    // that is how userRouteTree found it), but rendered through a bare outlet:
+    // the original standalone chat window, not the shared shell.
     expect(authGatedChildType(ticketDetail)).toBe(RouteBoundaryOutlet);
-    expect(typeof ticketDetail!.loader).toBe('function');
+    expect(ticketDetail!.loader).toBeUndefined();
     const detailIndex = ticketDetail!.children?.[0];
     expect(detailIndex?.index).toBe(true);
     expect(typeof detailIndex?.lazy).toBe('function');
   });
 
   it('gives every rendered page a lazy route module and keeps root redirect-only', () => {
-    const { root, children, guestLayout, appLayout, ticketDetail } = userRouteTree();
+    const { root, children, guestLayout, protectedBranch, appLayout, ticketDetail } =
+      userRouteTree();
     const rootEntry = children.find((route) => route.path === '/');
     const pageRoutes = [
       ...(guestLayout!.children ?? []),
@@ -248,7 +274,7 @@ describe('user route tree', () => {
       expect(typeof route.lazy).toBe('function');
       expect(route.errorElement).toBeTruthy();
     }
-    for (const route of [root, guestLayout!, appLayout!, ticketDetail!]) {
+    for (const route of [root, guestLayout!, protectedBranch!, appLayout!, ticketDetail!]) {
       expect(route.errorElement).toBeTruthy();
     }
 
@@ -494,14 +520,14 @@ describe('login existing-session loader', () => {
   });
 });
 
-describe('user route auth entry gate (layer 1: route loader)', () => {
-  it('redirects an unauthenticated entry to /login with the return path encoded', async () => {
+describe('user route auth navigation gate (layer 1: route middleware)', () => {
+  it('redirects an unauthenticated navigation to /login with the return path encoded', async () => {
     setAuthData(null);
-    const loader = createRequireUserLoader(new QueryClient());
+    const middleware = createRequireUserMiddleware(new QueryClient());
 
     let thrown: unknown;
     try {
-      await loader(loaderArgs('/dashboard?tab=orders'));
+      await runAuthMiddleware(middleware, '/dashboard?tab=orders');
     } catch (error) {
       thrown = error;
     }
@@ -514,17 +540,18 @@ describe('user route auth entry gate (layer 1: route loader)', () => {
     );
   });
 
-  it('lets an authenticated entry through and warms the user info query', async () => {
+  it('lets an authenticated navigation through and warms the user info query', async () => {
     setAuthData('token-xyz');
     const queryClient = new QueryClient();
     // Pre-seed so ensureQueryData resolves from cache instead of hitting the network.
     queryClient.setQueryData(userQueryOptions.info().queryKey, {} as never);
     const ensureSpy = vi.spyOn(queryClient, 'ensureQueryData');
-    const loader = createRequireUserLoader(queryClient);
+    const middleware = createRequireUserMiddleware(queryClient);
 
-    const result = await loader(loaderArgs('/dashboard'));
+    const result = await runAuthMiddleware(middleware, '/dashboard');
 
-    expect(result).toBeNull();
+    // Resolving without a value lets the router auto-advance to the loaders.
+    expect(result).toBeUndefined();
     expect(ensureSpy).toHaveBeenCalledTimes(1);
     expect(ensureSpy.mock.calls[0]?.[0]?.queryKey).toEqual(userQueryOptions.info().queryKey);
     setAuthData(null);
@@ -534,9 +561,9 @@ describe('user route auth entry gate (layer 1: route loader)', () => {
     setAuthData('token-xyz');
     const queryClient = new QueryClient();
     vi.spyOn(queryClient, 'ensureQueryData').mockRejectedValue(new Error('auth required'));
-    const loader = createRequireUserLoader(queryClient);
+    const middleware = createRequireUserMiddleware(queryClient);
 
-    await expect(loader(loaderArgs('/dashboard'))).rejects.toThrow('auth required');
+    await expect(runAuthMiddleware(middleware, '/dashboard')).rejects.toThrow('auth required');
     expect(queryClient.getQueryData(userQueryOptions.info().queryKey)).toBeUndefined();
     setAuthData(null);
   });
@@ -549,11 +576,11 @@ describe('user route auth entry gate (layer 1: route loader)', () => {
       setAuthData(null);
       throw new Error('auth required');
     });
-    const loader = createRequireUserLoader(queryClient);
+    const middleware = createRequireUserMiddleware(queryClient);
 
     let thrown: unknown;
     try {
-      await loader(loaderArgs('/dashboard'));
+      await runAuthMiddleware(middleware, '/dashboard');
     } catch (error) {
       thrown = error;
     }
@@ -567,9 +594,9 @@ describe('user route auth entry gate (layer 1: route loader)', () => {
     const queryClient = new QueryClient();
     queryClient.setQueryData(userQueryOptions.info().queryKey, { email: 'a@b.c' } as never);
     vi.spyOn(queryClient, 'ensureQueryData').mockRejectedValue(new Error('timeout'));
-    const loader = createRequireUserLoader(queryClient);
+    const middleware = createRequireUserMiddleware(queryClient);
 
-    await expect(loader(loaderArgs('/dashboard'))).rejects.toThrow('timeout');
+    await expect(runAuthMiddleware(middleware, '/dashboard')).rejects.toThrow('timeout');
 
     expect(queryClient.getQueryData(userQueryOptions.info().queryKey)).toEqual({
       email: 'a@b.c',
@@ -579,7 +606,7 @@ describe('user route auth entry gate (layer 1: route loader)', () => {
 });
 
 describe('user route dashboard prefetch loader', () => {
-  it('wires a dashboard-only loader that warms subscribe/stat/notices/comm when authenticated', () => {
+  it('wires a dashboard-only loader that warms subscribe/stat/notices/comm', () => {
     const queryClient = new QueryClient();
     const prefetchSpy = vi.spyOn(queryClient, 'prefetchQuery').mockResolvedValue(null as never);
     const { appLayout } = userRouteTree(queryClient);
@@ -595,10 +622,8 @@ describe('user route dashboard prefetch loader', () => {
 
     const prefetch = dashboard!.loader as SyncLoader;
 
-    setAuthData(null);
-    expect(prefetch(loaderArgs('/dashboard'))).toBeNull();
-    expect(prefetchSpy).not.toHaveBeenCalled();
-
+    // No auth re-check inside the loader: the requireUser middleware has
+    // already redirected unauthenticated navigations before loaders run.
     setAuthData('token-xyz');
     expect(prefetch(loaderArgs('/dashboard'))).toBeNull();
     const warmedKeys = prefetchSpy.mock.calls.map(([options]) => options.queryKey);

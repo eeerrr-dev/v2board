@@ -8,7 +8,7 @@ import {
   ADMIN_STANDALONE_ROUTE_PATHS,
   createAdminLoginLoader,
   createAdminRoutes,
-  createRequireAdminLoader,
+  createRequireAdminMiddleware,
   normalizeAdminRouteLoader,
   rootAdminRouteLoader,
   unknownAdminRouteLoader,
@@ -61,6 +61,21 @@ async function expectRedirect(run: () => unknown | Promise<unknown>, location: s
   }
 }
 
+type AuthMiddleware = ReturnType<typeof createRequireAdminMiddleware>;
+
+/** Invokes the auth middleware the way the router does on a navigation. The
+ * gate relies on the router auto-advancing when next() is not called, so the
+ * stub fails loudly if the middleware ever starts calling next() itself. */
+function runAuthMiddleware(middleware: AuthMiddleware, hashPath: string) {
+  const next = () => {
+    throw new Error('auth middleware must not call next()');
+  };
+  return middleware(
+    loaderArgs(hashPath) as unknown as Parameters<AuthMiddleware>[0],
+    next as Parameters<AuthMiddleware>[1],
+  );
+}
+
 describe('admin data router', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -100,12 +115,19 @@ describe('admin data router', () => {
   it('uses lazy route modules for every page instead of eager page imports', () => {
     const routes = createAdminRoutes(new QueryClient());
     const children = routes[0]?.children ?? [];
-    const layout = children.find((route) =>
+    const protectedBranch = children.find((route) => (route.middleware?.length ?? 0) > 0);
+    const layout = protectedBranch?.children?.find((route) =>
       route.children?.some((child) => child.path === '/dashboard'),
     );
     const dashboard = layout?.children?.find((route) => route.path === '/dashboard');
     const login = children.find((route) => route.path === '/login');
 
+    // One pathless middleware branch gates every protected page (layer 1).
+    expect(children.filter((route) => (route.middleware?.length ?? 0) > 0)).toHaveLength(1);
+    expect(protectedBranch?.middleware).toHaveLength(1);
+    expect(
+      protectedBranch?.children?.some((route) => route.path === '/ticket/:ticket_id'),
+    ).toBe(true);
     expect(dashboard?.lazy).toBeTypeOf('function');
     expect(login?.lazy).toBeTypeOf('function');
     expect(login?.loader).toBeTypeOf('function');
@@ -113,18 +135,21 @@ describe('admin data router', () => {
     expect(login?.element).toBeUndefined();
   });
 
-  it('redirects unauthenticated protected entries before a page module renders', async () => {
-    const loader = createRequireAdminLoader(new QueryClient());
-    await expectRedirect(() => loader(loaderArgs('/order')), '/login?redirect=%2Forder');
+  it('redirects unauthenticated protected navigations before a page module renders', async () => {
+    const middleware = createRequireAdminMiddleware(new QueryClient());
+    await expectRedirect(
+      () => runAuthMiddleware(middleware, '/order'),
+      '/login?redirect=%2Forder',
+    );
     expect(mocks.checkLogin).not.toHaveBeenCalled();
   });
 
   it('rejects a stored non-admin identity and destroys its credential', async () => {
     setAuthData('regular-user-token');
     mocks.checkLogin.mockResolvedValue({ is_login: true, is_admin: false });
-    const loader = createRequireAdminLoader(new QueryClient());
+    const middleware = createRequireAdminMiddleware(new QueryClient());
 
-    await expectRedirect(() => loader(loaderArgs('/dashboard')), '/login');
+    await expectRedirect(() => runAuthMiddleware(middleware, '/dashboard'), '/login');
     expect(getAuthData()).toBeNull();
   });
 
@@ -132,9 +157,10 @@ describe('admin data router', () => {
     setAuthData('admin-token');
     mocks.checkLogin.mockResolvedValue({ is_login: true, is_admin: true });
     mocks.userInfo.mockResolvedValue({ email: 'admin@example.com' });
-    const loader = createRequireAdminLoader(new QueryClient());
+    const middleware = createRequireAdminMiddleware(new QueryClient());
 
-    await expect(loader(loaderArgs('/dashboard'))).resolves.toBeNull();
+    // Resolving without a value lets the router auto-advance to the loaders.
+    await expect(runAuthMiddleware(middleware, '/dashboard')).resolves.toBeUndefined();
     expect(mocks.userInfo).toHaveBeenCalledOnce();
   });
 
@@ -143,9 +169,9 @@ describe('admin data router', () => {
     const failure = new Error('user info offline');
     mocks.checkLogin.mockResolvedValue({ is_login: true, is_admin: true });
     mocks.userInfo.mockRejectedValue(failure);
-    const loader = createRequireAdminLoader(queryClient());
+    const middleware = createRequireAdminMiddleware(queryClient());
 
-    await expect(loader(loaderArgs('/dashboard'))).rejects.toBe(failure);
+    await expect(runAuthMiddleware(middleware, '/dashboard')).rejects.toBe(failure);
     expect(getAuthData()).toBe('admin-token');
   });
 
@@ -175,7 +201,9 @@ describe('admin data router', () => {
       expectRedirect(() => loader(loaderArgs('/login?redirect=%2Forder')), '/order'),
       expectRedirect(() => loader(loaderArgs('/login?redirect=%2Forder')), '/order'),
     ]);
-    await expect(createRequireAdminLoader(client)(loaderArgs('/order'))).resolves.toBeNull();
+    await expect(
+      runAuthMiddleware(createRequireAdminMiddleware(client), '/order'),
+    ).resolves.toBeUndefined();
 
     expect(mocks.checkLogin).toHaveBeenCalledOnce();
     await vi.waitFor(() => expect(mocks.userInfo).toHaveBeenCalledOnce());
