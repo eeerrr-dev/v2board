@@ -248,6 +248,11 @@ export function useOrderCheckoutController(tradeNo: string | undefined): OrderCh
             // state so the result card and balance render at once.
             toast.success(t(($) => $.order.success));
             refreshAfterPayment();
+          } else {
+            // The schema keeps `type` open (a gateway discriminant, not a closed
+            // union), so an unknown value must surface instead of falling through
+            // silently like the old missing -1 branch did.
+            toast.error(t(($) => $.common.error_title));
           }
         },
       },

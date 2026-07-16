@@ -10,7 +10,6 @@ const numericStringSchema = z
   .regex(/^-?(?:\d+\.?\d*|\.\d+)$/)
   .transform(Number);
 const numberFromApiSchema = z.union([z.number(), numericStringSchema]);
-const nullableNumberFromApiSchema = numberFromApiSchema.nullable();
 
 export const trueSchema = z.literal(true);
 export const booleanSchema = z.boolean();
@@ -39,7 +38,6 @@ export const envelopeSchema = <TDataSchema extends z.ZodType>(data: TDataSchema)
     total: z.number().optional(),
     type: z.number().optional(),
     message: z.string().optional(),
-    msg: z.string().optional(),
   });
 
 export const pageEnvelopeSchema = <TItemSchema extends z.ZodType>(item: TItemSchema) =>
@@ -197,8 +195,11 @@ export const adminOrderSchema = orderSchema.extend({
 });
 
 export const orderCheckoutDataSchema = z.union([z.string(), z.boolean()]);
+// `type` is a payment-gateway discriminant, not a closed set: the checkout
+// controller interprets 0/1/-1 and treats anything else as an unsupported
+// gateway response instead of failing envelope validation.
 export const checkoutEnvelopeSchema = envelopeSchema(orderCheckoutDataSchema).extend({
-  type: z.union([z.literal(-1), z.literal(0), z.literal(1), z.literal(2)]),
+  type: z.number().int(),
 });
 
 export const stripePaymentIntentSchema = z.looseObject({
@@ -213,11 +214,16 @@ export const paymentMethodSchema = z.looseObject({
   name: z.string(),
   payment: z.string(),
   icon: nullableString,
-  handling_fee_fixed: nullableNumberFromApiSchema,
-  handling_fee_percent: nullableNumberFromApiSchema,
+  handling_fee_fixed: nullableNumber,
+  // /user/order/getPaymentMethod serializes the NUMERIC column as its exact
+  // decimal string (db/src/payment.rs `handling_fee_percent::text`).
+  handling_fee_percent: numericStringSchema.nullable(),
 });
 
 export const adminPaymentSchema = paymentMethodSchema.extend({
+  // /payment/fetch emits this field as a JSON number instead
+  // (admin commerce CAST(handling_fee_percent AS DOUBLE PRECISION)).
+  handling_fee_percent: nullableNumber,
   uuid: z.string(),
   config: z.record(z.string(), z.string()),
   notify_domain: nullableString,
@@ -395,12 +401,12 @@ export const adminUserBaseSchema = z.looseObject({
   id: z.number(),
   email: z.string(),
   password: z.string(),
-  balance: z.union([z.number(), z.string()]),
-  commission_balance: z.union([z.number(), z.string()]),
-  transfer_enable: z.union([z.number(), z.string()]),
+  balance: z.number(),
+  commission_balance: z.number(),
+  transfer_enable: z.number(),
   device_limit: nullableNumber,
-  u: z.union([z.number(), z.string()]),
-  d: z.union([z.number(), z.string()]),
+  u: z.number(),
+  d: z.number(),
   plan_id: nullableNumber,
   group_id: nullableNumber,
   expired_at: nullableNumber,
@@ -422,7 +428,7 @@ export const adminUserBaseSchema = z.looseObject({
   updated_at: z.number(),
 });
 export const adminUserSchema = adminUserBaseSchema.extend({
-  total_used: z.union([z.number(), z.string()]),
+  total_used: z.number(),
   alive_ip: z.number(),
   ips: z.string(),
   plan_name: nullableString.optional(),
@@ -436,7 +442,7 @@ export const adminUserTrafficSchema = z.looseObject({
   record_at: z.number(),
   u: z.number(),
   d: z.number(),
-  server_rate: z.union([z.number(), z.string()]),
+  server_rate: z.number(),
 });
 
 export const adminStatSummarySchema = z.looseObject({
@@ -545,28 +551,14 @@ export const serverRouteSchema = z.looseObject({
 });
 
 const configNumberSchema = numberFromApiSchema;
-const configIntegerByString = {
-  '0': 0,
-  '1': 1,
-  '2': 2,
-  '3': 3,
-  '4': 4,
-} as const;
-const configFlagSchema = z.union([
-  binaryFlagSchema,
-  z.union([z.literal('0'), z.literal('1')]).transform((value) => configIntegerByString[value]),
-]);
-const configTicketStatusSchema = z.union([
-  z.union([z.literal(0), z.literal(1), z.literal(2)]),
-  z
-    .union([z.literal('0'), z.literal('1'), z.literal('2')])
-    .transform((value) => configIntegerByString[value]),
-]);
+const configFlagSchema = binaryFlagSchema;
+const configTicketStatusSchema = z.union([z.literal(0), z.literal(1), z.literal(2)]);
 const configResetTrafficSchema = z.union([
-  z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
-  z
-    .union([z.literal('0'), z.literal('1'), z.literal('2'), z.literal('3'), z.literal('4')])
-    .transform((value) => configIntegerByString[value]),
+  z.literal(0),
+  z.literal(1),
+  z.literal(2),
+  z.literal(3),
+  z.literal(4),
 ]);
 const configNullableNumberSchema = z.union([z.null(), configNumberSchema]);
 // PostgreSQL authority emits exact decimals as strings. Keep their lexical

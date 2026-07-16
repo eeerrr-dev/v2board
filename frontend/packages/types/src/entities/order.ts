@@ -46,7 +46,9 @@ export interface OrderCheckoutPayload {
 }
 
 export interface OrderCheckoutResult {
-  type: -1 | 0 | 1 | 2;
+  /** Gateway discriminant: 0 QR, 1 redirect, -1 settled without a gateway.
+   * Kept open — callers must treat unknown values as an unsupported gateway. */
+  type: number;
   data: string | boolean;
 }
 

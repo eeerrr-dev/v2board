@@ -66,12 +66,15 @@ export interface AdminUserRow {
   id: number;
   email: string;
   password: string;
-  balance: number | string;
-  commission_balance: number | string;
-  transfer_enable: number | string;
+  // The wire values are JSON numbers (adminUserSchema); the api-client
+  // normalizer reformats these as fixed-decimal display strings (GiB / major
+  // currency units) before they reach the app.
+  balance: string;
+  commission_balance: string;
+  transfer_enable: string;
   device_limit: number | null;
-  u: number | string;
-  d: number | string;
+  u: string;
+  d: string;
   total_used: number | string;
   alive_ip: number;
   ips: string;

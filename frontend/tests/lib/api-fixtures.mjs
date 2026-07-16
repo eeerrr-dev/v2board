@@ -26,6 +26,7 @@ import {
   adminUserFixtures,
   adminUserRankFixtures,
   adminUserStoreFixtures,
+  adminUserTrafficFixtures,
   bannedUserInfoFixture,
   couponCheckFixture,
   dashboardResetPackageOrderFixture,
@@ -974,7 +975,7 @@ export function apiFixtureResponse(
         );
       }
       case '/stat/getStatUser':
-        return body(trafficFixtures, { total: 25 });
+        return body(adminUserTrafficFixtures, { total: 25 });
       case '/ticket/fetch':
         if (requestUrl.searchParams.has('id')) {
           const requestedId = requestUrl.searchParams.get('id') ?? '7';

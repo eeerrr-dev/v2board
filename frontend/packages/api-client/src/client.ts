@@ -72,7 +72,6 @@ export interface BackendEnvelope<T> {
   total?: number;
   type?: number;
   message?: string;
-  msg?: string;
 }
 
 export interface RawBinaryResponse {
@@ -89,7 +88,6 @@ type BackendEnvelopeObject = Record<string, unknown> & {
   total?: number;
   type?: number;
   message?: string;
-  msg?: string;
 };
 
 export interface ApiClient {
@@ -166,14 +164,14 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       const { responseSchema, ...requestConfig } = config;
       const response = await instance.request<unknown>(requestConfig);
       const endpoint = String(config.url ?? '<unknown>');
-      const data = unwrapBackendEnvelope(response.data, response.status, options, endpoint).data;
+      const data = unwrapBackendEnvelope(response.data, response.status, endpoint).data;
       return parseContract(responseSchema, data, endpoint);
     },
     requestEnvelope: async <TSchema extends ZodType>(config: JsonApiRequestConfig<TSchema>) => {
       const { responseSchema, ...requestConfig } = config;
       const response = await instance.request<unknown>(requestConfig);
       const endpoint = String(config.url ?? '<unknown>');
-      const envelope = unwrapBackendEnvelope(response.data, response.status, options, endpoint);
+      const envelope = unwrapBackendEnvelope(response.data, response.status, endpoint);
       return parseContract(responseSchema, envelope, endpoint);
     },
     requestBinary: async <TJsonSchema extends ZodType>(
@@ -187,7 +185,7 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       const buffer = toArrayBuffer(response.data);
       if (buffer) return { code: response.status, data: buffer, buffer };
       const endpoint = String(config.url ?? '<unknown>');
-      const envelope = unwrapBackendEnvelope(response.data, response.status, options, endpoint);
+      const envelope = unwrapBackendEnvelope(response.data, response.status, endpoint);
       return parseContract(jsonResponseSchema, envelope, endpoint);
     },
     resolveAdminPath: (path) => {
@@ -208,10 +206,12 @@ function parseContract<TSchema extends ZodType>(
   return result.data;
 }
 
+// Rust delivers failures as real HTTP statuses (handled by the response
+// interceptor); the in-body `code` handling below exists for the parity
+// fixtures, which reply HTTP 200 with `{ code: 400, ... }` envelopes.
 function unwrapBackendEnvelope(
   envelope: unknown,
   httpStatus: number,
-  options: ApiClientOptions,
   endpoint: string,
 ): BackendEnvelope<unknown> & Record<string, unknown> {
   if (!isEnvelopeObject(envelope)) {
@@ -227,13 +227,11 @@ function unwrapBackendEnvelope(
     data: envelope.data,
   };
   if (backendEnvelope.code !== 200) {
-    const apiError = new ApiError(
+    throw new ApiError(
       backendEnvelope.code,
-      backendEnvelope.message ?? backendEnvelope.msg ?? 'Request failed, please try again later',
+      backendEnvelope.message ?? 'Request failed, please try again later',
       backendEnvelope,
     );
-    if (backendEnvelope.code === 403) options.onUnauthorized?.(apiError);
-    throw apiError;
   }
   return backendEnvelope;
 }
@@ -251,13 +249,12 @@ function assertBackendEnvelopeMetadata(
       new TypeError(`Backend envelope field "${field}" must be a finite number`),
     );
   }
-  for (const field of ['message', 'msg'] as const) {
-    const value = envelope[field];
-    if (value === undefined || typeof value === 'string') continue;
+  const message = envelope.message;
+  if (message !== undefined && typeof message !== 'string') {
     throw new ApiContractError(
       endpoint,
       envelope,
-      new TypeError(`Backend envelope field "${field}" must be a string`),
+      new TypeError('Backend envelope field "message" must be a string'),
     );
   }
 }

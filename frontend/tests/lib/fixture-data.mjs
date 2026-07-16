@@ -287,10 +287,12 @@ export const dashboardResetPackageOrderFixture = {
   type: 1,
   updated_at: 1_700_259_200,
 };
+// /user/order/getPaymentMethod serializes handling_fee_percent as the exact
+// NUMERIC decimal string (`handling_fee_percent::text` in db/src/payment.rs).
 export const paymentMethodFixtures = [
   {
     handling_fee_fixed: 0,
-    handling_fee_percent: 0,
+    handling_fee_percent: '0',
     icon: null,
     id: 1,
     name: 'Alipay',
@@ -298,7 +300,7 @@ export const paymentMethodFixtures = [
   },
   {
     handling_fee_fixed: 100,
-    handling_fee_percent: 2.5,
+    handling_fee_percent: '2.5',
     icon: null,
     id: 2,
     name: 'Stripe',
@@ -306,7 +308,7 @@ export const paymentMethodFixtures = [
   },
   {
     handling_fee_fixed: 100,
-    handling_fee_percent: 0,
+    handling_fee_percent: '0',
     icon: null,
     id: 3,
     name: 'Fee Pay',
@@ -371,6 +373,8 @@ export const serverFixtures = [
     type: 'trojan',
   },
 ];
+// /user/stat/getTrafficLog serializes server_rate as the exact NUMERIC
+// decimal string (`server_rate::text` in db/src/stat.rs).
 export const trafficFixtures = [
   {
     d: 1024 * 1024 * 1024,
@@ -387,6 +391,12 @@ export const trafficFixtures = [
     user_id: 1,
   },
 ];
+// The admin /stat/getStatUser rows come from jsonb_build_object over the
+// NUMERIC column, so server_rate arrives as a JSON number there.
+export const adminUserTrafficFixtures = trafficFixtures.map((entry) => ({
+  ...entry,
+  server_rate: Number(entry.server_rate),
+}));
 export const inviteFixture = {
   codes: [
     {
