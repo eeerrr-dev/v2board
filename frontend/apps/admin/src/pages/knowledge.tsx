@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Controller, useForm } from 'react-hook-form';
+import { Controller, useForm, useFormState } from 'react-hook-form';
 import dayjs from 'dayjs';
 import type { Knowledge, KnowledgeSummary } from '@v2board/types';
 import { ArrowDown, ArrowUp, Pencil, Plus, Trash2 } from 'lucide-react';
@@ -85,15 +85,17 @@ function KnowledgeEditorForm({
   initialValues: KnowledgeEditorValues;
   onSubmit: (values: KnowledgeSavePayload) => void;
 }) {
-  const {
-    control,
-    formState: { errors },
-    handleSubmit,
-    register,
-  } = useForm<KnowledgeEditorValues, unknown, KnowledgeSavePayload>({
+  const { control, handleSubmit, register } = useForm<
+    KnowledgeEditorValues,
+    unknown,
+    KnowledgeSavePayload
+  >({
     resolver: zodResolver(knowledgeEditorSchema),
     defaultValues: initialValues,
   });
+  // useFormState, not the mutable formState proxy: the React Compiler caches
+  // proxy reads, which freezes error/submit UI after the first render.
+  const { errors } = useFormState({ control });
 
   return (
     <form

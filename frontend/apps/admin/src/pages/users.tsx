@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ComponentProps } from 'react';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
+import { Controller, useFieldArray, useForm, useFormState, useWatch } from 'react-hook-form';
 import {
   Activity,
   ArrowDown,
@@ -821,6 +821,9 @@ function UserFilterSheet({
     resolver: zodResolver(userFilterSchema),
     defaultValues: { rows: value },
   });
+  // useFormState, not the mutable form.formState proxy: the React Compiler
+  // caches proxy reads, which freezes error/submit UI after the first render.
+  const { errors: formErrors } = useFormState({ control: form.control });
   const {
     fields: filterRows,
     append,
@@ -879,7 +882,7 @@ function UserFilterSheet({
           {filterRows.map((filterRow, index) => {
             const row = rows[index] ?? filterRow;
             const field = fieldOf(row.key);
-            const valueError = form.formState.errors.rows?.[index]?.value;
+            const valueError = formErrors.rows?.[index]?.value;
             return (
               <div key={filterRow.id} className="space-y-2 rounded-md border border-border p-3">
                 <div className="flex items-center gap-2">
@@ -1066,6 +1069,10 @@ function GenerateUserModal({
       generate_count: '',
     },
   });
+  // Read form state through the useFormState subscription instead of the
+  // mutable form.formState proxy: the React Compiler caches proxy reads, which
+  // drops react-hook-form's render-time access tracking and freezes error UI.
+  const { errors: formErrors, isSubmitting } = useFormState({ control: form.control });
   const emailPrefix = useWatch({ control: form.control, name: 'email_prefix' });
   const generateCount = useWatch({ control: form.control, name: 'generate_count' });
 
@@ -1107,10 +1114,10 @@ function GenerateUserModal({
         </DialogHeader>
 
         <form className="space-y-4" onSubmit={submit} noValidate>
-          <FieldError errors={[form.formState.errors.root?.serverError]} />
+          <FieldError errors={[formErrors.root?.serverError]} />
           <FieldSet
             data-invalid={Boolean(
-              form.formState.errors.email_prefix || form.formState.errors.email_suffix,
+              formErrors.email_prefix || formErrors.email_suffix,
             )}
           >
             <FieldLegend variant="label">邮箱</FieldLegend>
@@ -1130,7 +1137,7 @@ function GenerateUserModal({
                         }
                       }}
                       data-testid="generate-email-prefix"
-                      aria-invalid={Boolean(form.formState.errors.email_prefix)}
+                      aria-invalid={Boolean(formErrors.email_prefix)}
                     />
                   )}
                 />
@@ -1150,7 +1157,7 @@ function GenerateUserModal({
               />
             </div>
             <FieldError
-              errors={[form.formState.errors.email_prefix, form.formState.errors.email_suffix]}
+              errors={[formErrors.email_prefix, formErrors.email_suffix]}
             />
           </FieldSet>
           <Field>
@@ -1211,7 +1218,7 @@ function GenerateUserModal({
             />
           </Field>
           {!emailPrefix ? (
-            <Field data-invalid={Boolean(form.formState.errors.generate_count)}>
+            <Field data-invalid={Boolean(formErrors.generate_count)}>
               <FieldLabel htmlFor="generate-count">生成数量</FieldLabel>
               <Controller
                 control={form.control}
@@ -1232,7 +1239,7 @@ function GenerateUserModal({
                   />
                 )}
               />
-              <FieldError errors={[form.formState.errors.generate_count]} />
+              <FieldError errors={[formErrors.generate_count]} />
             </Field>
           ) : null}
           <DialogFooter>
@@ -1241,8 +1248,8 @@ function GenerateUserModal({
             </Button>
             <Button
               type="submit"
-              disabled={loading || form.formState.isSubmitting}
-              loading={loading || form.formState.isSubmitting}
+              disabled={loading || isSubmitting}
+              loading={loading || isSubmitting}
               data-testid="generate-submit"
             >
               生成
@@ -1271,6 +1278,9 @@ function SendMailModal({
     resolver: zodResolver(sendMailSchema),
     defaultValues: { subject: '', content: '' },
   });
+  // useFormState, not the mutable form.formState proxy: the React Compiler
+  // caches proxy reads, which freezes error/submit UI after the first render.
+  const { errors: formErrors, isSubmitting } = useFormState({ control: form.control });
 
   useEffect(() => {
     if (!open) form.reset();
@@ -1298,7 +1308,7 @@ function SendMailModal({
         </DialogHeader>
 
         <form className="space-y-4" onSubmit={submit} noValidate>
-          <FieldError errors={[form.formState.errors.root?.serverError]} />
+          <FieldError errors={[formErrors.root?.serverError]} />
           <Field>
             <FieldLabel htmlFor="send-mail-recipient">收件人</FieldLabel>
             <Input
@@ -1307,7 +1317,7 @@ function SendMailModal({
               value={filter.length ? '过滤用户' : '全部用户'}
             />
           </Field>
-          <Field data-invalid={Boolean(form.formState.errors.subject)}>
+          <Field data-invalid={Boolean(formErrors.subject)}>
             <FieldLabel htmlFor="send-mail-subject">主题</FieldLabel>
             <Controller
               control={form.control}
@@ -1322,9 +1332,9 @@ function SendMailModal({
                 />
               )}
             />
-            <FieldError errors={[form.formState.errors.subject]} />
+            <FieldError errors={[formErrors.subject]} />
           </Field>
-          <Field data-invalid={Boolean(form.formState.errors.content)}>
+          <Field data-invalid={Boolean(formErrors.content)}>
             <FieldLabel htmlFor="send-mail-content">发送内容</FieldLabel>
             <Controller
               control={form.control}
@@ -1340,7 +1350,7 @@ function SendMailModal({
                 />
               )}
             />
-            <FieldError errors={[form.formState.errors.content]} />
+            <FieldError errors={[formErrors.content]} />
           </Field>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={close}>
@@ -1348,8 +1358,8 @@ function SendMailModal({
             </Button>
             <Button
               type="submit"
-              disabled={loading || form.formState.isSubmitting}
-              loading={loading || form.formState.isSubmitting}
+              disabled={loading || isSubmitting}
+              loading={loading || isSubmitting}
               data-testid="send-mail-submit"
             >
               确定
@@ -1380,6 +1390,9 @@ function AssignOrderModal({
       total_amount: '',
     },
   });
+  // useFormState, not the mutable form.formState proxy: the React Compiler
+  // caches proxy reads, which freezes error/submit UI after the first render.
+  const { errors: formErrors, isSubmitting } = useFormState({ control: form.control });
 
   useEffect(() => {
     form.reset({
@@ -1416,8 +1429,8 @@ function AssignOrderModal({
         </DialogHeader>
 
         <form className="space-y-4" onSubmit={doAssign} noValidate>
-          <FieldError errors={[form.formState.errors.root?.serverError]} />
-          <Field data-invalid={Boolean(form.formState.errors.email)}>
+          <FieldError errors={[formErrors.root?.serverError]} />
+          <Field data-invalid={Boolean(formErrors.email)}>
             <FieldLabel htmlFor="assign-email">用户邮箱</FieldLabel>
             <Controller
               control={form.control}
@@ -1433,9 +1446,9 @@ function AssignOrderModal({
                 />
               )}
             />
-            <FieldError errors={[form.formState.errors.email]} />
+            <FieldError errors={[formErrors.email]} />
           </Field>
-          <Field data-invalid={Boolean(form.formState.errors.plan_id)}>
+          <Field data-invalid={Boolean(formErrors.plan_id)}>
             <FieldLabel htmlFor="user-assign-plan">请选择订阅</FieldLabel>
             <Controller
               control={form.control}
@@ -1448,7 +1461,7 @@ function AssignOrderModal({
                   <SelectTrigger
                     id="user-assign-plan"
                     className="w-full"
-                    aria-invalid={Boolean(form.formState.errors.plan_id)}
+                    aria-invalid={Boolean(formErrors.plan_id)}
                   >
                     <SelectValue placeholder="请选择订阅" />
                   </SelectTrigger>
@@ -1462,9 +1475,9 @@ function AssignOrderModal({
                 </Select>
               )}
             />
-            <FieldError errors={[form.formState.errors.plan_id]} />
+            <FieldError errors={[formErrors.plan_id]} />
           </Field>
-          <Field data-invalid={Boolean(form.formState.errors.period)}>
+          <Field data-invalid={Boolean(formErrors.period)}>
             <FieldLabel htmlFor="user-assign-period">请选择周期</FieldLabel>
             <Controller
               control={form.control}
@@ -1474,7 +1487,7 @@ function AssignOrderModal({
                   <SelectTrigger
                     id="user-assign-period"
                     className="w-full"
-                    aria-invalid={Boolean(form.formState.errors.period)}
+                    aria-invalid={Boolean(formErrors.period)}
                   >
                     <SelectValue placeholder="请选择周期" />
                   </SelectTrigger>
@@ -1488,9 +1501,9 @@ function AssignOrderModal({
                 </Select>
               )}
             />
-            <FieldError errors={[form.formState.errors.period]} />
+            <FieldError errors={[formErrors.period]} />
           </Field>
-          <Field data-invalid={Boolean(form.formState.errors.total_amount)}>
+          <Field data-invalid={Boolean(formErrors.total_amount)}>
             <FieldLabel htmlFor="assign-amount">支付金额</FieldLabel>
             <Controller
               control={form.control}
@@ -1506,7 +1519,7 @@ function AssignOrderModal({
                 />
               )}
             />
-            <FieldError errors={[form.formState.errors.total_amount]} />
+            <FieldError errors={[formErrors.total_amount]} />
           </Field>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={close}>
@@ -1514,8 +1527,8 @@ function AssignOrderModal({
             </Button>
             <Button
               type="submit"
-              disabled={assign.isPending || form.formState.isSubmitting}
-              loading={assign.isPending || form.formState.isSubmitting}
+              disabled={assign.isPending || isSubmitting}
+              loading={assign.isPending || isSubmitting}
               data-testid="assign-submit"
             >
               确定

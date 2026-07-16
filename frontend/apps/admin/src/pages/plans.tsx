@@ -3,7 +3,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import type { admin } from '@v2board/api-client';
 import type { Plan, PlanPeriod } from '@v2board/types';
 import { ArrowDown, ArrowUp, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
-import { useForm, useWatch, type FieldPath, type FieldPathValue } from 'react-hook-form';
+import { type FieldPath, type FieldPathValue, useForm, useFormState, useWatch } from 'react-hook-form';
 import {
   useAdminPlans,
   useConfig,
@@ -229,6 +229,9 @@ function PlanEditor({
     resolver: zodResolver(planEditorSchema),
     defaultValues: { ...emptyPlan(), ...record },
   });
+  // useFormState, not the mutable form.formState proxy: the React Compiler
+  // caches proxy reads, which freezes error/submit UI after the first render.
+  const { errors: formErrors } = useFormState({ control: form.control });
   const submit = useWatch({ control: form.control });
 
   const openSheet = () => {
@@ -281,17 +284,17 @@ function PlanEditor({
 
         <TooltipProvider delayDuration={100}>
           <form id="plan-editor-form" className="space-y-5 px-4 pb-4" onSubmit={save} noValidate>
-            <Field data-invalid={Boolean(form.formState.errors.name)}>
+            <Field data-invalid={Boolean(formErrors.name)}>
               <FieldLabel htmlFor="plan-name">套餐名称</FieldLabel>
               <Input
                 id="plan-name"
                 placeholder="请输入套餐名称"
                 value={inputValue(submit.name)}
                 onChange={(event) => change('name', event.target.value)}
-                aria-invalid={Boolean(form.formState.errors.name)}
+                aria-invalid={Boolean(formErrors.name)}
                 data-testid="plan-name"
               />
-              <FieldError errors={[form.formState.errors.name]} />
+              <FieldError errors={[formErrors.name]} />
             </Field>
 
             <Field>
@@ -323,7 +326,7 @@ function PlanEditor({
                     currencySymbol={currencySymbol}
                     value={submit[field.key]}
                     onChange={(value) => priceChange(field.key, value)}
-                    error={form.formState.errors[field.key]}
+                    error={formErrors[field.key]}
                   />
                 ))}
               </div>
@@ -337,7 +340,7 @@ function PlanEditor({
                 placeholder="请输入套餐流量"
                 value={submit.transfer_enable}
                 onChange={(value) => change('transfer_enable', value)}
-                error={form.formState.errors.transfer_enable}
+                error={formErrors.transfer_enable}
               />
               <LimitInput
                 id="plan-device-limit"
@@ -345,12 +348,12 @@ function PlanEditor({
                 placeholder="留空则不限制"
                 value={submit.device_limit}
                 onChange={(value) => change('device_limit', value)}
-                error={form.formState.errors.device_limit}
+                error={formErrors.device_limit}
               />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <Field data-invalid={Boolean(form.formState.errors.group_id)}>
+              <Field data-invalid={Boolean(formErrors.group_id)}>
                 <FieldLabel htmlFor="plan-group">权限组</FieldLabel>
                 <Select
                   value={submit.group_id != null ? String(submit.group_id) : ''}
@@ -360,7 +363,7 @@ function PlanEditor({
                     id="plan-group"
                     className="w-full"
                     data-testid="plan-group"
-                    aria-invalid={Boolean(form.formState.errors.group_id)}
+                    aria-invalid={Boolean(formErrors.group_id)}
                   >
                     <SelectValue placeholder="请选择权限组" />
                   </SelectTrigger>
@@ -372,7 +375,7 @@ function PlanEditor({
                     ))}
                   </SelectContent>
                 </Select>
-                <FieldError errors={[form.formState.errors.group_id]} />
+                <FieldError errors={[formErrors.group_id]} />
               </Field>
               <Field>
                 <FieldLabel htmlFor="plan-reset-method">流量重置方式</FieldLabel>
@@ -407,7 +410,7 @@ function PlanEditor({
                 placeholder="留空则不限制"
                 value={submit.capacity_limit}
                 onChange={(value) => change('capacity_limit', value)}
-                error={form.formState.errors.capacity_limit}
+                error={formErrors.capacity_limit}
               />
               <LimitInput
                 id="plan-speed-limit"
@@ -416,7 +419,7 @@ function PlanEditor({
                 placeholder="留空则不限制"
                 value={submit.speed_limit}
                 onChange={(value) => change('speed_limit', value)}
-                error={form.formState.errors.speed_limit}
+                error={formErrors.speed_limit}
               />
             </div>
 

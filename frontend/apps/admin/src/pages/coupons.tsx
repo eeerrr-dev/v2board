@@ -2,7 +2,7 @@ import { useState, type ReactElement } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import dayjs from 'dayjs';
 import { useLocation } from 'react-router';
-import { Controller, useForm, useWatch } from 'react-hook-form';
+import { Controller, useForm, useFormState, useWatch } from 'react-hook-form';
 import { Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import type { admin } from '@v2board/api-client';
 import type { Coupon, CouponType, Giftcard, Plan } from '@v2board/types';
@@ -252,6 +252,9 @@ function CouponEditor({
       generate_count: undefined,
     },
   });
+  // useFormState, not the mutable form.formState proxy: the React Compiler
+  // caches proxy reads, which freezes error/submit UI after the first render.
+  const { errors: formErrors } = useFormState({ control: form.control });
   const values = useWatch({ control: form.control });
 
   const openSheet = () => {
@@ -302,16 +305,16 @@ function CouponEditor({
         </SheetHeader>
 
         <form id="coupon-editor-form" className="space-y-4 px-4 pb-4" onSubmit={save} noValidate>
-          <Field data-invalid={Boolean(form.formState.errors.name)}>
+          <Field data-invalid={Boolean(formErrors.name)}>
             <FieldLabel htmlFor="coupon-name">名称</FieldLabel>
             <Input
               id="coupon-name"
               placeholder="请输入优惠券名称"
-              aria-invalid={Boolean(form.formState.errors.name)}
+              aria-invalid={Boolean(formErrors.name)}
               {...form.register('name')}
               data-testid="coupon-name"
             />
-            <FieldError errors={[form.formState.errors.name]} />
+            <FieldError errors={[formErrors.name]} />
           </Field>
 
           {!values.generate_count ? (
@@ -328,7 +331,7 @@ function CouponEditor({
             </Field>
           ) : null}
 
-          <Field data-invalid={Boolean(form.formState.errors.value)}>
+          <Field data-invalid={Boolean(formErrors.value)}>
             <FieldLabel htmlFor="coupon-value">优惠信息</FieldLabel>
             <div className="flex gap-2">
               <Select
@@ -353,7 +356,7 @@ function CouponEditor({
                   type="number"
                   step={values.type === 1 ? '0.01' : '1'}
                   placeholder="请输入值"
-                  aria-invalid={Boolean(form.formState.errors.value)}
+                  aria-invalid={Boolean(formErrors.value)}
                   {...form.register('value')}
                   data-testid="coupon-value"
                 />
@@ -362,11 +365,11 @@ function CouponEditor({
                 </InputGroupAddon>
               </InputGroup>
             </div>
-            <FieldError errors={[form.formState.errors.value]} />
+            <FieldError errors={[formErrors.value]} />
           </Field>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field data-invalid={Boolean(form.formState.errors.started_at)}>
+            <Field data-invalid={Boolean(formErrors.started_at)}>
               <FieldLabel htmlFor="coupon-start">开始时间</FieldLabel>
               <Controller
                 control={form.control}
@@ -385,14 +388,14 @@ function CouponEditor({
                     }
                     onBlur={field.onBlur}
                     ref={field.ref}
-                    aria-invalid={Boolean(form.formState.errors.started_at)}
+                    aria-invalid={Boolean(formErrors.started_at)}
                     data-testid="coupon-start"
                   />
                 )}
               />
-              <FieldError errors={[form.formState.errors.started_at]} />
+              <FieldError errors={[formErrors.started_at]} />
             </Field>
-            <Field data-invalid={Boolean(form.formState.errors.ended_at)}>
+            <Field data-invalid={Boolean(formErrors.ended_at)}>
               <FieldLabel htmlFor="coupon-end">结束时间</FieldLabel>
               <Controller
                 control={form.control}
@@ -411,41 +414,41 @@ function CouponEditor({
                     }
                     onBlur={field.onBlur}
                     ref={field.ref}
-                    aria-invalid={Boolean(form.formState.errors.ended_at)}
+                    aria-invalid={Boolean(formErrors.ended_at)}
                     data-testid="coupon-end"
                   />
                 )}
               />
-              <FieldError errors={[form.formState.errors.ended_at]} />
+              <FieldError errors={[formErrors.ended_at]} />
             </Field>
           </div>
 
-          <Field data-invalid={Boolean(form.formState.errors.limit_use)}>
+          <Field data-invalid={Boolean(formErrors.limit_use)}>
             <FieldLabel htmlFor="coupon-limit-use">最大使用次数</FieldLabel>
             <Input
               id="coupon-limit-use"
               type="number"
               step="1"
               placeholder="限制最大使用次数，用完则无法使用(为空则不限制)"
-              aria-invalid={Boolean(form.formState.errors.limit_use)}
+              aria-invalid={Boolean(formErrors.limit_use)}
               {...form.register('limit_use')}
               data-testid="coupon-limit-use"
             />
-            <FieldError errors={[form.formState.errors.limit_use]} />
+            <FieldError errors={[formErrors.limit_use]} />
           </Field>
 
-          <Field data-invalid={Boolean(form.formState.errors.limit_use_with_user)}>
+          <Field data-invalid={Boolean(formErrors.limit_use_with_user)}>
             <FieldLabel htmlFor="coupon-limit-use-user">每个用户可使用次数</FieldLabel>
             <Input
               id="coupon-limit-use-user"
               type="number"
               step="1"
               placeholder="限制每个用户可使用次数(为空则不限制)"
-              aria-invalid={Boolean(form.formState.errors.limit_use_with_user)}
+              aria-invalid={Boolean(formErrors.limit_use_with_user)}
               {...form.register('limit_use_with_user')}
               data-testid="coupon-limit-use-user"
             />
-            <FieldError errors={[form.formState.errors.limit_use_with_user]} />
+            <FieldError errors={[formErrors.limit_use_with_user]} />
           </Field>
 
           <fieldset className="space-y-2">
@@ -473,7 +476,7 @@ function CouponEditor({
           </fieldset>
 
           {!values.code && !values.id ? (
-            <Field data-invalid={Boolean(form.formState.errors.generate_count)}>
+            <Field data-invalid={Boolean(formErrors.generate_count)}>
               <FieldLabel htmlFor="coupon-generate-count">生成数量</FieldLabel>
               <Input
                 id="coupon-generate-count"
@@ -482,13 +485,13 @@ function CouponEditor({
                 max="500"
                 step="1"
                 placeholder="输入数量批量生成"
-                aria-invalid={Boolean(form.formState.errors.generate_count)}
+                aria-invalid={Boolean(formErrors.generate_count)}
                 {...form.register('generate_count', {
                   onChange: () => form.setValue('code', undefined),
                 })}
                 data-testid="coupon-generate-count"
               />
-              <FieldError errors={[form.formState.errors.generate_count]} />
+              <FieldError errors={[formErrors.generate_count]} />
             </Field>
           ) : null}
         </form>
@@ -729,6 +732,9 @@ function GiftcardEditor({
       generate_count: undefined,
     },
   });
+  // useFormState, not the mutable form.formState proxy: the React Compiler
+  // caches proxy reads, which freezes error/submit UI after the first render.
+  const { errors: formErrors } = useFormState({ control: form.control });
   const values = useWatch({ control: form.control });
 
   const openSheet = () => {
@@ -774,16 +780,16 @@ function GiftcardEditor({
         </SheetHeader>
 
         <form id="giftcard-editor-form" className="space-y-4 px-4 pb-4" onSubmit={save} noValidate>
-          <Field data-invalid={Boolean(form.formState.errors.name)}>
+          <Field data-invalid={Boolean(formErrors.name)}>
             <FieldLabel htmlFor="giftcard-name">名称</FieldLabel>
             <Input
               id="giftcard-name"
               placeholder="请输入礼品卡名称"
-              aria-invalid={Boolean(form.formState.errors.name)}
+              aria-invalid={Boolean(formErrors.name)}
               {...form.register('name')}
               data-testid="giftcard-name"
             />
-            <FieldError errors={[form.formState.errors.name]} />
+            <FieldError errors={[formErrors.name]} />
           </Field>
 
           {!values.generate_count ? (
@@ -800,7 +806,7 @@ function GiftcardEditor({
             </Field>
           ) : null}
 
-          <Field data-invalid={Boolean(form.formState.errors.value)}>
+          <Field data-invalid={Boolean(formErrors.value)}>
             <FieldLabel htmlFor="giftcard-value">礼品卡类型</FieldLabel>
             <div className="flex gap-2">
               <Select
@@ -833,7 +839,7 @@ function GiftcardEditor({
                   placeholder={values.type === 5 ? '一次性套餐输入0' : '请输入值'}
                   value={values.type === 4 ? 0 : (values.value ?? '')}
                   onChange={(event) => form.setValue('value', event.target.value)}
-                  aria-invalid={Boolean(form.formState.errors.value)}
+                  aria-invalid={Boolean(formErrors.value)}
                   data-testid="giftcard-value"
                 />
                 <InputGroupAddon align="inline-end">
@@ -841,11 +847,11 @@ function GiftcardEditor({
                 </InputGroupAddon>
               </InputGroup>
             </div>
-            <FieldError errors={[form.formState.errors.value]} />
+            <FieldError errors={[formErrors.value]} />
           </Field>
 
           {values.type === 5 ? (
-            <Field data-invalid={Boolean(form.formState.errors.plan_id)}>
+            <Field data-invalid={Boolean(formErrors.plan_id)}>
               <FieldLabel htmlFor="giftcard-plan">指定订阅</FieldLabel>
               <Select
                 value={values.plan_id != null ? String(values.plan_id) : ''}
@@ -854,7 +860,7 @@ function GiftcardEditor({
                 <SelectTrigger
                   id="giftcard-plan"
                   className="w-full"
-                  aria-invalid={Boolean(form.formState.errors.plan_id)}
+                  aria-invalid={Boolean(formErrors.plan_id)}
                   data-testid="giftcard-plan"
                 >
                   <SelectValue placeholder="指定订阅" />
@@ -867,12 +873,12 @@ function GiftcardEditor({
                   ))}
                 </SelectContent>
               </Select>
-              <FieldError errors={[form.formState.errors.plan_id]} />
+              <FieldError errors={[formErrors.plan_id]} />
             </Field>
           ) : null}
 
           <div className="grid grid-cols-2 gap-3">
-            <Field data-invalid={Boolean(form.formState.errors.started_at)}>
+            <Field data-invalid={Boolean(formErrors.started_at)}>
               <FieldLabel htmlFor="giftcard-start">开始时间</FieldLabel>
               <Controller
                 control={form.control}
@@ -891,14 +897,14 @@ function GiftcardEditor({
                     }
                     onBlur={field.onBlur}
                     ref={field.ref}
-                    aria-invalid={Boolean(form.formState.errors.started_at)}
+                    aria-invalid={Boolean(formErrors.started_at)}
                     data-testid="giftcard-start"
                   />
                 )}
               />
-              <FieldError errors={[form.formState.errors.started_at]} />
+              <FieldError errors={[formErrors.started_at]} />
             </Field>
-            <Field data-invalid={Boolean(form.formState.errors.ended_at)}>
+            <Field data-invalid={Boolean(formErrors.ended_at)}>
               <FieldLabel htmlFor="giftcard-end">结束时间</FieldLabel>
               <Controller
                 control={form.control}
@@ -917,31 +923,31 @@ function GiftcardEditor({
                     }
                     onBlur={field.onBlur}
                     ref={field.ref}
-                    aria-invalid={Boolean(form.formState.errors.ended_at)}
+                    aria-invalid={Boolean(formErrors.ended_at)}
                     data-testid="giftcard-end"
                   />
                 )}
               />
-              <FieldError errors={[form.formState.errors.ended_at]} />
+              <FieldError errors={[formErrors.ended_at]} />
             </Field>
           </div>
 
-          <Field data-invalid={Boolean(form.formState.errors.limit_use)}>
+          <Field data-invalid={Boolean(formErrors.limit_use)}>
             <FieldLabel htmlFor="giftcard-limit-use">最大使用次数</FieldLabel>
             <Input
               id="giftcard-limit-use"
               type="number"
               step="1"
               placeholder="限制最大使用次数，用完则无法使用(为空则不限制)"
-              aria-invalid={Boolean(form.formState.errors.limit_use)}
+              aria-invalid={Boolean(formErrors.limit_use)}
               {...form.register('limit_use')}
               data-testid="giftcard-limit-use"
             />
-            <FieldError errors={[form.formState.errors.limit_use]} />
+            <FieldError errors={[formErrors.limit_use]} />
           </Field>
 
           {!values.code && !values.id ? (
-            <Field data-invalid={Boolean(form.formState.errors.generate_count)}>
+            <Field data-invalid={Boolean(formErrors.generate_count)}>
               <FieldLabel htmlFor="giftcard-generate-count">生成数量</FieldLabel>
               <Input
                 id="giftcard-generate-count"
@@ -950,13 +956,13 @@ function GiftcardEditor({
                 max="500"
                 step="1"
                 placeholder="输入数量批量生成"
-                aria-invalid={Boolean(form.formState.errors.generate_count)}
+                aria-invalid={Boolean(formErrors.generate_count)}
                 {...form.register('generate_count', {
                   onChange: () => form.setValue('code', undefined),
                 })}
                 data-testid="giftcard-generate-count"
               />
-              <FieldError errors={[form.formState.errors.generate_count]} />
+              <FieldError errors={[formErrors.generate_count]} />
             </Field>
           ) : null}
         </form>

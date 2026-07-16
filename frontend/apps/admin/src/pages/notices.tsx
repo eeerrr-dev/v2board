@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Controller, useForm, useWatch } from 'react-hook-form';
+import { Controller, useForm, useFormState, useWatch } from 'react-hook-form';
 import dayjs from 'dayjs';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import type { Notice } from '@v2board/types';
@@ -58,6 +58,9 @@ export default function NoticesPage() {
     resolver: zodResolver(noticeEditorSchema),
     defaultValues: noticeEditorValues(),
   });
+  // useFormState, not the mutable form.formState proxy: the React Compiler
+  // caches proxy reads, which freezes error/submit UI after the first render.
+  const { errors: formErrors } = useFormState({ control: form.control });
   const editingId = useWatch({ control: form.control, name: 'id' });
   const dataSource = notices.data?.data ?? [];
 
@@ -191,28 +194,28 @@ export default function NoticesPage() {
           </DialogHeader>
 
           <form id={NOTICE_FORM_ID} className="space-y-4" onSubmit={saveNotice} noValidate>
-            <Field data-invalid={Boolean(form.formState.errors.title)}>
+            <Field data-invalid={Boolean(formErrors.title)}>
               <FieldLabel htmlFor="notice-title">标题</FieldLabel>
               <Input
                 id="notice-title"
                 placeholder="请输入公告标题"
-                aria-invalid={Boolean(form.formState.errors.title)}
+                aria-invalid={Boolean(formErrors.title)}
                 {...form.register('title')}
               />
-              <FieldError errors={[form.formState.errors.title]} />
+              <FieldError errors={[formErrors.title]} />
             </Field>
-            <Field data-invalid={Boolean(form.formState.errors.content)}>
+            <Field data-invalid={Boolean(formErrors.content)}>
               <FieldLabel htmlFor="notice-content">公告内容</FieldLabel>
               <Textarea
                 id="notice-content"
                 rows={12}
                 placeholder="请输入公告内容"
-                aria-invalid={Boolean(form.formState.errors.content)}
+                aria-invalid={Boolean(formErrors.content)}
                 {...form.register('content')}
               />
-              <FieldError errors={[form.formState.errors.content]} />
+              <FieldError errors={[formErrors.content]} />
             </Field>
-            <Field data-invalid={Boolean(form.formState.errors.tags)}>
+            <Field data-invalid={Boolean(formErrors.tags)}>
               <FieldLabel htmlFor="notice-tags">公告标签</FieldLabel>
               <Controller
                 control={form.control}
@@ -224,21 +227,21 @@ export default function NoticesPage() {
                     value={field.value}
                     onChange={field.onChange}
                     onBlur={field.onBlur}
-                    invalid={Boolean(form.formState.errors.tags)}
+                    invalid={Boolean(formErrors.tags)}
                   />
                 )}
               />
-              <FieldError errors={[form.formState.errors.tags]} />
+              <FieldError errors={[formErrors.tags]} />
             </Field>
-            <Field data-invalid={Boolean(form.formState.errors.img_url)}>
+            <Field data-invalid={Boolean(formErrors.img_url)}>
               <FieldLabel htmlFor="notice-img">图片URL</FieldLabel>
               <Input
                 id="notice-img"
                 placeholder="请输入图片URL"
-                aria-invalid={Boolean(form.formState.errors.img_url)}
+                aria-invalid={Boolean(formErrors.img_url)}
                 {...form.register('img_url')}
               />
-              <FieldError errors={[form.formState.errors.img_url]} />
+              <FieldError errors={[formErrors.img_url]} />
             </Field>
           </form>
 

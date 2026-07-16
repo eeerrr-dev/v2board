@@ -1,6 +1,6 @@
 import { useState, type ReactElement } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm } from 'react-hook-form';
+import { useForm, useFormState } from 'react-hook-form';
 import { Loader2 } from 'lucide-react';
 import type { admin } from '@v2board/api-client';
 import { Button } from '@/components/ui/button';
@@ -33,6 +33,9 @@ export function ServerGroupDialog({
     resolver: zodResolver(serverGroupFormSchema),
     defaultValues: { id: record?.id, name: record?.name ?? '' },
   });
+  // useFormState, not the mutable form.formState proxy: the React Compiler
+  // caches proxy reads, which freezes error/submit UI after the first render.
+  const { errors: formErrors, isSubmitting } = useFormState({ control: form.control });
 
   const openModal = () => {
     form.reset({ id: record?.id, name: record?.name ?? '' });
@@ -59,17 +62,17 @@ export function ServerGroupDialog({
             <DialogTitle>{record?.id ? '编辑组' : '创建组'}</DialogTitle>
             <DialogDescription>设置权限组名称及其节点访问范围。</DialogDescription>
           </DialogHeader>
-          <Field className="mt-4" data-invalid={Boolean(form.formState.errors.name)}>
+          <Field className="mt-4" data-invalid={Boolean(formErrors.name)}>
             <FieldLabel htmlFor="server-group-name">组名</FieldLabel>
             <Input
               {...form.register('name')}
               id="server-group-name"
               placeholder="请输入组名"
-              aria-invalid={Boolean(form.formState.errors.name)}
-              aria-describedby={form.formState.errors.name ? groupNameErrorId : undefined}
+              aria-invalid={Boolean(formErrors.name)}
+              aria-describedby={formErrors.name ? groupNameErrorId : undefined}
               data-testid="server-group-name"
             />
-            <FieldError id={groupNameErrorId} errors={[form.formState.errors.name]} />
+            <FieldError id={groupNameErrorId} errors={[formErrors.name]} />
           </Field>
           <DialogFooter className="mt-4">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
@@ -77,10 +80,10 @@ export function ServerGroupDialog({
             </Button>
             <Button
               type="submit"
-              disabled={pending || form.formState.isSubmitting}
+              disabled={pending || isSubmitting}
               data-testid="server-group-submit"
             >
-              {pending || form.formState.isSubmitting ? (
+              {pending || isSubmitting ? (
                 <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
               ) : null}
               提交

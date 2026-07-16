@@ -2,7 +2,7 @@ import { useState, type BaseSyntheticEvent, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm, type UseFormRegister } from 'react-hook-form';
+import { useForm, useFormState, type UseFormRegister } from 'react-hook-form';
 import { useGuestConfig, useRegisterMutation } from '@/lib/guest';
 import { toast } from '@/lib/toast';
 import { i18nGet } from '@/lib/errors';
@@ -98,6 +98,9 @@ export function useRegisterController(): RegisterController {
       invite_code: initialInviteCode ?? '',
     },
   });
+  // useFormState, not the mutable form.formState proxy: the React Compiler caches
+  // proxy reads, which would freeze these derived errors after the first render.
+  const { errors } = useFormState({ control: form.control });
 
   const getEmail = (email: string) => {
     const normalized = email.trim();
@@ -162,9 +165,6 @@ export function useRegisterController(): RegisterController {
     await submitForm(event);
   };
 
-  // Read the proxied errors in the controller so every field update re-renders
-  // the presentation with its localized inline error.
-  const errors = form.formState.errors;
 
   return {
     config,

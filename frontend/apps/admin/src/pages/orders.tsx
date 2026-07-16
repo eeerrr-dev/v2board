@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Controller, useForm } from 'react-hook-form';
+import { Controller, useForm, useFormState } from 'react-hook-form';
 import { ChevronDown, ListFilter, Plus, Search } from 'lucide-react';
 import type { AdminFilter } from '@v2board/api-client';
 import type { AdminOrderRow, Plan } from '@v2board/types';
@@ -316,6 +316,9 @@ function AssignOrderDialog({ plans }: { plans: Plan[] }) {
     resolver: zodResolver(assignOrderSchema),
     defaultValues: { email: '', plan_id: undefined, period: undefined, total_amount: '' },
   });
+  // useFormState, not the mutable form.formState proxy: the React Compiler
+  // caches proxy reads, which freezes error/submit UI after the first render.
+  const { errors: formErrors, isSubmitting } = useFormState({ control: form.control });
 
   const openDialog = () => {
     form.reset();
@@ -355,8 +358,8 @@ function AssignOrderDialog({ plans }: { plans: Plan[] }) {
           </DialogHeader>
 
           <form className="space-y-4" onSubmit={assignOrder} noValidate>
-            <FieldError errors={[form.formState.errors.root?.serverError]} />
-            <Field data-invalid={Boolean(form.formState.errors.email)}>
+            <FieldError errors={[formErrors.root?.serverError]} />
+            <Field data-invalid={Boolean(formErrors.email)}>
               <FieldLabel htmlFor="order-assign-email">用户邮箱</FieldLabel>
               <Controller
                 control={form.control}
@@ -372,9 +375,9 @@ function AssignOrderDialog({ plans }: { plans: Plan[] }) {
                   />
                 )}
               />
-              <FieldError errors={[form.formState.errors.email]} />
+              <FieldError errors={[formErrors.email]} />
             </Field>
-            <Field data-invalid={Boolean(form.formState.errors.plan_id)}>
+            <Field data-invalid={Boolean(formErrors.plan_id)}>
               <FieldLabel htmlFor="order-assign-plan">请选择订阅</FieldLabel>
               <Controller
                 control={form.control}
@@ -387,7 +390,7 @@ function AssignOrderDialog({ plans }: { plans: Plan[] }) {
                     <SelectTrigger
                       id="order-assign-plan"
                       className="w-full"
-                      aria-invalid={Boolean(form.formState.errors.plan_id)}
+                      aria-invalid={Boolean(formErrors.plan_id)}
                     >
                       <SelectValue placeholder="请选择订阅" />
                     </SelectTrigger>
@@ -401,9 +404,9 @@ function AssignOrderDialog({ plans }: { plans: Plan[] }) {
                   </Select>
                 )}
               />
-              <FieldError errors={[form.formState.errors.plan_id]} />
+              <FieldError errors={[formErrors.plan_id]} />
             </Field>
-            <Field data-invalid={Boolean(form.formState.errors.period)}>
+            <Field data-invalid={Boolean(formErrors.period)}>
               <FieldLabel htmlFor="order-assign-period">请选择周期</FieldLabel>
               <Controller
                 control={form.control}
@@ -413,7 +416,7 @@ function AssignOrderDialog({ plans }: { plans: Plan[] }) {
                     <SelectTrigger
                       id="order-assign-period"
                       className="w-full"
-                      aria-invalid={Boolean(form.formState.errors.period)}
+                      aria-invalid={Boolean(formErrors.period)}
                     >
                       <SelectValue placeholder="请选择周期" />
                     </SelectTrigger>
@@ -427,9 +430,9 @@ function AssignOrderDialog({ plans }: { plans: Plan[] }) {
                   </Select>
                 )}
               />
-              <FieldError errors={[form.formState.errors.period]} />
+              <FieldError errors={[formErrors.period]} />
             </Field>
-            <Field data-invalid={Boolean(form.formState.errors.total_amount)}>
+            <Field data-invalid={Boolean(formErrors.total_amount)}>
               <FieldLabel htmlFor="order-assign-amount">支付金额</FieldLabel>
               <div className="relative">
                 <Controller
@@ -450,7 +453,7 @@ function AssignOrderDialog({ plans }: { plans: Plan[] }) {
                   ¥
                 </span>
               </div>
-              <FieldError errors={[form.formState.errors.total_amount]} />
+              <FieldError errors={[formErrors.total_amount]} />
             </Field>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
@@ -458,8 +461,8 @@ function AssignOrderDialog({ plans }: { plans: Plan[] }) {
               </Button>
               <Button
                 type="submit"
-                disabled={assign.isPending || form.formState.isSubmitting}
-                loading={assign.isPending || form.formState.isSubmitting}
+                disabled={assign.isPending || isSubmitting}
+                loading={assign.isPending || isSubmitting}
                 data-testid="order-assign-submit"
               >
                 确定

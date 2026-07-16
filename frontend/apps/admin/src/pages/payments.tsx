@@ -3,7 +3,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import type { admin } from '@v2board/api-client';
 import type { AdminPayment, PaymentFormDefinition } from '@v2board/types';
 import { ArrowDown, ArrowUp, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
-import { Controller, useForm, useWatch } from 'react-hook-form';
+import { Controller, useForm, useFormState, useWatch } from 'react-hook-form';
 import {
   useAdminPayments,
   useDropPaymentMutation,
@@ -106,6 +106,9 @@ function PaymentEditor({
     resolver: zodResolver(paymentFormSchema),
     defaultValues: paymentEditorValues(record),
   });
+  // useFormState, not the mutable form.formState proxy: the React Compiler
+  // caches proxy reads, which freezes error/submit UI after the first render.
+  const { errors: formErrors } = useFormState({ control: form.control });
   const selectedPaymentMethod = useWatch({ control: form.control, name: 'payment' });
   const paymentMethodsQuery = usePaymentMethods(open);
   const definitionQuery = usePaymentForm(
@@ -208,15 +211,15 @@ function PaymentEditor({
         </SheetHeader>
 
         <form id="payment-editor-form" className="space-y-4 px-4 pb-4" onSubmit={save} noValidate>
-          <Field data-invalid={Boolean(form.formState.errors.name)}>
+          <Field data-invalid={Boolean(formErrors.name)}>
             <FieldLabel htmlFor="payment-name">显示名称</FieldLabel>
             <Input
               id="payment-name"
               placeholder="用于前端显示使用"
-              aria-invalid={Boolean(form.formState.errors.name)}
+              aria-invalid={Boolean(formErrors.name)}
               {...form.register('name')}
             />
-            <FieldError errors={[form.formState.errors.name]} />
+            <FieldError errors={[formErrors.name]} />
           </Field>
           <Field>
             <FieldLabel htmlFor="payment-icon">图标URL(选填)</FieldLabel>
@@ -226,18 +229,18 @@ function PaymentEditor({
               {...form.register('icon')}
             />
           </Field>
-          <Field data-invalid={Boolean(form.formState.errors.notify_domain)}>
+          <Field data-invalid={Boolean(formErrors.notify_domain)}>
             <FieldLabel htmlFor="payment-notify">自定义通知域名(选填)</FieldLabel>
             <Input
               id="payment-notify"
               placeholder="网关的通知将会发送到该域名(https://x.com)"
-              aria-invalid={Boolean(form.formState.errors.notify_domain)}
+              aria-invalid={Boolean(formErrors.notify_domain)}
               {...form.register('notify_domain')}
             />
-            <FieldError errors={[form.formState.errors.notify_domain]} />
+            <FieldError errors={[formErrors.notify_domain]} />
           </Field>
           <div className="grid grid-cols-2 gap-3">
-            <Field data-invalid={Boolean(form.formState.errors.handling_fee_percent)}>
+            <Field data-invalid={Boolean(formErrors.handling_fee_percent)}>
               <FieldLabel htmlFor="payment-fee-percent">百分比手续费(选填)</FieldLabel>
               <InputGroup>
                 <InputGroupInput
@@ -247,29 +250,29 @@ function PaymentEditor({
                   max="100"
                   step="0.1"
                   placeholder="在订单金额基础上附加手续费"
-                  aria-invalid={Boolean(form.formState.errors.handling_fee_percent)}
+                  aria-invalid={Boolean(formErrors.handling_fee_percent)}
                   {...form.register('handling_fee_percent')}
                 />
                 <InputGroupAddon align="inline-end">
                   <InputGroupText>%</InputGroupText>
                 </InputGroupAddon>
               </InputGroup>
-              <FieldError errors={[form.formState.errors.handling_fee_percent]} />
+              <FieldError errors={[formErrors.handling_fee_percent]} />
             </Field>
-            <Field data-invalid={Boolean(form.formState.errors.handling_fee_fixed)}>
+            <Field data-invalid={Boolean(formErrors.handling_fee_fixed)}>
               <FieldLabel htmlFor="payment-fee-fixed">固定手续费(选填)</FieldLabel>
               <Input
                 id="payment-fee-fixed"
                 type="number"
                 step="0.01"
                 placeholder="在订单金额基础上附加手续费"
-                aria-invalid={Boolean(form.formState.errors.handling_fee_fixed)}
+                aria-invalid={Boolean(formErrors.handling_fee_fixed)}
                 {...form.register('handling_fee_fixed')}
               />
-              <FieldError errors={[form.formState.errors.handling_fee_fixed]} />
+              <FieldError errors={[formErrors.handling_fee_fixed]} />
             </Field>
           </div>
-          <Field data-invalid={Boolean(form.formState.errors.payment)}>
+          <Field data-invalid={Boolean(formErrors.payment)}>
             <FieldLabel htmlFor="payment-method">接口文件</FieldLabel>
             <Select
               value={selectedPaymentMethod ?? ''}
@@ -279,7 +282,7 @@ function PaymentEditor({
               <SelectTrigger
                 id="payment-method"
                 className="w-full"
-                aria-invalid={Boolean(form.formState.errors.payment)}
+                aria-invalid={Boolean(formErrors.payment)}
               >
                 <SelectValue placeholder="选择支付接口" />
               </SelectTrigger>
@@ -291,7 +294,7 @@ function PaymentEditor({
                 ))}
               </SelectContent>
             </Select>
-            <FieldError errors={[form.formState.errors.payment]} />
+            <FieldError errors={[formErrors.payment]} />
           </Field>
 
           {methodsLoading ? (
@@ -376,7 +379,7 @@ function PaymentEditor({
                 );
               })
             : null}
-          <FieldError errors={[form.formState.errors.config]} />
+          <FieldError errors={[formErrors.config]} />
 
           {selectedPaymentMethod === 'MGate' ? (
             <Alert className="border-warning/30 bg-warning/10 text-warning">

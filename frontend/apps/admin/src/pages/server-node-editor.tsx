@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Controller, useForm, useWatch } from 'react-hook-form';
+import { Controller, useForm, useFormState, useWatch } from 'react-hook-form';
 import { ExternalLink, Loader2 } from 'lucide-react';
 import type { admin } from '@v2board/api-client';
 import { Button } from '@/components/ui/button';
@@ -69,6 +69,9 @@ export function NodeEditor({
     resolver: zodResolver(serverNodeFormSchema),
     defaultValues: getNodeInitialValues(type, record),
   });
+  // useFormState, not the mutable nodeForm.formState proxy: the React Compiler
+  // caches proxy reads, which freezes error/submit UI after the first render.
+  const { errors: nodeFormErrors, isSubmitting, isSubmitted } = useFormState({ control: nodeForm.control });
   const values = useWatch({
     control: nodeForm.control,
     compute: (formValues) => formValues,
@@ -82,9 +85,9 @@ export function NodeEditor({
   const setFieldOptions = useMemo<NodeForm['setFieldOptions']>(
     () => ({
       shouldDirty: true,
-      shouldValidate: nodeForm.formState.isSubmitted,
+      shouldValidate: isSubmitted,
     }),
-    [nodeForm.formState.isSubmitted],
+    [isSubmitted],
   );
   const replaceValues = useCallback<NodeForm['replaceValues']>(
     (nextValues) => reset(nextValues),
@@ -93,12 +96,12 @@ export function NodeEditor({
   const form = useMemo<NodeForm>(
     () => ({
       values,
-      errors: nodeForm.formState.errors,
+      errors: nodeFormErrors,
       setField,
       setFieldOptions,
       replaceValues,
     }),
-    [nodeForm.formState.errors, replaceValues, setField, setFieldOptions, values],
+    [nodeFormErrors, replaceValues, setField, setFieldOptions, values],
   );
 
   const parentCandidates = nodes.filter((node) => node.type === type && node.id !== id);
@@ -153,19 +156,19 @@ export function NodeEditor({
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <Field
                 className="sm:col-span-2"
-                data-invalid={Boolean(nodeForm.formState.errors.name)}
+                data-invalid={Boolean(nodeFormErrors.name)}
               >
                 <FieldLabel htmlFor="node-name">节点名称</FieldLabel>
                 <Input
                   {...nodeForm.register('name')}
                   id="node-name"
                   placeholder="请输入节点名称"
-                  aria-invalid={Boolean(nodeForm.formState.errors.name)}
+                  aria-invalid={Boolean(nodeFormErrors.name)}
                   data-testid="node-name"
                 />
-                <FieldError errors={[nodeForm.formState.errors.name]} />
+                <FieldError errors={[nodeFormErrors.name]} />
               </Field>
-              <Field data-invalid={Boolean(nodeForm.formState.errors.rate)}>
+              <Field data-invalid={Boolean(nodeFormErrors.rate)}>
                 <FieldLabel htmlFor="node-rate">倍率</FieldLabel>
                 <div className="relative">
                   <Input
@@ -173,18 +176,18 @@ export function NodeEditor({
                     id="node-rate"
                     className="pr-8"
                     placeholder="请输入节点倍率"
-                    aria-invalid={Boolean(nodeForm.formState.errors.rate)}
+                    aria-invalid={Boolean(nodeFormErrors.rate)}
                     data-testid="node-rate"
                   />
                   <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground">
                     x
                   </span>
                 </div>
-                <FieldError errors={[nodeForm.formState.errors.rate]} />
+                <FieldError errors={[nodeFormErrors.rate]} />
               </Field>
             </div>
 
-            <Field data-invalid={Boolean(nodeForm.formState.errors.tags)}>
+            <Field data-invalid={Boolean(nodeFormErrors.tags)}>
               <FieldLabel htmlFor="node-tags">节点标签</FieldLabel>
               <Controller
                 control={nodeForm.control}
@@ -196,7 +199,7 @@ export function NodeEditor({
                     value={Array.isArray(field.value) ? field.value : []}
                     onChange={(next) => field.onChange(normalizeNullableArray(next))}
                     onBlur={field.onBlur}
-                    invalid={Boolean(nodeForm.formState.errors.tags)}
+                    invalid={Boolean(nodeFormErrors.tags)}
                     placeholder="输入后回车添加标签"
                   />
                 )}
@@ -205,7 +208,7 @@ export function NodeEditor({
 
             <fieldset
               className="min-w-0 space-y-2"
-              data-invalid={Boolean(nodeForm.formState.errors.group_id)}
+              data-invalid={Boolean(nodeFormErrors.group_id)}
             >
               <legend className="text-sm font-medium text-foreground">权限组</legend>
               <Controller
@@ -221,7 +224,7 @@ export function NodeEditor({
                   />
                 )}
               />
-              <FieldError errors={[nodeForm.formState.errors.group_id]} />
+              <FieldError errors={[nodeFormErrors.group_id]} />
             </fieldset>
 
             <NodeAddressFields form={form} showChildDrawer={showChildDrawer} />
@@ -306,10 +309,10 @@ export function NodeEditor({
           <SheetFooter>
             <Button
               type="submit"
-              disabled={!dependenciesReady || nodeForm.formState.isSubmitting}
+              disabled={!dependenciesReady || isSubmitting}
               data-testid="node-submit"
             >
-              {nodeForm.formState.isSubmitting ? (
+              {isSubmitting ? (
                 <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
               ) : null}
               提交

@@ -2,7 +2,7 @@ import { useEffect, type ComponentProps } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import dayjs from 'dayjs';
 import { CircleHelp } from 'lucide-react';
-import { Controller, useForm, useWatch } from 'react-hook-form';
+import { Controller, useForm, useFormState, useWatch } from 'react-hook-form';
 import type { AdminUserUpdateInput } from '@v2board/api-client';
 import type { AdminUserRow } from '@v2board/types';
 import { useAdminPlans, useAdminUserInfo, useUpdateUserMutation } from '@/lib/queries';
@@ -172,6 +172,9 @@ export function UserManageDrawer({
       remarks: '',
     },
   });
+  // useFormState, not the mutable form.formState proxy: the React Compiler
+  // caches proxy reads, which freezes error/submit UI after the first render.
+  const { errors: formErrors } = useFormState({ control: form.control });
   const planOptions = [
     { value: PLAN_NONE, label: '无' },
     ...(plans.data?.map((plan) => ({ value: String(plan.id), label: plan.name })) ?? []),
@@ -256,41 +259,41 @@ export function UserManageDrawer({
               noValidate
             >
               <FieldGroup className="flex-1 overflow-y-auto px-6 py-4">
-                <Field data-invalid={Boolean(form.formState.errors.email)}>
+                <Field data-invalid={Boolean(formErrors.email)}>
                   <FieldLabel htmlFor="user-manage-email">邮箱</FieldLabel>
                   <Input
                     id="user-manage-email"
                     placeholder="请输入邮箱"
-                    aria-invalid={Boolean(form.formState.errors.email)}
+                    aria-invalid={Boolean(formErrors.email)}
                     data-testid="user-drawer-email"
                     {...form.register('email')}
                   />
-                  <FieldError errors={[form.formState.errors.email]} />
+                  <FieldError errors={[formErrors.email]} />
                 </Field>
-                <Field data-invalid={Boolean(form.formState.errors.invite_user_email)}>
+                <Field data-invalid={Boolean(formErrors.invite_user_email)}>
                   <FieldLabel htmlFor="user-manage-invite-email">邀请人邮箱</FieldLabel>
                   <Input
                     id="user-manage-invite-email"
                     placeholder="请输入邀请人邮箱"
-                    aria-invalid={Boolean(form.formState.errors.invite_user_email)}
+                    aria-invalid={Boolean(formErrors.invite_user_email)}
                     {...form.register('invite_user_email')}
                   />
-                  <FieldError errors={[form.formState.errors.invite_user_email]} />
+                  <FieldError errors={[formErrors.invite_user_email]} />
                 </Field>
-                <Field data-invalid={Boolean(form.formState.errors.password)}>
+                <Field data-invalid={Boolean(formErrors.password)}>
                   <FieldLabel htmlFor="user-manage-password">密码</FieldLabel>
                   <Input
                     id="user-manage-password"
                     type="password"
                     placeholder="如需修改密码请输入"
-                    aria-invalid={Boolean(form.formState.errors.password)}
+                    aria-invalid={Boolean(formErrors.password)}
                     {...form.register('password')}
                   />
-                  <FieldError errors={[form.formState.errors.password]} />
+                  <FieldError errors={[formErrors.password]} />
                 </Field>
 
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <Field data-invalid={Boolean(form.formState.errors.balance)}>
+                  <Field data-invalid={Boolean(formErrors.balance)}>
                     <FieldLabel htmlFor="user-manage-balance">余额</FieldLabel>
                     <SuffixInput
                       id="user-manage-balance"
@@ -298,12 +301,12 @@ export function UserManageDrawer({
                       step="0.01"
                       suffix="¥"
                       placeholder="余额"
-                      aria-invalid={Boolean(form.formState.errors.balance)}
+                      aria-invalid={Boolean(formErrors.balance)}
                       {...form.register('balance')}
                     />
-                    <FieldError errors={[form.formState.errors.balance]} />
+                    <FieldError errors={[formErrors.balance]} />
                   </Field>
-                  <Field data-invalid={Boolean(form.formState.errors.commission_balance)}>
+                  <Field data-invalid={Boolean(formErrors.commission_balance)}>
                     <FieldLabel htmlFor="user-manage-commission-balance">推广佣金</FieldLabel>
                     <SuffixInput
                       id="user-manage-commission-balance"
@@ -311,15 +314,15 @@ export function UserManageDrawer({
                       step="0.01"
                       suffix="¥"
                       placeholder="推广佣金"
-                      aria-invalid={Boolean(form.formState.errors.commission_balance)}
+                      aria-invalid={Boolean(formErrors.commission_balance)}
                       {...form.register('commission_balance')}
                     />
-                    <FieldError errors={[form.formState.errors.commission_balance]} />
+                    <FieldError errors={[formErrors.commission_balance]} />
                   </Field>
                 </div>
 
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <Field data-invalid={Boolean(form.formState.errors.u)}>
+                  <Field data-invalid={Boolean(formErrors.u)}>
                     <FieldLabel htmlFor="user-manage-upload">已用上行</FieldLabel>
                     <SuffixInput
                       id="user-manage-upload"
@@ -327,12 +330,12 @@ export function UserManageDrawer({
                       step="any"
                       suffix="GB"
                       placeholder="已用上行"
-                      aria-invalid={Boolean(form.formState.errors.u)}
+                      aria-invalid={Boolean(formErrors.u)}
                       {...form.register('u')}
                     />
-                    <FieldError errors={[form.formState.errors.u]} />
+                    <FieldError errors={[formErrors.u]} />
                   </Field>
-                  <Field data-invalid={Boolean(form.formState.errors.d)}>
+                  <Field data-invalid={Boolean(formErrors.d)}>
                     <FieldLabel htmlFor="user-manage-download">已用下行</FieldLabel>
                     <SuffixInput
                       id="user-manage-download"
@@ -340,14 +343,14 @@ export function UserManageDrawer({
                       step="any"
                       suffix="GB"
                       placeholder="已用下行"
-                      aria-invalid={Boolean(form.formState.errors.d)}
+                      aria-invalid={Boolean(formErrors.d)}
                       {...form.register('d')}
                     />
-                    <FieldError errors={[form.formState.errors.d]} />
+                    <FieldError errors={[formErrors.d]} />
                   </Field>
                 </div>
 
-                <Field data-invalid={Boolean(form.formState.errors.transfer_enable)}>
+                <Field data-invalid={Boolean(formErrors.transfer_enable)}>
                   <FieldLabel htmlFor="user-manage-transfer">流量</FieldLabel>
                   <SuffixInput
                     id="user-manage-transfer"
@@ -355,23 +358,23 @@ export function UserManageDrawer({
                     step="any"
                     suffix="GB"
                     placeholder="请输入流量"
-                    aria-invalid={Boolean(form.formState.errors.transfer_enable)}
+                    aria-invalid={Boolean(formErrors.transfer_enable)}
                     {...form.register('transfer_enable')}
                   />
-                  <FieldError errors={[form.formState.errors.transfer_enable]} />
+                  <FieldError errors={[formErrors.transfer_enable]} />
                 </Field>
-                <Field data-invalid={Boolean(form.formState.errors.device_limit)}>
+                <Field data-invalid={Boolean(formErrors.device_limit)}>
                   <FieldLabel htmlFor="user-manage-device-limit">设备数限制</FieldLabel>
                   <Input
                     id="user-manage-device-limit"
                     type="number"
                     placeholder="留空则不限制"
-                    aria-invalid={Boolean(form.formState.errors.device_limit)}
+                    aria-invalid={Boolean(formErrors.device_limit)}
                     {...form.register('device_limit')}
                   />
-                  <FieldError errors={[form.formState.errors.device_limit]} />
+                  <FieldError errors={[formErrors.device_limit]} />
                 </Field>
-                <Field data-invalid={Boolean(form.formState.errors.expired_at)}>
+                <Field data-invalid={Boolean(formErrors.expired_at)}>
                   <FieldLabel htmlFor="user-manage-expired">到期时间</FieldLabel>
                   <Controller
                     control={form.control}
@@ -391,14 +394,14 @@ export function UserManageDrawer({
                         }
                         onBlur={field.onBlur}
                         ref={field.ref}
-                        aria-invalid={Boolean(form.formState.errors.expired_at)}
+                        aria-invalid={Boolean(formErrors.expired_at)}
                         data-testid="user-drawer-expired"
                       />
                     )}
                   />
-                  <FieldError errors={[form.formState.errors.expired_at]} />
+                  <FieldError errors={[formErrors.expired_at]} />
                 </Field>
-                <Field data-invalid={Boolean(form.formState.errors.commission_type)}>
+                <Field data-invalid={Boolean(formErrors.commission_type)}>
                   <FieldLabel htmlFor="user-manage-plan">订阅计划</FieldLabel>
                   <Controller
                     control={form.control}
@@ -461,7 +464,7 @@ export function UserManageDrawer({
                         <SelectTrigger
                           id="user-manage-commission-type"
                           className="w-full"
-                          aria-invalid={Boolean(form.formState.errors.commission_type)}
+                          aria-invalid={Boolean(formErrors.commission_type)}
                         >
                           <SelectValue placeholder="请选择推荐返利类型" />
                         </SelectTrigger>
@@ -475,9 +478,9 @@ export function UserManageDrawer({
                       </Select>
                     )}
                   />
-                  <FieldError errors={[form.formState.errors.commission_type]} />
+                  <FieldError errors={[formErrors.commission_type]} />
                 </Field>
-                <Field data-invalid={Boolean(form.formState.errors.commission_rate)}>
+                <Field data-invalid={Boolean(formErrors.commission_rate)}>
                   <FieldLabel htmlFor="user-manage-commission-rate">推荐返利比例</FieldLabel>
                   <SuffixInput
                     id="user-manage-commission-rate"
@@ -487,12 +490,12 @@ export function UserManageDrawer({
                     step="1"
                     suffix="%"
                     placeholder="请输入推荐返利比例(为空则跟随站点设置返利比例)"
-                    aria-invalid={Boolean(form.formState.errors.commission_rate)}
+                    aria-invalid={Boolean(formErrors.commission_rate)}
                     {...form.register('commission_rate')}
                   />
-                  <FieldError errors={[form.formState.errors.commission_rate]} />
+                  <FieldError errors={[formErrors.commission_rate]} />
                 </Field>
-                <Field data-invalid={Boolean(form.formState.errors.discount)}>
+                <Field data-invalid={Boolean(formErrors.discount)}>
                   <FieldLabel htmlFor="user-manage-discount">
                     <span className="inline-flex items-center gap-1">
                       专享折扣比例
@@ -518,12 +521,12 @@ export function UserManageDrawer({
                     step="1"
                     suffix="%"
                     placeholder="请输入专享折扣比例"
-                    aria-invalid={Boolean(form.formState.errors.discount)}
+                    aria-invalid={Boolean(formErrors.discount)}
                     {...form.register('discount')}
                   />
-                  <FieldError errors={[form.formState.errors.discount]} />
+                  <FieldError errors={[formErrors.discount]} />
                 </Field>
-                <Field data-invalid={Boolean(form.formState.errors.speed_limit)}>
+                <Field data-invalid={Boolean(formErrors.speed_limit)}>
                   <FieldLabel htmlFor="user-manage-speed-limit">限速</FieldLabel>
                   <SuffixInput
                     id="user-manage-speed-limit"
@@ -531,10 +534,10 @@ export function UserManageDrawer({
                     step="1"
                     suffix="Mbps"
                     placeholder="留空则不限制"
-                    aria-invalid={Boolean(form.formState.errors.speed_limit)}
+                    aria-invalid={Boolean(formErrors.speed_limit)}
                     {...form.register('speed_limit')}
                   />
-                  <FieldError errors={[form.formState.errors.speed_limit]} />
+                  <FieldError errors={[formErrors.speed_limit]} />
                 </Field>
                 <Controller
                   control={form.control}

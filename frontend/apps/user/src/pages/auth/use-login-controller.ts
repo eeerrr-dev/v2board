@@ -4,7 +4,7 @@ import type { AuthData } from '@v2board/types';
 import { getErrorPresentation } from '@v2board/api-client';
 import { useQueryClient } from '@tanstack/react-query';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm, type UseFormRegister } from 'react-hook-form';
+import { useForm, useFormState, type UseFormRegister } from 'react-hook-form';
 import { normalizeLoginRedirectTarget, setAuthData } from '@/lib/auth';
 import { i18nGet } from '@/lib/errors';
 import { useLoginMutation, useTokenLoginMutation } from '@/lib/guest';
@@ -45,9 +45,12 @@ export function useLoginController(): LoginController {
     resolver: zodResolver(loginSchema),
     defaultValues: { email: '', password: '' },
   });
+  // useFormState, not the mutable form.formState proxy: the React Compiler caches
+  // proxy reads, which would freeze these derived errors after the first render.
+  const { errors: formErrors } = useFormState({ control: form.control });
   // Server-side login failures live in react-hook-form's reserved `root` error namespace rather
   // than a parallel useState, so the inline alert is the single source of truth for this surface.
-  const error = form.formState.errors.root?.serverError?.message ?? null;
+  const error = formErrors.root?.serverError?.message ?? null;
 
   const queryRedirect = params.get('redirect');
   const redirect = normalizeLoginRedirectTarget(queryRedirect);
@@ -131,7 +134,7 @@ export function useLoginController(): LoginController {
     clearError,
     isPending,
     error,
-    emailError: form.formState.errors.email?.message,
-    passwordError: form.formState.errors.password?.message,
+    emailError: formErrors.email?.message,
+    passwordError: formErrors.password?.message,
   };
 }

@@ -1,7 +1,7 @@
 import { type BaseSyntheticEvent, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm, type UseFormRegister } from 'react-hook-form';
+import { useForm, useFormState, type UseFormRegister } from 'react-hook-form';
 import { useForgetMutation, useGuestConfig } from '@/lib/guest';
 import { useAuthRecaptcha } from './auth-recaptcha';
 import {
@@ -65,6 +65,9 @@ export function useForgetController(): ForgetController {
       confirm_password: '',
     },
   });
+  // useFormState, not the mutable form.formState proxy: the React Compiler caches
+  // proxy reads, which would freeze these derived errors after the first render.
+  const { errors } = useFormState({ control: form.control });
 
   const {
     sendCode: sendCodeWithConfig,
@@ -108,7 +111,6 @@ export function useForgetController(): ForgetController {
     await submitForm(event);
   };
 
-  const errors = form.formState.errors;
 
   return {
     configLoading,

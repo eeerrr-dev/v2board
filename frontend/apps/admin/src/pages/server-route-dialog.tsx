@@ -1,6 +1,6 @@
 import { useState, type ReactElement } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Controller, useForm, useWatch } from 'react-hook-form';
+import { Controller, useForm, useFormState, useWatch } from 'react-hook-form';
 import { ExternalLink, Loader2 } from 'lucide-react';
 import type { admin } from '@v2board/api-client';
 import { Button } from '@/components/ui/button';
@@ -45,6 +45,9 @@ export function ServerRouteDialog({
     resolver: zodResolver(serverRouteFormSchema),
     defaultValues: getServerRouteFormValues(initialRoute),
   });
+  // useFormState, not the mutable form.formState proxy: the React Compiler
+  // caches proxy reads, which freezes error/submit UI after the first render.
+  const { errors: formErrors, isSubmitting } = useFormState({ control: form.control });
   const action = useWatch({ control: form.control, name: 'action' });
   const openModal = () => {
     form.reset(getServerRouteFormValues(initialRoute));
@@ -75,20 +78,20 @@ export function ServerRouteDialog({
           </DialogHeader>
 
           <div className="mt-4 space-y-4">
-            <Field data-invalid={Boolean(form.formState.errors.remarks)}>
+            <Field data-invalid={Boolean(formErrors.remarks)}>
               <FieldLabel htmlFor="server-route-remarks">备注</FieldLabel>
               <Input
                 {...form.register('remarks')}
                 id="server-route-remarks"
                 placeholder="请输入备注"
-                aria-invalid={Boolean(form.formState.errors.remarks)}
+                aria-invalid={Boolean(formErrors.remarks)}
                 data-testid="server-route-remarks"
               />
-              <FieldError errors={[form.formState.errors.remarks]} />
+              <FieldError errors={[formErrors.remarks]} />
             </Field>
 
             {action !== 'default_out' ? (
-              <Field data-invalid={Boolean(form.formState.errors.match)}>
+              <Field data-invalid={Boolean(formErrors.match)}>
                 <FieldLabel htmlFor="server-route-match" className="flex items-center gap-2">
                   匹配值
                   <a
@@ -107,14 +110,14 @@ export function ServerRouteDialog({
                   rows={5}
                   className="font-mono text-xs"
                   placeholder={getRouteMatchPlaceholder(action)}
-                  aria-invalid={Boolean(form.formState.errors.match)}
+                  aria-invalid={Boolean(formErrors.match)}
                   data-testid="server-route-match"
                 />
-                <FieldError errors={[form.formState.errors.match]} />
+                <FieldError errors={[formErrors.match]} />
               </Field>
             ) : null}
 
-            <Field data-invalid={Boolean(form.formState.errors.action)}>
+            <Field data-invalid={Boolean(formErrors.action)}>
               <FieldLabel htmlFor="server-route-action">动作</FieldLabel>
               <Controller
                 control={form.control}
@@ -136,7 +139,7 @@ export function ServerRouteDialog({
                   />
                 )}
               />
-              <FieldError errors={[form.formState.errors.action]} />
+              <FieldError errors={[formErrors.action]} />
             </Field>
 
             {action === 'dns' ? (
@@ -199,10 +202,10 @@ export function ServerRouteDialog({
             </Button>
             <Button
               type="submit"
-              disabled={pending || form.formState.isSubmitting}
+              disabled={pending || isSubmitting}
               data-testid="server-route-submit"
             >
-              {pending || form.formState.isSubmitting ? (
+              {pending || isSubmitting ? (
                 <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
               ) : null}
               提交
