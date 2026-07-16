@@ -77,6 +77,13 @@ export function buildLoginRedirect(current: string): string {
  * the /login loader (existing sessions) and the login controller (new/verify
  * sessions), so protocol-relative and browser-normalized backslash bypasses
  * cannot drift between the two entry paths.
+ *
+ * The bare-path repair (`order` -> `/order`) is contract-driven and must stay:
+ * the backend emits bare route names into `redirect` (login_redirect_url
+ * defaults to `dashboard` in sessions.rs, and getQuickLoginUrl consumers pass
+ * the same shape). The admin app's stricter variant (App.tsx: reject bare
+ * paths) is intentionally different because nothing external deep-links into
+ * admin; do not unify the two.
  */
 export function normalizeLoginRedirectTarget(target: string | null): string {
   if (!target) return '/dashboard';

@@ -501,10 +501,15 @@ function serializePaymentForSave(data: SavePaymentPayload): Record<string, unkno
     const value = data[key];
     if (value === undefined) continue;
     if (value === '') {
-      // Missing optional fields are cleanest on create. On edit, an explicit
-      // null is required so clearing an existing value does not silently retain
-      // the old database value; the admin client encodes null as an empty form
-      // value for Laravel's ConvertEmptyStringsToNull middleware.
+      // Missing optional fields are cleanest on create. On edit an explicit
+      // null (form-encoded as an empty value, see serializeForm's 'empty'
+      // mode) keeps the payload uniform with the coupon/giftcard editors,
+      // where present-but-empty means "clear" and absent means "retain"
+      // (values.rs coupon_field_values/giftcard_field_values gate columns on
+      // contains_key). payment_save itself binds every optional column
+      // unconditionally (commerce.rs UPDATE payment_method), so there absent
+      // and cleared coincide and the explicit null is convention, not
+      // load-bearing.
       if (data.id === undefined) continue;
       payload[key] = null;
       continue;

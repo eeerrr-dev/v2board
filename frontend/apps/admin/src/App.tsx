@@ -165,6 +165,11 @@ export function createRequireAdminMiddleware(queryClient: QueryClient): Middlewa
   };
 }
 
+// Stricter than the user app's normalizeLoginRedirectTarget on purpose: the
+// user variant repairs bare paths (`order` -> `/order`) because the backend
+// emails bare route names into `redirect` (sessions.rs login_redirect_url,
+// getQuickLoginUrl). No external party deep-links into admin, so anything but
+// a clean absolute internal path falls back to /dashboard. Do not unify.
 function normalizeLoginRedirectTarget(value: string | null): string {
   if (!value) return '/dashboard';
   const normalized = value.trim().replace(/\\/g, '/');

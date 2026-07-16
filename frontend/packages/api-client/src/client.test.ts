@@ -633,6 +633,32 @@ describe('createApiClient', () => {
     );
   });
 
+  it('distinguishes cleared from omitted coupon fields for the Rust retain-vs-clear contract', async () => {
+    // The Rust coupon/giftcard editors gate each column on contains_key
+    // (values.rs coupon_field_values): a present-but-empty form value clears
+    // the column while an absent key retains the stored value. The 'empty'
+    // null encoding plus undefined omission is what keeps that reachable.
+    const client = createApiClient({
+      baseURL: '/api/v1',
+      adminSecurePath: () => 'admin-path',
+      nullFormValue: 'empty',
+    });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onPost('/admin-path/coupon/generate').reply(200, { data: true });
+
+    await generateCoupon(client, {
+      id: 5,
+      name: 'Edited',
+      limit_use: null,
+      ended_at: undefined,
+    });
+
+    const params = new URLSearchParams(String(mock.history.post[0]?.data));
+    expect(params.get('limit_use')).toBe('');
+    expect(params.has('ended_at')).toBe(false);
+    expect(params.get('name')).toBe('Edited');
+  });
+
   it('uses legacy recursive bracket encoding for arrays and objects', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
