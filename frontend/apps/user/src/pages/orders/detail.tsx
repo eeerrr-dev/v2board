@@ -98,7 +98,10 @@ export default function OrderDetailPage() {
     <>
       <PageShell
         id="cashier"
-        className={cn('grid max-w-6xl gap-6', isPending && 'lg:grid-cols-[minmax(0,1fr)_24rem]')}
+        className={cn(
+          'grid max-w-6xl gap-6',
+          isPending && '@3xl/main:grid-cols-[minmax(0,1fr)_24rem]',
+        )}
       >
         <div className="space-y-6">
           {!isPending && <OrderResult status={order.status} />}

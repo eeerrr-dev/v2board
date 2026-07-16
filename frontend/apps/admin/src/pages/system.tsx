@@ -68,7 +68,7 @@ export default function SystemPage() {
         {queueStats.isError ? (
           <ErrorState message="队列状态加载失败" onRetry={() => void queueStats.refetch()} />
         ) : stats ? (
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-4 @xl/main:grid-cols-2 @5xl/main:grid-cols-4">
             <StatCard label="当前作业量" value={stats.jobsPerMinute || '0'} />
             <StatCard label="近一小时处理量" value={stats.recentJobs || '0'} />
             <StatCard label="7日内报错数量" value={stats.failedJobs || '0'} />

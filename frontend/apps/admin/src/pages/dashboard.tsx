@@ -145,7 +145,7 @@ export default function DashboardPage() {
         </Alert>
       ) : null}
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 @xl/main:grid-cols-2 @5xl/main:grid-cols-4">
         {SHORTCUTS.map((shortcut) => (
           <Button
             asChild
@@ -161,7 +161,7 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 @2xl/main:grid-cols-3">
         <StatCard
           icon={<Users className="size-5" />}
           label="在线人数"
@@ -185,7 +185,7 @@ export default function DashboardPage() {
       </div>
 
       <Card>
-        <CardContent className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
+        <CardContent className="grid gap-6 @xl/main:grid-cols-2 @5xl/main:grid-cols-4">
           <MiniStat
             label="本月收入"
             value={`${formatCent(data?.month_income)} ${currency ?? ''}`}
@@ -218,7 +218,7 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid gap-4 @4xl/main:grid-cols-2">
         {rankCharts.map((chart) => (
           <Card key={chart.title} className="min-w-0 overflow-hidden">
             <CardHeader>

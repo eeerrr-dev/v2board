@@ -32,7 +32,7 @@ export function AccountCard() {
         </div>
       </CardHeader>
       <CardContent>
-        <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
+        <div className="grid gap-x-6 gap-y-4 @xl/main:grid-cols-2">
           <IdentityField
             label={t(($) => $.profile.email)}
             value={data?.email}

@@ -338,8 +338,10 @@ function AppLayoutContent({ loading, title: titleProp }: AppLayoutProps = {}) {
           </div>
         </header>
 
+        {/* The named container lets page grids column-switch on the width they
+            actually get (content area minus sidebar), not the viewport. */}
         {loading ? (
-          <div id="main-container" className="flex flex-1">
+          <div id="main-container" className="@container/main flex flex-1">
             <div
               role="status"
               className="flex w-full flex-1 items-center justify-center px-4 py-10"
@@ -349,7 +351,7 @@ function AppLayoutContent({ loading, title: titleProp }: AppLayoutProps = {}) {
             </div>
           </div>
         ) : (
-          <div id="main-container" className="flex-1">
+          <div id="main-container" className="@container/main flex-1">
             <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:px-6 md:py-6">
               <RouteBoundaryOutlet />
             </div>

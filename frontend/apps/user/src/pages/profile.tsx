@@ -19,7 +19,7 @@ import { WalletCard } from './profile/wallet-card';
 export default function ProfilePage() {
   return (
     <PageShell data-testid="profile-page">
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
+      <div className="grid gap-6 @4xl/main:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
         <WalletCard />
         <GiftCardCard />
       </div>
@@ -28,15 +28,15 @@ export default function ProfilePage() {
 
       <SessionsCard />
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-6 @3xl/main:grid-cols-2">
         <PasswordCard />
         <NotificationsCard />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-6 @3xl/main:grid-cols-2">
         <TelegramBindCard />
         <TelegramDiscussCard />
-        <ResetSubscribeCard className="lg:col-span-2" />
+        <ResetSubscribeCard className="@3xl/main:col-span-2" />
       </div>
     </PageShell>
   );

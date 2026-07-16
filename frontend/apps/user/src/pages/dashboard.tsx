@@ -196,7 +196,7 @@ export default function DashboardPage() {
         />
       ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.75fr)]">
+      <div className="grid gap-6 @3xl/main:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.75fr)]">
         <Card data-testid="dashboard-card" className="overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 border-b border-border pb-5">
             <div className="space-y-1">
@@ -284,7 +284,7 @@ export default function DashboardPage() {
                       'data-status': vm.trafficTone,
                     }}
                   />
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid gap-3 @xl/main:grid-cols-2">
                     <div className="rounded-lg border border-border bg-muted/30 p-3">
                       <p className="text-sm font-medium">
                         {t(($) => $.dashboard.used_traffic, {

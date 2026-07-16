@@ -83,7 +83,7 @@ export default function PlansPage() {
       ) : filtered.length === 0 ? (
         <EmptyState data-testid="plan-empty" title={t(($) => $.plan.no_plan)} />
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-4 @xl/main:grid-cols-2 @4xl/main:grid-cols-3">
           {filtered.map((plan) => {
             const unitPrice = getUnitPriceTag(plan);
             const isSoldOut = plan.capacity_limit !== null && plan.capacity_limit <= 0;

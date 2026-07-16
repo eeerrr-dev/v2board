@@ -252,9 +252,9 @@ function SystemConfigPage() {
     <PageShell data-testid="config-page">
       <PageHeader title="系统配置" description="所有配置修改后会自动保存并对全站生效。" />
 
-      <div className="grid gap-6 lg:grid-cols-[180px_1fr] lg:items-start">
+      <div className="grid gap-6 @3xl/main:grid-cols-[180px_1fr] @3xl/main:items-start">
         <nav
-          className="flex flex-row flex-wrap gap-1 lg:sticky lg:top-4 lg:flex-col"
+          className="flex flex-row flex-wrap gap-1 @3xl/main:sticky @3xl/main:top-4 @3xl/main:flex-col"
           aria-label="配置分组"
         >
           {SECTIONS.map((section) => (

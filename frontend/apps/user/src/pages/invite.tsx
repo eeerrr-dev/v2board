@@ -142,7 +142,7 @@ export default function InvitePage() {
     <TooltipProvider delayDuration={100}>
       <PageShell className="max-w-6xl gap-4" data-testid="invite-surface">
         <Card className="overflow-hidden" data-testid="invite-summary-card">
-          <CardContent className="grid gap-5 p-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+          <CardContent className="grid gap-5 p-6 @3xl/main:grid-cols-[minmax(0,1fr)_auto] @3xl/main:items-end">
             <div className="min-w-0 space-y-3">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <WalletCards className="size-4" />
@@ -158,7 +158,7 @@ export default function InvitePage() {
               </div>
               <p className="text-sm text-muted-foreground">{t(($) => $.invite.available)}</p>
             </div>
-            <div className="flex flex-col gap-2 sm:flex-row lg:justify-end">
+            <div className="flex flex-col gap-2 sm:flex-row @3xl/main:justify-end">
               <TransferDialog max={available}>
                 <Button type="button" data-testid="invite-transfer-trigger">
                   <Send className="size-4" />
@@ -186,7 +186,7 @@ export default function InvitePage() {
               <ErrorState onRetry={() => void invite.refetch()} data-testid="invite-stats-error" />
             </CardContent>
           ) : (
-            <CardContent className="grid gap-0 p-0 sm:grid-cols-2 xl:grid-cols-4">
+            <CardContent className="grid gap-0 p-0 @xl/main:grid-cols-2 @5xl/main:grid-cols-4">
               <StatTile
                 icon={<Users className="size-4" />}
                 label={t(($) => $.invite.registered)}

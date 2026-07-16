@@ -290,7 +290,9 @@ function AdminLayoutContent() {
           </div>
         </header>
 
-        <div id="main-container" className="flex-1">
+        {/* The named container lets page grids column-switch on the width
+            they actually get (content area minus sidebar), not the viewport. */}
+        <div id="main-container" className="@container/main flex-1">
           <div className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 md:py-6">
             <RouteBoundaryOutlet />
           </div>

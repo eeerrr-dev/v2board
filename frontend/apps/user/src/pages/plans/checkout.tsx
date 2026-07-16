@@ -226,7 +226,7 @@ export default function PlanCheckoutPage() {
     <PageShell
       id="cashier"
       data-testid="checkout-page"
-      className="grid max-w-6xl gap-6 lg:grid-cols-[minmax(0,1fr)_24rem]"
+      className="grid max-w-6xl gap-6 @3xl/main:grid-cols-[minmax(0,1fr)_24rem]"
     >
       <div className="space-y-6">
         <Card>
