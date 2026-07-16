@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import AxiosMockAdapter from 'axios-mock-adapter';
 import { z } from 'zod';
-import { ApiContractError, ApiError, createApiClient } from './client';
+import { ApiContractError, ApiError, createApiClient, isStepUpRequiredError } from './client';
 import { envelopeSchema, trueSchema } from './contracts';
 import {
   assignOrder,
@@ -711,6 +711,45 @@ describe('createApiClient', () => {
       .reply(200, { data: { token: 't', is_admin: 0, auth_data: 'jwt' } });
     await token2Login(client, { verify: 'abc' });
     expect(mock.history.get[0]?.url).toBe('/passport/auth/token2Login?verify=abc');
+  });
+
+  it('submits the step-up password as a form request and returns the typed grant', async () => {
+    const client = createApiClient({ baseURL: '/api/v1' });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock
+      .onPost('/passport/auth/stepUp')
+      .reply(200, { data: { step_up_token: 'grant-token', expires_in: 900 } });
+
+    await expect(passportEndpoints.stepUp(client, { password: 'secret' })).resolves.toMatchObject({
+      step_up_token: 'grant-token',
+      expires_in: 900,
+    });
+    expect(mock.history.post[0]?.data).toBe('password=secret');
+    expect(mock.history.post[0]?.headers?.['Content-Type']).toBe(
+      'application/x-www-form-urlencoded',
+    );
+  });
+
+  it('rides the step-up token on requests as the x-v2board-step-up header', async () => {
+    const client = createApiClient({ baseURL: '/api/v1', getStepUpToken: () => 'grant-token' });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onPost('/test').reply(200, { data: true });
+
+    await client.request({ url: '/test', method: 'POST', responseSchema: trueSchema });
+
+    expect(mock.history.post[0]?.headers?.['x-v2board-step-up']).toBe('grant-token');
+  });
+
+  it('recognizes only the exact step-up 403 as a step-up requirement', () => {
+    const stepUp = new ApiError(403, 'Recent password verification is required');
+    expect(isStepUpRequiredError(stepUp)).toBe(true);
+    expect(isStepUpRequiredError(new ApiError(403, 'Permission denied'))).toBe(false);
+    expect(
+      isStepUpRequiredError(new ApiError(500, 'Recent password verification is required')),
+    ).toBe(false);
+    expect(isStepUpRequiredError(new Error('Recent password verification is required'))).toBe(
+      false,
+    );
   });
 
   it('maps 403 into ApiError and fires onUnauthorized', async () => {

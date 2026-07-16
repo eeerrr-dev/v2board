@@ -35,6 +35,21 @@ export interface ApiUnauthorizedHook {
   (error: ApiError): void;
 }
 
+/**
+ * The two 403 messages Rust emits for a live, authenticated session
+ * (auth.rs `forbidden(...)`): a role gate and the privileged step-up gate.
+ * Unlike a session-expiry 403, neither should tear the session down.
+ */
+export const PERMISSION_DENIED_MESSAGE = 'Permission denied';
+export const STEP_UP_REQUIRED_MESSAGE = 'Recent password verification is required';
+
+/** True when the backend requires a fresh `stepUp` password verification. */
+export function isStepUpRequiredError(error: unknown): boolean {
+  return (
+    error instanceof ApiError && error.status === 403 && error.message === STEP_UP_REQUIRED_MESSAGE
+  );
+}
+
 export interface ApiClientOptions {
   baseURL?: string;
   /** Default request deadline. Individual requests may override it with Axios `timeout`. */
@@ -43,6 +58,13 @@ export interface ApiClientOptions {
   withCredentials?: boolean;
   getAuthData?: () => string | null;
   getLocale?: () => string | null;
+  /**
+   * Current privileged step-up token (POST /passport/auth/stepUp), sent as the
+   * `x-v2board-step-up` header. Return null once the grant's `expires_in` has
+   * elapsed: the backend rejects a stale token outright instead of falling
+   * back to the recent-password window.
+   */
+  getStepUpToken?: () => string | null;
   onUnauthorized?: ApiUnauthorizedHook;
   adminSecurePath?: () => string | null;
   nullFormValue?: 'omit' | 'empty';
@@ -122,6 +144,8 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     if (token) {
       config.headers.authorization = token;
     }
+    const stepUpToken = options.getStepUpToken?.();
+    if (stepUpToken) config.headers['x-v2board-step-up'] = stepUpToken;
     if (locale) config.headers['Content-Language'] = locale;
     if (config.params) {
       const query = serializeForm(config.params, options.nullFormValue ?? 'omit');

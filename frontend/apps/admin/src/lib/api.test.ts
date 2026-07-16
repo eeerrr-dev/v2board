@@ -1,8 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
+import { ApiError } from '@v2board/api-client';
 import { apiClient } from './api';
-import { getAuthData, registerSessionCacheClearer, setAuthData } from './auth';
+import {
+  AUTH_KEY,
+  getAuthData,
+  registerSessionCacheClearer,
+  setAuthData,
+  setupAuthSync,
+} from './auth';
 import { registerRouterNavigation } from './router-navigation';
+import {
+  clearStepUpGrant,
+  getStepUpToken,
+  isStepUpPromptRequested,
+  maybePromptStepUp,
+  resolveStepUpPrompt,
+  setStepUpGrant,
+} from './step-up';
 import { setAdminRuntimeConfig } from '@/test/runtime-config';
 
 type Adapter = typeof apiClient.axios.defaults.adapter;
@@ -74,6 +89,8 @@ describe('admin api legacy path resolution', () => {
     setAdminRuntimeConfig();
     window.g_lang = undefined;
     window.localStorage.clear();
+    resolveStepUpPrompt();
+    clearStepUpGrant();
   });
 
   it('prefixes admin endpoints with the bootstrapped secure_path', () => {
@@ -168,6 +185,86 @@ describe('admin api legacy path resolution', () => {
     expect(clear).toHaveBeenCalledOnce();
     expect(routerNavigate).toHaveBeenCalledOnce();
     expect(routerNavigate).toHaveBeenCalledWith('/login', { replace: true });
+  });
+
+  it('keeps the session on the live-session 403 verdicts (role gate, step-up gate)', async () => {
+    const clear = vi.fn();
+    registerSessionCacheClearer(clear);
+    setAuthData('live-admin');
+    clear.mockClear();
+
+    for (const message of ['Permission denied', 'Recent password verification is required']) {
+      apiClient.axios.defaults.adapter = adapterFor(403, { message });
+      await expect(
+        apiClient.request({ url: '/user/update', method: 'POST', responseSchema: z.unknown() }),
+      ).rejects.toMatchObject({ status: 403, message });
+    }
+
+    expect(getAuthData()).toBe('live-admin');
+    expect(clear).not.toHaveBeenCalled();
+    expect(routerNavigate).not.toHaveBeenCalled();
+  });
+
+  it('drops the step-up grant on any auth identity change, not only the 403 teardown', () => {
+    // The grant is bound server-side to (user_id, session_id); a stale header
+    // after re-login would flip a would-be recent-password pass into a
+    // spurious re-auth 403, so every logout/login path must clear it.
+    setAuthData(null);
+    setStepUpGrant('stale-grant', 60);
+    setAuthData('fresh-admin');
+    expect(getStepUpToken()).toBeNull();
+
+    setStepUpGrant('second-grant', 60);
+    setAuthData(null);
+    expect(getStepUpToken()).toBeNull();
+  });
+
+  it('drops the step-up grant when another tab changes the session', () => {
+    setupAuthSync();
+    setStepUpGrant('cross-tab-grant', 60);
+
+    window.dispatchEvent(new StorageEvent('storage', { key: AUTH_KEY, newValue: null }));
+
+    expect(getStepUpToken()).toBeNull();
+  });
+
+  it('closes the re-auth prompt when a session-expiry 403 tears the session down', async () => {
+    // A stranded password modal over /login is a dead end: stepUp can never
+    // succeed without a live session.
+    setAuthData('expired-admin');
+    maybePromptStepUp(new ApiError(403, 'Recent password verification is required'));
+    expect(isStepUpPromptRequested()).toBe(true);
+    apiClient.axios.defaults.adapter = adapterFor(403, { message: 'auth required' });
+
+    await expect(
+      apiClient.request({ url: '/user/info', method: 'GET', responseSchema: z.unknown() }),
+    ).rejects.toMatchObject({ status: 403 });
+
+    expect(isStepUpPromptRequested()).toBe(false);
+  });
+
+  it('sends the active step-up grant as the x-v2board-step-up header until it expires', async () => {
+    vi.useFakeTimers();
+    try {
+      setStepUpGrant('step-token', 60);
+      const seenHeaders: Array<Record<string, unknown> | undefined> = [];
+      apiClient.axios.defaults.adapter = async (config) => {
+        seenHeaders.push(config.headers as Record<string, unknown> | undefined);
+        return { data: { data: true }, status: 200, statusText: 'OK', headers: {}, config };
+      };
+
+      await apiClient.request({ url: '/user/update', method: 'POST', responseSchema: z.unknown() });
+      expect(seenHeaders[0]?.['x-v2board-step-up']).toBe('step-token');
+
+      // Past expiry (minus the safety margin) the header must disappear: the
+      // backend rejects a stale token instead of falling back to the
+      // recent-password window.
+      vi.advanceTimersByTime(61_000);
+      await apiClient.request({ url: '/user/update', method: 'POST', responseSchema: z.unknown() });
+      expect(seenHeaders[1]?.['x-v2board-step-up']).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('returns typed backend and transport errors to their query or mutation owner', async () => {

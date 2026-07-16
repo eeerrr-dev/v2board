@@ -28,7 +28,34 @@ describe('admin entrypoint', () => {
     expect(mainSource).toContain('setupAuthSync()');
     expect(mainSource).toContain('mutationCache: new MutationCache');
     expect(mainSource).toContain('presentMutationError(error, mutation.meta');
-    expect(mainSource).not.toContain('queryCache: new QueryCache');
+  });
+
+  it('short-circuits the step-up 403 ahead of mutation error presentation', () => {
+    // Privileged admin writes are mutations, so the MutationCache hook is the
+    // step-up gate's primary trigger path — and no parity lane can cover it
+    // (the Rust gate is production-only). The dialog must win before the raw
+    // error toast.
+    const mutationCacheBlock = mainSource.slice(
+      mainSource.indexOf('mutationCache: new MutationCache'),
+      mainSource.indexOf('queryCache: new QueryCache'),
+    );
+    expect(mutationCacheBlock).toContain('if (maybePromptStepUp(error)) return;');
+    expect(mutationCacheBlock.indexOf('maybePromptStepUp(error)')).toBeLessThan(
+      mutationCacheBlock.indexOf('presentMutationError'),
+    );
+  });
+
+  it('scopes the global QueryCache hook to the step-up re-auth prompt', () => {
+    // Query errors still belong to their route/query owners; the QueryCache
+    // hook exists only so a step-up 403 on a sensitive admin GET opens the
+    // re-auth dialog. It must never grow error presentation of its own.
+    const queryCacheBlock = mainSource.slice(
+      mainSource.indexOf('queryCache: new QueryCache'),
+      mainSource.indexOf('defaultOptions'),
+    );
+    expect(queryCacheBlock).toContain('maybePromptStepUp(error)');
+    expect(queryCacheBlock).not.toContain('toast');
+    expect(queryCacheBlock).not.toContain('presentMutationError');
   });
 
   it('boots the shared locale and document-language environment', () => {

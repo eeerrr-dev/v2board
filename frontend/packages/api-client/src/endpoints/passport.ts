@@ -1,5 +1,10 @@
 import type { ApiClient } from '../client';
-import { authDataSchema, nullableAuthDataSchema, trueSchema } from '../contracts';
+import {
+  authDataSchema,
+  nullableAuthDataSchema,
+  stepUpGrantSchema,
+  trueSchema,
+} from '../contracts';
 
 export interface LoginPayload {
   email: string;
@@ -67,4 +72,21 @@ export const token2Login = (client: ApiClient, payload: TokenLoginPayload) =>
     method: 'GET',
     params: payload,
     responseSchema: nullableAuthDataSchema,
+  });
+
+export interface StepUpPayload {
+  password: string;
+}
+
+/**
+ * Re-verify the signed-in admin/staff password for privileged writes. The
+ * returned token rides on subsequent requests as the `x-v2board-step-up`
+ * header (client option getStepUpToken) until `expires_in` elapses.
+ */
+export const stepUp = (client: ApiClient, payload: StepUpPayload) =>
+  client.request({
+    url: '/passport/auth/stepUp',
+    method: 'POST',
+    data: payload,
+    responseSchema: stepUpGrantSchema,
   });

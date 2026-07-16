@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { clearStepUpGrant } from './step-up';
 
 // Tier-1 pinned session key; also consumed by the pre-router hash gate via
 // ADMIN_HASH_ROUTE_OPTIONS.
@@ -23,6 +24,10 @@ export function setAuthData(value: string | null): void {
 
   if (value === null) localStorage.removeItem(AUTH_KEY);
   else localStorage.setItem(AUTH_KEY, value);
+  // The step-up grant is bound server-side to (user_id, session_id), so any
+  // identity change invalidates it — and Rust rejects a stale header outright
+  // instead of falling back to the fresh login's recent-password window.
+  clearStepUpGrant();
   sessionCacheClearer?.();
   for (const l of listeners) l(value);
 }
@@ -37,6 +42,7 @@ export function setupAuthSync(): void {
   authSyncInstalled = true;
   window.addEventListener('storage', (event) => {
     if (event.key === AUTH_KEY) {
+      clearStepUpGrant();
       sessionCacheClearer?.();
       for (const l of listeners) l(event.newValue);
     }

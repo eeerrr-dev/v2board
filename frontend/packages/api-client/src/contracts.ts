@@ -49,6 +49,12 @@ export const authDataSchema = z.looseObject({
   auth_data: z.string().min(1),
 });
 
+/** POST /passport/auth/stepUp: a fresh privileged step-up grant. */
+export const stepUpGrantSchema = z.looseObject({
+  step_up_token: z.string().min(1),
+  expires_in: z.number().int().positive(),
+});
+
 export const nullableAuthDataSchema = authDataSchema.nullable();
 
 export const checkLoginSchema = z.looseObject({
