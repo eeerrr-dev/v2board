@@ -97,8 +97,3 @@ export function renderRoutes(
   const result = renderWithProviders(<RouterProvider router={router} />, rest);
   return { ...result, router };
 }
-
-/** userEvent.setup() convenience for tests that render outside this helper. */
-export function setupUser(): UserEvent {
-  return userEvent.setup();
-}

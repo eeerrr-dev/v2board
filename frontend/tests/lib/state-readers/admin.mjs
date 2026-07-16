@@ -20,7 +20,6 @@ import {
   waitForVisibleInputByLabel,
   waitForVisibleText,
 } from '../dom-helpers.mjs';
-import { jsonIncludes } from '../json-util.mjs';
 import { normalizeAdminOrderFetchQuery, normalizeDownloadProbe } from '../normalizers.mjs';
 import {
   adminActiveConfigTabSelector,
@@ -374,22 +373,6 @@ export async function closeVisibleAdminServerDrawers(page) {
   }
 }
 
-export async function adminServerVlessMatrixState(page) {
-  const state = await adminServerNodeDrawerState(page);
-  const bodyText = await page.evaluate(() => document.body?.innerText ?? '');
-  const normalizedBodyText = normalizeParityText(bodyText);
-  const selectedValues = ['Default', 'Reality', 'TCP', 'xtls-rprx-vision'].filter(
-    (value) => jsonIncludes(state.selectedValues, value) || normalizedBodyText.includes(value),
-  );
-  return {
-    actionButtons: state.actionButtons,
-    drawerCount: state.drawerCount,
-    inputValues: state.inputValues.filter(Boolean),
-    labels: state.labels,
-    selectedValues,
-  };
-}
-
 export async function selectAdminOverlayOption(page, triggerIndex, optionText) {
   await page.locator(adminDrawerSelectTriggerSelector).nth(triggerIndex).click();
   // Wait for the option itself to be visible, not the dropdown container: antd
@@ -509,18 +492,6 @@ export async function addAdminNoticeTag(page, tag) {
     await fillFirstVisible(page, '.ant-modal .ant-select-search__field', tag);
     await page.keyboard.press('Enter');
   }
-}
-
-// Dismiss the knowledge editor after a successful save. The redesigned Sheet
-// closes itself on save (a Tier-2 UX choice); the antd oracle keeps the drawer
-// open, so click 取消 there. Both converge to a dismissed drawer.
-
-export async function dismissAdminKnowledgeDrawer(page) {
-  if ((await visibleCount(page, adminDrawerOpenSelector)) > 0) {
-    await clickFirstVisibleText(page, adminDrawerFooterButtonSelector, ['取消']);
-  }
-  await waitForVisibleElementsHidden(page, adminDrawerOpenSelector);
-  await waitForVisibleElementsHidden(page, adminDrawerTitleSelector);
 }
 
 export async function addAdminUserFilterCondition(page) {

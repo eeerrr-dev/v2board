@@ -121,7 +121,7 @@ jobs:
       - name: Audit modern frontend source isolation
         run: pnpm audit:source
 
-      - name: Reject unused or undeclared dependencies
+      - name: Reject unused files, exports, and dependencies
         run: pnpm audit:deps
 
       - name: Audit dependencies and registry signatures

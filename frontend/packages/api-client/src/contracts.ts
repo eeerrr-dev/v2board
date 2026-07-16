@@ -27,7 +27,6 @@ export const adminFilterSchema = z.object({
 
 /** Dynamic JSON is allowed at a leaf, never as an endpoint-level bypass. */
 export const jsonValueSchema = z.json();
-export type JsonValue = z.output<typeof jsonValueSchema>;
 export const jsonObjectSchema = z.record(z.string(), jsonValueSchema);
 
 export const arraySchema = <TSchema extends z.ZodType>(item: TSchema) => z.array(item);

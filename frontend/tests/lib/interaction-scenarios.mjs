@@ -1121,5 +1121,3 @@ export const interactions = [
     sourceOnly: true,
   },
 ];
-
-export const interactionsByLabel = new Map(interactions.map((i) => [i.label, i]));

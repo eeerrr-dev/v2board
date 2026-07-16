@@ -1,0 +1,31 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  // An export consumed by its own module is a visibility choice, not dead code;
+  // only exports unused everywhere (including their own file) are reported.
+  "ignoreExportsUsedInFile": true,
+  "workspaces": {
+    ".": {
+      "entry": [
+        // Operational scripts are executed by the Makefile / CI via `node
+        // scripts/<name>.mjs` (and `node --test scripts/*.test.mjs`), never
+        // imported from other modules.
+        "scripts/*.mjs",
+        // JSDoc-only type modules for the .mjs harness; knip does not follow
+        // the `@import` JSDoc references that consume them.
+        "scripts/*.d.mts",
+        "tests/lib/*.d.mts"
+      ]
+    },
+    "apps/*": {
+      "entry": [
+        // Passed explicitly to `vite build --config` by scripts/build-deploy.mjs.
+        "vite.config.deploy.ts",
+        // Owned shadcn registry copies. The full registry export surface is
+        // deliberate (scripts/ui-sync-audit.mjs keeps both apps' primitives
+        // synchronized), so these files keep dependency tracking but are
+        // exempt from unused-export pruning.
+        "src/components/ui/*.tsx"
+      ]
+    }
+  }
+}

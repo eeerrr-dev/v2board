@@ -70,12 +70,3 @@ export function RouteBoundaryOutlet() {
     </RouteErrorBoundary>
   );
 }
-
-export function RouteBoundaryElement({ children }: { children: ReactNode }) {
-  const location = useLocation();
-  return (
-    <RouteErrorBoundary resetKey={`${location.pathname}${location.search}`}>
-      {children}
-    </RouteErrorBoundary>
-  );
-}

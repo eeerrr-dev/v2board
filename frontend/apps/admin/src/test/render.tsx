@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { i18n as I18nInstance } from 'i18next';
 import { I18nextProvider } from 'react-i18next';
-import { createMemoryRouter, MemoryRouter, RouterProvider, type RouteObject } from 'react-router';
+import { MemoryRouter } from 'react-router';
 import { createI18n } from '@v2board/i18n/testing';
 
 export type UserEvent = ReturnType<typeof userEvent.setup>;
@@ -75,30 +75,3 @@ export function renderWithProviders(
   };
 }
 
-export interface RenderRoutesOptions extends RenderWithProvidersOptions {
-  /** Initial history stack for the memory data router. Defaults to ['/']. */
-  initialEntries?: string[];
-}
-
-export interface RenderRoutesResult extends RenderWithProvidersResult {
-  router: ReturnType<typeof createMemoryRouter>;
-}
-
-/**
- * Data-router variant (createMemoryRouter + RouterProvider) for components
- * that need loaders, actions, useParams, or router.navigate in assertions.
- */
-export function renderRoutes(
-  routes: RouteObject[],
-  options: RenderRoutesOptions = {},
-): RenderRoutesResult {
-  const { initialEntries = ['/'], ...rest } = options;
-  const router = createMemoryRouter(routes, { initialEntries });
-  const result = renderWithProviders(<RouterProvider router={router} />, rest);
-  return { ...result, router };
-}
-
-/** userEvent.setup() convenience for tests that render outside this helper. */
-export function setupUser(): UserEvent {
-  return userEvent.setup();
-}

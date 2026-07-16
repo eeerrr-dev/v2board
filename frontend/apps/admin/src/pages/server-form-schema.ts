@@ -488,7 +488,6 @@ export const serverNodeFormSchema = serverNodeInputSchema
 
 export type ServerNodeEditorValues = z.input<typeof serverNodeFormSchema>;
 export type ServerNodeSaveRequest = z.output<typeof serverNodeFormSchema>;
-export type ServerNodeType = ServerNodeEditorValues['type'];
 export type V2nodeEditorValues = Extract<ServerNodeEditorValues, { type: 'v2node' }>;
 export type V2nodeProtocol = Exclude<V2nodeEditorValues['config']['protocol'], ''>;
 

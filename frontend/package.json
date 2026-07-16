@@ -15,7 +15,7 @@
     "build:admin": "pnpm --filter @v2board/admin build",
     "build:deploy": "node scripts/build-deploy.mjs",
     "build:user": "pnpm --filter @v2board/user build",
-    "audit:deps": "knip --dependencies",
+    "audit:deps": "knip",
     "audit:source": "node scripts/frontend-source-audit.mjs",
     "typecheck": "pnpm -r --parallel typecheck",
     "lint": "eslint . --max-warnings 0",
