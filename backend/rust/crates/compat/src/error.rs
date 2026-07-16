@@ -1,6 +1,5 @@
-use std::collections::HashMap;
-
 use axum::{Json, http::StatusCode, response::IntoResponse};
+use indexmap::IndexMap;
 use serde::Serialize;
 
 /// Laravel's exception handler returns this translated string for any non-HTTP
@@ -13,10 +12,12 @@ pub enum ApiError {
     #[error("{message}")]
     Http { status: StatusCode, message: String },
     /// Laravel validation failure body: HTTP 422 with `{message, errors:{field:[...]}}`.
+    /// The bag is an `IndexMap` because Laravel's MessageBag preserves rule
+    /// insertion order and the frontend surfaces the first entry.
     #[error("{message}")]
     Validation {
         message: String,
-        errors: HashMap<String, Vec<String>>,
+        errors: IndexMap<String, Vec<String>>,
     },
     #[error("database error: {0}")]
     Database(#[from] sqlx::Error),
@@ -34,7 +35,7 @@ struct ErrorBody<'a> {
 #[derive(Serialize)]
 struct ValidationBody {
     message: String,
-    errors: HashMap<String, Vec<String>>,
+    errors: IndexMap<String, Vec<String>>,
 }
 
 impl ApiError {
@@ -86,7 +87,7 @@ impl ApiError {
     }
 
     /// Laravel 422 validation error: `{message, errors:{field:[...]}}`.
-    pub fn validation(message: impl Into<String>, errors: HashMap<String, Vec<String>>) -> Self {
+    pub fn validation(message: impl Into<String>, errors: IndexMap<String, Vec<String>>) -> Self {
         Self::Validation {
             message: message.into(),
             errors,
@@ -100,7 +101,7 @@ impl ApiError {
     pub fn validation_field(field: &str, message: &str) -> Self {
         Self::Validation {
             message: message.to_string(),
-            errors: HashMap::from([(field.to_string(), vec![message.to_string()])]),
+            errors: IndexMap::from([(field.to_string(), vec![message.to_string()])]),
         }
     }
 

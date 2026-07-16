@@ -239,10 +239,7 @@ pub(in super::super) fn optional_int_or_null_value(
 /// Builds a Laravel-style 422 validation error for a single field: the message
 /// doubles as the top-level message and the field's first error.
 pub(in super::super) fn validation_error(field: &str, message: &str) -> ApiError {
-    ApiError::validation(
-        message,
-        HashMap::from([(field.to_string(), vec![message.to_string()])]),
-    )
+    ApiError::validation_field(field, message)
 }
 
 /// A scalar request value trimmed of surrounding whitespace (Laravel's global

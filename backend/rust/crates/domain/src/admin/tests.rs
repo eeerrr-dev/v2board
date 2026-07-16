@@ -26,7 +26,7 @@ fn params(pairs: &[(&str, &str)]) -> HashMap<String, String> {
         .collect()
 }
 
-fn validation_parts(error: ApiError) -> (String, HashMap<String, Vec<String>>) {
+fn validation_parts(error: ApiError) -> (String, indexmap::IndexMap<String, Vec<String>>) {
     match error {
         ApiError::Validation { message, errors } => (message, errors),
         other => panic!("expected validation error, got {other:?}"),

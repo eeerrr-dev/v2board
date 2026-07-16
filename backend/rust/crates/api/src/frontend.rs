@@ -9,8 +9,13 @@ use v2board_config::AppConfig;
 
 use crate::runtime::host_matches_app_url;
 
+/// Must match `runtimeConfigToken` in frontend/scripts/deploy-contract.mjs and
+/// the apps' index.html templates; `make deploy-contract-audit` pins the pair.
 const RUNTIME_CONFIG_TOKEN: &str = "__V2BOARD_RUNTIME_CONFIG__";
 const CUSTOM_HTML_MARKER: &str = "<!-- V2BOARD_CUSTOM_HTML -->";
+/// Must stay set-equal to the frontend locale registry
+/// (frontend/packages/i18n/src/locale-registry.ts); `make deploy-contract-audit`
+/// fails when a locale lands on only one side.
 const ENABLED_LOCALES: [&str; 6] = ["zh-CN", "en-US", "ja-JP", "vi-VN", "ko-KR", "zh-TW"];
 
 #[derive(Clone, Copy)]
@@ -76,18 +81,9 @@ pub(super) async fn render(
         "text/html; charset=utf-8",
         text_body(method, html),
     );
-    let headers = response.headers_mut();
-    headers.insert(
+    response.headers_mut().insert(
         header::CACHE_CONTROL,
         HeaderValue::from_static("no-store, max-age=0"),
-    );
-    headers.insert(
-        header::X_CONTENT_TYPE_OPTIONS,
-        HeaderValue::from_static("nosniff"),
-    );
-    headers.insert(
-        header::REFERRER_POLICY,
-        HeaderValue::from_static("strict-origin-when-cross-origin"),
     );
     response
 }

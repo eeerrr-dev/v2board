@@ -414,7 +414,7 @@ fn validate_emitted_runtime_configs(
 ) -> anyhow::Result<()> {
     let paths = |config: &str| RuntimePaths {
         config: config.into(),
-        frontend: "/opt/v2board/frontend".into(),
+        frontend: "/opt/v2board/current/frontend".into(),
         rules: "/var/lib/v2board/rules".into(),
     };
     AppConfig::try_from_api_boot_config_map(

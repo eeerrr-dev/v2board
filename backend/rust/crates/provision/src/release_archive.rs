@@ -458,6 +458,9 @@ fn count_archive_entry(entry_count: &mut usize) -> Result<(), ReleaseArchiveErro
     Ok(())
 }
 
+/// Must match `forbiddenLegacyNames` in frontend/scripts/deploy-contract.mjs
+/// and the Makefile's FORBIDDEN_LEGACY_NAMES; `make deploy-contract-audit`
+/// fails when any copy drifts.
 fn is_forbidden_legacy_filename(name: &str) -> bool {
     matches!(
         name,
@@ -520,12 +523,32 @@ fn validate_symlink(path: &Path, target: &Path) -> Result<(), ReleaseArchiveErro
             }
         }
     }
-    if !resolved.starts_with("frontend/releases") || resolved == Path::new("frontend/releases") {
+    if resolved.parent() != Some(Path::new("frontend/releases")) {
         return Err(ReleaseArchiveError::new(
             "release_archive_symlink_target_outside_releases",
         ));
     }
+    // The publisher (frontend/scripts/release-publication.mjs) only ever links
+    // `releases/<20-lowercase-hex content id>`; inspection pins that exact
+    // shape so the installer verifies the publisher's real output rather than
+    // a looser superset.
+    if !resolved
+        .file_name()
+        .and_then(OsStr::to_str)
+        .is_some_and(is_release_content_id)
+    {
+        return Err(ReleaseArchiveError::new(
+            "release_archive_symlink_target_not_content_id",
+        ));
+    }
     Ok(())
+}
+
+fn is_release_content_id(name: &str) -> bool {
+    name.len() == 20
+        && name
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 fn validate_parents(indexed: &BTreeMap<PathBuf, IndexedEntry>) -> Result<(), ReleaseArchiveError> {
@@ -808,11 +831,11 @@ mod tests {
                 b"analytics-schema-binary".to_vec(),
             ),
             (
-                "frontend/releases/content-a/user/index.html",
+                "frontend/releases/0123456789abcdef0123/user/index.html",
                 b"<html>user</html>".to_vec(),
             ),
             (
-                "frontend/releases/content-a/admin/index.html",
+                "frontend/releases/0123456789abcdef0123/admin/index.html",
                 b"<html>admin</html>".to_vec(),
             ),
             (
@@ -879,9 +902,9 @@ mod tests {
             "bin",
             "frontend",
             "frontend/releases",
-            "frontend/releases/content-a",
-            "frontend/releases/content-a/user",
-            "frontend/releases/content-a/admin",
+            "frontend/releases/0123456789abcdef0123",
+            "frontend/releases/0123456789abcdef0123/user",
+            "frontend/releases/0123456789abcdef0123/admin",
             "systemd",
         ] {
             let mut header = tar::Header::new_gnu();
@@ -921,7 +944,7 @@ mod tests {
             header.set_size(0);
             header.set_path(link).expect("symlink path");
             header
-                .set_link_name("releases/content-a")
+                .set_link_name("releases/0123456789abcdef0123")
                 .expect("symlink target");
             header.set_cksum();
             builder
@@ -1044,6 +1067,21 @@ mod tests {
             count_archive_entry(&mut count).unwrap_err().code,
             "release_archive_too_many_entries"
         );
+    }
+
+    #[test]
+    fn symlink_targets_must_be_20_hex_content_ids() {
+        let path = Path::new("frontend/current");
+        assert!(validate_symlink(path, Path::new("releases/0123456789abcdef0123")).is_ok());
+        for target in [
+            "releases/content-a",
+            "releases/0123456789ABCDEF0123",
+            "releases/0123456789abcdef01",
+            "releases/0123456789abcdef0123/user",
+            "releases",
+        ] {
+            assert!(validate_symlink(path, Path::new(target)).is_err());
+        }
     }
 
     #[test]

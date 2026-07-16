@@ -914,7 +914,7 @@ fn boot_runtime_config(
 fn runtime_paths(config: PathBuf) -> RuntimePaths {
     RuntimePaths {
         config,
-        frontend: PathBuf::from("/opt/v2board/frontend"),
+        frontend: PathBuf::from("/opt/v2board/current/frontend"),
         rules: PathBuf::from("/var/lib/v2board/rules"),
     }
 }

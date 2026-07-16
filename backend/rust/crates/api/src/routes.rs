@@ -40,7 +40,6 @@ fn cors_layer(state: AppState) -> CorsLayer {
             header::CONTENT_TYPE,
             header::ACCEPT,
             header::AUTHORIZATION,
-            HeaderName::from_static("x-request-with"),
             HeaderName::from_static(X_REQUEST_ID),
             HeaderName::from_static("x-v2board-step-up"),
         ])
@@ -415,6 +414,10 @@ async fn cache_static_assets(request: Request, next: Next) -> Response {
     response
 }
 
+/// Runtime gate for `/assets/{user,admin}/*` names. The build-time grammar in
+/// frontend/scripts/deploy-contract.mjs (`hashedAssetNamePattern`) is a strict
+/// subset of this parse; keep it that way so a build-certified release can
+/// never contain a runtime-unservable filename.
 fn is_content_hashed_asset(path: &str) -> bool {
     if path.is_empty() || path.contains('/') || path.contains('\\') {
         return false;
@@ -451,13 +454,28 @@ mod tests {
 
     #[test]
     fn public_asset_gate_accepts_only_flat_content_hashed_files() {
+        // The accepted corpus is mirrored byte-for-byte by the build-time
+        // grammar test (frontend/scripts/deploy-contract.test.mjs). The build
+        // regex is a strict subset of this gate, so every name it certifies
+        // must be accepted here.
         assert!(is_content_hashed_asset("index-Dp3_abcdef.js"));
         assert!(is_content_hashed_asset("asset-a1b2c3d4.woff2"));
+        assert!(is_content_hashed_asset("logo.dark-a1b2c3d4.png"));
+        assert!(is_content_hashed_asset(
+            "roboto-v30-latin-regular-a1b2c3d4.woff2"
+        ));
         assert!(!is_content_hashed_asset("index.html"));
         assert!(!is_content_hashed_asset("manifest.json"));
         assert!(!is_content_hashed_asset("umi.js"));
         assert!(!is_content_hashed_asset("nested/index-a1b2c3d4.js"));
         assert!(!is_content_hashed_asset("../index-a1b2c3d4.js"));
+        // Dotted extension chains land the extra segment in the hash bytes
+        // and are rejected; the build regex refuses to certify them too.
+        assert!(!is_content_hashed_asset("chunk-abcdefgh.js.map"));
+        assert!(!is_content_hashed_asset("asset-a1b2c3d4.js.LICENSE.txt"));
+        assert!(!is_content_hashed_asset("index-abc.js"));
+        assert!(!is_content_hashed_asset("index-abcdefgh."));
+        assert!(!is_content_hashed_asset("-abcdefgh.js"));
     }
 
     #[test]

@@ -38,3 +38,6 @@ url.workspace = true
 v2board-compat = { version = "0.1.0", path = "../compat" }
 v2board-config = { version = "0.1.0", path = "../config" }
 v2board-db = { version = "0.1.0", path = "../db" }
+
+[dev-dependencies]
+indexmap.workspace = true

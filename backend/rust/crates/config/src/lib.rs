@@ -556,7 +556,7 @@ impl AppConfig {
         runtime_role: RuntimeRole,
         parse_mode: ConfigParseMode,
     ) -> io::Result<Self> {
-        let env_path = env_path(&["V2BOARD_ENV_PATH", "RUST_ENV_PATH"]);
+        let env_path = env_path("V2BOARD_ENV_PATH");
         if let Some(path) = env_path.as_ref() {
             if !path.is_file() {
                 return Err(invalid_setting(
@@ -1608,17 +1608,16 @@ impl AppConfig {
 
 impl RuntimePaths {
     fn from_env(runtime_role: RuntimeRole) -> Self {
-        let root = env_path(&["V2BOARD_RUNTIME_ROOT", "RUST_RUNTIME_ROOT"])
-            .unwrap_or_else(|| PathBuf::from("/var/lib/v2board"));
-        let frontend = env_path(&["V2BOARD_FRONTEND_DIR", "RUST_FRONTEND_DIR"])
-            .unwrap_or_else(|| PathBuf::from("/opt/v2board/frontend"));
+        let root =
+            env_path("V2BOARD_RUNTIME_ROOT").unwrap_or_else(|| PathBuf::from("/var/lib/v2board"));
+        let frontend = env_path("V2BOARD_FRONTEND_DIR")
+            .unwrap_or_else(|| PathBuf::from("/opt/v2board/current/frontend"));
 
         Self {
-            config: env_path(&["V2BOARD_CONFIG_PATH", "RUST_CONFIG_PATH"])
+            config: env_path("V2BOARD_CONFIG_PATH")
                 .unwrap_or_else(|| root.join(runtime_role.default_config_relative_path())),
             frontend,
-            rules: env_path(&["V2BOARD_RULE_DIR", "RUST_RULE_DIR"])
-                .unwrap_or_else(|| root.join("rules")),
+            rules: env_path("V2BOARD_RULE_DIR").unwrap_or_else(|| root.join("rules")),
         }
     }
 }
@@ -1775,8 +1774,8 @@ fn validate_role_environment(runtime_role: RuntimeRole) -> io::Result<()> {
     }
 }
 
-fn env_path(keys: &[&str]) -> Option<PathBuf> {
-    keys.iter().find_map(|key| env_opt(key).map(PathBuf::from))
+fn env_path(key: &str) -> Option<PathBuf> {
+    env_opt(key).map(PathBuf::from)
 }
 
 fn resolve_app_key(
