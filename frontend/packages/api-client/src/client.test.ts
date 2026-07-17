@@ -425,11 +425,13 @@ describe('createApiClient', () => {
   it('adds the legacy HTTP 200 code to successful envelopes when the body omits it', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onGet('/user/ticket/fetch').reply(200, { data: [], total: 0 });
+    // The legacy envelope core stays for the admin dialect until W14; the
+    // admin ticket list is a representative still-legacy route.
+    mock.onGet('/admin/ticket/fetch').reply(200, { data: [], total: 0 });
 
     await expect(
       client.requestEnvelope({
-        url: '/user/ticket/fetch',
+        url: '/admin/ticket/fetch',
         method: 'GET',
         responseSchema: envelopeSchema(z.array(z.unknown())),
       }),
@@ -443,11 +445,11 @@ describe('createApiClient', () => {
   ])('rejects an invalid legacy envelope %s field before returning data', async (field, value) => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onGet('/user/ticket/fetch').reply(200, { data: [], [field]: value });
+    mock.onGet('/admin/ticket/fetch').reply(200, { data: [], [field]: value });
 
     await expect(
       client.requestEnvelope({
-        url: '/user/ticket/fetch',
+        url: '/admin/ticket/fetch',
         method: 'GET',
         responseSchema: envelopeSchema(z.array(z.string())),
       }),

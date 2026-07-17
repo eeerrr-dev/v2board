@@ -159,7 +159,9 @@ describe('TicketDetailPage shadcn chat surface', () => {
 
   it('shows the backend not-found contract without offering a reply composer', () => {
     state.ticket = undefined;
-    state.ticketError = { status: 500, message: '工单不存在' };
+    // GET /user/tickets/{id} is path-identified: a missing ticket is the
+    // 404 `ticket_not_found` problem (docs/api-dialect.md §3.4, W8).
+    state.ticketError = { status: 404, message: '工单不存在' };
 
     renderWithProviders(<TicketDetailPage />);
 

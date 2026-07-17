@@ -394,6 +394,7 @@ export const adminNoticeSchema = z.looseObject({
   updated_at: z.number(),
 });
 
+/** Legacy ticket messages (epoch ints) — admin family only until W14. */
 export const ticketMessageSchema = z.looseObject({
   id: z.number(),
   user_id: z.number(),
@@ -404,6 +405,7 @@ export const ticketMessageSchema = z.looseObject({
   updated_at: z.number(),
 });
 
+/** Legacy ticket rows (`/admin/ticket/fetch`, W11's admin flip pending W14). */
 export const ticketSchema = z.looseObject({
   id: z.number(),
   user_id: z.number(),
@@ -415,6 +417,47 @@ export const ticketSchema = z.looseObject({
   created_at: z.number(),
   updated_at: z.number(),
   message: z.array(ticketMessageSchema).optional(),
+});
+
+/**
+ * User ticket thread messages — dialect v2 (docs/api-dialect.md §5.7, W8):
+ * RFC 3339 timestamps (§4.5), boolean `is_me`.
+ */
+export const userTicketMessageSchema = z.looseObject({
+  id: z.number(),
+  user_id: z.number(),
+  ticket_id: z.number(),
+  message: z.string(),
+  is_me: z.boolean(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+/**
+ * User ticket rows — dialect v2 (§5.7, W8): `level`/`status`/`reply_status`
+ * stay numeric enums (§4.1); `last_reply_user_id` is an always-present
+ * nullable.
+ */
+export const userTicketSchema = z.looseObject({
+  id: z.number(),
+  user_id: z.number(),
+  subject: z.string(),
+  level: z.union([z.literal(0), z.literal(1), z.literal(2)]),
+  status: binaryFlagSchema,
+  reply_status: binaryFlagSchema,
+  last_reply_user_id: nullableNumber,
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+/** GET /user/tickets/{id} (§5.7): the ticket row plus its `message[]` thread. */
+export const userTicketDetailSchema = userTicketSchema.extend({
+  message: z.array(userTicketMessageSchema),
+});
+
+/** POST /user/tickets + /user/withdrawal-tickets (§5.7): 201 with `{id}`. */
+export const createdTicketSchema = z.looseObject({
+  id: z.number(),
 });
 
 /**

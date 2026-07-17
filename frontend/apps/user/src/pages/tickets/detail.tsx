@@ -24,12 +24,10 @@ export default function TicketDetailPage() {
   const messages = ticket.data?.message ?? [];
   const missingTicketText = translateRuntimeMessage(i18n, 'Ticket does not exist');
   const ticketError = ticket.isError ? getErrorPresentation(ticket.error) : null;
-  // Laravel reports the historical absence contract as a localized HTTP 500,
-  // while the Rust rewrite uses a real 404. Match either without mislabelling
-  // unrelated transport/5xx failures as a missing ticket.
-  const isNotFound = Boolean(
-    ticketError && (ticketError.status === 404 || ticketError.message === missingTicketText),
-  );
+  // GET /user/tickets/{id} is path-identified, so a missing ticket is a real
+  // 404 `ticket_not_found` (docs/api-dialect.md §3.4, W8) — never a message
+  // match, so unrelated transport/5xx failures stay labelled as errors.
+  const isNotFound = ticketError?.status === 404;
   // A closed ticket (status 1) rejects replies server-side; gate the composer so
   // the user sees why instead of hitting a silent failure on submit.
   const isClosed = ticket.data?.status === 1;

@@ -18,6 +18,7 @@ import {
   commissionDetailSchema,
   couponSchema,
   createdOrderSchema,
+  createdTicketSchema,
   envelopeSchema,
   giftCardRedemptionSchema,
   giftcardSchema,
@@ -50,6 +51,8 @@ import {
   userPlanSchema,
   userProfileSchema,
   userStatsSchema,
+  userTicketDetailSchema,
+  userTicketSchema,
 } from './contracts';
 import { pageSchema, problemDetailsSchema } from './dialect';
 
@@ -130,7 +133,11 @@ const dialectGoldenSchemas: Record<string, z.ZodType> = {
   'user.subscription.json': subscriptionSchema,
   'user.subscription.reset-token.json': resetSubscribeTokenSchema,
   'user.telegram-bot.json': telegramBotInfoSchema,
+  'user.tickets.create.json': createdTicketSchema,
+  'user.tickets.detail.json': userTicketDetailSchema,
+  'user.tickets.json': arraySchema(userTicketSchema),
   'user.traffic-logs.json': arraySchema(trafficLogSchema),
+  'user.withdrawal-tickets.create.json': createdTicketSchema,
 };
 
 describe('golden response fixtures', () => {

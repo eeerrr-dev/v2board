@@ -22,6 +22,7 @@ import {
   checkoutResultSchema,
   commissionDetailSchema,
   createdOrderSchema,
+  createdTicketSchema,
   giftCardRedemptionSchema,
   inviteFetchSchema,
   knowledgeCategorySchema,
@@ -35,9 +36,7 @@ import {
   stripePaymentIntentSchema,
   subscriptionSchema,
   telegramBotInfoSchema,
-  ticketSchema,
   trafficLogSchema,
-  trueSchema,
   userCommConfigSchema,
   userCouponSchema,
   userOrderSchema,
@@ -45,6 +44,8 @@ import {
   userPlanSchema,
   userProfileSchema,
   userStatsSchema,
+  userTicketDetailSchema,
+  userTicketSchema,
 } from '../contracts';
 
 type QueryRequestConfig = Pick<ApiRequestConfig, 'signal'>;
@@ -398,53 +399,65 @@ export const fetchNotices = async (client: ApiClient, config?: QueryRequestConfi
   return page.items;
 };
 
+/** GET /user/tickets — dialect v2 bare array (docs/api-dialect.md §5.7, W8). */
 export const fetchTickets = (client: ApiClient, config?: QueryRequestConfig) =>
   client.request({
-    url: '/user/ticket/fetch',
+    url: '/user/tickets',
     method: 'GET',
-    responseSchema: arraySchema(ticketSchema),
+    dialect: 'v2',
+    responseSchema: arraySchema(userTicketSchema),
     ...config,
   });
 
+/** GET /user/tickets/{id} — dialect v2 bare detail with the `message[]` thread (§5.7, W8). */
 export const ticketDetail = (client: ApiClient, id: number | string, config?: QueryRequestConfig) =>
   client.request({
-    url: '/user/ticket/fetch',
+    url: `/user/tickets/${encodeURIComponent(id)}`,
     method: 'GET',
-    params: { id },
-    responseSchema: ticketSchema,
+    dialect: 'v2',
+    responseSchema: userTicketDetailSchema,
     ...config,
   });
 
+/** POST /user/tickets — dialect v2 JSON `{subject, level, message}` → 201 `{id}` (§5.7, W8). */
 export const saveTicket = (client: ApiClient, payload: TicketCreatePayload) =>
   client.request({
-    url: '/user/ticket/save',
+    url: '/user/tickets',
     method: 'POST',
+    dialect: 'v2',
     data: payload,
-    responseSchema: trueSchema,
+    responseSchema: createdTicketSchema,
   });
 
-export const replyTicket = (client: ApiClient, payload: TicketReplyPayload) =>
-  client.request({
-    url: '/user/ticket/reply',
+/** POST /user/tickets/{id}/replies — dialect v2, 204; the `id` moves to the path (§5.7, W8). */
+export const replyTicket = (client: ApiClient, payload: TicketReplyPayload) => {
+  const { id, ...data } = payload;
+  return client.request({
+    url: `/user/tickets/${encodeURIComponent(id)}/replies`,
     method: 'POST',
-    data: payload,
-    responseSchema: trueSchema,
+    dialect: 'v2',
+    data,
+    responseSchema: noContentSchema,
   });
+};
 
+/** POST /user/tickets/{id}/close — dialect v2, 204, no body (§5.7, W8). */
 export const closeTicket = (client: ApiClient, id: number) =>
   client.request({
-    url: '/user/ticket/close',
+    url: `/user/tickets/${encodeURIComponent(id)}/close`,
     method: 'POST',
-    data: { id },
-    responseSchema: trueSchema,
+    dialect: 'v2',
+    responseSchema: noContentSchema,
   });
 
+/** POST /user/withdrawal-tickets — dialect v2 JSON → 201 `{id}` (§5.7, W8). */
 export const withdrawTicket = (client: ApiClient, payload: TicketWithdrawPayload) =>
   client.request({
-    url: '/user/ticket/withdraw',
+    url: '/user/withdrawal-tickets',
     method: 'POST',
+    dialect: 'v2',
     data: payload,
-    responseSchema: trueSchema,
+    responseSchema: createdTicketSchema,
   });
 
 /** GET /user/servers — dialect v2 bare array (§5.4, W6). */
