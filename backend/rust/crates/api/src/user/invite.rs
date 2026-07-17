@@ -7,10 +7,7 @@ use chrono::Utc;
 use serde::Deserialize;
 use v2board_compat::{ApiError, LegacyEnvelope, legacy_data, legacy_page};
 
-use crate::{
-    auth::{AuthQuery, require_user},
-    runtime::AppState,
-};
+use crate::{auth::require_user, runtime::AppState};
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct TransferRequest {
@@ -32,11 +29,10 @@ struct TransferInviterRow {
 
 pub(crate) async fn user_transfer(
     State(state): State<AppState>,
-    Query(query): Query<AuthQuery>,
     headers: HeaderMap,
     Form(payload): Form<TransferRequest>,
 ) -> Result<Json<LegacyEnvelope<bool>>, ApiError> {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     // UserTransfer FormRequest: transfer_amount required|integer|min:1.
     if payload.transfer_amount <= 0 {
         return Err(ApiError::validation_field(
@@ -145,10 +141,9 @@ pub(super) fn checked_transfer_balances(
 
 pub(crate) async fn invite_save(
     State(state): State<AppState>,
-    Query(query): Query<AuthQuery>,
     headers: HeaderMap,
 ) -> Result<Json<LegacyEnvelope<bool>>, ApiError> {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     let created = v2board_db::invite::create_invite_code(
         &state.db,
         user.id,
@@ -166,10 +161,9 @@ pub(crate) async fn invite_save(
 
 pub(crate) async fn invite_fetch(
     State(state): State<AppState>,
-    Query(query): Query<AuthQuery>,
     headers: HeaderMap,
 ) -> Result<Json<LegacyEnvelope<v2board_db::invite::InviteFetchRow>>, ApiError> {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     let data = v2board_db::invite::fetch_invite(&state.db, user.id).await?;
     Ok(legacy_data(data))
 }
@@ -179,7 +173,6 @@ pub(crate) struct PageQuery {
     current: Option<String>,
     #[serde(rename = "page_size", alias = "pageSize")]
     page_size: Option<String>,
-    auth_data: Option<String>,
 }
 
 pub(crate) async fn invite_details(
@@ -190,7 +183,7 @@ pub(crate) async fn invite_details(
     Json<v2board_compat::LegacyPageEnvelope<Vec<v2board_db::invite::CommissionDetailRow>>>,
     ApiError,
 > {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     let (page_size, offset) =
         validate_pagination(query.current.as_deref(), query.page_size.as_deref())?;
     let (rows, total) =

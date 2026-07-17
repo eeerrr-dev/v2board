@@ -1,25 +1,17 @@
-use axum::{
-    Json,
-    extract::{Query, State},
-    http::HeaderMap,
-};
+use axum::{Json, extract::State, http::HeaderMap};
 use chrono::{Datelike, TimeZone, Utc};
 use v2board_compat::{ApiError, LegacyEnvelope, legacy_data};
 use v2board_config::{app_now, app_timezone};
 
-use crate::{
-    auth::{AuthQuery, require_user},
-    runtime::AppState,
-};
+use crate::{auth::require_user, runtime::AppState};
 
 use super::subscription::user_is_available;
 
 pub(crate) async fn user_stat(
     State(state): State<AppState>,
-    Query(query): Query<AuthQuery>,
     headers: HeaderMap,
 ) -> Result<Json<LegacyEnvelope<[i64; 3]>>, ApiError> {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     let pending_orders = v2board_db::user::count_pending_orders(&state.db, user.id).await?;
     let pending_tickets = v2board_db::user::count_pending_tickets(&state.db, user.id).await?;
     let invited_users = v2board_db::user::count_invited_users(&state.db, user.id).await?;
@@ -32,10 +24,9 @@ pub(crate) async fn user_stat(
 
 pub(crate) async fn server_fetch(
     State(state): State<AppState>,
-    Query(query): Query<AuthQuery>,
     headers: HeaderMap,
 ) -> Result<Json<LegacyEnvelope<Vec<v2board_db::server::AvailableServerRow>>>, ApiError> {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     let access = v2board_db::user::find_user_access(&state.db, user.id)
         .await?
         .ok_or_else(|| ApiError::legacy("The user does not exist"))?;
@@ -50,10 +41,9 @@ pub(crate) async fn server_fetch(
 
 pub(crate) async fn user_traffic_logs(
     State(state): State<AppState>,
-    Query(query): Query<AuthQuery>,
     headers: HeaderMap,
 ) -> Result<Json<LegacyEnvelope<Vec<v2board_db::stat::TrafficLogRow>>>, ApiError> {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     let logs =
         v2board_db::stat::fetch_traffic_logs(&state.db, user.id, first_day_of_month_timestamp())
             .await?;

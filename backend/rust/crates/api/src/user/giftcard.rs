@@ -1,6 +1,6 @@
 use axum::{
     Json,
-    extract::{Form, Query, State},
+    extract::{Form, State},
     http::HeaderMap,
     response::{IntoResponse, Response},
 };
@@ -9,11 +9,7 @@ use serde::Deserialize;
 use serde_json::json;
 use v2board_compat::ApiError;
 
-use crate::{
-    auth::{AuthQuery, require_user},
-    runtime::AppState,
-    validation::required_field,
-};
+use crate::{auth::require_user, runtime::AppState, validation::required_field};
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct RedeemGiftcardRequest {
@@ -63,11 +59,10 @@ const SECONDS_PER_DAY: i64 = 86_400;
 
 pub(crate) async fn redeem_giftcard(
     State(state): State<AppState>,
-    Query(query): Query<AuthQuery>,
     headers: HeaderMap,
     Form(payload): Form<RedeemGiftcardRequest>,
 ) -> Result<Response, ApiError> {
-    let auth_user = require_user(&state, &headers, query.auth_data).await?;
+    let auth_user = require_user(&state, &headers).await?;
     // UserRedeemGiftCard FormRequest: giftcard required.
     let giftcard_code = required_field(
         payload.giftcard.as_deref(),

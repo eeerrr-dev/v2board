@@ -14,7 +14,7 @@ use v2board_compat::{ApiError, LegacyEnvelope, legacy_data};
 use v2board_config::{AppConfig, app_now, app_timezone, duration_minutes_to_seconds};
 
 use crate::{
-    auth::{AuthQuery, require_user},
+    auth::require_user,
     codec::{base64_decode_url_safe, safe_base64_encode},
     runtime::AppState,
     validation::forbidden,
@@ -41,10 +41,9 @@ pub(crate) struct SubscribeInfo {
 
 pub(crate) async fn user_subscribe(
     State(state): State<AppState>,
-    Query(query): Query<AuthQuery>,
     headers: HeaderMap,
 ) -> Result<Json<LegacyEnvelope<SubscribeInfo>>, ApiError> {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     let subscribe = v2board_db::user::find_user_subscribe(&state.db, user.id)
         .await?
         .ok_or_else(|| ApiError::legacy("The user does not exist"))?;
@@ -90,10 +89,9 @@ struct UserPeriodRow {
 
 pub(crate) async fn user_new_period(
     State(state): State<AppState>,
-    Query(query): Query<AuthQuery>,
     headers: HeaderMap,
 ) -> Result<Json<LegacyEnvelope<bool>>, ApiError> {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     let config = state.config_snapshot();
     if config.allow_new_period == 0 {
         return Err(ApiError::legacy("Renewal is not allowed"));
@@ -222,11 +220,10 @@ pub(crate) struct UserQuickLoginRequest {
 
 pub(crate) async fn user_quick_login_url(
     State(state): State<AppState>,
-    Query(query): Query<AuthQuery>,
     headers: HeaderMap,
     Form(payload): Form<UserQuickLoginRequest>,
 ) -> Result<Json<LegacyEnvelope<String>>, ApiError> {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     let auth = state.auth_service();
     Ok(legacy_data(
         auth.quick_login_url(user.id, payload.redirect.as_deref())
@@ -237,7 +234,6 @@ pub(crate) async fn user_quick_login_url(
 #[derive(Debug, Deserialize)]
 pub(crate) struct PlanFetchQuery {
     id: Option<i32>,
-    auth_data: Option<String>,
 }
 
 pub(crate) async fn user_plan_fetch(
@@ -245,7 +241,7 @@ pub(crate) async fn user_plan_fetch(
     Query(query): Query<PlanFetchQuery>,
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     if let Some(id) = query.id {
         let subscribe = v2board_db::user::find_user_subscribe(&state.db, user.id)
             .await?

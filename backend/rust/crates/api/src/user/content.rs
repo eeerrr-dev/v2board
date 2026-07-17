@@ -10,7 +10,7 @@ use v2board_compat::{ApiError, LegacyEnvelope, legacy_data, legacy_page};
 use v2board_config::AppConfig;
 
 use crate::{
-    auth::{AuthQuery, require_user},
+    auth::require_user,
     codec::{percent_encode, safe_base64_encode},
     runtime::AppState,
 };
@@ -25,7 +25,6 @@ pub(crate) struct KnowledgeQuery {
     id: Option<i32>,
     language: Option<String>,
     keyword: Option<String>,
-    auth_data: Option<String>,
 }
 
 pub(crate) async fn knowledge_fetch(
@@ -33,7 +32,7 @@ pub(crate) async fn knowledge_fetch(
     Query(query): Query<KnowledgeQuery>,
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     if let Some(id) = query.id {
         let access = v2board_db::user::find_user_access(&state.db, user.id)
             .await?
@@ -62,7 +61,7 @@ pub(crate) async fn knowledge_categories(
     Query(query): Query<KnowledgeQuery>,
     headers: HeaderMap,
 ) -> Result<Json<LegacyEnvelope<Vec<serde_json::Value>>>, ApiError> {
-    let _user = require_user(&state, &headers, query.auth_data).await?;
+    let _user = require_user(&state, &headers).await?;
     let language = query.language.as_deref().unwrap_or("zh-CN");
     let categories = sqlx::query_scalar::<_, String>(
         "SELECT category FROM knowledge WHERE language = $1 AND \"show\" = 1 GROUP BY category ORDER BY category ASC",
@@ -78,10 +77,9 @@ pub(crate) async fn knowledge_categories(
 
 pub(crate) async fn telegram_bot_info(
     State(state): State<AppState>,
-    Query(query): Query<AuthQuery>,
     headers: HeaderMap,
 ) -> Result<Json<LegacyEnvelope<serde_json::Value>>, ApiError> {
-    let _user = require_user(&state, &headers, query.auth_data).await?;
+    let _user = require_user(&state, &headers).await?;
     let config = state.config_snapshot();
     let token = config
         .telegram_bot_token
@@ -116,7 +114,6 @@ pub(crate) struct NoticeFetchQuery {
     current: Option<i64>,
     #[serde(rename = "pageSize", alias = "page_size")]
     page_size: Option<i64>,
-    auth_data: Option<String>,
 }
 
 pub(crate) async fn user_notice_fetch(
@@ -124,7 +121,7 @@ pub(crate) async fn user_notice_fetch(
     Query(query): Query<NoticeFetchQuery>,
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
-    let _user = require_user(&state, &headers, query.auth_data).await?;
+    let _user = require_user(&state, &headers).await?;
     if let Some(id) = query.id {
         let notice = v2board_db::notice::find_visible_notice(&state.db, id)
             .await?

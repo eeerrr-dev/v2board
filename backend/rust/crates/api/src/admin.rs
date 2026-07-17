@@ -36,7 +36,7 @@ pub(crate) async fn dispatch_admin_get(
     if !matches_current_admin_api(&config, request_path) {
         return Err(ApiError::not_found("Not Found"));
     }
-    let admin = require_admin(state, headers, params.get("auth_data").cloned()).await?;
+    let admin = require_admin(state, headers).await?;
     if sensitive_admin_get(admin_path) {
         require_privileged_step_up(state, headers, &admin).await?;
     }
@@ -76,7 +76,7 @@ pub(crate) async fn dispatch_admin_post(
     }
     let headers = request.headers().clone();
     let mut params = admin_request_params(request).await?;
-    let admin = require_admin(state, &headers, params.get("auth_data").cloned()).await?;
+    let admin = require_admin(state, &headers).await?;
     require_privileged_step_up(state, &headers, &admin).await?;
     params.insert("_admin_email".to_string(), admin.email);
     if admin_path.trim_matches('/') == "user/sendMail" {
@@ -113,7 +113,7 @@ pub(crate) async fn staff_get(
     if !staff_path_allowed(&staff_path, Method::GET) {
         return Err(ApiError::not_found("Staff endpoint does not exist"));
     }
-    let _staff = require_staff(&state, &headers, params.get("auth_data").cloned()).await?;
+    let _staff = require_staff(&state, &headers).await?;
     let service = state.admin_service(state.config_snapshot());
     admin_response(service.staff_get(&staff_path, params).await?)
 }
@@ -128,7 +128,7 @@ pub(crate) async fn staff_post(
     }
     let headers = request.headers().clone();
     let mut params = admin_request_params(request).await?;
-    let staff = require_staff(&state, &headers, params.get("auth_data").cloned()).await?;
+    let staff = require_staff(&state, &headers).await?;
     require_privileged_step_up(&state, &headers, &staff).await?;
     params.insert("_admin_email".to_string(), staff.email);
     if staff_path.trim_matches('/') == "user/sendMail" {

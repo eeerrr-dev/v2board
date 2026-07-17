@@ -477,25 +477,7 @@ mod tests {
         // no HTTPS redirect may run before the CORS layer.
         config.trusted_proxy_cidrs = Vec::new();
         config.force_https = false;
-        let db = sqlx::postgres::PgPoolOptions::new()
-            .connect_lazy("postgres://unused:unused@127.0.0.1:9/unused")
-            .expect("lazy postgres pool");
-        let redis = redis::Client::open("redis://127.0.0.1:9/").expect("redis client");
-        let auth_redis = redis::aio::ConnectionManager::new_lazy_with_config(
-            redis.clone(),
-            redis::aio::ConnectionManagerConfig::new(),
-        )
-        .expect("lazy redis connection manager");
-        let state = AppState::new(
-            config.clone(),
-            db,
-            uuid::Uuid::new_v4(),
-            redis,
-            auth_redis,
-            reqwest::Client::new(),
-            v2board_domain::auth::PasswordKdf::new(1),
-            v2board_domain::smtp::SmtpTransportCache::default(),
-        );
+        let state = AppState::service_free_test(config.clone());
         build_app(state, &config)
     }
 

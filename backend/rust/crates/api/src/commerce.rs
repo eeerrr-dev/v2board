@@ -8,15 +8,11 @@ use serde::{Deserialize, Serialize};
 use v2board_compat::{ApiError, LegacyEnvelope, legacy_data};
 use v2board_db::DbPool;
 
-use crate::{
-    auth::{AuthQuery, require_user},
-    runtime::AppState,
-};
+use crate::{auth::require_user, runtime::AppState};
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct OrderFetchQuery {
     status: Option<i16>,
-    auth_data: Option<String>,
 }
 
 pub(crate) async fn order_fetch(
@@ -24,18 +20,17 @@ pub(crate) async fn order_fetch(
     Query(query): Query<OrderFetchQuery>,
     headers: HeaderMap,
 ) -> Result<Json<LegacyEnvelope<Vec<v2board_db::order::OrderRow>>>, ApiError> {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     let orders = v2board_db::order::fetch_user_orders(&state.db, user.id, query.status).await?;
     Ok(legacy_data(orders))
 }
 
 pub(crate) async fn order_save(
     State(state): State<AppState>,
-    Query(query): Query<AuthQuery>,
     headers: HeaderMap,
     Form(payload): Form<v2board_domain::order::SaveOrderInput>,
 ) -> Result<Json<LegacyEnvelope<String>>, ApiError> {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     let service =
         v2board_domain::order::OrderService::new(state.db.clone(), state.config_snapshot());
     let trade_no = service.save(user.id, payload).await?;
@@ -50,11 +45,10 @@ pub(crate) struct CheckoutEnvelope {
 
 pub(crate) async fn order_checkout(
     State(state): State<AppState>,
-    Query(query): Query<AuthQuery>,
     headers: HeaderMap,
     Form(payload): Form<v2board_domain::order::CheckoutOrderInput>,
 ) -> Result<Json<CheckoutEnvelope>, ApiError> {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     let service =
         v2board_domain::order::OrderService::new(state.db.clone(), state.config_snapshot());
     let result = service.checkout(user.id, payload).await?;
@@ -66,11 +60,10 @@ pub(crate) async fn order_checkout(
 
 pub(crate) async fn stripe_payment_intent(
     State(state): State<AppState>,
-    Query(query): Query<AuthQuery>,
     headers: HeaderMap,
     Form(payload): Form<v2board_domain::order::CheckoutOrderInput>,
 ) -> Result<Json<LegacyEnvelope<v2board_domain::order::StripePaymentIntentResult>>, ApiError> {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     let service =
         v2board_domain::order::OrderService::new(state.db.clone(), state.config_snapshot());
     let intent = service.prepare_stripe_intent(user.id, payload).await?;
@@ -80,7 +73,6 @@ pub(crate) async fn stripe_payment_intent(
 #[derive(Debug, Deserialize)]
 pub(crate) struct TradeNoQuery {
     trade_no: String,
-    auth_data: Option<String>,
 }
 
 pub(crate) async fn order_detail(
@@ -88,7 +80,7 @@ pub(crate) async fn order_detail(
     Query(query): Query<TradeNoQuery>,
     headers: HeaderMap,
 ) -> Result<Json<LegacyEnvelope<v2board_db::order::OrderRow>>, ApiError> {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     let config = state.config_snapshot();
     let mut order = v2board_db::order::find_user_order(
         &state.db,
@@ -120,7 +112,7 @@ pub(crate) async fn order_check(
     Query(query): Query<TradeNoQuery>,
     headers: HeaderMap,
 ) -> Result<Json<LegacyEnvelope<i16>>, ApiError> {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     let status = v2board_db::order::find_order_status(&state.db, user.id, &query.trade_no)
         .await?
         .ok_or_else(|| ApiError::legacy("Order does not exist"))?;
@@ -129,10 +121,9 @@ pub(crate) async fn order_check(
 
 pub(crate) async fn order_payment_methods(
     State(state): State<AppState>,
-    Query(query): Query<AuthQuery>,
     headers: HeaderMap,
 ) -> Result<Json<LegacyEnvelope<Vec<v2board_db::payment::PaymentMethodRow>>>, ApiError> {
-    let _user = require_user(&state, &headers, query.auth_data).await?;
+    let _user = require_user(&state, &headers).await?;
     let methods = v2board_db::payment::fetch_enabled_payment_methods(&state.db).await?;
     Ok(legacy_data(methods))
 }
@@ -144,11 +135,10 @@ pub(crate) struct OrderCancelRequest {
 
 pub(crate) async fn order_cancel(
     State(state): State<AppState>,
-    Query(query): Query<AuthQuery>,
     headers: HeaderMap,
     Form(payload): Form<OrderCancelRequest>,
 ) -> Result<Json<LegacyEnvelope<bool>>, ApiError> {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     if payload.trade_no.trim().is_empty() {
         return Err(ApiError::legacy("Invalid parameter"));
     }
@@ -199,11 +189,10 @@ pub(crate) struct CouponCheckRequest {
 
 pub(crate) async fn coupon_check(
     State(state): State<AppState>,
-    Query(query): Query<AuthQuery>,
     headers: HeaderMap,
     Form(payload): Form<CouponCheckRequest>,
 ) -> Result<Json<LegacyEnvelope<v2board_db::coupon::CouponRow>>, ApiError> {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     if payload.code.trim().is_empty() {
         return Err(ApiError::legacy("Coupon cannot be empty"));
     }

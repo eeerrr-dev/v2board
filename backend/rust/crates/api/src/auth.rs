@@ -119,7 +119,6 @@ pub(crate) async fn forget_password(
 #[derive(Deserialize)]
 pub(crate) struct StepUpRequest {
     password: String,
-    auth_data: Option<String>,
 }
 
 pub(crate) async fn privileged_step_up(
@@ -128,7 +127,7 @@ pub(crate) async fn privileged_step_up(
     headers: HeaderMap,
     Form(payload): Form<StepUpRequest>,
 ) -> Result<Json<LegacyEnvelope<Value>>, ApiError> {
-    let user = require_user(&state, &headers, payload.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     if user.is_admin == 0 && user.is_staff == 0 {
         return Err(forbidden("Permission denied"));
     }
@@ -151,7 +150,6 @@ pub(crate) async fn privileged_step_up(
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct QuickLoginRequest {
-    auth_data: Option<String>,
     redirect: Option<String>,
 }
 
@@ -160,7 +158,7 @@ pub(crate) async fn passport_quick_login_url(
     headers: HeaderMap,
     Form(payload): Form<QuickLoginRequest>,
 ) -> Result<Json<LegacyEnvelope<String>>, ApiError> {
-    let user = require_user(&state, &headers, payload.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     let auth = state.auth_service();
     let url = auth
         .quick_login_url(user.id, payload.redirect.as_deref())
@@ -195,21 +193,19 @@ pub(crate) async fn passport_pv(
     ))
 }
 
-#[derive(Debug, Deserialize)]
-pub(crate) struct AuthQuery {
-    pub(crate) auth_data: Option<String>,
-}
-
 pub(crate) async fn require_user(
     state: &AppState,
     headers: &HeaderMap,
-    _auth_data: Option<String>,
 ) -> Result<AuthUser, ApiError> {
     let auth_data = select_auth_data(headers).ok_or_else(ApiError::unauthorized)?;
     let auth = state.auth_service();
     auth.user_from_auth_data(&auth_data).await
 }
 
+/// The Authorization header is the only accepted bearer transport. URL
+/// `?auth_data=` tokens (a legacy PHP vestige) are deliberately unsupported:
+/// query strings outlive the request in referrers and durable edge logs,
+/// while headers stay out of them.
 pub(crate) fn select_auth_data(headers: &HeaderMap) -> Option<String> {
     headers
         .get(axum::http::header::AUTHORIZATION)?
@@ -235,9 +231,8 @@ fn bounded_user_agent(headers: &HeaderMap) -> Option<String> {
 pub(crate) async fn require_admin(
     state: &AppState,
     headers: &HeaderMap,
-    auth_data: Option<String>,
 ) -> Result<AuthUser, ApiError> {
-    let user = require_user(state, headers, auth_data).await?;
+    let user = require_user(state, headers).await?;
     if user.is_admin == 0 {
         return Err(forbidden("Permission denied"));
     }
@@ -247,9 +242,8 @@ pub(crate) async fn require_admin(
 pub(crate) async fn require_staff(
     state: &AppState,
     headers: &HeaderMap,
-    auth_data: Option<String>,
 ) -> Result<AuthUser, ApiError> {
-    let user = require_user(state, headers, auth_data).await?;
+    let user = require_user(state, headers).await?;
     if user.is_staff == 0 {
         return Err(forbidden("Permission denied"));
     }
@@ -298,20 +292,74 @@ fn recent_password_authentication(user: &AuthUser, now: i64, ttl_seconds: u64) -
 
 #[cfg(test)]
 mod tests {
-    use axum::http::{HeaderMap, header};
+    use std::net::SocketAddr;
+
+    use axum::{
+        body::Body,
+        extract::{ConnectInfo, Request},
+        http::{HeaderMap, StatusCode, header},
+    };
+    use tower::ServiceExt as _;
+    use v2board_config::AppConfig;
 
     use super::{
-        AuthQuery, MAX_USER_AGENT_BYTES, bounded_user_agent, recent_password_authentication,
-        select_auth_data,
+        MAX_USER_AGENT_BYTES, bounded_user_agent, recent_password_authentication, select_auth_data,
     };
     use v2board_domain::auth::AuthUser;
 
-    #[test]
-    fn only_the_authorization_header_is_an_authentication_source() {
-        let accepted_shape: AuthQuery =
-            serde_urlencoded::from_str("auth_data=query-token").expect("accepted query shape");
-        assert_eq!(accepted_shape.auth_data.as_deref(), Some("query-token"));
+    fn with_loopback_peer(mut request: Request) -> Request {
+        request
+            .extensions_mut()
+            .insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 40_000))));
+        request
+    }
 
+    #[tokio::test]
+    async fn only_the_authorization_header_is_an_authentication_source() {
+        let mut config = AppConfig::from_api_env();
+        config.trusted_proxy_cidrs = Vec::new();
+        config.force_https = false;
+        let state = crate::runtime::AppState::service_free_test(config.clone());
+        let app = crate::routes::build_app(state, &config);
+
+        // The state above has no reachable session store, so any request whose
+        // credential enters session lookup cannot be answered cleanly. A raw
+        // request carrying only the legacy `?auth_data=<token>` URL parameter
+        // must therefore fail closed with the legacy unauthenticated 403
+        // before any lookup: the query token is never honored as a credential.
+        let query_token_only = Request::builder()
+            .uri("/api/v1/user/info?auth_data=url-query-token")
+            .body(Body::empty())
+            .unwrap();
+        let response = app
+            .clone()
+            .oneshot(with_loopback_peer(query_token_only))
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::FORBIDDEN,
+            "a URL auth_data token must be rejected without a session lookup"
+        );
+
+        // The same raw request with an Authorization header passes credential
+        // selection and reaches the unreachable session store: authentication
+        // is sourced from the header alone.
+        let header_token = Request::builder()
+            .uri("/api/v1/user/info?auth_data=url-query-token")
+            .header(header::AUTHORIZATION, "header-token")
+            .body(Body::empty())
+            .unwrap();
+        let response = app.oneshot(with_loopback_peer(header_token)).await.unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "the Authorization header must be the credential that reaches the session store"
+        );
+    }
+
+    #[test]
+    fn select_auth_data_reads_only_a_bounded_authorization_header() {
         let mut headers = HeaderMap::new();
         headers.insert(header::AUTHORIZATION, "header-token".parse().unwrap());
         assert_eq!(select_auth_data(&headers).as_deref(), Some("header-token"));
@@ -325,11 +373,7 @@ mod tests {
             "an invalid Authorization header must fail closed"
         );
         headers.remove(header::AUTHORIZATION);
-        assert_eq!(
-            select_auth_data(&headers),
-            None,
-            "accepted auth_data parameter shape is never an authentication source"
-        );
+        assert_eq!(select_auth_data(&headers), None);
     }
 
     #[test]

@@ -10,7 +10,7 @@ use serde::Deserialize;
 use v2board_compat::{ApiError, LegacyEnvelope, legacy_data};
 
 use crate::{
-    auth::{AuthQuery, require_user},
+    auth::require_user,
     runtime::AppState,
     validation::{required_field, required_trimmed},
 };
@@ -44,7 +44,6 @@ fn validate_ticket_message(field: &str, message: &str) -> Result<(), ApiError> {
 #[derive(Debug, Deserialize)]
 pub(crate) struct TicketFetchQuery {
     id: Option<i64>,
-    auth_data: Option<String>,
 }
 
 pub(crate) async fn ticket_fetch(
@@ -52,7 +51,7 @@ pub(crate) async fn ticket_fetch(
     Query(query): Query<TicketFetchQuery>,
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     if let Some(id) = query.id {
         let ticket = v2board_db::ticket::fetch_ticket_detail(&state.db, user.id, id)
             .await?
@@ -72,11 +71,10 @@ pub(crate) struct TicketSaveRequest {
 
 pub(crate) async fn ticket_save(
     State(state): State<AppState>,
-    Query(query): Query<AuthQuery>,
     headers: HeaderMap,
     Form(payload): Form<TicketSaveRequest>,
 ) -> Result<Json<LegacyEnvelope<bool>>, ApiError> {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     // TicketSave FormRequest: subject required, level required|in:0,1,2, message required.
     let subject = required_field(
         payload.subject.as_deref(),
@@ -138,11 +136,10 @@ pub(crate) struct TicketReplyRequest {
 
 pub(crate) async fn ticket_reply(
     State(state): State<AppState>,
-    Query(query): Query<AuthQuery>,
     headers: HeaderMap,
     Form(payload): Form<TicketReplyRequest>,
 ) -> Result<Json<LegacyEnvelope<bool>>, ApiError> {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     let id = payload
         .id
         .ok_or_else(|| ApiError::legacy("Invalid parameter"))?;
@@ -177,11 +174,10 @@ pub(crate) struct IdRequest {
 
 pub(crate) async fn ticket_close(
     State(state): State<AppState>,
-    Query(query): Query<AuthQuery>,
     headers: HeaderMap,
     Form(payload): Form<IdRequest>,
 ) -> Result<Json<LegacyEnvelope<bool>>, ApiError> {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     let id = payload
         .id
         .ok_or_else(|| ApiError::legacy("Invalid parameter"))?;
@@ -201,11 +197,10 @@ pub(crate) struct TicketWithdrawRequest {
 
 pub(crate) async fn ticket_withdraw(
     State(state): State<AppState>,
-    Query(query): Query<AuthQuery>,
     headers: HeaderMap,
     Form(payload): Form<TicketWithdrawRequest>,
 ) -> Result<Json<LegacyEnvelope<bool>>, ApiError> {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     // TicketWithdraw FormRequest: withdraw_method + withdraw_account required. FormRequest
     // validation runs before the controller body, so it precedes the close-enable gate.
     let method = required_field(

@@ -75,6 +75,35 @@ impl AppState {
         }
     }
 
+    /// Builds an [`AppState`] whose PostgreSQL pool and Redis connections are
+    /// lazy handles to a closed loopback port: tests can drive the real router
+    /// and prove which requests are answered (or fail) before any backing
+    /// service is reachable.
+    #[cfg(test)]
+    pub(crate) fn service_free_test(config: AppConfig) -> Self {
+        let db = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://unused:unused@127.0.0.1:9/unused")
+            .expect("lazy postgres pool");
+        let redis = redis::Client::open("redis://127.0.0.1:9/").expect("redis client");
+        let auth_redis = redis::aio::ConnectionManager::new_lazy_with_config(
+            redis.clone(),
+            // Fail fast: a refused connection must surface as an immediate
+            // command error instead of a reconnect backoff.
+            redis::aio::ConnectionManagerConfig::new().set_number_of_retries(0),
+        )
+        .expect("lazy redis connection manager");
+        Self::new(
+            config,
+            db,
+            Uuid::new_v4(),
+            redis,
+            auth_redis,
+            reqwest::Client::new(),
+            PasswordKdf::new(1),
+            SmtpTransportCache::default(),
+        )
+    }
+
     pub(crate) fn auth_service(&self) -> AuthService {
         AuthService::new(
             self.db.clone(),

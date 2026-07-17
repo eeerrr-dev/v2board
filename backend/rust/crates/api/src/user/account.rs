@@ -1,6 +1,6 @@
 use axum::{
     Json,
-    extract::{Form, Query, State},
+    extract::{Form, State},
     http::HeaderMap,
 };
 use chrono::Utc;
@@ -8,16 +8,15 @@ use serde::{Deserialize, Serialize};
 use v2board_compat::{ApiError, LegacyEnvelope, legacy_data};
 
 use crate::{
-    auth::{AuthQuery, require_user, select_auth_data},
+    auth::{require_user, select_auth_data},
     runtime::AppState,
 };
 
 pub(crate) async fn user_info(
     State(state): State<AppState>,
-    Query(query): Query<AuthQuery>,
     headers: HeaderMap,
 ) -> Result<Json<LegacyEnvelope<v2board_db::user::UserInfoRow>>, ApiError> {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     let info = v2board_db::user::find_user_info(&state.db, user.id)
         .await?
         .ok_or_else(ApiError::unauthorized)?;
@@ -50,10 +49,9 @@ pub(crate) async fn logout(
 
 pub(crate) async fn check_login(
     State(state): State<AppState>,
-    Query(query): Query<AuthQuery>,
     headers: HeaderMap,
 ) -> Result<Json<LegacyEnvelope<CheckLoginResult>>, ApiError> {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     Ok(legacy_data(CheckLoginResult {
         is_login: true,
         is_admin: (user.is_admin != 0).then_some(true),
@@ -69,11 +67,10 @@ pub(crate) struct UserUpdateRequest {
 
 pub(crate) async fn user_update(
     State(state): State<AppState>,
-    Query(query): Query<AuthQuery>,
     headers: HeaderMap,
     Form(payload): Form<UserUpdateRequest>,
 ) -> Result<Json<LegacyEnvelope<bool>>, ApiError> {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     validate_binary("auto_renewal", payload.auto_renewal)?;
     validate_binary("remind_expire", payload.remind_expire)?;
     validate_binary("remind_traffic", payload.remind_traffic)?;
@@ -98,11 +95,10 @@ pub(crate) struct ChangePasswordRequest {
 
 pub(crate) async fn change_password(
     State(state): State<AppState>,
-    Query(query): Query<AuthQuery>,
     headers: HeaderMap,
     Form(payload): Form<ChangePasswordRequest>,
 ) -> Result<Json<LegacyEnvelope<bool>>, ApiError> {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     let auth = state.auth_service();
     auth.change_password(user.id, &payload.old_password, &payload.new_password)
         .await?;
@@ -111,10 +107,9 @@ pub(crate) async fn change_password(
 
 pub(crate) async fn reset_security(
     State(state): State<AppState>,
-    Query(query): Query<AuthQuery>,
     headers: HeaderMap,
 ) -> Result<Json<LegacyEnvelope<String>>, ApiError> {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     let auth = state.auth_service();
     let subscribe_url = auth.reset_security(user.id).await?;
     Ok(legacy_data(subscribe_url))
@@ -122,10 +117,9 @@ pub(crate) async fn reset_security(
 
 pub(crate) async fn unbind_telegram(
     State(state): State<AppState>,
-    Query(query): Query<AuthQuery>,
     headers: HeaderMap,
 ) -> Result<Json<LegacyEnvelope<bool>>, ApiError> {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     let updated =
         v2board_db::user::clear_telegram_id(&state.db, user.id, Utc::now().timestamp()).await?;
     if !updated {
@@ -136,10 +130,9 @@ pub(crate) async fn unbind_telegram(
 
 pub(crate) async fn active_sessions(
     State(state): State<AppState>,
-    Query(query): Query<AuthQuery>,
     headers: HeaderMap,
 ) -> Result<Json<LegacyEnvelope<serde_json::Map<String, serde_json::Value>>>, ApiError> {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     let auth = state.auth_service();
     let sessions = auth.sessions(user.id, Some(&user.session_id)).await?;
     Ok(legacy_data(sessions))
@@ -152,11 +145,10 @@ pub(crate) struct RemoveActiveSessionRequest {
 
 pub(crate) async fn remove_active_session(
     State(state): State<AppState>,
-    Query(query): Query<AuthQuery>,
     headers: HeaderMap,
     Form(payload): Form<RemoveActiveSessionRequest>,
 ) -> Result<Json<LegacyEnvelope<bool>>, ApiError> {
-    let user = require_user(&state, &headers, query.auth_data).await?;
+    let user = require_user(&state, &headers).await?;
     let auth = state.auth_service();
     let removed = auth.remove_session(user.id, &payload.session_id).await?;
     Ok(legacy_data(removed))
@@ -178,10 +170,9 @@ pub(crate) struct UserCommConfig {
 
 pub(crate) async fn user_comm_config(
     State(state): State<AppState>,
-    Query(query): Query<AuthQuery>,
     headers: HeaderMap,
 ) -> Result<Json<LegacyEnvelope<UserCommConfig>>, ApiError> {
-    let _user = require_user(&state, &headers, query.auth_data).await?;
+    let _user = require_user(&state, &headers).await?;
     let config = state.config_snapshot();
     Ok(legacy_data(UserCommConfig {
         is_telegram: config.telegram_bot_enable as i32,
