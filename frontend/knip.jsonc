@@ -18,7 +18,10 @@
         // JSDoc-only type modules for the .mjs harness; knip does not follow
         // the `@import` JSDoc references that consume them.
         "scripts/*.d.mts",
-        "tests/lib/*.d.mts"
+        "tests/lib/*.d.mts",
+        // Internal-dialect adapter unit tests (docs/api-dialect.md §13) run
+        // via `node --test`, never imported from other modules.
+        "tests/lib/dialect/*.test.mjs"
       ]
     },
     "apps/*": {

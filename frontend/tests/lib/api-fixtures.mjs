@@ -1,4 +1,5 @@
 import { adminPath } from './env.mjs';
+import { emitFixtureResponse } from './dialect/fixture-emitters.mjs';
 import {
   adminConfigFixture,
   adminCouponFixtures,
@@ -739,6 +740,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     await fulfillApiResponse(
       route,
       apiFixtureResponse(requestUrl, isAdminScenario, scenario, requestData, interaction),
+      target,
     );
 
     if (adminEndpoint === '/server/group/fetch' && !adminGroupsResolved) {
@@ -1268,19 +1270,15 @@ export function delay(ms) {
   });
 }
 
-export function fulfillApiResponse(route, body) {
-  const { contentType = 'application/json', httpStatus = 200, rawBody, ...payload } = body;
-  if (rawBody !== undefined) {
-    return route.fulfill({
-      body: rawBody,
-      contentType,
-      status: httpStatus,
-    });
-  }
+// World-aware serialization seam (docs/api-dialect.md §13.5): the fixture
+// response object is canonical; the dialect emitter owns each world's wire
+// shape (both worlds emit legacy until family waves flip the source world).
+export function fulfillApiResponse(route, body, world) {
+  const wire = emitFixtureResponse(world, body);
   return route.fulfill({
-    body: JSON.stringify(payload),
-    contentType,
-    status: httpStatus,
+    body: wire.body,
+    contentType: wire.contentType,
+    status: wire.status,
   });
 }
 
