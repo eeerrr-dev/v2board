@@ -374,8 +374,8 @@ ui-sync-audit:
 
 # Cross-checks the deploy-seam constants that are deliberately encoded on both
 # sides of the frontend/Rust seam (defense in depth): forbidden legacy bundle
-# names, the runtime-config token, and the enabled locale set. Runs on the
-# host against tracked sources only.
+# names, the runtime-config token, the enabled locale set, and the inline
+# pre-paint script CSP hashes. Runs on the host against tracked sources only.
 deploy-contract-audit:
 	@set -eu; \
 	js_names="$$(sed -n "/^export const forbiddenLegacyNames/,/^\]/p" frontend/scripts/deploy-contract.mjs | sed -n "s/^  '\(.*\)',$$/\1/p" | sort)"; \
@@ -395,6 +395,11 @@ deploy-contract-audit:
 	frontend_locales="$$(grep -o "code: '[^']*'" frontend/packages/i18n/src/locale-registry.ts | sed "s/code: '//;s/'$$//" | sort)"; \
 	test -n "$$rust_locales"; test -n "$$frontend_locales"; \
 	[ "$$rust_locales" = "$$frontend_locales" ] || { echo "Rust ENABLED_LOCALES drifted from the frontend locale registry"; exit 1; }; \
+	user_hash="$$(sed -n "s/^  user: '\(sha256-[^']*\)',$$/\1/p" frontend/scripts/deploy-contract.mjs)"; \
+	admin_hash="$$(sed -n "s/^  admin: '\(sha256-[^']*\)',$$/\1/p" frontend/scripts/deploy-contract.mjs)"; \
+	test -n "$$user_hash"; test -n "$$admin_hash"; \
+	grep -qF "USER_PREPAINT_SCRIPT_HASH: &str = \"$$user_hash\"" backend/rust/crates/api/src/frontend.rs || { echo "Rust USER_PREPAINT_SCRIPT_HASH drifted from deploy-contract.mjs prepaintScriptHashes"; exit 1; }; \
+	grep -qF "ADMIN_PREPAINT_SCRIPT_HASH: &str = \"$$admin_hash\"" backend/rust/crates/api/src/frontend.rs || { echo "Rust ADMIN_PREPAINT_SCRIPT_HASH drifted from deploy-contract.mjs prepaintScriptHashes"; exit 1; }; \
 	echo "Deploy-seam contract copies are in lockstep."
 
 reference-oracle-check:

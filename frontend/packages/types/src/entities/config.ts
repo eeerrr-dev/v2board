@@ -78,7 +78,10 @@ export interface AdminConfigFlat {
   secure_path: string | null;
   frontend_theme_color: 'default' | 'darkblue' | 'black' | 'green';
   frontend_background_url: string | null;
-  frontend_custom_html: string | null;
+  chat_widget_provider: string | null;
+  chat_widget_crisp_website_id: string | null;
+  chat_widget_tawk_property_id: string | null;
+  chat_widget_tawk_widget_id: string | null;
   safe_mode_enable: 0 | 1;
   server_api_url: string | null;
   server_token: string | null;
@@ -161,7 +164,12 @@ export interface AdminConfigGroups {
   >;
   frontend: Pick<
     AdminConfigFlat,
-    'frontend_theme_color' | 'frontend_background_url' | 'frontend_custom_html'
+    | 'frontend_theme_color'
+    | 'frontend_background_url'
+    | 'chat_widget_provider'
+    | 'chat_widget_crisp_website_id'
+    | 'chat_widget_tawk_property_id'
+    | 'chat_widget_tawk_widget_id'
   >;
   server: Pick<
     AdminConfigFlat,

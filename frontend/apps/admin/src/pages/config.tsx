@@ -101,7 +101,7 @@ const SECTION_FIELDS = {
     'commission_distribution_l2',
     'commission_distribution_l3',
   ],
-  frontend: ['frontend_theme_color', 'frontend_background_url', 'frontend_custom_html'],
+  frontend: ['frontend_theme_color', 'frontend_background_url'],
   server: [
     'server_api_url',
     'server_token',
@@ -1492,15 +1492,8 @@ function FrontendSection({ ctx }: { ctx: FormCtx }) {
         description="将会在后台登录页面进行展示。"
         placeholder="https://xxxxx.com/wallpaper.png"
       />
-      <TextareaRow
-        ctx={ctx}
-        group="frontend"
-        field="frontend_custom_html"
-        title="自定义集成 HTML"
-        description="仅供可信运维人员集成统计、客服等代码；内容会原样注入用户端页面，请勿粘贴任何不可信 HTML 或脚本。"
-        placeholder="<!-- 仅粘贴经过审核的可信集成代码 -->"
-        rows={8}
-      />
+      {/* docs/api-dialect.md §10.5/§10.6: 自定义 HTML 注入已移除；聊天挂件改为
+          类型化的 chat_widget_* 配置，其编辑界面随 A4 的前端 SDK 加载一并落地。 */}
     </Section>
   );
 }

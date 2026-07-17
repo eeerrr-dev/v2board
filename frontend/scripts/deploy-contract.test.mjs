@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import {
   forbiddenLegacyNames,
   hashedAssetNamePattern,
+  prepaintScriptHashes,
   runtimeConfigToken,
 } from './deploy-contract.mjs';
 
@@ -53,4 +54,15 @@ test('contract constants keep their pinned shapes', () => {
   assert.equal(runtimeConfigToken, '__V2BOARD_RUNTIME_CONFIG__');
   assert.equal(forbiddenLegacyNames.length, 8);
   assert.ok(Object.isFrozen(forbiddenLegacyNames));
+});
+
+test('pre-paint CSP allowances stay per-app, frozen, and hash-shaped', () => {
+  // docs/api-dialect.md §10.5: one SHA-256 source allowance per app's inline
+  // pre-paint script. build-deploy.mjs recomputes these from the built HTML;
+  // make deploy-contract-audit pins the Rust CSP constants to them.
+  assert.deepEqual(Object.keys(prepaintScriptHashes).sort(), ['admin', 'user']);
+  assert.ok(Object.isFrozen(prepaintScriptHashes));
+  for (const hash of Object.values(prepaintScriptHashes)) {
+    assert.match(hash, /^sha256-[A-Za-z0-9+/]{43}=$/);
+  }
 });

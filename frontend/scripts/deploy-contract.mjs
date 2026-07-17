@@ -5,7 +5,8 @@
  * defense in depth: Rust must validate any installed tree, builder-produced or
  * not) and in the Makefile. `make deploy-contract-audit` fails when any copy
  * drifts:
- * - backend/rust/crates/api/src/frontend.rs            RUNTIME_CONFIG_TOKEN
+ * - backend/rust/crates/api/src/frontend.rs            RUNTIME_CONFIG_TOKEN,
+ *                                       USER_/ADMIN_PREPAINT_SCRIPT_HASH
  * - backend/rust/crates/provision/src/release_archive.rs is_forbidden_legacy_filename
  * - Makefile                                           FORBIDDEN_LEGACY_NAMES
  * The apps' index.html templates and their vite-config pin tests keep the raw
@@ -13,6 +14,19 @@
  */
 
 export const runtimeConfigToken = '__V2BOARD_RUNTIME_CONFIG__';
+
+/**
+ * SHA-256 CSP source allowances for each app's single executable inline
+ * script — the dark-mode pre-paint (docs/api-dialect.md §10.5). The apps
+ * currently share one script byte-for-byte, but the entries stay per-app
+ * because Vite may emit them differently. build-deploy.mjs recomputes each
+ * built index.html's hash and fails the build on drift; the Rust document CSP
+ * pins the same values (frontend.rs USER_/ADMIN_PREPAINT_SCRIPT_HASH).
+ */
+export const prepaintScriptHashes = Object.freeze({
+  user: 'sha256-xvE7y+NVTYJtOqEHosh/TIUayVxvwstXsS01qdJfcrc=',
+  admin: 'sha256-xvE7y+NVTYJtOqEHosh/TIUayVxvwstXsS01qdJfcrc=',
+});
 
 export const forbiddenLegacyNames = Object.freeze([
   'components.chunk.css',

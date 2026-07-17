@@ -202,6 +202,15 @@ mod tests {
                 response.headers().get(header::CACHE_CONTROL).unwrap(),
                 "no-store, max-age=0"
             );
+            // HTML documents carry the full §10.5 policy, not the middleware
+            // frame-ancestors baseline.
+            let csp = response
+                .headers()
+                .get(header::CONTENT_SECURITY_POLICY)
+                .unwrap()
+                .to_str()
+                .unwrap();
+            assert!(csp.starts_with("default-src 'self'; script-src 'self' 'sha256-"));
             assert!(body_string(response).await.contains("user-shell"));
         }
 

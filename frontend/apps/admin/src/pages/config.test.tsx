@@ -66,7 +66,10 @@ function makeConfig() {
     frontend: {
       frontend_theme_color: 'default',
       frontend_background_url: 'https://example.com/bg.png',
-      frontend_custom_html: '<script src="https://example.com/widget.js"></script>',
+      chat_widget_provider: null,
+      chat_widget_crisp_website_id: null,
+      chat_widget_tawk_property_id: null,
+      chat_widget_tawk_widget_id: null,
     },
     server: {
       server_api_url: 'https://node.example.com',
@@ -541,7 +544,7 @@ describe('SystemConfigPage', () => {
     expect(mocks.emailTemplatesRefetch).toHaveBeenCalledTimes(1);
   });
 
-  it('renders the native frontend color, background, and custom HTML controls', async () => {
+  it('renders the native frontend color and background controls without custom HTML', async () => {
     const user = userEvent.setup();
     render(<ConfigPage />);
 
@@ -549,18 +552,9 @@ describe('SystemConfigPage', () => {
 
     expect(screen.getByTestId('config-frontend_theme_color')).toBeInTheDocument();
     expect(screen.getByTestId('config-frontend_background_url')).toBeInTheDocument();
-    const customHtml = screen.getByTestId('config-frontend_custom_html');
-    expect(customHtml).toHaveValue('<script src="https://example.com/widget.js"></script>');
-    expect(screen.getByText(/仅供可信运维人员/)).toBeInTheDocument();
-
-    await user.clear(customHtml);
-    await user.type(customHtml, '<div data-widget="trusted" />');
-    await user.tab();
-    await waitFor(() =>
-      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({
-        frontend_custom_html: '<div data-widget="trusted" />',
-      }),
-    );
+    // docs/api-dialect.md §10.5: the custom HTML injection control is removed;
+    // the typed chat-widget editor ships with the A4 SDK loader.
+    expect(screen.queryByTestId('config-frontend_custom_html')).not.toBeInTheDocument();
   });
 
   it('hides the conditional child field until its toggle is on', async () => {

@@ -344,13 +344,12 @@ fn apply_security_response_headers(path: &str, headers: &mut HeaderMap) {
         header::X_FRAME_OPTIONS,
         HeaderValue::from_static("SAMEORIGIN"),
     );
-    // This CSP directive is additive to X-Frame-Options and deliberately does
-    // not constrain script/style sources, so operator-provided custom HTML
-    // remains compatible while modern browsers still enforce frame isolation.
-    headers.insert(
-        header::CONTENT_SECURITY_POLICY,
-        HeaderValue::from_static("frame-ancestors 'self'"),
-    );
+    // Baseline frame isolation for API and asset responses. HTML documents
+    // carry the full §10.5 policy set by `frontend::render`, which must win:
+    // only fill the header when the handler has not already claimed it.
+    headers
+        .entry(header::CONTENT_SECURITY_POLICY)
+        .or_insert(HeaderValue::from_static("frame-ancestors 'self'"));
     headers.insert(
         header::REFERRER_POLICY,
         HeaderValue::from_static("no-referrer"),
@@ -676,5 +675,18 @@ mod tests {
         apply_security_response_headers("/assets/user/index-deadbeef.js", &mut asset_headers);
         assert!(asset_headers.get("cache-control").is_none());
         assert_eq!(asset_headers.get("x-frame-options").unwrap(), "SAMEORIGIN");
+
+        // A handler-claimed CSP (the full §10.5 HTML document policy) must
+        // survive the middleware baseline.
+        let mut html_headers = HeaderMap::new();
+        html_headers.insert(
+            "content-security-policy",
+            HeaderValue::from_static("default-src 'self'"),
+        );
+        apply_security_response_headers("/", &mut html_headers);
+        assert_eq!(
+            html_headers.get("content-security-policy").unwrap(),
+            "default-src 'self'"
+        );
     }
 }

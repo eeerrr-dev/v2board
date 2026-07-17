@@ -808,7 +808,6 @@ const enUS: Translations = {
       telegram_bot_enable: '启用 Telegram Bot',
       telegram_bot_token: 'Bot Token',
       telegram_discuss_link: '群聊链接',
-      frontend_custom_html: '自定义 HTML',
       frontend_theme_color: '主题色',
       background_url: '背景图 URL',
     },

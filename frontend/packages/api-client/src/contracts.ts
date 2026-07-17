@@ -639,7 +639,12 @@ const subscribeConfigSchema = z.looseObject({
 const frontendConfigSchema = z.looseObject({
   frontend_theme_color: z.enum(['default', 'darkblue', 'black', 'green']),
   frontend_background_url: configNullableStringSchema,
-  frontend_custom_html: configNullableStringSchema,
+  // docs/api-dialect.md §10.6: typed chat-widget integration (custom_html is
+  // removed).
+  chat_widget_provider: configNullableStringSchema,
+  chat_widget_crisp_website_id: configNullableStringSchema,
+  chat_widget_tawk_property_id: configNullableStringSchema,
+  chat_widget_tawk_widget_id: configNullableStringSchema,
 });
 const serverConfigSchema = z.looseObject({
   server_api_url: configNullableStringSchema,

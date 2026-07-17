@@ -189,13 +189,9 @@ describe('user Vite dev optimizer', () => {
     expect(userDevTemplateSource).toContain(
       '<script id="v2board-runtime-config" type="application/json">__V2BOARD_RUNTIME_CONFIG__</script>',
     );
-    expect(userDevTemplateSource).toContain('<!-- V2BOARD_CUSTOM_HTML -->');
-    expect(userDevTemplateSource.indexOf('<div id="root"></div>')).toBeLessThan(
-      userDevTemplateSource.indexOf('<!-- V2BOARD_CUSTOM_HTML -->'),
-    );
-    expect(userDevTemplateSource.indexOf('<!-- V2BOARD_CUSTOM_HTML -->')).toBeLessThan(
-      userDevTemplateSource.indexOf('<script type="module"'),
-    );
+    // docs/api-dialect.md §10.5: operator custom_html is removed — the only
+    // injection point is the runtime-config data element above.
+    expect(userDevTemplateSource).not.toContain('V2BOARD_CUSTOM_HTML');
     expect(userDevTemplateSource).not.toContain('window.settings');
     expect(userDevTemplateSource).not.toContain('custom.css');
     expect(userDevTemplateSource).not.toContain('custom.js');

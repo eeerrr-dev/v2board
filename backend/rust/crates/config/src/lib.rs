@@ -174,7 +174,6 @@ pub const FILE_ONLY_RUNTIME_KEYS_V1: &[&str] = &[
     "server_v2ray_protocol",
     "frontend_theme_color",
     "frontend_background_url",
-    "frontend_custom_html",
     "frontend_admin_path",
     "secure_path",
     "safe_mode_enable",
@@ -316,7 +315,10 @@ pub const OPERATOR_CONFIG_KEYS_V1: &[&str] = &[
     "server_v2ray_protocol",
     "frontend_theme_color",
     "frontend_background_url",
-    "frontend_custom_html",
+    "chat_widget_provider",
+    "chat_widget_crisp_website_id",
+    "chat_widget_tawk_property_id",
+    "chat_widget_tawk_widget_id",
     "frontend_admin_path",
     "secure_path",
     "legacy_hash_redirect_enable",
@@ -545,7 +547,15 @@ pub struct AppConfig {
     pub server_v2ray_protocol: Option<String>,
     pub frontend_theme_color: Option<String>,
     pub frontend_background_url: Option<String>,
-    pub frontend_custom_html: Option<String>,
+    /// First-class chat-widget integration (docs/api-dialect.md §10.6):
+    /// `crisp` or `tawk`. Replaces the removed operator `custom_html`
+    /// injection path — the user SPA loads the provider SDK from typed
+    /// runtime config, and CSP gains the provider hosts only when a
+    /// provider is configured.
+    pub chat_widget_provider: Option<String>,
+    pub chat_widget_crisp_website_id: Option<String>,
+    pub chat_widget_tawk_property_id: Option<String>,
+    pub chat_widget_tawk_widget_id: Option<String>,
     pub frontend_admin_path: Option<String>,
     pub secure_path: Option<String>,
     /// docs/api-dialect.md §10.3: client-side `#/…` → history-URL translation
@@ -743,7 +753,10 @@ impl AppConfig {
             "server_v2ray_protocol": self.server_v2ray_protocol,
             "frontend_theme_color": self.frontend_theme_color,
             "frontend_background_url": self.frontend_background_url,
-            "frontend_custom_html": self.frontend_custom_html,
+            "chat_widget_provider": self.chat_widget_provider,
+            "chat_widget_crisp_website_id": self.chat_widget_crisp_website_id,
+            "chat_widget_tawk_property_id": self.chat_widget_tawk_property_id,
+            "chat_widget_tawk_widget_id": self.chat_widget_tawk_widget_id,
             "frontend_admin_path": self.frontend_admin_path,
             "secure_path": self.secure_path,
             "legacy_hash_redirect_enable": self.legacy_hash_redirect_enable,
@@ -1512,10 +1525,25 @@ impl AppConfig {
                 "frontend_background_url",
                 "V2BOARD_FRONTEND_BACKGROUND_URL",
             ),
-            frontend_custom_html: config_or_env(
+            chat_widget_provider: config_or_env(
                 &file_config,
-                "frontend_custom_html",
-                "V2BOARD_FRONTEND_CUSTOM_HTML",
+                "chat_widget_provider",
+                "V2BOARD_CHAT_WIDGET_PROVIDER",
+            ),
+            chat_widget_crisp_website_id: config_or_env(
+                &file_config,
+                "chat_widget_crisp_website_id",
+                "V2BOARD_CHAT_WIDGET_CRISP_WEBSITE_ID",
+            ),
+            chat_widget_tawk_property_id: config_or_env(
+                &file_config,
+                "chat_widget_tawk_property_id",
+                "V2BOARD_CHAT_WIDGET_TAWK_PROPERTY_ID",
+            ),
+            chat_widget_tawk_widget_id: config_or_env(
+                &file_config,
+                "chat_widget_tawk_widget_id",
+                "V2BOARD_CHAT_WIDGET_TAWK_WIDGET_ID",
             ),
             frontend_admin_path: config_or_env(
                 &file_config,
@@ -2402,7 +2430,90 @@ fn validate_operator_dependencies(config: &AppConfig) -> io::Result<()> {
             "email_username and email_password must be configured together",
         ));
     }
-    validate_admin_path_configuration(config)
+    validate_admin_path_configuration(config)?;
+    validate_chat_widget_configuration(config)
+}
+
+/// docs/api-dialect.md §10.6: the chat widget is typed configuration, not
+/// injected HTML. A configured provider must carry its complete, well-formed
+/// identifiers — the SPA builds the official embed from these values and the
+/// CSP allowlist widens per provider, so a malformed identifier must fail the
+/// config save instead of shipping a broken (or attacker-shaped) embed.
+fn validate_chat_widget_configuration(config: &AppConfig) -> io::Result<()> {
+    let trimmed = |value: Option<&str>| {
+        value
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_ascii_lowercase)
+    };
+    let Some(provider) = trimmed(config.chat_widget_provider.as_deref()) else {
+        return Ok(());
+    };
+    match provider.as_str() {
+        "crisp" => {
+            let website_id = config
+                .chat_widget_crisp_website_id
+                .as_deref()
+                .map(str::trim)
+                .unwrap_or_default();
+            if !is_uuid_shaped(website_id) {
+                return Err(invalid_setting(
+                    "chat_widget_crisp_website_id",
+                    "must be the Crisp website ID (UUID) when chat_widget_provider is `crisp`",
+                ));
+            }
+        }
+        "tawk" => {
+            let property_id = config
+                .chat_widget_tawk_property_id
+                .as_deref()
+                .map(str::trim)
+                .unwrap_or_default();
+            if property_id.len() != 24 || !property_id.bytes().all(|byte| byte.is_ascii_hexdigit())
+            {
+                return Err(invalid_setting(
+                    "chat_widget_tawk_property_id",
+                    "must be the 24-character hex Tawk property ID when chat_widget_provider is `tawk`",
+                ));
+            }
+            let widget_id = config
+                .chat_widget_tawk_widget_id
+                .as_deref()
+                .map(str::trim)
+                .unwrap_or_default();
+            if widget_id.is_empty()
+                || widget_id.len() > 64
+                || !widget_id
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+            {
+                return Err(invalid_setting(
+                    "chat_widget_tawk_widget_id",
+                    "must be 1-64 characters of ASCII letters, digits, '_', or '-' when chat_widget_provider is `tawk`",
+                ));
+            }
+        }
+        _ => {
+            return Err(invalid_setting(
+                "chat_widget_provider",
+                "must be `crisp` or `tawk`",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Canonical 8-4-4-4-12 hex UUID shape (Crisp website IDs).
+fn is_uuid_shaped(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 36
+        && bytes.iter().enumerate().all(|(index, byte)| {
+            if matches!(index, 8 | 13 | 18 | 23) {
+                *byte == b'-'
+            } else {
+                byte.is_ascii_hexdigit()
+            }
+        })
 }
 
 /// docs/api-dialect.md §10.2/§12: both admin-path knobs must satisfy
@@ -3619,6 +3730,50 @@ mod tests {
         config.secure_path = None;
         config.frontend_admin_path = None;
         assert!(validate_admin_path_configuration(&config).is_ok());
+    }
+
+    /// docs/api-dialect.md §10.6: a configured chat provider must carry its
+    /// complete, well-formed identifiers; anything else fails the config save.
+    #[test]
+    fn chat_widget_configuration_requires_complete_well_formed_provider_ids() {
+        let paths = RuntimePaths {
+            config: PathBuf::from("/tmp/not-read-by-config-map-parser.json"),
+            frontend: PathBuf::from("/tmp/frontend"),
+            rules: PathBuf::from("/tmp/rules"),
+        };
+        let mut config = AppConfig::try_from_api_config_map(Map::new(), paths)
+            .expect("development config parses");
+
+        // No provider: identifiers are irrelevant.
+        assert!(validate_chat_widget_configuration(&config).is_ok());
+        config.chat_widget_provider = Some("   ".to_string());
+        assert!(validate_chat_widget_configuration(&config).is_ok());
+
+        config.chat_widget_provider = Some("livechat".to_string());
+        let error = validate_chat_widget_configuration(&config).unwrap_err();
+        assert!(error.to_string().contains("chat_widget_provider"));
+
+        // Crisp requires a UUID-shaped website ID.
+        config.chat_widget_provider = Some("crisp".to_string());
+        assert!(validate_chat_widget_configuration(&config).is_err());
+        config.chat_widget_crisp_website_id = Some("not-a-uuid".to_string());
+        assert!(validate_chat_widget_configuration(&config).is_err());
+        config.chat_widget_crisp_website_id =
+            Some("a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d".to_string());
+        assert!(validate_chat_widget_configuration(&config).is_ok());
+
+        // Tawk requires the 24-hex property ID plus a bounded widget ID.
+        config.chat_widget_provider = Some("Tawk".to_string());
+        assert!(validate_chat_widget_configuration(&config).is_err());
+        config.chat_widget_tawk_property_id = Some("5f0c1d2e3a4b5c6d7e8f9a0b".to_string());
+        assert!(validate_chat_widget_configuration(&config).is_err());
+        config.chat_widget_tawk_widget_id = Some("default".to_string());
+        assert!(validate_chat_widget_configuration(&config).is_ok());
+        config.chat_widget_tawk_property_id = Some("nothexnothexnothexnothex".to_string());
+        assert!(validate_chat_widget_configuration(&config).is_err());
+        config.chat_widget_tawk_property_id = Some("5f0c1d2e3a4b5c6d7e8f9a0b".to_string());
+        config.chat_widget_tawk_widget_id = Some("bad widget!".to_string());
+        assert!(validate_chat_widget_configuration(&config).is_err());
     }
 
     fn subscribe_config(subscribe_url: Option<&str>) -> AppConfig {

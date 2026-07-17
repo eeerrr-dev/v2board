@@ -154,7 +154,6 @@
     "server_v2ray_protocol": null,
     "frontend_theme_color": "default",
     "frontend_background_url": null,
-    "frontend_custom_html": null,
     "frontend_admin_path": null,
     "secure_path": "REPLACE_WITH_PRIVATE_ADMIN_PATH",
     "safe_mode_enable": false,

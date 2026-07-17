@@ -80,7 +80,13 @@ impl AdminService {
             "frontend": {
                 "frontend_theme_color": self.config.frontend_theme_color,
                 "frontend_background_url": self.config.frontend_background_url,
-                "frontend_custom_html": self.config.frontend_custom_html,
+                // docs/api-dialect.md §10.6: typed chat-widget integration —
+                // the replacement for the removed `frontend_custom_html`
+                // injection path.
+                "chat_widget_provider": self.config.chat_widget_provider,
+                "chat_widget_crisp_website_id": self.config.chat_widget_crisp_website_id,
+                "chat_widget_tawk_property_id": self.config.chat_widget_tawk_property_id,
+                "chat_widget_tawk_widget_id": self.config.chat_widget_tawk_widget_id,
             },
             "server": {
                 "server_api_url": self.config.server_api_url,

@@ -1,4 +1,5 @@
 import { execSync, spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   chmod,
   lstat,
@@ -16,6 +17,7 @@ import { gzipSync } from 'node:zlib';
 import {
   forbiddenLegacyNames,
   hashedAssetNamePattern,
+  prepaintScriptHashes,
   runtimeConfigToken,
 } from './deploy-contract.mjs';
 import { releaseIdFromBuilds } from './release-content-id.mjs';
@@ -52,13 +54,13 @@ try {
     label: 'User',
     outDir: userStageOut,
     publicBase: '/assets/user/',
-    requiresCustomHtmlMarker: true,
+    prepaintScriptHash: prepaintScriptHashes.user,
   });
   const adminBuild = await validateViteBuild({
     label: 'Admin',
     outDir: adminStageOut,
     publicBase: '/assets/admin/',
-    requiresCustomHtmlMarker: false,
+    prepaintScriptHash: prepaintScriptHashes.admin,
   });
 
   for (const dir of [userStageOut, adminStageOut]) await rejectLegacyArtifacts(dir);
@@ -111,7 +113,7 @@ function runViteBuild(filter, outDir) {
   });
 }
 
-async function validateViteBuild({ label, outDir, publicBase, requiresCustomHtmlMarker }) {
+async function validateViteBuild({ label, outDir, publicBase, prepaintScriptHash }) {
   const manifestPath = join(outDir, 'manifest.json');
   const manifestSource = await readFile(manifestPath, 'utf8');
   const manifest = JSON.parse(manifestSource);
@@ -187,17 +189,13 @@ async function validateViteBuild({ label, outDir, publicBase, requiresCustomHtml
     `<script id="v2board-runtime-config" type="application/json">${runtimeConfigToken}</script>`,
     `${label} runtime config bootstrap`,
   );
-  if (requiresCustomHtmlMarker) {
-    assertExactlyOnce(indexSource, '<!-- V2BOARD_CUSTOM_HTML -->', `${label} custom HTML marker`);
-    const rootPosition = indexSource.indexOf('<div id="root"></div>');
-    const markerPosition = indexSource.indexOf('<!-- V2BOARD_CUSTOM_HTML -->');
-    if (rootPosition === -1 || markerPosition < rootPosition) {
-      throw new Error(`${label} custom HTML marker must follow #root`);
-    }
+  if (indexSource.includes('V2BOARD_CUSTOM_HTML')) {
+    throw new Error(`${label} index.html retains the retired custom HTML marker`);
   }
   if (indexSource.includes('window.settings')) {
     throw new Error(`${label} index.html retains the retired window.settings bootstrap`);
   }
+  assertPrepaintScriptHash(label, indexSource, prepaintScriptHash);
 
   const htmlAssets = await validateHtmlAssets(label, indexSource, outDir, publicBase);
   for (const asset of [entry.file, ...(entry.css ?? [])]) {
@@ -385,6 +383,39 @@ async function collectBuildFiles(directory, rootDirectory = directory, files = [
     }
   }
   return files.sort();
+}
+
+/**
+ * The built document may carry exactly one executable inline script — the
+ * dark-mode pre-paint — and its bytes must hash to the CSP allowance pinned in
+ * deploy-contract.mjs (docs/api-dialect.md §10.5). The runtime-config element
+ * is `type="application/json"` (a non-executing data element) and needs no
+ * allowance. A drifted inline script fails the build here, not in the browser.
+ */
+function assertPrepaintScriptHash(label, html, expectedHash) {
+  const executableInlineScripts = [];
+  const pattern = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
+  for (const match of html.matchAll(pattern)) {
+    const attributes = match[1];
+    if (/\bsrc\s*=/i.test(attributes)) continue;
+    const type = /\btype\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(attributes);
+    const typeValue = type ? (type[1] ?? type[2]) : null;
+    if (typeValue !== null && !/^(?:module|text\/javascript)$/i.test(typeValue)) continue;
+    executableInlineScripts.push(match[2]);
+  }
+  if (executableInlineScripts.length !== 1) {
+    throw new Error(
+      `${label} index.html must contain exactly one executable inline script ` +
+        `(the dark-mode pre-paint), found ${executableInlineScripts.length}`,
+    );
+  }
+  const hash = `sha256-${createHash('sha256').update(executableInlineScripts[0], 'utf8').digest('base64')}`;
+  if (hash !== expectedHash) {
+    throw new Error(
+      `${label} inline pre-paint script hashes to ${hash}, but the deploy contract pins ` +
+        `${expectedHash}; update prepaintScriptHashes and the Rust CSP constants together`,
+    );
+  }
 }
 
 function assertExactlyOnce(source, value, label) {
