@@ -52,8 +52,9 @@ export function deriveDashboardSubscription(sub: Subscribe): DashboardSubscripti
   };
 }
 
-export function isSubscriptionExpired(expiredAt: number | null | undefined) {
-  return expiredAt !== null && expiredAt !== undefined && expiredAt < Date.now() / 1000;
+// `expired_at` is an RFC 3339 string since W5 (§4.5); null means "never".
+export function isSubscriptionExpired(expiredAt: string | null | undefined) {
+  return expiredAt !== null && expiredAt !== undefined && Date.parse(expiredAt) < Date.now();
 }
 
 export function getTrafficTone(usedPctRounded: number): TrafficTone {
@@ -62,8 +63,11 @@ export function getTrafficTone(usedPctRounded: number): TrafficTone {
   return 'success';
 }
 
-export function getSubscriptionDaysLeft(timestamp: number | string | null | undefined) {
-  return ((Number(timestamp) - Math.floor(Date.now() / 1000)) / 86400).toFixed(0);
+export function getSubscriptionDaysLeft(timestamp: string | null | undefined) {
+  // A null/absent expiry renders 'NaN' — callers only surface this value when
+  // an expiry exists, matching the legacy behavior.
+  const millis = timestamp == null ? Number.NaN : Date.parse(timestamp);
+  return ((millis - Date.now()) / 86_400_000).toFixed(0);
 }
 
 export function isSubscriptionRenewable(subscribe: Subscribe) {

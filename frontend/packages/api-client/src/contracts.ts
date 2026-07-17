@@ -48,7 +48,7 @@ export const noContentSchema = z.undefined();
 
 // Deliberately excludes the permanent subscription credential (`users.token`):
 // the Rust backend no longer returns it from login/register/token-login, and
-// the subscribe URL is fetched separately through /user/getSubscribe.
+// the subscribe URL is fetched separately through /user/subscription.
 export const authDataSchema = z.looseObject({
   is_admin: z.boolean(),
   auth_data: z.string().min(1),
@@ -89,17 +89,21 @@ export const guestConfigSchema = z.looseObject({
   logo: nullableString,
 });
 
-export const userInfoSchema = z.looseObject({
+/**
+ * GET /user/profile (docs/api-dialect.md §5.3, W5): bare body, boolean flags
+ * (§4.1), RFC 3339 timestamps (§4.5). Money stays integer cents.
+ */
+export const userProfileSchema = z.looseObject({
   email: z.string(),
   transfer_enable: z.number(),
   device_limit: nullableNumber,
-  last_login_at: nullableNumber,
-  created_at: z.number(),
-  banned: binaryFlagSchema,
-  auto_renewal: binaryFlagSchema,
-  remind_expire: binaryFlagSchema,
-  remind_traffic: binaryFlagSchema,
-  expired_at: nullableNumber,
+  last_login_at: nullableString,
+  created_at: z.string(),
+  banned: z.boolean(),
+  auto_renewal: z.boolean(),
+  remind_expire: z.boolean(),
+  remind_traffic: z.boolean(),
+  expired_at: nullableString,
   balance: z.number(),
   commission_balance: z.number(),
   plan_id: nullableNumber,
@@ -123,8 +127,8 @@ export const planPeriodSchema = z.enum([
 
 /**
  * Legacy-dialect plan rows (numeric flags, epoch timestamps): still delivered
- * by /user/getSubscribe (W5) and admin /plan/fetch (W11). The user commerce
- * routes moved to {@link userPlanSchema} with W4.
+ * by admin /plan/fetch (W11). The user commerce routes moved to
+ * {@link userPlanSchema} with W4, the subscription's nested plan with W5.
  */
 export const planSchema = z.looseObject({
   id: z.number(),
@@ -186,31 +190,47 @@ export const userPlanSchema = z.looseObject({
   updated_at: z.string(),
 });
 
-export const subscribeInfoSchema = z.looseObject({
+/**
+ * GET /user/subscription (docs/api-dialect.md §5.4, W5): bare body, boolean
+ * `allow_new_period` (§4.1), RFC 3339 `expired_at` (§4.5), explicit-null
+ * `plan` on the modern §5.5 shape. The `subscribe_url`/token scheme inside
+ * stays frozen (§2).
+ */
+export const subscriptionSchema = z.looseObject({
   plan_id: nullableNumber,
   token: z.string(),
-  expired_at: nullableNumber,
+  expired_at: nullableString,
   u: z.number(),
   d: z.number(),
   transfer_enable: z.number(),
   device_limit: nullableNumber,
   email: z.string(),
   uuid: z.string(),
-  plan: planSchema.optional(),
+  plan: userPlanSchema.nullable(),
   alive_ip: z.number(),
   subscribe_url: z.string(),
   reset_day: nullableNumber,
-  allow_new_period: binaryFlagSchema,
+  allow_new_period: z.boolean(),
 });
 
+/**
+ * POST /user/subscription/reset-token (docs/api-dialect.md §9.4, W5): the
+ * legacy bare URL string became a named object.
+ */
+export const resetSubscribeTokenSchema = z.looseObject({ subscribe_url: z.string() });
+
+/**
+ * One GET /user/sessions entry (docs/api-dialect.md §5.3/§9.4, W5): the
+ * legacy digest-keyed map became an array carrying `session_id`; `login_at`
+ * is RFC 3339 and the redacted `auth_data` filler died.
+ */
 export const activeSessionSchema = z.looseObject({
+  session_id: z.string(),
   ip: z.string(),
-  login_at: z.number(),
   ua: z.string(),
-  auth_data: z.string(),
+  login_at: z.string(),
   current: z.boolean(),
 });
-export const activeSessionMapSchema = z.record(z.string(), activeSessionSchema);
 
 /**
  * User order rows from GET /user/orders[/{trade_no}] (docs/api-dialect.md
@@ -561,7 +581,12 @@ export const userCommConfigSchema = z.looseObject({
   commission_distribution_l3: nullableNumber,
 });
 
-export const userStatTupleSchema = z.tuple([z.number(), z.number(), z.number()]);
+/** GET /user/stats (docs/api-dialect.md §9.1, W5): the named-count object. */
+export const userStatsSchema = z.looseObject({
+  pending_order_count: z.number(),
+  pending_ticket_count: z.number(),
+  invited_user_count: z.number(),
+});
 export const telegramBotInfoSchema = z.looseObject({ username: z.string() });
 
 export const adminUserBaseSchema = z.looseObject({
@@ -886,7 +911,11 @@ export const testMailEnvelopeSchema = envelopeSchema(trueSchema).extend({
   log: testMailLogSchema.optional(),
 });
 
-export const redeemGiftCardEnvelopeSchema = envelopeSchema(trueSchema).extend({
+/**
+ * POST /user/gift-card-redemptions (docs/api-dialect.md §9.4, W5): the legacy
+ * `{data: true, type, value}` envelope extras became this bare named object.
+ */
+export const giftCardRedemptionSchema = z.looseObject({
   type: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]),
   value: nullableNumber,
 });

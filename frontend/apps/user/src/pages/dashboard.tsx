@@ -56,8 +56,8 @@ export default function DashboardPage() {
   const [confirmAction, setConfirmAction] = useState<DashboardConfirmAction>(null);
   const [subscribeOpen, setSubscribeOpen] = useState(false);
 
-  const pendingOrderCount = stat.data?.pending_orders ?? 0;
-  const openTicketCount = stat.data?.pending_tickets ?? 0;
+  const pendingOrderCount = stat.data?.pending_order_count ?? 0;
+  const openTicketCount = stat.data?.pending_ticket_count ?? 0;
   const sub = subscribe.data;
   const hasSubscribeData = Boolean(sub?.email);
   const hasPlan = Boolean(sub?.plan_id);

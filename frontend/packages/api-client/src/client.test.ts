@@ -223,38 +223,38 @@ describe('createApiClient', () => {
     expect(endpoints.getQuickLoginUrl).toBeUndefined();
   });
 
-  it('fetches the active-session map with the backend contract shape', async () => {
+  it('fetches the active-session array as bare dialect data', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
-    const sessions = {
-      'guid-1': {
+    const sessions = [
+      {
+        session_id: 'guid-1',
         ip: '1.1.1.1',
-        login_at: 1000,
         ua: 'Chrome',
-        auth_data: '',
+        login_at: '2026-01-01T00:00:00Z',
         current: true,
       },
-      'guid-2': {
+      {
+        session_id: 'guid-2',
         ip: '2.2.2.2',
-        login_at: 2000,
         ua: 'Firefox',
-        auth_data: '',
+        login_at: '2025-12-31T00:00:00Z',
         current: false,
       },
-    };
-    mock.onGet('/user/getActiveSession').reply(200, { data: sessions });
+    ];
+    mock.onGet('/user/sessions').reply(200, sessions);
 
     await expect(userEndpoints.getActiveSession(client)).resolves.toEqual(sessions);
   });
 
-  it('revokes an active session by posting its session_id', async () => {
+  it('revokes an active session via DELETE /user/sessions/{session_id}', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/user/removeActiveSession').reply(200, { data: true });
+    mock.onDelete('/user/sessions/guid-2').reply(204);
 
-    await expect(userEndpoints.removeActiveSession(client, 'guid-2')).resolves.toBe(true);
+    await expect(userEndpoints.removeActiveSession(client, 'guid-2')).resolves.toBeUndefined();
 
-    expect(mock.history.post[0]?.data).toBe('session_id=guid-2');
+    expect(mock.history.delete[0]?.url).toBe('/user/sessions/guid-2');
   });
 
   it('revokes the current session via DELETE /auth/session with an explicitly captured bearer', async () => {
@@ -615,16 +615,16 @@ describe('createApiClient', () => {
     expect(mock.history.post).toHaveLength(0);
   });
 
-  it('keeps redeem gift card type and value on the legacy response envelope', async () => {
+  it('redeems a gift card as a dialect JSON request with the bare body', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/user/redeemgiftcard').reply(200, { data: true, type: 1, value: 1234 });
+    mock.onPost('/user/gift-card-redemptions').reply(200, { type: 1, value: 1234 });
 
     await expect(userEndpoints.redeemGiftCard(client, 'CARD-123')).resolves.toEqual({
       type: 1,
       value: 1234,
     });
-    expect(mock.history.post[0]?.data).toBe('giftcard=CARD-123');
+    expect(JSON.parse(String(mock.history.post[0]?.data))).toEqual({ giftcard: 'CARD-123' });
   });
 
   it('treats HTTP 201 as a legacy request failure', async () => {
@@ -644,15 +644,15 @@ describe('createApiClient', () => {
       getLocale: () => 'zh-CN',
     });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/user/update').reply(200, { data: true });
+    mock.onPost('/user/transfer').reply(200, { data: true });
     await client.request({
-      url: '/user/update',
+      url: '/user/transfer',
       method: 'POST',
-      data: { remind_expire: 1 },
+      data: { transfer_amount: 100 },
       responseSchema: trueSchema,
     });
     const request = mock.history.post[0]!;
-    expect(request.data).toBe('remind_expire=1');
+    expect(request.data).toBe('transfer_amount=100');
     // §4.2: the stored value stays raw; the wire always carries the scheme.
     expect(request.headers?.authorization).toBe('Bearer auth');
     // §4.3: Accept-Language is the locale signal; Content-Language rides along
@@ -771,9 +771,9 @@ describe('createApiClient', () => {
   it('sends empty POST requests as legacy form requests', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/user/newPeriod').reply(200, { data: true });
+    mock.onPost('/user/invite/save').reply(200, { data: true });
     await client.request({
-      url: '/user/newPeriod',
+      url: '/user/invite/save',
       method: 'POST',
       responseSchema: trueSchema,
     });
@@ -920,19 +920,19 @@ describe('createApiClient', () => {
   it('uses the first legacy validation error as the ApiError message', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/user/changePassword').reply(422, {
+    mock.onPost('/user/transfer').reply(422, {
       message: 'validation failed',
-      errors: { old_password: ['Old password cannot be empty'] },
+      errors: { transfer_amount: ['Transfer amount cannot be empty'] },
     });
     await expect(
       client.request({
-        url: '/user/changePassword',
+        url: '/user/transfer',
         method: 'POST',
-        data: { old_password: '', new_password: 'x' },
+        data: { transfer_amount: '' },
         responseSchema: z.unknown(),
       }),
     ).rejects.toMatchObject({
-      message: 'Old password cannot be empty',
+      message: 'Transfer amount cannot be empty',
     });
   });
 

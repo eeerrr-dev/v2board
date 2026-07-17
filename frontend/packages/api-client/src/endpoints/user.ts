@@ -16,13 +16,14 @@ import type { output } from 'zod';
 import { bearerAuthorization, pageSchema } from '../dialect';
 import { decimalToCents } from '../money';
 import {
-  activeSessionMapSchema,
+  activeSessionSchema,
   arraySchema,
   availableServerSchema,
   booleanSchema,
   checkoutResultSchema,
   commissionDetailSchema,
   createdOrderSchema,
+  giftCardRedemptionSchema,
   inviteFetchSchema,
   knowledgeCategorySchema,
   knowledgeSchema,
@@ -31,48 +32,44 @@ import {
   orderStatusSchema,
   pageEnvelopeSchema,
   paymentMethodSchema,
-  redeemGiftCardEnvelopeSchema,
+  resetSubscribeTokenSchema,
   sessionStateSchema,
-  stringSchema,
   stripePaymentIntentSchema,
-  subscribeInfoSchema,
+  subscriptionSchema,
   telegramBotInfoSchema,
   ticketSchema,
   trafficLogSchema,
   trueSchema,
   userCommConfigSchema,
   userCouponSchema,
-  userInfoSchema,
   userOrderSchema,
   userOrdersSchema,
   userPlanSchema,
-  userStatTupleSchema,
+  userProfileSchema,
+  userStatsSchema,
 } from '../contracts';
 
 type QueryRequestConfig = Pick<ApiRequestConfig, 'signal'>;
 
+/** GET /user/profile — dialect v2 bare profile (docs/api-dialect.md §5.3, W5). */
 export const info = (client: ApiClient, config?: QueryRequestConfig) =>
   client.request({
-    url: '/user/info',
+    url: '/user/profile',
     method: 'GET',
-    responseSchema: userInfoSchema,
+    dialect: 'v2',
+    responseSchema: userProfileSchema,
     ...config,
   });
 
-export const getStat = (client: ApiClient, config?: QueryRequestConfig) =>
-  // The backend returns a [pending_orders, pending_tickets, invited_count]
-  // tuple; only the first two are surfaced in the UI.
-  client
-    .request({
-      url: '/user/getStat',
-      method: 'GET',
-      responseSchema: userStatTupleSchema,
-      ...config,
-    })
-    .then(([pending_orders, pending_tickets]): UserStat => ({
-      pending_orders,
-      pending_tickets,
-    }));
+/** GET /user/stats — dialect v2 named counts (§9.1, W5). */
+export const getStat = (client: ApiClient, config?: QueryRequestConfig): Promise<UserStat> =>
+  client.request({
+    url: '/user/stats',
+    method: 'GET',
+    dialect: 'v2',
+    responseSchema: userStatsSchema,
+    ...config,
+  });
 
 // Session probe (GET /auth/session, dialect v2 — the checkLogin successor).
 // A dead or absent bearer is data ({is_login: false}), never a 401.
@@ -85,32 +82,52 @@ export const checkLogin = (client: ApiClient, config?: QueryRequestConfig) =>
     ...config,
   });
 
+/** GET /user/subscription — dialect v2 bare body, explicit-null plan (§5.4, W5). */
 export const getSubscribe = (client: ApiClient, config?: QueryRequestConfig) =>
   client.request({
-    url: '/user/getSubscribe',
+    url: '/user/subscription',
     method: 'GET',
-    responseSchema: subscribeInfoSchema,
+    dialect: 'v2',
+    responseSchema: subscriptionSchema,
     ...config,
   });
 
+/**
+ * PATCH /user/profile — dialect v2, 204 (§5.3, W5). §4.4 double-Option: an
+ * absent flag retains the stored value, so callers send only what changed.
+ */
 export const update = (client: ApiClient, payload: UserUpdatePayload) =>
   client.request({
-    url: '/user/update',
-    method: 'POST',
+    url: '/user/profile',
+    method: 'PATCH',
+    dialect: 'v2',
     data: payload,
-    responseSchema: trueSchema,
+    responseSchema: noContentSchema,
   });
 
+/** PUT /user/password — dialect v2, 204 (§5.3, W5). */
 export const changePassword = (client: ApiClient, old_password: string, new_password: string) =>
   client.request({
-    url: '/user/changePassword',
-    method: 'POST',
+    url: '/user/password',
+    method: 'PUT',
+    dialect: 'v2',
     data: { old_password, new_password },
-    responseSchema: trueSchema,
+    responseSchema: noContentSchema,
   });
 
+/**
+ * POST /user/subscription/reset-token — dialect v2 (§9.4, W5): rotates the
+ * subscribe token and returns the freshly minted URL as `{subscribe_url}`.
+ */
 export const resetSecurity = (client: ApiClient) =>
-  client.request({ url: '/user/resetSecurity', method: 'GET', responseSchema: stringSchema });
+  client
+    .request({
+      url: '/user/subscription/reset-token',
+      method: 'POST',
+      dialect: 'v2',
+      responseSchema: resetSubscribeTokenSchema,
+    })
+    .then((body) => body.subscribe_url);
 
 export const transfer = (client: ApiClient, transferAmount: number | string | undefined) =>
   client.request({
@@ -120,29 +137,38 @@ export const transfer = (client: ApiClient, transferAmount: number | string | un
     responseSchema: trueSchema,
   });
 
+/** POST /user/subscription/new-period — dialect v2, 204 (§5.4, W5). */
 export const newPeriod = (client: ApiClient) =>
-  client.request({ url: '/user/newPeriod', method: 'POST', responseSchema: trueSchema });
+  client.request({
+    url: '/user/subscription/new-period',
+    method: 'POST',
+    dialect: 'v2',
+    responseSchema: noContentSchema,
+  });
 
-export type RedeemGiftCardResult = Pick<
-  output<typeof redeemGiftCardEnvelopeSchema>,
-  'type' | 'value'
->;
+export type RedeemGiftCardResult = output<typeof giftCardRedemptionSchema>;
 
-export const redeemGiftCard = async (
+/** POST /user/gift-card-redemptions — dialect v2 bare `{type, value}` (§9.4, W5). */
+export const redeemGiftCard = (
   client: ApiClient,
   giftcard: string,
-): Promise<RedeemGiftCardResult> => {
-  const env = await client.requestEnvelope({
-    url: '/user/redeemgiftcard',
+): Promise<RedeemGiftCardResult> =>
+  client.request({
+    url: '/user/gift-card-redemptions',
     method: 'POST',
+    dialect: 'v2',
     data: { giftcard },
-    responseSchema: redeemGiftCardEnvelopeSchema,
+    responseSchema: giftCardRedemptionSchema,
   });
-  return { type: env.type, value: env.value };
-};
 
+/** DELETE /user/telegram-binding — dialect v2, 204 (§5.3, W5). */
 export const unbindTelegram = (client: ApiClient) =>
-  client.request({ url: '/user/unbindTelegram', method: 'GET', responseSchema: trueSchema });
+  client.request({
+    url: '/user/telegram-binding',
+    method: 'DELETE',
+    dialect: 'v2',
+    responseSchema: noContentSchema,
+  });
 
 // Explicit sign-out: best-effort server-side revocation of the current opaque
 // session (DELETE /auth/session, 204 — a Rust-only endpoint; the legacy API
@@ -162,20 +188,23 @@ export const logout = (client: ApiClient, capturedAuthData?: string | null) => {
   });
 };
 
+/** GET /user/sessions — dialect v2 array with `session_id` (§9.4, W5). */
 export const getActiveSession = (client: ApiClient, config?: QueryRequestConfig) =>
   client.request({
-    url: '/user/getActiveSession',
+    url: '/user/sessions',
     method: 'GET',
-    responseSchema: activeSessionMapSchema,
+    dialect: 'v2',
+    responseSchema: arraySchema(activeSessionSchema),
     ...config,
   });
 
+/** DELETE /user/sessions/{session_id} — dialect v2, 204, idempotent (§9.4, W5). */
 export const removeActiveSession = (client: ApiClient, session_id: string) =>
   client.request({
-    url: '/user/removeActiveSession',
-    method: 'POST',
-    data: { session_id },
-    responseSchema: booleanSchema,
+    url: `/user/sessions/${encodeURIComponent(session_id)}`,
+    method: 'DELETE',
+    dialect: 'v2',
+    responseSchema: noContentSchema,
   });
 
 /** GET /user/plans — dialect v2 bare array (docs/api-dialect.md §5.5, W4). */

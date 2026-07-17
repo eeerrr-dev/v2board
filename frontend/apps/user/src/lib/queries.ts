@@ -50,8 +50,9 @@ export function reportUserInfoToChat(info: UserInfo) {
 export function reportSubscribeToChat(data: SubscribeInfo) {
   if (!window.$crisp) return;
   // The external chat contract formats `expired_at` in local time; a null expiry
-  // becomes the epoch date (there is intentionally no '-' fallback here).
-  const expireTime = dayjs((data.expired_at ?? 0) * 1000).format('YYYY-MM-DD');
+  // becomes the epoch date (there is intentionally no '-' fallback here). The
+  // wire value is RFC 3339 (§4.5); the Crisp 'YYYY-MM-DD' output stays frozen.
+  const expireTime = dayjs(data.expired_at ?? 0).format('YYYY-MM-DD');
   window.$crisp.push([
     'set',
     'session:data',
@@ -543,7 +544,7 @@ export function useRemoveSessionMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (sessionId: string) => user.removeActiveSession(apiClient, sessionId),
-    // Revoking drops one entry from the session map; invalidate so the list
+    // Revoking drops one entry from the session list; invalidate so the list
     // refetches instead of the call site wiring its own refresh.
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: userKeys.sessions });

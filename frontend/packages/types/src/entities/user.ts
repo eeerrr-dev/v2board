@@ -1,16 +1,20 @@
-import type { Plan } from './plan';
+import type { UserPlan } from './plan';
 
+/**
+ * GET /user/profile (docs/api-dialect.md §5.3, W5): boolean flags (§4.1) and
+ * RFC 3339 timestamps (§4.5). Money stays integer cents.
+ */
 export interface UserInfo {
   email: string;
   transfer_enable: number;
   device_limit: number | null;
-  last_login_at: number | null;
-  created_at: number;
-  banned: 0 | 1;
-  auto_renewal: 0 | 1;
-  remind_expire: 0 | 1;
-  remind_traffic: 0 | 1;
-  expired_at: number | null;
+  last_login_at: string | null;
+  created_at: string;
+  banned: boolean;
+  auto_renewal: boolean;
+  remind_expire: boolean;
+  remind_traffic: boolean;
+  expired_at: string | null;
   balance: number;
   commission_balance: number;
   plan_id: number | null;
@@ -21,45 +25,56 @@ export interface UserInfo {
   avatar_url: string;
 }
 
+/** GET /user/stats (docs/api-dialect.md §9.1, W5): the named-count object. */
 export interface UserStat {
-  pending_orders: number;
-  pending_tickets: number;
+  pending_order_count: number;
+  pending_ticket_count: number;
+  invited_user_count: number;
 }
 
-// One entry from the backend USER_SESSIONS cache map (AuthService::sessions).
-// The requesting session is identified explicitly; `auth_data` is retained only
-// as the backend's redacted response-shape field and is never used as a bearer.
+/**
+ * One entry from GET /user/sessions (docs/api-dialect.md §5.3/§9.4, W5): the
+ * legacy map key is `session_id`, `login_at` is RFC 3339, and the redacted
+ * `auth_data` filler died with the map shape.
+ */
 export interface ActiveSession {
+  session_id: string;
   ip: string;
-  login_at: number;
   ua: string;
-  auth_data: string;
+  login_at: string;
   current: boolean;
 }
 
-export type ActiveSessionMap = Record<string, ActiveSession>;
-
+/**
+ * GET /user/subscription (docs/api-dialect.md §5.4, W5): boolean
+ * `allow_new_period`, RFC 3339 `expired_at`, explicit-null `plan` on the
+ * modern §5.5 shape. The `subscribe_url`/token scheme inside stays frozen.
+ */
 export interface SubscribeInfo {
   plan_id: number | null;
   token: string;
-  expired_at: number | null;
+  expired_at: string | null;
   u: number;
   d: number;
   transfer_enable: number;
   device_limit: number | null;
   email: string;
   uuid: string;
-  plan?: Plan;
+  plan: UserPlan | null;
   alive_ip: number;
   subscribe_url: string;
   reset_day: number | null;
-  allow_new_period: 0 | 1;
+  allow_new_period: boolean;
 }
 
+/**
+ * PATCH /user/profile (docs/api-dialect.md §5.3, W5): boolean preference
+ * flags; an absent field retains the stored value (§4.4).
+ */
 export interface UserUpdatePayload {
-  auto_renewal?: 0 | 1;
-  remind_expire?: 0 | 1;
-  remind_traffic?: 0 | 1;
+  auto_renewal?: boolean;
+  remind_expire?: boolean;
+  remind_traffic?: boolean;
 }
 
 export interface AdminUserRow {

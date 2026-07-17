@@ -15,8 +15,9 @@ export function ResetSubscribeCard({ className }: { className?: string }) {
 
   const onConfirmReset = () => {
     setConfirmOpen(false);
-    // The reset-security token rotation (/user/resetSecurity) is the Tier-1
-    // payload here; the shared mutation error presenter owns failures.
+    // The subscribe-token rotation (POST /user/subscription/reset-token) is
+    // the Tier-1 outcome here; the shared mutation error presenter owns
+    // failures.
     resetSub.mutate(undefined, {
       onSuccess: () => {
         toast.success(t(($) => $.profile.reset_success));

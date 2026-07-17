@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { deriveDashboardSubscription } from './dashboard-subscription';
 
-const FUTURE = 9_999_999_999;
+const FUTURE = '2286-11-20T17:46:39Z';
 type Subscribe = NonNullable<Parameters<typeof deriveDashboardSubscription>[0]>;
 type Plan = NonNullable<Subscribe['plan']>;
 
@@ -16,8 +16,8 @@ function makeSub(overrides: { u?: number; d?: number } = {}): Subscribe {
     name: 'Plan',
     sort: null,
     reset_price: 100,
-    renew: 1,
-    show: 1,
+    renew: true,
+    show: true,
     content: null,
     month_price: 1_000,
     quarter_price: null,
@@ -27,8 +27,8 @@ function makeSub(overrides: { u?: number; d?: number } = {}): Subscribe {
     three_year_price: null,
     onetime_price: null,
     capacity_limit: null,
-    created_at: 0,
-    updated_at: 0,
+    created_at: '1970-01-01T00:00:00Z',
+    updated_at: '1970-01-01T00:00:00Z',
   };
   return {
     plan_id: 1,
@@ -44,7 +44,7 @@ function makeSub(overrides: { u?: number; d?: number } = {}): Subscribe {
     alive_ip: 0,
     subscribe_url: 'https://example.com/sub',
     reset_day: null,
-    allow_new_period: 1,
+    allow_new_period: true,
     ...overrides,
   };
 }

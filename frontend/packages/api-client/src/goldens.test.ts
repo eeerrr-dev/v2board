@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
+  activeSessionSchema,
   adminKnowledgeSchema,
   adminKnowledgeSummarySchema,
   adminNoticeSchema,
@@ -16,6 +17,7 @@ import {
   couponSchema,
   createdOrderSchema,
   envelopeSchema,
+  giftCardRedemptionSchema,
   giftcardSchema,
   guestConfigSchema,
   knowledgeCategorySchema,
@@ -26,23 +28,25 @@ import {
   paymentMethodSchema,
   planSchema,
   quickLoginUrlSchema,
+  resetSubscribeTokenSchema,
   serverGroupSchema,
   serverNodeSchema,
   serverRouteSchema,
   sessionStateSchema,
   stepUpGrantSchema,
   stringArraySchema,
-  subscribeInfoSchema,
+  subscriptionSchema,
   telegramBotInfoSchema,
   ticketSchema,
   stripePaymentIntentSchema,
   trafficLogSchema,
   userCommConfigSchema,
   userCouponSchema,
-  userInfoSchema,
   userOrderSchema,
   userOrdersSchema,
   userPlanSchema,
+  userProfileSchema,
+  userStatsSchema,
 } from './contracts';
 import { pageSchema, problemDetailsSchema } from './dialect';
 
@@ -80,8 +84,6 @@ const goldenSchemas: Record<string, z.ZodType> = {
   'admin.user.getUserInfoById.json': envelopeSchema(adminUserDetailSchema),
   'admin.user.getUserInfoById.no-inviter.json': envelopeSchema(adminUserDetailSchema),
   // Pure serde wire bodies (v2board-api golden_wire test).
-  'user.getSubscribe.json': envelopeSchema(subscribeInfoSchema),
-  'user.info.json': envelopeSchema(userInfoSchema),
   'user.stat.getTrafficLog.json': envelopeSchema(arraySchema(trafficLogSchema)),
 };
 
@@ -101,6 +103,7 @@ const dialectGoldenSchemas: Record<string, z.ZodType> = {
   'public.config.whitelist-disabled.json': guestConfigSchema,
   'user.config.json': userCommConfigSchema,
   'user.coupons.check.json': userCouponSchema,
+  'user.gift-card-redemptions.create.json': giftCardRedemptionSchema,
   'user.knowledge-categories.json': arraySchema(z.looseObject({ category: z.string() })),
   'user.knowledge.detail.json': knowledgeSchema,
   'user.knowledge.json': knowledgeCategorySchema,
@@ -117,6 +120,11 @@ const dialectGoldenSchemas: Record<string, z.ZodType> = {
   'user.payment-methods.json': arraySchema(paymentMethodSchema),
   'user.plans.detail.json': userPlanSchema,
   'user.plans.json': arraySchema(userPlanSchema),
+  'user.profile.json': userProfileSchema,
+  'user.sessions.json': arraySchema(activeSessionSchema),
+  'user.stats.json': userStatsSchema,
+  'user.subscription.json': subscriptionSchema,
+  'user.subscription.reset-token.json': resetSubscribeTokenSchema,
   'user.telegram-bot.json': telegramBotInfoSchema,
 };
 

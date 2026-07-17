@@ -51,7 +51,11 @@ vi.mock('@v2board/api-client', async (importOriginal) => {
 beforeEach(() => {
   sessionApi.commConfig.mockResolvedValue({});
   sessionApi.fetchNotices.mockResolvedValue([]);
-  sessionApi.getStat.mockResolvedValue({ pending_orders: 0, pending_tickets: 0 });
+  sessionApi.getStat.mockResolvedValue({
+    pending_order_count: 0,
+    pending_ticket_count: 0,
+    invited_user_count: 0,
+  });
   sessionApi.getSubscribe.mockResolvedValue(null);
 });
 

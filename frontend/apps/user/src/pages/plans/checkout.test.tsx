@@ -43,7 +43,7 @@ const mocks = vi.hoisted(() => ({
     updated_at: 0,
   },
   info: { plan_id: 1 },
-  subscribe: { expired_at: 4_102_444_800 },
+  subscribe: { expired_at: '2100-01-01T00:00:00Z' },
   orders: [] as Array<{ trade_no: string; status: number }>,
   ordersIsError: false,
   ordersPending: false,
@@ -213,7 +213,7 @@ beforeEach(() => {
   mocks.refetchOrders.mockClear();
   mocks.refetchPlan.mockClear();
   mocks.info = { plan_id: 1 };
-  mocks.subscribe = { expired_at: 4_102_444_800 };
+  mocks.subscribe = { expired_at: '2100-01-01T00:00:00Z' };
   mocks.orders = [];
 });
 
@@ -620,7 +620,7 @@ describe('PlanCheckoutPage commerce behavior', () => {
 
   it('shows the change-subscription warning before saving', async () => {
     mocks.info = { plan_id: 2 };
-    mocks.subscribe = { expired_at: 4_102_444_800 };
+    mocks.subscribe = { expired_at: '2100-01-01T00:00:00Z' };
     mocks.saveOrder.mockResolvedValue('TRADE789');
 
     const { user } = renderWithProviders(<PlanCheckoutPage />);
@@ -646,7 +646,7 @@ describe('PlanCheckoutPage commerce behavior', () => {
 
   it('does not let the change-subscription confirmation bypass an unfinished order', async () => {
     mocks.info = { plan_id: 2 };
-    mocks.subscribe = { expired_at: 4_102_444_800 };
+    mocks.subscribe = { expired_at: '2100-01-01T00:00:00Z' };
     mocks.orders = [{ trade_no: 'PENDING-CHANGE', status: 1 }];
     mocks.cancelOrder.mockResolvedValue(true);
     mocks.saveOrder.mockResolvedValue('TRADE-CHANGED');
@@ -686,7 +686,7 @@ describe('PlanCheckoutPage commerce behavior', () => {
 
   it('skips the change-subscription warning when the old subscription is expired', async () => {
     mocks.info = { plan_id: 2 };
-    mocks.subscribe = { expired_at: 1 };
+    mocks.subscribe = { expired_at: '1970-01-01T00:00:01Z' };
     mocks.saveOrder.mockResolvedValue('TRADE999');
 
     const { user } = renderWithProviders(<PlanCheckoutPage />);

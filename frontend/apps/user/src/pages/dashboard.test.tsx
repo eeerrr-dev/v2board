@@ -80,8 +80,9 @@ const mocks = vi.hoisted(() => ({
   refetchStat: vi.fn(),
   saveOrder: vi.fn(),
   stat: {
-    pending_orders: 0,
-    pending_tickets: 0,
+    pending_order_count: 0,
+    pending_ticket_count: 0,
+    invited_user_count: 0,
   },
   statIsError: false,
   subscribe: {} as Record<string, unknown> | undefined,
@@ -277,7 +278,7 @@ function baseSubscribe(overrides: Record<string, unknown> = {}) {
     d: 0,
     device_limit: null,
     email: 'user@example.com',
-    expired_at: 4_102_488_000,
+    expired_at: '2100-01-01T12:00:00Z',
     plan: { name: 'Pro', renew: true, reset_price: 100, show: true },
     plan_id: 1,
     reset_day: 5,
@@ -305,8 +306,9 @@ function resetMocks() {
   mocks.saveOrder.mockReset();
   mocks.saveOrder.mockResolvedValue('ORDER123');
   mocks.stat = {
-    pending_orders: 0,
-    pending_tickets: 0,
+    pending_order_count: 0,
+    pending_ticket_count: 0,
+    invited_user_count: 0,
   };
   mocks.statIsError = false;
   mocks.subscribe = baseSubscribe();
@@ -324,7 +326,7 @@ describe('DashboardPage shadcn shell rendering', () => {
   beforeEach(resetMocks);
 
   it('renders alerts, notice, subscription card, and shortcuts', () => {
-    mocks.stat = { pending_orders: 2, pending_tickets: 3 };
+    mocks.stat = { pending_order_count: 2, pending_ticket_count: 3, invited_user_count: 0 };
     mocks.notices = [
       {
         content: '<p>Notice body</p>',
@@ -569,7 +571,7 @@ describe('DashboardPage shadcn shell actions', () => {
   });
 
   it('routes alert and shortcut actions through React Router', async () => {
-    mocks.stat = { pending_orders: 1, pending_tickets: 1 };
+    mocks.stat = { pending_order_count: 1, pending_ticket_count: 1, invited_user_count: 0 };
     const { user } = renderWithProviders(<DashboardPage />);
 
     await user.click(screen.getByRole('link', { name: '立即支付' }));

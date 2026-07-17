@@ -24,24 +24,21 @@ const mocks = vi.hoisted(() => ({
   logout: vi.fn(),
   sessions: {
     data: undefined as
-      | Record<
-          string,
-          { ip: string; login_at: number; ua: string; auth_data: string; current: boolean }
-        >
+      | { session_id: string; ip: string; ua: string; login_at: string; current: boolean }[]
       | undefined,
     isLoading: false,
     isError: false,
   },
   userInfo: {
     balance: 0,
-    auto_renewal: 0,
-    remind_expire: 0,
-    remind_traffic: 0,
+    auto_renewal: false,
+    remind_expire: false,
+    remind_traffic: false,
     telegram_id: null as number | null,
     email: 'user@example.test',
     uuid: 'uuid-abc-123',
-    created_at: 1_700_000_000,
-    last_login_at: 1_700_003_600 as number | null,
+    created_at: '2023-11-14T22:13:20Z',
+    last_login_at: '2023-11-14T23:13:20Z' as string | null,
   },
   comm: {
     currency: 'USD',
@@ -295,36 +292,37 @@ describe('ProfilePage shadcn account surface', () => {
       void options.onConfirm?.();
       return Promise.resolve(true);
     });
+    // GET /user/sessions delivers the array newest-first (W5).
     mocks.sessions = {
-      data: {
-        'guid-other': {
+      data: [
+        {
+          session_id: 'guid-other',
           ip: '203.0.113.9',
-          login_at: 1_700_003_600,
           ua: 'Firefox on Windows',
-          auth_data: 'token-other',
+          login_at: '2023-11-14T23:13:20Z',
           current: false,
         },
-        'guid-current': {
+        {
+          session_id: 'guid-current',
           ip: '198.51.100.4',
-          login_at: 1_700_000_000,
           ua: 'Chrome on macOS',
-          auth_data: 'token-current',
+          login_at: '2023-11-14T22:13:20Z',
           current: true,
         },
-      },
+      ],
       isLoading: false,
       isError: false,
     };
     mocks.userInfo = {
       balance: 0,
-      auto_renewal: 0,
-      remind_expire: 0,
-      remind_traffic: 0,
+      auto_renewal: false,
+      remind_expire: false,
+      remind_traffic: false,
       telegram_id: null,
       email: 'user@example.test',
       uuid: 'uuid-abc-123',
-      created_at: 1_700_000_000,
-      last_login_at: 1_700_003_600,
+      created_at: '2023-11-14T22:13:20Z',
+      last_login_at: '2023-11-14T23:13:20Z',
     };
     mocks.comm = {
       currency: 'USD',
@@ -472,7 +470,8 @@ describe('ProfilePage shadcn account surface', () => {
     expect(screen.getByText('203.0.113.9')).toBeInTheDocument();
     expect(screen.getByText('Chrome on macOS')).toBeInTheDocument();
 
-    // Rows sort newest-first, so the current (older) device is the second row.
+    // Rows arrive newest-first from the API, so the current (older) device is
+    // the second row.
     const badge = screen.getByTestId('profile-session-current');
     expect(rows[1]).toContainElement(badge);
 
@@ -574,7 +573,7 @@ describe('ProfilePage shadcn account surface', () => {
     expect(mocks.refetchBotInfo).toHaveBeenCalledTimes(1);
   });
 
-  it('updates profile switches with the original 0/1 payload and leaves the refresh to the mutation', async () => {
+  it('updates profile switches with the single changed boolean flag and leaves the refresh to the mutation', async () => {
     mocks.updateProfile.mockResolvedValue(true);
 
     const { user } = renderWithProviders(<ProfilePage />);
@@ -587,14 +586,16 @@ describe('ProfilePage shadcn account surface', () => {
 
     await user.click(autoRenewal);
 
-    await waitFor(() => expect(mocks.updateProfile).toHaveBeenCalledWith({ auto_renewal: 1 }));
+    await waitFor(() => expect(mocks.updateProfile).toHaveBeenCalledWith({ auto_renewal: true }));
     expect(mocks.refetchInfo).not.toHaveBeenCalled();
 
     mocks.updateProfile.mockRejectedValue(new Error('failed'));
 
     await user.click(remindExpire);
 
-    await waitFor(() => expect(mocks.updateProfile).toHaveBeenCalledWith({ remind_expire: 1 }));
+    await waitFor(() =>
+      expect(mocks.updateProfile).toHaveBeenCalledWith({ remind_expire: true }),
+    );
     expect(mocks.refetchInfo).not.toHaveBeenCalled();
   });
 
@@ -602,16 +603,16 @@ describe('ProfilePage shadcn account surface', () => {
     mocks.updateProfile.mockResolvedValue(true);
     mocks.userInfo = {
       ...mocks.userInfo,
-      auto_renewal: 1,
-      remind_expire: 0,
-      remind_traffic: 1,
+      auto_renewal: true,
+      remind_expire: false,
+      remind_traffic: true,
       telegram_id: null,
     };
 
     const { user } = renderWithProviders(<ProfilePage />);
 
-    // The backend sends 0/1 numbers; the switches must normalize them into a
-    // real Radix boolean checked state instead of leaking raw values.
+    // The backend sends booleans (§4.1); the switches surface them as the
+    // Radix checked state.
     const switches = screen.getAllByTestId('profile-switch');
     expect(switches).toHaveLength(3);
     expect(switches[0]).toHaveAttribute('aria-checked', 'true');
@@ -623,7 +624,9 @@ describe('ProfilePage shadcn account surface', () => {
 
     await user.click(switches[0]!);
 
-    await waitFor(() => expect(mocks.updateProfile).toHaveBeenCalledWith({ auto_renewal: 0 }));
+    await waitFor(() =>
+      expect(mocks.updateProfile).toHaveBeenCalledWith({ auto_renewal: false }),
+    );
   });
 
   it('blocks a mismatched confirm password with an inline error instead of calling the API', async () => {
@@ -750,9 +753,9 @@ describe('ProfilePage shadcn account surface', () => {
     };
     mocks.userInfo = {
       ...mocks.userInfo,
-      auto_renewal: 0,
-      remind_expire: 0,
-      remind_traffic: 0,
+      auto_renewal: false,
+      remind_expire: false,
+      remind_traffic: false,
       telegram_id: 12345,
     };
     mocks.resetSub.mockResolvedValue(true);

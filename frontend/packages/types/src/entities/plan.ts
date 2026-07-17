@@ -10,8 +10,8 @@ export type PlanPeriod =
 
 /**
  * Legacy-dialect plan row (numeric flags, epoch timestamps). Still delivered
- * by /user/getSubscribe (W5) and the admin plan endpoints (W11); the user
- * commerce routes moved to {@link UserPlan} with W4.
+ * by the admin plan endpoints (W11); the user commerce routes moved to
+ * {@link UserPlan} with W4, the subscription's nested plan with W5.
  */
 export interface Plan {
   id: number;

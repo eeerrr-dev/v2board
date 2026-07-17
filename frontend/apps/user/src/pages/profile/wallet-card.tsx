@@ -120,7 +120,7 @@ export function WalletCard() {
             ariaLabel={t(($) => $.profile.auto_renewal)}
             checked={data?.auto_renewal}
             loading={pending.auto_renewal}
-            onChange={(checked) => void toggle('auto_renewal', checked ? 1 : 0)}
+            onChange={(checked) => void toggle('auto_renewal', checked)}
           />
         </div>
         <Button

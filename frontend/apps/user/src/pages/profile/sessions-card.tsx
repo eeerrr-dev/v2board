@@ -27,9 +27,8 @@ export function SessionsCard() {
   const sessions = useActiveSessions({ refetchOnMount: 'always' });
   const removeSession = useRemoveSessionMutation();
 
-  const entries = sessions.data
-    ? Object.entries(sessions.data).sort(([, a], [, b]) => b.login_at - a.login_at)
-    : [];
+  // GET /user/sessions delivers the array already ordered newest-first (W5).
+  const entries = sessions.data ?? [];
 
   const onRevoke = (sessionId: string) => {
     void confirmDialog({
@@ -92,10 +91,10 @@ export function SessionsCard() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {entries.map(([sessionId, session]) => {
+                {entries.map((session) => {
                   const isCurrent = session.current;
                   return (
-                    <TableRow key={sessionId} data-testid="profile-session-row">
+                    <TableRow key={session.session_id} data-testid="profile-session-row">
                       <TableCell className="max-w-[18rem]">
                         <div className="flex items-center gap-2">
                           <span className="min-w-0 truncate" title={session.ua}>
@@ -120,7 +119,7 @@ export function SessionsCard() {
                           className="text-destructive hover:text-destructive"
                           disabled={isCurrent}
                           data-testid="profile-session-revoke"
-                          onClick={() => onRevoke(sessionId)}
+                          onClick={() => onRevoke(session.session_id)}
                         >
                           {t(($) => $.profile.session_revoke)}
                         </Button>

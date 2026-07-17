@@ -296,7 +296,7 @@ describe('user query state behavior', () => {
     window.$crisp = { push };
 
     reportSubscribeToChat({
-      expired_at: 1_700_000_000,
+      expired_at: '2023-11-14T22:13:20Z',
       plan: { name: 'Pro' },
       u: 100,
       d: 200,
