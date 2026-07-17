@@ -21,7 +21,7 @@ use serde_json::{Value, json};
 use sha2::{Sha256, Sha512};
 use url::Url;
 use uuid::Uuid;
-use v2board_compat::ApiError;
+use v2board_compat::{ApiError, Code, Problem};
 use v2board_config::{AppConfig, app_now};
 
 use super::{
@@ -87,8 +87,15 @@ pub(super) struct WechatUnifiedOrderResponse {
 pub(super) fn require_payment_provider(
     method: &str,
 ) -> Result<&'static PaymentProviderManifest, ApiError> {
-    payment_provider_manifest(method)
-        .ok_or_else(|| ApiError::legacy(format!("Payment gateway {method} is not supported")))
+    // §3.4: an unknown/retired gateway driver on a checkout dispatch is the
+    // 400 payment_gateway_unsupported problem. The external notify path
+    // reaches this through its uniform catch-all and still answers "fail".
+    payment_provider_manifest(method).ok_or_else(|| {
+        ApiError::from(
+            Problem::new(Code::PaymentGatewayUnsupported)
+                .with_detail(format!("Payment gateway {method} is not supported")),
+        )
+    })
 }
 
 pub(super) fn epay_pay(

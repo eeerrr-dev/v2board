@@ -173,35 +173,41 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
             "/api/v1/user/removeActiveSession",
             post(crate::user::remove_active_session),
         )
-        .route("/api/v1/user/plan/fetch", get(crate::user::user_plan_fetch))
-        .route("/api/v1/user/order/save", post(crate::commerce::order_save))
+        // ——— User commerce family, modern dialect (docs/api-dialect.md §5.5,
+        // §9.3, §9.4, W4) ———
+        .route("/api/v1/user/plans", get(crate::commerce::plans_list))
+        .route("/api/v1/user/plans/{id}", get(crate::commerce::plan_detail))
         .route(
-            "/api/v1/user/order/checkout",
-            post(crate::commerce::order_checkout),
+            "/api/v1/user/orders",
+            get(crate::commerce::orders_list).post(crate::commerce::order_create),
         )
         .route(
-            "/api/v1/user/order/stripe/intent",
-            post(crate::commerce::stripe_payment_intent),
-        )
-        .route(
-            "/api/v1/user/order/fetch",
-            get(crate::commerce::order_fetch),
-        )
-        .route(
-            "/api/v1/user/order/detail",
+            "/api/v1/user/orders/{trade_no}",
             get(crate::commerce::order_detail),
         )
         .route(
-            "/api/v1/user/order/check",
-            get(crate::commerce::order_check),
+            "/api/v1/user/orders/{trade_no}/status",
+            get(crate::commerce::order_status),
         )
         .route(
-            "/api/v1/user/order/cancel",
+            "/api/v1/user/orders/{trade_no}/cancel",
             post(crate::commerce::order_cancel),
         )
         .route(
-            "/api/v1/user/order/getPaymentMethod",
-            get(crate::commerce::order_payment_methods),
+            "/api/v1/user/orders/{trade_no}/checkout",
+            post(crate::commerce::order_checkout),
+        )
+        .route(
+            "/api/v1/user/orders/{trade_no}/stripe-intent",
+            post(crate::commerce::order_stripe_intent),
+        )
+        .route(
+            "/api/v1/user/payment-methods",
+            get(crate::commerce::payment_methods),
+        )
+        .route(
+            "/api/v1/user/coupons/check",
+            post(crate::commerce::coupon_check),
         )
         .route("/api/v1/user/invite/save", get(crate::user::invite_save))
         .route("/api/v1/user/invite/fetch", get(crate::user::invite_fetch))
@@ -227,10 +233,6 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
             post(crate::ticket::ticket_withdraw),
         )
         .route("/api/v1/user/server/fetch", get(crate::user::server_fetch))
-        .route(
-            "/api/v1/user/coupon/check",
-            post(crate::commerce::coupon_check),
-        )
         // ——— User content family, modern dialect (docs/api-dialect.md §5.8
         // plus the /user/config and /user/telegram-bot rows in §5.3, W3) ———
         .route("/api/v1/user/knowledge", get(crate::user::knowledge_list))

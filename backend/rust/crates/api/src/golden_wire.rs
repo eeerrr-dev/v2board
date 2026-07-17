@@ -20,18 +20,22 @@ use serde::Serialize;
 use serde_json::json;
 use v2board_compat::{Code, LegacyEnvelope, Problem};
 use v2board_db::{
+    coupon::CouponRow,
     order::{DepositPlan, OrderPlan, OrderRow},
     payment::PaymentMethodRow,
     plan::PlanRow,
     stat::TrafficLogRow,
     user::UserInfoRow,
 };
-use v2board_domain::auth::AuthData;
+use v2board_domain::{auth::AuthData, order::StripePaymentIntentResult};
 
 use crate::{
     auth::{QuickLoginUrl, SessionState, StepUpGrant},
     client::PublicConfig,
-    commerce::CheckoutEnvelope,
+    commerce::{
+        CheckoutOutcome, CouponBody, CreatedOrder, OrderBody, OrderStatusBody, PaymentMethodBody,
+        PlanBody,
+    },
     user::{
         account::UserConfig,
         content::{KnowledgeDetail, KnowledgeSummary, NoticeItem, TelegramBot},
@@ -270,11 +274,20 @@ fn documents() -> Vec<(&'static str, String)> {
         commission_distribution_l3: None,
     });
 
-    let order_fetch = envelope(vec![golden_plan_order(), golden_deposit_order()]);
+    // Modern-dialect user commerce family (docs/api-dialect.md §5.5, §9.3,
+    // §9.4, W4): bare bodies, RFC 3339 timestamps, boolean `show`/`renew`,
+    // numeric `handling_fee_percent`, and the discriminated checkout union.
+    let plans = pretty(&vec![PlanBody::from(golden_plan())]);
+    let plan_detail = pretty(&PlanBody::from(golden_plan()));
+
+    let orders = pretty(&vec![
+        OrderBody::from(golden_plan_order()),
+        OrderBody::from(golden_deposit_order()),
+    ]);
 
     let mut plan_order_detail = golden_plan_order();
     plan_order_detail.try_out_plan_id = Some(0);
-    let order_detail = envelope(plan_order_detail);
+    let order_detail = pretty(&OrderBody::from(plan_order_detail));
 
     let mut deposit_detail = golden_deposit_order();
     deposit_detail.plan = Some(OrderPlan::Deposit(DepositPlan {
@@ -283,35 +296,63 @@ fn documents() -> Vec<(&'static str, String)> {
     }));
     deposit_detail.bounus = Some(50);
     deposit_detail.get_amount = Some(550);
-    let order_detail_deposit = envelope(deposit_detail);
+    let order_detail_deposit = pretty(&OrderBody::from(deposit_detail));
 
-    let payment_methods = envelope(vec![
-        PaymentMethodRow {
+    let order_created = pretty(&CreatedOrder {
+        trade_no: "golden-trade-plan-00000000000001".to_string(),
+    });
+    let order_status = pretty(&OrderStatusBody { status: 0 });
+
+    let payment_methods = pretty(&vec![
+        PaymentMethodBody::from(PaymentMethodRow {
             id: 1,
             name: "Golden EPay".to_string(),
             payment: "EPay".to_string(),
             icon: None,
             handling_fee_fixed: Some(20),
             handling_fee_percent: Some("0.50".to_string()),
-        },
-        PaymentMethodRow {
+        }),
+        PaymentMethodBody::from(PaymentMethodRow {
             id: 2,
             name: "Golden Stripe".to_string(),
             payment: "StripeCheckout".to_string(),
             icon: Some("/icons/stripe.svg".to_string()),
             handling_fee_fixed: None,
             handling_fee_percent: None,
-        },
+        }),
     ]);
 
-    let checkout_redirect = pretty(&CheckoutEnvelope {
-        r#type: 1,
-        data: json!("https://checkout.golden.test/session/golden-0001"),
+    let checkout_redirect = pretty(&CheckoutOutcome::Redirect {
+        url: "https://checkout.golden.test/session/golden-0001".to_string(),
     });
-    let checkout_qr = pretty(&CheckoutEnvelope {
-        r#type: 0,
-        data: json!("golden-qr-checkout-payload"),
+    let checkout_qr = pretty(&CheckoutOutcome::QrCode {
+        payload: "golden-qr-checkout-payload".to_string(),
     });
+    let checkout_settled = pretty(&CheckoutOutcome::Settled);
+
+    let stripe_intent = pretty(&StripePaymentIntentResult {
+        public_key: "pk_test_golden000000000000000001".to_string(),
+        client_secret: "pi_golden_secret_000000000000001".to_string(),
+        amount: 1020,
+        currency: "usd".to_string(),
+    });
+
+    let coupon_check = pretty(&CouponBody::from(CouponRow {
+        id: 1,
+        code: "GOLDEN10".to_string(),
+        name: "Golden Coupon".to_string(),
+        r#type: 2,
+        value: 10,
+        show: 1,
+        limit_use: Some(100),
+        limit_use_with_user: Some(1),
+        limit_plan_ids: Some(vec![1]),
+        limit_period: Some(vec!["month_price".to_string()]),
+        started_at: GOLDEN_TIME - 86_400,
+        ended_at: GOLDEN_EXPIRED_AT,
+        created_at: GOLDEN_TIME,
+        updated_at: GOLDEN_TIME,
+    }));
 
     let traffic_log = envelope(vec![
         TrafficLogRow {
@@ -437,12 +478,19 @@ fn documents() -> Vec<(&'static str, String)> {
         ("user.knowledge.detail.json", knowledge_detail),
         ("user.knowledge.json", knowledge_list),
         ("user.info.json", user_info),
-        ("user.order.checkout.json", checkout_redirect),
-        ("user.order.checkout.qr.json", checkout_qr),
-        ("user.order.detail.deposit.json", order_detail_deposit),
-        ("user.order.detail.json", order_detail),
-        ("user.order.fetch.json", order_fetch),
-        ("user.order.getPaymentMethod.json", payment_methods),
+        ("user.coupons.check.json", coupon_check),
+        ("user.orders.checkout.qr.json", checkout_qr),
+        ("user.orders.checkout.redirect.json", checkout_redirect),
+        ("user.orders.checkout.settled.json", checkout_settled),
+        ("user.orders.create.json", order_created),
+        ("user.orders.detail.deposit.json", order_detail_deposit),
+        ("user.orders.detail.json", order_detail),
+        ("user.orders.json", orders),
+        ("user.orders.status.json", order_status),
+        ("user.orders.stripe-intent.json", stripe_intent),
+        ("user.payment-methods.json", payment_methods),
+        ("user.plans.detail.json", plan_detail),
+        ("user.plans.json", plans),
         ("user.notices.json", notices_page),
         ("user.stat.getTrafficLog.json", traffic_log),
         ("user.telegram-bot.json", telegram_bot),

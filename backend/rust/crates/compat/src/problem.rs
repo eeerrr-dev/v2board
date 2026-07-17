@@ -186,7 +186,24 @@ impl Code {
             (Code::InvalidToken, "zh-CN") => "令牌有误",
             (Code::PasswordResetFailed, "zh-CN") => "重置失败，请稍后再试",
             (Code::InternalError, "zh-CN") => "遇到了些问题，我们正在进行处理",
+            // Commerce family (W4). `PlanSoldOut` predates the wave: its
+            // zh-CN text is pinned by the §3.1 spec example bytes.
             (Code::PlanSoldOut, "zh-CN") => "当前产品已售罄",
+            (Code::PlanNotFound, "zh-CN") => "订阅计划不存在",
+            (Code::PlanUnavailable, "zh-CN") => "订阅计划不存在",
+            (Code::PlanPeriodUnavailable, "zh-CN") => "该订阅周期无法进行购买，请选择其它周期",
+            (Code::PlanChangeDisabled, "zh-CN") => "目前不允许更改订阅，请联系客服或提交工单操作",
+            (Code::PendingOrderExists, "zh-CN") => "您有未付款或开通中的订单，请稍后再试或将其取消",
+            (Code::OrderNotFound, "zh-CN") => "订单不存在或已支付",
+            (Code::OrderNotPending, "zh-CN") => "只能对待支付的订单进行操作",
+            (Code::PaymentMethodUnavailable, "zh-CN") => "支付方式不可用",
+            (Code::InsufficientBalance, "zh-CN") => "余额不足",
+            (Code::CouponInvalid, "zh-CN") => "优惠券无效",
+            (Code::CouponUnavailable, "zh-CN") => "优惠券已无可用次数",
+            (Code::CouponNotStarted, "zh-CN") => "优惠券还未到可用时间",
+            (Code::CouponExpired, "zh-CN") => "优惠券已过期",
+            (Code::CouponExhausted, "zh-CN") => "优惠券使用失败",
+            (Code::CouponNotApplicable, "zh-CN") => "该订阅无法使用此优惠码",
             _ => self.default_detail(),
         }
     }

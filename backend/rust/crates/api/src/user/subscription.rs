@@ -1,12 +1,7 @@
-use axum::{
-    Json,
-    extract::{Query, State},
-    http::HeaderMap,
-    response::{IntoResponse, Response},
-};
+use axum::{Json, extract::State, http::HeaderMap};
 use chrono::{Datelike, Duration, TimeZone, Utc};
 use redis::AsyncCommands;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use v2board_compat::{ApiError, LegacyEnvelope, legacy_data};
 use v2board_config::{AppConfig, app_now, app_timezone, duration_minutes_to_seconds};
 use v2board_domain::subscribe_link::{hmac_sha1_hex, totp_counter_bytes};
@@ -206,49 +201,6 @@ pub(super) fn checked_reset_subscription_expiry(
         .checked_sub(reset_seconds)
         .map(Some)
         .ok_or_else(|| ApiError::business("Subscription expiry exceeds the supported range"))
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct PlanFetchQuery {
-    id: Option<i32>,
-}
-
-pub(crate) async fn user_plan_fetch(
-    State(state): State<AppState>,
-    Query(query): Query<PlanFetchQuery>,
-    headers: HeaderMap,
-) -> Result<Response, ApiError> {
-    let user = require_user(&state, &headers).await?;
-    if let Some(id) = query.id {
-        let subscribe = v2board_db::user::find_user_subscribe(&state.db, user.id)
-            .await?
-            .ok_or_else(|| ApiError::business("The user does not exist"))?;
-        let plan = v2board_db::plan::find_plan(&state.db, id)
-            .await?
-            .ok_or_else(|| ApiError::business("Subscription plan does not exist"))?;
-        let hidden_plan = plan.show == 0;
-        let unavailable_hidden_plan =
-            hidden_plan && (plan.renew == 0 || subscribe.plan_id != Some(plan.id));
-        if unavailable_hidden_plan {
-            return Err(ApiError::business("Subscription plan does not exist"));
-        }
-        return Ok(legacy_data(plan).into_response());
-    }
-
-    let counts = v2board_db::plan::count_capacity_usage_by_plan(&state.db).await?;
-    let mut plans = v2board_db::plan::fetch_visible_plans(&state.db).await?;
-    for plan in &mut plans {
-        if let Some(capacity_limit) = plan.capacity_limit
-            && let Some(count) = counts.get(&plan.id)
-        {
-            let remaining = i64::from(capacity_limit)
-                .checked_sub(*count)
-                .and_then(|value| i32::try_from(value).ok())
-                .ok_or_else(|| ApiError::internal("plan capacity usage is outside range"))?;
-            plan.capacity_limit = Some(remaining);
-        }
-    }
-    Ok(legacy_data(plans).into_response())
 }
 
 pub(crate) async fn resolve_subscribe_token(

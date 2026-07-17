@@ -2,11 +2,11 @@ use std::{collections::HashMap, sync::Arc};
 
 use chrono::Utc;
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use sqlx::FromRow;
-use v2board_compat::ApiError;
+use v2board_compat::{ApiError, Code, Problem};
 use v2board_config::AppConfig;
 use v2board_db::{DbPool, DbTransaction};
 
@@ -74,15 +74,23 @@ pub struct OrderService {
     config: Arc<AppConfig>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct SaveOrderInput {
-    pub plan_id: Option<i32>,
-    pub period: Option<String>,
-    pub coupon_code: Option<String>,
-    pub deposit_amount: Option<i32>,
+/// The §5.5 create-order union (docs/api-dialect.md W4). The API layer
+/// deserializes the discriminated `{kind: "plan" | "deposit"}` request body
+/// and hands the domain the already-structural arm — the legacy
+/// `plan_id: 0` + `period: "deposit"` sentinel is gone.
+#[derive(Debug, Clone)]
+pub enum SaveOrderInput {
+    Plan {
+        plan_id: i32,
+        period: String,
+        coupon_code: Option<String>,
+    },
+    Deposit {
+        deposit_amount: i32,
+    },
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct CheckoutOrderInput {
     pub trade_no: String,
     pub method: Option<i32>,
@@ -434,7 +442,7 @@ fn payable_amount_cents(
     order_amount_cents
         .checked_add(handling_amount_cents.unwrap_or_default())
         .filter(|amount| *amount > 0)
-        .ok_or_else(|| ApiError::business("Payment amount is outside the supported range"))
+        .ok_or_else(|| ApiError::from(Problem::new(Code::PaymentAmountOutOfRange)))
 }
 
 fn payment_config_snapshot_matches(
@@ -460,20 +468,16 @@ impl OrderService {
     }
 
     pub async fn save(&self, user_id: i64, input: SaveOrderInput) -> Result<String, ApiError> {
-        // Laravel OrderSave FormRequest: plan_id `required`, period
-        // `required|in:<period list>`. A failed FormRequest is a 422
-        // `{message, errors:{field:[msg]}}`, not the 500 these pre-logic checks
-        // used to return.
-        let plan_id = input
-            .plan_id
-            .ok_or_else(|| ApiError::validation_field("plan_id", "Plan ID cannot be empty"))?;
-        let period = input
-            .period
-            .as_deref()
-            .filter(|period| !period.trim().is_empty())
-            .ok_or_else(|| ApiError::validation_field("period", "Plan period cannot be empty"))?;
-        if !is_valid_period(period) {
-            return Err(ApiError::validation_field("period", "Wrong plan period"));
+        // The request union is structural (§5.5): plan_id/period presence is
+        // enforced by the API-layer request struct. The period vocabulary
+        // check stays here; §3.4 folds the legacy "Wrong plan period" 422
+        // onto the 400 plan_period_unavailable problem.
+        if let SaveOrderInput::Plan { period, .. } = &input
+            && !is_valid_period(period)
+        {
+            return Err(Problem::new(Code::PlanPeriodUnavailable)
+                .with_detail("Wrong plan period")
+                .into());
         }
 
         let mut tx = self.db.begin().await?;
@@ -486,27 +490,32 @@ impl OrderService {
             .fetch_optional(&mut *tx)
             .await?;
         if incomplete_order_id.is_some() {
-            return Err(ApiError::business(
-                "You have an unpaid or pending order, please try again later or cancel it",
-            ));
+            return Err(Problem::new(Code::PendingOrderExists).into());
         }
         let user = find_user_for_order(&mut tx, user_id).await?;
 
         let trade_no = generate_order_no();
         let now = Utc::now().timestamp();
-        let draft = if plan_id == 0 {
-            self.build_deposit_order(&mut tx, user, period, input.deposit_amount, trade_no)
-                .await?
-        } else {
-            self.build_plan_order(
-                &mut tx,
-                user,
+        let draft = match input {
+            SaveOrderInput::Deposit { deposit_amount } => {
+                self.build_deposit_order(&mut tx, user, deposit_amount, trade_no)
+                    .await?
+            }
+            SaveOrderInput::Plan {
                 plan_id,
                 period,
-                input.coupon_code.as_deref(),
-                trade_no,
-            )
-            .await?
+                coupon_code,
+            } => {
+                self.build_plan_order(
+                    &mut tx,
+                    user,
+                    plan_id,
+                    &period,
+                    coupon_code.as_deref(),
+                    trade_no,
+                )
+                .await?
+            }
         };
 
         insert_order(&mut tx, &draft, now).await?;
@@ -542,7 +551,7 @@ impl OrderService {
         .bind(user_id)
         .fetch_optional(&mut *tx)
         .await?
-        .ok_or_else(|| ApiError::business("Order does not exist or has been paid"))?;
+        .ok_or_else(|| ApiError::from(Problem::new(Code::OrderNotFound)))?;
         let binding = sqlx::query_as::<_, (Option<i32>, Option<String>)>(
             "SELECT payment_id, callback_no FROM orders WHERE id = $1",
         )
@@ -562,7 +571,7 @@ impl OrderService {
 
         let method = input
             .method
-            .ok_or_else(|| ApiError::business("Payment method is not available"))?;
+            .ok_or_else(|| ApiError::from(Problem::new(Code::PaymentMethodUnavailable)))?;
         let payment = sqlx::query_as::<_, PaymentForCheckout>(
             r#"
             SELECT
@@ -582,14 +591,14 @@ impl OrderService {
         .bind(method)
         .fetch_optional(&mut *tx)
         .await?
-        .ok_or_else(|| ApiError::business("Payment method is not available"))?;
+        .ok_or_else(|| ApiError::from(Problem::new(Code::PaymentMethodUnavailable)))?;
         if payment.enable != 1 {
-            return Err(ApiError::business("Payment method is not available"));
+            return Err(Problem::new(Code::PaymentMethodUnavailable).into());
         }
         if payment.payment == "StripeCredit" {
-            return Err(ApiError::business(
-                "Stripe payments must be confirmed with Payment Element",
-            ));
+            return Err(Problem::new(Code::PaymentMethodUnavailable)
+                .with_detail("Stripe payments must be confirmed with Payment Element")
+                .into());
         }
 
         let handling_amount = calculate_handling_amount(&order, &payment)?;
@@ -603,10 +612,10 @@ impl OrderService {
             .cancel_stripe_intent_binding(binding.0, binding.1.as_deref())
             .await?
         {
-            return Err(ApiError::business("Order does not exist or has been paid"));
+            return Err(Problem::new(Code::OrderNotFound).into());
         }
         let expected_config = serde_json::from_str::<Value>(&payment.config)
-            .map_err(|_| ApiError::business("Payment config is invalid"))?;
+            .map_err(|_| ApiError::from(Problem::new(Code::PaymentConfigInvalid)))?;
         // A shared payment-version lock lets unrelated checkouts use the same
         // gateway concurrently while serializing an archive/toggle. The exact
         // immutable driver/config snapshot must still be active before binding.
@@ -618,9 +627,9 @@ impl OrderService {
                 .await?;
         if !payment_config_snapshot_matches(current_payment, &payment.payment, &expected_config) {
             bind_tx.rollback().await?;
-            return Err(ApiError::business(
-                "Payment configuration changed, please try again",
-            ));
+            return Err(Problem::new(Code::PaymentConfigInvalid)
+                .with_detail("Payment configuration changed, please try again")
+                .into());
         }
         let updated = sqlx::query(
             r#"
@@ -642,7 +651,7 @@ impl OrderService {
         .await?;
         if updated.rows_affected() != 1 {
             bind_tx.rollback().await?;
-            return Err(ApiError::business("Order does not exist or has been paid"));
+            return Err(Problem::new(Code::OrderNotFound).into());
         }
         bind_tx.commit().await?;
 
@@ -663,7 +672,7 @@ impl OrderService {
     ) -> Result<StripePaymentIntentResult, ApiError> {
         let method = input
             .method
-            .ok_or_else(|| ApiError::business("Payment method is not available"))?;
+            .ok_or_else(|| ApiError::from(Problem::new(Code::PaymentMethodUnavailable)))?;
         let mut tx = self.db.begin().await?;
         let order = sqlx::query_as::<_, (i64, String, i32, Option<String>, Option<i32>)>(
             r#"
@@ -678,9 +687,9 @@ impl OrderService {
         .bind(user_id)
         .fetch_optional(&mut *tx)
         .await?
-        .ok_or_else(|| ApiError::business("Order does not exist or has been paid"))?;
+        .ok_or_else(|| ApiError::from(Problem::new(Code::OrderNotFound)))?;
         if order.2 <= 0 {
-            return Err(ApiError::business("Order does not exist or has been paid"));
+            return Err(Problem::new(Code::OrderNotFound).into());
         }
 
         let payment = sqlx::query_as::<_, PaymentForCheckout>(
@@ -697,7 +706,7 @@ impl OrderService {
         .fetch_optional(&mut *tx)
         .await?
         .filter(|payment| payment.enable == 1)
-        .ok_or_else(|| ApiError::business("Payment method is not available"))?;
+        .ok_or_else(|| ApiError::from(Problem::new(Code::PaymentMethodUnavailable)))?;
 
         let handling_amount =
             calculate_handling_amount_cents(order.2, &payment)?.filter(|amount| *amount != 0);
@@ -709,7 +718,7 @@ impl OrderService {
                 .cancel_stripe_intent_binding(order.4, order.3.as_deref())
                 .await?
         {
-            return Err(ApiError::business("Order does not exist or has been paid"));
+            return Err(Problem::new(Code::OrderNotFound).into());
         }
 
         let payment_order = PaymentOrder {
@@ -729,7 +738,7 @@ impl OrderService {
         // driver/config snapshot remains active before binding the intent. An
         // archive that won the race makes this path cancel the new intent.
         let expected_config = serde_json::from_str::<Value>(&payment.config)
-            .map_err(|_| ApiError::business("Payment config is invalid"))?;
+            .map_err(|_| ApiError::from(Problem::new(Code::PaymentConfigInvalid)))?;
         let mut bind_tx = self.db.begin().await?;
         let current_payment =
             sqlx::query_as::<_, (String, String)>(PAYMENT_ACTIVE_CONFIG_FOR_SHARE_SQL)
@@ -785,15 +794,19 @@ impl OrderService {
         if binding_state != "bound" {
             let config = payment_config(&payment)?;
             if !stripe_cancel_intent(&config, &intent_id).await? {
-                return Err(ApiError::business(
-                    "The Stripe payment has already succeeded",
-                ));
+                return Err(Problem::new(Code::StripeBindingInvalid)
+                    .with_detail("The Stripe payment has already succeeded")
+                    .into());
             }
-            return Err(ApiError::business(if binding_state == "payment_changed" {
-                "Stripe payment configuration changed, please try again"
+            return Err(if binding_state == "payment_changed" {
+                // §3.4: payment_changed binding-state rejections are
+                // stripe_binding_invalid.
+                Problem::new(Code::StripeBindingInvalid)
+                    .with_detail("Stripe payment configuration changed, please try again")
+                    .into()
             } else {
-                "Order does not exist or has been paid"
-            }));
+                Problem::new(Code::OrderNotFound).into()
+            });
         }
         Ok(prepared)
     }
@@ -816,16 +829,16 @@ impl OrderService {
         .fetch_optional(&self.db)
         .await?;
         let Some((method, config)) = row else {
-            return Err(ApiError::legacy("Stripe payment binding is invalid"));
+            return Err(Problem::new(Code::StripeBindingInvalid).into());
         };
         if method != "StripeCredit" {
-            return Err(ApiError::legacy("Stripe payment binding is invalid"));
+            return Err(Problem::new(Code::StripeBindingInvalid).into());
         }
         let mut config = match serde_json::from_str::<Value>(&config)
-            .map_err(|_| ApiError::legacy("Payment config is invalid"))?
+            .map_err(|_| ApiError::from(Problem::new(Code::PaymentConfigInvalid)))?
         {
             Value::Object(config) => config,
-            _ => return Err(ApiError::legacy("Payment config is invalid")),
+            _ => return Err(Problem::new(Code::PaymentConfigInvalid).into()),
         };
         if let Some(secret_key) = config_string(&config, "stripe_sk_live") {
             config.insert(
@@ -925,9 +938,9 @@ impl OrderService {
             "BTCPay" => btcpay_pay(payment, order).await,
             "WechatPayNative" => wechat_pay_native_pay(payment, order).await,
             "AlipayF2F" => alipay_f2f_pay(&self.config, payment, order).await,
-            "StripeCredit" => Err(ApiError::business(
-                "Stripe payments must be confirmed with Payment Element",
-            )),
+            "StripeCredit" => Err(Problem::new(Code::PaymentMethodUnavailable)
+                .with_detail("Stripe payments must be confirmed with Payment Element")
+                .into()),
             "StripeAlipay" => stripe_source_pay(payment, order, "alipay").await,
             "StripeWepay" => stripe_source_pay(payment, order, "wechat").await,
             "StripeCheckout" => stripe_checkout_pay(payment, order).await,

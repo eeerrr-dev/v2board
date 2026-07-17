@@ -17,7 +17,7 @@ pub(crate) use invite::{invite_details, invite_fetch, invite_save, user_transfer
 pub(crate) use stats::{server_fetch, user_stat, user_traffic_logs};
 pub(crate) use subscription::{
     reset_day, resolve_subscribe_token, resolve_totp_subscribe_token, subscribe_url_for_user,
-    user_is_available, user_new_period, user_plan_fetch, user_subscribe,
+    user_is_available, user_new_period, user_subscribe,
 };
 
 #[cfg(test)]

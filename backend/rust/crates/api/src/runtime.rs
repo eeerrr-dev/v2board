@@ -1232,7 +1232,7 @@ mod tests {
             "/api/v1/not-admin/user/sendMail",
             "admin"
         ));
-        assert!(!request_timeout_exempt("/api/v1/user/order/save", "admin"));
+        assert!(!request_timeout_exempt("/api/v1/user/orders", "admin"));
         assert!(!request_timeout_exempt("/api/v1/user/info", "admin"));
     }
 
