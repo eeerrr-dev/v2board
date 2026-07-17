@@ -321,9 +321,8 @@ behavioral outcomes those lines pin remain contracts throughout.
     one-time-migration reads; imported-data interpretations (the notice
     `弹窗` auto-popup tag, the knowledge `copy()`/`jump()` hooks in rendered
     markdown); and security- and session-critical OUTCOMES — session teardown
-    exactly on session expiry (401 + `session_expired` in the modern dialect;
-    the legacy 403 message until W2 — permission-denied and step-up
-    rejections must never tear down the session), cross-account cache
+    exactly on session expiry (401 + `session_expired`; permission-denied and
+    step-up rejections must never tear down the session), cross-account cache
     isolation, no-credentials CORS, server-side registration enforcement,
     and i18n/language persistence. All of this must stay green through
     `make behavior-parity` or a focused interaction-parity shard. The
