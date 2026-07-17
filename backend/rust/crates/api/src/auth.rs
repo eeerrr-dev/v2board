@@ -494,7 +494,7 @@ mod tests {
 
         // No credentials at all: 401 problem+json with the bare challenge.
         let no_credentials = Request::builder()
-            .uri("/api/v1/user/info?auth_data=url-query-token")
+            .uri("/api/v1/user/profile?auth_data=url-query-token")
             .body(Body::empty())
             .unwrap();
         let response = app
@@ -523,7 +523,7 @@ mod tests {
         // must fail closed before any session lookup, with the
         // `invalid_token` challenge because credentials were presented.
         let raw_token = Request::builder()
-            .uri("/api/v1/user/info")
+            .uri("/api/v1/user/profile")
             .header(header::AUTHORIZATION, "raw-legacy-token")
             .header(header::ACCEPT_LANGUAGE, "en-US")
             .body(Body::empty())
@@ -551,7 +551,7 @@ mod tests {
         // reaches the (unreachable) session store: authentication is sourced
         // from the schemed header alone.
         let bearer_token = Request::builder()
-            .uri("/api/v1/user/info?auth_data=url-query-token")
+            .uri("/api/v1/user/profile?auth_data=url-query-token")
             .header(header::AUTHORIZATION, "Bearer header-token")
             .body(Body::empty())
             .unwrap();

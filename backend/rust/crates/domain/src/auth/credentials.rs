@@ -268,7 +268,7 @@ impl AuthService {
 
         let user = db::user::find_user_for_auth_by_id(&self.db, user_id)
             .await?
-            .ok_or_else(|| ApiError::business("The user does not exist"))?;
+            .ok_or_else(|| ApiError::from(Problem::new(Code::UserNotRegistered)))?;
         if !self
             .password_kdf
             .verify(
@@ -279,7 +279,7 @@ impl AuthService {
             )
             .await?
         {
-            return Err(ApiError::business("The old password is wrong"));
+            return Err(Problem::new(Code::OldPasswordIncorrect).into());
         }
 
         let password_hash = self.password_kdf.hash(new_password).await?;
@@ -312,7 +312,9 @@ impl AuthService {
             db::user::update_security(&self.db, user_id, &uuid, &token, Utc::now().timestamp())
                 .await?;
         if !updated {
-            return Err(ApiError::business("Reset failed"));
+            // Legacy "Reset failed" — shares password_reset_failed with the
+            // forget-password flow (docs/api-dialect.md §3.4 registry).
+            return Err(Problem::new(Code::PasswordResetFailed).into());
         }
         // Method-aware minting (Helper::getSubscribeUrl): under
         // show_subscribe_method 1/2 the returned URL must carry the rotating

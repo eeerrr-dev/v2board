@@ -225,28 +225,35 @@ pub async fn find_user_access_by_token(
     .await
 }
 
+/// PATCH /user/profile preference write (docs/api-dialect.md §4.4): each
+/// field is tri-state — outer `None` retains the current value, `Some(None)`
+/// clears to NULL, `Some(Some(flag))` sets it. COALESCE cannot express the
+/// clear arm, so a set-marker drives a CASE per column.
 pub async fn update_preferences(
     pool: &PgPool,
     id: i64,
-    auto_renewal: Option<i16>,
-    remind_expire: Option<i16>,
-    remind_traffic: Option<i16>,
+    auto_renewal: Option<Option<i16>>,
+    remind_expire: Option<Option<i16>>,
+    remind_traffic: Option<Option<i16>>,
     now: i64,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
         UPDATE users
         SET
-            auto_renewal = COALESCE($1, auto_renewal),
-            remind_expire = COALESCE($2, remind_expire),
-            remind_traffic = COALESCE($3, remind_traffic),
-            updated_at = $4
-        WHERE id = $5
+            auto_renewal = CASE WHEN $1 THEN $2 ELSE auto_renewal END,
+            remind_expire = CASE WHEN $3 THEN $4 ELSE remind_expire END,
+            remind_traffic = CASE WHEN $5 THEN $6 ELSE remind_traffic END,
+            updated_at = $7
+        WHERE id = $8
         "#,
     )
-    .bind(auto_renewal)
-    .bind(remind_expire)
-    .bind(remind_traffic)
+    .bind(auto_renewal.is_some())
+    .bind(auto_renewal.flatten())
+    .bind(remind_expire.is_some())
+    .bind(remind_expire.flatten())
+    .bind(remind_traffic.is_some())
+    .bind(remind_traffic.flatten())
     .bind(now)
     .bind(id)
     .execute(pool)

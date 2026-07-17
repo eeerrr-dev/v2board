@@ -6,7 +6,7 @@ use axum::{
     http::{HeaderMap, HeaderName, HeaderValue, Method, header},
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{delete, get, post, put},
 };
 use tower_http::compression::CompressionLayer;
 use tower_http::cors::{AllowOrigin, CorsLayer};
@@ -140,39 +140,43 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
             "/api/v1/auth/session",
             get(crate::auth::session_get).delete(crate::auth::session_delete),
         )
-        .route("/api/v1/user/info", get(crate::user::user_info))
-        .route("/api/v1/user/getStat", get(crate::user::user_stat))
+        // ——— User account & subscription family, modern dialect
+        // (docs/api-dialect.md §5.3, §5.4, §9.1, §9.4, W5) ———
         .route(
-            "/api/v1/user/getSubscribe",
-            get(crate::user::user_subscribe),
-        )
-        .route("/api/v1/user/newPeriod", post(crate::user::user_new_period))
-        .route(
-            "/api/v1/user/redeemgiftcard",
-            post(crate::user::redeem_giftcard),
-        )
-        .route("/api/v1/user/update", post(crate::user::user_update))
-        .route(
-            "/api/v1/user/changePassword",
-            post(crate::user::change_password),
+            "/api/v1/user/profile",
+            get(crate::user::user_profile).patch(crate::user::user_profile_update),
         )
         .route(
-            "/api/v1/user/resetSecurity",
-            get(crate::user::reset_security),
+            "/api/v1/user/password",
+            put(crate::user::user_password_update),
+        )
+        .route("/api/v1/user/stats", get(crate::user::user_stats))
+        .route("/api/v1/user/sessions", get(crate::user::user_sessions))
+        .route(
+            "/api/v1/user/sessions/{session_id}",
+            delete(crate::user::user_session_delete),
         )
         .route(
-            "/api/v1/user/unbindTelegram",
-            get(crate::user::unbind_telegram),
+            "/api/v1/user/gift-card-redemptions",
+            post(crate::user::gift_card_redemption_create),
+        )
+        .route(
+            "/api/v1/user/telegram-binding",
+            delete(crate::user::user_telegram_binding_delete),
+        )
+        .route(
+            "/api/v1/user/subscription",
+            get(crate::user::user_subscription),
+        )
+        .route(
+            "/api/v1/user/subscription/new-period",
+            post(crate::user::subscription_new_period),
+        )
+        .route(
+            "/api/v1/user/subscription/reset-token",
+            post(crate::user::subscription_reset_token),
         )
         .route("/api/v1/user/transfer", post(crate::user::user_transfer))
-        .route(
-            "/api/v1/user/getActiveSession",
-            get(crate::user::active_sessions),
-        )
-        .route(
-            "/api/v1/user/removeActiveSession",
-            post(crate::user::remove_active_session),
-        )
         // ——— User commerce family, modern dialect (docs/api-dialect.md §5.5,
         // §9.3, §9.4, W4) ———
         .route("/api/v1/user/plans", get(crate::commerce::plans_list))

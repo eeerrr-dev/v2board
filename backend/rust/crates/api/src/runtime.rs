@@ -1233,7 +1233,7 @@ mod tests {
             "admin"
         ));
         assert!(!request_timeout_exempt("/api/v1/user/orders", "admin"));
-        assert!(!request_timeout_exempt("/api/v1/user/info", "admin"));
+        assert!(!request_timeout_exempt("/api/v1/user/profile", "admin"));
     }
 
     #[test]
@@ -1241,6 +1241,6 @@ mod tests {
         assert!(https_enforcement_exempt_path("/healthz"));
         assert!(https_enforcement_exempt_path("/readyz"));
         assert!(!https_enforcement_exempt_path("/"));
-        assert!(!https_enforcement_exempt_path("/api/v1/user/info"));
+        assert!(!https_enforcement_exempt_path("/api/v1/user/profile"));
     }
 }

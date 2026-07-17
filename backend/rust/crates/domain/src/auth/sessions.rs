@@ -64,6 +64,17 @@ pub struct SessionMeta {
     password_authenticated: bool,
 }
 
+/// One visible active session (GET /user/sessions, docs/api-dialect.md §5.3
+/// W5). Plain data: the API layer owns the wire body (RFC 3339 `login_at`).
+#[derive(Debug, Clone)]
+pub struct UserSession {
+    pub session_id: String,
+    pub ip: String,
+    pub ua: String,
+    pub login_at: i64,
+    pub current: bool,
+}
+
 #[derive(Clone, Serialize)]
 pub struct AuthUser {
     pub id: i64,
@@ -253,14 +264,19 @@ impl AuthService {
         })
     }
 
+    /// The visible sessions for GET /user/sessions (docs/api-dialect.md
+    /// §5.3/§9.4, W5): the legacy digest-keyed map becomes an array whose map
+    /// key is `session_id`, and the constant-`""` `auth_data` filler dies (no
+    /// session bearer ever leaves this surface). Ordered newest-login first
+    /// (then by id) so the wire is deterministic.
     pub async fn sessions(
         &self,
         user_id: i64,
         current_session_id: Option<&str>,
-    ) -> Result<serde_json::Map<String, serde_json::Value>, ApiError> {
+    ) -> Result<Vec<UserSession>, ApiError> {
         let sessions = self.load_sessions(user_id).await?;
         let now = Utc::now().timestamp();
-        let mut visible = serde_json::Map::new();
+        let mut visible = Vec::new();
         for (session_id, value) in sessions {
             let Ok(meta) = serde_json::from_value::<SessionMeta>(value) else {
                 continue;
@@ -268,18 +284,19 @@ impl AuthService {
             if meta.expires_at.is_some_and(|expires_at| expires_at <= now) {
                 continue;
             }
-            visible.insert(
-                session_id.clone(),
-                serde_json::json!({
-                    "ip": meta.ip.unwrap_or_default(),
-                    "login_at": meta.login_at,
-                    "ua": meta.ua.unwrap_or_default(),
-                    // Keep the established response field without leaking any session bearer.
-                    "auth_data": "",
-                    "current": current_session_id == Some(session_id.as_str()),
-                }),
-            );
+            visible.push(UserSession {
+                current: current_session_id == Some(session_id.as_str()),
+                ip: meta.ip.unwrap_or_default(),
+                login_at: meta.login_at,
+                ua: meta.ua.unwrap_or_default(),
+                session_id,
+            });
         }
+        visible.sort_by(|a, b| {
+            b.login_at
+                .cmp(&a.login_at)
+                .then_with(|| a.session_id.cmp(&b.session_id))
+        });
         Ok(visible)
     }
 

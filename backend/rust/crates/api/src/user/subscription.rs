@@ -1,19 +1,40 @@
-use axum::{Json, extract::State, http::HeaderMap};
+use axum::{
+    Json,
+    extract::State,
+    http::{HeaderMap, StatusCode},
+};
 use chrono::{Datelike, Duration, TimeZone, Utc};
 use redis::AsyncCommands;
 use serde::Serialize;
-use v2board_compat::{ApiError, LegacyEnvelope, legacy_data};
+use v2board_compat::{ApiError, Code, Problem, json::rfc3339_option};
 use v2board_config::{AppConfig, app_now, app_timezone, duration_minutes_to_seconds};
 use v2board_domain::subscribe_link::{hmac_sha1_hex, totp_counter_bytes};
 
 use crate::{
-    auth::require_user, codec::base64_decode_url_safe, runtime::AppState, validation::forbidden,
+    auth::require_user, codec::base64_decode_url_safe, commerce::PlanBody, dialect::problem_from,
+    locale::request_locale, runtime::AppState, validation::forbidden,
 };
 
+/// A handler-constructed problem with a legacy-derived custom detail, pushed
+/// through [`problem_from`] so the detail catalog-localizes exactly like the
+/// retired response-rewrite middleware (§3.4).
+fn subscription_problem(
+    code: Code,
+    detail: impl Into<std::borrow::Cow<'static, str>>,
+    locale: &str,
+) -> Problem {
+    problem_from(Problem::new(code).with_detail(detail).into(), locale)
+}
+
+/// Bare GET /user/subscription body (docs/api-dialect.md §5.4, W5): boolean
+/// `allow_new_period` (§4.1), RFC 3339 `expired_at` (§4.5), an explicit-null
+/// `plan`, and the nested plan on the modern §5.5 shape. The
+/// `subscribe_url`/token scheme inside stays frozen (§2).
 #[derive(Debug, Serialize)]
-pub(crate) struct SubscribeInfo {
+pub(crate) struct SubscriptionBody {
     pub(crate) plan_id: Option<i32>,
     pub(crate) token: String,
+    #[serde(with = "rfc3339_option")]
     pub(crate) expired_at: Option<i64>,
     pub(crate) u: i64,
     pub(crate) d: i64,
@@ -21,36 +42,45 @@ pub(crate) struct SubscribeInfo {
     pub(crate) device_limit: Option<i32>,
     pub(crate) email: String,
     pub(crate) uuid: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) plan: Option<v2board_db::plan::PlanRow>,
+    pub(crate) plan: Option<PlanBody>,
     pub(crate) alive_ip: i64,
     pub(crate) subscribe_url: String,
     pub(crate) reset_day: Option<i64>,
-    pub(crate) allow_new_period: i32,
+    pub(crate) allow_new_period: bool,
 }
 
-pub(crate) async fn user_subscribe(
+/// GET /user/subscription — bare subscription (§5.4).
+pub(crate) async fn user_subscription(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> Result<Json<LegacyEnvelope<SubscribeInfo>>, ApiError> {
-    let user = require_user(&state, &headers).await?;
+) -> Result<Json<SubscriptionBody>, Problem> {
+    let locale = request_locale(&headers);
+    let user = require_user(&state, &headers)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
     let subscribe = v2board_db::user::find_user_subscribe(&state.db, user.id)
-        .await?
-        .ok_or_else(|| ApiError::business("The user does not exist"))?;
+        .await
+        .map_err(|error| problem_from(error.into(), locale))?
+        .ok_or_else(|| Problem::localized(Code::UserNotRegistered, locale))?;
     let plan = match subscribe.plan_id {
         Some(plan_id) => Some(
             v2board_db::plan::find_plan(&state.db, plan_id)
-                .await?
-                .ok_or_else(|| ApiError::business("Subscription plan does not exist"))?,
+                .await
+                .map_err(|error| problem_from(error.into(), locale))?
+                .ok_or_else(|| Problem::localized(Code::PlanUnavailable, locale))?,
         ),
         None => None,
     };
-    let alive_ip = alive_ip(&state, user.id).await?;
+    let alive_ip = alive_ip(&state, user.id)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
     let config = state.config_snapshot();
     let reset_day = reset_day(subscribe.expired_at, plan.as_ref(), &config);
-    let subscribe_url = subscribe_url_for_user(&state, user.id, &subscribe.token).await?;
+    let subscribe_url = subscribe_url_for_user(&state, user.id, &subscribe.token)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
 
-    Ok(legacy_data(SubscribeInfo {
+    Ok(Json(SubscriptionBody {
         plan_id: subscribe.plan_id,
         token: subscribe.token,
         expired_at: subscribe.expired_at,
@@ -60,12 +90,38 @@ pub(crate) async fn user_subscribe(
         device_limit: subscribe.device_limit,
         email: subscribe.email,
         uuid: subscribe.uuid,
-        plan,
+        plan: plan.map(PlanBody::from),
         alive_ip,
         subscribe_url,
         reset_day,
-        allow_new_period: config.allow_new_period,
+        allow_new_period: config.allow_new_period != 0,
     }))
+}
+
+/// §9.4: POST /user/subscription/reset-token answers `{"subscribe_url": …}`
+/// instead of the legacy bare string.
+#[derive(Debug, Serialize)]
+pub(crate) struct ResetTokenBody {
+    pub(crate) subscribe_url: String,
+}
+
+/// POST /user/subscription/reset-token — rotate the permanent subscribe token
+/// (§5.4; the legacy GET-with-side-effect became a POST). The rotation
+/// outcome is Tier-1.
+pub(crate) async fn subscription_reset_token(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<ResetTokenBody>, Problem> {
+    let locale = request_locale(&headers);
+    let user = require_user(&state, &headers)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    let subscribe_url = state
+        .auth_service()
+        .reset_security(user.id)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(Json(ResetTokenBody { subscribe_url }))
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -77,16 +133,32 @@ struct UserPeriodRow {
     expired_at: Option<i64>,
 }
 
-pub(crate) async fn user_new_period(
+/// POST /user/subscription/new-period — 204 on success (§5.4). A true
+/// non-CRUD action verb; any request body is ignored (`{}` allowed).
+pub(crate) async fn subscription_new_period(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> Result<Json<LegacyEnvelope<bool>>, ApiError> {
-    let user = require_user(&state, &headers).await?;
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    let user = require_user(&state, &headers)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
     let config = state.config_snapshot();
+    let not_allowed = || {
+        subscription_problem(
+            Code::RenewalNotAllowed,
+            "You do not allow to renew the subscription",
+            locale,
+        )
+    };
     if config.allow_new_period == 0 {
-        return Err(ApiError::business("Renewal is not allowed"));
+        return Err(Problem::localized(Code::RenewalNotAllowed, locale));
     }
-    let mut tx = state.db.begin().await?;
+    let mut tx = state
+        .db
+        .begin()
+        .await
+        .map_err(|error| problem_from(error.into(), locale))?;
     let row = sqlx::query_as::<_, UserPeriodRow>(
         r#"
         SELECT u.plan_id, u.transfer_enable, u.u, u.d, u.expired_at
@@ -98,23 +170,26 @@ pub(crate) async fn user_new_period(
     )
     .bind(user.id)
     .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| ApiError::business("The user does not exist"))?;
-    let used = row
-        .u
-        .checked_add(row.d)
-        .ok_or_else(|| ApiError::internal("user traffic exceeds the supported range"))?;
+    .await
+    .map_err(|error| problem_from(error.into(), locale))?
+    .ok_or_else(|| Problem::localized(Code::UserNotRegistered, locale))?;
+    let used = row.u.checked_add(row.d).ok_or_else(|| {
+        problem_from(
+            ApiError::internal("user traffic exceeds the supported range"),
+            locale,
+        )
+    })?;
     if row.transfer_enable > used {
-        return Err(ApiError::business(
+        return Err(subscription_problem(
+            Code::RenewalNotAllowed,
             "You have not used up your traffic, you cannot renew your subscription",
+            locale,
         ));
     }
     // A plan-less user cannot renew: both getResetDay and getResetPeriod return null
     // at `if ($user->plan_id === NULL) return null;`, and UserController::newPeriod
     // turns either null into abort(500, 'You do not allow to renew the subscription').
-    let plan_id = row
-        .plan_id
-        .ok_or_else(|| ApiError::business("You do not allow to renew the subscription"))?;
+    let plan_id = row.plan_id.ok_or_else(not_allowed)?;
     // PostgreSQL cannot lock the nullable side of an outer join. Preserve the
     // subscription writer lock order explicitly: user first, then the existing
     // plan whose reset method controls this mutation.
@@ -123,16 +198,16 @@ pub(crate) async fn user_new_period(
     )
     .bind(plan_id)
     .fetch_optional(&mut *tx)
-    .await?
+    .await
+    .map_err(|error| problem_from(error.into(), locale))?
     .flatten();
     let expired_at = row
         .expired_at
         .filter(|expired_at| *expired_at > Utc::now().timestamp())
-        .ok_or_else(|| ApiError::business("You do not allow to renew the subscription"))?;
-    let mut reset_day = reset_day_by_method(expired_at, plan_reset_method, &config)
-        .ok_or_else(|| ApiError::business("You do not allow to renew the subscription"))?;
-    let mut period = reset_period_by_method(plan_reset_method, &config)
-        .ok_or_else(|| ApiError::business("You do not allow to renew the subscription"))?;
+        .ok_or_else(not_allowed)?;
+    let mut reset_day =
+        reset_day_by_method(expired_at, plan_reset_method, &config).ok_or_else(not_allowed)?;
+    let mut period = reset_period_by_method(plan_reset_method, &config).ok_or_else(not_allowed)?;
     match period {
         1 => {
             reset_day = 30;
@@ -144,13 +219,14 @@ pub(crate) async fn user_new_period(
             period = 365;
         }
         365 => {}
-        _ => return Err(ApiError::business("Invalid reset period")),
+        _ => return Err(Problem::localized(Code::ResetPeriodInvalid, locale)),
     }
     if reset_day <= 0 {
         reset_day = period;
     }
     if let Some(next_expired_at) =
-        checked_reset_subscription_expiry(expired_at, reset_day, period, Utc::now().timestamp())?
+        checked_reset_subscription_expiry(expired_at, reset_day, period, Utc::now().timestamp())
+            .map_err(|error| problem_from(error, locale))?
     {
         let updated = sqlx::query(
             "UPDATE users SET expired_at = $1, traffic_epoch = traffic_epoch + 1, \
@@ -160,17 +236,23 @@ pub(crate) async fn user_new_period(
         .bind(Utc::now().timestamp())
         .bind(user.id)
         .execute(&mut *tx)
-        .await?;
+        .await
+        .map_err(|error| problem_from(error.into(), locale))?;
         if updated.rows_affected() != 1 {
-            return Err(ApiError::internal(
-                "subscription period update lost its user row",
+            return Err(problem_from(
+                ApiError::internal("subscription period update lost its user row"),
+                locale,
             ));
         }
-        tx.commit().await?;
-        Ok(legacy_data(true))
+        tx.commit()
+            .await
+            .map_err(|error| problem_from(error.into(), locale))?;
+        Ok(StatusCode::NO_CONTENT)
     } else {
-        Err(ApiError::business(
+        Err(subscription_problem(
+            Code::RenewalNotAllowed,
             "You do not have enough time to renew your subscription",
+            locale,
         ))
     }
 }
@@ -182,25 +264,28 @@ pub(super) fn checked_reset_subscription_expiry(
     now: i64,
 ) -> Result<Option<i64>, ApiError> {
     if reset_day < 0 || period < 0 {
-        return Err(ApiError::business("Invalid reset period"));
+        return Err(Problem::new(Code::ResetPeriodInvalid).into());
     }
+    let range_error = |detail: &'static str| {
+        ApiError::from(Problem::new(Code::SubscriptionValueOutOfRange).with_detail(detail))
+    };
     let threshold = period
         .checked_add(1)
         .and_then(|days| days.checked_mul(86_400))
-        .ok_or_else(|| ApiError::business("Reset period exceeds the supported range"))?;
+        .ok_or_else(|| range_error("Reset period exceeds the supported range"))?;
     let remaining = expired_at
         .checked_sub(now)
-        .ok_or_else(|| ApiError::business("Subscription expiry exceeds the supported range"))?;
+        .ok_or_else(|| range_error("Subscription expiry exceeds the supported range"))?;
     if threshold >= remaining {
         return Ok(None);
     }
     let reset_seconds = reset_day
         .checked_mul(86_400)
-        .ok_or_else(|| ApiError::business("Reset period exceeds the supported range"))?;
+        .ok_or_else(|| range_error("Reset period exceeds the supported range"))?;
     expired_at
         .checked_sub(reset_seconds)
         .map(Some)
-        .ok_or_else(|| ApiError::business("Subscription expiry exceeds the supported range"))
+        .ok_or_else(|| range_error("Subscription expiry exceeds the supported range"))
 }
 
 pub(crate) async fn resolve_subscribe_token(

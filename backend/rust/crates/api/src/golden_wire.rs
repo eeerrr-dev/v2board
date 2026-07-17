@@ -37,9 +37,11 @@ use crate::{
         PlanBody,
     },
     user::{
-        account::UserConfig,
+        account::{SessionBody, UserConfig, UserProfileBody},
         content::{KnowledgeDetail, KnowledgeSummary, NoticeItem, TelegramBot},
-        subscription::SubscribeInfo,
+        giftcard::GiftCardRedemptionBody,
+        stats::UserStatsBody,
+        subscription::{ResetTokenBody, SubscriptionBody},
     },
 };
 
@@ -216,7 +218,10 @@ fn documents() -> Vec<(&'static str, String)> {
         vec!["邮箱格式不正确".to_string()],
     )])));
 
-    let user_info = envelope(UserInfoRow {
+    // Modern-dialect user account & subscription family (docs/api-dialect.md
+    // §5.3, §5.4, §9.1, §9.4, W5): bare bodies, RFC 3339 timestamps, boolean
+    // flags, and the named-object tuple/scalar replacements.
+    let user_profile = pretty(&UserProfileBody::from(UserInfoRow {
         email: GOLDEN_EMAIL.to_string(),
         transfer_enable: 107_374_182_400,
         device_limit: Some(3),
@@ -238,9 +243,37 @@ fn documents() -> Vec<(&'static str, String)> {
             "https://cravatar.cn/avatar/{:x}?s=64&d=identicon",
             md5::compute(GOLDEN_EMAIL.as_bytes())
         ),
+    }));
+
+    let user_stats = pretty(&UserStatsBody {
+        pending_order_count: 2,
+        pending_ticket_count: 0,
+        invited_user_count: 7,
     });
 
-    let subscribe = envelope(SubscribeInfo {
+    let user_sessions = pretty(&vec![
+        SessionBody {
+            session_id: "golden-session-digest-0000000002".to_string(),
+            ip: "203.0.113.7".to_string(),
+            ua: "GoldenBrowser/2.0".to_string(),
+            login_at: GOLDEN_TIME + 3_600,
+            current: true,
+        },
+        SessionBody {
+            session_id: "golden-session-digest-0000000001".to_string(),
+            ip: String::new(),
+            ua: String::new(),
+            login_at: GOLDEN_TIME,
+            current: false,
+        },
+    ]);
+
+    let gift_card_redemption = pretty(&GiftCardRedemptionBody {
+        r#type: 1,
+        value: Some(1234),
+    });
+
+    let subscription = pretty(&SubscriptionBody {
         plan_id: Some(1),
         token: GOLDEN_TOKEN.to_string(),
         expired_at: Some(GOLDEN_EXPIRED_AT),
@@ -250,13 +283,19 @@ fn documents() -> Vec<(&'static str, String)> {
         device_limit: Some(3),
         email: GOLDEN_EMAIL.to_string(),
         uuid: GOLDEN_UUID.to_string(),
-        plan: Some(golden_plan()),
+        plan: Some(PlanBody::from(golden_plan())),
         alive_ip: 0,
         subscribe_url: format!(
             "https://golden.v2board.test/api/v1/client/subscribe?token={GOLDEN_TOKEN}"
         ),
         reset_day: Some(15),
-        allow_new_period: 1,
+        allow_new_period: true,
+    });
+
+    let subscription_reset_token = pretty(&ResetTokenBody {
+        subscribe_url: format!(
+            "https://golden.v2board.test/api/v1/client/subscribe?token={GOLDEN_TOKEN}"
+        ),
     });
 
     // Modern-dialect user config (docs/api-dialect.md §5.3, W3): bare body,
@@ -473,11 +512,21 @@ fn documents() -> Vec<(&'static str, String)> {
             public_config_whitelist_disabled,
         ),
         ("user.config.json", user_config),
-        ("user.getSubscribe.json", subscribe),
+        (
+            "user.gift-card-redemptions.create.json",
+            gift_card_redemption,
+        ),
         ("user.knowledge-categories.json", knowledge_categories),
         ("user.knowledge.detail.json", knowledge_detail),
         ("user.knowledge.json", knowledge_list),
-        ("user.info.json", user_info),
+        ("user.profile.json", user_profile),
+        ("user.sessions.json", user_sessions),
+        ("user.stats.json", user_stats),
+        ("user.subscription.json", subscription),
+        (
+            "user.subscription.reset-token.json",
+            subscription_reset_token,
+        ),
         ("user.coupons.check.json", coupon_check),
         ("user.orders.checkout.qr.json", checkout_qr),
         ("user.orders.checkout.redirect.json", checkout_redirect),

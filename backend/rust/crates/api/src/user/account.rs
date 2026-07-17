@@ -1,119 +1,239 @@
+//! User account family — modern dialect (docs/api-dialect.md §5.3, §9.1,
+//! §9.4, Appendix A §W5): bare success bodies on modern value types
+//! (RFC 3339 timestamps, boolean flags), §4.4 double-Option PATCH semantics,
+//! path-borne session identity, and problem+json failures.
+
 use axum::{
     Json,
-    extract::{Form, State},
-    http::HeaderMap,
+    extract::{Path, State},
+    http::{HeaderMap, StatusCode},
 };
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use v2board_compat::{ApiError, LegacyEnvelope, Problem, legacy_data};
+use v2board_compat::{
+    Code, Problem,
+    json::{double_option, rfc3339, rfc3339_option},
+};
 
-use crate::{auth::require_user, dialect::problem_from, locale::request_locale, runtime::AppState};
+use crate::{
+    auth::require_user, dialect::DialectJson, dialect::problem_from, locale::request_locale,
+    runtime::AppState,
+};
 
-pub(crate) async fn user_info(
+/// Bare GET /user/profile body (§5.3, W5): the legacy 0/1 flags are booleans
+/// (§4.1; a NULL preference reads as `false`) and the epoch timestamps are
+/// RFC 3339 instants (§4.5). Money stays integer cents.
+#[derive(Debug, Serialize)]
+pub(crate) struct UserProfileBody {
+    pub(crate) email: String,
+    pub(crate) transfer_enable: i64,
+    pub(crate) device_limit: Option<i32>,
+    #[serde(with = "rfc3339_option")]
+    pub(crate) last_login_at: Option<i64>,
+    #[serde(with = "rfc3339")]
+    pub(crate) created_at: i64,
+    pub(crate) banned: bool,
+    pub(crate) auto_renewal: bool,
+    pub(crate) remind_expire: bool,
+    pub(crate) remind_traffic: bool,
+    #[serde(with = "rfc3339_option")]
+    pub(crate) expired_at: Option<i64>,
+    pub(crate) balance: i32,
+    pub(crate) commission_balance: i32,
+    pub(crate) plan_id: Option<i32>,
+    pub(crate) discount: Option<i32>,
+    pub(crate) commission_rate: Option<i32>,
+    pub(crate) telegram_id: Option<i64>,
+    pub(crate) uuid: String,
+    pub(crate) avatar_url: String,
+}
+
+impl From<v2board_db::user::UserInfoRow> for UserProfileBody {
+    fn from(row: v2board_db::user::UserInfoRow) -> Self {
+        Self {
+            email: row.email,
+            transfer_enable: row.transfer_enable,
+            device_limit: row.device_limit,
+            last_login_at: row.last_login_at,
+            created_at: row.created_at,
+            banned: row.banned != 0,
+            auto_renewal: row.auto_renewal.unwrap_or(0) != 0,
+            remind_expire: row.remind_expire.unwrap_or(0) != 0,
+            remind_traffic: row.remind_traffic.unwrap_or(0) != 0,
+            expired_at: row.expired_at,
+            balance: row.balance,
+            commission_balance: row.commission_balance,
+            plan_id: row.plan_id,
+            discount: row.discount,
+            commission_rate: row.commission_rate,
+            telegram_id: row.telegram_id,
+            uuid: row.uuid,
+            avatar_url: row.avatar_url,
+        }
+    }
+}
+
+/// GET /user/profile — bare profile (§5.3).
+pub(crate) async fn user_profile(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> Result<Json<LegacyEnvelope<v2board_db::user::UserInfoRow>>, ApiError> {
-    let user = require_user(&state, &headers).await?;
+) -> Result<Json<UserProfileBody>, Problem> {
+    let locale = request_locale(&headers);
+    let user = require_user(&state, &headers)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
     let info = v2board_db::user::find_user_info(&state.db, user.id)
-        .await?
-        .ok_or_else(ApiError::unauthorized)?;
-    Ok(legacy_data(info))
+        .await
+        .map_err(|error| problem_from(error.into(), locale))?
+        .ok_or_else(|| Problem::localized(Code::SessionExpired, locale))?;
+    Ok(Json(UserProfileBody::from(info)))
 }
 
+/// PATCH /user/profile request (§5.3): boolean preference flags on §4.4
+/// double-Option semantics — absent retains, null clears, a value sets.
 #[derive(Debug, Deserialize)]
-pub(crate) struct UserUpdateRequest {
-    auto_renewal: Option<i16>,
-    remind_expire: Option<i16>,
-    remind_traffic: Option<i16>,
+#[serde(deny_unknown_fields)]
+pub(crate) struct UserProfilePatch {
+    #[serde(default, with = "double_option")]
+    auto_renewal: Option<Option<bool>>,
+    #[serde(default, with = "double_option")]
+    remind_expire: Option<Option<bool>>,
+    #[serde(default, with = "double_option")]
+    remind_traffic: Option<Option<bool>>,
 }
 
-pub(crate) async fn user_update(
+fn preference_write(field: Option<Option<bool>>) -> Option<Option<i16>> {
+    field.map(|value| value.map(i16::from))
+}
+
+/// PATCH /user/profile — 204 on success (§5.3, §4.4).
+pub(crate) async fn user_profile_update(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Form(payload): Form<UserUpdateRequest>,
-) -> Result<Json<LegacyEnvelope<bool>>, ApiError> {
-    let user = require_user(&state, &headers).await?;
-    validate_binary("auto_renewal", payload.auto_renewal)?;
-    validate_binary("remind_expire", payload.remind_expire)?;
-    validate_binary("remind_traffic", payload.remind_traffic)?;
-
+    DialectJson(payload): DialectJson<UserProfilePatch>,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    let user = require_user(&state, &headers)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
     v2board_db::user::update_preferences(
         &state.db,
         user.id,
-        payload.auto_renewal,
-        payload.remind_expire,
-        payload.remind_traffic,
+        preference_write(payload.auto_renewal),
+        preference_write(payload.remind_expire),
+        preference_write(payload.remind_traffic),
         Utc::now().timestamp(),
     )
-    .await?;
-    Ok(legacy_data(true))
+    .await
+    .map_err(|error| problem_from(error.into(), locale))?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
-#[derive(Deserialize)]
-pub(crate) struct ChangePasswordRequest {
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PasswordUpdateRequest {
     old_password: String,
     new_password: String,
 }
 
-pub(crate) async fn change_password(
+/// PUT /user/password — 204 on success (§5.3). Success still invalidates
+/// every session; the client redirect to /login is the Tier-1 outcome.
+pub(crate) async fn user_password_update(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Form(payload): Form<ChangePasswordRequest>,
-) -> Result<Json<LegacyEnvelope<bool>>, ApiError> {
-    let user = require_user(&state, &headers).await?;
-    let auth = state.auth_service();
-    auth.change_password(user.id, &payload.old_password, &payload.new_password)
-        .await?;
-    Ok(legacy_data(true))
+    DialectJson(payload): DialectJson<PasswordUpdateRequest>,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    let user = require_user(&state, &headers)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    state
+        .auth_service()
+        .change_password(user.id, &payload.old_password, &payload.new_password)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
-pub(crate) async fn reset_security(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<LegacyEnvelope<String>>, ApiError> {
-    let user = require_user(&state, &headers).await?;
-    let auth = state.auth_service();
-    let subscribe_url = auth.reset_security(user.id).await?;
-    Ok(legacy_data(subscribe_url))
+/// One GET /user/sessions entry (§5.3/§9.4): the legacy map key is
+/// `session_id`, `login_at` is RFC 3339, and the constant-`""` `auth_data`
+/// filler died with the map shape.
+#[derive(Debug, Serialize)]
+pub(crate) struct SessionBody {
+    pub(crate) session_id: String,
+    pub(crate) ip: String,
+    pub(crate) ua: String,
+    #[serde(with = "rfc3339")]
+    pub(crate) login_at: i64,
+    pub(crate) current: bool,
 }
 
-pub(crate) async fn unbind_telegram(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<LegacyEnvelope<bool>>, ApiError> {
-    let user = require_user(&state, &headers).await?;
-    let updated =
-        v2board_db::user::clear_telegram_id(&state.db, user.id, Utc::now().timestamp()).await?;
-    if !updated {
-        return Err(ApiError::business("Unbind telegram failed"));
+impl From<v2board_domain::auth::UserSession> for SessionBody {
+    fn from(session: v2board_domain::auth::UserSession) -> Self {
+        Self {
+            session_id: session.session_id,
+            ip: session.ip,
+            ua: session.ua,
+            login_at: session.login_at,
+            current: session.current,
+        }
     }
-    Ok(legacy_data(true))
 }
 
-pub(crate) async fn active_sessions(
+/// GET /user/sessions — bare array (§5.3).
+pub(crate) async fn user_sessions(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> Result<Json<LegacyEnvelope<serde_json::Map<String, serde_json::Value>>>, ApiError> {
-    let user = require_user(&state, &headers).await?;
-    let auth = state.auth_service();
-    let sessions = auth.sessions(user.id, Some(&user.session_id)).await?;
-    Ok(legacy_data(sessions))
+) -> Result<Json<Vec<SessionBody>>, Problem> {
+    let locale = request_locale(&headers);
+    let user = require_user(&state, &headers)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    let sessions = state
+        .auth_service()
+        .sessions(user.id, Some(&user.session_id))
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(Json(sessions.into_iter().map(SessionBody::from).collect()))
 }
 
-#[derive(Debug, Deserialize)]
-pub(crate) struct RemoveActiveSessionRequest {
-    session_id: String,
+/// DELETE /user/sessions/{session_id} — 204 (§5.3). Removal of an unknown or
+/// already-revoked session stays an idempotent success, exactly like the
+/// legacy boolean-true response.
+pub(crate) async fn user_session_delete(
+    State(state): State<AppState>,
+    Path(session_id): Path<String>,
+    headers: HeaderMap,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    let user = require_user(&state, &headers)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    state
+        .auth_service()
+        .remove_session(user.id, &session_id)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
-pub(crate) async fn remove_active_session(
+/// DELETE /user/telegram-binding — 204 (§5.3; the legacy GET-with-side-effect
+/// became a DELETE).
+pub(crate) async fn user_telegram_binding_delete(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Form(payload): Form<RemoveActiveSessionRequest>,
-) -> Result<Json<LegacyEnvelope<bool>>, ApiError> {
-    let user = require_user(&state, &headers).await?;
-    let auth = state.auth_service();
-    let removed = auth.remove_session(user.id, &payload.session_id).await?;
-    Ok(legacy_data(removed))
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    let user = require_user(&state, &headers)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    let updated = v2board_db::user::clear_telegram_id(&state.db, user.id, Utc::now().timestamp())
+        .await
+        .map_err(|error| problem_from(error.into(), locale))?;
+    if !updated {
+        return Err(Problem::localized(Code::TelegramUnbindFailed, locale));
+    }
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Bare GET /user/config body (docs/api-dialect.md §5.3, W3): flags are
@@ -161,11 +281,4 @@ pub(crate) async fn user_config(
         commission_distribution_l2: distribution_rate(config.commission_distribution_l2.as_deref()),
         commission_distribution_l3: distribution_rate(config.commission_distribution_l3.as_deref()),
     }))
-}
-
-fn validate_binary(field: &str, value: Option<i16>) -> Result<(), ApiError> {
-    match value {
-        Some(0 | 1) | None => Ok(()),
-        Some(_) => Err(ApiError::bad_request(format!("{field} must be 0 or 1"))),
-    }
 }

@@ -8,7 +8,9 @@ mod verification;
 pub use credentials::ForgetInput;
 pub use password::{PasswordKdf, hash_password, verify_password};
 pub use registration::RegisterInput;
-pub use sessions::{AuthData, AuthUser, SessionMeta, remove_user_sessions_from_client};
+pub use sessions::{
+    AuthData, AuthUser, SessionMeta, UserSession, remove_user_sessions_from_client,
+};
 pub use verification::EmailVerifyInput;
 
 use std::sync::Arc;
