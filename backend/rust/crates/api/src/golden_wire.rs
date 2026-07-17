@@ -35,6 +35,7 @@ use crate::{
         CheckoutOutcome, CouponBody, CreatedOrder, OrderBody, OrderStatusBody, PaymentMethodBody,
         PlanBody,
     },
+    ticket::{CreatedTicket, TicketBody, TicketDetailBody, TicketMessageBody},
     user::{
         account::{SessionBody, UserConfig, UserProfileBody},
         content::{KnowledgeDetail, KnowledgeSummary, NoticeItem, TelegramBot},
@@ -568,6 +569,71 @@ fn documents() -> Vec<(&'static str, String)> {
         },
     });
 
+    // Modern-dialect user ticket family (docs/api-dialect.md §5.7, W8): the
+    // bare list array, the detail body with its `message[]` thread, and the
+    // two 201 `{id}` create bodies. `level`/`status`/`reply_status` stay
+    // numeric enums (§4.1); `last_reply_user_id` is an explicit null when no
+    // message exists yet.
+    let tickets = pretty(&vec![
+        TicketBody {
+            id: 8,
+            user_id: 2,
+            subject: "Golden closed ticket".to_string(),
+            level: 0,
+            status: 1,
+            reply_status: 1,
+            last_reply_user_id: Some(1),
+            created_at: GOLDEN_TIME + 86_400,
+            updated_at: GOLDEN_TIME + 172_800,
+        },
+        TicketBody {
+            id: 7,
+            user_id: 2,
+            subject: "Golden open ticket".to_string(),
+            level: 1,
+            status: 0,
+            reply_status: 0,
+            last_reply_user_id: None,
+            created_at: GOLDEN_TIME,
+            updated_at: GOLDEN_TIME,
+        },
+    ]);
+
+    let ticket_detail = pretty(&TicketDetailBody {
+        id: 7,
+        user_id: 2,
+        subject: "Golden open ticket".to_string(),
+        level: 1,
+        status: 0,
+        reply_status: 0,
+        last_reply_user_id: Some(1),
+        created_at: GOLDEN_TIME,
+        updated_at: GOLDEN_TIME + 3_600,
+        message: vec![
+            TicketMessageBody {
+                id: 21,
+                user_id: 2,
+                ticket_id: 7,
+                message: "My subscription stopped working.".to_string(),
+                is_me: true,
+                created_at: GOLDEN_TIME,
+                updated_at: GOLDEN_TIME,
+            },
+            TicketMessageBody {
+                id: 22,
+                user_id: 1,
+                ticket_id: 7,
+                message: "We are looking into it.".to_string(),
+                is_me: false,
+                created_at: GOLDEN_TIME + 3_600,
+                updated_at: GOLDEN_TIME + 3_600,
+            },
+        ],
+    });
+
+    let ticket_created = pretty(&CreatedTicket { id: 9 });
+    let withdrawal_ticket_created = pretty(&CreatedTicket { id: 10 });
+
     let commissions = pretty(&v2board_compat::Page {
         items: vec![
             CommissionItem {
@@ -636,7 +702,14 @@ fn documents() -> Vec<(&'static str, String)> {
         ("user.notices.json", notices_page),
         ("user.servers.json", servers),
         ("user.telegram-bot.json", telegram_bot),
+        ("user.tickets.create.json", ticket_created),
+        ("user.tickets.detail.json", ticket_detail),
+        ("user.tickets.json", tickets),
         ("user.traffic-logs.json", traffic_logs),
+        (
+            "user.withdrawal-tickets.create.json",
+            withdrawal_ticket_created,
+        ),
     ]
 }
 

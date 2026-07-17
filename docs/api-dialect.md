@@ -325,7 +325,7 @@ Profile / invite / ticket / content (user):
 | `ticket_invalid_state` | 400 | `未知的工单状态`, closed-ticket reply rejections |
 | `unresolved_ticket_exists` | 400 | `There are other unresolved tickets`, `用户存在其他未解决工单，无法重新打开该工单` |
 | `ticket_requires_plan` | 400 | `请先购买套餐`, `当前套餐不允许发起工单` |
-| `withdraw_method_unsupported` | 400 | `Unsupported withdrawal method` |
+| `withdraw_method_unsupported` | 400 | `Unsupported withdrawal method`; `Unsupported withdrawal` (W8 reclassified the deterministic legacy-500 `user.ticket.withdraw.not_support_withdraw` close-enable gate here) |
 | `withdraw_below_minimum` | 400 | minimum-withdrawal format! (ticket.rs:245; limit stays in `detail`) |
 | `article_not_found` | 404 | `Article does not exist` — path-identified (`GET /user/knowledge/{id}`) |
 | `notice_not_found` | 404 | `Notice not found`, `公告不存在` |

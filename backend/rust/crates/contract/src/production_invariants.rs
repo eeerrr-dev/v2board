@@ -827,7 +827,7 @@ async fn ticket_state_machine(
     let mut existed = 0;
     while let Some(joined) = creates.join_next().await {
         match joined?? {
-            TicketCreateOutcome::Created => created += 1,
+            TicketCreateOutcome::Created(_) => created += 1,
             TicketCreateOutcome::OpenTicketExists => existed += 1,
             outcome => bail!("unexpected concurrent ticket outcome: {outcome:?}"),
         }
@@ -856,8 +856,8 @@ async fn ticket_state_machine(
             now - 90_000,
             false,
         )
-        .await?
-            == TicketCreateOutcome::Created,
+        .await
+        .map(|outcome| matches!(outcome, TicketCreateOutcome::Created(_)))?,
         "failed to create reply-race ticket"
     );
     let race_ticket: i64 =
@@ -906,8 +906,8 @@ async fn ticket_state_machine(
             now - 90_000,
             false,
         )
-        .await?
-            == TicketCreateOutcome::Created,
+        .await
+        .map(|outcome| matches!(outcome, TicketCreateOutcome::Created(_)))?,
         "failed to create stale ticket"
     );
     let stale_ticket: i64 =

@@ -41,7 +41,9 @@ pub struct TicketDetailRow {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TicketCreateOutcome {
-    Created,
+    /// Carries the created ticket id — the modern dialect answers creates
+    /// with `{id}` (docs/api-dialect.md §5.7).
+    Created(i64),
     OpenTicketExists,
     PaidOrderRequired,
     UserNotFound,
@@ -198,7 +200,7 @@ pub async fn create_ticket(
     };
     insert_message(&mut tx, user_id, ticket_id, message, now).await?;
     tx.commit().await?;
-    Ok(TicketCreateOutcome::Created)
+    Ok(TicketCreateOutcome::Created(ticket_id))
 }
 
 pub async fn create_withdraw_ticket(

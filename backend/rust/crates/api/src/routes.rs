@@ -227,22 +227,27 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
             "/api/v1/user/commission-transfers",
             post(crate::user::commission_transfer_create),
         )
+        // ——— User ticket family, modern dialect (docs/api-dialect.md §5.7,
+        // W8) ———
         .route(
-            "/api/v1/user/ticket/fetch",
-            get(crate::ticket::ticket_fetch),
-        )
-        .route("/api/v1/user/ticket/save", post(crate::ticket::ticket_save))
-        .route(
-            "/api/v1/user/ticket/reply",
-            post(crate::ticket::ticket_reply),
+            "/api/v1/user/tickets",
+            get(crate::ticket::tickets_list).post(crate::ticket::ticket_create),
         )
         .route(
-            "/api/v1/user/ticket/close",
+            "/api/v1/user/tickets/{id}",
+            get(crate::ticket::ticket_detail),
+        )
+        .route(
+            "/api/v1/user/tickets/{id}/replies",
+            post(crate::ticket::ticket_reply_create),
+        )
+        .route(
+            "/api/v1/user/tickets/{id}/close",
             post(crate::ticket::ticket_close),
         )
         .route(
-            "/api/v1/user/ticket/withdraw",
-            post(crate::ticket::ticket_withdraw),
+            "/api/v1/user/withdrawal-tickets",
+            post(crate::ticket::withdrawal_ticket_create),
         )
         // ——— User service-usage family, modern dialect (docs/api-dialect.md
         // §5.4 remainder, W6) ———
