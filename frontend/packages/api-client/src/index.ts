@@ -17,6 +17,22 @@ export type {
   JsonApiRequestConfig,
   RawBinaryResponse,
 } from './client';
+// Modern internal-dialect core (docs/api-dialect.md §14, Appendix A §W0):
+// inert foundations, consumed family-by-family from W2 on.
+export {
+  ApiProblemError,
+  acceptLanguageHeader,
+  bearerAuthorization,
+  dialectRequestHeaders,
+  hasProblemCode,
+  isApiProblemError,
+  isSessionExpiredProblem,
+  isStepUpRequiredProblem,
+  pageSchema,
+  parseProblem,
+  problemDetailsSchema,
+} from './dialect';
+export type { DialectHeaderInputs, ProblemDetails } from './dialect';
 export { decimalToCents, decimalToMinorUnits, decimalToScaledInteger } from './money';
 export {
   getErrorPresentation,

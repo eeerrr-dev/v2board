@@ -1,0 +1,133 @@
+import { z } from 'zod';
+
+// Modern internal-dialect client core (docs/api-dialect.md §14, Appendix A
+// §W0). Inert foundations: everything here is exported and unit-tested only —
+// no endpoint or client path consumes it until its family's wave (W2+) flips.
+// The legacy transport in client.ts stays authoritative until then.
+
+/**
+ * §4.2 — `Authorization: Bearer <auth_data>` on every authenticated internal
+ * request. The localStorage `authorization` key keeps storing the raw
+ * `auth_data` value (§2 frozen); the client prepends the scheme on the wire.
+ */
+export function bearerAuthorization(authData: string | null | undefined): string | null {
+  if (!authData) return null;
+  return `Bearer ${authData}`;
+}
+
+/**
+ * §4.3 — `Accept-Language: <active-locale>` replaces `Content-Language` as
+ * the request locale signal. The backend resolves it against the enabled
+ * locale registry and localizes problem `detail`/`errors`.
+ */
+export function acceptLanguageHeader(locale: string | null | undefined): string | null {
+  if (!locale) return null;
+  return locale;
+}
+
+export interface DialectHeaderInputs {
+  authData?: string | null;
+  locale?: string | null;
+}
+
+/** §4.2 + §4.3 — assemble the modern transport headers for one request. */
+export function dialectRequestHeaders({ authData, locale }: DialectHeaderInputs = {}): Record<
+  string,
+  string
+> {
+  const headers: Record<string, string> = {};
+  const authorization = bearerAuthorization(authData);
+  if (authorization) headers.Authorization = authorization;
+  const acceptLanguage = acceptLanguageHeader(locale);
+  if (acceptLanguage) headers['Accept-Language'] = acceptLanguage;
+  return headers;
+}
+
+/**
+ * §3.1 — the RFC 9457 problem body every internal-route error carries.
+ * Loose: RFC 9457 permits extension members, and unknown `code` slugs must
+ * still parse (apps fall back to `detail` verbatim for unknown codes).
+ */
+export const problemDetailsSchema = z.looseObject({
+  type: z.string(),
+  title: z.string(),
+  status: z.number().int().min(400),
+  code: z.string().min(1),
+  detail: z.string(),
+  /** Present only for `validation_failed`: ordered `{field: [messages]}`. */
+  errors: z.record(z.string(), z.array(z.string())).optional(),
+});
+
+export type ProblemDetails = z.output<typeof problemDetailsSchema>;
+
+/**
+ * The modern error surface: `{status, code, detail, errors}` (§14). `code` is
+ * the frontend's only discriminator (§3.1); `detail` is presentation-only and
+ * doubles as `Error#message`. No client logic may branch on `detail`.
+ */
+export class ApiProblemError extends Error {
+  public readonly status: number;
+  public readonly code: string;
+  public readonly detail: string;
+  public readonly errors?: Record<string, string[]>;
+  public readonly raw: unknown;
+
+  constructor(status: number, problem: ProblemDetails) {
+    super(problem.detail);
+    this.name = 'ApiProblemError';
+    this.status = status;
+    this.code = problem.code;
+    this.detail = problem.detail;
+    if (problem.errors) this.errors = problem.errors;
+    this.raw = problem;
+  }
+}
+
+/**
+ * Parse a problem+json response body into the ApiError model. `status` is the
+ * transport HTTP status (authoritative; §3.1 pins the body `status` to mirror
+ * it). Returns null when the body is not a problem document — e.g. the legacy
+ * `{message}` dialect, which stays on the legacy `ApiError` path.
+ */
+export function parseProblem(body: unknown, status: number): ApiProblemError | null {
+  const result = problemDetailsSchema.safeParse(body);
+  if (!result.success) return null;
+  return new ApiProblemError(status, result.data);
+}
+
+export function isApiProblemError(error: unknown): error is ApiProblemError {
+  return error instanceof ApiProblemError;
+}
+
+/** Code-first discrimination (§3.1): the slug replaces message matching. */
+export function hasProblemCode(error: unknown, code: string): boolean {
+  return isApiProblemError(error) && error.code === code;
+}
+
+/**
+ * §3.2 — the session-teardown key: exactly 401 + `session_expired`. A 403
+ * `permission_denied`/`step_up_required` must never tear the session down
+ * (the 403-keep-token behavior, now keyed by code instead of message text).
+ */
+export function isSessionExpiredProblem(error: unknown): boolean {
+  return hasProblemCode(error, 'session_expired') && (error as ApiProblemError).status === 401;
+}
+
+/**
+ * §3.2/§4.2 — the privileged step-up gate, signalled by
+ * `code: "step_up_required"` instead of the legacy message literal. The
+ * step-up token keeps riding `x-v2board-step-up`.
+ */
+export function isStepUpRequiredProblem(error: unknown): boolean {
+  return hasProblemCode(error, 'step_up_required') && (error as ApiProblemError).status === 403;
+}
+
+/**
+ * §8/§14 — the `{items, total}` page shape replacing the legacy `{data,
+ * total}` envelope. Non-paginated lists stay bare arrays; never wrap them.
+ */
+export const pageSchema = <TItemSchema extends z.ZodType>(item: TItemSchema) =>
+  z.object({
+    items: z.array(item),
+    total: z.number(),
+  });
