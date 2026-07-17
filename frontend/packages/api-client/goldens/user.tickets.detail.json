@@ -1,0 +1,31 @@
+{
+  "id": 7,
+  "user_id": 2,
+  "subject": "Golden open ticket",
+  "level": 1,
+  "status": 0,
+  "reply_status": 0,
+  "last_reply_user_id": 1,
+  "created_at": "2023-11-14T22:13:20Z",
+  "updated_at": "2023-11-14T23:13:20Z",
+  "message": [
+    {
+      "id": 21,
+      "user_id": 2,
+      "ticket_id": 7,
+      "message": "My subscription stopped working.",
+      "is_me": true,
+      "created_at": "2023-11-14T22:13:20Z",
+      "updated_at": "2023-11-14T22:13:20Z"
+    },
+    {
+      "id": 22,
+      "user_id": 1,
+      "ticket_id": 7,
+      "message": "We are looking into it.",
+      "is_me": false,
+      "created_at": "2023-11-14T23:13:20Z",
+      "updated_at": "2023-11-14T23:13:20Z"
+    }
+  ]
+}
