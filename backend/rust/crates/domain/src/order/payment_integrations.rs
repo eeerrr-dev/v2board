@@ -962,9 +962,12 @@ pub(super) fn payment_return_url(config: &AppConfig, trade_no: &str) -> String {
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
-        return format!("{}/#/order/{trade_no}", app_url.trim_end_matches('/'));
+        // Path-style history URL (docs/api-dialect.md §10.4); both branches —
+        // absolute and the relative fallback handed to providers when
+        // `app_url` is unset — drop the legacy `/#/` prefix.
+        return format!("{}/order/{trade_no}", app_url.trim_end_matches('/'));
     }
-    format!("/#/order/{trade_no}")
+    format!("/order/{trade_no}")
 }
 
 pub(super) fn payment_config(

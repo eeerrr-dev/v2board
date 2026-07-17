@@ -724,10 +724,10 @@ fn handling_fee_math_rejects_negative_legacy_configuration_and_overflow() {
 #[test]
 fn payment_url_and_wechat_xml_use_structured_codecs() {
     assert_eq!(
-        url_origin("https://pay.example.com:8443/#/order/T1"),
+        url_origin("https://pay.example.com:8443/order/T1"),
         "https://pay.example.com:8443"
     );
-    assert_eq!(url_origin("/#/order/T1"), "/#/order/T1");
+    assert_eq!(url_origin("/order/T1"), "/order/T1");
 
     let params = BTreeMap::from([
         ("appid".to_string(), "wx-1".to_string()),

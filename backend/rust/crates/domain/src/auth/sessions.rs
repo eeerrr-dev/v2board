@@ -137,7 +137,9 @@ impl AuthService {
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .unwrap_or("dashboard");
-        let path = format!("/#/login?verify={token}&redirect={redirect}");
+        // Path-style history URL (docs/api-dialect.md §10.4); the `verify=` /
+        // `redirect=` query names and token semantics are Tier-1.
+        let path = format!("/login?verify={token}&redirect={redirect}");
         if let Some(app_url) = self
             .config
             .app_url

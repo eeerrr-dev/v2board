@@ -104,6 +104,14 @@ impl AppState {
         )
     }
 
+    /// Swaps the live config snapshot without the operator-authority dance so
+    /// router tests can prove the per-request dynamic-prefix behavior
+    /// (docs/api-dialect.md §10.2 rule 4) across a `secure_path` change.
+    #[cfg(test)]
+    pub(crate) fn replace_config_for_test(&self, config: AppConfig) {
+        self.config.store(Arc::new(config));
+    }
+
     pub(crate) fn auth_service(&self) -> AuthService {
         AuthService::new(
             self.db.clone(),
