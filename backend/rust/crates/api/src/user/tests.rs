@@ -7,6 +7,7 @@ use super::{
         checked_add_giftcard_days, checked_gib_bytes, giftcard_plan_has_capacity,
     },
     invite::{checked_pagination_values, checked_transfer_balances, validate_pagination},
+    stats::server_body,
     subscription::{checked_reset_subscription_expiry, reset_day, reset_day_by_month_first_day},
 };
 
@@ -59,6 +60,57 @@ fn reset_day_returns_none_for_plan_less_user_ignoring_config_default() {
     // Missing / past expiry is null.
     assert_eq!(reset_day(None, Some(&null_method), &config), None);
     assert_eq!(reset_day(Some(1), Some(&null_method), &config), None);
+}
+
+fn server_row_fixture() -> v2board_db::server::AvailableServerRow {
+    v2board_db::server::AvailableServerRow {
+        id: 1,
+        parent_id: None,
+        group_id: vec![1],
+        route_id: None,
+        name: "Node".to_string(),
+        rate: "1.5".to_string(),
+        r#type: "shadowsocks".to_string(),
+        host: "node.example.test".to_string(),
+        port: serde_json::Value::from(443_i64),
+        cache_key: "shadowsocks-1-0-1".to_string(),
+        last_check_at: Some(1_700_000_000),
+        is_online: 1,
+        tags: None,
+        sort: None,
+        extra: serde_json::Value::Null,
+    }
+}
+
+/// docs/api-dialect.md §5.4 (W6): the modern server row is numeric
+/// `rate`/`port` and boolean `is_online`; the legacy free-text VARCHAR
+/// columns must never leak a non-numeric string onto the wire.
+#[test]
+fn server_body_enforces_the_numeric_wire_contract() {
+    let body = server_body(server_row_fixture()).unwrap();
+    assert_eq!(body.rate, 1.5);
+    assert_eq!(body.port, 443);
+    assert!(body.is_online);
+    assert_eq!(body.last_check_at, Some(1_700_000_000));
+
+    // String-typed but numeric legacy port values still convert.
+    let mut string_port = server_row_fixture();
+    string_port.port = serde_json::Value::String(" 8443 ".to_string());
+    string_port.is_online = 0;
+    let body = server_body(string_port).unwrap();
+    assert_eq!(body.port, 8443);
+    assert!(!body.is_online);
+
+    // Non-numeric operator values are internal errors, not string fallbacks.
+    let mut bad_rate = server_row_fixture();
+    bad_rate.rate = "fast".to_string();
+    assert!(server_body(bad_rate).is_err());
+    let mut nan_rate = server_row_fixture();
+    nan_rate.rate = "NaN".to_string();
+    assert!(server_body(nan_rate).is_err());
+    let mut bad_port = server_row_fixture();
+    bad_port.port = serde_json::Value::String("443,8443".to_string());
+    assert!(server_body(bad_port).is_err());
 }
 
 #[test]

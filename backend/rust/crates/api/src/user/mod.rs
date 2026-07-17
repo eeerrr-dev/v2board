@@ -14,7 +14,7 @@ pub(crate) use content::{
 };
 pub(crate) use giftcard::gift_card_redemption_create;
 pub(crate) use invite::{invite_details, invite_fetch, invite_save, user_transfer};
-pub(crate) use stats::{server_fetch, user_stats, user_traffic_logs};
+pub(crate) use stats::{user_servers, user_stats, user_traffic_logs};
 pub(crate) use subscription::{
     reset_day, resolve_subscribe_token, resolve_totp_subscribe_token, subscribe_url_for_user,
     subscription_new_period, subscription_reset_token, user_is_available, user_subscription,

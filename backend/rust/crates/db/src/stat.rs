@@ -1,13 +1,12 @@
-use serde::Serialize;
 use sqlx::{FromRow, PgPool};
 
-#[derive(Debug, Clone, FromRow, Serialize)]
+#[derive(Debug, Clone, FromRow)]
 pub struct TrafficLogRow {
     pub u: i64,
     pub d: i64,
     pub record_at: i64,
     pub user_id: i64,
-    pub server_rate: String,
+    pub server_rate: f64,
 }
 
 pub async fn fetch_traffic_logs(
@@ -22,7 +21,7 @@ pub async fn fetch_traffic_logs(
             d,
             record_at,
             user_id,
-            server_rate::text AS server_rate
+            server_rate::float8 AS server_rate
         FROM user_traffic
         WHERE user_id = $1 AND record_at >= $2
         ORDER BY record_at DESC

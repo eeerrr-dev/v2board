@@ -1,10 +1,10 @@
 //! Byte-exact golden fixtures for the pure-serde response bodies this crate
 //! serializes onto the wire (`auth.*`, `problem.*`, `guest.*`, `passport.*`,
 //! `user.*` under `frontend/packages/api-client/goldens`). Each document is a
-//! fully rendered response body: for legacy-dialect routes the exact compat
-//! envelope, for migrated modern-dialect routes (docs/api-dialect.md §1, §3)
+//! fully rendered modern-dialect response body (docs/api-dialect.md §1, §3):
 //! the bare success object or RFC 9457 problem body, around a hand-pinned,
-//! realistic struct value. The api-client vitest suite parses every fixture
+//! realistic struct value (W6 flipped this test's last legacy-envelope
+//! fixture). The api-client vitest suite parses every fixture
 //! with its zod contract schema, so a serde field rename, type change, or
 //! envelope change that would break the TypeScript contract fails here and in
 //! the frontend gate instead of drifting silently. The DB-backed `admin.*`
@@ -18,13 +18,12 @@ use std::path::PathBuf;
 use indexmap::IndexMap;
 use serde::Serialize;
 use serde_json::json;
-use v2board_compat::{Code, LegacyEnvelope, Problem};
+use v2board_compat::{Code, Problem};
 use v2board_db::{
     coupon::CouponRow,
     order::{DepositPlan, OrderPlan, OrderRow},
     payment::PaymentMethodRow,
     plan::PlanRow,
-    stat::TrafficLogRow,
     user::UserInfoRow,
 };
 use v2board_domain::{auth::AuthData, order::StripePaymentIntentResult};
@@ -40,7 +39,7 @@ use crate::{
         account::{SessionBody, UserConfig, UserProfileBody},
         content::{KnowledgeDetail, KnowledgeSummary, NoticeItem, TelegramBot},
         giftcard::GiftCardRedemptionBody,
-        stats::UserStatsBody,
+        stats::{ServerBody, TrafficLogBody, UserStatsBody},
         subscription::{ResetTokenBody, SubscriptionBody},
     },
 };
@@ -72,10 +71,6 @@ fn goldens_dir() -> PathBuf {
             "/../../../../frontend/packages/api-client/goldens"
         )),
     }
-}
-
-fn envelope<T: Serialize>(data: T) -> String {
-    pretty(&LegacyEnvelope { data })
 }
 
 fn pretty<T: Serialize>(value: &T) -> String {
@@ -393,20 +388,65 @@ fn documents() -> Vec<(&'static str, String)> {
         updated_at: GOLDEN_TIME,
     }));
 
-    let traffic_log = envelope(vec![
-        TrafficLogRow {
+    // Modern-dialect service family (docs/api-dialect.md §5.4, W6): bare
+    // arrays, numeric rates/ports, boolean is_online, RFC 3339 timestamps.
+    let traffic_logs = pretty(&vec![
+        TrafficLogBody {
             u: 1_073_741_824,
             d: 2_147_483_648,
             record_at: GOLDEN_TIME,
             user_id: 2,
-            server_rate: "1.00".to_string(),
+            server_rate: 1.0,
         },
-        TrafficLogRow {
+        TrafficLogBody {
             u: 104_857_600,
             d: 209_715_200,
             record_at: GOLDEN_TIME - 86_400,
             user_id: 2,
-            server_rate: "1.50".to_string(),
+            server_rate: 1.5,
+        },
+    ]);
+
+    let servers = pretty(&vec![
+        ServerBody {
+            id: 1,
+            parent_id: None,
+            group_id: vec![1],
+            route_id: Some(vec![2]),
+            name: "Golden Node 01".to_string(),
+            rate: 1.0,
+            r#type: "shadowsocks".to_string(),
+            host: "node-01.golden.v2board.test".to_string(),
+            port: 443,
+            cache_key: format!("shadowsocks-1-{GOLDEN_TIME}-1"),
+            last_check_at: Some(GOLDEN_TIME),
+            is_online: true,
+            tags: Some(vec!["IEPL".to_string(), "Golden".to_string()]),
+            sort: Some(1),
+            extra: json!({
+                "cipher": "aes-128-gcm",
+                "obfs": null,
+                "obfs_settings": null,
+                "created_at": GOLDEN_TIME,
+            }),
+        },
+        ServerBody {
+            id: 2,
+            parent_id: None,
+            group_id: vec![1],
+            route_id: None,
+            name: "Golden Node 02".to_string(),
+            rate: 2.5,
+            r#type: "trojan".to_string(),
+            host: "node-02.golden.v2board.test".to_string(),
+            port: 8443,
+            cache_key: format!("trojan-2-{GOLDEN_TIME}-0"),
+            last_check_at: None,
+            is_online: false,
+            tags: None,
+            sort: Some(2),
+            // Null extra pins the skip_serializing_if omission.
+            extra: serde_json::Value::Null,
         },
     ]);
 
@@ -541,8 +581,9 @@ fn documents() -> Vec<(&'static str, String)> {
         ("user.plans.detail.json", plan_detail),
         ("user.plans.json", plans),
         ("user.notices.json", notices_page),
-        ("user.stat.getTrafficLog.json", traffic_log),
+        ("user.servers.json", servers),
         ("user.telegram-bot.json", telegram_bot),
+        ("user.traffic-logs.json", traffic_logs),
     ]
 }
 

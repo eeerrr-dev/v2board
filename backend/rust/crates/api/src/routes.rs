@@ -236,7 +236,13 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
             "/api/v1/user/ticket/withdraw",
             post(crate::ticket::ticket_withdraw),
         )
-        .route("/api/v1/user/server/fetch", get(crate::user::server_fetch))
+        // ——— User service-usage family, modern dialect (docs/api-dialect.md
+        // §5.4 remainder, W6) ———
+        .route("/api/v1/user/servers", get(crate::user::user_servers))
+        .route(
+            "/api/v1/user/traffic-logs",
+            get(crate::user::user_traffic_logs),
+        )
         // ——— User content family, modern dialect (docs/api-dialect.md §5.8
         // plus the /user/config and /user/telegram-bot rows in §5.3, W3) ———
         .route("/api/v1/user/knowledge", get(crate::user::knowledge_list))
@@ -251,10 +257,6 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
         .route("/api/v1/user/notices", get(crate::user::user_notices))
         .route("/api/v1/user/telegram-bot", get(crate::user::telegram_bot))
         .route("/api/v1/user/config", get(crate::user::user_config))
-        .route(
-            "/api/v1/user/stat/getTrafficLog",
-            get(crate::user::user_traffic_logs),
-        )
         .route(
             &admin_api_route,
             get(crate::admin::admin_get).post(crate::admin::admin_post),
