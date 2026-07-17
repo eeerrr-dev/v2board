@@ -1,0 +1,15 @@
+{
+  "is_telegram": false,
+  "telegram_discuss_link": null,
+  "withdraw_methods": [
+    "alipay",
+    "usdt"
+  ],
+  "withdraw_close": false,
+  "currency": "CNY",
+  "currency_symbol": "¥",
+  "commission_distribution_enable": true,
+  "commission_distribution_l1": 0.5,
+  "commission_distribution_l2": null,
+  "commission_distribution_l3": null
+}

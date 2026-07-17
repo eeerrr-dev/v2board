@@ -1,0 +1,14 @@
+{
+  "tos_url": "https://golden.v2board.test/tos",
+  "is_email_verify": false,
+  "is_invite_force": false,
+  "email_whitelist_suffix": [
+    "gmail.com",
+    "example.test"
+  ],
+  "is_recaptcha": false,
+  "recaptcha_site_key": null,
+  "app_description": "Golden description",
+  "app_url": "https://golden.v2board.test",
+  "logo": null
+}

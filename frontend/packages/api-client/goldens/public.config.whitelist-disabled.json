@@ -1,0 +1,11 @@
+{
+  "tos_url": null,
+  "is_email_verify": true,
+  "is_invite_force": true,
+  "email_whitelist_suffix": [],
+  "is_recaptcha": true,
+  "recaptcha_site_key": "golden-recaptcha-site-key",
+  "app_description": null,
+  "app_url": null,
+  "logo": "https://golden.v2board.test/logo.png"
+}
