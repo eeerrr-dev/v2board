@@ -345,6 +345,22 @@ describe('user query state behavior', () => {
     }
   });
 
+  it('invalidates the replied ticket detail from the reply mutation, not the 5s poll', async () => {
+    const { useReplyTicketMutation, userKeys } = await import('./queries');
+    const mutation = callHook(() => useReplyTicketMutation()) as unknown as {
+      onSuccess: (data: unknown, variables: { id: number | string }) => void;
+    };
+
+    invalidateQueries.mockReset();
+    expect(mutation.onSuccess(undefined, { id: 42 })).toBeUndefined();
+
+    expect(invalidateQueries).toHaveBeenCalledTimes(1);
+    // Exactly the replied ticket's detail key via the userKeys factory — the
+    // list is untouched and no raw literal can drift from the key shape.
+    expect(userKeys.ticketDetail(42)).toEqual(['user', 'ticket', 42]);
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: userKeys.ticketDetail(42) });
+  });
+
   it('invalidates the user record from every mutation that changes it, not the call sites', async () => {
     const queries = await import('./queries');
     const userInfoMutations = [

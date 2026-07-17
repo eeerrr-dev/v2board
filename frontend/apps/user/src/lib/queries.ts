@@ -486,9 +486,16 @@ export function useSaveTicketMutation() {
 }
 
 export function useReplyTicketMutation() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: Parameters<typeof user.replyTicket>[1]) =>
       user.replyTicket(apiClient, payload),
+    // Replying appends to the detail thread; invalidate that ticket's detail
+    // query from the mutation so the chat refreshes right away instead of
+    // waiting on the detail page's 5s poll.
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({ queryKey: userKeys.ticketDetail(variables.id) });
+    },
   });
 }
 
