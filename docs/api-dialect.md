@@ -318,6 +318,7 @@ Profile / invite / ticket / content (user):
 | `transfer_amount_invalid` | 422 | `The transfer amount parameter is wrong` |
 | `insufficient_commission_balance` | 400 | `Insufficient commission balance` |
 | `balance_out_of_range` | 400 | `Balance exceeds the supported range` |
+| `invite_code_limit_reached` | 400 | `The maximum number of creations has been reached` |
 | `telegram_not_configured` | 400 | `Telegram bot is not configured`, `telegram bot token is null` |
 | `telegram_unbind_failed` | 400 | `Unbind telegram failed` |
 | `ticket_not_found` | 404 | `Ticket does not exist`, `工单不存在` |

@@ -176,7 +176,6 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
             "/api/v1/user/subscription/reset-token",
             post(crate::user::subscription_reset_token),
         )
-        .route("/api/v1/user/transfer", post(crate::user::user_transfer))
         // ——— User commerce family, modern dialect (docs/api-dialect.md §5.5,
         // §9.3, §9.4, W4) ———
         .route("/api/v1/user/plans", get(crate::commerce::plans_list))
@@ -213,11 +212,20 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
             "/api/v1/user/coupons/check",
             post(crate::commerce::coupon_check),
         )
-        .route("/api/v1/user/invite/save", get(crate::user::invite_save))
-        .route("/api/v1/user/invite/fetch", get(crate::user::invite_fetch))
+        // ——— Invite & commission family, modern dialect (docs/api-dialect.md
+        // §5.6, the §5.3 /user/commission-transfers row, §9.2, W7) ———
         .route(
-            "/api/v1/user/invite/details",
-            get(crate::user::invite_details),
+            "/api/v1/user/invite-codes",
+            post(crate::user::invite_code_create),
+        )
+        .route("/api/v1/user/invite", get(crate::user::invite_get))
+        .route(
+            "/api/v1/user/commissions",
+            get(crate::user::commissions_list),
+        )
+        .route(
+            "/api/v1/user/commission-transfers",
+            post(crate::user::commission_transfer_create),
         )
         .route(
             "/api/v1/user/ticket/fetch",

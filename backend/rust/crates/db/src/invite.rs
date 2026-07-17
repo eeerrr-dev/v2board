@@ -1,4 +1,3 @@
-use serde::Serialize;
 use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
@@ -26,7 +25,7 @@ fn exact_i64_aggregate(value: &str, metric: &str) -> Result<i64, sqlx::Error> {
     i64::try_from(exact).map_err(|_| invalid("exceeds the supported range"))
 }
 
-#[derive(Debug, Clone, FromRow, Serialize)]
+#[derive(Debug, Clone, FromRow)]
 pub struct InviteCodeRow {
     pub id: i32,
     pub user_id: i64,
@@ -37,7 +36,7 @@ pub struct InviteCodeRow {
     pub updated_at: i64,
 }
 
-#[derive(Debug, Clone, FromRow, Serialize)]
+#[derive(Debug, Clone, FromRow)]
 pub struct CommissionDetailRow {
     pub id: i64,
     pub trade_no: String,
@@ -46,10 +45,23 @@ pub struct CommissionDetailRow {
     pub created_at: i64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+/// The invite overview stat, named per docs/api-dialect.md §9.2 (was the
+/// legacy 5-tuple `[registered, valid_commission, pending_commission,
+/// commission_rate, available_commission]`). Commissions are integer cents;
+/// `commission_rate` is an integer percent (default 10 when unset).
+#[derive(Debug, Clone, Copy)]
+pub struct InviteStat {
+    pub registered_count: i64,
+    pub valid_commission: i64,
+    pub pending_commission: i64,
+    pub commission_rate: i64,
+    pub available_commission: i64,
+}
+
+#[derive(Debug, Clone)]
 pub struct InviteFetchRow {
     pub codes: Vec<InviteCodeRow>,
-    pub stat: [i64; 5],
+    pub stat: InviteStat,
 }
 
 #[derive(Debug, Clone, FromRow)]
@@ -136,13 +148,13 @@ pub async fn fetch_invite(pool: &PgPool, user_id: i64) -> Result<InviteFetchRow,
 
     Ok(InviteFetchRow {
         codes,
-        stat: [
-            registered,
+        stat: InviteStat {
+            registered_count: registered,
             valid_commission,
             pending_commission,
             commission_rate,
             available_commission,
-        ],
+        },
     })
 }
 

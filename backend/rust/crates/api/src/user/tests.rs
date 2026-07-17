@@ -6,7 +6,7 @@ use super::{
         GIFTCARD_FOR_UPDATE_SQL, GIFTCARD_USER_ORDER_RANGE_SQL, checked_add_cents,
         checked_add_giftcard_days, checked_gib_bytes, giftcard_plan_has_capacity,
     },
-    invite::{checked_pagination_values, checked_transfer_balances, validate_pagination},
+    invite::checked_transfer_balances,
     stats::server_body,
     subscription::{checked_reset_subscription_expiry, reset_day, reset_day_by_month_first_day},
 };
@@ -195,20 +195,6 @@ fn plan_giftcards_consume_capacity_but_can_materialize_an_existing_reservation()
     assert!(!giftcard_plan_has_capacity(2, 2, false));
     assert!(giftcard_plan_has_capacity(2, 2, true));
     assert!(!giftcard_plan_has_capacity(-1, 0, false));
-}
-
-#[test]
-fn pagination_is_bounded_and_never_overflows_the_offset() {
-    assert_eq!(validate_pagination(None, None).unwrap(), (10, 0));
-    assert_eq!(
-        validate_pagination(Some("2"), Some("25")).unwrap(),
-        (25, 25)
-    );
-    assert!(validate_pagination(Some("0"), Some("10")).is_err());
-    assert!(validate_pagination(Some("1"), Some("101")).is_err());
-    assert!(validate_pagination(Some("not-an-integer"), Some("10")).is_err());
-    assert!(validate_pagination(Some("9223372036854775807"), Some("100")).is_err());
-    assert!(checked_pagination_values(i64::MAX, 100).is_err());
 }
 
 /// Deterministic business-rule failures on frontend-only routes are HTTP 400

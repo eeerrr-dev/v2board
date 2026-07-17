@@ -39,6 +39,7 @@ use crate::{
         account::{SessionBody, UserConfig, UserProfileBody},
         content::{KnowledgeDetail, KnowledgeSummary, NoticeItem, TelegramBot},
         giftcard::GiftCardRedemptionBody,
+        invite::{CommissionItem, InviteBody, InviteCodeBody, InviteStatBody},
         stats::{ServerBody, TrafficLogBody, UserStatsBody},
         subscription::{ResetTokenBody, SubscriptionBody},
     },
@@ -537,6 +538,56 @@ fn documents() -> Vec<(&'static str, String)> {
         username: "golden_v2board_bot".to_string(),
     });
 
+    // Modern-dialect invite & commission family (docs/api-dialect.md §5.6,
+    // §8, §9.2, W7): the bare `{codes, stat}` body with the named stat
+    // object, and the commissions `{items, total}` page envelope. Money
+    // stays integer cents.
+    let invite = pretty(&InviteBody {
+        codes: vec![
+            InviteCodeBody {
+                id: 2,
+                code: "goldinv2".to_string(),
+                pv: 0,
+                created_at: GOLDEN_TIME + 86_400,
+                updated_at: GOLDEN_TIME + 86_400,
+            },
+            InviteCodeBody {
+                id: 1,
+                code: "goldinv1".to_string(),
+                pv: 3,
+                created_at: GOLDEN_TIME,
+                updated_at: GOLDEN_TIME,
+            },
+        ],
+        stat: InviteStatBody {
+            registered_count: 12,
+            valid_commission: 12_300,
+            pending_commission: 4_500,
+            commission_rate: 10,
+            available_commission: 8_000,
+        },
+    });
+
+    let commissions = pretty(&v2board_compat::Page {
+        items: vec![
+            CommissionItem {
+                id: 2,
+                trade_no: "golden-trade-commission-0000002".to_string(),
+                order_amount: 2_000,
+                get_amount: 200,
+                created_at: GOLDEN_TIME + 86_400,
+            },
+            CommissionItem {
+                id: 1,
+                trade_no: "golden-trade-commission-0000001".to_string(),
+                order_amount: 1_000,
+                get_amount: 100,
+                created_at: GOLDEN_TIME,
+            },
+        ],
+        total: 12,
+    });
+
     vec![
         ("auth.login.json", auth_login),
         ("auth.quick-login-url.json", auth_quick_login_url),
@@ -556,6 +607,8 @@ fn documents() -> Vec<(&'static str, String)> {
             "user.gift-card-redemptions.create.json",
             gift_card_redemption,
         ),
+        ("user.commissions.json", commissions),
+        ("user.invite.json", invite),
         ("user.knowledge-categories.json", knowledge_categories),
         ("user.knowledge.detail.json", knowledge_detail),
         ("user.knowledge.json", knowledge_list),
