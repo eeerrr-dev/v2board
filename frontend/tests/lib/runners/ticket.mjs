@@ -66,7 +66,7 @@ export async function runUserTicketErrorMatrixInteraction(page) {
   const replyFailed = await ticketReplyState(page);
 
   await page.evaluate(() => {
-    window.location.hash = '#/ticket';
+    window.__paritySpaNavigate('/ticket');
   });
   await waitForPagePropertyAtLeast(
     page,

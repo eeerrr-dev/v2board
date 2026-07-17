@@ -242,14 +242,23 @@ export async function gotoStable(page, url) {
   throw lastError ?? new Error(`${url} navigation failed`);
 }
 
-export async function navigateAfterWarmup(page, url) {
+export async function navigateAfterWarmup(page, url, routePath) {
   const targetUrl = new URL(url);
   const currentUrl = new URL(page.url());
 
-  if (currentUrl.origin === targetUrl.origin && currentUrl.pathname === targetUrl.pathname) {
-    await page.evaluate((hash) => {
-      window.location.hash = hash;
-    }, targetUrl.hash);
+  // In-place SPA navigation through the world-agnostic helper installed by
+  // installSpaLocationHelpers (docs/api-dialect.md §13.4): a hash assignment
+  // in the hash-routed oracle, pushState + popstate in the history-routed
+  // source world. Falls back to a full navigation across origins or when the
+  // helper is unavailable.
+  const canNavigateInPlace =
+    currentUrl.origin === targetUrl.origin &&
+    routePath !== undefined &&
+    (await page.evaluate(() => typeof window.__paritySpaNavigate === 'function'));
+  if (canNavigateInPlace) {
+    await page.evaluate((route) => {
+      window.__paritySpaNavigate(route);
+    }, routePath);
     await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => undefined);
     await page.waitForTimeout(800);
     return;

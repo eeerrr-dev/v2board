@@ -344,7 +344,7 @@ export async function dashboardAlertLinksState(page) {
         4,
       ),
     ),
-    hash: await page.evaluate(() => window.location.hash),
+    hash: await page.evaluate(() => window.__parityReadSpaRoute()),
     tableCount: await visibleCount(
       page,
       '[data-testid="orders-table"], [data-testid="ticket-table"], .ant-table, .am-list-body',

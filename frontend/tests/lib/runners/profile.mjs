@@ -60,7 +60,7 @@ export async function runProfileDepositModalInteraction(page) {
   );
   await waitForPagePropertyAtLeast(page, '__visualParityUserOrderSaveCount', 1);
   await page.waitForFunction(
-    (tradeNo) => window.location.hash.includes(`/order/${tradeNo}`),
+    (tradeNo) => window.__parityReadSpaRoute().includes(`/order/${tradeNo}`),
     profileDepositTradeNo,
     { timeout: 5_000 },
   );
@@ -73,7 +73,7 @@ export async function runProfileDepositModalInteraction(page) {
 
   return {
     filled,
-    hash: await page.evaluate(() => window.location.hash),
+    hash: await page.evaluate(() => window.__parityReadSpaRoute()),
     orderInfo: normalizeDashboardOrderInfo(
       await visibleTexts(page, '[data-testid="order-info"], .v2board-order-summary', 6),
     ),
@@ -362,7 +362,7 @@ export async function runProfileChangePasswordSuccessInteraction(page) {
     timeout: 5_000,
   });
   await page.waitForFunction(
-    () => window.location.hash.includes('/login') || window.location.hash.includes('/dashboard'),
+    () => window.__parityReadSpaRoute().includes('/login') || window.__parityReadSpaRoute().includes('/dashboard'),
     null,
     { timeout: 5_000 },
   );

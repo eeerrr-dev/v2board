@@ -15,7 +15,7 @@ export async function authPageState(page) {
     authBoxCount: await visibleCount(page, userAuthSurfaceSelector),
     buttons: await visibleTexts(page, 'button, .btn', 8),
     controls: await visibleFormControlStates(page, userAuthControlSelector),
-    hash: await page.evaluate(() => window.location.hash),
+    hash: await page.evaluate(() => window.__parityReadSpaRoute()),
     links: await visibleTexts(page, userAuthLinkSelector, 8),
     titleTexts: await visibleTexts(page, userAuthTitleTextSelector, 8),
   };
@@ -26,7 +26,7 @@ export async function adminAuthPageState(page) {
     authSurfaceCount: await visibleCount(page, adminAuthSurfaceSelector),
     controls: await visibleFormControlStates(page, adminAuthControlSelector),
     forgotActionCount: await visibleCount(page, adminAuthForgotSelector),
-    hash: await page.evaluate(() => window.location.hash),
+    hash: await page.evaluate(() => window.__parityReadSpaRoute()),
     submitActionCount: await visibleCount(page, adminAuthSubmitSelector),
   };
 }
@@ -106,7 +106,7 @@ async function readSessionExpiredRedirectStateFor(
               .filter(Boolean);
           return {
             authData: window.localStorage.getItem('authorization'),
-            hash: window.location.hash,
+            hash: window.__parityReadSpaRoute(),
             loginBoxCount: document.querySelectorAll(authSurfaceSelector).length,
             titleTexts: authTitleTextSelector ? visibleText(authTitleTextSelector, 4) : [],
           };
@@ -141,7 +141,7 @@ export async function readUnauthorizedHttp401NoRedirectState(page) {
         '[data-slot="page-title"], [data-testid="dashboard-page"], .block-title, .content-heading, .alert, .nav-main-link',
         12,
       ),
-      hash: window.location.hash,
+      hash: window.__parityReadSpaRoute(),
       loginBoxCount: document.querySelectorAll(authSurfaceSelector).length,
       pageContainerCount: document.querySelectorAll('#page-container').length,
       routeErrorCount: document.querySelectorAll('[data-testid="route-error"]').length,
@@ -165,12 +165,19 @@ export async function loginLanguagePersistenceState(page) {
 
     // titleText is intentionally not captured: the redesign turns the brand link into a semantic
     // <h1>, and the operator brand is constant across locales, so it carries no language-persistence
-    // signal. Releasing it keeps this interaction gating the locale state (cookie/storage/trigger),
+    // signal. Releasing it keeps this interaction gating the locale state (persistence/trigger),
     // not the heading markup the redesign legitimately changed.
+    //
+    // persistedLocale is the canonical Tier-1 signal (§11: language
+    // persistence is the contract, not the storage key): the source world
+    // persists localStorage["v2board_locale"], the oracle its legacy
+    // umi_locale/i18n-cookie trio.
     return {
-      cookieI18n: readCookie('i18n'),
-      gLang: window.g_lang ?? '',
-      storedLocale: window.localStorage.getItem('umi_locale') ?? '',
+      persistedLocale:
+        window.localStorage.getItem('v2board_locale') ??
+        window.localStorage.getItem('umi_locale') ??
+        readCookie('i18n') ??
+        '',
       triggerText: normalize(
         document.querySelector('[data-testid="auth-language-trigger"], .v2board-login-i18n-btn')
           ?.textContent,

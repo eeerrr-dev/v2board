@@ -456,6 +456,29 @@ export function normalizeInteractionResult(label, result) {
   ) {
     return normalizeOrderStripeInteractionResult(label, normalized);
   }
+  if (label === 'user-order-redirect-checkout') {
+    // §10.4/§W1: the backend mints a path-style relative return URL, so the
+    // modern source follows it with a full document navigation (fresh order
+    // page mount) while the frozen oracle hash-navigates in place and keeps
+    // its widget state alive. Post-redirect presentation (selected-method
+    // highlight, fee summary line, transit toast) is Tier-2; the Tier-1
+    // contract is the checkout payload, the pre-checkout method selection,
+    // and the redirect landing on the order route with the cashier marker.
+    return {
+      checkoutRequests: normalized.checkoutRequests,
+      redirected: {
+        hash: normalized.redirected?.hash,
+        modalCount: normalized.redirected?.modalCount,
+        qrCanvasCount: normalized.redirected?.qrCanvasCount,
+        qrSvgCount: normalized.redirected?.qrSvgCount,
+      },
+      selected: {
+        activeIndex: normalized.selected?.activeIndex,
+        hash: normalized.selected?.hash,
+        methodTexts: normalized.selected?.methodTexts,
+      },
+    };
+  }
   if (label === 'user-profile-change-password-success') {
     return normalizeProfileChangePasswordInteractionResult(normalized);
   }
@@ -940,7 +963,7 @@ export function normalizeInteractionResult(label, result) {
     const { hash: _hash, ...authState } = normalizeAdminAuthPageState(normalized);
     return {
       ...authState,
-      loginDestination: ['#/', '#/login'].includes(normalized.hash),
+      loginDestination: ['/', '/login'].includes(normalized.hash),
     };
   }
   if (label === 'admin-login-form-state') {

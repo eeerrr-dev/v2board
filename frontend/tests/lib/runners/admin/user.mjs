@@ -524,7 +524,7 @@ export async function runAdminUserOrdersActionInteraction(page) {
   await openAdminUserRowActionMenu(page, 'TA的订单');
   const opened = await adminUserOrdersActionState(page);
   await clickFirstVisibleTextStable(page, adminMenuItemSelector, ['TA的订单']);
-  await page.waitForFunction(() => window.location.hash.includes('/order'), null, {
+  await page.waitForFunction(() => window.__parityReadSpaRoute().includes('/order'), null, {
     timeout: 5_000,
   });
   await waitForPageProperty(page, '__visualParityLastAdminOrderFetchQuery');

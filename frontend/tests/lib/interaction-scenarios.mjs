@@ -38,6 +38,7 @@ import {
 } from './runners/admin/payment.mjs';
 import {
   runAdminMutationFailureMatrixInteraction,
+  runAdminPlanLegacyHashEntryInteraction,
   runAdminPlanCreateDrawerInteraction,
   runAdminPlanCreateGroupSelectDropdownInteraction,
   runAdminPlanDrawerKeyboardCloseInteraction,
@@ -102,6 +103,7 @@ import {
   runRegisterFormStateInteraction,
   runSessionExpiredRedirectInteraction,
   runUnauthorizedHttp401NoRedirectInteraction,
+  runUserRegisterLegacyHashEntryInteraction,
 } from './runners/auth.mjs';
 import {
   runOrderCancelConfirmInteraction,
@@ -186,6 +188,15 @@ export const interactions = [
     label: 'user-register-form-state',
     run: runRegisterFormStateInteraction,
     scenarioLabel: 'user-register-rich',
+  },
+  {
+    // §10.3/§W1: legacy `/#/register?code=…` entry must land the history
+    // router on the canonical path. Source-only — the frozen oracle is
+    // hash-routed by design.
+    label: 'user-register-legacy-hash-entry',
+    run: runUserRegisterLegacyHashEntryInteraction,
+    scenarioLabel: 'user-register-legacy-hash-entry',
+    sourceOnly: true,
   },
   {
     label: 'user-forget-form-state',
@@ -441,7 +452,9 @@ export const interactions = [
     stripePaymentElementComplete: true,
   },
   {
-    checkoutRedirectUrl: '/#/order/VISUAL2026110001?cashier=visual',
+    // Canonical route; api-fixtures mints it per world (path-style for the
+    // modern backend, /#/… for the legacy oracle — docs/api-dialect.md §W1).
+    checkoutRedirectRoute: '/order/VISUAL2026110001?cashier=visual',
     delayUserOrderCheckoutMs: 200,
     label: 'user-order-redirect-checkout',
     run: runOrderRedirectCheckoutInteraction,
@@ -661,6 +674,15 @@ export const interactions = [
     label: 'admin-plan-renew-tooltip',
     run: runAdminPlanRenewTooltipInteraction,
     scenarioLabel: 'admin-plans',
+  },
+  {
+    // §10.3/§W1: legacy `/{admin_path}#/plan` entry must land the history
+    // router on `/{admin_path}/plan`. Source-only — the frozen oracle admin is
+    // hash-routed by design.
+    label: 'admin-plan-legacy-hash-entry',
+    run: runAdminPlanLegacyHashEntryInteraction,
+    scenarioLabel: 'admin-plan-legacy-hash-entry',
+    sourceOnly: true,
   },
   {
     adminNoticeDropError: true,

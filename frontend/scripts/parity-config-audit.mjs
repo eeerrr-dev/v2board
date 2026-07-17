@@ -319,13 +319,14 @@ export function assertRouteCoverage(name, routes, scenarios, behaviorCoveredLabe
 }
 
 export function normalizeScenarioRoute(path) {
-  const hashIndex = path.indexOf('#');
-  if (hashIndex === -1) {
-    throw new Error(`Parity scenario path does not include a hash route: ${path}`);
+  // Scenario paths are canonical route paths since W1 (docs/api-dialect.md
+  // §13.4): the harness derives each world's entry URL (path-style source,
+  // legacy /#/… oracle) from them, so a hash form here is a regression.
+  if (path.includes('#')) {
+    throw new Error(`Parity scenario path must be a canonical route path, not a hash URL: ${path}`);
   }
 
-  const routeWithQuery = path.slice(hashIndex + 1) || '/';
-  const route = routeWithQuery.split(/[?#]/, 1)[0] || '/';
+  const route = path.split('?', 1)[0] || '/';
 
   return route.startsWith('/') ? route : `/${route}`;
 }

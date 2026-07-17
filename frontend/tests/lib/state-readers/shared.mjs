@@ -37,7 +37,7 @@ export async function fetchFailureState(page) {
     alertTexts: toPresenceTokens(alertTexts, 'alert'),
     blockLoadingCount: 0,
     emptyTexts: toPresenceTokens(emptyTexts, 'empty'),
-    hash: await page.evaluate(() => window.location.hash),
+    hash: await page.evaluate(() => window.__parityReadSpaRoute()),
     listItemTexts: toPresenceTokens(listItemTexts, 'list-item'),
     requestSeen: {
       adminCouponFetch: (page.__visualParityAdminCouponFetchCount ?? 0) > 0,

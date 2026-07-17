@@ -316,7 +316,7 @@ export async function runOrderRedirectCheckoutInteraction(page) {
     '__visualParityUserOrderCheckoutCount',
     initialCheckoutCount + 1,
   );
-  await page.waitForFunction(() => window.location.hash.includes('cashier=visual'), null, {
+  await page.waitForFunction(() => window.__parityReadSpaRoute().includes('cashier=visual'), null, {
     timeout: 5_000,
   });
   await page.waitForTimeout(150);

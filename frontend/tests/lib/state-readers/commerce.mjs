@@ -85,7 +85,7 @@ export async function orderCheckoutState(page) {
   return {
     ...(await orderPaymentState(page)),
     creditCardTexts: await commerceCreditCardTexts(page),
-    hash: await page.evaluate(() => window.location.hash),
+    hash: await page.evaluate(() => window.__parityReadSpaRoute()),
     modalCount: await visibleCount(page, '[data-testid="payment-qrcode"], .ant-modal'),
     modalTexts: await visibleTexts(
       page,

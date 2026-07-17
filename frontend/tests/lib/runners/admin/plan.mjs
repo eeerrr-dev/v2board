@@ -19,6 +19,7 @@ import {
   openLegacySelectByLabel,
   focusFirstVisible,
   keyboardFocusState,
+  visibleCount,
 } from '../../dom-helpers.mjs';
 import { hoverTooltipInteraction } from '../../tooltip-helpers.mjs';
 import { clonePageRequests } from '../../json-util.mjs';
@@ -287,7 +288,7 @@ export async function runAdminMutationFailureMatrixInteraction(page) {
 
   const initialNoticeFetchCount = page.__visualParityAdminNoticeFetchCount ?? 0;
   await page.evaluate(() => {
-    window.location.hash = '/notice';
+    window.__paritySpaNavigate('/notice');
   });
   await waitForPagePropertyAtLeast(
     page,
@@ -310,7 +311,7 @@ export async function runAdminMutationFailureMatrixInteraction(page) {
 
   const initialServerFetchCount = page.__visualParityAdminServerNodeFetchCount ?? 0;
   await page.evaluate(() => {
-    window.location.hash = '/server/manage';
+    window.__paritySpaNavigate('/server/manage');
   });
   await waitForPagePropertyAtLeast(
     page,
@@ -350,4 +351,21 @@ export async function runAdminMutationFailureMatrixInteraction(page) {
     serverSortMode,
     serverSortRequests: clonePageRequests(page.__visualParityAdminServerSortRequests),
   };
+}
+
+// §10.3 boot translator (docs/api-dialect.md Appendix A §W1): the scenario
+// enters the path-routed admin app through the legacy `/{admin_path}#/plan`
+// URL (`legacyHashEntry`). With `legacy_hash_redirect_enable` ON the boot must
+// resolve the hash against the admin basename and land the history router on
+// `/{admin_path}/plan` with the hash consumed and the plan table rendered.
+// Source-only: the frozen oracle admin is hash-routed by design and never
+// translates.
+export async function runAdminPlanLegacyHashEntryInteraction(page) {
+  const planRowCount = await visibleCount(page, adminTableRowSelector);
+  const location = await page.evaluate(() => ({
+    historyPath: window.location.pathname + window.location.search,
+    locationHash: window.location.hash,
+    route: window.__parityReadSpaRoute(),
+  }));
+  return { planRowCount, ...location };
 }

@@ -4,6 +4,7 @@ import {
   readAdminSessionExpiredRedirectState,
   readSessionExpiredRedirectState,
   readUnauthorizedHttp401NoRedirectState,
+  visibleFormControlStates,
 } from '../state-readers/auth.mjs';
 import { normalizeRedesignedAuthPageState, withoutDroppedLocale } from '../normalizers.mjs';
 import {
@@ -23,6 +24,7 @@ import {
   adminAuthSurfaceSelector,
   adminForgotDialogSelector,
   languageMenuItemSelector,
+  userAuthControlSelector,
   userAuthSurfaceSelector,
 } from '../selectors.mjs';
 
@@ -97,6 +99,26 @@ export async function runRegisterFormStateInteraction(page) {
   return normalizeRedesignedAuthPageState(page);
 }
 
+// §10.3 boot translator (docs/api-dialect.md Appendix A §W1): the scenario
+// enters the path-routed source world through the legacy
+// `/#/register?code=INVITE2026` URL (`legacyHashEntry`). With
+// `legacy_hash_redirect_enable` ON the boot must replace it with the history
+// URL before the router mounts — canonical path, query string preserved, hash
+// consumed — and the register form must still consume the invite code.
+// Source-only: the frozen oracle is hash-routed by design and never
+// translates.
+export async function runUserRegisterLegacyHashEntryInteraction(page) {
+  return {
+    authBoxCount: await visibleCount(page, userAuthSurfaceSelector),
+    controls: await visibleFormControlStates(page, userAuthControlSelector),
+    ...(await page.evaluate(() => ({
+      historyPath: window.location.pathname + window.location.search,
+      locationHash: window.location.hash,
+      route: window.__parityReadSpaRoute(),
+    }))),
+  };
+}
+
 export async function runForgetFormStateInteraction(page) {
   await fillVisibleAt(
     page,
@@ -142,7 +164,7 @@ export async function runAdminLoginFormStateInteraction(page) {
 export async function runAdminSystemQueueStateInteraction(page) {
   await page.waitForTimeout(150);
   return {
-    hash: await page.evaluate(() => window.location.hash),
+    hash: await page.evaluate(() => window.__parityReadSpaRoute()),
     overview: await visibleTexts(
       page,
       '[data-testid="queue-page"] [data-slot="card-title"], [data-testid="queue-page"] h2, .block-title, .font-size-h3',
@@ -164,7 +186,7 @@ export async function runAdminSystemQueueStateInteraction(page) {
 export async function runSessionExpiredRedirectInteraction(page) {
   await page.waitForFunction(
     (authSurfaceSelector) =>
-      window.location.hash.includes('/login') &&
+      window.__parityReadSpaRoute().includes('/login') &&
       Boolean(document.querySelector(authSurfaceSelector)),
     userAuthSurfaceSelector,
     { timeout: 5_000 },
@@ -175,7 +197,7 @@ export async function runSessionExpiredRedirectInteraction(page) {
 export async function runAdminSessionExpiredRedirectInteraction(page) {
   await page.waitForFunction(
     (authSurfaceSelector) =>
-      window.location.hash.includes('/login') &&
+      window.__parityReadSpaRoute().includes('/login') &&
       Boolean(document.querySelector(authSurfaceSelector)),
     adminAuthSurfaceSelector,
     { timeout: 5_000 },

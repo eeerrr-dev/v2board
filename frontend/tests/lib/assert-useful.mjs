@@ -11,6 +11,7 @@ import {
   dashboardResetPackageTradeNo,
   profileDepositTradeNo,
 } from './fixture-data.mjs';
+import { adminPath } from './env.mjs';
 
 export function isDarkModeReadyState(state) {
   return Boolean(state?.darkReaderReady || state?.shadcnDarkReady);
@@ -133,11 +134,9 @@ export function assertUsefulInteraction(label, result, target) {
   if (
     label === 'user-login-language-persistence' &&
     (!result.menuItems?.includes('English') ||
-      result.afterSelect?.storedLocale !== 'en-US' ||
-      result.afterSelect?.cookieI18n !== 'en-US' ||
+      result.afterSelect?.persistedLocale !== 'en-US' ||
       !result.afterSelect?.triggerText?.includes('English') ||
-      result.afterReload?.storedLocale !== 'en-US' ||
-      result.afterReload?.cookieI18n !== 'en-US' ||
+      result.afterReload?.persistedLocale !== 'en-US' ||
       !result.afterReload?.triggerText?.includes('English'))
   ) {
     throw new Error(
@@ -156,8 +155,8 @@ export function assertUsefulInteraction(label, result, target) {
       result.controls?.length !== 2 ||
       result.submitActionCount !== 1 ||
       result.forgotActionCount !== 1 ||
-      (target === 'source' && result.hash !== '#/login') ||
-      (target === 'oracle' && !['#/', '#/login'].includes(result.hash)))
+      (target === 'source' && result.hash !== '/login') ||
+      (target === 'oracle' && !['/', '/login'].includes(result.hash)))
   ) {
     throw new Error(`admin root did not resolve to the login contract: ${JSON.stringify(result)}`);
   }
@@ -169,6 +168,18 @@ export function assertUsefulInteraction(label, result, target) {
       !result.buttons?.length)
   ) {
     throw new Error(`register form did not produce observable state: ${JSON.stringify(result)}`);
+  }
+  if (
+    label === 'user-register-legacy-hash-entry' &&
+    (result.route !== '/register?code=INVITE2026' ||
+      result.historyPath !== '/register?code=INVITE2026' ||
+      result.locationHash !== '' ||
+      result.authBoxCount !== 1 ||
+      !JSON.stringify(result.controls).includes('INVITE2026'))
+  ) {
+    throw new Error(
+      `legacy hash entry did not translate to the history route (§10.3): ${JSON.stringify(result)}`,
+    );
   }
   if (
     label === 'user-forget-form-state' &&
@@ -221,7 +232,7 @@ export function assertUsefulInteraction(label, result, target) {
   }
   if (
     label === 'admin-session-expired-redirect' &&
-    (result.hash !== '#/login' ||
+    (result.hash !== '/login' ||
       result.loginSurfaceCount !== 1 ||
       (target === 'source' && result.authData !== null))
   ) {
@@ -1032,6 +1043,17 @@ export function assertUsefulInteraction(label, result, target) {
   ) {
     throw new Error(
       `admin config save failure matrix did not preserve the rejected draft: ${JSON.stringify(result)}`,
+    );
+  }
+  if (
+    label === 'admin-plan-legacy-hash-entry' &&
+    (result.route !== '/plan' ||
+      result.historyPath !== `/${adminPath}/plan` ||
+      result.locationHash !== '' ||
+      result.planRowCount < 1)
+  ) {
+    throw new Error(
+      `admin legacy hash entry did not translate under the admin basename (§10.3): ${JSON.stringify(result)}`,
     );
   }
   if (

@@ -56,7 +56,7 @@ export async function userTicketListState(page) {
   return {
     actionLinks: await visibleTexts(page, '[data-testid="ticket-table"] button, .ant-table-tbody a', 8),
     closeCount: page.__visualParityUserTicketCloseCount ?? 0,
-    hash: await page.evaluate(() => window.location.hash),
+    hash: await page.evaluate(() => window.__parityReadSpaRoute()),
     tableRows: await visibleTexts(page, '[data-testid="ticket-table"] tbody tr, .ant-table-tbody tr', 6),
     toastTexts: await visibleTexts(page, '[data-sonner-toast], .ant-message-notice, .ant-notification-notice', 4),
   };

@@ -9,7 +9,12 @@
 // frontend/scripts/visual-parity.mjs driver (runInteractionParity /
 // runInteractionTarget / preparePageForInteraction) onto @playwright/test.
 import { readFileSync } from 'node:fs';
-import { sourceBaseUrl, viewports } from './env.mjs';
+import { adminPath, sourceBaseUrl, viewports } from './env.mjs';
+import {
+  entryUrlFor,
+  entryUrlForDialect,
+  installSpaLocationHelpers,
+} from './dialect/page-location-canonicalizer.mjs';
 import { collapseCjkDeep } from './text.mjs';
 import { stableJson } from './json-util.mjs';
 import { getScenario } from './scenario-meta.mjs';
@@ -57,6 +62,23 @@ export function interactionAppliesToViewport(interaction, projectName) {
   return !interaction.viewports || interaction.viewports.includes(projectName);
 }
 
+// Admin scenarios (label prefix `admin-`) mount under the /{admin_path} base
+// in both worlds; user scenarios mount at the root.
+function scenarioBasePath(scenario) {
+  return scenario.label.startsWith('admin-') ? `/${adminPath}` : '';
+}
+
+// Per-world entry URL path for a canonical scenario route (§13.4a). A
+// `legacyHashEntry` scenario deliberately enters the path-routed source world
+// through the legacy `/#/x` URL to pin the §10.3 boot translator.
+function scenarioEntryPath(scenario, target) {
+  const basePath = scenarioBasePath(scenario);
+  if (target === 'source' && scenario.legacyHashEntry) {
+    return entryUrlForDialect(scenario.path, 'hash', basePath);
+  }
+  return entryUrlFor(scenario.path, target, basePath);
+}
+
 // Port of preparePageForInteraction(page, url, scenario, target, interaction).
 async function preparePageForInteraction(page, url, scenario, target, interaction = {}) {
   const diagnostics = [];
@@ -75,18 +97,23 @@ async function preparePageForInteraction(page, url, scenario, target, interactio
       diagnostics.push(`response ${response.status()} ${response.url()}`);
     }
   });
+  // World-agnostic SPA location helpers (§13.4b): every runner/state-reader
+  // reads `window.__parityReadSpaRoute()` and navigates through
+  // `window.__paritySpaNavigate()` regardless of the world's routing dialect.
+  await installSpaLocationHelpers(page, target, scenarioBasePath(scenario));
   await installApiFixtures(page, scenario, target, interaction);
   if (scenario.warmupPath) {
-    await gotoStable(page, new URL(scenario.warmupPath, url).toString());
+    const warmupEntry = entryUrlFor(scenario.warmupPath, target, scenarioBasePath(scenario));
+    await gotoStable(page, new URL(warmupEntry, url).toString());
     // A fixed post-navigation delay is not enough under a full serial run: a
-    // lazy data-router can still be mounting when the hash is changed, so the
-    // first hashchange is lost and the URL/content disagree. Navigate only
+    // lazy data-router can still be mounting when the SPA route is changed, so
+    // the first transition is lost and the URL/content disagree. Navigate only
     // after the warmup React/Umi root has observably mounted.
     await waitForMountedContent(page, diagnostics);
     if (target === 'oracle' && scenario.seedLegacyAdminStore) {
       await seedLegacyAdminStore(page, scenario);
     }
-    await navigateAfterWarmup(page, url);
+    await navigateAfterWarmup(page, url, scenario.path);
   } else {
     await gotoStable(page, url);
   }
@@ -142,7 +169,7 @@ export async function runParityScenario({ browser, interaction, projectName }) {
 
   const sourceResult = await runOneWorld(
     browser,
-    new URL(scenario.path, sourceBaseUrl).toString(),
+    new URL(scenarioEntryPath(scenario, 'source'), sourceBaseUrl).toString(),
     scenario,
     interaction,
     viewport,
@@ -160,7 +187,7 @@ export async function runParityScenario({ browser, interaction, projectName }) {
 
   const oracleResult = await runOneWorld(
     browser,
-    new URL(scenario.path, oracleBaseUrl()).toString(),
+    new URL(scenarioEntryPath(scenario, 'oracle'), oracleBaseUrl()).toString(),
     scenario,
     interaction,
     viewport,

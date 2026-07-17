@@ -311,12 +311,12 @@ behavioral outcomes those lines pin remain contracts throughout.
     namespaces and integration payloads (subscription clients, node agents,
     payment-gateway notify routes and webhooks, Telegram, Google reCAPTCHA
     verification, Stripe PaymentIntent metadata/webhooks, Crisp/Tawk session
-    data — `docs/api-dialect.md` §2); backend-minted URL resolvability — the
-    SPA must keep resolving the URLs the backend mints (the `?verify=` email
-    login link, the `{app_url}/order/{trade_no}` payment return, quick-login
-    redirects; hash-style today, path-style per `docs/api-dialect.md` §10.4
-    once W1 lands — the `legacy_hash_redirect_enable` hash translator is
-    presentation, not a contract); the browser-persisted `authorization`
+    data — `docs/api-dialect.md` §2); history route paths plus the
+    `legacy_hash_redirect_enable` translator; backend-minted URLs are
+    path-style per `docs/api-dialect.md` §10.4 — the SPA must keep resolving
+    the URLs the backend mints (the `?verify=` email login link, the
+    `{app_url}/order/{trade_no}` payment return, quick-login redirects;
+    `?verify=`/`?redirect=` query names unchanged); the browser-persisted `authorization`
     localStorage key, plus the legacy locale keys strictly as
     one-time-migration reads; imported-data interpretations (the notice
     `弹窗` auto-popup tag, the knowledge `copy()`/`jump()` hooks in rendered
@@ -387,8 +387,9 @@ second styling system.
 The user auth surface (`/login`, `/register`, `/forgetpassword`) is a pure
 shadcn island.
 
-- Keep auth contracts strict: API payloads, routed paths (hash today, history
-  routing per `docs/api-dialect.md`), `token2Login`, redirect
+- Keep auth contracts strict: API payloads, routed paths (history routing per
+  `docs/api-dialect.md` §10.1, with the §10.3 `legacy_hash_redirect_enable`
+  boot translator), `token2Login`, redirect
   safety, recaptcha, email verification, invite codes, language persistence,
   auth storage, and i18n behavior must remain covered. The TOS gate (block submit
   when `tos_url` is configured and unaccepted) is a UX behavior, not a payload

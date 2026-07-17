@@ -261,7 +261,7 @@ export async function runDashboardResetPackageConfirmInteraction(page) {
     initialOrderSaveCount + 1,
   );
   await page.waitForFunction(
-    (tradeNo) => window.location.hash.includes(`/order/${tradeNo}`),
+    (tradeNo) => window.__parityReadSpaRoute().includes(`/order/${tradeNo}`),
     dashboardResetPackageTradeNo,
     { timeout: 5_000 },
   );
@@ -276,7 +276,7 @@ export async function runDashboardResetPackageConfirmInteraction(page) {
   return {
     before,
     confirmed,
-    hash: await page.evaluate(() => window.location.hash),
+    hash: await page.evaluate(() => window.__parityReadSpaRoute()),
     opened,
     orderInfo: normalizeDashboardOrderInfo(await visibleTexts(page, '[data-testid="order-info"]', 6)),
     orderSaveRequests: (page.__visualParityUserOrderSaveRequests ?? []).map((request) =>
@@ -312,7 +312,7 @@ export async function runDashboardNewPeriodConfirmInteraction(page) {
   return {
     before,
     confirmed,
-    hash: await page.evaluate(() => window.location.hash),
+    hash: await page.evaluate(() => window.__parityReadSpaRoute()),
     newPeriodRequests: (page.__visualParityUserNewPeriodRequests ?? []).map((request) =>
       request && typeof request === 'object' && !Array.isArray(request) ? { ...request } : request,
     ),
@@ -328,7 +328,7 @@ export async function runDashboardAlertLinksInteraction(page) {
     '[data-testid="dashboard-alert"][data-alert-kind="danger"] [data-testid="dashboard-alert-link"], .alert-danger .alert-link',
     0,
   );
-  await page.waitForFunction(() => window.location.hash.includes('/order'), null, {
+  await page.waitForFunction(() => window.__parityReadSpaRoute().includes('/order'), null, {
     timeout: 5_000,
   });
   await page.waitForSelector('[data-testid="orders-table"], .ant-table-thead, .am-list-body', {
@@ -339,7 +339,7 @@ export async function runDashboardAlertLinksInteraction(page) {
   const order = await dashboardAlertLinksState(page);
 
   await page.evaluate(() => {
-    window.location.hash = '#/dashboard';
+    window.__paritySpaNavigate('/dashboard');
   });
   await page.waitForSelector(
     '[data-testid="dashboard-alert-link"], .alert .alert-link',
@@ -353,7 +353,7 @@ export async function runDashboardAlertLinksInteraction(page) {
     '[data-testid="dashboard-alert"][data-alert-kind="warning"] [data-testid="dashboard-alert-link"], .alert-warning .alert-link',
     0,
   );
-  await page.waitForFunction(() => window.location.hash.includes('/ticket'), null, {
+  await page.waitForFunction(() => window.__parityReadSpaRoute().includes('/ticket'), null, {
     timeout: 5_000,
   });
   await page.waitForSelector('[data-testid="ticket-table"], .ant-table-thead, .am-list-body', {
@@ -375,7 +375,7 @@ export async function runAdminDashboardCommissionShortcutInteraction(page) {
   } else {
     await clickVisibleAt(page, '.alert-danger .alert-link', 1);
   }
-  await page.waitForFunction(() => window.location.hash.includes('/order'), null, {
+  await page.waitForFunction(() => window.__parityReadSpaRoute().includes('/order'), null, {
     timeout: 5_000,
   });
   await waitForPageProperty(page, '__visualParityLastAdminOrderFetchQuery');

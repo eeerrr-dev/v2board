@@ -1,6 +1,10 @@
 import { adminPath } from './env.mjs';
 import { emitFixtureResponse } from './dialect/fixture-emitters.mjs';
 import {
+  entryUrlForDialect,
+  routingDialectFor,
+} from './dialect/page-location-canonicalizer.mjs';
+import {
   adminConfigFixture,
   adminCouponFixtures,
   adminCouponStoreFixtures,
@@ -80,14 +84,21 @@ export async function installApiFixtures(page, scenario, target, interaction = {
   let adminGroupsResolved = false;
 
   await page.addInitScript(
-    ({ authenticated, darkMode, locale, preserveRuntimeDarkMode, preserveRuntimeLocale }) => {
+    ({ authenticated, darkMode, locale, preserveRuntimeDarkMode, preserveRuntimeLocale, world }) => {
       const initializeDarkModeCookie = () => {
         document.cookie = darkMode
           ? 'dark_mode=1;path=/'
           : 'dark_mode=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
       };
+      // World-aware locale seed (docs/api-dialect.md §11): the source world
+      // persists only the canonical v2board_locale key; the oracle keeps its
+      // legacy umi_locale/g_lang/i18n-cookie trio.
       const initializeLocale = () => {
         if (!locale) return;
+        if (world === 'source') {
+          window.localStorage.setItem('v2board_locale', locale);
+          return;
+        }
         window.g_lang = locale;
         window.g_langSeparator = '-';
         window.localStorage.setItem('umi_locale', locale);
@@ -125,6 +136,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
       locale: effectiveLocale,
       preserveRuntimeDarkMode: Boolean(interaction.preserveRuntimeDarkMode),
       preserveRuntimeLocale: Boolean(interaction.preserveRuntimeLocale),
+      world: target,
     },
   );
 
@@ -739,7 +751,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     }
     await fulfillApiResponse(
       route,
-      apiFixtureResponse(requestUrl, isAdminScenario, scenario, requestData, interaction),
+      apiFixtureResponse(requestUrl, isAdminScenario, scenario, requestData, interaction, target),
       target,
     );
 
@@ -771,6 +783,7 @@ export function apiFixtureResponse(
   scenario = { label: '' },
   requestData = null,
   interaction = {},
+  target = 'oracle',
 ) {
   const pathname = requestUrl.pathname;
   const adminEndpoint = adminFixtureEndpoint(pathname);
@@ -1097,7 +1110,12 @@ export function apiFixtureResponse(
         return body('stripe-accepted', { type: 1 });
       }
       if (methodId === 3) {
-        return body(interaction.checkoutRedirectUrl ?? '/#/order/VISUAL2026110001?cashier=visual', {
+        // Backend-minted relative payment-return URL: the modern backend
+        // mints path-style URLs while the legacy oracle mints `/#/…`
+        // (docs/api-dialect.md Appendix A §W1), so emit per world.
+        const redirectRoute =
+          interaction.checkoutRedirectRoute ?? '/order/VISUAL2026110001?cashier=visual';
+        return body(entryUrlForDialect(redirectRoute, routingDialectFor(target)), {
           type: 1,
         });
       }

@@ -298,7 +298,7 @@ export async function profileChangePasswordState(page) {
     changePasswordRequests: (page.__visualParityUserChangePasswordRequests ?? []).map((request) =>
       request && typeof request === 'object' && !Array.isArray(request) ? { ...request } : request,
     ),
-    hash: await page.evaluate(() => window.location.hash),
+    hash: await page.evaluate(() => window.__parityReadSpaRoute()),
     localAuthPresent: await page.evaluate(() => Boolean(window.localStorage.getItem('authorization'))),
     toastTexts: await visibleTexts(page, '[data-sonner-toast], .ant-message-notice, .ant-notification-notice', 4),
     ...domState,

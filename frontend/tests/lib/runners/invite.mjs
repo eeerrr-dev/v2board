@@ -125,7 +125,7 @@ export async function runInviteWithdrawModalInteraction(page) {
   await page.waitForTimeout(100);
   const saving = await inviteFinanceDialogState(page);
   await waitForPagePropertyAtLeast(page, '__visualParityUserWithdrawCount', 1);
-  await page.waitForFunction(() => window.location.hash.includes('/ticket'), null, {
+  await page.waitForFunction(() => window.__parityReadSpaRoute().includes('/ticket'), null, {
     timeout: 5_000,
   });
   await page.waitForTimeout(250);
@@ -217,7 +217,7 @@ export async function runInviteFinanceSubmitMatrixInteraction(page) {
     '__visualParityUserWithdrawCount',
     initialWithdrawCount + 2,
   );
-  await page.waitForFunction(() => window.location.hash.includes('/ticket'), null, {
+  await page.waitForFunction(() => window.__parityReadSpaRoute().includes('/ticket'), null, {
     timeout: 5_000,
   });
   await page.waitForTimeout(250);

@@ -30,7 +30,7 @@ export async function inviteFinanceDialogState(page) {
       '[data-testid="invite-select-content"] [role="option"], .ant-select-dropdown-menu-item',
       8,
     ),
-    hash: await page.evaluate(() => window.location.hash),
+    hash: await page.evaluate(() => window.__parityReadSpaRoute()),
     inputValues: await visibleInputValues(page, '[data-testid="invite-dialog"] input, .ant-modal input'),
     labels: await visibleTexts(page, '[data-testid="invite-dialog"] label, .ant-modal .form-group label', 8),
     modalCount: await visibleCount(page, '[data-testid="invite-dialog"], .ant-modal'),

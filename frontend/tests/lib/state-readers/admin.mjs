@@ -873,7 +873,7 @@ export async function adminDashboardShortcutState(page) {
       '[role="alert"] a, [role="alert"] button, .alert-danger .alert-link',
       4,
     ),
-    hash: await page.evaluate(() => window.location.hash),
+    hash: await page.evaluate(() => window.__parityReadSpaRoute()),
     orderFetchQuery: normalizeAdminOrderFetchQuery(page.__visualParityLastAdminOrderFetchQuery),
     orderFilter,
   };
@@ -1114,7 +1114,7 @@ export async function adminTicketsReplyFilterState(page) {
 export async function adminUserOrdersActionState(page) {
   return {
     dropdownItems: await visibleTexts(page, adminMenuItemSelector, 10),
-    hash: await page.evaluate(() => window.location.hash),
+    hash: await page.evaluate(() => window.__parityReadSpaRoute()),
     orderFetchQuery: normalizeAdminOrderFetchQuery(page.__visualParityLastAdminOrderFetchQuery),
     tableRows: await visibleTexts(page, adminTableRowSelector, 6),
     triggerTexts: await visibleTexts(page, adminUserRowActionTriggerSelector, 10),
@@ -1331,7 +1331,7 @@ export async function adminUserAssignActionState(page) {
 export async function adminUserInviteActionState(page) {
   return {
     dropdownItems: await visibleTexts(page, adminMenuItemSelector, 10),
-    hash: await page.evaluate(() => window.location.hash),
+    hash: await page.evaluate(() => window.__parityReadSpaRoute()),
     tableRows: await visibleTexts(page, adminTableRowSelector, 6),
     triggerTexts: await visibleTexts(page, adminUserRowActionTriggerSelector, 10),
     userFetchQuery: normalizeAdminOrderFetchQuery(
@@ -1699,7 +1699,7 @@ export async function adminMutationFailureState(page) {
   return {
     buttons: await visibleTexts(page, 'button, .ant-btn', 12),
     dropdownItems: await visibleTexts(page, adminMenuItemSelector, 10),
-    hash: await page.evaluate(() => window.location.hash),
+    hash: await page.evaluate(() => window.__parityReadSpaRoute()),
     sortModeActive,
     requestCounts: {
       noticeDrop: page.__visualParityAdminNoticeDropCount ?? 0,

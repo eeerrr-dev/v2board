@@ -14,9 +14,12 @@ import { interactions } from '../../../tests/lib/interaction-scenarios.mjs';
 import { GROUP_NAMES } from '../../../tests/lib/spec-groups.mjs';
 
 describe('parity config audit helpers', () => {
-  it('normalizes parity hash paths back to application routes', () => {
-    expect(normalizeScenarioRoute('/#/register?code=INVITE2026')).toBe('/register');
-    expect(normalizeScenarioRoute('/${adminPath}#/')).toBe('/');
+  it('normalizes canonical scenario paths back to application routes', () => {
+    expect(normalizeScenarioRoute('/register?code=INVITE2026')).toBe('/register');
+    expect(normalizeScenarioRoute('/')).toBe('/');
+    expect(() => normalizeScenarioRoute('/#/register')).toThrowError(
+      /canonical route path, not a hash URL/,
+    );
   });
 
   it('matches concrete paths against dynamic route patterns', () => {
