@@ -3453,9 +3453,11 @@ name = "v2board-compat"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "chrono",
  "indexmap",
  "redis",
  "serde",
+ "serde_json",
  "sha2 0.11.0",
  "sqlx",
  "subtle",

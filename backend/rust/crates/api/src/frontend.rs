@@ -18,6 +18,14 @@ const CUSTOM_HTML_MARKER: &str = "<!-- V2BOARD_CUSTOM_HTML -->";
 /// fails when a locale lands on only one side.
 const ENABLED_LOCALES: [&str; 6] = ["zh-CN", "en-US", "ja-JP", "vi-VN", "ko-KR", "zh-TW"];
 
+/// Single Rust anchor for the enabled-locale set (docs/api-dialect.md §4.3):
+/// the runtime-config `i18n` key and the modern `Accept-Language` resolver
+/// (locale.rs) both derive from the one array above, so the lists cannot
+/// drift.
+pub(crate) fn enabled_locales() -> &'static [&'static str] {
+    &ENABLED_LOCALES
+}
+
 #[derive(Clone, Copy)]
 pub(super) enum FrontendApp {
     User,

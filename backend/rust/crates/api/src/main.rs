@@ -20,6 +20,7 @@ mod frontend;
 mod golden_wire;
 mod i18n;
 mod json_value;
+mod locale;
 mod localization;
 mod request_params;
 mod route_paths;
