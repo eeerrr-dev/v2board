@@ -242,19 +242,72 @@ current import contract and must not retain retired schema names or workflows.
 These pre-release installation rules do not relax the permanent external API,
 integration, or frontend behavior contracts below.
 
+## Internal API Dialect Direction
+
+The legacy-inherited internal API dialect is being replaced by a modern one.
+`docs/api-dialect.md` is the single source of truth for the new dialect: the
+complete old→new route map, the RFC 9457 `application/problem+json` error
+model with its stable snake_case `code` registry, JSON-body/Bearer/
+Accept-Language transport conventions, null-clear-vs-absent-retain
+(double-Option) semantics, the admin filter/sort DSL, `page`/`per_page` +
+`{items,total}` pagination, RFC 3339 timestamps, the checkout discriminated
+union, history routing with the `legacy_hash_redirect_enable` toggle,
+`custom_html` removal plus CSP tightening, the canonical locale key, and the
+wave-by-wave migration appendix that later waves are parameterized from.
+
+- All internal namespaces modernize: passport/auth (breaking third-party
+  in-app login is an accepted owner decision), user, admin (under the kept
+  dynamic `secure_path` prefix), and guest comm/config.
+- The external namespaces stay byte-frozen exactly as listed in
+  `docs/api-dialect.md` §2: `/api/v1/client/*` (+ the operator
+  `subscribe_path` alias), `/api/v1/server/{class}/{action}`,
+  `/api/v2/server/config`, `/api/v1/guest/payment/notify/{method}/{uuid}`,
+  `/api/v1/guest/telegram/webhook`, the subscribe-URL/token/flag scheme,
+  Stripe/reCAPTCHA/Crisp/Tawk integration payloads, and the localStorage
+  `authorization` key (legacy locale keys remain one-time migration reads).
+- No dual-dialect compatibility branches may ship: each endpoint family
+  switches atomically — backend + frontend + api-client + fixtures +
+  scenarios + goldens in one commit series, per the appendix waves.
+- Frontend error discrimination moves to the problem `code`; exact
+  error-string matching and the backend response-rewrite localization
+  middleware are retired as families migrate.
+- Cross-world parity comparison drops to canonical semantics through the
+  per-world adapter layer (URL map, request/error/page-location
+  canonicalizers, world-aware fixtures) under
+  `frontend/tests/lib/dialect/`; byte-level request equality for the
+  internal dialect is retired. The read-only reference oracle stays.
+
 ## Frontend Contract Direction
 
 The user and admin applications are fully redesigned shadcn surfaces. The old
 frontend is retired; only its read-only reference submodule remains to identify
 externally observable compatibility contracts.
 
+The internal API dialect migration (see "Internal API Dialect Direction"
+above) rewords contract lines in this section wave by wave. Until a
+family's wave lands, the legacy contract wording here remains authoritative
+for that family; when a wave ships, it rewords the affected lines in the
+same commit series — `docs/api-dialect.md` Appendix B maps each affected
+line to its replacement wording and owning wave (hash routes → history
+routes plus `legacy_hash_redirect_enable` and path-style minted URLs;
+form-encoded array shapes such as `limit_plan_ids[0]` → JSON arrays and the
+filter DSL; `{trade_no}` bodies → path segments; `/user/resetSecurity` →
+`POST /user/subscription/reset-token`; `/user/invite/save` →
+`POST /user/invite-codes`). Do not treat those quoted legacy shapes as
+permanent contracts: the Tier-1 anchor for internal API shape is the modern
+dialect per `docs/api-dialect.md`, while the behavioral outcomes those
+lines pin remain Tier 1 throughout.
+
 - Behavioral/contract parity is permanent, but the anchor is the Rust backend
   and external integrations, not the reference frontend. The reference only
   witnesses what those already expect; matching it is a proxy for matching the
   real contract, never an end in itself. Two tiers follow:
   - Tier 1 — non-negotiable (permanent): true external contracts — API endpoints
-    and request payloads, auth/session persistence keys, hash route paths (the
-    backend emails links into them, e.g. `?verify=`), and payloads sent to
+    and request payloads (for internal routes, the shapes defined by
+    `docs/api-dialect.md` once a family has migrated; the legacy shapes until
+    then), auth/session persistence keys, the SPA route paths the backend
+    mints links into (e.g. `?verify=`, `/order/{trade_no}` — moving from hash
+    to history routing per `docs/api-dialect.md`), and payloads sent to
     external integrations (e.g. Stripe PaymentIntent metadata/webhooks and
     Crisp/Tawk session data) — where changing one breaks a real external party; plus the security-
     and session-critical behavioral OUTCOMES (auth redirects, i18n/language
@@ -313,7 +366,8 @@ second styling system.
 The user auth surface (`/login`, `/register`, `/forgetpassword`) is a pure
 shadcn island.
 
-- Keep auth contracts strict: API payloads, hash routes, `token2Login`, redirect
+- Keep auth contracts strict: API payloads, routed paths (hash today, history
+  routing per `docs/api-dialect.md`), `token2Login`, redirect
   safety, recaptcha, email verification, invite codes, language persistence,
   auth storage, and i18n behavior must remain covered. The TOS gate (block submit
   when `tos_url` is configured and unaccepted) is a UX behavior, not a payload
