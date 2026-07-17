@@ -1,6 +1,6 @@
 use axum::{
     Json,
-    extract::{Form, Query, State},
+    extract::{Query, State},
     http::HeaderMap,
     response::{IntoResponse, Response},
 };
@@ -206,24 +206,6 @@ pub(super) fn checked_reset_subscription_expiry(
         .checked_sub(reset_seconds)
         .map(Some)
         .ok_or_else(|| ApiError::business("Subscription expiry exceeds the supported range"))
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct UserQuickLoginRequest {
-    redirect: Option<String>,
-}
-
-pub(crate) async fn user_quick_login_url(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Form(payload): Form<UserQuickLoginRequest>,
-) -> Result<Json<LegacyEnvelope<String>>, ApiError> {
-    let user = require_user(&state, &headers).await?;
-    let auth = state.auth_service();
-    Ok(legacy_data(
-        auth.quick_login_url(user.id, payload.redirect.as_deref())
-            .await?,
-    ))
 }
 
 #[derive(Debug, Deserialize)]

@@ -58,7 +58,10 @@ fn localize_legacy_message(message: &str, locale: &str) -> String {
     message.to_string()
 }
 
-fn localize_zh_cn_message(message: &str) -> Option<String> {
+/// Also reused by the modern dialect boundary (`crate::dialect`) so custom
+/// problem `detail` text (dynamic interpolations, distinguishing legacy
+/// messages) localizes exactly like the legacy rewrite middleware did.
+pub(crate) fn localize_zh_cn_message(message: &str) -> Option<String> {
     // Dynamically-composed rate-limit string (Laravel interpolates `:minute`); the
     // remaining ~98 static strings resolve through the embedded Laravel catalog below.
     if let Some(minute) = password_limit_minutes(message) {

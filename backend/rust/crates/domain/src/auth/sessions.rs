@@ -4,7 +4,7 @@ use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
-use v2board_compat::ApiError;
+use v2board_compat::{ApiError, Code, Problem};
 use v2board_db as db;
 
 use super::{AuthService, cache_key, legacy_guid, validation::validate_password};
@@ -32,14 +32,15 @@ end
 return 1
 "#;
 
-/// Login/register/token2Login response. Deliberately omits the permanent
+/// Login/register/token-login response (docs/api-dialect.md §5.2): the bare
+/// `{is_admin: bool, auth_data}` body. Deliberately omits the permanent
 /// subscription credential (`users.token`): the frontend reads only
 /// `auth_data` + `is_admin` and fetches the subscribe URL separately through
 /// `/user/getSubscribe`, so the long-lived credential never rides on the
 /// authentication exchange.
 #[derive(Serialize)]
 pub struct AuthData {
-    pub is_admin: i16,
+    pub is_admin: bool,
     pub auth_data: String,
 }
 
@@ -107,9 +108,10 @@ impl AuthService {
             .arg(&key)
             .query_async(&mut conn)
             .await?;
-        let token_value = token_value.ok_or_else(|| ApiError::business("Token error"))?;
-        let (user_id, session_epoch) =
-            parse_temp_token(&token_value).ok_or_else(|| ApiError::business("Token error"))?;
+        let token_value =
+            token_value.ok_or_else(|| ApiError::from(Problem::new(Code::InvalidToken)))?;
+        let (user_id, session_epoch) = parse_temp_token(&token_value)
+            .ok_or_else(|| ApiError::from(Problem::new(Code::InvalidToken)))?;
         self.auth_data_for_user(user_id, Some(session_epoch), ip, user_agent, false)
             .await
     }
@@ -166,9 +168,9 @@ impl AuthService {
     ) -> Result<AuthData, ApiError> {
         let user = db::user::find_user_for_auth_by_id(&self.db, user_id)
             .await?
-            .ok_or_else(|| ApiError::business("The user does not exist"))?;
+            .ok_or_else(|| ApiError::from(Problem::new(Code::UserNotRegistered)))?;
         if user.banned != 0 {
-            return Err(ApiError::business("Your account has been suspended"));
+            return Err(Problem::new(Code::AccountSuspended).into());
         }
         if expected_session_epoch.is_some_and(|expected| expected != user.session_epoch) {
             return Err(ApiError::unauthorized());
@@ -217,7 +219,7 @@ impl AuthService {
             .ok_or_else(|| ApiError::internal("could not allocate a unique session token"))?;
 
         Ok(AuthData {
-            is_admin: user.is_admin,
+            is_admin: user.is_admin != 0,
             auth_data,
         })
     }
@@ -348,9 +350,9 @@ impl AuthService {
             .invoke_async::<i64>(&mut limiter_conn)
             .await?;
         if reserved != 1 {
-            return Err(ApiError::business(
-                "Too many password verification attempts; try again later",
-            ));
+            return Err(Problem::new(Code::PasswordAttemptsRateLimited)
+                .with_detail("Too many password verification attempts; try again later")
+                .into());
         }
         let user = db::user::find_user_for_auth_by_id(&self.db, user_id)
             .await?
@@ -368,7 +370,7 @@ impl AuthService {
             )
             .await?
         {
-            return Err(ApiError::business("Incorrect email or password"));
+            return Err(Problem::new(Code::InvalidCredentials).into());
         }
         if !self.check_session(user_id, session_id).await? {
             return Err(ApiError::unauthorized());

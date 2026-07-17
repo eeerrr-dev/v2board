@@ -4,7 +4,7 @@ use chrono::Utc;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
-use v2board_compat::ApiError;
+use v2board_compat::{ApiError, Code, Problem};
 use v2board_config::duration_minutes_to_seconds;
 use v2board_db as db;
 
@@ -48,6 +48,7 @@ return 1
 "#;
 
 #[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ForgetInput {
     pub email: String,
     pub email_code: String,
@@ -72,10 +73,12 @@ impl AuthService {
         let password_error_limit = if self.config.password_limit_enable {
             let keys = login_limiter_keys(&email, ip.as_deref()).map(|key| self.redis_key(&key));
             if !self.reserve_login_attempt(&keys).await? {
-                return Err(ApiError::business(format!(
-                    "There are too many password errors, please try again after {} minutes.",
-                    self.config.password_limit_expire
-                )));
+                return Err(Problem::new(Code::PasswordAttemptsRateLimited)
+                    .with_detail(format!(
+                        "There are too many password errors, please try again after {} minutes.",
+                        self.config.password_limit_expire
+                    ))
+                    .into());
             }
             Some(keys)
         } else {
@@ -96,7 +99,7 @@ impl AuthService {
                     .await;
                 return Err(error);
             }
-            return Err(ApiError::business("Incorrect email or password"));
+            return Err(Problem::new(Code::InvalidCredentials).into());
         };
 
         let password_matches = match self
@@ -117,7 +120,7 @@ impl AuthService {
             }
         };
         if !password_matches {
-            return Err(ApiError::business("Incorrect email or password"));
+            return Err(Problem::new(Code::InvalidCredentials).into());
         }
 
         // The reservation represents only a password failure. Release it once
@@ -126,7 +129,7 @@ impl AuthService {
             .await;
 
         if user.banned != 0 {
-            return Err(ApiError::business("Your account has been suspended"));
+            return Err(Problem::new(Code::AccountSuspended).into());
         }
 
         if password_needs_rehash(user.password_algo.as_deref(), &user.password) {
@@ -227,21 +230,21 @@ impl AuthService {
         {
             LimitedEmailCodeResult::Consumed => {}
             LimitedEmailCodeResult::Incorrect => {
-                return Err(ApiError::business("Incorrect email verification code"));
+                return Err(Problem::new(Code::InvalidEmailCode).into());
             }
             LimitedEmailCodeResult::Limited => {
-                return Err(ApiError::business("Reset failed, Please try again later"));
+                return Err(Problem::new(Code::PasswordResetFailed).into());
             }
         }
         let user = db::user::find_user_for_auth(&self.db, email)
             .await?
-            .ok_or_else(|| ApiError::business("This email is not registered in the system"))?;
+            .ok_or_else(|| ApiError::from(Problem::new(Code::EmailNotRegistered)))?;
         let password_hash = self.password_kdf.hash(&input.password).await?;
         let updated =
             db::user::update_password(&self.db, user.id, &password_hash, Utc::now().timestamp())
                 .await?;
         if !updated {
-            return Err(ApiError::business("Reset failed"));
+            return Err(Problem::new(Code::PasswordResetFailed).into());
         }
         // The database epoch is the durable revocation mechanism. Redis cleanup is cache hygiene
         // only and must not turn an already committed password reset into an apparent failure.

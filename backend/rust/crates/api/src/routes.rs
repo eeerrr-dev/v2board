@@ -34,7 +34,17 @@ const MAX_REQUEST_BODY_BYTES: usize = 8 * 1024 * 1024;
 /// ambient credentials would only broaden future CSRF exposure.
 fn cors_layer(state: AppState) -> CorsLayer {
     let cors = CorsLayer::new()
-        .allow_methods([Method::GET, Method::POST, Method::OPTIONS, Method::HEAD])
+        // docs/api-dialect.md §4.2: the modern dialect uses resource-shaped
+        // methods (DELETE /auth/session today; PATCH/PUT as families migrate).
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PATCH,
+            Method::PUT,
+            Method::DELETE,
+            Method::OPTIONS,
+            Method::HEAD,
+        ])
         // No `Origin` entry: browsers forbid it in Access-Control-Request-Headers, so
         // advertising it (a verbatim transplant of legacy CORS.php) was inert.
         .allow_headers([
@@ -109,35 +119,28 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
             "/api/v1/client/app/getVersion",
             get(crate::client::client_app_version),
         )
+        // ——— Auth family, modern dialect (docs/api-dialect.md §5.2, W2) ———
+        .route("/api/v1/auth/register", post(crate::auth::register))
+        .route("/api/v1/auth/login", post(crate::auth::login))
+        .route("/api/v1/auth/quick-login", get(crate::auth::quick_login))
+        .route("/api/v1/auth/token-login", post(crate::auth::token_login))
         .route(
-            "/api/v1/passport/auth/register",
-            post(crate::auth::register),
+            "/api/v1/auth/password-reset",
+            post(crate::auth::password_reset),
         )
-        .route("/api/v1/passport/auth/login", post(crate::auth::login))
+        .route("/api/v1/auth/step-up", post(crate::auth::step_up))
         .route(
-            "/api/v1/passport/auth/token2Login",
-            get(crate::auth::token2_login),
+            "/api/v1/auth/quick-login-url",
+            post(crate::auth::quick_login_url),
         )
+        .route("/api/v1/auth/email-codes", post(crate::auth::email_codes))
         .route(
-            "/api/v1/passport/auth/forget",
-            post(crate::auth::forget_password),
+            "/api/v1/auth/session",
+            get(crate::auth::session_get).delete(crate::auth::session_delete),
         )
-        .route(
-            "/api/v1/passport/auth/stepUp",
-            post(crate::auth::privileged_step_up),
-        )
-        .route(
-            "/api/v1/passport/auth/getQuickLoginUrl",
-            post(crate::auth::passport_quick_login_url),
-        )
-        .route(
-            "/api/v1/passport/comm/sendEmailVerify",
-            post(crate::auth::send_email_verify),
-        )
+        // Legacy §5.1 telemetry — W3 owns its flip to /public/invite-views.
         .route("/api/v1/passport/comm/pv", post(crate::auth::passport_pv))
         .route("/api/v1/user/info", get(crate::user::user_info))
-        .route("/api/v1/user/checkLogin", get(crate::user::check_login))
-        .route("/api/v1/user/logout", post(crate::user::logout))
         .route("/api/v1/user/getStat", get(crate::user::user_stat))
         .route(
             "/api/v1/user/getSubscribe",
@@ -162,10 +165,6 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
             get(crate::user::unbind_telegram),
         )
         .route("/api/v1/user/transfer", post(crate::user::user_transfer))
-        .route(
-            "/api/v1/user/getQuickLoginUrl",
-            post(crate::user::user_quick_login_url),
-        )
         .route(
             "/api/v1/user/getActiveSession",
             get(crate::user::active_sessions),
@@ -501,7 +500,7 @@ mod tests {
         let request = with_loopback_peer(
             Request::builder()
                 .method(Method::OPTIONS)
-                .uri("/api/v1/passport/auth/login")
+                .uri("/api/v1/auth/login")
                 .header(header::ORIGIN, ALLOWED_ORIGIN)
                 .header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
                 .body(Body::empty())
@@ -515,7 +514,14 @@ mod tests {
             headers.get(header::ACCESS_CONTROL_ALLOW_ORIGIN).unwrap(),
             ALLOWED_ORIGIN
         );
-        assert!(header_str(&headers, &header::ACCESS_CONTROL_ALLOW_METHODS).contains("POST"));
+        let allow_methods = header_str(&headers, &header::ACCESS_CONTROL_ALLOW_METHODS);
+        // §4.2: the modern dialect's resource methods are advertised.
+        for method in ["GET", "POST", "PATCH", "PUT", "DELETE"] {
+            assert!(
+                allow_methods.contains(method),
+                "missing {method} in {allow_methods}"
+            );
+        }
         let allow_headers =
             header_str(&headers, &header::ACCESS_CONTROL_ALLOW_HEADERS).to_ascii_lowercase();
         assert!(allow_headers.contains("authorization"));
@@ -545,7 +551,7 @@ mod tests {
         let request = with_loopback_peer(
             Request::builder()
                 .method(Method::OPTIONS)
-                .uri("/api/v1/passport/auth/login")
+                .uri("/api/v1/auth/login")
                 .header(header::ORIGIN, "https://evil.example.test")
                 .header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
                 .body(Body::empty())
@@ -573,10 +579,12 @@ mod tests {
         let request = with_loopback_peer(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/v1/passport/auth/login")
+                .uri("/api/v1/auth/login")
                 .header(header::ORIGIN, ALLOWED_ORIGIN)
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from("email=not-an-email&password=password123"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    "{\"email\":\"not-an-email\",\"password\":\"password123\"}",
+                ))
                 .unwrap(),
         );
         let response = app.oneshot(request).await.unwrap();
@@ -595,11 +603,18 @@ mod tests {
                 .get(header::ACCESS_CONTROL_ALLOW_CREDENTIALS)
                 .is_none()
         );
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            "application/problem+json"
+        );
         let body = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
         let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        // The default-locale zh-CN message proves the request traversed the full
-        // middleware stack down to the handler's validation error.
-        assert_eq!(body["message"], "邮箱格式不正确");
+        // The default-locale zh-CN detail proves the request traversed the
+        // full middleware stack down to the handler's construction-time
+        // localized validation problem (docs/api-dialect.md §3.1/§4.3).
+        assert_eq!(body["code"], "validation_failed");
+        assert_eq!(body["detail"], "邮箱格式不正确");
+        assert_eq!(body["errors"]["email"][0], "邮箱格式不正确");
     }
 
     #[test]
@@ -662,7 +677,7 @@ mod tests {
     #[test]
     fn api_responses_are_never_cacheable_and_all_responses_are_hardened() {
         let mut headers = HeaderMap::new();
-        apply_security_response_headers("/api/v1/passport/auth/login", &mut headers);
+        apply_security_response_headers("/api/v1/auth/login", &mut headers);
         assert_eq!(headers.get("cache-control").unwrap(), "no-store, max-age=0");
         assert_eq!(headers.get("x-content-type-options").unwrap(), "nosniff");
         assert_eq!(headers.get("referrer-policy").unwrap(), "no-referrer");

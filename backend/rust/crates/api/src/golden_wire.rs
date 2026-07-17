@@ -1,11 +1,13 @@
 //! Byte-exact golden fixtures for the pure-serde response bodies this crate
-//! serializes onto the wire (`guest.*`, `passport.*`, `user.*` under
-//! `frontend/packages/api-client/goldens`). Each document is a fully rendered
-//! response body: the exact compat envelope around a hand-pinned, realistic
-//! struct value. The api-client vitest suite parses every fixture with its
-//! zod contract schema, so a serde field rename, type change, or envelope
-//! change that would break the TypeScript contract fails here and in the
-//! frontend gate instead of drifting silently. The DB-backed `admin.*`
+//! serializes onto the wire (`auth.*`, `problem.*`, `guest.*`, `passport.*`,
+//! `user.*` under `frontend/packages/api-client/goldens`). Each document is a
+//! fully rendered response body: for legacy-dialect routes the exact compat
+//! envelope, for migrated modern-dialect routes (docs/api-dialect.md §1, §3)
+//! the bare success object or RFC 9457 problem body, around a hand-pinned,
+//! realistic struct value. The api-client vitest suite parses every fixture
+//! with its zod contract schema, so a serde field rename, type change, or
+//! envelope change that would break the TypeScript contract fails here and in
+//! the frontend gate instead of drifting silently. The DB-backed `admin.*`
 //! fixtures are owned by `v2board-contract golden-responses`.
 //!
 //! Regenerate with `make contract-goldens` (UPDATE_GOLDENS=1); the default
@@ -13,9 +15,10 @@
 
 use std::path::PathBuf;
 
+use indexmap::IndexMap;
 use serde::Serialize;
 use serde_json::json;
-use v2board_compat::LegacyEnvelope;
+use v2board_compat::{Code, LegacyEnvelope, Problem};
 use v2board_db::{
     order::{DepositPlan, OrderPlan, OrderRow},
     payment::PaymentMethodRow,
@@ -26,12 +29,10 @@ use v2board_db::{
 use v2board_domain::auth::AuthData;
 
 use crate::{
+    auth::{QuickLoginUrl, SessionState, StepUpGrant},
     client::GuestConfig,
     commerce::CheckoutEnvelope,
-    user::{
-        account::{CheckLoginResult, UserCommConfig},
-        subscription::SubscribeInfo,
-    },
+    user::{account::UserCommConfig, subscription::SubscribeInfo},
 };
 
 /// 2023-11-14T22:13:20Z, shared with the contract crate's golden generator.
@@ -41,7 +42,10 @@ const GOLDEN_EMAIL: &str = "golden-member@example.test";
 const GOLDEN_UUID: &str = "00000000-0000-4000-8000-000000000002";
 const GOLDEN_TOKEN: &str = "goldenmembertoken000000000000002";
 /// The file-name prefixes this test owns inside the shared goldens directory.
-const WIRE_GOLDEN_PREFIXES: &[&str] = &["guest.", "passport.", "user."];
+/// `passport.` stays owned with zero fixtures so a retired legacy fixture can
+/// never linger unpinned (`/passport/comm/pv` is the namespace's last route,
+/// W3).
+const WIRE_GOLDEN_PREFIXES: &[&str] = &["auth.", "guest.", "passport.", "problem.", "user."];
 
 fn goldens_dir() -> PathBuf {
     match std::env::var("V2BOARD_GOLDENS_DIR") {
@@ -157,19 +161,45 @@ fn golden_deposit_order() -> OrderRow {
 
 /// Every wire fixture this test owns, as `(file name, exact body)`.
 fn documents() -> Vec<(&'static str, String)> {
-    let auth_login = envelope(AuthData {
-        is_admin: 0,
+    // Modern-dialect auth family (docs/api-dialect.md §5.2): bare success
+    // bodies, no envelope. login/register/token-login share the AuthData
+    // shape.
+    let auth_login = pretty(&AuthData {
+        is_admin: false,
         auth_data: "golden-opaque-session-token-0001".to_string(),
     });
 
-    let check_login = envelope(CheckLoginResult {
+    let auth_session = pretty(&SessionState {
         is_login: true,
         is_admin: None,
     });
-    let check_login_admin = envelope(CheckLoginResult {
+    let auth_session_admin = pretty(&SessionState {
         is_login: true,
         is_admin: Some(true),
     });
+    let auth_session_logged_out = pretty(&SessionState {
+        is_login: false,
+        is_admin: None,
+    });
+
+    let auth_step_up = pretty(&StepUpGrant {
+        step_up_token: "golden-step-up-token-000000000001".to_string(),
+        expires_in: 900,
+    });
+
+    let auth_quick_login_url = pretty(&QuickLoginUrl {
+        url: "https://golden.v2board.test/login?verify=golden-temp-token-0001&redirect=dashboard"
+            .to_string(),
+    });
+
+    // Modern-dialect problem bodies (docs/api-dialect.md §3.1): the exact
+    // `{type, title, status, code, detail, errors?}` serialization the
+    // api-client problem schema consumes.
+    let problem_session_expired = pretty(&Problem::localized(Code::SessionExpired, "zh-CN"));
+    let problem_validation = pretty(&Problem::validation(IndexMap::from([(
+        "email".to_string(),
+        vec!["邮箱格式不正确".to_string()],
+    )])));
 
     let user_info = envelope(UserInfoRow {
         email: GOLDEN_EMAIL.to_string(),
@@ -311,14 +341,19 @@ fn documents() -> Vec<(&'static str, String)> {
     });
 
     vec![
+        ("auth.login.json", auth_login),
+        ("auth.quick-login-url.json", auth_quick_login_url),
+        ("auth.session.admin.json", auth_session_admin),
+        ("auth.session.json", auth_session),
+        ("auth.session.logged-out.json", auth_session_logged_out),
+        ("auth.step-up.json", auth_step_up),
         ("guest.comm.config.json", guest_config),
         (
             "guest.comm.config.whitelist-disabled.json",
             guest_config_whitelist_disabled,
         ),
-        ("passport.auth.login.json", auth_login),
-        ("user.checkLogin.admin.json", check_login_admin),
-        ("user.checkLogin.json", check_login),
+        ("problem.session-expired.json", problem_session_expired),
+        ("problem.validation.json", problem_validation),
         ("user.comm.config.json", comm_config),
         ("user.getSubscribe.json", subscribe),
         ("user.info.json", user_info),

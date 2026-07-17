@@ -3418,6 +3418,7 @@ dependencies = [
  "chrono",
  "hex",
  "hmac",
+ "indexmap",
  "ipnet",
  "md5",
  "percent-encoding",

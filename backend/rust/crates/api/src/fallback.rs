@@ -312,14 +312,15 @@ mod tests {
         let config = fallback_test_config(&root);
         let (app, state) = fallback_test_app(&config);
 
-        // Boot prefix: the static admin route dispatches (403 unauthenticated
-        // proves it got past routing into the admin handler).
+        // Boot prefix: the static admin route dispatches (401 unauthenticated
+        // — the W2 session_expired flip — proves it got past routing into the
+        // admin handler).
         let response = app
             .clone()
             .oneshot(request(Method::GET, "/api/v1/boot-admin1/config/fetch"))
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
         // Simulate a runtime `secure_path` save: no rebuild, no restart.
         let mut live = config.clone();
@@ -332,7 +333,7 @@ mod tests {
             .oneshot(request(Method::GET, "/api/v1/live-admin22/config/fetch"))
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
         // The stale boot prefix is declined by the live-prefix check.
         let response = app

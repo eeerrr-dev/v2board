@@ -14,6 +14,7 @@ mod cli;
 mod client;
 mod codec;
 mod commerce;
+mod dialect;
 mod fallback;
 mod frontend;
 #[cfg(test)]

@@ -1,7 +1,7 @@
 use chrono::Utc;
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde::Deserialize;
-use v2board_compat::ApiError;
+use v2board_compat::{ApiError, Code, Problem};
 use v2board_config::duration_minutes_to_seconds;
 use v2board_db::DbTransaction;
 
@@ -42,6 +42,7 @@ struct RegistrationLimitReservation {
 }
 
 #[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RegisterInput {
     pub email: String,
     pub password: String,
@@ -75,7 +76,7 @@ impl AuthService {
                 .await?;
             self.validate_register_email(email).await?;
             if self.config.stop_register {
-                return Err(ApiError::business("Registration has closed"));
+                return Err(Problem::new(Code::RegistrationClosed).into());
             }
             if self.config.invite_force
                 && input
@@ -85,16 +86,16 @@ impl AuthService {
                     .filter(|value| !value.is_empty())
                     .is_none()
             {
-                return Err(ApiError::business(
-                    "You must use the invitation code to register",
-                ));
+                return Err(Problem::new(Code::InvalidInviteCode)
+                    .with_detail("You must use the invitation code to register")
+                    .into());
             }
             if self.config.email_verify
                 && !self
                     .consume_email_code(&cache_email, input.email_code.as_deref())
                     .await?
             {
-                return Err(ApiError::business("Incorrect email verification code"));
+                return Err(Problem::new(Code::InvalidEmailCode).into());
             }
 
             let password_hash = self.password_kdf.hash(&input.password).await?;
@@ -142,7 +143,7 @@ impl AuthService {
             .await
             .map_err(|error| {
                 if is_email_unique_violation(&error) {
-                    ApiError::business("Email already exists")
+                    ApiError::from(Problem::new(Code::EmailAlreadyRegistered))
                 } else {
                     ApiError::Database(error)
                 }
@@ -202,7 +203,7 @@ impl AuthService {
         .await?;
         let Some(row) = row else {
             if self.config.invite_force {
-                return Err(ApiError::business("Invalid invitation code"));
+                return Err(Problem::new(Code::InvalidInviteCode).into());
             }
             return Ok(None);
         };
@@ -215,7 +216,7 @@ impl AuthService {
             .execute(&mut **tx)
             .await?;
             if result.rows_affected() != 1 {
-                return Err(ApiError::business("Invalid invitation code"));
+                return Err(Problem::new(Code::InvalidInviteCode).into());
             }
         }
         Ok(Some(row.user_id))
@@ -247,10 +248,14 @@ impl AuthService {
             .invoke_async::<i64>(&mut conn)
             .await?;
         if reserved != 1 {
-            return Err(ApiError::business(format!(
-                "Register frequently, please try again after {} minute",
-                self.config.register_limit_expire
-            )));
+            // Unconditionally 429 since W2 (docs/api-dialect.md §3.4; the
+            // legacy dialect shipped this limiter as a 400 business error).
+            return Err(Problem::new(Code::RegisterIpRateLimited)
+                .with_detail(format!(
+                    "Register frequently, please try again after {} minute",
+                    self.config.register_limit_expire
+                ))
+                .into());
         }
         Ok(Some(RegistrationLimitReservation { key, token }))
     }

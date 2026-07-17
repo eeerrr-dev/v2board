@@ -1,0 +1,12 @@
+{
+  "type": "about:blank",
+  "title": "Unprocessable Entity",
+  "status": 422,
+  "code": "validation_failed",
+  "detail": "邮箱格式不正确",
+  "errors": {
+    "email": [
+      "邮箱格式不正确"
+    ]
+  }
+}

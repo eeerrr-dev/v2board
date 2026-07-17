@@ -321,13 +321,13 @@ fn auth_response_omits_the_permanent_subscription_credential() {
     // subscription credential must never ride on the authentication exchange;
     // clients fetch the subscribe URL separately through /user/getSubscribe.
     let value = serde_json::to_value(AuthData {
-        is_admin: 1,
+        is_admin: true,
         auth_data: "opaque-session-grant".to_string(),
     })
     .unwrap();
     assert_eq!(
         value,
-        serde_json::json!({ "is_admin": 1, "auth_data": "opaque-session-grant" })
+        serde_json::json!({ "is_admin": true, "auth_data": "opaque-session-grant" })
     );
 }
 

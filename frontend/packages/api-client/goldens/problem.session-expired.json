@@ -1,0 +1,7 @@
+{
+  "type": "about:blank",
+  "title": "Unauthorized",
+  "status": 401,
+  "code": "session_expired",
+  "detail": "未登录或登陆已过期"
+}

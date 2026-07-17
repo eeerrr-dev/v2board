@@ -2,7 +2,7 @@ use chrono::Utc;
 use lettre::{AsyncTransport, Message, message::header::ContentType};
 use serde::Deserialize;
 use uuid::Uuid;
-use v2board_compat::ApiError;
+use v2board_compat::{ApiError, Code, Problem};
 use v2board_db as db;
 
 use crate::smtp::SmtpSettings;
@@ -11,9 +11,12 @@ use super::validation::validate_email;
 use super::{AuthService, cache_key};
 
 #[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct EmailVerifyInput {
     pub email: String,
-    pub isforget: Option<i32>,
+    /// `isforget: Option<0|1>` in the legacy dialect; a real JSON bool named
+    /// `is_forget` since W2 (docs/api-dialect.md §4.1, §5.2).
+    pub is_forget: Option<bool>,
     pub recaptcha_data: Option<String>,
 }
 
@@ -31,7 +34,7 @@ impl AuthService {
         ip: Option<String>,
     ) -> Result<bool, ApiError> {
         // FormRequest validates `email => required|email:strict` (422) before the controller body,
-        // which then runs: per-IP rate limit (429), recaptcha, whitelist/gmail, isforget, resend.
+        // which then runs: per-IP rate limit (429), recaptcha, whitelist/gmail, is_forget, resend.
         validate_email(&input.email)?;
         // Laravel uses the raw, original-case `$email` for the whitelist check, the
         // `User::where('email', ...)` existence probe and the `SendEmailJob` recipient, and
@@ -45,9 +48,9 @@ impl AuthService {
         if let Some(ip) = ip.as_deref() {
             let key = self.redis_key(&cache_key("SEND_EMAIL_VERIFY_LIMIT", ip));
             if !self.check_and_increment_limit(&key, 3, 60).await? {
-                return Err(ApiError::too_many_requests(
-                    "Too many requests, please try again later.",
-                ));
+                return Err(Problem::new(Code::EmailSendRateLimited)
+                    .with_detail("Too many requests, please try again later.")
+                    .into());
             }
         }
 
@@ -57,12 +60,14 @@ impl AuthService {
         let exists = db::user::find_user_for_auth(&self.db, email)
             .await?
             .is_some();
-        match input.isforget {
-            Some(0) if exists => return Err(ApiError::business("This email is registered")),
-            Some(1) if !exists => {
-                return Err(ApiError::business(
-                    "This email is not registered in the system",
-                ));
+        match input.is_forget {
+            Some(false) if exists => {
+                return Err(Problem::new(Code::EmailAlreadyRegistered)
+                    .with_detail("This email is registered")
+                    .into());
+            }
+            Some(true) if !exists => {
+                return Err(Problem::new(Code::EmailNotRegistered).into());
             }
             _ => {}
         }
@@ -70,9 +75,12 @@ impl AuthService {
         let code = six_digit_code();
         let code_key = self.redis_key(&cache_key("EMAIL_VERIFY_CODE", &cache_email));
         if !self.reserve_email_code(&code_key, &last_key, &code).await? {
-            return Err(ApiError::business(
-                "Email verification code has been sent, please request again later",
-            ));
+            // Unconditionally 429 since W2 (docs/api-dialect.md §3.4; the
+            // legacy dialect shipped this resend cooldown as a 400 business
+            // error).
+            return Err(Problem::new(Code::EmailSendRateLimited)
+                .with_detail("Email verification code has been sent, please request again later")
+                .into());
         }
         let subject = verify_mail_subject(&self.config.app_name);
         let body = crate::mail::render_verify(
@@ -96,14 +104,14 @@ impl AuthService {
                 !suffix.is_empty() && email.ends_with(&format!("@{suffix}"))
             });
             if !allowed {
-                return Err(ApiError::business("Email suffix is not in the Whitelist"));
+                return Err(Problem::new(Code::EmailSuffixNotAllowed).into());
             }
         }
         if self.config.email_gmail_limit_enable
             && let Some(prefix) = email.split('@').next()
             && (prefix.contains('.') || prefix.contains('+'))
         {
-            return Err(ApiError::business("Gmail alias is not supported"));
+            return Err(Problem::new(Code::GmailAliasNotSupported).into());
         }
         Ok(())
     }
@@ -204,8 +212,9 @@ impl AuthService {
     }
 
     pub(super) async fn verify_recaptcha(&self, token: Option<&str>) -> Result<(), ApiError> {
+        let recaptcha_failed = || ApiError::from(Problem::new(Code::RecaptchaFailed));
         if token.is_some_and(|value| value.len() > 4096) {
-            return Err(ApiError::business("Invalid code is incorrect"));
+            return Err(recaptcha_failed());
         }
         if !self.config.recaptcha_enable {
             return Ok(());
@@ -215,14 +224,14 @@ impl AuthService {
             .recaptcha_key
             .as_deref()
             .filter(|value| !value.is_empty())
-            .ok_or_else(|| ApiError::business("Invalid code is incorrect"))?;
+            .ok_or_else(recaptcha_failed)?;
         let response = token
             .map(str::trim)
             .filter(|value| !value.is_empty())
-            .ok_or_else(|| ApiError::business("Invalid code is incorrect"))?;
+            .ok_or_else(recaptcha_failed)?;
         let request_body =
             serde_urlencoded::to_string([("secret", secret), ("response", response)])
-                .map_err(|_| ApiError::legacy("Invalid code is incorrect"))?;
+                .map_err(|_| recaptcha_failed())?;
         let response = self
             .http
             .post("https://www.google.com/recaptcha/api/siteverify")
@@ -233,13 +242,14 @@ impl AuthService {
             .body(request_body)
             .send()
             .await
-            .map_err(|_| ApiError::legacy("Invalid code is incorrect"))?;
+            .map_err(|_| recaptcha_failed())?;
         let body: serde_json::Value = crate::http_response::bounded_json(
             response,
             crate::http_response::MAX_EXTERNAL_RESPONSE_BYTES,
             "Invalid code is incorrect",
         )
-        .await?;
+        .await
+        .map_err(|_| recaptcha_failed())?;
         if body
             .get("success")
             .and_then(serde_json::Value::as_bool)
@@ -247,7 +257,7 @@ impl AuthService {
         {
             Ok(())
         } else {
-            Err(ApiError::business("Invalid code is incorrect"))
+            Err(recaptcha_failed())
         }
     }
 
@@ -257,19 +267,25 @@ impl AuthService {
             .from_address
             .clone()
             .or_else(|| settings.username.clone())
-            .ok_or_else(|| ApiError::legacy("Email sender is not configured"))?;
+            .ok_or_else(|| ApiError::from(Problem::new(Code::MailSenderNotConfigured)))?;
         let email = Message::builder()
-            .from(
-                from.parse()
-                    .map_err(|_| ApiError::legacy("Invalid email sender"))?,
-            )
-            .to(to
-                .parse()
-                .map_err(|_| ApiError::legacy("Invalid recipient email"))?)
+            .from(from.parse().map_err(|_| {
+                ApiError::from(Problem::new(Code::MailInvalid).with_detail("Invalid email sender"))
+            })?)
+            .to(to.parse().map_err(|_| {
+                ApiError::from(
+                    Problem::new(Code::MailInvalid).with_detail("Invalid recipient email"),
+                )
+            })?)
             .subject(subject)
             .header(ContentType::TEXT_HTML)
             .body(body.to_string())
-            .map_err(|error| ApiError::legacy(format!("Build mail failed: {error}")))?;
+            .map_err(|error| {
+                ApiError::from(
+                    Problem::new(Code::MailSendFailed)
+                        .with_detail(format!("Build mail failed: {error}")),
+                )
+            })?;
         let transport = self.smtp.transport(&settings)?;
         let delivery = transport.send(email);
         tokio::time::timeout(
@@ -277,8 +293,15 @@ impl AuthService {
             delivery,
         )
         .await
-        .map_err(|_| ApiError::legacy("Send mail timed out"))?
-        .map_err(|error| ApiError::legacy(format!("Send mail failed: {error}")))?;
+        .map_err(|_| {
+            ApiError::from(Problem::new(Code::MailSendFailed).with_detail("Send mail timed out"))
+        })?
+        .map_err(|error| {
+            ApiError::from(
+                Problem::new(Code::MailSendFailed)
+                    .with_detail(format!("Send mail failed: {error}")),
+            )
+        })?;
         Ok(())
     }
 }

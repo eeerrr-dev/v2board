@@ -165,11 +165,27 @@ impl Code {
     /// resolved from `Accept-Language`. Waves populate their family's entries
     /// as they migrate (consumed from W2 on, docs/api-dialect.md Appendix A);
     /// unlisted `(code, locale)` pairs fall back to the English default. The
-    /// two seeded entries are literals the spec itself pins (§3.1 example and
-    /// the §3.2 status table).
+    /// zh-CN texts are the legacy Laravel catalog values for each code's
+    /// anchor message (crates/api/src/i18n/zh-CN.json), so the default-locale
+    /// wording is unchanged by the dialect flip.
     pub fn localized_detail(self, locale: &str) -> &'static str {
         match (self, locale) {
+            // Auth / session family (W2).
             (Code::SessionExpired, "zh-CN") => "未登录或登陆已过期",
+            (Code::InvalidCredentials, "zh-CN") => "邮箱或密码错误",
+            (Code::AccountSuspended, "zh-CN") => "该账户已被停止使用",
+            (Code::RegistrationClosed, "zh-CN") => "本站已关闭注册",
+            (Code::EmailAlreadyRegistered, "zh-CN") => "邮箱已在系统中存在",
+            (Code::EmailNotRegistered, "zh-CN") => "该邮箱不存在系统中",
+            (Code::InvalidEmailCode, "zh-CN") => "邮箱验证码有误",
+            (Code::InvalidInviteCode, "zh-CN") => "邀请码无效",
+            (Code::EmailSuffixNotAllowed, "zh-CN") => "邮箱后缀不处于白名单中",
+            (Code::GmailAliasNotSupported, "zh-CN") => "不支持 Gmail 别名邮箱",
+            (Code::RecaptchaFailed, "zh-CN") => "验证码有误",
+            (Code::EmailSendRateLimited, "zh-CN") => "验证码已发送，请过一会儿再请求",
+            (Code::InvalidToken, "zh-CN") => "令牌有误",
+            (Code::PasswordResetFailed, "zh-CN") => "重置失败，请稍后再试",
+            (Code::InternalError, "zh-CN") => "遇到了些问题，我们正在进行处理",
             (Code::PlanSoldOut, "zh-CN") => "当前产品已售罄",
             _ => self.default_detail(),
         }
@@ -194,6 +210,9 @@ impl Serialize for Code {
 pub struct Problem {
     code: Code,
     detail: Cow<'static, str>,
+    /// True once [`Problem::with_detail`] installed call-site text (dynamic
+    /// interpolations); [`Problem::relocalize`] never overwrites those.
+    custom_detail: bool,
     errors: Option<IndexMap<String, Vec<String>>>,
     credentials_presented: bool,
 }
@@ -218,6 +237,7 @@ impl Problem {
         Self {
             code,
             detail: Cow::Borrowed(code.default_detail()),
+            custom_detail: false,
             errors: None,
             credentials_presented: true,
         }
@@ -226,13 +246,28 @@ impl Problem {
     /// A problem whose `detail` is localized for the resolved request locale
     /// (§4.3) via [`Code::localized_detail`].
     pub fn localized(code: Code, locale: &str) -> Self {
-        Self::new(code).with_detail(code.localized_detail(locale))
+        let mut problem = Self::new(code);
+        problem.detail = Cow::Borrowed(code.localized_detail(locale));
+        problem
+    }
+
+    /// Re-resolve a default (non-custom) `detail` for the request locale.
+    /// Domain layers construct problems without header access; the API
+    /// boundary calls this with the `Accept-Language` locale (§4.3). Details
+    /// installed via [`Problem::with_detail`] (dynamic interpolations) are
+    /// kept as constructed.
+    pub fn relocalize(mut self, locale: &str) -> Self {
+        if !self.custom_detail {
+            self.detail = Cow::Borrowed(self.code.localized_detail(locale));
+        }
+        self
     }
 
     /// Replace the human-readable `detail` (e.g. dynamic interpolations such
     /// as rate-limit minutes). Presentation only; never a client key (§3.1).
     pub fn with_detail(mut self, detail: impl Into<Cow<'static, str>>) -> Self {
         self.detail = detail.into();
+        self.custom_detail = true;
         self
     }
 
@@ -250,6 +285,8 @@ impl Problem {
         Self {
             code: Code::ValidationFailed,
             detail,
+            // The bag text is call-site content; relocalize must not touch it.
+            custom_detail: true,
             errors: Some(errors),
             credentials_presented: true,
         }
@@ -294,6 +331,17 @@ impl Problem {
             detail: &self.detail,
             errors: self.errors.as_ref(),
         }
+    }
+}
+
+/// Serializes the exact §3.1 wire body (`type, title, status, code, detail,
+/// errors?`) — the shape the golden wire lane pins.
+impl Serialize for Problem {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.body().serialize(serializer)
     }
 }
 
@@ -573,6 +621,21 @@ mod tests {
         assert_eq!(problem.status(), StatusCode::BAD_REQUEST);
         assert_eq!(
             problem.detail(),
+            "There are too many password errors, please try again after 5 minutes."
+        );
+    }
+
+    #[test]
+    fn relocalize_swaps_default_details_but_preserves_custom_ones() {
+        let default = Problem::new(Code::SessionExpired).relocalize("zh-CN");
+        assert_eq!(default.detail(), "未登录或登陆已过期");
+        let back = Problem::localized(Code::SessionExpired, "zh-CN").relocalize("en-US");
+        assert_eq!(back.detail(), Code::SessionExpired.default_detail());
+        let custom = Problem::new(Code::PasswordAttemptsRateLimited)
+            .with_detail("There are too many password errors, please try again after 5 minutes.")
+            .relocalize("zh-CN");
+        assert_eq!(
+            custom.detail(),
             "There are too many password errors, please try again after 5 minutes."
         );
     }
