@@ -72,7 +72,7 @@ impl AuthService {
         let password_error_limit = if self.config.password_limit_enable {
             let keys = login_limiter_keys(&email, ip.as_deref()).map(|key| self.redis_key(&key));
             if !self.reserve_login_attempt(&keys).await? {
-                return Err(ApiError::legacy(format!(
+                return Err(ApiError::business(format!(
                     "There are too many password errors, please try again after {} minutes.",
                     self.config.password_limit_expire
                 )));
@@ -96,7 +96,7 @@ impl AuthService {
                     .await;
                 return Err(error);
             }
-            return Err(ApiError::legacy("Incorrect email or password"));
+            return Err(ApiError::business("Incorrect email or password"));
         };
 
         let password_matches = match self
@@ -117,7 +117,7 @@ impl AuthService {
             }
         };
         if !password_matches {
-            return Err(ApiError::legacy("Incorrect email or password"));
+            return Err(ApiError::business("Incorrect email or password"));
         }
 
         // The reservation represents only a password failure. Release it once
@@ -126,7 +126,7 @@ impl AuthService {
             .await;
 
         if user.banned != 0 {
-            return Err(ApiError::legacy("Your account has been suspended"));
+            return Err(ApiError::business("Your account has been suspended"));
         }
 
         if password_needs_rehash(user.password_algo.as_deref(), &user.password) {
@@ -227,21 +227,21 @@ impl AuthService {
         {
             LimitedEmailCodeResult::Consumed => {}
             LimitedEmailCodeResult::Incorrect => {
-                return Err(ApiError::legacy("Incorrect email verification code"));
+                return Err(ApiError::business("Incorrect email verification code"));
             }
             LimitedEmailCodeResult::Limited => {
-                return Err(ApiError::legacy("Reset failed, Please try again later"));
+                return Err(ApiError::business("Reset failed, Please try again later"));
             }
         }
         let user = db::user::find_user_for_auth(&self.db, email)
             .await?
-            .ok_or_else(|| ApiError::legacy("This email is not registered in the system"))?;
+            .ok_or_else(|| ApiError::business("This email is not registered in the system"))?;
         let password_hash = self.password_kdf.hash(&input.password).await?;
         let updated =
             db::user::update_password(&self.db, user.id, &password_hash, Utc::now().timestamp())
                 .await?;
         if !updated {
-            return Err(ApiError::legacy("Reset failed"));
+            return Err(ApiError::business("Reset failed"));
         }
         // The database epoch is the durable revocation mechanism. Redis cleanup is cache hygiene
         // only and must not turn an already committed password reset into an apparent failure.
@@ -265,7 +265,7 @@ impl AuthService {
 
         let user = db::user::find_user_for_auth_by_id(&self.db, user_id)
             .await?
-            .ok_or_else(|| ApiError::legacy("The user does not exist"))?;
+            .ok_or_else(|| ApiError::business("The user does not exist"))?;
         if !self
             .password_kdf
             .verify(
@@ -276,7 +276,7 @@ impl AuthService {
             )
             .await?
         {
-            return Err(ApiError::legacy("The old password is wrong"));
+            return Err(ApiError::business("The old password is wrong"));
         }
 
         let password_hash = self.password_kdf.hash(new_password).await?;
@@ -290,7 +290,7 @@ impl AuthService {
         )
         .await?;
         if !updated {
-            return Err(ApiError::legacy("Save failed"));
+            return Err(ApiError::business("Save failed"));
         }
         if let Err(error) = self.remove_all_sessions(user_id).await {
             tracing::warn!(
@@ -309,7 +309,7 @@ impl AuthService {
             db::user::update_security(&self.db, user_id, &uuid, &token, Utc::now().timestamp())
                 .await?;
         if !updated {
-            return Err(ApiError::legacy("Reset failed"));
+            return Err(ApiError::business("Reset failed"));
         }
         Ok(self.config.subscribe_url_for_token(&token))
     }

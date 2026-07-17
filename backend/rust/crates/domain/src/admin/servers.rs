@@ -46,7 +46,7 @@ async fn lock_server_groups(tx: &mut DbTransaction<'_>, group_ids: &[i64]) -> Re
             .len();
     }
     if found != group_ids.len() {
-        return Err(ApiError::legacy("节点组不存在"));
+        return Err(ApiError::business("节点组不存在"));
     }
     Ok(())
 }
@@ -84,7 +84,7 @@ impl AdminService {
             .execute(&mut *tx)
             .await?;
         if result.rows_affected() == 0 {
-            return Err(ApiError::legacy("节点ID不存在"));
+            return Err(ApiError::business("节点ID不存在"));
         }
         sqlx::query("DELETE FROM server_credential WHERE node_type = $1 AND node_id = $2")
             .bind(kind)
@@ -111,11 +111,11 @@ impl AdminService {
                 .fetch_optional(&mut *tx)
                 .await?;
         if exists.is_none() {
-            return Err(ApiError::legacy("组不存在"));
+            return Err(ApiError::business("组不存在"));
         }
         for (_, table) in SERVER_TABLES {
             if server_table_uses_group(&mut tx, table, id).await? {
-                return Err(ApiError::legacy("该组已被节点所使用，无法删除"));
+                return Err(ApiError::business("该组已被节点所使用，无法删除"));
             }
         }
         let plan_used: Option<i32> =
@@ -124,7 +124,7 @@ impl AdminService {
                 .fetch_optional(&mut *tx)
                 .await?;
         if plan_used.is_some() {
-            return Err(ApiError::legacy("该组已被订阅所使用，无法删除"));
+            return Err(ApiError::business("该组已被订阅所使用，无法删除"));
         }
         let user_used: Option<i64> =
             sqlx::query_scalar("SELECT id FROM users WHERE group_id = $1 LIMIT 1 FOR SHARE")
@@ -132,14 +132,14 @@ impl AdminService {
                 .fetch_optional(&mut *tx)
                 .await?;
         if user_used.is_some() {
-            return Err(ApiError::legacy("该组已被用户所使用，无法删除"));
+            return Err(ApiError::business("该组已被用户所使用，无法删除"));
         }
         let deleted = sqlx::query("DELETE FROM server_group WHERE id = $1")
             .bind(id)
             .execute(&mut *tx)
             .await?;
         if deleted.rows_affected() != 1 {
-            return Err(ApiError::legacy("组不存在"));
+            return Err(ApiError::business("组不存在"));
         }
         tx.commit().await?;
         Ok(AdminOutput::Data(json!(true)))
@@ -480,9 +480,9 @@ impl AdminService {
             builder.push_bind(id);
             let result = builder.build().execute(&mut *tx).await?;
             if result.rows_affected() == 0 {
-                return Err(ApiError::legacy("服务器不存在"));
+                return Err(ApiError::business("服务器不存在"));
             }
-            i32::try_from(id).map_err(|_| ApiError::legacy("服务器不存在"))?
+            i32::try_from(id).map_err(|_| ApiError::business("服务器不存在"))?
         } else {
             let mut builder = QueryBuilder::<Postgres>::new(format!("INSERT INTO {table} ("));
             let mut columns = builder.separated(", ");
@@ -541,7 +541,8 @@ impl AdminService {
         .bind(id)
         .fetch_optional(&self.db)
         .await?;
-        let source_group_ids = source_group_ids.ok_or_else(|| ApiError::legacy("服务器不存在"))?;
+        let source_group_ids =
+            source_group_ids.ok_or_else(|| ApiError::business("服务器不存在"))?;
         let group_ids = parse_server_group_ids(&source_group_ids)?;
         let mut builder = QueryBuilder::<Postgres>::new(format!("INSERT INTO {table} ("));
         let mut insert_columns = builder.separated(", ");
@@ -579,7 +580,7 @@ impl AdminService {
             .build_query_scalar::<i32>()
             .fetch_optional(&mut *tx)
             .await?
-            .ok_or_else(|| ApiError::legacy("服务器不存在"))?;
+            .ok_or_else(|| ApiError::business("服务器不存在"))?;
         sqlx::query(
             "INSERT INTO server_credential \
              (node_type, node_id, credential_epoch, updated_at) VALUES ($1, $2, 0, $3)",

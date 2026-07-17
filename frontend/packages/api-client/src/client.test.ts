@@ -360,9 +360,11 @@ describe('createApiClient', () => {
   it('treats legacy 200 HTTP responses with non-200 business code as failures', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/passport/auth/login').reply(200, { code: 500, message: 'invalid login' });
+    // Business failures are HTTP 400 in Rust; the parity fixtures emulate them
+    // as HTTP-200 envelopes carrying the same code.
+    mock.onPost('/passport/auth/login').reply(200, { code: 400, message: 'invalid login' });
     await expect(login(client, { email: 'a@b.c', password: 'x' })).rejects.toMatchObject({
-      status: 500,
+      status: 400,
       message: 'invalid login',
     });
   });

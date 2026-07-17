@@ -192,7 +192,7 @@ impl AdminService {
         }
         if values.is_empty() {
             return self
-                .toggle("notice", "show", id, ApiError::legacy("公告不存在"))
+                .toggle("notice", "show", id, ApiError::business("公告不存在"))
                 .await;
         }
 
@@ -212,7 +212,7 @@ impl AdminService {
         builder.push_bind(id);
         let result = builder.build().execute(&self.db).await?;
         if result.rows_affected() == 0 {
-            return Err(ApiError::legacy("公告不存在"));
+            return Err(ApiError::business("公告不存在"));
         }
         Ok(AdminOutput::Data(json!(true)))
     }
@@ -237,7 +237,7 @@ impl AdminService {
                 id,
             )
             .await?
-            .ok_or_else(|| ApiError::legacy("知识不存在"))?;
+            .ok_or_else(|| ApiError::business("知识不存在"))?;
             return Ok(AdminOutput::Data(value));
         }
         Ok(AdminOutput::Data(json!(
@@ -332,7 +332,7 @@ impl AdminService {
                 id,
             )
             .await?
-            .ok_or_else(|| ApiError::legacy("工单不存在"))?;
+            .ok_or_else(|| ApiError::business("工单不存在"))?;
             // is_me marks messages whose author is NOT the ticket owner, i.e. an
             // admin/staff reply (TicketController::fetch :22-30).
             let messages = fetch_json_list_bind(
@@ -466,7 +466,7 @@ impl AdminService {
                 .bind(id)
                 .fetch_optional(&self.db)
                 .await?
-                .ok_or_else(|| ApiError::legacy("工单不存在"))?;
+                .ok_or_else(|| ApiError::business("工单不存在"))?;
         let prepared_notification = self
             .prepare_ticket_reply_notification(ticket_user_id, &subject, &message)
             .await;
@@ -488,10 +488,10 @@ impl AdminService {
                 match v2board_db::ticket::lock_operator_reply_target(&mut tx, ticket_id).await? {
                     v2board_db::ticket::OperatorReplyTargetOutcome::Locked(target) => target,
                     v2board_db::ticket::OperatorReplyTargetOutcome::NotFound => {
-                        return Err(ApiError::legacy("工单不存在"));
+                        return Err(ApiError::business("工单不存在"));
                     }
                     v2board_db::ticket::OperatorReplyTargetOutcome::OtherOpenTicketExists => {
-                        return Err(ApiError::legacy(
+                        return Err(ApiError::business(
                             "用户存在其他未解决工单，无法重新打开该工单",
                         ));
                     }

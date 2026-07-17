@@ -58,9 +58,9 @@ impl AuthService {
             .await?
             .is_some();
         match input.isforget {
-            Some(0) if exists => return Err(ApiError::legacy("This email is registered")),
+            Some(0) if exists => return Err(ApiError::business("This email is registered")),
             Some(1) if !exists => {
-                return Err(ApiError::legacy(
+                return Err(ApiError::business(
                     "This email is not registered in the system",
                 ));
             }
@@ -70,7 +70,7 @@ impl AuthService {
         let code = six_digit_code();
         let code_key = self.redis_key(&cache_key("EMAIL_VERIFY_CODE", &cache_email));
         if !self.reserve_email_code(&code_key, &last_key, &code).await? {
-            return Err(ApiError::legacy(
+            return Err(ApiError::business(
                 "Email verification code has been sent, please request again later",
             ));
         }
@@ -96,14 +96,14 @@ impl AuthService {
                 !suffix.is_empty() && email.ends_with(&format!("@{suffix}"))
             });
             if !allowed {
-                return Err(ApiError::legacy("Email suffix is not in the Whitelist"));
+                return Err(ApiError::business("Email suffix is not in the Whitelist"));
             }
         }
         if self.config.email_gmail_limit_enable
             && let Some(prefix) = email.split('@').next()
             && (prefix.contains('.') || prefix.contains('+'))
         {
-            return Err(ApiError::legacy("Gmail alias is not supported"));
+            return Err(ApiError::business("Gmail alias is not supported"));
         }
         Ok(())
     }
@@ -205,7 +205,7 @@ impl AuthService {
 
     pub(super) async fn verify_recaptcha(&self, token: Option<&str>) -> Result<(), ApiError> {
         if token.is_some_and(|value| value.len() > 4096) {
-            return Err(ApiError::legacy("Invalid code is incorrect"));
+            return Err(ApiError::business("Invalid code is incorrect"));
         }
         if !self.config.recaptcha_enable {
             return Ok(());
@@ -215,11 +215,11 @@ impl AuthService {
             .recaptcha_key
             .as_deref()
             .filter(|value| !value.is_empty())
-            .ok_or_else(|| ApiError::legacy("Invalid code is incorrect"))?;
+            .ok_or_else(|| ApiError::business("Invalid code is incorrect"))?;
         let response = token
             .map(str::trim)
             .filter(|value| !value.is_empty())
-            .ok_or_else(|| ApiError::legacy("Invalid code is incorrect"))?;
+            .ok_or_else(|| ApiError::business("Invalid code is incorrect"))?;
         let request_body =
             serde_urlencoded::to_string([("secret", secret), ("response", response)])
                 .map_err(|_| ApiError::legacy("Invalid code is incorrect"))?;
@@ -247,7 +247,7 @@ impl AuthService {
         {
             Ok(())
         } else {
-            Err(ApiError::legacy("Invalid code is incorrect"))
+            Err(ApiError::business("Invalid code is incorrect"))
         }
     }
 

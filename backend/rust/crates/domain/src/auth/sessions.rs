@@ -103,9 +103,9 @@ impl AuthService {
             .arg(&key)
             .query_async(&mut conn)
             .await?;
-        let token_value = token_value.ok_or_else(|| ApiError::legacy("Token error"))?;
+        let token_value = token_value.ok_or_else(|| ApiError::business("Token error"))?;
         let (user_id, session_epoch) =
-            parse_temp_token(&token_value).ok_or_else(|| ApiError::legacy("Token error"))?;
+            parse_temp_token(&token_value).ok_or_else(|| ApiError::business("Token error"))?;
         self.auth_data_for_user(user_id, Some(session_epoch), ip, user_agent, false)
             .await
     }
@@ -160,9 +160,9 @@ impl AuthService {
     ) -> Result<AuthData, ApiError> {
         let user = db::user::find_user_for_auth_by_id(&self.db, user_id)
             .await?
-            .ok_or_else(|| ApiError::legacy("The user does not exist"))?;
+            .ok_or_else(|| ApiError::business("The user does not exist"))?;
         if user.banned != 0 {
-            return Err(ApiError::legacy("Your account has been suspended"));
+            return Err(ApiError::business("Your account has been suspended"));
         }
         if expected_session_epoch.is_some_and(|expected| expected != user.session_epoch) {
             return Err(ApiError::unauthorized());
@@ -343,7 +343,7 @@ impl AuthService {
             .invoke_async::<i64>(&mut limiter_conn)
             .await?;
         if reserved != 1 {
-            return Err(ApiError::legacy(
+            return Err(ApiError::business(
                 "Too many password verification attempts; try again later",
             ));
         }
@@ -363,7 +363,7 @@ impl AuthService {
             )
             .await?
         {
-            return Err(ApiError::legacy("Incorrect email or password"));
+            return Err(ApiError::business("Incorrect email or password"));
         }
         if !self.check_session(user_id, session_id).await? {
             return Err(ApiError::unauthorized());

@@ -100,8 +100,8 @@ pub(crate) async fn ticket_save(
     let require_paid_order = match state.config_snapshot().ticket_status {
         0 => false,
         1 => true,
-        2 => return Err(ApiError::legacy("当前套餐不允许发起工单")),
-        _ => return Err(ApiError::legacy("未知的工单状态")),
+        2 => return Err(ApiError::business("当前套餐不允许发起工单")),
+        _ => return Err(ApiError::business("未知的工单状态")),
     };
     let outcome = v2board_db::ticket::create_ticket(
         &state.db,
@@ -116,13 +116,13 @@ pub(crate) async fn ticket_save(
     match outcome {
         v2board_db::ticket::TicketCreateOutcome::Created => {}
         v2board_db::ticket::TicketCreateOutcome::OpenTicketExists => {
-            return Err(ApiError::legacy("There are other unresolved tickets"));
+            return Err(ApiError::business("There are other unresolved tickets"));
         }
         v2board_db::ticket::TicketCreateOutcome::PaidOrderRequired => {
-            return Err(ApiError::legacy("请先购买套餐"));
+            return Err(ApiError::business("请先购买套餐"));
         }
         v2board_db::ticket::TicketCreateOutcome::UserNotFound => {
-            return Err(ApiError::legacy("The user does not exist"));
+            return Err(ApiError::business("The user does not exist"));
         }
     }
     Ok(legacy_data(true))
@@ -142,7 +142,7 @@ pub(crate) async fn ticket_reply(
     let user = require_user(&state, &headers).await?;
     let id = payload
         .id
-        .ok_or_else(|| ApiError::legacy("Invalid parameter"))?;
+        .ok_or_else(|| ApiError::business("Invalid parameter"))?;
     let message = required_trimmed(payload.message.as_deref(), "Message cannot be empty")?;
     validate_ticket_message("message", message)?;
     let outcome =
@@ -151,15 +151,15 @@ pub(crate) async fn ticket_reply(
     match outcome {
         v2board_db::ticket::UserTicketReplyOutcome::Replied => {}
         v2board_db::ticket::UserTicketReplyOutcome::NotFound => {
-            return Err(ApiError::legacy("Ticket does not exist"));
+            return Err(ApiError::business("Ticket does not exist"));
         }
         v2board_db::ticket::UserTicketReplyOutcome::Closed => {
-            return Err(ApiError::legacy(
+            return Err(ApiError::business(
                 "The ticket is closed and cannot be replied",
             ));
         }
         v2board_db::ticket::UserTicketReplyOutcome::AwaitingOperator => {
-            return Err(ApiError::legacy(
+            return Err(ApiError::business(
                 "Please wait for the technical enginneer to reply",
             ));
         }
@@ -180,11 +180,11 @@ pub(crate) async fn ticket_close(
     let user = require_user(&state, &headers).await?;
     let id = payload
         .id
-        .ok_or_else(|| ApiError::legacy("Invalid parameter"))?;
+        .ok_or_else(|| ApiError::business("Invalid parameter"))?;
     let closed =
         v2board_db::ticket::close_ticket(&state.db, user.id, id, Utc::now().timestamp()).await?;
     if !closed {
-        return Err(ApiError::legacy("Ticket does not exist"));
+        return Err(ApiError::business("Ticket does not exist"));
     }
     Ok(legacy_data(true))
 }
@@ -224,7 +224,7 @@ pub(crate) async fn ticket_withdraw(
     validate_ticket_message("withdraw_account", &withdrawal_message)?;
     let config = state.config_snapshot();
     if config.withdraw_close_enable {
-        return Err(ApiError::legacy(
+        return Err(ApiError::business(
             "user.ticket.withdraw.not_support_withdraw",
         ));
     }
@@ -233,16 +233,16 @@ pub(crate) async fn ticket_withdraw(
         .iter()
         .any(|allowed| allowed == method)
     {
-        return Err(ApiError::legacy("Unsupported withdrawal method"));
+        return Err(ApiError::business("Unsupported withdrawal method"));
     }
     let access = v2board_db::user::find_user_access(&state.db, user.id)
         .await?
-        .ok_or_else(|| ApiError::legacy("The user does not exist"))?;
+        .ok_or_else(|| ApiError::business("The user does not exist"))?;
     if !commission_balance_meets_minimum(
         i64::from(access.commission_balance),
         config.commission_withdraw_limit,
     ) {
-        return Err(ApiError::legacy(format!(
+        return Err(ApiError::business(format!(
             "The current required minimum withdrawal commission is {}",
             config.commission_withdraw_limit
         )));
@@ -258,10 +258,10 @@ pub(crate) async fn ticket_withdraw(
     match outcome {
         v2board_db::ticket::TicketCreateOutcome::Created => {}
         v2board_db::ticket::TicketCreateOutcome::OpenTicketExists => {
-            return Err(ApiError::legacy("There are other unresolved tickets"));
+            return Err(ApiError::business("There are other unresolved tickets"));
         }
         v2board_db::ticket::TicketCreateOutcome::UserNotFound => {
-            return Err(ApiError::legacy("The user does not exist"));
+            return Err(ApiError::business("The user does not exist"));
         }
         v2board_db::ticket::TicketCreateOutcome::PaidOrderRequired => {
             return Err(ApiError::internal(

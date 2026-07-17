@@ -46,12 +46,12 @@ pub(crate) async fn user_subscribe(
     let user = require_user(&state, &headers).await?;
     let subscribe = v2board_db::user::find_user_subscribe(&state.db, user.id)
         .await?
-        .ok_or_else(|| ApiError::legacy("The user does not exist"))?;
+        .ok_or_else(|| ApiError::business("The user does not exist"))?;
     let plan = match subscribe.plan_id {
         Some(plan_id) => Some(
             v2board_db::plan::find_plan(&state.db, plan_id)
                 .await?
-                .ok_or_else(|| ApiError::legacy("Subscription plan does not exist"))?,
+                .ok_or_else(|| ApiError::business("Subscription plan does not exist"))?,
         ),
         None => None,
     };
@@ -94,7 +94,7 @@ pub(crate) async fn user_new_period(
     let user = require_user(&state, &headers).await?;
     let config = state.config_snapshot();
     if config.allow_new_period == 0 {
-        return Err(ApiError::legacy("Renewal is not allowed"));
+        return Err(ApiError::business("Renewal is not allowed"));
     }
     let mut tx = state.db.begin().await?;
     let row = sqlx::query_as::<_, UserPeriodRow>(
@@ -109,13 +109,13 @@ pub(crate) async fn user_new_period(
     .bind(user.id)
     .fetch_optional(&mut *tx)
     .await?
-    .ok_or_else(|| ApiError::legacy("The user does not exist"))?;
+    .ok_or_else(|| ApiError::business("The user does not exist"))?;
     let used = row
         .u
         .checked_add(row.d)
         .ok_or_else(|| ApiError::internal("user traffic exceeds the supported range"))?;
     if row.transfer_enable > used {
-        return Err(ApiError::legacy(
+        return Err(ApiError::business(
             "You have not used up your traffic, you cannot renew your subscription",
         ));
     }
@@ -124,7 +124,7 @@ pub(crate) async fn user_new_period(
     // turns either null into abort(500, 'You do not allow to renew the subscription').
     let plan_id = row
         .plan_id
-        .ok_or_else(|| ApiError::legacy("You do not allow to renew the subscription"))?;
+        .ok_or_else(|| ApiError::business("You do not allow to renew the subscription"))?;
     // PostgreSQL cannot lock the nullable side of an outer join. Preserve the
     // subscription writer lock order explicitly: user first, then the existing
     // plan whose reset method controls this mutation.
@@ -138,11 +138,11 @@ pub(crate) async fn user_new_period(
     let expired_at = row
         .expired_at
         .filter(|expired_at| *expired_at > Utc::now().timestamp())
-        .ok_or_else(|| ApiError::legacy("You do not allow to renew the subscription"))?;
+        .ok_or_else(|| ApiError::business("You do not allow to renew the subscription"))?;
     let mut reset_day = reset_day_by_method(expired_at, plan_reset_method, &config)
-        .ok_or_else(|| ApiError::legacy("You do not allow to renew the subscription"))?;
+        .ok_or_else(|| ApiError::business("You do not allow to renew the subscription"))?;
     let mut period = reset_period_by_method(plan_reset_method, &config)
-        .ok_or_else(|| ApiError::legacy("You do not allow to renew the subscription"))?;
+        .ok_or_else(|| ApiError::business("You do not allow to renew the subscription"))?;
     match period {
         1 => {
             reset_day = 30;
@@ -154,7 +154,7 @@ pub(crate) async fn user_new_period(
             period = 365;
         }
         365 => {}
-        _ => return Err(ApiError::legacy("Invalid reset period")),
+        _ => return Err(ApiError::business("Invalid reset period")),
     }
     if reset_day <= 0 {
         reset_day = period;
@@ -179,7 +179,7 @@ pub(crate) async fn user_new_period(
         tx.commit().await?;
         Ok(legacy_data(true))
     } else {
-        Err(ApiError::legacy(
+        Err(ApiError::business(
             "You do not have enough time to renew your subscription",
         ))
     }
@@ -192,25 +192,25 @@ pub(super) fn checked_reset_subscription_expiry(
     now: i64,
 ) -> Result<Option<i64>, ApiError> {
     if reset_day < 0 || period < 0 {
-        return Err(ApiError::legacy("Invalid reset period"));
+        return Err(ApiError::business("Invalid reset period"));
     }
     let threshold = period
         .checked_add(1)
         .and_then(|days| days.checked_mul(86_400))
-        .ok_or_else(|| ApiError::legacy("Reset period exceeds the supported range"))?;
+        .ok_or_else(|| ApiError::business("Reset period exceeds the supported range"))?;
     let remaining = expired_at
         .checked_sub(now)
-        .ok_or_else(|| ApiError::legacy("Subscription expiry exceeds the supported range"))?;
+        .ok_or_else(|| ApiError::business("Subscription expiry exceeds the supported range"))?;
     if threshold >= remaining {
         return Ok(None);
     }
     let reset_seconds = reset_day
         .checked_mul(86_400)
-        .ok_or_else(|| ApiError::legacy("Reset period exceeds the supported range"))?;
+        .ok_or_else(|| ApiError::business("Reset period exceeds the supported range"))?;
     expired_at
         .checked_sub(reset_seconds)
         .map(Some)
-        .ok_or_else(|| ApiError::legacy("Subscription expiry exceeds the supported range"))
+        .ok_or_else(|| ApiError::business("Subscription expiry exceeds the supported range"))
 }
 
 #[derive(Debug, Deserialize)]
@@ -245,15 +245,15 @@ pub(crate) async fn user_plan_fetch(
     if let Some(id) = query.id {
         let subscribe = v2board_db::user::find_user_subscribe(&state.db, user.id)
             .await?
-            .ok_or_else(|| ApiError::legacy("The user does not exist"))?;
+            .ok_or_else(|| ApiError::business("The user does not exist"))?;
         let plan = v2board_db::plan::find_plan(&state.db, id)
             .await?
-            .ok_or_else(|| ApiError::legacy("Subscription plan does not exist"))?;
+            .ok_or_else(|| ApiError::business("Subscription plan does not exist"))?;
         let hidden_plan = plan.show == 0;
         let unavailable_hidden_plan =
             hidden_plan && (plan.renew == 0 || subscribe.plan_id != Some(plan.id));
         if unavailable_hidden_plan {
-            return Err(ApiError::legacy("Subscription plan does not exist"));
+            return Err(ApiError::business("Subscription plan does not exist"));
         }
         return Ok(legacy_data(plan).into_response());
     }

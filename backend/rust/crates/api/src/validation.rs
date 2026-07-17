@@ -8,7 +8,7 @@ pub(crate) fn required_trimmed<'a>(
     value
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| ApiError::legacy(message))
+        .ok_or_else(|| ApiError::business(message))
 }
 
 /// Laravel `required` rule (a string is empty when it trims to ""); on failure returns a

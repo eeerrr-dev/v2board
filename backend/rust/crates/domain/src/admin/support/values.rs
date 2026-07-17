@@ -299,7 +299,7 @@ pub(in super::super) fn required_json_array_string(
     params: &HashMap<String, String>,
     key: &str,
 ) -> Result<String, ApiError> {
-    json_array_string(params, key)?.ok_or_else(|| ApiError::legacy("参数有误"))
+    json_array_string(params, key)?.ok_or_else(|| ApiError::business("参数有误"))
 }
 
 pub(in super::super) fn optional_json_array_text_value(

@@ -123,7 +123,7 @@ pub(crate) async fn unbind_telegram(
     let updated =
         v2board_db::user::clear_telegram_id(&state.db, user.id, Utc::now().timestamp()).await?;
     if !updated {
-        return Err(ApiError::legacy("Unbind telegram failed"));
+        return Err(ApiError::business("Unbind telegram failed"));
     }
     Ok(legacy_data(true))
 }

@@ -144,7 +144,7 @@ impl AdminService {
                 break;
             };
             if ids.len().saturating_add(page.len()) > USER_BULK_MAX_ROWS {
-                return Err(ApiError::legacy(
+                return Err(ApiError::business(
                     "单次最多批量操作 10000 个用户，请缩小筛选范围",
                 ));
             }
@@ -297,7 +297,7 @@ impl AdminService {
         .bind(email)
         .fetch_optional(&self.db)
         .await?
-        .ok_or_else(|| ApiError::legacy("管理员不存在"))
+        .ok_or_else(|| ApiError::business("管理员不存在"))
     }
 
     /// Set-based cascade shared by delUser and allDel. Every chunk follows the same table order
@@ -460,7 +460,7 @@ impl AdminService {
             id,
         )
         .await?
-        .ok_or_else(|| ApiError::legacy("用户不存在"))?;
+        .ok_or_else(|| ApiError::business("用户不存在"))?;
         Ok(AdminOutput::Data(value))
     }
 
@@ -494,7 +494,7 @@ impl AdminService {
             id,
         )
         .await?
-        .ok_or_else(|| ApiError::legacy("用户不存在"))?;
+        .ok_or_else(|| ApiError::business("用户不存在"))?;
         Ok(AdminOutput::Data(value))
     }
 
@@ -509,7 +509,7 @@ impl AdminService {
                 .bind(id)
                 .fetch_optional(&self.db)
                 .await?
-                .ok_or_else(|| ApiError::legacy("用户不存在"))?;
+                .ok_or_else(|| ApiError::business("用户不存在"))?;
         let email = required_string(params, "email")?;
         if email != current_email {
             let taken: Option<i64> = sqlx::query_scalar(
@@ -519,7 +519,7 @@ impl AdminService {
             .fetch_optional(&self.db)
             .await?;
             if taken.is_some() {
-                return Err(ApiError::legacy("邮箱已被使用"));
+                return Err(ApiError::business("邮箱已被使用"));
             }
         }
 
@@ -560,7 +560,7 @@ impl AdminService {
                         .bind(plan_id)
                         .fetch_optional(&self.db)
                         .await?
-                        .ok_or_else(|| ApiError::legacy("订阅计划不存在"))?;
+                        .ok_or_else(|| ApiError::business("订阅计划不存在"))?;
                 group_id = plan_group
                     .map(|value| AdminSqlValue::Integer(i64::from(value)))
                     .unwrap_or(AdminSqlValue::IntegerNull);
@@ -651,7 +651,7 @@ impl AdminService {
         .bind(id)
         .fetch_optional(&self.db)
         .await?
-        .ok_or_else(|| ApiError::legacy("用户不存在"))?;
+        .ok_or_else(|| ApiError::business("用户不存在"))?;
         let email = required_string(params, "email")?;
         if email != current_email {
             let taken: Option<i64> = sqlx::query_scalar(
@@ -661,7 +661,7 @@ impl AdminService {
             .fetch_optional(&self.db)
             .await?;
             if taken.is_some() {
-                return Err(ApiError::legacy("邮箱已被使用"));
+                return Err(ApiError::business("邮箱已被使用"));
             }
         }
 
@@ -690,7 +690,7 @@ impl AdminService {
                         .bind(plan_id)
                         .fetch_optional(&self.db)
                         .await?
-                        .ok_or_else(|| ApiError::legacy("订阅计划不存在"))?;
+                        .ok_or_else(|| ApiError::business("订阅计划不存在"))?;
                 values.push(("plan_id", AdminSqlValue::Integer(plan_id)));
                 values.push((
                     "group_id",
@@ -803,7 +803,7 @@ impl AdminService {
         .bind(plan_id)
         .fetch_optional(&self.db)
         .await?
-        .ok_or_else(|| ApiError::legacy("订阅计划不存在"))?;
+        .ok_or_else(|| ApiError::business("订阅计划不存在"))?;
         Ok(Some((
             row.0,
             row.1,
@@ -855,7 +855,7 @@ impl AdminService {
             .fetch_optional(&self.db)
             .await?;
             if exists.is_some() {
-                return Err(ApiError::legacy("邮箱已存在于系统中"));
+                return Err(ApiError::business("邮箱已存在于系统中"));
             }
             let password_plain = params
                 .get("password")
@@ -1028,9 +1028,9 @@ impl AdminService {
             };
             exported = exported
                 .checked_add(rows.len())
-                .ok_or_else(|| ApiError::legacy("导出用户数量超出支持范围，请缩小筛选范围"))?;
+                .ok_or_else(|| ApiError::business("导出用户数量超出支持范围，请缩小筛选范围"))?;
             if exported > USER_CSV_MAX_ROWS {
-                return Err(ApiError::legacy(
+                return Err(ApiError::business(
                     "单次最多导出 50000 个用户，请缩小筛选范围",
                 ));
             }
@@ -1084,7 +1084,7 @@ impl AdminService {
         // The database epoch is authoritative; Redis deletion after the update only reclaims the
         // cached session metadata and may safely fail without leaving a banned session usable.
         if column != "banned" {
-            return Err(ApiError::legacy("Invalid user flag"));
+            return Err(ApiError::business("Invalid user flag"));
         }
         let clauses = self.user_filter_clauses(params).await?;
         let ids = self.filtered_user_ids_bounded(&clauses, false).await?;
@@ -1122,7 +1122,7 @@ impl AdminService {
         }
         let mut tx = self.db.begin().await?;
         if Self::lock_user_orders_and_find_pending_stripe(&mut tx, &ids).await? {
-            return Err(ApiError::legacy(
+            return Err(ApiError::business(
                 "所选用户仍有待支付的 Stripe 订单，请先取消订单",
             ));
         }
@@ -1137,12 +1137,12 @@ impl AdminService {
         // Ports UserController::delUser (:361-391): single-user cascade delete.
         let mut tx = self.db.begin().await?;
         if Self::lock_user_orders_and_find_pending_stripe(&mut tx, &[id]).await? {
-            return Err(ApiError::legacy(
+            return Err(ApiError::business(
                 "该用户仍有待支付的 Stripe 订单，请先取消订单",
             ));
         }
         if Self::lock_users_for_update(&mut tx, &[id]).await? != 1 {
-            return Err(ApiError::legacy("用户不存在"));
+            return Err(ApiError::business("用户不存在"));
         }
         self.delete_users_cascade(&mut tx, &[id]).await?;
         tx.commit().await?;

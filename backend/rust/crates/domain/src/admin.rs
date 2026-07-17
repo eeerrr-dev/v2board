@@ -228,7 +228,7 @@ impl AdminService {
                 self.delete_by_id(
                     "notice",
                     required_i64(&params, "id")?,
-                    ApiError::legacy("公告不存在"),
+                    ApiError::business("公告不存在"),
                 )
                 .await
             }
@@ -237,7 +237,7 @@ impl AdminService {
                     "notice",
                     "show",
                     required_i64(&params, "id")?,
-                    ApiError::legacy("公告不存在"),
+                    ApiError::business("公告不存在"),
                 )
                 .await
             }
@@ -246,7 +246,7 @@ impl AdminService {
                 self.delete_by_id(
                     "knowledge",
                     required_i64(&params, "id")?,
-                    ApiError::legacy("知识不存在"),
+                    ApiError::business("知识不存在"),
                 )
                 .await
             }
@@ -255,7 +255,7 @@ impl AdminService {
                     "knowledge",
                     "show",
                     required_i64(&params, "id")?,
-                    ApiError::legacy("知识不存在"),
+                    ApiError::business("知识不存在"),
                 )
                 .await
             }
@@ -270,7 +270,7 @@ impl AdminService {
                 self.delete_by_id(
                     "coupon",
                     required_i64(&params, "id")?,
-                    ApiError::legacy("优惠券不存在"),
+                    ApiError::business("优惠券不存在"),
                 )
                 .await
             }
@@ -279,7 +279,7 @@ impl AdminService {
                     "coupon",
                     "show",
                     required_i64(&params, "id")?,
-                    ApiError::legacy("优惠券不存在"),
+                    ApiError::business("优惠券不存在"),
                 )
                 .await
             }
@@ -299,7 +299,7 @@ impl AdminService {
                 self.delete_by_id(
                     "server_route",
                     required_i64(&params, "id")?,
-                    ApiError::legacy("路由不存在"),
+                    ApiError::business("路由不存在"),
                 )
                 .await
             }
@@ -329,7 +329,7 @@ impl AdminService {
                     table,
                     required_i64(&params, "id")?,
                     &params,
-                    ApiError::legacy("该服务器不存在"),
+                    ApiError::business("该服务器不存在"),
                 )
                 .await
             }
@@ -371,7 +371,7 @@ impl AdminService {
                 self.delete_by_id(
                     "notice",
                     required_i64(&params, "id")?,
-                    ApiError::legacy("公告不存在"),
+                    ApiError::business("公告不存在"),
                 )
                 .await
             }

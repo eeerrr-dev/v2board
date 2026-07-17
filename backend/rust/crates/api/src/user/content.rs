@@ -36,10 +36,10 @@ pub(crate) async fn knowledge_fetch(
     if let Some(id) = query.id {
         let access = v2board_db::user::find_user_access(&state.db, user.id)
             .await?
-            .ok_or_else(|| ApiError::legacy("The user does not exist"))?;
+            .ok_or_else(|| ApiError::business("The user does not exist"))?;
         let mut knowledge = v2board_db::knowledge::find_knowledge(&state.db, id)
             .await?
-            .ok_or_else(|| ApiError::legacy("Article does not exist"))?;
+            .ok_or_else(|| ApiError::business("Article does not exist"))?;
         if !user_is_available(&access) {
             knowledge.body = format_access_blocks(&knowledge.body);
         }
@@ -85,7 +85,7 @@ pub(crate) async fn telegram_bot_info(
         .telegram_bot_token
         .as_deref()
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| ApiError::legacy("Telegram bot is not configured"))?;
+        .ok_or_else(|| ApiError::business("Telegram bot is not configured"))?;
     let response = state
         .http
         .get(format!("https://api.telegram.org/bot{token}/getMe"))

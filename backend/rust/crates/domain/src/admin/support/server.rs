@@ -437,7 +437,7 @@ pub(in super::super) fn server_copy_columns(
         "vless" => Ok(SERVER_VLESS_COLUMNS),
         "anytls" => Ok(SERVER_ANYTLS_COLUMNS),
         "v2node" => Ok(SERVER_V2NODE_COLUMNS),
-        _ => Err(ApiError::legacy("Invalid server type")),
+        _ => Err(ApiError::business("Invalid server type")),
     }
 }
 
@@ -717,7 +717,7 @@ pub(in super::super) fn server_save_values(
                 values.push(("sort", optional_int_or_null_value(params, "sort")));
             }
         }
-        _ => return Err(ApiError::legacy("Invalid server type")),
+        _ => return Err(ApiError::business("Invalid server type")),
     }
     Ok(values)
 }
@@ -818,7 +818,7 @@ pub(in super::super) fn prepare_v2node_tls_settings(
 pub(in super::super) fn ensure_reality_keys(settings: &mut Value) -> Result<(), ApiError> {
     let object = settings
         .as_object_mut()
-        .ok_or_else(|| ApiError::legacy("TLS settings format is invalid"))?;
+        .ok_or_else(|| ApiError::business("TLS settings format is invalid"))?;
     let missing_public = object
         .get("public_key")
         .and_then(Value::as_str)

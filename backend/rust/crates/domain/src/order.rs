@@ -434,7 +434,7 @@ fn payable_amount_cents(
     order_amount_cents
         .checked_add(handling_amount_cents.unwrap_or_default())
         .filter(|amount| *amount > 0)
-        .ok_or_else(|| ApiError::legacy("Payment amount is outside the supported range"))
+        .ok_or_else(|| ApiError::business("Payment amount is outside the supported range"))
 }
 
 fn payment_config_snapshot_matches(
@@ -486,7 +486,7 @@ impl OrderService {
             .fetch_optional(&mut *tx)
             .await?;
         if incomplete_order_id.is_some() {
-            return Err(ApiError::legacy(
+            return Err(ApiError::business(
                 "You have an unpaid or pending order, please try again later or cancel it",
             ));
         }
@@ -542,7 +542,7 @@ impl OrderService {
         .bind(user_id)
         .fetch_optional(&mut *tx)
         .await?
-        .ok_or_else(|| ApiError::legacy("Order does not exist or has been paid"))?;
+        .ok_or_else(|| ApiError::business("Order does not exist or has been paid"))?;
         let binding = sqlx::query_as::<_, (Option<i32>, Option<String>)>(
             "SELECT payment_id, callback_no FROM orders WHERE id = $1",
         )
@@ -562,7 +562,7 @@ impl OrderService {
 
         let method = input
             .method
-            .ok_or_else(|| ApiError::legacy("Payment method is not available"))?;
+            .ok_or_else(|| ApiError::business("Payment method is not available"))?;
         let payment = sqlx::query_as::<_, PaymentForCheckout>(
             r#"
             SELECT
@@ -582,12 +582,12 @@ impl OrderService {
         .bind(method)
         .fetch_optional(&mut *tx)
         .await?
-        .ok_or_else(|| ApiError::legacy("Payment method is not available"))?;
+        .ok_or_else(|| ApiError::business("Payment method is not available"))?;
         if payment.enable != 1 {
-            return Err(ApiError::legacy("Payment method is not available"));
+            return Err(ApiError::business("Payment method is not available"));
         }
         if payment.payment == "StripeCredit" {
-            return Err(ApiError::legacy(
+            return Err(ApiError::business(
                 "Stripe payments must be confirmed with Payment Element",
             ));
         }
@@ -603,10 +603,10 @@ impl OrderService {
             .cancel_stripe_intent_binding(binding.0, binding.1.as_deref())
             .await?
         {
-            return Err(ApiError::legacy("Order does not exist or has been paid"));
+            return Err(ApiError::business("Order does not exist or has been paid"));
         }
         let expected_config = serde_json::from_str::<Value>(&payment.config)
-            .map_err(|_| ApiError::legacy("Payment config is invalid"))?;
+            .map_err(|_| ApiError::business("Payment config is invalid"))?;
         // A shared payment-version lock lets unrelated checkouts use the same
         // gateway concurrently while serializing an archive/toggle. The exact
         // immutable driver/config snapshot must still be active before binding.
@@ -618,7 +618,7 @@ impl OrderService {
                 .await?;
         if !payment_config_snapshot_matches(current_payment, &payment.payment, &expected_config) {
             bind_tx.rollback().await?;
-            return Err(ApiError::legacy(
+            return Err(ApiError::business(
                 "Payment configuration changed, please try again",
             ));
         }
@@ -642,7 +642,7 @@ impl OrderService {
         .await?;
         if updated.rows_affected() != 1 {
             bind_tx.rollback().await?;
-            return Err(ApiError::legacy("Order does not exist or has been paid"));
+            return Err(ApiError::business("Order does not exist or has been paid"));
         }
         bind_tx.commit().await?;
 
@@ -663,7 +663,7 @@ impl OrderService {
     ) -> Result<StripePaymentIntentResult, ApiError> {
         let method = input
             .method
-            .ok_or_else(|| ApiError::legacy("Payment method is not available"))?;
+            .ok_or_else(|| ApiError::business("Payment method is not available"))?;
         let mut tx = self.db.begin().await?;
         let order = sqlx::query_as::<_, (i64, String, i32, Option<String>, Option<i32>)>(
             r#"
@@ -678,9 +678,9 @@ impl OrderService {
         .bind(user_id)
         .fetch_optional(&mut *tx)
         .await?
-        .ok_or_else(|| ApiError::legacy("Order does not exist or has been paid"))?;
+        .ok_or_else(|| ApiError::business("Order does not exist or has been paid"))?;
         if order.2 <= 0 {
-            return Err(ApiError::legacy("Order does not exist or has been paid"));
+            return Err(ApiError::business("Order does not exist or has been paid"));
         }
 
         let payment = sqlx::query_as::<_, PaymentForCheckout>(
@@ -697,7 +697,7 @@ impl OrderService {
         .fetch_optional(&mut *tx)
         .await?
         .filter(|payment| payment.enable == 1)
-        .ok_or_else(|| ApiError::legacy("Payment method is not available"))?;
+        .ok_or_else(|| ApiError::business("Payment method is not available"))?;
 
         let handling_amount =
             calculate_handling_amount_cents(order.2, &payment)?.filter(|amount| *amount != 0);
@@ -709,7 +709,7 @@ impl OrderService {
                 .cancel_stripe_intent_binding(order.4, order.3.as_deref())
                 .await?
         {
-            return Err(ApiError::legacy("Order does not exist or has been paid"));
+            return Err(ApiError::business("Order does not exist or has been paid"));
         }
 
         let payment_order = PaymentOrder {
@@ -729,7 +729,7 @@ impl OrderService {
         // driver/config snapshot remains active before binding the intent. An
         // archive that won the race makes this path cancel the new intent.
         let expected_config = serde_json::from_str::<Value>(&payment.config)
-            .map_err(|_| ApiError::legacy("Payment config is invalid"))?;
+            .map_err(|_| ApiError::business("Payment config is invalid"))?;
         let mut bind_tx = self.db.begin().await?;
         let current_payment =
             sqlx::query_as::<_, (String, String)>(PAYMENT_ACTIVE_CONFIG_FOR_SHARE_SQL)
@@ -785,9 +785,11 @@ impl OrderService {
         if binding_state != "bound" {
             let config = payment_config(&payment)?;
             if !stripe_cancel_intent(&config, &intent_id).await? {
-                return Err(ApiError::legacy("The Stripe payment has already succeeded"));
+                return Err(ApiError::business(
+                    "The Stripe payment has already succeeded",
+                ));
             }
-            return Err(ApiError::legacy(if binding_state == "payment_changed" {
+            return Err(ApiError::business(if binding_state == "payment_changed" {
                 "Stripe payment configuration changed, please try again"
             } else {
                 "Order does not exist or has been paid"
@@ -923,7 +925,7 @@ impl OrderService {
             "BTCPay" => btcpay_pay(payment, order).await,
             "WechatPayNative" => wechat_pay_native_pay(payment, order).await,
             "AlipayF2F" => alipay_f2f_pay(&self.config, payment, order).await,
-            "StripeCredit" => Err(ApiError::legacy(
+            "StripeCredit" => Err(ApiError::business(
                 "Stripe payments must be confirmed with Payment Element",
             )),
             "StripeAlipay" => stripe_source_pay(payment, order, "alipay").await,
@@ -973,9 +975,9 @@ impl OrderService {
         .bind(trade_no)
         .fetch_optional(&self.db)
         .await?
-        .ok_or_else(|| ApiError::legacy("订单不存在"))?;
+        .ok_or_else(|| ApiError::business("订单不存在"))?;
         if expected_binding.0 != 0 {
-            return Err(ApiError::legacy("只能对待支付的订单进行操作"));
+            return Err(ApiError::business("只能对待支付的订单进行操作"));
         }
         // Manual settlement must first make the browser-held client secret inert.
         // Otherwise the order can be opened manually and then charged by Stripe a
@@ -985,7 +987,7 @@ impl OrderService {
             .cancel_stripe_intent_binding(expected_binding.1, expected_binding.2.as_deref())
             .await?
         {
-            return Err(ApiError::legacy("只能对待支付的订单进行操作"));
+            return Err(ApiError::business("只能对待支付的订单进行操作"));
         }
 
         let mut tx = self.db.begin().await?;
@@ -1011,7 +1013,7 @@ impl OrderService {
         .fetch_optional(&mut *tx)
         .await?
         else {
-            return Err(ApiError::legacy("订单不存在"));
+            return Err(ApiError::business("订单不存在"));
         };
         let current_binding = sqlx::query_as::<_, (i16, Option<i32>, Option<String>)>(
             "SELECT status, payment_id, callback_no FROM orders WHERE id = $1",
@@ -1020,7 +1022,7 @@ impl OrderService {
         .fetch_one(&mut *tx)
         .await?;
         if current_binding != expected_binding {
-            return Err(ApiError::legacy("只能对待支付的订单进行操作"));
+            return Err(ApiError::business("只能对待支付的订单进行操作"));
         }
 
         mark_order_paid(

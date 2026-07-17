@@ -49,7 +49,7 @@ pub(crate) async fn user_transfer(
     .bind(user.id)
     .fetch_optional(&mut *tx)
     .await?
-    .ok_or_else(|| ApiError::legacy("The user does not exist"))?;
+    .ok_or_else(|| ApiError::business("The user does not exist"))?;
     let (commission_balance, balance) = checked_transfer_balances(
         current.commission_balance,
         current.balance,
@@ -127,15 +127,15 @@ pub(super) fn checked_transfer_balances(
     transfer_amount: i32,
 ) -> Result<(i32, i32), ApiError> {
     if transfer_amount <= 0 {
-        return Err(ApiError::legacy("The transfer amount parameter is wrong"));
+        return Err(ApiError::business("The transfer amount parameter is wrong"));
     }
     let commission_balance = commission_balance
         .checked_sub(transfer_amount)
         .filter(|balance| *balance >= 0)
-        .ok_or_else(|| ApiError::legacy("Insufficient commission balance"))?;
+        .ok_or_else(|| ApiError::business("Insufficient commission balance"))?;
     let balance = balance
         .checked_add(transfer_amount)
-        .ok_or_else(|| ApiError::legacy("Balance exceeds the supported range"))?;
+        .ok_or_else(|| ApiError::business("Balance exceeds the supported range"))?;
     Ok((commission_balance, balance))
 }
 
@@ -152,7 +152,7 @@ pub(crate) async fn invite_save(
     )
     .await?;
     if !created {
-        return Err(ApiError::legacy(
+        return Err(ApiError::business(
             "The maximum number of creations has been reached",
         ));
     }

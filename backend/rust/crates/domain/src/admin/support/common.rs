@@ -186,7 +186,7 @@ pub(in super::super) fn required_string(
         .get(key)
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| ApiError::legacy(format!("{key} cannot be empty")))
+        .ok_or_else(|| ApiError::business(format!("{key} cannot be empty")))
 }
 
 pub(in super::super) fn optional_i64(params: &HashMap<String, String>, key: &str) -> Option<i64> {
@@ -214,7 +214,7 @@ pub(in super::super) fn required_i64(
     params: &HashMap<String, String>,
     key: &str,
 ) -> Result<i64, ApiError> {
-    optional_i64(params, key).ok_or_else(|| ApiError::legacy(format!("{key} cannot be empty")))
+    optional_i64(params, key).ok_or_else(|| ApiError::business(format!("{key} cannot be empty")))
 }
 
 pub(in super::super) struct Pagination {
@@ -314,7 +314,7 @@ pub(in super::super) fn array_param(
     }
     let values = values.into_values().collect::<Vec<_>>();
     if values.is_empty() {
-        return Err(ApiError::legacy("参数有误"));
+        return Err(ApiError::business("参数有误"));
     }
     Ok(values)
 }
@@ -441,7 +441,7 @@ pub(in super::super) fn server_table_from_path(path: &str) -> Result<&'static st
         .iter()
         .find(|(item, _)| *item == kind)
         .map(|(_, table)| *table)
-        .ok_or_else(|| ApiError::legacy("Invalid server type"))
+        .ok_or_else(|| ApiError::business("Invalid server type"))
 }
 
 pub(in super::super) fn server_kind_from_path(path: &str) -> Result<&str, ApiError> {
@@ -449,7 +449,7 @@ pub(in super::super) fn server_kind_from_path(path: &str) -> Result<&str, ApiErr
     let _server = parts.next();
     parts
         .next()
-        .ok_or_else(|| ApiError::legacy("Invalid server type"))
+        .ok_or_else(|| ApiError::business("Invalid server type"))
 }
 
 pub(in super::super) fn ensure_safe_table(table: &str) -> Result<(), ApiError> {
@@ -475,7 +475,7 @@ pub(in super::super) fn ensure_safe_table(table: &str) -> Result<(), ApiError> {
     if allowed.contains(&table) {
         Ok(())
     } else {
-        Err(ApiError::legacy("Invalid table"))
+        Err(ApiError::business("Invalid table"))
     }
 }
 
@@ -483,6 +483,6 @@ pub(in super::super) fn ensure_toggle_column(column: &str) -> Result<(), ApiErro
     if matches!(column, "show" | "enable") {
         Ok(())
     } else {
-        Err(ApiError::legacy("Invalid column"))
+        Err(ApiError::business("Invalid column"))
     }
 }

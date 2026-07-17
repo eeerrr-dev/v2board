@@ -60,6 +60,20 @@ impl ApiError {
         }
     }
 
+    /// Deterministic business-rule failure on a frontend-only route: HTTP 400
+    /// with the same `{message}` body shape and localization path as
+    /// [`ApiError::legacy`]. Frontend retry policy treats >=500 as transient,
+    /// so deterministic rejections (sold out, invalid coupon, missing plan, …)
+    /// must not report as server errors. External namespaces (`/api/v1/server/*`,
+    /// `/api/v2/server/config`, guest payment notify, the Telegram webhook) keep
+    /// `legacy()`'s byte-identical 500 contract.
+    pub fn business(message: impl Into<String>) -> Self {
+        Self::Http {
+            status: StatusCode::BAD_REQUEST,
+            message: message.into(),
+        }
+    }
+
     pub fn not_found(message: impl Into<String>) -> Self {
         Self::Http {
             status: StatusCode::NOT_FOUND,

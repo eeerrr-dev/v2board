@@ -130,13 +130,13 @@ fn map_admin_order_write_error(error: sqlx::Error) -> ApiError {
             .message()
             .contains(UNFINISHED_ORDER_UNIQUE_KEY)
     {
-        return ApiError::legacy("该用户还有待支付的订单，无法分配");
+        return ApiError::business("该用户还有待支付的订单，无法分配");
     }
     if matches!(
         database_error.code().as_deref(),
         Some("40P01" | "40001" | "55P03")
     ) {
-        return ApiError::legacy("订单状态正在被其他请求修改，请重试");
+        return ApiError::business("订单状态正在被其他请求修改，请重试");
     }
     ApiError::Database(error)
 }
@@ -151,7 +151,7 @@ async fn lock_server_group_for_share(
             .fetch_optional(&mut **tx)
             .await?;
     if exists.is_none() {
-        return Err(ApiError::legacy("该服务器组不存在"));
+        return Err(ApiError::business("该服务器组不存在"));
     }
     Ok(())
 }
@@ -183,7 +183,7 @@ async fn lock_plan_users_for_update(
         };
         locked = locked.saturating_add(ids.len());
         if locked > PLAN_FORCE_UPDATE_MAX_USERS {
-            return Err(ApiError::legacy(
+            return Err(ApiError::business(
                 "该订阅用户过多，单次最多强制更新 10000 个用户",
             ));
         }
@@ -331,7 +331,7 @@ impl AdminService {
                     .fetch_optional(&mut *tx)
                     .await?;
             if plan_exists.is_none() {
-                return Err(ApiError::legacy("该订阅ID不存在"));
+                return Err(ApiError::business("该订阅ID不存在"));
             }
             // PlanSave excludes show/renew/sort, so edit never touches them.
             sqlx::query(
@@ -462,7 +462,7 @@ impl AdminService {
             .fetch_optional(&self.db)
             .await?;
         if exists.is_none() {
-            return Err(ApiError::legacy("该订阅不存在"));
+            return Err(ApiError::business("该订阅不存在"));
         }
         if let Some(show) = optional_i64(params, "show") {
             sqlx::query(
@@ -566,7 +566,7 @@ impl AdminService {
             .bind(id)
             .fetch_optional(&self.db)
             .await?
-            .ok_or_else(|| ApiError::legacy("支付方式不存在"))?;
+            .ok_or_else(|| ApiError::business("支付方式不存在"))?;
             if payment.is_empty() {
                 payment.clone_from(&stored_payment);
             }
@@ -598,7 +598,7 @@ impl AdminService {
             .unwrap_or_default()
             .is_empty()
         {
-            return Err(ApiError::legacy("请在站点配置中配置站点地址"));
+            return Err(ApiError::business("请在站点配置中配置站点地址"));
         }
         // PaymentController::save validates name/payment/config plus the optional
         // notify_domain url and handling fee formats. It does NOT check that the
@@ -644,7 +644,7 @@ impl AdminService {
             .bind(id)
             .fetch_optional(&mut *tx)
             .await?
-            .ok_or_else(|| ApiError::legacy("支付方式不存在"))?;
+            .ok_or_else(|| ApiError::business("支付方式不存在"))?;
             let config_value = resolve_redacted_payment_config(
                 &payment,
                 Some((&current.0, &current.1)),
@@ -654,7 +654,7 @@ impl AdminService {
                 .map(|value| value != config_value)
                 .unwrap_or(true);
             if payment_verification_version_blocks_update(current.0 != payment, config_changed) {
-                return Err(ApiError::legacy(
+                return Err(ApiError::business(
                     "支付方式是不可变验签版本，网关类型和密钥配置不可原地修改；请归档后新建支付方式",
                 ));
             }
@@ -720,7 +720,7 @@ impl AdminService {
         .fetch_optional(&mut *tx)
         .await?;
         if exists.is_none() {
-            return Err(ApiError::legacy("支付方式不存在"));
+            return Err(ApiError::business("支付方式不存在"));
         }
         let now = Utc::now().timestamp();
         let archived = sqlx::query(
@@ -769,7 +769,7 @@ impl AdminService {
         .execute(&self.db)
         .await?;
         if updated.rows_affected() != 1 {
-            return Err(ApiError::legacy("支付方式不存在"));
+            return Err(ApiError::business("支付方式不存在"));
         }
         Ok(AdminOutput::Data(json!(true)))
     }
@@ -1017,7 +1017,7 @@ impl AdminService {
             id,
         )
         .await?
-        .ok_or_else(|| ApiError::legacy("订单不存在"))?;
+        .ok_or_else(|| ApiError::business("订单不存在"))?;
 
         // OrderController::detail always attaches commission_log (the CommissionLog
         // rows for this order's trade_no; an empty array when there are none).
@@ -1171,13 +1171,13 @@ impl AdminService {
         .bind(reconciliation_id)
         .fetch_optional(&mut *tx)
         .await?
-        .ok_or_else(|| ApiError::legacy("付款核对记录不存在"))?;
+        .ok_or_else(|| ApiError::business("付款核对记录不存在"))?;
         if current.1.is_some() {
             if current.2.as_deref() == Some(&resolution) {
                 tx.commit().await?;
                 return Ok(AdminOutput::Data(json!(true)));
             }
-            return Err(ApiError::legacy("付款核对记录已处理"));
+            return Err(ApiError::business("付款核对记录已处理"));
         }
         let updated = sqlx::query(
             r#"
@@ -1192,7 +1192,7 @@ impl AdminService {
         .execute(&mut *tx)
         .await?;
         if updated.rows_affected() != 1 {
-            return Err(ApiError::legacy("付款核对记录已处理"));
+            return Err(ApiError::business("付款核对记录已处理"));
         }
         tx.commit().await?;
         tracing::info!(
@@ -1226,17 +1226,17 @@ impl AdminService {
         .bind(&trade_no)
         .fetch_optional(&self.db)
         .await?
-        .ok_or_else(|| ApiError::legacy("订单不存在"))?;
+        .ok_or_else(|| ApiError::business("订单不存在"))?;
         let (status, user_id, balance_amount, payment_id, callback_no) = order;
         if status != 0 {
-            return Err(ApiError::legacy("只能对待支付的订单进行操作"));
+            return Err(ApiError::business("只能对待支付的订单进行操作"));
         }
         let order_service = OrderService::new(self.db.clone(), self.config.clone());
         if !order_service
             .cancel_stripe_intent_binding(payment_id, callback_no.as_deref())
             .await?
         {
-            return Err(ApiError::legacy("只能对待支付的订单进行操作"));
+            return Err(ApiError::business("只能对待支付的订单进行操作"));
         }
         let now = Utc::now().timestamp();
         let mut tx = self.db.begin().await?;
@@ -1255,7 +1255,7 @@ impl AdminService {
         .execute(&mut *tx)
         .await?;
         if updated.rows_affected() != 1 {
-            return Err(ApiError::legacy("只能对待支付的订单进行操作"));
+            return Err(ApiError::business("只能对待支付的订单进行操作"));
         }
         if let Some(balance) = balance_amount.filter(|value| *value != 0) {
             // UserService::addBalance: lock the row, add, and reject a negative result.
@@ -1264,15 +1264,15 @@ impl AdminService {
                     .bind(user_id)
                     .fetch_optional(&mut *tx)
                     .await?
-                    .ok_or_else(|| ApiError::legacy("更新失败"))?;
+                    .ok_or_else(|| ApiError::business("更新失败"))?;
             let updated = i64::from(current)
                 .checked_add(balance)
-                .ok_or_else(|| ApiError::legacy("更新失败"))?;
+                .ok_or_else(|| ApiError::business("更新失败"))?;
             if !(0..=i64::from(i32::MAX)).contains(&updated) {
-                return Err(ApiError::legacy("更新失败"));
+                return Err(ApiError::business("更新失败"));
             }
             sqlx::query("UPDATE users SET balance = $1, updated_at = $2 WHERE id = $3")
-                .bind(i32::try_from(updated).map_err(|_| ApiError::legacy("更新失败"))?)
+                .bind(i32::try_from(updated).map_err(|_| ApiError::business("更新失败"))?)
                 .bind(now)
                 .bind(user_id)
                 .execute(&mut *tx)
@@ -1297,14 +1297,14 @@ impl AdminService {
         .bind(email)
         .fetch_optional(&self.db)
         .await?;
-        let user_id = user_id.ok_or_else(|| ApiError::legacy("该用户不存在"))?;
+        let user_id = user_id.ok_or_else(|| ApiError::business("该用户不存在"))?;
         let mut tx = self.db.begin().await?;
         let has_incomplete: Option<i64> = sqlx::query_scalar(ADMIN_ASSIGN_UNFINISHED_ORDER_SQL)
             .bind(user_id)
             .fetch_optional(&mut *tx)
             .await?;
         if has_incomplete.is_some() {
-            return Err(ApiError::legacy("该用户还有待支付的订单，无法分配"));
+            return Err(ApiError::business("该用户还有待支付的订单，无法分配"));
         }
 
         // Load the fields setInvite / setOrderType need alongside the id:
@@ -1317,14 +1317,14 @@ impl AdminService {
         .fetch_optional(&mut *tx)
         .await?;
         let (user_id, user_plan_id, user_expired_at, user_invite_user_id) =
-            user.ok_or_else(|| ApiError::legacy("该用户不存在"))?;
+            user.ok_or_else(|| ApiError::business("该用户不存在"))?;
         let plan_exists: Option<i32> =
             sqlx::query_scalar("SELECT id FROM plan WHERE id = $1 LIMIT 1 FOR SHARE")
                 .bind(plan_id)
                 .fetch_optional(&mut *tx)
                 .await?;
         if plan_exists.is_none() {
-            return Err(ApiError::legacy("该订阅不存在"));
+            return Err(ApiError::business("该订阅不存在"));
         }
         let now = Utc::now().timestamp();
         let period = required_string(params, "period")?;
@@ -1458,7 +1458,7 @@ impl AdminService {
         .fetch_optional(&mut *tx)
         .await?;
         if has_order.is_some() {
-            return Err(ApiError::legacy("该订阅下存在订单无法删除"));
+            return Err(ApiError::business("该订阅下存在订单无法删除"));
         }
         let has_user: Option<i64> =
             sqlx::query_scalar("SELECT id FROM users WHERE plan_id = $1 LIMIT 1 FOR UPDATE")
@@ -1466,7 +1466,7 @@ impl AdminService {
                 .fetch_optional(&mut *tx)
                 .await?;
         if has_user.is_some() {
-            return Err(ApiError::legacy("该订阅下存在用户无法删除"));
+            return Err(ApiError::business("该订阅下存在用户无法删除"));
         }
         let has_giftcard: Option<i32> =
             sqlx::query_scalar("SELECT id FROM gift_card WHERE plan_id = $1 LIMIT 1 FOR UPDATE")
@@ -1474,7 +1474,7 @@ impl AdminService {
                 .fetch_optional(&mut *tx)
                 .await?;
         if has_giftcard.is_some() {
-            return Err(ApiError::legacy("该订阅仍被礼品卡使用，无法删除"));
+            return Err(ApiError::business("该订阅仍被礼品卡使用，无法删除"));
         }
         let exists: Option<i32> =
             sqlx::query_scalar("SELECT id FROM plan WHERE id = $1 LIMIT 1 FOR UPDATE")
@@ -1482,14 +1482,14 @@ impl AdminService {
                 .fetch_optional(&mut *tx)
                 .await?;
         if exists.is_none() {
-            return Err(ApiError::legacy("该订阅ID不存在"));
+            return Err(ApiError::business("该订阅ID不存在"));
         }
         let deleted = sqlx::query("DELETE FROM plan WHERE id = $1")
             .bind(id)
             .execute(&mut *tx)
             .await?;
         if deleted.rows_affected() != 1 {
-            return Err(ApiError::legacy("该订阅ID不存在"));
+            return Err(ApiError::business("该订阅ID不存在"));
         }
         tx.commit().await?;
         Ok(AdminOutput::Data(json!(true)))

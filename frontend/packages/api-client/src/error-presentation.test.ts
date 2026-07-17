@@ -8,7 +8,7 @@ import {
 
 describe('mutation error presentation', () => {
   it.each([
-    ['HTTP 200 business failure', new ApiError(500, 'business failed')],
+    ['business-rule failure', new ApiError(400, 'business failed')],
     ['HTTP failure', new ApiError(502, 'upstream failed')],
     ['transport failure', new ApiError(0, 'Network Error')],
   ])('notifies exactly once for a %s', (_label, error) => {
@@ -54,5 +54,8 @@ describe('shouldRetryQuery', () => {
 
   it('does not retry client errors', () => {
     expect(shouldRetryQuery(0, new ApiError(422, 'invalid'))).toBe(false);
+    // Deterministic business-rule failures are HTTP 400 in Rust and must not
+    // be retried as transient.
+    expect(shouldRetryQuery(0, new ApiError(400, 'Current product is sold out'))).toBe(false);
   });
 });

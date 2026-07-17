@@ -85,20 +85,20 @@ pub(crate) async fn redeem_giftcard(
     .bind(auth_user.id)
     .fetch_optional(&mut *tx)
     .await?
-    .ok_or_else(|| ApiError::legacy("The user does not exist"))?;
+    .ok_or_else(|| ApiError::business("The user does not exist"))?;
     let giftcard = sqlx::query_as::<_, GiftcardRow>(GIFTCARD_FOR_UPDATE_SQL)
         .bind(giftcard_code)
         .fetch_optional(&mut *tx)
         .await?
-        .ok_or_else(|| ApiError::legacy("The gift card does not exist"))?;
+        .ok_or_else(|| ApiError::business("The gift card does not exist"))?;
     if giftcard.started_at != 0 && now < giftcard.started_at {
-        return Err(ApiError::legacy("The gift card is not yet valid"));
+        return Err(ApiError::business("The gift card is not yet valid"));
     }
     if giftcard.ended_at != 0 && now > giftcard.ended_at {
-        return Err(ApiError::legacy("The gift card has expired"));
+        return Err(ApiError::business("The gift card has expired"));
     }
     if giftcard.limit_use.is_some_and(|limit| limit <= 0) {
-        return Err(ApiError::legacy(
+        return Err(ApiError::business(
             "The gift card usage limit has been reached",
         ));
     }
@@ -110,13 +110,13 @@ pub(crate) async fn redeem_giftcard(
     .fetch_one(&mut *tx)
     .await?;
     if already_redeemed {
-        return Err(ApiError::legacy(
+        return Err(ApiError::business(
             "The gift card has already been used by this user",
         ));
     }
     let value = giftcard.value.unwrap_or_default();
     if matches!(giftcard.r#type, 1 | 2 | 3 | 5) && value < 0 {
-        return Err(ApiError::legacy("Gift card value cannot be negative"));
+        return Err(ApiError::business("Gift card value cannot be negative"));
     }
     let mut group_id = None::<i32>;
     let mut device_limit = None::<i32>;
@@ -135,15 +135,14 @@ pub(crate) async fn redeem_giftcard(
         2 => {
             let expired_at = user
                 .expired_at
-                .ok_or_else(|| ApiError::legacy("Not suitable gift card type"))?;
+                .ok_or_else(|| ApiError::business("Not suitable gift card type"))?;
             user.expired_at = Some(checked_add_giftcard_days(expired_at.max(now), value)?);
         }
         3 => {
             let bytes = checked_gib_bytes(i64::from(value))?;
-            user.transfer_enable = user
-                .transfer_enable
-                .checked_add(bytes)
-                .ok_or_else(|| ApiError::legacy("Gift card traffic exceeds the supported range"))?;
+            user.transfer_enable = user.transfer_enable.checked_add(bytes).ok_or_else(|| {
+                ApiError::business("Gift card traffic exceeds the supported range")
+            })?;
         }
         4 => {
             user.traffic_epoch = user.traffic_epoch.checked_add(1).ok_or_else(|| {
@@ -156,14 +155,14 @@ pub(crate) async fn redeem_giftcard(
             let can_apply = user.plan_id.is_none()
                 || user.expired_at.is_some_and(|expired_at| expired_at < now);
             if !can_apply {
-                return Err(ApiError::legacy("Not suitable gift card type"));
+                return Err(ApiError::business("Not suitable gift card type"));
             }
             let plan_id = giftcard
                 .plan_id
-                .ok_or_else(|| ApiError::legacy("Subscription plan does not exist"))?;
+                .ok_or_else(|| ApiError::business("Subscription plan does not exist"))?;
             let plan = v2board_db::plan::find_plan_for_update(&mut tx, plan_id)
                 .await?
-                .ok_or_else(|| ApiError::legacy("Subscription plan does not exist"))?;
+                .ok_or_else(|| ApiError::business("Subscription plan does not exist"))?;
             if let Some(capacity_limit) = plan.capacity_limit {
                 let has_reservation: bool = sqlx::query_scalar(
                     r#"
@@ -182,7 +181,7 @@ pub(crate) async fn redeem_giftcard(
                 let capacity_used =
                     v2board_db::plan::capacity_usage_for_update(&mut tx, plan.id).await?;
                 if !giftcard_plan_has_capacity(capacity_limit, capacity_used, has_reservation) {
-                    return Err(ApiError::legacy("Current product is sold out"));
+                    return Err(ApiError::business("Current product is sold out"));
                 }
             }
             user.plan_id = Some(plan.id);
@@ -201,7 +200,7 @@ pub(crate) async fn redeem_giftcard(
                 Some(checked_add_giftcard_days(now, value)?)
             };
         }
-        _ => return Err(ApiError::legacy("Unknown gift card type")),
+        _ => return Err(ApiError::business("Unknown gift card type")),
     }
 
     sqlx::query(
@@ -253,26 +252,26 @@ pub(crate) async fn redeem_giftcard(
 
 pub(super) fn checked_add_cents(left: i32, right: i32, message: &str) -> Result<i32, ApiError> {
     left.checked_add(right)
-        .ok_or_else(|| ApiError::legacy(message))
+        .ok_or_else(|| ApiError::business(message))
 }
 
 pub(super) fn checked_gib_bytes(gib: i64) -> Result<i64, ApiError> {
     if gib < 0 {
-        return Err(ApiError::legacy("Gift card traffic cannot be negative"));
+        return Err(ApiError::business("Gift card traffic cannot be negative"));
     }
     gib.checked_mul(GIB_BYTES)
-        .ok_or_else(|| ApiError::legacy("Gift card traffic exceeds the supported range"))
+        .ok_or_else(|| ApiError::business("Gift card traffic exceeds the supported range"))
 }
 
 pub(super) fn checked_add_giftcard_days(base: i64, days: i32) -> Result<i64, ApiError> {
     if days < 0 {
-        return Err(ApiError::legacy("Gift card duration cannot be negative"));
+        return Err(ApiError::business("Gift card duration cannot be negative"));
     }
     let seconds = i64::from(days)
         .checked_mul(SECONDS_PER_DAY)
-        .ok_or_else(|| ApiError::legacy("Gift card duration exceeds the supported range"))?;
+        .ok_or_else(|| ApiError::business("Gift card duration exceeds the supported range"))?;
     base.checked_add(seconds)
-        .ok_or_else(|| ApiError::legacy("Gift card duration exceeds the supported range"))
+        .ok_or_else(|| ApiError::business("Gift card duration exceeds the supported range"))
 }
 
 pub(super) fn giftcard_plan_has_capacity(

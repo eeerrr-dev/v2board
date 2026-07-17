@@ -56,16 +56,16 @@ impl OrderService {
         trade_no: String,
     ) -> Result<DraftOrder, ApiError> {
         if period != "deposit" {
-            return Err(ApiError::legacy("Wrong plan period"));
+            return Err(ApiError::business("Wrong plan period"));
         }
         let amount = deposit_amount.unwrap_or_default();
         if amount <= 0 {
-            return Err(ApiError::legacy(
+            return Err(ApiError::business(
                 "Failed to create order, deposit amount must be greater than 0",
             ));
         }
         if amount >= 9_999_999 {
-            return Err(ApiError::legacy(
+            return Err(ApiError::business(
                 "Deposit amount too large, please contact the administrator",
             ));
         }
@@ -100,7 +100,7 @@ impl OrderService {
     ) -> Result<DraftOrder, ApiError> {
         let plan = v2board_db::plan::find_plan_for_update(tx, plan_id)
             .await?
-            .ok_or_else(|| ApiError::legacy("Subscription plan does not exist"))?;
+            .ok_or_else(|| ApiError::business("Subscription plan does not exist"))?;
         if period != "reset_price" {
             checked_plan_transfer_bytes(plan.transfer_enable)?;
         }
@@ -112,27 +112,27 @@ impl OrderService {
             && !have_capacity(tx, plan.id, plan.capacity_limit).await?
             && period != "reset_price"
         {
-            return Err(ApiError::legacy("Current product is sold out"));
+            return Err(ApiError::business("Current product is sold out"));
         }
         let price = purchasable_period_price(&plan, period)?;
         if period == "reset_price" && (!is_available(&user) || user.plan_id != Some(plan.id)) {
-            return Err(ApiError::legacy(
+            return Err(ApiError::business(
                 "Subscription has expired or no active subscription, unable to purchase Data Reset Package",
             ));
         }
         let hidden_unbuyable = plan.show == 0 && (plan.renew == 0 || user.plan_id != Some(plan.id));
         if hidden_unbuyable && period != "reset_price" {
-            return Err(ApiError::legacy(
+            return Err(ApiError::business(
                 "This subscription has been sold out, please choose another subscription",
             ));
         }
         if plan.renew == 0 && user.plan_id == Some(plan.id) && period != "reset_price" {
-            return Err(ApiError::legacy(
+            return Err(ApiError::business(
                 "This subscription cannot be renewed, please change to another subscription",
             ));
         }
         if plan.show == 0 && plan.renew != 0 && !is_available(&user) {
-            return Err(ApiError::legacy(
+            return Err(ApiError::business(
                 "This subscription has expired, please change to another subscription",
             ));
         }
@@ -192,7 +192,7 @@ impl OrderService {
         .bind(code)
         .fetch_optional(&mut **tx)
         .await?
-        .ok_or_else(|| ApiError::legacy("Invalid coupon"))?;
+        .ok_or_else(|| ApiError::business("Invalid coupon"))?;
         validate_coupon(tx, &coupon, draft).await?;
 
         // Mirror Laravel CouponService::use: set discount_amount (capped at the
@@ -211,14 +211,14 @@ impl OrderService {
 
         if let Some(limit_use) = coupon.limit_use {
             if limit_use <= 0 {
-                return Err(ApiError::legacy("Coupon failed"));
+                return Err(ApiError::business("Coupon failed"));
             }
             let result = sqlx::query("UPDATE coupon SET limit_use = limit_use - 1 WHERE id = $1")
                 .bind(coupon.id)
                 .execute(&mut **tx)
                 .await?;
             if result.rows_affected() == 0 {
-                return Err(ApiError::legacy("Coupon failed"));
+                return Err(ApiError::business("Coupon failed"));
             }
         }
         Ok(())
@@ -241,7 +241,7 @@ impl OrderService {
             && (user.expired_at.is_none() || user.expired_at.unwrap_or_default() > now)
         {
             if !self.config.plan_change_enable {
-                return Err(ApiError::legacy(
+                return Err(ApiError::business(
                     "目前不允许更改订阅，请联系客服或提交工单操作",
                 ));
             }
@@ -295,7 +295,7 @@ impl OrderService {
             let paid_total = i64::from(last_order.total_amount)
                 .checked_add(i64::from(last_order.balance_amount.unwrap_or_default()))
                 .ok_or_else(|| {
-                    ApiError::legacy("Subscription surplus amount exceeds the supported range")
+                    ApiError::business("Subscription surplus amount exceeds the supported range")
                 })?;
             if paid_total <= 0 {
                 return Ok(());
@@ -394,7 +394,7 @@ impl OrderService {
             let later_months_seconds = order_surplus_second
                 .checked_sub(first_month_remain_seconds)
                 .ok_or_else(|| {
-                    ApiError::legacy("Subscription surplus duration exceeds the supported range")
+                    ApiError::business("Subscription surplus duration exceeds the supported range")
                 })?;
             let first_month = checked_surplus_mul(
                 checked_surplus_mul(avg_price_per_second, Decimal::from(month_seconds))?,
@@ -444,7 +444,7 @@ impl OrderService {
         .execute(&mut **tx)
         .await?;
         if result.rows_affected() == 0 {
-            return Err(ApiError::legacy("Insufficient balance"));
+            return Err(ApiError::business("Insufficient balance"));
         }
         user.balance -= use_balance_cents;
         draft.balance_amount = Some(use_balance);
@@ -590,29 +590,29 @@ async fn validate_coupon(
 ) -> Result<(), ApiError> {
     validate_coupon_discount(coupon.r#type, coupon.value)?;
     if coupon.show == 0 {
-        return Err(ApiError::legacy("Invalid coupon"));
+        return Err(ApiError::business("Invalid coupon"));
     }
     if matches!(coupon.limit_use, Some(limit_use) if limit_use <= 0) {
-        return Err(ApiError::legacy("This coupon is no longer available"));
+        return Err(ApiError::business("This coupon is no longer available"));
     }
     let now = Utc::now().timestamp();
     if now < coupon.started_at {
-        return Err(ApiError::legacy("This coupon has not yet started"));
+        return Err(ApiError::business("This coupon has not yet started"));
     }
     if now > coupon.ended_at {
-        return Err(ApiError::legacy("This coupon has expired"));
+        return Err(ApiError::business("This coupon has expired"));
     }
     if let Some(plan_ids) = parse_i32_json_list(coupon.limit_plan_ids.as_deref())
         && !plan_ids.contains(&draft.plan_id)
     {
-        return Err(ApiError::legacy(
+        return Err(ApiError::business(
             "The coupon code cannot be used for this subscription",
         ));
     }
     if let Some(periods) = parse_string_json_list(coupon.limit_period.as_deref())
         && !periods.iter().any(|period| period == &draft.period)
     {
-        return Err(ApiError::legacy(
+        return Err(ApiError::business(
             "The coupon code cannot be used for this period",
         ));
     }
@@ -629,7 +629,7 @@ async fn validate_coupon(
         .fetch_one(&mut **tx)
         .await?;
         if used_count >= i64::from(limit) {
-            return Err(ApiError::legacy(format!(
+            return Err(ApiError::business(format!(
                 "The coupon can only be used {limit} per person"
             )));
         }
@@ -644,7 +644,7 @@ pub(super) fn validate_coupon_discount(coupon_type: i16, value: i32) -> Result<(
         _ => false,
     };
     if !valid {
-        return Err(ApiError::legacy("Invalid coupon discount value"));
+        return Err(ApiError::business("Invalid coupon discount value"));
     }
     Ok(())
 }
@@ -785,7 +785,7 @@ pub(super) async fn insert_order(
     .await;
     match result {
         Ok(_) => Ok(()),
-        Err(error) if is_unfinished_order_unique_violation(&error) => Err(ApiError::legacy(
+        Err(error) if is_unfinished_order_unique_violation(&error) => Err(ApiError::business(
             "You have an unpaid or pending order, please try again later or cancel it",
         )),
         Err(error) => Err(error.into()),
@@ -911,7 +911,7 @@ pub(super) fn calculate_handling_amount_cents(
     let fixed = payment.handling_fee_fixed.unwrap_or_default();
     let percent = payment.handling_fee_percent.unwrap_or_default();
     if fixed < 0 || percent < Decimal::ZERO {
-        return Err(ApiError::legacy(
+        return Err(ApiError::business(
             "Payment handling fee must not be negative",
         ));
     }
@@ -922,11 +922,11 @@ pub(super) fn calculate_handling_amount_cents(
         .checked_mul(percent)
         .and_then(|amount| amount.checked_div(Decimal::from(100)))
         .and_then(|amount| amount.checked_add(Decimal::from(fixed)))
-        .ok_or_else(|| ApiError::legacy("Payment handling fee is outside the supported range"))?;
+        .ok_or_else(|| ApiError::business("Payment handling fee is outside the supported range"))?;
     let amount = amount
         .round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero)
         .to_i32()
-        .ok_or_else(|| ApiError::legacy("Payment handling fee is outside the supported range"))?;
+        .ok_or_else(|| ApiError::business("Payment handling fee is outside the supported range"))?;
     Ok(Some(amount))
 }
 
@@ -1021,10 +1021,12 @@ fn plan_period_price(plan: &PlanRow, period: &str) -> Option<i32> {
 
 pub(super) fn purchasable_period_price(plan: &PlanRow, period: &str) -> Result<i32, ApiError> {
     let price = plan_period_price(plan, period).ok_or_else(|| {
-        ApiError::legacy("This payment period cannot be purchased, please choose another period")
+        ApiError::business("This payment period cannot be purchased, please choose another period")
     })?;
     if price < 0 {
-        return Err(ApiError::legacy("Subscription price must not be negative"));
+        return Err(ApiError::business(
+            "Subscription price must not be negative",
+        ));
     }
     Ok(price)
 }
@@ -1053,7 +1055,7 @@ pub(super) fn checked_unused_traffic(user: &UserForOrder) -> Result<i64, ApiErro
 pub(super) fn checked_order_month_sum(current: u32, months: u32) -> Result<u32, ApiError> {
     current
         .checked_add(months)
-        .ok_or_else(|| ApiError::legacy("Subscription surplus months exceed the supported range"))
+        .ok_or_else(|| ApiError::business("Subscription surplus months exceed the supported range"))
 }
 
 pub(super) fn checked_order_amount_sum(
@@ -1068,12 +1070,14 @@ pub(super) fn checked_order_amount_sum(
         .and_then(|amount| amount.checked_add(i64::from(balance_amount.unwrap_or_default())))
         .and_then(|amount| amount.checked_add(i64::from(surplus_amount.unwrap_or_default())))
         .and_then(|amount| amount.checked_sub(i64::from(refund_amount.unwrap_or_default())))
-        .ok_or_else(|| ApiError::legacy("Subscription surplus amount exceeds the supported range"))
+        .ok_or_else(|| {
+            ApiError::business("Subscription surplus amount exceeds the supported range")
+        })
 }
 
 pub(super) fn checked_surplus_seconds(end: i64, start: i64) -> Result<i64, ApiError> {
     end.checked_sub(start).ok_or_else(|| {
-        ApiError::legacy("Subscription surplus duration exceeds the supported range")
+        ApiError::business("Subscription surplus duration exceeds the supported range")
     })
 }
 
@@ -1081,25 +1085,31 @@ pub(super) fn checked_surplus_add_months(timestamp: i64, months: u32) -> Result<
     let base = app_timezone()
         .timestamp_opt(timestamp, 0)
         .single()
-        .ok_or_else(|| ApiError::legacy("Subscription timestamp is outside the supported range"))?;
+        .ok_or_else(|| {
+            ApiError::business("Subscription timestamp is outside the supported range")
+        })?;
     base.checked_add_months(Months::new(months))
         .map(|date| date.timestamp())
-        .ok_or_else(|| ApiError::legacy("Subscription surplus expiry exceeds the supported range"))
+        .ok_or_else(|| {
+            ApiError::business("Subscription surplus expiry exceeds the supported range")
+        })
 }
 
 pub(super) fn checked_surplus_mul(left: Decimal, right: Decimal) -> Result<Decimal, ApiError> {
-    left.checked_mul(right)
-        .ok_or_else(|| ApiError::legacy("Subscription surplus amount exceeds the supported range"))
+    left.checked_mul(right).ok_or_else(|| {
+        ApiError::business("Subscription surplus amount exceeds the supported range")
+    })
 }
 
 pub(super) fn checked_surplus_add(left: Decimal, right: Decimal) -> Result<Decimal, ApiError> {
-    left.checked_add(right)
-        .ok_or_else(|| ApiError::legacy("Subscription surplus amount exceeds the supported range"))
+    left.checked_add(right).ok_or_else(|| {
+        ApiError::business("Subscription surplus amount exceeds the supported range")
+    })
 }
 
 pub(super) fn checked_surplus_div(left: Decimal, right: Decimal) -> Result<Decimal, ApiError> {
     left.checked_div(right)
-        .ok_or_else(|| ApiError::legacy("Subscription surplus ratio exceeds the supported range"))
+        .ok_or_else(|| ApiError::business("Subscription surplus ratio exceeds the supported range"))
 }
 
 pub(super) fn is_valid_period(period: &str) -> bool {
@@ -1164,7 +1174,7 @@ pub(super) fn round_cents(amount: Decimal) -> Result<i32, ApiError> {
     amount
         .round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero)
         .to_i32()
-        .ok_or_else(|| ApiError::legacy("Order amount is outside the supported range"))
+        .ok_or_else(|| ApiError::business("Order amount is outside the supported range"))
 }
 
 pub fn generate_order_no() -> String {

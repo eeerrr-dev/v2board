@@ -158,3 +158,35 @@ fn pagination_is_bounded_and_never_overflows_the_offset() {
     assert!(validate_pagination(Some("9223372036854775807"), Some("100")).is_err());
     assert!(checked_pagination_values(i64::MAX, 100).is_err());
 }
+
+/// Deterministic business-rule failures on frontend-only routes are HTTP 400
+/// with the same `{message}` body shape as the legacy 500, so the frontend
+/// retry policy (>=500 is transient) never retries them. `legacy()` keeps the
+/// byte-identical 500 contract for the external namespaces.
+#[tokio::test]
+async fn business_rule_failures_are_400_with_the_legacy_message_body() {
+    use axum::response::IntoResponse as _;
+
+    let response =
+        v2board_compat::ApiError::business("Current product is sold out").into_response();
+    assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+    let body = axum::body::to_bytes(response.into_body(), 1024)
+        .await
+        .unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        body,
+        serde_json::json!({ "message": "Current product is sold out" })
+    );
+
+    let response = v2board_compat::ApiError::legacy("fail").into_response();
+    assert_eq!(
+        response.status(),
+        axum::http::StatusCode::INTERNAL_SERVER_ERROR
+    );
+    let body = axum::body::to_bytes(response.into_body(), 1024)
+        .await
+        .unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body, serde_json::json!({ "message": "fail" }));
+}

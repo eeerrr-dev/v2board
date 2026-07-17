@@ -166,7 +166,7 @@ impl AdminService {
             .or(self.config.app_url.as_deref());
         self.config
             .validate_security_update(server_token, force_https, app_url)
-            .map_err(|error| ApiError::legacy(format!("配置安全校验失败: {error}")))?;
+            .map_err(|error| ApiError::business(format!("配置安全校验失败: {error}")))?;
         let expected_revision = self
             .config
             .operator_revision()
@@ -184,7 +184,7 @@ impl AdminService {
         })?
         .map_err(|error| {
             tracing::warn!(?error, "rejected invalid operator configuration candidate");
-            ApiError::legacy(format!("配置校验失败: {error}"))
+            ApiError::business(format!("配置校验失败: {error}"))
         })?;
         let normalized = candidate_config.operator_config_map();
         if normalized == self.config.operator_config_map() {
@@ -274,7 +274,7 @@ impl AdminService {
             };
             recipient_count = recipient_count.saturating_add(recipients.len());
             if recipient_count > BULK_MAIL_MAX_RECIPIENTS {
-                return Err(ApiError::legacy(
+                return Err(ApiError::business(
                     "单次最多向 50000 个用户发送邮件，请缩小筛选范围",
                 ));
             }
@@ -378,7 +378,7 @@ impl AdminService {
             .map(String::as_str)
             .filter(|value| !value.trim().is_empty() && *value != REDACTED_SECRET)
             .or(self.config.telegram_bot_token.as_deref())
-            .ok_or_else(|| ApiError::legacy("Telegram bot token cannot be empty"))?;
+            .ok_or_else(|| ApiError::business("Telegram bot token cannot be empty"))?;
         let hook_url = format!(
             "{}/api/v1/guest/telegram/webhook",
             self.config
@@ -401,7 +401,7 @@ impl AdminService {
         )
         .await?;
         if me.get("ok").and_then(Value::as_bool) != Some(true) {
-            return Err(ApiError::legacy("Telegram token is invalid"));
+            return Err(ApiError::business("Telegram token is invalid"));
         }
         let result_response = self
             .http
@@ -417,7 +417,7 @@ impl AdminService {
         )
         .await?;
         if result.get("ok").and_then(Value::as_bool) != Some(true) {
-            return Err(ApiError::legacy("Telegram webhook failed"));
+            return Err(ApiError::business("Telegram webhook failed"));
         }
         Ok(AdminOutput::Data(json!(true)))
     }

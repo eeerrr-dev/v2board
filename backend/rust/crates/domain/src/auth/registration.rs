@@ -75,7 +75,7 @@ impl AuthService {
                 .await?;
             self.validate_register_email(email).await?;
             if self.config.stop_register {
-                return Err(ApiError::legacy("Registration has closed"));
+                return Err(ApiError::business("Registration has closed"));
             }
             if self.config.invite_force
                 && input
@@ -85,7 +85,7 @@ impl AuthService {
                     .filter(|value| !value.is_empty())
                     .is_none()
             {
-                return Err(ApiError::legacy(
+                return Err(ApiError::business(
                     "You must use the invitation code to register",
                 ));
             }
@@ -94,7 +94,7 @@ impl AuthService {
                     .consume_email_code(&cache_email, input.email_code.as_deref())
                     .await?
             {
-                return Err(ApiError::legacy("Incorrect email verification code"));
+                return Err(ApiError::business("Incorrect email verification code"));
             }
 
             let password_hash = self.password_kdf.hash(&input.password).await?;
@@ -142,7 +142,7 @@ impl AuthService {
             .await
             .map_err(|error| {
                 if is_email_unique_violation(&error) {
-                    ApiError::legacy("Email already exists")
+                    ApiError::business("Email already exists")
                 } else {
                     ApiError::Database(error)
                 }
@@ -202,7 +202,7 @@ impl AuthService {
         .await?;
         let Some(row) = row else {
             if self.config.invite_force {
-                return Err(ApiError::legacy("Invalid invitation code"));
+                return Err(ApiError::business("Invalid invitation code"));
             }
             return Ok(None);
         };
@@ -215,7 +215,7 @@ impl AuthService {
             .execute(&mut **tx)
             .await?;
             if result.rows_affected() != 1 {
-                return Err(ApiError::legacy("Invalid invitation code"));
+                return Err(ApiError::business("Invalid invitation code"));
             }
         }
         Ok(Some(row.user_id))
@@ -247,7 +247,7 @@ impl AuthService {
             .invoke_async::<i64>(&mut conn)
             .await?;
         if reserved != 1 {
-            return Err(ApiError::legacy(format!(
+            return Err(ApiError::business(format!(
                 "Register frequently, please try again after {} minute",
                 self.config.register_limit_expire
             )));
@@ -371,18 +371,20 @@ struct TrialPlan {
 
 pub(super) fn checked_trial_transfer_bytes(transfer_gib: i64) -> Result<i64, ApiError> {
     if transfer_gib < 0 {
-        return Err(ApiError::legacy(
+        return Err(ApiError::business(
             "Trial plan traffic allowance must not be negative",
         ));
     }
-    transfer_gib
-        .checked_mul(1_073_741_824)
-        .ok_or_else(|| ApiError::legacy("Trial plan traffic allowance exceeds the supported range"))
+    transfer_gib.checked_mul(1_073_741_824).ok_or_else(|| {
+        ApiError::business("Trial plan traffic allowance exceeds the supported range")
+    })
 }
 
 pub(super) fn checked_trial_expired_at(now: i64, try_out_hour: Decimal) -> Result<i64, ApiError> {
     if try_out_hour.is_sign_negative() {
-        return Err(ApiError::legacy("Trial plan duration must not be negative"));
+        return Err(ApiError::business(
+            "Trial plan duration must not be negative",
+        ));
     }
     let hours = if try_out_hour.is_zero() {
         Decimal::ONE
@@ -391,10 +393,10 @@ pub(super) fn checked_trial_expired_at(now: i64, try_out_hour: Decimal) -> Resul
     };
     let seconds = hours
         .checked_mul(Decimal::from(3_600))
-        .ok_or_else(|| ApiError::legacy("Trial plan duration exceeds the supported range"))?
+        .ok_or_else(|| ApiError::business("Trial plan duration exceeds the supported range"))?
         .trunc()
         .to_i64()
-        .ok_or_else(|| ApiError::legacy("Trial plan duration exceeds the supported range"))?;
+        .ok_or_else(|| ApiError::business("Trial plan duration exceeds the supported range"))?;
     now.checked_add(seconds)
-        .ok_or_else(|| ApiError::legacy("Trial plan expiry exceeds the supported range"))
+        .ok_or_else(|| ApiError::business("Trial plan expiry exceeds the supported range"))
 }

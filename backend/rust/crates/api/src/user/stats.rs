@@ -29,7 +29,7 @@ pub(crate) async fn server_fetch(
     let user = require_user(&state, &headers).await?;
     let access = v2board_db::user::find_user_access(&state.db, user.id)
         .await?
-        .ok_or_else(|| ApiError::legacy("The user does not exist"))?;
+        .ok_or_else(|| ApiError::business("The user does not exist"))?;
     if !user_is_available(&access) {
         return Ok(legacy_data(Vec::new()));
     }
