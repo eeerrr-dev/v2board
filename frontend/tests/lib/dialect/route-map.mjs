@@ -118,16 +118,49 @@ export const routeMap = Object.freeze([
     { method: 'DELETE', path: '/auth/session' },
   ),
 
-  // ——— §5.3 User account & profile ———
-  route('user.profile.get', { method: 'GET', path: '/user/info' }),
-  route('user.profile.update', { method: 'POST', path: '/user/update' }),
-  route('user.password.update', { method: 'POST', path: '/user/changePassword' }),
-  route('user.stats.get', { method: 'GET', path: '/user/getStat' }),
-  route('user.sessions.list', { method: 'GET', path: '/user/getActiveSession' }),
-  route('user.sessions.delete', { method: 'POST', path: '/user/removeActiveSession' }),
+  // ——— §5.3 User account & profile — flipped to the modern rows in W5 ———
+  route(
+    'user.profile.get',
+    { method: 'GET', path: '/user/info' },
+    { method: 'GET', path: '/user/profile' },
+  ),
+  route(
+    'user.profile.update',
+    { method: 'POST', path: '/user/update' },
+    { method: 'PATCH', path: '/user/profile' },
+  ),
+  route(
+    'user.password.update',
+    { method: 'POST', path: '/user/changePassword' },
+    { method: 'PUT', path: '/user/password' },
+  ),
+  route(
+    'user.stats.get',
+    { method: 'GET', path: '/user/getStat' },
+    { method: 'GET', path: '/user/stats' },
+  ),
+  route(
+    'user.sessions.list',
+    { method: 'GET', path: '/user/getActiveSession' },
+    { method: 'GET', path: '/user/sessions' },
+  ),
+  route(
+    'user.sessions.delete',
+    { method: 'POST', path: '/user/removeActiveSession' },
+    // The legacy body-carried session_id became a path parameter (§9.4).
+    { method: 'DELETE', path: '/user/sessions/{session_id}' },
+  ),
   route('user.commission-transfers.create', { method: 'POST', path: '/user/transfer' }),
-  route('user.gift-card-redemptions.create', { method: 'POST', path: '/user/redeemgiftcard' }),
-  route('user.telegram-binding.delete', { method: 'GET', path: '/user/unbindTelegram' }),
+  route(
+    'user.gift-card-redemptions.create',
+    { method: 'POST', path: '/user/redeemgiftcard' },
+    { method: 'POST', path: '/user/gift-card-redemptions' },
+  ),
+  route(
+    'user.telegram-binding.delete',
+    { method: 'GET', path: '/user/unbindTelegram' },
+    { method: 'DELETE', path: '/user/telegram-binding' },
+  ),
   route(
     'user.telegram-bot.get',
     { method: 'GET', path: '/user/telegram/getBotInfo' },
@@ -140,10 +173,23 @@ export const routeMap = Object.freeze([
     { method: 'GET', path: '/user/config' },
   ),
 
-  // ——— §5.4 Subscription & service usage ———
-  route('user.subscription.get', { method: 'GET', path: '/user/getSubscribe' }),
-  route('user.subscription.new-period', { method: 'POST', path: '/user/newPeriod' }),
-  route('user.subscription.reset-token', { method: 'GET', path: '/user/resetSecurity' }),
+  // ——— §5.4 Subscription & service usage — subscription rows flipped in W5 ———
+  route(
+    'user.subscription.get',
+    { method: 'GET', path: '/user/getSubscribe' },
+    { method: 'GET', path: '/user/subscription' },
+  ),
+  route(
+    'user.subscription.new-period',
+    { method: 'POST', path: '/user/newPeriod' },
+    { method: 'POST', path: '/user/subscription/new-period' },
+  ),
+  route(
+    'user.subscription.reset-token',
+    { method: 'GET', path: '/user/resetSecurity' },
+    // The legacy GET-with-side-effect rotation became a POST (§9.4).
+    { method: 'POST', path: '/user/subscription/reset-token' },
+  ),
   route('user.servers.list', { method: 'GET', path: '/user/server/fetch' }),
   route('user.traffic-logs.list', { method: 'GET', path: '/user/stat/getTrafficLog' }),
 

@@ -240,8 +240,12 @@ export async function runProfilePreferenceSwitchesInteraction(page) {
     const updateResponse = page.waitForResponse(
       (response) => {
         const url = new URL(response.url());
+        const method = response.request().method();
+        // Both worlds' profile-update spellings (W5): legacy POST
+        // /user/update, modern PATCH /user/profile.
         return (
-          url.pathname === '/api/v1/user/update' && response.request().method() === 'POST'
+          (url.pathname === '/api/v1/user/update' && method === 'POST') ||
+          (url.pathname === '/api/v1/user/profile' && method === 'PATCH')
         );
       },
       { timeout: 5_000 },

@@ -162,14 +162,39 @@ export async function installApiFixtures(page, scenario, target, interaction = {
   await page.route('**/api/v1/**', async (route) => {
     const requestUrl = new URL(route.request().url());
     const pathname = requestUrl.pathname;
-    page.__visualParityDiagnostics?.push(`${route.request().method()} ${pathname}`);
+    const requestMethod = route.request().method();
+    page.__visualParityDiagnostics?.push(`${requestMethod} ${pathname}`);
     const adminEndpoint = adminFixtureEndpoint(pathname);
+    // W5 (§5.3/§5.4): the modern profile family splits reads and writes by
+    // verb on shared paths. Match both worlds' spellings for the counters,
+    // captures, and delay knobs below.
+    const isUserProfileGet =
+      pathname === '/api/v1/user/info' ||
+      (pathname === '/api/v1/user/profile' && requestMethod === 'GET');
+    const isUserProfileUpdate =
+      pathname === '/api/v1/user/update' ||
+      (pathname === '/api/v1/user/profile' && requestMethod === 'PATCH');
+    const isUserPasswordUpdate =
+      pathname === '/api/v1/user/changePassword' || pathname === '/api/v1/user/password';
+    const isUserRedeemGiftcard =
+      pathname === '/api/v1/user/redeemgiftcard' ||
+      pathname === '/api/v1/user/gift-card-redemptions';
+    const isUserUnbindTelegram =
+      pathname === '/api/v1/user/unbindTelegram' || pathname === '/api/v1/user/telegram-binding';
+    const isUserResetSecurity =
+      pathname === '/api/v1/user/resetSecurity' ||
+      pathname === '/api/v1/user/subscription/reset-token';
+    const isUserSubscribeGet =
+      pathname === '/api/v1/user/getSubscribe' || pathname === '/api/v1/user/subscription';
+    const isUserNewPeriod =
+      pathname === '/api/v1/user/newPeriod' ||
+      pathname === '/api/v1/user/subscription/new-period';
 
     if (adminEndpoint) {
       page.__visualParityDiagnostics?.push(`fixture admin ${adminEndpoint}`);
     } else if (pathname === '/api/v1/user/checkLogin' || pathname === '/api/v1/auth/session') {
       page.__visualParityDiagnostics?.push(`fixture checkLogin admin=${isAdminScenario}`);
-    } else if (pathname === '/api/v1/user/info') {
+    } else if (isUserProfileGet) {
       page.__visualParityDiagnostics?.push('fixture user info');
     }
 
@@ -177,14 +202,14 @@ export async function installApiFixtures(page, scenario, target, interaction = {
       await waitForAdminGroups(adminGroupsReady);
     }
     const requestData = readRequestData(route.request());
-    const requestMethod = route.request().method();
-    // W4 (§5.5): the modern commerce family carries the order identity in the
-    // path. Match both worlds' spellings and capture commerce requests in the
-    // canonical dialect shape so cross-world comparison sees one contract.
+    // W4 (§5.5) / W5 (§5.3): the modern families carry identity in the path
+    // and booleans in JSON bodies. Match both worlds' spellings and capture
+    // these requests in the canonical dialect shape so cross-world comparison
+    // sees one contract.
     const modernOrderActionMatch =
       /^\/api\/v1\/user\/orders\/[^/]+\/(status|cancel|checkout|stripe-intent)$/.exec(pathname);
     const modernOrderAction = modernOrderActionMatch?.[1] ?? null;
-    const commerceRequestCapture = () => {
+    const canonicalRequestCapture = () => {
       const { params, body } = canonicalizeRequest(target, {
         method: requestMethod,
         url: route.request().url(),
@@ -194,29 +219,32 @@ export async function installApiFixtures(page, scenario, target, interaction = {
       return { ...bodyFields, ...params };
     };
     const adminServerNodeSaveMatch = /^\/server\/([^/]+)\/save$/.exec(adminEndpoint ?? '');
-    if (pathname === '/api/v1/user/info') {
+    if (isUserProfileGet) {
       page.__visualParityUserInfoFetchCount = (page.__visualParityUserInfoFetchCount ?? 0) + 1;
     }
-    if (pathname === '/api/v1/user/getSubscribe') {
+    if (isUserSubscribeGet) {
       page.__visualParityUserSubscribeFetchCount =
         (page.__visualParityUserSubscribeFetchCount ?? 0) + 1;
     }
-    if (pathname === '/api/v1/user/unbindTelegram') {
+    if (isUserUnbindTelegram) {
       page.__visualParityUserUnbindTelegramCount =
         (page.__visualParityUserUnbindTelegramCount ?? 0) + 1;
     }
-    if (pathname === '/api/v1/user/resetSecurity') {
+    if (isUserResetSecurity) {
       page.__visualParityUserResetSecurityCount =
         (page.__visualParityUserResetSecurityCount ?? 0) + 1;
     }
-    if (pathname === '/api/v1/user/update') {
-      page.__visualParityLastUserUpdate = requestData;
+    if (isUserProfileUpdate) {
+      // Canonical capture: the legacy 0/1 form flags and the modern boolean
+      // JSON flags compare as one §4.1 contract.
+      const updateRequest = canonicalRequestCapture();
+      page.__visualParityLastUserUpdate = updateRequest;
       page.__visualParityUserUpdateRequests = [
         ...(page.__visualParityUserUpdateRequests ?? []),
-        requestData,
+        updateRequest,
       ];
     }
-    if (pathname === '/api/v1/user/redeemgiftcard') {
+    if (isUserRedeemGiftcard) {
       page.__visualParityLastUserRedeemGiftcard = requestData;
       page.__visualParityUserRedeemGiftcardCount =
         (page.__visualParityUserRedeemGiftcardCount ?? 0) + 1;
@@ -225,7 +253,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
         requestData,
       ];
     }
-    if (pathname === '/api/v1/user/changePassword') {
+    if (isUserPasswordUpdate) {
       page.__visualParityLastUserChangePassword = requestData;
       page.__visualParityUserChangePasswordRequests = [
         ...(page.__visualParityUserChangePasswordRequests ?? []),
@@ -244,7 +272,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
       page.__visualParityUserInviteGenerateCount =
         (page.__visualParityUserInviteGenerateCount ?? 0) + 1;
     }
-    if (pathname === '/api/v1/user/newPeriod') {
+    if (isUserNewPeriod) {
       page.__visualParityLastUserNewPeriod = requestData;
       page.__visualParityUserNewPeriodCount = (page.__visualParityUserNewPeriodCount ?? 0) + 1;
       page.__visualParityUserNewPeriodRequests = [
@@ -256,7 +284,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
       pathname === '/api/v1/user/order/save' ||
       (pathname === '/api/v1/user/orders' && requestMethod === 'POST')
     ) {
-      const orderSaveRequest = commerceRequestCapture();
+      const orderSaveRequest = canonicalRequestCapture();
       page.__visualParityLastUserOrderSave = orderSaveRequest;
       page.__visualParityUserOrderSaveCount = (page.__visualParityUserOrderSaveCount ?? 0) + 1;
       page.__visualParityUserOrderSaveRequests = [
@@ -291,7 +319,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
         (page.__visualParityUserKnowledgeFetchCount ?? 0) + 1;
     }
     if (pathname === '/api/v1/user/order/checkout' || modernOrderAction === 'checkout') {
-      const checkoutRequest = commerceRequestCapture();
+      const checkoutRequest = canonicalRequestCapture();
       page.__visualParityLastUserOrderCheckout = checkoutRequest;
       page.__visualParityUserOrderCheckoutCount =
         (page.__visualParityUserOrderCheckoutCount ?? 0) + 1;
@@ -301,7 +329,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
       ];
     }
     if (pathname === '/api/v1/user/coupon/check' || pathname === '/api/v1/user/coupons/check') {
-      const couponCheckRequest = commerceRequestCapture();
+      const couponCheckRequest = canonicalRequestCapture();
       page.__visualParityLastUserCouponCheck = couponCheckRequest;
       page.__visualParityUserCouponCheckCount = (page.__visualParityUserCouponCheckCount ?? 0) + 1;
       page.__visualParityUserCouponCheckRequests = [
@@ -326,7 +354,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
         (page.__visualParityUserStripeIntentCount ?? 0) + 1;
       page.__visualParityUserStripeIntentRequests = [
         ...(page.__visualParityUserStripeIntentRequests ?? []),
-        commerceRequestCapture(),
+        canonicalRequestCapture(),
       ];
     }
     if (pathname === '/api/v1/user/ticket/fetch') {
@@ -365,7 +393,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
       ];
     }
     if (pathname === '/api/v1/user/order/cancel' || modernOrderAction === 'cancel') {
-      const orderCancelRequest = commerceRequestCapture();
+      const orderCancelRequest = canonicalRequestCapture();
       page.__visualParityLastUserOrderCancel = orderCancelRequest;
       page.__visualParityUserOrderCancelCount = (page.__visualParityUserOrderCancelCount ?? 0) + 1;
       page.__visualParityUserOrderCancelRequests = [
@@ -669,7 +697,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
       });
     }
 
-    if (pathname === '/api/v1/user/redeemgiftcard' && interaction.redeemGiftcardTimeout) {
+    if (isUserRedeemGiftcard && interaction.redeemGiftcardTimeout) {
       await route.abort('timedout');
       return;
     }
@@ -706,19 +734,19 @@ export async function installApiFixtures(page, scenario, target, interaction = {
       return;
     }
 
-    if (pathname === '/api/v1/user/update' && interaction.delayUserUpdateMs) {
+    if (isUserProfileUpdate && interaction.delayUserUpdateMs) {
       await delay(interaction.delayUserUpdateMs);
     }
-    if (pathname === '/api/v1/user/redeemgiftcard' && interaction.delayUserRedeemGiftcardMs) {
+    if (isUserRedeemGiftcard && interaction.delayUserRedeemGiftcardMs) {
       await delay(interaction.delayUserRedeemGiftcardMs);
     }
-    if (pathname === '/api/v1/user/changePassword' && interaction.delayUserChangePasswordMs) {
+    if (isUserPasswordUpdate && interaction.delayUserChangePasswordMs) {
       await delay(interaction.delayUserChangePasswordMs);
     }
     if (pathname === '/api/v1/user/transfer' && interaction.delayUserTransferMs) {
       await delay(interaction.delayUserTransferMs);
     }
-    if (pathname === '/api/v1/user/newPeriod' && interaction.delayUserNewPeriodMs) {
+    if (isUserNewPeriod && interaction.delayUserNewPeriodMs) {
       await delay(interaction.delayUserNewPeriodMs);
     }
     if (
@@ -789,7 +817,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     if (adminEndpoint === '/user/sendMail' && interaction.delayAdminUserSendMailMs) {
       await delay(interaction.delayAdminUserSendMailMs);
     }
-    if (pathname === '/api/v1/user/unbindTelegram' && interaction.delayUserUnbindTelegramMs) {
+    if (isUserUnbindTelegram && interaction.delayUserUnbindTelegramMs) {
       await delay(interaction.delayUserUnbindTelegramMs);
     }
     await fulfillApiResponse(
@@ -871,7 +899,7 @@ export function apiFixtureResponse(
 
   if (
     (scenario.forceUserUnauthorized || interaction.forceUserUnauthorized) &&
-    pathname === '/api/v1/user/info'
+    (pathname === '/api/v1/user/info' || pathname === '/api/v1/user/profile')
   ) {
     return unauthorizedFixture(
       interaction.forceUserUnauthorizedStatus ?? scenario.forceUserUnauthorizedStatus ?? 403,
@@ -1150,6 +1178,11 @@ export function apiFixtureResponse(
     return v2Body({ kind: 'qr_code', payload: 'https://pay.example.test/qr/VISUAL2026110001' });
   }
 
+  // §9.4 modern session revocation (W5): path-identified, 204, idempotent.
+  if (/^\/api\/v1\/user\/sessions\/[^/]+$/.test(pathname) && method === 'DELETE') {
+    return v2Empty();
+  }
+
   switch (pathname) {
     case '/api/v1/guest/comm/config':
       return body(guestConfigFixture);
@@ -1269,6 +1302,51 @@ export function apiFixtureResponse(
             ? bannedUserInfoFixture
             : userInfoFixture,
       );
+    // §5.3/§5.4 + §9.1/§9.4 modern profile family (W5). Only the source world
+    // requests these paths; the oracle keeps the legacy /user/* cases.
+    case '/api/v1/user/profile':
+      if (method === 'PATCH') return v2Empty();
+      return v2Body(
+        modernUserProfileFixture(
+          interaction?.telegramBoundProfile
+            ? { ...userInfoFixture, telegram_id: 12345 }
+            : scenario.bannedUser
+              ? bannedUserInfoFixture
+              : userInfoFixture,
+        ),
+      );
+    case '/api/v1/user/password':
+      return v2Empty();
+    case '/api/v1/user/stats':
+      return v2Body({ pending_order_count: 2, pending_ticket_count: 3, invited_user_count: 0 });
+    case '/api/v1/user/sessions':
+      return v2Body([
+        {
+          current: true,
+          ip: '203.0.113.10',
+          login_at: rfc3339FixtureTime(1_700_000_000),
+          session_id: 'visual-parity-session',
+          ua: 'Visual Parity Browser',
+        },
+      ]);
+    case '/api/v1/user/gift-card-redemptions':
+      if (interaction?.redeemGiftcardHttpError) {
+        return v2Problem(
+          500,
+          'Internal Server Error',
+          'internal_error',
+          '遇到了些问题，我们正在进行处理',
+        );
+      }
+      return v2Body({ type: 1, value: 1234 });
+    case '/api/v1/user/telegram-binding':
+      return v2Empty();
+    case '/api/v1/user/subscription':
+      return v2Body(modernSubscribeFixture(userSubscribeFixtureFor(scenario, interaction)));
+    case '/api/v1/user/subscription/new-period':
+      return v2Empty();
+    case '/api/v1/user/subscription/reset-token':
+      return v2Body({ subscribe_url: 'VISUAL-RESET-UUID' });
     case '/api/v1/user/update':
       return body(true);
     case '/api/v1/user/redeemgiftcard':
@@ -1285,16 +1363,6 @@ export function apiFixtureResponse(
       return body(true);
     case '/api/v1/user/getSubscribe':
       return body(userSubscribeFixtureFor(scenario, interaction));
-    case '/api/v1/user/getActiveSession':
-      return body({
-        'visual-parity-session': {
-          auth_data: '',
-          current: true,
-          ip: '203.0.113.10',
-          login_at: 1_700_000_000,
-          ua: 'Visual Parity Browser',
-        },
-      });
     case '/api/v1/user/getStat':
       return body([2, 3, 0]);
     case '/api/v1/user/plan/fetch':
@@ -1531,6 +1599,28 @@ const modernCouponFixture = (coupon) => ({
   ended_at: rfc3339FixtureTime(coupon.ended_at),
   created_at: rfc3339FixtureTime(coupon.created_at),
   updated_at: rfc3339FixtureTime(coupon.updated_at),
+});
+
+// ——— W5 modern-wire projections (docs/api-dialect.md §4.1, §4.5, §5.3,
+// §5.4) ——— boolean profile/subscription flags, RFC 3339 timestamps, and the
+// subscription's explicit-null modern plan.
+const modernUserProfileFixture = (fixture) => ({
+  ...fixture,
+  banned: fixture.banned !== 0,
+  auto_renewal: fixture.auto_renewal !== 0,
+  remind_expire: fixture.remind_expire !== 0,
+  remind_traffic: fixture.remind_traffic !== 0,
+  created_at: rfc3339FixtureTime(fixture.created_at),
+  last_login_at:
+    fixture.last_login_at == null ? null : rfc3339FixtureTime(fixture.last_login_at),
+  expired_at: fixture.expired_at == null ? null : rfc3339FixtureTime(fixture.expired_at),
+});
+
+const modernSubscribeFixture = (fixture) => ({
+  ...fixture,
+  allow_new_period: fixture.allow_new_period !== 0,
+  expired_at: fixture.expired_at == null ? null : rfc3339FixtureTime(fixture.expired_at),
+  plan: fixture.plan ? modernPlanFixture(fixture.plan) : null,
 });
 
 export function userKnowledgeFixturesFor(interaction = {}) {

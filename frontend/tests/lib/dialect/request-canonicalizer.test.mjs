@@ -247,6 +247,43 @@ test('the W4 checkout selection folds onto path trade_no + method_id (§5.5)', (
   assert.deepEqual(sourceIntent, oracleIntent);
 });
 
+test('the W5 session revocation folds onto path session_id in both worlds (§9.4)', () => {
+  const oracle = canonicalizeRequest('oracle', {
+    method: 'POST',
+    url: '/api/v1/user/removeActiveSession',
+    postData: 'session_id=digest-abc',
+  });
+  const source = canonicalizeRequest('source', {
+    method: 'DELETE',
+    url: '/api/v1/user/sessions/digest-abc',
+  });
+  assert.deepEqual(oracle, {
+    routeId: 'user.sessions.delete',
+    params: { session_id: 'digest-abc' },
+    body: null,
+  });
+  assert.deepEqual(source, oracle);
+});
+
+test('the W5 profile PATCH flags equal the legacy 0/1 form spelling (§4.1)', () => {
+  const oracle = canonicalizeRequest('oracle', {
+    method: 'POST',
+    url: '/api/v1/user/update',
+    postData: 'remind_expire=1',
+  });
+  const source = canonicalizeRequest('source', {
+    method: 'PATCH',
+    url: '/api/v1/user/profile',
+    postData: JSON.stringify({ remind_expire: true }),
+  });
+  assert.deepEqual(oracle, {
+    routeId: 'user.profile.update',
+    params: {},
+    body: { remind_expire: true },
+  });
+  assert.deepEqual(source, oracle);
+});
+
 test('unknown routes canonicalize with routeId null', () => {
   const request = canonicalizeRequest('oracle', {
     method: 'GET',

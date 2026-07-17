@@ -35,6 +35,20 @@ const W3_ROUTE_IDS = Object.freeze([
   'user.notices.list',
 ]);
 
+const W5_ROUTE_IDS = Object.freeze([
+  'user.profile.get',
+  'user.profile.update',
+  'user.password.update',
+  'user.stats.get',
+  'user.sessions.list',
+  'user.sessions.delete',
+  'user.gift-card-redemptions.create',
+  'user.telegram-binding.delete',
+  'user.subscription.get',
+  'user.subscription.new-period',
+  'user.subscription.reset-token',
+]);
+
 const W4_ROUTE_IDS = Object.freeze([
   'user.plans.get',
   'user.plans.list',
@@ -54,8 +68,55 @@ test('unflipped families stay identity: modern equals legacy until each wave', (
     if (entry.id.startsWith('auth.')) continue; // §5.2 flipped in W2
     if (W3_ROUTE_IDS.includes(entry.id)) continue; // §5.1/§5.8 flipped in W3
     if (W4_ROUTE_IDS.includes(entry.id)) continue; // §5.5 flipped in W4
+    if (W5_ROUTE_IDS.includes(entry.id)) continue; // §5.3/§5.4 flipped in W5
     assert.deepEqual(entry.modern, entry.legacy, `${entry.id} must stay legacy→legacy until its wave`);
   }
+});
+
+test('W5: the profile/subscription family carries the modern rows', () => {
+  const modern = Object.fromEntries(
+    W5_ROUTE_IDS.map((id) => [id, routeEntry(id).modern]),
+  );
+  assert.deepEqual(modern, {
+    'user.profile.get': { method: 'GET', path: '/user/profile' },
+    'user.profile.update': { method: 'PATCH', path: '/user/profile' },
+    'user.password.update': { method: 'PUT', path: '/user/password' },
+    'user.stats.get': { method: 'GET', path: '/user/stats' },
+    'user.sessions.list': { method: 'GET', path: '/user/sessions' },
+    // The legacy body-carried session_id became path identity (§9.4).
+    'user.sessions.delete': { method: 'DELETE', path: '/user/sessions/{session_id}' },
+    'user.gift-card-redemptions.create': {
+      method: 'POST',
+      path: '/user/gift-card-redemptions',
+    },
+    'user.telegram-binding.delete': { method: 'DELETE', path: '/user/telegram-binding' },
+    'user.subscription.get': { method: 'GET', path: '/user/subscription' },
+    'user.subscription.new-period': { method: 'POST', path: '/user/subscription/new-period' },
+    // GET-with-side-effect became a POST rotation (§9.4).
+    'user.subscription.reset-token': { method: 'POST', path: '/user/subscription/reset-token' },
+  });
+  // The oracle keeps requesting the legacy rows.
+  assert.equal(worldRoute('user.profile.get', 'oracle').path, '/user/info');
+  assert.equal(worldRoute('user.sessions.delete', 'oracle').method, 'POST');
+  assert.equal(worldRoute('user.subscription.reset-token', 'oracle').path, '/user/resetSecurity');
+  assert.deepEqual(
+    matchRoute('source', {
+      method: 'DELETE',
+      pathname: `${API_PREFIX}/user/sessions/digest-abc`,
+    }),
+    { id: 'user.sessions.delete', params: { session_id: 'digest-abc' } },
+  );
+  assert.equal(
+    matchRoute('source', { method: 'GET', pathname: `${API_PREFIX}/user/sessions` })?.id,
+    'user.sessions.list',
+  );
+  assert.equal(
+    matchRoute('source', {
+      method: 'POST',
+      pathname: `${API_PREFIX}/user/subscription/new-period`,
+    })?.id,
+    'user.subscription.new-period',
+  );
 });
 
 test('W4: the user commerce family carries the modern rows', () => {
@@ -163,9 +224,8 @@ test('W2: the §5.2 auth family carries the modern /auth/* rows', () => {
 
 test('worldRoute resolves the per-world shape for both worlds', () => {
   assert.deepEqual(WORLDS, ['oracle', 'source']);
-  for (const world of WORLDS) {
-    assert.equal(worldRoute('user.profile.get', world).path, '/user/info');
-  }
+  assert.equal(worldRoute('user.profile.get', 'oracle').path, '/user/info');
+  assert.equal(worldRoute('user.profile.get', 'source').path, '/user/profile');
   assert.throws(() => worldRoute('user.profile.get', 'staging'), /Unknown parity world/);
   assert.throws(() => routeEntry('user.unknown'), /Unknown canonical route id/);
 });

@@ -435,10 +435,10 @@ The user profile/account surface (`/profile`) is a redesigned shadcn surface.
 - Keep profile contracts strict: auto-renewal and email-reminder payloads,
   password-change redirect (security), gift-card redeem payload, deposit order
   payloads, Telegram bind/unbind, the reset-subscribe token rotation
-  (`/user/resetSecurity`), routing, and i18n must remain covered. Balance-display
-  formatting, gift-card redeem loading/timeout UX, subscribe refetch timing, and
-  reset/confirm dialog copy are Tier-2 defaults — relaxable on this redesigned
-  surface.
+  (POST `/user/subscription/reset-token`), routing, and i18n must remain
+  covered. Balance-display formatting, gift-card redeem loading/timeout UX,
+  subscribe refetch timing, and reset/confirm dialog copy are Tier-2 defaults —
+  relaxable on this redesigned surface.
 
 ### User Service Usage Direction
 

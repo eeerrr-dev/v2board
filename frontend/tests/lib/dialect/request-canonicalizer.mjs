@@ -143,7 +143,21 @@ const ROUTE_REQUEST_FOLDS = Object.freeze({
   'user.orders.cancel': foldBodyTradeNoIntoParams,
   'user.orders.checkout': foldBodyCheckoutSelection,
   'user.orders.stripe-intent': foldBodyCheckoutSelection,
+  // W5 (§9.4): the legacy body-carried session_id folds onto the modern
+  // DELETE /user/sessions/{session_id} path identity.
+  'user.sessions.delete': foldBodySessionIdIntoParams,
 });
+
+function foldBodySessionIdIntoParams(request) {
+  const body = request.body;
+  if (!isPlainObject(body) || body.session_id === undefined) return request;
+  const { session_id, ...rest } = body;
+  return {
+    ...request,
+    params: { session_id, ...request.params },
+    body: Object.keys(rest).length === 0 ? null : rest,
+  };
+}
 
 function foldBodyTradeNoIntoParams(request) {
   const body = request.body;
