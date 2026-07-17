@@ -450,7 +450,7 @@ const QUERY_BUILDER_SITES: &[DynamicSite] = &[
     },
     DynamicSite {
         source: "crates/domain/src/admin/users.rs",
-        count: 18,
+        count: 19,
         coverage: "admin user filter/bulk interaction parity",
     },
     DynamicSite {

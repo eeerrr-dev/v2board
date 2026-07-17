@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     env,
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -171,6 +171,9 @@ async fn run_isolated_checks(
 
         late_payment_reconciliation(pool, database_url, integration_redis_url).await?;
         pass("late authenticated payment reconciliation is durable and idempotent");
+
+        admin_projection_key_sets(pool, integration_redis_url).await?;
+        pass("admin projections serialize exactly their pinned key sets");
 
         migration_readiness_failure_modes(pool).await?;
         pass("migration readiness fails closed for missing or corrupt ledger state");
@@ -1325,6 +1328,795 @@ async fn late_payment_reconciliation(
         unexpected_reconciliation == 0,
         "an ordinary oversized callback replay was misclassified for reconciliation"
     );
+
+    Ok(())
+}
+
+/// The exact serialized key set of every reachable admin endpoint that emits a
+/// SQL-projected row. Each constant is the producer-side contract for one
+/// endpoint's row shape: a new or removed key here is an API change the admin
+/// frontend and its api-client contracts must consciously absorb, never an
+/// accidental projection leak.
+const ADMIN_USER_ROW_KEYS: &[&str] = &[
+    "id",
+    "email",
+    "password",
+    "balance",
+    "commission_balance",
+    "transfer_enable",
+    "device_limit",
+    "u",
+    "d",
+    "total_used",
+    "alive_ip",
+    "ips",
+    "plan_id",
+    "plan_name",
+    "group_id",
+    "expired_at",
+    "uuid",
+    "token",
+    "subscribe_url",
+    "banned",
+    "is_admin",
+    "is_staff",
+    "invite_user_id",
+    "discount",
+    "commission_type",
+    "commission_rate",
+    "t",
+    "speed_limit",
+    "auto_renewal",
+    "remind_expire",
+    "remind_traffic",
+    "remarks",
+    "telegram_id",
+    "last_login_at",
+    "created_at",
+    "updated_at",
+];
+
+const ADMIN_USER_TRAFFIC_KEYS: &[&str] = &["record_at", "u", "d", "server_rate"];
+
+const ADMIN_STAT_RECORD_KEYS: &[&str] = &[
+    "id",
+    "record_at",
+    "record_type",
+    "order_count",
+    "order_total",
+    "commission_count",
+    "commission_total",
+    "paid_count",
+    "paid_total",
+    "register_count",
+    "invite_count",
+    "transfer_used_total",
+    "created_at",
+    "updated_at",
+];
+
+const ADMIN_SYSTEM_LOG_KEYS: &[&str] = &[
+    "id",
+    "title",
+    "level",
+    "host",
+    "uri",
+    "method",
+    "data",
+    "ip",
+    "context",
+    "created_at",
+    "updated_at",
+];
+
+const ADMIN_KNOWLEDGE_LIST_KEYS: &[&str] =
+    &["id", "category", "title", "sort", "show", "updated_at"];
+
+const ADMIN_KNOWLEDGE_DETAIL_KEYS: &[&str] = &[
+    "id",
+    "language",
+    "category",
+    "title",
+    "body",
+    "sort",
+    "show",
+    "created_at",
+    "updated_at",
+];
+
+const ADMIN_TICKET_ROW_KEYS: &[&str] = &[
+    "id",
+    "user_id",
+    "subject",
+    "level",
+    "status",
+    "reply_status",
+    "last_reply_user_id",
+    "created_at",
+    "updated_at",
+];
+
+const ADMIN_TICKET_MESSAGE_KEYS: &[&str] = &[
+    "id",
+    "user_id",
+    "ticket_id",
+    "message",
+    "is_me",
+    "created_at",
+    "updated_at",
+];
+
+const ADMIN_COUPON_KEYS: &[&str] = &[
+    "id",
+    "code",
+    "name",
+    "type",
+    "value",
+    "show",
+    "limit_use",
+    "limit_use_with_user",
+    "limit_plan_ids",
+    "limit_period",
+    "started_at",
+    "ended_at",
+    "created_at",
+    "updated_at",
+];
+
+const ADMIN_GIFTCARD_KEYS: &[&str] = &[
+    "id",
+    "code",
+    "name",
+    "type",
+    "value",
+    "plan_id",
+    "limit_use",
+    "used_user_ids",
+    "started_at",
+    "ended_at",
+    "created_at",
+    "updated_at",
+];
+
+const ADMIN_ORDER_FETCH_KEYS: &[&str] = &[
+    "id",
+    "invite_user_id",
+    "user_id",
+    "email",
+    "plan_id",
+    "plan_name",
+    "coupon_id",
+    "type",
+    "period",
+    "trade_no",
+    "callback_no",
+    "total_amount",
+    "handling_amount",
+    "discount_amount",
+    "surplus_amount",
+    "refund_amount",
+    "balance_amount",
+    "surplus_order_ids",
+    "status",
+    "commission_status",
+    "commission_balance",
+    "actual_commission_balance",
+    "payment_id",
+    "payment_reconciliation_open_count",
+    "paid_at",
+    "created_at",
+    "updated_at",
+];
+
+const ADMIN_ORDER_DETAIL_KEYS: &[&str] = &[
+    "id",
+    "invite_user_id",
+    "user_id",
+    "plan_id",
+    "coupon_id",
+    "type",
+    "period",
+    "trade_no",
+    "callback_no",
+    "total_amount",
+    "handling_amount",
+    "discount_amount",
+    "surplus_amount",
+    "refund_amount",
+    "balance_amount",
+    "surplus_order_ids",
+    "status",
+    "commission_status",
+    "commission_balance",
+    "actual_commission_balance",
+    "payment_id",
+    "paid_at",
+    "created_at",
+    "updated_at",
+    "commission_log",
+    "payment_reconciliations",
+];
+
+const ADMIN_COMMISSION_LOG_KEYS: &[&str] = &[
+    "id",
+    "invite_user_id",
+    "user_id",
+    "trade_no",
+    "order_amount",
+    "get_amount",
+    "created_at",
+    "updated_at",
+];
+
+const ADMIN_ORDER_RECONCILIATION_KEYS: &[&str] = &[
+    "id",
+    "payment_id",
+    "provider",
+    "trade_no",
+    "trade_no_hash",
+    "callback_no",
+    "callback_no_hash",
+    "reason",
+    "order_status",
+    "expected_amount",
+    "settled_amount",
+    "occurrence_count",
+    "first_seen_at",
+    "last_seen_at",
+    "resolved_at",
+    "resolution",
+];
+
+const ADMIN_RECONCILIATION_FETCH_KEYS: &[&str] = &[
+    "id",
+    "payment_id",
+    "payment_name",
+    "payment_archived_at",
+    "provider",
+    "trade_no",
+    "trade_no_hash",
+    "callback_no",
+    "callback_no_hash",
+    "reason",
+    "order_status",
+    "expected_amount",
+    "settled_amount",
+    "occurrence_count",
+    "first_seen_at",
+    "last_seen_at",
+    "resolved_at",
+    "resolution",
+];
+
+const ADMIN_SERVER_GROUP_LIST_KEYS: &[&str] = &[
+    "id",
+    "name",
+    "created_at",
+    "updated_at",
+    "user_count",
+    "server_count",
+];
+
+const ADMIN_SERVER_GROUP_SINGLE_KEYS: &[&str] = &["id", "name", "created_at", "updated_at"];
+
+const ADMIN_SERVER_ROUTE_KEYS: &[&str] = &[
+    "id",
+    "remarks",
+    "match",
+    "action",
+    "action_value",
+    "created_at",
+    "updated_at",
+];
+
+const ADMIN_SHADOWSOCKS_NODE_KEYS: &[&str] = &[
+    "id",
+    "group_id",
+    "route_id",
+    "parent_id",
+    "tags",
+    "name",
+    "rate",
+    "host",
+    "port",
+    "server_port",
+    "cipher",
+    "obfs",
+    "obfs_settings",
+    "show",
+    "sort",
+    "created_at",
+    "updated_at",
+    "type",
+    "online",
+    "last_check_at",
+    "last_push_at",
+    "available_status",
+    "api_key",
+];
+
+fn assert_exact_keys(context: &str, value: &serde_json::Value, expected: &[&str]) -> Result<()> {
+    let object = value
+        .as_object()
+        .with_context(|| format!("{context}: row is not a JSON object"))?;
+    let actual: BTreeSet<&str> = object.keys().map(String::as_str).collect();
+    let expected: BTreeSet<&str> = expected.iter().copied().collect();
+    if actual != expected {
+        let unexpected: Vec<_> = actual.difference(&expected).collect();
+        let missing: Vec<_> = expected.difference(&actual).collect();
+        bail!(
+            "{context}: serialized key set drifted (unexpected {unexpected:?}, missing {missing:?})"
+        );
+    }
+    Ok(())
+}
+
+fn admin_page_rows(output: AdminOutput, context: &str) -> Result<Vec<serde_json::Value>> {
+    match output {
+        AdminOutput::Page { data, .. } => {
+            ensure!(
+                !data.is_empty(),
+                "{context}: paged response returned no rows"
+            );
+            Ok(data)
+        }
+        _ => bail!("{context}: expected a paged admin response"),
+    }
+}
+
+fn admin_data(output: AdminOutput, context: &str) -> Result<serde_json::Value> {
+    match output {
+        AdminOutput::Data(value) => Ok(value),
+        _ => bail!("{context}: expected a data admin response"),
+    }
+}
+
+fn admin_data_rows(output: AdminOutput, context: &str) -> Result<Vec<serde_json::Value>> {
+    let rows = admin_data(output, context)?
+        .as_array()
+        .cloned()
+        .with_context(|| format!("{context}: response is not a JSON array"))?;
+    ensure!(!rows.is_empty(), "{context}: response returned no rows");
+    Ok(rows)
+}
+
+/// Pins the exact serialized key set of every reachable admin endpoint whose
+/// rows are produced by a SQL projection, using the real AdminService against
+/// the migrated schema. This is the DB-backed producer-side contract: any
+/// projection edit that adds, renames, or drops a key fails here before it can
+/// silently leak (or break) a field the admin frontend consumes.
+async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) -> Result<()> {
+    let now = Utc::now().timestamp();
+    let admin = AdminService::new(
+        pool.clone(),
+        redis::Client::open(redis_url)?,
+        installation_id(pool).await?,
+        Arc::new(integration_config(pool, redis_url)?),
+        reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(2))
+            .timeout(Duration::from_secs(5))
+            .build()?,
+        PasswordKdf::new(1),
+        SmtpTransportCache::default(),
+    );
+
+    // Users: one inviter-linked target so the detail endpoint exercises the
+    // conditional invite_user attachment, and the inviter itself as the
+    // inviter-less shape.
+    let inviter_id = insert_user(pool, "projection-inviter", "hash").await?;
+    let user_id = insert_user(pool, "projection-user", "hash").await?;
+    sqlx::query("UPDATE users SET invite_user_id = $1 WHERE id = $2")
+        .bind(inviter_id)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+
+    for row in admin_page_rows(admin.get("user/fetch", HashMap::new()).await?, "user/fetch")? {
+        assert_exact_keys("user/fetch", &row, ADMIN_USER_ROW_KEYS)?;
+    }
+
+    let with_inviter = admin_data(
+        admin
+            .get(
+                "user/getUserInfoById",
+                HashMap::from([("id".to_string(), user_id.to_string())]),
+            )
+            .await?,
+        "user/getUserInfoById",
+    )?;
+    let mut detail_keys = ADMIN_USER_ROW_KEYS.to_vec();
+    detail_keys.push("invite_user");
+    assert_exact_keys(
+        "user/getUserInfoById (invited)",
+        &with_inviter,
+        &detail_keys,
+    )?;
+    assert_exact_keys(
+        "user/getUserInfoById invite_user",
+        &with_inviter["invite_user"],
+        &["id", "email"],
+    )?;
+    let without_inviter = admin_data(
+        admin
+            .get(
+                "user/getUserInfoById",
+                HashMap::from([("id".to_string(), inviter_id.to_string())]),
+            )
+            .await?,
+        "user/getUserInfoById",
+    )?;
+    assert_exact_keys(
+        "user/getUserInfoById (no inviter)",
+        &without_inviter,
+        ADMIN_USER_ROW_KEYS,
+    )?;
+    let staff_detail = admin_data(
+        admin
+            .staff_get(
+                "user/getUserInfoById",
+                HashMap::from([("id".to_string(), user_id.to_string())]),
+            )
+            .await?,
+        "staff user/getUserInfoById",
+    )?;
+    assert_exact_keys(
+        "staff user/getUserInfoById",
+        &staff_detail,
+        ADMIN_USER_ROW_KEYS,
+    )?;
+
+    // Per-user traffic history.
+    sqlx::query(
+        "INSERT INTO user_traffic (user_id, server_rate, u, d, record_type, record_at, created_at, updated_at) \
+         VALUES ($1, 1.00, 100, 200, 'd', $2, $3, $4)",
+    )
+    .bind(user_id)
+    .bind(now)
+    .bind(now)
+    .bind(now)
+    .execute(pool)
+    .await?;
+    for row in admin_page_rows(
+        admin
+            .get(
+                "stat/getStatUser",
+                HashMap::from([("user_id".to_string(), user_id.to_string())]),
+            )
+            .await?,
+        "stat/getStatUser",
+    )? {
+        assert_exact_keys("stat/getStatUser", &row, ADMIN_USER_TRAFFIC_KEYS)?;
+    }
+
+    // Aggregated stat records.
+    sqlx::query(
+        "INSERT INTO stat (record_at, record_type, order_count, order_total, commission_count, \
+         commission_total, paid_count, paid_total, register_count, invite_count, \
+         transfer_used_total, created_at, updated_at) \
+         VALUES ($1, 'd', 0, 0, 0, 0, 0, 0, 0, 0, '0', $2, $3)",
+    )
+    .bind(now)
+    .bind(now)
+    .bind(now)
+    .execute(pool)
+    .await?;
+    for row in admin_page_rows(
+        admin.get("stat/getStatRecord", HashMap::new()).await?,
+        "stat/getStatRecord",
+    )? {
+        assert_exact_keys("stat/getStatRecord", &row, ADMIN_STAT_RECORD_KEYS)?;
+    }
+
+    // System log.
+    sqlx::query(
+        "INSERT INTO system_log (title, level, host, uri, method, data, ip, context, created_at, updated_at) \
+         VALUES ('projection pin', 'info', 'localhost', '/projection', 'GET', NULL, '127.0.0.1', NULL, $1, $2)",
+    )
+    .bind(now)
+    .bind(now)
+    .execute(pool)
+    .await?;
+    for row in admin_page_rows(
+        admin.get("system/getSystemLog", HashMap::new()).await?,
+        "system/getSystemLog",
+    )? {
+        assert_exact_keys("system/getSystemLog", &row, ADMIN_SYSTEM_LOG_KEYS)?;
+    }
+
+    // Knowledge list + detail.
+    let knowledge_id: i32 = sqlx::query_scalar(
+        "INSERT INTO knowledge (language, category, title, body, sort, show, created_at, updated_at) \
+         VALUES ('zh-CN', 'projection', 'projection pin', 'body', NULL, 0, $1, $2) RETURNING id",
+    )
+    .bind(now)
+    .bind(now)
+    .fetch_one(pool)
+    .await?;
+    for row in admin_data_rows(
+        admin.get("knowledge/fetch", HashMap::new()).await?,
+        "knowledge/fetch",
+    )? {
+        assert_exact_keys("knowledge/fetch", &row, ADMIN_KNOWLEDGE_LIST_KEYS)?;
+    }
+    let knowledge_detail = admin_data(
+        admin
+            .get(
+                "knowledge/fetch",
+                HashMap::from([("id".to_string(), knowledge_id.to_string())]),
+            )
+            .await?,
+        "knowledge/fetch detail",
+    )?;
+    assert_exact_keys(
+        "knowledge/fetch detail",
+        &knowledge_detail,
+        ADMIN_KNOWLEDGE_DETAIL_KEYS,
+    )?;
+
+    // Ticket list + detail with one message.
+    let ticket_id: i64 = sqlx::query_scalar(
+        "INSERT INTO ticket (user_id, subject, level, status, reply_status, created_at, updated_at) \
+         VALUES ($1, 'projection pin', 1, 0, 0, $2, $3) RETURNING id",
+    )
+    .bind(user_id)
+    .bind(now)
+    .bind(now)
+    .fetch_one(pool)
+    .await?;
+    sqlx::query(
+        "INSERT INTO ticket_message (user_id, ticket_id, message, created_at, updated_at) \
+         VALUES ($1, $2, 'projection message', $3, $4)",
+    )
+    .bind(user_id)
+    .bind(ticket_id)
+    .bind(now)
+    .bind(now)
+    .execute(pool)
+    .await?;
+    for row in admin_page_rows(
+        admin.get("ticket/fetch", HashMap::new()).await?,
+        "ticket/fetch",
+    )? {
+        assert_exact_keys("ticket/fetch", &row, ADMIN_TICKET_ROW_KEYS)?;
+    }
+    let ticket_detail = admin_data(
+        admin
+            .get(
+                "ticket/fetch",
+                HashMap::from([("id".to_string(), ticket_id.to_string())]),
+            )
+            .await?,
+        "ticket/fetch detail",
+    )?;
+    let mut ticket_detail_keys = ADMIN_TICKET_ROW_KEYS.to_vec();
+    ticket_detail_keys.push("message");
+    assert_exact_keys("ticket/fetch detail", &ticket_detail, &ticket_detail_keys)?;
+    let ticket_messages = ticket_detail["message"]
+        .as_array()
+        .context("ticket/fetch detail: message is not an array")?;
+    ensure!(
+        !ticket_messages.is_empty(),
+        "ticket/fetch detail returned no messages"
+    );
+    for message in ticket_messages {
+        assert_exact_keys("ticket/fetch message", message, ADMIN_TICKET_MESSAGE_KEYS)?;
+    }
+
+    // Coupons and gift cards.
+    sqlx::query(
+        "INSERT INTO coupon (code, name, type, value, show, started_at, ended_at, created_at, updated_at) \
+         VALUES ($1, 'projection pin', 1, 100, 0, $2, $3, $4, $5)",
+    )
+    .bind(Uuid::new_v4().simple().to_string())
+    .bind(now)
+    .bind(now + 3600)
+    .bind(now)
+    .bind(now)
+    .execute(pool)
+    .await?;
+    for row in admin_page_rows(
+        admin.get("coupon/fetch", HashMap::new()).await?,
+        "coupon/fetch",
+    )? {
+        assert_exact_keys("coupon/fetch", &row, ADMIN_COUPON_KEYS)?;
+    }
+    sqlx::query(
+        "INSERT INTO gift_card (code, name, type, value, started_at, ended_at, created_at, updated_at) \
+         VALUES ($1, 'projection pin', 1, 100, $2, $3, $4, $5)",
+    )
+    .bind(Uuid::new_v4().simple().to_string())
+    .bind(now)
+    .bind(now + 3600)
+    .bind(now)
+    .bind(now)
+    .execute(pool)
+    .await?;
+    for row in admin_page_rows(
+        admin.get("giftcard/fetch", HashMap::new()).await?,
+        "giftcard/fetch",
+    )? {
+        assert_exact_keys("giftcard/fetch", &row, ADMIN_GIFTCARD_KEYS)?;
+    }
+
+    // Orders: a pending order with one commission log and one open
+    // reconciliation row bound to the same trade identity.
+    let trade_no = Uuid::new_v4().hyphenated().to_string();
+    let order_id: i64 = sqlx::query_scalar(
+        "INSERT INTO orders (user_id, plan_id, type, period, trade_no, total_amount, status, \
+         commission_status, commission_balance, created_at, updated_at) \
+         VALUES ($1, 0, 1, 'deposit', $2, 500, 0, 0, 0, $3, $4) RETURNING id",
+    )
+    .bind(user_id)
+    .bind(&trade_no)
+    .bind(now)
+    .bind(now)
+    .fetch_one(pool)
+    .await?;
+    sqlx::query(
+        "INSERT INTO commission_log (invite_user_id, user_id, trade_no, order_amount, get_amount, created_at, updated_at) \
+         VALUES ($1, $2, $3, 500, 50, $4, $5)",
+    )
+    .bind(inviter_id)
+    .bind(user_id)
+    .bind(&trade_no)
+    .bind(now)
+    .bind(now)
+    .execute(pool)
+    .await?;
+    let projection_payment_id: i32 = sqlx::query_scalar(
+        "INSERT INTO payment_method (uuid, payment, name, config, enable, created_at, updated_at) \
+         VALUES ($1, 'EPay', 'projection pin', $2, 0, $3, $4) RETURNING id",
+    )
+    .bind(Uuid::new_v4().simple().to_string())
+    .bind(serde_json::json!({ "key": "k", "pid": "p", "url": "https://pay.invalid" }))
+    .bind(now)
+    .bind(now)
+    .fetch_one(pool)
+    .await?;
+    let callback_no = format!("PROJECTION-{}", Uuid::new_v4().simple());
+    sqlx::query(
+        "INSERT INTO payment_reconciliation (payment_id, provider, trade_no, trade_no_hash, \
+         callback_no, callback_no_hash, reason, order_status, expected_amount, settled_amount, \
+         occurrence_count, first_seen_at, last_seen_at) \
+         VALUES ($1, 'EPay', $2, $3, $4, $5, 'order_not_found', 0, 500, NULL, 1, $6, $7)",
+    )
+    .bind(projection_payment_id)
+    .bind(&trade_no)
+    .bind(sha256_bytes(&trade_no))
+    .bind(&callback_no)
+    .bind(sha256_bytes(&callback_no))
+    .bind(now)
+    .bind(now)
+    .execute(pool)
+    .await?;
+
+    for row in admin_page_rows(
+        admin.get("order/fetch", HashMap::new()).await?,
+        "order/fetch",
+    )? {
+        assert_exact_keys("order/fetch", &row, ADMIN_ORDER_FETCH_KEYS)?;
+    }
+    let order_detail = admin_data(
+        admin
+            .post(
+                "order/detail",
+                HashMap::from([("id".to_string(), order_id.to_string())]),
+            )
+            .await?,
+        "order/detail",
+    )?;
+    assert_exact_keys("order/detail", &order_detail, ADMIN_ORDER_DETAIL_KEYS)?;
+    let commission_rows = order_detail["commission_log"]
+        .as_array()
+        .context("order/detail: commission_log is not an array")?;
+    ensure!(
+        !commission_rows.is_empty(),
+        "order/detail returned no commission log rows"
+    );
+    for row in commission_rows {
+        assert_exact_keys(
+            "order/detail commission_log",
+            row,
+            ADMIN_COMMISSION_LOG_KEYS,
+        )?;
+    }
+    let reconciliation_rows = order_detail["payment_reconciliations"]
+        .as_array()
+        .context("order/detail: payment_reconciliations is not an array")?;
+    ensure!(
+        !reconciliation_rows.is_empty(),
+        "order/detail returned no reconciliation rows"
+    );
+    for row in reconciliation_rows {
+        assert_exact_keys(
+            "order/detail payment_reconciliations",
+            row,
+            ADMIN_ORDER_RECONCILIATION_KEYS,
+        )?;
+    }
+    for row in admin_page_rows(
+        admin
+            .get(
+                "order/reconciliation/fetch",
+                HashMap::from([("trade_no".to_string(), trade_no.clone())]),
+            )
+            .await?,
+        "order/reconciliation/fetch",
+    )? {
+        assert_exact_keys(
+            "order/reconciliation/fetch",
+            &row,
+            ADMIN_RECONCILIATION_FETCH_KEYS,
+        )?;
+    }
+
+    // Server groups, routes, and one shadowsocks node through getNodes.
+    let group_id: i32 = sqlx::query_scalar(
+        "INSERT INTO server_group (name, created_at, updated_at) VALUES ('projection pin', $1, $2) RETURNING id",
+    )
+    .bind(now)
+    .bind(now)
+    .fetch_one(pool)
+    .await?;
+    for row in admin_data_rows(
+        admin.get("server/group/fetch", HashMap::new()).await?,
+        "server/group/fetch",
+    )? {
+        assert_exact_keys("server/group/fetch", &row, ADMIN_SERVER_GROUP_LIST_KEYS)?;
+    }
+    let single_group = admin_data_rows(
+        admin
+            .get(
+                "server/group/fetch",
+                HashMap::from([("group_id".to_string(), group_id.to_string())]),
+            )
+            .await?,
+        "server/group/fetch single",
+    )?;
+    assert_exact_keys(
+        "server/group/fetch single",
+        &single_group[0],
+        ADMIN_SERVER_GROUP_SINGLE_KEYS,
+    )?;
+
+    sqlx::query(
+        "INSERT INTO server_route (remarks, match, action, action_value, created_at, updated_at) \
+         VALUES ('projection pin', '[\"*\"]'::jsonb, 'block', NULL, $1, $2)",
+    )
+    .bind(now)
+    .bind(now)
+    .execute(pool)
+    .await?;
+    for row in admin_data_rows(
+        admin.get("server/route/fetch", HashMap::new()).await?,
+        "server/route/fetch",
+    )? {
+        assert_exact_keys("server/route/fetch", &row, ADMIN_SERVER_ROUTE_KEYS)?;
+    }
+
+    let node_name = format!("projection-node-{}", Uuid::new_v4().simple());
+    sqlx::query(
+        "INSERT INTO server_shadowsocks (group_id, name, rate, host, port, server_port, cipher, created_at, updated_at) \
+         VALUES ('[1]'::jsonb, $1, '1', 'ss.projection.test', '443', 443, 'aes-128-gcm', $2, $3)",
+    )
+    .bind(&node_name)
+    .bind(now)
+    .bind(now)
+    .execute(pool)
+    .await?;
+    let nodes = admin_data_rows(
+        admin.get("server/manage/getNodes", HashMap::new()).await?,
+        "server/manage/getNodes",
+    )?;
+    let node = nodes
+        .iter()
+        .find(|node| node["name"].as_str() == Some(node_name.as_str()))
+        .context("seeded shadowsocks node missing from server/manage/getNodes")?;
+    assert_exact_keys(
+        "server/manage/getNodes shadowsocks",
+        node,
+        ADMIN_SHADOWSOCKS_NODE_KEYS,
+    )?;
 
     Ok(())
 }

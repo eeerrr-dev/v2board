@@ -45,6 +45,126 @@ where
     Ok(())
 }
 
+/// The one SELECT behind every admin-facing user projection (`user_fetch`,
+/// `user_detail`, `staff_user_detail`). Callers append their own `AND …`
+/// filter clauses after the `WHERE 1 = 1` anchor. Credential-verification
+/// columns (`password`, `password_algo`, `password_salt`) and the unconsumed
+/// `last_login_ip` are deliberately absent: they never leave the database
+/// through an admin response.
+const ADMIN_USER_SELECT: &str = "\
+    SELECT u.id, u.email, u.balance, u.commission_balance, u.transfer_enable, \
+           u.device_limit, u.u, u.d, u.plan_id, p.name AS plan_name, u.group_id, \
+           u.expired_at, u.uuid, u.token, u.banned, u.is_admin, u.is_staff, \
+           u.invite_user_id, u.discount, u.commission_type, u.commission_rate, \
+           u.t, u.speed_limit, u.auto_renewal, u.remind_expire, u.remind_traffic, \
+           u.remarks, u.telegram_id, u.last_login_at, u.created_at, u.updated_at \
+    FROM users u \
+    LEFT JOIN plan p ON p.id = u.plan_id \
+    WHERE 1 = 1";
+
+/// One typed row of the shared admin user projection. `into_value` is the
+/// producer-side contract: it emits exactly the key set the admin frontend
+/// consumes, with `password` blanked and `subscribe_url`/`alive_ip`/`ips`
+/// carrying the pre-enrichment defaults that `enrich_users` may later
+/// overwrite in place.
+#[derive(Debug, sqlx::FromRow)]
+pub(super) struct AdminUserRecord {
+    id: i64,
+    email: String,
+    balance: i32,
+    commission_balance: i32,
+    transfer_enable: i64,
+    device_limit: Option<i32>,
+    u: i64,
+    d: i64,
+    plan_id: Option<i32>,
+    plan_name: Option<String>,
+    group_id: Option<i32>,
+    expired_at: Option<i64>,
+    uuid: String,
+    token: String,
+    banned: i16,
+    is_admin: i16,
+    is_staff: i16,
+    invite_user_id: Option<i64>,
+    discount: Option<i32>,
+    commission_type: i16,
+    commission_rate: Option<i32>,
+    t: i64,
+    speed_limit: Option<i32>,
+    auto_renewal: Option<i16>,
+    remind_expire: Option<i16>,
+    remind_traffic: Option<i16>,
+    remarks: Option<String>,
+    telegram_id: Option<i64>,
+    last_login_at: Option<i64>,
+    created_at: i64,
+    updated_at: i64,
+}
+
+impl AdminUserRecord {
+    fn into_value(self) -> Value {
+        // u and d are non-negative by check constraint, so the sum always
+        // fits u64 (the legacy SQL used NUMERIC(65,0) for the same reason).
+        let total_used = u64::try_from(self.u)
+            .unwrap_or_default()
+            .saturating_add(u64::try_from(self.d).unwrap_or_default());
+        json!({
+            "id": self.id,
+            "email": self.email,
+            "password": "",
+            "balance": self.balance,
+            "commission_balance": self.commission_balance,
+            "transfer_enable": self.transfer_enable,
+            "device_limit": self.device_limit,
+            "u": self.u,
+            "d": self.d,
+            "total_used": total_used,
+            "alive_ip": 0,
+            "ips": "",
+            "plan_id": self.plan_id,
+            "plan_name": self.plan_name,
+            "group_id": self.group_id,
+            "expired_at": self.expired_at,
+            "uuid": self.uuid,
+            "token": self.token,
+            "subscribe_url": "",
+            "banned": self.banned,
+            "is_admin": self.is_admin,
+            "is_staff": self.is_staff,
+            "invite_user_id": self.invite_user_id,
+            "discount": self.discount,
+            "commission_type": self.commission_type,
+            "commission_rate": self.commission_rate,
+            "t": self.t,
+            "speed_limit": self.speed_limit,
+            "auto_renewal": self.auto_renewal,
+            "remind_expire": self.remind_expire,
+            "remind_traffic": self.remind_traffic,
+            "remarks": self.remarks,
+            "telegram_id": self.telegram_id,
+            "last_login_at": self.last_login_at,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        })
+    }
+}
+
+/// Attaches the `invite_user` object only when the inviter row still exists,
+/// matching the legacy jsonb `CASE WHEN i.id IS NULL THEN '{}'` merge: an
+/// absent or dangling inviter omits the key entirely rather than emitting null.
+fn attach_invite_user(value: &mut Value, inviter: Option<(i64, String)>) {
+    let Some((id, email)) = inviter else {
+        return;
+    };
+    if let Some(object) = value.as_object_mut() {
+        object.insert(
+            "invite_user".to_string(),
+            json!({ "id": id, "email": email }),
+        );
+    }
+}
+
 pub(super) fn decimal_gib_filter_bytes(value: &str) -> Result<i64, ApiError> {
     value
         .trim()
@@ -427,31 +547,7 @@ impl AdminService {
             .fetch_one(&self.db)
             .await?;
 
-        let mut builder = QueryBuilder::<Postgres>::new(
-            r#"
-            SELECT jsonb_build_object(
-                'id', u.id, 'email', u.email, 'password', '', 'balance', u.balance,
-                'commission_balance', u.commission_balance, 'transfer_enable', u.transfer_enable,
-                'device_limit', u.device_limit, 'u', u.u, 'd', u.d,
-                'total_used', CAST(u.u AS NUMERIC(65,0)) + CAST(u.d AS NUMERIC(65,0)),
-                'alive_ip', 0, 'ips', '', 'plan_id', u.plan_id, 'plan_name', p.name,
-                'group_id', u.group_id, 'expired_at', u.expired_at, 'uuid', u.uuid,
-                'token', u.token, 'subscribe_url', '', 'banned', u.banned,
-                'is_admin', u.is_admin, 'is_staff', u.is_staff,
-                'invite_user_id', u.invite_user_id, 'discount', u.discount,
-                'commission_type', u.commission_type, 'commission_rate', u.commission_rate,
-                't', u.t, 'speed_limit', u.speed_limit, 'auto_renewal', u.auto_renewal,
-                'remind_expire', u.remind_expire, 'remind_traffic', u.remind_traffic,
-                'remarks', u.remarks, 'last_login_ip', u.last_login_ip,
-                'password_algo', u.password_algo, 'password_salt', u.password_salt,
-                'telegram_id', u.telegram_id,
-                'last_login_at', u.last_login_at, 'created_at', u.created_at, 'updated_at', u.updated_at
-            )
-            FROM users u
-            LEFT JOIN plan p ON p.id = u.plan_id
-            WHERE 1 = 1
-            "#,
-        );
+        let mut builder = QueryBuilder::<Postgres>::new(ADMIN_USER_SELECT);
         push_user_where(&mut builder, &clauses);
         // sort_expr and direction are whitelisted by user_sort, so this raw push is safe.
         let nulls = if direction == "ASC" {
@@ -464,84 +560,59 @@ impl AdminService {
         builder.push(" OFFSET ");
         builder.push_bind(pagination.offset);
         let rows = builder
-            .build_query_scalar::<Json<Value>>()
+            .build_query_as::<AdminUserRecord>()
             .fetch_all(&self.db)
             .await?;
-        let mut data: Vec<Value> = rows.into_iter().map(|row| row.0).collect();
+        let mut data: Vec<Value> = rows.into_iter().map(AdminUserRecord::into_value).collect();
         self.enrich_users(&mut data).await?;
         Ok(AdminOutput::Page { data, total })
     }
 
+    /// Fetches one row of the shared projection by id, optionally restricted
+    /// to non-admin/non-staff targets for the staff surface.
+    async fn admin_user_record(
+        &self,
+        id: i64,
+        staff_scoped: bool,
+    ) -> Result<Option<AdminUserRecord>, ApiError> {
+        let mut builder = QueryBuilder::<Postgres>::new(ADMIN_USER_SELECT);
+        builder.push(" AND u.id = ");
+        builder.push_bind(id);
+        if staff_scoped {
+            builder.push(" AND u.is_admin = 0 AND u.is_staff = 0");
+        }
+        builder.push(" LIMIT 1");
+        Ok(builder
+            .build_query_as::<AdminUserRecord>()
+            .fetch_optional(&self.db)
+            .await?)
+    }
+
     pub(super) async fn user_detail(&self, id: i64) -> Result<AdminOutput, ApiError> {
-        let value = fetch_json_one(
-            &self.db,
-            r#"
-            SELECT jsonb_build_object(
-                'id', u.id, 'email', u.email, 'password', '', 'balance', u.balance,
-                'commission_balance', u.commission_balance, 'transfer_enable', u.transfer_enable,
-                'device_limit', u.device_limit, 'u', u.u, 'd', u.d,
-                'total_used', CAST(u.u AS NUMERIC(65,0)) + CAST(u.d AS NUMERIC(65,0)),
-                'alive_ip', 0, 'ips', '', 'plan_id', u.plan_id, 'plan_name', p.name,
-                'group_id', u.group_id, 'expired_at', u.expired_at, 'uuid', u.uuid,
-                'token', u.token, 'subscribe_url', '', 'banned', u.banned,
-                'is_admin', u.is_admin, 'is_staff', u.is_staff,
-                'invite_user_id', u.invite_user_id, 'discount', u.discount,
-                'commission_type', u.commission_type, 'commission_rate', u.commission_rate,
-                't', u.t, 'speed_limit', u.speed_limit, 'auto_renewal', u.auto_renewal,
-                'remind_expire', u.remind_expire, 'remind_traffic', u.remind_traffic,
-                'remarks', u.remarks, 'last_login_ip', u.last_login_ip,
-                'password_algo', u.password_algo, 'password_salt', u.password_salt,
-                'telegram_id', u.telegram_id,
-                'last_login_at', u.last_login_at, 'created_at', u.created_at, 'updated_at', u.updated_at
-            ) || CASE WHEN i.id IS NULL THEN '{}'::jsonb
-                ELSE jsonb_build_object(
-                    'invite_user', jsonb_build_object('id', i.id, 'email', i.email)
-                ) END
-            FROM users u
-            LEFT JOIN plan p ON p.id = u.plan_id
-            LEFT JOIN users i ON i.id = u.invite_user_id
-            WHERE u.id = $1
-            LIMIT 1
-            "#,
-            id,
-        )
-        .await?
-        .ok_or_else(|| ApiError::business("用户不存在"))?;
+        let row = self
+            .admin_user_record(id, false)
+            .await?
+            .ok_or_else(|| ApiError::business("用户不存在"))?;
+        let inviter: Option<(i64, String)> = match row.invite_user_id {
+            Some(invite_user_id) => {
+                sqlx::query_as("SELECT id, email FROM users WHERE id = $1 LIMIT 1")
+                    .bind(invite_user_id)
+                    .fetch_optional(&self.db)
+                    .await?
+            }
+            None => None,
+        };
+        let mut value = row.into_value();
+        attach_invite_user(&mut value, inviter);
         Ok(AdminOutput::Data(value))
     }
 
     pub(super) async fn staff_user_detail(&self, id: i64) -> Result<AdminOutput, ApiError> {
-        let value = fetch_json_one(
-            &self.db,
-            r#"
-            SELECT jsonb_build_object(
-                'id', u.id, 'email', u.email, 'password', '', 'balance', u.balance,
-                'commission_balance', u.commission_balance, 'transfer_enable', u.transfer_enable,
-                'device_limit', u.device_limit, 'u', u.u, 'd', u.d,
-                'total_used', CAST(u.u AS NUMERIC(65,0)) + CAST(u.d AS NUMERIC(65,0)),
-                'alive_ip', 0, 'ips', '', 'plan_id', u.plan_id, 'plan_name', p.name,
-                'group_id', u.group_id, 'expired_at', u.expired_at, 'uuid', u.uuid,
-                'token', u.token, 'subscribe_url', '', 'banned', u.banned,
-                'is_admin', u.is_admin, 'is_staff', u.is_staff,
-                'invite_user_id', u.invite_user_id, 'discount', u.discount,
-                'commission_type', u.commission_type, 'commission_rate', u.commission_rate,
-                't', u.t, 'speed_limit', u.speed_limit, 'auto_renewal', u.auto_renewal,
-                'remind_expire', u.remind_expire, 'remind_traffic', u.remind_traffic,
-                'remarks', u.remarks, 'last_login_ip', u.last_login_ip,
-                'password_algo', u.password_algo, 'password_salt', u.password_salt,
-                'telegram_id', u.telegram_id,
-                'last_login_at', u.last_login_at, 'created_at', u.created_at, 'updated_at', u.updated_at
-            )
-            FROM users u
-            LEFT JOIN plan p ON p.id = u.plan_id
-            WHERE u.id = $1 AND u.is_admin = 0 AND u.is_staff = 0
-            LIMIT 1
-            "#,
-            id,
-        )
-        .await?
-        .ok_or_else(|| ApiError::business("用户不存在"))?;
-        Ok(AdminOutput::Data(value))
+        let row = self
+            .admin_user_record(id, true)
+            .await?
+            .ok_or_else(|| ApiError::business("用户不存在"))?;
+        Ok(AdminOutput::Data(row.into_value()))
     }
 
     pub(super) async fn user_update(
@@ -1303,18 +1374,122 @@ mod tests {
         assert_eq!(sorted_unique_user_ids(vec![9, 2, 9, 4]), vec![2, 4, 9]);
     }
 
-    #[test]
-    fn user_detail_omits_an_absent_inviter_like_the_legacy_contract() {
-        let source = include_str!("users.rs");
-        let detail_start = source.find("pub(super) async fn user_detail").unwrap();
-        let detail_end = source[detail_start..]
-            .find("pub(super) async fn staff_user_detail")
-            .map(|offset| detail_start + offset)
-            .unwrap();
-        let detail = &source[detail_start..detail_end];
+    fn sample_admin_user_record() -> AdminUserRecord {
+        AdminUserRecord {
+            id: 7,
+            email: "admin-user@example.test".to_string(),
+            balance: 1200,
+            commission_balance: 340,
+            transfer_enable: 107_374_182_400,
+            device_limit: Some(3),
+            u: 1_073_741_824,
+            d: 2_147_483_648,
+            plan_id: Some(2),
+            plan_name: Some("Pro".to_string()),
+            group_id: Some(1),
+            expired_at: Some(1_893_456_000),
+            uuid: "uuid-7".to_string(),
+            token: "token-7".to_string(),
+            banned: 0,
+            is_admin: 0,
+            is_staff: 0,
+            invite_user_id: Some(1),
+            discount: None,
+            commission_type: 0,
+            commission_rate: None,
+            t: 1_700_000_000,
+            speed_limit: None,
+            auto_renewal: Some(0),
+            remind_expire: Some(1),
+            remind_traffic: Some(1),
+            remarks: None,
+            telegram_id: None,
+            last_login_at: Some(1_700_000_000),
+            created_at: 1_690_000_000,
+            updated_at: 1_700_000_000,
+        }
+    }
 
-        assert!(detail.contains("CASE WHEN i.id IS NULL THEN '{}'::jsonb"));
-        assert!(!detail.contains("'invite_user', CASE WHEN i.id IS NULL THEN NULL"));
+    #[test]
+    fn admin_user_projection_serializes_the_exact_contract_key_set() {
+        let value = sample_admin_user_record().into_value();
+        let object = value.as_object().unwrap();
+        let keys: Vec<&str> = object.keys().map(String::as_str).collect();
+        let mut sorted = keys.clone();
+        sorted.sort_unstable();
+        assert_eq!(
+            sorted,
+            vec![
+                "alive_ip",
+                "auto_renewal",
+                "balance",
+                "banned",
+                "commission_balance",
+                "commission_rate",
+                "commission_type",
+                "created_at",
+                "d",
+                "device_limit",
+                "discount",
+                "email",
+                "expired_at",
+                "group_id",
+                "id",
+                "invite_user_id",
+                "ips",
+                "is_admin",
+                "is_staff",
+                "last_login_at",
+                "password",
+                "plan_id",
+                "plan_name",
+                "remarks",
+                "remind_expire",
+                "remind_traffic",
+                "speed_limit",
+                "subscribe_url",
+                "t",
+                "telegram_id",
+                "token",
+                "total_used",
+                "transfer_enable",
+                "u",
+                "updated_at",
+                "uuid",
+            ]
+        );
+        // Credential-verification columns never leave the database.
+        for leaked in ["password_algo", "password_salt", "last_login_ip"] {
+            assert!(!object.contains_key(leaked), "leaked key: {leaked}");
+        }
+        assert_eq!(value["password"], json!(""));
+        assert_eq!(value["subscribe_url"], json!(""));
+        assert_eq!(value["alive_ip"], json!(0));
+        assert_eq!(value["ips"], json!(""));
+        assert_eq!(value["total_used"], json!(3_221_225_472_u64));
+    }
+
+    #[test]
+    fn invite_user_is_attached_only_when_the_inviter_exists() {
+        let mut absent = sample_admin_user_record().into_value();
+        attach_invite_user(&mut absent, None);
+        assert!(absent.get("invite_user").is_none());
+
+        let mut present = sample_admin_user_record().into_value();
+        attach_invite_user(&mut present, Some((1, "inviter@example.test".to_string())));
+        assert_eq!(
+            present["invite_user"],
+            json!({ "id": 1, "email": "inviter@example.test" })
+        );
+    }
+
+    #[test]
+    fn shared_user_projection_is_the_only_admin_user_select() {
+        let source = include_str!("users.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap();
+        // The three read paths must not regrow private per-endpoint projections.
+        assert_eq!(production.matches("jsonb_build_object").count(), 0);
+        assert_eq!(production.matches("ADMIN_USER_SELECT").count(), 3);
     }
 
     #[test]

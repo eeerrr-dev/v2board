@@ -89,14 +89,23 @@ fn user_sort_whitelists_expression_and_direction() {
 }
 
 #[test]
-fn user_total_used_sql_widens_before_adding_bigint_counters() {
-    let users_source = include_str!("../users.rs");
+fn user_total_used_widens_before_adding_bigint_counters() {
+    // The total_used sort expression still adds the two BIGINT counters in
+    // SQL and must widen first. The projected value itself is summed in Rust
+    // by AdminUserRecord::into_value as u64, which two nonnegative i64
+    // counters cannot overflow.
+    let filters_source = include_str!("filters.rs");
     let widened = "CAST(u.u AS NUMERIC(65,0)) + CAST(u.d AS NUMERIC(65,0))";
-    assert_eq!(users_source.matches(widened).count(), 3);
-    assert!(!users_source.contains("'total_used', u.u + u.d"));
+    assert!(filters_source.contains(widened));
 
-    let max_total = i128::from(i64::MAX) + i128::from(i64::MAX);
-    assert_eq!(max_total, 18_446_744_073_709_551_614_i128);
+    let users_source = include_str!("../users.rs");
+    assert!(!users_source.contains("u.u + u.d"));
+
+    let max_counter = u64::try_from(i64::MAX).unwrap();
+    assert_eq!(
+        max_counter.checked_add(max_counter),
+        Some(18_446_744_073_709_551_614)
+    );
 }
 
 #[test]
