@@ -3421,6 +3421,7 @@ dependencies = [
  "ipnet",
  "md5",
  "percent-encoding",
+ "quick-xml",
  "redis",
  "regex",
  "reqwest",
