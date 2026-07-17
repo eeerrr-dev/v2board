@@ -112,8 +112,8 @@ describe('user query state behavior', () => {
           title: 'Old',
           category: '常见问题',
           sort: 0,
-          show: 1,
-          updated_at: 1,
+          show: true,
+          updated_at: '2023-11-14T22:13:20Z',
         },
       ],
     };

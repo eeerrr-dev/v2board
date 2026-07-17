@@ -37,14 +37,26 @@ export function formatDateTime(timestamp: number | null | undefined): string {
   return dayjs(timestamp * 1000).format('YYYY-MM-DD HH:mm:ss');
 }
 
+/**
+ * Backend timestamps arrive in two dialects (docs/api-dialect.md §4.5):
+ * migrated families deliver RFC 3339 strings, legacy families still deliver
+ * epoch seconds (or numeric strings). Both resolve to the same instant and
+ * render in the viewer's local timezone either way.
+ */
+function backendDayjs(timestamp: number | string | null | undefined): dayjs.Dayjs {
+  const epochSeconds = Number(timestamp);
+  if (Number.isFinite(epochSeconds)) return dayjs(epochSeconds * 1000);
+  return dayjs(typeof timestamp === 'string' ? timestamp : Number.NaN);
+}
+
 export function formatBackendDate(timestamp: number | string | null | undefined): string {
-  const d = dayjs(Number(timestamp) * 1000);
+  const d = backendDayjs(timestamp);
   if (!d.isValid()) return 'Invalid date';
   return d.format('YYYY-MM-DD');
 }
 
 export function formatBackendDateTime(timestamp: number | string | null | undefined): string {
-  const d = dayjs(Number(timestamp) * 1000);
+  const d = backendDayjs(timestamp);
   if (!d.isValid()) return 'Invalid date';
   return d.format('YYYY-MM-DD HH:mm:ss');
 }
@@ -55,7 +67,7 @@ export function formatDateMinuteSlash(timestamp: number | null | undefined): str
 }
 
 export function formatBackendDateSlash(timestamp: number | string | null | undefined): string {
-  const d = dayjs(Number(timestamp) * 1000);
+  const d = backendDayjs(timestamp);
   if (!d.isValid()) return 'Invalid date';
   return d.format('YYYY/MM/DD');
 }
@@ -63,7 +75,7 @@ export function formatBackendDateSlash(timestamp: number | string | null | undef
 export function formatBackendDateMinuteSlash(
   timestamp: number | string | null | undefined,
 ): string {
-  const d = dayjs(Number(timestamp) * 1000);
+  const d = backendDayjs(timestamp);
   if (!d.isValid()) return 'Invalid date';
   return d.format('YYYY/MM/DD HH:mm');
 }

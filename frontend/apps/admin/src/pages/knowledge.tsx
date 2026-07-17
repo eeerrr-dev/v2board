@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm, useFormState } from 'react-hook-form';
 import dayjs from 'dayjs';
-import type { Knowledge, KnowledgeSummary } from '@v2board/types';
+import type { AdminKnowledge, AdminKnowledgeSummary } from '@v2board/types';
 import { ArrowDown, ArrowUp, Pencil, Plus, Trash2 } from 'lucide-react';
 import {
   useAdminKnowledge,
@@ -64,7 +64,7 @@ const KNOWLEDGE_LOCALE_OPTIONS = [...KNOWLEDGE_LOCALES]
   .sort()
   .map((locale) => ({ value: locale, label: KNOWLEDGE_LOCALE_TEXT[locale] }));
 
-function knowledgeEditorValues(knowledge?: Knowledge): KnowledgeEditorValues {
+function knowledgeEditorValues(knowledge?: AdminKnowledge): KnowledgeEditorValues {
   return {
     ...(knowledge ? { id: knowledge.id } : {}),
     category: knowledge?.category ?? '',
@@ -274,7 +274,7 @@ export default function KnowledgePage() {
   const drop = useDropKnowledgeMutation();
   const show = useShowKnowledgeMutation();
   const sort = useSortKnowledgeMutation();
-  const [orderOverride, setOrderOverride] = useState<KnowledgeSummary[] | null>(null);
+  const [orderOverride, setOrderOverride] = useState<AdminKnowledgeSummary[] | null>(null);
   const [editor, setEditor] = useState<{
     id: number | undefined;
     key: number;
@@ -315,7 +315,7 @@ export default function KnowledgePage() {
     );
   };
 
-  const removeKnowledge = async (row: KnowledgeSummary) => {
+  const removeKnowledge = async (row: AdminKnowledgeSummary) => {
     const confirmed = await confirmDialog({
       title: '警告',
       description: '确定要删除该条项目吗？',
@@ -325,7 +325,7 @@ export default function KnowledgePage() {
     drop.mutate(row.id);
   };
 
-  const columns: DataTableColumn<KnowledgeSummary>[] = [
+  const columns: DataTableColumn<AdminKnowledgeSummary>[] = [
     {
       id: 'id',
       meta: { className: 'text-muted-foreground tabular-nums' },

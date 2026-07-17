@@ -8,7 +8,7 @@ import KnowledgePage from './index';
 const mocks = vi.hoisted(() => {
   const defaultGroups: Record<
     string,
-    Array<{ id: number; title: string; body: string; category: string; updated_at: number }>
+    Array<{ id: number; title: string; body: string; category: string; updated_at: string }>
   > = {
     General: [
       {
@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => {
         title: 'Copy Article',
         body: '',
         category: 'General',
-        updated_at: 1_700_000_000,
+        updated_at: '2023-11-14T22:13:20Z',
       },
     ],
     Router: [
@@ -25,7 +25,7 @@ const mocks = vi.hoisted(() => {
         title: 'Router Guide',
         body: '',
         category: 'Router',
-        updated_at: 1_700_086_400,
+        updated_at: '2023-11-15T22:13:20Z',
       },
     ],
   };
@@ -36,22 +36,22 @@ const mocks = vi.hoisted(() => {
       title: 'Copy Article',
       body: '<button onclick="copy(`token`)">copy</button>',
       category: 'General',
-      updated_at: 1_700_000_000,
+      updated_at: '2023-11-14T22:13:20Z',
       language: 'zh-CN',
       sort: null,
-      show: 1,
-      created_at: 1_700_000_000,
+      show: true,
+      created_at: '2023-11-14T22:13:20Z',
     },
     2: {
       id: 2,
       title: 'Router Guide',
       body: '<a onclick="jump(1)">jump</a>',
       category: 'Router',
-      updated_at: 1_700_086_400,
+      updated_at: '2023-11-15T22:13:20Z',
       language: 'zh-CN',
       sort: null,
-      show: 1,
-      created_at: 1_700_086_400,
+      show: true,
+      created_at: '2023-11-15T22:13:20Z',
     },
   } as Record<string, unknown>;
 
@@ -305,7 +305,7 @@ describe('KnowledgePage redesigned interactions', () => {
     // list, but the detail endpoint fetches it by id, so it must still open.
     mocks.searchParams = new URLSearchParams('id=99');
     mocks.detailById = {
-      '99': { id: 99, title: 'Cross-language Doc', body: 'body', updated_at: 1_700_000_000 },
+      '99': { id: 99, title: 'Cross-language Doc', body: 'body', updated_at: '2023-11-14T22:13:20Z' },
     } as Record<string, unknown>;
 
     renderWithProviders(<KnowledgePage />);

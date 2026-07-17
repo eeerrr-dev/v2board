@@ -1,8 +1,10 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import type { z } from 'zod';
+import { z } from 'zod';
 import {
+  adminKnowledgeSchema,
   adminKnowledgeSummarySchema,
+  adminNoticeSchema,
   adminOrderSchema,
   adminPaymentSchema,
   adminUserDetailSchema,
@@ -15,6 +17,7 @@ import {
   envelopeSchema,
   giftcardSchema,
   guestConfigSchema,
+  knowledgeCategorySchema,
   knowledgeSchema,
   noticeSchema,
   ordersSchema,
@@ -30,12 +33,13 @@ import {
   stepUpGrantSchema,
   stringArraySchema,
   subscribeInfoSchema,
+  telegramBotInfoSchema,
   ticketSchema,
   trafficLogSchema,
   userCommConfigSchema,
   userInfoSchema,
 } from './contracts';
-import { problemDetailsSchema } from './dialect';
+import { pageSchema, problemDetailsSchema } from './dialect';
 
 /**
  * Golden-response contract lane: every fixture in `../goldens` is a full
@@ -52,10 +56,10 @@ const goldenSchemas: Record<string, z.ZodType> = {
   'admin.config.getEmailTemplate.json': envelopeSchema(stringArraySchema),
   'admin.coupon.fetch.json': pageEnvelopeSchema(couponSchema),
   'admin.giftcard.fetch.json': pageEnvelopeSchema(giftcardSchema),
-  'admin.knowledge.detail.json': envelopeSchema(knowledgeSchema),
+  'admin.knowledge.detail.json': envelopeSchema(adminKnowledgeSchema),
   'admin.knowledge.fetch.json': envelopeSchema(arraySchema(adminKnowledgeSummarySchema)),
   'admin.knowledge.getCategory.json': envelopeSchema(stringArraySchema),
-  'admin.notice.fetch.json': pageEnvelopeSchema(noticeSchema),
+  'admin.notice.fetch.json': pageEnvelopeSchema(adminNoticeSchema),
   'admin.order.detail.json': envelopeSchema(adminOrderSchema),
   'admin.order.fetch.json': pageEnvelopeSchema(adminOrderSchema),
   'admin.payment.fetch.json': envelopeSchema(arraySchema(adminPaymentSchema)),
@@ -71,9 +75,6 @@ const goldenSchemas: Record<string, z.ZodType> = {
   'admin.user.getUserInfoById.json': envelopeSchema(adminUserDetailSchema),
   'admin.user.getUserInfoById.no-inviter.json': envelopeSchema(adminUserDetailSchema),
   // Pure serde wire bodies (v2board-api golden_wire test).
-  'guest.comm.config.json': envelopeSchema(guestConfigSchema),
-  'guest.comm.config.whitelist-disabled.json': envelopeSchema(guestConfigSchema),
-  'user.comm.config.json': envelopeSchema(userCommConfigSchema),
   'user.getSubscribe.json': envelopeSchema(subscribeInfoSchema),
   'user.info.json': envelopeSchema(userInfoSchema),
   'user.order.checkout.json': checkoutEnvelopeSchema,
@@ -97,6 +98,14 @@ const dialectGoldenSchemas: Record<string, z.ZodType> = {
   'auth.step-up.json': stepUpGrantSchema,
   'problem.session-expired.json': problemDetailsSchema,
   'problem.validation.json': problemDetailsSchema,
+  'public.config.json': guestConfigSchema,
+  'public.config.whitelist-disabled.json': guestConfigSchema,
+  'user.config.json': userCommConfigSchema,
+  'user.knowledge-categories.json': arraySchema(z.looseObject({ category: z.string() })),
+  'user.knowledge.detail.json': knowledgeSchema,
+  'user.knowledge.json': knowledgeCategorySchema,
+  'user.notices.json': pageSchema(noticeSchema),
+  'user.telegram-bot.json': telegramBotInfoSchema,
 };
 
 describe('golden response fixtures', () => {

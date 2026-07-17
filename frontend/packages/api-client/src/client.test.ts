@@ -285,11 +285,11 @@ describe('createApiClient', () => {
     expect(endpoints.noticeDetail).toBeUndefined();
   });
 
-  it('keeps user notice fetch as the bundled notice model data-only state', async () => {
+  it('unwraps the user notices page envelope to the first-page items array', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
     const controller = new AbortController();
-    mock.onGet('/user/notice/fetch').reply(200, { data: [], total: 99 });
+    mock.onGet('/user/notices').reply(200, { items: [], total: 99 });
 
     await expect(
       userEndpoints.fetchNotices(client, { signal: controller.signal }),
@@ -425,11 +425,11 @@ describe('createApiClient', () => {
   it('adds the legacy HTTP 200 code to successful envelopes when the body omits it', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onGet('/user/notice/fetch').reply(200, { data: [], total: 0 });
+    mock.onGet('/user/ticket/fetch').reply(200, { data: [], total: 0 });
 
     await expect(
       client.requestEnvelope({
-        url: '/user/notice/fetch',
+        url: '/user/ticket/fetch',
         method: 'GET',
         responseSchema: envelopeSchema(z.array(z.unknown())),
       }),
@@ -443,11 +443,11 @@ describe('createApiClient', () => {
   ])('rejects an invalid legacy envelope %s field before returning data', async (field, value) => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onGet('/user/notice/fetch').reply(200, { data: [], [field]: value });
+    mock.onGet('/user/ticket/fetch').reply(200, { data: [], [field]: value });
 
     await expect(
       client.requestEnvelope({
-        url: '/user/notice/fetch',
+        url: '/user/ticket/fetch',
         method: 'GET',
         responseSchema: envelopeSchema(z.array(z.string())),
       }),

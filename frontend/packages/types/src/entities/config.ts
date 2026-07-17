@@ -1,26 +1,36 @@
+/**
+ * GET /public/config (docs/api-dialect.md §5.1, W3): boolean flags and an
+ * always-array `email_whitelist_suffix`. Keeps its historical `Guest` name so
+ * call sites stay stable while the wire moved off `/guest/comm/config`.
+ */
 export interface GuestConfig {
   tos_url: string | null;
-  is_email_verify: 0 | 1;
-  is_invite_force: 0 | 1;
-  email_whitelist_suffix: string[] | 0;
-  is_recaptcha: 0 | 1;
+  is_email_verify: boolean;
+  is_invite_force: boolean;
+  email_whitelist_suffix: string[];
+  is_recaptcha: boolean;
   recaptcha_site_key: string | null;
   app_description: string | null;
   app_url: string | null;
   logo: string | null;
 }
 
+/**
+ * GET /user/config (docs/api-dialect.md §5.3, W3): boolean flags and numeric
+ * commission distribution rates. Keeps its historical `Comm` name so call
+ * sites stay stable while the wire moved off `/user/comm/config`.
+ */
 export interface UserCommConfig {
-  is_telegram: 0 | 1;
+  is_telegram: boolean;
   telegram_discuss_link: string | null;
   withdraw_methods: string[];
-  withdraw_close: 0 | 1;
+  withdraw_close: boolean;
   currency: string;
   currency_symbol: string;
-  commission_distribution_enable: 0 | 1;
-  commission_distribution_l1: string | number | null;
-  commission_distribution_l2: string | number | null;
-  commission_distribution_l3: string | number | null;
+  commission_distribution_enable: boolean;
+  commission_distribution_l1: number | null;
+  commission_distribution_l2: number | null;
+  commission_distribution_l3: number | null;
 }
 
 export interface AdminConfigFlat {

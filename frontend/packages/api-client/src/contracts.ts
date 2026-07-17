@@ -71,12 +71,18 @@ export const quickLoginUrlSchema = z.looseObject({
   url: z.string().min(1),
 });
 
+/**
+ * GET /public/config (docs/api-dialect.md §5.1, W3): bare body, boolean
+ * flags, and an always-array `email_whitelist_suffix` (the legacy `0`
+ * disabled-sentinel died with the flip). Keeps its historical `guest` name so
+ * call sites stay stable while the wire moved off `/guest/comm/config`.
+ */
 export const guestConfigSchema = z.looseObject({
   tos_url: nullableString,
-  is_email_verify: binaryFlagSchema,
-  is_invite_force: binaryFlagSchema,
-  email_whitelist_suffix: z.union([stringArraySchema, z.literal(0)]),
-  is_recaptcha: binaryFlagSchema,
+  is_email_verify: z.boolean(),
+  is_invite_force: z.boolean(),
+  email_whitelist_suffix: stringArraySchema,
+  is_recaptcha: z.boolean(),
   recaptcha_site_key: nullableString,
   app_description: nullableString,
   app_url: nullableString,
@@ -257,7 +263,24 @@ export const paymentFormFieldSchema = z.looseObject({
 });
 export const paymentFormSchema = z.record(z.string(), paymentFormFieldSchema);
 
+/**
+ * GET /user/notices items (docs/api-dialect.md §5.8, W3): boolean `show`,
+ * RFC 3339 timestamps. `tags` keeps carrying the backend `弹窗` auto-popup
+ * marker (Tier-1).
+ */
 export const noticeSchema = z.looseObject({
+  id: z.number(),
+  title: z.string(),
+  content: z.string(),
+  show: z.boolean(),
+  img_url: nullableString,
+  tags: stringArraySchema.nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+/** Legacy admin notice rows (`/admin/notice/fetch`, W10 still legacy). */
+export const adminNoticeSchema = z.looseObject({
   id: z.number(),
   title: z.string(),
   content: z.string(),
@@ -367,23 +390,40 @@ export const commissionDetailSchema = z.looseObject({
   created_at: z.number(),
 });
 
+/**
+ * User knowledge rows (docs/api-dialect.md §5.8, W3): boolean `show` and an
+ * RFC 3339 `updated_at`. The detail `body` stays non-idempotent —
+ * re-substituted per request (Tier-1 refetch behavior).
+ */
 export const knowledgeSummarySchema = z.looseObject({
   id: z.number(),
   category: z.string(),
   title: z.string(),
-  updated_at: z.number(),
+  sort: nullableNumber,
+  show: z.boolean(),
+  updated_at: z.string(),
 });
 export const knowledgeSchema = knowledgeSummarySchema.extend({
-  sort: nullableNumber,
+  body: z.string(),
+  language: z.string(),
+  created_at: z.string(),
+});
+export const knowledgeCategorySchema = z.record(z.string(), z.array(knowledgeSummarySchema));
+
+/** Legacy admin knowledge rows (`/admin/knowledge/*`, W10 still legacy). */
+export const adminKnowledgeSummarySchema = z.looseObject({
+  id: z.number(),
+  category: z.string(),
+  title: z.string(),
   show: binaryFlagSchema,
+  updated_at: z.number(),
+});
+export const adminKnowledgeSchema = adminKnowledgeSummarySchema.extend({
+  sort: nullableNumber,
   body: z.string(),
   language: z.string(),
   created_at: z.number(),
 });
-export const adminKnowledgeSummarySchema = knowledgeSummarySchema.extend({
-  show: binaryFlagSchema,
-});
-export const knowledgeCategorySchema = z.record(z.string(), z.array(knowledgeSummarySchema));
 
 export const trafficLogSchema = z.looseObject({
   u: z.number(),
@@ -393,20 +433,23 @@ export const trafficLogSchema = z.looseObject({
   server_rate: z.string(),
 });
 
+/**
+ * GET /user/config (docs/api-dialect.md §5.3, W3): bare body, boolean flags,
+ * an always-array `withdraw_methods`, and numeric commission distribution
+ * rates (the legacy string-vs-number split died with the flip). Keeps its
+ * historical `comm` name so call sites stay stable.
+ */
 export const userCommConfigSchema = z.looseObject({
-  is_telegram: binaryFlagSchema,
+  is_telegram: z.boolean(),
   telegram_discuss_link: nullableString,
-  withdraw_methods: z.union([
-    stringArraySchema,
-    z.string().transform((value) => (value === '' ? [] : value.split(','))),
-  ]),
-  withdraw_close: binaryFlagSchema,
+  withdraw_methods: stringArraySchema,
+  withdraw_close: z.boolean(),
   currency: z.string(),
   currency_symbol: z.string(),
-  commission_distribution_enable: binaryFlagSchema,
-  commission_distribution_l1: z.union([z.string(), z.number(), z.null()]),
-  commission_distribution_l2: z.union([z.string(), z.number(), z.null()]),
-  commission_distribution_l3: z.union([z.string(), z.number(), z.null()]),
+  commission_distribution_enable: z.boolean(),
+  commission_distribution_l1: nullableNumber,
+  commission_distribution_l2: nullableNumber,
+  commission_distribution_l3: nullableNumber,
 });
 
 export const userStatTupleSchema = z.tuple([z.number(), z.number(), z.number()]);

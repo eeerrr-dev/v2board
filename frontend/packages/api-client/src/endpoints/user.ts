@@ -12,7 +12,7 @@ import type {
 } from '@v2board/types';
 import type { ApiClient, ApiRequestConfig } from '../client';
 import type { output } from 'zod';
-import { bearerAuthorization } from '../dialect';
+import { bearerAuthorization, pageSchema } from '../dialect';
 import { decimalToCents } from '../money';
 import {
   activeSessionMapSchema,
@@ -295,13 +295,23 @@ export const inviteDetails = async (
   return { data: env.data, total: env.total };
 };
 
-export const fetchNotices = (client: ApiClient, config?: QueryRequestConfig) =>
-  client.request({
-    url: '/user/notice/fetch',
+/**
+ * GET /user/notices — dialect v2 (docs/api-dialect.md §5.8, W3): the
+ * `{items, total}` page envelope with the server-side `per_page` default
+ * pinned at 5. The client keeps requesting exactly the first default page,
+ * so the `弹窗` auto-popup tag scan operates over the same notice universe
+ * as legacy (Tier-1); consumers read the unwrapped items array.
+ */
+export const fetchNotices = async (client: ApiClient, config?: QueryRequestConfig) => {
+  const page = await client.request({
+    url: '/user/notices',
     method: 'GET',
-    responseSchema: arraySchema(noticeSchema),
+    dialect: 'v2',
+    responseSchema: pageSchema(noticeSchema),
     ...config,
   });
+  return page.items;
+};
 
 export const fetchTickets = (client: ApiClient, config?: QueryRequestConfig) =>
   client.request({
@@ -368,18 +378,22 @@ export const checkCoupon = (client: ApiClient, code: string, plan_id: number | s
     responseSchema: couponSchema,
   });
 
+/** GET /user/telegram-bot — dialect v2 bare `{username}` (§5.3, W3). */
 export const getTelegramBotInfo = (client: ApiClient, config?: QueryRequestConfig) =>
   client.request({
-    url: '/user/telegram/getBotInfo',
+    url: '/user/telegram-bot',
     method: 'GET',
+    dialect: 'v2',
     responseSchema: telegramBotInfoSchema,
     ...config,
   });
 
+/** GET /user/config — dialect v2 bare body (§5.3, W3). */
 export const commConfig = (client: ApiClient, config?: QueryRequestConfig) =>
   client.request({
-    url: '/user/comm/config',
+    url: '/user/config',
     method: 'GET',
+    dialect: 'v2',
     responseSchema: userCommConfigSchema,
     ...config,
   });
@@ -397,6 +411,7 @@ export const prepareStripePaymentIntent = (
     ...config,
   });
 
+/** GET /user/knowledge — dialect v2 bare `{category: [...]}` record (§5.8, W3). */
 export const fetchKnowledge = (
   client: ApiClient,
   language: string,
@@ -404,13 +419,19 @@ export const fetchKnowledge = (
   config?: QueryRequestConfig,
 ) =>
   client.request({
-    url: '/user/knowledge/fetch',
+    url: '/user/knowledge',
     method: 'GET',
+    dialect: 'v2',
     params: { language, keyword },
     responseSchema: knowledgeCategorySchema,
     signal: config?.signal,
   });
 
+/**
+ * GET /user/knowledge/{id} — dialect v2 bare article (§5.8, W3). The body is
+ * non-idempotent (re-substituted per request), so same-id refetches stay
+ * meaningful (Tier-1).
+ */
 export const knowledgeDetail = (
   client: ApiClient,
   id: number | string,
@@ -418,9 +439,10 @@ export const knowledgeDetail = (
   config?: QueryRequestConfig,
 ) =>
   client.request({
-    url: '/user/knowledge/fetch',
+    url: `/user/knowledge/${id}`,
     method: 'GET',
-    params: { id, language },
+    dialect: 'v2',
+    params: { language },
     responseSchema: knowledgeSchema,
     signal: config?.signal,
   });

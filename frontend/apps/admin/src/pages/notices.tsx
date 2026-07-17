@@ -3,7 +3,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm, useFormState, useWatch } from 'react-hook-form';
 import dayjs from 'dayjs';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
-import type { Notice } from '@v2board/types';
+import type { AdminNotice } from '@v2board/types';
 import {
   useAdminNotices,
   useDropNoticeMutation,
@@ -38,7 +38,7 @@ import {
 
 const NOTICE_FORM_ID = 'notice-editor-form';
 
-function noticeEditorValues(notice?: Notice): NoticeEditorValues {
+function noticeEditorValues(notice?: AdminNotice): NoticeEditorValues {
   return {
     ...(notice ? { id: notice.id } : {}),
     title: notice?.title ?? '',
@@ -69,7 +69,7 @@ export default function NoticesPage() {
     setOpen(true);
   };
 
-  const openEdit = (row: Notice) => {
+  const openEdit = (row: AdminNotice) => {
     form.reset(noticeEditorValues(row));
     setOpen(true);
   };
@@ -78,11 +78,11 @@ export default function NoticesPage() {
     save.mutate(values, { onSuccess: () => setOpen(false) });
   });
 
-  const toggleShow = (row: Notice) => {
+  const toggleShow = (row: AdminNotice) => {
     show.mutate(row.id);
   };
 
-  const removeNotice = async (row: Notice) => {
+  const removeNotice = async (row: AdminNotice) => {
     const confirmed = await confirmDialog({
       title: '删除公告',
       description: `确定要删除公告「${row.title}」吗？`,
@@ -92,7 +92,7 @@ export default function NoticesPage() {
     drop.mutate(row.id);
   };
 
-  const columns: DataTableColumn<Notice>[] = [
+  const columns: DataTableColumn<AdminNotice>[] = [
     {
       id: 'id',
       meta: { className: 'text-muted-foreground tabular-nums' },

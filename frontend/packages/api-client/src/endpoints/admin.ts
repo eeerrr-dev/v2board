@@ -4,10 +4,10 @@ import type {
   AdminOrderRow,
   AdminUserRow,
   AdminUserUpdatePayload,
+  AdminKnowledge,
+  AdminNotice,
   Coupon,
   Giftcard,
-  Knowledge,
-  Notice,
   Plan,
   PlanPeriod,
   Ticket,
@@ -20,7 +20,9 @@ import { decimalToCents, decimalToScaledInteger } from '../money';
 import {
   adminConfigSchema,
   adminFilterSchema,
+  adminKnowledgeSchema,
   adminKnowledgeSummarySchema,
+  adminNoticeSchema,
   adminOrderSchema,
   adminPaymentSchema,
   adminStatSummarySchema,
@@ -31,8 +33,6 @@ import {
   couponSchema,
   csvJsonEnvelopeSchema,
   giftcardSchema,
-  knowledgeSchema,
-  noticeSchema,
   orderStatSchema,
   pageEnvelopeSchema,
   paymentFormSchema,
@@ -538,18 +538,18 @@ export const fetchNotices = async (
   client: ApiClient,
   _query: AdminPageQuery = {},
   config?: QueryRequestConfig,
-): Promise<PageResult<Notice>> => {
+): Promise<PageResult<AdminNotice>> => {
   const env = await adminGetEnvelope(
     client,
     '/notice/fetch',
-    pageEnvelopeSchema(noticeSchema),
+    pageEnvelopeSchema(adminNoticeSchema),
     undefined,
     config,
   );
   return { data: env.data, total: env.total };
 };
 
-export type SaveNoticePayload = Pick<Notice, 'content' | 'img_url' | 'tags' | 'title'> & {
+export type SaveNoticePayload = Pick<AdminNotice, 'content' | 'img_url' | 'tags' | 'title'> & {
   id?: number;
 };
 
@@ -690,12 +690,12 @@ export const fetchKnowledge = (client: ApiClient, config?: QueryRequestConfig) =
   adminGet(client, '/knowledge/fetch', arraySchema(adminKnowledgeSummarySchema), undefined, config);
 
 export const knowledgeDetail = (client: ApiClient, id: number, config?: QueryRequestConfig) =>
-  adminGet(client, '/knowledge/fetch', knowledgeSchema, { id }, config);
+  adminGet(client, '/knowledge/fetch', adminKnowledgeSchema, { id }, config);
 
 export const knowledgeCategories = (client: ApiClient, config?: QueryRequestConfig) =>
   adminGet(client, '/knowledge/getCategory', stringArraySchema, undefined, config);
 
-export type SaveKnowledgePayload = Pick<Knowledge, 'body' | 'category' | 'language' | 'title'> & {
+export type SaveKnowledgePayload = Pick<AdminKnowledge, 'body' | 'category' | 'language' | 'title'> & {
   id?: number;
 };
 

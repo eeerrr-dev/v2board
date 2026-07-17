@@ -67,10 +67,11 @@ const mocks = vi.hoisted(() => ({
   noticesIsError: false,
   notices: [] as Array<{
     content?: string;
-    created_at: number;
+    /** RFC 3339, as delivered by GET /user/notices (docs/api-dialect.md §4.5). */
+    created_at: string;
     id: number;
     img_url?: string;
-    tags?: string | null;
+    tags?: string[] | null;
     title: string;
   }>,
   refetchSubscribe: vi.fn(),
@@ -327,10 +328,10 @@ describe('DashboardPage shadcn shell rendering', () => {
     mocks.notices = [
       {
         content: '<p>Notice body</p>',
-        created_at: 1_700_000_000,
+        created_at: '2023-11-14T22:13:20Z',
         id: 1,
         img_url: '/notice.jpg',
-        tags: '弹窗',
+        tags: ['弹窗'],
         title: 'Notice A',
       },
     ];
@@ -478,14 +479,14 @@ describe('DashboardPage shadcn shell actions', () => {
     mocks.notices = [
       {
         content: '<p>First notice</p>',
-        created_at: 1_700_000_000,
+        created_at: '2023-11-14T22:13:20Z',
         id: 1,
         img_url: '/notice-a.jpg',
         title: 'Notice A',
       },
       {
         content: '<p>Second notice</p>',
-        created_at: 1_700_100_000,
+        created_at: '2023-11-16T02:00:00Z',
         id: 2,
         img_url: '/notice-b.jpg',
         title: 'Notice B',
