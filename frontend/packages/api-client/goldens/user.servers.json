@@ -1,0 +1,49 @@
+[
+  {
+    "id": 1,
+    "parent_id": null,
+    "group_id": [
+      1
+    ],
+    "route_id": [
+      2
+    ],
+    "name": "Golden Node 01",
+    "rate": 1.0,
+    "type": "shadowsocks",
+    "host": "node-01.golden.v2board.test",
+    "port": 443,
+    "cache_key": "shadowsocks-1-1700000000-1",
+    "last_check_at": "2023-11-14T22:13:20Z",
+    "is_online": true,
+    "tags": [
+      "IEPL",
+      "Golden"
+    ],
+    "sort": 1,
+    "extra": {
+      "cipher": "aes-128-gcm",
+      "created_at": 1700000000,
+      "obfs": null,
+      "obfs_settings": null
+    }
+  },
+  {
+    "id": 2,
+    "parent_id": null,
+    "group_id": [
+      1
+    ],
+    "route_id": null,
+    "name": "Golden Node 02",
+    "rate": 2.5,
+    "type": "trojan",
+    "host": "node-02.golden.v2board.test",
+    "port": 8443,
+    "cache_key": "trojan-2-1700000000-0",
+    "last_check_at": null,
+    "is_online": false,
+    "tags": null,
+    "sort": 2
+  }
+]
