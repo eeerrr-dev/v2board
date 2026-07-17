@@ -373,8 +373,10 @@ export const serverFixtures = [
     type: 'trojan',
   },
 ];
-// /user/stat/getTrafficLog serializes server_rate as the exact NUMERIC
-// decimal string (`server_rate::text` in db/src/stat.rs).
+// The legacy oracle wire serializes server_rate as the exact NUMERIC decimal
+// string; the source world's modern /user/traffic-logs rows derive JSON
+// numbers from these via modernTrafficLogFixture (docs/api-dialect.md §5.4,
+// W6).
 export const trafficFixtures = [
   {
     d: 1024 * 1024 * 1024,

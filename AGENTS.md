@@ -446,12 +446,11 @@ The user service usage surfaces (`/node` and `/traffic`) are redesigned shadcn
 surfaces.
 
 - Keep service contracts strict: subscription-gated node visibility (never
-  render the node list before subscription state is known — serial
-  subscribe-first fetching today, parallel fetch with subscription-gated
-  rendering per `docs/api-dialect.md` §4.6), empty-state
-  subscribe/renew routing, node `is_online`/`server_rate` interpretation and
-  charged math `(u+d)*server_rate`, legacy traffic-charge coercion, routing, and
-  i18n must remain covered. Loading/timeout timing, the visual rendering of
+  render the node list before subscription state is known — parallel fetch
+  with subscription-gated rendering per `docs/api-dialect.md` §4.6),
+  empty-state subscribe/renew routing, node `is_online`/`server_rate`
+  interpretation and charged math `(u+d)*server_rate` (numeric on the modern
+  §5.4 wire), routing, and i18n must remain covered. Loading/timeout timing, the visual rendering of
   online/rate/tag badges, traffic date and byte formatting, horizontal-scroll
   observability, and tooltip copy are Tier-2 defaults — relaxable on these
   redesigned routes.

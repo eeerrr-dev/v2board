@@ -173,7 +173,8 @@ export const routeMap = Object.freeze([
     { method: 'GET', path: '/user/config' },
   ),
 
-  // ——— §5.4 Subscription & service usage — subscription rows flipped in W5 ———
+  // ——— §5.4 Subscription & service usage — subscription rows flipped in W5,
+  // service-usage rows in W6 ———
   route(
     'user.subscription.get',
     { method: 'GET', path: '/user/getSubscribe' },
@@ -190,8 +191,16 @@ export const routeMap = Object.freeze([
     // The legacy GET-with-side-effect rotation became a POST (§9.4).
     { method: 'POST', path: '/user/subscription/reset-token' },
   ),
-  route('user.servers.list', { method: 'GET', path: '/user/server/fetch' }),
-  route('user.traffic-logs.list', { method: 'GET', path: '/user/stat/getTrafficLog' }),
+  route(
+    'user.servers.list',
+    { method: 'GET', path: '/user/server/fetch' },
+    { method: 'GET', path: '/user/servers' },
+  ),
+  route(
+    'user.traffic-logs.list',
+    { method: 'GET', path: '/user/stat/getTrafficLog' },
+    { method: 'GET', path: '/user/traffic-logs' },
+  ),
 
   // ——— §5.5 Commerce — flipped to the modern rows in W4 ———
   // The detail row is listed first so `/user/plans/{id}` outranks the

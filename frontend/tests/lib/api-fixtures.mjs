@@ -304,10 +304,16 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     ) {
       page.__visualParityUserPlanFetchCount = (page.__visualParityUserPlanFetchCount ?? 0) + 1;
     }
-    if (pathname === '/api/v1/user/server/fetch') {
+    if (
+      pathname === '/api/v1/user/server/fetch' ||
+      pathname === '/api/v1/user/servers'
+    ) {
       page.__visualParityUserServerFetchCount = (page.__visualParityUserServerFetchCount ?? 0) + 1;
     }
-    if (pathname === '/api/v1/user/stat/getTrafficLog') {
+    if (
+      pathname === '/api/v1/user/stat/getTrafficLog' ||
+      pathname === '/api/v1/user/traffic-logs'
+    ) {
       page.__visualParityUserTrafficFetchCount =
         (page.__visualParityUserTrafficFetchCount ?? 0) + 1;
     }
@@ -707,8 +713,11 @@ export async function installApiFixtures(page, scenario, target, interaction = {
       (scenario.userOrdersTimeout &&
         (pathname === '/api/v1/user/order/fetch' ||
           (pathname === '/api/v1/user/orders' && requestMethod === 'GET'))) ||
-      (scenario.userServersTimeout && pathname === '/api/v1/user/server/fetch') ||
-      (scenario.userTrafficTimeout && pathname === '/api/v1/user/stat/getTrafficLog') ||
+      (scenario.userServersTimeout &&
+        (pathname === '/api/v1/user/server/fetch' || pathname === '/api/v1/user/servers')) ||
+      (scenario.userTrafficTimeout &&
+        (pathname === '/api/v1/user/stat/getTrafficLog' ||
+          pathname === '/api/v1/user/traffic-logs')) ||
       (scenario.userTicketsTimeout && pathname === '/api/v1/user/ticket/fetch') ||
       (scenario.userKnowledgeTimeout &&
         (pathname === '/api/v1/user/knowledge/fetch' || pathname === '/api/v1/user/knowledge')) ||
@@ -1347,6 +1356,21 @@ export function apiFixtureResponse(
       return v2Empty();
     case '/api/v1/user/subscription/reset-token':
       return v2Body({ subscribe_url: 'VISUAL-RESET-UUID' });
+    // §5.4 modern service-usage family (W6). Only the source world requests
+    // these paths; the oracle keeps the legacy /user/server/fetch +
+    // /user/stat/getTrafficLog cases.
+    case '/api/v1/user/servers':
+      if (scenario.userServersHttpError) {
+        return v2Problem(
+          500,
+          'Internal Server Error',
+          'internal_error',
+          '遇到了些问题，我们正在进行处理',
+        );
+      }
+      return v2Body(userServerFixturesFor(scenario).map(modernServerFixture));
+    case '/api/v1/user/traffic-logs':
+      return v2Body(trafficFixtures.map(modernTrafficLogFixture));
     case '/api/v1/user/update':
       return body(true);
     case '/api/v1/user/redeemgiftcard':
@@ -1621,6 +1645,23 @@ const modernSubscribeFixture = (fixture) => ({
   allow_new_period: fixture.allow_new_period !== 0,
   expired_at: fixture.expired_at == null ? null : rfc3339FixtureTime(fixture.expired_at),
   plan: fixture.plan ? modernPlanFixture(fixture.plan) : null,
+});
+
+// ——— W6 modern-wire projections (docs/api-dialect.md §4.1, §4.5, §5.4) ———
+// boolean is_online, numeric rate/port/server_rate, RFC 3339
+// last_check_at/record_at.
+const modernServerFixture = (server) => ({
+  ...server,
+  rate: Number(server.rate),
+  port: Number(server.port),
+  is_online: server.is_online !== 0,
+  last_check_at: server.last_check_at == null ? null : rfc3339FixtureTime(server.last_check_at),
+});
+
+const modernTrafficLogFixture = (entry) => ({
+  ...entry,
+  record_at: rfc3339FixtureTime(entry.record_at),
+  server_rate: Number(entry.server_rate),
 });
 
 export function userKnowledgeFixturesFor(interaction = {}) {

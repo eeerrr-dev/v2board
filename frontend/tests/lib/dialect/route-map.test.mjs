@@ -49,6 +49,8 @@ const W5_ROUTE_IDS = Object.freeze([
   'user.subscription.reset-token',
 ]);
 
+const W6_ROUTE_IDS = Object.freeze(['user.servers.list', 'user.traffic-logs.list']);
+
 const W4_ROUTE_IDS = Object.freeze([
   'user.plans.get',
   'user.plans.list',
@@ -69,6 +71,7 @@ test('unflipped families stay identity: modern equals legacy until each wave', (
     if (W3_ROUTE_IDS.includes(entry.id)) continue; // §5.1/§5.8 flipped in W3
     if (W4_ROUTE_IDS.includes(entry.id)) continue; // §5.5 flipped in W4
     if (W5_ROUTE_IDS.includes(entry.id)) continue; // §5.3/§5.4 flipped in W5
+    if (W6_ROUTE_IDS.includes(entry.id)) continue; // §5.4 service usage flipped in W6
     assert.deepEqual(entry.modern, entry.legacy, `${entry.id} must stay legacy→legacy until its wave`);
   }
 });
@@ -116,6 +119,25 @@ test('W5: the profile/subscription family carries the modern rows', () => {
       pathname: `${API_PREFIX}/user/subscription/new-period`,
     })?.id,
     'user.subscription.new-period',
+  );
+});
+
+test('W6: the user service-usage family carries the modern rows', () => {
+  const modern = Object.fromEntries(W6_ROUTE_IDS.map((id) => [id, routeEntry(id).modern]));
+  assert.deepEqual(modern, {
+    'user.servers.list': { method: 'GET', path: '/user/servers' },
+    'user.traffic-logs.list': { method: 'GET', path: '/user/traffic-logs' },
+  });
+  // The oracle keeps requesting the legacy rows.
+  assert.equal(worldRoute('user.servers.list', 'oracle').path, '/user/server/fetch');
+  assert.equal(worldRoute('user.traffic-logs.list', 'oracle').path, '/user/stat/getTrafficLog');
+  assert.equal(
+    matchRoute('source', { method: 'GET', pathname: `${API_PREFIX}/user/servers` })?.id,
+    'user.servers.list',
+  );
+  assert.equal(
+    matchRoute('source', { method: 'GET', pathname: `${API_PREFIX}/user/traffic-logs` })?.id,
+    'user.traffic-logs.list',
   );
 });
 

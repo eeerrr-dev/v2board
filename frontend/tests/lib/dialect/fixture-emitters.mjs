@@ -12,7 +12,8 @@
 // problem+json bodies) while the oracle emitter keeps legacy forever. A
 // migrated fixture carries `dialect: 'v2'` (W2 flipped the §5.2 auth family;
 // W3 the §5.1 public + §5.8 content family; W4 the §5.5 user commerce
-// family; W5 the §5.3/§5.4 profile + subscription family); unmigrated
+// family; W5 the §5.3/§5.4 profile + subscription family; W6 the §5.4
+// service-usage family); unmigrated
 // families keep emitting the legacy wire in BOTH worlds:
 // `{data}` envelopes, epoch ints, 0/1 flags, and the HTTP-200 `{code: 400}`
 // error emulation the reference build expects.
