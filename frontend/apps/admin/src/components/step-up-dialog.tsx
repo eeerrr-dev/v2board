@@ -1,6 +1,6 @@
 import { useState, useSyncExternalStore } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { ApiError, passport } from '@v2board/api-client';
+import { ApiError, ApiProblemError, passport } from '@v2board/api-client';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -24,7 +24,7 @@ import {
 /**
  * Global re-auth prompt for the privileged step-up gate. Opened imperatively
  * (lib/step-up.ts maybePromptStepUp) when a request fails with the backend's
- * "Recent password verification is required" 403. A successful verification
+ * step_up_required 403 problem. A successful verification
  * stores the grant for the x-v2board-step-up header and refetches active
  * queries; the failed mutation's form state stays intact for a manual retry.
  */
@@ -73,7 +73,13 @@ export function StepUpDialogProvider() {
       void queryClient.invalidateQueries();
     } catch (submitError) {
       setSubmitting(false);
-      setError(submitError instanceof ApiError ? submitError.message : '验证失败，请稍后再试');
+      // A wrong password is a 400 invalid_credentials problem post-W2; the
+      // ApiError arm keeps covering transport-level failures.
+      setError(
+        submitError instanceof ApiProblemError || submitError instanceof ApiError
+          ? submitError.message
+          : '验证失败，请稍后再试',
+      );
     }
   };
 

@@ -43,25 +43,32 @@ export const envelopeSchema = <TDataSchema extends z.ZodType>(data: TDataSchema)
 export const pageEnvelopeSchema = <TItemSchema extends z.ZodType>(item: TItemSchema) =>
   envelopeSchema(z.array(item)).extend({ total: z.number().optional() });
 
+/** Dialect 204 successes (docs/api-dialect.md §3.3): no body at all. */
+export const noContentSchema = z.undefined();
+
 // Deliberately excludes the permanent subscription credential (`users.token`):
-// the Rust backend no longer returns it from login/register/token2Login, and
+// the Rust backend no longer returns it from login/register/token-login, and
 // the subscribe URL is fetched separately through /user/getSubscribe.
 export const authDataSchema = z.looseObject({
-  is_admin: binaryFlagSchema,
+  is_admin: z.boolean(),
   auth_data: z.string().min(1),
 });
 
-/** POST /passport/auth/stepUp: a fresh privileged step-up grant. */
+/** POST /auth/step-up: a fresh privileged step-up grant. */
 export const stepUpGrantSchema = z.looseObject({
   step_up_token: z.string().min(1),
   expires_in: z.number().int().positive(),
 });
 
-export const nullableAuthDataSchema = authDataSchema.nullable();
-
-export const checkLoginSchema = z.looseObject({
+/** GET /auth/session: the checkLogin successor's bare probe body (§5.2). */
+export const sessionStateSchema = z.looseObject({
   is_login: z.boolean(),
   is_admin: z.boolean().optional(),
+});
+
+/** POST /auth/quick-login-url: the minted `{url}` body (§5.2, §9.4). */
+export const quickLoginUrlSchema = z.looseObject({
+  url: z.string().min(1),
 });
 
 export const guestConfigSchema = z.looseObject({

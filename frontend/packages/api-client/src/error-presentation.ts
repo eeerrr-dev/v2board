@@ -1,4 +1,5 @@
 import { ApiContractError } from './client';
+import { isSessionExpiredProblem } from './dialect';
 
 export const INLINE_MUTATION_ERROR_META = {
   errorPresentation: 'inline',
@@ -50,10 +51,18 @@ export function presentMutationError(
   localize: (message: string) => string = (message) => message,
 ): boolean {
   const presentation = getErrorPresentation(error);
-  // 403 already performs credential teardown + redirect in the API client. A
-  // toast during navigation is both duplicate feedback and prone to leaking
-  // session details onto the login screen.
-  if (presentation.status === 403 || meta?.errorPresentation === 'inline') return false;
+  // The 401 session_expired problem already performs credential teardown +
+  // redirect in the API client — a toast during that navigation is duplicate
+  // feedback and prone to leaking session details onto the login screen. 403
+  // authorization verdicts (permission_denied / step_up_required) keep their
+  // historical silence: the step-up dialog or the surface owns those.
+  if (
+    isSessionExpiredProblem(error) ||
+    presentation.status === 403 ||
+    meta?.errorPresentation === 'inline'
+  ) {
+    return false;
+  }
   notify(localize(presentation.message));
   return true;
 }

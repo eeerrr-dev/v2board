@@ -1,5 +1,6 @@
 import { waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ApiProblemError } from '@v2board/api-client';
 import type { LinkProps } from 'react-router';
 import type * as AuthModule from '@/lib/auth';
 import { renderWithProviders } from '@/test/render';
@@ -301,8 +302,16 @@ describe('LoginPage', () => {
     expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
-  it('does not render stale inline feedback for a 403 owned by API redirect teardown', async () => {
-    mocks.loginMutateAsync.mockRejectedValue(new mocks.ApiError(403, '登录已过期'));
+  it('does not render stale inline feedback for the session-expiry teardown owned by the API layer', async () => {
+    mocks.loginMutateAsync.mockRejectedValue(
+      new ApiProblemError(401, {
+        type: 'about:blank',
+        title: 'Unauthorized',
+        status: 401,
+        code: 'session_expired',
+        detail: '未登录或登陆已过期',
+      }),
+    );
     const view = renderWithProviders(<LoginPage />);
 
     await view.user.type(view.getByLabelText('邮箱'), 'user@example.com');
@@ -354,13 +363,14 @@ describe('LoginPage', () => {
     );
   });
 
-  it('runs token2Login with the raw query redirect and pushes after setting auth data', async () => {
+  it('runs tokenLogin with the verify-only payload and pushes after setting auth data', async () => {
     mocks.params = new URLSearchParams('verify=verify-token&redirect=order');
     renderWithProviders(<LoginPage />);
 
     await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/order'));
+    // The dialect payload is {verify} only (deny_unknown_fields); the redirect
+    // target stays a frontend routing concern.
     expect(mocks.tokenLoginMutateAsync).toHaveBeenCalledWith({
-      redirect: 'order',
       verify: 'verify-token',
     });
     expect(mocks.setAuthData).toHaveBeenCalledWith('TOKEN_AUTH');
@@ -370,8 +380,8 @@ describe('LoginPage', () => {
 
   it('redeems the one-time verify token only once across a doubled bootstrap (StrictMode-safe)', async () => {
     // React 19 StrictMode double-invokes the mount effect in dev (mount → cleanup →
-    // mount). A doubled bootstrap for the same verify token must POST token2Login only
-    // once — the one-time token would fail the second redemption — while the surviving
+    // mount). A doubled bootstrap for the same verify token must POST /auth/token-login
+    // only once — the one-time token would fail the second redemption — while the surviving
     // mount still finishes the login. The controller guards this with a module-level
     // in-flight map keyed by verify value, exercised here by two live mounts.
     let resolveTokenLogin: ((value: { auth_data: string }) => void) | undefined;
@@ -388,12 +398,11 @@ describe('LoginPage', () => {
     await waitFor(() => expect(mocks.tokenLoginMutateAsync).toHaveBeenCalledTimes(1));
 
     // A second bootstrap for the same token re-attaches to the shared redemption
-    // instead of POSTing token2Login again.
+    // instead of POSTing tokenLogin again.
     const second = renderWithProviders(<LoginPage />);
     await flushMicrotasks();
     expect(mocks.tokenLoginMutateAsync).toHaveBeenCalledTimes(1);
     expect(mocks.tokenLoginMutateAsync).toHaveBeenCalledWith({
-      redirect: 'order',
       verify: 'verify-once',
     });
 
@@ -406,7 +415,7 @@ describe('LoginPage', () => {
     second.unmount();
   });
 
-  it('ignores stale token2Login completions after the bootstrap effect is cleaned up', async () => {
+  it('ignores stale tokenLogin completions after the bootstrap effect is cleaned up', async () => {
     let resolveTokenLogin: ((value: { auth_data: string }) => void) | undefined;
     mocks.params = new URLSearchParams('verify=verify-token&redirect=order');
     mocks.tokenLoginMutateAsync.mockImplementation(
@@ -419,7 +428,6 @@ describe('LoginPage', () => {
     const view = renderWithProviders(<LoginPage />);
     await waitFor(() =>
       expect(mocks.tokenLoginMutateAsync).toHaveBeenCalledWith({
-        redirect: 'order',
         verify: 'verify-token',
       }),
     );

@@ -166,7 +166,7 @@ export function createRequireUserMiddleware(queryClient: QueryClient): Middlewar
     try {
       await queryClient.ensureQueryData(userQueryOptions.info());
     } catch (error) {
-      // A 403 clears auth in the API layer; convert that teardown into a router
+      // A 401 session_expired clears auth in the API layer; convert that teardown into a router
       // redirect. Other failures belong to the route error boundary—never invent
       // an empty user object that looks like valid authenticated server state.
       if (!getAuthData()) throw redirect('/login');

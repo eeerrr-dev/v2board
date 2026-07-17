@@ -1,11 +1,4 @@
-export {
-  createApiClient,
-  ApiContractError,
-  ApiError,
-  isStepUpRequiredError,
-  PERMISSION_DENIED_MESSAGE,
-  STEP_UP_REQUIRED_MESSAGE,
-} from './client';
+export { createApiClient, ApiContractError, ApiError } from './client';
 export type {
   ApiClient,
   ApiClientOptions,

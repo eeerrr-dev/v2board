@@ -56,7 +56,7 @@ const queryClient = new QueryClient({
   },
 });
 
-// Auth teardown (logout and the 403 session-expiry handler in lib/api.ts) must
+// Auth teardown (logout and the 401 session-expiry handler in lib/api.ts) must
 // drop cached server state so the next session on this tab cannot read the
 // previous account's data (e.g. the subscribe_url credential). Registered here
 // because the QueryClient lives in the entry; lib/auth never imports main.

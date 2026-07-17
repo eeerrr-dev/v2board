@@ -75,7 +75,7 @@ export function useForgetController(): ForgetController {
     cooldownActive,
     cooldownRemaining,
   } = useSendEmailVerifyFlow({
-    isforget: 1,
+    isForget: true,
     runRecaptcha,
   });
 

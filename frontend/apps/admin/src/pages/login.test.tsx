@@ -17,7 +17,7 @@ import LoginPage from './login';
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   passportLogin: vi.fn(),
-  passportToken2Login: vi.fn(),
+  passportTokenLogin: vi.fn(),
   userCheckLogin: vi.fn(),
   userInfo: vi.fn(),
   toastError: vi.fn(),
@@ -48,7 +48,7 @@ vi.mock('@v2board/api-client', async (importOriginal) => {
     passport: {
       ...actual.passport,
       login: mocks.passportLogin,
-      token2Login: mocks.passportToken2Login,
+      tokenLogin: mocks.passportTokenLogin,
     },
     user: {
       ...actual.user,
@@ -66,7 +66,7 @@ describe('Admin LoginPage', () => {
   beforeEach(() => {
     mocks.navigate.mockReset();
     mocks.passportLogin.mockReset();
-    mocks.passportToken2Login.mockReset();
+    mocks.passportTokenLogin.mockReset();
     mocks.userCheckLogin.mockReset();
     mocks.userInfo.mockReset();
     mocks.toastError.mockReset();
@@ -150,7 +150,7 @@ describe('Admin LoginPage', () => {
 
   it('logs an admin in with the passport payload, persists auth_data, and enters the console', async () => {
     mocks.redirectTarget = '/order';
-    mocks.passportLogin.mockResolvedValue({ is_admin: 1, auth_data: 'jwt' });
+    mocks.passportLogin.mockResolvedValue({ is_admin: true, auth_data: 'jwt' });
     mocks.userInfo.mockResolvedValue({ email: 'admin@example.com' });
 
     const { user, queryClient } = renderLogin();
@@ -175,7 +175,7 @@ describe('Admin LoginPage', () => {
   });
 
   it('rejects a non-admin session without persisting its credential', async () => {
-    mocks.passportLogin.mockResolvedValue({ is_admin: 0, auth_data: 'jwt' });
+    mocks.passportLogin.mockResolvedValue({ is_admin: false, auth_data: 'jwt' });
 
     const { user } = renderLogin();
     await user.type(screen.getByPlaceholderText('邮箱'), 'user@example.com');
@@ -200,7 +200,7 @@ describe('Admin LoginPage', () => {
     expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
-  it('does not add a local toast for a 403 handled by API teardown and MutationCache', async () => {
+  it('does not add a local toast for a 403 authorization verdict (MutationCache owns it)', async () => {
     mocks.passportLogin.mockRejectedValue({ status: 403, message: '登录已过期' });
     const { user } = renderLogin();
 
@@ -222,17 +222,17 @@ describe('Admin LoginPage', () => {
     expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
-  it('leaves a ?verify= parameter inert (the admin passport model has no token2Login effect)', async () => {
+  it('leaves a ?verify= parameter inert (the admin passport model has no tokenLogin effect)', async () => {
     mocks.redirectTarget = '/ticket';
-    mocks.passportToken2Login.mockResolvedValue({
-      is_admin: 1,
+    mocks.passportTokenLogin.mockResolvedValue({
+      is_admin: true,
       auth_data: 'quick-jwt',
     });
 
     renderLogin();
 
     await Promise.resolve();
-    expect(mocks.passportToken2Login).not.toHaveBeenCalled();
+    expect(mocks.passportTokenLogin).not.toHaveBeenCalled();
     expect(mocks.userCheckLogin).not.toHaveBeenCalled();
     expect(localStorage.getItem('authorization')).toBeNull();
     expect(mocks.navigate).not.toHaveBeenCalled();

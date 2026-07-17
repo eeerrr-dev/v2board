@@ -12,19 +12,20 @@ import type {
 } from '@v2board/types';
 import type { ApiClient, ApiRequestConfig } from '../client';
 import type { output } from 'zod';
+import { bearerAuthorization } from '../dialect';
 import { decimalToCents } from '../money';
 import {
   activeSessionMapSchema,
   arraySchema,
   availableServerSchema,
   booleanSchema,
-  checkLoginSchema,
   checkoutEnvelopeSchema,
   commissionDetailSchema,
   couponSchema,
   inviteFetchSchema,
   knowledgeCategorySchema,
   knowledgeSchema,
+  noContentSchema,
   noticeSchema,
   numberSchema,
   orderSchema,
@@ -33,6 +34,7 @@ import {
   paymentMethodSchema,
   planSchema,
   redeemGiftCardEnvelopeSchema,
+  sessionStateSchema,
   stringSchema,
   stripePaymentIntentSchema,
   subscribeInfoSchema,
@@ -70,11 +72,14 @@ export const getStat = (client: ApiClient, config?: QueryRequestConfig) =>
       pending_tickets,
     }));
 
+// Session probe (GET /auth/session, dialect v2 — the checkLogin successor).
+// A dead or absent bearer is data ({is_login: false}), never a 401.
 export const checkLogin = (client: ApiClient, config?: QueryRequestConfig) =>
   client.request({
-    url: '/user/checkLogin',
+    url: '/auth/session',
     method: 'GET',
-    responseSchema: checkLoginSchema,
+    dialect: 'v2',
+    responseSchema: sessionStateSchema,
     ...config,
   });
 
@@ -138,19 +143,22 @@ export const unbindTelegram = (client: ApiClient) =>
   client.request({ url: '/user/unbindTelegram', method: 'GET', responseSchema: trueSchema });
 
 // Explicit sign-out: best-effort server-side revocation of the current opaque
-// session (a Rust-only endpoint; the legacy API had no logout). The caller
-// tears local auth down synchronously right after firing this, and the
-// client's request interceptor reads the auth store on a microtask — after
-// that teardown — so the bearer must be captured up front and passed as an
-// explicit Authorization header. The backend treats a dead or absent bearer
-// as a successful no-op.
-export const logout = (client: ApiClient, config?: Pick<ApiRequestConfig, 'headers'>) =>
-  client.request({
-    url: '/user/logout',
-    method: 'POST',
-    responseSchema: trueSchema,
-    ...config,
+// session (DELETE /auth/session, 204 — a Rust-only endpoint; the legacy API
+// had no logout). The caller tears local auth down synchronously right after
+// firing this, and the client's request interceptor reads the auth store on a
+// microtask — after that teardown — so the raw auth_data must be captured up
+// front and passed here; the endpoint puts the Bearer scheme on the wire
+// (§4.2). The backend treats a dead or absent bearer as a successful no-op.
+export const logout = (client: ApiClient, capturedAuthData?: string | null) => {
+  const authorization = bearerAuthorization(capturedAuthData);
+  return client.request({
+    url: '/auth/session',
+    method: 'DELETE',
+    dialect: 'v2',
+    responseSchema: noContentSchema,
+    ...(authorization ? { headers: { authorization } } : {}),
   });
+};
 
 export const getActiveSession = (client: ApiClient, config?: QueryRequestConfig) =>
   client.request({

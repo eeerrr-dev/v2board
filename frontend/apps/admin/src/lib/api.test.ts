@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { ApiError } from '@v2board/api-client';
+import { ApiProblemError } from '@v2board/api-client';
 import { apiClient, signOut } from './api';
 import {
   AUTH_KEY,
@@ -53,6 +53,20 @@ function transportErrorAdapter(message: string): AdapterFn {
     error.isAxiosError = true;
     throw error;
   };
+}
+
+// The wire bodies Rust emits on migrated auth middleware (docs/api-dialect.md
+// §3.2): 401 session_expired tears down; 403 verdicts never do.
+const sessionExpiredProblem = {
+  type: 'about:blank',
+  title: 'Unauthorized',
+  status: 401,
+  code: 'session_expired',
+  detail: '未登录或登陆已过期',
+};
+
+function forbiddenProblem(code: string, detail: string) {
+  return { type: 'about:blank', title: 'Forbidden', status: 403, code, detail };
 }
 
 describe('admin api legacy path resolution', () => {
@@ -179,16 +193,16 @@ describe('admin api legacy path resolution', () => {
     expect(requestConfig?.headers?.['Content-Language']).toBe('ja-JP');
   });
 
-  it('clears the invalid credential, query cache and redirects to login on 403', async () => {
+  it('clears the invalid credential, query cache and redirects on 401 session_expired', async () => {
     const clear = vi.fn();
     registerSessionCacheClearer(clear);
     setAuthData('expired-admin');
     clear.mockClear();
-    apiClient.axios.defaults.adapter = adapterFor(403, { message: 'auth required' });
+    apiClient.axios.defaults.adapter = adapterFor(401, sessionExpiredProblem);
 
     await expect(
       apiClient.request({ url: '/user/info', method: 'GET', responseSchema: z.unknown() }),
-    ).rejects.toMatchObject({ status: 403 });
+    ).rejects.toMatchObject({ status: 401, code: 'session_expired' });
 
     expect(getAuthData()).toBeNull();
     expect(clear).toHaveBeenCalledOnce();
@@ -202,11 +216,15 @@ describe('admin api legacy path resolution', () => {
     setAuthData('live-admin');
     clear.mockClear();
 
-    for (const message of ['Permission denied', 'Recent password verification is required']) {
-      apiClient.axios.defaults.adapter = adapterFor(403, { message });
+    const verdicts = [
+      forbiddenProblem('permission_denied', 'Permission denied'),
+      forbiddenProblem('step_up_required', 'Recent password verification is required'),
+    ];
+    for (const problem of verdicts) {
+      apiClient.axios.defaults.adapter = adapterFor(403, problem);
       await expect(
         apiClient.request({ url: '/user/update', method: 'POST', responseSchema: z.unknown() }),
-      ).rejects.toMatchObject({ status: 403, message });
+      ).rejects.toMatchObject({ status: 403, code: problem.code });
     }
 
     expect(getAuthData()).toBe('live-admin');
@@ -237,17 +255,22 @@ describe('admin api legacy path resolution', () => {
     expect(getStepUpToken()).toBeNull();
   });
 
-  it('closes the re-auth prompt when a session-expiry 403 tears the session down', async () => {
+  it('closes the re-auth prompt when a 401 session expiry tears the session down', async () => {
     // A stranded password modal over /login is a dead end: stepUp can never
     // succeed without a live session.
     setAuthData('expired-admin');
-    maybePromptStepUp(new ApiError(403, 'Recent password verification is required'));
+    maybePromptStepUp(
+      new ApiProblemError(
+        403,
+        forbiddenProblem('step_up_required', 'Recent password verification is required'),
+      ),
+    );
     expect(isStepUpPromptRequested()).toBe(true);
-    apiClient.axios.defaults.adapter = adapterFor(403, { message: 'auth required' });
+    apiClient.axios.defaults.adapter = adapterFor(401, sessionExpiredProblem);
 
     await expect(
       apiClient.request({ url: '/user/info', method: 'GET', responseSchema: z.unknown() }),
-    ).rejects.toMatchObject({ status: 403 });
+    ).rejects.toMatchObject({ status: 401, code: 'session_expired' });
 
     expect(isStepUpPromptRequested()).toBe(false);
   });
@@ -323,27 +346,28 @@ describe('admin explicit sign-out revocation', () => {
 
     await vi.waitFor(() => expect(requests).toHaveLength(1));
     // Admin sessions are ordinary user sessions to the backend; the shared
-    // user endpoint revokes them too.
-    expect(requests[0]?.url).toBe('/user/logout');
-    expect(requests[0]?.method).toBe('post');
-    // The bearer must be captured before teardown: the request interceptor
-    // reads the auth store on a microtask, after it is already cleared.
-    expect(requests[0]?.headers?.authorization).toBe('live-admin-token');
+    // session endpoint revokes them too.
+    expect(requests[0]?.url).toBe('/auth/session');
+    expect(requests[0]?.method).toBe('delete');
+    // The raw auth_data must be captured before teardown: the request
+    // interceptor reads the auth store on a microtask, after it is already
+    // cleared. The endpoint puts the Bearer scheme on the wire (§4.2).
+    expect(requests[0]?.headers?.authorization).toBe('Bearer live-admin-token');
   });
 
-  it('does not fire the revocation from the 403 session-expiry teardown', async () => {
-    const forbidden = adapterFor(403, { message: 'auth required' });
+  it('does not fire the revocation from the 401 session-expiry teardown', async () => {
+    const unauthorized = adapterFor(401, sessionExpiredProblem);
     apiClient.axios.defaults.adapter = async (config) => {
       requests.push(config);
-      return forbidden(config);
+      return unauthorized(config);
     };
 
     await expect(
       apiClient.request({ url: '/user/info', method: 'GET', responseSchema: z.unknown() }),
-    ).rejects.toMatchObject({ status: 403 });
+    ).rejects.toMatchObject({ status: 401, code: 'session_expired' });
     expect(getAuthData()).toBeNull();
 
-    // The token is already dead server-side; revoking here would only 403
+    // The token is already dead server-side; revoking here would only 401
     // again into the same handler. Let any stray fire-and-forget call surface
     // before asserting.
     await new Promise((resolve) => setTimeout(resolve, 0));

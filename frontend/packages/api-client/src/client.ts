@@ -6,6 +6,7 @@ import axios, {
   type AxiosResponse,
 } from 'axios';
 import type { output, ZodType } from 'zod';
+import { ApiProblemError, bearerAuthorization, isSessionExpiredProblem, parseProblem } from './dialect';
 
 export class ApiError extends Error {
   public readonly status: number;
@@ -31,23 +32,13 @@ export class ApiContractError extends Error {
   }
 }
 
-export interface ApiUnauthorizedHook {
-  (error: ApiError): void;
-}
-
 /**
- * The two 403 messages Rust emits for a live, authenticated session
- * (auth.rs `forbidden(...)`): a role gate and the privileged step-up gate.
- * Unlike a session-expiry 403, neither should tear the session down.
+ * §3.2 — fired exactly once per session-teardown error: 401 + problem code
+ * `session_expired`. A 403 `permission_denied`/`step_up_required` is an
+ * authorization verdict for a live session and never reaches this hook.
  */
-export const PERMISSION_DENIED_MESSAGE = 'Permission denied';
-export const STEP_UP_REQUIRED_MESSAGE = 'Recent password verification is required';
-
-/** True when the backend requires a fresh `stepUp` password verification. */
-export function isStepUpRequiredError(error: unknown): boolean {
-  return (
-    error instanceof ApiError && error.status === 403 && error.message === STEP_UP_REQUIRED_MESSAGE
-  );
+export interface ApiUnauthorizedHook {
+  (error: ApiProblemError): void;
 }
 
 export interface ApiClientOptions {
@@ -70,7 +61,14 @@ export interface ApiClientOptions {
   nullFormValue?: 'omit' | 'empty';
 }
 
-export type ApiRequestConfig = AxiosRequestConfig;
+export type ApiRequestConfig = AxiosRequestConfig & {
+  /**
+   * docs/api-dialect.md §4.1/§14 — marks a migrated internal-dialect request:
+   * JSON object bodies (never form-encoded), real HTTP success statuses
+   * (200/201/204 all pass), and a bare-body response with no legacy envelope.
+   */
+  dialect?: 'v2';
+};
 
 export type JsonApiRequestConfig<TSchema extends ZodType> = Omit<
   ApiRequestConfig,
@@ -138,11 +136,13 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
   });
 
   instance.interceptors.request.use((config) => {
-    const token = options.getAuthData?.();
     const locale = options.getLocale?.();
     config.headers = config.headers ?? {};
-    if (token) {
-      config.headers.authorization = token;
+    // §4.2: every internal request carries the Bearer scheme on the wire;
+    // the auth store keeps holding the raw auth_data value.
+    const authorization = bearerAuthorization(options.getAuthData?.());
+    if (authorization) {
+      config.headers.authorization = authorization;
     }
     const stepUpToken = options.getStepUpToken?.();
     if (stepUpToken) config.headers['x-v2board-step-up'] = stepUpToken;
@@ -165,7 +165,11 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       }
       config.params = undefined;
     }
-    if (isPostRequest(config.method) && config.data === undefined) {
+    if ((config as ApiRequestConfig).dialect === 'v2') {
+      // §4.1: dialect bodies stay JSON (axios' default object serialization)
+      // and success is any real 2xx — 201 register, 204 bodiless actions.
+      config.validateStatus = (status) => status >= 200 && status < 300;
+    } else if (isPostRequest(config.method) && config.data === undefined) {
       config.headers['Content-Type'] = 'application/x-www-form-urlencoded';
       config.data = '';
     } else if (shouldFormEncode(config.data)) {
@@ -179,16 +183,26 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     (response) => normalizeArrayBufferJsonResponse(response),
     (error: AxiosError<{ errors?: Record<string, string[]>; message?: string }>) => {
       const status = error.response?.status ?? 0;
+      // §3.1: problem+json is discriminated by its stable `code` slug. The
+      // shared Rust session middleware emits it on every internal route —
+      // including families whose success bodies are still legacy — so this
+      // branch runs ahead of the legacy `{message}` mapping.
+      const problem = parseProblem(error.response?.data, status);
+      if (problem) {
+        // §3.2: exactly 401 + `session_expired` tears the session down. 403
+        // `permission_denied`/`step_up_required` are live-session verdicts
+        // and must never end the session.
+        if (isSessionExpiredProblem(problem)) {
+          options.onUnauthorized?.(problem);
+        }
+        return Promise.reject(problem);
+      }
       const message =
         firstValidationError(error.response?.data?.errors) ??
         error.response?.data?.message ??
         error.message ??
         'Request failed, please try again later';
-      const apiError = new ApiError(status, message, error.response?.data);
-      if (status === 403) {
-        options.onUnauthorized?.(apiError);
-      }
-      return Promise.reject(apiError);
+      return Promise.reject(new ApiError(status, message, error.response?.data));
     },
   );
 
@@ -198,6 +212,13 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       const { responseSchema, ...requestConfig } = config;
       const response = await instance.request<unknown>(requestConfig);
       const endpoint = String(config.url ?? '<unknown>');
+      if (config.dialect === 'v2') {
+        // §14: the dialect response is the bare success body — nothing to
+        // unwrap. A bodiless 204 (axios yields '' or undefined) parses as
+        // undefined against the endpoint's empty-success schema.
+        const body = response.data === '' || response.data == null ? undefined : response.data;
+        return parseContract(responseSchema, body, endpoint);
+      }
       const data = unwrapBackendEnvelope(response.data, response.status, endpoint).data;
       return parseContract(responseSchema, data, endpoint);
     },

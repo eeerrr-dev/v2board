@@ -10,7 +10,6 @@ import {
   adminUserTrafficSchema,
   arraySchema,
   authDataSchema,
-  checkLoginSchema,
   checkoutEnvelopeSchema,
   couponSchema,
   envelopeSchema,
@@ -23,9 +22,12 @@ import {
   pageEnvelopeSchema,
   paymentMethodSchema,
   planSchema,
+  quickLoginUrlSchema,
   serverGroupSchema,
   serverNodeSchema,
   serverRouteSchema,
+  sessionStateSchema,
+  stepUpGrantSchema,
   stringArraySchema,
   subscribeInfoSchema,
   ticketSchema,
@@ -33,6 +35,7 @@ import {
   userCommConfigSchema,
   userInfoSchema,
 } from './contracts';
+import { problemDetailsSchema } from './dialect';
 
 /**
  * Golden-response contract lane: every fixture in `../goldens` is a full
@@ -70,9 +73,6 @@ const goldenSchemas: Record<string, z.ZodType> = {
   // Pure serde wire bodies (v2board-api golden_wire test).
   'guest.comm.config.json': envelopeSchema(guestConfigSchema),
   'guest.comm.config.whitelist-disabled.json': envelopeSchema(guestConfigSchema),
-  'passport.auth.login.json': envelopeSchema(authDataSchema),
-  'user.checkLogin.admin.json': envelopeSchema(checkLoginSchema),
-  'user.checkLogin.json': envelopeSchema(checkLoginSchema),
   'user.comm.config.json': envelopeSchema(userCommConfigSchema),
   'user.getSubscribe.json': envelopeSchema(subscribeInfoSchema),
   'user.info.json': envelopeSchema(userInfoSchema),
@@ -85,12 +85,28 @@ const goldenSchemas: Record<string, z.ZodType> = {
   'user.stat.getTrafficLog.json': envelopeSchema(arraySchema(trafficLogSchema)),
 };
 
+// Dialect-v2 fixtures (docs/api-dialect.md §3, §5.2): bare success bodies and
+// problem+json error bodies — parsed exactly as the wire delivers them, with
+// no envelope emulation.
+const dialectGoldenSchemas: Record<string, z.ZodType> = {
+  'auth.login.json': authDataSchema,
+  'auth.quick-login-url.json': quickLoginUrlSchema,
+  'auth.session.admin.json': sessionStateSchema,
+  'auth.session.json': sessionStateSchema,
+  'auth.session.logged-out.json': sessionStateSchema,
+  'auth.step-up.json': stepUpGrantSchema,
+  'problem.session-expired.json': problemDetailsSchema,
+  'problem.validation.json': problemDetailsSchema,
+};
+
 describe('golden response fixtures', () => {
-  it('keeps the fixture directory and the schema map bijective', () => {
+  it('keeps the fixture directory and the schema maps bijective', () => {
     const files = readdirSync(goldensUrl)
       .filter((name) => name.endsWith('.json'))
       .sort();
-    expect(files).toEqual(Object.keys(goldenSchemas).sort());
+    expect(files).toEqual(
+      [...Object.keys(goldenSchemas), ...Object.keys(dialectGoldenSchemas)].sort(),
+    );
   });
 
   for (const [name, schema] of Object.entries(goldenSchemas)) {
@@ -104,6 +120,18 @@ describe('golden response fixtures', () => {
       // running the envelope schema.
       const unwrapped = { ...body, code: body.code ?? 200 };
       const result = schema.safeParse(unwrapped);
+      if (!result.success) {
+        throw new Error(
+          `${name} no longer satisfies its zod contract:\n${JSON.stringify(result.error.issues, null, 2)}`,
+        );
+      }
+    });
+  }
+
+  for (const [name, schema] of Object.entries(dialectGoldenSchemas)) {
+    it(`parses ${name} with its zod contract`, () => {
+      const body = JSON.parse(readFileSync(new URL(name, goldensUrl), 'utf8')) as unknown;
+      const result = schema.safeParse(body);
       if (!result.success) {
         throw new Error(
           `${name} no longer satisfies its zod contract:\n${JSON.stringify(result.error.issues, null, 2)}`,

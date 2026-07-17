@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ApiContractError, ApiError } from './client';
+import { ApiProblemError } from './dialect';
 import {
   INLINE_MUTATION_ERROR_META,
   presentMutationError,
@@ -32,10 +33,26 @@ describe('mutation error presentation', () => {
     expect(notify).not.toHaveBeenCalled();
   });
 
-  it('does not toast a 403 because the API client owns redirect teardown', () => {
+  it('does not toast the session-expiry problem because the API client owns redirect teardown', () => {
+    const notify = vi.fn();
+    const problem = new ApiProblemError(401, {
+      type: 'about:blank',
+      title: 'Unauthorized',
+      status: 401,
+      code: 'session_expired',
+      detail: '未登录或登陆已过期',
+    });
+
+    expect(presentMutationError(problem, undefined, notify)).toBe(false);
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it('does not toast 403 authorization verdicts', () => {
     const notify = vi.fn();
 
-    expect(presentMutationError(new ApiError(403, 'expired'), undefined, notify)).toBe(false);
+    expect(presentMutationError(new ApiError(403, 'Permission denied'), undefined, notify)).toBe(
+      false,
+    );
     expect(notify).not.toHaveBeenCalled();
   });
 });

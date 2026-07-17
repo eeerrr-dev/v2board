@@ -1,10 +1,9 @@
+// The guest auth family — dialect v2 (docs/api-dialect.md §5.2, Appendix A
+// §W2): JSON bodies against the `/auth/*` routes, bare success bodies, and
+// problem+json failures. The module keeps its historical `passport` name so
+// call sites stay stable while the wire moved off `/passport/*`.
 import type { ApiClient } from '../client';
-import {
-  authDataSchema,
-  nullableAuthDataSchema,
-  stepUpGrantSchema,
-  trueSchema,
-} from '../contracts';
+import { authDataSchema, noContentSchema, stepUpGrantSchema } from '../contracts';
 
 export interface LoginPayload {
   email: string;
@@ -26,52 +25,64 @@ export interface ForgetPayload {
 export interface SendEmailVerifyPayload {
   email: string;
   recaptcha_data?: string;
-  isforget?: 0 | 1;
+  /** `false` for register (email-exists check), `true` for password reset. */
+  is_forget?: boolean;
 }
 
 export interface TokenLoginPayload {
   verify: string;
-  redirect?: string;
 }
 
 export const login = (client: ApiClient, payload: LoginPayload) =>
   client.request({
-    url: '/passport/auth/login',
+    url: '/auth/login',
     method: 'POST',
+    dialect: 'v2',
     data: payload,
     responseSchema: authDataSchema,
   });
 
+/** 201 Created with the same bare auth body as login (§5.2). */
 export const register = (client: ApiClient, payload: RegisterPayload) =>
   client.request({
-    url: '/passport/auth/register',
+    url: '/auth/register',
     method: 'POST',
+    dialect: 'v2',
     data: payload,
     responseSchema: authDataSchema,
   });
 
+/** 204 on success; failures surface as coded problems (§3.4). */
 export const forget = (client: ApiClient, payload: ForgetPayload) =>
   client.request({
-    url: '/passport/auth/forget',
+    url: '/auth/password-reset',
     method: 'POST',
+    dialect: 'v2',
     data: payload,
-    responseSchema: trueSchema,
+    responseSchema: noContentSchema,
   });
 
+/** 204 on success; rate limits and policy failures are coded problems. */
 export const sendEmailVerify = (client: ApiClient, payload: SendEmailVerifyPayload) =>
   client.request({
-    url: '/passport/comm/sendEmailVerify',
+    url: '/auth/email-codes',
     method: 'POST',
+    dialect: 'v2',
     data: payload,
-    responseSchema: trueSchema,
+    responseSchema: noContentSchema,
   });
 
-export const token2Login = (client: ApiClient, payload: TokenLoginPayload) =>
+/**
+ * The SPA one-time `?verify=` exchange (POST, §5.2): a dead or malformed
+ * token rejects as a 400 `invalid_token` problem instead of a null body.
+ */
+export const tokenLogin = (client: ApiClient, payload: TokenLoginPayload) =>
   client.request({
-    url: '/passport/auth/token2Login',
-    method: 'GET',
-    params: payload,
-    responseSchema: nullableAuthDataSchema,
+    url: '/auth/token-login',
+    method: 'POST',
+    dialect: 'v2',
+    data: payload,
+    responseSchema: authDataSchema,
   });
 
 export interface StepUpPayload {
@@ -85,8 +96,9 @@ export interface StepUpPayload {
  */
 export const stepUp = (client: ApiClient, payload: StepUpPayload) =>
   client.request({
-    url: '/passport/auth/stepUp',
+    url: '/auth/step-up',
     method: 'POST',
+    dialect: 'v2',
     data: payload,
     responseSchema: stepUpGrantSchema,
   });

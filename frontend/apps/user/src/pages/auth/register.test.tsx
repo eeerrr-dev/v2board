@@ -275,7 +275,7 @@ describe('RegisterPage behavior', () => {
     expect(mocks.runRecaptcha).toHaveBeenCalledTimes(1);
     expect(mocks.sendCodeMutateAsync).toHaveBeenCalledWith({
       email: 'user@mail.test',
-      isforget: 0,
+      is_forget: false,
       recaptcha_data: 'recaptcha-token',
     });
     expect(mocks.toastSuccess).toHaveBeenCalledWith('发送成功', {
@@ -426,7 +426,7 @@ describe('RegisterPage behavior', () => {
 
     expect(mocks.sendCodeMutateAsync).toHaveBeenCalledWith({
       email: 'valid-user@mail.test',
-      isforget: 0,
+      is_forget: false,
       recaptcha_data: 'recaptcha-token',
     });
   });

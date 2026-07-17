@@ -1,6 +1,6 @@
-import { isStepUpRequiredError } from '@v2board/api-client';
+import { isStepUpRequiredProblem } from '@v2board/api-client';
 
-// Privileged step-up grant (POST /passport/auth/stepUp). The token is bound
+// Privileged step-up grant (POST /auth/step-up). The token is bound
 // server-side to the current session and rides on requests as the
 // `x-v2board-step-up` header. Held in memory only: after a reload the backend
 // either still honors the session's recent-password window or asks again.
@@ -62,12 +62,12 @@ export function resolveStepUpPrompt(): void {
 }
 
 /**
- * Open the re-auth dialog when `error` is the backend's step-up 403
- * ("Recent password verification is required"). Returns true when the error
- * was consumed so callers can skip their generic error presentation.
+ * Open the re-auth dialog when `error` is the backend's step-up 403 problem
+ * (`code: "step_up_required"`). Returns true when the error was consumed so
+ * callers can skip their generic error presentation.
  */
 export function maybePromptStepUp(error: unknown): boolean {
-  if (!isStepUpRequiredError(error)) return false;
+  if (!isStepUpRequiredProblem(error)) return false;
   if (!promptRequested) {
     promptRequested = true;
     notify();

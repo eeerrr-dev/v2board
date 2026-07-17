@@ -1,5 +1,5 @@
 export interface AuthData {
-  is_admin: 0 | 1;
+  is_admin: boolean;
   auth_data: string;
 }
 

@@ -233,7 +233,7 @@ describe('ForgetPage', () => {
     expect(mocks.runRecaptcha).toHaveBeenCalledTimes(1);
     expect(mocks.sendCodeMutateAsync).toHaveBeenCalledWith({
       email: 'reset@example.com',
-      isforget: 1,
+      is_forget: true,
       recaptcha_data: 'recaptcha-token',
     });
     expect(mocks.toastSuccess).toHaveBeenCalledWith('发送成功', {

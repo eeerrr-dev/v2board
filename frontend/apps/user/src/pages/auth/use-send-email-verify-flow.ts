@@ -4,8 +4,8 @@ import { toast } from '@/lib/toast';
 import { useCountdown } from './use-countdown';
 
 interface SendEmailVerifyFlowOptions {
-  /** The backend `isforget` flag: 0 for register, 1 for forget-password. */
-  isforget: 0 | 1;
+  /** The backend `is_forget` flag: false for register, true for forget-password. */
+  isForget: boolean;
   /** Runs the action behind the recaptcha gate (no-op gate when disabled). */
   runRecaptcha: (action: (recaptchaData?: string) => void | Promise<void>) => void;
 }
@@ -25,7 +25,7 @@ export interface SendEmailVerifyFlow {
 // unmount is a harmless no-op. The post-submit navigation guard still lives in each
 // controller, which is the only place that work outlives this flow.
 export function useSendEmailVerifyFlow({
-  isforget,
+  isForget,
   runRecaptcha,
 }: SendEmailVerifyFlowOptions): SendEmailVerifyFlow {
   const { t } = useTranslation();
@@ -36,12 +36,13 @@ export function useSendEmailVerifyFlow({
     sendCodeMutation(
       {
         email,
-        isforget,
+        is_forget: isForget,
         ...(recaptchaData ? { recaptcha_data: recaptchaData } : {}),
       },
       {
-        onSuccess: (sent) => {
-          if (!sent) return;
+        // POST /auth/email-codes succeeds as a bodiless 204; reaching
+        // onSuccess is the success signal itself.
+        onSuccess: () => {
           toast.success(
             t(($) => $.auth.email_code_sent_title),
             {

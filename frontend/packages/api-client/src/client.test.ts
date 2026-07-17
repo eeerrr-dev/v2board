@@ -2,8 +2,9 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import AxiosMockAdapter from 'axios-mock-adapter';
 import { z } from 'zod';
-import { ApiContractError, ApiError, createApiClient, isStepUpRequiredError } from './client';
+import { ApiContractError, ApiError, createApiClient } from './client';
 import { envelopeSchema, trueSchema } from './contracts';
+import { ApiProblemError } from './dialect';
 import {
   assignOrder,
   dumpUsersCsv,
@@ -35,7 +36,7 @@ import {
   updateServer,
 } from './endpoints/admin';
 import { config as fetchGuestConfig } from './endpoints/guest';
-import { login, token2Login } from './endpoints/passport';
+import { login, tokenLogin } from './endpoints/passport';
 import * as passportEndpoints from './endpoints/passport';
 import * as userEndpoints from './endpoints/user';
 
@@ -256,20 +257,26 @@ describe('createApiClient', () => {
     expect(mock.history.post[0]?.data).toBe('session_id=guid-2');
   });
 
-  it('revokes the current session via POST /user/logout with an explicitly captured bearer', async () => {
+  it('revokes the current session via DELETE /auth/session with an explicitly captured bearer', async () => {
     // Sign-out tears local auth down synchronously right after firing this
     // call, and the request interceptor reads the auth store on a microtask —
-    // after that teardown — so the caller passes the captured bearer as an
-    // explicit Authorization header instead.
+    // after that teardown — so the caller passes the captured raw auth_data
+    // and the endpoint puts the Bearer scheme on the wire (§4.2).
     const client = createApiClient({ baseURL: '/api/v1', getAuthData: () => null });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/user/logout').reply(200, { data: true });
+    mock.onDelete('/auth/session').reply(204);
 
-    await expect(
-      userEndpoints.logout(client, { headers: { authorization: 'captured-bearer' } }),
-    ).resolves.toBe(true);
+    await expect(userEndpoints.logout(client, 'captured-raw-token')).resolves.toBeUndefined();
 
-    expect(mock.history.post[0]?.headers?.authorization).toBe('captured-bearer');
+    expect(mock.history.delete[0]?.headers?.authorization).toBe('Bearer captured-raw-token');
+  });
+
+  it('probes the session state through GET /auth/session as bare dialect data', async () => {
+    const client = createApiClient({ baseURL: '/api/v1' });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onGet('/auth/session').reply(200, { is_login: false });
+
+    await expect(userEndpoints.checkLogin(client)).resolves.toEqual({ is_login: false });
   });
 
   it('does not expose a user notice detail endpoint absent from the original user bundle', () => {
@@ -290,20 +297,58 @@ describe('createApiClient', () => {
     expect(mock.history.get[0]?.signal).toBe(controller.signal);
   });
 
-  it('unwraps the data envelope', async () => {
+  it('parses dialect-v2 bare bodies as JSON requests without envelope unwrapping', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/passport/auth/login').reply(200, { data: { is_admin: 0, auth_data: 'jwt' } });
+    mock.onPost('/auth/login').reply(200, { is_admin: false, auth_data: 'jwt' });
     const result = await login(client, { email: 'a@b.c', password: 'x' });
-    expect(result).toEqual({ is_admin: 0, auth_data: 'jwt' });
+    expect(result).toEqual({ is_admin: false, auth_data: 'jwt' });
+    expect(JSON.parse(String(mock.history.post[0]?.data))).toEqual({
+      email: 'a@b.c',
+      password: 'x',
+    });
+    expect(mock.history.post[0]?.headers?.['Content-Type']).toContain('application/json');
+  });
+
+  it('accepts the 201 register success on the dialect path', async () => {
+    const client = createApiClient({ baseURL: '/api/v1' });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onPost('/auth/register').reply(201, { is_admin: false, auth_data: 'jwt' });
+
+    await expect(
+      passportEndpoints.register(client, { email: 'a@b.c', password: 'x' }),
+    ).resolves.toMatchObject({ auth_data: 'jwt' });
+  });
+
+  it('parses dialect 204 empty successes as undefined', async () => {
+    const client = createApiClient({ baseURL: '/api/v1' });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onPost('/auth/password-reset').reply(204);
+
+    await expect(
+      passportEndpoints.forget(client, { email: 'a@b.c', email_code: '123456', password: 'x' }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('sends the email-code request with the boolean is_forget field', async () => {
+    const client = createApiClient({ baseURL: '/api/v1' });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onPost('/auth/email-codes').reply(204);
+
+    await expect(
+      passportEndpoints.sendEmailVerify(client, { email: 'a@b.c', is_forget: true }),
+    ).resolves.toBeUndefined();
+
+    expect(JSON.parse(String(mock.history.post[0]?.data))).toEqual({
+      email: 'a@b.c',
+      is_forget: true,
+    });
   });
 
   it('rejects a successful HTTP response that violates a critical runtime contract', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/passport/auth/login').reply(200, {
-      data: { is_admin: 0 },
-    });
+    mock.onPost('/auth/login').reply(200, { is_admin: false });
 
     await expect(login(client, { email: 'a@b.c', password: 'x' })).rejects.toBeInstanceOf(
       ApiContractError,
@@ -362,11 +407,18 @@ describe('createApiClient', () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
     // Business failures are HTTP 400 in Rust; the parity fixtures emulate them
-    // as HTTP-200 envelopes carrying the same code.
-    mock.onPost('/passport/auth/login').reply(200, { code: 400, message: 'invalid login' });
-    await expect(login(client, { email: 'a@b.c', password: 'x' })).rejects.toMatchObject({
+    // as HTTP-200 envelopes carrying the same code on unmigrated families.
+    mock.onPost('/user/coupon/check').reply(200, { code: 400, message: 'invalid coupon' });
+    await expect(
+      client.request({
+        url: '/user/coupon/check',
+        method: 'POST',
+        data: { code: 'X' },
+        responseSchema: z.unknown(),
+      }),
+    ).rejects.toMatchObject({
       status: 400,
-      message: 'invalid login',
+      message: 'invalid coupon',
     });
   });
 
@@ -584,18 +636,24 @@ describe('createApiClient', () => {
     ).rejects.toMatchObject({ status: 201, message: 'created' });
   });
 
-  it('uses the legacy form body and request headers', async () => {
+  it('sends the Bearer scheme with the legacy form body on unmigrated endpoints', async () => {
     const client = createApiClient({
       baseURL: '/api/v1',
       getAuthData: () => 'auth',
       getLocale: () => 'zh-CN',
     });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/passport/auth/login').reply(200, { data: { is_admin: 0, auth_data: 'jwt' } });
-    await login(client, { email: 'a@b.c', password: 'x' });
+    mock.onPost('/user/update').reply(200, { data: true });
+    await client.request({
+      url: '/user/update',
+      method: 'POST',
+      data: { remind_expire: 1 },
+      responseSchema: trueSchema,
+    });
     const request = mock.history.post[0]!;
-    expect(request.data).toBe('email=a%40b.c&password=x');
-    expect(request.headers?.authorization).toBe('auth');
+    expect(request.data).toBe('remind_expire=1');
+    // §4.2: the stored value stays raw; the wire always carries the scheme.
+    expect(request.headers?.authorization).toBe('Bearer auth');
     // §4.3: Accept-Language is the locale signal; Content-Language rides along
     // transitionally until the legacy localization middleware retires.
     expect(request.headers?.['Accept-Language']).toBe('zh-CN');
@@ -723,31 +781,28 @@ describe('createApiClient', () => {
     expect(request.headers?.['Content-Type']).toBe('application/x-www-form-urlencoded');
   });
 
-  it('uses the legacy GET request for token login', async () => {
+  it('exchanges the one-time verify token via POST /auth/token-login', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock
-      .onGet('/passport/auth/token2Login?verify=abc')
-      .reply(200, { data: { is_admin: 0, auth_data: 'jwt' } });
-    await token2Login(client, { verify: 'abc' });
-    expect(mock.history.get[0]?.url).toBe('/passport/auth/token2Login?verify=abc');
+    mock.onPost('/auth/token-login').reply(200, { is_admin: false, auth_data: 'jwt' });
+
+    await expect(tokenLogin(client, { verify: 'abc' })).resolves.toEqual({
+      is_admin: false,
+      auth_data: 'jwt',
+    });
+    expect(JSON.parse(String(mock.history.post[0]?.data))).toEqual({ verify: 'abc' });
   });
 
-  it('submits the step-up password as a form request and returns the typed grant', async () => {
+  it('submits the step-up password as a dialect request and returns the typed grant', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock
-      .onPost('/passport/auth/stepUp')
-      .reply(200, { data: { step_up_token: 'grant-token', expires_in: 900 } });
+    mock.onPost('/auth/step-up').reply(200, { step_up_token: 'grant-token', expires_in: 900 });
 
     await expect(passportEndpoints.stepUp(client, { password: 'secret' })).resolves.toMatchObject({
       step_up_token: 'grant-token',
       expires_in: 900,
     });
-    expect(mock.history.post[0]?.data).toBe('password=secret');
-    expect(mock.history.post[0]?.headers?.['Content-Type']).toBe(
-      'application/x-www-form-urlencoded',
-    );
+    expect(JSON.parse(String(mock.history.post[0]?.data))).toEqual({ password: 'secret' });
   });
 
   it('rides the step-up token on requests as the x-v2board-step-up header', async () => {
@@ -760,19 +815,56 @@ describe('createApiClient', () => {
     expect(mock.history.post[0]?.headers?.['x-v2board-step-up']).toBe('grant-token');
   });
 
-  it('recognizes only the exact step-up 403 as a step-up requirement', () => {
-    const stepUp = new ApiError(403, 'Recent password verification is required');
-    expect(isStepUpRequiredError(stepUp)).toBe(true);
-    expect(isStepUpRequiredError(new ApiError(403, 'Permission denied'))).toBe(false);
-    expect(
-      isStepUpRequiredError(new ApiError(500, 'Recent password verification is required')),
-    ).toBe(false);
-    expect(isStepUpRequiredError(new Error('Recent password verification is required'))).toBe(
-      false,
+  it('fires onUnauthorized only for the 401 session_expired problem', async () => {
+    const onUnauthorized = vi.fn();
+    const client = createApiClient({ baseURL: '/api/v1', onUnauthorized });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onGet('/user/info').reply(
+      401,
+      {
+        type: 'about:blank',
+        title: 'Unauthorized',
+        status: 401,
+        code: 'session_expired',
+        detail: '未登录或登陆已过期',
+      },
+      { 'www-authenticate': 'Bearer' },
     );
+
+    await expect(
+      client.request({ url: '/user/info', method: 'GET', responseSchema: z.unknown() }),
+    ).rejects.toMatchObject({ status: 401, code: 'session_expired' });
+    expect(onUnauthorized).toHaveBeenCalledOnce();
+    expect(onUnauthorized.mock.calls[0]?.[0]).toBeInstanceOf(ApiProblemError);
   });
 
-  it('maps 403 into ApiError and fires onUnauthorized', async () => {
+  it('keeps 403 permission and step-up problems session-preserving', async () => {
+    const onUnauthorized = vi.fn();
+    const client = createApiClient({ baseURL: '/api/v1', onUnauthorized });
+    const mock = new AxiosMockAdapter(client.axios);
+    const forbidden = (code: string, detail: string) => ({
+      type: 'about:blank',
+      title: 'Forbidden',
+      status: 403,
+      code,
+      detail,
+    });
+    mock
+      .onGet('/user/info')
+      .replyOnce(403, forbidden('permission_denied', 'Permission denied'))
+      .onGet('/user/info')
+      .replyOnce(403, forbidden('step_up_required', 'Recent password verification is required'));
+
+    await expect(
+      client.request({ url: '/user/info', method: 'GET', responseSchema: z.unknown() }),
+    ).rejects.toMatchObject({ status: 403, code: 'permission_denied' });
+    await expect(
+      client.request({ url: '/user/info', method: 'GET', responseSchema: z.unknown() }),
+    ).rejects.toMatchObject({ status: 403, code: 'step_up_required' });
+    expect(onUnauthorized).not.toHaveBeenCalled();
+  });
+
+  it('no longer tears the session down on a legacy-shaped 403', async () => {
     const onUnauthorized = vi.fn();
     const client = createApiClient({ baseURL: '/api/v1', onUnauthorized });
     const mock = new AxiosMockAdapter(client.axios);
@@ -780,7 +872,7 @@ describe('createApiClient', () => {
     await expect(
       client.request({ url: '/user/info', method: 'GET', responseSchema: z.unknown() }),
     ).rejects.toBeInstanceOf(ApiError);
-    expect(onUnauthorized).toHaveBeenCalledOnce();
+    expect(onUnauthorized).not.toHaveBeenCalled();
   });
 
   it('maps non-200 envelope codes into ApiError without unauthorized handling', async () => {
@@ -806,15 +898,40 @@ describe('createApiClient', () => {
     expect(onUnauthorized).not.toHaveBeenCalled();
   });
 
+  it('surfaces dialect validation problems with detail, code, and the error bag', async () => {
+    const client = createApiClient({ baseURL: '/api/v1' });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onPost('/auth/login').reply(422, {
+      type: 'about:blank',
+      title: 'Unprocessable Entity',
+      status: 422,
+      code: 'validation_failed',
+      detail: '邮箱格式不正确',
+      errors: { email: ['邮箱格式不正确'] },
+    });
+    await expect(login(client, { email: '', password: '' })).rejects.toMatchObject({
+      code: 'validation_failed',
+      message: '邮箱格式不正确',
+      errors: { email: ['邮箱格式不正确'] },
+    });
+  });
+
   it('uses the first legacy validation error as the ApiError message', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/passport/auth/login').reply(422, {
+    mock.onPost('/user/changePassword').reply(422, {
       message: 'validation failed',
-      errors: { email: ['Email cannot be empty'] },
+      errors: { old_password: ['Old password cannot be empty'] },
     });
-    await expect(login(client, { email: '', password: '' })).rejects.toMatchObject({
-      message: 'Email cannot be empty',
+    await expect(
+      client.request({
+        url: '/user/changePassword',
+        method: 'POST',
+        data: { old_password: '', new_password: 'x' },
+        responseSchema: z.unknown(),
+      }),
+    ).rejects.toMatchObject({
+      message: 'Old password cannot be empty',
     });
   });
 

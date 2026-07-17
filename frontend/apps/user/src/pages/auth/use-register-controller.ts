@@ -113,7 +113,7 @@ export function useRegisterController(): RegisterController {
     cooldownActive,
     cooldownRemaining,
   } = useSendEmailVerifyFlow({
-    isforget: 0,
+    isForget: false,
     runRecaptcha,
   });
 

@@ -19,8 +19,8 @@ export const useLoginMutation = () =>
 
 export const useTokenLoginMutation = () =>
   useMutation({
-    mutationFn: (payload: Parameters<typeof passport.token2Login>[1]) =>
-      passport.token2Login(apiClient, payload),
+    mutationFn: (payload: Parameters<typeof passport.tokenLogin>[1]) =>
+      passport.tokenLogin(apiClient, payload),
   });
 
 export const useRegisterMutation = () =>

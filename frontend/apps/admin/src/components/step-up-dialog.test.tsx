@@ -1,7 +1,7 @@
 import type * as ApiClientModule from '@v2board/api-client';
 import { act, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiError } from '@v2board/api-client';
+import { ApiError, ApiProblemError } from '@v2board/api-client';
 import { renderWithProviders } from '@/test/render';
 import { StepUpDialogProvider } from './step-up-dialog';
 import {
@@ -20,7 +20,20 @@ vi.mock('@v2board/api-client', async (importOriginal) => {
 const toastSuccess = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/toast', () => ({ toast: { success: toastSuccess, error: vi.fn() } }));
 
-const STEP_UP_403 = new ApiError(403, 'Recent password verification is required');
+const STEP_UP_403 = new ApiProblemError(403, {
+  type: 'about:blank',
+  title: 'Forbidden',
+  status: 403,
+  code: 'step_up_required',
+  detail: 'Recent password verification is required',
+});
+const PERMISSION_403 = new ApiProblemError(403, {
+  type: 'about:blank',
+  title: 'Forbidden',
+  status: 403,
+  code: 'permission_denied',
+  detail: 'Permission denied',
+});
 
 describe('step-up re-auth dialog', () => {
   afterEach(() => {
@@ -30,11 +43,16 @@ describe('step-up re-auth dialog', () => {
     toastSuccess.mockReset();
   });
 
-  it('opens only for the exact step-up 403 and stores the grant on success', async () => {
+  it('opens only for the step_up_required problem and stores the grant on success', async () => {
     stepUpMock.mockResolvedValue({ step_up_token: 'grant-token', expires_in: 900 });
     const { user } = renderWithProviders(<StepUpDialogProvider />, { queryClient: true });
 
-    expect(maybePromptStepUp(new ApiError(403, 'Permission denied'))).toBe(false);
+    // Code-keyed discrimination (§3.1): neither the permission verdict nor a
+    // legacy message-shaped 403 opens the re-auth dialog.
+    expect(maybePromptStepUp(PERMISSION_403)).toBe(false);
+    expect(maybePromptStepUp(new ApiError(403, 'Recent password verification is required'))).toBe(
+      false,
+    );
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
     act(() => {
@@ -86,8 +104,18 @@ describe('step-up re-auth dialog', () => {
     expect(screen.getByLabelText('当前密码')).toHaveValue('');
   });
 
-  it('keeps the dialog open with the backend message on a wrong password', async () => {
-    stepUpMock.mockRejectedValue(new ApiError(500, 'Incorrect email or password'));
+  it('keeps the dialog open with the problem detail on a wrong password', async () => {
+    // Post-W2 wire: a wrong step-up password is a 400 invalid_credentials
+    // problem; its localized detail renders in place of the legacy message.
+    stepUpMock.mockRejectedValue(
+      new ApiProblemError(400, {
+        type: 'about:blank',
+        title: 'Bad Request',
+        status: 400,
+        code: 'invalid_credentials',
+        detail: 'Incorrect email or password',
+      }),
+    );
     const { user } = renderWithProviders(<StepUpDialogProvider />, { queryClient: true });
 
     act(() => {
