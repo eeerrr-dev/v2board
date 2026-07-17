@@ -16,13 +16,12 @@ import { useTableScrollPosition } from '@/lib/use-table-scroll-position';
 
 export default function NodePage() {
   const { t } = useTranslation();
-  // Subscription state owns the empty-state route, so it must resolve before
-  // the node request starts; a failed subscription request cannot mean "no plan".
+  // §4.6 (docs/api-dialect.md): subscription and servers fetch in parallel,
+  // but rendering stays subscription-gated — the node list never renders
+  // before subscription state is known, because subscription state owns the
+  // empty-state route and a failed subscription request cannot mean "no plan".
   const subscribe = useSubscribe({ refetchOnMount: 'always' });
-  const serversQuery = useServers({
-    enabled: subscribe.isSuccess,
-    refetchOnMount: 'always',
-  });
+  const serversQuery = useServers({ refetchOnMount: 'always' });
   // Key the full-page spinner on isPending (no data yet), not isFetching, so
   // cached rows keep rendering while the refetchOnMount('always') background
   // refetch runs instead of blanking the page on every revisit.
@@ -49,7 +48,7 @@ export default function NodePage() {
         </HeaderTooltip>
       ),
       cell: ({ row }) => {
-        const online = Boolean(parseInt(String(row.original.is_online)));
+        const online = row.original.is_online;
         return (
           <StatusBadge
             tone={online ? 'success' : 'destructive'}
@@ -69,7 +68,7 @@ export default function NodePage() {
           {t(($) => $.node.rate)}
         </HeaderTooltip>
       ),
-      cell: ({ row }) => <StatusBadge>{String(row.original.rate)} x</StatusBadge>,
+      cell: ({ row }) => <StatusBadge>{row.original.rate} x</StatusBadge>,
     },
     {
       id: 'tags',

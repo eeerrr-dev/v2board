@@ -418,10 +418,12 @@ export const withdrawTicket = (client: ApiClient, payload: TicketWithdrawPayload
     responseSchema: trueSchema,
   });
 
+/** GET /user/servers — dialect v2 bare array (§5.4, W6). */
 export const fetchServers = (client: ApiClient, config?: QueryRequestConfig) =>
   client.request({
-    url: '/user/server/fetch',
+    url: '/user/servers',
     method: 'GET',
+    dialect: 'v2',
     responseSchema: arraySchema(availableServerSchema),
     ...config,
   });
@@ -511,10 +513,12 @@ export const knowledgeDetail = (
     signal: config?.signal,
   });
 
+/** GET /user/traffic-logs — dialect v2 bare array (§5.4, W6). */
 export const getTrafficLog = (client: ApiClient, config?: QueryRequestConfig) =>
   client.request({
-    url: '/user/stat/getTrafficLog',
+    url: '/user/traffic-logs',
     method: 'GET',
+    dialect: 'v2',
     responseSchema: arraySchema(trafficLogSchema),
     ...config,
   });

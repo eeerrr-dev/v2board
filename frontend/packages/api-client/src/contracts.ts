@@ -417,19 +417,24 @@ export const ticketSchema = z.looseObject({
   message: z.array(ticketMessageSchema).optional(),
 });
 
+/**
+ * GET /user/servers (docs/api-dialect.md §5.4, W6): bare array rows with
+ * boolean `is_online`, numeric `rate`/`port` (§4.1), and RFC 3339
+ * `last_check_at` (§4.5).
+ */
 export const availableServerSchema = z.looseObject({
   id: z.number(),
   parent_id: nullableNumber,
   group_id: numberArraySchema,
   route_id: numberArraySchema.nullable(),
   name: z.string(),
-  rate: z.string(),
+  rate: z.number(),
   type: z.enum(['shadowsocks', 'vmess', 'trojan', 'tuic', 'vless', 'hysteria', 'anytls', 'v2node']),
   host: z.string(),
-  port: z.union([z.string(), z.number()]),
+  port: z.number(),
   cache_key: z.string(),
-  last_check_at: nullableNumber,
-  is_online: binaryFlagSchema,
+  last_check_at: nullableString,
+  is_online: z.boolean(),
   tags: stringArraySchema.nullable().optional(),
 });
 
@@ -554,12 +559,17 @@ export const adminKnowledgeSchema = adminKnowledgeSummarySchema.extend({
   created_at: z.number(),
 });
 
+/**
+ * GET /user/traffic-logs (docs/api-dialect.md §5.4, W6): numeric
+ * `server_rate` (§4.1) and RFC 3339 `record_at` (§4.5 — still the
+ * period-start marker).
+ */
 export const trafficLogSchema = z.looseObject({
   u: z.number(),
   d: z.number(),
-  record_at: z.number(),
+  record_at: z.string(),
   user_id: z.number(),
-  server_rate: z.string(),
+  server_rate: z.number(),
 });
 
 /**

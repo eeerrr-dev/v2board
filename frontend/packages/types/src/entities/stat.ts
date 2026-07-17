@@ -1,9 +1,13 @@
+/**
+ * GET /user/traffic-logs row (docs/api-dialect.md §5.4, W6): numeric
+ * `server_rate`, RFC 3339 `record_at`.
+ */
 export interface TrafficLogEntry {
   u: number;
   d: number;
-  record_at: number;
+  record_at: string;
   user_id: number;
-  server_rate: string;
+  server_rate: number;
 }
 
 export interface AdminStatSummary {

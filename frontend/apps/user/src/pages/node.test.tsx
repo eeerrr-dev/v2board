@@ -11,13 +11,13 @@ interface ServerRow {
   group_id: number[];
   route_id: null;
   name: string;
-  rate: string;
+  rate: number;
   type: 'shadowsocks';
   host: string;
   port: number;
   cache_key: string;
-  last_check_at: null;
-  is_online: 0 | 1;
+  last_check_at: string | null;
+  is_online: boolean;
   tags?: string[] | null;
 }
 
@@ -105,13 +105,13 @@ function makeServer(overrides: Partial<ServerRow>): ServerRow {
     group_id: [1],
     route_id: null,
     name: 'HK 01',
-    rate: '1.5',
+    rate: 1.5,
     type: 'shadowsocks',
     host: 'hk.example.test',
     port: 443,
     cache_key: 'hk01',
     last_check_at: null,
-    is_online: 1,
+    is_online: true,
     tags: null,
     ...overrides,
   };
@@ -133,14 +133,19 @@ beforeEach(() => {
 });
 
 describe('NodePage loading state', () => {
-  it('waits for the subscription before enabling the node request', () => {
+  it('fetches servers in parallel but never renders the list before subscription state is known', () => {
+    // §4.6: the node request starts immediately (no `enabled` gate), but the
+    // rendered list stays subscription-gated — even resolved server data must
+    // not paint while the subscription request is still pending.
     queryState.subscribePending = true;
     queryState.subscribeSuccess = false;
+    queryState.servers = [makeServer({ id: 1, name: 'HK 01' })];
 
     renderWithProviders(<NodePage />);
 
-    expect(queryState.serversEnabled).toBe(false);
+    expect(queryState.serversEnabled).toBeUndefined();
     expect(screen.getByTestId('node-loading')).toBeInTheDocument();
+    expect(screen.queryByTestId('node-table')).not.toBeInTheDocument();
     expect(screen.queryByTestId('node-empty')).not.toBeInTheDocument();
   });
 
@@ -172,14 +177,14 @@ describe('NodePage loading state', () => {
 describe('NodePage service table', () => {
   beforeEach(() => {
     queryState.servers = [
-      makeServer({ id: 1, name: 'HK 01', rate: '1.5', is_online: 1, tags: ['IEPL', 'Netflix'] }),
+      makeServer({ id: 1, name: 'HK 01', rate: 1.5, is_online: true, tags: ['IEPL', 'Netflix'] }),
       makeServer({
         id: 2,
         name: 'US 01',
-        rate: '2',
+        rate: 2,
         host: 'us.example.test',
         cache_key: 'us01',
-        is_online: 0,
+        is_online: false,
         tags: null,
       }),
     ];
@@ -205,13 +210,13 @@ describe('NodePage service table', () => {
     expect(usRow).toHaveAttribute('data-row-key', '1');
 
     expect(within(hkRow!).getByText('HK 01')).toBeInTheDocument();
-    expect(within(hkRow!).getByLabelText('online')).toBeInTheDocument(); // is_online: 1
+    expect(within(hkRow!).getByLabelText('online')).toBeInTheDocument(); // is_online: true
     expect(within(hkRow!).getByText('1.5 x')).toBeInTheDocument();
     expect(within(hkRow!).getByText('IEPL')).toBeInTheDocument();
     expect(within(hkRow!).getByText('Netflix')).toBeInTheDocument();
 
     expect(within(usRow!).getByText('US 01')).toBeInTheDocument();
-    expect(within(usRow!).getByLabelText('offline')).toBeInTheDocument(); // is_online: 0
+    expect(within(usRow!).getByLabelText('offline')).toBeInTheDocument(); // is_online: false
     expect(within(usRow!).getByText('2 x')).toBeInTheDocument();
     const usCells = within(usRow!).getAllByRole('cell');
     expect(usCells[3]).toHaveTextContent(/^-$/); // null tags fall back to a dash
@@ -270,7 +275,6 @@ describe('NodePage error state', () => {
 
     const { user } = renderWithProviders(<NodePage />);
 
-    expect(queryState.serversEnabled).toBe(false);
     expect(screen.getByTestId('node-subscribe-error')).toBeInTheDocument();
     expect(screen.queryByTestId('node-empty')).not.toBeInTheDocument();
 

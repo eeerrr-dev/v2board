@@ -25,32 +25,28 @@ export default function TrafficPage() {
   const trafficColumns = [
     {
       accessorKey: 'record_at',
+      // RFC 3339 UTC strings sort lexicographically in chronological order;
+      // keep the newest-first first click the numeric column used to get.
       sortingFn: 'basic',
+      sortDescFirst: true,
       header: t(($) => $.traffic.record_at),
-      cell: ({ row }) =>
-        row.original.record_at ? formatBackendDateSlash(row.original.record_at) : '-',
+      cell: ({ row }) => formatBackendDateSlash(row.original.record_at),
     },
     {
       meta: { align: 'right' },
       header: t(($) => $.traffic.actual_upload),
-      cell: ({ row }) => {
-        const upload = parseInt(String(row.original.u));
-        return row.original.server_rate ? formatBytes(upload) : 0;
-      },
+      cell: ({ row }) => formatBytes(row.original.u),
     },
     {
       meta: { align: 'right' },
       header: t(($) => $.traffic.actual_download),
-      cell: ({ row }) => {
-        const download = parseInt(String(row.original.d));
-        return row.original.server_rate ? formatBytes(download) : 0;
-      },
+      cell: ({ row }) => formatBytes(row.original.d),
     },
     {
       meta: { align: 'center' },
       header: t(($) => $.traffic.deduct_rate),
       cell: ({ row }) => {
-        const rate = Number.parseFloat(row.original.server_rate);
+        const rate = row.original.server_rate;
         return <StatusBadge>{rate ? `${rate.toFixed(2)} x` : '-'}</StatusBadge>;
       },
     },
@@ -67,12 +63,9 @@ export default function TrafficPage() {
         </HeaderTooltip>
       ),
       cell: ({ row }) => {
-        const upload = parseInt(String(row.original.u));
-        const download = parseInt(String(row.original.d));
-        // Number() is the explicit form of JavaScript's multiplication coercion:
-        // decimal strings, the backend empty-string zero, and malformed NaN all
-        // retain the backend contract without lying to TypeScript.
-        const charged = (upload + download) * Number(row.original.server_rate);
+        // Charged math (u+d)*server_rate — server_rate is a JSON number on
+        // the modern wire (docs/api-dialect.md §5.4, W6).
+        const charged = (row.original.u + row.original.d) * row.original.server_rate;
         return formatBytes(charged);
       },
     },

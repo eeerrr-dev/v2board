@@ -8,9 +8,9 @@ const queryState = vi.hoisted(() => ({
   rows: [] as Array<{
     u: number;
     d: number;
-    record_at: number;
+    record_at: string;
     user_id: number;
-    server_rate: string;
+    server_rate: number;
   }>,
   pending: false,
   fetching: false,
@@ -66,7 +66,7 @@ describe('TrafficPage loading state', () => {
 
   it('keeps cached rows rendered without the loading banner during a background refetch', () => {
     queryState.rows = [
-      { u: 2048, d: 1024, record_at: 1_705_320_000, user_id: 1, server_rate: '1.5' },
+      { u: 2048, d: 1024, record_at: '2024-01-15T12:00:00Z', user_id: 1, server_rate: 1.5 },
     ];
     queryState.pending = false;
     queryState.fetching = true; // background refetch with cached data
@@ -88,8 +88,8 @@ describe('TrafficPage loading state', () => {
 describe('TrafficPage service table', () => {
   beforeEach(() => {
     queryState.rows = [
-      { u: 2048, d: 1024, record_at: 1_705_320_000, user_id: 1, server_rate: '1.5' },
-      { u: 100, d: 200, record_at: 0, user_id: 1, server_rate: '0' },
+      { u: 2048, d: 1024, record_at: '2024-01-15T12:00:00Z', user_id: 1, server_rate: 1.5 },
+      { u: 100, d: 200, record_at: '2024-01-14T12:00:00Z', user_id: 1, server_rate: 0 },
     ];
   });
 
@@ -120,8 +120,8 @@ describe('TrafficPage service table', () => {
     expect(firstCells[4]).toHaveTextContent('4.50 KB');
 
     const secondCells = within(second!).getAllByRole('cell');
-    expect(secondCells[0]).toHaveTextContent(/^-$/); // record_at 0 renders a dash
-    expect(secondCells[1]).toHaveTextContent('100.00 B');
+    expect(secondCells[0]).toHaveTextContent('2024/01/14');
+    expect(secondCells[1]).toHaveTextContent('100.00 B'); // no legacy zero-rate short-circuit
     expect(secondCells[2]).toHaveTextContent('200.00 B');
     expect(secondCells[3]).toHaveTextContent(/^-$/); // rate 0 renders a dash
     expect(secondCells[4]).toHaveTextContent(/^0\.00 B$/);
@@ -136,15 +136,16 @@ describe('TrafficPage service table', () => {
 
     const sortButton = within(recordHeader).getByRole('button', { name: '记录时间' });
 
-    // Numeric columns toggle descending first in the shared table.
+    // The explicit sortDescFirst pin keeps the newest-first first click the
+    // numeric record_at column used to get from auto-detection.
     await user.click(sortButton);
     expect(recordHeader).toHaveAttribute('aria-sort', 'descending');
 
     await user.click(sortButton);
     expect(recordHeader).toHaveAttribute('aria-sort', 'ascending');
     const [first] = within(table).getAllByRole('row').slice(1);
-    // Ascending record_at puts the record_at: 0 row ('-' date, 100 B upload) first.
-    expect(within(first!).getAllByRole('cell')[0]).toHaveTextContent(/^-$/);
+    // Ascending record_at puts the older row (2024/01/14, 100 B upload) first.
+    expect(within(first!).getAllByRole('cell')[0]).toHaveTextContent('2024/01/14');
     expect(within(first!).getByText('100.00 B')).toBeInTheDocument();
   });
 
@@ -163,20 +164,20 @@ describe('TrafficPage service table', () => {
     );
   });
 
-  it('coerces the whole server_rate string in the charged total (legacy behavior)', () => {
-    queryState.rows = [{ u: 300, d: 400, record_at: 1_705_320_000, user_id: 1, server_rate: '' }];
+  it('computes the charged total from the numeric server_rate', () => {
+    queryState.rows = [
+      { u: 300, d: 400, record_at: '2024-01-15T12:00:00Z', user_id: 1, server_rate: 0.5 },
+    ];
 
     renderWithProviders(<TrafficPage />);
 
     const [row] = within(screen.getByTestId('traffic-table')).getAllByRole('row').slice(1);
     const cells = within(row!).getAllByRole('cell');
-    // A falsy server_rate short-circuits upload/download to a literal 0...
-    expect(cells[1]).toHaveTextContent(/^0$/);
-    expect(cells[2]).toHaveTextContent(/^0$/);
-    expect(cells[3]).toHaveTextContent(/^-$/);
-    // ...while the charged total multiplies by the whole coerced string:
-    // (300 + 400) * Number('') = 0. parseFloat semantics would render 'NaN B'.
-    expect(cells[4]).toHaveTextContent(/^0\.00 B$/);
+    expect(cells[1]).toHaveTextContent('300.00 B');
+    expect(cells[2]).toHaveTextContent('400.00 B');
+    expect(cells[3]).toHaveTextContent('0.50 x');
+    // Charged total contract: (u + d) * server_rate = (300 + 400) * 0.5 = 350.
+    expect(cells[4]).toHaveTextContent(/^350\.00 B$/);
   });
 });
 

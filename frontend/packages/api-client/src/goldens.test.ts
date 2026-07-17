@@ -13,6 +13,7 @@ import {
   adminUserTrafficSchema,
   arraySchema,
   authDataSchema,
+  availableServerSchema,
   checkoutResultSchema,
   couponSchema,
   createdOrderSchema,
@@ -83,8 +84,6 @@ const goldenSchemas: Record<string, z.ZodType> = {
   'admin.user.fetch.json': pageEnvelopeSchema(adminUserSchema),
   'admin.user.getUserInfoById.json': envelopeSchema(adminUserDetailSchema),
   'admin.user.getUserInfoById.no-inviter.json': envelopeSchema(adminUserDetailSchema),
-  // Pure serde wire bodies (v2board-api golden_wire test).
-  'user.stat.getTrafficLog.json': envelopeSchema(arraySchema(trafficLogSchema)),
 };
 
 // Dialect-v2 fixtures (docs/api-dialect.md §3, §5.2): bare success bodies and
@@ -121,11 +120,13 @@ const dialectGoldenSchemas: Record<string, z.ZodType> = {
   'user.plans.detail.json': userPlanSchema,
   'user.plans.json': arraySchema(userPlanSchema),
   'user.profile.json': userProfileSchema,
+  'user.servers.json': arraySchema(availableServerSchema),
   'user.sessions.json': arraySchema(activeSessionSchema),
   'user.stats.json': userStatsSchema,
   'user.subscription.json': subscriptionSchema,
   'user.subscription.reset-token.json': resetSubscribeTokenSchema,
   'user.telegram-bot.json': telegramBotInfoSchema,
+  'user.traffic-logs.json': arraySchema(trafficLogSchema),
 };
 
 describe('golden response fixtures', () => {
