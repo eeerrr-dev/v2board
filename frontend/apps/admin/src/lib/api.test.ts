@@ -86,6 +86,7 @@ describe('admin api legacy path resolution', () => {
     apiClient.axios.defaults.adapter = originalAdapter;
     registerSessionCacheClearer(() => undefined);
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
     setAdminRuntimeConfig();
     window.localStorage.clear();
     resolveStepUpPrompt();
@@ -98,10 +99,16 @@ describe('admin api legacy path resolution', () => {
     expect(apiClient.resolveAdminPath('/plan/fetch')).toBe('/secret-admin/plan/fetch');
   });
 
-  it('uses the canonical admin path when the runtime bootstrap is absent', () => {
+  it('falls back to the dev admin path when the runtime bootstrap is absent', async () => {
+    // getAdminSecurePath's absent-bootstrap fallback follows VITE_DEV_ADMIN_PATH
+    // (captured at module load), so pin the env → path plumbing with a stubbed
+    // env and a fresh module graph instead of the invoking environment's value.
+    vi.resetModules();
+    vi.stubEnv('VITE_DEV_ADMIN_PATH', 'stubbed-admin');
     setAdminRuntimeConfig();
 
-    expect(apiClient.resolveAdminPath('/plan/fetch')).toBe('/admin/plan/fetch');
+    const { apiClient: freshClient } = await import('./api');
+    expect(freshClient.resolveAdminPath('/plan/fetch')).toBe('/stubbed-admin/plan/fetch');
   });
 
   it('keeps the admin API same-origin', async () => {

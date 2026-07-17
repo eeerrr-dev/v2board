@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { setAdminRuntimeConfig } from '@/test/runtime-config';
 import {
   applyAdminRuntimeConfig,
@@ -6,7 +6,6 @@ import {
   getAdminBackgroundUrl,
   getAdminBasename,
   getAdminLogo,
-  getAdminRuntimeConfig,
   getAdminSecurePath,
   getAdminTitle,
   getLegacyHashRedirectEnabled,
@@ -18,6 +17,7 @@ describe('admin runtime config', () => {
     document.documentElement.classList.remove('dark');
     document.documentElement.removeAttribute('data-theme-color');
     document.title = '';
+    vi.unstubAllEnvs();
   });
 
   it('reads title, logo, background and secure path from the JSON bootstrap', () => {
@@ -47,15 +47,24 @@ describe('admin runtime config', () => {
     expect(getLegacyHashRedirectEnabled()).toBe(false);
   });
 
-  it('falls back safely when the backend token is not replaced', () => {
+  it('falls back safely when the backend token is not replaced', async () => {
+    // The absent-bootstrap secure_path fallback follows VITE_DEV_ADMIN_PATH
+    // (captured at module load), so pin the plumbing with a stubbed env and a
+    // fresh module instance instead of the invoking environment's value.
+    vi.resetModules();
+    vi.stubEnv('VITE_DEV_ADMIN_PATH', 'stubbed-admin');
     const element = document.createElement('script');
     element.id = 'v2board-runtime-config';
     element.type = 'application/json';
     element.textContent = '__V2BOARD_RUNTIME_CONFIG__';
     document.head.append(element);
 
-    expect(getAdminRuntimeConfig()).toMatchObject({ title: 'V2Board', secure_path: 'admin' });
-    expect(getAdminApiBaseUrl()).toBe(`${new URL(window.location.href).origin}/api/v1`);
+    const fresh = await import('./runtime-config');
+    expect(fresh.getAdminRuntimeConfig()).toMatchObject({
+      title: 'V2Board',
+      secure_path: 'stubbed-admin',
+    });
+    expect(fresh.getAdminApiBaseUrl()).toBe(`${new URL(window.location.href).origin}/api/v1`);
   });
 
   it('keeps bootstrap config immutable and applies a token theme without a stylesheet link', () => {
