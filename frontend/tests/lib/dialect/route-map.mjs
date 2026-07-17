@@ -48,9 +48,17 @@ const route = (id, legacy, modern) => ({
 });
 
 export const routeMap = Object.freeze([
-  // ——— §5.1 Public (was guest comm) ———
-  route('public.config', { method: 'GET', path: '/guest/comm/config' }),
-  route('public.invite-views.create', { method: 'POST', path: '/passport/comm/pv' }),
+  // ——— §5.1 Public (was guest comm) — flipped to the modern rows in W3 ———
+  route(
+    'public.config',
+    { method: 'GET', path: '/guest/comm/config' },
+    { method: 'GET', path: '/public/config' },
+  ),
+  route(
+    'public.invite-views.create',
+    { method: 'POST', path: '/passport/comm/pv' },
+    { method: 'POST', path: '/public/invite-views' },
+  ),
 
   // ——— §5.2 Auth (was passport) — flipped to the modern rows in W2 ———
   route(
@@ -120,8 +128,17 @@ export const routeMap = Object.freeze([
   route('user.commission-transfers.create', { method: 'POST', path: '/user/transfer' }),
   route('user.gift-card-redemptions.create', { method: 'POST', path: '/user/redeemgiftcard' }),
   route('user.telegram-binding.delete', { method: 'GET', path: '/user/unbindTelegram' }),
-  route('user.telegram-bot.get', { method: 'GET', path: '/user/telegram/getBotInfo' }),
-  route('user.config.get', { method: 'GET', path: '/user/comm/config' }),
+  route(
+    'user.telegram-bot.get',
+    { method: 'GET', path: '/user/telegram/getBotInfo' },
+    // §5.3 — flipped with the W3 content family.
+    { method: 'GET', path: '/user/telegram-bot' },
+  ),
+  route(
+    'user.config.get',
+    { method: 'GET', path: '/user/comm/config' },
+    { method: 'GET', path: '/user/config' },
+  ),
 
   // ——— §5.4 Subscription & service usage ———
   route('user.subscription.get', { method: 'GET', path: '/user/getSubscribe' }),
@@ -156,11 +173,31 @@ export const routeMap = Object.freeze([
   route('user.tickets.close', { method: 'POST', path: '/user/ticket/close' }),
   route('user.withdrawal-tickets.create', { method: 'POST', path: '/user/ticket/withdraw' }),
 
-  // ——— §5.8 Knowledge & notices ———
-  route('user.knowledge.list', { method: 'GET', path: '/user/knowledge/fetch' }),
-  route('user.knowledge.get', { method: 'GET', path: '/user/knowledge/fetch', query: ['id'] }),
-  route('user.knowledge-categories.list', { method: 'GET', path: '/user/knowledge/getCategory' }),
-  route('user.notices.list', { method: 'GET', path: '/user/notice/fetch' }),
+  // ——— §5.8 Knowledge & notices — flipped to the modern rows in W3 ———
+  // The detail row is listed first so `/user/knowledge/{id}` outranks the
+  // sibling list path on modern-world matches.
+  route(
+    'user.knowledge.get',
+    { method: 'GET', path: '/user/knowledge/fetch', query: ['id'] },
+    { method: 'GET', path: '/user/knowledge/{id}' },
+  ),
+  route(
+    'user.knowledge.list',
+    { method: 'GET', path: '/user/knowledge/fetch' },
+    { method: 'GET', path: '/user/knowledge' },
+  ),
+  route(
+    'user.knowledge-categories.list',
+    { method: 'GET', path: '/user/knowledge/getCategory' },
+    { method: 'GET', path: '/user/knowledge-categories' },
+  ),
+  // §5.8: the legacy `?id=` single-notice branch is dropped (recorded
+  // decision) — the modern route is list-only.
+  route(
+    'user.notices.list',
+    { method: 'GET', path: '/user/notice/fetch' },
+    { method: 'GET', path: '/user/notices' },
+  ),
 
   // ——— §6.1 Config & system ———
   route('admin.config.get', { method: 'GET', path: '/{secure_path}/config/fetch' }),

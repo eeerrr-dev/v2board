@@ -68,6 +68,23 @@ test('pagination params fold onto page/per_page in both worlds (§8)', () => {
   assert.deepEqual(source, oracle);
 });
 
+test('the W3 knowledge detail path param equals the legacy ?id= spelling (§5.8)', () => {
+  const oracle = canonicalizeRequest('oracle', {
+    method: 'GET',
+    url: '/api/v1/user/knowledge/fetch?id=2&language=en-US',
+  });
+  const source = canonicalizeRequest('source', {
+    method: 'GET',
+    url: '/api/v1/user/knowledge/2?language=en-US',
+  });
+  assert.deepEqual(oracle, {
+    routeId: 'user.knowledge.get',
+    params: { id: 2, language: 'en-US' },
+    body: null,
+  });
+  assert.deepEqual(source, oracle);
+});
+
 test('legacy bracket filters and the modern filter JSON fold to one clause list (§7.1)', () => {
   const oracleUrl =
     '/api/v1/sec/user/fetch?' +

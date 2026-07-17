@@ -256,7 +256,10 @@ export async function installApiFixtures(page, scenario, target, interaction = {
       page.__visualParityUserTrafficFetchCount =
         (page.__visualParityUserTrafficFetchCount ?? 0) + 1;
     }
-    if (pathname === '/api/v1/user/knowledge/fetch' && !requestUrl.searchParams.has('id')) {
+    if (
+      (pathname === '/api/v1/user/knowledge/fetch' && !requestUrl.searchParams.has('id')) ||
+      pathname === '/api/v1/user/knowledge'
+    ) {
       page.__visualParityUserKnowledgeFetchCount =
         (page.__visualParityUserKnowledgeFetchCount ?? 0) + 1;
     }
@@ -646,7 +649,8 @@ export async function installApiFixtures(page, scenario, target, interaction = {
       (scenario.userServersTimeout && pathname === '/api/v1/user/server/fetch') ||
       (scenario.userTrafficTimeout && pathname === '/api/v1/user/stat/getTrafficLog') ||
       (scenario.userTicketsTimeout && pathname === '/api/v1/user/ticket/fetch') ||
-      (scenario.userKnowledgeTimeout && pathname === '/api/v1/user/knowledge/fetch') ||
+      (scenario.userKnowledgeTimeout &&
+        (pathname === '/api/v1/user/knowledge/fetch' || pathname === '/api/v1/user/knowledge')) ||
       (scenario.adminPlansTimeout && adminEndpoint === '/plan/fetch') ||
       (scenario.adminOrdersTimeout && adminEndpoint === '/order/fetch') ||
       (scenario.adminUsersTimeout && adminEndpoint === '/user/fetch') ||
@@ -1039,9 +1043,51 @@ export function apiFixtureResponse(
     }
   }
 
+  // §5.8 modern knowledge detail (W3): /user/knowledge/{id} is source-world
+  // only; the oracle keeps the legacy `?id=` branch on /user/knowledge/fetch.
+  const knowledgeDetailMatch = /^\/api\/v1\/user\/knowledge\/(\d+)$/.exec(pathname);
+  if (knowledgeDetailMatch) {
+    return v2Body(
+      modernKnowledgeDetailFixture(
+        userKnowledgeFixtureById(knowledgeDetailMatch[1], interaction),
+      ),
+    );
+  }
+
   switch (pathname) {
     case '/api/v1/guest/comm/config':
       return body(guestConfigFixture);
+    // §5.1 + §5.3 + §5.8 modern public/content family (W3). Only the source
+    // world requests these paths; the oracle keeps the legacy cases below.
+    case '/api/v1/public/config':
+      return v2Body(modernPublicConfigFixture(guestConfigFixture));
+    case '/api/v1/public/invite-views':
+      return v2Empty();
+    case '/api/v1/user/config':
+      return v2Body(
+        modernUserConfigFixture(
+          interaction?.enableTelegramProfile
+            ? {
+                ...userCommConfigFixture,
+                is_telegram: 1,
+                telegram_discuss_link: 'https://t.me/visual_discuss',
+              }
+            : userCommConfigFixture,
+        ),
+      );
+    case '/api/v1/user/notices':
+      return v2Body({
+        items: noticeFixtures.map(modernNoticeFixture),
+        total: noticeFixtures.length,
+      });
+    case '/api/v1/user/knowledge':
+      return v2Body(modernKnowledgeRecordFixture(userKnowledgeFixturesFor(interaction)));
+    case '/api/v1/user/knowledge-categories':
+      return v2Body(
+        Object.keys(userKnowledgeFixturesFor(interaction)).map((category) => ({ category })),
+      );
+    case '/api/v1/user/telegram-bot':
+      return v2Body({ username: 'legacy_bot' });
     // The Rust wire shape deliberately omits the permanent subscription
     // credential (`token`) from login/token2Login — clients read only
     // auth_data + is_admin and fetch the subscribe URL via /user/getSubscribe.
@@ -1252,6 +1298,75 @@ export function apiFixtureResponse(
       return body(null);
   }
 }
+
+// ——— W3 modern-wire projections (docs/api-dialect.md §4.1, §4.5, §5.1,
+// §5.3, §5.8) ——— fixture-data.mjs stays the single legacy-shaped source;
+// the source world serializes these derived modern shapes (booleans, real
+// arrays, RFC 3339 timestamps, numeric rates) for the flipped family.
+const rfc3339FixtureTime = (epochSeconds) =>
+  new Date(epochSeconds * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+
+const modernPublicConfigFixture = (fixture) => ({
+  ...fixture,
+  is_email_verify: fixture.is_email_verify !== 0,
+  is_invite_force: fixture.is_invite_force !== 0,
+  is_recaptcha: fixture.is_recaptcha !== 0,
+  // §5.1: always an array — the legacy `0` disabled-sentinel died.
+  email_whitelist_suffix: Array.isArray(fixture.email_whitelist_suffix)
+    ? fixture.email_whitelist_suffix
+    : [],
+});
+
+const modernUserConfigFixture = (fixture) => ({
+  ...fixture,
+  is_telegram: fixture.is_telegram !== 0,
+  withdraw_close: fixture.withdraw_close !== 0,
+  commission_distribution_enable: fixture.commission_distribution_enable !== 0,
+  commission_distribution_l1: numericRate(fixture.commission_distribution_l1),
+  commission_distribution_l2: numericRate(fixture.commission_distribution_l2),
+  commission_distribution_l3: numericRate(fixture.commission_distribution_l3),
+});
+
+const numericRate = (value) => {
+  if (value === null || value === undefined) return null;
+  const rate = Number(value);
+  return Number.isFinite(rate) ? rate : null;
+};
+
+const modernNoticeFixture = (notice) => ({
+  id: notice.id,
+  title: notice.title,
+  content: notice.content,
+  show: notice.show !== 0,
+  img_url: notice.img_url ?? null,
+  tags: notice.tags ?? null,
+  created_at: rfc3339FixtureTime(notice.created_at),
+  updated_at: rfc3339FixtureTime(notice.updated_at),
+});
+
+const modernKnowledgeSummaryFixture = (row) => ({
+  id: row.id,
+  category: row.category,
+  title: row.title,
+  sort: row.sort ?? null,
+  show: row.show !== 0,
+  updated_at: rfc3339FixtureTime(row.updated_at),
+});
+
+const modernKnowledgeDetailFixture = (row) => ({
+  ...modernKnowledgeSummaryFixture(row),
+  body: row.body,
+  language: row.language,
+  created_at: rfc3339FixtureTime(row.created_at),
+});
+
+const modernKnowledgeRecordFixture = (fixtures) =>
+  Object.fromEntries(
+    Object.entries(fixtures).map(([category, rows]) => [
+      category,
+      rows.map(modernKnowledgeSummaryFixture),
+    ]),
+  );
 
 export function userKnowledgeFixturesFor(interaction = {}) {
   return interaction.extremeKnowledgeContent ? extremeKnowledgeFixtures : knowledgeFixtures;

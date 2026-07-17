@@ -91,8 +91,14 @@ export function canonicalizeRequest(world, { method, url, postData, securePath }
     body,
     securePath,
   });
+  // Path parameters canonicalize like query values so a modern path segment
+  // (`/user/knowledge/{id}`, W3) equals its legacy `?id=` query spelling.
+  const pathParams = {};
+  for (const [name, value] of Object.entries(match?.params ?? {})) {
+    pathParams[name] = canonicalizeValue(value, name);
+  }
   const params = {
-    ...(match?.params ?? {}),
+    ...pathParams,
     ...canonicalizeQueryParams(requestUrl.searchParams),
   };
   return {

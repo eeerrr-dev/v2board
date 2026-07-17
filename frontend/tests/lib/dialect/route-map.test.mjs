@@ -24,11 +24,53 @@ test('route ids are unique and every entry carries both world shapes', () => {
   }
 });
 
+const W3_ROUTE_IDS = Object.freeze([
+  'public.config',
+  'public.invite-views.create',
+  'user.telegram-bot.get',
+  'user.config.get',
+  'user.knowledge.get',
+  'user.knowledge.list',
+  'user.knowledge-categories.list',
+  'user.notices.list',
+]);
+
 test('unflipped families stay identity: modern equals legacy until each wave', () => {
   for (const entry of routeMap) {
     if (entry.id.startsWith('auth.')) continue; // §5.2 flipped in W2
+    if (W3_ROUTE_IDS.includes(entry.id)) continue; // §5.1/§5.8 flipped in W3
     assert.deepEqual(entry.modern, entry.legacy, `${entry.id} must stay legacy→legacy until its wave`);
   }
+});
+
+test('W3: the public/content family carries the modern rows', () => {
+  const modern = Object.fromEntries(
+    W3_ROUTE_IDS.map((id) => [id, routeEntry(id).modern]),
+  );
+  assert.deepEqual(modern, {
+    'public.config': { method: 'GET', path: '/public/config' },
+    'public.invite-views.create': { method: 'POST', path: '/public/invite-views' },
+    'user.telegram-bot.get': { method: 'GET', path: '/user/telegram-bot' },
+    'user.config.get': { method: 'GET', path: '/user/config' },
+    // The legacy `?id=` discriminator became a real path segment (§5.8).
+    'user.knowledge.get': { method: 'GET', path: '/user/knowledge/{id}' },
+    'user.knowledge.list': { method: 'GET', path: '/user/knowledge' },
+    'user.knowledge-categories.list': { method: 'GET', path: '/user/knowledge-categories' },
+    // The legacy single-notice `?id=` branch is dropped (§5.8 recorded
+    // decision): the modern route is list-only.
+    'user.notices.list': { method: 'GET', path: '/user/notices' },
+  });
+  // The oracle keeps requesting the legacy rows.
+  assert.equal(worldRoute('public.config', 'oracle').path, '/guest/comm/config');
+  assert.equal(worldRoute('user.notices.list', 'oracle').path, '/user/notice/fetch');
+  assert.deepEqual(
+    matchRoute('source', { method: 'GET', pathname: `${API_PREFIX}/user/knowledge/7` }),
+    { id: 'user.knowledge.get', params: { id: '7' } },
+  );
+  assert.equal(
+    matchRoute('source', { method: 'GET', pathname: `${API_PREFIX}/user/knowledge` })?.id,
+    'user.knowledge.list',
+  );
 });
 
 test('W2: the §5.2 auth family carries the modern /auth/* rows', () => {
