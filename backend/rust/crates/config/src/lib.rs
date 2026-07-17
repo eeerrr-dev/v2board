@@ -1546,16 +1546,28 @@ impl AppConfig {
             self.subscribe_path.as_str()
         };
         let path_with_token = format!("{path}?token={token}");
-        let configured_url = self
+        // Helper::getSubscribeUrl distributed links across the comma-separated
+        // mirror list with a fresh rand() per render (Helper.php:107-108). Keep
+        // the multi-mirror distribution, but pick deterministically by hashing
+        // the token so each token stays on one stable mirror across renders,
+        // restarts, and replicas instead of flapping per request.
+        let mirrors = self
             .subscribe_url
             .as_deref()
             .unwrap_or_default()
             .split(',')
             .map(str::trim)
-            .find(|value| !value.is_empty());
+            .filter(|value| !value.is_empty())
+            .collect::<Vec<_>>();
 
-        if let Some(base) = configured_url {
-            return format!("{}{}", base.trim_end_matches('/'), path_with_token);
+        if !mirrors.is_empty() {
+            let index = usize::try_from(fnv1a_64(token.as_bytes()) % mirrors.len() as u64)
+                .unwrap_or_default();
+            return format!(
+                "{}{}",
+                mirrors[index].trim_end_matches('/'),
+                path_with_token
+            );
         }
 
         if let Some(app_url) = self.app_url.as_deref().filter(|value| !value.is_empty()) {
@@ -3018,6 +3030,17 @@ fn crc32b_hex(bytes: &[u8]) -> String {
     format!("{:08x}", crc32fast::hash(bytes))
 }
 
+/// FNV-1a (64-bit), implemented inline so the subscribe-mirror pick is
+/// deterministic across processes, restarts, and platforms. `std`'s
+/// `RandomState` hashing is per-process seeded and must never be used here.
+fn fnv1a_64(bytes: &[u8]) -> u64 {
+    const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+    const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
+    bytes.iter().fold(FNV_OFFSET_BASIS, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(FNV_PRIME)
+    })
+}
+
 fn config_or_env(config: &Map<String, Value>, config_key: &str, env_key: &str) -> Option<String> {
     if operator_value_is_authoritative(config, config_key) {
         return config
@@ -3439,6 +3462,89 @@ mod tests {
     #[test]
     fn admin_path_fallback_uses_crc32b() {
         assert_eq!(crc32b_hex(b"test"), "d87f7e0c");
+    }
+
+    fn subscribe_config(subscribe_url: Option<&str>) -> AppConfig {
+        let paths = RuntimePaths {
+            config: PathBuf::from("/tmp/not-read-by-config-map-parser.json"),
+            frontend: PathBuf::from("/tmp/frontend"),
+            rules: PathBuf::from("/tmp/rules"),
+        };
+        let mut document = Map::new();
+        document.insert("app_url".to_string(), json!("https://panel.example"));
+        if let Some(subscribe_url) = subscribe_url {
+            document.insert("subscribe_url".to_string(), json!(subscribe_url));
+        }
+        AppConfig::try_from_api_config_map(document, paths).expect("subscribe test config")
+    }
+
+    #[test]
+    fn subscribe_url_single_mirror_and_app_url_fallback_are_unchanged() {
+        let single = subscribe_config(Some("https://mirror.example/"));
+        assert_eq!(
+            single.subscribe_url_for_token("token-a"),
+            "https://mirror.example/api/v1/client/subscribe?token=token-a"
+        );
+
+        // No configured mirror falls back to app_url (which the container
+        // environment may override, so derive the expectation from the snapshot).
+        let unconfigured = subscribe_config(None);
+        let app_url = unconfigured.app_url.clone().expect("app_url");
+        assert_eq!(
+            unconfigured.subscribe_url_for_token("token-a"),
+            format!(
+                "{}/api/v1/client/subscribe?token=token-a",
+                app_url.trim_end_matches('/')
+            )
+        );
+    }
+
+    #[test]
+    fn subscribe_url_multi_mirror_pick_is_a_stable_token_hash() {
+        // Helper.php:107-108 rotated with rand(); the native pick must instead be
+        // the deterministic FNV-1a(token) % mirror-count so a token never flaps.
+        let config = subscribe_config(Some("https://m0.example,https://m1.example/"));
+        // fnv1a_64("token-a") = 0xe572a608d45b6244 -> index 0.
+        assert_eq!(
+            config.subscribe_url_for_token("token-a"),
+            "https://m0.example/api/v1/client/subscribe?token=token-a"
+        );
+        // fnv1a_64("token-b") = 0xe572a908d45b675d -> index 1.
+        assert_eq!(
+            config.subscribe_url_for_token("token-b"),
+            "https://m1.example/api/v1/client/subscribe?token=token-b"
+        );
+        // Stable across repeated renders of the same token.
+        assert_eq!(
+            config.subscribe_url_for_token("token-b"),
+            "https://m1.example/api/v1/client/subscribe?token=token-b"
+        );
+    }
+
+    #[test]
+    fn subscribe_url_mirror_parsing_skips_empty_and_whitespace_entries() {
+        // Empty/whitespace entries are dropped before the modulus, so the two
+        // real mirrors keep the same assignment as a clean two-entry list.
+        let config = subscribe_config(Some(" , https://m0.example ,,\thttps://m1.example/ ,"));
+        assert_eq!(
+            config.subscribe_url_for_token("token-a"),
+            "https://m0.example/api/v1/client/subscribe?token=token-a"
+        );
+        assert_eq!(
+            config.subscribe_url_for_token("token-b"),
+            "https://m1.example/api/v1/client/subscribe?token=token-b"
+        );
+
+        // A mirror list with only blank entries behaves like no mirror at all.
+        let blank_only = subscribe_config(Some(" , ,\t"));
+        let app_url = blank_only.app_url.clone().expect("app_url");
+        assert_eq!(
+            blank_only.subscribe_url_for_token("token-a"),
+            format!(
+                "{}/api/v1/client/subscribe?token=token-a",
+                app_url.trim_end_matches('/')
+            )
+        );
     }
 
     #[test]
