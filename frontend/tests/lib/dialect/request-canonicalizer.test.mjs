@@ -58,7 +58,8 @@ test('pagination params fold onto page/per_page in both worlds (§8)', () => {
   });
   const source = canonicalizeRequest('source', {
     method: 'GET',
-    url: '/api/v1/user/invite/details?page=2&per_page=10',
+    // W7: the source world requests the modern §5.6 commissions row.
+    url: '/api/v1/user/commissions?page=2&per_page=10',
   });
   assert.deepEqual(oracle, {
     routeId: 'user.commissions.list',

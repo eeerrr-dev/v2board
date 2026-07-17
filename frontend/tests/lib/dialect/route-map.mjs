@@ -150,7 +150,12 @@ export const routeMap = Object.freeze([
     // The legacy body-carried session_id became a path parameter (§9.4).
     { method: 'DELETE', path: '/user/sessions/{session_id}' },
   ),
-  route('user.commission-transfers.create', { method: 'POST', path: '/user/transfer' }),
+  route(
+    'user.commission-transfers.create',
+    { method: 'POST', path: '/user/transfer' },
+    // §5.3 — flipped with the W7 invite & commission family.
+    { method: 'POST', path: '/user/commission-transfers' },
+  ),
   route(
     'user.gift-card-redemptions.create',
     { method: 'POST', path: '/user/redeemgiftcard' },
@@ -261,10 +266,24 @@ export const routeMap = Object.freeze([
     { method: 'POST', path: '/user/coupons/check' },
   ),
 
-  // ——— §5.6 Invite & commission ———
-  route('user.invite-codes.create', { method: 'GET', path: '/user/invite/save' }),
-  route('user.invite.get', { method: 'GET', path: '/user/invite/fetch' }),
-  route('user.commissions.list', { method: 'GET', path: '/user/invite/details' }),
+  // ——— §5.6 Invite & commission — flipped to the modern rows in W7 ———
+  route(
+    'user.invite-codes.create',
+    { method: 'GET', path: '/user/invite/save' },
+    // The legacy GET-with-side-effect became the one deliberate 204 POST
+    // create (§1/§5.6).
+    { method: 'POST', path: '/user/invite-codes' },
+  ),
+  route(
+    'user.invite.get',
+    { method: 'GET', path: '/user/invite/fetch' },
+    { method: 'GET', path: '/user/invite' },
+  ),
+  route(
+    'user.commissions.list',
+    { method: 'GET', path: '/user/invite/details' },
+    { method: 'GET', path: '/user/commissions' },
+  ),
 
   // ——— §5.7 Tickets ———
   route('user.tickets.list', { method: 'GET', path: '/user/ticket/fetch' }),

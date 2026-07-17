@@ -189,6 +189,13 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     const isUserNewPeriod =
       pathname === '/api/v1/user/newPeriod' ||
       pathname === '/api/v1/user/subscription/new-period';
+    // W7 (§5.6): the modern invite family splits the legacy GET actions into
+    // POST creates on new paths. Match both worlds' spellings for the
+    // counters, captures, and delay knobs below.
+    const isUserTransfer =
+      pathname === '/api/v1/user/transfer' || pathname === '/api/v1/user/commission-transfers';
+    const isUserInviteGenerate =
+      pathname === '/api/v1/user/invite/save' || pathname === '/api/v1/user/invite-codes';
 
     if (adminEndpoint) {
       page.__visualParityDiagnostics?.push(`fixture admin ${adminEndpoint}`);
@@ -260,7 +267,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
         requestData,
       ];
     }
-    if (pathname === '/api/v1/user/transfer') {
+    if (isUserTransfer) {
       page.__visualParityLastUserTransfer = requestData;
       page.__visualParityUserTransferCount = (page.__visualParityUserTransferCount ?? 0) + 1;
       page.__visualParityUserTransferRequests = [
@@ -268,7 +275,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
         requestData,
       ];
     }
-    if (pathname === '/api/v1/user/invite/save') {
+    if (isUserInviteGenerate) {
       page.__visualParityUserInviteGenerateCount =
         (page.__visualParityUserInviteGenerateCount ?? 0) + 1;
     }
@@ -752,7 +759,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     if (isUserPasswordUpdate && interaction.delayUserChangePasswordMs) {
       await delay(interaction.delayUserChangePasswordMs);
     }
-    if (pathname === '/api/v1/user/transfer' && interaction.delayUserTransferMs) {
+    if (isUserTransfer && interaction.delayUserTransferMs) {
       await delay(interaction.delayUserTransferMs);
     }
     if (isUserNewPeriod && interaction.delayUserNewPeriodMs) {
@@ -1371,6 +1378,29 @@ export function apiFixtureResponse(
       return v2Body(userServerFixturesFor(scenario).map(modernServerFixture));
     case '/api/v1/user/traffic-logs':
       return v2Body(trafficFixtures.map(modernTrafficLogFixture));
+    // §5.6 modern invite & commission family (W7). Only the source world
+    // requests these paths; the oracle keeps the legacy /user/invite/* +
+    // /user/transfer cases.
+    case '/api/v1/user/invite':
+      return v2Body(modernInviteFixture(inviteFixture));
+    case '/api/v1/user/commissions':
+      return v2Body({
+        items: inviteDetailFixtures.map(modernCommissionFixture),
+        total: inviteDetailFixtures.length,
+      });
+    case '/api/v1/user/invite-codes':
+      // The one deliberate 204-no-body create (§1/§5.6).
+      return v2Empty();
+    case '/api/v1/user/commission-transfers':
+      if (interaction?.transferError) {
+        return v2Problem(
+          400,
+          'Bad Request',
+          'insufficient_commission_balance',
+          '推广佣金余额不足',
+        );
+      }
+      return v2Empty();
     case '/api/v1/user/update':
       return body(true);
     case '/api/v1/user/redeemgiftcard':
@@ -1662,6 +1692,35 @@ const modernTrafficLogFixture = (entry) => ({
   ...entry,
   record_at: rfc3339FixtureTime(entry.record_at),
   server_rate: Number(entry.server_rate),
+});
+
+// ——— W7 modern-wire projections (docs/api-dialect.md §4.5, §5.6, §8,
+// §9.2) ——— the named invite stat object (was the legacy 5-tuple), RFC 3339
+// timestamps, and the constant-status/caller-echo code columns dropped from
+// the wire. Commission amounts stay integer cents.
+const modernInviteFixture = (fixture) => ({
+  codes: fixture.codes.map((code) => ({
+    id: code.id,
+    code: code.code,
+    pv: code.pv,
+    created_at: rfc3339FixtureTime(code.created_at),
+    updated_at: rfc3339FixtureTime(code.updated_at),
+  })),
+  stat: {
+    registered_count: fixture.stat[0],
+    valid_commission: fixture.stat[1],
+    pending_commission: fixture.stat[2],
+    commission_rate: fixture.stat[3],
+    available_commission: fixture.stat[4],
+  },
+});
+
+const modernCommissionFixture = (entry) => ({
+  id: entry.id,
+  trade_no: entry.trade_no,
+  order_amount: entry.order_amount,
+  get_amount: entry.get_amount,
+  created_at: rfc3339FixtureTime(entry.created_at),
 });
 
 export function userKnowledgeFixturesFor(interaction = {}) {

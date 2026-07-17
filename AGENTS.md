@@ -459,7 +459,8 @@ surfaces.
 
 The user invite/commission surface (`/invite`) is a redesigned shadcn surface.
 
-- Keep invite contracts strict: copy-link URL, the `/user/invite/save` call,
+- Keep invite contracts strict: copy-link URL, `POST /user/invite-codes`
+  (§5.6),
   transfer payload conversion (`100*amount`) through the API layer, withdraw
   method/account payload, commission cents reading (`amount/100`), routing, and
   i18n must remain covered. Fetch order, invite-success toast and refetch timing,

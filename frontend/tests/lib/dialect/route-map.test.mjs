@@ -51,6 +51,13 @@ const W5_ROUTE_IDS = Object.freeze([
 
 const W6_ROUTE_IDS = Object.freeze(['user.servers.list', 'user.traffic-logs.list']);
 
+const W7_ROUTE_IDS = Object.freeze([
+  'user.commission-transfers.create',
+  'user.invite-codes.create',
+  'user.invite.get',
+  'user.commissions.list',
+]);
+
 const W4_ROUTE_IDS = Object.freeze([
   'user.plans.get',
   'user.plans.list',
@@ -72,6 +79,7 @@ test('unflipped families stay identity: modern equals legacy until each wave', (
     if (W4_ROUTE_IDS.includes(entry.id)) continue; // §5.5 flipped in W4
     if (W5_ROUTE_IDS.includes(entry.id)) continue; // §5.3/§5.4 flipped in W5
     if (W6_ROUTE_IDS.includes(entry.id)) continue; // §5.4 service usage flipped in W6
+    if (W7_ROUTE_IDS.includes(entry.id)) continue; // §5.6 invite/commission flipped in W7
     assert.deepEqual(entry.modern, entry.legacy, `${entry.id} must stay legacy→legacy until its wave`);
   }
 });
@@ -138,6 +146,41 @@ test('W6: the user service-usage family carries the modern rows', () => {
   assert.equal(
     matchRoute('source', { method: 'GET', pathname: `${API_PREFIX}/user/traffic-logs` })?.id,
     'user.traffic-logs.list',
+  );
+});
+
+test('W7: the invite & commission family carries the modern rows', () => {
+  const modern = Object.fromEntries(W7_ROUTE_IDS.map((id) => [id, routeEntry(id).modern]));
+  assert.deepEqual(modern, {
+    'user.commission-transfers.create': { method: 'POST', path: '/user/commission-transfers' },
+    // The legacy GET-with-side-effect became the one deliberate 204 POST
+    // create (§1/§5.6).
+    'user.invite-codes.create': { method: 'POST', path: '/user/invite-codes' },
+    'user.invite.get': { method: 'GET', path: '/user/invite' },
+    'user.commissions.list': { method: 'GET', path: '/user/commissions' },
+  });
+  // The oracle keeps requesting the legacy rows.
+  assert.equal(worldRoute('user.commission-transfers.create', 'oracle').path, '/user/transfer');
+  assert.equal(worldRoute('user.invite-codes.create', 'oracle').method, 'GET');
+  assert.equal(worldRoute('user.invite-codes.create', 'oracle').path, '/user/invite/save');
+  assert.equal(worldRoute('user.invite.get', 'oracle').path, '/user/invite/fetch');
+  assert.equal(worldRoute('user.commissions.list', 'oracle').path, '/user/invite/details');
+  assert.equal(
+    matchRoute('source', { method: 'POST', pathname: `${API_PREFIX}/user/invite-codes` })?.id,
+    'user.invite-codes.create',
+  );
+  assert.equal(
+    matchRoute('source', { method: 'GET', pathname: `${API_PREFIX}/user/invite` })?.id,
+    'user.invite.get',
+  );
+  assert.equal(
+    matchRoute('source', { method: 'GET', pathname: `${API_PREFIX}/user/commissions` })?.id,
+    'user.commissions.list',
+  );
+  assert.equal(
+    matchRoute('source', { method: 'POST', pathname: `${API_PREFIX}/user/commission-transfers` })
+      ?.id,
+    'user.commission-transfers.create',
   );
 });
 
