@@ -449,12 +449,177 @@ fn is_content_hashed_asset(path: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use axum::http::{HeaderMap, HeaderValue};
+    use std::net::SocketAddr;
+
+    use axum::{
+        body::{Body, to_bytes},
+        extract::{ConnectInfo, Request},
+        http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, header},
+    };
+    use tower::ServiceExt as _;
+    use v2board_config::AppConfig;
 
     use super::{
-        X_REQUEST_ID, apply_security_response_headers, cors_origin_allowed,
+        X_REQUEST_ID, apply_security_response_headers, build_app, cors_origin_allowed,
         is_content_hashed_asset, valid_request_id, valid_request_id_header,
     };
+    use crate::runtime::AppState;
+
+    const ALLOWED_ORIGIN: &str = "https://app.example.test";
+
+    /// Builds the real production router with service-free process dependencies:
+    /// the PostgreSQL pool and the Redis connection manager are lazy, so every
+    /// request below must be answered before any backing service is touched.
+    fn cors_test_app() -> axum::Router {
+        let mut config = AppConfig::from_api_env();
+        config.cors_allowed_origins = vec![ALLOWED_ORIGIN.to_string()];
+        // The loopback test peer is the client itself: no proxy resolution and
+        // no HTTPS redirect may run before the CORS layer.
+        config.trusted_proxy_cidrs = Vec::new();
+        config.force_https = false;
+        let db = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://unused:unused@127.0.0.1:9/unused")
+            .expect("lazy postgres pool");
+        let redis = redis::Client::open("redis://127.0.0.1:9/").expect("redis client");
+        let auth_redis = redis::aio::ConnectionManager::new_lazy_with_config(
+            redis.clone(),
+            redis::aio::ConnectionManagerConfig::new(),
+        )
+        .expect("lazy redis connection manager");
+        let state = AppState::new(
+            config.clone(),
+            db,
+            uuid::Uuid::new_v4(),
+            redis,
+            auth_redis,
+            reqwest::Client::new(),
+            v2board_domain::auth::PasswordKdf::new(1),
+            v2board_domain::smtp::SmtpTransportCache::default(),
+        );
+        build_app(state, &config)
+    }
+
+    fn with_loopback_peer(mut request: Request) -> Request {
+        request
+            .extensions_mut()
+            .insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 40_000))));
+        request
+    }
+
+    fn header_str<'a>(headers: &'a HeaderMap, name: &HeaderName) -> &'a str {
+        headers
+            .get(name)
+            .unwrap_or_else(|| panic!("missing header {name}"))
+            .to_str()
+            .expect("ascii header value")
+    }
+
+    #[tokio::test]
+    async fn preflight_from_an_allowlisted_origin_is_answered_without_credentials() {
+        let app = cors_test_app();
+        let request = with_loopback_peer(
+            Request::builder()
+                .method(Method::OPTIONS)
+                .uri("/api/v1/passport/auth/login")
+                .header(header::ORIGIN, ALLOWED_ORIGIN)
+                .header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
+                .body(Body::empty())
+                .unwrap(),
+        );
+        let response = app.oneshot(request).await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let headers = response.headers().clone();
+        assert_eq!(
+            headers.get(header::ACCESS_CONTROL_ALLOW_ORIGIN).unwrap(),
+            ALLOWED_ORIGIN
+        );
+        assert!(header_str(&headers, &header::ACCESS_CONTROL_ALLOW_METHODS).contains("POST"));
+        let allow_headers =
+            header_str(&headers, &header::ACCESS_CONTROL_ALLOW_HEADERS).to_ascii_lowercase();
+        assert!(allow_headers.contains("authorization"));
+        // Origin is a browser-forbidden request header: it can never appear in
+        // Access-Control-Request-Headers, so it must not be advertised either.
+        assert!(!allow_headers.split(',').any(|name| name.trim() == "origin"));
+        assert_eq!(
+            header_str(&headers, &header::ACCESS_CONTROL_MAX_AGE),
+            "7200"
+        );
+        // Pins the db6bf00b regression: the API has no cookie-auth contract, so
+        // the preflight must never grant ambient credentials.
+        assert!(
+            headers
+                .get(header::ACCESS_CONTROL_ALLOW_CREDENTIALS)
+                .is_none()
+        );
+        // The CORS layer must short-circuit the preflight instead of letting it
+        // fall through to the router/fallback, which would produce a body.
+        let body = to_bytes(response.into_body(), 1024).await.unwrap();
+        assert!(body.is_empty());
+    }
+
+    #[tokio::test]
+    async fn preflight_from_a_disallowed_origin_gets_no_allow_origin() {
+        let app = cors_test_app();
+        let request = with_loopback_peer(
+            Request::builder()
+                .method(Method::OPTIONS)
+                .uri("/api/v1/passport/auth/login")
+                .header(header::ORIGIN, "https://evil.example.test")
+                .header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
+                .body(Body::empty())
+                .unwrap(),
+        );
+        let response = app.oneshot(request).await.unwrap();
+
+        assert!(
+            response
+                .headers()
+                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                .is_none()
+        );
+        assert!(
+            response
+                .headers()
+                .get(header::ACCESS_CONTROL_ALLOW_CREDENTIALS)
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn simple_cross_origin_post_carries_allow_origin_on_the_localized_error() {
+        let app = cors_test_app();
+        let request = with_loopback_peer(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v1/passport/auth/login")
+                .header(header::ORIGIN, ALLOWED_ORIGIN)
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from("email=not-an-email&password=password123"))
+                .unwrap(),
+        );
+        let response = app.oneshot(request).await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(
+            response
+                .headers()
+                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                .unwrap(),
+            ALLOWED_ORIGIN
+        );
+        assert!(
+            response
+                .headers()
+                .get(header::ACCESS_CONTROL_ALLOW_CREDENTIALS)
+                .is_none()
+        );
+        let body = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        // The default-locale zh-CN message proves the request traversed the full
+        // middleware stack down to the handler's validation error.
+        assert_eq!(body["message"], "邮箱格式不正确");
+    }
 
     #[test]
     fn public_asset_gate_accepts_only_flat_content_hashed_files() {
