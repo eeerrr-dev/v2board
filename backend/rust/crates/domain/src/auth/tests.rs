@@ -12,9 +12,10 @@ use super::{
         validate_registration_auxiliary_inputs,
     },
     sessions::{
-        ADD_OPAQUE_SESSION_SCRIPT, AUTH_SESSION_KEY_PREFIX, RESERVE_STEP_UP_ATTEMPT_SCRIPT,
-        auth_session_key, decode_session_metadata, generate_auth_token, parse_temp_token,
-        session_ttl_seconds, step_up_limiter_keys, truncate_utf8,
+        ADD_OPAQUE_SESSION_SCRIPT, AUTH_SESSION_KEY_PREFIX, REMOVE_SESSION_SCRIPT,
+        RESERVE_STEP_UP_ATTEMPT_SCRIPT, auth_session_key, decode_session_metadata,
+        generate_auth_token, parse_temp_token, session_ttl_seconds, step_up_limiter_keys,
+        truncate_utf8,
     },
     validation::{
         is_valid_email, normalize_email, validate_change_password, validate_email, validate_forget,
@@ -339,6 +340,25 @@ fn opaque_session_script_sets_absolute_ttl_without_storing_the_bearer() {
     assert!(!ADD_OPAQUE_SESSION_SCRIPT.contains("auth_data"));
     assert!(ADD_OPAQUE_SESSION_SCRIPT.contains("while count > tonumber(ARGV[6])"));
     assert!(ADD_OPAQUE_SESSION_SCRIPT.contains("redis.call('SREM', KEYS[3], auth_key)"));
+}
+
+#[test]
+fn logout_revokes_the_presented_bearer_and_repeats_as_a_no_op() {
+    // AuthService::logout resolves the presented bearer to its session and runs
+    // the removal script. `user_from_auth_data` authenticates through the
+    // AUTH_SESSION_<sha256(bearer)> reverse mapping and the per-user metadata
+    // entry; the script must delete both halves (the stored token_hash is the
+    // same sha256 the reverse-mapping key embeds), so the bearer is invalid
+    // immediately after logout instead of surviving to its TTL.
+    assert!(REMOVE_SESSION_SCRIPT.contains("local auth_key = ARGV[2] .. meta['token_hash']"));
+    assert!(REMOVE_SESSION_SCRIPT.contains("redis.call('DEL', auth_key)"));
+    assert!(REMOVE_SESSION_SCRIPT.contains("redis.call('SREM', KEYS[2], auth_key)"));
+    assert!(REMOVE_SESSION_SCRIPT.contains("sessions[ARGV[1]] = nil"));
+    // A repeated logout finds no session map (or no entry) and must complete as
+    // a no-op instead of erroring, keeping POST /user/logout idempotent. The
+    // bearer-to-identity lookup that precedes the script already short-circuits
+    // to Ok(false) when the reverse mapping is gone.
+    assert!(REMOVE_SESSION_SCRIPT.contains("if not current then\n    return 0\nend"));
 }
 
 #[test]

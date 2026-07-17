@@ -137,6 +137,21 @@ export const redeemGiftCard = async (
 export const unbindTelegram = (client: ApiClient) =>
   client.request({ url: '/user/unbindTelegram', method: 'GET', responseSchema: trueSchema });
 
+// Explicit sign-out: best-effort server-side revocation of the current opaque
+// session (a Rust-only endpoint; the legacy API had no logout). The caller
+// tears local auth down synchronously right after firing this, and the
+// client's request interceptor reads the auth store on a microtask — after
+// that teardown — so the bearer must be captured up front and passed as an
+// explicit Authorization header. The backend treats a dead or absent bearer
+// as a successful no-op.
+export const logout = (client: ApiClient, config?: Pick<ApiRequestConfig, 'headers'>) =>
+  client.request({
+    url: '/user/logout',
+    method: 'POST',
+    responseSchema: trueSchema,
+    ...config,
+  });
+
 export const getActiveSession = (client: ApiClient, config?: QueryRequestConfig) =>
   client.request({
     url: '/user/getActiveSession',

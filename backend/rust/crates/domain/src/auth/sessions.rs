@@ -276,6 +276,20 @@ impl AuthService {
         Ok(visible)
     }
 
+    /// Revokes the session behind the opaque bearer an explicit sign-out
+    /// presents. A bearer that no longer resolves — already revoked, expired,
+    /// or never issued — is a successful no-op so repeated logout calls stay
+    /// idempotent.
+    pub async fn logout(&self, auth_data: &str) -> Result<bool, ApiError> {
+        if auth_data.is_empty() || auth_data.len() > 4096 {
+            return Ok(false);
+        }
+        let Some(identity) = self.opaque_session_identity(auth_data).await? else {
+            return Ok(false);
+        };
+        self.remove_session(identity.id, &identity.session).await
+    }
+
     pub async fn remove_session(&self, user_id: i64, session_id: &str) -> Result<bool, ApiError> {
         let sessions_key = self.redis_key(&user_sessions_key(user_id));
         let auth_keys_key = self.redis_key(&user_auth_keys_key(user_id));
@@ -649,7 +663,7 @@ redis.call('EXPIRE', KEYS[3], ARGV[4])
 return 1
 "#;
 
-const REMOVE_SESSION_SCRIPT: &str = r#"
+pub(super) const REMOVE_SESSION_SCRIPT: &str = r#"
 local current = redis.call('GET', KEYS[1])
 if not current then
     return 0

@@ -18,7 +18,7 @@ import { AdminLayout } from './admin-layout';
 const mocks = vi.hoisted(() => ({
   location: { pathname: '/dashboard' } as { pathname: string },
   navigate: vi.fn(),
-  logout: vi.fn(),
+  signOut: vi.fn(),
 }));
 
 vi.mock('react-router', () => ({
@@ -50,8 +50,9 @@ vi.mock('react-router', () => ({
 }));
 
 vi.mock('@v2board/api-client', () => ({ user: { info: vi.fn() } }));
-vi.mock('@/lib/api', () => ({ apiClient: {} }));
-vi.mock('@/lib/auth', () => ({ logout: mocks.logout }));
+// The account menu's explicit sign-out (revocation + local teardown) lives in
+// lib/api as signOut; the shell only wires the menu item to it.
+vi.mock('@/lib/api', () => ({ apiClient: {}, signOut: mocks.signOut }));
 
 function renderShell({ preloadUserInfo = true }: { preloadUserInfo?: boolean } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -69,7 +70,7 @@ describe('AdminLayout', () => {
   beforeEach(() => {
     mocks.location = { pathname: '/dashboard' };
     mocks.navigate.mockReset();
-    mocks.logout.mockReset();
+    mocks.signOut.mockReset();
     vi.mocked(user.info).mockReset();
     vi.mocked(user.info).mockResolvedValue({ email: 'admin@example.com' } as Awaited<
       ReturnType<typeof user.info>
@@ -204,7 +205,7 @@ describe('AdminLayout', () => {
     await u.click(screen.getByTestId('admin-avatar-trigger'));
     await u.click(await screen.findByTestId('admin-logout'));
 
-    expect(mocks.logout).toHaveBeenCalledTimes(1);
+    expect(mocks.signOut).toHaveBeenCalledTimes(1);
     expect(mocks.navigate).toHaveBeenCalledWith('/login');
   });
 

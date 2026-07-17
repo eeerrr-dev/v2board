@@ -253,6 +253,22 @@ describe('createApiClient', () => {
     expect(mock.history.post[0]?.data).toBe('session_id=guid-2');
   });
 
+  it('revokes the current session via POST /user/logout with an explicitly captured bearer', async () => {
+    // Sign-out tears local auth down synchronously right after firing this
+    // call, and the request interceptor reads the auth store on a microtask —
+    // after that teardown — so the caller passes the captured bearer as an
+    // explicit Authorization header instead.
+    const client = createApiClient({ baseURL: '/api/v1', getAuthData: () => null });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onPost('/user/logout').reply(200, { data: true });
+
+    await expect(
+      userEndpoints.logout(client, { headers: { authorization: 'captured-bearer' } }),
+    ).resolves.toBe(true);
+
+    expect(mock.history.post[0]?.headers?.authorization).toBe('captured-bearer');
+  });
+
   it('does not expose a user notice detail endpoint absent from the original user bundle', () => {
     const endpoints = userEndpoints as unknown as Record<string, unknown>;
 

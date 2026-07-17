@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { apiClient } from './api';
+import { apiClient, signOut } from './api';
 import { getAuthData, registerSessionCacheClearer, setAuthData } from './auth';
 import { registerRouterNavigation } from './router-navigation';
 
@@ -115,6 +115,66 @@ describe('user api unauthorized handling', () => {
     expect(routerNavigate).toHaveBeenCalledWith('/login', { replace: true });
 
     expect(getAuthData()).toBeNull();
+  });
+});
+
+describe('explicit sign-out revocation', () => {
+  const originalAdapter = apiClient.axios.defaults.adapter;
+  let requests: Array<Parameters<AdapterFn>[0]>;
+
+  beforeEach(() => {
+    registerRouterNavigation({
+      navigate: vi.fn<RouterNavigate>().mockResolvedValue(undefined),
+    });
+    registerSessionCacheClearer(() => undefined);
+    setAuthData('live-token');
+    requests = [];
+  });
+
+  afterEach(() => {
+    apiClient.axios.defaults.adapter = originalAdapter;
+    registerSessionCacheClearer(() => undefined);
+    setAuthData(null);
+  });
+
+  it('fires the revocation with the captured bearer and tears down even when it rejects', async () => {
+    const reject = transportErrorAdapter('Network Error');
+    apiClient.axios.defaults.adapter = async (config) => {
+      requests.push(config);
+      return reject(config);
+    };
+
+    signOut();
+
+    // Local teardown is synchronous and never waits on (or fails with) the
+    // network; the rejection is swallowed by the fire-and-forget call.
+    expect(getAuthData()).toBeNull();
+
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0]?.url).toBe('/user/logout');
+    expect(requests[0]?.method).toBe('post');
+    // The bearer must be captured before teardown: the request interceptor
+    // reads the auth store on a microtask, after it is already cleared.
+    expect(requests[0]?.headers?.authorization).toBe('live-token');
+  });
+
+  it('does not fire the revocation from the 403 session-expiry teardown', async () => {
+    const forbidden = adapterFor(403, { message: 'auth required' });
+    apiClient.axios.defaults.adapter = async (config) => {
+      requests.push(config);
+      return forbidden(config);
+    };
+
+    await expect(
+      apiClient.request({ url: '/user/info', method: 'GET', responseSchema: z.unknown() }),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(getAuthData()).toBeNull();
+
+    // The token is already dead server-side; revoking here would only 403
+    // again into the same handler. Let any stray fire-and-forget call surface
+    // before asserting.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(requests.map((request) => request.url)).toEqual(['/user/info']);
   });
 });
 

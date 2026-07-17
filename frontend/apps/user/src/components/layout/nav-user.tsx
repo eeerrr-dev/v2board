@@ -1,7 +1,7 @@
 import { ChevronsUpDown, Languages, LogOut, UserRound } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
-import { logout } from '@/lib/auth';
+import { signOut } from '@/lib/api';
 import { LanguageMenuItems } from './language-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
@@ -116,7 +116,7 @@ export function NavUser({ email }: NavUserProps) {
             <DropdownMenuItem
               variant="destructive"
               onSelect={() => {
-                logout();
+                signOut();
                 void navigate('/login');
               }}
             >

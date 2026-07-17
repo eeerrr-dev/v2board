@@ -134,6 +134,7 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
         .route("/api/v1/passport/comm/pv", post(crate::auth::passport_pv))
         .route("/api/v1/user/info", get(crate::user::user_info))
         .route("/api/v1/user/checkLogin", get(crate::user::check_login))
+        .route("/api/v1/user/logout", post(crate::user::logout))
         .route("/api/v1/user/getStat", get(crate::user::user_stat))
         .route(
             "/api/v1/user/getSubscribe",

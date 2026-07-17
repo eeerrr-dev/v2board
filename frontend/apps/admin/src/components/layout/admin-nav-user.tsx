@@ -1,6 +1,6 @@
 import { ChevronsUpDown, LogOut } from 'lucide-react';
 import { useNavigate } from 'react-router';
-import { logout } from '@/lib/auth';
+import { signOut } from '@/lib/api';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
   DropdownMenu,
@@ -81,7 +81,7 @@ export function AdminNavUser({ email }: AdminNavUserProps) {
               data-testid="admin-logout"
               onSelect={() => {
                 setOpenMobile(false);
-                logout();
+                signOut();
                 void navigate('/login');
               }}
             >

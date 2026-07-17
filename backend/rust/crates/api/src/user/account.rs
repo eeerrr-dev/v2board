@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use v2board_compat::{ApiError, LegacyEnvelope, legacy_data};
 
 use crate::{
-    auth::{AuthQuery, require_user},
+    auth::{AuthQuery, require_user, select_auth_data},
     runtime::AppState,
 };
 
@@ -29,6 +29,23 @@ pub(crate) struct CheckLoginResult {
     is_login: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     is_admin: Option<bool>,
+}
+
+/// Explicit sign-out: revokes the opaque session presented in the
+/// Authorization header. The legacy API had no logout endpoint, so no external
+/// party consumes this; any valid session — user, staff, or admin — may revoke
+/// itself. A dead or absent bearer is a successful no-op so the client's
+/// fire-and-forget teardown stays idempotent: a repeated call still returns
+/// the standard `{data: true}` envelope.
+pub(crate) async fn logout(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<LegacyEnvelope<bool>>, ApiError> {
+    if let Some(auth_data) = select_auth_data(&headers) {
+        let auth = state.auth_service();
+        auth.logout(&auth_data).await?;
+    }
+    Ok(legacy_data(true))
 }
 
 pub(crate) async fn check_login(

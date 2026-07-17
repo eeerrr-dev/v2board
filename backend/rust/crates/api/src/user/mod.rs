@@ -6,7 +6,7 @@ mod stats;
 mod subscription;
 
 pub(crate) use account::{
-    active_sessions, change_password, check_login, remove_active_session, reset_security,
+    active_sessions, change_password, check_login, logout, remove_active_session, reset_security,
     unbind_telegram, user_comm_config, user_info, user_update,
 };
 pub(crate) use content::{

@@ -40,10 +40,10 @@ const mocks = vi.hoisted(() => ({
   location: { pathname: '/dashboard', search: '' },
   navigationState: 'idle' as 'idle' | 'loading' | 'submitting',
   changeLanguage: vi.fn(),
-  logout: vi.fn(),
   navigate: vi.fn(),
   selectLocale: vi.fn(),
   setThemePreference: vi.fn(),
+  signOut: vi.fn(),
   darkListeners: new Set<() => void>(),
   title: 'V2Board',
   user: { email: 'user@example.com' },
@@ -115,8 +115,10 @@ vi.mock('@/lib/queries', () => ({
   },
 }));
 
-vi.mock('@/lib/auth', () => ({
-  logout: mocks.logout,
+// The account menu's explicit sign-out (revocation + local teardown) lives in
+// lib/api as signOut; the shell only wires the menu item to it.
+vi.mock('@/lib/api', () => ({
+  signOut: mocks.signOut,
 }));
 
 vi.mock('@/lib/dark-mode', async () => {
@@ -153,10 +155,10 @@ function resetMocks() {
   mocks.location = { pathname: '/dashboard', search: '' };
   mocks.navigationState = 'idle';
   mocks.changeLanguage.mockReset();
-  mocks.logout.mockReset();
   mocks.navigate.mockReset();
   mocks.selectLocale.mockReset();
   mocks.setThemePreference.mockReset();
+  mocks.signOut.mockReset();
   mocks.darkListeners.clear();
   mocks.title = 'V2Board';
   mocks.user = { email: 'user@example.com' };
@@ -367,7 +369,7 @@ describe('AppLayout shadcn app shell behavior', () => {
 
     await user.click(screen.getByRole('menuitem', { name: '登出' }));
 
-    expect(mocks.logout).toHaveBeenCalled();
+    expect(mocks.signOut).toHaveBeenCalled();
     expect(mocks.navigate).toHaveBeenCalledWith('/login');
   });
 

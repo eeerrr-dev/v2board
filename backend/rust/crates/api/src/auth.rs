@@ -210,7 +210,7 @@ pub(crate) async fn require_user(
     auth.user_from_auth_data(&auth_data).await
 }
 
-fn select_auth_data(headers: &HeaderMap) -> Option<String> {
+pub(crate) fn select_auth_data(headers: &HeaderMap) -> Option<String> {
     headers
         .get(axum::http::header::AUTHORIZATION)?
         .to_str()
