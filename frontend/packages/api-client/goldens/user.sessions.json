@@ -1,0 +1,16 @@
+[
+  {
+    "session_id": "golden-session-digest-0000000002",
+    "ip": "203.0.113.7",
+    "ua": "GoldenBrowser/2.0",
+    "login_at": "2023-11-14T23:13:20Z",
+    "current": true
+  },
+  {
+    "session_id": "golden-session-digest-0000000001",
+    "ip": "",
+    "ua": "",
+    "login_at": "2023-11-14T22:13:20Z",
+    "current": false
+  }
+]
