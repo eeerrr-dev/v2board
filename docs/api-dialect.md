@@ -1417,7 +1417,7 @@ switches its family atomically. No wave leaves a family half-dialect. Wave
 ### W5 — Profile, account, subscription
 
 - Routes: §5.3 (minus the auth session rows, minus
-  `/user/commission-transfers` — owned by W7 — and minus
+  `/user/commission-transfers` — owned by W7 — and minus `/user/config` and
   `/user/telegram-bot` — owned by W3) + §5.4 subscription rows. Every route
   has exactly one owning wave.
 - Files: `crates/api/src/user/{account,subscription,stats}.rs`;
@@ -1468,7 +1468,9 @@ switches its family atomically. No wave leaves a family half-dialect. Wave
   (system rows), admin dispatcher rows; `endpoints/admin.ts` config/system;
   `apps/admin/src/pages/config*`, system pages.
 - Fixtures/scenarios: `runners/admin/config.mjs`,
-  `specs/admin-config.spec.mjs`; `INTERACTION_PARITY_SCENARIOS="admin"`.
+  `specs/admin-config.spec.mjs`; focused shards list exact
+  `INTERACTION_PARITY_SCENARIOS` labels (matching is end-anchored — a bare
+  `admin` prefix selects nothing).
 - Risk: the config save conflict code (409) and the 202 activation-pending
   refetch-not-resubmit flow (§6.1) drive admin UX;
   array-valued config fields switch off the `'[]'` hack.

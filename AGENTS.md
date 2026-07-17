@@ -107,10 +107,11 @@ visual, interaction, database, and native runtime artifacts in Docker volumes.
 - Never import, concatenate, copy, serve, or deploy the old packaged bundles:
   `umi.js`, `umi.css`, `components.chunk.css`, `vendors.async.js`,
   `components.async.js`, `env.example.js`, copied static/i18n/theme assets, or
-  admin equivalents. There are no runtime `custom.css`/`custom.js` fallbacks,
-  and no operator `custom_html` injection: that feature is removed
-  (`docs/api-dialect.md` §10.5/§12) — do not reintroduce its config field,
-  HTML marker, or admin UI control.
+  admin equivalents. There are no runtime `custom.css`/`custom.js` fallbacks.
+  Operator `custom_html` injection is removed by `docs/api-dialect.md`
+  §10.5/§12 (its config field, HTML marker, and admin UI control still exist
+  until that W1 wave lands) — do not extend it, and never reintroduce it
+  after removal.
 - `references/wyx2685-v2board` is the only retained old implementation. It is a
   pinned git submodule mounted read-only for compatibility tests. Never COPY it
   into an image, source tree, runtime volume, Vite input, or deploy release.
