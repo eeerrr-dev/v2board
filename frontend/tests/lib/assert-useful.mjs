@@ -891,7 +891,11 @@ export function assertUsefulInteraction(label, result, target) {
       result.replyRequests?.[0]?.message !== 'Parity reply send' ||
       result.sent?.inputValue !== '' ||
       !jsonIncludesAny(result.sent?.toastTexts, ['发送成功']) ||
-      result.ticketFetchDelta !== 0)
+      // Tier-2 conscious change on the redesigned ticket surface: the reply
+      // mutation invalidates the ticket detail query, so the source refetches
+      // the thread once immediately; the frozen legacy oracle still waits on
+      // its 5s detail poll and must not refetch inside the runner's window.
+      result.ticketFetchDelta !== (target === 'source' ? 1 : 0))
   ) {
     throw new Error(
       `user ticket reply send did not match legacy behavior: ${JSON.stringify(result)}`,
