@@ -35,12 +35,74 @@ const W3_ROUTE_IDS = Object.freeze([
   'user.notices.list',
 ]);
 
+const W4_ROUTE_IDS = Object.freeze([
+  'user.plans.get',
+  'user.plans.list',
+  'user.orders.create',
+  'user.orders.list',
+  'user.orders.get',
+  'user.orders.status',
+  'user.orders.cancel',
+  'user.orders.checkout',
+  'user.orders.stripe-intent',
+  'user.payment-methods.list',
+  'user.coupons.check',
+]);
+
 test('unflipped families stay identity: modern equals legacy until each wave', () => {
   for (const entry of routeMap) {
     if (entry.id.startsWith('auth.')) continue; // §5.2 flipped in W2
     if (W3_ROUTE_IDS.includes(entry.id)) continue; // §5.1/§5.8 flipped in W3
+    if (W4_ROUTE_IDS.includes(entry.id)) continue; // §5.5 flipped in W4
     assert.deepEqual(entry.modern, entry.legacy, `${entry.id} must stay legacy→legacy until its wave`);
   }
+});
+
+test('W4: the user commerce family carries the modern rows', () => {
+  const modern = Object.fromEntries(
+    W4_ROUTE_IDS.map((id) => [id, routeEntry(id).modern]),
+  );
+  assert.deepEqual(modern, {
+    // The legacy `?id=` discriminator became a real path segment (§5.5).
+    'user.plans.get': { method: 'GET', path: '/user/plans/{id}' },
+    'user.plans.list': { method: 'GET', path: '/user/plans' },
+    'user.orders.create': { method: 'POST', path: '/user/orders' },
+    'user.orders.list': { method: 'GET', path: '/user/orders' },
+    // The legacy `?trade_no=` discriminators became path identity (§5.5).
+    'user.orders.get': { method: 'GET', path: '/user/orders/{trade_no}' },
+    'user.orders.status': { method: 'GET', path: '/user/orders/{trade_no}/status' },
+    'user.orders.cancel': { method: 'POST', path: '/user/orders/{trade_no}/cancel' },
+    'user.orders.checkout': { method: 'POST', path: '/user/orders/{trade_no}/checkout' },
+    'user.orders.stripe-intent': {
+      method: 'POST',
+      path: '/user/orders/{trade_no}/stripe-intent',
+    },
+    'user.payment-methods.list': { method: 'GET', path: '/user/payment-methods' },
+    'user.coupons.check': { method: 'POST', path: '/user/coupons/check' },
+  });
+  // The oracle keeps requesting the legacy rows.
+  assert.equal(worldRoute('user.plans.list', 'oracle').path, '/user/plan/fetch');
+  assert.equal(worldRoute('user.orders.create', 'oracle').path, '/user/order/save');
+  assert.equal(worldRoute('user.payment-methods.list', 'oracle').path, '/user/order/getPaymentMethod');
+  assert.deepEqual(
+    matchRoute('source', { method: 'GET', pathname: `${API_PREFIX}/user/plans/3` }),
+    { id: 'user.plans.get', params: { id: '3' } },
+  );
+  assert.equal(
+    matchRoute('source', { method: 'GET', pathname: `${API_PREFIX}/user/plans` })?.id,
+    'user.plans.list',
+  );
+  assert.deepEqual(
+    matchRoute('source', {
+      method: 'POST',
+      pathname: `${API_PREFIX}/user/orders/2026TRADE1/checkout`,
+    }),
+    { id: 'user.orders.checkout', params: { trade_no: '2026TRADE1' } },
+  );
+  assert.deepEqual(
+    matchRoute('source', { method: 'GET', pathname: `${API_PREFIX}/user/orders/2026TRADE1/status` }),
+    { id: 'user.orders.status', params: { trade_no: '2026TRADE1' } },
+  );
 });
 
 test('W3: the public/content family carries the modern rows', () => {

@@ -1269,7 +1269,8 @@ export function normalizeOrderStripeInteractionResult(label, result) {
       prepared: (selected.stripeIntentCount ?? 0) + (selected.stripePublicKeyCount ?? 0) > 0,
       submitDisabled: selected.submitButton?.disabled,
     },
-    request: request ? { method: Number(request.method), trade_no: request.trade_no } : null,
+    // W4 canonical capture: {trade_no} path identity + {method_id} (§5.5).
+    request: request ? { method_id: Number(request.method_id), trade_no: request.trade_no } : null,
   };
   if (label === 'user-order-stripe-disabled-checkout') {
     return { before: base.before, selected: base.selected };
@@ -1618,13 +1619,14 @@ export function normalizeProfileDepositModalInteractionResult(result) {
       modalCount: result.filled?.modalCount > 0 ? 1 : 0,
     },
     hashIncludesOrder: Boolean(result.hash?.includes(`/order/${profileDepositTradeNo}`)),
+    // W4 canonical capture: the deposit arm of the §9.2 create-order union
+    // (the legacy plan_id: 0 + period: "deposit" sentinel folds away).
     orderSaveRequests:
       result.orderSaveRequests?.length === 1
         ? [
             {
               deposit_amount: String(Number(request.deposit_amount)),
-              period: request.period,
-              plan_id: String(Number(request.plan_id)),
+              kind: request.kind,
             },
           ]
         : [],

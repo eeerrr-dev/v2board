@@ -34,7 +34,7 @@ function hasExpectedStripeCheckoutContract(result, target, legacyOracleToken) {
     return Boolean(
       result.stripeIntentRequests?.length === 1 &&
       intentRequest?.trade_no === 'VISUAL2026110001' &&
-      Number(intentRequest?.method) === 2 &&
+      Number(intentRequest?.method_id) === 2 &&
       terminal.stripeConfirmCount === 1 &&
       terminal.stripeUnexpectedCreateTokenCount === 0 &&
       result.checkoutRequests?.length === 0,
@@ -50,7 +50,7 @@ function hasExpectedStripeCheckoutContract(result, target, legacyOracleToken) {
       result.stripeIntentRequests?.length === 0 &&
       result.checkoutRequests?.length === 1 &&
       legacyRequest?.trade_no === 'VISUAL2026110001' &&
-      Number(legacyRequest?.method) === 2 &&
+      Number(legacyRequest?.method_id) === 2 &&
       legacyRequest?.token === legacyOracleToken,
     );
   }
@@ -66,7 +66,7 @@ function hasExpectedStripePreparationContract(result, target) {
       result.selected?.stripePublicKeyCount === 0 &&
       result.stripeIntentRequests?.length === 1 &&
       intentRequest?.trade_no === 'VISUAL2026110001' &&
-      Number(intentRequest?.method) === 2,
+      Number(intentRequest?.method_id) === 2,
     );
   }
   if (target === 'oracle') {
@@ -382,8 +382,8 @@ export function assertUsefulInteraction(label, result, target) {
       !result.filled?.modalCount ||
       result.filled?.buttons?.length < 2 ||
       result.orderSaveRequests?.length !== 1 ||
-      Number(result.orderSaveRequests?.[0]?.plan_id) !== 0 ||
-      result.orderSaveRequests?.[0]?.period !== 'deposit' ||
+      // W4 canonical capture: the deposit arm of the §9.2 create-order union.
+      result.orderSaveRequests?.[0]?.kind !== 'deposit' ||
       Number(result.orderSaveRequests?.[0]?.deposit_amount) !== 1234 ||
       !result.hash?.includes(`/order/${profileDepositTradeNo}`))
   ) {
@@ -585,7 +585,7 @@ export function assertUsefulInteraction(label, result, target) {
       result.loading?.submitButton?.disabled !== true ||
       result.checkoutRequests?.length !== 1 ||
       result.checkoutRequests?.[0]?.trade_no !== 'VISUAL2026110001' ||
-      Number(result.checkoutRequests?.[0]?.method) !== 1 ||
+      Number(result.checkoutRequests?.[0]?.method_id) !== 1 ||
       result.opened?.modalCount < 1 ||
       !jsonIncludesAny(result.opened?.modalTexts, ['等待支付中', 'Waiting for payment']))
   ) {
@@ -598,7 +598,7 @@ export function assertUsefulInteraction(label, result, target) {
     (result.before?.activeIndex !== 0 ||
       result.checkoutRequests?.length !== 1 ||
       result.checkoutRequests?.[0]?.trade_no !== 'VISUAL2026110001' ||
-      Number(result.checkoutRequests?.[0]?.method) !== 1 ||
+      Number(result.checkoutRequests?.[0]?.method_id) !== 1 ||
       result.after?.modalCount !== 0 ||
       result.after?.qrSvgCount + result.after?.qrCanvasCount !== 0 ||
       result.after?.submitButton?.disabled !== false ||
@@ -613,7 +613,7 @@ export function assertUsefulInteraction(label, result, target) {
     (result.before?.activeIndex !== 0 ||
       result.checkoutRequests?.length !== 1 ||
       result.checkoutRequests?.[0]?.trade_no !== 'VISUAL2026110001' ||
-      Number(result.checkoutRequests?.[0]?.method) !== 1 ||
+      Number(result.checkoutRequests?.[0]?.method_id) !== 1 ||
       result.after?.modalCount !== 0 ||
       result.after?.qrSvgCount + result.after?.qrCanvasCount !== 0 ||
       !result.after?.hash?.includes('/order/VISUAL2026110001'))
@@ -726,7 +726,7 @@ export function assertUsefulInteraction(label, result, target) {
     (result.selected?.activeIndex !== 2 ||
       result.checkoutRequests?.length !== 1 ||
       result.checkoutRequests?.[0]?.trade_no !== 'VISUAL2026110001' ||
-      Number(result.checkoutRequests?.[0]?.method) !== 3 ||
+      Number(result.checkoutRequests?.[0]?.method_id) !== 3 ||
       !result.redirected?.hash?.includes('cashier=visual'))
   ) {
     throw new Error(

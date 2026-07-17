@@ -412,8 +412,10 @@ The user commerce flow (`/plan`, `/plan/:plan_id`, `/order`, and
 `/order/:trade_no`) is a redesigned shadcn surface.
 
 - Keep commerce contracts strict: plan filtering, sold-out handling
-  (`capacity_limit`), coupon checks, save-order payloads, unfinished-order and
-  order cancellation payloads (`{trade_no}`), change-subscription payload,
+  (`capacity_limit`), coupon checks, save-order payloads, unfinished-order
+  handling and order cancellation with `trade_no` in the path
+  (`POST /user/orders/{trade_no}/cancel`; W11 owns the admin-order half),
+  change-subscription payload,
   payment-method selection, Stripe PaymentIntent preparation and Payment Element
   confirmation (including signed webhook settlement) / QR / redirect checkout, routing, and
   i18n must remain covered. Handling-fee math (a display estimate; the server

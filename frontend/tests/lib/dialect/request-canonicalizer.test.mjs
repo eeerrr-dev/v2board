@@ -161,15 +161,90 @@ test('identifier-like strings never fold to numbers', () => {
     postData: 'trade_no=2026110099007',
   });
   assert.equal(request.routeId, 'user.orders.cancel');
-  // Exact numeric round-trip folds…
-  assert.equal(request.body.trade_no, 2026110099007);
+  // Exact numeric round-trip folds… (W4 lifts the legacy body-carried
+  // trade_no onto the canonical path identity.)
+  assert.equal(request.params.trade_no, 2026110099007);
   const padded = canonicalizeRequest('oracle', {
     method: 'POST',
     url: '/api/v1/user/order/cancel',
     postData: 'trade_no=007T',
   });
   // …but non-round-tripping identifiers stay strings.
-  assert.equal(padded.body.trade_no, '007T');
+  assert.equal(padded.params.trade_no, '007T');
+});
+
+test('the W4 create-order bodies fold onto the §9.2 union in both worlds (§5.5)', () => {
+  const oraclePlan = canonicalizeRequest('oracle', {
+    method: 'POST',
+    url: '/api/v1/user/order/save',
+    postData: JSON.stringify({ plan_id: 1, period: 'month_price', coupon_code: '' }),
+  });
+  const sourcePlan = canonicalizeRequest('source', {
+    method: 'POST',
+    url: '/api/v1/user/orders',
+    postData: JSON.stringify({ kind: 'plan', plan_id: 1, period: 'month_price' }),
+  });
+  assert.deepEqual(oraclePlan, {
+    routeId: 'user.orders.create',
+    params: {},
+    // §5.5: the legacy empty coupon_code spelling folds to omission.
+    body: { kind: 'plan', plan_id: 1, period: 'month_price' },
+  });
+  assert.deepEqual(sourcePlan, oraclePlan);
+
+  const oracleDeposit = canonicalizeRequest('oracle', {
+    method: 'POST',
+    url: '/api/v1/user/order/save',
+    postData: JSON.stringify({ plan_id: 0, period: 'deposit', deposit_amount: 1234 }),
+  });
+  const sourceDeposit = canonicalizeRequest('source', {
+    method: 'POST',
+    url: '/api/v1/user/orders',
+    postData: JSON.stringify({ kind: 'deposit', deposit_amount: 1234 }),
+  });
+  assert.deepEqual(oracleDeposit, {
+    routeId: 'user.orders.create',
+    params: {},
+    // The plan_id: 0 + period: "deposit" sentinel dies with the wave.
+    body: { kind: 'deposit', deposit_amount: 1234 },
+  });
+  assert.deepEqual(sourceDeposit, oracleDeposit);
+});
+
+test('the W4 checkout selection folds onto path trade_no + method_id (§5.5)', () => {
+  const oracle = canonicalizeRequest('oracle', {
+    method: 'POST',
+    url: '/api/v1/user/order/checkout',
+    postData: JSON.stringify({ trade_no: 'VISUAL2026110001', method: '3' }),
+  });
+  const source = canonicalizeRequest('source', {
+    method: 'POST',
+    url: '/api/v1/user/orders/VISUAL2026110001/checkout',
+    postData: JSON.stringify({ method_id: 3 }),
+  });
+  assert.deepEqual(oracle, {
+    routeId: 'user.orders.checkout',
+    params: { trade_no: 'VISUAL2026110001' },
+    body: { method_id: 3 },
+  });
+  assert.deepEqual(source, oracle);
+
+  const oracleIntent = canonicalizeRequest('oracle', {
+    method: 'POST',
+    url: '/api/v1/user/order/stripe/intent',
+    postData: JSON.stringify({ trade_no: 'VISUAL2026110001', method: 2 }),
+  });
+  const sourceIntent = canonicalizeRequest('source', {
+    method: 'POST',
+    url: '/api/v1/user/orders/VISUAL2026110001/stripe-intent',
+    postData: JSON.stringify({ method_id: 2 }),
+  });
+  assert.deepEqual(oracleIntent, {
+    routeId: 'user.orders.stripe-intent',
+    params: { trade_no: 'VISUAL2026110001' },
+    body: { method_id: 2 },
+  });
+  assert.deepEqual(sourceIntent, oracleIntent);
 });
 
 test('unknown routes canonicalize with routeId null', () => {

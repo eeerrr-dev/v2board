@@ -1,5 +1,6 @@
 import { adminPath } from './env.mjs';
 import { emitFixtureResponse } from './dialect/fixture-emitters.mjs';
+import { canonicalizeRequest } from './dialect/request-canonicalizer.mjs';
 import {
   entryUrlForDialect,
   routingDialectFor,
@@ -176,6 +177,22 @@ export async function installApiFixtures(page, scenario, target, interaction = {
       await waitForAdminGroups(adminGroupsReady);
     }
     const requestData = readRequestData(route.request());
+    const requestMethod = route.request().method();
+    // W4 (§5.5): the modern commerce family carries the order identity in the
+    // path. Match both worlds' spellings and capture commerce requests in the
+    // canonical dialect shape so cross-world comparison sees one contract.
+    const modernOrderActionMatch =
+      /^\/api\/v1\/user\/orders\/[^/]+\/(status|cancel|checkout|stripe-intent)$/.exec(pathname);
+    const modernOrderAction = modernOrderActionMatch?.[1] ?? null;
+    const commerceRequestCapture = () => {
+      const { params, body } = canonicalizeRequest(target, {
+        method: requestMethod,
+        url: route.request().url(),
+        postData: route.request().postData(),
+      });
+      const bodyFields = body && typeof body === 'object' && !Array.isArray(body) ? body : {};
+      return { ...bodyFields, ...params };
+    };
     const adminServerNodeSaveMatch = /^\/server\/([^/]+)\/save$/.exec(adminEndpoint ?? '');
     if (pathname === '/api/v1/user/info') {
       page.__visualParityUserInfoFetchCount = (page.__visualParityUserInfoFetchCount ?? 0) + 1;
@@ -235,18 +252,28 @@ export async function installApiFixtures(page, scenario, target, interaction = {
         requestData,
       ];
     }
-    if (pathname === '/api/v1/user/order/save') {
-      page.__visualParityLastUserOrderSave = requestData;
+    if (
+      pathname === '/api/v1/user/order/save' ||
+      (pathname === '/api/v1/user/orders' && requestMethod === 'POST')
+    ) {
+      const orderSaveRequest = commerceRequestCapture();
+      page.__visualParityLastUserOrderSave = orderSaveRequest;
       page.__visualParityUserOrderSaveCount = (page.__visualParityUserOrderSaveCount ?? 0) + 1;
       page.__visualParityUserOrderSaveRequests = [
         ...(page.__visualParityUserOrderSaveRequests ?? []),
-        requestData,
+        orderSaveRequest,
       ];
     }
-    if (pathname === '/api/v1/user/order/fetch') {
+    if (
+      pathname === '/api/v1/user/order/fetch' ||
+      (pathname === '/api/v1/user/orders' && requestMethod === 'GET')
+    ) {
       page.__visualParityUserOrderFetchCount = (page.__visualParityUserOrderFetchCount ?? 0) + 1;
     }
-    if (pathname === '/api/v1/user/plan/fetch' && !requestUrl.searchParams.has('id')) {
+    if (
+      (pathname === '/api/v1/user/plan/fetch' && !requestUrl.searchParams.has('id')) ||
+      pathname === '/api/v1/user/plans'
+    ) {
       page.__visualParityUserPlanFetchCount = (page.__visualParityUserPlanFetchCount ?? 0) + 1;
     }
     if (pathname === '/api/v1/user/server/fetch') {
@@ -263,21 +290,23 @@ export async function installApiFixtures(page, scenario, target, interaction = {
       page.__visualParityUserKnowledgeFetchCount =
         (page.__visualParityUserKnowledgeFetchCount ?? 0) + 1;
     }
-    if (pathname === '/api/v1/user/order/checkout') {
-      page.__visualParityLastUserOrderCheckout = requestData;
+    if (pathname === '/api/v1/user/order/checkout' || modernOrderAction === 'checkout') {
+      const checkoutRequest = commerceRequestCapture();
+      page.__visualParityLastUserOrderCheckout = checkoutRequest;
       page.__visualParityUserOrderCheckoutCount =
         (page.__visualParityUserOrderCheckoutCount ?? 0) + 1;
       page.__visualParityUserOrderCheckoutRequests = [
         ...(page.__visualParityUserOrderCheckoutRequests ?? []),
-        requestData,
+        checkoutRequest,
       ];
     }
-    if (pathname === '/api/v1/user/coupon/check') {
-      page.__visualParityLastUserCouponCheck = requestData;
+    if (pathname === '/api/v1/user/coupon/check' || pathname === '/api/v1/user/coupons/check') {
+      const couponCheckRequest = commerceRequestCapture();
+      page.__visualParityLastUserCouponCheck = couponCheckRequest;
       page.__visualParityUserCouponCheckCount = (page.__visualParityUserCouponCheckCount ?? 0) + 1;
       page.__visualParityUserCouponCheckRequests = [
         ...(page.__visualParityUserCouponCheckRequests ?? []),
-        requestData,
+        couponCheckRequest,
       ];
     }
     if (pathname === '/api/v1/user/comm/getStripePublicKey') {
@@ -290,14 +319,14 @@ export async function installApiFixtures(page, scenario, target, interaction = {
         requestData,
       ];
     }
-    if (pathname === '/api/v1/user/order/stripe/intent') {
+    if (pathname === '/api/v1/user/order/stripe/intent' || modernOrderAction === 'stripe-intent') {
       page.__visualParityUserStripePrepareCount =
         (page.__visualParityUserStripePrepareCount ?? 0) + 1;
       page.__visualParityUserStripeIntentCount =
         (page.__visualParityUserStripeIntentCount ?? 0) + 1;
       page.__visualParityUserStripeIntentRequests = [
         ...(page.__visualParityUserStripeIntentRequests ?? []),
-        requestData,
+        commerceRequestCapture(),
       ];
     }
     if (pathname === '/api/v1/user/ticket/fetch') {
@@ -335,12 +364,13 @@ export async function installApiFixtures(page, scenario, target, interaction = {
         requestData,
       ];
     }
-    if (pathname === '/api/v1/user/order/cancel') {
-      page.__visualParityLastUserOrderCancel = requestData;
+    if (pathname === '/api/v1/user/order/cancel' || modernOrderAction === 'cancel') {
+      const orderCancelRequest = commerceRequestCapture();
+      page.__visualParityLastUserOrderCancel = orderCancelRequest;
       page.__visualParityUserOrderCancelCount = (page.__visualParityUserOrderCancelCount ?? 0) + 1;
       page.__visualParityUserOrderCancelRequests = [
         ...(page.__visualParityUserOrderCancelRequests ?? []),
-        requestData,
+        orderCancelRequest,
       ];
     }
     if (adminEndpoint === '/config/fetch') {
@@ -644,8 +674,11 @@ export async function installApiFixtures(page, scenario, target, interaction = {
       return;
     }
     const shouldTimeout =
-      (scenario.userPlansTimeout && pathname === '/api/v1/user/plan/fetch') ||
-      (scenario.userOrdersTimeout && pathname === '/api/v1/user/order/fetch') ||
+      (scenario.userPlansTimeout &&
+        (pathname === '/api/v1/user/plan/fetch' || pathname === '/api/v1/user/plans')) ||
+      (scenario.userOrdersTimeout &&
+        (pathname === '/api/v1/user/order/fetch' ||
+          (pathname === '/api/v1/user/orders' && requestMethod === 'GET'))) ||
       (scenario.userServersTimeout && pathname === '/api/v1/user/server/fetch') ||
       (scenario.userTrafficTimeout && pathname === '/api/v1/user/stat/getTrafficLog') ||
       (scenario.userTicketsTimeout && pathname === '/api/v1/user/ticket/fetch') ||
@@ -665,7 +698,10 @@ export async function installApiFixtures(page, scenario, target, interaction = {
       await route.abort('timedout');
       return;
     }
-    if (pathname === '/api/v1/user/order/checkout' && interaction.orderCheckoutNetworkError) {
+    if (
+      (pathname === '/api/v1/user/order/checkout' || modernOrderAction === 'checkout') &&
+      interaction.orderCheckoutNetworkError
+    ) {
       await route.abort('failed');
       return;
     }
@@ -685,7 +721,10 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     if (pathname === '/api/v1/user/newPeriod' && interaction.delayUserNewPeriodMs) {
       await delay(interaction.delayUserNewPeriodMs);
     }
-    if (pathname === '/api/v1/user/order/checkout' && interaction.delayUserOrderCheckoutMs) {
+    if (
+      (pathname === '/api/v1/user/order/checkout' || modernOrderAction === 'checkout') &&
+      interaction.delayUserOrderCheckoutMs
+    ) {
       await delay(interaction.delayUserOrderCheckoutMs);
     }
     if (pathname === '/api/v1/user/ticket/reply' && interaction.delayUserTicketReplyMs) {
@@ -1054,6 +1093,63 @@ export function apiFixtureResponse(
     );
   }
 
+  // §5.5 modern commerce family (W4): path-identity routes are source-world
+  // only; the oracle keeps the legacy /user/plan/* + /user/order/* cases below.
+  const planDetailMatch = /^\/api\/v1\/user\/plans\/(\d+)$/.exec(pathname);
+  if (planDetailMatch) {
+    return v2Body(modernPlanFixture(userPlanFixtureById(planDetailMatch[1], scenario)));
+  }
+  const orderRouteMatch =
+    /^\/api\/v1\/user\/orders\/([^/]+)(?:\/(status|cancel|checkout|stripe-intent))?$/.exec(
+      pathname,
+    );
+  if (orderRouteMatch) {
+    const [, tradeNo, orderAction] = orderRouteMatch;
+    if (!orderAction) {
+      return v2Body(modernOrderFixture(userOrderDetailFixtureFor(tradeNo, scenario)));
+    }
+    if (orderAction === 'status') {
+      return v2Body({ status: 0 });
+    }
+    if (orderAction === 'cancel') {
+      return v2Empty();
+    }
+    if (orderAction === 'stripe-intent') {
+      return v2Body({
+        public_key: 'pk_test_visual_parity',
+        client_secret: 'pi_visual_secret_parity',
+        amount: 1000,
+        currency: 'cny',
+      });
+    }
+    // checkout — the §9.3 discriminated union.
+    if (interaction?.orderCheckoutError) {
+      // A gateway pay failure surfaces from Rust as the 500 internal_error
+      // problem (the legacy fixture's HTTP-200 `{code: 400}` "支付失败").
+      return v2Problem(
+        500,
+        'Internal Server Error',
+        'internal_error',
+        '遇到了些问题，我们正在进行处理',
+      );
+    }
+    const checkoutMethodId = Number(requestData?.method_id);
+    if (checkoutMethodId === 2) {
+      // Unreachable from the modern SPA (Stripe confirms via Payment Element,
+      // never the checkout POST); mirror the legacy acknowledgment as settled.
+      return v2Body({ kind: 'settled' });
+    }
+    if (checkoutMethodId === 3) {
+      const redirectRoute =
+        interaction.checkoutRedirectRoute ?? '/order/VISUAL2026110001?cashier=visual';
+      return v2Body({
+        kind: 'redirect',
+        url: entryUrlForDialect(redirectRoute, routingDialectFor(target)),
+      });
+    }
+    return v2Body({ kind: 'qr_code', payload: 'https://pay.example.test/qr/VISUAL2026110001' });
+  }
+
   switch (pathname) {
     case '/api/v1/guest/comm/config':
       return body(guestConfigFixture);
@@ -1088,6 +1184,39 @@ export function apiFixtureResponse(
       );
     case '/api/v1/user/telegram-bot':
       return v2Body({ username: 'legacy_bot' });
+    // §5.5 modern commerce family (W4). Only the source world requests these
+    // paths; the oracle keeps the legacy /user/plan/* + /user/order/* cases.
+    case '/api/v1/user/plans':
+      return v2Body(userPlanFixturesFor(scenario).map(modernPlanFixture));
+    case '/api/v1/user/orders': {
+      if (method === 'POST') {
+        // §9.2: 201 with the created identity; the union arm picks the
+        // scenario-specific trade_no exactly like the legacy sentinel did.
+        if (requestData?.kind === 'deposit') {
+          return v2Body({ trade_no: profileDepositTradeNo }, 201);
+        }
+        if (requestData?.period === 'reset_price') {
+          return v2Body({ trade_no: dashboardResetPackageTradeNo }, 201);
+        }
+        return v2Body({ trade_no: 'VISUAL2026110099' }, 201);
+      }
+      if (scenario.userOrdersHttpError) {
+        return v2Problem(
+          500,
+          'Internal Server Error',
+          'internal_error',
+          '遇到了些问题，我们正在进行处理',
+        );
+      }
+      return v2Body(userOrderFixturesFor(scenario).map(modernOrderFixture));
+    }
+    case '/api/v1/user/payment-methods':
+      return v2Body(paymentMethodFixtures.map(modernPaymentMethodFixture));
+    case '/api/v1/user/coupons/check':
+      if (interaction?.couponError) {
+        return v2Problem(400, 'Bad Request', 'coupon_invalid', '优惠券无效');
+      }
+      return v2Body(modernCouponFixture(couponCheckFixture));
     // The Rust wire shape deliberately omits the permanent subscription
     // credential (`token`) from login/token2Login — clients read only
     // auth_data + is_admin and fetch the subscribe URL via /user/getSubscribe.
@@ -1185,17 +1314,7 @@ export function apiFixtureResponse(
       return body(userOrderFixturesFor(scenario));
     case '/api/v1/user/order/detail':
       return body(
-        requestUrl.searchParams.get('trade_no') === dashboardResetPackageTradeNo
-          ? dashboardResetPackageOrderFixture
-          : requestUrl.searchParams.get('trade_no') === profileDepositTradeNo
-            ? profileDepositOrderFixture
-            : (userOrderFixturesFor(scenario).find(
-                (order) => order.trade_no === requestUrl.searchParams.get('trade_no'),
-              ) ??
-              orderFixtures.find(
-                (order) => order.trade_no === requestUrl.searchParams.get('trade_no'),
-              ) ??
-              orderFixtures[0]),
+        userOrderDetailFixtureFor(requestUrl.searchParams.get('trade_no'), scenario),
       );
     case '/api/v1/user/order/cancel':
       return body(true);
@@ -1368,6 +1487,52 @@ const modernKnowledgeRecordFixture = (fixtures) =>
     ]),
   );
 
+// ——— W4 modern-wire projections (docs/api-dialect.md §4.1, §4.5, §5.5) ———
+// booleans for show/renew, RFC 3339 timestamps, a numeric
+// handling_fee_percent, and no legacy plan `count` (the modern plan body
+// serializes remaining capacity in capacity_limit and drops the sold count).
+const modernPlanFixture = (plan) => {
+  const { count: _count, ...rest } = plan;
+  return {
+    ...rest,
+    show: plan.show !== 0,
+    renew: plan.renew !== 0,
+    created_at: rfc3339FixtureTime(plan.created_at),
+    updated_at: rfc3339FixtureTime(plan.updated_at),
+  };
+};
+
+const modernOrderFixture = (order) => ({
+  ...order,
+  paid_at: order.paid_at == null ? null : rfc3339FixtureTime(order.paid_at),
+  created_at: rfc3339FixtureTime(order.created_at),
+  updated_at: rfc3339FixtureTime(order.updated_at),
+  ...(order.plan
+    ? {
+        // Deposit orders carry the §5.5 `{id: 0, name: "deposit"}` synthetic
+        // plan; real plans project like the plan routes.
+        plan: order.plan.id === 0 ? { id: 0, name: 'deposit' } : modernPlanFixture(order.plan),
+      }
+    : {}),
+});
+
+const modernPaymentMethodFixture = (paymentMethod) => ({
+  ...paymentMethod,
+  handling_fee_percent:
+    paymentMethod.handling_fee_percent == null
+      ? null
+      : Number(paymentMethod.handling_fee_percent),
+});
+
+const modernCouponFixture = (coupon) => ({
+  ...coupon,
+  show: coupon.show !== 0,
+  started_at: rfc3339FixtureTime(coupon.started_at),
+  ended_at: rfc3339FixtureTime(coupon.ended_at),
+  created_at: rfc3339FixtureTime(coupon.created_at),
+  updated_at: rfc3339FixtureTime(coupon.updated_at),
+});
+
 export function userKnowledgeFixturesFor(interaction = {}) {
   return interaction.extremeKnowledgeContent ? extremeKnowledgeFixtures : knowledgeFixtures;
 }
@@ -1391,6 +1556,17 @@ export function userOrderFixturesFor(scenario = {}) {
   if (scenario.emptyOrders) return [];
   if (scenario.longData) return longOrderFixtures;
   return orderFixtures;
+}
+
+/** Resolve one order-detail fixture by trade_no (legacy query or W4 path). */
+export function userOrderDetailFixtureFor(tradeNo, scenario = {}) {
+  if (tradeNo === dashboardResetPackageTradeNo) return dashboardResetPackageOrderFixture;
+  if (tradeNo === profileDepositTradeNo) return profileDepositOrderFixture;
+  return (
+    userOrderFixturesFor(scenario).find((order) => order.trade_no === tradeNo) ??
+    orderFixtures.find((order) => order.trade_no === tradeNo) ??
+    orderFixtures[0]
+  );
 }
 
 export function userServerFixturesFor(scenario = {}) {

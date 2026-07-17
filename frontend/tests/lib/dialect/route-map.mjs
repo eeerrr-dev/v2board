@@ -147,18 +147,64 @@ export const routeMap = Object.freeze([
   route('user.servers.list', { method: 'GET', path: '/user/server/fetch' }),
   route('user.traffic-logs.list', { method: 'GET', path: '/user/stat/getTrafficLog' }),
 
-  // ——— §5.5 Commerce ———
-  route('user.plans.list', { method: 'GET', path: '/user/plan/fetch' }),
-  route('user.plans.get', { method: 'GET', path: '/user/plan/fetch', query: ['id'] }),
-  route('user.orders.create', { method: 'POST', path: '/user/order/save' }),
-  route('user.orders.list', { method: 'GET', path: '/user/order/fetch' }),
-  route('user.orders.get', { method: 'GET', path: '/user/order/detail' }),
-  route('user.orders.status', { method: 'GET', path: '/user/order/check' }),
-  route('user.orders.cancel', { method: 'POST', path: '/user/order/cancel' }),
-  route('user.orders.checkout', { method: 'POST', path: '/user/order/checkout' }),
-  route('user.orders.stripe-intent', { method: 'POST', path: '/user/order/stripe/intent' }),
-  route('user.payment-methods.list', { method: 'GET', path: '/user/order/getPaymentMethod' }),
-  route('user.coupons.check', { method: 'POST', path: '/user/coupon/check' }),
+  // ——— §5.5 Commerce — flipped to the modern rows in W4 ———
+  // The detail row is listed first so `/user/plans/{id}` outranks the
+  // sibling list path (same ordering as the §5.8 knowledge rows).
+  route(
+    'user.plans.get',
+    { method: 'GET', path: '/user/plan/fetch', query: ['id'] },
+    { method: 'GET', path: '/user/plans/{id}' },
+  ),
+  route(
+    'user.plans.list',
+    { method: 'GET', path: '/user/plan/fetch' },
+    { method: 'GET', path: '/user/plans' },
+  ),
+  route(
+    'user.orders.create',
+    { method: 'POST', path: '/user/order/save' },
+    { method: 'POST', path: '/user/orders' },
+  ),
+  route(
+    'user.orders.list',
+    { method: 'GET', path: '/user/order/fetch' },
+    { method: 'GET', path: '/user/orders' },
+  ),
+  route(
+    'user.orders.get',
+    { method: 'GET', path: '/user/order/detail' },
+    { method: 'GET', path: '/user/orders/{trade_no}' },
+  ),
+  route(
+    'user.orders.status',
+    { method: 'GET', path: '/user/order/check' },
+    { method: 'GET', path: '/user/orders/{trade_no}/status' },
+  ),
+  route(
+    'user.orders.cancel',
+    { method: 'POST', path: '/user/order/cancel' },
+    { method: 'POST', path: '/user/orders/{trade_no}/cancel' },
+  ),
+  route(
+    'user.orders.checkout',
+    { method: 'POST', path: '/user/order/checkout' },
+    { method: 'POST', path: '/user/orders/{trade_no}/checkout' },
+  ),
+  route(
+    'user.orders.stripe-intent',
+    { method: 'POST', path: '/user/order/stripe/intent' },
+    { method: 'POST', path: '/user/orders/{trade_no}/stripe-intent' },
+  ),
+  route(
+    'user.payment-methods.list',
+    { method: 'GET', path: '/user/order/getPaymentMethod' },
+    { method: 'GET', path: '/user/payment-methods' },
+  ),
+  route(
+    'user.coupons.check',
+    { method: 'POST', path: '/user/coupon/check' },
+    { method: 'POST', path: '/user/coupons/check' },
+  ),
 
   // ——— §5.6 Invite & commission ———
   route('user.invite-codes.create', { method: 'GET', path: '/user/invite/save' }),

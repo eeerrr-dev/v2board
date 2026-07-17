@@ -101,11 +101,71 @@ export function canonicalizeRequest(world, { method, url, postData, securePath }
     ...pathParams,
     ...canonicalizeQueryParams(requestUrl.searchParams),
   };
-  return {
+  return foldRouteRequest({
     routeId: match?.id ?? null,
     params,
     body: body === null ? null : canonicalizeValue(body, null),
+  });
+}
+
+/**
+ * §13.2 route-specific folds, landed with each owning family wave. W4 (§5.5):
+ * the canonical commerce request is the modern shape — the legacy order-save
+ * body folds onto the §9.2 create-order union (the deposit sentinel
+ * `plan_id: 0` + `period: "deposit"` dies; an empty `coupon_code` is omitted
+ * per the §5.5 empty-coupon rule), and the legacy body-carried `trade_no` /
+ * `method` selection folds onto path-identity `trade_no` + `{method_id}`.
+ */
+function foldRouteRequest(request) {
+  const fold = ROUTE_REQUEST_FOLDS[request.routeId];
+  return fold ? fold(request) : request;
+}
+
+const ROUTE_REQUEST_FOLDS = Object.freeze({
+  'user.orders.create': (request) => {
+    const body = request.body;
+    if (!isPlainObject(body) || body.kind !== undefined) return request;
+    if (body.period === 'deposit') {
+      return { ...request, body: { kind: 'deposit', deposit_amount: body.deposit_amount } };
+    }
+    const { plan_id, period, coupon_code } = body;
+    return {
+      ...request,
+      body: {
+        kind: 'plan',
+        plan_id,
+        period,
+        // §5.5: the legacy empty-string coupon spelling folds to omission.
+        ...(coupon_code ? { coupon_code } : {}),
+      },
+    };
+  },
+  'user.orders.cancel': foldBodyTradeNoIntoParams,
+  'user.orders.checkout': foldBodyCheckoutSelection,
+  'user.orders.stripe-intent': foldBodyCheckoutSelection,
+});
+
+function foldBodyTradeNoIntoParams(request) {
+  const body = request.body;
+  if (!isPlainObject(body) || body.trade_no === undefined) return request;
+  const { trade_no, ...rest } = body;
+  return {
+    ...request,
+    params: { trade_no, ...request.params },
+    body: Object.keys(rest).length === 0 ? null : rest,
   };
+}
+
+function foldBodyCheckoutSelection(request) {
+  const lifted = foldBodyTradeNoIntoParams(request);
+  const body = lifted.body;
+  if (!isPlainObject(body) || body.method === undefined) return lifted;
+  const { method, ...rest } = body;
+  return { ...lifted, body: { method_id: method, ...rest } };
+}
+
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 /** Decode a JSON or form-urlencoded body into a plain object (or null). */
