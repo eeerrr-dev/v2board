@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 
-// Tier-1 pinned session key; also consumed by the pre-router hash gate via
-// USER_HASH_ROUTE_OPTIONS.
+// Tier-1 pinned session key; also consumed by the route-normalization guard
+// via USER_ROUTE_GUARD_OPTIONS.
 export const AUTH_STORAGE_KEY = 'authorization';
 const listeners = new Set<(value: string | null) => void>();
 let authSyncInstalled = false;

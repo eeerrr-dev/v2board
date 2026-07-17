@@ -5,6 +5,7 @@ import { presentMutationError, shouldRetryQuery } from '@v2board/api-client';
 import type { SubscribeInfo, UserInfo } from '@v2board/types';
 import { I18nextProvider } from 'react-i18next';
 import { createLazyI18n, installLocaleDocumentEnvironment } from '@v2board/i18n';
+import { applyLegacyHashRedirect } from '@v2board/config';
 import { RouterProvider } from 'react-router/dom';
 
 import { createUserRouter } from './App';
@@ -12,7 +13,7 @@ import { ConfirmDialogProvider } from './components/ui/confirm-dialog';
 import { Toaster } from './components/ui/toaster';
 import { registerSessionCacheClearer, setupAuthSync } from './lib/auth';
 import { applyInitialDarkMode } from './lib/dark-mode';
-import { applyRuntimeConfig } from './lib/runtime-config';
+import { applyRuntimeConfig, getLegacyHashRedirectEnabled } from './lib/runtime-config';
 import { i18nGet } from './lib/errors';
 import { reportSubscribeToChat, reportUserInfoToChat, userKeys } from './lib/queries';
 import { registerRouterNavigation } from './lib/router-navigation';
@@ -62,6 +63,9 @@ registerSessionCacheClearer(() => queryClient.clear());
 setupAuthSync();
 
 applyInitialDarkMode();
+// docs/api-dialect.md §10.3: translate a legacy `/#/x?y` entry URL into its
+// history URL before router creation, gated on the injected admin toggle.
+applyLegacyHashRedirect({ enabled: getLegacyHashRedirectEnabled() });
 const router = createUserRouter(queryClient);
 registerRouterNavigation(router);
 

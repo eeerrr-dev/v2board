@@ -4,12 +4,17 @@ import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@ta
 import { presentMutationError, shouldRetryQuery } from '@v2board/api-client';
 import { I18nextProvider } from 'react-i18next';
 import { createLazyI18n, installLocaleDocumentEnvironment } from '@v2board/i18n';
+import { applyLegacyHashRedirect } from '@v2board/config';
 import { RouterProvider } from 'react-router/dom';
 import { createAdminRouter } from './App';
 import { StepUpDialogProvider } from './components/step-up-dialog';
 import { ConfirmDialogProvider } from './components/ui/confirm-dialog';
 import { Toaster } from './components/ui/toaster';
-import { applyAdminRuntimeConfig } from './lib/runtime-config';
+import {
+  applyAdminRuntimeConfig,
+  getAdminBasename,
+  getLegacyHashRedirectEnabled,
+} from './lib/runtime-config';
 import { applyInitialDarkMode } from './lib/dark-mode';
 import { registerSessionCacheClearer, setupAuthSync } from './lib/auth';
 import { registerRouterNavigation } from './lib/router-navigation';
@@ -49,6 +54,13 @@ const queryClient = new QueryClient({
 
 registerSessionCacheClearer(() => queryClient.clear());
 setupAuthSync();
+// docs/api-dialect.md §10.3: translate a legacy `/{admin_path}#/x?y` entry URL
+// into its history URL (resolved against the admin base) before router
+// creation, gated on the injected admin toggle.
+applyLegacyHashRedirect({
+  enabled: getLegacyHashRedirectEnabled(),
+  basename: getAdminBasename(),
+});
 const router = createAdminRouter(queryClient);
 registerRouterNavigation(router);
 

@@ -355,8 +355,8 @@ describe('retired auth chrome never returns', () => {
   });
 
   it('bans hardcoded hash anchors throughout auth — use react-router Link', () => {
-    // React Router owns every internal auth transition while createHashRouter
-    // keeps the externally visible #/login, #/register and #/forgetpassword URLs.
+    // React Router owns every internal auth transition; history routing keeps
+    // the externally visible /login, /register and /forgetpassword paths.
     expect(
       violations([
         {
@@ -453,7 +453,7 @@ describe('scoped legacy APIs and patterns', () => {
         {
           pattern: /<Routes[\s>/]/,
           scope: ['App.tsx'],
-          why: 'component-router <Routes> is banned — createHashRouter owns routing',
+          why: 'component-router <Routes> is banned — createBrowserRouter owns routing',
         },
         {
           pattern: /<Suspense\b/,
@@ -488,7 +488,7 @@ describe('scoped legacy APIs and patterns', () => {
         {
           pattern: /window\.location\.href\s*=/,
           scope: ['lib/api.ts'],
-          why: 'full-page navigation is banned — park only the hash on #/login',
+          why: 'full-page navigation is banned — route through the registered data router',
         },
         {
           pattern: /window\.location\.replace\s*\(/,

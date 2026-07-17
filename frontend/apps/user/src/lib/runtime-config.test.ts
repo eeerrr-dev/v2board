@@ -4,6 +4,7 @@ import { setRuntimeConfig } from '@/test/runtime-config';
 import {
   applyRuntimeConfig,
   getBackgroundUrl,
+  getLegacyHashRedirectEnabled,
   getLogoUrl,
   getRuntimeConfig,
 } from './runtime-config';
@@ -64,6 +65,16 @@ describe('runtime config bootstrap', () => {
     expect(document.documentElement.dataset.themeColor).toBe('default');
     expect(document.title).toBe('V2Board');
     expect(getRuntimeConfig().i18n).toContain('zh-CN');
+    // Mirrors the Rust config default (docs/api-dialect.md §10.3: default ON).
+    expect(getLegacyHashRedirectEnabled()).toBe(true);
+  });
+
+  it('reads the injected legacy-hash-redirect toggle (docs/api-dialect.md §10.3)', () => {
+    setRuntimeConfig({ legacy_hash_redirect_enable: false });
+    expect(getLegacyHashRedirectEnabled()).toBe(false);
+
+    setRuntimeConfig({ legacy_hash_redirect_enable: true });
+    expect(getLegacyHashRedirectEnabled()).toBe(true);
   });
 
   it('accepts web and relative operator images but rejects active URL schemes', () => {

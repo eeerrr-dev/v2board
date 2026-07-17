@@ -124,7 +124,9 @@ export default function InvitePage() {
   ] satisfies DataTableColumn<(typeof detailRows)[number]>[];
 
   const copyInviteLink = async (code: string) => {
-    const url = `${window.location.origin}${window.location.pathname}#/register?code=${code}`;
+    // Tier-1 copy-link URL, path-style since history routing
+    // (docs/api-dialect.md §10.1/§10.4): external invitees land on /register.
+    const url = `${window.location.origin}/register?code=${code}`;
     if (await copyText(url)) toast.success(t(($) => $.dashboard.copy_success));
   };
 

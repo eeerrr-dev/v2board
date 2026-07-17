@@ -14,6 +14,7 @@ import {
   unknownAdminRouteLoader,
 } from './App';
 import { getAuthData, setAuthData } from '@/lib/auth';
+import { getAdminBasename } from '@/lib/runtime-config';
 import { adminSessionKeys } from '@/lib/session-queries';
 
 const mocks = vi.hoisted(() => ({
@@ -33,15 +34,16 @@ vi.mock('@v2board/api-client', async (importOriginal) => {
   };
 });
 
-function requestFor(hashPath: string): Request {
-  return new Request(
-    `https://v2board.local/${hashPath.startsWith('#') ? hashPath : `#${hashPath}`}`,
-  );
+// History routing (docs/api-dialect.md §10.1): loader request URLs carry the
+// dynamic admin basename exactly as the browser router produces them, and
+// getRequestRoutePath strips it back to the app-relative route path.
+function requestFor(routePath: string): Request {
+  return new Request(`https://v2board.local${getAdminBasename()}${routePath}`);
 }
 
-function loaderArgs(hashPath: string): LoaderFunctionArgs {
+function loaderArgs(routePath: string): LoaderFunctionArgs {
   return {
-    request: requestFor(hashPath),
+    request: requestFor(routePath),
     params: {},
     context: {},
   } as unknown as LoaderFunctionArgs;
@@ -66,12 +68,12 @@ type AuthMiddleware = ReturnType<typeof createRequireAdminMiddleware>;
 /** Invokes the auth middleware the way the router does on a navigation. The
  * gate relies on the router auto-advancing when next() is not called, so the
  * stub fails loudly if the middleware ever starts calling next() itself. */
-function runAuthMiddleware(middleware: AuthMiddleware, hashPath: string) {
+function runAuthMiddleware(middleware: AuthMiddleware, routePath: string) {
   const next = () => {
     throw new Error('auth middleware must not call next()');
   };
   return middleware(
-    loaderArgs(hashPath) as unknown as Parameters<AuthMiddleware>[0],
+    loaderArgs(routePath) as unknown as Parameters<AuthMiddleware>[0],
     next as Parameters<AuthMiddleware>[1],
   );
 }
@@ -87,7 +89,7 @@ describe('admin data router', () => {
     setAuthData(null);
   });
 
-  it('preserves every externally visible hash route', () => {
+  it('preserves every externally visible route path', () => {
     expect([...ADMIN_ROUTE_PATHS]).toEqual([
       '/config/payment',
       '/config/system',
@@ -245,7 +247,7 @@ describe('admin data router', () => {
     expect(getAuthData()).toBe('admin-token');
   });
 
-  it('normalizes malformed protected hashes without bypassing session routing', async () => {
+  it('normalizes malformed protected paths without bypassing session routing', async () => {
     await expectRedirect(() => normalizeAdminRouteLoader(loaderArgs('/login/dashboard')), '/login');
 
     setAuthData('admin-token');

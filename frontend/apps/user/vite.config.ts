@@ -3,7 +3,7 @@ import react, { reactCompilerPreset } from '@vitejs/plugin-react';
 import babel from '@rolldown/plugin-babel';
 import tailwindcss from '@tailwindcss/vite';
 import path from 'node:path';
-import { buildAppViteConfig, hashNavigationRedirectPlugin } from '@v2board/config/vite';
+import { buildAppViteConfig } from '@v2board/config/vite';
 
 const baseConfig = buildAppViteConfig({ port: 5173 });
 
@@ -11,7 +11,8 @@ export default defineConfig({
   ...baseConfig,
   cacheDir: '../../node_modules/.vite/user',
   plugins: [
-    hashNavigationRedirectPlugin(),
+    // History routing (docs/api-dialect.md §10.1): Vite's default SPA fallback
+    // serves index.html for deep path URLs; no hash-redirect middleware.
     tailwindcss(),
     react(),
     // React Compiler (1.0) auto-memoizes components/hooks so manual useMemo/

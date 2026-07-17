@@ -5,6 +5,8 @@ import { z } from 'zod';
 import { Loader2 } from 'lucide-react';
 import type { AdminConfig, AdminConfigFlat, AdminConfigGroups, Plan } from '@v2board/types';
 import { getErrorPresentation } from '@v2board/api-client';
+import { stripBasePath } from '@v2board/config';
+import { getAdminBasename } from '@/lib/runtime-config';
 import {
   useAdminPlans,
   useConfig,
@@ -1065,6 +1067,15 @@ function SiteSection({ ctx, plans }: { ctx: FormCtx; plans: Plan[] }) {
         description="仅用于展示使用，更改后系统中所有的货币单位都将发生变更。"
         placeholder="¥"
       />
+      {/* docs/api-dialect.md §10.3: boot-time legacy `#/…` → history-URL
+          translation toggle, injected into both SPA runtime configs. */}
+      <SwitchRow
+        ctx={ctx}
+        group="site"
+        field="legacy_hash_redirect_enable"
+        title="旧版 #/ 链接重定向"
+        description="开启后旧版 /#/路径 链接将在页面加载时自动跳转到对应的新路径。"
+      />
     </Section>
   );
 }
@@ -1830,15 +1841,20 @@ function configValuesEqual(left: ConfigFieldValue, right: ConfigFieldValue) {
   return toText(left) === toText(right);
 }
 
-export function adminSecurePathLocation(securePath: string, currentHash: string) {
+// History routing (docs/api-dialect.md §10.1): a saved secure_path moves the
+// whole admin base, so the current app-relative route is re-rooted under the
+// new `/{admin_path}` prefix via a full-page replace.
+export function adminSecurePathLocation(securePath: string, currentRoutePath: string) {
   const normalizedPath = securePath.trim().replace(/^\/+|\/+$/g, '');
   if (!normalizedPath) throw new Error('后台路径不能为空');
-  const hash = currentHash || '#/config/system';
-  return `/${normalizedPath}${hash.startsWith('#') ? hash : `#${hash}`}`;
+  const route = currentRoutePath.startsWith('/') ? currentRoutePath : '/config/system';
+  return `/${normalizedPath}${route === '/' ? '/config/system' : route}`;
 }
 
 function replaceAdminSecurePath(securePath: string) {
-  window.location.replace(adminSecurePathLocation(securePath, window.location.hash));
+  const { pathname, search } = window.location;
+  const currentRoutePath = `${stripBasePath(pathname, getAdminBasename())}${search}`;
+  window.location.replace(adminSecurePathLocation(securePath, currentRoutePath));
 }
 
 export function parseBackendInteger(value: string) {

@@ -14,7 +14,7 @@ import { userQueryOptions } from '@/lib/queries';
 import { renderRoutes } from '@/test/render';
 import {
   USER_APP_LAYOUT_ROUTE_PATHS,
-  USER_HASH_ROUTE_OPTIONS,
+  USER_ROUTE_GUARD_OPTIONS,
   USER_ROUTE_PATHS,
   createLoginLoader,
   createRequireUserMiddleware,
@@ -178,21 +178,21 @@ describe('user route table', () => {
     expect(USER_ROUTE_PATHS).not.toContain('/home');
   });
 
-  it('wires the hash-route normalization options for this app', () => {
-    expect(USER_HASH_ROUTE_OPTIONS.authenticatedFallback).toBe('/dashboard');
-    expect(USER_HASH_ROUTE_OPTIONS.guestFallback).toBe('/login');
+  it('wires the route-guard normalization options for this app', () => {
+    expect(USER_ROUTE_GUARD_OPTIONS.authenticatedFallback).toBe('/dashboard');
+    expect(USER_ROUTE_GUARD_OPTIONS.guestFallback).toBe('/login');
     // Empty on purpose: an authenticated session may stay on /login etc.
     // instead of being force-bounced to the dashboard (route contract).
-    expect(USER_HASH_ROUTE_OPTIONS.authenticatedPublicFallbackRoutes).toEqual([]);
+    expect(USER_ROUTE_GUARD_OPTIONS.authenticatedPublicFallbackRoutes).toEqual([]);
     // Duplicated nested paths like /dashboard/plan recover against the full table.
-    expect(USER_HASH_ROUTE_OPTIONS.nestedPrefixes).toEqual([...USER_ROUTE_PATHS]);
-    expect(USER_HASH_ROUTE_OPTIONS.publicRoutes).toEqual([
+    expect(USER_ROUTE_GUARD_OPTIONS.nestedPrefixes).toEqual([...USER_ROUTE_PATHS]);
+    expect(USER_ROUTE_GUARD_OPTIONS.publicRoutes).toEqual([
       '/',
       '/login',
       '/register',
       '/forgetpassword',
     ]);
-    expect(USER_HASH_ROUTE_OPTIONS.routes).toEqual([...USER_ROUTE_PATHS]);
+    expect(USER_ROUTE_GUARD_OPTIONS.routes).toEqual([...USER_ROUTE_PATHS]);
   });
 });
 
@@ -280,7 +280,7 @@ describe('user route tree', () => {
   });
 });
 
-describe('hash-route normalization loaders (root + catch-all wiring)', () => {
+describe('route normalization loaders (root + catch-all wiring)', () => {
   const { root, catchAll } = userRouteTree();
   const normalize = root.loader as SyncLoader;
   const unknown = catchAll!.loader as SyncLoader;
@@ -303,18 +303,6 @@ describe('hash-route normalization loaders (root + catch-all wiring)', () => {
     setAuthData('token-xyz');
     const response = catchRedirect(() => normalize(loaderArgs('/dashboard/plan?from=email')));
     expect(response.headers.get('Location')).toBe('/plan?from=email');
-  });
-
-  it('normalizes the production #/ hash form of the request URL', () => {
-    setAuthData('token-xyz');
-    const response = catchRedirect(() =>
-      normalize({
-        request: new Request('https://v2board.local/#/dashboard/knowledge'),
-        params: {},
-        context: {},
-      } as unknown as LoaderFunctionArgs),
-    );
-    expect(response.headers.get('Location')).toBe('/knowledge');
   });
 
   it('bounces a guest requesting a guarded path to /login', () => {
@@ -637,16 +625,19 @@ describe('user route dashboard prefetch loader', () => {
 });
 
 describe('user router behavior', () => {
-  it('reads the #/ hash entry location defined by the router contract', () => {
+  it('boots the history router on the path entry location (docs/api-dialect.md §10.1)', () => {
     setAuthData(null);
-    window.location.hash = '#/login';
+    window.history.replaceState(null, '', '/login');
     const router = createUserRouter(new QueryClient());
     try {
       expect(router.routes.length).toBeGreaterThan(0);
       expect(router.state.location.pathname).toBe('/login');
+      // History routing: the legacy #/ entry form is translated before router
+      // creation (main.tsx applyLegacyHashRedirect), never read by the router.
+      expect(router.state.location.hash).toBe('');
     } finally {
       router.dispose();
-      window.location.hash = '';
+      window.history.replaceState(null, '', '/');
     }
   });
 
@@ -665,7 +656,7 @@ describe('user router behavior', () => {
     }
   });
 
-  it('lands unknown hashes on the session fallback route', async () => {
+  it('lands unknown paths on the session fallback route', async () => {
     setAuthData(null);
     const guestRouter = createMemoryRouter(createUserRoutes(new QueryClient()), {
       initialEntries: ['/definitely/not/a/route'],

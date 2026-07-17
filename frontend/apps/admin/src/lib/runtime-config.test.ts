@@ -4,10 +4,12 @@ import {
   applyAdminRuntimeConfig,
   getAdminApiBaseUrl,
   getAdminBackgroundUrl,
+  getAdminBasename,
   getAdminLogo,
   getAdminRuntimeConfig,
   getAdminSecurePath,
   getAdminTitle,
+  getLegacyHashRedirectEnabled,
 } from './runtime-config';
 
 describe('admin runtime config', () => {
@@ -31,6 +33,18 @@ describe('admin runtime config', () => {
     expect(getAdminBackgroundUrl()).toBe('/bg.jpg');
     expect(getAdminApiBaseUrl()).toBe(`${new URL(window.location.href).origin}/api/v1`);
     expect(getAdminSecurePath()).toBe('admin');
+    // The history-router basename derives from the same injected secure_path
+    // (docs/api-dialect.md §10.1).
+    expect(getAdminBasename()).toBe('/admin');
+  });
+
+  it('reads the injected legacy-hash-redirect toggle (docs/api-dialect.md §10.3)', () => {
+    // Mirrors the Rust config default (default ON) when the key is absent.
+    setAdminRuntimeConfig({});
+    expect(getLegacyHashRedirectEnabled()).toBe(true);
+
+    setAdminRuntimeConfig({ legacy_hash_redirect_enable: false });
+    expect(getLegacyHashRedirectEnabled()).toBe(false);
   });
 
   it('falls back safely when the backend token is not replaced', () => {

@@ -1,14 +1,14 @@
 import { CancelledError, type QueryClient } from '@tanstack/react-query';
 import { type ComponentType } from 'react';
 import {
-  createHashRouter,
+  createBrowserRouter,
   matchPath,
   redirect,
   type LoaderFunctionArgs,
   type MiddlewareFunction,
   type RouteObject,
 } from 'react-router';
-import { getNormalizedHashPath } from '@v2board/config';
+import { getNormalizedRoutePath, stripBasePath } from '@v2board/config';
 import type { CheckLoginResult } from '@v2board/types';
 import { AdminLayout } from '@/components/layout/admin-layout';
 import { RequireAuth } from '@/components/layout/require-auth';
@@ -21,6 +21,7 @@ import {
   logout,
   type AdminLoginLoaderData,
 } from '@/lib/auth';
+import { getAdminBasename } from '@/lib/runtime-config';
 import { adminSessionQueryOptions } from '@/lib/session-queries';
 
 export const ADMIN_ROUTE_PATHS = [
@@ -75,7 +76,7 @@ function isAbortedQuery(error: unknown): boolean {
   );
 }
 
-export const ADMIN_HASH_ROUTE_OPTIONS = {
+export const ADMIN_ROUTE_GUARD_OPTIONS = {
   matchRoute: (route: string, path: string, end: boolean) => matchPath({ path: route, end }, path),
   authStorageKey: AUTH_KEY,
   authenticatedFallback: '/dashboard',
@@ -115,10 +116,13 @@ function lazyPage(path: AdminRoutePath): RouteObject['lazy'] {
   };
 }
 
+// History routing (docs/api-dialect.md §10.1): the admin router mounts under
+// the dynamic `/{admin_path}` base, so loader request URLs carry the basename
+// while route matching, guards, and thrown `redirect()` targets stay
+// app-relative (react-router prepends the basename on redirect navigation).
 function getRequestRoutePath(request: Request): string {
   const url = new URL(request.url);
-  if (url.hash.startsWith('#/')) return url.hash.slice(1);
-  return `${url.pathname}${url.search}`;
+  return `${stripBasePath(url.pathname, getAdminBasename())}${url.search}`;
 }
 
 function matchesAdminRoute(pathname: string): boolean {
@@ -127,7 +131,7 @@ function matchesAdminRoute(pathname: string): boolean {
 
 export function normalizeAdminRouteLoader({ request }: LoaderFunctionArgs) {
   const current = getRequestRoutePath(request);
-  const normalized = getNormalizedHashPath(current, ADMIN_HASH_ROUTE_OPTIONS);
+  const normalized = getNormalizedRoutePath(current, ADMIN_ROUTE_GUARD_OPTIONS);
   if (normalized !== current) throw redirect(normalized);
   return null;
 }
@@ -138,7 +142,7 @@ export function rootAdminRouteLoader(): never {
 
 export function unknownAdminRouteLoader({ request }: LoaderFunctionArgs): never {
   const current = getRequestRoutePath(request);
-  const normalized = getNormalizedHashPath(current, ADMIN_HASH_ROUTE_OPTIONS);
+  const normalized = getNormalizedRoutePath(current, ADMIN_ROUTE_GUARD_OPTIONS);
   const url = new URL(`https://v2board.local${normalized}`);
   if (normalized !== current && matchesAdminRoute(url.pathname)) throw redirect(normalized);
   throw redirect(getAuthData() ? '/dashboard' : '/login');
@@ -301,5 +305,7 @@ export function createAdminRoutes(queryClient: QueryClient): RouteObject[] {
 }
 
 export function createAdminRouter(queryClient: QueryClient) {
-  return createHashRouter(createAdminRoutes(queryClient));
+  return createBrowserRouter(createAdminRoutes(queryClient), {
+    basename: getAdminBasename(),
+  });
 }

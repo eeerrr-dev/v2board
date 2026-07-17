@@ -48,7 +48,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('react-router', () => ({
   Link: ({ to, children, className }: LinkProps) => (
-    <a href={`#${String(to)}`} className={className}>
+    <a href={String(to)} className={className}>
       {children}
     </a>
   ),
@@ -342,15 +342,15 @@ describe('LoginPage', () => {
     expect(mocks.loginMutateAsync).not.toHaveBeenCalled();
   });
 
-  it('keeps the register and forgetpassword hash contracts through React Router links', () => {
+  it('keeps the register and forgetpassword route contracts through React Router links', () => {
     const view = renderWithProviders(<LoginPage />);
 
-    // Real hash anchors — the data router navigates natively, with no JS click handler or
-    // The Link targets stay router-native while createHashRouter preserves the public hash URLs.
-    expect(view.getByRole('link', { name: '注册' })).toHaveAttribute('href', '#/register');
+    // Router-native Links carrying the history route paths (docs/api-dialect.md
+    // §10.1) — no JS click handler, no hardcoded anchors.
+    expect(view.getByRole('link', { name: '注册' })).toHaveAttribute('href', '/register');
     expect(view.getByRole('link', { name: '忘记密码？' })).toHaveAttribute(
       'href',
-      '#/forgetpassword',
+      '/forgetpassword',
     );
   });
 

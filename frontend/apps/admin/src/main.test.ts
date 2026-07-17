@@ -23,6 +23,16 @@ describe('admin entrypoint', () => {
     expect(mainSource).not.toContain('LegacyRouteGate');
   });
 
+  it('translates legacy #/ entry URLs against the admin base before router creation', () => {
+    // docs/api-dialect.md §10.3: the admin app resolves the legacy hash
+    // against its dynamic /{admin_path} basename.
+    expect(mainSource).toContain('enabled: getLegacyHashRedirectEnabled()');
+    expect(mainSource).toContain('basename: getAdminBasename()');
+    expect(mainSource.indexOf('applyLegacyHashRedirect({')).toBeLessThan(
+      mainSource.indexOf('createAdminRouter(queryClient)'),
+    );
+  });
+
   it('synchronizes sessions and clears server state across identities', () => {
     expect(mainSource).toContain('registerSessionCacheClearer(() => queryClient.clear())');
     expect(mainSource).toContain('setupAuthSync()');

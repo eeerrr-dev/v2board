@@ -298,7 +298,7 @@ describe('TicketsPage shadcn interactions', () => {
     mocks.closeMutateAsync.mockResolvedValue(undefined);
   });
 
-  it('navigates to ticket detail through the existing hash-router route', async () => {
+  it('navigates to ticket detail through the existing router route', async () => {
     const { user } = renderWithProviders(<TicketsPage />);
 
     const viewButtons = screen.getAllByTestId('ticket-view');

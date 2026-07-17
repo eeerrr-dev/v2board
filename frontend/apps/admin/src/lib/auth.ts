@@ -1,8 +1,8 @@
 import { useSyncExternalStore } from 'react';
 import { clearStepUpGrant } from './step-up';
 
-// Tier-1 pinned session key; also consumed by the pre-router hash gate via
-// ADMIN_HASH_ROUTE_OPTIONS.
+// Tier-1 pinned session key; also consumed by the route-normalization guard
+// via ADMIN_ROUTE_GUARD_OPTIONS.
 export const AUTH_KEY = 'authorization';
 
 export interface AdminLoginLoaderData {

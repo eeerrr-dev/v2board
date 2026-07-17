@@ -7,6 +7,8 @@ export interface AdminRuntimeConfig {
   description?: string;
   logo?: string;
   secure_path?: string;
+  /** docs/api-dialect.md §10.3: boot-time legacy `#/…` → history-URL toggle. */
+  legacy_hash_redirect_enable?: boolean;
 }
 
 const DEV_ADMIN_PATH =
@@ -19,6 +21,8 @@ const DEFAULT_RUNTIME_CONFIG = {
   description: 'V2Board',
   logo: '',
   secure_path: DEV_ADMIN_PATH,
+  // Mirrors the Rust config default (config.rs legacy_hash_redirect_enable).
+  legacy_hash_redirect_enable: true,
 } as const satisfies Required<AdminRuntimeConfig>;
 const ADMIN_THEME_COLORS = new Set(['black', 'darkblue', 'default', 'green']);
 const ADMIN_THEME_META_COLORS: Record<string, string> = {
@@ -64,6 +68,10 @@ function readAdminRuntimeConfig(): AdminRuntimeConfig {
       description: stringValue(value.description, DEFAULT_RUNTIME_CONFIG.description),
       logo: stringValue(value.logo, DEFAULT_RUNTIME_CONFIG.logo),
       secure_path: stringValue(value.secure_path, DEFAULT_RUNTIME_CONFIG.secure_path),
+      legacy_hash_redirect_enable:
+        typeof value.legacy_hash_redirect_enable === 'boolean'
+          ? value.legacy_hash_redirect_enable
+          : DEFAULT_RUNTIME_CONFIG.legacy_hash_redirect_enable,
     };
   } catch {
     return cloneDefaults();
@@ -109,6 +117,19 @@ export function getAdminSecurePath(): string | null {
   const securePath = getAdminRuntimeConfig().secure_path;
   if (typeof securePath !== 'string') return null;
   return securePath.replaceAll('/', '');
+}
+
+/** The admin router basename (docs/api-dialect.md §10.1): `/{admin_path}`. */
+export function getAdminBasename(): string {
+  const securePath = getAdminSecurePath();
+  return securePath ? `/${securePath}` : '/';
+}
+
+export function getLegacyHashRedirectEnabled(): boolean {
+  return (
+    getAdminRuntimeConfig().legacy_hash_redirect_enable ??
+    DEFAULT_RUNTIME_CONFIG.legacy_hash_redirect_enable
+  );
 }
 
 function cloneDefaults(): AdminRuntimeConfig {

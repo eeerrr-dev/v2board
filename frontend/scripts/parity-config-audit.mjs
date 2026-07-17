@@ -53,10 +53,14 @@ export async function auditParityConfig(projectRoot = getDefaultProjectRoot()) {
 
   const userRoutes = extractRouteArray(userApp, 'USER_ROUTE_PATHS');
   const adminRoutes = extractRouteArray(adminApp, 'ADMIN_ROUTE_PATHS');
-  const userAppPublicRoutes = extractObjectArray(userApp, 'USER_HASH_ROUTE_OPTIONS', 'publicRoutes');
+  const userAppPublicRoutes = extractObjectArray(
+    userApp,
+    'USER_ROUTE_GUARD_OPTIONS',
+    'publicRoutes',
+  );
   const adminAppPublicRoutes = extractObjectArray(
     adminApp,
-    'ADMIN_HASH_ROUTE_OPTIONS',
+    'ADMIN_ROUTE_GUARD_OPTIONS',
     'publicRoutes',
   );
   const failures = [

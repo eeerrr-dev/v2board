@@ -1,6 +1,7 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { setAdminRuntimeConfig } from '@/test/runtime-config';
 import ConfigPage, {
   adminSecurePathLocation,
   isBackendEnabled,
@@ -213,7 +214,10 @@ beforeEach(() => {
   mocks.testMailMutateAsync.mockReset().mockResolvedValue({ data: true, log: { email: 'a@b.c' } });
   mocks.toastSuccess.mockReset();
   mocks.toastError.mockReset();
-  window.history.replaceState({}, '', '/admin-path#/config/system');
+  // History routing (docs/api-dialect.md §10.1): the admin app lives under
+  // its injected basename, and the page URL is a path, not a hash.
+  setAdminRuntimeConfig({ secure_path: 'admin-path' });
+  window.history.replaceState({}, '', '/admin-path/config/system');
   // Radix Select pointer + scroll shims for happy-dom.
   window.HTMLElement.prototype.scrollIntoView = vi.fn();
   window.HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
@@ -501,8 +505,9 @@ describe('SystemConfigPage', () => {
     await waitFor(() =>
       expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ secure_path: 'next-admin' }),
     );
-    await waitFor(() => expect(window.location.pathname).toBe('/next-admin'));
-    expect(window.location.hash).toBe('#/config/system');
+    // The app-relative route survives the base move (history routing).
+    await waitFor(() => expect(window.location.pathname).toBe('/next-admin/config/system'));
+    expect(window.location.hash).toBe('');
     expect(mocks.refetch).not.toHaveBeenCalled();
   });
 
@@ -521,7 +526,7 @@ describe('SystemConfigPage', () => {
       '后台路径不能为空',
     );
     expect(mocks.saveMutateAsync).not.toHaveBeenCalled();
-    expect(window.location.pathname).toBe('/admin-path');
+    expect(window.location.pathname).toBe('/admin-path/config/system');
   });
 
   it('gates sections when their dependent query fails and exposes a scoped retry', async () => {
@@ -681,10 +686,15 @@ describe('backend coercion helpers', () => {
     expect(Number.isNaN(parseBackendInteger(''))).toBe(true);
   });
 
-  it('builds the canonical same-origin secure-path location without a trailing slash', () => {
-    expect(adminSecurePathLocation('/new-admin/', '#/config/system')).toBe(
-      '/new-admin#/config/system',
+  it('re-roots the current route path under the new secure-path base', () => {
+    // History routing (docs/api-dialect.md §10.1): a saved secure_path moves
+    // the admin basename, keeping the app-relative route (and query) intact.
+    expect(adminSecurePathLocation('/new-admin/', '/config/system')).toBe(
+      '/new-admin/config/system',
     );
-    expect(adminSecurePathLocation('new-admin', '')).toBe('/new-admin#/config/system');
+    expect(adminSecurePathLocation('new-admin', '/user?page=2')).toBe('/new-admin/user?page=2');
+    // No usable current route falls back to the config page that saved it.
+    expect(adminSecurePathLocation('new-admin', '')).toBe('/new-admin/config/system');
+    expect(adminSecurePathLocation('new-admin', '/')).toBe('/new-admin/config/system');
   });
 });

@@ -31,7 +31,7 @@ describe('parity config audit helpers', () => {
         '/dashboard',
         '/order/:trade_no',
       ] as const;
-      const USER_HASH_ROUTE_OPTIONS = {
+      const USER_ROUTE_GUARD_OPTIONS = {
         authenticatedFallback: '/dashboard',
         guestFallback: '/login',
         publicRoutes: ['/', '/login'],
@@ -42,7 +42,7 @@ describe('parity config audit helpers', () => {
       '/dashboard',
       '/order/:trade_no',
     ]);
-    expect(extractObjectArray(appSource, 'USER_HASH_ROUTE_OPTIONS', 'publicRoutes')).toEqual([
+    expect(extractObjectArray(appSource, 'USER_ROUTE_GUARD_OPTIONS', 'publicRoutes')).toEqual([
       '/',
       '/login',
     ]);

@@ -2,14 +2,14 @@ import { CancelledError, type QueryClient } from '@tanstack/react-query';
 import { type ComponentType } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  createHashRouter,
+  createBrowserRouter,
   matchPath,
   redirect,
   type LoaderFunctionArgs,
   type MiddlewareFunction,
   type RouteObject,
 } from 'react-router';
-import { getNormalizedHashPath } from '@v2board/config';
+import { getNormalizedRoutePath } from '@v2board/config';
 import type { CheckLoginResult } from '@v2board/types';
 import { AppLayout } from '@/components/layout/app-layout';
 import { GuestLayout } from '@/components/layout/guest-layout';
@@ -63,7 +63,7 @@ export const USER_APP_LAYOUT_ROUTE_PATHS = [
   '/traffic',
 ] as const;
 
-export const USER_HASH_ROUTE_OPTIONS = {
+export const USER_ROUTE_GUARD_OPTIONS = {
   matchRoute: (route: string, path: string, end: boolean) => matchPath({ path: route, end }, path),
   authStorageKey: AUTH_STORAGE_KEY,
   authenticatedFallback: '/dashboard',
@@ -101,9 +101,11 @@ function lazyPage(path: UserPageRoutePath): RouteObject['lazy'] {
   };
 }
 
+// History routing (docs/api-dialect.md §10.1): loaders only ever see path
+// URLs. Legacy `#/…` entries are translated once at boot by the §10.3
+// `legacy_hash_redirect_enable` translator in main.tsx, before router creation.
 function getRequestRoutePath(request: Request): string {
   const url = new URL(request.url);
-  if (url.hash.startsWith('#/')) return url.hash.slice(1);
   return `${url.pathname}${url.search}`;
 }
 
@@ -113,13 +115,13 @@ function matchesUserRoute(pathname: string): boolean {
 
 function getUserRouteFallback(): string {
   return getAuthData()
-    ? USER_HASH_ROUTE_OPTIONS.authenticatedFallback
-    : USER_HASH_ROUTE_OPTIONS.guestFallback;
+    ? USER_ROUTE_GUARD_OPTIONS.authenticatedFallback
+    : USER_ROUTE_GUARD_OPTIONS.guestFallback;
 }
 
 export function normalizeUserRouteLoader({ request }: LoaderFunctionArgs) {
   const current = getRequestRoutePath(request);
-  const normalized = getNormalizedHashPath(current, USER_HASH_ROUTE_OPTIONS);
+  const normalized = getNormalizedRoutePath(current, USER_ROUTE_GUARD_OPTIONS);
 
   if (normalized !== current) throw redirect(normalized);
   return null;
@@ -127,7 +129,7 @@ export function normalizeUserRouteLoader({ request }: LoaderFunctionArgs) {
 
 export function unknownUserRouteLoader({ request }: LoaderFunctionArgs) {
   const current = getRequestRoutePath(request);
-  const normalized = getNormalizedHashPath(current, USER_HASH_ROUTE_OPTIONS);
+  const normalized = getNormalizedRoutePath(current, USER_ROUTE_GUARD_OPTIONS);
   const url = new URL(`https://v2board.local${normalized}`);
 
   if (normalized !== current && matchesUserRoute(url.pathname)) throw redirect(normalized);
@@ -365,5 +367,5 @@ export function createUserRoutes(queryClient: QueryClient): RouteObject[] {
 }
 
 export function createUserRouter(queryClient: QueryClient) {
-  return createHashRouter(createUserRoutes(queryClient));
+  return createBrowserRouter(createUserRoutes(queryClient));
 }

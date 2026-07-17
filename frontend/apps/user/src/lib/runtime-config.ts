@@ -11,6 +11,8 @@ export interface RuntimeConfig {
   description?: string;
   logo?: string;
   i18n?: string[];
+  /** docs/api-dialect.md §10.3: boot-time legacy `#/…` → history-URL toggle. */
+  legacy_hash_redirect_enable?: boolean;
 }
 
 const DEFAULT_RUNTIME_CONFIG = {
@@ -23,6 +25,8 @@ const DEFAULT_RUNTIME_CONFIG = {
   // Rust-injected list is intersected with it and kept set-equal by
   // `make deploy-contract-audit`.
   i18n: SUPPORTED_LOCALES.map((locale) => locale.code),
+  // Mirrors the Rust config default (config.rs legacy_hash_redirect_enable).
+  legacy_hash_redirect_enable: true,
 } as const satisfies Required<RuntimeConfig>;
 const THEME_COLORS = new Set<RuntimeThemeColor>(['default', 'darkblue', 'black', 'green']);
 const THEME_META_COLORS: Record<RuntimeThemeColor, string> = {
@@ -73,6 +77,10 @@ function readRuntimeConfig(): RuntimeConfig {
       i18n: Array.isArray(value.i18n)
         ? value.i18n.filter((locale): locale is string => typeof locale === 'string')
         : [...DEFAULT_RUNTIME_CONFIG.i18n],
+      legacy_hash_redirect_enable:
+        typeof value.legacy_hash_redirect_enable === 'boolean'
+          ? value.legacy_hash_redirect_enable
+          : DEFAULT_RUNTIME_CONFIG.legacy_hash_redirect_enable,
     };
   } catch {
     return cloneDefaults();
@@ -81,6 +89,13 @@ function readRuntimeConfig(): RuntimeConfig {
 
 export function getSiteTitle(): string {
   return getRuntimeConfig().title || DEFAULT_RUNTIME_CONFIG.title;
+}
+
+export function getLegacyHashRedirectEnabled(): boolean {
+  return (
+    getRuntimeConfig().legacy_hash_redirect_enable ??
+    DEFAULT_RUNTIME_CONFIG.legacy_hash_redirect_enable
+  );
 }
 
 function getOperatorImageUrl(value: string | undefined): string {

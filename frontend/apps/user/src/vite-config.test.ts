@@ -96,7 +96,9 @@ describe('user Vite dev optimizer', () => {
   it('keeps user optimized deps isolated and fully declared for stable page clicks', () => {
     expect(viteConfigSource).toContain("cacheDir: '../../node_modules/.vite/user'");
     expect(viteConfigSource).toContain('optimizeDeps: {');
-    expect(viteConfigSource).toContain('hashNavigationRedirectPlugin()');
+    // History routing (docs/api-dialect.md §10.1): the dev server relies on
+    // Vite's default SPA fallback; the hash-redirect middleware is retired.
+    expect(viteConfigSource).not.toContain('hashNavigationRedirectPlugin');
     expect(viteConfigSource).not.toContain('themeRuntimeAssetsPlugin()');
     expect(viteConfigSource).not.toContain('legacyThemePlugin()');
     expect(viteConfigSource).toContain('react()');
@@ -129,11 +131,12 @@ describe('user Vite dev optimizer', () => {
   it('uses the real Vite client and React Fast Refresh', () => {
     expect(sharedViteConfigSource).toContain('hmr: true');
     expect(sharedViteConfigSource).not.toContain('overlay: false');
-    expect(sharedViteConfigSource).toContain('export function hashNavigationRedirectPlugin(');
+    // No dev-server hash redirect survives history routing: deep path URLs
+    // must reach the SPA fallback untouched (docs/api-dialect.md §10.1).
+    expect(sharedViteConfigSource).not.toContain('hashNavigationRedirectPlugin');
+    expect(sharedViteConfigSource).not.toContain('location: `/#');
     expect(sharedViteConfigSource).not.toContain("pathname.startsWith('/theme/')");
     expect(sharedViteConfigSource).not.toContain("pathname.startsWith('/monitor/')");
-    expect(sharedViteConfigSource).toContain('location: `/#${pathname}${url.search}`');
-    expect(sharedViteConfigSource).toContain("'content-length': '0'");
     expect(sharedViteConfigSource).not.toContain('export function stripViteClientPlugin()');
     expect(sharedViteConfigSource).not.toContain('export function legacyViteClientStubPlugin()');
     expect(sharedViteConfigSource).not.toContain(

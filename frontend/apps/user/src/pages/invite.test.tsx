@@ -363,14 +363,16 @@ describe('InvitePage shadcn pagination', () => {
 describe('InvitePage shadcn actions', () => {
   beforeEach(resetMocks);
 
-  it('copies the exact legacy register URL and shows the original success toast', async () => {
+  it('copies the path-style register URL and shows the original success toast', async () => {
     mocks.inviteCodes = [{ code: 'ABC123', created_at: 1_700_000_000 }];
     const { user } = renderWithProviders(<InvitePage />);
 
     await user.click(screen.getByRole('button', { name: '复制链接' }));
 
+    // Tier-1 copy-link URL under history routing (docs/api-dialect.md §10.1):
+    // external invitees land on /register with the code preserved.
     expect(mocks.copyText).toHaveBeenCalledWith(
-      `${window.location.origin}${window.location.pathname}#/register?code=ABC123`,
+      `${window.location.origin}/register?code=ABC123`,
     );
     await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalledWith('复制成功'));
   });

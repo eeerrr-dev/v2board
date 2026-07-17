@@ -27,6 +27,15 @@ describe('user entrypoint', () => {
     expect(mainSource).not.toContain('queryCache: new QueryCache({\n    onError');
   });
 
+  it('translates legacy #/ entry URLs before router creation (docs/api-dialect.md §10.3)', () => {
+    expect(mainSource).toContain(
+      'applyLegacyHashRedirect({ enabled: getLegacyHashRedirectEnabled() })',
+    );
+    expect(mainSource.indexOf('applyLegacyHashRedirect({')).toBeLessThan(
+      mainSource.indexOf('createUserRouter(queryClient)'),
+    );
+  });
+
   it('leaves URL normalization to data-router loaders without a watchdog', () => {
     expect(mainSource).not.toContain('normalizeLegacyHashRoute');
     expect(mainSource).not.toContain('installLegacyHashRouteNormalizer');

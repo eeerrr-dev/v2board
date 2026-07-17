@@ -147,7 +147,7 @@ describe('PlansPage shadcn commerce list rendering', () => {
     expect(within(monthly!).getByTestId('plan-stock-badge')).toHaveTextContent('即将售罄');
     expect(monthly).toHaveTextContent('Feature A');
     expect(monthly).toHaveTextContent('立即订阅');
-    // Purchasable card is a real link carrying the hash-route href.
+    // Purchasable card is a real link carrying the route-path href.
     expect(monthly).toHaveAttribute('href', '/plan/1');
 
     expect(within(traffic!).getByTestId('plan-card-title')).toHaveTextContent('Legacy Traffic');

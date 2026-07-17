@@ -32,7 +32,9 @@ const workspacePackageJson = JSON.parse(
 describe('admin Vite configuration', () => {
   it('uses the real Vite HMR client with an explicit dependency graph', () => {
     expect(viteConfigSource).toContain("cacheDir: '../../node_modules/.vite/admin'");
-    expect(viteConfigSource).toContain('hashNavigationRedirectPlugin(');
+    // History routing (docs/api-dialect.md §10.1): the dev server relies on
+    // Vite's default SPA fallback; the hash-redirect middleware is retired.
+    expect(viteConfigSource).not.toContain('hashNavigationRedirectPlugin');
     expect(viteConfigSource).not.toContain('legacyViteClientStubPlugin');
     expect(viteConfigSource).not.toContain('stripViteClientPlugin');
     expect(sharedViteConfigSource).toContain('hmr: true');
