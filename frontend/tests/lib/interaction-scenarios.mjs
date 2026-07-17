@@ -230,6 +230,10 @@ export const interactions = [
     scenarioLabel: 'user-dashboard-session-expired',
   },
   {
+    // Tier-1 keep-token outcome (§3.2): a non-session auth verdict must never
+    // tear down the shell. The legacy oracle wire is a bare HTTP 401 (hence
+    // the label); the source world receives the modern equivalent — a 403
+    // problem+json `permission_denied` (the fixture layer owns the swap).
     forceUserUnauthorized: true,
     forceUserUnauthorizedStatus: 401,
     label: 'user-auth-401-no-redirect',
@@ -614,6 +618,9 @@ export const interactions = [
     scenarioLabel: 'admin-dashboard-session-expired',
   },
   {
+    // Tier-1 keep-token outcome (§3.2) — see user-auth-401-no-redirect: the
+    // source world receives a 403 problem+json `permission_denied` instead
+    // of the oracle's bare HTTP 401.
     forceAdminUnauthorized: true,
     forceAdminUnauthorizedStatus: 401,
     label: 'admin-auth-401-no-redirect',

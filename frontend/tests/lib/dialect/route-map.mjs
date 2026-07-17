@@ -52,22 +52,63 @@ export const routeMap = Object.freeze([
   route('public.config', { method: 'GET', path: '/guest/comm/config' }),
   route('public.invite-views.create', { method: 'POST', path: '/passport/comm/pv' }),
 
-  // ——— §5.2 Auth (was passport) ———
-  route('auth.register', { method: 'POST', path: '/passport/auth/register' }),
-  route('auth.login', { method: 'POST', path: '/passport/auth/login' }),
-  route('auth.quick-login', { method: 'GET', path: '/passport/auth/token2Login', query: ['token'] }),
-  route('auth.token-login', { method: 'GET', path: '/passport/auth/token2Login', query: ['verify'] }),
-  route('auth.password-reset', { method: 'POST', path: '/passport/auth/forget' }),
-  route('auth.step-up', { method: 'POST', path: '/passport/auth/stepUp' }),
-  route('auth.quick-login-url', {
-    method: 'POST',
-    path: '/passport/auth/getQuickLoginUrl',
-    // §5.2: consolidates with the duplicate user-side endpoint.
-    aliases: ['/user/getQuickLoginUrl'],
-  }),
-  route('auth.email-codes', { method: 'POST', path: '/passport/comm/sendEmailVerify' }),
-  route('auth.session.get', { method: 'GET', path: '/user/checkLogin' }),
-  route('auth.session.delete', { method: 'POST', path: '/user/logout' }),
+  // ——— §5.2 Auth (was passport) — flipped to the modern rows in W2 ———
+  route(
+    'auth.register',
+    { method: 'POST', path: '/passport/auth/register' },
+    { method: 'POST', path: '/auth/register' },
+  ),
+  route(
+    'auth.login',
+    { method: 'POST', path: '/passport/auth/login' },
+    { method: 'POST', path: '/auth/login' },
+  ),
+  route(
+    'auth.quick-login',
+    { method: 'GET', path: '/passport/auth/token2Login', query: ['token'] },
+    { method: 'GET', path: '/auth/quick-login', query: ['token'] },
+  ),
+  route(
+    'auth.token-login',
+    { method: 'GET', path: '/passport/auth/token2Login', query: ['verify'] },
+    // The legacy GET-with-side-effect exchange became a POST body (§5.2).
+    { method: 'POST', path: '/auth/token-login' },
+  ),
+  route(
+    'auth.password-reset',
+    { method: 'POST', path: '/passport/auth/forget' },
+    { method: 'POST', path: '/auth/password-reset' },
+  ),
+  route(
+    'auth.step-up',
+    { method: 'POST', path: '/passport/auth/stepUp' },
+    { method: 'POST', path: '/auth/step-up' },
+  ),
+  route(
+    'auth.quick-login-url',
+    {
+      method: 'POST',
+      path: '/passport/auth/getQuickLoginUrl',
+      // §5.2: consolidates with the duplicate user-side endpoint.
+      aliases: ['/user/getQuickLoginUrl'],
+    },
+    { method: 'POST', path: '/auth/quick-login-url' },
+  ),
+  route(
+    'auth.email-codes',
+    { method: 'POST', path: '/passport/comm/sendEmailVerify' },
+    { method: 'POST', path: '/auth/email-codes' },
+  ),
+  route(
+    'auth.session.get',
+    { method: 'GET', path: '/user/checkLogin' },
+    { method: 'GET', path: '/auth/session' },
+  ),
+  route(
+    'auth.session.delete',
+    { method: 'POST', path: '/user/logout' },
+    { method: 'DELETE', path: '/auth/session' },
+  ),
 
   // ——— §5.3 User account & profile ———
   route('user.profile.get', { method: 'GET', path: '/user/info' }),

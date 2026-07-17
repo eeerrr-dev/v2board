@@ -166,7 +166,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
 
     if (adminEndpoint) {
       page.__visualParityDiagnostics?.push(`fixture admin ${adminEndpoint}`);
-    } else if (pathname === '/api/v1/user/checkLogin') {
+    } else if (pathname === '/api/v1/user/checkLogin' || pathname === '/api/v1/auth/session') {
       page.__visualParityDiagnostics?.push(`fixture checkLogin admin=${isAdminScenario}`);
     } else if (pathname === '/api/v1/user/info') {
       page.__visualParityDiagnostics?.push('fixture user info');
@@ -751,7 +751,15 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     }
     await fulfillApiResponse(
       route,
-      apiFixtureResponse(requestUrl, isAdminScenario, scenario, requestData, interaction, target),
+      apiFixtureResponse(
+        requestUrl,
+        isAdminScenario,
+        scenario,
+        requestData,
+        interaction,
+        target,
+        route.request().method(),
+      ),
       target,
     );
 
@@ -784,6 +792,7 @@ export function apiFixtureResponse(
   requestData = null,
   interaction = {},
   target = 'oracle',
+  method = 'GET',
 ) {
   const pathname = requestUrl.pathname;
   const adminEndpoint = adminFixtureEndpoint(pathname);
@@ -795,20 +804,39 @@ export function apiFixtureResponse(
     httpStatus: status,
     message,
   });
+  // Modern-dialect fixtures (docs/api-dialect.md §13.5, flipped for §5.2 auth
+  // in W2): bare bodies with real HTTP statuses and problem+json errors. Only
+  // the source world requests the migrated paths / receives these shapes.
+  const v2Body = (data, httpStatus = 200) => ({ data, dialect: 'v2', httpStatus });
+  const v2Empty = () => ({ data: null, dialect: 'v2', httpStatus: 204 });
+  const v2Problem = (status, title, code, detail) => ({
+    dialect: 'v2',
+    httpStatus: status,
+    problem: { code, detail, status, title, type: 'about:blank' },
+  });
+  // GLOBAL FLIP 2 (§3.2): the force-unauthorized knobs keep their legacy
+  // canonical meaning — 403 was "session expired" (teardown + redirect), 401
+  // was a non-session auth failure (keep token, contain the error). The
+  // modern dialect swaps the wire for the same outcomes: teardown is 401
+  // problem+json `session_expired`, keep-token is 403 `permission_denied`.
+  const unauthorizedFixture = (legacyStatus) => {
+    if (target !== 'source') return httpError('auth required', legacyStatus);
+    return legacyStatus === 401
+      ? v2Problem(403, 'Forbidden', 'permission_denied', 'Permission denied')
+      : v2Problem(401, 'Unauthorized', 'session_expired', '未登录或登陆已过期');
+  };
 
   if (
     (scenario.forceUserUnauthorized || interaction.forceUserUnauthorized) &&
     pathname === '/api/v1/user/info'
   ) {
-    return httpError(
-      'auth required',
+    return unauthorizedFixture(
       interaction.forceUserUnauthorizedStatus ?? scenario.forceUserUnauthorizedStatus ?? 403,
     );
   }
 
   if ((scenario.forceAdminUnauthorized || interaction.forceAdminUnauthorized) && adminEndpoint) {
-    return httpError(
-      'auth required',
+    return unauthorizedFixture(
       interaction.forceAdminUnauthorizedStatus ?? scenario.forceAdminUnauthorizedStatus ?? 403,
     );
   }
@@ -1034,6 +1062,30 @@ export function apiFixtureResponse(
         is_admin: isAdminScenario && !scenario.forceCheckLoginNotAdmin,
         is_login: !(scenario.forceUserUnauthorized || scenario.forceAdminUnauthorized),
       });
+    // §5.2 modern auth family (W2). Only the source world requests these
+    // paths; the oracle keeps the legacy passport/checkLogin cases above.
+    case '/api/v1/auth/login':
+    case '/api/v1/auth/token-login':
+      return v2Body({ auth_data: 'VISUAL_PARITY_TOKEN', is_admin: isAdminScenario });
+    case '/api/v1/auth/register':
+      return v2Body({ auth_data: 'VISUAL_PARITY_TOKEN', is_admin: isAdminScenario }, 201);
+    case '/api/v1/auth/password-reset':
+    case '/api/v1/auth/email-codes':
+      return v2Empty();
+    case '/api/v1/auth/quick-login-url':
+      return v2Body({
+        url: 'https://visual.v2board.test/login?verify=VISUAL_VERIFY_TOKEN&redirect=dashboard',
+      });
+    case '/api/v1/auth/step-up':
+      return v2Body({ expires_in: 900, step_up_token: 'VISUAL_STEP_UP_TOKEN' });
+    case '/api/v1/auth/session': {
+      if (method === 'DELETE') return v2Empty();
+      const isLogin = !(scenario.forceUserUnauthorized || scenario.forceAdminUnauthorized);
+      const isAdmin = isAdminScenario && !scenario.forceCheckLoginNotAdmin;
+      // Mirror the Rust wire (golden auth.session*): `is_admin` appears only
+      // on a logged-in admin session.
+      return v2Body(isLogin && isAdmin ? { is_admin: true, is_login: true } : { is_login: isLogin });
+    }
     case '/api/v1/user/info':
       return body(
         interaction?.telegramBoundProfile
@@ -1290,7 +1342,8 @@ export function delay(ms) {
 
 // World-aware serialization seam (docs/api-dialect.md §13.5): the fixture
 // response object is canonical; the dialect emitter owns each world's wire
-// shape (both worlds emit legacy until family waves flip the source world).
+// shape (migrated families mark fixtures `dialect: 'v2'` for the source
+// world; everything else emits legacy in both worlds).
 export function fulfillApiResponse(route, body, world) {
   const wire = emitFixtureResponse(world, body);
   return route.fulfill({

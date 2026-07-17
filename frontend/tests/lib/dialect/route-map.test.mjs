@@ -24,10 +24,37 @@ test('route ids are unique and every entry carries both world shapes', () => {
   }
 });
 
-test('W0 map is identity: every modern row equals its legacy row', () => {
+test('unflipped families stay identity: modern equals legacy until each wave', () => {
   for (const entry of routeMap) {
+    if (entry.id.startsWith('auth.')) continue; // §5.2 flipped in W2
     assert.deepEqual(entry.modern, entry.legacy, `${entry.id} must stay legacy→legacy until its wave`);
   }
+});
+
+test('W2: the §5.2 auth family carries the modern /auth/* rows', () => {
+  const modern = Object.fromEntries(
+    routeMap
+      .filter((entry) => entry.id.startsWith('auth.'))
+      .map((entry) => [entry.id, entry.modern]),
+  );
+  assert.deepEqual(modern, {
+    'auth.register': { method: 'POST', path: '/auth/register' },
+    'auth.login': { method: 'POST', path: '/auth/login' },
+    'auth.quick-login': { method: 'GET', path: '/auth/quick-login', query: ['token'] },
+    // GET-with-side-effect became the POST body exchange (§5.2).
+    'auth.token-login': { method: 'POST', path: '/auth/token-login' },
+    'auth.password-reset': { method: 'POST', path: '/auth/password-reset' },
+    'auth.step-up': { method: 'POST', path: '/auth/step-up' },
+    'auth.quick-login-url': { method: 'POST', path: '/auth/quick-login-url' },
+    'auth.email-codes': { method: 'POST', path: '/auth/email-codes' },
+    'auth.session.get': { method: 'GET', path: '/auth/session' },
+    'auth.session.delete': { method: 'DELETE', path: '/auth/session' },
+  });
+  // The oracle keeps requesting the legacy passport/user rows.
+  assert.equal(worldRoute('auth.login', 'oracle').path, '/passport/auth/login');
+  assert.equal(worldRoute('auth.login', 'source').path, '/auth/login');
+  assert.equal(worldRoute('auth.session.get', 'oracle').path, '/user/checkLogin');
+  assert.equal(worldRoute('auth.session.delete', 'source').method, 'DELETE');
 });
 
 test('worldRoute resolves the per-world shape for both worlds', () => {

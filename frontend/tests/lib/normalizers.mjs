@@ -232,7 +232,9 @@ export function normalizeInteractionResult(label, result) {
     // The frozen oracle restored an expired credential, while the redesigned
     // clients correctly destroy it. Cross-world comparison therefore keeps the
     // externally visible redirect only; source unit/integration tests separately
-    // require `authorization` to remain absent after the 403.
+    // require `authorization` to remain absent after the session-expiry error
+    // (a legacy 403 in the oracle, a 401 `session_expired` problem in the
+    // source world — §3.2).
     return {
       hash: normalized.hash,
       loginBoxCount: normalized.loginBoxCount,
