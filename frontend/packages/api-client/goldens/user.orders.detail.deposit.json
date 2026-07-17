@@ -1,0 +1,30 @@
+{
+  "trade_no": "golden-trade-deposit-00000000002",
+  "callback_no": null,
+  "plan_id": 0,
+  "coupon_id": null,
+  "payment_id": null,
+  "type": 1,
+  "period": "deposit",
+  "total_amount": 500,
+  "handling_amount": null,
+  "discount_amount": null,
+  "surplus_amount": null,
+  "refund_amount": null,
+  "balance_amount": null,
+  "surplus_order_ids": null,
+  "status": 0,
+  "commission_status": 0,
+  "commission_balance": 0,
+  "actual_commission_balance": null,
+  "invite_user_id": null,
+  "paid_at": null,
+  "created_at": "2023-11-14T22:13:30Z",
+  "updated_at": "2023-11-14T22:13:30Z",
+  "plan": {
+    "id": 0,
+    "name": "deposit"
+  },
+  "bounus": 50,
+  "get_amount": 550
+}

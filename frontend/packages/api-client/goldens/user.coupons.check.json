@@ -1,0 +1,20 @@
+{
+  "id": 1,
+  "code": "GOLDEN10",
+  "name": "Golden Coupon",
+  "type": 2,
+  "value": 10,
+  "show": true,
+  "limit_use": 100,
+  "limit_use_with_user": 1,
+  "limit_plan_ids": [
+    1
+  ],
+  "limit_period": [
+    "month_price"
+  ],
+  "started_at": "2023-11-13T22:13:20Z",
+  "ended_at": "2023-12-14T22:13:20Z",
+  "created_at": "2023-11-14T22:13:20Z",
+  "updated_at": "2023-11-14T22:13:20Z"
+}
