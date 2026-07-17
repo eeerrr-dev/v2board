@@ -87,7 +87,6 @@ describe('admin api legacy path resolution', () => {
     registerSessionCacheClearer(() => undefined);
     vi.restoreAllMocks();
     setAdminRuntimeConfig();
-    window.g_lang = undefined;
     window.localStorage.clear();
     resolveStepUpPrompt();
     clearStepUpGrant();
@@ -117,7 +116,7 @@ describe('admin api legacy path resolution', () => {
   });
 
   it('sends the shared active locale in admin request headers', async () => {
-    window.g_lang = 'ja-JP';
+    window.localStorage.setItem('v2board_locale', 'ja-JP');
     const originalAdapter = apiClient.axios.defaults.adapter;
     let requestConfig: Parameters<AdapterFn>[0] | undefined;
     apiClient.axios.defaults.adapter = async (config) => {
@@ -138,6 +137,9 @@ describe('admin api legacy path resolution', () => {
         responseSchema: z.unknown(),
       });
 
+      // §4.3: Accept-Language is the locale signal; Content-Language rides
+      // along transitionally until the legacy localization middleware retires.
+      expect(requestConfig?.headers?.['Accept-Language']).toBe('ja-JP');
       expect(requestConfig?.headers?.['Content-Language']).toBe('ja-JP');
     } finally {
       apiClient.axios.defaults.adapter = originalAdapter;
@@ -147,8 +149,7 @@ describe('admin api legacy path resolution', () => {
   it('repairs an unsupported persisted locale from the supported browser preference', async () => {
     vi.spyOn(window.navigator, 'languages', 'get').mockReturnValue(['ja-JP']);
     vi.spyOn(window.navigator, 'language', 'get').mockReturnValue('ja-JP');
-    window.localStorage.setItem('umi_locale', 'fr-FR');
-    window.g_lang = 'not-a-locale';
+    window.localStorage.setItem('v2board_locale', 'fr-FR');
     let requestConfig: Parameters<AdapterFn>[0] | undefined;
     apiClient.axios.defaults.adapter = async (config) => {
       requestConfig = config;
@@ -167,6 +168,7 @@ describe('admin api legacy path resolution', () => {
       responseSchema: z.unknown(),
     });
 
+    expect(requestConfig?.headers?.['Accept-Language']).toBe('ja-JP');
     expect(requestConfig?.headers?.['Content-Language']).toBe('ja-JP');
   });
 

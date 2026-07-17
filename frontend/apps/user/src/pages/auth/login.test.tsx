@@ -108,7 +108,7 @@ function resetMocks() {
   mocks.setAuthData.mockReset();
   mocks.settings.logo = '';
   mocks.settings.title = 'V2Board';
-  window.g_lang = 'zh-CN';
+  window.localStorage.setItem('v2board_locale', 'zh-CN');
   mocks.tokenLoginMutateAsync.mockReset();
   mocks.tokenLoginMutateAsync.mockResolvedValue({ auth_data: 'TOKEN_AUTH' });
 }
@@ -124,7 +124,7 @@ describe('LoginPage', () => {
   beforeEach(resetMocks);
 
   afterEach(() => {
-    window.g_lang = undefined;
+    window.localStorage.removeItem('v2board_locale');
   });
 
   it('renders the login card with translated labels, shadcn examples, and footer copy', () => {

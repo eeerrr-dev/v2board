@@ -20,16 +20,13 @@ vi.mock('react-i18next', () => ({
 describe('AuthLanguageMenu', () => {
   beforeEach(() => {
     i18nMocks.changeLanguage.mockClear();
-    window.localStorage.setItem('umi_locale', 'en-US');
-    window.g_lang = 'en-US';
+    window.localStorage.setItem('v2board_locale', 'en-US');
     setRuntimeConfig({ i18n: ['en-US', 'zh-CN'] });
   });
 
   afterEach(() => {
-    document.cookie = 'i18n=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
     window.localStorage.clear();
     setRuntimeConfig();
-    window.g_lang = undefined;
     vi.restoreAllMocks();
   });
 
@@ -63,9 +60,11 @@ describe('AuthLanguageMenu', () => {
     const menu = await screen.findByRole('menu');
     await user.click(within(menu).getByText('简体中文'));
 
-    // Persistence writes stay (Tier-1 language persistence contract)...
-    expect(document.cookie).toContain('i18n=zh-CN');
-    expect(window.localStorage.getItem('umi_locale')).toBe('zh-CN');
+    // Persistence stays (Tier-1 language persistence contract) on the canonical
+    // §11 key; legacy keys (i18n cookie, umi_locale) are never written again...
+    expect(window.localStorage.getItem('v2board_locale')).toBe('zh-CN');
+    expect(document.cookie).not.toContain('i18n=zh-CN');
+    expect(window.localStorage.getItem('umi_locale')).toBeNull();
     // ...but the switch is reactive: changeLanguage drives the re-render, no reload.
     expect(i18nMocks.changeLanguage).toHaveBeenCalledWith('zh-CN');
     expect(reload).not.toHaveBeenCalled();

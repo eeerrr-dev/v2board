@@ -157,12 +157,11 @@ const localizedValidation: Array<
 
 describe('auth validation localization', () => {
   afterEach(() => {
-    window.localStorage.removeItem('umi_locale');
-    window.g_lang = undefined;
+    window.localStorage.removeItem('v2board_locale');
   });
 
   it.each(localizedValidation)('localizes validation copy for %s', async (locale, expected) => {
-    window.localStorage.setItem('umi_locale', locale);
+    window.localStorage.setItem('v2board_locale', locale);
     const instance = createI18n();
     await instance.changeLanguage(locale);
 

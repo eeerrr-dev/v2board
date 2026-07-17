@@ -17,7 +17,11 @@ export interface CreateI18nOptions {
 
 declare global {
   interface Window {
-    /** Public compatibility contract consumed by API requests and integrations. */
+    /**
+     * Retired legacy global. Read exactly once by the §11 bootstrap migration
+     * in `prepareI18nLocale`; nothing may assign or read it anywhere else
+     * (docs/api-dialect.md §11).
+     */
     g_lang?: string;
   }
 }
@@ -59,31 +63,32 @@ export function writeCookie(
 }
 
 /**
- * Reads the active locale from the established public storage contract. The
- * `umi_locale` key and `g_lang` global are intentionally retained for existing
- * sessions and external integrations; the implementation is frontend-native.
+ * Reads the active locale from the canonical `v2board_locale` key
+ * (docs/api-dialect.md §11). Legacy keys (`umi_locale`, the `i18n` cookie,
+ * `window.g_lang`) are only consulted by the one-time bootstrap migration in
+ * `prepareI18nLocale`, which writes the canonical key before app code runs.
  */
 export function getLocale(): SupportedLocale | '' {
   if (typeof window === 'undefined') return '';
   return (
-    resolveSupportedLocale(window.localStorage.getItem('umi_locale')) ??
-    resolveSupportedLocale(window.g_lang) ??
+    resolveSupportedLocale(window.localStorage.getItem('v2board_locale')) ??
     resolveNavigatorLocale(window.navigator) ??
     'zh-CN'
   );
 }
 
-/** Persists the active locale to the established `umi_locale`/`g_lang` contract. */
+/** Persists the active locale to the canonical `v2board_locale` key (§11). */
 export function setLocale(locale: string | undefined): void {
   if (typeof window === 'undefined') return;
   const normalized = locale === undefined ? undefined : resolveSupportedLocale(locale);
   if (locale !== undefined && normalized === undefined) {
     throw new Error('setLocale lang format error');
   }
-  const persisted = window.localStorage.getItem('umi_locale') || window.g_lang;
-  if (normalized !== undefined && persisted === normalized && window.g_lang === normalized) return;
-  window.g_lang = normalized;
-  window.localStorage.setItem('umi_locale', normalized || '');
+  if (normalized === undefined) {
+    window.localStorage.removeItem('v2board_locale');
+    return;
+  }
+  window.localStorage.setItem('v2board_locale', normalized);
 }
 
 export function applyLocaleDocumentEnvironment(
@@ -126,7 +131,7 @@ function configureI18n(
   initialized: Promise<unknown>;
 } {
   const fallback = options.fallback ?? 'zh-CN';
-  const lng = prepareI18nLocale(fallback, readCookie, setLocale);
+  const lng = prepareI18nLocale(fallback, readCookie);
   return initializeI18n({
     defaultNS: options.defaultNS,
     fallback,

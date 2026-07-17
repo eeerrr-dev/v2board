@@ -146,7 +146,17 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     }
     const stepUpToken = options.getStepUpToken?.();
     if (stepUpToken) config.headers['x-v2board-step-up'] = stepUpToken;
-    if (locale) config.headers['Content-Language'] = locale;
+    if (locale) {
+      // docs/api-dialect.md §4.3: Accept-Language is the request locale
+      // signal, resolved against the enabled locale registry.
+      config.headers['Accept-Language'] = locale;
+      // Transitional (2026-07-17, W1→W14): the legacy internal routes still
+      // localize `message` bodies through the backend's Content-Language
+      // response-rewrite middleware until each endpoint family migrates to
+      // the dialect (see the §4.3 transition footnote in docs/api-dialect.md).
+      // Delete this line together with that middleware.
+      config.headers['Content-Language'] = locale;
+    }
     if (config.params) {
       const query = serializeForm(config.params, options.nullFormValue ?? 'omit');
       if (query) {

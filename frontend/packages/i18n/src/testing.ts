@@ -1,5 +1,5 @@
 import type { CreateI18nOptions } from './index';
-import { readCookie, setLocale } from './index';
+import { readCookie } from './index';
 import { prepareI18nLocale } from './bootstrap';
 import { initializeI18n } from './instance';
 import enUS from './locales/en-US';
@@ -12,7 +12,7 @@ import zhTW from './locales/zh-TW';
 /** Test-only constructor that keeps all locale assertions synchronous. */
 export function createI18n(options: CreateI18nOptions = {}) {
   const fallback = options.fallback ?? 'zh-CN';
-  const lng = prepareI18nLocale(fallback, readCookie, setLocale);
+  const lng = prepareI18nLocale(fallback, readCookie);
   return initializeI18n({
     defaultNS: options.defaultNS,
     fallback,

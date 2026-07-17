@@ -596,6 +596,9 @@ describe('createApiClient', () => {
     const request = mock.history.post[0]!;
     expect(request.data).toBe('email=a%40b.c&password=x');
     expect(request.headers?.authorization).toBe('auth');
+    // §4.3: Accept-Language is the locale signal; Content-Language rides along
+    // transitionally until the legacy localization middleware retires.
+    expect(request.headers?.['Accept-Language']).toBe('zh-CN');
     expect(request.headers?.['Content-Language']).toBe('zh-CN');
     expect(request.withCredentials).toBe(false);
     expect(request.timeout).toBe(15_000);

@@ -443,6 +443,13 @@ unknown codes. No client behavior may branch on `detail`.
   resolver and the `v2board_locale` value vocabulary (§11) both derive from
   it, so the three lists cannot drift.
 - The api-client sends `Accept-Language: <active-locale>`.
+- Transition footnote (W1, 2026-07-17): the spec is silent on the client
+  transition window, so from W1 the api-client sends **both**
+  `Accept-Language` and the legacy `Content-Language` (same value). Legacy
+  internal routes localize `message` bodies through the Content-Language
+  response-rewrite middleware until their family migrates; the transitional
+  `Content-Language` line in `packages/api-client/src/client.ts` is deleted
+  together with that middleware at the end of the wave series.
 
 ### 4.4 Null semantics (clear vs retain)
 

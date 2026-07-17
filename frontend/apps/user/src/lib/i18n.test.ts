@@ -35,8 +35,7 @@ function installLocalStorageStub() {
 }
 
 function setLocalePreference(locale: string) {
-  document.cookie = `i18n=${locale};path=/`;
-  window.localStorage.setItem('umi_locale', locale);
+  window.localStorage.setItem('v2board_locale', locale);
 }
 
 describe('i18n resources', () => {
@@ -485,28 +484,70 @@ describe('i18n resources', () => {
     );
   });
 
+  // docs/api-dialect.md §11: one canonical key (v2board_locale) written at
+  // bootstrap; legacy keys (umi_locale, i18n cookie, g_lang) are read-only
+  // migration fallbacks and are never written again.
   it('stamps the provider fallback into getLocale for unsupported navigators', () => {
     setNavigatorLanguages('fr-FR');
 
     const i18n = createI18n();
 
     expect(i18n.language).toBe('zh-CN');
-    expect(window.g_lang).toBe('zh-CN');
-    expect(window.localStorage.getItem('umi_locale')).toBe('zh-CN');
+    expect(window.localStorage.getItem('v2board_locale')).toBe('zh-CN');
+    expect(window.localStorage.getItem('umi_locale')).toBeNull();
+    expect(window.g_lang).toBeUndefined();
     expect(getLocale()).toBe('zh-CN');
   });
 
   it('repairs an unsupported persisted locale so UI and API language cannot diverge', () => {
     setNavigatorLanguages('fr-FR');
-    window.localStorage.setItem('umi_locale', 'fr-FR');
-    window.g_lang = 'fr-FR';
+    window.localStorage.setItem('v2board_locale', 'fr-FR');
 
     const i18n = createI18n();
 
     expect(i18n.language).toBe('zh-CN');
-    expect(window.localStorage.getItem('umi_locale')).toBe('zh-CN');
-    expect(window.g_lang).toBe('zh-CN');
+    expect(window.localStorage.getItem('v2board_locale')).toBe('zh-CN');
     expect(getLocale()).toBe('zh-CN');
+  });
+
+  it('prefers the canonical v2board_locale key over every legacy fallback', () => {
+    setNavigatorLanguages('fr-FR');
+    window.localStorage.setItem('v2board_locale', 'ja-JP');
+    window.localStorage.setItem('umi_locale', 'en-US');
+    document.cookie = 'i18n=ko-KR;path=/';
+    window.g_lang = 'vi-VN';
+
+    const i18n = createI18n();
+
+    expect(i18n.language).toBe('ja-JP');
+    expect(window.localStorage.getItem('v2board_locale')).toBe('ja-JP');
+    // Legacy keys stay untouched: read-only fallbacks, never written again.
+    expect(window.localStorage.getItem('umi_locale')).toBe('en-US');
+    expect(window.g_lang).toBe('vi-VN');
+  });
+
+  it('migrates a legacy umi_locale value into the canonical key once', () => {
+    setNavigatorLanguages('fr-FR');
+    window.localStorage.setItem('umi_locale', 'en-US');
+    document.cookie = 'i18n=ja-JP;path=/';
+
+    const i18n = createI18n();
+
+    expect(i18n.language).toBe('en-US');
+    expect(window.localStorage.getItem('v2board_locale')).toBe('en-US');
+    expect(window.localStorage.getItem('umi_locale')).toBe('en-US');
+  });
+
+  it('migrates the legacy g_lang global when no storage key survives', () => {
+    setNavigatorLanguages('fr-FR');
+    window.g_lang = 'ko-KR';
+
+    const i18n = createI18n();
+
+    expect(i18n.language).toBe('ko-KR');
+    expect(window.localStorage.getItem('v2board_locale')).toBe('ko-KR');
+    // The migration read is the single permitted g_lang access; it never assigns.
+    expect(window.g_lang).toBe('ko-KR');
   });
 
   it('normalizes old underscore i18n cookies before bootstrapping the provider', () => {
@@ -517,8 +558,7 @@ describe('i18n resources', () => {
     const i18n = createI18n();
 
     expect(i18n.language).toBe('zh-CN');
-    expect(window.localStorage.getItem('umi_locale')).toBe('zh-CN');
-    expect(window.g_lang).toBe('zh-CN');
+    expect(window.localStorage.getItem('v2board_locale')).toBe('zh-CN');
     expect(reload).not.toHaveBeenCalled();
   });
 
@@ -529,8 +569,7 @@ describe('i18n resources', () => {
     const i18n = createI18n();
 
     expect(i18n.language).toBe('zh-CN');
-    expect(window.localStorage.getItem('umi_locale')).toBe('zh-CN');
-    expect(window.g_lang).toBe('zh-CN');
+    expect(window.localStorage.getItem('v2board_locale')).toBe('zh-CN');
   });
 
   it('ignores malformed i18n cookie encoding instead of throwing before the app mounts', () => {
@@ -540,8 +579,7 @@ describe('i18n resources', () => {
     const i18n = createI18n();
 
     expect(i18n.language).toBe('zh-CN');
-    expect(window.localStorage.getItem('umi_locale')).toBe('zh-CN');
-    expect(window.g_lang).toBe('zh-CN');
+    expect(window.localStorage.getItem('v2board_locale')).toBe('zh-CN');
   });
 
   it('bootstraps the provider from an exact supported navigator language', () => {
@@ -549,9 +587,9 @@ describe('i18n resources', () => {
 
     const i18n = createI18n();
 
-    expect(window.localStorage.getItem('umi_locale')).toBe('en-US');
+    expect(window.localStorage.getItem('v2board_locale')).toBe('en-US');
     expect(i18n.language).toBe('en-US');
-    expect(window.g_lang).toBe('en-US');
+    expect(window.localStorage.getItem('umi_locale')).toBeNull();
   });
 
   it('preserves a traditional-Chinese navigator region instead of collapsing it to zh-CN', () => {
@@ -559,9 +597,8 @@ describe('i18n resources', () => {
 
     const i18n = createI18n();
 
-    expect(window.localStorage.getItem('umi_locale')).toBe('zh-TW');
+    expect(window.localStorage.getItem('v2board_locale')).toBe('zh-TW');
     expect(i18n.language).toBe('zh-TW');
-    expect(window.g_lang).toBe('zh-TW');
   });
 
   it('uses the first supported secondary navigator language', () => {
@@ -569,8 +606,7 @@ describe('i18n resources', () => {
 
     const i18n = createI18n();
 
-    expect(window.localStorage.getItem('umi_locale')).toBe('ja-JP');
+    expect(window.localStorage.getItem('v2board_locale')).toBe('ja-JP');
     expect(i18n.language).toBe('ja-JP');
-    expect(window.g_lang).toBe('ja-JP');
   });
 });

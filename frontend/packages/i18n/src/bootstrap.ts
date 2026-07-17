@@ -48,25 +48,29 @@ export function resolveNavigatorLocale(
   return undefined;
 }
 
+/**
+ * One-time migration read at i18n bootstrap (docs/api-dialect.md §11):
+ * `v2board_locale` → `umi_locale` → legacy `i18n` cookie → `window.g_lang` →
+ * navigator language → the product fallback. The resolution is written to the
+ * canonical `v2board_locale` key; the legacy keys are read-only fallbacks here
+ * and are never written again. This is the single permitted `g_lang` read.
+ */
 export function prepareI18nLocale(
   fallback: SupportedLocale,
   readCookie: (name: string) => string,
-  setLocale: (locale: SupportedLocale | undefined) => void,
 ): SupportedLocale {
   if (typeof window === 'undefined') return fallback;
 
-  const cookieLocale = resolveSupportedLocale(readCookie('i18n'));
-  const bootstrapLocale = cookieLocale ?? resolveNavigatorLocale(window.navigator);
-  if (bootstrapLocale) setLocale(bootstrapLocale);
-
   const locale =
+    resolveSupportedLocale(window.localStorage.getItem('v2board_locale')) ??
     resolveSupportedLocale(window.localStorage.getItem('umi_locale')) ??
+    resolveSupportedLocale(readCookie('i18n')) ??
     resolveSupportedLocale(window.g_lang) ??
+    resolveNavigatorLocale(window.navigator) ??
     fallback;
-  // Canonicalize both public persistence surfaces. Leaving an unsupported old
-  // value in storage makes i18next fall back while API headers keep the stale
-  // value, so a successful bootstrap always repairs them together.
-  setLocale(locale);
-  window.g_lang = locale;
+  // Canonicalize storage: leaving an unsupported old value in place would make
+  // i18next fall back while API headers keep the stale value, so a successful
+  // bootstrap always repairs the canonical key.
+  window.localStorage.setItem('v2board_locale', locale);
   return locale;
 }
