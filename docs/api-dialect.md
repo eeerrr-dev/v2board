@@ -1330,7 +1330,7 @@ switches its family atomically. No wave leaves a family half-dialect. Wave
 
 - Rust: `Problem` type + `Code` enum + Accept-Language localization plumbing;
   JSON extractor helpers (double-Option, deny_unknown_fields patterns);
-  filter/sort/pagination parsing module; RFC 3339 serde helpers.
+  pagination parsing module; RFC 3339 serde helpers.
 - api-client: v2 core (`Bearer` header assembly, Accept-Language, problem
   parsing, `pageSchema`), inert alongside the legacy paths.
 - Harness: `tests/lib/dialect/{route-map,request-canonicalizer,error-canonicalizer}.mjs`,
