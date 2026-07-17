@@ -231,7 +231,7 @@ export const userQueryOptions = {
           : ({ signal }) =>
               user.prepareStripePaymentIntent(
                 apiClient,
-                { trade_no: tradeNo, method: methodId },
+                { trade_no: tradeNo, method_id: methodId },
                 { signal },
               ),
     }),

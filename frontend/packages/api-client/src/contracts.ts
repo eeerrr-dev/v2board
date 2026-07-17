@@ -121,6 +121,11 @@ export const planPeriodSchema = z.enum([
   'reset_price',
 ]);
 
+/**
+ * Legacy-dialect plan rows (numeric flags, epoch timestamps): still delivered
+ * by /user/getSubscribe (W5) and admin /plan/fetch (W11). The user commerce
+ * routes moved to {@link userPlanSchema} with W4.
+ */
 export const planSchema = z.looseObject({
   id: z.number(),
   group_id: z.number(),
@@ -149,6 +154,38 @@ export const planSchema = z.looseObject({
   updated_at: z.number(),
 });
 
+/**
+ * GET /user/plans and /user/plans/{id} (docs/api-dialect.md §5.5, W4): bare
+ * bodies, boolean `show`/`renew` (§4.1), RFC 3339 timestamps (§4.5).
+ * `capacity_limit` keeps the legacy remaining-capacity rewrite.
+ */
+export const userPlanSchema = z.looseObject({
+  id: z.number(),
+  group_id: z.number(),
+  transfer_enable: z.number(),
+  device_limit: nullableNumber,
+  speed_limit: nullableNumber,
+  reset_traffic_method: z
+    .union([z.literal(0), z.literal(1), z.literal(2), z.literal(3), z.literal(4)])
+    .nullable(),
+  name: z.string(),
+  show: z.boolean(),
+  sort: nullableNumber,
+  renew: z.boolean(),
+  content: nullableString,
+  month_price: nullableNumber,
+  quarter_price: nullableNumber,
+  half_year_price: nullableNumber,
+  year_price: nullableNumber,
+  two_year_price: nullableNumber,
+  three_year_price: nullableNumber,
+  onetime_price: nullableNumber,
+  reset_price: nullableNumber,
+  capacity_limit: nullableNumber,
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
 export const subscribeInfoSchema = z.looseObject({
   plan_id: nullableNumber,
   token: z.string(),
@@ -175,7 +212,12 @@ export const activeSessionSchema = z.looseObject({
 });
 export const activeSessionMapSchema = z.record(z.string(), activeSessionSchema);
 
-export const orderSchema = z.looseObject({
+/**
+ * User order rows from GET /user/orders[/{trade_no}] (docs/api-dialect.md
+ * §5.5, W4): RFC 3339 timestamps, nullable RFC 3339 `paid_at`;
+ * `status`/`type`/`commission_status` stay numeric enums (§4.1).
+ */
+export const userOrderSchema = z.looseObject({
   trade_no: z.string(),
   callback_no: nullableString,
   plan_id: z.number(),
@@ -183,7 +225,57 @@ export const orderSchema = z.looseObject({
   type: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(9)]),
   total_amount: z.number(),
   handling_amount: nullableNumber,
-  pre_handling_amount: z.number().optional(),
+  discount_amount: nullableNumber,
+  surplus_amount: nullableNumber,
+  refund_amount: nullableNumber,
+  balance_amount: nullableNumber,
+  surplus_order_ids: z.array(z.number()).nullable(),
+  status: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
+  commission_status: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]),
+  commission_balance: z.number(),
+  payment_id: nullableNumber,
+  invite_user_id: nullableNumber,
+  actual_commission_balance: nullableNumber.optional(),
+  coupon_id: nullableNumber,
+  paid_at: nullableString,
+  created_at: z.string(),
+  updated_at: z.string(),
+  plan: z
+    .union([userPlanSchema, z.looseObject({ id: z.literal(0), name: z.literal('deposit') })])
+    .optional(),
+  try_out_plan_id: z.number().optional(),
+  bounus: z.number().optional(),
+  get_amount: z.number().optional(),
+});
+
+export const userOrdersSchema = z.array(userOrderSchema);
+
+/** POST /user/orders (§9.4): 201 with the created identity. */
+export const createdOrderSchema = z.looseObject({
+  trade_no: z.string().min(1),
+});
+
+/** GET /user/orders/{trade_no}/status (§9.4): the bare `{status}` body. */
+export const orderStatusSchema = z.looseObject({
+  status: z.number().int(),
+});
+
+/**
+ * Legacy-dialect admin order rows (numeric flags, epoch timestamps) from the
+ * admin order endpoints; W11 owns their dialect flip.
+ */
+export const adminOrderSchema = z.looseObject({
+  id: z.number(),
+  user_id: z.number(),
+  email: z.string().optional(),
+  plan_name: nullableString.optional(),
+  trade_no: z.string(),
+  callback_no: nullableString,
+  plan_id: z.number(),
+  period: z.union([planPeriodSchema, z.literal('deposit')]),
+  type: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(9)]),
+  total_amount: z.number(),
+  handling_amount: nullableNumber,
   discount_amount: nullableNumber,
   surplus_amount: nullableNumber,
   refund_amount: nullableNumber,
@@ -207,21 +299,12 @@ export const orderSchema = z.looseObject({
   get_amount: z.number().optional(),
 });
 
-export const ordersSchema = z.array(orderSchema);
-export const adminOrderSchema = orderSchema.extend({
-  id: z.number(),
-  user_id: z.number(),
-  email: z.string().optional(),
-  plan_name: nullableString.optional(),
-});
-
-export const orderCheckoutDataSchema = z.union([z.string(), z.boolean()]);
-// `type` is a payment-gateway discriminant, not a closed set: the checkout
-// controller interprets 0/1/-1 and treats anything else as an unsupported
-// gateway response instead of failing envelope validation.
-export const checkoutEnvelopeSchema = envelopeSchema(orderCheckoutDataSchema).extend({
-  type: z.number().int(),
-});
+/** POST /user/orders/{trade_no}/checkout (§9.3, W4): the checkout result union. */
+export const checkoutResultSchema = z.discriminatedUnion('kind', [
+  z.looseObject({ kind: z.literal('qr_code'), payload: z.string() }),
+  z.looseObject({ kind: z.literal('redirect'), url: z.string() }),
+  z.looseObject({ kind: z.literal('settled') }),
+]);
 
 export const stripePaymentIntentSchema = z.looseObject({
   public_key: z.string().min(1),
@@ -230,21 +313,21 @@ export const stripePaymentIntentSchema = z.looseObject({
   currency: z.string().regex(/^[a-z]{3}$/),
 });
 
+/**
+ * GET /user/payment-methods (docs/api-dialect.md §5.5, W4):
+ * `handling_fee_percent` is a JSON number (§4.1; the legacy route emitted
+ * Eloquent's decimal string).
+ */
 export const paymentMethodSchema = z.looseObject({
   id: z.number(),
   name: z.string(),
   payment: z.string(),
   icon: nullableString,
   handling_fee_fixed: nullableNumber,
-  // /user/order/getPaymentMethod serializes the NUMERIC column as its exact
-  // decimal string (db/src/payment.rs `handling_fee_percent::text`).
-  handling_fee_percent: numericStringSchema.nullable(),
+  handling_fee_percent: nullableNumber,
 });
 
 export const adminPaymentSchema = paymentMethodSchema.extend({
-  // /payment/fetch emits this field as a JSON number instead
-  // (admin commerce CAST(handling_fee_percent AS DOUBLE PRECISION)).
-  handling_fee_percent: nullableNumber,
   uuid: z.string(),
   config: z.record(z.string(), z.string()),
   notify_domain: nullableString,
@@ -330,6 +413,32 @@ export const availableServerSchema = z.looseObject({
   tags: stringArraySchema.nullable().optional(),
 });
 
+/**
+ * POST /user/coupons/check (docs/api-dialect.md §5.5, W4): bare coupon body,
+ * boolean `show` (§4.1), RFC 3339 windows (§4.5); `type` stays the numeric
+ * 1/2 enum.
+ */
+export const userCouponSchema = z.looseObject({
+  id: z.number(),
+  code: z.string(),
+  name: z.string(),
+  type: z.union([z.literal(1), z.literal(2)]),
+  value: z.number(),
+  show: z.boolean(),
+  limit_use: nullableNumber,
+  limit_use_with_user: nullableNumber,
+  limit_plan_ids: numberArraySchema.nullable(),
+  limit_period: stringArraySchema.nullable(),
+  started_at: z.string(),
+  ended_at: z.string(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+/**
+ * Legacy-dialect coupon rows (numeric flags, epoch timestamps) from the admin
+ * coupon endpoints; W10 owns their dialect flip.
+ */
 export const couponSchema = z.looseObject({
   id: z.number(),
   code: z.string(),

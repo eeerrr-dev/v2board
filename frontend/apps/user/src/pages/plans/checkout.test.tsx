@@ -309,7 +309,7 @@ describe('PlanCheckoutPage rendering', () => {
     await user.click(screen.getByTestId('commerce-submit'));
 
     await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/order/TRADE-YEAR'));
-    expect(mocks.saveOrder).toHaveBeenCalledWith({ plan_id: 1, period: 'year_price' });
+    expect(mocks.saveOrder).toHaveBeenCalledWith({ kind: 'plan', plan_id: 1, period: 'year_price' });
   });
 
   it('lets TanStack Query retain checkout cache instead of clearing it on unmount', () => {
@@ -434,6 +434,7 @@ describe('PlanCheckoutPage commerce behavior', () => {
 
     await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/order/TRADE-EMPTY'));
     expect(mocks.saveOrder).toHaveBeenCalledWith({
+      kind: 'plan',
       plan_id: 1,
       period: 'month_price',
     });
@@ -475,6 +476,7 @@ describe('PlanCheckoutPage commerce behavior', () => {
 
     await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/order/TRADE123'));
     expect(mocks.saveOrder).toHaveBeenCalledWith({
+      kind: 'plan',
       plan_id: 1,
       period: 'month_price',
       coupon_code: 'SAVE',
@@ -527,7 +529,11 @@ describe('PlanCheckoutPage commerce behavior', () => {
     // The order is then placed with no stale coupon_code.
     await user.click(screen.getByTestId('commerce-submit'));
     await waitFor(() =>
-      expect(mocks.saveOrder).toHaveBeenCalledWith({ plan_id: 1, period: 'month_price' }),
+      expect(mocks.saveOrder).toHaveBeenCalledWith({
+        kind: 'plan',
+        plan_id: 1,
+        period: 'month_price',
+      }),
     );
   });
 
@@ -605,6 +611,7 @@ describe('PlanCheckoutPage commerce behavior', () => {
     expect(mocks.refetchOrders).not.toHaveBeenCalled();
     expect(mocks.invalidateQueries).not.toHaveBeenCalled();
     expect(mocks.saveOrder).toHaveBeenCalledWith({
+      kind: 'plan',
       plan_id: 1,
       period: 'month_price',
     });
@@ -630,6 +637,7 @@ describe('PlanCheckoutPage commerce behavior', () => {
     await options.onConfirm();
 
     expect(mocks.saveOrder).toHaveBeenCalledWith({
+      kind: 'plan',
       plan_id: 1,
       period: 'month_price',
     });
@@ -669,6 +677,7 @@ describe('PlanCheckoutPage commerce behavior', () => {
 
     expect(mocks.cancelOrder).toHaveBeenCalledWith('PENDING-CHANGE');
     expect(mocks.saveOrder).toHaveBeenCalledWith({
+      kind: 'plan',
       plan_id: 1,
       period: 'month_price',
     });
@@ -687,6 +696,7 @@ describe('PlanCheckoutPage commerce behavior', () => {
     await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/order/TRADE999'));
     expect(mocks.confirmDialog).not.toHaveBeenCalled();
     expect(mocks.saveOrder).toHaveBeenCalledWith({
+      kind: 'plan',
       plan_id: 1,
       period: 'month_price',
     });

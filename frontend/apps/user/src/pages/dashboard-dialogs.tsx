@@ -43,6 +43,7 @@ export function DashboardConfirmDialog({ action, onClose }: DashboardConfirmDial
     if (!sub) return;
     saveOrder.mutate(
       {
+        kind: 'plan',
         period: 'reset_price',
         plan_id: sub.plan_id as number,
       },

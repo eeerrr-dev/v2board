@@ -692,8 +692,7 @@ describe('ProfilePage shadcn account surface', () => {
 
     await waitFor(() =>
       expect(mocks.saveOrder).toHaveBeenCalledWith({
-        plan_id: 0,
-        period: 'deposit',
+        kind: 'deposit',
         deposit_amount: '12.34',
       }),
     );

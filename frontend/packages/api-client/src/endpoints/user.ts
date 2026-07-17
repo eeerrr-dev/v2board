@@ -2,7 +2,8 @@ import type {
   CommissionDetailPage,
   OrderCheckoutPayload,
   OrderCheckoutResult,
-  OrderSavePayload,
+  OrderCreatePayload,
+  PlanPeriod,
   StripePaymentIntentPayload,
   TicketCreatePayload,
   TicketReplyPayload,
@@ -19,20 +20,17 @@ import {
   arraySchema,
   availableServerSchema,
   booleanSchema,
-  checkoutEnvelopeSchema,
+  checkoutResultSchema,
   commissionDetailSchema,
-  couponSchema,
+  createdOrderSchema,
   inviteFetchSchema,
   knowledgeCategorySchema,
   knowledgeSchema,
   noContentSchema,
   noticeSchema,
-  numberSchema,
-  orderSchema,
-  ordersSchema,
+  orderStatusSchema,
   pageEnvelopeSchema,
   paymentMethodSchema,
-  planSchema,
   redeemGiftCardEnvelopeSchema,
   sessionStateSchema,
   stringSchema,
@@ -43,7 +41,11 @@ import {
   trafficLogSchema,
   trueSchema,
   userCommConfigSchema,
+  userCouponSchema,
   userInfoSchema,
+  userOrderSchema,
+  userOrdersSchema,
+  userPlanSchema,
   userStatTupleSchema,
 } from '../contracts';
 
@@ -176,94 +178,119 @@ export const removeActiveSession = (client: ApiClient, session_id: string) =>
     responseSchema: booleanSchema,
   });
 
+/** GET /user/plans — dialect v2 bare array (docs/api-dialect.md §5.5, W4). */
 export const fetchPlans = (client: ApiClient, config?: QueryRequestConfig) =>
   client.request({
-    url: '/user/plan/fetch',
+    url: '/user/plans',
     method: 'GET',
-    responseSchema: arraySchema(planSchema),
+    dialect: 'v2',
+    responseSchema: arraySchema(userPlanSchema),
     ...config,
   });
 
+/** GET /user/plans/{id} — dialect v2 bare plan; a miss is 404 plan_not_found (§5.5, W4). */
 export const fetchPlan = (client: ApiClient, id: number | string, config?: QueryRequestConfig) =>
   client.request({
-    url: '/user/plan/fetch',
+    url: `/user/plans/${encodeURIComponent(id)}`,
     method: 'GET',
-    params: { id },
-    responseSchema: planSchema,
+    dialect: 'v2',
+    responseSchema: userPlanSchema,
     ...config,
   });
 
+/** GET /user/orders?status= — dialect v2 bare array (§5.5, W4). */
 export const fetchOrders = (client: ApiClient, status?: number, config?: QueryRequestConfig) =>
   client.request({
-    url: '/user/order/fetch',
+    url: '/user/orders',
     method: 'GET',
+    dialect: 'v2',
     params: status === undefined ? {} : { status },
-    responseSchema: ordersSchema,
+    responseSchema: userOrdersSchema,
     ...config,
   });
 
+/** GET /user/orders/{trade_no} — dialect v2 bare order (§5.5, W4). */
 export const orderDetail = (client: ApiClient, trade_no: string, config?: QueryRequestConfig) =>
   client.request({
-    url: '/user/order/detail',
+    url: `/user/orders/${encodeURIComponent(trade_no)}`,
     method: 'GET',
-    params: { trade_no },
-    responseSchema: orderSchema,
+    dialect: 'v2',
+    responseSchema: userOrderSchema,
     ...config,
   });
 
-export type SaveOrderInput = Omit<OrderSavePayload, 'deposit_amount'> & {
-  /** Deposit amount in major currency units; converted to integer cents at this boundary. */
-  deposit_amount?: string;
-};
+export type SaveOrderInput =
+  | { kind: 'plan'; plan_id: number; period: PlanPeriod; coupon_code?: string }
+  | {
+      kind: 'deposit';
+      /** Deposit amount in major currency units; converted to integer cents at this boundary. */
+      deposit_amount: string;
+    };
 
+/**
+ * POST /user/orders — dialect v2 create from the §5.5 discriminated union,
+ * answered 201 with `{trade_no}` (§9.4, W4); resolves to the bare trade_no
+ * for navigation. The plan arm's `coupon_code` follows the §5.5 empty-coupon
+ * rule: callers omit the field entirely when no coupon is applied.
+ */
 export const saveOrder = async (client: ApiClient, payload: SaveOrderInput) => {
-  const { deposit_amount, ...order } = payload;
-  const data: OrderSavePayload =
-    deposit_amount === undefined
-      ? order
-      : { ...order, deposit_amount: decimalToCents(deposit_amount) };
-  return client.request({
-    url: '/user/order/save',
+  const data: OrderCreatePayload =
+    payload.kind === 'deposit'
+      ? { kind: 'deposit', deposit_amount: decimalToCents(payload.deposit_amount) }
+      : payload;
+  const created = await client.request({
+    url: '/user/orders',
     method: 'POST',
+    dialect: 'v2',
     data,
-    responseSchema: stringSchema,
+    responseSchema: createdOrderSchema,
   });
+  return created.trade_no;
 };
 
-export const checkoutOrder = async (
+/** POST /user/orders/{trade_no}/checkout — dialect v2, the §9.3 result union (W4). */
+export const checkoutOrder = (
   client: ApiClient,
   payload: OrderCheckoutPayload,
-): Promise<OrderCheckoutResult> => {
-  const env = await client.requestEnvelope({
-    url: '/user/order/checkout',
-    method: 'POST',
-    data: payload,
-    responseSchema: checkoutEnvelopeSchema,
-  });
-  return { type: env.type, data: env.data };
-};
-
-export const checkOrder = (client: ApiClient, trade_no: string, config?: QueryRequestConfig) =>
+): Promise<OrderCheckoutResult> =>
   client.request({
-    url: '/user/order/check',
-    method: 'GET',
-    params: { trade_no },
-    responseSchema: numberSchema,
-    ...config,
+    url: `/user/orders/${encodeURIComponent(payload.trade_no)}/checkout`,
+    method: 'POST',
+    dialect: 'v2',
+    data: { method_id: payload.method_id },
+    responseSchema: checkoutResultSchema,
   });
 
+/**
+ * GET /user/orders/{trade_no}/status — dialect v2 `{status}` body (§9.4, W4);
+ * resolves to the bare status number the 3s poll consumes.
+ */
+export const checkOrder = (client: ApiClient, trade_no: string, config?: QueryRequestConfig) =>
+  client
+    .request({
+      url: `/user/orders/${encodeURIComponent(trade_no)}/status`,
+      method: 'GET',
+      dialect: 'v2',
+      responseSchema: orderStatusSchema,
+      ...config,
+    })
+    .then((body) => body.status);
+
+/** POST /user/orders/{trade_no}/cancel — dialect v2, trade_no in the path, 204 (§5.5, W4). */
 export const cancelOrder = (client: ApiClient, trade_no: string) =>
   client.request({
-    url: '/user/order/cancel',
+    url: `/user/orders/${encodeURIComponent(trade_no)}/cancel`,
     method: 'POST',
-    data: { trade_no },
-    responseSchema: trueSchema,
+    dialect: 'v2',
+    responseSchema: noContentSchema,
   });
 
+/** GET /user/payment-methods — dialect v2 bare array, numeric percent (§5.5, W4). */
 export const getPaymentMethod = (client: ApiClient, config?: QueryRequestConfig) =>
   client.request({
-    url: '/user/order/getPaymentMethod',
+    url: '/user/payment-methods',
     method: 'GET',
+    dialect: 'v2',
     responseSchema: arraySchema(paymentMethodSchema),
     ...config,
   });
@@ -370,12 +397,14 @@ export const fetchServers = (client: ApiClient, config?: QueryRequestConfig) =>
     ...config,
   });
 
+/** POST /user/coupons/check — dialect v2 JSON `{code, plan_id}` → bare coupon (§5.5, W4). */
 export const checkCoupon = (client: ApiClient, code: string, plan_id: number | string) =>
   client.request({
-    url: '/user/coupon/check',
+    url: '/user/coupons/check',
     method: 'POST',
-    data: { code, plan_id },
-    responseSchema: couponSchema,
+    dialect: 'v2',
+    data: { code, plan_id: Number(plan_id) },
+    responseSchema: userCouponSchema,
   });
 
 /** GET /user/telegram-bot — dialect v2 bare `{username}` (§5.3, W3). */
@@ -398,15 +427,21 @@ export const commConfig = (client: ApiClient, config?: QueryRequestConfig) =>
     ...config,
   });
 
+/**
+ * POST /user/orders/{trade_no}/stripe-intent — dialect v2 bare intent body
+ * (§5.5, W4). The Stripe PaymentIntent payloads behind it stay byte-frozen
+ * (§2).
+ */
 export const prepareStripePaymentIntent = (
   client: ApiClient,
   payload: StripePaymentIntentPayload,
   config?: QueryRequestConfig,
 ) =>
   client.request({
-    url: '/user/order/stripe/intent',
+    url: `/user/orders/${encodeURIComponent(payload.trade_no)}/stripe-intent`,
     method: 'POST',
-    data: payload,
+    dialect: 'v2',
+    data: { method_id: payload.method_id },
     responseSchema: stripePaymentIntentSchema,
     ...config,
   });

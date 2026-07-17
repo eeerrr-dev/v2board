@@ -165,7 +165,7 @@ describe('user query state behavior', () => {
     await (enabled.queryFn as QueryFn)({ signal });
     expect(apiUser.prepareStripePaymentIntent).toHaveBeenCalledWith(
       apiClient,
-      { trade_no: 'ORDER123', method: 9 },
+      { trade_no: 'ORDER123', method_id: 9 },
       { signal },
     );
 

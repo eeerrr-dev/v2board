@@ -1,5 +1,31 @@
 export type CouponType = 1 | 2;
 
+/**
+ * POST /user/coupons/check (docs/api-dialect.md §5.5, W4): bare coupon body
+ * with a boolean `show` flag and RFC 3339 windows; `type` stays the numeric
+ * 1 (fixed cents) / 2 (percent) enum.
+ */
+export interface UserCoupon {
+  id: number;
+  code: string;
+  name: string;
+  type: CouponType;
+  value: number;
+  show: boolean;
+  limit_use: number | null;
+  limit_use_with_user: number | null;
+  limit_plan_ids: number[] | null;
+  limit_period: string[] | null;
+  started_at: string;
+  ended_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Legacy-dialect coupon row (numeric flags, epoch timestamps), still
+ * delivered by the admin coupon endpoints; W10 owns their dialect flip.
+ */
 export interface Coupon {
   id: number;
   code: string;

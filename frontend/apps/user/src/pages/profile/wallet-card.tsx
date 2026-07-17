@@ -78,12 +78,10 @@ export function WalletCard() {
   };
 
   const onDeposit = depositForm.handleSubmit(({ amount }) => {
+    // §5.5 (W4): the deposit arm of the create-order union replaced the
+    // legacy plan_id:0 + period:"deposit" sentinel.
     saveOrder.mutate(
-      {
-        plan_id: 0,
-        period: 'deposit',
-        deposit_amount: amount,
-      },
+      { kind: 'deposit', deposit_amount: amount },
       { onSuccess: (tradeNo) => void navigate(`/order/${tradeNo}`) },
     );
     closeDeposit();

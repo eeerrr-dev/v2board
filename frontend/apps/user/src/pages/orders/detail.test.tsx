@@ -78,7 +78,6 @@ const orderState = vi.hoisted(() => ({
           transfer_enable: number;
           month_price: number;
         };
-        pre_handling_amount?: number;
       }
     | undefined,
 }));
@@ -493,26 +492,6 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
     expect(screen.getByText('¥ 10.00 CNY')).toBeInTheDocument();
   });
 
-  it('prefers the server pre_handling_amount over the locally derived method fee', () => {
-    paymentState.data = [
-      {
-        id: 9,
-        name: 'Fee Pay',
-        payment: 'LegacyPay',
-        handling_fee_fixed: 150,
-        handling_fee_percent: 10,
-      },
-    ];
-    orderState.data = { ...orderState.data!, pre_handling_amount: 300 };
-
-    renderWithProviders(<OrderDetailPage />);
-
-    // Server value (300) wins over the locally computed 250.
-    expect(screen.getByText('3.00')).toBeInTheDocument();
-    expect(screen.queryByText('2.50')).toBeNull();
-    expect(screen.getByText('¥ 13.00 CNY')).toBeInTheDocument();
-  });
-
   it('confirms the server-owned PaymentIntent without sending a legacy token', async () => {
     paymentState.data = [{ id: 5, name: 'Stripe Pay', payment: 'StripeCredit' }];
     stripeIntent.value = {
@@ -600,16 +579,16 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
   });
 
   it('opens an accessible QR dialog encoding the checkout pay URL', async () => {
-    checkoutOrder.mockResolvedValue({ type: 0, data: 'https://pay.example.test/order' });
+    checkoutOrder.mockResolvedValue({ kind: 'qr_code', payload: 'https://pay.example.test/order' });
 
     const { user } = renderWithProviders(<OrderDetailPage />);
 
     await user.click(screen.getByTestId('commerce-submit'));
 
-    // Tier-1: the non-Stripe checkout payload carries the trade_no and method.
+    // Tier-1: the non-Stripe checkout payload carries the trade_no and method_id.
     expect(checkoutOrder).toHaveBeenCalledWith({
       trade_no: 'ORDER123',
-      method: 1,
+      method_id: 1,
     });
 
     const dialog = await screen.findByRole('dialog', { name: 'order.checkout' });
@@ -629,7 +608,7 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
 
   it('hides the QR dialog after paid polling', async () => {
     vi.useFakeTimers();
-    checkoutOrder.mockResolvedValue({ type: 0, data: 'https://pay.example.test/order' });
+    checkoutOrder.mockResolvedValue({ kind: 'qr_code', payload: 'https://pay.example.test/order' });
     orderStatusState.data = 1;
 
     renderWithProviders(<OrderDetailPage />);
@@ -651,13 +630,13 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
     expect(screen.queryByTestId('payment-qrcode')).toBeNull();
   });
 
-  it('settles a free / balance-covered order (type -1) instead of falling through silently', async () => {
+  it('settles a free / balance-covered order (kind "settled") instead of falling through silently', async () => {
     // total_amount <= 0 orders settle server-side with no gateway, so checkout
-    // returns type -1 with no QR/redirect. onPay must still refresh the order
-    // plus the balance (info) and subscription (subscribe) it just consumed.
+    // returns {kind:"settled"} with no QR/redirect. onPay must still refresh the
+    // order plus the balance (info) and subscription (subscribe) it just consumed.
     orderState.data = { ...orderState.data!, total_amount: 0 };
     paymentState.data = [{ id: 5, name: 'Stripe Pay', payment: 'StripeCredit' }];
-    checkoutOrder.mockResolvedValue({ type: -1, data: undefined });
+    checkoutOrder.mockResolvedValue({ kind: 'settled' });
 
     const { user } = renderWithProviders(<OrderDetailPage />);
 
@@ -667,7 +646,7 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
     await user.click(submit);
     await flushCheckout();
 
-    expect(checkoutOrder).toHaveBeenCalledWith({ trade_no: 'ORDER123', method: 5 });
+    expect(checkoutOrder).toHaveBeenCalledWith({ trade_no: 'ORDER123', method_id: 5 });
     expect(screen.queryByTestId('payment-qrcode')).toBeNull();
     expect(toastSpies.success).toHaveBeenCalledWith('order.success');
     expect(orderRefetch).toHaveBeenCalledTimes(1);

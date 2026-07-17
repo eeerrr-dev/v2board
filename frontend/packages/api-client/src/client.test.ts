@@ -454,17 +454,17 @@ describe('createApiClient', () => {
     ).rejects.toBeInstanceOf(ApiContractError);
   });
 
-  it('rejects checkout success envelopes that omit the required direct type field', async () => {
+  it('rejects checkout bodies that omit the §9.3 union kind tag', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/user/order/checkout').reply(200, { data: 'https://pay.example.test' });
+    mock.onPost('/user/orders/T1/checkout').reply(200, { payload: 'https://pay.example.test' });
 
     await expect(
-      userEndpoints.checkoutOrder(client, { trade_no: 'T1', method: 1 }),
+      userEndpoints.checkoutOrder(client, { trade_no: 'T1', method_id: 1 }),
     ).rejects.toBeInstanceOf(ApiContractError);
   });
 
-  it('prepares Stripe PaymentIntent with only the order and selected method', async () => {
+  it('prepares Stripe PaymentIntent with the trade_no in the path and only method_id in the body', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
     const intent = {
@@ -473,22 +473,22 @@ describe('createApiClient', () => {
       amount: 1234,
       currency: 'cny',
     };
-    mock.onPost('/user/order/stripe/intent').reply(200, { data: intent });
+    mock.onPost('/user/orders/T1/stripe-intent').reply(200, intent);
 
     await expect(
-      userEndpoints.prepareStripePaymentIntent(client, { trade_no: 'T1', method: 5 }),
+      userEndpoints.prepareStripePaymentIntent(client, { trade_no: 'T1', method_id: 5 }),
     ).resolves.toEqual(intent);
-    expect(mock.history.post[0]?.data).toBe('trade_no=T1&method=5');
+    expect(JSON.parse(String(mock.history.post[0]?.data))).toEqual({ method_id: 5 });
     expect(mock.history.post[0]?.data).not.toContain('token');
   });
 
   it('throws a typed checkout transport failure without owning UI presentation', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/user/order/checkout').networkError();
+    mock.onPost('/user/orders/T1/checkout').networkError();
 
     await expect(
-      userEndpoints.checkoutOrder(client, { trade_no: 'T1', method: 1 }),
+      userEndpoints.checkoutOrder(client, { trade_no: 'T1', method_id: 1 }),
     ).rejects.toMatchObject({
       status: 0,
       message: 'Network Error',
@@ -540,17 +540,19 @@ describe('createApiClient', () => {
   it('converts deposit major units to integer cents at the save-order boundary', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/user/order/save').reply(200, { data: 'DEPOSIT-1' });
+    mock.onPost('/user/orders').reply(201, { trade_no: 'DEPOSIT-1' });
 
     await expect(
       userEndpoints.saveOrder(client, {
-        plan_id: 0,
-        period: 'deposit',
+        kind: 'deposit',
         deposit_amount: '12.34',
       }),
     ).resolves.toBe('DEPOSIT-1');
 
-    expect(mock.history.post[0]?.data).toBe('plan_id=0&period=deposit&deposit_amount=1234');
+    expect(JSON.parse(String(mock.history.post[0]?.data))).toEqual({
+      kind: 'deposit',
+      deposit_amount: 1234,
+    });
   });
 
   it('converts Admin user GiB and major-unit money exactly at the update boundary', async () => {
@@ -606,8 +608,7 @@ describe('createApiClient', () => {
 
     await expect(
       userEndpoints.saveOrder(client, {
-        plan_id: 0,
-        period: 'deposit',
+        kind: 'deposit',
         deposit_amount: '900719925474099.99',
       }),
     ).rejects.toThrow(RangeError);

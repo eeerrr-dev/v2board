@@ -546,7 +546,11 @@ describe('DashboardPage shadcn shell actions', () => {
     await user.click(screen.getByTestId('dashboard-confirm-primary'));
 
     await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/order/ORDER123'));
-    expect(mocks.saveOrder).toHaveBeenCalledWith({ period: 'reset_price', plan_id: 1 });
+    expect(mocks.saveOrder).toHaveBeenCalledWith({
+      kind: 'plan',
+      period: 'reset_price',
+      plan_id: 1,
+    });
   });
 
   it('confirms opening a new traffic period and refetches subscription data', async () => {

@@ -12,7 +12,7 @@ import {
   useSubscribe,
   useUserInfo,
 } from '@/lib/queries';
-import type { Coupon, Plan, PlanPeriod } from '@v2board/types';
+import type { PlanPeriod, UserCoupon, UserPlan } from '@v2board/types';
 import { PLAN_PERIOD_LABELS, PURCHASABLE_PLAN_PERIODS } from '@/lib/plan-periods';
 import { isSubscriptionExpired } from '@/pages/dashboard-subscription';
 import { PlanContent } from '@/components/plan-content';
@@ -49,7 +49,7 @@ export default function PlanCheckoutPage() {
   const saveOrderMutation = useSaveOrderMutation();
   const [period, setPeriod] = useState<PlanPeriod | undefined>();
   const [couponCode, setCouponCode] = useState('');
-  const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
+  const [appliedCoupon, setAppliedCoupon] = useState<UserCoupon | null>(null);
   const ordersStateRef = useRef({ data: orders.data, isSuccess: orders.isSuccess });
 
   // Confirm dialogs outlive the render that opened them. Keep their eventual
@@ -109,11 +109,14 @@ export default function PlanCheckoutPage() {
     if (!isValidCheckoutPeriod(planQuery.data, currentPeriod) || hasInvalidCoupon(appliedCoupon)) {
       return;
     }
+    // §5.5 empty-coupon rule (Tier-1): with no applied coupon the field is
+    // omitted from the JSON body entirely — never sent as "".
     const payload: SaveOrderInput = {
+      kind: 'plan',
       plan_id: planQuery.data.id,
       period: currentPeriod,
+      ...(appliedCoupon?.name ? { coupon_code: appliedCoupon.code } : {}),
     };
-    if (appliedCoupon?.name) payload.coupon_code = appliedCoupon.code;
 
     saveOrderMutation.mutate(payload, {
       onSuccess: (tradeNo) => void navigate(`/order/${tradeNo}`),
@@ -366,7 +369,7 @@ export default function PlanCheckoutPage() {
 // Deliberately local and unshared (see lib/plan-periods.ts): includes
 // reset_price and iterates server JSON key order — it feeds the Tier-1
 // save-order payload.
-function getDefaultPeriod(plan: Plan): PlanPeriod | undefined {
+function getDefaultPeriod(plan: UserPlan): PlanPeriod | undefined {
   let period: PlanPeriod | undefined;
   for (const key of Object.keys(plan).reverse()) {
     if (key in PLAN_PERIOD_LABELS && isValidCheckoutPeriod(plan, key as PlanPeriod)) {
@@ -376,13 +379,16 @@ function getDefaultPeriod(plan: Plan): PlanPeriod | undefined {
   return period;
 }
 
-function isValidCheckoutPeriod(plan: Plan, period: PlanPeriod | undefined): period is PlanPeriod {
+function isValidCheckoutPeriod(
+  plan: UserPlan,
+  period: PlanPeriod | undefined,
+): period is PlanPeriod {
   if (!period) return false;
   const price = plan[period];
   return typeof price === 'number' && Number.isFinite(price);
 }
 
-function hasInvalidCoupon(coupon: Coupon | null): boolean {
+function hasInvalidCoupon(coupon: UserCoupon | null): boolean {
   if (!coupon?.name) return false;
   return (coupon.type !== 1 && coupon.type !== 2) || !Number.isFinite(coupon.value);
 }

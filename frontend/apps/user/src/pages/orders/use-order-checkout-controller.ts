@@ -193,13 +193,11 @@ export function useOrderCheckoutController(tradeNo: string | undefined): OrderCh
     [stripeClientSecret],
   );
 
-  // pre_handling_amount from the server wins; otherwise derive the fee from the selected
-  // method. The bundled poll-success refetch replaces the order detail without re-running
+  // The handling fee is a Tier-2 display estimate derived from the selected
+  // method; the server's settled `handling_amount` is what actually charges.
+  // The bundled poll-success refetch replaces the order detail without re-running
   // getPaymentMethod, so a paid (non-pending) order has no locally injected fee.
-  const fee = !order
-    ? 0
-    : (order.pre_handling_amount ??
-      (order.status === 0 ? calculatePreHandlingAmount(order, selectedPayment) : 0));
+  const fee = order?.status === 0 ? calculatePreHandlingAmount(order, selectedPayment) : 0;
 
   const onPay = async () => {
     // Never let an empty/loading/failed or stale payment-method result reach the checkout
@@ -231,28 +229,30 @@ export function useOrderCheckoutController(tradeNo: string | undefined): OrderCh
     checkout.mutate(
       {
         trade_no: tradeNo,
-        method: effectiveMethodId,
+        method_id: effectiveMethodId,
       },
       {
         onSuccess: (result) => {
-          if (result.type === 0) {
-            setQrcodeRequested(true);
-            setPayUrl(typeof result.data === 'string' ? result.data : undefined);
-          } else if (result.type === 1 && typeof result.data === 'string') {
-            window.location.href = result.data;
-            toast.info(t(($) => $.order.redirecting_checkout));
-          } else if (result.type === -1) {
-            // Free / balance-covered order (backend total_amount <= 0): it settles
-            // immediately with no gateway, so there is no QR or redirect. Without this
-            // branch onPay fell through silently. Confirm it and refresh the order + account
-            // state so the result card and balance render at once.
-            toast.success(t(($) => $.order.success));
-            refreshAfterPayment();
-          } else {
-            // The schema keeps `type` open (a gateway discriminant, not a closed
-            // union), so an unknown value must surface instead of falling through
-            // silently like the old missing -1 branch did.
-            toast.error(t(($) => $.common.error_title));
+          // §9.3: the checkout result is a closed discriminated union; an
+          // unmappable gateway response is a 400 payment_gateway_unsupported
+          // problem surfaced through the shared MutationCache error path.
+          switch (result.kind) {
+            case 'qr_code':
+              setQrcodeRequested(true);
+              setPayUrl(result.payload);
+              break;
+            case 'redirect':
+              window.location.href = result.url;
+              toast.info(t(($) => $.order.redirecting_checkout));
+              break;
+            case 'settled':
+              // Free / balance-covered order (backend total_amount <= 0): it settles
+              // immediately with no gateway, so there is no QR or redirect. Confirm it
+              // and refresh the order + account state so the result card and balance
+              // render at once.
+              toast.success(t(($) => $.order.success));
+              refreshAfterPayment();
+              break;
           }
         },
       },
