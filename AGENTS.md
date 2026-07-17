@@ -107,7 +107,10 @@ visual, interaction, database, and native runtime artifacts in Docker volumes.
 - Never import, concatenate, copy, serve, or deploy the old packaged bundles:
   `umi.js`, `umi.css`, `components.chunk.css`, `vendors.async.js`,
   `components.async.js`, `env.example.js`, copied static/i18n/theme assets, or
-  admin equivalents. There are no runtime `custom.css`/`custom.js` fallbacks.
+  admin equivalents. There are no runtime `custom.css`/`custom.js` fallbacks,
+  and no operator `custom_html` injection: that feature is removed
+  (`docs/api-dialect.md` §10.5/§12) — do not reintroduce its config field,
+  HTML marker, or admin UI control.
 - `references/wyx2685-v2board` is the only retained old implementation. It is a
   pinned git submodule mounted read-only for compatibility tests. Never COPY it
   into an image, source tree, runtime volume, Vite input, or deploy release.
@@ -276,6 +279,11 @@ wave-by-wave migration appendix that later waves are parameterized from.
   canonicalizers, world-aware fixtures) under
   `frontend/tests/lib/dialect/`; byte-level request equality for the
   internal dialect is retired. The read-only reference oracle stays.
+- The internal dialect is henceforth pinned by `docs/api-dialect.md` plus
+  the golden wire lane (`frontend/packages/api-client/src/goldens.test.ts`,
+  `backend/rust/crates/api/src/golden_wire.rs`) and the source-world
+  interaction scenarios — consult the spec, not legacy code or the
+  reference frontend, for internal shapes.
 
 ## Frontend Contract Direction
 
@@ -284,37 +292,46 @@ frontend is retired; only its read-only reference submodule remains to identify
 externally observable compatibility contracts.
 
 The internal API dialect migration (see "Internal API Dialect Direction"
-above) rewords contract lines in this section wave by wave. Until a
-family's wave lands, the legacy contract wording here remains authoritative
-for that family; when a wave ships, it rewords the affected lines in the
-same commit series — `docs/api-dialect.md` Appendix B maps each affected
-line to its replacement wording and owning wave (hash routes → history
-routes plus `legacy_hash_redirect_enable` and path-style minted URLs;
-form-encoded array shapes such as `limit_plan_ids[0]` → JSON arrays and the
-filter DSL; `{trade_no}` bodies → path segments; `/user/resetSecurity` →
-`POST /user/subscription/reset-token`; `/user/invite/save` →
-`POST /user/invite-codes`). Do not treat those quoted legacy shapes as
-permanent contracts: the Tier-1 anchor for internal API shape is the modern
-dialect per `docs/api-dialect.md`, while the behavioral outcomes those
-lines pin remain Tier 1 throughout.
+above) rewords contract lines in this section wave by wave. Payload, route,
+and header items in the per-surface lists below name the current Rust
+contract as specified in `docs/api-dialect.md` — the live legacy shape until
+a family's Appendix-A wave lands, the modern shape once it has — never a
+permanent legacy byte pin. Each wave rewords the affected lines here in the
+same commit series that flips its family; `docs/api-dialect.md` Appendix B
+maps each affected line to its replacement wording and owning wave. The
+behavioral outcomes those lines pin remain contracts throughout.
 
 - Behavioral/contract parity is permanent, but the anchor is the Rust backend
   and external integrations, not the reference frontend. The reference only
   witnesses what those already expect; matching it is a proxy for matching the
   real contract, never an end in itself. Two tiers follow:
-  - Tier 1 — non-negotiable (permanent): true external contracts — API endpoints
-    and request payloads (for internal routes, the shapes defined by
-    `docs/api-dialect.md` once a family has migrated; the legacy shapes until
-    then), auth/session persistence keys, the SPA route paths the backend
-    mints links into (e.g. `?verify=`, `/order/{trade_no}` — moving from hash
-    to history routing per `docs/api-dialect.md`), and payloads sent to
-    external integrations (e.g. Stripe PaymentIntent metadata/webhooks and
-    Crisp/Tawk session data) — where changing one breaks a real external party; plus the security-
-    and session-critical behavioral OUTCOMES (auth redirects, i18n/language
-    persistence) and any edge case that maps to a backend or data contract (e.g.
-    which payload is sent for an empty coupon, sold-out handling), pinned as
-    behavior, not as bytes. All of this must stay green through
-    `make behavior-parity` or a focused interaction parity shard.
+  - Tier 1 — non-negotiable (permanent): strictly external-party contracts,
+    where changing one breaks a real external party: the byte-frozen external
+    namespaces and integration payloads (subscription clients, node agents,
+    payment-gateway notify routes and webhooks, Telegram, Google reCAPTCHA
+    verification, Stripe PaymentIntent metadata/webhooks, Crisp/Tawk session
+    data — `docs/api-dialect.md` §2); backend-minted URL resolvability — the
+    SPA must keep resolving the URLs the backend mints (the `?verify=` email
+    login link, the `{app_url}/order/{trade_no}` payment return, quick-login
+    redirects; hash-style today, path-style per `docs/api-dialect.md` §10.4
+    once W1 lands — the `legacy_hash_redirect_enable` hash translator is
+    presentation, not a contract); the browser-persisted `authorization`
+    localStorage key, plus the legacy locale keys strictly as
+    one-time-migration reads; imported-data interpretations (the notice
+    `弹窗` auto-popup tag, the knowledge `copy()`/`jump()` hooks in rendered
+    markdown); and security- and session-critical OUTCOMES — session teardown
+    exactly on session expiry (401 + `session_expired` in the modern dialect;
+    the legacy 403 message until W2 — permission-denied and step-up
+    rejections must never tear down the session), cross-account cache
+    isolation, no-credentials CORS, server-side registration enforcement,
+    and i18n/language persistence. All of this must stay green through
+    `make behavior-parity` or a focused interaction-parity shard. The
+    internal API dialect itself — routes, request/response shapes, the error
+    model, transport headers — is pinned by `docs/api-dialect.md`, the
+    golden wire lane, and the source-world interaction scenarios, not by
+    this list; the spec also owns the contract-bearing edge cases (e.g. the
+    empty-coupon omission rule, sold-out `capacity_limit` handling), which
+    change only through a spec revision.
   - Tier 2 — conservatively pinned, relaxable per redesigned surface: things no
     external party consumes — display-only formatting (date/number rendering, or
     exact rendered-HTML bytes such as a trailing newline or attribute order) and
@@ -328,9 +345,12 @@ lines pin remain Tier 1 throughout.
     as Tier 1. Do not treat a Tier-2 pin as an external contract.
 - The per-surface "must remain covered" lists further down inherit this Tier
   model; read them through it rather than as flat byte-pins. An item there is
-  Tier 1 only if a real external party consumes it — a request payload, an
-  externally-read URL, an auth/session key, a security/redirect outcome, or a
-  backend-field interpretation. Items that are display formatting,
+  Tier 1 only if a real external party consumes it — an externally-read URL,
+  an auth/session persistence key, a security/redirect outcome, or a
+  backend-field interpretation of imported data. Payload and route items name
+  the current Rust contract as specified in `docs/api-dialect.md`, guarded by
+  the golden lane and source-world scenarios — they must remain covered, but
+  they are not external contracts. Items that are display formatting,
   spinner/toast/modal/poll/debounce/refetch timing, query/cache cleanup, scroll
   observability, or popup-vs-mobile navigation are Tier 2 — relaxable on a
   redesigned surface as long as a behavior/interaction scenario still covers the
@@ -422,7 +442,10 @@ The user profile/account surface (`/profile`) is a redesigned shadcn surface.
 The user service usage surfaces (`/node` and `/traffic`) are redesigned shadcn
 surfaces.
 
-- Keep service contracts strict: subscribe-first fetch ordering, empty-state
+- Keep service contracts strict: subscription-gated node visibility (never
+  render the node list before subscription state is known — serial
+  subscribe-first fetching today, parallel fetch with subscription-gated
+  rendering per `docs/api-dialect.md` §4.6), empty-state
   subscribe/renew routing, node `is_online`/`server_rate` interpretation and
   charged math `(u+d)*server_rate`, legacy traffic-charge coercion, routing, and
   i18n must remain covered. Loading/timeout timing, the visual rendering of
@@ -493,18 +516,26 @@ structure rather than pixel-era class names.
 The entire admin app (`frontend/apps/admin/src/pages/*`) is a redesigned shadcn
 surface — every admin page is shadcn/Radix with zero Ant Design imports. Its
 visual-parity scenarios are retired (`visualRetired: true`), so the admin
-interaction-parity scenarios are the standing contract guard, run with
-`INTERACTION_PARITY_SCENARIOS="admin" make interaction-parity` (desktop +
-mobile). Do not impose a frontend-only language restriction on the admin app;
-shared locale state, document language/direction, and API locale headers must
-remain coherent. Existing untranslated copy may stay Chinese until product
-translations are supplied, but Chinese-only behavior is not a contract.
+interaction-parity scenarios are the standing contract guard. They run in the
+full `make interaction-parity` suite (desktop + mobile); to narrow a run,
+list exact scenario labels — `INTERACTION_PARITY_SCENARIOS` matches each
+label end-anchored, so a bare `admin` prefix selects nothing (e.g.
+`INTERACTION_PARITY_SCENARIOS="admin-config-tabs admin-users-sort-matrix"
+make interaction-parity`). Do not impose a frontend-only language restriction
+on the admin app; shared locale state, document language/direction, and the
+API locale header (`Content-Language` today, `Accept-Language` per
+`docs/api-dialect.md` §4.3) must remain coherent. Existing untranslated copy
+may stay Chinese until product translations are supplied, but Chinese-only
+behavior is not a contract.
 
 - Keep admin contracts strict: every admin API endpoint and request payload
   (config, coupon/giftcard/notice/knowledge/plan/server/user/order/ticket
-  create/edit/delete bodies, including form-encoded array shapes like
-  `limit_plan_ids[0]`), the cents conversions (e.g. coupon `type===1 →
-  value*100`), list/fetch query and pagination/filter parameters, admin
+  create/edit/delete bodies, encoded per the current Rust contract as
+  specified in `docs/api-dialect.md` — form-encoded bracket arrays like
+  `limit_plan_ids[0]` until a family's wave lands, JSON arrays after), the
+  cents conversions (e.g. coupon `type===1 → value*100`), list/fetch query,
+  pagination, and filter/sort parameters (bracket `filter[i][…]` params
+  today, the spec's §7 filter DSL once its consumer waves land), admin
   auth/session persistence, and route contracts must stay covered by an
   interaction-parity scenario.
 - Tier-2 defaults are relaxable here: overlay chrome (sheet vs modal vs drawer),
