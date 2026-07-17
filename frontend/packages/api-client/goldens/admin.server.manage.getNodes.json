@@ -1,0 +1,31 @@
+{
+  "data": [
+    {
+      "api_key": null,
+      "available_status": 0,
+      "cipher": "aes-128-gcm",
+      "created_at": 1700000000,
+      "group_id": [
+        1
+      ],
+      "host": "ss.golden.test",
+      "id": 1,
+      "last_check_at": null,
+      "last_push_at": null,
+      "name": "Golden shadowsocks node",
+      "obfs": null,
+      "obfs_settings": null,
+      "online": null,
+      "parent_id": null,
+      "port": "443",
+      "rate": "1",
+      "route_id": null,
+      "server_port": 443,
+      "show": 1,
+      "sort": 1,
+      "tags": null,
+      "type": "shadowsocks",
+      "updated_at": 1700000000
+    }
+  ]
+}

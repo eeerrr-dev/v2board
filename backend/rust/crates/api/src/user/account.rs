@@ -25,9 +25,9 @@ pub(crate) async fn user_info(
 
 #[derive(Debug, Serialize)]
 pub(crate) struct CheckLoginResult {
-    is_login: bool,
+    pub(crate) is_login: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    is_admin: Option<bool>,
+    pub(crate) is_admin: Option<bool>,
 }
 
 /// Explicit sign-out: revokes the opaque session presented in the
@@ -156,16 +156,16 @@ pub(crate) async fn remove_active_session(
 
 #[derive(Debug, Serialize)]
 pub(crate) struct UserCommConfig {
-    is_telegram: i32,
-    telegram_discuss_link: Option<String>,
-    withdraw_methods: Vec<String>,
-    withdraw_close: i32,
-    currency: String,
-    currency_symbol: String,
-    commission_distribution_enable: i32,
-    commission_distribution_l1: Option<String>,
-    commission_distribution_l2: Option<String>,
-    commission_distribution_l3: Option<String>,
+    pub(crate) is_telegram: i32,
+    pub(crate) telegram_discuss_link: Option<String>,
+    pub(crate) withdraw_methods: Vec<String>,
+    pub(crate) withdraw_close: i32,
+    pub(crate) currency: String,
+    pub(crate) currency_symbol: String,
+    pub(crate) commission_distribution_enable: i32,
+    pub(crate) commission_distribution_l1: Option<String>,
+    pub(crate) commission_distribution_l2: Option<String>,
+    pub(crate) commission_distribution_l3: Option<String>,
 }
 
 pub(crate) async fn user_comm_config(

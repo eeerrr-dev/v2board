@@ -1,0 +1,41 @@
+{
+  "data": {
+    "actual_commission_balance": null,
+    "balance_amount": null,
+    "callback_no": null,
+    "commission_balance": 100,
+    "commission_log": [
+      {
+        "created_at": 1700000000,
+        "get_amount": 100,
+        "id": 1,
+        "invite_user_id": 1,
+        "order_amount": 1000,
+        "trade_no": "golden-trade-plan-00000000000001",
+        "updated_at": 1700000000,
+        "user_id": 2
+      }
+    ],
+    "commission_status": 0,
+    "coupon_id": null,
+    "created_at": 1700000000,
+    "discount_amount": null,
+    "handling_amount": null,
+    "id": 1,
+    "invite_user_id": 1,
+    "paid_at": null,
+    "payment_id": null,
+    "payment_reconciliations": [],
+    "period": "month_price",
+    "plan_id": 1,
+    "refund_amount": null,
+    "status": 0,
+    "surplus_amount": null,
+    "surplus_order_ids": null,
+    "total_amount": 1000,
+    "trade_no": "golden-trade-plan-00000000000001",
+    "type": 1,
+    "updated_at": 1700000000,
+    "user_id": 2
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "data": [
+    {
+      "created_at": 1700000000,
+      "id": 1,
+      "name": "Golden group",
+      "server_count": 1,
+      "updated_at": 1700000000,
+      "user_count": 0
+    }
+  ]
+}

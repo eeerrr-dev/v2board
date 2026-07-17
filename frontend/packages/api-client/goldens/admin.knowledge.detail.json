@@ -1,0 +1,13 @@
+{
+  "data": {
+    "body": "golden knowledge body",
+    "category": "Golden Category",
+    "created_at": 1700000000,
+    "id": 1,
+    "language": "en-US",
+    "show": 1,
+    "sort": 1,
+    "title": "Golden article",
+    "updated_at": 1700000000
+  }
+}

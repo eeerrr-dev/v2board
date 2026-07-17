@@ -1,0 +1,20 @@
+{
+  "data": [
+    {
+      "id": 1,
+      "name": "Golden EPay",
+      "payment": "EPay",
+      "icon": null,
+      "handling_fee_fixed": 20,
+      "handling_fee_percent": "0.50"
+    },
+    {
+      "id": 2,
+      "name": "Golden Stripe",
+      "payment": "StripeCheckout",
+      "icon": "/icons/stripe.svg",
+      "handling_fee_fixed": null,
+      "handling_fee_percent": null
+    }
+  ]
+}

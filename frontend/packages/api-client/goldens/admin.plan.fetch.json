@@ -1,0 +1,29 @@
+{
+  "data": [
+    {
+      "capacity_limit": 50,
+      "content": "golden plan content",
+      "count": 0,
+      "created_at": 1700000000,
+      "device_limit": 3,
+      "group_id": 1,
+      "half_year_price": null,
+      "id": 1,
+      "month_price": 1000,
+      "name": "Golden Plan",
+      "onetime_price": 15000,
+      "quarter_price": 2700,
+      "renew": 1,
+      "reset_price": 300,
+      "reset_traffic_method": 0,
+      "show": 1,
+      "sort": 1,
+      "speed_limit": null,
+      "three_year_price": null,
+      "transfer_enable": 107374182400,
+      "two_year_price": null,
+      "updated_at": 1700000000,
+      "year_price": 9600
+    }
+  ]
+}

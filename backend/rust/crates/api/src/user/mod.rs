@@ -1,9 +1,9 @@
-mod account;
+pub(crate) mod account;
 mod content;
 mod giftcard;
 mod invite;
 mod stats;
-mod subscription;
+pub(crate) mod subscription;
 
 pub(crate) use account::{
     active_sessions, change_password, check_login, logout, remove_active_session, reset_security,

@@ -1,0 +1,17 @@
+{
+  "data": [
+    "AlipayF2F",
+    "BEasyPaymentUSDT",
+    "BTCPay",
+    "CoinPayments",
+    "Coinbase",
+    "EPay",
+    "MGate",
+    "StripeALL",
+    "StripeAlipay",
+    "StripeCheckout",
+    "StripeCredit",
+    "StripeWepay",
+    "WechatPayNative"
+  ]
+}

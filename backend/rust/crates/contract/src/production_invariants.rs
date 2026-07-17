@@ -32,11 +32,12 @@ use v2board_domain::{
     smtp::SmtpTransportCache,
 };
 
-static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations-postgres");
+pub(crate) static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations-postgres");
 
-const DEFAULT_ROOT_DATABASE_URL: &str = "postgresql://v2board:v2board@postgres:5432/postgres";
+pub(crate) const DEFAULT_ROOT_DATABASE_URL: &str =
+    "postgresql://v2board:v2board@postgres:5432/postgres";
 const DEFAULT_RUNTIME_REDIS_URL: &str = "redis://redis:6379/1";
-const DEFAULT_INTEGRATION_REDIS_URL: &str = "redis://redis:6379/15";
+pub(crate) const DEFAULT_INTEGRATION_REDIS_URL: &str = "redis://redis:6379/15";
 const DEFAULT_WORKER_BIN: &str = "/app/target/debug/v2board-workers";
 const INTEGRATION_APP_KEY: &str = "integration-only-app-key-with-at-least-thirty-two-bytes";
 
@@ -2551,7 +2552,7 @@ async fn auth_service(pool: &PgPool, redis_url: &str, config: AppConfig) -> Resu
     ))
 }
 
-fn integration_config(_pool: &PgPool, redis_url: &str) -> Result<AppConfig> {
+pub(crate) fn integration_config(_pool: &PgPool, redis_url: &str) -> Result<AppConfig> {
     let mut config = AppConfig::try_from_api_env().context("load integration AppConfig")?;
     config.environment = RuntimeEnvironment::Testing;
     config.redis_url = redis_url.to_string();
@@ -2624,13 +2625,16 @@ async fn run_worker_once(
     Ok(())
 }
 
-async fn flush_redis(redis: &redis::Client) -> Result<()> {
+pub(crate) async fn flush_redis(redis: &redis::Client) -> Result<()> {
     let mut conn = redis.get_multiplexed_async_connection().await?;
     redis::cmd("FLUSHDB").query_async::<()>(&mut conn).await?;
     Ok(())
 }
 
-async fn create_database(root: &PgPool, database_name: &GeneratedDatabaseName) -> Result<()> {
+pub(crate) async fn create_database(
+    root: &PgPool,
+    database_name: &GeneratedDatabaseName,
+) -> Result<()> {
     sqlx::query(AssertSqlSafe(format!(
         "CREATE DATABASE {} WITH TEMPLATE template0 ENCODING 'UTF8'",
         database_name.quoted()
@@ -2640,7 +2644,10 @@ async fn create_database(root: &PgPool, database_name: &GeneratedDatabaseName) -
     Ok(())
 }
 
-async fn drop_database(root: &PgPool, database_name: &GeneratedDatabaseName) -> Result<()> {
+pub(crate) async fn drop_database(
+    root: &PgPool,
+    database_name: &GeneratedDatabaseName,
+) -> Result<()> {
     // A failed invariant may leave pooled or child-process sessions behind.
     // Terminate them by a bound value before issuing the necessarily dynamic
     // DROP DATABASE against the validated generated identifier.
@@ -2663,7 +2670,7 @@ async fn drop_database(root: &PgPool, database_name: &GeneratedDatabaseName) -> 
     Ok(())
 }
 
-fn database_url_for(
+pub(crate) fn database_url_for(
     root_database_url: &str,
     database_name: &GeneratedDatabaseName,
 ) -> Result<String> {
@@ -2673,10 +2680,10 @@ fn database_url_for(
 }
 
 #[derive(Debug)]
-struct GeneratedDatabaseName(String);
+pub(crate) struct GeneratedDatabaseName(String);
 
 impl GeneratedDatabaseName {
-    fn new(label: &str) -> Result<Self> {
+    pub(crate) fn new(label: &str) -> Result<Self> {
         ensure!(
             !label.is_empty()
                 && label
@@ -2692,11 +2699,11 @@ impl GeneratedDatabaseName {
         Ok(Self(value))
     }
 
-    fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         &self.0
     }
 
-    fn quoted(&self) -> String {
+    pub(crate) fn quoted(&self) -> String {
         // Validation excludes quotes and every other escaping case.
         format!("\"{}\"", self.0)
     }
@@ -2729,7 +2736,7 @@ fn random_traffic_key() -> String {
     format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple())
 }
 
-fn env_or(key: &str, default: &str) -> String {
+pub(crate) fn env_or(key: &str, default: &str) -> String {
     env::var(key).unwrap_or_else(|_| default.to_string())
 }
 

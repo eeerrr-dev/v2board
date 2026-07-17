@@ -1,0 +1,41 @@
+{
+  "data": [
+    {
+      "code": "GOLDENCOUPONB",
+      "created_at": 1700000010,
+      "ended_at": 1700003600,
+      "id": 2,
+      "limit_period": [
+        "month_price"
+      ],
+      "limit_plan_ids": [
+        1
+      ],
+      "limit_use": 10,
+      "limit_use_with_user": 1,
+      "name": "Golden coupon limited",
+      "show": 1,
+      "started_at": 1700000000,
+      "type": 2,
+      "updated_at": 1700000010,
+      "value": 20
+    },
+    {
+      "code": "GOLDENCOUPONA",
+      "created_at": 1700000000,
+      "ended_at": 1700003600,
+      "id": 1,
+      "limit_period": null,
+      "limit_plan_ids": null,
+      "limit_use": null,
+      "limit_use_with_user": null,
+      "name": "Golden coupon plain",
+      "show": 1,
+      "started_at": 1700000000,
+      "type": 1,
+      "updated_at": 1700000000,
+      "value": 100
+    }
+  ],
+  "total": 2
+}

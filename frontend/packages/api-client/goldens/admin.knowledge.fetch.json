@@ -1,0 +1,12 @@
+{
+  "data": [
+    {
+      "category": "Golden Category",
+      "id": 1,
+      "show": 1,
+      "sort": 1,
+      "title": "Golden article",
+      "updated_at": 1700000000
+    }
+  ]
+}

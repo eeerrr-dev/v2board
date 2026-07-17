@@ -1,0 +1,16 @@
+{
+  "data": [
+    {
+      "created_at": 1700000000,
+      "id": 1,
+      "last_reply_user_id": 2,
+      "level": 1,
+      "reply_status": 0,
+      "status": 0,
+      "subject": "Golden ticket subject",
+      "updated_at": 1700000000,
+      "user_id": 2
+    }
+  ],
+  "total": 1
+}

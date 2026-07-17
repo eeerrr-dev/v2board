@@ -16,6 +16,8 @@ mod codec;
 mod commerce;
 mod fallback;
 mod frontend;
+#[cfg(test)]
+mod golden_wire;
 mod i18n;
 mod json_value;
 mod localization;

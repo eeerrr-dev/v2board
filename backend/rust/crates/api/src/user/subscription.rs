@@ -17,21 +17,21 @@ use crate::{
 
 #[derive(Debug, Serialize)]
 pub(crate) struct SubscribeInfo {
-    plan_id: Option<i32>,
-    token: String,
-    expired_at: Option<i64>,
-    u: i64,
-    d: i64,
-    transfer_enable: i64,
-    device_limit: Option<i32>,
-    email: String,
-    uuid: String,
+    pub(crate) plan_id: Option<i32>,
+    pub(crate) token: String,
+    pub(crate) expired_at: Option<i64>,
+    pub(crate) u: i64,
+    pub(crate) d: i64,
+    pub(crate) transfer_enable: i64,
+    pub(crate) device_limit: Option<i32>,
+    pub(crate) email: String,
+    pub(crate) uuid: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    plan: Option<v2board_db::plan::PlanRow>,
-    alive_ip: i64,
-    subscribe_url: String,
-    reset_day: Option<i64>,
-    allow_new_period: i32,
+    pub(crate) plan: Option<v2board_db::plan::PlanRow>,
+    pub(crate) alive_ip: i64,
+    pub(crate) subscribe_url: String,
+    pub(crate) reset_day: Option<i64>,
+    pub(crate) allow_new_period: i32,
 }
 
 pub(crate) async fn user_subscribe(

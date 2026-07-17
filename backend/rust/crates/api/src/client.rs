@@ -20,15 +20,15 @@ use crate::{
 
 #[derive(Debug, Serialize)]
 pub(crate) struct GuestConfig {
-    tos_url: Option<String>,
-    is_email_verify: i32,
-    is_invite_force: i32,
-    email_whitelist_suffix: serde_json::Value,
-    is_recaptcha: i32,
-    recaptcha_site_key: Option<String>,
-    app_description: Option<String>,
-    app_url: Option<String>,
-    logo: Option<String>,
+    pub(crate) tos_url: Option<String>,
+    pub(crate) is_email_verify: i32,
+    pub(crate) is_invite_force: i32,
+    pub(crate) email_whitelist_suffix: serde_json::Value,
+    pub(crate) is_recaptcha: i32,
+    pub(crate) recaptcha_site_key: Option<String>,
+    pub(crate) app_description: Option<String>,
+    pub(crate) app_url: Option<String>,
+    pub(crate) logo: Option<String>,
 }
 
 pub(crate) async fn guest_config(

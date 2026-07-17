@@ -39,8 +39,8 @@ pub(crate) async fn order_save(
 
 #[derive(Debug, Serialize)]
 pub(crate) struct CheckoutEnvelope {
-    r#type: i16,
-    data: serde_json::Value,
+    pub(crate) r#type: i16,
+    pub(crate) data: serde_json::Value,
 }
 
 pub(crate) async fn order_checkout(

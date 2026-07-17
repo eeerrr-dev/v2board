@@ -1,5 +1,5 @@
 .PHONY: up down reset sync logs ps shell doctor \
-	rust-check rust-test rust-integration rust-route-audit rust-worker-reconcile rust-target-gate \
+	rust-check rust-test rust-integration rust-route-audit rust-worker-reconcile rust-target-gate contract-goldens \
 	public-bundle-audit runtime-isolation-audit native-database-audit cloudflared-config-audit native-release-audit frontend-source-audit parity-config-audit ui-sync-audit deploy-contract-audit \
 	deploy-smoke visual-smoke interaction-parity accessibility-smoke behavior-parity \
 	reference-oracle-check reference-oracle-up reference-oracle-down \
@@ -114,10 +114,34 @@ rust-check:
 	$(DCF) run --rm -T --no-deps --entrypoint bash rust-api -lc \
 		'. /usr/local/cargo/env; cargo fmt --all --check && cargo clippy --workspace --all-targets --locked -- -D warnings'
 
+# The checked-in golden response fixtures live in the frontend api-client
+# package; mount them read-only so the v2board-api golden_wire test can verify
+# the serialized wire bodies byte-for-byte.
+GOLDENS_HOST_DIR := $(CURDIR)/frontend/packages/api-client/goldens
+GOLDENS_MOUNT_DIR := /src/frontend/packages/api-client/goldens
+
 rust-test:
 	$(DCF) build rust-api
-	$(DCF) run --rm -T --no-deps --entrypoint bash rust-api -lc \
+	$(DCF) run --rm -T --no-deps --entrypoint bash \
+		-v "$(GOLDENS_HOST_DIR):$(GOLDENS_MOUNT_DIR):ro" \
+		rust-api -lc \
 		'. /usr/local/cargo/env; cargo test --workspace --locked'
+
+# Golden-response contract lane: verifies (default) or regenerates
+# (UPDATE_GOLDENS=1) the checked-in fixtures under
+# frontend/packages/api-client/goldens against the live Rust serialization.
+# The api-client vitest suite parses the same fixtures with their zod
+# contracts, closing the Rust->zod edge.
+contract-goldens:
+	$(DCF) build rust-api
+	$(DCF) up -d --wait postgres redis
+	$(DCF) run --rm -T --no-deps --entrypoint bash \
+		-v "$(GOLDENS_HOST_DIR):$(GOLDENS_MOUNT_DIR)" \
+		-e UPDATE_GOLDENS \
+		rust-api -lc \
+		'set -euo pipefail; . /usr/local/cargo/env; \
+		 cargo test --locked -p v2board-api golden_wire; \
+		 cargo run --locked -p v2board-contract -- golden-responses'
 
 rust-integration:
 	$(DCF) build rust-api
@@ -134,6 +158,7 @@ rust-integration:
 	$(DCF) exec -T clickhouse clickhouse-client --user v2board_analytics --password v2board \
 		--query 'CREATE DATABASE v2board_analytics_test'
 	$(DCF) run --rm -T --no-deps --entrypoint bash \
+		-v "$(GOLDENS_HOST_DIR):$(GOLDENS_MOUNT_DIR):ro" \
 		-e RUST_INTEGRATION_DATABASE_ROOT_URL=postgresql://v2board:v2board@postgres:5432/postgres \
 		-e RUST_INTEGRATION_DATABASE_URL=postgresql://v2board:v2board@postgres:5432/v2board_analytics_test \
 		-e RUST_INTEGRATION_CLICKHOUSE_URL=http://clickhouse:8123 \
@@ -157,7 +182,8 @@ rust-integration:
 		 cargo test --locked -p v2board-analytics --test clickhouse_roundtrip; \
 		 cargo test --locked -p v2board-analytics --test outbox_roundtrip; \
 		 cargo build --locked -p v2board-workers; \
-		 cargo run --locked -p v2board-contract -- production-invariants'
+		 cargo run --locked -p v2board-contract -- production-invariants; \
+		 cargo run --locked -p v2board-contract -- golden-responses'
 	$(DCF) --profile migration-test stop legacy-mysql-source postgres-import-target redis-import-target
 
 rust-route-audit:
