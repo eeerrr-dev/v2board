@@ -173,7 +173,7 @@ make doctor
 |---|---|
 | Rust 应用与 API | <http://localhost:8000> |
 | 用户端 Vite | <http://localhost:5173> |
-| 管理端 Vite | <http://localhost:5174/admin> |
+| 管理端 Vite | <http://localhost:5174/admin-dev> |
 | PostgreSQL | `localhost:5432` |
 | ClickHouse HTTP / native | `localhost:8123` / `localhost:9000` |
 | Redis | `localhost:6379` |

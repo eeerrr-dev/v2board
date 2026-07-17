@@ -105,6 +105,10 @@ fn runtime_config(config: &AppConfig, app: FrontendApp) -> Value {
         "background_url": config.frontend_background_url,
         "description": config.app_description,
         "logo": config.logo,
+        // docs/api-dialect.md §10.3: both SPAs read this toggle at boot to
+        // translate legacy `#/…` URLs into history URLs before router
+        // creation.
+        "legacy_hash_redirect_enable": config.legacy_hash_redirect_enable,
     });
     let Value::Object(mut settings) = common else {
         unreachable!("runtime config is always an object")

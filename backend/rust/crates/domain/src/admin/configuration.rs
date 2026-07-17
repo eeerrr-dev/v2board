@@ -61,6 +61,9 @@ impl AdminService {
                 "tos_url": self.config.tos_url,
                 "currency": self.config.currency,
                 "currency_symbol": self.config.currency_symbol,
+                // docs/api-dialect.md §10.3/§12: site-group toggle for the
+                // client-side legacy `#/…` hash → history-URL translation.
+                "legacy_hash_redirect_enable": bool_i(self.config.legacy_hash_redirect_enable),
             },
             "subscribe": {
                 "plan_change_enable": bool_i(self.config.plan_change_enable),

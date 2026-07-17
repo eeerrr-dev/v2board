@@ -12,7 +12,7 @@ x-rust-common-environment: &rust-common-environment
   APP_URL: ${APP_URL:-http://localhost:8000}
   REDIS_URL: ${V2BOARD_LOCAL_REDIS_URL:-redis://redis:6379/1}
   RUST_BIND_ADDR: 0.0.0.0:8080
-  V2BOARD_FRONTEND_ADMIN_PATH: ${V2BOARD_FRONTEND_ADMIN_PATH:-admin}
+  V2BOARD_FRONTEND_ADMIN_PATH: ${V2BOARD_FRONTEND_ADMIN_PATH:-admin-dev}
   V2BOARD_FRONTEND_DIR: /app/frontend-deploy
   V2BOARD_DATABASE_MIN_CONNECTIONS: ${V2BOARD_DATABASE_MIN_CONNECTIONS:-1}
   V2BOARD_DATABASE_MAX_CONNECTIONS: ${V2BOARD_DATABASE_MAX_CONNECTIONS:-20}
@@ -259,7 +259,7 @@ services:
       COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
       PLAYWRIGHT_BROWSERS_PATH: /app/frontend/.cache/ms-playwright
       VITE_API_BASE: http://rust-api:8080
-      VITE_DEV_ADMIN_PATH: ${V2BOARD_FRONTEND_ADMIN_PATH:-admin}
+      VITE_DEV_ADMIN_PATH: ${V2BOARD_FRONTEND_ADMIN_PATH:-admin-dev}
     depends_on:
       rust-api:
         condition: service_healthy
@@ -285,7 +285,7 @@ services:
       PLAYWRIGHT_BROWSERS_PATH: /app/frontend/.cache/ms-playwright
       REFERENCE_ORACLE_ROOT: /reference
       REFERENCE_ORACLE_STATE_ROOT: /tmp/v2board-reference-oracle
-      VISUAL_PARITY_ADMIN_PATH: ${V2BOARD_FRONTEND_ADMIN_PATH:-admin}
+      VISUAL_PARITY_ADMIN_PATH: ${V2BOARD_FRONTEND_ADMIN_PATH:-admin-dev}
       VISUAL_PARITY_ORACLE_HOST: 0.0.0.0
       VISUAL_PARITY_ORACLE_PORT: "8001"
       VISUAL_PARITY_PUBLIC_ORACLE_HOST: localhost

@@ -17,7 +17,10 @@ COMPOSE_PROJECT ?= v2board
 DCF := $(DC) -p $(COMPOSE_PROJECT) -f $(COMPOSE_FILE)
 REFERENCE_DCF := $(DCF) --profile reference
 
-V2BOARD_FRONTEND_ADMIN_PATH ?= admin
+# ≥ 8 chars of [A-Za-z0-9_-] and no reserved-segment collision: the admin
+# path knobs are validated (docs/api-dialect.md §10.2), so the local default
+# must itself be a legal value.
+V2BOARD_FRONTEND_ADMIN_PATH ?= admin-dev
 ADMIN_PATH ?= $(V2BOARD_FRONTEND_ADMIN_PATH)
 export V2BOARD_FRONTEND_ADMIN_PATH
 SOURCE_BASE_URL ?= http://rust-api:8080

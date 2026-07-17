@@ -189,6 +189,42 @@ pub const FILE_ONLY_RUNTIME_KEYS_V1: &[&str] = &[
     "android_download_url",
 ];
 
+/// Reserved public top-level path segments (docs/api-dialect.md §10.2). The
+/// resolved admin path serves the admin HTML subtree ahead of the user-SPA
+/// fallback and builds the dynamic admin API prefix, so it may not shadow a
+/// fixed public route root, a user-SPA route root, or a reserved API
+/// namespace. The `crc32b_hex` fallback is eight hex characters and can never
+/// equal an entry here.
+const RESERVED_ADMIN_PATH_SEGMENTS: &[&str] = &[
+    // Fixed public routes.
+    "api",
+    "assets",
+    "healthz",
+    "readyz",
+    // User-SPA route roots.
+    "login",
+    "register",
+    "forgetpassword",
+    "dashboard",
+    "plan",
+    "order",
+    "profile",
+    "node",
+    "traffic",
+    "invite",
+    "ticket",
+    "knowledge",
+    // API namespaces.
+    "auth",
+    "user",
+    "public",
+    "staff",
+    "client",
+    "server",
+    "guest",
+    "passport",
+];
+
 /// Application behavior owned by the versioned operator-configuration
 /// authority.  Bootstrap-only credentials and process topology (database,
 /// Redis, ClickHouse, listener, paths, environment, and `app_key`) are
@@ -283,6 +319,7 @@ pub const OPERATOR_CONFIG_KEYS_V1: &[&str] = &[
     "frontend_custom_html",
     "frontend_admin_path",
     "secure_path",
+    "legacy_hash_redirect_enable",
     "safe_mode_enable",
     "password_limit_enable",
     "password_limit_count",
@@ -511,6 +548,9 @@ pub struct AppConfig {
     pub frontend_custom_html: Option<String>,
     pub frontend_admin_path: Option<String>,
     pub secure_path: Option<String>,
+    /// docs/api-dialect.md §10.3: client-side `#/…` → history-URL translation
+    /// toggle, injected into the frontend runtime config. Default ON.
+    pub legacy_hash_redirect_enable: bool,
     pub safe_mode_enable: bool,
     pub password_limit_enable: bool,
     pub password_limit_count: i64,
@@ -706,6 +746,7 @@ impl AppConfig {
             "frontend_custom_html": self.frontend_custom_html,
             "frontend_admin_path": self.frontend_admin_path,
             "secure_path": self.secure_path,
+            "legacy_hash_redirect_enable": self.legacy_hash_redirect_enable,
             "safe_mode_enable": self.safe_mode_enable,
             "password_limit_enable": self.password_limit_enable,
             "password_limit_count": self.password_limit_count,
@@ -1482,6 +1523,12 @@ impl AppConfig {
                 "V2BOARD_FRONTEND_ADMIN_PATH",
             ),
             secure_path: config_or_env(&file_config, "secure_path", "V2BOARD_SECURE_PATH"),
+            legacy_hash_redirect_enable: config_bool(
+                &file_config,
+                "legacy_hash_redirect_enable",
+                "V2BOARD_LEGACY_HASH_REDIRECT_ENABLE",
+                true,
+            ),
             safe_mode_enable: config_bool(
                 &file_config,
                 "safe_mode_enable",
@@ -2355,6 +2402,61 @@ fn validate_operator_dependencies(config: &AppConfig) -> io::Result<()> {
             "email_username and email_password must be configured together",
         ));
     }
+    validate_admin_path_configuration(config)
+}
+
+/// docs/api-dialect.md §10.2/§12: both admin-path knobs must satisfy
+/// `secure_path`'s syntactic rule (≥ 8 characters of ASCII alphanumeric,
+/// `_`, or `-`), and the resolved admin path may not equal a reserved
+/// top-level segment — under the history-routing HTML subtree it would
+/// shadow a user-SPA route root (including the backend-minted
+/// `/order/{trade_no}` payment return), a fixed public route, or an API
+/// namespace of the dynamic `/api/v1/{admin_path}/` prefix.
+fn validate_admin_path_configuration(config: &AppConfig) -> io::Result<()> {
+    for (setting, value) in [
+        ("secure_path", config.secure_path.as_deref()),
+        ("frontend_admin_path", config.frontend_admin_path.as_deref()),
+    ] {
+        let Some(effective) = value
+            .map(str::trim)
+            .map(|value| value.trim_matches('/'))
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+        if effective.chars().count() < 8 {
+            return Err(invalid_setting(
+                setting,
+                "must be at least 8 characters long",
+            ));
+        }
+        if !effective
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
+        {
+            return Err(invalid_setting(
+                setting,
+                "must contain only ASCII letters, digits, '_', or '-'",
+            ));
+        }
+    }
+
+    let resolved = config.admin_path();
+    let subscribe_first_segment = config
+        .subscribe_path
+        .trim()
+        .trim_start_matches('/')
+        .split('/')
+        .next()
+        .filter(|segment| !segment.is_empty());
+    if RESERVED_ADMIN_PATH_SEGMENTS.contains(&resolved.as_str())
+        || subscribe_first_segment == Some(resolved.as_str())
+    {
+        return Err(invalid_setting(
+            "secure_path",
+            &format!("admin path `{resolved}` collides with a reserved top-level path segment"),
+        ));
+    }
     Ok(())
 }
 
@@ -2431,6 +2533,10 @@ fn validate_scalar_config(
             "V2BOARD_COMMISSION_FIRST_TIME_ENABLE",
         ),
         ("server_log_enable", "V2BOARD_SERVER_LOG_ENABLE"),
+        (
+            "legacy_hash_redirect_enable",
+            "V2BOARD_LEGACY_HASH_REDIRECT_ENABLE",
+        ),
         ("safe_mode_enable", "V2BOARD_SAFE_MODE_ENABLE"),
         ("password_limit_enable", "V2BOARD_PASSWORD_LIMIT_ENABLE"),
         (
@@ -3462,6 +3568,57 @@ mod tests {
     #[test]
     fn admin_path_fallback_uses_crc32b() {
         assert_eq!(crc32b_hex(b"test"), "d87f7e0c");
+    }
+
+    /// docs/api-dialect.md §10.2: both admin-path knobs carry `secure_path`'s
+    /// syntactic rule, and the resolved path may not shadow a reserved
+    /// top-level segment once the HTML fallback claims the admin subtree.
+    #[test]
+    fn admin_path_knobs_are_validated_syntactically_and_against_reserved_segments() {
+        let paths = RuntimePaths {
+            config: PathBuf::from("/tmp/not-read-by-config-map-parser.json"),
+            frontend: PathBuf::from("/tmp/frontend"),
+            rules: PathBuf::from("/tmp/rules"),
+        };
+        let mut config = AppConfig::try_from_api_config_map(Map::new(), paths)
+            .expect("development config parses");
+
+        config.secure_path = Some("valid-admin-path".to_string());
+        config.frontend_admin_path = None;
+        assert!(validate_admin_path_configuration(&config).is_ok());
+
+        // Same syntactic rule as secure_path: ≥ 8 chars, alphanumeric/_/-.
+        config.secure_path = None;
+        config.frontend_admin_path = Some("short".to_string());
+        let error = validate_admin_path_configuration(&config).unwrap_err();
+        assert!(error.to_string().contains("frontend_admin_path"));
+        config.frontend_admin_path = Some("bad/path!chars".to_string());
+        assert!(validate_admin_path_configuration(&config).is_err());
+
+        // Reserved collisions: user-SPA roots and API namespaces are legal
+        // syntactically but would shadow public routes.
+        for reserved in ["dashboard", "knowledge", "passport-x"] {
+            config.frontend_admin_path = Some(reserved.to_string());
+            let result = validate_admin_path_configuration(&config);
+            if reserved == "passport-x" {
+                assert!(result.is_ok(), "non-reserved {reserved} must pass");
+            } else {
+                assert!(result.is_err(), "reserved {reserved} must be rejected");
+            }
+        }
+
+        // The operator subscribe alias's first segment is reserved too.
+        config.frontend_admin_path = Some("mysubscribe".to_string());
+        config.subscribe_path = "/mysubscribe/feed".to_string();
+        assert!(validate_admin_path_configuration(&config).is_err());
+        config.subscribe_path = "/subs/feed".to_string();
+        assert!(validate_admin_path_configuration(&config).is_ok());
+
+        // Unset knobs fall back to the 8-hex-char crc32b digest, which can
+        // never collide with a reserved segment.
+        config.secure_path = None;
+        config.frontend_admin_path = None;
+        assert!(validate_admin_path_configuration(&config).is_ok());
     }
 
     fn subscribe_config(subscribe_url: Option<&str>) -> AppConfig {
