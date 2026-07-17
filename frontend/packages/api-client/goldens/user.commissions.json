@@ -1,0 +1,19 @@
+{
+  "items": [
+    {
+      "id": 2,
+      "trade_no": "golden-trade-commission-0000002",
+      "order_amount": 2000,
+      "get_amount": 200,
+      "created_at": "2023-11-15T22:13:20Z"
+    },
+    {
+      "id": 1,
+      "trade_no": "golden-trade-commission-0000001",
+      "order_amount": 1000,
+      "get_amount": 100,
+      "created_at": "2023-11-14T22:13:20Z"
+    }
+  ],
+  "total": 12
+}

@@ -1,0 +1,25 @@
+{
+  "codes": [
+    {
+      "id": 2,
+      "code": "goldinv2",
+      "pv": 0,
+      "created_at": "2023-11-15T22:13:20Z",
+      "updated_at": "2023-11-15T22:13:20Z"
+    },
+    {
+      "id": 1,
+      "code": "goldinv1",
+      "pv": 3,
+      "created_at": "2023-11-14T22:13:20Z",
+      "updated_at": "2023-11-14T22:13:20Z"
+    }
+  ],
+  "stat": {
+    "registered_count": 12,
+    "valid_commission": 12300,
+    "pending_commission": 4500,
+    "commission_rate": 10,
+    "available_commission": 8000
+  }
+}
