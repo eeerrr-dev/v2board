@@ -43,8 +43,10 @@ export const envelopeSchema = <TDataSchema extends z.ZodType>(data: TDataSchema)
 export const pageEnvelopeSchema = <TItemSchema extends z.ZodType>(item: TItemSchema) =>
   envelopeSchema(z.array(item)).extend({ total: z.number().optional() });
 
+// Deliberately excludes the permanent subscription credential (`users.token`):
+// the Rust backend no longer returns it from login/register/token2Login, and
+// the subscribe URL is fetched separately through /user/getSubscribe.
 export const authDataSchema = z.looseObject({
-  token: z.string().min(1),
   is_admin: binaryFlagSchema,
   auth_data: z.string().min(1),
 });

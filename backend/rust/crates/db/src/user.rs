@@ -9,7 +9,6 @@ pub struct UserAuthRow {
     pub password_algo: Option<String>,
     pub password_salt: Option<String>,
     pub session_epoch: i64,
-    pub token: String,
     pub banned: i16,
     pub is_admin: i16,
     pub is_staff: i16,
@@ -92,7 +91,7 @@ pub async fn find_user_for_auth(
 ) -> Result<Option<UserAuthRow>, sqlx::Error> {
     sqlx::query_as::<_, UserAuthRow>(
         r#"
-        SELECT id, email, password, password_algo, password_salt, session_epoch, token, banned, is_admin, is_staff
+        SELECT id, email, password, password_algo, password_salt, session_epoch, banned, is_admin, is_staff
         FROM users
         WHERE lower(btrim(email)) = lower(btrim($1))
         LIMIT 1
@@ -109,7 +108,7 @@ pub async fn find_user_for_auth_by_id(
 ) -> Result<Option<UserAuthRow>, sqlx::Error> {
     sqlx::query_as::<_, UserAuthRow>(
         r#"
-        SELECT id, email, password, password_algo, password_salt, session_epoch, token, banned, is_admin, is_staff
+        SELECT id, email, password, password_algo, password_salt, session_epoch, banned, is_admin, is_staff
         FROM users
         WHERE id = $1
         LIMIT 1

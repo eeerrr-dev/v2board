@@ -150,7 +150,7 @@ describe('Admin LoginPage', () => {
 
   it('logs an admin in with the passport payload, persists auth_data, and enters the console', async () => {
     mocks.redirectTarget = '/order';
-    mocks.passportLogin.mockResolvedValue({ token: 't', is_admin: 1, auth_data: 'jwt' });
+    mocks.passportLogin.mockResolvedValue({ is_admin: 1, auth_data: 'jwt' });
     mocks.userInfo.mockResolvedValue({ email: 'admin@example.com' });
 
     const { user, queryClient } = renderLogin();
@@ -175,7 +175,7 @@ describe('Admin LoginPage', () => {
   });
 
   it('rejects a non-admin session without persisting its credential', async () => {
-    mocks.passportLogin.mockResolvedValue({ token: 't', is_admin: 0, auth_data: 'jwt' });
+    mocks.passportLogin.mockResolvedValue({ is_admin: 0, auth_data: 'jwt' });
 
     const { user } = renderLogin();
     await user.type(screen.getByPlaceholderText('邮箱'), 'user@example.com');
@@ -225,7 +225,6 @@ describe('Admin LoginPage', () => {
   it('leaves a ?verify= parameter inert (the admin passport model has no token2Login effect)', async () => {
     mocks.redirectTarget = '/ticket';
     mocks.passportToken2Login.mockResolvedValue({
-      token: 't',
       is_admin: 1,
       auth_data: 'quick-jwt',
     });

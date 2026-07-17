@@ -999,17 +999,20 @@ export function apiFixtureResponse(
   switch (pathname) {
     case '/api/v1/guest/comm/config':
       return body(guestConfigFixture);
+    // The Rust wire shape deliberately omits the permanent subscription
+    // credential (`token`) from login/token2Login — clients read only
+    // auth_data + is_admin and fetch the subscribe URL via /user/getSubscribe.
+    // Cross-world safe: the reference bundles never read `data.token` either;
+    // they persist only the `authorization` storage key.
     case '/api/v1/passport/auth/login':
       return body({
         auth_data: 'VISUAL_PARITY_TOKEN',
         is_admin: isAdminScenario,
-        token: 'visual-parity-token',
       });
     case '/api/v1/passport/auth/token2Login':
       return body({
         auth_data: 'VISUAL_PARITY_TOKEN',
         is_admin: isAdminScenario,
-        token: 'visual-parity-token',
       });
     case '/api/v1/user/checkLogin':
       return body({

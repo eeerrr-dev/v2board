@@ -12,7 +12,7 @@ use super::{
         validate_registration_auxiliary_inputs,
     },
     sessions::{
-        ADD_OPAQUE_SESSION_SCRIPT, AUTH_SESSION_KEY_PREFIX, REMOVE_SESSION_SCRIPT,
+        ADD_OPAQUE_SESSION_SCRIPT, AUTH_SESSION_KEY_PREFIX, AuthData, REMOVE_SESSION_SCRIPT,
         RESERVE_STEP_UP_ATTEMPT_SCRIPT, auth_session_key, decode_session_metadata,
         generate_auth_token, parse_temp_token, session_ttl_seconds, step_up_limiter_keys,
         truncate_utf8,
@@ -312,6 +312,23 @@ fn opaque_tokens_are_256_bit_url_safe_secrets_and_redis_keys_are_hashed() {
     assert!(key.starts_with(AUTH_SESSION_KEY_PREFIX));
     assert!(!key.contains(&first));
     assert_eq!(key.len(), AUTH_SESSION_KEY_PREFIX.len() + 64);
+}
+
+#[test]
+fn auth_response_omits_the_permanent_subscription_credential() {
+    // Credential minimization: login/register/token2Login return only the
+    // opaque session grant plus the role flag. The long-lived `users.token`
+    // subscription credential must never ride on the authentication exchange;
+    // clients fetch the subscribe URL separately through /user/getSubscribe.
+    let value = serde_json::to_value(AuthData {
+        is_admin: 1,
+        auth_data: "opaque-session-grant".to_string(),
+    })
+    .unwrap();
+    assert_eq!(
+        value,
+        serde_json::json!({ "is_admin": 1, "auth_data": "opaque-session-grant" })
+    );
 }
 
 #[test]

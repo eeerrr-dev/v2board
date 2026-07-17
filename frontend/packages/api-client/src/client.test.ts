@@ -290,18 +290,16 @@ describe('createApiClient', () => {
   it('unwraps the data envelope', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock
-      .onPost('/passport/auth/login')
-      .reply(200, { data: { token: 't', is_admin: 0, auth_data: 'jwt' } });
+    mock.onPost('/passport/auth/login').reply(200, { data: { is_admin: 0, auth_data: 'jwt' } });
     const result = await login(client, { email: 'a@b.c', password: 'x' });
-    expect(result).toEqual({ token: 't', is_admin: 0, auth_data: 'jwt' });
+    expect(result).toEqual({ is_admin: 0, auth_data: 'jwt' });
   });
 
   it('rejects a successful HTTP response that violates a critical runtime contract', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
     mock.onPost('/passport/auth/login').reply(200, {
-      data: { token: 't', is_admin: 0 },
+      data: { is_admin: 0 },
     });
 
     await expect(login(client, { email: 'a@b.c', password: 'x' })).rejects.toBeInstanceOf(
@@ -590,9 +588,7 @@ describe('createApiClient', () => {
       getLocale: () => 'zh-CN',
     });
     const mock = new AxiosMockAdapter(client.axios);
-    mock
-      .onPost('/passport/auth/login')
-      .reply(200, { data: { token: 't', is_admin: 0, auth_data: 'jwt' } });
+    mock.onPost('/passport/auth/login').reply(200, { data: { is_admin: 0, auth_data: 'jwt' } });
     await login(client, { email: 'a@b.c', password: 'x' });
     const request = mock.history.post[0]!;
     expect(request.data).toBe('email=a%40b.c&password=x');
@@ -726,7 +722,7 @@ describe('createApiClient', () => {
     const mock = new AxiosMockAdapter(client.axios);
     mock
       .onGet('/passport/auth/token2Login?verify=abc')
-      .reply(200, { data: { token: 't', is_admin: 0, auth_data: 'jwt' } });
+      .reply(200, { data: { is_admin: 0, auth_data: 'jwt' } });
     await token2Login(client, { verify: 'abc' });
     expect(mock.history.get[0]?.url).toBe('/passport/auth/token2Login?verify=abc');
   });

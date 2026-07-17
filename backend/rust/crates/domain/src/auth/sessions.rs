@@ -32,9 +32,13 @@ end
 return 1
 "#;
 
+/// Login/register/token2Login response. Deliberately omits the permanent
+/// subscription credential (`users.token`): the frontend reads only
+/// `auth_data` + `is_admin` and fetches the subscribe URL separately through
+/// `/user/getSubscribe`, so the long-lived credential never rides on the
+/// authentication exchange.
 #[derive(Serialize)]
 pub struct AuthData {
-    pub token: String,
     pub is_admin: i16,
     pub auth_data: String,
 }
@@ -211,7 +215,6 @@ impl AuthService {
             .ok_or_else(|| ApiError::internal("could not allocate a unique session token"))?;
 
         Ok(AuthData {
-            token: user.token,
             is_admin: user.is_admin,
             auth_data,
         })
