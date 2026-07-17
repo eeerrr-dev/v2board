@@ -285,13 +285,40 @@ export const routeMap = Object.freeze([
     { method: 'GET', path: '/user/commissions' },
   ),
 
-  // ——— §5.7 Tickets ———
-  route('user.tickets.list', { method: 'GET', path: '/user/ticket/fetch' }),
-  route('user.tickets.get', { method: 'GET', path: '/user/ticket/fetch', query: ['id'] }),
-  route('user.tickets.create', { method: 'POST', path: '/user/ticket/save' }),
-  route('user.tickets.replies.create', { method: 'POST', path: '/user/ticket/reply' }),
-  route('user.tickets.close', { method: 'POST', path: '/user/ticket/close' }),
-  route('user.withdrawal-tickets.create', { method: 'POST', path: '/user/ticket/withdraw' }),
+  // ——— §5.7 Tickets — flipped to the modern rows in W8 ———
+  // The detail row is listed first so `/user/tickets/{id}` outranks the
+  // sibling list path on modern-world matches.
+  route(
+    'user.tickets.get',
+    { method: 'GET', path: '/user/ticket/fetch', query: ['id'] },
+    { method: 'GET', path: '/user/tickets/{id}' },
+  ),
+  route(
+    'user.tickets.list',
+    { method: 'GET', path: '/user/ticket/fetch' },
+    { method: 'GET', path: '/user/tickets' },
+  ),
+  route(
+    'user.tickets.create',
+    { method: 'POST', path: '/user/ticket/save' },
+    { method: 'POST', path: '/user/tickets' },
+  ),
+  route(
+    'user.tickets.replies.create',
+    { method: 'POST', path: '/user/ticket/reply' },
+    // The legacy body-carried ticket id became a path parameter (§5.7).
+    { method: 'POST', path: '/user/tickets/{id}/replies' },
+  ),
+  route(
+    'user.tickets.close',
+    { method: 'POST', path: '/user/ticket/close' },
+    { method: 'POST', path: '/user/tickets/{id}/close' },
+  ),
+  route(
+    'user.withdrawal-tickets.create',
+    { method: 'POST', path: '/user/ticket/withdraw' },
+    { method: 'POST', path: '/user/withdrawal-tickets' },
+  ),
 
   // ——— §5.8 Knowledge & notices — flipped to the modern rows in W3 ———
   // The detail row is listed first so `/user/knowledge/{id}` outranks the

@@ -58,6 +58,15 @@ const W7_ROUTE_IDS = Object.freeze([
   'user.commissions.list',
 ]);
 
+const W8_ROUTE_IDS = Object.freeze([
+  'user.tickets.get',
+  'user.tickets.list',
+  'user.tickets.create',
+  'user.tickets.replies.create',
+  'user.tickets.close',
+  'user.withdrawal-tickets.create',
+]);
+
 const W4_ROUTE_IDS = Object.freeze([
   'user.plans.get',
   'user.plans.list',
@@ -80,6 +89,7 @@ test('unflipped families stay identity: modern equals legacy until each wave', (
     if (W5_ROUTE_IDS.includes(entry.id)) continue; // §5.3/§5.4 flipped in W5
     if (W6_ROUTE_IDS.includes(entry.id)) continue; // §5.4 service usage flipped in W6
     if (W7_ROUTE_IDS.includes(entry.id)) continue; // §5.6 invite/commission flipped in W7
+    if (W8_ROUTE_IDS.includes(entry.id)) continue; // §5.7 user tickets flipped in W8
     assert.deepEqual(entry.modern, entry.legacy, `${entry.id} must stay legacy→legacy until its wave`);
   }
 });
@@ -181,6 +191,53 @@ test('W7: the invite & commission family carries the modern rows', () => {
     matchRoute('source', { method: 'POST', pathname: `${API_PREFIX}/user/commission-transfers` })
       ?.id,
     'user.commission-transfers.create',
+  );
+});
+
+test('W8: the user ticket family carries the modern rows', () => {
+  const modern = Object.fromEntries(W8_ROUTE_IDS.map((id) => [id, routeEntry(id).modern]));
+  assert.deepEqual(modern, {
+    'user.tickets.get': { method: 'GET', path: '/user/tickets/{id}' },
+    'user.tickets.list': { method: 'GET', path: '/user/tickets' },
+    'user.tickets.create': { method: 'POST', path: '/user/tickets' },
+    // The legacy body-carried ticket id became path identity (§5.7).
+    'user.tickets.replies.create': { method: 'POST', path: '/user/tickets/{id}/replies' },
+    'user.tickets.close': { method: 'POST', path: '/user/tickets/{id}/close' },
+    'user.withdrawal-tickets.create': { method: 'POST', path: '/user/withdrawal-tickets' },
+  });
+  // The oracle keeps requesting the legacy rows.
+  assert.equal(worldRoute('user.tickets.get', 'oracle').path, '/user/ticket/fetch');
+  assert.deepEqual(worldRoute('user.tickets.get', 'oracle').query, ['id']);
+  assert.equal(worldRoute('user.tickets.list', 'oracle').path, '/user/ticket/fetch');
+  assert.equal(worldRoute('user.tickets.create', 'oracle').path, '/user/ticket/save');
+  assert.equal(worldRoute('user.tickets.replies.create', 'oracle').path, '/user/ticket/reply');
+  assert.equal(worldRoute('user.tickets.close', 'oracle').path, '/user/ticket/close');
+  assert.equal(worldRoute('user.withdrawal-tickets.create', 'oracle').path, '/user/ticket/withdraw');
+  // Source-world matches extract the path id; the list row stays distinct.
+  assert.deepEqual(
+    matchRoute('source', { method: 'GET', pathname: `${API_PREFIX}/user/tickets/7` }),
+    { id: 'user.tickets.get', params: { id: '7' } },
+  );
+  assert.equal(
+    matchRoute('source', { method: 'GET', pathname: `${API_PREFIX}/user/tickets` })?.id,
+    'user.tickets.list',
+  );
+  assert.equal(
+    matchRoute('source', { method: 'POST', pathname: `${API_PREFIX}/user/tickets` })?.id,
+    'user.tickets.create',
+  );
+  assert.deepEqual(
+    matchRoute('source', { method: 'POST', pathname: `${API_PREFIX}/user/tickets/7/replies` }),
+    { id: 'user.tickets.replies.create', params: { id: '7' } },
+  );
+  assert.deepEqual(
+    matchRoute('source', { method: 'POST', pathname: `${API_PREFIX}/user/tickets/7/close` }),
+    { id: 'user.tickets.close', params: { id: '7' } },
+  );
+  assert.equal(
+    matchRoute('source', { method: 'POST', pathname: `${API_PREFIX}/user/withdrawal-tickets` })
+      ?.id,
+    'user.withdrawal-tickets.create',
   );
 });
 

@@ -196,6 +196,27 @@ export async function installApiFixtures(page, scenario, target, interaction = {
       pathname === '/api/v1/user/transfer' || pathname === '/api/v1/user/commission-transfers';
     const isUserInviteGenerate =
       pathname === '/api/v1/user/invite/save' || pathname === '/api/v1/user/invite-codes';
+    // W8 (§5.7): the modern ticket family carries identity in the path.
+    // Match both worlds' spellings for the counters, captures, timeout, and
+    // delay knobs below; the fetch counter spans list + detail exactly like
+    // the shared legacy /user/ticket/fetch path did.
+    const isUserTicketFetch =
+      pathname === '/api/v1/user/ticket/fetch' ||
+      (requestMethod === 'GET' &&
+        (pathname === '/api/v1/user/tickets' ||
+          /^\/api\/v1\/user\/tickets\/[^/]+$/.test(pathname)));
+    const isUserTicketSave =
+      pathname === '/api/v1/user/ticket/save' ||
+      (pathname === '/api/v1/user/tickets' && requestMethod === 'POST');
+    const isUserTicketReply =
+      pathname === '/api/v1/user/ticket/reply' ||
+      /^\/api\/v1\/user\/tickets\/[^/]+\/replies$/.test(pathname);
+    const isUserTicketClose =
+      pathname === '/api/v1/user/ticket/close' ||
+      /^\/api\/v1\/user\/tickets\/[^/]+\/close$/.test(pathname);
+    const isUserWithdraw =
+      pathname === '/api/v1/user/ticket/withdraw' ||
+      pathname === '/api/v1/user/withdrawal-tickets';
 
     if (adminEndpoint) {
       page.__visualParityDiagnostics?.push(`fixture admin ${adminEndpoint}`);
@@ -370,39 +391,45 @@ export async function installApiFixtures(page, scenario, target, interaction = {
         canonicalRequestCapture(),
       ];
     }
-    if (pathname === '/api/v1/user/ticket/fetch') {
+    if (isUserTicketFetch) {
       page.__visualParityUserTicketFetchCount = (page.__visualParityUserTicketFetchCount ?? 0) + 1;
     }
-    if (pathname === '/api/v1/user/ticket/reply') {
-      page.__visualParityLastUserTicketReply = requestData;
+    if (isUserTicketReply) {
+      // Canonical capture: the legacy body-carried ticket id and the modern
+      // path id compare as one §5.7 contract.
+      const ticketReplyRequest = canonicalRequestCapture();
+      page.__visualParityLastUserTicketReply = ticketReplyRequest;
       page.__visualParityUserTicketReplyCount = (page.__visualParityUserTicketReplyCount ?? 0) + 1;
       page.__visualParityUserTicketReplyRequests = [
         ...(page.__visualParityUserTicketReplyRequests ?? []),
-        requestData,
+        ticketReplyRequest,
       ];
     }
-    if (pathname === '/api/v1/user/ticket/close') {
-      page.__visualParityLastUserTicketClose = requestData;
+    if (isUserTicketClose) {
+      const ticketCloseRequest = canonicalRequestCapture();
+      page.__visualParityLastUserTicketClose = ticketCloseRequest;
       page.__visualParityUserTicketCloseCount = (page.__visualParityUserTicketCloseCount ?? 0) + 1;
       page.__visualParityUserTicketCloseRequests = [
         ...(page.__visualParityUserTicketCloseRequests ?? []),
-        requestData,
+        ticketCloseRequest,
       ];
     }
-    if (pathname === '/api/v1/user/ticket/save') {
-      page.__visualParityLastUserTicketSave = requestData;
+    if (isUserTicketSave) {
+      const ticketSaveRequest = canonicalRequestCapture();
+      page.__visualParityLastUserTicketSave = ticketSaveRequest;
       page.__visualParityUserTicketSaveCount = (page.__visualParityUserTicketSaveCount ?? 0) + 1;
       page.__visualParityUserTicketSaveRequests = [
         ...(page.__visualParityUserTicketSaveRequests ?? []),
-        requestData,
+        ticketSaveRequest,
       ];
     }
-    if (pathname === '/api/v1/user/ticket/withdraw') {
-      page.__visualParityLastUserWithdraw = requestData;
+    if (isUserWithdraw) {
+      const withdrawRequest = canonicalRequestCapture();
+      page.__visualParityLastUserWithdraw = withdrawRequest;
       page.__visualParityUserWithdrawCount = (page.__visualParityUserWithdrawCount ?? 0) + 1;
       page.__visualParityUserWithdrawRequests = [
         ...(page.__visualParityUserWithdrawRequests ?? []),
-        requestData,
+        withdrawRequest,
       ];
     }
     if (pathname === '/api/v1/user/order/cancel' || modernOrderAction === 'cancel') {
@@ -725,7 +752,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
       (scenario.userTrafficTimeout &&
         (pathname === '/api/v1/user/stat/getTrafficLog' ||
           pathname === '/api/v1/user/traffic-logs')) ||
-      (scenario.userTicketsTimeout && pathname === '/api/v1/user/ticket/fetch') ||
+      (scenario.userTicketsTimeout && isUserTicketFetch) ||
       (scenario.userKnowledgeTimeout &&
         (pathname === '/api/v1/user/knowledge/fetch' || pathname === '/api/v1/user/knowledge')) ||
       (scenario.adminPlansTimeout && adminEndpoint === '/plan/fetch') ||
@@ -771,16 +798,16 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     ) {
       await delay(interaction.delayUserOrderCheckoutMs);
     }
-    if (pathname === '/api/v1/user/ticket/reply' && interaction.delayUserTicketReplyMs) {
+    if (isUserTicketReply && interaction.delayUserTicketReplyMs) {
       await delay(interaction.delayUserTicketReplyMs);
     }
-    if (pathname === '/api/v1/user/ticket/close' && interaction.delayUserTicketCloseMs) {
+    if (isUserTicketClose && interaction.delayUserTicketCloseMs) {
       await delay(interaction.delayUserTicketCloseMs);
     }
-    if (pathname === '/api/v1/user/ticket/save' && interaction.delayUserTicketSaveMs) {
+    if (isUserTicketSave && interaction.delayUserTicketSaveMs) {
       await delay(interaction.delayUserTicketSaveMs);
     }
-    if (pathname === '/api/v1/user/ticket/withdraw' && interaction.delayUserWithdrawMs) {
+    if (isUserWithdraw && interaction.delayUserWithdrawMs) {
       await delay(interaction.delayUserWithdrawMs);
     }
     if (adminEndpoint === '/ticket/reply' && interaction.delayAdminTicketReplyMs) {
@@ -1199,6 +1226,44 @@ export function apiFixtureResponse(
     return v2Empty();
   }
 
+  // §5.7 modern user ticket family (W8): path-identity routes are
+  // source-world only; the oracle keeps the legacy /user/ticket/* cases
+  // below. The error details mirror the legacy fixture toast text — the
+  // Tier-1 comparison keys on the problem `code`, presentation drops.
+  const ticketRouteMatch = /^\/api\/v1\/user\/tickets(?:\/([^/]+)(?:\/(replies|close))?)?$/.exec(
+    pathname,
+  );
+  if (ticketRouteMatch) {
+    const [, ticketId, ticketAction] = ticketRouteMatch;
+    if (!ticketId) {
+      if (method === 'POST') {
+        if (interaction?.ticketSaveError) {
+          return v2Problem(422, 'Unprocessable Entity', 'validation_failed', '工单内容不能为空');
+        }
+        // §5.7: 201 with the created ticket id.
+        return v2Body({ id: 10 }, 201);
+      }
+      return v2Body(userTicketFixturesFor(scenario).map(modernTicketFixture));
+    }
+    if (!ticketAction) {
+      return v2Body(modernTicketDetailFixture(userTicketDetailFixtureFor(scenario)));
+    }
+    if (ticketAction === 'replies') {
+      if (
+        interaction?.ticketReplyError ||
+        requestData?.message === interaction?.ticketReplyErrorMessage
+      ) {
+        return v2Problem(400, 'Bad Request', 'ticket_invalid_state', '工单回复失败');
+      }
+      return v2Empty();
+    }
+    // close
+    if (interaction?.ticketCloseError) {
+      return v2Problem(400, 'Bad Request', 'ticket_invalid_state', '工单关闭失败');
+    }
+    return v2Empty();
+  }
+
   switch (pathname) {
     case '/api/v1/guest/comm/config':
       return body(guestConfigFixture);
@@ -1391,6 +1456,17 @@ export function apiFixtureResponse(
     case '/api/v1/user/invite-codes':
       // The one deliberate 204-no-body create (§1/§5.6).
       return v2Empty();
+    // §5.7 modern withdrawal-ticket create (W8). Only the source world
+    // requests this path; the oracle keeps the legacy /user/ticket/withdraw
+    // case below.
+    case '/api/v1/user/withdrawal-tickets':
+      if (
+        interaction?.withdrawError ||
+        requestData?.withdraw_account === interaction?.withdrawErrorAccount
+      ) {
+        return v2Problem(400, 'Bad Request', 'withdraw_method_unsupported', '提现失败');
+      }
+      return v2Body({ id: 11 }, 201);
     case '/api/v1/user/commission-transfers':
       if (interaction?.transferError) {
         return v2Problem(
@@ -1721,6 +1797,37 @@ const modernCommissionFixture = (entry) => ({
   order_amount: entry.order_amount,
   get_amount: entry.get_amount,
   created_at: rfc3339FixtureTime(entry.created_at),
+});
+
+// ——— W8 modern-wire projections (docs/api-dialect.md §4.1, §4.5, §5.7) ———
+// RFC 3339 timestamps, numeric level/status/reply_status enums, an
+// always-present nullable last_reply_user_id, and no `message` stub on list
+// rows (the thread ships only on the detail body).
+const modernTicketFixture = (ticket) => ({
+  id: ticket.id,
+  user_id: ticket.user_id,
+  subject: ticket.subject,
+  level: ticket.level,
+  status: ticket.status,
+  reply_status: ticket.reply_status,
+  last_reply_user_id: ticket.last_reply_user_id ?? null,
+  created_at: rfc3339FixtureTime(ticket.created_at),
+  updated_at: rfc3339FixtureTime(ticket.updated_at),
+});
+
+const modernTicketMessageFixture = (entry) => ({
+  id: entry.id,
+  user_id: entry.user_id,
+  ticket_id: entry.ticket_id,
+  message: entry.message,
+  is_me: entry.is_me,
+  created_at: rfc3339FixtureTime(entry.created_at),
+  updated_at: rfc3339FixtureTime(entry.updated_at),
+});
+
+const modernTicketDetailFixture = (ticket) => ({
+  ...modernTicketFixture(ticket),
+  message: (ticket.message ?? []).map(modernTicketMessageFixture),
 });
 
 export function userKnowledgeFixturesFor(interaction = {}) {

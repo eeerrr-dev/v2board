@@ -146,7 +146,22 @@ const ROUTE_REQUEST_FOLDS = Object.freeze({
   // W5 (§9.4): the legacy body-carried session_id folds onto the modern
   // DELETE /user/sessions/{session_id} path identity.
   'user.sessions.delete': foldBodySessionIdIntoParams,
+  // W8 (§5.7): the legacy body-carried ticket id folds onto the modern
+  // /user/tickets/{id}/replies + /user/tickets/{id}/close path identity.
+  'user.tickets.replies.create': foldBodyIdIntoParams,
+  'user.tickets.close': foldBodyIdIntoParams,
 });
+
+function foldBodyIdIntoParams(request) {
+  const body = request.body;
+  if (!isPlainObject(body) || body.id === undefined) return request;
+  const { id, ...rest } = body;
+  return {
+    ...request,
+    params: { id, ...request.params },
+    body: Object.keys(rest).length === 0 ? null : rest,
+  };
+}
 
 function foldBodySessionIdIntoParams(request) {
   const body = request.body;
