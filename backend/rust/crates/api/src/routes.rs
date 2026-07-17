@@ -95,9 +95,11 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
         .nest_service("/assets/admin", admin_assets)
         .route("/healthz", get(crate::runtime::healthz))
         .route("/readyz", get(crate::runtime::readyz))
+        // ——— Public family, modern dialect (docs/api-dialect.md §5.1, W3) ———
+        .route("/api/v1/public/config", get(crate::client::public_config))
         .route(
-            "/api/v1/guest/comm/config",
-            get(crate::client::guest_config),
+            "/api/v1/public/invite-views",
+            post(crate::auth::public_invite_views),
         )
         .route(
             "/api/v1/guest/payment/notify/{method}/{uuid}",
@@ -138,8 +140,6 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
             "/api/v1/auth/session",
             get(crate::auth::session_get).delete(crate::auth::session_delete),
         )
-        // Legacy §5.1 telemetry — W3 owns its flip to /public/invite-views.
-        .route("/api/v1/passport/comm/pv", post(crate::auth::passport_pv))
         .route("/api/v1/user/info", get(crate::user::user_info))
         .route("/api/v1/user/getStat", get(crate::user::user_stat))
         .route(
@@ -231,26 +231,20 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
             "/api/v1/user/coupon/check",
             post(crate::commerce::coupon_check),
         )
+        // ——— User content family, modern dialect (docs/api-dialect.md §5.8
+        // plus the /user/config and /user/telegram-bot rows in §5.3, W3) ———
+        .route("/api/v1/user/knowledge", get(crate::user::knowledge_list))
         .route(
-            "/api/v1/user/knowledge/fetch",
-            get(crate::user::knowledge_fetch),
+            "/api/v1/user/knowledge/{id}",
+            get(crate::user::knowledge_detail),
         )
         .route(
-            "/api/v1/user/knowledge/getCategory",
+            "/api/v1/user/knowledge-categories",
             get(crate::user::knowledge_categories),
         )
-        .route(
-            "/api/v1/user/notice/fetch",
-            get(crate::user::user_notice_fetch),
-        )
-        .route(
-            "/api/v1/user/telegram/getBotInfo",
-            get(crate::user::telegram_bot_info),
-        )
-        .route(
-            "/api/v1/user/comm/config",
-            get(crate::user::user_comm_config),
-        )
+        .route("/api/v1/user/notices", get(crate::user::user_notices))
+        .route("/api/v1/user/telegram-bot", get(crate::user::telegram_bot))
+        .route("/api/v1/user/config", get(crate::user::user_config))
         .route(
             "/api/v1/user/stat/getTrafficLog",
             get(crate::user::user_traffic_logs),

@@ -1,5 +1,5 @@
 pub(crate) mod account;
-mod content;
+pub(crate) mod content;
 mod giftcard;
 mod invite;
 mod stats;
@@ -7,10 +7,10 @@ pub(crate) mod subscription;
 
 pub(crate) use account::{
     active_sessions, change_password, remove_active_session, reset_security, unbind_telegram,
-    user_comm_config, user_info, user_update,
+    user_config, user_info, user_update,
 };
 pub(crate) use content::{
-    knowledge_categories, knowledge_fetch, telegram_bot_info, user_notice_fetch,
+    knowledge_categories, knowledge_detail, knowledge_list, telegram_bot, user_notices,
 };
 pub(crate) use giftcard::redeem_giftcard;
 pub(crate) use invite::{invite_details, invite_fetch, invite_save, user_transfer};

@@ -5,9 +5,9 @@ use axum::{
 };
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use v2board_compat::{ApiError, LegacyEnvelope, legacy_data};
+use v2board_compat::{ApiError, LegacyEnvelope, Problem, legacy_data};
 
-use crate::{auth::require_user, runtime::AppState};
+use crate::{auth::require_user, dialect::problem_from, locale::request_locale, runtime::AppState};
 
 pub(crate) async fn user_info(
     State(state): State<AppState>,
@@ -116,37 +116,50 @@ pub(crate) async fn remove_active_session(
     Ok(legacy_data(removed))
 }
 
+/// Bare GET /user/config body (docs/api-dialect.md §5.3, W3): flags are
+/// booleans, `withdraw_methods` is always a real array, and the commission
+/// distribution rates are numbers (the legacy string-vs-number split dies,
+/// §4.1).
 #[derive(Debug, Serialize)]
-pub(crate) struct UserCommConfig {
-    pub(crate) is_telegram: i32,
+pub(crate) struct UserConfig {
+    pub(crate) is_telegram: bool,
     pub(crate) telegram_discuss_link: Option<String>,
     pub(crate) withdraw_methods: Vec<String>,
-    pub(crate) withdraw_close: i32,
+    pub(crate) withdraw_close: bool,
     pub(crate) currency: String,
     pub(crate) currency_symbol: String,
-    pub(crate) commission_distribution_enable: i32,
-    pub(crate) commission_distribution_l1: Option<String>,
-    pub(crate) commission_distribution_l2: Option<String>,
-    pub(crate) commission_distribution_l3: Option<String>,
+    pub(crate) commission_distribution_enable: bool,
+    pub(crate) commission_distribution_l1: Option<f64>,
+    pub(crate) commission_distribution_l2: Option<f64>,
+    pub(crate) commission_distribution_l3: Option<f64>,
 }
 
-pub(crate) async fn user_comm_config(
+/// Legacy admin config stores distribution rates as free-form strings; the
+/// modern wire carries numbers, and an unset or non-numeric value is null.
+fn distribution_rate(value: Option<&str>) -> Option<f64> {
+    value.and_then(|raw| raw.trim().parse::<f64>().ok())
+}
+
+pub(crate) async fn user_config(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> Result<Json<LegacyEnvelope<UserCommConfig>>, ApiError> {
-    let _user = require_user(&state, &headers).await?;
+) -> Result<Json<UserConfig>, Problem> {
+    let locale = request_locale(&headers);
+    require_user(&state, &headers)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
     let config = state.config_snapshot();
-    Ok(legacy_data(UserCommConfig {
-        is_telegram: config.telegram_bot_enable as i32,
+    Ok(Json(UserConfig {
+        is_telegram: config.telegram_bot_enable,
         telegram_discuss_link: config.telegram_discuss_link.clone(),
         withdraw_methods: config.commission_withdraw_method.clone(),
-        withdraw_close: config.withdraw_close_enable as i32,
+        withdraw_close: config.withdraw_close_enable,
         currency: config.currency.clone(),
         currency_symbol: config.currency_symbol.clone(),
-        commission_distribution_enable: config.commission_distribution_enable as i32,
-        commission_distribution_l1: config.commission_distribution_l1.clone(),
-        commission_distribution_l2: config.commission_distribution_l2.clone(),
-        commission_distribution_l3: config.commission_distribution_l3.clone(),
+        commission_distribution_enable: config.commission_distribution_enable,
+        commission_distribution_l1: distribution_rate(config.commission_distribution_l1.as_deref()),
+        commission_distribution_l2: distribution_rate(config.commission_distribution_l2.as_deref()),
+        commission_distribution_l3: distribution_rate(config.commission_distribution_l3.as_deref()),
     }))
 }
 

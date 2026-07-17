@@ -30,9 +30,13 @@ use v2board_domain::auth::AuthData;
 
 use crate::{
     auth::{QuickLoginUrl, SessionState, StepUpGrant},
-    client::GuestConfig,
+    client::PublicConfig,
     commerce::CheckoutEnvelope,
-    user::{account::UserCommConfig, subscription::SubscribeInfo},
+    user::{
+        account::UserConfig,
+        content::{KnowledgeDetail, KnowledgeSummary, NoticeItem, TelegramBot},
+        subscription::SubscribeInfo,
+    },
 };
 
 /// 2023-11-14T22:13:20Z, shared with the contract crate's golden generator.
@@ -42,10 +46,17 @@ const GOLDEN_EMAIL: &str = "golden-member@example.test";
 const GOLDEN_UUID: &str = "00000000-0000-4000-8000-000000000002";
 const GOLDEN_TOKEN: &str = "goldenmembertoken000000000000002";
 /// The file-name prefixes this test owns inside the shared goldens directory.
-/// `passport.` stays owned with zero fixtures so a retired legacy fixture can
-/// never linger unpinned (`/passport/comm/pv` is the namespace's last route,
-/// W3).
-const WIRE_GOLDEN_PREFIXES: &[&str] = &["auth.", "guest.", "passport.", "problem.", "user."];
+/// `passport.` and `guest.` stay owned with zero fixtures so a retired legacy
+/// fixture can never linger unpinned (W3 flipped both namespaces' last
+/// fixture-bearing routes onto `/public/*`).
+const WIRE_GOLDEN_PREFIXES: &[&str] = &[
+    "auth.",
+    "guest.",
+    "passport.",
+    "problem.",
+    "public.",
+    "user.",
+];
 
 fn goldens_dir() -> PathBuf {
     match std::env::var("V2BOARD_GOLDENS_DIR") {
@@ -244,15 +255,17 @@ fn documents() -> Vec<(&'static str, String)> {
         allow_new_period: 1,
     });
 
-    let comm_config = envelope(UserCommConfig {
-        is_telegram: 0,
+    // Modern-dialect user config (docs/api-dialect.md §5.3, W3): bare body,
+    // boolean flags, numeric distribution rates.
+    let user_config = pretty(&UserConfig {
+        is_telegram: false,
         telegram_discuss_link: None,
         withdraw_methods: vec!["alipay".to_string(), "usdt".to_string()],
-        withdraw_close: 0,
+        withdraw_close: false,
         currency: "CNY".to_string(),
         currency_symbol: "¥".to_string(),
-        commission_distribution_enable: 0,
-        commission_distribution_l1: Some("50".to_string()),
+        commission_distribution_enable: true,
+        commission_distribution_l1: Some(0.5),
         commission_distribution_l2: None,
         commission_distribution_l3: None,
     });
@@ -317,27 +330,91 @@ fn documents() -> Vec<(&'static str, String)> {
         },
     ]);
 
-    let guest_config = envelope(GuestConfig {
+    // Modern-dialect public config (docs/api-dialect.md §5.1, W3): bare body,
+    // boolean flags, and an always-array whitelist (the `0` sentinel died).
+    let public_config = pretty(&PublicConfig {
         tos_url: Some("https://golden.v2board.test/tos".to_string()),
-        is_email_verify: 0,
-        is_invite_force: 0,
-        email_whitelist_suffix: json!(["gmail.com", "example.test"]),
-        is_recaptcha: 0,
+        is_email_verify: false,
+        is_invite_force: false,
+        email_whitelist_suffix: vec!["gmail.com".to_string(), "example.test".to_string()],
+        is_recaptcha: false,
         recaptcha_site_key: None,
         app_description: Some("Golden description".to_string()),
         app_url: Some("https://golden.v2board.test".to_string()),
         logo: None,
     });
-    let guest_config_whitelist_disabled = envelope(GuestConfig {
+    let public_config_whitelist_disabled = pretty(&PublicConfig {
         tos_url: None,
-        is_email_verify: 1,
-        is_invite_force: 1,
-        email_whitelist_suffix: json!(0),
-        is_recaptcha: 1,
+        is_email_verify: true,
+        is_invite_force: true,
+        email_whitelist_suffix: Vec::new(),
+        is_recaptcha: true,
         recaptcha_site_key: Some("golden-recaptcha-site-key".to_string()),
         app_description: None,
         app_url: None,
         logo: Some("https://golden.v2board.test/logo.png".to_string()),
+    });
+
+    // Modern-dialect user content family (docs/api-dialect.md §5.8, W3).
+    let notices_page = pretty(&v2board_compat::Page {
+        items: vec![
+            NoticeItem {
+                id: 2,
+                title: "Golden popup notice".to_string(),
+                content: "<p>Golden popup body</p>".to_string(),
+                show: true,
+                img_url: None,
+                tags: Some(vec!["弹窗".to_string()]),
+                created_at: GOLDEN_TIME + 86_400,
+                updated_at: GOLDEN_TIME + 86_400,
+            },
+            NoticeItem {
+                id: 1,
+                title: "Golden notice".to_string(),
+                content: "<p>Golden notice body</p>".to_string(),
+                show: true,
+                img_url: Some("https://golden.v2board.test/notice.png".to_string()),
+                tags: None,
+                created_at: GOLDEN_TIME,
+                updated_at: GOLDEN_TIME,
+            },
+        ],
+        total: 7,
+    });
+
+    let knowledge_list = pretty(&std::collections::BTreeMap::from([(
+        "Golden Apps".to_string(),
+        vec![KnowledgeSummary {
+            id: 3,
+            category: "Golden Apps".to_string(),
+            title: "Golden setup guide".to_string(),
+            sort: Some(1),
+            show: true,
+            updated_at: GOLDEN_TIME,
+        }],
+    )]));
+
+    let knowledge_detail = pretty(&KnowledgeDetail {
+        id: 3,
+        language: "en-US".to_string(),
+        category: "Golden Apps".to_string(),
+        title: "Golden setup guide".to_string(),
+        body: format!(
+            "<p>Use https://golden.v2board.test/api/v1/client/subscribe?token={GOLDEN_TOKEN}</p>"
+        ),
+        sort: Some(1),
+        show: true,
+        created_at: GOLDEN_TIME,
+        updated_at: GOLDEN_TIME,
+    });
+
+    let knowledge_categories = pretty(&vec![
+        json!({ "category": "Golden Apps" }),
+        json!({ "category": "Golden Tutorials" }),
+    ]);
+
+    let telegram_bot = pretty(&TelegramBot {
+        username: "golden_v2board_bot".to_string(),
     });
 
     vec![
@@ -347,15 +424,18 @@ fn documents() -> Vec<(&'static str, String)> {
         ("auth.session.json", auth_session),
         ("auth.session.logged-out.json", auth_session_logged_out),
         ("auth.step-up.json", auth_step_up),
-        ("guest.comm.config.json", guest_config),
-        (
-            "guest.comm.config.whitelist-disabled.json",
-            guest_config_whitelist_disabled,
-        ),
         ("problem.session-expired.json", problem_session_expired),
         ("problem.validation.json", problem_validation),
-        ("user.comm.config.json", comm_config),
+        ("public.config.json", public_config),
+        (
+            "public.config.whitelist-disabled.json",
+            public_config_whitelist_disabled,
+        ),
+        ("user.config.json", user_config),
         ("user.getSubscribe.json", subscribe),
+        ("user.knowledge-categories.json", knowledge_categories),
+        ("user.knowledge.detail.json", knowledge_detail),
+        ("user.knowledge.json", knowledge_list),
         ("user.info.json", user_info),
         ("user.order.checkout.json", checkout_redirect),
         ("user.order.checkout.qr.json", checkout_qr),
@@ -363,7 +443,9 @@ fn documents() -> Vec<(&'static str, String)> {
         ("user.order.detail.json", order_detail),
         ("user.order.fetch.json", order_fetch),
         ("user.order.getPaymentMethod.json", payment_methods),
+        ("user.notices.json", notices_page),
         ("user.stat.getTrafficLog.json", traffic_log),
+        ("user.telegram-bot.json", telegram_bot),
     ]
 }
 

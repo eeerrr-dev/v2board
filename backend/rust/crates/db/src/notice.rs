@@ -25,22 +25,6 @@ struct RawNoticeRow {
     updated_at: i64,
 }
 
-pub async fn find_visible_notice(pool: &PgPool, id: i32) -> Result<Option<NoticeRow>, sqlx::Error> {
-    let row = sqlx::query_as::<_, RawNoticeRow>(
-        r#"
-        SELECT id, title, content, show, img_url, tags::text AS tags, created_at, updated_at
-        FROM notice
-        WHERE id = $1 AND show = 1
-        LIMIT 1
-        "#,
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await?;
-
-    Ok(row.map(NoticeRow::from))
-}
-
 pub async fn fetch_visible_notices(
     pool: &PgPool,
     page_size: i64,

@@ -310,19 +310,25 @@ pub(crate) async fn session_delete(
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct PassportPvRequest {
-    invite_code: Option<String>,
+#[serde(deny_unknown_fields)]
+pub(crate) struct InviteViewRequest {
+    invite_code: String,
 }
 
-/// Legacy §5.1 telemetry (W3 owns its flip to POST /public/invite-views).
-pub(crate) async fn passport_pv(
+/// POST /public/invite-views — unauthenticated invite-view telemetry
+/// (docs/api-dialect.md §5.1, W3): JSON `{invite_code}`, 204 on success
+/// (the legacy `{data: true}` body dies).
+pub(crate) async fn public_invite_views(
     State(state): State<AppState>,
-    axum::extract::Form(payload): axum::extract::Form<PassportPvRequest>,
-) -> Result<Json<v2board_compat::LegacyEnvelope<bool>>, ApiError> {
+    headers: HeaderMap,
+    DialectJson(payload): DialectJson<InviteViewRequest>,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
     let auth = state.auth_service();
-    Ok(v2board_compat::legacy_data(
-        auth.passport_pv(payload.invite_code.as_deref()).await?,
-    ))
+    auth.passport_pv(Some(payload.invite_code.as_str()))
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Authenticate the shared session extractor path. Missing, malformed, or

@@ -18,35 +18,36 @@ use crate::{
     validation::forbidden,
 };
 
+/// Bare GET /public/config body (docs/api-dialect.md §5.1, W3): flags are
+/// booleans and `email_whitelist_suffix` is always a real array — the legacy
+/// `0` disabled-sentinel dies (§4.1).
 #[derive(Debug, Serialize)]
-pub(crate) struct GuestConfig {
+pub(crate) struct PublicConfig {
     pub(crate) tos_url: Option<String>,
-    pub(crate) is_email_verify: i32,
-    pub(crate) is_invite_force: i32,
-    pub(crate) email_whitelist_suffix: serde_json::Value,
-    pub(crate) is_recaptcha: i32,
+    pub(crate) is_email_verify: bool,
+    pub(crate) is_invite_force: bool,
+    pub(crate) email_whitelist_suffix: Vec<String>,
+    pub(crate) is_recaptcha: bool,
     pub(crate) recaptcha_site_key: Option<String>,
     pub(crate) app_description: Option<String>,
     pub(crate) app_url: Option<String>,
     pub(crate) logo: Option<String>,
 }
 
-pub(crate) async fn guest_config(
-    State(state): State<AppState>,
-) -> Json<LegacyEnvelope<GuestConfig>> {
+pub(crate) async fn public_config(State(state): State<AppState>) -> Json<PublicConfig> {
     let config = state.config_snapshot();
     let email_whitelist_suffix = if config.email_whitelist_enable {
-        json!(config.email_whitelist_suffix)
+        config.email_whitelist_suffix.clone()
     } else {
-        json!(0)
+        Vec::new()
     };
 
-    legacy_data(GuestConfig {
+    Json(PublicConfig {
         tos_url: config.tos_url.clone(),
-        is_email_verify: config.email_verify as i32,
-        is_invite_force: config.invite_force as i32,
+        is_email_verify: config.email_verify,
+        is_invite_force: config.invite_force,
         email_whitelist_suffix,
-        is_recaptcha: config.recaptcha_enable as i32,
+        is_recaptcha: config.recaptcha_enable,
         recaptcha_site_key: config.recaptcha_site_key.clone(),
         app_description: config.app_description.clone(),
         app_url: config.app_url.clone(),
