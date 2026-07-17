@@ -5,19 +5,14 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use chrono::{Datelike, Duration, TimeZone, Utc};
-use hmac::{Hmac, KeyInit, Mac};
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
-use sha1::Sha1;
-use uuid::Uuid;
 use v2board_compat::{ApiError, LegacyEnvelope, legacy_data};
 use v2board_config::{AppConfig, app_now, app_timezone, duration_minutes_to_seconds};
+use v2board_domain::subscribe_link::{hmac_sha1_hex, totp_counter_bytes};
 
 use crate::{
-    auth::require_user,
-    codec::{base64_decode_url_safe, safe_base64_encode},
-    runtime::AppState,
-    validation::forbidden,
+    auth::require_user, codec::base64_decode_url_safe, runtime::AppState, validation::forbidden,
 };
 
 #[derive(Debug, Serialize)]
@@ -324,11 +319,9 @@ pub(crate) async fn resolve_totp_subscribe_token(
         .await?
         .ok_or_else(|| forbidden("token is error"))?;
 
-    let timestep = duration_minutes_to_seconds(state.config_snapshot().show_subscribe_expire);
-    let counter = Utc::now().timestamp().max(0) as u64 / timestep;
-    let mut counter_bytes = [0_u8; 8];
-    counter_bytes[4..].copy_from_slice(&(counter as u32).to_be_bytes());
-    let expected = hmac_sha1_hex(user.token.as_bytes(), &counter_bytes)?;
+    let config = state.config_snapshot();
+    let timestep = duration_minutes_to_seconds(config.show_subscribe_expire);
+    let expected = hmac_sha1_hex(user.token.as_bytes(), &totp_counter_bytes(&config))?;
     if client_hash != expected {
         return Err(forbidden("token is error"));
     }
@@ -337,52 +330,27 @@ pub(crate) async fn resolve_totp_subscribe_token(
     Ok(user.token)
 }
 
-/// Mirror `Helper::getSubscribeUrl`: derive the method-specific token so the generated URL
-/// resolves back through [`resolve_subscribe_token`]. Method 0 keeps the raw token; method 1
-/// mints/reuses a one-time token; method 2 derives the time-stepped `{id}:{hmac}` token.
-pub(super) async fn subscribe_url_for_user(
+/// Mirror `Helper::getSubscribeUrl` through the shared domain minter
+/// (`v2board_domain::subscribe_link`): derive the method-specific token so the
+/// generated URL resolves back through [`resolve_subscribe_token`].
+pub(crate) async fn subscribe_url_for_user(
     state: &AppState,
     user_id: i64,
     token: &str,
 ) -> Result<String, ApiError> {
     let config = state.config_snapshot();
-    let method_token = match config.show_subscribe_method {
-        1 => one_time_subscribe_token(state, token).await?,
-        2 => totp_subscribe_token(&config, user_id, token)?,
-        _ => token.to_string(),
-    };
-    Ok(config.subscribe_url_for_token(&method_token))
+    v2board_domain::subscribe_link::subscribe_url_for_user(
+        &config,
+        &state.redis_keys,
+        &mut Some(state.auth_redis.clone()),
+        user_id,
+        token,
+    )
+    .await
 }
 
-/// Method 1 token: `Cache::add("otp_{token}")` mints a fresh 24-byte url-safe token and stores
-/// the reverse `otpn_{newtoken}` mapping the subscribe middleware pulls. The SET NX mirrors
-/// `Cache::add`, so a concurrent generator that loses the race reuses the winner's token.
-async fn one_time_subscribe_token(state: &AppState, token: &str) -> Result<String, ApiError> {
-    let mut raw = [0_u8; 24];
-    raw[..16].copy_from_slice(Uuid::new_v4().as_bytes());
-    raw[16..].copy_from_slice(&Uuid::new_v4().as_bytes()[..8]);
-    let new_token = safe_base64_encode(&raw);
-    let mut conn = state.auth_redis.clone();
-    Ok(redis::Script::new(MINT_SUBSCRIBE_TOKEN_SCRIPT)
-        .key(state.redis_key(&format!("otp_{token}")))
-        .arg(state.redis_key("otpn_"))
-        .arg(token)
-        .arg(&new_token)
-        .arg(86_400)
-        .invoke_async(&mut conn)
-        .await?)
-}
-
-const MINT_SUBSCRIBE_TOKEN_SCRIPT: &str = r#"
-local existing = redis.call('GET', KEYS[1])
-if existing and existing ~= '' then
-    return existing
-end
-redis.call('SET', KEYS[1], ARGV[3], 'EX', ARGV[4])
-redis.call('SET', ARGV[1] .. ARGV[3], ARGV[2], 'EX', ARGV[4])
-return ARGV[3]
-"#;
-
+/// Consume side of the method-1 one-time token pair; the mint side is
+/// `v2board_domain::subscribe_link::MINT_SUBSCRIBE_TOKEN_SCRIPT`.
 const CONSUME_SUBSCRIBE_TOKEN_SCRIPT: &str = r#"
 local user_token = redis.call('GET', KEYS[1])
 if not user_token then
@@ -392,17 +360,6 @@ redis.call('DEL', KEYS[1])
 redis.call('DEL', ARGV[1] .. user_token)
 return user_token
 "#;
-
-/// Method 2 token: `base64url("{user_id}:{hmac_sha1(counterBytes, token)}")`, derived purely so
-/// it stays in lock-step with [`resolve_totp_subscribe_token`] for the same time window.
-fn totp_subscribe_token(config: &AppConfig, user_id: i64, token: &str) -> Result<String, ApiError> {
-    let timestep = duration_minutes_to_seconds(config.show_subscribe_expire);
-    let counter = Utc::now().timestamp().max(0) as u64 / timestep;
-    let mut counter_bytes = [0_u8; 8];
-    counter_bytes[4..].copy_from_slice(&(counter as u32).to_be_bytes());
-    let hash = hmac_sha1_hex(token.as_bytes(), &counter_bytes)?;
-    Ok(safe_base64_encode(format!("{user_id}:{hash}").as_bytes()))
-}
 
 async fn alive_ip(state: &AppState, user_id: i64) -> Result<i64, ApiError> {
     let key = state.redis_key(&format!("ALIVE_IP_USER_{user_id}"));
@@ -547,17 +504,4 @@ pub(crate) fn user_is_available(user: &v2board_db::user::UserAccessRow) -> bool 
         .map(|expired_at| expired_at > Utc::now().timestamp())
         .unwrap_or(true);
     user.banned == 0 && user.transfer_enable > 0 && unexpired
-}
-
-fn hmac_sha1_hex(key: &[u8], message: &[u8]) -> Result<String, ApiError> {
-    type HmacSha1 = Hmac<Sha1>;
-    let mut mac =
-        HmacSha1::new_from_slice(key).map_err(|_| ApiError::internal("invalid hmac key"))?;
-    mac.update(message);
-    Ok(mac
-        .finalize()
-        .into_bytes()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect())
 }

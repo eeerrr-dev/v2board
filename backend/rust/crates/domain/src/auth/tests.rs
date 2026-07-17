@@ -438,3 +438,21 @@ fn registration_auxiliary_inputs_are_bounded_before_expensive_work() {
     assert!(bounds < reserve);
     assert!(bounds < hash);
 }
+
+#[test]
+fn reset_security_mints_the_returned_url_through_the_method_aware_minter() {
+    // /user/resetSecurity rotates the permanent token and hands the caller a
+    // subscribe URL. Under show_subscribe_method 1/2 that URL must carry the
+    // rotating token (subscribe_link mints it — covered by its own mode
+    // tests), never the fresh permanent token via a raw URL render.
+    let source = include_str!("credentials.rs");
+    let reset = source.find("pub async fn reset_security").unwrap();
+    let body = &source[reset..];
+    let mint = body
+        .find("crate::subscribe_link::subscribe_url_for_user")
+        .unwrap();
+    assert!(mint < body.find("pub(super) fn login_limiter_keys").unwrap());
+    assert!(!source.contains("subscribe_url_for_token"));
+    // The rotation is durably persisted before any URL is minted.
+    assert!(body.find("db::user::update_security").unwrap() < mint);
+}

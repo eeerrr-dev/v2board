@@ -163,6 +163,7 @@ fn version_at_least(version: &str, minimum: &[u64]) -> bool {
 }
 
 pub(super) async fn build_subscription_document(
+    state: &crate::runtime::AppState,
     config: &AppConfig,
     user: &v2board_db::user::UserAccessRow,
     servers: &[v2board_db::server::AvailableServerRow],
@@ -192,8 +193,19 @@ pub(super) async fn build_subscription_document(
         SubscriptionFormat::SingBoxLegacy => {
             build_singbox_subscription(config, &user.uuid, servers, false).await?
         }
-        SubscriptionFormat::Surge => build_surge_subscription(config, user, servers, host),
-        SubscriptionFormat::Surfboard => build_surfboard_subscription(config, user, servers, host),
+        SubscriptionFormat::Surge | SubscriptionFormat::Surfboard => {
+            // The embedded `$subs_link` must honor show_subscribe_method like
+            // every other minted subscribe URL (Surge.php:71 used
+            // Helper::getSubscribeUrl); modes 1/2 must never embed the
+            // permanent token in the managed config.
+            let subs_link =
+                crate::user::subscribe_url_for_user(state, user.id, &user.token).await?;
+            if format == SubscriptionFormat::Surge {
+                build_surge_subscription(config, user, servers, host, &subs_link)
+            } else {
+                build_surfboard_subscription(config, user, servers, host, &subs_link)
+            }
+        }
         SubscriptionFormat::Loon => build_loon_subscription(&user.uuid, servers),
         SubscriptionFormat::Shadowsocks => build_shadowsocks_sip008_subscription(user, servers)?,
         SubscriptionFormat::Shadowrocket => build_shadowrocket_subscription(user, servers),

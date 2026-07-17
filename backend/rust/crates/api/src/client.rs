@@ -123,7 +123,8 @@ pub(crate) async fn client_subscribe_response(
         .unwrap_or("")
         .to_owned();
     let subscription =
-        subscription::build_subscription_document(&config, &user, &servers, &flag, &host).await?;
+        subscription::build_subscription_document(state, &config, &user, &servers, &flag, &host)
+            .await?;
     let profile = subscription_header_profile(&flag);
     let mut response = subscription.body.into_response();
     let headers = response.headers_mut();

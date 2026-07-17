@@ -9,6 +9,85 @@ use super::users::decimal_gib_filter_bytes;
 use super::*;
 use crate::mail::outbox::{mail_message_id, prepared_mail_payload_hash};
 
+#[tokio::test]
+async fn user_listing_mints_method_one_subscribe_urls_in_one_round_trip_per_row() {
+    use crate::subscribe_link::test_support::MockRedis;
+    use std::path::PathBuf;
+    use v2board_config::RuntimePaths;
+
+    let paths = RuntimePaths {
+        config: PathBuf::from("/tmp/not-read-by-config-map-parser.json"),
+        frontend: PathBuf::from("/tmp/frontend"),
+        rules: PathBuf::from("/tmp/rules"),
+    };
+    let mut config = AppConfig::try_from_api_config_map(Map::new(), paths).expect("test config");
+    config.subscribe_url = Some("https://sub.example".to_string());
+    config.show_subscribe_method = 1;
+    let redis_keys = RedisKeyspace::new(Uuid::nil());
+
+    let mut users = vec![
+        json!({ "id": 1, "token": "token-one" }),
+        json!({ "id": 2, "token": "token-two" }),
+    ];
+    // The mint script reuses the cached otp_ token when present, so the reply
+    // is whatever Redis already holds for the row (Admin/UserController.php:103).
+    let mut conn = Some(MockRedis::new([
+        redis::Value::BulkString(b"minted-one".to_vec()),
+        redis::Value::BulkString(b"minted-two".to_vec()),
+    ]));
+    super::users::attach_subscribe_urls(&config, &redis_keys, &mut conn, &mut users)
+        .await
+        .expect("attach subscribe urls");
+
+    assert_eq!(
+        users[0]["subscribe_url"],
+        json!(config.subscribe_url_for_token("minted-one"))
+    );
+    assert_eq!(
+        users[1]["subscribe_url"],
+        json!(config.subscribe_url_for_token("minted-two"))
+    );
+    let conn = conn.expect("mock connection");
+    // One shared connection, one mint round-trip per listed user.
+    assert_eq!(conn.commands.len(), 2);
+    assert!(
+        conn.command_args(0)
+            .contains(&redis_keys.key("otp_token-one"))
+    );
+    assert!(
+        conn.command_args(1)
+            .contains(&redis_keys.key("otp_token-two"))
+    );
+
+    // Method 0 stays byte-identical to the raw-token URL and needs no Redis.
+    config.show_subscribe_method = 0;
+    let mut raw_users = vec![json!({ "id": 1, "token": "token-one" })];
+    let mut no_conn: Option<MockRedis> = None;
+    super::users::attach_subscribe_urls(&config, &redis_keys, &mut no_conn, &mut raw_users)
+        .await
+        .expect("method 0 attach");
+    assert_eq!(
+        raw_users[0]["subscribe_url"],
+        json!(config.subscribe_url_for_token("token-one"))
+    );
+}
+
+#[test]
+fn admin_user_exports_route_every_subscribe_url_through_the_shared_minter() {
+    // The listing, generate CSV, and dump CSV surfaces must all mint through
+    // subscribe_link so show_subscribe_method 1/2 never leak permanent tokens.
+    let source = include_str!("users.rs");
+    assert!(!source.contains("subscribe_url_for_token"));
+    assert_eq!(
+        source
+            .matches("crate::subscribe_link::subscribe_url_for_user")
+            .count(),
+        3
+    );
+    // Methods 0/2 must not acquire a Redis connection for exports.
+    assert!(source.contains("show_subscribe_method != 1"));
+}
+
 #[test]
 fn telegram_webhook_secret_is_stable_scoped_and_header_safe() {
     let first = telegram_webhook_secret("app-key", "123:bot-token");

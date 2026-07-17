@@ -8,3 +8,4 @@ pub mod payment_provider;
 pub mod redis_runtime;
 pub mod server_credentials;
 pub mod smtp;
+pub mod subscribe_link;

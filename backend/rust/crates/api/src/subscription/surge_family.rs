@@ -11,6 +11,9 @@ pub(super) fn build_surge_subscription(
     user: &v2board_db::user::UserAccessRow,
     servers: &[v2board_db::server::AvailableServerRow],
     host: &str,
+    // Method-aware subscribe URL precomputed by the caller (the substitution
+    // point cannot go async); Surge.php:71 minted it via Helper::getSubscribeUrl.
+    subs_link: &str,
 ) -> String {
     let proxies = servers
         .iter()
@@ -22,7 +25,15 @@ pub(super) fn build_surge_subscription(
         .map(|server| server.name.clone())
         .collect::<Vec<_>>()
         .join(", ");
-    render_managed_config(SURGE_TEMPLATE, config, user, host, &proxies, &proxy_group)
+    render_managed_config(
+        SURGE_TEMPLATE,
+        config,
+        user,
+        host,
+        &proxies,
+        &proxy_group,
+        subs_link,
+    )
 }
 
 pub(super) fn build_surfboard_subscription(
@@ -30,6 +41,7 @@ pub(super) fn build_surfboard_subscription(
     user: &v2board_db::user::UserAccessRow,
     servers: &[v2board_db::server::AvailableServerRow],
     host: &str,
+    subs_link: &str,
 ) -> String {
     let proxies = servers
         .iter()
@@ -48,6 +60,7 @@ pub(super) fn build_surfboard_subscription(
         host,
         &proxies,
         &proxy_group,
+        subs_link,
     )
 }
 
@@ -59,6 +72,7 @@ fn render_managed_config(
     host: &str,
     proxies: &str,
     proxy_group: &str,
+    subs_link: &str,
 ) -> String {
     let upload = round2(user.u as f64 / GIB);
     let download = round2(user.d as f64 / GIB);
@@ -80,7 +94,7 @@ fn render_managed_config(
         expire = expire,
     );
     template
-        .replace("$subs_link", &config.subscribe_url_for_token(&user.token))
+        .replace("$subs_link", subs_link)
         .replace("$subs_domain", host)
         .replace("$proxies", proxies)
         .replace("$proxy_group", proxy_group)

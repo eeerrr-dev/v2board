@@ -311,7 +311,17 @@ impl AuthService {
         if !updated {
             return Err(ApiError::business("Reset failed"));
         }
-        Ok(self.config.subscribe_url_for_token(&token))
+        // Method-aware minting (Helper::getSubscribeUrl): under
+        // show_subscribe_method 1/2 the returned URL must carry the rotating
+        // token, never the freshly rotated permanent one.
+        crate::subscribe_link::subscribe_url_for_user(
+            &self.config,
+            &self.redis_keys,
+            &mut Some(self.redis.clone()),
+            user_id,
+            &token,
+        )
+        .await
     }
 }
 

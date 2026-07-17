@@ -10,6 +10,41 @@ const USER_CSV_MAX_ROWS: usize = 50_000;
 const GENERATED_USER_MAX_ROWS: usize = 1_000;
 const SESSION_CLEANUP_CONCURRENCY: usize = 8;
 
+/// Attaches the method-aware `subscribe_url` onto fetched user rows through
+/// the shared minter (`Helper::getSubscribeUrl` in the tail of
+/// UserController::fetch, Admin/UserController.php:103). Under
+/// show_subscribe_method 1 each row reuses its cached `otp_` token via one
+/// mint-script round-trip on the one shared connection.
+pub(super) async fn attach_subscribe_urls<C>(
+    config: &AppConfig,
+    redis_keys: &RedisKeyspace,
+    conn: &mut Option<C>,
+    users: &mut [Value],
+) -> Result<(), ApiError>
+where
+    C: redis::aio::ConnectionLike + Send,
+{
+    for user in users.iter_mut() {
+        let Some(object) = user.as_object_mut() else {
+            continue;
+        };
+        let Some(token) = object
+            .get("token")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+        else {
+            continue;
+        };
+        let user_id = object.get("id").and_then(Value::as_i64).unwrap_or_default();
+        let url = crate::subscribe_link::subscribe_url_for_user(
+            config, redis_keys, conn, user_id, &token,
+        )
+        .await?;
+        object.insert("subscribe_url".to_string(), json!(url));
+    }
+    Ok(())
+}
+
 pub(super) fn decimal_gib_filter_bytes(value: &str) -> Result<i64, ApiError> {
     value
         .trim()
@@ -180,6 +215,19 @@ impl AdminService {
             .await?)
     }
 
+    /// One shared Redis connection for method-1 one-time subscribe-token
+    /// minting (one mint-script round-trip per row); methods 0/2 never touch
+    /// Redis, exactly like Helper::getSubscribeUrl, which only reads the
+    /// `otp_` cache under method 1 (Admin/UserController.php:103,197,275).
+    async fn subscribe_mint_connection(
+        &self,
+    ) -> Result<Option<redis::aio::MultiplexedConnection>, ApiError> {
+        if self.config.show_subscribe_method != 1 {
+            return Ok(None);
+        }
+        Ok(Some(self.redis.get_multiplexed_async_connection().await?))
+    }
+
     /// Adds `subscribe_url` and the `alive_ip` / `ips` device stats onto fetched
     /// user rows. Ports the tail of UserController::fetch (:88-105); the alive-IP
     /// cache read is best-effort so a Redis outage does not fail the listing.
@@ -187,15 +235,13 @@ impl AdminService {
         if users.is_empty() {
             return Ok(());
         }
+        let mut mint_conn = self.subscribe_mint_connection().await?;
+        attach_subscribe_urls(&self.config, &self.redis_keys, &mut mint_conn, users).await?;
         let mut cache_rows = Vec::with_capacity(users.len());
-        for (index, user) in users.iter_mut().enumerate() {
-            let Some(object) = user.as_object_mut() else {
+        for (index, user) in users.iter().enumerate() {
+            let Some(object) = user.as_object() else {
                 continue;
             };
-            if let Some(token) = object.get("token").and_then(Value::as_str) {
-                let url = self.config.subscribe_url_for_token(token);
-                object.insert("subscribe_url".to_string(), json!(url));
-            }
             let id = object.get("id").and_then(Value::as_i64).unwrap_or_default();
             cache_rows.push((index, id));
         }
@@ -952,25 +998,46 @@ impl AdminService {
                 .push_bind(now)
                 .push_bind(now);
         });
-        insert.build().execute(&mut *tx).await?;
+        // The method-2 subscribe token embeds the user id, so recover the
+        // generated ids alongside the batch-unique random tokens.
+        insert.push(" RETURNING id, token");
+        let inserted: Vec<(i64, String)> = insert
+            .build_query_as::<(i64, String)>()
+            .fetch_all(&mut *tx)
+            .await?;
         tx.commit().await?;
+        let token_ids = inserted
+            .into_iter()
+            .map(|(id, token)| (token, id))
+            .collect::<HashMap<_, _>>();
 
         let create_date = local_datetime(now);
         let expire = expired_at
             .map(local_datetime)
             .unwrap_or_else(|| "长期有效".to_string());
-        let rows = prepared
-            .into_iter()
-            .map(|(_, email, password_plain, uuid, token, _)| {
-                vec![
-                    email,
-                    password_plain,
-                    expire.clone(),
-                    uuid,
-                    create_date.clone(),
-                    self.config.subscribe_url_for_token(&token),
-                ]
-            });
+        let mut mint_conn = self.subscribe_mint_connection().await?;
+        let mut rows = Vec::with_capacity(prepared.len());
+        for (_, email, password_plain, uuid, token, _) in prepared {
+            let user_id = token_ids.get(&token).copied().ok_or_else(|| {
+                ApiError::internal("generated user row is missing its inserted id")
+            })?;
+            let url = crate::subscribe_link::subscribe_url_for_user(
+                &self.config,
+                &self.redis_keys,
+                &mut mint_conn,
+                user_id,
+                &token,
+            )
+            .await?;
+            rows.push(vec![
+                email,
+                password_plain,
+                expire.clone(),
+                uuid,
+                create_date.clone(),
+                url,
+            ]);
+        }
         let body = csv_export(
             &["账号", "密码", "过期时间", "UUID", "创建时间", "订阅地址"],
             rows,
@@ -1006,6 +1073,7 @@ impl AdminService {
         )?;
         let mut after_id = 0_i64;
         let mut exported = 0_usize;
+        let mut mint_conn = self.subscribe_mint_connection().await?;
         loop {
             let mut builder = QueryBuilder::<Postgres>::new(
                 "SELECT u.id AS id, u.email AS email, u.balance AS balance, \
@@ -1053,7 +1121,14 @@ impl AdminService {
                 let used = i128::from(row.u) + i128::from(row.d);
                 let not_use = (i128::from(row.transfer_enable) - used) as f64 / GIB as f64;
                 let plan = row.plan_name.unwrap_or_else(|| "无订阅".to_string());
-                let url = self.config.subscribe_url_for_token(&row.token);
+                let url = crate::subscribe_link::subscribe_url_for_user(
+                    &self.config,
+                    &self.redis_keys,
+                    &mut mint_conn,
+                    row.id,
+                    &row.token,
+                )
+                .await?;
                 csv.write_row(vec![
                     row.email,
                     balance.to_string(),
