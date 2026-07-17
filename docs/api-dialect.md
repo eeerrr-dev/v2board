@@ -1123,13 +1123,68 @@ object-src 'none'
   `recaptcha_data` carriage on register/forget/send-email-verify.
 - `img-src https:` retains operator logo/background URLs
   (`logo`, `frontend_background_url`) and knowledge/notice images.
-- Open issue (§15): Crisp/Tawk widgets historically entered the page through
-  operator `custom_html`; with it removed there is no injection path, so the
-  session-data pushes in `queries.ts` become dormant until a first-class
-  chat-widget config (with its own CSP allowlist entries) is designed. The
-  frozen Crisp/Tawk payload contract is kept in code.
+- Chat widgets (Crisp/Tawk) historically entered the page through operator
+  `custom_html`; the first-class replacement is the typed chat-widget
+  configuration in §10.6, whose provider hosts extend this policy only when
+  a provider is completely configured. (Resolves §15 open issue 1.)
 - API-route responses keep `frame-ancestors 'self'` plus the existing
   no-store cache headers; the full policy above applies to HTML documents.
+  Implementation shape: `frontend.rs` builds and sets the document policy on
+  the HTML response; the shared security middleware only fills the
+  `frame-ancestors 'self'` baseline when a handler has not already claimed
+  the header (`or_insert`).
+
+### 10.6 Chat-widget integration (owner decision, replaces custom_html chat)
+
+First-class, typed chat-widget configuration — the only supported path for
+the Crisp/Tawk integrations after `custom_html` is removed. No other
+provider and no raw-HTML escape hatch may be added.
+
+- **Config** (operator authority, admin config `frontend` group):
+  - `chat_widget_provider` — `crisp` | `tawk` | null (null/empty = feature
+    off, the default).
+  - `chat_widget_crisp_website_id` — the Crisp website ID; must be a
+    canonical 8-4-4-4-12 hex UUID when the provider is `crisp`.
+  - `chat_widget_tawk_property_id` — the Tawk property ID; must be 24 hex
+    characters when the provider is `tawk`.
+  - `chat_widget_tawk_widget_id` — the Tawk widget ID; 1–64 characters of
+    ASCII alphanumeric/`_`/`-` when the provider is `tawk`.
+  - A configured provider with a missing or malformed identifier rejects the
+    config save with 400 `config_validation_failed` (the SPA builds the
+    official embed from these values and the CSP widens per provider, so a
+    malformed identifier must fail the save, not ship a broken or
+    attacker-shaped embed). The importer maps none of these keys (fresh
+    defaults; OPERATOR-only keys need no manifest changes).
+- **Runtime injection** (user app only; the admin document never carries
+  it): when — and only when — a provider is completely configured, the
+  runtime config gains a typed `chat_widget` object:
+  `{"provider": "crisp", "website_id": …}` or
+  `{"provider": "tawk", "property_id": …, "widget_id": …}`.
+- **SPA loader (W1's frontend half)**: bundled user-app code reads
+  `chat_widget` and loads the provider's official SDK — Crisp via
+  `window.$crisp`/`CRISP_WEBSITE_ID` + `https://client.crisp.chat/l.js`,
+  Tawk via `https://embed.tawk.to/{property_id}/{widget_id}` — as a
+  `'self'`-originated dynamic script insertion, never an inline snippet
+  (no new CSP inline allowance). The frozen §2 session-data pushes in
+  `queries.ts` reactivate against these SDK globals with their payloads
+  byte-unchanged.
+- **CSP** (extends the §10.5 policy, user document only, only when the
+  matching provider is configured; `img-src https:` already covers provider
+  images):
+  - Crisp (docs.crisp.chat domain whitelist): `script-src` + `style-src`
+    `https://*.crisp.chat`; `connect-src https://*.crisp.chat
+    wss://*.relay.crisp.chat wss://*.relay.rescue.crisp.chat`;
+    `frame-src https://*.crisp.chat https://*.crisp.help`;
+    `font-src 'self' https://*.crisp.chat`;
+    `media-src 'self' https://*.crisp.chat`;
+    `worker-src 'self' blob: https://*.crisp.chat`.
+  - Tawk (help.tawk.to CSP guidance, scheme-qualified):
+    `script-src https://*.tawk.to https://cdn.jsdelivr.net`;
+    `style-src https://*.tawk.to https://fonts.googleapis.com
+    https://cdn.jsdelivr.net`; `connect-src https://*.tawk.to
+    wss://*.tawk.to`; `frame-src https://*.tawk.to`;
+    `font-src 'self' https://*.tawk.to https://fonts.gstatic.com`;
+    `form-action 'self' https://*.tawk.to`.
 
 ---
 
@@ -1162,6 +1217,12 @@ object-src 'none'
 - New config key: `legacy_hash_redirect_enable` (bool, default `true`),
   site group, admin-editable, injected into runtime config (§10.3). The
   importer does not map it (fresh default).
+- New config keys: `chat_widget_provider`,
+  `chat_widget_crisp_website_id`, `chat_widget_tawk_property_id`,
+  `chat_widget_tawk_widget_id` (§10.6) — operator authority, admin config
+  `frontend` group, validated at config save, injected into the user
+  runtime config when complete. The importer maps none of them (fresh
+  defaults).
 - New config security validation: the reserved-segment admin-path rule
   (§10.2) — `secure_path`/`frontend_admin_path` syntactic validation plus
   the reserved-top-level-segment rejection, surfacing as 400
@@ -1287,15 +1348,21 @@ commit series that switches it (no dual goldens).
 
 ## 15. Open issues
 
-1. **Chat-widget injection after custom_html removal** — Crisp/Tawk
-   previously entered via operator custom HTML. The removal leaves the
-   (frozen) session-data pushes dormant. A first-class integration config
-   (IDs + CSP entries) is out of scope here and needs an owner decision.
+1. **Resolved (owner decision, W1)** — chat-widget injection after
+   custom_html removal: a first-class typed Crisp/Tawk configuration with
+   per-provider CSP allowlist entries is specified in §10.6. The backend
+   half (config + validation + runtime injection + CSP) lands with the W1
+   backend series; the SPA SDK loader and the admin editor UI land with
+   W1's frontend half.
 2. **CSP `img-src` refinement** — §10.5 now enumerates every dynamic
    loader in the codebase (Stripe via `@stripe/stripe-js` including
    `m.stripe.network` and telemetry, reCAPTCHA via the pinned
-   `recaptcha.net` loader plus `gstatic.com`); a repeat enumeration at W1
-   implementation time must confirm no new loader has landed since.
+   `recaptcha.net` loader plus `gstatic.com`); the W1-implementation-time
+   repeat enumeration confirmed no new loader has landed: the only dynamic
+   script loaders remain `loadStripe` from `@stripe/stripe-js/pure`
+   (`apps/user/src/pages/order/stripe-payment-form.tsx`) and the
+   `https://www.recaptcha.net/recaptcha/api.js` injector
+   (`apps/user/src/pages/auth/auth-recaptcha.tsx`).
    Remaining open point: `img-src` refinement only (payment gateway QR
    values are rendered client-side from strings, not fetched cross-origin
    as scripts, but operator logo/background/knowledge image hosts keep
@@ -1344,7 +1411,9 @@ switches its family atomically. No wave leaves a family half-dialect. Wave
   (config + runtime injection + boot translator), the reserved-segment
   admin-path validation (§10.2/§12), minted-URL formats (`sessions.rs`,
   `payment_integrations.rs` — both the absolute and the relative
-  payment-return branch), custom_html removal + CSP (§10.5, §12), locale
+  payment-return branch), custom_html removal + CSP (§10.5, §12), the
+  chat-widget config + validation + user runtime injection + per-provider
+  CSP with its SPA SDK loader and admin editor UI (§10.6), locale
   key migration + api-client `Accept-Language` sending (§11, §4.3; verify
   the `Accept-Language` resolver, `v2board_locale` vocabulary, and
   runtime-config `i18n` key all bind to `ENABLED_LOCALES`). The
@@ -1358,7 +1427,11 @@ switches its family atomically. No wave leaves a family half-dialect. Wave
   assertion; add the per-app inline pre-paint script hash extraction),
   `frontend/scripts/parity-config-audit.mjs` (the validator that today
   throws on non-hash scenario paths learns canonical route paths, §13.4),
-  deploy contract.
+  deploy contract; chat-widget frontend half (§10.6): a user-app
+  chat-widget SDK loader module reading runtime `chat_widget` (reusing the
+  frozen session-data pushes in `apps/user/src/lib/queries.ts`) and the
+  admin config `frontend`-section editor controls for the
+  `chat_widget_*` keys (`apps/admin/src/pages/config.tsx`).
 - Scenarios/fixtures: `specs/auth.spec.mjs` (redirect outcomes),
   `specs/dashboard.spec.mjs`, all `runners/**` URL assertions via the
   route-map, per-world entry URLs + location reads via the
