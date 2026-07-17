@@ -35,8 +35,9 @@ const MAX_REQUEST_BODY_BYTES: usize = 8 * 1024 * 1024;
 fn cors_layer(state: AppState) -> CorsLayer {
     let cors = CorsLayer::new()
         .allow_methods([Method::GET, Method::POST, Method::OPTIONS, Method::HEAD])
+        // No `Origin` entry: browsers forbid it in Access-Control-Request-Headers, so
+        // advertising it (a verbatim transplant of legacy CORS.php) was inert.
         .allow_headers([
-            header::ORIGIN,
             header::CONTENT_TYPE,
             header::ACCEPT,
             header::AUTHORIZATION,
@@ -44,7 +45,9 @@ fn cors_layer(state: AppState) -> CorsLayer {
             HeaderName::from_static("x-v2board-step-up"),
         ])
         .expose_headers([HeaderName::from_static(X_REQUEST_ID)])
-        .max_age(Duration::from_secs(10080));
+        // 7200s is Chromium's preflight cache cap; the legacy 10080 was a
+        // minutes literal shipped as seconds.
+        .max_age(Duration::from_secs(7200));
     cors.allow_origin(AllowOrigin::predicate(move |origin, _request| {
         cors_origin_allowed(&state.config_snapshot().cors_allowed_origins, origin)
     }))
