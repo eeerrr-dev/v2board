@@ -12,6 +12,7 @@ import { createUserRouter } from './App';
 import { ConfirmDialogProvider } from './components/ui/confirm-dialog';
 import { Toaster } from './components/ui/toaster';
 import { registerSessionCacheClearer, setupAuthSync } from './lib/auth';
+import { installChatWidget } from './lib/chat-widget';
 import { applyInitialDarkMode } from './lib/dark-mode';
 import { applyRuntimeConfig, getLegacyHashRedirectEnabled } from './lib/runtime-config';
 import { i18nGet } from './lib/errors';
@@ -63,6 +64,10 @@ registerSessionCacheClearer(() => queryClient.clear());
 setupAuthSync();
 
 applyInitialDarkMode();
+// docs/api-dialect.md §10.6: load the configured chat provider's official SDK
+// (dynamic script insertion, never inline) so the frozen Crisp/Tawk
+// session-data pushes above have their globals.
+installChatWidget();
 // docs/api-dialect.md §10.3: translate a legacy `/#/x?y` entry URL into its
 // history URL before router creation, gated on the injected admin toggle.
 applyLegacyHashRedirect({ enabled: getLegacyHashRedirectEnabled() });

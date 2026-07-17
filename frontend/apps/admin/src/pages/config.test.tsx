@@ -558,8 +558,73 @@ describe('SystemConfigPage', () => {
     expect(screen.getByTestId('config-frontend_theme_color')).toBeInTheDocument();
     expect(screen.getByTestId('config-frontend_background_url')).toBeInTheDocument();
     // docs/api-dialect.md §10.5: the custom HTML injection control is removed;
-    // the typed chat-widget editor ships with the A4 SDK loader.
+    // the typed chat-widget editor (§10.6) replaces it.
     expect(screen.queryByTestId('config-frontend_custom_html')).not.toBeInTheDocument();
+    expect(screen.getByTestId('config-chat_widget_provider')).toBeInTheDocument();
+  });
+
+  it('drives the typed chat-widget editor with per-provider identifier fields', async () => {
+    // The post-save refetch is authoritative, so each step models the
+    // backend-applied value before saving (same pattern as the recaptcha test).
+    const applied = (values: Record<string, unknown>) => {
+      const config = makeConfig();
+      Object.assign(config.frontend, values);
+      mocks.configData = config;
+    };
+    const user = userEvent.setup();
+    render(<ConfigPage />);
+
+    await user.click(screen.getByTestId('config-tab-frontend'));
+
+    // Provider off (null fixture): no identifier fields are shown.
+    expect(screen.queryByTestId('config-chat_widget_crisp_website_id')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('config-chat_widget_tawk_property_id')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('config-chat_widget_tawk_widget_id')).not.toBeInTheDocument();
+
+    // Selecting Crisp saves the exact backend key/value and reveals only the
+    // Crisp identifier field.
+    applied({ chat_widget_provider: 'crisp' });
+    await user.click(screen.getByTestId('config-chat_widget_provider'));
+    await user.click(await screen.findByRole('option', { name: 'Crisp' }));
+    await waitFor(() =>
+      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ chat_widget_provider: 'crisp' }),
+    );
+    const crispInput = await screen.findByTestId('config-chat_widget_crisp_website_id');
+    expect(screen.queryByTestId('config-chat_widget_tawk_property_id')).not.toBeInTheDocument();
+    applied({
+      chat_widget_provider: 'crisp',
+      chat_widget_crisp_website_id: '01234567-89ab-cdef-0123-456789abcdef',
+    });
+    await user.type(crispInput, '01234567-89ab-cdef-0123-456789abcdef');
+    await user.tab();
+    await waitFor(() =>
+      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({
+        chat_widget_crisp_website_id: '01234567-89ab-cdef-0123-456789abcdef',
+      }),
+    );
+
+    // Switching to Tawk swaps the identifier fields.
+    applied({ chat_widget_provider: 'tawk' });
+    await user.click(screen.getByTestId('config-chat_widget_provider'));
+    await user.click(await screen.findByRole('option', { name: 'Tawk.to' }));
+    await waitFor(() =>
+      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ chat_widget_provider: 'tawk' }),
+    );
+    expect(screen.queryByTestId('config-chat_widget_crisp_website_id')).not.toBeInTheDocument();
+    expect(await screen.findByTestId('config-chat_widget_tawk_property_id')).toBeInTheDocument();
+    expect(screen.getByTestId('config-chat_widget_tawk_widget_id')).toBeInTheDocument();
+
+    // 关闭 serializes to the backend's clear value (empty string), never the
+    // 'off' UI sentinel, and hides the identifier fields again.
+    applied({ chat_widget_provider: '' });
+    await user.click(screen.getByTestId('config-chat_widget_provider'));
+    await user.click(await screen.findByRole('option', { name: '关闭' }));
+    await waitFor(() =>
+      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ chat_widget_provider: '' }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByTestId('config-chat_widget_tawk_property_id')).not.toBeInTheDocument(),
+    );
   });
 
   it('hides the conditional child field until its toggle is on', async () => {
