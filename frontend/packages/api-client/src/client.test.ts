@@ -505,36 +505,36 @@ describe('createApiClient', () => {
     ).rejects.toMatchObject({ status: 0, message: 'Network Error' });
   });
 
-  it('keeps invite detail totals as the direct envelope field', async () => {
+  it('unwraps the modern commissions page envelope into {data, total}', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onGet('/user/invite/details?current=1&page_size=10').reply(200, { data: [] });
+    mock.onGet('/user/commissions?page=1&per_page=10').reply(200, { items: [], total: 0 });
 
     const result = await userEndpoints.inviteDetails(client, 1, 10);
 
-    expect(result.total).toBeUndefined();
+    expect(result).toEqual({ data: [], total: 0 });
   });
 
-  it('submits legacy user transfer amounts in cents from the API layer', async () => {
+  it('submits commission transfer amounts in cents from the API layer', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/user/transfer').reply(200, { data: true });
+    mock.onPost('/user/commission-transfers').reply(204);
 
     await userEndpoints.transfer(client, '12.34');
 
-    expect(mock.history.post[0]?.data).toBe('transfer_amount=1234');
+    expect(JSON.parse(String(mock.history.post[0]?.data))).toEqual({ transfer_amount: 1234 });
   });
 
   it('converts decimal transfer amounts without binary floating-point drift', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/user/transfer').reply(200, { data: true });
+    mock.onPost('/user/commission-transfers').reply(204);
 
     await userEndpoints.transfer(client, '19.99');
 
     // Binary multiplication produces 1998.9999…; the string-based boundary
     // conversion still sends the exact 1999 cents.
-    expect(mock.history.post[0]?.data).toBe('transfer_amount=1999');
+    expect(JSON.parse(String(mock.history.post[0]?.data))).toEqual({ transfer_amount: 1999 });
   });
 
   it('converts deposit major units to integer cents at the save-order boundary', async () => {

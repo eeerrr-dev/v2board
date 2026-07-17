@@ -49,11 +49,13 @@ export default function InvitePage() {
   const generate = useGenerateInviteMutation();
   const symbol = comm?.currency_symbol;
 
+  // §9.2 named stat object (was the legacy 5-tuple): commissions in cents,
+  // rate an integer percent.
   const stat = invite.data?.stat;
-  const registered = stat?.[0];
-  const validCommission = stat?.[1];
-  const pendingCommission = stat?.[2];
-  const rate = stat?.[3];
+  const registered = stat?.registered_count;
+  const validCommission = stat?.valid_commission;
+  const pendingCommission = stat?.pending_commission;
+  const rate = stat?.commission_rate;
   const available = userInfo.data?.commission_balance;
   const availableText =
     userInfo.data?.commission_balance !== undefined

@@ -19,7 +19,6 @@ import {
   activeSessionSchema,
   arraySchema,
   availableServerSchema,
-  booleanSchema,
   checkoutResultSchema,
   commissionDetailSchema,
   createdOrderSchema,
@@ -30,7 +29,6 @@ import {
   noContentSchema,
   noticeSchema,
   orderStatusSchema,
-  pageEnvelopeSchema,
   paymentMethodSchema,
   resetSubscribeTokenSchema,
   sessionStateSchema,
@@ -129,12 +127,18 @@ export const resetSecurity = (client: ApiClient) =>
     })
     .then((body) => body.subscribe_url);
 
+/**
+ * POST /user/commission-transfers — dialect v2, 204 (docs/api-dialect.md
+ * §5.3, W7). The `100*amount` cents conversion stays at this boundary;
+ * callers pass decimal major units.
+ */
 export const transfer = (client: ApiClient, transferAmount: number | string | undefined) =>
   client.request({
-    url: '/user/transfer',
+    url: '/user/commission-transfers',
     method: 'POST',
+    dialect: 'v2',
     data: { transfer_amount: decimalToCents(transferAmount ?? '') },
-    responseSchema: trueSchema,
+    responseSchema: noContentSchema,
   });
 
 /** POST /user/subscription/new-period — dialect v2, 204 (§5.4, W5). */
@@ -324,31 +328,56 @@ export const getPaymentMethod = (client: ApiClient, config?: QueryRequestConfig)
     ...config,
   });
 
+/**
+ * POST /user/invite-codes — dialect v2 (docs/api-dialect.md §5.6, W7): the
+ * one deliberate 204-no-body create (§1). Invite codes are never
+ * individually addressed afterwards, so callers refetch `GET /user/invite`
+ * instead of consuming a created id.
+ */
 export const generateInvite = (client: ApiClient) =>
-  client.request({ url: '/user/invite/save', method: 'GET', responseSchema: booleanSchema });
+  client.request({
+    url: '/user/invite-codes',
+    method: 'POST',
+    dialect: 'v2',
+    responseSchema: noContentSchema,
+  });
 
+/**
+ * GET /user/invite — dialect v2 bare `{codes, stat}` with the §9.2 named
+ * stat object (docs/api-dialect.md §5.6, W7). Commission values stay
+ * integer cents.
+ */
 export const fetchInvite = (client: ApiClient, config?: QueryRequestConfig) =>
   client.request({
-    url: '/user/invite/fetch',
+    url: '/user/invite',
     method: 'GET',
+    dialect: 'v2',
     responseSchema: inviteFetchSchema,
     ...config,
   });
 
+/**
+ * GET /user/commissions — dialect v2 `{items, total}` page envelope on
+ * `page`/`per_page` (docs/api-dialect.md §5.6/§8, W7; server default 10).
+ * The raw requested page is sent unclamped — display clamping stays a
+ * Tier-2 concern of the pagination control. Commission amounts stay cents
+ * for the boundary `amount/100` display conversion.
+ */
 export const inviteDetails = async (
   client: ApiClient,
-  current?: number,
-  page_size?: number,
+  page?: number,
+  perPage?: number,
   config?: QueryRequestConfig,
 ): Promise<CommissionDetailPage> => {
-  const env = await client.requestEnvelope({
-    url: '/user/invite/details',
+  const result = await client.request({
+    url: '/user/commissions',
     method: 'GET',
-    params: { current, page_size },
-    responseSchema: pageEnvelopeSchema(commissionDetailSchema),
+    dialect: 'v2',
+    params: { page, per_page: perPage },
+    responseSchema: pageSchema(commissionDetailSchema),
     ...config,
   });
-  return { data: env.data, total: env.total };
+  return { data: result.items, total: result.total };
 };
 
 /**

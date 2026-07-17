@@ -496,22 +496,26 @@ export const giftcardSchema = z.looseObject({
   updated_at: z.number(),
 });
 
+/**
+ * Invite & commission family (docs/api-dialect.md §5.6, §9.2, W7): bare
+ * `{codes, stat}` with the named stat object (was the legacy 5-tuple),
+ * RFC 3339 timestamps, and integer-cents commissions (the `amount/100`
+ * display math keeps reading cents).
+ */
 export const inviteCodeSchema = z.looseObject({
   id: z.number(),
-  user_id: z.number(),
   code: z.string(),
-  status: binaryFlagSchema,
   pv: z.number(),
-  created_at: z.number(),
-  updated_at: z.number(),
+  created_at: z.string(),
+  updated_at: z.string(),
 });
-export const inviteStatSchema = z.tuple([
-  z.number(),
-  z.number(),
-  z.number(),
-  z.number(),
-  z.number(),
-]);
+export const inviteStatSchema = z.looseObject({
+  registered_count: z.number(),
+  valid_commission: z.number(),
+  pending_commission: z.number(),
+  commission_rate: z.number(),
+  available_commission: z.number(),
+});
 export const inviteFetchSchema = z.looseObject({
   codes: z.array(inviteCodeSchema),
   stat: inviteStatSchema,
@@ -521,7 +525,7 @@ export const commissionDetailSchema = z.looseObject({
   trade_no: z.string(),
   order_amount: z.number(),
   get_amount: z.number(),
-  created_at: z.number(),
+  created_at: z.string(),
 });
 
 /**

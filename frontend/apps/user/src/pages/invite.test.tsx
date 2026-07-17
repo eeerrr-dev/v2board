@@ -19,7 +19,7 @@ const mocks = vi.hoisted(() => ({
   } as Record<string, unknown>,
   copyText: vi.fn(),
   detailQueryCalls: [] as Array<{ current?: number; pageSize?: number }>,
-  detailRows: [] as Array<{ created_at: number; get_amount: number }>,
+  detailRows: [] as Array<{ created_at: string; get_amount: number }>,
   detailsError: false,
   detailsFetching: false,
   detailsRefetch: vi.fn(),
@@ -27,11 +27,18 @@ const mocks = vi.hoisted(() => ({
   generateIsPending: false,
   generateMutateAsync: vi.fn(),
   invalidateQueries: vi.fn(),
-  inviteCodes: [] as Array<{ code: string; created_at: number }>,
+  inviteCodes: [] as Array<{ code: string; created_at: string }>,
   inviteError: false,
   inviteFetching: false,
   inviteRefetch: vi.fn(),
-  inviteStat: [7, 2345, 678, 12] as Array<number | undefined> | undefined,
+  // §9.2 named stat object (W7): commissions in cents, rate integer percent.
+  inviteStat: {
+    registered_count: 7,
+    valid_commission: 2345,
+    pending_commission: 678,
+    commission_rate: 12,
+    available_commission: 12345,
+  } as Record<string, number> | undefined,
   labels: {
     'common.empty': '暂无数据',
     'common.error_title': '出错了',
@@ -162,7 +169,13 @@ function resetMocks() {
   mocks.inviteError = false;
   mocks.inviteFetching = false;
   mocks.inviteRefetch.mockReset();
-  mocks.inviteStat = [7, 2345, 678, 12];
+  mocks.inviteStat = {
+    registered_count: 7,
+    valid_commission: 2345,
+    pending_commission: 678,
+    commission_rate: 12,
+    available_commission: 12345,
+  };
   mocks.toastSuccess.mockReset();
   mocks.userInfo = { commission_balance: 12345 };
 }
@@ -171,8 +184,8 @@ describe('InvitePage shadcn surface', () => {
   beforeEach(resetMocks);
 
   it('renders the commission summary, stats, code table, and history table', () => {
-    mocks.inviteCodes = [{ code: 'ABC123', created_at: 1_700_000_000 }];
-    mocks.detailRows = [{ created_at: 1_700_000_600, get_amount: 1234 }];
+    mocks.inviteCodes = [{ code: 'ABC123', created_at: '2023-11-14T22:13:20Z' }];
+    mocks.detailRows = [{ created_at: '2023-11-14T22:23:20Z', get_amount: 1234 }];
     mocks.detailsTotal = 1;
 
     renderWithProviders(<InvitePage />);
@@ -189,7 +202,8 @@ describe('InvitePage shadcn surface', () => {
     expect(screen.queryByRole('button', { name: '推广佣金提现' })).toBeNull();
     expect(screen.queryByTestId('invite-withdraw-trigger')).toBeNull();
 
-    // Stats card: stat tuple [registered, valid, pending, rate] read positionally.
+    // Stats card: the §9.2 named stat object (registered_count,
+    // valid_commission, pending_commission, commission_rate).
     const stats = screen.getByTestId('invite-stats-card');
     expect(within(stats).getByText('确认中的佣金')).toHaveAttribute(
       'data-slot',
@@ -224,7 +238,7 @@ describe('InvitePage shadcn surface', () => {
     expect(within(codeTable).getByText('ABC123')).toBeInTheDocument();
     expect(within(codeTable).getByRole('button', { name: '复制链接' })).toBeInTheDocument();
     expect(
-      within(codeTable).getByText(formatBackendDateMinuteSlash(1_700_000_000)),
+      within(codeTable).getByText(formatBackendDateMinuteSlash('2023-11-14T22:13:20Z')),
     ).toBeInTheDocument();
     expect(within(codeTable).getByText('ABC123').closest('tr')).toHaveAttribute(
       'data-row-key',
@@ -239,7 +253,7 @@ describe('InvitePage shadcn surface', () => {
     ).toBeInTheDocument();
     expect(within(historyTable).getByRole('columnheader', { name: '佣金' })).toBeInTheDocument();
     expect(
-      within(historyTable).getByText(formatBackendDateMinuteSlash(1_700_000_600)),
+      within(historyTable).getByText(formatBackendDateMinuteSlash('2023-11-14T22:23:20Z')),
     ).toBeInTheDocument();
     expect(within(historyTable).getByText('12.34')).toBeInTheDocument();
     expect(within(historyTable).getByText('12.34').closest('tr')).toHaveAttribute(
@@ -341,7 +355,7 @@ describe('InvitePage shadcn pagination', () => {
   });
 
   it('shows table pagination when commission history has rows', () => {
-    mocks.detailRows = [{ created_at: 1, get_amount: 100 }];
+    mocks.detailRows = [{ created_at: '2023-11-14T22:13:20Z', get_amount: 100 }];
     mocks.detailsTotal = 1;
 
     renderWithProviders(<InvitePage />);
@@ -364,7 +378,7 @@ describe('InvitePage shadcn actions', () => {
   beforeEach(resetMocks);
 
   it('copies the path-style register URL and shows the original success toast', async () => {
-    mocks.inviteCodes = [{ code: 'ABC123', created_at: 1_700_000_000 }];
+    mocks.inviteCodes = [{ code: 'ABC123', created_at: '2023-11-14T22:13:20Z' }];
     const { user } = renderWithProviders(<InvitePage />);
 
     await user.click(screen.getByRole('button', { name: '复制链接' }));
@@ -403,8 +417,8 @@ describe('InvitePage shadcn actions', () => {
     expect(mocks.generateMutateAsync).not.toHaveBeenCalled();
   });
 
-  it('requests invite/details with the page selected from the table pagination', async () => {
-    mocks.detailRows = [{ created_at: 1_700_000_600, get_amount: 1234 }];
+  it('requests the commission history with the page selected from the table pagination', async () => {
+    mocks.detailRows = [{ created_at: '2023-11-14T22:23:20Z', get_amount: 1234 }];
     mocks.detailsTotal = 25;
     const { user } = renderWithProviders(<InvitePage />);
 
@@ -415,7 +429,7 @@ describe('InvitePage shadcn actions', () => {
   });
 
   it('clamps the visible commission-history page like the legacy pagination helper', async () => {
-    mocks.detailRows = [{ created_at: 1_700_000_600, get_amount: 1234 }];
+    mocks.detailRows = [{ created_at: '2023-11-14T22:23:20Z', get_amount: 1234 }];
     mocks.detailsTotal = 45;
     const { rerender, user } = renderWithProviders(<InvitePage />);
 
