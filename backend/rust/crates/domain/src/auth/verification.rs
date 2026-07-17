@@ -74,7 +74,7 @@ impl AuthService {
                 "Email verification code has been sent, please request again later",
             ));
         }
-        let subject = format!("{}Email verification code", self.config.app_name);
+        let subject = verify_mail_subject(&self.config.app_name);
         let body = crate::mail::render_verify(
             &self.config.app_name,
             self.config.app_url.as_deref().unwrap_or_default(),
@@ -281,6 +281,14 @@ impl AuthService {
         .map_err(|error| ApiError::legacy(format!("Send mail failed: {error}")))?;
         Ok(())
     }
+}
+
+/// Legacy subject: `config('v2board.app_name', 'V2Board') . __('Email verification code')`
+/// (CommController.php:78). Laravel pins the default (and fallback) locale to zh-CN, so
+/// `__()` resolves to "邮箱验证码" and the delivered subject is this literal concatenation —
+/// the same hardcoded language as the zh-CN body template in [`crate::mail::render_verify`].
+pub(super) fn verify_mail_subject(app_name: &str) -> String {
+    format!("{app_name}邮箱验证码")
 }
 
 fn six_digit_code() -> String {

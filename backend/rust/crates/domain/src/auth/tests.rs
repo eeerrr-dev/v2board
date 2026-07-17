@@ -21,7 +21,7 @@ use super::{
         is_valid_email, normalize_email, validate_change_password, validate_email, validate_forget,
         validate_password,
     },
-    verification::CONSUME_VALUE_WITH_FAILURE_LIMIT_SCRIPT,
+    verification::{CONSUME_VALUE_WITH_FAILURE_LIMIT_SCRIPT, verify_mail_subject},
 };
 
 #[test]
@@ -72,6 +72,14 @@ fn privileged_users_receive_the_short_session_ttl() {
         session_ttl_seconds(30 * 86_400, 12 * 3_600, 0, 1),
         12 * 3_600
     );
+}
+
+#[test]
+fn verify_mail_subject_is_the_zh_cn_default_locale_concatenation() {
+    // Legacy: `app_name . __('Email verification code')` rendered under Laravel's pinned
+    // default locale zh-CN (CommController.php:78 + resources/lang/zh-CN.json), so the
+    // subject language matches the hardcoded zh-CN verify body template.
+    assert_eq!(verify_mail_subject("V2Board"), "V2Board邮箱验证码");
 }
 
 #[test]
