@@ -260,37 +260,6 @@ fn parse_page_value(raw: Option<&String>, field: &str, default: i64) -> Result<i
     Ok(value)
 }
 
-/// `ORDER BY` clause for admin list endpoints that accept `sort`/`sort_type`
-/// (coupon/giftcard fetch), mirroring `Coupon::orderBy($sort, $sortType)`: the
-/// direction is whitelisted to ASC/DESC (anything else, including a missing param,
-/// falls back to DESC), and the column defaults to `id` when the param is absent or
-/// empty. The column is backtick-wrapped with any backticks doubled, the same way
-/// Laravel's query grammar quotes an identifier, so an unknown column produces a SQL
-/// error rather than an injection point.
-pub(in super::super) fn admin_sort_clause(params: &HashMap<String, String>) -> String {
-    let direction = match params.get("sort_type").map(String::as_str) {
-        Some("ASC") => "ASC",
-        _ => "DESC",
-    };
-    // MySQL orders NULL before non-NULL for ASC and after it for DESC;
-    // PostgreSQL defaults are the reverse. Pin the legacy list/pagination
-    // contract explicitly for every allowed or operator-supplied column.
-    let nulls = if direction == "ASC" {
-        "NULLS FIRST"
-    } else {
-        "NULLS LAST"
-    };
-    let column = params
-        .get("sort")
-        .map(String::as_str)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("id");
-    format!(
-        "ORDER BY \"{}\" {direction} {nulls}",
-        column.replace('"', "\"\"")
-    )
-}
-
 pub(in super::super) fn array_param(
     params: &HashMap<String, String>,
     key: &str,

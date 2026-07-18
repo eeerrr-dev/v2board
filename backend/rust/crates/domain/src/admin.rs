@@ -50,6 +50,12 @@ pub use support::filter_dsl;
 use support::*;
 
 pub use configuration::ConfigPatchOutcome;
+pub use content::{
+    AdminCouponItem, AdminGiftcardItem, AdminKnowledgeDetail, AdminKnowledgeSummary,
+    AdminNoticeItem, ContentGenerateOutcome, CouponGenerate, CouponPatch, GiftcardGenerate,
+    GiftcardPatch, KnowledgeCreate, KnowledgePatch, KnowledgeSortRequest, NoticeCreate,
+    NoticePatch,
+};
 
 const GIB: i64 = 1_073_741_824;
 
@@ -175,12 +181,7 @@ impl AdminService {
             "user/getUserInfoById" => self.user_detail(required_i64(&params, "id")?).await,
             "order/fetch" => self.order_fetch(&params).await,
             "order/reconciliation/fetch" => self.payment_reconciliation_fetch(&params).await,
-            "notice/fetch" => self.notice_fetch().await,
             "ticket/fetch" => self.ticket_fetch(&params, false).await,
-            "coupon/fetch" => self.coupon_fetch(&params).await,
-            "giftcard/fetch" => self.giftcard_fetch(&params).await,
-            "knowledge/fetch" => self.knowledge_fetch(&params).await,
-            "knowledge/getCategory" => self.knowledge_categories().await,
             "server/group/fetch" => self.server_group_fetch(&params).await,
             "server/route/fetch" => self.server_route_fetch().await,
             "server/manage/getNodes" => self.server_nodes().await,
@@ -216,76 +217,8 @@ impl AdminService {
             "payment/drop" => self.payment_drop(required_i64(&params, "id")?).await,
             "payment/show" => self.payment_show(required_i64(&params, "id")?).await,
             "payment/sort" => self.payment_sort(&array_param(&params, "ids")?).await,
-            "notice/save" => self.notice_save(&params).await,
-            "notice/update" => self.notice_update(&params).await,
-            "notice/drop" => {
-                self.delete_by_id(
-                    "notice",
-                    required_i64(&params, "id")?,
-                    ApiError::business("公告不存在"),
-                )
-                .await
-            }
-            "notice/show" => {
-                self.toggle(
-                    "notice",
-                    "show",
-                    required_i64(&params, "id")?,
-                    ApiError::business("公告不存在"),
-                )
-                .await
-            }
-            "knowledge/save" => self.knowledge_save(&params).await,
-            "knowledge/drop" => {
-                self.delete_by_id(
-                    "knowledge",
-                    required_i64(&params, "id")?,
-                    ApiError::business("知识不存在"),
-                )
-                .await
-            }
-            "knowledge/show" => {
-                self.toggle(
-                    "knowledge",
-                    "show",
-                    required_i64(&params, "id")?,
-                    ApiError::business("知识不存在"),
-                )
-                .await
-            }
-            "knowledge/sort" => {
-                self.sort_ids("knowledge", &array_param(&params, "knowledge_ids")?)
-                    .await
-            }
             "ticket/reply" => self.ticket_reply(&params).await,
             "ticket/close" => self.ticket_close(required_i64(&params, "id")?).await,
-            "coupon/generate" => self.coupon_generate(&params).await,
-            "coupon/drop" => {
-                self.delete_by_id(
-                    "coupon",
-                    required_i64(&params, "id")?,
-                    ApiError::business("优惠券不存在"),
-                )
-                .await
-            }
-            "coupon/show" => {
-                self.toggle(
-                    "coupon",
-                    "show",
-                    required_i64(&params, "id")?,
-                    ApiError::business("优惠券不存在"),
-                )
-                .await
-            }
-            "giftcard/generate" => self.giftcard_generate(&params).await,
-            "giftcard/drop" => {
-                self.delete_by_id(
-                    "gift_card",
-                    required_i64(&params, "id")?,
-                    ApiError::not_found("礼品卡不存在"),
-                )
-                .await
-            }
             "server/group/save" => self.server_group_save(&params).await,
             "server/group/drop" => self.server_group_drop(&params).await,
             "server/route/save" => self.server_route_save(&params).await,

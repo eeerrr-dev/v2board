@@ -2,18 +2,26 @@ use std::collections::HashMap;
 
 use axum::{
     Json, Router,
-    extract::{Extension, Query, Request, State},
+    extract::{Extension, Path, Query, Request, State},
     http::{HeaderMap, HeaderValue, Method, StatusCode, header},
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{get, patch, post},
 };
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use tower::ServiceExt as _;
 use uuid::Uuid;
 use v2board_compat::{ApiError, Page, Pagination, Problem, legacy_data, legacy_page, page};
-use v2board_domain::{admin::ConfigPatchOutcome, auth::AuthUser};
+use v2board_domain::{
+    admin::{
+        AdminCouponItem, AdminGiftcardItem, AdminKnowledgeDetail, AdminKnowledgeSummary,
+        AdminNoticeItem, ConfigPatchOutcome, ContentGenerateOutcome, CouponGenerate, CouponPatch,
+        GiftcardGenerate, GiftcardPatch, KnowledgeCreate, KnowledgePatch, KnowledgeSortRequest,
+        NoticeCreate, NoticePatch,
+    },
+    auth::AuthUser,
+};
 
 use crate::{
     auth::{require_admin, require_privileged_step_up, require_staff},
@@ -26,6 +34,10 @@ use crate::{
 
 /// §8 default for `GET system/logs` (the legacy admin list default).
 const SYSTEM_LOGS_DEFAULT_PER_PAGE: i64 = 10;
+
+/// §8 default for `GET coupons` / `GET gift-cards` (the legacy admin list
+/// default, 10 unless noted).
+const CONTENT_LIST_DEFAULT_PER_PAGE: i64 = 10;
 
 /// Re-dispatch target for every request under the live admin prefix
 /// (docs/api-dialect.md §6 preamble): `dynamic_fallback` strips the
@@ -61,8 +73,9 @@ pub(crate) async fn dispatch_admin(
 
 /// The modern admin resources as a nested, method-aware router relative to
 /// the live prefix (docs/api-dialect.md §6.1 — the W9 config & system
-/// family). Later waves add their resources here. Unmatched paths fall back
-/// to the legacy GET/POST string dispatch until their family's wave lands.
+/// family — plus §6.3 — the W10 content CRUD family). Later waves add their
+/// resources here. Unmatched paths fall back to the legacy GET/POST string
+/// dispatch until their family's wave lands.
 fn admin_router(state: AppState) -> Router {
     Router::new()
         .route("/config", get(config_view).patch(config_patch))
@@ -74,6 +87,24 @@ fn admin_router(state: AppState) -> Router {
         .route("/system/queue-workload", get(system_queue_workload))
         .route("/system/queue-masters", get(system_queue_masters))
         .route("/system/logs", get(system_logs))
+        .route("/notices", get(notices_list).post(notice_create))
+        .route("/notices/{id}", patch(notice_patch).delete(notice_delete))
+        .route("/knowledge", get(knowledge_list).post(knowledge_create))
+        .route("/knowledge/sort", post(knowledge_sort))
+        .route(
+            "/knowledge/{id}",
+            get(knowledge_detail)
+                .patch(knowledge_patch)
+                .delete(knowledge_delete),
+        )
+        .route("/knowledge-categories", get(knowledge_categories))
+        .route("/coupons", get(coupons_list).post(coupon_generate))
+        .route("/coupons/{id}", patch(coupon_patch).delete(coupon_delete))
+        .route("/gift-cards", get(giftcards_list).post(giftcard_generate))
+        .route(
+            "/gift-cards/{id}",
+            patch(giftcard_patch).delete(giftcard_delete),
+        )
         // §6 preamble: admin auth and the blanket mutation step-up gate are
         // structural — shared middleware over every modern route, so a new
         // route cannot silently ship ungated. The legacy fallback below keeps
@@ -363,6 +394,329 @@ async fn system_logs(
     Ok(page(items, total))
 }
 
+/// GET `notices` (docs/api-dialect.md §6.3): bare **unpaginated** array —
+/// the legacy route returned every row and no pagination is invented.
+async fn notices_list(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<AdminNoticeItem>>, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .notices_list()
+        .await
+        .map(Json)
+        .map_err(|error| problem_from(error, locale))
+}
+
+/// POST `notices` (§6.3): 201 bare `{id}` per §1.
+async fn notice_create(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    DialectJson(body): DialectJson<NoticeCreate>,
+) -> Result<(StatusCode, Json<Value>), Problem> {
+    let locale = request_locale(&headers);
+    let id = state
+        .admin_service(state.config_snapshot())
+        .notice_create(&body)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok((StatusCode::CREATED, Json(json!({ "id": id }))))
+}
+
+/// PATCH `notices/{id}` (§6.3): §4.4 partial update (merges the legacy
+/// `update` + `show` toggle); empty 204 on success.
+async fn notice_patch(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+    DialectJson(body): DialectJson<NoticePatch>,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .notice_patch(id, &body)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// DELETE `notices/{id}` (§6.3): empty 204.
+async fn notice_delete(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .notice_delete(id)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// GET `knowledge` (§6.3): bare array of summaries.
+async fn knowledge_list(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<AdminKnowledgeSummary>>, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .knowledge_list()
+        .await
+        .map(Json)
+        .map_err(|error| problem_from(error, locale))
+}
+
+/// GET `knowledge/{id}` (§6.3): bare detail (raw stored body).
+async fn knowledge_detail(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+) -> Result<Json<AdminKnowledgeDetail>, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .knowledge_detail(id)
+        .await
+        .map(Json)
+        .map_err(|error| problem_from(error, locale))
+}
+
+/// POST `knowledge` (§6.3): 201 bare `{id}`.
+async fn knowledge_create(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    DialectJson(body): DialectJson<KnowledgeCreate>,
+) -> Result<(StatusCode, Json<Value>), Problem> {
+    let locale = request_locale(&headers);
+    let id = state
+        .admin_service(state.config_snapshot())
+        .knowledge_create(&body)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok((StatusCode::CREATED, Json(json!({ "id": id }))))
+}
+
+/// PATCH `knowledge/{id}` (§6.3): set-only partial update (all columns NOT
+/// NULL) merging the legacy `show` toggle; empty 204.
+async fn knowledge_patch(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+    DialectJson(body): DialectJson<KnowledgePatch>,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .knowledge_patch(id, &body)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// DELETE `knowledge/{id}` (§6.3): empty 204.
+async fn knowledge_delete(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .knowledge_delete(id)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// GET `knowledge-categories` (§6.3): bare array of category names.
+async fn knowledge_categories(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<String>>, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .knowledge_categories_list()
+        .await
+        .map(Json)
+        .map_err(|error| problem_from(error, locale))
+}
+
+/// POST `knowledge/sort` (§6.3): JSON `{ids}` full resequencing; empty 204.
+async fn knowledge_sort(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    DialectJson(body): DialectJson<KnowledgeSortRequest>,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .knowledge_sort(&body.ids)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+struct ContentListQuery {
+    page: Option<i64>,
+    per_page: Option<i64>,
+    sort_by: Option<String>,
+    sort_dir: Option<String>,
+}
+
+/// GET `coupons` (§6.3): §8 pagination + §7.2 sort only — the legacy list
+/// has no filter support and none is invented.
+async fn coupons_list(
+    State(state): State<AppState>,
+    Query(query): Query<ContentListQuery>,
+    headers: HeaderMap,
+) -> Result<Json<Page<AdminCouponItem>>, Problem> {
+    let locale = request_locale(&headers);
+    let pagination =
+        Pagination::resolve(query.page, query.per_page, CONTENT_LIST_DEFAULT_PER_PAGE)?;
+    let (items, total) = state
+        .admin_service(state.config_snapshot())
+        .coupons_list(
+            pagination,
+            query.sort_by.as_deref(),
+            query.sort_dir.as_deref(),
+        )
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(page(items, total))
+}
+
+/// GET `gift-cards` (§6.3): same conventions as `GET coupons`.
+async fn giftcards_list(
+    State(state): State<AppState>,
+    Query(query): Query<ContentListQuery>,
+    headers: HeaderMap,
+) -> Result<Json<Page<AdminGiftcardItem>>, Problem> {
+    let locale = request_locale(&headers);
+    let pagination =
+        Pagination::resolve(query.page, query.per_page, CONTENT_LIST_DEFAULT_PER_PAGE)?;
+    let (items, total) = state
+        .admin_service(state.config_snapshot())
+        .giftcards_list(
+            pagination,
+            query.sort_by.as_deref(),
+            query.sort_dir.as_deref(),
+        )
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(page(items, total))
+}
+
+/// §6.3 generate outcome: a single create is the §1 201 `{id}`; a bulk run
+/// streams the byte-frozen CSV attachment (externally consumed layout —
+/// unchanged across the dialect flip).
+fn generate_response(outcome: ContentGenerateOutcome) -> Result<Response, ApiError> {
+    match outcome {
+        ContentGenerateOutcome::Created { id } => {
+            Ok((StatusCode::CREATED, Json(json!({ "id": id }))).into_response())
+        }
+        ContentGenerateOutcome::Csv { filename, body } => csv_attachment(&filename, body),
+    }
+}
+
+/// POST `coupons` (§6.3): single create or CSV bulk generate.
+async fn coupon_generate(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    DialectJson(body): DialectJson<CouponGenerate>,
+) -> Result<Response, Problem> {
+    let locale = request_locale(&headers);
+    let outcome = state
+        .admin_service(state.config_snapshot())
+        .coupon_generate(&body)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    generate_response(outcome).map_err(|error| problem_from(error, locale))
+}
+
+/// PATCH `coupons/{id}` (§6.3): §4.4 partial update merging the legacy
+/// `show` toggle; empty 204.
+async fn coupon_patch(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+    DialectJson(body): DialectJson<CouponPatch>,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .coupon_patch(id, &body)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// DELETE `coupons/{id}` (§6.3): empty 204.
+async fn coupon_delete(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .coupon_delete(id)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// POST `gift-cards` (§6.3): single create or CSV bulk generate.
+async fn giftcard_generate(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    DialectJson(body): DialectJson<GiftcardGenerate>,
+) -> Result<Response, Problem> {
+    let locale = request_locale(&headers);
+    let outcome = state
+        .admin_service(state.config_snapshot())
+        .giftcard_generate(&body)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    generate_response(outcome).map_err(|error| problem_from(error, locale))
+}
+
+/// PATCH `gift-cards/{id}` (§6.3): §4.4 partial update; empty 204.
+async fn giftcard_patch(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+    DialectJson(body): DialectJson<GiftcardPatch>,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .giftcard_patch(id, &body)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// DELETE `gift-cards/{id}` (§6.3): empty 204.
+async fn giftcard_delete(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .giftcard_delete(id)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub(crate) async fn staff_get(
     State(state): State<AppState>,
     axum::extract::Path(staff_path): axum::extract::Path<String>,
@@ -439,6 +793,22 @@ fn staff_path_allowed(path: &str, method: Method) -> bool {
     }
 }
 
+/// CSV download response shared by the legacy dispatch and the modern §6.3
+/// bulk generates: `text/csv` + attachment disposition, body bytes untouched.
+fn csv_attachment(filename: &str, body: String) -> Result<Response, ApiError> {
+    let mut response = body.into_response();
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/csv; charset=utf-8"),
+    );
+    response.headers_mut().insert(
+        header::CONTENT_DISPOSITION,
+        HeaderValue::from_str(&format!("attachment; filename=\"{filename}\""))
+            .map_err(|_| ApiError::internal("invalid csv filename"))?,
+    );
+    Ok(response)
+}
+
 pub(crate) fn admin_response(
     output: v2board_domain::admin::AdminOutput,
 ) -> Result<Response, ApiError> {
@@ -448,17 +818,7 @@ pub(crate) fn admin_response(
             Ok(legacy_page(data, total).into_response())
         }
         v2board_domain::admin::AdminOutput::Csv { filename, body } => {
-            let mut response = body.into_response();
-            response.headers_mut().insert(
-                header::CONTENT_TYPE,
-                HeaderValue::from_static("text/csv; charset=utf-8"),
-            );
-            response.headers_mut().insert(
-                header::CONTENT_DISPOSITION,
-                HeaderValue::from_str(&format!("attachment; filename=\"{filename}\""))
-                    .map_err(|_| ApiError::internal("invalid csv filename"))?,
-            );
-            Ok(response)
+            csv_attachment(&filename, body)
         }
     }
 }

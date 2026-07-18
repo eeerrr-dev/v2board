@@ -1,3 +1,9 @@
+use serde::Deserialize;
+use v2board_compat::{
+    Code, Pagination, Problem,
+    json::{double_option, rfc3339, rfc3339_option},
+};
+
 use super::*;
 
 pub(super) fn validate_ticket_message_length(message: &str) -> Result<(), ApiError> {
@@ -97,6 +103,651 @@ fn duplicate_code_error(error: ApiError, field: &str, message: &str) -> ApiError
     }
 }
 
+// === W10 modern content-CRUD wire types (docs/api-dialect.md §6.3) ===
+//
+// Notices, knowledge, coupons, and gift cards on dialect-v2 semantics: JSON
+// bodies with real arrays, §4.4 double-Option updates, §4.5 RFC 3339
+// timestamps, §1 201 `{id}` creates, and problem+json misses. The staff
+// namespace keeps the legacy notice methods further down until W14.
+
+/// §7.2 sort whitelist for `GET coupons` / `GET gift-cards`: these lists have
+/// no filter support (none is invented, §6.3/§7.1), so only the `created_at`
+/// default is sortable.
+const CONTENT_SORT_COLUMNS: &[filter_dsl::SortColumn] = &[filter_dsl::SortColumn {
+    field: "created_at",
+    expr: "created_at",
+}];
+
+/// One admin notice row (§6.3 `GET notices`): the legacy field set on modern
+/// value types. The admin list stays deliberately **unpaginated** — the
+/// legacy route returned every row and no pagination is invented.
+#[derive(Debug, Serialize)]
+pub struct AdminNoticeItem {
+    pub id: i32,
+    pub title: String,
+    pub content: String,
+    pub show: bool,
+    pub img_url: Option<String>,
+    pub tags: Option<Vec<String>>,
+    #[serde(with = "rfc3339")]
+    pub created_at: i64,
+    #[serde(with = "rfc3339")]
+    pub updated_at: i64,
+}
+
+#[derive(Debug, FromRow)]
+struct NoticeRecord {
+    id: i32,
+    title: String,
+    content: String,
+    img_url: Option<String>,
+    tags: Option<String>,
+    show: i16,
+    created_at: i64,
+    updated_at: i64,
+}
+
+impl From<NoticeRecord> for AdminNoticeItem {
+    fn from(row: NoticeRecord) -> Self {
+        // Same tolerant tags decode as the legacy DTO: a JSON string array
+        // passes through; any other non-empty payload renders as one tag.
+        let tags = row.tags.and_then(|value| {
+            serde_json::from_str::<Vec<String>>(&value)
+                .ok()
+                .or_else(|| (!value.trim().is_empty()).then_some(vec![value]))
+        });
+        Self {
+            id: row.id,
+            title: row.title,
+            content: row.content,
+            show: row.show != 0,
+            img_url: row.img_url,
+            tags,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        }
+    }
+}
+
+/// POST `notices` (§6.3): create body. Structural failures (missing fields,
+/// wrong types, unknown keys) are DialectJson 422s; a created notice starts
+/// visible exactly like the legacy insert.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NoticeCreate {
+    pub title: String,
+    pub content: String,
+    #[serde(default)]
+    pub img_url: Option<String>,
+    #[serde(default)]
+    pub tags: Option<Vec<String>>,
+}
+
+/// PATCH `notices/{id}` (§6.3): §4.4 semantics — `img_url`/`tags` are the
+/// nullable columns (double-Option); `title`/`content` are NOT NULL and only
+/// settable; the legacy `notice/show` toggle merges in as an explicit bool.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NoticePatch {
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub content: Option<String>,
+    #[serde(default, with = "double_option")]
+    pub img_url: Option<Option<String>>,
+    #[serde(default, with = "double_option")]
+    pub tags: Option<Option<Vec<String>>>,
+    #[serde(default)]
+    pub show: Option<bool>,
+}
+
+/// GET `knowledge` list row (§6.3): the legacy summary key set.
+#[derive(Debug, Serialize)]
+pub struct AdminKnowledgeSummary {
+    pub id: i32,
+    pub category: String,
+    pub title: String,
+    pub sort: Option<i32>,
+    pub show: bool,
+    #[serde(with = "rfc3339")]
+    pub updated_at: i64,
+}
+
+/// GET `knowledge/{id}` (§6.3): the legacy detail key set (the raw stored
+/// body — unlike the user route, nothing is substituted per request).
+#[derive(Debug, Serialize)]
+pub struct AdminKnowledgeDetail {
+    pub id: i32,
+    pub language: String,
+    pub category: String,
+    pub title: String,
+    pub body: String,
+    pub sort: Option<i32>,
+    pub show: bool,
+    #[serde(with = "rfc3339")]
+    pub created_at: i64,
+    #[serde(with = "rfc3339")]
+    pub updated_at: i64,
+}
+
+/// POST `knowledge` (§6.3). Creates keep the DB defaults the legacy save
+/// never touched: `show` = 0, `sort` = NULL.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct KnowledgeCreate {
+    pub language: String,
+    pub category: String,
+    pub title: String,
+    pub body: String,
+}
+
+/// PATCH `knowledge/{id}` (§6.3): every column is NOT NULL, so all fields
+/// are set-only; the legacy `knowledge/show` toggle merges in as a bool.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct KnowledgePatch {
+    #[serde(default)]
+    pub language: Option<String>,
+    #[serde(default)]
+    pub category: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub body: Option<String>,
+    #[serde(default)]
+    pub show: Option<bool>,
+}
+
+/// POST `knowledge/sort` (§6.3): the full resequencing id list.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct KnowledgeSortRequest {
+    pub ids: Vec<i64>,
+}
+
+/// One coupon row (§6.3 `GET coupons`): boolean `show`, RFC 3339 validity
+/// window, and JSON passthrough of the stored `limit_plan_ids`/`limit_period`
+/// arrays. `value` stays integer cents for amount coupons (`type` 1).
+#[derive(Debug, Serialize)]
+pub struct AdminCouponItem {
+    pub id: i32,
+    pub code: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub coupon_type: i16,
+    pub value: i32,
+    pub show: bool,
+    pub limit_use: Option<i32>,
+    pub limit_use_with_user: Option<i32>,
+    pub limit_plan_ids: Option<Value>,
+    pub limit_period: Option<Value>,
+    #[serde(with = "rfc3339")]
+    pub started_at: i64,
+    #[serde(with = "rfc3339")]
+    pub ended_at: i64,
+    #[serde(with = "rfc3339")]
+    pub created_at: i64,
+    #[serde(with = "rfc3339")]
+    pub updated_at: i64,
+}
+
+#[derive(Debug, FromRow)]
+struct CouponRecord {
+    id: i32,
+    code: String,
+    name: String,
+    coupon_type: i16,
+    value: i32,
+    show: i16,
+    limit_use: Option<i32>,
+    limit_use_with_user: Option<i32>,
+    limit_plan_ids: Option<Json<Value>>,
+    limit_period: Option<Json<Value>>,
+    started_at: i64,
+    ended_at: i64,
+    created_at: i64,
+    updated_at: i64,
+}
+
+impl From<CouponRecord> for AdminCouponItem {
+    fn from(row: CouponRecord) -> Self {
+        Self {
+            id: row.id,
+            code: row.code,
+            name: row.name,
+            coupon_type: row.coupon_type,
+            value: row.value,
+            show: row.show != 0,
+            limit_use: row.limit_use,
+            limit_use_with_user: row.limit_use_with_user,
+            limit_plan_ids: row.limit_plan_ids.map(|value| value.0),
+            limit_period: row.limit_period.map(|value| value.0),
+            started_at: row.started_at,
+            ended_at: row.ended_at,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        }
+    }
+}
+
+/// POST `coupons` (§6.3): single create (201 `{id}`) or, with a positive
+/// `generate_count`, the CSV bulk generate. `limit_plan_ids` is a real JSON
+/// array, `started_at`/`ended_at` are RFC 3339, and the money rule stays on
+/// the client (`type === 1 → value*100`), so `value` arrives as integer
+/// cents for amount coupons exactly as before.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CouponGenerate {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub coupon_type: i64,
+    pub value: i64,
+    #[serde(with = "rfc3339")]
+    pub started_at: i64,
+    #[serde(with = "rfc3339")]
+    pub ended_at: i64,
+    #[serde(default)]
+    pub limit_use: Option<i64>,
+    #[serde(default)]
+    pub limit_use_with_user: Option<i64>,
+    #[serde(default)]
+    pub limit_plan_ids: Option<Vec<i64>>,
+    #[serde(default)]
+    pub limit_period: Option<Vec<String>>,
+    #[serde(default)]
+    pub code: Option<String>,
+    #[serde(default)]
+    pub generate_count: Option<i64>,
+}
+
+/// PATCH `coupons/{id}` (§6.3): §4.4 — the nullable limit columns are
+/// double-Option; NOT NULL columns are set-only; the legacy `coupon/show`
+/// toggle merges in as an explicit bool.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CouponPatch {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default, rename = "type")]
+    pub coupon_type: Option<i64>,
+    #[serde(default)]
+    pub value: Option<i64>,
+    #[serde(default, with = "rfc3339_option")]
+    pub started_at: Option<i64>,
+    #[serde(default, with = "rfc3339_option")]
+    pub ended_at: Option<i64>,
+    #[serde(default, with = "double_option")]
+    pub limit_use: Option<Option<i64>>,
+    #[serde(default, with = "double_option")]
+    pub limit_use_with_user: Option<Option<i64>>,
+    #[serde(default, with = "double_option")]
+    pub limit_plan_ids: Option<Option<Vec<i64>>>,
+    #[serde(default, with = "double_option")]
+    pub limit_period: Option<Option<Vec<String>>>,
+    #[serde(default)]
+    pub code: Option<String>,
+    #[serde(default)]
+    pub show: Option<bool>,
+}
+
+/// One gift-card row (§6.3 `GET gift-cards`); `used_user_ids` keeps the
+/// aggregated redemption identities.
+#[derive(Debug, Serialize)]
+pub struct AdminGiftcardItem {
+    pub id: i32,
+    pub code: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub card_type: i16,
+    pub value: Option<i32>,
+    pub plan_id: Option<i32>,
+    pub limit_use: Option<i32>,
+    pub used_user_ids: Vec<i64>,
+    #[serde(with = "rfc3339")]
+    pub started_at: i64,
+    #[serde(with = "rfc3339")]
+    pub ended_at: i64,
+    #[serde(with = "rfc3339")]
+    pub created_at: i64,
+    #[serde(with = "rfc3339")]
+    pub updated_at: i64,
+}
+
+#[derive(Debug, FromRow)]
+struct GiftcardRecord {
+    id: i32,
+    code: String,
+    name: String,
+    card_type: i16,
+    value: Option<i32>,
+    plan_id: Option<i32>,
+    limit_use: Option<i32>,
+    used_user_ids: Json<Vec<i64>>,
+    started_at: i64,
+    ended_at: i64,
+    created_at: i64,
+    updated_at: i64,
+}
+
+impl From<GiftcardRecord> for AdminGiftcardItem {
+    fn from(row: GiftcardRecord) -> Self {
+        Self {
+            id: row.id,
+            code: row.code,
+            name: row.name,
+            card_type: row.card_type,
+            value: row.value,
+            plan_id: row.plan_id,
+            limit_use: row.limit_use,
+            used_user_ids: row.used_user_ids.0,
+            started_at: row.started_at,
+            ended_at: row.ended_at,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        }
+    }
+}
+
+/// POST `gift-cards` (§6.3): same conventions as coupons — 201 `{id}` single
+/// create or the CSV bulk generate; gift-card cents stay integer for amount
+/// cards (`type` 1).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GiftcardGenerate {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub card_type: i64,
+    #[serde(default)]
+    pub value: Option<i64>,
+    #[serde(default)]
+    pub plan_id: Option<i64>,
+    #[serde(with = "rfc3339")]
+    pub started_at: i64,
+    #[serde(with = "rfc3339")]
+    pub ended_at: i64,
+    #[serde(default)]
+    pub limit_use: Option<i64>,
+    #[serde(default)]
+    pub code: Option<String>,
+    #[serde(default)]
+    pub generate_count: Option<i64>,
+}
+
+/// PATCH `gift-cards/{id}` (§6.3, §6 preamble upsert split): §4.4 —
+/// `value`/`plan_id`/`limit_use` are the nullable columns (double-Option);
+/// the rest are set-only.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GiftcardPatch {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default, rename = "type")]
+    pub card_type: Option<i64>,
+    #[serde(default, with = "double_option")]
+    pub value: Option<Option<i64>>,
+    #[serde(default, with = "double_option")]
+    pub plan_id: Option<Option<i64>>,
+    #[serde(default, with = "rfc3339_option")]
+    pub started_at: Option<i64>,
+    #[serde(default, with = "rfc3339_option")]
+    pub ended_at: Option<i64>,
+    #[serde(default, with = "double_option")]
+    pub limit_use: Option<Option<i64>>,
+    #[serde(default)]
+    pub code: Option<String>,
+}
+
+/// Result of a §6.3 generate: a bulk run streams the byte-frozen CSV
+/// attachment; a single create returns the new row's identity for the §1
+/// 201 `{id}` body.
+pub enum ContentGenerateOutcome {
+    Created { id: i32 },
+    Csv { filename: String, body: String },
+}
+
+/// Semantic rules from `CouponGenerate::rules()` that survive the typed
+/// request (structural rules — required fields, integer/array types — are
+/// DialectJson 422s). Messages keep the legacy Chinese literals the §3.4
+/// `validation_failed` bag localizes.
+fn coupon_generate_validation(body: &CouponGenerate) -> Result<(), ApiError> {
+    if body.generate_count.is_some_and(|count| count > 500) {
+        return Err(validation_error("generate_count", "生成数量最大为500个"));
+    }
+    if !matches!(body.coupon_type, 1 | 2) {
+        return Err(validation_error("type", "类型格式有误"));
+    }
+    if !(0..=i64::from(i32::MAX)).contains(&body.value)
+        || (body.coupon_type == 2 && body.value > 100)
+    {
+        return Err(validation_error("value", "金额或比例格式有误"));
+    }
+    Ok(())
+}
+
+/// The same rules applied to the fields a PATCH provides. The type-2
+/// percentage cap only binds when the request itself carries both fields,
+/// matching the legacy always-full-payload editor.
+fn coupon_patch_validation(body: &CouponPatch) -> Result<(), ApiError> {
+    if let Some(coupon_type) = body.coupon_type
+        && !matches!(coupon_type, 1 | 2)
+    {
+        return Err(validation_error("type", "类型格式有误"));
+    }
+    if let Some(value) = body.value
+        && (!(0..=i64::from(i32::MAX)).contains(&value)
+            || (body.coupon_type == Some(2) && value > 100))
+    {
+        return Err(validation_error("value", "金额或比例格式有误"));
+    }
+    Ok(())
+}
+
+/// Semantic rules from `GiftcardGenerate::rules()`: `value`/`plan_id` use
+/// `required_if`, whose untranslated Laravel keys are the legacy anchor.
+fn giftcard_generate_validation(body: &GiftcardGenerate) -> Result<(), ApiError> {
+    if body.generate_count.is_some_and(|count| count > 500) {
+        return Err(validation_error("generate_count", "生成数量最大为500个"));
+    }
+    if !matches!(body.card_type, 1..=5) {
+        return Err(validation_error("type", "类型格式有误"));
+    }
+    match body.value {
+        None if matches!(body.card_type, 1 | 2 | 3 | 5) => {
+            return Err(validation_error("value", "validation.required_if"));
+        }
+        Some(value) if !(0..=i64::from(i32::MAX)).contains(&value) => {
+            return Err(validation_error("value", "数值格式有误"));
+        }
+        _ => {}
+    }
+    if body.card_type == 5 && body.plan_id.is_none() {
+        return Err(validation_error("plan_id", "validation.required_if"));
+    }
+    Ok(())
+}
+
+fn giftcard_patch_validation(body: &GiftcardPatch) -> Result<(), ApiError> {
+    if let Some(card_type) = body.card_type
+        && !matches!(card_type, 1..=5)
+    {
+        return Err(validation_error("type", "类型格式有误"));
+    }
+    if let Some(Some(value)) = body.value
+        && !(0..=i64::from(i32::MAX)).contains(&value)
+    {
+        return Err(validation_error("value", "数值格式有误"));
+    }
+    Ok(())
+}
+
+/// A request `code` normalized the way the legacy `optional_string` did:
+/// trimmed, with empty submissions treated as "generate one for me".
+fn requested_code(code: Option<&str>) -> Option<String> {
+    code.map(str::trim)
+        .filter(|code| !code.is_empty())
+        .map(str::to_string)
+}
+
+/// Coupon columns for INSERT, from the validated typed request. Absent
+/// optional fields keep the column defaults (NULL), as on the legacy path.
+fn coupon_generate_values(body: &CouponGenerate) -> Vec<(&'static str, AdminSqlValue)> {
+    let mut values = vec![
+        ("name", AdminSqlValue::Text(body.name.clone())),
+        ("type", AdminSqlValue::Integer(body.coupon_type)),
+        ("value", AdminSqlValue::Integer(body.value)),
+        ("started_at", AdminSqlValue::Integer(body.started_at)),
+        ("ended_at", AdminSqlValue::Integer(body.ended_at)),
+    ];
+    if let Some(limit_use) = body.limit_use {
+        values.push(("limit_use", AdminSqlValue::Integer(limit_use)));
+    }
+    if let Some(limit) = body.limit_use_with_user {
+        values.push(("limit_use_with_user", AdminSqlValue::Integer(limit)));
+    }
+    if let Some(plan_ids) = &body.limit_plan_ids {
+        values.push(("limit_plan_ids", AdminSqlValue::Json(Some(json!(plan_ids)))));
+    }
+    if let Some(periods) = &body.limit_period {
+        values.push(("limit_period", AdminSqlValue::Json(Some(json!(periods)))));
+    }
+    values
+}
+
+fn giftcard_generate_values(body: &GiftcardGenerate) -> Vec<(&'static str, AdminSqlValue)> {
+    let mut values = vec![
+        ("name", AdminSqlValue::Text(body.name.clone())),
+        ("type", AdminSqlValue::Integer(body.card_type)),
+        ("started_at", AdminSqlValue::Integer(body.started_at)),
+        ("ended_at", AdminSqlValue::Integer(body.ended_at)),
+    ];
+    if let Some(value) = body.value {
+        values.push(("value", AdminSqlValue::Integer(value)));
+    }
+    if let Some(plan_id) = body.plan_id {
+        values.push(("plan_id", AdminSqlValue::Integer(plan_id)));
+    }
+    if let Some(limit_use) = body.limit_use {
+        values.push(("limit_use", AdminSqlValue::Integer(limit_use)));
+    }
+    values
+}
+
+/// Renders the coupon bulk-generate CSV. The byte layout — headers, column
+/// order, display formatting, CRLF — is frozen: operators feed these files
+/// to external tooling (§6.3 "CSV bytes unchanged").
+fn coupon_csv_body(body: &CouponGenerate, codes: &[String], now: i64) -> Result<String, ApiError> {
+    let type_label = match body.coupon_type {
+        1 => "金额",
+        2 => "比例",
+        _ => "",
+    };
+    let value_display = match body.coupon_type {
+        1 => (body.value as f64 / 100.0).to_string(),
+        2 => body.value.to_string(),
+        _ => String::new(),
+    };
+    let start = local_datetime(body.started_at);
+    let end = local_datetime(body.ended_at);
+    let limit_use = body
+        .limit_use
+        .map_or_else(|| "不限制".to_string(), |value| value.to_string());
+    let limit_plan_ids = body.limit_plan_ids.as_ref().map_or_else(
+        || "不限制".to_string(),
+        |ids| {
+            ids.iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("/")
+        },
+    );
+    let create = local_datetime(now);
+    let rows = codes.iter().map(|code| {
+        vec![
+            body.name.clone(),
+            type_label.to_string(),
+            value_display.clone(),
+            start.clone(),
+            end.clone(),
+            limit_use.clone(),
+            limit_plan_ids.clone(),
+            code.clone(),
+            create.clone(),
+        ]
+    });
+    csv_export(
+        &[
+            "名称",
+            "类型",
+            "金额或比例",
+            "开始时间",
+            "结束时间",
+            "可用次数",
+            "可用于订阅",
+            "券码",
+            "生成时间",
+        ],
+        rows,
+        false,
+    )
+}
+
+/// Renders the gift-card bulk-generate CSV; the byte layout is frozen like
+/// the coupon export.
+fn giftcard_csv_body(
+    body: &GiftcardGenerate,
+    codes: &[String],
+    now: i64,
+) -> Result<String, ApiError> {
+    let type_label = match body.card_type {
+        1 => "金额",
+        2 => "时长",
+        3 => "流量",
+        4 => "重置",
+        5 => "套餐",
+        _ => "",
+    };
+    let value = body.value.unwrap_or_default();
+    let value_display = match body.card_type {
+        1 => format!("{:.2}", value as f64 / 100.0),
+        2 | 5 => format!("{value}天"),
+        3 => format!("{value}GB"),
+        4 => "-".to_string(),
+        _ => String::new(),
+    };
+    let start = local_datetime(body.started_at);
+    let end = local_datetime(body.ended_at);
+    let limit_use = body
+        .limit_use
+        .map_or_else(|| "不限制".to_string(), |value| value.to_string());
+    let create = local_datetime(now);
+    let rows = codes.iter().map(|code| {
+        vec![
+            body.name.clone(),
+            type_label.to_string(),
+            value_display.clone(),
+            start.clone(),
+            end.clone(),
+            limit_use.clone(),
+            code.clone(),
+            create.clone(),
+        ]
+    });
+    csv_export(
+        &[
+            "名称",
+            "类型",
+            "数值",
+            "开始时间",
+            "结束时间",
+            "可用次数",
+            "礼品卡卡密",
+            "生成时间",
+        ],
+        rows,
+        false,
+    )
+}
+
 const TICKET_NOTIFICATION_GATE_TTL_SECONDS: u64 = 1800;
 pub(super) const TICKET_NOTIFICATION_GATE_RELEASE_SCRIPT: &str = r#"
 if redis.call("GET", KEYS[1]) == ARGV[1] then
@@ -117,6 +768,213 @@ struct TicketReplyNotification {
 }
 
 impl AdminService {
+    // === W10 modern content CRUD (docs/api-dialect.md §6.3) ===
+
+    /// GET `notices`: every row, id-descending, as a bare **unpaginated**
+    /// array (the legacy list had no pagination and none is invented).
+    pub async fn notices_list(&self) -> Result<Vec<AdminNoticeItem>, ApiError> {
+        let rows = sqlx::query_as::<_, NoticeRecord>(
+            "SELECT id, title, content, img_url, tags::text AS tags, \"show\", created_at, updated_at FROM notice ORDER BY id DESC",
+        )
+        .fetch_all(&self.db)
+        .await?;
+        Ok(rows.into_iter().map(AdminNoticeItem::from).collect())
+    }
+
+    /// POST `notices` → the new id (a 201 `{id}` on the wire). Created rows
+    /// start visible, exactly like the legacy insert.
+    pub async fn notice_create(&self, body: &NoticeCreate) -> Result<i32, ApiError> {
+        let now = Utc::now().timestamp();
+        Ok(sqlx::query_scalar::<_, i32>(
+            "INSERT INTO notice (title, content, img_url, tags, \"show\", created_at, updated_at) \
+             VALUES ($1, $2, $3, $4, 1, $5, $5) RETURNING id",
+        )
+        .bind(&body.title)
+        .bind(&body.content)
+        .bind(&body.img_url)
+        .bind(body.tags.as_ref().map(|tags| Json(json!(tags))))
+        .bind(now)
+        .fetch_one(&self.db)
+        .await?)
+    }
+
+    /// PATCH `notices/{id}` — §4.4 partial update incl. the merged `show`;
+    /// a path-identified miss is 404 `notice_not_found`.
+    pub async fn notice_patch(&self, id: i64, body: &NoticePatch) -> Result<(), ApiError> {
+        let mut values = Vec::new();
+        if let Some(title) = &body.title {
+            values.push(("title", AdminSqlValue::Text(title.clone())));
+        }
+        if let Some(content) = &body.content {
+            values.push(("content", AdminSqlValue::Text(content.clone())));
+        }
+        if let Some(img_url) = &body.img_url {
+            values.push((
+                "img_url",
+                img_url
+                    .clone()
+                    .map_or(AdminSqlValue::TextNull, AdminSqlValue::Text),
+            ));
+        }
+        if let Some(tags) = &body.tags {
+            values.push((
+                "tags",
+                AdminSqlValue::Json(tags.as_ref().map(|tags| json!(tags))),
+            ));
+        }
+        if let Some(show) = body.show {
+            values.push(("show", AdminSqlValue::Integer(i64::from(show))));
+        }
+        self.patch_row(
+            "notice",
+            id,
+            &values,
+            Problem::new(Code::NoticeNotFound).into(),
+        )
+        .await
+    }
+
+    /// DELETE `notices/{id}` — 404 `notice_not_found` on a missing id.
+    pub async fn notice_delete(&self, id: i64) -> Result<(), ApiError> {
+        self.delete_by_id("notice", id, Problem::new(Code::NoticeNotFound).into())
+            .await
+            .map(|_| ())
+    }
+
+    /// GET `knowledge`: bare array in the operator sort order.
+    pub async fn knowledge_list(&self) -> Result<Vec<AdminKnowledgeSummary>, ApiError> {
+        #[derive(FromRow)]
+        struct Row {
+            id: i32,
+            category: String,
+            title: String,
+            sort: Option<i32>,
+            show: i16,
+            updated_at: i64,
+        }
+        let rows = sqlx::query_as::<_, Row>(
+            "SELECT id, category, title, sort, \"show\", updated_at FROM knowledge \
+             ORDER BY sort ASC NULLS FIRST, id ASC",
+        )
+        .fetch_all(&self.db)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|row| AdminKnowledgeSummary {
+                id: row.id,
+                category: row.category,
+                title: row.title,
+                sort: row.sort,
+                show: row.show != 0,
+                updated_at: row.updated_at,
+            })
+            .collect())
+    }
+
+    /// GET `knowledge/{id}` — 404 `knowledge_not_found` on a miss.
+    pub async fn knowledge_detail(&self, id: i64) -> Result<AdminKnowledgeDetail, ApiError> {
+        #[derive(FromRow)]
+        struct Row {
+            id: i32,
+            language: String,
+            category: String,
+            title: String,
+            body: String,
+            sort: Option<i32>,
+            show: i16,
+            created_at: i64,
+            updated_at: i64,
+        }
+        sqlx::query_as::<_, Row>(
+            "SELECT id, language, category, title, body, sort, \"show\", created_at, updated_at \
+             FROM knowledge WHERE id = $1 LIMIT 1",
+        )
+        .bind(id)
+        .fetch_optional(&self.db)
+        .await?
+        .map(|row| AdminKnowledgeDetail {
+            id: row.id,
+            language: row.language,
+            category: row.category,
+            title: row.title,
+            body: row.body,
+            sort: row.sort,
+            show: row.show != 0,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        })
+        .ok_or_else(|| Problem::new(Code::KnowledgeNotFound).into())
+    }
+
+    /// POST `knowledge` → the new id. Creates keep the DB defaults the
+    /// legacy save never touched (`show` = 0, `sort` = NULL).
+    pub async fn knowledge_create(&self, body: &KnowledgeCreate) -> Result<i32, ApiError> {
+        let now = Utc::now().timestamp();
+        Ok(sqlx::query_scalar::<_, i32>(
+            "INSERT INTO knowledge (language, category, title, body, created_at, updated_at) \
+             VALUES ($1, $2, $3, $4, $5, $5) RETURNING id",
+        )
+        .bind(&body.language)
+        .bind(&body.category)
+        .bind(&body.title)
+        .bind(&body.body)
+        .bind(now)
+        .fetch_one(&self.db)
+        .await?)
+    }
+
+    /// PATCH `knowledge/{id}` — 404 `knowledge_not_found` on a miss.
+    pub async fn knowledge_patch(&self, id: i64, body: &KnowledgePatch) -> Result<(), ApiError> {
+        let mut values = Vec::new();
+        for (column, field) in [
+            ("language", &body.language),
+            ("category", &body.category),
+            ("title", &body.title),
+            ("body", &body.body),
+        ] {
+            if let Some(value) = field {
+                values.push((column, AdminSqlValue::Text(value.clone())));
+            }
+        }
+        if let Some(show) = body.show {
+            values.push(("show", AdminSqlValue::Integer(i64::from(show))));
+        }
+        self.patch_row(
+            "knowledge",
+            id,
+            &values,
+            Problem::new(Code::KnowledgeNotFound).into(),
+        )
+        .await
+    }
+
+    /// DELETE `knowledge/{id}` — 404 `knowledge_not_found` on a miss.
+    pub async fn knowledge_delete(&self, id: i64) -> Result<(), ApiError> {
+        self.delete_by_id(
+            "knowledge",
+            id,
+            Problem::new(Code::KnowledgeNotFound).into(),
+        )
+        .await
+        .map(|_| ())
+    }
+
+    /// GET `knowledge-categories`: bare string array.
+    pub async fn knowledge_categories_list(&self) -> Result<Vec<String>, ApiError> {
+        Ok(sqlx::query_scalar::<_, String>(
+            "SELECT DISTINCT category FROM knowledge ORDER BY category ASC",
+        )
+        .fetch_all(&self.db)
+        .await?)
+    }
+
+    /// POST `knowledge/sort` `{ids}` — full-order resequencing, unchanged.
+    pub async fn knowledge_sort(&self, ids: &[i64]) -> Result<(), ApiError> {
+        self.sort_ids("knowledge", ids).await.map(|_| ())
+    }
+
+    /// W14 staff mirror only (docs/api-dialect.md §6.9): the legacy-dialect
+    /// staff `notice/fetch` envelope. The admin resource is `notices_list`.
     pub(super) async fn notice_fetch(&self) -> Result<AdminOutput, ApiError> {
         let rows = sqlx::query_as::<_, NoticeRaw>(
             "SELECT id, title, content, img_url, tags::text AS tags, \"show\", created_at, updated_at FROM notice ORDER BY id DESC",
@@ -128,6 +986,7 @@ impl AdminService {
         )))
     }
 
+    /// W14 staff mirror only (§6.9): legacy-dialect staff `notice/save`.
     pub(super) async fn notice_save(
         &self,
         params: &HashMap<String, String>,
@@ -166,6 +1025,8 @@ impl AdminService {
         Ok(AdminOutput::Data(json!(true)))
     }
 
+    /// W14 staff mirror only (§6.9): legacy-dialect staff `notice/update`,
+    /// including the values-empty toggle fallback.
     pub(super) async fn notice_update(
         &self,
         params: &HashMap<String, String>,
@@ -213,97 +1074,6 @@ impl AdminService {
         let result = builder.build().execute(&self.db).await?;
         if result.rows_affected() == 0 {
             return Err(ApiError::business("公告不存在"));
-        }
-        Ok(AdminOutput::Data(json!(true)))
-    }
-
-    pub(super) async fn knowledge_fetch(
-        &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        if let Some(id) = optional_i64(params, "id") {
-            let value = fetch_json_one(
-                &self.db,
-                r#"
-                SELECT jsonb_build_object(
-                    'id', id, 'language', language, 'category', category, 'title', title,
-                    'body', body, 'sort', sort, 'show', "show", 'created_at', created_at,
-                    'updated_at', updated_at
-                )
-                FROM knowledge
-                WHERE id = $1
-                LIMIT 1
-                "#,
-                id,
-            )
-            .await?
-            .ok_or_else(|| ApiError::business("知识不存在"))?;
-            return Ok(AdminOutput::Data(value));
-        }
-        Ok(AdminOutput::Data(json!(
-            fetch_json_list(
-                &self.db,
-                r#"
-            SELECT jsonb_build_object(
-                'id', id, 'category', category, 'title', title, 'sort', sort, 'show', "show",
-                'updated_at', updated_at
-            )
-            FROM knowledge
-            ORDER BY sort ASC NULLS FIRST
-            "#
-            )
-            .await?
-        )))
-    }
-
-    pub(super) async fn knowledge_categories(&self) -> Result<AdminOutput, ApiError> {
-        let rows = sqlx::query_scalar::<_, String>(
-            "SELECT DISTINCT category FROM knowledge ORDER BY category ASC",
-        )
-        .fetch_all(&self.db)
-        .await?;
-        Ok(AdminOutput::Data(json!(rows)))
-    }
-
-    pub(super) async fn knowledge_save(
-        &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        // KnowledgeSave only validates category/language/title/body, so create/update
-        // never touch `show` or `sort`: create leaves the DB defaults (show = 0,
-        // sort = NULL) and update leaves those columns as-is.
-        let now = Utc::now().timestamp();
-        if let Some(id) = optional_i64(params, "id") {
-            sqlx::query(
-                r#"
-                UPDATE knowledge
-                SET language = $1, category = $2, title = $3, body = $4, updated_at = $5
-                WHERE id = $6
-                "#,
-            )
-            .bind(required_string(params, "language")?)
-            .bind(required_string(params, "category")?)
-            .bind(required_string(params, "title")?)
-            .bind(required_string(params, "body")?)
-            .bind(now)
-            .bind(id)
-            .execute(&self.db)
-            .await?;
-        } else {
-            sqlx::query(
-                r#"
-                INSERT INTO knowledge (language, category, title, body, created_at, updated_at)
-                VALUES ($1, $2, $3, $4, $5, $6)
-                "#,
-            )
-            .bind(required_string(params, "language")?)
-            .bind(required_string(params, "category")?)
-            .bind(required_string(params, "title")?)
-            .bind(required_string(params, "body")?)
-            .bind(now)
-            .bind(now)
-            .execute(&self.db)
-            .await?;
         }
         Ok(AdminOutput::Data(json!(true)))
     }
@@ -662,90 +1432,78 @@ impl AdminService {
         Ok(AdminOutput::Data(json!(true)))
     }
 
-    pub(super) async fn coupon_fetch(
+    /// GET `coupons` (§6.3): §8 pagination + §7.2 sort, **no filter DSL** —
+    /// the legacy list had none and none is invented. An `id DESC` tiebreak
+    /// keeps pagination deterministic across equal timestamps.
+    pub async fn coupons_list(
         &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        let pagination = page(params)?;
+        pagination: Pagination,
+        sort_by: Option<&str>,
+        sort_dir: Option<&str>,
+    ) -> Result<(Vec<AdminCouponItem>, i64), ApiError> {
+        let sort = filter_dsl::resolve_sort(sort_by, sort_dir, CONTENT_SORT_COLUMNS)?;
         let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM coupon")
             .fetch_one(&self.db)
             .await?;
-        let data = fetch_json_list_page(
-            &self.db,
-            &format!(
-                r#"
-            SELECT jsonb_build_object(
-                'id', id, 'code', code, 'name', name, 'type', type, 'value', value,
-                'show', "show", 'limit_use', limit_use, 'limit_use_with_user', limit_use_with_user,
-                'limit_plan_ids', CAST(limit_plan_ids AS JSONB), 'limit_period', CAST(limit_period AS JSONB),
-                'started_at', started_at, 'ended_at', ended_at, 'created_at', created_at, 'updated_at', updated_at
-            )
-            FROM coupon
-            {}
-            LIMIT $1 OFFSET $2
-            "#,
-                admin_sort_clause(params)
-            ),
-            pagination.limit,
-            pagination.offset,
-        )
+        let rows = sqlx::query_as::<_, CouponRecord>(AssertSqlSafe(format!(
+            "SELECT id, code, name, type AS coupon_type, value, \"show\", limit_use, \
+             limit_use_with_user, limit_plan_ids, limit_period, started_at, ended_at, \
+             created_at, updated_at FROM coupon ORDER BY {}, id DESC LIMIT $1 OFFSET $2",
+            sort.order_by()
+        )))
+        .bind(pagination.limit())
+        .bind(pagination.offset())
+        .fetch_all(&self.db)
         .await?;
-        Ok(AdminOutput::Page { data, total })
+        Ok((rows.into_iter().map(AdminCouponItem::from).collect(), total))
     }
 
-    pub(super) async fn giftcard_fetch(
+    /// GET `gift-cards` (§6.3): same conventions as the coupon list.
+    pub async fn giftcards_list(
         &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        let pagination = page(params)?;
+        pagination: Pagination,
+        sort_by: Option<&str>,
+        sort_dir: Option<&str>,
+    ) -> Result<(Vec<AdminGiftcardItem>, i64), ApiError> {
+        let sort = filter_dsl::resolve_sort(sort_by, sort_dir, CONTENT_SORT_COLUMNS)?;
         let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM gift_card")
             .fetch_one(&self.db)
             .await?;
-        let data = fetch_json_list_page(
-            &self.db,
-            &format!(
-                r#"
-            SELECT jsonb_build_object(
-                'id', id, 'code', code, 'name', name, 'type', type, 'value', value,
-                'plan_id', plan_id, 'limit_use', limit_use,
-                'used_user_ids', COALESCE(
-                    (
-                        SELECT jsonb_agg(redemption.user_id)
-                        FROM gift_card_redemption AS redemption
-                        WHERE redemption.giftcard_id = gift_card.id
-                    ),
-                    '[]'::jsonb
-                ),
-                'started_at', started_at, 'ended_at', ended_at, 'created_at', created_at, 'updated_at', updated_at
-            )
-            FROM gift_card
-            {}
-            LIMIT $1 OFFSET $2
-            "#,
-                admin_sort_clause(params)
-            ),
-            pagination.limit,
-            pagination.offset,
-        )
+        let rows = sqlx::query_as::<_, GiftcardRecord>(AssertSqlSafe(format!(
+            "SELECT id, code, name, type AS card_type, value, plan_id, limit_use, \
+             COALESCE((SELECT jsonb_agg(redemption.user_id ORDER BY redemption.user_id) \
+             FROM gift_card_redemption AS redemption \
+             WHERE redemption.giftcard_id = gift_card.id), '[]'::jsonb) AS used_user_ids, \
+             started_at, ended_at, created_at, updated_at \
+             FROM gift_card ORDER BY {}, id DESC LIMIT $1 OFFSET $2",
+            sort.order_by()
+        )))
+        .bind(pagination.limit())
+        .bind(pagination.offset())
+        .fetch_all(&self.db)
         .await?;
-        Ok(AdminOutput::Page { data, total })
+        Ok((
+            rows.into_iter().map(AdminGiftcardItem::from).collect(),
+            total,
+        ))
     }
 
-    pub(super) async fn coupon_generate(
+    /// POST `coupons` (§6.3): bulk generate (byte-frozen CSV attachment) or
+    /// single create (201 `{id}`). Ports CouponController::generate /
+    /// multiGenerate minus the legacy id-update arm, which is now
+    /// `coupon_patch`.
+    pub async fn coupon_generate(
         &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        // Ports CouponController::generate / multiGenerate. A generate_count marks
-        // the CSV batch path; otherwise this is a single create (or update by id).
-        // The CouponGenerate FormRequest validates every path before the method body.
-        coupon_generate_validation(params)?;
+        body: &CouponGenerate,
+    ) -> Result<ContentGenerateOutcome, ApiError> {
+        coupon_generate_validation(body)?;
         let now = Utc::now().timestamp();
-        if let Some(count) = optional_i64(params, "generate_count").filter(|count| *count > 0) {
-            let field_values = coupon_field_values(params);
+        if let Some(count) = body.generate_count.filter(|count| *count > 0) {
+            let field_values = coupon_generate_values(body);
             let count = usize::try_from(count)
-                .map_err(|_| ApiError::validation_field("generate_count", "生成数量格式有误"))?;
+                .map_err(|_| validation_error("generate_count", "生成数量格式有误"))?;
             if count > GENERATED_CODE_MAX_ROWS {
-                return Err(ApiError::validation_field(
+                return Err(validation_error(
                     "generate_count",
                     "单次最多生成 1000 张优惠券",
                 ));
@@ -761,96 +1519,107 @@ impl AdminService {
             )
             .await?;
             tx.commit().await?;
-
-            let coupon_type = optional_i64(params, "type").unwrap_or_default();
-            let value = optional_i64(params, "value").unwrap_or_default();
-            let type_label = match coupon_type {
-                1 => "金额",
-                2 => "比例",
-                _ => "",
-            };
-            let value_display = match coupon_type {
-                1 => (value as f64 / 100.0).to_string(),
-                2 => value.to_string(),
-                _ => String::new(),
-            };
-            let name = optional_string(params, "name").unwrap_or_default();
-            let start = local_datetime(optional_i64(params, "started_at").unwrap_or_default());
-            let end = local_datetime(optional_i64(params, "ended_at").unwrap_or_default());
-            let limit_use = optional_i64(params, "limit_use")
-                .map(|value| value.to_string())
-                .unwrap_or_else(|| "不限制".to_string());
-            let limit_plan_ids = joined_array_display(params, "limit_plan_ids");
-            let create = local_datetime(now);
-            let rows = codes.into_iter().map(|code| {
-                vec![
-                    name.clone(),
-                    type_label.to_string(),
-                    value_display.clone(),
-                    start.clone(),
-                    end.clone(),
-                    limit_use.clone(),
-                    limit_plan_ids.clone(),
-                    code,
-                    create.clone(),
-                ]
-            });
-            let body = csv_export(
-                &[
-                    "名称",
-                    "类型",
-                    "金额或比例",
-                    "开始时间",
-                    "结束时间",
-                    "可用次数",
-                    "可用于订阅",
-                    "券码",
-                    "生成时间",
-                ],
-                rows,
-                false,
-            )?;
-            return Ok(AdminOutput::Csv {
+            return Ok(ContentGenerateOutcome::Csv {
                 filename: "coupon.csv".to_string(),
-                body,
+                body: coupon_csv_body(body, &codes, now)?,
             });
         }
 
-        let mut values = coupon_field_values(params);
-        if let Some(id) = optional_i64(params, "id") {
-            if let Some(code) = optional_string(params, "code") {
-                values.push(("code", AdminSqlValue::Text(code)));
-            }
-            self.update_row("coupon", id, &values, now)
-                .await
-                .map_err(|error| duplicate_code_error(error, "code", "优惠码已存在"))?;
-        } else if let Some(code) = optional_string(params, "code") {
+        let mut values = coupon_generate_values(body);
+        let id = if let Some(code) = requested_code(body.code.as_deref()) {
             values.push(("code", AdminSqlValue::Text(code)));
             self.insert_row("coupon", &values, now)
                 .await
-                .map_err(|error| duplicate_code_error(error, "code", "优惠码已存在"))?;
+                .map_err(|error| duplicate_code_error(error, "code", "优惠码已存在"))?
         } else {
             self.insert_generated_single_code("coupon", &values, 8, now)
-                .await?;
-        }
-        Ok(AdminOutput::Data(json!(true)))
+                .await?
+        };
+        Ok(ContentGenerateOutcome::Created { id })
     }
 
-    pub(super) async fn giftcard_generate(
+    /// PATCH `coupons/{id}` (§6.3) — 404 `coupon_not_found` on a miss; a
+    /// duplicate code keeps the legacy 422.
+    pub async fn coupon_patch(&self, id: i64, body: &CouponPatch) -> Result<(), ApiError> {
+        coupon_patch_validation(body)?;
+        let mut values = Vec::new();
+        if let Some(name) = &body.name {
+            values.push(("name", AdminSqlValue::Text(name.clone())));
+        }
+        if let Some(coupon_type) = body.coupon_type {
+            values.push(("type", AdminSqlValue::Integer(coupon_type)));
+        }
+        if let Some(value) = body.value {
+            values.push(("value", AdminSqlValue::Integer(value)));
+        }
+        if let Some(started_at) = body.started_at {
+            values.push(("started_at", AdminSqlValue::Integer(started_at)));
+        }
+        if let Some(ended_at) = body.ended_at {
+            values.push(("ended_at", AdminSqlValue::Integer(ended_at)));
+        }
+        for (column, field) in [
+            ("limit_use", &body.limit_use),
+            ("limit_use_with_user", &body.limit_use_with_user),
+        ] {
+            if let Some(update) = field {
+                values.push((
+                    column,
+                    update.map_or(AdminSqlValue::IntegerNull, AdminSqlValue::Integer),
+                ));
+            }
+        }
+        if let Some(update) = &body.limit_plan_ids {
+            values.push((
+                "limit_plan_ids",
+                AdminSqlValue::Json(update.as_ref().map(|ids| json!(ids))),
+            ));
+        }
+        if let Some(update) = &body.limit_period {
+            values.push((
+                "limit_period",
+                AdminSqlValue::Json(update.as_ref().map(|periods| json!(periods))),
+            ));
+        }
+        if let Some(code) = requested_code(body.code.as_deref()) {
+            values.push(("code", AdminSqlValue::Text(code)));
+        }
+        if let Some(show) = body.show {
+            values.push(("show", AdminSqlValue::Integer(i64::from(show))));
+        }
+        self.patch_row(
+            "coupon",
+            id,
+            &values,
+            Problem::new(Code::CouponNotFound).into(),
+        )
+        .await
+        .map_err(|error| duplicate_code_error(error, "code", "优惠码已存在"))
+    }
+
+    /// DELETE `coupons/{id}` — 404 `coupon_not_found` on a miss.
+    pub async fn coupon_delete(&self, id: i64) -> Result<(), ApiError> {
+        self.delete_by_id("coupon", id, Problem::new(Code::CouponNotFound).into())
+            .await
+            .map(|_| ())
+    }
+
+    /// POST `gift-cards` (§6.3): bulk generate (byte-frozen CSV, 16-char
+    /// codes) or single create (201 `{id}`). Ports GiftcardController::
+    /// generate / multiGenerate minus the legacy id-update arm, which is now
+    /// `giftcard_patch`.
+    pub async fn giftcard_generate(
         &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        // Ports GiftcardController::generate / multiGenerate. Codes are 16 chars
-        // and, in the batch path, retried until unique.
-        // The GiftcardGenerate FormRequest validates every path before the body.
-        giftcard_generate_validation(params)?;
+        body: &GiftcardGenerate,
+    ) -> Result<ContentGenerateOutcome, ApiError> {
+        giftcard_generate_validation(body)?;
         let now = Utc::now().timestamp();
-        if let Some(count) = optional_i64(params, "generate_count").filter(|count| *count > 0) {
-            let field_values = giftcard_field_values(params);
+        if let Some(count) = body.generate_count.filter(|count| *count > 0) {
+            let field_values = giftcard_generate_values(body);
             let count = usize::try_from(count)
-                .map_err(|_| ApiError::validation_field("generate_count", "生成数量格式有误"))?;
+                .map_err(|_| validation_error("generate_count", "生成数量格式有误"))?;
             if count > GENERATED_CODE_MAX_ROWS {
-                return Err(ApiError::validation_field(
+                return Err(validation_error(
                     "generate_count",
                     "单次最多生成 1000 张礼品卡",
                 ));
@@ -866,100 +1635,84 @@ impl AdminService {
             )
             .await?;
             tx.commit().await?;
-
-            let card_type = optional_i64(params, "type").unwrap_or_default();
-            let value = optional_i64(params, "value").unwrap_or_default();
-            let type_label = match card_type {
-                1 => "金额",
-                2 => "时长",
-                3 => "流量",
-                4 => "重置",
-                5 => "套餐",
-                _ => "",
-            };
-            let value_display = match card_type {
-                1 => format!("{:.2}", value as f64 / 100.0),
-                2 | 5 => format!("{value}天"),
-                3 => format!("{value}GB"),
-                4 => "-".to_string(),
-                _ => String::new(),
-            };
-            let name = optional_string(params, "name").unwrap_or_default();
-            let start = local_datetime(optional_i64(params, "started_at").unwrap_or_default());
-            let end = local_datetime(optional_i64(params, "ended_at").unwrap_or_default());
-            let limit_use = optional_i64(params, "limit_use")
-                .map(|value| value.to_string())
-                .unwrap_or_else(|| "不限制".to_string());
-            let create = local_datetime(now);
-            let rows = codes.into_iter().map(|code| {
-                vec![
-                    name.clone(),
-                    type_label.to_string(),
-                    value_display.clone(),
-                    start.clone(),
-                    end.clone(),
-                    limit_use.clone(),
-                    code,
-                    create.clone(),
-                ]
-            });
-            let body = csv_export(
-                &[
-                    "名称",
-                    "类型",
-                    "数值",
-                    "开始时间",
-                    "结束时间",
-                    "可用次数",
-                    "礼品卡卡密",
-                    "生成时间",
-                ],
-                rows,
-                false,
-            )?;
-            return Ok(AdminOutput::Csv {
+            return Ok(ContentGenerateOutcome::Csv {
                 filename: "giftcard.csv".to_string(),
-                body,
+                body: giftcard_csv_body(body, &codes, now)?,
             });
         }
 
-        let mut values = giftcard_field_values(params);
-        if let Some(id) = optional_i64(params, "id") {
-            let exists: Option<i32> =
-                sqlx::query_scalar("SELECT id FROM gift_card WHERE id = $1 LIMIT 1")
-                    .bind(id)
-                    .fetch_optional(&self.db)
-                    .await?;
-            if exists.is_none() {
-                return Err(ApiError::not_found("礼品卡不存在"));
-            }
-            if let Some(code) = optional_string(params, "code") {
-                values.push(("code", AdminSqlValue::Text(code)));
-            }
-            self.update_row("gift_card", id, &values, now)
-                .await
-                .map_err(|error| duplicate_code_error(error, "code", "礼品卡卡密已存在"))?;
-        } else if let Some(code) = optional_string(params, "code") {
+        let mut values = giftcard_generate_values(body);
+        let id = if let Some(code) = requested_code(body.code.as_deref()) {
             values.push(("code", AdminSqlValue::Text(code)));
             self.insert_row("gift_card", &values, now)
                 .await
-                .map_err(|error| duplicate_code_error(error, "code", "礼品卡卡密已存在"))?;
+                .map_err(|error| duplicate_code_error(error, "code", "礼品卡卡密已存在"))?
         } else {
             self.insert_generated_single_code("gift_card", &values, 16, now)
-                .await?;
-        }
-        Ok(AdminOutput::Data(json!(true)))
+                .await?
+        };
+        Ok(ContentGenerateOutcome::Created { id })
     }
 
-    /// Builds and runs a dynamic `INSERT ... (created_at, updated_at)` for the
-    /// given whitelisted column/value pairs. Table names are compile-time
-    /// literals, so the interpolation is injection-safe.
+    /// PATCH `gift-cards/{id}` (§6.3) — 404 `gift_card_not_found` on a miss;
+    /// a duplicate code keeps the legacy 422.
+    pub async fn giftcard_patch(&self, id: i64, body: &GiftcardPatch) -> Result<(), ApiError> {
+        giftcard_patch_validation(body)?;
+        let mut values = Vec::new();
+        if let Some(name) = &body.name {
+            values.push(("name", AdminSqlValue::Text(name.clone())));
+        }
+        if let Some(card_type) = body.card_type {
+            values.push(("type", AdminSqlValue::Integer(card_type)));
+        }
+        for (column, field) in [
+            ("value", &body.value),
+            ("plan_id", &body.plan_id),
+            ("limit_use", &body.limit_use),
+        ] {
+            if let Some(update) = field {
+                values.push((
+                    column,
+                    update.map_or(AdminSqlValue::IntegerNull, AdminSqlValue::Integer),
+                ));
+            }
+        }
+        if let Some(started_at) = body.started_at {
+            values.push(("started_at", AdminSqlValue::Integer(started_at)));
+        }
+        if let Some(ended_at) = body.ended_at {
+            values.push(("ended_at", AdminSqlValue::Integer(ended_at)));
+        }
+        if let Some(code) = requested_code(body.code.as_deref()) {
+            values.push(("code", AdminSqlValue::Text(code)));
+        }
+        self.patch_row(
+            "gift_card",
+            id,
+            &values,
+            Problem::new(Code::GiftCardNotFound).into(),
+        )
+        .await
+        .map_err(|error| duplicate_code_error(error, "code", "礼品卡卡密已存在"))
+    }
+
+    /// DELETE `gift-cards/{id}` — 404 `gift_card_not_found` on a miss.
+    pub async fn giftcard_delete(&self, id: i64) -> Result<(), ApiError> {
+        self.delete_by_id("gift_card", id, Problem::new(Code::GiftCardNotFound).into())
+            .await
+            .map(|_| ())
+    }
+
+    /// Builds and runs a dynamic `INSERT ... (created_at, updated_at)
+    /// RETURNING id` for the given whitelisted column/value pairs, feeding
+    /// the §1 201 `{id}` body. Table names are compile-time literals, so the
+    /// interpolation is injection-safe.
     async fn insert_row(
         &self,
         table: &str,
         values: &[(&str, AdminSqlValue)],
         now: i64,
-    ) -> Result<(), ApiError> {
+    ) -> Result<i32, ApiError> {
         let mut builder = QueryBuilder::<Postgres>::new(format!("INSERT INTO {table} ("));
         let mut columns = builder.separated(", ");
         for (column, _) in values {
@@ -974,9 +1727,9 @@ impl AdminService {
         }
         placeholders.push_bind(now);
         placeholders.push_bind(now);
-        builder.push(")");
-        builder.build().execute(&self.db).await?;
-        Ok(())
+        builder.push(") RETURNING id");
+        let id: i32 = builder.build_query_scalar().fetch_one(&self.db).await?;
+        Ok(id)
     }
 
     async fn insert_generated_single_code(
@@ -985,12 +1738,12 @@ impl AdminService {
         values: &[(&str, AdminSqlValue)],
         length: usize,
         now: i64,
-    ) -> Result<(), ApiError> {
+    ) -> Result<i32, ApiError> {
         for _ in 0..8 {
             let mut candidate = values.to_vec();
             candidate.push(("code", AdminSqlValue::Text(random_char(length))));
             match self.insert_row(table, &candidate, now).await {
-                Ok(()) => return Ok(()),
+                Ok(id) => return Ok(id),
                 Err(ApiError::Database(error)) if is_unique_violation(&error) => continue,
                 Err(error) => return Err(error),
             }
@@ -1000,33 +1753,274 @@ impl AdminService {
         ))
     }
 
-    /// Builds and runs a dynamic `UPDATE ... SET ..., updated_at WHERE id = ?`.
-    async fn update_row(
+    /// Shared §4.4 PATCH executor: dynamic `UPDATE ... SET ..., updated_at
+    /// WHERE id = ?` over the provided columns, reporting a path-identified
+    /// miss as the caller's 404 problem. An all-absent body retains every
+    /// column but still 404s on a missing id.
+    async fn patch_row(
         &self,
         table: &str,
         id: i64,
         values: &[(&str, AdminSqlValue)],
-        now: i64,
+        not_found: ApiError,
     ) -> Result<(), ApiError> {
+        ensure_safe_table(table)?;
+        if values.is_empty() {
+            return self.ensure_row_exists(table, id, not_found).await;
+        }
         let mut builder = QueryBuilder::<Postgres>::new(format!("UPDATE {table} SET "));
-        let mut first = true;
         for (column, value) in values {
-            if !first {
-                builder.push(", ");
-            }
-            first = false;
             builder.push(format!("\"{column}\" = "));
             push_admin_sql_bind(&mut builder, column, value);
-        }
-        if !first {
             builder.push(", ");
         }
         builder.push("\"updated_at\" = ");
-        builder.push_bind(now);
+        builder.push_bind(Utc::now().timestamp());
         builder.push(" WHERE id = ");
         builder.push_bind(id);
-        builder.build().execute(&self.db).await?;
+        let result = builder.build().execute(&self.db).await?;
+        if result.rows_affected() == 0 {
+            return Err(not_found);
+        }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod content_wire_tests {
+    use super::*;
+
+    fn coupon_request() -> CouponGenerate {
+        serde_json::from_value(json!({
+            "name": "新春优惠",
+            "type": 1,
+            "value": 1000,
+            "started_at": "2023-11-14T22:13:20Z",
+            "ended_at": "2023-11-15T22:13:20Z",
+            "limit_use": 10,
+            "limit_plan_ids": [1, 3],
+            "generate_count": 2
+        }))
+        .unwrap()
+    }
+
+    /// §6.3: the bulk-generate CSV byte layout is externally consumed and
+    /// frozen — headers, column order, display formatting (yuan conversion,
+    /// Asia/Shanghai timestamps, `不限制` placeholders, `/` joins), CRLF.
+    #[test]
+    fn coupon_csv_layout_is_byte_frozen() {
+        let codes = ["AAAABBBB".to_string(), "CCCCDDDD".to_string()];
+        let body = coupon_csv_body(&coupon_request(), &codes, 1_700_000_000).unwrap();
+        assert_eq!(
+            body,
+            "名称,类型,金额或比例,开始时间,结束时间,可用次数,可用于订阅,券码,生成时间\r\n\
+             新春优惠,金额,10,2023-11-15 06:13:20,2023-11-16 06:13:20,10,1/3,AAAABBBB,2023-11-15 06:13:20\r\n\
+             新春优惠,金额,10,2023-11-15 06:13:20,2023-11-16 06:13:20,10,1/3,CCCCDDDD,2023-11-15 06:13:20\r\n"
+        );
+
+        // Absent optional limits keep the legacy placeholder columns.
+        let plain: CouponGenerate = serde_json::from_value(json!({
+            "name": "比例券",
+            "type": 2,
+            "value": 15,
+            "started_at": "2023-11-14T22:13:20Z",
+            "ended_at": "2023-11-15T22:13:20Z"
+        }))
+        .unwrap();
+        let body = coupon_csv_body(&plain, &["EEEEFFFF".to_string()], 1_700_000_000).unwrap();
+        assert_eq!(
+            body,
+            "名称,类型,金额或比例,开始时间,结束时间,可用次数,可用于订阅,券码,生成时间\r\n\
+             比例券,比例,15,2023-11-15 06:13:20,2023-11-16 06:13:20,不限制,不限制,EEEEFFFF,2023-11-15 06:13:20\r\n"
+        );
+    }
+
+    #[test]
+    fn giftcard_csv_layout_is_byte_frozen() {
+        let request: GiftcardGenerate = serde_json::from_value(json!({
+            "name": "流量卡",
+            "type": 3,
+            "value": 100,
+            "started_at": "2023-11-14T22:13:20Z",
+            "ended_at": "2023-11-15T22:13:20Z",
+            "limit_use": 1,
+            "generate_count": 1
+        }))
+        .unwrap();
+        let codes = ["AAAABBBBCCCCDDDD".to_string()];
+        let body = giftcard_csv_body(&request, &codes, 1_700_000_000).unwrap();
+        assert_eq!(
+            body,
+            "名称,类型,数值,开始时间,结束时间,可用次数,礼品卡卡密,生成时间\r\n\
+             流量卡,流量,100GB,2023-11-15 06:13:20,2023-11-16 06:13:20,1,AAAABBBBCCCCDDDD,2023-11-15 06:13:20\r\n"
+        );
+
+        // Amount cards keep the two-decimal yuan display.
+        let amount: GiftcardGenerate = serde_json::from_value(json!({
+            "name": "余额卡",
+            "type": 1,
+            "value": 1050,
+            "started_at": "2023-11-14T22:13:20Z",
+            "ended_at": "2023-11-15T22:13:20Z"
+        }))
+        .unwrap();
+        let body =
+            giftcard_csv_body(&amount, &["EEEEFFFFGGGGHHHH".to_string()], 1_700_000_000).unwrap();
+        assert_eq!(
+            body,
+            "名称,类型,数值,开始时间,结束时间,可用次数,礼品卡卡密,生成时间\r\n\
+             余额卡,金额,10.50,2023-11-15 06:13:20,2023-11-16 06:13:20,不限制,EEEEFFFFGGGGHHHH,2023-11-15 06:13:20\r\n"
+        );
+    }
+
+    /// §6.3: `GET notices` is deliberately **unpaginated** — a bare JSON
+    /// array (never `{items,total}`), with boolean `show` and §4.5 RFC 3339
+    /// timestamps.
+    #[test]
+    fn admin_notices_serialize_as_a_bare_unpaginated_array() {
+        let items = vec![AdminNoticeItem {
+            id: 7,
+            title: "Golden notice".to_string(),
+            content: "golden notice content".to_string(),
+            show: true,
+            img_url: None,
+            tags: Some(vec!["弹窗".to_string()]),
+            created_at: 1_700_000_000,
+            updated_at: 1_700_000_000,
+        }];
+        assert_eq!(
+            serde_json::to_value(&items).unwrap(),
+            json!([{
+                "id": 7,
+                "title": "Golden notice",
+                "content": "golden notice content",
+                "show": true,
+                "img_url": null,
+                "tags": ["弹窗"],
+                "created_at": "2023-11-14T22:13:20Z",
+                "updated_at": "2023-11-14T22:13:20Z"
+            }])
+        );
+    }
+
+    fn assert_validation(result: Result<(), ApiError>, field: &str, message: &str) {
+        match result {
+            Err(ApiError::Validation {
+                message: top,
+                errors,
+            }) => {
+                assert_eq!(top, message, "top-level message");
+                assert_eq!(
+                    errors.get(field).map(Vec::as_slice),
+                    Some([message.to_string()].as_slice()),
+                    "errors[{field}]"
+                );
+            }
+            other => panic!("expected 422 validation on {field}, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn coupon_generate_validation_keeps_the_semantic_rules() {
+        assert!(coupon_generate_validation(&coupon_request()).is_ok());
+
+        let mut request = coupon_request();
+        request.generate_count = Some(501);
+        assert_validation(
+            coupon_generate_validation(&request),
+            "generate_count",
+            "生成数量最大为500个",
+        );
+        let mut request = coupon_request();
+        request.generate_count = Some(500);
+        assert!(coupon_generate_validation(&request).is_ok());
+
+        let mut request = coupon_request();
+        request.coupon_type = 9;
+        assert_validation(coupon_generate_validation(&request), "type", "类型格式有误");
+
+        for (coupon_type, value) in [(1, -1), (1, i64::from(i32::MAX) + 1), (2, -1), (2, 101)] {
+            let mut request = coupon_request();
+            request.coupon_type = coupon_type;
+            request.value = value;
+            assert_validation(
+                coupon_generate_validation(&request),
+                "value",
+                "金额或比例格式有误",
+            );
+        }
+    }
+
+    #[test]
+    fn giftcard_generate_validation_uses_required_if_and_untranslated_keys() {
+        let request = |value: Value| -> GiftcardGenerate { serde_json::from_value(value).unwrap() };
+        let base = json!({
+            "name": "g",
+            "type": 4,
+            "started_at": "2023-11-14T22:13:20Z",
+            "ended_at": "2023-11-15T22:13:20Z"
+        });
+
+        // type=4 needs neither value nor plan_id.
+        assert!(giftcard_generate_validation(&request(base.clone())).is_ok());
+
+        // type=5 requires value then plan_id; the required_if failures keep
+        // the untranslated Laravel keys.
+        let mut typed = base.clone();
+        typed["type"] = json!(5);
+        assert_validation(
+            giftcard_generate_validation(&request(typed.clone())),
+            "value",
+            "validation.required_if",
+        );
+        typed["value"] = json!(10);
+        assert_validation(
+            giftcard_generate_validation(&request(typed.clone())),
+            "plan_id",
+            "validation.required_if",
+        );
+        typed["plan_id"] = json!(2);
+        assert!(giftcard_generate_validation(&request(typed)).is_ok());
+
+        let mut invalid_type = base.clone();
+        invalid_type["type"] = json!(6);
+        assert_validation(
+            giftcard_generate_validation(&request(invalid_type)),
+            "type",
+            "类型格式有误",
+        );
+
+        let mut negative = base.clone();
+        negative["type"] = json!(3);
+        negative["value"] = json!(-1);
+        assert_validation(
+            giftcard_generate_validation(&request(negative)),
+            "value",
+            "数值格式有误",
+        );
+    }
+
+    /// §4.4: absent retains, null clears, value sets — pinned through the
+    /// coupon PATCH struct that carries every double-Option column.
+    #[test]
+    fn coupon_patch_distinguishes_absent_null_and_value() {
+        let patch: CouponPatch = serde_json::from_value(json!({
+            "limit_use": null,
+            "limit_plan_ids": [2, 4],
+            "show": true
+        }))
+        .unwrap();
+        assert_eq!(patch.limit_use, Some(None));
+        assert_eq!(patch.limit_use_with_user, None);
+        assert_eq!(patch.limit_plan_ids, Some(Some(vec![2, 4])));
+        assert_eq!(patch.show, Some(true));
+        assert!(patch.name.is_none() && patch.code.is_none());
+
+        // Unknown fields are 422s, never silent retains.
+        assert!(serde_json::from_value::<CouponPatch>(json!({"typo": 1})).is_err());
+        // The legacy blank-code submission still means "keep the code".
+        assert_eq!(requested_code(Some("  ")), None);
+        assert_eq!(requested_code(Some(" ABC ")), Some("ABC".to_string()));
     }
 }
 

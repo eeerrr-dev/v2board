@@ -25,7 +25,7 @@ use anyhow::{Context, Result, bail, ensure};
 use serde::Serialize;
 use serde_json::json;
 use sqlx::{PgPool, postgres::PgPoolOptions};
-use v2board_compat::{LegacyEnvelope, LegacyPageEnvelope};
+use v2board_compat::{LegacyEnvelope, LegacyPageEnvelope, Page, Pagination};
 use v2board_config::AppConfig;
 use v2board_db::installation_id;
 use v2board_domain::{
@@ -163,6 +163,41 @@ async fn generate_documents(pool: &PgPool, redis_url: &str) -> Result<Vec<(Strin
         "admin.order.detail.json".to_string(),
         envelope_document(order_detail, "admin.order.detail")?,
     ));
+
+    // The W10 content family (docs/api-dialect.md §6.3) serializes modern
+    // dialect-v2 bodies straight from the typed domain methods: bare arrays
+    // for the deliberately unpaginated notice/knowledge lists, `{items,total}`
+    // for the paginated coupon/gift-card lists, bare objects for details.
+    let content_page = Pagination {
+        page: 1,
+        per_page: 10,
+    };
+    documents.push((
+        "admin.notices.json".to_string(),
+        pretty_document(&admin.notices_list().await?)?,
+    ));
+    documents.push((
+        "admin.knowledge.json".to_string(),
+        pretty_document(&admin.knowledge_list().await?)?,
+    ));
+    documents.push((
+        "admin.knowledge.detail.json".to_string(),
+        pretty_document(&admin.knowledge_detail(1).await?)?,
+    ));
+    documents.push((
+        "admin.knowledge-categories.json".to_string(),
+        pretty_document(&admin.knowledge_categories_list().await?)?,
+    ));
+    let (items, total) = admin.coupons_list(content_page, None, None).await?;
+    documents.push((
+        "admin.coupons.json".to_string(),
+        pretty_document(&Page { items, total })?,
+    ));
+    let (items, total) = admin.giftcards_list(content_page, None, None).await?;
+    documents.push((
+        "admin.gift-cards.json".to_string(),
+        pretty_document(&Page { items, total })?,
+    ));
     documents.sort_by(|left, right| left.0.cmp(&right.0));
 
     flush_redis(&redis).await?;
@@ -201,25 +236,11 @@ fn admin_get_endpoints() -> Vec<(&'static str, &'static str, HashMap<String, Str
         ),
         ("admin.order.fetch", "order/fetch", none()),
         ("admin.payment.fetch", "payment/fetch", none()),
-        ("admin.notice.fetch", "notice/fetch", none()),
         ("admin.ticket.fetch", "ticket/fetch", none()),
         (
             "admin.ticket.detail",
             "ticket/fetch",
             HashMap::from([("id".to_string(), "1".to_string())]),
-        ),
-        ("admin.coupon.fetch", "coupon/fetch", none()),
-        ("admin.giftcard.fetch", "giftcard/fetch", none()),
-        ("admin.knowledge.fetch", "knowledge/fetch", none()),
-        (
-            "admin.knowledge.detail",
-            "knowledge/fetch",
-            HashMap::from([("id".to_string(), "1".to_string())]),
-        ),
-        (
-            "admin.knowledge.getCategory",
-            "knowledge/getCategory",
-            none(),
         ),
         (
             "admin.server.manage.getNodes",

@@ -1835,7 +1835,9 @@ async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) -> Result<()>
         assert_exact_keys("system/logs", &row, ADMIN_SYSTEM_LOG_KEYS)?;
     }
 
-    // Knowledge list + detail.
+    // Knowledge list + detail (W10 modern routes: GET knowledge,
+    // GET knowledge/{id} — key names unchanged; `show` is boolean and the
+    // timestamps are RFC 3339 strings on the modern wire).
     let knowledge_id: i32 = sqlx::query_scalar(
         "INSERT INTO knowledge (language, category, title, body, sort, show, created_at, updated_at) \
          VALUES ('zh-CN', 'projection', 'projection pin', 'body', NULL, 0, $1, $2) RETURNING id",
@@ -1844,24 +1846,22 @@ async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) -> Result<()>
     .bind(now)
     .fetch_one(pool)
     .await?;
-    for row in admin_data_rows(
-        admin.get("knowledge/fetch", HashMap::new()).await?,
-        "knowledge/fetch",
-    )? {
-        assert_exact_keys("knowledge/fetch", &row, ADMIN_KNOWLEDGE_LIST_KEYS)?;
+    let knowledge_rows = admin.knowledge_list().await?;
+    ensure!(
+        !knowledge_rows.is_empty(),
+        "knowledge list must return the seeded projection row"
+    );
+    for row in &knowledge_rows {
+        assert_exact_keys(
+            "knowledge",
+            &serde_json::to_value(row)?,
+            ADMIN_KNOWLEDGE_LIST_KEYS,
+        )?;
     }
-    let knowledge_detail = admin_data(
-        admin
-            .get(
-                "knowledge/fetch",
-                HashMap::from([("id".to_string(), knowledge_id.to_string())]),
-            )
-            .await?,
-        "knowledge/fetch detail",
-    )?;
+    let knowledge_detail = admin.knowledge_detail(i64::from(knowledge_id)).await?;
     assert_exact_keys(
-        "knowledge/fetch detail",
-        &knowledge_detail,
+        "knowledge detail",
+        &serde_json::to_value(&knowledge_detail)?,
         ADMIN_KNOWLEDGE_DETAIL_KEYS,
     )?;
 
@@ -1926,11 +1926,22 @@ async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) -> Result<()>
     .bind(now)
     .execute(pool)
     .await?;
-    for row in admin_page_rows(
-        admin.get("coupon/fetch", HashMap::new()).await?,
-        "coupon/fetch",
-    )? {
-        assert_exact_keys("coupon/fetch", &row, ADMIN_COUPON_KEYS)?;
+    let (coupon_rows, coupon_total) = admin
+        .coupons_list(
+            v2board_compat::Pagination {
+                page: 1,
+                per_page: 10,
+            },
+            None,
+            None,
+        )
+        .await?;
+    ensure!(
+        coupon_total >= 1 && !coupon_rows.is_empty(),
+        "coupons list must return the seeded projection row"
+    );
+    for row in &coupon_rows {
+        assert_exact_keys("coupons", &serde_json::to_value(row)?, ADMIN_COUPON_KEYS)?;
     }
     sqlx::query(
         "INSERT INTO gift_card (code, name, type, value, started_at, ended_at, created_at, updated_at) \
@@ -1943,11 +1954,26 @@ async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) -> Result<()>
     .bind(now)
     .execute(pool)
     .await?;
-    for row in admin_page_rows(
-        admin.get("giftcard/fetch", HashMap::new()).await?,
-        "giftcard/fetch",
-    )? {
-        assert_exact_keys("giftcard/fetch", &row, ADMIN_GIFTCARD_KEYS)?;
+    let (giftcard_rows, giftcard_total) = admin
+        .giftcards_list(
+            v2board_compat::Pagination {
+                page: 1,
+                per_page: 10,
+            },
+            None,
+            None,
+        )
+        .await?;
+    ensure!(
+        giftcard_total >= 1 && !giftcard_rows.is_empty(),
+        "gift-cards list must return the seeded projection row"
+    );
+    for row in &giftcard_rows {
+        assert_exact_keys(
+            "gift-cards",
+            &serde_json::to_value(row)?,
+            ADMIN_GIFTCARD_KEYS,
+        )?;
     }
 
     // Orders: a pending order with one commission log and one open
