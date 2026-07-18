@@ -1214,8 +1214,11 @@ export function assertUsefulInteraction(label, result, target) {
       inputText: 'Parity Failed VLess',
       openKey: 'drawerCount',
       requestKey: 'saveRequests',
+      // W13 (§6.7): the canonical capture carries the protocol as the `type`
+      // path param in both worlds (legacy /server/vless/save, modern
+      // POST /servers/vless).
       requestMatches: (request) =>
-        request?.__endpoint === '/server/vless/save' &&
+        request?.type === 'vless' &&
         request?.name === 'Parity Failed VLess' &&
         request?.host === 'failed-vless.example.test',
     },
@@ -1476,8 +1479,10 @@ export function assertUsefulInteraction(label, result, target) {
       !jsonIncludes(result.realityTcp?.inputValues, 'Parity VLess Reality') ||
       !jsonIncludes(result.realityTcp?.inputValues, 'vless.example.test') ||
       result.saveRequests?.length !== 1 ||
-      result.saveRequests?.[0]?.__endpoint !== '/server/vless/save' ||
-      result.saveRequests?.[0]?.__type !== 'vless' ||
+      // W13 (§6.7): the canonical capture carries the protocol as the `type`
+      // path param and folds the legacy bracket arrays / numeric strings onto
+      // the modern typed JSON body.
+      result.saveRequests?.[0]?.type !== 'vless' ||
       result.saveRequests?.[0]?.name !== 'Parity VLess Reality' ||
       String(result.saveRequests?.[0]?.rate) !== '3.5' ||
       result.saveRequests?.[0]?.host !== 'vless.example.test' ||
@@ -1486,7 +1491,7 @@ export function assertUsefulInteraction(label, result, target) {
       String(result.saveRequests?.[0]?.tls) !== '2' ||
       result.saveRequests?.[0]?.network !== 'tcp' ||
       result.saveRequests?.[0]?.flow !== 'xtls-rprx-vision' ||
-      String(result.saveRequests?.[0]?.['group_id[0]']) !== '1' ||
+      String(result.saveRequests?.[0]?.group_id?.[0]) !== '1' ||
       result.nodeFetchDelta < 1)
   ) {
     throw new Error(
@@ -1585,7 +1590,9 @@ export function assertUsefulInteraction(label, result, target) {
       !JSON.stringify(result.opened?.labels).includes('节点地址') ||
       !JSON.stringify(result.opened?.labels).includes('连接端口') ||
       !JSON.stringify(result.opened?.inputValues).includes('Tokyo 01') ||
-      !JSON.stringify(result.opened?.inputValues).includes('1.0') ||
+      // W13 (§6.7): the modern wire carries rate as a JSON number (1), the
+      // legacy oracle as the '1.0' decimal string — Tier-2 input formatting.
+      !JSON.stringify(result.opened?.inputValues).includes(target === 'oracle' ? '1.0' : '"1"') ||
       !JSON.stringify(result.opened?.inputValues).includes('jp.example.com') ||
       !JSON.stringify(result.opened?.inputValues).includes('443') ||
       !JSON.stringify(result.opened?.inputValues).includes('8388') ||
@@ -1623,16 +1630,17 @@ export function assertUsefulInteraction(label, result, target) {
       !JSON.stringify(result.edited?.inputValues).includes('9.9.9.9') ||
       !JSON.stringify(result.edited?.selectedValues).includes('指定DNS服务器进行解析') ||
       result.saveRequests?.length !== 1 ||
+      // W13 (§6.7): the canonical capture folds the legacy `match[i]` bracket
+      // spelling onto the modern real `match` array.
       !hasExactObjectKeys(result.saveRequests?.[0], [
         'remarks',
-        'match[0]',
-        'match[1]',
+        'match',
         'action',
         'action_value',
       ]) ||
       result.saveRequests?.[0]?.remarks !== 'Parity Created Route' ||
-      result.saveRequests?.[0]?.['match[0]'] !== 'domain:created.example.com' ||
-      result.saveRequests?.[0]?.['match[1]'] !== 'geosite:created' ||
+      result.saveRequests?.[0]?.match?.[0] !== 'domain:created.example.com' ||
+      result.saveRequests?.[0]?.match?.[1] !== 'geosite:created' ||
       result.saveRequests?.[0]?.action !== 'dns' ||
       result.saveRequests?.[0]?.action_value !== '9.9.9.9' ||
       result.routeFetchDelta < 1 ||
@@ -1665,19 +1673,21 @@ export function assertUsefulInteraction(label, result, target) {
       !jsonIncludes(result.edited?.buttons, '取 消') ||
       !jsonIncludes(result.edited?.buttons, '提 交') ||
       result.saveRequests?.length !== 1 ||
+      // W13 (§6.7): the canonical capture folds the legacy body id onto the
+      // modern path identity and the `match[i]` brackets onto the real array;
+      // the oracle's legacy edit body still echoes the row timestamps.
       !hasExactObjectKeys(result.saveRequests?.[0], [
         'id',
         'remarks',
-        'match[0]',
-        'match[1]',
+        'match',
         'action',
         'action_value',
         ...(target === 'oracle' ? ['created_at', 'updated_at'] : []),
       ]) ||
       String(result.saveRequests?.[0]?.id) !== '1' ||
       result.saveRequests?.[0]?.remarks !== 'Parity Edited Route' ||
-      result.saveRequests?.[0]?.['match[0]'] !== 'domain:edited.example.com' ||
-      result.saveRequests?.[0]?.['match[1]'] !== 'geosite:openai' ||
+      result.saveRequests?.[0]?.match?.[0] !== 'domain:edited.example.com' ||
+      result.saveRequests?.[0]?.match?.[1] !== 'geosite:openai' ||
       result.saveRequests?.[0]?.action !== 'dns' ||
       result.saveRequests?.[0]?.action_value !== '1.1.1.1' ||
       result.routeFetchDelta < 1 ||

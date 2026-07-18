@@ -207,7 +207,99 @@ const ROUTE_REQUEST_FOLDS = Object.freeze({
   'admin.users.export': foldBodyFilterClauses,
   'admin.users.mail': foldBodyFilterClauses,
   'admin.users.bulk-delete': foldBodyFilterClauses,
+  // W13 (§6.7): the legacy server family carried the row id in the body; the
+  // modern group/route/protocol mutations carry it in the path.
+  'admin.server-groups.update': foldBodyIdIntoParams,
+  'admin.server-groups.delete': foldBodyIdIntoParams,
+  'admin.server-routes.update': foldBodyIdIntoParams,
+  'admin.server-routes.delete': foldBodyIdIntoParams,
+  'admin.servers.create': foldServerSaveBody,
+  'admin.servers.update': foldServerSaveBody,
+  'admin.servers.toggle': foldBodyIdIntoParams,
+  'admin.servers.delete': foldBodyIdIntoParams,
+  'admin.servers.copy': foldBodyIdIntoParams,
 });
+
+/**
+ * W13 (§6.7): the legacy admin client form-encoded protocol saves with
+ * `nullFormValue: 'empty'`, spelling every cleared field as `''` on the wire,
+ * while the modern JSON body spells the §4.4 clear as an explicit null — fold
+ * `''` onto null so both spellings compare as one tri-state. `padding_scheme`
+ * crossed the legacy wire as a raw JSON string but rides the modern wire as
+ * its decoded container — fold the parseable string spelling onto the
+ * container. The legacy body-carried row id folds onto the modern path
+ * identity.
+ */
+// §6.7 numeric wire fields whose legacy form spelling may not round-trip the
+// generic numeric fold (e.g. rate '1.0' → 1).
+const SERVER_NUMERIC_FIELDS = new Set([
+  'rate',
+  'port',
+  'server_port',
+  'tls',
+  'version',
+  'parent_id',
+  'sort',
+  'up_mbps',
+  'down_mbps',
+]);
+
+function foldServerSaveBody(request) {
+  const lifted = foldBodyIdIntoParams(request);
+  const body = lifted.body;
+  if (!isPlainObject(body)) return lifted;
+  const folded = {};
+  for (const [key, value] of Object.entries(body)) {
+    if (isEmptyContainer(value)) continue;
+    if (key === 'padding_scheme' && typeof value === 'string') {
+      folded[key] = parseJsonContainer(value);
+    } else if (
+      SERVER_NUMERIC_FIELDS.has(key) &&
+      typeof value === 'string' &&
+      value !== '' &&
+      Number.isFinite(Number(value))
+    ) {
+      folded[key] = Number(value);
+    } else {
+      folded[key] = foldEmptyFormValue(value);
+    }
+  }
+  return { ...lifted, body: folded };
+}
+
+// The legacy form encoding cannot spell an empty array/object (the key is
+// simply omitted) while the modern JSON body can — drop empty containers so
+// omission compares equal.
+function isEmptyContainer(value) {
+  return (
+    (Array.isArray(value) && value.length === 0) ||
+    (isPlainObject(value) && Object.keys(value).length === 0)
+  );
+}
+
+// `''` → null at every depth (the legacy `nullFormValue: 'empty'` spelling
+// reaches nested settings objects too).
+function foldEmptyFormValue(value) {
+  if (value === '') return null;
+  if (Array.isArray(value)) return value.map(foldEmptyFormValue);
+  if (isPlainObject(value)) {
+    const folded = {};
+    for (const [key, entry] of Object.entries(value)) {
+      if (isEmptyContainer(entry)) continue;
+      folded[key] = foldEmptyFormValue(entry);
+    }
+    return folded;
+  }
+  return value;
+}
+
+function parseJsonContainer(value) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
 
 function foldBodyFilterClauses(request) {
   const body = request.body;

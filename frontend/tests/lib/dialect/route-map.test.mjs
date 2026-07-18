@@ -144,6 +144,24 @@ const W12_ROUTE_IDS = Object.freeze([
   'admin.users.bulk-delete',
 ]);
 
+const W13_ROUTE_IDS = Object.freeze([
+  'admin.nodes.list',
+  'admin.nodes.sort',
+  'admin.server-groups.list',
+  'admin.server-groups.create',
+  'admin.server-groups.update',
+  'admin.server-groups.delete',
+  'admin.server-routes.list',
+  'admin.server-routes.create',
+  'admin.server-routes.update',
+  'admin.server-routes.delete',
+  'admin.servers.create',
+  'admin.servers.update',
+  'admin.servers.toggle',
+  'admin.servers.delete',
+  'admin.servers.copy',
+]);
+
 const W4_ROUTE_IDS = Object.freeze([
   'user.plans.get',
   'user.plans.list',
@@ -171,6 +189,7 @@ test('unflipped families stay identity: modern equals legacy until each wave', (
     if (W10_ROUTE_IDS.includes(entry.id)) continue; // §6.3 admin content flipped in W10
     if (W11_ROUTE_IDS.includes(entry.id)) continue; // §6.2/§6.4 admin commerce flipped in W11
     if (W12_ROUTE_IDS.includes(entry.id)) continue; // §6.6 admin users flipped in W12
+    if (W13_ROUTE_IDS.includes(entry.id)) continue; // §6.7 admin servers flipped in W13
     assert.deepEqual(entry.modern, entry.legacy, `${entry.id} must stay legacy→legacy until its wave`);
   }
 });
@@ -763,6 +782,129 @@ test('W12: the admin users family carries the modern rows', () => {
   );
 });
 
+test('W13: the admin servers family carries the modern rows', () => {
+  const modern = Object.fromEntries(W13_ROUTE_IDS.map((id) => [id, routeEntry(id).modern]));
+  assert.deepEqual(modern, {
+    'admin.nodes.list': { method: 'GET', path: '/{secure_path}/nodes' },
+    // §6.7: the grouped `{type: {id: sort}}` JSON body is kept verbatim.
+    'admin.nodes.sort': { method: 'POST', path: '/{secure_path}/nodes/sort' },
+    'admin.server-groups.list': { method: 'GET', path: '/{secure_path}/server-groups' },
+    'admin.server-groups.create': { method: 'POST', path: '/{secure_path}/server-groups' },
+    'admin.server-groups.update': { method: 'PATCH', path: '/{secure_path}/server-groups/{id}' },
+    'admin.server-groups.delete': { method: 'DELETE', path: '/{secure_path}/server-groups/{id}' },
+    'admin.server-routes.list': { method: 'GET', path: '/{secure_path}/server-routes' },
+    'admin.server-routes.create': { method: 'POST', path: '/{secure_path}/server-routes' },
+    'admin.server-routes.update': { method: 'PATCH', path: '/{secure_path}/server-routes/{id}' },
+    'admin.server-routes.delete': { method: 'DELETE', path: '/{secure_path}/server-routes/{id}' },
+    'admin.servers.create': {
+      method: 'POST',
+      path: '/{secure_path}/servers/{type}',
+      params: { type: SERVER_TYPES },
+    },
+    // §6.7: the full edit-save PATCH is discriminated from the single-key
+    // {show} toggle PATCH by the always-present `name` body key.
+    'admin.servers.update': {
+      method: 'PATCH',
+      path: '/{secure_path}/servers/{type}/{id}',
+      params: { type: SERVER_TYPES },
+      bodyKeys: ['name'],
+    },
+    'admin.servers.toggle': {
+      method: 'PATCH',
+      path: '/{secure_path}/servers/{type}/{id}',
+      params: { type: SERVER_TYPES },
+    },
+    'admin.servers.delete': {
+      method: 'DELETE',
+      path: '/{secure_path}/servers/{type}/{id}',
+      params: { type: SERVER_TYPES },
+    },
+    'admin.servers.copy': {
+      method: 'POST',
+      path: '/{secure_path}/servers/{type}/{id}/copy',
+      params: { type: SERVER_TYPES },
+    },
+  });
+  // The oracle keeps requesting the legacy server rows.
+  assert.equal(worldRoute('admin.nodes.list', 'oracle').path, '/{secure_path}/server/manage/getNodes');
+  assert.equal(worldRoute('admin.nodes.sort', 'oracle').path, '/{secure_path}/server/manage/sort');
+  assert.equal(worldRoute('admin.server-groups.update', 'oracle').method, 'POST');
+  assert.equal(worldRoute('admin.servers.delete', 'oracle').path, '/{secure_path}/server/{type}/drop');
+  // Source-world matches extract the protocol and path id.
+  assert.deepEqual(
+    matchRoute('source', {
+      method: 'POST',
+      pathname: `${API_PREFIX}/sec/servers/vless`,
+      securePath: 'sec',
+      body: { name: 'Node', group_id: [1] },
+    }),
+    { id: 'admin.servers.create', params: { type: 'vless' } },
+  );
+  // A full edit body (with `name`) is the update; the bare {show} body is the
+  // merged toggle.
+  assert.deepEqual(
+    matchRoute('source', {
+      method: 'PATCH',
+      pathname: `${API_PREFIX}/sec/servers/vless/5`,
+      securePath: 'sec',
+      body: { name: 'Node', group_id: [1], show: true },
+    }),
+    { id: 'admin.servers.update', params: { type: 'vless', id: '5' } },
+  );
+  assert.deepEqual(
+    matchRoute('source', {
+      method: 'PATCH',
+      pathname: `${API_PREFIX}/sec/servers/vless/5`,
+      securePath: 'sec',
+      body: { show: false },
+    }),
+    { id: 'admin.servers.toggle', params: { type: 'vless', id: '5' } },
+  );
+  assert.deepEqual(
+    matchRoute('source', {
+      method: 'POST',
+      pathname: `${API_PREFIX}/sec/servers/tuic/7/copy`,
+      securePath: 'sec',
+    }),
+    { id: 'admin.servers.copy', params: { type: 'tuic', id: '7' } },
+  );
+  // The protocol vocabulary still guards the modern rows: /servers/groups is
+  // not a protocol CRUD path.
+  assert.equal(
+    matchRoute('source', {
+      method: 'POST',
+      pathname: `${API_PREFIX}/sec/servers/group`,
+      securePath: 'sec',
+    }),
+    null,
+  );
+  assert.deepEqual(
+    matchRoute('source', {
+      method: 'PATCH',
+      pathname: `${API_PREFIX}/sec/server-groups/3`,
+      securePath: 'sec',
+      body: { name: 'Edited' },
+    }),
+    { id: 'admin.server-groups.update', params: { id: '3' } },
+  );
+  assert.deepEqual(
+    matchRoute('source', {
+      method: 'DELETE',
+      pathname: `${API_PREFIX}/sec/server-routes/2`,
+      securePath: 'sec',
+    }),
+    { id: 'admin.server-routes.delete', params: { id: '2' } },
+  );
+  assert.equal(
+    matchRoute('source', {
+      method: 'POST',
+      pathname: `${API_PREFIX}/sec/nodes/sort`,
+      securePath: 'sec',
+    })?.id,
+    'admin.nodes.sort',
+  );
+});
+
 test('W4: the user commerce family carries the modern rows', () => {
   const modern = Object.fromEntries(
     W4_ROUTE_IDS.map((id) => [id, routeEntry(id).modern]),
@@ -880,11 +1022,19 @@ test('resolveRoutePath substitutes secure_path and path parameters', () => {
     `${API_PREFIX}/sec-path/config/fetch`,
   );
   assert.equal(
-    resolveRoutePath('admin.servers.toggle', 'source', {
+    resolveRoutePath('admin.servers.toggle', 'oracle', {
       securePath: 'admin',
       params: { type: 'vmess' },
     }),
     `${API_PREFIX}/admin/server/vmess/update`,
+  );
+  // §6.7 (W13): the source world resolves the merged PATCH row.
+  assert.equal(
+    resolveRoutePath('admin.servers.toggle', 'source', {
+      securePath: 'admin',
+      params: { type: 'vmess', id: 8 },
+    }),
+    `${API_PREFIX}/admin/servers/vmess/8`,
   );
   assert.equal(
     resolveRoutePath('user.plans.get', 'oracle', { query: { id: 2 } }),

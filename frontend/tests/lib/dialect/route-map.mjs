@@ -728,59 +728,104 @@ export const routeMap = Object.freeze([
   ),
 
   // ——— §6.7 Servers (nodes, groups, routes, protocol CRUD) ———
-  route('admin.nodes.list', { method: 'GET', path: '/{secure_path}/server/manage/getNodes' }),
-  route('admin.nodes.sort', { method: 'POST', path: '/{secure_path}/server/manage/sort' }),
-  route('admin.server-groups.list', { method: 'GET', path: '/{secure_path}/server/group/fetch' }),
-  route('admin.server-groups.create', {
-    method: 'POST',
-    path: '/{secure_path}/server/group/save',
-  }),
-  route('admin.server-groups.update', {
-    method: 'POST',
-    path: '/{secure_path}/server/group/save',
-  }),
-  route('admin.server-groups.delete', {
-    method: 'POST',
-    path: '/{secure_path}/server/group/drop',
-  }),
-  route('admin.server-routes.list', { method: 'GET', path: '/{secure_path}/server/route/fetch' }),
-  route('admin.server-routes.create', {
-    method: 'POST',
-    path: '/{secure_path}/server/route/save',
-  }),
-  route('admin.server-routes.update', {
-    method: 'POST',
-    path: '/{secure_path}/server/route/save',
-  }),
-  route('admin.server-routes.delete', {
-    method: 'POST',
-    path: '/{secure_path}/server/route/drop',
-  }),
-  route('admin.servers.create', {
-    method: 'POST',
-    path: '/{secure_path}/server/{type}/save',
-    params: { type: SERVER_TYPES },
-  }),
-  route('admin.servers.update', {
-    method: 'POST',
-    path: '/{secure_path}/server/{type}/save',
-    params: { type: SERVER_TYPES },
-  }),
-  route('admin.servers.toggle', {
-    method: 'POST',
-    path: '/{secure_path}/server/{type}/update',
-    params: { type: SERVER_TYPES },
-  }),
-  route('admin.servers.delete', {
-    method: 'POST',
-    path: '/{secure_path}/server/{type}/drop',
-    params: { type: SERVER_TYPES },
-  }),
-  route('admin.servers.copy', {
-    method: 'POST',
-    path: '/{secure_path}/server/{type}/copy',
-    params: { type: SERVER_TYPES },
-  }),
+  // Flipped to the modern rows in W13.
+  route(
+    'admin.nodes.list',
+    { method: 'GET', path: '/{secure_path}/server/manage/getNodes' },
+    { method: 'GET', path: '/{secure_path}/nodes' },
+  ),
+  route(
+    'admin.nodes.sort',
+    { method: 'POST', path: '/{secure_path}/server/manage/sort' },
+    // §6.7: the grouped `{type: {id: sort}}` JSON body is kept verbatim.
+    { method: 'POST', path: '/{secure_path}/nodes/sort' },
+  ),
+  route(
+    'admin.server-groups.list',
+    { method: 'GET', path: '/{secure_path}/server/group/fetch' },
+    { method: 'GET', path: '/{secure_path}/server-groups' },
+  ),
+  route(
+    'admin.server-groups.create',
+    { method: 'POST', path: '/{secure_path}/server/group/save' },
+    { method: 'POST', path: '/{secure_path}/server-groups' },
+  ),
+  route(
+    'admin.server-groups.update',
+    { method: 'POST', path: '/{secure_path}/server/group/save', bodyKeys: ['id'] },
+    { method: 'PATCH', path: '/{secure_path}/server-groups/{id}' },
+  ),
+  route(
+    'admin.server-groups.delete',
+    { method: 'POST', path: '/{secure_path}/server/group/drop' },
+    { method: 'DELETE', path: '/{secure_path}/server-groups/{id}' },
+  ),
+  route(
+    'admin.server-routes.list',
+    { method: 'GET', path: '/{secure_path}/server/route/fetch' },
+    { method: 'GET', path: '/{secure_path}/server-routes' },
+  ),
+  route(
+    'admin.server-routes.create',
+    { method: 'POST', path: '/{secure_path}/server/route/save' },
+    { method: 'POST', path: '/{secure_path}/server-routes' },
+  ),
+  route(
+    'admin.server-routes.update',
+    { method: 'POST', path: '/{secure_path}/server/route/save', bodyKeys: ['id'] },
+    { method: 'PATCH', path: '/{secure_path}/server-routes/{id}' },
+  ),
+  route(
+    'admin.server-routes.delete',
+    { method: 'POST', path: '/{secure_path}/server/route/drop' },
+    { method: 'DELETE', path: '/{secure_path}/server-routes/{id}' },
+  ),
+  route(
+    'admin.servers.create',
+    { method: 'POST', path: '/{secure_path}/server/{type}/save', params: { type: SERVER_TYPES } },
+    { method: 'POST', path: '/{secure_path}/servers/{type}', params: { type: SERVER_TYPES } },
+  ),
+  route(
+    'admin.servers.update',
+    {
+      method: 'POST',
+      path: '/{secure_path}/server/{type}/save',
+      params: { type: SERVER_TYPES },
+      bodyKeys: ['id'],
+    },
+    // §6.7: full edit-saves carry `name` (required in every protocol matrix),
+    // which separates them from the single-key `{show}` toggle PATCH below.
+    {
+      method: 'PATCH',
+      path: '/{secure_path}/servers/{type}/{id}',
+      params: { type: SERVER_TYPES },
+      bodyKeys: ['name'],
+    },
+  ),
+  route(
+    'admin.servers.toggle',
+    { method: 'POST', path: '/{secure_path}/server/{type}/update', params: { type: SERVER_TYPES } },
+    // §6.7: show/hide merges into the update PATCH with a boolean `show` body.
+    { method: 'PATCH', path: '/{secure_path}/servers/{type}/{id}', params: { type: SERVER_TYPES } },
+  ),
+  route(
+    'admin.servers.delete',
+    { method: 'POST', path: '/{secure_path}/server/{type}/drop', params: { type: SERVER_TYPES } },
+    {
+      method: 'DELETE',
+      path: '/{secure_path}/servers/{type}/{id}',
+      params: { type: SERVER_TYPES },
+    },
+  ),
+  route(
+    'admin.servers.copy',
+    { method: 'POST', path: '/{secure_path}/server/{type}/copy', params: { type: SERVER_TYPES } },
+    {
+      method: 'POST',
+      path: '/{secure_path}/servers/{type}/{id}/copy',
+      params: { type: SERVER_TYPES },
+    },
+  ),
 
   // ——— §6.8 Stats ———
   route('admin.stats.summary', {

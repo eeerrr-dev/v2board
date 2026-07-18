@@ -235,7 +235,10 @@ export async function installApiFixtures(page, scenario, target, interaction = {
       page.__visualParityDiagnostics?.push('fixture user info');
     }
 
-    if (adminEndpoint === '/server/manage/getNodes') {
+    if (
+      adminEndpoint === '/server/manage/getNodes' ||
+      (adminEndpoint === '/nodes' && requestMethod === 'GET')
+    ) {
       await waitForAdminGroups(adminGroupsReady);
     }
     const requestData = readRequestData(route.request());
@@ -256,7 +259,6 @@ export async function installApiFixtures(page, scenario, target, interaction = {
       const bodyFields = body && typeof body === 'object' && !Array.isArray(body) ? body : {};
       return { ...bodyFields, ...params };
     };
-    const adminServerNodeSaveMatch = /^\/server\/([^/]+)\/save$/.exec(adminEndpoint ?? '');
     // W10 (§6.3): the modern admin content family carries identity in the
     // path — creates POST the collection, edits/toggles PATCH /{id}, deletes
     // DELETE /{id}; the show toggle is the PATCH whose body is exactly
@@ -267,6 +269,20 @@ export async function installApiFixtures(page, scenario, target, interaction = {
       requestData != null &&
       Object.keys(requestData).length === 1 &&
       'show' in requestData;
+    // W13 (§6.7): protocol saves are the legacy /server/{type}/save POST, the
+    // modern POST /servers/{type} create, or the modern full-body (non-toggle)
+    // PATCH /servers/{type}/{id} edit.
+    const adminServerNodeSaveMatch =
+      /^\/server\/([^/]+)\/save$/.exec(adminEndpoint ?? '') ??
+      (requestMethod === 'POST'
+        ? /^\/servers\/([^/]+)$/.exec(adminEndpoint ?? '')
+        : requestMethod === 'PATCH' && !isShowOnlyPatch
+          ? /^\/servers\/([^/]+)\/\d+$/.exec(adminEndpoint ?? '')
+          : null);
+    const isAdminServerGroupSave =
+      adminEndpoint === '/server/group/save' ||
+      (adminEndpoint === '/server-groups' && requestMethod === 'POST') ||
+      (/^\/server-groups\/\d+$/.test(adminEndpoint ?? '') && requestMethod === 'PATCH');
     const isAdminNoticeFetch =
       adminEndpoint === '/notice/fetch' ||
       (adminEndpoint === '/notices' && requestMethod === 'GET');
@@ -639,37 +655,57 @@ export async function installApiFixtures(page, scenario, target, interaction = {
         planDropRequest,
       ];
     }
-    if (adminEndpoint === '/server/group/fetch') {
+    // W13 (§6.7): match both worlds' spellings for the server family counters
+    // and captures; mutations capture canonically so the legacy body-id /
+    // bracket-array form and the modern path-identity JSON compare as one
+    // contract.
+    if (
+      adminEndpoint === '/server/group/fetch' ||
+      (adminEndpoint === '/server-groups' && requestMethod === 'GET')
+    ) {
       page.__visualParityAdminServerGroupFetchCount =
         (page.__visualParityAdminServerGroupFetchCount ?? 0) + 1;
     }
-    if (adminEndpoint === '/server/group/save') {
-      page.__visualParityLastAdminServerGroupSave = requestData;
+    if (isAdminServerGroupSave) {
+      const groupSaveRequest = canonicalRequestCapture();
+      page.__visualParityLastAdminServerGroupSave = groupSaveRequest;
       page.__visualParityAdminServerGroupSaveCount =
         (page.__visualParityAdminServerGroupSaveCount ?? 0) + 1;
       page.__visualParityAdminServerGroupSaveRequests = [
         ...(page.__visualParityAdminServerGroupSaveRequests ?? []),
-        requestData,
+        groupSaveRequest,
       ];
     }
-    if (adminEndpoint === '/server/route/fetch') {
+    if (
+      adminEndpoint === '/server/route/fetch' ||
+      (adminEndpoint === '/server-routes' && requestMethod === 'GET')
+    ) {
       page.__visualParityAdminServerRouteFetchCount =
         (page.__visualParityAdminServerRouteFetchCount ?? 0) + 1;
     }
-    if (adminEndpoint === '/server/route/save') {
-      page.__visualParityLastAdminServerRouteSave = requestData;
+    if (
+      adminEndpoint === '/server/route/save' ||
+      (adminEndpoint === '/server-routes' && requestMethod === 'POST') ||
+      (/^\/server-routes\/\d+$/.test(adminEndpoint ?? '') && requestMethod === 'PATCH')
+    ) {
+      const routeSaveRequest = canonicalRequestCapture();
+      page.__visualParityLastAdminServerRouteSave = routeSaveRequest;
       page.__visualParityAdminServerRouteSaveCount =
         (page.__visualParityAdminServerRouteSaveCount ?? 0) + 1;
       page.__visualParityAdminServerRouteSaveRequests = [
         ...(page.__visualParityAdminServerRouteSaveRequests ?? []),
-        requestData,
+        routeSaveRequest,
       ];
     }
-    if (adminEndpoint === '/server/manage/getNodes') {
+    if (
+      adminEndpoint === '/server/manage/getNodes' ||
+      (adminEndpoint === '/nodes' && requestMethod === 'GET')
+    ) {
       page.__visualParityAdminServerNodeFetchCount =
         (page.__visualParityAdminServerNodeFetchCount ?? 0) + 1;
     }
-    if (adminEndpoint === '/server/manage/sort') {
+    if (adminEndpoint === '/server/manage/sort' || adminEndpoint === '/nodes/sort') {
+      // Both worlds POST the identical grouped `{type: {id: sort}}` JSON body.
       page.__visualParityLastAdminServerSort = requestData;
       page.__visualParityAdminServerSortCount = (page.__visualParityAdminServerSortCount ?? 0) + 1;
       page.__visualParityAdminServerSortRequests = [
@@ -678,16 +714,13 @@ export async function installApiFixtures(page, scenario, target, interaction = {
       ];
     }
     if (adminServerNodeSaveMatch) {
-      page.__visualParityLastAdminServerNodeSave = requestData;
+      const nodeSaveRequest = canonicalRequestCapture();
+      page.__visualParityLastAdminServerNodeSave = nodeSaveRequest;
       page.__visualParityAdminServerNodeSaveCount =
         (page.__visualParityAdminServerNodeSaveCount ?? 0) + 1;
       page.__visualParityAdminServerNodeSaveRequests = [
         ...(page.__visualParityAdminServerNodeSaveRequests ?? []),
-        {
-          ...requestData,
-          __endpoint: adminEndpoint,
-          __type: adminServerNodeSaveMatch[1],
-        },
+        nodeSaveRequest,
       ];
     }
     if (isAdminCouponFetch) {
@@ -920,7 +953,9 @@ export async function installApiFixtures(page, scenario, target, interaction = {
       (scenario.adminOrdersTimeout && isAdminOrderFetch) ||
       (scenario.adminUsersTimeout && isAdminUserFetch) ||
       (scenario.adminTicketsTimeout && adminEndpoint === '/ticket/fetch') ||
-      (scenario.adminServerManageTimeout && adminEndpoint === '/server/manage/getNodes') ||
+      (scenario.adminServerManageTimeout &&
+        (adminEndpoint === '/server/manage/getNodes' ||
+          (adminEndpoint === '/nodes' && requestMethod === 'GET'))) ||
       (scenario.adminPaymentsTimeout && isAdminPaymentFetch) ||
       (scenario.adminCouponsTimeout && isAdminCouponFetch) ||
       (scenario.adminGiftcardsTimeout && isAdminGiftcardFetch) ||
@@ -997,12 +1032,13 @@ export async function installApiFixtures(page, scenario, target, interaction = {
         isAdminNoticeShow ||
         isAdminPlanDrop ||
         isAdminPlanUpdate ||
-        adminEndpoint === '/server/manage/sort') &&
+        adminEndpoint === '/server/manage/sort' ||
+        adminEndpoint === '/nodes/sort') &&
       interaction.delayAdminMutationMs
     ) {
       await delay(interaction.delayAdminMutationMs);
     }
-    if (adminEndpoint === '/server/group/save' && interaction.delayAdminServerGroupSaveMs) {
+    if (isAdminServerGroupSave && interaction.delayAdminServerGroupSaveMs) {
       await delay(interaction.delayAdminServerGroupSaveMs);
     }
     if (isAdminConfigSave && interaction.delayAdminConfigSaveMs) {
@@ -1034,7 +1070,11 @@ export async function installApiFixtures(page, scenario, target, interaction = {
       target,
     );
 
-    if (adminEndpoint === '/server/group/fetch' && !adminGroupsResolved) {
+    if (
+      (adminEndpoint === '/server/group/fetch' ||
+        (adminEndpoint === '/server-groups' && requestMethod === 'GET')) &&
+      !adminGroupsResolved
+    ) {
       adminGroupsResolved = true;
       resolveAdminGroupsReady();
     }
@@ -1399,6 +1439,63 @@ export function apiFixtureResponse(
       return v2Empty();
     }
     if (/^\/users\/\d+\/(set-inviter|reset-secret)$/.test(adminEndpoint)) {
+      return v2Empty();
+    }
+
+    // §6.7 modern admin servers family (W13): the nodes list is a bare typed
+    // array (boolean show, numeric rate and id arrays, RFC 3339 timestamps,
+    // no is_online), sort keeps its grouped JSON body on POST /nodes/sort,
+    // groups/routes are bare arrays with 201 {id} creates and bodiless
+    // PATCH/DELETE, and the eight protocol saves POST /servers/{type}
+    // (201 {id}) / PATCH /servers/{type}/{id} with the single-key {show}
+    // toggle sharing the PATCH row. Only the source world requests these
+    // spellings; the oracle keeps the legacy rows in the switch below. The
+    // error-knob detail text mirrors the legacy toast — the Tier-1 comparison
+    // keys on the problem `code`, presentation drops.
+    if (adminEndpoint === '/nodes') {
+      return v2Body(adminServerNodeFixturesFor(scenario).map(modernAdminServerNodeFixture));
+    }
+    if (adminEndpoint === '/nodes/sort') {
+      if (interaction?.adminServerSortError) {
+        return v2Problem(500, 'Internal Server Error', 'internal_error', '节点排序失败');
+      }
+      return v2Empty();
+    }
+    if (adminEndpoint === '/server-groups') {
+      if (method === 'POST') {
+        if (interaction?.adminServerGroupSaveError) {
+          return contentValidationProblem('权限组保存失败');
+        }
+        return v2Body({ id: adminServerGroupFixtures.length + 1 }, 201);
+      }
+      return v2Body(adminServerGroupFixtures.map(modernAdminServerGroupFixture));
+    }
+    if (/^\/server-groups\/\d+$/.test(adminEndpoint)) {
+      if (method === 'DELETE') return v2Empty();
+      if (interaction?.adminServerGroupSaveError) {
+        return contentValidationProblem('权限组保存失败');
+      }
+      return v2Empty();
+    }
+    if (adminEndpoint === '/server-routes') {
+      if (method === 'POST') return v2Body({ id: adminServerRouteFixtures.length + 1 }, 201);
+      return v2Body(adminServerRouteFixtures.map(modernAdminServerRouteFixture));
+    }
+    if (/^\/server-routes\/\d+$/.test(adminEndpoint)) {
+      return v2Empty();
+    }
+    if (/^\/servers\/[^/]+$/.test(adminEndpoint) && method === 'POST') {
+      if (interaction?.adminServerNodeSaveError) return contentValidationProblem('节点保存失败');
+      return v2Body({ id: adminServerNodeFixturesFor(scenario).length + 1 }, 201);
+    }
+    if (/^\/servers\/[^/]+\/\d+\/copy$/.test(adminEndpoint)) {
+      return v2Body({ id: adminServerNodeFixturesFor(scenario).length + 1 }, 201);
+    }
+    if (/^\/servers\/[^/]+\/\d+$/.test(adminEndpoint)) {
+      if (method === 'DELETE') return v2Empty();
+      if (!isShowOnlyBody && interaction?.adminServerNodeSaveError) {
+        return contentValidationProblem('节点保存失败');
+      }
       return v2Empty();
     }
 
@@ -2246,6 +2343,39 @@ const modernAdminUserDetailFixture = (user, users) => {
     ...(inviter ? { invite_user: { id: inviter.id, email: inviter.email } } : {}),
   };
 };
+
+// ——— W13 modern-wire projections (docs/api-dialect.md §6.7) ——— the nodes
+// list drops the legacy `is_online`, casts show to boolean and rate/id arrays
+// to numbers, crosses timestamps as RFC 3339 UTC, and always carries the
+// projection's api_key/last_push_at columns; groups and routes keep their
+// rows with RFC 3339 timestamps.
+const modernAdminServerNodeFixture = (node) => {
+  const { is_online: _dropped, ...rest } = node;
+  return {
+    ...rest,
+    group_id: node.group_id.map(Number),
+    route_id: node.route_id == null ? null : node.route_id.map(Number),
+    rate: Number(node.rate),
+    show: node.show !== 0,
+    last_check_at: node.last_check_at == null ? null : rfc3339FixtureTime(node.last_check_at),
+    last_push_at: null,
+    api_key: null,
+    created_at: rfc3339FixtureTime(1_700_000_000),
+    updated_at: rfc3339FixtureTime(1_700_000_000),
+  };
+};
+
+const modernAdminServerGroupFixture = (group) => ({
+  ...group,
+  created_at: rfc3339FixtureTime(group.created_at),
+  updated_at: rfc3339FixtureTime(group.updated_at),
+});
+
+const modernAdminServerRouteFixture = (route) => ({
+  ...route,
+  created_at: rfc3339FixtureTime(route.created_at),
+  updated_at: rfc3339FixtureTime(route.updated_at),
+});
 
 // ——— W5 modern-wire projections (docs/api-dialect.md §4.1, §4.5, §5.3,
 // §5.4) ——— boolean profile/subscription flags, RFC 3339 timestamps, and the

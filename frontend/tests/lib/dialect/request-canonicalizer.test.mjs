@@ -586,6 +586,216 @@ test('the W12 user bulk actions fold the body-borne filter clauses (§7.1)', () 
   assert.deepEqual(source, oracle);
 });
 
+test('the W13 protocol create folds the legacy form spellings (§6.7/§4.4)', () => {
+  const oracle = canonicalizeRequest('oracle', {
+    method: 'POST',
+    url: '/api/v1/sec/server/vless/save',
+    postData:
+      'name=Parity+VLess&rate=3.5&host=vless.example.test&port=443&server_port=10443' +
+      '&tls=2&network=tcp&flow=xtls-rprx-vision&group_id[0]=1&network_settings=&parent_id=',
+    securePath: 'sec',
+  });
+  const source = canonicalizeRequest('source', {
+    method: 'POST',
+    url: '/api/v1/sec/servers/vless',
+    postData: JSON.stringify({
+      name: 'Parity VLess',
+      rate: 3.5,
+      host: 'vless.example.test',
+      port: 443,
+      server_port: 10443,
+      tls: 2,
+      network: 'tcp',
+      flow: 'xtls-rprx-vision',
+      group_id: [1],
+      // §4.4: the modern body spells clears as explicit null; the legacy form
+      // spelled them '' (nullFormValue) — both fold to null.
+      network_settings: null,
+      parent_id: null,
+      // The legacy form cannot spell empty containers (it omits the key) —
+      // the modern empty arrays fold to omission.
+      route_id: [],
+      tags: [],
+    }),
+    securePath: 'sec',
+  });
+  assert.deepEqual(oracle, {
+    routeId: 'admin.servers.create',
+    params: { type: 'vless' },
+    body: {
+      name: 'Parity VLess',
+      rate: 3.5,
+      host: 'vless.example.test',
+      port: 443,
+      server_port: 10443,
+      tls: 2,
+      network: 'tcp',
+      flow: 'xtls-rprx-vision',
+      group_id: [1],
+      network_settings: null,
+      parent_id: null,
+    },
+  });
+  assert.deepEqual(source, oracle);
+});
+
+test('the W13 protocol update folds the body id and padding_scheme (§6.7)', () => {
+  const oracle = canonicalizeRequest('oracle', {
+    method: 'POST',
+    url: '/api/v1/sec/server/anytls/save',
+    postData: JSON.stringify({
+      id: 5,
+      name: 'AnyTLS',
+      group_id: [1],
+      host: 'anytls.example.test',
+      port: 443,
+      server_port: 443,
+      rate: '1.0',
+      // The legacy wire carried the padding scheme as a raw JSON string; the
+      // modern wire carries the decoded container — both fold to the container.
+      padding_scheme: '["30-30"]',
+    }),
+    securePath: 'sec',
+  });
+  const source = canonicalizeRequest('source', {
+    method: 'PATCH',
+    url: '/api/v1/sec/servers/anytls/5',
+    postData: JSON.stringify({
+      name: 'AnyTLS',
+      group_id: [1],
+      host: 'anytls.example.test',
+      port: 443,
+      server_port: 443,
+      rate: 1,
+      padding_scheme: ['30-30'],
+    }),
+    securePath: 'sec',
+  });
+  assert.deepEqual(oracle, {
+    routeId: 'admin.servers.update',
+    params: { id: 5, type: 'anytls' },
+    body: {
+      name: 'AnyTLS',
+      group_id: [1],
+      host: 'anytls.example.test',
+      port: 443,
+      server_port: 443,
+      rate: 1,
+      padding_scheme: ['30-30'],
+    },
+  });
+  assert.deepEqual(source, oracle);
+});
+
+test('the W13 show toggle folds onto the merged boolean PATCH (§6.7)', () => {
+  const oracle = canonicalizeRequest('oracle', {
+    method: 'POST',
+    url: '/api/v1/sec/server/vmess/update',
+    postData: 'id=8&show=0',
+    securePath: 'sec',
+  });
+  const source = canonicalizeRequest('source', {
+    method: 'PATCH',
+    url: '/api/v1/sec/servers/vmess/8',
+    postData: JSON.stringify({ show: false }),
+    securePath: 'sec',
+  });
+  assert.deepEqual(oracle, {
+    routeId: 'admin.servers.toggle',
+    params: { id: 8, type: 'vmess' },
+    body: { show: false },
+  });
+  assert.deepEqual(source, oracle);
+});
+
+test('the W13 protocol delete/copy fold the body id onto the path (§6.7)', () => {
+  const oracleDrop = canonicalizeRequest('oracle', {
+    method: 'POST',
+    url: '/api/v1/sec/server/tuic/drop',
+    postData: JSON.stringify({ id: 7 }),
+    securePath: 'sec',
+  });
+  const sourceDrop = canonicalizeRequest('source', {
+    method: 'DELETE',
+    url: '/api/v1/sec/servers/tuic/7',
+    securePath: 'sec',
+  });
+  assert.deepEqual(oracleDrop, {
+    routeId: 'admin.servers.delete',
+    params: { id: 7, type: 'tuic' },
+    body: null,
+  });
+  assert.deepEqual(sourceDrop, oracleDrop);
+  const oracleCopy = canonicalizeRequest('oracle', {
+    method: 'POST',
+    url: '/api/v1/sec/server/tuic/copy',
+    postData: JSON.stringify({ id: 7 }),
+    securePath: 'sec',
+  });
+  const sourceCopy = canonicalizeRequest('source', {
+    method: 'POST',
+    url: '/api/v1/sec/servers/tuic/7/copy',
+    securePath: 'sec',
+  });
+  assert.deepEqual(oracleCopy, {
+    routeId: 'admin.servers.copy',
+    params: { id: 7, type: 'tuic' },
+    body: null,
+  });
+  assert.deepEqual(sourceCopy, oracleCopy);
+});
+
+test('the W13 group/route edits fold the body id onto the PATCH path (§6.7)', () => {
+  const oracleGroup = canonicalizeRequest('oracle', {
+    method: 'POST',
+    url: '/api/v1/sec/server/group/save',
+    postData: JSON.stringify({ id: 1, name: 'Parity Edited Group' }),
+    securePath: 'sec',
+  });
+  const sourceGroup = canonicalizeRequest('source', {
+    method: 'PATCH',
+    url: '/api/v1/sec/server-groups/1',
+    postData: JSON.stringify({ name: 'Parity Edited Group' }),
+    securePath: 'sec',
+  });
+  assert.deepEqual(oracleGroup, {
+    routeId: 'admin.server-groups.update',
+    params: { id: 1 },
+    body: { name: 'Parity Edited Group' },
+  });
+  assert.deepEqual(sourceGroup, oracleGroup);
+  const oracleRoute = canonicalizeRequest('oracle', {
+    method: 'POST',
+    url: '/api/v1/sec/server/route/save',
+    postData:
+      'id=1&remarks=Edited&match[0]=domain:edited.example.com&match[1]=geosite:openai' +
+      '&action=dns&action_value=1.1.1.1',
+    securePath: 'sec',
+  });
+  const sourceRoute = canonicalizeRequest('source', {
+    method: 'PATCH',
+    url: '/api/v1/sec/server-routes/1',
+    postData: JSON.stringify({
+      remarks: 'Edited',
+      match: ['domain:edited.example.com', 'geosite:openai'],
+      action: 'dns',
+      action_value: '1.1.1.1',
+    }),
+    securePath: 'sec',
+  });
+  assert.deepEqual(oracleRoute, {
+    routeId: 'admin.server-routes.update',
+    params: { id: 1 },
+    body: {
+      remarks: 'Edited',
+      match: ['domain:edited.example.com', 'geosite:openai'],
+      action: 'dns',
+      action_value: '1.1.1.1',
+    },
+  });
+  assert.deepEqual(sourceRoute, oracleRoute);
+});
+
 test('unknown routes canonicalize with routeId null', () => {
   const request = canonicalizeRequest('oracle', {
     method: 'GET',
