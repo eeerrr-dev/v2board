@@ -155,15 +155,26 @@ const ADMIN_PLAN_SAVE_KEYS = [
   'reset_traffic_method',
   'capacity_limit',
   'speed_limit',
-  'force_update',
+  // W11 (§6.2): `force_update` is intentionally NOT compared cross-world — the
+  // modern create body denies it (there are no subscribers to force yet) while
+  // the frozen oracle always sends it, so the create capture would diverge. The
+  // edit-only flag stays pinned per-world by the raw plan-edit assertion.
 ];
+
+// W11 (§6.2/§4.4): a cleared numeric plan field (prices, capacity/speed/device
+// limits, reset method, sort) means the same in both dialects — the modern body
+// serializes it to `null`, the frozen oracle sends the legacy present-but-empty
+// `''`. Fold both spellings to `null` so the cleared semantics compare equal
+// cross-world; a real value stays compared. Only the free-text `name`/`content`
+// fields keep an empty string as itself.
+const ADMIN_PLAN_TEXT_KEYS = new Set(['name', 'content']);
 
 function reduceAdminPlanSaveRequest(request) {
   if (!request || typeof request !== 'object') return request;
   return Object.fromEntries(
     ADMIN_PLAN_SAVE_KEYS.filter((key) => Object.hasOwn(request, key)).map((key) => [
       key,
-      request[key],
+      !ADMIN_PLAN_TEXT_KEYS.has(key) && request[key] === '' ? null : request[key],
     ]),
   );
 }
@@ -199,24 +210,36 @@ const paymentSaveFields = new Set([
   'handling_fee_percent',
 ]);
 
-const paymentConfigFieldsByDriver = new Map([
-  ['AlipayF2F', new Set(['config[key]', 'config[mch_id]'])],
-  ['MGate', new Set(['config[token]'])],
-  ['StripeCheckout', new Set(['config[publishable_key]', 'config[secret_key]'])],
+const paymentConfigKeysByDriver = new Map([
+  ['AlipayF2F', ['key', 'mch_id']],
+  ['MGate', ['token']],
+  ['StripeCheckout', ['publishable_key', 'secret_key']],
 ]);
 
 export function reducePaymentSaveRequest(request) {
   if (!request || typeof request !== 'object' || Array.isArray(request)) return request;
-  const selectedConfigFields = paymentConfigFieldsByDriver.get(request.payment);
-  return Object.fromEntries(
+  const base = Object.fromEntries(
     Object.entries(request)
-      .filter(
-        ([key]) =>
-          paymentSaveFields.has(key) ||
-          (selectedConfigFields ? selectedConfigFields.has(key) : key.startsWith('config[')),
-      )
+      .filter(([key]) => paymentSaveFields.has(key))
       .map(([key, value]) => [key, value == null ? '' : value]),
   );
+  // W11 (§6.2): `config` is the canonical nested object — both worlds fold their
+  // spellings onto it (the legacy `config[key]` bracket form and the modern
+  // nested JSON). Keep only the selected driver's keys so the frozen oracle's
+  // stale cross-driver config leakage (e.g. MGate config[token] carried into
+  // StripeCheckout) drops out; deleting that invalid stale config is not a
+  // relaxation of the selected driver's contract, whose complete keys and
+  // values remain compared and are also required by the raw assertion.
+  const rawConfig =
+    request.config && typeof request.config === 'object' && !Array.isArray(request.config)
+      ? request.config
+      : {};
+  const selectedKeys = paymentConfigKeysByDriver.get(request.payment);
+  const config = {};
+  for (const [key, value] of Object.entries(rawConfig)) {
+    if (!selectedKeys || selectedKeys.includes(key)) config[key] = value == null ? '' : value;
+  }
+  return { ...base, config };
 }
 
 export function normalizeInteractionResult(label, result) {

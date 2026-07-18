@@ -328,6 +328,141 @@ test('the W5 profile PATCH flags equal the legacy 0/1 form spelling (§4.1)', ()
   assert.deepEqual(source, oracle);
 });
 
+test('the W11 plan save folds create vs edit onto the modern identity (§6.2)', () => {
+  const oracleCreate = canonicalizeRequest('oracle', {
+    method: 'POST',
+    url: '/api/v1/sec/plan/save',
+    postData: JSON.stringify({ name: 'Pro', content: 'x', month_price: 1200 }),
+    securePath: 'sec',
+  });
+  const sourceCreate = canonicalizeRequest('source', {
+    method: 'POST',
+    url: '/api/v1/sec/plans',
+    postData: JSON.stringify({ name: 'Pro', content: 'x', month_price: 1200 }),
+    securePath: 'sec',
+  });
+  assert.deepEqual(oracleCreate, {
+    routeId: 'admin.plans.create',
+    params: {},
+    body: { name: 'Pro', content: 'x', month_price: 1200 },
+  });
+  assert.deepEqual(sourceCreate, oracleCreate);
+
+  // The legacy edit rode the same plan/save action behind a body id; the modern
+  // edit is a PATCH whose path carries the identity.
+  const oracleEdit = canonicalizeRequest('oracle', {
+    method: 'POST',
+    url: '/api/v1/sec/plan/save',
+    postData: JSON.stringify({ id: 5, name: 'Pro', content: 'x', month_price: 1200 }),
+    securePath: 'sec',
+  });
+  const sourceEdit = canonicalizeRequest('source', {
+    method: 'PATCH',
+    url: '/api/v1/sec/plans/5',
+    postData: JSON.stringify({ name: 'Pro', content: 'x', month_price: 1200 }),
+    securePath: 'sec',
+  });
+  assert.deepEqual(oracleEdit, {
+    routeId: 'admin.plans.update',
+    params: { id: 5 },
+    body: { name: 'Pro', content: 'x', month_price: 1200 },
+  });
+  assert.deepEqual(sourceEdit, oracleEdit);
+});
+
+test('the W11 plan show/renew toggle folds id into the PATCH path (§6.2)', () => {
+  const oracle = canonicalizeRequest('oracle', {
+    method: 'POST',
+    url: '/api/v1/sec/plan/update',
+    postData: 'id=5&show=1',
+    securePath: 'sec',
+  });
+  const source = canonicalizeRequest('source', {
+    method: 'PATCH',
+    url: '/api/v1/sec/plans/5',
+    postData: JSON.stringify({ show: true }),
+    securePath: 'sec',
+  });
+  // The legacy dedicated toggle action and the modern merged PATCH resolve to
+  // different route ids (the toggle merges into the update row), but the
+  // captured capture — params + the boolean flag body — is identical.
+  assert.equal(oracle.routeId, 'admin.plans.toggle');
+  assert.equal(source.routeId, 'admin.plans.update');
+  assert.deepEqual(oracle.params, { id: 5 });
+  assert.deepEqual(oracle.body, { show: true });
+  assert.deepEqual(
+    { params: source.params, body: source.body },
+    { params: oracle.params, body: oracle.body },
+  );
+});
+
+test('the W11 payment save folds the config bracket form onto nested JSON (§6.2)', () => {
+  const oracle = canonicalizeRequest('oracle', {
+    method: 'POST',
+    url: '/api/v1/sec/payment/save',
+    postData: 'id=1&name=Alipay&payment=AlipayF2F&config[key]=sk&config[mch_id]=m1',
+    securePath: 'sec',
+  });
+  const source = canonicalizeRequest('source', {
+    method: 'PATCH',
+    url: '/api/v1/sec/payments/1',
+    postData: JSON.stringify({
+      name: 'Alipay',
+      payment: 'AlipayF2F',
+      config: { key: 'sk', mch_id: 'm1' },
+    }),
+    securePath: 'sec',
+  });
+  assert.deepEqual(oracle, {
+    routeId: 'admin.payments.update',
+    params: { id: 1 },
+    body: { name: 'Alipay', payment: 'AlipayF2F', config: { key: 'sk', mch_id: 'm1' } },
+  });
+  assert.deepEqual(source, oracle);
+});
+
+test('the W11 order status update folds trade_no into the PATCH path (§6.4)', () => {
+  const oracle = canonicalizeRequest('oracle', {
+    method: 'POST',
+    url: '/api/v1/sec/order/update',
+    postData: JSON.stringify({ trade_no: 'VISUAL2026110001', status: 3 }),
+    securePath: 'sec',
+  });
+  const source = canonicalizeRequest('source', {
+    method: 'PATCH',
+    url: '/api/v1/sec/orders/VISUAL2026110001',
+    postData: JSON.stringify({ status: 3 }),
+    securePath: 'sec',
+  });
+  assert.deepEqual(oracle, {
+    routeId: 'admin.orders.update',
+    params: { trade_no: 'VISUAL2026110001' },
+    body: { status: 3 },
+  });
+  assert.deepEqual(source, oracle);
+});
+
+test('the W11 reconciliation resolve splits out of order/update (§6.4)', () => {
+  const oracle = canonicalizeRequest('oracle', {
+    method: 'POST',
+    url: '/api/v1/sec/order/update',
+    postData: JSON.stringify({ reconciliation_id: 7, resolution: 'confirm' }),
+    securePath: 'sec',
+  });
+  const source = canonicalizeRequest('source', {
+    method: 'POST',
+    url: '/api/v1/sec/payment-reconciliations/7/resolve',
+    postData: JSON.stringify({ resolution: 'confirm' }),
+    securePath: 'sec',
+  });
+  assert.deepEqual(oracle, {
+    routeId: 'admin.payment-reconciliations.resolve',
+    params: { id: 7 },
+    body: { resolution: 'confirm' },
+  });
+  assert.deepEqual(source, oracle);
+});
+
 test('unknown routes canonicalize with routeId null', () => {
   const request = canonicalizeRequest('oracle', {
     method: 'GET',

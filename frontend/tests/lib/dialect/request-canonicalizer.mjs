@@ -45,6 +45,9 @@ export const BOOLEAN_FLAG_FIELDS = Object.freeze(
     'withdraw_close',
     'commission_distribution_enable',
     'is_forget',
+    // §6.2 (W11): the plan-editor force-update flag rides as a native boolean
+    // on the modern wire (the legacy form spelled it `1`/`true`).
+    'force_update',
   ]),
 );
 
@@ -165,7 +168,37 @@ const ROUTE_REQUEST_FOLDS = Object.freeze({
   'admin.coupons.delete': foldBodyIdIntoParams,
   'admin.gift-cards.update': foldBodyIdIntoParams,
   'admin.gift-cards.delete': foldBodyIdIntoParams,
+  // W11 (§6.2): the legacy plan/payment body-carried row id folds onto the
+  // modern PATCH/DELETE path identity.
+  'admin.plans.update': foldBodyIdIntoParams,
+  'admin.plans.toggle': foldBodyIdIntoParams,
+  'admin.plans.delete': foldBodyIdIntoParams,
+  'admin.payments.update': foldBodyIdIntoParams,
+  'admin.payments.toggle': foldBodyIdIntoParams,
+  'admin.payments.delete': foldBodyIdIntoParams,
+  // W11 (§6.4): the order identifier standardizes on trade_no in the path.
+  // The legacy detail read carried a numeric `id`; every mutation carried the
+  // body `trade_no`. Fold each onto the modern path identity.
+  'admin.orders.get': foldBodyIdIntoParams,
+  'admin.orders.update': foldBodyTradeNoIntoParams,
+  'admin.orders.mark-paid': foldBodyTradeNoIntoParams,
+  'admin.orders.cancel': foldBodyTradeNoIntoParams,
+  // W11 (§6.4): the demultiplexed reconciliation arm becomes its own resolve
+  // route; the legacy `reconciliation_id` body folds onto the modern `{id}`
+  // path identity.
+  'admin.payment-reconciliations.resolve': foldBodyReconciliationIdIntoParams,
 });
+
+function foldBodyReconciliationIdIntoParams(request) {
+  const body = request.body;
+  if (!isPlainObject(body) || body.reconciliation_id === undefined) return request;
+  const { reconciliation_id, ...rest } = body;
+  return {
+    ...request,
+    params: { id: reconciliation_id, ...request.params },
+    body: Object.keys(rest).length === 0 ? null : rest,
+  };
+}
 
 function foldKnowledgeSortIds(request) {
   const body = request.body;

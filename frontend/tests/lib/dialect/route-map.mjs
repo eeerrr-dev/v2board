@@ -402,27 +402,82 @@ export const routeMap = Object.freeze([
     { method: 'GET', path: '/{secure_path}/system/logs' },
   ),
 
-  // ——— §6.2 Plans, payments ———
-  route('admin.plans.list', { method: 'GET', path: '/{secure_path}/plan/fetch' }),
-  route('admin.plans.create', { method: 'POST', path: '/{secure_path}/plan/save' }),
-  route('admin.plans.update', { method: 'POST', path: '/{secure_path}/plan/save' }),
-  route('admin.plans.toggle', { method: 'POST', path: '/{secure_path}/plan/update' }),
-  route('admin.plans.delete', { method: 'POST', path: '/{secure_path}/plan/drop' }),
-  route('admin.plans.sort', { method: 'POST', path: '/{secure_path}/plan/sort' }),
-  route('admin.payments.list', { method: 'GET', path: '/{secure_path}/payment/fetch' }),
-  route('admin.payment-providers.list', {
-    method: 'GET',
-    path: '/{secure_path}/payment/getPaymentMethods',
-  }),
-  route('admin.payment-providers.form', {
-    method: 'POST',
-    path: '/{secure_path}/payment/getPaymentForm',
-  }),
-  route('admin.payments.create', { method: 'POST', path: '/{secure_path}/payment/save' }),
-  route('admin.payments.update', { method: 'POST', path: '/{secure_path}/payment/save' }),
-  route('admin.payments.toggle', { method: 'POST', path: '/{secure_path}/payment/show' }),
-  route('admin.payments.delete', { method: 'POST', path: '/{secure_path}/payment/drop' }),
-  route('admin.payments.sort', { method: 'POST', path: '/{secure_path}/payment/sort' }),
+  // ——— §6.2 Plans, payments — flipped to the modern rows in W11 ———
+  route(
+    'admin.plans.list',
+    { method: 'GET', path: '/{secure_path}/plan/fetch' },
+    // §6.2: bare unpaginated array, prices stay cents.
+    { method: 'GET', path: '/{secure_path}/plans' },
+  ),
+  route(
+    'admin.plans.create',
+    { method: 'POST', path: '/{secure_path}/plan/save' },
+    { method: 'POST', path: '/{secure_path}/plans' },
+  ),
+  route(
+    'admin.plans.update',
+    { method: 'POST', path: '/{secure_path}/plan/save', bodyKeys: ['id'] },
+    { method: 'PATCH', path: '/{secure_path}/plans/{id}' },
+  ),
+  route(
+    'admin.plans.toggle',
+    { method: 'POST', path: '/{secure_path}/plan/update' },
+    // §6.2: the show/renew toggle merges into PATCH with an explicit flag body.
+    { method: 'PATCH', path: '/{secure_path}/plans/{id}' },
+  ),
+  route(
+    'admin.plans.delete',
+    { method: 'POST', path: '/{secure_path}/plan/drop' },
+    { method: 'DELETE', path: '/{secure_path}/plans/{id}' },
+  ),
+  route(
+    'admin.plans.sort',
+    { method: 'POST', path: '/{secure_path}/plan/sort' },
+    // Same verb; the body renames `plan_ids` → `ids` (§6.2).
+    { method: 'POST', path: '/{secure_path}/plans/sort' },
+  ),
+  route(
+    'admin.payments.list',
+    { method: 'GET', path: '/{secure_path}/payment/fetch' },
+    { method: 'GET', path: '/{secure_path}/payments' },
+  ),
+  route(
+    'admin.payment-providers.list',
+    { method: 'GET', path: '/{secure_path}/payment/getPaymentMethods' },
+    { method: 'GET', path: '/{secure_path}/payment-providers' },
+  ),
+  route(
+    'admin.payment-providers.form',
+    { method: 'POST', path: '/{secure_path}/payment/getPaymentForm' },
+    // §6.2: the provider-form read moved to GET, provider code in the path and
+    // the optional row id in `?payment_id=`.
+    { method: 'GET', path: '/{secure_path}/payment-providers/{code}/form' },
+  ),
+  route(
+    'admin.payments.create',
+    { method: 'POST', path: '/{secure_path}/payment/save' },
+    { method: 'POST', path: '/{secure_path}/payments' },
+  ),
+  route(
+    'admin.payments.update',
+    { method: 'POST', path: '/{secure_path}/payment/save', bodyKeys: ['id'] },
+    { method: 'PATCH', path: '/{secure_path}/payments/{id}' },
+  ),
+  route(
+    'admin.payments.toggle',
+    { method: 'POST', path: '/{secure_path}/payment/show' },
+    { method: 'PATCH', path: '/{secure_path}/payments/{id}', bodyKeys: ['enable'] },
+  ),
+  route(
+    'admin.payments.delete',
+    { method: 'POST', path: '/{secure_path}/payment/drop' },
+    { method: 'DELETE', path: '/{secure_path}/payments/{id}' },
+  ),
+  route(
+    'admin.payments.sort',
+    { method: 'POST', path: '/{secure_path}/payment/sort' },
+    { method: 'POST', path: '/{secure_path}/payments/sort' },
+  ),
 
   // ——— §6.3 Content — flipped to the modern rows in W10 ———
   route(
@@ -549,25 +604,56 @@ export const routeMap = Object.freeze([
     { method: 'DELETE', path: '/{secure_path}/gift-cards/{id}' },
   ),
 
-  // ——— §6.4 Orders & reconciliation ———
-  route('admin.orders.list', { method: 'GET', path: '/{secure_path}/order/fetch' }),
-  route('admin.orders.get', { method: 'POST', path: '/{secure_path}/order/detail' }),
-  // The reconciliation arm rides the same legacy action behind a
+  // ——— §6.4 Orders & reconciliation — flipped to the modern rows in W11 ———
+  route(
+    'admin.orders.list',
+    { method: 'GET', path: '/{secure_path}/order/fetch' },
+    // §8 pagination + the §7 DSL on the guarded order column list;
+    // `?is_commission=` modernizes to `?commission_only=`.
+    { method: 'GET', path: '/{secure_path}/orders' },
+  ),
+  route(
+    'admin.orders.get',
+    { method: 'POST', path: '/{secure_path}/order/detail' },
+    // §6.4: the identifier standardizes on trade_no and the read moves to GET.
+    { method: 'GET', path: '/{secure_path}/orders/{trade_no}' },
+  ),
+  // The reconciliation arm rode the same legacy action behind a
   // `reconciliation_id` body param (§6.4 demultiplex); list it before the
-  // plain status/commission arm so the body discriminator can win.
-  route('admin.payment-reconciliations.resolve', {
-    method: 'POST',
-    path: '/{secure_path}/order/update',
-    bodyKeys: ['reconciliation_id'],
-  }),
-  route('admin.orders.update', { method: 'POST', path: '/{secure_path}/order/update' }),
-  route('admin.orders.mark-paid', { method: 'POST', path: '/{secure_path}/order/paid' }),
-  route('admin.orders.cancel', { method: 'POST', path: '/{secure_path}/order/cancel' }),
-  route('admin.orders.create', { method: 'POST', path: '/{secure_path}/order/assign' }),
-  route('admin.payment-reconciliations.list', {
-    method: 'GET',
-    path: '/{secure_path}/order/reconciliation/fetch',
-  }),
+  // plain status/commission arm so the body discriminator can win. §6.4
+  // splits it out onto its own modern resolve route.
+  route(
+    'admin.payment-reconciliations.resolve',
+    { method: 'POST', path: '/{secure_path}/order/update', bodyKeys: ['reconciliation_id'] },
+    { method: 'POST', path: '/{secure_path}/payment-reconciliations/{id}/resolve' },
+  ),
+  route(
+    'admin.orders.update',
+    { method: 'POST', path: '/{secure_path}/order/update' },
+    // §6.4: exactly one of {status, commission_status}; trade_no in the path.
+    { method: 'PATCH', path: '/{secure_path}/orders/{trade_no}' },
+  ),
+  route(
+    'admin.orders.mark-paid',
+    { method: 'POST', path: '/{secure_path}/order/paid' },
+    { method: 'POST', path: '/{secure_path}/orders/{trade_no}/mark-paid' },
+  ),
+  route(
+    'admin.orders.cancel',
+    { method: 'POST', path: '/{secure_path}/order/cancel' },
+    { method: 'POST', path: '/{secure_path}/orders/{trade_no}/cancel' },
+  ),
+  route(
+    'admin.orders.create',
+    { method: 'POST', path: '/{secure_path}/order/assign' },
+    // §6.4: creates an assigned order returning 201 `{trade_no}`.
+    { method: 'POST', path: '/{secure_path}/orders' },
+  ),
+  route(
+    'admin.payment-reconciliations.list',
+    { method: 'GET', path: '/{secure_path}/order/reconciliation/fetch' },
+    { method: 'GET', path: '/{secure_path}/payment-reconciliations' },
+  ),
 
   // ——— §6.5 Tickets (admin) ———
   route('admin.tickets.list', { method: 'GET', path: '/{secure_path}/ticket/fetch' }),

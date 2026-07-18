@@ -307,6 +307,54 @@ export async function installApiFixtures(page, scenario, target, interaction = {
       adminEndpoint === '/giftcard/generate' ||
       (adminEndpoint === '/gift-cards' && requestMethod === 'POST') ||
       (/^\/gift-cards\/\d+$/.test(adminEndpoint ?? '') && requestMethod === 'PATCH');
+    // W11 (§6.2/§6.4): the modern admin commerce family carries identity in the
+    // path — plan/payment creates POST the collection, edits PATCH /{id}
+    // (the show/renew/enable toggle is the single-flag PATCH), deletes DELETE
+    // /{id}, sort POSTs /{collection}/sort; orders standardize on trade_no
+    // path identity. Match both worlds' spellings for the counters, captures,
+    // timeout, and delay knobs below.
+    const isSingleFlagPatch = (flag) =>
+      requestMethod === 'PATCH' &&
+      requestData != null &&
+      Object.keys(requestData).length === 1 &&
+      flag in requestData;
+    const isPlanTogglePatch = isSingleFlagPatch('show') || isSingleFlagPatch('renew');
+    const isAdminPlanFetch =
+      adminEndpoint === '/plan/fetch' ||
+      (adminEndpoint === '/plans' && requestMethod === 'GET');
+    const isAdminPlanSave =
+      adminEndpoint === '/plan/save' ||
+      (adminEndpoint === '/plans' && requestMethod === 'POST') ||
+      (/^\/plans\/\d+$/.test(adminEndpoint ?? '') &&
+        requestMethod === 'PATCH' &&
+        !isPlanTogglePatch);
+    const isAdminPlanUpdate =
+      adminEndpoint === '/plan/update' ||
+      (/^\/plans\/\d+$/.test(adminEndpoint ?? '') && isPlanTogglePatch);
+    const isAdminPlanDrop =
+      adminEndpoint === '/plan/drop' ||
+      (/^\/plans\/\d+$/.test(adminEndpoint ?? '') && requestMethod === 'DELETE');
+    const isAdminPaymentFetch =
+      adminEndpoint === '/payment/fetch' ||
+      (adminEndpoint === '/payments' && requestMethod === 'GET');
+    const isAdminPaymentSave =
+      adminEndpoint === '/payment/save' ||
+      (adminEndpoint === '/payments' && requestMethod === 'POST') ||
+      (/^\/payments\/\d+$/.test(adminEndpoint ?? '') &&
+        requestMethod === 'PATCH' &&
+        !isSingleFlagPatch('enable'));
+    const isAdminOrderFetch =
+      adminEndpoint === '/order/fetch' ||
+      (adminEndpoint === '/orders' && requestMethod === 'GET');
+    const isAdminOrderAssign =
+      adminEndpoint === '/order/assign' ||
+      (adminEndpoint === '/orders' && requestMethod === 'POST');
+    const isAdminOrderPaid =
+      adminEndpoint === '/order/paid' ||
+      /^\/orders\/[^/]+\/mark-paid$/.test(adminEndpoint ?? '');
+    const isAdminOrderUpdate =
+      adminEndpoint === '/order/update' ||
+      (/^\/orders\/[^/]+$/.test(adminEndpoint ?? '') && requestMethod === 'PATCH');
     if (isUserProfileGet) {
       page.__visualParityUserInfoFetchCount = (page.__visualParityUserInfoFetchCount ?? 0) + 1;
     }
@@ -513,46 +561,56 @@ export async function installApiFixtures(page, scenario, target, interaction = {
         requestData,
       ];
     }
-    if (adminEndpoint === '/order/assign') {
-      page.__visualParityLastAdminOrderAssign = requestData;
+    if (isAdminOrderAssign) {
+      // Canonical capture (W11 §6.4): the legacy form body and the modern JSON
+      // body (total_amount cents in both) fold onto one contract.
+      page.__visualParityLastAdminOrderAssign = canonicalRequestCapture();
     }
-    if (adminEndpoint === '/order/paid') {
-      page.__visualParityLastAdminOrderPaid = requestData;
+    if (isAdminOrderPaid) {
+      // Canonical capture: legacy `{trade_no}` body and modern path identity
+      // both surface `{trade_no}`.
+      page.__visualParityLastAdminOrderPaid = canonicalRequestCapture();
     }
-    if (adminEndpoint === '/order/update') {
-      page.__visualParityLastAdminOrderUpdate = requestData;
+    if (isAdminOrderUpdate) {
+      // Canonical capture: legacy `{trade_no, status|commission_status}` body
+      // and the modern PATCH `{status|commission_status}` + path trade_no fold
+      // onto one flat contract.
+      page.__visualParityLastAdminOrderUpdate = canonicalRequestCapture();
     }
-    if (adminEndpoint === '/order/fetch') {
+    if (isAdminOrderFetch) {
       page.__visualParityAdminOrderFetchCount = (page.__visualParityAdminOrderFetchCount ?? 0) + 1;
-      page.__visualParityLastAdminOrderFetchQuery = Object.fromEntries(
-        requestUrl.searchParams.entries(),
-      );
+      // Canonical capture (§7/§8): the legacy `filter[i][…]`/`current`/`pageSize`
+      // query and the modern `filter` JSON + `page`/`per_page` fold to one shape.
+      page.__visualParityLastAdminOrderFetchQuery = canonicalRequestCapture();
     }
-    if (adminEndpoint === '/plan/fetch') {
+    if (isAdminPlanFetch) {
       page.__visualParityAdminPlanFetchCount = (page.__visualParityAdminPlanFetchCount ?? 0) + 1;
     }
-    if (adminEndpoint === '/plan/save') {
-      page.__visualParityLastAdminPlanSave = requestData;
+    if (isAdminPlanSave) {
+      const planSaveRequest = canonicalRequestCapture();
+      page.__visualParityLastAdminPlanSave = planSaveRequest;
       page.__visualParityAdminPlanSaveCount = (page.__visualParityAdminPlanSaveCount ?? 0) + 1;
       page.__visualParityAdminPlanSaveRequests = [
         ...(page.__visualParityAdminPlanSaveRequests ?? []),
-        requestData,
+        planSaveRequest,
       ];
     }
-    if (adminEndpoint === '/plan/update') {
-      page.__visualParityLastAdminPlanUpdate = requestData;
+    if (isAdminPlanUpdate) {
+      const planUpdateRequest = canonicalRequestCapture();
+      page.__visualParityLastAdminPlanUpdate = planUpdateRequest;
       page.__visualParityAdminPlanUpdateCount = (page.__visualParityAdminPlanUpdateCount ?? 0) + 1;
       page.__visualParityAdminPlanUpdateRequests = [
         ...(page.__visualParityAdminPlanUpdateRequests ?? []),
-        requestData,
+        planUpdateRequest,
       ];
     }
-    if (adminEndpoint === '/plan/drop') {
-      page.__visualParityLastAdminPlanDrop = requestData;
+    if (isAdminPlanDrop) {
+      const planDropRequest = canonicalRequestCapture();
+      page.__visualParityLastAdminPlanDrop = planDropRequest;
       page.__visualParityAdminPlanDropCount = (page.__visualParityAdminPlanDropCount ?? 0) + 1;
       page.__visualParityAdminPlanDropRequests = [
         ...(page.__visualParityAdminPlanDropRequests ?? []),
-        requestData,
+        planDropRequest,
       ];
     }
     if (adminEndpoint === '/server/group/fetch') {
@@ -681,17 +739,20 @@ export async function installApiFixtures(page, scenario, target, interaction = {
         noticeDropRequest,
       ];
     }
-    if (adminEndpoint === '/payment/fetch') {
+    if (isAdminPaymentFetch) {
       page.__visualParityAdminPaymentFetchCount =
         (page.__visualParityAdminPaymentFetchCount ?? 0) + 1;
     }
-    if (adminEndpoint === '/payment/save') {
-      page.__visualParityLastAdminPaymentSave = requestData;
+    if (isAdminPaymentSave) {
+      // Canonical capture (W11 §6.2): the legacy `config[key]` bracket form and
+      // the modern nested `config` JSON object fold onto one contract.
+      const paymentSaveRequest = canonicalRequestCapture();
+      page.__visualParityLastAdminPaymentSave = paymentSaveRequest;
       page.__visualParityAdminPaymentSaveCount =
         (page.__visualParityAdminPaymentSaveCount ?? 0) + 1;
       page.__visualParityAdminPaymentSaveRequests = [
         ...(page.__visualParityAdminPaymentSaveRequests ?? []),
-        requestData,
+        paymentSaveRequest,
       ];
     }
     if (adminEndpoint === '/ticket/fetch') {
@@ -823,12 +884,12 @@ export async function installApiFixtures(page, scenario, target, interaction = {
       (scenario.userTicketsTimeout && isUserTicketFetch) ||
       (scenario.userKnowledgeTimeout &&
         (pathname === '/api/v1/user/knowledge/fetch' || pathname === '/api/v1/user/knowledge')) ||
-      (scenario.adminPlansTimeout && adminEndpoint === '/plan/fetch') ||
-      (scenario.adminOrdersTimeout && adminEndpoint === '/order/fetch') ||
+      (scenario.adminPlansTimeout && isAdminPlanFetch) ||
+      (scenario.adminOrdersTimeout && isAdminOrderFetch) ||
       (scenario.adminUsersTimeout && adminEndpoint === '/user/fetch') ||
       (scenario.adminTicketsTimeout && adminEndpoint === '/ticket/fetch') ||
       (scenario.adminServerManageTimeout && adminEndpoint === '/server/manage/getNodes') ||
-      (scenario.adminPaymentsTimeout && adminEndpoint === '/payment/fetch') ||
+      (scenario.adminPaymentsTimeout && isAdminPaymentFetch) ||
       (scenario.adminCouponsTimeout && isAdminCouponFetch) ||
       (scenario.adminGiftcardsTimeout && isAdminGiftcardFetch) ||
       (scenario.adminNoticesTimeout && isAdminNoticeFetch) ||
@@ -881,7 +942,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     if (adminEndpoint === '/ticket/reply' && interaction.delayAdminTicketReplyMs) {
       await delay(interaction.delayAdminTicketReplyMs);
     }
-    if (adminEndpoint === '/payment/save' && interaction.delayAdminPaymentSaveMs) {
+    if (isAdminPaymentSave && interaction.delayAdminPaymentSaveMs) {
       await delay(interaction.delayAdminPaymentSaveMs);
     }
     if (isAdminCouponGenerate && interaction.delayAdminCouponGenerateMs) {
@@ -896,13 +957,15 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     if (isAdminNoticeSave && interaction.delayAdminNoticeSaveMs) {
       await delay(interaction.delayAdminNoticeSaveMs);
     }
-    if (adminEndpoint === '/plan/save' && interaction.delayAdminPlanSaveMs) {
+    if (isAdminPlanSave && interaction.delayAdminPlanSaveMs) {
       await delay(interaction.delayAdminPlanSaveMs);
     }
     if (
       (isAdminNoticeDrop ||
         isAdminNoticeShow ||
-        ['/plan/drop', '/plan/update', '/server/manage/sort'].includes(adminEndpoint ?? '')) &&
+        isAdminPlanDrop ||
+        isAdminPlanUpdate ||
+        adminEndpoint === '/server/manage/sort') &&
       interaction.delayAdminMutationMs
     ) {
       await delay(interaction.delayAdminMutationMs);
@@ -1020,8 +1083,15 @@ export function apiFixtureResponse(
   }
 
   if (adminEndpoint) {
-    if (scenario.adminOrdersHttpError && adminEndpoint === '/order/fetch') {
-      return httpError('Server Error', 500);
+    if (
+      scenario.adminOrdersHttpError &&
+      (adminEndpoint === '/order/fetch' || (adminEndpoint === '/orders' && method === 'GET'))
+    ) {
+      // W11 (§6.4): the source world speaks dialect v2, so a list failure is a
+      // problem+json 500; the frozen oracle keeps the legacy HTTP-500 body.
+      return target === 'source'
+        ? v2Problem(500, 'Internal Server Error', 'internal_error', 'Server Error')
+        : httpError('Server Error', 500);
     }
     if (scenario.adminUsersHttpError && adminEndpoint === '/user/fetch') {
       return httpError('Server Error', 500);
@@ -1135,6 +1205,86 @@ export function apiFixtureResponse(
       if (interaction?.adminGiftcardGenerateError) {
         return contentValidationProblem('礼品卡生成失败');
       }
+      return v2Empty();
+    }
+
+    // §6.2/§6.4 modern admin commerce family (W11): plans/payments bare arrays
+    // (prices/fees stay cents/number, booleans, RFC 3339), payment-providers
+    // code array + provider form, orders §8 page + trade_no bare detail, 201
+    // {id}/{trade_no} creates, bodiless updates/toggles/deletes, and a seeded
+    // reconciliation page. Only the source world requests these spellings; the
+    // oracle keeps the legacy rows in the switch below. Error-knob detail text
+    // mirrors the legacy toast — the Tier-1 comparison keys on the problem
+    // `code`, presentation drops.
+    const isSingleFlagBody = (flag) =>
+      requestData != null && Object.keys(requestData).length === 1 && flag in requestData;
+    if (adminEndpoint === '/plans') {
+      if (method === 'POST') {
+        if (interaction?.adminPlanSaveError) return contentValidationProblem('订阅保存失败');
+        return v2Body({ id: adminPlanFixturesFor(scenario).length + 1 }, 201);
+      }
+      return v2Body(adminPlanFixturesFor(scenario).map(modernAdminPlanFixture));
+    }
+    if (adminEndpoint === '/plans/sort') return v2Empty();
+    if (/^\/plans\/\d+$/.test(adminEndpoint)) {
+      if (method === 'DELETE') {
+        if (interaction?.adminPlanDropError) return contentValidationProblem('订阅删除失败');
+        return v2Empty();
+      }
+      if (isSingleFlagBody('show') || isSingleFlagBody('renew')) {
+        if (interaction?.adminPlanUpdateError) return contentValidationProblem('订阅开关失败');
+        return v2Empty();
+      }
+      if (interaction?.adminPlanSaveError) return contentValidationProblem('订阅保存失败');
+      return v2Empty();
+    }
+    if (adminEndpoint === '/payments') {
+      if (method === 'POST') {
+        if (interaction?.adminPaymentSaveError) return contentValidationProblem('支付方式保存失败');
+        return v2Body({ id: adminPaymentFixtures.length + 1 }, 201);
+      }
+      return v2Body(adminPaymentFixtures.map(modernAdminPaymentFixture));
+    }
+    if (adminEndpoint === '/payments/sort') return v2Empty();
+    if (adminEndpoint === '/payment-providers') {
+      return v2Body(adminPaymentMethodsFixture);
+    }
+    const modernProviderFormMatch = /^\/payment-providers\/([^/]+)\/form$/.exec(adminEndpoint);
+    if (modernProviderFormMatch) {
+      const requestedProvider = decodeURIComponent(modernProviderFormMatch[1]);
+      return v2Body(
+        adminPaymentFormFixtures[requestedProvider] ?? adminPaymentFormFixtures.AlipayF2F,
+      );
+    }
+    if (/^\/payments\/\d+$/.test(adminEndpoint)) {
+      if (method === 'DELETE') return v2Empty();
+      if (isSingleFlagBody('enable')) return v2Empty();
+      if (interaction?.adminPaymentSaveError) return contentValidationProblem('支付方式保存失败');
+      return v2Empty();
+    }
+    if (adminEndpoint === '/orders') {
+      if (method === 'POST') return v2Body({ trade_no: 'VISUAL2026110099' }, 201);
+      return v2Body({
+        items: adminOrderFixturesFor(scenario).map(modernAdminOrderFixture),
+        total: adminOrderFixturesFor(scenario).length,
+      });
+    }
+    const modernOrderScopedMatch = /^\/orders\/([^/]+)$/.exec(adminEndpoint);
+    if (modernOrderScopedMatch) {
+      if (method === 'GET') {
+        const requestedTradeNo = decodeURIComponent(modernOrderScopedMatch[1]);
+        return v2Body(
+          modernAdminOrderFixture(
+            adminOrderFixturesFor(scenario).find(
+              (order) => order.trade_no === requestedTradeNo,
+            ) ?? adminOrderFixtures[0],
+          ),
+        );
+      }
+      // PATCH status / commission_status
+      return v2Empty();
+    }
+    if (/^\/orders\/[^/]+\/(mark-paid|cancel)$/.test(adminEndpoint)) {
       return v2Empty();
     }
 
@@ -1929,6 +2079,34 @@ const modernGiftcardFixture = (giftcard) => ({
   ended_at: rfc3339FixtureTime(giftcard.ended_at),
   created_at: rfc3339FixtureTime(giftcard.created_at),
   updated_at: rfc3339FixtureTime(giftcard.updated_at),
+});
+
+// ——— W11 modern-wire projections (docs/api-dialect.md §6.2, §6.4) ———
+// boolean show/renew/enable flags, RFC 3339 timestamps, a numeric
+// handling_fee_percent, and prices/fees that stay cents. The admin plan list
+// keeps the sold `count` (unlike the user-side §5.5 plan body, which drops it).
+const modernAdminPlanFixture = (plan) => ({
+  ...plan,
+  show: plan.show !== 0,
+  renew: plan.renew !== 0,
+  created_at: rfc3339FixtureTime(plan.created_at),
+  updated_at: rfc3339FixtureTime(plan.updated_at),
+});
+
+const modernAdminPaymentFixture = (payment) => ({
+  ...payment,
+  enable: payment.enable !== 0,
+  handling_fee_percent:
+    payment.handling_fee_percent == null ? null : Number(payment.handling_fee_percent),
+  created_at: rfc3339FixtureTime(payment.created_at),
+  updated_at: rfc3339FixtureTime(payment.updated_at),
+});
+
+const modernAdminOrderFixture = (order) => ({
+  ...order,
+  paid_at: order.paid_at == null ? null : rfc3339FixtureTime(order.paid_at),
+  created_at: rfc3339FixtureTime(order.created_at),
+  updated_at: rfc3339FixtureTime(order.updated_at),
 });
 
 // ——— W5 modern-wire projections (docs/api-dialect.md §4.1, §4.5, §5.3,

@@ -105,6 +105,31 @@ const W10_ROUTE_IDS = Object.freeze([
   'admin.gift-cards.delete',
 ]);
 
+const W11_ROUTE_IDS = Object.freeze([
+  'admin.plans.list',
+  'admin.plans.create',
+  'admin.plans.update',
+  'admin.plans.toggle',
+  'admin.plans.delete',
+  'admin.plans.sort',
+  'admin.payments.list',
+  'admin.payment-providers.list',
+  'admin.payment-providers.form',
+  'admin.payments.create',
+  'admin.payments.update',
+  'admin.payments.toggle',
+  'admin.payments.delete',
+  'admin.payments.sort',
+  'admin.orders.list',
+  'admin.orders.get',
+  'admin.payment-reconciliations.resolve',
+  'admin.orders.update',
+  'admin.orders.mark-paid',
+  'admin.orders.cancel',
+  'admin.orders.create',
+  'admin.payment-reconciliations.list',
+]);
+
 const W4_ROUTE_IDS = Object.freeze([
   'user.plans.get',
   'user.plans.list',
@@ -130,6 +155,7 @@ test('unflipped families stay identity: modern equals legacy until each wave', (
     if (W8_ROUTE_IDS.includes(entry.id)) continue; // §5.7 user tickets flipped in W8
     if (W9_ROUTE_IDS.includes(entry.id)) continue; // §6.1 admin config/system flipped in W9
     if (W10_ROUTE_IDS.includes(entry.id)) continue; // §6.3 admin content flipped in W10
+    if (W11_ROUTE_IDS.includes(entry.id)) continue; // §6.2/§6.4 admin commerce flipped in W11
     assert.deepEqual(entry.modern, entry.legacy, `${entry.id} must stay legacy→legacy until its wave`);
   }
 });
@@ -477,6 +503,157 @@ test('W10: the admin content family carries the modern rows', () => {
       securePath: 'sec',
     })?.id,
     'admin.knowledge-categories.list',
+  );
+});
+
+test('W11: the admin commerce family carries the modern rows', () => {
+  const modern = Object.fromEntries(W11_ROUTE_IDS.map((id) => [id, routeEntry(id).modern]));
+  assert.deepEqual(modern, {
+    // §6.2: bare unpaginated array, prices stay cents.
+    'admin.plans.list': { method: 'GET', path: '/{secure_path}/plans' },
+    'admin.plans.create': { method: 'POST', path: '/{secure_path}/plans' },
+    'admin.plans.update': { method: 'PATCH', path: '/{secure_path}/plans/{id}' },
+    // §6.2: the show/renew toggle merges into PATCH (no fixed body key — the
+    // flag varies per toggle, so the row stays undiscriminated).
+    'admin.plans.toggle': { method: 'PATCH', path: '/{secure_path}/plans/{id}' },
+    'admin.plans.delete': { method: 'DELETE', path: '/{secure_path}/plans/{id}' },
+    'admin.plans.sort': { method: 'POST', path: '/{secure_path}/plans/sort' },
+    'admin.payments.list': { method: 'GET', path: '/{secure_path}/payments' },
+    'admin.payment-providers.list': { method: 'GET', path: '/{secure_path}/payment-providers' },
+    // §6.2: the provider-form read moved to GET, provider code in the path.
+    'admin.payment-providers.form': {
+      method: 'GET',
+      path: '/{secure_path}/payment-providers/{code}/form',
+    },
+    'admin.payments.create': { method: 'POST', path: '/{secure_path}/payments' },
+    'admin.payments.update': { method: 'PATCH', path: '/{secure_path}/payments/{id}' },
+    'admin.payments.toggle': {
+      method: 'PATCH',
+      path: '/{secure_path}/payments/{id}',
+      bodyKeys: ['enable'],
+    },
+    'admin.payments.delete': { method: 'DELETE', path: '/{secure_path}/payments/{id}' },
+    'admin.payments.sort': { method: 'POST', path: '/{secure_path}/payments/sort' },
+    // §8 pagination + the §7 DSL; `?is_commission=` → `?commission_only=`.
+    'admin.orders.list': { method: 'GET', path: '/{secure_path}/orders' },
+    // §6.4: the identifier standardizes on trade_no and the read moves to GET.
+    'admin.orders.get': { method: 'GET', path: '/{secure_path}/orders/{trade_no}' },
+    // §6.4: the reconciliation arm splits out onto its own resolve route.
+    'admin.payment-reconciliations.resolve': {
+      method: 'POST',
+      path: '/{secure_path}/payment-reconciliations/{id}/resolve',
+    },
+    // §6.4: exactly one of {status, commission_status}; trade_no in the path.
+    'admin.orders.update': { method: 'PATCH', path: '/{secure_path}/orders/{trade_no}' },
+    'admin.orders.mark-paid': { method: 'POST', path: '/{secure_path}/orders/{trade_no}/mark-paid' },
+    'admin.orders.cancel': { method: 'POST', path: '/{secure_path}/orders/{trade_no}/cancel' },
+    // §6.4: creates an assigned order returning 201 `{trade_no}`.
+    'admin.orders.create': { method: 'POST', path: '/{secure_path}/orders' },
+    'admin.payment-reconciliations.list': {
+      method: 'GET',
+      path: '/{secure_path}/payment-reconciliations',
+    },
+  });
+  // The oracle keeps requesting the legacy rows, including the body-carried
+  // id upserts and the reconciliation demultiplex on order/update.
+  assert.equal(worldRoute('admin.plans.list', 'oracle').path, '/{secure_path}/plan/fetch');
+  assert.deepEqual(worldRoute('admin.plans.update', 'oracle').bodyKeys, ['id']);
+  assert.equal(worldRoute('admin.plans.toggle', 'oracle').path, '/{secure_path}/plan/update');
+  assert.equal(worldRoute('admin.orders.get', 'oracle').path, '/{secure_path}/order/detail');
+  assert.equal(
+    worldRoute('admin.payment-providers.form', 'oracle').path,
+    '/{secure_path}/payment/getPaymentForm',
+  );
+  assert.deepEqual(worldRoute('admin.payment-reconciliations.resolve', 'oracle').bodyKeys, [
+    'reconciliation_id',
+  ]);
+  // Oracle-world upsert bodies discriminate create vs update on the row id.
+  assert.equal(
+    matchRoute('oracle', {
+      method: 'POST',
+      pathname: `${API_PREFIX}/sec/plan/save`,
+      securePath: 'sec',
+      body: { name: 'New', content: 'x' },
+    })?.id,
+    'admin.plans.create',
+  );
+  assert.equal(
+    matchRoute('oracle', {
+      method: 'POST',
+      pathname: `${API_PREFIX}/sec/plan/save`,
+      securePath: 'sec',
+      body: { id: 5, name: 'Edited' },
+    })?.id,
+    'admin.plans.update',
+  );
+  // Source-world matches extract the path id / trade_no.
+  assert.deepEqual(
+    matchRoute('source', {
+      method: 'PATCH',
+      pathname: `${API_PREFIX}/sec/plans/5`,
+      securePath: 'sec',
+      body: { name: 'Edited' },
+    }),
+    { id: 'admin.plans.update', params: { id: '5' } },
+  );
+  assert.deepEqual(
+    matchRoute('source', {
+      method: 'PATCH',
+      pathname: `${API_PREFIX}/sec/payments/2`,
+      securePath: 'sec',
+      body: { enable: false },
+    }),
+    { id: 'admin.payments.toggle', params: { id: '2' } },
+  );
+  assert.deepEqual(
+    matchRoute('source', {
+      method: 'GET',
+      pathname: `${API_PREFIX}/sec/orders/2026TRADE1`,
+      securePath: 'sec',
+    }),
+    { id: 'admin.orders.get', params: { trade_no: '2026TRADE1' } },
+  );
+  assert.deepEqual(
+    matchRoute('source', {
+      method: 'PATCH',
+      pathname: `${API_PREFIX}/sec/orders/2026TRADE1`,
+      securePath: 'sec',
+      body: { status: 3 },
+    }),
+    { id: 'admin.orders.update', params: { trade_no: '2026TRADE1' } },
+  );
+  assert.deepEqual(
+    matchRoute('source', {
+      method: 'POST',
+      pathname: `${API_PREFIX}/sec/payment-reconciliations/7/resolve`,
+      securePath: 'sec',
+      body: { resolution: 'confirm' },
+    }),
+    { id: 'admin.payment-reconciliations.resolve', params: { id: '7' } },
+  );
+  assert.equal(
+    matchRoute('source', {
+      method: 'GET',
+      pathname: `${API_PREFIX}/sec/payment-providers`,
+      securePath: 'sec',
+    })?.id,
+    'admin.payment-providers.list',
+  );
+  assert.deepEqual(
+    matchRoute('source', {
+      method: 'GET',
+      pathname: `${API_PREFIX}/sec/payment-providers/StripeCheckout/form`,
+      securePath: 'sec',
+    }),
+    { id: 'admin.payment-providers.form', params: { code: 'StripeCheckout' } },
+  );
+  assert.equal(
+    matchRoute('source', {
+      method: 'POST',
+      pathname: `${API_PREFIX}/sec/orders`,
+      securePath: 'sec',
+    })?.id,
+    'admin.orders.create',
   );
 });
 

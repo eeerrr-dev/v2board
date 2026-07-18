@@ -1014,7 +1014,11 @@ export function assertUsefulInteraction(label, result, target) {
     label === 'admin-dashboard-commission-shortcut' &&
     (result.before?.alertLinks?.length < 2 ||
       !result.after?.hash?.includes('/order') ||
-      !JSON.stringify(result.after?.orderFetchQuery).includes('filter[0][key]') ||
+      // W11 (§6.4/§7): the fetch query folds to the canonical DSL clause array
+      // in both worlds — the commission jump seeds the status/commission_status
+      // /commission_balance conditions.
+      !JSON.stringify(result.after?.orderFetchQuery).includes('"field"') ||
+      !JSON.stringify(result.after?.orderFetchQuery).includes('"op":"gt"') ||
       !JSON.stringify(result.after?.orderFetchQuery).includes('status') ||
       !JSON.stringify(result.after?.orderFetchQuery).includes('commission_status') ||
       !JSON.stringify(result.after?.orderFetchQuery).includes('commission_balance'))
@@ -1073,7 +1077,9 @@ export function assertUsefulInteraction(label, result, target) {
     (!jsonIncludes(result.beforePlan?.tableRows, 'Pro') ||
       result.planUpdateRequests?.length !== 1 ||
       String(result.planUpdateRequests?.[0]?.id) !== '1' ||
-      String(result.planUpdateRequests?.[0]?.show) !== '0' ||
+      // W11 (§6.2): the show toggle rides as a native boolean (canonical false
+      // from the legacy `0` / modern `false` spellings).
+      result.planUpdateRequests?.[0]?.show !== false ||
       result.planDropRequests?.length !== 1 ||
       String(result.planDropRequests?.[0]?.id) !== '1' ||
       !jsonIncludes(result.beforeNotice?.tableRows, 'Notice A') ||
@@ -1131,7 +1137,9 @@ export function assertUsefulInteraction(label, result, target) {
       String(result.saveRequests?.[0]?.reset_traffic_method) !== '1' ||
       String(result.saveRequests?.[0]?.capacity_limit) !== '99' ||
       String(result.saveRequests?.[0]?.speed_limit) !== '50' ||
-      result.saveRequests?.[0]?.force_update !== 'true' ||
+      // W11 (§6.2): the modern create body denies `force_update` (no subscribers
+      // to force on a brand-new plan); the checkbox state is still verified by
+      // `result.filled?.forceUpdate?.checked` above.
       result.planFetchDelta < 1 ||
       result.closed?.drawerCount !== 0)
   ) {
@@ -1181,8 +1189,8 @@ export function assertUsefulInteraction(label, result, target) {
       requestMatches: (request) =>
         request?.name === 'Parity Failed Pay' &&
         request?.payment === 'AlipayF2F' &&
-        request?.['config[key]'] === 'failed-secret' &&
-        request?.['config[mch_id]'] === 'failed-merchant',
+        request?.config?.key === 'failed-secret' &&
+        request?.config?.mch_id === 'failed-merchant',
     },
     'admin-plan-save-failure': {
       fetchDeltaKey: 'planFetchDelta',
@@ -1318,7 +1326,9 @@ export function assertUsefulInteraction(label, result, target) {
       String(result.saveRequests?.[0]?.device_limit) !== '8' ||
       String(result.saveRequests?.[0]?.group_id) !== '1' ||
       String(result.saveRequests?.[0]?.reset_traffic_method) !== '2' ||
-      result.saveRequests?.[0]?.force_update !== 'true' ||
+      // W11 (§6.2): the modern edit body keeps `force_update` as a native
+      // boolean (the legacy form spelled it `true`).
+      result.saveRequests?.[0]?.force_update !== true ||
       result.planFetchDelta < 1 ||
       result.closed?.drawerCount !== 0)
   ) {
@@ -1343,8 +1353,8 @@ export function assertUsefulInteraction(label, result, target) {
       result.saveRequests?.length !== 1 ||
       result.saveRequests?.[0]?.name !== 'Parity Pay' ||
       result.saveRequests?.[0]?.payment !== 'StripeCheckout' ||
-      result.saveRequests?.[0]?.['config[publishable_key]'] !== 'pk_parity_create' ||
-      result.saveRequests?.[0]?.['config[secret_key]'] !== 'sk_parity_create' ||
+      result.saveRequests?.[0]?.config?.publishable_key !== 'pk_parity_create' ||
+      result.saveRequests?.[0]?.config?.secret_key !== 'sk_parity_create' ||
       result.paymentFetchDelta < 1 ||
       result.closed?.modalCount !== 0)
   ) {
@@ -1378,8 +1388,8 @@ export function assertUsefulInteraction(label, result, target) {
       String(result.saveRequests?.[0]?.id) !== '1' ||
       result.saveRequests?.[0]?.name !== 'Parity Edited Pay' ||
       result.saveRequests?.[0]?.payment !== 'AlipayF2F' ||
-      result.saveRequests?.[0]?.['config[key]'] !== 'edited-secret' ||
-      result.saveRequests?.[0]?.['config[mch_id]'] !== 'edited-merchant' ||
+      result.saveRequests?.[0]?.config?.key !== 'edited-secret' ||
+      result.saveRequests?.[0]?.config?.mch_id !== 'edited-merchant' ||
       result.paymentFetchDelta < 1 ||
       result.closed?.modalCount !== 0)
   ) {
@@ -1404,8 +1414,8 @@ export function assertUsefulInteraction(label, result, target) {
       result.saveRequests?.length !== 1 ||
       result.saveRequests?.[0]?.name !== 'Parity Plugin Matrix' ||
       result.saveRequests?.[0]?.payment !== 'StripeCheckout' ||
-      result.saveRequests?.[0]?.['config[publishable_key]'] !== 'pk_matrix_plugin' ||
-      result.saveRequests?.[0]?.['config[secret_key]'] !== 'sk_matrix_plugin' ||
+      result.saveRequests?.[0]?.config?.publishable_key !== 'pk_matrix_plugin' ||
+      result.saveRequests?.[0]?.config?.secret_key !== 'sk_matrix_plugin' ||
       result.paymentFetchDelta < 1 ||
       result.closed?.modalCount !== 0)
   ) {
@@ -1795,20 +1805,21 @@ export function assertUsefulInteraction(label, result, target) {
     // The redesigned list filters through an inline `order-search` box + `order-
     // page` pagination instead of the antd `过滤器` drawer, and shows the full
     // trade_no where the antd oracle truncates to `ADM...001` — both Tier-2. The
-    // filter/pagination CONTRACT (filter[0][key]=trade_no, value, current/
-    // pageSize) stays pinned by filterQuery below.
+    // filter/pagination CONTRACT stays pinned by filterQuery below; W11 (§6.4/
+    // §7/§8) folds both worlds to the canonical DSL clause array plus
+    // `page`/`per_page` pagination.
     label === 'admin-orders-filter-pagination-matrix' &&
     (!(result.before?.rowTexts?.length > 0) ||
       result.before?.sorterCount !== 0 ||
       result.filtered?.drawerCount !== 0 ||
-      !jsonIncludes(result.filtered?.filterQuery, 'filter[0][key]') ||
+      !jsonIncludes(result.filtered?.filterQuery, '"field"') ||
       !jsonIncludes(result.filtered?.filterQuery, 'trade_no') ||
       !jsonIncludes(result.filtered?.filterQuery, 'VISUAL202611') ||
       !jsonIncludes(result.filtered?.activePage, '1') ||
       !jsonIncludes(result.filtered?.pageItems, '2') ||
       !jsonIncludes(result.page2?.activePage, '2') ||
-      String(result.page2?.filterQuery?.current) !== '2' ||
-      String(result.page2?.filterQuery?.pageSize) !== '10' ||
+      String(result.page2?.filterQuery?.page) !== '2' ||
+      String(result.page2?.filterQuery?.per_page) !== '10' ||
       result.page2?.sorterCount !== 0)
   ) {
     throw new Error(
@@ -2451,8 +2462,9 @@ export function assertUsefulInteraction(label, result, target) {
       !JSON.stringify(result.before?.triggerTexts).includes('操作') ||
       !JSON.stringify(result.opened?.dropdownItems).includes('TA的订单') ||
       !String(result.navigated?.hash).includes('/order') ||
+      // W11 (§6.4/§7): the seeded user filter folds to the canonical DSL clause.
       !JSON.stringify(result.navigated?.orderFetchQuery).includes('user_id') ||
-      !JSON.stringify(result.navigated?.orderFetchQuery).includes('=') ||
+      !JSON.stringify(result.navigated?.orderFetchQuery).includes('"op":"eq"') ||
       !JSON.stringify(result.navigated?.orderFetchQuery).includes('1'))
   ) {
     throw new Error(
