@@ -220,10 +220,10 @@ pub struct ServerBody {
     pub congestion_control: Option<Option<String>>,
     #[serde(default)]
     pub version: Option<i64>,
-    #[serde(default)]
-    pub up_mbps: Option<i64>,
-    #[serde(default)]
-    pub down_mbps: Option<i64>,
+    #[serde(default, with = "double_option")]
+    pub up_mbps: Option<Option<i64>>,
+    #[serde(default, with = "double_option")]
+    pub down_mbps: Option<Option<i64>>,
     #[serde(default, with = "double_option")]
     pub flow: Option<Option<String>>,
     #[serde(default, with = "double_option")]
@@ -505,6 +505,25 @@ fn set_int_default(
     }
 }
 
+/// Double-Option integer over an INTEGER NOT NULL column (§4.4): an explicit
+/// JSON `null` clears back to the legacy always-assigned default; absence
+/// retains on PATCH and applies the default on create.
+fn set_int_clear_default(
+    values: &mut ServerValues,
+    column: &'static str,
+    field: Option<Option<i64>>,
+    default: i64,
+    mode: ValueMode,
+) {
+    set_int_default(
+        values,
+        column,
+        field.map(|value| value.unwrap_or(default)),
+        default,
+        mode,
+    );
+}
+
 fn validated_port(field: Option<i64>, column: &'static str) -> Result<Option<i64>, ApiError> {
     match field {
         Some(port) if (1..=65_535).contains(&port) => Ok(Some(port)),
@@ -771,8 +790,8 @@ pub(super) fn build_server_values(
         }
         "hysteria" => {
             set_int_default(&mut values, "version", body.version, 2, mode);
-            set_int_default(&mut values, "up_mbps", body.up_mbps, 0, mode);
-            set_int_default(&mut values, "down_mbps", body.down_mbps, 0, mode);
+            set_int_clear_default(&mut values, "up_mbps", body.up_mbps, 0, mode);
+            set_int_clear_default(&mut values, "down_mbps", body.down_mbps, 0, mode);
             set_nullable_text(&mut values, "obfs", &body.obfs);
             push_obfs_password(&mut values, body, mode);
             set_nullable_text(&mut values, "server_name", &body.server_name);
@@ -899,8 +918,8 @@ fn push_v2node_values(
             .or_else(|| protocol_is_shadowsocks.then(|| "aes-128-gcm".to_string()));
         values.push(("cipher", optional_text(cipher)));
     }
-    set_int_default(values, "up_mbps", body.up_mbps, 0, mode);
-    set_int_default(values, "down_mbps", body.down_mbps, 0, mode);
+    set_int_clear_default(values, "up_mbps", body.up_mbps, 0, mode);
+    set_int_clear_default(values, "down_mbps", body.down_mbps, 0, mode);
     set_nullable_text(values, "obfs", &body.obfs);
     push_obfs_password(values, body, mode);
     set_nullable_json(values, "padding_scheme", &body.padding_scheme);
@@ -1925,6 +1944,24 @@ mod tests {
             value_of(&tuic, "port"),
             AdminSqlValue::Text(port) if port == "443"
         ));
+    }
+
+    /// §4.4: an explicit JSON `null` clears the NOT NULL bandwidth columns
+    /// back to the legacy always-assigned 0; absence retains on PATCH.
+    #[test]
+    fn patch_null_bandwidth_clears_to_the_legacy_default() {
+        for kind in ["hysteria", "v2node"] {
+            let cleared = patch_values(kind, json!({ "up_mbps": null, "down_mbps": null }));
+            for column in ["up_mbps", "down_mbps"] {
+                assert!(matches!(
+                    value_of(&cleared, column),
+                    AdminSqlValue::Integer(0)
+                ));
+            }
+            let retained = patch_values(kind, json!({ "name": "node" }));
+            assert!(!columns(&retained).contains(&"up_mbps"));
+            assert!(!columns(&retained).contains(&"down_mbps"));
+        }
     }
 
     /// R22: the vmess protocol-settings keys keep their legacy camelCase
