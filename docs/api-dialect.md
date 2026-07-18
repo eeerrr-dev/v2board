@@ -238,11 +238,16 @@ wave records the reclassification in §3.4.
 
 ### 3.4 Initial code registry
 
-Derived from the actual `ApiError::business/legacy/bad_request/not_found/
-validation_field/unauthorized` call sites in `crates/api` and
-`crates/domain` (internal routes only). "Legacy anchor" is the current
-message literal the code replaces; it is also the key the parity error
-canonicalizer (§13.3) uses to map oracle-world errors onto codes.
+Originally derived from the legacy `ApiError::business/legacy/bad_request/
+not_found/validation_field/unauthorized` call sites in `crates/api` and
+`crates/domain` (internal routes only). The W14 teardown deleted those
+internal constructors, so internal routes now emit this registry solely
+through the `Problem` constructors (`crates/compat/src/problem.rs`); the
+W14 sweep verified the shipped `Code` enum matches these tables
+slug-for-slug and status-for-status, with every code reachable from a live
+emitter. "Legacy anchor" is the message literal the code replaced; it is
+also the key the parity error canonicalizer (§13.3) uses to map
+oracle-world errors onto codes.
 
 Transport / generic:
 
