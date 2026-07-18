@@ -1,0 +1,7 @@
+{
+  "type": "about:blank",
+  "title": "Conflict",
+  "status": 409,
+  "code": "config_revision_conflict",
+  "detail": "The configuration was updated by another request, please refresh and retry"
+}
