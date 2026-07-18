@@ -63,7 +63,10 @@ fn localize_legacy_message(message: &str, locale: &str) -> String {
 /// messages) localizes exactly like the legacy rewrite middleware did.
 pub(crate) fn localize_zh_cn_message(message: &str) -> Option<String> {
     // Dynamically-composed rate-limit string (Laravel interpolates `:minute`); the
-    // remaining ~98 static strings resolve through the embedded Laravel catalog below.
+    // remaining ~73 static strings resolve through the embedded Laravel catalog below
+    // (W14 dropped the entries no external route or internal construction site can
+    // still emit — `translate_zh_cn` is an exact-key lookup, so the legacy
+    // `:placeholder` template keys could never match and died with them).
     if let Some(minute) = password_limit_minutes(message) {
         return Some(format!("密码错误次数过多，请 {minute} 分钟后再试"));
     }

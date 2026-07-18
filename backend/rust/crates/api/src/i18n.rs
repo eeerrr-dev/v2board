@@ -31,8 +31,10 @@ mod tests {
     fn catalog_loads_and_covers_representative_keys() {
         // A parse failure would silently degrade every localized message to English, so
         // assert the catalog is non-empty and that keys from distinct controllers resolve.
+        // W14 trimmed the catalog to the entries an external route can still
+        // emit or an internal construction site still localizes through.
         assert!(
-            ZH_CN.len() >= 90,
+            ZH_CN.len() >= 70,
             "catalog unexpectedly small: {}",
             ZH_CN.len()
         );
