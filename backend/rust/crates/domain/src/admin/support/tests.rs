@@ -87,13 +87,13 @@ fn parse_alive_ip_extracts_count_and_ip_labels() {
 /// (which is also the top-level message), mirroring a single-rule FormRequest.
 fn assert_validation(result: Result<(), ApiError>, field: &str, message: &str) {
     match result {
-        Err(ApiError::Validation {
-            message: top,
-            errors,
-        }) => {
-            assert_eq!(top, message, "top-level message");
+        Err(ApiError::Problem(problem)) if problem.code() == Code::ValidationFailed => {
+            assert_eq!(problem.detail(), message, "detail");
             assert_eq!(
-                errors.get(field).map(Vec::as_slice),
+                problem
+                    .errors()
+                    .and_then(|errors| errors.get(field))
+                    .map(Vec::as_slice),
                 Some([message.to_string()].as_slice()),
                 "errors[{field}]"
             );

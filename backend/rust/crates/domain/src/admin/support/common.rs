@@ -2,13 +2,16 @@ use super::*;
 
 pub(in super::super) fn checked_gib_bytes(value: i64, field: &str) -> Result<i64, ApiError> {
     if value < 0 {
-        return Err(ApiError::validation_field(
+        return Err(ApiError::from(Problem::validation_field(
             field,
             "Traffic allowance must not be negative",
-        ));
+        )));
     }
     value.checked_mul(GIB).ok_or_else(|| {
-        ApiError::validation_field(field, "Traffic allowance exceeds the supported range")
+        ApiError::from(Problem::validation_field(
+            field,
+            "Traffic allowance exceeds the supported range",
+        ))
     })
 }
 
@@ -155,6 +158,8 @@ pub(in super::super) fn ensure_safe_table(table: &str) -> Result<(), ApiError> {
     if allowed.contains(&table) {
         Ok(())
     } else {
-        Err(ApiError::business("Invalid table"))
+        Err(ApiError::from(
+            Problem::new(Code::InvalidParameter).with_detail("Invalid table"),
+        ))
     }
 }

@@ -1,6 +1,6 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use rust_decimal::Decimal;
-use v2board_compat::ApiError;
+use v2board_compat::{ApiError, Code};
 
 use super::{
     credentials::{RELEASE_LOGIN_ATTEMPT_SCRIPT, RESERVE_LOGIN_ATTEMPT_SCRIPT, login_limiter_keys},
@@ -109,10 +109,14 @@ fn validate_email_reports_validation_error_with_laravel_messages() {
     assert!(validate_email("user@example.com").is_ok());
     let empty = validate_email("   ").unwrap_err();
     assert_eq!(empty.to_string(), "Email can not be empty");
-    assert!(matches!(empty, ApiError::Validation { .. }));
+    assert!(
+        matches!(&empty, ApiError::Problem(problem) if problem.code() == Code::ValidationFailed)
+    );
     let malformed = validate_email("bad").unwrap_err();
     assert_eq!(malformed.to_string(), "Email format is incorrect");
-    assert!(matches!(malformed, ApiError::Validation { .. }));
+    assert!(
+        matches!(&malformed, ApiError::Problem(problem) if problem.code() == Code::ValidationFailed)
+    );
     assert!(validate_email(&format!("{}@x.io", "a".repeat(60))).is_err());
     assert_eq!(normalize_email(" User@Example.COM "), "user@example.com");
 }
@@ -151,7 +155,9 @@ fn validate_forget_mirrors_authforget_rules() {
     // email: required -> format -> max:64 (character count)
     let empty_email = validate_forget("", "password", "123456").unwrap_err();
     assert_eq!(empty_email.to_string(), "Email can not be empty");
-    assert!(matches!(empty_email, ApiError::Validation { .. }));
+    assert!(
+        matches!(&empty_email, ApiError::Problem(problem) if problem.code() == Code::ValidationFailed)
+    );
     assert_eq!(
         validate_forget("bad", "password", "123456")
             .unwrap_err()
@@ -186,7 +192,9 @@ fn validate_forget_mirrors_authforget_rules() {
         empty_code.to_string(),
         "Email verification code cannot be empty"
     );
-    assert!(matches!(empty_code, ApiError::Validation { .. }));
+    assert!(
+        matches!(&empty_code, ApiError::Problem(problem) if problem.code() == Code::ValidationFailed)
+    );
     assert_eq!(
         validate_forget("user@example.com", "password", "12345")
             .unwrap_err()
@@ -208,7 +216,9 @@ fn validate_change_password_mirrors_userchangepassword_rules() {
     // old_password required takes precedence over new_password rules.
     let empty_old = validate_change_password("", "short").unwrap_err();
     assert_eq!(empty_old.to_string(), "Old password cannot be empty");
-    assert!(matches!(empty_old, ApiError::Validation { .. }));
+    assert!(
+        matches!(&empty_old, ApiError::Problem(problem) if problem.code() == Code::ValidationFailed)
+    );
 
     // new_password required reports its own message, not the min message.
     assert_eq!(

@@ -19,9 +19,12 @@ const ROUTE_ACTIONS: [&str; 8] = [
 
 fn parse_server_group_ids(raw: &str) -> Result<Vec<i64>, ApiError> {
     let Value::Array(values) = serde_json::from_str::<Value>(raw)
-        .map_err(|_| ApiError::validation_field("group_id", "节点组格式不正确"))?
+        .map_err(|_| ApiError::from(Problem::validation_field("group_id", "节点组格式不正确")))?
     else {
-        return Err(ApiError::validation_field("group_id", "节点组格式不正确"));
+        return Err(ApiError::from(Problem::validation_field(
+            "group_id",
+            "节点组格式不正确",
+        )));
     };
     let mut ids = Vec::with_capacity(values.len());
     for value in values {
@@ -29,13 +32,18 @@ fn parse_server_group_ids(raw: &str) -> Result<Vec<i64>, ApiError> {
             .as_i64()
             .or_else(|| value.as_str().and_then(|value| value.parse::<i64>().ok()))
             .filter(|id| *id > 0)
-            .ok_or_else(|| ApiError::validation_field("group_id", "节点组格式不正确"))?;
+            .ok_or_else(|| {
+                ApiError::from(Problem::validation_field("group_id", "节点组格式不正确"))
+            })?;
         ids.push(id);
     }
     ids.sort_unstable();
     ids.dedup();
     if ids.is_empty() {
-        return Err(ApiError::validation_field("group_id", "节点组不能为空"));
+        return Err(ApiError::from(Problem::validation_field(
+            "group_id",
+            "节点组不能为空",
+        )));
     }
     Ok(ids)
 }
@@ -44,13 +52,19 @@ fn parse_server_group_ids(raw: &str) -> Result<Vec<i64>, ApiError> {
 /// lock list; the submitted array itself is what gets stored.
 fn requested_group_lock_ids(ids: &[i64]) -> Result<Vec<i64>, ApiError> {
     if ids.iter().any(|id| *id <= 0) {
-        return Err(ApiError::validation_field("group_id", "节点组格式不正确"));
+        return Err(ApiError::from(Problem::validation_field(
+            "group_id",
+            "节点组格式不正确",
+        )));
     }
     let mut lock_ids = ids.to_vec();
     lock_ids.sort_unstable();
     lock_ids.dedup();
     if lock_ids.is_empty() {
-        return Err(ApiError::validation_field("group_id", "节点组不能为空"));
+        return Err(ApiError::from(Problem::validation_field(
+            "group_id",
+            "节点组不能为空",
+        )));
     }
     Ok(lock_ids)
 }

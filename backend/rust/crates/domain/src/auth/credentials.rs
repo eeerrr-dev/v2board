@@ -293,7 +293,12 @@ impl AuthService {
         )
         .await?;
         if !updated {
-            return Err(ApiError::business("Save failed"));
+            // Concurrent password change raced this one: the current hash no
+            // longer matches. Deterministic 400, detail preserved from the
+            // legacy anchor.
+            return Err(ApiError::from(
+                Problem::new(Code::InvalidParameter).with_detail("Save failed"),
+            ));
         }
         if let Err(error) = self.remove_all_sessions(user_id).await {
             tracing::warn!(

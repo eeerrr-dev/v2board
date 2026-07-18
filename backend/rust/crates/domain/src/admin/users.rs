@@ -384,8 +384,9 @@ impl AdminService {
                 break;
             };
             if ids.len().saturating_add(page.len()) > USER_BULK_MAX_ROWS {
-                return Err(ApiError::business(
-                    "单次最多批量操作 10000 个用户，请缩小筛选范围",
+                return Err(ApiError::from(
+                    Problem::new(Code::InvalidParameter)
+                        .with_detail("单次最多批量操作 10000 个用户，请缩小筛选范围"),
                 ));
             }
             ids.extend(page);
@@ -720,7 +721,10 @@ impl AdminService {
             && !password.is_empty()
             && password.chars().count() < 8
         {
-            return Err(ApiError::validation_field("password", "密码长度最小8位"));
+            return Err(ApiError::from(Problem::validation_field(
+                "password",
+                "密码长度最小8位",
+            )));
         }
         for (field, value) in [
             ("commission_rate", body.commission_rate),
@@ -729,7 +733,10 @@ impl AdminService {
             if let Some(Some(value)) = value
                 && !(0..=100).contains(&value)
             {
-                return Err(ApiError::validation_field(field, "参数范围为0-100"));
+                return Err(ApiError::from(Problem::validation_field(
+                    field,
+                    "参数范围为0-100",
+                )));
             }
         }
 
@@ -1054,7 +1061,7 @@ impl AdminService {
         .bind(plan_id)
         .fetch_optional(&self.db)
         .await?
-        .ok_or_else(|| ApiError::business("订阅计划不存在"))?;
+        .ok_or_else(|| ApiError::from(Problem::new(Code::PlanUnavailable)))?;
         Ok(Some((
             row.0,
             row.1,
@@ -1072,16 +1079,16 @@ impl AdminService {
     ) -> Result<UserGenerateOutcome, ApiError> {
         // UserGenerate rules: generate_count nullable|integer|max:500.
         if body.generate_count.is_some_and(|count| count > 500) {
-            return Err(ApiError::validation_field(
+            return Err(ApiError::from(Problem::validation_field(
                 "generate_count",
                 "生成数量最大为500个",
-            ));
+            )));
         }
         if body.email_suffix.trim().is_empty() {
-            return Err(ApiError::validation_field(
+            return Err(ApiError::from(Problem::validation_field(
                 "email_suffix",
                 "邮箱后缀不能为空",
-            ));
+            )));
         }
         let now = Utc::now().timestamp();
         let plan = self.generate_plan(body.plan_id).await?;
@@ -1162,12 +1169,17 @@ impl AdminService {
         let count = usize::try_from(count)
             .ok()
             .filter(|count| *count > 0)
-            .ok_or_else(|| ApiError::validation_field("generate_count", "生成数量必须为正整数"))?;
+            .ok_or_else(|| {
+                ApiError::from(Problem::validation_field(
+                    "generate_count",
+                    "生成数量必须为正整数",
+                ))
+            })?;
         if count > GENERATED_USER_MAX_ROWS {
-            return Err(ApiError::validation_field(
+            return Err(ApiError::from(Problem::validation_field(
                 "generate_count",
                 "单次最多生成 1000 个用户",
-            ));
+            )));
         }
         let suffix = body.email_suffix.trim();
         let input_password = body
@@ -1319,12 +1331,16 @@ impl AdminService {
             let Some(last_id) = rows.last().map(|row| row.id) else {
                 break;
             };
-            exported = exported
-                .checked_add(rows.len())
-                .ok_or_else(|| ApiError::business("导出用户数量超出支持范围，请缩小筛选范围"))?;
+            exported = exported.checked_add(rows.len()).ok_or_else(|| {
+                ApiError::from(
+                    Problem::new(Code::InvalidParameter)
+                        .with_detail("导出用户数量超出支持范围，请缩小筛选范围"),
+                )
+            })?;
             if exported > USER_CSV_MAX_ROWS {
-                return Err(ApiError::business(
-                    "单次最多导出 50000 个用户，请缩小筛选范围",
+                return Err(ApiError::from(
+                    Problem::new(Code::InvalidParameter)
+                        .with_detail("单次最多导出 50000 个用户，请缩小筛选范围"),
                 ));
             }
             for row in rows {
@@ -1423,8 +1439,9 @@ impl AdminService {
         }
         let mut tx = self.db.begin().await?;
         if Self::lock_user_orders_and_find_pending_stripe(&mut tx, &ids).await? {
-            return Err(ApiError::business(
-                "所选用户仍有待支付的 Stripe 订单，请先取消订单",
+            return Err(ApiError::from(
+                Problem::new(Code::InvalidParameter)
+                    .with_detail("所选用户仍有待支付的 Stripe 订单，请先取消订单"),
             ));
         }
         Self::lock_users_for_update(&mut tx, &ids).await?;
@@ -1440,8 +1457,9 @@ impl AdminService {
     pub async fn del_user(&self, id: i64) -> Result<(), ApiError> {
         let mut tx = self.db.begin().await?;
         if Self::lock_user_orders_and_find_pending_stripe(&mut tx, &[id]).await? {
-            return Err(ApiError::business(
-                "该用户仍有待支付的 Stripe 订单，请先取消订单",
+            return Err(ApiError::from(
+                Problem::new(Code::InvalidParameter)
+                    .with_detail("该用户仍有待支付的 Stripe 订单，请先取消订单"),
             ));
         }
         if Self::lock_users_for_update(&mut tx, &[id]).await? != 1 {
@@ -1518,7 +1536,10 @@ impl AdminService {
                 .fetch_optional(&self.db)
                 .await?;
                 Some(inviter.ok_or_else(|| {
-                    ApiError::validation_field("invite_user_email", "邀请人不存在")
+                    ApiError::from(Problem::validation_field(
+                        "invite_user_email",
+                        "邀请人不存在",
+                    ))
                 })?)
             }
             _ => None,

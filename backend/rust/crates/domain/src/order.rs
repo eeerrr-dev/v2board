@@ -988,9 +988,9 @@ impl OrderService {
         .bind(trade_no)
         .fetch_optional(&self.db)
         .await?
-        .ok_or_else(|| ApiError::business("订单不存在"))?;
+        .ok_or_else(|| ApiError::from(Problem::new(Code::OrderNotFound)))?;
         if expected_binding.0 != 0 {
-            return Err(ApiError::business("只能对待支付的订单进行操作"));
+            return Err(ApiError::from(Problem::new(Code::OrderNotPending)));
         }
         // Manual settlement must first make the browser-held client secret inert.
         // Otherwise the order can be opened manually and then charged by Stripe a
@@ -1000,7 +1000,7 @@ impl OrderService {
             .cancel_stripe_intent_binding(expected_binding.1, expected_binding.2.as_deref())
             .await?
         {
-            return Err(ApiError::business("只能对待支付的订单进行操作"));
+            return Err(ApiError::from(Problem::new(Code::OrderNotPending)));
         }
 
         let mut tx = self.db.begin().await?;
@@ -1026,7 +1026,7 @@ impl OrderService {
         .fetch_optional(&mut *tx)
         .await?
         else {
-            return Err(ApiError::business("订单不存在"));
+            return Err(ApiError::from(Problem::new(Code::OrderNotFound)));
         };
         let current_binding = sqlx::query_as::<_, (i16, Option<i32>, Option<String>)>(
             "SELECT status, payment_id, callback_no FROM orders WHERE id = $1",
@@ -1035,7 +1035,7 @@ impl OrderService {
         .fetch_one(&mut *tx)
         .await?;
         if current_binding != expected_binding {
-            return Err(ApiError::business("只能对待支付的订单进行操作"));
+            return Err(ApiError::from(Problem::new(Code::OrderNotPending)));
         }
 
         mark_order_paid(

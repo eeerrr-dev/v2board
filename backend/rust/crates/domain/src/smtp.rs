@@ -4,7 +4,7 @@ use std::{
 };
 
 use lettre::{AsyncSmtpTransport, Tokio1Executor, transport::smtp::authentication::Credentials};
-use v2board_compat::ApiError;
+use v2board_compat::{ApiError, Code, Problem};
 use v2board_config::AppConfig;
 
 #[derive(Clone, PartialEq, Eq)]
@@ -23,7 +23,12 @@ impl SmtpSettings {
             .email_host
             .clone()
             .filter(|host| !host.trim().is_empty())
-            .ok_or_else(|| ApiError::legacy("Email host is not configured"))?;
+            .ok_or_else(|| {
+                ApiError::from(
+                    Problem::new(Code::MailSenderNotConfigured)
+                        .with_detail("Email host is not configured"),
+                )
+            })?;
         Ok(Self {
             host,
             port: config
@@ -84,7 +89,7 @@ fn build_transport(
     } else {
         AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&settings.host)
     }
-    .map_err(|error| ApiError::legacy(format!("SMTP config error: {error}")))?;
+    .map_err(|error| ApiError::internal(format!("SMTP config error: {error}")))?;
     if let Some(port) = settings.port {
         builder = builder.port(port);
     }

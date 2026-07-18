@@ -113,7 +113,7 @@ fn is_unique_violation(error: &sqlx::Error) -> bool {
 fn duplicate_code_error(error: ApiError, field: &str, message: &str) -> ApiError {
     match error {
         ApiError::Database(error) if is_unique_violation(&error) => {
-            ApiError::validation_field(field, message)
+            ApiError::from(Problem::validation_field(field, message))
         }
         error => error,
     }
@@ -1799,13 +1799,13 @@ mod content_wire_tests {
 
     fn assert_validation(result: Result<(), ApiError>, field: &str, message: &str) {
         match result {
-            Err(ApiError::Validation {
-                message: top,
-                errors,
-            }) => {
-                assert_eq!(top, message, "top-level message");
+            Err(ApiError::Problem(problem)) if problem.code() == Code::ValidationFailed => {
+                assert_eq!(problem.detail(), message, "detail");
                 assert_eq!(
-                    errors.get(field).map(Vec::as_slice),
+                    problem
+                        .errors()
+                        .and_then(|errors| errors.get(field))
+                        .map(Vec::as_slice),
                     Some([message.to_string()].as_slice()),
                     "errors[{field}]"
                 );

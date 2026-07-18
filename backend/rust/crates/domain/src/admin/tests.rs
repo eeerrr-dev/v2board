@@ -98,7 +98,10 @@ fn telegram_webhook_secret_is_stable_scoped_and_header_safe() {
 
 fn validation_parts(error: ApiError) -> (String, indexmap::IndexMap<String, Vec<String>>) {
     match error {
-        ApiError::Validation { message, errors } => (message, errors),
+        ApiError::Problem(problem) if problem.code() == Code::ValidationFailed => (
+            problem.detail().to_string(),
+            problem.errors().cloned().unwrap_or_default(),
+        ),
         other => panic!("expected validation error, got {other:?}"),
     }
 }

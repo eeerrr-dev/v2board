@@ -158,7 +158,7 @@ pub(in super::super) fn optional_text(value: Option<String>) -> AdminSqlValue {
 /// Builds a Laravel-style 422 validation error for a single field: the message
 /// doubles as the top-level message and the field's first error.
 pub(in super::super) fn validation_error(field: &str, message: &str) -> ApiError {
-    ApiError::validation_field(field, message)
+    ApiError::from(Problem::validation_field(field, message))
 }
 
 /// Approximates Laravel's `url` rule (filter_var FILTER_VALIDATE_URL): requires a

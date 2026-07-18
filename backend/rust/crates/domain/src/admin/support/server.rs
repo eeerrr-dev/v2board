@@ -437,7 +437,7 @@ pub(in super::super) fn server_copy_columns(
         "vless" => Ok(SERVER_VLESS_COLUMNS),
         "anytls" => Ok(SERVER_ANYTLS_COLUMNS),
         "v2node" => Ok(SERVER_V2NODE_COLUMNS),
-        _ => Err(ApiError::business("Invalid server type")),
+        _ => Err(ApiError::from(Problem::new(Code::InvalidServerType))),
     }
 }
 
@@ -503,9 +503,11 @@ pub(in super::super) fn prepare_v2node_tls_settings(
 }
 
 pub(in super::super) fn ensure_reality_keys(settings: &mut Value) -> Result<(), ApiError> {
-    let object = settings
-        .as_object_mut()
-        .ok_or_else(|| ApiError::business("TLS settings format is invalid"))?;
+    let object = settings.as_object_mut().ok_or_else(|| {
+        ApiError::from(
+            Problem::new(Code::InvalidParameter).with_detail("TLS settings format is invalid"),
+        )
+    })?;
     let missing_public = object
         .get("public_key")
         .and_then(Value::as_str)
@@ -680,13 +682,13 @@ pub(in super::super) fn server_key(timestamp: i64, length: usize) -> String {
 
 pub(in super::super) fn x25519_key_pair_urlsafe() -> Result<(String, String), ApiError> {
     let key = PKey::generate_x25519()
-        .map_err(|error| ApiError::legacy(format!("X25519 key generation failed: {error}")))?;
+        .map_err(|error| ApiError::internal(format!("X25519 key generation failed: {error}")))?;
     let public_key = key
         .raw_public_key()
-        .map_err(|error| ApiError::legacy(format!("X25519 public key export failed: {error}")))?;
-    let private_key = key
-        .raw_private_key()
-        .map_err(|error| ApiError::legacy(format!("X25519 private key export failed: {error}")))?;
+        .map_err(|error| ApiError::internal(format!("X25519 public key export failed: {error}")))?;
+    let private_key = key.raw_private_key().map_err(|error| {
+        ApiError::internal(format!("X25519 private key export failed: {error}"))
+    })?;
     Ok((
         base64_url_no_pad(&public_key),
         base64_url_no_pad(&private_key),
@@ -697,13 +699,13 @@ pub(in super::super) fn generate_ech_key_pair(
     outer_sni: &str,
 ) -> Result<(String, String), ApiError> {
     let key = PKey::generate_x25519()
-        .map_err(|error| ApiError::legacy(format!("ECH key generation failed: {error}")))?;
+        .map_err(|error| ApiError::internal(format!("ECH key generation failed: {error}")))?;
     let public_key = key
         .raw_public_key()
-        .map_err(|error| ApiError::legacy(format!("ECH public key export failed: {error}")))?;
+        .map_err(|error| ApiError::internal(format!("ECH public key export failed: {error}")))?;
     let private_key = key
         .raw_private_key()
-        .map_err(|error| ApiError::legacy(format!("ECH private key export failed: {error}")))?;
+        .map_err(|error| ApiError::internal(format!("ECH private key export failed: {error}")))?;
     let config_id = Uuid::new_v4().as_bytes()[0];
 
     let mut config_data = Vec::new();

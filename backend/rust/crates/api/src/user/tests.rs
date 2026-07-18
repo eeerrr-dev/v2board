@@ -197,16 +197,16 @@ fn plan_giftcards_consume_capacity_but_can_materialize_an_existing_reservation()
     assert!(!giftcard_plan_has_capacity(-1, 0, false));
 }
 
-/// Deterministic business-rule failures on frontend-only routes are HTTP 400
-/// with the same `{message}` body shape as the legacy 500, so the frontend
-/// retry policy (>=500 is transient) never retries them. `legacy()` keeps the
-/// byte-identical 500 contract for the external namespaces.
+/// `legacy()`/`bad_request()` keep the byte-identical `{message}` contract
+/// for the frozen §2 external namespaces (payment notify's uniform 500
+/// `fail`, notify body parsing 400s). The W14 teardown removed every
+/// internal constructor of these bodies.
 #[tokio::test]
-async fn business_rule_failures_are_400_with_the_legacy_message_body() {
+async fn frozen_external_errors_keep_the_legacy_message_body() {
     use axum::response::IntoResponse as _;
 
     let response =
-        v2board_compat::ApiError::business("Current product is sold out").into_response();
+        v2board_compat::ApiError::bad_request("Invalid payment notify body").into_response();
     assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
     let body = axum::body::to_bytes(response.into_body(), 1024)
         .await
@@ -214,7 +214,7 @@ async fn business_rule_failures_are_400_with_the_legacy_message_body() {
     let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(
         body,
-        serde_json::json!({ "message": "Current product is sold out" })
+        serde_json::json!({ "message": "Invalid payment notify body" })
     );
 
     let response = v2board_compat::ApiError::legacy("fail").into_response();

@@ -66,7 +66,9 @@ pub(crate) async fn dispatch_admin(
 ) -> Result<Response, ApiError> {
     let config = state.config_snapshot();
     if !matches_current_admin_api(&config, request_path) {
-        return Err(ApiError::not_found("Not Found"));
+        // A stale (no longer live) admin prefix is an unknown internal API
+        // path: modern 404 `endpoint_not_found` (§10.2 rule 1).
+        return Err(ApiError::from(Problem::new(Code::EndpointNotFound)));
     }
     let relative = match request.uri().query() {
         Some(query) => format!("/{admin_path}?{query}"),
@@ -74,7 +76,7 @@ pub(crate) async fn dispatch_admin(
     };
     *request.uri_mut() = relative
         .parse()
-        .map_err(|_| ApiError::not_found("Not Found"))?;
+        .map_err(|_| ApiError::from(Problem::new(Code::EndpointNotFound)))?;
     // Admin traffic is low-volume; building the small router per dispatch is
     // simpler than caching it against a mutable AppState.
     let response = admin_router(state.clone())
@@ -1909,12 +1911,15 @@ fn mail_idempotency_key(headers: &HeaderMap) -> Result<String, ApiError> {
             value
                 .to_str()
                 .map(str::trim)
-                .map_err(|_| ApiError::bad_request("Mail idempotency key is invalid"))
+                .map_err(|_| ApiError::from(Problem::new(Code::MailIdempotencyKeyInvalid)))
         })
         .transpose()?
         .filter(|value| !value.is_empty());
     if key.is_some_and(|value| value.len() > 512) {
-        return Err(ApiError::bad_request("Mail idempotency key is too long"));
+        return Err(ApiError::from(
+            Problem::new(Code::MailIdempotencyKeyInvalid)
+                .with_detail("Mail idempotency key is too long"),
+        ));
     }
     Ok(key.map_or_else(|| Uuid::new_v4().to_string(), str::to_owned))
 }

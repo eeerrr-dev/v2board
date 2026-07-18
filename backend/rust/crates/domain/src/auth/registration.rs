@@ -169,10 +169,10 @@ impl AuthService {
     pub async fn passport_pv(&self, invite_code: Option<&str>) -> Result<bool, ApiError> {
         if let Some(invite_code) = invite_code.map(str::trim).filter(|value| !value.is_empty()) {
             if invite_code.len() > MAX_INVITE_CODE_BYTES {
-                return Err(ApiError::validation_field(
+                return Err(ApiError::from(Problem::validation_field(
                     "invite_code",
                     "Invalid invitation code",
-                ));
+                )));
             }
             sqlx::query(
                 "UPDATE invite_code SET pv = pv + 1, updated_at = $1 \
@@ -314,30 +314,30 @@ pub(super) fn validate_registration_auxiliary_inputs(
         .as_deref()
         .is_some_and(|value| value.len() > MAX_INVITE_CODE_BYTES)
     {
-        return Err(ApiError::validation_field(
+        return Err(ApiError::from(Problem::validation_field(
             "invite_code",
             "Invalid invitation code",
-        ));
+        )));
     }
     if input
         .email_code
         .as_deref()
         .is_some_and(|value| value.len() > MAX_EMAIL_CODE_BYTES)
     {
-        return Err(ApiError::validation_field(
+        return Err(ApiError::from(Problem::validation_field(
             "email_code",
             "Incorrect email verification code",
-        ));
+        )));
     }
     if input
         .recaptcha_data
         .as_deref()
         .is_some_and(|value| value.len() > MAX_RECAPTCHA_DATA_BYTES)
     {
-        return Err(ApiError::validation_field(
+        return Err(ApiError::from(Problem::validation_field(
             "recaptcha_data",
             "Invalid code is incorrect",
-        ));
+        )));
     }
     Ok(())
 }
@@ -376,19 +376,24 @@ struct TrialPlan {
 
 pub(super) fn checked_trial_transfer_bytes(transfer_gib: i64) -> Result<i64, ApiError> {
     if transfer_gib < 0 {
-        return Err(ApiError::business(
-            "Trial plan traffic allowance must not be negative",
+        return Err(ApiError::from(
+            Problem::new(Code::InvalidParameter)
+                .with_detail("Trial plan traffic allowance must not be negative"),
         ));
     }
     transfer_gib.checked_mul(1_073_741_824).ok_or_else(|| {
-        ApiError::business("Trial plan traffic allowance exceeds the supported range")
+        ApiError::from(
+            Problem::new(Code::InvalidParameter)
+                .with_detail("Trial plan traffic allowance exceeds the supported range"),
+        )
     })
 }
 
 pub(super) fn checked_trial_expired_at(now: i64, try_out_hour: Decimal) -> Result<i64, ApiError> {
     if try_out_hour.is_sign_negative() {
-        return Err(ApiError::business(
-            "Trial plan duration must not be negative",
+        return Err(ApiError::from(
+            Problem::new(Code::InvalidParameter)
+                .with_detail("Trial plan duration must not be negative"),
         ));
     }
     let hours = if try_out_hour.is_zero() {
@@ -398,10 +403,24 @@ pub(super) fn checked_trial_expired_at(now: i64, try_out_hour: Decimal) -> Resul
     };
     let seconds = hours
         .checked_mul(Decimal::from(3_600))
-        .ok_or_else(|| ApiError::business("Trial plan duration exceeds the supported range"))?
+        .ok_or_else(|| {
+            ApiError::from(
+                Problem::new(Code::InvalidParameter)
+                    .with_detail("Trial plan duration exceeds the supported range"),
+            )
+        })?
         .trunc()
         .to_i64()
-        .ok_or_else(|| ApiError::business("Trial plan duration exceeds the supported range"))?;
-    now.checked_add(seconds)
-        .ok_or_else(|| ApiError::business("Trial plan expiry exceeds the supported range"))
+        .ok_or_else(|| {
+            ApiError::from(
+                Problem::new(Code::InvalidParameter)
+                    .with_detail("Trial plan duration exceeds the supported range"),
+            )
+        })?;
+    now.checked_add(seconds).ok_or_else(|| {
+        ApiError::from(
+            Problem::new(Code::InvalidParameter)
+                .with_detail("Trial plan expiry exceeds the supported range"),
+        )
+    })
 }

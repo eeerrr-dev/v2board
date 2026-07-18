@@ -193,10 +193,10 @@ async fn lock_plan_users_for_update(
 
 fn nonnegative_i32(field: &str, value: i64) -> Result<i64, ApiError> {
     if !(0..=i64::from(i32::MAX)).contains(&value) {
-        return Err(ApiError::validation_field(
+        return Err(ApiError::from(Problem::validation_field(
             field,
             "Value must be a non-negative 32-bit integer",
-        ));
+        )));
     }
     Ok(value)
 }
@@ -210,10 +210,10 @@ pub(super) fn optional_nonnegative_i32(
 
 fn optional_smallint(field: &str, value: Option<i64>) -> Result<Option<i64>, ApiError> {
     if value.is_some_and(|value| i16::try_from(value).is_err()) {
-        return Err(ApiError::validation_field(
+        return Err(ApiError::from(Problem::validation_field(
             field,
             "Value must be a 16-bit integer",
-        ));
+        )));
     }
     Ok(value)
 }
@@ -1913,13 +1913,13 @@ mod commerce_wire_tests {
         let neither: OrderPatch = serde_json::from_value(json!({})).unwrap();
         assert!(matches!(
             order_patch_action(&neither),
-            Err(ApiError::Validation { .. })
+            Err(ApiError::Problem(problem)) if problem.code() == Code::ValidationFailed
         ));
         let both: OrderPatch =
             serde_json::from_value(json!({ "status": 1, "commission_status": 1 })).unwrap();
         assert!(matches!(
             order_patch_action(&both),
-            Err(ApiError::Validation { .. })
+            Err(ApiError::Problem(problem)) if problem.code() == Code::ValidationFailed
         ));
 
         let status: OrderPatch = serde_json::from_value(json!({ "status": 2 })).unwrap();
@@ -2029,7 +2029,7 @@ mod commerce_wire_tests {
             let patch: PlanPatch = serde_json::from_value(invalid).unwrap();
             assert!(matches!(
                 plan_patch_validation(&patch),
-                Err(ApiError::Validation { .. })
+                Err(ApiError::Problem(problem)) if problem.code() == Code::ValidationFailed
             ));
         }
         let bad_reset: PlanPatch =

@@ -14,7 +14,7 @@ use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use sqlx::{AssertSqlSafe, FromRow, Postgres, QueryBuilder, types::Json};
 use uuid::Uuid;
-use v2board_compat::ApiError;
+use v2board_compat::{ApiError, Code, Problem};
 use v2board_config::{
     AppConfig, MAX_CONFIG_DURATION_MINUTES, RedisKeyspace, app_now, app_timezone,
 };
@@ -72,7 +72,7 @@ fn mail_outbox_api_error(error: MailOutboxError) -> ApiError {
     match error {
         MailOutboxError::Database(error) => ApiError::Database(error),
         MailOutboxError::IdempotencyConflict => {
-            ApiError::bad_request("Mail idempotency key was reused with a different payload")
+            ApiError::from(Problem::new(Code::MailIdempotencyConflict))
         }
         // W14 teardown: these mail-envelope failures are operator
         // misconfiguration on internal routes — 500 `internal_error`

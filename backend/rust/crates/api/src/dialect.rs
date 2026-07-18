@@ -42,14 +42,22 @@ where
     }
 }
 
-/// Convert a shared-plumbing [`ApiError`] into the migrated family's
-/// problem+json surface. Family-owned call sites construct
-/// `ApiError::Problem` directly; the remaining arms are structural bridges
-/// (legacy validation bags) and defensive nets keyed on status class only —
-/// never on message text.
+/// Convert a shared-plumbing [`ApiError`] into the internal-family
+/// problem+json surface. Internal call sites construct `ApiError::Problem`
+/// directly (the W14 teardown removed the legacy constructors from every
+/// internal path); the `Http` arm is a defensive net for frozen-external
+/// plumbing shared with internal routes (payment gateways, outbound HTTP),
+/// keyed on status class only — never on message text.
 pub(crate) fn problem_from(error: ApiError, locale: &str) -> Problem {
     match error {
         ApiError::Problem(problem) => {
+            // Validation bags carry call-site source text (the Laravel
+            // English rule strings or already-localized zh literals);
+            // translate them through the same catalog path the legacy
+            // rewrite middleware used, exactly like `detail` below.
+            if let Some(errors) = problem.errors() {
+                return Problem::validation(localize_bag(errors.clone(), locale));
+            }
             // Default details re-resolve by code; custom details (dynamic
             // interpolations, distinguishing legacy messages) localize
             // through the same catalog path the legacy middleware used.
@@ -61,7 +69,6 @@ pub(crate) fn problem_from(error: ApiError, locale: &str) -> Problem {
                 problem.with_detail(localized)
             }
         }
-        ApiError::Validation { errors, .. } => Problem::validation(localize_bag(errors, locale)),
         ApiError::Http { status, message } => {
             let code = match status.as_u16() {
                 400 => Code::InvalidParameter,
@@ -161,7 +168,7 @@ mod tests {
     #[test]
     fn validation_bags_localize_through_the_embedded_catalog() {
         let problem = problem_from(
-            ApiError::validation_field("email", "Email format is incorrect"),
+            Problem::validation_field("email", "Email format is incorrect").into(),
             "zh-CN",
         );
         assert_eq!(problem.code(), Code::ValidationFailed);
@@ -172,7 +179,7 @@ mod tests {
         );
 
         let english = problem_from(
-            ApiError::validation_field("email", "Email format is incorrect"),
+            Problem::validation_field("email", "Email format is incorrect").into(),
             "en-US",
         );
         assert_eq!(english.detail(), "Email format is incorrect");
@@ -190,13 +197,7 @@ mod tests {
                 vec!["Password can not be empty".to_string()],
             ),
         ]);
-        let problem = problem_from(
-            ApiError::Validation {
-                message: "Email can not be empty".to_string(),
-                errors,
-            },
-            "zh-CN",
-        );
+        let problem = problem_from(Problem::validation(errors).into(), "zh-CN");
         let keys: Vec<&String> = problem.errors().unwrap().keys().collect();
         assert_eq!(keys, ["email", "password"]);
         assert_eq!(problem.detail(), "邮箱不能为空");

@@ -448,8 +448,9 @@ impl AdminService {
             };
             recipient_count = recipient_count.saturating_add(recipients.len());
             if recipient_count > BULK_MAIL_MAX_RECIPIENTS {
-                return Err(ApiError::business(
-                    "单次最多向 50000 个用户发送邮件，请缩小筛选范围",
+                return Err(ApiError::from(
+                    Problem::new(Code::InvalidParameter)
+                        .with_detail("单次最多向 50000 个用户发送邮件，请缩小筛选范围"),
                 ));
             }
             let emails = recipients
@@ -498,10 +499,16 @@ impl AdminService {
         staff_scoped: bool,
     ) -> Result<(), ApiError> {
         if body.subject.trim().is_empty() {
-            return Err(ApiError::validation_field("subject", "邮件主题不能为空"));
+            return Err(ApiError::from(Problem::validation_field(
+                "subject",
+                "邮件主题不能为空",
+            )));
         }
         if body.content.trim().is_empty() {
-            return Err(ApiError::validation_field("content", "邮件内容不能为空"));
+            return Err(ApiError::from(Problem::validation_field(
+                "content",
+                "邮件内容不能为空",
+            )));
         }
         let filter = body.filter.clone().unwrap_or_default();
         let resolved = filter_dsl::resolve_filters(&filter, USER_FILTER_COLUMNS)?;
@@ -539,7 +546,7 @@ impl AdminService {
             .from_address
             .as_deref()
             .or(settings.username.as_deref())
-            .ok_or_else(|| ApiError::legacy("Email sender is not configured"))?;
+            .ok_or_else(|| ApiError::from(Problem::new(Code::MailSenderNotConfigured)))?;
         let sender = format!("{} <{}>", self.config.app_name, from);
         validate_mail_sender(&sender).map_err(mail_outbox_api_error)?;
         Ok(PreparedMailEnvelope {

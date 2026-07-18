@@ -1,6 +1,10 @@
 use axum::Json;
 use serde::Serialize;
 
+/// The legacy `{data}` envelope. Frozen-external-namespace only (docs/
+/// api-dialect.md §2 — e.g. `/api/v1/client/app/getVersion`); the W14
+/// teardown removed it from every internal path, and the paged
+/// `{data, total}` sibling died with the admin list flips.
 #[derive(Debug, Serialize)]
 pub struct LegacyEnvelope<T>
 where
@@ -9,25 +13,9 @@ where
     pub data: T,
 }
 
-#[derive(Debug, Serialize)]
-pub struct LegacyPageEnvelope<T>
-where
-    T: Serialize,
-{
-    pub data: T,
-    pub total: i64,
-}
-
 pub fn legacy_data<T>(data: T) -> Json<LegacyEnvelope<T>>
 where
     T: Serialize,
 {
     Json(LegacyEnvelope { data })
-}
-
-pub fn legacy_page<T>(data: T, total: i64) -> Json<LegacyPageEnvelope<T>>
-where
-    T: Serialize,
-{
-    Json(LegacyPageEnvelope { data, total })
 }

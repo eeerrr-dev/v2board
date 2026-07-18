@@ -21,9 +21,10 @@ use crate::{
 ///    into the nested method-aware admin router so a runtime `secure_path`
 ///    change keeps working without a process restart (§6 preamble); rule 4's
 ///    404 applies only after this dispatch has declined the path.
-/// 3. `/api/*` never falls back to HTML: unknown API paths keep each
-///    namespace's dialect 404 (all internal families are legacy until their
-///    wave flips).
+/// 3. `/api/*` never falls back to HTML: unknown API paths 404 in their
+///    namespace's dialect — the legacy `{message}` body under the frozen §2
+///    external prefixes, problem+json `endpoint_not_found` everywhere else
+///    (the internal migration completed with W14).
 /// 4. GET/HEAD: reserved roots (`/assets/*`, `/healthz`, `/readyz`) → modern
 ///    404; `/{admin_path}` and `/{admin_path}/*` → admin `index.html`; every
 ///    other path → user `index.html` (safe_mode Host gate inside `render`).
@@ -61,7 +62,12 @@ pub(crate) async fn dynamic_fallback(
     }
 
     if path == "/api" || path.starts_with("/api/") {
-        return Err(ApiError::not_found("Not Found"));
+        // §10.2 rule 1: per-namespace dialect 404. Only the frozen §2
+        // external prefixes keep the legacy `{message}` body.
+        if is_frozen_external_api_path(&path) {
+            return Err(ApiError::not_found("Not Found"));
+        }
+        return Ok(Problem::new(Code::EndpointNotFound).into_response());
     }
 
     if matches!(method, Method::GET | Method::HEAD) && !is_reserved_non_html_path(&path) {
@@ -83,6 +89,18 @@ pub(crate) async fn dynamic_fallback(
 /// such as `/assets`, `/assets/other`, or a trailing-slash probe.
 fn is_reserved_non_html_path(path: &str) -> bool {
     path == "/assets" || path.starts_with("/assets/") || path == "/healthz" || path == "/readyz"
+}
+
+/// The byte-frozen §2 external namespaces: unknown paths under these
+/// prefixes keep the legacy `{message}` 404 because their error bodies are
+/// pinned for external consumers (subscription clients, node agents,
+/// payment providers, Telegram).
+fn is_frozen_external_api_path(path: &str) -> bool {
+    path.starts_with("/api/v1/client/")
+        || path.starts_with("/api/v1/server/")
+        || path.starts_with("/api/v2/server/")
+        || path.starts_with("/api/v1/guest/payment/notify/")
+        || path == "/api/v1/guest/telegram/webhook"
 }
 
 #[cfg(test)]
@@ -248,9 +266,31 @@ mod tests {
             assert!(body_string(response).await.contains("endpoint_not_found"));
         }
 
-        // Unknown `/api/*` paths keep the legacy namespace 404 until each
-        // family's wave flips its dialect.
+        // Unknown internal `/api/*` paths are the modern 404 since W14
+        // closed the migration…
         for path in ["/api", "/api/v1/unknown", "/api/v9/thing"] {
+            let response = app
+                .clone()
+                .oneshot(request(Method::GET, path))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::NOT_FOUND, "GET {path}");
+            assert_eq!(
+                response.headers().get(header::CONTENT_TYPE).unwrap(),
+                "application/problem+json",
+                "modern 404 for {path}"
+            );
+            assert!(body_string(response).await.contains("endpoint_not_found"));
+        }
+
+        // …while unknown paths under the frozen §2 external prefixes keep
+        // the legacy `{message}` body forever.
+        for path in [
+            "/api/v1/client/unknown",
+            "/api/v1/server/class/action/extra",
+            "/api/v2/server/unknown",
+            "/api/v1/guest/payment/notify/x/y/z",
+        ] {
             let response = app
                 .clone()
                 .oneshot(request(Method::GET, path))

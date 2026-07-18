@@ -34,17 +34,20 @@ fn commission_balance_meets_minimum(balance_cents: i64, minimum_yuan: Decimal) -
 
 fn validate_ticket_subject(subject: &str) -> Result<(), ApiError> {
     if subject.chars().count() > MAX_TICKET_SUBJECT_CHARS {
-        return Err(ApiError::validation_field(
+        return Err(ApiError::from(Problem::validation_field(
             "subject",
             "Ticket subject is too long",
-        ));
+        )));
     }
     Ok(())
 }
 
 fn validate_ticket_message(field: &str, message: &str) -> Result<(), ApiError> {
     if message.len() > MAX_TICKET_MESSAGE_BYTES {
-        return Err(ApiError::validation_field(field, "Message is too long"));
+        return Err(ApiError::from(Problem::validation_field(
+            field,
+            "Message is too long",
+        )));
     }
     Ok(())
 }
@@ -229,14 +232,17 @@ async fn create(
         "Ticket subject cannot be empty",
     )?;
     validate_ticket_subject(subject)?;
-    let level = payload
-        .level
-        .ok_or_else(|| ApiError::validation_field("level", "Ticket level cannot be empty"))?;
+    let level = payload.level.ok_or_else(|| {
+        ApiError::from(Problem::validation_field(
+            "level",
+            "Ticket level cannot be empty",
+        ))
+    })?;
     if !matches!(level, 0..=2) {
-        return Err(ApiError::validation_field(
+        return Err(ApiError::from(Problem::validation_field(
             "level",
             "Incorrect ticket level format",
-        ));
+        )));
     }
     let message = required_field(
         payload.message.as_deref(),
@@ -425,10 +431,10 @@ async fn create_withdrawal(
         "The withdrawal account cannot be empty",
     )?;
     if method.chars().count() > MAX_TICKET_SUBJECT_CHARS {
-        return Err(ApiError::validation_field(
+        return Err(ApiError::from(Problem::validation_field(
             "withdraw_method",
             "The withdrawal method is too long",
-        ));
+        )));
     }
     let withdrawal_message =
         format!("Withdrawal method：{method}\r\nWithdrawal account：{account}");

@@ -1,5 +1,4 @@
 use axum::{Json, http::StatusCode, response::IntoResponse};
-use indexmap::IndexMap;
 use serde::Serialize;
 
 use crate::{Code, Problem};
@@ -11,21 +10,18 @@ const GENERIC_ERROR_MESSAGE: &str = "Uh-oh, we've had some problems, we're worki
 
 #[derive(Debug, thiserror::Error)]
 pub enum ApiError {
+    /// Legacy `{message}` body. Frozen-external-namespace plumbing only
+    /// (docs/api-dialect.md §2): payment notify, the Telegram webhook,
+    /// `/api/v1/client/*`, `/api/v1/server/*`. The W14 teardown removed
+    /// every internal constructor of this variant; internal families
+    /// construct [`ApiError::Problem`] with §3.4 registry codes.
     #[error("{message}")]
     Http { status: StatusCode, message: String },
-    /// Laravel validation failure body: HTTP 422 with `{message, errors:{field:[...]}}`.
-    /// The bag is an `IndexMap` because Laravel's MessageBag preserves rule
-    /// insertion order and the frontend surfaces the first entry.
-    #[error("{message}")]
-    Validation {
-        message: String,
-        errors: IndexMap<String, Vec<String>>,
-    },
     /// Modern-dialect problem+json (docs/api-dialect.md §3) carried through
-    /// `Result<_, ApiError>` plumbing shared with unmigrated legacy routes.
-    /// The auth extractors and migrated domain families construct this
-    /// variant; it responds as RFC 9457 problem+json regardless of which
-    /// route it surfaces on (the W2 cross-cutting 401/403 flip).
+    /// `Result<_, ApiError>` plumbing shared with the frozen external
+    /// routes. The auth extractors and internal domain families construct
+    /// this variant; it responds as RFC 9457 problem+json regardless of
+    /// which route it surfaces on (the W2 cross-cutting 401/403 flip).
     #[error("{}", .0.detail())]
     Problem(Problem),
     #[error("database error: {0}")]
@@ -45,12 +41,6 @@ impl From<Problem> for ApiError {
 #[derive(Serialize)]
 struct ErrorBody<'a> {
     message: &'a str,
-}
-
-#[derive(Serialize)]
-struct ValidationBody {
-    message: String,
-    errors: IndexMap<String, Vec<String>>,
 }
 
 impl ApiError {
@@ -87,23 +77,13 @@ impl ApiError {
         }
     }
 
+    /// Legacy uniform 500 `{message}` body. Frozen external namespaces only
+    /// (`/api/v1/server/*`, `/api/v2/server/config`, guest payment notify,
+    /// the Telegram webhook) — their error bytes are pinned by docs/
+    /// api-dialect.md §2.
     pub fn legacy(message: impl Into<String>) -> Self {
         Self::Http {
             status: StatusCode::INTERNAL_SERVER_ERROR,
-            message: message.into(),
-        }
-    }
-
-    /// Deterministic business-rule failure on a frontend-only route: HTTP 400
-    /// with the same `{message}` body shape and localization path as
-    /// [`ApiError::legacy`]. Frontend retry policy treats >=500 as transient,
-    /// so deterministic rejections (sold out, invalid coupon, missing plan, …)
-    /// must not report as server errors. External namespaces (`/api/v1/server/*`,
-    /// `/api/v2/server/config`, guest payment notify, the Telegram webhook) keep
-    /// `legacy()`'s byte-identical 500 contract.
-    pub fn business(message: impl Into<String>) -> Self {
-        Self::Http {
-            status: StatusCode::BAD_REQUEST,
             message: message.into(),
         }
     }
@@ -134,21 +114,9 @@ impl ApiError {
         Self::Internal(message.into())
     }
 
-    /// Single-field Laravel 422: `{message, errors:{field:[message]}}`. Mirrors a
-    /// FormRequest that stops at the first failing rule (the common case): the same
-    /// text is the top-level `message` and the field's sole error, matching Laravel's
-    /// MessageBag when one rule fails.
-    pub fn validation_field(field: &str, message: &str) -> Self {
-        Self::Validation {
-            message: message.to_string(),
-            errors: IndexMap::from([(field.to_string(), vec![message.to_string()])]),
-        }
-    }
-
     fn status(&self) -> StatusCode {
         match self {
             Self::Http { status, .. } => *status,
-            Self::Validation { .. } => StatusCode::UNPROCESSABLE_ENTITY,
             Self::Problem(problem) => problem.status(),
             Self::Database(_) | Self::Redis(_) | Self::Internal(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
@@ -158,7 +126,7 @@ impl ApiError {
 
     fn public_message(&self) -> String {
         match self {
-            Self::Http { message, .. } | Self::Validation { message, .. } => message.clone(),
+            Self::Http { message, .. } => message.clone(),
             Self::Problem(problem) => problem.detail().to_string(),
             Self::Database(_) | Self::Redis(_) | Self::Internal(_) => {
                 GENERIC_ERROR_MESSAGE.to_string()
@@ -170,14 +138,11 @@ impl ApiError {
 impl IntoResponse for ApiError {
     fn into_response(self) -> axum::response::Response {
         match &self {
-            Self::Http { .. } | Self::Validation { .. } | Self::Problem(_) => {}
+            Self::Http { .. } | Self::Problem(_) => {}
             error => tracing::error!(?error, "internal api error"),
         }
         let status = self.status();
         match self {
-            Self::Validation { message, errors } => {
-                (status, Json(ValidationBody { message, errors })).into_response()
-            }
             Self::Problem(problem) => problem.into_response(),
             other => {
                 let message = other.public_message();
