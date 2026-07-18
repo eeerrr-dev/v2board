@@ -1,0 +1,41 @@
+{
+  "items": [
+    {
+      "id": 2,
+      "code": "GOLDENCOUPONB",
+      "name": "Golden coupon limited",
+      "type": 2,
+      "value": 20,
+      "show": true,
+      "limit_use": 10,
+      "limit_use_with_user": 1,
+      "limit_plan_ids": [
+        1
+      ],
+      "limit_period": [
+        "month_price"
+      ],
+      "started_at": "2023-11-14T22:13:20Z",
+      "ended_at": "2023-11-14T23:13:20Z",
+      "created_at": "2023-11-14T22:13:30Z",
+      "updated_at": "2023-11-14T22:13:30Z"
+    },
+    {
+      "id": 1,
+      "code": "GOLDENCOUPONA",
+      "name": "Golden coupon plain",
+      "type": 1,
+      "value": 100,
+      "show": true,
+      "limit_use": null,
+      "limit_use_with_user": null,
+      "limit_plan_ids": null,
+      "limit_period": null,
+      "started_at": "2023-11-14T22:13:20Z",
+      "ended_at": "2023-11-14T23:13:20Z",
+      "created_at": "2023-11-14T22:13:20Z",
+      "updated_at": "2023-11-14T22:13:20Z"
+    }
+  ],
+  "total": 2
+}

@@ -1,0 +1,15 @@
+[
+  {
+    "id": 1,
+    "title": "Golden notice",
+    "content": "golden notice content",
+    "show": true,
+    "img_url": null,
+    "tags": [
+      "golden",
+      "popup"
+    ],
+    "created_at": "2023-11-14T22:13:20Z",
+    "updated_at": "2023-11-14T22:13:20Z"
+  }
+]
