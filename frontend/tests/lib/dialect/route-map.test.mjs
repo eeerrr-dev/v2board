@@ -67,6 +67,19 @@ const W8_ROUTE_IDS = Object.freeze([
   'user.withdrawal-tickets.create',
 ]);
 
+const W9_ROUTE_IDS = Object.freeze([
+  'admin.config.get',
+  'admin.config.update',
+  'admin.email-templates.list',
+  'admin.telegram-webhook.set',
+  'admin.test-mail.send',
+  'admin.system.status',
+  'admin.system.queue-stats',
+  'admin.system.queue-workload',
+  'admin.system.queue-masters',
+  'admin.system.logs',
+]);
+
 const W4_ROUTE_IDS = Object.freeze([
   'user.plans.get',
   'user.plans.list',
@@ -90,6 +103,7 @@ test('unflipped families stay identity: modern equals legacy until each wave', (
     if (W6_ROUTE_IDS.includes(entry.id)) continue; // §5.4 service usage flipped in W6
     if (W7_ROUTE_IDS.includes(entry.id)) continue; // §5.6 invite/commission flipped in W7
     if (W8_ROUTE_IDS.includes(entry.id)) continue; // §5.7 user tickets flipped in W8
+    if (W9_ROUTE_IDS.includes(entry.id)) continue; // §6.1 admin config/system flipped in W9
     assert.deepEqual(entry.modern, entry.legacy, `${entry.id} must stay legacy→legacy until its wave`);
   }
 });
@@ -238,6 +252,78 @@ test('W8: the user ticket family carries the modern rows', () => {
     matchRoute('source', { method: 'POST', pathname: `${API_PREFIX}/user/withdrawal-tickets` })
       ?.id,
     'user.withdrawal-tickets.create',
+  );
+});
+
+test('W9: the admin config & system family carries the modern rows', () => {
+  const modern = Object.fromEntries(W9_ROUTE_IDS.map((id) => [id, routeEntry(id).modern]));
+  assert.deepEqual(modern, {
+    'admin.config.get': { method: 'GET', path: '/{secure_path}/config' },
+    // §6.1: partial-update semantics become a real PATCH (202 pending /
+    // 409 config_revision_conflict).
+    'admin.config.update': { method: 'PATCH', path: '/{secure_path}/config' },
+    'admin.email-templates.list': { method: 'GET', path: '/{secure_path}/email-templates' },
+    'admin.telegram-webhook.set': { method: 'POST', path: '/{secure_path}/telegram-webhook' },
+    'admin.test-mail.send': { method: 'POST', path: '/{secure_path}/test-mail' },
+    'admin.system.status': { method: 'GET', path: '/{secure_path}/system/status' },
+    'admin.system.queue-stats': { method: 'GET', path: '/{secure_path}/system/queue-stats' },
+    'admin.system.queue-workload': {
+      method: 'GET',
+      path: '/{secure_path}/system/queue-workload',
+    },
+    'admin.system.queue-masters': { method: 'GET', path: '/{secure_path}/system/queue-masters' },
+    // §7 (W9): the modern list rides the single JSON `filter` query param.
+    'admin.system.logs': { method: 'GET', path: '/{secure_path}/system/logs' },
+  });
+  // The oracle keeps requesting the legacy rows.
+  assert.equal(worldRoute('admin.config.get', 'oracle').path, '/{secure_path}/config/fetch');
+  assert.equal(worldRoute('admin.config.update', 'oracle').method, 'POST');
+  assert.equal(worldRoute('admin.config.update', 'oracle').path, '/{secure_path}/config/save');
+  assert.equal(
+    worldRoute('admin.email-templates.list', 'oracle').path,
+    '/{secure_path}/config/getEmailTemplate',
+  );
+  assert.equal(
+    worldRoute('admin.system.queue-stats', 'oracle').path,
+    '/{secure_path}/system/getQueueStats',
+  );
+  assert.equal(
+    worldRoute('admin.system.logs', 'oracle').path,
+    '/{secure_path}/system/getSystemLog',
+  );
+  // Source-world matches resolve under the dynamic secure_path prefix, and
+  // GET vs PATCH split the two /config rows.
+  assert.deepEqual(
+    matchRoute('source', {
+      method: 'GET',
+      pathname: `${API_PREFIX}/sec/config`,
+      securePath: 'sec',
+    }),
+    { id: 'admin.config.get', params: {} },
+  );
+  assert.equal(
+    matchRoute('source', {
+      method: 'PATCH',
+      pathname: `${API_PREFIX}/sec/config`,
+      securePath: 'sec',
+    })?.id,
+    'admin.config.update',
+  );
+  assert.equal(
+    matchRoute('source', {
+      method: 'GET',
+      pathname: `${API_PREFIX}/sec/system/logs`,
+      securePath: 'sec',
+    })?.id,
+    'admin.system.logs',
+  );
+  assert.equal(
+    matchRoute('source', {
+      method: 'POST',
+      pathname: `${API_PREFIX}/sec/test-mail`,
+      securePath: 'sec',
+    })?.id,
+    'admin.test-mail.send',
   );
 });
 

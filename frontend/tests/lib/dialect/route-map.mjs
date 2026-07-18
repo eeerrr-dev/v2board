@@ -346,32 +346,61 @@ export const routeMap = Object.freeze([
     { method: 'GET', path: '/user/notices' },
   ),
 
-  // ——— §6.1 Config & system ———
-  route('admin.config.get', { method: 'GET', path: '/{secure_path}/config/fetch' }),
-  route('admin.config.update', { method: 'POST', path: '/{secure_path}/config/save' }),
-  route('admin.email-templates.list', {
-    method: 'GET',
-    path: '/{secure_path}/config/getEmailTemplate',
-  }),
-  route('admin.telegram-webhook.set', {
-    method: 'POST',
-    path: '/{secure_path}/config/setTelegramWebhook',
-  }),
-  route('admin.test-mail.send', { method: 'POST', path: '/{secure_path}/config/testSendMail' }),
-  route('admin.system.status', { method: 'GET', path: '/{secure_path}/system/getSystemStatus' }),
-  route('admin.system.queue-stats', {
-    method: 'GET',
-    path: '/{secure_path}/system/getQueueStats',
-  }),
-  route('admin.system.queue-workload', {
-    method: 'GET',
-    path: '/{secure_path}/system/getQueueWorkload',
-  }),
-  route('admin.system.queue-masters', {
-    method: 'GET',
-    path: '/{secure_path}/system/getQueueMasters',
-  }),
-  route('admin.system.logs', { method: 'GET', path: '/{secure_path}/system/getSystemLog' }),
+  // ——— §6.1 Config & system — flipped to the modern rows in W9 ———
+  route(
+    'admin.config.get',
+    { method: 'GET', path: '/{secure_path}/config/fetch' },
+    { method: 'GET', path: '/{secure_path}/config' },
+  ),
+  route(
+    'admin.config.update',
+    { method: 'POST', path: '/{secure_path}/config/save' },
+    // §6.1: partial-update semantics become a real PATCH with the 202
+    // activation-pending / 409 config_revision_conflict split.
+    { method: 'PATCH', path: '/{secure_path}/config' },
+  ),
+  route(
+    'admin.email-templates.list',
+    { method: 'GET', path: '/{secure_path}/config/getEmailTemplate' },
+    { method: 'GET', path: '/{secure_path}/email-templates' },
+  ),
+  route(
+    'admin.telegram-webhook.set',
+    { method: 'POST', path: '/{secure_path}/config/setTelegramWebhook' },
+    { method: 'POST', path: '/{secure_path}/telegram-webhook' },
+  ),
+  route(
+    'admin.test-mail.send',
+    { method: 'POST', path: '/{secure_path}/config/testSendMail' },
+    { method: 'POST', path: '/{secure_path}/test-mail' },
+  ),
+  route(
+    'admin.system.status',
+    { method: 'GET', path: '/{secure_path}/system/getSystemStatus' },
+    { method: 'GET', path: '/{secure_path}/system/status' },
+  ),
+  route(
+    'admin.system.queue-stats',
+    { method: 'GET', path: '/{secure_path}/system/getQueueStats' },
+    { method: 'GET', path: '/{secure_path}/system/queue-stats' },
+  ),
+  route(
+    'admin.system.queue-workload',
+    { method: 'GET', path: '/{secure_path}/system/getQueueWorkload' },
+    { method: 'GET', path: '/{secure_path}/system/queue-workload' },
+  ),
+  route(
+    'admin.system.queue-masters',
+    { method: 'GET', path: '/{secure_path}/system/getQueueMasters' },
+    { method: 'GET', path: '/{secure_path}/system/queue-masters' },
+  ),
+  route(
+    'admin.system.logs',
+    { method: 'GET', path: '/{secure_path}/system/getSystemLog' },
+    // §7 (W9): the modern list rides the single JSON `filter` query param
+    // plus enum-validated sort_by/sort_dir — never filter[i][key] brackets.
+    { method: 'GET', path: '/{secure_path}/system/logs' },
+  ),
 
   // ——— §6.2 Plans, payments ———
   route('admin.plans.list', { method: 'GET', path: '/{secure_path}/plan/fetch' }),

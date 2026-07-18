@@ -14,7 +14,8 @@
 // W3 the §5.1 public + §5.8 content family; W4 the §5.5 user commerce
 // family; W5 the §5.3/§5.4 profile + subscription family; W6 the §5.4
 // service-usage family; W7 the §5.6 invite & commission family; W8 the
-// §5.7 user ticket family); unmigrated
+// §5.7 user ticket family; W9 the §6.1 admin config & system family);
+// unmigrated
 // families keep emitting the legacy wire in BOTH worlds:
 // `{data}` envelopes, epoch ints, 0/1 flags, and the HTTP-200 `{code: 400}`
 // error emulation the reference build expects.

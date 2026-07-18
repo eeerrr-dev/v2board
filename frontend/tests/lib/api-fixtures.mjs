@@ -217,6 +217,15 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     const isUserWithdraw =
       pathname === '/api/v1/user/ticket/withdraw' ||
       pathname === '/api/v1/user/withdrawal-tickets';
+    // W9 (§6.1): the modern admin config family splits GET vs PATCH on one
+    // /{secure_path}/config row; match both worlds' spellings for the
+    // counters, captures, and delay knobs below.
+    const isAdminConfigFetch =
+      adminEndpoint === '/config/fetch' ||
+      (adminEndpoint === '/config' && requestMethod === 'GET');
+    const isAdminConfigSave =
+      adminEndpoint === '/config/save' ||
+      (adminEndpoint === '/config' && requestMethod === 'PATCH');
 
     if (adminEndpoint) {
       page.__visualParityDiagnostics?.push(`fixture admin ${adminEndpoint}`);
@@ -441,11 +450,11 @@ export async function installApiFixtures(page, scenario, target, interaction = {
         orderCancelRequest,
       ];
     }
-    if (adminEndpoint === '/config/fetch') {
+    if (isAdminConfigFetch) {
       page.__visualParityAdminConfigFetchCount =
         (page.__visualParityAdminConfigFetchCount ?? 0) + 1;
     }
-    if (adminEndpoint === '/config/save') {
+    if (isAdminConfigSave) {
       page.__visualParityLastAdminConfigSave = requestData;
       page.__visualParityAdminConfigSaveCount = (page.__visualParityAdminConfigSaveCount ?? 0) + 1;
       page.__visualParityAdminConfigSaveRequests = [
@@ -846,7 +855,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     if (adminEndpoint === '/server/group/save' && interaction.delayAdminServerGroupSaveMs) {
       await delay(interaction.delayAdminServerGroupSaveMs);
     }
-    if (adminEndpoint === '/config/save' && interaction.delayAdminConfigSaveMs) {
+    if (isAdminConfigSave && interaction.delayAdminConfigSaveMs) {
       await delay(interaction.delayAdminConfigSaveMs);
     }
     if (
@@ -979,6 +988,28 @@ export function apiFixtureResponse(
         return body(true);
       case '/config/getEmailTemplate':
         return body(adminEmailTemplateFixtures);
+      // §6.1 modern config & system family (W9). Only the source world
+      // requests these spellings; the oracle keeps the legacy rows above.
+      case '/config':
+        if (method === 'PATCH') {
+          if (interaction?.adminConfigSaveError) {
+            return v2Problem(400, 'Bad Request', 'config_validation_failed', '配置保存失败');
+          }
+          // Full activation is a bodiless 204 (the 202 activation-pending
+          // split is a single-process runtime concern, not a fixture path).
+          return v2Empty();
+        }
+        return v2Body(modernAdminConfigFixture(adminConfigFixture));
+      case '/email-templates':
+        return v2Body(adminEmailTemplateFixtures);
+      case '/telegram-webhook':
+        return v2Empty();
+      case '/test-mail':
+        return v2Body({ log: null, sent: true });
+      case '/system/queue-stats':
+        return v2Body(modernQueueStatsFixture(adminQueueStatsFixture));
+      case '/system/queue-workload':
+        return v2Body(adminQueueWorkloadFixtures.map(modernQueueWorkloadFixture));
       case '/coupon/fetch':
         return body(adminCouponFixtures, { total: adminCouponFixtures.length });
       case '/coupon/generate':
@@ -1828,6 +1859,100 @@ const modernTicketMessageFixture = (entry) => ({
 const modernTicketDetailFixture = (ticket) => ({
   ...modernTicketFixture(ticket),
   message: (ticket.message ?? []).map(modernTicketMessageFixture),
+});
+
+// ——— W9 modern-wire projections (docs/api-dialect.md §4.1, §6.1) ———
+// the grouped config body flips every flag to a real boolean, keeps
+// enums/counters as JSON numbers, converts email_port to a number, adds the
+// §10.3 legacy_hash_redirect_enable site toggle, and pins
+// commission_withdraw_limit to its decimal-string exception; queue
+// stats/workload turn bare snake_case with a boolean status and RFC 3339
+// last-run maps.
+const modernConfigFlag = (value) => value !== 0 && value !== '0' && value !== false;
+
+const modernAdminConfigFixture = (config) => ({
+  ...config,
+  invite: {
+    ...config.invite,
+    invite_force: modernConfigFlag(config.invite.invite_force),
+    invite_never_expire: modernConfigFlag(config.invite.invite_never_expire),
+    commission_first_time_enable: modernConfigFlag(config.invite.commission_first_time_enable),
+    commission_auto_check_enable: modernConfigFlag(config.invite.commission_auto_check_enable),
+    withdraw_close_enable: modernConfigFlag(config.invite.withdraw_close_enable),
+    commission_distribution_enable: modernConfigFlag(
+      config.invite.commission_distribution_enable,
+    ),
+    commission_withdraw_limit: String(config.invite.commission_withdraw_limit),
+  },
+  site: {
+    ...config.site,
+    force_https: modernConfigFlag(config.site.force_https),
+    stop_register: modernConfigFlag(config.site.stop_register),
+    legacy_hash_redirect_enable: false,
+  },
+  subscribe: {
+    ...config.subscribe,
+    plan_change_enable: modernConfigFlag(config.subscribe.plan_change_enable),
+    surplus_enable: modernConfigFlag(config.subscribe.surplus_enable),
+    allow_new_period: modernConfigFlag(config.subscribe.allow_new_period),
+    new_order_event_id: modernConfigFlag(config.subscribe.new_order_event_id),
+    renew_order_event_id: modernConfigFlag(config.subscribe.renew_order_event_id),
+    change_order_event_id: modernConfigFlag(config.subscribe.change_order_event_id),
+    show_info_to_server_enable: modernConfigFlag(config.subscribe.show_info_to_server_enable),
+  },
+  server: {
+    ...config.server,
+    device_limit_mode: modernConfigFlag(config.server.device_limit_mode),
+  },
+  email: {
+    ...config.email,
+    email_port: config.email.email_port == null ? null : Number(config.email.email_port),
+  },
+  telegram: {
+    ...config.telegram,
+    telegram_bot_enable: modernConfigFlag(config.telegram.telegram_bot_enable),
+  },
+  safe: {
+    ...config.safe,
+    email_verify: modernConfigFlag(config.safe.email_verify),
+    safe_mode_enable: modernConfigFlag(config.safe.safe_mode_enable),
+    email_whitelist_enable: modernConfigFlag(config.safe.email_whitelist_enable),
+    email_gmail_limit_enable: modernConfigFlag(config.safe.email_gmail_limit_enable),
+    recaptcha_enable: modernConfigFlag(config.safe.recaptcha_enable),
+    register_limit_by_ip_enable: modernConfigFlag(config.safe.register_limit_by_ip_enable),
+    password_limit_enable: modernConfigFlag(config.safe.password_limit_enable),
+  },
+});
+
+const modernQueueLastRunMap = (stats) =>
+  Object.fromEntries(Object.keys(stats.wait).map((name) => [name, rfc3339FixtureTime(1700000000)]));
+
+const modernQueueStatsFixture = (stats) => ({
+  failed_jobs: stats.failedJobs,
+  jobs_per_minute: stats.jobsPerMinute,
+  last_failure_at: {},
+  last_run_at: modernQueueLastRunMap(stats),
+  last_success_at: modernQueueLastRunMap(stats),
+  paused_masters: stats.pausedMasters,
+  periods: { failed_jobs: stats.periods.failedJobs, recent_jobs: stats.periods.recentJobs },
+  processes: stats.processes,
+  queue_with_max_runtime: stats.queueWithMaxRuntime,
+  queue_with_max_throughput: stats.queueWithMaxThroughput,
+  recent_jobs: stats.recentJobs,
+  status: stats.status,
+  wait: stats.wait,
+});
+
+const modernQueueWorkloadFixture = (row) => ({
+  failed_jobs: 0,
+  last_failure_at: null,
+  last_run_at: rfc3339FixtureTime(1700000000),
+  last_success_at: rfc3339FixtureTime(1700000000),
+  length: row.length,
+  name: row.name,
+  processes: row.processes,
+  recent_jobs: row.length,
+  wait: row.wait,
 });
 
 export function userKnowledgeFixturesFor(interaction = {}) {
