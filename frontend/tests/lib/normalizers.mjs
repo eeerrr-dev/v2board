@@ -921,7 +921,7 @@ export function normalizeInteractionResult(label, result) {
     return { before: reachable(normalized.before), opened: reachable(normalized.opened) };
   }
   if (label === 'admin-users-pagination-matrix') {
-    // Keep the pagination CONTRACT — the applied fetch query (current/pageSize),
+    // Keep the pagination CONTRACT — the applied fetch query (§8 page/per_page),
     // active page, and page-item set — and drop Tier-2 presentation: the antd
     // `.ant-pagination-next` classes, the page-size selection label formatting,
     // the full row texts (number/date formatting), and the size dropdown's option
@@ -931,7 +931,7 @@ export function normalizeInteractionResult(label, result) {
         ? {
             activePage: state.activePage,
             pageItems: state.pageItems,
-            query: pickFetchQueryFields(state.query, ['current', 'pageSize']),
+            query: pickFetchQueryFields(state.query, ['page', 'per_page']),
           }
         : state;
     // Drop the size-changer path (sizeChangerCount, pageSize50, sizeDropdown) from
@@ -948,13 +948,13 @@ export function normalizeInteractionResult(label, result) {
     };
   }
   if (label === 'admin-users-sort-matrix') {
-    // The sort CONTRACT is the fetch query (sort=banned, sort_type ASC→DESC); the
-    // antd `ant-table-column-sorter-up/down` arrow classes, header label set, and
-    // row texts are Tier-2 presentation the redesigned lucide sort icons express
-    // differently. Compare only the applied ASC/DESC queries.
+    // The sort CONTRACT is the fetch query (§7.2 sort_by=banned, sort_dir
+    // asc→desc); the antd `ant-table-column-sorter-up/down` arrow classes, header
+    // label set, and row texts are Tier-2 presentation the redesigned lucide sort
+    // icons express differently. Compare only the applied asc/desc queries.
     const reduceSort = (state) =>
       state
-        ? { query: pickFetchQueryFields(state.query, ['current', 'pageSize', 'sort', 'sort_type']) }
+        ? { query: pickFetchQueryFields(state.query, ['page', 'per_page', 'sort_by', 'sort_dir']) }
         : state;
     return { asc: reduceSort(normalized.asc), desc: reduceSort(normalized.desc) };
   }

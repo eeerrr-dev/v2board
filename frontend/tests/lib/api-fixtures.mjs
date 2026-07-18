@@ -355,6 +355,32 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     const isAdminOrderUpdate =
       adminEndpoint === '/order/update' ||
       (/^\/orders\/[^/]+$/.test(adminEndpoint ?? '') && requestMethod === 'PATCH');
+    // W12 (§6.6): the modern admin user family carries identity in the path —
+    // the list GETs `/users` (§7/§8), the detail GETs `/users/{id}`, update
+    // PATCHes `/users/{id}`, delete DELETEs `/users/{id}`, single/bulk create
+    // POSTs `/users`, the bulk filter actions POST `/users/{export,mail,ban,
+    // bulk-delete}`, and reset-secret/set-inviter POST `/users/{id}/…`. Match
+    // both worlds' spellings for the counters, captures, timeout, and delay
+    // knobs below.
+    const isAdminUserFetch =
+      adminEndpoint === '/user/fetch' ||
+      (adminEndpoint === '/users' && requestMethod === 'GET');
+    const isAdminUserUpdate =
+      adminEndpoint === '/user/update' ||
+      (/^\/users\/\d+$/.test(adminEndpoint ?? '') && requestMethod === 'PATCH');
+    const isAdminUserGenerate =
+      adminEndpoint === '/user/generate' ||
+      (adminEndpoint === '/users' && requestMethod === 'POST');
+    const isAdminUserDelete =
+      adminEndpoint === '/user/delUser' ||
+      (/^\/users\/\d+$/.test(adminEndpoint ?? '') && requestMethod === 'DELETE');
+    const isAdminUserBan = adminEndpoint === '/user/ban' || adminEndpoint === '/users/ban';
+    const isAdminUserAllDelete =
+      adminEndpoint === '/user/allDel' || adminEndpoint === '/users/bulk-delete';
+    const isAdminUserDumpCsv =
+      adminEndpoint === '/user/dumpCSV' || adminEndpoint === '/users/export';
+    const isAdminUserSendMail =
+      adminEndpoint === '/user/sendMail' || adminEndpoint === '/users/mail';
     if (isUserProfileGet) {
       page.__visualParityUserInfoFetchCount = (page.__visualParityUserInfoFetchCount ?? 0) + 1;
     }
@@ -780,21 +806,32 @@ export async function installApiFixtures(page, scenario, target, interaction = {
         requestUrl.searchParams.entries(),
       );
     }
-    if (adminEndpoint === '/user/fetch') {
+    if (isAdminUserFetch) {
       page.__visualParityAdminUserFetchCount = (page.__visualParityAdminUserFetchCount ?? 0) + 1;
-      page.__visualParityLastAdminUserFetchQuery = Object.fromEntries(
-        requestUrl.searchParams.entries(),
-      );
+      // Canonical capture (§7/§8): the legacy `filter[i][…]`/`current`/`pageSize`
+      // /`sort` query and the modern `filter` JSON + `page`/`per_page`/`sort_by`
+      // /`sort_dir` fold to one flat shape.
+      const userFetchCapture = canonicalRequestCapture();
+      page.__visualParityLastAdminUserFetchQuery = userFetchCapture;
+      if (
+        Array.isArray(userFetchCapture.filter) &&
+        userFetchCapture.filter.some((clause) => clause?.field === 'invite_user_id')
+      ) {
+        page.__visualParityLastAdminFilteredUserFetchQuery = userFetchCapture;
+      }
     }
-    if (adminEndpoint === '/user/update') {
-      page.__visualParityLastAdminUserUpdate = requestData;
+    if (isAdminUserUpdate) {
+      // Canonical capture (§6.6): the legacy `{id, …}` body and the modern PATCH
+      // `{…}` + path id fold onto one flat contract.
+      const userUpdateRequest = canonicalRequestCapture();
+      page.__visualParityLastAdminUserUpdate = userUpdateRequest;
       page.__visualParityAdminUserUpdateCount = (page.__visualParityAdminUserUpdateCount ?? 0) + 1;
       page.__visualParityAdminUserUpdateRequests = [
         ...(page.__visualParityAdminUserUpdateRequests ?? []),
-        requestData,
+        userUpdateRequest,
       ];
     }
-    if (adminEndpoint === '/user/generate') {
+    if (isAdminUserGenerate) {
       page.__visualParityLastAdminUserGenerate = requestData;
       page.__visualParityAdminUserGenerateCount =
         (page.__visualParityAdminUserGenerateCount ?? 0) + 1;
@@ -803,15 +840,18 @@ export async function installApiFixtures(page, scenario, target, interaction = {
         requestData,
       ];
     }
-    if (adminEndpoint === '/user/delUser') {
-      page.__visualParityLastAdminUserDelete = requestData;
+    if (isAdminUserDelete) {
+      // Canonical capture: the legacy `{id}` body and the modern DELETE path id
+      // both surface `{id}`.
+      const userDeleteRequest = canonicalRequestCapture();
+      page.__visualParityLastAdminUserDelete = userDeleteRequest;
       page.__visualParityAdminUserDeleteCount = (page.__visualParityAdminUserDeleteCount ?? 0) + 1;
       page.__visualParityAdminUserDeleteRequests = [
         ...(page.__visualParityAdminUserDeleteRequests ?? []),
-        requestData,
+        userDeleteRequest,
       ];
     }
-    if (adminEndpoint === '/user/ban') {
+    if (isAdminUserBan) {
       page.__visualParityLastAdminUserBan = requestData;
       page.__visualParityAdminUserBanCount = (page.__visualParityAdminUserBanCount ?? 0) + 1;
       page.__visualParityAdminUserBanRequests = [
@@ -819,7 +859,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
         requestData,
       ];
     }
-    if (adminEndpoint === '/user/allDel') {
+    if (isAdminUserAllDelete) {
       page.__visualParityLastAdminUserAllDelete = requestData;
       page.__visualParityAdminUserAllDeleteCount =
         (page.__visualParityAdminUserAllDeleteCount ?? 0) + 1;
@@ -828,7 +868,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
         requestData,
       ];
     }
-    if (adminEndpoint === '/user/dumpCSV') {
+    if (isAdminUserDumpCsv) {
       page.__visualParityLastAdminUserDumpCsv = requestData;
       page.__visualParityAdminUserDumpCsvCount =
         (page.__visualParityAdminUserDumpCsvCount ?? 0) + 1;
@@ -837,7 +877,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
         requestData,
       ];
     }
-    if (adminEndpoint === '/user/sendMail') {
+    if (isAdminUserSendMail) {
       page.__visualParityLastAdminUserSendMail = requestData;
       page.__visualParityAdminUserSendMailCount =
         (page.__visualParityAdminUserSendMailCount ?? 0) + 1;
@@ -845,14 +885,6 @@ export async function installApiFixtures(page, scenario, target, interaction = {
         ...(page.__visualParityAdminUserSendMailRequests ?? []),
         requestData,
       ];
-    }
-    if (
-      adminEndpoint === '/user/fetch' &&
-      Array.from(requestUrl.searchParams.values()).includes('invite_user_id')
-    ) {
-      page.__visualParityLastAdminFilteredUserFetchQuery = Object.fromEntries(
-        requestUrl.searchParams.entries(),
-      );
     }
     if (
       target === 'oracle' &&
@@ -886,7 +918,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
         (pathname === '/api/v1/user/knowledge/fetch' || pathname === '/api/v1/user/knowledge')) ||
       (scenario.adminPlansTimeout && isAdminPlanFetch) ||
       (scenario.adminOrdersTimeout && isAdminOrderFetch) ||
-      (scenario.adminUsersTimeout && adminEndpoint === '/user/fetch') ||
+      (scenario.adminUsersTimeout && isAdminUserFetch) ||
       (scenario.adminTicketsTimeout && adminEndpoint === '/ticket/fetch') ||
       (scenario.adminServerManageTimeout && adminEndpoint === '/server/manage/getNodes') ||
       (scenario.adminPaymentsTimeout && isAdminPaymentFetch) ||
@@ -977,14 +1009,12 @@ export async function installApiFixtures(page, scenario, target, interaction = {
       await delay(interaction.delayAdminConfigSaveMs);
     }
     if (
-      ['/user/update', '/user/delUser', '/user/ban', '/user/allDel'].includes(
-        adminEndpoint ?? '',
-      ) &&
+      (isAdminUserUpdate || isAdminUserDelete || isAdminUserBan || isAdminUserAllDelete) &&
       interaction.delayAdminUserMutationMs
     ) {
       await delay(interaction.delayAdminUserMutationMs);
     }
-    if (adminEndpoint === '/user/sendMail' && interaction.delayAdminUserSendMailMs) {
+    if (isAdminUserSendMail && interaction.delayAdminUserSendMailMs) {
       await delay(interaction.delayAdminUserSendMailMs);
     }
     if (isUserUnbindTelegram && interaction.delayUserUnbindTelegramMs) {
@@ -1093,8 +1123,15 @@ export function apiFixtureResponse(
         ? v2Problem(500, 'Internal Server Error', 'internal_error', 'Server Error')
         : httpError('Server Error', 500);
     }
-    if (scenario.adminUsersHttpError && adminEndpoint === '/user/fetch') {
-      return httpError('Server Error', 500);
+    if (
+      scenario.adminUsersHttpError &&
+      (adminEndpoint === '/user/fetch' || (adminEndpoint === '/users' && method === 'GET'))
+    ) {
+      // W12 (§6.6): the source world speaks dialect v2, so a list failure is a
+      // problem+json 500; the frozen oracle keeps the legacy HTTP-500 body.
+      return target === 'source'
+        ? v2Problem(500, 'Internal Server Error', 'internal_error', 'Server Error')
+        : httpError('Server Error', 500);
     }
     if (
       /^\/server\/(shadowsocks|vmess|trojan|vless|hysteria|tuic|anytls|v2node)\/save$/.test(
@@ -1285,6 +1322,83 @@ export function apiFixtureResponse(
       return v2Empty();
     }
     if (/^\/orders\/[^/]+\/(mark-paid|cancel)$/.test(adminEndpoint)) {
+      return v2Empty();
+    }
+
+    // §6.6 modern admin users family (W12): the list is an §8 `{items, total}`
+    // page over the §7 DSL (RFC 3339 timestamps, `t`/password dropped), the
+    // detail is a bare user with the conditional `invite_user` object, a single
+    // create returns 201 `{id}` while a bulk run streams the byte-frozen
+    // credential CSV, the bulk filter actions POST `/users/{export,mail,ban,
+    // bulk-delete}`, and the update/toggle/delete/reset-secret/set-inviter carry
+    // identity in the path with bodiless 204s. Only the source world requests
+    // these spellings; the oracle keeps the legacy rows in the switch below.
+    if (adminEndpoint === '/users') {
+      if (method === 'POST') {
+        if (requestData?.generate_count) {
+          return {
+            contentType: 'text/csv',
+            httpStatus: 200,
+            rawBody: 'email,password\nparity.created@example.com,secret123\n',
+          };
+        }
+        return v2Body({ id: adminUserFixturesFor(scenario).length + 1 }, 201);
+      }
+      return v2Body({
+        items: adminUserFixturesFor(scenario).map(modernAdminUserFixture),
+        total: adminUserFixturesFor(scenario).length,
+      });
+    }
+    if (adminEndpoint === '/users/export') {
+      return {
+        contentType: 'text/csv',
+        httpStatus: 200,
+        rawBody: 'id,email\n1,visual-user@example.com\n',
+      };
+    }
+    if (adminEndpoint === '/users/mail') {
+      if (requestData?.subject === interaction?.adminUserSendMailFailureSubject) {
+        return v2Problem(500, 'Internal Server Error', 'internal_error', '邮件加入队列失败');
+      }
+      return v2Empty();
+    }
+    if (adminEndpoint === '/users/ban') {
+      if (interaction?.adminUserBanError) {
+        return v2Problem(500, 'Internal Server Error', 'internal_error', '用户封禁失败');
+      }
+      return v2Empty();
+    }
+    if (adminEndpoint === '/users/bulk-delete') {
+      if (interaction?.adminUserAllDeleteError) {
+        return v2Problem(500, 'Internal Server Error', 'internal_error', '用户批量删除失败');
+      }
+      return v2Empty();
+    }
+    const modernUserDetailMatch = /^\/users\/(\d+)$/.exec(adminEndpoint);
+    if (modernUserDetailMatch) {
+      if (method === 'GET') {
+        const requestedId = Number(modernUserDetailMatch[1]);
+        const users = adminUserFixturesFor(scenario);
+        return v2Body(
+          modernAdminUserDetailFixture(
+            users.find((user) => user.id === requestedId) ?? users[0],
+            users,
+          ),
+        );
+      }
+      if (method === 'DELETE') {
+        if (interaction?.adminUserDeleteError) {
+          return v2Problem(500, 'Internal Server Error', 'internal_error', '用户删除失败');
+        }
+        return v2Empty();
+      }
+      // PATCH update
+      if (interaction?.adminUserUpdateError) {
+        return v2Problem(422, 'Unprocessable Entity', 'validation_failed', '邮箱格式错误');
+      }
+      return v2Empty();
+    }
+    if (/^\/users\/\d+\/(set-inviter|reset-secret)$/.test(adminEndpoint)) {
       return v2Empty();
     }
 
@@ -2108,6 +2222,30 @@ const modernAdminOrderFixture = (order) => ({
   created_at: rfc3339FixtureTime(order.created_at),
   updated_at: rfc3339FixtureTime(order.updated_at),
 });
+
+// ——— W12 modern-wire projections (docs/api-dialect.md §6.6) ——— the admin user
+// list/detail keep 0/1 flag columns and integer bytes/cents, cross every epoch
+// field as RFC 3339 UTC (nullable ones stay null), drop the `t` online marker
+// and the stored password, and — on the detail only — attach the conditional
+// `invite_user: {id, email}` object resolved from the inviter row.
+const modernAdminUserFixture = (user) => ({
+  ...user,
+  password: '',
+  expired_at: user.expired_at == null ? null : rfc3339FixtureTime(user.expired_at),
+  last_login_at: user.last_login_at == null ? null : rfc3339FixtureTime(user.last_login_at),
+  created_at: rfc3339FixtureTime(user.created_at),
+  updated_at: rfc3339FixtureTime(user.updated_at),
+});
+
+const modernAdminUserDetailFixture = (user, users) => {
+  const inviter =
+    user.invite_user_id == null ? null : users.find((row) => row.id === user.invite_user_id);
+  return {
+    ...modernAdminUserFixture(user),
+    subscribe_url: '',
+    ...(inviter ? { invite_user: { id: inviter.id, email: inviter.email } } : {}),
+  };
+};
 
 // ——— W5 modern-wire projections (docs/api-dialect.md §4.1, §4.5, §5.3,
 // §5.4) ——— boolean profile/subscription flags, RFC 3339 timestamps, and the

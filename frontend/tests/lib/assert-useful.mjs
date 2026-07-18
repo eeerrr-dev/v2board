@@ -2124,8 +2124,8 @@ export function assertUsefulInteraction(label, result, target) {
       ? !jsonIncludes(result.before?.pageSizeSelection, '10') ||
         !jsonIncludes(result.sizeDropdown?.dropdownItems, '50 条/页') ||
         !jsonIncludes(result.pageSize50?.activePage, '1') ||
-        String(result.pageSize50?.query?.current) !== '1' ||
-        String(result.pageSize50?.query?.pageSize) !== '50' ||
+        String(result.pageSize50?.query?.page) !== '1' ||
+        String(result.pageSize50?.query?.per_page) !== '50' ||
         !jsonIncludes(result.pageSize50?.pageSizeSelection, '50')
       : result.before?.sizeChangerCount !== 0 ||
         result.page2?.sizeChangerCount !== 0 ||
@@ -2135,8 +2135,10 @@ export function assertUsefulInteraction(label, result, target) {
       !jsonIncludes(result.before?.rowTexts, 'very.long.user.identity.1') ||
       !jsonIncludes(result.before?.pageItems, '2') ||
       !jsonIncludes(result.page2?.activePage, '2') ||
-      String(result.page2?.query?.current) !== '2' ||
-      String(result.page2?.query?.pageSize) !== '10' ||
+      // W12 (§8): the applied fetch page/per_page fold to the canonical names
+      // in both worlds (legacy `current`/`pageSize` → `page`/`per_page`).
+      String(result.page2?.query?.page) !== '2' ||
+      String(result.page2?.query?.per_page) !== '10' ||
       sizeChangerMismatch
     ) {
       throw new Error(
@@ -2148,16 +2150,18 @@ export function assertUsefulInteraction(label, result, target) {
     label === 'admin-users-sort-matrix' &&
     (!jsonIncludes(result.before?.rowTexts, 'very.long.user.identity.1') ||
       !jsonIncludes(result.before?.tableHeaders, '状态') ||
-      String(result.asc?.query?.sort) !== 'banned' ||
-      String(result.asc?.query?.sort_type) !== 'ASC' ||
-      String(result.asc?.query?.current) !== '1' ||
-      String(result.desc?.query?.sort) !== 'banned' ||
-      String(result.desc?.query?.sort_type) !== 'DESC' ||
-      String(result.desc?.query?.current) !== '1')
+      // W12 (§7.2): the sort clause folds to the canonical `sort_by`/`sort_dir`
+      // (lowercased) in both worlds (legacy `sort`/`sort_type` `ASC`/`DESC`).
+      String(result.asc?.query?.sort_by) !== 'banned' ||
+      String(result.asc?.query?.sort_dir) !== 'asc' ||
+      String(result.asc?.query?.page) !== '1' ||
+      String(result.desc?.query?.sort_by) !== 'banned' ||
+      String(result.desc?.query?.sort_dir) !== 'desc' ||
+      String(result.desc?.query?.page) !== '1')
   ) {
     // The ascending/descending arrow indicator (antd `ant-table-column-sorter-up/
     // down` vs the redesigned lucide ArrowUp/ArrowDown) is Tier-2 presentation; the
-    // sort_type ASC→DESC query above is the external contract.
+    // sort_dir asc→desc query above is the external contract.
     throw new Error(
       `admin users sort matrix did not match legacy state: ${JSON.stringify(result)}`,
     );
@@ -2168,7 +2172,8 @@ export function assertUsefulInteraction(label, result, target) {
       !JSON.stringify(result.before?.toolbarButtons).includes('过滤器') ||
       !JSON.stringify(result.before?.toolbarButtons).includes('操作') ||
       result.filtered?.drawerCount !== 0 ||
-      !JSON.stringify(result.filtered?.filterQuery).includes('filter[0][key]') ||
+      // W12 (§7): the applied list filter folds to the canonical DSL clause.
+      !JSON.stringify(result.filtered?.filterQuery).includes('"field"') ||
       !JSON.stringify(result.filtered?.filterQuery).includes('email') ||
       !JSON.stringify(result.filtered?.filterQuery).includes('visual@example.com') ||
       !JSON.stringify(result.dropdown?.dropdownItems).includes('批量封禁') ||
@@ -2477,8 +2482,9 @@ export function assertUsefulInteraction(label, result, target) {
       !JSON.stringify(result.before?.triggerTexts).includes('操作') ||
       !JSON.stringify(result.opened?.dropdownItems).includes('TA的邀请') ||
       !String(result.filtered?.hash).includes('/user') ||
+      // W12 (§7): the seeded inviter filter folds to the canonical DSL clause.
       !JSON.stringify(result.filtered?.userFetchQuery).includes('invite_user_id') ||
-      !JSON.stringify(result.filtered?.userFetchQuery).includes('=') ||
+      !JSON.stringify(result.filtered?.userFetchQuery).includes('"op":"eq"') ||
       !JSON.stringify(result.filtered?.userFetchQuery).includes('1'))
   ) {
     throw new Error(

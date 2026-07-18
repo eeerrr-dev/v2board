@@ -15,7 +15,8 @@
 // family; W5 the §5.3/§5.4 profile + subscription family; W6 the §5.4
 // service-usage family; W7 the §5.6 invite & commission family; W8 the
 // §5.7 user ticket family; W9 the §6.1 admin config & system family; W10
-// the §6.3 admin content family; W11 the §6.2/§6.4 admin commerce family);
+// the §6.3 admin content family; W11 the §6.2/§6.4 admin commerce family;
+// W12 the §6.6 admin users family — the §7 filter/sort DSL flagship);
 // unmigrated
 // families keep emitting the legacy wire in BOTH worlds:
 // `{data}` envelopes, epoch ints, 0/1 flags, and the HTTP-200 `{code: 400}`

@@ -130,6 +130,20 @@ const W11_ROUTE_IDS = Object.freeze([
   'admin.payment-reconciliations.list',
 ]);
 
+const W12_ROUTE_IDS = Object.freeze([
+  'admin.users.list',
+  'admin.users.get',
+  'admin.users.update',
+  'admin.users.set-inviter',
+  'admin.users.create',
+  'admin.users.export',
+  'admin.users.mail',
+  'admin.users.ban',
+  'admin.users.reset-secret',
+  'admin.users.delete',
+  'admin.users.bulk-delete',
+]);
+
 const W4_ROUTE_IDS = Object.freeze([
   'user.plans.get',
   'user.plans.list',
@@ -156,6 +170,7 @@ test('unflipped families stay identity: modern equals legacy until each wave', (
     if (W9_ROUTE_IDS.includes(entry.id)) continue; // §6.1 admin config/system flipped in W9
     if (W10_ROUTE_IDS.includes(entry.id)) continue; // §6.3 admin content flipped in W10
     if (W11_ROUTE_IDS.includes(entry.id)) continue; // §6.2/§6.4 admin commerce flipped in W11
+    if (W12_ROUTE_IDS.includes(entry.id)) continue; // §6.6 admin users flipped in W12
     assert.deepEqual(entry.modern, entry.legacy, `${entry.id} must stay legacy→legacy until its wave`);
   }
 });
@@ -654,6 +669,97 @@ test('W11: the admin commerce family carries the modern rows', () => {
       securePath: 'sec',
     })?.id,
     'admin.orders.create',
+  );
+});
+
+test('W12: the admin users family carries the modern rows', () => {
+  const modern = Object.fromEntries(W12_ROUTE_IDS.map((id) => [id, routeEntry(id).modern]));
+  assert.deepEqual(modern, {
+    // §8 pagination + the §7 DSL over the guarded user column whitelist.
+    'admin.users.list': { method: 'GET', path: '/{secure_path}/users' },
+    // §6.6: the identifier moves from the `?id=` query to the path.
+    'admin.users.get': { method: 'GET', path: '/{secure_path}/users/{id}' },
+    'admin.users.update': { method: 'PATCH', path: '/{secure_path}/users/{id}' },
+    'admin.users.set-inviter': { method: 'POST', path: '/{secure_path}/users/{id}/set-inviter' },
+    'admin.users.create': { method: 'POST', path: '/{secure_path}/users' },
+    'admin.users.export': { method: 'POST', path: '/{secure_path}/users/export' },
+    'admin.users.mail': { method: 'POST', path: '/{secure_path}/users/mail' },
+    'admin.users.ban': { method: 'POST', path: '/{secure_path}/users/ban' },
+    'admin.users.reset-secret': { method: 'POST', path: '/{secure_path}/users/{id}/reset-secret' },
+    'admin.users.delete': { method: 'DELETE', path: '/{secure_path}/users/{id}' },
+    'admin.users.bulk-delete': { method: 'POST', path: '/{secure_path}/users/bulk-delete' },
+  });
+  // The oracle keeps requesting the legacy user rows.
+  assert.equal(worldRoute('admin.users.list', 'oracle').path, '/{secure_path}/user/fetch');
+  assert.equal(worldRoute('admin.users.get', 'oracle').path, '/{secure_path}/user/getUserInfoById');
+  assert.equal(worldRoute('admin.users.update', 'oracle').method, 'POST');
+  assert.equal(worldRoute('admin.users.delete', 'oracle').path, '/{secure_path}/user/delUser');
+  assert.equal(worldRoute('admin.users.bulk-delete', 'oracle').path, '/{secure_path}/user/allDel');
+  // Source-world matches extract the path id.
+  assert.deepEqual(
+    matchRoute('source', {
+      method: 'GET',
+      pathname: `${API_PREFIX}/sec/users/5`,
+      securePath: 'sec',
+    }),
+    { id: 'admin.users.get', params: { id: '5' } },
+  );
+  assert.deepEqual(
+    matchRoute('source', {
+      method: 'PATCH',
+      pathname: `${API_PREFIX}/sec/users/5`,
+      securePath: 'sec',
+      body: { email: 'x@y.test' },
+    }),
+    { id: 'admin.users.update', params: { id: '5' } },
+  );
+  assert.deepEqual(
+    matchRoute('source', {
+      method: 'DELETE',
+      pathname: `${API_PREFIX}/sec/users/5`,
+      securePath: 'sec',
+    }),
+    { id: 'admin.users.delete', params: { id: '5' } },
+  );
+  assert.deepEqual(
+    matchRoute('source', {
+      method: 'POST',
+      pathname: `${API_PREFIX}/sec/users/5/set-inviter`,
+      securePath: 'sec',
+    }),
+    { id: 'admin.users.set-inviter', params: { id: '5' } },
+  );
+  assert.deepEqual(
+    matchRoute('source', {
+      method: 'POST',
+      pathname: `${API_PREFIX}/sec/users/5/reset-secret`,
+      securePath: 'sec',
+    }),
+    { id: 'admin.users.reset-secret', params: { id: '5' } },
+  );
+  assert.equal(
+    matchRoute('source', {
+      method: 'GET',
+      pathname: `${API_PREFIX}/sec/users`,
+      securePath: 'sec',
+    })?.id,
+    'admin.users.list',
+  );
+  assert.equal(
+    matchRoute('source', {
+      method: 'POST',
+      pathname: `${API_PREFIX}/sec/users`,
+      securePath: 'sec',
+    })?.id,
+    'admin.users.create',
+  );
+  assert.equal(
+    matchRoute('source', {
+      method: 'POST',
+      pathname: `${API_PREFIX}/sec/users/export`,
+      securePath: 'sec',
+    })?.id,
+    'admin.users.export',
   );
 });
 

@@ -665,18 +665,67 @@ export const routeMap = Object.freeze([
   route('admin.tickets.replies.create', { method: 'POST', path: '/{secure_path}/ticket/reply' }),
   route('admin.tickets.close', { method: 'POST', path: '/{secure_path}/ticket/close' }),
 
-  // ——— §6.6 Users ———
-  route('admin.users.list', { method: 'GET', path: '/{secure_path}/user/fetch' }),
-  route('admin.users.get', { method: 'GET', path: '/{secure_path}/user/getUserInfoById' }),
-  route('admin.users.update', { method: 'POST', path: '/{secure_path}/user/update' }),
-  route('admin.users.set-inviter', { method: 'POST', path: '/{secure_path}/user/setInviteUser' }),
-  route('admin.users.create', { method: 'POST', path: '/{secure_path}/user/generate' }),
-  route('admin.users.export', { method: 'POST', path: '/{secure_path}/user/dumpCSV' }),
-  route('admin.users.mail', { method: 'POST', path: '/{secure_path}/user/sendMail' }),
-  route('admin.users.ban', { method: 'POST', path: '/{secure_path}/user/ban' }),
-  route('admin.users.reset-secret', { method: 'POST', path: '/{secure_path}/user/resetSecret' }),
-  route('admin.users.delete', { method: 'POST', path: '/{secure_path}/user/delUser' }),
-  route('admin.users.bulk-delete', { method: 'POST', path: '/{secure_path}/user/allDel' }),
+  // ——— §6.6 Users — flipped to the modern rows in W12 ———
+  route(
+    'admin.users.list',
+    { method: 'GET', path: '/{secure_path}/user/fetch' },
+    // §8 pagination + the §7 DSL on the guarded user column whitelist.
+    { method: 'GET', path: '/{secure_path}/users' },
+  ),
+  route(
+    'admin.users.get',
+    { method: 'GET', path: '/{secure_path}/user/getUserInfoById' },
+    // §6.6: the identifier moves from the `?id=` query to the path.
+    { method: 'GET', path: '/{secure_path}/users/{id}' },
+  ),
+  route(
+    'admin.users.update',
+    { method: 'POST', path: '/{secure_path}/user/update' },
+    // §6.6: id in the path; §4.4 double-Option body (inviter arm split out).
+    { method: 'PATCH', path: '/{secure_path}/users/{id}' },
+  ),
+  route(
+    'admin.users.set-inviter',
+    { method: 'POST', path: '/{secure_path}/user/setInviteUser' },
+    { method: 'POST', path: '/{secure_path}/users/{id}/set-inviter' },
+  ),
+  route(
+    'admin.users.create',
+    { method: 'POST', path: '/{secure_path}/user/generate' },
+    // §6.6: single create → 201 `{id}`; bulk → the byte-frozen credential CSV.
+    { method: 'POST', path: '/{secure_path}/users' },
+  ),
+  route(
+    'admin.users.export',
+    { method: 'POST', path: '/{secure_path}/user/dumpCSV' },
+    { method: 'POST', path: '/{secure_path}/users/export' },
+  ),
+  route(
+    'admin.users.mail',
+    { method: 'POST', path: '/{secure_path}/user/sendMail' },
+    { method: 'POST', path: '/{secure_path}/users/mail' },
+  ),
+  route(
+    'admin.users.ban',
+    { method: 'POST', path: '/{secure_path}/user/ban' },
+    { method: 'POST', path: '/{secure_path}/users/ban' },
+  ),
+  route(
+    'admin.users.reset-secret',
+    { method: 'POST', path: '/{secure_path}/user/resetSecret' },
+    { method: 'POST', path: '/{secure_path}/users/{id}/reset-secret' },
+  ),
+  route(
+    'admin.users.delete',
+    { method: 'POST', path: '/{secure_path}/user/delUser' },
+    { method: 'DELETE', path: '/{secure_path}/users/{id}' },
+  ),
+  route(
+    'admin.users.bulk-delete',
+    { method: 'POST', path: '/{secure_path}/user/allDel' },
+    // §6.6: kept a POST action (filter body; DELETE-with-body is proxy-hostile).
+    { method: 'POST', path: '/{secure_path}/users/bulk-delete' },
+  ),
 
   // ——— §6.7 Servers (nodes, groups, routes, protocol CRUD) ———
   route('admin.nodes.list', { method: 'GET', path: '/{secure_path}/server/manage/getNodes' }),

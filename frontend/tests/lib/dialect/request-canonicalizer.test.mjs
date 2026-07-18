@@ -155,7 +155,7 @@ test('legacy bracket filters and the modern filter JSON fold to one clause list 
   ]);
   const source = canonicalizeRequest('source', {
     method: 'GET',
-    url: `/api/v1/sec/user/fetch?filter=${encodeURIComponent(modernFilter)}`,
+    url: `/api/v1/sec/users?filter=${encodeURIComponent(modernFilter)}`,
     securePath: 'sec',
   });
 
@@ -459,6 +459,129 @@ test('the W11 reconciliation resolve splits out of order/update (§6.4)', () => 
     routeId: 'admin.payment-reconciliations.resolve',
     params: { id: 7 },
     body: { resolution: 'confirm' },
+  });
+  assert.deepEqual(source, oracle);
+});
+
+test('the W12 user list folds pagination/sort/filter onto the §7/§8 form', () => {
+  const oracle = canonicalizeRequest('oracle', {
+    method: 'GET',
+    url:
+      '/api/v1/sec/user/fetch?current=2&pageSize=10&sort=banned&sort_type=ASC' +
+      '&filter[0][key]=email&filter[0][condition]=模糊&filter[0][value]=visual@example.com' +
+      '&filter[1][key]=banned&filter[1][condition]==&filter[1][value]=1' +
+      '&filter[2][key]=plan_id&filter[2][condition]==&filter[2][value]=null',
+    securePath: 'sec',
+  });
+  const source = canonicalizeRequest('source', {
+    method: 'GET',
+    url:
+      '/api/v1/sec/users?page=2&per_page=10&sort_by=banned&sort_dir=asc&filter=' +
+      encodeURIComponent(
+        JSON.stringify([
+          { field: 'email', op: 'like', value: 'visual@example.com' },
+          { field: 'banned', op: 'eq', value: true },
+          { field: 'plan_id', op: 'eq', value: null },
+        ]),
+      ),
+    securePath: 'sec',
+  });
+  assert.deepEqual(oracle, {
+    routeId: 'admin.users.list',
+    params: {
+      page: 2,
+      per_page: 10,
+      sort_by: 'banned',
+      sort_dir: 'asc',
+      filter: [
+        { field: 'email', op: 'like', value: 'visual@example.com' },
+        { field: 'banned', op: 'eq', value: true },
+        { field: 'plan_id', op: 'eq', value: null },
+      ],
+    },
+    body: null,
+  });
+  assert.deepEqual(source, oracle);
+});
+
+test('the W12 user update folds the body id onto the PATCH path (§6.6)', () => {
+  const oracle = canonicalizeRequest('oracle', {
+    method: 'POST',
+    url: '/api/v1/sec/user/update',
+    postData: JSON.stringify({ id: 1, email: 'a@b.test', banned: 1 }),
+    securePath: 'sec',
+  });
+  const source = canonicalizeRequest('source', {
+    method: 'PATCH',
+    url: '/api/v1/sec/users/1',
+    postData: JSON.stringify({ email: 'a@b.test', banned: true }),
+    securePath: 'sec',
+  });
+  assert.deepEqual(oracle, {
+    routeId: 'admin.users.update',
+    params: { id: 1 },
+    body: { email: 'a@b.test', banned: true },
+  });
+  assert.deepEqual(source, oracle);
+});
+
+test('the W12 user delete folds the body id onto the DELETE path (§6.6)', () => {
+  const oracle = canonicalizeRequest('oracle', {
+    method: 'POST',
+    url: '/api/v1/sec/user/delUser',
+    postData: JSON.stringify({ id: 1 }),
+    securePath: 'sec',
+  });
+  const source = canonicalizeRequest('source', {
+    method: 'DELETE',
+    url: '/api/v1/sec/users/1',
+    securePath: 'sec',
+  });
+  assert.deepEqual(oracle, { routeId: 'admin.users.delete', params: { id: 1 }, body: null });
+  assert.deepEqual(source, oracle);
+});
+
+test('the W12 user set-inviter folds body id + clears the inviter (§6.6)', () => {
+  const oracle = canonicalizeRequest('oracle', {
+    method: 'POST',
+    url: '/api/v1/sec/user/setInviteUser',
+    postData: JSON.stringify({ id: 2, invite_user_email: null }),
+    securePath: 'sec',
+  });
+  const source = canonicalizeRequest('source', {
+    method: 'POST',
+    url: '/api/v1/sec/users/2/set-inviter',
+    postData: JSON.stringify({ invite_user_email: null }),
+    securePath: 'sec',
+  });
+  assert.deepEqual(oracle, {
+    routeId: 'admin.users.set-inviter',
+    params: { id: 2 },
+    body: { invite_user_email: null },
+  });
+  assert.deepEqual(source, oracle);
+});
+
+test('the W12 user bulk actions fold the body-borne filter clauses (§7.1)', () => {
+  const oracle = canonicalizeRequest('oracle', {
+    method: 'POST',
+    url: '/api/v1/sec/user/ban',
+    postData:
+      'filter[0][key]=email&filter[0][condition]=模糊&filter[0][value]=visual@example.com',
+    securePath: 'sec',
+  });
+  const source = canonicalizeRequest('source', {
+    method: 'POST',
+    url: '/api/v1/sec/users/ban',
+    postData: JSON.stringify({
+      filter: [{ field: 'email', op: 'like', value: 'visual@example.com' }],
+    }),
+    securePath: 'sec',
+  });
+  assert.deepEqual(oracle, {
+    routeId: 'admin.users.ban',
+    params: {},
+    body: { filter: [{ field: 'email', op: 'like', value: 'visual@example.com' }] },
   });
   assert.deepEqual(source, oracle);
 });

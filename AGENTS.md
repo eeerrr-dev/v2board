@@ -537,8 +537,9 @@ behavior is not a contract.
   specified in `docs/api-dialect.md` — JSON bodies with real arrays such as
   `limit_plan_ids` per §4.1 for migrated families), the
   cents conversions (e.g. coupon `type===1 → value*100`), list/fetch query,
-  pagination, and filter/sort parameters (bracket `filter[i][…]` params
-  today, the spec's §7 filter DSL once its consumer waves land), admin
+  pagination, and filter/sort parameters (the spec's §7 filter DSL for
+  migrated families — system logs and admin users — and bracket
+  `filter[i][…]` params for families still awaiting their wave), admin
   auth/session persistence, and route contracts must stay covered by an
   interaction-parity scenario.
 - Tier-2 defaults are relaxable here: overlay chrome (sheet vs modal vs drawer),

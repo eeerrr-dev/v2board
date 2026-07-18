@@ -61,6 +61,13 @@ const PAGINATION_RENAMES = Object.freeze({
   page_size: 'per_page',
 });
 
+/**
+ * §7.2 — the legacy `sort` + `sort_type` (`"ASC"`/`"DESC"`) fold onto the modern
+ * `sort_by` + `sort_dir`; the direction value lowercases so `ASC`/`asc` compare
+ * equal cross-world.
+ */
+const SORT_RENAMES = Object.freeze({ sort: 'sort_by', sort_type: 'sort_dir' });
+
 /** §7.1 — legacy filter `condition` tokens fold onto the modern op set. */
 export const FILTER_CONDITION_OPS = Object.freeze({
   '=': 'eq',
@@ -187,7 +194,26 @@ const ROUTE_REQUEST_FOLDS = Object.freeze({
   // route; the legacy `reconciliation_id` body folds onto the modern `{id}`
   // path identity.
   'admin.payment-reconciliations.resolve': foldBodyReconciliationIdIntoParams,
+  // W12 (§6.6): the legacy user family carried the row id in the body; the
+  // modern update/delete/reset-secret/set-inviter carry it in the path.
+  'admin.users.update': foldBodyIdIntoParams,
+  'admin.users.delete': foldBodyIdIntoParams,
+  'admin.users.reset-secret': foldBodyIdIntoParams,
+  'admin.users.set-inviter': foldBodyIdIntoParams,
+  // W12 (§7.1): the §6.6 bulk actions carry the filter clause array in the body;
+  // the legacy `filter[i][key]` bracket form and the modern unencoded JSON array
+  // both fold onto the canonical `{field, op, value}` clause list.
+  'admin.users.ban': foldBodyFilterClauses,
+  'admin.users.export': foldBodyFilterClauses,
+  'admin.users.mail': foldBodyFilterClauses,
+  'admin.users.bulk-delete': foldBodyFilterClauses,
 });
+
+function foldBodyFilterClauses(request) {
+  const body = request.body;
+  if (!isPlainObject(body) || body.filter === undefined) return request;
+  return { ...request, body: { ...body, filter: canonicalizeFilterClauses(body.filter) } };
+}
 
 function foldBodyReconciliationIdIntoParams(request) {
   const body = request.body;
@@ -277,12 +303,14 @@ export function canonicalizeQueryParams(searchParams) {
 
   const params = {};
   for (const [key, value] of entries) {
-    const name = PAGINATION_RENAMES[key] ?? FIELD_RENAMES[key] ?? key;
+    const name = PAGINATION_RENAMES[key] ?? SORT_RENAMES[key] ?? FIELD_RENAMES[key] ?? key;
     if (name === 'filter') {
       params.filter = canonicalizeFilterClauses(parseJsonFilter(value));
       continue;
     }
-    const canonical = canonicalizeValue(value, name);
+    let canonical = canonicalizeValue(value, name);
+    // §7.2: the sort direction is case-insensitive; fold `ASC`/`DESC` to lower.
+    if (name === 'sort_dir' && typeof canonical === 'string') canonical = canonical.toLowerCase();
     if (name in params) {
       params[name] = [...(Array.isArray(params[name]) ? params[name] : [params[name]]), canonical];
     } else {
