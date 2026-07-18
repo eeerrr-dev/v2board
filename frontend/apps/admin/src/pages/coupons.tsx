@@ -112,10 +112,16 @@ function fromDateTimeLocal(value: string) {
   return value ? String(dayjs(value).unix()) : null;
 }
 
-function dateRange(startedAt?: number | string | null, endedAt?: number | string | null) {
-  return `${dayjs(1000 * Number(startedAt)).format('YYYY/MM/DD HH:mm')} ~ ${dayjs(
-    1000 * Number(endedAt),
-  ).format('YYYY/MM/DD HH:mm')}`;
+// §4.5 (W10): fetched rows carry RFC 3339 windows; the editor form state keeps
+// its unix-seconds strings, so record seeding converts at the edge.
+function rfc3339ToUnixInput(value?: string | null) {
+  return value ? String(dayjs(value).unix()) : null;
+}
+
+function dateRange(startedAt?: string | null, endedAt?: string | null) {
+  return `${dayjs(startedAt).format('YYYY/MM/DD HH:mm')} ~ ${dayjs(endedAt).format(
+    'YYYY/MM/DD HH:mm',
+  )}`;
 }
 
 function giftcardValueUnit(type: GiftcardSubmit['type']) {
@@ -144,8 +150,8 @@ function normalizeGenerationPayload<T extends object>(value: T) {
   ) as T;
 }
 
-// Preserve the CSV download contract for batch generation: the /generate endpoint
-// returns an arraybuffer of codes only when generate_count is set.
+// Preserve the CSV download contract for batch generation: the §6.3 create
+// endpoint returns an arraybuffer of codes only when generate_count is set.
 function downloadGeneratedCsv(prefix: 'COUPON' | 'GIFTCARD', buffer: unknown) {
   const blob = new Blob([buffer as BlobPart], { type: 'text/plain,charset=UTF-8' });
   const url = window.URL.createObjectURL(blob);
@@ -229,7 +235,7 @@ function CouponEditor({
   record?: CouponRow;
   plans: Plan[];
   pending: boolean;
-  onSave: (payload: CouponSubmit, onSuccess: (response: GenerateResponse) => void) => void;
+  onSave: (payload: CouponSubmit, onSuccess: (response?: GenerateResponse) => void) => void;
   children: ReactElement<{ onClick?: () => void }>;
 }) {
   const [open, setOpen] = useState(false);
@@ -241,8 +247,8 @@ function CouponEditor({
       name: record?.name,
       code: record?.code,
       value: record?.value ?? undefined,
-      started_at: record?.started_at ?? null,
-      ended_at: record?.ended_at ?? null,
+      started_at: rfc3339ToUnixInput(record?.started_at),
+      ended_at: rfc3339ToUnixInput(record?.ended_at),
       limit_use: record?.limit_use ?? null,
       limit_use_with_user: record?.limit_use_with_user ?? null,
       limit_plan_ids: record?.limit_plan_ids ?? null,
@@ -262,8 +268,8 @@ function CouponEditor({
       name: record?.name,
       code: record?.code,
       value: record?.value ?? undefined,
-      started_at: record?.started_at ?? null,
-      ended_at: record?.ended_at ?? null,
+      started_at: rfc3339ToUnixInput(record?.started_at),
+      ended_at: rfc3339ToUnixInput(record?.ended_at),
       limit_use: record?.limit_use ?? null,
       limit_use_with_user: record?.limit_use_with_user ?? null,
       limit_plan_ids: record?.limit_plan_ids ?? null,
@@ -275,7 +281,8 @@ function CouponEditor({
 
   const save = form.handleSubmit((validValues) => {
     onSave(normalizeGenerationPayload(validValues) as CouponSubmit, (response) => {
-      if (validValues.generate_count) downloadGeneratedCsv('COUPON', response.buffer);
+      if (validValues.generate_count && response?.buffer)
+        downloadGeneratedCsv('COUPON', response.buffer);
       setOpen(false);
     });
   });
@@ -525,7 +532,7 @@ function CouponsView() {
   const planOptions = plans.data;
   const plansReady = !plans.isError && planOptions !== undefined;
 
-  const data = coupons.data?.data ?? [];
+  const data = coupons.data?.items ?? [];
   const total = coupons.data?.total ?? 0;
 
   const removeCoupon = async (row: CouponRow) => {
@@ -552,8 +559,9 @@ function CouponsView() {
       header: () => <span>启用</span>,
       cell: ({ row }) => (
         <Switch
-          checked={Boolean(row.original.show)}
-          onCheckedChange={() => show.mutate(row.original.id)}
+          checked={row.original.show}
+          // §6.3 (W10): PATCH `{show}` carries the explicit target value.
+          onCheckedChange={() => show.mutate({ id: row.original.id, show: !row.original.show })}
           aria-label={`切换优惠券「${row.original.name}」启用`}
         />
       ),
@@ -710,7 +718,7 @@ function GiftcardEditor({
   record?: GiftcardRow;
   plans: Plan[];
   pending: boolean;
-  onSave: (payload: GiftcardSubmit, onSuccess: (response: GenerateResponse) => void) => void;
+  onSave: (payload: GiftcardSubmit, onSuccess: (response?: GenerateResponse) => void) => void;
   children: ReactElement<{ onClick?: () => void }>;
 }) {
   const [open, setOpen] = useState(false);
@@ -723,8 +731,8 @@ function GiftcardEditor({
       code: record?.code,
       value: record?.value ?? undefined,
       plan_id: record?.plan_id ?? null,
-      started_at: record?.started_at ?? null,
-      ended_at: record?.ended_at ?? null,
+      started_at: rfc3339ToUnixInput(record?.started_at),
+      ended_at: rfc3339ToUnixInput(record?.ended_at),
       limit_use: record?.limit_use ?? null,
       generate_count: undefined,
     },
@@ -742,8 +750,8 @@ function GiftcardEditor({
       code: record?.code,
       value: record?.value ?? undefined,
       plan_id: record?.plan_id ?? null,
-      started_at: record?.started_at ?? null,
-      ended_at: record?.ended_at ?? null,
+      started_at: rfc3339ToUnixInput(record?.started_at),
+      ended_at: rfc3339ToUnixInput(record?.ended_at),
       limit_use: record?.limit_use ?? null,
       generate_count: undefined,
     });
@@ -752,7 +760,8 @@ function GiftcardEditor({
 
   const save = form.handleSubmit((validValues) => {
     onSave(normalizeGenerationPayload(validValues) as GiftcardSubmit, (response) => {
-      if (validValues.generate_count) downloadGeneratedCsv('GIFTCARD', response.buffer);
+      if (validValues.generate_count && response?.buffer)
+        downloadGeneratedCsv('GIFTCARD', response.buffer);
       setOpen(false);
     });
   });
@@ -994,7 +1003,7 @@ function GiftcardsView() {
   const planOptions = plans.data;
   const plansReady = !plans.isError && planOptions !== undefined;
 
-  const data = giftcards.data?.data ?? [];
+  const data = giftcards.data?.items ?? [];
   const total = giftcards.data?.total ?? 0;
 
   const planName = (id: number | string | null | undefined) =>

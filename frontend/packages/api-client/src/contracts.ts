@@ -361,9 +361,10 @@ export const paymentFormFieldSchema = z.looseObject({
 export const paymentFormSchema = z.record(z.string(), paymentFormFieldSchema);
 
 /**
- * GET /user/notices items (docs/api-dialect.md §5.8, W3): boolean `show`,
- * RFC 3339 timestamps. `tags` keeps carrying the backend `弹窗` auto-popup
- * marker (Tier-1).
+ * GET /user/notices items (docs/api-dialect.md §5.8, W3) and, since W10, the
+ * admin `GET /{secure_path}/notices` rows (§6.3 — the same field set on the
+ * same modern value types): boolean `show`, RFC 3339 timestamps. `tags` keeps
+ * carrying the backend `弹窗` auto-popup marker (Tier-1).
  */
 export const noticeSchema = z.looseObject({
   id: z.number(),
@@ -374,18 +375,6 @@ export const noticeSchema = z.looseObject({
   tags: stringArraySchema.nullable(),
   created_at: z.string(),
   updated_at: z.string(),
-});
-
-/** Legacy admin notice rows (`/admin/notice/fetch`, W10 still legacy). */
-export const adminNoticeSchema = z.looseObject({
-  id: z.number(),
-  title: z.string(),
-  content: z.string(),
-  img_url: nullableString,
-  tags: stringArraySchema.nullable(),
-  show: binaryFlagSchema,
-  created_at: z.number(),
-  updated_at: z.number(),
 });
 
 /** Legacy ticket messages (epoch ints) — admin family only until W14. */
@@ -498,26 +487,17 @@ export const userCouponSchema = z.looseObject({
 });
 
 /**
- * Legacy-dialect coupon rows (numeric flags, epoch timestamps) from the admin
- * coupon endpoints; W10 owns their dialect flip.
+ * Admin `GET /{secure_path}/coupons` items (docs/api-dialect.md §6.3, W10):
+ * the same modern coupon body the user check route returns — boolean `show`,
+ * RFC 3339 windows, real `limit_plan_ids`/`limit_period` arrays, integer
+ * cents for amount coupons (`type` 1).
  */
-export const couponSchema = z.looseObject({
-  id: z.number(),
-  code: z.string(),
-  name: z.string(),
-  type: z.union([z.literal(1), z.literal(2)]),
-  value: z.number(),
-  show: binaryFlagSchema,
-  limit_use: nullableNumber,
-  limit_use_with_user: nullableNumber,
-  limit_plan_ids: numberArraySchema.nullable(),
-  limit_period: stringArraySchema.nullable(),
-  started_at: z.number(),
-  ended_at: z.number(),
-  created_at: z.number(),
-  updated_at: z.number(),
-});
+export const couponSchema = userCouponSchema;
 
+/**
+ * Admin `GET /{secure_path}/gift-cards` items (docs/api-dialect.md §6.3,
+ * W10): RFC 3339 windows and a real `used_user_ids` array of redeemer ids.
+ */
 export const giftcardSchema = z.looseObject({
   id: z.number(),
   name: z.string(),
@@ -526,11 +506,11 @@ export const giftcardSchema = z.looseObject({
   value: nullableNumber,
   plan_id: nullableNumber,
   limit_use: nullableNumber,
-  used_user_ids: z.union([nullableString, z.array(z.union([z.number(), z.string()]))]),
-  started_at: nullableNumber,
-  ended_at: nullableNumber,
-  created_at: z.number(),
-  updated_at: z.number(),
+  used_user_ids: numberArraySchema,
+  started_at: z.string(),
+  ended_at: z.string(),
+  created_at: z.string(),
+  updated_at: z.string(),
 });
 
 /**
@@ -568,7 +548,9 @@ export const commissionDetailSchema = z.looseObject({
 /**
  * User knowledge rows (docs/api-dialect.md §5.8, W3): boolean `show` and an
  * RFC 3339 `updated_at`. The detail `body` stays non-idempotent —
- * re-substituted per request (Tier-1 refetch behavior).
+ * re-substituted per request (Tier-1 refetch behavior). Since W10 the admin
+ * `GET /{secure_path}/knowledge` rows (§6.3) reuse the same shapes — the
+ * admin detail differs only in serving the raw stored body.
  */
 export const knowledgeSummarySchema = z.looseObject({
   id: z.number(),
@@ -584,21 +566,6 @@ export const knowledgeSchema = knowledgeSummarySchema.extend({
   created_at: z.string(),
 });
 export const knowledgeCategorySchema = z.record(z.string(), z.array(knowledgeSummarySchema));
-
-/** Legacy admin knowledge rows (`/admin/knowledge/*`, W10 still legacy). */
-export const adminKnowledgeSummarySchema = z.looseObject({
-  id: z.number(),
-  category: z.string(),
-  title: z.string(),
-  show: binaryFlagSchema,
-  updated_at: z.number(),
-});
-export const adminKnowledgeSchema = adminKnowledgeSummarySchema.extend({
-  sort: nullableNumber,
-  body: z.string(),
-  language: z.string(),
-  created_at: z.number(),
-});
 
 /**
  * GET /user/traffic-logs (docs/api-dialect.md §5.4, W6): numeric
@@ -1006,6 +973,17 @@ export const giftCardRedemptionSchema = z.looseObject({
 });
 
 export const csvJsonEnvelopeSchema = envelopeSchema(trueSchema).extend({
+  /** Keeps the JSON side of `BinaryApiResponse` structurally distinct. */
+  buffer: z.never().optional(),
+});
+
+/**
+ * The §1 bare 201 `{id}` create result (dialect v2 upsert splits, W10). On
+ * the CSV-capable §6.3 bulk-generate routes it is the JSON arm — a bulk run
+ * streams the byte-frozen CSV attachment instead.
+ */
+export const createdIdSchema = z.looseObject({
+  id: z.number(),
   /** Keeps the JSON side of `BinaryApiResponse` structurally distinct. */
   buffer: z.never().optional(),
 });

@@ -240,6 +240,12 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       const buffer = toArrayBuffer(response.data);
       if (buffer) return { code: response.status, data: buffer, buffer };
       const endpoint = String(config.url ?? '<unknown>');
+      if (config.dialect === 'v2') {
+        // §14: the dialect JSON arm is the bare success body (e.g. the §1
+        // 201 `{id}` create) — no envelope to unwrap; the CSV arm above is
+        // byte-frozen either way.
+        return parseContract(jsonResponseSchema, response.data, endpoint);
+      }
       const envelope = unwrapBackendEnvelope(response.data, response.status, endpoint);
       return parseContract(jsonResponseSchema, envelope, endpoint);
     },

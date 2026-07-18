@@ -19,16 +19,16 @@ function makeKnowledge() {
       category: '帮助',
       title: '入门指南',
       sort: 1,
-      show: 1 as const,
-      updated_at: 1700000000,
+      show: true,
+      updated_at: '2023-11-14T22:13:20Z',
     },
     {
       id: 2,
       category: '教程',
       title: '进阶用法',
       sort: 2,
-      show: 0 as const,
-      updated_at: 1700000000,
+      show: false,
+      updated_at: '2023-11-14T22:13:20Z',
     },
   ];
 }
@@ -40,11 +40,11 @@ function makeKnowledgeDetail(id: number) {
     category: second ? '教程' : '帮助',
     title: second ? '进阶详情' : '入门指南',
     sort: id,
-    show: second ? (0 as const) : (1 as const),
+    show: !second,
     body: second ? '第二篇正文' : '正文内容',
     language: second ? 'en-US' : 'zh-CN',
-    created_at: 1,
-    updated_at: 1700000000,
+    created_at: '2023-11-14T22:13:20Z',
+    updated_at: '2023-11-14T22:13:20Z',
   };
 }
 
@@ -136,7 +136,7 @@ describe('KnowledgePage', () => {
     expect(screen.getByText('进阶用法')).toBeInTheDocument();
     expect(screen.getByText('教程')).toBeInTheDocument();
     expect(
-      screen.getAllByText(dayjs(1700000000 * 1000).format('YYYY/MM/DD HH:mm')).length,
+      screen.getAllByText(dayjs('2023-11-14T22:13:20Z').format('YYYY/MM/DD HH:mm')).length,
     ).toBeGreaterThan(0);
   });
 
@@ -157,7 +157,8 @@ describe('KnowledgePage', () => {
     render(<KnowledgePage />);
 
     await user.click(screen.getAllByRole('switch')[0]!);
-    expect(mocks.showMutate).toHaveBeenCalledWith(1);
+    // §6.3 (W10): the toggle sends the explicit target value.
+    expect(mocks.showMutate).toHaveBeenCalledWith({ id: 1, show: false });
   });
 
   it('reorders with sort.mutate over the new id order', async () => {

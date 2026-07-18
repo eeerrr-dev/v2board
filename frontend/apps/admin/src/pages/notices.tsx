@@ -3,7 +3,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm, useFormState, useWatch } from 'react-hook-form';
 import dayjs from 'dayjs';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
-import type { AdminNotice } from '@v2board/types';
+import type { Notice } from '@v2board/types';
 import {
   useAdminNotices,
   useDropNoticeMutation,
@@ -38,7 +38,7 @@ import {
 
 const NOTICE_FORM_ID = 'notice-editor-form';
 
-function noticeEditorValues(notice?: AdminNotice): NoticeEditorValues {
+function noticeEditorValues(notice?: Notice): NoticeEditorValues {
   return {
     ...(notice ? { id: notice.id } : {}),
     title: notice?.title ?? '',
@@ -49,7 +49,7 @@ function noticeEditorValues(notice?: AdminNotice): NoticeEditorValues {
 }
 
 export default function NoticesPage() {
-  const notices = useAdminNotices({});
+  const notices = useAdminNotices();
   const save = useSaveNoticeMutation();
   const drop = useDropNoticeMutation();
   const show = useShowNoticeMutation();
@@ -62,14 +62,14 @@ export default function NoticesPage() {
   // caches proxy reads, which freezes error/submit UI after the first render.
   const { errors: formErrors } = useFormState({ control: form.control });
   const editingId = useWatch({ control: form.control, name: 'id' });
-  const dataSource = notices.data?.data ?? [];
+  const dataSource = notices.data ?? [];
 
   const openCreate = () => {
     form.reset(noticeEditorValues());
     setOpen(true);
   };
 
-  const openEdit = (row: AdminNotice) => {
+  const openEdit = (row: Notice) => {
     form.reset(noticeEditorValues(row));
     setOpen(true);
   };
@@ -78,11 +78,12 @@ export default function NoticesPage() {
     save.mutate(values, { onSuccess: () => setOpen(false) });
   });
 
-  const toggleShow = (row: AdminNotice) => {
-    show.mutate(row.id);
+  const toggleShow = (row: Notice) => {
+    // §6.3 (W10): PATCH `{show}` carries the explicit target value.
+    show.mutate({ id: row.id, show: !row.show });
   };
 
-  const removeNotice = async (row: AdminNotice) => {
+  const removeNotice = async (row: Notice) => {
     const confirmed = await confirmDialog({
       title: '删除公告',
       description: `确定要删除公告「${row.title}」吗？`,
@@ -92,7 +93,7 @@ export default function NoticesPage() {
     drop.mutate(row.id);
   };
 
-  const columns: DataTableColumn<AdminNotice>[] = [
+  const columns: DataTableColumn<Notice>[] = [
     {
       id: 'id',
       meta: { className: 'text-muted-foreground tabular-nums' },
@@ -121,7 +122,8 @@ export default function NoticesPage() {
       id: 'created_at',
       meta: { align: 'right', className: 'text-muted-foreground tabular-nums' },
       header: () => <span>创建时间</span>,
-      cell: ({ row }) => dayjs(1000 * row.original.created_at).format('YYYY/MM/DD HH:mm'),
+      // §4.5 (W10): timestamps arrive as RFC 3339 strings.
+      cell: ({ row }) => dayjs(row.original.created_at).format('YYYY/MM/DD HH:mm'),
     },
     {
       id: 'actions',

@@ -3,9 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
   activeSessionSchema,
-  adminKnowledgeSchema,
-  adminKnowledgeSummarySchema,
-  adminNoticeSchema,
   adminOrderSchema,
   adminPaymentSchema,
   adminUserDetailSchema,
@@ -26,6 +23,7 @@ import {
   inviteFetchSchema,
   knowledgeCategorySchema,
   knowledgeSchema,
+  knowledgeSummarySchema,
   noticeSchema,
   orderStatusSchema,
   pageEnvelopeSchema,
@@ -68,12 +66,6 @@ const goldensUrl = new URL('../goldens/', import.meta.url);
 
 const goldenSchemas: Record<string, z.ZodType> = {
   // DB-backed admin surface (v2board-contract golden-responses).
-  'admin.coupon.fetch.json': pageEnvelopeSchema(couponSchema),
-  'admin.giftcard.fetch.json': pageEnvelopeSchema(giftcardSchema),
-  'admin.knowledge.detail.json': envelopeSchema(adminKnowledgeSchema),
-  'admin.knowledge.fetch.json': envelopeSchema(arraySchema(adminKnowledgeSummarySchema)),
-  'admin.knowledge.getCategory.json': envelopeSchema(stringArraySchema),
-  'admin.notice.fetch.json': pageEnvelopeSchema(adminNoticeSchema),
   'admin.order.detail.json': envelopeSchema(adminOrderSchema),
   'admin.order.fetch.json': pageEnvelopeSchema(adminOrderSchema),
   'admin.payment.fetch.json': envelopeSchema(arraySchema(adminPaymentSchema)),
@@ -100,6 +92,14 @@ const dialectGoldenSchemas: Record<string, z.ZodType> = {
   'auth.session.json': sessionStateSchema,
   'auth.session.logged-out.json': sessionStateSchema,
   'auth.step-up.json': stepUpGrantSchema,
+  // §6.3 (W10): the admin content family — bare arrays for the unpaginated
+  // notice/knowledge lists, `{items, total}` pages for coupons/gift-cards.
+  'admin.coupons.json': pageSchema(couponSchema),
+  'admin.gift-cards.json': pageSchema(giftcardSchema),
+  'admin.knowledge-categories.json': stringArraySchema,
+  'admin.knowledge.detail.json': knowledgeSchema,
+  'admin.knowledge.json': arraySchema(knowledgeSummarySchema),
+  'admin.notices.json': arraySchema(noticeSchema),
   // §6.1 (W9): the PATCH config stale-revision conflict problem.
   'problem.config-revision-conflict.json': problemDetailsSchema,
   'problem.session-expired.json': problemDetailsSchema,

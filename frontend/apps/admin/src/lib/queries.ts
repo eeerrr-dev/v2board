@@ -22,6 +22,18 @@ const noticesScope = ['admin', 'notices'] as const;
 const couponsScope = ['admin', 'coupons'] as const;
 const giftcardsScope = ['admin', 'giftcards'] as const;
 
+// Pages keep their local {current, pageSize} pagination state; the §8 dialect
+// query (`page`/`per_page`) is minted here at the API boundary.
+interface AdminContentPageState {
+  current?: number;
+  pageSize?: number;
+}
+
+const contentListQuery = (query: AdminContentPageState): admin.ContentListQuery => ({
+  page: query.current,
+  per_page: query.pageSize,
+});
+
 export const adminKeys = {
   config: (key?: string) => ['admin', 'config', key] as const,
   stat: ['admin', 'stat'] as const,
@@ -31,7 +43,7 @@ export const adminKeys = {
   order: (id: number | undefined) => [...orderScope, id] as const,
   plans: ['admin', 'plans'] as const,
   payments: ['admin', 'payments'] as const,
-  notices: (filters: unknown) => [...noticesScope, filters] as const,
+  notices: noticesScope,
   tickets: (filters: unknown) => [...ticketsScope, filters] as const,
   ticket: (id: number | string | undefined) => [...ticketScope, id] as const,
   coupons: (filters: unknown) => [...couponsScope, filters] as const,
@@ -158,11 +170,12 @@ export const adminQueryOptions = {
       queryFn:
         id == null ? skipToken : ({ signal }) => admin.getUserInfoById(apiClient, id, { signal }),
     }),
-  notices: (query: admin.AdminPageQuery) =>
+  // §6.3 (W10): GET /notices stays deliberately unpaginated — a bare array,
+  // so the query takes no page state.
+  notices: () =>
     queryOptions({
-      queryKey: adminKeys.notices(query),
-      queryFn: ({ signal }) => admin.fetchNotices(apiClient, query, { signal }),
-      placeholderData: keepPreviousData,
+      queryKey: adminKeys.notices,
+      queryFn: ({ signal }) => admin.fetchNotices(apiClient, { signal }),
     }),
   tickets: (query: admin.AdminPageQuery) =>
     queryOptions({
@@ -181,16 +194,18 @@ export const adminQueryOptions = {
       refetchInterval: (query) =>
         query.state.status === 'error' || query.state.data?.status === 1 ? false : 5_000,
     }),
-  coupons: (query: admin.AdminPageQuery) =>
+  coupons: (query: AdminContentPageState) =>
     queryOptions({
       queryKey: adminKeys.coupons(query),
-      queryFn: ({ signal }) => admin.fetchCoupons(apiClient, query, { signal }),
+      queryFn: ({ signal }) =>
+        admin.fetchCoupons(apiClient, contentListQuery(query), { signal }),
       placeholderData: keepPreviousData,
     }),
-  giftcards: (query: admin.AdminPageQuery) =>
+  giftcards: (query: AdminContentPageState) =>
     queryOptions({
       queryKey: adminKeys.giftcards(query),
-      queryFn: ({ signal }) => admin.fetchGiftcards(apiClient, query, { signal }),
+      queryFn: ({ signal }) =>
+        admin.fetchGiftcards(apiClient, contentListQuery(query), { signal }),
       placeholderData: keepPreviousData,
     }),
   knowledge: () =>
@@ -272,14 +287,13 @@ export const useAdminOrders = (query: admin.AdminPageQuery & { is_commission?: 0
   useQuery(adminQueryOptions.orders(query));
 export const useAdminOrderDetail = (id?: number) => useQuery(adminQueryOptions.order(id));
 export const useAdminUserInfo = (id?: number | null) => useQuery(adminQueryOptions.user(id));
-export const useAdminNotices = (query: admin.AdminPageQuery) =>
-  useQuery(adminQueryOptions.notices(query));
+export const useAdminNotices = () => useQuery(adminQueryOptions.notices());
 export const useAdminTickets = (query: admin.AdminPageQuery) =>
   useQuery(adminQueryOptions.tickets(query));
 export const useAdminTicket = (id?: number | string) => useQuery(adminQueryOptions.ticket(id));
-export const useAdminCoupons = (query: admin.AdminPageQuery) =>
+export const useAdminCoupons = (query: AdminContentPageState) =>
   useQuery(adminQueryOptions.coupons(query));
-export const useAdminGiftcards = (query: admin.AdminPageQuery) =>
+export const useAdminGiftcards = (query: AdminContentPageState) =>
   useQuery(adminQueryOptions.giftcards(query));
 export const useAdminKnowledge = () => useQuery(adminQueryOptions.knowledge());
 export const useAdminKnowledgeDetail = (id: number | undefined, open: boolean) =>
@@ -458,7 +472,12 @@ export function useDropNoticeMutation() {
 }
 
 export function useShowNoticeMutation() {
-  return useInvalidatingMutation((id: number) => admin.showNotice(apiClient, id), [noticesScope]);
+  // §6.3 (W10): the legacy server-side flip became an explicit client-sent
+  // target value on the PATCH `{show}` toggle.
+  return useInvalidatingMutation(
+    ({ id, show }: { id: number; show: boolean }) => admin.showNotice(apiClient, id, show),
+    [noticesScope],
+  );
 }
 
 /**
@@ -504,8 +523,13 @@ export function useDropPaymentMutation() {
 }
 
 export function useGenerateCouponMutation() {
+  // §6.3 (W10): edits carry the row id and ride PATCH /coupons/{id}; creates
+  // POST /coupons (201 {id} single, byte-frozen CSV bulk).
   return useInvalidatingMutation(
-    (data: Parameters<typeof admin.generateCoupon>[1]) => admin.generateCoupon(apiClient, data),
+    (data: Parameters<typeof admin.generateCoupon>[1]) =>
+      data.id != null
+        ? admin.updateCoupon(apiClient, data.id, data)
+        : admin.generateCoupon(apiClient, data),
     [couponsScope],
   );
 }
@@ -515,12 +539,18 @@ export function useDropCouponMutation() {
 }
 
 export function useShowCouponMutation() {
-  return useInvalidatingMutation((id: number) => admin.showCoupon(apiClient, id), [couponsScope]);
+  return useInvalidatingMutation(
+    ({ id, show }: { id: number; show: boolean }) => admin.showCoupon(apiClient, id, show),
+    [couponsScope],
+  );
 }
 
 export function useGenerateGiftcardMutation() {
   return useInvalidatingMutation(
-    (data: Parameters<typeof admin.generateGiftcard>[1]) => admin.generateGiftcard(apiClient, data),
+    (data: Parameters<typeof admin.generateGiftcard>[1]) =>
+      data.id != null
+        ? admin.updateGiftcard(apiClient, data.id, data)
+        : admin.generateGiftcard(apiClient, data),
     [giftcardsScope],
   );
 }
@@ -548,7 +578,7 @@ export function useDropKnowledgeMutation() {
 
 export function useShowKnowledgeMutation() {
   return useInvalidatingMutation(
-    (id: number) => admin.showKnowledge(apiClient, id),
+    ({ id, show }: { id: number; show: boolean }) => admin.showKnowledge(apiClient, id, show),
     [adminKeys.knowledge],
   );
 }

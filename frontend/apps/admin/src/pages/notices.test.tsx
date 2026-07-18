@@ -17,9 +17,9 @@ const NOTICE = {
   content: 'content',
   img_url: null,
   tags: ['system'],
-  show: 1,
-  created_at: 1700000000,
-  updated_at: 1700000000,
+  show: true,
+  created_at: '2023-11-14T22:13:20Z',
+  updated_at: '2023-11-14T22:13:20Z',
 };
 
 const NOTICE_TWO = {
@@ -46,7 +46,8 @@ vi.mock('@/lib/queries', () => ({
     isError: mocks.listError,
     isSuccess: !mocks.listError,
     refetch: mocks.refetch,
-    data: { data: mocks.data, total: mocks.data.length },
+    // §6.3 (W10): the notice list is a bare unpaginated array.
+    data: mocks.data,
   }),
   useSaveNoticeMutation: () => ({
     isPending: false,
@@ -80,7 +81,7 @@ describe('NoticesPage', () => {
     expect(screen.getByText('公告管理')).toBeInTheDocument();
     expect(screen.getByText('维护通知')).toBeInTheDocument();
     expect(
-      screen.getByText(dayjs(1700000000 * 1000).format('YYYY/MM/DD HH:mm')),
+      screen.getByText(dayjs('2023-11-14T22:13:20Z').format('YYYY/MM/DD HH:mm')),
     ).toBeInTheDocument();
   });
 
@@ -220,7 +221,8 @@ describe('NoticesPage', () => {
     render(<NoticesPage />);
 
     await user.click(screen.getByRole('switch'));
-    expect(mocks.showMutate).toHaveBeenCalledWith(1);
+    // §6.3 (W10): the toggle sends the explicit target value.
+    expect(mocks.showMutate).toHaveBeenCalledWith({ id: 1, show: false });
   });
 
   it('deletes only after the confirm dialog resolves true', async () => {

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm, useFormState } from 'react-hook-form';
 import dayjs from 'dayjs';
-import type { AdminKnowledge, AdminKnowledgeSummary } from '@v2board/types';
+import type { Knowledge, KnowledgeSummary } from '@v2board/types';
 import { ArrowDown, ArrowUp, Pencil, Plus, Trash2 } from 'lucide-react';
 import {
   useAdminKnowledge,
@@ -64,7 +64,7 @@ const KNOWLEDGE_LOCALE_OPTIONS = [...KNOWLEDGE_LOCALES]
   .sort()
   .map((locale) => ({ value: locale, label: KNOWLEDGE_LOCALE_TEXT[locale] }));
 
-function knowledgeEditorValues(knowledge?: AdminKnowledge): KnowledgeEditorValues {
+function knowledgeEditorValues(knowledge?: Knowledge): KnowledgeEditorValues {
   return {
     ...(knowledge ? { id: knowledge.id } : {}),
     category: knowledge?.category ?? '',
@@ -274,7 +274,7 @@ export default function KnowledgePage() {
   const drop = useDropKnowledgeMutation();
   const show = useShowKnowledgeMutation();
   const sort = useSortKnowledgeMutation();
-  const [orderOverride, setOrderOverride] = useState<AdminKnowledgeSummary[] | null>(null);
+  const [orderOverride, setOrderOverride] = useState<KnowledgeSummary[] | null>(null);
   const [editor, setEditor] = useState<{
     id: number | undefined;
     key: number;
@@ -315,7 +315,7 @@ export default function KnowledgePage() {
     );
   };
 
-  const removeKnowledge = async (row: AdminKnowledgeSummary) => {
+  const removeKnowledge = async (row: KnowledgeSummary) => {
     const confirmed = await confirmDialog({
       title: '警告',
       description: '确定要删除该条项目吗？',
@@ -325,7 +325,7 @@ export default function KnowledgePage() {
     drop.mutate(row.id);
   };
 
-  const columns: DataTableColumn<AdminKnowledgeSummary>[] = [
+  const columns: DataTableColumn<KnowledgeSummary>[] = [
     {
       id: 'id',
       meta: { className: 'text-muted-foreground tabular-nums' },
@@ -338,8 +338,9 @@ export default function KnowledgePage() {
       header: () => <span>显示</span>,
       cell: ({ row }) => (
         <Switch
-          checked={Boolean(row.original.show)}
-          onCheckedChange={() => show.mutate(row.original.id)}
+          checked={row.original.show}
+          // §6.3 (W10): PATCH `{show}` carries the explicit target value.
+          onCheckedChange={() => show.mutate({ id: row.original.id, show: !row.original.show })}
           aria-label={`切换「${row.original.title}」显示`}
         />
       ),
@@ -360,7 +361,8 @@ export default function KnowledgePage() {
       id: 'updated_at',
       meta: { align: 'right', className: 'text-muted-foreground tabular-nums' },
       header: () => <span>更新时间</span>,
-      cell: ({ row }) => dayjs(1000 * row.original.updated_at).format('YYYY/MM/DD HH:mm'),
+      // §4.5 (W10): timestamps arrive as RFC 3339 strings.
+      cell: ({ row }) => dayjs(row.original.updated_at).format('YYYY/MM/DD HH:mm'),
     },
     {
       id: 'actions',

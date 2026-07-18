@@ -32,6 +32,7 @@ import {
   sortServerNodes,
   statUser,
   testSendMail,
+  updateCoupon,
   updatePlan,
   updateUser,
   updateServer,
@@ -52,15 +53,15 @@ function makeCoupon(overrides: Record<string, unknown> = {}) {
     name: 'Coupon',
     type: 1,
     value: 100,
-    show: 1,
+    show: true,
     limit_use: null,
     limit_use_with_user: null,
     limit_plan_ids: null,
     limit_period: null,
-    started_at: 0,
-    ended_at: 0,
-    created_at: 0,
-    updated_at: 0,
+    started_at: '2023-11-14T22:13:20Z',
+    ended_at: '2023-11-14T23:13:20Z',
+    created_at: '2023-11-14T22:13:20Z',
+    updated_at: '2023-11-14T22:13:20Z',
     ...overrides,
   };
 }
@@ -74,11 +75,11 @@ function makeGiftcard(overrides: Record<string, unknown> = {}) {
     value: 100,
     plan_id: null,
     limit_use: null,
-    used_user_ids: null,
-    started_at: null,
-    ended_at: null,
-    created_at: 0,
-    updated_at: 0,
+    used_user_ids: [],
+    started_at: '2023-11-14T22:13:20Z',
+    ended_at: '2023-11-14T23:13:20Z',
+    created_at: '2023-11-14T22:13:20Z',
+    updated_at: '2023-11-14T22:13:20Z',
     ...overrides,
   };
 }
@@ -718,30 +719,32 @@ describe('createApiClient', () => {
     );
   });
 
-  it('distinguishes cleared from omitted coupon fields for the Rust retain-vs-clear contract', async () => {
-    // The Rust coupon/giftcard editors gate each column on contains_key
-    // (values.rs coupon_field_values): a present-but-empty form value clears
-    // the column while an absent key retains the stored value. The 'empty'
-    // null encoding plus undefined omission is what keeps that reachable.
+  it('sends explicit JSON nulls as §4.4 clears on the coupon PATCH', async () => {
+    // §6.3 (W10): the full-form editor clears the nullable limit columns
+    // with explicit JSON nulls (double-Option clear); an omitted window
+    // field is simply absent (retain).
     const client = createApiClient({
       baseURL: '/api/v1',
       adminSecurePath: () => 'admin-path',
-      nullFormValue: 'empty',
     });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/admin-path/coupon/generate').reply(200, { data: true });
+    mock.onPatch('/admin-path/coupons/5').reply(204);
 
-    await generateCoupon(client, {
-      id: 5,
+    await updateCoupon(client, 5, {
       name: 'Edited',
+      type: 2,
+      value: '30',
       limit_use: null,
+      started_at: 1_700_000_000,
       ended_at: undefined,
     });
 
-    const params = new URLSearchParams(String(mock.history.post[0]?.data));
-    expect(params.get('limit_use')).toBe('');
-    expect(params.has('ended_at')).toBe(false);
-    expect(params.get('name')).toBe('Edited');
+    const body = JSON.parse(String(mock.history.patch[0]?.data)) as Record<string, unknown>;
+    expect(body.limit_use).toBeNull();
+    expect('ended_at' in body).toBe(false);
+    expect(body.started_at).toBe('2023-11-14T22:13:20Z');
+    expect(body.name).toBe('Edited');
+    expect(body.value).toBe(30);
   });
 
   it('uses legacy recursive bracket encoding for arrays and objects', async () => {
@@ -953,15 +956,11 @@ describe('createApiClient', () => {
     mock.onGet('/admin-path/user/fetch').reply(200, { data: [] });
     mock.onGet('/admin-path/order/fetch').reply(200, { data: [] });
     mock.onGet('/admin-path/ticket/fetch').reply(200, { data: [] });
-    mock.onGet('/admin-path/coupon/fetch').reply(200, { data: [] });
-    mock.onGet('/admin-path/giftcard/fetch').reply(200, { data: [] });
     mock.onGet('/admin-path/stat/getStatUser?user_id=1').reply(200, { data: [] });
 
     await expect(fetchUsers(client)).resolves.toEqual({ data: [], total: undefined });
     await expect(fetchAdminOrders(client)).resolves.toEqual({ data: [], total: undefined });
     await expect(fetchAdminTickets(client)).resolves.toEqual({ data: [], total: undefined });
-    await expect(fetchAdminCoupons(client)).resolves.toEqual({ data: [], total: undefined });
-    await expect(fetchAdminGiftcards(client)).resolves.toEqual({ data: [], total: undefined });
     await expect(statUser(client, { user_id: 1 })).resolves.toEqual({ data: [], total: undefined });
     expect(mock.history.get.filter((request) => request.url?.includes('/user/fetch'))).toHaveLength(
       1,
@@ -975,18 +974,17 @@ describe('createApiClient', () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
     const controller = new AbortController();
-    mock.onGet('/admin-path/knowledge/fetch?id=7').reply(200, {
-      data: {
-        id: 7,
-        category: 'Guide',
-        title: 'Article',
-        body: 'Body',
-        language: 'zh-CN',
-        sort: null,
-        show: 1,
-        created_at: 1_700_000_000,
-        updated_at: 1_700_000_000,
-      },
+    // §6.3 (W10): GET /knowledge/{id} — bare dialect body, raw stored markdown.
+    mock.onGet('/admin-path/knowledge/7').reply(200, {
+      id: 7,
+      category: 'Guide',
+      title: 'Article',
+      body: 'Body',
+      language: 'zh-CN',
+      sort: null,
+      show: true,
+      created_at: '2023-11-14T22:13:20Z',
+      updated_at: '2023-11-14T22:13:20Z',
     });
 
     await expect(knowledgeDetail(client, 7, { signal: controller.signal })).resolves.toMatchObject({
@@ -996,7 +994,7 @@ describe('createApiClient', () => {
     expect(mock.history.get[0]?.signal).toBe(controller.signal);
   });
 
-  it('normalizes fetched coupon and giftcard amount values to legacy model units', async () => {
+  it('normalizes fetched coupon and giftcard amount values to display units', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
     const couponRows = [
@@ -1007,18 +1005,18 @@ describe('createApiClient', () => {
       makeGiftcard({ id: 1, type: 1, value: 5678 }),
       makeGiftcard({ id: 2, type: 3, value: 100 }),
     ];
-    mock.onGet('/admin-path/coupon/fetch').reply(200, { data: couponRows, total: 2 });
-    mock.onGet('/admin-path/giftcard/fetch').reply(200, { data: giftcardRows, total: 2 });
+    mock.onGet('/admin-path/coupons').reply(200, { items: couponRows, total: 2 });
+    mock.onGet('/admin-path/gift-cards').reply(200, { items: giftcardRows, total: 2 });
 
     await expect(fetchAdminCoupons(client)).resolves.toMatchObject({
-      data: [
+      items: [
         { id: 1, type: 1, value: 12.34 },
         { id: 2, type: 2, value: 30 },
       ],
       total: 2,
     });
     await expect(fetchAdminGiftcards(client)).resolves.toMatchObject({
-      data: [
+      items: [
         { id: 1, type: 1, value: 56.78 },
         { id: 2, type: 3, value: 100 },
       ],
@@ -1071,7 +1069,10 @@ describe('createApiClient', () => {
   it('converts all admin money inputs at the API boundary without float drift', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost().reply(200, { data: true });
+    // §6.3 (W10): single creates are dialect JSON POSTs answered with 201 {id}.
+    mock.onPost('/admin-path/coupons').reply(201, { id: 1 });
+    mock.onPost('/admin-path/gift-cards').reply(201, { id: 1 });
+    mock.onPost('/admin-path/payment/save').reply(200, { data: true });
 
     await generateCoupon(client, { type: 1, value: '19.99' });
     await generateGiftcard(client, { type: 1, value: '0.1' });
@@ -1082,8 +1083,8 @@ describe('createApiClient', () => {
       handling_fee_fixed: '1.05',
     });
 
-    expect(mock.history.post[0]?.data).toContain('value=1999');
-    expect(mock.history.post[1]?.data).toContain('value=10');
+    expect(JSON.parse(String(mock.history.post[0]?.data))).toMatchObject({ value: 1999 });
+    expect(JSON.parse(String(mock.history.post[1]?.data))).toMatchObject({ value: 10 });
     expect(mock.history.post[2]?.data).toContain('handling_fee_fixed=105');
   });
 
@@ -1471,29 +1472,26 @@ describe('createApiClient', () => {
     });
   });
 
-  it('keeps legacy admin notice fetch as a plain unpaginated array response', async () => {
+  it('keeps the admin notice fetch as a bare unpaginated array response', async () => {
+    // §6.3 (W10): GET /notices deliberately stays unpaginated — the dialect
+    // body is the bare array, no `{items, total}` page.
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onGet('/admin-path/notice/fetch').reply(200, {
-      data: [
-        {
-          id: 1,
-          title: '维护通知',
-          content: 'content',
-          img_url: null,
-          tags: ['system'],
-          show: 1,
-          created_at: 1700000000,
-          updated_at: 1700000000,
-        },
-      ],
-    });
+    mock.onGet('/admin-path/notices').reply(200, [
+      {
+        id: 1,
+        title: '维护通知',
+        content: 'content',
+        img_url: null,
+        tags: ['system'],
+        show: true,
+        created_at: '2023-11-14T22:13:20Z',
+        updated_at: '2023-11-14T22:13:20Z',
+      },
+    ]);
 
-    await expect(fetchNotices(client, { current: 1, pageSize: 10 })).resolves.toMatchObject({
-      data: [{ id: 1, title: '维护通知' }],
-      total: undefined,
-    });
-    expect(mock.history.get[0]?.url).toBe('/admin-path/notice/fetch');
+    await expect(fetchNotices(client)).resolves.toMatchObject([{ id: 1, title: '维护通知' }]);
+    expect(mock.history.get[0]?.url).toBe('/admin-path/notices');
   });
 
   it('sets the telegram webhook with an empty JSON body when no token is given', async () => {
@@ -1686,15 +1684,17 @@ describe('createApiClient', () => {
     expect(mock.history.post[2]?.headers?.['Idempotency-Key']).not.toBe(firstKey);
   });
 
-  it('preserves legacy generated coupon and giftcard CSV buffers', async () => {
+  it('preserves the byte-frozen coupon and gift-card bulk CSV buffers', async () => {
+    // §6.3 (W10): `generate_count` keeps streaming the byte-frozen CSV
+    // attachment from the dialect create routes.
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
     const couponBuffer = textBuffer('coupon-code');
     const giftcardBuffer = textBuffer('giftcard-code');
-    mock.onPost('/admin-path/coupon/generate').reply(200, couponBuffer, {
+    mock.onPost('/admin-path/coupons').reply(200, couponBuffer, {
       'content-type': 'text/csv',
     });
-    mock.onPost('/admin-path/giftcard/generate').reply(200, giftcardBuffer, {
+    mock.onPost('/admin-path/gift-cards').reply(200, giftcardBuffer, {
       'content-type': 'text/csv',
     });
 
@@ -1704,5 +1704,6 @@ describe('createApiClient', () => {
     await expect(generateGiftcard(client, { generate_count: '2' })).resolves.toMatchObject({
       buffer: giftcardBuffer,
     });
+    expect(JSON.parse(String(mock.history.post[0]?.data))).toMatchObject({ generate_count: 2 });
   });
 });

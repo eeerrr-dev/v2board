@@ -17,15 +17,15 @@ const COUPON = {
   name: '十元优惠',
   type: 1,
   value: 10, // api-client already divided cents → yuan for type 1
-  show: 1,
+  show: true,
   limit_use: null,
   limit_use_with_user: null,
   limit_plan_ids: null,
   limit_period: null,
-  started_at: 1700000000,
-  ended_at: 1700086400,
-  created_at: 1700000000,
-  updated_at: 1700000000,
+  started_at: '2023-11-14T22:13:20Z',
+  ended_at: '2023-11-15T22:13:20Z',
+  created_at: '2023-11-14T22:13:20Z',
+  updated_at: '2023-11-14T22:13:20Z',
 };
 
 const GIFTCARD = {
@@ -36,11 +36,11 @@ const GIFTCARD = {
   value: 10,
   plan_id: 1,
   limit_use: null,
-  used_user_ids: null,
-  started_at: 1700000000,
-  ended_at: 1700086400,
-  created_at: 1700000000,
-  updated_at: 1700000000,
+  used_user_ids: [],
+  started_at: '2023-11-14T22:13:20Z',
+  ended_at: '2023-11-15T22:13:20Z',
+  created_at: '2023-11-14T22:13:20Z',
+  updated_at: '2023-11-14T22:13:20Z',
 };
 
 const mocks = vi.hoisted(() => ({
@@ -74,12 +74,13 @@ vi.mock('@/lib/queries', () => ({
     return {
       isPending: false,
       refetch: mocks.refetch,
-      data: { data: [COUPON], total: mocks.couponTotal },
+      // §6.3 (W10): dialect `{items, total}` page shape.
+      data: { items: [COUPON], total: mocks.couponTotal },
     };
   },
   useAdminGiftcards: (query: Record<string, unknown>) => {
     mocks.giftcardQueries.push(query);
-    return { isPending: false, refetch: mocks.refetch, data: { data: [GIFTCARD], total: 1 } };
+    return { isPending: false, refetch: mocks.refetch, data: { items: [GIFTCARD], total: 1 } };
   },
   useAdminPlans: () => ({
     data: mocks.plansError ? undefined : [{ id: 1, name: 'VIP' }],
@@ -204,9 +205,9 @@ describe('CouponsView', () => {
     expect(within(table).getByText('无限')).toBeInTheDocument();
     expect(
       within(table).getByText(
-        `${dayjs(1700000000 * 1000).format('YYYY/MM/DD HH:mm')} ~ ${dayjs(1700086400 * 1000).format(
-          'YYYY/MM/DD HH:mm',
-        )}`,
+        `${dayjs('2023-11-14T22:13:20Z').format('YYYY/MM/DD HH:mm')} ~ ${dayjs(
+          '2023-11-15T22:13:20Z',
+        ).format('YYYY/MM/DD HH:mm')}`,
       ),
     ).toBeInTheDocument();
   });
@@ -368,12 +369,13 @@ describe('CouponsView', () => {
     expect(mocks.dropCoupon).not.toHaveBeenCalled();
   });
 
-  it('toggles coupon visibility by id', async () => {
+  it('toggles coupon visibility with the explicit target value', async () => {
     const user = userEvent.setup();
     render(<CouponsPage />);
     await user.click(screen.getByLabelText('切换优惠券「十元优惠」启用'));
     expect(mocks.showCoupon).toHaveBeenCalled();
-    expect(mocks.showCoupon.mock.calls[0]?.[0]).toBe(1);
+    // §6.3 (W10): PATCH `{show}` carries the target value, not a server flip.
+    expect(mocks.showCoupon.mock.calls[0]?.[0]).toEqual({ id: 1, show: false });
   });
 
   it('sends the new current on pagination change', async () => {
