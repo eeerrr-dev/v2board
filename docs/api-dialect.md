@@ -743,7 +743,7 @@ family entirely; it migrates in W14 alongside the staff mirror.
 
 | Old | New | Req | Resp | Notes |
 | --- | --- | --- | --- | --- |
-| GET `ticket/fetch` | GET `tickets` | query `?status=&reply_status=&email=` + pagination | page | `reply_status` is a repeatable query key (real array; the legacy JSON-stringified array param dies). Email scoping keeps the legacy outcome: present + known user → scope to that user; present-but-unknown or absent → no scope (the Laravel `if ($user)` guard). Ordered by `updated_at`, unchanged. `per_page` default pinned when W14 lands (§15). |
+| GET `ticket/fetch` | GET `tickets` | query `?status=&reply_status=&email=` + pagination | page | `reply_status` is a repeatable query key (real array; the legacy JSON-stringified array param dies). Email scoping keeps the legacy outcome: present + known user → scope to that user; present-but-unknown or absent → no scope (the Laravel `if ($user)` guard). Ordered by `updated_at`, unchanged. `per_page` default 10 (pinned by W14 per §15). |
 | GET `ticket/fetch?id=` | GET `tickets/{id}` | none | bare | Includes the `message[]` thread with `is_me` semantics unchanged. |
 | POST `ticket/reply` | POST `tickets/{id}/replies` | json `{message}` | empty | `id` moves to path. |
 | POST `ticket/close` | POST `tickets/{id}/close` | none | empty | |

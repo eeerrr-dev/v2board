@@ -104,7 +104,10 @@ impl AdminService {
         exact_stat_sum_i64(&value, "Commission payout")
     }
 
-    pub(super) async fn stat_summary(&self) -> Result<AdminOutput, ApiError> {
+    /// GET `stats/summary` (docs/api-dialect.md §6.8, W14): the one modern
+    /// route replacing the three legacy aliases (`getStat`, `getOverride`,
+    /// `getRanking`). Bare object; every money field is integer cents.
+    pub async fn stats_summary(&self) -> Result<Value, ApiError> {
         // Ports StatController::getOverride (:26-66).
         let now = Utc::now().timestamp();
         let today = start_of_today();
@@ -161,7 +164,7 @@ impl AdminService {
         let commission_last_month_payout =
             self.commission_payout_between(last_month, month).await?;
 
-        Ok(AdminOutput::Data(json!({
+        Ok(json!({
             "online_user": online_user,
             "month_income": month_income,
             "month_register_total": month_register_total,
@@ -174,7 +177,7 @@ impl AdminService {
             "last_month_income": last_month_income,
             "commission_month_payout": commission_month_payout,
             "commission_last_month_payout": commission_last_month_payout,
-        })))
+        }))
     }
 
     /// Resolves `(canonical_type, id) -> name` for every root (parent_id IS NULL)
@@ -195,7 +198,10 @@ impl AdminService {
         Ok(names)
     }
 
-    pub(super) async fn server_rank(&self, today: bool) -> Result<AdminOutput, ApiError> {
+    /// GET `stats/server-rank` `?window=today|previous` (§6.8, W14): bare
+    /// array replacing the legacy `getServerTodayRank`/`getServerLastRank`
+    /// route pair. Row shape unchanged.
+    pub async fn stats_server_rank(&self, today: bool) -> Result<Vec<Value>, ApiError> {
         // Ports StatController::getServerLastRank / getServerTodayRank.
         let (start, end) = if today {
             (start_of_today(), Utc::now().timestamp())
@@ -234,10 +240,12 @@ impl AdminService {
             let right = b["total"].as_f64().unwrap_or_default();
             right.total_cmp(&left)
         });
-        Ok(AdminOutput::Data(json!(result)))
+        Ok(result)
     }
 
-    pub(super) async fn user_rank(&self, today: bool) -> Result<AdminOutput, ApiError> {
+    /// GET `stats/user-rank` `?window=today|previous` (§6.8, W14): bare array
+    /// replacing the legacy `getUserTodayRank`/`getUserLastRank` pair.
+    pub async fn stats_user_rank(&self, today: bool) -> Result<Vec<Value>, ApiError> {
         // Ports StatController::getUserTodayRank / getUserLastRank: weight traffic
         // by server_rate, aggregate per user, then keep the top 15.
         let (start, end) = if today {
@@ -287,140 +295,77 @@ impl AdminService {
             right.total_cmp(&left)
         });
         result.truncate(15);
-        Ok(AdminOutput::Data(json!(result)))
+        Ok(result)
     }
 
-    pub(super) async fn order_stat(&self) -> Result<AdminOutput, ApiError> {
-        // Ports StatController::getOrder (:68-108): five series per recorded day,
-        // newest 31 days, flattened then reversed to run oldest-first.
-        let rows: Vec<(i64, i64, i64, i64, i64, i64)> = sqlx::query_as(
+    /// GET `stats/orders` (§6.8, W14): bare array of `{series, date, value}`
+    /// rows — the series re-spec replaces the legacy Chinese `type` literals
+    /// with stable snake_case slugs and the yuan floats with integer cents.
+    /// Window semantics unchanged from `getOrder`: five series per recorded
+    /// day, newest 31 days, flattened oldest-first.
+    pub async fn stats_orders(&self) -> Result<Vec<Value>, ApiError> {
+        let rows: Vec<StatSeriesSourceRow> = sqlx::query_as(
             "SELECT record_at, register_count::BIGINT, paid_total, paid_count::BIGINT, \
                     commission_total, commission_count::BIGINT \
              FROM stat WHERE record_type = 'd' ORDER BY record_at DESC LIMIT 31",
         )
         .fetch_all(&self.db)
         .await?;
-
-        let mut result: Vec<Value> = Vec::with_capacity(rows.len() * 5);
-        for (
-            record_at,
-            register_count,
-            paid_total,
-            paid_count,
-            commission_total,
-            commission_count,
-        ) in rows
-        {
-            let date = local_month_day(record_at);
-            result.push(json!({ "type": "注册人数", "date": date, "value": register_count }));
-            result.push(
-                json!({ "type": "收款金额", "date": date, "value": paid_total as f64 / 100.0 }),
-            );
-            result.push(json!({ "type": "收款笔数", "date": date, "value": paid_count }));
-            result.push(json!({
-                "type": "佣金金额(已发放)", "date": date, "value": commission_total as f64 / 100.0
-            }));
-            result.push(
-                json!({ "type": "佣金笔数(已发放)", "date": date, "value": commission_count }),
-            );
-        }
-        result.reverse();
-        Ok(AdminOutput::Data(json!(result)))
+        Ok(stat_series_rows(rows))
     }
 
-    pub(super) async fn stat_user(
+    /// GET `stats/user-traffic` `?user_id=&page=&per_page=` (§6.8, W14): §8
+    /// `{items,total}` page. `server_rate` crosses as a JSON number and
+    /// `record_at` as an RFC 3339 instant (§4.5).
+    pub async fn stats_user_traffic(
         &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        let user_id = required_i64(params, "user_id")?;
-        let pagination = page(params)?;
+        user_id: i64,
+        pagination: Pagination,
+    ) -> Result<(Vec<Value>, i64), ApiError> {
         let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM user_traffic WHERE user_id = $1")
             .bind(user_id)
             .fetch_one(&self.db)
             .await?;
-        let data = fetch_json_list_page_bind(
-            &self.db,
-            r#"
-            SELECT jsonb_build_object('record_at', record_at, 'u', u, 'd', d, 'server_rate', server_rate)
-            FROM user_traffic
-            WHERE user_id = $1
-            ORDER BY record_at DESC
-            LIMIT $2 OFFSET $3
-            "#,
-            user_id,
-            pagination.limit,
-            pagination.offset,
+        let rows: Vec<(i64, i64, i64, f64)> = sqlx::query_as(
+            "SELECT record_at, u, d, CAST(server_rate AS DOUBLE PRECISION) \
+             FROM user_traffic WHERE user_id = $1 \
+             ORDER BY record_at DESC LIMIT $2 OFFSET $3",
         )
+        .bind(user_id)
+        .bind(pagination.limit())
+        .bind(pagination.offset())
+        .fetch_all(&self.db)
         .await?;
-        Ok(AdminOutput::Page { data, total })
+        let items = rows
+            .into_iter()
+            .map(|(record_at, u, d, server_rate)| {
+                json!({
+                    "record_at": rfc3339_epoch(record_at),
+                    "u": u,
+                    "d": d,
+                    "server_rate": server_rate,
+                })
+            })
+            .collect();
+        Ok((items, total))
     }
 
-    pub(super) async fn stat_record(
-        &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        let pagination = page(params)?;
-        let record_type = params
-            .get("record_type")
-            .map(String::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
-        let total: i64 = if let Some(record_type) = record_type {
-            sqlx::query_scalar("SELECT COUNT(*) FROM stat WHERE record_type = $1")
-                .bind(record_type)
-                .fetch_one(&self.db)
-                .await?
-        } else {
-            sqlx::query_scalar("SELECT COUNT(*) FROM stat")
-                .fetch_one(&self.db)
-                .await?
-        };
-        let data = if let Some(record_type) = record_type {
-            fetch_json_list_page_bind_text(
-                &self.db,
-                r#"
-                SELECT jsonb_build_object(
-                    'id', id, 'record_at', record_at, 'record_type', record_type,
-                    'order_count', order_count, 'order_total', order_total,
-                    'commission_count', commission_count, 'commission_total', commission_total,
-                    'paid_count', paid_count, 'paid_total', paid_total,
-                    'register_count', register_count, 'invite_count', invite_count,
-                    'transfer_used_total', transfer_used_total,
-                    'created_at', created_at, 'updated_at', updated_at
-                )
-                FROM stat
-                WHERE record_type = $1
-                ORDER BY record_at DESC
-                LIMIT $2 OFFSET $3
-                "#,
-                record_type,
-                pagination.limit,
-                pagination.offset,
-            )
-            .await?
-        } else {
-            fetch_json_list_page(
-                &self.db,
-                r#"
-                SELECT jsonb_build_object(
-                    'id', id, 'record_at', record_at, 'record_type', record_type,
-                    'order_count', order_count, 'order_total', order_total,
-                    'commission_count', commission_count, 'commission_total', commission_total,
-                    'paid_count', paid_count, 'paid_total', paid_total,
-                    'register_count', register_count, 'invite_count', invite_count,
-                    'transfer_used_total', transfer_used_total,
-                    'created_at', created_at, 'updated_at', updated_at
-                )
-                FROM stat
-                ORDER BY record_at DESC
-                LIMIT $1 OFFSET $2
-                "#,
-                pagination.limit,
-                pagination.offset,
-            )
-            .await?
-        };
-        Ok(AdminOutput::Page { data, total })
+    /// GET `stats/records` `?type=` (§6.8, W14): bare array of the same
+    /// `{series, date, value}` rows as `stats/orders`, parameterized by the
+    /// `stat.record_type` bucket (`d` daily — the default — or `m` monthly).
+    /// The legacy paginated raw-row projection is retired with the series
+    /// re-spec; the window mirrors `stats/orders` (newest 31 recorded
+    /// periods, flattened oldest-first).
+    pub async fn stats_records(&self, record_type: &str) -> Result<Vec<Value>, ApiError> {
+        let rows: Vec<StatSeriesSourceRow> = sqlx::query_as(
+            "SELECT record_at, register_count::BIGINT, paid_total, paid_count::BIGINT, \
+                    commission_total, commission_count::BIGINT \
+             FROM stat WHERE record_type = $1 ORDER BY record_at DESC LIMIT 31",
+        )
+        .bind(record_type)
+        .fetch_all(&self.db)
+        .await?;
+        Ok(stat_series_rows(rows))
     }
 
     /// GET `system/status` (docs/api-dialect.md §6.1): scheduler/worker
@@ -669,6 +614,37 @@ pub(super) fn epoch_fields_to_rfc3339(mut row: Value, fields: &[&str]) -> Value 
     row
 }
 
+/// One decoded `stat` source row feeding the §6.8 series builders:
+/// `(record_at, register_count, paid_total, paid_count, commission_total,
+/// commission_count)`.
+type StatSeriesSourceRow = (i64, i64, i64, i64, i64, i64);
+
+/// The W14 series re-spec (docs/api-dialect.md §6.8): the legacy rows embedded
+/// Chinese literals as machine series keys and shipped money as yuan floats.
+/// Modern rows are `{series, date, value}` with stable snake_case slugs and
+/// integer-cent money; the client maps `series → i18n`. Rows flatten
+/// newest-first and then reverse, preserving the legacy oldest-first chart
+/// order exactly (including the within-day series order the reversal implies).
+fn stat_series_rows(rows: Vec<StatSeriesSourceRow>) -> Vec<Value> {
+    let mut result: Vec<Value> = Vec::with_capacity(rows.len() * 5);
+    for (record_at, register_count, paid_total, paid_count, commission_total, commission_count) in
+        rows
+    {
+        let date = local_month_day(record_at);
+        result.push(json!({ "series": "register_count", "date": date, "value": register_count }));
+        result.push(json!({ "series": "paid_total", "date": date, "value": paid_total }));
+        result.push(json!({ "series": "paid_count", "date": date, "value": paid_count }));
+        result.push(
+            json!({ "series": "commission_paid_total", "date": date, "value": commission_total }),
+        );
+        result.push(
+            json!({ "series": "commission_paid_count", "date": date, "value": commission_count }),
+        );
+    }
+    result.reverse();
+    result
+}
+
 #[cfg(test)]
 mod arithmetic_tests {
     use super::*;
@@ -696,6 +672,44 @@ mod arithmetic_tests {
             ..WorkerSnapshot::default()
         };
         assert!(!snapshot.worker_running(i64::MAX, 180));
+    }
+
+    #[test]
+    fn stat_series_rows_use_snake_case_slugs_and_integer_cents() {
+        // §6.8 W14 series re-spec: five rows per recorded period, snake_case
+        // `series` slugs (never the legacy Chinese literals), integer-cent
+        // money (never `paid_total / 100.0` yuan floats), flattened
+        // oldest-first via the legacy flatten-then-reverse order.
+        let rows = stat_series_rows(vec![
+            (86_400 * 2, 7, 12_345, 3, 999, 2), // newer period
+            (86_400, 1, 100, 1, 50, 1),         // older period
+        ]);
+        assert_eq!(rows.len(), 10);
+
+        // Reversal puts the older period first, its series order reversed.
+        let expected_series = [
+            "commission_paid_count",
+            "commission_paid_total",
+            "paid_count",
+            "paid_total",
+            "register_count",
+        ];
+        for (index, series) in expected_series.iter().enumerate() {
+            assert_eq!(rows[index]["series"], json!(series));
+            assert_eq!(rows[index + 5]["series"], json!(series));
+        }
+
+        // Money crosses as raw integer cents; every value is a JSON integer.
+        let newer: Vec<&Value> = rows[5..].iter().collect();
+        assert_eq!(newer[3]["value"], json!(12_345));
+        assert_eq!(newer[1]["value"], json!(999));
+        for row in &rows {
+            assert!(row["value"].is_i64(), "series value must be an integer");
+            assert!(row["date"].is_string());
+            let series = row["series"].as_str().unwrap();
+            assert_eq!(series.to_ascii_lowercase(), series);
+            assert!(series.is_ascii());
+        }
     }
 
     #[test]

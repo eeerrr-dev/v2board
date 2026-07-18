@@ -1,5 +1,4 @@
 use super::*;
-use rust_decimal::{RoundingStrategy, prelude::ToPrimitive};
 use serde::Deserialize;
 use tokio::task::JoinSet;
 use v2board_compat::json::{double_option, rfc3339_option};
@@ -184,19 +183,6 @@ fn admin_user_v2_value(mut value: Value) -> Value {
     )
 }
 
-pub(super) fn decimal_gib_filter_bytes(value: &str) -> Result<i64, ApiError> {
-    value
-        .trim()
-        .parse::<Decimal>()
-        .ok()
-        .and_then(|value| value.checked_mul(Decimal::from(GIB)))
-        .map(|value| value.round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero))
-        .and_then(|value| value.to_i64())
-        .ok_or_else(|| {
-            ApiError::validation_field("filter", "Traffic filter is outside the supported range")
-        })
-}
-
 /// §4.4 double-Option for the clearable RFC 3339 `expired_at` field: absent →
 /// retain, `null` → clear (never expires), an RFC 3339 string → set. Combines
 /// the `double_option` tri-state with the §4.5 timestamp parse that the plain
@@ -267,6 +253,41 @@ pub struct AdminUserPatch {
     pub expired_at: Option<Option<i64>>,
 }
 
+/// Staff PATCH `users/{id}` (docs/api-dialect.md §6.9, W14): the §4.4
+/// partial-update body over the unchanged staff field allow-list — no
+/// `speed_limit`, `is_admin`, `is_staff`, `commission_type`, or `remarks`
+/// (Staff\UserUpdate rules). Same tri-state semantics as [`AdminUserPatch`].
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StaffUserPatch {
+    #[serde(default)]
+    pub email: Option<String>,
+    #[serde(default)]
+    pub password: Option<String>,
+    #[serde(default)]
+    pub transfer_enable: Option<i64>,
+    #[serde(default)]
+    pub u: Option<i64>,
+    #[serde(default)]
+    pub d: Option<i64>,
+    #[serde(default)]
+    pub balance: Option<i64>,
+    #[serde(default)]
+    pub commission_balance: Option<i64>,
+    #[serde(default)]
+    pub banned: Option<bool>,
+    #[serde(default, with = "double_option")]
+    pub device_limit: Option<Option<i64>>,
+    #[serde(default, with = "double_option")]
+    pub commission_rate: Option<Option<i64>>,
+    #[serde(default, with = "double_option")]
+    pub discount: Option<Option<i64>>,
+    #[serde(default, with = "double_option")]
+    pub plan_id: Option<Option<i64>>,
+    #[serde(default, with = "expired_at_double_option")]
+    pub expired_at: Option<Option<i64>>,
+}
+
 /// POST `users` (docs/api-dialect.md §6.6): single create (a real
 /// `email_prefix`) or the bulk CSV generate. `expired_at` is RFC 3339 (§4.5).
 #[derive(Debug, Deserialize)]
@@ -324,93 +345,12 @@ pub struct AdminSetInviterBody {
 }
 
 impl AdminService {
-    /// Reconstructs the `filter[]` array into injection-safe WHERE clauses.
-    /// Ports UserController::filter (laravel .../Admin/UserController.php:36-62):
-    /// `模糊` → LIKE %value%, `d`/`transfer_enable` scaled by GiB, `invite_by_email`
-    /// resolved to invite_user_id (0 when not found), and `plan_id == 'null'` → IS NULL.
-    /// Unknown columns/operators are dropped rather than interpolated (unlike the
-    /// Laravel builder, which trusts the raw request key).
-    pub(super) async fn user_filter_clauses(
-        &self,
-        params: &HashMap<String, String>,
-    ) -> Result<Vec<UserFilterClause>, ApiError> {
-        let mut clauses = Vec::new();
-        for entry in collect_filter_entries(params) {
-            let Some(key) = entry.get("key").map(String::as_str) else {
-                continue;
-            };
-            let mut condition = entry
-                .get("condition")
-                .map(String::as_str)
-                .unwrap_or("=")
-                .to_string();
-            let mut value = entry.get("value").cloned().unwrap_or_default();
-            if condition == "模糊" {
-                condition = "like".to_string();
-                value = format!("%{value}%");
-            }
-            if key == "d" || key == "transfer_enable" {
-                let scaled = decimal_gib_filter_bytes(&value)?;
-                let (Some(column), Some(op)) = (user_column(key), user_filter_operator(&condition))
-                else {
-                    continue;
-                };
-                clauses.push(UserFilterClause::Compare {
-                    column,
-                    op,
-                    value: FilterBind::Int(scaled),
-                });
-                continue;
-            }
-            if key == "invite_by_email" {
-                let op = user_filter_operator(&condition).unwrap_or("=");
-                let predicate = if op == "like" {
-                    "email ILIKE $1".to_string()
-                } else if matches!(op, "=" | "<>") {
-                    format!("lower(btrim(email)) {op} lower(btrim($1))")
-                } else {
-                    format!("email {op} $1")
-                };
-                let invite_id: Option<i64> = sqlx::query_scalar(AssertSqlSafe(format!(
-                    "SELECT id FROM users WHERE {predicate} LIMIT 1"
-                )))
-                .bind(&value)
-                .fetch_optional(&self.db)
-                .await?;
-                clauses.push(UserFilterClause::Compare {
-                    column: "invite_user_id",
-                    op: "=",
-                    value: FilterBind::Int(invite_id.unwrap_or(0)),
-                });
-                continue;
-            }
-            if key == "plan_id" && value == "null" {
-                clauses.push(UserFilterClause::IsNull { column: "plan_id" });
-                continue;
-            }
-            let (Some(column), Some(op)) = (user_column(key), user_filter_operator(&condition))
-            else {
-                continue;
-            };
-            clauses.push(UserFilterClause::Compare {
-                column,
-                op,
-                value: if op == "like" || !user_column_is_numeric(column) {
-                    FilterBind::Text(value)
-                } else {
-                    FilterBind::Int(value.trim().parse().unwrap_or_default())
-                },
-            });
-        }
-        Ok(clauses)
-    }
-
     /// Returns one primary-key page of users matching the request filter. Bulk
     /// mutations advance this cursor after every bounded database/cache batch
     /// instead of retaining the whole account table in memory.
     async fn filtered_user_id_page(
         &self,
-        clauses: &UserWhere<'_>,
+        clauses: &[filter_dsl::ResolvedFilter],
         staff_scoped: bool,
         after_id: i64,
     ) -> Result<Vec<i64>, ApiError> {
@@ -418,7 +358,7 @@ impl AdminService {
         if staff_scoped {
             builder.push(" AND u.is_admin = 0 AND u.is_staff = 0");
         }
-        push_user_filter(&mut builder, clauses);
+        filter_dsl::push_filter_where(&mut builder, clauses);
         builder.push(" AND u.id > ");
         builder.push_bind(after_id);
         builder.push(" ORDER BY u.id LIMIT ");
@@ -431,7 +371,7 @@ impl AdminService {
 
     async fn filtered_user_ids_bounded(
         &self,
-        clauses: &UserWhere<'_>,
+        clauses: &[filter_dsl::ResolvedFilter],
         staff_scoped: bool,
     ) -> Result<Vec<i64>, ApiError> {
         let mut ids = Vec::new();
@@ -459,7 +399,7 @@ impl AdminService {
     /// audience snapshot without an unbounded email vector.
     pub(super) async fn filtered_user_email_page_in_tx(
         &self,
-        clauses: &UserWhere<'_>,
+        clauses: &[filter_dsl::ResolvedFilter],
         staff_scoped: bool,
         after_id: i64,
         tx: &mut DbTransaction<'_>,
@@ -469,7 +409,7 @@ impl AdminService {
         if staff_scoped {
             builder.push(" AND u.is_admin = 0 AND u.is_staff = 0");
         }
-        push_user_filter(&mut builder, clauses);
+        filter_dsl::push_filter_where(&mut builder, clauses);
         builder.push(" AND u.id > ");
         builder.push_bind(after_id);
         builder.push(" ORDER BY u.id LIMIT ");
@@ -595,20 +535,18 @@ impl AdminService {
         }
     }
 
-    /// Resolves the acting admin's user id from the `_admin_email` the router
-    /// injects (main.rs adds only the email, not the id).
-    pub(super) async fn current_admin_id(
-        &self,
-        params: &HashMap<String, String>,
-    ) -> Result<i64, ApiError> {
-        let email = required_string(params, "_admin_email")?;
+    /// Resolves the acting operator's user id from the authenticated session
+    /// email (the HTTP layer passes `AuthUser::email`). The account existed
+    /// moments ago when the session was validated, so a miss is an internal
+    /// race, not a client error.
+    pub(super) async fn current_admin_id(&self, operator_email: &str) -> Result<i64, ApiError> {
         sqlx::query_scalar::<_, i64>(
             "SELECT id FROM users WHERE lower(btrim(email)) = lower(btrim($1)) LIMIT 1",
         )
-        .bind(email)
+        .bind(operator_email)
         .fetch_optional(&self.db)
         .await?
-        .ok_or_else(|| ApiError::business("管理员不存在"))
+        .ok_or_else(|| ApiError::internal("acting operator account no longer exists"))
     }
 
     /// Set-based cascade shared by delUser and allDel. Every chunk follows the same table order
@@ -761,12 +699,16 @@ impl AdminService {
         Ok(value)
     }
 
-    pub(super) async fn staff_user_detail(&self, id: i64) -> Result<AdminOutput, ApiError> {
+    /// Staff GET `users/{id}` (§6.9, W14): the bare W12 v2 projection (`t`
+    /// dropped, RFC 3339 timestamps), restricted to non-admin/non-staff
+    /// targets and without the admin-only `invite_user` attachment.
+    /// `user_not_found` (404) replaces the legacy 400 business error.
+    pub async fn staff_user_detail(&self, id: i64) -> Result<Value, ApiError> {
         let row = self
             .admin_user_record(id, true)
             .await?
-            .ok_or_else(|| ApiError::business("用户不存在"))?;
-        Ok(AdminOutput::Data(row.into_value()))
+            .ok_or_else(|| ApiError::from(Problem::new(Code::UserNotFound)))?;
+        Ok(admin_user_v2_value(row.into_value()))
     }
 
     /// PATCH `users/{id}` (§6.6): §4.4 partial update. Ports
@@ -941,82 +883,96 @@ impl AdminService {
         Ok(())
     }
 
-    pub(super) async fn staff_user_update(
-        &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        // Ports Staff\UserController::update. Staff cannot touch speed_limit,
-        // is_admin, is_staff, commission_type or remarks (Staff\UserUpdate rules),
-        // and — unlike Laravel's unscoped find — the target stays restricted to
-        // non-admin/non-staff users.
-        let id = required_i64(params, "id")?;
+    /// Staff PATCH `users/{id}` (§6.9, W14): the §4.4 partial update over the
+    /// unchanged staff field allow-list (Staff\UserUpdate rules — no
+    /// `speed_limit`, `is_admin`, `is_staff`, `commission_type`, or
+    /// `remarks`). Unlike Laravel's unscoped find, the target stays
+    /// restricted to non-admin/non-staff users. A cleared `plan_id` keeps the
+    /// legacy staff outcome: `plan_id` → NULL with `group_id` untouched.
+    pub async fn staff_user_update(&self, id: i64, body: &StaffUserPatch) -> Result<(), ApiError> {
         let current_email: String = sqlx::query_scalar(
             "SELECT email FROM users WHERE id = $1 AND is_admin = 0 AND is_staff = 0 LIMIT 1",
         )
         .bind(id)
         .fetch_optional(&self.db)
         .await?
-        .ok_or_else(|| ApiError::business("用户不存在"))?;
-        let email = required_string(params, "email")?;
-        if email != current_email {
-            let taken: Option<i64> = sqlx::query_scalar(
-                "SELECT id FROM users WHERE lower(btrim(email)) = lower(btrim($1)) LIMIT 1",
-            )
-            .bind(&email)
-            .fetch_optional(&self.db)
-            .await?;
-            if taken.is_some() {
-                return Err(ApiError::business("邮箱已被使用"));
-            }
-        }
+        .ok_or_else(|| ApiError::from(Problem::new(Code::UserNotFound)))?;
 
-        let mut values: Vec<(&str, AdminSqlValue)> = vec![("email", AdminSqlValue::Text(email))];
-        for key in [
-            "transfer_enable",
-            "device_limit",
-            "expired_at",
-            "banned",
-            "commission_rate",
-            "discount",
-            "u",
-            "d",
-            "balance",
-            "commission_balance",
+        let mut values: Vec<(&str, AdminSqlValue)> = Vec::new();
+        if let Some(email) = &body.email {
+            if email != &current_email {
+                let taken: Option<i64> = sqlx::query_scalar(
+                    "SELECT id FROM users WHERE lower(btrim(email)) = lower(btrim($1)) LIMIT 1",
+                )
+                .bind(email)
+                .fetch_optional(&self.db)
+                .await?;
+                if taken.is_some() {
+                    return Err(ApiError::from(Problem::new(Code::EmailAlreadyRegistered)));
+                }
+            }
+            values.push(("email", AdminSqlValue::Text(email.clone())));
+        }
+        for (column, value) in [
+            ("transfer_enable", body.transfer_enable),
+            ("u", body.u),
+            ("d", body.d),
+            ("balance", body.balance),
+            ("commission_balance", body.commission_balance),
         ] {
-            if params.contains_key(key) {
-                values.push((key, optional_int_or_null_value(params, key)));
+            if let Some(value) = value {
+                values.push((column, AdminSqlValue::Integer(value)));
             }
         }
-        // Staff update only sets group_id when a real plan_id is supplied.
-        if params.contains_key("plan_id") {
-            if let Some(plan_id) = optional_i64(params, "plan_id") {
-                let plan_group: Option<i32> =
-                    sqlx::query_scalar("SELECT group_id FROM plan WHERE id = $1 LIMIT 1")
-                        .bind(plan_id)
-                        .fetch_optional(&self.db)
-                        .await?
-                        .ok_or_else(|| ApiError::business("订阅计划不存在"))?;
-                values.push(("plan_id", AdminSqlValue::Integer(plan_id)));
+        if let Some(banned) = body.banned {
+            values.push(("banned", AdminSqlValue::Integer(i64::from(banned))));
+        }
+        for (column, field) in [
+            ("device_limit", body.device_limit),
+            ("commission_rate", body.commission_rate),
+            ("discount", body.discount),
+            ("expired_at", body.expired_at),
+        ] {
+            if let Some(update) = field {
                 values.push((
-                    "group_id",
-                    plan_group
-                        .map(|value| AdminSqlValue::Integer(i64::from(value)))
-                        .unwrap_or(AdminSqlValue::IntegerNull),
+                    column,
+                    update.map_or(AdminSqlValue::IntegerNull, AdminSqlValue::Integer),
                 ));
-            } else {
-                values.push(("plan_id", AdminSqlValue::IntegerNull));
             }
         }
-        let password_changed = params
-            .get("password")
+        // Staff plan updates only resolve group_id for a real plan_id
+        // (Staff\UserController::update); a cleared plan never touches group_id.
+        if let Some(plan_update) = body.plan_id {
+            match plan_update {
+                Some(plan_id) => {
+                    let plan_group: Option<i32> =
+                        sqlx::query_scalar("SELECT group_id FROM plan WHERE id = $1 LIMIT 1")
+                            .bind(plan_id)
+                            .fetch_optional(&self.db)
+                            .await?
+                            .ok_or_else(|| ApiError::from(Problem::new(Code::PlanNotFound)))?;
+                    values.push(("plan_id", AdminSqlValue::Integer(plan_id)));
+                    values.push((
+                        "group_id",
+                        plan_group
+                            .map(|value| AdminSqlValue::Integer(i64::from(value)))
+                            .unwrap_or(AdminSqlValue::IntegerNull),
+                    ));
+                }
+                None => values.push(("plan_id", AdminSqlValue::IntegerNull)),
+            }
+        }
+        let password_changed = body
+            .password
+            .as_deref()
             .is_some_and(|value| !value.is_empty());
-        if let Some(password) = params.get("password").filter(|value| !value.is_empty()) {
+        if let Some(password) = body.password.as_deref().filter(|value| !value.is_empty()) {
             let hash = self.password_kdf.hash(password).await?;
             values.push(("password", AdminSqlValue::Text(hash)));
             values.push(("password_algo", AdminSqlValue::TextNull));
         }
-        let revokes_sessions = password_changed || optional_i64(params, "banned") == Some(1);
-        let resets_traffic = params.contains_key("u") || params.contains_key("d");
+        let revokes_sessions = password_changed || body.banned == Some(true);
+        let resets_traffic = body.u.is_some() || body.d.is_some();
 
         let mut builder = QueryBuilder::<Postgres>::new("UPDATE users SET ");
         let mut first = true;
@@ -1029,12 +985,23 @@ impl AdminService {
             push_admin_sql_bind(&mut builder, column, value);
         }
         if revokes_sessions {
-            builder.push(", \"session_epoch\" = \"session_epoch\" + 1");
+            if !first {
+                builder.push(", ");
+            }
+            first = false;
+            builder.push("\"session_epoch\" = \"session_epoch\" + 1");
         }
         if resets_traffic {
-            builder.push(", \"traffic_epoch\" = \"traffic_epoch\" + 1");
+            if !first {
+                builder.push(", ");
+            }
+            first = false;
+            builder.push("\"traffic_epoch\" = \"traffic_epoch\" + 1");
         }
-        builder.push(", \"updated_at\" = ");
+        if !first {
+            builder.push(", ");
+        }
+        builder.push("\"updated_at\" = ");
         builder.push_bind(Utc::now().timestamp());
         builder.push(" WHERE id = ");
         builder.push_bind(id);
@@ -1043,43 +1010,18 @@ impl AdminService {
         if revokes_sessions {
             self.remove_user_sessions(id).await;
         }
-        Ok(AdminOutput::Data(json!(true)))
+        Ok(())
     }
 
-    pub(super) async fn staff_send_mail_to_users(
+    /// Staff POST `users/ban` (§6.9, W14): the same `{filter?}` DSL body as
+    /// the admin route, scoped to non-admin/non-staff users. The durable
+    /// epoch check is deliberately stronger than the retired implementation's
+    /// Redis-only admin revocation.
+    pub async fn staff_users_ban(
         &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        self.enqueue_mail_to_users(params, true).await
-    }
-
-    pub(super) async fn staff_user_bulk_ban(
-        &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        // Staff safety remains scoped to non-admin/non-staff users. The durable epoch check is
-        // deliberately stronger than the retired implementation's Redis-only admin revocation.
-        let clauses = self.user_filter_clauses(params).await?;
-        let ids = self
-            .filtered_user_ids_bounded(&UserWhere::Legacy(&clauses), true)
-            .await?;
-        if ids.is_empty() {
-            return Ok(AdminOutput::Data(json!(true)));
-        }
-        let mut tx = self.db.begin().await?;
-        for ids in ids.chunks(USER_DELETE_SQL_BATCH_SIZE) {
-            let mut builder = QueryBuilder::<Postgres>::new(
-                "UPDATE users SET banned = 1, session_epoch = session_epoch + 1, updated_at = ",
-            );
-            builder.push_bind(Utc::now().timestamp());
-            builder.push(" WHERE id IN (");
-            push_id_binds(&mut builder, ids);
-            builder.push(")");
-            builder.build().execute(&mut *tx).await?;
-        }
-        tx.commit().await?;
-        self.remove_user_sessions_bounded(&ids).await;
-        Ok(AdminOutput::Data(json!(true)))
+        filter: &[filter_dsl::FilterClause],
+    ) -> Result<(), ApiError> {
+        self.users_ban_scoped(filter, true).await
     }
 
     /// POST `users/{id}/reset-secret` (§6.6): rotates the subscribe token and
@@ -1365,7 +1307,7 @@ impl AdminService {
                  p.name AS plan_name, u.token AS token \
                  FROM users u LEFT JOIN plan p ON p.id = u.plan_id WHERE 1 = 1",
             );
-            push_user_filter(&mut builder, &UserWhere::Dsl(&clauses));
+            filter_dsl::push_filter_where(&mut builder, &clauses);
             builder.push(" AND u.id > ");
             builder.push_bind(after_id);
             builder.push(" ORDER BY u.id ASC LIMIT ");
@@ -1435,9 +1377,17 @@ impl AdminService {
     /// cleanup after commit only reclaims cached metadata and may safely fail
     /// without leaving a banned session usable.
     pub async fn users_ban(&self, filter: &[filter_dsl::FilterClause]) -> Result<(), ApiError> {
+        self.users_ban_scoped(filter, false).await
+    }
+
+    async fn users_ban_scoped(
+        &self,
+        filter: &[filter_dsl::FilterClause],
+        staff_scoped: bool,
+    ) -> Result<(), ApiError> {
         let resolved = filter_dsl::resolve_filters(filter, USER_FILTER_COLUMNS)?;
         let ids = self
-            .filtered_user_ids_bounded(&UserWhere::Dsl(&resolved), false)
+            .filtered_user_ids_bounded(&resolved, staff_scoped)
             .await?;
         if ids.is_empty() {
             return Ok(());
@@ -1467,10 +1417,7 @@ impl AdminService {
         filter: &[filter_dsl::FilterClause],
     ) -> Result<(), ApiError> {
         let resolved = filter_dsl::resolve_filters(filter, USER_FILTER_COLUMNS)?;
-        let ids = sorted_unique_user_ids(
-            self.filtered_user_ids_bounded(&UserWhere::Dsl(&resolved), false)
-                .await?,
-        );
+        let ids = sorted_unique_user_ids(self.filtered_user_ids_bounded(&resolved, false).await?);
         if ids.is_empty() {
             return Ok(());
         }

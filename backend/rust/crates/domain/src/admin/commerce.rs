@@ -11,8 +11,8 @@ use super::*;
 // Plans, payments, orders, and payment reconciliations on dialect-v2
 // semantics: JSON bodies, §4.4 double-Option partial updates, §4.5 RFC 3339
 // timestamps, §1 201 `{id}`/`{trade_no}` creates, §7 DSL order filtering,
-// §8 pagination, and typed §3.4 problem codes. The staff namespace keeps the
-// legacy `plan_fetch` mirror at the bottom until W14.
+// §8 pagination, and typed §3.4 problem codes. Since W14 the §6.9 staff
+// mirror consumes the same modern `plans_list`.
 
 const PLAN_USER_LOCK_PAGE_SIZE: i64 = 500;
 const PLAN_FORCE_UPDATE_MAX_USERS: usize = 10_000;
@@ -877,7 +877,7 @@ impl AdminService {
 
     /// POST `plans/sort` (§6.2): JSON `{ids}` full resequencing; empty 204.
     pub async fn plans_sort(&self, ids: &[i64]) -> Result<(), ApiError> {
-        self.sort_ids("plan", ids).await.map(|_| ())
+        self.sort_ids("plan", ids).await
     }
 
     fn require_app_url(&self) -> Result<(), ApiError> {
@@ -1898,47 +1898,6 @@ impl AdminService {
             "administrator resolved payment reconciliation"
         );
         Ok(())
-    }
-
-    /// W14 staff mirror only (§6.9): the legacy bare-array plan list on the
-    /// legacy envelope dialect. The admin namespace serves the modern
-    /// [`AdminService::plans_list`]; this method dies with the W14 staff
-    /// wave.
-    pub(super) async fn plan_fetch(&self) -> Result<AdminOutput, ApiError> {
-        let mut plans = v2board_db::plan::fetch_visible_plans(&self.db).await?;
-        let shown_ids = plans.iter().map(|plan| plan.id).collect::<HashSet<_>>();
-        let mut hidden = sqlx::query_as::<_, v2board_db::plan::PlanRow>(
-            r#"
-            SELECT id, group_id, transfer_enable, device_limit, name, speed_limit, "show", sort,
-                   renew, content, month_price, quarter_price, half_year_price, year_price,
-                   two_year_price, three_year_price, onetime_price, reset_price,
-                   reset_traffic_method, capacity_limit, created_at, updated_at
-            FROM plan
-            WHERE "show" = 0
-            ORDER BY sort ASC NULLS FIRST
-            "#,
-        )
-        .fetch_all(&self.db)
-        .await?;
-        plans.append(&mut hidden);
-        let counts = v2board_db::plan::count_active_users_by_plan(&self.db).await?;
-        let mut data = Vec::with_capacity(plans.len());
-        for plan in plans {
-            let mut value = serde_json::to_value(&plan)
-                .map_err(|_| ApiError::internal("failed to encode plan"))?;
-            value["count"] = json!(counts.get(&plan.id).copied().unwrap_or_default());
-            if !shown_ids.contains(&plan.id) {
-                value["show"] = json!(0);
-            }
-            data.push(value);
-        }
-        data.sort_by_key(|value| {
-            value
-                .get("sort")
-                .and_then(Value::as_i64)
-                .unwrap_or_default()
-        });
-        Ok(AdminOutput::Data(json!(data)))
     }
 }
 

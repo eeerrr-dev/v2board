@@ -274,10 +274,9 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
         // `dynamic_fallback` into the nested method-aware admin router
         // (docs/api-dialect.md §6 preamble), so a runtime `secure_path` save
         // takes effect without a restart.
-        .route(
-            "/api/v1/staff/{*staff_path}",
-            get(crate::admin::staff_get).post(crate::admin::staff_post),
-        )
+        // The §6.9 staff namespace keeps its fixed prefix, so it nests as a
+        // boot-time method-aware router (unlike the admin prefix above).
+        .nest_service("/api/v1/staff", crate::admin::staff_router(state.clone()))
         .route(
             "/api/v1/server/{class}/{action}",
             get(crate::server_api::server_v1).post(crate::server_api::server_v1),

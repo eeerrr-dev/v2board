@@ -31,37 +31,17 @@ impl AdminService {
         table: &str,
         id: i64,
         not_found: ApiError,
-    ) -> Result<AdminOutput, ApiError> {
+    ) -> Result<(), ApiError> {
         ensure_safe_table(table)?;
         self.ensure_row_exists(table, id, not_found).await?;
         sqlx::query(AssertSqlSafe(format!("DELETE FROM {table} WHERE id = $1")))
             .bind(id)
             .execute(&self.db)
             .await?;
-        Ok(AdminOutput::Data(json!(true)))
+        Ok(())
     }
 
-    pub(super) async fn toggle(
-        &self,
-        table: &str,
-        column: &str,
-        id: i64,
-        not_found: ApiError,
-    ) -> Result<AdminOutput, ApiError> {
-        ensure_safe_table(table)?;
-        ensure_toggle_column(column)?;
-        self.ensure_row_exists(table, id, not_found).await?;
-        sqlx::query(AssertSqlSafe(format!(
-            "UPDATE {table} SET \"{column}\" = CASE WHEN \"{column}\" = 1 THEN 0::SMALLINT ELSE 1::SMALLINT END, updated_at = $1 WHERE id = $2::BIGINT"
-        )))
-        .bind(Utc::now().timestamp())
-        .bind(id)
-        .execute(&self.db)
-        .await?;
-        Ok(AdminOutput::Data(json!(true)))
-    }
-
-    pub(super) async fn sort_ids(&self, table: &str, ids: &[i64]) -> Result<AdminOutput, ApiError> {
+    pub(super) async fn sort_ids(&self, table: &str, ids: &[i64]) -> Result<(), ApiError> {
         ensure_safe_table(table)?;
         for (index, id) in ids.iter().enumerate() {
             sqlx::query(AssertSqlSafe(format!(
@@ -72,6 +52,6 @@ impl AdminService {
             .execute(&self.db)
             .await?;
         }
-        Ok(AdminOutput::Data(json!(true)))
+        Ok(())
     }
 }

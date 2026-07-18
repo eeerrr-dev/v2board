@@ -422,7 +422,7 @@ impl AdminService {
     async fn enqueue_mail_core(
         &self,
         mail: BulkMailEnqueue<'_>,
-        clauses: &UserWhere<'_>,
+        clauses: &[filter_dsl::ResolvedFilter],
         staff_scoped: bool,
     ) -> Result<(), ApiError> {
         let batch_key = mail_batch_key(mail.actor, mail.idempotency_key);
@@ -473,6 +473,30 @@ impl AdminService {
         actor_email: &str,
         idempotency_key: &str,
     ) -> Result<(), ApiError> {
+        self.users_mail_scoped(body, actor_email, idempotency_key, false)
+            .await
+    }
+
+    /// Staff POST `users/mail` (§6.9, W14): the admin body and idempotency
+    /// contract, scoped to non-admin/non-staff recipients under the `staff:`
+    /// actor prefix.
+    pub async fn staff_users_mail(
+        &self,
+        body: &AdminUserMailBody,
+        actor_email: &str,
+        idempotency_key: &str,
+    ) -> Result<(), ApiError> {
+        self.users_mail_scoped(body, actor_email, idempotency_key, true)
+            .await
+    }
+
+    async fn users_mail_scoped(
+        &self,
+        body: &AdminUserMailBody,
+        actor_email: &str,
+        idempotency_key: &str,
+        staff_scoped: bool,
+    ) -> Result<(), ApiError> {
         if body.subject.trim().is_empty() {
             return Err(ApiError::validation_field("subject", "邮件主题不能为空"));
         }
@@ -481,7 +505,10 @@ impl AdminService {
         }
         let filter = body.filter.clone().unwrap_or_default();
         let resolved = filter_dsl::resolve_filters(&filter, USER_FILTER_COLUMNS)?;
-        let actor = format!("admin:{actor_email}");
+        let actor = format!(
+            "{}:{actor_email}",
+            if staff_scoped { "staff" } else { "admin" }
+        );
         // The replay identity is the canonical typed payload, so the same
         // Idempotency-Key with an identical subject/content/filter replays.
         let payload_hash = hash_mail_payload(&(&body.subject, &body.content, &body.filter));
@@ -493,41 +520,10 @@ impl AdminService {
                 idempotency_key,
                 payload_hash: &payload_hash,
             },
-            &UserWhere::Dsl(&resolved),
-            false,
-        )
-        .await
-    }
-
-    pub(super) async fn enqueue_mail_to_users(
-        &self,
-        params: &HashMap<String, String>,
-        staff_scoped: bool,
-    ) -> Result<AdminOutput, ApiError> {
-        let subject = required_string(params, "subject")?;
-        let content = required_string(params, "content")?;
-        let actor_email = required_string(params, "_admin_email")?;
-        let idempotency_key = optional_string(params, "_idempotency_key")
-            .unwrap_or_else(|| Uuid::new_v4().to_string());
-        let actor = format!(
-            "{}:{actor_email}",
-            if staff_scoped { "staff" } else { "admin" }
-        );
-        let payload_hash = bulk_mail_payload_hash(params);
-        let clauses = self.user_filter_clauses(params).await?;
-        self.enqueue_mail_core(
-            BulkMailEnqueue {
-                subject: &subject,
-                content: &content,
-                actor: &actor,
-                idempotency_key: &idempotency_key,
-                payload_hash: &payload_hash,
-            },
-            &UserWhere::Legacy(&clauses),
+            &resolved,
             staff_scoped,
         )
-        .await?;
-        Ok(AdminOutput::Data(json!(true)))
+        .await
     }
 
     pub(super) fn prepare_notify_mail(
@@ -575,15 +571,6 @@ pub(super) fn drop_unchanged_effective_secure_path(
     {
         body.remove("secure_path");
     }
-}
-
-pub(super) fn bulk_mail_payload_hash(params: &HashMap<String, String>) -> String {
-    let canonical = params
-        .iter()
-        .filter(|(key, _)| !key.starts_with('_') && key.as_str() != "auth_data")
-        .map(|(key, value)| (key.as_str(), value.as_str()))
-        .collect::<BTreeMap<_, _>>();
-    hash_mail_payload(&canonical)
 }
 
 #[cfg(test)]

@@ -13,6 +13,22 @@ pub(super) fn validate_ticket_message_length(message: &str) -> Result<(), ApiErr
     Ok(())
 }
 
+/// The shared §6.5/§6.9 ticket row projection (list and detail): the legacy
+/// key set with the computed `last_reply_user_id`. Timestamps convert to
+/// RFC 3339 (§4.5) after fetch.
+const ADMIN_TICKET_ROW_SELECT: &str = r#"
+    SELECT jsonb_build_object(
+        'id', id, 'user_id', user_id, 'subject', subject, 'level', level,
+        'status', status, 'reply_status', reply_status,
+        'last_reply_user_id', (
+            SELECT user_id FROM ticket_message WHERE ticket_id = ticket.id ORDER BY id DESC LIMIT 1
+        ),
+        'created_at', created_at, 'updated_at', updated_at
+    )
+    FROM ticket
+    WHERE 1 = 1
+"#;
+
 const GENERATED_CODE_MAX_ROWS: usize = 1_000;
 
 #[derive(Clone, Copy)]
@@ -838,7 +854,6 @@ impl AdminService {
     pub async fn notice_delete(&self, id: i64) -> Result<(), ApiError> {
         self.delete_by_id("notice", id, Problem::new(Code::NoticeNotFound).into())
             .await
-            .map(|_| ())
     }
 
     /// GET `knowledge`: bare array in the operator sort order.
@@ -956,7 +971,6 @@ impl AdminService {
             Problem::new(Code::KnowledgeNotFound).into(),
         )
         .await
-        .map(|_| ())
     }
 
     /// GET `knowledge-categories`: bare string array.
@@ -970,166 +984,27 @@ impl AdminService {
 
     /// POST `knowledge/sort` `{ids}` — full-order resequencing, unchanged.
     pub async fn knowledge_sort(&self, ids: &[i64]) -> Result<(), ApiError> {
-        self.sort_ids("knowledge", ids).await.map(|_| ())
+        self.sort_ids("knowledge", ids).await
     }
 
-    /// W14 staff mirror only (docs/api-dialect.md §6.9): the legacy-dialect
-    /// staff `notice/fetch` envelope. The admin resource is `notices_list`.
-    pub(super) async fn notice_fetch(&self) -> Result<AdminOutput, ApiError> {
-        let rows = sqlx::query_as::<_, NoticeRaw>(
-            "SELECT id, title, content, img_url, tags::text AS tags, \"show\", created_at, updated_at FROM notice ORDER BY id DESC",
-        )
-        .fetch_all(&self.db)
-        .await?;
-        Ok(AdminOutput::Data(json!(
-            rows.into_iter().map(NoticeDto::from).collect::<Vec<_>>()
-        )))
-    }
-
-    /// W14 staff mirror only (§6.9): legacy-dialect staff `notice/save`.
-    pub(super) async fn notice_save(
+    /// GET `tickets` (docs/api-dialect.md §6.5, W14) plus the §6.9 staff
+    /// mirror: §8 `{items,total}` pagination over the shared row projection
+    /// with RFC 3339 timestamps (§4.5).
+    ///
+    /// The admin list honors the dedicated `status` / repeatable
+    /// `reply_status` / `email` filters (never the §7 DSL) and orders by
+    /// `updated_at`; the staff mirror only filters by `status` and orders by
+    /// `created_at`. Email scoping keeps the legacy outcome: present + known
+    /// user → scope to that user; present-but-unknown or absent → no scope
+    /// (the Laravel `if ($user)` guard).
+    pub async fn tickets_list(
         &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        let now = Utc::now().timestamp();
-        let tags = json_array_string(params, "tags")?
-            .map(|value| serde_json::from_str::<Value>(&value))
-            .transpose()
-            .map_err(|_| ApiError::validation_field("tags", "公告标签格式不正确"))?
-            .map(Json);
-        if let Some(id) = optional_i64(params, "id") {
-            sqlx::query(
-                "UPDATE notice SET title = $1, content = $2, img_url = $3, tags = $4, updated_at = $5 WHERE id = $6",
-            )
-            .bind(required_string(params, "title")?)
-            .bind(required_string(params, "content")?)
-            .bind(params.get("img_url"))
-            .bind(tags)
-            .bind(now)
-            .bind(id)
-            .execute(&self.db)
-            .await?;
-        } else {
-            sqlx::query(
-                "INSERT INTO notice (title, content, img_url, tags, \"show\", created_at, updated_at) VALUES ($1, $2, $3, $4, 1, $5, $6)",
-            )
-            .bind(required_string(params, "title")?)
-            .bind(required_string(params, "content")?)
-            .bind(params.get("img_url"))
-            .bind(tags)
-            .bind(now)
-            .bind(now)
-            .execute(&self.db)
-            .await?;
-        }
-        Ok(AdminOutput::Data(json!(true)))
-    }
-
-    /// W14 staff mirror only (§6.9): legacy-dialect staff `notice/update`,
-    /// including the values-empty toggle fallback.
-    pub(super) async fn notice_update(
-        &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        let id = required_i64(params, "id")?;
-        let mut values = Vec::new();
-        if let Some(title) = optional_string(params, "title") {
-            values.push(("title", AdminSqlValue::Text(title)));
-        }
-        if let Some(content) = optional_string(params, "content") {
-            values.push(("content", AdminSqlValue::Text(content)));
-        }
-        if params.contains_key("img_url") {
-            values.push(("img_url", optional_text_value(params, "img_url")));
-        }
-        if params
-            .keys()
-            .any(|key| key == "tags" || key.starts_with("tags["))
-        {
-            values.push(("tags", optional_json_array_text_value(params, "tags")));
-        }
-        if let Some(show) = optional_i64(params, "show") {
-            values.push(("show", AdminSqlValue::Integer(show)));
-        }
-        if values.is_empty() {
-            return self
-                .toggle("notice", "show", id, ApiError::business("公告不存在"))
-                .await;
-        }
-
-        let mut builder = QueryBuilder::<Postgres>::new("UPDATE notice SET ");
-        let mut first = true;
-        for (column, value) in &values {
-            if !first {
-                builder.push(", ");
-            }
-            first = false;
-            builder.push(format!("\"{column}\" = "));
-            push_admin_sql_bind(&mut builder, column, value);
-        }
-        builder.push(", \"updated_at\" = ");
-        builder.push_bind(Utc::now().timestamp());
-        builder.push(" WHERE id = ");
-        builder.push_bind(id);
-        let result = builder.build().execute(&self.db).await?;
-        if result.rows_affected() == 0 {
-            return Err(ApiError::business("公告不存在"));
-        }
-        Ok(AdminOutput::Data(json!(true)))
-    }
-
-    pub(super) async fn ticket_fetch(
-        &self,
-        params: &HashMap<String, String>,
+        pagination: Pagination,
+        status: Option<i64>,
+        reply_statuses: &[i64],
+        email: Option<&str>,
         staff: bool,
-    ) -> Result<AdminOutput, ApiError> {
-        if let Some(id) = optional_i64(params, "id") {
-            let ticket = fetch_json_one(
-                &self.db,
-                r#"
-                SELECT jsonb_build_object(
-                    'id', id, 'user_id', user_id, 'subject', subject, 'level', level,
-                    'status', status, 'reply_status', reply_status,
-                    'last_reply_user_id', (
-                        SELECT user_id FROM ticket_message WHERE ticket_id = ticket.id ORDER BY id DESC LIMIT 1
-                    ),
-                    'created_at', created_at, 'updated_at', updated_at
-                )
-                FROM ticket
-                WHERE id = $1
-                LIMIT 1
-                "#,
-                id,
-            )
-            .await?
-            .ok_or_else(|| ApiError::business("工单不存在"))?;
-            // is_me marks messages whose author is NOT the ticket owner, i.e. an
-            // admin/staff reply (TicketController::fetch :22-30).
-            let messages = fetch_json_list_bind(
-                &self.db,
-                r#"
-                SELECT jsonb_build_object(
-                    'id', id, 'user_id', user_id, 'ticket_id', ticket_id, 'message', message,
-                    'is_me', user_id <> (
-                        SELECT user_id FROM ticket WHERE id = ticket_message.ticket_id
-                    ),
-                    'created_at', created_at, 'updated_at', updated_at
-                )
-                FROM ticket_message
-                WHERE ticket_id = $1
-                ORDER BY id ASC
-                "#,
-                id,
-            )
-            .await?;
-            let mut ticket = ticket.as_object().cloned().unwrap_or_default();
-            ticket.insert("message".to_string(), json!(messages));
-            return Ok(AdminOutput::Data(Value::Object(ticket)));
-        }
-
-        // Admin list honors the status / reply_status[] / email filters (:37-48)
-        // and orders by updated_at. Staff\TicketController::fetch only filters by
-        // status and orders by created_at.
+    ) -> Result<(Vec<Value>, i64), ApiError> {
         fn apply_filters(
             builder: &mut QueryBuilder<Postgres>,
             status: Option<i64>,
@@ -1154,91 +1029,110 @@ impl AdminService {
             }
         }
 
-        let status = params
-            .get("status")
-            .map(|value| value.trim())
-            .filter(|value| !value.is_empty())
-            .and_then(|value| value.parse::<i64>().ok());
         // Staff has no reply_status / email filters.
-        let reply_statuses: Vec<i64> = if staff {
-            Vec::new()
-        } else {
-            json_array_param(params, "reply_status")
-                .iter()
-                .filter_map(Value::as_i64)
-                .collect()
-        };
-        // email present + user found → scope to that user; present-but-unknown or
-        // absent → no scope, matching the Laravel `if ($user)` guard.
-        let user_id = if !staff && params.contains_key("email") {
-            let email = params.get("email").cloned().unwrap_or_default();
-            sqlx::query_scalar::<_, i64>(
-                "SELECT id FROM users WHERE lower(btrim(email)) = lower(btrim($1)) LIMIT 1",
-            )
-            .bind(email)
-            .fetch_optional(&self.db)
-            .await?
-        } else {
-            None
+        let reply_statuses = if staff { &[][..] } else { reply_statuses };
+        let user_id = match email.filter(|_| !staff) {
+            Some(email) => {
+                sqlx::query_scalar::<_, i64>(
+                    "SELECT id FROM users WHERE lower(btrim(email)) = lower(btrim($1)) LIMIT 1",
+                )
+                .bind(email)
+                .fetch_optional(&self.db)
+                .await?
+            }
+            None => None,
         };
 
-        let pagination = page(params)?;
         let mut count_builder =
             QueryBuilder::<Postgres>::new("SELECT COUNT(*) FROM ticket WHERE 1 = 1");
-        apply_filters(&mut count_builder, status, &reply_statuses, user_id);
+        apply_filters(&mut count_builder, status, reply_statuses, user_id);
         let total: i64 = count_builder
             .build_query_scalar()
             .fetch_one(&self.db)
             .await?;
 
-        let mut builder = QueryBuilder::<Postgres>::new(
-            r#"
-            SELECT jsonb_build_object(
-                'id', id, 'user_id', user_id, 'subject', subject, 'level', level,
-                'status', status, 'reply_status', reply_status,
-                'last_reply_user_id', (
-                    SELECT user_id FROM ticket_message WHERE ticket_id = ticket.id ORDER BY id DESC LIMIT 1
-                ),
-                'created_at', created_at, 'updated_at', updated_at
-            )
-            FROM ticket
-            WHERE 1 = 1
-            "#,
-        );
-        apply_filters(&mut builder, status, &reply_statuses, user_id);
+        let mut builder = QueryBuilder::<Postgres>::new(ADMIN_TICKET_ROW_SELECT);
+        apply_filters(&mut builder, status, reply_statuses, user_id);
         let order_column = if staff { "created_at" } else { "updated_at" };
         builder.push(format!(" ORDER BY {order_column} DESC LIMIT "));
-        builder.push_bind(pagination.limit);
+        builder.push_bind(pagination.limit());
         builder.push(" OFFSET ");
-        builder.push_bind(pagination.offset);
+        builder.push_bind(pagination.offset());
         let rows = builder
             .build_query_scalar::<Json<Value>>()
             .fetch_all(&self.db)
             .await?;
-        let data = rows.into_iter().map(|row| row.0).collect();
-        Ok(AdminOutput::Page { data, total })
+        let items = rows
+            .into_iter()
+            .map(|row| statistics::epoch_fields_to_rfc3339(row.0, &["created_at", "updated_at"]))
+            .collect();
+        Ok((items, total))
     }
 
-    pub(super) async fn ticket_reply(
+    /// GET `tickets/{id}` (§6.5, W14) plus the §6.9 staff mirror: the bare
+    /// row with the ordered `message[]` thread. `is_me` semantics are
+    /// unchanged — true marks messages whose author is NOT the ticket owner,
+    /// i.e. an admin/staff reply (TicketController::fetch :22-30).
+    pub async fn ticket_detail(&self, id: i64) -> Result<Value, ApiError> {
+        let ticket = fetch_json_one(
+            &self.db,
+            &format!("{ADMIN_TICKET_ROW_SELECT} AND id = $1 LIMIT 1"),
+            id,
+        )
+        .await?
+        .ok_or_else(|| ApiError::from(Problem::new(Code::TicketNotFound)))?;
+        let messages = fetch_json_list_bind(
+            &self.db,
+            r#"
+            SELECT jsonb_build_object(
+                'id', id, 'user_id', user_id, 'ticket_id', ticket_id, 'message', message,
+                'is_me', user_id <> (
+                    SELECT user_id FROM ticket WHERE id = ticket_message.ticket_id
+                ),
+                'created_at', created_at, 'updated_at', updated_at
+            )
+            FROM ticket_message
+            WHERE ticket_id = $1
+            ORDER BY id ASC
+            "#,
+            id,
+        )
+        .await?;
+        let messages: Vec<Value> = messages
+            .into_iter()
+            .map(|row| statistics::epoch_fields_to_rfc3339(row, &["created_at", "updated_at"]))
+            .collect();
+        let mut ticket = statistics::epoch_fields_to_rfc3339(ticket, &["created_at", "updated_at"])
+            .as_object()
+            .cloned()
+            .unwrap_or_default();
+        ticket.insert("message".to_string(), json!(messages));
+        Ok(Value::Object(ticket))
+    }
+
+    /// POST `tickets/{id}/replies` (§6.5, W14) plus the §6.9 staff mirror:
+    /// empty on success; `ticket_not_found` (404) and
+    /// `unresolved_ticket_exists` (400) replace the legacy business errors.
+    pub async fn ticket_reply(
         &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
+        ticket_id: i64,
+        message: &str,
+        operator_email: &str,
+    ) -> Result<(), ApiError> {
         // Ports TicketService::replyByAdmin (:34-61): records the reply under the
         // acting admin, reopens the ticket (status = 0), sets reply_status based
         // on authorship, and notifies the owner by email (deduped 30 min).
-        let id = required_i64(params, "id")?;
-        let ticket_id = id;
-        let message = required_string(params, "message")?;
-        validate_ticket_message_length(&message)?;
-        let admin_id = self.current_admin_id(params).await?;
+        let id = ticket_id;
+        validate_ticket_message_length(message)?;
+        let admin_id = self.current_admin_id(operator_email).await?;
         let (ticket_user_id, subject): (i64, String) =
             sqlx::query_as("SELECT user_id, subject FROM ticket WHERE id = $1 LIMIT 1")
                 .bind(id)
                 .fetch_optional(&self.db)
                 .await?
-                .ok_or_else(|| ApiError::business("工单不存在"))?;
+                .ok_or_else(|| ApiError::from(Problem::new(Code::TicketNotFound)))?;
         let prepared_notification = self
-            .prepare_ticket_reply_notification(ticket_user_id, &subject, &message)
+            .prepare_ticket_reply_notification(ticket_user_id, &subject, message)
             .await;
         let notification = if let Some((email, envelope)) = prepared_notification {
             self.reserve_ticket_notification_gate(ticket_user_id)
@@ -1258,12 +1152,12 @@ impl AdminService {
                 match v2board_db::ticket::lock_operator_reply_target(&mut tx, ticket_id).await? {
                     v2board_db::ticket::OperatorReplyTargetOutcome::Locked(target) => target,
                     v2board_db::ticket::OperatorReplyTargetOutcome::NotFound => {
-                        return Err(ApiError::business("工单不存在"));
+                        return Err(Problem::new(Code::TicketNotFound).into());
                     }
                     v2board_db::ticket::OperatorReplyTargetOutcome::OtherOpenTicketExists => {
-                        return Err(ApiError::business(
-                            "用户存在其他未解决工单，无法重新打开该工单",
-                        ));
+                        // Default detail relocalizes per §4.3 (the W8 user
+                        // path already uses the registry default).
+                        return Err(Problem::new(Code::UnresolvedTicketExists).into());
                     }
                 };
             if target.user_id != ticket_user_id {
@@ -1271,7 +1165,7 @@ impl AdminService {
                     "ticket owner changed while preparing an admin reply",
                 ));
             }
-            v2board_db::ticket::apply_operator_reply(&mut tx, &target, admin_id, &message, now)
+            v2board_db::ticket::apply_operator_reply(&mut tx, &target, admin_id, message, now)
                 .await?;
             if let Some(notification) = notification.as_ref() {
                 let recipients = vec![notification.email.clone()];
@@ -1304,7 +1198,7 @@ impl AdminService {
             }
             return Err(error);
         }
-        Ok(AdminOutput::Data(json!(true)))
+        Ok(())
     }
 
     /// Prepares the recipient and envelope before reserving the Redis admission
@@ -1427,9 +1321,11 @@ impl AdminService {
         }
     }
 
-    pub(super) async fn ticket_close(&self, id: i64) -> Result<AdminOutput, ApiError> {
+    /// POST `tickets/{id}/close` (§6.5, W14) plus the §6.9 staff mirror:
+    /// empty on success.
+    pub async fn ticket_close(&self, id: i64) -> Result<(), ApiError> {
         v2board_db::ticket::close_ticket_as_operator(&self.db, id, Utc::now().timestamp()).await?;
-        Ok(AdminOutput::Data(json!(true)))
+        Ok(())
     }
 
     /// GET `coupons` (§6.3): §8 pagination + §7.2 sort, **no filter DSL** —
@@ -1601,7 +1497,6 @@ impl AdminService {
     pub async fn coupon_delete(&self, id: i64) -> Result<(), ApiError> {
         self.delete_by_id("coupon", id, Problem::new(Code::CouponNotFound).into())
             .await
-            .map(|_| ())
     }
 
     /// POST `gift-cards` (§6.3): bulk generate (byte-frozen CSV, 16-char
@@ -1700,7 +1595,6 @@ impl AdminService {
     pub async fn giftcard_delete(&self, id: i64) -> Result<(), ApiError> {
         self.delete_by_id("gift_card", id, Problem::new(Code::GiftCardNotFound).into())
             .await
-            .map(|_| ())
     }
 
     /// Builds and runs a dynamic `INSERT ... (created_at, updated_at)

@@ -4,18 +4,18 @@
 //! `frontend/packages/api-client/goldens`. Each fixture is a full response
 //! body produced by the real `AdminService` against a disposable, freshly
 //! migrated PostgreSQL database seeded with fixed timestamps, identifiers,
-//! and codes, then wrapped in the exact compat envelope the HTTP layer
-//! serializes. The api-client vitest suite parses every fixture with its zod
-//! contract schema, closing the Rust→zod edge that previously drifted
-//! silently. The `guest.*`/`passport.*`/`user.*` fixtures for pure serde
-//! response structs are owned by the `v2board-api` `golden_wire` test.
+//! and codes — since W14 every family serializes the bare modern dialect-v2
+//! body (no legacy envelope remains). The api-client vitest suite parses
+//! every fixture with its zod contract schema, closing the Rust→zod edge
+//! that previously drifted silently. The `guest.*`/`passport.*`/`user.*`
+//! fixtures for pure serde response structs are owned by the `v2board-api`
+//! `golden_wire` test.
 //!
 //! Default mode verifies the checked-in fixtures byte-for-byte; set
 //! `UPDATE_GOLDENS=1` (wired through `make contract-goldens`) to rewrite
 //! them.
 
 use std::{
-    collections::HashMap,
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
@@ -25,13 +25,11 @@ use anyhow::{Context, Result, bail, ensure};
 use serde::Serialize;
 use serde_json::json;
 use sqlx::{PgPool, postgres::PgPoolOptions};
-use v2board_compat::{LegacyEnvelope, LegacyPageEnvelope, Page, Pagination};
+use v2board_compat::{Page, Pagination};
 use v2board_config::AppConfig;
 use v2board_db::installation_id;
 use v2board_domain::{
-    admin::{AdminOutput, AdminService},
-    auth::PasswordKdf,
-    payment_provider::payment_provider_codes,
+    admin::AdminService, auth::PasswordKdf, payment_provider::payment_provider_codes,
     smtp::SmtpTransportCache,
 };
 
@@ -146,13 +144,6 @@ async fn generate_documents(pool: &PgPool, redis_url: &str) -> Result<Vec<(Strin
     );
 
     let mut documents = Vec::new();
-    for (name, path, params) in admin_get_endpoints() {
-        let output = admin
-            .get(path, params)
-            .await
-            .with_context(|| format!("generate golden response for admin GET {path}"))?;
-        documents.push((format!("{name}.json"), envelope_document(output, name)?));
-    }
     // The W11 admin commerce family (docs/api-dialect.md §6.2/§6.4) serializes
     // modern dialect-v2 bodies straight from the typed domain methods: bare
     // arrays for the deliberately unpaginated plan/payment/provider lists,
@@ -272,44 +263,54 @@ async fn generate_documents(pool: &PgPool, redis_url: &str) -> Result<Vec<(Strin
         "admin.server-routes.json".to_string(),
         pretty_document(&admin.server_routes_list().await?)?,
     ));
+
+    // The W14 admin tickets + stats families (docs/api-dialect.md §6.5/§6.8)
+    // serialize modern dialect-v2 bodies straight from the typed domain
+    // methods: `{items,total}` for the ticket list and per-user traffic page,
+    // a bare ticket detail with its `message[]` thread, and bare
+    // `{series,date,value}` arrays with snake_case series slugs and
+    // integer-cent money. `local_month_day` uses the fixed +08:00 app
+    // timezone, so the seeded `stat` rows render byte-stable dates.
+    let ticket_page = Pagination {
+        page: 1,
+        per_page: 10,
+    };
+    let (items, total) = admin
+        .tickets_list(ticket_page, None, &[], None, false)
+        .await?;
+    documents.push((
+        "admin.tickets.json".to_string(),
+        pretty_document(&Page { items, total })?,
+    ));
+    documents.push((
+        "admin.ticket.detail.json".to_string(),
+        pretty_document(&admin.ticket_detail(1).await?)?,
+    ));
+    let (items, total) = admin
+        .stats_user_traffic(
+            2,
+            Pagination {
+                page: 1,
+                per_page: 10,
+            },
+        )
+        .await?;
+    documents.push((
+        "admin.stats.user-traffic.json".to_string(),
+        pretty_document(&Page { items, total })?,
+    ));
+    documents.push((
+        "admin.stats.orders.json".to_string(),
+        pretty_document(&admin.stats_orders().await?)?,
+    ));
+    documents.push((
+        "admin.stats.records.json".to_string(),
+        pretty_document(&admin.stats_records("m").await?)?,
+    ));
     documents.sort_by(|left, right| left.0.cmp(&right.0));
 
     flush_redis(&redis).await?;
     Ok(documents)
-}
-
-/// The admin GET endpoints this lane pins: every read the api-client consumes
-/// with a zod contract schema and the invariants harness can reach on a
-/// seeded database. Time-window statistics and queue/system telemetry are
-/// deliberately absent — their outputs depend on the wall clock or live
-/// worker state and cannot be byte-stable fixtures.
-fn admin_get_endpoints() -> Vec<(&'static str, &'static str, HashMap<String, String>)> {
-    let none = HashMap::new;
-    vec![
-        (
-            "admin.stat.getStatUser",
-            "stat/getStatUser",
-            HashMap::from([("user_id".to_string(), "2".to_string())]),
-        ),
-        ("admin.ticket.fetch", "ticket/fetch", none()),
-        (
-            "admin.ticket.detail",
-            "ticket/fetch",
-            HashMap::from([("id".to_string(), "1".to_string())]),
-        ),
-    ]
-}
-
-/// Serialize an `AdminOutput` exactly as `crates/api/src/admin.rs` does on the
-/// wire: `Data` through `LegacyEnvelope`, `Page` through `LegacyPageEnvelope`.
-fn envelope_document(output: AdminOutput, name: &str) -> Result<String> {
-    match output {
-        AdminOutput::Data(data) => pretty_document(&LegacyEnvelope { data }),
-        AdminOutput::Page { data, total } => pretty_document(&LegacyPageEnvelope { data, total }),
-        AdminOutput::Csv { .. } => {
-            bail!("golden endpoint {name} returned a non-JSON admin output")
-        }
-    }
 }
 
 fn pretty_document<T: Serialize>(value: &T) -> Result<String> {
@@ -393,6 +394,24 @@ async fn seed_fixture_rows(pool: &PgPool) -> Result<()> {
          created_at, updated_at) VALUES (2, 1.00, 100, 200, 'd', $1, $1, $1)",
     )
     .bind(GOLDEN_TIME)
+    .execute(pool)
+    .await?;
+
+    // Aggregated stat periods for the W14 §6.8 series fixtures: two daily
+    // rows (stats/orders reads the newest 31 `d` periods) and one monthly row
+    // (stats/records `?type=m`). Fixed epochs render byte-stable dates
+    // through the +08:00 app timezone.
+    sqlx::query(
+        "INSERT INTO stat (record_at, record_type, order_count, order_total, commission_count, \
+         commission_total, paid_count, paid_total, register_count, invite_count, \
+         transfer_used_total, created_at, updated_at) VALUES \
+         ($1, 'd', 3, 3000, 1, 100, 2, 1500, 4, 1, '1073741824', $1, $1), \
+         ($2, 'd', 5, 6000, 2, 300, 3, 2500, 6, 2, '2147483648', $2, $2), \
+         ($3, 'm', 30, 60000, 6, 900, 20, 45000, 40, 8, '32212254720', $3, $3)",
+    )
+    .bind(GOLDEN_TIME - 86_400)
+    .bind(GOLDEN_TIME)
+    .bind(GOLDEN_TIME - 86_400 * 30)
     .execute(pool)
     .await?;
 

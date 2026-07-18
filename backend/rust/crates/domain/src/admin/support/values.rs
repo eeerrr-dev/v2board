@@ -155,22 +155,6 @@ pub(in super::super) fn optional_text(value: Option<String>) -> AdminSqlValue {
         .unwrap_or(AdminSqlValue::TextNull)
 }
 
-pub(in super::super) fn optional_text_value(
-    params: &HashMap<String, String>,
-    key: &str,
-) -> AdminSqlValue {
-    optional_text(optional_string(params, key))
-}
-
-pub(in super::super) fn optional_int_or_null_value(
-    params: &HashMap<String, String>,
-    key: &str,
-) -> AdminSqlValue {
-    optional_i64(params, key)
-        .map(AdminSqlValue::Integer)
-        .unwrap_or(AdminSqlValue::IntegerNull)
-}
-
 /// Builds a Laravel-style 422 validation error for a single field: the message
 /// doubles as the top-level message and the field's first error.
 pub(in super::super) fn validation_error(field: &str, message: &str) -> ApiError {
@@ -194,42 +178,6 @@ pub(in super::super) fn is_valid_url(value: &str) -> bool {
     }
     let host = rest.split(['/', '?', '#']).next().unwrap_or_default();
     !host.is_empty()
-}
-
-pub(in super::super) fn optional_string(
-    params: &HashMap<String, String>,
-    key: &str,
-) -> Option<String> {
-    params
-        .get(key)
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case("null"))
-}
-
-pub(in super::super) fn optional_json_array_text_value(
-    params: &HashMap<String, String>,
-    key: &str,
-) -> AdminSqlValue {
-    AdminSqlValue::Json(
-        json_array_string(params, key)
-            .ok()
-            .flatten()
-            .and_then(|value| serde_json::from_str(&value).ok()),
-    )
-}
-
-pub(in super::super) fn json_array_string(
-    params: &HashMap<String, String>,
-    key: &str,
-) -> Result<Option<String>, ApiError> {
-    if let Some(value) = optional_string(params, key) {
-        if serde_json::from_str::<Value>(&value).is_ok() {
-            return Ok(Some(value));
-        }
-        return Ok(Some(json_string(&Value::Array(vec![json_scalar(&value)]))));
-    }
-    let values = json_array_param(params, key);
-    Ok((!values.is_empty()).then(|| json_string(&Value::Array(values))))
 }
 
 pub(in super::super) fn json_value(value: Value) -> AdminSqlValue {

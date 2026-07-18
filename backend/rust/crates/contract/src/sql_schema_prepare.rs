@@ -358,8 +358,8 @@ const DYNAMIC_SQLX_SITES: &[DynamicSite] = &[
     },
     DynamicSite {
         source: "crates/domain/src/admin/repository.rs",
-        count: 4,
-        coverage: "safe-table/toggle allowlists and admin interaction parity",
+        count: 3,
+        coverage: "safe-table allowlist and admin interaction parity",
     },
     DynamicSite {
         source: "crates/domain/src/admin/servers.rs",
@@ -368,13 +368,8 @@ const DYNAMIC_SQLX_SITES: &[DynamicSite] = &[
     },
     DynamicSite {
         source: "crates/domain/src/admin/support/common.rs",
-        count: 6,
+        count: 3,
         coverage: "literal caller SQL is collected and prepared by this AST audit",
-    },
-    DynamicSite {
-        source: "crates/domain/src/admin/users.rs",
-        count: 1,
-        coverage: "operator whitelist and admin user filter interaction parity",
     },
     DynamicSite {
         source: "crates/domain/src/operator_config.rs",
@@ -436,7 +431,7 @@ const QUERY_BUILDER_SITES: &[DynamicSite] = &[
     },
     DynamicSite {
         source: "crates/domain/src/admin/content.rs",
-        count: 7,
+        count: 6,
         coverage: "admin content/ticket interaction parity",
     },
     DynamicSite {
@@ -466,7 +461,7 @@ const QUERY_BUILDER_SITES: &[DynamicSite] = &[
     },
     DynamicSite {
         source: "crates/domain/src/admin/users.rs",
-        count: 19,
+        count: 18,
         coverage: "admin user filter/bulk interaction parity",
     },
     DynamicSite {

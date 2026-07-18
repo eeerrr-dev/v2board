@@ -83,10 +83,6 @@ fn neutralize_spreadsheet_formula(value: &str) -> String {
     }
 }
 
-pub(in super::super) fn normalize_admin_path(path: &str) -> String {
-    path.trim_matches('/').to_string()
-}
-
 pub(in super::super) async fn fetch_json_list(
     db: &DbPool,
     sql: &str,
@@ -109,52 +105,6 @@ pub(in super::super) async fn fetch_json_list_bind(
     Ok(json_rows(rows))
 }
 
-pub(in super::super) async fn fetch_json_list_page(
-    db: &DbPool,
-    sql: &str,
-    limit: i64,
-    offset: i64,
-) -> Result<Vec<Value>, ApiError> {
-    let rows = sqlx::query_scalar::<_, Json<Value>>(AssertSqlSafe(sql))
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(db)
-        .await?;
-    Ok(json_rows(rows))
-}
-
-pub(in super::super) async fn fetch_json_list_page_bind(
-    db: &DbPool,
-    sql: &str,
-    bind: i64,
-    limit: i64,
-    offset: i64,
-) -> Result<Vec<Value>, ApiError> {
-    let rows = sqlx::query_scalar::<_, Json<Value>>(AssertSqlSafe(sql))
-        .bind(bind)
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(db)
-        .await?;
-    Ok(json_rows(rows))
-}
-
-pub(in super::super) async fn fetch_json_list_page_bind_text(
-    db: &DbPool,
-    sql: &str,
-    bind: &str,
-    limit: i64,
-    offset: i64,
-) -> Result<Vec<Value>, ApiError> {
-    let rows = sqlx::query_scalar::<_, Json<Value>>(AssertSqlSafe(sql))
-        .bind(bind)
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(db)
-        .await?;
-    Ok(json_rows(rows))
-}
-
 pub(in super::super) async fn fetch_json_one(
     db: &DbPool,
     sql: &str,
@@ -172,124 +122,6 @@ pub(in super::super) async fn fetch_json_one(
 
 pub(in super::super) fn json_rows(rows: Vec<Json<Value>>) -> Vec<Value> {
     rows.into_iter().map(|row| row.0).collect()
-}
-
-pub(in super::super) fn required_string(
-    params: &HashMap<String, String>,
-    key: &str,
-) -> Result<String, ApiError> {
-    params
-        .get(key)
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| ApiError::business(format!("{key} cannot be empty")))
-}
-
-pub(in super::super) fn optional_i64(params: &HashMap<String, String>, key: &str) -> Option<i64> {
-    params
-        .get(key)
-        .map(String::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case("null"))
-        .and_then(|value| value.parse::<i64>().ok())
-}
-
-pub(in super::super) fn required_i64(
-    params: &HashMap<String, String>,
-    key: &str,
-) -> Result<i64, ApiError> {
-    optional_i64(params, key).ok_or_else(|| ApiError::business(format!("{key} cannot be empty")))
-}
-
-pub(in super::super) struct Pagination {
-    pub limit: i64,
-    pub offset: i64,
-}
-
-const MAX_PAGE_SIZE: i64 = 100;
-
-pub(in super::super) fn page(params: &HashMap<String, String>) -> Result<Pagination, ApiError> {
-    let current = parse_page_value(params.get("current"), "current", 1)?;
-    let page_size = parse_page_value(
-        params.get("pageSize").or_else(|| params.get("page_size")),
-        "page_size",
-        10,
-    )?;
-    if page_size > MAX_PAGE_SIZE {
-        return Err(ApiError::validation_field(
-            "page_size",
-            "Page size must not exceed 100",
-        ));
-    }
-    let offset = current
-        .checked_sub(1)
-        .and_then(|page| page.checked_mul(page_size))
-        .ok_or_else(|| ApiError::validation_field("current", "Page offset is too large"))?;
-    Ok(Pagination {
-        limit: page_size,
-        offset,
-    })
-}
-
-fn parse_page_value(raw: Option<&String>, field: &str, default: i64) -> Result<i64, ApiError> {
-    let Some(raw) = raw else {
-        return Ok(default);
-    };
-    let value = raw
-        .trim()
-        .parse::<i64>()
-        .map_err(|_| ApiError::validation_field(field, "Pagination value must be an integer"))?;
-    if value < 1 {
-        return Err(ApiError::validation_field(
-            field,
-            "Pagination value must be greater than zero",
-        ));
-    }
-    Ok(value)
-}
-
-pub(in super::super) fn json_array_param(
-    params: &HashMap<String, String>,
-    key: &str,
-) -> Vec<Value> {
-    let mut values = BTreeMap::<usize, Value>::new();
-    for (raw_key, raw_value) in params {
-        if let Some(index) = bracket_index(raw_key, key) {
-            values.insert(index, json_scalar(raw_value));
-        }
-    }
-    values.into_values().collect()
-}
-
-pub(in super::super) fn bracket_index(raw_key: &str, key: &str) -> Option<usize> {
-    raw_key
-        .strip_prefix(&format!("{key}["))
-        .and_then(|value| value.strip_suffix(']'))
-        .and_then(|value| value.parse::<usize>().ok())
-}
-
-pub(in super::super) fn json_scalar(value: &str) -> Value {
-    if value.eq_ignore_ascii_case("null") {
-        Value::Null
-    } else if value == "true" {
-        Value::Bool(true)
-    } else if value == "false" {
-        Value::Bool(false)
-    } else if let Ok(value) = value.parse::<i64>() {
-        json!(value)
-    } else if let Ok(value) = value.parse::<f64>()
-        && value.is_finite()
-    {
-        serde_json::Number::from_f64(value)
-            .map(Value::Number)
-            .unwrap_or_else(|| Value::String(value.to_string()))
-    } else {
-        json!(value)
-    }
-}
-
-pub(in super::super) fn json_string(value: &Value) -> String {
-    serde_json::to_string(value).expect("serde_json::Value is always serializable")
 }
 
 pub(in super::super) fn random_payment_uuid() -> String {
@@ -324,13 +156,5 @@ pub(in super::super) fn ensure_safe_table(table: &str) -> Result<(), ApiError> {
         Ok(())
     } else {
         Err(ApiError::business("Invalid table"))
-    }
-}
-
-pub(in super::super) fn ensure_toggle_column(column: &str) -> Result<(), ApiError> {
-    if matches!(column, "show" | "enable") {
-        Ok(())
-    } else {
-        Err(ApiError::business("Invalid column"))
     }
 }

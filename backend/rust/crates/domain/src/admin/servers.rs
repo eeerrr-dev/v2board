@@ -1230,7 +1230,6 @@ impl AdminService {
     pub async fn server_route_delete(&self, id: i64) -> Result<(), ApiError> {
         self.delete_by_id("server_route", id, Problem::new(Code::RouteNotFound).into())
             .await
-            .map(|_| ())
     }
 }
 

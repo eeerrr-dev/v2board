@@ -63,7 +63,7 @@ pub use content::{
 pub use servers::{RouteCreate, RoutePatch, ServerBody, ServerGroupBody};
 pub use users::{
     AdminSetInviterBody, AdminUserFilterBody, AdminUserGenerate, AdminUserMailBody, AdminUserPatch,
-    UserGenerateOutcome,
+    StaffUserPatch, UserGenerateOutcome,
 };
 
 const GIB: i64 = 1_073_741_824;
@@ -74,9 +74,12 @@ fn mail_outbox_api_error(error: MailOutboxError) -> ApiError {
         MailOutboxError::IdempotencyConflict => {
             ApiError::bad_request("Mail idempotency key was reused with a different payload")
         }
-        MailOutboxError::InvalidSender => ApiError::legacy("Email sender is invalid"),
-        MailOutboxError::InvalidRecipient => ApiError::legacy("Email recipient is invalid"),
-        MailOutboxError::InvalidContent => ApiError::legacy("Email content is invalid"),
+        // W14 teardown: these mail-envelope failures are operator
+        // misconfiguration on internal routes — 500 `internal_error`
+        // problems, no longer minted through the legacy constructor.
+        MailOutboxError::InvalidSender => ApiError::internal("Email sender is invalid"),
+        MailOutboxError::InvalidRecipient => ApiError::internal("Email recipient is invalid"),
+        MailOutboxError::InvalidContent => ApiError::internal("Email content is invalid"),
         MailOutboxError::BatchLost => ApiError::internal("mail outbox batch envelope was lost"),
     }
 }
@@ -106,12 +109,6 @@ pub struct AdminService {
     smtp: SmtpTransportCache,
 }
 
-pub enum AdminOutput {
-    Data(Value),
-    Page { data: Vec<Value>, total: i64 },
-    Csv { filename: String, body: String },
-}
-
 impl AdminService {
     pub fn new(
         db: DbPool,
@@ -136,81 +133,6 @@ impl AdminService {
 
     pub(super) fn redis_key(&self, logical_key: &str) -> String {
         self.redis_keys.key(logical_key)
-    }
-
-    pub async fn get(
-        &self,
-        path: &str,
-        params: HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        let path = normalize_admin_path(path);
-        match path.as_str() {
-            "ticket/fetch" => self.ticket_fetch(&params, false).await,
-            "stat/getStat" | "stat/getOverride" => self.stat_summary().await,
-            "stat/getServerLastRank" => self.server_rank(false).await,
-            "stat/getServerTodayRank" => self.server_rank(true).await,
-            "stat/getUserLastRank" => self.user_rank(false).await,
-            "stat/getUserTodayRank" => self.user_rank(true).await,
-            "stat/getOrder" => self.order_stat().await,
-            "stat/getStatUser" => self.stat_user(&params).await,
-            "stat/getRanking" => self.stat_summary().await,
-            "stat/getStatRecord" => self.stat_record(&params).await,
-            _ => Err(ApiError::not_found("Admin endpoint does not exist")),
-        }
-    }
-
-    pub async fn post(
-        &self,
-        path: &str,
-        params: HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        let path = normalize_admin_path(path);
-        match path.as_str() {
-            "ticket/reply" => self.ticket_reply(&params).await,
-            "ticket/close" => self.ticket_close(required_i64(&params, "id")?).await,
-            _ => Err(ApiError::not_found("Admin endpoint does not exist")),
-        }
-    }
-
-    pub async fn staff_get(
-        &self,
-        path: &str,
-        params: HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        let path = normalize_admin_path(path);
-        match path.as_str() {
-            "ticket/fetch" => self.ticket_fetch(&params, true).await,
-            "user/getUserInfoById" => self.staff_user_detail(required_i64(&params, "id")?).await,
-            "plan/fetch" => self.plan_fetch().await,
-            "notice/fetch" => self.notice_fetch().await,
-            _ => Err(ApiError::not_found("Staff endpoint does not exist")),
-        }
-    }
-
-    pub async fn staff_post(
-        &self,
-        path: &str,
-        params: HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        let path = normalize_admin_path(path);
-        match path.as_str() {
-            "ticket/reply" => self.ticket_reply(&params).await,
-            "ticket/close" => self.ticket_close(required_i64(&params, "id")?).await,
-            "user/update" => self.staff_user_update(&params).await,
-            "user/sendMail" => self.staff_send_mail_to_users(&params).await,
-            "user/ban" => self.staff_user_bulk_ban(&params).await,
-            "notice/save" => self.notice_save(&params).await,
-            "notice/update" => self.notice_update(&params).await,
-            "notice/drop" => {
-                self.delete_by_id(
-                    "notice",
-                    required_i64(&params, "id")?,
-                    ApiError::business("公告不存在"),
-                )
-                .await
-            }
-            _ => Err(ApiError::not_found("Staff endpoint does not exist")),
-        }
     }
 }
 

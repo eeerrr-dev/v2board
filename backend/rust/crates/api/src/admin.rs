@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use axum::{
     Json, Router,
@@ -12,7 +12,7 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use tower::ServiceExt as _;
 use uuid::Uuid;
-use v2board_compat::{ApiError, Page, Pagination, Problem, legacy_data, legacy_page, page};
+use v2board_compat::{ApiError, Code, Page, Pagination, Problem, page};
 use v2board_domain::{
     admin::{
         AdminCouponItem, AdminGiftcardItem, AdminKnowledgeDetail, AdminKnowledgeSummary,
@@ -22,7 +22,7 @@ use v2board_domain::{
         KnowledgeCreate, KnowledgePatch, KnowledgeSortRequest, NoticeCreate, NoticePatch,
         OrderAssign, OrderPatch, PaymentCreate, PaymentPatch, PlanCreate, PlanPatch,
         ReconciliationResolveRequest, RouteCreate, RoutePatch, ServerBody, ServerGroupBody,
-        SortIdsRequest, UserGenerateOutcome,
+        SortIdsRequest, StaffUserPatch, UserGenerateOutcome,
     },
     auth::AuthUser,
     payment_provider::payment_provider_codes,
@@ -32,7 +32,6 @@ use crate::{
     auth::{require_admin, require_privileged_step_up, require_staff},
     dialect::{DialectJson, problem_from},
     locale::request_locale,
-    request_params::{admin_request_params, parse_urlencoded_params},
     route_paths::matches_current_admin_api,
     runtime::AppState,
 };
@@ -44,12 +43,21 @@ const SYSTEM_LOGS_DEFAULT_PER_PAGE: i64 = 10;
 /// default, 10 unless noted).
 const CONTENT_LIST_DEFAULT_PER_PAGE: i64 = 10;
 
+/// §8 default for `GET tickets` on both prefixes, pinned by W14 per §15
+/// (the legacy admin list default, 10).
+const TICKET_LIST_DEFAULT_PER_PAGE: i64 = 10;
+
+/// §8 default for `GET stats/user-traffic` (the legacy `getStatUser`
+/// pageSize floor, 10).
+const STAT_USER_TRAFFIC_DEFAULT_PER_PAGE: i64 = 10;
+
 /// Re-dispatch target for every request under the live admin prefix
 /// (docs/api-dialect.md §6 preamble): `dynamic_fallback` strips the
 /// per-request `/api/v1/{secure_path}/` prefix and forwards **all** methods
 /// here, so a runtime `secure_path` save keeps working without a restart.
 /// The request URI is rewritten to the admin-relative path and pushed
-/// through the nested method-aware router.
+/// through the nested method-aware router; unmatched paths get the router's
+/// problem+json 404 fallback.
 pub(crate) async fn dispatch_admin(
     state: &AppState,
     request_path: &str,
@@ -77,10 +85,9 @@ pub(crate) async fn dispatch_admin(
 }
 
 /// The modern admin resources as a nested, method-aware router relative to
-/// the live prefix (docs/api-dialect.md §6.1 — the W9 config & system
-/// family — plus §6.3 — the W10 content CRUD family). Later waves add their
-/// resources here. Unmatched paths fall back to the legacy GET/POST string
-/// dispatch until their family's wave lands.
+/// the live prefix (docs/api-dialect.md §6). Since W14 every admin family is
+/// modern: unmatched paths get the problem+json 404 (§10.2 rule 1) — the
+/// legacy GET/POST string dispatch is deleted.
 fn admin_router(state: AppState) -> Router {
     Router::new()
         .route("/config", get(config_view).patch(config_patch))
@@ -132,6 +139,16 @@ fn admin_router(state: AppState) -> Router {
         )
         .route("/users/{id}/set-inviter", post(user_set_inviter))
         .route("/users/{id}/reset-secret", post(user_reset_secret))
+        .route("/tickets", get(tickets_list))
+        .route("/tickets/{id}", get(ticket_detail))
+        .route("/tickets/{id}/replies", post(ticket_reply))
+        .route("/tickets/{id}/close", post(ticket_close))
+        .route("/stats/summary", get(stats_summary))
+        .route("/stats/server-rank", get(stats_server_rank))
+        .route("/stats/user-rank", get(stats_user_rank))
+        .route("/stats/orders", get(stats_orders))
+        .route("/stats/user-traffic", get(stats_user_traffic))
+        .route("/stats/records", get(stats_records))
         .route("/orders", get(orders_list).post(order_assign))
         .route("/orders/{trade_no}", get(order_detail).patch(order_patch))
         .route("/orders/{trade_no}/mark-paid", post(order_mark_paid))
@@ -167,11 +184,17 @@ fn admin_router(state: AppState) -> Router {
         .route("/servers/{type}/{id}/copy", post(server_copy))
         // §6 preamble: admin auth and the blanket mutation step-up gate are
         // structural — shared middleware over every modern route, so a new
-        // route cannot silently ship ungated. The legacy fallback below keeps
-        // its own equivalent gates.
+        // route cannot silently ship ungated.
         .route_layer(middleware::from_fn_with_state(state.clone(), admin_guard))
-        .fallback(legacy_admin_dispatch)
+        .fallback(endpoint_not_found)
         .with_state(state)
+}
+
+/// §10.2 rule 1: unmatched paths under the live admin prefix (and the staff
+/// prefix) are problem+json 404 `endpoint_not_found` — route resolution
+/// precedes auth, exactly like the top-level API fallback.
+async fn endpoint_not_found(headers: HeaderMap) -> Problem {
+    Problem::localized(Code::EndpointNotFound, request_locale(&headers))
 }
 
 /// Structural admin gate for the modern routes: session auth for every
@@ -194,60 +217,6 @@ async fn admin_guard(State(state): State<AppState>, mut request: Request, next: 
     }
     request.extensions_mut().insert(admin);
     next.run(request).await
-}
-
-/// Legacy-dialect admin families (W10–W14) keep dispatching by path string:
-/// GET/POST only, with the blanket POST step-up and the sensitive-GET gate
-/// preserved. Methods without a route here stay inside the legacy admin 404
-/// shape (§10.2 rule 4 applies only after this dispatch declines the path).
-async fn legacy_admin_dispatch(
-    State(state): State<AppState>,
-    request: Request,
-) -> Result<Response, ApiError> {
-    let admin_path = request.uri().path().trim_start_matches('/').to_string();
-    match *request.method() {
-        Method::GET | Method::HEAD => {
-            let params = request
-                .uri()
-                .query()
-                .map(parse_urlencoded_params)
-                .transpose()?
-                .unwrap_or_default();
-            let headers = request.headers().clone();
-            legacy_admin_get(&state, &admin_path, params, &headers).await
-        }
-        Method::POST => legacy_admin_post(&state, &admin_path, request).await,
-        _ => Err(ApiError::not_found("Admin endpoint does not exist")),
-    }
-}
-
-async fn legacy_admin_get(
-    state: &AppState,
-    admin_path: &str,
-    params: HashMap<String, String>,
-    headers: &HeaderMap,
-) -> Result<Response, ApiError> {
-    let _admin = require_admin(state, headers).await?;
-    // No legacy GET is step-up sensitive anymore: the node-credential read
-    // moved to the modern `GET nodes`, which keeps its step-up gate in its
-    // own handler (like `GET payment-reconciliations`); configuration reads
-    // are redacted by the domain layer.
-    let service = state.admin_service(state.config_snapshot());
-    admin_response(service.get(admin_path, params).await?)
-}
-
-async fn legacy_admin_post(
-    state: &AppState,
-    admin_path: &str,
-    request: Request,
-) -> Result<Response, ApiError> {
-    let headers = request.headers().clone();
-    let mut params = admin_request_params(request).await?;
-    let admin = require_admin(state, &headers).await?;
-    require_privileged_step_up(state, &headers, &admin).await?;
-    params.insert("_admin_email".to_string(), admin.email);
-    let service = state.admin_service(state.config_snapshot());
-    admin_response(service.post(admin_path, params).await?)
 }
 
 #[derive(Deserialize)]
@@ -1152,6 +1121,258 @@ async fn users_mail(
 }
 
 #[derive(Deserialize)]
+struct TicketsListQuery {
+    page: Option<i64>,
+    per_page: Option<i64>,
+    status: Option<i64>,
+    email: Option<String>,
+}
+
+/// The §6.5 repeatable `reply_status` query key (a real array — the legacy
+/// JSON-stringified array param died with the wave). `Query<T>` cannot
+/// collect repeated keys into a `Vec`, so the raw pairs are scanned.
+fn reply_statuses_from(pairs: &[(String, String)]) -> Result<Vec<i64>, Problem> {
+    pairs
+        .iter()
+        .filter(|(key, _)| key == "reply_status")
+        .map(|(_, value)| {
+            value.parse::<i64>().map_err(|_| {
+                Problem::new(Code::ValidationFailed).with_detail("reply_status must be an integer")
+            })
+        })
+        .collect()
+}
+
+/// GET `tickets` (§6.5): §8 pagination, `?status=&reply_status=&email=`.
+/// Email scoping keeps the legacy `if ($user)` outcome (unknown email → no
+/// scope); ordered by `updated_at`, unchanged.
+async fn tickets_list(
+    State(state): State<AppState>,
+    Query(query): Query<TicketsListQuery>,
+    Query(pairs): Query<Vec<(String, String)>>,
+    headers: HeaderMap,
+) -> Result<Json<Page<Value>>, Problem> {
+    tickets_list_response(state, query, pairs, headers, false).await
+}
+
+async fn tickets_list_response(
+    state: AppState,
+    query: TicketsListQuery,
+    pairs: Vec<(String, String)>,
+    headers: HeaderMap,
+    staff: bool,
+) -> Result<Json<Page<Value>>, Problem> {
+    let locale = request_locale(&headers);
+    let pagination = Pagination::resolve(query.page, query.per_page, TICKET_LIST_DEFAULT_PER_PAGE)?;
+    let reply_statuses = reply_statuses_from(&pairs)?;
+    // The legacy guard was falsy (`if ($request->input('email'))`): an empty
+    // string means "no email filter", not "match the empty email".
+    let email = query.email.as_deref().filter(|value| !value.is_empty());
+    let (items, total) = state
+        .admin_service(state.config_snapshot())
+        .tickets_list(pagination, query.status, &reply_statuses, email, staff)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(page(items, total))
+}
+
+/// GET `tickets/{id}` (§6.5): bare ticket with the `message[]` thread,
+/// `is_me` semantics unchanged.
+async fn ticket_detail(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .ticket_detail(id)
+        .await
+        .map(Json)
+        .map_err(|error| problem_from(error, locale))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TicketReplyBody {
+    message: String,
+}
+
+/// POST `tickets/{id}/replies` (§6.5): json `{message}`; empty 204. Serves
+/// both prefixes — the guard's `AuthUser` extension names the acting
+/// operator.
+async fn ticket_reply(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Extension(operator): Extension<AuthUser>,
+    headers: HeaderMap,
+    DialectJson(body): DialectJson<TicketReplyBody>,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .ticket_reply(id, &body.message, &operator.email)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// POST `tickets/{id}/close` (§6.5): no body; empty 204.
+async fn ticket_close(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .ticket_close(id)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// GET `stats/summary` (§6.8): bare object — the three legacy aliases
+/// collapsed into one route; money fields are integer cents.
+async fn stats_summary(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .stats_summary()
+        .await
+        .map(Json)
+        .map_err(|error| problem_from(error, locale))
+}
+
+#[derive(Deserialize)]
+struct StatsWindowQuery {
+    window: Option<String>,
+}
+
+/// §6.8 `?window=today|previous`: the two legacy today/last routes collapse
+/// into one; the selector is required and closed.
+fn stats_window_today(query: &StatsWindowQuery) -> Result<bool, Problem> {
+    match query.window.as_deref() {
+        Some("today") => Ok(true),
+        Some("previous") => Ok(false),
+        _ => {
+            Err(Problem::new(Code::ValidationFailed)
+                .with_detail("window must be today or previous"))
+        }
+    }
+}
+
+/// GET `stats/server-rank` `?window=today|previous` (§6.8): bare array.
+async fn stats_server_rank(
+    State(state): State<AppState>,
+    Query(query): Query<StatsWindowQuery>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<Value>>, Problem> {
+    let locale = request_locale(&headers);
+    let today = stats_window_today(&query)?;
+    state
+        .admin_service(state.config_snapshot())
+        .stats_server_rank(today)
+        .await
+        .map(Json)
+        .map_err(|error| problem_from(error, locale))
+}
+
+/// GET `stats/user-rank` `?window=today|previous` (§6.8): bare array.
+async fn stats_user_rank(
+    State(state): State<AppState>,
+    Query(query): Query<StatsWindowQuery>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<Value>>, Problem> {
+    let locale = request_locale(&headers);
+    let today = stats_window_today(&query)?;
+    state
+        .admin_service(state.config_snapshot())
+        .stats_user_rank(today)
+        .await
+        .map(Json)
+        .map_err(|error| problem_from(error, locale))
+}
+
+/// GET `stats/orders` (§6.8): bare array of `{series, date, value}` rows
+/// with the snake_case series slugs and integer-cent money.
+async fn stats_orders(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<Value>>, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .stats_orders()
+        .await
+        .map(Json)
+        .map_err(|error| problem_from(error, locale))
+}
+
+#[derive(Deserialize)]
+struct StatsUserTrafficQuery {
+    user_id: Option<i64>,
+    page: Option<i64>,
+    per_page: Option<i64>,
+}
+
+/// GET `stats/user-traffic` `?user_id=&page=&per_page=` (§6.8): §8 page;
+/// `server_rate` crosses as a number.
+async fn stats_user_traffic(
+    State(state): State<AppState>,
+    Query(query): Query<StatsUserTrafficQuery>,
+    headers: HeaderMap,
+) -> Result<Json<Page<Value>>, Problem> {
+    let locale = request_locale(&headers);
+    let user_id = query
+        .user_id
+        .ok_or_else(|| Problem::new(Code::ValidationFailed).with_detail("user_id is required"))?;
+    let pagination = Pagination::resolve(
+        query.page,
+        query.per_page,
+        STAT_USER_TRAFFIC_DEFAULT_PER_PAGE,
+    )?;
+    let (items, total) = state
+        .admin_service(state.config_snapshot())
+        .stats_user_traffic(user_id, pagination)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(page(items, total))
+}
+
+#[derive(Deserialize)]
+struct StatsRecordsQuery {
+    #[serde(rename = "type")]
+    record_type: Option<String>,
+}
+
+/// GET `stats/records` `?type=` (§6.8): bare `{series, date, value}` array
+/// over the `d`/`m` stat buckets (`d` when omitted, the legacy default).
+async fn stats_records(
+    State(state): State<AppState>,
+    Query(query): Query<StatsRecordsQuery>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<Value>>, Problem> {
+    let locale = request_locale(&headers);
+    let record_type = match query.record_type.as_deref() {
+        None | Some("d") => "d",
+        Some("m") => "m",
+        Some(_) => {
+            return Err(Problem::new(Code::ValidationFailed).with_detail("type must be d or m"));
+        }
+    };
+    state
+        .admin_service(state.config_snapshot())
+        .stats_records(record_type)
+        .await
+        .map(Json)
+        .map_err(|error| problem_from(error, locale))
+}
+
+#[derive(Deserialize)]
 struct OrdersListQuery {
     page: Option<i64>,
     per_page: Option<i64>,
@@ -1556,41 +1777,129 @@ async fn server_copy(
     Ok((StatusCode::CREATED, Json(json!({ "id": id }))))
 }
 
-pub(crate) async fn staff_get(
-    State(state): State<AppState>,
-    axum::extract::Path(staff_path): axum::extract::Path<String>,
-    Query(params): Query<HashMap<String, String>>,
-    headers: HeaderMap,
-) -> Result<Response, ApiError> {
-    if !staff_path_allowed(&staff_path, Method::GET) {
-        return Err(ApiError::not_found("Staff endpoint does not exist"));
-    }
-    let _staff = require_staff(&state, &headers).await?;
-    let service = state.admin_service(state.config_snapshot());
-    admin_response(service.staff_get(&staff_path, params).await?)
+/// The §6.9 staff namespace: `/api/v1/staff/…` keeps its fixed prefix and
+/// allow-list, with paths mirroring the admin resources. Shared handlers
+/// (tickets, plans, notices) are mounted directly; the user routes get
+/// staff-scoped handlers over the staff domain methods. Unmatched paths are
+/// the same problem+json 404 as the admin prefix.
+pub(crate) fn staff_router(state: AppState) -> Router {
+    Router::new()
+        .route("/tickets", get(staff_tickets_list))
+        .route("/tickets/{id}", get(ticket_detail))
+        .route("/tickets/{id}/replies", post(ticket_reply))
+        .route("/tickets/{id}/close", post(ticket_close))
+        .route("/users/mail", post(staff_users_mail))
+        .route("/users/ban", post(staff_users_ban))
+        .route(
+            "/users/{id}",
+            get(staff_user_detail).patch(staff_user_patch),
+        )
+        .route("/plans", get(plans_list))
+        .route("/notices", get(notices_list).post(notice_create))
+        .route("/notices/{id}", patch(notice_patch).delete(notice_delete))
+        // §6.9 keeps the §6 structural gates: staff session auth on every
+        // method plus the blanket step-up requirement on mutations. Never a
+        // session teardown: permission and step-up failures stay 403s.
+        .route_layer(middleware::from_fn_with_state(state.clone(), staff_guard))
+        .fallback(endpoint_not_found)
+        .with_state(state)
 }
 
-pub(crate) async fn staff_post(
+/// Structural staff gate mirroring [`admin_guard`]: `is_staff` (or admin)
+/// session auth for every method, step-up on non-GET/HEAD, and the acting
+/// `AuthUser` inserted for operator-attributed handlers.
+async fn staff_guard(State(state): State<AppState>, mut request: Request, next: Next) -> Response {
+    let locale = request_locale(request.headers());
+    let staff = match require_staff(&state, request.headers()).await {
+        Ok(staff) => staff,
+        Err(error) => return problem_from(error, locale).into_response(),
+    };
+    if !matches!(*request.method(), Method::GET | Method::HEAD)
+        && let Err(error) = require_privileged_step_up(&state, request.headers(), &staff).await
+    {
+        return problem_from(error, locale).into_response();
+    }
+    request.extensions_mut().insert(staff);
+    next.run(request).await
+}
+
+/// Staff GET `tickets` (§6.9): the admin list with the staff scope — the
+/// narrower legacy filters (no `reply_status`/`email`) and `created_at`
+/// ordering are applied by the domain layer.
+async fn staff_tickets_list(
     State(state): State<AppState>,
-    axum::extract::Path(staff_path): axum::extract::Path<String>,
-    request: Request,
-) -> Result<Response, ApiError> {
-    if !staff_path_allowed(&staff_path, Method::POST) {
-        return Err(ApiError::not_found("Staff endpoint does not exist"));
-    }
-    let headers = request.headers().clone();
-    let mut params = admin_request_params(request).await?;
-    let staff = require_staff(&state, &headers).await?;
-    require_privileged_step_up(&state, &headers, &staff).await?;
-    params.insert("_admin_email".to_string(), staff.email);
-    if staff_path.trim_matches('/') == "user/sendMail" {
-        params.insert(
-            "_idempotency_key".to_string(),
-            mail_idempotency_key(&headers)?,
-        );
-    }
-    let service = state.admin_service(state.config_snapshot());
-    admin_response(service.staff_post(&staff_path, params).await?)
+    Query(query): Query<TicketsListQuery>,
+    Query(pairs): Query<Vec<(String, String)>>,
+    headers: HeaderMap,
+) -> Result<Json<Page<Value>>, Problem> {
+    tickets_list_response(state, query, pairs, headers, true).await
+}
+
+/// Staff GET `users/{id}` (§6.9): the staff-redacted W12 v2 projection.
+async fn staff_user_detail(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .staff_user_detail(id)
+        .await
+        .map(Json)
+        .map_err(|error| problem_from(error, locale))
+}
+
+/// Staff PATCH `users/{id}` (§6.9): §4.4 partial update over the unchanged
+/// staff field allow-list; empty 204.
+async fn staff_user_patch(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+    DialectJson(body): DialectJson<StaffUserPatch>,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .staff_user_update(id, &body)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Staff POST `users/mail` (§6.9): the admin body with the unchanged
+/// `Idempotency-Key` contract, staff-scoped recipients; empty 204.
+async fn staff_users_mail(
+    State(state): State<AppState>,
+    Extension(staff): Extension<AuthUser>,
+    headers: HeaderMap,
+    DialectJson(body): DialectJson<AdminUserMailBody>,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    let idempotency_key =
+        mail_idempotency_key(&headers).map_err(|error| problem_from(error, locale))?;
+    state
+        .admin_service(state.config_snapshot())
+        .staff_users_mail(&body, &staff.email, &idempotency_key)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Staff POST `users/ban` (§6.9): the `{filter?}` DSL body, staff-scoped;
+/// empty 204.
+async fn staff_users_ban(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    DialectJson(body): DialectJson<AdminUserFilterBody>,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .staff_users_ban(&body.filter.unwrap_or_default())
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 fn mail_idempotency_key(headers: &HeaderMap) -> Result<String, ApiError> {
@@ -1610,30 +1919,8 @@ fn mail_idempotency_key(headers: &HeaderMap) -> Result<String, ApiError> {
     Ok(key.map_or_else(|| Uuid::new_v4().to_string(), str::to_owned))
 }
 
-fn staff_path_allowed(path: &str, method: Method) -> bool {
-    let path = path.trim_matches('/');
-    match method {
-        Method::GET => matches!(
-            path,
-            "ticket/fetch" | "user/getUserInfoById" | "plan/fetch" | "notice/fetch"
-        ),
-        Method::POST => matches!(
-            path,
-            "ticket/reply"
-                | "ticket/close"
-                | "user/update"
-                | "user/sendMail"
-                | "user/ban"
-                | "notice/save"
-                | "notice/update"
-                | "notice/drop"
-        ),
-        _ => false,
-    }
-}
-
-/// CSV download response shared by the legacy dispatch and the modern §6.3
-/// bulk generates: `text/csv` + attachment disposition, body bytes untouched.
+/// CSV download response for the modern bulk generates and exports:
+/// `text/csv` + attachment disposition, body bytes untouched.
 fn csv_attachment(filename: &str, body: String) -> Result<Response, ApiError> {
     let mut response = body.into_response();
     response.headers_mut().insert(
@@ -1646,20 +1933,6 @@ fn csv_attachment(filename: &str, body: String) -> Result<Response, ApiError> {
             .map_err(|_| ApiError::internal("invalid csv filename"))?,
     );
     Ok(response)
-}
-
-pub(crate) fn admin_response(
-    output: v2board_domain::admin::AdminOutput,
-) -> Result<Response, ApiError> {
-    match output {
-        v2board_domain::admin::AdminOutput::Data(data) => Ok(legacy_data(data).into_response()),
-        v2board_domain::admin::AdminOutput::Page { data, total } => {
-            Ok(legacy_page(data, total).into_response())
-        }
-        v2board_domain::admin::AdminOutput::Csv { filename, body } => {
-            csv_attachment(&filename, body)
-        }
-    }
 }
 
 #[cfg(test)]

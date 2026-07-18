@@ -53,9 +53,9 @@ pub(crate) async fn dynamic_fallback(
     let admin_prefix = format!("/api/v1/{}/", config.admin_path());
     if let Some(admin_path) = path.strip_prefix(&admin_prefix) {
         // §6 preamble: all methods re-dispatch into the nested method-aware
-        // admin router; unmatched paths fall back to the legacy GET/POST
-        // string dispatch inside, and other unmatched methods keep the
-        // legacy admin 404 shape.
+        // admin router; unmatched paths get its problem+json 404
+        // `endpoint_not_found` fallback (§10.2 rule 1) — the legacy string
+        // dispatch died with W14.
         let admin_path = admin_path.to_string();
         return dispatch_admin(&state, &path, &admin_path, request).await;
     }
@@ -337,17 +337,16 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
 
-        // Methods without a modern or legacy admin route stay inside the
-        // legacy admin 404 instead of leaking into HTML or the modern
-        // problem shape (§10.2 rule 4 applies only after the admin dispatch
-        // declines the path).
+        // Paths without a modern admin route get the problem+json 404 from
+        // the admin router's fallback (§10.2 rule 1) — since W14 there is no
+        // legacy string dispatch left under the prefix.
         let response = app
             .clone()
             .oneshot(request(Method::DELETE, "/api/v1/live-admin22/plan/1"))
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
-        assert!(body_string(response).await.contains("\"message\""));
+        assert!(body_string(response).await.contains("endpoint_not_found"));
 
         // The HTML admin root follows the live prefix too; the stale root
         // becomes an ordinary user-SPA path.

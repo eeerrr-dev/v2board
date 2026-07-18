@@ -71,39 +71,6 @@ fn raw_json_payment_notify(method: &str) -> bool {
     )
 }
 
-pub(crate) async fn admin_request_params(
-    request: Request,
-) -> Result<HashMap<String, String>, ApiError> {
-    let mut params = HashMap::new();
-    if let Some(query) = request.uri().query().filter(|query| !query.is_empty()) {
-        params.extend(parse_urlencoded_params(query)?);
-    }
-    let content_type = request
-        .headers()
-        .get(header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .map(str::to_ascii_lowercase)
-        .unwrap_or_default();
-    let body = to_bytes(request.into_body(), 1024 * 1024)
-        .await
-        .map_err(|_| ApiError::bad_request("Invalid admin request body"))?;
-    if body.is_empty() {
-        validate_params(&params, "Invalid admin request body")?;
-        return Ok(params);
-    }
-    if content_type.contains("application/json") || body.first() == Some(&b'{') {
-        let value = serde_json::from_slice::<serde_json::Value>(&body)
-            .map_err(|_| ApiError::bad_request("Invalid admin request body"))?;
-        flatten_admin_json(None, &value, &mut params);
-    } else {
-        let body = std::str::from_utf8(&body)
-            .map_err(|_| ApiError::bad_request("Invalid admin request body"))?;
-        params.extend(parse_urlencoded_params(body)?);
-    }
-    validate_params(&params, "Invalid admin request body")?;
-    Ok(params)
-}
-
 pub(crate) fn flatten_admin_json(
     prefix: Option<String>,
     value: &serde_json::Value,

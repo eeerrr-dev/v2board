@@ -2,9 +2,8 @@ use super::commerce::{
     optional_nonnegative_i32, parse_payment_config, reconciliation_resolution,
     reconciliation_resolved_filter, resolve_redacted_payment_config,
 };
-use super::configuration::{bulk_mail_payload_hash, drop_unchanged_effective_secure_path};
+use super::configuration::drop_unchanged_effective_secure_path;
 use super::content::{TICKET_NOTIFICATION_GATE_RELEASE_SCRIPT, validate_ticket_message_length};
-use super::users::decimal_gib_filter_bytes;
 use super::*;
 use crate::mail::outbox::{mail_message_id, prepared_mail_payload_hash};
 
@@ -95,13 +94,6 @@ fn telegram_webhook_secret_is_stable_scoped_and_header_safe() {
     assert_ne!(first, telegram_webhook_secret("app-key", "456:bot-token"));
     assert_eq!(first.len(), 64);
     assert!(first.bytes().all(|byte| byte.is_ascii_hexdigit()));
-}
-
-fn params(pairs: &[(&str, &str)]) -> HashMap<String, String> {
-    pairs
-        .iter()
-        .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
-        .collect()
 }
 
 fn validation_parts(error: ApiError) -> (String, indexmap::IndexMap<String, Vec<String>>) {
@@ -223,14 +215,6 @@ fn payment_reconciliation_resolution_is_structured_bounded_and_actor_scoped() {
 }
 
 #[test]
-fn traffic_filters_scale_decimal_gib_without_binary_float_drift() {
-    assert_eq!(decimal_gib_filter_bytes("1.5").unwrap(), 1_610_612_736);
-    assert_eq!(decimal_gib_filter_bytes("0.000000001").unwrap(), 1);
-    assert!(decimal_gib_filter_bytes("not-a-number").is_err());
-    assert!(decimal_gib_filter_bytes("1e100").is_err());
-}
-
-#[test]
 fn plan_amount_fields_reject_negative_invalid_and_database_overflow_values() {
     assert_eq!(
         optional_nonnegative_i32("month_price", Some(1999)).unwrap(),
@@ -244,28 +228,11 @@ fn plan_amount_fields_reject_negative_invalid_and_database_overflow_values() {
 }
 
 #[test]
-fn bulk_mail_identity_is_actor_scoped_and_payload_canonical() {
+fn bulk_mail_identity_is_actor_scoped() {
     let first = mail_batch_key("admin:one@example.test", "retry-key");
     assert_eq!(first.len(), 64);
     assert_eq!(first, mail_batch_key("admin:one@example.test", "retry-key"));
     assert_ne!(first, mail_batch_key("staff:one@example.test", "retry-key"));
-
-    let first_params = params(&[
-        ("subject", "Notice"),
-        ("content", "Body"),
-        ("filter[0][key]", "email"),
-        ("_idempotency_key", "first"),
-    ]);
-    let reordered = params(&[
-        ("_idempotency_key", "second"),
-        ("filter[0][key]", "email"),
-        ("content", "Body"),
-        ("subject", "Notice"),
-    ]);
-    assert_eq!(
-        bulk_mail_payload_hash(&first_params),
-        bulk_mail_payload_hash(&reordered)
-    );
 }
 
 #[test]
@@ -483,10 +450,10 @@ fn clearing_email_port_uses_json_null_not_the_legacy_empty_string() {
 fn ticket_reply_notification_is_enqueued_inside_the_reply_transaction() {
     let source = include_str!("content.rs");
     let start = source
-        .find("pub(super) async fn ticket_reply")
+        .find("pub async fn ticket_reply")
         .expect("ticket reply implementation");
     let end = source[start..]
-        .find("pub(super) async fn ticket_close")
+        .find("pub async fn ticket_close")
         .map(|offset| start + offset)
         .expect("ticket close implementation");
     let reply = &source[start..end];

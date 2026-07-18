@@ -23,7 +23,7 @@ use v2board_analytics::{
 use v2board_config::{AppConfig, RedisKeyspace, RuntimeEnvironment};
 use v2board_db::{DbPoolConfig, installation_id, migrations_current};
 use v2board_domain::{
-    admin::{AdminOutput, AdminService, AdminUserMailBody, filter_dsl},
+    admin::{AdminService, AdminUserMailBody, filter_dsl},
     auth::{AuthService, PasswordKdf, RegisterInput, hash_password},
     operator_config,
     order::{OrderService, PaymentNotifyInput},
@@ -1376,65 +1376,11 @@ const ADMIN_USER_ROW_KEYS: &[&str] = &[
     "updated_at",
 ];
 
-/// The still-legacy staff user projection (W14 not yet landed): the shared
-/// `into_value` shape, which keeps the raw `t` column and integer epochs.
-const STAFF_USER_ROW_KEYS: &[&str] = &[
-    "id",
-    "email",
-    "password",
-    "balance",
-    "commission_balance",
-    "transfer_enable",
-    "device_limit",
-    "u",
-    "d",
-    "total_used",
-    "alive_ip",
-    "ips",
-    "plan_id",
-    "plan_name",
-    "group_id",
-    "expired_at",
-    "uuid",
-    "token",
-    "subscribe_url",
-    "banned",
-    "is_admin",
-    "is_staff",
-    "invite_user_id",
-    "discount",
-    "commission_type",
-    "commission_rate",
-    "t",
-    "speed_limit",
-    "auto_renewal",
-    "remind_expire",
-    "remind_traffic",
-    "remarks",
-    "telegram_id",
-    "last_login_at",
-    "created_at",
-    "updated_at",
-];
-
 const ADMIN_USER_TRAFFIC_KEYS: &[&str] = &["record_at", "u", "d", "server_rate"];
 
-const ADMIN_STAT_RECORD_KEYS: &[&str] = &[
-    "id",
-    "record_at",
-    "record_type",
-    "order_count",
-    "order_total",
-    "commission_count",
-    "commission_total",
-    "paid_count",
-    "paid_total",
-    "register_count",
-    "invite_count",
-    "transfer_used_total",
-    "created_at",
-    "updated_at",
-];
+/// The W14 §6.8 series re-spec: `stats/orders` and `stats/records` rows are
+/// `{series, date, value}` with stable snake_case series slugs.
+const ADMIN_STAT_SERIES_KEYS: &[&str] = &["series", "date", "value"];
 
 const ADMIN_SYSTEM_LOG_KEYS: &[&str] = &[
     "id",
@@ -1707,26 +1653,6 @@ fn assert_rfc3339_fields(context: &str, value: &serde_json::Value, fields: &[&st
     Ok(())
 }
 
-fn admin_page_rows(output: AdminOutput, context: &str) -> Result<Vec<serde_json::Value>> {
-    match output {
-        AdminOutput::Page { data, .. } => {
-            ensure!(
-                !data.is_empty(),
-                "{context}: paged response returned no rows"
-            );
-            Ok(data)
-        }
-        _ => bail!("{context}: expected a paged admin response"),
-    }
-}
-
-fn admin_data(output: AdminOutput, context: &str) -> Result<serde_json::Value> {
-    match output {
-        AdminOutput::Data(value) => Ok(value),
-        _ => bail!("{context}: expected a data admin response"),
-    }
-}
-
 /// Pins the exact serialized key set of every reachable admin endpoint whose
 /// rows are produced by a SQL projection, using the real AdminService against
 /// the migrated schema. This is the DB-backed producer-side contract: any
@@ -1789,20 +1715,15 @@ async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) -> Result<()>
         ADMIN_USER_ROW_KEYS,
     )?;
 
-    // The staff surface stays legacy (W14): the raw `into_value` shape with `t`.
-    let staff_detail = admin_data(
-        admin
-            .staff_get(
-                "user/getUserInfoById",
-                HashMap::from([("id".to_string(), user_id.to_string())]),
-            )
-            .await?,
-        "staff user/getUserInfoById",
-    )?;
-    assert_exact_keys(
-        "staff user/getUserInfoById",
+    // Staff GET users/{id} (§6.9, W14): the staff-redacted view now shares
+    // the W12 v2 projection — `t` dropped, RFC 3339 timestamps, and never an
+    // `invite_user` attachment.
+    let staff_detail = admin.staff_user_detail(user_id).await?;
+    assert_exact_keys("staff users/{id}", &staff_detail, ADMIN_USER_ROW_KEYS)?;
+    assert_rfc3339_fields(
+        "staff users/{id}",
         &staff_detail,
-        STAFF_USER_ROW_KEYS,
+        &["expired_at", "last_login_at", "created_at", "updated_at"],
     )?;
 
     // Per-user traffic history.
@@ -1816,16 +1737,26 @@ async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) -> Result<()>
     .bind(now)
     .execute(pool)
     .await?;
-    for row in admin_page_rows(
-        admin
-            .get(
-                "stat/getStatUser",
-                HashMap::from([("user_id".to_string(), user_id.to_string())]),
-            )
-            .await?,
-        "stat/getStatUser",
-    )? {
-        assert_exact_keys("stat/getStatUser", &row, ADMIN_USER_TRAFFIC_KEYS)?;
+    // GET stats/user-traffic (§6.8, W14): §8 page, `server_rate` as a JSON
+    // number, `record_at` RFC 3339.
+    let (traffic_rows, traffic_total) = admin
+        .stats_user_traffic(
+            user_id,
+            v2board_compat::Pagination::resolve(None, None, 10)
+                .map_err(|problem| anyhow::anyhow!("stats/user-traffic pagination: {problem:?}"))?,
+        )
+        .await?;
+    ensure!(
+        traffic_total >= 1 && !traffic_rows.is_empty(),
+        "stats/user-traffic must return the seeded projection row"
+    );
+    for row in &traffic_rows {
+        assert_exact_keys("stats/user-traffic", row, ADMIN_USER_TRAFFIC_KEYS)?;
+        ensure!(
+            row["server_rate"].is_f64(),
+            "stats/user-traffic: server_rate must cross as a JSON number"
+        );
+        assert_rfc3339_fields("stats/user-traffic", row, &["record_at"])?;
     }
 
     // Aggregated stat records.
@@ -1840,11 +1771,27 @@ async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) -> Result<()>
     .bind(now)
     .execute(pool)
     .await?;
-    for row in admin_page_rows(
-        admin.get("stat/getStatRecord", HashMap::new()).await?,
-        "stat/getStatRecord",
-    )? {
-        assert_exact_keys("stat/getStatRecord", &row, ADMIN_STAT_RECORD_KEYS)?;
+    // GET stats/records + stats/orders (§6.8, W14): the series re-spec —
+    // `{series,date,value}` rows, snake_case slugs, integer values.
+    let record_rows = admin.stats_records("d").await?;
+    ensure!(
+        !record_rows.is_empty(),
+        "stats/records must return the seeded stat period"
+    );
+    for row in &record_rows {
+        assert_exact_keys("stats/records", row, ADMIN_STAT_SERIES_KEYS)?;
+        ensure!(
+            row["value"].is_i64(),
+            "stats/records: value must be an integer (cents/counts)"
+        );
+    }
+    let order_rows = admin.stats_orders().await?;
+    ensure!(
+        !order_rows.is_empty(),
+        "stats/orders must return the seeded stat period"
+    );
+    for row in &order_rows {
+        assert_exact_keys("stats/orders", row, ADMIN_STAT_SERIES_KEYS)?;
     }
 
     // System log.
@@ -1924,33 +1871,44 @@ async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) -> Result<()>
     .bind(now)
     .execute(pool)
     .await?;
-    for row in admin_page_rows(
-        admin.get("ticket/fetch", HashMap::new()).await?,
-        "ticket/fetch",
-    )? {
-        assert_exact_keys("ticket/fetch", &row, ADMIN_TICKET_ROW_KEYS)?;
+    // GET tickets (§6.5, W14) on both prefixes: the admin list and the §6.9
+    // staff mirror share the projection (key set unchanged from the legacy
+    // rows; timestamps now RFC 3339).
+    let ticket_pagination = || {
+        v2board_compat::Pagination::resolve(None, None, 10)
+            .map_err(|problem| anyhow::anyhow!("tickets pagination: {problem:?}"))
+    };
+    for (context, staff) in [("tickets", false), ("staff tickets", true)] {
+        let (ticket_rows, ticket_total) = admin
+            .tickets_list(ticket_pagination()?, None, &[], None, staff)
+            .await?;
+        ensure!(
+            ticket_total >= 1 && !ticket_rows.is_empty(),
+            "{context}: list must return the seeded projection row"
+        );
+        for row in &ticket_rows {
+            assert_exact_keys(context, row, ADMIN_TICKET_ROW_KEYS)?;
+            assert_rfc3339_fields(context, row, &["created_at", "updated_at"])?;
+        }
     }
-    let ticket_detail = admin_data(
-        admin
-            .get(
-                "ticket/fetch",
-                HashMap::from([("id".to_string(), ticket_id.to_string())]),
-            )
-            .await?,
-        "ticket/fetch detail",
-    )?;
+    let ticket_detail = admin.ticket_detail(ticket_id).await?;
     let mut ticket_detail_keys = ADMIN_TICKET_ROW_KEYS.to_vec();
     ticket_detail_keys.push("message");
-    assert_exact_keys("ticket/fetch detail", &ticket_detail, &ticket_detail_keys)?;
+    assert_exact_keys("tickets/{id}", &ticket_detail, &ticket_detail_keys)?;
     let ticket_messages = ticket_detail["message"]
         .as_array()
-        .context("ticket/fetch detail: message is not an array")?;
+        .context("tickets/{id}: message is not an array")?;
     ensure!(
         !ticket_messages.is_empty(),
-        "ticket/fetch detail returned no messages"
+        "tickets/{{id}} returned no messages"
     );
     for message in ticket_messages {
-        assert_exact_keys("ticket/fetch message", message, ADMIN_TICKET_MESSAGE_KEYS)?;
+        assert_exact_keys("tickets/{id} message", message, ADMIN_TICKET_MESSAGE_KEYS)?;
+        assert_rfc3339_fields(
+            "tickets/{id} message",
+            message,
+            &["created_at", "updated_at"],
+        )?;
     }
 
     // Coupons and gift cards.

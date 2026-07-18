@@ -17,50 +17,6 @@ pub(in super::super) struct PaymentRow {
     pub(in super::super) updated_at: i64,
 }
 
-#[derive(Debug, FromRow)]
-pub(in super::super) struct NoticeRaw {
-    id: i32,
-    title: String,
-    content: String,
-    img_url: Option<String>,
-    tags: Option<String>,
-    show: i16,
-    created_at: i64,
-    updated_at: i64,
-}
-
-#[derive(Debug, Serialize)]
-pub(in super::super) struct NoticeDto {
-    id: i32,
-    title: String,
-    content: String,
-    img_url: Option<String>,
-    tags: Option<Vec<String>>,
-    show: i16,
-    created_at: i64,
-    updated_at: i64,
-}
-
-impl From<NoticeRaw> for NoticeDto {
-    fn from(row: NoticeRaw) -> Self {
-        let tags = row.tags.and_then(|value| {
-            serde_json::from_str::<Vec<String>>(&value)
-                .ok()
-                .or_else(|| (!value.trim().is_empty()).then_some(vec![value]))
-        });
-        Self {
-            id: row.id,
-            title: row.title,
-            content: row.content,
-            img_url: row.img_url,
-            tags,
-            show: row.show,
-            created_at: row.created_at,
-            updated_at: row.updated_at,
-        }
-    }
-}
-
 pub(in super::super) struct MailSettings {
     pub(in super::super) host: String,
     pub(in super::super) port: Option<u16>,
@@ -75,7 +31,7 @@ impl MailSettings {
         let host = config
             .email_host
             .clone()
-            .ok_or_else(|| ApiError::legacy("Email host is not configured"))?;
+            .ok_or_else(|| ApiError::internal("Email host is not configured"))?;
         Ok(Self {
             host,
             port: config

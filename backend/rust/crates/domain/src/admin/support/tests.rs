@@ -52,20 +52,6 @@ fn normalize_stat_server_type_maps_legacy_v2ray() {
 }
 
 #[test]
-fn user_column_and_operator_reject_unknown_input() {
-    assert_eq!(user_column("email"), Some("email"));
-    assert_eq!(user_column("id"), Some("id"));
-    assert_eq!(user_column("password"), None);
-    assert_eq!(user_column("email); DROP TABLE"), None);
-    assert_eq!(user_filter_operator("="), Some("="));
-    assert_eq!(user_filter_operator("like"), Some("like"));
-    assert_eq!(user_filter_operator("!="), Some("<>"));
-    // 模糊 is rewritten to `like` before reaching the operator whitelist.
-    assert_eq!(user_filter_operator("模糊"), None);
-    assert_eq!(user_filter_operator("; DELETE"), None);
-}
-
-#[test]
 fn user_total_used_widens_before_adding_bigint_counters() {
     // The total_used sort expression still adds the two BIGINT counters in
     // SQL and must widen first. The projected value itself is summed in Rust
@@ -86,31 +72,6 @@ fn user_total_used_widens_before_adding_bigint_counters() {
 }
 
 #[test]
-fn collect_filter_entries_groups_by_index_and_keeps_raw_null() {
-    let mut params = HashMap::new();
-    params.insert("filter[0][key]".to_string(), "plan_id".to_string());
-    params.insert("filter[0][condition]".to_string(), "=".to_string());
-    params.insert("filter[0][value]".to_string(), "null".to_string());
-    params.insert("filter[1][key]".to_string(), "email".to_string());
-    let entries = collect_filter_entries(&params);
-    assert_eq!(entries.len(), 2);
-    assert_eq!(entries[0].get("key").map(String::as_str), Some("plan_id"));
-    // Raw "null" must survive so plan_id == 'null' -> IS NULL still fires.
-    assert_eq!(entries[0].get("value").map(String::as_str), Some("null"));
-    assert_eq!(entries[1].get("key").map(String::as_str), Some("email"));
-}
-
-#[test]
-fn notice_tags_preserve_bracketed_strings_as_json() {
-    let values = params(&[("tags[1]", "运营"), ("tags[0]", "弹窗")]);
-    assert_eq!(
-        json_array_string(&values, "tags").unwrap().as_deref(),
-        Some(r#"["弹窗","运营"]"#)
-    );
-    assert_eq!(json_array_string(&HashMap::new(), "tags").unwrap(), None);
-}
-
-#[test]
 fn parse_alive_ip_extracts_count_and_ip_labels() {
     let raw = json!({
         "alive_ip": 2,
@@ -120,35 +81,6 @@ fn parse_alive_ip_extracts_count_and_ip_labels() {
     let (alive_ip, ips) = parse_alive_ip(&raw);
     assert_eq!(alive_ip, 2);
     assert_eq!(ips, "1.2.3.4_7, 5.6.7.8_7");
-}
-
-fn params(pairs: &[(&str, &str)]) -> HashMap<String, String> {
-    pairs
-        .iter()
-        .map(|(key, value)| (key.to_string(), value.to_string()))
-        .collect()
-}
-
-#[test]
-fn pagination_has_a_hard_cap_and_checked_offset() {
-    let defaults = page(&HashMap::new()).unwrap();
-    assert_eq!(defaults.limit, 10);
-    assert_eq!(defaults.offset, 0);
-
-    let second = page(&params(&[("current", "2"), ("pageSize", "25")])).unwrap();
-    assert_eq!(second.limit, 25);
-    assert_eq!(second.offset, 25);
-
-    assert!(page(&params(&[("current", "0")])).is_err());
-    assert!(page(&params(&[("page_size", "101")])).is_err());
-    assert!(page(&params(&[("current", "not-an-integer")])).is_err());
-    assert!(
-        page(&params(&[
-            ("current", "9223372036854775807"),
-            ("pageSize", "100"),
-        ]))
-        .is_err()
-    );
 }
 
 /// Asserts the error is a 422 validation failure on `field` with `message`
