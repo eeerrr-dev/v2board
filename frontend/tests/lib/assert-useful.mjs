@@ -1851,7 +1851,8 @@ export function assertUsefulInteraction(label, result, target) {
     // The type control's rendered selection (antd `.ant-select-selection-selected-
     // value` vs the Radix trigger label) and the ¥/% value addon are Tier-2
     // presentation; the type/scope selections are proven by the generate payload
-    // (type, limit_plan_ids[0], limit_period[0]).
+    // (type, limit_plan_ids, limit_period — canonical W10 arrays; the legacy
+    // bracket params fold onto them).
     (result.amount?.modalCount !== 1 ||
       result.limited?.modalCount !== 1 ||
       result.generateRequests?.length !== 1 ||
@@ -1859,8 +1860,8 @@ export function assertUsefulInteraction(label, result, target) {
       result.generateRequests?.[0]?.code !== 'RATIO2026' ||
       String(result.generateRequests?.[0]?.type) !== '2' ||
       String(result.generateRequests?.[0]?.value) !== '15' ||
-      String(result.generateRequests?.[0]?.['limit_plan_ids[0]']) !== '1' ||
-      result.generateRequests?.[0]?.['limit_period[0]'] !== 'month_price' ||
+      String(result.generateRequests?.[0]?.limit_plan_ids) !== '1' ||
+      String(result.generateRequests?.[0]?.limit_period) !== 'month_price' ||
       result.couponFetchDelta < 1 ||
       result.closed?.modalCount !== 0)
   ) {
@@ -1985,7 +1986,7 @@ export function assertUsefulInteraction(label, result, target) {
       result.saveRequests?.length !== 1 ||
       result.saveRequests?.[0]?.title !== 'Parity Notice' ||
       result.saveRequests?.[0]?.content !== 'Parity notice body' ||
-      result.saveRequests?.[0]?.['tags[0]'] !== 'ops' ||
+      String(result.saveRequests?.[0]?.tags) !== 'ops' ||
       result.saveRequests?.[0]?.img_url !== 'https://example.test/notice.png' ||
       result.noticeFetchDelta < 1 ||
       result.closed?.modalCount !== 0 ||
@@ -2020,8 +2021,7 @@ export function assertUsefulInteraction(label, result, target) {
       String(result.saveRequests?.[0]?.id) !== '2' ||
       result.saveRequests?.[0]?.title !== 'Parity Edited Notice' ||
       result.saveRequests?.[0]?.content !== '<p>Parity edited notice body</p>' ||
-      result.saveRequests?.[0]?.['tags[0]'] !== 'ops' ||
-      result.saveRequests?.[0]?.['tags[1]'] !== 'edited' ||
+      String(result.saveRequests?.[0]?.tags) !== 'ops,edited' ||
       result.saveRequests?.[0]?.img_url !== 'https://example.test/notice-edited.png' ||
       result.noticeFetchDelta < 1 ||
       result.closed?.modalCount !== 0)

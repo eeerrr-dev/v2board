@@ -251,11 +251,62 @@ export async function installApiFixtures(page, scenario, target, interaction = {
         method: requestMethod,
         url: route.request().url(),
         postData: route.request().postData(),
+        securePath: adminPath,
       });
       const bodyFields = body && typeof body === 'object' && !Array.isArray(body) ? body : {};
       return { ...bodyFields, ...params };
     };
     const adminServerNodeSaveMatch = /^\/server\/([^/]+)\/save$/.exec(adminEndpoint ?? '');
+    // W10 (§6.3): the modern admin content family carries identity in the
+    // path — creates POST the collection, edits/toggles PATCH /{id}, deletes
+    // DELETE /{id}; the show toggle is the PATCH whose body is exactly
+    // {show}. Match both worlds' spellings for the counters, captures,
+    // timeout, and delay knobs below.
+    const isShowOnlyPatch =
+      requestMethod === 'PATCH' &&
+      requestData != null &&
+      Object.keys(requestData).length === 1 &&
+      'show' in requestData;
+    const isAdminNoticeFetch =
+      adminEndpoint === '/notice/fetch' ||
+      (adminEndpoint === '/notices' && requestMethod === 'GET');
+    const isAdminNoticeSave =
+      adminEndpoint === '/notice/save' ||
+      (adminEndpoint === '/notices' && requestMethod === 'POST') ||
+      (/^\/notices\/\d+$/.test(adminEndpoint ?? '') &&
+        requestMethod === 'PATCH' &&
+        !isShowOnlyPatch);
+    const isAdminNoticeShow =
+      adminEndpoint === '/notice/show' ||
+      (/^\/notices\/\d+$/.test(adminEndpoint ?? '') && isShowOnlyPatch);
+    const isAdminNoticeDrop =
+      adminEndpoint === '/notice/drop' ||
+      (/^\/notices\/\d+$/.test(adminEndpoint ?? '') && requestMethod === 'DELETE');
+    const isAdminKnowledgeListFetch =
+      (adminEndpoint === '/knowledge/fetch' && !requestUrl.searchParams.has('id')) ||
+      (adminEndpoint === '/knowledge' && requestMethod === 'GET');
+    const isAdminKnowledgeSave =
+      adminEndpoint === '/knowledge/save' ||
+      (adminEndpoint === '/knowledge' && requestMethod === 'POST') ||
+      (/^\/knowledge\/\d+$/.test(adminEndpoint ?? '') &&
+        requestMethod === 'PATCH' &&
+        !isShowOnlyPatch);
+    const isAdminCouponFetch =
+      adminEndpoint === '/coupon/fetch' ||
+      (adminEndpoint === '/coupons' && requestMethod === 'GET');
+    const isAdminCouponGenerate =
+      adminEndpoint === '/coupon/generate' ||
+      (adminEndpoint === '/coupons' && requestMethod === 'POST') ||
+      (/^\/coupons\/\d+$/.test(adminEndpoint ?? '') &&
+        requestMethod === 'PATCH' &&
+        !isShowOnlyPatch);
+    const isAdminGiftcardFetch =
+      adminEndpoint === '/giftcard/fetch' ||
+      (adminEndpoint === '/gift-cards' && requestMethod === 'GET');
+    const isAdminGiftcardGenerate =
+      adminEndpoint === '/giftcard/generate' ||
+      (adminEndpoint === '/gift-cards' && requestMethod === 'POST') ||
+      (/^\/gift-cards\/\d+$/.test(adminEndpoint ?? '') && requestMethod === 'PATCH');
     if (isUserProfileGet) {
       page.__visualParityUserInfoFetchCount = (page.__visualParityUserInfoFetchCount ?? 0) + 1;
     }
@@ -555,71 +606,79 @@ export async function installApiFixtures(page, scenario, target, interaction = {
         },
       ];
     }
-    if (adminEndpoint === '/coupon/fetch') {
+    if (isAdminCouponFetch) {
       page.__visualParityAdminCouponFetchCount =
         (page.__visualParityAdminCouponFetchCount ?? 0) + 1;
     }
-    if (adminEndpoint === '/coupon/generate') {
-      page.__visualParityLastAdminCouponGenerate = requestData;
+    if (isAdminCouponGenerate) {
+      // Canonical capture (W10 §6.3): the legacy edit-by-generate body-id and
+      // bracket arrays fold onto the modern path-identity JSON contract.
+      const couponGenerateRequest = canonicalRequestCapture();
+      page.__visualParityLastAdminCouponGenerate = couponGenerateRequest;
       page.__visualParityAdminCouponGenerateCount =
         (page.__visualParityAdminCouponGenerateCount ?? 0) + 1;
       page.__visualParityAdminCouponGenerateRequests = [
         ...(page.__visualParityAdminCouponGenerateRequests ?? []),
-        requestData,
+        couponGenerateRequest,
       ];
     }
-    if (adminEndpoint === '/giftcard/fetch') {
+    if (isAdminGiftcardFetch) {
       page.__visualParityAdminGiftcardFetchCount =
         (page.__visualParityAdminGiftcardFetchCount ?? 0) + 1;
     }
-    if (adminEndpoint === '/giftcard/generate') {
-      page.__visualParityLastAdminGiftcardGenerate = requestData;
+    if (isAdminGiftcardGenerate) {
+      const giftcardGenerateRequest = canonicalRequestCapture();
+      page.__visualParityLastAdminGiftcardGenerate = giftcardGenerateRequest;
       page.__visualParityAdminGiftcardGenerateCount =
         (page.__visualParityAdminGiftcardGenerateCount ?? 0) + 1;
       page.__visualParityAdminGiftcardGenerateRequests = [
         ...(page.__visualParityAdminGiftcardGenerateRequests ?? []),
-        requestData,
+        giftcardGenerateRequest,
       ];
     }
-    if (adminEndpoint === '/knowledge/fetch' && !requestUrl.searchParams.has('id')) {
+    if (isAdminKnowledgeListFetch) {
       page.__visualParityAdminKnowledgeFetchCount =
         (page.__visualParityAdminKnowledgeFetchCount ?? 0) + 1;
     }
-    if (adminEndpoint === '/knowledge/save') {
-      page.__visualParityLastAdminKnowledgeSave = requestData;
+    if (isAdminKnowledgeSave) {
+      const knowledgeSaveRequest = canonicalRequestCapture();
+      page.__visualParityLastAdminKnowledgeSave = knowledgeSaveRequest;
       page.__visualParityAdminKnowledgeSaveCount =
         (page.__visualParityAdminKnowledgeSaveCount ?? 0) + 1;
       page.__visualParityAdminKnowledgeSaveRequests = [
         ...(page.__visualParityAdminKnowledgeSaveRequests ?? []),
-        requestData,
+        knowledgeSaveRequest,
       ];
     }
-    if (adminEndpoint === '/notice/fetch') {
+    if (isAdminNoticeFetch) {
       page.__visualParityAdminNoticeFetchCount =
         (page.__visualParityAdminNoticeFetchCount ?? 0) + 1;
     }
-    if (adminEndpoint === '/notice/save') {
-      page.__visualParityLastAdminNoticeSave = requestData;
+    if (isAdminNoticeSave) {
+      const noticeSaveRequest = canonicalRequestCapture();
+      page.__visualParityLastAdminNoticeSave = noticeSaveRequest;
       page.__visualParityAdminNoticeSaveCount = (page.__visualParityAdminNoticeSaveCount ?? 0) + 1;
       page.__visualParityAdminNoticeSaveRequests = [
         ...(page.__visualParityAdminNoticeSaveRequests ?? []),
-        requestData,
+        noticeSaveRequest,
       ];
     }
-    if (adminEndpoint === '/notice/show') {
-      page.__visualParityLastAdminNoticeShow = requestData;
+    if (isAdminNoticeShow) {
+      const noticeShowRequest = canonicalRequestCapture();
+      page.__visualParityLastAdminNoticeShow = noticeShowRequest;
       page.__visualParityAdminNoticeShowCount = (page.__visualParityAdminNoticeShowCount ?? 0) + 1;
       page.__visualParityAdminNoticeShowRequests = [
         ...(page.__visualParityAdminNoticeShowRequests ?? []),
-        requestData,
+        noticeShowRequest,
       ];
     }
-    if (adminEndpoint === '/notice/drop') {
-      page.__visualParityLastAdminNoticeDrop = requestData;
+    if (isAdminNoticeDrop) {
+      const noticeDropRequest = canonicalRequestCapture();
+      page.__visualParityLastAdminNoticeDrop = noticeDropRequest;
       page.__visualParityAdminNoticeDropCount = (page.__visualParityAdminNoticeDropCount ?? 0) + 1;
       page.__visualParityAdminNoticeDropRequests = [
         ...(page.__visualParityAdminNoticeDropRequests ?? []),
-        requestData,
+        noticeDropRequest,
       ];
     }
     if (adminEndpoint === '/payment/fetch') {
@@ -770,10 +829,10 @@ export async function installApiFixtures(page, scenario, target, interaction = {
       (scenario.adminTicketsTimeout && adminEndpoint === '/ticket/fetch') ||
       (scenario.adminServerManageTimeout && adminEndpoint === '/server/manage/getNodes') ||
       (scenario.adminPaymentsTimeout && adminEndpoint === '/payment/fetch') ||
-      (scenario.adminCouponsTimeout && adminEndpoint === '/coupon/fetch') ||
-      (scenario.adminGiftcardsTimeout && adminEndpoint === '/giftcard/fetch') ||
-      (scenario.adminNoticesTimeout && adminEndpoint === '/notice/fetch') ||
-      (scenario.adminKnowledgeTimeout && adminEndpoint === '/knowledge/fetch');
+      (scenario.adminCouponsTimeout && isAdminCouponFetch) ||
+      (scenario.adminGiftcardsTimeout && isAdminGiftcardFetch) ||
+      (scenario.adminNoticesTimeout && isAdminNoticeFetch) ||
+      (scenario.adminKnowledgeTimeout && isAdminKnowledgeListFetch);
     if (shouldTimeout) {
       await route.abort('timedout');
       return;
@@ -825,29 +884,25 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     if (adminEndpoint === '/payment/save' && interaction.delayAdminPaymentSaveMs) {
       await delay(interaction.delayAdminPaymentSaveMs);
     }
-    if (adminEndpoint === '/coupon/generate' && interaction.delayAdminCouponGenerateMs) {
+    if (isAdminCouponGenerate && interaction.delayAdminCouponGenerateMs) {
       await delay(interaction.delayAdminCouponGenerateMs);
     }
-    if (adminEndpoint === '/giftcard/generate' && interaction.delayAdminGiftcardGenerateMs) {
+    if (isAdminGiftcardGenerate && interaction.delayAdminGiftcardGenerateMs) {
       await delay(interaction.delayAdminGiftcardGenerateMs);
     }
-    if (adminEndpoint === '/knowledge/save' && interaction.delayAdminKnowledgeSaveMs) {
+    if (isAdminKnowledgeSave && interaction.delayAdminKnowledgeSaveMs) {
       await delay(interaction.delayAdminKnowledgeSaveMs);
     }
-    if (adminEndpoint === '/notice/save' && interaction.delayAdminNoticeSaveMs) {
+    if (isAdminNoticeSave && interaction.delayAdminNoticeSaveMs) {
       await delay(interaction.delayAdminNoticeSaveMs);
     }
     if (adminEndpoint === '/plan/save' && interaction.delayAdminPlanSaveMs) {
       await delay(interaction.delayAdminPlanSaveMs);
     }
     if (
-      [
-        '/notice/drop',
-        '/notice/show',
-        '/plan/drop',
-        '/plan/update',
-        '/server/manage/sort',
-      ].includes(adminEndpoint ?? '') &&
+      (isAdminNoticeDrop ||
+        isAdminNoticeShow ||
+        ['/plan/drop', '/plan/update', '/server/manage/sort'].includes(adminEndpoint ?? '')) &&
       interaction.delayAdminMutationMs
     ) {
       await delay(interaction.delayAdminMutationMs);
@@ -978,6 +1033,109 @@ export function apiFixtureResponse(
     ) {
       if (interaction?.adminServerNodeSaveError) return error('节点保存失败');
       return body(true);
+    }
+
+    // §6.3 modern admin content family (W10): notices bare unpaginated array,
+    // knowledge bare array + /{id} detail, coupons/gift-cards §8 pages,
+    // creates 201 {id}, updates/toggles/deletes bodiless. Only the source
+    // world requests these spellings (the shared /knowledge/sort path is
+    // target-gated); the oracle keeps the legacy rows in the switch below.
+    // The error-knob details mirror the legacy fixture toast text — the
+    // Tier-1 comparison keys on the problem `code`, presentation drops.
+    const contentValidationProblem = (detail) =>
+      v2Problem(422, 'Unprocessable Entity', 'validation_failed', detail);
+    const isShowOnlyBody =
+      requestData != null && Object.keys(requestData).length === 1 && 'show' in requestData;
+    if (adminEndpoint === '/notices') {
+      if (method === 'POST') {
+        if (interaction?.adminNoticeSaveError) return contentValidationProblem('公告保存失败');
+        return v2Body({ id: adminNoticeFixtures.length + 1 }, 201);
+      }
+      return v2Body(adminNoticeFixtures.map(modernNoticeFixture));
+    }
+    if (/^\/notices\/\d+$/.test(adminEndpoint)) {
+      if (method === 'DELETE') {
+        if (interaction?.adminNoticeDropError) return contentValidationProblem('公告删除失败');
+        return v2Empty();
+      }
+      if (isShowOnlyBody) {
+        if (interaction?.adminNoticeShowError) {
+          return contentValidationProblem('公告显示状态保存失败');
+        }
+        return v2Empty();
+      }
+      if (interaction?.adminNoticeSaveError) return contentValidationProblem('公告保存失败');
+      return v2Empty();
+    }
+    if (adminEndpoint === '/knowledge-categories') {
+      return v2Body(
+        Array.from(new Set(adminKnowledgeFixtures.map((knowledge) => knowledge.category))),
+      );
+    }
+    if (adminEndpoint === '/knowledge/sort' && target === 'source') {
+      return v2Empty();
+    }
+    if (adminEndpoint === '/knowledge') {
+      if (method === 'POST') {
+        if (interaction?.adminKnowledgeSaveError) return contentValidationProblem('知识保存失败');
+        return v2Body({ id: adminKnowledgeFixtures.length + 1 }, 201);
+      }
+      return v2Body(adminKnowledgeFixtures.map(modernKnowledgeSummaryFixture));
+    }
+    const modernAdminKnowledgeMatch = /^\/knowledge\/(\d+)$/.exec(adminEndpoint);
+    if (modernAdminKnowledgeMatch) {
+      if (method === 'GET') {
+        return v2Body(
+          modernKnowledgeDetailFixture(
+            adminKnowledgeFixtures.find(
+              (knowledge) => String(knowledge.id) === modernAdminKnowledgeMatch[1],
+            ) ?? adminKnowledgeFixtures[0],
+          ),
+        );
+      }
+      if (method === 'DELETE') return v2Empty();
+      if (!isShowOnlyBody && interaction?.adminKnowledgeSaveError) {
+        return contentValidationProblem('知识保存失败');
+      }
+      return v2Empty();
+    }
+    if (adminEndpoint === '/coupons') {
+      if (method === 'POST') {
+        if (interaction?.adminCouponGenerateError) {
+          return contentValidationProblem('优惠券生成失败');
+        }
+        return v2Body({ id: adminCouponFixtures.length + 1 }, 201);
+      }
+      return v2Body({
+        items: adminCouponFixtures.map(modernCouponFixture),
+        total: adminCouponFixtures.length,
+      });
+    }
+    if (/^\/coupons\/\d+$/.test(adminEndpoint)) {
+      if (method === 'DELETE') return v2Empty();
+      if (!isShowOnlyBody && interaction?.adminCouponGenerateError) {
+        return contentValidationProblem('优惠券生成失败');
+      }
+      return v2Empty();
+    }
+    if (adminEndpoint === '/gift-cards') {
+      if (method === 'POST') {
+        if (interaction?.adminGiftcardGenerateError) {
+          return contentValidationProblem('礼品卡生成失败');
+        }
+        return v2Body({ id: adminGiftcardFixtures.length + 1 }, 201);
+      }
+      return v2Body({
+        items: adminGiftcardFixtures.map(modernGiftcardFixture),
+        total: adminGiftcardFixtures.length,
+      });
+    }
+    if (/^\/gift-cards\/\d+$/.test(adminEndpoint)) {
+      if (method === 'DELETE') return v2Empty();
+      if (interaction?.adminGiftcardGenerateError) {
+        return contentValidationProblem('礼品卡生成失败');
+      }
+      return v2Empty();
     }
 
     switch (adminEndpoint) {
@@ -1760,6 +1918,17 @@ const modernCouponFixture = (coupon) => ({
   ended_at: rfc3339FixtureTime(coupon.ended_at),
   created_at: rfc3339FixtureTime(coupon.created_at),
   updated_at: rfc3339FixtureTime(coupon.updated_at),
+});
+
+// ——— W10 modern-wire projection (docs/api-dialect.md §6.3) ——— RFC 3339
+// windows and a real `used_user_ids` array (the legacy null sentinel died).
+const modernGiftcardFixture = (giftcard) => ({
+  ...giftcard,
+  used_user_ids: giftcard.used_user_ids ?? [],
+  started_at: rfc3339FixtureTime(giftcard.started_at),
+  ended_at: rfc3339FixtureTime(giftcard.ended_at),
+  created_at: rfc3339FixtureTime(giftcard.created_at),
+  updated_at: rfc3339FixtureTime(giftcard.updated_at),
 });
 
 // ——— W5 modern-wire projections (docs/api-dialect.md §4.1, §4.5, §5.3,

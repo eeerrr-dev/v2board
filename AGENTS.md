@@ -534,8 +534,8 @@ behavior is not a contract.
 - Keep admin contracts strict: every admin API endpoint and request payload
   (config, coupon/giftcard/notice/knowledge/plan/server/user/order/ticket
   create/edit/delete bodies, encoded per the current Rust contract as
-  specified in `docs/api-dialect.md` — form-encoded bracket arrays like
-  `limit_plan_ids[0]` until a family's wave lands, JSON arrays after), the
+  specified in `docs/api-dialect.md` — JSON bodies with real arrays such as
+  `limit_plan_ids` per §4.1 for migrated families), the
   cents conversions (e.g. coupon `type===1 → value*100`), list/fetch query,
   pagination, and filter/sort parameters (bracket `filter[i][…]` params
   today, the spec's §7 filter DSL once its consumer waves land), admin

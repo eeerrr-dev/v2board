@@ -80,6 +80,31 @@ const W9_ROUTE_IDS = Object.freeze([
   'admin.system.logs',
 ]);
 
+const W10_ROUTE_IDS = Object.freeze([
+  'admin.notices.list',
+  'admin.notices.create',
+  'admin.notices.update',
+  'admin.notices.toggle',
+  'admin.notices.delete',
+  'admin.knowledge.list',
+  'admin.knowledge.get',
+  'admin.knowledge-categories.list',
+  'admin.knowledge.create',
+  'admin.knowledge.update',
+  'admin.knowledge.toggle',
+  'admin.knowledge.delete',
+  'admin.knowledge.sort',
+  'admin.coupons.list',
+  'admin.coupons.create',
+  'admin.coupons.update',
+  'admin.coupons.toggle',
+  'admin.coupons.delete',
+  'admin.gift-cards.list',
+  'admin.gift-cards.create',
+  'admin.gift-cards.update',
+  'admin.gift-cards.delete',
+]);
+
 const W4_ROUTE_IDS = Object.freeze([
   'user.plans.get',
   'user.plans.list',
@@ -104,6 +129,7 @@ test('unflipped families stay identity: modern equals legacy until each wave', (
     if (W7_ROUTE_IDS.includes(entry.id)) continue; // §5.6 invite/commission flipped in W7
     if (W8_ROUTE_IDS.includes(entry.id)) continue; // §5.7 user tickets flipped in W8
     if (W9_ROUTE_IDS.includes(entry.id)) continue; // §6.1 admin config/system flipped in W9
+    if (W10_ROUTE_IDS.includes(entry.id)) continue; // §6.3 admin content flipped in W10
     assert.deepEqual(entry.modern, entry.legacy, `${entry.id} must stay legacy→legacy until its wave`);
   }
 });
@@ -324,6 +350,133 @@ test('W9: the admin config & system family carries the modern rows', () => {
       securePath: 'sec',
     })?.id,
     'admin.test-mail.send',
+  );
+});
+
+test('W10: the admin content family carries the modern rows', () => {
+  const modern = Object.fromEntries(W10_ROUTE_IDS.map((id) => [id, routeEntry(id).modern]));
+  assert.deepEqual(modern, {
+    // §6.3: deliberately unpaginated bare array.
+    'admin.notices.list': { method: 'GET', path: '/{secure_path}/notices' },
+    'admin.notices.create': { method: 'POST', path: '/{secure_path}/notices' },
+    'admin.notices.update': { method: 'PATCH', path: '/{secure_path}/notices/{id}' },
+    // The legacy server-side flip became the explicit `{show}` PATCH body.
+    'admin.notices.toggle': {
+      method: 'PATCH',
+      path: '/{secure_path}/notices/{id}',
+      bodyKeys: ['show'],
+    },
+    'admin.notices.delete': { method: 'DELETE', path: '/{secure_path}/notices/{id}' },
+    'admin.knowledge.list': { method: 'GET', path: '/{secure_path}/knowledge' },
+    // The legacy `?id=` discriminator became a real path segment (§6.3).
+    'admin.knowledge.get': { method: 'GET', path: '/{secure_path}/knowledge/{id}' },
+    'admin.knowledge-categories.list': {
+      method: 'GET',
+      path: '/{secure_path}/knowledge-categories',
+    },
+    'admin.knowledge.create': { method: 'POST', path: '/{secure_path}/knowledge' },
+    'admin.knowledge.update': { method: 'PATCH', path: '/{secure_path}/knowledge/{id}' },
+    'admin.knowledge.toggle': {
+      method: 'PATCH',
+      path: '/{secure_path}/knowledge/{id}',
+      bodyKeys: ['show'],
+    },
+    'admin.knowledge.delete': { method: 'DELETE', path: '/{secure_path}/knowledge/{id}' },
+    'admin.knowledge.sort': { method: 'POST', path: '/{secure_path}/knowledge/sort' },
+    'admin.coupons.list': { method: 'GET', path: '/{secure_path}/coupons' },
+    'admin.coupons.create': { method: 'POST', path: '/{secure_path}/coupons' },
+    'admin.coupons.update': { method: 'PATCH', path: '/{secure_path}/coupons/{id}' },
+    'admin.coupons.toggle': {
+      method: 'PATCH',
+      path: '/{secure_path}/coupons/{id}',
+      bodyKeys: ['show'],
+    },
+    'admin.coupons.delete': { method: 'DELETE', path: '/{secure_path}/coupons/{id}' },
+    'admin.gift-cards.list': { method: 'GET', path: '/{secure_path}/gift-cards' },
+    'admin.gift-cards.create': { method: 'POST', path: '/{secure_path}/gift-cards' },
+    'admin.gift-cards.update': { method: 'PATCH', path: '/{secure_path}/gift-cards/{id}' },
+    'admin.gift-cards.delete': { method: 'DELETE', path: '/{secure_path}/gift-cards/{id}' },
+  });
+  // The oracle keeps requesting the legacy rows, including the
+  // body-discriminated generate/save upserts.
+  assert.equal(worldRoute('admin.notices.list', 'oracle').path, '/{secure_path}/notice/fetch');
+  assert.deepEqual(worldRoute('admin.notices.update', 'oracle').bodyKeys, ['id']);
+  assert.deepEqual(worldRoute('admin.coupons.update', 'oracle').path, '/{secure_path}/coupon/generate');
+  assert.equal(
+    worldRoute('admin.knowledge-categories.list', 'oracle').path,
+    '/{secure_path}/knowledge/getCategory',
+  );
+  // Oracle-world upsert bodies discriminate create vs update on the row id.
+  assert.equal(
+    matchRoute('oracle', {
+      method: 'POST',
+      pathname: `${API_PREFIX}/sec/coupon/generate`,
+      securePath: 'sec',
+      body: { name: 'New', type: 1 },
+    })?.id,
+    'admin.coupons.create',
+  );
+  assert.equal(
+    matchRoute('oracle', {
+      method: 'POST',
+      pathname: `${API_PREFIX}/sec/coupon/generate`,
+      securePath: 'sec',
+      body: { id: 5, name: 'Edited' },
+    })?.id,
+    'admin.coupons.update',
+  );
+  // Source-world PATCHes discriminate the `{show}` toggle on the body key.
+  assert.deepEqual(
+    matchRoute('source', {
+      method: 'PATCH',
+      pathname: `${API_PREFIX}/sec/notices/3`,
+      securePath: 'sec',
+      body: { show: true },
+    }),
+    { id: 'admin.notices.toggle', params: { id: '3' } },
+  );
+  assert.deepEqual(
+    matchRoute('source', {
+      method: 'PATCH',
+      pathname: `${API_PREFIX}/sec/notices/3`,
+      securePath: 'sec',
+      body: { title: 'Edited', content: 'Body' },
+    }),
+    { id: 'admin.notices.update', params: { id: '3' } },
+  );
+  assert.deepEqual(
+    matchRoute('source', {
+      method: 'DELETE',
+      pathname: `${API_PREFIX}/sec/gift-cards/9`,
+      securePath: 'sec',
+    }),
+    { id: 'admin.gift-cards.delete', params: { id: '9' } },
+  );
+  // The modern knowledge detail path outranks nothing else: list and
+  // categories stay distinct rows.
+  assert.deepEqual(
+    matchRoute('source', {
+      method: 'GET',
+      pathname: `${API_PREFIX}/sec/knowledge/7`,
+      securePath: 'sec',
+    }),
+    { id: 'admin.knowledge.get', params: { id: '7' } },
+  );
+  assert.equal(
+    matchRoute('source', {
+      method: 'GET',
+      pathname: `${API_PREFIX}/sec/knowledge`,
+      securePath: 'sec',
+    })?.id,
+    'admin.knowledge.list',
+  );
+  assert.equal(
+    matchRoute('source', {
+      method: 'GET',
+      pathname: `${API_PREFIX}/sec/knowledge-categories`,
+      securePath: 'sec',
+    })?.id,
+    'admin.knowledge-categories.list',
   );
 });
 

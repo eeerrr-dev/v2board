@@ -150,7 +150,29 @@ const ROUTE_REQUEST_FOLDS = Object.freeze({
   // /user/tickets/{id}/replies + /user/tickets/{id}/close path identity.
   'user.tickets.replies.create': foldBodyIdIntoParams,
   'user.tickets.close': foldBodyIdIntoParams,
+  // W10 (§6.3): the legacy body-carried row id folds onto the modern
+  // PATCH/DELETE path identity across the admin content family.
+  'admin.notices.update': foldBodyIdIntoParams,
+  'admin.notices.toggle': foldBodyIdIntoParams,
+  'admin.notices.delete': foldBodyIdIntoParams,
+  'admin.knowledge.update': foldBodyIdIntoParams,
+  'admin.knowledge.toggle': foldBodyIdIntoParams,
+  'admin.knowledge.delete': foldBodyIdIntoParams,
+  // W10 (§6.3): the sort body renames `knowledge_ids` → `ids`.
+  'admin.knowledge.sort': foldKnowledgeSortIds,
+  'admin.coupons.update': foldBodyIdIntoParams,
+  'admin.coupons.toggle': foldBodyIdIntoParams,
+  'admin.coupons.delete': foldBodyIdIntoParams,
+  'admin.gift-cards.update': foldBodyIdIntoParams,
+  'admin.gift-cards.delete': foldBodyIdIntoParams,
 });
+
+function foldKnowledgeSortIds(request) {
+  const body = request.body;
+  if (!isPlainObject(body) || body.knowledge_ids === undefined) return request;
+  const { knowledge_ids, ...rest } = body;
+  return { ...request, body: { ids: knowledge_ids, ...rest } };
+}
 
 function foldBodyIdIntoParams(request) {
   const body = request.body;

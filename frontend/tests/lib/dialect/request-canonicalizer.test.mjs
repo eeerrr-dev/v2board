@@ -22,7 +22,8 @@ test('form-encoded and JSON bodies decode to one canonical object (§13.2)', () 
   });
   const source = canonicalizeRequest('source', {
     method: 'POST',
-    url: '/api/v1/sec/coupon/generate',
+    // W10: the source world requests the modern §6.3 coupons row.
+    url: '/api/v1/sec/coupons',
     postData: JSON.stringify({
       name: 'Sale',
       type: 1,
@@ -49,6 +50,48 @@ test('form-encoded and JSON bodies decode to one canonical object (§13.2)', () 
     },
   });
   assert.deepEqual(source, oracle);
+});
+
+test('the W10 legacy edit-by-generate folds onto the modern PATCH identity (§6.3)', () => {
+  const oracle = canonicalizeRequest('oracle', {
+    method: 'POST',
+    url: '/api/v1/sec/coupon/generate',
+    postData: 'id=5&name=Edited&type=2&value=30&started_at=1750000000&ended_at=1760000000',
+    securePath: 'sec',
+  });
+  const source = canonicalizeRequest('source', {
+    method: 'PATCH',
+    url: '/api/v1/sec/coupons/5',
+    postData: JSON.stringify({
+      name: 'Edited',
+      type: 2,
+      value: 30,
+      started_at: '2025-06-15T15:06:40Z',
+      ended_at: '2025-10-09T08:53:20Z',
+    }),
+    securePath: 'sec',
+  });
+  assert.deepEqual(oracle, {
+    routeId: 'admin.coupons.update',
+    params: { id: 5 },
+    body: {
+      name: 'Edited',
+      type: 2,
+      value: 30,
+      started_at: 1_750_000_000,
+      ended_at: 1_760_000_000,
+    },
+  });
+  assert.deepEqual(source, oracle);
+
+  // The knowledge sort body renames `knowledge_ids` → `ids` (§6.3).
+  const sort = canonicalizeRequest('oracle', {
+    method: 'POST',
+    url: '/api/v1/sec/knowledge/sort',
+    postData: 'knowledge_ids[0]=2&knowledge_ids[1]=1',
+    securePath: 'sec',
+  });
+  assert.deepEqual(sort.body, { ids: [2, 1] });
 });
 
 test('pagination params fold onto page/per_page in both worlds (§8)', () => {

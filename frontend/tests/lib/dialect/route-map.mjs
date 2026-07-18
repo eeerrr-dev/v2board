@@ -424,38 +424,130 @@ export const routeMap = Object.freeze([
   route('admin.payments.delete', { method: 'POST', path: '/{secure_path}/payment/drop' }),
   route('admin.payments.sort', { method: 'POST', path: '/{secure_path}/payment/sort' }),
 
-  // ——— §6.3 Content: notices, knowledge, coupons, gift cards ———
-  route('admin.notices.list', { method: 'GET', path: '/{secure_path}/notice/fetch' }),
-  route('admin.notices.create', { method: 'POST', path: '/{secure_path}/notice/save' }),
-  route('admin.notices.update', {
-    method: 'POST',
-    path: '/{secure_path}/notice/save',
-    aliases: ['/{secure_path}/notice/update'],
-  }),
-  route('admin.notices.toggle', { method: 'POST', path: '/{secure_path}/notice/show' }),
-  route('admin.notices.delete', { method: 'POST', path: '/{secure_path}/notice/drop' }),
-  route('admin.knowledge.list', { method: 'GET', path: '/{secure_path}/knowledge/fetch' }),
-  route('admin.knowledge.get', {
-    method: 'GET',
-    path: '/{secure_path}/knowledge/fetch',
-    query: ['id'],
-  }),
-  route('admin.knowledge-categories.list', {
-    method: 'GET',
-    path: '/{secure_path}/knowledge/getCategory',
-  }),
-  route('admin.knowledge.create', { method: 'POST', path: '/{secure_path}/knowledge/save' }),
-  route('admin.knowledge.update', { method: 'POST', path: '/{secure_path}/knowledge/save' }),
-  route('admin.knowledge.toggle', { method: 'POST', path: '/{secure_path}/knowledge/show' }),
-  route('admin.knowledge.delete', { method: 'POST', path: '/{secure_path}/knowledge/drop' }),
-  route('admin.knowledge.sort', { method: 'POST', path: '/{secure_path}/knowledge/sort' }),
-  route('admin.coupons.list', { method: 'GET', path: '/{secure_path}/coupon/fetch' }),
-  route('admin.coupons.create', { method: 'POST', path: '/{secure_path}/coupon/generate' }),
-  route('admin.coupons.toggle', { method: 'POST', path: '/{secure_path}/coupon/show' }),
-  route('admin.coupons.delete', { method: 'POST', path: '/{secure_path}/coupon/drop' }),
-  route('admin.gift-cards.list', { method: 'GET', path: '/{secure_path}/giftcard/fetch' }),
-  route('admin.gift-cards.create', { method: 'POST', path: '/{secure_path}/giftcard/generate' }),
-  route('admin.gift-cards.delete', { method: 'POST', path: '/{secure_path}/giftcard/drop' }),
+  // ——— §6.3 Content — flipped to the modern rows in W10 ———
+  route(
+    'admin.notices.list',
+    { method: 'GET', path: '/{secure_path}/notice/fetch' },
+    // §6.3: deliberately unpaginated — the bare array, no invented paging.
+    { method: 'GET', path: '/{secure_path}/notices' },
+  ),
+  route(
+    'admin.notices.create',
+    { method: 'POST', path: '/{secure_path}/notice/save' },
+    { method: 'POST', path: '/{secure_path}/notices' },
+  ),
+  route(
+    'admin.notices.update',
+    {
+      method: 'POST',
+      path: '/{secure_path}/notice/save',
+      // The legacy upsert carries the row id in the body.
+      bodyKeys: ['id'],
+      aliases: ['/{secure_path}/notice/update'],
+    },
+    { method: 'PATCH', path: '/{secure_path}/notices/{id}' },
+  ),
+  route(
+    'admin.notices.toggle',
+    { method: 'POST', path: '/{secure_path}/notice/show' },
+    // §6.3: the toggle merges into PATCH with an explicit `{show}` body.
+    { method: 'PATCH', path: '/{secure_path}/notices/{id}', bodyKeys: ['show'] },
+  ),
+  route(
+    'admin.notices.delete',
+    { method: 'POST', path: '/{secure_path}/notice/drop' },
+    { method: 'DELETE', path: '/{secure_path}/notices/{id}' },
+  ),
+  route(
+    'admin.knowledge.list',
+    { method: 'GET', path: '/{secure_path}/knowledge/fetch' },
+    { method: 'GET', path: '/{secure_path}/knowledge' },
+  ),
+  route(
+    'admin.knowledge.get',
+    { method: 'GET', path: '/{secure_path}/knowledge/fetch', query: ['id'] },
+    // The legacy `?id=` discriminator became a real path segment (§6.3).
+    { method: 'GET', path: '/{secure_path}/knowledge/{id}' },
+  ),
+  route(
+    'admin.knowledge-categories.list',
+    { method: 'GET', path: '/{secure_path}/knowledge/getCategory' },
+    { method: 'GET', path: '/{secure_path}/knowledge-categories' },
+  ),
+  route(
+    'admin.knowledge.create',
+    { method: 'POST', path: '/{secure_path}/knowledge/save' },
+    { method: 'POST', path: '/{secure_path}/knowledge' },
+  ),
+  route(
+    'admin.knowledge.update',
+    { method: 'POST', path: '/{secure_path}/knowledge/save', bodyKeys: ['id'] },
+    { method: 'PATCH', path: '/{secure_path}/knowledge/{id}' },
+  ),
+  route(
+    'admin.knowledge.toggle',
+    { method: 'POST', path: '/{secure_path}/knowledge/show' },
+    { method: 'PATCH', path: '/{secure_path}/knowledge/{id}', bodyKeys: ['show'] },
+  ),
+  route(
+    'admin.knowledge.delete',
+    { method: 'POST', path: '/{secure_path}/knowledge/drop' },
+    { method: 'DELETE', path: '/{secure_path}/knowledge/{id}' },
+  ),
+  route(
+    'admin.knowledge.sort',
+    { method: 'POST', path: '/{secure_path}/knowledge/sort' },
+    // Same path; the body renames `knowledge_ids` → `ids` (§6.3).
+    { method: 'POST', path: '/{secure_path}/knowledge/sort' },
+  ),
+  route(
+    'admin.coupons.list',
+    { method: 'GET', path: '/{secure_path}/coupon/fetch' },
+    // §8 pagination + §7.2 created_at sort only — no filter DSL (§6.3).
+    { method: 'GET', path: '/{secure_path}/coupons' },
+  ),
+  route(
+    'admin.coupons.create',
+    { method: 'POST', path: '/{secure_path}/coupon/generate' },
+    // Single create → 201 `{id}`; `generate_count` → byte-frozen CSV (§6.3).
+    { method: 'POST', path: '/{secure_path}/coupons' },
+  ),
+  route(
+    'admin.coupons.update',
+    // The legacy edit rode generate with the row id in the body.
+    { method: 'POST', path: '/{secure_path}/coupon/generate', bodyKeys: ['id'] },
+    { method: 'PATCH', path: '/{secure_path}/coupons/{id}' },
+  ),
+  route(
+    'admin.coupons.toggle',
+    { method: 'POST', path: '/{secure_path}/coupon/show' },
+    { method: 'PATCH', path: '/{secure_path}/coupons/{id}', bodyKeys: ['show'] },
+  ),
+  route(
+    'admin.coupons.delete',
+    { method: 'POST', path: '/{secure_path}/coupon/drop' },
+    { method: 'DELETE', path: '/{secure_path}/coupons/{id}' },
+  ),
+  route(
+    'admin.gift-cards.list',
+    { method: 'GET', path: '/{secure_path}/giftcard/fetch' },
+    { method: 'GET', path: '/{secure_path}/gift-cards' },
+  ),
+  route(
+    'admin.gift-cards.create',
+    { method: 'POST', path: '/{secure_path}/giftcard/generate' },
+    { method: 'POST', path: '/{secure_path}/gift-cards' },
+  ),
+  route(
+    'admin.gift-cards.update',
+    { method: 'POST', path: '/{secure_path}/giftcard/generate', bodyKeys: ['id'] },
+    { method: 'PATCH', path: '/{secure_path}/gift-cards/{id}' },
+  ),
+  route(
+    'admin.gift-cards.delete',
+    { method: 'POST', path: '/{secure_path}/giftcard/drop' },
+    { method: 'DELETE', path: '/{secure_path}/gift-cards/{id}' },
+  ),
 
   // ——— §6.4 Orders & reconciliation ———
   route('admin.orders.list', { method: 'GET', path: '/{secure_path}/order/fetch' }),

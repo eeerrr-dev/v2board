@@ -378,11 +378,21 @@ export function normalizeInteractionResult(label, result) {
     // + confirm dialog, Radix switches). The Tier-1 contract is the mutation
     // request payloads (kept at top level) plus each capture's route + running
     // request counts; the captured buttons/dropdown/switch/table/toast surfaces
-    // are Tier-2 presentation. Reduce every sub-state to that essence.
+    // are Tier-2 presentation. Reduce every sub-state to that essence. The
+    // notice show/drop captures are canonical W10 shapes whose bodies
+    // intentionally differ (§6.3: the legacy toggle flips server-side on {id},
+    // the modern PATCH states {show}); the shared Tier-1 essence is the
+    // targeted id.
     const reduceState = (state) =>
       state ? { hash: state.hash, requestCounts: state.requestCounts } : state;
+    const pickId = (requests) =>
+      (requests ?? []).map((request) => ({
+        id: request?.id == null ? '' : String(request.id),
+      }));
     return {
       ...normalized,
+      noticeDropRequests: pickId(normalized.noticeDropRequests),
+      noticeShowRequests: pickId(normalized.noticeShowRequests),
       beforeNotice: reduceState(normalized.beforeNotice),
       beforePlan: reduceState(normalized.beforePlan),
       beforeServerSort: reduceState(normalized.beforeServerSort),
@@ -1114,8 +1124,10 @@ export function normalizeAdminUserActionInteractionResult(label, result) {
 
 // Reduce the coupon / giftcard / notice / knowledge editor scenarios. Every
 // captured editor snapshot collapses to its structural overlay open/close count;
-// the Tier-1 signal is the generate/save request payload (picked to its contract
-// fields and string-coerced — both worlds form-encode, but coerce defensively)
+// the Tier-1 signal is the generate/save request payload (captured in the
+// canonical W10 dialect shape — legacy bracket arrays fold to real arrays and
+// the body id folds onto the path identity — then picked to its contract
+// fields and string-coerced so arrays and numbers compare deterministically)
 // plus that a refetch fired. The rich field text (labels, titles, input values,
 // selected values, table rows, dropdown items, addon/preview chrome, tag chips)
 // is Tier-2 presentation the redesign renders differently and is pinned per-world
@@ -1138,17 +1150,9 @@ export function normalizeAdminCommerceEntityInteractionResult(label, result) {
     return { before: reduce(result.before), opened: reduce(result.opened) };
   }
 
-  const couponKeys = [
-    'id',
-    'name',
-    'code',
-    'type',
-    'value',
-    'limit_plan_ids[0]',
-    'limit_period[0]',
-  ];
+  const couponKeys = ['id', 'name', 'code', 'type', 'value', 'limit_plan_ids', 'limit_period'];
   const giftcardKeys = ['id', 'name', 'code', 'type', 'value', 'plan_id', 'limit_use'];
-  const noticeKeys = ['id', 'title', 'content', 'tags[0]', 'tags[1]', 'img_url'];
+  const noticeKeys = ['id', 'title', 'content', 'tags', 'img_url'];
   const knowledgeKeys = ['id', 'title', 'category', 'language', 'body'];
   const requestSpecByLabel = {
     'admin-coupon-create-modal': { field: 'generateRequests', keys: couponKeys },
