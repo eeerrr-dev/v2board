@@ -160,9 +160,15 @@ export function assertDialectRouteMap(map) {
     'admin.tickets.get',
     'admin.tickets.replies.create',
     'admin.tickets.close',
+    'staff.tickets.list',
+    'staff.tickets.get',
+    'staff.tickets.replies.create',
+    'staff.tickets.close',
   ]) {
     if (!ids.has(required)) {
-      failures.push(`dialect route map: required §6.5 admin ticket row ${required} is missing`);
+      failures.push(
+        `dialect route map: required §6.5/§6.9 ticket row ${required} is missing`,
+      );
     }
   }
   return failures;

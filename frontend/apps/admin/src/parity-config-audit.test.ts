@@ -107,7 +107,7 @@ describe('parity config audit helpers', () => {
     ]);
   });
 
-  it('audits the dialect route map as complete two-world rows with the §6.5 ticket rows', () => {
+  it('audits the dialect route map as complete two-world rows with the §6.5/§6.9 ticket rows', () => {
     expect(assertDialectRouteMap(routeMap)).toEqual([]);
     expect(
       assertDialectRouteMap([{ id: 'x', legacy: { method: 'GET', path: '/x' } }]),
@@ -123,9 +123,13 @@ describe('parity config audit helpers', () => {
     ).toEqual([
       'dialect route map: admin.tickets.list legacy method FETCH is invalid',
       'dialect route map: admin.tickets.list legacy path must start with /',
-      'dialect route map: required §6.5 admin ticket row admin.tickets.get is missing',
-      'dialect route map: required §6.5 admin ticket row admin.tickets.replies.create is missing',
-      'dialect route map: required §6.5 admin ticket row admin.tickets.close is missing',
+      'dialect route map: required §6.5/§6.9 ticket row admin.tickets.get is missing',
+      'dialect route map: required §6.5/§6.9 ticket row admin.tickets.replies.create is missing',
+      'dialect route map: required §6.5/§6.9 ticket row admin.tickets.close is missing',
+      'dialect route map: required §6.5/§6.9 ticket row staff.tickets.list is missing',
+      'dialect route map: required §6.5/§6.9 ticket row staff.tickets.get is missing',
+      'dialect route map: required §6.5/§6.9 ticket row staff.tickets.replies.create is missing',
+      'dialect route map: required §6.5/§6.9 ticket row staff.tickets.close is missing',
     ]);
   });
 
