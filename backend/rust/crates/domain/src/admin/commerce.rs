@@ -1,4 +1,19 @@
+use serde::Deserialize;
+use v2board_compat::{
+    Code, Pagination, Problem,
+    json::{double_option, rfc3339},
+};
+
 use super::*;
+
+// === W11 modern commerce family (docs/api-dialect.md §6.2/§6.4) ===
+//
+// Plans, payments, orders, and payment reconciliations on dialect-v2
+// semantics: JSON bodies, §4.4 double-Option partial updates, §4.5 RFC 3339
+// timestamps, §1 201 `{id}`/`{trade_no}` creates, §7 DSL order filtering,
+// §8 pagination, and typed §3.4 problem codes. The staff namespace keeps the
+// legacy `plan_fetch` mirror at the bottom until W14.
+
 const PLAN_USER_LOCK_PAGE_SIZE: i64 = 500;
 const PLAN_FORCE_UPDATE_MAX_USERS: usize = 10_000;
 const ADMIN_ASSIGN_UNFINISHED_ORDER_SQL: &str = r#"
@@ -63,7 +78,8 @@ pub(super) fn resolve_redacted_payment_config(
     // response, while unknown providers mask every value. Preserve those
     // hidden values on a metadata-only edit so a redacted round trip never
     // mutates verification material. Any real driver/config change is rejected
-    // below because each payment row is an immutable verification version.
+    // by the PATCH handler because each payment row is an immutable
+    // verification version.
     if let Some(current_object) = current_config.as_ref().and_then(Value::as_object) {
         let known_fields =
             crate::payment_provider::payment_provider_manifest(payment).map(|provider| {
@@ -87,30 +103,16 @@ pub(super) fn resolve_redacted_payment_config(
     Ok(submitted)
 }
 
-pub(super) fn payment_config_input(params: &HashMap<String, String>, payment: &str) -> Value {
-    if crate::payment_provider::payment_provider_manifest(payment).is_none() {
-        return nested_json(params, "config");
-    }
-    let mut root = Value::Object(Map::new());
-    for (raw_key, raw_value) in params {
-        if let Some(path) = bracket_path(raw_key, "config") {
-            // Built-in provider manifests are text forms. Preserve exact strings
-            // (including numeric-looking IDs and boolean-looking secrets) rather
-            // than applying the generic JSON scalar coercion used elsewhere.
-            insert_nested_json(&mut root, &path, Value::String(raw_value.clone()));
-        }
-    }
-    root
-}
-
 fn payment_reconciliation_identity_hash(value: &str) -> [u8; 32] {
     Sha256::digest(value.as_bytes()).into()
 }
 
-pub(super) fn reconciliation_resolved_filter(
-    params: &HashMap<String, String>,
-) -> Result<i16, ApiError> {
-    match optional_string(params, "resolved").as_deref() {
+/// §6.4 `?resolved=` vocabulary for `GET payment-reconciliations` — the
+/// legacy dedicated scalar filter survives unchanged: absent/`0`/
+/// `unresolved`/`open` list open rows, `1`/`resolved`/`closed` list resolved
+/// rows, `all` lists both.
+pub(super) fn reconciliation_resolved_filter(resolved: Option<&str>) -> Result<i16, ApiError> {
+    match resolved {
         None | Some("0" | "unresolved" | "open") => Ok(0),
         Some("1" | "resolved" | "closed") => Ok(1),
         Some("all") => Ok(2),
@@ -130,13 +132,13 @@ fn map_admin_order_write_error(error: sqlx::Error) -> ApiError {
             .message()
             .contains(UNFINISHED_ORDER_UNIQUE_KEY)
     {
-        return ApiError::business("该用户还有待支付的订单，无法分配");
+        return Problem::new(Code::OrderAssignConflict).into();
     }
     if matches!(
         database_error.code().as_deref(),
         Some("40P01" | "40001" | "55P03")
     ) {
-        return ApiError::business("订单状态正在被其他请求修改，请重试");
+        return Problem::new(Code::OrderUpdateConflict).into();
     }
     ApiError::Database(error)
 }
@@ -151,7 +153,7 @@ async fn lock_server_group_for_share(
             .fetch_optional(&mut **tx)
             .await?;
     if exists.is_none() {
-        return Err(ApiError::business("该服务器组不存在"));
+        return Err(Problem::new(Code::ServerGroupNotFound).into());
     }
     Ok(())
 }
@@ -183,19 +185,13 @@ async fn lock_plan_users_for_update(
         };
         locked = locked.saturating_add(ids.len());
         if locked > PLAN_FORCE_UPDATE_MAX_USERS {
-            return Err(ApiError::business(
-                "该订阅用户过多，单次最多强制更新 10000 个用户",
-            ));
+            return Err(Problem::new(Code::PlanForceUpdateLimitExceeded).into());
         }
         after_id = last_id;
     }
 }
 
-pub(super) fn required_nonnegative_i32(
-    params: &HashMap<String, String>,
-    field: &str,
-) -> Result<i64, ApiError> {
-    let value = required_i64(params, field)?;
+fn nonnegative_i32(field: &str, value: i64) -> Result<i64, ApiError> {
     if !(0..=i64::from(i32::MAX)).contains(&value) {
         return Err(ApiError::validation_field(
             field,
@@ -206,25 +202,20 @@ pub(super) fn required_nonnegative_i32(
 }
 
 pub(super) fn optional_nonnegative_i32(
-    params: &HashMap<String, String>,
     field: &str,
+    value: Option<i64>,
 ) -> Result<Option<i64>, ApiError> {
-    let Some(raw) = params.get(field).map(|value| value.trim()) else {
-        return Ok(None);
-    };
-    if raw.is_empty() || raw.eq_ignore_ascii_case("null") {
-        return Ok(None);
-    }
-    let value = raw.parse::<i64>().map_err(|_| {
-        ApiError::validation_field(field, "Value must be a non-negative 32-bit integer")
-    })?;
-    if !(0..=i64::from(i32::MAX)).contains(&value) {
+    value.map(|value| nonnegative_i32(field, value)).transpose()
+}
+
+fn optional_smallint(field: &str, value: Option<i64>) -> Result<Option<i64>, ApiError> {
+    if value.is_some_and(|value| i16::try_from(value).is_err()) {
         return Err(ApiError::validation_field(
             field,
-            "Value must be a non-negative 32-bit integer",
+            "Value must be a 16-bit integer",
         ));
     }
-    Ok(Some(value))
+    Ok(value)
 }
 
 pub(super) fn parse_payment_config(raw: &str) -> Result<Value, ApiError> {
@@ -251,243 +242,660 @@ pub(super) fn reconciliation_resolution(actor: &str, note: &str) -> Result<Strin
     Ok(value)
 }
 
+/// §6.2: `handling_fee_percent` crosses the wire as a JSON number; the exact
+/// legacy 0.1–100 range check runs on the decimal representation.
+fn handling_fee_percent_decimal(
+    value: Option<&serde_json::Number>,
+) -> Result<Option<Decimal>, ApiError> {
+    let Some(number) = value else {
+        return Ok(None);
+    };
+    match number.to_string().parse::<Decimal>() {
+        Ok(percent) if (Decimal::new(1, 1)..=Decimal::from(100)).contains(&percent) => {
+            Ok(Some(percent))
+        }
+        _ => Err(validation_error(
+            "handling_fee_percent",
+            "百分比手续费范围须在0.1-100之间",
+        )),
+    }
+}
+
+/// One admin plan row (§6.2 `GET plans`): the legacy field set plus the
+/// active-user `count`, on modern value types — bool flags, §4.5 RFC 3339
+/// timestamps. Prices stay integer cents; `transfer_enable` stays the
+/// operator-facing GiB figure.
+#[derive(Debug, Serialize)]
+pub struct AdminPlanItem {
+    pub id: i32,
+    pub group_id: i32,
+    pub transfer_enable: i64,
+    pub device_limit: Option<i32>,
+    pub name: String,
+    pub speed_limit: Option<i32>,
+    pub show: bool,
+    pub sort: Option<i32>,
+    pub renew: bool,
+    pub content: Option<String>,
+    pub month_price: Option<i32>,
+    pub quarter_price: Option<i32>,
+    pub half_year_price: Option<i32>,
+    pub year_price: Option<i32>,
+    pub two_year_price: Option<i32>,
+    pub three_year_price: Option<i32>,
+    pub onetime_price: Option<i32>,
+    pub reset_price: Option<i32>,
+    pub reset_traffic_method: Option<i16>,
+    pub capacity_limit: Option<i32>,
+    pub count: i64,
+    #[serde(with = "rfc3339")]
+    pub created_at: i64,
+    #[serde(with = "rfc3339")]
+    pub updated_at: i64,
+}
+
+/// POST `plans` (§6.2): the legacy PlanSave field set as a JSON body.
+/// Creates keep the DB defaults PlanSave never touched (`show` = 0,
+/// `renew` = 1, `sort` = NULL).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlanCreate {
+    pub name: String,
+    pub group_id: i64,
+    pub transfer_enable: i64,
+    #[serde(default)]
+    pub device_limit: Option<i64>,
+    #[serde(default)]
+    pub speed_limit: Option<i64>,
+    #[serde(default)]
+    pub capacity_limit: Option<i64>,
+    #[serde(default)]
+    pub content: Option<String>,
+    #[serde(default)]
+    pub month_price: Option<i64>,
+    #[serde(default)]
+    pub quarter_price: Option<i64>,
+    #[serde(default)]
+    pub half_year_price: Option<i64>,
+    #[serde(default)]
+    pub year_price: Option<i64>,
+    #[serde(default)]
+    pub two_year_price: Option<i64>,
+    #[serde(default)]
+    pub three_year_price: Option<i64>,
+    #[serde(default)]
+    pub onetime_price: Option<i64>,
+    #[serde(default)]
+    pub reset_price: Option<i64>,
+    #[serde(default)]
+    pub reset_traffic_method: Option<i64>,
+}
+
+/// PATCH `plans/{id}` (§6.2): §4.4 partial update merging the legacy
+/// `plan/update` show/renew toggles; `force_update` stays a body flag that
+/// propagates the final plan limits to every subscribed user.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlanPatch {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub group_id: Option<i64>,
+    #[serde(default)]
+    pub transfer_enable: Option<i64>,
+    #[serde(default, with = "double_option")]
+    pub device_limit: Option<Option<i64>>,
+    #[serde(default, with = "double_option")]
+    pub speed_limit: Option<Option<i64>>,
+    #[serde(default, with = "double_option")]
+    pub capacity_limit: Option<Option<i64>>,
+    #[serde(default, with = "double_option")]
+    pub content: Option<Option<String>>,
+    #[serde(default, with = "double_option")]
+    pub month_price: Option<Option<i64>>,
+    #[serde(default, with = "double_option")]
+    pub quarter_price: Option<Option<i64>>,
+    #[serde(default, with = "double_option")]
+    pub half_year_price: Option<Option<i64>>,
+    #[serde(default, with = "double_option")]
+    pub year_price: Option<Option<i64>>,
+    #[serde(default, with = "double_option")]
+    pub two_year_price: Option<Option<i64>>,
+    #[serde(default, with = "double_option")]
+    pub three_year_price: Option<Option<i64>>,
+    #[serde(default, with = "double_option")]
+    pub onetime_price: Option<Option<i64>>,
+    #[serde(default, with = "double_option")]
+    pub reset_price: Option<Option<i64>>,
+    #[serde(default, with = "double_option")]
+    pub reset_traffic_method: Option<Option<i64>>,
+    #[serde(default)]
+    pub show: Option<bool>,
+    #[serde(default)]
+    pub renew: Option<bool>,
+    #[serde(default)]
+    pub force_update: Option<bool>,
+}
+
+/// POST `plans/sort` / POST `payments/sort` (§6.2): JSON `{ids}` full
+/// resequencing (the legacy `plan_ids` key becomes `ids` per §4.1).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SortIdsRequest {
+    pub ids: Vec<i64>,
+}
+
+/// One admin payment-method row (§6.2 `GET payments`): the legacy field set
+/// with `handling_fee_percent` as a JSON number, bool `enable`, redacted
+/// `config`, and §4.5 RFC 3339 timestamps.
+#[derive(Debug, Serialize)]
+pub struct AdminPaymentItem {
+    pub id: i32,
+    pub name: String,
+    pub payment: String,
+    pub icon: Option<String>,
+    pub handling_fee_fixed: Option<i32>,
+    pub handling_fee_percent: Option<f64>,
+    pub uuid: String,
+    pub config: Value,
+    pub notify_domain: Option<String>,
+    pub notify_url: String,
+    pub enable: bool,
+    pub sort: Option<i32>,
+    #[serde(with = "rfc3339")]
+    pub created_at: i64,
+    #[serde(with = "rfc3339")]
+    pub updated_at: i64,
+    pub legacy_md5_signature: bool,
+    pub security_warning: Option<&'static str>,
+}
+
+/// POST `payments` (§6.2): JSON body with the gateway config as a real
+/// object. Created rows start disabled with NULL sort, as the legacy insert
+/// did.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PaymentCreate {
+    pub name: String,
+    pub payment: String,
+    pub config: Map<String, Value>,
+    #[serde(default)]
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub notify_domain: Option<String>,
+    #[serde(default)]
+    pub handling_fee_fixed: Option<i64>,
+    #[serde(default)]
+    pub handling_fee_percent: Option<serde_json::Number>,
+}
+
+/// PATCH `payments/{id}` (§6.2): §4.4 double-Option replaces the legacy
+/// present-but-empty=clear convention, and the legacy `payment/show` toggle
+/// merges in as the explicit `enable` bool. `payment`/`config` may only be
+/// echoed back unchanged — each payment row is an immutable verification
+/// version (any real change is `payment_method_in_use`).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PaymentPatch {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub payment: Option<String>,
+    #[serde(default)]
+    pub config: Option<Map<String, Value>>,
+    #[serde(default, with = "double_option")]
+    pub icon: Option<Option<String>>,
+    #[serde(default, with = "double_option")]
+    pub notify_domain: Option<Option<String>>,
+    #[serde(default, with = "double_option")]
+    pub handling_fee_fixed: Option<Option<i64>>,
+    #[serde(default, with = "double_option")]
+    pub handling_fee_percent: Option<Option<serde_json::Number>>,
+    #[serde(default)]
+    pub enable: Option<bool>,
+}
+
+/// PATCH `orders/{trade_no}` (§6.4): **exactly one** of the two fields must
+/// be present — both or neither is 422 `validation_failed` (the legacy
+/// client only ever sends one).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OrderPatch {
+    #[serde(default)]
+    pub status: Option<i64>,
+    #[serde(default)]
+    pub commission_status: Option<i64>,
+}
+
+/// The single §6.4 order-PATCH assignment, resolved by
+/// [`order_patch_action`].
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum OrderPatchAction {
+    Status(i64),
+    CommissionStatus(i64),
+}
+
+/// §6.4 exactly-one-field rule plus the legacy Laravel `in:` validations
+/// (`status` in 0–3, `commission_status` in 0/1/3).
+pub(super) fn order_patch_action(body: &OrderPatch) -> Result<OrderPatchAction, ApiError> {
+    match (body.status, body.commission_status) {
+        (Some(_), Some(_)) | (None, None) => Err(validation_error(
+            "status",
+            "Provide exactly one of status and commission_status",
+        )),
+        (Some(status), None) => {
+            if !(0..=3).contains(&status) {
+                return Err(validation_error("status", "销售状态格式不正确"));
+            }
+            Ok(OrderPatchAction::Status(status))
+        }
+        (None, Some(commission_status)) => {
+            if !matches!(commission_status, 0 | 1 | 3) {
+                return Err(validation_error("commission_status", "佣金状态格式不正确"));
+            }
+            Ok(OrderPatchAction::CommissionStatus(commission_status))
+        }
+    }
+}
+
+/// POST `orders` (§6.4): assigns an order to a user by email — the legacy
+/// `order/assign` body as JSON, answered with a §1 201 bare `{trade_no}`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OrderAssign {
+    pub email: String,
+    pub plan_id: i64,
+    pub period: String,
+    #[serde(default)]
+    pub total_amount: Option<i64>,
+}
+
+/// POST `payment-reconciliations/{id}/resolve` (§6.4): the demultiplexed
+/// legacy `order/update` + `reconciliation_id` arm.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReconciliationResolveRequest {
+    pub resolution: String,
+}
+
+fn plan_create_validation(body: &PlanCreate) -> Result<(), ApiError> {
+    if body.name.trim().is_empty() {
+        return Err(validation_error("name", "name cannot be empty"));
+    }
+    nonnegative_i32("transfer_enable", body.transfer_enable)?;
+    for (field, value) in [
+        ("device_limit", body.device_limit),
+        ("speed_limit", body.speed_limit),
+        ("capacity_limit", body.capacity_limit),
+        ("month_price", body.month_price),
+        ("quarter_price", body.quarter_price),
+        ("half_year_price", body.half_year_price),
+        ("year_price", body.year_price),
+        ("two_year_price", body.two_year_price),
+        ("three_year_price", body.three_year_price),
+        ("onetime_price", body.onetime_price),
+        ("reset_price", body.reset_price),
+    ] {
+        optional_nonnegative_i32(field, value)?;
+    }
+    optional_smallint("reset_traffic_method", body.reset_traffic_method)?;
+    Ok(())
+}
+
+pub(super) fn plan_patch_validation(body: &PlanPatch) -> Result<(), ApiError> {
+    if let Some(name) = &body.name
+        && name.trim().is_empty()
+    {
+        return Err(validation_error("name", "name cannot be empty"));
+    }
+    if let Some(transfer_enable) = body.transfer_enable {
+        nonnegative_i32("transfer_enable", transfer_enable)?;
+    }
+    for (field, value) in [
+        ("device_limit", &body.device_limit),
+        ("speed_limit", &body.speed_limit),
+        ("capacity_limit", &body.capacity_limit),
+        ("month_price", &body.month_price),
+        ("quarter_price", &body.quarter_price),
+        ("half_year_price", &body.half_year_price),
+        ("year_price", &body.year_price),
+        ("two_year_price", &body.two_year_price),
+        ("three_year_price", &body.three_year_price),
+        ("onetime_price", &body.onetime_price),
+        ("reset_price", &body.reset_price),
+    ] {
+        if let Some(update) = value {
+            optional_nonnegative_i32(field, *update)?;
+        }
+    }
+    if let Some(update) = &body.reset_traffic_method {
+        optional_smallint("reset_traffic_method", *update)?;
+    }
+    Ok(())
+}
+
 impl AdminService {
-    pub(super) async fn plan_fetch(&self) -> Result<AdminOutput, ApiError> {
-        let mut plans = v2board_db::plan::fetch_visible_plans(&self.db).await?;
-        let shown_ids = plans.iter().map(|plan| plan.id).collect::<HashSet<_>>();
-        let mut hidden = sqlx::query_as::<_, v2board_db::plan::PlanRow>(
+    /// GET `plans` (§6.2): bare array — every plan, shown and hidden, with
+    /// its active-user `count`, in the operator sort order.
+    pub async fn plans_list(&self) -> Result<Vec<AdminPlanItem>, ApiError> {
+        let plans = sqlx::query_as::<_, v2board_db::plan::PlanRow>(
             r#"
             SELECT id, group_id, transfer_enable, device_limit, name, speed_limit, "show", sort,
                    renew, content, month_price, quarter_price, half_year_price, year_price,
                    two_year_price, three_year_price, onetime_price, reset_price,
                    reset_traffic_method, capacity_limit, created_at, updated_at
             FROM plan
-            WHERE "show" = 0
-            ORDER BY sort ASC NULLS FIRST
+            ORDER BY sort ASC NULLS FIRST, id ASC
             "#,
         )
         .fetch_all(&self.db)
         .await?;
-        plans.append(&mut hidden);
         let counts = v2board_db::plan::count_active_users_by_plan(&self.db).await?;
-        let mut data = Vec::with_capacity(plans.len());
-        for plan in plans {
-            let mut value = serde_json::to_value(&plan)
-                .map_err(|_| ApiError::internal("failed to encode plan"))?;
-            value["count"] = json!(counts.get(&plan.id).copied().unwrap_or_default());
-            if !shown_ids.contains(&plan.id) {
-                value["show"] = json!(0);
-            }
-            data.push(value);
-        }
-        data.sort_by_key(|value| {
-            value
-                .get("sort")
-                .and_then(Value::as_i64)
-                .unwrap_or_default()
-        });
-        Ok(AdminOutput::Data(json!(data)))
+        Ok(plans
+            .into_iter()
+            .map(|plan| {
+                let count = counts.get(&plan.id).copied().unwrap_or_default();
+                AdminPlanItem {
+                    id: plan.id,
+                    group_id: plan.group_id,
+                    transfer_enable: plan.transfer_enable,
+                    device_limit: plan.device_limit,
+                    name: plan.name,
+                    speed_limit: plan.speed_limit,
+                    show: plan.show != 0,
+                    sort: plan.sort,
+                    renew: plan.renew != 0,
+                    content: plan.content,
+                    month_price: plan.month_price,
+                    quarter_price: plan.quarter_price,
+                    half_year_price: plan.half_year_price,
+                    year_price: plan.year_price,
+                    two_year_price: plan.two_year_price,
+                    three_year_price: plan.three_year_price,
+                    onetime_price: plan.onetime_price,
+                    reset_price: plan.reset_price,
+                    reset_traffic_method: plan.reset_traffic_method,
+                    capacity_limit: plan.capacity_limit,
+                    count,
+                    created_at: plan.created_at,
+                    updated_at: plan.updated_at,
+                }
+            })
+            .collect())
     }
 
-    pub(super) async fn plan_save(
-        &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
+    /// POST `plans` (§6.2) → the new id (a 201 `{id}` on the wire).
+    pub async fn plan_create(&self, body: &PlanCreate) -> Result<i32, ApiError> {
+        plan_create_validation(body)?;
         let now = Utc::now().timestamp();
-        let id = optional_i64(params, "id");
-        let transfer_enable = required_nonnegative_i32(params, "transfer_enable")?;
-        let device_limit = optional_nonnegative_i32(params, "device_limit")?;
-        let speed_limit = optional_nonnegative_i32(params, "speed_limit")?;
-        let capacity_limit = optional_nonnegative_i32(params, "capacity_limit")?;
-        let month_price = optional_nonnegative_i32(params, "month_price")?;
-        let quarter_price = optional_nonnegative_i32(params, "quarter_price")?;
-        let half_year_price = optional_nonnegative_i32(params, "half_year_price")?;
-        let year_price = optional_nonnegative_i32(params, "year_price")?;
-        let two_year_price = optional_nonnegative_i32(params, "two_year_price")?;
-        let three_year_price = optional_nonnegative_i32(params, "three_year_price")?;
-        let onetime_price = optional_nonnegative_i32(params, "onetime_price")?;
-        let reset_price = optional_nonnegative_i32(params, "reset_price")?;
-        let group_id = required_i64(params, "group_id")?;
-        let force_update = id.is_some() && truthy(params.get("force_update"));
-        let transfer_enable_bytes = force_update
-            .then(|| checked_gib_bytes(transfer_enable, "transfer_enable"))
-            .transpose()?;
         let mut tx = self.db.begin().await?;
-        // Group writers use group -> user -> plan ordering.  The shared parent
-        // lock makes a concurrent group drop wait before either the plan or its
-        // users can be changed.
-        lock_server_group_for_share(&mut tx, group_id).await?;
-        if let Some(id) = id {
-            if force_update {
-                // Order lifecycle writers take user before plan.  Acquire every
-                // affected user in primary-key pages before the plan row so the
-                // force propagation cannot invert that order or materialize an
-                // unbounded id list.
-                lock_plan_users_for_update(&mut tx, id).await?;
+        // Group writers use group -> user -> plan ordering. The shared parent
+        // lock makes a concurrent group drop wait before the plan is created.
+        lock_server_group_for_share(&mut tx, body.group_id).await?;
+        let id: i32 = sqlx::query_scalar(
+            r#"
+            INSERT INTO plan (
+                group_id, transfer_enable, device_limit, name, speed_limit,
+                content, month_price, quarter_price, half_year_price, year_price,
+                two_year_price, three_year_price, onetime_price, reset_price,
+                reset_traffic_method, capacity_limit, created_at, updated_at
+            )
+            VALUES (
+                CAST($1::BIGINT AS INTEGER), $2, CAST($3::BIGINT AS INTEGER), $4,
+                CAST($5::BIGINT AS INTEGER), $6, CAST($7::BIGINT AS INTEGER),
+                CAST($8::BIGINT AS INTEGER), CAST($9::BIGINT AS INTEGER),
+                CAST($10::BIGINT AS INTEGER), CAST($11::BIGINT AS INTEGER),
+                CAST($12::BIGINT AS INTEGER), CAST($13::BIGINT AS INTEGER),
+                CAST($14::BIGINT AS INTEGER), CAST($15::BIGINT AS SMALLINT),
+                CAST($16::BIGINT AS INTEGER), $17, $18
+            )
+            RETURNING id
+            "#,
+        )
+        .bind(body.group_id)
+        .bind(body.transfer_enable)
+        .bind(body.device_limit)
+        .bind(&body.name)
+        .bind(body.speed_limit)
+        .bind(&body.content)
+        .bind(body.month_price)
+        .bind(body.quarter_price)
+        .bind(body.half_year_price)
+        .bind(body.year_price)
+        .bind(body.two_year_price)
+        .bind(body.three_year_price)
+        .bind(body.onetime_price)
+        .bind(body.reset_price)
+        .bind(body.reset_traffic_method)
+        .bind(body.capacity_limit)
+        .bind(now)
+        .bind(now)
+        .fetch_one(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(id)
+    }
+
+    /// PATCH `plans/{id}` (§6.2): §4.4 partial update over the PlanSave
+    /// field set plus the merged show/renew toggles. `force_update` locks
+    /// and repropagates the **final** plan limits (post-patch values, with
+    /// untouched columns read from the current row) to every subscribed
+    /// user, preserving the legacy group -> user -> plan lock ordering.
+    pub async fn plan_patch(&self, id: i64, body: &PlanPatch) -> Result<(), ApiError> {
+        plan_patch_validation(body)?;
+        let force_update = body.force_update.unwrap_or(false);
+        let now = Utc::now().timestamp();
+        let mut tx = self.db.begin().await?;
+        // The current values feed the group lock and the force propagation
+        // when the body leaves them untouched. The plain read is safe: the
+        // plan row itself is locked FOR UPDATE below before any write.
+        #[derive(FromRow)]
+        struct CurrentPlan {
+            group_id: i32,
+            transfer_enable: i64,
+            device_limit: Option<i32>,
+            speed_limit: Option<i32>,
+        }
+        let current = sqlx::query_as::<_, CurrentPlan>(
+            "SELECT group_id, transfer_enable, device_limit, speed_limit \
+             FROM plan WHERE id = $1 LIMIT 1",
+        )
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| ApiError::from(Problem::new(Code::PlanNotFound)))?;
+        let target_group = body.group_id.unwrap_or(i64::from(current.group_id));
+        if body.group_id.is_some() || force_update {
+            // Group writers use group -> user -> plan ordering. The shared
+            // parent lock makes a concurrent group drop wait before either
+            // the plan or its users can be changed.
+            lock_server_group_for_share(&mut tx, target_group).await?;
+        }
+        if force_update {
+            // Order lifecycle writers take user before plan. Acquire every
+            // affected user in primary-key pages before the plan row so the
+            // force propagation cannot invert that order or materialize an
+            // unbounded id list.
+            lock_plan_users_for_update(&mut tx, id).await?;
+        }
+        let locked: Option<i32> =
+            sqlx::query_scalar("SELECT id FROM plan WHERE id = $1 LIMIT 1 FOR UPDATE")
+                .bind(id)
+                .fetch_optional(&mut *tx)
+                .await?;
+        if locked.is_none() {
+            return Err(Problem::new(Code::PlanNotFound).into());
+        }
+
+        let mut values: Vec<(&str, AdminSqlValue)> = Vec::new();
+        if let Some(name) = &body.name {
+            values.push(("name", AdminSqlValue::Text(name.clone())));
+        }
+        if let Some(group_id) = body.group_id {
+            values.push(("group_id", AdminSqlValue::Integer(group_id)));
+        }
+        if let Some(transfer_enable) = body.transfer_enable {
+            values.push(("transfer_enable", AdminSqlValue::Integer(transfer_enable)));
+        }
+        for (column, field) in [
+            ("device_limit", &body.device_limit),
+            ("speed_limit", &body.speed_limit),
+            ("capacity_limit", &body.capacity_limit),
+            ("month_price", &body.month_price),
+            ("quarter_price", &body.quarter_price),
+            ("half_year_price", &body.half_year_price),
+            ("year_price", &body.year_price),
+            ("two_year_price", &body.two_year_price),
+            ("three_year_price", &body.three_year_price),
+            ("onetime_price", &body.onetime_price),
+            ("reset_price", &body.reset_price),
+            ("reset_traffic_method", &body.reset_traffic_method),
+        ] {
+            if let Some(update) = field {
+                values.push((
+                    column,
+                    update.map_or(AdminSqlValue::IntegerNull, AdminSqlValue::Integer),
+                ));
             }
-            let plan_exists: Option<i32> =
-                sqlx::query_scalar("SELECT id FROM plan WHERE id = $1 LIMIT 1 FOR UPDATE")
-                    .bind(id)
-                    .fetch_optional(&mut *tx)
-                    .await?;
-            if plan_exists.is_none() {
-                return Err(ApiError::business("该订阅ID不存在"));
-            }
-            // PlanSave excludes show/renew/sort, so edit never touches them.
+        }
+        if let Some(content) = &body.content {
+            values.push((
+                "content",
+                content
+                    .clone()
+                    .map_or(AdminSqlValue::TextNull, AdminSqlValue::Text),
+            ));
+        }
+        if let Some(show) = body.show {
+            values.push(("show", AdminSqlValue::Integer(i64::from(show))));
+        }
+        if let Some(renew) = body.renew {
+            values.push(("renew", AdminSqlValue::Integer(i64::from(renew))));
+        }
+        let mut builder = QueryBuilder::<Postgres>::new("UPDATE plan SET ");
+        for (column, value) in &values {
+            builder.push(format!("\"{column}\" = "));
+            push_admin_sql_bind(&mut builder, column, value);
+            builder.push(", ");
+        }
+        builder.push("\"updated_at\" = ");
+        builder.push_bind(now);
+        builder.push(" WHERE id = ");
+        builder.push_bind(id);
+        builder.build().execute(&mut *tx).await?;
+
+        if force_update {
+            let transfer_enable_bytes = checked_gib_bytes(
+                body.transfer_enable.unwrap_or(current.transfer_enable),
+                "transfer_enable",
+            )?;
+            let device_limit = match &body.device_limit {
+                Some(update) => *update,
+                None => current.device_limit.map(i64::from),
+            };
+            let speed_limit = match &body.speed_limit {
+                Some(update) => *update,
+                None => current.speed_limit.map(i64::from),
+            };
             sqlx::query(
                 r#"
-                UPDATE plan
+                UPDATE users
                 SET group_id = CAST($1::BIGINT AS INTEGER), transfer_enable = $2,
-                    device_limit = CAST($3::BIGINT AS INTEGER), name = $4,
-                    speed_limit = CAST($5::BIGINT AS INTEGER), content = $6,
-                    month_price = CAST($7::BIGINT AS INTEGER),
-                    quarter_price = CAST($8::BIGINT AS INTEGER),
-                    half_year_price = CAST($9::BIGINT AS INTEGER),
-                    year_price = CAST($10::BIGINT AS INTEGER),
-                    two_year_price = CAST($11::BIGINT AS INTEGER),
-                    three_year_price = CAST($12::BIGINT AS INTEGER),
-                    onetime_price = CAST($13::BIGINT AS INTEGER),
-                    reset_price = CAST($14::BIGINT AS INTEGER),
-                    reset_traffic_method = CAST($15::BIGINT AS SMALLINT),
-                    capacity_limit = CAST($16::BIGINT AS INTEGER), updated_at = $17
-                WHERE id = $18::BIGINT
+                    device_limit = CAST($3::BIGINT AS INTEGER),
+                    speed_limit = CAST($4::BIGINT AS INTEGER), updated_at = $5
+                WHERE plan_id = $6::BIGINT
                 "#,
             )
-            .bind(group_id)
-            .bind(transfer_enable)
+            .bind(target_group)
+            .bind(transfer_enable_bytes)
             .bind(device_limit)
-            .bind(required_string(params, "name")?)
             .bind(speed_limit)
-            .bind(params.get("content"))
-            .bind(month_price)
-            .bind(quarter_price)
-            .bind(half_year_price)
-            .bind(year_price)
-            .bind(two_year_price)
-            .bind(three_year_price)
-            .bind(onetime_price)
-            .bind(reset_price)
-            .bind(optional_i64(params, "reset_traffic_method"))
-            .bind(capacity_limit)
             .bind(now)
             .bind(id)
-            .execute(&mut *tx)
-            .await?;
-            if force_update {
-                sqlx::query(
-                    r#"
-                    UPDATE users
-                    SET group_id = CAST($1::BIGINT AS INTEGER), transfer_enable = $2,
-                        device_limit = CAST($3::BIGINT AS INTEGER),
-                        speed_limit = CAST($4::BIGINT AS INTEGER), updated_at = $5
-                    WHERE plan_id = $6::BIGINT
-                    "#,
-                )
-                .bind(group_id)
-                .bind(transfer_enable_bytes)
-                .bind(device_limit)
-                .bind(speed_limit)
-                .bind(now)
-                .bind(id)
-                .execute(&mut *tx)
-                .await?;
-            }
-        } else {
-            // PlanSave excludes show/renew/sort, so create leaves the DB defaults
-            // (show = 0, renew = 1, sort = NULL).
-            sqlx::query(
-                r#"
-                INSERT INTO plan (
-                    group_id, transfer_enable, device_limit, name, speed_limit,
-                    content, month_price, quarter_price, half_year_price, year_price,
-                    two_year_price, three_year_price, onetime_price, reset_price,
-                    reset_traffic_method, capacity_limit, created_at, updated_at
-                )
-                VALUES (
-                    CAST($1::BIGINT AS INTEGER), $2, CAST($3::BIGINT AS INTEGER), $4,
-                    CAST($5::BIGINT AS INTEGER), $6, CAST($7::BIGINT AS INTEGER),
-                    CAST($8::BIGINT AS INTEGER), CAST($9::BIGINT AS INTEGER),
-                    CAST($10::BIGINT AS INTEGER), CAST($11::BIGINT AS INTEGER),
-                    CAST($12::BIGINT AS INTEGER), CAST($13::BIGINT AS INTEGER),
-                    CAST($14::BIGINT AS INTEGER), CAST($15::BIGINT AS SMALLINT),
-                    CAST($16::BIGINT AS INTEGER), $17, $18
-                )
-                "#,
-            )
-            .bind(group_id)
-            .bind(transfer_enable)
-            .bind(device_limit)
-            .bind(required_string(params, "name")?)
-            .bind(speed_limit)
-            .bind(params.get("content"))
-            .bind(month_price)
-            .bind(quarter_price)
-            .bind(half_year_price)
-            .bind(year_price)
-            .bind(two_year_price)
-            .bind(three_year_price)
-            .bind(onetime_price)
-            .bind(reset_price)
-            .bind(optional_i64(params, "reset_traffic_method"))
-            .bind(capacity_limit)
-            .bind(now)
-            .bind(now)
             .execute(&mut *tx)
             .await?;
         }
         tx.commit().await?;
-        Ok(AdminOutput::Data(json!(true)))
+        Ok(())
     }
 
-    pub(super) async fn plan_update(
-        &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        let id = required_i64(params, "id")?;
-        // PlanUpdate validates show/renew as in:0,1 before the controller runs.
-        for (field, message) in [
-            ("show", "销售状态格式不正确"),
-            ("renew", "续费状态格式不正确"),
-        ] {
-            if let Some(value) = params.get(field).map(|value| value.trim())
-                && value != "0"
-                && value != "1"
-            {
-                return Err(validation_error(field, message));
-            }
+    /// DELETE `plans/{id}` (§6.2): rejects deletion while any order, user,
+    /// or gift card still references the plan (400 `plan_in_use`, with the
+    /// blocking dependency in `detail` per §3.4); a missing id is 404
+    /// `plan_not_found`. One locking transaction, as the legacy drop.
+    pub async fn plan_delete(&self, id: i64) -> Result<(), ApiError> {
+        let mut tx = self.db.begin().await?;
+        let has_order: Option<i64> = sqlx::query_scalar(
+            "SELECT id FROM orders WHERE referenced_plan_id = $1 LIMIT 1 FOR UPDATE",
+        )
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?;
+        if has_order.is_some() {
+            return Err(Problem::new(Code::PlanInUse)
+                .with_detail("该订阅下存在订单无法删除")
+                .into());
         }
-        // PlanController::update aborts 500 when the plan id does not exist.
-        let exists: Option<i32> = sqlx::query_scalar("SELECT id FROM plan WHERE id = $1 LIMIT 1")
-            .bind(id)
-            .fetch_optional(&self.db)
-            .await?;
+        let has_user: Option<i64> =
+            sqlx::query_scalar("SELECT id FROM users WHERE plan_id = $1 LIMIT 1 FOR UPDATE")
+                .bind(id)
+                .fetch_optional(&mut *tx)
+                .await?;
+        if has_user.is_some() {
+            return Err(Problem::new(Code::PlanInUse)
+                .with_detail("该订阅下存在用户无法删除")
+                .into());
+        }
+        let has_giftcard: Option<i32> =
+            sqlx::query_scalar("SELECT id FROM gift_card WHERE plan_id = $1 LIMIT 1 FOR UPDATE")
+                .bind(id)
+                .fetch_optional(&mut *tx)
+                .await?;
+        if has_giftcard.is_some() {
+            return Err(Problem::new(Code::PlanInUse)
+                .with_detail("该订阅仍被礼品卡使用，无法删除")
+                .into());
+        }
+        let exists: Option<i32> =
+            sqlx::query_scalar("SELECT id FROM plan WHERE id = $1 LIMIT 1 FOR UPDATE")
+                .bind(id)
+                .fetch_optional(&mut *tx)
+                .await?;
         if exists.is_none() {
-            return Err(ApiError::business("该订阅不存在"));
+            return Err(Problem::new(Code::PlanNotFound).into());
         }
-        if let Some(show) = optional_i64(params, "show") {
-            sqlx::query(
-                "UPDATE plan SET \"show\" = CAST($1::BIGINT AS SMALLINT), updated_at = $2 WHERE id = $3::BIGINT",
-            )
-                .bind(show)
-                .bind(Utc::now().timestamp())
-                .bind(id)
-                .execute(&self.db)
-                .await?;
+        let deleted = sqlx::query("DELETE FROM plan WHERE id = $1")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        if deleted.rows_affected() != 1 {
+            return Err(Problem::new(Code::PlanNotFound).into());
         }
-        if let Some(renew) = optional_i64(params, "renew") {
-            sqlx::query(
-                "UPDATE plan SET renew = CAST($1::BIGINT AS SMALLINT), updated_at = $2 WHERE id = $3::BIGINT",
-            )
-                .bind(renew)
-                .bind(Utc::now().timestamp())
-                .bind(id)
-                .execute(&self.db)
-                .await?;
-        }
-        Ok(AdminOutput::Data(json!(true)))
+        tx.commit().await?;
+        Ok(())
     }
 
-    pub(super) async fn payment_fetch(&self) -> Result<AdminOutput, ApiError> {
+    /// POST `plans/sort` (§6.2): JSON `{ids}` full resequencing; empty 204.
+    pub async fn plans_sort(&self, ids: &[i64]) -> Result<(), ApiError> {
+        self.sort_ids("plan", ids).await.map(|_| ())
+    }
+
+    fn require_app_url(&self) -> Result<(), ApiError> {
+        if self
+            .config
+            .app_url
+            .as_deref()
+            .unwrap_or_default()
+            .is_empty()
+        {
+            return Err(Problem::new(Code::AppUrlNotConfigured).into());
+        }
+        Ok(())
+    }
+
+    /// GET `payments` (§6.2): bare array of active (non-archived) payment
+    /// methods with redacted configs and composed notify URLs.
+    pub async fn payments_list(&self) -> Result<Vec<AdminPaymentItem>, ApiError> {
         let rows = sqlx::query_as::<_, PaymentRow>(
             r#"
             SELECT id, name, payment, icon, handling_fee_fixed,
@@ -496,13 +904,12 @@ impl AdminService {
                    created_at, updated_at
             FROM payment_method
             WHERE archived_at IS NULL
-            ORDER BY sort ASC NULLS FIRST
+            ORDER BY sort ASC NULLS FIRST, id ASC
             "#,
         )
         .fetch_all(&self.db)
         .await?;
-        let data = rows
-            .into_iter()
+        rows.into_iter()
             .map(|row| {
                 let config = crate::payment_provider::redact_payment_config(
                     &row.payment,
@@ -526,39 +933,43 @@ impl AdminService {
                 } else {
                     notify_path
                 };
-                let legacy_md5_signature =
-                    crate::payment_provider::payment_provider_uses_legacy_md5(&row.payment);
-                let security_warning =
-                    crate::payment_provider::payment_provider_security_warning(&row.payment);
-                Ok(json!({
-                    "id": row.id,
-                    "name": row.name,
-                    "payment": row.payment,
-                    "icon": row.icon,
-                    "handling_fee_fixed": row.handling_fee_fixed,
-                    "handling_fee_percent": row.handling_fee_percent,
-                    "uuid": row.uuid,
-                    "config": config,
-                    "notify_domain": row.notify_domain,
-                    "notify_url": notify_url,
-                    "enable": row.enable,
-                    "sort": row.sort,
-                    "created_at": row.created_at,
-                    "updated_at": row.updated_at,
-                    "legacy_md5_signature": legacy_md5_signature,
-                    "security_warning": security_warning,
-                }))
+                Ok(AdminPaymentItem {
+                    id: row.id,
+                    legacy_md5_signature: crate::payment_provider::payment_provider_uses_legacy_md5(
+                        &row.payment,
+                    ),
+                    security_warning: crate::payment_provider::payment_provider_security_warning(
+                        &row.payment,
+                    ),
+                    name: row.name,
+                    payment: row.payment,
+                    icon: row.icon,
+                    handling_fee_fixed: row.handling_fee_fixed,
+                    handling_fee_percent: row.handling_fee_percent,
+                    uuid: row.uuid,
+                    config,
+                    notify_domain: row.notify_domain,
+                    notify_url,
+                    enable: row.enable != 0,
+                    sort: row.sort,
+                    created_at: row.created_at,
+                    updated_at: row.updated_at,
+                })
             })
-            .collect::<Result<Vec<_>, ApiError>>()?;
-        Ok(AdminOutput::Data(json!(data)))
+            .collect()
     }
 
-    pub(super) async fn payment_form(
+    /// GET `payment-providers/{code}/form` `?payment_id=` (§6.2): the
+    /// provider's form template, prefilled with the redacted stored config
+    /// when `payment_id` names an active row of the same driver. The read
+    /// moved off POST (recorded §6 decision) — the response stays
+    /// server-redacted.
+    pub async fn payment_provider_form_view(
         &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        let mut payment = params.get("payment").cloned().unwrap_or_default();
-        let config = if let Some(id) = optional_i64(params, "id") {
+        code: &str,
+        payment_id: Option<i64>,
+    ) -> Result<Value, ApiError> {
+        let config = if let Some(id) = payment_id {
             let (stored_payment, raw_config) = sqlx::query_as::<_, (String, String)>(
                 "SELECT payment, CAST(config AS TEXT) FROM payment_method \
                  WHERE id = $1 AND archived_at IS NULL LIMIT 1",
@@ -566,11 +977,8 @@ impl AdminService {
             .bind(id)
             .fetch_optional(&self.db)
             .await?
-            .ok_or_else(|| ApiError::business("支付方式不存在"))?;
-            if payment.is_empty() {
-                payment.clone_from(&stored_payment);
-            }
-            if payment == stored_payment {
+            .ok_or_else(|| ApiError::from(Problem::new(Code::PaymentMethodNotFound)))?;
+            if stored_payment == code {
                 Some(crate::payment_provider::redact_payment_config(
                     &stored_payment,
                     &parse_payment_config(&raw_config)?,
@@ -581,136 +989,173 @@ impl AdminService {
         } else {
             None
         };
-        Ok(AdminOutput::Data(payment_provider_form(
-            &payment,
-            config.as_ref(),
-        )))
+        Ok(payment_provider_form(code, config.as_ref()))
     }
 
-    pub(super) async fn payment_save(
-        &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        if self
-            .config
-            .app_url
-            .as_deref()
-            .unwrap_or_default()
-            .is_empty()
-        {
-            return Err(ApiError::business("请在站点配置中配置站点地址"));
+    /// POST `payments` (§6.2) → the new id (a 201 `{id}` on the wire). The
+    /// legacy Chinese validation literals stay as the 422 field messages; a
+    /// missing site URL is 400 `app_url_not_configured`.
+    pub async fn payment_create(&self, body: &PaymentCreate) -> Result<i32, ApiError> {
+        self.require_app_url()?;
+        if body.name.trim().is_empty() {
+            return Err(validation_error("name", "显示名称不能为空"));
         }
-        // PaymentController::save validates name/payment/config plus the optional
-        // notify_domain url and handling fee formats. It does NOT check that the
-        // gateway manifest exists, so no "gate is not found" gate here.
-        let name = required_string(params, "name")
-            .map_err(|_| validation_error("name", "显示名称不能为空"))?;
-        let payment = required_string(params, "payment")
-            .map_err(|_| validation_error("payment", "网关参数不能为空"))?;
-        if !param_present(params, "config") {
+        if body.payment.trim().is_empty() {
+            return Err(validation_error("payment", "网关参数不能为空"));
+        }
+        if body.config.is_empty() {
             return Err(validation_error("config", "配置参数不能为空"));
         }
-        if let Some(domain) = optional_string(params, "notify_domain")
-            && !is_valid_url(&domain)
+        if let Some(domain) = body.notify_domain.as_deref()
+            && !is_valid_url(domain)
         {
             return Err(validation_error("notify_domain", "自定义通知域名格式有误"));
         }
-        let handling_fee_fixed = optional_nonnegative_i32(params, "handling_fee_fixed")?;
-        if let Some(value) = optional_string(params, "handling_fee_percent") {
-            match value.parse::<Decimal>() {
-                Ok(number) if (Decimal::new(1, 1)..=Decimal::from(100)).contains(&number) => {}
-                _ => {
-                    return Err(validation_error(
-                        "handling_fee_percent",
-                        "百分比手续费范围须在0.1-100之间",
-                    ));
-                }
-            }
-        }
-        let submitted_config = payment_config_input(params, &payment);
-        if crate::payment_provider::payment_provider_uses_legacy_md5(&payment) {
+        let handling_fee_fixed =
+            optional_nonnegative_i32("handling_fee_fixed", body.handling_fee_fixed)?;
+        let handling_fee_percent =
+            handling_fee_percent_decimal(body.handling_fee_percent.as_ref())?;
+        let config_value = resolve_redacted_payment_config(
+            &body.payment,
+            None,
+            Value::Object(body.config.clone()),
+        )?;
+        if crate::payment_provider::payment_provider_uses_legacy_md5(&body.payment) {
             tracing::warn!(
-                provider = payment,
+                provider = body.payment,
                 "administrator saved a legacy MD5 payment provider; HTTPS and migration are strongly recommended"
             );
         }
         let now = Utc::now().timestamp();
-        if let Some(id) = optional_i64(params, "id") {
-            let mut tx = self.db.begin().await?;
-            let current = sqlx::query_as::<_, (String, String)>(
-                "SELECT payment, CAST(config AS TEXT) FROM payment_method \
-                 WHERE id = $1 AND archived_at IS NULL LIMIT 1 FOR UPDATE",
+        let id: i32 = sqlx::query_scalar(
+            r#"
+            INSERT INTO payment_method (
+                name, icon, payment, uuid, config, notify_domain, handling_fee_fixed,
+                handling_fee_percent, enable, created_at, updated_at
             )
-            .bind(id)
-            .fetch_optional(&mut *tx)
-            .await?
-            .ok_or_else(|| ApiError::business("支付方式不存在"))?;
-            let config_value = resolve_redacted_payment_config(
-                &payment,
-                Some((&current.0, &current.1)),
-                submitted_config,
-            )?;
-            let config_changed = serde_json::from_str::<Value>(&current.1)
-                .map(|value| value != config_value)
-                .unwrap_or(true);
-            if payment_verification_version_blocks_update(current.0 != payment, config_changed) {
-                return Err(ApiError::business(
-                    "支付方式是不可变验签版本，网关类型和密钥配置不可原地修改；请归档后新建支付方式",
-                ));
-            }
-            sqlx::query(
-                r#"
-                UPDATE payment_method
-                SET name = $1, icon = $2, payment = $3, config = $4, notify_domain = $5,
-                    handling_fee_fixed = CAST($6::BIGINT AS INTEGER),
-                    handling_fee_percent = $7, updated_at = $8
-                WHERE id = $9::BIGINT AND archived_at IS NULL
-                "#,
-            )
-            .bind(&name)
-            .bind(optional_string(params, "icon"))
-            .bind(&payment)
-            .bind(Json(config_value))
-            .bind(optional_string(params, "notify_domain"))
-            .bind(handling_fee_fixed)
-            .bind(optional_decimal(params, "handling_fee_percent"))
-            .bind(now)
-            .bind(id)
-            .execute(&mut *tx)
-            .await?;
-            tx.commit().await?;
-        } else {
-            let config_value = resolve_redacted_payment_config(&payment, None, submitted_config)?;
-            sqlx::query(
-                r#"
-                INSERT INTO payment_method (
-                    name, icon, payment, uuid, config, notify_domain, handling_fee_fixed,
-                    handling_fee_percent, enable, sort, created_at, updated_at
-                )
-                VALUES (
-                    $1, $2, $3, $4, $5, $6, CAST($7::BIGINT AS INTEGER),
-                    $8, 0, CAST($9::BIGINT AS INTEGER), $10, $11
-                )
-                "#,
-            )
-            .bind(&name)
-            .bind(params.get("icon"))
-            .bind(&payment)
-            .bind(random_payment_uuid())
-            .bind(Json(config_value))
-            .bind(params.get("notify_domain"))
-            .bind(handling_fee_fixed)
-            .bind(optional_decimal(params, "handling_fee_percent"))
-            .bind(optional_i64(params, "sort"))
-            .bind(now)
-            .bind(now)
-            .execute(&self.db)
-            .await?;
-        }
-        Ok(AdminOutput::Data(json!(true)))
+            VALUES ($1, $2, $3, $4, $5, $6, CAST($7::BIGINT AS INTEGER), $8, 0, $9, $9)
+            RETURNING id
+            "#,
+        )
+        .bind(&body.name)
+        .bind(&body.icon)
+        .bind(&body.payment)
+        .bind(random_payment_uuid())
+        .bind(Json(config_value))
+        .bind(&body.notify_domain)
+        .bind(handling_fee_fixed)
+        .bind(handling_fee_percent)
+        .bind(now)
+        .fetch_one(&self.db)
+        .await?;
+        Ok(id)
     }
 
-    pub(super) async fn payment_drop(&self, id: i64) -> Result<AdminOutput, ApiError> {
+    /// PATCH `payments/{id}` (§6.2): §4.4 metadata update (name/icon/
+    /// notify_domain/fees) plus the merged explicit `enable` flag. The
+    /// gateway driver and key material are an immutable verification
+    /// version: `payment`/`config` may only be echoed back unchanged — any
+    /// real change is 400 `payment_method_in_use` (archive and recreate).
+    pub async fn payment_patch(&self, id: i64, body: &PaymentPatch) -> Result<(), ApiError> {
+        self.require_app_url()?;
+        if let Some(name) = &body.name
+            && name.trim().is_empty()
+        {
+            return Err(validation_error("name", "显示名称不能为空"));
+        }
+        if let Some(Some(domain)) = &body.notify_domain
+            && !is_valid_url(domain)
+        {
+            return Err(validation_error("notify_domain", "自定义通知域名格式有误"));
+        }
+        let handling_fee_fixed = match body.handling_fee_fixed {
+            Some(update) => Some(optional_nonnegative_i32("handling_fee_fixed", update)?),
+            None => None,
+        };
+        let handling_fee_percent = match &body.handling_fee_percent {
+            Some(update) => Some(handling_fee_percent_decimal(update.as_ref())?),
+            None => None,
+        };
+        let now = Utc::now().timestamp();
+        let mut tx = self.db.begin().await?;
+        let current = sqlx::query_as::<_, (String, String)>(
+            "SELECT payment, CAST(config AS TEXT) FROM payment_method \
+             WHERE id = $1 AND archived_at IS NULL LIMIT 1 FOR UPDATE",
+        )
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| ApiError::from(Problem::new(Code::PaymentMethodNotFound)))?;
+        let driver_changed = body
+            .payment
+            .as_deref()
+            .is_some_and(|payment| payment != current.0);
+        let config_changed = match &body.config {
+            Some(config) => {
+                let resolved = resolve_redacted_payment_config(
+                    &current.0,
+                    Some((&current.0, &current.1)),
+                    Value::Object(config.clone()),
+                )?;
+                serde_json::from_str::<Value>(&current.1)
+                    .map(|value| value != resolved)
+                    .unwrap_or(true)
+            }
+            None => false,
+        };
+        if payment_verification_version_blocks_update(driver_changed, config_changed) {
+            return Err(Problem::new(Code::PaymentMethodInUse)
+                .with_detail(
+                    "支付方式是不可变验签版本，网关类型和密钥配置不可原地修改；请归档后新建支付方式",
+                )
+                .into());
+        }
+        let mut builder = QueryBuilder::<Postgres>::new("UPDATE payment_method SET ");
+        if let Some(name) = &body.name {
+            builder.push("name = ");
+            builder.push_bind(name.clone());
+            builder.push(", ");
+        }
+        if let Some(icon) = &body.icon {
+            builder.push("icon = ");
+            builder.push_bind(icon.clone());
+            builder.push(", ");
+        }
+        if let Some(notify_domain) = &body.notify_domain {
+            builder.push("notify_domain = ");
+            builder.push_bind(notify_domain.clone());
+            builder.push(", ");
+        }
+        if let Some(update) = handling_fee_fixed {
+            builder.push("handling_fee_fixed = CAST(");
+            builder.push_bind(update);
+            builder.push(" AS INTEGER), ");
+        }
+        if let Some(update) = handling_fee_percent {
+            builder.push("handling_fee_percent = ");
+            builder.push_bind(update);
+            builder.push(", ");
+        }
+        if let Some(enable) = body.enable {
+            builder.push("enable = ");
+            builder.push_bind(i16::from(enable));
+            builder.push(", ");
+        }
+        builder.push("updated_at = ");
+        builder.push_bind(now);
+        builder.push(" WHERE id = ");
+        builder.push_bind(id);
+        builder.push(" AND archived_at IS NULL");
+        builder.build().execute(&mut *tx).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// DELETE `payments/{id}` (§6.2): soft archive — the immutable
+    /// verification version stays reachable for delayed callbacks; ordinary
+    /// reads hide it. A missing/already-archived id is 404
+    /// `payment_method_not_found`.
+    pub async fn payment_delete(&self, id: i64) -> Result<(), ApiError> {
         let mut tx = self.db.begin().await?;
         let exists: Option<i32> = sqlx::query_scalar(
             "SELECT id FROM payment_method \
@@ -720,10 +1165,10 @@ impl AdminService {
         .fetch_optional(&mut *tx)
         .await?;
         if exists.is_none() {
-            return Err(ApiError::business("支付方式不存在"));
+            return Err(Problem::new(Code::PaymentMethodNotFound).into());
         }
         let now = Utc::now().timestamp();
-        let archived = sqlx::query(
+        sqlx::query(
             "UPDATE payment_method \
              SET enable = 0, archived_at = COALESCE(archived_at, $1), updated_at = $2 \
              WHERE id = $3 AND archived_at IS NULL",
@@ -734,10 +1179,11 @@ impl AdminService {
         .execute(&mut *tx)
         .await?;
         tx.commit().await?;
-        Ok(AdminOutput::Data(json!(archived.rows_affected() != 0)))
+        Ok(())
     }
 
-    pub(super) async fn payment_sort(&self, ids: &[i64]) -> Result<AdminOutput, ApiError> {
+    /// POST `payments/sort` (§6.2): JSON `{ids}` full resequencing.
+    pub async fn payments_sort(&self, ids: &[i64]) -> Result<(), ApiError> {
         let mut tx = self.db.begin().await?;
         for (index, id) in ids.iter().enumerate() {
             sqlx::query(
@@ -751,145 +1197,32 @@ impl AdminService {
             .await?;
         }
         tx.commit().await?;
-        Ok(AdminOutput::Data(json!(true)))
+        Ok(())
     }
 
-    pub(super) async fn payment_show(&self, id: i64) -> Result<AdminOutput, ApiError> {
-        // PaymentController::show aborts 500 when the id does not exist before
-        // flipping the enable flag. This toggle intentionally remains available
-        // with pending orders: it stops new checkouts, while authenticated
-        // in-flight callbacks continue using the immutable driver/config binding.
-        let updated = sqlx::query(
-            "UPDATE payment_method \
-             SET enable = CASE WHEN enable = 1 THEN 0::SMALLINT ELSE 1::SMALLINT END, updated_at = $1 \
-             WHERE id = $2::BIGINT AND archived_at IS NULL",
-        )
-        .bind(Utc::now().timestamp())
-        .bind(id)
-        .execute(&self.db)
-        .await?;
-        if updated.rows_affected() != 1 {
-            return Err(ApiError::business("支付方式不存在"));
-        }
-        Ok(AdminOutput::Data(json!(true)))
-    }
-
-    pub(super) async fn payment_reconciliation_fetch(
+    /// GET `orders` (§6.4): §8 pagination, the §7 DSL over the guarded
+    /// order-column whitelist, §7.2 sort, and the `?commission_only=` bool
+    /// scope (the legacy truthy `is_commission`). Rows keep the legacy jsonb
+    /// projection with §4.5 RFC 3339 timestamps.
+    pub async fn orders_list(
         &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        let pagination = page(params)?;
-        let resolved = reconciliation_resolved_filter(params)?;
-        let payment_id = optional_i64(params, "payment_id")
-            .map(|value| {
-                i32::try_from(value)
-                    .map_err(|_| validation_error("payment_id", "payment_id 超出支持范围"))
-            })
-            .transpose()?;
-        let reason = optional_string(params, "reason");
-        let trade_no_hash = optional_string(params, "trade_no")
-            .map(|value| hex::encode(payment_reconciliation_identity_hash(&value)));
-        let callback_no_hash = optional_string(params, "callback_no")
-            .map(|value| hex::encode(payment_reconciliation_identity_hash(&value)));
-
-        let total: i64 = sqlx::query_scalar(
-            r#"
-            SELECT COUNT(*)
-            FROM payment_reconciliation r
-            WHERE (
-                $1::SMALLINT = 2
-                OR ($2::SMALLINT = 0 AND r.resolved_at IS NULL)
-                OR ($3::SMALLINT = 1 AND r.resolved_at IS NOT NULL)
-            )
-              AND ($4::INTEGER IS NULL OR r.payment_id = $5)
-              AND ($6::TEXT IS NULL OR r.reason = $7::TEXT)
-              AND ($8::TEXT IS NULL OR r.trade_no_hash = decode($9::TEXT, 'hex'))
-              AND ($10::TEXT IS NULL OR r.callback_no_hash = decode($11::TEXT, 'hex'))
-            "#,
-        )
-        .bind(resolved)
-        .bind(resolved)
-        .bind(resolved)
-        .bind(payment_id)
-        .bind(payment_id)
-        .bind(reason.as_deref())
-        .bind(reason.as_deref())
-        .bind(trade_no_hash.as_deref())
-        .bind(trade_no_hash.as_deref())
-        .bind(callback_no_hash.as_deref())
-        .bind(callback_no_hash.as_deref())
-        .fetch_one(&self.db)
-        .await?;
-
-        let rows = sqlx::query_scalar::<_, Json<Value>>(
-            r#"
-            SELECT jsonb_build_object(
-                'id', r.id,
-                'payment_id', r.payment_id,
-                'payment_name', p.name,
-                'payment_archived_at', p.archived_at,
-                'provider', r.provider,
-                'trade_no', r.trade_no,
-                'trade_no_hash', encode(r.trade_no_hash, 'hex'),
-                'callback_no', r.callback_no,
-                'callback_no_hash', encode(r.callback_no_hash, 'hex'),
-                'reason', r.reason,
-                'order_status', r.order_status,
-                'expected_amount', r.expected_amount,
-                'settled_amount', r.settled_amount,
-                'occurrence_count', r.occurrence_count,
-                'first_seen_at', r.first_seen_at,
-                'last_seen_at', r.last_seen_at,
-                'resolved_at', r.resolved_at,
-                'resolution', r.resolution
-            )
-            FROM payment_reconciliation r
-            JOIN payment_method p ON p.id = r.payment_id
-            WHERE (
-                $1::SMALLINT = 2
-                OR ($2::SMALLINT = 0 AND r.resolved_at IS NULL)
-                OR ($3::SMALLINT = 1 AND r.resolved_at IS NOT NULL)
-            )
-              AND ($4::INTEGER IS NULL OR r.payment_id = $5)
-              AND ($6::TEXT IS NULL OR r.reason = $7::TEXT)
-              AND ($8::TEXT IS NULL OR r.trade_no_hash = decode($9::TEXT, 'hex'))
-              AND ($10::TEXT IS NULL OR r.callback_no_hash = decode($11::TEXT, 'hex'))
-            ORDER BY (r.resolved_at IS NOT NULL) ASC, r.first_seen_at DESC, r.id DESC
-            LIMIT $12 OFFSET $13
-            "#,
-        )
-        .bind(resolved)
-        .bind(resolved)
-        .bind(resolved)
-        .bind(payment_id)
-        .bind(payment_id)
-        .bind(reason.as_deref())
-        .bind(reason.as_deref())
-        .bind(trade_no_hash.as_deref())
-        .bind(trade_no_hash.as_deref())
-        .bind(callback_no_hash.as_deref())
-        .bind(callback_no_hash.as_deref())
-        .bind(pagination.limit)
-        .bind(pagination.offset)
-        .fetch_all(&self.db)
-        .await?;
-        Ok(AdminOutput::Page {
-            data: json_rows(rows),
-            total,
-        })
-    }
-
-    pub(super) async fn order_fetch(
-        &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        let pagination = page(params)?;
-        let is_commission = truthy(params.get("is_commission"));
-        let clauses = self.order_filter_clauses(params).await?;
+        pagination: Pagination,
+        filter: Option<&str>,
+        sort_by: Option<&str>,
+        sort_dir: Option<&str>,
+        commission_only: bool,
+    ) -> Result<(Vec<Value>, i64), ApiError> {
+        let clauses = filter
+            .map(filter_dsl::parse_filter_param)
+            .transpose()?
+            .unwrap_or_default();
+        let filters = filter_dsl::resolve_filters(&clauses, ORDER_FILTER_COLUMNS)?;
+        let sort = filter_dsl::resolve_sort(sort_by, sort_dir, ORDER_SORT_COLUMNS.as_slice())?;
 
         let mut count_builder =
             QueryBuilder::<Postgres>::new("SELECT COUNT(*) FROM orders o WHERE 1 = 1");
-        push_order_where(&mut count_builder, is_commission, &clauses);
+        push_commission_scope(&mut count_builder, commission_only);
+        filter_dsl::push_filter_where(&mut count_builder, &filters);
         let total: i64 = count_builder
             .build_query_scalar()
             .fetch_one(&self.db)
@@ -922,80 +1255,31 @@ impl AdminService {
             WHERE 1 = 1
             "#,
         );
-        push_order_where(&mut builder, is_commission, &clauses);
-        builder.push(" ORDER BY o.created_at DESC LIMIT ");
-        builder.push_bind(pagination.limit);
+        push_commission_scope(&mut builder, commission_only);
+        filter_dsl::push_filter_where(&mut builder, &filters);
+        builder.push(format!(" ORDER BY {}, o.id DESC LIMIT ", sort.order_by()));
+        builder.push_bind(pagination.limit());
         builder.push(" OFFSET ");
-        builder.push_bind(pagination.offset);
-        let rows = builder
+        builder.push_bind(pagination.offset());
+        let items = builder
             .build_query_scalar::<Json<Value>>()
             .fetch_all(&self.db)
-            .await?;
-        let data = rows.into_iter().map(|row| row.0).collect();
-        Ok(AdminOutput::Page { data, total })
+            .await?
+            .into_iter()
+            .map(|row| {
+                statistics::epoch_fields_to_rfc3339(row.0, &["paid_at", "created_at", "updated_at"])
+            })
+            .collect();
+        Ok((items, total))
     }
 
-    /// Ports OrderController::filter (:21-38): reconstructs filter[] into
-    /// injection-safe WHERE clauses. The `email` key looks a user up by the
-    /// literal `%value%` (reproducing the Laravel bug — it is an exact match, not
-    /// a LIKE) and scopes to that user's id, skipping the filter when no user
-    /// matches; `模糊` becomes LIKE %value%. Unknown columns/operators are dropped
-    /// rather than interpolated.
-    async fn order_filter_clauses(
-        &self,
-        params: &HashMap<String, String>,
-    ) -> Result<Vec<OrderFilterClause>, ApiError> {
-        let mut clauses = Vec::new();
-        for entry in collect_filter_entries(params) {
-            let Some(key) = entry.get("key").map(String::as_str) else {
-                continue;
-            };
-            let mut condition = entry
-                .get("condition")
-                .map(String::as_str)
-                .unwrap_or("=")
-                .to_string();
-            let mut value = entry.get("value").cloned().unwrap_or_default();
-            if key == "email" {
-                let user_id: Option<i64> = sqlx::query_scalar(
-                    "SELECT id FROM users WHERE lower(btrim(email)) = lower(btrim($1)) LIMIT 1",
-                )
-                .bind(format!("%{value}%"))
-                .fetch_optional(&self.db)
-                .await?;
-                if let Some(user_id) = user_id {
-                    clauses.push(OrderFilterClause::Compare {
-                        column: "user_id",
-                        op: "=",
-                        value: FilterBind::Int(user_id),
-                    });
-                }
-                continue;
-            }
-            if condition == "模糊" {
-                condition = "like".to_string();
-                value = format!("%{value}%");
-            }
-            let (Some(column), Some(op)) = (order_column(key), user_filter_operator(&condition))
-            else {
-                continue;
-            };
-            clauses.push(OrderFilterClause::Compare {
-                column,
-                op,
-                value: if op == "like" || !order_column_is_numeric(column) {
-                    FilterBind::Text(value)
-                } else {
-                    FilterBind::Int(value.trim().parse().unwrap_or_default())
-                },
-            });
-        }
-        Ok(clauses)
-    }
-
-    pub(super) async fn order_detail(&self, id: i64) -> Result<AdminOutput, ApiError> {
-        let mut value = fetch_json_one(
-            &self.db,
+    /// GET `orders/{trade_no}` (§6.4): bare detail — `trade_no` replaces the
+    /// legacy numeric-id lookup, and the read left the blanket POST step-up
+    /// gate (recorded §6 decision). Always attaches `commission_log` and
+    /// `payment_reconciliations`; `surplus_orders` only when
+    /// `surplus_order_ids` is a non-empty array, as the legacy detail did.
+    pub async fn order_detail(&self, trade_no: &str) -> Result<Value, ApiError> {
+        let mut value = sqlx::query_scalar::<_, Json<Value>>(
             r#"
             SELECT jsonb_build_object(
                 'id', o.id, 'invite_user_id', o.invite_user_id, 'user_id', o.user_id,
@@ -1011,22 +1295,17 @@ impl AdminService {
                 'paid_at', o.paid_at, 'created_at', o.created_at, 'updated_at', o.updated_at
             )
             FROM orders o
-            WHERE o.id = $1
+            WHERE o.trade_no = $1
             LIMIT 1
             "#,
-            id,
         )
+        .bind(trade_no)
+        .fetch_optional(&self.db)
         .await?
-        .ok_or_else(|| ApiError::business("订单不存在"))?;
+        .map(|row| row.0)
+        .ok_or_else(|| ApiError::from(Problem::new(Code::OrderNotFound)))?;
 
-        // OrderController::detail always attaches commission_log (the CommissionLog
-        // rows for this order's trade_no; an empty array when there are none).
-        let trade_no = value
-            .get("trade_no")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string();
-        let trade_no_hash = payment_reconciliation_identity_hash(&trade_no);
+        let trade_no_hash = payment_reconciliation_identity_hash(trade_no);
         let commission_rows = sqlx::query_scalar::<_, Json<Value>>(
             r#"
             SELECT jsonb_build_object(
@@ -1038,11 +1317,14 @@ impl AdminService {
             WHERE trade_no = $1
             "#,
         )
-        .bind(&trade_no)
+        .bind(trade_no)
         .fetch_all(&self.db)
         .await?;
-        let commission_log = json_rows(commission_rows);
-        let payment_reconciliations = sqlx::query_scalar::<_, Json<Value>>(
+        let commission_log = json_rows(commission_rows)
+            .into_iter()
+            .map(|row| statistics::epoch_fields_to_rfc3339(row, &["created_at", "updated_at"]))
+            .collect::<Vec<_>>();
+        let reconciliation_rows = sqlx::query_scalar::<_, Json<Value>>(
             r#"
             SELECT jsonb_build_object(
                 'id', id, 'payment_id', payment_id, 'provider', provider,
@@ -1062,10 +1344,18 @@ impl AdminService {
         .bind(trade_no_hash.as_slice())
         .fetch_all(&self.db)
         .await?;
-        let payment_reconciliations = json_rows(payment_reconciliations);
+        let payment_reconciliations = json_rows(reconciliation_rows)
+            .into_iter()
+            .map(|row| {
+                statistics::epoch_fields_to_rfc3339(
+                    row,
+                    &["first_seen_at", "last_seen_at", "resolved_at"],
+                )
+            })
+            .collect::<Vec<_>>();
 
-        // surplus_orders is attached only when surplus_order_ids is a non-empty array
-        // (PHP `if ($order->surplus_order_ids)` on the array cast).
+        // surplus_orders is attached only when surplus_order_ids is a non-empty
+        // array (PHP `if ($order->surplus_order_ids)` on the array cast).
         let surplus_ids: Vec<i64> = value
             .get("surplus_order_ids")
             .and_then(Value::as_array)
@@ -1109,12 +1399,22 @@ impl AdminService {
                     .fetch_all(&self.db)
                     .await?;
                 json_rows(rows)
+                    .into_iter()
+                    .map(|row| {
+                        statistics::epoch_fields_to_rfc3339(
+                            row,
+                            &["paid_at", "created_at", "updated_at"],
+                        )
+                    })
+                    .collect()
             };
             Some(rows)
         } else {
             None
         };
 
+        value =
+            statistics::epoch_fields_to_rfc3339(value, &["paid_at", "created_at", "updated_at"]);
         if let Some(object) = value.as_object_mut() {
             object.insert("commission_log".to_string(), Value::Array(commission_log));
             object.insert(
@@ -1125,96 +1425,50 @@ impl AdminService {
                 object.insert("surplus_orders".to_string(), Value::Array(surplus_orders));
             }
         }
-        Ok(AdminOutput::Data(value))
+        Ok(value)
     }
 
-    pub(super) async fn order_update(
-        &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        if param_present(params, "reconciliation_id") {
-            return self.resolve_payment_reconciliation(params).await;
-        }
-        let trade_no = required_string(params, "trade_no")?;
-        if let Some(value) = optional_i64(params, "commission_status") {
-            sqlx::query(
-                "UPDATE orders SET commission_status = CAST($1::BIGINT AS SMALLINT), updated_at = $2 WHERE trade_no = $3",
+    /// PATCH `orders/{trade_no}` (§6.4): exactly one of `status` /
+    /// `commission_status`; a missing trade_no is 404 `order_not_found`.
+    pub async fn order_patch(&self, trade_no: &str, body: &OrderPatch) -> Result<(), ApiError> {
+        let updated = match order_patch_action(body)? {
+            OrderPatchAction::Status(status) => sqlx::query(
+                "UPDATE orders SET status = CAST($1::BIGINT AS SMALLINT), updated_at = $2 \
+                 WHERE trade_no = $3",
             )
-            .bind(value)
+            .bind(status)
             .bind(Utc::now().timestamp())
             .bind(trade_no)
             .execute(&self.db)
-            .await?;
+            .await?,
+            OrderPatchAction::CommissionStatus(commission_status) => sqlx::query(
+                "UPDATE orders SET commission_status = CAST($1::BIGINT AS SMALLINT), updated_at = $2 \
+                 WHERE trade_no = $3",
+            )
+            .bind(commission_status)
+            .bind(Utc::now().timestamp())
+            .bind(trade_no)
+            .execute(&self.db)
+            .await?,
+        };
+        if updated.rows_affected() == 0 {
+            return Err(Problem::new(Code::OrderNotFound).into());
         }
-        Ok(AdminOutput::Data(json!(true)))
+        Ok(())
     }
 
-    async fn resolve_payment_reconciliation(
-        &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        let reconciliation_id = required_i64(params, "reconciliation_id")?;
-        let note = required_string(params, "resolution")?;
-        let actor = required_string(params, "_admin_email")?;
-        let resolution = reconciliation_resolution(&actor, &note)?;
-        let now = Utc::now().timestamp();
-        let mut tx = self.db.begin().await?;
-        let current = sqlx::query_as::<_, (String, Option<i64>, Option<String>)>(
-            r#"
-            SELECT trade_no, resolved_at, resolution
-            FROM payment_reconciliation
-            WHERE id = $1
-            LIMIT 1
-            FOR UPDATE
-            "#,
-        )
-        .bind(reconciliation_id)
-        .fetch_optional(&mut *tx)
-        .await?
-        .ok_or_else(|| ApiError::business("付款核对记录不存在"))?;
-        if current.1.is_some() {
-            if current.2.as_deref() == Some(&resolution) {
-                tx.commit().await?;
-                return Ok(AdminOutput::Data(json!(true)));
-            }
-            return Err(ApiError::business("付款核对记录已处理"));
-        }
-        let updated = sqlx::query(
-            r#"
-            UPDATE payment_reconciliation
-            SET resolved_at = $1, resolution = $2
-            WHERE id = $3 AND resolved_at IS NULL
-            "#,
-        )
-        .bind(now)
-        .bind(&resolution)
-        .bind(reconciliation_id)
-        .execute(&mut *tx)
-        .await?;
-        if updated.rows_affected() != 1 {
-            return Err(ApiError::business("付款核对记录已处理"));
-        }
-        tx.commit().await?;
-        tracing::info!(
-            reconciliation_id,
-            trade_no = current.0,
-            actor,
-            "administrator resolved payment reconciliation"
-        );
-        Ok(AdminOutput::Data(json!(true)))
-    }
-
-    pub(super) async fn order_paid(&self, trade_no: String) -> Result<AdminOutput, ApiError> {
+    /// POST `orders/{trade_no}/mark-paid` (§6.4): manual settlement through
+    /// the shared order lifecycle.
+    pub async fn order_mark_paid(&self, trade_no: &str) -> Result<(), ApiError> {
         OrderService::new(self.db.clone(), self.config.clone())
-            .paid_manually(&trade_no)
-            .await?;
-        Ok(AdminOutput::Data(json!(true)))
+            .paid_manually(trade_no)
+            .await
     }
 
-    pub(super) async fn order_cancel(&self, trade_no: String) -> Result<AdminOutput, ApiError> {
-        // Ports Admin\OrderController::cancel + OrderService::cancel (:273-291):
-        // only pending orders can be cancelled, and the balance paid toward the
-        // order is refunded to the user via addBalance.
+    /// POST `orders/{trade_no}/cancel` (§6.4). Ports OrderService::cancel:
+    /// only pending orders can be cancelled (400 `order_not_pending`), and
+    /// the balance paid toward the order is refunded to the user.
+    pub async fn order_cancel(&self, trade_no: &str) -> Result<(), ApiError> {
         let order: (i16, i64, Option<i64>, Option<i32>, Option<String>) = sqlx::query_as(
             r#"
             SELECT status, user_id, balance_amount::BIGINT, payment_id, callback_no
@@ -1223,20 +1477,20 @@ impl AdminService {
             LIMIT 1
             "#,
         )
-        .bind(&trade_no)
+        .bind(trade_no)
         .fetch_optional(&self.db)
         .await?
-        .ok_or_else(|| ApiError::business("订单不存在"))?;
+        .ok_or_else(|| ApiError::from(Problem::new(Code::OrderNotFound)))?;
         let (status, user_id, balance_amount, payment_id, callback_no) = order;
         if status != 0 {
-            return Err(ApiError::business("只能对待支付的订单进行操作"));
+            return Err(Problem::new(Code::OrderNotPending).into());
         }
         let order_service = OrderService::new(self.db.clone(), self.config.clone());
         if !order_service
             .cancel_stripe_intent_binding(payment_id, callback_no.as_deref())
             .await?
         {
-            return Err(ApiError::business("只能对待支付的订单进行操作"));
+            return Err(Problem::new(Code::OrderNotPending).into());
         }
         let now = Utc::now().timestamp();
         let mut tx = self.db.begin().await?;
@@ -1249,13 +1503,13 @@ impl AdminService {
             "#,
         )
         .bind(now)
-        .bind(&trade_no)
+        .bind(trade_no)
         .bind(payment_id)
         .bind(&callback_no)
         .execute(&mut *tx)
         .await?;
         if updated.rows_affected() != 1 {
-            return Err(ApiError::business("只能对待支付的订单进行操作"));
+            return Err(Problem::new(Code::OrderNotPending).into());
         }
         if let Some(balance) = balance_amount.filter(|value| *value != 0) {
             // UserService::addBalance: lock the row, add, and reject a negative result.
@@ -1264,47 +1518,55 @@ impl AdminService {
                     .bind(user_id)
                     .fetch_optional(&mut *tx)
                     .await?
-                    .ok_or_else(|| ApiError::business("更新失败"))?;
+                    .ok_or_else(|| ApiError::from(Problem::new(Code::OrderUpdateFailed)))?;
             let updated = i64::from(current)
                 .checked_add(balance)
-                .ok_or_else(|| ApiError::business("更新失败"))?;
+                .ok_or_else(|| ApiError::from(Problem::new(Code::OrderUpdateFailed)))?;
             if !(0..=i64::from(i32::MAX)).contains(&updated) {
-                return Err(ApiError::business("更新失败"));
+                return Err(Problem::new(Code::OrderUpdateFailed).into());
             }
             sqlx::query("UPDATE users SET balance = $1, updated_at = $2 WHERE id = $3")
-                .bind(i32::try_from(updated).map_err(|_| ApiError::business("更新失败"))?)
+                .bind(
+                    i32::try_from(updated)
+                        .map_err(|_| ApiError::from(Problem::new(Code::OrderUpdateFailed)))?,
+                )
                 .bind(now)
                 .bind(user_id)
                 .execute(&mut *tx)
                 .await?;
         }
         tx.commit().await?;
-        Ok(AdminOutput::Data(json!(true)))
+        Ok(())
     }
 
-    pub(super) async fn order_assign(
-        &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        let email = required_string(params, "email")?;
-        let plan_id = required_i64(params, "plan_id")?;
+    /// POST `orders` (§6.4): assign an order to a user → the new
+    /// `trade_no` (a 201 bare `{trade_no}` on the wire). An unknown email
+    /// is 400 `user_not_registered`, a missing plan 400 `plan_unavailable`,
+    /// an unfinished order 400 `order_assign_conflict`.
+    pub async fn order_assign(&self, body: &OrderAssign) -> Result<String, ApiError> {
+        if body.period.trim().is_empty() {
+            return Err(validation_error("period", "period cannot be empty"));
+        }
+        let total_amount =
+            optional_nonnegative_i32("total_amount", body.total_amount)?.unwrap_or_default();
         // Resolve the stable key before entering the locking transaction.  The
         // row is loaded again only after the user's unfinished-order range has
         // been locked, preserving the global order -> user -> plan sequence.
         let user_id: Option<i64> = sqlx::query_scalar(
             "SELECT id FROM users WHERE lower(btrim(email)) = lower(btrim($1)) LIMIT 1",
         )
-        .bind(email)
+        .bind(&body.email)
         .fetch_optional(&self.db)
         .await?;
-        let user_id = user_id.ok_or_else(|| ApiError::business("该用户不存在"))?;
+        let user_id =
+            user_id.ok_or_else(|| ApiError::from(Problem::new(Code::UserNotRegistered)))?;
         let mut tx = self.db.begin().await?;
         let has_incomplete: Option<i64> = sqlx::query_scalar(ADMIN_ASSIGN_UNFINISHED_ORDER_SQL)
             .bind(user_id)
             .fetch_optional(&mut *tx)
             .await?;
         if has_incomplete.is_some() {
-            return Err(ApiError::business("该用户还有待支付的订单，无法分配"));
+            return Err(Problem::new(Code::OrderAssignConflict).into());
         }
 
         // Load the fields setInvite / setOrderType need alongside the id:
@@ -1317,24 +1579,23 @@ impl AdminService {
         .fetch_optional(&mut *tx)
         .await?;
         let (user_id, user_plan_id, user_expired_at, user_invite_user_id) =
-            user.ok_or_else(|| ApiError::business("该用户不存在"))?;
+            user.ok_or_else(|| ApiError::from(Problem::new(Code::UserNotRegistered)))?;
         let plan_exists: Option<i32> =
             sqlx::query_scalar("SELECT id FROM plan WHERE id = $1 LIMIT 1 FOR SHARE")
-                .bind(plan_id)
+                .bind(body.plan_id)
                 .fetch_optional(&mut *tx)
                 .await?;
         if plan_exists.is_none() {
-            return Err(ApiError::business("该订阅不存在"));
+            return Err(Problem::new(Code::PlanUnavailable).into());
         }
         let now = Utc::now().timestamp();
-        let period = required_string(params, "period")?;
-        let total_amount = optional_nonnegative_i32(params, "total_amount")?.unwrap_or_default();
         // OrderController::assign order-type branches (:167-175).
-        let order_type: i64 = if period == "reset_price" {
+        let order_type: i64 = if body.period == "reset_price" {
             4
-        } else if user_plan_id.is_some() && user_plan_id != Some(plan_id) {
+        } else if user_plan_id.is_some() && user_plan_id != Some(body.plan_id) {
             3
-        } else if user_expired_at.is_some_and(|value| value > now) && user_plan_id == Some(plan_id)
+        } else if user_expired_at.is_some_and(|value| value > now)
+            && user_plan_id == Some(body.plan_id)
         {
             2
         } else {
@@ -1360,8 +1621,8 @@ impl AdminService {
         )
         .bind(user_id)
         .bind(invite_user_id)
-        .bind(plan_id)
-        .bind(period)
+        .bind(body.plan_id)
+        .bind(&body.period)
         .bind(&trade_no)
         .bind(total_amount)
         .bind(order_type)
@@ -1372,7 +1633,7 @@ impl AdminService {
         .await
         .map_err(map_admin_order_write_error)?;
         tx.commit().await.map_err(map_admin_order_write_error)?;
-        Ok(AdminOutput::Data(json!(trade_no)))
+        Ok(trade_no)
     }
 
     /// Ports OrderService::setInvite (:138-165) for the assign flow. Returns the
@@ -1440,58 +1701,463 @@ impl AdminService {
         .await?;
         Ok(found.is_some())
     }
+}
 
-    pub(super) async fn plan_drop(
+/// §6.4 `?commission_only=` scope on an order builder aliased `o` (the
+/// legacy `is_commission` truthy filter).
+fn push_commission_scope(builder: &mut QueryBuilder<Postgres>, commission_only: bool) {
+    if commission_only {
+        builder.push(
+            " AND o.invite_user_id IS NOT NULL AND o.status NOT IN (0, 2) AND o.commission_balance > 0",
+        );
+    }
+}
+
+impl AdminService {
+    /// GET `payment-reconciliations` (§6.4): the step-up-gated global
+    /// ledger. Keeps its dedicated named scalar params — `trade_no`/
+    /// `callback_no` are hashed server-side before matching, which the §7
+    /// DSL cannot express — plus §8 pagination.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn reconciliations_list(
         &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        // Ports PlanController::drop (:70-87): reject deletion while any order or
-        // user still references the plan.  The whole decision is one locking
-        // transaction; migration 22's conditional order FK excludes only the
-        // real deposit sentinel (plan_id = 0).
-        let id = required_i64(params, "id")?;
-        let mut tx = self.db.begin().await?;
-        let has_order: Option<i64> = sqlx::query_scalar(
-            "SELECT id FROM orders WHERE referenced_plan_id = $1 LIMIT 1 FOR UPDATE",
+        pagination: Pagination,
+        resolved: Option<&str>,
+        payment_id: Option<i64>,
+        reason: Option<&str>,
+        trade_no: Option<&str>,
+        callback_no: Option<&str>,
+    ) -> Result<(Vec<Value>, i64), ApiError> {
+        let resolved = reconciliation_resolved_filter(resolved)?;
+        let payment_id = payment_id
+            .map(|value| {
+                i32::try_from(value)
+                    .map_err(|_| validation_error("payment_id", "payment_id 超出支持范围"))
+            })
+            .transpose()?;
+        let trade_no_hash =
+            trade_no.map(|value| hex::encode(payment_reconciliation_identity_hash(value)));
+        let callback_no_hash =
+            callback_no.map(|value| hex::encode(payment_reconciliation_identity_hash(value)));
+
+        let total: i64 = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*)
+            FROM payment_reconciliation r
+            WHERE (
+                $1::SMALLINT = 2
+                OR ($2::SMALLINT = 0 AND r.resolved_at IS NULL)
+                OR ($3::SMALLINT = 1 AND r.resolved_at IS NOT NULL)
+            )
+              AND ($4::INTEGER IS NULL OR r.payment_id = $5)
+              AND ($6::TEXT IS NULL OR r.reason = $7::TEXT)
+              AND ($8::TEXT IS NULL OR r.trade_no_hash = decode($9::TEXT, 'hex'))
+              AND ($10::TEXT IS NULL OR r.callback_no_hash = decode($11::TEXT, 'hex'))
+            "#,
         )
-        .bind(id)
-        .fetch_optional(&mut *tx)
+        .bind(resolved)
+        .bind(resolved)
+        .bind(resolved)
+        .bind(payment_id)
+        .bind(payment_id)
+        .bind(reason)
+        .bind(reason)
+        .bind(trade_no_hash.as_deref())
+        .bind(trade_no_hash.as_deref())
+        .bind(callback_no_hash.as_deref())
+        .bind(callback_no_hash.as_deref())
+        .fetch_one(&self.db)
         .await?;
-        if has_order.is_some() {
-            return Err(ApiError::business("该订阅下存在订单无法删除"));
+
+        let rows = sqlx::query_scalar::<_, Json<Value>>(
+            r#"
+            SELECT jsonb_build_object(
+                'id', r.id,
+                'payment_id', r.payment_id,
+                'payment_name', p.name,
+                'payment_archived_at', p.archived_at,
+                'provider', r.provider,
+                'trade_no', r.trade_no,
+                'trade_no_hash', encode(r.trade_no_hash, 'hex'),
+                'callback_no', r.callback_no,
+                'callback_no_hash', encode(r.callback_no_hash, 'hex'),
+                'reason', r.reason,
+                'order_status', r.order_status,
+                'expected_amount', r.expected_amount,
+                'settled_amount', r.settled_amount,
+                'occurrence_count', r.occurrence_count,
+                'first_seen_at', r.first_seen_at,
+                'last_seen_at', r.last_seen_at,
+                'resolved_at', r.resolved_at,
+                'resolution', r.resolution
+            )
+            FROM payment_reconciliation r
+            JOIN payment_method p ON p.id = r.payment_id
+            WHERE (
+                $1::SMALLINT = 2
+                OR ($2::SMALLINT = 0 AND r.resolved_at IS NULL)
+                OR ($3::SMALLINT = 1 AND r.resolved_at IS NOT NULL)
+            )
+              AND ($4::INTEGER IS NULL OR r.payment_id = $5)
+              AND ($6::TEXT IS NULL OR r.reason = $7::TEXT)
+              AND ($8::TEXT IS NULL OR r.trade_no_hash = decode($9::TEXT, 'hex'))
+              AND ($10::TEXT IS NULL OR r.callback_no_hash = decode($11::TEXT, 'hex'))
+            ORDER BY (r.resolved_at IS NOT NULL) ASC, r.first_seen_at DESC, r.id DESC
+            LIMIT $12 OFFSET $13
+            "#,
+        )
+        .bind(resolved)
+        .bind(resolved)
+        .bind(resolved)
+        .bind(payment_id)
+        .bind(payment_id)
+        .bind(reason)
+        .bind(reason)
+        .bind(trade_no_hash.as_deref())
+        .bind(trade_no_hash.as_deref())
+        .bind(callback_no_hash.as_deref())
+        .bind(callback_no_hash.as_deref())
+        .bind(pagination.limit())
+        .bind(pagination.offset())
+        .fetch_all(&self.db)
+        .await?;
+        let items = json_rows(rows)
+            .into_iter()
+            .map(|row| {
+                statistics::epoch_fields_to_rfc3339(
+                    row,
+                    &[
+                        "payment_archived_at",
+                        "first_seen_at",
+                        "last_seen_at",
+                        "resolved_at",
+                    ],
+                )
+            })
+            .collect();
+        Ok((items, total))
+    }
+
+    /// POST `payment-reconciliations/{id}/resolve` (§6.4): the demultiplexed
+    /// legacy `order/update` + `reconciliation_id` arm. 404
+    /// `reconciliation_not_found`; repeating the identical resolution is
+    /// idempotent, a different one 409 `reconciliation_already_processed`.
+    pub async fn reconciliation_resolve(
+        &self,
+        reconciliation_id: i64,
+        note: &str,
+        actor: &str,
+    ) -> Result<(), ApiError> {
+        let note = note.trim();
+        if note.is_empty() {
+            return Err(validation_error("resolution", "resolution cannot be empty"));
         }
-        let has_user: Option<i64> =
-            sqlx::query_scalar("SELECT id FROM users WHERE plan_id = $1 LIMIT 1 FOR UPDATE")
-                .bind(id)
-                .fetch_optional(&mut *tx)
-                .await?;
-        if has_user.is_some() {
-            return Err(ApiError::business("该订阅下存在用户无法删除"));
+        let resolution = reconciliation_resolution(actor, note)?;
+        let now = Utc::now().timestamp();
+        let mut tx = self.db.begin().await?;
+        let current = sqlx::query_as::<_, (String, Option<i64>, Option<String>)>(
+            r#"
+            SELECT trade_no, resolved_at, resolution
+            FROM payment_reconciliation
+            WHERE id = $1
+            LIMIT 1
+            FOR UPDATE
+            "#,
+        )
+        .bind(reconciliation_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| ApiError::from(Problem::new(Code::ReconciliationNotFound)))?;
+        if current.1.is_some() {
+            if current.2.as_deref() == Some(&resolution) {
+                tx.commit().await?;
+                return Ok(());
+            }
+            return Err(Problem::new(Code::ReconciliationAlreadyProcessed).into());
         }
-        let has_giftcard: Option<i32> =
-            sqlx::query_scalar("SELECT id FROM gift_card WHERE plan_id = $1 LIMIT 1 FOR UPDATE")
-                .bind(id)
-                .fetch_optional(&mut *tx)
-                .await?;
-        if has_giftcard.is_some() {
-            return Err(ApiError::business("该订阅仍被礼品卡使用，无法删除"));
-        }
-        let exists: Option<i32> =
-            sqlx::query_scalar("SELECT id FROM plan WHERE id = $1 LIMIT 1 FOR UPDATE")
-                .bind(id)
-                .fetch_optional(&mut *tx)
-                .await?;
-        if exists.is_none() {
-            return Err(ApiError::business("该订阅ID不存在"));
-        }
-        let deleted = sqlx::query("DELETE FROM plan WHERE id = $1")
-            .bind(id)
-            .execute(&mut *tx)
-            .await?;
-        if deleted.rows_affected() != 1 {
-            return Err(ApiError::business("该订阅ID不存在"));
+        let updated = sqlx::query(
+            r#"
+            UPDATE payment_reconciliation
+            SET resolved_at = $1, resolution = $2
+            WHERE id = $3 AND resolved_at IS NULL
+            "#,
+        )
+        .bind(now)
+        .bind(&resolution)
+        .bind(reconciliation_id)
+        .execute(&mut *tx)
+        .await?;
+        if updated.rows_affected() != 1 {
+            return Err(Problem::new(Code::ReconciliationAlreadyProcessed).into());
         }
         tx.commit().await?;
-        Ok(AdminOutput::Data(json!(true)))
+        tracing::info!(
+            reconciliation_id,
+            trade_no = current.0,
+            actor,
+            "administrator resolved payment reconciliation"
+        );
+        Ok(())
+    }
+
+    /// W14 staff mirror only (§6.9): the legacy bare-array plan list on the
+    /// legacy envelope dialect. The admin namespace serves the modern
+    /// [`AdminService::plans_list`]; this method dies with the W14 staff
+    /// wave.
+    pub(super) async fn plan_fetch(&self) -> Result<AdminOutput, ApiError> {
+        let mut plans = v2board_db::plan::fetch_visible_plans(&self.db).await?;
+        let shown_ids = plans.iter().map(|plan| plan.id).collect::<HashSet<_>>();
+        let mut hidden = sqlx::query_as::<_, v2board_db::plan::PlanRow>(
+            r#"
+            SELECT id, group_id, transfer_enable, device_limit, name, speed_limit, "show", sort,
+                   renew, content, month_price, quarter_price, half_year_price, year_price,
+                   two_year_price, three_year_price, onetime_price, reset_price,
+                   reset_traffic_method, capacity_limit, created_at, updated_at
+            FROM plan
+            WHERE "show" = 0
+            ORDER BY sort ASC NULLS FIRST
+            "#,
+        )
+        .fetch_all(&self.db)
+        .await?;
+        plans.append(&mut hidden);
+        let counts = v2board_db::plan::count_active_users_by_plan(&self.db).await?;
+        let mut data = Vec::with_capacity(plans.len());
+        for plan in plans {
+            let mut value = serde_json::to_value(&plan)
+                .map_err(|_| ApiError::internal("failed to encode plan"))?;
+            value["count"] = json!(counts.get(&plan.id).copied().unwrap_or_default());
+            if !shown_ids.contains(&plan.id) {
+                value["show"] = json!(0);
+            }
+            data.push(value);
+        }
+        data.sort_by_key(|value| {
+            value
+                .get("sort")
+                .and_then(Value::as_i64)
+                .unwrap_or_default()
+        });
+        Ok(AdminOutput::Data(json!(data)))
+    }
+}
+
+#[cfg(test)]
+mod commerce_wire_tests {
+    use super::*;
+
+    /// §6.4: PATCH `orders/{trade_no}` demands **exactly one** of `status`
+    /// and `commission_status` — both or neither is a 422 validation
+    /// problem, and each arm keeps its legacy `in:` vocabulary.
+    #[test]
+    fn order_patch_enforces_the_exactly_one_field_rule() {
+        let neither: OrderPatch = serde_json::from_value(json!({})).unwrap();
+        assert!(matches!(
+            order_patch_action(&neither),
+            Err(ApiError::Validation { .. })
+        ));
+        let both: OrderPatch =
+            serde_json::from_value(json!({ "status": 1, "commission_status": 1 })).unwrap();
+        assert!(matches!(
+            order_patch_action(&both),
+            Err(ApiError::Validation { .. })
+        ));
+
+        let status: OrderPatch = serde_json::from_value(json!({ "status": 2 })).unwrap();
+        assert_eq!(
+            order_patch_action(&status).unwrap(),
+            OrderPatchAction::Status(2)
+        );
+        let commission: OrderPatch =
+            serde_json::from_value(json!({ "commission_status": 3 })).unwrap();
+        assert_eq!(
+            order_patch_action(&commission).unwrap(),
+            OrderPatchAction::CommissionStatus(3)
+        );
+
+        // Legacy Laravel vocabularies: status in 0-3, commission_status in 0/1/3.
+        let bad_status: OrderPatch = serde_json::from_value(json!({ "status": 4 })).unwrap();
+        assert!(order_patch_action(&bad_status).is_err());
+        let bad_commission: OrderPatch =
+            serde_json::from_value(json!({ "commission_status": 2 })).unwrap();
+        assert!(order_patch_action(&bad_commission).is_err());
+
+        // deny_unknown_fields: the legacy reconciliation_id demultiplex is
+        // gone — it must not parse as an order patch.
+        assert!(serde_json::from_value::<OrderPatch>(json!({ "reconciliation_id": 7 })).is_err());
+    }
+
+    /// §4.4: the payment PATCH distinguishes absent (retain), null (clear),
+    /// and value (set) for the nullable metadata columns.
+    #[test]
+    fn payment_patch_distinguishes_absent_null_and_value() {
+        let absent: PaymentPatch = serde_json::from_value(json!({})).unwrap();
+        assert!(absent.icon.is_none());
+        assert!(absent.notify_domain.is_none());
+        assert!(absent.handling_fee_fixed.is_none());
+        assert!(absent.enable.is_none());
+
+        let cleared: PaymentPatch = serde_json::from_value(json!({
+            "icon": null,
+            "notify_domain": null,
+            "handling_fee_fixed": null,
+            "handling_fee_percent": null
+        }))
+        .unwrap();
+        assert_eq!(cleared.icon, Some(None));
+        assert_eq!(cleared.notify_domain, Some(None));
+        assert_eq!(cleared.handling_fee_fixed, Some(None));
+        assert!(matches!(cleared.handling_fee_percent, Some(None)));
+
+        let set: PaymentPatch = serde_json::from_value(json!({
+            "name": "Renamed",
+            "handling_fee_fixed": 20,
+            "handling_fee_percent": 0.5,
+            "enable": true
+        }))
+        .unwrap();
+        assert_eq!(set.handling_fee_fixed, Some(Some(20)));
+        assert_eq!(set.enable, Some(true));
+        assert_eq!(
+            handling_fee_percent_decimal(set.handling_fee_percent.unwrap().as_ref()).unwrap(),
+            Some(Decimal::new(5, 1))
+        );
+    }
+
+    /// §6.2: the legacy 0.1–100 handling-fee window survives on the JSON
+    /// number representation.
+    #[test]
+    fn handling_fee_percent_window_is_exact() {
+        for valid in [json!(0.1), json!(100), json!(2.75)] {
+            let number = valid.as_number().unwrap().clone();
+            assert!(
+                handling_fee_percent_decimal(Some(&number)).is_ok(),
+                "{number}"
+            );
+        }
+        for invalid in [json!(0), json!(0.09), json!(100.01), json!(-3)] {
+            let number = invalid.as_number().unwrap().clone();
+            assert!(
+                handling_fee_percent_decimal(Some(&number)).is_err(),
+                "{number}"
+            );
+        }
+        assert_eq!(handling_fee_percent_decimal(None).unwrap(), None);
+    }
+
+    /// §4.4 + amount windows on the plan PATCH: double-Option clears, and
+    /// every amount keeps the non-negative 32-bit window.
+    #[test]
+    fn plan_patch_distinguishes_absent_null_and_value_and_validates_amounts() {
+        let patch: PlanPatch = serde_json::from_value(json!({
+            "month_price": null,
+            "capacity_limit": 50,
+            "show": true,
+            "force_update": true
+        }))
+        .unwrap();
+        assert_eq!(patch.month_price, Some(None));
+        assert_eq!(patch.capacity_limit, Some(Some(50)));
+        assert!(patch.quarter_price.is_none());
+        assert_eq!(patch.show, Some(true));
+        assert_eq!(patch.force_update, Some(true));
+        assert!(plan_patch_validation(&patch).is_ok());
+
+        for invalid in [
+            json!({ "month_price": -1 }),
+            json!({ "transfer_enable": 2_147_483_648_i64 }),
+        ] {
+            let patch: PlanPatch = serde_json::from_value(invalid).unwrap();
+            assert!(matches!(
+                plan_patch_validation(&patch),
+                Err(ApiError::Validation { .. })
+            ));
+        }
+        let bad_reset: PlanPatch =
+            serde_json::from_value(json!({ "reset_traffic_method": 40_000 })).unwrap();
+        assert!(plan_patch_validation(&bad_reset).is_err());
+    }
+
+    /// §6.2/§4.5: admin plan and payment items serialize bool flags and
+    /// RFC 3339 timestamps (prices cents, `handling_fee_percent` a number).
+    #[test]
+    fn commerce_items_serialize_modern_value_types() {
+        let plan = AdminPlanItem {
+            id: 1,
+            group_id: 1,
+            transfer_enable: 100,
+            device_limit: None,
+            name: "Golden Plan".to_string(),
+            speed_limit: None,
+            show: true,
+            sort: Some(1),
+            renew: false,
+            content: None,
+            month_price: Some(1000),
+            quarter_price: None,
+            half_year_price: None,
+            year_price: None,
+            two_year_price: None,
+            three_year_price: None,
+            onetime_price: None,
+            reset_price: None,
+            reset_traffic_method: Some(0),
+            capacity_limit: None,
+            count: 3,
+            created_at: 1_700_000_000,
+            updated_at: 1_700_000_000,
+        };
+        let encoded = serde_json::to_value(&plan).unwrap();
+        assert_eq!(encoded["show"], json!(true));
+        assert_eq!(encoded["renew"], json!(false));
+        assert_eq!(encoded["count"], json!(3));
+        assert_eq!(encoded["month_price"], json!(1000));
+        assert_eq!(encoded["created_at"], json!("2023-11-14T22:13:20Z"));
+
+        let payment = AdminPaymentItem {
+            id: 7,
+            name: "Golden EPay".to_string(),
+            payment: "EPay".to_string(),
+            icon: None,
+            handling_fee_fixed: Some(20),
+            handling_fee_percent: Some(0.5),
+            uuid: "goldenepayuuid000000000000000001".to_string(),
+            config: json!({ "pid": "1000" }),
+            notify_domain: None,
+            notify_url: "https://golden.v2board.test/api/v1/guest/payment/notify/EPay/goldenepayuuid000000000000000001".to_string(),
+            enable: true,
+            sort: Some(1),
+            created_at: 1_700_000_000,
+            updated_at: 1_700_000_000,
+            legacy_md5_signature: true,
+            security_warning: Some("warning"),
+        };
+        let encoded = serde_json::to_value(&payment).unwrap();
+        assert_eq!(encoded["enable"], json!(true));
+        assert_eq!(encoded["handling_fee_percent"], json!(0.5));
+        assert_eq!(encoded["updated_at"], json!("2023-11-14T22:13:20Z"));
+        assert_eq!(encoded["legacy_md5_signature"], json!(true));
+    }
+
+    /// §6.4: the assign body is the named JSON object with an optional
+    /// `total_amount`; unknown fields are rejected.
+    #[test]
+    fn order_assign_body_is_strict_json() {
+        let assign: OrderAssign = serde_json::from_value(json!({
+            "email": "member@example.test",
+            "plan_id": 1,
+            "period": "month_price"
+        }))
+        .unwrap();
+        assert_eq!(assign.total_amount, None);
+        assert!(
+            serde_json::from_value::<OrderAssign>(json!({
+                "email": "member@example.test",
+                "plan_id": 1,
+                "period": "month_price",
+                "id": 9
+            }))
+            .is_err()
+        );
     }
 }

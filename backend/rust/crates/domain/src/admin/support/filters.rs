@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use super::*;
 
 // ---------------------------------------------------------------------------
@@ -131,84 +133,111 @@ pub(in super::super) fn push_user_where(
     }
 }
 
-/// A single WHERE comparison for an order filter[]. Values are bound as strings,
-/// matching Laravel's default PDO parameter binding.
-#[derive(Debug)]
-pub(in super::super) enum OrderFilterClause {
-    Compare {
-        column: &'static str,
-        op: &'static str,
-        value: FilterBind,
-    },
-}
-
-/// Whitelisted orders columns usable in a filter[] key. Guards the dynamically
-/// built WHERE clause (OrderController::filter trusts the raw request key).
-pub(in super::super) fn order_column(key: &str) -> Option<&'static str> {
-    const COLUMNS: &[&str] = &[
-        "id",
+/// §7.1 filter whitelist for `GET orders` (docs/api-dialect.md §7.1: "the
+/// guarded `order_column` list") on the §7 DSL. The columns are the legacy
+/// `order_column` set; expressions carry the `o.` alias the list projection
+/// uses, with `"type"` quoted as before.
+pub(in super::super) const ORDER_FILTER_COLUMNS: &[filter_dsl::FilterColumn] = &[
+    column("id", "o.id", filter_dsl::ColumnKind::Integer),
+    column(
         "invite_user_id",
-        "user_id",
-        "plan_id",
-        "coupon_id",
+        "o.invite_user_id",
+        filter_dsl::ColumnKind::Integer,
+    ),
+    column("user_id", "o.user_id", filter_dsl::ColumnKind::Integer),
+    column("plan_id", "o.plan_id", filter_dsl::ColumnKind::Integer),
+    column("coupon_id", "o.coupon_id", filter_dsl::ColumnKind::Integer),
+    column(
         "payment_id",
-        "type",
-        "period",
-        "trade_no",
-        "callback_no",
+        "o.payment_id",
+        filter_dsl::ColumnKind::Integer,
+    ),
+    column("type", "o.\"type\"", filter_dsl::ColumnKind::Integer),
+    column("period", "o.period", filter_dsl::ColumnKind::Text),
+    column("trade_no", "o.trade_no", filter_dsl::ColumnKind::Text),
+    column("callback_no", "o.callback_no", filter_dsl::ColumnKind::Text),
+    column(
         "total_amount",
+        "o.total_amount",
+        filter_dsl::ColumnKind::Integer,
+    ),
+    column(
         "handling_amount",
+        "o.handling_amount",
+        filter_dsl::ColumnKind::Integer,
+    ),
+    column(
         "discount_amount",
+        "o.discount_amount",
+        filter_dsl::ColumnKind::Integer,
+    ),
+    column(
         "surplus_amount",
+        "o.surplus_amount",
+        filter_dsl::ColumnKind::Integer,
+    ),
+    column(
         "refund_amount",
+        "o.refund_amount",
+        filter_dsl::ColumnKind::Integer,
+    ),
+    column(
         "balance_amount",
-        "status",
+        "o.balance_amount",
+        filter_dsl::ColumnKind::Integer,
+    ),
+    column("status", "o.status", filter_dsl::ColumnKind::Integer),
+    column(
         "commission_status",
+        "o.commission_status",
+        filter_dsl::ColumnKind::Integer,
+    ),
+    column(
         "commission_balance",
+        "o.commission_balance",
+        filter_dsl::ColumnKind::Integer,
+    ),
+    column(
         "actual_commission_balance",
-        "paid_at",
+        "o.actual_commission_balance",
+        filter_dsl::ColumnKind::Integer,
+    ),
+    column("paid_at", "o.paid_at", filter_dsl::ColumnKind::Timestamp),
+    column(
         "created_at",
+        "o.created_at",
+        filter_dsl::ColumnKind::Timestamp,
+    ),
+    column(
         "updated_at",
-    ];
-    COLUMNS.iter().copied().find(|column| *column == key)
+        "o.updated_at",
+        filter_dsl::ColumnKind::Timestamp,
+    ),
+];
+
+const fn column(
+    field: &'static str,
+    expr: &'static str,
+    kind: filter_dsl::ColumnKind,
+) -> filter_dsl::FilterColumn {
+    filter_dsl::FilterColumn { field, expr, kind }
 }
 
-/// Applies the is_commission scope and filter[] clauses to an order builder whose
-/// order table is aliased `o`. Ports OrderController::fetch (:58-63) + filter().
-pub(in super::super) fn push_order_where(
-    builder: &mut QueryBuilder<Postgres>,
-    is_commission: bool,
-    clauses: &[OrderFilterClause],
-) {
-    if is_commission {
-        builder.push(
-            " AND o.invite_user_id IS NOT NULL AND o.status NOT IN (0, 2) AND o.commission_balance > 0",
-        );
-    }
-    for clause in clauses {
-        let OrderFilterClause::Compare { column, op, value } = clause;
-        if *op == "like" {
-            builder.push(format!(" AND o.\"{column}\"::text ILIKE "));
-        } else {
-            builder.push(format!(" AND o.\"{column}\" {op} "));
-        }
-        match value {
-            FilterBind::Int(value) => {
-                builder.push_bind(*value);
-            }
-            FilterBind::Text(value) => {
-                builder.push_bind(value.clone());
-            }
-        }
-    }
-}
+/// §7.2 sort whitelist for `GET orders`: the same per-endpoint field list as
+/// the filters (no computed additions), including the `created_at` default.
+pub(in super::super) static ORDER_SORT_COLUMNS: LazyLock<Vec<filter_dsl::SortColumn>> =
+    LazyLock::new(|| {
+        ORDER_FILTER_COLUMNS
+            .iter()
+            .map(|column| filter_dsl::SortColumn {
+                field: column.field,
+                expr: column.expr,
+            })
+            .collect()
+    });
 
 pub(in super::super) fn user_column_is_numeric(column: &str) -> bool {
     !matches!(column, "email" | "uuid" | "token" | "remarks")
-}
-
-pub(in super::super) fn order_column_is_numeric(column: &str) -> bool {
-    !matches!(column, "period" | "trade_no" | "callback_no")
 }
 
 /// Reconstructs `filter[<i>][<field>]` request keys into per-index maps of raw

@@ -194,18 +194,6 @@ pub(in super::super) fn optional_i64(params: &HashMap<String, String>, key: &str
         .and_then(|value| value.parse::<i64>().ok())
 }
 
-pub(in super::super) fn optional_decimal(
-    params: &HashMap<String, String>,
-    key: &str,
-) -> Option<Decimal> {
-    params
-        .get(key)
-        .map(String::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case("null"))
-        .and_then(|value| value.parse::<Decimal>().ok())
-}
-
 pub(in super::super) fn required_i64(
     params: &HashMap<String, String>,
     key: &str,
@@ -258,30 +246,6 @@ fn parse_page_value(raw: Option<&String>, field: &str, default: i64) -> Result<i
         ));
     }
     Ok(value)
-}
-
-pub(in super::super) fn array_param(
-    params: &HashMap<String, String>,
-    key: &str,
-) -> Result<Vec<i64>, ApiError> {
-    let mut values = BTreeMap::<usize, i64>::new();
-    for (raw_key, raw_value) in params {
-        if let Some(index) = bracket_index(raw_key, key)
-            && let Ok(value) = raw_value.parse::<i64>()
-        {
-            values.insert(index, value);
-        }
-    }
-    if let Some(value) = params.get(key)
-        && let Ok(parsed) = serde_json::from_str::<Vec<i64>>(value)
-    {
-        return Ok(parsed);
-    }
-    let values = values.into_values().collect::<Vec<_>>();
-    if values.is_empty() {
-        return Err(ApiError::business("参数有误"));
-    }
-    Ok(values)
 }
 
 pub(in super::super) fn json_array_param(

@@ -345,6 +345,7 @@ Admin:
 | `order_update_conflict` | 409 | `订单状态正在被其他请求修改，请重试` |
 | `order_update_failed` | 400 | `更新失败` |
 | `plan_in_use` | 400 | `该订阅下存在订单无法删除` / `…存在用户无法删除` / `该订阅仍被礼品卡使用，无法删除` (which dependency stays in `detail`) |
+| `plan_force_update_limit_exceeded` | 400 | `该订阅用户过多，单次最多强制更新 10000 个用户` (native `force_update` cap) |
 | `coupon_not_found` | 404 | `优惠券不存在` |
 | `gift_card_not_found` | 404 | `礼品卡不存在` (admin `DELETE gift-cards/{id}`, already `not_found` in the anchor) |
 | `server_not_found` | 404 | `该服务器不存在`, `路由不存在`(→`route_not_found`), `该服务器组不存在`(→`server_group_not_found`) |

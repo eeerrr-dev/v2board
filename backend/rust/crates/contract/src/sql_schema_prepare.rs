@@ -431,7 +431,7 @@ const QUERY_BUILDER_SITES: &[DynamicSite] = &[
     },
     DynamicSite {
         source: "crates/domain/src/admin/commerce.rs",
-        count: 3,
+        count: 5,
         coverage: "admin commerce interaction parity",
     },
     DynamicSite {

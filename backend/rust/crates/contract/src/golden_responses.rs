@@ -31,6 +31,7 @@ use v2board_db::installation_id;
 use v2board_domain::{
     admin::{AdminOutput, AdminService},
     auth::PasswordKdf,
+    payment_provider::payment_provider_codes,
     smtp::SmtpTransportCache,
 };
 
@@ -152,16 +153,48 @@ async fn generate_documents(pool: &PgPool, redis_url: &str) -> Result<Vec<(Strin
             .with_context(|| format!("generate golden response for admin GET {path}"))?;
         documents.push((format!("{name}.json"), envelope_document(output, name)?));
     }
-    let order_detail = admin
-        .post(
-            "order/detail",
-            HashMap::from([("id".to_string(), "1".to_string())]),
-        )
-        .await
-        .context("generate golden response for admin POST order/detail")?;
+    // The W11 admin commerce family (docs/api-dialect.md §6.2/§6.4) serializes
+    // modern dialect-v2 bodies straight from the typed domain methods: bare
+    // arrays for the deliberately unpaginated plan/payment/provider lists,
+    // `{items,total}` for the paginated order and reconciliation lists, and a
+    // bare object for the `trade_no`-addressed order detail.
+    let commerce_page = Pagination {
+        page: 1,
+        per_page: 10,
+    };
+    documents.push((
+        "admin.plans.json".to_string(),
+        pretty_document(&admin.plans_list().await?)?,
+    ));
+    documents.push((
+        "admin.payments.json".to_string(),
+        pretty_document(&admin.payments_list().await?)?,
+    ));
+    documents.push((
+        "admin.payment-providers.json".to_string(),
+        pretty_document(&payment_provider_codes())?,
+    ));
+    let (items, total) = admin
+        .orders_list(commerce_page, None, None, None, false)
+        .await?;
+    documents.push((
+        "admin.orders.json".to_string(),
+        pretty_document(&Page { items, total })?,
+    ));
     documents.push((
         "admin.order.detail.json".to_string(),
-        envelope_document(order_detail, "admin.order.detail")?,
+        pretty_document(
+            &admin
+                .order_detail("golden-trade-plan-00000000000001")
+                .await?,
+        )?,
+    ));
+    let (items, total) = admin
+        .reconciliations_list(commerce_page, None, None, None, None, None)
+        .await?;
+    documents.push((
+        "admin.payment-reconciliations.json".to_string(),
+        pretty_document(&Page { items, total })?,
     ));
 
     // The W10 content family (docs/api-dialect.md §6.3) serializes modern
@@ -212,12 +245,6 @@ async fn generate_documents(pool: &PgPool, redis_url: &str) -> Result<Vec<(Strin
 fn admin_get_endpoints() -> Vec<(&'static str, &'static str, HashMap<String, String>)> {
     let none = HashMap::new;
     vec![
-        (
-            "admin.payment.getPaymentMethods",
-            "payment/getPaymentMethods",
-            none(),
-        ),
-        ("admin.plan.fetch", "plan/fetch", none()),
         ("admin.user.fetch", "user/fetch", none()),
         (
             "admin.user.getUserInfoById",
@@ -234,8 +261,6 @@ fn admin_get_endpoints() -> Vec<(&'static str, &'static str, HashMap<String, Str
             "stat/getStatUser",
             HashMap::from([("user_id".to_string(), "2".to_string())]),
         ),
-        ("admin.order.fetch", "order/fetch", none()),
-        ("admin.payment.fetch", "payment/fetch", none()),
         ("admin.ticket.fetch", "ticket/fetch", none()),
         (
             "admin.ticket.detail",
@@ -453,6 +478,22 @@ async fn seed_fixture_rows(pool: &PgPool) -> Result<()> {
     )
     .bind(json!({ "key": "golden-epay-key-2", "pid": "2000", "url": "https://epay2.golden.test" }))
     .bind(GOLDEN_TIME + 10)
+    .execute(pool)
+    .await?;
+
+    // One open payment reconciliation bound to the plan order, so the W11
+    // `GET payment-reconciliations` fixture pins a non-empty ledger with the
+    // server-side `trade_no`/`callback_no` hashes.
+    sqlx::query(
+        "INSERT INTO payment_reconciliation (payment_id, provider, trade_no, trade_no_hash, \
+         callback_no, callback_no_hash, reason, order_status, expected_amount, settled_amount, \
+         occurrence_count, first_seen_at, last_seen_at, resolved_at, resolution) \
+         VALUES (1, 'EPay', 'golden-trade-plan-00000000000001', \
+         sha256('golden-trade-plan-00000000000001'::bytea), 'golden-callback-00000000000001', \
+         sha256('golden-callback-00000000000001'::bytea), 'amount_mismatch', 0, 1000, 900, \
+         1, $1, $1, NULL, NULL)",
+    )
+    .bind(GOLDEN_TIME)
     .execute(pool)
     .await?;
 

@@ -1003,19 +1003,10 @@ async fn late_payment_reconciliation(
         PasswordKdf::new(1),
         SmtpTransportCache::default(),
     );
-    let archive_output = admin
-        .post(
-            "payment/drop",
-            HashMap::from([("id".to_string(), payment_id.to_string())]),
-        )
-        .await?;
+    admin.payment_delete(i64::from(payment_id)).await?;
+    let payments = admin.payments_list().await?;
     ensure!(
-        matches!(archive_output, AdminOutput::Data(value) if value == true),
-        "admin payment drop did not report a successful soft archive"
-    );
-    let fetch_output = admin.get("payment/fetch", HashMap::new()).await?;
-    ensure!(
-        matches!(fetch_output, AdminOutput::Data(value) if value.as_array().is_some_and(|rows| rows.iter().all(|row| row["id"].as_i64() != Some(i64::from(payment_id))))),
+        payments.iter().all(|row| row.id != payment_id),
         "archived payment remained visible in the ordinary admin list"
     );
 
@@ -1223,23 +1214,25 @@ async fn late_payment_reconciliation(
         "delayed callbacks did not preserve the archived verification version"
     );
     let expected_callback_hash_hex = sha256_hex(&unknown_callback_no);
-    let list_output = admin
-        .get(
-            "order/reconciliation/fetch",
-            HashMap::from([("trade_no".to_string(), missing_trade_no)]),
+    let (list_rows, list_total) = admin
+        .reconciliations_list(
+            v2board_compat::Pagination {
+                page: 1,
+                per_page: 10,
+            },
+            None,
+            None,
+            None,
+            Some(&missing_trade_no),
+            None,
         )
         .await?;
     ensure!(
-        matches!(
-            list_output,
-            AdminOutput::Page { data, total }
-                if total == 1
-                    && data.first().is_some_and(|row| {
-                        row["reason"] == "order_not_found"
-                            && row["callback_no_hash"].as_str()
-                                == Some(expected_callback_hash_hex.as_str())
-                    })
-        ),
+        list_total == 1
+            && list_rows.first().is_some_and(|row| {
+                row["reason"] == "order_not_found"
+                    && row["callback_no_hash"].as_str() == Some(expected_callback_hash_hex.as_str())
+            }),
         "unknown-order reconciliation was not discoverable through the global admin API"
     );
 
@@ -1979,16 +1972,16 @@ async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) -> Result<()>
     // Orders: a pending order with one commission log and one open
     // reconciliation row bound to the same trade identity.
     let trade_no = Uuid::new_v4().hyphenated().to_string();
-    let order_id: i64 = sqlx::query_scalar(
+    sqlx::query(
         "INSERT INTO orders (user_id, plan_id, type, period, trade_no, total_amount, status, \
          commission_status, commission_balance, created_at, updated_at) \
-         VALUES ($1, 0, 1, 'deposit', $2, 500, 0, 0, 0, $3, $4) RETURNING id",
+         VALUES ($1, 0, 1, 'deposit', $2, 500, 0, 0, 0, $3, $4)",
     )
     .bind(user_id)
     .bind(&trade_no)
     .bind(now)
     .bind(now)
-    .fetch_one(pool)
+    .execute(pool)
     .await?;
     sqlx::query(
         "INSERT INTO commission_log (invite_user_id, user_id, trade_no, order_amount, get_amount, created_at, updated_at) \
@@ -2028,62 +2021,64 @@ async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) -> Result<()>
     .execute(pool)
     .await?;
 
-    for row in admin_page_rows(
-        admin.get("order/fetch", HashMap::new()).await?,
-        "order/fetch",
-    )? {
-        assert_exact_keys("order/fetch", &row, ADMIN_ORDER_FETCH_KEYS)?;
+    // W11 modern commerce routes: GET orders, GET orders/{trade_no},
+    // GET payment-reconciliations. Order projections keep their key sets; the
+    // list is `{items,total}` and the detail is a bare object.
+    let commerce_page = || v2board_compat::Pagination {
+        page: 1,
+        per_page: 10,
+    };
+    let (order_rows, order_total) = admin
+        .orders_list(commerce_page(), None, None, None, false)
+        .await?;
+    ensure!(
+        order_total >= 1 && !order_rows.is_empty(),
+        "orders list must return the seeded projection row"
+    );
+    for row in &order_rows {
+        assert_exact_keys("orders", row, ADMIN_ORDER_FETCH_KEYS)?;
     }
-    let order_detail = admin_data(
-        admin
-            .post(
-                "order/detail",
-                HashMap::from([("id".to_string(), order_id.to_string())]),
-            )
-            .await?,
-        "order/detail",
-    )?;
-    assert_exact_keys("order/detail", &order_detail, ADMIN_ORDER_DETAIL_KEYS)?;
+    let order_detail = admin.order_detail(&trade_no).await?;
+    assert_exact_keys("orders detail", &order_detail, ADMIN_ORDER_DETAIL_KEYS)?;
     let commission_rows = order_detail["commission_log"]
         .as_array()
-        .context("order/detail: commission_log is not an array")?;
+        .context("orders detail: commission_log is not an array")?;
     ensure!(
         !commission_rows.is_empty(),
-        "order/detail returned no commission log rows"
+        "orders detail returned no commission log rows"
     );
     for row in commission_rows {
         assert_exact_keys(
-            "order/detail commission_log",
+            "orders detail commission_log",
             row,
             ADMIN_COMMISSION_LOG_KEYS,
         )?;
     }
     let reconciliation_rows = order_detail["payment_reconciliations"]
         .as_array()
-        .context("order/detail: payment_reconciliations is not an array")?;
+        .context("orders detail: payment_reconciliations is not an array")?;
     ensure!(
         !reconciliation_rows.is_empty(),
-        "order/detail returned no reconciliation rows"
+        "orders detail returned no reconciliation rows"
     );
     for row in reconciliation_rows {
         assert_exact_keys(
-            "order/detail payment_reconciliations",
+            "orders detail payment_reconciliations",
             row,
             ADMIN_ORDER_RECONCILIATION_KEYS,
         )?;
     }
-    for row in admin_page_rows(
-        admin
-            .get(
-                "order/reconciliation/fetch",
-                HashMap::from([("trade_no".to_string(), trade_no.clone())]),
-            )
-            .await?,
-        "order/reconciliation/fetch",
-    )? {
+    let (reconciliation_list_rows, reconciliation_total) = admin
+        .reconciliations_list(commerce_page(), None, None, None, Some(&trade_no), None)
+        .await?;
+    ensure!(
+        reconciliation_total >= 1 && !reconciliation_list_rows.is_empty(),
+        "payment-reconciliations must return the seeded projection row"
+    );
+    for row in &reconciliation_list_rows {
         assert_exact_keys(
-            "order/reconciliation/fetch",
-            &row,
+            "payment-reconciliations",
+            row,
             ADMIN_RECONCILIATION_FETCH_KEYS,
         )?;
     }

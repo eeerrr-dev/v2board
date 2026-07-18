@@ -1,7 +1,6 @@
 use super::commerce::{
-    optional_nonnegative_i32, parse_payment_config, payment_config_input,
-    reconciliation_resolution, reconciliation_resolved_filter, required_nonnegative_i32,
-    resolve_redacted_payment_config,
+    optional_nonnegative_i32, parse_payment_config, reconciliation_resolution,
+    reconciliation_resolved_filter, resolve_redacted_payment_config,
 };
 use super::configuration::{bulk_mail_payload_hash, drop_unchanged_effective_secure_path};
 use super::content::{TICKET_NOTIFICATION_GATE_RELEASE_SCRIPT, validate_ticket_message_length};
@@ -157,19 +156,6 @@ fn redacted_payment_secret_preserves_only_an_existing_same_provider_value() {
 }
 
 #[test]
-fn built_in_payment_text_fields_never_coerce_numeric_or_boolean_looking_values() {
-    let input = params(&[
-        ("config[pid]", "00123"),
-        ("config[key]", "true"),
-        ("config[type]", "null"),
-    ]);
-    let config = payment_config_input(&input, "EPay");
-    assert_eq!(config["pid"], "00123");
-    assert_eq!(config["key"], "true");
-    assert_eq!(config["type"], "null");
-}
-
-#[test]
 fn redacted_known_config_round_trip_preserves_exact_legacy_json_types() {
     let current = r#"{"currency":"usd","stripe_sk_live":"secret","stripe_pk_live":{"malformed":"private"},"stripe_webhook_key":null}"#;
     let submitted = json!({
@@ -231,16 +217,10 @@ fn unknown_payment_provider_redaction_round_trip_preserves_hidden_values() {
 
 #[test]
 fn reconciliation_list_defaults_open_and_validates_resolution_filter() {
-    assert_eq!(reconciliation_resolved_filter(&HashMap::new()).unwrap(), 0);
-    assert_eq!(
-        reconciliation_resolved_filter(&params(&[("resolved", "resolved")])).unwrap(),
-        1
-    );
-    assert_eq!(
-        reconciliation_resolved_filter(&params(&[("resolved", "all")])).unwrap(),
-        2
-    );
-    assert!(reconciliation_resolved_filter(&params(&[("resolved", "maybe")])).is_err());
+    assert_eq!(reconciliation_resolved_filter(None).unwrap(), 0);
+    assert_eq!(reconciliation_resolved_filter(Some("resolved")).unwrap(), 1);
+    assert_eq!(reconciliation_resolved_filter(Some("all")).unwrap(), 2);
+    assert!(reconciliation_resolved_filter(Some("maybe")).is_err());
 }
 
 #[test]
@@ -262,19 +242,14 @@ fn traffic_filters_scale_decimal_gib_without_binary_float_drift() {
 
 #[test]
 fn plan_amount_fields_reject_negative_invalid_and_database_overflow_values() {
-    let valid = params(&[("transfer_enable", "100"), ("month_price", "1999")]);
     assert_eq!(
-        required_nonnegative_i32(&valid, "transfer_enable").unwrap(),
-        100
-    );
-    assert_eq!(
-        optional_nonnegative_i32(&valid, "month_price").unwrap(),
+        optional_nonnegative_i32("month_price", Some(1999)).unwrap(),
         Some(1999)
     );
+    assert_eq!(optional_nonnegative_i32("month_price", None).unwrap(), None);
 
-    for value in ["-1", "2147483648", "not-an-integer"] {
-        let input = params(&[("month_price", value)]);
-        assert!(optional_nonnegative_i32(&input, "month_price").is_err());
+    for value in [-1, 2_147_483_648_i64] {
+        assert!(optional_nonnegative_i32("month_price", Some(value)).is_err());
     }
 }
 

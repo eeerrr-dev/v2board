@@ -23,9 +23,22 @@ enum AdminIntegerColumnType {
 /// dynamic integer assignment must carry the target column's exact SQL type.
 fn admin_integer_column_type(column: &str) -> AdminIntegerColumnType {
     match column {
-        "allow_insecure" | "auto_renewal" | "banned" | "commission_type" | "disable_sni"
-        | "insecure" | "is_admin" | "is_staff" | "remind_expire" | "remind_traffic" | "renew"
-        | "show" | "tls" | "type" | "zero_rtt_handshake" => AdminIntegerColumnType::SmallInt,
+        "allow_insecure"
+        | "auto_renewal"
+        | "banned"
+        | "commission_type"
+        | "disable_sni"
+        | "insecure"
+        | "is_admin"
+        | "is_staff"
+        | "remind_expire"
+        | "remind_traffic"
+        | "renew"
+        | "reset_traffic_method"
+        | "show"
+        | "tls"
+        | "type"
+        | "zero_rtt_handshake" => AdminIntegerColumnType::SmallInt,
         "balance"
         | "capacity_limit"
         | "commission_balance"
@@ -34,17 +47,25 @@ fn admin_integer_column_type(column: &str) -> AdminIntegerColumnType {
         | "discount"
         | "down_mbps"
         | "group_id"
+        | "half_year_price"
         | "limit_use"
         | "limit_use_with_user"
+        | "month_price"
+        | "onetime_price"
         | "parent_id"
         | "plan_id"
         | "port"
+        | "quarter_price"
+        | "reset_price"
         | "server_port"
         | "sort"
         | "speed_limit"
+        | "three_year_price"
+        | "two_year_price"
         | "up_mbps"
         | "value"
-        | "version" => AdminIntegerColumnType::Integer,
+        | "version"
+        | "year_price" => AdminIntegerColumnType::Integer,
         _ => AdminIntegerColumnType::BigInt,
     }
 }

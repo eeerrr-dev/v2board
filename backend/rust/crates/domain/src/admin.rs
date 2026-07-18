@@ -20,7 +20,7 @@ use v2board_config::{
 };
 use v2board_db::{DbPool, DbTransaction};
 
-use crate::payment_provider::{payment_provider_codes, payment_provider_form};
+use crate::payment_provider::payment_provider_form;
 use crate::{
     auth::PasswordKdf,
     mail::outbox::{
@@ -49,6 +49,10 @@ const REDIS_MGET_BATCH_SIZE: usize = 500;
 pub use support::filter_dsl;
 use support::*;
 
+pub use commerce::{
+    AdminPaymentItem, AdminPlanItem, OrderAssign, OrderPatch, PaymentCreate, PaymentPatch,
+    PlanCreate, PlanPatch, ReconciliationResolveRequest, SortIdsRequest,
+};
 pub use configuration::ConfigPatchOutcome;
 pub use content::{
     AdminCouponItem, AdminGiftcardItem, AdminKnowledgeDetail, AdminKnowledgeSummary,
@@ -174,13 +178,8 @@ impl AdminService {
     ) -> Result<AdminOutput, ApiError> {
         let path = normalize_admin_path(path);
         match path.as_str() {
-            "plan/fetch" => self.plan_fetch().await,
-            "payment/fetch" => self.payment_fetch().await,
-            "payment/getPaymentMethods" => Ok(AdminOutput::Data(json!(payment_provider_codes()))),
             "user/fetch" => self.user_fetch(&params).await,
             "user/getUserInfoById" => self.user_detail(required_i64(&params, "id")?).await,
-            "order/fetch" => self.order_fetch(&params).await,
-            "order/reconciliation/fetch" => self.payment_reconciliation_fetch(&params).await,
             "ticket/fetch" => self.ticket_fetch(&params, false).await,
             "server/group/fetch" => self.server_group_fetch(&params).await,
             "server/route/fetch" => self.server_route_fetch().await,
@@ -205,18 +204,6 @@ impl AdminService {
     ) -> Result<AdminOutput, ApiError> {
         let path = normalize_admin_path(path);
         match path.as_str() {
-            "plan/save" => self.plan_save(&params).await,
-            "plan/drop" => self.plan_drop(&params).await,
-            "plan/update" => self.plan_update(&params).await,
-            "plan/sort" => {
-                self.sort_ids("plan", &array_param(&params, "plan_ids")?)
-                    .await
-            }
-            "payment/getPaymentForm" => self.payment_form(&params).await,
-            "payment/save" => self.payment_save(&params).await,
-            "payment/drop" => self.payment_drop(required_i64(&params, "id")?).await,
-            "payment/show" => self.payment_show(required_i64(&params, "id")?).await,
-            "payment/sort" => self.payment_sort(&array_param(&params, "ids")?).await,
             "ticket/reply" => self.ticket_reply(&params).await,
             "ticket/close" => self.ticket_close(required_i64(&params, "id")?).await,
             "server/group/save" => self.server_group_save(&params).await,
@@ -231,14 +218,6 @@ impl AdminService {
                 .await
             }
             "server/manage/sort" => self.server_sort(&params).await,
-            "order/detail" => self.order_detail(required_i64(&params, "id")?).await,
-            "order/update" => self.order_update(&params).await,
-            "order/paid" => self.order_paid(required_string(&params, "trade_no")?).await,
-            "order/cancel" => {
-                self.order_cancel(required_string(&params, "trade_no")?)
-                    .await
-            }
-            "order/assign" => self.order_assign(&params).await,
             "user/update" => self.user_update(&params).await,
             "user/generate" => self.user_generate(&params).await,
             "user/dumpCSV" => self.user_dump_csv(&params).await,

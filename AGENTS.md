@@ -414,7 +414,7 @@ The user commerce flow (`/plan`, `/plan/:plan_id`, `/order`, and
 - Keep commerce contracts strict: plan filtering, sold-out handling
   (`capacity_limit`), coupon checks, save-order payloads, unfinished-order
   handling and order cancellation with `trade_no` in the path
-  (`POST /user/orders/{trade_no}/cancel`; W11 owns the admin-order half),
+  (`POST /user/orders/{trade_no}/cancel`),
   change-subscription payload,
   payment-method selection, Stripe PaymentIntent preparation and Payment Element
   confirmation (including signed webhook settlement) / QR / redirect checkout, routing, and

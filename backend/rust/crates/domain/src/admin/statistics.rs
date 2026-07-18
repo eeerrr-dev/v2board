@@ -655,8 +655,8 @@ fn rfc3339_epoch_map(timestamps: &BTreeMap<String, i64>) -> Value {
 }
 
 /// Converts named epoch-integer members of a database-built JSON row into
-/// their §4.5 RFC 3339 form.
-fn epoch_fields_to_rfc3339(mut row: Value, fields: &[&str]) -> Value {
+/// their §4.5 RFC 3339 form. Shared with the W11 commerce lists.
+pub(super) fn epoch_fields_to_rfc3339(mut row: Value, fields: &[&str]) -> Value {
     if let Some(object) = row.as_object_mut() {
         for field in fields {
             if let Some(value) = object.get_mut(*field)
