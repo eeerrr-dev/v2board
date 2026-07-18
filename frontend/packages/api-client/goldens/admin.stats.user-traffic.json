@@ -1,8 +1,8 @@
 {
-  "data": [
+  "items": [
     {
       "d": 200,
-      "record_at": 1700000000,
+      "record_at": "2023-11-14T22:13:20Z",
       "server_rate": 1.0,
       "u": 100
     }

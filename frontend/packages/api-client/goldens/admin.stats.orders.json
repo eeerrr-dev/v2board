@@ -1,0 +1,52 @@
+[
+  {
+    "date": "11-14",
+    "series": "commission_paid_count",
+    "value": 1
+  },
+  {
+    "date": "11-14",
+    "series": "commission_paid_total",
+    "value": 100
+  },
+  {
+    "date": "11-14",
+    "series": "paid_count",
+    "value": 2
+  },
+  {
+    "date": "11-14",
+    "series": "paid_total",
+    "value": 1500
+  },
+  {
+    "date": "11-14",
+    "series": "register_count",
+    "value": 4
+  },
+  {
+    "date": "11-15",
+    "series": "commission_paid_count",
+    "value": 2
+  },
+  {
+    "date": "11-15",
+    "series": "commission_paid_total",
+    "value": 300
+  },
+  {
+    "date": "11-15",
+    "series": "paid_count",
+    "value": 3
+  },
+  {
+    "date": "11-15",
+    "series": "paid_total",
+    "value": 2500
+  },
+  {
+    "date": "11-15",
+    "series": "register_count",
+    "value": 6
+  }
+]
