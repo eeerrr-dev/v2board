@@ -800,33 +800,44 @@ export const serverTypeNameSchema = z.enum([
   'v2node',
 ]);
 
+/**
+ * GET /{secure_path}/nodes row (docs/api-dialect.md §6.7, W13): the dialect-v2
+ * projection — boolean `show`, numeric `rate`/`port`, integer id arrays,
+ * RFC 3339 timestamps, and the health/credential fields the step-up-gated read
+ * always attaches. Protocol-specific columns (cipher, tls, the R22 camelCase
+ * vmess settings keys, …) ride through the loose object as stored.
+ */
 export const serverNodeSchema = z.looseObject({
   id: z.number(),
   name: z.string(),
-  group_id: z.union([numberArraySchema, stringArraySchema]),
+  group_id: numberArraySchema,
   route_id: numberArraySchema.nullable(),
   type: serverTypeNameSchema,
   host: z.string(),
-  port: z.union([z.number(), z.string()]),
+  port: z.number(),
   server_port: nullableNumber,
-  show: z.union([binaryFlagSchema, z.string()]),
-  rate: z.string(),
+  show: z.boolean(),
+  rate: z.number(),
   parent_id: nullableNumber,
   online: z
     .number()
     .nullable()
     .transform((value) => value ?? 0),
-  last_check_at: nullableNumber,
-  is_online: binaryFlagSchema.optional(),
-  available_status: z.union([z.literal(0), z.literal(1), z.literal(2)]).optional(),
+  last_check_at: nullableString,
+  last_push_at: nullableString,
+  available_status: z.union([z.literal(0), z.literal(1), z.literal(2)]),
+  api_key: nullableString,
+  install_command: z.string().optional(),
 });
+/** GET /{secure_path}/server-groups row (§6.7, W13): always enriched with
+ * `user_count`/`server_count`; §4.5 RFC 3339 timestamps. */
 export const serverGroupSchema = z.looseObject({
   id: z.number(),
   name: z.string(),
-  user_count: z.number().optional(),
-  server_count: z.number().optional(),
-  created_at: z.number(),
-  updated_at: z.number(),
+  user_count: z.number(),
+  server_count: z.number(),
+  created_at: z.string(),
+  updated_at: z.string(),
 });
 export const serverRouteActionSchema = z.enum([
   'block',
@@ -838,14 +849,16 @@ export const serverRouteActionSchema = z.enum([
   'route_ip',
   'default_out',
 ]);
+/** GET /{secure_path}/server-routes row (§6.7, W13): `match` is always a real
+ * array on the dialect-v2 wire; §4.5 RFC 3339 timestamps. */
 export const serverRouteSchema = z.looseObject({
   id: z.number(),
   remarks: z.string(),
-  match: z.union([stringArraySchema, z.string()]),
+  match: stringArraySchema,
   action: serverRouteActionSchema,
   action_value: nullableString,
-  created_at: z.number(),
-  updated_at: z.number(),
+  created_at: z.string(),
+  updated_at: z.string(),
 });
 
 // GET `/{secure_path}/config` (docs/api-dialect.md §6.1, W9): §4.1 native

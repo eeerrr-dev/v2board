@@ -294,13 +294,7 @@ export function ServerManagePage() {
   };
 
   const toggleNodeShow = (row: admin.ServerNode) => {
-    const checked = parseInt(String(row.show), 10);
-    update.mutate({
-      type: row.type,
-      id: row.id,
-      key: 'show',
-      value: checked ? 0 : 1,
-    });
+    update.mutate({ type: row.type, id: row.id, show: !row.show });
   };
 
   const copyNode = (row: admin.ServerNode) => {
@@ -442,7 +436,7 @@ export function ServerManagePage() {
       header: () => <span>显隐</span>,
       cell: ({ row }) => (
         <Switch
-          checked={Boolean(parseInt(String(row.original.show), 10))}
+          checked={row.original.show}
           onCheckedChange={() => toggleNodeShow(row.original)}
           aria-label={`切换「${row.original.name}」显隐`}
         />

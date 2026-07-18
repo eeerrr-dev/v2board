@@ -650,9 +650,11 @@ export function useCopyServerMutation() {
 }
 
 export function useUpdateServerMutation() {
+  // §6.7 (W13): the legacy server-side flip became an explicit client-sent
+  // boolean on PATCH /servers/{type}/{id}.
   return useInvalidatingMutation(
-    (vars: { type: admin.ServerTypeName; id: number; key: 'show'; value: 0 | 1 }) =>
-      admin.updateServer(apiClient, vars.type, vars.id, vars.key, vars.value),
+    (vars: { type: admin.ServerTypeName; id: number; show: boolean }) =>
+      admin.showServer(apiClient, vars.type, vars.id, vars.show),
     [adminKeys.serverNodes],
   );
 }

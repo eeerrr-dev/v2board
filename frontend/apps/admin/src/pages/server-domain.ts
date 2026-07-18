@@ -467,15 +467,14 @@ export interface NodeFilterItem {
 // stable because the Rust API and deployed proxy nodes consume the result.
 // ---------------------------------------------------------------------------
 
+// §6.7 (W13): route `match` is always a real JSON array on the modern wire.
 export function getRouteMatchLabel(value: admin.ServerRoute['match'] | undefined) {
   if (!value || value.length === 0) return '无规则时默认';
-  const rules = typeof value === 'string' ? value.split(',').filter(Boolean) : value;
-  return `匹配 ${rules.length} 条规则`;
+  return `匹配 ${value.length} 条规则`;
 }
 
 export function getRouteMatchTextareaValue(value: admin.ServerRoute['match'] | undefined) {
-  if (Array.isArray(value)) return value.join('\n');
-  return value?.split(',').join('\n');
+  return value?.join('\n');
 }
 
 export function getRouteMatchPlaceholder(action: string | undefined) {

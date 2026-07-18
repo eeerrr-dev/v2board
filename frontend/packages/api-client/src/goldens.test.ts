@@ -67,9 +67,6 @@ const goldensUrl = new URL('../goldens/', import.meta.url);
 
 const goldenSchemas: Record<string, z.ZodType> = {
   // DB-backed admin surface (v2board-contract golden-responses).
-  'admin.server.group.fetch.json': envelopeSchema(arraySchema(serverGroupSchema)),
-  'admin.server.manage.getNodes.json': envelopeSchema(arraySchema(serverNodeSchema)),
-  'admin.server.route.fetch.json': envelopeSchema(arraySchema(serverRouteSchema)),
   'admin.stat.getStatUser.json': pageEnvelopeSchema(adminUserTrafficSchema),
   'admin.ticket.detail.json': envelopeSchema(ticketSchema),
   'admin.ticket.fetch.json': pageEnvelopeSchema(ticketSchema),
@@ -107,6 +104,11 @@ const dialectGoldenSchemas: Record<string, z.ZodType> = {
   'admin.knowledge.detail.json': knowledgeSchema,
   'admin.knowledge.json': arraySchema(knowledgeSummarySchema),
   'admin.notices.json': arraySchema(noticeSchema),
+  // §6.7 (W13): the admin servers family — bare arrays for the nodes list
+  // (typed booleans/numbers, RFC 3339 timestamps) and the group/route lists.
+  'admin.nodes.json': arraySchema(serverNodeSchema),
+  'admin.server-groups.json': arraySchema(serverGroupSchema),
+  'admin.server-routes.json': arraySchema(serverRouteSchema),
   // §6.1 (W9): the PATCH config stale-revision conflict problem.
   'problem.config-revision-conflict.json': problemDetailsSchema,
   'problem.session-expired.json': problemDetailsSchema,

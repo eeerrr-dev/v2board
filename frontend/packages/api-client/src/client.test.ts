@@ -27,15 +27,16 @@ import {
   saveConfig,
   savePlan,
   savePayment,
+  saveServer,
   sendMailToUsers,
   setTelegramWebhook,
+  showServer,
   sortServerNodes,
   statUser,
   testSendMail,
   updateCoupon,
   updatePlan,
   updateUser,
-  updateServer,
 } from './endpoints/admin';
 import { config as fetchGuestConfig } from './endpoints/guest';
 import { login, tokenLogin } from './endpoints/passport';
@@ -385,25 +386,29 @@ describe('createApiClient', () => {
   it('rejects an unknown admin server type before it can select a management endpoint', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onGet('/admin-path/server/manage/getNodes').reply(200, {
-      data: [
-        {
-          id: 1,
-          name: 'unsupported node',
-          group_id: [1],
-          route_id: null,
-          type: 'future-protocol',
-          host: 'node.example.test',
-          port: 443,
-          server_port: null,
-          show: 1,
-          rate: '1',
-          parent_id: null,
-          online: 0,
-          last_check_at: null,
-        },
-      ],
-    });
+    // §6.7 (W13): the modern nodes list is a bare dialect array.
+    mock.onGet('/admin-path/nodes').reply(200, [
+      {
+        id: 1,
+        name: 'unsupported node',
+        group_id: [1],
+        route_id: null,
+        type: 'future-protocol',
+        host: 'node.example.test',
+        port: 443,
+        server_port: null,
+        show: true,
+        rate: 1,
+        parent_id: null,
+        online: 0,
+        last_check_at: null,
+        last_push_at: null,
+        available_status: 0,
+        api_key: null,
+        created_at: '2023-11-14T22:13:20Z',
+        updated_at: '2023-11-14T22:13:20Z',
+      },
+    ]);
 
     await expect(fetchServerNodes(client)).rejects.toBeInstanceOf(ApiContractError);
   });
@@ -1255,11 +1260,12 @@ describe('createApiClient', () => {
     expect(userWithoutInviter).not.toHaveProperty('invite_user_email');
   });
 
-  it('submits legacy server-manage sort payloads as JSON', async () => {
+  it('submits server node sort payloads as JSON to the modern route', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
+    // §6.7 (W13): route moves to POST /nodes/sort; the legacy grouped-map body is kept.
     const payload = { shadowsocks: { 1: 0, 3: 2 }, vmess: { 9: 1 } };
-    mock.onPost('/admin-path/server/manage/sort').reply(200, { data: true });
+    mock.onPost('/admin-path/nodes/sort').reply(204);
 
     await sortServerNodes(client, payload);
 
@@ -1267,27 +1273,74 @@ describe('createApiClient', () => {
     expect(mock.history.post[0]?.headers?.['Content-Type']).toBe('application/json');
   });
 
-  it('submits admin server updates with the original dynamic key payload', async () => {
+  it('dispatches the admin server show toggle as a merged boolean PATCH', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/admin-path/server/vmess/update').reply(200, { data: true });
+    // §6.7 (W13): show/hide is a plain PATCH into the merged server update route.
+    mock.onPatch('/admin-path/servers/vmess/8').reply(204);
 
-    await updateServer(client, 'vmess', 8, 'show', 0);
+    await showServer(client, 'vmess', 8, false);
 
-    expect(mock.history.post[0]?.data).toBe('id=8&show=0');
+    expect(JSON.parse(mock.history.patch[0]?.data ?? '{}')).toEqual({ show: false });
   });
 
-  it('uses the legacy key/value shape for admin server update requests', () => {
-    const source = readFileSync(new URL('./endpoints/admin.ts', import.meta.url), 'utf8');
+  it('serializes admin server saves onto the typed §6.7 wire', async () => {
+    const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onPost('/admin-path/servers/vmess').reply(201, { id: 12 });
+    mock.onPatch('/admin-path/servers/anytls/5').reply(204);
 
-    expect(source).toContain("key: 'show',");
-    expect(source).toContain('value: 0 | 1,');
-    expect(source).toContain(
-      'adminPostTrue(client, `/server/${type}/update`, { id, [key]: value })',
-    );
-    expect(source).not.toContain(
-      'show: 0 | 1,\n) => adminPostTrue(client, `/server/${type}/update`, { id, show })',
-    );
+    await saveServer(client, 'vmess', {
+      name: 'Node',
+      rate: '1.5',
+      group_id: ['1', 2],
+      route_id: null,
+      host: 'node.example.test',
+      port: '443',
+      server_port: '8443',
+      parent_id: '',
+      show: '1',
+      network: 'ws',
+      tls: 1,
+      // R22: the vmess protocol-settings keys stay camelCase on the modern wire.
+      networkSettings: { path: '/ws' },
+      tlsSettings: null,
+    });
+    expect(JSON.parse(mock.history.post[0]?.data ?? '{}')).toEqual({
+      name: 'Node',
+      rate: 1.5,
+      group_id: [1, 2],
+      route_id: null,
+      host: 'node.example.test',
+      port: 443,
+      server_port: 8443,
+      parent_id: null,
+      show: true,
+      network: 'ws',
+      tls: 1,
+      networkSettings: { path: '/ws' },
+      tlsSettings: null,
+    });
+
+    await saveServer(client, 'anytls', {
+      id: 5,
+      name: 'AnyTLS',
+      group_id: [1],
+      host: 'anytls.example.test',
+      port: 443,
+      server_port: 443,
+      rate: 1,
+      padding_scheme: '["30-30"]',
+    });
+    expect(JSON.parse(mock.history.patch[0]?.data ?? '{}')).toEqual({
+      name: 'AnyTLS',
+      group_id: [1],
+      host: 'anytls.example.test',
+      port: 443,
+      server_port: 443,
+      rate: 1,
+      padding_scheme: ['30-30'],
+    });
   });
 
   it('submits admin plan prices in cents and strips fetched model metadata', async () => {

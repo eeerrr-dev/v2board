@@ -19,6 +19,9 @@ export function nullableText(value: unknown): string | null | undefined {
 }
 
 export function binaryValue(value: unknown, fallback: 0 | 1): 0 | 1 | '0' | '1' {
+  // §6.7 (W13): the dialect-v2 node rows carry real booleans for the legacy
+  // 0/1 flags; the form keeps its binary select vocabulary.
+  if (typeof value === 'boolean') return value ? 1 : 0;
   return value === 0 || value === 1 || value === '0' || value === '1' ? value : fallback;
 }
 
@@ -41,6 +44,14 @@ export function stringArray(value: unknown): string[] | undefined {
 
 export function jsonEditorValue(value: unknown): unknown {
   return value && typeof value === 'object' ? JSON.stringify(value, null, 2) : value;
+}
+
+/** §6.7 (W13): `padding_scheme` rides the dialect-v2 wire as its decoded JSON
+ * container; the editor textarea keeps working on its string spelling. */
+export function paddingSchemeText(value: unknown): string | null | undefined {
+  if (value === null || typeof value === 'string') return value;
+  if (value === undefined) return undefined;
+  return JSON.stringify(value, null, 4);
 }
 
 export type ShadowsocksEditorValues = Extract<ServerNodeEditorValues, { type: 'shadowsocks' }>;
@@ -185,7 +196,7 @@ export function v2nodeInitialConfig(
       ...common,
       protocol,
       tls_settings: nodeRecordValue(record, 'tls_settings'),
-      padding_scheme: nullableText(nodeRecordValue(record, 'padding_scheme')),
+      padding_scheme: paddingSchemeText(nodeRecordValue(record, 'padding_scheme')),
     };
   }
   if (protocol === 'vmess') {
@@ -288,7 +299,7 @@ export function getNodeInitialValues(
       type,
       server_name: nullableText(nodeRecordValue(record, 'server_name')),
       insecure: binaryValue(nodeRecordValue(record, 'insecure'), 0),
-      padding_scheme: nullableText(nodeRecordValue(record, 'padding_scheme')),
+      padding_scheme: paddingSchemeText(nodeRecordValue(record, 'padding_scheme')),
     };
   }
   return {

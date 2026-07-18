@@ -26,8 +26,17 @@ import { createTestTranslation } from '@/test/i18next-selector';
 // keys/defaults/coercions (the exported pure helpers), the node/group/route save
 // payloads, route match parsing, and the grouped sort payload.
 
+// Query data arrives through the dialect-v2 projections (§6.7, W13): boolean
+// show, numeric rate/port, integer id arrays, RFC 3339 timestamps.
 const GROUPS = [
-  { id: 1, name: 'VIP', user_count: 12, server_count: 3, created_at: 1, updated_at: 1 },
+  {
+    id: 1,
+    name: 'VIP',
+    user_count: 12,
+    server_count: 3,
+    created_at: '2023-11-14T22:13:20Z',
+    updated_at: '2023-11-14T22:13:20Z',
+  },
 ];
 
 const NODES = [
@@ -40,13 +49,14 @@ const NODES = [
     host: 'example.com',
     port: 443,
     server_port: null,
-    show: 1,
-    rate: '1',
+    show: true,
+    rate: 1,
     parent_id: null,
     online: 8,
     last_check_at: null,
-    is_online: 1,
+    last_push_at: null,
     available_status: 2,
+    api_key: null,
   },
   {
     id: 2,
@@ -57,13 +67,14 @@ const NODES = [
     host: 'child.example.com',
     port: 8443,
     server_port: null,
-    show: 0,
-    rate: '2',
+    show: false,
+    rate: 2,
     parent_id: 1,
     online: 0,
     last_check_at: null,
-    is_online: 0,
+    last_push_at: null,
     available_status: 0,
+    api_key: null,
   },
 ];
 
@@ -74,8 +85,8 @@ const ROUTES = [
     match: ['geosite:netflix', 'domain:example.com'],
     action: 'route',
     action_value: '{}',
-    created_at: 1,
-    updated_at: 1,
+    created_at: '2023-11-14T22:13:20Z',
+    updated_at: '2023-11-14T22:13:20Z',
   },
   {
     id: 2,
@@ -83,8 +94,8 @@ const ROUTES = [
     match: [],
     action: 'default_out',
     action_value: '{}',
-    created_at: 1,
-    updated_at: 1,
+    created_at: '2023-11-14T22:13:20Z',
+    updated_at: '2023-11-14T22:13:20Z',
   },
 ];
 
@@ -520,15 +531,14 @@ describe('ServerManagePage (shadcn island)', () => {
     expect(mocks.saveServer).not.toHaveBeenCalled();
   });
 
-  it('dispatches the show toggle with the original key/value shape', async () => {
+  it('dispatches the show toggle as the merged §6.7 boolean PATCH', async () => {
     const user = userEvent.setup();
     render(<ServersPage />);
     await user.click(screen.getByLabelText('切换「Tokyo」显隐'));
     expect(mocks.updateServer).toHaveBeenCalledWith({
       type: 'shadowsocks',
       id: 1,
-      key: 'show',
-      value: 0,
+      show: false,
     });
   });
 
@@ -1053,10 +1063,10 @@ describe('server node config contract helpers', () => {
 
 describe('applyServerNodeColumnControls (node table sort/filter)', () => {
   const nodes = [
-    { id: 1, type: 'shadowsocks', group_id: ['1'], online: 8 },
-    { id: 2, type: 'vmess', group_id: ['2'], online: 0 },
-    { id: 3, type: 'trojan', group_id: ['1', '2'], online: 4 },
-  ] as Parameters<typeof applyServerNodeColumnControls>[0];
+    { id: 1, type: 'shadowsocks', group_id: [1], online: 8 },
+    { id: 2, type: 'vmess', group_id: [2], online: 0 },
+    { id: 3, type: 'trojan', group_id: [1, 2], online: 4 },
+  ] as unknown as Parameters<typeof applyServerNodeColumnControls>[0];
   const ids = (list: (typeof nodes)[number][]) => list.map((node) => node.id);
 
   it('filters by type matching node.type to the lowercased column label', () => {
