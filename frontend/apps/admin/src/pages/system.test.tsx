@@ -8,17 +8,19 @@ import SystemPage from './system';
 // covered is behavior: the stat values, the 'default' workload filter, the
 // zh queue-name mapping, and explicit query failures.
 
+// §6.1 (W9): queue stats/workload are bare snake_case objects with a boolean
+// `status` and RFC 3339 last-run maps.
 const mocks = vi.hoisted(() => ({
   stats: {
-    data: { jobsPerMinute: 12, recentJobs: 34, failedJobs: 5, status: true },
+    data: { jobs_per_minute: 12, recent_jobs: 34, failed_jobs: 5, status: true },
     isError: false,
     refetch: vi.fn(),
   },
   workload: {
     data: [
-      { name: 'default', processes: 1, length: 2, wait: 3 },
-      { name: 'order_handle', processes: 4, length: 5, wait: 6 },
-      { name: 'traffic_fetch', processes: 7, length: 8, wait: 9 },
+      { name: 'default', processes: 1, length: 2, wait: 3, recent_jobs: 0, failed_jobs: 0 },
+      { name: 'order_handle', processes: 4, length: 5, wait: 6, recent_jobs: 2, failed_jobs: 0 },
+      { name: 'traffic_fetch', processes: 7, length: 8, wait: 9, recent_jobs: 1, failed_jobs: 1 },
     ],
     isError: false,
     refetch: vi.fn(),

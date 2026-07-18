@@ -68,7 +68,6 @@ const goldensUrl = new URL('../goldens/', import.meta.url);
 
 const goldenSchemas: Record<string, z.ZodType> = {
   // DB-backed admin surface (v2board-contract golden-responses).
-  'admin.config.getEmailTemplate.json': envelopeSchema(stringArraySchema),
   'admin.coupon.fetch.json': pageEnvelopeSchema(couponSchema),
   'admin.giftcard.fetch.json': pageEnvelopeSchema(giftcardSchema),
   'admin.knowledge.detail.json': envelopeSchema(adminKnowledgeSchema),
@@ -101,6 +100,8 @@ const dialectGoldenSchemas: Record<string, z.ZodType> = {
   'auth.session.json': sessionStateSchema,
   'auth.session.logged-out.json': sessionStateSchema,
   'auth.step-up.json': stepUpGrantSchema,
+  // §6.1 (W9): the PATCH config stale-revision conflict problem.
+  'problem.config-revision-conflict.json': problemDetailsSchema,
   'problem.session-expired.json': problemDetailsSchema,
   'problem.validation.json': problemDetailsSchema,
   'public.config.json': guestConfigSchema,

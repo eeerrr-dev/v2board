@@ -18,6 +18,7 @@ import {
   fetchPayments as fetchAdminPayments,
   fetchServerNodes,
   fetchConfig,
+  fetchSystemLogs,
   generateCoupon,
   generateGiftcard,
   generateUser,
@@ -110,29 +111,32 @@ function makePlan(overrides: Record<string, unknown> = {}) {
   };
 }
 
+// GET `/{secure_path}/config` (docs/api-dialect.md §6.1, W9): §4.1 native
+// JSON types — real booleans, JSON numbers, real arrays, and the recorded
+// `commission_withdraw_limit` decimal-string exception.
 function makeAdminConfig() {
   return {
     ticket: { ticket_status: 0 },
     deposit: { deposit_bounus: ['50:18', '100:38'] },
     invite: {
-      invite_force: 1,
+      invite_force: true,
       invite_commission: 10,
       invite_gen_limit: 5,
-      invite_never_expire: 0,
-      commission_first_time_enable: 1,
-      commission_auto_check_enable: 1,
-      commission_withdraw_limit: 100,
+      invite_never_expire: false,
+      commission_first_time_enable: true,
+      commission_auto_check_enable: true,
+      commission_withdraw_limit: '100',
       commission_withdraw_method: ['支付宝', 'USDT'],
-      withdraw_close_enable: 0,
-      commission_distribution_enable: 1,
+      withdraw_close_enable: false,
+      commission_distribution_enable: true,
       commission_distribution_l1: 50,
       commission_distribution_l2: 30,
       commission_distribution_l3: 20,
     },
     site: {
       logo: 'https://example.test/logo.png',
-      force_https: 1,
-      stop_register: 0,
+      force_https: true,
+      stop_register: false,
       app_name: 'V2Board',
       app_description: 'V2Board is best!',
       app_url: 'https://example.test',
@@ -143,16 +147,17 @@ function makeAdminConfig() {
       tos_url: 'https://example.test/tos',
       currency: 'CNY',
       currency_symbol: '¥',
+      legacy_hash_redirect_enable: true,
     },
     subscribe: {
-      plan_change_enable: 1,
+      plan_change_enable: true,
       reset_traffic_method: 0,
-      surplus_enable: 1,
-      allow_new_period: 0,
-      new_order_event_id: 1,
-      renew_order_event_id: 0,
-      change_order_event_id: 1,
-      show_info_to_server_enable: 1,
+      surplus_enable: true,
+      allow_new_period: false,
+      new_order_event_id: true,
+      renew_order_event_id: false,
+      change_order_event_id: true,
+      show_info_to_server_enable: true,
       show_subscribe_method: 2,
       show_subscribe_expire: 30,
     },
@@ -171,19 +176,19 @@ function makeAdminConfig() {
       server_push_interval: 60,
       server_node_report_min_traffic: 0,
       server_device_online_min_traffic: 0,
-      device_limit_mode: 0,
+      device_limit_mode: false,
     },
     email: {
       email_template: 'default',
       email_host: 'smtp.example.test',
-      email_port: '465',
+      email_port: 465,
       email_username: 'mailer',
       email_password: 'password',
       email_encryption: 'ssl',
       email_from_address: 'noreply@example.test',
     },
     telegram: {
-      telegram_bot_enable: 1,
+      telegram_bot_enable: true,
       telegram_bot_token: 'bot-token',
       telegram_discuss_link: 'https://t.me/example',
     },
@@ -196,19 +201,19 @@ function makeAdminConfig() {
       android_download_url: 'https://example.test/app.apk',
     },
     safe: {
-      email_verify: 1,
-      safe_mode_enable: 1,
+      email_verify: true,
+      safe_mode_enable: true,
       secure_path: 'admin-path',
-      email_whitelist_enable: 1,
+      email_whitelist_enable: true,
       email_whitelist_suffix: ['qq.com', 'gmail.com'],
-      email_gmail_limit_enable: 1,
-      recaptcha_enable: 1,
+      email_gmail_limit_enable: true,
+      recaptcha_enable: true,
       recaptcha_key: 'secret',
       recaptcha_site_key: 'site',
-      register_limit_by_ip_enable: 1,
+      register_limit_by_ip_enable: true,
       register_limit_count: 3,
       register_limit_expire: 60,
-      password_limit_enable: 1,
+      password_limit_enable: true,
       password_limit_count: 5,
       password_limit_expire: 60,
     },
@@ -366,7 +371,6 @@ describe('createApiClient', () => {
       ['tickets', () => userEndpoints.fetchTickets(client), [{ id: 1 }]],
       ['servers', () => userEndpoints.fetchServers(client), [{ id: 1 }]],
       ['knowledge', () => userEndpoints.fetchKnowledge(client, 'zh-CN'), { Guide: [{ id: 1 }] }],
-      ['admin config', () => fetchConfig(client, 'site'), { site: { currency: 'CNY' } }],
       ['admin payments', () => fetchAdminPayments(client), [{ id: 1 }]],
     ];
 
@@ -1338,39 +1342,28 @@ describe('createApiClient', () => {
     await expect(fetchPlans(client)).rejects.toBeInstanceOf(ApiContractError);
   });
 
-  it('normalizes legacy admin config comma-list strings after fetch', async () => {
+  it('rejects legacy comma-list config strings now that arrays are real arrays', async () => {
+    // §6.1 (W9): the 0/1-flag, comma-list-string, and number-as-string
+    // tolerances died with the dialect flip — a legacy-shaped body is a
+    // contract violation, not something to silently renormalize.
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
     const config = makeAdminConfig();
-    mock.onGet('/admin-path/config/fetch').reply(200, {
-      data: {
-        ...config,
-        deposit: { deposit_bounus: '50:18,100:38' },
-        invite: { ...config.invite, commission_withdraw_method: '支付宝,USDT' },
-        site: { ...config.site, email_whitelist_suffix: 'qq.com,gmail.com' },
-        safe: { ...config.safe, email_whitelist_suffix: 'safe.example' },
-      },
+    mock.onGet('/admin-path/config').reply(200, {
+      ...config,
+      invite: { ...config.invite, commission_withdraw_method: '支付宝,USDT' },
     });
 
-    const result = await fetchConfig(client);
-
-    expect(result.deposit?.deposit_bounus).toEqual(['50:18', '100:38']);
-    expect(result.deposit_bounus).toEqual(['50:18', '100:38']);
-    expect(result.invite?.commission_withdraw_method).toEqual(['支付宝', 'USDT']);
-    expect(result.commission_withdraw_method).toEqual(['支付宝', 'USDT']);
-    expect(result.site?.email_whitelist_suffix).toEqual(['qq.com', 'gmail.com']);
-    expect(result.email_whitelist_suffix).toEqual(['safe.example']);
+    await expect(fetchConfig(client)).rejects.toBeInstanceOf(ApiContractError);
   });
 
   it('normalizes only a null admin email template to the default template', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
     const config = makeAdminConfig();
-    mock.onGet('/admin-path/config/fetch').reply(200, {
-      data: {
-        ...config,
-        email: { ...config.email, email_template: null },
-      },
+    mock.onGet('/admin-path/config').reply(200, {
+      ...config,
+      email: { ...config.email, email_template: null },
     });
 
     await expect(fetchConfig(client)).resolves.toMatchObject({
@@ -1379,24 +1372,21 @@ describe('createApiClient', () => {
     });
   });
 
-  it('preserves exact operator decimals as strings', async () => {
+  it('preserves the exact commission_withdraw_limit decimal string', async () => {
+    // §4.1 recorded exception: PostgreSQL NUMERIC round-trips lexically.
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
     const config = makeAdminConfig();
-    mock.onGet('/admin-path/config/fetch').reply(200, {
-      data: {
-        ...config,
-        invite: {
-          ...config.invite,
-          commission_withdraw_limit: '9007199254740993.125',
-        },
-        site: { ...config.site, try_out_hour: '0.1234567890123456789012345678' },
+    mock.onGet('/admin-path/config').reply(200, {
+      ...config,
+      invite: {
+        ...config.invite,
+        commission_withdraw_limit: '9007199254740993.125',
       },
     });
 
     await expect(fetchConfig(client)).resolves.toMatchObject({
       commission_withdraw_limit: '9007199254740993.125',
-      try_out_hour: '0.1234567890123456789012345678',
     });
   });
 
@@ -1407,42 +1397,74 @@ describe('createApiClient', () => {
     const emailWithoutTemplate: Record<string, unknown> = { ...config.email };
     delete emailWithoutTemplate.email_template;
 
-    mock.onGet('/admin-path/config/fetch').replyOnce(200, {
-      data: { ...config, email: emailWithoutTemplate },
-    });
-    mock.onGet('/admin-path/config/fetch').replyOnce(200, {
-      data: { ...config, site: { ...config.site, app_name: null } },
+    mock.onGet('/admin-path/config').replyOnce(200, { ...config, email: emailWithoutTemplate });
+    mock.onGet('/admin-path/config').replyOnce(200, {
+      ...config,
+      site: { ...config.site, app_name: null },
     });
 
     await expect(fetchConfig(client)).rejects.toBeInstanceOf(ApiContractError);
     await expect(fetchConfig(client)).rejects.toBeInstanceOf(ApiContractError);
   });
 
-  it('preserves bracket encoding for populated config arrays and marks empty arrays explicitly', async () => {
+  it('PATCHes config as JSON with real arrays and reports full activation', async () => {
+    // §6.1 (W9): the `'[]'`-string empty-array hack is dead — an empty array
+    // rides as a real JSON `[]`; a bodiless 204 means fully activated.
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/admin-path/config/save').reply(200, { data: true });
+    mock.onPatch('/admin-path/config').reply(204);
 
-    await saveConfig(client, {
+    await expect(
+      saveConfig(client, {
+        email_whitelist_suffix: ['example.com', 'example.org'],
+        commission_withdraw_method: [],
+      }),
+    ).resolves.toEqual({ activation: 'applied' });
+
+    expect(JSON.parse(String(mock.history.patch[0]?.data))).toEqual({
       email_whitelist_suffix: ['example.com', 'example.org'],
       commission_withdraw_method: [],
     });
-
-    expect(mock.history.post[0]?.data).toBe(
-      'email_whitelist_suffix[0]=example.com&email_whitelist_suffix[1]=example.org&commission_withdraw_method=%5B%5D',
-    );
+    expect(mock.history.patch[0]?.headers?.['Content-Type']).toContain('application/json');
   });
 
-  it('passes the legacy config key when a page requests a single config group', async () => {
+  it('surfaces the 202 activation-pending config save without treating it as an error', async () => {
+    // §6.1: the write is durable — the caller must refetch, never resubmit.
+    const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onPatch('/admin-path/config').reply(202, { activation: 'pending' });
+
+    await expect(saveConfig(client, { app_name: 'Pending Site' })).resolves.toEqual({
+      activation: 'pending',
+    });
+  });
+
+  it('rejects a stale-revision config save with the 409 conflict problem code', async () => {
+    const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onPatch('/admin-path/config').reply(
+      409,
+      {
+        type: 'about:blank',
+        title: 'Conflict',
+        status: 409,
+        code: 'config_revision_conflict',
+        detail: '配置已被其他请求更新，请刷新后重试',
+      },
+      { 'content-type': 'application/problem+json' },
+    );
+
+    await expect(saveConfig(client, { app_name: 'Stale Site' })).rejects.toMatchObject({
+      code: 'config_revision_conflict',
+      status: 409,
+    });
+  });
+
+  it('passes the modern group query when a page requests a single config group', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
     const site = makeAdminConfig().site;
-    mock.onAny().reply((config) => {
-      expect(config.method).toBe('get');
-      expect(config.url).toBe('/admin-path/config/fetch?key=site');
-      expect(config.params).toBeUndefined();
-      return [200, { data: { site } }];
-    });
+    mock.onGet('/admin-path/config?group=site').reply(200, { site });
 
     await expect(fetchConfig(client, 'site')).resolves.toMatchObject({
       site: { currency: 'CNY' },
@@ -1474,44 +1496,81 @@ describe('createApiClient', () => {
     expect(mock.history.get[0]?.url).toBe('/admin-path/notice/fetch');
   });
 
-  it('sets the telegram webhook with the original empty token payload', async () => {
+  it('sets the telegram webhook with an empty JSON body when no token is given', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/admin-path/config/setTelegramWebhook').reply(200, { data: true });
+    mock.onPost('/admin-path/telegram-webhook').reply(204);
 
-    await setTelegramWebhook(client);
+    await expect(setTelegramWebhook(client)).resolves.toBeUndefined();
 
-    expect(mock.history.post[0]?.data).toBe('');
+    expect(JSON.parse(String(mock.history.post[0]?.data))).toEqual({});
   });
 
   it('sets the telegram webhook with the explicit current token', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/admin-path/config/setTelegramWebhook').reply(200, { data: true });
+    mock.onPost('/admin-path/telegram-webhook').reply(204);
 
     await setTelegramWebhook(client, 'current-token');
 
-    expect(mock.history.post[0]?.data).toBe('telegram_bot_token=current-token');
+    expect(JSON.parse(String(mock.history.post[0]?.data))).toEqual({
+      telegram_bot_token: 'current-token',
+    });
   });
 
-  it('sends the original empty test-mail request and preserves its log envelope', async () => {
+  it('sends the bodiless test-mail probe and parses the bare sent/log object', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/admin-path/config/testSendMail').reply(200, {
-      code: 200,
-      data: true,
-      log: {
-        email: 'user@example.com',
-        config: { host: 'smtp.example.com', port: 465, encryption: 'ssl', username: 'mailer' },
-      },
+    mock.onPost('/admin-path/test-mail').reply(200, { sent: true, log: null });
+
+    await expect(testSendMail(client)).resolves.toEqual({ sent: true, log: null });
+    expect(mock.history.post[0]?.data).toBeUndefined();
+  });
+
+  it('encodes the system-log DSL query into filter/sort/pagination params', async () => {
+    // §7 (W9): one JSON `filter` param, enum-validated sort scalars, §8
+    // page/per_page — never legacy `filter[i][key]` brackets.
+    const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onGet(/^\/admin-path\/system\/logs\?/).reply(200, {
+      items: [
+        {
+          id: 1,
+          title: 'AlipayF2F notify failed',
+          level: 'error',
+          host: 'example.test',
+          uri: '/api/v1/guest/payment/notify/alipay/uuid',
+          method: 'POST',
+          data: null,
+          ip: '203.0.113.9',
+          context: null,
+          created_at: '2026-07-01T00:00:00Z',
+          updated_at: '2026-07-01T00:00:00Z',
+        },
+      ],
+      total: 1,
     });
 
-    await expect(testSendMail(client)).resolves.toMatchObject({
-      code: 200,
-      data: true,
-      log: { email: 'user@example.com' },
+    const page = await fetchSystemLogs(client, {
+      page: 2,
+      per_page: 10,
+      filter: [{ field: 'level', op: 'eq', value: 'error' }],
+      sort_by: 'created_at',
+      sort_dir: 'desc',
     });
-    expect(mock.history.post[0]?.data).toBe('');
+
+    expect(page.total).toBe(1);
+    expect(page.items[0]).toMatchObject({ id: 1, level: 'error' });
+    const url = String(mock.history.get[0]?.url);
+    expect(url.startsWith('/admin-path/system/logs?')).toBe(true);
+    const query = new URLSearchParams(url.slice(url.indexOf('?') + 1));
+    expect(query.get('page')).toBe('2');
+    expect(query.get('per_page')).toBe('10');
+    expect(query.get('filter')).toBe('[{"field":"level","op":"eq","value":"error"}]');
+    expect(query.get('sort_by')).toBe('created_at');
+    expect(query.get('sort_dir')).toBe('desc');
+    // Never the retired legacy bracket spelling.
+    expect(url).not.toContain('filter%5B0%5D');
   });
 
   it('preserves legacy generated user CSV buffers', async () => {

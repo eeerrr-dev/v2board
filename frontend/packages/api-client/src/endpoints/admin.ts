@@ -1,6 +1,7 @@
 import type {
   AdminConfig,
   AdminConfigFlat,
+  AdminConfigPatchResult,
   AdminOrderRow,
   AdminUserRow,
   AdminUserUpdatePayload,
@@ -13,13 +14,18 @@ import type {
   Ticket,
   TicketReplyPayload,
 } from '@v2board/types';
-import type { output, ZodType } from 'zod';
+import { z, type output, type ZodType } from 'zod';
 import type { ApiClient, ApiRequestConfig, BinaryApiResponse } from '../client';
 import type { serverRouteActionSchema, serverTypeNameSchema } from '../contracts';
+import { adminListQueryParams, pageSchema, type AdminListQuery } from '../dialect';
 import { decimalToCents, decimalToScaledInteger } from '../money';
 import {
   adminConfigSchema,
   adminFilterSchema,
+  configActivationPendingSchema,
+  noContentSchema,
+  systemLogSchema,
+  testMailResultSchema,
   adminKnowledgeSchema,
   adminKnowledgeSummarySchema,
   adminNoticeSchema,
@@ -45,7 +51,6 @@ import {
   serverRouteSchema,
   stringArraySchema,
   stringSchema,
-  testMailEnvelopeSchema,
   ticketSchema,
   trueSchema,
   userRankSchema,
@@ -62,7 +67,7 @@ export interface AdminPageQuery {
   filter?: AdminFilter[];
 }
 
-export type AdminTestMailResult = output<typeof testMailEnvelopeSchema>;
+export type AdminTestMailResult = output<typeof testMailResultSchema>;
 
 export type AdminUserTrafficRecord = output<typeof adminUserTrafficSchema>;
 
@@ -164,34 +169,72 @@ function normalizeAdminConfig(config: output<typeof adminConfigSchema>): AdminCo
   };
 }
 
-export const fetchConfig = async (client: ApiClient, key?: string, config?: QueryRequestConfig) =>
+/** GET /{secure_path}/config `?group=` — dialect v2 bare grouped object (§6.1, W9). */
+export const fetchConfig = async (client: ApiClient, group?: string, config?: QueryRequestConfig) =>
   normalizeAdminConfig(
-    await adminGet(client, '/config/fetch', adminConfigSchema, key ? { key } : undefined, config),
+    await client.request({
+      url: client.resolveAdminPath('/config'),
+      method: 'GET',
+      dialect: 'v2',
+      params: group ? { group } : undefined,
+      responseSchema: adminConfigSchema,
+      ...config,
+    }),
   );
 
-function serializeConfigForSave(data: Partial<AdminConfigFlat>): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(data).map(([key, value]) => [
-      key,
-      Array.isArray(value) && value.length === 0 ? '[]' : value,
-    ]),
-  );
-}
+/**
+ * PATCH /{secure_path}/config — dialect v2 partial JSON body in §4.1 native
+ * types (real booleans/arrays; the legacy `'[]'`-string empty-array hack is
+ * dead) with §4.4 null-clear semantics. 204 means the write fully activated;
+ * 202 `{activation: "pending"}` means it is durable but not yet active — the
+ * caller must refetch, never resubmit (a resubmit would 409
+ * `config_revision_conflict` on the now-stale revision).
+ */
+export const saveConfig = (
+  client: ApiClient,
+  data: Partial<AdminConfigFlat>,
+): Promise<AdminConfigPatchResult> =>
+  client
+    .request({
+      url: client.resolveAdminPath('/config'),
+      method: 'PATCH',
+      dialect: 'v2',
+      data,
+      responseSchema: z.union([noContentSchema, configActivationPendingSchema]),
+    })
+    .then((body) => ({ activation: body?.activation ?? 'applied' }));
 
-export const saveConfig = (client: ApiClient, data: Partial<AdminConfigFlat>) =>
-  adminPostTrue(client, '/config/save', serializeConfigForSave(data));
-
+/** GET /{secure_path}/email-templates — dialect v2 bare array (§6.1, W9). */
 export const getEmailTemplate = (client: ApiClient, config?: QueryRequestConfig) =>
-  adminGet(client, '/config/getEmailTemplate', stringArraySchema, undefined, config);
+  client.request({
+    url: client.resolveAdminPath('/email-templates'),
+    method: 'GET',
+    dialect: 'v2',
+    responseSchema: stringArraySchema,
+    ...config,
+  });
 
+/** POST /{secure_path}/telegram-webhook — dialect v2, 204 (§6.1, W9). */
 export const setTelegramWebhook = (client: ApiClient, telegram_bot_token?: string) =>
-  adminPostTrue(client, '/config/setTelegramWebhook', { telegram_bot_token });
-
-export const testSendMail = (client: ApiClient) =>
-  client.requestEnvelope({
-    url: client.resolveAdminPath('/config/testSendMail'),
+  client.request({
+    url: client.resolveAdminPath('/telegram-webhook'),
     method: 'POST',
-    responseSchema: testMailEnvelopeSchema,
+    dialect: 'v2',
+    data: telegram_bot_token === undefined ? {} : { telegram_bot_token },
+    responseSchema: noContentSchema,
+  });
+
+/**
+ * POST /{secure_path}/test-mail — dialect v2 bare `{sent, log}` (§6.1, W9):
+ * the legacy `{data: true, log}` envelope became a named object; failures are
+ * problems (400 mail_sender_not_configured/mail_invalid, 502 mail_send_failed).
+ */
+export const testSendMail = (client: ApiClient) =>
+  client.request({
+    url: client.resolveAdminPath('/test-mail'),
+    method: 'POST',
+    dialect: 'v2',
+    responseSchema: testMailResultSchema,
   });
 
 const PLAN_PRICE_KEYS = [
@@ -711,11 +754,52 @@ export const dropKnowledge = (client: ApiClient, id: number) =>
 export const sortKnowledge = (client: ApiClient, knowledge_ids: number[]) =>
   adminPostTrue(client, '/knowledge/sort', { knowledge_ids });
 
+/** GET /{secure_path}/system/queue-stats — dialect v2 bare object (§6.1, W9). */
 export const queueStats = (client: ApiClient, config?: QueryRequestConfig) =>
-  adminGet(client, '/system/getQueueStats', queueStatsSchema, undefined, config);
+  client.request({
+    url: client.resolveAdminPath('/system/queue-stats'),
+    method: 'GET',
+    dialect: 'v2',
+    responseSchema: queueStatsSchema,
+    ...config,
+  });
 
+/** GET /{secure_path}/system/queue-workload — dialect v2 bare array (§6.1, W9). */
 export const queueWorkload = (client: ApiClient, config?: QueryRequestConfig) =>
-  adminGet(client, '/system/getQueueWorkload', arraySchema(queueWorkloadSchema), undefined, config);
+  client.request({
+    url: client.resolveAdminPath('/system/queue-workload'),
+    method: 'GET',
+    dialect: 'v2',
+    responseSchema: arraySchema(queueWorkloadSchema),
+    ...config,
+  });
+
+/** §7.1 — the GET system/logs filter whitelist (`level` only) and §7.2 sort columns. */
+export const SYSTEM_LOG_FILTER_FIELDS = ['level'] as const;
+export const SYSTEM_LOG_SORT_FIELDS = ['created_at', 'level'] as const;
+export type SystemLogFilterField = (typeof SYSTEM_LOG_FILTER_FIELDS)[number];
+export type AdminSystemLogRecord = output<typeof systemLogSchema>;
+
+/**
+ * GET /{secure_path}/system/logs — dialect v2 `{items, total}` page (§6.1,
+ * W9) and the §7 filter/sort DSL's first consumer: clauses ride the single
+ * JSON `filter` query param, sorting rides enum-validated
+ * `sort_by`/`sort_dir`. No modern route parses legacy `filter[i][key]`
+ * brackets.
+ */
+export const fetchSystemLogs = (
+  client: ApiClient,
+  query: AdminListQuery<SystemLogFilterField> = {},
+  config?: QueryRequestConfig,
+) =>
+  client.request({
+    url: client.resolveAdminPath('/system/logs'),
+    method: 'GET',
+    dialect: 'v2',
+    params: adminListQueryParams(query),
+    responseSchema: pageSchema(systemLogSchema),
+    ...config,
+  });
 
 export const statSummary = (client: ApiClient, config?: QueryRequestConfig) =>
   adminGet(client, '/stat/getOverride', adminStatSummarySchema, undefined, config);

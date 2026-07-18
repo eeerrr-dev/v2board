@@ -131,3 +131,73 @@ export const pageSchema = <TItemSchema extends z.ZodType>(item: TItemSchema) =>
     items: z.array(item),
     total: z.number(),
   });
+
+// ——— §7 admin filter & sort DSL (docs/api-dialect.md §7, shipped in W9 with
+// GET system/logs as its first consumer; the W11/W12 admin list waves reuse
+// these builders). Replaces the legacy `filter[i][key]/[condition]/[value]`
+// bracket params, the `模糊` operator token, and `sort`/`sort_type`.
+
+/** §7.1 — the closed filter operator vocabulary. */
+export const filterOpSchema = z.enum(['eq', 'neq', 'like', 'gt', 'gte', 'lt', 'lte', 'in']);
+export type FilterOp = z.output<typeof filterOpSchema>;
+
+const filterScalarSchema = z.union([z.string(), z.number(), z.boolean()]);
+const filterValueSchema = z.union([
+  filterScalarSchema,
+  z.null(),
+  // `in`: a non-empty array of scalars (§7.1).
+  z.array(filterScalarSchema).min(1),
+]);
+
+/**
+ * §7.1 — one filter clause against a per-endpoint field whitelist. Endpoints
+ * instantiate this with their §7.1 column list so an unknown field fails in
+ * the client instead of round-tripping to a 422.
+ */
+export const filterClauseSchema = <TField extends readonly [string, ...string[]]>(
+  fields: TField,
+) =>
+  z.object({
+    field: z.enum(fields),
+    op: filterOpSchema,
+    value: filterValueSchema,
+  });
+
+export interface FilterClause<TField extends string = string> {
+  field: TField;
+  op: FilterOp;
+  value: string | number | boolean | null | Array<string | number | boolean>;
+}
+
+/** §7.2 — enum-validated sort direction (invalid values are 422s, not defaults). */
+export const sortDirSchema = z.enum(['asc', 'desc']);
+export type SortDir = z.output<typeof sortDirSchema>;
+
+/** §8 + §7 — one admin list request: pagination, filter clauses, and sort. */
+export interface AdminListQuery<TField extends string = string> {
+  page?: number;
+  per_page?: number;
+  filter?: FilterClause<TField>[];
+  sort_by?: string;
+  sort_dir?: SortDir;
+}
+
+/**
+ * §7.1/§7.2 — encode an admin list query into query params: the clause array
+ * serializes with `JSON.stringify` into the single `filter` param (URL
+ * encoding is the transport's job); `page`/`per_page`/`sort_by`/`sort_dir`
+ * ride as plain scalars. An empty/absent clause list omits `filter` entirely.
+ */
+export function adminListQueryParams<TField extends string>(
+  query: AdminListQuery<TField> = {},
+): Record<string, string | number> {
+  const params: Record<string, string | number> = {};
+  if (query.page !== undefined) params.page = query.page;
+  if (query.per_page !== undefined) params.per_page = query.per_page;
+  if (query.filter !== undefined && query.filter.length > 0) {
+    params.filter = JSON.stringify(query.filter);
+  }
+  if (query.sort_by !== undefined) params.sort_by = query.sort_by;
+  if (query.sort_dir !== undefined) params.sort_dir = query.sort_dir;
+  return params;
+}

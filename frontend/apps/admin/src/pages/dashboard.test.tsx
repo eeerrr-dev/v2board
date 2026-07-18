@@ -62,7 +62,8 @@ vi.mock('@/lib/runtime-config', async (importOriginal) => ({
 vi.mock('@/lib/queries', () => ({
   useConfig: () => ({ data: { site: { currency: 'CNY' }, currency: 'USD' } }),
   useQueueStats: () => ({
-    data: { status: 'running' },
+    // §6.1 (W9): queue-stats `status` is a real JSON boolean.
+    data: { status: true },
     isError: false,
     refetch: vi.fn(),
   }),

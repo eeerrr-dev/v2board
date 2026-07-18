@@ -3,14 +3,18 @@ import { z } from 'zod';
 import {
   ApiProblemError,
   acceptLanguageHeader,
+  adminListQueryParams,
   bearerAuthorization,
   dialectRequestHeaders,
+  filterClauseSchema,
+  filterOpSchema,
   hasProblemCode,
   isApiProblemError,
   isSessionExpiredProblem,
   isStepUpRequiredProblem,
   pageSchema,
   parseProblem,
+  sortDirSchema,
 } from './dialect';
 
 // The docs/api-dialect.md §3.1 example body, verbatim.
@@ -155,5 +159,54 @@ describe('pageSchema (§8)', () => {
   it('rejects a page without a total', () => {
     const result = pageSchema(itemSchema).safeParse({ items: [] });
     expect(result.success).toBe(false);
+  });
+});
+
+describe('admin filter & sort DSL (§7)', () => {
+  it('keeps the §7.1 operator vocabulary closed', () => {
+    expect(filterOpSchema.options).toEqual(['eq', 'neq', 'like', 'gt', 'gte', 'lt', 'lte', 'in']);
+    expect(filterOpSchema.safeParse('模糊').success).toBe(false);
+    expect(filterOpSchema.safeParse('is').success).toBe(false);
+  });
+
+  it('validates clauses against the per-endpoint field whitelist', () => {
+    const clause = filterClauseSchema(['level']);
+    expect(clause.safeParse({ field: 'level', op: 'eq', value: 'error' }).success).toBe(true);
+    expect(clause.safeParse({ field: 'level', op: 'eq', value: null }).success).toBe(true);
+    expect(clause.safeParse({ field: 'level', op: 'in', value: ['info', 'error'] }).success).toBe(
+      true,
+    );
+    // Unknown field, retired legacy shape, and empty `in` arrays all fail.
+    expect(clause.safeParse({ field: 'email', op: 'eq', value: 'x' }).success).toBe(false);
+    expect(clause.safeParse({ key: 'level', condition: '=', value: 'x' }).success).toBe(false);
+    expect(clause.safeParse({ field: 'level', op: 'in', value: [] }).success).toBe(false);
+  });
+
+  it('serializes the clause array into one JSON filter param', () => {
+    expect(
+      adminListQueryParams({
+        page: 1,
+        per_page: 10,
+        filter: [{ field: 'level', op: 'like', value: '50%_off' }],
+        sort_by: 'created_at',
+        sort_dir: 'asc',
+      }),
+    ).toEqual({
+      page: 1,
+      per_page: 10,
+      filter: '[{"field":"level","op":"like","value":"50%_off"}]',
+      sort_by: 'created_at',
+      sort_dir: 'asc',
+    });
+  });
+
+  it('omits the filter param entirely for an empty clause list', () => {
+    expect(adminListQueryParams({ page: 1, filter: [] })).toEqual({ page: 1 });
+    expect(adminListQueryParams()).toEqual({});
+  });
+
+  it('rejects sort directions outside the §7.2 enum', () => {
+    expect(sortDirSchema.safeParse('asc').success).toBe(true);
+    expect(sortDirSchema.safeParse('DESC').success).toBe(false);
   });
 });

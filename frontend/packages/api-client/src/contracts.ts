@@ -4,12 +4,6 @@ import type { AdminConfig } from '@v2board/types';
 const nullableNumber = z.number().nullable();
 const nullableString = z.string().nullable();
 const binaryFlagSchema = z.union([z.literal(0), z.literal(1)]);
-const numericStringSchema = z
-  .string()
-  .trim()
-  .regex(/^-?(?:\d+\.?\d*|\.\d+)$/)
-  .transform(Number);
-const numberFromApiSchema = z.union([z.number(), numericStringSchema]);
 
 export const trueSchema = z.literal(true);
 export const booleanSchema = z.boolean();
@@ -722,23 +716,54 @@ export const orderStatSchema = z.looseObject({
   value: z.number(),
 });
 
+/**
+ * GET /{secure_path}/system/queue-stats (docs/api-dialect.md §6.1, W9): bare
+ * snake_case worker counters with RFC 3339 timestamp maps.
+ */
 export const queueStatsSchema = z.looseObject({
-  failedJobs: z.number(),
-  jobsPerMinute: z.number(),
-  pausedMasters: z.number(),
-  periods: z.looseObject({ failedJobs: z.number(), recentJobs: z.number() }),
+  failed_jobs: z.number(),
+  jobs_per_minute: z.number(),
+  paused_masters: z.number(),
+  periods: z.looseObject({ failed_jobs: z.number(), recent_jobs: z.number() }),
   processes: z.number(),
-  queueWithMaxRuntime: nullableString,
-  queueWithMaxThroughput: nullableString,
-  recentJobs: z.number(),
-  status: z.union([z.string(), z.boolean(), z.null()]),
+  queue_with_max_runtime: nullableString,
+  queue_with_max_throughput: nullableString,
+  recent_jobs: z.number(),
+  status: z.boolean(),
   wait: z.record(z.string(), z.number()),
+  last_run_at: z.record(z.string(), z.string()),
+  last_success_at: z.record(z.string(), z.string()),
+  last_failure_at: z.record(z.string(), z.string()),
 });
+/** GET /{secure_path}/system/queue-workload row (§6.1, W9): bare snake_case. */
 export const queueWorkloadSchema = z.looseObject({
   name: z.string(),
   processes: z.number(),
   length: z.number(),
   wait: z.number(),
+  recent_jobs: z.number(),
+  failed_jobs: z.number(),
+  last_run_at: nullableString,
+  last_success_at: nullableString,
+  last_failure_at: nullableString,
+});
+/**
+ * GET /{secure_path}/system/logs item (docs/api-dialect.md §6.1, W9): the
+ * legacy key set with §4.5 RFC 3339 `created_at`/`updated_at`. The route is
+ * the §7 filter/sort DSL's first consumer (whitelist: `level` only).
+ */
+export const systemLogSchema = z.looseObject({
+  id: z.number(),
+  title: z.string(),
+  level: nullableString,
+  host: nullableString,
+  uri: z.string(),
+  method: z.string(),
+  data: nullableString,
+  ip: nullableString,
+  context: nullableString,
+  created_at: z.string(),
+  updated_at: z.string(),
 });
 export const serverTypeNameSchema = z.enum([
   'shadowsocks',
@@ -799,8 +824,11 @@ export const serverRouteSchema = z.looseObject({
   updated_at: z.number(),
 });
 
-const configNumberSchema = numberFromApiSchema;
-const configFlagSchema = binaryFlagSchema;
+// GET `/{secure_path}/config` (docs/api-dialect.md §6.1, W9): §4.1 native
+// JSON types — real booleans for every config flag, real string arrays, JSON
+// numbers. The legacy 0/1-flag, comma-list-string, and number-as-string
+// tolerances died with the W9 flip.
+const configFlagSchema = z.boolean();
 const configTicketStatusSchema = z.union([z.literal(0), z.literal(1), z.literal(2)]);
 const configResetTrafficSchema = z.union([
   z.literal(0),
@@ -809,61 +837,52 @@ const configResetTrafficSchema = z.union([
   z.literal(3),
   z.literal(4),
 ]);
-const configNullableNumberSchema = z.union([z.null(), configNumberSchema]);
-// PostgreSQL authority emits exact decimals as strings. Keep their lexical
-// value instead of round-tripping through IEEE-754 in the admin form.
-const configDecimalStringSchema = z.union([
-  z
-    .string()
-    .trim()
-    .regex(/^-?(?:\d+\.?\d*|\.\d+)$/),
-  z.number().transform(String),
-]);
-const configNullableDecimalStringSchema = configDecimalStringSchema.nullable();
+// PostgreSQL authority emits exact decimals as strings (§4.1 recorded
+// exception, `commission_withdraw_limit` only). Keep their lexical value
+// instead of round-tripping through IEEE-754 in the admin form.
+const configDecimalStringSchema = z
+  .string()
+  .trim()
+  .regex(/^-?(?:\d+\.?\d*|\.\d+)$/);
 const configNullableStringSchema = z.union([z.string(), z.null()]);
-const configStringSchema = z.union([z.string(), z.number().transform(String)]);
-const commaSeparatedStringArraySchema = z.union([
-  stringArraySchema,
-  z.string().transform((value) => (value === '' ? [] : value.split(','))),
-]);
 
 const ticketConfigSchema = z.looseObject({
   ticket_status: configTicketStatusSchema,
 });
 const depositConfigSchema = z.looseObject({
-  deposit_bounus: commaSeparatedStringArraySchema,
+  deposit_bounus: stringArraySchema,
 });
 const inviteConfigSchema = z.looseObject({
   invite_force: configFlagSchema,
-  invite_commission: configNumberSchema,
-  invite_gen_limit: configNumberSchema,
+  invite_commission: z.number(),
+  invite_gen_limit: z.number(),
   invite_never_expire: configFlagSchema,
   commission_first_time_enable: configFlagSchema,
   commission_auto_check_enable: configFlagSchema,
-  commission_withdraw_limit: configNullableDecimalStringSchema,
-  commission_withdraw_method: commaSeparatedStringArraySchema,
+  commission_withdraw_limit: configDecimalStringSchema,
+  commission_withdraw_method: stringArraySchema,
   withdraw_close_enable: configFlagSchema,
   commission_distribution_enable: configFlagSchema,
-  commission_distribution_l1: z.union([z.string(), z.number(), z.null()]),
-  commission_distribution_l2: z.union([z.string(), z.number(), z.null()]),
-  commission_distribution_l3: z.union([z.string(), z.number(), z.null()]),
+  commission_distribution_l1: nullableNumber,
+  commission_distribution_l2: nullableNumber,
+  commission_distribution_l3: nullableNumber,
 });
 const siteConfigSchema = z.looseObject({
   logo: configNullableStringSchema,
   force_https: configFlagSchema,
   stop_register: configFlagSchema,
   app_name: z.string(),
-  app_description: z.string(),
+  app_description: configNullableStringSchema,
   app_url: configNullableStringSchema,
   subscribe_url: configNullableStringSchema,
   subscribe_path: configNullableStringSchema,
-  try_out_plan_id: configNullableNumberSchema,
-  try_out_hour: configDecimalStringSchema,
+  try_out_plan_id: z.number(),
+  try_out_hour: z.number(),
   tos_url: configNullableStringSchema,
   currency: z.string(),
   currency_symbol: z.string(),
-  // Older installations returned this safe-setting under `site`.
-  email_whitelist_suffix: commaSeparatedStringArraySchema.optional(),
+  // docs/api-dialect.md §10.3: the legacy `#/…` hash → history-URL toggle.
+  legacy_hash_redirect_enable: configFlagSchema,
 });
 const subscribeConfigSchema = z.looseObject({
   plan_change_enable: configFlagSchema,
@@ -875,7 +894,7 @@ const subscribeConfigSchema = z.looseObject({
   change_order_event_id: configFlagSchema,
   show_info_to_server_enable: configFlagSchema,
   show_subscribe_method: configTicketStatusSchema,
-  show_subscribe_expire: configNullableNumberSchema,
+  show_subscribe_expire: z.number(),
 });
 const frontendConfigSchema = z.looseObject({
   frontend_theme_color: z.enum(['default', 'darkblue', 'black', 'green']),
@@ -890,10 +909,10 @@ const frontendConfigSchema = z.looseObject({
 const serverConfigSchema = z.looseObject({
   server_api_url: configNullableStringSchema,
   server_token: configNullableStringSchema,
-  server_pull_interval: configStringSchema,
-  server_push_interval: configStringSchema,
-  server_node_report_min_traffic: configStringSchema,
-  server_device_online_min_traffic: configStringSchema,
+  server_pull_interval: z.number(),
+  server_push_interval: z.number(),
+  server_node_report_min_traffic: z.number(),
+  server_device_online_min_traffic: z.number(),
   device_limit_mode: configFlagSchema,
 });
 const emailConfigSchema = z.looseObject({
@@ -902,7 +921,7 @@ const emailConfigSchema = z.looseObject({
     .nullable()
     .transform((value) => value ?? 'default'),
   email_host: configNullableStringSchema,
-  email_port: z.union([z.string(), z.number().transform(String), z.null()]),
+  email_port: nullableNumber,
   email_username: configNullableStringSchema,
   email_password: configNullableStringSchema,
   email_encryption: configNullableStringSchema,
@@ -926,17 +945,17 @@ const safeConfigSchema = z.looseObject({
   safe_mode_enable: configFlagSchema,
   secure_path: configNullableStringSchema,
   email_whitelist_enable: configFlagSchema,
-  email_whitelist_suffix: commaSeparatedStringArraySchema,
+  email_whitelist_suffix: stringArraySchema,
   email_gmail_limit_enable: configFlagSchema,
   recaptcha_enable: configFlagSchema,
   recaptcha_key: configNullableStringSchema,
   recaptcha_site_key: configNullableStringSchema,
   register_limit_by_ip_enable: configFlagSchema,
-  register_limit_count: configNumberSchema,
-  register_limit_expire: configNumberSchema,
+  register_limit_count: z.number(),
+  register_limit_expire: z.number(),
   password_limit_enable: configFlagSchema,
-  password_limit_count: configNumberSchema,
-  password_limit_expire: configNumberSchema,
+  password_limit_count: z.number(),
+  password_limit_expire: z.number(),
 });
 
 /**
@@ -957,15 +976,24 @@ export const adminConfigSchema = z.looseObject({
   safe: safeConfigSchema.optional(),
 }) satisfies z.ZodType<AdminConfig>;
 
-export const testMailLogSchema = z.looseObject({
-  error: nullableString.optional(),
-  email: z.string().optional(),
-  subject: z.string().optional(),
-  template_name: z.string().optional(),
-  config: jsonObjectSchema.optional(),
+/**
+ * POST /{secure_path}/test-mail (docs/api-dialect.md §6.1, W9): the legacy
+ * `{data: true, log}` envelope became this bare named object. The native
+ * probe is synchronous; failures surface as problems, so `log` is null on
+ * success.
+ */
+export const testMailResultSchema = z.looseObject({
+  sent: z.boolean(),
+  log: nullableString,
 });
-export const testMailEnvelopeSchema = envelopeSchema(trueSchema).extend({
-  log: testMailLogSchema.optional(),
+
+/**
+ * PATCH /{secure_path}/config (docs/api-dialect.md §6.1, W9): the only 202 in
+ * the dialect — a durable-but-not-yet-active write. Full activation is a
+ * bodiless 204.
+ */
+export const configActivationPendingSchema = z.looseObject({
+  activation: z.literal('pending'),
 });
 
 /**

@@ -15,8 +15,11 @@ export type {
 export {
   ApiProblemError,
   acceptLanguageHeader,
+  adminListQueryParams,
   bearerAuthorization,
   dialectRequestHeaders,
+  filterClauseSchema,
+  filterOpSchema,
   hasProblemCode,
   isApiProblemError,
   isSessionExpiredProblem,
@@ -24,8 +27,16 @@ export {
   pageSchema,
   parseProblem,
   problemDetailsSchema,
+  sortDirSchema,
 } from './dialect';
-export type { DialectHeaderInputs, ProblemDetails } from './dialect';
+export type {
+  AdminListQuery,
+  DialectHeaderInputs,
+  FilterClause,
+  FilterOp,
+  ProblemDetails,
+  SortDir,
+} from './dialect';
 export { decimalToCents, decimalToMinorUnits, decimalToScaledInteger } from './money';
 export {
   getErrorPresentation,

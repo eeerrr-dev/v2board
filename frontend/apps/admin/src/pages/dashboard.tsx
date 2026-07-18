@@ -66,7 +66,8 @@ export default function DashboardPage() {
   const config = useConfig('site');
   const currency = config.data?.site?.currency;
   const data = stat.data;
-  const queueHealthy = queueStatus.data?.status === true || queueStatus.data?.status === 'running';
+  // §6.1 (W9): queue-stats `status` is a real JSON boolean on the wire.
+  const queueHealthy = queueStatus.data?.status === true;
   const dashboardQueries = [
     queueStatus,
     stat,

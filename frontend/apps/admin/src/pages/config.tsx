@@ -4,7 +4,7 @@ import { Controller, useForm, useWatch, type Control } from 'react-hook-form';
 import { z } from 'zod';
 import { Loader2 } from 'lucide-react';
 import type { AdminConfig, AdminConfigFlat, AdminConfigGroups, Plan } from '@v2board/types';
-import { getErrorPresentation } from '@v2board/api-client';
+import { getErrorPresentation, hasProblemCode } from '@v2board/api-client';
 import { stripBasePath } from '@v2board/config';
 import { getAdminBasename } from '@/lib/runtime-config';
 import {
@@ -37,7 +37,7 @@ import { Textarea } from '@/components/ui/textarea';
 
 type ConfigGroupKey = keyof AdminConfigGroups;
 
-type ConfigFieldValue = string | number | string[] | null | undefined;
+type ConfigFieldValue = string | number | boolean | string[] | null | undefined;
 type ConfigSectionValues = Record<string, ConfigFieldValue>;
 type SerializedConfigSave = <T>(operation: () => Promise<T>) => Promise<T>;
 
@@ -56,6 +56,7 @@ const SECTION_FIELDS = {
     'try_out_hour',
     'currency',
     'currency_symbol',
+    'legacy_hash_redirect_enable',
   ],
   safe: [
     'email_verify',
@@ -143,6 +144,7 @@ const SECTION_FIELDS = {
 const configFieldValueSchema = z.union([
   z.string(),
   z.number(),
+  z.boolean(),
   z.array(z.string()),
   z.null(),
   z.undefined(),
@@ -224,12 +226,14 @@ function SystemConfigPage() {
   }, []);
 
   const sendTestMail = async () => {
+    // §6.1: bare `{sent, log}` — the native probe is synchronous, so failures
+    // arrive as problems (handled by the mutation error path) and `log` is a
+    // nullable transcript line, not a legacy log object.
     const result = await testMail.mutateAsync();
-    const log = result.log;
-    if (log?.error) {
-      toast.error('发送失败', { description: log.error });
+    if (result.sent) {
+      toast.success('发送成功', result.log ? { description: result.log } : undefined);
     } else {
-      toast.success('发送成功', { description: `收信地址：${log?.email ?? ''}` });
+      toast.error('发送失败', result.log ? { description: result.log } : undefined);
     }
   };
 
@@ -458,7 +462,9 @@ function SystemConfigSectionForm({
 
           try {
             const outcome = await serializeConfigSave(async () => {
-              await saveConfig.mutateAsync({ [field]: value } as Partial<AdminConfigFlat>);
+              const patch = await saveConfig.mutateAsync({
+                [field]: value,
+              } as Partial<AdminConfigFlat>);
               // A newer local value already supersedes this response. Persist it
               // immediately and avoid a full-config refresh that can only be stale.
               if ((saveGenerations.current[field] ?? 0) !== generation) {
@@ -466,6 +472,23 @@ function SystemConfigSectionForm({
               }
 
               saveFailures.current.delete(field);
+              if (patch.activation === 'pending') {
+                // §6.1: 202 means the write is durable but not yet active on
+                // every process — refetch, never resubmit. The submitted value
+                // is the durable baseline, so keep the draft (a refetched
+                // canonical could still show the not-yet-active old value) and
+                // skip the secure_path redirect until full activation.
+                canonicalValues.current[field] = value;
+                await refreshInOrder();
+                if (
+                  mounted.current &&
+                  (saveGenerations.current[field] ?? 0) === generation &&
+                  !queuedSaves.current.has(field)
+                ) {
+                  toast.success('保存成功', { description: '配置已保存，正在等待所有进程生效。' });
+                }
+                return 'applied' as const;
+              }
               if (field === 'secure_path') {
                 replaceAdminSecurePath(toText(value));
                 return 'redirected' as const;
@@ -509,6 +532,16 @@ function SystemConfigSectionForm({
                 type: 'server',
                 message: getErrorPresentation(error).message,
               });
+              if (hasProblemCode(error, 'config_revision_conflict')) {
+                // §6.1: a stale-revision write must refetch the winning
+                // config — never blindly resubmit the losing value. The
+                // conflicted field keeps its draft plus the inline error.
+                try {
+                  await refreshInOrder();
+                } catch {
+                  // The refetch failure surfaces through the config query.
+                }
+              }
             }
           }
 
@@ -740,9 +773,9 @@ function SwitchRow({
                 checked={isBackendEnabled(controlField.value)}
                 onBlur={controlField.onBlur}
                 onCheckedChange={(checked) => {
-                  const value = checked ? 1 : 0;
-                  controlField.onChange(value);
-                  void ctx.save(group, field, value);
+                  // §4.1: config flags are real JSON booleans on the wire.
+                  controlField.onChange(checked);
+                  void ctx.save(group, field, checked);
                 }}
                 aria-label={title}
                 aria-invalid={fieldState.invalid}
@@ -914,7 +947,13 @@ function SelectRow({
         const current =
           controlField.value == null || controlField.value === ''
             ? fallback
-            : String(controlField.value);
+            : typeof controlField.value === 'boolean'
+              ? // Boolean wire values (order-event toggles) display through
+                // their legacy '0'/'1' option ids.
+                controlField.value
+                ? '1'
+                : '0'
+              : String(controlField.value);
         return (
           <SettingRow title={title} description={description} indent={indent}>
             <Field data-invalid={fieldState.invalid} aria-busy={ctx.isSaving(field)}>
@@ -1055,6 +1094,7 @@ function SiteSection({ ctx, plans }: { ctx: FormCtx; plans: Plan[] }) {
           { value: '0', label: '关闭' },
           ...plans.map((plan) => ({ value: String(plan.id), label: plan.name })),
         ]}
+        serialize={selectInteger}
       />
       {tryOutOff ? null : (
         <TextRow
@@ -1064,6 +1104,7 @@ function SiteSection({ ctx, plans }: { ctx: FormCtx; plans: Plan[] }) {
           title="试用时间(小时)"
           placeholder="请输入"
           indent
+          coerce={parseBackendNumber}
         />
       )}
       <TextRow
@@ -1193,6 +1234,7 @@ function SafeSection({ ctx }: { ctx: FormCtx }) {
             description="达到注册次数后开启惩罚。"
             placeholder="请输入"
             indent
+            coerce={parseBackendInteger}
           />
           <TextRow
             ctx={ctx}
@@ -1202,6 +1244,7 @@ function SafeSection({ ctx }: { ctx: FormCtx }) {
             description="需要等待惩罚时间过后才可以再次注册。"
             placeholder="请输入"
             indent
+            coerce={parseBackendInteger}
           />
         </>
       ) : null}
@@ -1222,6 +1265,7 @@ function SafeSection({ ctx }: { ctx: FormCtx }) {
             description="达到失败次数后开启惩罚。"
             placeholder="请输入"
             indent
+            coerce={parseBackendInteger}
           />
           <TextRow
             ctx={ctx}
@@ -1231,6 +1275,7 @@ function SafeSection({ ctx }: { ctx: FormCtx }) {
             description="需要等待惩罚时间过后才可以再次登陆。"
             placeholder="请输入"
             indent
+            coerce={parseBackendInteger}
           />
         </>
       ) : null}
@@ -1264,6 +1309,7 @@ function SubscribeSection({ ctx }: { ctx: FormCtx }) {
           { value: '3', label: '每年1月1日' },
           { value: '4', label: '按年重置' },
         ]}
+        serialize={selectInteger}
       />
       <SwitchRow
         ctx={ctx}
@@ -1288,6 +1334,7 @@ function SubscribeSection({ ctx }: { ctx: FormCtx }) {
         placeholder="请选择事件"
         fallback="0"
         options={ORDER_EVENT_OPTIONS}
+        serialize={selectBoolean}
       />
       <SelectRow
         ctx={ctx}
@@ -1298,6 +1345,7 @@ function SubscribeSection({ ctx }: { ctx: FormCtx }) {
         placeholder="请选择事件"
         fallback="0"
         options={ORDER_EVENT_OPTIONS}
+        serialize={selectBoolean}
       />
       <SelectRow
         ctx={ctx}
@@ -1308,6 +1356,7 @@ function SubscribeSection({ ctx }: { ctx: FormCtx }) {
         placeholder="请选择事件"
         fallback="0"
         options={ORDER_EVENT_OPTIONS}
+        serialize={selectBoolean}
       />
       <SwitchRow
         ctx={ctx}
@@ -1329,6 +1378,7 @@ function SubscribeSection({ ctx }: { ctx: FormCtx }) {
           { value: '1', label: '一次性有效' },
           { value: '2', label: '限时有效' },
         ]}
+        serialize={selectInteger}
       />
       {timedExpire ? (
         <TextRow
@@ -1339,6 +1389,7 @@ function SubscribeSection({ ctx }: { ctx: FormCtx }) {
           description="订阅链接获取后经过该时间将失效。"
           placeholder="请输入"
           indent
+          coerce={parseBackendInteger}
         />
       ) : null}
     </Section>
@@ -1377,6 +1428,7 @@ function TicketSection({ ctx }: { ctx: FormCtx }) {
           { value: '1', label: '仅限有付费订单用户' },
           { value: '2', label: '完全禁止工单' },
         ]}
+        serialize={selectInteger}
       />
     </Section>
   );
@@ -1471,6 +1523,7 @@ function InviteSection({ ctx }: { ctx: FormCtx }) {
             title="一级邀请人比例"
             placeholder="请输入比例如：50"
             indent
+            coerce={parseBackendNumber}
           />
           <TextRow
             ctx={ctx}
@@ -1479,6 +1532,7 @@ function InviteSection({ ctx }: { ctx: FormCtx }) {
             title="二级邀请人比例"
             placeholder="请输入比例如：30"
             indent
+            coerce={parseBackendNumber}
           />
           <TextRow
             ctx={ctx}
@@ -1487,6 +1541,7 @@ function InviteSection({ ctx }: { ctx: FormCtx }) {
             title="三级邀请人比例"
             placeholder="请输入比例如：20"
             indent
+            coerce={parseBackendNumber}
           />
         </>
       ) : null}
@@ -1605,6 +1660,7 @@ function ServerSection({ ctx }: { ctx: FormCtx }) {
         placeholder="请输入"
         type="number"
         suffix="秒"
+        coerce={parseBackendInteger}
       />
       <TextRow
         ctx={ctx}
@@ -1615,6 +1671,7 @@ function ServerSection({ ctx }: { ctx: FormCtx }) {
         placeholder="请输入"
         type="number"
         suffix="秒"
+        coerce={parseBackendInteger}
       />
       <TextRow
         ctx={ctx}
@@ -1625,6 +1682,7 @@ function ServerSection({ ctx }: { ctx: FormCtx }) {
         placeholder="请输入"
         type="number"
         suffix="Kb"
+        coerce={parseBackendInteger}
       />
       <TextRow
         ctx={ctx}
@@ -1635,6 +1693,7 @@ function ServerSection({ ctx }: { ctx: FormCtx }) {
         placeholder="请输入"
         type="number"
         suffix="Kb"
+        coerce={parseBackendInteger}
       />
       <SwitchRow
         ctx={ctx}
@@ -1679,6 +1738,7 @@ function EmailSection({
           title="SMTP服务端口"
           description="常见的端口有25, 465, 587"
           placeholder="请输入"
+          coerce={parseBackendInteger}
         />
         <TextRow
           ctx={ctx}
@@ -1925,10 +1985,32 @@ function replaceAdminSecurePath(securePath: string) {
   window.location.replace(adminSecurePathLocation(securePath, currentRoutePath));
 }
 
-export function parseBackendInteger(value: string) {
-  return parseInt(value);
+/**
+ * §4.1: integer settings travel as JSON numbers. An empty or non-numeric
+ * input coerces to `null`, the §4.4 clear-to-built-in-default signal.
+ */
+export function parseBackendInteger(value: string): number | null {
+  const parsed = parseInt(value, 10);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+/** §4.1 rate settings (distribution levels, trial hours) are JSON numbers. */
+export function parseBackendNumber(value: string): number | null {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** Maps a Radix Select option id to its §4.1 JSON-integer wire value. */
+function selectInteger(value: string): number {
+  return Number(value);
+}
+
+/** Maps the legacy '0'/'1' order-event option ids to wire booleans. */
+function selectBoolean(value: string): boolean {
+  return value === '1';
 }
 
 export function isBackendEnabled(value: unknown) {
+  if (typeof value === 'boolean') return value;
   return Boolean(parseInt(toText(value)));
 }

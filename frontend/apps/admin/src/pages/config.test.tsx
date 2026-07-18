@@ -1,38 +1,42 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { parseProblem } from '@v2board/api-client';
 import { setAdminRuntimeConfig } from '@/test/runtime-config';
 import ConfigPage, {
   adminSecurePathLocation,
   isBackendEnabled,
   parseBackendInteger,
+  parseBackendNumber,
 } from './config';
 
 // The config surface is a redesigned shadcn island (PageShell + section nav +
 // Card sections of labeled shadcn controls) replacing the antd tabs / OneUI
 // replica. All legacy DOM and source byte-pins are retired. What stays covered
 // is the Tier-1 contract: fetch populates the fields, and each control persists
-// the EXACT backend key with its legacy-coerced value through /config/save
-// (per-field `{ [key]: value }`), plus the theme activate / theme-settings
-// save payloads. The RHF/Zod section forms also keep rejected drafts inline,
-// replace successful drafts with the refetched server value, and never treat a
-// failed plans/template dependency as an empty successful result.
+// the EXACT backend key with its §4.1-typed value through PATCH config
+// (per-field `{ [key]: value }`): real booleans for flags, JSON numbers for
+// integers/rates/enums, real string arrays for lists, and the decimal-string
+// `commission_withdraw_limit` exception. The RHF/Zod section forms also keep
+// rejected drafts inline, replace successful drafts with the refetched server
+// value, honour the §6.1 202 refetch-never-resubmit and 409 conflict flows,
+// and never treat a failed plans/template dependency as an empty result.
 
 function makeConfig() {
   return {
     ticket: { ticket_status: 0 },
     deposit: { deposit_bounus: ['50:18', '100:38'] },
     invite: {
-      invite_force: 1,
+      invite_force: true,
       invite_commission: 10,
       invite_gen_limit: 5,
-      invite_never_expire: 0,
-      commission_first_time_enable: 1,
-      commission_auto_check_enable: 1,
-      commission_withdraw_limit: 100,
+      invite_never_expire: false,
+      commission_first_time_enable: true,
+      commission_auto_check_enable: true,
+      commission_withdraw_limit: '100',
       commission_withdraw_method: ['支付宝', 'USDT'],
-      withdraw_close_enable: 0,
-      commission_distribution_enable: 1,
+      withdraw_close_enable: false,
+      commission_distribution_enable: true,
       commission_distribution_l1: 50,
       commission_distribution_l2: 30,
       commission_distribution_l3: 20,
@@ -41,26 +45,27 @@ function makeConfig() {
       app_name: 'V2Board',
       app_description: 'V2Board is best!',
       app_url: 'https://example.com',
-      force_https: 1,
+      force_https: true,
       logo: 'https://example.com/logo.png',
       subscribe_url: 'https://sub.example.com',
       subscribe_path: '/api/v1/client/subscribe',
       tos_url: 'https://example.com/tos',
-      stop_register: 0,
+      stop_register: false,
       try_out_plan_id: 1,
       try_out_hour: 24,
       currency: 'CNY',
       currency_symbol: '¥',
+      legacy_hash_redirect_enable: true,
     },
     subscribe: {
-      plan_change_enable: 1,
+      plan_change_enable: true,
       reset_traffic_method: 0,
-      surplus_enable: 1,
-      allow_new_period: 0,
-      new_order_event_id: 1,
-      renew_order_event_id: 0,
-      change_order_event_id: 1,
-      show_info_to_server_enable: 1,
+      surplus_enable: true,
+      allow_new_period: false,
+      new_order_event_id: true,
+      renew_order_event_id: false,
+      change_order_event_id: true,
+      show_info_to_server_enable: true,
       show_subscribe_method: 2,
       show_subscribe_expire: 30,
     },
@@ -79,12 +84,12 @@ function makeConfig() {
       server_push_interval: 60,
       server_node_report_min_traffic: 0,
       server_device_online_min_traffic: 0,
-      device_limit_mode: 0,
+      device_limit_mode: false,
     },
     email: {
       email_template: 'default',
       email_host: 'smtp.example.com',
-      email_port: '465',
+      email_port: 465,
       email_encryption: 'ssl',
       email_username: 'mailer',
       email_password: 'password',
@@ -92,7 +97,7 @@ function makeConfig() {
     },
     telegram: {
       telegram_bot_token: '0000000000:token',
-      telegram_bot_enable: 1,
+      telegram_bot_enable: true,
       telegram_discuss_link: 'https://t.me/example',
     },
     app: {
@@ -104,24 +109,26 @@ function makeConfig() {
       android_download_url: 'https://example.com/app.apk',
     },
     safe: {
-      email_verify: 1,
-      email_gmail_limit_enable: 1,
-      safe_mode_enable: 1,
+      email_verify: true,
+      email_gmail_limit_enable: true,
+      safe_mode_enable: true,
       secure_path: 'admin-path',
-      email_whitelist_enable: 1,
+      email_whitelist_enable: true,
       email_whitelist_suffix: ['qq.com', 'gmail.com'],
-      recaptcha_enable: 1,
+      recaptcha_enable: true,
       recaptcha_key: 'secret',
       recaptcha_site_key: 'site',
-      register_limit_by_ip_enable: 1,
+      register_limit_by_ip_enable: true,
       register_limit_count: 3,
       register_limit_expire: 60,
-      password_limit_enable: 1,
+      password_limit_enable: true,
       password_limit_count: 5,
       password_limit_expire: 60,
     },
   };
 }
+
+const APPLIED = { activation: 'applied' as const };
 
 const mocks = vi.hoisted(() => ({
   configData: undefined as unknown,
@@ -209,9 +216,10 @@ beforeEach(() => {
     error: null,
     isError: false,
   }));
-  mocks.saveMutateAsync.mockReset().mockResolvedValue(undefined);
+  mocks.saveMutateAsync.mockReset().mockResolvedValue(APPLIED);
   mocks.webhookMutateAsync.mockReset().mockResolvedValue(undefined);
-  mocks.testMailMutateAsync.mockReset().mockResolvedValue({ data: true, log: { email: 'a@b.c' } });
+  // §6.1: POST test-mail returns bare `{sent, log}` with a nullable log line.
+  mocks.testMailMutateAsync.mockReset().mockResolvedValue({ sent: true, log: null });
   mocks.toastSuccess.mockReset();
   mocks.toastError.mockReset();
   // History routing (docs/api-dialect.md §10.1): the admin app lives under
@@ -230,10 +238,15 @@ describe('SystemConfigPage', () => {
     render(<ConfigPage />);
     expect(screen.getByTestId('config-app_name')).toHaveValue('V2Board');
     expect(screen.getByTestId('config-app_url')).toHaveValue('https://example.com');
-    // force_https = 1 → switch is on.
+    // force_https = true → switch is on.
     expect(screen.getByTestId('config-force_https')).toHaveAttribute('aria-checked', 'true');
-    // stop_register = 0 → switch is off.
+    // stop_register = false → switch is off.
     expect(screen.getByTestId('config-stop_register')).toHaveAttribute('aria-checked', 'false');
+    // §10.3: the site group carries the legacy-hash redirect toggle.
+    expect(screen.getByTestId('config-legacy_hash_redirect_enable')).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
   });
 
   it('saves a text field on blur with the exact key and raw string value', async () => {
@@ -266,11 +279,11 @@ describe('SystemConfigPage', () => {
     mocks.saveMutateAsync
       .mockImplementationOnce(
         () =>
-          new Promise<void>((resolve) => {
-            resolveFirstSave = resolve;
+          new Promise<typeof APPLIED>((resolve) => {
+            resolveFirstSave = () => resolve(APPLIED);
           }),
       )
-      .mockResolvedValueOnce(undefined);
+      .mockResolvedValueOnce(APPLIED);
     const user = userEvent.setup();
     render(<ConfigPage />);
 
@@ -298,29 +311,38 @@ describe('SystemConfigPage', () => {
     );
   });
 
-  it('saves a switch immediately with the key coerced to 1/0', async () => {
+  it('saves a switch immediately with a real JSON boolean (§4.1)', async () => {
     const user = userEvent.setup();
     render(<ConfigPage />);
 
-    // stop_register starts at 0 → toggling on sends 1.
+    // stop_register starts at false → toggling on sends true.
     await user.click(screen.getByTestId('config-stop_register'));
-    await waitFor(() => expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ stop_register: 1 }));
+    await waitFor(() =>
+      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ stop_register: true }),
+    );
 
-    // force_https starts at 1 → toggling off sends 0.
+    // force_https starts at true → toggling off sends false.
     await user.click(screen.getByTestId('config-force_https'));
-    await waitFor(() => expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ force_https: 0 }));
+    await waitFor(() => expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ force_https: false }));
   });
 
-  it('saves a select immediately with the chosen option value', async () => {
+  it('saves enum selects as JSON integers and event selects as booleans', async () => {
     const user = userEvent.setup();
     render(<ConfigPage />);
 
     await user.click(screen.getByTestId('config-tab-subscribe'));
     await user.click(screen.getByTestId('config-reset_traffic_method'));
     await user.click(await screen.findByRole('option', { name: '按月重置' }));
-
     await waitFor(() =>
-      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ reset_traffic_method: '1' }),
+      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ reset_traffic_method: 1 }),
+    );
+
+    // Order-event toggles keep their legacy '0'/'1' option ids but travel as
+    // §4.1 booleans (renew_order_event_id starts false and displays 不执行).
+    await user.click(screen.getByTestId('config-renew_order_event_id'));
+    await user.click(await screen.findByRole('option', { name: '重置用户流量' }));
+    await waitFor(() =>
+      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ renew_order_event_id: true }),
     );
   });
 
@@ -376,6 +398,7 @@ describe('SystemConfigPage', () => {
     canonicalConfig.site.app_name = '服务端规范化名称';
     mocks.saveMutateAsync.mockImplementationOnce(async () => {
       mocks.configData = canonicalConfig;
+      return APPLIED;
     });
     const user = userEvent.setup();
     render(<ConfigPage />);
@@ -396,10 +419,10 @@ describe('SystemConfigPage', () => {
     let resolveSave!: () => void;
     mocks.saveMutateAsync.mockImplementationOnce(
       () =>
-        new Promise<void>((resolve) => {
+        new Promise<typeof APPLIED>((resolve) => {
           resolveSave = () => {
             mocks.configData = canonicalConfig;
-            resolve();
+            resolve(APPLIED);
           };
         }),
     );
@@ -424,19 +447,19 @@ describe('SystemConfigPage', () => {
 
   it('queues the latest same-field value and never lets an older refresh reset it', async () => {
     const firstCanonical = makeConfig();
-    firstCanonical.site.force_https = 0;
+    firstCanonical.site.force_https = false;
     const finalCanonical = makeConfig();
-    finalCanonical.site.force_https = 1;
+    finalCanonical.site.force_https = true;
     let resolveFirstRefresh!: (result: {
       data: ReturnType<typeof makeConfig>;
       error: null;
       isError: false;
     }) => void;
     let resolveSecondSave!: () => void;
-    mocks.saveMutateAsync.mockResolvedValueOnce(undefined).mockImplementationOnce(
+    mocks.saveMutateAsync.mockResolvedValueOnce(APPLIED).mockImplementationOnce(
       () =>
-        new Promise<void>((resolve) => {
-          resolveSecondSave = resolve;
+        new Promise<typeof APPLIED>((resolve) => {
+          resolveSecondSave = () => resolve(APPLIED);
         }),
     );
     mocks.refetch
@@ -471,7 +494,10 @@ describe('SystemConfigPage', () => {
     act(() => resolveSecondSave());
     await waitFor(() => expect(mocks.refetch).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'));
-    expect(mocks.saveMutateAsync.mock.calls).toEqual([[{ force_https: 0 }], [{ force_https: 1 }]]);
+    expect(mocks.saveMutateAsync.mock.calls).toEqual([
+      [{ force_https: false }],
+      [{ force_https: true }],
+    ]);
   });
 
   it('keeps a rejected draft and renders the mutation error inline', async () => {
@@ -490,6 +516,84 @@ describe('SystemConfigPage', () => {
     expect(input).toHaveValue('需要保留的草稿');
     expect(mocks.refetch).not.toHaveBeenCalled();
     expect(mocks.toastSuccess).not.toHaveBeenCalled();
+  });
+
+  it('refetches without resubmitting when a save hits a stale-revision 409 (§6.1)', async () => {
+    mocks.saveMutateAsync.mockRejectedValueOnce(
+      parseProblem(
+        {
+          type: 'about:blank',
+          title: 'Conflict',
+          status: 409,
+          code: 'config_revision_conflict',
+          detail: '配置已被其他请求更新，请刷新后重试',
+        },
+        409,
+      ),
+    );
+    const user = userEvent.setup();
+    render(<ConfigPage />);
+
+    const input = screen.getByTestId('config-app_name');
+    await user.clear(input);
+    await user.type(input, '落败的草稿');
+    await user.tab();
+
+    const field = input.closest('[data-slot="field"]');
+    expect(field).not.toBeNull();
+    expect(await within(field as HTMLElement).findByRole('alert')).toHaveTextContent(
+      '配置已被其他请求更新，请刷新后重试',
+    );
+    // The winning config is refetched; the losing value is never resubmitted.
+    await waitFor(() => expect(mocks.refetch).toHaveBeenCalledTimes(1));
+    expect(mocks.saveMutateAsync).toHaveBeenCalledTimes(1);
+    expect(input).toHaveValue('落败的草稿');
+    expect(mocks.toastSuccess).not.toHaveBeenCalled();
+  });
+
+  it('refetches and keeps the durable draft on 202 activation-pending (§6.1)', async () => {
+    mocks.saveMutateAsync.mockResolvedValueOnce({ activation: 'pending' });
+    const user = userEvent.setup();
+    render(<ConfigPage />);
+
+    const input = screen.getByTestId('config-app_name');
+    await user.clear(input);
+    await user.type(input, '待激活名称');
+    await user.tab();
+
+    await waitFor(() => expect(mocks.refetch).toHaveBeenCalledTimes(1));
+    // Durable but not yet active: keep the submitted draft, never resubmit.
+    expect(input).toHaveValue('待激活名称');
+    expect(mocks.saveMutateAsync).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(mocks.toastSuccess).toHaveBeenCalledWith('保存成功', {
+        description: '配置已保存，正在等待所有进程生效。',
+      }),
+    );
+
+    // The durable value is the new baseline — an unchanged blur stays silent.
+    await user.click(input);
+    await user.tab();
+    expect(mocks.saveMutateAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the admin base while a secure_path save is activation-pending (§6.1)', async () => {
+    mocks.saveMutateAsync.mockResolvedValueOnce({ activation: 'pending' });
+    const user = userEvent.setup();
+    render(<ConfigPage />);
+
+    await user.click(screen.getByTestId('config-tab-safe'));
+    const input = screen.getByTestId('config-secure_path');
+    await user.clear(input);
+    await user.type(input, 'next-admin');
+    await user.tab();
+
+    await waitFor(() =>
+      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ secure_path: 'next-admin' }),
+    );
+    // The new path is not active yet, so the base must not move.
+    await waitFor(() => expect(mocks.refetch).toHaveBeenCalledTimes(1));
+    expect(window.location.pathname).toBe('/admin-path/config/system');
   });
 
   it('replaces the outer admin path after secure_path saves without refetching the old path', async () => {
@@ -629,12 +733,12 @@ describe('SystemConfigPage', () => {
 
   it('hides the conditional child field until its toggle is on', async () => {
     const canonicalConfig = makeConfig();
-    canonicalConfig.safe.recaptcha_enable = 0;
+    canonicalConfig.safe.recaptcha_enable = false;
     let resolveSave!: () => void;
     mocks.saveMutateAsync.mockImplementationOnce(
       () =>
-        new Promise<void>((resolve) => {
-          resolveSave = resolve;
+        new Promise<typeof APPLIED>((resolve) => {
+          resolveSave = () => resolve(APPLIED);
         }),
     );
     const user = userEvent.setup();
@@ -643,11 +747,11 @@ describe('SystemConfigPage', () => {
     await user.click(screen.getByTestId('config-tab-safe'));
     expect(screen.getByTestId('config-recaptcha_key')).toBeInTheDocument();
 
-    // recaptcha_enable = 1 → the keys show. The local form value must hide
+    // recaptcha_enable = true → the keys show. The local form value must hide
     // them immediately, without waiting for the queued save or refetch.
     await user.click(screen.getByTestId('config-recaptcha_enable'));
     expect(screen.queryByTestId('config-recaptcha_key')).not.toBeInTheDocument();
-    expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ recaptcha_enable: 0 });
+    expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ recaptcha_enable: false });
     expect(mocks.refetch).not.toHaveBeenCalled();
 
     // The successful refresh is authoritative. Model the backend-applied value
@@ -672,8 +776,8 @@ describe('SystemConfigPage', () => {
     let resolveSave!: () => void;
     mocks.saveMutateAsync.mockImplementationOnce(
       () =>
-        new Promise<void>((resolve) => {
-          resolveSave = resolve;
+        new Promise<typeof APPLIED>((resolve) => {
+          resolveSave = () => resolve(APPLIED);
         }),
     );
     const user = userEvent.setup();
@@ -707,8 +811,8 @@ describe('SystemConfigPage', () => {
     let resolveSave!: () => void;
     mocks.saveMutateAsync.mockImplementationOnce(
       () =>
-        new Promise<void>((resolve) => {
-          resolveSave = resolve;
+        new Promise<typeof APPLIED>((resolve) => {
+          resolveSave = () => resolve(APPLIED);
         }),
     );
     const user = userEvent.setup();
@@ -738,7 +842,9 @@ describe('SystemConfigPage', () => {
 });
 
 describe('backend coercion helpers', () => {
-  it('reads backend boolean-like values through parseInt', () => {
+  it('reads §4.1 wire booleans first, then legacy numeric spellings', () => {
+    expect(isBackendEnabled(true)).toBe(true);
+    expect(isBackendEnabled(false)).toBe(false);
     expect(isBackendEnabled(1)).toBe(true);
     expect(isBackendEnabled('2')).toBe(true);
     expect(isBackendEnabled(0)).toBe(false);
@@ -746,9 +852,11 @@ describe('backend coercion helpers', () => {
     expect(isBackendEnabled('')).toBe(false);
   });
 
-  it('parses integer fields with parseInt semantics', () => {
+  it('coerces numeric fields to JSON numbers, clearing to null when empty (§4.4)', () => {
     expect(parseBackendInteger('12px')).toBe(12);
-    expect(Number.isNaN(parseBackendInteger(''))).toBe(true);
+    expect(parseBackendInteger('')).toBeNull();
+    expect(parseBackendNumber('12.5')).toBe(12.5);
+    expect(parseBackendNumber('')).toBeNull();
   });
 
   it('re-roots the current route path under the new secure-path base', () => {
