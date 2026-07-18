@@ -563,13 +563,15 @@ describe('createApiClient', () => {
   });
 
   it('converts Admin user GiB and major-unit money exactly at the update boundary', async () => {
+    // §6.6 (W12): the update is the JSON PATCH `users/{id}` — the id rides the
+    // path, scaled fields cross as integer bytes/cents, never legacy
+    // form-encoded `user/update`.
     const client = createApiClient({
       baseURL: '/api/v1',
       adminSecurePath: () => 'admin-path',
-      nullFormValue: 'empty',
     });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/admin-path/user/update').reply(200, { data: true });
+    mock.onPatch('/admin-path/users/7').reply(204);
 
     await updateUser(client, {
       id: 7,
@@ -581,14 +583,13 @@ describe('createApiClient', () => {
       commission_balance: '-0.005',
     });
 
-    expect(Object.fromEntries(new URLSearchParams(String(mock.history.post[0]?.data)))).toEqual({
-      id: '7',
+    expect(JSON.parse(String(mock.history.patch[0]?.data))).toEqual({
       email: 'user@example.com',
-      transfer_enable: '1610612736',
-      u: '1',
-      d: '0',
-      balance: '1999',
-      commission_balance: '-1',
+      transfer_enable: 1610612736,
+      u: 1,
+      d: 0,
+      balance: 1999,
+      commission_balance: -1,
     });
   });
 
@@ -606,7 +607,7 @@ describe('createApiClient', () => {
         transfer_enable: '9007199254740992',
       }),
     ).rejects.toThrow(RangeError);
-    expect(mock.history.post).toHaveLength(0);
+    expect(mock.history.patch).toHaveLength(0);
   });
 
   it('rejects an unsafe deposit amount before issuing the save-order request', async () => {
@@ -953,14 +954,21 @@ describe('createApiClient', () => {
   it('keeps legacy admin page totals as direct envelope fields', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onGet('/admin-path/user/fetch').reply(200, { data: [] });
     mock.onGet('/admin-path/ticket/fetch').reply(200, { data: [] });
     mock.onGet('/admin-path/stat/getStatUser?user_id=1').reply(200, { data: [] });
 
-    await expect(fetchUsers(client)).resolves.toEqual({ data: [], total: undefined });
     await expect(fetchAdminTickets(client)).resolves.toEqual({ data: [], total: undefined });
     await expect(statUser(client, { user_id: 1 })).resolves.toEqual({ data: [], total: undefined });
-    expect(mock.history.get.filter((request) => request.url?.includes('/user/fetch'))).toHaveLength(
+  });
+
+  it('reads the modern users page as {data,total} from the {items,total} body', async () => {
+    const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
+    const mock = new AxiosMockAdapter(client.axios);
+    // §6.6 (W12): GET /users is the dialect-v2 `{items,total}` page.
+    mock.onGet('/admin-path/users').reply(200, { items: [], total: 0 });
+
+    await expect(fetchUsers(client)).resolves.toEqual({ data: [], total: 0 });
+    expect(mock.history.get.filter((request) => request.url?.startsWith('/admin-path/users'))).toHaveLength(
       1,
     );
   });
@@ -1167,13 +1175,16 @@ describe('createApiClient', () => {
     expect(source).not.toContain("adminPostTrue(client, '/plan/update', { id, [key]: value })");
   });
 
-  it('normalizes legacy admin user rows exactly like the packaged admin model', async () => {
+  it('normalizes modern admin user rows exactly like the packaged admin model', async () => {
+    // §6.6 (W12): the list is GET /users `{items,total}` with RFC 3339 dates
+    // and cents/byte integers; the detail is GET /users/{id} with the nested
+    // `invite_user` object the normalizer flattens to `invite_user_email`.
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
     const rawUser = {
       id: 1,
       email: 'user@example.com',
-      password: 'secret',
+      password: '',
       balance: 1234,
       commission_balance: 5678,
       transfer_enable: 107374182400,
@@ -1186,7 +1197,7 @@ describe('createApiClient', () => {
       plan_id: 1,
       plan_name: '基础套餐',
       group_id: 1,
-      expired_at: 1893456000,
+      expired_at: '2030-01-01T00:00:00Z',
       uuid: 'uuid',
       token: 'token',
       subscribe_url: 'https://example.com/sub',
@@ -1194,19 +1205,20 @@ describe('createApiClient', () => {
       is_admin: 0,
       is_staff: 0,
       invite_user_id: null,
-      invite_user: { email: 'invite@example.com' },
       discount: null,
       commission_rate: null,
       telegram_id: null,
-      last_login_at: 1700000000,
-      created_at: 1700000000,
-      updated_at: 1700000000,
+      last_login_at: '2023-11-14T22:13:20Z',
+      created_at: '2023-11-14T22:13:20Z',
+      updated_at: '2023-11-14T22:13:20Z',
     };
-    mock.onGet('/admin-path/user/fetch?current=1').reply(200, {
-      data: [rawUser],
+    mock.onGet('/admin-path/users?page=1').reply(200, {
+      items: [rawUser],
       total: 1,
     });
-    mock.onGet('/admin-path/user/getUserInfoById?id=1').reply(200, { data: rawUser });
+    mock
+      .onGet('/admin-path/users/1')
+      .reply(200, { ...rawUser, invite_user: { email: 'invite@example.com', id: 5 } });
 
     await expect(fetchUsers(client, { current: 1 })).resolves.toMatchObject({
       data: [
@@ -1237,9 +1249,7 @@ describe('createApiClient', () => {
     });
 
     mock.resetHandlers();
-    mock.onGet('/admin-path/user/getUserInfoById?id=1').reply(200, {
-      data: { ...rawUser, invite_user: null },
-    });
+    mock.onGet('/admin-path/users/1').reply(200, { ...rawUser, invite_user: null });
     const userWithoutInviter = await getUserInfoById(client, 1);
     expect(userWithoutInviter.invite_user).toBeNull();
     expect(userWithoutInviter).not.toHaveProperty('invite_user_email');
@@ -1570,11 +1580,14 @@ describe('createApiClient', () => {
     expect(url).not.toContain('filter%5B0%5D');
   });
 
-  it('preserves legacy generated user CSV buffers', async () => {
+  it('streams the byte-frozen generated user CSV from the dialect create route', async () => {
+    // §6.6 (W12): bulk generate POSTs JSON to /users and streams the
+    // byte-frozen credential CSV attachment — never legacy form-encoded
+    // `user/generate`.
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
     const csvBuffer = textBuffer('user-csv');
-    mock.onPost('/admin-path/user/generate').reply(200, csvBuffer, {
+    mock.onPost('/admin-path/users').reply(200, csvBuffer, {
       'content-type': 'text/csv',
     });
 
@@ -1584,72 +1597,59 @@ describe('createApiClient', () => {
         generate_count: '2',
       }),
     ).resolves.toMatchObject({ buffer: csvBuffer });
-    expect(mock.history.post[0]?.data).toBe('email_suffix=example.com&generate_count=2');
+    expect(JSON.parse(String(mock.history.post[0]?.data))).toEqual({
+      email_suffix: 'example.com',
+      generate_count: 2,
+    });
     expect(mock.history.post[0]?.responseType).toBe('arraybuffer');
   });
 
-  it('keeps JSON responses usable on legacy admin CSV-capable endpoints', async () => {
+  it('parses the single user create as the dialect 201 {id}', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock
-      .onPost('/admin-path/user/generate')
-      .reply(200, textBuffer(JSON.stringify({ data: true })), {
-        'content-type': 'application/json',
-      });
+    mock.onPost('/admin-path/users').reply(201, { id: 42 });
 
-    await expect(generateUser(client, { email_suffix: 'example.com' })).resolves.toMatchObject({
-      code: 200,
-      data: true,
+    await expect(
+      generateUser(client, { email_prefix: 'new', email_suffix: 'example.com' }),
+    ).resolves.toMatchObject({ id: 42 });
+    expect(JSON.parse(String(mock.history.post[0]?.data))).toEqual({
+      email_prefix: 'new',
+      email_suffix: 'example.com',
     });
   });
 
-  it('validates the JSON branch of the binary endpoint escape hatch', async () => {
+  it('rejects a single user create whose JSON body omits the created id', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock
-      .onPost('/admin-path/user/generate')
-      .reply(200, textBuffer(JSON.stringify({ data: 'unexpected' })), {
-        'content-type': 'application/json',
-      });
+    mock.onPost('/admin-path/users').reply(201, { data: 'unexpected' });
 
     await expect(generateUser(client, { email_suffix: 'example.com' })).rejects.toBeInstanceOf(
       ApiContractError,
     );
   });
 
-  it('uses the legacy exact application/json check for CSV-capable admin responses', async () => {
-    const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
-    const mock = new AxiosMockAdapter(client.axios);
-    const jsonBuffer = textBuffer(JSON.stringify({ data: true }));
-    mock.onPost('/admin-path/user/generate').reply(200, jsonBuffer, {
-      'content-type': 'application/json; charset=utf-8',
-    });
-
-    await expect(generateUser(client, { email_suffix: 'example.com' })).resolves.toMatchObject({
-      buffer: jsonBuffer,
-    });
-  });
-
-  it('preserves legacy dumped user CSV buffers', async () => {
+  it('streams the byte-frozen dumped user CSV over the DSL export body', async () => {
+    // §6.6 (W12): POST /users/export carries the §7 DSL `{filter}` clause
+    // array, never the retired legacy `filter[i][key]` brackets.
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
     const csvBuffer = textBuffer('users-csv');
-    mock.onPost('/admin-path/user/dumpCSV').reply(200, csvBuffer, {
+    mock.onPost('/admin-path/users/export').reply(200, csvBuffer, {
       'content-type': 'text/csv',
     });
 
     await expect(
       dumpUsersCsv(client, [{ key: 'email', condition: '模糊', value: 'user@example.com' }]),
     ).resolves.toMatchObject({ buffer: csvBuffer });
-    expect(mock.history.post[0]?.data).toBe(
-      'filter[0][key]=email&filter[0][condition]=%E6%A8%A1%E7%B3%8A&filter[0][value]=user%40example.com',
-    );
+    expect(JSON.parse(String(mock.history.post[0]?.data))).toEqual({
+      filter: [{ field: 'email', op: 'like', value: 'user@example.com' }],
+    });
   });
 
-  it('submits the required admin mail subject and content with its target filter', async () => {
+  it('submits the required admin mail subject and content with its DSL target filter', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/admin-path/user/sendMail').reply(200, { data: true });
+    mock.onPost('/admin-path/users/mail').reply(204);
 
     await sendMailToUsers(client, {
       subject: 'Account notice',
@@ -1657,21 +1657,29 @@ describe('createApiClient', () => {
       filter: [{ key: 'email', condition: '模糊', value: 'user@example.com' }],
     });
 
-    expect(mock.history.post[0]?.data).toBe(
-      'subject=Account%20notice&content=Please%20review%20your%20account.&filter[0][key]=email&filter[0][condition]=%E6%A8%A1%E7%B3%8A&filter[0][value]=user%40example.com',
-    );
+    expect(JSON.parse(String(mock.history.post[0]?.data))).toEqual({
+      subject: 'Account notice',
+      content: 'Please review your account.',
+      filter: [{ field: 'email', op: 'like', value: 'user@example.com' }],
+    });
     expect(mock.history.post[0]?.headers?.['Idempotency-Key']).toEqual(expect.any(String));
   });
 
   it('reuses the admin mail idempotency key when one mutation request is retried', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/admin-path/user/sendMail').replyOnce(500, { message: 'retry' });
-    mock.onPost('/admin-path/user/sendMail').reply(200, { data: true });
+    mock.onPost('/admin-path/users/mail').replyOnce(500, {
+      type: 'about:blank',
+      title: 'Internal Server Error',
+      status: 500,
+      code: 'internal_error',
+      detail: 'The mail batch could not be dispatched.',
+    });
+    mock.onPost('/admin-path/users/mail').reply(204);
     const mutation = { subject: 'Notice', content: 'Body' };
 
-    await expect(sendMailToUsers(client, mutation)).rejects.toBeInstanceOf(ApiError);
-    await expect(sendMailToUsers(client, mutation)).resolves.toBe(true);
+    await expect(sendMailToUsers(client, mutation)).rejects.toBeInstanceOf(ApiProblemError);
+    await expect(sendMailToUsers(client, mutation)).resolves.toBeUndefined();
 
     const firstKey = mock.history.post[0]?.headers?.['Idempotency-Key'];
     const retryKey = mock.history.post[1]?.headers?.['Idempotency-Key'];

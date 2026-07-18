@@ -32,7 +32,8 @@ const USER_ROW_ONE = {
   plan_id: 1,
   plan_name: '基础套餐',
   group_id: 1,
-  expired_at: 1893456000,
+  // §6.6 (W12): the admin user list crosses epoch fields as RFC 3339 strings.
+  expired_at: '2030-01-01T00:00:00Z',
   uuid: 'uuid',
   token: 'token',
   subscribe_url: 'https://example.com/sub',
@@ -43,9 +44,9 @@ const USER_ROW_ONE = {
   discount: null,
   commission_rate: null,
   telegram_id: null,
-  last_login_at: 1700000000,
-  created_at: 1700000000,
-  updated_at: 1700000000,
+  last_login_at: '2023-11-14T22:13:20Z',
+  created_at: '2023-11-14T22:13:20Z',
+  updated_at: '2023-11-14T22:13:20Z',
 };
 
 const USER_ROW_TWO = {
@@ -78,7 +79,9 @@ const USER_INFO = {
   u: 0,
   d: 0,
   plan_id: 1,
-  expired_at: 1893456000,
+  // §6.6 (W12): getUserInfoById delivers `expired_at` as an RFC 3339 string; the
+  // drawer coerces it back to epoch seconds for the native date input.
+  expired_at: '2030-01-01T00:00:00Z',
   banned: 0,
   is_admin: 0,
   is_staff: 0,

@@ -27,7 +27,7 @@ import {
 import type { admin, AdminFilter } from '@v2board/api-client';
 import type { AdminUserRow } from '@v2board/types';
 import { copyText } from '@v2board/config/clipboard';
-import { formatDateMinuteSlash, formatDateTime } from '@v2board/config/format';
+import { formatBackendDateMinuteSlash, formatDateTime } from '@v2board/config/format';
 import { takeStoredAdminFilters } from '@/lib/stored-admin-filters';
 import {
   useAdminPlans,
@@ -411,8 +411,11 @@ export default function UsersPage() {
   );
 
   const renderEmail = (row: AdminUserRow) => {
+    // §6.6 (W12): the `t` last-online marker is dropped from the modern list
+    // projection, so an absent value degrades to offline rather than a
+    // misleading always-online dot.
     const onlineAt = (row as AdminUserRow & { t?: number | null }).t;
-    const online = !(currentUnixTime - 600 > Number(onlineAt));
+    const online = onlineAt != null && currentUnixTime - 600 <= Number(onlineAt);
     return (
       <Tooltip>
         <TooltipTrigger asChild>
@@ -449,11 +452,13 @@ export default function UsersPage() {
     );
   };
 
-  const renderExpiredAt = (value: number | null) => {
-    const expired = value !== null && value < currentUnixTime;
+  const renderExpiredAt = (value: string | null) => {
+    // §6.6 (W12): `expired_at` crosses as an RFC 3339 string (null = long-term).
+    const epoch = value == null ? null : dayjs(value).unix();
+    const expired = epoch !== null && epoch < currentUnixTime;
     return (
       <StatusBadge tone={expired ? 'destructive' : 'success'}>
-        {value ? formatDateMinuteSlash(value) : value === null ? '长期有效' : '-'}
+        {value ? formatBackendDateMinuteSlash(value) : '长期有效'}
       </StatusBadge>
     );
   };
@@ -539,7 +544,7 @@ export default function UsersPage() {
       id: 'created_at',
       meta: { align: 'right', className: 'text-muted-foreground tabular-nums' },
       header: sortHeader('加入时间', 'created_at'),
-      cell: ({ row }) => formatDateMinuteSlash(row.original.created_at),
+      cell: ({ row }) => formatBackendDateMinuteSlash(row.original.created_at),
     },
     {
       id: 'actions',

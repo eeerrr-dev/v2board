@@ -62,7 +62,9 @@ function toFormValues(user: AdminUserEditRecord): UserManageFormValues {
     commission_balance: user.commission_balance ?? '',
     balance: user.balance ?? '',
     device_limit: user.device_limit ?? null,
-    expired_at: user.expired_at ?? null,
+    // §6.6 (W12): the detail delivers `expired_at` as an RFC 3339 string; the
+    // editor form keeps it as epoch seconds for its native date input.
+    expired_at: user.expired_at == null ? null : dayjs(user.expired_at).unix(),
     plan_id: user.plan_id ?? null,
     banned: user.banned ?? 0,
     commission_type: user.commission_type ?? 0,

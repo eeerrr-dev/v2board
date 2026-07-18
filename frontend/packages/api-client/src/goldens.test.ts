@@ -73,9 +73,6 @@ const goldenSchemas: Record<string, z.ZodType> = {
   'admin.stat.getStatUser.json': pageEnvelopeSchema(adminUserTrafficSchema),
   'admin.ticket.detail.json': envelopeSchema(ticketSchema),
   'admin.ticket.fetch.json': pageEnvelopeSchema(ticketSchema),
-  'admin.user.fetch.json': pageEnvelopeSchema(adminUserSchema),
-  'admin.user.getUserInfoById.json': envelopeSchema(adminUserDetailSchema),
-  'admin.user.getUserInfoById.no-inviter.json': envelopeSchema(adminUserDetailSchema),
 };
 
 // Dialect-v2 fixtures (docs/api-dialect.md §3, §5.2): bare success bodies and
@@ -97,6 +94,11 @@ const dialectGoldenSchemas: Record<string, z.ZodType> = {
   'admin.orders.json': pageSchema(adminOrderSchema),
   'admin.order.detail.json': adminOrderSchema,
   'admin.payment-reconciliations.json': pageSchema(reconciliationSchema),
+  // §6.6 (W12): the admin users family — the `{items, total}` list page and
+  // the bare user detail (with the conditional `invite_user` object).
+  'admin.users.json': pageSchema(adminUserSchema),
+  'admin.user.detail.json': adminUserDetailSchema,
+  'admin.user.detail.no-inviter.json': adminUserDetailSchema,
   // §6.3 (W10): the admin content family — bare arrays for the unpaginated
   // notice/knowledge lists, `{items, total}` pages for coupons/gift-cards.
   'admin.coupons.json': pageSchema(couponSchema),

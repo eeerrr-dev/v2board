@@ -96,7 +96,9 @@ export interface AdminUserRow {
   plan_id: number | null;
   plan_name: string | null;
   group_id: number | null;
-  expired_at: number | null;
+  // §6.6 (W12): epoch fields cross as RFC 3339 UTC strings (nullable ones stay
+  // null when unset); render through the `formatBackend*` date helpers.
+  expired_at: string | null;
   uuid: string;
   token: string;
   subscribe_url: string;
@@ -111,9 +113,9 @@ export interface AdminUserRow {
   speed_limit?: number | null;
   remarks?: string | null;
   telegram_id: number | null;
-  last_login_at: number | null;
-  created_at: number;
-  updated_at: number;
+  last_login_at: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface AdminUserUpdatePayload {

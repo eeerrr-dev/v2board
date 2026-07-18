@@ -672,7 +672,11 @@ export const adminUserBaseSchema = z.looseObject({
   d: z.number(),
   plan_id: nullableNumber,
   group_id: nullableNumber,
-  expired_at: nullableNumber,
+  // §6.6 (W12): the modern admin user projection emits RFC 3339 UTC strings
+  // for every epoch field (`created_at`/`updated_at` always present; the
+  // nullable `expired_at`/`last_login_at` stay null when unset) and drops the
+  // `t`/`password_algo`/`password_salt`/`last_login_ip` columns.
+  expired_at: nullableString,
   uuid: z.string(),
   token: z.string(),
   banned: binaryFlagSchema,
@@ -686,9 +690,9 @@ export const adminUserBaseSchema = z.looseObject({
   speed_limit: nullableNumber.optional(),
   remarks: nullableString.optional(),
   telegram_id: nullableNumber,
-  last_login_at: nullableNumber,
-  created_at: z.number(),
-  updated_at: z.number(),
+  last_login_at: nullableString,
+  created_at: z.string(),
+  updated_at: z.string(),
 });
 export const adminUserSchema = adminUserBaseSchema.extend({
   total_used: z.number(),
@@ -1023,11 +1027,6 @@ export const configActivationPendingSchema = z.looseObject({
 export const giftCardRedemptionSchema = z.looseObject({
   type: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]),
   value: nullableNumber,
-});
-
-export const csvJsonEnvelopeSchema = envelopeSchema(trueSchema).extend({
-  /** Keeps the JSON side of `BinaryApiResponse` structurally distinct. */
-  buffer: z.never().optional(),
 });
 
 /**
