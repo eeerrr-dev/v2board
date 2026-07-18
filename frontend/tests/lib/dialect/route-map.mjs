@@ -655,15 +655,30 @@ export const routeMap = Object.freeze([
     { method: 'GET', path: '/{secure_path}/payment-reconciliations' },
   ),
 
-  // ——— §6.5 Tickets (admin) ———
-  route('admin.tickets.list', { method: 'GET', path: '/{secure_path}/ticket/fetch' }),
-  route('admin.tickets.get', {
-    method: 'GET',
-    path: '/{secure_path}/ticket/fetch',
-    query: ['id'],
-  }),
-  route('admin.tickets.replies.create', { method: 'POST', path: '/{secure_path}/ticket/reply' }),
-  route('admin.tickets.close', { method: 'POST', path: '/{secure_path}/ticket/close' }),
+  // ——— §6.5 Tickets (admin) — flipped to the modern rows in W14 ———
+  route(
+    'admin.tickets.list',
+    { method: 'GET', path: '/{secure_path}/ticket/fetch' },
+    // §8 pagination; `reply_status` is a repeatable real-array query key.
+    { method: 'GET', path: '/{secure_path}/tickets' },
+  ),
+  route(
+    'admin.tickets.get',
+    { method: 'GET', path: '/{secure_path}/ticket/fetch', query: ['id'] },
+    // §6.5: the identifier moves from the `?id=` query to the path.
+    { method: 'GET', path: '/{secure_path}/tickets/{id}' },
+  ),
+  route(
+    'admin.tickets.replies.create',
+    { method: 'POST', path: '/{secure_path}/ticket/reply' },
+    // §6.5: the legacy body-carried ticket id became a path parameter.
+    { method: 'POST', path: '/{secure_path}/tickets/{id}/replies' },
+  ),
+  route(
+    'admin.tickets.close',
+    { method: 'POST', path: '/{secure_path}/ticket/close' },
+    { method: 'POST', path: '/{secure_path}/tickets/{id}/close' },
+  ),
 
   // ——— §6.6 Users — flipped to the modern rows in W12 ———
   route(
@@ -827,46 +842,127 @@ export const routeMap = Object.freeze([
     },
   ),
 
-  // ——— §6.8 Stats ———
-  route('admin.stats.summary', {
-    method: 'GET',
-    path: '/{secure_path}/stat/getStat',
-    // §6.8: three legacy aliases collapse into one modern route.
-    aliases: ['/{secure_path}/stat/getOverride', '/{secure_path}/stat/getRanking'],
-  }),
-  route('admin.stats.server-rank', {
-    method: 'GET',
-    path: '/{secure_path}/stat/getServerTodayRank',
-    // The today/last split becomes the modern `?window=today|previous`.
-    aliases: ['/{secure_path}/stat/getServerLastRank'],
-  }),
-  route('admin.stats.user-rank', {
-    method: 'GET',
-    path: '/{secure_path}/stat/getUserTodayRank',
-    aliases: ['/{secure_path}/stat/getUserLastRank'],
-  }),
-  route('admin.stats.orders', { method: 'GET', path: '/{secure_path}/stat/getOrder' }),
-  route('admin.stats.user-traffic', { method: 'GET', path: '/{secure_path}/stat/getStatUser' }),
-  route('admin.stats.records', { method: 'GET', path: '/{secure_path}/stat/getStatRecord' }),
+  // ——— §6.8 Stats — flipped to the modern rows in W14 ———
+  route(
+    'admin.stats.summary',
+    {
+      method: 'GET',
+      path: '/{secure_path}/stat/getStat',
+      // §6.8: three legacy aliases collapse into one modern route.
+      aliases: ['/{secure_path}/stat/getOverride', '/{secure_path}/stat/getRanking'],
+    },
+    { method: 'GET', path: '/{secure_path}/stats/summary' },
+  ),
+  route(
+    'admin.stats.server-rank',
+    {
+      method: 'GET',
+      path: '/{secure_path}/stat/getServerTodayRank',
+      // The today/last split becomes the modern `?window=today|previous`.
+      aliases: ['/{secure_path}/stat/getServerLastRank'],
+    },
+    { method: 'GET', path: '/{secure_path}/stats/server-rank', query: ['window'] },
+  ),
+  route(
+    'admin.stats.user-rank',
+    {
+      method: 'GET',
+      path: '/{secure_path}/stat/getUserTodayRank',
+      aliases: ['/{secure_path}/stat/getUserLastRank'],
+    },
+    { method: 'GET', path: '/{secure_path}/stats/user-rank', query: ['window'] },
+  ),
+  route(
+    'admin.stats.orders',
+    { method: 'GET', path: '/{secure_path}/stat/getOrder' },
+    // §6.8 series re-spec: `{series, date, value}` slug rows, integer cents.
+    { method: 'GET', path: '/{secure_path}/stats/orders' },
+  ),
+  route(
+    'admin.stats.user-traffic',
+    { method: 'GET', path: '/{secure_path}/stat/getStatUser' },
+    { method: 'GET', path: '/{secure_path}/stats/user-traffic' },
+  ),
+  route(
+    'admin.stats.records',
+    { method: 'GET', path: '/{secure_path}/stat/getStatRecord' },
+    { method: 'GET', path: '/{secure_path}/stats/records' },
+  ),
 
-  // ——— §6.9 Staff namespace ———
-  route('staff.tickets.list', { method: 'GET', path: '/staff/ticket/fetch' }),
-  route('staff.tickets.get', { method: 'GET', path: '/staff/ticket/fetch', query: ['id'] }),
-  route('staff.tickets.replies.create', { method: 'POST', path: '/staff/ticket/reply' }),
-  route('staff.tickets.close', { method: 'POST', path: '/staff/ticket/close' }),
-  route('staff.users.get', { method: 'GET', path: '/staff/user/getUserInfoById' }),
-  route('staff.users.update', { method: 'POST', path: '/staff/user/update' }),
-  route('staff.users.mail', { method: 'POST', path: '/staff/user/sendMail' }),
-  route('staff.users.ban', { method: 'POST', path: '/staff/user/ban' }),
-  route('staff.plans.list', { method: 'GET', path: '/staff/plan/fetch' }),
-  route('staff.notices.list', { method: 'GET', path: '/staff/notice/fetch' }),
-  route('staff.notices.create', { method: 'POST', path: '/staff/notice/save' }),
-  route('staff.notices.update', {
-    method: 'POST',
-    path: '/staff/notice/save',
-    aliases: ['/staff/notice/update'],
-  }),
-  route('staff.notices.delete', { method: 'POST', path: '/staff/notice/drop' }),
+  // ——— §6.9 Staff namespace — flipped to the modern rows in W14 ———
+  // The prefix stays `/staff`; the paths mirror the admin resources.
+  route(
+    'staff.tickets.list',
+    { method: 'GET', path: '/staff/ticket/fetch' },
+    { method: 'GET', path: '/staff/tickets' },
+  ),
+  route(
+    'staff.tickets.get',
+    { method: 'GET', path: '/staff/ticket/fetch', query: ['id'] },
+    { method: 'GET', path: '/staff/tickets/{id}' },
+  ),
+  route(
+    'staff.tickets.replies.create',
+    { method: 'POST', path: '/staff/ticket/reply' },
+    { method: 'POST', path: '/staff/tickets/{id}/replies' },
+  ),
+  route(
+    'staff.tickets.close',
+    { method: 'POST', path: '/staff/ticket/close' },
+    { method: 'POST', path: '/staff/tickets/{id}/close' },
+  ),
+  route(
+    'staff.users.get',
+    { method: 'GET', path: '/staff/user/getUserInfoById' },
+    { method: 'GET', path: '/staff/users/{id}' },
+  ),
+  route(
+    'staff.users.update',
+    { method: 'POST', path: '/staff/user/update' },
+    // §6.9: staff field allow-list unchanged; id moves to the path.
+    { method: 'PATCH', path: '/staff/users/{id}' },
+  ),
+  route(
+    'staff.users.mail',
+    { method: 'POST', path: '/staff/user/sendMail' },
+    { method: 'POST', path: '/staff/users/mail' },
+  ),
+  route(
+    'staff.users.ban',
+    { method: 'POST', path: '/staff/user/ban' },
+    { method: 'POST', path: '/staff/users/ban' },
+  ),
+  route(
+    'staff.plans.list',
+    { method: 'GET', path: '/staff/plan/fetch' },
+    { method: 'GET', path: '/staff/plans' },
+  ),
+  route(
+    'staff.notices.list',
+    { method: 'GET', path: '/staff/notice/fetch' },
+    { method: 'GET', path: '/staff/notices' },
+  ),
+  route(
+    'staff.notices.create',
+    { method: 'POST', path: '/staff/notice/save' },
+    { method: 'POST', path: '/staff/notices' },
+  ),
+  route(
+    'staff.notices.update',
+    {
+      method: 'POST',
+      path: '/staff/notice/save',
+      // The legacy upsert carries the row id in the body.
+      bodyKeys: ['id'],
+      aliases: ['/staff/notice/update'],
+    },
+    { method: 'PATCH', path: '/staff/notices/{id}' },
+  ),
+  route(
+    'staff.notices.delete',
+    { method: 'POST', path: '/staff/notice/drop' },
+    { method: 'DELETE', path: '/staff/notices/{id}' },
+  ),
 ]);
 
 const routesById = new Map(routeMap.map((entry) => [entry.id, entry]));

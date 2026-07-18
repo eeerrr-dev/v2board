@@ -526,8 +526,8 @@ label end-anchored, so a bare `admin` prefix selects nothing (e.g.
 `INTERACTION_PARITY_SCENARIOS="admin-config-tabs admin-users-sort-matrix"
 make interaction-parity`). Do not impose a frontend-only language restriction
 on the admin app; shared locale state, document language/direction, and the
-API locale header (`Content-Language` today, `Accept-Language` per
-`docs/api-dialect.md` §4.3) must remain coherent. Existing untranslated copy
+API locale header (`Accept-Language` per `docs/api-dialect.md` §4.3) must
+remain coherent. Existing untranslated copy
 may stay Chinese until product translations are supplied, but Chinese-only
 behavior is not a contract.
 
@@ -535,11 +535,11 @@ behavior is not a contract.
   (config, coupon/giftcard/notice/knowledge/plan/server/user/order/ticket
   create/edit/delete bodies, encoded per the current Rust contract as
   specified in `docs/api-dialect.md` — JSON bodies with real arrays such as
-  `limit_plan_ids` per §4.1 for migrated families), the
+  `limit_plan_ids` per §4.1), the
   cents conversions (e.g. coupon `type===1 → value*100`), list/fetch query,
-  pagination, and filter/sort parameters (the spec's §7 filter DSL for
-  migrated families — system logs and admin users — and bracket
-  `filter[i][…]` params for families still awaiting their wave), admin
+  pagination, and filter/sort parameters (the spec's §7 filter DSL on its
+  enumerated list routes; the W14 series close retired the legacy bracket
+  `filter[i][…]` params), admin
   auth/session persistence, and route contracts must stay covered by an
   interaction-parity scenario.
 - Tier-2 defaults are relaxable here: overlay chrome (sheet vs modal vs drawer),

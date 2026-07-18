@@ -748,18 +748,18 @@ export function normalizeInteractionResult(label, result) {
     };
   }
   if (label === 'admin-tickets-reply-filter') {
-    // Both DOMs send the backend filter contract (current/pageSize/status and
-    // the toggled reply_status[]=0). The legacy antd Table additionally leaks
-    // its own pagination chrome — total (the echoed row count) and size (table
-    // density) — into the query string; those are antd-internal presentation,
-    // not backend filter params, so strip them from both sides before
-    // comparing. reply_status[] passthrough stays pinned by the raw assertion.
+    // Both worlds' fetches canonicalize onto one flat §6.5 shape (page/
+    // per_page/status plus the toggled reply_status array — W14). The legacy
+    // antd Table additionally leaks its own pagination chrome — total (the
+    // echoed row count) and size (table density) — into the query string;
+    // those are antd-internal presentation, not backend filter params, so
+    // strip them from both sides before comparing. The reply_status
+    // passthrough stays pinned by the raw assertion.
     const stripAntdTableParams = (request) =>
-      request && Array.isArray(request.searchParams)
-        ? {
-            ...request,
-            searchParams: request.searchParams.filter(([key]) => key !== 'total' && key !== 'size'),
-          }
+      request && typeof request === 'object' && !Array.isArray(request)
+        ? Object.fromEntries(
+            Object.entries(request).filter(([key]) => key !== 'total' && key !== 'size'),
+          )
         : request;
     return {
       ...normalized,
@@ -1056,13 +1056,13 @@ export function reduceAdminUserActionSnapshot(state) {
   }
   for (const key of ['filterQuery', 'orderFetchQuery', 'userFetchQuery', 'trafficQuery', 'probe']) {
     if (key in state) {
-      // The traffic modal fetch (`/stat/getStatUser`) carries the page number as
-      // the legacy `page` alias in the frozen antd oracle but as the real backend
-      // param `current` in the redesigned client; canonicalize so the shared
-      // contract (user_id, current, pageSize) compares equal.
+      // W14 (§6.8): the traffic modal fetch capture is canonical in both
+      // worlds (`/stat/getStatUser` page/pageSize and the modern
+      // `stats/user-traffic` page/per_page fold onto one shape); reduce to
+      // the shared contract fields (user_id, page, per_page).
       reduced[key] =
         key === 'trafficQuery'
-          ? pickFetchQueryFields(state[key], ['user_id', 'current', 'pageSize'])
+          ? pickFetchQueryFields(state[key], ['user_id', 'page', 'per_page'])
           : state[key];
     }
   }

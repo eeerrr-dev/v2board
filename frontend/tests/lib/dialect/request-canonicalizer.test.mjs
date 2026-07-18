@@ -796,6 +796,129 @@ test('the W13 group/route edits fold the body id onto the PATCH path (§6.7)', (
   assert.deepEqual(sourceRoute, oracleRoute);
 });
 
+test('the W14 admin ticket list folds reply_status onto one real array (§6.5)', () => {
+  // Oracle: the legacy serializer spells the antd filter as indexed brackets
+  // plus current/pageSize pagination. Source: the modern wire repeats the
+  // plain query key (a single selection decodes as a scalar before the fold).
+  const oracle = canonicalizeRequest('oracle', {
+    method: 'GET',
+    url: '/api/v1/sec/ticket/fetch?current=1&pageSize=10&reply_status[0]=0',
+    securePath: 'sec',
+  });
+  const source = canonicalizeRequest('source', {
+    method: 'GET',
+    url: '/api/v1/sec/tickets?page=1&per_page=10&reply_status=0',
+    securePath: 'sec',
+  });
+  assert.deepEqual(oracle, {
+    routeId: 'admin.tickets.list',
+    params: { page: 1, per_page: 10, reply_status: [0] },
+    body: null,
+  });
+  assert.deepEqual(source, oracle);
+  // The dead legacy JSON-stringified array param folds onto the same array.
+  const jsonSpelling = canonicalizeRequest('oracle', {
+    method: 'GET',
+    url: `/api/v1/sec/ticket/fetch?reply_status=${encodeURIComponent('[0,1]')}`,
+    securePath: 'sec',
+  });
+  assert.deepEqual(jsonSpelling.params.reply_status, [0, 1]);
+});
+
+test('the W14 admin ticket reply/close fold the body id onto the path (§6.5)', () => {
+  const oracleReply = canonicalizeRequest('oracle', {
+    method: 'POST',
+    url: '/api/v1/sec/ticket/reply',
+    postData: 'id=7&message=Parity+admin+reply+send',
+    securePath: 'sec',
+  });
+  const sourceReply = canonicalizeRequest('source', {
+    method: 'POST',
+    url: '/api/v1/sec/tickets/7/replies',
+    postData: JSON.stringify({ message: 'Parity admin reply send' }),
+    securePath: 'sec',
+  });
+  assert.deepEqual(oracleReply, {
+    routeId: 'admin.tickets.replies.create',
+    params: { id: 7 },
+    body: { message: 'Parity admin reply send' },
+  });
+  assert.deepEqual(sourceReply, oracleReply);
+  const oracleClose = canonicalizeRequest('oracle', {
+    method: 'POST',
+    url: '/api/v1/sec/ticket/close',
+    postData: 'id=7',
+    securePath: 'sec',
+  });
+  const sourceClose = canonicalizeRequest('source', {
+    method: 'POST',
+    url: '/api/v1/sec/tickets/7/close',
+    securePath: 'sec',
+  });
+  assert.deepEqual(oracleClose, {
+    routeId: 'admin.tickets.close',
+    params: { id: 7 },
+    body: null,
+  });
+  assert.deepEqual(sourceClose, oracleClose);
+});
+
+test('the W14 stats user-traffic query folds pagination onto §8 names (§6.8)', () => {
+  const oracle = canonicalizeRequest('oracle', {
+    method: 'GET',
+    url: '/api/v1/sec/stat/getStatUser?user_id=1&page=1&pageSize=10',
+    securePath: 'sec',
+  });
+  const source = canonicalizeRequest('source', {
+    method: 'GET',
+    url: '/api/v1/sec/stats/user-traffic?user_id=1&page=1&per_page=10',
+    securePath: 'sec',
+  });
+  assert.deepEqual(oracle, {
+    routeId: 'admin.stats.user-traffic',
+    params: { user_id: 1, page: 1, per_page: 10 },
+    body: null,
+  });
+  assert.deepEqual(source, oracle);
+});
+
+test('the W14 staff ticket mirror folds onto the same canonical shapes (§6.9)', () => {
+  const oracle = canonicalizeRequest('oracle', {
+    method: 'POST',
+    url: '/api/v1/staff/ticket/reply',
+    postData: 'id=7&message=Parity+staff+reply',
+  });
+  const source = canonicalizeRequest('source', {
+    method: 'POST',
+    url: '/api/v1/staff/tickets/7/replies',
+    postData: JSON.stringify({ message: 'Parity staff reply' }),
+  });
+  assert.deepEqual(oracle, {
+    routeId: 'staff.tickets.replies.create',
+    params: { id: 7 },
+    body: { message: 'Parity staff reply' },
+  });
+  assert.deepEqual(source, oracle);
+  // The staff notice upsert keeps the legacy body-id spelling on the oracle
+  // side and folds onto the modern PATCH path identity.
+  const oracleNotice = canonicalizeRequest('oracle', {
+    method: 'POST',
+    url: '/api/v1/staff/notice/save',
+    postData: JSON.stringify({ id: 3, title: 'Parity staff notice' }),
+  });
+  const sourceNotice = canonicalizeRequest('source', {
+    method: 'PATCH',
+    url: '/api/v1/staff/notices/3',
+    postData: JSON.stringify({ title: 'Parity staff notice' }),
+  });
+  assert.deepEqual(oracleNotice, {
+    routeId: 'staff.notices.update',
+    params: { id: 3 },
+    body: { title: 'Parity staff notice' },
+  });
+  assert.deepEqual(sourceNotice, oracleNotice);
+});
+
 test('unknown routes canonicalize with routeId null', () => {
   const request = canonicalizeRequest('oracle', {
     method: 'GET',

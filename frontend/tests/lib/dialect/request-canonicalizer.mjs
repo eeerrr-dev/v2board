@@ -218,7 +218,45 @@ const ROUTE_REQUEST_FOLDS = Object.freeze({
   'admin.servers.toggle': foldBodyIdIntoParams,
   'admin.servers.delete': foldBodyIdIntoParams,
   'admin.servers.copy': foldBodyIdIntoParams,
+  // W14 (§6.5): the legacy body-carried ticket id folds onto the modern
+  // /tickets/{id}/replies + /tickets/{id}/close path identity; the list's
+  // reply_status spellings fold onto one real array.
+  'admin.tickets.list': foldTicketListReplyStatus,
+  'admin.tickets.replies.create': foldBodyIdIntoParams,
+  'admin.tickets.close': foldBodyIdIntoParams,
+  // W14 (§6.9): the staff mirror shares the admin domain shapes — ticket and
+  // notice/user row ids fold onto path identity, the bulk user actions fold
+  // their filter clauses onto the §7.1 vocabulary.
+  'staff.tickets.list': foldTicketListReplyStatus,
+  'staff.tickets.replies.create': foldBodyIdIntoParams,
+  'staff.tickets.close': foldBodyIdIntoParams,
+  'staff.users.update': foldBodyIdIntoParams,
+  'staff.users.mail': foldBodyFilterClauses,
+  'staff.users.ban': foldBodyFilterClauses,
+  'staff.notices.update': foldBodyIdIntoParams,
 });
+
+/**
+ * W14 (§6.5): `reply_status` is one real array cross-world. The modern wire
+ * repeats the query key (a single selection decodes as a scalar), the legacy
+ * wire spells indexed brackets (already folded to an array upstream) or the
+ * dead JSON-stringified array param — fold every spelling onto an array.
+ */
+function foldTicketListReplyStatus(request) {
+  const value = request.params?.reply_status;
+  if (value === undefined || Array.isArray(value)) return request;
+  const parsed =
+    typeof value === 'string' && value.startsWith('[') ? parseJsonContainer(value) : value;
+  return {
+    ...request,
+    params: {
+      ...request.params,
+      reply_status: Array.isArray(parsed)
+        ? parsed.map((item) => canonicalizeValue(item, 'reply_status'))
+        : [parsed],
+    },
+  };
+}
 
 /**
  * W13 (§6.7): the legacy admin client form-encoded protocol saves with

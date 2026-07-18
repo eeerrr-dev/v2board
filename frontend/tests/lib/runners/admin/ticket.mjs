@@ -35,6 +35,8 @@ export async function runAdminTicketReplySendInteraction(page) {
   await page.waitForTimeout(150);
   const sent = await ticketReplyState(page);
 
+  const staffMirror = await driveStaffTicketMirror(page);
+
   return {
     filled,
     loading,
@@ -42,7 +44,81 @@ export async function runAdminTicketReplySendInteraction(page) {
       request && typeof request === 'object' && !Array.isArray(request) ? { ...request } : request,
     ),
     sent,
+    staffMirror,
     ticketFetchDelta: (page.__visualParityAdminTicketFetchCount ?? 0) - initialTicketFetchCount,
+  };
+}
+
+// W14 (§6.9): the staff namespace mirrors the admin ticket resources under
+// its own /api/v1/staff prefix in both dialects. No SPA surface drives it, so
+// the scenario exercises the mirror directly in each world's wire dialect
+// (the modern resource rows on the source side, the legacy action spellings
+// on the oracle side); the fixture layer canonicalizes the captures so the
+// cross-world comparison proves both prefixes carry one Tier-1 contract.
+async function driveStaffTicketMirror(page) {
+  const modern = page.__parityWorld === 'source';
+  const responses = await page.evaluate(
+    async ({ modern }) => {
+      const send = async (method, url, body, form) => {
+        const headers = {};
+        let payload;
+        if (body !== undefined) {
+          if (form) {
+            headers['Content-Type'] = 'application/x-www-form-urlencoded';
+            payload = new URLSearchParams(body).toString();
+          } else {
+            headers['Content-Type'] = 'application/json';
+            payload = JSON.stringify(body);
+          }
+        }
+        const response = await fetch(url, { body: payload, headers, method });
+        let data = null;
+        try {
+          data = await response.json();
+        } catch {
+          data = null;
+        }
+        return { data, ok: response.ok };
+      };
+      if (modern) {
+        const list = await send('GET', '/api/v1/staff/tickets?page=1&per_page=10');
+        const detail = await send('GET', '/api/v1/staff/tickets/7');
+        const reply = await send('POST', '/api/v1/staff/tickets/7/replies', {
+          message: 'Parity staff reply',
+        });
+        const close = await send('POST', '/api/v1/staff/tickets/7/close');
+        return {
+          closeOk: close.ok,
+          detailId: detail.data?.id ?? null,
+          detailMessageCount: Array.isArray(detail.data?.message) ? detail.data.message.length : 0,
+          listIds: (list.data?.items ?? []).map((ticket) => ticket.id),
+          replyOk: reply.ok,
+        };
+      }
+      const list = await send('GET', '/api/v1/staff/ticket/fetch?current=1&pageSize=10');
+      const detail = await send('GET', '/api/v1/staff/ticket/fetch?id=7');
+      const reply = await send(
+        'POST',
+        '/api/v1/staff/ticket/reply',
+        { id: '7', message: 'Parity staff reply' },
+        true,
+      );
+      const close = await send('POST', '/api/v1/staff/ticket/close', { id: '7' }, true);
+      return {
+        closeOk: close.ok,
+        detailId: detail.data?.data?.id ?? null,
+        detailMessageCount: Array.isArray(detail.data?.data?.message)
+          ? detail.data.data.message.length
+          : 0,
+        listIds: (list.data?.data ?? []).map((ticket) => ticket.id),
+        replyOk: reply.ok,
+      };
+    },
+    { modern },
+  );
+  return {
+    requests: clonePageRequests(page.__visualParityStaffTicketRequests ?? []),
+    responses,
   };
 }
 

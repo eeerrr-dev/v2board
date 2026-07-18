@@ -29,19 +29,18 @@ export function jsonIncludesAny(value, candidates) {
 
 export function requestIncludesParamValue(requests, keyFragment, expectedValue) {
   const expected = String(expectedValue);
+  const matches = (value) =>
+    Array.isArray(value) ? value.map(String).includes(expected) : String(value ?? '') === expected;
   return (requests ?? []).some((request) => {
     const entries = Array.isArray(request?.searchParams) ? request.searchParams : [];
     if (
-      entries.some(
-        ([key, value]) => String(key).includes(keyFragment) && String(value) === expected,
-      )
+      entries.some(([key, value]) => String(key).includes(keyFragment) && matches(value))
     ) {
       return true;
     }
-    const dataValue = request?.data?.[keyFragment];
-    return Array.isArray(dataValue)
-      ? dataValue.map(String).includes(expected)
-      : String(dataValue ?? '') === expected;
+    if (matches(request?.data?.[keyFragment])) return true;
+    // W14: canonical flat captures carry the folded param as a direct key.
+    return Boolean(request) && typeof request === 'object' && matches(request[keyFragment]);
   });
 }
 

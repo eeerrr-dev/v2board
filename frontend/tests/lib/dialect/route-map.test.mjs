@@ -176,22 +176,56 @@ const W4_ROUTE_IDS = Object.freeze([
   'user.coupons.check',
 ]);
 
-test('unflipped families stay identity: modern equals legacy until each wave', () => {
-  for (const entry of routeMap) {
-    if (entry.id.startsWith('auth.')) continue; // §5.2 flipped in W2
-    if (W3_ROUTE_IDS.includes(entry.id)) continue; // §5.1/§5.8 flipped in W3
-    if (W4_ROUTE_IDS.includes(entry.id)) continue; // §5.5 flipped in W4
-    if (W5_ROUTE_IDS.includes(entry.id)) continue; // §5.3/§5.4 flipped in W5
-    if (W6_ROUTE_IDS.includes(entry.id)) continue; // §5.4 service usage flipped in W6
-    if (W7_ROUTE_IDS.includes(entry.id)) continue; // §5.6 invite/commission flipped in W7
-    if (W8_ROUTE_IDS.includes(entry.id)) continue; // §5.7 user tickets flipped in W8
-    if (W9_ROUTE_IDS.includes(entry.id)) continue; // §6.1 admin config/system flipped in W9
-    if (W10_ROUTE_IDS.includes(entry.id)) continue; // §6.3 admin content flipped in W10
-    if (W11_ROUTE_IDS.includes(entry.id)) continue; // §6.2/§6.4 admin commerce flipped in W11
-    if (W12_ROUTE_IDS.includes(entry.id)) continue; // §6.6 admin users flipped in W12
-    if (W13_ROUTE_IDS.includes(entry.id)) continue; // §6.7 admin servers flipped in W13
-    assert.deepEqual(entry.modern, entry.legacy, `${entry.id} must stay legacy→legacy until its wave`);
-  }
+const W14_ROUTE_IDS = Object.freeze([
+  'admin.tickets.list',
+  'admin.tickets.get',
+  'admin.tickets.replies.create',
+  'admin.tickets.close',
+  'admin.stats.summary',
+  'admin.stats.server-rank',
+  'admin.stats.user-rank',
+  'admin.stats.orders',
+  'admin.stats.user-traffic',
+  'admin.stats.records',
+  'staff.tickets.list',
+  'staff.tickets.get',
+  'staff.tickets.replies.create',
+  'staff.tickets.close',
+  'staff.users.get',
+  'staff.users.update',
+  'staff.users.mail',
+  'staff.users.ban',
+  'staff.plans.list',
+  'staff.notices.list',
+  'staff.notices.create',
+  'staff.notices.update',
+  'staff.notices.delete',
+]);
+
+test('W14 closed the wave series: every route id belongs to exactly one wave', () => {
+  // Appendix A ran W2 (auth.*) through W14; there is no unflipped family
+  // left, so the wave lists must partition the route map exactly.
+  const waveIds = [
+    ...routeMap.filter((entry) => entry.id.startsWith('auth.')).map((entry) => entry.id), // W2
+    ...W3_ROUTE_IDS,
+    ...W4_ROUTE_IDS,
+    ...W5_ROUTE_IDS,
+    ...W6_ROUTE_IDS,
+    ...W7_ROUTE_IDS,
+    ...W8_ROUTE_IDS,
+    ...W9_ROUTE_IDS,
+    ...W10_ROUTE_IDS,
+    ...W11_ROUTE_IDS,
+    ...W12_ROUTE_IDS,
+    ...W13_ROUTE_IDS,
+    ...W14_ROUTE_IDS,
+  ];
+  assert.equal(new Set(waveIds).size, waveIds.length, 'a route id may belong to only one wave');
+  assert.deepEqual(
+    [...waveIds].sort(),
+    routeMap.map((entry) => entry.id).sort(),
+    'every route map entry must be owned by a wave list',
+  );
 });
 
 test('W5: the profile/subscription family carries the modern rows', () => {
@@ -902,6 +936,141 @@ test('W13: the admin servers family carries the modern rows', () => {
       securePath: 'sec',
     })?.id,
     'admin.nodes.sort',
+  );
+});
+
+test('W14: the admin tickets/stats and staff families carry the modern rows', () => {
+  const modern = Object.fromEntries(W14_ROUTE_IDS.map((id) => [id, routeEntry(id).modern]));
+  assert.deepEqual(modern, {
+    // §6.5: id moves to the path; reply_status is a repeatable query key.
+    'admin.tickets.list': { method: 'GET', path: '/{secure_path}/tickets' },
+    'admin.tickets.get': { method: 'GET', path: '/{secure_path}/tickets/{id}' },
+    'admin.tickets.replies.create': {
+      method: 'POST',
+      path: '/{secure_path}/tickets/{id}/replies',
+    },
+    'admin.tickets.close': { method: 'POST', path: '/{secure_path}/tickets/{id}/close' },
+    // §6.8: the alias trio collapses; today/last becomes ?window=.
+    'admin.stats.summary': { method: 'GET', path: '/{secure_path}/stats/summary' },
+    'admin.stats.server-rank': {
+      method: 'GET',
+      path: '/{secure_path}/stats/server-rank',
+      query: ['window'],
+    },
+    'admin.stats.user-rank': {
+      method: 'GET',
+      path: '/{secure_path}/stats/user-rank',
+      query: ['window'],
+    },
+    'admin.stats.orders': { method: 'GET', path: '/{secure_path}/stats/orders' },
+    'admin.stats.user-traffic': { method: 'GET', path: '/{secure_path}/stats/user-traffic' },
+    'admin.stats.records': { method: 'GET', path: '/{secure_path}/stats/records' },
+    // §6.9: the /staff prefix stays; the paths mirror the admin resources.
+    'staff.tickets.list': { method: 'GET', path: '/staff/tickets' },
+    'staff.tickets.get': { method: 'GET', path: '/staff/tickets/{id}' },
+    'staff.tickets.replies.create': { method: 'POST', path: '/staff/tickets/{id}/replies' },
+    'staff.tickets.close': { method: 'POST', path: '/staff/tickets/{id}/close' },
+    'staff.users.get': { method: 'GET', path: '/staff/users/{id}' },
+    'staff.users.update': { method: 'PATCH', path: '/staff/users/{id}' },
+    'staff.users.mail': { method: 'POST', path: '/staff/users/mail' },
+    'staff.users.ban': { method: 'POST', path: '/staff/users/ban' },
+    'staff.plans.list': { method: 'GET', path: '/staff/plans' },
+    'staff.notices.list': { method: 'GET', path: '/staff/notices' },
+    'staff.notices.create': { method: 'POST', path: '/staff/notices' },
+    'staff.notices.update': { method: 'PATCH', path: '/staff/notices/{id}' },
+    'staff.notices.delete': { method: 'DELETE', path: '/staff/notices/{id}' },
+  });
+  // The oracle keeps requesting the legacy rows, including the stat aliases.
+  assert.equal(worldRoute('admin.tickets.list', 'oracle').path, '/{secure_path}/ticket/fetch');
+  assert.deepEqual(worldRoute('admin.stats.summary', 'oracle').aliases, [
+    '/{secure_path}/stat/getOverride',
+    '/{secure_path}/stat/getRanking',
+  ]);
+  assert.equal(
+    worldRoute('admin.stats.user-traffic', 'oracle').path,
+    '/{secure_path}/stat/getStatUser',
+  );
+  assert.equal(worldRoute('staff.tickets.replies.create', 'oracle').path, '/staff/ticket/reply');
+  // Source-world matches extract the path id under the dynamic secure path.
+  assert.deepEqual(
+    matchRoute('source', {
+      method: 'GET',
+      pathname: `${API_PREFIX}/sec/tickets/7`,
+      securePath: 'sec',
+    }),
+    { id: 'admin.tickets.get', params: { id: '7' } },
+  );
+  assert.deepEqual(
+    matchRoute('source', {
+      method: 'POST',
+      pathname: `${API_PREFIX}/sec/tickets/7/replies`,
+      securePath: 'sec',
+      body: { message: 'hi' },
+    }),
+    { id: 'admin.tickets.replies.create', params: { id: '7' } },
+  );
+  assert.equal(
+    matchRoute('source', {
+      method: 'GET',
+      pathname: `${API_PREFIX}/sec/tickets`,
+      securePath: 'sec',
+      searchParams: new URLSearchParams('page=1&per_page=10&status=0&reply_status=0&reply_status=1'),
+    })?.id,
+    'admin.tickets.list',
+  );
+  // The rank rows require the ?window= discriminator that replaced the
+  // today/last path split.
+  assert.equal(
+    matchRoute('source', {
+      method: 'GET',
+      pathname: `${API_PREFIX}/sec/stats/server-rank`,
+      securePath: 'sec',
+      searchParams: new URLSearchParams('window=previous'),
+    })?.id,
+    'admin.stats.server-rank',
+  );
+  assert.equal(
+    matchRoute('source', {
+      method: 'GET',
+      pathname: `${API_PREFIX}/sec/stats/server-rank`,
+      securePath: 'sec',
+    }),
+    null,
+  );
+  // Staff mirrors match without a secure path; the admin rows must not
+  // swallow them (the {secure_path} segment never matches the literal
+  // /staff prefix).
+  assert.deepEqual(
+    matchRoute('source', {
+      method: 'PATCH',
+      pathname: `${API_PREFIX}/staff/users/9`,
+      securePath: 'sec',
+    }),
+    { id: 'staff.users.update', params: { id: '9' } },
+  );
+  assert.deepEqual(
+    matchRoute('source', {
+      method: 'POST',
+      pathname: `${API_PREFIX}/staff/tickets/7/close`,
+    }),
+    { id: 'staff.tickets.close', params: { id: '7' } },
+  );
+  // The legacy staff upsert with a body id resolves to the update row.
+  assert.equal(
+    matchRoute('oracle', {
+      method: 'POST',
+      pathname: `${API_PREFIX}/staff/notice/save`,
+      body: { id: 3, title: 'Edited' },
+    })?.id,
+    'staff.notices.update',
+  );
+  assert.equal(
+    matchRoute('oracle', {
+      method: 'POST',
+      pathname: `${API_PREFIX}/staff/notice/save`,
+      body: { title: 'New' },
+    })?.id,
+    'staff.notices.create',
   );
 });
 

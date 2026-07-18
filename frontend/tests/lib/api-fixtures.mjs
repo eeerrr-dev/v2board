@@ -76,6 +76,9 @@ import {
 
 export async function installApiFixtures(page, scenario, target, interaction = {}) {
   const isAdminScenario = scenario.label.startsWith('admin-');
+  // W14 (§6.9): runners that drive the staff mirror directly need to speak
+  // the current world's wire dialect; stash it on the page handle.
+  page.__parityWorld = target;
   const effectiveLocale = scenario.locale ?? (isAdminScenario ? '' : 'zh-CN');
   let seededAdminTicketDetailStore = false;
   let resolveAdminGroupsReady;
@@ -217,6 +220,16 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     const isUserWithdraw =
       pathname === '/api/v1/user/ticket/withdraw' ||
       pathname === '/api/v1/user/withdrawal-tickets';
+    // W14 (§6.5): the modern admin ticket family carries identity in the
+    // path; the fetch counter spans list + detail exactly like the shared
+    // legacy /ticket/fetch path did. Match both worlds' spellings for the
+    // counters, captures, timeout, and delay knobs below.
+    const isAdminTicketFetch =
+      adminEndpoint === '/ticket/fetch' ||
+      ((adminEndpoint === '/tickets' || /^\/tickets\/\d+$/.test(adminEndpoint ?? '')) &&
+        requestMethod === 'GET');
+    const isAdminTicketReply =
+      adminEndpoint === '/ticket/reply' || /^\/tickets\/\d+\/replies$/.test(adminEndpoint ?? '');
     // W9 (§6.1): the modern admin config family splits GET vs PATCH on one
     // /{secure_path}/config row; match both worlds' spellings for the
     // counters, captures, and delay knobs below.
@@ -814,30 +827,50 @@ export async function installApiFixtures(page, scenario, target, interaction = {
         paymentSaveRequest,
       ];
     }
-    if (adminEndpoint === '/ticket/fetch') {
+    if (isAdminTicketFetch) {
       page.__visualParityAdminTicketFetchCount =
         (page.__visualParityAdminTicketFetchCount ?? 0) + 1;
+      // Canonical capture (§6.5/§8): the legacy bracket reply_status +
+      // current/pageSize query and the modern repeated-key + page/per_page
+      // query fold to one flat shape.
       page.__visualParityAdminTicketFetchRequests = [
         ...(page.__visualParityAdminTicketFetchRequests ?? []),
-        {
-          data: requestData,
-          searchParams: Array.from(requestUrl.searchParams.entries()),
-        },
+        canonicalRequestCapture(),
       ];
     }
-    if (adminEndpoint === '/ticket/reply') {
-      page.__visualParityLastAdminTicketReply = requestData;
+    if (isAdminTicketReply) {
+      // Canonical capture (§6.5): the legacy `{id, message}` body and the
+      // modern `{message}` + path id fold onto one flat contract.
+      const ticketReplyRequest = canonicalRequestCapture();
+      page.__visualParityLastAdminTicketReply = ticketReplyRequest;
       page.__visualParityAdminTicketReplyCount =
         (page.__visualParityAdminTicketReplyCount ?? 0) + 1;
       page.__visualParityAdminTicketReplyRequests = [
         ...(page.__visualParityAdminTicketReplyRequests ?? []),
-        requestData,
+        ticketReplyRequest,
       ];
     }
-    if (adminEndpoint === '/stat/getStatUser') {
-      page.__visualParityLastAdminUserTrafficQuery = Object.fromEntries(
-        requestUrl.searchParams.entries(),
-      );
+    if (
+      adminEndpoint === '/stat/getStatUser' ||
+      (adminEndpoint === '/stats/user-traffic' && requestMethod === 'GET')
+    ) {
+      // Canonical capture (§6.8): the legacy page/pageSize query and the
+      // modern page/per_page spelling fold to one flat shape.
+      page.__visualParityLastAdminUserTrafficQuery = canonicalRequestCapture();
+    }
+    // W14 (§6.9): the staff mirror keeps its own /api/v1/staff prefix in both
+    // worlds; capture the full canonicalized requests (routeId included) so
+    // the runner can prove the mirror carries one Tier-1 contract.
+    if (pathname.startsWith('/api/v1/staff/')) {
+      page.__visualParityStaffTicketRequests = [
+        ...(page.__visualParityStaffTicketRequests ?? []),
+        canonicalizeRequest(target, {
+          method: requestMethod,
+          url: route.request().url(),
+          postData: route.request().postData(),
+          securePath: adminPath,
+        }),
+      ];
     }
     if (isAdminUserFetch) {
       page.__visualParityAdminUserFetchCount = (page.__visualParityAdminUserFetchCount ?? 0) + 1;
@@ -952,7 +985,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
       (scenario.adminPlansTimeout && isAdminPlanFetch) ||
       (scenario.adminOrdersTimeout && isAdminOrderFetch) ||
       (scenario.adminUsersTimeout && isAdminUserFetch) ||
-      (scenario.adminTicketsTimeout && adminEndpoint === '/ticket/fetch') ||
+      (scenario.adminTicketsTimeout && isAdminTicketFetch) ||
       (scenario.adminServerManageTimeout &&
         (adminEndpoint === '/server/manage/getNodes' ||
           (adminEndpoint === '/nodes' && requestMethod === 'GET'))) ||
@@ -1006,7 +1039,7 @@ export async function installApiFixtures(page, scenario, target, interaction = {
     if (isUserWithdraw && interaction.delayUserWithdrawMs) {
       await delay(interaction.delayUserWithdrawMs);
     }
-    if (adminEndpoint === '/ticket/reply' && interaction.delayAdminTicketReplyMs) {
+    if (isAdminTicketReply && interaction.delayAdminTicketReplyMs) {
       await delay(interaction.delayAdminTicketReplyMs);
     }
     if (isAdminPaymentSave && interaction.delayAdminPaymentSaveMs) {
@@ -1150,6 +1183,50 @@ export function apiFixtureResponse(
     return unauthorizedFixture(
       interaction.forceAdminUnauthorizedStatus ?? scenario.forceAdminUnauthorizedStatus ?? 403,
     );
+  }
+
+  // §6.9 staff mirror (W14): the /api/v1/staff prefix survives in both
+  // dialects — the source world drives the modern resource rows, the oracle
+  // keeps the legacy action spellings. Serve the same ticket fixtures as the
+  // admin family so the cross-world mirror comparison sees one contract.
+  const staffEndpoint = pathname.startsWith('/api/v1/staff/')
+    ? pathname.slice('/api/v1/staff'.length)
+    : null;
+  if (staffEndpoint) {
+    if (staffEndpoint === '/tickets' && method === 'GET') {
+      return v2Body({
+        items: adminTicketFixtures.map(modernTicketFixture),
+        total: adminTicketFixtures.length,
+      });
+    }
+    const staffTicketMatch = /^\/tickets\/(\d+)$/.exec(staffEndpoint);
+    if (staffTicketMatch && method === 'GET') {
+      return v2Body(
+        modernTicketDetailFixture(
+          adminTicketFixtures.find((item) => String(item.id) === staffTicketMatch[1]) ??
+            adminTicketFixtures[0],
+        ),
+      );
+    }
+    if (/^\/tickets\/\d+\/(replies|close)$/.test(staffEndpoint)) {
+      return v2Empty();
+    }
+    switch (staffEndpoint) {
+      case '/ticket/fetch':
+        if (requestUrl.searchParams.has('id')) {
+          const requestedId = requestUrl.searchParams.get('id');
+          return body(
+            adminTicketFixtures.find((item) => String(item.id) === requestedId) ??
+              adminTicketFixtures[0],
+          );
+        }
+        return body(adminTicketFixtures, { total: adminTicketFixtures.length });
+      case '/ticket/reply':
+      case '/ticket/close':
+        return body(true);
+      default:
+        return body(null);
+    }
   }
 
   if (adminEndpoint) {
@@ -1440,6 +1517,52 @@ export function apiFixtureResponse(
     }
     if (/^\/users\/\d+\/(set-inviter|reset-secret)$/.test(adminEndpoint)) {
       return v2Empty();
+    }
+
+    // §6.5 modern admin tickets family (W14): the list is an §8 page with no
+    // message stub, the detail is bare + the message[] thread, replies/close
+    // are path-identity bodiless 204s. §6.8 stats: the three legacy summary
+    // aliases collapse onto one bare integer-cent object (same field names),
+    // the ranks take ?window=, orders/records are {series, date, value} slug
+    // rows (the seeded arrays are empty), and user-traffic is an §8 page with
+    // RFC 3339 record_at. Only the source world requests these spellings; the
+    // oracle keeps the legacy rows in the switch below.
+    if (adminEndpoint === '/tickets') {
+      return v2Body({
+        items: adminTicketFixtures.map(modernTicketFixture),
+        total: adminTicketFixtures.length,
+      });
+    }
+    const modernAdminTicketMatch = /^\/tickets\/(\d+)$/.exec(adminEndpoint);
+    if (modernAdminTicketMatch) {
+      const ticket =
+        scenario.label === 'admin-ticket-detail'
+          ? adminTicketDetailFixture
+          : (adminTicketFixtures.find(
+              (item) => String(item.id) === modernAdminTicketMatch[1],
+            ) ?? adminTicketFixtures[0]);
+      return v2Body(modernTicketDetailFixture(ticket));
+    }
+    if (/^\/tickets\/\d+\/(replies|close)$/.test(adminEndpoint)) {
+      return v2Empty();
+    }
+    if (adminEndpoint === '/stats/summary') {
+      return v2Body(adminStatFixture);
+    }
+    if (adminEndpoint === '/stats/orders' || adminEndpoint === '/stats/records') {
+      return v2Body(adminOrderStatFixtures);
+    }
+    if (adminEndpoint === '/stats/server-rank') {
+      return v2Body(adminServerRankFixtures);
+    }
+    if (adminEndpoint === '/stats/user-rank') {
+      return v2Body(adminUserRankFixtures);
+    }
+    if (adminEndpoint === '/stats/user-traffic') {
+      return v2Body({
+        items: adminUserTrafficFixtures.map(modernAdminUserTrafficFixture),
+        total: 25,
+      });
     }
 
     // §6.7 modern admin servers family (W13): the nodes list is a bare typed
@@ -2474,6 +2597,14 @@ const modernTicketMessageFixture = (entry) => ({
 const modernTicketDetailFixture = (ticket) => ({
   ...modernTicketFixture(ticket),
   message: (ticket.message ?? []).map(modernTicketMessageFixture),
+});
+
+// ——— W14 modern-wire projections (docs/api-dialect.md §4.5, §6.8) ———
+// stats/user-traffic rows carry RFC 3339 record_at; server_rate is already a
+// JSON number on the admin fixture row.
+const modernAdminUserTrafficFixture = (entry) => ({
+  ...entry,
+  record_at: rfc3339FixtureTime(entry.record_at),
 });
 
 // ——— W9 modern-wire projections (docs/api-dialect.md §4.1, §6.1) ———

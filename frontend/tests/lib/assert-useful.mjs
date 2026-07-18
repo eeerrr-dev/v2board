@@ -936,7 +936,18 @@ export function assertUsefulInteraction(label, result, target) {
       String(result.replyRequests?.[0]?.id) !== '7' ||
       result.replyRequests?.[0]?.message !== 'Parity admin reply send' ||
       result.sent?.inputValue !== '' ||
-      result.ticketFetchDelta !== 1)
+      result.ticketFetchDelta !== 1 ||
+      // W14 (§6.9): the staff mirror must resolve the canonical staff rows in
+      // both worlds and carry the same ticket contract as the admin prefix.
+      result.staffMirror?.requests?.map((request) => request?.routeId).join(',') !==
+        'staff.tickets.list,staff.tickets.get,staff.tickets.replies.create,staff.tickets.close' ||
+      String(result.staffMirror?.requests?.[2]?.params?.id) !== '7' ||
+      result.staffMirror?.requests?.[2]?.body?.message !== 'Parity staff reply' ||
+      result.staffMirror?.responses?.listIds?.join(',') !== '7,8' ||
+      result.staffMirror?.responses?.detailId !== 7 ||
+      result.staffMirror?.responses?.detailMessageCount !== 1 ||
+      result.staffMirror?.responses?.replyOk !== true ||
+      result.staffMirror?.responses?.closeOk !== true)
   ) {
     throw new Error(
       `admin ticket reply send did not match legacy behavior: ${JSON.stringify(result)}`,
@@ -2515,7 +2526,8 @@ export function assertUsefulInteraction(label, result, target) {
       !JSON.stringify(result.modal?.modalRows).includes('2024-01-15') ||
       !JSON.stringify(result.modal?.trafficQuery).includes('user_id') ||
       !JSON.stringify(result.modal?.trafficQuery).includes('1') ||
-      !JSON.stringify(result.modal?.trafficQuery).includes('pageSize'))
+      // W14 (§6.8): the canonical capture folds both worlds onto per_page.
+      !JSON.stringify(result.modal?.trafficQuery).includes('per_page'))
   ) {
     throw new Error(
       `admin user traffic action did not produce observable state: ${JSON.stringify(result)}`,
