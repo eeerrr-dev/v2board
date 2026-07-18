@@ -100,11 +100,6 @@ export const planPeriodSchema = z.enum([
 ]);
 
 /**
- * Legacy-dialect plan rows (numeric flags, epoch timestamps): still delivered
- * by admin /plan/fetch (W11). The user commerce routes moved to
- * {@link userPlanSchema} with W4, the subscription's nested plan with W5.
- */
-/**
  * Admin GET /{secure_path}/plans + /{secure_path}/plans/{id} (docs/api-dialect.md
  * §6.2, W11): bare rows with boolean `show`/`renew` (§4.1) and RFC 3339
  * timestamps (§4.5). Prices stay integer cents; the admin list keeps the

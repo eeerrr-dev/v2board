@@ -8,8 +8,20 @@ export interface ParityInteraction {
   label: string;
 }
 
+export interface DialectRouteShape {
+  method: string;
+  path: string;
+}
+
+export interface DialectRouteEntry {
+  id: string;
+  legacy: DialectRouteShape;
+  modern: DialectRouteShape;
+}
+
 export interface ParityConfigAuditResult {
   adminRouteCount: number;
+  dialectRouteCount: number;
   failures: string[];
   interactionScenarioCount: number;
   scenarioCount: number;
@@ -48,6 +60,9 @@ export function assertRouteCoverage(
   routes: string[],
   scenarios: ScenarioRoute[],
   behaviorCoveredLabels?: Set<string>,
+): string[];
+export function assertDialectRouteMap(
+  map: ReadonlyArray<{ id: string; legacy?: DialectRouteShape; modern?: DialectRouteShape }>,
 ): string[];
 export function normalizeScenarioRoute(path: string): string;
 export function routePatternMatches(pattern: string, route: string): boolean;

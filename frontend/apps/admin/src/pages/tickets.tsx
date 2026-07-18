@@ -346,9 +346,9 @@ function TicketChat({ ticketId }: { ticketId: number | string }) {
   const chatRef = useRef<HTMLDivElement | null>(null);
   const current = ticket.data;
   const ticketError = ticket.isError ? getErrorPresentation(ticket.error) : null;
-  const isNotFound = Boolean(
-    ticketError && (ticketError.status === 404 || ticketError.message === '工单不存在'),
-  );
+  // §3.2: a missing ticket is the modern 404 (`ticket_not_found`); the
+  // legacy exact-message match died with the W14 teardown.
+  const isNotFound = Boolean(ticketError && ticketError.status === 404);
   const messageCount = current?.message?.length;
 
   useAdminUserInfo(current?.user_id);

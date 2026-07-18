@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { WORLDS, routeMap } from '../tests/lib/dialect/route-map.mjs';
 import { viewports } from '../tests/lib/env.mjs';
 import { interactions } from '../tests/lib/interaction-scenarios.mjs';
 import { scenariosByLabel } from '../tests/lib/scenario-meta.mjs';
@@ -90,10 +91,12 @@ export async function auditParityConfig(projectRoot = getDefaultProjectRoot()) {
     ),
     ...assertSubset('user public routes', userAppPublicRoutes, userRoutes),
     ...assertSubset('admin public routes', adminAppPublicRoutes, adminRoutes),
+    ...assertDialectRouteMap(routeMap),
   ];
 
   return {
     adminRouteCount: adminRoutes.length,
+    dialectRouteCount: routeMap.length,
     failures,
     interactionScenarioCount: interactionLabels.length,
     scenarioCount: scenarioLabels.length,
@@ -113,10 +116,56 @@ export function formatAuditSuccess(result) {
     `${result.interactionScenarioCount} interactions across ${result.specGroupCount} spec groups ` +
     `and ${result.viewportCount} viewports, Makefile INTERACTION_PARITY_SCENARIOS mirrors ` +
     `the interaction modules, and App.tsx route definitions cover ${result.userRouteCount} ` +
-    `user routes plus ${result.adminRouteCount} admin routes. UI sync covers ` +
+    `user routes plus ${result.adminRouteCount} admin routes. The dialect route map carries ` +
+    `${result.dialectRouteCount} well-formed two-world rows (incl. the §6.5 admin ticket rows). ` +
+    `UI sync covers ` +
     `${result.uiSharedPrimitiveCount} shared primitives, ${result.uiSharedStylesheetCount} ` +
     `shared stylesheets, and ${result.uiAppSpecificCount} explicit app-only ${appOnlyNoun}.`
   );
+}
+
+/**
+ * Structural audit of the internal-dialect route map (docs/api-dialect.md
+ * §13.1). W14 closed the wave series, so every row must be a complete
+ * two-world entry, and the §6.5 admin ticket rows (plus their §6.9 staff
+ * mirrors) must be present — the interaction lane resolves its intercepted
+ * URLs through these rows.
+ */
+export function assertDialectRouteMap(map) {
+  const failures = assertUnique(
+    'dialect route map ids',
+    map.map((entry) => entry.id),
+  );
+  for (const entry of map) {
+    for (const world of ['legacy', 'modern']) {
+      const shape = entry[world];
+      if (!shape || typeof shape.method !== 'string' || typeof shape.path !== 'string') {
+        failures.push(`dialect route map: ${entry.id} is missing its ${world} shape`);
+        continue;
+      }
+      if (!/^(GET|POST|PATCH|PUT|DELETE)$/.test(shape.method)) {
+        failures.push(`dialect route map: ${entry.id} ${world} method ${shape.method} is invalid`);
+      }
+      if (!shape.path.startsWith('/')) {
+        failures.push(`dialect route map: ${entry.id} ${world} path must start with /`);
+      }
+    }
+  }
+  if (WORLDS.length !== 2) {
+    failures.push(`dialect route map: expected the two-world seam, got ${WORLDS.join(', ')}`);
+  }
+  const ids = new Set(map.map((entry) => entry.id));
+  for (const required of [
+    'admin.tickets.list',
+    'admin.tickets.get',
+    'admin.tickets.replies.create',
+    'admin.tickets.close',
+  ]) {
+    if (!ids.has(required)) {
+      failures.push(`dialect route map: required §6.5 admin ticket row ${required} is missing`);
+    }
+  }
+  return failures;
 }
 
 export function readMakeList(source, name) {

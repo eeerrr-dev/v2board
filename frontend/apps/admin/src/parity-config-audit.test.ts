@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  assertDialectRouteMap,
   assertRouteCoverage,
   assertSameOrderedList,
   assertSpecGroupCoverage,
@@ -10,6 +11,7 @@ import {
   normalizeScenarioRoute,
   routePatternMatches,
 } from '../../../scripts/parity-config-audit.mjs';
+import { routeMap } from '../../../tests/lib/dialect/route-map.mjs';
 import { interactions } from '../../../tests/lib/interaction-scenarios.mjs';
 import { GROUP_NAMES } from '../../../tests/lib/spec-groups.mjs';
 
@@ -17,7 +19,7 @@ describe('parity config audit helpers', () => {
   it('normalizes canonical scenario paths back to application routes', () => {
     expect(normalizeScenarioRoute('/register?code=INVITE2026')).toBe('/register');
     expect(normalizeScenarioRoute('/')).toBe('/');
-    expect(() => normalizeScenarioRoute('/#/register')).toThrowError(
+    expect(() => normalizeScenarioRoute('/#/register')).toThrow(
       /canonical route path, not a hash URL/,
     );
   });
@@ -105,6 +107,28 @@ describe('parity config audit helpers', () => {
     ]);
   });
 
+  it('audits the dialect route map as complete two-world rows with the §6.5 ticket rows', () => {
+    expect(assertDialectRouteMap(routeMap)).toEqual([]);
+    expect(
+      assertDialectRouteMap([{ id: 'x', legacy: { method: 'GET', path: '/x' } }]),
+    ).toContain('dialect route map: x is missing its modern shape');
+    expect(
+      assertDialectRouteMap([
+        {
+          id: 'admin.tickets.list',
+          legacy: { method: 'FETCH', path: 'ticket/fetch' },
+          modern: { method: 'GET', path: '/{secure_path}/tickets' },
+        },
+      ]),
+    ).toEqual([
+      'dialect route map: admin.tickets.list legacy method FETCH is invalid',
+      'dialect route map: admin.tickets.list legacy path must start with /',
+      'dialect route map: required §6.5 admin ticket row admin.tickets.get is missing',
+      'dialect route map: required §6.5 admin ticket row admin.tickets.replies.create is missing',
+      'dialect route map: required §6.5 admin ticket row admin.tickets.close is missing',
+    ]);
+  });
+
   it('maps every interaction to exactly one spec group with no empty groups', () => {
     expect(assertSpecGroupCoverage(interactions, GROUP_NAMES)).toEqual([]);
     expect(assertSpecGroupCoverage(interactions, [...GROUP_NAMES, 'phantom-group'])).toEqual([
@@ -116,6 +140,7 @@ describe('parity config audit helpers', () => {
     expect(
       formatAuditSuccess({
         adminRouteCount: 19,
+        dialectRouteCount: 155,
         failures: [],
         interactionScenarioCount: 159,
         scenarioCount: 240,
@@ -127,7 +152,7 @@ describe('parity config audit helpers', () => {
         viewportCount: 2,
       }),
     ).toBe(
-      'Parity config audit OK: 240 parity scenarios and 159 interactions across 17 spec groups and 2 viewports, Makefile INTERACTION_PARITY_SCENARIOS mirrors the interaction modules, and App.tsx route definitions cover 16 user routes plus 19 admin routes. UI sync covers 31 shared primitives, 2 shared stylesheets, and 6 explicit app-only primitives.',
+      'Parity config audit OK: 240 parity scenarios and 159 interactions across 17 spec groups and 2 viewports, Makefile INTERACTION_PARITY_SCENARIOS mirrors the interaction modules, and App.tsx route definitions cover 16 user routes plus 19 admin routes. The dialect route map carries 155 well-formed two-world rows (incl. the §6.5 admin ticket rows). UI sync covers 31 shared primitives, 2 shared stylesheets, and 6 explicit app-only primitives.',
     );
   });
 });

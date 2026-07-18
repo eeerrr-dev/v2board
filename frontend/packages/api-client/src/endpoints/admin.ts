@@ -14,7 +14,7 @@ import type {
   Ticket,
   TicketReplyPayload,
 } from '@v2board/types';
-import { z, type output, type ZodType } from 'zod';
+import { z, type output } from 'zod';
 import type { ApiClient, ApiRequestConfig, BinaryApiResponse } from '../client';
 import type { serverRouteActionSchema, serverTypeNameSchema } from '../contracts';
 import {

@@ -108,10 +108,9 @@ visual, interaction, database, and native runtime artifacts in Docker volumes.
   `umi.js`, `umi.css`, `components.chunk.css`, `vendors.async.js`,
   `components.async.js`, `env.example.js`, copied static/i18n/theme assets, or
   admin equivalents. There are no runtime `custom.css`/`custom.js` fallbacks.
-  Operator `custom_html` injection is removed by `docs/api-dialect.md`
-  §10.5/§12 (its config field, HTML marker, and admin UI control still exist
-  until that W1 wave lands) — do not extend it, and never reintroduce it
-  after removal.
+  Operator `custom_html` injection is removed per `docs/api-dialect.md`
+  §10.5/§12 (landed with W1: the config field, HTML marker, and admin UI
+  control are gone) — never reintroduce it.
 - `references/wyx2685-v2board` is the only retained old implementation. It is a
   pinned git submodule mounted read-only for compatibility tests. Never COPY it
   into an image, source tree, runtime volume, Vite input, or deploy release.
@@ -248,8 +247,9 @@ integration, or frontend behavior contracts below.
 
 ## Internal API Dialect Direction
 
-The legacy-inherited internal API dialect is being replaced by a modern one.
-`docs/api-dialect.md` is the single source of truth for the new dialect: the
+The legacy-inherited internal API dialect has been fully replaced by the
+modern one (the `docs/api-dialect.md` Appendix A waves W0–W14 all landed).
+`docs/api-dialect.md` is the single source of truth for the dialect: the
 complete old→new route map, the RFC 9457 `application/problem+json` error
 model with its stable snake_case `code` registry, JSON-body/Bearer/
 Accept-Language transport conventions, null-clear-vs-absent-retain
@@ -257,10 +257,10 @@ Accept-Language transport conventions, null-clear-vs-absent-retain
 `{items,total}` pagination, RFC 3339 timestamps, the checkout discriminated
 union, history routing with the `legacy_hash_redirect_enable` toggle,
 `custom_html` removal plus CSP tightening, the canonical locale key, and the
-wave-by-wave migration appendix that later waves are parameterized from.
+wave-by-wave migration appendix recording how each family flipped.
 
-- All internal namespaces modernize: passport/auth (breaking third-party
-  in-app login is an accepted owner decision), user, admin (under the kept
+- All internal namespaces are modern: passport/auth (breaking third-party
+  in-app login was an accepted owner decision), user, admin (under the kept
   dynamic `secure_path` prefix), and guest comm/config.
 - The external namespaces stay byte-frozen exactly as listed in
   `docs/api-dialect.md` §2: `/api/v1/client/*` (+ the operator
@@ -269,12 +269,15 @@ wave-by-wave migration appendix that later waves are parameterized from.
   `/api/v1/guest/telegram/webhook`, the subscribe-URL/token/flag scheme,
   Stripe/reCAPTCHA/Crisp/Tawk integration payloads, and the localStorage
   `authorization` key (legacy locale keys remain one-time migration reads).
-- No dual-dialect compatibility branches may ship: each endpoint family
-  switches atomically — backend + frontend + api-client + fixtures +
-  scenarios + goldens in one commit series, per the appendix waves.
-- Frontend error discrimination moves to the problem `code`; exact
-  error-string matching and the backend response-rewrite localization
-  middleware are retired as families migrate.
+- No dual-dialect compatibility branches exist or may return: every family
+  switched atomically — backend + frontend + api-client + fixtures +
+  scenarios + goldens in one commit series, per the appendix waves — and
+  W14 tore the legacy internal error/envelope constructors out.
+- Frontend error discrimination keys on the problem `code`; exact
+  error-string matching is retired. The backend response-rewrite
+  localization middleware and its zh-CN catalog remain in service solely
+  for the §2 frozen external namespaces (problem+json bodies carry no
+  `message` key, so the middleware is a structural no-op internally).
 - Cross-world parity comparison drops to canonical semantics through the
   per-world adapter layer (URL map, request/error/page-location
   canonicalizers, world-aware fixtures) under
@@ -293,14 +296,12 @@ frontend is retired; only its read-only reference submodule remains to identify
 externally observable compatibility contracts.
 
 The internal API dialect migration (see "Internal API Dialect Direction"
-above) rewords contract lines in this section wave by wave. Payload, route,
-and header items in the per-surface lists below name the current Rust
-contract as specified in `docs/api-dialect.md` — the live legacy shape until
-a family's Appendix-A wave lands, the modern shape once it has — never a
-permanent legacy byte pin. Each wave rewords the affected lines here in the
-same commit series that flips its family; `docs/api-dialect.md` Appendix B
-maps each affected line to its replacement wording and owning wave. The
-behavioral outcomes those lines pin remain contracts throughout.
+above) is complete: payload, route, and header items in the per-surface
+lists below name the modern Rust contract as specified in
+`docs/api-dialect.md` — never a legacy byte pin. Each wave reworded its
+lines here in the same commit series that flipped its family;
+`docs/api-dialect.md` Appendix B records that line-by-line amendment map.
+The behavioral outcomes those lines pin remain contracts throughout.
 
 - Behavioral/contract parity is permanent, but the anchor is the Rust backend
   and external integrations, not the reference frontend. The reference only
@@ -388,7 +389,9 @@ shadcn island.
 
 - Keep auth contracts strict: API payloads, routed paths (history routing per
   `docs/api-dialect.md` §10.1, with the §10.3 `legacy_hash_redirect_enable`
-  boot translator), `token2Login`, redirect
+  boot translator), quick login (the §5.2 split: browser-facing GET
+  `/auth/quick-login?token=` redirect vs the SPA's POST `/auth/token-login`
+  `{verify}` exchange), redirect
   safety, recaptcha, email verification, invite codes, language persistence,
   auth storage, and i18n behavior must remain covered. The TOS gate (block submit
   when `tos_url` is configured and unaccepted) is a UX behavior, not a payload

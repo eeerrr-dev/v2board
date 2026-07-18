@@ -72,12 +72,7 @@ async function driveStaffTicketMirror(page) {
           }
         }
         const response = await fetch(url, { body: payload, headers, method });
-        let data = null;
-        try {
-          data = await response.json();
-        } catch {
-          data = null;
-        }
+        const data = await response.json().catch(() => null);
         return { data, ok: response.ok };
       };
       if (modern) {

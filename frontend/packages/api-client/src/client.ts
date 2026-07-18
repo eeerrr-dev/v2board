@@ -6,7 +6,8 @@ import axios, {
   type AxiosResponse,
 } from 'axios';
 import type { output, ZodType } from 'zod';
-import { ApiProblemError, bearerAuthorization, isSessionExpiredProblem, parseProblem } from './dialect';
+import { bearerAuthorization, isSessionExpiredProblem, parseProblem } from './dialect';
+import type { ApiProblemError } from './dialect';
 
 export class ApiError extends Error {
   public readonly status: number;
