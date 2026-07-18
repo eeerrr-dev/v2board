@@ -1,7 +1,7 @@
 import type { ComponentProps } from 'react';
 import { screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Plan } from '@v2board/types';
+import type { UserPlan } from '@v2board/types';
 import { renderWithProviders } from '@/test/render';
 import { createTestTranslation } from '@/test/i18next-selector';
 import PlansPage from './index';
@@ -9,7 +9,7 @@ import PlansPage from './index';
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   refetch: vi.fn(),
-  plans: [] as Plan[],
+  plans: [] as UserPlan[],
   plansError: false,
 }));
 
@@ -40,9 +40,9 @@ function resetPlans() {
       speed_limit: null,
       reset_traffic_method: null,
       name: 'Legacy Monthly',
-      show: 1,
+      show: true,
       sort: 0,
-      renew: 1,
+      renew: true,
       content: JSON.stringify([{ feature: 'Feature A', support: true }]),
       month_price: 1000,
       quarter_price: null,
@@ -53,8 +53,8 @@ function resetPlans() {
       onetime_price: 50000,
       reset_price: null,
       capacity_limit: 4,
-      created_at: 0,
-      updated_at: 0,
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
     },
     {
       id: 2,
@@ -64,9 +64,9 @@ function resetPlans() {
       speed_limit: null,
       reset_traffic_method: null,
       name: 'Legacy Traffic',
-      show: 1,
+      show: true,
       sort: 1,
-      renew: 1,
+      renew: true,
       content: '<p>Raw HTML</p>',
       month_price: null,
       quarter_price: null,
@@ -77,8 +77,8 @@ function resetPlans() {
       onetime_price: 5500,
       reset_price: null,
       capacity_limit: 0,
-      created_at: 0,
-      updated_at: 0,
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
     },
   ];
 }
@@ -170,9 +170,9 @@ describe('PlansPage shadcn commerce list rendering', () => {
         speed_limit: null,
         reset_traffic_method: null,
         name: 'Legacy Empty Price',
-        show: 1,
+        show: true,
         sort: 2,
-        renew: 1,
+        renew: true,
         content: '',
         month_price: null,
         quarter_price: null,
@@ -183,8 +183,8 @@ describe('PlansPage shadcn commerce list rendering', () => {
         onetime_price: null,
         reset_price: null,
         capacity_limit: null,
-        created_at: 0,
-        updated_at: 0,
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
       },
     ];
 

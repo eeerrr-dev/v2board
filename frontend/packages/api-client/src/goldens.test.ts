@@ -30,6 +30,7 @@ import {
   paymentMethodSchema,
   planSchema,
   quickLoginUrlSchema,
+  reconciliationSchema,
   resetSubscribeTokenSchema,
   serverGroupSchema,
   serverNodeSchema,
@@ -66,11 +67,6 @@ const goldensUrl = new URL('../goldens/', import.meta.url);
 
 const goldenSchemas: Record<string, z.ZodType> = {
   // DB-backed admin surface (v2board-contract golden-responses).
-  'admin.order.detail.json': envelopeSchema(adminOrderSchema),
-  'admin.order.fetch.json': pageEnvelopeSchema(adminOrderSchema),
-  'admin.payment.fetch.json': envelopeSchema(arraySchema(adminPaymentSchema)),
-  'admin.payment.getPaymentMethods.json': envelopeSchema(stringArraySchema),
-  'admin.plan.fetch.json': envelopeSchema(arraySchema(planSchema)),
   'admin.server.group.fetch.json': envelopeSchema(arraySchema(serverGroupSchema)),
   'admin.server.manage.getNodes.json': envelopeSchema(arraySchema(serverNodeSchema)),
   'admin.server.route.fetch.json': envelopeSchema(arraySchema(serverRouteSchema)),
@@ -92,6 +88,15 @@ const dialectGoldenSchemas: Record<string, z.ZodType> = {
   'auth.session.json': sessionStateSchema,
   'auth.session.logged-out.json': sessionStateSchema,
   'auth.step-up.json': stepUpGrantSchema,
+  // §6.2/§6.4 (W11): the admin commerce family — bare arrays for plans,
+  // payments, and payment-providers; `{items, total}` pages for orders and
+  // payment-reconciliations; the bare order detail.
+  'admin.plans.json': arraySchema(planSchema),
+  'admin.payments.json': arraySchema(adminPaymentSchema),
+  'admin.payment-providers.json': stringArraySchema,
+  'admin.orders.json': pageSchema(adminOrderSchema),
+  'admin.order.detail.json': adminOrderSchema,
+  'admin.payment-reconciliations.json': pageSchema(reconciliationSchema),
   // §6.3 (W10): the admin content family — bare arrays for the unpaginated
   // notice/knowledge lists, `{items, total}` pages for coupons/gift-cards.
   'admin.coupons.json': pageSchema(couponSchema),

@@ -480,8 +480,8 @@ export default function PaymentsPage() {
       header: () => <span>启用</span>,
       cell: ({ row }) => (
         <Switch
-          checked={Boolean(parseInt(String(row.original.enable), 10))}
-          onCheckedChange={() => show.mutate(row.original.id)}
+          checked={row.original.enable}
+          onCheckedChange={() => show.mutate({ id: row.original.id, enable: !row.original.enable })}
           aria-label={`切换「${row.original.name}」启用`}
         />
       ),

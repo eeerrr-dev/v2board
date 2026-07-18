@@ -1,7 +1,7 @@
 import type { ComponentProps } from 'react';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Plan } from '@v2board/types';
+import type { UserPlan } from '@v2board/types';
 import { renderWithProviders } from '@/test/render';
 import { createTestTranslation } from '@/test/i18next-selector';
 import PlanCheckoutPage from './checkout';
@@ -26,9 +26,9 @@ const mocks = vi.hoisted(() => ({
     speed_limit: null,
     reset_traffic_method: null,
     name: 'Legacy Plan',
-    show: 1,
+    show: true,
     sort: 0,
-    renew: 1,
+    renew: true,
     content: JSON.stringify([{ feature: 'Feature A', support: true }]),
     month_price: 1000,
     quarter_price: null,
@@ -39,8 +39,8 @@ const mocks = vi.hoisted(() => ({
     onetime_price: 50000,
     reset_price: null,
     capacity_limit: null,
-    created_at: 0,
-    updated_at: 0,
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
   },
   info: { plan_id: 1 },
   subscribe: { expired_at: '2100-01-01T00:00:00Z' },
@@ -89,9 +89,9 @@ function resetPlan() {
     speed_limit: null,
     reset_traffic_method: null,
     name: 'Legacy Plan',
-    show: 1,
+    show: true,
     sort: 0,
-    renew: 1,
+    renew: true,
     content: JSON.stringify([{ feature: 'Feature A', support: true }]),
     month_price: 1000,
     quarter_price: null,
@@ -102,8 +102,8 @@ function resetPlan() {
     onetime_price: 50000,
     reset_price: null,
     capacity_limit: null,
-    created_at: 0,
-    updated_at: 0,
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
   });
   mocks.planIsError = false;
   mocks.planPending = false;
@@ -255,7 +255,7 @@ describe('PlanCheckoutPage rendering', () => {
   });
 
   it('renders the non-renewable branch and routes back to the plan list', async () => {
-    mocks.plan.renew = 0;
+    mocks.plan.renew = false;
     mocks.info = { plan_id: 1 };
 
     const { user } = renderWithProviders(<PlanCheckoutPage />);
@@ -276,7 +276,7 @@ describe('PlanCheckoutPage rendering', () => {
   });
 
   it('keeps reset_price as the old default period without rendering it as a selectable period', () => {
-    const plan = mocks.plan as Plan;
+    const plan = mocks.plan as UserPlan;
     plan.month_price = null;
     plan.year_price = null;
     plan.onetime_price = null;
@@ -538,7 +538,7 @@ describe('PlanCheckoutPage commerce behavior', () => {
   });
 
   it('blocks checkout with an explicit error when no purchasable period exists', async () => {
-    const plan = mocks.plan as Plan;
+    const plan = mocks.plan as UserPlan;
     plan.month_price = null;
     plan.year_price = null;
     plan.onetime_price = null;

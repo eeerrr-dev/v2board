@@ -93,9 +93,9 @@ function makePlan(overrides: Record<string, unknown> = {}) {
     speed_limit: null,
     reset_traffic_method: null,
     name: 'Plan',
-    show: 1,
+    show: true,
     sort: null,
-    renew: 1,
+    renew: true,
     content: null,
     month_price: 1000,
     quarter_price: null,
@@ -106,8 +106,8 @@ function makePlan(overrides: Record<string, unknown> = {}) {
     onetime_price: null,
     reset_price: null,
     capacity_limit: null,
-    created_at: 0,
-    updated_at: 0,
+    created_at: '2023-11-14T22:13:20Z',
+    updated_at: '2023-11-14T22:13:20Z',
     ...overrides,
   };
 }
@@ -954,20 +954,25 @@ describe('createApiClient', () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
     mock.onGet('/admin-path/user/fetch').reply(200, { data: [] });
-    mock.onGet('/admin-path/order/fetch').reply(200, { data: [] });
     mock.onGet('/admin-path/ticket/fetch').reply(200, { data: [] });
     mock.onGet('/admin-path/stat/getStatUser?user_id=1').reply(200, { data: [] });
 
     await expect(fetchUsers(client)).resolves.toEqual({ data: [], total: undefined });
-    await expect(fetchAdminOrders(client)).resolves.toEqual({ data: [], total: undefined });
     await expect(fetchAdminTickets(client)).resolves.toEqual({ data: [], total: undefined });
     await expect(statUser(client, { user_id: 1 })).resolves.toEqual({ data: [], total: undefined });
     expect(mock.history.get.filter((request) => request.url?.includes('/user/fetch'))).toHaveLength(
       1,
     );
-    expect(
-      mock.history.get.filter((request) => request.url?.includes('/order/fetch')),
-    ).toHaveLength(1);
+  });
+
+  it('reads the modern orders page as {data,total} from the {items,total} body', async () => {
+    const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
+    const mock = new AxiosMockAdapter(client.axios);
+    // §6.4 (W11): GET /orders is the dialect-v2 `{items,total}` page.
+    mock.onGet('/admin-path/orders').reply(200, { items: [], total: 0 });
+
+    await expect(fetchAdminOrders(client)).resolves.toEqual({ data: [], total: 0 });
+    expect(mock.history.get.filter((request) => request.url?.includes('/orders'))).toHaveLength(1);
   });
 
   it('passes article id and cancellation through the admin knowledge-detail request', async () => {
@@ -1049,10 +1054,11 @@ describe('createApiClient', () => {
     );
   });
 
-  it('submits legacy admin assigned-order amounts in cents', async () => {
+  it('submits admin assigned-order amounts in cents as a dialect create', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/admin-path/order/assign').reply(200, { data: 'TRADE123' });
+    // §6.4 (W11): POST /orders (legacy `order/assign`) — 201 `{trade_no}`.
+    mock.onPost('/admin-path/orders').reply(201, { trade_no: 'TRADE123' });
 
     await assignOrder(client, {
       email: 'user@example.com',
@@ -1061,9 +1067,12 @@ describe('createApiClient', () => {
       total_amount: '12.34',
     });
 
-    expect(mock.history.post[0]?.data).toBe(
-      'email=user%40example.com&plan_id=1&period=month_price&total_amount=1234',
-    );
+    expect(JSON.parse(String(mock.history.post[0]?.data))).toEqual({
+      email: 'user@example.com',
+      plan_id: 1,
+      period: 'month_price',
+      total_amount: 1234,
+    });
   });
 
   it('converts all admin money inputs at the API boundary without float drift', async () => {
@@ -1072,7 +1081,8 @@ describe('createApiClient', () => {
     // §6.3 (W10): single creates are dialect JSON POSTs answered with 201 {id}.
     mock.onPost('/admin-path/coupons').reply(201, { id: 1 });
     mock.onPost('/admin-path/gift-cards').reply(201, { id: 1 });
-    mock.onPost('/admin-path/payment/save').reply(200, { data: true });
+    // §6.2 (W11): POST /payments is a dialect JSON create answered with 201 {id}.
+    mock.onPost('/admin-path/payments').reply(201, { id: 1 });
 
     await generateCoupon(client, { type: 1, value: '19.99' });
     await generateGiftcard(client, { type: 1, value: '0.1' });
@@ -1085,17 +1095,15 @@ describe('createApiClient', () => {
 
     expect(JSON.parse(String(mock.history.post[0]?.data))).toMatchObject({ value: 1999 });
     expect(JSON.parse(String(mock.history.post[1]?.data))).toMatchObject({ value: 10 });
-    expect(mock.history.post[2]?.data).toContain('handling_fee_fixed=105');
+    expect(JSON.parse(String(mock.history.post[2]?.data))).toMatchObject({ handling_fee_fixed: 105 });
   });
 
-  it('sends only the PaymentController save contract and normalizes empty optionals', async () => {
-    const client = createApiClient({
-      baseURL: '/api/v1',
-      adminSecurePath: () => 'admin-path',
-      nullFormValue: 'empty',
-    });
+  it('sends only the dialect payment save contract with §4.4 create/edit empties', async () => {
+    const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/admin-path/payment/save').reply(200, { data: true });
+    // §6.2 (W11): create POSTs the collection (201 {id}); edit PATCHes /{id} (204).
+    mock.onPost('/admin-path/payments').reply(201, { id: 1 });
+    mock.onPatch('/admin-path/payments/7').reply(204);
 
     await savePayment(client, {
       name: 'New gateway',
@@ -1110,10 +1118,11 @@ describe('createApiClient', () => {
       enable: 1,
     } as unknown as Parameters<typeof savePayment>[1]);
 
-    expect(Object.fromEntries(new URLSearchParams(String(mock.history.post[0]?.data)))).toEqual({
+    // §4.4: on create an empty optional is absent (the documented default).
+    expect(JSON.parse(String(mock.history.post[0]?.data))).toEqual({
       name: 'New gateway',
       payment: 'StripeCheckout',
-      'config[secret_key]': 'sk_new',
+      config: { secret_key: 'sk_new' },
     });
 
     await savePayment(client, {
@@ -1127,36 +1136,35 @@ describe('createApiClient', () => {
       handling_fee_percent: '',
     });
 
-    expect(Object.fromEntries(new URLSearchParams(String(mock.history.post[1]?.data)))).toEqual({
-      id: '7',
+    // §4.4: on PATCH an empty optional is an explicit `null` clear.
+    expect(JSON.parse(String(mock.history.patch[0]?.data))).toEqual({
       name: 'Edited gateway',
       payment: 'StripeCheckout',
-      'config[secret_key]': 'sk_edited',
-      icon: '',
-      notify_domain: '',
-      handling_fee_fixed: '',
-      handling_fee_percent: '',
+      config: { secret_key: 'sk_edited' },
+      icon: null,
+      notify_domain: null,
+      handling_fee_fixed: null,
+      handling_fee_percent: null,
     });
   });
 
-  it('submits admin plan updates with the original dynamic key payload', async () => {
+  it('merges the admin plan show/renew toggle into the dialect PATCH', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/admin-path/plan/update').reply(200, { data: true });
+    // §6.2 (W11): the dedicated toggle action merged into PATCH /plans/{id} (204).
+    mock.onPatch('/admin-path/plans/7').reply(204);
 
-    await updatePlan(client, 7, 'renew', 0);
+    await updatePlan(client, 7, 'renew', false);
 
-    expect(mock.history.post[0]?.data).toBe('id=7&renew=0');
+    expect(JSON.parse(String(mock.history.patch[0]?.data))).toEqual({ renew: false });
   });
 
-  it('uses the legacy key/value shape for admin plan update requests', () => {
+  it('uses the merged boolean-flag PATCH shape for admin plan toggles', () => {
     const source = readFileSync(new URL('./endpoints/admin.ts', import.meta.url), 'utf8');
 
-    expect(source).toContain("key: 'show' | 'renew',");
-    expect(source).toContain('value: 0 | 1,');
-    expect(source).toContain("adminPostTrue(client, '/plan/update', { id, [key]: value })");
-    expect(source).not.toContain('show?: 0 | 1, renew?: 0 | 1');
-    expect(source).not.toContain('{ id, show, renew }');
+    expect(source).toContain("key: 'show' | 'renew', value: boolean");
+    expect(source).toContain('data: { [key]: value }');
+    expect(source).not.toContain("adminPostTrue(client, '/plan/update', { id, [key]: value })");
   });
 
   it('normalizes legacy admin user rows exactly like the packaged admin model', async () => {
@@ -1273,13 +1281,10 @@ describe('createApiClient', () => {
   });
 
   it('submits admin plan prices in cents and strips fetched model metadata', async () => {
-    const client = createApiClient({
-      baseURL: '/api/v1',
-      adminSecurePath: () => 'admin-path',
-      nullFormValue: 'empty',
-    });
+    const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/admin-path/plan/save').reply(200, { data: true });
+    // §6.2 (W11): the row id carries the PATCH path; the body is dialect JSON (204).
+    mock.onPatch('/admin-path/plans/1').reply(204);
 
     await savePlan(client, {
       id: 1,
@@ -1298,34 +1303,30 @@ describe('createApiClient', () => {
       updated_at: 1_700_000_001,
     } as Parameters<typeof savePlan>[1] & Record<string, unknown>);
 
-    const body = new URLSearchParams(String(mock.history.post[0]?.data));
-    expect(body.get('id')).toBe('1');
-    expect(body.get('name')).toBe('基础套餐');
-    expect(body.get('month_price')).toBe('1234');
-    expect(body.get('quarter_price')).toBe('0');
-    expect(body.get('year_price')).toBe('');
-    expect(body.get('onetime_price')).toBe('30000');
-    expect(body.get('force_update')).toBe('true');
-    expect(body.get('half_year_price')).toBe('');
-    expect(body.has('show')).toBe(false);
-    expect(body.has('renew')).toBe(false);
-    expect(body.has('sort')).toBe(false);
-    expect(body.has('count')).toBe(false);
-    expect(body.has('created_at')).toBe(false);
-    expect(body.has('updated_at')).toBe(false);
+    // Prices serialize to cents; §4.4 turns an empty price into an explicit
+    // null clear; the fetched-model metadata (show/renew/sort/count/timestamps)
+    // is stripped by the save whitelist; `force_update` stays an edit-only flag.
+    expect(JSON.parse(String(mock.history.patch[0]?.data))).toEqual({
+      name: '基础套餐',
+      month_price: 1234,
+      quarter_price: 0,
+      half_year_price: null,
+      year_price: null,
+      onetime_price: 30000,
+      force_update: true,
+    });
   });
 
   it('normalizes schema-validated admin plan prices from cents', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onGet('/admin-path/plan/fetch').reply(200, {
-      data: [
-        makePlan({
-          month_price: 1234,
-          quarter_price: null,
-        }),
-      ],
-    });
+    // §6.2 (W11): GET /plans is the dialect-v2 bare array with cents prices.
+    mock.onGet('/admin-path/plans').reply(200, [
+      makePlan({
+        month_price: 1234,
+        quarter_price: null,
+      }),
+    ]);
 
     const result = await fetchPlans(client);
 
@@ -1336,9 +1337,7 @@ describe('createApiClient', () => {
   it('rejects malformed admin plan records instead of normalizing partial legacy data', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onGet('/admin-path/plan/fetch').reply(200, {
-      data: [{ id: 1, name: 'Incomplete plan', month_price: 1234 }],
-    });
+    mock.onGet('/admin-path/plans').reply(200, [{ id: 1, name: 'Incomplete plan', month_price: 1234 }]);
 
     await expect(fetchPlans(client)).rejects.toBeInstanceOf(ApiContractError);
   });

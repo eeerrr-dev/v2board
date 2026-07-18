@@ -517,7 +517,7 @@ export default function PlansPage() {
     drop.mutate(record.id);
   };
 
-  const updatePlan = (id: number, key: 'show' | 'renew', value: 0 | 1) => {
+  const updatePlan = (id: number, key: 'show' | 'renew', value: boolean) => {
     update.mutate({ id, key, value });
   };
 
@@ -563,10 +563,8 @@ export default function PlansPage() {
       header: () => <span>销售状态</span>,
       cell: ({ row }) => (
         <Switch
-          checked={Boolean(parseInt(String(row.original.show), 10))}
-          onCheckedChange={() =>
-            updatePlan(row.original.id, 'show', parseInt(String(row.original.show), 10) ? 0 : 1)
-          }
+          checked={row.original.show}
+          onCheckedChange={() => updatePlan(row.original.id, 'show', !row.original.show)}
           aria-label={`切换「${row.original.name}」销售状态`}
         />
       ),
@@ -581,10 +579,8 @@ export default function PlansPage() {
       ),
       cell: ({ row }) => (
         <Switch
-          checked={Boolean(parseInt(String(row.original.renew), 10))}
-          onCheckedChange={() =>
-            updatePlan(row.original.id, 'renew', parseInt(String(row.original.renew), 10) ? 0 : 1)
-          }
+          checked={row.original.renew}
+          onCheckedChange={() => updatePlan(row.original.id, 'renew', !row.original.renew)}
           aria-label={`切换「${row.original.name}」续费`}
         />
       ),

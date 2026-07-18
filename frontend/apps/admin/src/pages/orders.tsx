@@ -5,7 +5,7 @@ import { Controller, useForm, useFormState } from 'react-hook-form';
 import { ChevronDown, ListFilter, Plus, Search } from 'lucide-react';
 import type { AdminFilter } from '@v2board/api-client';
 import type { AdminOrderRow, Plan } from '@v2board/types';
-import { formatDateMinuteSlash, formatDateTime } from '@v2board/config/format';
+import { formatBackendDateMinuteSlash, formatBackendDateTime } from '@v2board/config/format';
 import { takeStoredAdminFilters } from '@/lib/stored-admin-filters';
 import {
   useAdminOrderDetail,
@@ -158,19 +158,19 @@ function DetailLoading({ testId }: { testId: string }) {
 }
 
 function OrderDetailSheet({
-  id,
+  tradeNo,
   open,
   onClose,
   plans,
   onUserFilter,
 }: {
-  id?: number;
+  tradeNo?: string;
   open: boolean;
   onClose: () => void;
   plans: Plan[];
   onUserFilter: (key: string, condition: string, value: string) => void;
 }) {
-  const order = useAdminOrderDetail(id);
+  const order = useAdminOrderDetail(tradeNo);
   const user = useAdminUserInfo(order.data?.user_id);
   const inviteUser = useAdminUserInfo(order.data?.invite_user_id);
   const detail = order.data;
@@ -261,8 +261,8 @@ function OrderDetailSheet({
         <DetailRow label="优惠金额">{cents(detail.discount_amount)}</DetailRow>
         <DetailRow label="退回金额">{cents(detail.refund_amount)}</DetailRow>
         <DetailRow label="折抵金额">{cents(detail.surplus_amount)}</DetailRow>
-        <DetailRow label="创建时间">{formatDateTime(detail.created_at)}</DetailRow>
-        <DetailRow label="更新时间">{formatDateTime(detail.updated_at)}</DetailRow>
+        <DetailRow label="创建时间">{formatBackendDateTime(detail.created_at)}</DetailRow>
+        <DetailRow label="更新时间">{formatBackendDateTime(detail.updated_at)}</DetailRow>
         {detail.invite_user_id && detail.status === 3 ? (
           <>
             <DetailRow label="邀请人">
@@ -483,7 +483,7 @@ export default function OrdersPage() {
     filter: readStoredOrderFilter(),
   }));
   const [search, setSearch] = useState(() => filterValue(query.filter, 'trade_no') ?? '');
-  const [detailId, setDetailId] = useState<number>();
+  const [detailTradeNo, setDetailTradeNo] = useState<string>();
   const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const orders = useAdminOrders({
@@ -653,8 +653,8 @@ export default function OrdersPage() {
         <button
           type="button"
           className="font-mono text-primary underline-offset-4 hover:underline"
-          onClick={() => setDetailId(row.original.id)}
-          data-testid={`order-open-${row.original.id}`}
+          onClick={() => setDetailTradeNo(row.original.trade_no)}
+          data-testid={`order-open-${row.original.trade_no}`}
         >
           {row.original.trade_no}
         </button>
@@ -714,7 +714,7 @@ export default function OrdersPage() {
       id: 'created_at',
       meta: { align: 'right', className: 'text-muted-foreground tabular-nums' },
       header: () => <span>创建时间</span>,
-      cell: ({ row }) => formatDateMinuteSlash(row.original.created_at),
+      cell: ({ row }) => formatBackendDateMinuteSlash(row.original.created_at),
     },
   ];
 
@@ -826,9 +826,9 @@ export default function OrdersPage() {
       </TooltipProvider>
 
       <OrderDetailSheet
-        id={detailId}
-        open={detailId != null}
-        onClose={() => setDetailId(undefined)}
+        tradeNo={detailTradeNo}
+        open={detailTradeNo != null}
+        onClose={() => setDetailTradeNo(undefined)}
         plans={plans.data ?? []}
         onUserFilter={userFilter}
       />

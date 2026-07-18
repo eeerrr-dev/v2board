@@ -124,6 +124,12 @@ export const planPeriodSchema = z.enum([
  * by admin /plan/fetch (W11). The user commerce routes moved to
  * {@link userPlanSchema} with W4, the subscription's nested plan with W5.
  */
+/**
+ * Admin GET /{secure_path}/plans + /{secure_path}/plans/{id} (docs/api-dialect.md
+ * §6.2, W11): bare rows with boolean `show`/`renew` (§4.1) and RFC 3339
+ * timestamps (§4.5). Prices stay integer cents; the admin list keeps the
+ * legacy sold `count`.
+ */
 export const planSchema = z.looseObject({
   id: z.number(),
   group_id: z.number(),
@@ -134,9 +140,9 @@ export const planSchema = z.looseObject({
     .union([z.literal(0), z.literal(1), z.literal(2), z.literal(3), z.literal(4)])
     .nullable(),
   name: z.string(),
-  show: binaryFlagSchema,
+  show: z.boolean(),
   sort: nullableNumber,
-  renew: binaryFlagSchema,
+  renew: z.boolean(),
   content: nullableString,
   month_price: nullableNumber,
   quarter_price: nullableNumber,
@@ -148,8 +154,8 @@ export const planSchema = z.looseObject({
   reset_price: nullableNumber,
   capacity_limit: nullableNumber,
   count: z.number().optional(),
-  created_at: z.number(),
-  updated_at: z.number(),
+  created_at: z.string(),
+  updated_at: z.string(),
 });
 
 /**
@@ -275,8 +281,50 @@ export const orderStatusSchema = z.looseObject({
 });
 
 /**
- * Legacy-dialect admin order rows (numeric flags, epoch timestamps) from the
- * admin order endpoints; W11 owns their dialect flip.
+ * One payment-reconciliation row (docs/api-dialect.md §6.4, W11). Served both
+ * as the `GET /{secure_path}/payment-reconciliations` page items and embedded
+ * in the admin order detail's `payment_reconciliations[]`. `trade_no`/
+ * `callback_no` ride raw alongside their server-side identity hashes;
+ * `payment_name`/`payment_archived_at` appear only on the standalone list.
+ */
+export const reconciliationSchema = z.looseObject({
+  id: z.number(),
+  payment_id: z.number(),
+  provider: z.string(),
+  reason: z.string(),
+  order_status: z.number(),
+  expected_amount: z.number(),
+  settled_amount: z.number(),
+  occurrence_count: z.number(),
+  trade_no: nullableString,
+  trade_no_hash: z.string(),
+  callback_no: nullableString,
+  callback_no_hash: z.string(),
+  resolution: nullableString,
+  resolved_at: nullableString,
+  first_seen_at: z.string(),
+  last_seen_at: z.string(),
+  payment_name: z.string().optional(),
+  payment_archived_at: nullableString.optional(),
+});
+
+/** One commission-log entry embedded in the admin order detail (§6.4, W11). */
+export const adminCommissionLogSchema = z.looseObject({
+  id: z.number(),
+  user_id: z.number(),
+  invite_user_id: nullableNumber,
+  trade_no: z.string(),
+  order_amount: z.number(),
+  get_amount: z.number(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+/**
+ * Admin order rows (docs/api-dialect.md §6.4, W11): RFC 3339 timestamps
+ * (§4.5), numeric status/type enums (§4.1). The list row carries `email`,
+ * `plan_name`, and `payment_reconciliation_open_count`; the detail carries
+ * `commission_log[]` and `payment_reconciliations[]`.
  */
 export const adminOrderSchema = z.looseObject({
   id: z.number(),
@@ -302,15 +350,12 @@ export const adminOrderSchema = z.looseObject({
   invite_user_id: nullableNumber,
   actual_commission_balance: nullableNumber.optional(),
   coupon_id: nullableNumber,
-  paid_at: nullableNumber,
-  created_at: z.number(),
-  updated_at: z.number(),
-  plan: z
-    .union([planSchema, z.looseObject({ id: z.literal(0), name: z.literal('deposit') })])
-    .optional(),
-  try_out_plan_id: z.number().optional(),
-  bounus: z.number().optional(),
-  get_amount: z.number().optional(),
+  paid_at: nullableString,
+  created_at: z.string(),
+  updated_at: z.string(),
+  payment_reconciliation_open_count: z.number().optional(),
+  commission_log: z.array(adminCommissionLogSchema).optional(),
+  payment_reconciliations: z.array(reconciliationSchema).optional(),
 });
 
 /** POST /user/orders/{trade_no}/checkout (§9.3, W4): the checkout result union. */
@@ -341,15 +386,23 @@ export const paymentMethodSchema = z.looseObject({
   handling_fee_percent: nullableNumber,
 });
 
+/**
+ * Admin GET /{secure_path}/payments rows (docs/api-dialect.md §6.2, W11):
+ * boolean `enable` (§4.1), RFC 3339 timestamps (§4.5), a numeric
+ * `handling_fee_percent` (via `paymentMethodSchema`), and the server-redacted
+ * `config` map. `legacy_md5_signature`/`security_warning` flag MD5 providers.
+ */
 export const adminPaymentSchema = paymentMethodSchema.extend({
   uuid: z.string(),
   config: z.record(z.string(), z.string()),
   notify_domain: nullableString,
   notify_url: z.string(),
-  enable: binaryFlagSchema,
+  enable: z.boolean(),
   sort: nullableNumber,
-  created_at: z.number(),
-  updated_at: z.number(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  legacy_md5_signature: z.boolean().optional(),
+  security_warning: nullableString.optional(),
 });
 
 export const paymentFormFieldSchema = z.looseObject({

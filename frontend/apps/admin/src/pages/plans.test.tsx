@@ -18,8 +18,8 @@ function makePlans() {
     {
       id: 1,
       sort: 1,
-      show: 1,
-      renew: 0,
+      show: true,
+      renew: false,
       name: '基础套餐',
       count: 3,
       transfer_enable: 100,
@@ -37,14 +37,14 @@ function makePlans() {
       speed_limit: null,
       capacity_limit: null,
       reset_traffic_method: null,
-      created_at: 1,
-      updated_at: 1,
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
     },
     {
       id: 2,
       sort: 2,
-      show: 0,
-      renew: 1,
+      show: false,
+      renew: true,
       name: '高级套餐',
       count: 0,
       transfer_enable: 200,
@@ -62,8 +62,8 @@ function makePlans() {
       speed_limit: null,
       capacity_limit: null,
       reset_traffic_method: null,
-      created_at: 1,
-      updated_at: 1,
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
     },
   ];
 }
@@ -252,13 +252,13 @@ describe('PlansPage', () => {
     const user = userEvent.setup();
     render(<PlansPage />);
 
-    // show is 1 → toggles to 0.
+    // show is true → toggles to false.
     await user.click(screen.getByLabelText('切换「基础套餐」销售状态'));
-    expect(mocks.updateMutate).toHaveBeenCalledWith({ id: 1, key: 'show', value: 0 });
+    expect(mocks.updateMutate).toHaveBeenCalledWith({ id: 1, key: 'show', value: false });
 
-    // renew is 0 → toggles to 1.
+    // renew is false → toggles to true.
     await user.click(screen.getByLabelText('切换「基础套餐」续费'));
-    expect(mocks.updateMutate).toHaveBeenCalledWith({ id: 1, key: 'renew', value: 1 });
+    expect(mocks.updateMutate).toHaveBeenCalledWith({ id: 1, key: 'renew', value: true });
   });
 
   it('drops a plan by id only after the confirm dialog resolves true', async () => {

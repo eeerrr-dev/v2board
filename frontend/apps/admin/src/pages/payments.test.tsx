@@ -26,10 +26,10 @@ function makePayments() {
       config: {},
       notify_domain: null,
       notify_url: 'https://example.com/notify/1',
-      enable: 1,
+      enable: true,
       sort: 1,
-      created_at: 1,
-      updated_at: 1,
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
     },
     {
       id: 2,
@@ -42,10 +42,10 @@ function makePayments() {
       config: {},
       notify_domain: null,
       notify_url: 'https://example.com/notify/2',
-      enable: 0,
+      enable: false,
       sort: 2,
-      created_at: 1,
-      updated_at: 1,
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
     },
   ];
 }
@@ -193,7 +193,7 @@ describe('PaymentsPage', () => {
     render(<PaymentsPage />);
 
     await user.click(screen.getAllByRole('switch')[0]!);
-    expect(mocks.showMutate).toHaveBeenCalledWith(1);
+    expect(mocks.showMutate).toHaveBeenCalledWith({ id: 1, enable: false });
   });
 
   it('opens immediately and enables the keyed method and form queries', async () => {

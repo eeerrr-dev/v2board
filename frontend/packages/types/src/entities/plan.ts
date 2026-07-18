@@ -9,9 +9,9 @@ export type PlanPeriod =
   | 'reset_price';
 
 /**
- * Legacy-dialect plan row (numeric flags, epoch timestamps). Still delivered
- * by the admin plan endpoints (W11); the user commerce routes moved to
- * {@link UserPlan} with W4, the subscription's nested plan with W5.
+ * Admin plan row (docs/api-dialect.md §6.2, W11): boolean `show`/`renew` flags
+ * and RFC 3339 timestamps. Prices ride as cents. The user commerce routes use
+ * {@link UserPlan} (W4); the subscription's nested plan moved with W5.
  */
 export interface Plan {
   id: number;
@@ -21,9 +21,9 @@ export interface Plan {
   speed_limit: number | null;
   reset_traffic_method: 0 | 1 | 2 | 3 | 4 | null;
   name: string;
-  show: 0 | 1;
+  show: boolean;
   sort: number | null;
-  renew: 0 | 1;
+  renew: boolean;
   content: string | null;
   month_price: number | null;
   quarter_price: number | null;
@@ -35,8 +35,8 @@ export interface Plan {
   reset_price: number | null;
   capacity_limit: number | null;
   count?: number;
-  created_at: number;
-  updated_at: number;
+  created_at: string;
+  updated_at: string;
 }
 
 /**

@@ -40,7 +40,7 @@ export const adminKeys = {
   users: (filters: unknown) => [...usersScope, filters] as const,
   user: (id: number | null | undefined) => [...userScope, id] as const,
   orders: (filters: unknown) => [...ordersScope, filters] as const,
-  order: (id: number | undefined) => [...orderScope, id] as const,
+  order: (tradeNo: string | undefined) => [...orderScope, tradeNo] as const,
   plans: ['admin', 'plans'] as const,
   payments: ['admin', 'payments'] as const,
   notices: noticesScope,
@@ -152,17 +152,19 @@ export const adminQueryOptions = {
       queryFn: ({ signal }) => admin.fetchUsers(apiClient, query, { signal }),
       placeholderData: keepPreviousData,
     }),
-  orders: (query: admin.AdminPageQuery & { is_commission?: 0 | 1 }) =>
+  orders: (query: admin.AdminPageQuery & { commission_only?: boolean }) =>
     queryOptions({
       queryKey: adminKeys.orders(query),
       queryFn: ({ signal }) => admin.fetchOrders(apiClient, query, { signal }),
       placeholderData: keepPreviousData,
     }),
-  order: (id: number | undefined) =>
+  order: (tradeNo: string | undefined) =>
     queryOptions({
-      queryKey: adminKeys.order(id),
+      queryKey: adminKeys.order(tradeNo),
       queryFn:
-        id == null ? skipToken : ({ signal }) => admin.orderDetail(apiClient, id, { signal }),
+        tradeNo == null
+          ? skipToken
+          : ({ signal }) => admin.orderDetail(apiClient, tradeNo, { signal }),
     }),
   user: (id: number | null | undefined) =>
     queryOptions({
@@ -283,9 +285,10 @@ export const usePaymentForm = (
 ) => useQuery({ ...adminQueryOptions.paymentForm(payment, id), enabled });
 export const useAdminUsers = (query: admin.AdminPageQuery) =>
   useQuery(adminQueryOptions.users(query));
-export const useAdminOrders = (query: admin.AdminPageQuery & { is_commission?: 0 | 1 }) =>
+export const useAdminOrders = (query: admin.AdminPageQuery & { commission_only?: boolean }) =>
   useQuery(adminQueryOptions.orders(query));
-export const useAdminOrderDetail = (id?: number) => useQuery(adminQueryOptions.order(id));
+export const useAdminOrderDetail = (tradeNo?: string) =>
+  useQuery(adminQueryOptions.order(tradeNo));
 export const useAdminUserInfo = (id?: number | null) => useQuery(adminQueryOptions.user(id));
 export const useAdminNotices = () => useQuery(adminQueryOptions.notices());
 export const useAdminTickets = (query: admin.AdminPageQuery) =>
@@ -349,7 +352,7 @@ export function useDropPlanMutation() {
 
 export function useUpdatePlanMutation() {
   return useInvalidatingMutation(
-    (vars: { id: number; key: 'show' | 'renew'; value: 0 | 1 }) =>
+    (vars: { id: number; key: 'show' | 'renew'; value: boolean }) =>
       admin.updatePlan(apiClient, vars.id, vars.key, vars.value),
     [adminKeys.plans],
   );
@@ -502,8 +505,10 @@ export function useSavePaymentMutation() {
 }
 
 export function useShowPaymentMutation() {
+  // §6.2 (W11): the legacy server-side flip became an explicit client-sent
+  // target value on the PATCH `{enable}` toggle.
   return useInvalidatingMutation(
-    (id: number) => admin.showPayment(apiClient, id),
+    ({ id, enable }: { id: number; enable: boolean }) => admin.showPayment(apiClient, id, enable),
     [adminKeys.payments],
   );
 }

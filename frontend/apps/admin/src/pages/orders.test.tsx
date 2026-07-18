@@ -311,7 +311,7 @@ describe('OrdersPage', () => {
     const user = userEvent.setup();
     render(<OrdersPage />);
 
-    await user.click(screen.getByTestId('order-open-1'));
+    await user.click(screen.getByTestId('order-open-202601010001'));
     const sheet = await screen.findByTestId('order-detail');
     expect(within(sheet).getByText('202601010001')).toBeInTheDocument();
 
@@ -328,7 +328,7 @@ describe('OrdersPage', () => {
     const user = userEvent.setup();
     render(<OrdersPage />);
 
-    await user.click(screen.getByTestId('order-open-1'));
+    await user.click(screen.getByTestId('order-open-202601010001'));
     const sheet = await screen.findByTestId('order-detail');
 
     expect(within(sheet).getByTestId('order-detail-loading')).toHaveAttribute('role', 'status');
@@ -340,7 +340,7 @@ describe('OrdersPage', () => {
     const user = userEvent.setup();
     render(<OrdersPage />);
 
-    await user.click(screen.getByTestId('order-open-1'));
+    await user.click(screen.getByTestId('order-open-202601010001'));
     const error = await screen.findByTestId('order-detail-error');
     expect(error).toHaveTextContent('订单详情加载失败');
     expect(screen.queryByTestId('order-detail-loading')).toBeNull();
@@ -353,7 +353,7 @@ describe('OrdersPage', () => {
     const user = userEvent.setup();
     render(<OrdersPage />);
 
-    await user.click(screen.getByTestId('order-open-1'));
+    await user.click(screen.getByTestId('order-open-202601010001'));
 
     expect(await screen.findByTestId('order-detail-empty')).toHaveTextContent('暂无订单详情');
     expect(screen.queryByTestId('order-detail-loading')).toBeNull();
@@ -365,7 +365,7 @@ describe('OrdersPage', () => {
     const user = userEvent.setup();
     render(<OrdersPage />);
 
-    await user.click(screen.getByTestId('order-open-1'));
+    await user.click(screen.getByTestId('order-open-202601010001'));
     const error = await screen.findByTestId('order-detail-user-error');
     expect(error).toHaveTextContent('订单用户加载失败');
     expect(screen.queryByTestId('order-detail-user-empty')).toBeNull();
@@ -379,7 +379,7 @@ describe('OrdersPage', () => {
     const user = userEvent.setup();
     render(<OrdersPage />);
 
-    await user.click(screen.getByTestId('order-open-1'));
+    await user.click(screen.getByTestId('order-open-202601010001'));
 
     expect(await screen.findByTestId('order-detail-user-empty')).toHaveTextContent(
       '未找到订单用户',
@@ -394,7 +394,7 @@ describe('OrdersPage', () => {
     const user = userEvent.setup();
     render(<OrdersPage />);
 
-    await user.click(screen.getByTestId('order-open-2'));
+    await user.click(screen.getByTestId('order-open-202601010002'));
     const error = await screen.findByTestId('order-detail-invite-error');
     expect(error).toHaveTextContent('邀请人信息加载失败');
     expect(screen.queryByTestId('order-detail-invite-empty')).toBeNull();
@@ -410,7 +410,7 @@ describe('OrdersPage', () => {
     const user = userEvent.setup();
     const { rerender } = render(<OrdersPage />);
 
-    await user.click(screen.getByTestId('order-open-2'));
+    await user.click(screen.getByTestId('order-open-202601010002'));
     expect(await screen.findByTestId('order-detail-invite-loading')).toHaveAttribute(
       'role',
       'status',

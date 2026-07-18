@@ -17,13 +17,20 @@ import type {
 import { z, type output, type ZodType } from 'zod';
 import type { ApiClient, ApiRequestConfig, BinaryApiResponse } from '../client';
 import type { serverRouteActionSchema, serverTypeNameSchema } from '../contracts';
-import { adminListQueryParams, pageSchema, type AdminListQuery } from '../dialect';
+import {
+  adminListQueryParams,
+  pageSchema,
+  type AdminListQuery,
+  type FilterClause,
+  type FilterOp,
+} from '../dialect';
 import { decimalToCents, decimalToScaledInteger } from '../money';
 import {
   adminConfigSchema,
   adminFilterSchema,
   configActivationPendingSchema,
   createdIdSchema,
+  createdOrderSchema,
   noContentSchema,
   systemLogSchema,
   testMailResultSchema,
@@ -51,7 +58,6 @@ import {
   serverRankSchema,
   serverRouteSchema,
   stringArraySchema,
-  stringSchema,
   ticketSchema,
   trueSchema,
   userRankSchema,
@@ -316,18 +322,53 @@ function normalizeAdminUserDetail(user: output<typeof adminUserDetailSchema>) {
   };
 }
 
+/** GET /{secure_path}/plans — dialect v2 bare array (§6.2, W11). Prices ride
+ * as cents; `normalizePlan` divides them to yuan for the editor. */
 export const fetchPlans = async (client: ApiClient, config?: QueryRequestConfig) =>
-  (await adminGet(client, '/plan/fetch', arraySchema(planSchema), undefined, config)).map(
-    normalizePlan,
-  );
+  (
+    await client.request({
+      url: client.resolveAdminPath('/plans'),
+      method: 'GET',
+      dialect: 'v2',
+      responseSchema: arraySchema(planSchema),
+      ...config,
+    })
+  ).map(normalizePlan);
 
-export const savePlan = (client: ApiClient, data: AdminPlanSavePayload) =>
-  adminPostTrue(client, '/plan/save', serializePlanForSave(data));
+/**
+ * POST /{secure_path}/plans (201 `{id}`) / PATCH `plans/{id}` (204) — the
+ * dialect-v2 upsert split (§6.2, W11). Prices serialize to cents; on PATCH an
+ * empty price is a §4.4 clear (null). `force_update` is an edit-only body flag
+ * — the create body denies it (`deny_unknown_fields`; there are no subscribers
+ * to force yet).
+ */
+export const savePlan = (client: ApiClient, { id, force_update, ...data }: AdminPlanSavePayload) =>
+  id === undefined
+    ? client.request({
+        url: client.resolveAdminPath('/plans'),
+        method: 'POST',
+        dialect: 'v2',
+        data: serializePlanBody(data),
+        responseSchema: createdIdSchema,
+      })
+    : client.request({
+        url: client.resolveAdminPath(`/plans/${id}`),
+        method: 'PATCH',
+        dialect: 'v2',
+        data: {
+          ...serializePlanBody(data),
+          ...(force_update === undefined ? {} : { force_update }),
+        },
+        responseSchema: noContentSchema,
+      });
 
-function serializePlanForSave(data: AdminPlanSavePayload): Record<string, unknown> {
+function serializePlanBody(
+  data: Omit<AdminPlanSavePayload, 'id' | 'force_update'>,
+): Record<string, unknown> {
   const next: Record<string, unknown> = {};
   for (const key of PLAN_SAVE_KEYS) {
-    const value = data[key];
+    if (key === 'id' || key === 'force_update') continue;
+    const value = data[key as keyof typeof data];
     if (value !== undefined) next[key] = value;
   }
   for (const key of PLAN_PRICE_KEYS) {
@@ -342,14 +383,33 @@ function serializePlanForSave(data: AdminPlanSavePayload): Record<string, unknow
   return next;
 }
 
-export const updatePlan = (client: ApiClient, id: number, key: 'show' | 'renew', value: 0 | 1) =>
-  adminPostTrue(client, '/plan/update', { id, [key]: value });
+/** PATCH /{secure_path}/plans/{id} `{show|renew}` — the merged legacy toggle (§6.2). */
+export const updatePlan = (client: ApiClient, id: number, key: 'show' | 'renew', value: boolean) =>
+  client.request({
+    url: client.resolveAdminPath(`/plans/${id}`),
+    method: 'PATCH',
+    dialect: 'v2',
+    data: { [key]: value },
+    responseSchema: noContentSchema,
+  });
 
 export const dropPlan = (client: ApiClient, id: number) =>
-  adminPostTrue(client, '/plan/drop', { id });
+  client.request({
+    url: client.resolveAdminPath(`/plans/${id}`),
+    method: 'DELETE',
+    dialect: 'v2',
+    responseSchema: noContentSchema,
+  });
 
-export const sortPlans = (client: ApiClient, plan_ids: number[]) =>
-  adminPostTrue(client, '/plan/sort', { plan_ids });
+/** POST /{secure_path}/plans/sort `{ids}` — `plan_ids` → `ids` (§6.2, §4.1). */
+export const sortPlans = (client: ApiClient, ids: number[]) =>
+  client.request({
+    url: client.resolveAdminPath('/plans/sort'),
+    method: 'POST',
+    dialect: 'v2',
+    data: { ids },
+    responseSchema: noContentSchema,
+  });
 
 export const fetchUsers = async (
   client: ApiClient,
@@ -455,37 +515,132 @@ export const deleteUser = (client: ApiClient, id: number) =>
 export const deleteAllUsers = (client: ApiClient, filter?: AdminFilter[]) =>
   adminPostTrue(client, '/user/allDel', { filter });
 
-export const fetchOrders = async (
-  client: ApiClient,
-  query: AdminPageQuery & { is_commission?: 0 | 1 } = {},
-  config?: QueryRequestConfig,
-): Promise<PageResult<AdminOrderRow>> => {
-  const env = await adminGetEnvelope(
-    client,
-    '/order/fetch',
-    pageEnvelopeSchema(adminOrderSchema),
-    { ...query },
-    config,
-  );
-  return { data: env.data, total: env.total };
+/** §7.1 order filter column kinds. Integer columns take JSON numbers, text/
+ * timestamp columns strings; `like` values ride raw. */
+const ORDER_FILTER_STRING_FIELDS = new Set([
+  'period',
+  'trade_no',
+  'callback_no',
+  'paid_at',
+  'created_at',
+  'updated_at',
+]);
+
+/** §7.1 — legacy `{key, condition, value}` conditions folded onto the op set. */
+const LEGACY_FILTER_OPS: Record<string, FilterOp> = {
+  '=': 'eq',
+  is: 'eq',
+  '!=': 'neq',
+  '<>': 'neq',
+  not: 'neq',
+  like: 'like',
+  模糊: 'like',
+  '>': 'gt',
+  '>=': 'gte',
+  '<': 'lt',
+  '<=': 'lte',
 };
 
-export const orderDetail = (client: ApiClient, id: number, config?: QueryRequestConfig) =>
-  adminPost(client, '/order/detail', adminOrderSchema, { id }, config);
+/**
+ * Translate the app-internal legacy filter representation (still the shared
+ * cross-page `{key, condition, value}` shape written by the dashboard and user
+ * pages) into the §7 DSL clause array on the way to the wire. `like` keeps the
+ * raw substring; integer columns coerce to JSON numbers (the DSL rejects a
+ * string on a numeric column); the `'null'` sentinel becomes JSON null.
+ */
+function orderFilterClauses(filter?: AdminFilter[]): FilterClause[] | undefined {
+  if (!filter?.length) return undefined;
+  return filter.map((clause) => {
+    const field = clause.key;
+    const op = LEGACY_FILTER_OPS[clause.condition] ?? 'eq';
+    const raw = clause.value;
+    if (op === 'like') return { field, op, value: raw == null ? '' : String(raw) };
+    if (raw === null || raw === 'null') return { field, op, value: null };
+    if (ORDER_FILTER_STRING_FIELDS.has(field)) return { field, op, value: String(raw) };
+    return { field, op, value: typeof raw === 'number' ? raw : Number(raw) };
+  });
+}
 
+/**
+ * GET /{secure_path}/orders — dialect v2 `{items, total}` page (§6.4, W11):
+ * §8 pagination, the §7 DSL over the guarded order column list, and
+ * `?commission_only=` (the legacy `?is_commission=`). The app keeps its shared
+ * legacy filter representation; the DSL translation happens here.
+ */
+export const fetchOrders = async (
+  client: ApiClient,
+  query: AdminPageQuery & { commission_only?: boolean } = {},
+  config?: QueryRequestConfig,
+): Promise<PageResult<AdminOrderRow>> => {
+  const params: Record<string, unknown> = adminListQueryParams({
+    page: query.current,
+    per_page: query.pageSize,
+    sort_by: query.sort,
+    sort_dir: query.sort_type ? (query.sort_type === 'ASC' ? 'asc' : 'desc') : undefined,
+    filter: orderFilterClauses(query.filter),
+  });
+  if (query.commission_only !== undefined) params.commission_only = query.commission_only;
+  const page = await client.request({
+    url: client.resolveAdminPath('/orders'),
+    method: 'GET',
+    dialect: 'v2',
+    params,
+    responseSchema: pageSchema(adminOrderSchema),
+    ...config,
+  });
+  return { data: page.items, total: page.total };
+};
+
+/** GET /{secure_path}/orders/{trade_no} — dialect v2 bare detail (§6.4, W11);
+ * the read moved off POST and the identifier from numeric id to trade_no. */
+export const orderDetail = (client: ApiClient, trade_no: string, config?: QueryRequestConfig) =>
+  client.request({
+    url: client.resolveAdminPath(`/orders/${encodeURIComponent(trade_no)}`),
+    method: 'GET',
+    dialect: 'v2',
+    responseSchema: adminOrderSchema,
+    ...config,
+  });
+
+/** POST /{secure_path}/orders/{trade_no}/mark-paid — 204 (§6.4). */
 export const paidOrder = (client: ApiClient, trade_no: string) =>
-  adminPostTrue(client, '/order/paid', { trade_no });
+  client.request({
+    url: client.resolveAdminPath(`/orders/${encodeURIComponent(trade_no)}/mark-paid`),
+    method: 'POST',
+    dialect: 'v2',
+    responseSchema: noContentSchema,
+  });
 
+/** POST /{secure_path}/orders/{trade_no}/cancel — 204 (§6.4). */
 export const cancelOrder = (client: ApiClient, trade_no: string) =>
-  adminPostTrue(client, '/order/cancel', { trade_no });
+  client.request({
+    url: client.resolveAdminPath(`/orders/${encodeURIComponent(trade_no)}/cancel`),
+    method: 'POST',
+    dialect: 'v2',
+    responseSchema: noContentSchema,
+  });
 
+/**
+ * PATCH /{secure_path}/orders/{trade_no} — dialect v2 (§6.4): exactly one of
+ * `{status, commission_status}` per call (the backend 422s on both/neither).
+ * The value is a numeric enum.
+ */
 export const updateOrder = (
   client: ApiClient,
   trade_no: string,
   key: 'commission_status' | 'status',
   value: string | number,
-) => adminPostTrue(client, '/order/update', { trade_no, [key]: value });
+) =>
+  client.request({
+    url: client.resolveAdminPath(`/orders/${encodeURIComponent(trade_no)}`),
+    method: 'PATCH',
+    dialect: 'v2',
+    data: { [key]: Number(value) },
+    responseSchema: noContentSchema,
+  });
 
+/** POST /{secure_path}/orders — dialect v2 create (§6.4, legacy `order/assign`):
+ * 201 `{trade_no}`; `total_amount` serializes to cents. */
 export const assignOrder = (
   client: ApiClient,
   data: {
@@ -495,16 +650,37 @@ export const assignOrder = (
     total_amount: number | string;
   },
 ) =>
-  adminPost(client, '/order/assign', stringSchema, {
-    ...data,
-    total_amount: data.total_amount === '' ? data.total_amount : decimalToCents(data.total_amount),
+  client.request({
+    url: client.resolveAdminPath('/orders'),
+    method: 'POST',
+    dialect: 'v2',
+    data: {
+      ...data,
+      total_amount:
+        data.total_amount === '' ? data.total_amount : decimalToCents(data.total_amount),
+    },
+    responseSchema: createdOrderSchema,
   });
 
+/** GET /{secure_path}/payments — dialect v2 bare array (§6.2, W11). */
 export const fetchPayments = (client: ApiClient, config?: QueryRequestConfig) =>
-  adminGet(client, '/payment/fetch', arraySchema(adminPaymentSchema), undefined, config);
+  client.request({
+    url: client.resolveAdminPath('/payments'),
+    method: 'GET',
+    dialect: 'v2',
+    responseSchema: arraySchema(adminPaymentSchema),
+    ...config,
+  });
 
+/** GET /{secure_path}/payment-providers — dialect v2 provider-code array (§6.2). */
 export const paymentMethods = (client: ApiClient, config?: QueryRequestConfig) =>
-  adminGet(client, '/payment/getPaymentMethods', stringArraySchema, undefined, config);
+  client.request({
+    url: client.resolveAdminPath('/payment-providers'),
+    method: 'GET',
+    dialect: 'v2',
+    responseSchema: stringArraySchema,
+    ...config,
+  });
 
 export interface SavePaymentPayload {
   id?: number;
@@ -517,12 +693,25 @@ export interface SavePaymentPayload {
   handling_fee_percent?: string | number | null;
 }
 
+/**
+ * GET /{secure_path}/payment-providers/{code}/form `?payment_id=` — dialect v2
+ * bare provider form (§6.2, W11): the legacy POST `getPaymentForm` read moved
+ * to GET, provider code in the path and the optional row id in the query.
+ */
 export const paymentForm = (
   client: ApiClient,
   payment?: string,
   id?: number,
   config?: QueryRequestConfig,
-) => adminPost(client, '/payment/getPaymentForm', paymentFormSchema, { payment, id }, config);
+) =>
+  client.request({
+    url: client.resolveAdminPath(`/payment-providers/${encodeURIComponent(payment ?? '')}/form`),
+    method: 'GET',
+    dialect: 'v2',
+    params: id === undefined ? undefined : { payment_id: id },
+    responseSchema: paymentFormSchema,
+    ...config,
+  });
 
 const optionalPaymentFields = [
   'icon',
@@ -531,12 +720,16 @@ const optionalPaymentFields = [
   'handling_fee_percent',
 ] as const;
 
-function serializePaymentForSave(data: SavePaymentPayload): Record<string, unknown> {
-  // Whitelist the fields PaymentController::save actually consumes. In
-  // particular, never echo fetched uuid/enable/sort/timestamps/notify_url back
-  // into an update just because a caller started from an AdminPayment object.
+/**
+ * The dialect-v2 payment body (§6.2, §4.4, W11): whitelist the columns the
+ * upsert consumes (never echo fetched uuid/enable/sort/timestamps/notify_url).
+ * On create an empty optional is absent (the documented default); on PATCH an
+ * empty optional is an explicit `null` clear. `handling_fee_fixed` serializes
+ * to cents and `handling_fee_percent` to a JSON number (§4.1).
+ */
+function serializePaymentBody(data: SavePaymentPayload): Record<string, unknown> {
+  const isCreate = data.id === undefined;
   const payload: Record<string, unknown> = {
-    ...(data.id === undefined ? {} : { id: data.id }),
     name: data.name,
     payment: data.payment,
     config: data.config,
@@ -545,16 +738,7 @@ function serializePaymentForSave(data: SavePaymentPayload): Record<string, unkno
     const value = data[key];
     if (value === undefined) continue;
     if (value === '') {
-      // Missing optional fields are cleanest on create. On edit an explicit
-      // null (form-encoded as an empty value, see serializeForm's 'empty'
-      // mode) keeps the payload uniform with the coupon/giftcard editors,
-      // where present-but-empty means "clear" and absent means "retain"
-      // (values.rs coupon_field_values/giftcard_field_values gate columns on
-      // contains_key). payment_save itself binds every optional column
-      // unconditionally (commerce.rs UPDATE payment_method), so there absent
-      // and cleared coincide and the explicit null is convention, not
-      // load-bearing.
-      if (data.id === undefined) continue;
+      if (isCreate) continue;
       payload[key] = null;
       continue;
     }
@@ -563,20 +747,61 @@ function serializePaymentForSave(data: SavePaymentPayload): Record<string, unkno
   if (payload.handling_fee_fixed != null) {
     payload.handling_fee_fixed = decimalToCents(payload.handling_fee_fixed as string | number);
   }
+  if (payload.handling_fee_percent != null) {
+    payload.handling_fee_percent = Number(payload.handling_fee_percent);
+  }
   return payload;
 }
 
+/**
+ * POST /{secure_path}/payments (201 `{id}`) / PATCH `payments/{id}` (204) — the
+ * dialect-v2 upsert split (§6.2, W11); §4.4 replaces the legacy
+ * present-but-empty=clear convention.
+ */
 export const savePayment = (client: ApiClient, data: SavePaymentPayload) =>
-  adminPostTrue(client, '/payment/save', serializePaymentForSave(data));
+  data.id === undefined
+    ? client.request({
+        url: client.resolveAdminPath('/payments'),
+        method: 'POST',
+        dialect: 'v2',
+        data: serializePaymentBody(data),
+        responseSchema: createdIdSchema,
+      })
+    : client.request({
+        url: client.resolveAdminPath(`/payments/${data.id}`),
+        method: 'PATCH',
+        dialect: 'v2',
+        data: serializePaymentBody(data),
+        responseSchema: noContentSchema,
+      });
 
-export const showPayment = (client: ApiClient, id: number) =>
-  adminPostTrue(client, '/payment/show', { id });
+/** PATCH /{secure_path}/payments/{id} `{enable}` — the merged legacy toggle (§6.2). */
+export const showPayment = (client: ApiClient, id: number, enable: boolean) =>
+  client.request({
+    url: client.resolveAdminPath(`/payments/${id}`),
+    method: 'PATCH',
+    dialect: 'v2',
+    data: { enable },
+    responseSchema: noContentSchema,
+  });
 
-export const sortPayments = (client: ApiClient, payment_ids: number[]) =>
-  adminPostTrue(client, '/payment/sort', { ids: payment_ids });
+/** POST /{secure_path}/payments/sort `{ids}` — 204 (§6.2). */
+export const sortPayments = (client: ApiClient, ids: number[]) =>
+  client.request({
+    url: client.resolveAdminPath('/payments/sort'),
+    method: 'POST',
+    dialect: 'v2',
+    data: { ids },
+    responseSchema: noContentSchema,
+  });
 
 export const dropPayment = (client: ApiClient, id: number) =>
-  adminPostTrue(client, '/payment/drop', { id });
+  client.request({
+    url: client.resolveAdminPath(`/payments/${id}`),
+    method: 'DELETE',
+    dialect: 'v2',
+    responseSchema: noContentSchema,
+  });
 
 /**
  * GET /{secure_path}/notices — dialect v2 bare array (§6.3, W10). The list

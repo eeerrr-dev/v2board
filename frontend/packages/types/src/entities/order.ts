@@ -1,4 +1,4 @@
-import type { Plan, PlanPeriod, UserPlan } from './plan';
+import type { PlanPeriod, UserPlan } from './plan';
 
 export type OrderStatus = 0 | 1 | 2 | 3 | 4;
 
@@ -76,6 +76,47 @@ export interface StripePaymentIntent {
  * Legacy-dialect admin order rows (numeric flags, epoch timestamps) from the
  * admin order endpoints; W11 owns their dialect flip.
  */
+/** One payment-reconciliation row (docs/api-dialect.md §6.4, W11). */
+export interface PaymentReconciliation {
+  id: number;
+  payment_id: number;
+  provider: string;
+  reason: string;
+  order_status: number;
+  expected_amount: number;
+  settled_amount: number;
+  occurrence_count: number;
+  trade_no: string | null;
+  trade_no_hash: string;
+  callback_no: string | null;
+  callback_no_hash: string;
+  resolution: string | null;
+  resolved_at: string | null;
+  first_seen_at: string;
+  last_seen_at: string;
+  payment_name?: string;
+  payment_archived_at?: string | null;
+}
+
+/** One commission-log entry in the admin order detail (docs/api-dialect.md §6.4, W11). */
+export interface AdminCommissionLog {
+  id: number;
+  user_id: number;
+  invite_user_id: number | null;
+  trade_no: string;
+  order_amount: number;
+  get_amount: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Admin order rows (docs/api-dialect.md §6.4, W11): RFC 3339 timestamps and a
+ * nullable RFC 3339 `paid_at`; `status`/`type`/`commission_status` stay
+ * numeric enums (§4.1). The list row carries `email`, `plan_name`, and
+ * `payment_reconciliation_open_count`; the detail carries `commission_log[]`
+ * and `payment_reconciliations[]`.
+ */
 export interface AdminOrderRow {
   id: number;
   user_id: number;
@@ -100,12 +141,10 @@ export interface AdminOrderRow {
   invite_user_id: number | null;
   actual_commission_balance?: number | null;
   coupon_id: number | null;
-  paid_at: number | null;
-  created_at: number;
-  updated_at: number;
-  plan?: Plan | { id: 0; name: 'deposit' };
-  try_out_plan_id?: number;
-  surplus_orders?: AdminOrderRow[];
-  bounus?: number;
-  get_amount?: number;
+  paid_at: string | null;
+  created_at: string;
+  updated_at: string;
+  payment_reconciliation_open_count?: number;
+  commission_log?: AdminCommissionLog[];
+  payment_reconciliations?: PaymentReconciliation[];
 }
