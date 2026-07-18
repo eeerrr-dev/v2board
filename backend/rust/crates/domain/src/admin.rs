@@ -60,6 +60,10 @@ pub use content::{
     GiftcardPatch, KnowledgeCreate, KnowledgePatch, KnowledgeSortRequest, NoticeCreate,
     NoticePatch,
 };
+pub use users::{
+    AdminSetInviterBody, AdminUserFilterBody, AdminUserGenerate, AdminUserMailBody, AdminUserPatch,
+    UserGenerateOutcome,
+};
 
 const GIB: i64 = 1_073_741_824;
 
@@ -178,8 +182,6 @@ impl AdminService {
     ) -> Result<AdminOutput, ApiError> {
         let path = normalize_admin_path(path);
         match path.as_str() {
-            "user/fetch" => self.user_fetch(&params).await,
-            "user/getUserInfoById" => self.user_detail(required_i64(&params, "id")?).await,
             "ticket/fetch" => self.ticket_fetch(&params, false).await,
             "server/group/fetch" => self.server_group_fetch(&params).await,
             "server/route/fetch" => self.server_route_fetch().await,
@@ -218,15 +220,6 @@ impl AdminService {
                 .await
             }
             "server/manage/sort" => self.server_sort(&params).await,
-            "user/update" => self.user_update(&params).await,
-            "user/generate" => self.user_generate(&params).await,
-            "user/dumpCSV" => self.user_dump_csv(&params).await,
-            "user/sendMail" => self.send_mail_to_users(&params).await,
-            "user/ban" => self.user_bulk_flag(&params, "banned", 1).await,
-            "user/resetSecret" => self.user_reset_secret(required_i64(&params, "id")?).await,
-            "user/delUser" => self.del_user(required_i64(&params, "id")?).await,
-            "user/allDel" => self.user_bulk_delete(&params).await,
-            "user/setInviteUser" => self.user_set_invite(&params).await,
             _ if is_server_path(&path, "save") => self.server_save(&path, &params).await,
             _ if is_server_path(&path, "drop") => self.server_drop(&path, &params).await,
             _ if is_server_path(&path, "update") => {

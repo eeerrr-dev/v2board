@@ -9,13 +9,13 @@
 //! The SQL builder only ever binds values; column expressions come from the
 //! per-endpoint whitelist, never from the request.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Number;
 use sqlx::{Postgres, QueryBuilder};
 use v2board_compat::{ApiError, Problem};
 
 /// One clause of the §7.1 filter DSL: `{"field": ..., "op": ..., "value": ...}`.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct FilterClause {
     pub field: String,
@@ -24,7 +24,7 @@ pub struct FilterClause {
 }
 
 /// The closed §7.1 operator vocabulary.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum FilterOp {
     Eq,
@@ -38,7 +38,7 @@ pub enum FilterOp {
 }
 
 /// The bounded §7.1 value domain: scalars, null, or an array of scalars.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum FilterValue {
     Null,
@@ -49,7 +49,7 @@ pub enum FilterValue {
 }
 
 /// Array elements for the `in` operator — scalars only, never null/nested.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum ScalarFilterValue {
     Bool(bool),

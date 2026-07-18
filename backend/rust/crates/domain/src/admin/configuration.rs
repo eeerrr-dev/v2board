@@ -403,47 +403,45 @@ impl AdminService {
     }
 }
 
-impl AdminService {
-    pub(super) async fn send_mail_to_users(
-        &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        self.enqueue_mail_to_users(params, false).await
-    }
+/// The payload-identifying inputs for one bulk-mail enqueue: the visible
+/// envelope plus the `(actor, idempotency_key)` replay identity and its
+/// canonical `payload_hash`.
+struct BulkMailEnqueue<'a> {
+    subject: &'a str,
+    content: &'a str,
+    actor: &'a str,
+    idempotency_key: &'a str,
+    payload_hash: &'a str,
+}
 
-    pub(super) async fn enqueue_mail_to_users(
+impl AdminService {
+    /// Shared bulk-mail enqueue over either clause representation. The batch
+    /// reservation is idempotent on `(actor, idempotency_key)`: an identical
+    /// payload replays as a no-op success, while a different payload under the
+    /// same key is the unchanged `Idempotency-Key` conflict.
+    async fn enqueue_mail_core(
         &self,
-        params: &HashMap<String, String>,
+        mail: BulkMailEnqueue<'_>,
+        clauses: &UserWhere<'_>,
         staff_scoped: bool,
-    ) -> Result<AdminOutput, ApiError> {
-        let subject = required_string(params, "subject")?;
-        let content = required_string(params, "content")?;
-        let actor_email = required_string(params, "_admin_email")?;
-        let idempotency_key = optional_string(params, "_idempotency_key")
-            .unwrap_or_else(|| Uuid::new_v4().to_string());
-        let actor = format!(
-            "{}:{actor_email}",
-            if staff_scoped { "staff" } else { "admin" }
-        );
-        let batch_key = mail_batch_key(&actor, &idempotency_key);
-        let payload_hash = bulk_mail_payload_hash(params);
-        let clauses = self.user_filter_clauses(params).await?;
+    ) -> Result<(), ApiError> {
+        let batch_key = mail_batch_key(mail.actor, mail.idempotency_key);
         let now = Utc::now().timestamp();
         let mut tx = self.db.begin().await?;
-        if !reserve_mail_outbox_batch(&mut tx, &batch_key, &payload_hash, &actor, now)
+        if !reserve_mail_outbox_batch(&mut tx, &batch_key, mail.payload_hash, mail.actor, now)
             .await
             .map_err(mail_outbox_api_error)?
         {
             tx.commit().await?;
-            return Ok(AdminOutput::Data(json!(true)));
+            return Ok(());
         }
 
-        let envelope = self.prepare_notify_mail(&subject, &content)?;
+        let envelope = self.prepare_notify_mail(mail.subject, mail.content)?;
         let mut after_id = 0_i64;
         let mut recipient_count = 0_usize;
         loop {
             let recipients = self
-                .filtered_user_email_page_in_tx(&clauses, staff_scoped, after_id, &mut tx)
+                .filtered_user_email_page_in_tx(clauses, staff_scoped, after_id, &mut tx)
                 .await?;
             let Some(last_id) = recipients.last().map(|(id, _)| *id) else {
                 break;
@@ -464,6 +462,71 @@ impl AdminService {
             after_id = last_id;
         }
         tx.commit().await?;
+        Ok(())
+    }
+
+    /// POST `users/mail` (§6.6): `{subject, content, filter?}` over the §7 DSL,
+    /// with the unchanged `Idempotency-Key` replay contract. Empty 204.
+    pub async fn users_mail(
+        &self,
+        body: &AdminUserMailBody,
+        actor_email: &str,
+        idempotency_key: &str,
+    ) -> Result<(), ApiError> {
+        if body.subject.trim().is_empty() {
+            return Err(ApiError::validation_field("subject", "邮件主题不能为空"));
+        }
+        if body.content.trim().is_empty() {
+            return Err(ApiError::validation_field("content", "邮件内容不能为空"));
+        }
+        let filter = body.filter.clone().unwrap_or_default();
+        let resolved = filter_dsl::resolve_filters(&filter, USER_FILTER_COLUMNS)?;
+        let actor = format!("admin:{actor_email}");
+        // The replay identity is the canonical typed payload, so the same
+        // Idempotency-Key with an identical subject/content/filter replays.
+        let payload_hash = hash_mail_payload(&(&body.subject, &body.content, &body.filter));
+        self.enqueue_mail_core(
+            BulkMailEnqueue {
+                subject: &body.subject,
+                content: &body.content,
+                actor: &actor,
+                idempotency_key,
+                payload_hash: &payload_hash,
+            },
+            &UserWhere::Dsl(&resolved),
+            false,
+        )
+        .await
+    }
+
+    pub(super) async fn enqueue_mail_to_users(
+        &self,
+        params: &HashMap<String, String>,
+        staff_scoped: bool,
+    ) -> Result<AdminOutput, ApiError> {
+        let subject = required_string(params, "subject")?;
+        let content = required_string(params, "content")?;
+        let actor_email = required_string(params, "_admin_email")?;
+        let idempotency_key = optional_string(params, "_idempotency_key")
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
+        let actor = format!(
+            "{}:{actor_email}",
+            if staff_scoped { "staff" } else { "admin" }
+        );
+        let payload_hash = bulk_mail_payload_hash(params);
+        let clauses = self.user_filter_clauses(params).await?;
+        self.enqueue_mail_core(
+            BulkMailEnqueue {
+                subject: &subject,
+                content: &content,
+                actor: &actor,
+                idempotency_key: &idempotency_key,
+                payload_hash: &payload_hash,
+            },
+            &UserWhere::Legacy(&clauses),
+            staff_scoped,
+        )
+        .await?;
         Ok(AdminOutput::Data(json!(true)))
     }
 

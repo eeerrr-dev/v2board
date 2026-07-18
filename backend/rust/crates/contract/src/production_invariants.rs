@@ -23,7 +23,7 @@ use v2board_analytics::{
 use v2board_config::{AppConfig, RedisKeyspace, RuntimeEnvironment};
 use v2board_db::{DbPoolConfig, installation_id, migrations_current};
 use v2board_domain::{
-    admin::{AdminOutput, AdminService},
+    admin::{AdminOutput, AdminService, AdminUserMailBody, filter_dsl},
     auth::{AuthService, PasswordKdf, RegisterInput, hash_password},
     operator_config,
     order::{OrderService, PaymentNotifyInput},
@@ -175,6 +175,9 @@ async fn run_isolated_checks(
 
         admin_projection_key_sets(pool, integration_redis_url).await?;
         pass("admin projections serialize exactly their pinned key sets");
+
+        admin_user_w12_mutations(pool, integration_redis_url).await?;
+        pass("W12 admin user DSL filter, mail idempotency replay, and ban/reset mutations");
 
         migration_readiness_failure_modes(pool).await?;
         pass("migration readiness fails closed for missing or corrupt ledger state");
@@ -1331,7 +1334,51 @@ async fn late_payment_reconciliation(
 /// endpoint's row shape: a new or removed key here is an API change the admin
 /// frontend and its api-client contracts must consciously absorb, never an
 /// accidental projection leak.
+/// The modern W12 admin user projection (docs/api-dialect.md §6.6): the
+/// credential column `t` is dropped alongside the already-absent
+/// `password_algo`/`password_salt`/`last_login_ip`, and every epoch field
+/// crosses the boundary as an RFC 3339 UTC string (§4.5).
 const ADMIN_USER_ROW_KEYS: &[&str] = &[
+    "id",
+    "email",
+    "password",
+    "balance",
+    "commission_balance",
+    "transfer_enable",
+    "device_limit",
+    "u",
+    "d",
+    "total_used",
+    "alive_ip",
+    "ips",
+    "plan_id",
+    "plan_name",
+    "group_id",
+    "expired_at",
+    "uuid",
+    "token",
+    "subscribe_url",
+    "banned",
+    "is_admin",
+    "is_staff",
+    "invite_user_id",
+    "discount",
+    "commission_type",
+    "commission_rate",
+    "speed_limit",
+    "auto_renewal",
+    "remind_expire",
+    "remind_traffic",
+    "remarks",
+    "telegram_id",
+    "last_login_at",
+    "created_at",
+    "updated_at",
+];
+
+/// The still-legacy staff user projection (W14 not yet landed): the shared
+/// `into_value` shape, which keeps the raw `t` column and integer epochs.
+const STAFF_USER_ROW_KEYS: &[&str] = &[
     "id",
     "email",
     "password",
@@ -1705,45 +1752,38 @@ async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) -> Result<()>
         .execute(pool)
         .await?;
 
-    for row in admin_page_rows(admin.get("user/fetch", HashMap::new()).await?, "user/fetch")? {
-        assert_exact_keys("user/fetch", &row, ADMIN_USER_ROW_KEYS)?;
+    // GET users (§6.6): the modern DSL list, W12 projection (no `t`).
+    let (rows, _total) = admin
+        .users_list(
+            v2board_compat::Pagination::resolve(None, None, 10)
+                .map_err(|problem| anyhow::anyhow!("users pagination: {problem:?}"))?,
+            None,
+            None,
+            None,
+        )
+        .await?;
+    for row in &rows {
+        assert_exact_keys("users", row, ADMIN_USER_ROW_KEYS)?;
     }
 
-    let with_inviter = admin_data(
-        admin
-            .get(
-                "user/getUserInfoById",
-                HashMap::from([("id".to_string(), user_id.to_string())]),
-            )
-            .await?,
-        "user/getUserInfoById",
-    )?;
+    // GET users/{id} (§6.6): the bare projection with the conditional inviter.
+    let with_inviter = admin.user_detail(user_id).await?;
     let mut detail_keys = ADMIN_USER_ROW_KEYS.to_vec();
     detail_keys.push("invite_user");
+    assert_exact_keys("users/{id} (invited)", &with_inviter, &detail_keys)?;
     assert_exact_keys(
-        "user/getUserInfoById (invited)",
-        &with_inviter,
-        &detail_keys,
-    )?;
-    assert_exact_keys(
-        "user/getUserInfoById invite_user",
+        "users/{id} invite_user",
         &with_inviter["invite_user"],
         &["id", "email"],
     )?;
-    let without_inviter = admin_data(
-        admin
-            .get(
-                "user/getUserInfoById",
-                HashMap::from([("id".to_string(), inviter_id.to_string())]),
-            )
-            .await?,
-        "user/getUserInfoById",
-    )?;
+    let without_inviter = admin.user_detail(inviter_id).await?;
     assert_exact_keys(
-        "user/getUserInfoById (no inviter)",
+        "users/{id} (no inviter)",
         &without_inviter,
         ADMIN_USER_ROW_KEYS,
     )?;
+
+    // The staff surface stays legacy (W14): the raw `into_value` shape with `t`.
     let staff_detail = admin_data(
         admin
             .staff_get(
@@ -1756,7 +1796,7 @@ async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) -> Result<()>
     assert_exact_keys(
         "staff user/getUserInfoById",
         &staff_detail,
-        ADMIN_USER_ROW_KEYS,
+        STAFF_USER_ROW_KEYS,
     )?;
 
     // Per-user traffic history.
@@ -2150,6 +2190,138 @@ async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) -> Result<()>
         node,
         ADMIN_SHADOWSOCKS_NODE_KEYS,
     )?;
+
+    Ok(())
+}
+
+/// The W12 admin users family (docs/api-dialect.md §6.6) end-to-end through the
+/// live `AdminService`: the §7 DSL list filter, the `Idempotency-Key` mail
+/// replay/conflict contract, and the ban / reset-secret mutations.
+async fn admin_user_w12_mutations(pool: &PgPool, redis_url: &str) -> Result<()> {
+    let mut config = integration_config(pool, redis_url)?;
+    config.email_host = Some("smtp.invariants.test".to_string());
+    config.email_from_address = Some("w12-sender@example.test".to_string());
+    config.app_url = Some("https://invariants.v2board.test".to_string());
+    config.show_subscribe_method = 0;
+    let admin = AdminService::new(
+        pool.clone(),
+        redis::Client::open(redis_url)?,
+        installation_id(pool).await?,
+        Arc::new(config),
+        reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(2))
+            .timeout(Duration::from_secs(5))
+            .build()?,
+        PasswordKdf::new(1),
+        SmtpTransportCache::default(),
+    );
+
+    // Two members with distinct balances drive the filter, ban, and reset
+    // assertions; both start with a zero session epoch.
+    let low = insert_user(pool, "w12-low", "hash").await?;
+    let high = insert_user(pool, "w12-high", "hash").await?;
+    sqlx::query("UPDATE users SET balance = 100, session_epoch = 0 WHERE id = $1")
+        .bind(low)
+        .execute(pool)
+        .await?;
+    sqlx::query("UPDATE users SET balance = 900, session_epoch = 0 WHERE id = $1")
+        .bind(high)
+        .execute(pool)
+        .await?;
+    let (low_token, low_uuid): (String, String) =
+        sqlx::query_as("SELECT token, uuid FROM users WHERE id = $1")
+            .bind(low)
+            .fetch_one(pool)
+            .await?;
+
+    // §7 DSL list filter: `gt` on the integer balance column selects only the
+    // high-balance member, exercising the users whitelist end-to-end.
+    let (rows, total) = admin
+        .users_list(
+            v2board_compat::Pagination::resolve(None, None, 10)
+                .map_err(|problem| anyhow::anyhow!("users pagination: {problem:?}"))?,
+            Some(r#"[{"field":"balance","op":"gt","value":500}]"#),
+            None,
+            None,
+        )
+        .await?;
+    ensure!(
+        total == 1 && rows.iter().all(|row| row["id"].as_i64() == Some(high)),
+        "balance>500 must match exactly the high-balance member (total {total})"
+    );
+
+    // POST users/ban over the same DSL filter bans only `high` and bumps its
+    // session epoch; the unmatched member is untouched.
+    let ban_filter: Vec<filter_dsl::FilterClause> =
+        serde_json::from_str(r#"[{"field":"balance","op":"gt","value":500}]"#)?;
+    admin.users_ban(&ban_filter).await?;
+    let (high_banned, high_epoch): (i16, i64) =
+        sqlx::query_as("SELECT banned, session_epoch FROM users WHERE id = $1")
+            .bind(high)
+            .fetch_one(pool)
+            .await?;
+    ensure!(
+        high_banned == 1 && high_epoch == 1,
+        "ban must set banned=1 and bump the session epoch"
+    );
+    let (low_banned, low_epoch): (i16, i64) =
+        sqlx::query_as("SELECT banned, session_epoch FROM users WHERE id = $1")
+            .bind(low)
+            .fetch_one(pool)
+            .await?;
+    ensure!(
+        low_banned == 0 && low_epoch == 0,
+        "the unmatched member must not be banned or re-epoched"
+    );
+
+    // POST users/{id}/reset-secret rotates both the subscribe token and UUID.
+    admin.user_reset_secret(low).await?;
+    let (new_token, new_uuid): (String, String) =
+        sqlx::query_as("SELECT token, uuid FROM users WHERE id = $1")
+            .bind(low)
+            .fetch_one(pool)
+            .await?;
+    ensure!(
+        new_token != low_token && new_uuid != low_uuid,
+        "reset-secret must rotate both the token and the uuid"
+    );
+
+    // POST users/mail: an identical payload under the same Idempotency-Key
+    // replays as a no-op (no new outbox items); a different payload under that
+    // key is the unchanged conflict.
+    let key = format!("w12-mail-{}", Uuid::new_v4().simple());
+    let body = AdminUserMailBody {
+        subject: "W12 subject".to_string(),
+        content: "W12 content".to_string(),
+        filter: Some(serde_json::from_str(&format!(
+            r#"[{{"field":"id","op":"eq","value":{low}}}]"#
+        ))?),
+    };
+    admin
+        .users_mail(&body, "invariants-admin@example.test", &key)
+        .await?;
+    let after_first: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM mail_outbox")
+        .fetch_one(pool)
+        .await?;
+    admin
+        .users_mail(&body, "invariants-admin@example.test", &key)
+        .await?;
+    let after_replay: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM mail_outbox")
+        .fetch_one(pool)
+        .await?;
+    ensure!(
+        after_first == after_replay,
+        "an identical mail payload under the same key must not re-enqueue"
+    );
+    let mut conflicting = body;
+    conflicting.subject = "W12 conflicting subject".to_string();
+    ensure!(
+        admin
+            .users_mail(&conflicting, "invariants-admin@example.test", &key)
+            .await
+            .is_err(),
+        "a different mail payload under the same key must conflict"
+    );
 
     Ok(())
 }

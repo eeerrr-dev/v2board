@@ -75,30 +75,6 @@ pub(in super::super) fn user_filter_operator(condition: &str) -> Option<&'static
     }
 }
 
-/// Returns the validated `(ORDER BY expression, direction)`. Mirrors fetch():
-/// sort defaults to created_at, sort_type is DESC unless exactly "ASC".
-pub(in super::super) fn user_sort(params: &HashMap<String, String>) -> (String, &'static str) {
-    let direction = match params.get("sort_type").map(String::as_str) {
-        Some("ASC") => "ASC",
-        _ => "DESC",
-    };
-    let sort_expr = match params
-        .get("sort")
-        .map(|value| value.trim())
-        .filter(|value| !value.is_empty())
-    {
-        Some("total_used") => {
-            "(CAST(u.u AS NUMERIC(65,0)) + CAST(u.d AS NUMERIC(65,0)))".to_string()
-        }
-        Some(sort) => match user_column(sort) {
-            Some(column) => format!("u.{column}"),
-            None => "u.created_at".to_string(),
-        },
-        None => "u.created_at".to_string(),
-    };
-    (sort_expr, direction)
-}
-
 pub(in super::super) fn push_user_where(
     builder: &mut QueryBuilder<Postgres>,
     clauses: &[UserFilterClause],
@@ -236,6 +212,160 @@ pub(in super::super) static ORDER_SORT_COLUMNS: LazyLock<Vec<filter_dsl::SortCol
             .collect()
     });
 
+/// §7.1 filter whitelist for `GET users` (docs/api-dialect.md §7.1: "the
+/// guarded `user_column` list"). It enumerates exactly the columns of the
+/// legacy `user_column` guard (kept for the still-legacy staff path). The 0/1
+/// flag columns (`banned`, `is_admin`, `is_staff`) resolve to boolean
+/// predicates so the §7.1 JSON-boolean value type binds correctly against the
+/// SMALLINT storage; `t` stays filterable (it is in the whitelist) even though
+/// the W12 response projection drops it.
+pub(in super::super) const USER_FILTER_COLUMNS: &[filter_dsl::FilterColumn] = &[
+    column("id", "u.id", filter_dsl::ColumnKind::Integer),
+    column("email", "u.email", filter_dsl::ColumnKind::Email),
+    column(
+        "telegram_id",
+        "u.telegram_id",
+        filter_dsl::ColumnKind::Integer,
+    ),
+    column("balance", "u.balance", filter_dsl::ColumnKind::Integer),
+    column("discount", "u.discount", filter_dsl::ColumnKind::Integer),
+    column(
+        "commission_type",
+        "u.commission_type",
+        filter_dsl::ColumnKind::Integer,
+    ),
+    column(
+        "commission_rate",
+        "u.commission_rate",
+        filter_dsl::ColumnKind::Integer,
+    ),
+    column(
+        "commission_balance",
+        "u.commission_balance",
+        filter_dsl::ColumnKind::Integer,
+    ),
+    column("t", "u.t", filter_dsl::ColumnKind::Integer),
+    column("u", "u.u", filter_dsl::ColumnKind::Integer),
+    column("d", "u.d", filter_dsl::ColumnKind::Integer),
+    column(
+        "transfer_enable",
+        "u.transfer_enable",
+        filter_dsl::ColumnKind::Integer,
+    ),
+    column(
+        "device_limit",
+        "u.device_limit",
+        filter_dsl::ColumnKind::Integer,
+    ),
+    column("banned", "(u.banned <> 0)", filter_dsl::ColumnKind::Boolean),
+    column(
+        "is_admin",
+        "(u.is_admin <> 0)",
+        filter_dsl::ColumnKind::Boolean,
+    ),
+    column(
+        "is_staff",
+        "(u.is_staff <> 0)",
+        filter_dsl::ColumnKind::Boolean,
+    ),
+    column(
+        "last_login_at",
+        "u.last_login_at",
+        filter_dsl::ColumnKind::Timestamp,
+    ),
+    column("uuid", "u.uuid", filter_dsl::ColumnKind::Text),
+    column("group_id", "u.group_id", filter_dsl::ColumnKind::Integer),
+    column("plan_id", "u.plan_id", filter_dsl::ColumnKind::Integer),
+    column(
+        "speed_limit",
+        "u.speed_limit",
+        filter_dsl::ColumnKind::Integer,
+    ),
+    column("token", "u.token", filter_dsl::ColumnKind::Text),
+    column(
+        "expired_at",
+        "u.expired_at",
+        filter_dsl::ColumnKind::Timestamp,
+    ),
+    column("remarks", "u.remarks", filter_dsl::ColumnKind::Text),
+    column(
+        "invite_user_id",
+        "u.invite_user_id",
+        filter_dsl::ColumnKind::Integer,
+    ),
+    column(
+        "created_at",
+        "u.created_at",
+        filter_dsl::ColumnKind::Timestamp,
+    ),
+    column(
+        "updated_at",
+        "u.updated_at",
+        filter_dsl::ColumnKind::Timestamp,
+    ),
+];
+
+const fn sort_column(field: &'static str, expr: &'static str) -> filter_dsl::SortColumn {
+    filter_dsl::SortColumn { field, expr }
+}
+
+/// §7.2 sort whitelist for `GET users`: the same per-endpoint field list as
+/// the filters (raw column expressions so ordering is numeric/lexical, not the
+/// filter's boolean cast) plus the computed `total_used = u + d` (§7.2) and the
+/// `created_at` default.
+pub(in super::super) const USER_SORT_COLUMNS: &[filter_dsl::SortColumn] = &[
+    sort_column("id", "u.id"),
+    sort_column("email", "u.email"),
+    sort_column("telegram_id", "u.telegram_id"),
+    sort_column("balance", "u.balance"),
+    sort_column("discount", "u.discount"),
+    sort_column("commission_type", "u.commission_type"),
+    sort_column("commission_rate", "u.commission_rate"),
+    sort_column("commission_balance", "u.commission_balance"),
+    sort_column("t", "u.t"),
+    sort_column("u", "u.u"),
+    sort_column("d", "u.d"),
+    sort_column("transfer_enable", "u.transfer_enable"),
+    sort_column("device_limit", "u.device_limit"),
+    sort_column("banned", "u.banned"),
+    sort_column("is_admin", "u.is_admin"),
+    sort_column("is_staff", "u.is_staff"),
+    sort_column("last_login_at", "u.last_login_at"),
+    sort_column("uuid", "u.uuid"),
+    sort_column("group_id", "u.group_id"),
+    sort_column("plan_id", "u.plan_id"),
+    sort_column("speed_limit", "u.speed_limit"),
+    sort_column("token", "u.token"),
+    sort_column("expired_at", "u.expired_at"),
+    sort_column("remarks", "u.remarks"),
+    sort_column("invite_user_id", "u.invite_user_id"),
+    sort_column("created_at", "u.created_at"),
+    sort_column("updated_at", "u.updated_at"),
+    sort_column(
+        "total_used",
+        "(CAST(u.u AS NUMERIC(65,0)) + CAST(u.d AS NUMERIC(65,0)))",
+    ),
+];
+
+/// The two clause representations behind the shared user bulk-selection
+/// helpers: the still-legacy staff path (`filter[]` form) and the modern W12
+/// admin path (the §7 DSL). Both append AND-combined `WHERE` predicates that
+/// only ever bind values, never interpolate.
+pub(in super::super) enum UserWhere<'a> {
+    Legacy(&'a [UserFilterClause]),
+    Dsl(&'a [filter_dsl::ResolvedFilter]),
+}
+
+pub(in super::super) fn push_user_filter(
+    builder: &mut QueryBuilder<Postgres>,
+    clauses: &UserWhere<'_>,
+) {
+    match clauses {
+        UserWhere::Legacy(clauses) => push_user_where(builder, clauses),
+        UserWhere::Dsl(filters) => filter_dsl::push_filter_where(builder, filters),
+    }
+}
+
 pub(in super::super) fn user_column_is_numeric(column: &str) -> bool {
     !matches!(column, "email" | "uuid" | "token" | "remarks")
 }
@@ -269,4 +399,144 @@ pub(in super::super) fn collect_filter_entries(
             .insert(field.to_string(), value.clone());
     }
     entries.into_values().collect()
+}
+
+#[cfg(test)]
+mod user_dsl_whitelist_tests {
+    use super::*;
+
+    /// Resolves one §7 DSL clause against the `GET users` whitelist and returns
+    /// the full SQL the builder would emit for it (values bound, never
+    /// interpolated).
+    fn sql_for(field: &str, op: &str, value: serde_json::Value) -> String {
+        let raw = serde_json::json!([{ "field": field, "op": op, "value": value }]).to_string();
+        let clauses = filter_dsl::parse_filter_param(&raw).expect("parse user filter clause");
+        let filters = filter_dsl::resolve_filters(&clauses, USER_FILTER_COLUMNS)
+            .expect("resolve user filter");
+        let mut builder = QueryBuilder::<Postgres>::new("SELECT 1 FROM users u WHERE 1 = 1");
+        filter_dsl::push_filter_where(&mut builder, &filters);
+        builder.sql().as_str().to_string()
+    }
+
+    #[test]
+    fn every_whitelisted_user_column_resolves_and_binds_its_expression() {
+        use filter_dsl::ColumnKind;
+        for column in USER_FILTER_COLUMNS {
+            let value = match column.kind {
+                ColumnKind::Integer => serde_json::json!(1),
+                ColumnKind::Boolean => serde_json::json!(true),
+                ColumnKind::Timestamp => serde_json::json!("2023-11-14T22:13:20Z"),
+                ColumnKind::Text | ColumnKind::Email => serde_json::json!("x"),
+            };
+            let sql = sql_for(column.field, "eq", value);
+            assert!(
+                sql.contains(column.expr),
+                "field {} must resolve to its whitelisted expression {}",
+                column.field,
+                column.expr
+            );
+            assert!(
+                sql.contains("$1"),
+                "field {} must bind its value rather than interpolate it",
+                column.field
+            );
+        }
+    }
+
+    #[test]
+    fn user_operators_map_to_the_expected_sql() {
+        const BASE: &str = "SELECT 1 FROM users u WHERE 1 = 1";
+        // Integer comparisons across the range operators.
+        assert_eq!(
+            sql_for("balance", "gt", serde_json::json!(5)),
+            format!("{BASE} AND u.balance > $1")
+        );
+        assert_eq!(
+            sql_for("balance", "gte", serde_json::json!(5)),
+            format!("{BASE} AND u.balance >= $1")
+        );
+        assert_eq!(
+            sql_for("balance", "lt", serde_json::json!(5)),
+            format!("{BASE} AND u.balance < $1")
+        );
+        assert_eq!(
+            sql_for("balance", "lte", serde_json::json!(5)),
+            format!("{BASE} AND u.balance <= $1")
+        );
+        assert_eq!(
+            sql_for("id", "neq", serde_json::json!(5)),
+            format!("{BASE} AND u.id <> $1")
+        );
+        assert_eq!(
+            sql_for("plan_id", "in", serde_json::json!([1, 2])),
+            format!("{BASE} AND u.plan_id = ANY($1)")
+        );
+        // The `'null'` sentinel is now a JSON null (§7.1).
+        assert_eq!(
+            sql_for("plan_id", "eq", serde_json::json!(null)),
+            format!("{BASE} AND u.plan_id IS NULL")
+        );
+        assert_eq!(
+            sql_for("plan_id", "neq", serde_json::json!(null)),
+            format!("{BASE} AND u.plan_id IS NOT NULL")
+        );
+        // Email keeps the trimmed/lowercased equality and the literal ILIKE.
+        assert_eq!(
+            sql_for("email", "eq", serde_json::json!("A@B")),
+            format!("{BASE} AND lower(btrim(u.email)) = lower(btrim($1))")
+        );
+        assert_eq!(
+            sql_for("email", "like", serde_json::json!("gmail")),
+            format!("{BASE} AND u.email ILIKE $1")
+        );
+        // Boolean flags bind a bool against the SMALLINT-guard expression.
+        assert_eq!(
+            sql_for("banned", "eq", serde_json::json!(true)),
+            format!("{BASE} AND (u.banned <> 0) = $1")
+        );
+        // Integer `like` keeps the legacy `::text` substring search.
+        assert_eq!(
+            sql_for("id", "like", serde_json::json!("7")),
+            format!("{BASE} AND u.id::text ILIKE $1")
+        );
+        // Timestamp columns compare on the stored epoch.
+        assert_eq!(
+            sql_for(
+                "created_at",
+                "gte",
+                serde_json::json!("2023-11-14T22:13:20Z")
+            ),
+            format!("{BASE} AND u.created_at >= $1")
+        );
+    }
+
+    #[test]
+    fn total_used_is_sort_only_and_sort_defaults_to_created_at() {
+        // `total_used` is a computed §7.2 sort field, not a filter column.
+        let filter =
+            filter_dsl::parse_filter_param(r#"[{"field":"total_used","op":"gt","value":1}]"#)
+                .unwrap();
+        assert!(filter_dsl::resolve_filters(&filter, USER_FILTER_COLUMNS).is_err());
+        // It is sortable, on the NUMERIC(65,0) sum.
+        let sort =
+            filter_dsl::resolve_sort(Some("total_used"), Some("desc"), USER_SORT_COLUMNS).unwrap();
+        assert_eq!(
+            sort.order_by(),
+            "(CAST(u.u AS NUMERIC(65,0)) + CAST(u.d AS NUMERIC(65,0))) DESC NULLS LAST"
+        );
+        // The default sort is created_at desc; boolean flags sort on the raw
+        // column, not the boolean-cast filter expression.
+        assert_eq!(
+            filter_dsl::resolve_sort(None, None, USER_SORT_COLUMNS)
+                .unwrap()
+                .order_by(),
+            "u.created_at DESC NULLS LAST"
+        );
+        assert_eq!(
+            filter_dsl::resolve_sort(Some("banned"), Some("asc"), USER_SORT_COLUMNS)
+                .unwrap()
+                .order_by(),
+            "u.banned ASC NULLS FIRST"
+        );
+    }
 }

@@ -16,11 +16,12 @@ use v2board_compat::{ApiError, Page, Pagination, Problem, legacy_data, legacy_pa
 use v2board_domain::{
     admin::{
         AdminCouponItem, AdminGiftcardItem, AdminKnowledgeDetail, AdminKnowledgeSummary,
-        AdminNoticeItem, AdminPaymentItem, AdminPlanItem, ConfigPatchOutcome,
+        AdminNoticeItem, AdminPaymentItem, AdminPlanItem, AdminSetInviterBody, AdminUserFilterBody,
+        AdminUserGenerate, AdminUserMailBody, AdminUserPatch, ConfigPatchOutcome,
         ContentGenerateOutcome, CouponGenerate, CouponPatch, GiftcardGenerate, GiftcardPatch,
         KnowledgeCreate, KnowledgePatch, KnowledgeSortRequest, NoticeCreate, NoticePatch,
         OrderAssign, OrderPatch, PaymentCreate, PaymentPatch, PlanCreate, PlanPatch,
-        ReconciliationResolveRequest, SortIdsRequest,
+        ReconciliationResolveRequest, SortIdsRequest, UserGenerateOutcome,
     },
     auth::AuthUser,
     payment_provider::payment_provider_codes,
@@ -119,6 +120,17 @@ fn admin_router(state: AppState) -> Router {
         )
         .route("/payment-providers", get(payment_providers))
         .route("/payment-providers/{code}/form", get(payment_provider_form))
+        .route("/users", get(users_list).post(user_generate))
+        .route("/users/export", post(users_export))
+        .route("/users/mail", post(users_mail))
+        .route("/users/ban", post(users_ban))
+        .route("/users/bulk-delete", post(users_bulk_delete))
+        .route(
+            "/users/{id}",
+            get(user_detail).patch(user_patch).delete(user_delete),
+        )
+        .route("/users/{id}/set-inviter", post(user_set_inviter))
+        .route("/users/{id}/reset-secret", post(user_reset_secret))
         .route("/orders", get(orders_list).post(order_assign))
         .route("/orders/{trade_no}", get(order_detail).patch(order_patch))
         .route("/orders/{trade_no}/mark-paid", post(order_mark_paid))
@@ -217,12 +229,6 @@ async fn legacy_admin_post(
     let admin = require_admin(state, &headers).await?;
     require_privileged_step_up(state, &headers, &admin).await?;
     params.insert("_admin_email".to_string(), admin.email);
-    if admin_path.trim_matches('/') == "user/sendMail" {
-        params.insert(
-            "_idempotency_key".to_string(),
-            mail_idempotency_key(&headers)?,
-        );
-    }
     let service = state.admin_service(state.config_snapshot());
     admin_response(service.post(admin_path, params).await?)
 }
@@ -921,6 +927,208 @@ async fn payments_sort(
     state
         .admin_service(state.config_snapshot())
         .payments_sort(&body.ids)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// §8 default for `GET users` (the legacy admin user list default of 10).
+const USER_LIST_DEFAULT_PER_PAGE: i64 = 10;
+
+#[derive(Deserialize)]
+struct UsersListQuery {
+    page: Option<i64>,
+    per_page: Option<i64>,
+    filter: Option<String>,
+    sort_by: Option<String>,
+    sort_dir: Option<String>,
+}
+
+/// GET `users` (§6.6): §8 pagination + the §7 DSL over the guarded user
+/// column whitelist, §7.2 sort (incl. the computed `total_used`), and the W12
+/// admin projection (RFC 3339 timestamps, `t` dropped).
+async fn users_list(
+    State(state): State<AppState>,
+    Query(query): Query<UsersListQuery>,
+    headers: HeaderMap,
+) -> Result<Json<Page<Value>>, Problem> {
+    let locale = request_locale(&headers);
+    let pagination = Pagination::resolve(query.page, query.per_page, USER_LIST_DEFAULT_PER_PAGE)?;
+    let (items, total) = state
+        .admin_service(state.config_snapshot())
+        .users_list(
+            pagination,
+            query.filter.as_deref(),
+            query.sort_by.as_deref(),
+            query.sort_dir.as_deref(),
+        )
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(page(items, total))
+}
+
+/// GET `users/{id}` (§6.6): bare W12 projection with the conditional
+/// `invite_user` object; `user_not_found` (404) when absent.
+async fn user_detail(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .user_detail(id)
+        .await
+        .map(Json)
+        .map_err(|error| problem_from(error, locale))
+}
+
+/// POST `users` (§6.6): a single create (real `email_prefix`) is the §1 201
+/// `{id}`; the bulk generate streams the byte-frozen credential CSV.
+async fn user_generate(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    DialectJson(body): DialectJson<AdminUserGenerate>,
+) -> Result<Response, Problem> {
+    let locale = request_locale(&headers);
+    let outcome = state
+        .admin_service(state.config_snapshot())
+        .user_generate(&body)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    match outcome {
+        UserGenerateOutcome::Created { id } => {
+            Ok((StatusCode::CREATED, Json(json!({ "id": id }))).into_response())
+        }
+        UserGenerateOutcome::Csv { filename, body } => {
+            csv_attachment(&filename, body).map_err(|error| problem_from(error, locale))
+        }
+    }
+}
+
+/// PATCH `users/{id}` (§6.6): §4.4 partial update; empty 204.
+async fn user_patch(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+    DialectJson(body): DialectJson<AdminUserPatch>,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .user_update(id, &body)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// DELETE `users/{id}` (§6.6): single-user cascade delete; empty 204.
+async fn user_delete(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .del_user(id)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// POST `users/{id}/set-inviter` (§6.6): `{invite_user_email}`; empty 204.
+async fn user_set_inviter(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+    DialectJson(body): DialectJson<AdminSetInviterBody>,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .user_set_inviter(id, &body)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// POST `users/{id}/reset-secret` (§6.6): rotates the subscribe token/UUID;
+/// empty 204.
+async fn user_reset_secret(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .user_reset_secret(id)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// POST `users/export` (§6.6): CSV over the `{filter?}` DSL body.
+async fn users_export(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    DialectJson(body): DialectJson<AdminUserFilterBody>,
+) -> Result<Response, Problem> {
+    let locale = request_locale(&headers);
+    let (filename, csv) = state
+        .admin_service(state.config_snapshot())
+        .users_export(&body.filter.unwrap_or_default())
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    csv_attachment(&filename, csv).map_err(|error| problem_from(error, locale))
+}
+
+/// POST `users/ban` (§6.6): bulk-ban over the `{filter?}` DSL body; empty 204.
+async fn users_ban(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    DialectJson(body): DialectJson<AdminUserFilterBody>,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .users_ban(&body.filter.unwrap_or_default())
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// POST `users/bulk-delete` (§6.6): bulk cascade delete over the `{filter?}`
+/// DSL body; empty 204.
+async fn users_bulk_delete(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    DialectJson(body): DialectJson<AdminUserFilterBody>,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .users_bulk_delete(&body.filter.unwrap_or_default())
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// POST `users/mail` (§6.6): `{subject, content, filter?}` with the unchanged
+/// `Idempotency-Key` replay contract; empty 204.
+async fn users_mail(
+    State(state): State<AppState>,
+    Extension(admin): Extension<AuthUser>,
+    headers: HeaderMap,
+    DialectJson(body): DialectJson<AdminUserMailBody>,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    let idempotency_key =
+        mail_idempotency_key(&headers).map_err(|error| problem_from(error, locale))?;
+    state
+        .admin_service(state.config_snapshot())
+        .users_mail(&body, &admin.email, &idempotency_key)
         .await
         .map_err(|error| problem_from(error, locale))?;
     Ok(StatusCode::NO_CONTENT)

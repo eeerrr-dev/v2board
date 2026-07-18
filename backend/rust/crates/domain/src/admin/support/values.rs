@@ -185,22 +185,6 @@ pub(in super::super) fn validation_error(field: &str, message: &str) -> ApiError
     ApiError::validation_field(field, message)
 }
 
-/// A scalar request value trimmed of surrounding whitespace (Laravel's global
-/// `TrimStrings` middleware), yielding `None` when the key is absent or the
-/// value is empty after trimming. This is the presence test Laravel's
-/// `required`/`nullable`/`integer` rules operate on — note it does NOT treat the
-/// literal string `"null"` as empty (unlike `optional_string`), because Laravel
-/// does not either.
-pub(in super::super) fn present_value<'a>(
-    params: &'a HashMap<String, String>,
-    key: &str,
-) -> Option<&'a str> {
-    params
-        .get(key)
-        .map(|value| value.trim())
-        .filter(|value| !value.is_empty())
-}
-
 /// True when `key` (scalar or bracketed array) appears in the request params.
 /// Mirrors Laravel's `required` presence check for nested inputs.
 pub(in super::super) fn param_present(params: &HashMap<String, String>, key: &str) -> bool {

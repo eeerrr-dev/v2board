@@ -197,6 +197,29 @@ async fn generate_documents(pool: &PgPool, redis_url: &str) -> Result<Vec<(Strin
         pretty_document(&Page { items, total })?,
     ));
 
+    // The W12 admin users family (docs/api-dialect.md §6.6) serializes the
+    // modern dialect-v2 body straight from the typed domain methods: the
+    // `{items,total}` list plus the two bare detail projections (member id 2
+    // carries an inviter, id 1 does not). The projection drops `t` and crosses
+    // every epoch as an RFC 3339 string (§4.5).
+    let user_page = Pagination {
+        page: 1,
+        per_page: 10,
+    };
+    let (items, total) = admin.users_list(user_page, None, None, None).await?;
+    documents.push((
+        "admin.users.json".to_string(),
+        pretty_document(&Page { items, total })?,
+    ));
+    documents.push((
+        "admin.user.detail.json".to_string(),
+        pretty_document(&admin.user_detail(2).await?)?,
+    ));
+    documents.push((
+        "admin.user.detail.no-inviter.json".to_string(),
+        pretty_document(&admin.user_detail(1).await?)?,
+    ));
+
     // The W10 content family (docs/api-dialect.md §6.3) serializes modern
     // dialect-v2 bodies straight from the typed domain methods: bare arrays
     // for the deliberately unpaginated notice/knowledge lists, `{items,total}`
@@ -245,17 +268,6 @@ async fn generate_documents(pool: &PgPool, redis_url: &str) -> Result<Vec<(Strin
 fn admin_get_endpoints() -> Vec<(&'static str, &'static str, HashMap<String, String>)> {
     let none = HashMap::new;
     vec![
-        ("admin.user.fetch", "user/fetch", none()),
-        (
-            "admin.user.getUserInfoById",
-            "user/getUserInfoById",
-            HashMap::from([("id".to_string(), "2".to_string())]),
-        ),
-        (
-            "admin.user.getUserInfoById.no-inviter",
-            "user/getUserInfoById",
-            HashMap::from([("id".to_string(), "1".to_string())]),
-        ),
         (
             "admin.stat.getStatUser",
             "stat/getStatUser",

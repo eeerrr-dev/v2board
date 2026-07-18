@@ -66,29 +66,6 @@ fn user_column_and_operator_reject_unknown_input() {
 }
 
 #[test]
-fn user_sort_whitelists_expression_and_direction() {
-    let mut params = HashMap::new();
-    assert_eq!(user_sort(&params), ("u.created_at".to_string(), "DESC"));
-
-    params.insert("sort".to_string(), "total_used".to_string());
-    params.insert("sort_type".to_string(), "ASC".to_string());
-    assert_eq!(
-        user_sort(&params),
-        (
-            "(CAST(u.u AS NUMERIC(65,0)) + CAST(u.d AS NUMERIC(65,0)))".to_string(),
-            "ASC"
-        )
-    );
-
-    params.insert("sort".to_string(), "email".to_string());
-    assert_eq!(user_sort(&params), ("u.email".to_string(), "ASC"));
-
-    params.insert("sort".to_string(), "bogus".to_string());
-    params.insert("sort_type".to_string(), "sideways".to_string());
-    assert_eq!(user_sort(&params), ("u.created_at".to_string(), "DESC"));
-}
-
-#[test]
 fn user_total_used_widens_before_adding_bigint_counters() {
     // The total_used sort expression still adds the two BIGINT counters in
     // SQL and must widen first. The projected value itself is summed in Rust
@@ -211,26 +188,6 @@ fn config_duration_minutes_reject_zero_negative_and_overflowing_values() {
             validate_config_json(&Map::from_iter([(field.to_string(), json!(525_600))])).is_ok()
         );
     }
-}
-
-#[test]
-fn user_generate_validation_requires_suffix_and_integer_checks() {
-    assert!(user_generate_validation(&params(&[("email_suffix", "example.com")])).is_ok());
-    assert_validation(
-        user_generate_validation(&params(&[])),
-        "email_suffix",
-        "validation.required",
-    );
-    assert_validation(
-        user_generate_validation(&params(&[("expired_at", "soon"), ("email_suffix", "x")])),
-        "expired_at",
-        "validation.integer",
-    );
-    assert_validation(
-        user_generate_validation(&params(&[("generate_count", "999"), ("email_suffix", "x")])),
-        "generate_count",
-        "生成数量最大为500个",
-    );
 }
 
 /// The required common columns every server save request must supply.

@@ -1,6 +1,9 @@
 use super::*;
 use rust_decimal::{RoundingStrategy, prelude::ToPrimitive};
+use serde::Deserialize;
 use tokio::task::JoinSet;
+use v2board_compat::json::{double_option, rfc3339_option};
+use v2board_compat::{Code, Pagination, Problem};
 
 const USER_DELETE_SQL_BATCH_SIZE: usize = 500;
 const USER_MUTATION_PAGE_SIZE: i64 = 500;
@@ -45,7 +48,7 @@ where
     Ok(())
 }
 
-/// The one SELECT behind every admin-facing user projection (`user_fetch`,
+/// The one SELECT behind every admin-facing user projection (`users_list`,
 /// `user_detail`, `staff_user_detail`). Callers append their own `AND …`
 /// filter clauses after the `WHERE 1 = 1` anchor. Credential-verification
 /// columns (`password`, `password_algo`, `password_salt`) and the unconsumed
@@ -165,6 +168,22 @@ fn attach_invite_user(value: &mut Value, inviter: Option<(i64, String)>) {
     }
 }
 
+/// Projects the shared legacy `into_value` row into the modern W12 admin user
+/// body (docs/api-dialect.md §6.6): the credential column `t` (last traffic
+/// reset marker) is dropped alongside the already-absent
+/// `password_algo`/`password_salt`/`last_login_ip`, and every epoch field
+/// crosses the boundary as an RFC 3339 UTC string (§4.5). The still-legacy
+/// staff surface keeps the raw `into_value` shape until W14.
+fn admin_user_v2_value(mut value: Value) -> Value {
+    if let Some(object) = value.as_object_mut() {
+        object.remove("t");
+    }
+    statistics::epoch_fields_to_rfc3339(
+        value,
+        &["expired_at", "last_login_at", "created_at", "updated_at"],
+    )
+}
+
 pub(super) fn decimal_gib_filter_bytes(value: &str) -> Result<i64, ApiError> {
     value
         .trim()
@@ -176,6 +195,132 @@ pub(super) fn decimal_gib_filter_bytes(value: &str) -> Result<i64, ApiError> {
         .ok_or_else(|| {
             ApiError::validation_field("filter", "Traffic filter is outside the supported range")
         })
+}
+
+/// §4.4 double-Option for the clearable RFC 3339 `expired_at` field: absent →
+/// retain, `null` → clear (never expires), an RFC 3339 string → set. Combines
+/// the `double_option` tri-state with the §4.5 timestamp parse that the plain
+/// `rfc3339_option` combinator cannot express for a double-Option field.
+mod expired_at_double_option {
+    use serde::{Deserialize, Deserializer};
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Option<i64>>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        // Called only when the key is present; `#[serde(default)]` supplies the
+        // absent case as `None`.
+        let parsed = Option::<String>::deserialize(deserializer)?
+            .map(|value| {
+                chrono::DateTime::parse_from_rfc3339(&value)
+                    .map(|instant| instant.timestamp())
+                    .map_err(serde::de::Error::custom)
+            })
+            .transpose()?;
+        Ok(Some(parsed))
+    }
+}
+
+/// PATCH `users/{id}` (docs/api-dialect.md §6.6): the §4.4 partial-update body.
+/// Nullable columns use the double-Option tri-state; `banned`/`is_admin`/
+/// `is_staff` cross as JSON booleans (§4.1, matching the §7.1 filter value
+/// type). `invite_user_id` is no longer set here — the inviter moves to the
+/// dedicated `set-inviter` action (§6.6).
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AdminUserPatch {
+    #[serde(default)]
+    pub email: Option<String>,
+    #[serde(default)]
+    pub password: Option<String>,
+    #[serde(default)]
+    pub transfer_enable: Option<i64>,
+    #[serde(default)]
+    pub u: Option<i64>,
+    #[serde(default)]
+    pub d: Option<i64>,
+    #[serde(default)]
+    pub balance: Option<i64>,
+    #[serde(default)]
+    pub commission_balance: Option<i64>,
+    #[serde(default)]
+    pub commission_type: Option<i64>,
+    #[serde(default)]
+    pub banned: Option<bool>,
+    #[serde(default)]
+    pub is_admin: Option<bool>,
+    #[serde(default)]
+    pub is_staff: Option<bool>,
+    #[serde(default, with = "double_option")]
+    pub device_limit: Option<Option<i64>>,
+    #[serde(default, with = "double_option")]
+    pub commission_rate: Option<Option<i64>>,
+    #[serde(default, with = "double_option")]
+    pub discount: Option<Option<i64>>,
+    #[serde(default, with = "double_option")]
+    pub speed_limit: Option<Option<i64>>,
+    #[serde(default, with = "double_option")]
+    pub plan_id: Option<Option<i64>>,
+    #[serde(default, with = "double_option")]
+    pub remarks: Option<Option<String>>,
+    #[serde(default, with = "expired_at_double_option")]
+    pub expired_at: Option<Option<i64>>,
+}
+
+/// POST `users` (docs/api-dialect.md §6.6): single create (a real
+/// `email_prefix`) or the bulk CSV generate. `expired_at` is RFC 3339 (§4.5).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AdminUserGenerate {
+    #[serde(default)]
+    pub email_prefix: Option<String>,
+    pub email_suffix: String,
+    #[serde(default)]
+    pub password: Option<String>,
+    #[serde(default)]
+    pub plan_id: Option<i64>,
+    #[serde(default, with = "rfc3339_option")]
+    pub expired_at: Option<i64>,
+    #[serde(default)]
+    pub generate_count: Option<i64>,
+}
+
+/// The outcome of `POST users`: a single create is the §1 201 `{id}`; a bulk
+/// run streams the byte-frozen credential CSV attachment (an externally
+/// consumed artifact, unchanged across the dialect flip).
+pub enum UserGenerateOutcome {
+    Created { id: i64 },
+    Csv { filename: String, body: String },
+}
+
+/// The shared `{filter?}` body for the §6.6 bulk actions `users/export`,
+/// `users/ban`, and `users/bulk-delete`: a raw §7 DSL clause array, unencoded
+/// (§7.1), not the query-param string form.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AdminUserFilterBody {
+    #[serde(default)]
+    pub filter: Option<Vec<filter_dsl::FilterClause>>,
+}
+
+/// POST `users/mail` (§6.6): `{subject, content, filter?}` with the same raw
+/// DSL clause array. The `Idempotency-Key` header contract is unchanged.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AdminUserMailBody {
+    pub subject: String,
+    pub content: String,
+    #[serde(default)]
+    pub filter: Option<Vec<filter_dsl::FilterClause>>,
+}
+
+/// POST `users/{id}/set-inviter` (§6.6): the named non-CRUD action. A present
+/// `invite_user_email` resolves and sets the inviter; `null` clears it.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AdminSetInviterBody {
+    #[serde(default)]
+    pub invite_user_email: Option<String>,
 }
 
 impl AdminService {
@@ -265,7 +410,7 @@ impl AdminService {
     /// instead of retaining the whole account table in memory.
     async fn filtered_user_id_page(
         &self,
-        clauses: &[UserFilterClause],
+        clauses: &UserWhere<'_>,
         staff_scoped: bool,
         after_id: i64,
     ) -> Result<Vec<i64>, ApiError> {
@@ -273,7 +418,7 @@ impl AdminService {
         if staff_scoped {
             builder.push(" AND u.is_admin = 0 AND u.is_staff = 0");
         }
-        push_user_where(&mut builder, clauses);
+        push_user_filter(&mut builder, clauses);
         builder.push(" AND u.id > ");
         builder.push_bind(after_id);
         builder.push(" ORDER BY u.id LIMIT ");
@@ -286,7 +431,7 @@ impl AdminService {
 
     async fn filtered_user_ids_bounded(
         &self,
-        clauses: &[UserFilterClause],
+        clauses: &UserWhere<'_>,
         staff_scoped: bool,
     ) -> Result<Vec<i64>, ApiError> {
         let mut ids = Vec::new();
@@ -314,7 +459,7 @@ impl AdminService {
     /// audience snapshot without an unbounded email vector.
     pub(super) async fn filtered_user_email_page_in_tx(
         &self,
-        clauses: &[UserFilterClause],
+        clauses: &UserWhere<'_>,
         staff_scoped: bool,
         after_id: i64,
         tx: &mut DbTransaction<'_>,
@@ -324,7 +469,7 @@ impl AdminService {
         if staff_scoped {
             builder.push(" AND u.is_admin = 0 AND u.is_staff = 0");
         }
-        push_user_where(&mut builder, clauses);
+        push_user_filter(&mut builder, clauses);
         builder.push(" AND u.id > ");
         builder.push_bind(after_id);
         builder.push(" ORDER BY u.id LIMIT ");
@@ -531,41 +676,47 @@ impl AdminService {
         Ok(found)
     }
 
-    pub(super) async fn user_fetch(
+    /// GET `users` (§6.6): §8 pagination, the §7 DSL over the guarded
+    /// `user_column` whitelist, §7.2 sort (including the computed `total_used`),
+    /// and the W12 admin projection (RFC 3339 timestamps, `t` dropped). The
+    /// SQL builder only binds DSL values; column expressions come from the
+    /// per-endpoint whitelist.
+    pub async fn users_list(
         &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        let pagination = page(params)?;
-        let clauses = self.user_filter_clauses(params).await?;
-        let (sort_expr, direction) = user_sort(params);
+        pagination: Pagination,
+        filter: Option<&str>,
+        sort_by: Option<&str>,
+        sort_dir: Option<&str>,
+    ) -> Result<(Vec<Value>, i64), ApiError> {
+        let clauses = filter
+            .map(filter_dsl::parse_filter_param)
+            .transpose()?
+            .unwrap_or_default();
+        let filters = filter_dsl::resolve_filters(&clauses, USER_FILTER_COLUMNS)?;
+        let sort = filter_dsl::resolve_sort(sort_by, sort_dir, USER_SORT_COLUMNS)?;
 
         let mut count_builder =
             QueryBuilder::<Postgres>::new("SELECT COUNT(*) FROM users u WHERE 1 = 1");
-        push_user_where(&mut count_builder, &clauses);
+        filter_dsl::push_filter_where(&mut count_builder, &filters);
         let total: i64 = count_builder
             .build_query_scalar()
             .fetch_one(&self.db)
             .await?;
 
         let mut builder = QueryBuilder::<Postgres>::new(ADMIN_USER_SELECT);
-        push_user_where(&mut builder, &clauses);
-        // sort_expr and direction are whitelisted by user_sort, so this raw push is safe.
-        let nulls = if direction == "ASC" {
-            "NULLS FIRST"
-        } else {
-            "NULLS LAST"
-        };
-        builder.push(format!(" ORDER BY {sort_expr} {direction} {nulls} LIMIT "));
-        builder.push_bind(pagination.limit);
+        filter_dsl::push_filter_where(&mut builder, &filters);
+        builder.push(format!(" ORDER BY {}, u.id DESC LIMIT ", sort.order_by()));
+        builder.push_bind(pagination.limit());
         builder.push(" OFFSET ");
-        builder.push_bind(pagination.offset);
+        builder.push_bind(pagination.offset());
         let rows = builder
             .build_query_as::<AdminUserRecord>()
             .fetch_all(&self.db)
             .await?;
         let mut data: Vec<Value> = rows.into_iter().map(AdminUserRecord::into_value).collect();
         self.enrich_users(&mut data).await?;
-        Ok(AdminOutput::Page { data, total })
+        let data = data.into_iter().map(admin_user_v2_value).collect();
+        Ok((data, total))
     }
 
     /// Fetches one row of the shared projection by id, optionally restricted
@@ -588,11 +739,14 @@ impl AdminService {
             .await?)
     }
 
-    pub(super) async fn user_detail(&self, id: i64) -> Result<AdminOutput, ApiError> {
+    /// GET `users/{id}` (§6.6): the bare W12 admin projection with the
+    /// conditional `invite_user` object. `user_not_found` (404) replaces the
+    /// legacy 400 business error.
+    pub async fn user_detail(&self, id: i64) -> Result<Value, ApiError> {
         let row = self
             .admin_user_record(id, false)
             .await?
-            .ok_or_else(|| ApiError::business("用户不存在"))?;
+            .ok_or_else(|| ApiError::from(Problem::new(Code::UserNotFound)))?;
         let inviter: Option<(i64, String)> = match row.invite_user_id {
             Some(invite_user_id) => {
                 sqlx::query_as("SELECT id, email FROM users WHERE id = $1 LIMIT 1")
@@ -602,9 +756,9 @@ impl AdminService {
             }
             None => None,
         };
-        let mut value = row.into_value();
+        let mut value = admin_user_v2_value(row.into_value());
         attach_invite_user(&mut value, inviter);
-        Ok(AdminOutput::Data(value))
+        Ok(value)
     }
 
     pub(super) async fn staff_user_detail(&self, id: i64) -> Result<AdminOutput, ApiError> {
@@ -615,116 +769,139 @@ impl AdminService {
         Ok(AdminOutput::Data(row.into_value()))
     }
 
-    pub(super) async fn user_update(
-        &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        // Ports UserController::update (laravel .../Admin/UserController.php:125-172).
-        let id = required_i64(params, "id")?;
+    /// PATCH `users/{id}` (§6.6): §4.4 partial update. Ports
+    /// UserController::update (Admin/UserController.php:125-172) minus the
+    /// inviter arm, which is now the dedicated `set-inviter` action. Absent
+    /// fields retain; nullable fields clear on JSON `null`.
+    pub async fn user_update(&self, id: i64, body: &AdminUserPatch) -> Result<(), ApiError> {
+        if let Some(password) = body.password.as_deref()
+            && !password.is_empty()
+            && password.chars().count() < 8
+        {
+            return Err(ApiError::validation_field("password", "密码长度最小8位"));
+        }
+        for (field, value) in [
+            ("commission_rate", body.commission_rate),
+            ("discount", body.discount),
+        ] {
+            if let Some(Some(value)) = value
+                && !(0..=100).contains(&value)
+            {
+                return Err(ApiError::validation_field(field, "参数范围为0-100"));
+            }
+        }
+
         let current_email: String =
             sqlx::query_scalar("SELECT email FROM users WHERE id = $1 LIMIT 1")
                 .bind(id)
                 .fetch_optional(&self.db)
                 .await?
-                .ok_or_else(|| ApiError::business("用户不存在"))?;
-        let email = required_string(params, "email")?;
-        if email != current_email {
-            let taken: Option<i64> = sqlx::query_scalar(
-                "SELECT id FROM users WHERE lower(btrim(email)) = lower(btrim($1)) LIMIT 1",
-            )
-            .bind(&email)
-            .fetch_optional(&self.db)
-            .await?;
-            if taken.is_some() {
-                return Err(ApiError::business("邮箱已被使用"));
-            }
-        }
+                .ok_or_else(|| ApiError::from(Problem::new(Code::UserNotFound)))?;
 
-        let mut values: Vec<(&str, AdminSqlValue)> = vec![("email", AdminSqlValue::Text(email))];
-        // transfer_enable is stored as-is: the admin UI already sends bytes, so the
-        // previous `* GIB` double-scaled it. Laravel's update() stores the raw value.
-        for key in [
-            "transfer_enable",
-            "device_limit",
-            "expired_at",
-            "banned",
-            "commission_rate",
-            "discount",
-            "is_admin",
-            "is_staff",
-            "u",
-            "d",
-            "balance",
-            "commission_type",
-            "commission_balance",
-            "speed_limit",
-        ] {
-            if params.contains_key(key) {
-                values.push((key, optional_int_or_null_value(params, key)));
-            }
-        }
-        if params.contains_key("remarks") {
-            values.push(("remarks", optional_text_value(params, "remarks")));
-        }
-
-        // plan_id drives group_id (:145-153): a set plan_id resolves group_id from
-        // the plan, otherwise group_id is reset to NULL.
-        let mut group_id = AdminSqlValue::IntegerNull;
-        if params.contains_key("plan_id") {
-            if let Some(plan_id) = optional_i64(params, "plan_id") {
-                let plan_group: Option<i32> =
-                    sqlx::query_scalar("SELECT group_id FROM plan WHERE id = $1 LIMIT 1")
-                        .bind(plan_id)
-                        .fetch_optional(&self.db)
-                        .await?
-                        .ok_or_else(|| ApiError::business("订阅计划不存在"))?;
-                group_id = plan_group
-                    .map(|value| AdminSqlValue::Integer(i64::from(value)))
-                    .unwrap_or(AdminSqlValue::IntegerNull);
-                values.push(("plan_id", AdminSqlValue::Integer(plan_id)));
-            } else {
-                values.push(("plan_id", AdminSqlValue::IntegerNull));
-            }
-        }
-        values.push(("group_id", group_id));
-
-        // invite_user_email → invite_user_id (:155-162). A present-but-unknown
-        // email leaves invite_user_id untouched; an absent email resets it to NULL.
-        match params
-            .get("invite_user_email")
-            .map(|value| value.trim())
-            .filter(|value| !value.is_empty())
-        {
-            Some(invite_email) => {
-                if let Some(invite_id) = sqlx::query_scalar::<_, i64>(
+        let mut values: Vec<(&str, AdminSqlValue)> = Vec::new();
+        if let Some(email) = &body.email {
+            if email != &current_email {
+                let taken: Option<i64> = sqlx::query_scalar(
                     "SELECT id FROM users WHERE lower(btrim(email)) = lower(btrim($1)) LIMIT 1",
                 )
-                .bind(invite_email)
+                .bind(email)
                 .fetch_optional(&self.db)
-                .await?
-                {
-                    values.push(("invite_user_id", AdminSqlValue::Integer(invite_id)));
+                .await?;
+                if taken.is_some() {
+                    return Err(ApiError::from(Problem::new(Code::EmailAlreadyRegistered)));
                 }
             }
-            None => values.push(("invite_user_id", AdminSqlValue::IntegerNull)),
+            values.push(("email", AdminSqlValue::Text(email.clone())));
+        }
+        // transfer_enable is stored as-is: the admin UI already sends bytes.
+        if let Some(value) = body.transfer_enable {
+            values.push(("transfer_enable", AdminSqlValue::Integer(value)));
+        }
+        for (column, value) in [
+            ("u", body.u),
+            ("d", body.d),
+            ("balance", body.balance),
+            ("commission_balance", body.commission_balance),
+            ("commission_type", body.commission_type),
+        ] {
+            if let Some(value) = value {
+                values.push((column, AdminSqlValue::Integer(value)));
+            }
+        }
+        for (column, value) in [
+            ("banned", body.banned),
+            ("is_admin", body.is_admin),
+            ("is_staff", body.is_staff),
+        ] {
+            if let Some(value) = value {
+                values.push((column, AdminSqlValue::Integer(i64::from(value))));
+            }
+        }
+        for (column, field) in [
+            ("device_limit", body.device_limit),
+            ("commission_rate", body.commission_rate),
+            ("discount", body.discount),
+            ("speed_limit", body.speed_limit),
+            ("expired_at", body.expired_at),
+        ] {
+            if let Some(update) = field {
+                values.push((
+                    column,
+                    update.map_or(AdminSqlValue::IntegerNull, AdminSqlValue::Integer),
+                ));
+            }
+        }
+        if let Some(update) = &body.remarks {
+            values.push((
+                "remarks",
+                update
+                    .clone()
+                    .map_or(AdminSqlValue::TextNull, AdminSqlValue::Text),
+            ));
         }
 
-        let password_changed = params
-            .get("password")
+        // plan_id drives group_id (:145-153): a set plan_id resolves group_id
+        // from the plan, a cleared plan_id resets group_id to NULL, and an
+        // absent plan_id retains both.
+        if let Some(plan_update) = body.plan_id {
+            match plan_update {
+                Some(plan_id) => {
+                    let plan_group: Option<i32> =
+                        sqlx::query_scalar("SELECT group_id FROM plan WHERE id = $1 LIMIT 1")
+                            .bind(plan_id)
+                            .fetch_optional(&self.db)
+                            .await?
+                            .ok_or_else(|| ApiError::from(Problem::new(Code::PlanNotFound)))?;
+                    values.push(("plan_id", AdminSqlValue::Integer(plan_id)));
+                    values.push((
+                        "group_id",
+                        plan_group
+                            .map(|value| AdminSqlValue::Integer(i64::from(value)))
+                            .unwrap_or(AdminSqlValue::IntegerNull),
+                    ));
+                }
+                None => {
+                    values.push(("plan_id", AdminSqlValue::IntegerNull));
+                    values.push(("group_id", AdminSqlValue::IntegerNull));
+                }
+            }
+        }
+
+        let password_changed = body
+            .password
+            .as_deref()
             .is_some_and(|value| !value.is_empty());
-        if let Some(password) = params.get("password").filter(|value| !value.is_empty()) {
+        if let Some(password) = body.password.as_deref().filter(|value| !value.is_empty()) {
             let hash = self.password_kdf.hash(password).await?;
             values.push(("password", AdminSqlValue::Text(hash)));
             values.push(("password_algo", AdminSqlValue::TextNull));
         }
 
-        // Any privilege assignment invalidates sessions issued under the old
-        // role. A newly promoted staff/admin user must not keep a 30-day user
-        // session, and a demoted account must lose privileged step-up tokens.
-        let role_changed = params.contains_key("is_admin") || params.contains_key("is_staff");
-        let revokes_sessions =
-            password_changed || optional_i64(params, "banned") == Some(1) || role_changed;
-        let resets_traffic = params.contains_key("u") || params.contains_key("d");
+        // Any privilege assignment or ban invalidates sessions issued under the
+        // old role; a traffic reset bumps the traffic epoch.
+        let role_changed = body.is_admin.is_some() || body.is_staff.is_some();
+        let revokes_sessions = password_changed || body.banned == Some(true) || role_changed;
+        let resets_traffic = body.u.is_some() || body.d.is_some();
 
         let mut builder = QueryBuilder::<Postgres>::new("UPDATE users SET ");
         let mut first = true;
@@ -737,12 +914,23 @@ impl AdminService {
             push_admin_sql_bind(&mut builder, column, value);
         }
         if revokes_sessions {
-            builder.push(", \"session_epoch\" = \"session_epoch\" + 1");
+            if !first {
+                builder.push(", ");
+            }
+            first = false;
+            builder.push("\"session_epoch\" = \"session_epoch\" + 1");
         }
         if resets_traffic {
-            builder.push(", \"traffic_epoch\" = \"traffic_epoch\" + 1");
+            if !first {
+                builder.push(", ");
+            }
+            first = false;
+            builder.push("\"traffic_epoch\" = \"traffic_epoch\" + 1");
         }
-        builder.push(", \"updated_at\" = ");
+        if !first {
+            builder.push(", ");
+        }
+        builder.push("\"updated_at\" = ");
         builder.push_bind(Utc::now().timestamp());
         builder.push(" WHERE id = ");
         builder.push_bind(id);
@@ -750,7 +938,7 @@ impl AdminService {
         if revokes_sessions {
             self.remove_user_sessions(id).await;
         }
-        Ok(AdminOutput::Data(json!(true)))
+        Ok(())
     }
 
     pub(super) async fn staff_user_update(
@@ -872,7 +1060,9 @@ impl AdminService {
         // Staff safety remains scoped to non-admin/non-staff users. The durable epoch check is
         // deliberately stronger than the retired implementation's Redis-only admin revocation.
         let clauses = self.user_filter_clauses(params).await?;
-        let ids = self.filtered_user_ids_bounded(&clauses, true).await?;
+        let ids = self
+            .filtered_user_ids_bounded(&UserWhere::Legacy(&clauses), true)
+            .await?;
         if ids.is_empty() {
             return Ok(AdminOutput::Data(json!(true)));
         }
@@ -892,7 +1082,9 @@ impl AdminService {
         Ok(AdminOutput::Data(json!(true)))
     }
 
-    pub(super) async fn user_reset_secret(&self, id: i64) -> Result<AdminOutput, ApiError> {
+    /// POST `users/{id}/reset-secret` (§6.6): rotates the subscribe token and
+    /// UUID; empty 204.
+    pub async fn user_reset_secret(&self, id: i64) -> Result<(), ApiError> {
         sqlx::query("UPDATE users SET token = $1, uuid = $2, updated_at = $3 WHERE id = $4")
             .bind(random_token())
             .bind(Uuid::new_v4().to_string())
@@ -900,7 +1092,7 @@ impl AdminService {
             .bind(id)
             .execute(&self.db)
             .await?;
-        Ok(AdminOutput::Data(json!(true)))
+        Ok(())
     }
 
     /// Resolves the plan referenced by a generate request into
@@ -908,9 +1100,9 @@ impl AdminService {
     /// `Plan::find` guard shared by generate() and multiGenerate().
     async fn generate_plan(
         &self,
-        params: &HashMap<String, String>,
+        plan_id: Option<i64>,
     ) -> Result<Option<(i64, Option<i64>, i64, Option<i64>)>, ApiError> {
-        let Some(plan_id) = optional_i64(params, "plan_id") else {
+        let Some(plan_id) = plan_id else {
             return Ok(None);
         };
         let row: (i64, Option<i64>, Option<i64>, Option<i64>) = sqlx::query_as(
@@ -929,16 +1121,28 @@ impl AdminService {
         )))
     }
 
-    pub(super) async fn user_generate(
+    /// POST `users` (§6.6): single create (real `email_prefix`) → 201 `{id}`,
+    /// or the bulk CSV generate. Ports UserController::generate (:204-236) and
+    /// multiGenerate (:238-279).
+    pub async fn user_generate(
         &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        // Ports UserController::generate (:204-236) and multiGenerate (:238-279).
-        // The UserGenerate FormRequest validates before the method body: it makes
-        // email_suffix required and integer-checks generate_count/expired_at/plan_id.
-        user_generate_validation(params)?;
+        body: &AdminUserGenerate,
+    ) -> Result<UserGenerateOutcome, ApiError> {
+        // UserGenerate rules: generate_count nullable|integer|max:500.
+        if body.generate_count.is_some_and(|count| count > 500) {
+            return Err(ApiError::validation_field(
+                "generate_count",
+                "生成数量最大为500个",
+            ));
+        }
+        if body.email_suffix.trim().is_empty() {
+            return Err(ApiError::validation_field(
+                "email_suffix",
+                "邮箱后缀不能为空",
+            ));
+        }
         let now = Utc::now().timestamp();
-        let plan = self.generate_plan(params).await?;
+        let plan = self.generate_plan(body.plan_id).await?;
         let (plan_id, group_id, transfer_enable, device_limit) = match plan {
             Some((id, group_id, transfer_enable, device_limit)) => {
                 (Some(id), group_id, transfer_enable, device_limit)
@@ -961,10 +1165,14 @@ impl AdminService {
             .transpose()
             .map_err(|_| ApiError::internal("stored device limit exceeds PostgreSQL INTEGER"))?;
 
-        // Single generation returns JSON; the CSV path is multiGenerate only.
-        if let Some(prefix) = optional_string(params, "email_prefix") {
-            let suffix = required_string(params, "email_suffix")?;
-            let email = format!("{prefix}@{suffix}");
+        // Single generation returns the created id; the CSV path is multiGenerate only.
+        if let Some(prefix) = body
+            .email_prefix
+            .as_deref()
+            .map(str::trim)
+            .filter(|prefix| !prefix.is_empty())
+        {
+            let email = format!("{prefix}@{}", body.email_suffix);
             let exists: Option<i64> = sqlx::query_scalar(
                 "SELECT id FROM users WHERE lower(btrim(email)) = lower(btrim($1)) LIMIT 1",
             )
@@ -972,21 +1180,23 @@ impl AdminService {
             .fetch_optional(&self.db)
             .await?;
             if exists.is_some() {
-                return Err(ApiError::business("邮箱已存在于系统中"));
+                return Err(ApiError::from(Problem::new(Code::EmailAlreadyRegistered)));
             }
-            let password_plain = params
-                .get("password")
+            let password_plain = body
+                .password
+                .as_deref()
                 .filter(|value| !value.is_empty())
-                .cloned()
+                .map(str::to_owned)
                 .unwrap_or_else(|| email.clone());
             let hash = self.password_kdf.hash(&password_plain).await?;
-            sqlx::query(
+            let id: i64 = sqlx::query_scalar(
                 r#"
                 INSERT INTO users (
                     email, plan_id, group_id, transfer_enable, device_limit, expired_at,
                     uuid, token, password, password_algo, created_at, updated_at
                 )
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULL, $10, $11)
+                RETURNING id
                 "#,
             )
             .bind(&email)
@@ -994,35 +1204,36 @@ impl AdminService {
             .bind(group_id_db)
             .bind(transfer_enable)
             .bind(device_limit_db)
-            .bind(optional_i64(params, "expired_at"))
+            .bind(body.expired_at)
             .bind(Uuid::new_v4().to_string())
             .bind(random_token())
             .bind(&hash)
             .bind(now)
             .bind(now)
-            .execute(&self.db)
+            .fetch_one(&self.db)
             .await?;
-            return Ok(AdminOutput::Data(json!(true)));
+            return Ok(UserGenerateOutcome::Created { id });
         }
 
-        let count = optional_i64(params, "generate_count").unwrap_or_default();
-        if count <= 0 {
-            return Ok(AdminOutput::Data(json!(true)));
-        }
+        // The bulk generate path (no `email_prefix`) requires a positive count.
+        let count = body.generate_count.unwrap_or_default();
         let count = usize::try_from(count)
-            .map_err(|_| ApiError::validation_field("generate_count", "生成数量格式有误"))?;
+            .ok()
+            .filter(|count| *count > 0)
+            .ok_or_else(|| ApiError::validation_field("generate_count", "生成数量必须为正整数"))?;
         if count > GENERATED_USER_MAX_ROWS {
             return Err(ApiError::validation_field(
                 "generate_count",
                 "单次最多生成 1000 个用户",
             ));
         }
-        let suffix = required_string(params, "email_suffix")?;
-        let input_password = params
-            .get("password")
+        let suffix = body.email_suffix.trim();
+        let input_password = body
+            .password
+            .as_deref()
             .filter(|value| !value.is_empty())
-            .cloned();
-        let expired_at = optional_i64(params, "expired_at");
+            .map(str::to_owned);
+        let expired_at = body.expired_at;
         let mut jobs = JoinSet::new();
         let mut emails = HashSet::with_capacity(count);
         while emails.len() < count {
@@ -1114,20 +1325,21 @@ impl AdminService {
             rows,
             false,
         )?;
-        Ok(AdminOutput::Csv {
+        Ok(UserGenerateOutcome::Csv {
             filename: "users.csv".to_string(),
             body,
         })
     }
 
-    pub(super) async fn user_dump_csv(
+    /// POST `users/export` (§6.6): streams the byte-frozen user CSV over the
+    /// §7 DSL filter. Ports UserController::dumpCSV (:174-202). device_limit is
+    /// emitted for real here — the Laravel row reads a `devce_limit` typo that
+    /// always produced an empty column.
+    pub async fn users_export(
         &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        // Ports UserController::dumpCSV (:174-202). device_limit is emitted for
-        // real here — the Laravel row reads a `devce_limit` typo that always
-        // produced an empty column.
-        let clauses = self.user_filter_clauses(params).await?;
+        filter: &[filter_dsl::FilterClause],
+    ) -> Result<(String, String), ApiError> {
+        let clauses = filter_dsl::resolve_filters(filter, USER_FILTER_COLUMNS)?;
         let mut csv = CsvExportWriter::new(
             &[
                 "邮箱",
@@ -1153,7 +1365,7 @@ impl AdminService {
                  p.name AS plan_name, u.token AS token \
                  FROM users u LEFT JOIN plan p ON p.id = u.plan_id WHERE 1 = 1",
             );
-            push_user_where(&mut builder, &clauses);
+            push_user_filter(&mut builder, &UserWhere::Dsl(&clauses));
             builder.push(" AND u.id > ");
             builder.push_bind(after_id);
             builder.push(" ORDER BY u.id ASC LIMIT ");
@@ -1215,34 +1427,26 @@ impl AdminService {
             after_id = last_id;
         }
         let body = csv.finish()?;
-        Ok(AdminOutput::Csv {
-            filename: "users.csv".to_string(),
-            body,
-        })
+        Ok(("users.csv".to_string(), body))
     }
 
-    pub(super) async fn user_bulk_flag(
-        &self,
-        params: &HashMap<String, String>,
-        column: &str,
-        value: i64,
-    ) -> Result<AdminOutput, ApiError> {
-        // The database epoch is authoritative; Redis deletion after the update only reclaims the
-        // cached session metadata and may safely fail without leaving a banned session usable.
-        if column != "banned" {
-            return Err(ApiError::business("Invalid user flag"));
-        }
-        let clauses = self.user_filter_clauses(params).await?;
-        let ids = self.filtered_user_ids_bounded(&clauses, false).await?;
+    /// POST `users/ban` (§6.6): bulk-bans every user matching the §7 DSL
+    /// filter; empty 204. The database epoch is authoritative; Redis session
+    /// cleanup after commit only reclaims cached metadata and may safely fail
+    /// without leaving a banned session usable.
+    pub async fn users_ban(&self, filter: &[filter_dsl::FilterClause]) -> Result<(), ApiError> {
+        let resolved = filter_dsl::resolve_filters(filter, USER_FILTER_COLUMNS)?;
+        let ids = self
+            .filtered_user_ids_bounded(&UserWhere::Dsl(&resolved), false)
+            .await?;
         if ids.is_empty() {
-            return Ok(AdminOutput::Data(json!(true)));
+            return Ok(());
         }
         let mut tx = self.db.begin().await?;
         for ids in ids.chunks(USER_DELETE_SQL_BATCH_SIZE) {
-            let mut builder = QueryBuilder::<Postgres>::new("UPDATE users SET banned = CAST(");
-            builder.push_bind(value);
-            builder.push("::BIGINT AS SMALLINT), session_epoch = session_epoch + 1");
-            builder.push(", updated_at = ");
+            let mut builder = QueryBuilder::<Postgres>::new(
+                "UPDATE users SET banned = 1, session_epoch = session_epoch + 1, updated_at = ",
+            );
             builder.push_bind(Utc::now().timestamp());
             builder.push(" WHERE id IN (");
             push_id_binds(&mut builder, ids);
@@ -1251,20 +1455,24 @@ impl AdminService {
         }
         tx.commit().await?;
         self.remove_user_sessions_bounded(&ids).await;
-        Ok(AdminOutput::Data(json!(true)))
+        Ok(())
     }
 
-    pub(super) async fn user_bulk_delete(
+    /// POST `users/bulk-delete` (§6.6): empty 204. Ports UserController::allDel
+    /// (:328-359): scoped to the DSL filter, cascading orders / invite codes /
+    /// tickets and detaching referrals for each user inside a single
+    /// transaction, then deleting the matched users.
+    pub async fn users_bulk_delete(
         &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        // Ports UserController::allDel (:328-359): scoped to the request filter,
-        // cascading orders / invite codes / tickets and detaching referrals for
-        // each user inside a single transaction, then deleting the matched users.
-        let clauses = self.user_filter_clauses(params).await?;
-        let ids = sorted_unique_user_ids(self.filtered_user_ids_bounded(&clauses, false).await?);
+        filter: &[filter_dsl::FilterClause],
+    ) -> Result<(), ApiError> {
+        let resolved = filter_dsl::resolve_filters(filter, USER_FILTER_COLUMNS)?;
+        let ids = sorted_unique_user_ids(
+            self.filtered_user_ids_bounded(&UserWhere::Dsl(&resolved), false)
+                .await?,
+        );
         if ids.is_empty() {
-            return Ok(AdminOutput::Data(json!(true)));
+            return Ok(());
         }
         let mut tx = self.db.begin().await?;
         if Self::lock_user_orders_and_find_pending_stripe(&mut tx, &ids).await? {
@@ -1276,11 +1484,13 @@ impl AdminService {
         self.delete_users_cascade(&mut tx, &ids).await?;
         tx.commit().await?;
         self.remove_user_sessions_bounded(&ids).await;
-        Ok(AdminOutput::Data(json!(true)))
+        Ok(())
     }
 
-    pub(super) async fn del_user(&self, id: i64) -> Result<AdminOutput, ApiError> {
-        // Ports UserController::delUser (:361-391): single-user cascade delete.
+    /// DELETE `users/{id}` (§6.6): single-user cascade delete; empty 204.
+    /// Ports UserController::delUser (:361-391). A missing target is the modern
+    /// 404 `user_not_found` (the legacy 400 business error is retired).
+    pub async fn del_user(&self, id: i64) -> Result<(), ApiError> {
         let mut tx = self.db.begin().await?;
         if Self::lock_user_orders_and_find_pending_stripe(&mut tx, &[id]).await? {
             return Err(ApiError::business(
@@ -1288,12 +1498,12 @@ impl AdminService {
             ));
         }
         if Self::lock_users_for_update(&mut tx, &[id]).await? != 1 {
-            return Err(ApiError::business("用户不存在"));
+            return Err(ApiError::from(Problem::new(Code::UserNotFound)));
         }
         self.delete_users_cascade(&mut tx, &[id]).await?;
         tx.commit().await?;
         self.remove_user_sessions_bounded(&[id]).await;
-        Ok(AdminOutput::Data(json!(true)))
+        Ok(())
     }
 
     async fn lock_user_orders_and_find_pending_stripe(
@@ -1336,19 +1546,43 @@ impl AdminService {
         Ok(false)
     }
 
-    pub(super) async fn user_set_invite(
+    /// POST `users/{id}/set-inviter` (§6.6): resolves `invite_user_email` to an
+    /// inviter id and assigns it; an absent/`null` email clears the inviter.
+    /// Empty 204. The target `{id}` missing is a 404 `user_not_found`; an
+    /// `invite_user_email` that resolves to no user is a 422 on that field.
+    pub async fn user_set_inviter(
         &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        let user_id = required_i64(params, "user_id")?;
-        let invite_user_id = optional_i64(params, "invite_user_id");
+        id: i64,
+        body: &AdminSetInviterBody,
+    ) -> Result<(), ApiError> {
+        let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM users WHERE id = $1 LIMIT 1")
+            .bind(id)
+            .fetch_optional(&self.db)
+            .await?;
+        if exists.is_none() {
+            return Err(ApiError::from(Problem::new(Code::UserNotFound)));
+        }
+        let invite_user_id = match body.invite_user_email.as_deref().map(str::trim) {
+            Some(email) if !email.is_empty() => {
+                let inviter: Option<i64> = sqlx::query_scalar(
+                    "SELECT id FROM users WHERE lower(btrim(email)) = lower(btrim($1)) LIMIT 1",
+                )
+                .bind(email)
+                .fetch_optional(&self.db)
+                .await?;
+                Some(inviter.ok_or_else(|| {
+                    ApiError::validation_field("invite_user_email", "邀请人不存在")
+                })?)
+            }
+            _ => None,
+        };
         sqlx::query("UPDATE users SET invite_user_id = $1, updated_at = $2 WHERE id = $3")
             .bind(invite_user_id)
             .bind(Utc::now().timestamp())
-            .bind(user_id)
+            .bind(id)
             .execute(&self.db)
             .await?;
-        Ok(AdminOutput::Data(json!(true)))
+        Ok(())
     }
 }
 
@@ -1470,6 +1704,27 @@ mod tests {
     }
 
     #[test]
+    fn admin_user_v2_projection_drops_t_and_emits_rfc3339_timestamps() {
+        let value = admin_user_v2_value(sample_admin_user_record().into_value());
+        let object = value.as_object().unwrap();
+        // The W12 projection drops `t` alongside the always-absent credential
+        // columns and crosses every epoch as an RFC 3339 string (§4.5).
+        assert!(!object.contains_key("t"), "the W12 projection drops t");
+        for field in ["expired_at", "last_login_at", "created_at", "updated_at"] {
+            assert!(
+                object[field]
+                    .as_str()
+                    .is_some_and(|value| value.contains('T') && value.ends_with('Z')),
+                "{field} must serialize as an RFC 3339 UTC string"
+            );
+        }
+        // Non-epoch fields keep their raw representation.
+        assert_eq!(value["total_used"], json!(3_221_225_472_u64));
+        assert_eq!(value["banned"], json!(0));
+        assert_eq!(value["password"], json!(""));
+    }
+
+    #[test]
     fn invite_user_is_attached_only_when_the_inviter_exists() {
         let mut absent = sample_admin_user_record().into_value();
         attach_invite_user(&mut absent, None);
@@ -1508,10 +1763,8 @@ mod tests {
         }
         assert!(!production.contains("delete_user_cascade("));
 
-        let bulk_start = production
-            .find("pub(super) async fn user_bulk_delete")
-            .unwrap();
-        let single_start = production.find("pub(super) async fn del_user").unwrap();
+        let bulk_start = production.find("pub async fn users_bulk_delete").unwrap();
+        let single_start = production.find("pub async fn del_user").unwrap();
         let bulk = &production[bulk_start..single_start];
         assert!(
             bulk.find("tx.commit().await?").unwrap()
@@ -1525,9 +1778,7 @@ mod tests {
         );
         assert!(production.contains("SESSION_CLEANUP_CONCURRENCY: usize = 8"));
 
-        let flag_start = production
-            .find("pub(super) async fn user_bulk_flag")
-            .unwrap();
+        let flag_start = production.find("pub async fn users_ban").unwrap();
         let flag = &production[flag_start..bulk_start];
         assert!(flag.contains("remove_user_sessions_bounded(&ids)"));
         assert!(!flag.contains("for id in ids"));
@@ -1536,9 +1787,9 @@ mod tests {
     #[test]
     fn multi_user_generation_hashes_before_transaction_and_inserts_as_one_batch() {
         let source = include_str!("users.rs");
-        let generate_start = source.find("pub(super) async fn user_generate").unwrap();
+        let generate_start = source.find("pub async fn user_generate").unwrap();
         let generate_end = source[generate_start..]
-            .find("pub(super) async fn user_export")
+            .find("pub async fn users_export")
             .map(|offset| generate_start + offset)
             .unwrap_or(source.len());
         let generate = &source[generate_start..generate_end];

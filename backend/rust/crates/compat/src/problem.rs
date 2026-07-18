@@ -192,6 +192,7 @@ impl Code {
             // zh-CN text is pinned by the §3.1 spec example bytes.
             (Code::PlanSoldOut, "zh-CN") => "当前产品已售罄",
             (Code::PlanNotFound, "zh-CN") => "订阅计划不存在",
+            (Code::UserNotFound, "zh-CN") => "用户不存在",
             (Code::PlanUnavailable, "zh-CN") => "订阅计划不存在",
             (Code::PlanPeriodUnavailable, "zh-CN") => "该订阅周期无法进行购买，请选择其它周期",
             (Code::PlanChangeDisabled, "zh-CN") => "目前不允许更改订阅，请联系客服或提交工单操作",

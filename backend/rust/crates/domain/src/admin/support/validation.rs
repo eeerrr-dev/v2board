@@ -365,36 +365,6 @@ pub(in super::super) fn validate_config_json(body: &Map<String, Value>) -> Resul
     Ok(())
 }
 
-/// Ports `UserGenerate::rules()`. Only `generate_count` declares custom messages;
-/// `expired_at`/`plan_id` (`integer`) and `email_suffix` (`required`) fall back to
-/// the untranslated validation keys because there is no `zh-CN/validation.php`.
-pub(in super::super) fn user_generate_validation(
-    params: &HashMap<String, String>,
-) -> Result<(), ApiError> {
-    // generate_count: nullable|integer|max:500
-    if let Some(value) = present_value(params, "generate_count") {
-        let Ok(count) = value.parse::<i64>() else {
-            return Err(validation_error("generate_count", "生成数量必须为数字"));
-        };
-        if count > 500 {
-            return Err(validation_error("generate_count", "生成数量最大为500个"));
-        }
-    }
-    // expired_at / plan_id: nullable|integer
-    for key in ["expired_at", "plan_id"] {
-        if let Some(value) = present_value(params, key)
-            && value.parse::<i64>().is_err()
-        {
-            return Err(validation_error(key, "validation.integer"));
-        }
-    }
-    // email_suffix: required
-    if present_value(params, "email_suffix").is_none() {
-        return Err(validation_error("email_suffix", "validation.required"));
-    }
-    Ok(())
-}
-
 /// Matches ConfigSave's deposit_bounus regex `^\d+(\.\d+)?:\d+(\.\d+)?$`.
 fn is_deposit_bounus_tier(tier: &str) -> bool {
     let Some((amount, bounus)) = tier.split_once(':') else {

@@ -455,6 +455,11 @@ const QUERY_BUILDER_SITES: &[DynamicSite] = &[
         coverage: "§7 DSL bind-only SQL-shape unit tests (whitelisted exprs, bound values) plus the system/logs production-invariant projection",
     },
     DynamicSite {
+        source: "crates/domain/src/admin/support/filters.rs",
+        count: 1,
+        coverage: "§7 GET users whitelist bind-only SQL-shape unit tests (every user column resolves and binds its expression)",
+    },
+    DynamicSite {
         source: "crates/domain/src/admin/support/values.rs",
         count: 2,
         coverage: "exact PostgreSQL integer-cast builder unit tests and caller interaction parity",
