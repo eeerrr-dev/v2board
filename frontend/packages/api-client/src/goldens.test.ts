@@ -5,6 +5,8 @@ import {
   activeSessionSchema,
   adminOrderSchema,
   adminPaymentSchema,
+  adminTicketDetailSchema,
+  adminTicketSchema,
   adminUserDetailSchema,
   adminUserSchema,
   adminUserTrafficSchema,
@@ -16,7 +18,6 @@ import {
   couponSchema,
   createdOrderSchema,
   createdTicketSchema,
-  envelopeSchema,
   giftCardRedemptionSchema,
   giftcardSchema,
   guestConfigSchema,
@@ -26,7 +27,6 @@ import {
   knowledgeSummarySchema,
   noticeSchema,
   orderStatusSchema,
-  pageEnvelopeSchema,
   paymentMethodSchema,
   planSchema,
   quickLoginUrlSchema,
@@ -36,11 +36,11 @@ import {
   serverNodeSchema,
   serverRouteSchema,
   sessionStateSchema,
+  statSeriesPointSchema,
   stepUpGrantSchema,
   stringArraySchema,
   subscriptionSchema,
   telegramBotInfoSchema,
-  ticketSchema,
   stripePaymentIntentSchema,
   trafficLogSchema,
   userCommConfigSchema,
@@ -65,16 +65,10 @@ import { pageSchema, problemDetailsSchema } from './dialect';
  */
 const goldensUrl = new URL('../goldens/', import.meta.url);
 
-const goldenSchemas: Record<string, z.ZodType> = {
-  // DB-backed admin surface (v2board-contract golden-responses).
-  'admin.stat.getStatUser.json': pageEnvelopeSchema(adminUserTrafficSchema),
-  'admin.ticket.detail.json': envelopeSchema(ticketSchema),
-  'admin.ticket.fetch.json': pageEnvelopeSchema(ticketSchema),
-};
-
 // Dialect-v2 fixtures (docs/api-dialect.md §3, §5.2): bare success bodies and
 // problem+json error bodies — parsed exactly as the wire delivers them, with
-// no envelope emulation.
+// no envelope emulation. Since W14 closed the wave series, this is the only
+// fixture dialect.
 const dialectGoldenSchemas: Record<string, z.ZodType> = {
   'auth.login.json': authDataSchema,
   'auth.quick-login-url.json': quickLoginUrlSchema,
@@ -109,6 +103,14 @@ const dialectGoldenSchemas: Record<string, z.ZodType> = {
   'admin.nodes.json': arraySchema(serverNodeSchema),
   'admin.server-groups.json': arraySchema(serverGroupSchema),
   'admin.server-routes.json': arraySchema(serverRouteSchema),
+  // §6.5/§6.8 (W14): the admin ticket family (`{items, total}` page + bare
+  // detail with the `message[]` thread) and the stats family (§8 user-traffic
+  // page; `{series, date, value}` rows with snake_case slugs, integer cents).
+  'admin.tickets.json': pageSchema(adminTicketSchema),
+  'admin.ticket.detail.json': adminTicketDetailSchema,
+  'admin.stats.user-traffic.json': pageSchema(adminUserTrafficSchema),
+  'admin.stats.orders.json': arraySchema(statSeriesPointSchema),
+  'admin.stats.records.json': arraySchema(statSeriesPointSchema),
   // §6.1 (W9): the PATCH config stale-revision conflict problem.
   'problem.config-revision-conflict.json': problemDetailsSchema,
   'problem.session-expired.json': problemDetailsSchema,
@@ -151,33 +153,12 @@ const dialectGoldenSchemas: Record<string, z.ZodType> = {
 };
 
 describe('golden response fixtures', () => {
-  it('keeps the fixture directory and the schema maps bijective', () => {
+  it('keeps the fixture directory and the schema map bijective', () => {
     const files = readdirSync(goldensUrl)
       .filter((name) => name.endsWith('.json'))
       .sort();
-    expect(files).toEqual(
-      [...Object.keys(goldenSchemas), ...Object.keys(dialectGoldenSchemas)].sort(),
-    );
+    expect(files).toEqual(Object.keys(dialectGoldenSchemas).sort());
   });
-
-  for (const [name, schema] of Object.entries(goldenSchemas)) {
-    it(`parses ${name} with its zod contract`, () => {
-      const body = JSON.parse(readFileSync(new URL(name, goldensUrl), 'utf8')) as Record<
-        string,
-        unknown
-      >;
-      // The runtime client injects `code` from the HTTP status when the JSON
-      // body omits it (client.ts unwrapBackendEnvelope); mirror that before
-      // running the envelope schema.
-      const unwrapped = { ...body, code: body.code ?? 200 };
-      const result = schema.safeParse(unwrapped);
-      if (!result.success) {
-        throw new Error(
-          `${name} no longer satisfies its zod contract:\n${JSON.stringify(result.error.issues, null, 2)}`,
-        );
-      }
-    });
-  }
 
   for (const [name, schema] of Object.entries(dialectGoldenSchemas)) {
     it(`parses ${name} with its zod contract`, () => {

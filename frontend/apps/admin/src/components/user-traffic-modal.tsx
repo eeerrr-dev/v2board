@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { admin } from '@v2board/api-client';
-import { formatBytes, formatDate } from '@v2board/config/format';
+import { formatBackendDate, formatBytes } from '@v2board/config/format';
 import { useAdminUserTraffic } from '@/lib/queries';
 import {
   Dialog,
@@ -27,9 +27,9 @@ interface TrafficPagination {
   pageSize: number;
 }
 
-// The backend `/stat/getStatUser` reads `current` + `pageSize` (see the Rust
-// `page()` helper / Laravel StatController). Sending those two keys is the Tier-1
-// contract; the shadcn presentation around it is Tier-2.
+// The modal keeps its local {current, pageSize} state; the API layer mints
+// the §8 page/per_page query for GET stats/user-traffic (§6.8, W14). The
+// shadcn presentation around it is Tier-2.
 const INITIAL_PAGINATION: TrafficPagination = { current: 1, pageSize: 10 };
 
 const columns: DataTableColumn<admin.AdminUserTrafficRecord>[] = [
@@ -37,7 +37,8 @@ const columns: DataTableColumn<admin.AdminUserTrafficRecord>[] = [
     id: 'record_at',
     meta: { className: 'text-muted-foreground tabular-nums' },
     header: () => <span>日期</span>,
-    cell: ({ row }) => formatDate(row.original.record_at),
+    // §6.8 (W14): record_at crosses the wire as an RFC 3339 instant.
+    cell: ({ row }) => formatBackendDate(row.original.record_at),
   },
   {
     id: 'u',

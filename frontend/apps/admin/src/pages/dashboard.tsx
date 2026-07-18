@@ -88,8 +88,11 @@ export default function DashboardPage() {
     void navigate('/order');
   };
 
-  const serverTodayChart = buildRankingData(serverToday.data ?? [], (item) => item.server_name);
-  const serverLastChart = buildRankingData(serverLast.data ?? [], (item) => item.server_name);
+  // §6.8 (W14): server_name is nullable when a rank row's node was deleted;
+  // fall back to the stable id so the bar still renders identifiably.
+  const serverRankName = (item: ServerRankItem) => item.server_name ?? `#${item.server_id}`;
+  const serverTodayChart = buildRankingData(serverToday.data ?? [], serverRankName);
+  const serverLastChart = buildRankingData(serverLast.data ?? [], serverRankName);
   const userTodayChart = buildRankingData(userToday.data ?? [], (item) => item.email);
   const userLastChart = buildRankingData(userLast.data ?? [], (item) => item.email);
 

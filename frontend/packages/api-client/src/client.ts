@@ -58,14 +58,15 @@ export interface ApiClientOptions {
   getStepUpToken?: () => string | null;
   onUnauthorized?: ApiUnauthorizedHook;
   adminSecurePath?: () => string | null;
-  nullFormValue?: 'omit' | 'empty';
 }
 
 export type ApiRequestConfig = AxiosRequestConfig & {
   /**
-   * docs/api-dialect.md §4.1/§14 — marks a migrated internal-dialect request:
-   * JSON object bodies (never form-encoded), real HTTP success statuses
-   * (200/201/204 all pass), and a bare-body response with no legacy envelope.
+   * docs/api-dialect.md §4.1/§14 — the internal-dialect wave marker. Since
+   * W14 closed the wave series, v2 is the only internal dialect: JSON object
+   * bodies (never form-encoded), real HTTP success statuses (200/201/204 all
+   * pass), and a bare-body response with no legacy envelope. The marker stays
+   * as per-endpoint documentation of the §5–§6 route tables.
    */
   dialect?: 'v2';
 };
@@ -86,14 +87,6 @@ export type BinaryApiRequestConfig<TJsonSchema extends ZodType> = Omit<
   jsonResponseSchema: TJsonSchema;
 };
 
-export interface BackendEnvelope<T> {
-  code: number;
-  data: T;
-  total?: number;
-  type?: number;
-  message?: string;
-}
-
 export interface RawBinaryResponse {
   code: number;
   data: ArrayBuffer;
@@ -103,21 +96,10 @@ export interface RawBinaryResponse {
 export type BinaryApiResponse<TJsonSchema extends ZodType> =
   RawBinaryResponse | output<TJsonSchema>;
 
-type BackendEnvelopeObject = Record<string, unknown> & {
-  code?: number;
-  total?: number;
-  type?: number;
-  message?: string;
-};
-
 export interface ApiClient {
   axios: AxiosInstance;
-  /** Validates and returns the backend envelope's `data` field. */
+  /** Validates and returns the bare dialect success body (§14). */
   request: <TSchema extends ZodType>(
-    config: JsonApiRequestConfig<TSchema>,
-  ) => Promise<output<TSchema>>;
-  /** Validates and returns the complete normalized backend envelope. */
-  requestEnvelope: <TSchema extends ZodType>(
     config: JsonApiRequestConfig<TSchema>,
   ) => Promise<output<TSchema>>;
   /** Explicit escape hatch for endpoints that may return either CSV bytes or JSON. */
@@ -132,7 +114,8 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     baseURL: options.baseURL ?? '/api/v1',
     timeout: options.timeoutMs ?? 15_000,
     withCredentials: options.withCredentials ?? false,
-    validateStatus: (status) => status === 200,
+    // §4.1: success is any real 2xx — 200 reads, 201 creates, 204 bodiless.
+    validateStatus: (status) => status >= 200 && status < 300,
   });
 
   instance.interceptors.request.use((config) => {
@@ -148,33 +131,20 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     if (stepUpToken) config.headers['x-v2board-step-up'] = stepUpToken;
     if (locale) {
       // docs/api-dialect.md §4.3: Accept-Language is the request locale
-      // signal, resolved against the enabled locale registry.
+      // signal, resolved against the enabled locale registry. (The W1→W14
+      // transitional Content-Language copy died when W14 closed the wave
+      // series — no internal route localizes `message` bodies anymore.)
       config.headers['Accept-Language'] = locale;
-      // Transitional (2026-07-17, W1→W14): the legacy internal routes still
-      // localize `message` bodies through the backend's Content-Language
-      // response-rewrite middleware until each endpoint family migrates to
-      // the dialect (see the §4.3 transition footnote in docs/api-dialect.md).
-      // Delete this line together with that middleware.
-      config.headers['Content-Language'] = locale;
     }
     if (config.params) {
-      const query = serializeForm(config.params, options.nullFormValue ?? 'omit');
+      // §4.1: query values are plain scalars; array params ride as repeated
+      // keys (`reply_status=0&reply_status=1`) — no legacy bracket encoding.
+      const query = serializeQuery(config.params);
       if (query) {
         const separator = config.url?.includes('?') ? '&' : '?';
         config.url = `${config.url}${separator}${query}`;
       }
       config.params = undefined;
-    }
-    if ((config as ApiRequestConfig).dialect === 'v2') {
-      // §4.1: dialect bodies stay JSON (axios' default object serialization)
-      // and success is any real 2xx — 201 register, 204 bodiless actions.
-      config.validateStatus = (status) => status >= 200 && status < 300;
-    } else if (isPostRequest(config.method) && config.data === undefined) {
-      config.headers['Content-Type'] = 'application/x-www-form-urlencoded';
-      config.data = '';
-    } else if (shouldFormEncode(config.data)) {
-      config.headers['Content-Type'] = 'application/x-www-form-urlencoded';
-      config.data = serializeForm(config.data, options.nullFormValue ?? 'omit');
     }
     return config;
   });
@@ -183,10 +153,9 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     (response) => normalizeArrayBufferJsonResponse(response),
     (error: AxiosError<{ errors?: Record<string, string[]>; message?: string }>) => {
       const status = error.response?.status ?? 0;
-      // §3.1: problem+json is discriminated by its stable `code` slug. The
-      // shared Rust session middleware emits it on every internal route —
-      // including families whose success bodies are still legacy — so this
-      // branch runs ahead of the legacy `{message}` mapping.
+      // §3.1: problem+json is discriminated by its stable `code` slug and is
+      // the only internal error dialect since W14; the `{message}` fallback
+      // below covers non-dialect failures (gateway HTML, network bodies).
       const problem = parseProblem(error.response?.data, status);
       if (problem) {
         // §3.2: exactly 401 + `session_expired` tears the session down. 403
@@ -212,22 +181,11 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       const { responseSchema, ...requestConfig } = config;
       const response = await instance.request<unknown>(requestConfig);
       const endpoint = String(config.url ?? '<unknown>');
-      if (config.dialect === 'v2') {
-        // §14: the dialect response is the bare success body — nothing to
-        // unwrap. A bodiless 204 (axios yields '' or undefined) parses as
-        // undefined against the endpoint's empty-success schema.
-        const body = response.data === '' || response.data == null ? undefined : response.data;
-        return parseContract(responseSchema, body, endpoint);
-      }
-      const data = unwrapBackendEnvelope(response.data, response.status, endpoint).data;
-      return parseContract(responseSchema, data, endpoint);
-    },
-    requestEnvelope: async <TSchema extends ZodType>(config: JsonApiRequestConfig<TSchema>) => {
-      const { responseSchema, ...requestConfig } = config;
-      const response = await instance.request<unknown>(requestConfig);
-      const endpoint = String(config.url ?? '<unknown>');
-      const envelope = unwrapBackendEnvelope(response.data, response.status, endpoint);
-      return parseContract(responseSchema, envelope, endpoint);
+      // §14: the dialect response is the bare success body — nothing to
+      // unwrap. A bodiless 204 (axios yields '' or undefined) parses as
+      // undefined against the endpoint's empty-success schema.
+      const body = response.data === '' || response.data == null ? undefined : response.data;
+      return parseContract(responseSchema, body, endpoint);
     },
     requestBinary: async <TJsonSchema extends ZodType>(
       config: BinaryApiRequestConfig<TJsonSchema>,
@@ -240,14 +198,10 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       const buffer = toArrayBuffer(response.data);
       if (buffer) return { code: response.status, data: buffer, buffer };
       const endpoint = String(config.url ?? '<unknown>');
-      if (config.dialect === 'v2') {
-        // §14: the dialect JSON arm is the bare success body (e.g. the §1
-        // 201 `{id}` create) — no envelope to unwrap; the CSV arm above is
-        // byte-frozen either way.
-        return parseContract(jsonResponseSchema, response.data, endpoint);
-      }
-      const envelope = unwrapBackendEnvelope(response.data, response.status, endpoint);
-      return parseContract(jsonResponseSchema, envelope, endpoint);
+      // §14: the dialect JSON arm is the bare success body (e.g. the §1
+      // 201 `{id}` create) — no envelope to unwrap; the CSV arm above is
+      // byte-frozen either way.
+      return parseContract(jsonResponseSchema, response.data, endpoint);
     },
     resolveAdminPath: (path) => {
       const securePath = options.adminSecurePath?.();
@@ -265,67 +219,6 @@ function parseContract<TSchema extends ZodType>(
   const result = schema.safeParse(value);
   if (!result.success) throw new ApiContractError(endpoint, value, result.error);
   return result.data;
-}
-
-// Rust delivers failures as real HTTP statuses (handled by the response
-// interceptor); the in-body `code` handling below exists for the parity
-// fixtures, which reply HTTP 200 with `{ code: 400, ... }` envelopes.
-function unwrapBackendEnvelope(
-  envelope: unknown,
-  httpStatus: number,
-  endpoint: string,
-): BackendEnvelope<unknown> & Record<string, unknown> {
-  if (!isEnvelopeObject(envelope)) {
-    return {
-      code: httpStatus,
-      data: envelope,
-    };
-  }
-  assertBackendEnvelopeMetadata(envelope, endpoint);
-  const backendEnvelope = {
-    ...envelope,
-    code: envelope.code ?? httpStatus,
-    data: envelope.data,
-  };
-  if (backendEnvelope.code !== 200) {
-    throw new ApiError(
-      backendEnvelope.code,
-      backendEnvelope.message ?? 'Request failed, please try again later',
-      backendEnvelope,
-    );
-  }
-  return backendEnvelope;
-}
-
-function assertBackendEnvelopeMetadata(
-  envelope: Record<string, unknown>,
-  endpoint: string,
-): asserts envelope is BackendEnvelopeObject {
-  for (const field of ['code', 'total', 'type'] as const) {
-    const value = envelope[field];
-    if (value === undefined || (typeof value === 'number' && Number.isFinite(value))) continue;
-    throw new ApiContractError(
-      endpoint,
-      envelope,
-      new TypeError(`Backend envelope field "${field}" must be a finite number`),
-    );
-  }
-  const message = envelope.message;
-  if (message !== undefined && typeof message !== 'string') {
-    throw new ApiContractError(
-      endpoint,
-      envelope,
-      new TypeError('Backend envelope field "message" must be a string'),
-    );
-  }
-}
-
-function isEnvelopeObject(envelope: unknown): envelope is Record<string, unknown> {
-  if (envelope === null || typeof envelope !== 'object' || Array.isArray(envelope)) return false;
-  if (envelope instanceof ArrayBuffer) return false;
-  if (ArrayBuffer.isView(envelope)) return false;
-  if (envelope instanceof Blob) return false;
-  return true;
 }
 
 function normalizeArrayBufferJsonResponse<T>(response: AxiosResponse<T>): AxiosResponse<T> {
@@ -351,59 +244,29 @@ function toArrayBuffer(data: unknown): ArrayBuffer | null {
   return view.slice().buffer;
 }
 
-function isPostRequest(method: string | undefined): boolean {
-  return (method ?? 'GET').toUpperCase() === 'POST';
-}
-
-function shouldFormEncode(data: unknown): data is Record<string, unknown> {
-  if (!data || typeof data !== 'object') return false;
-  if (data instanceof URLSearchParams) return false;
-  if (data instanceof FormData) return false;
-  if (data instanceof Blob) return false;
-  if (data instanceof ArrayBuffer) return false;
-  return true;
-}
-
 function firstValidationError(errors: Record<string, string[]> | undefined): string | undefined {
   if (!errors) return undefined;
   return Object.values(errors)[0]?.[0];
 }
 
-function serializeForm(data: unknown, nullFormValue: 'omit' | 'empty'): string {
-  if (!data || typeof data !== 'object' || Array.isArray(data)) return '';
-  const parts: string[] = [];
-  const target = {
-    append(key: string, value: unknown) {
-      parts.push(`${key}=${encodeURIComponent(String(value))}`);
-    },
-  };
-  const source = nullFormValue === 'empty' ? replaceNullFormValues(data, new WeakMap()) : data;
-  axios.toFormData(source as object, target, {
-    indexes: true,
-    maxDepth: 20,
-  });
-  return parts.join('&');
-}
-
-function replaceNullFormValues(value: unknown, seen: WeakMap<object, unknown>): unknown {
-  if (value === null) return '';
-  if (value === undefined || typeof value !== 'object') return value;
-  if (seen.has(value)) return seen.get(value);
-
-  if (Array.isArray(value)) {
-    const copy: unknown[] = [];
-    seen.set(value, copy);
-    for (const item of value) copy.push(replaceNullFormValues(item, seen));
-    return copy;
+/**
+ * §4.1 query serialization — the only wire the internal dialect speaks:
+ * scalar params as plain `key=value` pairs, array params as repeated keys,
+ * nullish values omitted. (The legacy recursive bracket form serializer died
+ * with W14.)
+ */
+function serializeQuery(params: unknown): string {
+  if (!params || typeof params !== 'object' || Array.isArray(params)) return '';
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null) continue;
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (item !== undefined && item !== null) query.append(key, String(item));
+      }
+      continue;
+    }
+    query.append(key, String(value));
   }
-
-  if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
-    return value;
-  }
-  const copy: Record<string, unknown> = {};
-  seen.set(value, copy);
-  for (const [key, child] of Object.entries(value)) {
-    copy[key] = replaceNullFormValues(child, seen);
-  }
-  return copy;
+  return query.toString();
 }

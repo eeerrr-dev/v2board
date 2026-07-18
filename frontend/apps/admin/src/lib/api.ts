@@ -38,7 +38,6 @@ export const apiClient = createApiClient({
   getLocale: () => getLocale(),
   getStepUpToken,
   adminSecurePath: () => getAdminSecurePath(),
-  nullFormValue: 'empty',
   // Fires only for the 401 session_expired problem (docs/api-dialect.md
   // §3.2). The 403 permission_denied / step_up_required verdicts for a live
   // admin session never reach this hook, so no message discrimination is

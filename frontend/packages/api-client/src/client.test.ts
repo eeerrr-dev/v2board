@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from 'vitest';
 import AxiosMockAdapter from 'axios-mock-adapter';
 import { z } from 'zod';
 import { ApiContractError, ApiError, createApiClient } from './client';
-import { envelopeSchema, trueSchema } from './contracts';
 import { ApiProblemError } from './dialect';
 import {
   assignOrder,
@@ -413,59 +412,6 @@ describe('createApiClient', () => {
     await expect(fetchServerNodes(client)).rejects.toBeInstanceOf(ApiContractError);
   });
 
-  it('treats legacy 200 HTTP responses with non-200 business code as failures', async () => {
-    const client = createApiClient({ baseURL: '/api/v1' });
-    const mock = new AxiosMockAdapter(client.axios);
-    // Business failures are HTTP 400 in Rust; the parity fixtures emulate them
-    // as HTTP-200 envelopes carrying the same code on unmigrated families.
-    mock.onPost('/user/coupon/check').reply(200, { code: 400, message: 'invalid coupon' });
-    await expect(
-      client.request({
-        url: '/user/coupon/check',
-        method: 'POST',
-        data: { code: 'X' },
-        responseSchema: z.unknown(),
-      }),
-    ).rejects.toMatchObject({
-      status: 400,
-      message: 'invalid coupon',
-    });
-  });
-
-  it('adds the legacy HTTP 200 code to successful envelopes when the body omits it', async () => {
-    const client = createApiClient({ baseURL: '/api/v1' });
-    const mock = new AxiosMockAdapter(client.axios);
-    // The legacy envelope core stays for the admin dialect until W14; the
-    // admin ticket list is a representative still-legacy route.
-    mock.onGet('/admin/ticket/fetch').reply(200, { data: [], total: 0 });
-
-    await expect(
-      client.requestEnvelope({
-        url: '/admin/ticket/fetch',
-        method: 'GET',
-        responseSchema: envelopeSchema(z.array(z.unknown())),
-      }),
-    ).resolves.toEqual({ code: 200, data: [], total: 0 });
-  });
-
-  it.each([
-    ['code', '200'],
-    ['total', '1'],
-    ['type', null],
-  ])('rejects an invalid legacy envelope %s field before returning data', async (field, value) => {
-    const client = createApiClient({ baseURL: '/api/v1' });
-    const mock = new AxiosMockAdapter(client.axios);
-    mock.onGet('/admin/ticket/fetch').reply(200, { data: [], [field]: value });
-
-    await expect(
-      client.requestEnvelope({
-        url: '/admin/ticket/fetch',
-        method: 'GET',
-        responseSchema: envelopeSchema(z.array(z.string())),
-      }),
-    ).rejects.toBeInstanceOf(ApiContractError);
-  });
-
   it('rejects checkout bodies that omit the §9.3 union kind tag', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
@@ -640,38 +586,28 @@ describe('createApiClient', () => {
     expect(JSON.parse(String(mock.history.post[0]?.data))).toEqual({ giftcard: 'CARD-123' });
   });
 
-  it('treats HTTP 201 as a legacy request failure', async () => {
-    const client = createApiClient({ baseURL: '/api/v1' });
-    const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/test').reply(201, { message: 'created' });
-
-    await expect(
-      client.request({ url: '/test', method: 'POST', responseSchema: z.unknown() }),
-    ).rejects.toMatchObject({ status: 201, message: 'created' });
-  });
-
-  it('sends the Bearer scheme with the legacy form body on unmigrated endpoints', async () => {
+  it('sends the Bearer scheme, Accept-Language, and JSON defaults on every request', async () => {
     const client = createApiClient({
       baseURL: '/api/v1',
       getAuthData: () => 'auth',
       getLocale: () => 'zh-CN',
     });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/user/transfer').reply(200, { data: true });
+    mock.onPost('/user/commission-transfers').reply(204);
     await client.request({
-      url: '/user/transfer',
+      url: '/user/commission-transfers',
       method: 'POST',
       data: { transfer_amount: 100 },
-      responseSchema: trueSchema,
+      responseSchema: z.undefined(),
     });
     const request = mock.history.post[0]!;
-    expect(request.data).toBe('transfer_amount=100');
+    expect(JSON.parse(String(request.data))).toEqual({ transfer_amount: 100 });
     // §4.2: the stored value stays raw; the wire always carries the scheme.
     expect(request.headers?.authorization).toBe('Bearer auth');
-    // §4.3: Accept-Language is the locale signal; Content-Language rides along
-    // transitionally until the legacy localization middleware retires.
+    // §4.3: Accept-Language is the only locale signal — the W1→W14
+    // transitional Content-Language copy died when W14 closed the wave series.
     expect(request.headers?.['Accept-Language']).toBe('zh-CN');
-    expect(request.headers?.['Content-Language']).toBe('zh-CN');
+    expect(request.headers?.['Content-Language']).toBeUndefined();
     expect(request.withCredentials).toBe(false);
     expect(request.timeout).toBe(15_000);
   });
@@ -683,46 +619,32 @@ describe('createApiClient', () => {
       withCredentials: true,
     });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onGet('/slow').reply(200, { data: true });
+    mock.onGet('/slow').reply(200, {});
 
     await client.request({
       url: '/slow',
       method: 'GET',
       timeout: 60_000,
-      responseSchema: trueSchema,
+      responseSchema: z.unknown(),
     });
 
     expect(mock.history.get[0]?.withCredentials).toBe(true);
     expect(mock.history.get[0]?.timeout).toBe(60_000);
   });
 
-  it('omits nullish values from legacy form bodies', async () => {
+  it('serializes array query params as repeated keys and omits nullish values', async () => {
+    // §4.1: plain `key=value` scalars, repeated keys for arrays — never the
+    // retired legacy recursive bracket encoding.
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/test').reply(200, { data: true });
+    mock.onAny().reply(200, {});
     await client.request({
       url: '/test',
-      method: 'POST',
-      data: { keep: 'yes', skipNull: null, skipUndefined: undefined },
-      responseSchema: trueSchema,
+      method: 'GET',
+      params: { reply_status: [0, 1], status: 0, email: undefined, cleared: null },
+      responseSchema: z.unknown(),
     });
-    expect(mock.history.post[0]?.data).toBe('keep=yes');
-  });
-
-  it('serializes admin legacy null form values as empty strings', async () => {
-    const client = createApiClient({ baseURL: '/api/v1', nullFormValue: 'empty' });
-    const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/test').reply(200, { data: true });
-    await client.request({
-      url: '/test',
-      method: 'POST',
-      data: { clear: null, filter: [{ key: 'plan_id', condition: '=', value: null }] },
-      responseSchema: trueSchema,
-    });
-
-    expect(mock.history.post[0]?.data).toBe(
-      'clear=&filter[0][key]=plan_id&filter[0][condition]=%3D&filter[0][value]=',
-    );
+    expect(mock.history.get[0]?.url).toBe('/test?reply_status=0&reply_status=1&status=0');
   });
 
   it('sends explicit JSON nulls as §4.4 clears on the coupon PATCH', async () => {
@@ -753,50 +675,6 @@ describe('createApiClient', () => {
     expect(body.value).toBe(30);
   });
 
-  it('uses legacy recursive bracket encoding for arrays and objects', async () => {
-    const client = createApiClient({ baseURL: '/api/v1' });
-    const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/test').reply(200, { data: true });
-    await client.request({
-      url: '/test',
-      method: 'POST',
-      data: { list: ['a', 'b'], nested: { key: 'value' } },
-      responseSchema: trueSchema,
-    });
-    expect(mock.history.post[0]?.data).toBe('list[0]=a&list[1]=b&nested[key]=value');
-  });
-
-  it('serializes only own enumerable form fields', async () => {
-    const client = createApiClient({ baseURL: '/api/v1' });
-    const mock = new AxiosMockAdapter(client.axios);
-    const payload = Object.create({ inherited: 'legacy' }) as Record<string, unknown>;
-    payload.own = 'value';
-
-    mock.onPost('/test').reply(200, { data: true });
-    await client.request({
-      url: '/test',
-      method: 'POST',
-      data: payload,
-      responseSchema: trueSchema,
-    });
-
-    expect(mock.history.post[0]?.data).toBe('own=value');
-  });
-
-  it('sends empty POST requests as legacy form requests', async () => {
-    const client = createApiClient({ baseURL: '/api/v1' });
-    const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/user/invite/save').reply(200, { data: true });
-    await client.request({
-      url: '/user/invite/save',
-      method: 'POST',
-      responseSchema: trueSchema,
-    });
-    const request = mock.history.post[0]!;
-    expect(request.data).toBe('');
-    expect(request.headers?.['Content-Type']).toBe('application/x-www-form-urlencoded');
-  });
-
   it('exchanges the one-time verify token via POST /auth/token-login', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
@@ -824,9 +702,9 @@ describe('createApiClient', () => {
   it('rides the step-up token on requests as the x-v2board-step-up header', async () => {
     const client = createApiClient({ baseURL: '/api/v1', getStepUpToken: () => 'grant-token' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/test').reply(200, { data: true });
+    mock.onPost('/test').reply(204);
 
-    await client.request({ url: '/test', method: 'POST', responseSchema: trueSchema });
+    await client.request({ url: '/test', method: 'POST', responseSchema: z.undefined() });
 
     expect(mock.history.post[0]?.headers?.['x-v2board-step-up']).toBe('grant-token');
   });
@@ -891,18 +769,6 @@ describe('createApiClient', () => {
     expect(onUnauthorized).not.toHaveBeenCalled();
   });
 
-  it('maps non-200 envelope codes into ApiError without unauthorized handling', async () => {
-    const onUnauthorized = vi.fn();
-    const client = createApiClient({ baseURL: '/api/v1', onUnauthorized });
-    const mock = new AxiosMockAdapter(client.axios);
-    mock.onGet('/user/info').reply(200, { code: 400, message: 'bad request' });
-
-    await expect(
-      client.request({ url: '/user/info', method: 'GET', responseSchema: z.unknown() }),
-    ).rejects.toMatchObject({ status: 400, message: 'bad request' });
-    expect(onUnauthorized).not.toHaveBeenCalled();
-  });
-
   it('maps other non-2xx responses into ApiError without unauthorized handling', async () => {
     const onUnauthorized = vi.fn();
     const client = createApiClient({ baseURL: '/api/v1', onUnauthorized });
@@ -932,16 +798,18 @@ describe('createApiClient', () => {
     });
   });
 
-  it('uses the first legacy validation error as the ApiError message', async () => {
+  it('falls back to the first non-dialect validation error as the ApiError message', async () => {
+    // Non-problem `{message, errors}` bodies (gateway emulations, non-dialect
+    // fixtures) still surface their most specific line as the message.
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/user/transfer').reply(422, {
+    mock.onPost('/user/commission-transfers').reply(422, {
       message: 'validation failed',
       errors: { transfer_amount: ['Transfer amount cannot be empty'] },
     });
     await expect(
       client.request({
-        url: '/user/transfer',
+        url: '/user/commission-transfers',
         method: 'POST',
         data: { transfer_amount: '' },
         responseSchema: z.unknown(),
@@ -953,17 +821,24 @@ describe('createApiClient', () => {
 
   it('prefixes admin paths when securePath is provided', () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'abc' });
-    expect(client.resolveAdminPath('/plan/fetch')).toBe('/abc/plan/fetch');
+    expect(client.resolveAdminPath('/tickets')).toBe('/abc/tickets');
   });
 
-  it('keeps legacy admin page totals as direct envelope fields', async () => {
+  it('mints the §8 page query and repeated reply_status keys for the admin ticket list', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onGet('/admin-path/ticket/fetch').reply(200, { data: [] });
-    mock.onGet('/admin-path/stat/getStatUser?user_id=1').reply(200, { data: [] });
+    // §6.5 (W14): GET /tickets is the dialect-v2 `{items,total}` page; the
+    // legacy JSON-stringified `reply_status` array param died with the flip,
+    // and an empty `email` means "no filter" so it never reaches the wire.
+    mock.onAny().reply(200, { items: [], total: 0 });
 
-    await expect(fetchAdminTickets(client)).resolves.toEqual({ data: [], total: undefined });
-    await expect(statUser(client, { user_id: 1 })).resolves.toEqual({ data: [], total: undefined });
+    await expect(
+      fetchAdminTickets(client, { current: 2, pageSize: 10, reply_status: [0, 1], email: '' }),
+    ).resolves.toEqual({ data: [], total: 0 });
+
+    expect(mock.history.get[0]?.url).toBe(
+      '/admin-path/tickets?page=2&per_page=10&reply_status=0&reply_status=1',
+    );
   });
 
   it('reads the modern users page as {data,total} from the {items,total} body', async () => {
@@ -1042,28 +917,21 @@ describe('createApiClient', () => {
     });
   });
 
-  it('requests legacy admin user traffic records with pagination', async () => {
+  it('requests admin user traffic as the §8 stats/user-traffic page', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onAny().reply((config) => {
-      expect(config.method).toBe('get');
-      expect(config.url).toBe('/admin-path/stat/getStatUser?user_id=1&current=2&pageSize=10');
-      expect(config.params).toBeUndefined();
-      return [
-        200,
-        {
-          data: [{ record_at: 1700000000, u: 1024, d: 2048, server_rate: 1 }],
-          total: 1,
-        },
-      ];
-    });
+    // §6.8 (W14): RFC 3339 record_at, numeric server_rate, `{items,total}`.
+    const record = { record_at: '2023-11-14T22:13:20Z', u: 1024, d: 2048, server_rate: 1 };
+    mock
+      .onGet('/admin-path/stats/user-traffic?user_id=1&page=2&per_page=10')
+      .reply(200, { items: [record], total: 1 });
 
     await expect(statUser(client, { user_id: 1, current: 2, pageSize: 10 })).resolves.toEqual({
-      data: [{ record_at: 1700000000, u: 1024, d: 2048, server_rate: 1 }],
+      data: [record],
       total: 1,
     });
     expect(mock.history.get[0]?.url).toBe(
-      '/admin-path/stat/getStatUser?user_id=1&current=2&pageSize=10',
+      '/admin-path/stats/user-traffic?user_id=1&page=2&per_page=10',
     );
   });
 

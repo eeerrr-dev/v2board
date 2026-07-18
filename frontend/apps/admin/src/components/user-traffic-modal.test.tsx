@@ -6,8 +6,9 @@ import { UserTrafficModal } from './user-traffic-modal';
 // The traffic modal is a redesigned shadcn island (Dialog + DataTable +
 // PaginationControl) replacing the ant-modal / ant-table replica. The DOM
 // byte-pins are retired; what stays covered is the Tier-1 fetch contract:
-// `/stat/getStatUser` is queried with `{ current, pageSize }`, gated on
-// open && userId != null, and jumps back to page 1 when opened for another user.
+// `stats/user-traffic` (§6.8, W14) is queried with `{ current, pageSize }`,
+// gated on open && userId != null, and jumps back to page 1 when opened for
+// another user.
 
 const mocks = vi.hoisted(() => ({
   useAdminUserTraffic: vi.fn(),
@@ -23,7 +24,7 @@ beforeEach(() => {
   mocks.refetch.mockReset().mockResolvedValue(undefined);
   mocks.useAdminUserTraffic.mockReturnValue({
     data: {
-      data: [{ record_at: 1700000000, u: 1024, d: 2048, server_rate: 1 }],
+      data: [{ record_at: '2023-11-14T22:13:20Z', u: 1024, d: 2048, server_rate: 1 }],
       total: 25,
     },
     isPending: false,
@@ -74,7 +75,7 @@ describe('UserTrafficModal', () => {
   it('surfaces and retries a traffic failure even when stale rows remain cached', async () => {
     mocks.useAdminUserTraffic.mockReturnValue({
       data: {
-        data: [{ record_at: 1700000000, u: 1024, d: 2048, server_rate: 1 }],
+        data: [{ record_at: '2023-11-14T22:13:20Z', u: 1024, d: 2048, server_rate: 1 }],
         total: 1,
       },
       isPending: false,

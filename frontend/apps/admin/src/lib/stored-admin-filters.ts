@@ -1,4 +1,16 @@
-import { adminFilterArraySchema, type AdminFilter } from '@v2board/api-client';
+import { z } from 'zod';
+import type { AdminFilter } from '@v2board/api-client';
+
+// App-internal `{key, condition, value}` clause shape (the API layer
+// translates it into the §7 DSL per list endpoint). Validated locally: the
+// wire-facing api-client no longer ships a legacy filter schema (W14).
+const storedAdminFilterSchema = z.array(
+  z.object({
+    key: z.string(),
+    condition: z.string(),
+    value: z.union([z.string(), z.number(), z.null()]),
+  }),
+);
 
 /**
  * Consumes a one-shot cross-page filter. Persisted browser state is an
@@ -14,7 +26,7 @@ export function takeStoredAdminFilters(key: string): AdminFilter[] {
 
   try {
     const parsed: unknown = JSON.parse(stored);
-    const result = adminFilterArraySchema.safeParse(parsed);
+    const result = storedAdminFilterSchema.safeParse(parsed);
     return result.success ? result.data : [];
   } catch {
     return [];

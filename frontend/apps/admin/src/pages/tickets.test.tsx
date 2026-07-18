@@ -12,6 +12,7 @@ import TicketsPage from './tickets';
 // ticket-id passthrough, and the /ticket/:ticket_id route rendering the chat.
 
 const mocks = vi.hoisted(() => {
+  // §6.5 (W14): timestamps cross the wire as RFC 3339 instants.
   const OPEN_TICKET = {
     id: 1,
     user_id: 7,
@@ -20,8 +21,8 @@ const mocks = vi.hoisted(() => {
     status: 0,
     reply_status: 0,
     last_reply_user_id: null,
-    created_at: 1700000000,
-    updated_at: 1700086400,
+    created_at: '2023-11-14T22:13:20Z',
+    updated_at: '2023-11-15T22:13:20Z',
   };
 
   const CLOSED_TICKET = {
@@ -32,8 +33,8 @@ const mocks = vi.hoisted(() => {
     status: 1,
     reply_status: 1,
     last_reply_user_id: null,
-    created_at: 1700000000,
-    updated_at: 1700086400,
+    created_at: '2023-11-14T22:13:20Z',
+    updated_at: '2023-11-15T22:13:20Z',
   };
 
   const makeDetail = () => ({
@@ -45,8 +46,8 @@ const mocks = vi.hoisted(() => {
         ticket_id: 1,
         message: '用户消息',
         is_me: false,
-        created_at: 1700000000,
-        updated_at: 1700000000,
+        created_at: '2023-11-14T22:13:20Z',
+        updated_at: '2023-11-14T22:13:20Z',
       },
       {
         id: 2,
@@ -54,8 +55,8 @@ const mocks = vi.hoisted(() => {
         ticket_id: 1,
         message: '客服回复',
         is_me: true,
-        created_at: 1700086400,
-        updated_at: 1700086400,
+        created_at: '2023-11-15T22:13:20Z',
+        updated_at: '2023-11-15T22:13:20Z',
       },
     ],
   });
@@ -173,11 +174,11 @@ describe('TicketsPage list', () => {
     expect(within(table).getByText('待回复')).toBeInTheDocument();
     expect(within(table).getByText('已关闭')).toBeInTheDocument();
     expect(
-      within(table).getAllByText(dayjs(1700000000 * 1000).format('YYYY/MM/DD HH:mm')).length,
+      within(table).getAllByText(dayjs('2023-11-14T22:13:20Z').format('YYYY/MM/DD HH:mm')).length,
     ).toBeGreaterThan(0);
   });
 
-  it('fetches the first open-ticket page with the legacy query shape', () => {
+  it('fetches the first open-ticket page with the in-app pagination model', () => {
     render(<TicketsPage />);
     expect(mocks.ticketQueries[0]).toMatchObject({ current: 1, pageSize: 10, status: 0 });
   });

@@ -4,7 +4,6 @@ export type {
   ApiClientOptions,
   ApiRequestConfig,
   ApiUnauthorizedHook,
-  BackendEnvelope,
   BinaryApiRequestConfig,
   BinaryApiResponse,
   JsonApiRequestConfig,
@@ -45,7 +44,6 @@ export {
   shouldRetryQuery,
 } from './error-presentation';
 export type { ErrorPresentation, MutationErrorMeta } from './error-presentation';
-export { adminFilterArraySchema } from './endpoints/admin';
 export * as passport from './endpoints/passport';
 export * as guest from './endpoints/guest';
 export * as user from './endpoints/user';

@@ -158,10 +158,10 @@ describe('admin api legacy path resolution', () => {
         responseSchema: z.unknown(),
       });
 
-      // §4.3: Accept-Language is the locale signal; Content-Language rides
-      // along transitionally until the legacy localization middleware retires.
+      // §4.3: Accept-Language is the only locale signal — the transitional
+      // Content-Language copy died when W14 closed the wave series.
       expect(requestConfig?.headers?.['Accept-Language']).toBe('ja-JP');
-      expect(requestConfig?.headers?.['Content-Language']).toBe('ja-JP');
+      expect(requestConfig?.headers?.['Content-Language']).toBeUndefined();
     } finally {
       apiClient.axios.defaults.adapter = originalAdapter;
     }
@@ -190,7 +190,6 @@ describe('admin api legacy path resolution', () => {
     });
 
     expect(requestConfig?.headers?.['Accept-Language']).toBe('ja-JP');
-    expect(requestConfig?.headers?.['Content-Language']).toBe('ja-JP');
   });
 
   it('clears the invalid credential, query cache and redirects on 401 session_expired', async () => {

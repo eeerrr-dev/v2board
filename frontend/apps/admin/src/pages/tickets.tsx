@@ -43,14 +43,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { DataTable, type DataTableColumn } from '@/components/ui/table';
 
-// The extra keys (status / email / reply_status) are the same admin ticket-fetch
-// filters required by the backend contract; `fetchTickets` spreads the whole query into
-// the request params, so their names/shapes are the preserved data contract.
-type TicketQuery = admin.AdminPageQuery & {
-  status?: number;
-  email?: string;
-  reply_status?: number[] | null;
-};
+// The status / email / reply_status keys are the §6.5 admin ticket list
+// filters; the page keeps its local {current, pageSize} state and the API
+// layer mints the §8 page/per_page wire query (docs/api-dialect.md, W14).
+type TicketQuery = admin.AdminTicketListQuery;
 
 const PAGINATION_LABELS = {
   itemsPerPage: '条/页',
@@ -71,8 +67,9 @@ const TICKET_LEVELS: Record<number, { label: string; tone: StatusTone }> = {
   2: { label: '高', tone: 'destructive' },
 };
 
-function formatMinute(value: number) {
-  return dayjs(1000 * value).format('YYYY/MM/DD HH:mm');
+// §4.5 (W14): ticket timestamps cross the wire as RFC 3339 UTC strings.
+function formatMinute(value: string) {
+  return dayjs(value).format('YYYY/MM/DD HH:mm');
 }
 
 function renderTicketStatus(row: Ticket) {

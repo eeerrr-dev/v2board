@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { OrderStatPoint } from '@v2board/types';
+import type { StatSeriesPoint } from '@v2board/types';
 import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts';
 import { cn } from '@/lib/cn';
 import {
@@ -29,7 +29,7 @@ export interface RankingChartDatum {
 
 interface OrderChartProps {
   kind: 'order';
-  data: readonly OrderStatPoint[];
+  data: readonly StatSeriesPoint[];
   label: string;
   className?: string;
 }
@@ -58,16 +58,43 @@ export interface OrderChartModel {
   series: OrderChartSeries[];
 }
 
-export function buildOrderChartModel(points: readonly OrderStatPoint[]): OrderChartModel {
-  const labels = Array.from(new Set(points.map((point) => point.type)));
-  const series = labels.map((label, index) => ({ dataKey: `series_${index}`, label }));
-  const dataKeyByLabel = new Map(series.map((item) => [item.label, item.dataKey]));
+// §6.8 (W14) series re-spec: the wire carries stable snake_case `series`
+// slugs with integer-cent money values; the client owns the display mapping
+// (slug → label, cents → major units). Slugs outside this map still render,
+// labeled by their raw slug, so a backend-added series degrades visibly
+// instead of vanishing.
+const ORDER_SERIES_DISPLAY: ReadonlyMap<string, { label: string; cents?: boolean }> = new Map([
+  ['register_count', { label: '注册人数' }],
+  ['paid_total', { label: '收款金额', cents: true }],
+  ['paid_count', { label: '收款笔数' }],
+  ['commission_paid_total', { label: '佣金金额(已发放)', cents: true }],
+  ['commission_paid_count', { label: '佣金笔数(已发放)' }],
+]);
+
+const orderSeriesRank = (slug: string) => {
+  const rank = [...ORDER_SERIES_DISPLAY.keys()].indexOf(slug);
+  return rank === -1 ? ORDER_SERIES_DISPLAY.size : rank;
+};
+
+export function buildOrderChartModel(points: readonly StatSeriesPoint[]): OrderChartModel {
+  const slugs = Array.from(new Set(points.map((point) => point.series))).sort(
+    (a, b) => orderSeriesRank(a) - orderSeriesRank(b),
+  );
+  const series = slugs.map((slug, index) => ({
+    dataKey: `series_${index}`,
+    label: ORDER_SERIES_DISPLAY.get(slug)?.label ?? slug,
+  }));
+  const dataKeyBySlug = new Map(slugs.map((slug, index) => [slug, `series_${index}`]));
   const rowsByDate = new Map<string, OrderChartRow>();
 
   for (const point of points) {
     const row = rowsByDate.get(point.date) ?? { date: point.date };
-    const dataKey = dataKeyByLabel.get(point.type);
-    if (dataKey) row[dataKey] = point.value;
+    const dataKey = dataKeyBySlug.get(point.series);
+    if (dataKey) {
+      row[dataKey] = ORDER_SERIES_DISPLAY.get(point.series)?.cents
+        ? point.value / 100
+        : point.value;
+    }
     rowsByDate.set(point.date, row);
   }
 

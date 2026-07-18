@@ -97,21 +97,30 @@ describe('DashboardPage', () => {
   });
 
   it('aligns sparse order series by their actual date instead of array position', () => {
+    // §6.8 (W14): the wire carries snake_case series slugs with integer-cent
+    // money; the client owns the slug→label mapping and cents→major division.
     expect(
       buildOrderChartModel([
-        { type: '新购', date: '07-01', value: 10 },
-        { type: '新购', date: '07-02', value: 20 },
-        { type: '续费', date: '07-01', value: 4 },
+        { series: 'paid_total', date: '07-01', value: 1000 },
+        { series: 'paid_total', date: '07-02', value: 2000 },
+        { series: 'register_count', date: '07-01', value: 4 },
       ]),
     ).toEqual({
       series: [
-        { dataKey: 'series_0', label: '新购' },
-        { dataKey: 'series_1', label: '续费' },
+        { dataKey: 'series_0', label: '注册人数' },
+        { dataKey: 'series_1', label: '收款金额' },
       ],
       rows: [
-        { date: '07-01', series_0: 10, series_1: 4 },
-        { date: '07-02', series_0: 20 },
+        { date: '07-01', series_0: 4, series_1: 10 },
+        { date: '07-02', series_1: 20 },
       ],
+    });
+  });
+
+  it('renders an unknown series slug labeled by the raw slug without cents scaling', () => {
+    expect(buildOrderChartModel([{ series: 'future_metric', date: '07-01', value: 123 }])).toEqual({
+      series: [{ dataKey: 'series_0', label: 'future_metric' }],
+      rows: [{ date: '07-01', series_0: 123 }],
     });
   });
 

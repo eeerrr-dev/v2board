@@ -107,24 +107,6 @@ describe('user api unauthorized handling', () => {
     expect(clearSessionSpy).not.toHaveBeenCalled();
   });
 
-  it('rejects a non-200 envelope code carried over HTTP 200 without touching the session', async () => {
-    // Rust delivers auth failures as real HTTP statuses; an in-body code is a
-    // parity-fixture shape and never a session verdict.
-    apiClient.axios.defaults.adapter = adapterFor(200, {
-      code: 403,
-      data: null,
-      message: 'auth required',
-    });
-
-    await expect(
-      apiClient.request({ url: '/user/info', method: 'GET', responseSchema: z.unknown() }),
-    ).rejects.toMatchObject({ status: 403 });
-
-    expect(getAuthData()).toBe('token-401');
-    expect(routerNavigate).not.toHaveBeenCalled();
-    expect(clearSessionSpy).not.toHaveBeenCalled();
-  });
-
   it('keeps concurrent session-expiry teardown idempotent', async () => {
     apiClient.axios.defaults.adapter = adapterFor(401, sessionExpiredProblem);
 

@@ -82,28 +82,30 @@ export const adminQueryOptions = {
       queryFn: ({ signal }) => admin.statOrder(apiClient, { signal }),
       staleTime: 30_000,
     }),
+  // §6.8 (W14): the legacy today/last route pairs collapsed into one rank
+  // route with the required `?window=today|previous` selector.
   statUserToday: () =>
     queryOptions({
       queryKey: adminKeys.statUserToday,
-      queryFn: ({ signal }) => admin.statUserTodayRank(apiClient, { signal }),
+      queryFn: ({ signal }) => admin.statUserRank(apiClient, 'today', { signal }),
       staleTime: 30_000,
     }),
   statUserLast: () =>
     queryOptions({
       queryKey: adminKeys.statUserLast,
-      queryFn: ({ signal }) => admin.statUserLastRank(apiClient, { signal }),
+      queryFn: ({ signal }) => admin.statUserRank(apiClient, 'previous', { signal }),
       staleTime: 30_000,
     }),
   statServerToday: () =>
     queryOptions({
       queryKey: adminKeys.statServerToday,
-      queryFn: ({ signal }) => admin.statServerTodayRank(apiClient, { signal }),
+      queryFn: ({ signal }) => admin.statServerRank(apiClient, 'today', { signal }),
       staleTime: 30_000,
     }),
   statServerLast: () =>
     queryOptions({
       queryKey: adminKeys.statServerLast,
-      queryFn: ({ signal }) => admin.statServerLastRank(apiClient, { signal }),
+      queryFn: ({ signal }) => admin.statServerRank(apiClient, 'previous', { signal }),
       staleTime: 30_000,
     }),
   userTraffic: (userId: number | undefined, query: Omit<admin.AdminUserTrafficQuery, 'user_id'>) =>
@@ -179,7 +181,7 @@ export const adminQueryOptions = {
       queryKey: adminKeys.notices,
       queryFn: ({ signal }) => admin.fetchNotices(apiClient, { signal }),
     }),
-  tickets: (query: admin.AdminPageQuery) =>
+  tickets: (query: admin.AdminTicketListQuery) =>
     queryOptions({
       queryKey: adminKeys.tickets(query),
       queryFn: ({ signal }) => admin.fetchTickets(apiClient, query, { signal }),
@@ -291,7 +293,7 @@ export const useAdminOrderDetail = (tradeNo?: string) =>
   useQuery(adminQueryOptions.order(tradeNo));
 export const useAdminUserInfo = (id?: number | null) => useQuery(adminQueryOptions.user(id));
 export const useAdminNotices = () => useQuery(adminQueryOptions.notices());
-export const useAdminTickets = (query: admin.AdminPageQuery) =>
+export const useAdminTickets = (query: admin.AdminTicketListQuery) =>
   useQuery(adminQueryOptions.tickets(query));
 export const useAdminTicket = (id?: number | string) => useQuery(adminQueryOptions.ticket(id));
 export const useAdminCoupons = (query: AdminContentPageState) =>

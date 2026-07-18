@@ -5,37 +5,17 @@ const nullableNumber = z.number().nullable();
 const nullableString = z.string().nullable();
 const binaryFlagSchema = z.union([z.literal(0), z.literal(1)]);
 
-export const trueSchema = z.literal(true);
 export const booleanSchema = z.boolean();
 export const stringSchema = z.string();
 export const numberSchema = z.number();
 export const stringArraySchema = z.array(stringSchema);
 export const numberArraySchema = z.array(numberSchema);
 
-export const adminFilterSchema = z.object({
-  key: z.string(),
-  condition: z.string(),
-  value: z.union([z.string(), z.number(), z.null()]),
-});
-
 /** Dynamic JSON is allowed at a leaf, never as an endpoint-level bypass. */
 export const jsonValueSchema = z.json();
 export const jsonObjectSchema = z.record(z.string(), jsonValueSchema);
 
 export const arraySchema = <TSchema extends z.ZodType>(item: TSchema) => z.array(item);
-
-/** The client adds `code` before this schema runs when the backend JSON omitted it. */
-export const envelopeSchema = <TDataSchema extends z.ZodType>(data: TDataSchema) =>
-  z.looseObject({
-    code: z.number(),
-    data,
-    total: z.number().optional(),
-    type: z.number().optional(),
-    message: z.string().optional(),
-  });
-
-export const pageEnvelopeSchema = <TItemSchema extends z.ZodType>(item: TItemSchema) =>
-  envelopeSchema(z.array(item)).extend({ total: z.number().optional() });
 
 /** Dialect 204 successes (docs/api-dialect.md §3.3): no body at all. */
 export const noContentSchema = z.undefined();
@@ -430,31 +410,6 @@ export const noticeSchema = z.looseObject({
   updated_at: z.string(),
 });
 
-/** Legacy ticket messages (epoch ints) — admin family only until W14. */
-export const ticketMessageSchema = z.looseObject({
-  id: z.number(),
-  user_id: z.number(),
-  ticket_id: z.number(),
-  message: z.string(),
-  is_me: z.boolean(),
-  created_at: z.number(),
-  updated_at: z.number(),
-});
-
-/** Legacy ticket rows (`/admin/ticket/fetch`, W11's admin flip pending W14). */
-export const ticketSchema = z.looseObject({
-  id: z.number(),
-  user_id: z.number(),
-  subject: z.string(),
-  level: z.union([z.literal(0), z.literal(1), z.literal(2)]),
-  status: binaryFlagSchema,
-  reply_status: binaryFlagSchema,
-  last_reply_user_id: nullableNumber.optional(),
-  created_at: z.number(),
-  updated_at: z.number(),
-  message: z.array(ticketMessageSchema).optional(),
-});
-
 /**
  * User ticket thread messages — dialect v2 (docs/api-dialect.md §5.7, W8):
  * RFC 3339 timestamps (§4.5), boolean `is_me`.
@@ -490,6 +445,15 @@ export const userTicketSchema = z.looseObject({
 export const userTicketDetailSchema = userTicketSchema.extend({
   message: z.array(userTicketMessageSchema),
 });
+
+/**
+ * Admin ticket rows and detail — dialect v2 (docs/api-dialect.md §6.5, W14):
+ * the admin-prefix ticket family shares the §5.7 modern row shape (RFC 3339
+ * timestamps, boolean `is_me`); only the list transport differs (`{items,
+ * total}` page instead of the user-side bare array).
+ */
+export const adminTicketSchema = userTicketSchema;
+export const adminTicketDetailSchema = userTicketDetailSchema;
 
 /** POST /user/tickets + /user/withdrawal-tickets (§5.7): 201 with `{id}`. */
 export const createdTicketSchema = z.looseObject({
@@ -705,13 +669,18 @@ export const adminUserDetailSchema = adminUserBaseSchema.extend({
   invite_user: z.looseObject({ email: z.string().optional() }).nullable().optional(),
 });
 
+/**
+ * GET /{secure_path}/stats/user-traffic rows (docs/api-dialect.md §6.8, W14):
+ * RFC 3339 `record_at` (§4.5) and a real JSON-number `server_rate`.
+ */
 export const adminUserTrafficSchema = z.looseObject({
-  record_at: z.number(),
+  record_at: z.string(),
   u: z.number(),
   d: z.number(),
   server_rate: z.number(),
 });
 
+/** GET /{secure_path}/stats/summary (§6.8, W14): bare object, integer-cent money. */
 export const adminStatSummarySchema = z.looseObject({
   online_user: z.number().optional(),
   month_income: z.number(),
@@ -719,23 +688,37 @@ export const adminStatSummarySchema = z.looseObject({
   day_register_total: z.number().optional(),
   ticket_pending_total: z.number(),
   commission_pending_total: z.number(),
+  payment_reconciliation_pending_total: z.number().optional(),
+  payment_reconciliation_pending_amount: z.number().optional(),
   day_income: z.number(),
   last_month_income: z.number(),
   commission_month_payout: z.number(),
   commission_last_month_payout: z.number(),
 });
+/** GET /{secure_path}/stats/server-rank `?window=` rows (§6.8, W14). */
 export const serverRankSchema = z.looseObject({
   server_id: z.number(),
-  server_name: z.string(),
+  server_type: z.string(),
+  server_name: nullableString,
+  u: z.number(),
+  d: z.number(),
   total: z.number(),
 });
+/** GET /{secure_path}/stats/user-rank `?window=` rows (§6.8, W14). */
 export const userRankSchema = z.looseObject({
   user_id: z.number(),
   email: z.string(),
+  u: z.number(),
+  d: z.number(),
   total: z.number(),
 });
-export const orderStatSchema = z.looseObject({
-  type: z.string(),
+/**
+ * GET /{secure_path}/stats/{orders,records} rows (§6.8, W14): stable
+ * snake_case `series` slugs and integer-cent money values — the legacy
+ * Chinese `type` literals and yuan floats died with the wave.
+ */
+export const statSeriesPointSchema = z.looseObject({
+  series: z.string(),
   date: z.string(),
   value: z.number(),
 });

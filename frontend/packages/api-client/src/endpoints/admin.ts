@@ -27,7 +27,8 @@ import {
 import { decimalToCents, decimalToScaledInteger } from '../money';
 import {
   adminConfigSchema,
-  adminFilterSchema,
+  adminTicketDetailSchema,
+  adminTicketSchema,
   configActivationPendingSchema,
   createdIdSchema,
   createdOrderSchema,
@@ -46,8 +47,6 @@ import {
   knowledgeSchema,
   knowledgeSummarySchema,
   noticeSchema,
-  orderStatSchema,
-  pageEnvelopeSchema,
   paymentFormSchema,
   planSchema,
   queueStatsSchema,
@@ -56,14 +55,22 @@ import {
   serverNodeSchema,
   serverRankSchema,
   serverRouteSchema,
+  statSeriesPointSchema,
   stringArraySchema,
-  ticketSchema,
-  trueSchema,
   userRankSchema,
 } from '../contracts';
 
-export const adminFilterArraySchema = arraySchema(adminFilterSchema);
-export type AdminFilter = output<typeof adminFilterSchema>;
+/**
+ * App-internal shared filter clause (`{key, condition, value}`), persisted in
+ * cross-page sessionStorage handoffs and drawer state. It is not a wire
+ * shape: each list endpoint translates it into the §7 DSL at this boundary
+ * (see `userFilterClauses`).
+ */
+export interface AdminFilter {
+  key: string;
+  condition: string;
+  value: string | number | null;
+}
 
 export interface AdminPageQuery {
   current?: number;
@@ -79,7 +86,6 @@ export type AdminUserTrafficRecord = output<typeof adminUserTrafficSchema>;
 
 export interface AdminUserTrafficQuery {
   user_id: number;
-  page?: number;
   current?: number;
   pageSize?: number;
 }
@@ -90,61 +96,8 @@ interface PageResult<T> {
 }
 
 type QueryRequestConfig = Pick<ApiRequestConfig, 'signal'>;
-type MutationRequestConfig = Pick<ApiRequestConfig, 'signal' | 'headers'>;
 
 const BYTES_PER_GIB = 1_073_741_824;
-
-const adminGet = <TSchema extends ZodType>(
-  client: ApiClient,
-  path: string,
-  responseSchema: TSchema,
-  params?: Record<string, unknown>,
-  config?: QueryRequestConfig,
-) =>
-  client.request({
-    url: client.resolveAdminPath(path),
-    method: 'GET',
-    params,
-    responseSchema,
-    ...config,
-  });
-
-const adminGetEnvelope = <TSchema extends ZodType>(
-  client: ApiClient,
-  path: string,
-  responseSchema: TSchema,
-  params?: Record<string, unknown>,
-  config?: QueryRequestConfig,
-) =>
-  client.requestEnvelope({
-    url: client.resolveAdminPath(path),
-    method: 'GET',
-    params,
-    responseSchema,
-    ...config,
-  });
-
-const adminPost = <TSchema extends ZodType>(
-  client: ApiClient,
-  path: string,
-  responseSchema: TSchema,
-  data?: unknown,
-  config?: MutationRequestConfig,
-) =>
-  client.request({
-    url: client.resolveAdminPath(path),
-    method: 'POST',
-    data,
-    responseSchema,
-    ...config,
-  });
-
-const adminPostTrue = (
-  client: ApiClient,
-  path: string,
-  data?: unknown,
-  config?: MutationRequestConfig,
-) => adminPost(client, path, trueSchema, data, config);
 
 const bulkMailIdempotencyKeys = new WeakMap<object, string>();
 
@@ -1100,29 +1053,78 @@ export const showNotice = (client: ApiClient, id: number, show: boolean) =>
     responseSchema: noContentSchema,
   });
 
+/**
+ * §6.5 (W14) list query: pages keep their local `{current, pageSize}` state;
+ * the §8 `page`/`per_page` wire query is minted here. `status`, `email`, and
+ * the repeatable `reply_status` keys are the admin ticket list's only
+ * filters (no §7 DSL — the spec invents none for this family).
+ */
+export interface AdminTicketListQuery {
+  current?: number;
+  pageSize?: number;
+  status?: number;
+  email?: string;
+  reply_status?: number[] | null;
+}
+
+/**
+ * GET /{secure_path}/tickets — dialect v2 `{items, total}` page (§6.5, W14).
+ * `reply_status` rides as a repeated real-array query key (the legacy
+ * JSON-stringified array param died); an empty `email` means "no filter",
+ * matching the legacy falsy guard, so it is omitted from the wire.
+ */
 export const fetchTickets = async (
   client: ApiClient,
-  query: AdminPageQuery = {},
+  query: AdminTicketListQuery = {},
   config?: QueryRequestConfig,
 ): Promise<PageResult<Ticket>> => {
-  const env = await adminGetEnvelope(
-    client,
-    '/ticket/fetch',
-    pageEnvelopeSchema(ticketSchema),
-    { ...query },
-    config,
-  );
-  return { data: env.data, total: env.total };
+  const page = await client.request({
+    url: client.resolveAdminPath('/tickets'),
+    method: 'GET',
+    dialect: 'v2',
+    params: {
+      page: query.current,
+      per_page: query.pageSize,
+      status: query.status,
+      email: query.email || undefined,
+      reply_status: query.reply_status?.length ? query.reply_status : undefined,
+    },
+    responseSchema: pageSchema(adminTicketSchema),
+    ...config,
+  });
+  return { data: page.items, total: page.total };
 };
 
+/** GET /{secure_path}/tickets/{id} — bare detail with the `message[]` thread (§6.5, W14). */
 export const ticketDetail = (client: ApiClient, id: number | string, config?: QueryRequestConfig) =>
-  adminGet(client, '/ticket/fetch', ticketSchema, { id }, config);
+  client.request({
+    url: client.resolveAdminPath(`/tickets/${encodeURIComponent(id)}`),
+    method: 'GET',
+    dialect: 'v2',
+    responseSchema: adminTicketDetailSchema,
+    ...config,
+  });
 
-export const replyTicket = (client: ApiClient, payload: TicketReplyPayload) =>
-  adminPostTrue(client, '/ticket/reply', payload);
+/** POST /{secure_path}/tickets/{id}/replies `{message}` — 204; the `id` moves to the path (§6.5). */
+export const replyTicket = (client: ApiClient, payload: TicketReplyPayload) => {
+  const { id, ...data } = payload;
+  return client.request({
+    url: client.resolveAdminPath(`/tickets/${encodeURIComponent(id)}/replies`),
+    method: 'POST',
+    dialect: 'v2',
+    data,
+    responseSchema: noContentSchema,
+  });
+};
 
+/** POST /{secure_path}/tickets/{id}/close — 204, no body (§6.5, W14). */
 export const closeTicket = (client: ApiClient, id: number) =>
-  adminPostTrue(client, '/ticket/close', { id });
+  client.request({
+    url: client.resolveAdminPath(`/tickets/${encodeURIComponent(id)}/close`),
+    method: 'POST',
+    dialect: 'v2',
+    responseSchema: noContentSchema,
+  });
 
 /**
  * §6.3 (W10): the coupon/gift-card lists take §8 pagination plus the §7.2
@@ -1470,37 +1472,81 @@ export const fetchSystemLogs = (
     ...config,
   });
 
+/** §6.8 (W14): the `stats/server-rank` + `stats/user-rank` window selector. */
+export type StatsRankWindow = 'today' | 'previous';
+
+/** GET /{secure_path}/stats/summary — dialect v2 bare object (§6.8, W14):
+ * the three legacy aliases collapsed into one route; money in integer cents. */
 export const statSummary = (client: ApiClient, config?: QueryRequestConfig) =>
-  adminGet(client, '/stat/getOverride', adminStatSummarySchema, undefined, config);
+  client.request({
+    url: client.resolveAdminPath('/stats/summary'),
+    method: 'GET',
+    dialect: 'v2',
+    responseSchema: adminStatSummarySchema,
+    ...config,
+  });
 
-export const statServerLastRank = (client: ApiClient, config?: QueryRequestConfig) =>
-  adminGet(client, '/stat/getServerLastRank', arraySchema(serverRankSchema), undefined, config);
+/** GET /{secure_path}/stats/server-rank `?window=today|previous` — bare array (§6.8, W14). */
+export const statServerRank = (
+  client: ApiClient,
+  window: StatsRankWindow,
+  config?: QueryRequestConfig,
+) =>
+  client.request({
+    url: client.resolveAdminPath('/stats/server-rank'),
+    method: 'GET',
+    dialect: 'v2',
+    params: { window },
+    responseSchema: arraySchema(serverRankSchema),
+    ...config,
+  });
 
-export const statServerTodayRank = (client: ApiClient, config?: QueryRequestConfig) =>
-  adminGet(client, '/stat/getServerTodayRank', arraySchema(serverRankSchema), undefined, config);
+/** GET /{secure_path}/stats/user-rank `?window=today|previous` — bare array (§6.8, W14). */
+export const statUserRank = (
+  client: ApiClient,
+  window: StatsRankWindow,
+  config?: QueryRequestConfig,
+) =>
+  client.request({
+    url: client.resolveAdminPath('/stats/user-rank'),
+    method: 'GET',
+    dialect: 'v2',
+    params: { window },
+    responseSchema: arraySchema(userRankSchema),
+    ...config,
+  });
 
-export const statUserLastRank = (client: ApiClient, config?: QueryRequestConfig) =>
-  adminGet(client, '/stat/getUserLastRank', arraySchema(userRankSchema), undefined, config);
-
-export const statUserTodayRank = (client: ApiClient, config?: QueryRequestConfig) =>
-  adminGet(client, '/stat/getUserTodayRank', arraySchema(userRankSchema), undefined, config);
-
+/** GET /{secure_path}/stats/orders — bare `{series, date, value}` array (§6.8, W14):
+ * snake_case series slugs, integer-cent money. */
 export const statOrder = (client: ApiClient, config?: QueryRequestConfig) =>
-  adminGet(client, '/stat/getOrder', arraySchema(orderStatSchema), undefined, config);
+  client.request({
+    url: client.resolveAdminPath('/stats/orders'),
+    method: 'GET',
+    dialect: 'v2',
+    responseSchema: arraySchema(statSeriesPointSchema),
+    ...config,
+  });
 
+/**
+ * GET /{secure_path}/stats/user-traffic `?user_id=&page=&per_page=` — dialect
+ * v2 `{items, total}` page (§6.8, W14): RFC 3339 `record_at`, numeric
+ * `server_rate`. The modal keeps its local `{current, pageSize}` state; the
+ * §8 wire query is minted here.
+ */
 export const statUser = async (
   client: ApiClient,
   query: AdminUserTrafficQuery,
   config?: QueryRequestConfig,
 ): Promise<PageResult<AdminUserTrafficRecord>> => {
-  const env = await adminGetEnvelope(
-    client,
-    '/stat/getStatUser',
-    pageEnvelopeSchema(adminUserTrafficSchema),
-    { ...query },
-    config,
-  );
-  return { data: env.data, total: env.total };
+  const page = await client.request({
+    url: client.resolveAdminPath('/stats/user-traffic'),
+    method: 'GET',
+    dialect: 'v2',
+    params: { user_id: query.user_id, page: query.current, per_page: query.pageSize },
+    responseSchema: pageSchema(adminUserTrafficSchema),
+    ...config,
+  });
+  return { data: page.items, total: page.total };
 };
 
 export type ServerNode = output<typeof serverNodeSchema>;
