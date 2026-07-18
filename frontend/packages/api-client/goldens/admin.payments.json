@@ -1,0 +1,46 @@
+[
+  {
+    "id": 1,
+    "name": "Golden EPay",
+    "payment": "EPay",
+    "icon": null,
+    "handling_fee_fixed": 20,
+    "handling_fee_percent": 0.5,
+    "uuid": "goldenepayuuid000000000000000001",
+    "config": {
+      "key": "********",
+      "pid": "1000",
+      "url": "https://epay.golden.test"
+    },
+    "notify_domain": null,
+    "notify_url": "https://golden.v2board.test/api/v1/guest/payment/notify/EPay/goldenepayuuid000000000000000001",
+    "enable": true,
+    "sort": 1,
+    "created_at": "2023-11-14T22:13:20Z",
+    "updated_at": "2023-11-14T22:13:20Z",
+    "legacy_md5_signature": true,
+    "security_warning": "Legacy MD5 signature protocol: require HTTPS and migrate to a provider with HMAC or asymmetric signatures when available."
+  },
+  {
+    "id": 2,
+    "name": "Golden EPay disabled",
+    "payment": "EPay",
+    "icon": null,
+    "handling_fee_fixed": null,
+    "handling_fee_percent": null,
+    "uuid": "goldenepayuuid000000000000000002",
+    "config": {
+      "key": "********",
+      "pid": "2000",
+      "url": "https://epay2.golden.test"
+    },
+    "notify_domain": "https://notify.golden.test",
+    "notify_url": "https://notify.golden.test/api/v1/guest/payment/notify/EPay/goldenepayuuid000000000000000002",
+    "enable": false,
+    "sort": 2,
+    "created_at": "2023-11-14T22:13:30Z",
+    "updated_at": "2023-11-14T22:13:30Z",
+    "legacy_md5_signature": true,
+    "security_warning": "Legacy MD5 signature protocol: require HTTPS and migrate to a provider with HMAC or asymmetric signatures when available."
+  }
+]
