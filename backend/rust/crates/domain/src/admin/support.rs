@@ -1,6 +1,7 @@
 use super::*;
 
 mod common;
+pub mod filter_dsl;
 mod filters;
 mod reporting;
 mod server;

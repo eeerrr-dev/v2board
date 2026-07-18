@@ -1,3 +1,6 @@
+use rust_decimal::prelude::ToPrimitive;
+use v2board_compat::{Code, Problem};
+
 use super::*;
 
 const BULK_MAIL_MAX_RECIPIENTS: usize = 50_000;
@@ -15,65 +18,91 @@ fn redacted_secret(value: Option<&str>) -> Option<&'static str> {
         .map(|_| REDACTED_SECRET)
 }
 
-fn without_redacted_config_secrets(params: &HashMap<String, String>) -> HashMap<String, String> {
-    params
-        .iter()
+/// A round-tripped redaction sentinel is "no change", never a literal secret
+/// value: the fetch view emits `********` for configured secrets and a PATCH
+/// echoing that placeholder must not overwrite the stored secret.
+fn without_redacted_config_secrets(body: &Map<String, Value>) -> Map<String, Value> {
+    body.iter()
         .filter(|(key, value)| {
-            !(CONFIG_SECRET_KEYS.contains(&key.as_str()) && value.as_str() == REDACTED_SECRET)
+            !(CONFIG_SECRET_KEYS.contains(&key.as_str()) && value.as_str() == Some(REDACTED_SECRET))
         })
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect()
 }
 
+/// PATCH `config` commit outcome (docs/api-dialect.md §6.1): `Unchanged` when
+/// the normalized candidate equals the active snapshot (nothing written);
+/// `Committed` carries the validated snapshot at its new revision for the API
+/// layer to activate (204 on full activation, 202 `{"activation":"pending"}`
+/// when the write persisted but this process could not activate it yet).
+pub enum ConfigPatchOutcome {
+    Unchanged,
+    Committed(Box<AppConfig>),
+}
+
 impl AdminService {
-    pub(super) fn config_fetch(&self, key: Option<&str>) -> Result<AdminOutput, ApiError> {
+    /// GET `config` `?group=` (docs/api-dialect.md §6.1): the grouped operator
+    /// view in §4.1 JSON types — real booleans for every flag, JSON numbers
+    /// for the unified numeric fields, real arrays, RFC 3339 having no
+    /// timestamps here, and the recorded exception that
+    /// `commission_withdraw_limit` keeps its exact decimal-string form.
+    /// Secrets stay redacted to a fixed-width sentinel. A known `?group=`
+    /// returns just that group (still keyed); an unknown or absent group
+    /// returns the full object, matching the legacy `?key=` behavior.
+    pub fn config_view(&self, group: Option<&str>) -> Value {
+        let distribution_rate = |value: Option<&str>| {
+            value
+                .and_then(|value| value.trim().parse::<f64>().ok())
+                .map(|value| json!(value))
+                .unwrap_or(Value::Null)
+        };
         let data = json!({
             "ticket": { "ticket_status": self.config.ticket_status },
             "deposit": { "deposit_bounus": self.config.deposit_bounus },
             "invite": {
-                "invite_force": bool_i(self.config.invite_force),
+                "invite_force": self.config.invite_force,
                 "invite_commission": self.config.invite_commission,
                 "invite_gen_limit": self.config.invite_gen_limit,
-                // Ported from ConfigController::fetch (laravel .../Admin/ConfigController.php:82).
-                "invite_never_expire": bool_i(self.config.invite_never_expire),
-                "commission_first_time_enable": bool_i(self.config.commission_first_time_enable),
-                "commission_auto_check_enable": bool_i(self.config.commission_auto_check_enable),
+                "invite_never_expire": self.config.invite_never_expire,
+                "commission_first_time_enable": self.config.commission_first_time_enable,
+                "commission_auto_check_enable": self.config.commission_auto_check_enable,
+                // Exact PostgreSQL NUMERIC round-trip: stays a decimal string
+                // so the admin form preserves lexical value (§4.1 exception).
                 "commission_withdraw_limit": self.config.commission_withdraw_limit.normalize().to_string(),
                 "commission_withdraw_method": self.config.commission_withdraw_method,
-                "withdraw_close_enable": bool_i(self.config.withdraw_close_enable),
-                "commission_distribution_enable": bool_i(self.config.commission_distribution_enable),
-                "commission_distribution_l1": self.config.commission_distribution_l1,
-                "commission_distribution_l2": self.config.commission_distribution_l2,
-                "commission_distribution_l3": self.config.commission_distribution_l3,
+                "withdraw_close_enable": self.config.withdraw_close_enable,
+                "commission_distribution_enable": self.config.commission_distribution_enable,
+                "commission_distribution_l1": distribution_rate(self.config.commission_distribution_l1.as_deref()),
+                "commission_distribution_l2": distribution_rate(self.config.commission_distribution_l2.as_deref()),
+                "commission_distribution_l3": distribution_rate(self.config.commission_distribution_l3.as_deref()),
             },
             "site": {
                 "logo": self.config.logo,
-                "force_https": bool_i(self.config.force_https),
-                "stop_register": bool_i(self.config.stop_register),
+                "force_https": self.config.force_https,
+                "stop_register": self.config.stop_register,
                 "app_name": self.config.app_name,
                 "app_description": self.config.app_description,
                 "app_url": self.config.app_url,
                 "subscribe_url": self.config.subscribe_url,
                 "subscribe_path": self.config.subscribe_path,
                 "try_out_plan_id": self.config.try_out_plan_id,
-                // Ported from ConfigController::fetch (laravel .../Admin/ConfigController.php:103).
-                "try_out_hour": self.config.try_out_hour.normalize().to_string(),
+                "try_out_hour": self.config.try_out_hour.to_f64(),
                 "tos_url": self.config.tos_url,
                 "currency": self.config.currency,
                 "currency_symbol": self.config.currency_symbol,
                 // docs/api-dialect.md §10.3/§12: site-group toggle for the
                 // client-side legacy `#/…` hash → history-URL translation.
-                "legacy_hash_redirect_enable": bool_i(self.config.legacy_hash_redirect_enable),
+                "legacy_hash_redirect_enable": self.config.legacy_hash_redirect_enable,
             },
             "subscribe": {
-                "plan_change_enable": bool_i(self.config.plan_change_enable),
+                "plan_change_enable": self.config.plan_change_enable,
                 "reset_traffic_method": self.config.reset_traffic_method,
-                "surplus_enable": bool_i(self.config.surplus_enable),
-                "allow_new_period": self.config.allow_new_period,
-                "new_order_event_id": self.config.new_order_event_id,
-                "renew_order_event_id": self.config.renew_order_event_id,
-                "change_order_event_id": self.config.change_order_event_id,
-                "show_info_to_server_enable": bool_i(self.config.show_info_to_server_enable),
+                "surplus_enable": self.config.surplus_enable,
+                "allow_new_period": self.config.allow_new_period != 0,
+                "new_order_event_id": self.config.new_order_event_id != 0,
+                "renew_order_event_id": self.config.renew_order_event_id != 0,
+                "change_order_event_id": self.config.change_order_event_id != 0,
+                "show_info_to_server_enable": self.config.show_info_to_server_enable,
                 "show_subscribe_method": self.config.show_subscribe_method,
                 "show_subscribe_expire": self.config.show_subscribe_expire,
             },
@@ -95,7 +124,7 @@ impl AdminService {
                 "server_push_interval": self.config.server_push_interval,
                 "server_node_report_min_traffic": self.config.server_node_report_min_traffic,
                 "server_device_online_min_traffic": self.config.server_device_online_min_traffic,
-                "device_limit_mode": self.config.device_limit_mode,
+                "device_limit_mode": self.config.device_limit_mode != 0,
             },
             "email": {
                 "email_template": self.config.email_template,
@@ -107,7 +136,7 @@ impl AdminService {
                 "email_from_address": self.config.email_from_address,
             },
             "telegram": {
-                "telegram_bot_enable": bool_i(self.config.telegram_bot_enable),
+                "telegram_bot_enable": self.config.telegram_bot_enable,
                 "telegram_bot_token": redacted_secret(self.config.telegram_bot_token.as_deref()),
                 "telegram_discuss_link": self.config.telegram_discuss_link,
             },
@@ -120,68 +149,85 @@ impl AdminService {
                 "android_download_url": self.config.android_download_url,
             },
             "safe": {
-                "email_verify": bool_i(self.config.email_verify),
-                "safe_mode_enable": bool_i(self.config.safe_mode_enable),
+                "email_verify": self.config.email_verify,
+                "safe_mode_enable": self.config.safe_mode_enable,
                 "secure_path": self.config.admin_path(),
-                "email_whitelist_enable": bool_i(self.config.email_whitelist_enable),
+                "email_whitelist_enable": self.config.email_whitelist_enable,
                 "email_whitelist_suffix": self.config.email_whitelist_suffix,
-                "email_gmail_limit_enable": bool_i(self.config.email_gmail_limit_enable),
-                "recaptcha_enable": bool_i(self.config.recaptcha_enable),
+                "email_gmail_limit_enable": self.config.email_gmail_limit_enable,
+                "recaptcha_enable": self.config.recaptcha_enable,
                 "recaptcha_key": redacted_secret(self.config.recaptcha_key.as_deref()),
                 "recaptcha_site_key": self.config.recaptcha_site_key,
-                "register_limit_by_ip_enable": bool_i(self.config.register_limit_by_ip_enable),
+                "register_limit_by_ip_enable": self.config.register_limit_by_ip_enable,
                 "register_limit_count": self.config.register_limit_count,
                 "register_limit_expire": self.config.register_limit_expire,
-                "password_limit_enable": bool_i(self.config.password_limit_enable),
+                "password_limit_enable": self.config.password_limit_enable,
                 "password_limit_count": self.config.password_limit_count,
                 "password_limit_expire": self.config.password_limit_expire,
             },
         });
-        if let Some(key) = key
-            && let Some(value) = data.get(key)
+        if let Some(group) = group
+            && let Some(value) = data.get(group)
         {
-            return Ok(AdminOutput::Data(json!({ key: value })));
+            return json!({ group: value });
         }
-        Ok(AdminOutput::Data(data))
+        data
     }
 
-    pub(super) async fn config_save(
+    /// GET `email-templates` (docs/api-dialect.md §6.1): a bare array of the
+    /// installed template names. The native build ships only `default`.
+    pub fn email_templates(&self) -> Value {
+        json!(["default"])
+    }
+}
+
+impl AdminService {
+    /// PATCH `config` (docs/api-dialect.md §6.1): a partial JSON object of
+    /// whitelisted operator settings in §4.1 native types (the `'[]'`-string
+    /// array hack is dead — arrays are JSON arrays). §4.4 semantics: an
+    /// absent key retains, `null` clears back to the built-in default, a
+    /// value sets. A stale operator revision is the 409
+    /// `config_revision_conflict` problem.
+    pub async fn config_patch(
         &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        // ConfigSave validates the payload (enums, urls, secure_path/server_token
-        // length, deposit_bounus format) and 422s before anything is written.
-        let actor = params
-            .get("_admin_email")
-            .map(|email| format!("admin:{}", email.trim()))
-            .unwrap_or_else(|| "admin:unknown".to_string());
-        let mut params = without_redacted_config_secrets(params);
-        // The fetch response exposes the effective fallback path. Posting that
-        // unchanged value must remain a no-op even when an old installation's
-        // fallback is shorter than today's explicit-path validation rule.
-        drop_unchanged_effective_secure_path(&mut params, &self.config.admin_path());
-        validate_config_params(&params)?;
-        let server_token = params
-            .get("server_token")
-            .map(String::as_str)
-            .or(self.config.server_token.as_deref());
-        let force_https = params
-            .get("force_https")
-            .map(|value| truthy(Some(value)))
-            .unwrap_or(self.config.force_https);
-        let app_url = params
-            .get("app_url")
-            .map(String::as_str)
-            .or(self.config.app_url.as_deref());
+        body: &Map<String, Value>,
+        admin_email: &str,
+    ) -> Result<ConfigPatchOutcome, ApiError> {
+        let actor = format!("admin:{}", admin_email.trim());
+        let mut body = without_redacted_config_secrets(body);
+        // The fetch response exposes the effective fallback path. Patching
+        // that unchanged value must remain a no-op even when an old
+        // installation's fallback is shorter than today's explicit-path rule.
+        drop_unchanged_effective_secure_path(&mut body, &self.config.admin_path());
+        validate_config_json(&body)?;
+        let server_token = match body.get("server_token") {
+            Some(Value::String(value)) => Some(value.as_str()),
+            Some(Value::Null) => None,
+            _ => self.config.server_token.as_deref(),
+        };
+        let force_https = match body.get("force_https") {
+            Some(Value::Bool(value)) => *value,
+            _ => self.config.force_https,
+        };
+        let app_url = match body.get("app_url") {
+            Some(Value::String(value)) => Some(value.as_str()),
+            Some(Value::Null) => None,
+            _ => self.config.app_url.as_deref(),
+        };
         self.config
             .validate_security_update(server_token, force_https, app_url)
-            .map_err(|error| ApiError::business(format!("配置安全校验失败: {error}")))?;
+            .map_err(|error| {
+                ApiError::from(
+                    Problem::new(Code::ConfigValidationFailed)
+                        .with_detail(format!("配置安全校验失败: {error}")),
+                )
+            })?;
         let expected_revision = self
             .config
             .operator_revision()
             .ok_or_else(|| ApiError::internal("operator configuration authority is not active"))?;
         let mut candidate = self.config.operator_config_map();
-        merge_config_params(&mut candidate, &params);
+        merge_config_json(&mut candidate, &body);
         let current = self.config.clone();
         let candidate_config = tokio::task::spawn_blocking(move || {
             current.with_operator_config(&candidate, expected_revision)
@@ -193,11 +239,14 @@ impl AdminService {
         })?
         .map_err(|error| {
             tracing::warn!(?error, "rejected invalid operator configuration candidate");
-            ApiError::business(format!("配置校验失败: {error}"))
+            ApiError::from(
+                Problem::new(Code::ConfigValidationFailed)
+                    .with_detail(format!("配置校验失败: {error}")),
+            )
         })?;
         let normalized = candidate_config.operator_config_map();
         if normalized == self.config.operator_config_map() {
-            return Ok(AdminOutput::Data(json!(true)));
+            return Ok(ConfigPatchOutcome::Unchanged);
         }
         let installation_id = self.installation_id;
         let committed = operator_config::commit(
@@ -211,32 +260,150 @@ impl AdminService {
         .await
         .map_err(|error| match error {
             operator_config::OperatorConfigError::Conflict { .. } => {
-                ApiError::bad_request("配置已被其他请求更新，请刷新后重试")
+                ApiError::from(Problem::new(Code::ConfigRevisionConflict))
             }
             error => {
                 tracing::error!(?error, "failed to commit operator configuration");
                 ApiError::internal("operator configuration commit failed")
             }
         })?;
-        Ok(AdminOutput::ConfigSaved {
-            config: Box::new(candidate_config.at_operator_revision(committed.revision)),
-        })
+        Ok(ConfigPatchOutcome::Committed(Box::new(
+            candidate_config.at_operator_revision(committed.revision),
+        )))
     }
 
-    pub(super) async fn test_send_mail(
-        &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        let to = required_string(params, "_admin_email")?;
-        self.send_test_mail(
-            &to,
+    /// POST `test-mail` (docs/api-dialect.md §6.1): a synchronous SMTP probe
+    /// to the requesting admin. Failures are typed problems — 400
+    /// `mail_sender_not_configured` / `mail_invalid`, 502 `mail_send_failed` —
+    /// never queue items.
+    pub async fn test_mail(&self, to: &str) -> Result<(), ApiError> {
+        let settings = MailSettings::load(&self.config)
+            .map_err(|_| ApiError::from(Problem::new(Code::MailSenderNotConfigured)))?;
+        let transport_settings = SmtpSettings {
+            host: settings.host.clone(),
+            port: settings.port,
+            username: settings.username.clone(),
+            password: settings.password.clone(),
+            encryption: settings.encryption.clone(),
+            from_address: settings.from_address.clone(),
+        };
+        let from = settings
+            .from_address
+            .as_deref()
+            .or(settings.username.as_deref())
+            .ok_or_else(|| ApiError::from(Problem::new(Code::MailSenderNotConfigured)))?;
+        // The configuration probe stays synchronous and uses the `notify` HTML
+        // template.
+        let body = crate::mail::render_notify(
+            &self.config.app_name,
+            self.config.app_url.as_deref().unwrap_or_default(),
             "This is v2board test email",
-            "This is v2board test email",
+        );
+        let email = Message::builder()
+            .from(
+                format!("{} <{}>", self.config.app_name, from)
+                    .parse()
+                    .map_err(|_| {
+                        ApiError::from(
+                            Problem::new(Code::MailSenderNotConfigured)
+                                .with_detail("Email sender is invalid"),
+                        )
+                    })?,
+            )
+            .to(to.parse().map_err(|_| {
+                ApiError::from(
+                    Problem::new(Code::MailInvalid).with_detail("Email recipient is invalid"),
+                )
+            })?)
+            .subject("This is v2board test email")
+            .header(ContentType::TEXT_HTML)
+            .body(body)
+            .map_err(|_| {
+                ApiError::from(
+                    Problem::new(Code::MailInvalid).with_detail("Email content is invalid"),
+                )
+            })?;
+
+        let transport = self.smtp.transport(&transport_settings)?;
+        let send = transport.send(email);
+        tokio::time::timeout(
+            std::time::Duration::from_secs(self.config.http_request_timeout_seconds),
+            send,
         )
-        .await?;
-        Ok(AdminOutput::Data(json!(true)))
+        .await
+        .map_err(|_| {
+            ApiError::from(Problem::new(Code::MailSendFailed).with_detail("Email send timed out"))
+        })?
+        .map_err(|error| {
+            tracing::warn!(?error, "test mail send failed");
+            ApiError::from(Problem::new(Code::MailSendFailed))
+        })?;
+        Ok(())
     }
 
+    /// POST `telegram-webhook` (docs/api-dialect.md §6.1): registers the §2
+    /// byte-frozen guest webhook with Telegram, using the request token when
+    /// given (a round-tripped redaction sentinel means "use the stored one").
+    /// Problems: 400 `telegram_token_invalid`, 502 `telegram_request_failed`
+    /// / `telegram_webhook_failed`.
+    pub async fn set_telegram_webhook(&self, token: Option<&str>) -> Result<(), ApiError> {
+        let token = token
+            .map(str::trim)
+            .filter(|value| !value.is_empty() && *value != REDACTED_SECRET)
+            .or(self.config.telegram_bot_token.as_deref())
+            .ok_or_else(|| {
+                ApiError::from(
+                    Problem::new(Code::TelegramTokenInvalid)
+                        .with_detail("Telegram bot token cannot be empty"),
+                )
+            })?;
+        let hook_url = format!(
+            "{}/api/v1/guest/telegram/webhook",
+            self.config
+                .app_url
+                .as_deref()
+                .unwrap_or_default()
+                .trim_end_matches('/')
+        );
+        let secret_token = telegram_webhook_secret(&self.config.app_key, token);
+        let me_response = self
+            .http
+            .get(format!("https://api.telegram.org/bot{token}/getMe"))
+            .send()
+            .await
+            .map_err(|_| ApiError::from(Problem::new(Code::TelegramRequestFailed)))?;
+        let me: Value = crate::http_response::bounded_json(
+            me_response,
+            crate::http_response::MAX_EXTERNAL_RESPONSE_BYTES,
+            "Telegram request failed",
+        )
+        .await
+        .map_err(|_| ApiError::from(Problem::new(Code::TelegramRequestFailed)))?;
+        if me.get("ok").and_then(Value::as_bool) != Some(true) {
+            return Err(Problem::new(Code::TelegramTokenInvalid).into());
+        }
+        let result_response = self
+            .http
+            .post(format!("https://api.telegram.org/bot{token}/setWebhook"))
+            .json(&json!({ "url": hook_url, "secret_token": secret_token }))
+            .send()
+            .await
+            .map_err(|_| ApiError::from(Problem::new(Code::TelegramRequestFailed)))?;
+        let result: Value = crate::http_response::bounded_json(
+            result_response,
+            crate::http_response::MAX_EXTERNAL_RESPONSE_BYTES,
+            "Telegram request failed",
+        )
+        .await
+        .map_err(|_| ApiError::from(Problem::new(Code::TelegramRequestFailed)))?;
+        if result.get("ok").and_then(Value::as_bool) != Some(true) {
+            return Err(Problem::new(Code::TelegramWebhookFailed).into());
+        }
+        Ok(())
+    }
+}
+
+impl AdminService {
     pub(super) async fn send_mail_to_users(
         &self,
         params: &HashMap<String, String>,
@@ -330,117 +497,20 @@ impl AdminService {
             ),
         })
     }
-
-    async fn send_test_mail(&self, to: &str, subject: &str, content: &str) -> Result<(), ApiError> {
-        let settings = MailSettings::load(&self.config)?;
-        let transport_settings = SmtpSettings {
-            host: settings.host.clone(),
-            port: settings.port,
-            username: settings.username.clone(),
-            password: settings.password.clone(),
-            encryption: settings.encryption.clone(),
-            from_address: settings.from_address.clone(),
-        };
-        let from = settings
-            .from_address
-            .as_deref()
-            .or(settings.username.as_deref())
-            .ok_or_else(|| ApiError::legacy("Email sender is not configured"))?;
-        // The configuration probe stays synchronous and uses the `notify` HTML template.
-        let body = crate::mail::render_notify(
-            &self.config.app_name,
-            self.config.app_url.as_deref().unwrap_or_default(),
-            content,
-        );
-        let email = Message::builder()
-            .from(
-                format!("{} <{}>", self.config.app_name, from)
-                    .parse()
-                    .map_err(|_| ApiError::legacy("Email sender is invalid"))?,
-            )
-            .to(to
-                .parse()
-                .map_err(|_| ApiError::legacy("Email recipient is invalid"))?)
-            .subject(subject)
-            .header(ContentType::TEXT_HTML)
-            .body(body)
-            .map_err(|_| ApiError::legacy("Email content is invalid"))?;
-
-        let transport = self.smtp.transport(&transport_settings)?;
-        let send = transport.send(email);
-        tokio::time::timeout(
-            std::time::Duration::from_secs(self.config.http_request_timeout_seconds),
-            send,
-        )
-        .await
-        .map_err(|_| ApiError::legacy("Email send timed out"))?
-        .map_err(|error| ApiError::legacy(format!("Email send failed: {error}")))?;
-        Ok(())
-    }
-
-    pub(super) async fn set_telegram_webhook(
-        &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        let token = params
-            .get("telegram_bot_token")
-            .map(String::as_str)
-            .filter(|value| !value.trim().is_empty() && *value != REDACTED_SECRET)
-            .or(self.config.telegram_bot_token.as_deref())
-            .ok_or_else(|| ApiError::business("Telegram bot token cannot be empty"))?;
-        let hook_url = format!(
-            "{}/api/v1/guest/telegram/webhook",
-            self.config
-                .app_url
-                .as_deref()
-                .unwrap_or_default()
-                .trim_end_matches('/')
-        );
-        let secret_token = telegram_webhook_secret(&self.config.app_key, token);
-        let me_response = self
-            .http
-            .get(format!("https://api.telegram.org/bot{token}/getMe"))
-            .send()
-            .await
-            .map_err(|_| ApiError::legacy("Telegram request failed"))?;
-        let me: Value = crate::http_response::bounded_json(
-            me_response,
-            crate::http_response::MAX_EXTERNAL_RESPONSE_BYTES,
-            "Telegram request failed",
-        )
-        .await?;
-        if me.get("ok").and_then(Value::as_bool) != Some(true) {
-            return Err(ApiError::business("Telegram token is invalid"));
-        }
-        let result_response = self
-            .http
-            .post(format!("https://api.telegram.org/bot{token}/setWebhook"))
-            .json(&json!({ "url": hook_url, "secret_token": secret_token }))
-            .send()
-            .await
-            .map_err(|_| ApiError::legacy("Telegram request failed"))?;
-        let result: Value = crate::http_response::bounded_json(
-            result_response,
-            crate::http_response::MAX_EXTERNAL_RESPONSE_BYTES,
-            "Telegram request failed",
-        )
-        .await?;
-        if result.get("ok").and_then(Value::as_bool) != Some(true) {
-            return Err(ApiError::business("Telegram webhook failed"));
-        }
-        Ok(AdminOutput::Data(json!(true)))
-    }
 }
 
+/// The GET view exposes the effective fallback admin path; a PATCH echoing
+/// that unchanged value is removed before validation so it stays a no-op.
 pub(super) fn drop_unchanged_effective_secure_path(
-    params: &mut HashMap<String, String>,
+    body: &mut Map<String, Value>,
     effective_admin_path: &str,
 ) {
-    if params
+    if body
         .get("secure_path")
+        .and_then(Value::as_str)
         .is_some_and(|path| path.trim_matches('/') == effective_admin_path)
     {
-        params.remove("secure_path");
+        body.remove("secure_path");
     }
 }
 
@@ -464,19 +534,19 @@ mod tests {
             Some(REDACTED_SECRET)
         );
         assert_eq!(redacted_secret(None), None);
-        let params = HashMap::from([
-            ("server_token".to_string(), REDACTED_SECRET.to_string()),
-            ("email_password".to_string(), "rotated".to_string()),
-            ("app_name".to_string(), "V2Board".to_string()),
-        ]);
-        let filtered = without_redacted_config_secrets(&params);
+        let body = json!({
+            "server_token": REDACTED_SECRET,
+            "email_password": "rotated",
+            "app_name": "V2Board",
+        });
+        let filtered = without_redacted_config_secrets(body.as_object().expect("object"));
         assert!(!filtered.contains_key("server_token"));
         assert_eq!(
-            filtered.get("email_password").map(String::as_str),
+            filtered.get("email_password").and_then(Value::as_str),
             Some("rotated")
         );
         assert_eq!(
-            filtered.get("app_name").map(String::as_str),
+            filtered.get("app_name").and_then(Value::as_str),
             Some("V2Board")
         );
     }

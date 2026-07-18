@@ -1,5 +1,6 @@
 use super::*;
 use rust_decimal::prelude::ToPrimitive;
+use v2board_compat::Pagination;
 
 const ORDER_INCOME_SUM_SQL: &str = "SELECT CAST(COALESCE(SUM(total_amount), 0) AS TEXT) FROM orders \
      WHERE created_at >= $1 AND created_at < $2 AND status NOT IN (0, 2)";
@@ -422,7 +423,10 @@ impl AdminService {
         Ok(AdminOutput::Page { data, total })
     }
 
-    pub(super) async fn system_status(&self) -> Result<AdminOutput, ApiError> {
+    /// GET `system/status` (docs/api-dialect.md §6.1): scheduler/worker
+    /// health as a bare object — snake_case keys and RFC 3339 timestamps per
+    /// §4.5 (the legacy camelCase Horizon vocabulary is retired).
+    pub async fn system_status_view(&self) -> Result<Value, ApiError> {
         let snapshot = self.worker_snapshot().await?;
         let now = Utc::now().timestamp();
         let schedule_recent = snapshot
@@ -430,19 +434,21 @@ impl AdminService {
             .map(|last_seen| timestamp_is_recent(now, last_seen, 180))
             .unwrap_or(false);
         let worker_running = snapshot.worker_running(now, 180);
-        Ok(AdminOutput::Data(json!({
+        Ok(json!({
             "schedule": schedule_recent,
             "horizon": worker_running,
-            "schedule_last_runtime": snapshot.schedule_last_seen_at.unwrap_or_default(),
-            "logChannel": "rust",
-            "logLevel": std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()),
-            "cacheDriver": "redis",
-            "backendVersion": env!("CARGO_PKG_VERSION"),
-            "frontendVersion": env!("CARGO_PKG_VERSION"),
-        })))
+            "schedule_last_runtime": rfc3339_epoch_option(snapshot.schedule_last_seen_at),
+            "log_channel": "rust",
+            "log_level": std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()),
+            "cache_driver": "redis",
+            "backend_version": env!("CARGO_PKG_VERSION"),
+            "frontend_version": env!("CARGO_PKG_VERSION"),
+        }))
     }
 
-    pub(super) async fn queue_stats(&self) -> Result<AdminOutput, ApiError> {
+    /// GET `system/queue-stats` (docs/api-dialect.md §6.1): bare worker
+    /// counters — snake_case keys, RFC 3339 timestamp maps.
+    pub async fn queue_stats_view(&self) -> Result<Value, ApiError> {
         let snapshot = self.worker_snapshot().await?;
         let now = Utc::now().timestamp();
         let worker_running = snapshot.worker_running(now, 180);
@@ -451,27 +457,29 @@ impl AdminService {
             .values()
             .filter(|last_run| timestamp_is_recent(now, **last_run, 60))
             .count();
-        Ok(AdminOutput::Data(json!({
-            "failedJobs": snapshot.failed_jobs(),
-            "jobsPerMinute": jobs_per_minute,
-            "pausedMasters": 0,
+        Ok(json!({
+            "failed_jobs": snapshot.failed_jobs(),
+            "jobs_per_minute": jobs_per_minute,
+            "paused_masters": 0,
             "periods": {
-                "failedJobs": snapshot.failed_jobs(),
-                "recentJobs": snapshot.total_jobs(),
+                "failed_jobs": snapshot.failed_jobs(),
+                "recent_jobs": snapshot.total_jobs(),
             },
             "processes": if worker_running { 1 } else { 0 },
-            "queueWithMaxRuntime": null,
-            "queueWithMaxThroughput": snapshot.max_counter_key(),
-            "recentJobs": snapshot.total_jobs(),
+            "queue_with_max_runtime": null,
+            "queue_with_max_throughput": snapshot.max_counter_key(),
+            "recent_jobs": snapshot.total_jobs(),
             "status": worker_running,
             "wait": {},
-            "lastRunAt": snapshot.last_run_at,
-            "lastSuccessAt": snapshot.last_success_at,
-            "lastFailureAt": snapshot.last_failure_at,
-        })))
+            "last_run_at": rfc3339_epoch_map(&snapshot.last_run_at),
+            "last_success_at": rfc3339_epoch_map(&snapshot.last_success_at),
+            "last_failure_at": rfc3339_epoch_map(&snapshot.last_failure_at),
+        }))
     }
 
-    pub(super) async fn queue_workload(&self) -> Result<AdminOutput, ApiError> {
+    /// GET `system/queue-workload` (docs/api-dialect.md §6.1): a bare array of
+    /// per-job counters with RFC 3339 timestamps.
+    pub async fn queue_workload_view(&self) -> Result<Value, ApiError> {
         let snapshot = self.worker_snapshot().await?;
         let now = Utc::now().timestamp();
         let rows = snapshot
@@ -488,27 +496,29 @@ impl AdminService {
                     "processes": if last_run_at.map(|seen| timestamp_is_recent(now, seen, 180)).unwrap_or(false) { 1 } else { 0 },
                     "recent_jobs": total,
                     "failed_jobs": failed,
-                    "last_run_at": last_run_at,
-                    "last_success_at": snapshot.last_success_at.get(&name).copied(),
-                    "last_failure_at": snapshot.last_failure_at.get(&name).copied(),
+                    "last_run_at": rfc3339_epoch_option(last_run_at),
+                    "last_success_at": rfc3339_epoch_option(snapshot.last_success_at.get(&name).copied()),
+                    "last_failure_at": rfc3339_epoch_option(snapshot.last_failure_at.get(&name).copied()),
                 })
             })
             .collect::<Vec<_>>();
-        Ok(AdminOutput::Data(json!(rows)))
+        Ok(json!(rows))
     }
 
-    pub(super) async fn queue_masters(&self) -> Result<AdminOutput, ApiError> {
+    /// GET `system/queue-masters` (docs/api-dialect.md §6.1): a bare array —
+    /// the single native worker process with RFC 3339 heartbeats.
+    pub async fn queue_masters_view(&self) -> Result<Value, ApiError> {
         let snapshot = self.worker_snapshot().await?;
         let now = Utc::now().timestamp();
         let worker_running = snapshot.worker_running(now, 180);
-        Ok(AdminOutput::Data(json!([{
+        Ok(json!([{
             "name": "rust-worker",
             "status": if worker_running { "running" } else { "stale" },
             "pid": null,
             "supervisors": snapshot.job_names(),
-            "last_seen_at": snapshot.last_seen_at(),
-            "schedule_last_seen_at": snapshot.schedule_last_seen_at,
-        }])))
+            "last_seen_at": rfc3339_epoch_option(snapshot.last_seen_at()),
+            "schedule_last_seen_at": rfc3339_epoch_option(snapshot.schedule_last_seen_at),
+        }]))
     }
 
     async fn worker_snapshot(&self) -> Result<WorkerSnapshot, ApiError> {
@@ -551,39 +561,27 @@ impl AdminService {
         })
     }
 
-    pub(super) async fn system_log(
+    /// GET `system/logs` (docs/api-dialect.md §6.1): §8 pagination plus the
+    /// §7 filter/sort DSL — this route is the DSL's first consumer, with the
+    /// §7.1 whitelist pinned to `level` only. Rows keep the legacy key set
+    /// with §4.5 RFC 3339 `created_at`/`updated_at`.
+    pub async fn system_logs(
         &self,
-        params: &HashMap<String, String>,
-    ) -> Result<AdminOutput, ApiError> {
-        let pagination = page(params)?;
-        // SystemController::getSystemLog reads the ProTable filter[] scope via
-        // setFilterAllowKeys('level'): each entry must be key=level, a supported
-        // condition, and a non-empty value.
-        let entries = collect_filter_entries(params);
-        for entry in &entries {
-            let key = entry.get("key").map(String::as_str).unwrap_or_default();
-            let condition = entry
-                .get("condition")
-                .map(String::as_str)
-                .unwrap_or_default();
-            let value = entry.get("value").map(String::as_str).unwrap_or_default();
-            if key != "level" {
-                return Err(validation_error("filter.key", "选择的 filter.key 不存在"));
-            }
-            if !LOG_FILTER_CONDITIONS.contains(&condition) {
-                return Err(validation_error(
-                    "filter.condition",
-                    "选择的 filter.condition 不存在",
-                ));
-            }
-            if value.is_empty() {
-                return Err(validation_error("filter.value", "filter.value 不能为空"));
-            }
-        }
+        pagination: Pagination,
+        filter: Option<&str>,
+        sort_by: Option<&str>,
+        sort_dir: Option<&str>,
+    ) -> Result<(Vec<Value>, i64), ApiError> {
+        let clauses = filter
+            .map(filter_dsl::parse_filter_param)
+            .transpose()?
+            .unwrap_or_default();
+        let filters = filter_dsl::resolve_filters(&clauses, SYSTEM_LOG_FILTER_COLUMNS)?;
+        let sort = filter_dsl::resolve_sort(sort_by, sort_dir, SYSTEM_LOG_SORT_COLUMNS)?;
 
         let mut count_builder =
             QueryBuilder::<Postgres>::new("SELECT COUNT(*) FROM system_log WHERE 1 = 1");
-        push_log_filters(&mut count_builder, &entries);
+        filter_dsl::push_filter_where(&mut count_builder, &filters);
         let total: i64 = count_builder
             .build_query_scalar()
             .fetch_one(&self.db)
@@ -600,20 +598,75 @@ impl AdminService {
             WHERE 1 = 1
             "#,
         );
-        push_log_filters(&mut builder, &entries);
-        builder.push(" ORDER BY created_at DESC LIMIT ");
-        builder.push_bind(pagination.limit);
+        filter_dsl::push_filter_where(&mut builder, &filters);
+        builder.push(format!(" ORDER BY {} LIMIT ", sort.order_by()));
+        builder.push_bind(pagination.limit());
         builder.push(" OFFSET ");
-        builder.push_bind(pagination.offset);
-        let data = builder
+        builder.push_bind(pagination.offset());
+        let items = builder
             .build_query_scalar::<Json<Value>>()
             .fetch_all(&self.db)
             .await?
             .into_iter()
-            .map(|row| row.0)
+            .map(|row| epoch_fields_to_rfc3339(row.0, &["created_at", "updated_at"]))
             .collect();
-        Ok(AdminOutput::Page { data, total })
+        Ok((items, total))
     }
+}
+
+/// §7.1 filter whitelist for `GET system/logs`: `level` only.
+const SYSTEM_LOG_FILTER_COLUMNS: &[filter_dsl::FilterColumn] = &[filter_dsl::FilterColumn {
+    field: "level",
+    expr: "level",
+    kind: filter_dsl::ColumnKind::Text,
+}];
+
+/// §7.2 sort whitelist: the filterable fields plus the `created_at` default.
+const SYSTEM_LOG_SORT_COLUMNS: &[filter_dsl::SortColumn] = &[
+    filter_dsl::SortColumn {
+        field: "created_at",
+        expr: "created_at",
+    },
+    filter_dsl::SortColumn {
+        field: "level",
+        expr: "level",
+    },
+];
+
+/// §4.5: epoch seconds cross the boundary as RFC 3339 UTC strings (or null).
+/// Matches `v2board_compat::json::rfc3339`'s `Z`-suffixed seconds form.
+fn rfc3339_epoch(epoch_seconds: i64) -> Value {
+    chrono::DateTime::from_timestamp(epoch_seconds, 0)
+        .map(|instant| Value::String(instant.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)))
+        .unwrap_or(Value::Null)
+}
+
+fn rfc3339_epoch_option(epoch_seconds: Option<i64>) -> Value {
+    epoch_seconds.map(rfc3339_epoch).unwrap_or(Value::Null)
+}
+
+fn rfc3339_epoch_map(timestamps: &BTreeMap<String, i64>) -> Value {
+    Value::Object(
+        timestamps
+            .iter()
+            .map(|(name, epoch)| (name.clone(), rfc3339_epoch(*epoch)))
+            .collect(),
+    )
+}
+
+/// Converts named epoch-integer members of a database-built JSON row into
+/// their §4.5 RFC 3339 form.
+fn epoch_fields_to_rfc3339(mut row: Value, fields: &[&str]) -> Value {
+    if let Some(object) = row.as_object_mut() {
+        for field in fields {
+            if let Some(value) = object.get_mut(*field)
+                && let Some(epoch) = value.as_i64()
+            {
+                *value = rfc3339_epoch(epoch);
+            }
+        }
+    }
+    row
 }
 
 #[cfg(test)]

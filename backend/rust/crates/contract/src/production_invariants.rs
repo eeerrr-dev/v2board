@@ -1817,11 +1817,22 @@ async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) -> Result<()>
     .bind(now)
     .execute(pool)
     .await?;
-    for row in admin_page_rows(
-        admin.get("system/getSystemLog", HashMap::new()).await?,
-        "system/getSystemLog",
-    )? {
-        assert_exact_keys("system/getSystemLog", &row, ADMIN_SYSTEM_LOG_KEYS)?;
+    // W9 modern route: GET system/logs (§8 pagination + §7 DSL). The row key
+    // set is unchanged from the legacy projection.
+    let (log_rows, log_total) = admin
+        .system_logs(
+            v2board_compat::Pagination::resolve(None, None, 10)
+                .map_err(|problem| anyhow::anyhow!("system/logs pagination: {problem:?}"))?,
+            Some(r#"[{"field":"level","op":"eq","value":"info"}]"#),
+            None,
+            None,
+        )
+        .await?;
+    if log_total < 1 || log_rows.is_empty() {
+        anyhow::bail!("system/logs must return the seeded projection row");
+    }
+    for row in log_rows {
+        assert_exact_keys("system/logs", &row, ADMIN_SYSTEM_LOG_KEYS)?;
     }
 
     // Knowledge list + detail.

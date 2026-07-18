@@ -44,7 +44,12 @@ mod users;
 
 const REDIS_MGET_BATCH_SIZE: usize = 500;
 
+/// The §7 filter/sort DSL (docs/api-dialect.md §7), shipped in W9 with
+/// `GET system/logs` and reused by the W11/W12 admin list waves.
+pub use support::filter_dsl;
 use support::*;
+
+pub use configuration::ConfigPatchOutcome;
 
 const GIB: i64 = 1_073_741_824;
 
@@ -128,7 +133,6 @@ pub enum AdminOutput {
     Data(Value),
     Page { data: Vec<Value>, total: i64 },
     Csv { filename: String, body: String },
-    ConfigSaved { config: Box<AppConfig> },
 }
 
 impl AdminService {
@@ -164,8 +168,6 @@ impl AdminService {
     ) -> Result<AdminOutput, ApiError> {
         let path = normalize_admin_path(path);
         match path.as_str() {
-            "config/fetch" => self.config_fetch(params.get("key").map(String::as_str)),
-            "config/getEmailTemplate" => Ok(AdminOutput::Data(json!(["default"]))),
             "plan/fetch" => self.plan_fetch().await,
             "payment/fetch" => self.payment_fetch().await,
             "payment/getPaymentMethods" => Ok(AdminOutput::Data(json!(payment_provider_codes()))),
@@ -191,11 +193,6 @@ impl AdminService {
             "stat/getStatUser" => self.stat_user(&params).await,
             "stat/getRanking" => self.stat_summary().await,
             "stat/getStatRecord" => self.stat_record(&params).await,
-            "system/getSystemStatus" => self.system_status().await,
-            "system/getQueueStats" => self.queue_stats().await,
-            "system/getQueueWorkload" => self.queue_workload().await,
-            "system/getQueueMasters" => self.queue_masters().await,
-            "system/getSystemLog" => self.system_log(&params).await,
             _ => Err(ApiError::not_found("Admin endpoint does not exist")),
         }
     }
@@ -207,9 +204,6 @@ impl AdminService {
     ) -> Result<AdminOutput, ApiError> {
         let path = normalize_admin_path(path);
         match path.as_str() {
-            "config/save" => self.config_save(&params).await,
-            "config/setTelegramWebhook" => self.set_telegram_webhook(&params).await,
-            "config/testSendMail" => self.test_send_mail(&params).await,
             "plan/save" => self.plan_save(&params).await,
             "plan/drop" => self.plan_drop(&params).await,
             "plan/update" => self.plan_update(&params).await,

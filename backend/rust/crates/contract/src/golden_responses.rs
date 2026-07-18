@@ -178,11 +178,6 @@ fn admin_get_endpoints() -> Vec<(&'static str, &'static str, HashMap<String, Str
     let none = HashMap::new;
     vec![
         (
-            "admin.config.getEmailTemplate",
-            "config/getEmailTemplate",
-            none(),
-        ),
-        (
             "admin.payment.getPaymentMethods",
             "payment/getPaymentMethods",
             none(),
@@ -242,7 +237,7 @@ fn envelope_document(output: AdminOutput, name: &str) -> Result<String> {
     match output {
         AdminOutput::Data(data) => pretty_document(&LegacyEnvelope { data }),
         AdminOutput::Page { data, total } => pretty_document(&LegacyPageEnvelope { data, total }),
-        AdminOutput::Csv { .. } | AdminOutput::ConfigSaved { .. } => {
+        AdminOutput::Csv { .. } => {
             bail!("golden endpoint {name} returned a non-JSON admin output")
         }
     }

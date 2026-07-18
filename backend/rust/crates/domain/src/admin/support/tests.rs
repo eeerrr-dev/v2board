@@ -209,14 +209,16 @@ fn config_duration_minutes_reject_zero_negative_and_overflowing_values() {
         "register_limit_expire",
         "password_limit_expire",
     ] {
-        for value in ["0", "-1", "9223372036854775807"] {
+        for value in [0_i64, -1, i64::MAX] {
             assert_validation(
-                validate_config_params(&params(&[(field, value)])),
+                validate_config_json(&Map::from_iter([(field.to_string(), json!(value))])),
                 field,
                 "分钟数必须在安全范围内",
             );
         }
-        assert!(validate_config_params(&params(&[(field, "525600")])).is_ok());
+        assert!(
+            validate_config_json(&Map::from_iter([(field.to_string(), json!(525_600))])).is_ok()
+        );
     }
 }
 

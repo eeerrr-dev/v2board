@@ -6,10 +6,9 @@ use axum::{
 use v2board_compat::{ApiError, Code, Problem};
 
 use crate::{
-    admin::{dispatch_admin_get, dispatch_admin_post},
+    admin::dispatch_admin,
     client::{ClientSubscribeQuery, client_subscribe_response},
     frontend,
-    request_params::parse_urlencoded_params,
     route_paths::{custom_subscribe_route_path, normalize_request_path},
     runtime::AppState,
 };
@@ -17,10 +16,11 @@ use crate::{
 /// Subtree HTML fallback (docs/api-dialect.md §10.2). Precedence:
 ///
 /// 1. Operator `subscribe_path` alias (GET/HEAD) — reserved, never HTML.
-/// 2. Live-prefix admin API dispatch under `/api/v1/{admin_path}/` — resolved
-///    per request so a runtime `secure_path` change keeps working without a
-///    process restart (§6 preamble); rule 4's 404 applies only after this
-///    dispatch has declined the path.
+/// 2. Live-prefix admin API dispatch under `/api/v1/{admin_path}/` for
+///    **every** method (GET/POST/PATCH/PUT/DELETE) — resolved per request
+///    into the nested method-aware admin router so a runtime `secure_path`
+///    change keeps working without a process restart (§6 preamble); rule 4's
+///    404 applies only after this dispatch has declined the path.
 /// 3. `/api/*` never falls back to HTML: unknown API paths keep each
 ///    namespace's dialect 404 (all internal families are legacy until their
 ///    wave flips).
@@ -52,27 +52,12 @@ pub(crate) async fn dynamic_fallback(
 
     let admin_prefix = format!("/api/v1/{}/", config.admin_path());
     if let Some(admin_path) = path.strip_prefix(&admin_prefix) {
+        // §6 preamble: all methods re-dispatch into the nested method-aware
+        // admin router; unmatched paths fall back to the legacy GET/POST
+        // string dispatch inside, and other unmatched methods keep the
+        // legacy admin 404 shape.
         let admin_path = admin_path.to_string();
-        match method {
-            // Axum's `get()` also answers HEAD on the boot-time admin route;
-            // the live-prefix re-dispatch must not behave differently.
-            Method::GET | Method::HEAD => {
-                let params = request
-                    .uri()
-                    .query()
-                    .map(parse_urlencoded_params)
-                    .transpose()?
-                    .unwrap_or_default();
-                return dispatch_admin_get(&state, &path, &admin_path, params, &headers).await;
-            }
-            Method::POST => {
-                return dispatch_admin_post(&state, &path, &admin_path, request).await;
-            }
-            // The admin family has no PATCH/PUT/DELETE routes until its wave
-            // (W9) lands the method-aware sub-router; declined methods fall
-            // through to the `/api/*` namespace 404 below.
-            _ => {}
-        }
+        return dispatch_admin(&state, &path, &admin_path, request).await;
     }
 
     if path == "/api" || path.starts_with("/api/") {
@@ -312,12 +297,12 @@ mod tests {
         let config = fallback_test_config(&root);
         let (app, state) = fallback_test_app(&config);
 
-        // Boot prefix: the static admin route dispatches (401 unauthenticated
-        // — the W2 session_expired flip — proves it got past routing into the
-        // admin handler).
+        // Boot prefix: the fallback re-dispatch reaches the modern admin
+        // router (401 unauthenticated — the W2 session_expired flip — proves
+        // it got past routing into the admin guard).
         let response = app
             .clone()
-            .oneshot(request(Method::GET, "/api/v1/boot-admin1/config/fetch"))
+            .oneshot(request(Method::GET, "/api/v1/boot-admin1/config"))
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
@@ -327,24 +312,35 @@ mod tests {
         live.secure_path = Some("live-admin22".to_string());
         state.replace_config_for_test(live);
 
-        // The new prefix is served through the fallback re-dispatch.
-        let response = app
-            .clone()
-            .oneshot(request(Method::GET, "/api/v1/live-admin22/config/fetch"))
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        // The new prefix is served through the fallback re-dispatch — for
+        // every method (§6 preamble): PATCH must keep working across a
+        // `secure_path` change without a process restart.
+        for method in [Method::GET, Method::PATCH] {
+            let response = app
+                .clone()
+                .oneshot(request(method.clone(), "/api/v1/live-admin22/config"))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{method}");
+            assert_eq!(
+                response.headers().get(header::CONTENT_TYPE).unwrap(),
+                "application/problem+json",
+                "{method}"
+            );
+        }
 
         // The stale boot prefix is declined by the live-prefix check.
         let response = app
             .clone()
-            .oneshot(request(Method::GET, "/api/v1/boot-admin1/config/fetch"))
+            .oneshot(request(Method::GET, "/api/v1/boot-admin1/config"))
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
 
-        // Methods without an admin route yet stay inside the `/api/*` legacy
-        // 404 instead of leaking into HTML or the modern problem shape.
+        // Methods without a modern or legacy admin route stay inside the
+        // legacy admin 404 instead of leaking into HTML or the modern
+        // problem shape (§10.2 rule 4 applies only after the admin dispatch
+        // declines the path).
         let response = app
             .clone()
             .oneshot(request(Method::DELETE, "/api/v1/live-admin22/plan/1"))

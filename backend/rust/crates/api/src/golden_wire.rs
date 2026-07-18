@@ -214,6 +214,10 @@ fn documents() -> Vec<(&'static str, String)> {
         "email".to_string(),
         vec!["邮箱格式不正确".to_string()],
     )])));
+    // §6.1: PATCH `config` on a stale operator revision — the 409 the admin
+    // UI reacts to by refetching (never resubmitting).
+    let problem_config_revision_conflict =
+        pretty(&Problem::localized(Code::ConfigRevisionConflict, "zh-CN"));
 
     // Modern-dialect user account & subscription family (docs/api-dialect.md
     // §5.3, §5.4, §9.1, §9.4, W5): bare bodies, RFC 3339 timestamps, boolean
@@ -661,6 +665,10 @@ fn documents() -> Vec<(&'static str, String)> {
         ("auth.session.json", auth_session),
         ("auth.session.logged-out.json", auth_session_logged_out),
         ("auth.step-up.json", auth_step_up),
+        (
+            "problem.config-revision-conflict.json",
+            problem_config_revision_conflict,
+        ),
         ("problem.session-expired.json", problem_session_expired),
         ("problem.validation.json", problem_validation),
         ("public.config.json", public_config),

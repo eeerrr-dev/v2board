@@ -94,58 +94,17 @@ pub(in super::super) fn config_save_whitelisted(base: &str) -> bool {
     KEYS.contains(&base)
 }
 
-/// Validates a config/save payload against ConfigSave::RULES before it is
-/// written. Ports the enum (`in:...`), integer/numeric, url, regex and length
-/// rules that guard against corrupt config; only present, non-empty values are
-/// checked, matching Laravel's implicit skipping of empty optional inputs.
-/// Returns the first failure as a Laravel-style 422.
-pub(in super::super) fn validate_config_params(
-    params: &HashMap<String, String>,
-) -> Result<(), ApiError> {
-    // `secure_path` is the live admin route, so an explicitly submitted empty
-    // value must never be interpreted as "unset/use the fallback".  The fetch
-    // round-trip of an unchanged fallback path is removed before validation.
-    if params
-        .get("secure_path")
-        .is_some_and(|value| value.trim().is_empty())
-    {
-        return Err(validation_error("secure_path", "后台路径不能为空"));
-    }
-
-    let value = |key: &str| -> Option<&str> {
-        params
-            .get(key)
-            .map(|value| value.trim())
-            .filter(|value| !value.is_empty())
-    };
-
-    // These settings have exactly two accepted wire shapes: indexed form
-    // (`field[0]=...`) or the literal `field=[]` used to clear the list.  A
-    // bare scalar is ambiguous (and was previously parsed as a comma list by
-    // AppConfig), so reject it instead of silently changing its meaning.
-    for key in [
-        "deposit_bounus",
-        "commission_withdraw_method",
-        "email_whitelist_suffix",
-    ] {
-        let indexed = params
-            .keys()
-            .filter(|raw_key| raw_key.starts_with(&format!("{key}[")))
-            .collect::<Vec<_>>();
-        if indexed
-            .iter()
-            .any(|raw_key| bracket_index(raw_key, key).is_none())
-        {
-            return Err(validation_error(key, "数组参数格式有误"));
-        }
-        if let Some(raw) = params.get(key)
-            && (raw.trim() != "[]" || !indexed.is_empty())
-        {
-            return Err(validation_error(key, "数组参数格式有误"));
-        }
-    }
-
-    const IN_0_1: &[&str] = &[
+/// Validates a PATCH `config` JSON body (docs/api-dialect.md §6.1) against
+/// the operator whitelist and the ported ConfigSave rule inventory, now on
+/// §4.1 native JSON types: flags are booleans, enums and counters are JSON
+/// integers, lists are string arrays, and `commission_withdraw_limit` keeps
+/// its decimal-string form (recorded §4.1 exception). §4.4 `null` clears a
+/// setting back to its built-in default and is accepted for every key except
+/// `secure_path` — the live admin route must never be emptied. Unknown keys
+/// are 422s (deny-unknown posture), not silent retains. Returns the first
+/// failure as a single-field 422.
+pub(in super::super) fn validate_config_json(body: &Map<String, Value>) -> Result<(), ApiError> {
+    const FLAGS: &[&str] = &[
         "invite_force",
         "invite_never_expire",
         "commission_first_time_enable",
@@ -173,71 +132,11 @@ pub(in super::super) fn validate_config_params(
         "register_limit_by_ip_enable",
         "password_limit_enable",
     ];
-    for key in IN_0_1 {
-        if let Some(value) = value(key)
-            && value != "0"
-            && value != "1"
-        {
-            return Err(validation_error(key, "参数格式有误"));
-        }
-    }
-    for key in ["ticket_status", "show_subscribe_method"] {
-        if let Some(value) = value(key)
-            && !matches!(value, "0" | "1" | "2")
-        {
-            return Err(validation_error(key, "参数格式有误"));
-        }
-    }
-    if let Some(value) = value("reset_traffic_method")
-        && !matches!(value, "0" | "1" | "2" | "3" | "4")
-    {
-        return Err(validation_error("reset_traffic_method", "参数格式有误"));
-    }
-    if let Some(value) = value("frontend_theme_color")
-        && !matches!(value, "default" | "darkblue" | "black" | "green")
-    {
-        return Err(validation_error("frontend_theme_color", "参数格式有误"));
-    }
-
-    for (key, message) in [
-        ("logo", "LOGO URL格式不正确，必须携带https(s)://"),
-        ("app_url", "站点URL格式不正确，必须携带http(s)://"),
-        ("tos_url", "服务条款URL格式不正确，必须携带http(s)://"),
-        (
-            "telegram_discuss_link",
-            "Telegram群组地址必须为URL格式，必须携带http(s)://",
-        ),
-        ("frontend_background_url", "参数格式有误"),
-    ] {
-        if let Some(value) = value(key)
-            && !is_valid_url(value)
-        {
-            return Err(validation_error(key, message));
-        }
-    }
-
-    if let Some(value) = value("subscribe_path")
-        && !value.starts_with('/')
-    {
-        return Err(validation_error("subscribe_path", "订阅路径必须以/开头"));
-    }
-    if let Some(value) = value("server_token")
-        && value.chars().count() < 16
-    {
-        return Err(validation_error("server_token", "通讯密钥长度必须大于16位"));
-    }
-    if let Some(value) = value("secure_path") {
-        if value.chars().count() < 8 {
-            return Err(validation_error("secure_path", "后台路径长度最小为8位"));
-        }
-        if !value
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
-        {
-            return Err(validation_error("secure_path", "后台路径只能为字母或数字"));
-        }
-    }
-
+    const STRING_ARRAYS: &[&str] = &[
+        "deposit_bounus",
+        "commission_withdraw_method",
+        "email_whitelist_suffix",
+    ];
     const INTEGERS: &[&str] = &[
         "invite_commission",
         "invite_gen_limit",
@@ -252,22 +151,85 @@ pub(in super::super) fn validate_config_params(
         "password_limit_count",
         "password_limit_expire",
     ];
-    const DURATION_MINUTES: &[&str] = &[
-        "show_subscribe_expire",
-        "register_limit_expire",
-        "password_limit_expire",
+    const RATE_NUMBERS: &[&str] = &[
+        "try_out_hour",
+        "commission_distribution_l1",
+        "commission_distribution_l2",
+        "commission_distribution_l3",
     ];
-    for key in INTEGERS {
-        if let Some(value) = value(key) {
-            let parsed = value
-                .parse::<i64>()
-                .map_err(|_| validation_error(key, "参数格式有误"))?;
-            if DURATION_MINUTES.contains(key)
+
+    for (key, value) in body {
+        if !config_save_whitelisted(key) {
+            return Err(validation_error(key, "不支持的配置项"));
+        }
+        // `secure_path` is the live admin route, so an explicitly submitted
+        // empty (or cleared) value must never mean "unset/use the fallback".
+        // The fetch round-trip of an unchanged fallback path is removed
+        // before validation.
+        if key == "secure_path" {
+            let Some(path) = value.as_str().map(str::trim) else {
+                return Err(validation_error("secure_path", "后台路径不能为空"));
+            };
+            if path.is_empty() {
+                return Err(validation_error("secure_path", "后台路径不能为空"));
+            }
+            if path.chars().count() < 8 {
+                return Err(validation_error("secure_path", "后台路径长度最小为8位"));
+            }
+            if !path
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
+            {
+                return Err(validation_error("secure_path", "后台路径只能为字母或数字"));
+            }
+            continue;
+        }
+        if value.is_null() {
+            // §4.4: null clears back to the built-in default.
+            continue;
+        }
+        let key = key.as_str();
+        if FLAGS.contains(&key) {
+            if !value.is_boolean() {
+                return Err(validation_error(key, "参数格式有误"));
+            }
+            continue;
+        }
+        if STRING_ARRAYS.contains(&key) {
+            let Some(items) = value.as_array() else {
+                return Err(validation_error(key, "数组参数格式有误"));
+            };
+            for item in items {
+                let Some(item) = item.as_str() else {
+                    return Err(validation_error(key, "数组参数格式有误"));
+                };
+                // deposit_bounus tiers must match `<amount>:<bounus>`
+                // (empty tiers allowed, matching the legacy regex rule).
+                let item = item.trim();
+                if key == "deposit_bounus" && !item.is_empty() && !is_deposit_bounus_tier(item) {
+                    return Err(validation_error(
+                        key,
+                        "充值奖励格式不正确，必须为充值金额:奖励金额",
+                    ));
+                }
+            }
+            continue;
+        }
+        if INTEGERS.contains(&key) {
+            const DURATION_MINUTES: &[&str] = &[
+                "show_subscribe_expire",
+                "register_limit_expire",
+                "password_limit_expire",
+            ];
+            let Some(parsed) = value.as_i64() else {
+                return Err(validation_error(key, "参数格式有误"));
+            };
+            if DURATION_MINUTES.contains(&key)
                 && !(1..=MAX_CONFIG_DURATION_MINUTES).contains(&parsed)
             {
                 return Err(validation_error(key, "分钟数必须在安全范围内"));
             }
-            let (minimum, maximum) = match *key {
+            let (minimum, maximum) = match key {
                 "show_subscribe_expire" | "register_limit_expire" | "password_limit_expire" => {
                     (1, MAX_CONFIG_DURATION_MINUTES)
                 }
@@ -283,56 +245,121 @@ pub(in super::super) fn validate_config_params(
             if !(minimum..=maximum).contains(&parsed) {
                 return Err(validation_error(key, "参数超出支持范围"));
             }
+            continue;
         }
-    }
-    if let Some(port) = value("email_port") {
-        let port = port
-            .parse::<u16>()
-            .map_err(|_| validation_error("email_port", "端口格式有误"))?;
-        if port == 0 {
-            return Err(validation_error("email_port", "端口必须在1到65535之间"));
-        }
-    }
-    const NUMERICS: &[&str] = &[
-        "try_out_hour",
-        "commission_withdraw_limit",
-        "commission_distribution_l1",
-        "commission_distribution_l2",
-        "commission_distribution_l3",
-    ];
-    for key in NUMERICS {
-        if let Some(value) = value(key) {
-            let parsed = value
-                .parse::<Decimal>()
-                .map_err(|_| validation_error(key, "参数格式有误"))?;
-            if parsed.is_sign_negative() {
+        if RATE_NUMBERS.contains(&key) {
+            if !value.is_number() {
+                return Err(validation_error(key, "参数格式有误"));
+            }
+            if value.as_f64().is_some_and(|number| number < 0.0) {
                 return Err(validation_error(key, "参数不能为负数"));
             }
-            let maximum = match *key {
+            // `serde_json::Number` renders the exact literal; a magnitude that
+            // does not fit the exact decimal domain is out of range.
+            let Ok(parsed) = value.to_string().parse::<Decimal>() else {
+                return Err(validation_error(key, "参数超出支持范围"));
+            };
+            let maximum = match key {
                 "try_out_hour" => Decimal::from(i64::MAX) / Decimal::from(3_600),
-                "commission_withdraw_limit" => Decimal::from(i64::MAX) / Decimal::from(100),
                 _ => Decimal::MAX,
             };
             if parsed > maximum {
                 return Err(validation_error(key, "参数超出支持范围"));
             }
-        }
-    }
-
-    // deposit_bounus[] tiers must match `<amount>:<bounus>` (empty tiers allowed).
-    for tier in json_array_param(params, "deposit_bounus") {
-        let Value::String(tier) = tier else {
-            return Err(validation_error("deposit_bounus", "数组参数格式有误"));
-        };
-        let tier = tier.trim();
-        if tier.is_empty() {
             continue;
         }
-        if !is_deposit_bounus_tier(tier) {
-            return Err(validation_error(
-                "deposit_bounus",
-                "充值奖励格式不正确，必须为充值金额:奖励金额",
-            ));
+        match key {
+            "ticket_status" | "show_subscribe_method" => {
+                if !value
+                    .as_i64()
+                    .is_some_and(|parsed| (0..=2).contains(&parsed))
+                {
+                    return Err(validation_error(key, "参数格式有误"));
+                }
+            }
+            "reset_traffic_method" => {
+                if !value
+                    .as_i64()
+                    .is_some_and(|parsed| (0..=4).contains(&parsed))
+                {
+                    return Err(validation_error(key, "参数格式有误"));
+                }
+            }
+            "email_port" => {
+                let Some(port) = value.as_i64() else {
+                    return Err(validation_error(key, "端口格式有误"));
+                };
+                if !(1..=i64::from(u16::MAX)).contains(&port) {
+                    return Err(validation_error(key, "端口必须在1到65535之间"));
+                }
+            }
+            "commission_withdraw_limit" => {
+                let Some(raw) = value.as_str().map(str::trim) else {
+                    return Err(validation_error(key, "参数格式有误"));
+                };
+                if raw.is_empty() {
+                    continue;
+                }
+                let Ok(parsed) = raw.parse::<Decimal>() else {
+                    return Err(validation_error(key, "参数格式有误"));
+                };
+                if parsed.is_sign_negative() {
+                    return Err(validation_error(key, "参数不能为负数"));
+                }
+                if parsed > Decimal::from(i64::MAX) / Decimal::from(100) {
+                    return Err(validation_error(key, "参数超出支持范围"));
+                }
+            }
+            "frontend_theme_color" => {
+                let Some(color) = value.as_str().map(str::trim) else {
+                    return Err(validation_error(key, "参数格式有误"));
+                };
+                if !color.is_empty() && !matches!(color, "default" | "darkblue" | "black" | "green")
+                {
+                    return Err(validation_error(key, "参数格式有误"));
+                }
+            }
+            "logo"
+            | "app_url"
+            | "tos_url"
+            | "telegram_discuss_link"
+            | "frontend_background_url" => {
+                let message = match key {
+                    "logo" => "LOGO URL格式不正确，必须携带https(s)://",
+                    "app_url" => "站点URL格式不正确，必须携带http(s)://",
+                    "tos_url" => "服务条款URL格式不正确，必须携带http(s)://",
+                    "telegram_discuss_link" => "Telegram群组地址必须为URL格式，必须携带http(s)://",
+                    _ => "参数格式有误",
+                };
+                let Some(url) = value.as_str().map(str::trim) else {
+                    return Err(validation_error(key, message));
+                };
+                if !url.is_empty() && !is_valid_url(url) {
+                    return Err(validation_error(key, message));
+                }
+            }
+            "subscribe_path" => {
+                let Some(path) = value.as_str().map(str::trim) else {
+                    return Err(validation_error(key, "订阅路径必须以/开头"));
+                };
+                if !path.is_empty() && !path.starts_with('/') {
+                    return Err(validation_error(key, "订阅路径必须以/开头"));
+                }
+            }
+            "server_token" => {
+                let Some(token) = value.as_str().map(str::trim) else {
+                    return Err(validation_error(key, "通讯密钥长度必须大于16位"));
+                };
+                if !token.is_empty() && token.chars().count() < 16 {
+                    return Err(validation_error(key, "通讯密钥长度必须大于16位"));
+                }
+            }
+            // Every remaining whitelisted setting is a plain string.
+            _ => {
+                if !value.is_string() {
+                    return Err(validation_error(key, "参数格式有误"));
+                }
+            }
         }
     }
     Ok(())
@@ -537,55 +564,36 @@ fn is_unsigned_decimal(value: &str) -> bool {
     }
 }
 
-pub(in super::super) fn merge_config_params(
+/// Merges a validated PATCH `config` body into the operator candidate map.
+/// Values are inserted in their native JSON types — `AppConfig` performs the
+/// typed parsing, and §4.4 `null` rides through as the parser's "unset"
+/// (clear back to the built-in default). The three list settings normalize
+/// like the legacy indexed form: items trimmed, empties dropped, an empty
+/// array staying an explicit empty list.
+pub(in super::super) fn merge_config_json(
     config: &mut Map<String, Value>,
-    params: &HashMap<String, String>,
+    body: &Map<String, Value>,
 ) {
-    let mut arrays = BTreeMap::<String, BTreeMap<usize, Value>>::new();
-    for (key, value) in params {
-        if let Some((base, index)) = key
-            .split_once('[')
-            .and_then(|(base, rest)| rest.strip_suffix(']').map(|rest| (base, rest)))
-            .and_then(|(base, index)| index.parse::<usize>().ok().map(|index| (base, index)))
-        {
-            if !config_save_whitelisted(base) {
-                continue;
-            }
-            let value = value.trim();
-            if !value.is_empty() {
-                arrays
-                    .entry(base.to_string())
-                    .or_default()
-                    .insert(index, Value::String(value.to_string()));
-            } else {
-                // Preserve an explicitly submitted, all-empty array as an
-                // empty list rather than falling back to the previous value.
-                arrays.entry(base.to_string()).or_default();
-            }
-            continue;
-        }
+    for (key, value) in body {
         if !config_save_whitelisted(key) {
             continue;
         }
         if matches!(
             key.as_str(),
             "deposit_bounus" | "commission_withdraw_method" | "email_whitelist_suffix"
-        ) && value.trim() == "[]"
+        ) && let Some(items) = value.as_array()
         {
-            config.insert(key.clone(), Value::Array(Vec::new()));
+            let items = items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .filter(|item| !item.is_empty())
+                .map(|item| Value::String(item.to_string()))
+                .collect();
+            config.insert(key.clone(), Value::Array(items));
             continue;
         }
-        if key == "email_port" && value.trim().is_empty() {
-            config.insert(key.clone(), Value::Null);
-            continue;
-        }
-        // Preserve the submitted lexical value until AppConfig performs typed
-        // parsing. This avoids f64 round-trips for exact decimals and prevents
-        // numeric-looking passwords/tokens from losing leading zeroes.
-        config.insert(key.clone(), Value::String(value.clone()));
-    }
-    for (key, values) in arrays {
-        config.insert(key, Value::Array(values.into_values().collect()));
+        config.insert(key.clone(), value.clone());
     }
 }
 

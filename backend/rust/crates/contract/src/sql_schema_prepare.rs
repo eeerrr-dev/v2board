@@ -444,6 +444,11 @@ const QUERY_BUILDER_SITES: &[DynamicSite] = &[
         coverage: "admin dashboard/list interaction parity",
     },
     DynamicSite {
+        source: "crates/domain/src/admin/support/filter_dsl.rs",
+        count: 1,
+        coverage: "§7 DSL bind-only SQL-shape unit tests (whitelisted exprs, bound values) plus the system/logs production-invariant projection",
+    },
+    DynamicSite {
         source: "crates/domain/src/admin/support/values.rs",
         count: 2,
         coverage: "exact PostgreSQL integer-cast builder unit tests and caller interaction parity",

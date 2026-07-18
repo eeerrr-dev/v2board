@@ -70,7 +70,6 @@ fn cors_origin_allowed(allowed_origins: &[String], origin: &HeaderValue) -> bool
 }
 
 pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
-    let admin_api_route = config.admin_api_route();
     let user_assets = ServeDir::new(config.runtime_paths.frontend.join("current/user"))
         .append_index_html_on_directories(false)
         .fallback(
@@ -270,10 +269,11 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
         .route("/api/v1/user/notices", get(crate::user::user_notices))
         .route("/api/v1/user/telegram-bot", get(crate::user::telegram_bot))
         .route("/api/v1/user/config", get(crate::user::user_config))
-        .route(
-            &admin_api_route,
-            get(crate::admin::admin_get).post(crate::admin::admin_post),
-        )
+        // The admin API has no boot-time literal route: every method under
+        // the live `/api/v1/{secure_path}/` prefix re-dispatches through
+        // `dynamic_fallback` into the nested method-aware admin router
+        // (docs/api-dialect.md §6 preamble), so a runtime `secure_path` save
+        // takes effect without a restart.
         .route(
             "/api/v1/staff/{*staff_path}",
             get(crate::admin::staff_get).post(crate::admin::staff_post),

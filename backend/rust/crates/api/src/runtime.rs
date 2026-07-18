@@ -848,7 +848,7 @@ pub(crate) async fn request_timeout_middleware(
 }
 
 fn request_timeout_exempt(path: &str, admin_path: &str) -> bool {
-    path == format!("/api/v1/{admin_path}/config/testSendMail")
+    path == format!("/api/v1/{admin_path}/test-mail")
 }
 
 fn public_client_ip(
@@ -1220,7 +1220,9 @@ mod tests {
             "/api/v1/admin/user/sendMail",
             "admin"
         ));
-        assert!(request_timeout_exempt(
+        assert!(request_timeout_exempt("/api/v1/admin/test-mail", "admin"));
+        // The legacy spelling died with the W9 flip.
+        assert!(!request_timeout_exempt(
             "/api/v1/admin/config/testSendMail",
             "admin"
         ));
@@ -1229,7 +1231,7 @@ mod tests {
             "admin"
         ));
         assert!(!request_timeout_exempt(
-            "/api/v1/not-admin/user/sendMail",
+            "/api/v1/not-admin/test-mail",
             "admin"
         ));
         assert!(!request_timeout_exempt("/api/v1/user/orders", "admin"));

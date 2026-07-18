@@ -87,10 +87,6 @@ pub(in super::super) fn normalize_admin_path(path: &str) -> String {
     path.trim_matches('/').to_string()
 }
 
-pub(in super::super) fn bool_i(value: bool) -> i32 {
-    if value { 1 } else { 0 }
-}
-
 pub(in super::super) async fn fetch_json_list(
     db: &DbPool,
     sql: &str,

@@ -338,7 +338,7 @@ fn prepared_mail_payload_identity_covers_envelope_and_recipient() {
 #[test]
 fn admin_smtp_probe_has_an_end_to_end_deadline() {
     let source = include_str!("configuration.rs");
-    let start = source.find("async fn send_test_mail").unwrap();
+    let start = source.find("pub async fn test_mail").unwrap();
     let probe = &source[start..];
     assert!(probe.contains("tokio::time::timeout"));
     assert!(probe.contains("http_request_timeout_seconds"));
@@ -355,67 +355,103 @@ fn admin_config_is_typed_and_security_validated_before_revision_commit() {
     assert!(!source.contains("update_config_atomic"));
 }
 
-#[test]
-fn config_candidate_validation_rejects_lossy_or_unsafe_scalars() {
-    for (key, invalid) in [
-        ("email_port", "smtp"),
-        ("email_port", "0"),
-        ("email_port", "65536"),
-        ("try_out_hour", "NaN"),
-        ("commission_withdraw_limit", "inf"),
-        ("server_push_interval", "-1"),
-        ("server_node_report_min_traffic", "-1"),
-        ("register_limit_count", "-1"),
-    ] {
-        assert!(
-            validate_config_params(&params(&[(key, invalid)])).is_err(),
-            "{key}={invalid} must fail before commit"
-        );
-    }
+fn body(pairs: &[(&str, Value)]) -> Map<String, Value> {
+    pairs
+        .iter()
+        .map(|(key, value)| ((*key).to_string(), value.clone()))
+        .collect()
 }
 
 #[test]
-fn config_save_rejects_an_explicit_empty_secure_path_but_drops_an_unchanged_fallback() {
-    for empty in ["", " ", "\t\n"] {
-        let error = validate_config_params(&params(&[("secure_path", empty)]))
-            .expect_err("an explicit empty admin path must be a 422 validation error");
+fn config_candidate_validation_rejects_lossy_or_unsafe_values() {
+    for (key, invalid) in [
+        ("email_port", json!("587")),
+        ("email_port", json!(0)),
+        ("email_port", json!(65_536)),
+        ("email_port", json!(2.5)),
+        // §4.1: unified numeric fields are JSON numbers, not strings.
+        ("try_out_hour", json!("12")),
+        ("try_out_hour", json!(-1)),
+        // §4.1 recorded exception: exact decimals stay strings.
+        ("commission_withdraw_limit", json!(100)),
+        ("commission_withdraw_limit", json!("inf")),
+        ("server_push_interval", json!(-1)),
+        ("server_node_report_min_traffic", json!(-1)),
+        ("register_limit_count", json!(-1)),
+        ("register_limit_count", json!(1.5)),
+        // §4.1: flags are JSON booleans; 0/1 and "1" die on the wire.
+        ("force_https", json!(1)),
+        ("stop_register", json!("1")),
+        // True enums stay numeric with their closed ranges.
+        ("ticket_status", json!(3)),
+        ("ticket_status", json!(true)),
+        ("reset_traffic_method", json!(5)),
+        ("app_name", json!(7)),
+        // Unknown keys are 422s (deny-unknown posture), not silent retains.
+        ("no_such_setting", json!("x")),
+    ] {
+        assert!(
+            validate_config_json(&body(&[(key, invalid.clone())])).is_err(),
+            "{key}={invalid} must fail before commit"
+        );
+    }
+    validate_config_json(&body(&[
+        ("email_port", json!(587)),
+        ("force_https", json!(true)),
+        ("ticket_status", json!(2)),
+        ("try_out_hour", json!(1.5)),
+        ("commission_withdraw_limit", json!("100.05")),
+        ("register_limit_count", json!(3)),
+        ("app_name", json!("V2Board")),
+        ("logo", json!(null)),
+    ]))
+    .expect("a typed candidate passes");
+}
+
+#[test]
+fn config_patch_rejects_an_explicit_empty_secure_path_but_drops_an_unchanged_fallback() {
+    for empty in [json!(""), json!(" "), json!("\t\n"), json!(null)] {
+        let error = validate_config_json(&body(&[("secure_path", empty)]))
+            .expect_err("an explicitly cleared admin path must be a 422 validation error");
         let (message, errors) = validation_parts(error);
         assert_eq!(message, "后台路径不能为空");
         assert_eq!(errors["secure_path"], vec!["后台路径不能为空"]);
     }
 
-    let mut unchanged_fallback = params(&[("secure_path", "/old123/")]);
+    let mut unchanged_fallback = body(&[("secure_path", json!("/old123/"))]);
     drop_unchanged_effective_secure_path(&mut unchanged_fallback, "old123");
     assert!(!unchanged_fallback.contains_key("secure_path"));
-    validate_config_params(&unchanged_fallback)
+    validate_config_json(&unchanged_fallback)
         .expect("an unchanged effective fallback remains a no-op");
 
-    let mut empty = params(&[("secure_path", "")]);
+    let mut empty = body(&[("secure_path", json!(""))]);
     drop_unchanged_effective_secure_path(&mut empty, "old123");
     assert!(empty.contains_key("secure_path"));
 }
 
 #[test]
-fn config_merge_preserves_exact_decimals_and_only_declared_empty_lists() {
+fn config_merge_preserves_exact_decimal_strings_and_native_json_types() {
     let exact = "0.1234567890123456789012345678";
-    let input = params(&[
-        ("try_out_hour", exact),
-        ("commission_withdraw_limit", "10.05"),
-        ("commission_distribution_l1", exact),
-        ("deposit_bounus", "[]"),
-        ("commission_withdraw_method", "[]"),
-        ("email_whitelist_suffix", "[]"),
-        ("app_name", "[]"),
-        ("email_password", "00001234"),
+    let input = body(&[
+        ("commission_withdraw_limit", json!(exact)),
+        ("try_out_hour", json!(1.5)),
+        ("force_https", json!(true)),
+        ("email_password", json!("00001234")),
+        ("deposit_bounus", json!([])),
+        ("commission_withdraw_method", json!([])),
+        ("email_whitelist_suffix", json!([])),
+        ("app_name", json!("[]")),
     ]);
-    validate_config_params(&input).expect("exact decimal candidate");
+    validate_config_json(&input).expect("exact decimal candidate");
     let mut merged = Map::new();
-    merge_config_params(&mut merged, &input);
-    assert_eq!(merged["try_out_hour"], Value::String(exact.to_string()));
+    merge_config_json(&mut merged, &input);
     assert_eq!(
-        merged["commission_distribution_l1"],
+        merged["commission_withdraw_limit"],
         Value::String(exact.to_string())
     );
+    assert_eq!(merged["try_out_hour"], json!(1.5));
+    assert_eq!(merged["force_https"], Value::Bool(true));
+    // Numeric-looking secrets keep their leading zeroes.
     assert_eq!(
         merged["email_password"],
         Value::String("00001234".to_string())
@@ -427,55 +463,53 @@ fn config_merge_preserves_exact_decimals_and_only_declared_empty_lists() {
     ] {
         assert_eq!(merged[key], Value::Array(Vec::new()));
     }
+    // A literal "[]" string is just a string — the legacy clear hack is dead.
     assert_eq!(merged["app_name"], Value::String("[]".to_string()));
 }
 
 #[test]
-fn config_arrays_reject_bare_scalars_and_normalize_indexed_items() {
+fn config_arrays_are_real_json_arrays_of_trimmed_strings() {
     for key in [
         "deposit_bounus",
         "commission_withdraw_method",
         "email_whitelist_suffix",
     ] {
-        assert!(validate_config_params(&params(&[(key, "one,two")])).is_err());
-        assert!(validate_config_params(&params(&[(key, "[]")])).is_ok());
+        // The legacy `'[]'` string hack and bare scalars are 422s now.
+        assert!(validate_config_json(&body(&[(key, json!("[]"))])).is_err());
+        assert!(validate_config_json(&body(&[(key, json!("one,two"))])).is_err());
+        assert!(validate_config_json(&body(&[(key, json!([1]))])).is_err());
+        assert!(validate_config_json(&body(&[(key, json!([]))])).is_ok());
     }
 
-    let input = params(&[
-        ("commission_withdraw_method[0]", "  Alipay  "),
-        ("commission_withdraw_method[1]", "   "),
-        ("commission_withdraw_method[2]", "USDT"),
-    ]);
-    validate_config_params(&input).expect("indexed array");
+    let input = body(&[(
+        "commission_withdraw_method",
+        json!(["  Alipay  ", "   ", "USDT"]),
+    )]);
+    validate_config_json(&input).expect("string array");
     let mut merged = Map::new();
-    merge_config_params(&mut merged, &input);
+    merge_config_json(&mut merged, &input);
     assert_eq!(
         merged["commission_withdraw_method"],
-        serde_json::json!(["Alipay", "USDT"])
+        json!(["Alipay", "USDT"])
     );
 
-    assert!(
-        validate_config_params(&params(&[
-            ("email_whitelist_suffix", "[]"),
-            ("email_whitelist_suffix[0]", "example.com"),
-        ]))
-        .is_err()
-    );
+    assert!(validate_config_json(&body(&[("deposit_bounus", json!(["100:20", "x"]))])).is_err());
+    validate_config_json(&body(&[("deposit_bounus", json!(["100:20", ""]))]))
+        .expect("empty tiers stay allowed");
 }
 
 #[test]
-fn clearing_email_port_normalizes_only_that_optional_scalar_to_null() {
-    let mut merged = serde_json::json!({
+fn clearing_email_port_uses_json_null_not_the_legacy_empty_string() {
+    let mut merged = json!({
         "email_port": 587,
         "email_host": "smtp.example.com"
     })
     .as_object()
     .expect("object")
     .clone();
-    merge_config_params(
-        &mut merged,
-        &params(&[("email_port", ""), ("email_host", "")]),
-    );
+    let input = body(&[("email_port", json!(null)), ("email_host", json!(""))]);
+    validate_config_json(&input).expect("null clears an optional scalar");
+    merge_config_json(&mut merged, &input);
     assert_eq!(merged["email_port"], Value::Null);
     assert_eq!(merged["email_host"], Value::String(String::new()));
 }
