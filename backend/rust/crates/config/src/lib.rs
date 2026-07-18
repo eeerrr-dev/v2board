@@ -1669,10 +1669,6 @@ impl AppConfig {
             .unwrap_or_else(|| crc32b_hex(self.app_key.as_bytes()))
     }
 
-    pub fn admin_api_route(&self) -> String {
-        format!("/api/v1/{}/{{*admin_path}}", self.admin_path())
-    }
-
     /// Validates the security-sensitive cross-field portion of an admin config
     /// update before the file is persisted. Runtime reload is therefore not the
     /// first point at which a bad production secret or HTTPS combination is

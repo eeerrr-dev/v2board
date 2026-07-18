@@ -72,10 +72,6 @@ export interface StripePaymentIntent {
   currency: string;
 }
 
-/**
- * Legacy-dialect admin order rows (numeric flags, epoch timestamps) from the
- * admin order endpoints; W11 owns their dialect flip.
- */
 /** One payment-reconciliation row (docs/api-dialect.md §6.4, W11). */
 export interface PaymentReconciliation {
   id: number;

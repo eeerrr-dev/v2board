@@ -11,10 +11,6 @@ export const numberSchema = z.number();
 export const stringArraySchema = z.array(stringSchema);
 export const numberArraySchema = z.array(numberSchema);
 
-/** Dynamic JSON is allowed at a leaf, never as an endpoint-level bypass. */
-export const jsonValueSchema = z.json();
-export const jsonObjectSchema = z.record(z.string(), jsonValueSchema);
-
 export const arraySchema = <TSchema extends z.ZodType>(item: TSchema) => z.array(item);
 
 /** Dialect 204 successes (docs/api-dialect.md §3.3): no body at all. */

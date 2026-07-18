@@ -1365,8 +1365,8 @@ export function apiFixtureResponse(
     // §6.2/§6.4 modern admin commerce family (W11): plans/payments bare arrays
     // (prices/fees stay cents/number, booleans, RFC 3339), payment-providers
     // code array + provider form, orders §8 page + trade_no bare detail, 201
-    // {id}/{trade_no} creates, bodiless updates/toggles/deletes, and a seeded
-    // reconciliation page. Only the source world requests these spellings; the
+    // {id}/{trade_no} creates, and bodiless updates/toggles/deletes. Only the
+    // source world requests these spellings; the
     // oracle keeps the legacy rows in the switch below. Error-knob detail text
     // mirrors the legacy toast — the Tier-1 comparison keys on the problem
     // `code`, presentation drops.

@@ -400,7 +400,6 @@ export const USER_FILTER_FIELDS = [
   'updated_at',
 ] as const;
 export type UserFilterField = (typeof USER_FILTER_FIELDS)[number];
-export const USER_SORT_FIELDS = [...USER_FILTER_FIELDS, 'total_used'] as const;
 
 const USER_FILTER_FIELD_SET = new Set<string>(USER_FILTER_FIELDS);
 /** §7.1 boolean-typed columns: their 0/1 select value becomes a JSON boolean. */
@@ -848,8 +847,9 @@ export const assignOrder = (
     dialect: 'v2',
     data: {
       ...data,
+      // Legacy '' meant "no charge"; omit so Rust's Option default (0) applies.
       total_amount:
-        data.total_amount === '' ? data.total_amount : decimalToCents(data.total_amount),
+        data.total_amount === '' ? undefined : decimalToCents(data.total_amount),
     },
     responseSchema: createdOrderSchema,
   });
