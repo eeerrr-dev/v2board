@@ -112,16 +112,6 @@ fn validation_parts(error: ApiError) -> (String, indexmap::IndexMap<String, Vec<
 }
 
 #[test]
-fn route_save_accepts_valid_payload() {
-    let ok = params(&[
-        ("remarks", "cn"),
-        ("action", "block"),
-        ("match", r#"["1.1.1.1"]"#),
-    ]);
-    assert!(route_save_validation(&ok).is_none());
-}
-
-#[test]
 fn admin_ticket_reply_respects_mysql_text_limit() {
     assert!(validate_ticket_message_length(&"a".repeat(65_535)).is_ok());
     assert!(validate_ticket_message_length(&"a".repeat(65_536)).is_err());
@@ -540,72 +530,4 @@ fn stored_payment_config_requires_a_valid_json_object() {
         parse_payment_config(r#"["not","an","object"]"#),
         Err(ApiError::Internal(_))
     ));
-}
-
-#[test]
-fn route_save_default_out_needs_no_match() {
-    // required_unless:action,default_out: match is optional once action is default_out.
-    let ok = params(&[("remarks", "fallback"), ("action", "default_out")]);
-    assert!(route_save_validation(&ok).is_none());
-}
-
-#[test]
-fn route_save_nonempty_match_array_passes_required_even_if_falsy() {
-    // Laravel `required` counts a non-empty array; array_filter drops "0" later.
-    let ok = params(&[
-        ("remarks", "cn"),
-        ("action", "block"),
-        ("match", r#"["0"]"#),
-    ]);
-    assert!(route_save_validation(&ok).is_none());
-}
-
-#[test]
-fn route_save_missing_remarks_reports_first() {
-    let error = route_save_validation(&params(&[("action", "block"), ("match", r#"["1.1.1.1"]"#)]))
-        .expect("missing remarks must fail");
-    let (message, errors) = validation_parts(error);
-    assert_eq!(message, "备注不能为空");
-    assert_eq!(errors["remarks"], vec!["备注不能为空".to_string()]);
-}
-
-#[test]
-fn route_save_missing_match_reports_required_unless() {
-    let error = route_save_validation(&params(&[("remarks", "cn"), ("action", "block")]))
-        .expect("missing match must fail");
-    let (message, errors) = validation_parts(error);
-    assert_eq!(message, "匹配值不能为空");
-    assert_eq!(errors["match"], vec!["匹配值不能为空".to_string()]);
-}
-
-#[test]
-fn route_save_missing_action_reports_required() {
-    let error = route_save_validation(&params(&[("remarks", "cn"), ("match", r#"["1.1.1.1"]"#)]))
-        .expect("missing action must fail");
-    let (message, _) = validation_parts(error);
-    assert_eq!(message, "动作类型不能为空");
-}
-
-#[test]
-fn route_save_invalid_action_reports_in_rule() {
-    let error = route_save_validation(&params(&[
-        ("remarks", "cn"),
-        ("action", "teleport"),
-        ("match", r#"["1.1.1.1"]"#),
-    ]))
-    .expect("invalid action must fail");
-    let (message, errors) = validation_parts(error);
-    assert_eq!(message, "动作类型参数有误");
-    assert_eq!(errors["action"], vec!["动作类型参数有误".to_string()]);
-}
-
-#[test]
-fn route_save_empty_payload_reports_first_field() {
-    // Every field fails; Laravel's field order makes remarks the reported message,
-    // and the codebase's single-field 422 shape keys only that first failure.
-    let error = route_save_validation(&params(&[])).expect("empty payload must fail");
-    let (message, errors) = validation_parts(error);
-    assert_eq!(message, "备注不能为空");
-    assert_eq!(errors.len(), 1);
-    assert_eq!(errors["remarks"], vec!["备注不能为空".to_string()]);
 }

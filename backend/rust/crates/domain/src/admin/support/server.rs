@@ -1,5 +1,6 @@
 use super::*;
 use base64::{Engine as _, engine::general_purpose};
+use v2board_compat::{Code, Problem};
 
 // Order matches ServerService::getAllServers() array_merge concatenation, so the
 // getNodes list (before its stable sort by `sort`) preserves Laravel tie order.
@@ -182,17 +183,17 @@ const SERVER_V2NODE_COLUMNS: &[&str] = &[
     "padding_scheme",
 ];
 
-/// How a node column is serialized in the getNodes full-row output. `Json`
-/// mirrors an Eloquent `array` cast (decoded JSON); `Padding` mirrors the
-/// re-encoded padding_scheme (a JSON string) in getAllAnyTLS/getAllV2node.
+/// How a node column is serialized in the GET `nodes` full-row output. `Json`
+/// mirrors an Eloquent `array` cast (decoded JSON). The legacy re-encoded
+/// padding_scheme JSON *string* is retired: §4.1 kills stringified-JSON
+/// members, so `padding_scheme` crosses as its decoded JSON value.
 #[derive(Clone, Copy)]
 enum NodeCast {
     Plain,
     Json,
-    Padding,
 }
 
-use NodeCast::{Json as J, Padding as P, Plain as X};
+use NodeCast::{Json as J, Plain as X};
 
 const SHADOWSOCKS_NODE_COLS: &[(&str, NodeCast)] = &[
     ("id", X),
@@ -345,7 +346,7 @@ const ANYTLS_NODE_COLS: &[(&str, NodeCast)] = &[
     ("sort", X),
     ("server_name", X),
     ("insecure", X),
-    ("padding_scheme", P),
+    ("padding_scheme", J),
     ("created_at", X),
     ("updated_at", X),
 ];
@@ -381,7 +382,7 @@ const V2NODE_NODE_COLS: &[(&str, NodeCast)] = &[
     ("down_mbps", X),
     ("obfs", X),
     ("obfs_password", X),
-    ("padding_scheme", P),
+    ("padding_scheme", J),
     ("created_at", X),
     ("updated_at", X),
 ];
@@ -410,7 +411,6 @@ pub(in super::super) fn server_node_select(kind: &str, table: &str) -> String {
         let expr = match cast {
             NodeCast::Plain => format!("\"{name}\""),
             NodeCast::Json => format!("CAST(\"{name}\" AS JSONB)"),
-            NodeCast::Padding => format!("CAST(\"{name}\" AS TEXT)"),
         };
         pairs.push_str(&format!("'{name}', {expr}, "));
     }
@@ -441,336 +441,23 @@ pub(in super::super) fn server_copy_columns(
     }
 }
 
-pub(in super::super) fn server_save_values(
-    kind: &str,
-    params: &HashMap<String, String>,
-) -> Result<Vec<(&'static str, AdminSqlValue)>, ApiError> {
-    let mut values = Vec::new();
-    push_common_server_values(&mut values, params)?;
-    // Each arm mirrors its Server*Save rule set: `required` columns are pushed
-    // unconditionally (always in `$params`), a handful the controller assigns
-    // after validation are pushed unconditionally with the computed value, and
-    // every remaining `nullable` column is present-gated so an omitted key is left
-    // untouched on update — matching `$server->update($request->validated())`.
-    match kind {
-        "shadowsocks" => {
-            values.push(("cipher", text_value(required_string(params, "cipher")?)));
-            if param_present(params, "obfs") {
-                values.push(("obfs", optional_text_value(params, "obfs")));
-            }
-            if param_present(params, "obfs_settings") {
-                values.push((
-                    "obfs_settings",
-                    optional_json_text_value(params, "obfs_settings"),
-                ));
-            }
-        }
-        "trojan" => {
-            values.push(("network", text_value(required_string(params, "network")?)));
-            if param_present(params, "network_settings") {
-                values.push((
-                    "network_settings",
-                    optional_json_text_value(params, "network_settings"),
-                ));
-            }
-            if param_present(params, "allow_insecure") {
-                values.push((
-                    "allow_insecure",
-                    optional_int_value(params, "allow_insecure", 0),
-                ));
-            }
-            if param_present(params, "server_name") {
-                values.push(("server_name", optional_text_value(params, "server_name")));
-            }
-        }
-        "vmess" => {
-            // ServerVmessSave has no `rules` rule, so the legacy `rules` column is
-            // never written by save (dropped here, not present-gated).
-            values.push(("tls", optional_int_value(params, "tls", 0)));
-            values.push(("network", text_value(required_string(params, "network")?)));
-            for key in [
-                "networkSettings",
-                "tlsSettings",
-                "ruleSettings",
-                "dnsSettings",
-            ] {
-                if param_present(params, key) {
-                    values.push((key, optional_json_text_value(params, key)));
-                }
-            }
-        }
-        "tuic" => {
-            if param_present(params, "server_name") {
-                values.push(("server_name", optional_text_value(params, "server_name")));
-            }
-            values.push(("insecure", optional_int_value(params, "insecure", 0)));
-            values.push(("disable_sni", optional_int_value(params, "disable_sni", 0)));
-            if param_present(params, "udp_relay_mode") {
-                values.push((
-                    "udp_relay_mode",
-                    optional_text_value(params, "udp_relay_mode"),
-                ));
-            }
-            values.push((
-                "zero_rtt_handshake",
-                optional_int_value(params, "zero_rtt_handshake", 0),
-            ));
-            if param_present(params, "congestion_control") {
-                values.push((
-                    "congestion_control",
-                    optional_text_value(params, "congestion_control"),
-                ));
-            }
-        }
-        "hysteria" => {
-            values.push(("version", optional_int_value(params, "version", 2)));
-            // up_mbps/down_mbps default to 0 in the controller, so they are always
-            // written; obfs_password is likewise always assigned (null when no obfs).
-            values.push(("up_mbps", optional_int_value(params, "up_mbps", 0)));
-            values.push(("down_mbps", optional_int_value(params, "down_mbps", 0)));
-            if param_present(params, "obfs") {
-                values.push(("obfs", optional_text_value(params, "obfs")));
-            }
-            values.push((
-                "obfs_password",
-                hysteria_obfs_password(params, params.get("obfs")),
-            ));
-            if param_present(params, "server_name") {
-                values.push(("server_name", optional_text_value(params, "server_name")));
-            }
-            values.push(("insecure", optional_int_value(params, "insecure", 0)));
-        }
-        "vless" => {
-            // Unlike every other protocol table, PostgreSQL stores VLESS `port`
-            // as INTEGER. Replace the common text value with an integer bind so
-            // the dynamic INSERT/UPDATE has the target column's real type.
-            let port = required_i64(params, "port")?;
-            if let Some((_, value)) = values.iter_mut().find(|(column, _)| *column == "port") {
-                *value = AdminSqlValue::Integer(port);
-            }
-            let tls = optional_i64(params, "tls").unwrap_or_default();
-            let network = required_string(params, "network")?;
-            let encryption = optional_string(params, "encryption");
-            let mut flow = optional_string(params, "flow");
-            if network != "tcp" {
-                flow = None;
-            }
-            values.push(("tls", AdminSqlValue::Integer(tls)));
-            // tls==2 forces reality settings into $params even when unsubmitted.
-            if tls == 2 || param_present(params, "tls_settings") {
-                values.push((
-                    "tls_settings",
-                    json_value(prepare_tls_settings(params, tls)?),
-                ));
-            }
-            // flow is forced to null when network != tcp; otherwise present-gated.
-            if network != "tcp" || param_present(params, "flow") {
-                values.push(("flow", optional_text(flow)));
-            }
-            values.push(("network", text_value(network.clone())));
-            if param_present(params, "network_settings") {
-                values.push((
-                    "network_settings",
-                    json_value(prepare_network_settings(
-                        params,
-                        "network_settings",
-                        &network,
-                        false,
-                    )),
-                ));
-            }
-            if param_present(params, "encryption") {
-                values.push(("encryption", optional_text(encryption.clone())));
-            }
-            // mlkem encryption forces encryption_settings into $params.
-            if encryption.as_deref() == Some("mlkem768x25519plus")
-                || param_present(params, "encryption_settings")
-            {
-                values.push((
-                    "encryption_settings",
-                    json_value(prepare_encryption_settings(
-                        params,
-                        encryption.as_deref(),
-                        false,
-                    )?),
-                ));
-            }
-            if param_present(params, "sort") {
-                values.push(("sort", optional_int_or_null_value(params, "sort")));
-            }
-        }
-        "anytls" => {
-            if param_present(params, "server_name") {
-                values.push(("server_name", optional_text_value(params, "server_name")));
-            }
-            values.push(("insecure", optional_int_value(params, "insecure", 0)));
-            if param_present(params, "padding_scheme") {
-                values.push((
-                    "padding_scheme",
-                    optional_decoded_json_text_value(params, "padding_scheme"),
-                ));
-            }
-        }
-        "v2node" => {
-            let protocol = required_string(params, "protocol")?;
-            let mut tls = optional_i64(params, "tls").unwrap_or_default();
-            if (protocol == "anytls" && tls == 0)
-                || matches!(protocol.as_str(), "hysteria2" | "trojan" | "tuic")
-            {
-                tls = 1;
-            }
-            let network = required_string(params, "network")?;
-            let encryption = optional_string(params, "encryption");
-            // Laravel only nulls flow when encryption is *present* and not mlkem
-            // (V2nodeController.php: `... && isset($params['encryption']) && ...`).
-            let force_flow_null = network != "tcp"
-                && encryption.is_some()
-                && encryption.as_deref() != Some("mlkem768x25519plus");
-            let flow = if force_flow_null {
-                None
-            } else {
-                optional_string(params, "flow")
-            };
-            if param_present(params, "listen_ip") {
-                values.push(("listen_ip", optional_text_value(params, "listen_ip")));
-            }
-            values.push(("protocol", text_value(protocol.clone())));
-            values.push(("tls", AdminSqlValue::Integer(tls)));
-            if tls == 2 || param_present(params, "tls_settings") {
-                values.push((
-                    "tls_settings",
-                    json_value(prepare_v2node_tls_settings(params, tls)?),
-                ));
-            }
-            if force_flow_null || param_present(params, "flow") {
-                values.push(("flow", optional_text(flow)));
-            }
-            values.push(("network", text_value(network.clone())));
-            if param_present(params, "network_settings") {
-                values.push((
-                    "network_settings",
-                    json_value(prepare_network_settings(
-                        params,
-                        "network_settings",
-                        &network,
-                        true,
-                    )),
-                ));
-            }
-            if param_present(params, "encryption") {
-                values.push(("encryption", optional_text(encryption.clone())));
-            }
-            if encryption.as_deref() == Some("mlkem768x25519plus")
-                || param_present(params, "encryption_settings")
-            {
-                values.push((
-                    "encryption_settings",
-                    json_value(prepare_encryption_settings(
-                        params,
-                        encryption.as_deref(),
-                        true,
-                    )?),
-                ));
-            }
-            values.push(("disable_sni", optional_int_value(params, "disable_sni", 0)));
-            if param_present(params, "udp_relay_mode") {
-                values.push((
-                    "udp_relay_mode",
-                    optional_text_value(params, "udp_relay_mode"),
-                ));
-            }
-            values.push((
-                "zero_rtt_handshake",
-                optional_int_value(params, "zero_rtt_handshake", 0),
-            ));
-            if param_present(params, "congestion_control") {
-                values.push((
-                    "congestion_control",
-                    optional_text_value(params, "congestion_control"),
-                ));
-            }
-            // cipher defaults to aes-128-gcm for shadowsocks; otherwise present-gated.
-            if protocol == "shadowsocks" || param_present(params, "cipher") {
-                values.push((
-                    "cipher",
-                    optional_text(optional_string(params, "cipher").or_else(|| {
-                        (protocol == "shadowsocks").then(|| "aes-128-gcm".to_string())
-                    })),
-                ));
-            }
-            values.push(("up_mbps", optional_int_value(params, "up_mbps", 0)));
-            values.push(("down_mbps", optional_int_value(params, "down_mbps", 0)));
-            if param_present(params, "obfs") {
-                values.push(("obfs", optional_text_value(params, "obfs")));
-            }
-            values.push((
-                "obfs_password",
-                hysteria_obfs_password(params, params.get("obfs")),
-            ));
-            if param_present(params, "padding_scheme") {
-                values.push((
-                    "padding_scheme",
-                    optional_decoded_json_text_value(params, "padding_scheme"),
-                ));
-            }
-            if param_present(params, "sort") {
-                values.push(("sort", optional_int_or_null_value(params, "sort")));
-            }
-        }
-        _ => return Err(ApiError::business("Invalid server type")),
-    }
-    Ok(values)
+/// Resolves the `{type}` path segment of the modern §6.7 server routes to its
+/// node table; an unknown segment is the registry's 400 `invalid_server_type`.
+pub(in super::super) fn server_table_for_kind(kind: &str) -> Result<&'static str, ApiError> {
+    SERVER_TABLES
+        .iter()
+        .find(|(item, _)| *item == kind)
+        .map(|(_, table)| *table)
+        .ok_or_else(|| Problem::new(Code::InvalidServerType).into())
 }
 
-pub(in super::super) fn push_common_server_values(
-    values: &mut Vec<(&'static str, AdminSqlValue)>,
-    params: &HashMap<String, String>,
-) -> Result<(), ApiError> {
-    // Every Server*Controller::save writes `$request->validated()`/`validate()`
-    // then `update($params)`/`create($params)`, so only keys the request actually
-    // supplied reach the row. `required` columns are always present; `nullable`/``
-    // columns must be present-gated so a partial update leaves an omitted column
-    // untouched instead of resetting it to a default. `sort` is intentionally
-    // absent here — only vless/v2node declare a rule for it (handled per protocol);
-    // the other protocols never write it, so drag-ordering survives every edit.
-    values.push((
-        "group_id",
-        AdminSqlValue::Json(Some(
-            serde_json::from_str(&required_json_array_string(params, "group_id")?)
-                .map_err(|_| ApiError::validation_field("group_id", "节点组格式不正确"))?,
-        )),
-    ));
-    values.push(("name", text_value(required_string(params, "name")?)));
-    values.push(("rate", text_value(required_string(params, "rate")?)));
-    values.push(("host", text_value(required_string(params, "host")?)));
-    values.push(("port", text_value(required_string(params, "port")?)));
-    values.push((
-        "server_port",
-        AdminSqlValue::Integer(required_i64(params, "server_port")?),
-    ));
-    if param_present(params, "route_id") {
-        values.push((
-            "route_id",
-            optional_json_array_text_value(params, "route_id"),
-        ));
-    }
-    if param_present(params, "parent_id") {
-        values.push(("parent_id", optional_int_or_null_value(params, "parent_id")));
-    }
-    if param_present(params, "tags") {
-        values.push(("tags", optional_json_array_text_value(params, "tags")));
-    }
-    if param_present(params, "show") {
-        values.push(("show", optional_int_value(params, "show", 0)));
-    }
-    Ok(())
-}
-
+/// The submitted (or empty) TLS settings object, with reality keys generated
+/// when `tls == 2` — ports the VlessController tls==2 forcing.
 pub(in super::super) fn prepare_tls_settings(
-    params: &HashMap<String, String>,
+    settings: Option<&Value>,
     tls: i64,
 ) -> Result<Value, ApiError> {
-    let mut settings = optional_json_value(params, "tls_settings").unwrap_or_else(|| json!({}));
+    let mut settings = settings.cloned().unwrap_or_else(|| json!({}));
     if tls == 2 {
         ensure_reality_keys(&mut settings)?;
     }
@@ -778,10 +465,10 @@ pub(in super::super) fn prepare_tls_settings(
 }
 
 pub(in super::super) fn prepare_v2node_tls_settings(
-    params: &HashMap<String, String>,
+    settings: Option<&Value>,
     tls: i64,
 ) -> Result<Value, ApiError> {
-    let mut settings = prepare_tls_settings(params, tls)?;
+    let mut settings = prepare_tls_settings(settings, tls)?;
     if let Some(object) = settings.as_object_mut()
         && object.get("ech").and_then(Value::as_str) == Some("custom")
     {
@@ -858,17 +545,21 @@ pub(in super::super) fn ensure_reality_keys(settings: &mut Value) -> Result<(), 
     Ok(())
 }
 
+/// The submitted network settings object with the legacy value hygiene:
+/// v2node coerces `acceptProxyProtocol` to a bool, and `network == "xhttp"`
+/// normalizes the xhttp `extra` scalars. `network` is the value submitted in
+/// the same request; a PATCH that omits `network` skips the xhttp
+/// normalization (the stored network is not re-read).
 pub(in super::super) fn prepare_network_settings(
-    params: &HashMap<String, String>,
-    key: &str,
-    network: &str,
+    settings: &Value,
+    network: Option<&str>,
     v2node: bool,
 ) -> Value {
-    let mut settings = optional_json_value(params, key).unwrap_or_else(|| json!({}));
+    let mut settings = settings.clone();
     if v2node && let Some(object) = settings.as_object_mut() {
         coerce_object_bool(object, "acceptProxyProtocol");
     }
-    if network == "xhttp" {
+    if network == Some("xhttp") {
         normalize_xhttp_settings(&mut settings, v2node);
     }
     settings
@@ -898,13 +589,16 @@ pub(in super::super) fn normalize_xhttp_settings(settings: &mut Value, v2node: b
     }
 }
 
+/// The submitted (or empty) encryption settings, with the mlkem768x25519plus
+/// enrichment: v2node defaults `mode`/`rtt`/`ticket`, `1rtt` pins the ticket,
+/// and one X25519 keypair supplies `private_key` + matching `password` when
+/// either is missing.
 pub(in super::super) fn prepare_encryption_settings(
-    params: &HashMap<String, String>,
+    settings: Option<&Value>,
     encryption: Option<&str>,
     v2node: bool,
 ) -> Result<Value, ApiError> {
-    let mut settings =
-        optional_json_value(params, "encryption_settings").unwrap_or_else(|| json!({}));
+    let mut settings = settings.cloned().unwrap_or_else(|| json!({}));
     if encryption != Some("mlkem768x25519plus") {
         return Ok(settings);
     }
@@ -938,9 +632,9 @@ pub(in super::super) fn prepare_encryption_settings(
     {
         // Laravel generates ONE crypto_box (X25519) keypair and stores
         // private_key = base64url(secretkey), password = base64url(publickey)
-        // (VlessController.php:87-99 / V2nodeController.php). The password IS the public
-        // key that corresponds to private_key; two independent randoms would leave clients
-        // unable to derive the shared secret.
+        // (VlessController.php:87-99 / V2nodeController.php). The password IS the
+        // public key that corresponds to private_key; two independent randoms would
+        // leave clients unable to derive the shared secret.
         let (public_key, private_key) = x25519_key_pair_urlsafe()?;
         object
             .entry("private_key".to_string())
@@ -977,26 +671,6 @@ pub(in super::super) fn coerce_object_i64(object: &mut Map<String, Value>, key: 
     {
         *value = json!(parsed);
     }
-}
-
-pub(in super::super) fn hysteria_obfs_password(
-    params: &HashMap<String, String>,
-    obfs: Option<&String>,
-) -> AdminSqlValue {
-    if obfs
-        .map(|value| value.trim().is_empty() || value.eq_ignore_ascii_case("null"))
-        .unwrap_or(true)
-    {
-        return AdminSqlValue::TextNull;
-    }
-    optional_string(params, "obfs_password")
-        .map(AdminSqlValue::Text)
-        .unwrap_or_else(|| {
-            AdminSqlValue::Text(server_key(
-                optional_i64(params, "created_at").unwrap_or_else(|| Utc::now().timestamp()),
-                16,
-            ))
-        })
 }
 
 pub(in super::super) fn server_key(timestamp: i64, length: usize) -> String {

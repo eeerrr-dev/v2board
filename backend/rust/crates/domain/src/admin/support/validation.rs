@@ -419,28 +419,3 @@ pub(in super::super) fn merge_config_json(
         config.insert(key.clone(), value.clone());
     }
 }
-
-/// PHP `array_filter()` (no callback) drops falsy scalars: '', '0', 0, 0.0,
-/// false, null, and empty arrays/objects.
-pub(in super::super) fn php_falsy(value: &Value) -> bool {
-    match value {
-        Value::Null => true,
-        Value::Bool(value) => !value,
-        Value::Number(value) => value.as_f64().map(|value| value == 0.0).unwrap_or(false),
-        Value::String(value) => value.is_empty() || value == "0",
-        Value::Array(items) => items.is_empty(),
-        Value::Object(object) => object.is_empty(),
-    }
-}
-
-/// Reconstructs the route `match` values from either a raw JSON-array string or
-/// bracketed `match[i]` params. Mirrors the `(array)($params['match'] ?? [])`
-/// cast in RouteController::save.
-pub(in super::super) fn route_match_values(params: &HashMap<String, String>) -> Vec<Value> {
-    if let Some(raw) = params.get("match")
-        && let Ok(Value::Array(items)) = serde_json::from_str::<Value>(raw)
-    {
-        return items;
-    }
-    json_array_param(params, "match")
-}

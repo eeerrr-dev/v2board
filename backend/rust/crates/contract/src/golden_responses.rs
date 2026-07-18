@@ -254,6 +254,24 @@ async fn generate_documents(pool: &PgPool, redis_url: &str) -> Result<Vec<(Strin
         "admin.gift-cards.json".to_string(),
         pretty_document(&Page { items, total })?,
     ));
+
+    // The W13 admin servers family (docs/api-dialect.md §6.7) serializes
+    // modern dialect-v2 bodies straight from the typed domain methods: bare
+    // arrays for the node, group, and route lists. The node rows pin the
+    // dialect-v2 projection (`show` bool, `rate` number, RFC 3339 timestamps)
+    // with the vmess camelCase settings keys kept as-is (R22).
+    documents.push((
+        "admin.nodes.json".to_string(),
+        pretty_document(&admin.nodes_list().await?)?,
+    ));
+    documents.push((
+        "admin.server-groups.json".to_string(),
+        pretty_document(&admin.server_groups_list(None).await?)?,
+    ));
+    documents.push((
+        "admin.server-routes.json".to_string(),
+        pretty_document(&admin.server_routes_list().await?)?,
+    ));
     documents.sort_by(|left, right| left.0.cmp(&right.0));
 
     flush_redis(&redis).await?;
@@ -279,13 +297,6 @@ fn admin_get_endpoints() -> Vec<(&'static str, &'static str, HashMap<String, Str
             "ticket/fetch",
             HashMap::from([("id".to_string(), "1".to_string())]),
         ),
-        (
-            "admin.server.manage.getNodes",
-            "server/manage/getNodes",
-            none(),
-        ),
-        ("admin.server.group.fetch", "server/group/fetch", none()),
-        ("admin.server.route.fetch", "server/route/fetch", none()),
     ]
 }
 

@@ -60,6 +60,7 @@ pub use content::{
     GiftcardPatch, KnowledgeCreate, KnowledgePatch, KnowledgeSortRequest, NoticeCreate,
     NoticePatch,
 };
+pub use servers::{RouteCreate, RoutePatch, ServerBody, ServerGroupBody};
 pub use users::{
     AdminSetInviterBody, AdminUserFilterBody, AdminUserGenerate, AdminUserMailBody, AdminUserPatch,
     UserGenerateOutcome,
@@ -87,44 +88,6 @@ pub fn telegram_webhook_secret(app_key: &str, bot_token: &str) -> String {
         .expect("HMAC accepts keys of any length");
     mac.update(bot_token.as_bytes());
     hex::encode(mac.finalize().into_bytes())
-}
-
-/// Allowed `action` values for RouteController::save (`in:...` rule).
-const ROUTE_ACTIONS: [&str; 8] = [
-    "block",
-    "block_ip",
-    "block_port",
-    "protocol",
-    "dns",
-    "route",
-    "route_ip",
-    "default_out",
-];
-
-/// Ports RouteController::save's `$request->validate([...])` (V1\Admin\Server),
-/// returning HTTP 422 with the Chinese literal messages. Fields are checked in
-/// Laravel's declaration order (remarks, match, action) so the reported message is
-/// the first failing field. Returns `None` when the payload is valid.
-fn route_save_validation(params: &HashMap<String, String>) -> Option<ApiError> {
-    let action = optional_string(params, "action");
-    // remarks => required
-    if optional_string(params, "remarks").is_none() {
-        return Some(ApiError::validation_field("remarks", "备注不能为空"));
-    }
-    // match => array|required_unless:action,default_out. `required` treats an absent
-    // or empty array as missing (a non-empty array like ["0"] passes even though
-    // array_filter later drops it), so check raw presence before filtering.
-    if action.as_deref() != Some("default_out") && route_match_values(params).is_empty() {
-        return Some(ApiError::validation_field("match", "匹配值不能为空"));
-    }
-    // action => required|in:block,block_ip,block_port,protocol,dns,route,route_ip,default_out
-    match action.as_deref() {
-        None => Some(ApiError::validation_field("action", "动作类型不能为空")),
-        Some(value) if !ROUTE_ACTIONS.contains(&value) => {
-            Some(ApiError::validation_field("action", "动作类型参数有误"))
-        }
-        Some(_) => None,
-    }
 }
 
 fn payment_verification_version_blocks_update(driver_changed: bool, config_changed: bool) -> bool {
@@ -183,9 +146,6 @@ impl AdminService {
         let path = normalize_admin_path(path);
         match path.as_str() {
             "ticket/fetch" => self.ticket_fetch(&params, false).await,
-            "server/group/fetch" => self.server_group_fetch(&params).await,
-            "server/route/fetch" => self.server_route_fetch().await,
-            "server/manage/getNodes" => self.server_nodes().await,
             "stat/getStat" | "stat/getOverride" => self.stat_summary().await,
             "stat/getServerLastRank" => self.server_rank(false).await,
             "stat/getServerTodayRank" => self.server_rank(true).await,
@@ -208,31 +168,6 @@ impl AdminService {
         match path.as_str() {
             "ticket/reply" => self.ticket_reply(&params).await,
             "ticket/close" => self.ticket_close(required_i64(&params, "id")?).await,
-            "server/group/save" => self.server_group_save(&params).await,
-            "server/group/drop" => self.server_group_drop(&params).await,
-            "server/route/save" => self.server_route_save(&params).await,
-            "server/route/drop" => {
-                self.delete_by_id(
-                    "server_route",
-                    required_i64(&params, "id")?,
-                    ApiError::business("路由不存在"),
-                )
-                .await
-            }
-            "server/manage/sort" => self.server_sort(&params).await,
-            _ if is_server_path(&path, "save") => self.server_save(&path, &params).await,
-            _ if is_server_path(&path, "drop") => self.server_drop(&path, &params).await,
-            _ if is_server_path(&path, "update") => {
-                let table = server_table_from_path(&path)?;
-                self.toggle_or_set_show(
-                    table,
-                    required_i64(&params, "id")?,
-                    &params,
-                    ApiError::business("该服务器不存在"),
-                )
-                .await
-            }
-            _ if is_server_path(&path, "copy") => self.server_copy(&path, &params).await,
             _ => Err(ApiError::not_found("Admin endpoint does not exist")),
         }
     }

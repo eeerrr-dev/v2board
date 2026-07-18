@@ -358,13 +358,13 @@ const DYNAMIC_SQLX_SITES: &[DynamicSite] = &[
     },
     DynamicSite {
         source: "crates/domain/src/admin/repository.rs",
-        count: 5,
+        count: 4,
         coverage: "safe-table/toggle allowlists and admin interaction parity",
     },
     DynamicSite {
         source: "crates/domain/src/admin/servers.rs",
-        count: 5,
-        coverage: "server-table schema probes and admin server interaction parity",
+        count: 6,
+        coverage: "server-table schema probes, W13 node CRUD, and the wire-shape unit tests",
     },
     DynamicSite {
         source: "crates/domain/src/admin/support/common.rs",

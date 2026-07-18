@@ -1757,7 +1757,7 @@ impl AdminService {
     /// WHERE id = ?` over the provided columns, reporting a path-identified
     /// miss as the caller's 404 problem. An all-absent body retains every
     /// column but still 404s on a missing id.
-    async fn patch_row(
+    pub(super) async fn patch_row(
         &self,
         table: &str,
         id: i64,

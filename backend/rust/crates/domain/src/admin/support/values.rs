@@ -162,14 +162,6 @@ pub(in super::super) fn optional_text_value(
     optional_text(optional_string(params, key))
 }
 
-pub(in super::super) fn optional_int_value(
-    params: &HashMap<String, String>,
-    key: &str,
-    default: i64,
-) -> AdminSqlValue {
-    AdminSqlValue::Integer(optional_i64(params, key).unwrap_or(default))
-}
-
 pub(in super::super) fn optional_int_or_null_value(
     params: &HashMap<String, String>,
     key: &str,
@@ -183,14 +175,6 @@ pub(in super::super) fn optional_int_or_null_value(
 /// doubles as the top-level message and the field's first error.
 pub(in super::super) fn validation_error(field: &str, message: &str) -> ApiError {
     ApiError::validation_field(field, message)
-}
-
-/// True when `key` (scalar or bracketed array) appears in the request params.
-/// Mirrors Laravel's `required` presence check for nested inputs.
-pub(in super::super) fn param_present(params: &HashMap<String, String>, key: &str) -> bool {
-    params
-        .keys()
-        .any(|param| param == key || param.starts_with(&format!("{key}[")))
 }
 
 /// Approximates Laravel's `url` rule (filter_var FILTER_VALIDATE_URL): requires a
@@ -222,13 +206,6 @@ pub(in super::super) fn optional_string(
         .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case("null"))
 }
 
-pub(in super::super) fn required_json_array_string(
-    params: &HashMap<String, String>,
-    key: &str,
-) -> Result<String, ApiError> {
-    json_array_string(params, key)?.ok_or_else(|| ApiError::business("参数有误"))
-}
-
 pub(in super::super) fn optional_json_array_text_value(
     params: &HashMap<String, String>,
     key: &str,
@@ -253,39 +230,6 @@ pub(in super::super) fn json_array_string(
     }
     let values = json_array_param(params, key);
     Ok((!values.is_empty()).then(|| json_string(&Value::Array(values))))
-}
-
-pub(in super::super) fn optional_json_text_value(
-    params: &HashMap<String, String>,
-    key: &str,
-) -> AdminSqlValue {
-    AdminSqlValue::Json(optional_json_value(params, key))
-}
-
-pub(in super::super) fn optional_decoded_json_text_value(
-    params: &HashMap<String, String>,
-    key: &str,
-) -> AdminSqlValue {
-    let Some(value) = optional_string(params, key) else {
-        return optional_json_text_value(params, key);
-    };
-    AdminSqlValue::Json(serde_json::from_str::<Value>(&value).ok())
-}
-
-pub(in super::super) fn optional_json_value(
-    params: &HashMap<String, String>,
-    key: &str,
-) -> Option<Value> {
-    if let Some(value) = optional_string(params, key)
-        && let Ok(parsed) = serde_json::from_str::<Value>(&value)
-    {
-        return Some(parsed);
-    }
-    let value = nested_json(params, key);
-    match &value {
-        Value::Object(object) if object.is_empty() => None,
-        _ => Some(value),
-    }
 }
 
 pub(in super::super) fn json_value(value: Value) -> AdminSqlValue {

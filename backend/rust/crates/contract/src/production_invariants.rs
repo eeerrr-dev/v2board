@@ -1638,8 +1638,6 @@ const ADMIN_SERVER_GROUP_LIST_KEYS: &[&str] = &[
     "server_count",
 ];
 
-const ADMIN_SERVER_GROUP_SINGLE_KEYS: &[&str] = &["id", "name", "created_at", "updated_at"];
-
 const ADMIN_SERVER_ROUTE_KEYS: &[&str] = &[
     "id",
     "remarks",
@@ -1692,6 +1690,23 @@ fn assert_exact_keys(context: &str, value: &serde_json::Value, expected: &[&str]
     Ok(())
 }
 
+/// §4.5: the named fields must cross the boundary as RFC 3339 UTC strings
+/// (or null for nullable timestamps), never as raw epoch integers.
+fn assert_rfc3339_fields(context: &str, value: &serde_json::Value, fields: &[&str]) -> Result<()> {
+    for field in fields {
+        let field_value = &value[*field];
+        if field_value.is_null() {
+            continue;
+        }
+        let text = field_value
+            .as_str()
+            .with_context(|| format!("{context}: {field} is not an RFC 3339 string"))?;
+        chrono::DateTime::parse_from_rfc3339(text)
+            .with_context(|| format!("{context}: {field} is not valid RFC 3339 ({text})"))?;
+    }
+    Ok(())
+}
+
 fn admin_page_rows(output: AdminOutput, context: &str) -> Result<Vec<serde_json::Value>> {
     match output {
         AdminOutput::Page { data, .. } => {
@@ -1710,15 +1725,6 @@ fn admin_data(output: AdminOutput, context: &str) -> Result<serde_json::Value> {
         AdminOutput::Data(value) => Ok(value),
         _ => bail!("{context}: expected a data admin response"),
     }
-}
-
-fn admin_data_rows(output: AdminOutput, context: &str) -> Result<Vec<serde_json::Value>> {
-    let rows = admin_data(output, context)?
-        .as_array()
-        .cloned()
-        .with_context(|| format!("{context}: response is not a JSON array"))?;
-    ensure!(!rows.is_empty(), "{context}: response returned no rows");
-    Ok(rows)
 }
 
 /// Pins the exact serialized key set of every reachable admin endpoint whose
@@ -2123,7 +2129,9 @@ async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) -> Result<()>
         )?;
     }
 
-    // Server groups, routes, and one shadowsocks node through getNodes.
+    // Server groups, routes, and one shadowsocks node through the W13
+    // dialect-v2 projections (docs/api-dialect.md §6.7): bare arrays, RFC
+    // 3339 timestamps, `show` boolean, numeric `rate`.
     let group_id: i32 = sqlx::query_scalar(
         "INSERT INTO server_group (name, created_at, updated_at) VALUES ('projection pin', $1, $2) RETURNING id",
     )
@@ -2131,25 +2139,21 @@ async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) -> Result<()>
     .bind(now)
     .fetch_one(pool)
     .await?;
-    for row in admin_data_rows(
-        admin.get("server/group/fetch", HashMap::new()).await?,
-        "server/group/fetch",
-    )? {
-        assert_exact_keys("server/group/fetch", &row, ADMIN_SERVER_GROUP_LIST_KEYS)?;
+    for row in admin.server_groups_list(None).await? {
+        assert_exact_keys("server-groups", &row, ADMIN_SERVER_GROUP_LIST_KEYS)?;
+        assert_rfc3339_fields("server-groups", &row, &["created_at", "updated_at"])?;
     }
-    let single_group = admin_data_rows(
-        admin
-            .get(
-                "server/group/fetch",
-                HashMap::from([("group_id".to_string(), group_id.to_string())]),
-            )
-            .await?,
-        "server/group/fetch single",
-    )?;
+    // The single-group filter keeps the same uniform projection (the legacy
+    // count-less single fetch shape is gone with the dialect flip).
+    let single_group = admin.server_groups_list(Some(i64::from(group_id))).await?;
+    ensure!(
+        single_group.len() == 1,
+        "server-groups?group_id must return exactly the one matching row"
+    );
     assert_exact_keys(
-        "server/group/fetch single",
+        "server-groups single",
         &single_group[0],
-        ADMIN_SERVER_GROUP_SINGLE_KEYS,
+        ADMIN_SERVER_GROUP_LIST_KEYS,
     )?;
 
     sqlx::query(
@@ -2160,11 +2164,13 @@ async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) -> Result<()>
     .bind(now)
     .execute(pool)
     .await?;
-    for row in admin_data_rows(
-        admin.get("server/route/fetch", HashMap::new()).await?,
-        "server/route/fetch",
-    )? {
-        assert_exact_keys("server/route/fetch", &row, ADMIN_SERVER_ROUTE_KEYS)?;
+    for row in admin.server_routes_list().await? {
+        assert_exact_keys("server-routes", &row, ADMIN_SERVER_ROUTE_KEYS)?;
+        ensure!(
+            row["match"].is_array(),
+            "server-routes: match must always be an array"
+        );
+        assert_rfc3339_fields("server-routes", &row, &["created_at", "updated_at"])?;
     }
 
     let node_name = format!("projection-node-{}", Uuid::new_v4().simple());
@@ -2177,19 +2183,25 @@ async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) -> Result<()>
     .bind(now)
     .execute(pool)
     .await?;
-    let nodes = admin_data_rows(
-        admin.get("server/manage/getNodes", HashMap::new()).await?,
-        "server/manage/getNodes",
-    )?;
+    let nodes = admin.nodes_list().await?;
     let node = nodes
         .iter()
         .find(|node| node["name"].as_str() == Some(node_name.as_str()))
-        .context("seeded shadowsocks node missing from server/manage/getNodes")?;
-    assert_exact_keys(
-        "server/manage/getNodes shadowsocks",
-        node,
-        ADMIN_SHADOWSOCKS_NODE_KEYS,
-    )?;
+        .context("seeded shadowsocks node missing from GET nodes")?;
+    assert_exact_keys("nodes shadowsocks", node, ADMIN_SHADOWSOCKS_NODE_KEYS)?;
+    ensure!(
+        node["show"].is_boolean(),
+        "nodes: show must cross as a JSON boolean"
+    );
+    ensure!(
+        node["rate"].is_number(),
+        "nodes: rate must cross as a JSON number"
+    );
+    ensure!(
+        node["port"].is_number() && node["server_port"].is_number(),
+        "nodes: port/server_port must cross as JSON numbers"
+    );
+    assert_rfc3339_fields("nodes", node, &["created_at", "updated_at"])?;
 
     Ok(())
 }

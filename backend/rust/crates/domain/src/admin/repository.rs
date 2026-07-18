@@ -61,27 +61,6 @@ impl AdminService {
         Ok(AdminOutput::Data(json!(true)))
     }
 
-    pub(super) async fn toggle_or_set_show(
-        &self,
-        table: &str,
-        id: i64,
-        params: &HashMap<String, String>,
-        not_found: ApiError,
-    ) -> Result<AdminOutput, ApiError> {
-        ensure_safe_table(table)?;
-        self.ensure_row_exists(table, id, not_found).await?;
-        let show = optional_i64(params, "show").unwrap_or(1);
-        sqlx::query(AssertSqlSafe(format!(
-            "UPDATE {table} SET \"show\" = CAST($1::BIGINT AS SMALLINT), updated_at = $2 WHERE id = $3::BIGINT"
-        )))
-        .bind(show)
-        .bind(Utc::now().timestamp())
-        .bind(id)
-        .execute(&self.db)
-        .await?;
-        Ok(AdminOutput::Data(json!(true)))
-    }
-
     pub(super) async fn sort_ids(&self, table: &str, ids: &[i64]) -> Result<AdminOutput, ApiError> {
         ensure_safe_table(table)?;
         for (index, id) in ids.iter().enumerate() {

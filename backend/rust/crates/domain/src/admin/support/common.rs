@@ -268,59 +268,6 @@ pub(in super::super) fn bracket_index(raw_key: &str, key: &str) -> Option<usize>
         .and_then(|value| value.parse::<usize>().ok())
 }
 
-pub(in super::super) fn nested_json(params: &HashMap<String, String>, key: &str) -> Value {
-    let mut root = Value::Object(Map::new());
-    for (raw_key, raw_value) in params {
-        if let Some(path) = bracket_path(raw_key, key) {
-            insert_nested_json(&mut root, &path, json_scalar(raw_value));
-        }
-    }
-    if matches!(&root, Value::Object(object) if object.is_empty())
-        && let Some(value) = params.get(key)
-        && let Ok(parsed) = serde_json::from_str::<Value>(value)
-    {
-        return parsed;
-    }
-    root
-}
-
-pub(in super::super) fn bracket_path(raw_key: &str, key: &str) -> Option<Vec<String>> {
-    let mut rest = raw_key.strip_prefix(key)?;
-    if rest.is_empty() {
-        return None;
-    }
-    let mut parts = Vec::new();
-    while let Some(value) = rest.strip_prefix('[') {
-        let (part, tail) = value.split_once(']')?;
-        parts.push(part.to_string());
-        rest = tail;
-    }
-    (rest.is_empty() && !parts.is_empty()).then_some(parts)
-}
-
-pub(in super::super) fn insert_nested_json(root: &mut Value, path: &[String], value: Value) {
-    let Some((head, tail)) = path.split_first() else {
-        *root = value;
-        return;
-    };
-    if tail.is_empty() {
-        if let Value::Object(object) = root {
-            object.insert(head.clone(), value);
-        }
-        return;
-    }
-    if !root.is_object() {
-        *root = Value::Object(Map::new());
-    }
-    let Value::Object(object) = root else {
-        return;
-    };
-    let child = object
-        .entry(head.clone())
-        .or_insert_with(|| Value::Object(Map::new()));
-    insert_nested_json(child, tail, value);
-}
-
 pub(in super::super) fn json_scalar(value: &str) -> Value {
     if value.eq_ignore_ascii_case("null") {
         Value::Null
@@ -345,40 +292,12 @@ pub(in super::super) fn json_string(value: &Value) -> String {
     serde_json::to_string(value).expect("serde_json::Value is always serializable")
 }
 
-pub(in super::super) fn truthy(value: Option<&String>) -> bool {
-    matches!(
-        value.map(String::as_str),
-        Some("1" | "true" | "TRUE" | "yes" | "YES")
-    )
-}
-
 pub(in super::super) fn random_payment_uuid() -> String {
     Uuid::new_v4().simple().to_string()
 }
 
 pub(in super::super) fn random_token() -> String {
     Uuid::new_v4().simple().to_string()
-}
-
-pub(in super::super) fn is_server_path(path: &str, action: &str) -> bool {
-    path.starts_with("server/") && path.ends_with(&format!("/{action}"))
-}
-
-pub(in super::super) fn server_table_from_path(path: &str) -> Result<&'static str, ApiError> {
-    let kind = server_kind_from_path(path)?;
-    SERVER_TABLES
-        .iter()
-        .find(|(item, _)| *item == kind)
-        .map(|(_, table)| *table)
-        .ok_or_else(|| ApiError::business("Invalid server type"))
-}
-
-pub(in super::super) fn server_kind_from_path(path: &str) -> Result<&str, ApiError> {
-    let mut parts = path.split('/');
-    let _server = parts.next();
-    parts
-        .next()
-        .ok_or_else(|| ApiError::business("Invalid server type"))
 }
 
 pub(in super::super) fn ensure_safe_table(table: &str) -> Result<(), ApiError> {

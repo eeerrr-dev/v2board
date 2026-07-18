@@ -351,6 +351,7 @@ Admin:
 | `server_not_found` | 404 | `该服务器不存在`, `路由不存在`(→`route_not_found`), `该服务器组不存在`(→`server_group_not_found`) |
 | `route_not_found` | 404 | `路由不存在` |
 | `server_group_not_found` | 404 | `该服务器组不存在` |
+| `server_group_in_use` | 400 | `该组已被节点所使用，无法删除` / `该组已被订阅所使用，无法删除` / `该组已被用户所使用，无法删除` (which dependency stays in `detail`; W13 `DELETE server-groups/{id}`) |
 | `invalid_server_type` | 400 | `Invalid server type` |
 | `app_url_not_configured` | 400 | `请在站点配置中配置站点地址` |
 | `mail_sender_not_configured` | 400 | `Email sender is not configured`, `Email host is not configured` |

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use axum::{
     Json, Router,
@@ -21,7 +21,8 @@ use v2board_domain::{
         ContentGenerateOutcome, CouponGenerate, CouponPatch, GiftcardGenerate, GiftcardPatch,
         KnowledgeCreate, KnowledgePatch, KnowledgeSortRequest, NoticeCreate, NoticePatch,
         OrderAssign, OrderPatch, PaymentCreate, PaymentPatch, PlanCreate, PlanPatch,
-        ReconciliationResolveRequest, SortIdsRequest, UserGenerateOutcome,
+        ReconciliationResolveRequest, RouteCreate, RoutePatch, ServerBody, ServerGroupBody,
+        SortIdsRequest, UserGenerateOutcome,
     },
     auth::AuthUser,
     payment_provider::payment_provider_codes,
@@ -140,6 +141,30 @@ fn admin_router(state: AppState) -> Router {
             "/payment-reconciliations/{id}/resolve",
             post(reconciliation_resolve),
         )
+        .route("/nodes", get(nodes_list))
+        .route("/nodes/sort", post(nodes_sort))
+        .route(
+            "/server-groups",
+            get(server_groups_list).post(server_group_create),
+        )
+        .route(
+            "/server-groups/{id}",
+            patch(server_group_patch).delete(server_group_delete),
+        )
+        .route(
+            "/server-routes",
+            get(server_routes_list).post(server_route_create),
+        )
+        .route(
+            "/server-routes/{id}",
+            patch(server_route_patch).delete(server_route_delete),
+        )
+        .route("/servers/{type}", post(server_create))
+        .route(
+            "/servers/{type}/{id}",
+            patch(server_patch).delete(server_delete),
+        )
+        .route("/servers/{type}/{id}/copy", post(server_copy))
         // §6 preamble: admin auth and the blanket mutation step-up gate are
         // structural — shared middleware over every modern route, so a new
         // route cannot silently ship ungated. The legacy fallback below keeps
@@ -153,8 +178,8 @@ fn admin_router(state: AppState) -> Router {
 /// method, plus the §6 blanket step-up requirement on mutations
 /// (POST/PATCH/PUT/DELETE → 403 `step_up_required` without a valid
 /// `x-v2board-step-up` token). Sensitive reads add their own in-handler
-/// step-up gate (`GET payment-reconciliations` since W11; `nodes` joins in
-/// its wave). Never a session teardown: step-up and permission failures
+/// step-up gate (`GET payment-reconciliations` since W11, `GET nodes`
+/// since W13). Never a session teardown: step-up and permission failures
 /// are 403s.
 async fn admin_guard(State(state): State<AppState>, mut request: Request, next: Next) -> Response {
     let locale = request_locale(request.headers());
@@ -202,21 +227,13 @@ async fn legacy_admin_get(
     params: HashMap<String, String>,
     headers: &HeaderMap,
 ) -> Result<Response, ApiError> {
-    let admin = require_admin(state, headers).await?;
-    if sensitive_admin_get(admin_path) {
-        require_privileged_step_up(state, headers, &admin).await?;
-    }
+    let _admin = require_admin(state, headers).await?;
+    // No legacy GET is step-up sensitive anymore: the node-credential read
+    // moved to the modern `GET nodes`, which keeps its step-up gate in its
+    // own handler (like `GET payment-reconciliations`); configuration reads
+    // are redacted by the domain layer.
     let service = state.admin_service(state.config_snapshot());
     admin_response(service.get(admin_path, params).await?)
-}
-
-fn sensitive_admin_get(path: &str) -> bool {
-    // Node credentials contain a live control-plane bearer. Configuration
-    // reads are redacted by the domain layer and therefore do not expose
-    // secrets after ordinary auth. (The reconciliation ledger moved to the
-    // modern `GET payment-reconciliations`, which keeps its step-up gate in
-    // its own handler.)
-    matches!(path.trim_matches('/'), "server/manage/getNodes")
 }
 
 async fn legacy_admin_post(
@@ -1310,6 +1327,235 @@ async fn reconciliation_resolve(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// GET `nodes` (docs/api-dialect.md §6.7): bare array of every protocol
+/// node in the dialect-v2 projection. The rows carry each node's live
+/// control-plane bearer (`api_key`/install command), so this read keeps its
+/// own step-up gate on top of ordinary admin auth — same pattern as
+/// `GET payment-reconciliations`.
+async fn nodes_list(
+    State(state): State<AppState>,
+    Extension(admin): Extension<AuthUser>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<Value>>, Problem> {
+    let locale = request_locale(&headers);
+    require_privileged_step_up(&state, &headers, &admin)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    state
+        .admin_service(state.config_snapshot())
+        .nodes_list()
+        .await
+        .map(Json)
+        .map_err(|error| problem_from(error, locale))
+}
+
+/// POST `nodes/sort` (§6.7): JSON `{<type>: {<id>: sort}}` (the legacy shape
+/// kept as-is); empty 204.
+async fn nodes_sort(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    DialectJson(body): DialectJson<BTreeMap<String, BTreeMap<String, i64>>>,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .nodes_sort(&body)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+struct ServerGroupsQuery {
+    group_id: Option<i64>,
+}
+
+/// GET `server-groups` `?group_id=` (§6.7): bare array (a single-id filter
+/// returns a one-element array; a miss is empty, per the legacy fetch).
+async fn server_groups_list(
+    State(state): State<AppState>,
+    Query(query): Query<ServerGroupsQuery>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<Value>>, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .server_groups_list(query.group_id)
+        .await
+        .map(Json)
+        .map_err(|error| problem_from(error, locale))
+}
+
+/// POST `server-groups` (§6.7): 201 bare `{id}`.
+async fn server_group_create(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    DialectJson(body): DialectJson<ServerGroupBody>,
+) -> Result<(StatusCode, Json<Value>), Problem> {
+    let locale = request_locale(&headers);
+    let id = state
+        .admin_service(state.config_snapshot())
+        .server_group_create(&body)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok((StatusCode::CREATED, Json(json!({ "id": id }))))
+}
+
+/// PATCH `server-groups/{id}` (§6.7): rename; empty 204.
+async fn server_group_patch(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+    DialectJson(body): DialectJson<ServerGroupBody>,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .server_group_patch(id, &body)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// DELETE `server-groups/{id}` (§6.7): 400 `server_group_in_use` while any
+/// node, plan, or user still references the group; empty 204.
+async fn server_group_delete(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .server_group_delete(id)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// GET `server-routes` (§6.7): bare array; `match` is always an array.
+async fn server_routes_list(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<Value>>, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .server_routes_list()
+        .await
+        .map(Json)
+        .map_err(|error| problem_from(error, locale))
+}
+
+/// POST `server-routes` (§6.7): 201 bare `{id}`.
+async fn server_route_create(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    DialectJson(body): DialectJson<RouteCreate>,
+) -> Result<(StatusCode, Json<Value>), Problem> {
+    let locale = request_locale(&headers);
+    let id = state
+        .admin_service(state.config_snapshot())
+        .server_route_create(&body)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok((StatusCode::CREATED, Json(json!({ "id": id }))))
+}
+
+/// PATCH `server-routes/{id}` (§6.7): §4.4 partial update; empty 204.
+async fn server_route_patch(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+    DialectJson(body): DialectJson<RoutePatch>,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .server_route_patch(id, &body)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// DELETE `server-routes/{id}` (§6.7): empty 204.
+async fn server_route_delete(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .server_route_delete(id)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// POST `servers/{type}` (§6.7): protocol node create; 201 bare `{id}`.
+async fn server_create(
+    State(state): State<AppState>,
+    Path(kind): Path<String>,
+    headers: HeaderMap,
+    DialectJson(body): DialectJson<ServerBody>,
+) -> Result<(StatusCode, Json<Value>), Problem> {
+    let locale = request_locale(&headers);
+    let id = state
+        .admin_service(state.config_snapshot())
+        .server_create(&kind, &body)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok((StatusCode::CREATED, Json(json!({ "id": id }))))
+}
+
+/// PATCH `servers/{type}/{id}` (§6.7): §4.4 partial update (merges the
+/// legacy save-with-id and the `show` toggle); empty 204.
+async fn server_patch(
+    State(state): State<AppState>,
+    Path((kind, id)): Path<(String, i64)>,
+    headers: HeaderMap,
+    DialectJson(body): DialectJson<ServerBody>,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .server_patch(&kind, id, &body)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// DELETE `servers/{type}/{id}` (§6.7): empty 204.
+async fn server_delete(
+    State(state): State<AppState>,
+    Path((kind, id)): Path<(String, i64)>,
+    headers: HeaderMap,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .admin_service(state.config_snapshot())
+        .server_delete(&kind, id)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// POST `servers/{type}/{id}/copy` (§6.7): 201 bare `{id}` of the new copy.
+async fn server_copy(
+    State(state): State<AppState>,
+    Path((kind, id)): Path<(String, i64)>,
+    headers: HeaderMap,
+) -> Result<(StatusCode, Json<Value>), Problem> {
+    let locale = request_locale(&headers);
+    let id = state
+        .admin_service(state.config_snapshot())
+        .server_copy(&kind, id)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok((StatusCode::CREATED, Json(json!({ "id": id }))))
+}
+
 pub(crate) async fn staff_get(
     State(state): State<AppState>,
     axum::extract::Path(staff_path): axum::extract::Path<String>,
@@ -1451,11 +1697,20 @@ mod tests {
 
     #[test]
     fn node_control_plane_credentials_require_recent_password_authentication() {
-        assert!(sensitive_admin_get("server/manage/getNodes"));
-        assert!(sensitive_admin_get("/server/manage/getNodes/"));
-        // W11: the reconciliation ledger left the legacy dispatch; its
-        // step-up gate lives in the modern `reconciliations_list` handler.
-        assert!(!sensitive_admin_get("order/reconciliation/fetch"));
+        // W13: the node-credential read left the legacy dispatch; its
+        // step-up gate lives in the modern `nodes_list` handler (same
+        // pattern as `reconciliations_list` since W11), so the legacy GET
+        // path must no longer carry a sensitive-read allowance at all.
+        let source = include_str!("admin.rs");
+        // Built by concatenation so this test does not match itself.
+        let legacy_gate = ["sensitive_admin", "_get"].concat();
+        assert!(!source.contains(&legacy_gate));
+        let handler = source
+            .split("async fn nodes_list")
+            .nth(1)
+            .and_then(|rest| rest.split("async fn nodes_sort").next())
+            .expect("nodes_list handler exists");
+        assert!(handler.contains("require_privileged_step_up"));
     }
 
     #[test]
