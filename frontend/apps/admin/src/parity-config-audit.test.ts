@@ -109,9 +109,9 @@ describe('parity config audit helpers', () => {
 
   it('audits the dialect route map as complete two-world rows with the §6.5/§6.9 ticket rows', () => {
     expect(assertDialectRouteMap(routeMap)).toEqual([]);
-    expect(
-      assertDialectRouteMap([{ id: 'x', legacy: { method: 'GET', path: '/x' } }]),
-    ).toContain('dialect route map: x is missing its modern shape');
+    expect(assertDialectRouteMap([{ id: 'x', legacy: { method: 'GET', path: '/x' } }])).toContain(
+      'dialect route map: x is missing its modern shape',
+    );
     expect(
       assertDialectRouteMap([
         {

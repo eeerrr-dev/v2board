@@ -5,7 +5,6 @@ const nullableNumber = z.number().nullable();
 const nullableString = z.string().nullable();
 const binaryFlagSchema = z.union([z.literal(0), z.literal(1)]);
 
-export const booleanSchema = z.boolean();
 export const stringSchema = z.string();
 export const numberSchema = z.number();
 export const stringArraySchema = z.array(stringSchema);
@@ -418,7 +417,9 @@ export const userTicketMessageSchema = z.looseObject({
 /**
  * User ticket rows — dialect v2 (§5.7, W8): `level`/`status`/`reply_status`
  * stay numeric enums (§4.1); `last_reply_user_id` is an always-present
- * nullable.
+ * nullable. The admin-prefix ticket family (§6.5, W14) shares this row shape;
+ * only the list transport differs (`{items, total}` page instead of the
+ * user-side bare array).
  */
 export const userTicketSchema = z.looseObject({
   id: z.number(),
@@ -432,19 +433,13 @@ export const userTicketSchema = z.looseObject({
   updated_at: z.string(),
 });
 
-/** GET /user/tickets/{id} (§5.7): the ticket row plus its `message[]` thread. */
+/**
+ * GET /user/tickets/{id} and admin GET /{secure_path}/tickets/{id} (§5.7,
+ * §6.5): the ticket row plus its `message[]` thread.
+ */
 export const userTicketDetailSchema = userTicketSchema.extend({
   message: z.array(userTicketMessageSchema),
 });
-
-/**
- * Admin ticket rows and detail — dialect v2 (docs/api-dialect.md §6.5, W14):
- * the admin-prefix ticket family shares the §5.7 modern row shape (RFC 3339
- * timestamps, boolean `is_me`); only the list transport differs (`{items,
- * total}` page instead of the user-side bare array).
- */
-export const adminTicketSchema = userTicketSchema;
-export const adminTicketDetailSchema = userTicketDetailSchema;
 
 /** POST /user/tickets + /user/withdrawal-tickets (§5.7): 201 with `{id}`. */
 export const createdTicketSchema = z.looseObject({
@@ -475,7 +470,8 @@ export const availableServerSchema = z.looseObject({
 /**
  * POST /user/coupons/check (docs/api-dialect.md §5.5, W4): bare coupon body,
  * boolean `show` (§4.1), RFC 3339 windows (§4.5); `type` stays the numeric
- * 1/2 enum.
+ * 1/2 enum. Admin `GET /{secure_path}/coupons` items (§6.3, W10) return the
+ * same modern body, paged as `{items, total}`.
  */
 export const userCouponSchema = z.looseObject({
   id: z.number(),
@@ -493,14 +489,6 @@ export const userCouponSchema = z.looseObject({
   created_at: z.string(),
   updated_at: z.string(),
 });
-
-/**
- * Admin `GET /{secure_path}/coupons` items (docs/api-dialect.md §6.3, W10):
- * the same modern coupon body the user check route returns — boolean `show`,
- * RFC 3339 windows, real `limit_plan_ids`/`limit_period` arrays, integer
- * cents for amount coupons (`type` 1).
- */
-export const couponSchema = userCouponSchema;
 
 /**
  * Admin `GET /{secure_path}/gift-cards` items (docs/api-dialect.md §6.3,

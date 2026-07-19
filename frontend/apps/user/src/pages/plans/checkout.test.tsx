@@ -309,7 +309,11 @@ describe('PlanCheckoutPage rendering', () => {
     await user.click(screen.getByTestId('commerce-submit'));
 
     await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/order/TRADE-YEAR'));
-    expect(mocks.saveOrder).toHaveBeenCalledWith({ kind: 'plan', plan_id: 1, period: 'year_price' });
+    expect(mocks.saveOrder).toHaveBeenCalledWith({
+      kind: 'plan',
+      plan_id: 1,
+      period: 'year_price',
+    });
   });
 
   it('lets TanStack Query retain checkout cache instead of clearing it on unmount', () => {

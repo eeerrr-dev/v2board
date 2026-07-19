@@ -115,7 +115,7 @@ export function StepUpDialogProvider() {
                 setError(null);
               }}
             />
-            {error ? <p className="text-destructive text-sm">{error}</p> : null}
+            {error ? <p className="text-sm text-destructive">{error}</p> : null}
           </Field>
           <DialogFooter>
             <Button type="button" variant="outline" disabled={submitting} onClick={close}>

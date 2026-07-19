@@ -154,9 +154,7 @@ const filterValueSchema = z.union([
  * instantiate this with their §7.1 column list so an unknown field fails in
  * the client instead of round-tripping to a 422.
  */
-export const filterClauseSchema = <TField extends readonly [string, ...string[]]>(
-  fields: TField,
-) =>
+export const filterClauseSchema = <TField extends readonly [string, ...string[]]>(fields: TField) =>
   z.object({
     field: z.enum(fields),
     op: filterOpSchema,

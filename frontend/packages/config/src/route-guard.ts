@@ -69,8 +69,7 @@ export function getNormalizedRoutePath(routeSource: string, options: RouteGuardO
   const rawPath = queryIndex >= 0 ? routeSource.slice(0, queryIndex) : routeSource;
   const query = queryIndex >= 0 ? routeSource.slice(queryIndex) : '';
   const hasAuth =
-    typeof window !== 'undefined' &&
-    Boolean(window.localStorage.getItem(options.authStorageKey));
+    typeof window !== 'undefined' && Boolean(window.localStorage.getItem(options.authStorageKey));
   const normalizedRawPath = normalizePath(rawPath);
   const recoveredNestedPath = recoverNestedPrefix(normalizedRawPath, options);
   let path = recoveredNestedPath ?? normalizedRawPath;

@@ -848,9 +848,9 @@ describe('createApiClient', () => {
     mock.onGet('/admin-path/users').reply(200, { items: [], total: 0 });
 
     await expect(fetchUsers(client)).resolves.toEqual({ data: [], total: 0 });
-    expect(mock.history.get.filter((request) => request.url?.startsWith('/admin-path/users'))).toHaveLength(
-      1,
-    );
+    expect(
+      mock.history.get.filter((request) => request.url?.startsWith('/admin-path/users')),
+    ).toHaveLength(1);
   });
 
   it('reads the modern orders page as {data,total} from the {items,total} body', async () => {
@@ -976,7 +976,9 @@ describe('createApiClient', () => {
 
     expect(JSON.parse(String(mock.history.post[0]?.data))).toMatchObject({ value: 1999 });
     expect(JSON.parse(String(mock.history.post[1]?.data))).toMatchObject({ value: 10 });
-    expect(JSON.parse(String(mock.history.post[2]?.data))).toMatchObject({ handling_fee_fixed: 105 });
+    expect(JSON.parse(String(mock.history.post[2]?.data))).toMatchObject({
+      handling_fee_fixed: 105,
+    });
   });
 
   it('sends only the dialect payment save contract with §4.4 create/edit empties', async () => {
@@ -1268,7 +1270,9 @@ describe('createApiClient', () => {
   it('rejects malformed admin plan records instead of normalizing partial legacy data', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onGet('/admin-path/plans').reply(200, [{ id: 1, name: 'Incomplete plan', month_price: 1234 }]);
+    mock
+      .onGet('/admin-path/plans')
+      .reply(200, [{ id: 1, name: 'Incomplete plan', month_price: 1234 }]);
 
     await expect(fetchPlans(client)).rejects.toBeInstanceOf(ApiContractError);
   });

@@ -5,8 +5,6 @@ import {
   activeSessionSchema,
   adminOrderSchema,
   adminPaymentSchema,
-  adminTicketDetailSchema,
-  adminTicketSchema,
   adminUserDetailSchema,
   adminUserSchema,
   adminUserTrafficSchema,
@@ -15,7 +13,6 @@ import {
   availableServerSchema,
   checkoutResultSchema,
   commissionDetailSchema,
-  couponSchema,
   createdOrderSchema,
   createdTicketSchema,
   giftCardRedemptionSchema,
@@ -92,7 +89,7 @@ const dialectGoldenSchemas: Record<string, z.ZodType> = {
   'admin.user.detail.no-inviter.json': adminUserDetailSchema,
   // §6.3 (W10): the admin content family — bare arrays for the unpaginated
   // notice/knowledge lists, `{items, total}` pages for coupons/gift-cards.
-  'admin.coupons.json': pageSchema(couponSchema),
+  'admin.coupons.json': pageSchema(userCouponSchema),
   'admin.gift-cards.json': pageSchema(giftcardSchema),
   'admin.knowledge-categories.json': stringArraySchema,
   'admin.knowledge.detail.json': knowledgeSchema,
@@ -106,8 +103,8 @@ const dialectGoldenSchemas: Record<string, z.ZodType> = {
   // §6.5/§6.8 (W14): the admin ticket family (`{items, total}` page + bare
   // detail with the `message[]` thread) and the stats family (§8 user-traffic
   // page; `{series, date, value}` rows with snake_case slugs, integer cents).
-  'admin.tickets.json': pageSchema(adminTicketSchema),
-  'admin.ticket.detail.json': adminTicketDetailSchema,
+  'admin.tickets.json': pageSchema(userTicketSchema),
+  'admin.ticket.detail.json': userTicketDetailSchema,
   'admin.stats.user-traffic.json': pageSchema(adminUserTrafficSchema),
   'admin.stats.orders.json': arraySchema(statSeriesPointSchema),
   'admin.stats.records.json': arraySchema(statSeriesPointSchema),

@@ -27,8 +27,6 @@ import {
 import { decimalToCents, decimalToScaledInteger } from '../money';
 import {
   adminConfigSchema,
-  adminTicketDetailSchema,
-  adminTicketSchema,
   configActivationPendingSchema,
   createdIdSchema,
   createdOrderSchema,
@@ -42,7 +40,6 @@ import {
   adminUserSchema,
   adminUserTrafficSchema,
   arraySchema,
-  couponSchema,
   giftcardSchema,
   knowledgeSchema,
   knowledgeSummarySchema,
@@ -57,7 +54,10 @@ import {
   serverRouteSchema,
   statSeriesPointSchema,
   stringArraySchema,
+  userCouponSchema,
   userRankSchema,
+  userTicketDetailSchema,
+  userTicketSchema,
 } from '../contracts';
 
 /**
@@ -539,7 +539,10 @@ function serializeAdminUserPatch(data: AdminUserUpdateInput): Record<string, unk
   };
   set('email', data.email);
   if (data.password !== undefined && data.password !== '') body.password = data.password;
-  set('commission_type', data.commission_type === undefined ? undefined : Number(data.commission_type));
+  set(
+    'commission_type',
+    data.commission_type === undefined ? undefined : Number(data.commission_type),
+  );
   for (const flag of ['banned', 'is_admin', 'is_staff'] as const) {
     if (data[flag] !== undefined) body[flag] = Boolean(data[flag]);
   }
@@ -554,8 +557,7 @@ function serializeAdminUserPatch(data: AdminUserUpdateInput): Record<string, unk
     body[field] = value === null || value === '' ? null : value;
   }
   if (data.expired_at !== undefined) {
-    body.expired_at =
-      data.expired_at === null ? null : userFilterEpochToRfc3339(data.expired_at);
+    body.expired_at = data.expired_at === null ? null : userFilterEpochToRfc3339(data.expired_at);
   }
   return body;
 }
@@ -848,8 +850,7 @@ export const assignOrder = (
     data: {
       ...data,
       // Legacy '' meant "no charge"; omit so Rust's Option default (0) applies.
-      total_amount:
-        data.total_amount === '' ? undefined : decimalToCents(data.total_amount),
+      total_amount: data.total_amount === '' ? undefined : decimalToCents(data.total_amount),
     },
     responseSchema: createdOrderSchema,
   });
@@ -1089,7 +1090,7 @@ export const fetchTickets = async (
       email: query.email || undefined,
       reply_status: query.reply_status?.length ? query.reply_status : undefined,
     },
-    responseSchema: pageSchema(adminTicketSchema),
+    responseSchema: pageSchema(userTicketSchema),
     ...config,
   });
   return { data: page.items, total: page.total };
@@ -1101,7 +1102,7 @@ export const ticketDetail = (client: ApiClient, id: number | string, config?: Qu
     url: client.resolveAdminPath(`/tickets/${encodeURIComponent(id)}`),
     method: 'GET',
     dialect: 'v2',
-    responseSchema: adminTicketDetailSchema,
+    responseSchema: userTicketDetailSchema,
     ...config,
   });
 
@@ -1144,7 +1145,7 @@ export const fetchCoupons = async (
     method: 'GET',
     dialect: 'v2',
     params: adminListQueryParams(query),
-    responseSchema: pageSchema(couponSchema),
+    responseSchema: pageSchema(userCouponSchema),
     ...config,
   });
   // Client-side money rule (§6.3): amount coupons stay integer cents on the

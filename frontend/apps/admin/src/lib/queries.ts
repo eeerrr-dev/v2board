@@ -201,15 +201,13 @@ export const adminQueryOptions = {
   coupons: (query: AdminContentPageState) =>
     queryOptions({
       queryKey: adminKeys.coupons(query),
-      queryFn: ({ signal }) =>
-        admin.fetchCoupons(apiClient, contentListQuery(query), { signal }),
+      queryFn: ({ signal }) => admin.fetchCoupons(apiClient, contentListQuery(query), { signal }),
       placeholderData: keepPreviousData,
     }),
   giftcards: (query: AdminContentPageState) =>
     queryOptions({
       queryKey: adminKeys.giftcards(query),
-      queryFn: ({ signal }) =>
-        admin.fetchGiftcards(apiClient, contentListQuery(query), { signal }),
+      queryFn: ({ signal }) => admin.fetchGiftcards(apiClient, contentListQuery(query), { signal }),
       placeholderData: keepPreviousData,
     }),
   knowledge: () =>
@@ -289,8 +287,7 @@ export const useAdminUsers = (query: admin.AdminPageQuery) =>
   useQuery(adminQueryOptions.users(query));
 export const useAdminOrders = (query: admin.AdminPageQuery & { commission_only?: boolean }) =>
   useQuery(adminQueryOptions.orders(query));
-export const useAdminOrderDetail = (tradeNo?: string) =>
-  useQuery(adminQueryOptions.order(tradeNo));
+export const useAdminOrderDetail = (tradeNo?: string) => useQuery(adminQueryOptions.order(tradeNo));
 export const useAdminUserInfo = (id?: number | null) => useQuery(adminQueryOptions.user(id));
 export const useAdminNotices = () => useQuery(adminQueryOptions.notices());
 export const useAdminTickets = (query: admin.AdminTicketListQuery) =>

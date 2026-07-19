@@ -55,9 +55,7 @@ export interface OrderCheckoutPayload {
 
 /** The §9.3 checkout result union. */
 export type OrderCheckoutResult =
-  | { kind: 'qr_code'; payload: string }
-  | { kind: 'redirect'; url: string }
-  | { kind: 'settled' };
+  { kind: 'qr_code'; payload: string } | { kind: 'redirect'; url: string } | { kind: 'settled' };
 
 /** POST /user/orders/{trade_no}/stripe-intent — trade_no rides the path (§5.5). */
 export interface StripePaymentIntentPayload {

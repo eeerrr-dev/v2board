@@ -593,9 +593,7 @@ describe('ProfilePage shadcn account surface', () => {
 
     await user.click(remindExpire);
 
-    await waitFor(() =>
-      expect(mocks.updateProfile).toHaveBeenCalledWith({ remind_expire: true }),
-    );
+    await waitFor(() => expect(mocks.updateProfile).toHaveBeenCalledWith({ remind_expire: true }));
     expect(mocks.refetchInfo).not.toHaveBeenCalled();
   });
 
@@ -624,9 +622,7 @@ describe('ProfilePage shadcn account surface', () => {
 
     await user.click(switches[0]!);
 
-    await waitFor(() =>
-      expect(mocks.updateProfile).toHaveBeenCalledWith({ auto_renewal: false }),
-    );
+    await waitFor(() => expect(mocks.updateProfile).toHaveBeenCalledWith({ auto_renewal: false }));
   });
 
   it('blocks a mismatched confirm password with an inline error instead of calling the API', async () => {

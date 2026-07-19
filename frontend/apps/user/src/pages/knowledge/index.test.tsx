@@ -305,7 +305,12 @@ describe('KnowledgePage redesigned interactions', () => {
     // list, but the detail endpoint fetches it by id, so it must still open.
     mocks.searchParams = new URLSearchParams('id=99');
     mocks.detailById = {
-      '99': { id: 99, title: 'Cross-language Doc', body: 'body', updated_at: '2023-11-14T22:13:20Z' },
+      '99': {
+        id: 99,
+        title: 'Cross-language Doc',
+        body: 'body',
+        updated_at: '2023-11-14T22:13:20Z',
+      },
     } as Record<string, unknown>;
 
     renderWithProviders(<KnowledgePage />);
