@@ -22,7 +22,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { userFilterSchema, type UserFilterValues } from '../user-action-form-schema';
+import { userFilterSchema, type UserFilterValues } from './form-schema';
 import type { FilterField } from './shared';
 
 export function UserFilterSheet({

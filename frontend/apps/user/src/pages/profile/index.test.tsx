@@ -3,7 +3,7 @@ import { screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/render';
 import { createTestTranslation } from '@/test/i18next-selector';
-import ProfilePage from './profile';
+import ProfilePage from './index';
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),

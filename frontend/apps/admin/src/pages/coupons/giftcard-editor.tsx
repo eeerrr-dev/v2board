@@ -28,7 +28,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
-import { giftcardEditorSchema, type GiftcardEditorValues } from '../coupon-form-schema';
+import { giftcardEditorSchema, type GiftcardEditorValues } from './form-schema';
 import {
   downloadGeneratedCsv,
   fromDateTimeLocal,

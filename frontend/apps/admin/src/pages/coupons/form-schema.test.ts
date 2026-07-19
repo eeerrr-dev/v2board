@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { couponEditorSchema, giftcardEditorSchema } from './coupon-form-schema';
+import { couponEditorSchema, giftcardEditorSchema } from './form-schema';
 
 const common = {
   name: '活动',

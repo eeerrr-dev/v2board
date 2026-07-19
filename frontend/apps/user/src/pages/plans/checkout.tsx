@@ -14,7 +14,7 @@ import {
 } from '@/lib/queries';
 import type { PlanPeriod, UserCoupon, UserPlan } from '@v2board/types';
 import { PLAN_PERIOD_LABELS, PURCHASABLE_PLAN_PERIODS } from '@/lib/plan-periods';
-import { isSubscriptionExpired } from '@/pages/dashboard-subscription';
+import { isSubscriptionExpired } from '@/pages/dashboard/subscription';
 import { PlanContent } from '@/components/plan-content';
 import { confirmDialog } from '@/components/ui/confirm-dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';

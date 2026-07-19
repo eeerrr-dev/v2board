@@ -29,7 +29,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
-import { couponEditorSchema, type CouponEditorValues } from '../coupon-form-schema';
+import { couponEditorSchema, type CouponEditorValues } from './form-schema';
 import {
   downloadGeneratedCsv,
   fromDateTimeLocal,

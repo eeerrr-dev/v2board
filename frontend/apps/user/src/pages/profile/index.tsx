@@ -1,15 +1,15 @@
 import { PageShell } from '@/components/ui/page';
-import { AccountCard } from './profile/account-card';
-import { GiftCardCard } from './profile/gift-card-card';
-import { NotificationsCard } from './profile/notifications-card';
-import { PasswordCard } from './profile/password-card';
-import { ResetSubscribeCard } from './profile/reset-subscribe-card';
-import { SessionsCard } from './profile/sessions-card';
-import { TelegramBindCard, TelegramDiscussCard } from './profile/telegram-card';
-import { WalletCard } from './profile/wallet-card';
+import { AccountCard } from './account-card';
+import { GiftCardCard } from './gift-card-card';
+import { NotificationsCard } from './notifications-card';
+import { PasswordCard } from './password-card';
+import { ResetSubscribeCard } from './reset-subscribe-card';
+import { SessionsCard } from './sessions-card';
+import { TelegramBindCard, TelegramDiscussCard } from './telegram-card';
+import { WalletCard } from './wallet-card';
 
 // The account surface is a grid of self-contained shadcn cards. Each card owns
-// its own queries, mutations, form, and dialog (see ./profile/*), so this page
+// its own queries, mutations, form, and dialog (see the sibling ./*-card files), so this page
 // is only the layout. Every Tier-1 contract lives inside a card: the deposit
 // exact major-unit-to-cents deposit boundary (WalletCard/api-client), the 0/1 preference toggles
 // (WalletCard/NotificationsCard via usePreferenceToggle), the /login redirect

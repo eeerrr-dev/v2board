@@ -4,7 +4,7 @@ import {
   generateUserSchema,
   sendMailSchema,
   userFilterSchema,
-} from './user-action-form-schema';
+} from './form-schema';
 
 describe('admin user action schemas', () => {
   it('accepts the complete order assignment protocol and rejects partial values', () => {

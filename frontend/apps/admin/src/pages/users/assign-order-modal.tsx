@@ -21,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { assignOrderSchema, type AssignOrderValues } from '../user-action-form-schema';
+import { assignOrderSchema, type AssignOrderValues } from './form-schema';
 import { requestErrorMessage, type PlanOption } from './shared';
 
 const PERIOD_TEXT: Record<string, string> = {

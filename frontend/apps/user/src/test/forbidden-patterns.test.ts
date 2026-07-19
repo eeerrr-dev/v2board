@@ -15,7 +15,7 @@ import { describe, expect, it } from 'vitest';
 // `useSyncExternalStore` lives in lib/dark-mode.ts and components/ui/
 // confirm-dialog.tsx, `refetchInterval` is owned by lib/queries.ts and passed
 // by pages/tickets/detail.tsx, `window.location.pathname` builds the invite
-// copy link, `md:grid-cols-2` lays out plan cards, profile.tsx composes the
+// copy link, `md:grid-cols-2` lays out plan cards, profile/index.tsx composes the
 // shared TableRow primitive for its static deposit table, and the auth LAYOUT
 // (not the card) hosts AuthPanelBrand/AuthLanguageMenu. Each rule therefore
 // applies to the narrowest file set that reproduces the original guard.
@@ -253,7 +253,7 @@ describe('legacy class names never appear in source', () => {
 
   it('bans packaged-bundle CSS-module hashes and packaged theme asset paths', () => {
     // from: tickets/detail.test.tsx (content___DW5w1 / input___1j_ND /
-    // tag___12_9H) and dashboard.test.tsx (oneClickSubscribe___2t9Xg,
+    // tag___12_9H) and dashboard/index.test.tsx (oneClickSubscribe___2t9Xg,
     // /theme/default/assets/ and copied source-owned client icon directories).
     expect(
       violations([
@@ -267,7 +267,7 @@ describe('legacy class names never appear in source', () => {
         },
         {
           pattern: /assets\/images\/icon\//,
-          scope: ['pages/dashboard-subscribe-menu.tsx'],
+          scope: ['pages/dashboard/subscribe-menu.tsx'],
           why: 'all subscribe targets use one Lucide Import glyph, not copied client artwork',
         },
       ]),
@@ -600,7 +600,7 @@ describe('scoped legacy APIs and patterns', () => {
   });
 
   it('redesigned tables compose the shared DataTable, not page-local rows', () => {
-    // from: invite.test.tsx, traffic.test.tsx, node.test.tsx. profile.tsx is
+    // from: invite.test.tsx, traffic.test.tsx, node.test.tsx. profile/index.tsx is
     // deliberately outside this scope: its static deposit table composes the
     // shared TableRow primitive directly, which its own tests cover.
     expect(
@@ -617,10 +617,10 @@ describe('scoped legacy APIs and patterns', () => {
   it('file-scoped bans: profile form state, ticket cache/polling, recaptcha dialog, confirm-dialog, toaster', () => {
     expect(
       violations([
-        // from: profile.test.tsx — schema-based form state, not per-keystroke useState.
+        // from: profile/index.test.tsx — schema-based form state, not per-keystroke useState.
         {
           pattern: /\bsetPasswordForm\b|\bsetGiftCard\b/,
-          scope: ['pages/profile.tsx'],
+          scope: ['pages/profile/index.tsx'],
           why: 'per-keystroke useState form tracking is banned',
         },
         // from: tickets/index.test.tsx — list refresh is owned by the mutations' onSuccess.

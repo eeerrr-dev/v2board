@@ -21,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { generateUserSchema, type GenerateUserValues } from '../user-action-form-schema';
+import { generateUserSchema, type GenerateUserValues } from './form-schema';
 import { PLAN_NONE, requestErrorMessage, type PlanOption } from './shared';
 
 type GenerateUserPayload = Parameters<typeof admin.generateUser>[1];

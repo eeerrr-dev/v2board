@@ -23,13 +23,13 @@ import { PageShell } from '@/components/ui/page';
 import { Progress } from '@/components/ui/progress';
 import { Spinner } from '@/components/ui/spinner';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { DashboardNoticeCarousel } from './dashboard-notice-carousel';
+import { DashboardNoticeCarousel } from './notice-carousel';
 import {
   DashboardConfirmDialog,
   DashboardSubscribeDialog,
   type DashboardConfirmAction,
-} from './dashboard-dialogs';
-import { deriveDashboardSubscription } from './dashboard-subscription';
+} from './dialogs';
+import { deriveDashboardSubscription } from './subscription';
 import { useCommConfig, useNotices, useSubscribe, useUserStat } from '@/lib/queries';
 import { formatBackendDateSlash, formatBytes } from '@v2board/config/format';
 import { cn } from '@/lib/cn';

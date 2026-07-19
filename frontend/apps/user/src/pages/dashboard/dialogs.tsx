@@ -20,7 +20,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import { DashboardSubscribeMenu } from './dashboard-subscribe-menu';
+import { DashboardSubscribeMenu } from './subscribe-menu';
 import { useNewPeriodMutation, useSaveOrderMutation, useSubscribe } from '@/lib/queries';
 import { toast } from '@/lib/toast';
 

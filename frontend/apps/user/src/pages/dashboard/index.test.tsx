@@ -9,7 +9,7 @@ import {
   type TranslationValues,
 } from '@/test/i18next-selector';
 import { setRuntimeConfig } from '@/test/runtime-config';
-import DashboardPage from './dashboard';
+import DashboardPage from './index';
 
 const mocks = vi.hoisted(() => ({
   copyText: vi.fn(),

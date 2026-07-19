@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getSubscribeTargets } from './dashboard-subscribe-menu';
+import { getSubscribeTargets } from './subscribe-menu';
 
 const IPAD_OS13_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Safari/605.1.15';

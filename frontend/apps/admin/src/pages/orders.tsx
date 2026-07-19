@@ -63,7 +63,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
 import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@/components/ui/table';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { assignOrderSchema, type AssignOrderValues } from './user-action-form-schema';
+import { assignOrderSchema, type AssignOrderValues } from './users/form-schema';
 
 const PERIOD_TEXT: Record<string, string> = {
   month_price: '月付',

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deriveDashboardSubscription } from './dashboard-subscription';
+import { deriveDashboardSubscription } from './subscription';
 
 const FUTURE = '2286-11-20T17:46:39Z';
 type Subscribe = NonNullable<Parameters<typeof deriveDashboardSubscription>[0]>;

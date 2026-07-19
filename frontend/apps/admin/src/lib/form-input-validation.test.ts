@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { userManageSchema } from '@/components/user-manage-schema';
-import { couponEditorSchema, giftcardEditorSchema } from '@/pages/coupon-form-schema';
+import { couponEditorSchema, giftcardEditorSchema } from '@/pages/coupons/form-schema';
 import { paymentFormSchema } from '@/pages/payment-form-schema';
 import { planEditorSchema } from '@/pages/plan-form-schema';
 
