@@ -25,6 +25,7 @@ mod json_value;
 mod locale;
 mod localization;
 mod metrics;
+mod rate_limit;
 mod request_params;
 mod route_paths;
 mod routes;

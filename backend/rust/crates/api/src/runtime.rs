@@ -46,6 +46,7 @@ pub(crate) struct AppState {
     pub(crate) auth_redis: redis::aio::ConnectionManager,
     pub(crate) http: reqwest::Client,
     pub(crate) http_metrics: Arc<crate::metrics::HttpMetrics>,
+    pub(crate) http_rate_limiter: Arc<crate::rate_limit::HttpRateLimiter>,
     password_kdf: PasswordKdf,
     smtp: SmtpTransportCache,
 }
@@ -77,6 +78,7 @@ impl AppState {
             auth_redis,
             http,
             http_metrics: Arc::new(crate::metrics::HttpMetrics::default()),
+            http_rate_limiter: Arc::new(crate::rate_limit::HttpRateLimiter::from_env()),
             password_kdf,
             smtp,
         }

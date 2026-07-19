@@ -88,6 +88,7 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
     let timeout_state = state.clone();
     let cors_state = state.clone();
     let http_metrics_state = state.clone();
+    let rate_limit_state = state.clone();
     let request_timeout = Duration::from_secs(config.api_request_timeout_seconds);
 
     Router::new()
@@ -330,6 +331,13 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
                 )
             }),
         )
+        // Inner to trusted_client_ip_middleware so the resolved ClientIp
+        // extension is available; only the unauthenticated internal families
+        // are counted (crate::rate_limit module docs).
+        .layer(middleware::from_fn_with_state(
+            rate_limit_state,
+            crate::rate_limit::http_rate_limit_middleware,
+        ))
         .layer(middleware::from_fn_with_state(
             https_state,
             enforce_https_middleware,
