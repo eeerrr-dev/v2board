@@ -14,6 +14,9 @@ const useMutation = vi.hoisted(() => vi.fn((options: unknown) => options));
 const skipTokenMock = vi.hoisted(() => Symbol('skipToken'));
 const useQuery = vi.hoisted(() => vi.fn((options: UseQueryOptions) => options));
 const invalidateQueries = vi.hoisted(() => vi.fn());
+const cancelQueries = vi.hoisted(() => vi.fn());
+const getQueryData = vi.hoisted(() => vi.fn());
+const setQueryData = vi.hoisted(() => vi.fn());
 const apiUser = vi.hoisted(() => ({
   checkLogin: vi.fn(),
   info: vi.fn(),
@@ -31,6 +34,9 @@ vi.mock('@tanstack/react-query', () => ({
   useQuery,
   useQueryClient: () => ({
     invalidateQueries,
+    cancelQueries,
+    getQueryData,
+    setQueryData,
   }),
 }));
 
@@ -381,6 +387,47 @@ describe('user query state behavior', () => {
       const options = invalidateQueries.mock.calls[0]![0] as { queryKey: readonly unknown[] };
       expect(options.queryKey).toEqual(['user', 'info']);
     }
+  });
+
+  it('flips the cached profile preferences optimistically and rolls back on error', async () => {
+    const { useUpdateProfileMutation } = await import('./queries');
+    const mutation = callHook(() => useUpdateProfileMutation()) as unknown as {
+      onMutate: (payload: Record<string, boolean>) => Promise<{ snapshot?: unknown }>;
+      onError: (error: Error, payload: unknown, context: unknown) => void;
+    };
+
+    const snapshot = { auto_renewal: false, remind_expire: true } as unknown as UserInfo;
+    cancelQueries.mockReset();
+    getQueryData.mockReset().mockReturnValue(snapshot);
+    setQueryData.mockReset();
+
+    const context = await mutation.onMutate({ auto_renewal: true });
+
+    expect(cancelQueries).toHaveBeenCalledWith({ queryKey: ['user', 'info'] });
+    expect(setQueryData).toHaveBeenCalledWith(['user', 'info'], {
+      auto_renewal: true,
+      remind_expire: true,
+    });
+
+    mutation.onError(new Error('offline'), { auto_renewal: true }, context);
+    expect(setQueryData).toHaveBeenLastCalledWith(['user', 'info'], snapshot);
+  });
+
+  it('skips the optimistic profile flip when no user record is cached yet', async () => {
+    const { useUpdateProfileMutation } = await import('./queries');
+    const mutation = callHook(() => useUpdateProfileMutation()) as unknown as {
+      onMutate: (payload: Record<string, boolean>) => Promise<{ snapshot?: unknown }>;
+      onError: (error: Error, payload: unknown, context: unknown) => void;
+    };
+
+    getQueryData.mockReset().mockReturnValue(undefined);
+    setQueryData.mockReset();
+
+    const context = await mutation.onMutate({ remind_traffic: true });
+    expect(setQueryData).not.toHaveBeenCalled();
+
+    mutation.onError(new Error('offline'), { remind_traffic: true }, context);
+    expect(setQueryData).not.toHaveBeenCalled();
   });
 
   it('invalidates every cached credential projection after reset-subscribe', async () => {

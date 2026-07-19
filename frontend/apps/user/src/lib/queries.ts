@@ -397,8 +397,20 @@ export function useUpdateProfileMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: Parameters<typeof user.update>[1]) => user.update(apiClient, payload),
-    // Profile edits change the cached user record; invalidate it here so every
-    // consumer refreshes instead of each call site wiring its own refetch.
+    // The payload carries only the three preference booleans, so the cached
+    // user record flips optimistically — the switches answer on click instead
+    // of after the round trip. An error restores the snapshot (the global
+    // mutation toast reports the failure); success still refetches the
+    // authoritative record here so no call site wires its own refetch.
+    onMutate: async (payload) => {
+      await queryClient.cancelQueries({ queryKey: userKeys.info });
+      const snapshot = queryClient.getQueryData<UserInfo>(userKeys.info);
+      if (snapshot) queryClient.setQueryData(userKeys.info, { ...snapshot, ...payload });
+      return { snapshot };
+    },
+    onError: (_error, _payload, context) => {
+      if (context?.snapshot) queryClient.setQueryData(userKeys.info, context.snapshot);
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: userKeys.info });
     },

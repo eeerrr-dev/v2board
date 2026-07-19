@@ -343,6 +343,40 @@ function useInvalidatingMutation<TVariables, TData>(
   });
 }
 
+// Toggle mutations flip the row inside every cached list matching `scope`
+// before the request settles, so the switch answers on click instead of after
+// the round trip. An error restores the snapshots (the global mutation toast
+// reports the failure) and settlement always refetches the authoritative
+// lists through the same scope prefix useInvalidatingMutation would use.
+// `scope.exact` keeps a flip off sibling caches that share the list's key
+// prefix but not its shape (e.g. knowledge detail under the knowledge list).
+function useOptimisticToggleMutation<TVariables, TData, TCache>(
+  mutationFn: (variables: TVariables) => Promise<TData>,
+  scope: { queryKey: readonly unknown[]; exact?: boolean },
+  applyToggle: (cached: TCache, variables: TVariables) => TCache,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn,
+    onMutate: async (variables: TVariables) => {
+      await queryClient.cancelQueries(scope);
+      const snapshots = queryClient.getQueriesData<TCache>(scope);
+      queryClient.setQueriesData<TCache>(scope, (cached) =>
+        cached === undefined ? undefined : applyToggle(cached, variables),
+      );
+      return { snapshots };
+    },
+    onError: (_error, _variables, context) => {
+      context?.snapshots.forEach(([queryKey, cached]) => {
+        queryClient.setQueryData(queryKey, cached);
+      });
+    },
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: scope.queryKey });
+    },
+  });
+}
+
 export function useSetTelegramWebhookMutation() {
   return useMutation({
     mutationFn: (telegramBotToken: string) => admin.setTelegramWebhook(apiClient, telegramBotToken),
@@ -367,10 +401,12 @@ export function useDropPlanMutation() {
 }
 
 export function useUpdatePlanMutation() {
-  return useInvalidatingMutation(
+  return useOptimisticToggleMutation(
     (vars: { id: number; key: 'show' | 'renew'; value: boolean }) =>
       admin.updatePlan(apiClient, vars.id, vars.key, vars.value),
-    [adminKeys.plans],
+    { queryKey: adminKeys.plans, exact: true },
+    (plans: Awaited<ReturnType<typeof admin.fetchPlans>>, vars) =>
+      plans.map((plan) => (plan.id === vars.id ? { ...plan, [vars.key]: vars.value } : plan)),
   );
 }
 
@@ -516,9 +552,11 @@ export function useDropNoticeMutation() {
 export function useShowNoticeMutation() {
   // §6.3 (W10): the legacy server-side flip became an explicit client-sent
   // target value on the PATCH `{show}` toggle.
-  return useInvalidatingMutation(
+  return useOptimisticToggleMutation(
     ({ id, show }: { id: number; show: boolean }) => admin.showNotice(apiClient, id, show),
-    [noticesScope],
+    { queryKey: noticesScope, exact: true },
+    (notices: Awaited<ReturnType<typeof admin.fetchNotices>>, vars) =>
+      notices.map((notice) => (notice.id === vars.id ? { ...notice, show: vars.show } : notice)),
   );
 }
 
@@ -546,9 +584,13 @@ export function useSavePaymentMutation() {
 export function useShowPaymentMutation() {
   // §6.2 (W11): the legacy server-side flip became an explicit client-sent
   // target value on the PATCH `{enable}` toggle.
-  return useInvalidatingMutation(
+  return useOptimisticToggleMutation(
     ({ id, enable }: { id: number; enable: boolean }) => admin.showPayment(apiClient, id, enable),
-    [adminKeys.payments],
+    { queryKey: adminKeys.payments, exact: true },
+    (payments: Awaited<ReturnType<typeof admin.fetchPayments>>, vars) =>
+      payments.map((payment) =>
+        payment.id === vars.id ? { ...payment, enable: vars.enable } : payment,
+      ),
   );
 }
 
@@ -583,9 +625,16 @@ export function useDropCouponMutation() {
 }
 
 export function useShowCouponMutation() {
-  return useInvalidatingMutation(
+  return useOptimisticToggleMutation(
     ({ id, show }: { id: number; show: boolean }) => admin.showCoupon(apiClient, id, show),
-    [couponsScope],
+    // Non-exact: flip the row inside every cached filter/pagination page.
+    { queryKey: couponsScope },
+    (page: Awaited<ReturnType<typeof admin.fetchCoupons>>, vars) => ({
+      ...page,
+      items: page.items.map((coupon) =>
+        coupon.id === vars.id ? { ...coupon, show: vars.show } : coupon,
+      ),
+    }),
   );
 }
 
@@ -621,9 +670,11 @@ export function useDropKnowledgeMutation() {
 }
 
 export function useShowKnowledgeMutation() {
-  return useInvalidatingMutation(
+  return useOptimisticToggleMutation(
     ({ id, show }: { id: number; show: boolean }) => admin.showKnowledge(apiClient, id, show),
-    [adminKeys.knowledge],
+    { queryKey: adminKeys.knowledge, exact: true },
+    (rows: Awaited<ReturnType<typeof admin.fetchKnowledge>>, vars) =>
+      rows.map((row) => (row.id === vars.id ? { ...row, show: vars.show } : row)),
   );
 }
 
@@ -691,10 +742,15 @@ export function useCopyServerMutation() {
 export function useUpdateServerMutation() {
   // §6.7 (W13): the legacy server-side flip became an explicit client-sent
   // boolean on PATCH /servers/{type}/{id}.
-  return useInvalidatingMutation(
+  return useOptimisticToggleMutation(
     (vars: { type: admin.ServerTypeName; id: number; show: boolean }) =>
       admin.showServer(apiClient, vars.type, vars.id, vars.show),
-    [adminKeys.serverNodes],
+    { queryKey: adminKeys.serverNodes, exact: true },
+    // Node ids are only unique per protocol type, so the flip must match both.
+    (nodes: Awaited<ReturnType<typeof admin.fetchServerNodes>>, vars) =>
+      nodes.map((node) =>
+        node.type === vars.type && node.id === vars.id ? { ...node, show: vars.show } : node,
+      ),
   );
 }
 
