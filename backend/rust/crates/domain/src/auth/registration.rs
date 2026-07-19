@@ -6,6 +6,7 @@ use v2board_config::duration_minutes_to_seconds;
 use v2board_db::DbTransaction;
 
 use super::validation::{validate_email, validate_password};
+use super::verification::LimitedEmailCodeResult;
 use super::{AuthData, AuthService, cache_key, legacy_guid};
 
 pub(super) const MAX_INVITE_CODE_BYTES: usize = 255;
@@ -90,12 +91,38 @@ impl AuthService {
                     .with_detail("You must use the invitation code to register")
                     .into());
             }
-            if self.config.email_verify
-                && !self
-                    .consume_email_code(&cache_email, input.email_code.as_deref())
+            if self.config.email_verify {
+                let email_code = input
+                    .email_code
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| value.len() == 6 && value.chars().all(|ch| ch.is_ascii_digit()))
+                    .ok_or_else(|| ApiError::from(Problem::new(Code::InvalidEmailCode)))?;
+                // Brute-force limit the emailed 6-digit code exactly like the
+                // forget/reset flow (credentials.rs): without it the ~9e5 code
+                // space is enumerable within the 300s TTL, since the registration
+                // IP reservation is ZREM-released on every failure and so never
+                // accumulates against failed guesses.
+                let limit_key =
+                    self.redis_key(&cache_key("REGISTER_EMAIL_CODE_LIMIT", &cache_email));
+                match self
+                    .consume_email_code_with_failure_limit(
+                        &cache_email,
+                        email_code,
+                        &limit_key,
+                        3,
+                        300,
+                    )
                     .await?
-            {
-                return Err(Problem::new(Code::InvalidEmailCode).into());
+                {
+                    LimitedEmailCodeResult::Consumed => {}
+                    LimitedEmailCodeResult::Incorrect => {
+                        return Err(Problem::new(Code::InvalidEmailCode).into());
+                    }
+                    LimitedEmailCodeResult::Limited => {
+                        return Err(Problem::new(Code::RegisterIpRateLimited).into());
+                    }
+                }
             }
 
             let password_hash = self.password_kdf.hash(&input.password).await?;

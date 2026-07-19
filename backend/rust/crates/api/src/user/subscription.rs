@@ -6,7 +6,7 @@ use axum::{
 use chrono::{Datelike, Duration, TimeZone, Utc};
 use redis::AsyncCommands;
 use serde::Serialize;
-use v2board_compat::{ApiError, Code, Problem, json::rfc3339_option};
+use v2board_compat::{ApiError, Code, Problem, constant_time_bytes_eq, json::rfc3339_option};
 use v2board_config::{AppConfig, app_now, app_timezone, duration_minutes_to_seconds};
 use v2board_domain::subscribe_link::{hmac_sha1_hex, totp_counter_bytes};
 
@@ -341,7 +341,11 @@ pub(crate) async fn resolve_totp_subscribe_token(
     let config = state.config_snapshot();
     let timestep = duration_minutes_to_seconds(config.show_subscribe_expire);
     let expected = hmac_sha1_hex(user.token.as_bytes(), &totp_counter_bytes(&config))?;
-    if client_hash != expected {
+    // Constant-time compare of the secret-derived HMAC, matching every other MAC
+    // check on the external boundary (node token, telegram secret, payment
+    // signatures). Both sides are fixed-length lowercase hex, so comparing the
+    // hex bytes leaks nothing beyond the already-public length.
+    if !constant_time_bytes_eq(expected.as_bytes(), client_hash.as_bytes()) {
         return Err(forbidden("token is error"));
     }
 

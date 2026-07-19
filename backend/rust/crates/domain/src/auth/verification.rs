@@ -116,26 +116,6 @@ impl AuthService {
         Ok(())
     }
 
-    pub(super) async fn consume_email_code(
-        &self,
-        email: &str,
-        code: Option<&str>,
-    ) -> Result<bool, ApiError> {
-        let Some(code) = code
-            .map(str::trim)
-            .filter(|value| value.len() == 6 && value.chars().all(|ch| ch.is_ascii_digit()))
-        else {
-            return Ok(false);
-        };
-        let mut conn = self.redis.clone();
-        let consumed = redis::Script::new(CONSUME_VALUE_SCRIPT)
-            .key(self.redis_key(&cache_key("EMAIL_VERIFY_CODE", email)))
-            .arg(code)
-            .invoke_async::<i64>(&mut conn)
-            .await?;
-        Ok(consumed == 1)
-    }
-
     pub(super) async fn consume_email_code_with_failure_limit(
         &self,
         email: &str,
@@ -344,14 +324,6 @@ end
 local value = redis.call('INCR', KEYS[2])
 if value == 1 or redis.call('TTL', KEYS[2]) < 0 then
     redis.call('EXPIRE', KEYS[2], ARGV[3])
-end
-return 0
-"#;
-
-const CONSUME_VALUE_SCRIPT: &str = r#"
-if redis.call('GET', KEYS[1]) == ARGV[1] then
-    redis.call('DEL', KEYS[1])
-    return 1
 end
 return 0
 "#;

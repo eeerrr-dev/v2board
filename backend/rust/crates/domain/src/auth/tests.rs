@@ -94,6 +94,22 @@ fn password_reset_code_consumption_and_failure_limit_share_one_redis_script() {
 }
 
 #[test]
+fn registration_email_code_is_brute_force_limited_like_password_reset() {
+    // The emailed 6-digit registration code must run through the same
+    // failure-limited consumer as forget/reset, not an unlimited GET==code:
+    // the registration IP reservation is ZREM-released on every failure, so
+    // without this the ~9e5 code space is enumerable inside the 300s TTL.
+    let source = include_str!("registration.rs");
+    assert!(source.contains("consume_email_code_with_failure_limit"));
+    assert!(source.contains("REGISTER_EMAIL_CODE_LIMIT"));
+    // Exhausting the attempt ceiling is a 429, never a silent success.
+    assert!(source.contains("LimitedEmailCodeResult::Limited"));
+    assert!(source.contains("Code::RegisterIpRateLimited"));
+    // The unlimited single-GET consumer path is gone.
+    assert!(!source.contains(".consume_email_code("));
+}
+
+#[test]
 fn is_valid_email_accepts_structural_addresses_and_rejects_malformed() {
     assert!(is_valid_email("user@example.com"));
     assert!(is_valid_email("user@localhost"));
