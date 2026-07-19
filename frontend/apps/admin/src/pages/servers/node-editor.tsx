@@ -23,26 +23,26 @@ import {
   normalizeNullableArray,
   normalizeSettings,
   type SelectOption,
-} from './server-domain';
-import { getNodeInitialValues, inputValue, selectValue } from './server-node-values';
+} from './domain';
+import { getNodeInitialValues, inputValue, selectValue } from './node-values';
 import {
   MultiCheckboxField,
   NodeFieldError,
   NodeSelect,
   type NodeAdvancedField,
   type NodeForm,
-} from './server-form-controls';
+} from './form-controls';
 import {
   serverNodeFormSchema,
   type ServerNodeEditorValues,
   type ServerNodeSaveRequest,
-} from './server-form-schema';
+} from './form-schema';
 import {
   NodeAddressFields,
   NodeChildField,
   NodePortFields,
   ServerTypeFields,
-} from './server-protocol-fields';
+} from './protocol-fields';
 
 export function NodeEditor({
   open,

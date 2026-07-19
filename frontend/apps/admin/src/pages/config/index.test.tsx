@@ -3,12 +3,13 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseProblem } from '@v2board/api-client';
 import { setAdminRuntimeConfig } from '@/test/runtime-config';
-import ConfigPage, {
+import ConfigPage from './index';
+import {
   adminSecurePathLocation,
   isBackendEnabled,
   parseBackendInteger,
   parseBackendNumber,
-} from './config';
+} from './values';
 
 // The config surface is a redesigned shadcn island (PageShell + section nav +
 // Card sections of labeled shadcn controls) replacing the antd tabs / OneUI

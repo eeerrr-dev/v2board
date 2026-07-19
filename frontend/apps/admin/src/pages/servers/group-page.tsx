@@ -12,8 +12,8 @@ import {
   useSaveServerGroupMutation,
   useServerGroups,
 } from '@/lib/queries';
-import { ServerGroupDialog } from './server-group-dialog';
-import type { ServerGroupFormValues } from './server-form-schema';
+import { ServerGroupDialog } from './group-dialog';
+import type { ServerGroupFormValues } from './form-schema';
 
 export function ServerGroupPage() {
   const groups = useServerGroups();

@@ -6,7 +6,7 @@ import {
   TROJAN_NETWORKS,
   V2NODE_TRANSPORTS,
   VMESS_NETWORKS,
-} from './server-domain';
+} from './domain';
 
 export const serverGroupFormSchema = z.object({
   id: z.number().int().positive().optional(),

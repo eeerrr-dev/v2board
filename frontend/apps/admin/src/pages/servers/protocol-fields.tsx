@@ -47,14 +47,9 @@ import {
   settingValue,
   settingsObject,
   withSetting,
-} from './server-domain';
-import {
-  NodeFieldError,
-  NodeSelect,
-  type NodeAdvancedField,
-  type NodeForm,
-} from './server-form-controls';
-import { switchV2nodeProtocol, type ServerNodeEditorValues } from './server-form-schema';
+} from './domain';
+import { NodeFieldError, NodeSelect, type NodeAdvancedField, type NodeForm } from './form-controls';
+import { switchV2nodeProtocol, type ServerNodeEditorValues } from './form-schema';
 import {
   binaryValue,
   displayText,
@@ -70,7 +65,7 @@ import {
   v2nodeNetwork,
   vlessFlow,
   vmessNetwork,
-} from './server-node-values';
+} from './node-values';
 
 export function NodeAddressFields({
   form,

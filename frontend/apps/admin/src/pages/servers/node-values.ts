@@ -1,6 +1,6 @@
 import type { admin } from '@v2board/api-client';
-import { V2NODE_PROTOCOLS, type SelectValueType } from './server-domain';
-import type { ServerNodeEditorValues, V2nodeEditorValues } from './server-form-schema';
+import { V2NODE_PROTOCOLS, type SelectValueType } from './domain';
+import type { ServerNodeEditorValues, V2nodeEditorValues } from './form-schema';
 
 export function nodeRecordValue(record: admin.ServerNode | undefined, key: string): unknown {
   if (!record) return undefined;

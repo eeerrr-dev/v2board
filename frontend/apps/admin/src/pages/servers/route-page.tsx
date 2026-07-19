@@ -12,9 +12,9 @@ import {
   useSaveServerRouteMutation,
   useServerRoutes,
 } from '@/lib/queries';
-import { ROUTE_ACTION_TEXT, getRouteMatchLabel } from './server-domain';
-import { ServerRouteDialog } from './server-route-dialog';
-import { splitServerRouteMatches, type ServerRouteFormValues } from './server-form-schema';
+import { ROUTE_ACTION_TEXT, getRouteMatchLabel } from './domain';
+import { ServerRouteDialog } from './route-dialog';
+import { splitServerRouteMatches, type ServerRouteFormValues } from './form-schema';
 
 export function ServerRoutePage() {
   const routes = useServerRoutes();

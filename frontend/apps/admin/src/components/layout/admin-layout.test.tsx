@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { user } from '@v2board/api-client';
+import type * as ApiClientModule from '@v2board/api-client';
 import { setAdminRuntimeConfig } from '@/test/runtime-config';
 import { adminSessionKeys } from '@/lib/session-queries';
 import { AdminLayout } from './admin-layout';
@@ -50,7 +51,7 @@ vi.mock('react-router', () => ({
 }));
 
 vi.mock('@v2board/api-client', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@v2board/api-client')>()),
+  ...(await importOriginal<typeof ApiClientModule>()),
   user: { info: vi.fn() },
 }));
 // The account menu's explicit sign-out (revocation + local teardown) lives in

@@ -70,9 +70,9 @@ import {
   createServerSortPayload,
   moveServerNodeByDragIndexes,
   type NodeFilterItem,
-} from './server-domain';
-import { AvailabilityDot, ServerTypeTag } from './server-form-controls';
-import { NodeEditor } from './server-node-editor';
+} from './domain';
+import { AvailabilityDot, ServerTypeTag } from './form-controls';
+import { NodeEditor } from './node-editor';
 
 function ServerSortNavigationGuard({ when }: { when: boolean }) {
   const blocker = useBlocker(when);

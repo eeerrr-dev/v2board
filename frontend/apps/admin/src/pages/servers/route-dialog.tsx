@@ -21,13 +21,13 @@ import {
   SERVER_ROUTE_ACTIONS,
   getRouteMatchPlaceholder,
   getRouteMatchTextareaValue,
-} from './server-domain';
+} from './domain';
 import {
   serverRouteFormSchema,
   type ServerRouteAction,
   type ServerRouteFormValues,
-} from './server-form-schema';
-import { NodeSelect } from './server-form-controls';
+} from './form-schema';
+import { NodeSelect } from './form-controls';
 
 export function ServerRouteDialog({
   route: initialRoute,

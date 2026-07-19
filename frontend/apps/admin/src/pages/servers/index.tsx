@@ -1,7 +1,7 @@
 import { useLocation } from 'react-router';
-import { ServerGroupPage } from './server-group-page';
-import { ServerManagePage } from './server-manage-page';
-import { ServerRoutePage } from './server-route-page';
+import { ServerGroupPage } from './group-page';
+import { ServerManagePage } from './manage-page';
+import { ServerRoutePage } from './route-page';
 
 export {
   applyServerNodeColumnControls,
@@ -11,7 +11,7 @@ export {
   getNumericSelectValue,
   getV2nodeSecurityValue,
   moveServerNodeByDragIndexes,
-} from './server-domain';
+} from './domain';
 
 export default function ServersPage() {
   const location = useLocation();

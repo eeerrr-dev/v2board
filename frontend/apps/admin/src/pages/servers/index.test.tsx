@@ -10,12 +10,8 @@ import ServersPage, {
   getNumericSelectValue,
   getV2nodeSecurityValue,
   moveServerNodeByDragIndexes,
-} from './servers';
-import {
-  serverNodeFormSchema,
-  switchV2nodeProtocol,
-  type V2nodeEditorValues,
-} from './server-form-schema';
+} from './index';
+import { serverNodeFormSchema, switchV2nodeProtocol, type V2nodeEditorValues } from './form-schema';
 import { createTestTranslation } from '@/test/i18next-selector';
 
 // The admin server manager is a redesigned pure shadcn island (route dispatch →

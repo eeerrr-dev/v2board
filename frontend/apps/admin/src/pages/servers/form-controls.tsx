@@ -18,8 +18,8 @@ import {
   type ServerType,
   type SelectOption,
   type SelectValueType,
-} from './server-domain';
-import type { ServerNodeEditorValues } from './server-form-schema';
+} from './domain';
+import type { ServerNodeEditorValues } from './form-schema';
 
 export interface NodeForm {
   values: ServerNodeEditorValues;
