@@ -139,6 +139,9 @@ async fn run_isolated_checks(
         schema_invariants(pool).await?;
         pass("fresh migrations and production schema constraints");
 
+        audit_log_append_only(pool).await?;
+        pass("operator audit trail is append-only and surface-constrained");
+
         analytics_outbox_invariant(pool).await?;
         pass("analytics outbox uniqueness, batching, and leases are durable");
 
@@ -568,6 +571,44 @@ async fn partial_unique_behavior(pool: &PgPool) -> Result<()> {
         .bind(ticket_id)
         .execute(pool)
         .await?;
+    Ok(())
+}
+
+async fn audit_log_append_only(pool: &PgPool) -> Result<()> {
+    let audit_id: i64 = sqlx::query_scalar(
+        "INSERT INTO audit_log \
+         (actor_id, actor_email, session_id, surface, method, path, status_code, client_ip, request_id, created_at) \
+         VALUES (1, 'invariant@example.test', 'invariant-session', 'admin', 'PATCH', '/config', 204, '127.0.0.1', NULL, $1) \
+         RETURNING id",
+    )
+    .bind(Utc::now().timestamp())
+    .fetch_one(pool)
+    .await?;
+    ensure!(
+        sqlx::query("UPDATE audit_log SET status_code = 500 WHERE id = $1")
+            .bind(audit_id)
+            .execute(pool)
+            .await
+            .is_err(),
+        "audit_log accepted an UPDATE; the trail must be append-only"
+    );
+    ensure!(
+        sqlx::query("DELETE FROM audit_log WHERE id = $1")
+            .bind(audit_id)
+            .execute(pool)
+            .await
+            .is_err(),
+        "audit_log accepted a DELETE; the trail must be append-only"
+    );
+    ensure!(
+        sqlx::query("INSERT INTO audit_log \
+             (actor_id, actor_email, session_id, surface, method, path, status_code, client_ip, request_id, created_at) \
+             VALUES (1, 'invariant@example.test', 'invariant-session', 'operator', 'PATCH', '/config', 204, NULL, NULL, 0)")
+            .execute(pool)
+            .await
+            .is_err(),
+        "audit_log accepted a surface outside the admin/staff check constraint"
+    );
     Ok(())
 }
 

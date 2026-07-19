@@ -9,6 +9,7 @@ use v2board_domain::{
 };
 
 mod admin;
+mod audit;
 mod auth;
 mod cli;
 mod client;

@@ -235,3 +235,22 @@ journalctl -u v2board-api --since -15m --no-pager | tail -50
 After any page-severity incident, write a short post-incident note (what
 paged, timeline, root cause, follow-ups) next to the drill records. The
 follow-ups feed the next release, not a wiki graveyard.
+
+## 6. Operator audit trail
+
+Every authenticated admin/staff mutation is appended to the PostgreSQL
+`audit_log` table (actor, surface, method, prefix-relative path, response
+status, client IP, request id, epoch timestamp). The table is append-only at
+the database level — `UPDATE`/`DELETE` raise for every application principal —
+so it is the authoritative who-did-what-when record for incident forensics.
+Request bodies are deliberately not recorded (they can carry secrets);
+correlate the `request_id` column with journald API logs when payload-level
+context is needed:
+
+```sql
+SELECT to_timestamp(created_at), actor_email, surface, method, path, status_code, client_ip
+FROM audit_log ORDER BY id DESC LIMIT 50;
+```
+
+It lives in the ordinary `postgres` database, so §2.1 backups and §3.1
+restores cover it with no extra step.

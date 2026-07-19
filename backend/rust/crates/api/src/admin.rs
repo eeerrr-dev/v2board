@@ -217,8 +217,48 @@ async fn admin_guard(State(state): State<AppState>, mut request: Request, next: 
     {
         return problem_from(error, locale).into_response();
     }
-    request.extensions_mut().insert(admin);
-    next.run(request).await
+    request.extensions_mut().insert(admin.clone());
+    audited_run(state, admin, "admin", request, next).await
+}
+
+/// Runs the gated request and, for mutations, appends the operator audit row
+/// (crate::audit) with the produced status. Reads pass through untouched.
+async fn audited_run(
+    state: AppState,
+    actor: AuthUser,
+    surface: &'static str,
+    request: Request,
+    next: Next,
+) -> Response {
+    if matches!(*request.method(), Method::GET | Method::HEAD) {
+        return next.run(request).await;
+    }
+    let method = request.method().clone();
+    let path = request.uri().path().to_owned();
+    let client_ip = request
+        .extensions()
+        .get::<crate::runtime::ClientIp>()
+        .map(|client_ip| client_ip.0);
+    let request_id = request
+        .headers()
+        .get(crate::routes::X_REQUEST_ID)
+        .and_then(|value| value.to_str().ok())
+        .map(ToOwned::to_owned);
+    let response = next.run(request).await;
+    crate::audit::record_privileged_mutation(
+        &state,
+        &actor,
+        crate::audit::MutationRecord {
+            surface,
+            method,
+            path: &path,
+            status: response.status(),
+            client_ip,
+            request_id: request_id.as_deref(),
+        },
+    )
+    .await;
+    response
 }
 
 #[derive(Deserialize)]
@@ -1821,8 +1861,8 @@ async fn staff_guard(State(state): State<AppState>, mut request: Request, next: 
     {
         return problem_from(error, locale).into_response();
     }
-    request.extensions_mut().insert(staff);
-    next.run(request).await
+    request.extensions_mut().insert(staff.clone());
+    audited_run(state, staff, "staff", request, next).await
 }
 
 /// Staff GET `tickets` (§6.9): the admin list with the staff scope — the

@@ -26,7 +26,7 @@ use crate::{
     },
 };
 
-const X_REQUEST_ID: &str = "x-request-id";
+pub(crate) const X_REQUEST_ID: &str = "x-request-id";
 const MAX_REQUEST_BODY_BYTES: usize = 8 * 1024 * 1024;
 
 /// Preserve cross-origin API clients while keeping authentication explicit in
