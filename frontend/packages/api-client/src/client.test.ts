@@ -1044,7 +1044,7 @@ describe('createApiClient', () => {
   });
 
   it('uses the merged boolean-flag PATCH shape for admin plan toggles', () => {
-    const source = readFileSync(new URL('./endpoints/admin.ts', import.meta.url), 'utf8');
+    const source = readFileSync(new URL('./endpoints/admin/commerce.ts', import.meta.url), 'utf8');
 
     expect(source).toContain("key: 'show' | 'renew', value: boolean");
     expect(source).toContain('data: { [key]: value }');
