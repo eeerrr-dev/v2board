@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import dayjs from 'dayjs';
-import CouponsPage from './coupons';
+import CouponsPage from './index';
 
 // The admin coupon/giftcard manager is a redesigned shadcn island (PageHeader +
 // DataTable + Sheet editor). Legacy ant-table / ant-modal DOM byte-pins are

@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import dayjs from 'dayjs';
-import UsersPage from './users';
+import UsersPage from './index';
 
 // The admin user manager is a redesigned shadcn island (PageHeader + DataTable +
 // a Sheet filter builder + a Sheet edit drawer + Dialog create/mail/assign
