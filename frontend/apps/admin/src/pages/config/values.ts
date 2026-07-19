@@ -28,7 +28,9 @@ export function configValuesEqual(left: ConfigFieldValue, right: ConfigFieldValu
 // new `/{admin_path}` prefix via a full-page replace.
 export function adminSecurePathLocation(securePath: string, currentRoutePath: string) {
   const normalizedPath = securePath.trim().replace(/^\/+|\/+$/g, '');
-  if (!normalizedPath) throw new Error('后台路径不能为空');
+  // Dotted i18n key: the save queue surfaces this through FieldError, which
+  // resolves it via translateRuntimeMessage (module scope has no `t`).
+  if (!normalizedPath) throw new Error('admin.config.secure_path_required');
   const route = currentRoutePath.startsWith('/') ? currentRoutePath : '/config/system';
   return `/${normalizedPath}${route === '/' ? '/config/system' : route}`;
 }

@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import type { Giftcard } from '@v2board/types';
 import {
@@ -22,12 +24,50 @@ import {
   copyWithToast,
   dateRange,
   PAGE_SIZE_OPTIONS,
-  PAGINATION_LABELS,
+  paginationLabels,
   type GiftcardRow,
   type QueryState,
 } from './shared';
 
+// Wire giftcard type codes (1-5) are the backend contract; only the labels
+// are translated, resolved at render time.
+function renderValue(t: TFunction, value: Giftcard['value'], type: Giftcard['type']) {
+  if (value === null) return '-';
+  switch (type) {
+    case 1:
+      return t(($) => $.admin.coupons.giftcards.value_amount, { value: value.toFixed(2) });
+    case 2:
+      return t(($) => $.admin.coupons.giftcards.value_days, { value });
+    case 3:
+      return t(($) => $.admin.coupons.giftcards.value_traffic, { value });
+    case 4:
+      return '-';
+    case 5:
+      return t(($) => $.admin.coupons.giftcards.value_days, { value });
+    default:
+      return value;
+  }
+}
+
+function typeLabel(t: TFunction, type: Giftcard['type']) {
+  switch (type) {
+    case 1:
+      return t(($) => $.admin.coupons.giftcards.type_amount);
+    case 2:
+      return t(($) => $.admin.coupons.giftcards.type_duration);
+    case 3:
+      return t(($) => $.admin.coupons.giftcards.type_traffic);
+    case 4:
+      return t(($) => $.admin.coupons.giftcards.type_reset);
+    case 5:
+      return t(($) => $.admin.coupons.giftcards.type_plan);
+    default:
+      return '';
+  }
+}
+
 export function GiftcardsView() {
+  const { t } = useTranslation();
   const [query, setQuery] = useState<QueryState>({ current: 1, pageSize: 10 });
   const giftcards = useAdminGiftcards(query);
   const plans = useAdminPlans();
@@ -42,47 +82,14 @@ export function GiftcardsView() {
   const planName = (id: number | string | null | undefined) =>
     planOptions?.find((plan) => plan.id === id)?.name ?? '-';
 
-  const renderValue = (value: Giftcard['value'], type: Giftcard['type']) => {
-    if (value === null) return '-';
-    switch (type) {
-      case 1:
-        return `${value.toFixed(2)} ¥`;
-      case 2:
-        return `${value} 天`;
-      case 3:
-        return `${value} GB`;
-      case 4:
-        return '-';
-      case 5:
-        return `${value} 天`;
-      default:
-        return value;
-    }
-  };
-
-  const typeLabel = (type: Giftcard['type']) => {
-    switch (type) {
-      case 1:
-        return '金额';
-      case 2:
-        return '时长';
-      case 3:
-        return '流量';
-      case 4:
-        return '重置';
-      case 5:
-        return '套餐';
-      default:
-        return '';
-    }
-  };
+  const copyCode = (value: string) => copyWithToast(value, (selector) => t(selector));
 
   const removeGiftcard = async (row: GiftcardRow) => {
     const confirmed = await confirmDialog({
-      title: '警告',
-      description: '确定要删除该条项目吗？',
-      confirmText: '确定',
-      cancelText: '取消',
+      title: t(($) => $.admin.coupons.delete_confirm_title),
+      description: t(($) => $.admin.coupons.delete_confirm_description),
+      confirmText: t(($) => $.common.confirm),
+      cancelText: t(($) => $.common.cancel),
     });
     if (!confirmed) return;
     drop.mutate(row.id);
@@ -98,50 +105,52 @@ export function GiftcardsView() {
     {
       id: 'name',
       meta: { className: 'font-medium text-foreground' },
-      header: () => <span>名称</span>,
+      header: () => <span>{t(($) => $.admin.coupons.name)}</span>,
       cell: ({ row }) => row.original.name,
     },
     {
       id: 'type',
-      header: () => <span>类型</span>,
-      cell: ({ row }) => typeLabel(row.original.type),
+      header: () => <span>{t(($) => $.admin.coupons.type)}</span>,
+      cell: ({ row }) => typeLabel(t, row.original.type),
     },
     {
       id: 'value',
       meta: { className: 'tabular-nums' },
-      header: () => <span>数值</span>,
-      cell: ({ row }) => renderValue(row.original.value, row.original.type),
+      header: () => <span>{t(($) => $.admin.coupons.giftcards.value)}</span>,
+      cell: ({ row }) => renderValue(t, row.original.value, row.original.type),
     },
     {
       id: 'plan',
-      header: () => <span>套餐</span>,
+      header: () => <span>{t(($) => $.admin.coupons.giftcards.plan)}</span>,
       cell: ({ row }) => planName(row.original.plan_id),
     },
     {
       id: 'code',
-      header: () => <span>卡密</span>,
-      cell: ({ row }) => <CopyableCode value={row.original.code} onCopy={copyWithToast} />,
+      header: () => <span>{t(($) => $.admin.coupons.giftcards.code)}</span>,
+      cell: ({ row }) => <CopyableCode value={row.original.code} onCopy={copyCode} />,
     },
     {
       id: 'limit_use',
       meta: { align: 'center' },
-      header: () => <span>剩余次数</span>,
+      header: () => <span>{t(($) => $.admin.coupons.remaining)}</span>,
       cell: ({ row }) => (
         <Badge variant="secondary">
-          {row.original.limit_use !== null ? row.original.limit_use : '无限'}
+          {row.original.limit_use !== null
+            ? row.original.limit_use
+            : t(($) => $.admin.coupons.unlimited)}
         </Badge>
       ),
     },
     {
       id: 'validity',
       meta: { className: 'text-muted-foreground tabular-nums' },
-      header: () => <span>有效期</span>,
+      header: () => <span>{t(($) => $.admin.coupons.valid_period)}</span>,
       cell: ({ row }) => dateRange(row.original.started_at, row.original.ended_at),
     },
     {
       id: 'actions',
       meta: { align: 'right' },
-      header: () => <span>操作</span>,
+      header: () => <span>{t(($) => $.common.operation)}</span>,
       cell: ({ row }) => (
         <div className="flex items-center justify-end gap-1">
           {plansReady ? (
@@ -153,13 +162,13 @@ export function GiftcardsView() {
             >
               <Button variant="ghost" size="sm" data-testid={`giftcard-edit-${row.original.id}`}>
                 <Pencil className="size-4" />
-                编辑
+                {t(($) => $.common.edit)}
               </Button>
             </GiftcardEditor>
           ) : (
             <Button variant="ghost" size="sm" disabled>
               <Pencil className="size-4" />
-              编辑
+              {t(($) => $.common.edit)}
             </Button>
           )}
           <Button
@@ -170,7 +179,7 @@ export function GiftcardsView() {
             data-testid={`giftcard-delete-${row.original.id}`}
           >
             <Trash2 className="size-4" />
-            删除
+            {t(($) => $.common.delete)}
           </Button>
         </div>
       ),
@@ -180,13 +189,19 @@ export function GiftcardsView() {
   return (
     <PageShell data-testid="giftcards-page">
       {giftcards.isError ? (
-        <ErrorState message="礼品卡列表加载失败" onRetry={() => void giftcards.refetch()} />
+        <ErrorState
+          message={t(($) => $.admin.coupons.giftcards.load_failed)}
+          onRetry={() => void giftcards.refetch()}
+        />
       ) : null}
       {plans.isError ? (
-        <ErrorState message="订阅列表加载失败" onRetry={() => void plans.refetch()} />
+        <ErrorState
+          message={t(($) => $.admin.coupons.plans_load_failed)}
+          onRetry={() => void plans.refetch()}
+        />
       ) : null}
       <PageHeader
-        title="礼品卡管理"
+        title={t(($) => $.admin.coupons.giftcards.title)}
         actions={
           plansReady ? (
             <GiftcardEditor
@@ -196,13 +211,13 @@ export function GiftcardsView() {
             >
               <Button data-testid="giftcard-create">
                 <Plus className="size-4" />
-                添加礼品卡
+                {t(($) => $.admin.coupons.giftcards.create)}
               </Button>
             </GiftcardEditor>
           ) : (
             <Button disabled data-testid="giftcard-create">
               <Plus className="size-4" />
-              添加礼品卡
+              {t(($) => $.admin.coupons.giftcards.create)}
             </Button>
           )
         }
@@ -218,7 +233,7 @@ export function GiftcardsView() {
             data-testid="giftcards-table"
             empty={
               !giftcards.isError && giftcards.data !== undefined && data.length === 0
-                ? '暂无礼品卡'
+                ? t(($) => $.admin.coupons.giftcards.empty)
                 : undefined
             }
             emptyTestId="giftcards-empty"
@@ -230,7 +245,7 @@ export function GiftcardsView() {
               pageSize={query.pageSize}
               total={total}
               pageSizeOptions={PAGE_SIZE_OPTIONS}
-              labels={PAGINATION_LABELS}
+              labels={paginationLabels((selector) => t(selector))}
               onChange={(page, pageSize) => setQuery({ current: page, pageSize })}
               testIds={{ page: 'giftcard-page', pageSize: 'giftcard-page-size' }}
             />

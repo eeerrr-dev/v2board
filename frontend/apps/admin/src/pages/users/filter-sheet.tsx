@@ -3,6 +3,7 @@ import dayjs from 'dayjs';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useFieldArray, useForm, useFormState, useWatch } from 'react-hook-form';
 import { Plus, X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { AdminFilter } from '@v2board/api-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,6 +39,7 @@ export function UserFilterSheet({
   value: AdminFilter[];
   onApply: (filter: AdminFilter[]) => void;
 }) {
+  const { t } = useTranslation();
   const form = useForm<UserFilterValues>({
     resolver: zodResolver(userFilterSchema),
     defaultValues: { rows: value },
@@ -92,13 +94,15 @@ export function UserFilterSheet({
         data-testid="user-filter-sheet"
       >
         <SheetHeader className="border-b border-border px-6 py-4">
-          <SheetTitle>过滤器</SheetTitle>
-          <SheetDescription>组合字段条件以筛选用户列表。</SheetDescription>
+          <SheetTitle>{t(($) => $.admin.users.filter)}</SheetTitle>
+          <SheetDescription>{t(($) => $.admin.users.filter_description)}</SheetDescription>
         </SheetHeader>
 
         <div className="flex-1 space-y-4 overflow-y-auto px-6 py-4">
           {filterRows.length === 0 ? (
-            <p className="text-sm text-muted-foreground">点击下方按钮添加过滤条件。</p>
+            <p className="text-sm text-muted-foreground">
+              {t(($) => $.admin.users.filter_empty_hint)}
+            </p>
           ) : null}
           {filterRows.map((filterRow, index) => {
             const row = rows[index] ?? filterRow;
@@ -110,7 +114,7 @@ export function UserFilterSheet({
                   <Select value={row.key} onValueChange={(key) => changeField(index, key)}>
                     <SelectTrigger
                       className="flex-1"
-                      aria-label={`筛选字段 ${index + 1}`}
+                      aria-label={t(($) => $.admin.users.filter_field_label, { index: index + 1 })}
                       data-testid={`user-filter-field-${index}`}
                     >
                       <SelectValue />
@@ -130,7 +134,9 @@ export function UserFilterSheet({
                       <Select value={conditionField.value} onValueChange={conditionField.onChange}>
                         <SelectTrigger
                           className="w-24"
-                          aria-label={`筛选条件 ${index + 1}`}
+                          aria-label={t(($) => $.admin.users.filter_condition_label, {
+                            index: index + 1,
+                          })}
                           data-testid={`user-filter-condition-${index}`}
                         >
                           <SelectValue />
@@ -150,7 +156,7 @@ export function UserFilterSheet({
                     variant="ghost"
                     size="icon"
                     className="size-9 shrink-0 text-muted-foreground"
-                    aria-label="删除条件"
+                    aria-label={t(($) => $.admin.users.filter_remove_label)}
                     onClick={() => remove(index)}
                     data-testid={`user-filter-remove-${index}`}
                   >
@@ -178,7 +184,7 @@ export function UserFilterSheet({
 
           <Button type="button" variant="outline" onClick={addRow} data-testid="user-filter-add">
             <Plus className="size-4" />
-            添加条件
+            {t(($) => $.admin.users.filter_add)}
           </Button>
         </div>
 
@@ -189,10 +195,10 @@ export function UserFilterSheet({
             onClick={reset}
             data-testid="user-filter-reset-all"
           >
-            重置
+            {t(($) => $.admin.users.reset)}
           </Button>
           <Button type="button" onClick={() => void apply()} data-testid="user-filter-apply">
-            确定
+            {t(($) => $.common.confirm)}
           </Button>
         </SheetFooter>
       </SheetContent>
@@ -211,6 +217,7 @@ function FilterValueInput({
   value: AdminFilter['value'];
   onChange: (value: AdminFilter['value']) => void;
 }) {
+  const { t } = useTranslation();
   if (field.type === 'select') {
     const options = field.options ?? [];
     const current =
@@ -225,10 +232,10 @@ function FilterValueInput({
       >
         <SelectTrigger
           className="w-full"
-          aria-label={`筛选值 ${index + 1}`}
+          aria-label={t(($) => $.admin.users.filter_value_label, { index: index + 1 })}
           data-testid={`user-filter-value-${index}`}
         >
-          <SelectValue placeholder="请选择" />
+          <SelectValue placeholder={t(($) => $.admin.users.select_placeholder)} />
         </SelectTrigger>
         <SelectContent>
           {options.map((option) => (
@@ -245,7 +252,7 @@ function FilterValueInput({
     return (
       <Input
         type="datetime-local"
-        aria-label={`筛选值 ${index + 1}`}
+        aria-label={t(($) => $.admin.users.filter_value_label, { index: index + 1 })}
         value={value ? dayjs(1000 * Number(value)).format('YYYY-MM-DDTHH:mm') : ''}
         onChange={(event) =>
           onChange(event.target.value ? String(dayjs(event.target.value).unix()) : '')
@@ -257,8 +264,8 @@ function FilterValueInput({
 
   return (
     <Input
-      placeholder="欲检索内容"
-      aria-label={`筛选值 ${index + 1}`}
+      placeholder={t(($) => $.admin.users.filter_value_placeholder)}
+      aria-label={t(($) => $.admin.users.filter_value_label, { index: index + 1 })}
       value={value == null ? '' : String(value)}
       onChange={(event) => onChange(event.target.value)}
       data-testid={`user-filter-value-${index}`}

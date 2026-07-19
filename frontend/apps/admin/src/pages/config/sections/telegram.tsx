@@ -1,4 +1,5 @@
 import { Loader2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import type { FormCtx } from '../schema';
 import { Section, SettingRow, SwitchRow, TextRow } from '../rows';
@@ -12,27 +13,28 @@ export function TelegramSection({
   onWebhook: () => void;
   webhookPending: boolean;
 }) {
+  const { t } = useTranslation();
   const hasToken = Boolean(ctx.get('telegram', 'telegram_bot_token'));
   return (
-    <Section title="Telegram">
+    <Section title={t(($) => $.admin.config.sections.telegram)}>
       <TextRow
         ctx={ctx}
         group="telegram"
         field="telegram_bot_token"
-        title="机器人Token"
-        description="请输入由Botfather提供的token。"
+        title={t(($) => $.admin.config.telegram.bot_token_title)}
+        description={t(($) => $.admin.config.telegram.bot_token_desc)}
         placeholder="0000000000:xxxxxxxxx_xxxxxxxxxxxxxxx"
       />
       {hasToken ? (
         <SettingRow
-          title="设置Webhook"
-          description="对机器人进行Webhook设置，不设置将无法收到Telegram通知。"
+          title={t(($) => $.admin.config.telegram.webhook_title)}
+          description={t(($) => $.admin.config.telegram.webhook_desc)}
         >
           <Button onClick={onWebhook} disabled={webhookPending} data-testid="config-set-webhook">
             {webhookPending ? (
               <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
             ) : null}
-            一键设置
+            {t(($) => $.admin.config.telegram.webhook_button)}
           </Button>
         </SettingRow>
       ) : null}
@@ -40,15 +42,15 @@ export function TelegramSection({
         ctx={ctx}
         group="telegram"
         field="telegram_bot_enable"
-        title="开启机器人通知"
-        description="开启后bot将会对绑定了telegram的管理员和用户进行基础通知。"
+        title={t(($) => $.admin.config.telegram.bot_enable_title)}
+        description={t(($) => $.admin.config.telegram.bot_enable_desc)}
       />
       <TextRow
         ctx={ctx}
         group="telegram"
         field="telegram_discuss_link"
-        title="群组地址"
-        description="填写后将会在用户端展示，或者被用于需要的地方。"
+        title={t(($) => $.admin.config.telegram.discuss_link_title)}
+        description={t(($) => $.admin.config.telegram.discuss_link_desc)}
         placeholder="https://t.me/xxxxxx"
       />
     </Section>

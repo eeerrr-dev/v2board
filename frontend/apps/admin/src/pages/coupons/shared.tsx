@@ -1,4 +1,5 @@
 import dayjs from 'dayjs';
+import type { SelectorParam } from 'i18next';
 import type { admin } from '@v2board/api-client';
 import type { Coupon, Giftcard, Plan } from '@v2board/types';
 import { copyText } from '@v2board/config/clipboard';
@@ -11,15 +12,19 @@ export type GenerateResponse = admin.GenerateCsvResponse;
 export type CouponRow = Coupon;
 export type GiftcardRow = Giftcard;
 
+export type Translate = (selector: SelectorParam) => string;
+
 export const PAGE_SIZE_OPTIONS = [10, 50, 100, 150];
 
-export const PAGINATION_LABELS = {
-  itemsPerPage: '条/页',
-  nextPage: '下一页',
-  nextWindow: '向后 5 页',
-  previousPage: '上一页',
-  previousWindow: '向前 5 页',
-};
+export function paginationLabels(translate: Translate) {
+  return {
+    itemsPerPage: translate(($) => $.common.items_per_page),
+    nextPage: translate(($) => $.common.next_page),
+    nextWindow: translate(($) => $.common.next_5),
+    previousPage: translate(($) => $.common.prev_page),
+    previousWindow: translate(($) => $.common.prev_5),
+  };
+}
 
 export interface QueryState {
   current: number;
@@ -75,9 +80,9 @@ export function downloadGeneratedCsv(prefix: 'COUPON' | 'GIFTCARD', buffer: unkn
   window.URL.revokeObjectURL(url);
 }
 
-export async function copyWithToast(text: string) {
-  if (await copyText(text)) toast.success('复制成功');
-  else toast.error('复制失败');
+export async function copyWithToast(text: string, translate: Translate) {
+  if (await copyText(text)) toast.success(translate(($) => $.admin.coupons.copy_success));
+  else toast.error(translate(($) => $.admin.coupons.copy_fail));
 }
 
 export function CopyableCode({

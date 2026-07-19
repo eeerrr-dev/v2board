@@ -13,6 +13,8 @@ export interface FilterField {
 
 export const PLAN_NONE = 'null';
 
+// Returns either the raw error message or the 'admin.users.request_failed' i18n
+// key; FieldError resolves it through translateRuntimeMessage at display time.
 export function requestErrorMessage(error: unknown) {
-  return error instanceof Error && error.message ? error.message : '请求失败';
+  return error instanceof Error && error.message ? error.message : 'admin.users.request_failed';
 }

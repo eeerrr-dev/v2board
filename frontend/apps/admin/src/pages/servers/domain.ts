@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next';
 import type { admin } from '@v2board/api-client';
 
 export const SERVER_ROUTE_ACTIONS = [
@@ -103,30 +104,44 @@ export const AVAILABLE_STATUS_DOT: Record<'error' | 'warning' | 'processing', st
   processing: 'bg-info',
 };
 
-export const ROUTE_ACTION_TEXT = {
-  block: '禁止访问(域名目标)',
-  block_ip: '禁止访问(IP目标)',
-  block_port: '禁止访问(端口目标)',
-  protocol: '禁止访问(协议)',
-  dns: '指定DNS服务器进行解析',
-  route: '指定出站服务器(域名目标)',
-  route_ip: '指定出站服务器(IP目标)',
-  default_out: '自定义默认出站',
-} satisfies Record<(typeof SERVER_ROUTE_ACTIONS)[number], string>;
+// Route action values are wire identifiers; only the labels are copy, so the
+// option/label constants resolve their copy through t() at render time.
+export function getRouteActionText(
+  t: TFunction,
+): Record<(typeof SERVER_ROUTE_ACTIONS)[number], string> {
+  return {
+    block: t(($) => $.admin.servers.route_action_block),
+    block_ip: t(($) => $.admin.servers.route_action_block_ip),
+    block_port: t(($) => $.admin.servers.route_action_block_port),
+    protocol: t(($) => $.admin.servers.route_action_protocol),
+    dns: t(($) => $.admin.servers.route_action_dns),
+    route: t(($) => $.admin.servers.route_action_route),
+    route_ip: t(($) => $.admin.servers.route_action_route_ip),
+    default_out: t(($) => $.admin.servers.route_action_default_out),
+  };
+}
 
-export const ROUTE_ACTION_OPTIONS = optionsFromLabels(SERVER_ROUTE_ACTIONS, ROUTE_ACTION_TEXT);
+export function getRouteActionOptions(t: TFunction) {
+  return optionsFromLabels(SERVER_ROUTE_ACTIONS, getRouteActionText(t));
+}
 
-export const BINARY_SELECT_OPTIONS = [
-  { value: 0, label: '否' },
-  { value: 1, label: '是' },
-] satisfies SelectOption<0 | 1>[];
+export function getBinarySelectOptions(t: TFunction): SelectOption<0 | 1>[] {
+  return [
+    { value: 0, label: t(($) => $.common.no) },
+    { value: 1, label: t(($) => $.common.yes) },
+  ];
+}
 
-export const TLS_SUPPORT_OPTIONS = [
-  { value: 0, label: '不支持' },
-  { value: 1, label: '支持' },
-] satisfies SelectOption<0 | 1>[];
+export function getTlsSupportOptions(t: TFunction): SelectOption<0 | 1>[] {
+  return [
+    { value: 0, label: t(($) => $.admin.servers.not_supported) },
+    { value: 1, label: t(($) => $.admin.servers.supported) },
+  ];
+}
 
-export const SECURITY_NONE_OPTION = { value: 0, label: '无' } satisfies SelectOption<0>;
+export function getSecurityNoneOption(t: TFunction): SelectOption<0> {
+  return { value: 0, label: t(($) => $.admin.servers.none) };
+}
 export const SECURITY_TLS_OPTION = { value: 1, label: 'TLS' } satisfies SelectOption<1>;
 export const SECURITY_REALITY_OPTION = {
   value: 2,
@@ -160,27 +175,26 @@ export const V2NODE_PROTOCOL_LABELS = {
 } satisfies Record<(typeof V2NODE_PROTOCOLS)[number], string>;
 export const V2NODE_PROTOCOL_OPTIONS = optionsFromLabels(V2NODE_PROTOCOLS, V2NODE_PROTOCOL_LABELS);
 
-export const V2NODE_TRANSPORT_LABELS = {
-  tcp: 'TCP',
-  ws: 'WebSocket',
-  grpc: 'gRPC',
-  http: 'HTTP伪装',
-  httpupgrade: 'HTTPUpgrade',
-  xhttp: 'XHTTP',
-} satisfies Record<(typeof V2NODE_TRANSPORTS)[number], string>;
-export const V2NODE_SHADOWSOCKS_NETWORK_OPTIONS = optionsFromLabels(
-  V2NODE_SHADOWSOCKS_NETWORKS,
-  V2NODE_TRANSPORT_LABELS,
-);
+function getV2nodeTransportLabels(t: TFunction) {
+  return {
+    tcp: 'TCP',
+    ws: 'WebSocket',
+    grpc: 'gRPC',
+    http: t(($) => $.admin.servers.http_disguise),
+    httpupgrade: 'HTTPUpgrade',
+    xhttp: 'XHTTP',
+  } satisfies Record<(typeof V2NODE_TRANSPORTS)[number], string>;
+}
+export function getV2nodeShadowsocksNetworkOptions(t: TFunction) {
+  return optionsFromLabels(V2NODE_SHADOWSOCKS_NETWORKS, getV2nodeTransportLabels(t));
+}
 
-export const V2NODE_TRANSPORT_OPTIONS = optionsFromLabels(
-  V2NODE_STANDARD_TRANSPORTS,
-  V2NODE_TRANSPORT_LABELS,
-);
-export const HYSTERIA2_OBFS_OPTIONS: SelectOption[] = [
-  { value: null, label: '无' },
-  { value: 'salamander', label: 'salamander' },
-];
+export function getHysteria2ObfsOptions(t: TFunction): SelectOption[] {
+  return [
+    { value: null, label: t(($) => $.admin.servers.none) },
+    { value: 'salamander', label: 'salamander' },
+  ];
+}
 export const TUIC_RELAY_MODE_OPTIONS: SelectOption[] = [
   { value: 'native', label: 'native' },
   { value: 'quic', label: 'quic' },
@@ -202,33 +216,42 @@ export const SHADOWSOCKS_CIPHER_OPTIONS = optionsFromLabels(
   SHADOWSOCKS_CIPHERS,
   SHADOWSOCKS_CIPHER_LABELS,
 );
-export const SHADOWSOCKS_OBFS_OPTIONS: SelectOption[] = [
-  { value: '', label: '无' },
-  { value: 'http', label: 'HTTP' },
-];
-export const VLESS_ENCRYPTION_OPTIONS: SelectOption[] = [
-  { value: null, label: '无' },
-  { value: 'mlkem768x25519plus', label: 'MLKEM768X25519PLUS' },
-];
-export const VLESS_FLOW_NONE_OPTIONS: SelectOption[] = [{ value: null, label: '无' }];
-export const VLESS_FLOW_OPTIONS: SelectOption[] = [
-  ...VLESS_FLOW_NONE_OPTIONS,
-  { value: 'xtls-rprx-vision', label: 'xtls-rprx-vision' },
-];
+export function getShadowsocksObfsOptions(t: TFunction): SelectOption[] {
+  return [
+    { value: '', label: t(($) => $.admin.servers.none) },
+    { value: 'http', label: 'HTTP' },
+  ];
+}
+export function getVlessEncryptionOptions(t: TFunction): SelectOption[] {
+  return [
+    { value: null, label: t(($) => $.admin.servers.none) },
+    { value: 'mlkem768x25519plus', label: 'MLKEM768X25519PLUS' },
+  ];
+}
+function getVlessFlowNoneOptions(t: TFunction): SelectOption[] {
+  return [{ value: null, label: t(($) => $.admin.servers.none) }];
+}
+export function getVlessFlowOptions(t: TFunction): SelectOption[] {
+  return [...getVlessFlowNoneOptions(t), { value: 'xtls-rprx-vision', label: 'xtls-rprx-vision' }];
+}
 export const HYSTERIA_VERSION_OPTIONS: SelectOption[] = [
   { value: 1, label: 'v1' },
   { value: 2, label: 'v2' },
 ];
-export const HYSTERIA_V1_OBFS_OPTIONS: SelectOption[] = [
-  { value: null, label: '无' },
-  { value: 'xplus', label: 'xplus' },
-];
-export const TLS_CERT_MODE_OPTIONS: SelectOption[] = [
-  { value: 'self', label: '自签名' },
-  { value: 'http', label: 'HTTP申请' },
-  { value: 'dns', label: 'DNS申请' },
-  { value: 'none', label: '无证书(关闭TLS)' },
-];
+export function getHysteriaV1ObfsOptions(t: TFunction): SelectOption[] {
+  return [
+    { value: null, label: t(($) => $.admin.servers.none) },
+    { value: 'xplus', label: 'xplus' },
+  ];
+}
+export function getTlsCertModeOptions(t: TFunction): SelectOption[] {
+  return [
+    { value: 'self', label: t(($) => $.admin.servers.cert_mode_self) },
+    { value: 'http', label: t(($) => $.admin.servers.cert_mode_http) },
+    { value: 'dns', label: t(($) => $.admin.servers.cert_mode_dns) },
+    { value: 'none', label: t(($) => $.admin.servers.cert_mode_none) },
+  ];
+}
 export const PROXY_PROTOCOL_OPTIONS: SelectOption[] = [
   { value: 0, label: '0' },
   { value: 1, label: '1' },
@@ -244,11 +267,13 @@ export const TLS_FINGERPRINT_OPTIONS: SelectOption[] = [
   { value: '360', label: '360' },
   { value: 'qq', label: 'QQ' },
 ];
-export const ECH_MODE_OPTIONS: SelectOption[] = [
-  { value: '', label: '无' },
-  { value: 'cloudflare', label: 'Cloudflare' },
-  { value: 'custom', label: '自定义 SNI' },
-];
+export function getEchModeOptions(t: TFunction): SelectOption[] {
+  return [
+    { value: '', label: t(($) => $.admin.servers.none) },
+    { value: 'cloudflare', label: 'Cloudflare' },
+    { value: 'custom', label: t(($) => $.admin.servers.ech_custom_sni) },
+  ];
+}
 export const ENCRYPTION_MODE_OPTIONS: SelectOption[] = [
   { value: 'native', label: 'native' },
   { value: 'xorpub', label: 'xorpub' },
@@ -259,7 +284,6 @@ export const ENCRYPTION_RTT_OPTIONS: SelectOption[] = [
   { value: '1rtt', label: '1rtt' },
 ];
 
-export const SERVER_SORT_LEAVE_PROMPT = '节点排序还没有保存，是否离开';
 export const ANYTLS_PADDING_SCHEME_PLACEHOLDER = JSON.stringify(
   [
     'stop=8',
@@ -468,22 +492,22 @@ export interface NodeFilterItem {
 // ---------------------------------------------------------------------------
 
 // §6.7 (W13): route `match` is always a real JSON array on the modern wire.
-export function getRouteMatchLabel(value: admin.ServerRoute['match'] | undefined) {
-  if (!value || value.length === 0) return '无规则时默认';
-  return `匹配 ${value.length} 条规则`;
+export function getRouteMatchLabel(t: TFunction, value: admin.ServerRoute['match'] | undefined) {
+  if (!value || value.length === 0) return t(($) => $.admin.servers.route_match_default);
+  return t(($) => $.admin.servers.route_match_count, { n: value.length });
 }
 
 export function getRouteMatchTextareaValue(value: admin.ServerRoute['match'] | undefined) {
   return value?.join('\n');
 }
 
-export function getRouteMatchPlaceholder(action: string | undefined) {
+export function getRouteMatchPlaceholder(t: TFunction, action: string | undefined) {
   if (action === 'protocol') return 'http\ntls\nquic\nbittorrent';
   if (action === 'block_port') return '53\n443\n1000-2000';
   if (action && ['route_ip', 'block_ip'].includes(action)) {
-    return '127.0.0.1(单一匹配)\n10.0.0.0/8(范围匹配)\ngeoip:cn(预定义列表匹配)';
+    return t(($) => $.admin.servers.route_match_ip_placeholder);
   }
-  return 'example.com(关键字匹配)\ndomain:example.com(子域名匹配)\ngeosite:netflix(预定义域名列表)';
+  return t(($) => $.admin.servers.route_match_domain_placeholder);
 }
 
 export function getAvailableStatus(status?: number | null) {
@@ -555,21 +579,23 @@ export function getV2nodeSecurityValue(protocol: unknown, tls: unknown) {
   return protocolValue && V2NODE_SECURITY_DEFAULT_TLS_PROTOCOLS.includes(protocolValue) ? 1 : 0;
 }
 
-export function getV2nodeSecurityOptions(protocol: unknown): SelectOption[] {
+export function getV2nodeSecurityOptions(t: TFunction, protocol: unknown): SelectOption[] {
   const protocolValue = protocol == null ? null : String(protocol);
   return [
-    ...(protocolValue === 'vless' || protocolValue === 'vmess' ? [SECURITY_NONE_OPTION] : []),
+    ...(protocolValue === 'vless' || protocolValue === 'vmess' ? [getSecurityNoneOption(t)] : []),
     SECURITY_TLS_OPTION,
     ...(protocolValue === 'vless' || protocolValue === 'anytls' ? [SECURITY_REALITY_OPTION] : []),
   ];
 }
 
-export function getV2nodeTransportOptions(protocol: unknown): SelectOption[] {
-  return protocol === 'trojan' ? TROJAN_NETWORK_OPTIONS : V2NODE_TRANSPORT_OPTIONS;
+export function getV2nodeTransportOptions(t: TFunction, protocol: unknown): SelectOption[] {
+  return protocol === 'trojan'
+    ? TROJAN_NETWORK_OPTIONS
+    : optionsFromLabels(V2NODE_STANDARD_TRANSPORTS, getV2nodeTransportLabels(t));
 }
 
-export function getVlessFlowOptions(network: unknown): SelectOption[] {
-  return String(network) === 'tcp' ? VLESS_FLOW_OPTIONS : VLESS_FLOW_NONE_OPTIONS;
+export function getVlessFlowOptionsForNetwork(t: TFunction, network: unknown): SelectOption[] {
+  return String(network) === 'tcp' ? getVlessFlowOptions(t) : getVlessFlowNoneOptions(t);
 }
 
 export function getNumericSelectValue(value: unknown, fallback = 0) {

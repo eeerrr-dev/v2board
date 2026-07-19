@@ -10,6 +10,7 @@ import {
   useFormState,
   useWatch,
 } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import {
   useAdminPlans,
   useConfig,
@@ -66,28 +67,6 @@ import { planEditorSchema, type PlanEditorValues } from './plan-form-schema';
 // { id, [key]: value } show/renew toggles.
 type SavePlanPayload = Parameters<typeof admin.savePlan>[1];
 type EditablePlan = PlanEditorValues;
-
-const PRICE_FIELDS: { key: PlanPeriod; label: string }[] = [
-  { key: 'month_price', label: '月付' },
-  { key: 'quarter_price', label: '季付' },
-  { key: 'half_year_price', label: '半年' },
-  { key: 'year_price', label: '年付' },
-  { key: 'two_year_price', label: '两年付' },
-  { key: 'three_year_price', label: '三年付' },
-  { key: 'onetime_price', label: '一次性' },
-  { key: 'reset_price', label: '重置包' },
-];
-
-// null → 跟随系统设置. Radix Select values are non-empty strings, so `null` is
-// carried as the 'null' sentinel and converted back on change.
-const RESET_TRAFFIC_OPTIONS: { value: string; label: string }[] = [
-  { value: 'null', label: '跟随系统设置' },
-  { value: '0', label: '每月1号' },
-  { value: '1', label: '按月重置' },
-  { value: '2', label: '不重置' },
-  { value: '3', label: '每年1月1日' },
-  { value: '4', label: '按年重置' },
-];
 
 function parseResetTrafficMethod(value: string): EditablePlan['reset_traffic_method'] {
   switch (value) {
@@ -230,6 +209,7 @@ function PlanEditor({
   onSave: (payload: SavePlanPayload, onSuccess: () => void) => void;
   children: ReactElement<{ onClick?: () => void }>;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const form = useForm<EditablePlan>({
     resolver: zodResolver(planEditorSchema),
@@ -269,6 +249,28 @@ function PlanEditor({
         ? undefined
         : String(submit.reset_traffic_method);
 
+  const priceFields: { key: PlanPeriod; label: string }[] = [
+    { key: 'month_price', label: t(($) => $.admin.plans.price_month) },
+    { key: 'quarter_price', label: t(($) => $.admin.plans.price_quarter) },
+    { key: 'half_year_price', label: t(($) => $.admin.plans.price_half_year) },
+    { key: 'year_price', label: t(($) => $.admin.plans.price_year) },
+    { key: 'two_year_price', label: t(($) => $.admin.plans.price_two_year) },
+    { key: 'three_year_price', label: t(($) => $.admin.plans.price_three_year) },
+    { key: 'onetime_price', label: t(($) => $.admin.plans.price_onetime) },
+    { key: 'reset_price', label: t(($) => $.admin.plans.price_reset) },
+  ];
+
+  // null → 跟随系统设置. Radix Select values are non-empty strings, so `null` is
+  // carried as the 'null' sentinel and converted back on change.
+  const resetTrafficOptions: { value: string; label: string }[] = [
+    { value: 'null', label: t(($) => $.admin.plans.reset_traffic_follow_system) },
+    { value: '0', label: t(($) => $.admin.plans.reset_traffic_first_day_of_month) },
+    { value: '1', label: t(($) => $.admin.plans.reset_traffic_monthly) },
+    { value: '2', label: t(($) => $.admin.plans.reset_traffic_none) },
+    { value: '3', label: t(($) => $.admin.plans.reset_traffic_first_day_of_year) },
+    { value: '4', label: t(($) => $.admin.plans.reset_traffic_yearly) },
+  ];
+
   return (
     <Sheet
       open={open}
@@ -284,17 +286,21 @@ function PlanEditor({
         data-testid="plan-editor"
       >
         <SheetHeader>
-          <SheetTitle>{submit.id ? '编辑订阅' : '新建订阅'}</SheetTitle>
-          <SheetDescription>配置订阅流量、权限组、价格周期和展示规则。</SheetDescription>
+          <SheetTitle>
+            {submit.id
+              ? t(($) => $.admin.plans.editor_title_edit)
+              : t(($) => $.admin.plans.editor_title_create)}
+          </SheetTitle>
+          <SheetDescription>{t(($) => $.admin.plans.editor_description)}</SheetDescription>
         </SheetHeader>
 
         <TooltipProvider delayDuration={100}>
           <form id="plan-editor-form" className="space-y-5 px-4 pb-4" onSubmit={save} noValidate>
             <Field data-invalid={Boolean(formErrors.name)}>
-              <FieldLabel htmlFor="plan-name">套餐名称</FieldLabel>
+              <FieldLabel htmlFor="plan-name">{t(($) => $.admin.plans.name_label)}</FieldLabel>
               <Input
                 id="plan-name"
-                placeholder="请输入套餐名称"
+                placeholder={t(($) => $.admin.plans.name_placeholder)}
                 value={inputValue(submit.name)}
                 onChange={(event) => change('name', event.target.value)}
                 aria-invalid={Boolean(formErrors.name)}
@@ -304,12 +310,14 @@ function PlanEditor({
             </Field>
 
             <Field>
-              <FieldLabel htmlFor="plan-content">套餐描述</FieldLabel>
+              <FieldLabel htmlFor="plan-content">
+                {t(($) => $.admin.plans.content_label)}
+              </FieldLabel>
               <Textarea
                 id="plan-content"
                 rows={6}
                 className="font-mono text-xs"
-                placeholder="请输入套餐描述，支持HTML"
+                placeholder={t(($) => $.admin.plans.content_placeholder)}
                 value={inputValue(submit.content)}
                 onChange={(event) => change('content', event.target.value)}
                 data-testid="plan-content"
@@ -318,13 +326,13 @@ function PlanEditor({
 
             <div className="space-y-3">
               <HeaderTooltip
-                title="将金额留空则不会进行出售"
+                title={t(($) => $.admin.plans.price_section_tooltip)}
                 className="text-sm font-medium text-foreground"
               >
-                售价设置
+                {t(($) => $.admin.plans.price_section_title)}
               </HeaderTooltip>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {PRICE_FIELDS.map((field) => (
+                {priceFields.map((field) => (
                   <PriceInput
                     key={field.key}
                     id={`plan-price-${field.key}`}
@@ -341,17 +349,17 @@ function PlanEditor({
             <div className="grid grid-cols-2 gap-3">
               <LimitInput
                 id="plan-transfer-enable"
-                label="套餐流量"
+                label={t(($) => $.admin.plans.transfer_enable_label)}
                 suffix="GB"
-                placeholder="请输入套餐流量"
+                placeholder={t(($) => $.admin.plans.transfer_enable_placeholder)}
                 value={submit.transfer_enable}
                 onChange={(value) => change('transfer_enable', value)}
                 error={formErrors.transfer_enable}
               />
               <LimitInput
                 id="plan-device-limit"
-                label="设备数限制"
-                placeholder="留空则不限制"
+                label={t(($) => $.admin.plans.device_limit_label)}
+                placeholder={t(($) => $.admin.plans.unlimited_placeholder)}
                 value={submit.device_limit}
                 onChange={(value) => change('device_limit', value)}
                 error={formErrors.device_limit}
@@ -360,7 +368,7 @@ function PlanEditor({
 
             <div className="grid grid-cols-2 gap-3">
               <Field data-invalid={Boolean(formErrors.group_id)}>
-                <FieldLabel htmlFor="plan-group">权限组</FieldLabel>
+                <FieldLabel htmlFor="plan-group">{t(($) => $.admin.plans.group_label)}</FieldLabel>
                 <Select
                   value={submit.group_id != null ? String(submit.group_id) : ''}
                   onValueChange={(value) => change('group_id', Number(value))}
@@ -371,7 +379,7 @@ function PlanEditor({
                     data-testid="plan-group"
                     aria-invalid={Boolean(formErrors.group_id)}
                   >
-                    <SelectValue placeholder="请选择权限组" />
+                    <SelectValue placeholder={t(($) => $.admin.plans.group_placeholder)} />
                   </SelectTrigger>
                   <SelectContent>
                     {groups.map((group) => (
@@ -384,7 +392,9 @@ function PlanEditor({
                 <FieldError errors={[formErrors.group_id]} />
               </Field>
               <Field>
-                <FieldLabel htmlFor="plan-reset-method">流量重置方式</FieldLabel>
+                <FieldLabel htmlFor="plan-reset-method">
+                  {t(($) => $.admin.plans.reset_traffic_method_label)}
+                </FieldLabel>
                 <Select
                   value={resetValue ?? ''}
                   onValueChange={(value) =>
@@ -396,10 +406,12 @@ function PlanEditor({
                     className="w-full"
                     data-testid="plan-reset-method"
                   >
-                    <SelectValue placeholder="请选择流量重置方式" />
+                    <SelectValue
+                      placeholder={t(($) => $.admin.plans.reset_traffic_method_placeholder)}
+                    />
                   </SelectTrigger>
                   <SelectContent>
-                    {RESET_TRAFFIC_OPTIONS.map((option) => (
+                    {resetTrafficOptions.map((option) => (
                       <SelectItem key={option.value} value={option.value}>
                         {option.label}
                       </SelectItem>
@@ -412,17 +424,17 @@ function PlanEditor({
             <div className="grid grid-cols-2 gap-3">
               <LimitInput
                 id="plan-capacity-limit"
-                label="最大容纳用户量"
-                placeholder="留空则不限制"
+                label={t(($) => $.admin.plans.capacity_limit_label)}
+                placeholder={t(($) => $.admin.plans.unlimited_placeholder)}
                 value={submit.capacity_limit}
                 onChange={(value) => change('capacity_limit', value)}
                 error={formErrors.capacity_limit}
               />
               <LimitInput
                 id="plan-speed-limit"
-                label="限速"
+                label={t(($) => $.admin.plans.speed_limit_label)}
                 suffix="Mbps"
-                placeholder="留空则不限制"
+                placeholder={t(($) => $.admin.plans.unlimited_placeholder)}
                 value={submit.speed_limit}
                 onChange={(value) => change('speed_limit', value)}
                 error={formErrors.speed_limit}
@@ -436,10 +448,10 @@ function PlanEditor({
                   onCheckedChange={(value) => change('force_update', value === true)}
                   data-testid="plan-force-update"
                 />
-                强制更新到用户
+                {t(($) => $.admin.plans.force_update_label)}
               </label>
               <p className="text-xs text-muted-foreground">
-                勾选后变更的流量、限速、权限组将应用到该套餐下的用户
+                {t(($) => $.admin.plans.force_update_hint)}
               </p>
             </div>
           </form>
@@ -455,10 +467,10 @@ function PlanEditor({
             {pending ? (
               <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
             ) : null}
-            提交
+            {t(($) => $.common.submit)}
           </Button>
           <Button variant="outline" onClick={() => setOpen(false)}>
-            取消
+            {t(($) => $.common.cancel)}
           </Button>
         </SheetFooter>
       </SheetContent>
@@ -467,6 +479,7 @@ function PlanEditor({
 }
 
 export default function PlansPage() {
+  const { t } = useTranslation();
   const plans = useAdminPlans();
   const groups = useServerGroups();
   const config = useConfig('site');
@@ -508,10 +521,10 @@ export default function PlansPage() {
 
   const removePlan = async (record: Plan) => {
     const confirmed = await confirmDialog({
-      title: '警告',
-      description: '确定要删除该订阅吗？',
-      confirmText: '确定',
-      cancelText: '取消',
+      title: t(($) => $.admin.plans.delete_confirm_title),
+      description: t(($) => $.admin.plans.delete_confirm_description),
+      confirmText: t(($) => $.common.confirm),
+      cancelText: t(($) => $.common.cancel),
     });
     if (!confirmed) return;
     drop.mutate(record.id);
@@ -524,11 +537,22 @@ export default function PlansPage() {
   const groupName = (id: number) =>
     groupData?.find((group) => group.id === parseInt(String(id), 10))?.name;
 
+  const priceColumns: { key: PlanPeriod; label: string }[] = [
+    { key: 'month_price', label: t(($) => $.admin.plans.col_price_month) },
+    { key: 'quarter_price', label: t(($) => $.admin.plans.col_price_quarter) },
+    { key: 'half_year_price', label: t(($) => $.admin.plans.col_price_half_year) },
+    { key: 'year_price', label: t(($) => $.admin.plans.col_price_year) },
+    { key: 'two_year_price', label: t(($) => $.admin.plans.col_price_two_year) },
+    { key: 'three_year_price', label: t(($) => $.admin.plans.col_price_three_year) },
+    { key: 'onetime_price', label: t(($) => $.admin.plans.col_price_onetime) },
+    { key: 'reset_price', label: t(($) => $.admin.plans.col_price_reset) },
+  ];
+
   const columns: DataTableColumn<Plan>[] = [
     {
       id: 'sort',
       meta: { align: 'center' },
-      header: () => <span>排序</span>,
+      header: () => <span>{t(($) => $.common.sort)}</span>,
       cell: ({ row }) => {
         const index = order.findIndex((item) => item.id === row.original.id);
         return (
@@ -539,7 +563,7 @@ export default function PlansPage() {
               className="size-8"
               disabled={index <= 0}
               onClick={() => movePlan(index, -1)}
-              aria-label="上移"
+              aria-label={t(($) => $.admin.plans.move_up)}
             >
               <ArrowUp className="size-4" />
             </Button>
@@ -549,7 +573,7 @@ export default function PlansPage() {
               className="size-8"
               disabled={index < 0 || index >= order.length - 1}
               onClick={() => movePlan(index, 1)}
-              aria-label="下移"
+              aria-label={t(($) => $.admin.plans.move_down)}
             >
               <ArrowDown className="size-4" />
             </Button>
@@ -560,12 +584,12 @@ export default function PlansPage() {
     {
       id: 'show',
       meta: { align: 'center' },
-      header: () => <span>销售状态</span>,
+      header: () => <span>{t(($) => $.admin.plans.col_show)}</span>,
       cell: ({ row }) => (
         <Switch
           checked={row.original.show}
           onCheckedChange={() => updatePlan(row.original.id, 'show', !row.original.show)}
-          aria-label={`切换「${row.original.name}」销售状态`}
+          aria-label={t(($) => $.admin.plans.toggle_show_aria, { name: row.original.name })}
         />
       ),
     },
@@ -573,51 +597,51 @@ export default function PlansPage() {
       id: 'renew',
       meta: { align: 'center' },
       header: () => (
-        <HeaderTooltip title="在订阅停止销售时，已购用户是否可以续费" className="justify-center">
-          续费
+        <HeaderTooltip title={t(($) => $.admin.plans.renew_tooltip)} className="justify-center">
+          {t(($) => $.admin.plans.col_renew)}
         </HeaderTooltip>
       ),
       cell: ({ row }) => (
         <Switch
           checked={row.original.renew}
           onCheckedChange={() => updatePlan(row.original.id, 'renew', !row.original.renew)}
-          aria-label={`切换「${row.original.name}」续费`}
+          aria-label={t(($) => $.admin.plans.toggle_renew_aria, { name: row.original.name })}
         />
       ),
     },
     {
       id: 'name',
       meta: { className: 'font-medium text-foreground' },
-      header: () => <span>名称</span>,
+      header: () => <span>{t(($) => $.admin.plans.col_name)}</span>,
       cell: ({ row }) => row.original.name,
     },
     {
       id: 'count',
       meta: { align: 'center', className: 'tabular-nums' },
-      header: () => <span>统计</span>,
+      header: () => <span>{t(($) => $.admin.plans.col_count)}</span>,
       cell: ({ row }) => row.original.count,
     },
     {
       id: 'transfer_enable',
       meta: { className: 'tabular-nums' },
-      header: () => <span>流量</span>,
+      header: () => <span>{t(($) => $.admin.plans.col_transfer_enable)}</span>,
       cell: ({ row }) => `${row.original.transfer_enable} GB`,
     },
     {
       id: 'device_limit',
       meta: { className: 'tabular-nums' },
-      header: () => <span>设备数限制</span>,
+      header: () => <span>{t(($) => $.admin.plans.device_limit_label)}</span>,
       cell: ({ row }) => (row.original.device_limit !== null ? row.original.device_limit : '-'),
     },
-    ...PRICE_FIELDS.map<DataTableColumn<Plan>>((field) => ({
+    ...priceColumns.map<DataTableColumn<Plan>>((field) => ({
       id: field.key,
       meta: { className: 'tabular-nums text-muted-foreground' },
-      header: () => <span>{TABLE_PRICE_LABEL[field.key]}</span>,
+      header: () => <span>{field.label}</span>,
       cell: ({ row }) => formatPrice(row.original[field.key]),
     })),
     {
       id: 'group_id',
-      header: () => <span>权限组</span>,
+      header: () => <span>{t(($) => $.admin.plans.group_label)}</span>,
       cell: ({ row }) => {
         const name = groupName(row.original.group_id);
         return name ? <Badge variant="secondary">{name}</Badge> : null;
@@ -626,7 +650,7 @@ export default function PlansPage() {
     {
       id: 'actions',
       meta: { align: 'right' },
-      header: () => <span>操作</span>,
+      header: () => <span>{t(($) => $.common.operation)}</span>,
       cell: ({ row }) => (
         <div className="flex items-center justify-end gap-1">
           {groupsReady ? (
@@ -639,13 +663,13 @@ export default function PlansPage() {
             >
               <Button variant="ghost" size="sm" data-testid={`plan-edit-${row.original.id}`}>
                 <Pencil className="size-4" />
-                编辑
+                {t(($) => $.common.edit)}
               </Button>
             </PlanEditor>
           ) : (
             <Button variant="ghost" size="sm" disabled>
               <Pencil className="size-4" />
-              编辑
+              {t(($) => $.common.edit)}
             </Button>
           )}
           <Button
@@ -656,7 +680,7 @@ export default function PlansPage() {
             data-testid={`plan-delete-${row.original.id}`}
           >
             <Trash2 className="size-4" />
-            删除
+            {t(($) => $.common.delete)}
           </Button>
         </div>
       ),
@@ -666,13 +690,19 @@ export default function PlansPage() {
   return (
     <PageShell data-testid="plans-page">
       {plans.isError ? (
-        <ErrorState message="订阅列表加载失败" onRetry={() => void plans.refetch()} />
+        <ErrorState
+          message={t(($) => $.admin.plans.plans_load_failed)}
+          onRetry={() => void plans.refetch()}
+        />
       ) : null}
       {groups.isError ? (
-        <ErrorState message="权限组加载失败" onRetry={() => void groups.refetch()} />
+        <ErrorState
+          message={t(($) => $.admin.plans.groups_load_failed)}
+          onRetry={() => void groups.refetch()}
+        />
       ) : null}
       <PageHeader
-        title="订阅管理"
+        title={t(($) => $.admin.plans.page_title)}
         actions={
           groupsReady ? (
             <PlanEditor
@@ -683,13 +713,13 @@ export default function PlansPage() {
             >
               <Button data-testid="plan-create">
                 <Plus className="size-4" />
-                添加订阅
+                {t(($) => $.admin.plans.add_plan)}
               </Button>
             </PlanEditor>
           ) : (
             <Button disabled data-testid="plan-create">
               <Plus className="size-4" />
-              添加订阅
+              {t(($) => $.admin.plans.add_plan)}
             </Button>
           )
         }
@@ -706,7 +736,7 @@ export default function PlansPage() {
               data-testid="plans-table"
               empty={
                 !plans.isError && plans.data !== undefined && order.length === 0
-                  ? '暂无订阅'
+                  ? t(($) => $.admin.plans.empty)
                   : undefined
               }
               emptyTestId="plans-empty"
@@ -723,14 +753,3 @@ export default function PlansPage() {
     </PageShell>
   );
 }
-
-const TABLE_PRICE_LABEL: Record<PlanPeriod, string> = {
-  month_price: '月付',
-  quarter_price: '季付',
-  half_year_price: '半年付',
-  year_price: '年付',
-  two_year_price: '两年付',
-  three_year_price: '三年付',
-  onetime_price: '一次性',
-  reset_price: '重置包',
-};

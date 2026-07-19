@@ -1,17 +1,19 @@
+import { useTranslation } from 'react-i18next';
 import type { FormCtx } from '../schema';
 import { Section, TextareaRow } from '../rows';
 import { splitComma } from '../values';
 
 export function DepositSection({ ctx }: { ctx: FormCtx }) {
+  const { t } = useTranslation();
   return (
-    <Section title="充值">
+    <Section title={t(($) => $.admin.config.sections.deposit)}>
       <TextareaRow
         ctx={ctx}
         group="deposit"
         field="deposit_bounus"
-        title="充值奖励"
-        description="充值一定金额可以获得的奖励。"
-        placeholder={'请输入 充值金额:奖励金额,逗号分割\n如 50:18,100:38,200:88'}
+        title={t(($) => $.admin.config.deposit.bonus_title)}
+        description={t(($) => $.admin.config.deposit.bonus_desc)}
+        placeholder={t(($) => $.admin.config.deposit.bonus_placeholder)}
         rows={2}
         coerce={splitComma}
       />

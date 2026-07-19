@@ -1,5 +1,6 @@
 import { CancelledError, type QueryClient } from '@tanstack/react-query';
 import { type ComponentType } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   createBrowserRouter,
   matchPath,
@@ -238,6 +239,7 @@ export function createAdminLoginLoader(queryClient: QueryClient) {
 }
 
 function RouteHydrateFallback() {
+  const { t } = useTranslation();
   return (
     <div
       role="status"
@@ -245,7 +247,7 @@ function RouteHydrateFallback() {
       className="flex min-h-screen items-center justify-center bg-background"
     >
       <Spinner className="size-6" />
-      <span className="sr-only">正在加载</span>
+      <span className="sr-only">{t(($) => $.admin.nav.loading)}</span>
     </div>
   );
 }

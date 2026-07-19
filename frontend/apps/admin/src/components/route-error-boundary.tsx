@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Outlet, useLocation } from 'react-router';
 import { AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -39,6 +40,7 @@ export class RouteErrorBoundary extends Component<
 }
 
 export function RouteErrorFallback() {
+  const { t } = useTranslation();
   // The boundary can mount outside AdminLayout (it wraps the login and
   // standalone-ticket routes), so it carries the island class itself to pull in
   // the token theming rather than inheriting it from the shell.
@@ -53,10 +55,12 @@ export function RouteErrorFallback() {
           <AlertTriangle className="size-6" />
         </div>
         <div className="space-y-1">
-          <h3 className="text-lg font-semibold text-foreground">页面加载失败</h3>
-          <p className="text-sm text-muted-foreground">请刷新页面后重试。</p>
+          <h3 className="text-lg font-semibold text-foreground">
+            {t(($) => $.common.route_load_failed)}
+          </h3>
+          <p className="text-sm text-muted-foreground">{t(($) => $.common.route_refresh_hint)}</p>
         </div>
-        <Button onClick={() => window.location.reload()}>刷新页面</Button>
+        <Button onClick={() => window.location.reload()}>{t(($) => $.common.refresh_page)}</Button>
       </div>
     </div>
   );

@@ -8,9 +8,11 @@ import {
   VMESS_NETWORKS,
 } from './domain';
 
+// Schema messages are i18n keys; FieldError resolves them through
+// translateRuntimeMessage at display time (values live in admin.servers).
 export const serverGroupFormSchema = z.object({
   id: z.number().int().positive().optional(),
-  name: z.string().refine((value) => value.trim().length > 0, '组名不能为空'),
+  name: z.string().refine((value) => value.trim().length > 0, 'admin.servers.group_name_required'),
 });
 
 export type ServerGroupFormValues = z.infer<typeof serverGroupFormSchema>;
@@ -18,9 +20,11 @@ export type ServerGroupFormValues = z.infer<typeof serverGroupFormSchema>;
 export const serverRouteFormSchema = z
   .object({
     id: z.number().int().positive().optional(),
-    remarks: z.string().refine((value) => value.trim().length > 0, '备注不能为空'),
+    remarks: z
+      .string()
+      .refine((value) => value.trim().length > 0, 'admin.servers.remarks_required'),
     match: z.string(),
-    action: z.enum(SERVER_ROUTE_ACTIONS, { error: '动作类型不能为空' }),
+    action: z.enum(SERVER_ROUTE_ACTIONS, { error: 'admin.servers.action_required' }),
     action_value: z.string().nullable(),
   })
   .superRefine((values, context) => {
@@ -28,7 +32,7 @@ export const serverRouteFormSchema = z
       context.addIssue({
         code: 'custom',
         path: ['match'],
-        message: '匹配值不能为空',
+        message: 'admin.servers.match_required',
       });
     }
   });
@@ -51,11 +55,11 @@ const numericScalar = (requiredMessage: string, invalidMessage: string) =>
   );
 const optionalIntegerScalar = optionalScalar.refine(
   (value) => isEmptyInput(value) || isIntegerInput(value),
-  '父节点格式不正确',
+  'admin.servers.parent_id_invalid',
 );
 const optionalNumericScalar = optionalScalar.refine(
   (value) => isEmptyInput(value) || isNumericInput(value),
-  '带宽格式不正确',
+  'admin.servers.bandwidth_invalid',
 );
 const binaryScalar = z.union([z.literal(0), z.literal(1), z.literal('0'), z.literal('1')]);
 const securityScalar = z.union([
@@ -68,7 +72,7 @@ const securityScalar = z.union([
 ]);
 const nullableString = z.string().nullable().optional();
 const settingsContainer = z.union([z.looseObject({}), z.array(z.unknown())], {
-  error: '配置格式有误',
+  error: 'admin.servers.settings_invalid',
 });
 const settingsInput = z.preprocess(parseJsonContainer, settingsContainer.nullable().optional());
 const obfsSettingsInput = z.preprocess(
@@ -90,7 +94,9 @@ function parseJsonContainer(value: unknown): unknown {
 const jsonContainerInput = z
   .preprocess(
     parseJsonContainer,
-    z.union([settingsContainer, z.null()], { error: '传输协议配置格式有误' }).optional(),
+    z
+      .union([settingsContainer, z.null()], { error: 'admin.servers.network_settings_invalid' })
+      .optional(),
   )
   .transform((value) => value ?? null);
 
@@ -109,19 +115,22 @@ const paddingSchemeInput = z
   .string()
   .nullable()
   .optional()
-  .refine((value) => value == null || !value.trim() || isJsonContainer(value), '填充方案格式有误');
+  .refine(
+    (value) => value == null || !value.trim() || isJsonContainer(value),
+    'admin.servers.padding_scheme_invalid',
+  );
 
 const commonNodeFields = {
   id: z.number().int().positive().optional(),
-  name: z.string().refine((value) => value.trim().length > 0, '节点名称不能为空'),
-  group_id: z.array(scalar).min(1, '权限组不能为空'),
+  name: z.string().refine((value) => value.trim().length > 0, 'admin.servers.node_name_required'),
+  group_id: z.array(scalar).min(1, 'admin.servers.group_required'),
   route_id: z.array(scalar).nullable().optional(),
   parent_id: optionalIntegerScalar,
-  host: z.string().refine((value) => value.trim().length > 0, '节点地址不能为空'),
-  port: requiredScalar('连接端口不能为空'),
-  server_port: requiredScalar('后端服务端口不能为空'),
+  host: z.string().refine((value) => value.trim().length > 0, 'admin.servers.host_required'),
+  port: requiredScalar('admin.servers.port_required'),
+  server_port: requiredScalar('admin.servers.server_port_required'),
   tags: z.array(z.string()).nullable().optional(),
-  rate: numericScalar('倍率不能为空', '倍率格式不正确'),
+  rate: numericScalar('admin.servers.rate_required', 'admin.servers.rate_invalid'),
   show: binaryScalar.optional(),
 };
 
@@ -129,7 +138,7 @@ const commonNodeSchema = z.object(commonNodeFields);
 
 const shadowsocksNodeSchema = commonNodeSchema.extend({
   type: z.literal('shadowsocks'),
-  cipher: z.enum(SHADOWSOCKS_CIPHERS, { error: '加密方式不能为空' }),
+  cipher: z.enum(SHADOWSOCKS_CIPHERS, { error: 'admin.servers.cipher_required' }),
   obfs: z.union([z.literal(''), z.literal('http'), z.null()]).optional(),
   obfs_settings: obfsSettingsInput,
 });
@@ -137,7 +146,7 @@ const shadowsocksNodeSchema = commonNodeSchema.extend({
 const vmessNodeSchema = commonNodeSchema.extend({
   type: z.literal('vmess'),
   tls: binaryScalar,
-  network: z.enum(VMESS_NETWORKS, { error: '传输协议格式不正确' }),
+  network: z.enum(VMESS_NETWORKS, { error: 'admin.servers.network_invalid' }),
   networkSettings: jsonContainerInput,
   tlsSettings: settingsInput,
   ruleSettings: settingsInput,
@@ -146,7 +155,7 @@ const vmessNodeSchema = commonNodeSchema.extend({
 
 const trojanNodeSchema = commonNodeSchema.extend({
   type: z.literal('trojan'),
-  network: z.enum(TROJAN_NETWORKS, { error: '传输协议格式不正确' }),
+  network: z.enum(TROJAN_NETWORKS, { error: 'admin.servers.network_invalid' }),
   network_settings: jsonContainerInput,
   allow_insecure: binaryScalar.optional(),
   server_name: nullableString,
@@ -179,7 +188,7 @@ const vlessNodeSchema = commonNodeSchema.extend({
   tls: securityScalar,
   tls_settings: settingsInput,
   flow: z.union([z.literal('xtls-rprx-vision'), z.null()]).optional(),
-  network: z.string().refine((value) => value.length > 0, '传输协议不能为空'),
+  network: z.string().refine((value) => value.length > 0, 'admin.servers.network_required'),
   network_settings: jsonContainerInput,
   encryption: nullableString,
   encryption_settings: settingsInput,
@@ -195,7 +204,7 @@ const anytlsNodeSchema = commonNodeSchema.extend({
 const v2nodeProtocolCommonFields = {
   tls: securityScalar,
   network: z.enum(V2NODE_TRANSPORTS, {
-    error: '传输协议格式不正确',
+    error: 'admin.servers.network_invalid',
   }),
   network_settings: jsonContainerInput,
   disable_sni: binaryScalar,
@@ -297,14 +306,14 @@ export const serverNodeFormSchema = serverNodeInputSchema
       context.addIssue({
         code: 'custom',
         path: ['network'],
-        message: '传输协议不能为空',
+        message: 'admin.servers.network_required',
       });
     }
     if (values.type === 'v2node' && values.config.protocol === '') {
       context.addIssue({
         code: 'custom',
         path: ['config', 'protocol'],
-        message: '节点协议不能为空',
+        message: 'admin.servers.protocol_required',
       });
     }
   })

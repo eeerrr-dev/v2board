@@ -6,13 +6,15 @@ export type KnowledgeLocale = (typeof KNOWLEDGE_LOCALES)[number];
 
 const requiredText = (message: string) => z.string().trim().min(1, message);
 
+// Validation messages are i18n keys; FieldError resolves them through
+// translateRuntimeMessage.
 export const knowledgeEditorSchema = z
   .object({
     id: z.number().int().positive().optional(),
-    category: requiredText('分类不能为空'),
-    language: z.enum(KNOWLEDGE_LOCALES, { error: '语言不能为空' }),
-    title: requiredText('标题不能为空'),
-    body: requiredText('内容不能为空'),
+    category: requiredText('admin.knowledge.category_required'),
+    language: z.enum(KNOWLEDGE_LOCALES, { error: 'admin.knowledge.language_required' }),
+    title: requiredText('admin.knowledge.title_required'),
+    body: requiredText('admin.knowledge.body_required'),
   })
   .strict();
 

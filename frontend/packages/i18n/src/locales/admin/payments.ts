@@ -1,0 +1,48 @@
+// Filled by the admin i18n conversion; values stay Chinese until product
+// translations are supplied (see ./index.ts).
+export const adminPayments = {
+  // Editor sheet.
+  edit_title: '编辑支付方式',
+  add_title: '添加支付方式',
+  editor_description: '配置支付驱动、显示信息、手续费和网关参数。',
+  name_label: '显示名称',
+  name_placeholder: '用于前端显示使用',
+  icon_label: '图标URL(选填)',
+  icon_placeholder: '用于前端显示使用(https://x.com/icon.svg)',
+  notify_domain_label: '自定义通知域名(选填)',
+  notify_domain_placeholder: '网关的通知将会发送到该域名(https://x.com)',
+  fee_percent_label: '百分比手续费(选填)',
+  fee_placeholder: '在订单金额基础上附加手续费',
+  fee_fixed_label: '固定手续费(选填)',
+  method_label: '接口文件',
+  method_placeholder: '选择支付接口',
+  methods_loading: '正在加载支付接口',
+  methods_load_failed: '支付接口列表加载失败',
+  methods_empty: '暂无可用支付接口',
+  definition_loading: '正在加载接口配置',
+  definition_load_failed: '支付接口配置加载失败',
+  definition_empty: '该支付接口未提供配置字段',
+  add: '添加',
+  // Table page.
+  delete_confirm_title: '警告',
+  delete_confirm_description: '确定要删除该条项目吗？',
+  toggle_enable: '切换「{{name}}」启用',
+  payment_col: '支付接口',
+  notify_url_tooltip: '支付网关将会把数据通知到本地址，请通过防火墙放行本地址。',
+  notify_url_col: '通知地址',
+  move_up: '上移',
+  move_down: '下移',
+  list_load_failed: '支付配置加载失败',
+  title: '支付配置',
+  empty: '暂无支付方式',
+  // payment-form-schema.ts messages, resolved through FieldError ->
+  // translateRuntimeMessage.
+  name_required: '显示名称不能为空',
+  notify_domain_invalid: '请输入有效的 HTTP(S) 通知域名',
+  fee_percent_numeric: '百分比手续费必须是数字',
+  fee_percent_range: '百分比手续费范围须在 0.1 到 100 之间',
+  fee_fixed_invalid: '固定手续费格式有误',
+  fee_fixed_exceeds: '固定手续费超出可保存范围',
+  payment_required: '请选择支付接口',
+  config_required: '支付配置不能为空',
+};

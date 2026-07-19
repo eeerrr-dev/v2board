@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ChevronsUpDown, LogOut, ShieldCheck } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { signOut } from '@/lib/api';
@@ -29,6 +30,7 @@ interface AdminNavUserProps {
 // shell's NavUser without the profile/language items the admin console does
 // not have.
 export function AdminNavUser({ email }: AdminNavUserProps) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { isMobile, state, setOpenMobile } = useSidebar();
   const [mfaOpen, setMfaOpen] = useState(false);
@@ -88,7 +90,7 @@ export function AdminNavUser({ email }: AdminNavUserProps) {
               }}
             >
               <ShieldCheck className="size-4" />
-              两步验证
+              {t(($) => $.admin.auth.mfa_title)}
             </DropdownMenuItem>
             <DropdownMenuItem
               variant="destructive"
@@ -100,7 +102,7 @@ export function AdminNavUser({ email }: AdminNavUserProps) {
               }}
             >
               <LogOut className="size-4" />
-              登出
+              {t(($) => $.common.logout)}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

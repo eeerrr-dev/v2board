@@ -1,4 +1,5 @@
 import { type ComponentProps } from 'react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -15,9 +16,10 @@ export interface LoadingStateProps extends ComponentProps<'div'> {
  * the pre-shell full-screen boot fallbacks.
  */
 export function LoadingState({ label, className, children, ...props }: LoadingStateProps) {
+  const { t } = useTranslation();
   return (
     <div role="status" data-slot="loading-state" className={cn('w-full', className)} {...props}>
-      <span className="sr-only">{label ?? '加载中'}</span>
+      <span className="sr-only">{label ?? t(($) => $.common.loading)}</span>
       {children}
     </div>
   );

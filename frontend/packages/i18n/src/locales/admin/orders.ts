@@ -1,0 +1,86 @@
+// Filled by the admin i18n conversion; values stay Chinese until product
+// translations are supplied (see ./index.ts).
+export const adminOrders = {
+  // Order period display copy (the wire identifiers such as `month_price` are
+  // Tier-1 data and stay in pages/orders.tsx).
+  period_month: '月付',
+  period_quarter: '季付',
+  period_half_year: '半年付',
+  period_year: '年付',
+  period_two_year: '两年付',
+  period_three_year: '三年付',
+  period_onetime: '一次性',
+  period_reset: '流量重置包',
+  // Order type display copy (backend type codes stay in pages/orders.tsx).
+  type_new: '新购',
+  type_renew: '续费',
+  type_change: '变更',
+  type_traffic_package: '流量包',
+  type_deposit: '充值',
+  // Order status labels not covered by $.common.* (0/2/3 reuse
+  // common.unpaid/cancelled/completed).
+  status_activating: '开通中',
+  status_credited: '已折抵',
+  // Commission status labels.
+  commission_pending: '待确认',
+  commission_processing: '发放中',
+  commission_paid: '已发放',
+  commission_rejected: '已驳回',
+  // Detail sheet states.
+  detail_load_failed: '订单详情加载失败',
+  detail_empty: '暂无订单详情',
+  detail_user_load_failed: '订单用户加载失败',
+  detail_user_empty: '未找到订单用户',
+  detail_invite_load_failed: '邀请人信息加载失败',
+  detail_invite_empty: '未找到邀请人',
+  // Detail sheet rows.
+  email: '邮箱',
+  trade_no: '订单号',
+  order_period: '订单周期',
+  order_status: '订单状态',
+  plan: '订阅计划',
+  callback_no: '回调单号',
+  total_amount: '支付金额',
+  balance_amount: '余额支付',
+  discount_amount: '优惠金额',
+  refund_amount: '退回金额',
+  surplus_amount: '折抵金额',
+  created_at: '创建时间',
+  updated_at: '更新时间',
+  invite_user: '邀请人',
+  commission_amount: '佣金金额',
+  actual_commission: '实际发放',
+  commission_status: '佣金状态',
+  detail_title: '订单信息',
+  detail_description: '查看订单状态、金额、订阅周期与支付信息。',
+  // Assign dialog.
+  add_order: '添加订单',
+  assign_title: '订单分配',
+  assign_description: '为指定用户创建订单并选择订阅计划与周期。',
+  assign_email_label: '用户邮箱',
+  assign_email_placeholder: '请输入用户邮箱',
+  assign_plan_label: '请选择订阅',
+  assign_period_label: '请选择周期',
+  assign_amount_placeholder: '请输入需要支付的金额',
+  request_failed: '请求失败',
+  // Row actions.
+  cancel_order: '取消订单',
+  cancel_order_confirm: '确定要取消该订单吗？',
+  mark_paid: '标记为已支付',
+  commission_valid: '有效',
+  commission_invalid: '无效',
+  // Table columns.
+  trade_no_col: '# 订单号',
+  type_col: '类型',
+  period_col: '周期',
+  status_tooltip: '标记为[已支付]后将会由系统进行开通后并完成',
+  commission_status_tooltip: '标记为[有效]后将会由系统处理后发放到用户并完成',
+  // Page chrome.
+  list_load_failed: '订单列表加载失败',
+  plans_load_failed: '订阅列表加载失败',
+  title: '订单管理',
+  assign_order: '分配订单',
+  clear_filters: '清除筛选',
+  search_placeholder: '搜索订单号',
+  empty: '暂无订单',
+};

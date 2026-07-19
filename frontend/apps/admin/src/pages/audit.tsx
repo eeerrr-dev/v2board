@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import type { SelectorParam } from 'i18next';
+import { useTranslation } from 'react-i18next';
 import type { admin, FilterClause } from '@v2board/api-client';
 import { formatBackendDateTime } from '@v2board/config/format';
 import { Badge } from '@/components/ui/badge';
@@ -18,17 +20,10 @@ import { LoadingState, SkeletonRows } from '@/components/ui/loading-state';
 import { DataTable, type DataTableColumn } from '@/components/ui/table';
 import { useAuditLogs } from '@/lib/queries';
 
-const PAGINATION_LABELS = {
-  itemsPerPage: '条/页',
-  nextPage: '下一页',
-  nextWindow: '向后 5 页',
-  previousPage: '上一页',
-  previousWindow: '向前 5 页',
-};
-
-const SURFACE_TEXT: Record<string, string> = {
-  admin: '管理员',
-  staff: '员工',
+// Keyed by the wire `surface` values; labels resolve through t() at render.
+const SURFACE_LABEL_KEYS: Record<string, SelectorParam> = {
+  admin: ($) => $.admin.audit.surface_admin,
+  staff: ($) => $.admin.audit.surface_staff,
 };
 
 // Radix Select items cannot carry an empty value, so the "all" choices use a
@@ -68,6 +63,7 @@ function auditFilter(query: QueryState): FilterClause<admin.AuditLogFilterField>
  * append-only on the backend — this page never mutates anything.
  */
 export default function AuditPage() {
+  const { t } = useTranslation();
   const [query, setQuery] = useState<QueryState>({
     current: 1,
     pageSize: 20,
@@ -98,41 +94,44 @@ export default function AuditPage() {
     {
       id: 'created_at',
       meta: { className: 'whitespace-nowrap tabular-nums' },
-      header: () => <span>时间</span>,
+      header: () => <span>{t(($) => $.admin.audit.time)}</span>,
       cell: ({ row }) => formatBackendDateTime(row.original.created_at),
     },
     {
       id: 'actor_email',
       meta: { className: 'text-foreground' },
-      header: () => <span>操作者</span>,
+      header: () => <span>{t(($) => $.admin.audit.actor)}</span>,
       cell: ({ row }) => row.original.actor_email,
     },
     {
       id: 'surface',
       meta: { align: 'center' },
-      header: () => <span>界面</span>,
-      cell: ({ row }) => (
-        <Badge variant={row.original.surface === 'admin' ? 'default' : 'secondary'}>
-          {SURFACE_TEXT[row.original.surface] ?? row.original.surface}
-        </Badge>
-      ),
+      header: () => <span>{t(($) => $.admin.audit.surface)}</span>,
+      cell: ({ row }) => {
+        const labelKey = SURFACE_LABEL_KEYS[row.original.surface];
+        return (
+          <Badge variant={row.original.surface === 'admin' ? 'default' : 'secondary'}>
+            {labelKey ? t(labelKey) : row.original.surface}
+          </Badge>
+        );
+      },
     },
     {
       id: 'method',
       meta: { align: 'center', className: 'font-mono text-xs' },
-      header: () => <span>方法</span>,
+      header: () => <span>{t(($) => $.admin.audit.method)}</span>,
       cell: ({ row }) => row.original.method,
     },
     {
       id: 'path',
       meta: { className: 'font-mono text-xs break-all' },
-      header: () => <span>路径</span>,
+      header: () => <span>{t(($) => $.admin.audit.path)}</span>,
       cell: ({ row }) => row.original.path,
     },
     {
       id: 'status_code',
       meta: { align: 'center', className: 'tabular-nums' },
-      header: () => <span>状态</span>,
+      header: () => <span>{t(($) => $.admin.audit.status)}</span>,
       cell: ({ row }) => (
         <Badge variant={row.original.status_code < 400 ? 'secondary' : 'destructive'}>
           {row.original.status_code}
@@ -142,13 +141,13 @@ export default function AuditPage() {
     {
       id: 'client_ip',
       meta: { className: 'font-mono text-xs' },
-      header: () => <span>来源 IP</span>,
+      header: () => <span>{t(($) => $.admin.audit.client_ip)}</span>,
       cell: ({ row }) => row.original.client_ip ?? '-',
     },
     {
       id: 'request_id',
       meta: { className: 'max-w-40 truncate font-mono text-xs' },
-      header: () => <span>请求 ID</span>,
+      header: () => <span>{t(($) => $.admin.audit.request_id)}</span>,
       cell: ({ row }) => row.original.request_id ?? '-',
     },
   ];
@@ -156,8 +155,8 @@ export default function AuditPage() {
   return (
     <PageShell data-testid="audit-page">
       <PageHeader
-        title="审计日志"
-        description="每一次管理员/员工修改操作的只读追加记录；请求体不会被记录。"
+        title={t(($) => $.admin.audit.title)}
+        description={t(($) => $.admin.audit.description)}
       />
 
       <Card>
@@ -169,15 +168,15 @@ export default function AuditPage() {
             >
               <SelectTrigger
                 className="w-40"
-                aria-label="界面筛选"
+                aria-label={t(($) => $.admin.audit.surface_filter_label)}
                 data-testid="audit-surface-filter"
               >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={ALL_SURFACES}>全部界面</SelectItem>
-                <SelectItem value="admin">管理员</SelectItem>
-                <SelectItem value="staff">员工</SelectItem>
+                <SelectItem value={ALL_SURFACES}>{t(($) => $.admin.audit.all_surfaces)}</SelectItem>
+                <SelectItem value="admin">{t(($) => $.admin.audit.surface_admin)}</SelectItem>
+                <SelectItem value="staff">{t(($) => $.admin.audit.surface_staff)}</SelectItem>
               </SelectContent>
             </Select>
             <Select
@@ -186,13 +185,13 @@ export default function AuditPage() {
             >
               <SelectTrigger
                 className="w-40"
-                aria-label="方法筛选"
+                aria-label={t(($) => $.admin.audit.method_filter_label)}
                 data-testid="audit-method-filter"
               >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={ALL_METHODS}>全部方法</SelectItem>
+                <SelectItem value={ALL_METHODS}>{t(($) => $.admin.audit.all_methods)}</SelectItem>
                 {METHODS.map((method) => (
                   <SelectItem key={method} value={method}>
                     {method}
@@ -202,8 +201,8 @@ export default function AuditPage() {
             </Select>
             <Input
               className="w-56"
-              placeholder="按操作者邮箱搜索"
-              aria-label="操作者筛选"
+              placeholder={t(($) => $.admin.audit.email_filter_placeholder)}
+              aria-label={t(($) => $.admin.audit.email_filter_label)}
               data-testid="audit-email-filter"
               value={emailDraft}
               onChange={(event) => setEmailDraft(event.target.value)}
@@ -216,7 +215,7 @@ export default function AuditPage() {
 
           {logs.isError ? (
             <ErrorState
-              message="审计日志加载失败"
+              message={t(($) => $.admin.audit.load_error)}
               onRetry={() => void logs.refetch()}
               data-testid="audit-error"
             />
@@ -230,7 +229,7 @@ export default function AuditPage() {
                 data-testid="audit-table"
                 empty={
                   !logs.isError && logs.data !== undefined && data.length === 0
-                    ? '暂无审计记录'
+                    ? t(($) => $.admin.audit.empty)
                     : undefined
                 }
                 emptyTestId="audit-empty"
@@ -241,7 +240,13 @@ export default function AuditPage() {
                   current={query.current}
                   pageSize={query.pageSize}
                   total={total}
-                  labels={PAGINATION_LABELS}
+                  labels={{
+                    itemsPerPage: t(($) => $.common.items_per_page),
+                    nextPage: t(($) => $.common.next_page),
+                    nextWindow: t(($) => $.common.next_5),
+                    previousPage: t(($) => $.common.prev_page),
+                    previousWindow: t(($) => $.common.prev_5),
+                  }}
                   onChange={(page, pageSize) =>
                     setQuery((state) => ({ ...state, current: page, pageSize }))
                   }

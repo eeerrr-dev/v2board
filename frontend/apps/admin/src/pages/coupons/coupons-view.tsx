@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import {
   useAdminCoupons,
@@ -23,12 +24,13 @@ import {
   copyWithToast,
   dateRange,
   PAGE_SIZE_OPTIONS,
-  PAGINATION_LABELS,
+  paginationLabels,
   type CouponRow,
   type QueryState,
 } from './shared';
 
 export function CouponsView() {
+  const { t } = useTranslation();
   const [query, setQuery] = useState<QueryState>({ current: 1, pageSize: 10 });
   const coupons = useAdminCoupons(query);
   const plans = useAdminPlans();
@@ -43,14 +45,16 @@ export function CouponsView() {
 
   const removeCoupon = async (row: CouponRow) => {
     const confirmed = await confirmDialog({
-      title: '警告',
-      description: '确定要删除该条项目吗？',
-      confirmText: '确定',
-      cancelText: '取消',
+      title: t(($) => $.admin.coupons.delete_confirm_title),
+      description: t(($) => $.admin.coupons.delete_confirm_description),
+      confirmText: t(($) => $.common.confirm),
+      cancelText: t(($) => $.common.cancel),
     });
     if (!confirmed) return;
     drop.mutate(row.id);
   };
+
+  const copyCode = (value: string) => copyWithToast(value, (selector) => t(selector));
 
   const columns: DataTableColumn<CouponRow>[] = [
     {
@@ -62,52 +66,57 @@ export function CouponsView() {
     {
       id: 'show',
       meta: { align: 'center' },
-      header: () => <span>启用</span>,
+      header: () => <span>{t(($) => $.common.enable)}</span>,
       cell: ({ row }) => (
         <Switch
           checked={row.original.show}
           // §6.3 (W10): PATCH `{show}` carries the explicit target value.
           onCheckedChange={() => show.mutate({ id: row.original.id, show: !row.original.show })}
-          aria-label={`切换优惠券「${row.original.name}」启用`}
+          aria-label={t(($) => $.admin.coupons.toggle_show_aria, { name: row.original.name })}
         />
       ),
     },
     {
       id: 'name',
       meta: { className: 'font-medium text-foreground' },
-      header: () => <span>券名称</span>,
+      header: () => <span>{t(($) => $.admin.coupons.coupon_name)}</span>,
       cell: ({ row }) => row.original.name,
     },
     {
       id: 'type',
-      header: () => <span>类型</span>,
-      cell: ({ row }) => (row.original.type === 1 ? '金额' : '比例'),
+      header: () => <span>{t(($) => $.admin.coupons.type)}</span>,
+      cell: ({ row }) =>
+        row.original.type === 1
+          ? t(($) => $.admin.coupons.type_amount)
+          : t(($) => $.admin.coupons.type_percent),
     },
     {
       id: 'code',
-      header: () => <span>券码</span>,
-      cell: ({ row }) => <CopyableCode value={row.original.code} onCopy={copyWithToast} />,
+      header: () => <span>{t(($) => $.admin.coupons.code)}</span>,
+      cell: ({ row }) => <CopyableCode value={row.original.code} onCopy={copyCode} />,
     },
     {
       id: 'limit_use',
       meta: { align: 'center' },
-      header: () => <span>剩余次数</span>,
+      header: () => <span>{t(($) => $.admin.coupons.remaining)}</span>,
       cell: ({ row }) => (
         <Badge variant="secondary">
-          {row.original.limit_use !== null ? row.original.limit_use : '无限'}
+          {row.original.limit_use !== null
+            ? row.original.limit_use
+            : t(($) => $.admin.coupons.unlimited)}
         </Badge>
       ),
     },
     {
       id: 'validity',
       meta: { className: 'text-muted-foreground tabular-nums' },
-      header: () => <span>有效期</span>,
+      header: () => <span>{t(($) => $.admin.coupons.valid_period)}</span>,
       cell: ({ row }) => dateRange(row.original.started_at, row.original.ended_at),
     },
     {
       id: 'actions',
       meta: { align: 'right' },
-      header: () => <span>操作</span>,
+      header: () => <span>{t(($) => $.common.operation)}</span>,
       cell: ({ row }) => (
         <div className="flex items-center justify-end gap-1">
           {plansReady ? (
@@ -119,13 +128,13 @@ export function CouponsView() {
             >
               <Button variant="ghost" size="sm" data-testid={`coupon-edit-${row.original.id}`}>
                 <Pencil className="size-4" />
-                编辑
+                {t(($) => $.common.edit)}
               </Button>
             </CouponEditor>
           ) : (
             <Button variant="ghost" size="sm" disabled>
               <Pencil className="size-4" />
-              编辑
+              {t(($) => $.common.edit)}
             </Button>
           )}
           <Button
@@ -136,7 +145,7 @@ export function CouponsView() {
             data-testid={`coupon-delete-${row.original.id}`}
           >
             <Trash2 className="size-4" />
-            删除
+            {t(($) => $.common.delete)}
           </Button>
         </div>
       ),
@@ -146,13 +155,19 @@ export function CouponsView() {
   return (
     <PageShell data-testid="coupons-page">
       {coupons.isError ? (
-        <ErrorState message="优惠券列表加载失败" onRetry={() => void coupons.refetch()} />
+        <ErrorState
+          message={t(($) => $.admin.coupons.load_failed)}
+          onRetry={() => void coupons.refetch()}
+        />
       ) : null}
       {plans.isError ? (
-        <ErrorState message="订阅列表加载失败" onRetry={() => void plans.refetch()} />
+        <ErrorState
+          message={t(($) => $.admin.coupons.plans_load_failed)}
+          onRetry={() => void plans.refetch()}
+        />
       ) : null}
       <PageHeader
-        title="优惠券管理"
+        title={t(($) => $.admin.coupons.title)}
         actions={
           plansReady ? (
             <CouponEditor
@@ -162,13 +177,13 @@ export function CouponsView() {
             >
               <Button data-testid="coupon-create">
                 <Plus className="size-4" />
-                添加优惠券
+                {t(($) => $.admin.coupons.create)}
               </Button>
             </CouponEditor>
           ) : (
             <Button disabled data-testid="coupon-create">
               <Plus className="size-4" />
-              添加优惠券
+              {t(($) => $.admin.coupons.create)}
             </Button>
           )
         }
@@ -184,7 +199,7 @@ export function CouponsView() {
             data-testid="coupons-table"
             empty={
               !coupons.isError && coupons.data !== undefined && data.length === 0
-                ? '暂无优惠券'
+                ? t(($) => $.admin.coupons.empty)
                 : undefined
             }
             emptyTestId="coupons-empty"
@@ -196,7 +211,7 @@ export function CouponsView() {
               pageSize={query.pageSize}
               total={total}
               pageSizeOptions={PAGE_SIZE_OPTIONS}
-              labels={PAGINATION_LABELS}
+              labels={paginationLabels((selector) => t(selector))}
               onChange={(page, pageSize) => setQuery({ current: page, pageSize })}
               testIds={{ page: 'coupon-page', pageSize: 'coupon-page-size' }}
             />

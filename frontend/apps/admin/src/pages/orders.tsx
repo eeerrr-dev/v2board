@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm, useFormState } from 'react-hook-form';
+import type { TFunction } from 'i18next';
+import { useTranslation } from 'react-i18next';
 import { ChevronDown, ListFilter, Plus, Search } from 'lucide-react';
 import type { AdminFilter } from '@v2board/api-client';
 import type { AdminOrderRow, Plan } from '@v2board/types';
@@ -65,54 +67,61 @@ import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@/componen
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { assignOrderSchema, type AssignOrderValues } from './users/form-schema';
 
-const PERIOD_TEXT: Record<string, string> = {
-  month_price: '月付',
-  quarter_price: '季付',
-  half_year_price: '半年付',
-  year_price: '年付',
-  two_year_price: '两年付',
-  three_year_price: '三年付',
-  onetime_price: '一次性',
-  reset_price: '流量重置包',
-};
+// The record keys below are backend wire values (period identifiers, order
+// type/status codes); only the labels are translated, resolved at render time.
+function periodTextMap(t: TFunction): Record<string, string> {
+  return {
+    month_price: t(($) => $.admin.orders.period_month),
+    quarter_price: t(($) => $.admin.orders.period_quarter),
+    half_year_price: t(($) => $.admin.orders.period_half_year),
+    year_price: t(($) => $.admin.orders.period_year),
+    two_year_price: t(($) => $.admin.orders.period_two_year),
+    three_year_price: t(($) => $.admin.orders.period_three_year),
+    onetime_price: t(($) => $.admin.orders.period_onetime),
+    reset_price: t(($) => $.admin.orders.period_reset),
+  };
+}
 
-const PERIOD_OPTIONS = Object.keys(PERIOD_TEXT).map((period) => ({
-  value: period,
-  label: PERIOD_TEXT[period] ?? period,
-}));
-
-const ORDER_TYPE_TEXT: Record<number, string> = {
-  1: '新购',
-  2: '续费',
-  3: '变更',
-  4: '流量包',
-  9: '充值',
-};
+function orderTypeTextMap(t: TFunction): Record<number, string> {
+  return {
+    1: t(($) => $.admin.orders.type_new),
+    2: t(($) => $.admin.orders.type_renew),
+    3: t(($) => $.admin.orders.type_change),
+    4: t(($) => $.admin.orders.type_traffic_package),
+    9: t(($) => $.admin.orders.type_deposit),
+  };
+}
 
 // Backend order-status codes -> display label + pill tone. The codes are the
 // Tier-1 contract; the tones are Tier-2 presentation.
-const ORDER_STATUS: Record<number, { label: string; tone: StatusTone }> = {
-  0: { label: '待支付', tone: 'warning' },
-  1: { label: '开通中', tone: 'info' },
-  2: { label: '已取消', tone: 'default' },
-  3: { label: '已完成', tone: 'success' },
-  4: { label: '已折抵', tone: 'default' },
-};
+function orderStatusMap(t: TFunction): Record<number, { label: string; tone: StatusTone }> {
+  return {
+    0: { label: t(($) => $.common.unpaid), tone: 'warning' },
+    1: { label: t(($) => $.admin.orders.status_activating), tone: 'info' },
+    2: { label: t(($) => $.common.cancelled), tone: 'default' },
+    3: { label: t(($) => $.common.completed), tone: 'success' },
+    4: { label: t(($) => $.admin.orders.status_credited), tone: 'default' },
+  };
+}
 
-const COMMISSION_STATUS: Record<number, { label: string; tone: StatusTone }> = {
-  0: { label: '待确认', tone: 'default' },
-  1: { label: '发放中', tone: 'info' },
-  2: { label: '已发放', tone: 'success' },
-  3: { label: '已驳回', tone: 'destructive' },
-};
+function commissionStatusMap(t: TFunction): Record<number, { label: string; tone: StatusTone }> {
+  return {
+    0: { label: t(($) => $.admin.orders.commission_pending), tone: 'default' },
+    1: { label: t(($) => $.admin.orders.commission_processing), tone: 'info' },
+    2: { label: t(($) => $.admin.orders.commission_paid), tone: 'success' },
+    3: { label: t(($) => $.admin.orders.commission_rejected), tone: 'destructive' },
+  };
+}
 
-const PAGINATION_LABELS = {
-  itemsPerPage: '条/页',
-  nextPage: '下一页',
-  nextWindow: '向后 5 页',
-  previousPage: '上一页',
-  previousWindow: '向前 5 页',
-};
+function paginationLabels(t: TFunction) {
+  return {
+    itemsPerPage: t(($) => $.common.items_per_page),
+    nextPage: t(($) => $.common.next_page),
+    nextWindow: t(($) => $.common.next_5),
+    previousPage: t(($) => $.common.prev_page),
+    previousWindow: t(($) => $.common.prev_5),
+  };
+}
 
 interface QueryState {
   current: number;
@@ -169,6 +178,10 @@ function OrderDetailSheet({
   plans: Plan[];
   onUserFilter: (key: string, condition: string, value: string) => void;
 }) {
+  const { t } = useTranslation();
+  const periodText = periodTextMap(t);
+  const orderStatus = orderStatusMap(t);
+  const commissionStatus = commissionStatusMap(t);
   const order = useAdminOrderDetail(tradeNo);
   const user = useAdminUserInfo(order.data?.user_id);
   const inviteUser = useAdminUserInfo(order.data?.invite_user_id);
@@ -184,7 +197,7 @@ function OrderDetailSheet({
       <div className="px-4 py-6">
         <ErrorState
           data-testid="order-detail-error"
-          message="订单详情加载失败"
+          message={t(($) => $.admin.orders.detail_load_failed)}
           onRetry={() => void order.refetch()}
         />
       </div>
@@ -193,14 +206,18 @@ function OrderDetailSheet({
     content = <DetailLoading testId="order-detail-loading" />;
   } else if (!detail) {
     content = (
-      <EmptyState className="m-4 min-h-32" data-testid="order-detail-empty" title="暂无订单详情" />
+      <EmptyState
+        className="m-4 min-h-32"
+        data-testid="order-detail-empty"
+        title={t(($) => $.admin.orders.detail_empty)}
+      />
     );
   } else if (user.isError) {
     content = (
       <div className="px-4 py-6">
         <ErrorState
           data-testid="order-detail-user-error"
-          message="订单用户加载失败"
+          message={t(($) => $.admin.orders.detail_user_load_failed)}
           onRetry={() => void user.refetch()}
         />
       </div>
@@ -212,7 +229,7 @@ function OrderDetailSheet({
       <EmptyState
         className="m-4 min-h-32"
         data-testid="order-detail-user-empty"
-        title="未找到订单用户"
+        title={t(($) => $.admin.orders.detail_user_empty)}
       />
     );
   } else if (requiresInviteUser && inviteUser.isError) {
@@ -220,7 +237,7 @@ function OrderDetailSheet({
       <div className="px-4 py-6">
         <ErrorState
           data-testid="order-detail-invite-error"
-          message="邀请人信息加载失败"
+          message={t(($) => $.admin.orders.detail_invite_load_failed)}
           onRetry={() => void inviteUser.refetch()}
         />
       </div>
@@ -232,13 +249,13 @@ function OrderDetailSheet({
       <EmptyState
         className="m-4 min-h-32"
         data-testid="order-detail-invite-empty"
-        title="未找到邀请人"
+        title={t(($) => $.admin.orders.detail_invite_empty)}
       />
     );
   } else {
     content = (
       <div className="divide-y divide-border px-4 pb-6">
-        <DetailRow label="邮箱">
+        <DetailRow label={t(($) => $.admin.orders.email)}>
           <button
             type="button"
             className="text-primary underline-offset-4 hover:underline"
@@ -248,23 +265,43 @@ function OrderDetailSheet({
             {detailUser.email}
           </button>
         </DetailRow>
-        <DetailRow label="订单号">
+        <DetailRow label={t(($) => $.admin.orders.trade_no)}>
           <span className="font-mono">{detail.trade_no}</span>
         </DetailRow>
-        <DetailRow label="订单周期">{PERIOD_TEXT[detail.period] ?? detail.period}</DetailRow>
-        <DetailRow label="订单状态">{ORDER_STATUS[detail.status]?.label}</DetailRow>
-        <DetailRow label="订阅计划">{planName}</DetailRow>
-        <DetailRow label="回调单号">{detail.callback_no || '-'}</DetailRow>
-        <DetailRow label="支付金额">{cents(detail.total_amount)}</DetailRow>
-        <DetailRow label="余额支付">{cents(detail.balance_amount)}</DetailRow>
-        <DetailRow label="优惠金额">{cents(detail.discount_amount)}</DetailRow>
-        <DetailRow label="退回金额">{cents(detail.refund_amount)}</DetailRow>
-        <DetailRow label="折抵金额">{cents(detail.surplus_amount)}</DetailRow>
-        <DetailRow label="创建时间">{formatBackendDateTime(detail.created_at)}</DetailRow>
-        <DetailRow label="更新时间">{formatBackendDateTime(detail.updated_at)}</DetailRow>
+        <DetailRow label={t(($) => $.admin.orders.order_period)}>
+          {periodText[detail.period] ?? detail.period}
+        </DetailRow>
+        <DetailRow label={t(($) => $.admin.orders.order_status)}>
+          {orderStatus[detail.status]?.label}
+        </DetailRow>
+        <DetailRow label={t(($) => $.admin.orders.plan)}>{planName}</DetailRow>
+        <DetailRow label={t(($) => $.admin.orders.callback_no)}>
+          {detail.callback_no || '-'}
+        </DetailRow>
+        <DetailRow label={t(($) => $.admin.orders.total_amount)}>
+          {cents(detail.total_amount)}
+        </DetailRow>
+        <DetailRow label={t(($) => $.admin.orders.balance_amount)}>
+          {cents(detail.balance_amount)}
+        </DetailRow>
+        <DetailRow label={t(($) => $.admin.orders.discount_amount)}>
+          {cents(detail.discount_amount)}
+        </DetailRow>
+        <DetailRow label={t(($) => $.admin.orders.refund_amount)}>
+          {cents(detail.refund_amount)}
+        </DetailRow>
+        <DetailRow label={t(($) => $.admin.orders.surplus_amount)}>
+          {cents(detail.surplus_amount)}
+        </DetailRow>
+        <DetailRow label={t(($) => $.admin.orders.created_at)}>
+          {formatBackendDateTime(detail.created_at)}
+        </DetailRow>
+        <DetailRow label={t(($) => $.admin.orders.updated_at)}>
+          {formatBackendDateTime(detail.updated_at)}
+        </DetailRow>
         {detail.invite_user_id && detail.status === 3 ? (
           <>
-            <DetailRow label="邀请人">
+            <DetailRow label={t(($) => $.admin.orders.invite_user)}>
               <button
                 type="button"
                 className="text-primary underline-offset-4 hover:underline"
@@ -277,12 +314,16 @@ function OrderDetailSheet({
                 {detailInviteUser?.email}
               </button>
             </DetailRow>
-            <DetailRow label="佣金金额">{cents(detail.commission_balance)}</DetailRow>
+            <DetailRow label={t(($) => $.admin.orders.commission_amount)}>
+              {cents(detail.commission_balance)}
+            </DetailRow>
             {detail.actual_commission_balance ? (
-              <DetailRow label="实际发放">{cents(detail.actual_commission_balance)}</DetailRow>
+              <DetailRow label={t(($) => $.admin.orders.actual_commission)}>
+                {cents(detail.actual_commission_balance)}
+              </DetailRow>
             ) : null}
-            <DetailRow label="佣金状态">
-              {COMMISSION_STATUS[detail.commission_status]?.label}
+            <DetailRow label={t(($) => $.admin.orders.commission_status)}>
+              {commissionStatus[detail.commission_status]?.label}
             </DetailRow>
           </>
         ) : null}
@@ -298,8 +339,8 @@ function OrderDetailSheet({
         data-testid="order-detail"
       >
         <SheetHeader>
-          <SheetTitle>订单信息</SheetTitle>
-          <SheetDescription>查看订单状态、金额、订阅周期与支付信息。</SheetDescription>
+          <SheetTitle>{t(($) => $.admin.orders.detail_title)}</SheetTitle>
+          <SheetDescription>{t(($) => $.admin.orders.detail_description)}</SheetDescription>
         </SheetHeader>
 
         {content}
@@ -309,6 +350,12 @@ function OrderDetailSheet({
 }
 
 function AssignOrderDialog({ plans }: { plans: Plan[] }) {
+  const { t } = useTranslation();
+  const periodText = periodTextMap(t);
+  const periodOptions = Object.keys(periodText).map((period) => ({
+    value: period,
+    label: periodText[period] ?? period,
+  }));
   const assign = useAssignOrderMutation();
   const [open, setOpen] = useState(false);
   const form = useForm<AssignOrderValues>({
@@ -333,7 +380,10 @@ function AssignOrderDialog({ plans }: { plans: Plan[] }) {
       setOpen(false);
     } catch (error) {
       form.setError('root.serverError', {
-        message: error instanceof Error && error.message ? error.message : '请求失败',
+        message:
+          error instanceof Error && error.message
+            ? error.message
+            : t(($) => $.admin.orders.request_failed),
       });
     }
   });
@@ -347,19 +397,21 @@ function AssignOrderDialog({ plans }: { plans: Plan[] }) {
     <>
       <Button onClick={openDialog} data-testid="order-assign-open">
         <Plus className="size-4" />
-        添加订单
+        {t(($) => $.admin.orders.add_order)}
       </Button>
       <Dialog open={open} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md" data-testid="order-assign-dialog">
           <DialogHeader>
-            <DialogTitle>订单分配</DialogTitle>
-            <DialogDescription>为指定用户创建订单并选择订阅计划与周期。</DialogDescription>
+            <DialogTitle>{t(($) => $.admin.orders.assign_title)}</DialogTitle>
+            <DialogDescription>{t(($) => $.admin.orders.assign_description)}</DialogDescription>
           </DialogHeader>
 
           <form className="space-y-4" onSubmit={assignOrder} noValidate>
             <FieldError errors={[formErrors.root?.serverError]} />
             <Field data-invalid={Boolean(formErrors.email)}>
-              <FieldLabel htmlFor="order-assign-email">用户邮箱</FieldLabel>
+              <FieldLabel htmlFor="order-assign-email">
+                {t(($) => $.admin.orders.assign_email_label)}
+              </FieldLabel>
               <Controller
                 control={form.control}
                 name="email"
@@ -368,7 +420,7 @@ function AssignOrderDialog({ plans }: { plans: Plan[] }) {
                     {...field}
                     id="order-assign-email"
                     type="email"
-                    placeholder="请输入用户邮箱"
+                    placeholder={t(($) => $.admin.orders.assign_email_placeholder)}
                     data-testid="order-assign-email"
                     aria-invalid={fieldState.invalid}
                   />
@@ -377,7 +429,9 @@ function AssignOrderDialog({ plans }: { plans: Plan[] }) {
               <FieldError errors={[formErrors.email]} />
             </Field>
             <Field data-invalid={Boolean(formErrors.plan_id)}>
-              <FieldLabel htmlFor="order-assign-plan">请选择订阅</FieldLabel>
+              <FieldLabel htmlFor="order-assign-plan">
+                {t(($) => $.admin.orders.assign_plan_label)}
+              </FieldLabel>
               <Controller
                 control={form.control}
                 name="plan_id"
@@ -391,7 +445,7 @@ function AssignOrderDialog({ plans }: { plans: Plan[] }) {
                       className="w-full"
                       aria-invalid={Boolean(formErrors.plan_id)}
                     >
-                      <SelectValue placeholder="请选择订阅" />
+                      <SelectValue placeholder={t(($) => $.admin.orders.assign_plan_label)} />
                     </SelectTrigger>
                     <SelectContent>
                       {plans.map((plan) => (
@@ -406,7 +460,9 @@ function AssignOrderDialog({ plans }: { plans: Plan[] }) {
               <FieldError errors={[formErrors.plan_id]} />
             </Field>
             <Field data-invalid={Boolean(formErrors.period)}>
-              <FieldLabel htmlFor="order-assign-period">请选择周期</FieldLabel>
+              <FieldLabel htmlFor="order-assign-period">
+                {t(($) => $.admin.orders.assign_period_label)}
+              </FieldLabel>
               <Controller
                 control={form.control}
                 name="period"
@@ -417,10 +473,10 @@ function AssignOrderDialog({ plans }: { plans: Plan[] }) {
                       className="w-full"
                       aria-invalid={Boolean(formErrors.period)}
                     >
-                      <SelectValue placeholder="请选择周期" />
+                      <SelectValue placeholder={t(($) => $.admin.orders.assign_period_label)} />
                     </SelectTrigger>
                     <SelectContent>
-                      {PERIOD_OPTIONS.map((option) => (
+                      {periodOptions.map((option) => (
                         <SelectItem key={option.value} value={option.value}>
                           {option.label}
                         </SelectItem>
@@ -432,7 +488,9 @@ function AssignOrderDialog({ plans }: { plans: Plan[] }) {
               <FieldError errors={[formErrors.period]} />
             </Field>
             <Field data-invalid={Boolean(formErrors.total_amount)}>
-              <FieldLabel htmlFor="order-assign-amount">支付金额</FieldLabel>
+              <FieldLabel htmlFor="order-assign-amount">
+                {t(($) => $.admin.orders.total_amount)}
+              </FieldLabel>
               <div className="relative">
                 <Controller
                   control={form.control}
@@ -442,7 +500,7 @@ function AssignOrderDialog({ plans }: { plans: Plan[] }) {
                       {...field}
                       id="order-assign-amount"
                       className="pr-8"
-                      placeholder="请输入需要支付的金额"
+                      placeholder={t(($) => $.admin.orders.assign_amount_placeholder)}
                       data-testid="order-assign-amount"
                       aria-invalid={fieldState.invalid}
                     />
@@ -456,7 +514,7 @@ function AssignOrderDialog({ plans }: { plans: Plan[] }) {
             </Field>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
-                取消
+                {t(($) => $.common.cancel)}
               </Button>
               <Button
                 type="submit"
@@ -464,7 +522,7 @@ function AssignOrderDialog({ plans }: { plans: Plan[] }) {
                 loading={assign.isPending || isSubmitting}
                 data-testid="order-assign-submit"
               >
-                确定
+                {t(($) => $.common.confirm)}
               </Button>
             </DialogFooter>
           </form>
@@ -475,6 +533,12 @@ function AssignOrderDialog({ plans }: { plans: Plan[] }) {
 }
 
 export default function OrdersPage() {
+  const { t } = useTranslation();
+  const periodText = periodTextMap(t);
+  const orderTypeText = orderTypeTextMap(t);
+  const orderStatus = orderStatusMap(t);
+  const commissionStatus = commissionStatusMap(t);
+  const pagination = paginationLabels(t);
   const navigate = useNavigate();
   const [query, setQuery] = useState<QueryState>(() => ({
     current: 1,
@@ -529,9 +593,9 @@ export default function OrdersPage() {
 
   const cancelOrder = async (tradeNo: string) => {
     const confirmed = await confirmDialog({
-      title: '取消订单',
-      description: '确定要取消该订单吗？',
-      confirmText: '确定',
+      title: t(($) => $.admin.orders.cancel_order),
+      description: t(($) => $.admin.orders.cancel_order_confirm),
+      confirmText: t(($) => $.common.confirm),
     });
     if (!confirmed) return;
     cancel.mutate(tradeNo);
@@ -554,7 +618,7 @@ export default function OrdersPage() {
   const statusValue = filterValue(query.filter, 'status') ?? 'all';
 
   const renderOrderStatus = (row: AdminOrderRow) => {
-    const info = ORDER_STATUS[row.status] ?? ORDER_STATUS[0]!;
+    const info = orderStatus[row.status] ?? orderStatus[0]!;
     if (row.status !== 0) {
       return (
         <StatusBadge tone={info.tone} showDot>
@@ -581,14 +645,14 @@ export default function OrdersPage() {
             onClick={() => markPaid(row.trade_no)}
             data-testid={`order-mark-paid-${row.trade_no}`}
           >
-            标记为已支付
+            {t(($) => $.admin.orders.mark_paid)}
           </DropdownMenuItem>
           <DropdownMenuItem
             variant="destructive"
             onClick={() => void cancelOrder(row.trade_no)}
             data-testid={`order-cancel-${row.trade_no}`}
           >
-            取消订单
+            {t(($) => $.admin.orders.cancel_order)}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -598,7 +662,7 @@ export default function OrdersPage() {
   const renderCommissionStatus = (row: AdminOrderRow) => {
     if (row.status === 0 || row.status === 2 || !row.commission_balance) return '-';
     const value = row.commission_status;
-    const info = COMMISSION_STATUS[value] ?? COMMISSION_STATUS[0]!;
+    const info = commissionStatus[value] ?? commissionStatus[0]!;
     if (value === 2) {
       return (
         <StatusBadge tone={info.tone} showDot>
@@ -625,19 +689,19 @@ export default function OrdersPage() {
             disabled={value === 0}
             onClick={() => updateCommission(row.trade_no, '0')}
           >
-            待确认
+            {t(($) => $.admin.orders.commission_pending)}
           </DropdownMenuItem>
           <DropdownMenuItem
             disabled={value === 1}
             onClick={() => updateCommission(row.trade_no, '1')}
           >
-            有效
+            {t(($) => $.admin.orders.commission_valid)}
           </DropdownMenuItem>
           <DropdownMenuItem
             disabled={value === 3}
             onClick={() => updateCommission(row.trade_no, '3')}
           >
-            无效
+            {t(($) => $.admin.orders.commission_invalid)}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -647,7 +711,7 @@ export default function OrdersPage() {
   const columns: DataTableColumn<AdminOrderRow>[] = [
     {
       id: 'trade_no',
-      header: () => <span># 订单号</span>,
+      header: () => <span>{t(($) => $.admin.orders.trade_no_col)}</span>,
       cell: ({ row }) => (
         <button
           type="button"
@@ -661,40 +725,42 @@ export default function OrdersPage() {
     },
     {
       id: 'type',
-      header: () => <span>类型</span>,
-      cell: ({ row }) => ORDER_TYPE_TEXT[row.original.type],
+      header: () => <span>{t(($) => $.admin.orders.type_col)}</span>,
+      cell: ({ row }) => orderTypeText[row.original.type],
     },
     {
       id: 'plan_name',
       meta: { className: 'text-foreground' },
-      header: () => <span>订阅计划</span>,
+      header: () => <span>{t(($) => $.admin.orders.plan)}</span>,
       cell: ({ row }) => row.original.plan_name,
     },
     {
       id: 'period',
       meta: { align: 'center' },
-      header: () => <span>周期</span>,
+      header: () => <span>{t(($) => $.admin.orders.period_col)}</span>,
       cell: ({ row }) => (
-        <Badge variant="secondary">{PERIOD_TEXT[row.original.period] ?? row.original.period}</Badge>
+        <Badge variant="secondary">{periodText[row.original.period] ?? row.original.period}</Badge>
       ),
     },
     {
       id: 'total_amount',
       meta: { align: 'right', className: 'tabular-nums' },
-      header: () => <span>支付金额</span>,
+      header: () => <span>{t(($) => $.admin.orders.total_amount)}</span>,
       cell: ({ row }) => cents(row.original.total_amount),
     },
     {
       id: 'status',
       header: () => (
-        <HeaderTooltip title="标记为[已支付]后将会由系统进行开通后并完成">订单状态</HeaderTooltip>
+        <HeaderTooltip title={t(($) => $.admin.orders.status_tooltip)}>
+          {t(($) => $.admin.orders.order_status)}
+        </HeaderTooltip>
       ),
       cell: ({ row }) => renderOrderStatus(row.original),
     },
     {
       id: 'commission_balance',
       meta: { align: 'right', className: 'tabular-nums' },
-      header: () => <span>佣金金额</span>,
+      header: () => <span>{t(($) => $.admin.orders.commission_amount)}</span>,
       cell: ({ row }) =>
         row.original.status === 0 || row.original.status === 2 || !row.original.commission_balance
           ? '-'
@@ -703,8 +769,8 @@ export default function OrdersPage() {
     {
       id: 'commission_status',
       header: () => (
-        <HeaderTooltip title="标记为[有效]后将会由系统处理后发放到用户并完成">
-          佣金状态
+        <HeaderTooltip title={t(($) => $.admin.orders.commission_status_tooltip)}>
+          {t(($) => $.admin.orders.commission_status)}
         </HeaderTooltip>
       ),
       cell: ({ row }) => renderCommissionStatus(row.original),
@@ -712,7 +778,7 @@ export default function OrdersPage() {
     {
       id: 'created_at',
       meta: { align: 'right', className: 'text-muted-foreground tabular-nums' },
-      header: () => <span>创建时间</span>,
+      header: () => <span>{t(($) => $.admin.orders.created_at)}</span>,
       cell: ({ row }) => formatBackendDateMinuteSlash(row.original.created_at),
     },
   ];
@@ -720,19 +786,25 @@ export default function OrdersPage() {
   return (
     <PageShell data-testid="orders-page">
       {orders.isError ? (
-        <ErrorState message="订单列表加载失败" onRetry={() => void orders.refetch()} />
+        <ErrorState
+          message={t(($) => $.admin.orders.list_load_failed)}
+          onRetry={() => void orders.refetch()}
+        />
       ) : null}
       {plans.isError ? (
-        <ErrorState message="订阅列表加载失败" onRetry={() => void plans.refetch()} />
+        <ErrorState
+          message={t(($) => $.admin.orders.plans_load_failed)}
+          onRetry={() => void plans.refetch()}
+        />
       ) : null}
       <PageHeader
-        title="订单管理"
+        title={t(($) => $.admin.orders.title)}
         actions={
           plansReady ? (
             <AssignOrderDialog plans={planData} />
           ) : (
             <Button disabled data-testid="order-assign-open">
-              分配订单
+              {t(($) => $.admin.orders.assign_order)}
             </Button>
           )
         }
@@ -748,12 +820,13 @@ export default function OrdersPage() {
                     <Button variant="outline" size="sm" data-testid="order-status-filter">
                       <ListFilter className="size-4" />
                       {statusValue === 'all'
-                        ? '订单状态'
-                        : (ORDER_STATUS[Number(statusValue)]?.label ?? '订单状态')}
+                        ? t(($) => $.admin.orders.order_status)
+                        : (orderStatus[Number(statusValue)]?.label ??
+                          t(($) => $.admin.orders.order_status))}
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start">
-                    <DropdownMenuLabel>订单状态</DropdownMenuLabel>
+                    <DropdownMenuLabel>{t(($) => $.admin.orders.order_status)}</DropdownMenuLabel>
                     <DropdownMenuSeparator />
                     <DropdownMenuRadioGroup
                       value={statusValue}
@@ -761,10 +834,12 @@ export default function OrdersPage() {
                         setFilter('status', '=', value === 'all' ? '' : value)
                       }
                     >
-                      <DropdownMenuRadioItem value="all">全部</DropdownMenuRadioItem>
-                      {Object.keys(ORDER_STATUS).map((code) => (
+                      <DropdownMenuRadioItem value="all">
+                        {t(($) => $.common.all)}
+                      </DropdownMenuRadioItem>
+                      {Object.keys(orderStatus).map((code) => (
                         <DropdownMenuRadioItem key={code} value={code}>
-                          {ORDER_STATUS[Number(code)]!.label}
+                          {orderStatus[Number(code)]!.label}
                         </DropdownMenuRadioItem>
                       ))}
                     </DropdownMenuRadioGroup>
@@ -777,7 +852,7 @@ export default function OrdersPage() {
                     onClick={resetFilters}
                     data-testid="order-filter-reset"
                   >
-                    清除筛选
+                    {t(($) => $.admin.orders.clear_filters)}
                   </Button>
                 ) : null}
               </div>
@@ -785,7 +860,7 @@ export default function OrdersPage() {
                 <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   className="pl-9"
-                  placeholder="搜索订单号"
+                  placeholder={t(($) => $.admin.orders.search_placeholder)}
                   value={search}
                   onChange={(event) => onSearchChange(event.target.value)}
                   data-testid="order-search"
@@ -801,7 +876,7 @@ export default function OrdersPage() {
               data-testid="orders-table"
               empty={
                 !orders.isError && orders.data !== undefined && data.length === 0
-                  ? '暂无订单'
+                  ? t(($) => $.admin.orders.empty)
                   : undefined
               }
               emptyTestId="orders-empty"
@@ -813,7 +888,7 @@ export default function OrdersPage() {
                 current={query.current}
                 pageSize={query.pageSize}
                 total={total}
-                labels={PAGINATION_LABELS}
+                labels={pagination}
                 onChange={(page, pageSize) =>
                   setQuery((state) => ({ ...state, current: page, pageSize }))
                 }

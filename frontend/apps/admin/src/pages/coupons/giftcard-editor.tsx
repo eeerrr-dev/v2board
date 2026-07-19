@@ -1,4 +1,6 @@
 import { useState, type ReactElement } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm, useFormState, useWatch } from 'react-hook-form';
 import { Loader2 } from 'lucide-react';
@@ -41,18 +43,18 @@ import {
   type GiftcardSubmit,
 } from './shared';
 
-function giftcardValueUnit(type: GiftcardSubmit['type']) {
+function giftcardValueUnit(t: TFunction, type: GiftcardSubmit['type']) {
   switch (type) {
     case 1:
       return '¥';
     case 2:
-      return '天';
+      return t(($) => $.admin.coupons.giftcards.unit_days);
     case 3:
       return 'GB';
     case 4:
       return '';
     case 5:
-      return '天';
+      return t(($) => $.admin.coupons.giftcards.unit_days);
     default:
       return '';
   }
@@ -71,6 +73,7 @@ export function GiftcardEditor({
   onSave: (payload: GiftcardSubmit, onSuccess: (response?: GenerateResponse) => void) => void;
   children: ReactElement<{ onClick?: () => void }>;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const form = useForm<GiftcardEditorValues>({
     resolver: zodResolver(giftcardEditorSchema),
@@ -131,16 +134,22 @@ export function GiftcardEditor({
         data-testid="giftcard-editor"
       >
         <SheetHeader>
-          <SheetTitle>{record?.id ? '编辑礼品卡' : '新建礼品卡'}</SheetTitle>
-          <SheetDescription>设置礼品卡额度、订阅计划、数量和有效期。</SheetDescription>
+          <SheetTitle>
+            {record?.id
+              ? t(($) => $.admin.coupons.giftcards.edit_title)
+              : t(($) => $.admin.coupons.giftcards.create_title)}
+          </SheetTitle>
+          <SheetDescription>
+            {t(($) => $.admin.coupons.giftcards.editor_description)}
+          </SheetDescription>
         </SheetHeader>
 
         <form id="giftcard-editor-form" className="space-y-4 px-4 pb-4" onSubmit={save} noValidate>
           <Field data-invalid={Boolean(formErrors.name)}>
-            <FieldLabel htmlFor="giftcard-name">名称</FieldLabel>
+            <FieldLabel htmlFor="giftcard-name">{t(($) => $.admin.coupons.name)}</FieldLabel>
             <Input
               id="giftcard-name"
-              placeholder="请输入礼品卡名称"
+              placeholder={t(($) => $.admin.coupons.giftcards.name_placeholder)}
               aria-invalid={Boolean(formErrors.name)}
               {...form.register('name')}
               data-testid="giftcard-name"
@@ -150,10 +159,12 @@ export function GiftcardEditor({
 
           {!values.generate_count ? (
             <Field>
-              <FieldLabel htmlFor="giftcard-code">自定义礼品卡卡密</FieldLabel>
+              <FieldLabel htmlFor="giftcard-code">
+                {t(($) => $.admin.coupons.giftcards.custom_code)}
+              </FieldLabel>
               <Input
                 id="giftcard-code"
-                placeholder="自定义礼品卡卡密(留空随机生成)"
+                placeholder={t(($) => $.admin.coupons.giftcards.custom_code_placeholder)}
                 {...form.register('code', {
                   onChange: () => form.setValue('generate_count', undefined),
                 })}
@@ -163,7 +174,9 @@ export function GiftcardEditor({
           ) : null}
 
           <Field data-invalid={Boolean(formErrors.value)}>
-            <FieldLabel htmlFor="giftcard-value">礼品卡类型</FieldLabel>
+            <FieldLabel htmlFor="giftcard-value">
+              {t(($) => $.admin.coupons.giftcards.type_label)}
+            </FieldLabel>
             <div className="flex gap-2">
               <Select
                 value={String(values.type ?? 1)}
@@ -174,16 +187,26 @@ export function GiftcardEditor({
                 <SelectTrigger
                   className="w-40 shrink-0"
                   data-testid="giftcard-type"
-                  aria-label="礼品卡类型"
+                  aria-label={t(($) => $.admin.coupons.giftcards.type_label)}
                 >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="1">增加账户余额</SelectItem>
-                  <SelectItem value="2">增加订阅时长</SelectItem>
-                  <SelectItem value="3">增加套餐流量</SelectItem>
-                  <SelectItem value="4">重置套餐流量</SelectItem>
-                  <SelectItem value="5">兑换订阅套餐</SelectItem>
+                  <SelectItem value="1">
+                    {t(($) => $.admin.coupons.giftcards.type_balance_option)}
+                  </SelectItem>
+                  <SelectItem value="2">
+                    {t(($) => $.admin.coupons.giftcards.type_duration_option)}
+                  </SelectItem>
+                  <SelectItem value="3">
+                    {t(($) => $.admin.coupons.giftcards.type_traffic_option)}
+                  </SelectItem>
+                  <SelectItem value="4">
+                    {t(($) => $.admin.coupons.giftcards.type_reset_option)}
+                  </SelectItem>
+                  <SelectItem value="5">
+                    {t(($) => $.admin.coupons.giftcards.type_plan_option)}
+                  </SelectItem>
                 </SelectContent>
               </Select>
               <InputGroup className="flex-1">
@@ -192,14 +215,18 @@ export function GiftcardEditor({
                   type="number"
                   step={values.type === 1 ? '0.01' : '1'}
                   disabled={values.type === 4}
-                  placeholder={values.type === 5 ? '一次性套餐输入0' : '请输入值'}
+                  placeholder={
+                    values.type === 5
+                      ? t(($) => $.admin.coupons.giftcards.value_placeholder_onetime)
+                      : t(($) => $.admin.coupons.value_placeholder)
+                  }
                   value={values.type === 4 ? 0 : (values.value ?? '')}
                   onChange={(event) => form.setValue('value', event.target.value)}
                   aria-invalid={Boolean(formErrors.value)}
                   data-testid="giftcard-value"
                 />
                 <InputGroupAddon align="inline-end">
-                  <InputGroupText>{giftcardValueUnit(values.type)}</InputGroupText>
+                  <InputGroupText>{giftcardValueUnit(t, values.type)}</InputGroupText>
                 </InputGroupAddon>
               </InputGroup>
             </div>
@@ -208,7 +235,9 @@ export function GiftcardEditor({
 
           {values.type === 5 ? (
             <Field data-invalid={Boolean(formErrors.plan_id)}>
-              <FieldLabel htmlFor="giftcard-plan">指定订阅</FieldLabel>
+              <FieldLabel htmlFor="giftcard-plan">
+                {t(($) => $.admin.coupons.giftcards.plan_label)}
+              </FieldLabel>
               <Select
                 value={values.plan_id != null ? String(values.plan_id) : ''}
                 onValueChange={(value) => form.setValue('plan_id', value || null)}
@@ -219,7 +248,7 @@ export function GiftcardEditor({
                   aria-invalid={Boolean(formErrors.plan_id)}
                   data-testid="giftcard-plan"
                 >
-                  <SelectValue placeholder="指定订阅" />
+                  <SelectValue placeholder={t(($) => $.admin.coupons.giftcards.plan_label)} />
                 </SelectTrigger>
                 <SelectContent>
                   {planOptions(plans).map((option) => (
@@ -235,7 +264,9 @@ export function GiftcardEditor({
 
           <div className="grid grid-cols-2 gap-3">
             <Field data-invalid={Boolean(formErrors.started_at)}>
-              <FieldLabel htmlFor="giftcard-start">开始时间</FieldLabel>
+              <FieldLabel htmlFor="giftcard-start">
+                {t(($) => $.admin.coupons.started_at)}
+              </FieldLabel>
               <Controller
                 control={form.control}
                 name="started_at"
@@ -261,7 +292,7 @@ export function GiftcardEditor({
               <FieldError errors={[formErrors.started_at]} />
             </Field>
             <Field data-invalid={Boolean(formErrors.ended_at)}>
-              <FieldLabel htmlFor="giftcard-end">结束时间</FieldLabel>
+              <FieldLabel htmlFor="giftcard-end">{t(($) => $.admin.coupons.ended_at)}</FieldLabel>
               <Controller
                 control={form.control}
                 name="ended_at"
@@ -289,12 +320,14 @@ export function GiftcardEditor({
           </div>
 
           <Field data-invalid={Boolean(formErrors.limit_use)}>
-            <FieldLabel htmlFor="giftcard-limit-use">最大使用次数</FieldLabel>
+            <FieldLabel htmlFor="giftcard-limit-use">
+              {t(($) => $.admin.coupons.limit_use)}
+            </FieldLabel>
             <Input
               id="giftcard-limit-use"
               type="number"
               step="1"
-              placeholder="限制最大使用次数，用完则无法使用(为空则不限制)"
+              placeholder={t(($) => $.admin.coupons.limit_use_placeholder)}
               aria-invalid={Boolean(formErrors.limit_use)}
               {...form.register('limit_use')}
               data-testid="giftcard-limit-use"
@@ -304,14 +337,16 @@ export function GiftcardEditor({
 
           {!values.code && !values.id ? (
             <Field data-invalid={Boolean(formErrors.generate_count)}>
-              <FieldLabel htmlFor="giftcard-generate-count">生成数量</FieldLabel>
+              <FieldLabel htmlFor="giftcard-generate-count">
+                {t(($) => $.admin.coupons.generate_count)}
+              </FieldLabel>
               <Input
                 id="giftcard-generate-count"
                 type="number"
                 min="1"
                 max="500"
                 step="1"
-                placeholder="输入数量批量生成"
+                placeholder={t(($) => $.admin.coupons.generate_count_placeholder)}
                 aria-invalid={Boolean(formErrors.generate_count)}
                 {...form.register('generate_count', {
                   onChange: () => form.setValue('code', undefined),
@@ -333,10 +368,10 @@ export function GiftcardEditor({
             {pending ? (
               <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
             ) : null}
-            提交
+            {t(($) => $.common.submit)}
           </Button>
           <Button variant="outline" onClick={() => setOpen(false)}>
-            取消
+            {t(($) => $.common.cancel)}
           </Button>
         </SheetFooter>
       </SheetContent>

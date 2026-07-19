@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm, useFormState, useWatch } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import type { Notice } from '@v2board/types';
@@ -49,6 +50,7 @@ function noticeEditorValues(notice?: Notice): NoticeEditorValues {
 }
 
 export default function NoticesPage() {
+  const { t } = useTranslation();
   const notices = useAdminNotices();
   const save = useSaveNoticeMutation();
   const drop = useDropNoticeMutation();
@@ -85,9 +87,9 @@ export default function NoticesPage() {
 
   const removeNotice = async (row: Notice) => {
     const confirmed = await confirmDialog({
-      title: '删除公告',
-      description: `确定要删除公告「${row.title}」吗？`,
-      confirmText: '删除',
+      title: t(($) => $.admin.notices.delete_confirm_title),
+      description: t(($) => $.admin.notices.delete_confirm_description, { title: row.title }),
+      confirmText: t(($) => $.common.delete),
     });
     if (!confirmed) return;
     drop.mutate(row.id);
@@ -103,32 +105,32 @@ export default function NoticesPage() {
     {
       id: 'show',
       meta: { align: 'center' },
-      header: () => <span>显示</span>,
+      header: () => <span>{t(($) => $.admin.notices.show)}</span>,
       cell: ({ row }) => (
         <Switch
           checked={Boolean(row.original.show)}
           onCheckedChange={() => toggleShow(row.original)}
-          aria-label={`切换公告「${row.original.title}」显示`}
+          aria-label={t(($) => $.admin.notices.toggle_show, { title: row.original.title })}
         />
       ),
     },
     {
       id: 'title',
       meta: { className: 'font-medium text-foreground' },
-      header: () => <span>标题</span>,
+      header: () => <span>{t(($) => $.common.title)}</span>,
       cell: ({ row }) => row.original.title,
     },
     {
       id: 'created_at',
       meta: { align: 'right', className: 'text-muted-foreground tabular-nums' },
-      header: () => <span>创建时间</span>,
+      header: () => <span>{t(($) => $.admin.notices.created_at)}</span>,
       // §4.5 (W10): timestamps arrive as RFC 3339 strings.
       cell: ({ row }) => dayjs(row.original.created_at).format('YYYY/MM/DD HH:mm'),
     },
     {
       id: 'actions',
       meta: { align: 'right' },
-      header: () => <span>操作</span>,
+      header: () => <span>{t(($) => $.common.operation)}</span>,
       cell: ({ row }) => (
         <div className="flex items-center justify-end gap-1">
           <Button
@@ -138,7 +140,7 @@ export default function NoticesPage() {
             data-testid={`notice-edit-${row.original.id}`}
           >
             <Pencil className="size-4" />
-            编辑
+            {t(($) => $.common.edit)}
           </Button>
           <Button
             variant="ghost"
@@ -148,7 +150,7 @@ export default function NoticesPage() {
             data-testid={`notice-delete-${row.original.id}`}
           >
             <Trash2 className="size-4" />
-            删除
+            {t(($) => $.common.delete)}
           </Button>
         </div>
       ),
@@ -158,14 +160,17 @@ export default function NoticesPage() {
   return (
     <PageShell data-testid="notices-page">
       {notices.isError ? (
-        <ErrorState message="公告列表加载失败" onRetry={() => void notices.refetch()} />
+        <ErrorState
+          message={t(($) => $.admin.notices.list_error)}
+          onRetry={() => void notices.refetch()}
+        />
       ) : null}
       <PageHeader
-        title="公告管理"
+        title={t(($) => $.admin.notices.page_title)}
         actions={
           <Button onClick={openCreate} data-testid="notice-create">
             <Plus className="size-4" />
-            添加公告
+            {t(($) => $.admin.notices.create)}
           </Button>
         }
       />
@@ -180,7 +185,7 @@ export default function NoticesPage() {
             data-testid="notices-table"
             empty={
               notices.isSuccess && notices.data !== undefined && dataSource.length === 0
-                ? '暂无公告'
+                ? t(($) => $.admin.notices.empty)
                 : undefined
             }
             emptyTestId="notices-empty"
@@ -191,41 +196,47 @@ export default function NoticesPage() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-lg" data-testid="notice-dialog">
           <DialogHeader>
-            <DialogTitle>{editingId ? '编辑公告' : '新建公告'}</DialogTitle>
-            <DialogDescription>编辑公告标题、内容、标签和图片。</DialogDescription>
+            <DialogTitle>
+              {editingId
+                ? t(($) => $.admin.notices.edit_title)
+                : t(($) => $.admin.notices.create_title)}
+            </DialogTitle>
+            <DialogDescription>{t(($) => $.admin.notices.dialog_description)}</DialogDescription>
           </DialogHeader>
 
           <form id={NOTICE_FORM_ID} className="space-y-4" onSubmit={saveNotice} noValidate>
             <Field data-invalid={Boolean(formErrors.title)}>
-              <FieldLabel htmlFor="notice-title">标题</FieldLabel>
+              <FieldLabel htmlFor="notice-title">{t(($) => $.common.title)}</FieldLabel>
               <Input
                 id="notice-title"
-                placeholder="请输入公告标题"
+                placeholder={t(($) => $.admin.notices.title_placeholder)}
                 aria-invalid={Boolean(formErrors.title)}
                 {...form.register('title')}
               />
               <FieldError errors={[formErrors.title]} />
             </Field>
             <Field data-invalid={Boolean(formErrors.content)}>
-              <FieldLabel htmlFor="notice-content">公告内容</FieldLabel>
+              <FieldLabel htmlFor="notice-content">
+                {t(($) => $.admin.notices.content_label)}
+              </FieldLabel>
               <Textarea
                 id="notice-content"
                 rows={12}
-                placeholder="请输入公告内容"
+                placeholder={t(($) => $.admin.notices.content_placeholder)}
                 aria-invalid={Boolean(formErrors.content)}
                 {...form.register('content')}
               />
               <FieldError errors={[formErrors.content]} />
             </Field>
             <Field data-invalid={Boolean(formErrors.tags)}>
-              <FieldLabel htmlFor="notice-tags">公告标签</FieldLabel>
+              <FieldLabel htmlFor="notice-tags">{t(($) => $.admin.notices.tags_label)}</FieldLabel>
               <Controller
                 control={form.control}
                 name="tags"
                 render={({ field }) => (
                   <TagsInput
                     id="notice-tags"
-                    placeholder="输入后回车添加标签"
+                    placeholder={t(($) => $.admin.notices.tags_placeholder)}
                     value={field.value}
                     onChange={field.onChange}
                     onBlur={field.onBlur}
@@ -236,10 +247,12 @@ export default function NoticesPage() {
               <FieldError errors={[formErrors.tags]} />
             </Field>
             <Field data-invalid={Boolean(formErrors.img_url)}>
-              <FieldLabel htmlFor="notice-img">图片URL</FieldLabel>
+              <FieldLabel htmlFor="notice-img">
+                {t(($) => $.admin.notices.img_url_label)}
+              </FieldLabel>
               <Input
                 id="notice-img"
-                placeholder="请输入图片URL"
+                placeholder={t(($) => $.admin.notices.img_url_placeholder)}
                 aria-invalid={Boolean(formErrors.img_url)}
                 {...form.register('img_url')}
               />
@@ -249,7 +262,7 @@ export default function NoticesPage() {
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-              取消
+              {t(($) => $.common.cancel)}
             </Button>
             <Button
               type="submit"
@@ -258,7 +271,7 @@ export default function NoticesPage() {
               loading={save.isPending}
               data-testid="notice-submit"
             >
-              提交
+              {t(($) => $.common.submit)}
             </Button>
           </DialogFooter>
         </DialogContent>

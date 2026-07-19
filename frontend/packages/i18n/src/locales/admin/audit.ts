@@ -1,0 +1,23 @@
+// Values stay Chinese until product translations are supplied (see ./index.ts).
+export const adminAudit = {
+  surface_admin: '管理员',
+  surface_staff: '员工',
+  time: '时间',
+  actor: '操作者',
+  surface: '界面',
+  method: '方法',
+  path: '路径',
+  status: '状态',
+  client_ip: '来源 IP',
+  request_id: '请求 ID',
+  title: '审计日志',
+  description: '每一次管理员/员工修改操作的只读追加记录；请求体不会被记录。',
+  surface_filter_label: '界面筛选',
+  all_surfaces: '全部界面',
+  method_filter_label: '方法筛选',
+  all_methods: '全部方法',
+  email_filter_placeholder: '按操作者邮箱搜索',
+  email_filter_label: '操作者筛选',
+  load_error: '审计日志加载失败',
+  empty: '暂无审计记录',
+};

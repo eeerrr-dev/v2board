@@ -1,4 +1,5 @@
 import { useState, type ComponentProps } from 'react';
+import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import { Badge } from './badge';
 import { cn } from '@/lib/cn';
@@ -19,6 +20,7 @@ function TagsInput({
   disabled,
   ...inputProps
 }: TagsInputProps) {
+  const { t } = useTranslation();
   const [draft, setDraft] = useState('');
 
   const commit = () => {
@@ -45,7 +47,7 @@ function TagsInput({
             className="rounded-full text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[2px] focus-visible:ring-ring/50"
             disabled={disabled}
             onClick={() => onChange(value.filter((item) => item !== tag))}
-            aria-label={`移除标签 ${tag}`}
+            aria-label={t(($) => $.admin.shared.remove_tag, { tag })}
           >
             <X className="size-3" />
           </button>

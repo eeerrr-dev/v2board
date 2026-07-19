@@ -1,21 +1,23 @@
+import { useTranslation } from 'react-i18next';
 import type { FormCtx } from '../schema';
 import { Section, SelectRow } from '../rows';
 import { selectInteger } from '../values';
 
 export function TicketSection({ ctx }: { ctx: FormCtx }) {
+  const { t } = useTranslation();
   return (
-    <Section title="工单">
+    <Section title={t(($) => $.admin.config.sections.ticket)}>
       <SelectRow
         ctx={ctx}
         group="ticket"
         field="ticket_status"
-        title="工单设置"
-        description="请选择工单的状态。"
+        title={t(($) => $.admin.config.ticket.status_title)}
+        description={t(($) => $.admin.config.ticket.status_desc)}
         fallback="0"
         options={[
-          { value: '0', label: '完全开放工单' },
-          { value: '1', label: '仅限有付费订单用户' },
-          { value: '2', label: '完全禁止工单' },
+          { value: '0', label: t(($) => $.admin.config.ticket.status_open) },
+          { value: '1', label: t(($) => $.admin.config.ticket.status_paid_only) },
+          { value: '2', label: t(($) => $.admin.config.ticket.status_closed) },
         ]}
         serialize={selectInteger}
       />

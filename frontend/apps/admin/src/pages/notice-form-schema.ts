@@ -3,16 +3,18 @@ import { isHttpUrlInput } from '@/lib/form-input-validation';
 
 const requiredText = (message: string) => z.string().trim().min(1, message);
 
+// Validation messages are i18n keys; FieldError resolves them through
+// translateRuntimeMessage.
 export const noticeEditorSchema = z
   .object({
     id: z.number().int().positive().optional(),
-    title: requiredText('标题不能为空'),
-    content: requiredText('内容不能为空'),
+    title: requiredText('admin.notices.title_required'),
+    content: requiredText('admin.notices.content_required'),
     img_url: z
       .string()
       .trim()
-      .refine((value) => value === '' || isHttpUrlInput(value), '图片URL格式不正确'),
-    tags: z.array(requiredText('标签不能为空')),
+      .refine((value) => value === '' || isHttpUrlInput(value), 'admin.notices.img_url_invalid'),
+    tags: z.array(requiredText('admin.notices.tag_required')),
   })
   .strict()
   .transform((values) => ({

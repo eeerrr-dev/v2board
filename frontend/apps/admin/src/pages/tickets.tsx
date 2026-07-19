@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import dayjs from 'dayjs';
+import type { SelectorParam } from 'i18next';
+import { useTranslation } from 'react-i18next';
 import { Activity, CircleX, Filter, MessageSquare, Send, User } from 'lucide-react';
 import type { Ticket } from '@v2board/types';
 import { useParams } from 'react-router';
@@ -48,23 +50,17 @@ import { DataTable, type DataTableColumn } from '@/components/ui/table';
 // layer mints the §8 page/per_page wire query (docs/api-dialect.md, W14).
 type TicketQuery = admin.AdminTicketListQuery;
 
-const PAGINATION_LABELS = {
-  itemsPerPage: '条/页',
-  nextPage: '下一页',
-  nextWindow: '向后 5 页',
-  previousPage: '上一页',
-  previousWindow: '向前 5 页',
-};
-
-const REPLY_STATUS_OPTIONS = [
-  { label: '已回复', value: 1 },
-  { label: '待回复', value: 0 },
+// The 1/0 values are the §6.5 reply_status wire codes; only the labels are copy.
+const REPLY_STATUS_OPTIONS: { labelKey: SelectorParam; value: number }[] = [
+  { labelKey: ($) => $.admin.tickets.replied, value: 1 },
+  { labelKey: ($) => $.admin.tickets.awaiting_reply, value: 0 },
 ];
 
-const TICKET_LEVELS: Record<number, { label: string; tone: StatusTone }> = {
-  0: { label: '低', tone: 'default' },
-  1: { label: '中', tone: 'warning' },
-  2: { label: '高', tone: 'destructive' },
+// Keyed by the wire ticket `level` codes; labels resolve through t() at render.
+const TICKET_LEVELS: Record<number, { labelKey: SelectorParam; tone: StatusTone }> = {
+  0: { labelKey: ($) => $.admin.tickets.level_low, tone: 'default' },
+  1: { labelKey: ($) => $.admin.tickets.level_medium, tone: 'warning' },
+  2: { labelKey: ($) => $.admin.tickets.level_high, tone: 'destructive' },
 };
 
 // §4.5 (W14): ticket timestamps cross the wire as RFC 3339 UTC strings.
@@ -72,23 +68,23 @@ function formatMinute(value: string) {
   return dayjs(value).format('YYYY/MM/DD HH:mm');
 }
 
-function renderTicketStatus(row: Ticket) {
+function renderTicketStatus(row: Ticket, translate: (selector: SelectorParam) => string) {
   // Backend-field interpretation preserved from the replica: a closed ticket
   // wins over reply_status; otherwise reply_status 1/0 reads replied/awaiting.
   if (row.status === 1) {
     return (
       <StatusBadge tone="success" showDot>
-        已关闭
+        {translate(($) => $.admin.tickets.closed)}
       </StatusBadge>
     );
   }
   return row.reply_status ? (
     <StatusBadge tone="info" showDot>
-      已回复
+      {translate(($) => $.admin.tickets.replied)}
     </StatusBadge>
   ) : (
     <StatusBadge tone="destructive" showDot>
-      待回复
+      {translate(($) => $.admin.tickets.awaiting_reply)}
     </StatusBadge>
   );
 }
@@ -100,6 +96,7 @@ export default function TicketsPage() {
 }
 
 function TicketListPage() {
+  const { t } = useTranslation();
   const [query, setQuery] = useState<TicketQuery>({ current: 1, pageSize: 10, status: 0 });
   const tickets = useAdminTickets(query);
   const closeTicket = useCloseTicketMutation();
@@ -127,14 +124,14 @@ function TicketListPage() {
 
   const closeTicketRow = async (row: Ticket) => {
     const confirmed = await confirmDialog({
-      title: '关闭工单',
-      description: `确定要关闭工单「${row.subject}」吗？`,
-      confirmText: '关闭',
+      title: t(($) => $.admin.tickets.close_confirm_title),
+      description: t(($) => $.admin.tickets.close_confirm_description, { subject: row.subject }),
+      confirmText: t(($) => $.common.close),
     });
     if (!confirmed) return;
     closeTicket.mutate(row.id, {
       onSuccess: () => {
-        toast.success('工单已关闭');
+        toast.success(t(($) => $.admin.tickets.close_success));
       },
     });
   };
@@ -149,38 +146,38 @@ function TicketListPage() {
     {
       id: 'subject',
       meta: { className: 'font-medium text-foreground' },
-      header: () => <span>主题</span>,
+      header: () => <span>{t(($) => $.admin.tickets.subject)}</span>,
       cell: ({ row }) => row.original.subject,
     },
     {
       id: 'level',
-      header: () => <span>工单级别</span>,
+      header: () => <span>{t(($) => $.admin.tickets.level)}</span>,
       cell: ({ row }) => {
         const level = TICKET_LEVELS[row.original.level] ?? TICKET_LEVELS[0]!;
-        return <StatusBadge tone={level.tone}>{level.label}</StatusBadge>;
+        return <StatusBadge tone={level.tone}>{t(level.labelKey)}</StatusBadge>;
       },
     },
     {
       id: 'status',
-      header: () => <span>工单状态</span>,
-      cell: ({ row }) => renderTicketStatus(row.original),
+      header: () => <span>{t(($) => $.admin.tickets.status)}</span>,
+      cell: ({ row }) => renderTicketStatus(row.original, (selector) => t(selector)),
     },
     {
       id: 'created_at',
       meta: { className: 'text-muted-foreground tabular-nums' },
-      header: () => <span>创建时间</span>,
+      header: () => <span>{t(($) => $.admin.tickets.created_at)}</span>,
       cell: ({ row }) => formatMinute(row.original.created_at),
     },
     {
       id: 'updated_at',
       meta: { className: 'text-muted-foreground tabular-nums' },
-      header: () => <span>最后回复</span>,
+      header: () => <span>{t(($) => $.admin.tickets.last_reply)}</span>,
       cell: ({ row }) => formatMinute(row.original.updated_at),
     },
     {
       id: 'actions',
       meta: { align: 'right' },
-      header: () => <span>操作</span>,
+      header: () => <span>{t(($) => $.common.operation)}</span>,
       cell: ({ row }) => (
         <div className="flex items-center justify-end gap-1">
           <Button
@@ -190,7 +187,7 @@ function TicketListPage() {
             data-testid={`ticket-view-${row.original.id}`}
           >
             <MessageSquare className="size-4" />
-            查看
+            {t(($) => $.admin.tickets.view)}
           </Button>
           <Button
             variant="ghost"
@@ -201,7 +198,7 @@ function TicketListPage() {
             data-testid={`ticket-close-${row.original.id}`}
           >
             <CircleX className="size-4" />
-            关闭
+            {t(($) => $.common.close)}
           </Button>
         </div>
       ),
@@ -211,20 +208,23 @@ function TicketListPage() {
   return (
     <PageShell data-testid="tickets-page">
       {tickets.isError ? (
-        <ErrorState message="工单列表加载失败" onRetry={() => void tickets.refetch()} />
+        <ErrorState
+          message={t(($) => $.admin.tickets.list_error)}
+          onRetry={() => void tickets.refetch()}
+        />
       ) : null}
-      <PageHeader title="工单管理" />
+      <PageHeader title={t(($) => $.admin.tickets.title)} />
 
       <Card className="overflow-hidden py-0">
         <CardContent className="p-0">
           <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between">
             <SegmentedControl
-              aria-label="工单状态筛选"
+              aria-label={t(($) => $.admin.tickets.status_filter_label)}
               value={String(query.status ?? 0)}
               onValueChange={(value) => patchQuery({ status: Number(value), reply_status: null })}
               items={[
-                { label: '已开启', value: '0' },
-                { label: '已关闭', value: '1' },
+                { label: t(($) => $.admin.tickets.open), value: '0' },
+                { label: t(($) => $.admin.tickets.closed), value: '1' },
               ]}
             />
             <div className="flex items-center gap-2">
@@ -233,7 +233,7 @@ function TicketListPage() {
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" size="sm" data-testid="ticket-reply-filter">
                       <Filter className="size-4" />
-                      筛选
+                      {t(($) => $.admin.tickets.filter)}
                       {replyStatus.length ? (
                         <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
                           {replyStatus.length}
@@ -242,7 +242,7 @@ function TicketListPage() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuLabel>回复状态</DropdownMenuLabel>
+                    <DropdownMenuLabel>{t(($) => $.admin.tickets.reply_status)}</DropdownMenuLabel>
                     <DropdownMenuSeparator />
                     {REPLY_STATUS_OPTIONS.map((option) => (
                       <DropdownMenuCheckboxItem
@@ -251,14 +251,14 @@ function TicketListPage() {
                         onSelect={(event) => event.preventDefault()}
                         onCheckedChange={(checked) => toggleReplyStatus(option.value, checked)}
                       >
-                        {option.label}
+                        {t(option.labelKey)}
                       </DropdownMenuCheckboxItem>
                     ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
               ) : null}
               <Input
-                placeholder="输入邮箱搜索"
+                placeholder={t(($) => $.admin.tickets.email_search_placeholder)}
                 className="w-full sm:w-56"
                 onChange={(event) => onEmailSearch(event.target.value)}
                 data-testid="ticket-email-search"
@@ -274,7 +274,7 @@ function TicketListPage() {
             data-testid="tickets-table"
             empty={
               !tickets.isError && tickets.data !== undefined && data.length === 0
-                ? '暂无工单'
+                ? t(($) => $.admin.tickets.empty)
                 : undefined
             }
             emptyTestId="tickets-empty"
@@ -285,7 +285,13 @@ function TicketListPage() {
               current={query.current ?? 1}
               pageSize={query.pageSize ?? 10}
               total={total}
-              labels={PAGINATION_LABELS}
+              labels={{
+                itemsPerPage: t(($) => $.common.items_per_page),
+                nextPage: t(($) => $.common.next_page),
+                nextWindow: t(($) => $.common.next_5),
+                previousPage: t(($) => $.common.prev_page),
+                previousWindow: t(($) => $.common.prev_5),
+              }}
               onChange={(page, pageSize) =>
                 setQuery((current) => ({ ...current, current: page, pageSize }))
               }
@@ -307,8 +313,8 @@ function TicketListPage() {
           data-testid="ticket-chat"
         >
           <SheetHeader className="sr-only">
-            <SheetTitle>工单详情</SheetTitle>
-            <SheetDescription>查看工单对话并回复用户。</SheetDescription>
+            <SheetTitle>{t(($) => $.admin.tickets.detail)}</SheetTitle>
+            <SheetDescription>{t(($) => $.admin.tickets.detail_description)}</SheetDescription>
           </SheetHeader>
           {chatTicketId !== null ? <TicketChat ticketId={chatTicketId} /> : null}
         </SheetContent>
@@ -337,6 +343,7 @@ function TicketChatStandalone({ ticketId }: { ticketId: string }) {
 }
 
 function TicketChat({ ticketId }: { ticketId: number | string }) {
+  const { t } = useTranslation();
   const ticket = useAdminTicket(ticketId);
   const reply = useReplyTicketMutation();
   const [message, setMessage] = useState('');
@@ -359,7 +366,7 @@ function TicketChat({ ticketId }: { ticketId: number | string }) {
 
   const sendReply = () => {
     if (reply.isPending || !message.trim()) return;
-    const toastId = toast.loading('发送中');
+    const toastId = toast.loading(t(($) => $.admin.tickets.reply_sending));
     reply.mutate(
       { id: ticketId, message },
       {
@@ -372,19 +379,23 @@ function TicketChat({ ticketId }: { ticketId: number | string }) {
   const emptyNotice = current
     ? undefined
     : isNotFound
-      ? '工单不存在'
+      ? t(($) => $.admin.tickets.not_found)
       : ticket.isError
         ? undefined
-        : '加载中...';
+        : t(($) => $.common.loading);
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
       <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
         <div className="min-w-0">
           <div className="truncate text-base font-semibold text-foreground">
-            {current?.subject ?? '工单详情'}
+            {current?.subject ?? t(($) => $.admin.tickets.detail)}
           </div>
-          {current ? <div className="text-xs text-muted-foreground">工单 #{current.id}</div> : null}
+          {current ? (
+            <div className="text-xs text-muted-foreground">
+              {t(($) => $.admin.tickets.ticket_number, { id: current.id })}
+            </div>
+          ) : null}
         </div>
         <TooltipProvider delayDuration={100}>
           <div className="flex items-center gap-1">
@@ -394,14 +405,14 @@ function TicketChat({ ticketId }: { ticketId: number | string }) {
                   variant="ghost"
                   size="icon"
                   className="size-8"
-                  aria-label="用户管理"
+                  aria-label={t(($) => $.admin.tickets.manage_user)}
                   disabled={!current?.user_id}
                   onClick={() => current?.user_id && setUserOpen(true)}
                 >
                   <User className="size-4" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>用户管理</TooltipContent>
+              <TooltipContent>{t(($) => $.admin.tickets.manage_user)}</TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -409,14 +420,14 @@ function TicketChat({ ticketId }: { ticketId: number | string }) {
                   variant="ghost"
                   size="icon"
                   className="size-8"
-                  aria-label="TA的流量记录"
+                  aria-label={t(($) => $.admin.tickets.user_traffic)}
                   disabled={!current?.user_id}
                   onClick={() => current?.user_id && setTrafficOpen(true)}
                 >
                   <Activity className="size-4" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>TA的流量记录</TooltipContent>
+              <TooltipContent>{t(($) => $.admin.tickets.user_traffic)}</TooltipContent>
             </Tooltip>
           </div>
         </TooltipProvider>
@@ -466,7 +477,7 @@ function TicketChat({ ticketId }: { ticketId: number | string }) {
             <Textarea
               rows={1}
               value={message}
-              placeholder="输入内容回复工单..."
+              placeholder={t(($) => $.admin.tickets.reply_placeholder)}
               className="max-h-40 min-h-9 resize-none"
               onChange={(event) => setMessage(event.target.value)}
               onKeyDown={(event) => {
@@ -480,7 +491,7 @@ function TicketChat({ ticketId }: { ticketId: number | string }) {
             <Button
               size="icon"
               className="size-9 shrink-0"
-              aria-label="发送"
+              aria-label={t(($) => $.admin.tickets.send)}
               disabled={reply.isPending || !message.trim()}
               onClick={sendReply}
               data-testid="ticket-reply-submit"

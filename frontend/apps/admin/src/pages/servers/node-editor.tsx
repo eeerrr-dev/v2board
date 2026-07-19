@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm, useFormState, useWatch } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { ExternalLink, Loader2 } from 'lucide-react';
 import type { admin } from '@v2board/api-client';
 import { Button } from '@/components/ui/button';
@@ -63,6 +64,7 @@ export function NodeEditor({
   dependenciesReady: boolean;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const saveServer = useSaveServerMutation();
   const id = record?.id;
   const nodeForm = useForm<ServerNodeEditorValues, unknown, ServerNodeSaveRequest>({
@@ -110,7 +112,7 @@ export function NodeEditor({
 
   const parentCandidates = nodes.filter((node) => node.type === type && node.id !== id);
   const parentOptions: SelectOption[] = [
-    { value: '', label: '无' },
+    { value: '', label: t(($) => $.admin.servers.none) },
     ...parentCandidates.map((node) => ({ value: node.id, label: node.name })),
   ];
   const groupOptions = groups.map((group) => ({ value: String(group.id), label: group.name }));
@@ -152,31 +154,33 @@ export function NodeEditor({
       >
         <form className="contents" onSubmit={(event) => void submit(event)}>
           <SheetHeader>
-            <SheetTitle>{id ? '编辑节点' : '新建节点'}</SheetTitle>
-            <SheetDescription>配置节点协议、连接参数、权限组和路由规则。</SheetDescription>
+            <SheetTitle>
+              {id ? t(($) => $.admin.servers.edit_node) : t(($) => $.admin.servers.create_node)}
+            </SheetTitle>
+            <SheetDescription>{t(($) => $.admin.servers.node_editor_description)}</SheetDescription>
           </SheetHeader>
 
           <div className="space-y-5 px-4 pb-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <Field className="sm:col-span-2" data-invalid={Boolean(nodeFormErrors.name)}>
-                <FieldLabel htmlFor="node-name">节点名称</FieldLabel>
+                <FieldLabel htmlFor="node-name">{t(($) => $.admin.servers.node_name)}</FieldLabel>
                 <Input
                   {...nodeForm.register('name')}
                   id="node-name"
-                  placeholder="请输入节点名称"
+                  placeholder={t(($) => $.admin.servers.node_name_placeholder)}
                   aria-invalid={Boolean(nodeFormErrors.name)}
                   data-testid="node-name"
                 />
                 <FieldError errors={[nodeFormErrors.name]} />
               </Field>
               <Field data-invalid={Boolean(nodeFormErrors.rate)}>
-                <FieldLabel htmlFor="node-rate">倍率</FieldLabel>
+                <FieldLabel htmlFor="node-rate">{t(($) => $.admin.servers.rate)}</FieldLabel>
                 <div className="relative">
                   <Input
                     {...nodeForm.register('rate')}
                     id="node-rate"
                     className="pr-8"
-                    placeholder="请输入节点倍率"
+                    placeholder={t(($) => $.admin.servers.rate_placeholder)}
                     aria-invalid={Boolean(nodeFormErrors.rate)}
                     data-testid="node-rate"
                   />
@@ -189,7 +193,7 @@ export function NodeEditor({
             </div>
 
             <Field data-invalid={Boolean(nodeFormErrors.tags)}>
-              <FieldLabel htmlFor="node-tags">节点标签</FieldLabel>
+              <FieldLabel htmlFor="node-tags">{t(($) => $.admin.servers.node_tags)}</FieldLabel>
               <Controller
                 control={nodeForm.control}
                 name="tags"
@@ -201,14 +205,16 @@ export function NodeEditor({
                     onChange={(next) => field.onChange(normalizeNullableArray(next))}
                     onBlur={field.onBlur}
                     invalid={Boolean(nodeFormErrors.tags)}
-                    placeholder="输入后回车添加标签"
+                    placeholder={t(($) => $.admin.servers.tags_placeholder)}
                   />
                 )}
               />
             </Field>
 
             <fieldset className="min-w-0 space-y-2" data-invalid={Boolean(nodeFormErrors.group_id)}>
-              <legend className="text-sm font-medium text-foreground">权限组</legend>
+              <legend className="text-sm font-medium text-foreground">
+                {t(($) => $.admin.servers.group)}
+              </legend>
               <Controller
                 control={nodeForm.control}
                 name="group_id"
@@ -218,7 +224,7 @@ export function NodeEditor({
                     value={Array.isArray(field.value) ? field.value.map(String) : []}
                     onChange={field.onChange}
                     testId="node-group-ids"
-                    emptyText="暂无可选权限组"
+                    emptyText={t(($) => $.admin.servers.no_group_options)}
                   />
                 )}
               />
@@ -232,7 +238,7 @@ export function NodeEditor({
 
             <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <Label htmlFor="node-parent">父节点</Label>
+                <Label htmlFor="node-parent">{t(($) => $.admin.servers.parent_node)}</Label>
                 <a
                   className="inline-flex items-center gap-1 text-sm text-primary"
                   target="_blank"
@@ -240,7 +246,7 @@ export function NodeEditor({
                   rel="noopener noreferrer"
                 >
                   <ExternalLink className="size-3.5" />
-                  更多解答
+                  {t(($) => $.admin.servers.more_help)}
                 </a>
               </div>
               <Controller
@@ -258,7 +264,9 @@ export function NodeEditor({
             </div>
 
             <fieldset className="min-w-0 space-y-2">
-              <legend className="text-sm font-medium text-foreground">路由组</legend>
+              <legend className="text-sm font-medium text-foreground">
+                {t(($) => $.admin.servers.route_group)}
+              </legend>
               <Controller
                 control={nodeForm.control}
                 name="route_id"
@@ -268,7 +276,7 @@ export function NodeEditor({
                     value={Array.isArray(field.value) ? field.value.map(String) : []}
                     onChange={(next) => field.onChange(normalizeNullableArray(next.map(Number)))}
                     testId="node-route-ids"
-                    emptyText="暂无可选路由组"
+                    emptyText={t(($) => $.admin.servers.no_route_options)}
                   />
                 )}
               />
@@ -276,7 +284,9 @@ export function NodeEditor({
 
             {values.type === 'v2node' ? (
               <div className="space-y-2">
-                <Label htmlFor="node-install-command">一键安装指令</Label>
+                <Label htmlFor="node-install-command">
+                  {t(($) => $.admin.servers.install_command)}
+                </Label>
                 <Textarea
                   id="node-install-command"
                   rows={4}
@@ -313,10 +323,10 @@ export function NodeEditor({
               {isSubmitting ? (
                 <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
               ) : null}
-              提交
+              {t(($) => $.common.submit)}
             </Button>
             <Button type="button" variant="outline" onClick={onClose}>
-              取消
+              {t(($) => $.common.cancel)}
             </Button>
           </SheetFooter>
         </form>
@@ -334,14 +344,16 @@ export function NodeEditor({
           >
             <SheetHeader>
               <SheetTitle>{childDrawer.title}</SheetTitle>
-              <SheetDescription>编辑当前节点的高级协议参数。</SheetDescription>
+              <SheetDescription>
+                {t(($) => $.admin.servers.child_editor_description)}
+              </SheetDescription>
             </SheetHeader>
             <div className="space-y-4 px-4 pb-4">
               <NodeChildField field={childDrawer.field} form={form} />
             </div>
             <SheetFooter>
               <Button type="button" onClick={() => showChildDrawer()}>
-                完成
+                {t(($) => $.admin.servers.done)}
               </Button>
             </SheetFooter>
           </SheetContent>

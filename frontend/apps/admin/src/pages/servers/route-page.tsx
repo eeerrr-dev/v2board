@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import type { admin } from '@v2board/api-client';
 import { Button } from '@/components/ui/button';
@@ -12,11 +13,12 @@ import {
   useSaveServerRouteMutation,
   useServerRoutes,
 } from '@/lib/queries';
-import { ROUTE_ACTION_TEXT, getRouteMatchLabel } from './domain';
+import { getRouteActionText, getRouteMatchLabel } from './domain';
 import { ServerRouteDialog } from './route-dialog';
 import { splitServerRouteMatches, type ServerRouteFormValues } from './form-schema';
 
 export function ServerRoutePage() {
+  const { t } = useTranslation();
   const routes = useServerRoutes();
   const save = useSaveServerRouteMutation();
   const drop = useDropServerRouteMutation();
@@ -35,15 +37,16 @@ export function ServerRoutePage() {
 
   const removeRoute = async (record: admin.ServerRoute) => {
     const confirmed = await confirmDialog({
-      title: '警告',
-      description: '确定要删除该路由吗？',
-      confirmText: '确定',
-      cancelText: '取消',
+      title: t(($) => $.admin.servers.warning),
+      description: t(($) => $.admin.servers.confirm_delete_route),
+      confirmText: t(($) => $.common.confirm),
+      cancelText: t(($) => $.common.cancel),
     });
     if (!confirmed) return;
     drop.mutate(record.id);
   };
 
+  const routeActionText = getRouteActionText(t);
   const columns: DataTableColumn<admin.ServerRoute>[] = [
     {
       id: 'id',
@@ -54,29 +57,29 @@ export function ServerRoutePage() {
     {
       id: 'remarks',
       meta: { className: 'font-medium text-foreground' },
-      header: () => <span>备注</span>,
+      header: () => <span>{t(($) => $.admin.servers.remarks)}</span>,
       cell: ({ row }) => row.original.remarks,
     },
     {
       id: 'match',
-      header: () => <span>匹配数量</span>,
-      cell: ({ row }) => getRouteMatchLabel(row.original.match),
+      header: () => <span>{t(($) => $.admin.servers.match_count)}</span>,
+      cell: ({ row }) => getRouteMatchLabel(t, row.original.match),
     },
     {
       id: 'action',
-      header: () => <span>动作</span>,
-      cell: ({ row }) => ROUTE_ACTION_TEXT[row.original.action],
+      header: () => <span>{t(($) => $.admin.servers.action)}</span>,
+      cell: ({ row }) => routeActionText[row.original.action],
     },
     {
       id: 'actions',
       meta: { align: 'right' },
-      header: () => <span>操作</span>,
+      header: () => <span>{t(($) => $.common.operation)}</span>,
       cell: ({ row }) => (
         <div className="flex items-center justify-end gap-1">
           <ServerRouteDialog route={row.original} pending={save.isPending} onSave={saveRoute}>
             <Button variant="ghost" size="sm" data-testid={`server-route-edit-${row.original.id}`}>
               <Pencil className="size-4" />
-              编辑
+              {t(($) => $.common.edit)}
             </Button>
           </ServerRouteDialog>
           <Button
@@ -87,7 +90,7 @@ export function ServerRoutePage() {
             data-testid={`server-route-delete-${row.original.id}`}
           >
             <Trash2 className="size-4" />
-            删除
+            {t(($) => $.common.delete)}
           </Button>
         </div>
       ),
@@ -97,15 +100,18 @@ export function ServerRoutePage() {
   return (
     <PageShell data-testid="server-route-page">
       {routes.isError ? (
-        <ErrorState message="路由列表加载失败" onRetry={() => void routes.refetch()} />
+        <ErrorState
+          message={t(($) => $.admin.servers.routes_load_failed)}
+          onRetry={() => void routes.refetch()}
+        />
       ) : null}
       <PageHeader
-        title="路由管理"
+        title={t(($) => $.admin.servers.route_title)}
         actions={
           <ServerRouteDialog pending={save.isPending} onSave={saveRoute}>
             <Button data-testid="server-route-create">
               <Plus className="size-4" />
-              添加路由
+              {t(($) => $.admin.servers.add_route)}
             </Button>
           </ServerRouteDialog>
         }
@@ -121,7 +127,7 @@ export function ServerRoutePage() {
             data-testid="server-routes-table"
             empty={
               routes.isSuccess && routes.data !== undefined && data.length === 0
-                ? '暂无路由'
+                ? t(($) => $.admin.servers.no_routes)
                 : undefined
             }
             emptyTestId="server-routes-empty"

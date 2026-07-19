@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Copy, ShieldCheck, ShieldOff } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { ApiError, ApiProblemError, hasProblemCode } from '@v2board/api-client';
@@ -28,12 +29,6 @@ interface MfaDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-function codeErrorMessage(error: unknown): string {
-  if (hasProblemCode(error, 'mfa_code_invalid')) return '验证码错误或已被使用';
-  if (error instanceof ApiProblemError || error instanceof ApiError) return error.message;
-  return '操作失败，请稍后重试';
-}
-
 /**
  * Account two-factor management (§6.10): enroll a TOTP factor by scanning the
  * one-time provisioning secret, confirm it with a live code, or disable an
@@ -41,6 +36,7 @@ function codeErrorMessage(error: unknown): string {
  * step-up gate, so the shared prompt may interleave.
  */
 export function MfaDialog({ open, onOpenChange }: MfaDialogProps) {
+  const { t } = useTranslation();
   const status = useAccountMfa(open);
   const setup = useSetupTotpMutation();
   const confirm = useConfirmTotpMutation();
@@ -62,12 +58,18 @@ export function MfaDialog({ open, onOpenChange }: MfaDialogProps) {
   const enabled = status.data?.totp_enabled === true;
   const busy = confirm.isPending || disable.isPending;
 
+  const codeErrorMessage = (error: unknown): string => {
+    if (hasProblemCode(error, 'mfa_code_invalid')) return t(($) => $.admin.auth.mfa_code_invalid);
+    if (error instanceof ApiProblemError || error instanceof ApiError) return error.message;
+    return t(($) => $.admin.auth.operation_failed);
+  };
+
   const submitConfirm = () => {
     if (busy || code.trim() === '') return;
     setCodeError(null);
     confirm.mutate(code.trim(), {
       onSuccess: () => {
-        toast.success('两步验证已启用');
+        toast.success(t(($) => $.admin.auth.mfa_enabled));
         setCode('');
         setup.reset();
       },
@@ -80,7 +82,7 @@ export function MfaDialog({ open, onOpenChange }: MfaDialogProps) {
     setCodeError(null);
     disable.mutate(code.trim(), {
       onSuccess: () => {
-        toast.success('两步验证已关闭');
+        toast.success(t(($) => $.admin.auth.mfa_disabled));
         setCode('');
       },
       onError: (error) => setCodeError(codeErrorMessage(error)),
@@ -88,17 +90,15 @@ export function MfaDialog({ open, onOpenChange }: MfaDialogProps) {
   };
 
   const copyValue = async (value: string) => {
-    if (await copyText(value)) toast.success('复制成功');
+    if (await copyText(value)) toast.success(t(($) => $.admin.auth.copy_success));
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md" data-testid="admin-mfa-dialog">
         <DialogHeader>
-          <DialogTitle>两步验证</DialogTitle>
-          <DialogDescription>
-            使用 TOTP 验证器 App（如 Google Authenticator、1Password）为管理账号增加第二重保护。
-          </DialogDescription>
+          <DialogTitle>{t(($) => $.admin.auth.mfa_title)}</DialogTitle>
+          <DialogDescription>{t(($) => $.admin.auth.mfa_description)}</DialogDescription>
         </DialogHeader>
 
         {status.isPending ? (
@@ -111,21 +111,23 @@ export function MfaDialog({ open, onOpenChange }: MfaDialogProps) {
             <div className="flex items-center gap-2 text-sm">
               <ShieldCheck className="size-4 text-emerald-500" />
               <span>
-                两步验证已启用
+                {t(($) => $.admin.auth.mfa_enabled)}
                 {status.data?.totp_enabled_at
                   ? `（${new Date(status.data.totp_enabled_at).toLocaleString()}）`
                   : null}
               </span>
             </div>
             <Field data-invalid={codeError !== null}>
-              <FieldLabel htmlFor="admin-mfa-disable-code">输入当前验证码以关闭</FieldLabel>
+              <FieldLabel htmlFor="admin-mfa-disable-code">
+                {t(($) => $.admin.auth.mfa_disable_label)}
+              </FieldLabel>
               <Input
                 id="admin-mfa-disable-code"
                 value={code}
                 inputMode="numeric"
                 autoComplete="one-time-code"
                 maxLength={6}
-                placeholder="6 位验证码"
+                placeholder={t(($) => $.admin.auth.code_placeholder)}
                 data-testid="admin-mfa-disable-code"
                 onChange={(event) => setCode(event.target.value)}
                 onKeyDown={(event) => {
@@ -148,7 +150,7 @@ export function MfaDialog({ open, onOpenChange }: MfaDialogProps) {
                 onClick={submitDisable}
               >
                 <ShieldOff className="size-4" />
-                关闭两步验证
+                {t(($) => $.admin.auth.mfa_disable_submit)}
               </Button>
             </DialogFooter>
           </div>
@@ -158,7 +160,9 @@ export function MfaDialog({ open, onOpenChange }: MfaDialogProps) {
               <QRCodeSVG value={provisioning.otpauth_url} size={168} />
             </div>
             <div className="grid gap-1 text-sm">
-              <span className="text-muted-foreground">无法扫码时，手动输入密钥：</span>
+              <span className="text-muted-foreground">
+                {t(($) => $.admin.auth.mfa_manual_secret)}
+              </span>
               <button
                 type="button"
                 className="flex items-center gap-2 rounded-md bg-muted px-3 py-2 text-left font-mono text-xs break-all"
@@ -170,14 +174,16 @@ export function MfaDialog({ open, onOpenChange }: MfaDialogProps) {
               </button>
             </div>
             <Field data-invalid={codeError !== null}>
-              <FieldLabel htmlFor="admin-mfa-confirm-code">输入 App 中的验证码完成绑定</FieldLabel>
+              <FieldLabel htmlFor="admin-mfa-confirm-code">
+                {t(($) => $.admin.auth.mfa_confirm_label)}
+              </FieldLabel>
               <Input
                 id="admin-mfa-confirm-code"
                 value={code}
                 inputMode="numeric"
                 autoComplete="one-time-code"
                 maxLength={6}
-                placeholder="6 位验证码"
+                placeholder={t(($) => $.admin.auth.code_placeholder)}
                 data-testid="admin-mfa-confirm-code"
                 onChange={(event) => setCode(event.target.value)}
                 onKeyDown={(event) => {
@@ -199,19 +205,18 @@ export function MfaDialog({ open, onOpenChange }: MfaDialogProps) {
                 onClick={submitConfirm}
               >
                 <ShieldCheck className="size-4" />
-                确认并启用
+                {t(($) => $.admin.auth.mfa_confirm_submit)}
               </Button>
             </DialogFooter>
           </div>
         ) : (
           <div className="grid gap-4">
             <p className="text-sm text-muted-foreground">
-              当前账号未启用两步验证。启用后，登录除密码外还需输入验证器 App 中的动态验证码；
-              如手机遗失，可由服务器操作员执行{' '}
+              {t(($) => $.admin.auth.mfa_intro)}{' '}
               <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
-                v2board-api reset-admin-totp 邮箱
+                {t(($) => $.admin.auth.mfa_reset_command)}
               </code>{' '}
-              解除。
+              {t(($) => $.admin.auth.mfa_intro_suffix)}
             </p>
             <DialogFooter>
               <Button
@@ -225,7 +230,7 @@ export function MfaDialog({ open, onOpenChange }: MfaDialogProps) {
                 }
               >
                 <ShieldCheck className="size-4" />
-                生成密钥并开始设置
+                {t(($) => $.admin.auth.mfa_setup_start)}
               </Button>
             </DialogFooter>
             {codeError ? (

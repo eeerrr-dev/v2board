@@ -1,6 +1,8 @@
 import { useEffect, type ComponentProps } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm, useFormState } from 'react-hook-form';
+import type { TFunction } from 'i18next';
+import { useTranslation } from 'react-i18next';
 import type { AdminUserRow } from '@v2board/types';
 import { useAssignOrderMutation } from '@/lib/queries';
 import { Button } from '@/components/ui/button';
@@ -24,21 +26,28 @@ import {
 import { assignOrderSchema, type AssignOrderValues } from './form-schema';
 import { requestErrorMessage, type PlanOption } from './shared';
 
-const PERIOD_TEXT: Record<string, string> = {
-  month_price: '月付',
-  quarter_price: '季付',
-  half_year_price: '半年付',
-  year_price: '年付',
-  two_year_price: '两年付',
-  three_year_price: '三年付',
-  onetime_price: '一次性',
-  reset_price: '流量重置包',
-};
+// The record keys below are backend wire values (period identifiers); only the
+// labels are translated, resolved at render time.
+function periodTextMap(t: TFunction): Record<string, string> {
+  return {
+    month_price: t(($) => $.admin.users.period_month),
+    quarter_price: t(($) => $.admin.users.period_quarter),
+    half_year_price: t(($) => $.admin.users.period_half_year),
+    year_price: t(($) => $.admin.users.period_year),
+    two_year_price: t(($) => $.admin.users.period_two_year),
+    three_year_price: t(($) => $.admin.users.period_three_year),
+    onetime_price: t(($) => $.admin.users.period_onetime),
+    reset_price: t(($) => $.admin.users.period_reset),
+  };
+}
 
-const PERIOD_OPTIONS = Object.keys(PERIOD_TEXT).map((period) => ({
-  value: period,
-  label: PERIOD_TEXT[period] ?? period,
-}));
+function periodOptions(t: TFunction) {
+  const periodText = periodTextMap(t);
+  return Object.keys(periodText).map((period) => ({
+    value: period,
+    label: periodText[period] ?? period,
+  }));
+}
 
 function AmountInput({ suffix, ...props }: ComponentProps<typeof Input> & { suffix: string }) {
   return (
@@ -60,6 +69,7 @@ export function AssignOrderModal({
   plans: PlanOption[];
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const assign = useAssignOrderMutation();
   const form = useForm<AssignOrderValues>({
     resolver: zodResolver(assignOrderSchema),
@@ -104,14 +114,14 @@ export function AssignOrderModal({
     <Dialog open={Boolean(user)} onOpenChange={(next) => (!next ? close() : undefined)}>
       <DialogContent data-testid="user-assign-dialog">
         <DialogHeader>
-          <DialogTitle>订单分配</DialogTitle>
-          <DialogDescription>为当前用户创建并分配订阅订单。</DialogDescription>
+          <DialogTitle>{t(($) => $.admin.users.assign_title)}</DialogTitle>
+          <DialogDescription>{t(($) => $.admin.users.assign_description)}</DialogDescription>
         </DialogHeader>
 
         <form className="space-y-4" onSubmit={doAssign} noValidate>
           <FieldError errors={[formErrors.root?.serverError]} />
           <Field data-invalid={Boolean(formErrors.email)}>
-            <FieldLabel htmlFor="assign-email">用户邮箱</FieldLabel>
+            <FieldLabel htmlFor="assign-email">{t(($) => $.admin.users.user_email)}</FieldLabel>
             <Controller
               control={form.control}
               name="email"
@@ -120,7 +130,7 @@ export function AssignOrderModal({
                   {...field}
                   id="assign-email"
                   type="email"
-                  placeholder="请输入用户邮箱"
+                  placeholder={t(($) => $.admin.users.user_email_placeholder)}
                   data-testid="assign-email"
                   aria-invalid={fieldState.invalid}
                 />
@@ -129,7 +139,9 @@ export function AssignOrderModal({
             <FieldError errors={[formErrors.email]} />
           </Field>
           <Field data-invalid={Boolean(formErrors.plan_id)}>
-            <FieldLabel htmlFor="user-assign-plan">请选择订阅</FieldLabel>
+            <FieldLabel htmlFor="user-assign-plan">
+              {t(($) => $.admin.users.plan_placeholder)}
+            </FieldLabel>
             <Controller
               control={form.control}
               name="plan_id"
@@ -143,7 +155,7 @@ export function AssignOrderModal({
                     className="w-full"
                     aria-invalid={Boolean(formErrors.plan_id)}
                   >
-                    <SelectValue placeholder="请选择订阅" />
+                    <SelectValue placeholder={t(($) => $.admin.users.plan_placeholder)} />
                   </SelectTrigger>
                   <SelectContent>
                     {plans.map((plan) => (
@@ -158,7 +170,9 @@ export function AssignOrderModal({
             <FieldError errors={[formErrors.plan_id]} />
           </Field>
           <Field data-invalid={Boolean(formErrors.period)}>
-            <FieldLabel htmlFor="user-assign-period">请选择周期</FieldLabel>
+            <FieldLabel htmlFor="user-assign-period">
+              {t(($) => $.admin.users.period_placeholder)}
+            </FieldLabel>
             <Controller
               control={form.control}
               name="period"
@@ -169,10 +183,10 @@ export function AssignOrderModal({
                     className="w-full"
                     aria-invalid={Boolean(formErrors.period)}
                   >
-                    <SelectValue placeholder="请选择周期" />
+                    <SelectValue placeholder={t(($) => $.admin.users.period_placeholder)} />
                   </SelectTrigger>
                   <SelectContent>
-                    {PERIOD_OPTIONS.map((option) => (
+                    {periodOptions(t).map((option) => (
                       <SelectItem key={option.value} value={option.value}>
                         {option.label}
                       </SelectItem>
@@ -184,7 +198,7 @@ export function AssignOrderModal({
             <FieldError errors={[formErrors.period]} />
           </Field>
           <Field data-invalid={Boolean(formErrors.total_amount)}>
-            <FieldLabel htmlFor="assign-amount">支付金额</FieldLabel>
+            <FieldLabel htmlFor="assign-amount">{t(($) => $.admin.users.paid_amount)}</FieldLabel>
             <Controller
               control={form.control}
               name="total_amount"
@@ -193,7 +207,7 @@ export function AssignOrderModal({
                   {...field}
                   id="assign-amount"
                   suffix="¥"
-                  placeholder="请输入需要支付的金额"
+                  placeholder={t(($) => $.admin.users.paid_amount_placeholder)}
                   data-testid="assign-amount"
                   aria-invalid={fieldState.invalid}
                 />
@@ -203,7 +217,7 @@ export function AssignOrderModal({
           </Field>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={close}>
-              取消
+              {t(($) => $.common.cancel)}
             </Button>
             <Button
               type="submit"
@@ -211,7 +225,7 @@ export function AssignOrderModal({
               loading={assign.isPending || isSubmitting}
               data-testid="assign-submit"
             >
-              确定
+              {t(($) => $.common.confirm)}
             </Button>
           </DialogFooter>
         </form>

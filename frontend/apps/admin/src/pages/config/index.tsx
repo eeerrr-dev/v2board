@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   useAdminPlans,
   useConfig,
@@ -23,6 +24,7 @@ export default function ConfigPage() {
 // ---------------------------------------------------------------------------
 
 function SystemConfigPage() {
+  const { t } = useTranslation();
   const config = useConfig();
   const plans = useAdminPlans();
   const emailTemplates = useEmailTemplates();
@@ -45,21 +47,30 @@ function SystemConfigPage() {
     // nullable transcript line, not a legacy log object.
     const result = await testMail.mutateAsync();
     if (result.sent) {
-      toast.success('发送成功', result.log ? { description: result.log } : undefined);
+      toast.success(
+        t(($) => $.admin.config.send_success),
+        result.log ? { description: result.log } : undefined,
+      );
     } else {
-      toast.error('发送失败', result.log ? { description: result.log } : undefined);
+      toast.error(
+        t(($) => $.admin.config.send_fail),
+        result.log ? { description: result.log } : undefined,
+      );
     }
   };
 
   const setWebhook = async (telegramBotToken: string) => {
     await webhook.mutateAsync(telegramBotToken);
-    toast.success('webhook 设置成功');
+    toast.success(t(($) => $.admin.config.webhook_success));
   };
 
   if (config.isError) {
     return (
       <PageShell data-testid="config-page">
-        <ErrorState message="系统配置加载失败" onRetry={() => void config.refetch()} />
+        <ErrorState
+          message={t(($) => $.admin.config.load_failed)}
+          onRetry={() => void config.refetch()}
+        />
       </PageShell>
     );
   }
@@ -76,12 +87,15 @@ function SystemConfigPage() {
 
   return (
     <PageShell data-testid="config-page">
-      <PageHeader title="系统配置" description="所有配置修改后会自动保存并对全站生效。" />
+      <PageHeader
+        title={t(($) => $.admin.config.title)}
+        description={t(($) => $.admin.config.description)}
+      />
 
       <div className="grid gap-6 @3xl/main:grid-cols-[180px_1fr] @3xl/main:items-start">
         <nav
           className="flex flex-row flex-wrap gap-1 @3xl/main:sticky @3xl/main:top-4 @3xl/main:flex-col"
-          aria-label="配置分组"
+          aria-label={t(($) => $.admin.config.nav_label)}
         >
           {SECTIONS.map((section) => (
             <button
@@ -97,7 +111,7 @@ function SystemConfigPage() {
                   : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
               )}
             >
-              {section.title}
+              {section.title(t)}
             </button>
           ))}
         </nav>
@@ -105,20 +119,20 @@ function SystemConfigPage() {
         <div className="min-w-0 space-y-6">
           {active === 'site' && plans.isError ? (
             <ErrorState
-              message="订阅依赖加载失败，无法编辑站点配置"
+              message={t(($) => $.admin.config.plans_dep_error)}
               onRetry={() => void plans.refetch()}
               data-testid="config-plans-error"
             />
           ) : active === 'site' && !plans.data ? (
-            <ConfigDependencyLoading label="正在加载订阅依赖" />
+            <ConfigDependencyLoading label={t(($) => $.admin.config.plans_dep_loading)} />
           ) : active === 'email' && emailTemplates.isError ? (
             <ErrorState
-              message="邮件模板加载失败，无法编辑邮件配置"
+              message={t(($) => $.admin.config.email_templates_error)}
               onRetry={() => void emailTemplates.refetch()}
               data-testid="config-email-templates-error"
             />
           ) : active === 'email' && !emailTemplates.data ? (
-            <ConfigDependencyLoading label="正在加载邮件模板" />
+            <ConfigDependencyLoading label={t(($) => $.admin.config.email_templates_loading)} />
           ) : (
             <SystemConfigSectionForm
               key={active}
@@ -134,7 +148,7 @@ function SystemConfigPage() {
               refreshConfig={async () => {
                 const result = await config.refetch();
                 if (result.isError || !result.data) {
-                  throw result.error ?? new Error('系统配置刷新失败');
+                  throw result.error ?? new Error(t(($) => $.admin.config.refresh_failed));
                 }
                 return result.data;
               }}

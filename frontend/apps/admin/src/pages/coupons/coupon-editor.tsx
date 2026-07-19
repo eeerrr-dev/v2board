@@ -1,4 +1,6 @@
 import { useState, type ReactElement } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { SelectorParam } from 'i18next';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm, useFormState, useWatch } from 'react-hook-form';
 import { Loader2 } from 'lucide-react';
@@ -42,21 +44,18 @@ import {
   type GenerateResponse,
 } from './shared';
 
-const PERIOD_TEXT: Record<string, string> = {
-  month_price: '月付',
-  quarter_price: '季付',
-  half_year_price: '半年付',
-  year_price: '年付',
-  two_year_price: '两年付',
-  three_year_price: '三年付',
-  onetime_price: '一次性',
-  reset_price: '流量重置包',
+// Wire period identifiers -> label selectors; labels resolve through t() at
+// render so the period values stay pure data.
+const PERIOD_LABEL_KEYS: Record<string, SelectorParam> = {
+  month_price: ($) => $.admin.coupons.periods.month_price,
+  quarter_price: ($) => $.admin.coupons.periods.quarter_price,
+  half_year_price: ($) => $.admin.coupons.periods.half_year_price,
+  year_price: ($) => $.admin.coupons.periods.year_price,
+  two_year_price: ($) => $.admin.coupons.periods.two_year_price,
+  three_year_price: ($) => $.admin.coupons.periods.three_year_price,
+  onetime_price: ($) => $.admin.coupons.periods.onetime_price,
+  reset_price: ($) => $.admin.coupons.periods.reset_price,
 };
-
-const PERIOD_OPTIONS = Object.keys(PERIOD_TEXT).map((period) => ({
-  value: period,
-  label: PERIOD_TEXT[period] ?? period,
-}));
 
 interface CheckboxGroupProps {
   options: { value: string; label: string }[];
@@ -106,6 +105,7 @@ export function CouponEditor({
   onSave: (payload: CouponSubmit, onSuccess: (response?: GenerateResponse) => void) => void;
   children: ReactElement<{ onClick?: () => void }>;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const form = useForm<CouponEditorValues>({
     resolver: zodResolver(couponEditorSchema),
@@ -157,6 +157,10 @@ export function CouponEditor({
 
   const selectedPlanIds = (values.limit_plan_ids ?? []).map(String);
   const selectedPeriods = (values.limit_period ?? []).map(String);
+  const periodOptions = Object.entries(PERIOD_LABEL_KEYS).map(([period, labelKey]) => ({
+    value: period,
+    label: t(labelKey),
+  }));
 
   return (
     <Sheet
@@ -173,16 +177,20 @@ export function CouponEditor({
         data-testid="coupon-editor"
       >
         <SheetHeader>
-          <SheetTitle>{record?.id ? '编辑优惠券' : '新建优惠券'}</SheetTitle>
-          <SheetDescription>设置优惠额度、使用限制、有效期和适用订阅。</SheetDescription>
+          <SheetTitle>
+            {record?.id
+              ? t(($) => $.admin.coupons.edit_title)
+              : t(($) => $.admin.coupons.create_title)}
+          </SheetTitle>
+          <SheetDescription>{t(($) => $.admin.coupons.editor_description)}</SheetDescription>
         </SheetHeader>
 
         <form id="coupon-editor-form" className="space-y-4 px-4 pb-4" onSubmit={save} noValidate>
           <Field data-invalid={Boolean(formErrors.name)}>
-            <FieldLabel htmlFor="coupon-name">名称</FieldLabel>
+            <FieldLabel htmlFor="coupon-name">{t(($) => $.admin.coupons.name)}</FieldLabel>
             <Input
               id="coupon-name"
-              placeholder="请输入优惠券名称"
+              placeholder={t(($) => $.admin.coupons.name_placeholder)}
               aria-invalid={Boolean(formErrors.name)}
               {...form.register('name')}
               data-testid="coupon-name"
@@ -192,10 +200,10 @@ export function CouponEditor({
 
           {!values.generate_count ? (
             <Field>
-              <FieldLabel htmlFor="coupon-code">自定义优惠券码</FieldLabel>
+              <FieldLabel htmlFor="coupon-code">{t(($) => $.admin.coupons.custom_code)}</FieldLabel>
               <Input
                 id="coupon-code"
-                placeholder="自定义优惠券码(留空随机生成)"
+                placeholder={t(($) => $.admin.coupons.custom_code_placeholder)}
                 {...form.register('code', {
                   onChange: () => form.setValue('generate_count', undefined),
                 })}
@@ -205,7 +213,7 @@ export function CouponEditor({
           ) : null}
 
           <Field data-invalid={Boolean(formErrors.value)}>
-            <FieldLabel htmlFor="coupon-value">优惠信息</FieldLabel>
+            <FieldLabel htmlFor="coupon-value">{t(($) => $.admin.coupons.value_label)}</FieldLabel>
             <div className="flex gap-2">
               <Select
                 value={String(values.type ?? 1)}
@@ -214,13 +222,13 @@ export function CouponEditor({
                 <SelectTrigger
                   className="w-36 shrink-0"
                   data-testid="coupon-type"
-                  aria-label="优惠类型"
+                  aria-label={t(($) => $.admin.coupons.type_aria)}
                 >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="1">按金额优惠</SelectItem>
-                  <SelectItem value="2">按比例优惠</SelectItem>
+                  <SelectItem value="1">{t(($) => $.admin.coupons.type_amount_option)}</SelectItem>
+                  <SelectItem value="2">{t(($) => $.admin.coupons.type_percent_option)}</SelectItem>
                 </SelectContent>
               </Select>
               <InputGroup className="flex-1">
@@ -228,7 +236,7 @@ export function CouponEditor({
                   id="coupon-value"
                   type="number"
                   step={values.type === 1 ? '0.01' : '1'}
-                  placeholder="请输入值"
+                  placeholder={t(($) => $.admin.coupons.value_placeholder)}
                   aria-invalid={Boolean(formErrors.value)}
                   {...form.register('value')}
                   data-testid="coupon-value"
@@ -243,7 +251,7 @@ export function CouponEditor({
 
           <div className="grid grid-cols-2 gap-3">
             <Field data-invalid={Boolean(formErrors.started_at)}>
-              <FieldLabel htmlFor="coupon-start">开始时间</FieldLabel>
+              <FieldLabel htmlFor="coupon-start">{t(($) => $.admin.coupons.started_at)}</FieldLabel>
               <Controller
                 control={form.control}
                 name="started_at"
@@ -269,7 +277,7 @@ export function CouponEditor({
               <FieldError errors={[formErrors.started_at]} />
             </Field>
             <Field data-invalid={Boolean(formErrors.ended_at)}>
-              <FieldLabel htmlFor="coupon-end">结束时间</FieldLabel>
+              <FieldLabel htmlFor="coupon-end">{t(($) => $.admin.coupons.ended_at)}</FieldLabel>
               <Controller
                 control={form.control}
                 name="ended_at"
@@ -297,12 +305,14 @@ export function CouponEditor({
           </div>
 
           <Field data-invalid={Boolean(formErrors.limit_use)}>
-            <FieldLabel htmlFor="coupon-limit-use">最大使用次数</FieldLabel>
+            <FieldLabel htmlFor="coupon-limit-use">
+              {t(($) => $.admin.coupons.limit_use)}
+            </FieldLabel>
             <Input
               id="coupon-limit-use"
               type="number"
               step="1"
-              placeholder="限制最大使用次数，用完则无法使用(为空则不限制)"
+              placeholder={t(($) => $.admin.coupons.limit_use_placeholder)}
               aria-invalid={Boolean(formErrors.limit_use)}
               {...form.register('limit_use')}
               data-testid="coupon-limit-use"
@@ -311,12 +321,14 @@ export function CouponEditor({
           </Field>
 
           <Field data-invalid={Boolean(formErrors.limit_use_with_user)}>
-            <FieldLabel htmlFor="coupon-limit-use-user">每个用户可使用次数</FieldLabel>
+            <FieldLabel htmlFor="coupon-limit-use-user">
+              {t(($) => $.admin.coupons.limit_use_with_user)}
+            </FieldLabel>
             <Input
               id="coupon-limit-use-user"
               type="number"
               step="1"
-              placeholder="限制每个用户可使用次数(为空则不限制)"
+              placeholder={t(($) => $.admin.coupons.limit_use_with_user_placeholder)}
               aria-invalid={Boolean(formErrors.limit_use_with_user)}
               {...form.register('limit_use_with_user')}
               data-testid="coupon-limit-use-user"
@@ -325,7 +337,9 @@ export function CouponEditor({
           </Field>
 
           <fieldset className="space-y-2">
-            <legend className="text-sm font-medium text-foreground">指定订阅</legend>
+            <legend className="text-sm font-medium text-foreground">
+              {t(($) => $.admin.coupons.limit_plans)}
+            </legend>
             {plans.length ? (
               <CheckboxGroup
                 options={planOptions(plans)}
@@ -334,14 +348,16 @@ export function CouponEditor({
                 testId="coupon-plan-ids"
               />
             ) : (
-              <p className="text-sm text-muted-foreground">暂无可选订阅</p>
+              <p className="text-sm text-muted-foreground">{t(($) => $.admin.coupons.no_plans)}</p>
             )}
           </fieldset>
 
           <fieldset className="space-y-2">
-            <legend className="text-sm font-medium text-foreground">指定周期</legend>
+            <legend className="text-sm font-medium text-foreground">
+              {t(($) => $.admin.coupons.limit_periods)}
+            </legend>
             <CheckboxGroup
-              options={PERIOD_OPTIONS}
+              options={periodOptions}
               value={selectedPeriods}
               onChange={(value) => form.setValue('limit_period', value.length ? value : null)}
               testId="coupon-periods"
@@ -350,14 +366,16 @@ export function CouponEditor({
 
           {!values.code && !values.id ? (
             <Field data-invalid={Boolean(formErrors.generate_count)}>
-              <FieldLabel htmlFor="coupon-generate-count">生成数量</FieldLabel>
+              <FieldLabel htmlFor="coupon-generate-count">
+                {t(($) => $.admin.coupons.generate_count)}
+              </FieldLabel>
               <Input
                 id="coupon-generate-count"
                 type="number"
                 min="1"
                 max="500"
                 step="1"
-                placeholder="输入数量批量生成"
+                placeholder={t(($) => $.admin.coupons.generate_count_placeholder)}
                 aria-invalid={Boolean(formErrors.generate_count)}
                 {...form.register('generate_count', {
                   onChange: () => form.setValue('code', undefined),
@@ -379,10 +397,10 @@ export function CouponEditor({
             {pending ? (
               <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
             ) : null}
-            提交
+            {t(($) => $.common.submit)}
           </Button>
           <Button variant="outline" onClick={() => setOpen(false)}>
-            取消
+            {t(($) => $.common.cancel)}
           </Button>
         </SheetFooter>
       </SheetContent>

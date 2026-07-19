@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import type { TFunction } from 'i18next';
+import { useTranslation } from 'react-i18next';
 import type { admin } from '@v2board/api-client';
 import { formatBackendDate, formatBytes } from '@v2board/config/format';
 import { useAdminUserTraffic } from '@/lib/queries';
@@ -14,13 +16,15 @@ import { PaginationControl } from '@/components/ui/pagination';
 import { LoadingState, SkeletonRows } from '@/components/ui/loading-state';
 import { DataTable, type DataTableColumn } from '@/components/ui/table';
 
-const PAGINATION_LABELS = {
-  itemsPerPage: '条/页',
-  nextPage: '下一页',
-  nextWindow: '向后 5 页',
-  previousPage: '上一页',
-  previousWindow: '向前 5 页',
-};
+function paginationLabels(t: TFunction) {
+  return {
+    itemsPerPage: t(($) => $.common.items_per_page),
+    nextPage: t(($) => $.common.next_page),
+    nextWindow: t(($) => $.common.next_5),
+    previousPage: t(($) => $.common.prev_page),
+    previousWindow: t(($) => $.common.prev_5),
+  };
+}
 
 interface TrafficPagination {
   current: number;
@@ -32,33 +36,35 @@ interface TrafficPagination {
 // shadcn presentation around it is Tier-2.
 const INITIAL_PAGINATION: TrafficPagination = { current: 1, pageSize: 10 };
 
-const columns: DataTableColumn<admin.AdminUserTrafficRecord>[] = [
-  {
-    id: 'record_at',
-    meta: { className: 'text-muted-foreground tabular-nums' },
-    header: () => <span>日期</span>,
-    // §6.8 (W14): record_at crosses the wire as an RFC 3339 instant.
-    cell: ({ row }) => formatBackendDate(row.original.record_at),
-  },
-  {
-    id: 'u',
-    meta: { align: 'right', className: 'tabular-nums' },
-    header: () => <span>上行</span>,
-    cell: ({ row }) => formatBytes(row.original.u),
-  },
-  {
-    id: 'd',
-    meta: { align: 'right', className: 'tabular-nums' },
-    header: () => <span>下行</span>,
-    cell: ({ row }) => formatBytes(row.original.d),
-  },
-  {
-    id: 'server_rate',
-    meta: { align: 'right', className: 'tabular-nums' },
-    header: () => <span>倍率</span>,
-    cell: ({ row }) => row.original.server_rate,
-  },
-];
+function trafficColumns(t: TFunction): DataTableColumn<admin.AdminUserTrafficRecord>[] {
+  return [
+    {
+      id: 'record_at',
+      meta: { className: 'text-muted-foreground tabular-nums' },
+      header: () => <span>{t(($) => $.admin.users.date)}</span>,
+      // §6.8 (W14): record_at crosses the wire as an RFC 3339 instant.
+      cell: ({ row }) => formatBackendDate(row.original.record_at),
+    },
+    {
+      id: 'u',
+      meta: { align: 'right', className: 'tabular-nums' },
+      header: () => <span>{t(($) => $.admin.users.upload)}</span>,
+      cell: ({ row }) => formatBytes(row.original.u),
+    },
+    {
+      id: 'd',
+      meta: { align: 'right', className: 'tabular-nums' },
+      header: () => <span>{t(($) => $.admin.users.download)}</span>,
+      cell: ({ row }) => formatBytes(row.original.d),
+    },
+    {
+      id: 'server_rate',
+      meta: { align: 'right', className: 'tabular-nums' },
+      header: () => <span>{t(($) => $.admin.users.rate)}</span>,
+      cell: ({ row }) => row.original.server_rate,
+    },
+  ];
+}
 
 export function UserTrafficModal({
   userId,
@@ -88,6 +94,7 @@ function UserTrafficModalContent({
   open: boolean;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const [pagination, setPagination] = useState<TrafficPagination>(INITIAL_PAGINATION);
   // The wrapper keys this stateful body by user id, so switching users resets
   // pagination before the first render/query without an effect-driven repair.
@@ -95,6 +102,7 @@ function UserTrafficModalContent({
 
   const data = records.data?.data ?? [];
   const total = records.data?.total ?? 0;
+  const columns = trafficColumns(t);
 
   return (
     <Dialog open={open} onOpenChange={(next) => (!next ? onClose() : undefined)}>
@@ -103,14 +111,14 @@ function UserTrafficModalContent({
         data-testid="user-traffic-modal"
       >
         <DialogHeader className="border-b border-border px-6 py-4 text-left">
-          <DialogTitle>流量记录</DialogTitle>
-          <DialogDescription>查看用户在各节点产生的上传、下载和计费流量。</DialogDescription>
+          <DialogTitle>{t(($) => $.admin.users.traffic_title)}</DialogTitle>
+          <DialogDescription>{t(($) => $.admin.users.traffic_description)}</DialogDescription>
         </DialogHeader>
         {records.isError ? (
           <div className="px-6 py-8">
             <ErrorState
               data-testid="user-traffic-error"
-              message="流量记录加载失败"
+              message={t(($) => $.admin.users.traffic_load_failed)}
               onRetry={() => void records.refetch()}
             />
           </div>
@@ -126,7 +134,7 @@ function UserTrafficModalContent({
               getRowKey={(_row, index) => index}
               scrollClassName="max-h-[60vh] overflow-y-auto"
               data-testid="user-traffic-table"
-              empty={data.length === 0 ? '暂无数据' : undefined}
+              empty={data.length === 0 ? t(($) => $.common.empty) : undefined}
               emptyTestId="user-traffic-empty"
             />
             {total > 0 ? (
@@ -134,7 +142,7 @@ function UserTrafficModalContent({
                 current={pagination.current}
                 pageSize={pagination.pageSize}
                 total={total}
-                labels={PAGINATION_LABELS}
+                labels={paginationLabels(t)}
                 onChange={(page, pageSize) => setPagination({ current: page, pageSize })}
                 testIds={{ page: 'user-traffic-page', pageSize: 'user-traffic-page-size' }}
               />

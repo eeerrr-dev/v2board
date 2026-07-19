@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { get, type FieldErrors, type FieldPath, type UseFormSetValue } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { FieldError } from '@/components/ui/field';
@@ -115,8 +116,13 @@ export function MultiCheckboxField({
   testId?: string;
   emptyText?: string;
 }) {
+  const { t } = useTranslation();
   if (!options.length) {
-    return <p className="text-sm text-muted-foreground">{emptyText ?? '暂无可选项'}</p>;
+    return (
+      <p className="text-sm text-muted-foreground">
+        {emptyText ?? t(($) => $.admin.servers.no_options)}
+      </p>
+    );
   }
   const toggle = (option: string, checked: boolean) => {
     onChange(checked ? [...value, option] : value.filter((item) => item !== option));

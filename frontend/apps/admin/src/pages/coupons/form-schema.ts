@@ -10,20 +10,25 @@ import {
 const numberInput = z.union([z.string(), z.number()]);
 const MAX_I32 = 2_147_483_647;
 const nullableNumberInput = numberInput.nullable().optional();
+// Messages are i18n keys; FieldError resolves them through
+// translateRuntimeMessage at display time.
 const requiredIntegerInput = nullableNumberInput.refine(
   (value) => !isBlankInput(value) && isIntegerInput(value),
-  '请输入整数',
+  'admin.coupons.integer_required',
 );
 const optionalIntegerInput = nullableNumberInput.refine(
   (value) => isEmptyInput(value) || isIntegerInput(value),
-  '请输入整数',
+  'admin.coupons.integer_required',
 );
 const generateCountInput = numberInput
   .optional()
-  .refine((value) => isEmptyInput(value) || isIntegerInput(value), '生成数量必须为整数')
+  .refine(
+    (value) => isEmptyInput(value) || isIntegerInput(value),
+    'admin.coupons.generate_count_integer',
+  )
   .refine(
     (value) => isEmptyInput(value) || (Number(value) >= 1 && Number(value) <= 500),
-    '生成数量须在 1 到 500 之间',
+    'admin.coupons.generate_count_range',
   );
 
 const common = {
@@ -31,7 +36,7 @@ const common = {
   name: z
     .string()
     .optional()
-    .refine((value) => !isBlankInput(value), '名称不能为空'),
+    .refine((value) => !isBlankInput(value), 'admin.coupons.name_required'),
   code: z.string().optional(),
   value: numberInput.optional(),
   started_at: requiredIntegerInput,
@@ -54,7 +59,7 @@ function validateWindow(
     context.addIssue({
       code: 'custom',
       path: ['ended_at'],
-      message: '结束时间必须晚于开始时间',
+      message: 'admin.coupons.ended_at_after_started_at',
     });
   }
 }
@@ -88,7 +93,8 @@ export const couponEditorSchema = z
       context.addIssue({
         code: 'custom',
         path: ['value'],
-        message: values.type === 1 ? '请输入非负优惠金额' : '优惠比例必须为 0 到 100 之间的整数',
+        message:
+          values.type === 1 ? 'admin.coupons.amount_invalid' : 'admin.coupons.percent_invalid',
       });
     }
     validateWindow(values, context);
@@ -112,7 +118,10 @@ export const giftcardEditorSchema = z
         context.addIssue({
           code: 'custom',
           path: ['value'],
-          message: values.type === 1 ? '请输入非负礼品卡金额' : '礼品卡数值必须为非负整数',
+          message:
+            values.type === 1
+              ? 'admin.coupons.giftcards.amount_invalid'
+              : 'admin.coupons.giftcards.value_invalid',
         });
       }
     }
@@ -120,7 +129,7 @@ export const giftcardEditorSchema = z
       context.addIssue({
         code: 'custom',
         path: ['plan_id'],
-        message: '请选择订阅计划',
+        message: 'admin.coupons.giftcards.plan_required',
       });
     }
     validateWindow(values, context);

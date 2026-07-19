@@ -1,4 +1,6 @@
 import { useMemo } from 'react';
+import { getI18n, useTranslation } from 'react-i18next';
+import type { SelectorParam } from 'i18next';
 import type { StatSeriesPoint } from '@v2board/types';
 import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts';
 import { cn } from '@/lib/cn';
@@ -63,27 +65,43 @@ export interface OrderChartModel {
 // (slug → label, cents → major units). Slugs outside this map still render,
 // labeled by their raw slug, so a backend-added series degrades visibly
 // instead of vanishing.
-const ORDER_SERIES_DISPLAY: ReadonlyMap<string, { label: string; cents?: boolean }> = new Map([
-  ['register_count', { label: '注册人数' }],
-  ['paid_total', { label: '收款金额', cents: true }],
-  ['paid_count', { label: '收款笔数' }],
-  ['commission_paid_total', { label: '佣金金额(已发放)', cents: true }],
-  ['commission_paid_count', { label: '佣金笔数(已发放)' }],
-]);
+const ORDER_SERIES_DISPLAY: ReadonlyMap<string, { labelKey: SelectorParam; cents?: boolean }> =
+  new Map([
+    ['register_count', { labelKey: ($) => $.admin.dashboard.series_register_count }],
+    ['paid_total', { labelKey: ($) => $.admin.dashboard.series_paid_total, cents: true }],
+    ['paid_count', { labelKey: ($) => $.admin.dashboard.series_paid_count }],
+    [
+      'commission_paid_total',
+      { labelKey: ($) => $.admin.dashboard.series_commission_paid_total, cents: true },
+    ],
+    ['commission_paid_count', { labelKey: ($) => $.admin.dashboard.series_commission_paid_count }],
+  ]);
 
 const orderSeriesRank = (slug: string) => {
   const rank = [...ORDER_SERIES_DISPLAY.keys()].indexOf(slug);
   return rank === -1 ? ORDER_SERIES_DISPLAY.size : rank;
 };
 
-export function buildOrderChartModel(points: readonly StatSeriesPoint[]): OrderChartModel {
+type TranslateSelector = (selector: SelectorParam) => string;
+
+// The default resolver serves direct (non-component) callers such as unit
+// tests; OrderChart passes its provider-bound `t` so labels stay reactive.
+const defaultTranslateLabel: TranslateSelector = (selector) => getI18n().t(selector);
+
+export function buildOrderChartModel(
+  points: readonly StatSeriesPoint[],
+  translateLabel: TranslateSelector = defaultTranslateLabel,
+): OrderChartModel {
   const slugs = Array.from(new Set(points.map((point) => point.series))).sort(
     (a, b) => orderSeriesRank(a) - orderSeriesRank(b),
   );
-  const series = slugs.map((slug, index) => ({
-    dataKey: `series_${index}`,
-    label: ORDER_SERIES_DISPLAY.get(slug)?.label ?? slug,
-  }));
+  const series = slugs.map((slug, index) => {
+    const display = ORDER_SERIES_DISPLAY.get(slug);
+    return {
+      dataKey: `series_${index}`,
+      label: display ? translateLabel(display.labelKey) : slug,
+    };
+  });
   const dataKeyBySlug = new Map(slugs.map((slug, index) => [slug, `series_${index}`]));
   const rowsByDate = new Map<string, OrderChartRow>();
 
@@ -101,19 +119,16 @@ export function buildOrderChartModel(points: readonly StatSeriesPoint[]): OrderC
   return { rows: Array.from(rowsByDate.values()), series };
 }
 
-const rankingConfig = {
-  total: { label: '流量', color: 'var(--chart-1)' },
-} satisfies ChartConfig;
-
 export default function AdminChart(props: AdminChartProps) {
   return props.kind === 'order' ? <OrderChart {...props} /> : <RankingChart {...props} />;
 }
 
 function OrderChart({ data, label, className }: OrderChartProps) {
+  const { t } = useTranslation();
   // Deliberate useMemo (not compiler-elided): recharts restarts its mount
   // animation when the data/config prop identity changes, so these must stay
   // referentially stable across unrelated parent re-renders.
-  const model = useMemo(() => buildOrderChartModel(data), [data]);
+  const model = useMemo(() => buildOrderChartModel(data, (selector) => t(selector)), [data, t]);
   const config = useMemo<ChartConfig>(
     () =>
       Object.fromEntries(
@@ -168,13 +183,20 @@ function OrderChart({ data, label, className }: OrderChartProps) {
 }
 
 function RankingChart({ data, label, className }: RankingChartProps) {
+  const { t } = useTranslation();
   // Deliberate useMemo: stable rows identity keeps recharts from replaying
   // its mount animation on unrelated parent re-renders.
   const rows = useMemo(() => [...data].reverse(), [data]);
+  const config = useMemo<ChartConfig>(
+    () => ({
+      total: { label: t(($) => $.admin.dashboard.ranking_traffic), color: 'var(--chart-1)' },
+    }),
+    [t],
+  );
 
   return (
     <ChartContainer
-      config={rankingConfig}
+      config={config}
       initialDimension={CHART_INITIAL_DIMENSION}
       data-testid="admin-ranking-chart"
       className={cn('aspect-auto h-[360px] min-h-[360px] w-full min-w-0', className)}

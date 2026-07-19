@@ -1,4 +1,6 @@
-import { lazy, Suspense, type ReactNode } from 'react';
+import { lazy, Suspense, type ComponentType, type ReactNode, type SVGProps } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { SelectorParam } from 'i18next';
 import { Link, useNavigate } from 'react-router';
 import {
   AlertTriangle,
@@ -47,14 +49,25 @@ const PENDING_COMMISSION_ORDER_FILTER: AdminFilter[] = [
   { key: 'commission_balance', condition: '>', value: '0' },
 ];
 
-const SHORTCUTS = [
-  { title: '系统设置', to: '/config/system', icon: SlidersHorizontal },
-  { title: '订单管理', to: '/order', icon: List },
-  { title: '订阅管理', to: '/plan', icon: ShoppingBag },
-  { title: '用户管理', to: '/user', icon: Users },
+interface DashboardShortcut {
+  titleKey: SelectorParam;
+  to: string;
+  icon: ComponentType<SVGProps<SVGSVGElement>>;
+}
+
+const SHORTCUTS: DashboardShortcut[] = [
+  {
+    titleKey: ($) => $.admin.dashboard.shortcut_system_settings,
+    to: '/config/system',
+    icon: SlidersHorizontal,
+  },
+  { titleKey: ($) => $.admin.dashboard.shortcut_orders, to: '/order', icon: List },
+  { titleKey: ($) => $.admin.dashboard.shortcut_plans, to: '/plan', icon: ShoppingBag },
+  { titleKey: ($) => $.admin.dashboard.shortcut_users, to: '/user', icon: Users },
 ];
 
 export default function DashboardPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const queueStatus = useQueueStats();
   const stat = useStat();
@@ -97,17 +110,17 @@ export default function DashboardPage() {
   const userLastChart = buildRankingData(userLast.data ?? [], (item) => item.email);
 
   const rankCharts = [
-    { title: '今日节点流量排行', data: serverTodayChart },
-    { title: '昨日节点流量排行', data: serverLastChart },
-    { title: '今日用户流量排行', data: userTodayChart },
-    { title: '昨日用户流量排行', data: userLastChart },
+    { title: t(($) => $.admin.dashboard.server_today_rank), data: serverTodayChart },
+    { title: t(($) => $.admin.dashboard.server_last_rank), data: serverLastChart },
+    { title: t(($) => $.admin.dashboard.user_today_rank), data: userTodayChart },
+    { title: t(($) => $.admin.dashboard.user_last_rank), data: userLastChart },
   ];
 
   return (
     <PageShell data-testid="dashboard-page">
       {dashboardFailed ? (
         <ErrorState
-          message="仪表盘数据加载失败"
+          message={t(($) => $.admin.dashboard.load_failed)}
           onRetry={() => {
             for (const query of dashboardQueries) void query.refetch();
           }}
@@ -116,7 +129,7 @@ export default function DashboardPage() {
       {queueStatus.data && !queueHealthy ? (
         <Alert variant="destructive" data-testid="dashboard-queue-alert">
           <AlertTriangle className="size-4" />
-          <AlertDescription>当前队列服务运行异常，可能会导致业务无法使用。</AlertDescription>
+          <AlertDescription>{t(($) => $.admin.dashboard.queue_alert)}</AlertDescription>
         </Alert>
       ) : null}
 
@@ -124,9 +137,11 @@ export default function DashboardPage() {
         <Alert variant="destructive" data-testid="dashboard-ticket-alert">
           <AlertTriangle className="size-4" />
           <AlertDescription className="flex flex-wrap items-center gap-1">
-            <span>有 {data.ticket_pending_total} 条工单等待处理</span>
+            <span>
+              {t(($) => $.admin.dashboard.ticket_pending, { count: data.ticket_pending_total })}
+            </span>
             <Button asChild variant="link" className="h-auto p-0 text-sm text-destructive">
-              <Link to="/ticket">立即处理</Link>
+              <Link to="/ticket">{t(($) => $.admin.dashboard.handle_now)}</Link>
             </Button>
           </AlertDescription>
         </Alert>
@@ -136,14 +151,18 @@ export default function DashboardPage() {
         <Alert variant="destructive" data-testid="dashboard-commission-alert">
           <AlertTriangle className="size-4" />
           <AlertDescription className="flex flex-wrap items-center gap-1">
-            <span>有 {data.commission_pending_total} 笔佣金等待确认</span>
+            <span>
+              {t(($) => $.admin.dashboard.commission_pending, {
+                count: data.commission_pending_total,
+              })}
+            </span>
             <Button
               variant="link"
               className="h-auto p-0 text-sm text-destructive"
               onClick={goPendingCommissionOrders}
               data-testid="dashboard-commission-action"
             >
-              立即处理
+              {t(($) => $.admin.dashboard.handle_now)}
             </Button>
           </AlertDescription>
         </Alert>
@@ -159,7 +178,7 @@ export default function DashboardPage() {
           >
             <Link to={shortcut.to}>
               <shortcut.icon className="size-6 text-primary" />
-              <span className="text-sm font-medium">{shortcut.title}</span>
+              <span className="text-sm font-medium">{t(shortcut.titleKey)}</span>
             </Link>
           </Button>
         ))}
@@ -168,12 +187,12 @@ export default function DashboardPage() {
       <div className="grid gap-4 @2xl/main:grid-cols-3">
         <StatCard
           icon={<Users className="size-5" />}
-          label="在线人数"
+          label={t(($) => $.admin.dashboard.online_users)}
           value={data?.online_user || '0'}
         />
         <StatCard
           icon={<TrendingUp className="size-5" />}
-          label="今日收入"
+          label={t(($) => $.admin.dashboard.day_income)}
           value={
             <>
               {formatCent(data?.day_income)}
@@ -183,7 +202,7 @@ export default function DashboardPage() {
         />
         <StatCard
           icon={<UserPlus className="size-5" />}
-          label="实时注册"
+          label={t(($) => $.admin.dashboard.day_register)}
           value={data?.day_register_total || '0'}
         />
       </div>
@@ -191,31 +210,34 @@ export default function DashboardPage() {
       <Card>
         <CardContent className="grid gap-6 @xl/main:grid-cols-2 @5xl/main:grid-cols-4">
           <MiniStat
-            label="本月收入"
+            label={t(($) => $.admin.dashboard.month_income)}
             value={`${formatCent(data?.month_income)} ${currency ?? ''}`}
           />
           <MiniStat
-            label="上月收入"
+            label={t(($) => $.admin.dashboard.last_month_income)}
             value={`${formatCent(data?.last_month_income)} ${currency ?? ''}`}
           />
           <MiniStat
-            label="上月佣金支出"
+            label={t(($) => $.admin.dashboard.last_month_commission_payout)}
             value={`${formatCent(data?.commission_last_month_payout)} ${currency ?? ''}`}
           />
-          <MiniStat label="本月新增用户" value={data?.month_register_total || '-'} />
+          <MiniStat
+            label={t(($) => $.admin.dashboard.month_register)}
+            value={data?.month_register_total || '-'}
+          />
         </CardContent>
       </Card>
 
       <Card className="min-w-0 overflow-hidden">
         <CardHeader>
-          <CardTitle>订单统计</CardTitle>
+          <CardTitle>{t(($) => $.admin.dashboard.order_stat)}</CardTitle>
         </CardHeader>
         <CardContent className="min-w-0">
-          <ChartSuspense label="订单统计折线图">
+          <ChartSuspense label={t(($) => $.admin.dashboard.order_chart_label)}>
             <AdminChart
               kind="order"
               data={order.data ?? []}
-              label="订单统计折线图"
+              label={t(($) => $.admin.dashboard.order_chart_label)}
               className="h-[360px] w-full min-w-0"
             />
           </ChartSuspense>
@@ -246,13 +268,14 @@ export default function DashboardPage() {
 }
 
 function ChartSuspense({ label, children }: { label: string; children: ReactNode }) {
+  const { t } = useTranslation();
   return (
     <Suspense
       fallback={
         <div
           className="h-[360px] w-full animate-pulse rounded-md bg-muted motion-reduce:animate-none"
           role="status"
-          aria-label={`${label}加载中`}
+          aria-label={t(($) => $.admin.dashboard.chart_loading, { label })}
         />
       }
     >

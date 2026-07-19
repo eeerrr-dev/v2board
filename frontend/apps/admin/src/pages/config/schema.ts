@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { TFunction } from 'i18next';
 import type { Control } from 'react-hook-form';
 import type { AdminConfigGroups } from '@v2board/types';
 
@@ -132,7 +133,9 @@ function createSectionSchema(
   return z.record(z.string(), configFieldValueSchema).superRefine((values, ctx) => {
     for (const field of Object.keys(values)) {
       if (allowed.has(field)) continue;
-      ctx.addIssue({ code: 'custom', path: [field], message: '配置字段不属于当前分组' });
+      // Dotted i18n key: resolved at display time by FieldError through
+      // translateRuntimeMessage (module scope has no `t`).
+      ctx.addIssue({ code: 'custom', path: [field], message: 'admin.config.field_not_in_group' });
     }
   });
 }
@@ -154,16 +157,17 @@ export const SECTION_SCHEMAS: Record<
   app: createSectionSchema(SECTION_FIELDS.app),
 };
 
-export const SECTIONS: { key: ConfigGroupKey; title: string }[] = [
-  { key: 'site', title: '站点' },
-  { key: 'safe', title: '安全' },
-  { key: 'subscribe', title: '订阅' },
-  { key: 'deposit', title: '充值' },
-  { key: 'ticket', title: '工单' },
-  { key: 'invite', title: '邀请&佣金' },
-  { key: 'frontend', title: '个性化' },
-  { key: 'server', title: '节点' },
-  { key: 'email', title: '邮件' },
-  { key: 'telegram', title: 'Telegram' },
-  { key: 'app', title: 'APP' },
+// Titles resolve at render time so the active locale always wins.
+export const SECTIONS: { key: ConfigGroupKey; title: (t: TFunction) => string }[] = [
+  { key: 'site', title: (t) => t(($) => $.admin.config.sections.site) },
+  { key: 'safe', title: (t) => t(($) => $.admin.config.sections.safe) },
+  { key: 'subscribe', title: (t) => t(($) => $.admin.config.sections.subscribe) },
+  { key: 'deposit', title: (t) => t(($) => $.admin.config.sections.deposit) },
+  { key: 'ticket', title: (t) => t(($) => $.admin.config.sections.ticket) },
+  { key: 'invite', title: (t) => t(($) => $.admin.config.sections.invite) },
+  { key: 'frontend', title: (t) => t(($) => $.admin.config.sections.frontend) },
+  { key: 'server', title: (t) => t(($) => $.admin.config.sections.server) },
+  { key: 'email', title: (t) => t(($) => $.admin.config.sections.email) },
+  { key: 'telegram', title: (t) => t(($) => $.admin.config.sections.telegram) },
+  { key: 'app', title: (t) => t(($) => $.admin.config.sections.app) },
 ];

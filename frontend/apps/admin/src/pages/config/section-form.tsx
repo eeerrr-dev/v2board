@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
+import type { TFunction } from 'i18next';
+import { useTranslation } from 'react-i18next';
 import { useForm, useWatch } from 'react-hook-form';
 import type { AdminConfig, AdminConfigFlat, Plan } from '@v2board/types';
 import { getErrorPresentation, hasProblemCode } from '@v2board/api-client';
@@ -28,7 +30,11 @@ import { SubscribeSection } from './sections/subscribe';
 import { TelegramSection } from './sections/telegram';
 import { TicketSection } from './sections/ticket';
 
-function getConfigSectionValues(config: AdminConfig, group: ConfigGroupKey): ConfigSectionValues {
+function getConfigSectionValues(
+  config: AdminConfig,
+  group: ConfigGroupKey,
+  t: TFunction,
+): ConfigSectionValues {
   const source = config[group];
   if (!source || typeof source !== 'object' || Array.isArray(source)) return {};
 
@@ -40,7 +46,12 @@ function getConfigSectionValues(config: AdminConfig, group: ConfigGroupKey): Con
 
   const parsed = SECTION_SCHEMAS[group].safeParse(selected);
   if (!parsed.success) {
-    throw new Error(`系统配置「${group}」的数据格式不正确`, { cause: parsed.error });
+    throw new Error(
+      t(($) => $.admin.config.section_data_invalid, { group }),
+      {
+        cause: parsed.error,
+      },
+    );
   }
   return parsed.data;
 }
@@ -68,10 +79,11 @@ export function SystemConfigSectionForm({
   serializeConfigSave: SerializedConfigSave;
   refreshConfig: () => Promise<AdminConfig>;
 }) {
+  const { t } = useTranslation();
   const saveConfig = useSaveSystemConfigMutation();
   // Deliberate useMemo: serverValues identity feeds the draft-reset effect
   // below; recomputing per render would clobber in-progress field edits.
-  const serverValues = useMemo(() => getConfigSectionValues(config, group), [config, group]);
+  const serverValues = useMemo(() => getConfigSectionValues(config, group, t), [config, group, t]);
   const form = useForm<ConfigSectionValues>({
     resolver: zodResolver(SECTION_SCHEMAS[group]),
     defaultValues: serverValues,
@@ -171,7 +183,12 @@ export function SystemConfigSectionForm({
                   (saveGenerations.current[field] ?? 0) === generation &&
                   !queuedSaves.current.has(field)
                 ) {
-                  toast.success('保存成功', { description: '配置已保存，正在等待所有进程生效。' });
+                  toast.success(
+                    t(($) => $.admin.config.save_success),
+                    {
+                      description: t(($) => $.admin.config.save_pending_desc),
+                    },
+                  );
                 }
                 return 'applied' as const;
               }
@@ -186,7 +203,7 @@ export function SystemConfigSectionForm({
                 (saveGenerations.current[field] ?? 0) === generation &&
                 !queuedSaves.current.has(field)
               ) {
-                const canonicalValue = getConfigSectionValues(refreshed, group)[field];
+                const canonicalValue = getConfigSectionValues(refreshed, group, t)[field];
                 canonicalValues.current[field] = canonicalValue;
                 // Do not overwrite text entered while this request was in flight.
                 // Its eventual blur will enqueue a new revision against the now
@@ -194,7 +211,7 @@ export function SystemConfigSectionForm({
                 if (configValuesEqual(form.getValues(field), draftValue)) {
                   form.resetField(field, { defaultValue: canonicalValue });
                 }
-                toast.success('保存成功');
+                toast.success(t(($) => $.admin.config.save_success));
               }
               return 'applied' as const;
             });
@@ -257,17 +274,20 @@ export function SystemConfigSectionForm({
   ): Promise<void> => {
     const allowedFields: readonly string[] = SECTION_FIELDS[group];
     if (requestedGroup !== group || !allowedFields.includes(field)) {
-      throw new Error(`配置字段「${field}」不属于「${group}」分组`);
+      throw new Error(t(($) => $.admin.config.field_not_in_section, { field, group }));
     }
 
     const payloadValue = configFieldValueSchema.safeParse(value);
     const fieldValue = SECTION_SCHEMAS[group].safeParse({ [field]: value });
     if (!payloadValue.success || !fieldValue.success) {
-      form.setError(field, { type: 'validate', message: '请输入有效的配置值' });
+      form.setError(field, { type: 'validate', message: t(($) => $.admin.config.invalid_value) });
       return Promise.resolve();
     }
     if (field === 'secure_path' && toText(payloadValue.data).trim() === '') {
-      form.setError(field, { type: 'validate', message: '后台路径不能为空' });
+      form.setError(field, {
+        type: 'validate',
+        message: t(($) => $.admin.config.secure_path_required),
+      });
       return Promise.resolve();
     }
 
@@ -349,7 +369,7 @@ export function SystemConfigSectionForm({
 
   switch (group) {
     case 'site':
-      if (!plans) throw new Error('站点配置缺少订阅依赖');
+      if (!plans) throw new Error(t(($) => $.admin.config.site_plans_missing));
       return <SiteSection ctx={ctx} plans={plans} />;
     case 'safe':
       return <SafeSection ctx={ctx} />;
@@ -366,7 +386,7 @@ export function SystemConfigSectionForm({
     case 'server':
       return <ServerSection ctx={ctx} />;
     case 'email':
-      if (!emailTemplates) throw new Error('邮件配置缺少模板依赖');
+      if (!emailTemplates) throw new Error(t(($) => $.admin.config.email_templates_missing));
       return (
         <EmailSection
           ctx={ctx}

@@ -3,6 +3,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import dayjs from 'dayjs';
 import { CircleHelp } from 'lucide-react';
 import { Controller, useForm, useFormState, useWatch } from 'react-hook-form';
+import type { TFunction } from 'i18next';
+import { useTranslation } from 'react-i18next';
 import type { AdminUserUpdateInput } from '@v2board/api-client';
 import type { AdminUserRow } from '@v2board/types';
 import { useAdminPlans, useAdminUserInfo, useUpdateUserMutation } from '@/lib/queries';
@@ -112,16 +114,22 @@ function fromDateInput(value: string) {
 
 const PLAN_NONE = 'null';
 
-const ACCOUNT_STATUS_OPTIONS = [
-  { value: '1', label: '封禁' },
-  { value: '0', label: '正常' },
-];
+// Wire values (banned/commission_type codes sent to the API) are the record
+// keys; only the labels are translated, resolved at render time.
+function accountStatusOptions(t: TFunction) {
+  return [
+    { value: '1', label: t(($) => $.admin.users.status_banned) },
+    { value: '0', label: t(($) => $.admin.users.status_normal) },
+  ];
+}
 
-const COMMISSION_TYPE_OPTIONS = [
-  { value: '0', label: '跟随系统设置' },
-  { value: '1', label: '循环返利' },
-  { value: '2', label: '首次返利' },
-];
+function commissionTypeOptions(t: TFunction) {
+  return [
+    { value: '0', label: t(($) => $.admin.users.commission_type_system) },
+    { value: '1', label: t(($) => $.admin.users.commission_type_cycle) },
+    { value: '2', label: t(($) => $.admin.users.commission_type_first) },
+  ];
+}
 
 function SuffixInput({
   suffix,
@@ -146,6 +154,7 @@ export function UserManageDrawer({
   open: boolean;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const user = useAdminUserInfo(open ? userId : undefined);
   const plans = useAdminPlans();
   const update = useUpdateUserMutation();
@@ -178,7 +187,7 @@ export function UserManageDrawer({
   // caches proxy reads, which freezes error/submit UI after the first render.
   const { errors: formErrors } = useFormState({ control: form.control });
   const planOptions = [
-    { value: PLAN_NONE, label: '无' },
+    { value: PLAN_NONE, label: t(($) => $.admin.users.none) },
     ...(plans.data?.map((plan) => ({ value: String(plan.id), label: plan.name })) ?? []),
   ];
 
@@ -217,15 +226,15 @@ export function UserManageDrawer({
         data-testid="user-manage-drawer"
       >
         <SheetHeader className="border-b border-border px-6 py-4">
-          <SheetTitle>用户管理</SheetTitle>
-          <SheetDescription>查看并修改用户账户、订阅和余额信息。</SheetDescription>
+          <SheetTitle>{t(($) => $.admin.users.title)}</SheetTitle>
+          <SheetDescription>{t(($) => $.admin.users.drawer_description)}</SheetDescription>
         </SheetHeader>
 
         {userError ? (
           <div className="px-6 py-8">
             <ErrorState
               data-testid="user-manage-error"
-              message="用户信息加载失败"
+              message={t(($) => $.admin.users.user_info_load_failed)}
               onRetry={() => void user.refetch()}
             />
           </div>
@@ -233,7 +242,7 @@ export function UserManageDrawer({
           <div className="px-6 py-8">
             <ErrorState
               data-testid="user-manage-plans-error"
-              message="订阅列表加载失败"
+              message={t(($) => $.admin.users.plans_load_failed)}
               onRetry={() => void plans.refetch()}
             />
           </div>
@@ -245,7 +254,11 @@ export function UserManageDrawer({
           <EmptyState
             className="m-6 min-h-32"
             data-testid="user-manage-empty"
-            title={userId == null ? '未选择用户' : '未找到用户'}
+            title={
+              userId == null
+                ? t(($) => $.admin.users.no_user_selected)
+                : t(($) => $.admin.users.user_not_found)
+            }
           />
         ) : (
           <TooltipProvider delayDuration={100}>
@@ -257,10 +270,12 @@ export function UserManageDrawer({
             >
               <FieldGroup className="flex-1 overflow-y-auto px-6 py-4">
                 <Field data-invalid={Boolean(formErrors.email)}>
-                  <FieldLabel htmlFor="user-manage-email">邮箱</FieldLabel>
+                  <FieldLabel htmlFor="user-manage-email">
+                    {t(($) => $.admin.users.email)}
+                  </FieldLabel>
                   <Input
                     id="user-manage-email"
-                    placeholder="请输入邮箱"
+                    placeholder={t(($) => $.admin.users.email_placeholder)}
                     aria-invalid={Boolean(formErrors.email)}
                     data-testid="user-drawer-email"
                     {...form.register('email')}
@@ -268,21 +283,25 @@ export function UserManageDrawer({
                   <FieldError errors={[formErrors.email]} />
                 </Field>
                 <Field data-invalid={Boolean(formErrors.invite_user_email)}>
-                  <FieldLabel htmlFor="user-manage-invite-email">邀请人邮箱</FieldLabel>
+                  <FieldLabel htmlFor="user-manage-invite-email">
+                    {t(($) => $.admin.users.invite_user_email)}
+                  </FieldLabel>
                   <Input
                     id="user-manage-invite-email"
-                    placeholder="请输入邀请人邮箱"
+                    placeholder={t(($) => $.admin.users.invite_user_email_placeholder)}
                     aria-invalid={Boolean(formErrors.invite_user_email)}
                     {...form.register('invite_user_email')}
                   />
                   <FieldError errors={[formErrors.invite_user_email]} />
                 </Field>
                 <Field data-invalid={Boolean(formErrors.password)}>
-                  <FieldLabel htmlFor="user-manage-password">密码</FieldLabel>
+                  <FieldLabel htmlFor="user-manage-password">
+                    {t(($) => $.admin.users.password)}
+                  </FieldLabel>
                   <Input
                     id="user-manage-password"
                     type="password"
-                    placeholder="如需修改密码请输入"
+                    placeholder={t(($) => $.admin.users.password_edit_placeholder)}
                     aria-invalid={Boolean(formErrors.password)}
                     {...form.register('password')}
                   />
@@ -291,26 +310,30 @@ export function UserManageDrawer({
 
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <Field data-invalid={Boolean(formErrors.balance)}>
-                    <FieldLabel htmlFor="user-manage-balance">余额</FieldLabel>
+                    <FieldLabel htmlFor="user-manage-balance">
+                      {t(($) => $.admin.users.balance)}
+                    </FieldLabel>
                     <SuffixInput
                       id="user-manage-balance"
                       type="number"
                       step="0.01"
                       suffix="¥"
-                      placeholder="余额"
+                      placeholder={t(($) => $.admin.users.balance)}
                       aria-invalid={Boolean(formErrors.balance)}
                       {...form.register('balance')}
                     />
                     <FieldError errors={[formErrors.balance]} />
                   </Field>
                   <Field data-invalid={Boolean(formErrors.commission_balance)}>
-                    <FieldLabel htmlFor="user-manage-commission-balance">推广佣金</FieldLabel>
+                    <FieldLabel htmlFor="user-manage-commission-balance">
+                      {t(($) => $.admin.users.commission_balance)}
+                    </FieldLabel>
                     <SuffixInput
                       id="user-manage-commission-balance"
                       type="number"
                       step="0.01"
                       suffix="¥"
-                      placeholder="推广佣金"
+                      placeholder={t(($) => $.admin.users.commission_balance)}
                       aria-invalid={Boolean(formErrors.commission_balance)}
                       {...form.register('commission_balance')}
                     />
@@ -320,26 +343,30 @@ export function UserManageDrawer({
 
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <Field data-invalid={Boolean(formErrors.u)}>
-                    <FieldLabel htmlFor="user-manage-upload">已用上行</FieldLabel>
+                    <FieldLabel htmlFor="user-manage-upload">
+                      {t(($) => $.admin.users.upload_used)}
+                    </FieldLabel>
                     <SuffixInput
                       id="user-manage-upload"
                       type="number"
                       step="any"
                       suffix="GB"
-                      placeholder="已用上行"
+                      placeholder={t(($) => $.admin.users.upload_used)}
                       aria-invalid={Boolean(formErrors.u)}
                       {...form.register('u')}
                     />
                     <FieldError errors={[formErrors.u]} />
                   </Field>
                   <Field data-invalid={Boolean(formErrors.d)}>
-                    <FieldLabel htmlFor="user-manage-download">已用下行</FieldLabel>
+                    <FieldLabel htmlFor="user-manage-download">
+                      {t(($) => $.admin.users.download_used)}
+                    </FieldLabel>
                     <SuffixInput
                       id="user-manage-download"
                       type="number"
                       step="any"
                       suffix="GB"
-                      placeholder="已用下行"
+                      placeholder={t(($) => $.admin.users.download_used)}
                       aria-invalid={Boolean(formErrors.d)}
                       {...form.register('d')}
                     />
@@ -348,31 +375,37 @@ export function UserManageDrawer({
                 </div>
 
                 <Field data-invalid={Boolean(formErrors.transfer_enable)}>
-                  <FieldLabel htmlFor="user-manage-transfer">流量</FieldLabel>
+                  <FieldLabel htmlFor="user-manage-transfer">
+                    {t(($) => $.admin.users.transfer)}
+                  </FieldLabel>
                   <SuffixInput
                     id="user-manage-transfer"
                     type="number"
                     step="any"
                     suffix="GB"
-                    placeholder="请输入流量"
+                    placeholder={t(($) => $.admin.users.transfer_placeholder)}
                     aria-invalid={Boolean(formErrors.transfer_enable)}
                     {...form.register('transfer_enable')}
                   />
                   <FieldError errors={[formErrors.transfer_enable]} />
                 </Field>
                 <Field data-invalid={Boolean(formErrors.device_limit)}>
-                  <FieldLabel htmlFor="user-manage-device-limit">设备数限制</FieldLabel>
+                  <FieldLabel htmlFor="user-manage-device-limit">
+                    {t(($) => $.admin.users.device_limit)}
+                  </FieldLabel>
                   <Input
                     id="user-manage-device-limit"
                     type="number"
-                    placeholder="留空则不限制"
+                    placeholder={t(($) => $.admin.users.no_limit_placeholder)}
                     aria-invalid={Boolean(formErrors.device_limit)}
                     {...form.register('device_limit')}
                   />
                   <FieldError errors={[formErrors.device_limit]} />
                 </Field>
                 <Field data-invalid={Boolean(formErrors.expired_at)}>
-                  <FieldLabel htmlFor="user-manage-expired">到期时间</FieldLabel>
+                  <FieldLabel htmlFor="user-manage-expired">
+                    {t(($) => $.admin.users.expired_at)}
+                  </FieldLabel>
                   <Controller
                     control={form.control}
                     name="expired_at"
@@ -381,7 +414,7 @@ export function UserManageDrawer({
                         id="user-manage-expired"
                         name={field.name}
                         type="date"
-                        placeholder="长期有效"
+                        placeholder={t(($) => $.common.long_term)}
                         value={toDateInput(field.value)}
                         onChange={(event) =>
                           form.setValue('expired_at', fromDateInput(event.target.value), {
@@ -399,7 +432,9 @@ export function UserManageDrawer({
                   <FieldError errors={[formErrors.expired_at]} />
                 </Field>
                 <Field data-invalid={Boolean(formErrors.commission_type)}>
-                  <FieldLabel htmlFor="user-manage-plan">订阅计划</FieldLabel>
+                  <FieldLabel htmlFor="user-manage-plan">
+                    {t(($) => $.admin.users.subscription_plan)}
+                  </FieldLabel>
                   <Controller
                     control={form.control}
                     name="plan_id"
@@ -411,7 +446,9 @@ export function UserManageDrawer({
                         }
                       >
                         <SelectTrigger id="user-manage-plan" className="w-full">
-                          <SelectValue placeholder="请选择用户订阅计划" />
+                          <SelectValue
+                            placeholder={t(($) => $.admin.users.plan_select_placeholder)}
+                          />
                         </SelectTrigger>
                         <SelectContent>
                           {planOptions.map((option) => (
@@ -425,7 +462,9 @@ export function UserManageDrawer({
                   />
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="user-manage-status">账户状态</FieldLabel>
+                  <FieldLabel htmlFor="user-manage-status">
+                    {t(($) => $.admin.users.account_status_edit)}
+                  </FieldLabel>
                   <Controller
                     control={form.control}
                     name="banned"
@@ -438,7 +477,7 @@ export function UserManageDrawer({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {ACCOUNT_STATUS_OPTIONS.map((option) => (
+                          {accountStatusOptions(t).map((option) => (
                             <SelectItem key={option.value} value={option.value}>
                               {option.label}
                             </SelectItem>
@@ -449,7 +488,9 @@ export function UserManageDrawer({
                   />
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="user-manage-commission-type">推荐返利类型</FieldLabel>
+                  <FieldLabel htmlFor="user-manage-commission-type">
+                    {t(($) => $.admin.users.commission_type)}
+                  </FieldLabel>
                   <Controller
                     control={form.control}
                     name="commission_type"
@@ -463,10 +504,12 @@ export function UserManageDrawer({
                           className="w-full"
                           aria-invalid={Boolean(formErrors.commission_type)}
                         >
-                          <SelectValue placeholder="请选择推荐返利类型" />
+                          <SelectValue
+                            placeholder={t(($) => $.admin.users.commission_type_placeholder)}
+                          />
                         </SelectTrigger>
                         <SelectContent>
-                          {COMMISSION_TYPE_OPTIONS.map((option) => (
+                          {commissionTypeOptions(t).map((option) => (
                             <SelectItem key={option.value} value={option.value}>
                               {option.label}
                             </SelectItem>
@@ -478,7 +521,9 @@ export function UserManageDrawer({
                   <FieldError errors={[formErrors.commission_type]} />
                 </Field>
                 <Field data-invalid={Boolean(formErrors.commission_rate)}>
-                  <FieldLabel htmlFor="user-manage-commission-rate">推荐返利比例</FieldLabel>
+                  <FieldLabel htmlFor="user-manage-commission-rate">
+                    {t(($) => $.admin.users.commission_rate)}
+                  </FieldLabel>
                   <SuffixInput
                     id="user-manage-commission-rate"
                     type="number"
@@ -486,7 +531,7 @@ export function UserManageDrawer({
                     max="100"
                     step="1"
                     suffix="%"
-                    placeholder="请输入推荐返利比例(为空则跟随站点设置返利比例)"
+                    placeholder={t(($) => $.admin.users.commission_rate_placeholder)}
                     aria-invalid={Boolean(formErrors.commission_rate)}
                     {...form.register('commission_rate')}
                   />
@@ -495,18 +540,18 @@ export function UserManageDrawer({
                 <Field data-invalid={Boolean(formErrors.discount)}>
                   <FieldLabel htmlFor="user-manage-discount">
                     <span className="inline-flex items-center gap-1">
-                      专享折扣比例
+                      {t(($) => $.admin.users.discount)}
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <span
                             tabIndex={0}
-                            aria-label="专享折扣说明"
+                            aria-label={t(($) => $.admin.users.discount_help_label)}
                             className="inline-flex cursor-help items-center outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                           >
                             <CircleHelp className="size-3.5 text-muted-foreground" />
                           </span>
                         </TooltipTrigger>
-                        <TooltipContent>设置后该用户购买任何订阅将始终享受该折扣</TooltipContent>
+                        <TooltipContent>{t(($) => $.admin.users.discount_help)}</TooltipContent>
                       </Tooltip>
                     </span>
                   </FieldLabel>
@@ -517,20 +562,22 @@ export function UserManageDrawer({
                     max="100"
                     step="1"
                     suffix="%"
-                    placeholder="请输入专享折扣比例"
+                    placeholder={t(($) => $.admin.users.discount)}
                     aria-invalid={Boolean(formErrors.discount)}
                     {...form.register('discount')}
                   />
                   <FieldError errors={[formErrors.discount]} />
                 </Field>
                 <Field data-invalid={Boolean(formErrors.speed_limit)}>
-                  <FieldLabel htmlFor="user-manage-speed-limit">限速</FieldLabel>
+                  <FieldLabel htmlFor="user-manage-speed-limit">
+                    {t(($) => $.admin.users.speed_limit)}
+                  </FieldLabel>
                   <SuffixInput
                     id="user-manage-speed-limit"
                     type="number"
                     step="1"
                     suffix="Mbps"
-                    placeholder="留空则不限制"
+                    placeholder={t(($) => $.admin.users.no_limit_placeholder)}
                     aria-invalid={Boolean(formErrors.speed_limit)}
                     {...form.register('speed_limit')}
                   />
@@ -541,7 +588,9 @@ export function UserManageDrawer({
                   name="is_admin"
                   render={({ field }) => (
                     <Field orientation="horizontal" className="justify-between">
-                      <FieldLabel htmlFor="user-manage-is-admin">是否管理员</FieldLabel>
+                      <FieldLabel htmlFor="user-manage-is-admin">
+                        {t(($) => $.admin.users.is_admin_label)}
+                      </FieldLabel>
                       <Switch
                         id="user-manage-is-admin"
                         checked={Boolean(field.value)}
@@ -555,7 +604,9 @@ export function UserManageDrawer({
                   name="is_staff"
                   render={({ field }) => (
                     <Field orientation="horizontal" className="justify-between">
-                      <FieldLabel htmlFor="user-manage-is-staff">是否员工</FieldLabel>
+                      <FieldLabel htmlFor="user-manage-is-staff">
+                        {t(($) => $.admin.users.is_staff_label)}
+                      </FieldLabel>
                       <Switch
                         id="user-manage-is-staff"
                         checked={Boolean(field.value)}
@@ -565,20 +616,22 @@ export function UserManageDrawer({
                   )}
                 />
                 <Field>
-                  <FieldLabel htmlFor="user-manage-remarks">备注</FieldLabel>
+                  <FieldLabel htmlFor="user-manage-remarks">
+                    {t(($) => $.admin.users.remarks)}
+                  </FieldLabel>
                   <Textarea
                     id="user-manage-remarks"
                     rows={4}
-                    placeholder="请在这里记录.."
+                    placeholder={t(($) => $.admin.users.remarks_placeholder)}
                     {...form.register('remarks')}
                   />
-                  <FieldDescription>仅供管理员内部记录。</FieldDescription>
+                  <FieldDescription>{t(($) => $.admin.users.remarks_hint)}</FieldDescription>
                 </Field>
               </FieldGroup>
 
               <SheetFooter className="flex-row justify-end gap-2 border-t border-border px-6 py-4">
                 <Button type="button" variant="outline" onClick={hide}>
-                  取消
+                  {t(($) => $.common.cancel)}
                 </Button>
                 <Button
                   type="submit"
@@ -586,7 +639,7 @@ export function UserManageDrawer({
                   loading={update.isPending}
                   data-testid="user-manage-submit"
                 >
-                  提交
+                  {t(($) => $.common.submit)}
                 </Button>
               </SheetFooter>
             </form>

@@ -1,61 +1,63 @@
+import { useTranslation } from 'react-i18next';
 import type { FormCtx } from '../schema';
 import { Section, SwitchRow, TextRow, TextareaRow } from '../rows';
 import { isBackendEnabled, parseBackendInteger, splitComma } from '../values';
 
 export function SafeSection({ ctx }: { ctx: FormCtx }) {
+  const { t } = useTranslation();
   return (
-    <Section title="安全">
+    <Section title={t(($) => $.admin.config.sections.safe)}>
       <SwitchRow
         ctx={ctx}
         group="safe"
         field="email_verify"
-        title="邮箱验证"
-        description="开启后将会强制要求用户进行邮箱验证。"
+        title={t(($) => $.admin.config.safe.email_verify_title)}
+        description={t(($) => $.admin.config.safe.email_verify_desc)}
       />
       <SwitchRow
         ctx={ctx}
         group="safe"
         field="email_gmail_limit_enable"
-        title="禁止使用Gmail多别名"
-        description="开启后Gmail多别名将无法注册。"
+        title={t(($) => $.admin.config.safe.gmail_limit_title)}
+        description={t(($) => $.admin.config.safe.gmail_limit_desc)}
       />
       <SwitchRow
         ctx={ctx}
         group="safe"
         field="safe_mode_enable"
-        title="安全模式"
-        description="开启后除了站点URL以外的绑定本站点的域名访问都将会被403。"
+        title={t(($) => $.admin.config.safe.safe_mode_title)}
+        description={t(($) => $.admin.config.safe.safe_mode_desc)}
       />
       <SwitchRow
         ctx={ctx}
         group="safe"
         field="admin_mfa_force"
-        title="强制两步验证"
-        description="开启后未启用两步验证的管理员/员工只能访问自己的两步验证设置，其余后台功能将被拒绝，直到完成绑定。"
+        title={t(($) => $.admin.config.safe.admin_mfa_force_title)}
+        description={t(($) => $.admin.config.safe.admin_mfa_force_desc)}
       />
       <TextRow
         ctx={ctx}
         group="safe"
         field="secure_path"
-        title="后台路径"
-        description="后台管理路径，修改后将会改变原有的admin路径"
+        title={t(($) => $.admin.config.safe.secure_path_title)}
+        description={t(($) => $.admin.config.safe.secure_path_desc)}
         placeholder="admin"
       />
       <SwitchRow
         ctx={ctx}
         group="safe"
         field="email_whitelist_enable"
-        title="邮箱后缀白名单"
-        description="开启后在名单中的邮箱后缀才允许进行注册。"
+        title={t(($) => $.admin.config.safe.email_whitelist_title)}
+        description={t(($) => $.admin.config.safe.email_whitelist_desc)}
       />
       {isBackendEnabled(ctx.get('safe', 'email_whitelist_enable')) ? (
         <TextareaRow
           ctx={ctx}
           group="safe"
           field="email_whitelist_suffix"
-          title="白名单后缀"
-          description="请使用逗号进行分割，如：qq.com,gmail.com。"
-          placeholder="请输入后缀域名，逗号分割 如：qq.com,gmail.com"
+          title={t(($) => $.admin.config.safe.whitelist_suffix_title)}
+          description={t(($) => $.admin.config.safe.whitelist_suffix_desc)}
+          placeholder={t(($) => $.admin.config.safe.whitelist_suffix_placeholder)}
           rows={4}
           indent
           coerce={splitComma}
@@ -65,8 +67,8 @@ export function SafeSection({ ctx }: { ctx: FormCtx }) {
         ctx={ctx}
         group="safe"
         field="recaptcha_enable"
-        title="防机器人"
-        description="开启后将会使用Google reCAPTCHA防止机器人。"
+        title={t(($) => $.admin.config.safe.recaptcha_title)}
+        description={t(($) => $.admin.config.safe.recaptcha_desc)}
       />
       {isBackendEnabled(ctx.get('safe', 'recaptcha_enable')) ? (
         <>
@@ -74,18 +76,18 @@ export function SafeSection({ ctx }: { ctx: FormCtx }) {
             ctx={ctx}
             group="safe"
             field="recaptcha_key"
-            title="密钥"
-            description="在Google reCAPTCHA申请的密钥。"
-            placeholder="请输入"
+            title={t(($) => $.admin.config.safe.recaptcha_key_title)}
+            description={t(($) => $.admin.config.safe.recaptcha_key_desc)}
+            placeholder={t(($) => $.admin.config.input_placeholder)}
             indent
           />
           <TextRow
             ctx={ctx}
             group="safe"
             field="recaptcha_site_key"
-            title="网站密钥"
-            description="在Google reCAPTCH申请的网站密钥。"
-            placeholder="请输入"
+            title={t(($) => $.admin.config.safe.recaptcha_site_key_title)}
+            description={t(($) => $.admin.config.safe.recaptcha_site_key_desc)}
+            placeholder={t(($) => $.admin.config.input_placeholder)}
             indent
           />
         </>
@@ -94,8 +96,8 @@ export function SafeSection({ ctx }: { ctx: FormCtx }) {
         ctx={ctx}
         group="safe"
         field="register_limit_by_ip_enable"
-        title="IP注册限制"
-        description="开启后如果IP注册账户达到规则要求将会被限制注册，请注意IP判断可能因为CDN或前置代理导致问题。"
+        title={t(($) => $.admin.config.safe.register_limit_title)}
+        description={t(($) => $.admin.config.safe.register_limit_desc)}
       />
       {isBackendEnabled(ctx.get('safe', 'register_limit_by_ip_enable')) ? (
         <>
@@ -103,9 +105,9 @@ export function SafeSection({ ctx }: { ctx: FormCtx }) {
             ctx={ctx}
             group="safe"
             field="register_limit_count"
-            title="次数"
-            description="达到注册次数后开启惩罚。"
-            placeholder="请输入"
+            title={t(($) => $.admin.config.safe.count_title)}
+            description={t(($) => $.admin.config.safe.register_limit_count_desc)}
+            placeholder={t(($) => $.admin.config.input_placeholder)}
             indent
             coerce={parseBackendInteger}
           />
@@ -113,9 +115,9 @@ export function SafeSection({ ctx }: { ctx: FormCtx }) {
             ctx={ctx}
             group="safe"
             field="register_limit_expire"
-            title="惩罚时间(分钟)"
-            description="需要等待惩罚时间过后才可以再次注册。"
-            placeholder="请输入"
+            title={t(($) => $.admin.config.safe.penalty_minutes_title)}
+            description={t(($) => $.admin.config.safe.register_limit_expire_desc)}
+            placeholder={t(($) => $.admin.config.input_placeholder)}
             indent
             coerce={parseBackendInteger}
           />
@@ -125,8 +127,8 @@ export function SafeSection({ ctx }: { ctx: FormCtx }) {
         ctx={ctx}
         group="safe"
         field="password_limit_enable"
-        title="防爆破限制"
-        description="开启后如果该账户尝试登陆失败次数过多将会被限制。"
+        title={t(($) => $.admin.config.safe.password_limit_title)}
+        description={t(($) => $.admin.config.safe.password_limit_desc)}
       />
       {isBackendEnabled(ctx.get('safe', 'password_limit_enable')) ? (
         <>
@@ -134,9 +136,9 @@ export function SafeSection({ ctx }: { ctx: FormCtx }) {
             ctx={ctx}
             group="safe"
             field="password_limit_count"
-            title="次数"
-            description="达到失败次数后开启惩罚。"
-            placeholder="请输入"
+            title={t(($) => $.admin.config.safe.count_title)}
+            description={t(($) => $.admin.config.safe.password_limit_count_desc)}
+            placeholder={t(($) => $.admin.config.input_placeholder)}
             indent
             coerce={parseBackendInteger}
           />
@@ -144,9 +146,9 @@ export function SafeSection({ ctx }: { ctx: FormCtx }) {
             ctx={ctx}
             group="safe"
             field="password_limit_expire"
-            title="惩罚时间(分钟)"
-            description="需要等待惩罚时间过后才可以再次登陆。"
-            placeholder="请输入"
+            title={t(($) => $.admin.config.safe.penalty_minutes_title)}
+            description={t(($) => $.admin.config.safe.password_limit_expire_desc)}
+            placeholder={t(($) => $.admin.config.input_placeholder)}
             indent
             coerce={parseBackendInteger}
           />

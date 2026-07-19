@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import type { TFunction } from 'i18next';
 import { Controller } from 'react-hook-form';
 import { cn } from '@/lib/cn';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -307,10 +308,13 @@ export function SelectRow({
   );
 }
 
-export const ORDER_EVENT_OPTIONS = [
-  { value: '0', label: '不执行任何动作' },
-  { value: '1', label: '重置用户流量' },
-];
+// The '0'/'1' option ids are the legacy wire spellings — data, not copy.
+export function orderEventOptions(t: TFunction) {
+  return [
+    { value: '0', label: t(($) => $.admin.config.order_event_none) },
+    { value: '1', label: t(($) => $.admin.config.order_event_reset_traffic) },
+  ];
+}
 
 export function WarningAlert({ children }: { children: ReactNode }) {
   return (

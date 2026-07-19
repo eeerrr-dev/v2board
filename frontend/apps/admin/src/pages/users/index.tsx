@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router';
+import type { TFunction } from 'i18next';
+import { useTranslation } from 'react-i18next';
 import {
   ArrowDown,
   ArrowUp,
@@ -67,13 +69,15 @@ interface QueryState {
 
 const PAGE_SIZE_OPTIONS = [10, 50, 100, 150];
 
-const PAGINATION_LABELS = {
-  itemsPerPage: '条/页',
-  nextPage: '下一页',
-  nextWindow: '向后 5 页',
-  previousPage: '上一页',
-  previousWindow: '向前 5 页',
-};
+function paginationLabels(t: TFunction) {
+  return {
+    itemsPerPage: t(($) => $.common.items_per_page),
+    nextPage: t(($) => $.common.next_page),
+    nextWindow: t(($) => $.common.next_5),
+    previousPage: t(($) => $.common.prev_page),
+    previousWindow: t(($) => $.common.prev_5),
+  };
+}
 
 // Cross-page Tier-1 contract: the order manager (and the dashboard) seed an
 // AdminFilter[] into sessionStorage then navigate to /user. Read it on mount,
@@ -122,6 +126,7 @@ function SortableColumnHeader({
 }
 
 export default function UsersPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [currentUnixTime, setCurrentUnixTime] = useState(() => Date.now() / 1000);
   const [query, setQuery] = useState<QueryState>(() => ({
@@ -165,49 +170,64 @@ export default function UsersPage() {
     for (const group of groupData) groupMap.set(group.id, group.name);
   }
 
+  // The `condition` entries (including '模糊') are wire values sent verbatim in
+  // the admin filter payload — data contracts, not display copy.
   const filterFields: FilterField[] = [
-    { key: 'email', title: '邮箱', condition: ['模糊'] },
-    { key: 'id', title: '用户ID', condition: ['=', '>=', '>', '<', '<='] },
+    { key: 'email', title: t(($) => $.admin.users.email), condition: ['模糊'] },
+    { key: 'id', title: t(($) => $.admin.users.user_id), condition: ['=', '>=', '>', '<', '<='] },
     ...(plansReady
       ? [
           {
             key: 'plan_id',
-            title: '订阅',
+            title: t(($) => $.admin.users.plan),
             condition: ['='],
             type: 'select' as const,
             options: [
-              { label: '无订阅', value: PLAN_NONE },
+              { label: t(($) => $.admin.users.no_plan), value: PLAN_NONE },
               ...planOptions.map((plan) => ({ label: plan.label, value: plan.value })),
             ],
           },
         ]
       : []),
-    { key: 'transfer_enable', title: '流量', condition: ['>=', '>', '<', '<='] },
-    { key: 'd', title: '下行', condition: ['>=', '>', '<', '<='] },
-    { key: 'expired_at', title: '到期时间', condition: ['>=', '>', '<', '<='], type: 'date' },
+    {
+      key: 'transfer_enable',
+      title: t(($) => $.admin.users.transfer),
+      condition: ['>=', '>', '<', '<='],
+    },
+    { key: 'd', title: t(($) => $.admin.users.download), condition: ['>=', '>', '<', '<='] },
+    {
+      key: 'expired_at',
+      title: t(($) => $.admin.users.expired_at),
+      condition: ['>=', '>', '<', '<='],
+      type: 'date',
+    },
     { key: 'uuid', title: 'UUID', condition: ['='] },
     { key: 'token', title: 'TOKEN', condition: ['='] },
     {
       key: 'banned',
-      title: '账号状态',
+      title: t(($) => $.admin.users.account_status),
       condition: ['='],
       type: 'select',
       options: [
-        { label: '正常', value: 0 },
-        { label: '封禁', value: 1 },
+        { label: t(($) => $.admin.users.status_normal), value: 0 },
+        { label: t(($) => $.admin.users.status_banned), value: 1 },
       ],
     },
-    { key: 'invite_by_email', title: '邀请人邮箱', condition: ['模糊'] },
-    { key: 'invite_user_id', title: '邀请人ID', condition: ['='] },
-    { key: 'remarks', title: '备注', condition: ['模糊'] },
+    {
+      key: 'invite_by_email',
+      title: t(($) => $.admin.users.invite_user_email),
+      condition: ['模糊'],
+    },
+    { key: 'invite_user_id', title: t(($) => $.admin.users.invite_user_id), condition: ['='] },
+    { key: 'remarks', title: t(($) => $.admin.users.remarks), condition: ['模糊'] },
     {
       key: 'is_admin',
-      title: '管理员',
+      title: t(($) => $.admin.users.is_admin),
       condition: ['='],
       type: 'select',
       options: [
-        { label: '是', value: 1 },
-        { label: '否', value: 0 },
+        { label: t(($) => $.common.yes), value: 1 },
+        { label: t(($) => $.common.no), value: 0 },
       ],
     },
   ];
@@ -236,37 +256,37 @@ export default function UsersPage() {
 
   const resetUserSecret = async (row: AdminUserRow) => {
     const confirmed = await confirmDialog({
-      title: '重置安全信息',
-      description: `确定要重置${row.email}的安全信息吗？`,
-      confirmText: '确定',
-      cancelText: '取消',
+      title: t(($) => $.admin.users.reset_secret_title),
+      description: t(($) => $.admin.users.reset_secret_confirm, { email: row.email }),
+      confirmText: t(($) => $.common.confirm),
+      cancelText: t(($) => $.common.cancel),
     });
     if (!confirmed) return;
     resetSecret.mutate(row.id, {
       onSuccess: () => {
-        toast.success('重置成功');
+        toast.success(t(($) => $.admin.users.reset_success));
       },
     });
   };
 
   const deleteUser = async (row: AdminUserRow) => {
     const confirmed = await confirmDialog({
-      title: '删除用户',
-      description: `确定要删除${row.email}的用户信息吗？`,
-      confirmText: '确定',
-      cancelText: '取消',
+      title: t(($) => $.admin.users.delete_user),
+      description: t(($) => $.admin.users.delete_user_confirm, { email: row.email }),
+      confirmText: t(($) => $.common.confirm),
+      cancelText: t(($) => $.common.cancel),
     });
     if (!confirmed) return;
     remove.mutate(row.id, {
       onSuccess: () => {
-        toast.success('删除成功');
+        toast.success(t(($) => $.admin.users.delete_success));
       },
     });
   };
 
   const copySubscribeUrl = async (row: AdminUserRow) => {
-    if (await copyText(row.subscribe_url)) toast.success('复制成功');
-    else toast.error('复制失败');
+    if (await copyText(row.subscribe_url)) toast.success(t(($) => $.admin.users.copy_success));
+    else toast.error(t(($) => $.admin.users.copy_fail));
   };
 
   const runUserAction = (key: string, row: AdminUserRow) => {
@@ -281,7 +301,7 @@ export default function UsersPage() {
   };
 
   const exportCsv = () => {
-    const toastId = toast.loading('导出中');
+    const toastId = toast.loading(t(($) => $.admin.users.exporting));
     dumpCsv.mutate(query.filter, {
       onSuccess: (response) => {
         downloadText(`${formatDateTime(Date.now() / 1000)}.csv`, response.buffer);
@@ -294,10 +314,10 @@ export default function UsersPage() {
 
   const bulkBan = async () => {
     const confirmed = await confirmDialog({
-      title: '提醒',
-      description: '确定要进行封禁吗？',
-      confirmText: '确定',
-      cancelText: '取消',
+      title: t(($) => $.admin.users.reminder),
+      description: t(($) => $.admin.users.bulk_ban_confirm),
+      confirmText: t(($) => $.common.confirm),
+      cancelText: t(($) => $.common.cancel),
     });
     if (!confirmed) return;
     banUsers.mutate(query.filter);
@@ -305,10 +325,10 @@ export default function UsersPage() {
 
   const bulkDelete = async () => {
     const confirmed = await confirmDialog({
-      title: '提醒',
-      description: '确定要进行删除吗？',
-      confirmText: '确定',
-      cancelText: '取消',
+      title: t(($) => $.admin.users.reminder),
+      description: t(($) => $.admin.users.bulk_delete_confirm),
+      confirmText: t(($) => $.common.confirm),
+      cancelText: t(($) => $.common.cancel),
     });
     if (!confirmed) return;
     deleteAll.mutate(query.filter);
@@ -343,7 +363,9 @@ export default function UsersPage() {
           </span>
         </TooltipTrigger>
         <TooltipContent>
-          {onlineAt ? `最后在线${formatDateTime(Number(onlineAt))}` : '从未在线'}
+          {onlineAt
+            ? t(($) => $.admin.users.last_online_at, { time: formatDateTime(Number(onlineAt)) })
+            : t(($) => $.admin.users.never_online)}
         </TooltipContent>
       </Tooltip>
     );
@@ -371,7 +393,7 @@ export default function UsersPage() {
     const expired = epoch !== null && epoch < currentUnixTime;
     return (
       <StatusBadge tone={expired ? 'destructive' : 'success'}>
-        {value ? formatBackendDateMinuteSlash(value) : '长期有效'}
+        {value ? formatBackendDateMinuteSlash(value) : t(($) => $.common.long_term)}
       </StatusBadge>
     );
   };
@@ -386,33 +408,47 @@ export default function UsersPage() {
     {
       id: 'email',
       meta: { className: 'font-medium text-foreground' },
-      header: () => <span>邮箱</span>,
+      header: () => <span>{t(($) => $.admin.users.email)}</span>,
       cell: ({ row }) => renderEmail(row.original),
     },
     {
       id: 'banned',
-      header: sortHeader('状态', 'banned'),
+      header: sortHeader(
+        t(($) => $.admin.users.status),
+        'banned',
+      ),
       cell: ({ row }) => (
         <StatusBadge tone={row.original.banned ? 'destructive' : 'success'}>
-          {row.original.banned ? '封禁' : '正常'}
+          {row.original.banned
+            ? t(($) => $.admin.users.status_banned)
+            : t(($) => $.admin.users.status_normal)}
         </StatusBadge>
       ),
     },
     {
       id: 'plan_id',
-      header: sortHeader('订阅', 'plan_id'),
+      header: sortHeader(
+        t(($) => $.admin.users.plan),
+        'plan_id',
+      ),
       cell: ({ row }) => row.original.plan_name || '-',
     },
     {
       id: 'group_id',
-      header: sortHeader('权限组', 'group_id'),
+      header: sortHeader(
+        t(($) => $.admin.users.group),
+        'group_id',
+      ),
       cell: ({ row }) =>
         row.original.group_id != null ? (groupMap.get(row.original.group_id) ?? '-') : '-',
     },
     {
       id: 'total_used',
       meta: { align: 'right' },
-      header: sortHeader('已用(G)', 'total_used'),
+      header: sortHeader(
+        t(($) => $.admin.users.used_g),
+        'total_used',
+      ),
       cell: ({ row }) => {
         const over =
           parseFloat(String(row.original.total_used)) >
@@ -427,42 +463,60 @@ export default function UsersPage() {
     {
       id: 'transfer_enable',
       meta: { align: 'right', className: 'tabular-nums' },
-      header: sortHeader('流量(G)', 'transfer_enable'),
+      header: sortHeader(
+        t(($) => $.admin.users.transfer_g),
+        'transfer_enable',
+      ),
       cell: ({ row }) => row.original.transfer_enable,
     },
     {
       id: 'device',
       meta: { align: 'right' },
-      header: sortHeader('设备数', 'updated_at'),
+      header: sortHeader(
+        t(($) => $.admin.users.device_count),
+        'updated_at',
+      ),
       cell: ({ row }) => renderDeviceLimit(row.original),
     },
     {
       id: 'expired_at',
-      header: sortHeader('到期时间', 'expired_at'),
+      header: sortHeader(
+        t(($) => $.admin.users.expired_at),
+        'expired_at',
+      ),
       cell: ({ row }) => renderExpiredAt(row.original.expired_at),
     },
     {
       id: 'balance',
       meta: { align: 'right', className: 'tabular-nums' },
-      header: sortHeader('余额', 'balance'),
+      header: sortHeader(
+        t(($) => $.admin.users.balance),
+        'balance',
+      ),
       cell: ({ row }) => row.original.balance,
     },
     {
       id: 'commission_balance',
       meta: { align: 'right', className: 'tabular-nums' },
-      header: sortHeader('佣金', 'commission_balance'),
+      header: sortHeader(
+        t(($) => $.admin.users.commission),
+        'commission_balance',
+      ),
       cell: ({ row }) => row.original.commission_balance,
     },
     {
       id: 'created_at',
       meta: { align: 'right', className: 'text-muted-foreground tabular-nums' },
-      header: sortHeader('加入时间', 'created_at'),
+      header: sortHeader(
+        t(($) => $.admin.users.created_at),
+        'created_at',
+      ),
       cell: ({ row }) => formatBackendDateMinuteSlash(row.original.created_at),
     },
     {
       id: 'actions',
       meta: { align: 'right' },
-      header: () => <span>操作</span>,
+      header: () => <span>{t(($) => $.common.operation)}</span>,
       cell: ({ row }) => (
         <UserRowActions row={row.original} onAction={runUserAction} assignDisabled={!plansReady} />
       ),
@@ -472,16 +526,25 @@ export default function UsersPage() {
   return (
     <PageShell data-testid="users-page">
       {users.isError ? (
-        <ErrorState message="用户列表加载失败" onRetry={() => void users.refetch()} />
+        <ErrorState
+          message={t(($) => $.admin.users.load_failed)}
+          onRetry={() => void users.refetch()}
+        />
       ) : null}
       {plans.isError ? (
-        <ErrorState message="订阅列表加载失败" onRetry={() => void plans.refetch()} />
+        <ErrorState
+          message={t(($) => $.admin.users.plans_load_failed)}
+          onRetry={() => void plans.refetch()}
+        />
       ) : null}
       {groups.isError ? (
-        <ErrorState message="权限组加载失败" onRetry={() => void groups.refetch()} />
+        <ErrorState
+          message={t(($) => $.admin.users.groups_load_failed)}
+          onRetry={() => void groups.refetch()}
+        />
       ) : null}
       <PageHeader
-        title="用户管理"
+        title={t(($) => $.admin.users.title)}
         actions={
           <Button
             onClick={() => setCreating(true)}
@@ -489,7 +552,7 @@ export default function UsersPage() {
             data-testid="user-create"
           >
             <UserPlus className="size-4" />
-            创建用户
+            {t(($) => $.admin.users.create_user)}
           </Button>
         }
       />
@@ -506,7 +569,7 @@ export default function UsersPage() {
                   data-testid="user-filter-open"
                 >
                   <ListFilter className="size-4" />
-                  过滤器
+                  {t(($) => $.admin.users.filter)}
                   {query.filter.length ? (
                     <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-primary-foreground text-xs text-primary">
                       {query.filter.length}
@@ -517,20 +580,20 @@ export default function UsersPage() {
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" size="sm" data-testid="user-bulk-actions">
                       <SlidersHorizontal className="size-4" />
-                      操作
+                      {t(($) => $.common.operation)}
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start">
                     <DropdownMenuItem onClick={exportCsv} data-testid="user-export-csv">
                       <FileSpreadsheet className="size-4" />
-                      导出CSV
+                      {t(($) => $.admin.users.export_csv)}
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={() => setMailOpen(true)}
                       data-testid="user-send-mail"
                     >
                       <Mail className="size-4" />
-                      发送邮件
+                      {t(($) => $.admin.users.send_mail)}
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       disabled={!query.filter.length}
@@ -538,7 +601,7 @@ export default function UsersPage() {
                       data-testid="user-bulk-ban"
                     >
                       <Ban className="size-4" />
-                      批量封禁
+                      {t(($) => $.admin.users.bulk_ban)}
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       variant="destructive"
@@ -547,7 +610,7 @@ export default function UsersPage() {
                       data-testid="user-bulk-delete"
                     >
                       <Trash2 className="size-4" />
-                      批量删除
+                      {t(($) => $.admin.users.bulk_delete)}
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -558,13 +621,11 @@ export default function UsersPage() {
                     onClick={() => setFilter([])}
                     data-testid="user-filter-reset"
                   >
-                    清除筛选
+                    {t(($) => $.admin.users.clear_filter)}
                   </Button>
                 ) : null}
               </div>
-              <p className="text-xs text-muted-foreground">
-                Tips：可以使用过滤器过滤后再使用操作对过滤的用户进行操作。
-              </p>
+              <p className="text-xs text-muted-foreground">{t(($) => $.admin.users.filter_tips)}</p>
             </div>
 
             <DataTable
@@ -575,7 +636,7 @@ export default function UsersPage() {
               data-testid="users-table"
               empty={
                 !users.isError && users.data !== undefined && data.length === 0
-                  ? '暂无用户'
+                  ? t(($) => $.admin.users.no_users)
                   : undefined
               }
               emptyTestId="users-empty"
@@ -588,7 +649,7 @@ export default function UsersPage() {
                 pageSize={query.pageSize}
                 total={total}
                 pageSizeOptions={PAGE_SIZE_OPTIONS}
-                labels={PAGINATION_LABELS}
+                labels={paginationLabels(t)}
                 onChange={(page, pageSize) =>
                   setQuery((state) => ({ ...state, current: page, pageSize }))
                 }
@@ -633,7 +694,7 @@ export default function UsersPage() {
         onClose={() => setMailOpen(false)}
         onSubmit={async (values) => {
           await sendMail.mutateAsync({ filter: query.filter, ...values });
-          toast.success('已加入队列执行');
+          toast.success(t(($) => $.admin.users.mail_queued));
           setMailOpen(false);
         }}
       />

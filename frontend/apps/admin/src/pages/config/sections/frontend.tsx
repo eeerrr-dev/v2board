@@ -1,7 +1,9 @@
+import { useTranslation } from 'react-i18next';
 import type { FormCtx } from '../schema';
 import { Section, SelectRow, TextRow } from '../rows';
 
 export function FrontendSection({ ctx }: { ctx: FormCtx }) {
+  const { t } = useTranslation();
   // docs/api-dialect.md §10.6: the typed chat-widget configuration is the only
   // supported chat integration path (custom_html is removed). A configured
   // provider with a missing/malformed identifier is rejected by the backend
@@ -10,38 +12,38 @@ export function FrontendSection({ ctx }: { ctx: FormCtx }) {
     .trim()
     .toLowerCase();
   return (
-    <Section title="个性化">
+    <Section title={t(($) => $.admin.config.sections.frontend)}>
       <SelectRow
         ctx={ctx}
         group="frontend"
         field="frontend_theme_color"
-        title="主题色"
+        title={t(($) => $.admin.config.frontend.theme_color_title)}
         fallback="default"
         options={[
-          { value: 'default', label: '默认' },
-          { value: 'black', label: '黑色' },
-          { value: 'darkblue', label: '暗蓝色' },
-          { value: 'green', label: '奶绿色' },
+          { value: 'default', label: t(($) => $.admin.config.frontend.theme_default) },
+          { value: 'black', label: t(($) => $.admin.config.frontend.theme_black) },
+          { value: 'darkblue', label: t(($) => $.admin.config.frontend.theme_darkblue) },
+          { value: 'green', label: t(($) => $.admin.config.frontend.theme_green) },
         ]}
       />
       <TextRow
         ctx={ctx}
         group="frontend"
         field="frontend_background_url"
-        title="背景"
-        description="将会在后台登录页面进行展示。"
+        title={t(($) => $.admin.config.frontend.background_title)}
+        description={t(($) => $.admin.config.frontend.background_desc)}
         placeholder="https://xxxxx.com/wallpaper.png"
       />
       <SelectRow
         ctx={ctx}
         group="frontend"
         field="chat_widget_provider"
-        title="在线聊天挂件"
-        description="为用户端加载官方聊天 SDK；需要完整填写所选提供商的标识后才会生效。"
-        placeholder="请选择"
+        title={t(($) => $.admin.config.frontend.chat_widget_title)}
+        description={t(($) => $.admin.config.frontend.chat_widget_desc)}
+        placeholder={t(($) => $.admin.config.select_placeholder)}
         fallback="off"
         options={[
-          { value: 'off', label: '关闭' },
+          { value: 'off', label: t(($) => $.common.close) },
           { value: 'crisp', label: 'Crisp' },
           { value: 'tawk', label: 'Tawk.to' },
         ]}
@@ -53,7 +55,7 @@ export function FrontendSection({ ctx }: { ctx: FormCtx }) {
           group="frontend"
           field="chat_widget_crisp_website_id"
           title="Crisp Website ID"
-          description="Crisp 后台的 Website ID（UUID 格式）。"
+          description={t(($) => $.admin.config.frontend.crisp_website_id_desc)}
           placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
           indent
         />
@@ -65,8 +67,8 @@ export function FrontendSection({ ctx }: { ctx: FormCtx }) {
             group="frontend"
             field="chat_widget_tawk_property_id"
             title="Tawk Property ID"
-            description="Tawk 后台的 Property ID（24 位十六进制）。"
-            placeholder="请输入"
+            description={t(($) => $.admin.config.frontend.tawk_property_id_desc)}
+            placeholder={t(($) => $.admin.config.input_placeholder)}
             indent
           />
           <TextRow
@@ -74,7 +76,7 @@ export function FrontendSection({ ctx }: { ctx: FormCtx }) {
             group="frontend"
             field="chat_widget_tawk_widget_id"
             title="Tawk Widget ID"
-            description="Tawk 后台的 Widget ID。"
+            description={t(($) => $.admin.config.frontend.tawk_widget_id_desc)}
             placeholder="default"
             indent
           />

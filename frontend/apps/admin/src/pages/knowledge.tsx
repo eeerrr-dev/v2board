@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm, useFormState } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
 import type { Knowledge, KnowledgeSummary } from '@v2board/types';
 import { ArrowDown, ArrowUp, Pencil, Plus, Trash2 } from 'lucide-react';
@@ -44,25 +45,14 @@ import {
   KNOWLEDGE_LOCALES,
   knowledgeEditorSchema,
   type KnowledgeEditorValues,
-  type KnowledgeLocale,
   type KnowledgeSavePayload,
 } from './knowledge-form-schema';
 
 // Article language options. The values are the backend locale strings that ride
 // along in the save payload; the list is sorted by key for a stable, deterministic
-// order (preserving the established sorted-locale behavior).
-const KNOWLEDGE_LOCALE_TEXT: Record<KnowledgeLocale, string> = {
-  'zh-CN': '简体中文',
-  'zh-TW': '繁體中文',
-  'en-US': 'English',
-  'ja-JP': '日本語',
-  'vi-VN': 'Tiếng Việt',
-  'ko-KR': '한국어',
-};
-
-const KNOWLEDGE_LOCALE_OPTIONS = [...KNOWLEDGE_LOCALES]
-  .sort()
-  .map((locale) => ({ value: locale, label: KNOWLEDGE_LOCALE_TEXT[locale] }));
+// order (preserving the established sorted-locale behavior). Labels resolve at
+// render through the locale_labels dictionary subtree (language autonyms).
+const SORTED_KNOWLEDGE_LOCALES = [...KNOWLEDGE_LOCALES].sort();
 
 function knowledgeEditorValues(knowledge?: Knowledge): KnowledgeEditorValues {
   return {
@@ -85,6 +75,7 @@ function KnowledgeEditorForm({
   initialValues: KnowledgeEditorValues;
   onSubmit: (values: KnowledgeSavePayload) => void;
 }) {
+  const { t } = useTranslation();
   const { control, handleSubmit, register } = useForm<
     KnowledgeEditorValues,
     unknown,
@@ -96,6 +87,10 @@ function KnowledgeEditorForm({
   // useFormState, not the mutable formState proxy: the React Compiler caches
   // proxy reads, which freezes error/submit UI after the first render.
   const { errors } = useFormState({ control });
+  const localeOptions = SORTED_KNOWLEDGE_LOCALES.map((locale) => ({
+    value: locale,
+    label: t(($) => $.admin.knowledge.locale_labels[locale]),
+  }));
 
   return (
     <form
@@ -105,21 +100,21 @@ function KnowledgeEditorForm({
       noValidate
     >
       <Field data-invalid={Boolean(errors.title)}>
-        <FieldLabel htmlFor="knowledge-title">标题</FieldLabel>
+        <FieldLabel htmlFor="knowledge-title">{t(($) => $.common.title)}</FieldLabel>
         <Input
           id="knowledge-title"
-          placeholder="请输入知识标题"
+          placeholder={t(($) => $.admin.knowledge.title_placeholder)}
           aria-invalid={Boolean(errors.title)}
           {...register('title')}
         />
         <FieldError errors={[errors.title]} />
       </Field>
       <Field data-invalid={Boolean(errors.category)}>
-        <FieldLabel htmlFor="knowledge-category">分类</FieldLabel>
+        <FieldLabel htmlFor="knowledge-category">{t(($) => $.admin.knowledge.category)}</FieldLabel>
         <Input
           id="knowledge-category"
           list="knowledge-category-options"
-          placeholder="请输入分类，分类将会自动归集"
+          placeholder={t(($) => $.admin.knowledge.category_placeholder)}
           aria-invalid={Boolean(errors.category)}
           {...register('category')}
         />
@@ -131,7 +126,7 @@ function KnowledgeEditorForm({
         <FieldError errors={[errors.category]} />
       </Field>
       <Field data-invalid={Boolean(errors.language)}>
-        <FieldLabel htmlFor="knowledge-language">语言</FieldLabel>
+        <FieldLabel htmlFor="knowledge-language">{t(($) => $.common.language)}</FieldLabel>
         <Controller
           control={control}
           name="language"
@@ -149,10 +144,10 @@ function KnowledgeEditorForm({
                 className="w-full"
                 aria-invalid={Boolean(errors.language)}
               >
-                <SelectValue placeholder="请选择知识语言" />
+                <SelectValue placeholder={t(($) => $.admin.knowledge.language_placeholder)} />
               </SelectTrigger>
               <SelectContent>
-                {KNOWLEDGE_LOCALE_OPTIONS.map((option) => (
+                {localeOptions.map((option) => (
                   <SelectItem key={option.value} value={option.value}>
                     {option.label}
                   </SelectItem>
@@ -164,12 +159,12 @@ function KnowledgeEditorForm({
         <FieldError errors={[errors.language]} />
       </Field>
       <Field data-invalid={Boolean(errors.body)}>
-        <FieldLabel htmlFor="knowledge-body">内容</FieldLabel>
+        <FieldLabel htmlFor="knowledge-body">{t(($) => $.admin.knowledge.body_label)}</FieldLabel>
         <Textarea
           id="knowledge-body"
           rows={18}
           className="font-mono text-sm"
-          placeholder="请输入知识内容，支持 Markdown"
+          placeholder={t(($) => $.admin.knowledge.body_placeholder)}
           aria-invalid={Boolean(errors.body)}
           {...register('body')}
           data-testid="knowledge-body"
@@ -195,6 +190,7 @@ function KnowledgeEditor({
   onOpenChange: (open: boolean) => void;
   onSave: (payload: KnowledgeSavePayload, onSuccess: () => void) => void;
 }) {
+  const { t } = useTranslation();
   const detail = useAdminKnowledgeDetail(id, open);
   const detailLoading = id != null && detail.isPending;
   const detailError = id != null && detail.isError;
@@ -204,7 +200,7 @@ function KnowledgeEditor({
   const saveValues = (values: KnowledgeSavePayload) => {
     onSave(values, () => {
       onOpenChange(false);
-      toast.success('保存成功');
+      toast.success(t(($) => $.admin.knowledge.save_success));
     });
   };
 
@@ -220,14 +216,16 @@ function KnowledgeEditor({
         data-testid="knowledge-editor"
       >
         <SheetHeader>
-          <SheetTitle>{id ? '编辑知识' : '新增知识'}</SheetTitle>
-          <SheetDescription>编辑文章分类、语言、标题和 Markdown 内容。</SheetDescription>
+          <SheetTitle>
+            {id ? t(($) => $.admin.knowledge.edit_title) : t(($) => $.admin.knowledge.create_title)}
+          </SheetTitle>
+          <SheetDescription>{t(($) => $.admin.knowledge.sheet_description)}</SheetDescription>
         </SheetHeader>
 
         {detailError ? (
           <div className="px-4 pb-4">
             <ErrorState
-              message="知识详情加载失败"
+              message={t(($) => $.admin.knowledge.detail_error)}
               onRetry={retryDetail}
               data-testid="knowledge-detail-error"
             />
@@ -253,10 +251,10 @@ function KnowledgeEditor({
             loading={saveLoading}
             data-testid="knowledge-submit"
           >
-            提交
+            {t(($) => $.common.submit)}
           </Button>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-            取消
+            {t(($) => $.common.cancel)}
           </Button>
         </SheetFooter>
       </SheetContent>
@@ -265,6 +263,7 @@ function KnowledgeEditor({
 }
 
 export default function KnowledgePage() {
+  const { t } = useTranslation();
   const list = useAdminKnowledge();
   const categories = useAdminKnowledgeCategories();
   const categoryData = categories.data;
@@ -316,9 +315,9 @@ export default function KnowledgePage() {
 
   const removeKnowledge = async (row: KnowledgeSummary) => {
     const confirmed = await confirmDialog({
-      title: '警告',
-      description: '确定要删除该条项目吗？',
-      confirmText: '确定',
+      title: t(($) => $.admin.knowledge.delete_confirm_title),
+      description: t(($) => $.admin.knowledge.delete_confirm_description),
+      confirmText: t(($) => $.common.confirm),
     });
     if (!confirmed) return;
     drop.mutate(row.id);
@@ -328,45 +327,45 @@ export default function KnowledgePage() {
     {
       id: 'id',
       meta: { className: 'text-muted-foreground tabular-nums' },
-      header: () => <span>文章ID</span>,
+      header: () => <span>{t(($) => $.admin.knowledge.id_column)}</span>,
       cell: ({ row }) => row.original.id,
     },
     {
       id: 'show',
       meta: { align: 'center' },
-      header: () => <span>显示</span>,
+      header: () => <span>{t(($) => $.admin.knowledge.show)}</span>,
       cell: ({ row }) => (
         <Switch
           checked={row.original.show}
           // §6.3 (W10): PATCH `{show}` carries the explicit target value.
           onCheckedChange={() => show.mutate({ id: row.original.id, show: !row.original.show })}
-          aria-label={`切换「${row.original.title}」显示`}
+          aria-label={t(($) => $.admin.knowledge.toggle_show, { title: row.original.title })}
         />
       ),
     },
     {
       id: 'title',
       meta: { className: 'font-medium text-foreground' },
-      header: () => <span>标题</span>,
+      header: () => <span>{t(($) => $.common.title)}</span>,
       cell: ({ row }) => row.original.title,
     },
     {
       id: 'category',
       meta: { className: 'text-muted-foreground' },
-      header: () => <span>分类</span>,
+      header: () => <span>{t(($) => $.admin.knowledge.category)}</span>,
       cell: ({ row }) => row.original.category,
     },
     {
       id: 'updated_at',
       meta: { align: 'right', className: 'text-muted-foreground tabular-nums' },
-      header: () => <span>更新时间</span>,
+      header: () => <span>{t(($) => $.admin.knowledge.updated_at)}</span>,
       // §4.5 (W10): timestamps arrive as RFC 3339 strings.
       cell: ({ row }) => dayjs(row.original.updated_at).format('YYYY/MM/DD HH:mm'),
     },
     {
       id: 'actions',
       meta: { align: 'right' },
-      header: () => <span>操作</span>,
+      header: () => <span>{t(($) => $.common.operation)}</span>,
       cell: ({ row }) => {
         const index = orderedKnowledge.findIndex((item) => item.id === row.original.id);
         return (
@@ -377,7 +376,7 @@ export default function KnowledgePage() {
               className="size-8"
               disabled={index <= 0}
               onClick={() => moveKnowledge(index, -1)}
-              aria-label="上移"
+              aria-label={t(($) => $.admin.knowledge.move_up)}
             >
               <ArrowUp className="size-4" />
             </Button>
@@ -387,7 +386,7 @@ export default function KnowledgePage() {
               className="size-8"
               disabled={index < 0 || index >= orderedKnowledge.length - 1}
               onClick={() => moveKnowledge(index, 1)}
-              aria-label="下移"
+              aria-label={t(($) => $.admin.knowledge.move_down)}
             >
               <ArrowDown className="size-4" />
             </Button>
@@ -399,12 +398,12 @@ export default function KnowledgePage() {
                 onClick={() => openEditor(row.original.id)}
               >
                 <Pencil className="size-4" />
-                编辑
+                {t(($) => $.common.edit)}
               </Button>
             ) : (
               <Button variant="ghost" size="sm" disabled>
                 <Pencil className="size-4" />
-                编辑
+                {t(($) => $.common.edit)}
               </Button>
             )}
             <Button
@@ -415,7 +414,7 @@ export default function KnowledgePage() {
               data-testid={`knowledge-delete-${row.original.id}`}
             >
               <Trash2 className="size-4" />
-              删除
+              {t(($) => $.common.delete)}
             </Button>
           </div>
         );
@@ -426,23 +425,29 @@ export default function KnowledgePage() {
   return (
     <PageShell data-testid="knowledge-page">
       {list.isError ? (
-        <ErrorState message="知识库加载失败" onRetry={() => void list.refetch()} />
+        <ErrorState
+          message={t(($) => $.admin.knowledge.list_error)}
+          onRetry={() => void list.refetch()}
+        />
       ) : null}
       {categories.isError ? (
-        <ErrorState message="知识分类加载失败" onRetry={() => void categories.refetch()} />
+        <ErrorState
+          message={t(($) => $.admin.knowledge.categories_error)}
+          onRetry={() => void categories.refetch()}
+        />
       ) : null}
       <PageHeader
-        title="知识库管理"
+        title={t(($) => $.admin.knowledge.page_title)}
         actions={
           categoriesReady ? (
             <Button data-testid="knowledge-create" onClick={() => openEditor()}>
               <Plus className="size-4" />
-              新增
+              {t(($) => $.common.add)}
             </Button>
           ) : (
             <Button disabled data-testid="knowledge-create">
               <Plus className="size-4" />
-              新增
+              {t(($) => $.common.add)}
             </Button>
           )
         }
@@ -458,7 +463,7 @@ export default function KnowledgePage() {
             data-testid="knowledge-table"
             empty={
               !list.isError && list.data !== undefined && orderedKnowledge.length === 0
-                ? '暂无知识'
+                ? t(($) => $.admin.knowledge.empty)
                 : undefined
             }
             emptyTestId="knowledge-empty"

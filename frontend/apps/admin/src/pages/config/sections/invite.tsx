@@ -1,70 +1,72 @@
+import { useTranslation } from 'react-i18next';
 import type { FormCtx } from '../schema';
 import { Section, SwitchRow, TextRow, TextareaRow } from '../rows';
 import { isBackendEnabled, parseBackendInteger, parseBackendNumber, splitComma } from '../values';
 
 export function InviteSection({ ctx }: { ctx: FormCtx }) {
+  const { t } = useTranslation();
   return (
-    <Section title="邀请&佣金">
+    <Section title={t(($) => $.admin.config.sections.invite)}>
       <SwitchRow
         ctx={ctx}
         group="invite"
         field="invite_force"
-        title="开启强制邀请"
-        description="开启后只有被邀请的用户才可以进行注册。"
+        title={t(($) => $.admin.config.invite.force_title)}
+        description={t(($) => $.admin.config.invite.force_desc)}
       />
       <TextRow
         ctx={ctx}
         group="invite"
         field="invite_commission"
-        title="邀请佣金百分比"
-        description="默认全局的佣金分配比例，你可以在用户管理单独配置单个比例。"
-        placeholder="请输入"
+        title={t(($) => $.admin.config.invite.commission_title)}
+        description={t(($) => $.admin.config.invite.commission_desc)}
+        placeholder={t(($) => $.admin.config.input_placeholder)}
         coerce={parseBackendInteger}
       />
       <TextRow
         ctx={ctx}
         group="invite"
         field="invite_gen_limit"
-        title="用户可创建邀请码上限"
-        placeholder="请输入"
+        title={t(($) => $.admin.config.invite.gen_limit_title)}
+        placeholder={t(($) => $.admin.config.input_placeholder)}
         coerce={parseBackendInteger}
       />
       <SwitchRow
         ctx={ctx}
         group="invite"
         field="invite_never_expire"
-        title="邀请码永不失效"
-        description="开启后邀请码被使用后将不会失效，否则使用过后即失效。"
+        title={t(($) => $.admin.config.invite.never_expire_title)}
+        description={t(($) => $.admin.config.invite.never_expire_desc)}
       />
       <SwitchRow
         ctx={ctx}
         group="invite"
         field="commission_first_time_enable"
-        title="佣金仅首次发放"
-        description="开启后被邀请人首次支付时才会产生佣金，可以在用户管理对用户进行单独配置。"
+        title={t(($) => $.admin.config.invite.first_time_title)}
+        description={t(($) => $.admin.config.invite.first_time_desc)}
       />
       <SwitchRow
         ctx={ctx}
         group="invite"
         field="commission_auto_check_enable"
-        title="佣金自动确认"
-        description="开启后佣金将会在订单完成3日后自动进行确认。"
+        title={t(($) => $.admin.config.invite.auto_check_title)}
+        description={t(($) => $.admin.config.invite.auto_check_desc)}
       />
       <TextRow
         ctx={ctx}
         group="invite"
         field="commission_withdraw_limit"
-        title="提现单申请门槛(元)"
-        description="小于门槛金额的提现单将不会被提交。"
-        placeholder="请输入"
+        title={t(($) => $.admin.config.invite.withdraw_limit_title)}
+        description={t(($) => $.admin.config.invite.withdraw_limit_desc)}
+        placeholder={t(($) => $.admin.config.input_placeholder)}
       />
       <TextareaRow
         ctx={ctx}
         group="invite"
         field="commission_withdraw_method"
-        title="提现方式"
-        description="可以支持的提现方式。"
-        placeholder="请输入后缀域名，逗号分割 如：支付宝,USDT,贝宝"
+        title={t(($) => $.admin.config.invite.withdraw_method_title)}
+        description={t(($) => $.admin.config.invite.withdraw_method_desc)}
+        placeholder={t(($) => $.admin.config.invite.withdraw_method_placeholder)}
         rows={4}
         coerce={splitComma}
       />
@@ -72,15 +74,15 @@ export function InviteSection({ ctx }: { ctx: FormCtx }) {
         ctx={ctx}
         group="invite"
         field="withdraw_close_enable"
-        title="关闭提现"
-        description="关闭后将禁止用户申请提现，且邀请佣金将会直接进入用户余额。"
+        title={t(($) => $.admin.config.invite.withdraw_close_title)}
+        description={t(($) => $.admin.config.invite.withdraw_close_desc)}
       />
       <SwitchRow
         ctx={ctx}
         group="invite"
         field="commission_distribution_enable"
-        title="三级分销"
-        description="开启后将佣金将按照设置的3成比例进行分成，三成比例合计请不要>100%。"
+        title={t(($) => $.admin.config.invite.distribution_title)}
+        description={t(($) => $.admin.config.invite.distribution_desc)}
       />
       {isBackendEnabled(ctx.get('invite', 'commission_distribution_enable')) ? (
         <>
@@ -88,8 +90,8 @@ export function InviteSection({ ctx }: { ctx: FormCtx }) {
             ctx={ctx}
             group="invite"
             field="commission_distribution_l1"
-            title="一级邀请人比例"
-            placeholder="请输入比例如：50"
+            title={t(($) => $.admin.config.invite.distribution_l1_title)}
+            placeholder={t(($) => $.admin.config.invite.distribution_l1_placeholder)}
             indent
             coerce={parseBackendNumber}
           />
@@ -97,8 +99,8 @@ export function InviteSection({ ctx }: { ctx: FormCtx }) {
             ctx={ctx}
             group="invite"
             field="commission_distribution_l2"
-            title="二级邀请人比例"
-            placeholder="请输入比例如：30"
+            title={t(($) => $.admin.config.invite.distribution_l2_title)}
+            placeholder={t(($) => $.admin.config.invite.distribution_l2_placeholder)}
             indent
             coerce={parseBackendNumber}
           />
@@ -106,8 +108,8 @@ export function InviteSection({ ctx }: { ctx: FormCtx }) {
             ctx={ctx}
             group="invite"
             field="commission_distribution_l3"
-            title="三级邀请人比例"
-            placeholder="请输入比例如：20"
+            title={t(($) => $.admin.config.invite.distribution_l3_title)}
+            placeholder={t(($) => $.admin.config.invite.distribution_l3_placeholder)}
             indent
             coerce={parseBackendNumber}
           />

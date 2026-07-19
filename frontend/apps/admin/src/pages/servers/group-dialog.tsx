@@ -1,6 +1,7 @@
 import { useState, type ReactElement } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, useFormState } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { Loader2 } from 'lucide-react';
 import type { admin } from '@v2board/api-client';
 import { Button } from '@/components/ui/button';
@@ -28,6 +29,7 @@ export function ServerGroupDialog({
   onSave: (payload: ServerGroupFormValues, onSuccess: () => void) => void;
   children: ReactElement<{ onClick?: () => void }>;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const form = useForm<ServerGroupFormValues>({
     resolver: zodResolver(serverGroupFormSchema),
@@ -59,15 +61,23 @@ export function ServerGroupDialog({
       <DialogContent data-testid="server-group-editor">
         <form onSubmit={(event) => void saveGroup(event)}>
           <DialogHeader>
-            <DialogTitle>{record?.id ? '编辑组' : '创建组'}</DialogTitle>
-            <DialogDescription>设置权限组名称及其节点访问范围。</DialogDescription>
+            <DialogTitle>
+              {record?.id
+                ? t(($) => $.admin.servers.edit_group)
+                : t(($) => $.admin.servers.create_group)}
+            </DialogTitle>
+            <DialogDescription>
+              {t(($) => $.admin.servers.group_editor_description)}
+            </DialogDescription>
           </DialogHeader>
           <Field className="mt-4" data-invalid={Boolean(formErrors.name)}>
-            <FieldLabel htmlFor="server-group-name">组名</FieldLabel>
+            <FieldLabel htmlFor="server-group-name">
+              {t(($) => $.admin.servers.group_name_label)}
+            </FieldLabel>
             <Input
               {...form.register('name')}
               id="server-group-name"
-              placeholder="请输入组名"
+              placeholder={t(($) => $.admin.servers.group_name_placeholder)}
               aria-invalid={Boolean(formErrors.name)}
               aria-describedby={formErrors.name ? groupNameErrorId : undefined}
               data-testid="server-group-name"
@@ -76,7 +86,7 @@ export function ServerGroupDialog({
           </Field>
           <DialogFooter className="mt-4">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-              取消
+              {t(($) => $.common.cancel)}
             </Button>
             <Button
               type="submit"
@@ -86,7 +96,7 @@ export function ServerGroupDialog({
               {pending || isSubmitting ? (
                 <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
               ) : null}
-              提交
+              {t(($) => $.common.submit)}
             </Button>
           </DialogFooter>
         </form>

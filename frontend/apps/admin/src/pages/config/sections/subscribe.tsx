@@ -1,32 +1,35 @@
+import { useTranslation } from 'react-i18next';
 import type { FormCtx } from '../schema';
-import { ORDER_EVENT_OPTIONS, Section, SelectRow, SwitchRow, TextRow } from '../rows';
+import { Section, SelectRow, SwitchRow, TextRow, orderEventOptions } from '../rows';
 import { parseBackendInteger, selectBoolean, selectInteger } from '../values';
 
 export function SubscribeSection({ ctx }: { ctx: FormCtx }) {
+  const { t } = useTranslation();
   const timedExpire = String(ctx.get('subscribe', 'show_subscribe_method') ?? 0) === '2';
+  const eventOptions = orderEventOptions(t);
   return (
-    <Section title="订阅">
+    <Section title={t(($) => $.admin.config.sections.subscribe)}>
       <SwitchRow
         ctx={ctx}
         group="subscribe"
         field="plan_change_enable"
-        title="允许用户更改订阅"
-        description="开启后用户将会可以对订阅计划进行变更。"
+        title={t(($) => $.admin.config.subscribe.plan_change_title)}
+        description={t(($) => $.admin.config.subscribe.plan_change_desc)}
       />
       <SelectRow
         ctx={ctx}
         group="subscribe"
         field="reset_traffic_method"
-        title="月流量重置方式"
-        description="全局流量重置方式，默认每月1号。可以在订阅管理为订阅单独设置。"
-        placeholder="请选择订阅重置方式"
+        title={t(($) => $.admin.config.subscribe.reset_method_title)}
+        description={t(($) => $.admin.config.subscribe.reset_method_desc)}
+        placeholder={t(($) => $.admin.config.subscribe.reset_method_placeholder)}
         fallback="0"
         options={[
-          { value: '0', label: '每月1号' },
-          { value: '1', label: '按月重置' },
-          { value: '2', label: '不重置' },
-          { value: '3', label: '每年1月1日' },
-          { value: '4', label: '按年重置' },
+          { value: '0', label: t(($) => $.admin.config.subscribe.reset_method_first_day) },
+          { value: '1', label: t(($) => $.admin.config.subscribe.reset_method_monthly) },
+          { value: '2', label: t(($) => $.admin.config.subscribe.reset_method_none) },
+          { value: '3', label: t(($) => $.admin.config.subscribe.reset_method_year_first_day) },
+          { value: '4', label: t(($) => $.admin.config.subscribe.reset_method_yearly) },
         ]}
         serialize={selectInteger}
       />
@@ -34,68 +37,68 @@ export function SubscribeSection({ ctx }: { ctx: FormCtx }) {
         ctx={ctx}
         group="subscribe"
         field="surplus_enable"
-        title="开启折抵方案"
-        description="开启后用户更换订阅将会由系统对原有订阅进行折抵，方案参考文档。"
+        title={t(($) => $.admin.config.subscribe.surplus_title)}
+        description={t(($) => $.admin.config.subscribe.surplus_desc)}
       />
       <SwitchRow
         ctx={ctx}
         group="subscribe"
         field="allow_new_period"
-        title="允许提前开启流量周期"
-        description="开启后用户流量用尽时可以选择扣除订阅时长为代价重置流量，按月重置时扣除本周期剩余订阅时长，每月1号重置时扣除整月时间30天。"
+        title={t(($) => $.admin.config.subscribe.new_period_title)}
+        description={t(($) => $.admin.config.subscribe.new_period_desc)}
       />
       <SelectRow
         ctx={ctx}
         group="subscribe"
         field="new_order_event_id"
-        title="当订阅新购时触发事件"
-        description="新购订阅完成时将触发该任务。"
-        placeholder="请选择事件"
+        title={t(($) => $.admin.config.subscribe.new_order_event_title)}
+        description={t(($) => $.admin.config.subscribe.new_order_event_desc)}
+        placeholder={t(($) => $.admin.config.subscribe.event_placeholder)}
         fallback="0"
-        options={ORDER_EVENT_OPTIONS}
+        options={eventOptions}
         serialize={selectBoolean}
       />
       <SelectRow
         ctx={ctx}
         group="subscribe"
         field="renew_order_event_id"
-        title="当订阅续费时触发事件"
-        description="续费订阅完成时将触发该任务。"
-        placeholder="请选择事件"
+        title={t(($) => $.admin.config.subscribe.renew_order_event_title)}
+        description={t(($) => $.admin.config.subscribe.renew_order_event_desc)}
+        placeholder={t(($) => $.admin.config.subscribe.event_placeholder)}
         fallback="0"
-        options={ORDER_EVENT_OPTIONS}
+        options={eventOptions}
         serialize={selectBoolean}
       />
       <SelectRow
         ctx={ctx}
         group="subscribe"
         field="change_order_event_id"
-        title="当订阅变更时触发事件"
-        description="变更订阅完成时将触发该任务。"
-        placeholder="请选择事件"
+        title={t(($) => $.admin.config.subscribe.change_order_event_title)}
+        description={t(($) => $.admin.config.subscribe.change_order_event_desc)}
+        placeholder={t(($) => $.admin.config.subscribe.event_placeholder)}
         fallback="0"
-        options={ORDER_EVENT_OPTIONS}
+        options={eventOptions}
         serialize={selectBoolean}
       />
       <SwitchRow
         ctx={ctx}
         group="subscribe"
         field="show_info_to_server_enable"
-        title="在订阅中展示订阅信息"
-        description="开启后将会在用户订阅节点时输出订阅信息。"
+        title={t(($) => $.admin.config.subscribe.show_info_title)}
+        description={t(($) => $.admin.config.subscribe.show_info_desc)}
       />
       <SelectRow
         ctx={ctx}
         group="subscribe"
         field="show_subscribe_method"
-        title="订阅链接生效模式"
-        description="用户获取订阅链接后的有效期。"
-        placeholder="请选择"
+        title={t(($) => $.admin.config.subscribe.show_method_title)}
+        description={t(($) => $.admin.config.subscribe.show_method_desc)}
+        placeholder={t(($) => $.admin.config.select_placeholder)}
         fallback="0"
         options={[
-          { value: '0', label: '永久有效' },
-          { value: '1', label: '一次性有效' },
-          { value: '2', label: '限时有效' },
+          { value: '0', label: t(($) => $.admin.config.subscribe.show_method_permanent) },
+          { value: '1', label: t(($) => $.admin.config.subscribe.show_method_once) },
+          { value: '2', label: t(($) => $.admin.config.subscribe.show_method_timed) },
         ]}
         serialize={selectInteger}
       />
@@ -104,9 +107,9 @@ export function SubscribeSection({ ctx }: { ctx: FormCtx }) {
           ctx={ctx}
           group="subscribe"
           field="show_subscribe_expire"
-          title="订阅链接有效时间(分钟)"
-          description="订阅链接获取后经过该时间将失效。"
-          placeholder="请输入"
+          title={t(($) => $.admin.config.subscribe.show_expire_title)}
+          description={t(($) => $.admin.config.subscribe.show_expire_desc)}
+          placeholder={t(($) => $.admin.config.input_placeholder)}
           indent
           coerce={parseBackendInteger}
         />

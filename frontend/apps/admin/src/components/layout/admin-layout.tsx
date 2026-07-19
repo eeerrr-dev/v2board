@@ -1,5 +1,7 @@
 import { Suspense, useState, type ComponentType, type SVGProps } from 'react';
 import { Link, ScrollRestoration, useLocation } from 'react-router';
+import { useTranslation } from 'react-i18next';
+import type { SelectorParam } from 'i18next';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import {
   BarChart3,
@@ -68,57 +70,64 @@ type ShellIcon = ComponentType<SVGProps<SVGSVGElement>>;
 
 interface NavItem {
   to: string;
-  title: string;
+  titleKey: SelectorParam;
   icon: ShellIcon;
 }
 
 interface NavGroup {
-  title?: string;
+  id: string;
+  titleKey?: SelectorParam;
   items: NavItem[];
 }
 
 const NAV: NavGroup[] = [
   {
-    items: [{ to: '/dashboard', title: '仪表盘', icon: Gauge }],
+    id: 'primary',
+    items: [{ to: '/dashboard', titleKey: ($) => $.admin.nav.dashboard, icon: Gauge }],
   },
   {
-    title: '设置',
+    id: 'settings',
+    titleKey: ($) => $.admin.nav.group_settings,
     items: [
-      { to: '/config/system', title: '系统配置', icon: SlidersHorizontal },
-      { to: '/config/payment', title: '支付配置', icon: CreditCard },
+      { to: '/config/system', titleKey: ($) => $.admin.nav.system_config, icon: SlidersHorizontal },
+      { to: '/config/payment', titleKey: ($) => $.admin.nav.payment_config, icon: CreditCard },
     ],
   },
   {
-    title: '服务器',
+    id: 'server',
+    titleKey: ($) => $.admin.nav.group_server,
     items: [
-      { to: '/server/manage', title: '节点管理', icon: Layers },
-      { to: '/server/group', title: '权限组管理', icon: Wrench },
-      { to: '/server/route', title: '路由管理', icon: RouteIcon },
+      { to: '/server/manage', titleKey: ($) => $.admin.nav.server_manage, icon: Layers },
+      { to: '/server/group', titleKey: ($) => $.admin.nav.server_group, icon: Wrench },
+      { to: '/server/route', titleKey: ($) => $.admin.nav.server_route, icon: RouteIcon },
     ],
   },
   {
-    title: '财务',
+    id: 'finance',
+    titleKey: ($) => $.admin.nav.group_finance,
     items: [
-      { to: '/plan', title: '订阅管理', icon: ShoppingBag },
-      { to: '/order', title: '订单管理', icon: List },
-      { to: '/coupon', title: '优惠券管理', icon: Gift },
-      { to: '/giftcard', title: '礼品卡管理', icon: Star },
+      { to: '/plan', titleKey: ($) => $.admin.nav.plans, icon: ShoppingBag },
+      { to: '/order', titleKey: ($) => $.admin.nav.orders, icon: List },
+      { to: '/coupon', titleKey: ($) => $.admin.nav.coupons, icon: Gift },
+      { to: '/giftcard', titleKey: ($) => $.admin.nav.giftcards, icon: Star },
     ],
   },
   {
-    title: '用户',
+    id: 'user',
+    titleKey: ($) => $.admin.nav.group_user,
     items: [
-      { to: '/user', title: '用户管理', icon: Users },
-      { to: '/notice', title: '公告管理', icon: MessageSquare },
-      { to: '/ticket', title: '工单管理', icon: Ticket },
-      { to: '/knowledge', title: '知识库管理', icon: BookOpen },
+      { to: '/user', titleKey: ($) => $.admin.nav.users, icon: Users },
+      { to: '/notice', titleKey: ($) => $.admin.nav.notices, icon: MessageSquare },
+      { to: '/ticket', titleKey: ($) => $.admin.nav.tickets, icon: Ticket },
+      { to: '/knowledge', titleKey: ($) => $.admin.nav.knowledge, icon: BookOpen },
     ],
   },
   {
-    title: '指标',
+    id: 'metrics',
+    titleKey: ($) => $.admin.nav.group_metrics,
     items: [
-      { to: '/queue', title: '队列监控', icon: BarChart3 },
-      { to: '/audit', title: '审计日志', icon: ClipboardList },
+      { to: '/queue', titleKey: ($) => $.admin.nav.queue, icon: BarChart3 },
+      { to: '/audit', titleKey: ($) => $.admin.nav.audit, icon: ClipboardList },
     ],
   },
 ];
@@ -130,19 +139,20 @@ function readSidebarDefaultOpen(): boolean {
   return readCookie(SIDEBAR_STATE_COOKIE) !== 'false';
 }
 
-function findActiveTitle(pathname: string): string {
+function findActiveTitleKey(pathname: string): SelectorParam | undefined {
   for (const group of NAV) {
     for (const item of group.items) {
-      if (pathname === item.to || pathname.startsWith(item.to + '/')) return item.title;
+      if (pathname === item.to || pathname.startsWith(item.to + '/')) return item.titleKey;
     }
   }
-  return '';
+  return undefined;
 }
 
 // The sidebar lives inside SidebarProvider, so it owns the router hooks and the
 // mobile-sheet close-on-navigate that AdminLayout (which renders the provider)
 // cannot reach through useSidebar.
 function AdminSidebar({ siteTitle, email }: { siteTitle: string; email: string }) {
+  const { t } = useTranslation();
   const location = useLocation();
   const { setOpenMobile } = useSidebar();
 
@@ -153,8 +163,8 @@ function AdminSidebar({ siteTitle, email }: { siteTitle: string; email: string }
       id="sidebar"
       variant="sidebar"
       collapsible="icon"
-      sheetTitle="导航"
-      sheetDescription="管理中心导航"
+      sheetTitle={t(($) => $.admin.nav.sheet_title)}
+      sheetDescription={t(($) => $.admin.nav.sheet_description)}
     >
       <SidebarHeader>
         <div className="flex items-center justify-between gap-1">
@@ -165,16 +175,19 @@ function AdminSidebar({ siteTitle, email }: { siteTitle: string; email: string }
           >
             {siteTitle}
           </Link>
-          <SidebarTrigger className="size-8 shrink-0" aria-label="切换导航" />
+          <SidebarTrigger
+            className="size-8 shrink-0"
+            aria-label={t(($) => $.admin.nav.toggle_nav)}
+          />
         </div>
       </SidebarHeader>
 
-      <SidebarContent role="navigation" aria-label="主导航">
-        {NAV.map((group, groupIndex) => (
-          <SidebarGroup key={group.title ?? `group-${groupIndex}`}>
-            {group.title ? (
+      <SidebarContent role="navigation" aria-label={t(($) => $.admin.nav.primary_nav)}>
+        {NAV.map((group) => (
+          <SidebarGroup key={group.id}>
+            {group.titleKey ? (
               <SidebarGroupLabel className="group-data-[collapsible=icon]:mt-0">
-                {group.title}
+                {t(group.titleKey)}
               </SidebarGroupLabel>
             ) : null}
             <SidebarGroupContent>
@@ -184,14 +197,14 @@ function AdminSidebar({ siteTitle, email }: { siteTitle: string; email: string }
                     location.pathname === item.to || location.pathname.startsWith(item.to + '/');
                   return (
                     <SidebarMenuItem key={item.to}>
-                      <SidebarMenuButton asChild isActive={active} tooltip={item.title}>
+                      <SidebarMenuButton asChild isActive={active} tooltip={t(item.titleKey)}>
                         <Link
                           to={item.to}
                           aria-current={active ? 'page' : undefined}
                           onClick={closeMobile}
                         >
                           <item.icon />
-                          <span>{item.title}</span>
+                          <span>{t(item.titleKey)}</span>
                         </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
@@ -218,19 +231,20 @@ function AdminSidebar({ siteTitle, email }: { siteTitle: string; email: string }
  * enrollment prompt until the factor is confirmed.
  */
 function MfaEnrollmentGate() {
+  const { t } = useTranslation();
   const [dialogOpen, setDialogOpen] = useState(false);
   return (
     <Card className="mx-auto max-w-lg" data-testid="mfa-enrollment-gate">
       <CardContent className="flex flex-col items-center gap-4 py-10 text-center">
         <ShieldAlert className="size-10 text-destructive" aria-hidden />
         <div className="space-y-1">
-          <h2 className="text-lg font-semibold">需要启用两步验证</h2>
+          <h2 className="text-lg font-semibold">{t(($) => $.admin.auth.mfa_required_title)}</h2>
           <p className="text-sm text-muted-foreground">
-            本站点已强制要求管理人员启用两步验证，完成绑定后即可继续使用后台。
+            {t(($) => $.admin.auth.mfa_required_description)}
           </p>
         </div>
         <Button type="button" onClick={() => setDialogOpen(true)}>
-          立即设置
+          {t(($) => $.admin.auth.mfa_setup_now)}
         </Button>
       </CardContent>
       <MfaDialog open={dialogOpen} onOpenChange={setDialogOpen} />
@@ -239,6 +253,7 @@ function MfaEnrollmentGate() {
 }
 
 function AdminLayoutContent() {
+  const { t } = useTranslation();
   const location = useLocation();
   const darkMode = useDarkMode();
   const themePreference = useThemePreference();
@@ -251,7 +266,7 @@ function AdminLayoutContent() {
   const mfaBlocked =
     accountMfa.data?.totp_required === true && accountMfa.data.totp_enabled === false;
   const siteTitle = getAdminTitle();
-  const title = findActiveTitle(location.pathname);
+  const titleKey = findActiveTitleKey(location.pathname);
 
   return (
     <SidebarProvider
@@ -271,7 +286,10 @@ function AdminLayoutContent() {
           className="flex h-12 shrink-0 items-center gap-2 border-b border-border"
         >
           <div className="flex w-full items-center gap-1 px-4 sm:px-6 lg:gap-2">
-            <SidebarTrigger className="-ml-1 md:hidden" aria-label="切换导航" />
+            <SidebarTrigger
+              className="-ml-1 md:hidden"
+              aria-label={t(($) => $.admin.nav.toggle_nav)}
+            />
             <Separator
               orientation="vertical"
               className="mx-2 data-[orientation=vertical]:h-4 md:hidden"
@@ -280,7 +298,7 @@ function AdminLayoutContent() {
               data-slot="page-title"
               className="min-w-0 flex-1 truncate text-base font-medium text-foreground"
             >
-              {title}
+              {titleKey ? t(titleKey) : null}
             </h1>
             <div className="ml-auto flex shrink-0 items-center gap-1">
               <DropdownMenu modal={false}>
@@ -291,8 +309,8 @@ function AdminLayoutContent() {
                     size="icon"
                     className="size-8 text-muted-foreground hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-accent-foreground"
                     data-dark-mode-trigger
-                    aria-label="切换主题"
-                    title="切换主题"
+                    aria-label={t(($) => $.common.toggle_theme)}
+                    title={t(($) => $.common.toggle_theme)}
                   >
                     {darkMode ? <Moon /> : <Sun />}
                   </Button>
@@ -308,7 +326,7 @@ function AdminLayoutContent() {
                       className="gap-2"
                     >
                       <Monitor className="size-4" />
-                      跟随系统
+                      {t(($) => $.common.theme_system)}
                     </DropdownMenuRadioItem>
                     <DropdownMenuRadioItem
                       value="light"
@@ -316,11 +334,11 @@ function AdminLayoutContent() {
                       className="gap-2"
                     >
                       <Sun className="size-4" />
-                      浅色
+                      {t(($) => $.common.theme_light)}
                     </DropdownMenuRadioItem>
                     <DropdownMenuRadioItem value="dark" data-theme-option="dark" className="gap-2">
                       <Moon className="size-4" />
-                      深色
+                      {t(($) => $.common.theme_dark)}
                     </DropdownMenuRadioItem>
                   </DropdownMenuRadioGroup>
                 </DropdownMenuContent>
@@ -342,10 +360,11 @@ function AdminLayoutContent() {
 }
 
 function AdminLayoutFallback() {
+  const { t } = useTranslation();
   return (
     <div role="status" className="flex min-h-screen items-center justify-center bg-background">
       <Spinner className="size-6" />
-      <span className="sr-only">正在加载</span>
+      <span className="sr-only">{t(($) => $.admin.nav.loading)}</span>
     </div>
   );
 }

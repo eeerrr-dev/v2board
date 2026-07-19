@@ -1,6 +1,7 @@
 import { useState, type ReactElement } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm, useFormState, useWatch } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { ExternalLink, Loader2 } from 'lucide-react';
 import type { admin } from '@v2board/api-client';
 import { Button } from '@/components/ui/button';
@@ -17,8 +18,8 @@ import { Field, FieldError, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import {
-  ROUTE_ACTION_OPTIONS,
   SERVER_ROUTE_ACTIONS,
+  getRouteActionOptions,
   getRouteMatchPlaceholder,
   getRouteMatchTextareaValue,
 } from './domain';
@@ -40,6 +41,7 @@ export function ServerRouteDialog({
   onSave: (route: ServerRouteFormValues, onSuccess: () => void) => void;
   children: ReactElement<{ onClick?: () => void }>;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const form = useForm<ServerRouteFormValues>({
     resolver: zodResolver(serverRouteFormSchema),
@@ -73,17 +75,25 @@ export function ServerRouteDialog({
       >
         <form onSubmit={(event) => void saveRoute(event)}>
           <DialogHeader>
-            <DialogTitle>{initialRoute?.id ? '编辑路由' : '创建路由'}</DialogTitle>
-            <DialogDescription>配置匹配条件、路由动作和目标值。</DialogDescription>
+            <DialogTitle>
+              {initialRoute?.id
+                ? t(($) => $.admin.servers.edit_route)
+                : t(($) => $.admin.servers.create_route)}
+            </DialogTitle>
+            <DialogDescription>
+              {t(($) => $.admin.servers.route_editor_description)}
+            </DialogDescription>
           </DialogHeader>
 
           <div className="mt-4 space-y-4">
             <Field data-invalid={Boolean(formErrors.remarks)}>
-              <FieldLabel htmlFor="server-route-remarks">备注</FieldLabel>
+              <FieldLabel htmlFor="server-route-remarks">
+                {t(($) => $.admin.servers.remarks)}
+              </FieldLabel>
               <Input
                 {...form.register('remarks')}
                 id="server-route-remarks"
-                placeholder="请输入备注"
+                placeholder={t(($) => $.admin.servers.remarks_placeholder)}
                 aria-invalid={Boolean(formErrors.remarks)}
                 data-testid="server-route-remarks"
               />
@@ -93,7 +103,7 @@ export function ServerRouteDialog({
             {action !== 'default_out' ? (
               <Field data-invalid={Boolean(formErrors.match)}>
                 <FieldLabel htmlFor="server-route-match" className="flex items-center gap-2">
-                  匹配值
+                  {t(($) => $.admin.servers.match_value)}
                   <a
                     className="inline-flex items-center gap-1 text-primary"
                     href="https://xtls.github.io/config/routing.html#ruleobject"
@@ -101,7 +111,7 @@ export function ServerRouteDialog({
                     rel="noopener noreferrer"
                   >
                     <ExternalLink className="size-3.5" />
-                    填写参考
+                    {t(($) => $.admin.servers.fill_reference)}
                   </a>
                 </FieldLabel>
                 <Textarea
@@ -109,7 +119,7 @@ export function ServerRouteDialog({
                   id="server-route-match"
                   rows={5}
                   className="font-mono text-xs"
-                  placeholder={getRouteMatchPlaceholder(action)}
+                  placeholder={getRouteMatchPlaceholder(t, action)}
                   aria-invalid={Boolean(formErrors.match)}
                   data-testid="server-route-match"
                 />
@@ -118,15 +128,17 @@ export function ServerRouteDialog({
             ) : null}
 
             <Field data-invalid={Boolean(formErrors.action)}>
-              <FieldLabel htmlFor="server-route-action">动作</FieldLabel>
+              <FieldLabel htmlFor="server-route-action">
+                {t(($) => $.admin.servers.action)}
+              </FieldLabel>
               <Controller
                 control={form.control}
                 name="action"
                 render={({ field }) => (
                   <NodeSelect
                     value={field.value}
-                    placeholder="请选择动作"
-                    options={ROUTE_ACTION_OPTIONS}
+                    placeholder={t(($) => $.admin.servers.action_placeholder)}
+                    options={getRouteActionOptions(t)}
                     onChange={(value) => {
                       const nextAction = value as ServerRouteAction;
                       field.onChange(nextAction);
@@ -144,11 +156,13 @@ export function ServerRouteDialog({
 
             {action === 'dns' ? (
               <Field>
-                <FieldLabel htmlFor="server-route-dns">DNS服务器</FieldLabel>
+                <FieldLabel htmlFor="server-route-dns">
+                  {t(($) => $.admin.servers.dns_server)}
+                </FieldLabel>
                 <Input
                   {...form.register('action_value')}
                   id="server-route-dns"
-                  placeholder="请输入用于解析的DNS服务器地址"
+                  placeholder={t(($) => $.admin.servers.dns_server_placeholder)}
                   data-testid="server-route-action-value"
                 />
               </Field>
@@ -157,7 +171,7 @@ export function ServerRouteDialog({
             {action === 'route' || action === 'route_ip' || action === 'default_out' ? (
               <Field>
                 <FieldLabel htmlFor="server-route-outbound" className="flex items-center gap-2">
-                  Xray出站配置
+                  {t(($) => $.admin.servers.xray_outbound)}
                   <a
                     className="inline-flex items-center gap-1 text-primary"
                     href="https://xtls.github.io/config/outbound.html"
@@ -165,7 +179,7 @@ export function ServerRouteDialog({
                     rel="noopener noreferrer"
                   >
                     <ExternalLink className="size-3.5" />
-                    填写参考
+                    {t(($) => $.admin.servers.fill_reference)}
                   </a>
                 </FieldLabel>
                 <Textarea
@@ -198,7 +212,7 @@ export function ServerRouteDialog({
 
           <DialogFooter className="mt-4">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-              取消
+              {t(($) => $.common.cancel)}
             </Button>
             <Button
               type="submit"
@@ -208,7 +222,7 @@ export function ServerRouteDialog({
               {pending || isSubmitting ? (
                 <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
               ) : null}
-              提交
+              {t(($) => $.common.submit)}
             </Button>
           </DialogFooter>
         </form>

@@ -7,27 +7,32 @@ import {
   isMoneyInput,
 } from '@/lib/form-input-validation';
 
+// Messages are i18n keys; FieldError resolves them through
+// translateRuntimeMessage at display time.
 const numberInput = z.union([z.string(), z.number()]);
 const nullableNumberInput = numberInput.nullable();
 const MAX_I32 = 2_147_483_647;
 const requiredIntegerInput = nullableNumberInput
-  .refine((value) => !isBlankInput(value) && isIntegerInput(value), '请输入整数')
-  .refine((value) => Number(value) >= 0 && Number(value) <= MAX_I32, '数值超出可保存范围');
+  .refine((value) => !isBlankInput(value) && isIntegerInput(value), 'admin.plans.integer_invalid')
+  .refine(
+    (value) => Number(value) >= 0 && Number(value) <= MAX_I32,
+    'admin.plans.integer_out_of_range',
+  );
 const optionalIntegerInput = nullableNumberInput
   .optional()
-  .refine((value) => isEmptyInput(value) || isIntegerInput(value), '请输入整数')
+  .refine((value) => isEmptyInput(value) || isIntegerInput(value), 'admin.plans.integer_invalid')
   .refine(
     (value) => isEmptyInput(value) || (Number(value) >= 0 && Number(value) <= MAX_I32),
-    '数值超出可保存范围',
+    'admin.plans.integer_out_of_range',
   );
 const optionalPriceInput = nullableNumberInput
-  .refine((value) => value === null || isMoneyInput(value), '请输入有效金额')
+  .refine((value) => value === null || isMoneyInput(value), 'admin.plans.price_invalid')
   .refine(
     (value) =>
       value === null ||
       !isMoneyInput(value) ||
       (Number(value) >= 0 && decimalToCents(value) <= MAX_I32),
-    '金额超出可保存范围',
+    'admin.plans.price_out_of_range',
   );
 
 export const planEditorSchema = z.object({
@@ -35,11 +40,11 @@ export const planEditorSchema = z.object({
   name: z
     .string()
     .nullable()
-    .refine((value) => !isBlankInput(value), '套餐名称不能为空'),
+    .refine((value) => !isBlankInput(value), 'admin.plans.name_required'),
   content: z.string().nullable().optional(),
   group_id: numberInput
     .optional()
-    .refine((value) => !isBlankInput(value) && isIntegerInput(value), '权限组不能为空'),
+    .refine((value) => !isBlankInput(value) && isIntegerInput(value), 'admin.plans.group_required'),
   reset_traffic_method: z
     .union([z.literal(0), z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.null()])
     .optional(),

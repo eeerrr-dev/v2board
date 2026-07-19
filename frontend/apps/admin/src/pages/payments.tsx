@@ -4,6 +4,7 @@ import type { admin } from '@v2board/api-client';
 import type { AdminPayment, PaymentFormDefinition } from '@v2board/types';
 import { ArrowDown, ArrowUp, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { Controller, useForm, useFormState, useWatch } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import {
   useAdminPayments,
   useDropPaymentMutation,
@@ -102,6 +103,7 @@ function PaymentEditor({
   onOpenChange: (open: boolean) => void;
   onSave: (payload: SavePaymentPayload, onSuccess: () => void) => void;
 }) {
+  const { t } = useTranslation();
   const form = useForm<PaymentEditorValues>({
     resolver: zodResolver(paymentFormSchema),
     defaultValues: paymentEditorValues(record),
@@ -208,34 +210,40 @@ function PaymentEditor({
         }}
       >
         <SheetHeader>
-          <SheetTitle>{record?.id ? '编辑支付方式' : '添加支付方式'}</SheetTitle>
-          <SheetDescription>配置支付驱动、显示信息、手续费和网关参数。</SheetDescription>
+          <SheetTitle>
+            {record?.id
+              ? t(($) => $.admin.payments.edit_title)
+              : t(($) => $.admin.payments.add_title)}
+          </SheetTitle>
+          <SheetDescription>{t(($) => $.admin.payments.editor_description)}</SheetDescription>
         </SheetHeader>
 
         <form id="payment-editor-form" className="space-y-4 px-4 pb-4" onSubmit={save} noValidate>
           <Field data-invalid={Boolean(formErrors.name)}>
-            <FieldLabel htmlFor="payment-name">显示名称</FieldLabel>
+            <FieldLabel htmlFor="payment-name">{t(($) => $.admin.payments.name_label)}</FieldLabel>
             <Input
               id="payment-name"
-              placeholder="用于前端显示使用"
+              placeholder={t(($) => $.admin.payments.name_placeholder)}
               aria-invalid={Boolean(formErrors.name)}
               {...form.register('name')}
             />
             <FieldError errors={[formErrors.name]} />
           </Field>
           <Field>
-            <FieldLabel htmlFor="payment-icon">图标URL(选填)</FieldLabel>
+            <FieldLabel htmlFor="payment-icon">{t(($) => $.admin.payments.icon_label)}</FieldLabel>
             <Input
               id="payment-icon"
-              placeholder="用于前端显示使用(https://x.com/icon.svg)"
+              placeholder={t(($) => $.admin.payments.icon_placeholder)}
               {...form.register('icon')}
             />
           </Field>
           <Field data-invalid={Boolean(formErrors.notify_domain)}>
-            <FieldLabel htmlFor="payment-notify">自定义通知域名(选填)</FieldLabel>
+            <FieldLabel htmlFor="payment-notify">
+              {t(($) => $.admin.payments.notify_domain_label)}
+            </FieldLabel>
             <Input
               id="payment-notify"
-              placeholder="网关的通知将会发送到该域名(https://x.com)"
+              placeholder={t(($) => $.admin.payments.notify_domain_placeholder)}
               aria-invalid={Boolean(formErrors.notify_domain)}
               {...form.register('notify_domain')}
             />
@@ -243,7 +251,9 @@ function PaymentEditor({
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field data-invalid={Boolean(formErrors.handling_fee_percent)}>
-              <FieldLabel htmlFor="payment-fee-percent">百分比手续费(选填)</FieldLabel>
+              <FieldLabel htmlFor="payment-fee-percent">
+                {t(($) => $.admin.payments.fee_percent_label)}
+              </FieldLabel>
               <InputGroup>
                 <InputGroupInput
                   id="payment-fee-percent"
@@ -251,7 +261,7 @@ function PaymentEditor({
                   min="0.1"
                   max="100"
                   step="0.1"
-                  placeholder="在订单金额基础上附加手续费"
+                  placeholder={t(($) => $.admin.payments.fee_placeholder)}
                   aria-invalid={Boolean(formErrors.handling_fee_percent)}
                   {...form.register('handling_fee_percent')}
                 />
@@ -262,12 +272,14 @@ function PaymentEditor({
               <FieldError errors={[formErrors.handling_fee_percent]} />
             </Field>
             <Field data-invalid={Boolean(formErrors.handling_fee_fixed)}>
-              <FieldLabel htmlFor="payment-fee-fixed">固定手续费(选填)</FieldLabel>
+              <FieldLabel htmlFor="payment-fee-fixed">
+                {t(($) => $.admin.payments.fee_fixed_label)}
+              </FieldLabel>
               <Input
                 id="payment-fee-fixed"
                 type="number"
                 step="0.01"
-                placeholder="在订单金额基础上附加手续费"
+                placeholder={t(($) => $.admin.payments.fee_placeholder)}
                 aria-invalid={Boolean(formErrors.handling_fee_fixed)}
                 {...form.register('handling_fee_fixed')}
               />
@@ -275,7 +287,9 @@ function PaymentEditor({
             </Field>
           </div>
           <Field data-invalid={Boolean(formErrors.payment)}>
-            <FieldLabel htmlFor="payment-method">接口文件</FieldLabel>
+            <FieldLabel htmlFor="payment-method">
+              {t(($) => $.admin.payments.method_label)}
+            </FieldLabel>
             <Select
               value={selectedPaymentMethod ?? ''}
               disabled={methodsLoading || methodsError || methodsEmpty}
@@ -286,7 +300,7 @@ function PaymentEditor({
                 className="w-full"
                 aria-invalid={Boolean(formErrors.payment)}
               >
-                <SelectValue placeholder="选择支付接口" />
+                <SelectValue placeholder={t(($) => $.admin.payments.method_placeholder)} />
               </SelectTrigger>
               <SelectContent>
                 {paymentMethods.map((method) => (
@@ -302,7 +316,7 @@ function PaymentEditor({
           {methodsLoading ? (
             <LoadingState
               className="min-h-20 py-2"
-              label="正在加载支付接口"
+              label={t(($) => $.admin.payments.methods_loading)}
               data-testid="payment-methods-loading"
             >
               <SkeletonRows rows={2} />
@@ -311,14 +325,14 @@ function PaymentEditor({
           {methodsError ? (
             <ErrorState
               data-testid="payment-methods-error"
-              message="支付接口列表加载失败"
+              message={t(($) => $.admin.payments.methods_load_failed)}
               onRetry={() => void paymentMethodsQuery.refetch()}
             />
           ) : null}
           {methodsEmpty ? (
             <ErrorState
               data-testid="payment-methods-empty"
-              message="暂无可用支付接口"
+              message={t(($) => $.admin.payments.methods_empty)}
               onRetry={() => void paymentMethodsQuery.refetch()}
             />
           ) : null}
@@ -326,7 +340,7 @@ function PaymentEditor({
           {definitionLoading ? (
             <LoadingState
               className="min-h-20 py-2"
-              label="正在加载接口配置"
+              label={t(($) => $.admin.payments.definition_loading)}
               data-testid="payment-definition-loading"
             >
               <SkeletonFields fields={2} />
@@ -335,14 +349,14 @@ function PaymentEditor({
           {definitionError ? (
             <ErrorState
               data-testid="payment-definition-error"
-              message="支付接口配置加载失败"
+              message={t(($) => $.admin.payments.definition_load_failed)}
               onRetry={() => void definitionQuery.refetch()}
             />
           ) : null}
           {definitionEmpty ? (
             <ErrorState
               data-testid="payment-definition-empty"
-              message="该支付接口未提供配置字段"
+              message={t(($) => $.admin.payments.definition_empty)}
               onRetry={() => void definitionQuery.refetch()}
             />
           ) : null}
@@ -398,10 +412,10 @@ function PaymentEditor({
             {pending ? (
               <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
             ) : null}
-            {record?.id ? '保存' : '添加'}
+            {record?.id ? t(($) => $.common.save) : t(($) => $.admin.payments.add)}
           </Button>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            取消
+            {t(($) => $.common.cancel)}
           </Button>
         </SheetFooter>
       </SheetContent>
@@ -410,6 +424,7 @@ function PaymentEditor({
 }
 
 export default function PaymentsPage() {
+  const { t } = useTranslation();
   const payments = useAdminPayments();
   const save = useSavePaymentMutation();
   const show = useShowPaymentMutation();
@@ -457,9 +472,9 @@ export default function PaymentsPage() {
 
   const removePayment = async (row: AdminPayment) => {
     const confirmed = await confirmDialog({
-      title: '警告',
-      description: '确定要删除该条项目吗？',
-      confirmText: '确定',
+      title: t(($) => $.admin.payments.delete_confirm_title),
+      description: t(($) => $.admin.payments.delete_confirm_description),
+      confirmText: t(($) => $.common.confirm),
     });
     if (!confirmed) return;
     drop.mutate(row.id);
@@ -475,32 +490,32 @@ export default function PaymentsPage() {
     {
       id: 'enable',
       meta: { align: 'center' },
-      header: () => <span>启用</span>,
+      header: () => <span>{t(($) => $.common.enable)}</span>,
       cell: ({ row }) => (
         <Switch
           checked={row.original.enable}
           onCheckedChange={() => show.mutate({ id: row.original.id, enable: !row.original.enable })}
-          aria-label={`切换「${row.original.name}」启用`}
+          aria-label={t(($) => $.admin.payments.toggle_enable, { name: row.original.name })}
         />
       ),
     },
     {
       id: 'name',
       meta: { className: 'font-medium text-foreground' },
-      header: () => <span>显示名称</span>,
+      header: () => <span>{t(($) => $.admin.payments.name_label)}</span>,
       cell: ({ row }) => row.original.name,
     },
     {
       id: 'payment',
-      header: () => <span>支付接口</span>,
+      header: () => <span>{t(($) => $.admin.payments.payment_col)}</span>,
       cell: ({ row }) => row.original.payment,
     },
     {
       id: 'notify_url',
       meta: { className: 'max-w-[24rem] truncate text-muted-foreground' },
       header: () => (
-        <HeaderTooltip title="支付网关将会把数据通知到本地址，请通过防火墙放行本地址。">
-          通知地址
+        <HeaderTooltip title={t(($) => $.admin.payments.notify_url_tooltip)}>
+          {t(($) => $.admin.payments.notify_url_col)}
         </HeaderTooltip>
       ),
       cell: ({ row }) => row.original.notify_url,
@@ -508,7 +523,7 @@ export default function PaymentsPage() {
     {
       id: 'actions',
       meta: { align: 'right' },
-      header: () => <span>操作</span>,
+      header: () => <span>{t(($) => $.common.operation)}</span>,
       cell: ({ row }) => {
         const index = orderedPayments.findIndex((item) => item.id === row.original.id);
         return (
@@ -519,7 +534,7 @@ export default function PaymentsPage() {
               className="size-8"
               disabled={index <= 0}
               onClick={() => movePayment(index, -1)}
-              aria-label="上移"
+              aria-label={t(($) => $.admin.payments.move_up)}
             >
               <ArrowUp className="size-4" />
             </Button>
@@ -529,7 +544,7 @@ export default function PaymentsPage() {
               className="size-8"
               disabled={index < 0 || index >= orderedPayments.length - 1}
               onClick={() => movePayment(index, 1)}
-              aria-label="下移"
+              aria-label={t(($) => $.admin.payments.move_down)}
             >
               <ArrowDown className="size-4" />
             </Button>
@@ -542,7 +557,7 @@ export default function PaymentsPage() {
               aria-expanded={editorOpen && editor?.record?.id === row.original.id}
             >
               <Pencil className="size-4" />
-              编辑
+              {t(($) => $.common.edit)}
             </Button>
             <Button
               variant="ghost"
@@ -552,7 +567,7 @@ export default function PaymentsPage() {
               data-testid={`payment-delete-${row.original.id}`}
             >
               <Trash2 className="size-4" />
-              删除
+              {t(($) => $.common.delete)}
             </Button>
           </div>
         );
@@ -563,10 +578,13 @@ export default function PaymentsPage() {
   return (
     <PageShell data-testid="payments-page">
       {payments.isError ? (
-        <ErrorState message="支付配置加载失败" onRetry={() => void payments.refetch()} />
+        <ErrorState
+          message={t(($) => $.admin.payments.list_load_failed)}
+          onRetry={() => void payments.refetch()}
+        />
       ) : null}
       <PageHeader
-        title="支付配置"
+        title={t(($) => $.admin.payments.title)}
         actions={
           <Button
             data-testid="payment-create"
@@ -575,7 +593,7 @@ export default function PaymentsPage() {
             aria-expanded={editorOpen && editor?.record === undefined}
           >
             <Plus className="size-4" />
-            添加支付方式
+            {t(($) => $.admin.payments.add_title)}
           </Button>
         }
       />
@@ -603,7 +621,7 @@ export default function PaymentsPage() {
               data-testid="payments-table"
               empty={
                 !payments.isError && payments.data !== undefined && orderedPayments.length === 0
-                  ? '暂无支付方式'
+                  ? t(($) => $.admin.payments.empty)
                   : undefined
               }
               emptyTestId="payments-empty"

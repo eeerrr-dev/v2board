@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useLoaderData, useNavigate } from 'react-router';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -24,16 +25,27 @@ import { Field, FieldError, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { toast } from '@/lib/toast';
 
-const emailInput = z.string().trim().min(1, '请输入邮箱');
-const passwordError = '密码至少需要 8 个字符';
+// Flat runtime message keys (FieldError resolves them through
+// translateRuntimeMessage); they must match the admin.auth fragment.
+const LOGIN_VALIDATION = {
+  emailRequired: 'admin.auth.email_required',
+  emailInvalid: 'admin.auth.email_invalid',
+  passwordMin: 'admin.auth.password_min',
+  mfaCodeInvalid: 'admin.auth.mfa_code_invalid',
+} as const;
+
+const emailInput = z.string().trim().min(1, LOGIN_VALIDATION.emailRequired);
 const loginSchema = z.object({
-  email: emailInput.pipe(z.email('请输入有效邮箱')),
+  email: emailInput.pipe(z.email(LOGIN_VALIDATION.emailInvalid)),
   // AuthLogin counts Unicode characters (Laravel mb_strlen semantics), not
   // UTF-16 code units. Keep spaces intact because passwords are not trimmed.
   password: z
     .string()
-    .min(8, passwordError)
-    .refine((value) => value.length < 8 || Array.from(value).length >= 8, passwordError),
+    .min(8, LOGIN_VALIDATION.passwordMin)
+    .refine(
+      (value) => value.length < 8 || Array.from(value).length >= 8,
+      LOGIN_VALIDATION.passwordMin,
+    ),
   totp_code: z.string().optional(),
 });
 
@@ -44,6 +56,7 @@ const LOGIN_PASSWORD_ID = 'admin-login-password';
 const LOGIN_TOTP_ID = 'admin-login-totp';
 
 export default function LoginPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { redirectTarget } = useLoaderData() as AdminLoginLoaderData;
@@ -72,7 +85,7 @@ export default function LoginPage() {
         onSuccess: (result) => {
           if (!result.is_admin) {
             logout();
-            toast.error('无管理员权限');
+            toast.error(t(($) => $.admin.auth.not_admin));
             return;
           }
           setAuthData(result.auth_data);
@@ -87,7 +100,7 @@ export default function LoginPage() {
           }
           if (hasProblemCode(error, 'mfa_code_invalid')) {
             setMfaRequired(true);
-            form.setError('totp_code', { message: '验证码错误或已被使用' });
+            form.setError('totp_code', { message: LOGIN_VALIDATION.mfaCodeInvalid });
           }
         },
       },
@@ -121,7 +134,7 @@ export default function LoginPage() {
           ) : (
             <CardTitle className="text-2xl">{title || 'V2Board'}</CardTitle>
           )}
-          <CardDescription>登录到管理中心</CardDescription>
+          <CardDescription>{t(($) => $.admin.auth.login_description)}</CardDescription>
         </CardHeader>
         <CardContent>
           <form className="grid gap-4" onSubmit={submit} noValidate>
@@ -132,13 +145,13 @@ export default function LoginPage() {
                 const errorId = `${LOGIN_EMAIL_ID}-error`;
                 return (
                   <Field data-invalid={fieldState.invalid}>
-                    <FieldLabel htmlFor={LOGIN_EMAIL_ID}>邮箱</FieldLabel>
+                    <FieldLabel htmlFor={LOGIN_EMAIL_ID}>{t(($) => $.admin.auth.email)}</FieldLabel>
                     <Input
                       {...field}
                       id={LOGIN_EMAIL_ID}
                       type="email"
                       autoComplete="username"
-                      placeholder="邮箱"
+                      placeholder={t(($) => $.admin.auth.email)}
                       aria-invalid={fieldState.invalid}
                       aria-describedby={fieldState.invalid ? errorId : undefined}
                     />
@@ -154,13 +167,15 @@ export default function LoginPage() {
                 const errorId = `${LOGIN_PASSWORD_ID}-error`;
                 return (
                   <Field data-invalid={fieldState.invalid}>
-                    <FieldLabel htmlFor={LOGIN_PASSWORD_ID}>密码</FieldLabel>
+                    <FieldLabel htmlFor={LOGIN_PASSWORD_ID}>
+                      {t(($) => $.admin.auth.password)}
+                    </FieldLabel>
                     <Input
                       {...field}
                       id={LOGIN_PASSWORD_ID}
                       type="password"
                       autoComplete="current-password"
-                      placeholder="密码"
+                      placeholder={t(($) => $.admin.auth.password)}
                       aria-invalid={fieldState.invalid}
                       aria-describedby={fieldState.invalid ? errorId : undefined}
                     />
@@ -179,7 +194,7 @@ export default function LoginPage() {
                     <Field data-invalid={fieldState.invalid}>
                       <FieldLabel htmlFor={LOGIN_TOTP_ID}>
                         <ShieldCheck className="size-4" />
-                        两步验证码
+                        {t(($) => $.admin.auth.mfa_code_label)}
                       </FieldLabel>
                       <Input
                         {...field}
@@ -187,7 +202,7 @@ export default function LoginPage() {
                         inputMode="numeric"
                         autoComplete="one-time-code"
                         maxLength={6}
-                        placeholder="验证器 App 中的 6 位验证码"
+                        placeholder={t(($) => $.admin.auth.mfa_code_placeholder)}
                         aria-invalid={fieldState.invalid}
                         aria-describedby={fieldState.invalid ? errorId : undefined}
                         data-testid="admin-login-totp"
@@ -200,7 +215,7 @@ export default function LoginPage() {
             ) : null}
             <Button type="submit" block loading={login.isPending} data-testid="admin-login-submit">
               <LogIn className="size-4" />
-              登入
+              {t(($) => $.admin.auth.sign_in)}
             </Button>
           </form>
           <div className="mt-4 text-center">
@@ -210,7 +225,7 @@ export default function LoginPage() {
               className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
               onClick={() => setForgotOpen(true)}
             >
-              忘记密码
+              {t(($) => $.admin.auth.forgot_password)}
             </button>
           </div>
         </CardContent>
@@ -219,15 +234,15 @@ export default function LoginPage() {
       <Dialog open={forgotOpen} onOpenChange={setForgotOpen}>
         <DialogContent className="sm:max-w-md" data-testid="admin-forgot-dialog">
           <DialogHeader>
-            <DialogTitle>忘记密码</DialogTitle>
-            <DialogDescription>在站点目录下执行命令找回密码</DialogDescription>
+            <DialogTitle>{t(($) => $.admin.auth.forgot_password)}</DialogTitle>
+            <DialogDescription>{t(($) => $.admin.auth.forgot_description)}</DialogDescription>
           </DialogHeader>
           <code className="grid rounded-md bg-muted px-3 py-2 font-mono text-sm text-foreground">
-            {"V2BOARD_NEW_PASSWORD='新密码' v2board-api reset-admin-password 管理员邮箱"}
+            {t(($) => $.admin.auth.reset_password_command)}
           </code>
           <DialogFooter>
             <Button type="button" onClick={() => setForgotOpen(false)}>
-              我知道了
+              {t(($) => $.admin.auth.got_it)}
             </Button>
           </DialogFooter>
         </DialogContent>

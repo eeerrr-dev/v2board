@@ -2,6 +2,8 @@ import { useEffect } from 'react';
 import dayjs from 'dayjs';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm, useFormState, useWatch } from 'react-hook-form';
+import type { TFunction } from 'i18next';
+import { useTranslation } from 'react-i18next';
 import type { admin } from '@v2board/api-client';
 import { Button } from '@/components/ui/button';
 import {
@@ -26,9 +28,9 @@ import { PLAN_NONE, requestErrorMessage, type PlanOption } from './shared';
 
 type GenerateUserPayload = Parameters<typeof admin.generateUser>[1];
 
-function planSelectItems(plans: PlanOption[], includeEmpty = false) {
+function planSelectItems(t: TFunction, plans: PlanOption[], includeEmpty = false) {
   return [
-    ...(includeEmpty ? [{ value: PLAN_NONE, label: '无' }] : []),
+    ...(includeEmpty ? [{ value: PLAN_NONE, label: t(($) => $.admin.users.none) }] : []),
     ...plans.map((plan) => ({ value: String(plan.value), label: plan.label })),
   ];
 }
@@ -46,6 +48,7 @@ export function GenerateUserModal({
   onClose: () => void;
   onSubmit: (values: GenerateUserPayload) => Promise<void>;
 }) {
+  const { t } = useTranslation();
   const form = useForm<GenerateUserValues>({
     resolver: zodResolver(generateUserSchema),
     defaultValues: {
@@ -73,7 +76,7 @@ export function GenerateUserModal({
     onClose();
   };
 
-  const planItems = planSelectItems(plans, true);
+  const planItems = planSelectItems(t, plans, true);
   const submit = form.handleSubmit(async (values) => {
     form.clearErrors('root.serverError');
     const emailPrefix = values.email_prefix.trim();
@@ -97,14 +100,14 @@ export function GenerateUserModal({
     <Dialog open={open} onOpenChange={(next) => (!next ? close() : undefined)}>
       <DialogContent data-testid="user-generate-dialog">
         <DialogHeader>
-          <DialogTitle>创建用户</DialogTitle>
-          <DialogDescription>批量创建用户并设置初始订阅与到期时间。</DialogDescription>
+          <DialogTitle>{t(($) => $.admin.users.create_user)}</DialogTitle>
+          <DialogDescription>{t(($) => $.admin.users.create_user_description)}</DialogDescription>
         </DialogHeader>
 
         <form className="space-y-4" onSubmit={submit} noValidate>
           <FieldError errors={[formErrors.root?.serverError]} />
           <FieldSet data-invalid={Boolean(formErrors.email_prefix || formErrors.email_suffix)}>
-            <FieldLegend variant="label">邮箱</FieldLegend>
+            <FieldLegend variant="label">{t(($) => $.admin.users.email)}</FieldLegend>
             <div className="flex items-center gap-2">
               {!generateCount ? (
                 <Controller
@@ -113,7 +116,7 @@ export function GenerateUserModal({
                   render={({ field }) => (
                     <Input
                       {...field}
-                      placeholder="账号（批量生成请留空）"
+                      placeholder={t(($) => $.admin.users.email_prefix_placeholder)}
                       onChange={(event) => {
                         field.onChange(event);
                         if (event.target.value) {
@@ -133,7 +136,7 @@ export function GenerateUserModal({
                 render={({ field, fieldState }) => (
                   <Input
                     {...field}
-                    placeholder="域"
+                    placeholder={t(($) => $.admin.users.email_suffix_placeholder)}
                     data-testid="generate-email-suffix"
                     aria-invalid={fieldState.invalid}
                   />
@@ -143,17 +146,21 @@ export function GenerateUserModal({
             <FieldError errors={[formErrors.email_prefix, formErrors.email_suffix]} />
           </FieldSet>
           <Field>
-            <FieldLabel htmlFor="generate-password">密码</FieldLabel>
+            <FieldLabel htmlFor="generate-password">{t(($) => $.admin.users.password)}</FieldLabel>
             <Controller
               control={form.control}
               name="password"
               render={({ field }) => (
-                <Input {...field} id="generate-password" placeholder="留空则密码与邮箱相同" />
+                <Input
+                  {...field}
+                  id="generate-password"
+                  placeholder={t(($) => $.admin.users.password_same_as_email)}
+                />
               )}
             />
           </Field>
           <Field>
-            <FieldLabel htmlFor="generate-expired">到期时间</FieldLabel>
+            <FieldLabel htmlFor="generate-expired">{t(($) => $.admin.users.expired_at)}</FieldLabel>
             <Controller
               control={form.control}
               name="expired_at"
@@ -161,7 +168,7 @@ export function GenerateUserModal({
                 <Input
                   id="generate-expired"
                   type="date"
-                  placeholder="请选择用户到期日期，为空则不限制到期时间"
+                  placeholder={t(($) => $.admin.users.expired_at_placeholder)}
                   value={field.value ? dayjs(1000 * Number(field.value)).format('YYYY-MM-DD') : ''}
                   onChange={(event) =>
                     field.onChange(
@@ -174,7 +181,9 @@ export function GenerateUserModal({
             />
           </Field>
           <Field>
-            <FieldLabel htmlFor="generate-plan">订阅计划</FieldLabel>
+            <FieldLabel htmlFor="generate-plan">
+              {t(($) => $.admin.users.subscription_plan)}
+            </FieldLabel>
             <Controller
               control={form.control}
               name="plan_id"
@@ -186,7 +195,7 @@ export function GenerateUserModal({
                   }
                 >
                   <SelectTrigger id="generate-plan" className="w-full">
-                    <SelectValue placeholder="请选择用户订阅计划" />
+                    <SelectValue placeholder={t(($) => $.admin.users.plan_select_placeholder)} />
                   </SelectTrigger>
                   <SelectContent>
                     {planItems.map((option) => (
@@ -201,7 +210,9 @@ export function GenerateUserModal({
           </Field>
           {!emailPrefix ? (
             <Field data-invalid={Boolean(formErrors.generate_count)}>
-              <FieldLabel htmlFor="generate-count">生成数量</FieldLabel>
+              <FieldLabel htmlFor="generate-count">
+                {t(($) => $.admin.users.generate_count)}
+              </FieldLabel>
               <Controller
                 control={form.control}
                 name="generate_count"
@@ -209,7 +220,7 @@ export function GenerateUserModal({
                   <Input
                     {...field}
                     id="generate-count"
-                    placeholder="如果为批量生成请输入生成数量"
+                    placeholder={t(($) => $.admin.users.generate_count_placeholder)}
                     onChange={(event) => {
                       field.onChange(event);
                       if (event.target.value) {
@@ -226,7 +237,7 @@ export function GenerateUserModal({
           ) : null}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={close}>
-              取消
+              {t(($) => $.common.cancel)}
             </Button>
             <Button
               type="submit"
@@ -234,7 +245,7 @@ export function GenerateUserModal({
               loading={loading || isSubmitting}
               data-testid="generate-submit"
             >
-              生成
+              {t(($) => $.admin.users.generate)}
             </Button>
           </DialogFooter>
         </form>

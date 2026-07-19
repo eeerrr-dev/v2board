@@ -1,4 +1,5 @@
 import { useState, useSyncExternalStore } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import { ApiError, ApiProblemError, passport } from '@v2board/api-client';
 import { Button } from '@/components/ui/button';
@@ -29,6 +30,7 @@ import {
  * queries; the failed mutation's form state stays intact for a manual retry.
  */
 export function StepUpDialogProvider() {
+  const { t } = useTranslation();
   const open = useSyncExternalStore(
     subscribeStepUpPrompt,
     isStepUpPromptRequested,
@@ -67,7 +69,7 @@ export function StepUpDialogProvider() {
       const grant = await passport.stepUp(apiClient, { password });
       setStepUpGrant(grant.step_up_token, grant.expires_in);
       close();
-      toast.success('验证成功，请重试刚才的操作');
+      toast.success(t(($) => $.admin.auth.step_up_success));
       // Sensitive reads that failed on the same gate recover on refetch now
       // that the header is available.
       void queryClient.invalidateQueries();
@@ -78,7 +80,7 @@ export function StepUpDialogProvider() {
       setError(
         submitError instanceof ApiProblemError || submitError instanceof ApiError
           ? submitError.message
-          : '验证失败，请稍后再试',
+          : t(($) => $.admin.auth.step_up_failed),
       );
     }
   };
@@ -92,8 +94,8 @@ export function StepUpDialogProvider() {
     >
       <DialogContent className="sm:max-w-[26rem]">
         <DialogHeader>
-          <DialogTitle>验证管理员密码</DialogTitle>
-          <DialogDescription>此操作需要重新验证您的登录密码。</DialogDescription>
+          <DialogTitle>{t(($) => $.admin.auth.step_up_title)}</DialogTitle>
+          <DialogDescription>{t(($) => $.admin.auth.step_up_description)}</DialogDescription>
         </DialogHeader>
         <form
           onSubmit={(event) => {
@@ -103,7 +105,9 @@ export function StepUpDialogProvider() {
           className="space-y-4"
         >
           <Field data-invalid={Boolean(error)}>
-            <FieldLabel htmlFor="step-up-password">当前密码</FieldLabel>
+            <FieldLabel htmlFor="step-up-password">
+              {t(($) => $.admin.auth.current_password)}
+            </FieldLabel>
             <Input
               id="step-up-password"
               type="password"
@@ -119,10 +123,10 @@ export function StepUpDialogProvider() {
           </Field>
           <DialogFooter>
             <Button type="button" variant="outline" disabled={submitting} onClick={close}>
-              取消
+              {t(($) => $.common.cancel)}
             </Button>
             <Button type="submit" loading={submitting} disabled={password === ''}>
-              验证
+              {t(($) => $.admin.auth.verify)}
             </Button>
           </DialogFooter>
         </form>

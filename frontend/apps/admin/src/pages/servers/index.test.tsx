@@ -12,6 +12,7 @@ import ServersPage, {
   moveServerNodeByDragIndexes,
 } from './index';
 import { serverNodeFormSchema, switchV2nodeProtocol, type V2nodeEditorValues } from './form-schema';
+import { zhCN } from '@v2board/i18n/testing';
 import { createTestTranslation } from '@/test/i18next-selector';
 
 // The admin server manager is a redesigned pure shadcn island (route dispatch →
@@ -133,8 +134,25 @@ vi.mock('react-router', () => ({
   useBeforeUnload: mocks.useBeforeUnload,
 }));
 
+// The mock resolves selectors and runtime keys against the flattened real
+// zh-CN tree so rendered copy (and zod messages routed through FieldError →
+// translateRuntimeMessage) stays byte-identical to the pre-i18n strings.
+function flattenTranslations(tree: object, prefix = ''): Record<string, string> {
+  const labels: Record<string, string> = {};
+  for (const [key, value] of Object.entries(tree) as [string, unknown][]) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (typeof value === 'string') labels[path] = value;
+    else if (value && typeof value === 'object') {
+      Object.assign(labels, flattenTranslations(value, path));
+    }
+  }
+  return labels;
+}
+
+let zhCnLabels: Record<string, string> | undefined;
+
 vi.mock('react-i18next', () => ({
-  useTranslation: () => createTestTranslation({}),
+  useTranslation: () => createTestTranslation((zhCnLabels ??= flattenTranslations(zhCN))),
 }));
 
 vi.mock('@/lib/toast', () => ({

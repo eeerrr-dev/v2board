@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useBeforeUnload, useBlocker } from 'react-router';
 import {
   ArrowDown,
@@ -63,7 +64,6 @@ import {
 import { toast } from '@/lib/toast';
 import {
   NODE_TYPE_FILTERS,
-  SERVER_SORT_LEAVE_PROMPT,
   SERVER_TYPES,
   SERVER_TYPE_LABELS,
   applyServerNodeColumnControls,
@@ -75,6 +75,7 @@ import { AvailabilityDot, ServerTypeTag } from './form-controls';
 import { NodeEditor } from './node-editor';
 
 function ServerSortNavigationGuard({ when }: { when: boolean }) {
+  const { t } = useTranslation();
   const blocker = useBlocker(when);
   // Deliberate useCallback: useBeforeUnload re-subscribes the capture-phase
   // window listener whenever this identity changes.
@@ -107,13 +108,15 @@ function ServerSortNavigationGuard({ when }: { when: boolean }) {
     >
       <AlertDialogContent data-testid="server-sort-leave-dialog" className="sm:max-w-md">
         <AlertDialogHeader>
-          <AlertDialogTitle>{SERVER_SORT_LEAVE_PROMPT}</AlertDialogTitle>
-          <AlertDialogDescription>离开后，本次排序调整将不会保存。</AlertDialogDescription>
+          <AlertDialogTitle>{t(($) => $.admin.servers.sort_leave_prompt)}</AlertDialogTitle>
+          <AlertDialogDescription>
+            {t(($) => $.admin.servers.sort_leave_description)}
+          </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel asChild>
             <Button type="button" variant="outline" data-testid="server-sort-stay">
-              取消
+              {t(($) => $.common.cancel)}
             </Button>
           </AlertDialogCancel>
           <AlertDialogAction asChild>
@@ -125,7 +128,7 @@ function ServerSortNavigationGuard({ when }: { when: boolean }) {
               }}
               data-testid="server-sort-leave"
             >
-              确定
+              {t(($) => $.common.confirm)}
             </Button>
           </AlertDialogAction>
         </AlertDialogFooter>
@@ -145,6 +148,7 @@ function NodeFilterMenu({
   active: boolean;
   onApply: (next: string[]) => void;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState<string[]>(value);
   const toggle = (target: string) =>
@@ -162,7 +166,7 @@ function NodeFilterMenu({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label="筛选"
+          aria-label={t(($) => $.admin.servers.filter)}
           className={cn(
             'ml-1 inline-flex size-6 items-center justify-center rounded-sm transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50',
             active ? 'text-primary' : 'text-muted-foreground',
@@ -196,7 +200,7 @@ function NodeFilterMenu({
               setOpen(false);
             }}
           >
-            确定
+            {t(($) => $.common.confirm)}
           </button>
           <button
             type="button"
@@ -207,7 +211,7 @@ function NodeFilterMenu({
               setOpen(false);
             }}
           >
-            重置
+            {t(($) => $.admin.servers.reset)}
           </button>
         </div>
       </DropdownMenuContent>
@@ -222,13 +226,16 @@ function OnlineSortHeader({
   sort: '' | 'ascend' | 'descend';
   onCycle: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <button
       type="button"
       className="inline-flex items-center gap-1.5 rounded-sm transition-colors outline-none select-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
       onClick={onCycle}
     >
-      <HeaderTooltip title="在线人数">人数</HeaderTooltip>
+      <HeaderTooltip title={t(($) => $.admin.servers.online_count_tip)}>
+        {t(($) => $.admin.servers.online_count)}
+      </HeaderTooltip>
       {sort === 'ascend' ? (
         <ArrowUp className="size-3.5" />
       ) : sort === 'descend' ? (
@@ -241,6 +248,7 @@ function OnlineSortHeader({
 }
 
 export function ServerManagePage() {
+  const { t } = useTranslation();
   const nodes = useServerNodes();
   const groups = useServerGroups();
   const routes = useServerRoutes();
@@ -303,18 +311,18 @@ export function ServerManagePage() {
 
   const removeNode = async (row: admin.ServerNode) => {
     const confirmed = await confirmDialog({
-      title: '警告',
-      description: '确定要删除该节点吗？',
-      confirmText: '确定',
-      cancelText: '取消',
+      title: t(($) => $.admin.servers.warning),
+      description: t(($) => $.admin.servers.confirm_delete_node),
+      confirmText: t(($) => $.common.confirm),
+      cancelText: t(($) => $.common.cancel),
     });
     if (!confirmed) return;
     drop.mutate({ type: row.type, id: row.id });
   };
 
   const copyHost = async (host: string) => {
-    if (await copyText(host)) toast.success('复制成功');
-    else toast.error('复制失败');
+    if (await copyText(host)) toast.success(t(($) => $.admin.servers.copy_success));
+    else toast.error(t(($) => $.admin.servers.copy_fail));
   };
 
   const moveNode = (id: number, direction: -1 | 1) => {
@@ -368,7 +376,7 @@ export function ServerManagePage() {
     id: 'node_id',
     header: () => (
       <span className="inline-flex items-center">
-        节点ID
+        {t(($) => $.admin.servers.col_node_id)}
         <NodeFilterMenu
           items={NODE_TYPE_FILTERS}
           value={typeFilter}
@@ -390,7 +398,7 @@ export function ServerManagePage() {
     {
       id: 'sort',
       meta: { align: 'center' },
-      header: () => <span>排序</span>,
+      header: () => <span>{t(($) => $.common.sort)}</span>,
       cell: ({ row }) => {
         const index = orderedNodes.findIndex((node) => node.id === row.original.id);
         return (
@@ -401,7 +409,7 @@ export function ServerManagePage() {
               className="size-8"
               disabled={index <= 0}
               onClick={() => moveNode(row.original.id, -1)}
-              aria-label="上移"
+              aria-label={t(($) => $.admin.servers.move_up)}
             >
               <ArrowUp className="size-4" />
             </Button>
@@ -411,7 +419,7 @@ export function ServerManagePage() {
               className="size-8"
               disabled={index < 0 || index >= orderedNodes.length - 1}
               onClick={() => moveNode(row.original.id, 1)}
-              aria-label="下移"
+              aria-label={t(($) => $.admin.servers.move_down)}
             >
               <ArrowDown className="size-4" />
             </Button>
@@ -423,7 +431,7 @@ export function ServerManagePage() {
     {
       id: 'name',
       meta: { className: 'font-medium text-foreground' },
-      header: () => <span>节点</span>,
+      header: () => <span>{t(($) => $.admin.servers.col_node)}</span>,
       cell: ({ row }) => row.original.name,
     },
   ];
@@ -433,19 +441,23 @@ export function ServerManagePage() {
     {
       id: 'show',
       meta: { align: 'center' },
-      header: () => <span>显隐</span>,
+      header: () => <span>{t(($) => $.admin.servers.col_show)}</span>,
       cell: ({ row }) => (
         <Switch
           checked={row.original.show}
           onCheckedChange={() => toggleNodeShow(row.original)}
-          aria-label={`切换「${row.original.name}」显隐`}
+          aria-label={t(($) => $.admin.servers.toggle_show_aria, { name: row.original.name })}
         />
       ),
     },
     {
       id: 'node',
       meta: { className: 'font-medium text-foreground' },
-      header: () => <HeaderTooltip title="节点名称">节点</HeaderTooltip>,
+      header: () => (
+        <HeaderTooltip title={t(($) => $.admin.servers.node_name)}>
+          {t(($) => $.admin.servers.col_node)}
+        </HeaderTooltip>
+      ),
       cell: ({ row }) => (
         <span className="inline-flex items-center gap-2">
           <AvailabilityDot status={row.original.available_status} />
@@ -455,7 +467,7 @@ export function ServerManagePage() {
     },
     {
       id: 'host',
-      header: () => <span>地址</span>,
+      header: () => <span>{t(($) => $.admin.servers.col_address)}</span>,
       cell: ({ row }) => (
         <button
           type="button"
@@ -479,8 +491,8 @@ export function ServerManagePage() {
       id: 'rate',
       meta: { align: 'center' },
       header: () => (
-        <HeaderTooltip title="流量倍率" className="justify-center">
-          倍率
+        <HeaderTooltip title={t(($) => $.admin.servers.rate_tip)} className="justify-center">
+          {t(($) => $.admin.servers.rate)}
         </HeaderTooltip>
       ),
       cell: ({ row }) => (
@@ -493,7 +505,7 @@ export function ServerManagePage() {
       id: 'group',
       header: () => (
         <span className="inline-flex items-center">
-          权限组
+          {t(($) => $.admin.servers.group)}
           <NodeFilterMenu
             items={(groups.data ?? []).map((group) => ({
               text: group.name,
@@ -518,12 +530,12 @@ export function ServerManagePage() {
     {
       id: 'actions',
       meta: { align: 'right' },
-      header: () => <span>操作</span>,
+      header: () => <span>{t(($) => $.common.operation)}</span>,
       cell: ({ row }) => (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="sm" data-testid={`node-actions-${row.original.id}`}>
-              操作
+              {t(($) => $.common.operation)}
               <ChevronDown className="size-4" />
             </Button>
           </DropdownMenuTrigger>
@@ -534,14 +546,14 @@ export function ServerManagePage() {
               data-testid={`node-edit-${row.original.id}`}
             >
               <Pencil className="size-4" />
-              编辑
+              {t(($) => $.common.edit)}
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => copyNode(row.original)}
               data-testid={`node-copy-${row.original.id}`}
             >
               <Copy className="size-4" />
-              复制
+              {t(($) => $.common.copy)}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
@@ -550,7 +562,7 @@ export function ServerManagePage() {
               data-testid={`node-delete-${row.original.id}`}
             >
               <Trash2 className="size-4" />
-              删除
+              {t(($) => $.common.delete)}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -561,26 +573,32 @@ export function ServerManagePage() {
   const columns = sortMode ? sortColumns : browseColumns;
   const emptyText =
     nodes.isSuccess && nodes.data !== undefined && filteredNodes.length === 0
-      ? '暂无节点'
+      ? t(($) => $.admin.servers.no_nodes)
       : undefined;
 
   return (
     <PageShell data-testid="server-manage-page">
       {nodes.isError ? (
-        <ErrorState message="节点列表加载失败" onRetry={() => void nodes.refetch()} />
+        <ErrorState
+          message={t(($) => $.admin.servers.nodes_load_failed)}
+          onRetry={() => void nodes.refetch()}
+        />
       ) : null}
       {groups.isError ? (
-        <ErrorState message="权限组加载失败，无法编辑节点" onRetry={() => void groups.refetch()} />
+        <ErrorState
+          message={t(($) => $.admin.servers.groups_load_failed_blocking)}
+          onRetry={() => void groups.refetch()}
+        />
       ) : null}
       {routes.isError ? (
         <ErrorState
-          message="路由列表加载失败，无法编辑节点"
+          message={t(($) => $.admin.servers.routes_load_failed_blocking)}
           onRetry={() => void routes.refetch()}
         />
       ) : null}
       <ServerSortNavigationGuard when={sortMode} />
       <PageHeader
-        title="节点管理"
+        title={t(($) => $.admin.servers.manage_title)}
         actions={
           <>
             {editorDependenciesReady ? (
@@ -588,7 +606,7 @@ export function ServerManagePage() {
                 <DropdownMenuTrigger asChild>
                   <Button data-testid="node-add">
                     <Plus className="size-4" />
-                    添加节点
+                    {t(($) => $.admin.servers.add_node)}
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
@@ -606,7 +624,7 @@ export function ServerManagePage() {
             ) : (
               <Button disabled data-testid="node-add">
                 <Plus className="size-4" />
-                添加节点
+                {t(($) => $.admin.servers.add_node)}
               </Button>
             )}
             <Button
@@ -614,7 +632,7 @@ export function ServerManagePage() {
               onClick={saveSort}
               data-testid="node-sort-toggle"
             >
-              {sortMode ? '保存排序' : '编辑排序'}
+              {sortMode ? t(($) => $.admin.servers.save_sort) : t(($) => $.admin.servers.edit_sort)}
             </Button>
           </>
         }
@@ -622,8 +640,8 @@ export function ServerManagePage() {
 
       <div className="w-full sm:max-w-xs">
         <Input
-          aria-label="搜索节点"
-          placeholder="输入任意关键字搜索"
+          aria-label={t(($) => $.admin.servers.search_nodes_aria)}
+          placeholder={t(($) => $.admin.servers.search_placeholder)}
           onChange={(event) => {
             setSearchKey(event.target.value);
             setCurrentPage(1);
@@ -692,18 +710,25 @@ function ServerPagination({
   total: number;
   onChange: (page: number, pageSize: number) => void;
 }) {
+  const { t } = useTranslation();
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   return (
     <div className="flex flex-wrap items-center justify-end gap-3">
-      <span className="text-sm text-muted-foreground">共 {total} 条</span>
+      <span className="text-sm text-muted-foreground">
+        {t(($) => $.admin.servers.total_items, { total })}
+      </span>
       <Select value={String(pageSize)} onValueChange={(value) => onChange(1, Number(value))}>
-        <SelectTrigger className="h-9 w-28" data-testid="node-page-size" aria-label="每页条数">
+        <SelectTrigger
+          className="h-9 w-28"
+          data-testid="node-page-size"
+          aria-label={t(($) => $.admin.servers.page_size_aria)}
+        >
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
           {SERVER_PAGE_SIZE_OPTIONS.map((size) => (
             <SelectItem key={size} value={String(size)}>
-              {size} 条/页
+              {size} {t(($) => $.common.items_per_page)}
             </SelectItem>
           ))}
         </SelectContent>
@@ -715,7 +740,7 @@ function ServerPagination({
           disabled={current <= 1}
           onClick={() => onChange(current - 1, pageSize)}
         >
-          上一页
+          {t(($) => $.common.prev_page)}
         </Button>
         <span className="px-2 text-sm tabular-nums" data-testid="node-page">
           {current} / {pageCount}
@@ -726,7 +751,7 @@ function ServerPagination({
           disabled={current >= pageCount}
           onClick={() => onChange(current + 1, pageSize)}
         >
-          下一页
+          {t(($) => $.common.next_page)}
         </Button>
       </div>
     </div>

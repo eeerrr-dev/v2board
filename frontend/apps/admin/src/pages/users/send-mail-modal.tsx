@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm, useFormState } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import type { AdminFilter } from '@v2board/api-client';
 import { Button } from '@/components/ui/button';
 import {
@@ -30,6 +31,7 @@ export function SendMailModal({
   onClose: () => void;
   onSubmit: (values: SendMailValues) => Promise<void>;
 }) {
+  const { t } = useTranslation();
   const form = useForm<SendMailValues>({
     resolver: zodResolver(sendMailSchema),
     defaultValues: { subject: '', content: '' },
@@ -59,22 +61,30 @@ export function SendMailModal({
     <Dialog open={open} onOpenChange={(next) => (!next ? close() : undefined)}>
       <DialogContent data-testid="user-send-mail-dialog">
         <DialogHeader>
-          <DialogTitle>发送邮件</DialogTitle>
-          <DialogDescription>向当前筛选范围内的用户发送邮件。</DialogDescription>
+          <DialogTitle>{t(($) => $.admin.users.send_mail)}</DialogTitle>
+          <DialogDescription>{t(($) => $.admin.users.send_mail_description)}</DialogDescription>
         </DialogHeader>
 
         <form className="space-y-4" onSubmit={submit} noValidate>
           <FieldError errors={[formErrors.root?.serverError]} />
           <Field>
-            <FieldLabel htmlFor="send-mail-recipient">收件人</FieldLabel>
+            <FieldLabel htmlFor="send-mail-recipient">
+              {t(($) => $.admin.users.recipient)}
+            </FieldLabel>
             <Input
               id="send-mail-recipient"
               disabled
-              value={filter.length ? '过滤用户' : '全部用户'}
+              value={
+                filter.length
+                  ? t(($) => $.admin.users.filtered_users)
+                  : t(($) => $.admin.users.all_users)
+              }
             />
           </Field>
           <Field data-invalid={Boolean(formErrors.subject)}>
-            <FieldLabel htmlFor="send-mail-subject">主题</FieldLabel>
+            <FieldLabel htmlFor="send-mail-subject">
+              {t(($) => $.admin.users.mail_subject)}
+            </FieldLabel>
             <Controller
               control={form.control}
               name="subject"
@@ -82,7 +92,7 @@ export function SendMailModal({
                 <Input
                   {...field}
                   id="send-mail-subject"
-                  placeholder="请输入邮件主题"
+                  placeholder={t(($) => $.admin.users.mail_subject_placeholder)}
                   data-testid="send-mail-subject"
                   aria-invalid={fieldState.invalid}
                 />
@@ -91,7 +101,9 @@ export function SendMailModal({
             <FieldError errors={[formErrors.subject]} />
           </Field>
           <Field data-invalid={Boolean(formErrors.content)}>
-            <FieldLabel htmlFor="send-mail-content">发送内容</FieldLabel>
+            <FieldLabel htmlFor="send-mail-content">
+              {t(($) => $.admin.users.mail_content)}
+            </FieldLabel>
             <Controller
               control={form.control}
               name="content"
@@ -100,7 +112,7 @@ export function SendMailModal({
                   {...field}
                   id="send-mail-content"
                   rows={12}
-                  placeholder="请输入邮件内容"
+                  placeholder={t(($) => $.admin.users.mail_content_placeholder)}
                   data-testid="send-mail-content"
                   aria-invalid={fieldState.invalid}
                 />
@@ -110,7 +122,7 @@ export function SendMailModal({
           </Field>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={close}>
-              取消
+              {t(($) => $.common.cancel)}
             </Button>
             <Button
               type="submit"
@@ -118,7 +130,7 @@ export function SendMailModal({
               loading={loading || isSubmitting}
               data-testid="send-mail-submit"
             >
-              确定
+              {t(($) => $.common.confirm)}
             </Button>
           </DialogFooter>
         </form>

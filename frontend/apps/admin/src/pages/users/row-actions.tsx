@@ -9,6 +9,7 @@ import {
   Trash2,
   UsersRound,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { AdminUserRow } from '@v2board/types';
 import { Button } from '@/components/ui/button';
 import {
@@ -28,42 +29,43 @@ export function UserRowActions({
   onAction: (key: string, row: AdminUserRow) => void;
   assignDisabled: boolean;
 }) {
+  const { t } = useTranslation();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="sm" data-testid={`user-actions-${row.id}`}>
-          操作
+          {t(($) => $.common.operation)}
           <ChevronDown className="size-4" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuItem onClick={() => onAction('edit', row)} data-testid={`user-edit-${row.id}`}>
           <Pencil className="size-4" />
-          编辑
+          {t(($) => $.common.edit)}
         </DropdownMenuItem>
         <DropdownMenuItem disabled={assignDisabled} onClick={() => onAction('assign', row)}>
           <Plus className="size-4" />
-          分配订单
+          {t(($) => $.admin.users.assign_order)}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => onAction('copy', row)} data-testid={`user-copy-${row.id}`}>
           <Copy className="size-4" />
-          复制订阅URL
+          {t(($) => $.admin.users.copy_subscribe_url)}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => onAction('reset', row)}>
           <RefreshCw className="size-4" />
-          重置UUID及订阅URL
+          {t(($) => $.admin.users.reset_uuid)}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => onAction('orders', row)}>
           <ReceiptText className="size-4" />
-          TA的订单
+          {t(($) => $.admin.users.their_orders)}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => onAction('invite', row)}>
           <UsersRound className="size-4" />
-          TA的邀请
+          {t(($) => $.admin.users.their_invites)}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => onAction('traffic', row)}>
           <Activity className="size-4" />
-          TA的流量记录
+          {t(($) => $.admin.users.their_traffic)}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
@@ -72,7 +74,7 @@ export function UserRowActions({
           data-testid={`user-delete-${row.id}`}
         >
           <Trash2 className="size-4" />
-          删除用户
+          {t(($) => $.admin.users.delete_user)}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
