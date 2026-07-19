@@ -351,6 +351,12 @@ const DYNAMIC_SQLX_SITES: &[DynamicSite] = &[
         coverage: "all node variants are collected as indirect static SQL and server API contracts",
     },
     DynamicSite {
+        source: "crates/db/src/pool.rs",
+        count: 2,
+        coverage: "connection-init statement/lock timeout SETs interpolate validated integer \
+                   milliseconds (SET takes no binds); pinned by the timeout parsing unit tests",
+    },
+    DynamicSite {
         source: "crates/domain/src/admin/codes.rs",
         count: 2,
         coverage: "§7.2 whitelist-sorted coupon/gift-card list SELECTs, pinned by the golden \
