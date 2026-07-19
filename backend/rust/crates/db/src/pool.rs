@@ -1,6 +1,6 @@
 use argon2::{Argon2, PasswordHasher, password_hash::SaltString};
 use chrono::Utc;
-use sqlx::{PgConnection, PgPool, Postgres, Transaction, postgres::PgPoolOptions};
+use sqlx::{AssertSqlSafe, PgConnection, PgPool, Postgres, Transaction, postgres::PgPoolOptions};
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -23,6 +23,12 @@ pub struct DbPoolConfig {
     pub acquire_timeout: Duration,
     pub idle_timeout: Duration,
     pub max_lifetime: Duration,
+    /// Server-side cap on any single statement (`None` disables it). Bounds a
+    /// runaway query in PostgreSQL itself, where `acquire_timeout` and HTTP
+    /// deadlines cannot reach.
+    pub statement_timeout: Option<Duration>,
+    /// Server-side cap on waiting for a conflicting lock (`None` disables it).
+    pub lock_timeout: Option<Duration>,
 }
 
 impl Default for DbPoolConfig {
@@ -33,6 +39,8 @@ impl Default for DbPoolConfig {
             acquire_timeout: Duration::from_secs(10),
             idle_timeout: Duration::from_secs(10 * 60),
             max_lifetime: Duration::from_secs(30 * 60),
+            statement_timeout: Some(Duration::from_secs(30)),
+            lock_timeout: Some(Duration::from_secs(5)),
         }
     }
 }
@@ -63,6 +71,14 @@ impl DbPoolConfig {
                 "V2BOARD_DATABASE_MAX_LIFETIME_SECONDS",
                 defaults.max_lifetime.as_secs(),
             )?),
+            statement_timeout: env_optional_timeout(
+                "V2BOARD_DATABASE_STATEMENT_TIMEOUT_SECONDS",
+                defaults.statement_timeout,
+            )?,
+            lock_timeout: env_optional_timeout(
+                "V2BOARD_DATABASE_LOCK_TIMEOUT_SECONDS",
+                defaults.lock_timeout,
+            )?,
         };
         if config.min_connections > config.max_connections {
             return Err(DbInitError::Configuration(format!(
@@ -125,6 +141,8 @@ pub async fn connect_postgres_with_config(
     database_url: &str,
     config: &DbPoolConfig,
 ) -> Result<DbPool, DbInitError> {
+    let statement_timeout_ms = config.statement_timeout.map(|value| value.as_millis());
+    let lock_timeout_ms = config.lock_timeout.map(|value| value.as_millis());
     let pool = PgPoolOptions::new()
         .min_connections(config.min_connections)
         .max_connections(config.max_connections)
@@ -132,7 +150,7 @@ pub async fn connect_postgres_with_config(
         .idle_timeout(Some(config.idle_timeout))
         .max_lifetime(Some(config.max_lifetime))
         .test_before_acquire(true)
-        .after_connect(|connection, _metadata| {
+        .after_connect(move |connection, _metadata| {
             Box::pin(async move {
                 // PostgreSQL READ COMMITTED plus explicit row locks and database
                 // constraints most closely matches the application's intended
@@ -153,6 +171,22 @@ pub async fn connect_postgres_with_config(
                 )
                 .execute(&mut *connection)
                 .await?;
+                // SET takes no bind parameters; the interpolated values are
+                // integer milliseconds derived from validated Durations. The
+                // one-shot lifecycle importer builds its own pools, so bulk
+                // COPY and deferred index builds stay unbounded.
+                if let Some(timeout_ms) = statement_timeout_ms {
+                    sqlx::query(AssertSqlSafe(format!(
+                        "SET statement_timeout = {timeout_ms}"
+                    )))
+                    .execute(&mut *connection)
+                    .await?;
+                }
+                if let Some(timeout_ms) = lock_timeout_ms {
+                    sqlx::query(AssertSqlSafe(format!("SET lock_timeout = {timeout_ms}")))
+                        .execute(&mut *connection)
+                        .await?;
+                }
                 Ok(())
             })
         })
@@ -297,6 +331,32 @@ fn env_u32(key: &str, default: u32, allow_zero: bool) -> Result<u32, DbInitError
         )));
     }
     Ok(value)
+}
+
+/// Timeout knobs accept `0` as an explicit "disabled", matching the
+/// PostgreSQL convention for `statement_timeout`/`lock_timeout`.
+fn env_optional_timeout(
+    key: &str,
+    default: Option<Duration>,
+) -> Result<Option<Duration>, DbInitError> {
+    parse_optional_timeout(key, std::env::var(key).ok().as_deref(), default)
+}
+
+fn parse_optional_timeout(
+    key: &str,
+    raw: Option<&str>,
+    default: Option<Duration>,
+) -> Result<Option<Duration>, DbInitError> {
+    let Some(raw) = raw else {
+        return Ok(default);
+    };
+    let value = raw.trim().parse::<u64>().map_err(|_| {
+        DbInitError::Configuration(format!("{key} must be an unsigned integer, got {raw:?}"))
+    })?;
+    if value == 0 {
+        return Ok(None);
+    }
+    Ok(Some(Duration::from_secs(value)))
 }
 
 fn env_u64(key: &str, default: u64) -> Result<u64, DbInitError> {
@@ -533,6 +593,34 @@ mod tests {
             ],
             &embedded,
         ));
+    }
+
+    #[test]
+    fn pool_defaults_bound_statements_and_lock_waits() {
+        let defaults = DbPoolConfig::default();
+        assert_eq!(defaults.statement_timeout, Some(Duration::from_secs(30)));
+        assert_eq!(defaults.lock_timeout, Some(Duration::from_secs(5)));
+    }
+
+    #[test]
+    fn optional_timeouts_parse_disabled_zero_and_reject_garbage() {
+        let default = Some(Duration::from_secs(30));
+        assert_eq!(
+            parse_optional_timeout("K", None, default).unwrap(),
+            default,
+            "unset keeps the default"
+        );
+        assert_eq!(
+            parse_optional_timeout("K", Some("0"), default).unwrap(),
+            None,
+            "zero disables the timeout entirely"
+        );
+        assert_eq!(
+            parse_optional_timeout("K", Some(" 45 "), default).unwrap(),
+            Some(Duration::from_secs(45)),
+        );
+        let error = parse_optional_timeout("K", Some("soon"), default).unwrap_err();
+        assert!(error.to_string().contains("unsigned integer"));
     }
 
     #[test]

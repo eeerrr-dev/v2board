@@ -66,6 +66,7 @@ pub async fn run() -> Result<()> {
         acquire_timeout: Duration::from_secs(10),
         idle_timeout: Duration::from_secs(30),
         max_lifetime: Duration::from_secs(300),
+        ..DbPoolConfig::default()
     };
     let pool = match v2board_db::connect_postgres_with_config(&database_url, &pool_config).await {
         Ok(pool) => pool,
