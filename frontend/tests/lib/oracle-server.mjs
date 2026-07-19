@@ -3,7 +3,8 @@ import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { extname, normalize, resolve, sep } from 'node:path';
 import { adminPath, navigationAttempts, oraclePublicRoot, sourceBaseUrl } from './env.mjs';
-import { adminFixtureEndpoint, apiFixtureResponse, delay } from './api-fixtures.mjs';
+import { delay } from './api-fixtures.mjs';
+import { adminFixtureEndpoint, apiFixtureResponse } from './api-fixture-response.mjs';
 
 export async function startOracleServer(port = 0, host = '127.0.0.1', advertisedHost = host, sourceSettings) {
   const server = createServer(async (request, response) => {

@@ -20,7 +20,8 @@ import { stableJson } from './json-util.mjs';
 import { getScenario } from './scenario-meta.mjs';
 import { normalizeInteractionResult } from './normalizers.mjs';
 import { assertUsefulInteraction } from './assert-useful.mjs';
-import { installApiFixtures, seedLegacyAdminStore, delay } from './api-fixtures.mjs';
+import { installApiFixtures, delay } from './api-fixtures.mjs';
+import { seedLegacyAdminStore } from './legacy-store-seed.mjs';
 import { readDebugSnapshot, waitForReadySelector } from './dom-helpers.mjs';
 import {
   gotoStable,
