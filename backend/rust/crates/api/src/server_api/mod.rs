@@ -136,6 +136,14 @@ pub(super) async fn server_v2_config(
     let Some(node) = load_server_node(&state.db, "v2node", node_id).await? else {
         return Ok(server_fail_response("server is not exist"));
     };
+    // COST DECISION (accept, do not cache): every node poll re-materializes and
+    // sha1s the config even when the ETag ends up matching. That work is a couple
+    // of primary-key point lookups plus a hash of a small payload, driven at the
+    // operator-controlled `server_pull_interval` (default 60s), so it stays cheap
+    // at node scale. A cache would have to be invalidated on config reload, node
+    // edits, and route edits — an invariant surface not worth its risk here. If a
+    // deployment ever runs enough nodes at a short interval to make this hot,
+    // revisit with a config-generation-keyed cache rather than removing the hash.
     let value = server_v2_config_value(&state, &node).await?;
     // INTENTIONAL DIVERGENCE (kept more correct than the oracle): ServerController.php:105
     // compares `If-None-Match === $eTag` against the UNQUOTED sha1 while emitting a QUOTED
