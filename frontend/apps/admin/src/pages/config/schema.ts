@@ -36,6 +36,7 @@ export const SECTION_FIELDS = {
     'email_verify',
     'email_gmail_limit_enable',
     'safe_mode_enable',
+    'admin_mfa_force',
     'secure_path',
     'email_whitelist_enable',
     'email_whitelist_suffix',

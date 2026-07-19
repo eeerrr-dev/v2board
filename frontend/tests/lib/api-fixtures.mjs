@@ -2662,6 +2662,7 @@ const modernAdminConfigFixture = (config) => ({
     ...config.safe,
     email_verify: modernConfigFlag(config.safe.email_verify),
     safe_mode_enable: modernConfigFlag(config.safe.safe_mode_enable),
+    admin_mfa_force: modernConfigFlag(config.safe.admin_mfa_force),
     email_whitelist_enable: modernConfigFlag(config.safe.email_whitelist_enable),
     email_gmail_limit_enable: modernConfigFlag(config.safe.email_gmail_limit_enable),
     recaptcha_enable: modernConfigFlag(config.safe.recaptcha_enable),

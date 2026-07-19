@@ -26,6 +26,13 @@ export function SafeSection({ ctx }: { ctx: FormCtx }) {
         title="安全模式"
         description="开启后除了站点URL以外的绑定本站点的域名访问都将会被403。"
       />
+      <SwitchRow
+        ctx={ctx}
+        group="safe"
+        field="admin_mfa_force"
+        title="强制两步验证"
+        description="开启后未启用两步验证的管理员/员工只能访问自己的两步验证设置，其余后台功能将被拒绝，直到完成绑定。"
+      />
       <TextRow
         ctx={ctx}
         group="safe"

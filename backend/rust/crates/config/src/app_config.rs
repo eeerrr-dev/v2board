@@ -144,6 +144,11 @@ pub struct AppConfig {
     /// toggle, injected into the frontend runtime config. Default ON.
     pub legacy_hash_redirect_enable: bool,
     pub safe_mode_enable: bool,
+    /// docs/api-dialect.md §6.10: with this on, an admin/staff session without
+    /// an enabled TOTP factor may only reach its own `account/mfa` family —
+    /// every other privileged route answers 403 `mfa_enrollment_required`.
+    /// Default OFF.
+    pub admin_mfa_force: bool,
     pub password_limit_enable: bool,
     pub password_limit_count: i64,
     pub password_limit_expire: i64,
@@ -343,6 +348,7 @@ impl AppConfig {
             "secure_path": self.secure_path,
             "legacy_hash_redirect_enable": self.legacy_hash_redirect_enable,
             "safe_mode_enable": self.safe_mode_enable,
+            "admin_mfa_force": self.admin_mfa_force,
             "password_limit_enable": self.password_limit_enable,
             "password_limit_count": self.password_limit_count,
             "password_limit_expire": self.password_limit_expire,
@@ -1143,6 +1149,12 @@ impl AppConfig {
                 &file_config,
                 "safe_mode_enable",
                 "V2BOARD_SAFE_MODE_ENABLE",
+                false,
+            ),
+            admin_mfa_force: config_bool(
+                &file_config,
+                "admin_mfa_force",
+                "V2BOARD_ADMIN_MFA_FORCE",
                 false,
             ),
             password_limit_enable: config_bool(

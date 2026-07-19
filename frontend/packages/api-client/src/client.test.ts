@@ -204,6 +204,7 @@ function makeAdminConfig() {
     safe: {
       email_verify: true,
       safe_mode_enable: true,
+      admin_mfa_force: false,
       secure_path: 'admin-path',
       email_whitelist_enable: true,
       email_whitelist_suffix: ['qq.com', 'gmail.com'],

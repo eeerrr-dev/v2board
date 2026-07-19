@@ -151,6 +151,7 @@ impl AdminService {
             "safe": {
                 "email_verify": self.config.email_verify,
                 "safe_mode_enable": self.config.safe_mode_enable,
+                "admin_mfa_force": self.config.admin_mfa_force,
                 "secure_path": self.config.admin_path(),
                 "email_whitelist_enable": self.config.email_whitelist_enable,
                 "email_whitelist_suffix": self.config.email_whitelist_suffix,

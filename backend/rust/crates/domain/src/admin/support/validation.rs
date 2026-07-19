@@ -83,6 +83,7 @@ pub(in super::super) fn config_save_whitelisted(base: &str) -> bool {
         "recaptcha_site_key",
         "email_verify",
         "safe_mode_enable",
+        "admin_mfa_force",
         "register_limit_by_ip_enable",
         "register_limit_count",
         "register_limit_expire",
@@ -129,6 +130,7 @@ pub(in super::super) fn validate_config_json(body: &Map<String, Value>) -> Resul
         "email_verify",
         "legacy_hash_redirect_enable",
         "safe_mode_enable",
+        "admin_mfa_force",
         "register_limit_by_ip_enable",
         "password_limit_enable",
     ];

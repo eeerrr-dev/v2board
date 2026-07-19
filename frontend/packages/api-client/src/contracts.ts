@@ -33,6 +33,7 @@ export const stepUpGrantSchema = z.looseObject({
 export const mfaStatusSchema = z.looseObject({
   totp_enabled: z.boolean(),
   totp_enabled_at: z.string().min(1).nullable(),
+  totp_required: z.boolean(),
 });
 
 /**
@@ -976,6 +977,7 @@ const appConfigSchema = z.looseObject({
 const safeConfigSchema = z.looseObject({
   email_verify: configFlagSchema,
   safe_mode_enable: configFlagSchema,
+  admin_mfa_force: configFlagSchema,
   secure_path: configNullableStringSchema,
   email_whitelist_enable: configFlagSchema,
   email_whitelist_suffix: stringArraySchema,

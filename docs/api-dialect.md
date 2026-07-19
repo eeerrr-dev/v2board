@@ -277,6 +277,7 @@ Auth / session:
 | `mfa_already_enabled` | 400 | — (native addition, §6.10) |
 | `mfa_setup_missing` | 400 | — (native addition, §6.10) |
 | `mfa_not_enabled` | 400 | — (native addition, §6.10) |
+| `mfa_enrollment_required` | 403 | — (native addition, §6.10: `admin_mfa_force` demands an enabled factor before any privileged route outside the caller's own `account/mfa` family) |
 | `email_already_registered` | 400 | `Email already exists`, `This email is registered` |
 | `email_not_registered` | 400 | `This email is not registered in the system` |
 | `invalid_email_code` | 400 | `Incorrect email verification code` |
@@ -849,7 +850,7 @@ dynamic admin prefix (`/api/v1/{secure_path}/…`) and the staff prefix
 
 | Route | Req | Resp | Notes |
 | --- | --- | --- | --- |
-| GET `account/mfa` | none | bare `{totp_enabled: bool, totp_enabled_at: rfc3339\|null}` | |
+| GET `account/mfa` | none | bare `{totp_enabled: bool, totp_enabled_at: rfc3339\|null, totp_required: bool}` | `totp_required` mirrors the `admin_mfa_force` operator flag. |
 | POST `account/mfa/totp` | none | bare `{secret, otpauth_url}` | Starts (or restarts) a **pending** enrollment. The base32 secret is returned exactly once and never readable again; an enabled factor must be disabled first (400 `mfa_already_enabled`). |
 | POST `account/mfa/totp/confirm` | json `{code}` | empty 204 | Proves possession with a live code and flips the pending enrollment to enabled. 400 `mfa_setup_missing` without a pending enrollment; 401 `mfa_code_invalid` on a wrong code. |
 | POST `account/mfa/totp/disable` | json `{code}` | empty 204 | Requires a live code (not just the step-up password): a hijacked session cannot silently remove the factor. 400 `mfa_not_enabled`; 401 `mfa_code_invalid`. |
@@ -868,6 +869,14 @@ Semantics:
   `mfa_code_required` prompt (the normal two-phase login) does not.
 - Lockout recovery is operator-only: `v2board-api reset-admin-totp <email>`
   removes the factor. There are no recovery codes.
+- Mandatory enrollment: the operator config flag `admin_mfa_force` (safe
+  group, default off) makes the factor compulsory. While it is on, an
+  admin/staff session whose account has no enabled factor may reach only its
+  own `account/mfa` family — every other route under either privileged
+  prefix answers 403 `mfa_enrollment_required` (a permission failure, never
+  a session teardown; login itself stays password-only until a factor
+  exists). The GET body's `totp_required` mirrors the flag so the SPA gates
+  its shell on enrollment instead of discovering the demand through 403s.
 
 ### 6.11 Operator audit trail (native addition)
 

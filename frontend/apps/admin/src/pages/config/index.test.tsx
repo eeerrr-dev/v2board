@@ -113,6 +113,7 @@ function makeConfig() {
       email_verify: true,
       email_gmail_limit_enable: true,
       safe_mode_enable: true,
+      admin_mfa_force: false,
       secure_path: 'admin-path',
       email_whitelist_enable: true,
       email_whitelist_suffix: ['qq.com', 'gmail.com'],

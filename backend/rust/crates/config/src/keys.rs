@@ -277,6 +277,7 @@ pub const OPERATOR_CONFIG_KEYS_V1: &[&str] = &[
     "secure_path",
     "legacy_hash_redirect_enable",
     "safe_mode_enable",
+    "admin_mfa_force",
     "password_limit_enable",
     "password_limit_count",
     "password_limit_expire",

@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { user } from '@v2board/api-client';
 import type * as ApiClientModule from '@v2board/api-client';
+import type * as QueriesModule from '@/lib/queries';
 import { setAdminRuntimeConfig } from '@/test/runtime-config';
 import { adminSessionKeys } from '@/lib/session-queries';
 import { AdminLayout } from './admin-layout';
@@ -20,6 +21,10 @@ const mocks = vi.hoisted(() => ({
   location: { pathname: '/dashboard' } as { pathname: string },
   navigate: vi.fn(),
   signOut: vi.fn(),
+  accountMfa: {
+    data: undefined as
+      { totp_enabled: boolean; totp_enabled_at: string | null; totp_required: boolean } | undefined,
+  },
 }));
 
 vi.mock('react-router', () => ({
@@ -57,6 +62,12 @@ vi.mock('@v2board/api-client', async (importOriginal) => ({
 // The account menu's explicit sign-out (revocation + local teardown) lives in
 // lib/api as signOut; the shell only wires the menu item to it.
 vi.mock('@/lib/api', () => ({ apiClient: {}, signOut: mocks.signOut }));
+// The mandatory-MFA gate reads the account factor state through this hook;
+// everything else in the queries module stays real.
+vi.mock('@/lib/queries', async (importOriginal) => ({
+  ...(await importOriginal<typeof QueriesModule>()),
+  useAccountMfa: () => mocks.accountMfa,
+}));
 
 function renderShell({ preloadUserInfo = true }: { preloadUserInfo?: boolean } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -75,6 +86,9 @@ describe('AdminLayout', () => {
     mocks.location = { pathname: '/dashboard' };
     mocks.navigate.mockReset();
     mocks.signOut.mockReset();
+    mocks.accountMfa = {
+      data: { totp_enabled: false, totp_enabled_at: null, totp_required: false },
+    };
     vi.mocked(user.info).mockReset();
     vi.mocked(user.info).mockResolvedValue({ email: 'admin@example.com' } as Awaited<
       ReturnType<typeof user.info>
@@ -223,5 +237,35 @@ describe('AdminLayout', () => {
 
     expect(document.documentElement.classList.contains('dark')).toBe(true);
     expect(document.cookie).toContain('dark_mode=1');
+  });
+
+  it('swaps the routed page for the enrollment gate while MFA is forced and unenrolled', async () => {
+    const u = userEvent.setup();
+    mocks.accountMfa = {
+      data: { totp_enabled: false, totp_enabled_at: null, totp_required: true },
+    };
+    renderShell();
+
+    const gate = screen.getByTestId('mfa-enrollment-gate');
+    expect(gate).toHaveTextContent('需要启用两步验证');
+    expect(document.querySelector('[data-outlet]')).toBeNull();
+
+    await u.click(within(gate).getByRole('button', { name: '立即设置' }));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('keeps the routed page when MFA is not forced, or forced but already enrolled', () => {
+    renderShell();
+    expect(document.querySelector('[data-outlet]')).not.toBeNull();
+    expect(screen.queryByTestId('mfa-enrollment-gate')).not.toBeInTheDocument();
+  });
+
+  it('keeps the routed page for an enrolled account under forced MFA', () => {
+    mocks.accountMfa = {
+      data: { totp_enabled: true, totp_enabled_at: '2026-07-18T03:00:00Z', totp_required: true },
+    };
+    renderShell();
+    expect(document.querySelector('[data-outlet]')).not.toBeNull();
+    expect(screen.queryByTestId('mfa-enrollment-gate')).not.toBeInTheDocument();
   });
 });

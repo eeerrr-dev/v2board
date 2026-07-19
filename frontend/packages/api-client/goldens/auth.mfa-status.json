@@ -1,4 +1,5 @@
 {
   "totp_enabled": false,
-  "totp_enabled_at": null
+  "totp_enabled_at": null,
+  "totp_required": false
 }

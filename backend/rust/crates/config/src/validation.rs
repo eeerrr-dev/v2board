@@ -959,6 +959,7 @@ pub(crate) fn validate_scalar_config(
             "V2BOARD_LEGACY_HASH_REDIRECT_ENABLE",
         ),
         ("safe_mode_enable", "V2BOARD_SAFE_MODE_ENABLE"),
+        ("admin_mfa_force", "V2BOARD_ADMIN_MFA_FORCE"),
         ("password_limit_enable", "V2BOARD_PASSWORD_LIMIT_ENABLE"),
         (
             "privileged_step_up_enable",

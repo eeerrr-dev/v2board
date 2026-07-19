@@ -210,10 +210,12 @@ fn documents() -> Vec<(&'static str, String)> {
     let auth_mfa_status = pretty(&MfaStatus {
         totp_enabled: false,
         totp_enabled_at: None,
+        totp_required: false,
     });
     let auth_mfa_status_enabled = pretty(&MfaStatus {
         totp_enabled: true,
         totp_enabled_at: Some(GOLDEN_TIME),
+        totp_required: true,
     });
     let auth_mfa_totp = pretty(&TotpProvisioning {
         secret: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ".to_string(),

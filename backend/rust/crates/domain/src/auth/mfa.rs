@@ -37,6 +37,10 @@ pub struct MfaStatus {
     pub totp_enabled: bool,
     #[serde(with = "rfc3339_option")]
     pub totp_enabled_at: Option<i64>,
+    /// §6.10 `admin_mfa_force`: whether the deployment demands an enabled
+    /// factor before this session may leave the `account/mfa` family. Set by
+    /// the API layer from the config snapshot; the domain read reports `false`.
+    pub totp_required: bool,
 }
 
 /// POST `account/mfa/totp` — the pending enrollment the operator loads into
@@ -187,6 +191,7 @@ impl AuthService {
         Ok(MfaStatus {
             totp_enabled: enabled_at.is_some(),
             totp_enabled_at: enabled_at,
+            totp_required: false,
         })
     }
 

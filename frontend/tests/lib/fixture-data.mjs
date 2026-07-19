@@ -714,6 +714,7 @@ export const adminConfigFixture = {
   safe: {
     email_verify: 1,
     safe_mode_enable: 1,
+    admin_mfa_force: 0,
     secure_path: 'admin-path',
     email_whitelist_enable: 1,
     email_whitelist_suffix: ['qq.com', 'gmail.com'],

@@ -14,6 +14,7 @@ import {
   Monitor,
   Moon,
   Route as RouteIcon,
+  ShieldAlert,
   ShoppingBag,
   SlidersHorizontal,
   Star,
@@ -24,6 +25,9 @@ import {
 } from 'lucide-react';
 import { readCookie } from '@v2board/i18n';
 import { adminSessionQueryOptions } from '@/lib/session-queries';
+import { useAccountMfa } from '@/lib/queries';
+import { MfaDialog } from '@/components/mfa-dialog';
+import { Card, CardContent } from '@/components/ui/card';
 import { getAdminTitle } from '@/lib/runtime-config';
 import {
   setThemePreference,
@@ -206,6 +210,34 @@ function AdminSidebar({ siteTitle, email }: { siteTitle: string; email: string }
   );
 }
 
+/**
+ * §6.10 `admin_mfa_force`: while the deployment demands an enabled factor and
+ * this account has none, the backend answers every route outside the
+ * `account/mfa` family with 403 `mfa_enrollment_required` — so instead of a
+ * wall of failed requests, the shell swaps the routed page for this
+ * enrollment prompt until the factor is confirmed.
+ */
+function MfaEnrollmentGate() {
+  const [dialogOpen, setDialogOpen] = useState(false);
+  return (
+    <Card className="mx-auto max-w-lg" data-testid="mfa-enrollment-gate">
+      <CardContent className="flex flex-col items-center gap-4 py-10 text-center">
+        <ShieldAlert className="size-10 text-destructive" aria-hidden />
+        <div className="space-y-1">
+          <h2 className="text-lg font-semibold">需要启用两步验证</h2>
+          <p className="text-sm text-muted-foreground">
+            本站点已强制要求管理人员启用两步验证，完成绑定后即可继续使用后台。
+          </p>
+        </div>
+        <Button type="button" onClick={() => setDialogOpen(true)}>
+          立即设置
+        </Button>
+      </CardContent>
+      <MfaDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+    </Card>
+  );
+}
+
 function AdminLayoutContent() {
   const location = useLocation();
   const darkMode = useDarkMode();
@@ -215,6 +247,9 @@ function AdminLayoutContent() {
     ...adminSessionQueryOptions.userInfo(),
     refetchOnMount: false,
   });
+  const accountMfa = useAccountMfa();
+  const mfaBlocked =
+    accountMfa.data?.totp_required === true && accountMfa.data.totp_enabled === false;
   const siteTitle = getAdminTitle();
   const title = findActiveTitle(location.pathname);
 
@@ -298,7 +333,7 @@ function AdminLayoutContent() {
             they actually get (content area minus sidebar), not the viewport. */}
         <div id="main-container" className="@container/main flex-1">
           <div className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 md:py-6">
-            <RouteBoundaryOutlet />
+            {mfaBlocked ? <MfaEnrollmentGate /> : <RouteBoundaryOutlet />}
           </div>
         </div>
       </SidebarInset>

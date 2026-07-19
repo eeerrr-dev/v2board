@@ -100,6 +100,7 @@ export interface AdminConfigFlat {
   chat_widget_tawk_property_id: string | null;
   chat_widget_tawk_widget_id: string | null;
   safe_mode_enable: boolean;
+  admin_mfa_force: boolean;
   server_api_url: string | null;
   server_token: string | null;
   server_pull_interval: number;
@@ -221,6 +222,7 @@ export interface AdminConfigGroups {
     AdminConfigFlat,
     | 'email_verify'
     | 'safe_mode_enable'
+    | 'admin_mfa_force'
     | 'secure_path'
     | 'email_whitelist_enable'
     | 'email_whitelist_suffix'

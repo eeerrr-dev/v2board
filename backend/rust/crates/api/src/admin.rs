@@ -217,6 +217,9 @@ async fn admin_guard(State(state): State<AppState>, mut request: Request, next: 
         Ok(admin) => admin,
         Err(error) => return problem_from(error, locale).into_response(),
     };
+    if let Err(error) = require_enrolled_mfa(&state, &admin, request.uri().path()).await {
+        return problem_from(error, locale).into_response();
+    }
     if !matches!(*request.method(), Method::GET | Method::HEAD)
         && let Err(error) = require_privileged_step_up(&state, request.headers(), &admin).await
     {
@@ -224,6 +227,36 @@ async fn admin_guard(State(state): State<AppState>, mut request: Request, next: 
     }
     request.extensions_mut().insert(admin.clone());
     audited_run(state, admin, "admin", request, next).await
+}
+
+/// §6.10 mandatory-MFA gate: with `admin_mfa_force` on, a privileged session
+/// without an enabled TOTP factor may reach only its own `account/mfa`
+/// family (status, enroll, confirm) — every other admin/staff route answers
+/// 403 `mfa_enrollment_required`. A permission failure, never a session
+/// teardown. The dispatch layer has already rewritten the URI to the
+/// prefix-relative path, so the exemption matches on `/account/mfa…`.
+async fn require_enrolled_mfa(
+    state: &AppState,
+    actor: &AuthUser,
+    path: &str,
+) -> Result<(), ApiError> {
+    if !state.config_snapshot().admin_mfa_force {
+        return Ok(());
+    }
+    if mfa_exempt_path(path) {
+        return Ok(());
+    }
+    let status = state.auth_service().admin_mfa_status(actor.id).await?;
+    if status.totp_enabled {
+        return Ok(());
+    }
+    Err(ApiError::from(Problem::new(Code::MfaEnrollmentRequired)))
+}
+
+/// The only routes an unenrolled session may reach under `admin_mfa_force`:
+/// the caller's own `account/mfa` family, so enrollment itself stays possible.
+fn mfa_exempt_path(path: &str) -> bool {
+    path == "/account/mfa" || path.starts_with("/account/mfa/")
 }
 
 /// Runs the gated request and, for mutations, appends the operator audit row
@@ -280,11 +313,14 @@ async fn account_mfa_status(
     headers: HeaderMap,
 ) -> Result<Json<MfaStatus>, Problem> {
     let locale = request_locale(&headers);
-    let status = state
+    let mut status = state
         .auth_service()
         .admin_mfa_status(actor.id)
         .await
         .map_err(|error| problem_from(error, locale))?;
+    // §6.10: surface the `admin_mfa_force` demand so the SPA can gate the
+    // shell on enrollment instead of discovering it through 403s.
+    status.totp_required = state.config_snapshot().admin_mfa_force;
     Ok(Json(status))
 }
 
@@ -1962,6 +1998,9 @@ async fn staff_guard(State(state): State<AppState>, mut request: Request, next: 
         Ok(staff) => staff,
         Err(error) => return problem_from(error, locale).into_response(),
     };
+    if let Err(error) = require_enrolled_mfa(&state, &staff, request.uri().path()).await {
+        return problem_from(error, locale).into_response();
+    }
     if !matches!(*request.method(), Method::GET | Method::HEAD)
         && let Err(error) = require_privileged_step_up(&state, request.headers(), &staff).await
     {
@@ -2135,6 +2174,38 @@ mod tests {
             .and_then(|rest| rest.split("async fn nodes_sort").next())
             .expect("nodes_list handler exists");
         assert!(handler.contains("require_privileged_step_up"));
+    }
+
+    #[test]
+    fn mandatory_mfa_exempts_exactly_the_account_mfa_family() {
+        // §6.10 `admin_mfa_force`: enrollment must stay reachable for an
+        // unenrolled session, and nothing else may be.
+        assert!(mfa_exempt_path("/account/mfa"));
+        assert!(mfa_exempt_path("/account/mfa/totp"));
+        assert!(mfa_exempt_path("/account/mfa/totp/confirm"));
+        assert!(mfa_exempt_path("/account/mfa/totp/disable"));
+        assert!(!mfa_exempt_path("/account/mfariver"));
+        assert!(!mfa_exempt_path("/config"));
+        assert!(!mfa_exempt_path("/system/audit-logs"));
+    }
+
+    #[test]
+    fn both_privileged_guards_run_the_mandatory_mfa_gate() {
+        // Structural pin mirroring the step-up test style: the admin and
+        // staff guards must consult `require_enrolled_mfa` before dispatch.
+        let source = include_str!("admin.rs");
+        let admin_guard = source
+            .split("async fn admin_guard")
+            .nth(1)
+            .and_then(|rest| rest.split("async fn require_enrolled_mfa").next())
+            .expect("admin_guard precedes require_enrolled_mfa");
+        assert!(admin_guard.contains("require_enrolled_mfa(&state, &admin, request.uri().path())"));
+        let staff_guard = source
+            .split("async fn staff_guard")
+            .nth(1)
+            .and_then(|rest| rest.split("async fn staff_tickets_list").next())
+            .expect("staff_guard handler exists");
+        assert!(staff_guard.contains("require_enrolled_mfa(&state, &staff, request.uri().path())"));
     }
 
     #[test]
