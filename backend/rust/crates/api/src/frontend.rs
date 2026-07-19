@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use axum::{
     body::Body,
     http::{HeaderMap, HeaderValue, Method, StatusCode, header},
@@ -38,6 +40,56 @@ pub(crate) fn enabled_locales() -> &'static [&'static str] {
 pub(super) enum FrontendApp {
     User,
     Admin,
+}
+
+/// Optional SPA error reporting (`V2BOARD_FRONTEND_SENTRY_DSN`): the DSN is
+/// injected into the runtime config so both apps can lazily initialize their
+/// Sentry client, and its ingest origin joins the document CSP `connect-src`.
+/// Absent or blank keeps the feature entirely off; an invalid value warns and
+/// stays off, the same fail-open stance as the process `V2BOARD_SENTRY_DSN`.
+struct FrontendSentry {
+    dsn: String,
+    ingest_origin: String,
+}
+
+impl FrontendSentry {
+    /// A browser DSN needs the public key (URL username) and an http(s) ingest
+    /// host; everything else about the value stays opaque to Rust.
+    fn parse(raw: &str) -> Option<Self> {
+        let url = url::Url::parse(raw).ok()?;
+        if !matches!(url.scheme(), "http" | "https") || url.username().is_empty() {
+            return None;
+        }
+        let host = url.host_str()?;
+        let ingest_origin = match url.port() {
+            Some(port) => format!("{}://{host}:{port}", url.scheme()),
+            None => format!("{}://{host}", url.scheme()),
+        };
+        Some(Self {
+            dsn: raw.to_owned(),
+            ingest_origin,
+        })
+    }
+}
+
+/// The env value is immutable for the process lifetime, so it is parsed once.
+fn frontend_sentry() -> Option<&'static FrontendSentry> {
+    static FRONTEND_SENTRY: OnceLock<Option<FrontendSentry>> = OnceLock::new();
+    FRONTEND_SENTRY
+        .get_or_init(|| {
+            let raw = std::env::var("V2BOARD_FRONTEND_SENTRY_DSN")
+                .ok()
+                .map(|raw| raw.trim().to_owned())
+                .filter(|raw| !raw.is_empty())?;
+            let parsed = FrontendSentry::parse(&raw);
+            if parsed.is_none() {
+                tracing::warn!(
+                    "V2BOARD_FRONTEND_SENTRY_DSN is not a valid DSN; frontend error reporting is disabled"
+                );
+            }
+            parsed
+        })
+        .as_ref()
 }
 
 pub(super) async fn render(
@@ -82,7 +134,8 @@ pub(super) async fn render(
         );
     }
 
-    let runtime_config = script_safe_json(&runtime_config(config, app));
+    let sentry = frontend_sentry();
+    let runtime_config = script_safe_json(&runtime_config(config, app, sentry));
     let html = template.replacen(RUNTIME_CONFIG_TOKEN, &runtime_config, 1);
 
     let mut response = response(
@@ -97,7 +150,7 @@ pub(super) async fn render(
     // The full document policy (docs/api-dialect.md §10.5) is set here on the
     // HTML response; the security middleware only fills in the API/asset
     // baseline when a handler has not already claimed the header.
-    if let Ok(csp) = HeaderValue::from_str(&content_security_policy(config, app)) {
+    if let Ok(csp) = HeaderValue::from_str(&content_security_policy(config, app, sentry)) {
         response
             .headers_mut()
             .insert(header::CONTENT_SECURITY_POLICY, csp);
@@ -143,7 +196,11 @@ fn chat_widget(config: &AppConfig) -> Option<ChatWidget<'_>> {
 /// widget is configured — that provider's documented embed hosts (§10.6).
 /// `img-src https:` already covers provider images alongside operator
 /// logo/background URLs.
-fn content_security_policy(config: &AppConfig, app: FrontendApp) -> String {
+fn content_security_policy(
+    config: &AppConfig,
+    app: FrontendApp,
+    sentry: Option<&FrontendSentry>,
+) -> String {
     let prepaint_hash = match app {
         FrontendApp::User => USER_PREPAINT_SCRIPT_HASH,
         FrontendApp::Admin => ADMIN_PREPAINT_SCRIPT_HASH,
@@ -164,6 +221,13 @@ fn content_security_policy(config: &AppConfig, app: FrontendApp) -> String {
     let mut font_src: Option<String> = None;
     let mut media_src: Option<String> = None;
     let mut worker_src: Option<String> = None;
+
+    // Both documents report to the same ingest origin when the operator
+    // configures frontend Sentry; the DSN itself travels via runtime config.
+    if let Some(sentry) = sentry {
+        connect_src.push(' ');
+        connect_src.push_str(&sentry.ingest_origin);
+    }
 
     if matches!(app, FrontendApp::User) {
         match chat_widget(config) {
@@ -213,7 +277,7 @@ fn content_security_policy(config: &AppConfig, app: FrontendApp) -> String {
     policy
 }
 
-fn runtime_config(config: &AppConfig, app: FrontendApp) -> Value {
+fn runtime_config(config: &AppConfig, app: FrontendApp, sentry: Option<&FrontendSentry>) -> Value {
     let common = json!({
         "title": config.app_name,
         "theme": {
@@ -230,6 +294,10 @@ fn runtime_config(config: &AppConfig, app: FrontendApp) -> Value {
     let Value::Object(mut settings) = common else {
         unreachable!("runtime config is always an object")
     };
+    // Absent means frontend error reporting is off (the default).
+    if let Some(sentry) = sentry {
+        settings.insert("sentry_dsn".to_string(), json!(sentry.dsn));
+    }
 
     match app {
         FrontendApp::User => {
@@ -330,7 +398,7 @@ mod tests {
     fn document_csp_pins_the_prepaint_hash_and_stays_self_anchored() {
         let config = chat_test_config();
         for app in [FrontendApp::User, FrontendApp::Admin] {
-            let policy = content_security_policy(&config, app);
+            let policy = content_security_policy(&config, app, None);
             assert!(policy.starts_with("default-src 'self'; script-src 'self' 'sha256-"));
             assert!(policy.contains("https://js.stripe.com"));
             assert!(policy.contains("https://www.recaptcha.net"));
@@ -351,7 +419,7 @@ mod tests {
         config.chat_widget_provider = Some("crisp".to_string());
         config.chat_widget_crisp_website_id =
             Some("a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d".to_string());
-        let policy = content_security_policy(&config, FrontendApp::User);
+        let policy = content_security_policy(&config, FrontendApp::User, None);
         assert!(policy.contains("script-src 'self' 'sha256-"));
         assert!(policy.contains("https://*.crisp.chat"));
         assert!(policy.contains("wss://*.relay.crisp.chat"));
@@ -359,13 +427,13 @@ mod tests {
         assert!(!policy.contains("tawk"));
         // The chat widget is a user-app surface; the admin document must not
         // widen.
-        assert!(!content_security_policy(&config, FrontendApp::Admin).contains("crisp"));
+        assert!(!content_security_policy(&config, FrontendApp::Admin, None).contains("crisp"));
 
         let mut config = chat_test_config();
         config.chat_widget_provider = Some("tawk".to_string());
         config.chat_widget_tawk_property_id = Some("5f0c1d2e3a4b5c6d7e8f9a0b".to_string());
         config.chat_widget_tawk_widget_id = Some("default".to_string());
-        let policy = content_security_policy(&config, FrontendApp::User);
+        let policy = content_security_policy(&config, FrontendApp::User, None);
         assert!(policy.contains("https://*.tawk.to"));
         assert!(policy.contains("wss://*.tawk.to"));
         assert!(policy.contains("form-action 'self' https://*.tawk.to"));
@@ -380,13 +448,13 @@ mod tests {
         // the CSP.
         config.chat_widget_provider = Some("crisp".to_string());
         assert!(chat_widget(&config).is_none());
-        let value = runtime_config(&config, FrontendApp::User);
+        let value = runtime_config(&config, FrontendApp::User, None);
         assert!(value.get("chat_widget").is_none());
-        assert!(!content_security_policy(&config, FrontendApp::User).contains("crisp"));
+        assert!(!content_security_policy(&config, FrontendApp::User, None).contains("crisp"));
 
         config.chat_widget_crisp_website_id =
             Some("a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d".to_string());
-        let value = runtime_config(&config, FrontendApp::User);
+        let value = runtime_config(&config, FrontendApp::User, None);
         assert_eq!(
             value["chat_widget"],
             json!({
@@ -396,7 +464,7 @@ mod tests {
         );
         // Admin documents never carry the widget.
         assert!(
-            runtime_config(&config, FrontendApp::Admin)
+            runtime_config(&config, FrontendApp::Admin, None)
                 .get("chat_widget")
                 .is_none()
         );
@@ -406,13 +474,40 @@ mod tests {
         config.chat_widget_tawk_property_id = Some("5f0c1d2e3a4b5c6d7e8f9a0b".to_string());
         config.chat_widget_tawk_widget_id = Some("default".to_string());
         assert_eq!(
-            runtime_config(&config, FrontendApp::User)["chat_widget"],
+            runtime_config(&config, FrontendApp::User, None)["chat_widget"],
             json!({
                 "provider": "tawk",
                 "property_id": "5f0c1d2e3a4b5c6d7e8f9a0b",
                 "widget_id": "default",
             })
         );
+    }
+
+    #[test]
+    fn sentry_dsn_widens_connect_src_and_lands_in_runtime_config_only_when_configured() {
+        let config = chat_test_config();
+        let dsn = "https://f00d@o111111.ingest.sentry.io/2222";
+        let sentry = FrontendSentry::parse(dsn).expect("a complete browser DSN parses");
+        assert_eq!(sentry.ingest_origin, "https://o111111.ingest.sentry.io");
+        for app in [FrontendApp::User, FrontendApp::Admin] {
+            let policy = content_security_policy(&config, app, Some(&sentry));
+            assert!(policy.contains(" https://o111111.ingest.sentry.io"));
+            assert_eq!(
+                runtime_config(&config, app, Some(&sentry))["sentry_dsn"],
+                json!(dsn)
+            );
+            // Off (the default): no DSN key and no widened connect-src.
+            assert!(
+                runtime_config(&config, app, None)
+                    .get("sentry_dsn")
+                    .is_none()
+            );
+            assert!(!content_security_policy(&config, app, None).contains("ingest.sentry.io"));
+        }
+        // A keyless or non-HTTP value cannot activate reporting.
+        assert!(FrontendSentry::parse("not a dsn").is_none());
+        assert!(FrontendSentry::parse("https://o1.ingest.sentry.io/2").is_none());
+        assert!(FrontendSentry::parse("ftp://key@host/1").is_none());
     }
 
     #[test]

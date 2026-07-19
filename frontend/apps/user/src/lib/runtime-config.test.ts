@@ -8,6 +8,7 @@ import {
   getLegacyHashRedirectEnabled,
   getLogoUrl,
   getRuntimeConfig,
+  getSentryDsn,
 } from './runtime-config';
 
 describe('runtime config bootstrap', () => {
@@ -104,6 +105,19 @@ describe('runtime config bootstrap', () => {
     expect(getChatWidgetConfig()).toBeUndefined();
     setRuntimeConfig({ chat_widget: { provider: 'zendesk' } as never });
     expect(getChatWidgetConfig()).toBeUndefined();
+  });
+
+  it('activates error reporting only for an injected non-empty sentry_dsn', () => {
+    setRuntimeConfig({});
+    expect(getSentryDsn()).toBeUndefined();
+
+    setRuntimeConfig({ sentry_dsn: 'https://f00d@o1.ingest.sentry.io/2' });
+    expect(getSentryDsn()).toBe('https://f00d@o1.ingest.sentry.io/2');
+
+    setRuntimeConfig({ sentry_dsn: '   ' });
+    expect(getSentryDsn()).toBeUndefined();
+    setRuntimeConfig({ sentry_dsn: 42 as never });
+    expect(getSentryDsn()).toBeUndefined();
   });
 
   it('accepts web and relative operator images but rejects active URL schemes', () => {

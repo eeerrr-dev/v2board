@@ -14,6 +14,7 @@ import {
   applyAdminRuntimeConfig,
   getAdminBasename,
   getLegacyHashRedirectEnabled,
+  getSentryDsn,
 } from './lib/runtime-config';
 import { applyInitialDarkMode } from './lib/dark-mode';
 import { registerSessionCacheClearer, setupAuthSync } from './lib/auth';
@@ -24,6 +25,12 @@ import './styles/globals.css';
 
 applyAdminRuntimeConfig();
 applyInitialDarkMode();
+// Error reporting is opt-in via the injected runtime config; the SDK loads
+// lazily so boot never blocks on it and the chunk is never fetched when off.
+const sentryDsn = getSentryDsn();
+if (sentryDsn) {
+  void import('./lib/sentry').then(({ initSentry }) => initSentry(sentryDsn));
+}
 
 const i18n = await createLazyI18n();
 installLocaleDocumentEnvironment(i18n);

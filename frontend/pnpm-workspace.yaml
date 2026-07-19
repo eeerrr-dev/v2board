@@ -27,6 +27,7 @@ catalog:
   '@babel/core': ^8.0.1
   '@hookform/resolvers': ^5.4.0
   '@rolldown/plugin-babel': ^0.2.3
+  '@sentry/react': ^10.66.0
   '@tailwindcss/vite': ^4.3.2
   '@tanstack/react-query': ^5.101.2
   '@tanstack/eslint-plugin-query': ^5.101.1

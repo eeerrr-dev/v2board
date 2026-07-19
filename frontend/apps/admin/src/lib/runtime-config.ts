@@ -9,6 +9,8 @@ export interface AdminRuntimeConfig {
   secure_path?: string;
   /** docs/api-dialect.md §10.3: boot-time legacy `#/…` → history-URL toggle. */
   legacy_hash_redirect_enable?: boolean;
+  /** Absent = frontend error reporting off (the default). */
+  sentry_dsn?: string;
 }
 
 const DEV_ADMIN_PATH =
@@ -23,7 +25,8 @@ const DEFAULT_RUNTIME_CONFIG = {
   secure_path: DEV_ADMIN_PATH,
   // Mirrors the Rust config default (config.rs legacy_hash_redirect_enable).
   legacy_hash_redirect_enable: true,
-} as const satisfies Required<AdminRuntimeConfig>;
+  // `sentry_dsn` is deliberately absent: off is the default.
+} as const satisfies Required<Omit<AdminRuntimeConfig, 'sentry_dsn'>>;
 const ADMIN_THEME_COLORS = new Set(['black', 'darkblue', 'default', 'green']);
 const ADMIN_THEME_META_COLORS: Record<string, string> = {
   default: '#0665d0',
@@ -72,6 +75,10 @@ function readAdminRuntimeConfig(): AdminRuntimeConfig {
         typeof value.legacy_hash_redirect_enable === 'boolean'
           ? value.legacy_hash_redirect_enable
           : DEFAULT_RUNTIME_CONFIG.legacy_hash_redirect_enable,
+      sentry_dsn:
+        typeof value.sentry_dsn === 'string' && value.sentry_dsn.trim() !== ''
+          ? value.sentry_dsn
+          : undefined,
     };
   } catch {
     return cloneDefaults();
@@ -130,6 +137,11 @@ export function getLegacyHashRedirectEnabled(): boolean {
     getAdminRuntimeConfig().legacy_hash_redirect_enable ??
     DEFAULT_RUNTIME_CONFIG.legacy_hash_redirect_enable
   );
+}
+
+/** undefined = frontend error reporting off (the default). */
+export function getSentryDsn(): string | undefined {
+  return getAdminRuntimeConfig().sentry_dsn;
 }
 
 function cloneDefaults(): AdminRuntimeConfig {

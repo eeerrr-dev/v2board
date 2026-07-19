@@ -24,6 +24,8 @@ export interface RuntimeConfig {
   legacy_hash_redirect_enable?: boolean;
   /** docs/api-dialect.md §10.6: absent = chat widget off (the default). */
   chat_widget?: ChatWidgetConfig;
+  /** Absent = frontend error reporting off (the default). */
+  sentry_dsn?: string;
 }
 
 const DEFAULT_RUNTIME_CONFIG = {
@@ -38,8 +40,8 @@ const DEFAULT_RUNTIME_CONFIG = {
   i18n: SUPPORTED_LOCALES.map((locale) => locale.code),
   // Mirrors the Rust config default (config.rs legacy_hash_redirect_enable).
   legacy_hash_redirect_enable: true,
-  // `chat_widget` is deliberately absent: off is the §10.6 default.
-} as const satisfies Required<Omit<RuntimeConfig, 'chat_widget'>>;
+  // `chat_widget` and `sentry_dsn` are deliberately absent: off is the default.
+} as const satisfies Required<Omit<RuntimeConfig, 'chat_widget' | 'sentry_dsn'>>;
 const THEME_COLORS = new Set<RuntimeThemeColor>(['default', 'darkblue', 'black', 'green']);
 const THEME_META_COLORS: Record<RuntimeThemeColor, string> = {
   default: '#0665d0',
@@ -95,6 +97,7 @@ function readRuntimeConfig(): RuntimeConfig {
           ? value.legacy_hash_redirect_enable
           : DEFAULT_RUNTIME_CONFIG.legacy_hash_redirect_enable,
       chat_widget: parseChatWidget(value.chat_widget),
+      sentry_dsn: nonEmptyString(value.sentry_dsn) ? value.sentry_dsn : undefined,
     };
   } catch {
     return cloneDefaults();
@@ -136,6 +139,11 @@ export function getLegacyHashRedirectEnabled(): boolean {
 /** docs/api-dialect.md §10.6: undefined = chat widget off (the default). */
 export function getChatWidgetConfig(): ChatWidgetConfig | undefined {
   return getRuntimeConfig().chat_widget;
+}
+
+/** undefined = frontend error reporting off (the default). */
+export function getSentryDsn(): string | undefined {
+  return getRuntimeConfig().sentry_dsn;
 }
 
 function getOperatorImageUrl(value: string | undefined): string {

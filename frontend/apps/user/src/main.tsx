@@ -14,7 +14,7 @@ import { Toaster } from './components/ui/toaster';
 import { registerSessionCacheClearer, setupAuthSync } from './lib/auth';
 import { installChatWidget } from './lib/chat-widget';
 import { applyInitialDarkMode } from './lib/dark-mode';
-import { applyRuntimeConfig, getLegacyHashRedirectEnabled } from './lib/runtime-config';
+import { applyRuntimeConfig, getLegacyHashRedirectEnabled, getSentryDsn } from './lib/runtime-config';
 import { i18nGet } from './lib/errors';
 import { reportSubscribeToChat, reportUserInfoToChat, userKeys } from './lib/queries';
 import { registerRouterNavigation } from './lib/router-navigation';
@@ -22,6 +22,12 @@ import { toast } from './lib/toast';
 import './styles/globals.css';
 
 applyRuntimeConfig();
+// Error reporting is opt-in via the injected runtime config; the SDK loads
+// lazily so boot never blocks on it and the chunk is never fetched when off.
+const sentryDsn = getSentryDsn();
+if (sentryDsn) {
+  void import('./lib/sentry').then(({ initSentry }) => initSentry(sentryDsn));
+}
 const i18n = await createLazyI18n();
 installLocaleDocumentEnvironment(i18n);
 function queryKeyEquals(a: readonly unknown[], b: readonly unknown[]): boolean {

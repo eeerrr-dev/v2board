@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@hookform/resolvers": "catalog:",
+    "@sentry/react": "catalog:",
     "@tanstack/react-query": "catalog:",
     "@tanstack/react-table": "catalog:",
     "@tanstack/react-virtual": "catalog:",

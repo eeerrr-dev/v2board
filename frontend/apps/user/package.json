@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@hookform/resolvers": "catalog:",
+    "@sentry/react": "catalog:",
     "@stripe/react-stripe-js": "^6.7.0",
     "@stripe/stripe-js": "^9.9.0",
     "@tanstack/react-query": "catalog:",

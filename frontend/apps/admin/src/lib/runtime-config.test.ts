@@ -9,6 +9,7 @@ import {
   getAdminSecurePath,
   getAdminTitle,
   getLegacyHashRedirectEnabled,
+  getSentryDsn,
 } from './runtime-config';
 
 describe('admin runtime config', () => {
@@ -45,6 +46,19 @@ describe('admin runtime config', () => {
 
     setAdminRuntimeConfig({ legacy_hash_redirect_enable: false });
     expect(getLegacyHashRedirectEnabled()).toBe(false);
+  });
+
+  it('activates error reporting only for an injected non-empty sentry_dsn', () => {
+    setAdminRuntimeConfig({});
+    expect(getSentryDsn()).toBeUndefined();
+
+    setAdminRuntimeConfig({ sentry_dsn: 'https://f00d@o1.ingest.sentry.io/2' });
+    expect(getSentryDsn()).toBe('https://f00d@o1.ingest.sentry.io/2');
+
+    setAdminRuntimeConfig({ sentry_dsn: '   ' });
+    expect(getSentryDsn()).toBeUndefined();
+    setAdminRuntimeConfig({ sentry_dsn: 42 as never });
+    expect(getSentryDsn()).toBeUndefined();
   });
 
   it('falls back safely when the backend token is not replaced', async () => {
