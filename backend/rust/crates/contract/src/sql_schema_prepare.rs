@@ -351,7 +351,7 @@ const DYNAMIC_SQLX_SITES: &[DynamicSite] = &[
         coverage: "all node variants are collected as indirect static SQL and server API contracts",
     },
     DynamicSite {
-        source: "crates/domain/src/admin/content.rs",
+        source: "crates/domain/src/admin/codes.rs",
         count: 2,
         coverage: "§7.2 whitelist-sorted coupon/gift-card list SELECTs, pinned by the golden \
                    responses and production-invariant projections",
@@ -425,14 +425,30 @@ const QUERY_BUILDER_SITES: &[DynamicSite] = &[
         coverage: "commerce interaction contracts",
     },
     DynamicSite {
-        source: "crates/domain/src/admin/commerce.rs",
-        count: 5,
+        source: "crates/domain/src/admin/codes.rs",
+        count: 3,
+        coverage: "coupon/gift-card batch and single code INSERTs, pinned by the generated-code \
+                   unit tests and admin content interaction parity",
+    },
+    DynamicSite {
+        source: "crates/domain/src/admin/commerce/orders.rs",
+        count: 3,
         coverage: "admin commerce interaction parity",
     },
     DynamicSite {
-        source: "crates/domain/src/admin/content.rs",
-        count: 6,
-        coverage: "admin content/ticket interaction parity",
+        source: "crates/domain/src/admin/commerce/payments.rs",
+        count: 1,
+        coverage: "admin commerce interaction parity",
+    },
+    DynamicSite {
+        source: "crates/domain/src/admin/commerce/plans.rs",
+        count: 1,
+        coverage: "admin commerce interaction parity",
+    },
+    DynamicSite {
+        source: "crates/domain/src/admin/repository.rs",
+        count: 1,
+        coverage: "safe-table allowlisted §4.4 PATCH executor and admin interaction parity",
     },
     DynamicSite {
         source: "crates/domain/src/admin/servers.rs",
@@ -458,6 +474,11 @@ const QUERY_BUILDER_SITES: &[DynamicSite] = &[
         source: "crates/domain/src/admin/support/values.rs",
         count: 2,
         coverage: "exact PostgreSQL integer-cast builder unit tests and caller interaction parity",
+    },
+    DynamicSite {
+        source: "crates/domain/src/admin/tickets.rs",
+        count: 2,
+        coverage: "admin ticket interaction parity",
     },
     DynamicSite {
         source: "crates/domain/src/admin/users.rs",

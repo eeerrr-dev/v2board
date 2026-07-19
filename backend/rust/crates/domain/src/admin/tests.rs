@@ -3,7 +3,7 @@ use super::commerce::{
     reconciliation_resolved_filter, resolve_redacted_payment_config,
 };
 use super::configuration::drop_unchanged_effective_secure_path;
-use super::content::{TICKET_NOTIFICATION_GATE_RELEASE_SCRIPT, validate_ticket_message_length};
+use super::tickets::{TICKET_NOTIFICATION_GATE_RELEASE_SCRIPT, validate_ticket_message_length};
 use super::*;
 use crate::mail::outbox::{mail_message_id, prepared_mail_payload_hash};
 
@@ -451,7 +451,7 @@ fn clearing_email_port_uses_json_null_not_the_legacy_empty_string() {
 
 #[test]
 fn ticket_reply_notification_is_enqueued_inside_the_reply_transaction() {
-    let source = include_str!("content.rs");
+    let source = include_str!("tickets.rs");
     let start = source
         .find("pub async fn ticket_reply")
         .expect("ticket reply implementation");
@@ -475,7 +475,7 @@ fn ticket_reply_notification_is_enqueued_inside_the_reply_transaction() {
 
 #[test]
 fn ticket_notification_gate_is_atomic_and_owner_scoped_on_rollback() {
-    let source = include_str!("content.rs");
+    let source = include_str!("tickets.rs");
     assert!(source.contains("redis::cmd(\"SET\")"));
     assert!(source.contains(".arg(\"NX\")"));
     assert!(source.contains(".arg(\"EX\")"));

@@ -349,7 +349,7 @@ Admin:
 | `config_revision_conflict` | 409 | `配置已被其他请求更新，请刷新后重试` |
 | `config_validation_failed` | 400 | `配置校验失败: …`, `配置安全校验失败: …` (detail keeps the specific reason); also emitted by the new reserved-segment admin-path rule (§10.2) |
 | `payment_method_not_found` | 404 | `支付方式不存在` |
-| `payment_method_in_use` | 400 | payment delete/update guards (commerce.rs:657) |
+| `payment_method_in_use` | 400 | payment delete/update guards (commerce/payments.rs) |
 | `reconciliation_not_found` | 404 | `付款核对记录不存在` |
 | `reconciliation_already_processed` | 409 | `付款核对记录已处理` |
 | `order_assign_conflict` | 400 | `该用户还有待支付的订单，无法分配` |
@@ -1625,7 +1625,7 @@ switches its family atomically. No wave leaves a family half-dialect. Wave
 ### W10 — Admin content CRUD (notice, knowledge, coupon, gift card)
 
 - Routes: §6.3.
-- Files: `crates/domain/src/admin/content.rs`; `endpoints/admin.ts`;
+- Files: `crates/domain/src/admin/{content,codes}.rs`; `endpoints/admin.ts`;
   `apps/admin/src/pages/{notice,knowledge,coupon,giftcard}*`.
 - Fixtures/scenarios: `runners/admin/coupon-giftcard-notice-knowledge.mjs`,
   `specs/admin-coupon-giftcard-notice-knowledge.spec.mjs`.
@@ -1635,8 +1635,8 @@ switches its family atomically. No wave leaves a family half-dialect. Wave
 ### W11 — Admin commerce (plans, payments, orders, reconciliation)
 
 - Routes: §6.2 + §6.4.
-- Files: `crates/domain/src/admin/commerce.rs`; `endpoints/admin.ts`;
-  `apps/admin/src/pages/{plan,payment,order}*`.
+- Files: `crates/domain/src/admin/commerce.rs` + `commerce/*.rs`;
+  `endpoints/admin.ts`; `apps/admin/src/pages/{plan,payment,order}*`.
 - Fixtures/scenarios: `runners/admin/{plan,payment,order}.mjs`,
   `specs/admin-{plan,payment,order}.spec.mjs`.
 - Risk: order identifier switch to `trade_no`; payment present-but-empty

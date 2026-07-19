@@ -54,4 +54,36 @@ impl AdminService {
         }
         Ok(())
     }
+
+    /// Shared §4.4 PATCH executor: dynamic `UPDATE ... SET ..., updated_at
+    /// WHERE id = ?` over the provided columns, reporting a path-identified
+    /// miss as the caller's 404 problem. An all-absent body retains every
+    /// column but still 404s on a missing id.
+    pub(super) async fn patch_row(
+        &self,
+        table: &str,
+        id: i64,
+        values: &[(&str, AdminSqlValue)],
+        not_found: ApiError,
+    ) -> Result<(), ApiError> {
+        ensure_safe_table(table)?;
+        if values.is_empty() {
+            return self.ensure_row_exists(table, id, not_found).await;
+        }
+        let mut builder = QueryBuilder::<Postgres>::new(format!("UPDATE {table} SET "));
+        for (column, value) in values {
+            builder.push(format!("\"{column}\" = "));
+            push_admin_sql_bind(&mut builder, column, value);
+            builder.push(", ");
+        }
+        builder.push("\"updated_at\" = ");
+        builder.push_bind(Utc::now().timestamp());
+        builder.push(" WHERE id = ");
+        builder.push_bind(id);
+        let result = builder.build().execute(&self.db).await?;
+        if result.rows_affected() == 0 {
+            return Err(not_found);
+        }
+        Ok(())
+    }
 }
