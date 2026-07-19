@@ -1,0 +1,35 @@
+# v2board Alertmanager skeleton. Replace the placeholder receiver with the
+# operator's real paging/notification integration before relying on it;
+# an Alertmanager with no working receiver silently drops pages.
+#
+# Install as /etc/prometheus/alertmanager.yml (Debian package
+# prometheus-alertmanager reads it from there).
+
+route:
+  receiver: default
+  group_by: [alertname]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    # Pages repeat faster than warnings until acknowledged.
+    - matchers: [severity="page"]
+      receiver: default
+      repeat_interval: 1h
+
+receivers:
+  - name: default
+    # Point this at the operator's incident webhook (Slack/Telegram bridge,
+    # PagerDuty events API proxy, ntfy, ...). Keep the URL secret-free or
+    # root-own this file 0600.
+    webhook_configs:
+      - url: http://127.0.0.1:9999/alerts
+        send_resolved: true
+    # Or SMTP, using the same relay the application uses:
+    # email_configs:
+    #   - to: ops@example.com
+    #     from: alertmanager@example.com
+    #     smarthost: smtp.example.com:587
+    #     auth_username: alertmanager@example.com
+    #     auth_password_file: /etc/prometheus/alertmanager-smtp-password
+    #     send_resolved: true

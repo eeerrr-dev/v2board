@@ -1,0 +1,143 @@
+# v2board alert rules — the executable form of the required-alert table in
+# docs/operations.md §1.2 (severity: page = wake an operator, warn =
+# investigate within a working day), plus the latency and external-probe
+# alerts enabled by the HTTP histogram and blackbox jobs.
+#
+# Install as /etc/prometheus/v2board-alerts.yml.
+
+groups:
+  - name: v2board-availability
+    rules:
+      - alert: APIScrapeDown
+        expr: up{job="v2board"} == 0
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: The v2board API /metrics endpoint is not answering its local scrape.
+
+      - alert: PublicURLProbeFailing
+        expr: probe_success{job="v2board-public"} == 0
+        for: 3m
+        labels:
+          severity: page
+        annotations:
+          summary: The canonical public URL is failing the external-path probe (edge -> tunnel -> origin).
+
+      - alert: PostgresDownOrLedgerDrift
+        expr: v2board_postgres_up == 0
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: PostgreSQL is unreachable or the migration ledger is not exactly current.
+
+      - alert: RedisDown
+        expr: v2board_redis_up == 0
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: Redis is unreachable from the API.
+
+      - alert: OperatorConfigAuthorityUnhealthy
+        expr: v2board_operator_config_authority_healthy == 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: The operator configuration authority is unhealthy.
+
+      - alert: FrontendReleaseMissing
+        expr: v2board_frontend_release_present == 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: The frontend release tree is missing or invalid.
+
+  - name: v2board-worker
+    rules:
+      - alert: SchedulerStale
+        expr: time() - v2board_worker_scheduler_last_check_timestamp_seconds > 180
+        labels:
+          severity: page
+        annotations:
+          summary: The worker scheduler has not checked in for more than 3 minutes.
+
+      - alert: WorkerLoopStale
+        expr: time() - v2board_worker_loop_heartbeat_timestamp_seconds > 300
+        labels:
+          severity: page
+        annotations:
+          summary: 'Worker loop {{ $labels.loop }} has not heartbeat for more than 5 minutes.'
+
+      - alert: ScheduledJobFailing
+        expr: increase(v2board_worker_jobs_failed_total[1h]) > 0
+        labels:
+          severity: warn
+        annotations:
+          summary: 'Scheduled job {{ $labels.job_name }} failed within the last hour.'
+
+  - name: v2board-analytics-outbox
+    rules:
+      - alert: AnalyticsAdmissionUnobservable
+        expr: v2board_analytics_admission_observed == 0
+        for: 10m
+        labels:
+          severity: warn
+        annotations:
+          summary: The analytics admission policy cannot be observed.
+
+      - alert: OutboxSoftPressure
+        expr: v2board_analytics_pressure_state{state="soft_pressure"} == 1
+        for: 15m
+        labels:
+          severity: warn
+        annotations:
+          summary: The analytics outbox has been under soft pressure for 15 minutes.
+
+      - alert: OutboxHardStop
+        expr: v2board_analytics_pressure_state{state="hard_stop"} == 1
+        labels:
+          severity: page
+        annotations:
+          summary: The analytics outbox reached hard stop; event admission is rejecting.
+
+      - alert: OutboxAging
+        expr: >
+          v2board_analytics_oldest_pending_age_seconds
+            > on() v2board_analytics_threshold_oldest_age_seconds{level="soft"}
+        labels:
+          severity: warn
+        annotations:
+          summary: The oldest pending outbox row is older than the soft age threshold.
+
+      - alert: CapacityHeadroomLow
+        expr: >
+          v2board_analytics_capacity_headroom_bytes
+            < on() v2board_analytics_threshold_min_headroom_bytes{level="soft"}
+        labels:
+          severity: warn
+        annotations:
+          summary: Database capacity headroom fell below the soft threshold.
+
+  - name: v2board-http
+    rules:
+      - alert: ElevatedServerErrors
+        expr: increase(v2board_http_requests_total{class="5xx"}[5m]) > 10
+        labels:
+          severity: warn
+        annotations:
+          summary: More than 10 HTTP 5xx responses in the last 5 minutes.
+
+      - alert: SlowRequestsP95
+        expr: >
+          histogram_quantile(0.95,
+            sum by (family, le) (rate(v2board_http_request_duration_seconds_bucket[5m])))
+            > 1
+        for: 10m
+        labels:
+          severity: warn
+        annotations:
+          summary: 'p95 latency for the {{ $labels.family }} route family exceeded 1s for 10 minutes.'

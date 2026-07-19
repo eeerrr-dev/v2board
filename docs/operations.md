@@ -12,6 +12,10 @@ invariants live in
 
 ## 1. Monitoring and alerting
 
+Ready-to-install Prometheus/Alertmanager/blackbox configs implementing this
+section — including the §1.2 required-alert table — live in
+[`deploy/monitoring/`](../deploy/monitoring/README.md).
+
 ### 1.1 The `/metrics` endpoint
 
 The API exports Prometheus text metrics at `GET http://127.0.0.1:8080/metrics`.

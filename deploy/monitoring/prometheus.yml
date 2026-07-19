@@ -1,0 +1,62 @@
+# v2board production Prometheus configuration (Debian 13, same-host scrape).
+#
+# /metrics shares the /healthz//readyz origin gate: it answers only a direct
+# loopback peer whose Host is exactly 127.0.0.1:8080 and which carries no
+# CF-Connecting-IP header (docs/operations.md §1.1). Prometheus targeting
+# 127.0.0.1:8080 satisfies that gate as-is, so this file must run on the
+# application host. Never create a Tunnel or WAF route for /metrics.
+#
+# Install as /etc/prometheus/prometheus.yml alongside v2board-alerts.yml,
+# replace panel.example.com with the canonical app_url hostname, and keep
+# Prometheus itself on loopback (README.md).
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/v2board-alerts.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['127.0.0.1:9093']
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ['127.0.0.1:9090']
+
+  # API process metrics; worker heartbeats/counters are re-exported here from
+  # Redis (v2board_worker_*), so there is no second application target.
+  - job_name: v2board
+    static_configs:
+      - targets: ['127.0.0.1:8080']
+
+  # External-path uptime probe: blackbox-exporter fetches the canonical public
+  # URL through Cloudflare (edge -> tunnel -> origin). This proves the full
+  # ingress chain but still runs from this host; ALSO register an independent
+  # third-party uptime check from another network (README.md).
+  - job_name: v2board-public
+    metrics_path: /probe
+    params:
+      module: [https_2xx]
+    static_configs:
+      - targets:
+          - https://panel.example.com/
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 127.0.0.1:9115
+
+  # Infrastructure exporters (docs/operations.md §1.3). Uncomment as each is
+  # installed; the application exporter does not replace them.
+  # - job_name: node
+  #   static_configs:
+  #     - targets: ['127.0.0.1:9100']
+  # - job_name: postgres
+  #   static_configs:
+  #     - targets: ['127.0.0.1:9187']
