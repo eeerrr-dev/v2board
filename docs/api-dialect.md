@@ -1,12 +1,12 @@
 # Internal API Dialect v2 — Design Specification
 
-Status: **approved design, not yet implemented.** This document is the single
-source of truth for the modernized internal API dialect that replaces the
-legacy-inherited dialect (audit items R1–R30) across the Rust backend, the
-React frontend, `@v2board/api-client`, fixtures, goldens, and the parity
-harness. Implementation happens in the waves listed in Appendix A; each wave
-updates this document (notably the error-code registry) in the same commit
-series that ships it.
+Status: **implemented and normative.** Every migration wave in Appendix A
+(W0–W14) has landed; the Rust backend, the React frontend,
+`@v2board/api-client`, fixtures, goldens, and the parity harness all speak
+this dialect and nothing else. This document remains the single source of
+truth for the internal dialect that replaced the legacy-inherited one (audit
+items R1–R30): contract changes land as revisions to this specification in
+the same commit series that ships them (notably the error-code registry).
 
 Owner decisions fixed before this design (not open questions): all internal
 namespaces modernize, including passport/auth (breaking third-party in-app
