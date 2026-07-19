@@ -18,6 +18,7 @@ import {
 } from './lib/runtime-config';
 import { applyInitialDarkMode } from './lib/dark-mode';
 import { registerSessionCacheClearer, setupAuthSync } from './lib/auth';
+import { installChunkReloadRecovery } from './lib/chunk-recovery';
 import { registerRouterNavigation } from './lib/router-navigation';
 import { maybePromptStepUp } from './lib/step-up';
 import { toast } from './lib/toast';
@@ -25,6 +26,9 @@ import './styles/globals.css';
 
 applyAdminRuntimeConfig();
 applyInitialDarkMode();
+// A stale tab whose lazy chunks were replaced by a newer release recovers with
+// one guarded reload; installed before any dynamic import can fail.
+installChunkReloadRecovery();
 // Error reporting is opt-in via the injected runtime config; the SDK loads
 // lazily so boot never blocks on it and the chunk is never fetched when off.
 const sentryDsn = getSentryDsn();
