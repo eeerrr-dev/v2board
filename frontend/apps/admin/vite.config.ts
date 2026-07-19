@@ -23,6 +23,7 @@ export default defineConfig({
     include: [
       '@hookform/resolvers/zod',
       'radix-ui',
+      '@sentry/react',
       '@tanstack/react-query',
       '@tanstack/react-table',
       '@tanstack/react-virtual',
