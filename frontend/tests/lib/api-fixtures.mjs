@@ -13,7 +13,12 @@ export async function installApiFixtures(page, scenario, target, interaction = {
   // W14 (§6.9): runners that drive the staff mirror directly need to speak
   // the current world's wire dialect; stash it on the page handle.
   page.__parityWorld = target;
-  const effectiveLocale = scenario.locale ?? (isAdminScenario ? '' : 'zh-CN');
+  // Admin copy is deliberately untranslated Chinese, but the redesigned admin
+  // resolves through i18next, so the source world must pin the canonical
+  // locale for deterministic scenario text; the legacy oracle admin has no
+  // locale machinery and stays unseeded.
+  const effectiveLocale =
+    scenario.locale ?? (isAdminScenario ? (target === 'source' ? 'zh-CN' : '') : 'zh-CN');
   let seededAdminTicketDetailStore = false;
   let resolveAdminGroupsReady;
   const adminGroupsReady = new Promise((resolve) => {
