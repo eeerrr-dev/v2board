@@ -1,0 +1,9 @@
+# cargo-audit policy for CI's `cargo audit --deny warnings`. Keep the ignore
+# list in lockstep with deny.toml [advisories].ignore.
+
+[advisories]
+# `paste` is archived upstream (unmaintained advisory) but is a compile-time
+# proc-macro only, pulled in transitively by clickhouse (latest) ->
+# polonius-the-crab -> higher-kinded-types; no maintained replacement path
+# exists today.
+ignore = ["RUSTSEC-2024-0436"]

@@ -9,6 +9,13 @@ all-features = true
 unmaintained = "all"
 unsound = "all"
 yanked = "deny"
+ignore = [
+  # `paste` is archived upstream but is a compile-time proc-macro only, pulled
+  # in transitively by clickhouse (latest) -> polonius-the-crab ->
+  # higher-kinded-types; no maintained replacement path exists today. Keep in
+  # lockstep with .cargo/audit.toml.
+  { id = "RUSTSEC-2024-0436", reason = "compile-time proc-macro reached only through the latest clickhouse driver; no upstream fix available" },
+]
 
 [bans]
 multiple-versions = "warn"
