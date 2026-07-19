@@ -1060,6 +1060,33 @@ export function assertUsefulInteraction(label, result, target) {
       `admin config save failure matrix did not preserve the rejected draft: ${JSON.stringify(result)}`,
     );
   }
+  if (label === 'admin-audit-filters') {
+    // §6.11/§7: each control must mint its canonical clause on the captured
+    // GET system/audit-logs query — surface eq, then +method eq, then +the
+    // actor_email like clause (raw string per §7.1) — with the page reset to 1.
+    const clauses = (query) => JSON.stringify(query?.filter ?? []);
+    if (
+      (result.initial?.rowCount ?? 0) < 1 ||
+      result.initial?.query?.page !== 1 ||
+      result.initial?.query?.per_page !== 20 ||
+      result.initial?.query?.filter !== undefined ||
+      !clauses(result.surfaceFiltered?.query).includes(
+        '{"field":"surface","op":"eq","value":"staff"}',
+      ) ||
+      !clauses(result.methodFiltered?.query).includes(
+        '{"field":"method","op":"eq","value":"POST"}',
+      ) ||
+      result.emailFiltered?.query?.filter?.length !== 3 ||
+      !clauses(result.emailFiltered?.query).includes(
+        '{"field":"actor_email","op":"like","value":"staff@example.com"}',
+      ) ||
+      result.emailFiltered?.query?.page !== 1
+    ) {
+      throw new Error(
+        `admin audit filters did not mint the §7 clauses: ${JSON.stringify(result)}`,
+      );
+    }
+  }
   if (
     label === 'admin-plan-legacy-hash-entry' &&
     (result.route !== '/plan' ||

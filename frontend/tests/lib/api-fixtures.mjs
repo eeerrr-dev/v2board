@@ -550,6 +550,12 @@ export async function installApiFixtures(page, scenario, target, interaction = {
         requestData,
       ];
     }
+    if (adminEndpoint === '/system/audit-logs' && requestMethod === 'GET') {
+      // Canonical capture (§6.11/§7/§8): the audit-trail list query — the
+      // single JSON `filter` clause list plus `page`/`per_page` — so the
+      // runner can assert the minted clauses. Native-only, source world only.
+      page.__visualParityLastAdminAuditFetchQuery = canonicalRequestCapture();
+    }
     if (isAdminOrderAssign) {
       // Canonical capture (W11 §6.4): the legacy form body and the modern JSON
       // body (total_amount cents in both) fold onto one contract.

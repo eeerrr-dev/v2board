@@ -1,12 +1,22 @@
 import {
   activeTabState,
   clickVisibleAt,
+  clickFirstVisibleTextStable,
   fillVisibleAt,
   blurVisibleAt,
+  visibleCount,
+  waitForPageProperty,
   waitForPagePropertyAtLeast,
+  waitForVisibleElementsHidden,
+  waitForVisibleText,
 } from '../../dom-helpers.mjs';
 import { adminConfigSaveFailureState } from '../../state-readers/admin.mjs';
-import { adminConfigTabSelector, adminConfigFieldInputSelector } from '../../selectors.mjs';
+import {
+  adminConfigTabSelector,
+  adminConfigFieldInputSelector,
+  adminSelectDropdownSelector,
+  adminSelectOptionSelector,
+} from '../../selectors.mjs';
 import { clonePageRequests } from '../../json-util.mjs';
 
 export async function runAdminConfigTabsInteraction(page) {
@@ -51,4 +61,42 @@ export async function runAdminConfigUnchangedBlurInteraction(page) {
   return {
     configSaveDelta: (page.__visualParityAdminConfigSaveCount ?? 0) - initialSaveCount,
   };
+}
+
+// §6.11 (native-only): drive the /audit trail's three §7 filter controls and
+// capture the canonical GET system/audit-logs query each one mints. Source-only
+// — the frozen oracle has no audit surface — so plain data-testid selectors are
+// enough; the shared union selectors cover the portaled Radix Select chrome.
+export async function runAdminAuditFiltersInteraction(page) {
+  await waitForPageProperty(page, '__visualParityLastAdminAuditFetchQuery');
+  const initial = {
+    query: page.__visualParityLastAdminAuditFetchQuery,
+    rowCount: await visibleCount(
+      page,
+      '[data-testid="audit-table"] [data-slot="table-body"] [data-slot="table-row"]',
+    ),
+  };
+
+  const applyFilter = async (act) => {
+    page.__visualParityLastAdminAuditFetchQuery = null;
+    await act();
+    await waitForPageProperty(page, '__visualParityLastAdminAuditFetchQuery');
+    return { query: page.__visualParityLastAdminAuditFetchQuery };
+  };
+  const selectOption = async (triggerTestId, optionText) => {
+    await page.click(`[data-testid="${triggerTestId}"]`);
+    await waitForVisibleText(page, adminSelectOptionSelector, optionText);
+    await clickFirstVisibleTextStable(page, adminSelectOptionSelector, [optionText]);
+    await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
+  };
+
+  const surfaceFiltered = await applyFilter(() => selectOption('audit-surface-filter', '员工'));
+  const methodFiltered = await applyFilter(() => selectOption('audit-method-filter', 'POST'));
+  // The email input drafts locally and mints its like clause on Enter.
+  const emailFiltered = await applyFilter(async () => {
+    await page.locator('[data-testid="audit-email-filter"]').fill('staff@example.com');
+    await page.keyboard.press('Enter');
+  });
+
+  return { emailFiltered, initial, methodFiltered, surfaceFiltered };
 }

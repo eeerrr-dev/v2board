@@ -43,6 +43,7 @@ import {
   rfc3339FixtureTime,
 } from './modern-fixtures.mjs';
 import {
+  adminAuditLogFixtures,
   adminConfigFixture,
   adminCouponFixtures,
   adminEmailTemplateFixtures,
@@ -643,6 +644,12 @@ export function apiFixtureResponse(
         return v2Body(modernQueueStatsFixture(adminQueueStatsFixture));
       case '/system/queue-workload':
         return v2Body(adminQueueWorkloadFixtures.map(modernQueueWorkloadFixture));
+      case '/system/audit-logs':
+        // §6.11 (native-only, source world only): the operator audit trail is
+        // an §8 {items, total} page. The fixture ignores the §7 filter/§8 page
+        // query — the interaction asserts on the captured request, not on a
+        // filtered response.
+        return v2Body({ items: adminAuditLogFixtures, total: adminAuditLogFixtures.length });
       case '/coupon/fetch':
         return body(adminCouponFixtures, { total: adminCouponFixtures.length });
       case '/coupon/generate':

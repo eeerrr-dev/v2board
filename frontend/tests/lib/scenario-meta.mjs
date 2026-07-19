@@ -1880,6 +1880,17 @@ const scenarios = [
     seedLegacyAdminStore: true,
     warmupPath: '/login',
   },
+  // §6.11: the /audit operator audit trail is native-only — the frozen oracle
+  // has no audit page — so only its source-only interaction ever enters here
+  // (no legacy store seed or warmup; auth is seeded by the fixture init
+  // script, like the legacy-hash-entry scenarios).
+  {
+    authenticated: true,
+    label: 'admin-audit',
+    path: '/audit',
+    readySelector: '[data-testid="audit-page"]',
+    visualRetired: true,
+  },
   {
     authenticated: true,
     label: 'admin-system',

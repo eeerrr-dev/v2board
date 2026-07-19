@@ -760,6 +760,50 @@ export const adminQueueWorkloadFixtures = [
   { length: 5, name: 'order_handle', processes: 4, wait: 6 },
   { length: 8, name: 'traffic_fetch', processes: 7, wait: 9 },
 ];
+// §6.11 operator audit trail rows. Native-only (no legacy counterpart), so the
+// fixture is stored directly in the modern wire shape: RFC 3339 `created_at`,
+// nullable `client_ip`/`request_id`, newest-first.
+export const adminAuditLogFixtures = [
+  {
+    actor_email: 'admin@example.com',
+    actor_id: 1,
+    client_ip: '203.0.113.7',
+    created_at: '2026-07-18T03:00:00Z',
+    id: 3,
+    method: 'PATCH',
+    path: '/config',
+    request_id: 'req-parity-3',
+    session_id: 'session-admin-1',
+    status_code: 200,
+    surface: 'admin',
+  },
+  {
+    actor_email: 'staff@example.com',
+    actor_id: 2,
+    client_ip: '198.51.100.24',
+    created_at: '2026-07-18T02:00:00Z',
+    id: 2,
+    method: 'POST',
+    path: '/tickets/7/replies',
+    request_id: 'req-parity-2',
+    session_id: 'session-staff-1',
+    status_code: 201,
+    surface: 'staff',
+  },
+  {
+    actor_email: 'admin@example.com',
+    actor_id: 1,
+    client_ip: null,
+    created_at: '2026-07-18T01:00:00Z',
+    id: 1,
+    method: 'DELETE',
+    path: '/users/9',
+    request_id: null,
+    session_id: 'session-admin-1',
+    status_code: 422,
+    surface: 'admin',
+  },
+];
 export const adminOrderStatFixtures = [];
 export const adminServerRankFixtures = [];
 export const adminUserRankFixtures = [];

@@ -1,4 +1,5 @@
 import {
+  runAdminAuditFiltersInteraction,
   runAdminConfigSaveFailureMatrixInteraction,
   runAdminConfigTabsInteraction,
   runAdminConfigUnchangedBlurInteraction,
@@ -719,6 +720,15 @@ export const interactions = [
     label: 'admin-config-save-failure-matrix',
     run: runAdminConfigSaveFailureMatrixInteraction,
     scenarioLabel: 'admin-config',
+  },
+  {
+    // §6.11: the /audit operator audit trail and its §7 filter DSL clauses.
+    // Source-only — the audit page is native-only; the frozen oracle has no
+    // counterpart surface.
+    label: 'admin-audit-filters',
+    run: runAdminAuditFiltersInteraction,
+    scenarioLabel: 'admin-audit',
+    sourceOnly: true,
   },
   {
     label: 'admin-server-create-node-drawer',
