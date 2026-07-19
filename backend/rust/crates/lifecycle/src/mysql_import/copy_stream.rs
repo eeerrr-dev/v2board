@@ -32,6 +32,7 @@ pub(crate) const MAX_LEGACY_PAYMENT_METHODS: usize = 4_096;
 pub(crate) async fn copy_business_data(
     source: &mut MySqlConnection,
     target: &PgPool,
+    app_key: &str,
 ) -> anyhow::Result<Vec<ImportedTableReport>> {
     let mut known_payment_ids = BTreeSet::new();
     let mut stripe_payment_ids = BTreeSet::new();
@@ -55,6 +56,7 @@ pub(crate) async fn copy_business_data(
                     &mut *source,
                     target,
                     mapping,
+                    app_key,
                     &mut known_payment_ids,
                     &mut stripe_payment_ids,
                 )
@@ -72,6 +74,7 @@ async fn copy_base_table(
     source: &mut MySqlConnection,
     target: &PgPool,
     mapping: &TableMapping,
+    app_key: &str,
     known_payment_ids: &mut BTreeSet<i32>,
     stripe_payment_ids: &mut BTreeSet<i32>,
 ) -> anyhow::Result<ImportedTableReport> {
@@ -119,7 +122,8 @@ async fn copy_base_table(
                         anyhow::anyhow!("discarded row count overflow for {}", mapping.source)
                     })?;
                 }
-                MysqlImportRowDisposition::Retain(row) => {
+                MysqlImportRowDisposition::Retain(mut row) => {
+                    encrypt_retained_payment_config(mapping, app_key, &mut row)?;
                     let encoded = encode_copy_row(mapping.target, &columns, &row)?;
                     retained.update_row(&row)?;
                     if !buffer.is_empty()
@@ -178,6 +182,49 @@ async fn copy_base_table(
         discarded_rows,
         retained_sha256,
     })
+}
+
+/// Seals the retained payment row's gateway config into the runtime at-rest
+/// AES-256-GCM envelope before it is hashed and COPY-encoded, so the canonical
+/// expectation, the stored JSONB column, and the post-COPY verification scan
+/// all agree on the encrypted form. The deterministic nonce (derived from the
+/// driver, uuid, and exact plaintext bytes) keeps the whole import
+/// byte-reproducible across runs.
+pub(crate) fn encrypt_retained_payment_config(
+    mapping: &TableMapping,
+    app_key: &str,
+    row: &mut CanonicalRow,
+) -> anyhow::Result<()> {
+    if mapping.source != "v2_payment" {
+        return Ok(());
+    }
+    let payment = match row.get("payment") {
+        Some(CanonicalValue::Text(value)) => value.clone(),
+        _ => anyhow::bail!("retained payment row has no text driver"),
+    };
+    let uuid = match row.get("uuid") {
+        Some(CanonicalValue::Text(value)) => value.clone(),
+        _ => anyhow::bail!("retained payment row has no text uuid"),
+    };
+    let plaintext = match row.get("config") {
+        Some(CanonicalValue::Json(value)) => value.to_compact_json()?,
+        _ => anyhow::bail!("retained payment row has no JSON config"),
+    };
+    let envelope = v2board_domain::payment_secrets::encrypt_payment_config_canonical(
+        app_key,
+        &payment,
+        &uuid,
+        plaintext.as_bytes(),
+    )
+    .map_err(|error| anyhow::anyhow!("payment config encryption failed: {error}"))?
+    .to_string();
+    row.insert(
+        "config".to_string(),
+        CanonicalValue::Json(CanonicalJson::parse(&envelope).map_err(|error| {
+            anyhow::anyhow!("encrypted payment config is not canonical JSON: {error}")
+        })?),
+    );
+    Ok(())
 }
 
 pub(crate) fn index_legacy_payment(

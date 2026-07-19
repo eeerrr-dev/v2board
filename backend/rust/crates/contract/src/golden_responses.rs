@@ -508,7 +508,13 @@ async fn seed_fixture_rows(pool: &PgPool) -> Result<()> {
          VALUES ('goldenepayuuid000000000000000001', 'EPay', 'Golden EPay', NULL, \
          $1, 20, 0.50, 1, 1, $2, $2)",
     )
-    .bind(json!({ "key": "golden-epay-key", "pid": "1000", "url": "https://epay.golden.test" }))
+    .bind(
+        crate::production_invariants::encrypt_payment_fixture_config(
+            "EPay",
+            "goldenepayuuid000000000000000001",
+            &json!({ "key": "golden-epay-key", "pid": "1000", "url": "https://epay.golden.test" }),
+        )?,
+    )
     .bind(GOLDEN_TIME)
     .execute(pool)
     .await?;
@@ -518,7 +524,13 @@ async fn seed_fixture_rows(pool: &PgPool) -> Result<()> {
          VALUES ('goldenepayuuid000000000000000002', 'EPay', 'Golden EPay disabled', NULL, \
          $1, 'https://notify.golden.test', NULL, NULL, 0, 2, $2, $2)",
     )
-    .bind(json!({ "key": "golden-epay-key-2", "pid": "2000", "url": "https://epay2.golden.test" }))
+    .bind(
+        crate::production_invariants::encrypt_payment_fixture_config(
+            "EPay",
+            "goldenepayuuid000000000000000002",
+            &json!({ "key": "golden-epay-key-2", "pid": "2000", "url": "https://epay2.golden.test" }),
+        )?,
+    )
     .bind(GOLDEN_TIME + 10)
     .execute(pool)
     .await?;

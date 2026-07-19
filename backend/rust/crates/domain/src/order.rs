@@ -230,6 +230,29 @@ impl OrderService {
     pub fn new(db: DbPool, config: Arc<AppConfig>) -> Self {
         Self { db, config }
     }
+
+    /// `payment_method.config` is stored as an at-rest AES-256-GCM envelope
+    /// bound to the row's driver and uuid. Every checkout/notify read decrypts
+    /// it back to the exact plaintext JSON text the gateway integrations
+    /// consume; a non-envelope or unauthentic column is a hard integrity
+    /// failure, never a plaintext fallback.
+    fn decrypt_payment_for_checkout(
+        &self,
+        mut payment: PaymentForCheckout,
+    ) -> Result<PaymentForCheckout, ApiError> {
+        let plaintext = crate::payment_secrets::decrypt_payment_config_canonical(
+            &self.config.app_key,
+            &payment.payment,
+            &payment.uuid,
+            &payment.config,
+        )
+        .map_err(|error| {
+            ApiError::internal(format!("stored payment config failed decryption: {error}"))
+        })?;
+        payment.config = String::from_utf8(plaintext)
+            .map_err(|_| ApiError::internal("decrypted payment config is not UTF-8"))?;
+        Ok(payment)
+    }
 }
 #[cfg(test)]
 mod tests;

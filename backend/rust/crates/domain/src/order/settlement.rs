@@ -259,6 +259,7 @@ impl OrderService {
             .fetch_optional(&self.db)
             .await?
             .ok_or_else(|| ApiError::legacy("gate is not found"))?;
+        let payment = self.decrypt_payment_for_checkout(payment)?;
         // `enable` and `archived_at` gate new checkouts only. An authenticated
         // callback can arrive after an operator archives any gateway version;
         // rejecting it would strand money already accepted by the provider. The

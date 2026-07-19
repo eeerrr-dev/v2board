@@ -718,12 +718,17 @@ pub(super) async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) ->
     .bind(now)
     .execute(pool)
     .await?;
+    let projection_payment_uuid = Uuid::new_v4().simple().to_string();
     let projection_payment_id: i32 = sqlx::query_scalar(
         "INSERT INTO payment_method (uuid, payment, name, config, enable, created_at, updated_at) \
          VALUES ($1, 'EPay', 'projection pin', $2, 0, $3, $4) RETURNING id",
     )
-    .bind(Uuid::new_v4().simple().to_string())
-    .bind(serde_json::json!({ "key": "k", "pid": "p", "url": "https://pay.invalid" }))
+    .bind(&projection_payment_uuid)
+    .bind(super::harness::encrypt_payment_fixture_config(
+        "EPay",
+        &projection_payment_uuid,
+        &serde_json::json!({ "key": "k", "pid": "p", "url": "https://pay.invalid" }),
+    )?)
     .bind(now)
     .bind(now)
     .fetch_one(pool)

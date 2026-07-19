@@ -190,24 +190,54 @@ fn payment_binding_rejects_archived_driver_or_config_snapshots_without_a_global_
     assert!(PAYMENT_ACTIVE_CONFIG_FOR_SHARE_SQL.contains("FOR SHARE"));
     assert!(PAYMENT_ACTIVE_CONFIG_FOR_SHARE_SQL.contains("archived_at IS NULL"));
     assert!(PAYMENT_ACTIVE_CONFIG_FOR_SHARE_SQL.contains("enable = 1"));
+    let app_key = "order-tests-app-key-material-32-bytes-long";
+    let uuid = "payment-uuid";
     let expected = json!({"secret": "old", "nested": {"enabled": true}});
+    let stored = |payment: &str, config: &serde_json::Value| {
+        crate::payment_secrets::encrypt_payment_config(
+            app_key,
+            payment,
+            uuid,
+            config.as_object().unwrap(),
+        )
+        .unwrap()
+        .to_string()
+    };
     assert!(payment_config_snapshot_matches(
+        app_key,
+        uuid,
+        Some(("Coinbase".to_string(), stored("Coinbase", &expected))),
+        "Coinbase",
+        &expected,
+    ));
+    assert!(!payment_config_snapshot_matches(
+        app_key,
+        uuid,
+        Some(("BTCPay".to_string(), stored("BTCPay", &expected))),
+        "Coinbase",
+        &expected,
+    ));
+    assert!(!payment_config_snapshot_matches(
+        app_key,
+        uuid,
+        Some((
+            "Coinbase".to_string(),
+            stored("Coinbase", &json!({"secret": "new"})),
+        )),
+        "Coinbase",
+        &expected,
+    ));
+    // Plaintext (non-envelope) stored configs are an integrity failure, not a
+    // comparison candidate.
+    assert!(!payment_config_snapshot_matches(
+        app_key,
+        uuid,
         Some(("Coinbase".to_string(), expected.to_string())),
         "Coinbase",
         &expected,
     ));
     assert!(!payment_config_snapshot_matches(
-        Some(("BTCPay".to_string(), expected.to_string())),
-        "Coinbase",
-        &expected,
-    ));
-    assert!(!payment_config_snapshot_matches(
-        Some(("Coinbase".to_string(), json!({"secret": "new"}).to_string(),)),
-        "Coinbase",
-        &expected,
-    ));
-    assert!(!payment_config_snapshot_matches(
-        None, "Coinbase", &expected,
+        app_key, uuid, None, "Coinbase", &expected,
     ));
 }
 

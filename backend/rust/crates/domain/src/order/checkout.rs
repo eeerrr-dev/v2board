@@ -33,14 +33,20 @@ pub(super) fn payable_amount_cents(
         .ok_or_else(|| ApiError::from(Problem::new(Code::PaymentAmountOutOfRange)))
 }
 
+/// The stored column is an encrypted envelope; the snapshot comparison
+/// decrypts the currently active row (with the immutable driver/uuid binding)
+/// and compares the plaintext gateway configs.
 pub(super) fn payment_config_snapshot_matches(
+    app_key: &str,
+    uuid: &str,
     current: Option<(String, String)>,
     expected_method: &str,
     expected_config: &Value,
 ) -> bool {
     current.is_some_and(|(method, config)| {
         method == expected_method
-            && serde_json::from_str::<Value>(&config).is_ok_and(|config| &config == expected_config)
+            && crate::payment_secrets::decrypt_payment_config(app_key, &method, uuid, &config)
+                .is_ok_and(|config| &config == expected_config)
     })
 }
 
@@ -170,6 +176,7 @@ impl OrderService {
         .fetch_optional(&mut *tx)
         .await?
         .ok_or_else(|| ApiError::from(Problem::new(Code::PaymentMethodUnavailable)))?;
+        let payment = self.decrypt_payment_for_checkout(payment)?;
         if payment.enable != 1 {
             return Err(Problem::new(Code::PaymentMethodUnavailable).into());
         }
@@ -203,7 +210,13 @@ impl OrderService {
                 .bind(payment.id)
                 .fetch_optional(&mut *bind_tx)
                 .await?;
-        if !payment_config_snapshot_matches(current_payment, &payment.payment, &expected_config) {
+        if !payment_config_snapshot_matches(
+            &self.config.app_key,
+            &payment.uuid,
+            current_payment,
+            &payment.payment,
+            &expected_config,
+        ) {
             bind_tx.rollback().await?;
             return Err(Problem::new(Code::PaymentConfigInvalid)
                 .with_detail("Payment configuration changed, please try again")
@@ -285,6 +298,7 @@ impl OrderService {
         .await?
         .filter(|payment| payment.enable == 1)
         .ok_or_else(|| ApiError::from(Problem::new(Code::PaymentMethodUnavailable)))?;
+        let payment = self.decrypt_payment_for_checkout(payment)?;
 
         let handling_amount =
             calculate_handling_amount_cents(order.2, &payment)?.filter(|amount| *amount != 0);
@@ -323,8 +337,13 @@ impl OrderService {
                 .bind(payment.id)
                 .fetch_optional(&mut *bind_tx)
                 .await?;
-        let payment_changed =
-            !payment_config_snapshot_matches(current_payment, "StripeCredit", &expected_config);
+        let payment_changed = !payment_config_snapshot_matches(
+            &self.config.app_key,
+            &payment.uuid,
+            current_payment,
+            "StripeCredit",
+            &expected_config,
+        );
         let binding_state = if payment_changed {
             bind_tx.rollback().await?;
             "payment_changed"
@@ -400,22 +419,25 @@ impl OrderService {
         if !intent_id.starts_with("pi_") {
             return Ok(true);
         }
-        let row = sqlx::query_as::<_, (String, String)>(
-            "SELECT payment, CAST(config AS TEXT) FROM payment_method WHERE id = $1 LIMIT 1",
+        let row = sqlx::query_as::<_, (String, String, String)>(
+            "SELECT payment, uuid, CAST(config AS TEXT) FROM payment_method WHERE id = $1 LIMIT 1",
         )
         .bind(payment_id)
         .fetch_optional(&self.db)
         .await?;
-        let Some((method, config)) = row else {
+        let Some((method, uuid, config)) = row else {
             return Err(Problem::new(Code::StripeBindingInvalid).into());
         };
         if method != "StripeCredit" {
             return Err(Problem::new(Code::StripeBindingInvalid).into());
         }
-        let mut config = match serde_json::from_str::<Value>(&config)
-            .map_err(|_| ApiError::from(Problem::new(Code::PaymentConfigInvalid)))?
-        {
-            Value::Object(config) => config,
+        let mut config = match crate::payment_secrets::decrypt_payment_config(
+            &self.config.app_key,
+            &method,
+            &uuid,
+            &config,
+        ) {
+            Ok(Value::Object(config)) => config,
             _ => return Err(Problem::new(Code::PaymentConfigInvalid).into()),
         };
         if let Some(secret_key) = config_string(&config, "stripe_sk_live") {

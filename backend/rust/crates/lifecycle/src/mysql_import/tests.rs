@@ -790,7 +790,10 @@ async fn representative_mysql_rows_copy_into_fresh_postgres() {
     );
     validate_source_relationships(&mut source).await.unwrap();
     POSTGRES_MIGRATOR.run_to(1, &target).await.unwrap();
-    let reports = copy_business_data(&mut source, &target).await.unwrap();
+    let import_app_key = "ApiApplicationSecretMaterial00000001";
+    let reports = copy_business_data(&mut source, &target, import_app_key)
+        .await
+        .unwrap();
     commit_mysql_read_snapshot(&mut source).await.unwrap();
     POSTGRES_MIGRATOR.run(&target).await.unwrap();
     finalize_and_verify_business_data(&target, &reports)
@@ -844,15 +847,28 @@ async fn representative_mysql_rows_copy_into_fresh_postgres() {
             .await
             .unwrap();
     assert_eq!(payment_drivers, ["Manual"]);
-    let exact_payment_numbers = sqlx::query_as::<_, (bool, bool)>(
-        "SELECT (config->>'exact')::numeric = 9007199254740993.25, \
-                (config->>'scientific')::numeric = 1230 \
-         FROM payment_method WHERE id = 1",
+    // The stored column is the at-rest envelope: opaque raw text that decrypts
+    // (bound to the imported driver and uuid) back to the converter's exact
+    // canonical form of the legacy config, where number spellings such as
+    // 9007199254740993.25 and 1.2300e3 canonicalize by exact base-10 value.
+    let stored_config =
+        sqlx::query_scalar::<_, String>("SELECT config::text FROM payment_method WHERE id = 1")
+            .fetch_one(&target)
+            .await
+            .unwrap();
+    assert!(!stored_config.contains("migration-test"));
+    assert!(stored_config.contains("ciphertext"));
+    let decrypted = v2board_domain::payment_secrets::decrypt_payment_config_canonical(
+        import_app_key,
+        "Manual",
+        "11111111111111111111111111111111",
+        &stored_config,
     )
-    .fetch_one(&target)
-    .await
     .unwrap();
-    assert_eq!(exact_payment_numbers, (true, true));
+    assert_eq!(
+        String::from_utf8(decrypted).unwrap(),
+        r#"{"account":"migration-test","exact":900719925474099325e-2,"scientific":123e1}"#
+    );
     let order_bindings = sqlx::query_as::<_, (String, Option<i32>, Option<String>)>(
         "SELECT trade_no, payment_id, callback_no FROM orders ORDER BY id",
     )

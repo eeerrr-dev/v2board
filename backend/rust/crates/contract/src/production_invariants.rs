@@ -19,7 +19,8 @@ mod tests;
 
 pub(crate) use harness::{
     DEFAULT_INTEGRATION_REDIS_URL, DEFAULT_ROOT_DATABASE_URL, GeneratedDatabaseName, MIGRATOR,
-    create_database, database_url_for, drop_database, env_or, flush_redis, integration_config,
+    create_database, database_url_for, drop_database, encrypt_payment_fixture_config, env_or,
+    flush_redis, integration_config,
 };
 
 use access_control::{
@@ -29,7 +30,7 @@ use admin_projections::admin_projection_key_sets;
 use admin_users::admin_user_w12_mutations;
 #[cfg(test)]
 use harness::validate_generated_database_name;
-use payments::late_payment_reconciliation;
+use payments::{late_payment_reconciliation, payment_config_at_rest_opacity};
 use schema::{
     analytics_outbox_invariant, audit_log_append_only, install_contract_analytics_admission,
     install_contract_operator_config_authority, installation_identity_invariant,
@@ -174,6 +175,9 @@ async fn run_isolated_checks(
 
         late_payment_reconciliation(pool, database_url, integration_redis_url).await?;
         pass("late authenticated payment reconciliation is durable and idempotent");
+
+        payment_config_at_rest_opacity(pool, integration_redis_url).await?;
+        pass("payment gateway credentials are opaque at rest and redacted on the wire");
 
         admin_projection_key_sets(pool, integration_redis_url).await?;
         pass("admin projections serialize exactly their pinned key sets");

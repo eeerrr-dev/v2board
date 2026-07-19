@@ -176,7 +176,7 @@ pub(crate) async fn execute_validated(
     .execute(&target)
     .await?;
 
-    let imported_tables = copy_business_data(&mut source, &target).await?;
+    let imported_tables = copy_business_data(&mut source, &target, &plan.app_key).await?;
     commit_mysql_read_snapshot(&mut source).await?;
     drop(source);
     source_pool.close().await;

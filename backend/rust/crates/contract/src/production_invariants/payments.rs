@@ -11,7 +11,7 @@ use tokio::task::JoinSet;
 use uuid::Uuid;
 use v2board_db::installation_id;
 use v2board_domain::{
-    admin::AdminService,
+    admin::{AdminService, PaymentCreate},
     auth::PasswordKdf,
     order::{OrderService, PaymentNotifyInput},
     smtp::SmtpTransportCache,
@@ -36,11 +36,15 @@ pub(super) async fn late_payment_reconciliation(
         "#,
     )
     .bind(&payment_uuid)
-    .bind(serde_json::json!({
-        "key": "epay-secret",
-        "pid": "integration",
-        "url": "https://pay.invalid"
-    }))
+    .bind(super::harness::encrypt_payment_fixture_config(
+        "EPay",
+        &payment_uuid,
+        &serde_json::json!({
+            "key": "epay-secret",
+            "pid": "integration",
+            "url": "https://pay.invalid"
+        }),
+    )?)
     .bind(now)
     .bind(now)
     .fetch_one(pool)
@@ -396,5 +400,105 @@ pub(super) async fn late_payment_reconciliation(
         "an ordinary oversized callback replay was misclassified for reconciliation"
     );
 
+    Ok(())
+}
+
+/// After the real admin create path runs, the `payment_method.config` column
+/// must hold only the AES-256-GCM envelope: no submitted secret may appear in
+/// the raw column text, the envelope must decrypt (bound to the row's driver
+/// and uuid) back to exactly the submitted config, and the admin wire must
+/// keep returning the redacted PLAINTEXT shape rather than the envelope.
+pub(super) async fn payment_config_at_rest_opacity(pool: &PgPool, redis_url: &str) -> Result<()> {
+    let mut config = integration_config(pool, redis_url)?;
+    config.app_url = Some("https://opacity.integration.invalid".to_string());
+    let admin = AdminService::new(
+        pool.clone(),
+        redis::Client::open(redis_url)?,
+        installation_id(pool).await?,
+        Arc::new(config),
+        reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(2))
+            .timeout(Duration::from_secs(5))
+            .build()?,
+        PasswordKdf::new(1),
+        SmtpTransportCache::default(),
+    );
+    let submitted = serde_json::json!({
+        "url": "https://opacity.pay.invalid",
+        "pid": "opacity-epay-pid-4242",
+        "key": "opacity-epay-secret-key-material",
+    });
+    let submitted_object = submitted
+        .as_object()
+        .context("submitted opacity config is an object")?
+        .clone();
+    let payment_id = admin
+        .payment_create(&PaymentCreate {
+            name: "at-rest opacity".to_string(),
+            payment: "EPay".to_string(),
+            config: submitted_object.clone(),
+            icon: None,
+            notify_domain: None,
+            handling_fee_fixed: None,
+            handling_fee_percent: None,
+        })
+        .await?;
+
+    let (raw_config, payment_uuid): (String, String) =
+        sqlx::query_as("SELECT CAST(config AS TEXT), uuid FROM payment_method WHERE id = $1")
+            .bind(payment_id)
+            .fetch_one(pool)
+            .await?;
+    for secret in submitted_object.values() {
+        let secret = secret
+            .as_str()
+            .context("opacity fixture values are strings")?;
+        ensure!(
+            !raw_config.contains(secret),
+            "submitted payment secret {secret:?} appeared in the raw stored config column"
+        );
+    }
+    let envelope: serde_json::Value = serde_json::from_str(&raw_config)
+        .context("stored payment config column is not valid JSON")?;
+    let envelope = envelope
+        .as_object()
+        .context("stored payment config column is not a JSON object")?;
+    ensure!(
+        envelope.len() == 4
+            && ["format_version", "nonce", "ciphertext", "tag"]
+                .iter()
+                .all(|key| envelope.contains_key(*key))
+            && envelope
+                .get("format_version")
+                .and_then(serde_json::Value::as_i64)
+                == Some(1),
+        "stored payment config is not the version-1 encrypted envelope shape"
+    );
+    let decrypted = v2board_domain::payment_secrets::decrypt_payment_config(
+        super::harness::INTEGRATION_APP_KEY,
+        "EPay",
+        &payment_uuid,
+        &raw_config,
+    )
+    .context("stored payment envelope did not decrypt with the driver/uuid binding")?;
+    ensure!(
+        decrypted == serde_json::Value::Object(submitted_object),
+        "decrypted payment envelope does not round-trip the submitted config"
+    );
+
+    let listed = admin
+        .payments_list()
+        .await?
+        .into_iter()
+        .find(|row| row.id == payment_id)
+        .context("created payment method is missing from the admin list")?;
+    ensure!(
+        listed.config.get("key").and_then(serde_json::Value::as_str) == Some("********")
+            && listed.config.get("url").and_then(serde_json::Value::as_str)
+                == Some("https://opacity.pay.invalid")
+            && listed.config.get("ciphertext").is_none(),
+        "admin payment list stopped returning the redacted plaintext config shape"
+    );
+    admin.payment_delete(i64::from(payment_id)).await?;
     Ok(())
 }

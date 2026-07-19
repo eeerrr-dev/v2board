@@ -80,6 +80,21 @@ pub(in super::super) fn resolve_redacted_payment_config(
     Ok(submitted)
 }
 
+/// Admin reads decrypt the stored at-rest envelope back to the plaintext
+/// gateway config before redaction/merging, so the wire keeps the redacted
+/// PLAINTEXT shape and never shows the envelope. A stored non-envelope config
+/// is a hard integrity error — there is no plaintext fallback.
+fn decrypt_stored_payment_config(
+    app_key: &str,
+    payment: &str,
+    uuid: &str,
+    raw: &str,
+) -> Result<Value, ApiError> {
+    crate::payment_secrets::decrypt_payment_config(app_key, payment, uuid, raw).map_err(|error| {
+        ApiError::internal(format!("stored payment config failed decryption: {error}"))
+    })
+}
+
 pub(in super::super) fn parse_payment_config(raw: &str) -> Result<Value, ApiError> {
     let config = serde_json::from_str::<Value>(raw).map_err(|error| {
         ApiError::internal(format!("stored payment config is invalid JSON: {error}"))
@@ -215,7 +230,12 @@ impl AdminService {
             .map(|row| {
                 let config = crate::payment_provider::redact_payment_config(
                     &row.payment,
-                    &parse_payment_config(&row.config)?,
+                    &decrypt_stored_payment_config(
+                        &self.config.app_key,
+                        &row.payment,
+                        &row.uuid,
+                        &row.config,
+                    )?,
                 );
                 let notify_path =
                     format!("/api/v1/guest/payment/notify/{}/{}", row.payment, row.uuid);
@@ -272,18 +292,24 @@ impl AdminService {
         payment_id: Option<i64>,
     ) -> Result<Value, ApiError> {
         let config = if let Some(id) = payment_id {
-            let (stored_payment, raw_config) = sqlx::query_as::<_, (String, String)>(
-                "SELECT payment, CAST(config AS TEXT) FROM payment_method \
-                 WHERE id = $1 AND archived_at IS NULL LIMIT 1",
-            )
-            .bind(id)
-            .fetch_optional(&self.db)
-            .await?
-            .ok_or_else(|| ApiError::from(Problem::new(Code::PaymentMethodNotFound)))?;
+            let (stored_payment, stored_uuid, raw_config) =
+                sqlx::query_as::<_, (String, String, String)>(
+                    "SELECT payment, uuid, CAST(config AS TEXT) FROM payment_method \
+                     WHERE id = $1 AND archived_at IS NULL LIMIT 1",
+                )
+                .bind(id)
+                .fetch_optional(&self.db)
+                .await?
+                .ok_or_else(|| ApiError::from(Problem::new(Code::PaymentMethodNotFound)))?;
             if stored_payment == code {
                 Some(crate::payment_provider::redact_payment_config(
                     &stored_payment,
-                    &parse_payment_config(&raw_config)?,
+                    &decrypt_stored_payment_config(
+                        &self.config.app_key,
+                        &stored_payment,
+                        &stored_uuid,
+                        &raw_config,
+                    )?,
                 ))
             } else {
                 None
@@ -322,6 +348,21 @@ impl AdminService {
             None,
             Value::Object(body.config.clone()),
         )?;
+        // The uuid participates in the at-rest AAD, so it is generated before
+        // the resolved plaintext is sealed into the stored envelope.
+        let uuid = random_payment_uuid();
+        let stored_config = match &config_value {
+            Value::Object(config) => crate::payment_secrets::encrypt_payment_config(
+                &self.config.app_key,
+                &body.payment,
+                &uuid,
+                config,
+            )
+            .map_err(|error| {
+                ApiError::internal(format!("payment config encryption failed: {error}"))
+            })?,
+            _ => return Err(validation_error("config", "配置参数格式有误")),
+        };
         if crate::payment_provider::payment_provider_uses_legacy_md5(&body.payment) {
             tracing::warn!(
                 provider = body.payment,
@@ -342,8 +383,8 @@ impl AdminService {
         .bind(&body.name)
         .bind(&body.icon)
         .bind(&body.payment)
-        .bind(random_payment_uuid())
-        .bind(Json(config_value))
+        .bind(uuid)
+        .bind(Json(stored_config))
         .bind(&body.notify_domain)
         .bind(handling_fee_fixed)
         .bind(handling_fee_percent)
@@ -380,8 +421,8 @@ impl AdminService {
         };
         let now = Utc::now().timestamp();
         let mut tx = self.db.begin().await?;
-        let current = sqlx::query_as::<_, (String, String)>(
-            "SELECT payment, CAST(config AS TEXT) FROM payment_method \
+        let current = sqlx::query_as::<_, (String, String, String)>(
+            "SELECT payment, uuid, CAST(config AS TEXT) FROM payment_method \
              WHERE id = $1 AND archived_at IS NULL LIMIT 1 FOR UPDATE",
         )
         .bind(id)
@@ -394,14 +435,22 @@ impl AdminService {
             .is_some_and(|payment| payment != current.0);
         let config_changed = match &body.config {
             Some(config) => {
+                // The immutability comparison runs on the DECRYPTED plaintext:
+                // redacted round trips resolve against the real stored secrets,
+                // exactly as before encryption at rest.
+                let current_config = decrypt_stored_payment_config(
+                    &self.config.app_key,
+                    &current.0,
+                    &current.1,
+                    &current.2,
+                )?;
+                let current_config_text = current_config.to_string();
                 let resolved = resolve_redacted_payment_config(
                     &current.0,
-                    Some((&current.0, &current.1)),
+                    Some((&current.0, &current_config_text)),
                     Value::Object(config.clone()),
                 )?;
-                serde_json::from_str::<Value>(&current.1)
-                    .map(|value| value != resolved)
-                    .unwrap_or(true)
+                current_config != resolved
             }
             None => false,
         };
