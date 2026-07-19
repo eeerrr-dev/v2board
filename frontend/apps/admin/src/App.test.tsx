@@ -91,6 +91,7 @@ describe('admin data router', () => {
 
   it('preserves every externally visible route path', () => {
     expect([...ADMIN_ROUTE_PATHS]).toEqual([
+      '/audit',
       '/config/payment',
       '/config/system',
       '/coupon',

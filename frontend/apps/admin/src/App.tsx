@@ -25,6 +25,7 @@ import { getAdminBasename } from '@/lib/runtime-config';
 import { adminSessionQueryOptions } from '@/lib/session-queries';
 
 export const ADMIN_ROUTE_PATHS = [
+  '/audit',
   '/config/payment',
   '/config/system',
   '/coupon',
@@ -52,6 +53,7 @@ export const ADMIN_STANDALONE_ROUTE_PATHS = [
 ] as const satisfies readonly AdminRoutePath[];
 
 export const ADMIN_LAYOUT_ROUTE_PATHS = [
+  '/audit',
   '/config/payment',
   '/config/system',
   '/coupon',
@@ -89,6 +91,7 @@ export const ADMIN_ROUTE_GUARD_OPTIONS = {
 type LazyRouteModule = Promise<{ default: ComponentType }>;
 
 const ADMIN_ROUTE_MODULES: Record<AdminRoutePath, () => LazyRouteModule> = {
+  '/audit': () => import('@/pages/audit'),
   '/config/payment': () => import('@/pages/payments'),
   '/config/system': () => import('@/pages/config'),
   '/coupon': () => import('@/pages/coupons'),

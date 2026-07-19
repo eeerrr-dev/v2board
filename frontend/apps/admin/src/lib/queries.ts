@@ -1,4 +1,4 @@
-import { admin, INLINE_MUTATION_ERROR_META } from '@v2board/api-client';
+import { admin, INLINE_MUTATION_ERROR_META, type AdminListQuery } from '@v2board/api-client';
 import {
   keepPreviousData,
   queryOptions,
@@ -68,6 +68,7 @@ export const adminKeys = {
     ['admin', 'payment', 'form', payment, id] as const,
   emailTemplates: ['admin', 'config', 'emailTemplates'] as const,
   accountMfa: ['admin', 'account', 'mfa'] as const,
+  auditLogs: (query: unknown) => ['admin', 'system', 'auditLogs', query] as const,
 };
 
 export const adminQueryOptions = {
@@ -254,6 +255,12 @@ export const adminQueryOptions = {
       queryFn: ({ signal }) => admin.queueStats(apiClient, { signal }),
       refetchInterval: 3_000,
     }),
+  auditLogs: (query: AdminListQuery<admin.AuditLogFilterField>) =>
+    queryOptions({
+      queryKey: adminKeys.auditLogs(query),
+      queryFn: ({ signal }) => admin.fetchAuditLogs(apiClient, query, { signal }),
+      placeholderData: keepPreviousData,
+    }),
   queueWorkload: () =>
     queryOptions({
       queryKey: adminKeys.queueWorkload,
@@ -316,6 +323,8 @@ export const useServerNodes = () => useQuery(adminQueryOptions.serverNodes());
 export const useServerGroups = () => useQuery(adminQueryOptions.serverGroups());
 export const useServerRoutes = () => useQuery(adminQueryOptions.serverRoutes());
 export const useQueueStats = () => useQuery(adminQueryOptions.queueStats());
+export const useAuditLogs = (query: AdminListQuery<admin.AuditLogFilterField>) =>
+  useQuery(adminQueryOptions.auditLogs(query));
 export const useQueueWorkload = () => useQuery(adminQueryOptions.queueWorkload());
 export const useEmailTemplates = () => useQuery(adminQueryOptions.emailTemplates());
 

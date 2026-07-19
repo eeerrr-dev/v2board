@@ -105,6 +105,7 @@ describe('AdminLayout', () => {
       '节点管理',
       '礼品卡管理',
       '队列监控',
+      '审计日志',
       '知识库管理',
     ]) {
       expect(screen.getByText(label)).toBeInTheDocument();

@@ -557,6 +557,58 @@ impl AdminService {
             .collect();
         Ok((items, total))
     }
+
+    /// GET `system/audit-logs` (docs/api-dialect.md §6.11): the append-only
+    /// operator audit trail, read through the same §8 pagination and §7
+    /// filter/sort DSL as `system/logs`.
+    pub async fn audit_logs(
+        &self,
+        pagination: Pagination,
+        filter: Option<&str>,
+        sort_by: Option<&str>,
+        sort_dir: Option<&str>,
+    ) -> Result<(Vec<Value>, i64), ApiError> {
+        let clauses = filter
+            .map(filter_dsl::parse_filter_param)
+            .transpose()?
+            .unwrap_or_default();
+        let filters = filter_dsl::resolve_filters(&clauses, AUDIT_LOG_FILTER_COLUMNS)?;
+        let sort = filter_dsl::resolve_sort(sort_by, sort_dir, AUDIT_LOG_SORT_COLUMNS)?;
+
+        let mut count_builder =
+            QueryBuilder::<Postgres>::new("SELECT COUNT(*) FROM audit_log WHERE 1 = 1");
+        filter_dsl::push_filter_where(&mut count_builder, &filters);
+        let total: i64 = count_builder
+            .build_query_scalar()
+            .fetch_one(&self.db)
+            .await?;
+
+        let mut builder = QueryBuilder::<Postgres>::new(
+            r#"
+            SELECT jsonb_build_object(
+                'id', id, 'actor_id', actor_id, 'actor_email', actor_email,
+                'session_id', session_id, 'surface', surface, 'method', method,
+                'path', path, 'status_code', status_code, 'client_ip', client_ip,
+                'request_id', request_id, 'created_at', created_at
+            )
+            FROM audit_log
+            WHERE 1 = 1
+            "#,
+        );
+        filter_dsl::push_filter_where(&mut builder, &filters);
+        builder.push(format!(" ORDER BY {} LIMIT ", sort.order_by()));
+        builder.push_bind(pagination.limit());
+        builder.push(" OFFSET ");
+        builder.push_bind(pagination.offset());
+        let items = builder
+            .build_query_scalar::<Json<Value>>()
+            .fetch_all(&self.db)
+            .await?
+            .into_iter()
+            .map(|row| epoch_fields_to_rfc3339(row.0, &["created_at"]))
+            .collect();
+        Ok((items, total))
+    }
 }
 
 /// §7.1 filter whitelist for `GET system/logs`: `level` only.
@@ -577,6 +629,31 @@ const SYSTEM_LOG_SORT_COLUMNS: &[filter_dsl::SortColumn] = &[
         expr: "level",
     },
 ];
+
+/// §7.1 filter whitelist for `GET system/audit-logs`.
+const AUDIT_LOG_FILTER_COLUMNS: &[filter_dsl::FilterColumn] = &[
+    filter_dsl::FilterColumn {
+        field: "surface",
+        expr: "surface",
+        kind: filter_dsl::ColumnKind::Text,
+    },
+    filter_dsl::FilterColumn {
+        field: "actor_email",
+        expr: "actor_email",
+        kind: filter_dsl::ColumnKind::Text,
+    },
+    filter_dsl::FilterColumn {
+        field: "method",
+        expr: "method",
+        kind: filter_dsl::ColumnKind::Text,
+    },
+];
+
+/// §7.2 sort whitelist: the `created_at` default only.
+const AUDIT_LOG_SORT_COLUMNS: &[filter_dsl::SortColumn] = &[filter_dsl::SortColumn {
+    field: "created_at",
+    expr: "created_at",
+}];
 
 /// §4.5: epoch seconds cross the boundary as RFC 3339 UTC strings (or null).
 /// Matches `v2board_compat::json::rfc3339`'s `Z`-suffixed seconds form.

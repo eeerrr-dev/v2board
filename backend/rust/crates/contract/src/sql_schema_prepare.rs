@@ -441,8 +441,8 @@ const QUERY_BUILDER_SITES: &[DynamicSite] = &[
     },
     DynamicSite {
         source: "crates/domain/src/admin/statistics.rs",
-        count: 3,
-        coverage: "admin dashboard/list interaction parity",
+        count: 5,
+        coverage: "admin dashboard/list interaction parity plus the audit-trail list production invariant",
     },
     DynamicSite {
         source: "crates/domain/src/admin/support/filter_dsl.rs",

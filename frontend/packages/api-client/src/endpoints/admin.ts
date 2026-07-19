@@ -31,6 +31,7 @@ import {
   createdIdSchema,
   createdOrderSchema,
   noContentSchema,
+  auditLogSchema,
   systemLogSchema,
   testMailResultSchema,
   adminOrderSchema,
@@ -1514,6 +1515,31 @@ export const fetchSystemLogs = (
     dialect: 'v2',
     params: adminListQueryParams(query),
     responseSchema: pageSchema(systemLogSchema),
+    ...config,
+  });
+
+/** §7.1 — the GET system/audit-logs filter whitelist and §7.2 sort columns. */
+export const AUDIT_LOG_FILTER_FIELDS = ['surface', 'actor_email', 'method'] as const;
+export const AUDIT_LOG_SORT_FIELDS = ['created_at'] as const;
+export type AuditLogFilterField = (typeof AUDIT_LOG_FILTER_FIELDS)[number];
+export type AdminAuditLogRecord = output<typeof auditLogSchema>;
+
+/**
+ * GET /{secure_path}/system/audit-logs — the §6.11 append-only operator audit
+ * trail as a dialect v2 `{items, total}` page behind the same §8 pagination
+ * and §7 filter/sort DSL as system/logs. Admin prefix only (no staff mirror).
+ */
+export const fetchAuditLogs = (
+  client: ApiClient,
+  query: AdminListQuery<AuditLogFilterField> = {},
+  config?: QueryRequestConfig,
+) =>
+  client.request({
+    url: client.resolveAdminPath('/system/audit-logs'),
+    method: 'GET',
+    dialect: 'v2',
+    params: adminListQueryParams(query),
+    responseSchema: pageSchema(auditLogSchema),
     ...config,
   });
 

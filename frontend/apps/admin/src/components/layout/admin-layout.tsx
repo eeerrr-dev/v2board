@@ -4,6 +4,7 @@ import { useSuspenseQuery } from '@tanstack/react-query';
 import {
   BarChart3,
   BookOpen,
+  ClipboardList,
   CreditCard,
   Gauge,
   Gift,
@@ -111,7 +112,10 @@ const NAV: NavGroup[] = [
   },
   {
     title: '指标',
-    items: [{ to: '/queue', title: '队列监控', icon: BarChart3 }],
+    items: [
+      { to: '/queue', title: '队列监控', icon: BarChart3 },
+      { to: '/audit', title: '审计日志', icon: ClipboardList },
+    ],
   },
 ];
 

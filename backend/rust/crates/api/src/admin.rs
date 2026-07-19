@@ -105,6 +105,7 @@ fn admin_router(state: AppState) -> Router {
         .route("/system/queue-workload", get(system_queue_workload))
         .route("/system/queue-masters", get(system_queue_masters))
         .route("/system/logs", get(system_logs))
+        .route("/system/audit-logs", get(audit_logs))
         .route("/notices", get(notices_list).post(notice_create))
         .route("/notices/{id}", patch(notice_patch).delete(notice_delete))
         .route("/knowledge", get(knowledge_list).post(knowledge_create))
@@ -517,6 +518,30 @@ async fn system_logs(
     let (items, total) = state
         .admin_service(state.config_snapshot())
         .system_logs(
+            pagination,
+            query.filter.as_deref(),
+            query.sort_by.as_deref(),
+            query.sort_dir.as_deref(),
+        )
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(page(items, total))
+}
+
+/// GET `system/audit-logs` (docs/api-dialect.md §6.11): the append-only
+/// operator audit trail behind the same §8 pagination and §7 filter/sort DSL
+/// as `system/logs` (whitelist: `surface`, `actor_email`, `method`).
+/// Admin-prefix only — the staff router deliberately does not mirror it.
+async fn audit_logs(
+    State(state): State<AppState>,
+    Query(query): Query<SystemLogsQuery>,
+    headers: HeaderMap,
+) -> Result<Json<Page<Value>>, Problem> {
+    let locale = request_locale(&headers);
+    let pagination = Pagination::resolve(query.page, query.per_page, SYSTEM_LOGS_DEFAULT_PER_PAGE)?;
+    let (items, total) = state
+        .admin_service(state.config_snapshot())
+        .audit_logs(
             pagination,
             query.filter.as_deref(),
             query.sort_by.as_deref(),

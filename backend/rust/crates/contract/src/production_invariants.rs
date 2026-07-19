@@ -1437,6 +1437,20 @@ const ADMIN_SYSTEM_LOG_KEYS: &[&str] = &[
     "updated_at",
 ];
 
+const ADMIN_AUDIT_LOG_KEYS: &[&str] = &[
+    "id",
+    "actor_id",
+    "actor_email",
+    "session_id",
+    "surface",
+    "method",
+    "path",
+    "status_code",
+    "client_ip",
+    "request_id",
+    "created_at",
+];
+
 const ADMIN_KNOWLEDGE_LIST_KEYS: &[&str] =
     &["id", "category", "title", "sort", "show", "updated_at"];
 
@@ -1860,6 +1874,32 @@ async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) -> Result<()>
     }
     for row in log_rows {
         assert_exact_keys("system/logs", &row, ADMIN_SYSTEM_LOG_KEYS)?;
+    }
+
+    // Operator audit trail (§6.11 native addition: GET system/audit-logs,
+    // same §8 pagination + §7 DSL; the trail itself is append-only).
+    sqlx::query(
+        "INSERT INTO audit_log (actor_id, actor_email, session_id, surface, method, path, status_code, client_ip, request_id, created_at) \
+         VALUES ($1, 'projection@example.com', 'projection-session', 'admin', 'POST', '/config', 200, '127.0.0.1', 'projection-request', $2)",
+    )
+    .bind(user_id)
+    .bind(now)
+    .execute(pool)
+    .await?;
+    let (audit_rows, audit_total) = admin
+        .audit_logs(
+            v2board_compat::Pagination::resolve(None, None, 10)
+                .map_err(|problem| anyhow::anyhow!("system/audit-logs pagination: {problem:?}"))?,
+            Some(r#"[{"field":"surface","op":"eq","value":"admin"}]"#),
+            None,
+            None,
+        )
+        .await?;
+    if audit_total < 1 || audit_rows.is_empty() {
+        anyhow::bail!("system/audit-logs must return the seeded projection row");
+    }
+    for row in audit_rows {
+        assert_exact_keys("system/audit-logs", &row, ADMIN_AUDIT_LOG_KEYS)?;
     }
 
     // Knowledge list + detail (W10 modern routes: GET knowledge,

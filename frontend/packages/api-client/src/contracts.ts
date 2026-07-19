@@ -766,6 +766,25 @@ export const systemLogSchema = z.looseObject({
   created_at: z.string(),
   updated_at: z.string(),
 });
+/**
+ * GET /{secure_path}/system/audit-logs item (docs/api-dialect.md §6.11):
+ * one append-only operator-audit row — who (actor id/email/session), what
+ * (surface, method, prefix-relative path), the outcome status, and the
+ * request correlation fields. §4.5 RFC 3339 `created_at`.
+ */
+export const auditLogSchema = z.looseObject({
+  id: z.number(),
+  actor_id: z.number(),
+  actor_email: z.string(),
+  session_id: z.string(),
+  surface: z.string(),
+  method: z.string(),
+  path: z.string(),
+  status_code: z.number(),
+  client_ip: nullableString,
+  request_id: nullableString,
+  created_at: z.string(),
+});
 export const serverTypeNameSchema = z.enum([
   'shadowsocks',
   'vmess',

@@ -869,6 +869,19 @@ Semantics:
 - Lockout recovery is operator-only: `v2board-api reset-admin-totp <email>`
   removes the factor. There are no recovery codes.
 
+### 6.11 Operator audit trail (native addition)
+
+Read access to the append-only `audit_log` table that the §6 structural
+guards write (one row per authenticated admin/staff mutation; request
+bodies are never recorded). Like §6.10 this is a native addition with no
+legacy counterpart and no §13.1 two-world mapping. It exists **only**
+under the dynamic admin prefix — the staff router deliberately does not
+mirror it, so staff accounts cannot read the operator trail.
+
+| Route | Req | Resp | Notes |
+| --- | --- | --- | --- |
+| GET `system/audit-logs` | query + filter DSL (§7) | page | Row shape `{id, actor_id, actor_email, session_id, surface, method, path, status_code, client_ip, request_id, created_at}`; `surface` is `admin`\|`staff`, `created_at` is RFC 3339, `client_ip`/`request_id` nullable. Default sort `created_at desc`. |
+
 ---
 
 ## 7. Admin filter & sort DSL
@@ -906,6 +919,7 @@ no wave has to improvise:
 | GET `users` | the guarded `user_column` list (`support/filters.rs`) |
 | GET `orders` | the guarded `order_column` list (`support/filters.rs`) |
 | GET `system/logs` | `level` only |
+| GET `system/audit-logs` | `surface`, `actor_email`, `method` |
 | GET `coupons`, GET `gift-cards` | **none** — no legacy filter support; none invented (§6.3) |
 | GET `payment-reconciliations` | **not DSL** — dedicated named scalar params (§6.4) |
 | GET `tickets` (admin) | **not DSL** — dedicated `status`/`reply_status`/`email` params (§6.5) |
