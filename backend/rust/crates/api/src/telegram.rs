@@ -121,6 +121,48 @@ async fn release_telegram_update(state: &AppState, key: &str) {
     }
 }
 
+/// Bounded retry for transient Telegram Bot API failures: transport
+/// connect/timeout errors plus 429/5xx statuses, the classes Telegram itself
+/// documents as retryable. A response whose body later fails to read is never
+/// retried — Telegram already accepted the request, and re-sending
+/// user-visible messages would duplicate them. The sanitized error string
+/// never contains the request URL (it embeds the bot token).
+const TELEGRAM_RETRY_DELAYS: [std::time::Duration; 2] = [
+    std::time::Duration::from_millis(250),
+    std::time::Duration::from_millis(750),
+];
+
+async fn telegram_api_send<F>(build_request: F) -> Result<reqwest::Response, String>
+where
+    F: Fn() -> reqwest::RequestBuilder,
+{
+    let mut attempt = 0_usize;
+    loop {
+        let retry_delay = TELEGRAM_RETRY_DELAYS.get(attempt).copied();
+        match build_request().send().await {
+            Ok(response) => {
+                let status = response.status();
+                let transient = status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error();
+                let Some(delay) = retry_delay.filter(|_| transient) else {
+                    return Ok(response);
+                };
+                tracing::warn!(%status, attempt, "retrying transient Telegram API status");
+                tokio::time::sleep(delay).await;
+            }
+            Err(error) => {
+                let transient = error.is_connect() || error.is_timeout();
+                let sanitized = format!("Telegram request failed: {}", error.without_url());
+                let Some(delay) = retry_delay.filter(|_| transient) else {
+                    return Err(sanitized);
+                };
+                tracing::warn!(error = %sanitized, attempt, "retrying transient Telegram transport failure");
+                tokio::time::sleep(delay).await;
+            }
+        }
+        attempt += 1;
+    }
+}
+
 async fn telegram_chat_join_request(
     client: &reqwest::Client,
     bot_token: &str,
@@ -133,15 +175,14 @@ async fn telegram_chat_join_request(
         ("user_id", user_id.to_string()),
     ])
     .map_err(|_| ApiError::internal("telegram request encode failed"))?;
-    let response = client
-        .post(format!("https://api.telegram.org/bot{bot_token}/{method}"))
-        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-        .body(body)
-        .send()
-        .await
-        .map_err(|error| {
-            ApiError::legacy(format!("Telegram request failed: {}", error.without_url()))
-        })?;
+    let response = telegram_api_send(|| {
+        client
+            .post(format!("https://api.telegram.org/bot{bot_token}/{method}"))
+            .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body(body.clone())
+    })
+    .await
+    .map_err(ApiError::legacy)?;
     let status = response.status();
     v2board_domain::http_response::bounded_bytes(
         response,
@@ -508,16 +549,10 @@ async fn telegram_bot_username(
     client: &reqwest::Client,
     bot_token: &str,
 ) -> Result<String, TelegramCommandError> {
-    let response = client
-        .get(format!("https://api.telegram.org/bot{bot_token}/getMe"))
-        .send()
-        .await
-        .map_err(|error| {
-            TelegramCommandError::without_chat(format!(
-                "Telegram request failed: {}",
-                error.without_url()
-            ))
-        })?;
+    let response =
+        telegram_api_send(|| client.get(format!("https://api.telegram.org/bot{bot_token}/getMe")))
+            .await
+            .map_err(TelegramCommandError::without_chat)?;
     let value: serde_json::Value = v2board_domain::http_response::bounded_json(
         response,
         v2board_domain::http_response::MAX_EXTERNAL_RESPONSE_BYTES,
@@ -551,20 +586,16 @@ async fn telegram_send_message(
     }
     let body = serde_urlencoded::to_string(params)
         .map_err(|_| TelegramCommandError::new(chat_id, "telegram request encode failed"))?;
-    let response = client
-        .post(format!(
-            "https://api.telegram.org/bot{bot_token}/sendMessage"
-        ))
-        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-        .body(body)
-        .send()
-        .await
-        .map_err(|error| {
-            TelegramCommandError::new(
-                chat_id,
-                format!("Telegram request failed: {}", error.without_url()),
-            )
-        })?;
+    let response = telegram_api_send(|| {
+        client
+            .post(format!(
+                "https://api.telegram.org/bot{bot_token}/sendMessage"
+            ))
+            .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body(body.clone())
+    })
+    .await
+    .map_err(|error| TelegramCommandError::new(chat_id, error))?;
     let status = response.status();
     v2board_domain::http_response::bounded_bytes(
         response,
@@ -752,11 +783,91 @@ struct TelegramAdminRecipient {
 #[cfg(test)]
 mod tests {
     use serde_json::json;
+    use std::io::{Read as _, Write as _};
 
     use super::{
         TelegramUpdate, escape_telegram_markdown, legacy_traffic_convert, subscribe_token_from_url,
-        telegram_reply_ticket_id,
+        telegram_api_send, telegram_reply_ticket_id,
     };
+
+    /// Serves each scripted raw response on its own accepted connection, then
+    /// drops the listener (further connects are refused).
+    fn scripted_server(responses: Vec<&'static [u8]>) -> (String, std::thread::JoinHandle<usize>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let handle = std::thread::spawn(move || {
+            let mut served = 0;
+            for raw_response in responses {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = [0_u8; 2048];
+                let mut used = 0;
+                while used < request.len() {
+                    let read = stream.read(&mut request[used..]).unwrap();
+                    if read == 0 {
+                        break;
+                    }
+                    used += read;
+                    if request[..used]
+                        .windows(4)
+                        .any(|window| window == b"\r\n\r\n")
+                    {
+                        break;
+                    }
+                }
+                stream.write_all(raw_response).unwrap();
+                stream.flush().unwrap();
+                stream.shutdown(std::net::Shutdown::Write).unwrap();
+                served += 1;
+            }
+            served
+        });
+        (format!("http://{address}/"), handle)
+    }
+
+    #[tokio::test]
+    async fn telegram_send_retries_transient_server_errors_until_success() {
+        let (url, server) = scripted_server(vec![
+            b"HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            b"HTTP/1.1 429 Too Many Requests\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok",
+        ]);
+        let client = reqwest::Client::new();
+        let response = telegram_api_send(|| client.get(url.clone())).await.unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        assert_eq!(server.join().unwrap(), 3);
+    }
+
+    #[tokio::test]
+    async fn telegram_send_does_not_retry_definitive_client_errors() {
+        let (url, server) = scripted_server(vec![
+            b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        ]);
+        let client = reqwest::Client::new();
+        let response = telegram_api_send(|| client.get(url.clone())).await.unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);
+        assert_eq!(server.join().unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn telegram_send_gives_up_after_bounded_attempts_without_leaking_the_url() {
+        let (url, server) = scripted_server(vec![
+            b"HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            b"HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            b"HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        ]);
+        let client = reqwest::Client::new();
+        let response = telegram_api_send(|| client.get(url.clone())).await.unwrap();
+        assert_eq!(
+            response.status(),
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+            "the final transient status is returned for the caller's status check"
+        );
+        assert_eq!(
+            server.join().unwrap(),
+            3,
+            "exactly the bounded attempt count"
+        );
+    }
 
     #[test]
     fn telegram_update_requires_the_replay_identifier() {
