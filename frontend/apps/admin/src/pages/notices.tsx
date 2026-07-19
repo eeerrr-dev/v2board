@@ -25,7 +25,7 @@ import { Input } from '@/components/ui/input';
 import { Field, FieldError, FieldLabel } from '@/components/ui/field';
 import { PageHeader, PageShell } from '@/components/ui/page';
 import { ErrorState } from '@/components/ui/error-state';
-import { Spinner } from '@/components/ui/spinner';
+import { LoadingState, SkeletonRows } from '@/components/ui/loading-state';
 import { Switch } from '@/components/ui/switch';
 import { TagsInput } from '@/components/ui/tags-input';
 import { Textarea } from '@/components/ui/textarea';
@@ -265,10 +265,9 @@ export default function NoticesPage() {
       </Dialog>
 
       {notices.isPending ? (
-        <div className="flex justify-center py-6" role="status">
-          <Spinner className="size-5 text-muted-foreground" />
-          <span className="sr-only">加载中</span>
-        </div>
+        <LoadingState className="rounded-xl border border-border bg-card p-4">
+          <SkeletonRows rows={3} />
+        </LoadingState>
       ) : null}
     </PageShell>
   );

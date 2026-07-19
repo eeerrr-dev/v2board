@@ -53,6 +53,8 @@ import {
   SidebarTrigger,
   useSidebar,
 } from '@/components/ui/sidebar';
+import { LoadingState, SkeletonRows } from '@/components/ui/loading-state';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 
 type ShellIcon = ComponentType<SVGProps<SVGSVGElement>>;
@@ -341,14 +343,11 @@ function AppLayoutContent({ loading, title: titleProp }: AppLayoutProps = {}) {
         {/* The named container lets page grids column-switch on the width they
             actually get (content area minus sidebar), not the viewport. */}
         {loading ? (
-          <div id="main-container" className="@container/main flex flex-1">
-            <div
-              role="status"
-              className="flex w-full flex-1 items-center justify-center px-4 py-10"
-            >
-              <Spinner className="size-6" />
-              <span className="sr-only">{t(($) => $.common.loading)}</span>
-            </div>
+          <div id="main-container" className="@container/main flex-1">
+            <LoadingState className="mx-auto max-w-6xl space-y-4 px-4 py-4 sm:px-6 md:py-6">
+              <Skeleton className="h-7 w-44" aria-hidden />
+              <SkeletonRows rows={4} />
+            </LoadingState>
           </div>
         ) : (
           <div id="main-container" className="@container/main flex-1">

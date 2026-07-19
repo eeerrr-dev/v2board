@@ -17,7 +17,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { Spinner } from '@/components/ui/spinner';
+import { LoadingState, SkeletonLines, SkeletonRows } from '@/components/ui/loading-state';
 import { cn } from '@/lib/cn';
 import { getRequestLocale } from '@/lib/api';
 import { formatBackendDateSlash } from '@v2board/config/format';
@@ -47,15 +47,15 @@ export default function KnowledgePage() {
     return Number.isNaN(urlId) ? undefined : urlId;
   });
   // Remembers the article that is on screen while a jump to another article
-  // loads, so the previous one stays visible instead of blanking to a spinner.
+  // loads, so the previous one stays visible instead of blanking to a skeleton.
   const [previousArticle, setPreviousArticle] = useState<Knowledge | undefined>(undefined);
   const knowledgeQuery = useKnowledge(language, deferredKeyword || undefined);
   const { data, isError, isPending, isFetching, isPlaceholderData } = knowledgeQuery;
-  // The full spinner card is only for the initial load (no cached list yet).
+  // The full loading card is only for the initial load (no cached list yet).
   // While a debounced search resolves, keepPreviousData keeps the prior list as
   // placeholder data, so keep rendering it dimmed instead of blanking it —
   // matching the opacity-80 refetch pattern invite/tickets already use.
-  const showListSpinner = isPending;
+  const showListLoading = isPending;
   const listRefreshing = isFetching && isPlaceholderData;
   const knowledgeGroups = data ?? {};
   const categories = Object.entries(knowledgeGroups).filter(
@@ -157,13 +157,12 @@ export default function KnowledgePage() {
             />
           </CardContent>
         </Card>
-      ) : showListSpinner ? (
+      ) : showListLoading ? (
         <Card data-testid="knowledge-loading">
-          <CardContent className="flex items-center justify-center gap-2 py-14 text-sm text-muted-foreground">
-            <span role="status" className="inline-flex items-center gap-2">
-              <Spinner />
-              <span>{t(($) => $.common.loading)}</span>
-            </span>
+          <CardContent className="py-6">
+            <LoadingState>
+              <SkeletonRows rows={4} />
+            </LoadingState>
           </CardContent>
         </Card>
       ) : categories.length ? (
@@ -254,10 +253,9 @@ export default function KnowledgePage() {
             data-testid="knowledge-sheet-body"
           >
             {detail.isFetching ? (
-              <div role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Spinner />
-                <span>{t(($) => $.common.loading)}</span>
-              </div>
+              <LoadingState>
+                <SkeletonLines lines={5} />
+              </LoadingState>
             ) : detail.isError ? (
               // A failed detail fetch must not sit on a blank body under a stuck
               // "Loading..." title; surface the error with a retry instead.

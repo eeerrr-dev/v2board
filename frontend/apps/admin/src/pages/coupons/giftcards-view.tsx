@@ -14,7 +14,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader, PageShell } from '@/components/ui/page';
 import { ErrorState } from '@/components/ui/error-state';
 import { PaginationControl } from '@/components/ui/pagination';
-import { Spinner } from '@/components/ui/spinner';
+import { LoadingState, SkeletonRows } from '@/components/ui/loading-state';
 import { DataTable, type DataTableColumn } from '@/components/ui/table';
 import { GiftcardEditor } from './giftcard-editor';
 import {
@@ -239,10 +239,9 @@ export function GiftcardsView() {
       </Card>
 
       {giftcards.isPending ? (
-        <div className="flex justify-center py-6" role="status">
-          <Spinner className="size-5 text-muted-foreground" />
-          <span className="sr-only">加载中</span>
-        </div>
+        <LoadingState className="rounded-xl border border-border bg-card p-4">
+          <SkeletonRows rows={3} />
+        </LoadingState>
       ) : null}
     </PageShell>
   );

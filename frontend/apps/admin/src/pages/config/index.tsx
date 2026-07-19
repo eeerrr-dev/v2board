@@ -10,7 +10,7 @@ import { cn } from '@/lib/cn';
 import { toast } from '@/lib/toast';
 import { PageHeader, PageShell } from '@/components/ui/page';
 import { ErrorState } from '@/components/ui/error-state';
-import { Spinner } from '@/components/ui/spinner';
+import { LoadingState, SkeletonFields } from '@/components/ui/loading-state';
 import { SECTIONS, type ConfigGroupKey } from './schema';
 import { SystemConfigSectionForm } from './section-form';
 
@@ -67,10 +67,9 @@ function SystemConfigPage() {
   if (config.isPending || !config.data) {
     return (
       <PageShell data-testid="config-page">
-        <div className="flex justify-center py-16" role="status">
-          <Spinner className="size-6 text-muted-foreground" />
-          <span className="sr-only">加载中</span>
-        </div>
+        <LoadingState className="py-6">
+          <SkeletonFields fields={5} />
+        </LoadingState>
       </PageShell>
     );
   }
@@ -149,9 +148,8 @@ function SystemConfigPage() {
 
 function ConfigDependencyLoading({ label }: { label: string }) {
   return (
-    <div className="flex justify-center py-16" role="status">
-      <Spinner className="size-6 text-muted-foreground" />
-      <span className="sr-only">{label}</span>
-    </div>
+    <LoadingState className="py-6" label={label}>
+      <SkeletonFields fields={3} />
+    </LoadingState>
   );
 }

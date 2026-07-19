@@ -32,7 +32,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { Spinner } from '@/components/ui/spinner';
+import { LoadingState, SkeletonFields } from '@/components/ui/loading-state';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -238,14 +238,9 @@ export function UserManageDrawer({
             />
           </div>
         ) : userLoading || plansLoading ? (
-          <div
-            className="flex flex-1 items-center justify-center py-10"
-            role="status"
-            data-testid="user-manage-loading"
-          >
-            <Spinner className="size-6 text-muted-foreground" />
-            <span className="sr-only">加载中</span>
-          </div>
+          <LoadingState className="flex-1 p-6" data-testid="user-manage-loading">
+            <SkeletonFields fields={5} />
+          </LoadingState>
         ) : !current ? (
           <EmptyState
             className="m-6 min-h-32"

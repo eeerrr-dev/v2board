@@ -36,7 +36,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { Spinner } from '@/components/ui/spinner';
+import { LoadingState, SkeletonFields, SkeletonRows } from '@/components/ui/loading-state';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { DataTable, type DataTableColumn } from '@/components/ui/table';
@@ -233,10 +233,9 @@ function KnowledgeEditor({
             />
           </div>
         ) : detailLoading || !detailReady ? (
-          <div className="flex justify-center py-16" role="status">
-            <Spinner className="size-5 text-muted-foreground" />
-            <span className="sr-only">加载中</span>
-          </div>
+          <LoadingState className="px-4 py-6">
+            <SkeletonFields fields={4} />
+          </LoadingState>
         ) : (
           <KnowledgeEditorForm
             categories={categories}
@@ -468,10 +467,9 @@ export default function KnowledgePage() {
       </Card>
 
       {sort.isPending || list.isPending ? (
-        <div className="flex justify-center py-6" role="status">
-          <Spinner className="size-5 text-muted-foreground" />
-          <span className="sr-only">加载中</span>
-        </div>
+        <LoadingState className="rounded-xl border border-border bg-card p-4">
+          <SkeletonRows rows={3} />
+        </LoadingState>
       ) : null}
 
       <KnowledgeEditor

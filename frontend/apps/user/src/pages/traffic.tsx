@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ErrorState } from '@/components/ui/error-state';
 import { HeaderTooltip } from '@/components/ui/header-tooltip';
 import { PageShell } from '@/components/ui/page';
-import { Spinner } from '@/components/ui/spinner';
+import { LoadingState, SkeletonRows } from '@/components/ui/loading-state';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@/components/ui/table';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -83,13 +83,9 @@ export default function TrafficPage() {
             </div>
 
             {isPending ? (
-              <div
-                className="flex items-center gap-2 border-b border-border px-4 py-3 text-sm text-muted-foreground"
-                role="status"
-              >
-                <Spinner className="size-4" />
-                <span>{t(($) => $.common.loading)}</span>
-              </div>
+              <LoadingState className="border-b border-border px-4 py-3">
+                <SkeletonRows rows={3} />
+              </LoadingState>
             ) : null}
 
             {isError ? (

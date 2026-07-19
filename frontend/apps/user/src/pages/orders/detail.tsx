@@ -20,7 +20,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ErrorState } from '@/components/ui/error-state';
 import { EmptyState, PageShell } from '@/components/ui/page';
 import { RadioGroup, RadioGroupIndicator, RadioGroupItem } from '@/components/ui/radio-group';
-import { Spinner } from '@/components/ui/spinner';
+import { LoadingState, SkeletonLines } from '@/components/ui/loading-state';
+import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/cn';
 import { useOrderCheckoutController } from './use-order-checkout-controller';
 
@@ -66,9 +67,9 @@ export default function OrderDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-44 items-center justify-center" role="status">
-        <Spinner className="size-5" />
-      </div>
+      <LoadingState className="min-h-44 py-6">
+        <SkeletonLines lines={4} />
+      </LoadingState>
     );
   }
 
@@ -183,13 +184,12 @@ export default function OrderDetailPage() {
                 </CardHeader>
                 <CardContent className="p-6 pt-0">
                   {paymentMethodsState.isPending ? (
-                    <div
-                      className="flex min-h-24 items-center justify-center"
-                      role="status"
-                      data-testid="payment-methods-loading"
-                    >
-                      <Spinner className="size-5" />
-                    </div>
+                    <LoadingState className="min-h-24" data-testid="payment-methods-loading">
+                      <div className="grid gap-3" aria-hidden>
+                        <Skeleton className="h-12 w-full" />
+                        <Skeleton className="h-12 w-full" />
+                      </div>
+                    </LoadingState>
                   ) : paymentMethodsState.error ? (
                     <ErrorState
                       data-testid="payment-methods-error"
@@ -239,9 +239,9 @@ export default function OrderDetailPage() {
               </Card>
 
               {isStripePayment && stripePreparation.isPending && (
-                <div className="flex min-h-24 items-center justify-center" role="status">
-                  <Spinner className="size-5" />
-                </div>
+                <LoadingState className="min-h-24">
+                  <Skeleton className="h-24 w-full" aria-hidden />
+                </LoadingState>
               )}
 
               {isStripePayment && stripePreparation.error && (

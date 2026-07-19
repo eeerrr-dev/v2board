@@ -11,7 +11,8 @@ import { ErrorState } from '@/components/ui/error-state';
 import { HeaderTooltip } from '@/components/ui/header-tooltip';
 import { PaginationControl } from '@/components/ui/pagination';
 import { PageShell } from '@/components/ui/page';
-import { Spinner } from '@/components/ui/spinner';
+import { LoadingState } from '@/components/ui/loading-state';
+import { Skeleton } from '@/components/ui/skeleton';
 import { DataTable, type DataTableColumn } from '@/components/ui/table';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { cn } from '@/lib/cn';
@@ -278,10 +279,9 @@ export default function InvitePage() {
               <CardDescription>{t(($) => $.invite.commission_col)}</CardDescription>
             </div>
             {detailsLoading ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
-                <Spinner className="size-4" />
-                <span>{t(($) => $.common.loading)}</span>
-              </div>
+              <LoadingState className="w-auto">
+                <Skeleton className="h-4 w-28" aria-hidden />
+              </LoadingState>
             ) : null}
           </CardHeader>
           <CardContent className={details.isError ? undefined : 'p-0'}>
@@ -352,7 +352,7 @@ function StatTile({
         </span>
       </div>
       <div className="min-h-7 text-right text-2xl font-semibold tracking-tight text-foreground">
-        {value ?? <Spinner className="ml-auto size-5 text-muted-foreground" />}
+        {value ?? <Skeleton className="ml-auto h-7 w-20" aria-hidden />}
       </div>
     </div>
   );

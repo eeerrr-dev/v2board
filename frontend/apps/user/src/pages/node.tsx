@@ -7,7 +7,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ErrorState } from '@/components/ui/error-state';
 import { HeaderTooltip } from '@/components/ui/header-tooltip';
 import { PageShell } from '@/components/ui/page';
-import { Spinner } from '@/components/ui/spinner';
+import { LoadingState, SkeletonRows } from '@/components/ui/loading-state';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@/components/ui/table';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -93,14 +93,12 @@ export default function NodePage() {
   if (subscribe.isPending || (subscribe.isSuccess && isPending)) {
     return (
       <PageShell data-testid="node-page">
-        <div
-          className="flex min-h-44 items-center justify-center rounded-xl border border-border bg-card text-card-foreground shadow-sm"
+        <LoadingState
+          className="min-h-44 rounded-xl border border-border bg-card p-6 text-card-foreground shadow-sm"
           data-testid="node-loading"
-          role="status"
         >
-          <Spinner className="size-5 text-muted-foreground" />
-          <span className="sr-only">{t(($) => $.common.loading)}</span>
-        </div>
+          <SkeletonRows rows={3} />
+        </LoadingState>
       </PageShell>
     );
   }

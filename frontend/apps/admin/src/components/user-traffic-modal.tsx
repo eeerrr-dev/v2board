@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { ErrorState } from '@/components/ui/error-state';
 import { PaginationControl } from '@/components/ui/pagination';
-import { Spinner } from '@/components/ui/spinner';
+import { LoadingState, SkeletonRows } from '@/components/ui/loading-state';
 import { DataTable, type DataTableColumn } from '@/components/ui/table';
 
 const PAGINATION_LABELS = {
@@ -115,14 +115,9 @@ function UserTrafficModalContent({
             />
           </div>
         ) : records.isPending ? (
-          <div
-            className="flex min-h-44 items-center justify-center"
-            role="status"
-            data-testid="user-traffic-loading"
-          >
-            <Spinner className="size-5 text-muted-foreground" />
-            <span className="sr-only">加载中</span>
-          </div>
+          <LoadingState className="min-h-44 py-4" data-testid="user-traffic-loading">
+            <SkeletonRows rows={4} />
+          </LoadingState>
         ) : (
           <>
             <DataTable

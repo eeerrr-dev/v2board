@@ -59,7 +59,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { Spinner } from '@/components/ui/spinner';
+import { LoadingState, SkeletonLines, SkeletonRows } from '@/components/ui/loading-state';
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
 import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@/components/ui/table';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -150,10 +150,9 @@ function DetailRow({ label, children }: { label: string; children: ReactNode }) 
 
 function DetailLoading({ testId }: { testId: string }) {
   return (
-    <div className="flex justify-center py-10" role="status" data-testid={testId}>
-      <Spinner className="size-5 text-muted-foreground" />
-      <span className="sr-only">加载中</span>
-    </div>
+    <LoadingState className="py-10" data-testid={testId}>
+      <SkeletonLines lines={4} />
+    </LoadingState>
   );
 }
 
@@ -834,10 +833,9 @@ export default function OrdersPage() {
       />
 
       {orders.isPending ? (
-        <div className="flex justify-center py-6" role="status">
-          <Spinner className="size-5 text-muted-foreground" />
-          <span className="sr-only">加载中</span>
-        </div>
+        <LoadingState className="rounded-xl border border-border bg-card p-4">
+          <SkeletonRows rows={3} />
+        </LoadingState>
       ) : null}
     </PageShell>
   );

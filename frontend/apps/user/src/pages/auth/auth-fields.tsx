@@ -11,7 +11,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Spinner } from '@/components/ui/spinner';
+import { LoadingState, SkeletonFields } from '@/components/ui/loading-state';
+import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/cn';
 import { translateRuntimeMessage } from '@/lib/translate-runtime-message';
 
@@ -66,12 +67,11 @@ export function AuthFieldError({
 }
 
 export function AuthLoadingState() {
-  const { t } = useTranslation();
   return (
-    <div className="flex min-h-64 items-center justify-center" role="status">
-      <Spinner className="size-5 text-muted-foreground" />
-      <span className="sr-only">{t(($) => $.common.loading)}</span>
-    </div>
+    <LoadingState className="min-h-64 space-y-5">
+      <SkeletonFields fields={2} />
+      <Skeleton className="h-9 w-full" aria-hidden />
+    </LoadingState>
   );
 }
 

@@ -37,7 +37,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { Spinner } from '@/components/ui/spinner';
+import { LoadingState, SkeletonRows } from '@/components/ui/loading-state';
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -315,10 +315,9 @@ function TicketListPage() {
       </Sheet>
 
       {tickets.isPending ? (
-        <div className="flex justify-center py-6" role="status">
-          <Spinner className="size-5 text-muted-foreground" />
-          <span className="sr-only">加载中</span>
-        </div>
+        <LoadingState className="rounded-xl border border-border bg-card p-4">
+          <SkeletonRows rows={3} />
+        </LoadingState>
       ) : null}
     </PageShell>
   );

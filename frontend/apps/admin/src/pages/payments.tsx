@@ -43,7 +43,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { Spinner } from '@/components/ui/spinner';
+import { LoadingState, SkeletonFields, SkeletonRows } from '@/components/ui/loading-state';
 import { Switch } from '@/components/ui/switch';
 import { DataTable, type DataTableColumn } from '@/components/ui/table';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -300,14 +300,13 @@ function PaymentEditor({
           </Field>
 
           {methodsLoading ? (
-            <div
-              className="flex min-h-20 items-center justify-center gap-2 text-sm text-muted-foreground"
-              role="status"
+            <LoadingState
+              className="min-h-20 py-2"
+              label="正在加载支付接口"
               data-testid="payment-methods-loading"
             >
-              <Spinner className="size-4" />
-              正在加载支付接口
-            </div>
+              <SkeletonRows rows={2} />
+            </LoadingState>
           ) : null}
           {methodsError ? (
             <ErrorState
@@ -325,14 +324,13 @@ function PaymentEditor({
           ) : null}
 
           {definitionLoading ? (
-            <div
-              className="flex min-h-20 items-center justify-center gap-2 text-sm text-muted-foreground"
-              role="status"
+            <LoadingState
+              className="min-h-20 py-2"
+              label="正在加载接口配置"
               data-testid="payment-definition-loading"
             >
-              <Spinner className="size-4" />
-              正在加载接口配置
-            </div>
+              <SkeletonFields fields={2} />
+            </LoadingState>
           ) : null}
           {definitionError ? (
             <ErrorState
@@ -615,10 +613,9 @@ export default function PaymentsPage() {
       </TooltipProvider>
 
       {sort.isPending || payments.isPending ? (
-        <div className="flex justify-center py-6" role="status">
-          <Spinner className="size-5 text-muted-foreground" />
-          <span className="sr-only">加载中</span>
-        </div>
+        <LoadingState className="rounded-xl border border-border bg-card p-4">
+          <SkeletonRows rows={3} />
+        </LoadingState>
       ) : null}
     </PageShell>
   );

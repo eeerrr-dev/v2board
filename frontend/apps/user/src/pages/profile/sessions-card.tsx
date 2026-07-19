@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { confirmDialog } from '@/components/ui/confirm-dialog';
 import { ErrorState } from '@/components/ui/error-state';
-import { Spinner } from '@/components/ui/spinner';
+import { LoadingState, SkeletonRows } from '@/components/ui/loading-state';
 import {
   Table,
   TableBody,
@@ -59,10 +59,9 @@ export function SessionsCard() {
       </CardHeader>
       <CardContent className="p-0">
         {sessions.isLoading ? (
-          <div className="flex items-center gap-2 px-6 pb-6 text-sm text-muted-foreground">
-            <Spinner className="size-4" />
-            <span>{t(($) => $.common.loading)}</span>
-          </div>
+          <LoadingState className="px-6 pb-6">
+            <SkeletonRows rows={2} />
+          </LoadingState>
         ) : sessions.isError ? (
           <div className="px-6 pb-6">
             <ErrorState

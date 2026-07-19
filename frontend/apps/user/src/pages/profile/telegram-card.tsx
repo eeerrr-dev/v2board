@@ -11,7 +11,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { ErrorState } from '@/components/ui/error-state';
-import { Spinner } from '@/components/ui/spinner';
+import { LoadingState, SkeletonLines } from '@/components/ui/loading-state';
 import {
   useCommConfig,
   useSubscribe,
@@ -213,13 +213,9 @@ function TelegramBindDialog({
             </div>
           </div>
         ) : botLoading ? (
-          <div
-            className="flex min-h-24 items-center justify-center gap-2 text-sm text-muted-foreground"
-            role="status"
-          >
-            <Spinner />
-            <span>{t(($) => $.common.loading)}</span>
-          </div>
+          <LoadingState className="min-h-24">
+            <SkeletonLines lines={2} />
+          </LoadingState>
         ) : (
           <ErrorState onRetry={onRetry} data-testid="profile-telegram-bot-error" />
         )}

@@ -30,7 +30,7 @@ export async function fetchFailureState(page) {
   const legacyBlockLoadingCount = await visibleCount(page, '.block-mode-loading');
   const spinnerVisibleCount = await visibleCount(
     page,
-    '[data-testid="plan-empty"] svg, [data-testid="orders-card"] svg, [data-testid="node-loading"] svg, [data-testid="traffic-card"] [role="status"] svg, .spinner-grow, .ant-spin-spinning, [role="status"] svg',
+    '[data-testid="plan-empty"] svg, [data-testid="orders-card"] svg, [data-testid="node-loading"] svg, [data-testid="traffic-card"] [role="status"] svg, .spinner-grow, .ant-spin-spinning, [role="status"] svg, [data-slot="skeleton"]',
   );
 
   return {

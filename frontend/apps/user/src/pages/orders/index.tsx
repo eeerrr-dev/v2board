@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { ErrorState } from '@/components/ui/error-state';
 import { PageShell } from '@/components/ui/page';
-import { Spinner } from '@/components/ui/spinner';
+import { LoadingState, SkeletonRows } from '@/components/ui/loading-state';
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
 import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@/components/ui/table';
 
@@ -111,10 +111,9 @@ export default function OrdersPage() {
       <Card className="overflow-hidden py-0" data-testid="orders-card">
         <CardContent className="p-0">
           {loading ? (
-            <div className="flex items-center gap-2 border-b border-border px-4 py-3 text-sm text-muted-foreground">
-              <Spinner className="size-4" />
-              <span>{t(($) => $.common.loading)}</span>
-            </div>
+            <LoadingState className="border-b border-border px-4 py-3">
+              <SkeletonRows rows={3} />
+            </LoadingState>
           ) : null}
 
           {isError ? (

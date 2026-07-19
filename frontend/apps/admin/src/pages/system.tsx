@@ -3,7 +3,7 @@ import { CheckCircle2, XCircle } from 'lucide-react';
 import { useQueueStats, useQueueWorkload } from '@/lib/queries';
 import { Card, CardContent } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page';
-import { Spinner } from '@/components/ui/spinner';
+import { LoadingState, SkeletonRows } from '@/components/ui/loading-state';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { DataTable, type DataTableColumn } from '@/components/ui/table';
 import { ErrorState } from '@/components/ui/error-state';
@@ -118,12 +118,8 @@ export default function SystemPage() {
 
 function LoadingPanel() {
   return (
-    <div
-      className="flex min-h-32 items-center justify-center rounded-xl border border-border bg-card"
-      role="status"
-    >
-      <Spinner className="size-5 text-muted-foreground" />
-      <span className="sr-only">加载中</span>
-    </div>
+    <LoadingState className="min-h-32 rounded-xl border border-border bg-card p-4">
+      <SkeletonRows rows={2} />
+    </LoadingState>
   );
 }

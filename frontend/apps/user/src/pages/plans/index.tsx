@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ErrorState } from '@/components/ui/error-state';
 import { EmptyState, PageHeader, PageShell } from '@/components/ui/page';
 import { SegmentedControl } from '@/components/ui/segmented-control';
-import { Spinner } from '@/components/ui/spinner';
+import { LoadingState, SkeletonRows } from '@/components/ui/loading-state';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { cn } from '@/lib/cn';
 
@@ -76,8 +76,10 @@ export default function PlansPage() {
         <ErrorState onRetry={() => void refetch()} data-testid="plan-error" />
       ) : isLoading || !data ? (
         <Card data-testid="plan-empty">
-          <CardContent className="flex min-h-44 items-center justify-center">
-            <Spinner className="size-5" />
+          <CardContent className="min-h-44 py-6">
+            <LoadingState>
+              <SkeletonRows rows={3} />
+            </LoadingState>
           </CardContent>
         </Card>
       ) : filtered.length === 0 ? (

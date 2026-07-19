@@ -21,7 +21,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ErrorState } from '@/components/ui/error-state';
 import { PageShell } from '@/components/ui/page';
 import { Progress } from '@/components/ui/progress';
-import { Spinner } from '@/components/ui/spinner';
+import { LoadingState } from '@/components/ui/loading-state';
+import { Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { DashboardNoticeCarousel } from './notice-carousel';
 import {
@@ -218,9 +219,12 @@ export default function DashboardPage() {
                 data-testid="dashboard-plan-error"
               />
             ) : subscribe.isLoading || !hasSubscribeData ? (
-              <div className="flex min-h-36 items-center justify-center">
-                <Spinner className="size-6" />
-              </div>
+              <LoadingState className="min-h-36 space-y-3">
+                <Skeleton className="h-7 w-44" aria-hidden />
+                <Skeleton className="h-4 w-full max-w-md" aria-hidden />
+                <Skeleton className="h-2 w-full" aria-hidden />
+                <Skeleton className="h-4 w-32" aria-hidden />
+              </LoadingState>
             ) : hasPlan ? (
               <div className="space-y-6">
                 <div className="space-y-3">

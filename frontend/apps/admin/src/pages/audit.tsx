@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Spinner } from '@/components/ui/spinner';
+import { LoadingState, SkeletonRows } from '@/components/ui/loading-state';
 import { DataTable, type DataTableColumn } from '@/components/ui/table';
 import { useAuditLogs } from '@/lib/queries';
 
@@ -252,10 +252,9 @@ export default function AuditPage() {
           )}
 
           {logs.isPending ? (
-            <div className="flex justify-center py-6" role="status">
-              <Spinner className="size-5 text-muted-foreground" />
-              <span className="sr-only">加载中</span>
-            </div>
+            <LoadingState className="py-4">
+              <SkeletonRows rows={3} />
+            </LoadingState>
           ) : null}
         </CardContent>
       </Card>

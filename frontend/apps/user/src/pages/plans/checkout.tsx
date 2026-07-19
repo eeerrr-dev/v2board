@@ -24,7 +24,7 @@ import { ErrorState } from '@/components/ui/error-state';
 import { Input } from '@/components/ui/input';
 import { PageShell } from '@/components/ui/page';
 import { RadioGroup, RadioGroupIndicator, RadioGroupItem } from '@/components/ui/radio-group';
-import { Spinner } from '@/components/ui/spinner';
+import { LoadingState, SkeletonLines, SkeletonRows } from '@/components/ui/loading-state';
 
 // Derived from the canonical lib/plan-periods tables; plan-periods.test.ts pins
 // that this derivation matches the backend order-amount contract exactly.
@@ -168,13 +168,13 @@ export default function PlanCheckoutPage() {
     void continueAfterUnfinishedOrderCheck();
   };
 
-  // Full-page spinner only for the initial load: cached plan data keeps
+  // Full-page skeleton only for the initial load: cached plan data keeps
   // rendering while the mount refetch runs in the background.
   if (planQuery.isPending) {
     return (
-      <div className="flex min-h-44 items-center justify-center" role="status">
-        <Spinner className="size-5" />
-      </div>
+      <LoadingState className="min-h-44 py-6">
+        <SkeletonLines lines={4} />
+      </LoadingState>
     );
   }
 
@@ -334,14 +334,9 @@ export default function PlanCheckoutPage() {
               </Alert>
             ) : null}
             {orders.isPending ? (
-              <div
-                className="flex items-center gap-2 text-sm text-muted-foreground"
-                role="status"
-                data-testid="unfinished-orders-loading"
-              >
-                <Spinner className="size-4" />
-                <span>{t(($) => $.common.loading)}</span>
-              </div>
+              <LoadingState data-testid="unfinished-orders-loading">
+                <SkeletonRows rows={2} />
+              </LoadingState>
             ) : null}
             {orders.isError ? (
               <ErrorState
