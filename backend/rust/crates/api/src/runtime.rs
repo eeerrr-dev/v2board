@@ -40,6 +40,7 @@ pub(crate) struct AppState {
     pub(crate) redis: redis::Client,
     pub(crate) auth_redis: redis::aio::ConnectionManager,
     pub(crate) http: reqwest::Client,
+    pub(crate) http_metrics: Arc<crate::metrics::HttpMetrics>,
     password_kdf: PasswordKdf,
     smtp: SmtpTransportCache,
 }
@@ -70,6 +71,7 @@ impl AppState {
             redis,
             auth_redis,
             http,
+            http_metrics: Arc::new(crate::metrics::HttpMetrics::default()),
             password_kdf,
             smtp,
         }
@@ -142,6 +144,14 @@ impl AppState {
 
     pub(crate) fn redis_key(&self, logical_key: &str) -> String {
         self.redis_keys.key(logical_key)
+    }
+
+    pub(crate) fn operator_config_acknowledged(&self) -> bool {
+        self.pending_operator_ack.load(Ordering::Acquire) == 0
+    }
+
+    pub(crate) fn operator_config_authority_healthy(&self) -> bool {
+        self.operator_authority_healthy.load(Ordering::Acquire)
     }
 
     pub(crate) async fn reload_config(&self) -> io::Result<Arc<AppConfig>> {
@@ -777,7 +787,7 @@ pub(crate) async fn enforce_https_middleware(
 }
 
 fn https_enforcement_exempt_path(path: &str) -> bool {
-    matches!(path, "/healthz" | "/readyz")
+    matches!(path, "/healthz" | "/readyz" | "/metrics")
 }
 
 fn direct_probe_client_ip(
@@ -1239,9 +1249,10 @@ mod tests {
     }
 
     #[test]
-    fn internal_health_probes_are_the_only_https_enforcement_exceptions() {
+    fn loopback_probe_and_metrics_paths_are_the_only_https_enforcement_exceptions() {
         assert!(https_enforcement_exempt_path("/healthz"));
         assert!(https_enforcement_exempt_path("/readyz"));
+        assert!(https_enforcement_exempt_path("/metrics"));
         assert!(!https_enforcement_exempt_path("/"));
         assert!(!https_enforcement_exempt_path("/api/v1/user/profile"));
     }

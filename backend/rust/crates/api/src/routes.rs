@@ -87,6 +87,7 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
     let https_state = state.clone();
     let timeout_state = state.clone();
     let cors_state = state.clone();
+    let http_metrics_state = state.clone();
     let request_timeout = Duration::from_secs(config.api_request_timeout_seconds);
 
     Router::new()
@@ -94,6 +95,7 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
         .nest_service("/assets/admin", admin_assets)
         .route("/healthz", get(crate::runtime::healthz))
         .route("/readyz", get(crate::runtime::readyz))
+        .route("/metrics", get(crate::metrics::metrics))
         // ——— Public family, modern dialect (docs/api-dialect.md §5.1, W3) ———
         .route("/api/v1/public/config", get(crate::client::public_config))
         .route(
@@ -339,6 +341,12 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
         ]))
         .layer(SetRequestIdLayer::new(request_id_header, MakeRequestUuid))
         .layer(middleware::from_fn(sanitize_request_id))
+        // Outermost so the status-class counters see every response,
+        // including ones short-circuited by the layers below.
+        .layer(middleware::from_fn_with_state(
+            http_metrics_state,
+            crate::metrics::http_metrics_middleware,
+        ))
 }
 
 async fn security_response_headers(request: Request, next: Next) -> Response {

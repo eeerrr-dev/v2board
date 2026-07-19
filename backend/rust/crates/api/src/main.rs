@@ -23,6 +23,7 @@ mod i18n;
 mod json_value;
 mod locale;
 mod localization;
+mod metrics;
 mod request_params;
 mod route_paths;
 mod routes;
