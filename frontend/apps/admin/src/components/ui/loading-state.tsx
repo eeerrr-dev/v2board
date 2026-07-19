@@ -4,7 +4,7 @@ import { cn } from '@/lib/cn';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export interface LoadingStateProps extends ComponentProps<'div'> {
-  /** Overrides the default status text. */
+  /** Overrides the default `common.loading` status text. */
   label?: string;
 }
 
