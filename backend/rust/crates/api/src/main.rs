@@ -42,8 +42,16 @@ use runtime::{
     shutdown_signal,
 };
 
+fn main() -> anyhow::Result<()> {
+    // Telemetry must initialize before the tokio runtime exists: the OTLP
+    // batch exporter constructs a blocking HTTP client, which panics inside
+    // an async context. The guard flushes both exports on drop.
+    let _telemetry = init_tracing();
+    run()
+}
+
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn run() -> anyhow::Result<()> {
     let command = cli::parse()?;
     if matches!(&command, cli::Command::Help) {
         cli::print_help();
@@ -72,7 +80,6 @@ async fn main() -> anyhow::Result<()> {
         );
     }
 
-    let _sentry_guard = init_tracing();
     let config = AppConfig::try_from_api_boot_env()?;
     let database_url = if matches!(&command, cli::Command::Migrate) {
         migration_database_url(&config, migration_database_secret)?

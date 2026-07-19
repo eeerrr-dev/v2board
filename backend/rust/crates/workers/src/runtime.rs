@@ -50,11 +50,31 @@ impl WorkerRuntimeConfig {
     }
 }
 
-/// Initializes tracing plus optional Sentry error reporting (the same
-/// `V2BOARD_SENTRY_DSN` contract as the API runtime: absent or blank is fully
-/// off, an unparseable DSN warns and stays off). The caller holds the guard
-/// for the process lifetime so queued events flush on shutdown.
-pub(crate) fn init_tracing() -> Option<sentry::ClientInitGuard> {
+/// Process-lifetime telemetry state (the worker mirror of the API runtime's
+/// guard). Dropping it at the end of `main` flushes queued Sentry events and
+/// shuts down the OTLP tracer provider so buffered spans export.
+pub(crate) struct TelemetryGuard {
+    _sentry: Option<sentry::ClientInitGuard>,
+    otel: Option<opentelemetry_sdk::trace::SdkTracerProvider>,
+}
+
+impl Drop for TelemetryGuard {
+    fn drop(&mut self) {
+        if let Some(provider) = self.otel.take()
+            && let Err(error) = provider.shutdown()
+        {
+            eprintln!("OTLP tracer provider shutdown did not flush cleanly: {error}");
+        }
+    }
+}
+
+/// Initializes tracing plus optional Sentry error reporting and optional OTLP
+/// span export (the same `V2BOARD_SENTRY_DSN` /
+/// `V2BOARD_OTEL_EXPORTER_OTLP_ENDPOINT` contracts as the API runtime: absent
+/// or blank is fully off, an invalid value warns and stays off). Must run
+/// before the tokio runtime starts: the OTLP batch exporter constructs a
+/// blocking HTTP client, which panics inside an async context.
+pub(crate) fn init_tracing() -> TelemetryGuard {
     let env_filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("v2board_workers=info"));
     let production =
@@ -73,6 +93,7 @@ pub(crate) fn init_tracing() -> Option<sentry::ClientInitGuard> {
             ..Default::default()
         })
     });
+    let otel = init_otel();
     tracing_subscriber::registry()
         .with(env_filter)
         .with(tracing_subscriber::fmt::layer())
@@ -81,11 +102,70 @@ pub(crate) fn init_tracing() -> Option<sentry::ClientInitGuard> {
                 .is_some()
                 .then(sentry::integrations::tracing::layer),
         )
+        .with(otel.as_ref().ok().and_then(Option::as_ref).map(|provider| {
+            use opentelemetry::trace::TracerProvider as _;
+            tracing_opentelemetry::layer().with_tracer(provider.tracer("v2board-worker"))
+        }))
         .init();
     if let Some(Err(error)) = &dsn {
         tracing::warn!(%error, "V2BOARD_SENTRY_DSN is invalid; error reporting is disabled");
     }
-    sentry_guard
+    let otel = match otel {
+        Ok(provider) => provider,
+        Err(error) => {
+            tracing::warn!(
+                error = %error,
+                "V2BOARD_OTEL_EXPORTER_OTLP_ENDPOINT is invalid; span export is disabled"
+            );
+            None
+        }
+    };
+    TelemetryGuard {
+        _sentry: sentry_guard,
+        otel,
+    }
+}
+
+/// `Ok(None)` when the endpoint variable is absent or blank (export off). The
+/// operator supplies the base endpoint and the traces signal path is appended
+/// unless a full signal URL was already given, matching the API runtime.
+fn init_otel() -> Result<Option<opentelemetry_sdk::trace::SdkTracerProvider>, String> {
+    let Some(endpoint) = std::env::var("V2BOARD_OTEL_EXPORTER_OTLP_ENDPOINT")
+        .ok()
+        .map(|raw| raw.trim().to_owned())
+        .filter(|raw| !raw.is_empty())
+    else {
+        return Ok(None);
+    };
+    let url = url::Url::parse(&endpoint)
+        .map_err(|error| format!("endpoint is not a valid URL: {error}"))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err("endpoint must be an http(s) URL".to_owned());
+    }
+    let trimmed = endpoint.trim_end_matches('/');
+    let traces_endpoint = if trimmed.ends_with("/v1/traces") {
+        trimmed.to_owned()
+    } else {
+        format!("{trimmed}/v1/traces")
+    };
+    let exporter = {
+        use opentelemetry_otlp::WithExportConfig;
+        opentelemetry_otlp::SpanExporter::builder()
+            .with_http()
+            .with_protocol(opentelemetry_otlp::Protocol::HttpBinary)
+            .with_endpoint(traces_endpoint)
+            .build()
+            .map_err(|error| error.to_string())?
+    };
+    let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
+        .with_batch_exporter(exporter)
+        .with_resource(
+            opentelemetry_sdk::Resource::builder()
+                .with_service_name("v2board-worker")
+                .build(),
+        )
+        .build();
+    Ok(Some(provider))
 }
 
 pub(crate) async fn run(state: WorkerState) -> anyhow::Result<()> {

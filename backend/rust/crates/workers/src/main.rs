@@ -35,10 +35,16 @@ use v2board_domain::{
 
 use crate::state::WorkerState;
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let _sentry_guard = runtime::init_tracing();
+fn main() -> anyhow::Result<()> {
+    // Telemetry must initialize before the tokio runtime exists: the OTLP
+    // batch exporter constructs a blocking HTTP client, which panics inside
+    // an async context. The guard flushes both exports on drop.
+    let _telemetry = runtime::init_tracing();
+    run()
+}
 
+#[tokio::main]
+async fn run() -> anyhow::Result<()> {
     let bootstrap = AppConfig::try_from_worker_boot_env()?;
     let db = v2board_db::connect_postgres(&bootstrap.database_url).await?;
     if !v2board_db::migrations_current(&db).await? {

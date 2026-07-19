@@ -322,13 +322,25 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
                     .get::<crate::runtime::ClientIp>()
                     .map(|client_ip| client_ip.0.to_string())
                     .unwrap_or_else(|| "unknown".to_string());
-                tracing::info_span!(
+                let span = tracing::info_span!(
                     "http.request",
                     method = %request.method(),
                     path = request.uri().path(),
                     request_id = request_id,
                     client_ip = client_ip,
-                )
+                );
+                // W3C trace context: adopt an incoming `traceparent` as the
+                // remote parent only when OTLP export is on; the disabled
+                // default stays a plain local span with zero extra work.
+                if crate::runtime::otel_enabled() {
+                    use tracing_opentelemetry::OpenTelemetrySpanExt;
+                    let parent = opentelemetry::global::get_text_map_propagator(|propagator| {
+                        propagator.extract(&crate::runtime::HeaderCarrier(request.headers()))
+                    });
+                    // Fails only for a closed/disabled span; nothing to do.
+                    let _ = span.set_parent(parent);
+                }
+                span
             }),
         )
         // Inner to trusted_client_ip_middleware so the resolved ClientIp
