@@ -33,6 +33,7 @@ use crate::{
     smtp::{SmtpSettings, SmtpTransportCache},
 };
 
+mod codes;
 mod commerce;
 mod configuration;
 mod content;
@@ -40,6 +41,7 @@ mod repository;
 mod servers;
 mod statistics;
 mod support;
+mod tickets;
 mod users;
 
 const REDIS_MGET_BATCH_SIZE: usize = 500;
@@ -49,16 +51,18 @@ const REDIS_MGET_BATCH_SIZE: usize = 500;
 pub use support::filter_dsl;
 use support::*;
 
+pub use codes::{
+    AdminCouponItem, AdminGiftcardItem, ContentGenerateOutcome, CouponGenerate, CouponPatch,
+    GiftcardGenerate, GiftcardPatch,
+};
 pub use commerce::{
     AdminPaymentItem, AdminPlanItem, OrderAssign, OrderPatch, PaymentCreate, PaymentPatch,
     PlanCreate, PlanPatch, ReconciliationResolveRequest, SortIdsRequest,
 };
 pub use configuration::ConfigPatchOutcome;
 pub use content::{
-    AdminCouponItem, AdminGiftcardItem, AdminKnowledgeDetail, AdminKnowledgeSummary,
-    AdminNoticeItem, ContentGenerateOutcome, CouponGenerate, CouponPatch, GiftcardGenerate,
-    GiftcardPatch, KnowledgeCreate, KnowledgePatch, KnowledgeSortRequest, NoticeCreate,
-    NoticePatch,
+    AdminKnowledgeDetail, AdminKnowledgeSummary, AdminNoticeItem, KnowledgeCreate, KnowledgePatch,
+    KnowledgeSortRequest, NoticeCreate, NoticePatch,
 };
 pub use servers::{RouteCreate, RoutePatch, ServerBody, ServerGroupBody};
 pub use users::{
