@@ -35,11 +35,167 @@ const PROMETHEUS_CONTENT_TYPE: &str = "text/plain; version=0.0.4; charset=utf-8"
 const STATUS_CLASSES: [&str; 5] = ["1xx", "2xx", "3xx", "4xx", "5xx"];
 const THRESHOLD_LEVELS: [&str; 3] = ["recovery", "soft", "hard"];
 
-/// Process-local HTTP counters incremented by [`http_metrics_middleware`].
+/// Upper bounds (inclusive) of the latency histogram buckets, in microseconds,
+/// with the matching Prometheus `le` label values. Observations above the last
+/// bound land only in `+Inf` (represented by `_count`).
+const LATENCY_BUCKETS_MICROS: [u64; 11] = [
+    5_000, 10_000, 25_000, 50_000, 100_000, 250_000, 500_000, 1_000_000, 2_500_000, 5_000_000,
+    10_000_000,
+];
+const LATENCY_BUCKET_LABELS: [&str; 11] = [
+    "0.005", "0.01", "0.025", "0.05", "0.1", "0.25", "0.5", "1", "2.5", "5", "10",
+];
+
+/// Bounded route-counter cardinality guard. Matched-route templates come from
+/// the finite route table, so this cap only matters if that assumption ever
+/// breaks; excess routes fold into [`ROUTE_OVERFLOW_LABEL`].
+const MAX_TRACKED_ROUTES: usize = 512;
+const ROUTE_OVERFLOW_LABEL: &str = "_overflow";
+
+/// Coarse request families for the latency histogram. Families come from the
+/// raw request path (plus the live dynamic admin prefix), so they cover every
+/// request — including the admin dispatch and SPA fallback paths that never
+/// carry an axum `MatchedPath`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RouteFamily {
+    User,
+    Admin,
+    Staff,
+    Auth,
+    Server,
+    Client,
+    Guest,
+    Public,
+    Assets,
+    Internal,
+    Other,
+}
+
+const ROUTE_FAMILIES: [RouteFamily; 11] = [
+    RouteFamily::User,
+    RouteFamily::Admin,
+    RouteFamily::Staff,
+    RouteFamily::Auth,
+    RouteFamily::Server,
+    RouteFamily::Client,
+    RouteFamily::Guest,
+    RouteFamily::Public,
+    RouteFamily::Assets,
+    RouteFamily::Internal,
+    RouteFamily::Other,
+];
+
+impl RouteFamily {
+    fn as_str(self) -> &'static str {
+        match self {
+            RouteFamily::User => "user",
+            RouteFamily::Admin => "admin",
+            RouteFamily::Staff => "staff",
+            RouteFamily::Auth => "auth",
+            RouteFamily::Server => "server",
+            RouteFamily::Client => "client",
+            RouteFamily::Guest => "guest",
+            RouteFamily::Public => "public",
+            RouteFamily::Assets => "assets",
+            RouteFamily::Internal => "internal",
+            RouteFamily::Other => "other",
+        }
+    }
+
+    fn index(self) -> usize {
+        match self {
+            RouteFamily::User => 0,
+            RouteFamily::Admin => 1,
+            RouteFamily::Staff => 2,
+            RouteFamily::Auth => 3,
+            RouteFamily::Server => 4,
+            RouteFamily::Client => 5,
+            RouteFamily::Guest => 6,
+            RouteFamily::Public => 7,
+            RouteFamily::Assets => 8,
+            RouteFamily::Internal => 9,
+            RouteFamily::Other => 10,
+        }
+    }
+}
+
+/// The admin secure path is validated against reserved-segment collisions, so
+/// the fixed families cannot be shadowed. The operator `subscribe_path` client
+/// alias intentionally classifies as `other`.
+pub(crate) fn classify_request_path(path: &str, admin_path: &str) -> RouteFamily {
+    if path.starts_with("/api/v1/user/") {
+        RouteFamily::User
+    } else if path.starts_with("/api/v1/staff/") {
+        RouteFamily::Staff
+    } else if path.starts_with("/api/v1/auth/") {
+        RouteFamily::Auth
+    } else if path.starts_with("/api/v1/server/") || path.starts_with("/api/v2/server/") {
+        RouteFamily::Server
+    } else if path.starts_with("/api/v1/client/") {
+        RouteFamily::Client
+    } else if path.starts_with("/api/v1/guest/") {
+        RouteFamily::Guest
+    } else if path.starts_with("/api/v1/public/") {
+        RouteFamily::Public
+    } else if path.starts_with("/assets/") {
+        RouteFamily::Assets
+    } else if matches!(path, "/healthz" | "/readyz" | "/metrics") {
+        RouteFamily::Internal
+    } else if !admin_path.is_empty()
+        && path
+            .strip_prefix("/api/v1/")
+            .and_then(|rest| rest.strip_prefix(admin_path))
+            .is_some_and(|tail| tail.is_empty() || tail.starts_with('/'))
+    {
+        RouteFamily::Admin
+    } else {
+        RouteFamily::Other
+    }
+}
+
+#[derive(Debug, Default)]
+struct FamilyHistogram {
+    buckets: [AtomicU64; LATENCY_BUCKETS_MICROS.len()],
+    sum_micros: AtomicU64,
+    count: AtomicU64,
+}
+
+impl FamilyHistogram {
+    fn observe(&self, elapsed_micros: u64) {
+        self.count.fetch_add(1, Ordering::Relaxed);
+        self.sum_micros.fetch_add(elapsed_micros, Ordering::Relaxed);
+        if let Some(index) = LATENCY_BUCKETS_MICROS
+            .iter()
+            .position(|bound| elapsed_micros <= *bound)
+        {
+            self.buckets[index].fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    fn snapshot(&self) -> FamilyHistogramSnapshot {
+        FamilyHistogramSnapshot {
+            buckets: std::array::from_fn(|index| self.buckets[index].load(Ordering::Relaxed)),
+            sum_micros: self.sum_micros.load(Ordering::Relaxed),
+            count: self.count.load(Ordering::Relaxed),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct FamilyHistogramSnapshot {
+    buckets: [u64; LATENCY_BUCKETS_MICROS.len()],
+    sum_micros: u64,
+    count: u64,
+}
+
+/// Process-local HTTP counters incremented by [`http_metrics_middleware`] and
+/// [`route_metrics_middleware`].
 #[derive(Debug, Default)]
 pub(crate) struct HttpMetrics {
     in_flight: AtomicI64,
     classes: [AtomicU64; 5],
+    families: [FamilyHistogram; ROUTE_FAMILIES.len()],
+    routes: std::sync::RwLock<BTreeMap<String, [AtomicU64; 5]>>,
 }
 
 impl HttpMetrics {
@@ -47,17 +203,61 @@ impl HttpMetrics {
         self.in_flight.fetch_add(1, Ordering::Relaxed);
     }
 
-    fn finish(&self, status: StatusCode) {
+    fn finish(&self, status: StatusCode, family: RouteFamily, elapsed: Duration) {
         self.in_flight.fetch_sub(1, Ordering::Relaxed);
         if let Some(class) = status_class_index(status) {
             self.classes[class].fetch_add(1, Ordering::Relaxed);
         }
+        let elapsed_micros = u64::try_from(elapsed.as_micros()).unwrap_or(u64::MAX);
+        self.families[family.index()].observe(elapsed_micros);
+    }
+
+    fn observe_route(&self, route: &str, status: StatusCode) {
+        let Some(class) = status_class_index(status) else {
+            return;
+        };
+        if let Ok(routes) = self.routes.read()
+            && let Some(counters) = routes.get(route)
+        {
+            counters[class].fetch_add(1, Ordering::Relaxed);
+            return;
+        }
+        let Ok(mut routes) = self.routes.write() else {
+            return;
+        };
+        let key = if routes.len() >= MAX_TRACKED_ROUTES && !routes.contains_key(route) {
+            ROUTE_OVERFLOW_LABEL
+        } else {
+            route
+        };
+        routes.entry(key.to_string()).or_default()[class].fetch_add(1, Ordering::Relaxed);
     }
 
     fn snapshot(&self) -> HttpSnapshot {
         HttpSnapshot {
             in_flight: self.in_flight.load(Ordering::Relaxed),
             classes: [0, 1, 2, 3, 4].map(|class| self.classes[class].load(Ordering::Relaxed)),
+            families: ROUTE_FAMILIES
+                .iter()
+                .map(|family| (*family, self.families[family.index()].snapshot()))
+                .filter(|(_, histogram)| histogram.count > 0)
+                .collect(),
+            routes: self
+                .routes
+                .read()
+                .map(|routes| {
+                    routes
+                        .iter()
+                        .map(|(route, counters)| {
+                            (
+                                route.clone(),
+                                [0, 1, 2, 3, 4]
+                                    .map(|class| counters[class].load(Ordering::Relaxed)),
+                            )
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
         }
     }
 }
@@ -74,9 +274,30 @@ pub(crate) async fn http_metrics_middleware(
     request: Request,
     next: Next,
 ) -> Response {
+    let started = std::time::Instant::now();
+    let config = state.config_snapshot();
+    let family = classify_request_path(request.uri().path(), &config.admin_path());
     state.http_metrics.begin();
     let response = next.run(request).await;
-    state.http_metrics.finish(response.status());
+    state
+        .http_metrics
+        .finish(response.status(), family, started.elapsed());
+    response
+}
+
+/// Applied through `route_layer`, so it runs only after routing succeeded and
+/// the bounded `MatchedPath` template is available. Requests dispatched through
+/// the dynamic fallback (admin API, SPA documents) are intentionally absent
+/// here; the family histogram above still covers them.
+pub(crate) async fn route_metrics_middleware(
+    State(state): State<AppState>,
+    matched_path: axum::extract::MatchedPath,
+    request: Request,
+    next: Next,
+) -> Response {
+    let route = matched_path.as_str().to_owned();
+    let response = next.run(request).await;
+    state.http_metrics.observe_route(&route, response.status());
     response
 }
 
@@ -84,6 +305,8 @@ pub(crate) async fn http_metrics_middleware(
 struct HttpSnapshot {
     in_flight: i64,
     classes: [u64; 5],
+    families: Vec<(RouteFamily, FamilyHistogramSnapshot)>,
+    routes: BTreeMap<String, [u64; 5]>,
 }
 
 /// Worker heartbeat and job counters mirrored from the worker-owned Redis
@@ -283,7 +506,75 @@ fn render(snapshot: &MetricsSnapshot) -> String {
             count,
         );
     }
+    render_http_latency(&mut out, &snapshot.http.families);
+    render_http_routes(&mut out, &snapshot.http.routes);
     out
+}
+
+fn render_http_latency(out: &mut String, families: &[(RouteFamily, FamilyHistogramSnapshot)]) {
+    if families.is_empty() {
+        return;
+    }
+    family_header(
+        out,
+        "v2board_http_request_duration_seconds",
+        "HTTP request latency by request family.",
+        "histogram",
+    );
+    for (family, histogram) in families {
+        let family_label = family.as_str();
+        let mut cumulative = 0_u64;
+        for (bucket_label, bucket_count) in LATENCY_BUCKET_LABELS.iter().zip(histogram.buckets) {
+            cumulative += bucket_count;
+            sample(
+                out,
+                "v2board_http_request_duration_seconds_bucket",
+                &[("family", family_label), ("le", bucket_label)],
+                cumulative,
+            );
+        }
+        sample(
+            out,
+            "v2board_http_request_duration_seconds_bucket",
+            &[("family", family_label), ("le", "+Inf")],
+            histogram.count,
+        );
+        sample(
+            out,
+            "v2board_http_request_duration_seconds_sum",
+            &[("family", family_label)],
+            format!("{:.6}", histogram.sum_micros as f64 / 1_000_000.0),
+        );
+        sample(
+            out,
+            "v2board_http_request_duration_seconds_count",
+            &[("family", family_label)],
+            histogram.count,
+        );
+    }
+}
+
+fn render_http_routes(out: &mut String, routes: &BTreeMap<String, [u64; 5]>) {
+    if routes.is_empty() {
+        return;
+    }
+    counter(
+        out,
+        "v2board_http_route_requests_total",
+        "HTTP responses by matched route template and status class.",
+    );
+    for (route, counters) in routes {
+        for (class, count) in STATUS_CLASSES.iter().zip(counters) {
+            if *count > 0 {
+                sample(
+                    out,
+                    "v2board_http_route_requests_total",
+                    &[("route", route), ("class", class)],
+                    *count,
+                );
+            }
+        }
+    }
 }
 
 fn render_admission(out: &mut String, admission: Option<&AnalyticsAdmissionSnapshot>) {
@@ -642,6 +933,15 @@ mod tests {
             http: HttpSnapshot {
                 in_flight: 1,
                 classes: [0, 7, 0, 3, 1],
+                families: vec![(
+                    RouteFamily::User,
+                    FamilyHistogramSnapshot {
+                        buckets: [2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                        sum_micros: 1_512_500,
+                        count: 4,
+                    },
+                )],
+                routes: BTreeMap::from([("/api/v1/user/orders".to_string(), [0_u64, 7, 0, 1, 0])]),
             },
         };
         let text = render(&snapshot);
@@ -664,6 +964,35 @@ mod tests {
         assert!(text.contains("v2board_analytics_threshold_pending_rows{level=\"hard\"} 30\n"));
         assert!(text.contains("v2board_http_requests_total{class=\"2xx\"} 7\n"));
         assert!(text.contains("v2board_http_requests_in_flight 1\n"));
+        assert!(text.contains("# TYPE v2board_http_request_duration_seconds histogram\n"));
+        assert!(text.contains(
+            "v2board_http_request_duration_seconds_bucket{family=\"user\",le=\"0.005\"} 2\n"
+        ));
+        assert!(
+            text.contains(
+                "v2board_http_request_duration_seconds_bucket{family=\"user\",le=\"0.01\"} 3\n"
+            ),
+            "bucket samples must render cumulatively"
+        );
+        assert!(text.contains(
+            "v2board_http_request_duration_seconds_bucket{family=\"user\",le=\"+Inf\"} 4\n"
+        ));
+        assert!(
+            text.contains("v2board_http_request_duration_seconds_sum{family=\"user\"} 1.512500\n")
+        );
+        assert!(text.contains("v2board_http_request_duration_seconds_count{family=\"user\"} 4\n"));
+        assert!(text.contains(
+            "v2board_http_route_requests_total{route=\"/api/v1/user/orders\",class=\"2xx\"} 7\n"
+        ));
+        assert!(text.contains(
+            "v2board_http_route_requests_total{route=\"/api/v1/user/orders\",class=\"4xx\"} 1\n"
+        ));
+        assert!(
+            !text.contains(
+                "v2board_http_route_requests_total{route=\"/api/v1/user/orders\",class=\"1xx\"}"
+            ),
+            "zero-valued route/class samples stay absent"
+        );
     }
 
     #[test]
@@ -679,6 +1008,8 @@ mod tests {
             http: HttpSnapshot {
                 in_flight: 0,
                 classes: [0; 5],
+                families: Vec::new(),
+                routes: BTreeMap::new(),
             },
         };
         let text = render(&snapshot);
@@ -687,6 +1018,77 @@ mod tests {
         assert!(!text.contains("v2board_worker_jobs_total"));
         assert!(!text.contains("v2board_worker_scheduler_last_check_timestamp_seconds"));
         assert!(text.contains("v2board_http_requests_total{class=\"5xx\"} 0\n"));
+        assert!(!text.contains("v2board_http_request_duration_seconds"));
+        assert!(!text.contains("v2board_http_route_requests_total"));
+    }
+
+    #[test]
+    fn request_paths_classify_into_bounded_families() {
+        for (path, family) in [
+            ("/api/v1/user/orders", RouteFamily::User),
+            ("/api/v1/staff/tickets", RouteFamily::Staff),
+            ("/api/v1/auth/login", RouteFamily::Auth),
+            ("/api/v1/server/UniProxy/config", RouteFamily::Server),
+            ("/api/v2/server/config", RouteFamily::Server),
+            ("/api/v1/client/subscribe", RouteFamily::Client),
+            ("/api/v1/guest/payment/notify/stripe/x", RouteFamily::Guest),
+            ("/api/v1/public/config", RouteFamily::Public),
+            ("/assets/user/index-abc.js", RouteFamily::Assets),
+            ("/healthz", RouteFamily::Internal),
+            ("/metrics", RouteFamily::Internal),
+            ("/api/v1/secret-admin/users", RouteFamily::Admin),
+            ("/api/v1/secret-admin", RouteFamily::Admin),
+            ("/api/v1/secret-admin-two/users", RouteFamily::Other),
+            ("/dashboard", RouteFamily::Other),
+            ("/", RouteFamily::Other),
+        ] {
+            assert_eq!(
+                classify_request_path(path, "secret-admin"),
+                family,
+                "path {path:?}"
+            );
+        }
+        assert_eq!(
+            classify_request_path("/api/v1//users", ""),
+            RouteFamily::Other,
+            "an empty admin path never classifies as admin"
+        );
+    }
+
+    #[test]
+    fn latency_observations_land_in_their_bucket_and_the_sum() {
+        let histogram = FamilyHistogram::default();
+        histogram.observe(3_000);
+        histogram.observe(9_000);
+        histogram.observe(30_000_000);
+        let snapshot = histogram.snapshot();
+        assert_eq!(snapshot.buckets[0], 1);
+        assert_eq!(snapshot.buckets[1], 1);
+        assert_eq!(
+            snapshot.buckets.iter().sum::<u64>(),
+            2,
+            "an observation above the last bound lands only in +Inf"
+        );
+        assert_eq!(snapshot.count, 3);
+        assert_eq!(snapshot.sum_micros, 30_012_000);
+    }
+
+    #[test]
+    fn route_counters_fold_excess_cardinality_into_the_overflow_label() {
+        let metrics = HttpMetrics::default();
+        for index in 0..MAX_TRACKED_ROUTES {
+            metrics.observe_route(&format!("/route/{index}"), StatusCode::OK);
+        }
+        metrics.observe_route("/route/beyond-the-cap", StatusCode::OK);
+        metrics.observe_route("/route/0", StatusCode::OK);
+        let snapshot = metrics.snapshot();
+        assert_eq!(snapshot.routes.len(), MAX_TRACKED_ROUTES + 1);
+        assert_eq!(snapshot.routes[ROUTE_OVERFLOW_LABEL], [0, 1, 0, 0, 0]);
+        assert_eq!(
+            snapshot.routes["/route/0"],
+            [0, 2, 0, 0, 0],
+            "already-tracked routes keep counting past the cap"
+        );
     }
 
     #[tokio::test]

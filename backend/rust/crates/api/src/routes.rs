@@ -287,6 +287,14 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
             "/api/v2/server/config",
             get(crate::server_api::server_v2_config).post(crate::server_api::server_v2_config),
         )
+        // route_layer runs only after routing succeeded, so the bounded
+        // MatchedPath template is available for per-route counters; fallback
+        // dispatch (admin API, SPA documents) is covered by the family
+        // histogram in http_metrics_middleware instead.
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            crate::metrics::route_metrics_middleware,
+        ))
         .fallback(crate::fallback::dynamic_fallback)
         .with_state(state)
         .layer(middleware::from_fn(cache_static_assets))
