@@ -39,7 +39,7 @@ export function SegmentedControl<T extends string>({
           key={item.value}
           value={item.value}
           data-slot="segmented-control-item"
-          className="inline-flex h-8 items-center justify-center rounded-md px-3 text-sm font-medium whitespace-nowrap transition-all hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 data-[state=checked]:bg-background data-[state=checked]:text-foreground data-[state=checked]:shadow-xs dark:data-[state=checked]:bg-input/30"
+          className="inline-flex h-8 items-center justify-center rounded-md px-3 text-sm font-medium whitespace-nowrap text-foreground/70 transition-all hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 data-[state=checked]:bg-background data-[state=checked]:text-foreground data-[state=checked]:shadow-xs dark:data-[state=checked]:bg-input/30"
         >
           <span>{item.label}</span>
         </RadioGroupPrimitive.Item>

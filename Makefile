@@ -34,7 +34,9 @@ RUST_WORKER_RECONCILE_STRICT ?= 1
 VISUAL_PARITY_VIEWPORTS ?= desktop mobile
 PARITY_WORKERS ?=
 INTERACTION_PARITY_ARTIFACT_DIR ?= /app/frontend/.cache/interaction-parity
-A11Y_SMOKE_SCENARIOS ?= a11y-user-login a11y-admin-login a11y-user-dashboard a11y-admin-users
+A11Y_SMOKE_SCENARIOS ?= a11y-user-login a11y-admin-login a11y-user-dashboard a11y-admin-users \
+	a11y-user-register a11y-user-forget a11y-user-plans a11y-user-plan-checkout a11y-user-orders a11y-user-node a11y-user-traffic a11y-user-invite a11y-user-tickets a11y-user-knowledge a11y-user-profile \
+	a11y-admin-config a11y-admin-plans a11y-admin-server-manage a11y-admin-orders a11y-admin-coupons a11y-admin-notices a11y-admin-tickets a11y-admin-audit
 INTERACTION_PARITY_SCENARIOS ?= user-login-form-language user-login-language-persistence user-home-root-page-state user-register-form-state user-register-legacy-hash-entry user-forget-form-state admin-root-page-state admin-login-form-state \
 	admin-system-queue-state user-dashboard-header-language-dropdown user-session-expired-redirect user-auth-401-no-redirect user-dashboard-dark-mode-persistence user-dashboard-subscribe-drawer user-dashboard-subscribe-import-links \
 	user-dashboard-subscribe-import-ios-ua user-dashboard-subscribe-import-android-ua user-dashboard-subscribe-import-macos-ua user-dashboard-subscribe-import-windows-ua user-dashboard-notice-carousel user-dashboard-reset-package-confirm user-dashboard-new-period-confirm user-dashboard-alert-links \
@@ -55,7 +57,9 @@ INTERACTION_PARITY_SCENARIOS ?= user-login-form-language user-login-language-per
 	admin-users-filter-field-select-dropdown admin-users-filter-expiry-picker admin-users-pagination-matrix admin-users-sort-matrix admin-users-fetch-api-500 admin-users-fetch-timeout admin-user-bulk-ban-confirm admin-user-bulk-delete-confirm \
 	admin-user-destructive-failure-matrix admin-user-export-download-matrix admin-user-create-modal admin-user-create-plan-select-dropdown admin-user-create-expiry-picker admin-user-send-mail-modal admin-user-send-mail-submit-matrix admin-user-reset-secret-confirm \
 	admin-user-delete-confirm admin-user-copy-action admin-user-edit-action admin-user-update-validation-failure admin-user-assign-action admin-user-orders-action admin-user-invite-action admin-user-traffic-action \
-	admin-users-extreme-viewport-matrix a11y-user-login a11y-admin-login a11y-user-dashboard a11y-admin-users
+	admin-users-extreme-viewport-matrix a11y-user-login a11y-admin-login a11y-user-dashboard a11y-admin-users \
+	a11y-user-register a11y-user-forget a11y-user-plans a11y-user-plan-checkout a11y-user-orders a11y-user-node a11y-user-traffic a11y-user-invite a11y-user-tickets a11y-user-knowledge a11y-user-profile \
+	a11y-admin-config a11y-admin-plans a11y-admin-server-manage a11y-admin-orders a11y-admin-coupons a11y-admin-notices a11y-admin-tickets a11y-admin-audit
 
 FRONTEND_RUN := $(DCF) run --rm -T --no-deps --entrypoint sh
 FRONTEND_WORKSPACE_BOOTSTRAP := if [ ! -f /app/frontend/package.json ]; then mkdir -p /app/frontend && tar --exclude=node_modules --exclude=.pnpm-store --exclude=dist --exclude=dist-deploy -C /src/frontend -cf - . | tar -C /app/frontend -xf -; fi

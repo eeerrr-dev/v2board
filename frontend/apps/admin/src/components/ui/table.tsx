@@ -48,6 +48,7 @@ function TableScroll({
     <div
       ref={ref}
       data-slot="table-scroll"
+      tabIndex={0}
       className={cn('overflow-x-auto', className)}
       {...props}
     />

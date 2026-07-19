@@ -698,7 +698,7 @@ function ServerPagination({
     <div className="flex flex-wrap items-center justify-end gap-3">
       <span className="text-sm text-muted-foreground">共 {total} 条</span>
       <Select value={String(pageSize)} onValueChange={(value) => onChange(1, Number(value))}>
-        <SelectTrigger className="h-9 w-28" data-testid="node-page-size">
+        <SelectTrigger className="h-9 w-28" data-testid="node-page-size" aria-label="每页条数">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
