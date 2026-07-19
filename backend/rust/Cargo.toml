@@ -52,6 +52,9 @@ regex = "1.13.0"
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls", "stream"] }
 rmp-serde = "1.3.1"
 rust_decimal = { version = "1.42.1", default-features = false, features = ["std"] }
+# Optional process error reporting: entirely inert unless V2BOARD_SENTRY_DSN
+# is set. The reqwest+rustls transport shares the workspace HTTP stack.
+sentry = { version = "0.48.5", default-features = false, features = ["backtrace", "contexts", "panic", "reqwest", "rustls", "tracing"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1.0.150", features = ["raw_value"] }
 serde_urlencoded = "0.7.1"

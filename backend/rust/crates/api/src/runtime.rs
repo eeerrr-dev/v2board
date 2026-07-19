@@ -583,12 +583,30 @@ pub(crate) async fn reset_admin_password(
     Ok(())
 }
 
-pub(crate) fn init_tracing() {
+/// Initializes tracing plus optional Sentry error reporting. The caller must
+/// hold the returned guard for the process lifetime so queued events flush on
+/// shutdown. Reporting is entirely off unless `V2BOARD_SENTRY_DSN` is set; an
+/// unparseable DSN warns and stays off rather than failing the service, the
+/// same fail-open stance as the other telemetry env knobs.
+pub(crate) fn init_tracing() -> Option<sentry::ClientInitGuard> {
     let env_filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("v2board_api=info,tower_http=info"));
     let production =
         v2board_config::RuntimeEnvironment::parse(std::env::var("V2BOARD_ENV").ok().as_deref())
             .is_ok_and(v2board_config::RuntimeEnvironment::is_production);
+    let dsn = parse_sentry_dsn(std::env::var("V2BOARD_SENTRY_DSN").ok());
+    let sentry_guard = dsn.as_ref().ok().and_then(Option::as_ref).map(|dsn| {
+        sentry::init(sentry::ClientOptions {
+            dsn: Some(dsn.clone()),
+            release: sentry::release_name!(),
+            environment: Some(if production { "production" } else { "local" }.into()),
+            attach_stacktrace: true,
+            ..Default::default()
+        })
+    });
+    // ERROR events become Sentry events and WARN/INFO become breadcrumbs
+    // (the sentry-tracing default); without a client the layer is absent.
+    let sentry_enabled = sentry_guard.is_some();
     if production {
         tracing_subscriber::registry()
             .with(env_filter)
@@ -599,12 +617,29 @@ pub(crate) fn init_tracing() {
                     .with_current_span(true)
                     .with_span_list(false),
             )
+            .with(sentry_enabled.then(sentry::integrations::tracing::layer))
             .init();
     } else {
         tracing_subscriber::registry()
             .with(env_filter)
             .with(tracing_subscriber::fmt::layer())
+            .with(sentry_enabled.then(sentry::integrations::tracing::layer))
             .init();
+    }
+    if let Err(error) = &dsn {
+        tracing::warn!(%error, "V2BOARD_SENTRY_DSN is invalid; error reporting is disabled");
+    }
+    sentry_guard
+}
+
+/// `Ok(None)` when the variable is absent or blank (reporting off); `Err`
+/// preserves the parse failure so it can be logged once tracing is up.
+fn parse_sentry_dsn(
+    raw: Option<String>,
+) -> Result<Option<sentry::types::Dsn>, sentry::types::ParseDsnError> {
+    match raw.as_deref().map(str::trim).filter(|raw| !raw.is_empty()) {
+        Some(raw) => raw.parse().map(Some),
+        None => Ok(None),
     }
 }
 
@@ -760,7 +795,9 @@ pub(crate) async fn shutdown_signal() {
 
 #[cfg(test)]
 mod tests {
-    use super::{ActivationSource, activation_source, finish_applied_operator_activation};
+    use super::{
+        ActivationSource, activation_source, finish_applied_operator_activation, parse_sentry_dsn,
+    };
     use std::sync::atomic::{AtomicI64, Ordering};
     use v2board_domain::operator_config::OperatorConfigError;
 
@@ -780,6 +817,21 @@ mod tests {
             Ok(ActivationSource::Authority),
             "a delayed revision-2 response must apply and acknowledge DB-active revision 3"
         );
+    }
+
+    #[test]
+    fn sentry_reporting_is_off_without_a_dsn_and_on_parse_failure() {
+        assert!(matches!(parse_sentry_dsn(None), Ok(None)));
+        assert!(matches!(parse_sentry_dsn(Some(String::new())), Ok(None)));
+        assert!(matches!(
+            parse_sentry_dsn(Some("   ".to_string())),
+            Ok(None)
+        ));
+        assert!(parse_sentry_dsn(Some("not a dsn".to_string())).is_err());
+        let parsed = parse_sentry_dsn(Some(
+            "https://f00d@o111111.ingest.sentry.io/2222".to_string(),
+        ));
+        assert!(matches!(parsed, Ok(Some(_))));
     }
 
     #[test]

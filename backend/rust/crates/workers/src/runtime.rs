@@ -50,13 +50,42 @@ impl WorkerRuntimeConfig {
     }
 }
 
-pub(crate) fn init_tracing() {
+/// Initializes tracing plus optional Sentry error reporting (the same
+/// `V2BOARD_SENTRY_DSN` contract as the API runtime: absent or blank is fully
+/// off, an unparseable DSN warns and stays off). The caller holds the guard
+/// for the process lifetime so queued events flush on shutdown.
+pub(crate) fn init_tracing() -> Option<sentry::ClientInitGuard> {
     let env_filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("v2board_workers=info"));
+    let production =
+        v2board_config::RuntimeEnvironment::parse(std::env::var("V2BOARD_ENV").ok().as_deref())
+            .is_ok_and(v2board_config::RuntimeEnvironment::is_production);
+    let dsn = match std::env::var("V2BOARD_SENTRY_DSN") {
+        Ok(raw) if !raw.trim().is_empty() => Some(raw.trim().parse::<sentry::types::Dsn>()),
+        _ => None,
+    };
+    let sentry_guard = dsn.as_ref().and_then(|dsn| dsn.as_ref().ok()).map(|dsn| {
+        sentry::init(sentry::ClientOptions {
+            dsn: Some(dsn.clone()),
+            release: sentry::release_name!(),
+            environment: Some(if production { "production" } else { "local" }.into()),
+            attach_stacktrace: true,
+            ..Default::default()
+        })
+    });
     tracing_subscriber::registry()
         .with(env_filter)
         .with(tracing_subscriber::fmt::layer())
+        .with(
+            sentry_guard
+                .is_some()
+                .then(sentry::integrations::tracing::layer),
+        )
         .init();
+    if let Some(Err(error)) = &dsn {
+        tracing::warn!(%error, "V2BOARD_SENTRY_DSN is invalid; error reporting is disabled");
+    }
+    sentry_guard
 }
 
 pub(crate) async fn run(state: WorkerState) -> anyhow::Result<()> {

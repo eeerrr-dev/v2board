@@ -72,7 +72,7 @@ async fn main() -> anyhow::Result<()> {
         );
     }
 
-    init_tracing();
+    let _sentry_guard = init_tracing();
     let config = AppConfig::try_from_api_boot_env()?;
     let database_url = if matches!(&command, cli::Command::Migrate) {
         migration_database_url(&config, migration_database_secret)?

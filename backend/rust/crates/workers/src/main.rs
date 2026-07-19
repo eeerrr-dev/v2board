@@ -37,7 +37,7 @@ use crate::state::WorkerState;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    runtime::init_tracing();
+    let _sentry_guard = runtime::init_tracing();
 
     let bootstrap = AppConfig::try_from_worker_boot_env()?;
     let db = v2board_db::connect_postgres(&bootstrap.database_url).await?;
