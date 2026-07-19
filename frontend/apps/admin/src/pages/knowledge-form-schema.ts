@@ -2,8 +2,6 @@ import { z } from 'zod';
 
 export const KNOWLEDGE_LOCALES = ['zh-CN', 'zh-TW', 'en-US', 'ja-JP', 'vi-VN', 'ko-KR'] as const;
 
-export type KnowledgeLocale = (typeof KNOWLEDGE_LOCALES)[number];
-
 const requiredText = (message: string) => z.string().trim().min(1, message);
 
 // Validation messages are i18n keys; FieldError resolves them through
