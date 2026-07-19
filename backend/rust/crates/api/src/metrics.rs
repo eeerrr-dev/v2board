@@ -286,18 +286,23 @@ pub(crate) async fn http_metrics_middleware(
 }
 
 /// Applied through `route_layer`, so it runs only after routing succeeded and
-/// the bounded `MatchedPath` template is available. Requests dispatched through
-/// the dynamic fallback (admin API, SPA documents) are intentionally absent
-/// here; the family histogram above still covers them.
+/// the bounded `MatchedPath` template is available. `MatchedPath` must stay
+/// optional: nested services (the `/assets/{user,admin}` trees) have no route
+/// template, and a required extractor would turn every asset hit into a 500.
+/// Requests dispatched through the dynamic fallback (admin API, SPA documents)
+/// are intentionally absent here; the family histogram above still covers all
+/// of them.
 pub(crate) async fn route_metrics_middleware(
     State(state): State<AppState>,
-    matched_path: axum::extract::MatchedPath,
+    matched_path: Option<axum::extract::MatchedPath>,
     request: Request,
     next: Next,
 ) -> Response {
-    let route = matched_path.as_str().to_owned();
+    let route = matched_path.map(|path| path.as_str().to_owned());
     let response = next.run(request).await;
-    state.http_metrics.observe_route(&route, response.status());
+    if let Some(route) = route {
+        state.http_metrics.observe_route(&route, response.status());
+    }
     response
 }
 
@@ -1089,6 +1094,51 @@ mod tests {
             [0, 2, 0, 0, 0],
             "already-tracked routes keep counting past the cap"
         );
+    }
+
+    #[tokio::test]
+    async fn nested_asset_services_pass_the_route_layer_without_a_matched_path() {
+        use tower::ServiceExt;
+        let state = AppState::service_free_test(v2board_config::AppConfig::from_api_env());
+        let served = tower::service_fn(|_request: Request| async {
+            Ok::<_, std::convert::Infallible>(Response::new(axum::body::Body::empty()))
+        });
+        let app: axum::Router = axum::Router::new()
+            .nest_service("/assets/user", served)
+            .route("/api/v1/public/config", axum::routing::get(|| async { "" }))
+            .route_layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                route_metrics_middleware,
+            ));
+        // Nested services carry no route template; the layer must serve them
+        // untouched instead of failing extraction into a 500.
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/assets/user/app-deadbeef.js")
+                    .body(axum::body::Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("infallible");
+        assert_eq!(response.status(), StatusCode::OK);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/public/config")
+                    .body(axum::body::Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("infallible");
+        assert_eq!(response.status(), StatusCode::OK);
+        let snapshot = state.http_metrics.snapshot();
+        assert!(
+            snapshot.routes.contains_key("/api/v1/public/config"),
+            "statically routed requests still land in the per-route counters"
+        );
+        assert!(!snapshot.routes.keys().any(|route| route.contains("assets")));
     }
 
     #[tokio::test]
