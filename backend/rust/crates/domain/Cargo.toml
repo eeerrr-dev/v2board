@@ -41,4 +41,9 @@ v2board-config = { version = "0.1.0", path = "../config" }
 v2board-db = { version = "0.1.0", path = "../db" }
 
 [dev-dependencies]
+criterion.workspace = true
 indexmap.workspace = true
+
+[[bench]]
+name = "hot_paths"
+harness = false
