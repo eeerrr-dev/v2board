@@ -8,6 +8,12 @@ import { authDataSchema, noContentSchema, stepUpGrantSchema } from '../contracts
 export interface LoginPayload {
   email: string;
   password: string;
+  /**
+   * §6.10 second phase for privileged accounts with an enabled TOTP factor:
+   * a plain login answers 401 `mfa_code_required`, the retry carries the
+   * 6-digit code (wrong/replayed → 401 `mfa_code_invalid`).
+   */
+  totp_code?: string;
 }
 
 export interface RegisterPayload extends LoginPayload {

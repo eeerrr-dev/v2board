@@ -1,4 +1,5 @@
 mod credentials;
+mod mfa;
 mod password;
 mod registration;
 mod sessions;
@@ -6,6 +7,7 @@ mod validation;
 mod verification;
 
 pub use credentials::ForgetInput;
+pub use mfa::{MfaStatus, TotpProvisioning};
 pub use password::{PasswordKdf, hash_password, verify_password};
 pub use registration::RegisterInput;
 pub use sessions::{

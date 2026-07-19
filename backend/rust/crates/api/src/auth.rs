@@ -40,6 +40,11 @@ const BEARER_SCHEME: &str = "Bearer ";
 pub(crate) struct LoginRequest {
     email: String,
     password: String,
+    /// Required (as a second phase) only for privileged accounts with an
+    /// enabled TOTP factor: absent → 401 `mfa_code_required`, wrong →
+    /// 401 `mfa_code_invalid`.
+    #[serde(default)]
+    totp_code: Option<String>,
 }
 
 /// POST /auth/login — bare `{is_admin: bool, auth_data}` (§5.2).
@@ -54,7 +59,13 @@ pub(crate) async fn login(
     let user_agent = bounded_user_agent(&headers);
     let ip = Some(client_ip.to_string());
     let data = auth
-        .login(&payload.email, &payload.password, ip, user_agent)
+        .login(
+            &payload.email,
+            &payload.password,
+            payload.totp_code.as_deref(),
+            ip,
+            user_agent,
+        )
         .await
         .map_err(|error| problem_from(error, locale))?;
     Ok(Json(data))

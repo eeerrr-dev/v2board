@@ -2528,6 +2528,7 @@ async fn auth_rate_limits(pool: &PgPool, database_url: &str, redis_url: &str) ->
             auth.login(
                 &attempted_email,
                 "wrong-integration-password",
+                None,
                 Some("192.0.2.55".to_string()),
                 Some("production-invariant-gate".to_string()),
             )

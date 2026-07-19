@@ -1,0 +1,4 @@
+{
+  "secret": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+  "otpauth_url": "otpauth://totp/Golden%20Panel:golden-admin@example.test?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=Golden+Panel&algorithm=SHA1&digits=6&period=30"
+}

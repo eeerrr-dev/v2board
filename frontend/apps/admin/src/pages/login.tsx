@@ -4,8 +4,8 @@ import { useLoaderData, useNavigate } from 'react-router';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { LogIn } from 'lucide-react';
-import { passport } from '@v2board/api-client';
+import { LogIn, ShieldCheck } from 'lucide-react';
+import { hasProblemCode, passport } from '@v2board/api-client';
 import { apiClient } from '@/lib/api';
 import { logout, setAuthData, type AdminLoginLoaderData } from '@/lib/auth';
 import { adminSessionQueryOptions } from '@/lib/session-queries';
@@ -34,18 +34,24 @@ const loginSchema = z.object({
     .string()
     .min(8, passwordError)
     .refine((value) => value.length < 8 || Array.from(value).length >= 8, passwordError),
+  totp_code: z.string().optional(),
 });
 
 type LoginValues = z.infer<typeof loginSchema>;
 
 const LOGIN_EMAIL_ID = 'admin-login-email';
 const LOGIN_PASSWORD_ID = 'admin-login-password';
+const LOGIN_TOTP_ID = 'admin-login-totp';
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { redirectTarget } = useLoaderData() as AdminLoginLoaderData;
   const [forgotOpen, setForgotOpen] = useState(false);
+  // §6.10 two-phase login: a privileged account with an enabled TOTP factor
+  // answers the plain submit with 401 `mfa_code_required`; reveal the code
+  // field and resubmit with `totp_code`.
+  const [mfaRequired, setMfaRequired] = useState(false);
   const logo = getAdminLogo();
   const title = getAdminTitle();
   const backgroundUrl = getAdminBackgroundUrl();
@@ -55,12 +61,13 @@ export default function LoginPage() {
   });
   const form = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
-    defaultValues: { email: '', password: '' },
+    defaultValues: { email: '', password: '', totp_code: '' },
   });
 
-  const submit = form.handleSubmit(({ email, password }) => {
+  const submit = form.handleSubmit(({ email, password, totp_code }) => {
+    const code = totp_code?.trim();
     login.mutate(
-      { email, password },
+      { email, password, ...(mfaRequired && code ? { totp_code: code } : {}) },
       {
         onSuccess: (result) => {
           if (!result.is_admin) {
@@ -71,6 +78,17 @@ export default function LoginPage() {
           setAuthData(result.auth_data);
           void queryClient.prefetchQuery(adminSessionQueryOptions.userInfo());
           void navigate(redirectTarget, { replace: true });
+        },
+        onError: (error) => {
+          if (hasProblemCode(error, 'mfa_code_required')) {
+            setMfaRequired(true);
+            form.setFocus('totp_code');
+            return;
+          }
+          if (hasProblemCode(error, 'mfa_code_invalid')) {
+            setMfaRequired(true);
+            form.setError('totp_code', { message: '验证码错误或已被使用' });
+          }
         },
       },
     );
@@ -151,6 +169,35 @@ export default function LoginPage() {
                 );
               }}
             />
+            {mfaRequired ? (
+              <Controller
+                control={form.control}
+                name="totp_code"
+                render={({ field, fieldState }) => {
+                  const errorId = `${LOGIN_TOTP_ID}-error`;
+                  return (
+                    <Field data-invalid={fieldState.invalid}>
+                      <FieldLabel htmlFor={LOGIN_TOTP_ID}>
+                        <ShieldCheck className="size-4" />
+                        两步验证码
+                      </FieldLabel>
+                      <Input
+                        {...field}
+                        id={LOGIN_TOTP_ID}
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        maxLength={6}
+                        placeholder="验证器 App 中的 6 位验证码"
+                        aria-invalid={fieldState.invalid}
+                        aria-describedby={fieldState.invalid ? errorId : undefined}
+                        data-testid="admin-login-totp"
+                      />
+                      <FieldError id={errorId} errors={[fieldState.error]} />
+                    </Field>
+                  );
+                }}
+              />
+            ) : null}
             <Button type="submit" block loading={login.isPending} data-testid="admin-login-submit">
               <LogIn className="size-4" />
               登入

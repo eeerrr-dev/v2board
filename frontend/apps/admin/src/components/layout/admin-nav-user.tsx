@@ -1,6 +1,8 @@
-import { ChevronsUpDown, LogOut } from 'lucide-react';
+import { useState } from 'react';
+import { ChevronsUpDown, LogOut, ShieldCheck } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { signOut } from '@/lib/api';
+import { MfaDialog } from '@/components/mfa-dialog';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
   DropdownMenu,
@@ -23,11 +25,13 @@ interface AdminNavUserProps {
 
 // Sidebar-footer account menu (shadcn dashboard-01): the size-lg chip collapses
 // to the avatar in the icon rail and opens a trigger-width dropdown carrying the
-// single admin account action — logout. Mirrors the user shell's NavUser without
-// the profile/language items the admin console does not have.
+// admin account actions — two-factor settings and logout. Mirrors the user
+// shell's NavUser without the profile/language items the admin console does
+// not have.
 export function AdminNavUser({ email }: AdminNavUserProps) {
   const navigate = useNavigate();
   const { isMobile, state, setOpenMobile } = useSidebar();
+  const [mfaOpen, setMfaOpen] = useState(false);
   const initials = getInitials(email);
   const accountLabel = getAccountLabel(email);
 
@@ -77,6 +81,16 @@ export function AdminNavUser({ email }: AdminNavUserProps) {
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem
+              data-testid="admin-mfa-settings"
+              onSelect={() => {
+                setOpenMobile(false);
+                setMfaOpen(true);
+              }}
+            >
+              <ShieldCheck className="size-4" />
+              两步验证
+            </DropdownMenuItem>
+            <DropdownMenuItem
               variant="destructive"
               data-testid="admin-logout"
               onSelect={() => {
@@ -90,6 +104,7 @@ export function AdminNavUser({ email }: AdminNavUserProps) {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        <MfaDialog open={mfaOpen} onOpenChange={setMfaOpen} />
       </SidebarMenuItem>
     </SidebarMenu>
   );

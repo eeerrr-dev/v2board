@@ -22,6 +22,7 @@ import {
   knowledgeCategorySchema,
   knowledgeSchema,
   knowledgeSummarySchema,
+  mfaStatusSchema,
   noticeSchema,
   orderStatusSchema,
   paymentMethodSchema,
@@ -38,6 +39,7 @@ import {
   stringArraySchema,
   subscriptionSchema,
   telegramBotInfoSchema,
+  totpProvisioningSchema,
   stripePaymentIntentSchema,
   trafficLogSchema,
   userCommConfigSchema,
@@ -68,6 +70,9 @@ const goldensUrl = new URL('../goldens/', import.meta.url);
 // fixture dialect.
 const dialectGoldenSchemas: Record<string, z.ZodType> = {
   'auth.login.json': authDataSchema,
+  'auth.mfa-status.enabled.json': mfaStatusSchema,
+  'auth.mfa-status.json': mfaStatusSchema,
+  'auth.mfa-totp.json': totpProvisioningSchema,
   'auth.quick-login-url.json': quickLoginUrlSchema,
   'auth.session.admin.json': sessionStateSchema,
   'auth.session.json': sessionStateSchema,

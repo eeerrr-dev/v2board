@@ -43,6 +43,7 @@ import {
   giftcardSchema,
   knowledgeSchema,
   knowledgeSummarySchema,
+  mfaStatusSchema,
   noticeSchema,
   paymentFormSchema,
   planSchema,
@@ -56,6 +57,7 @@ import {
   stringArraySchema,
   userCouponSchema,
   userRankSchema,
+  totpProvisioningSchema,
   userTicketDetailSchema,
   userTicketSchema,
 } from '../contracts';
@@ -194,6 +196,48 @@ export const testSendMail = (client: ApiClient) =>
     method: 'POST',
     dialect: 'v2',
     responseSchema: testMailResultSchema,
+  });
+
+/** GET /{secure_path}/account/mfa — the caller's own two-factor state (§6.10). */
+export const fetchAccountMfa = (client: ApiClient, config?: QueryRequestConfig) =>
+  client.request({
+    url: client.resolveAdminPath('/account/mfa'),
+    method: 'GET',
+    dialect: 'v2',
+    responseSchema: mfaStatusSchema,
+    ...config,
+  });
+
+/**
+ * POST /{secure_path}/account/mfa/totp — start a pending TOTP enrollment
+ * (§6.10). The provisioning secret in the response is shown exactly once.
+ */
+export const setupAccountTotp = (client: ApiClient) =>
+  client.request({
+    url: client.resolveAdminPath('/account/mfa/totp'),
+    method: 'POST',
+    dialect: 'v2',
+    responseSchema: totpProvisioningSchema,
+  });
+
+/** POST /{secure_path}/account/mfa/totp/confirm — enable with a live code; 204 (§6.10). */
+export const confirmAccountTotp = (client: ApiClient, code: string) =>
+  client.request({
+    url: client.resolveAdminPath('/account/mfa/totp/confirm'),
+    method: 'POST',
+    dialect: 'v2',
+    data: { code },
+    responseSchema: noContentSchema,
+  });
+
+/** POST /{secure_path}/account/mfa/totp/disable — remove with a live code; 204 (§6.10). */
+export const disableAccountTotp = (client: ApiClient, code: string) =>
+  client.request({
+    url: client.resolveAdminPath('/account/mfa/totp/disable'),
+    method: 'POST',
+    dialect: 'v2',
+    data: { code },
+    responseSchema: noContentSchema,
   });
 
 const PLAN_PRICE_KEYS = [

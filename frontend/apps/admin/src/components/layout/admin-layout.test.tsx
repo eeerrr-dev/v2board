@@ -49,7 +49,10 @@ vi.mock('react-router', () => ({
   useNavigate: () => mocks.navigate,
 }));
 
-vi.mock('@v2board/api-client', () => ({ user: { info: vi.fn() } }));
+vi.mock('@v2board/api-client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@v2board/api-client')>()),
+  user: { info: vi.fn() },
+}));
 // The account menu's explicit sign-out (revocation + local teardown) lives in
 // lib/api as signOut; the shell only wires the menu item to it.
 vi.mock('@/lib/api', () => ({ apiClient: {}, signOut: mocks.signOut }));

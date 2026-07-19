@@ -60,6 +60,7 @@ impl AuthService {
         &self,
         email: &str,
         password: &str,
+        totp_code: Option<&str>,
         ip: Option<String>,
         user_agent: Option<String>,
     ) -> Result<AuthData, ApiError> {
@@ -121,6 +122,24 @@ impl AuthService {
         };
         if !password_matches {
             return Err(Problem::new(Code::InvalidCredentials).into());
+        }
+
+        // The TOTP gate for privileged accounts sits between password proof
+        // and reservation release so wrong second-factor guesses keep
+        // consuming the same limiter budget as wrong passwords. The
+        // code-absent prompt (`mfa_code_required`) is the normal two-phase
+        // login, not a guess, so it releases the reservation like a success.
+        if user.is_admin != 0 || user.is_staff != 0 {
+            if let Err(error) = self.verify_login_totp(user.id, totp_code).await {
+                if !matches!(
+                    &error,
+                    ApiError::Problem(problem) if problem.code() == Code::MfaCodeInvalid
+                ) {
+                    self.release_login_attempt(password_error_limit.as_ref())
+                        .await;
+                }
+                return Err(error);
+            }
         }
 
         // The reservation represents only a password failure. Release it once

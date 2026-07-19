@@ -272,6 +272,11 @@ Auth / session:
 | `registration_closed` | 400 | `Registration has closed` |
 | `register_ip_rate_limited` | 429 | register-limit-by-IP message (registration.rs:250 format!) — unconditionally 429 (was a 400 business rejection) |
 | `password_attempts_rate_limited` | 400 | `There are too many password errors, please try again after N minutes.` (minutes stay in localized `detail`) |
+| `mfa_code_required` | 401 | — (native addition, §6.10: privileged login needs a TOTP second phase) |
+| `mfa_code_invalid` | 401 | — (native addition, §6.10: wrong/replayed TOTP code) |
+| `mfa_already_enabled` | 400 | — (native addition, §6.10) |
+| `mfa_setup_missing` | 400 | — (native addition, §6.10) |
+| `mfa_not_enabled` | 400 | — (native addition, §6.10) |
 | `email_already_registered` | 400 | `Email already exists`, `This email is registered` |
 | `email_not_registered` | 400 | `This email is not registered in the system` |
 | `invalid_email_code` | 400 | `Incorrect email verification code` |
@@ -544,7 +549,7 @@ response is `problem+json` on error.
 | Old | New | Req | Resp | Notes |
 | --- | --- | --- | --- | --- |
 | POST `/passport/auth/register` | POST `/auth/register` | json `{email, password, invite_code?, email_code?, recaptcha_data?}` | bare `{is_admin: bool, auth_data}` (201) | `is_admin` becomes bool; 201 — account creation. |
-| POST `/passport/auth/login` | POST `/auth/login` | json `{email, password}` | bare (same as register) | |
+| POST `/passport/auth/login` | POST `/auth/login` | json `{email, password, totp_code?}` | bare (same as register) | `totp_code` is a native addition (§6.10): required as a second phase only for privileged accounts with an enabled TOTP factor — absent → 401 `mfa_code_required`, wrong/replayed → 401 `mfa_code_invalid`. Neither 401 tears a session down; non-privileged logins ignore the field. |
 | GET `/passport/auth/token2Login?token=` | GET `/auth/quick-login?token=` | query | redirect | 302 to `{app_url}/login?verify=…&redirect=…` (path-style, §10.4). Browser-facing. |
 | GET `/passport/auth/token2Login?verify=` | POST `/auth/token-login` | json `{verify}` | bare auth data (or 400 `invalid_token`, matching the legacy `Token error` business status) | GET-with-side-effect becomes POST; the SPA exchange call. The legacy "neither param → empty 200" branch dies (422). |
 | POST `/passport/auth/forget` | POST `/auth/password-reset` | json `{email, email_code, password}` | empty | |
@@ -832,6 +837,37 @@ the admin resources:
 | GET `notice/fetch` | GET `notices` | |
 | POST `notice/save` / `notice/update` | POST `notices` / PATCH `notices/{id}` | |
 | POST `notice/drop` | DELETE `notices/{id}` | |
+
+### 6.10 Account MFA (native addition)
+
+Privileged-account TOTP two-factor management. These routes are a native
+addition with no legacy counterpart, so they carry no "Old" column and are
+deliberately absent from the §13.1 two-world route map (there is no
+oracle-world shape to compare against). They exist identically under the
+dynamic admin prefix (`/api/v1/{secure_path}/…`) and the staff prefix
+(`/api/v1/staff/…`); each caller manages only their own account's factor.
+
+| Route | Req | Resp | Notes |
+| --- | --- | --- | --- |
+| GET `account/mfa` | none | bare `{totp_enabled: bool, totp_enabled_at: rfc3339\|null}` | |
+| POST `account/mfa/totp` | none | bare `{secret, otpauth_url}` | Starts (or restarts) a **pending** enrollment. The base32 secret is returned exactly once and never readable again; an enabled factor must be disabled first (400 `mfa_already_enabled`). |
+| POST `account/mfa/totp/confirm` | json `{code}` | empty 204 | Proves possession with a live code and flips the pending enrollment to enabled. 400 `mfa_setup_missing` without a pending enrollment; 401 `mfa_code_invalid` on a wrong code. |
+| POST `account/mfa/totp/disable` | json `{code}` | empty 204 | Requires a live code (not just the step-up password): a hijacked session cannot silently remove the factor. 400 `mfa_not_enabled`; 401 `mfa_code_invalid`. |
+
+Semantics:
+
+- TOTP per RFC 6238 over HMAC-SHA1, 6 digits, 30-second steps, ±1-step
+  verification window. Every accepted code consumes its time-step through a
+  monotonic compare-and-set, so a code is one-time-use even under concurrent
+  logins (replays answer 401 `mfa_code_invalid`).
+- The §6 structural gates apply unchanged: session auth on every method and
+  the blanket step-up requirement on the mutations, which therefore also land
+  in the operator audit trail.
+- Login integration is the §5.2 `totp_code` field. Wrong TOTP guesses consume
+  the same limiter budget as wrong passwords; the code-absent
+  `mfa_code_required` prompt (the normal two-phase login) does not.
+- Lockout recovery is operator-only: `v2board-api reset-admin-totp <email>`
+  removes the factor. There are no recovery codes.
 
 ---
 

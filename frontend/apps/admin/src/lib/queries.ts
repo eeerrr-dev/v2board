@@ -67,6 +67,7 @@ export const adminKeys = {
   paymentForm: (payment: string | undefined, id?: number) =>
     ['admin', 'payment', 'form', payment, id] as const,
   emailTemplates: ['admin', 'config', 'emailTemplates'] as const,
+  accountMfa: ['admin', 'account', 'mfa'] as const,
 };
 
 export const adminQueryOptions = {
@@ -181,6 +182,11 @@ export const adminQueryOptions = {
       queryKey: adminKeys.notices,
       queryFn: ({ signal }) => admin.fetchNotices(apiClient, { signal }),
     }),
+  accountMfa: () =>
+    queryOptions({
+      queryKey: adminKeys.accountMfa,
+      queryFn: ({ signal }) => admin.fetchAccountMfa(apiClient, { signal }),
+    }),
   tickets: (query: admin.AdminTicketListQuery) =>
     queryOptions({
       queryKey: adminKeys.tickets(query),
@@ -290,6 +296,8 @@ export const useAdminOrders = (query: admin.AdminPageQuery & { commission_only?:
 export const useAdminOrderDetail = (tradeNo?: string) => useQuery(adminQueryOptions.order(tradeNo));
 export const useAdminUserInfo = (id?: number | null) => useQuery(adminQueryOptions.user(id));
 export const useAdminNotices = () => useQuery(adminQueryOptions.notices());
+export const useAccountMfa = (enabled = true) =>
+  useQuery({ ...adminQueryOptions.accountMfa(), enabled });
 export const useAdminTickets = (query: admin.AdminTicketListQuery) =>
   useQuery(adminQueryOptions.tickets(query));
 export const useAdminTicket = (id?: number | string) => useQuery(adminQueryOptions.ticket(id));
@@ -459,6 +467,29 @@ export function useCloseTicketMutation() {
   return useInvalidatingMutation(
     (id: number) => admin.closeTicket(apiClient, id),
     [ticketsScope, ticketScope],
+  );
+}
+
+/** §6.10 TOTP enrollment: the provisioning secret is shown exactly once. */
+export function useSetupTotpMutation() {
+  return useMutation({
+    mutationFn: () => admin.setupAccountTotp(apiClient),
+  });
+}
+
+export function useConfirmTotpMutation() {
+  return useInvalidatingMutation(
+    (code: string) => admin.confirmAccountTotp(apiClient, code),
+    [adminKeys.accountMfa],
+    INLINE_MUTATION_ERROR_META,
+  );
+}
+
+export function useDisableTotpMutation() {
+  return useInvalidatingMutation(
+    (code: string) => admin.disableAccountTotp(apiClient, code),
+    [adminKeys.accountMfa],
+    INLINE_MUTATION_ERROR_META,
   );
 }
 

@@ -1,4 +1,5 @@
 import { screen, waitFor } from '@testing-library/react';
+import { ApiProblemError } from '@v2board/api-client';
 import type * as ApiClientModule from '@v2board/api-client';
 import type * as ReactRouterModule from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -236,6 +237,72 @@ describe('Admin LoginPage', () => {
     expect(mocks.userCheckLogin).not.toHaveBeenCalled();
     expect(localStorage.getItem('authorization')).toBeNull();
     expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
+  it('runs the §6.10 two-phase TOTP login: reveal the code field, then resubmit with totp_code', async () => {
+    const mfaRequired = new ApiProblemError(401, {
+      type: 'about:blank',
+      title: 'Unauthorized',
+      status: 401,
+      code: 'mfa_code_required',
+      detail: '需要两步验证码',
+    });
+    mocks.passportLogin
+      .mockRejectedValueOnce(mfaRequired)
+      .mockResolvedValueOnce({ is_admin: true, auth_data: 'jwt' });
+    mocks.userInfo.mockResolvedValue({ email: 'admin@example.com' });
+
+    const { user } = renderLogin();
+    await user.type(screen.getByPlaceholderText('邮箱'), 'admin@example.com');
+    await user.type(screen.getByPlaceholderText('密码'), 'password');
+    await user.click(screen.getByTestId('admin-login-submit'));
+
+    // Phase 1: the plain payload carries no totp_code and reveals the field.
+    await waitFor(() =>
+      expect(mocks.passportLogin).toHaveBeenCalledWith(
+        {},
+        { email: 'admin@example.com', password: 'password' },
+      ),
+    );
+    const totp = await screen.findByTestId('admin-login-totp');
+    expect(localStorage.getItem('authorization')).toBeNull();
+
+    // Phase 2: the retry includes the entered code and completes the login.
+    await user.type(totp, '123456');
+    await user.click(screen.getByTestId('admin-login-submit'));
+    await waitFor(() =>
+      expect(mocks.passportLogin).toHaveBeenLastCalledWith(
+        {},
+        { email: 'admin@example.com', password: 'password', totp_code: '123456' },
+      ),
+    );
+    expect(localStorage.getItem('authorization')).toBe('jwt');
+    await waitFor(() =>
+      expect(mocks.navigate).toHaveBeenCalledWith('/dashboard', { replace: true }),
+    );
+  });
+
+  it('surfaces a wrong TOTP code inline on the code field without tearing the form down', async () => {
+    const invalid = new ApiProblemError(401, {
+      type: 'about:blank',
+      title: 'Unauthorized',
+      status: 401,
+      code: 'mfa_code_invalid',
+      detail: '验证码错误',
+    });
+    mocks.passportLogin.mockRejectedValue(invalid);
+
+    const { user } = renderLogin();
+    await user.type(screen.getByPlaceholderText('邮箱'), 'admin@example.com');
+    await user.type(screen.getByPlaceholderText('密码'), 'password');
+    await user.click(screen.getByTestId('admin-login-submit'));
+
+    const totp = await screen.findByTestId('admin-login-totp');
+    expect(await screen.findByText('验证码错误或已被使用')).toBeInTheDocument();
+
+    await user.type(totp, '000000');
+    expect(screen.getByPlaceholderText('邮箱')).toHaveValue('admin@example.com');
+    expect(localStorage.getItem('authorization')).toBeNull();
   });
 
   it('shows the native reset command in the forgot-password dialog', async () => {

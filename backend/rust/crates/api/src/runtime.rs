@@ -475,6 +475,30 @@ pub(crate) fn build_http_client(config: &AppConfig) -> anyhow::Result<reqwest::C
         .build()?)
 }
 
+/// `v2board-api reset-admin-totp <email>` — the operator escape hatch for a
+/// privileged account locked out of its TOTP factor. Removes the factor
+/// (pending or enabled); the account's password remains untouched.
+pub(crate) async fn reset_admin_totp(db: &DbPool, email: &str) -> anyhow::Result<()> {
+    let email = email.trim();
+    if email.is_empty() {
+        anyhow::bail!("usage: v2board-api reset-admin-totp <email>");
+    }
+    let user_id = sqlx::query_scalar::<_, i64>(
+        "SELECT id FROM users \
+         WHERE lower(btrim(email)) = lower(btrim($1)) AND (is_admin = 1 OR is_staff = 1) LIMIT 1",
+    )
+    .bind(email)
+    .fetch_optional(db)
+    .await?
+    .ok_or_else(|| anyhow::anyhow!("privileged account not found: {email}"))?;
+    if v2board_db::admin_mfa::reset(db, user_id).await? == 0 {
+        println!("no TOTP factor was configured for {email}; nothing to remove");
+    } else {
+        println!("TOTP factor removed for {email}");
+    }
+    Ok(())
+}
+
 pub(crate) async fn reset_admin_password(
     db: &DbPool,
     config: &AppConfig,

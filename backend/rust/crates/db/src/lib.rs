@@ -1,3 +1,4 @@
+pub mod admin_mfa;
 pub mod coupon;
 pub mod invite;
 pub mod knowledge;

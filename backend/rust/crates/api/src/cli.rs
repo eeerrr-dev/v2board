@@ -3,6 +3,7 @@ pub(crate) enum Command {
     Serve,
     Migrate,
     ResetAdminPassword { email: String },
+    ResetAdminTotp { email: String },
     Help,
 }
 
@@ -19,6 +20,9 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> anyhow::Result<Command>
         [command, email] if command == "reset-admin-password" => Ok(Command::ResetAdminPassword {
             email: email.clone(),
         }),
+        [command, email] if command == "reset-admin-totp" => Ok(Command::ResetAdminTotp {
+            email: email.clone(),
+        }),
         _ => anyhow::bail!(
             "invalid command; run v2board-api --help for the supported command grammar"
         ),
@@ -27,7 +31,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> anyhow::Result<Command>
 
 pub(crate) fn print_help() {
     println!(
-        "v2board-api\n\nCommands:\n  migrate\n      Apply native PostgreSQL migrations\n\n  reset-admin-password <email>\n      Read the new password from a systemd credential or V2BOARD_NEW_PASSWORD_FILE\n\nMySQL import commands are intentionally absent from this runtime binary. Use the disposable\nv2board-lifecycle binary for validate/inspect/execute operations."
+        "v2board-api\n\nCommands:\n  migrate\n      Apply native PostgreSQL migrations\n\n  reset-admin-password <email>\n      Read the new password from a systemd credential or V2BOARD_NEW_PASSWORD_FILE\n\n  reset-admin-totp <email>\n      Remove a locked-out privileged account's TOTP factor (the operator escape hatch)\n\nMySQL import commands are intentionally absent from this runtime binary. Use the disposable\nv2board-lifecycle binary for validate/inspect/execute operations."
     );
 }
 
@@ -45,6 +49,12 @@ mod tests {
         assert_eq!(
             parse_args(["reset-admin-password", "admin@example.com"].map(str::to_owned)).unwrap(),
             Command::ResetAdminPassword {
+                email: "admin@example.com".to_string()
+            }
+        );
+        assert_eq!(
+            parse_args(["reset-admin-totp", "admin@example.com"].map(str::to_owned)).unwrap(),
+            Command::ResetAdminTotp {
                 email: "admin@example.com".to_string()
             }
         );

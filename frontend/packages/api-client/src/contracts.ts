@@ -29,6 +29,21 @@ export const stepUpGrantSchema = z.looseObject({
   expires_in: z.number().int().positive(),
 });
 
+/** GET account/mfa (§6.10): the caller's own two-factor state. */
+export const mfaStatusSchema = z.looseObject({
+  totp_enabled: z.boolean(),
+  totp_enabled_at: z.string().min(1).nullable(),
+});
+
+/**
+ * POST account/mfa/totp (§6.10): the one-time provisioning body — the base32
+ * secret is never readable again after this response.
+ */
+export const totpProvisioningSchema = z.looseObject({
+  secret: z.string().min(1),
+  otpauth_url: z.string().min(1),
+});
+
 /** GET /auth/session: the checkLogin successor's bare probe body (§5.2). */
 export const sessionStateSchema = z.looseObject({
   is_login: z.boolean(),

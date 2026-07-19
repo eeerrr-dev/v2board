@@ -26,7 +26,10 @@ use v2board_db::{
     plan::PlanRow,
     user::UserInfoRow,
 };
-use v2board_domain::{auth::AuthData, order::StripePaymentIntentResult};
+use v2board_domain::{
+    auth::{AuthData, MfaStatus, TotpProvisioning},
+    order::StripePaymentIntentResult,
+};
 
 use crate::{
     auth::{QuickLoginUrl, SessionState, StepUpGrant},
@@ -199,6 +202,22 @@ fn documents() -> Vec<(&'static str, String)> {
     let auth_step_up = pretty(&StepUpGrant {
         step_up_token: "golden-step-up-token-000000000001".to_string(),
         expires_in: 900,
+    });
+
+    // Privileged-account TOTP MFA (docs/api-dialect.md §6.10): the status
+    // and one-time provisioning bodies shared by the admin and staff
+    // `account/mfa` routes.
+    let auth_mfa_status = pretty(&MfaStatus {
+        totp_enabled: false,
+        totp_enabled_at: None,
+    });
+    let auth_mfa_status_enabled = pretty(&MfaStatus {
+        totp_enabled: true,
+        totp_enabled_at: Some(GOLDEN_TIME),
+    });
+    let auth_mfa_totp = pretty(&TotpProvisioning {
+        secret: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ".to_string(),
+        otpauth_url: "otpauth://totp/Golden%20Panel:golden-admin@example.test?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=Golden+Panel&algorithm=SHA1&digits=6&period=30".to_string(),
     });
 
     let auth_quick_login_url = pretty(&QuickLoginUrl {
@@ -660,6 +679,9 @@ fn documents() -> Vec<(&'static str, String)> {
 
     vec![
         ("auth.login.json", auth_login),
+        ("auth.mfa-status.enabled.json", auth_mfa_status_enabled),
+        ("auth.mfa-status.json", auth_mfa_status),
+        ("auth.mfa-totp.json", auth_mfa_totp),
         ("auth.quick-login-url.json", auth_quick_login_url),
         ("auth.session.admin.json", auth_session_admin),
         ("auth.session.json", auth_session),

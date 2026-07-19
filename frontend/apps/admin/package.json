@@ -24,6 +24,7 @@
     "dayjs": "catalog:",
     "i18next": "catalog:",
     "lucide-react": "catalog:",
+    "qrcode.react": "^4.2.0",
     "radix-ui": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",

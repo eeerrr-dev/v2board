@@ -36,7 +36,10 @@ mod ticket;
 mod user;
 mod validation;
 
-use runtime::{AppState, build_http_client, init_tracing, reset_admin_password, shutdown_signal};
+use runtime::{
+    AppState, build_http_client, init_tracing, reset_admin_password, reset_admin_totp,
+    shutdown_signal,
+};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -93,6 +96,9 @@ async fn main() -> anyhow::Result<()> {
     if let cli::Command::ResetAdminPassword { email } = command {
         return reset_admin_password(&db, &config, &password_kdf, &email, admin_password_secret)
             .await;
+    }
+    if let cli::Command::ResetAdminTotp { email } = command {
+        return reset_admin_totp(&db, &email).await;
     }
     let installation_id = v2board_db::installation_id(&db).await?;
     let authority_result = if config.environment.is_production() {

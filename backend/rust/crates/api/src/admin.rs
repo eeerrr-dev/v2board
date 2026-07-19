@@ -24,7 +24,7 @@ use v2board_domain::{
         ReconciliationResolveRequest, RouteCreate, RoutePatch, ServerBody, ServerGroupBody,
         SortIdsRequest, StaffUserPatch, UserGenerateOutcome,
     },
-    auth::AuthUser,
+    auth::{AuthUser, MfaStatus, TotpProvisioning},
     payment_provider::payment_provider_codes,
 };
 
@@ -92,6 +92,10 @@ pub(crate) async fn dispatch_admin(
 /// legacy GET/POST string dispatch is deleted.
 fn admin_router(state: AppState) -> Router {
     Router::new()
+        .route("/account/mfa", get(account_mfa_status))
+        .route("/account/mfa/totp", post(account_mfa_totp_setup))
+        .route("/account/mfa/totp/confirm", post(account_mfa_totp_confirm))
+        .route("/account/mfa/totp/disable", post(account_mfa_totp_disable))
         .route("/config", get(config_view).patch(config_patch))
         .route("/email-templates", get(email_templates))
         .route("/telegram-webhook", post(telegram_webhook))
@@ -259,6 +263,79 @@ async fn audited_run(
     )
     .await;
     response
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MfaCodeBody {
+    code: String,
+}
+
+/// GET `account/mfa` (both privileged prefixes): the caller's own
+/// two-factor state.
+async fn account_mfa_status(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    headers: HeaderMap,
+) -> Result<Json<MfaStatus>, Problem> {
+    let locale = request_locale(&headers);
+    let status = state
+        .auth_service()
+        .admin_mfa_status(actor.id)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(Json(status))
+}
+
+/// POST `account/mfa/totp`: start (or restart) a pending TOTP enrollment.
+/// The provisioning secret is returned exactly once; the guards already
+/// require a session plus step-up, and the audit trail records the call.
+async fn account_mfa_totp_setup(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    headers: HeaderMap,
+) -> Result<Json<TotpProvisioning>, Problem> {
+    let locale = request_locale(&headers);
+    let provisioning = state
+        .auth_service()
+        .admin_mfa_totp_setup(actor.id, &actor.email)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(Json(provisioning))
+}
+
+/// POST `account/mfa/totp/confirm`: prove possession with a live code and
+/// flip the pending enrollment to enabled; empty 204.
+async fn account_mfa_totp_confirm(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    headers: HeaderMap,
+    DialectJson(body): DialectJson<MfaCodeBody>,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .auth_service()
+        .admin_mfa_totp_confirm(actor.id, &body.code)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// POST `account/mfa/totp/disable`: a live code (not just the step-up
+/// password) is required to remove the factor; empty 204.
+async fn account_mfa_totp_disable(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    headers: HeaderMap,
+    DialectJson(body): DialectJson<MfaCodeBody>,
+) -> Result<StatusCode, Problem> {
+    let locale = request_locale(&headers);
+    state
+        .auth_service()
+        .admin_mfa_totp_disable(actor.id, &body.code)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Deserialize)]
@@ -1826,6 +1903,10 @@ async fn server_copy(
 /// the same problem+json 404 as the admin prefix.
 pub(crate) fn staff_router(state: AppState) -> Router {
     Router::new()
+        .route("/account/mfa", get(account_mfa_status))
+        .route("/account/mfa/totp", post(account_mfa_totp_setup))
+        .route("/account/mfa/totp/confirm", post(account_mfa_totp_confirm))
+        .route("/account/mfa/totp/disable", post(account_mfa_totp_disable))
         .route("/tickets", get(staff_tickets_list))
         .route("/tickets/{id}", get(ticket_detail))
         .route("/tickets/{id}/replies", post(ticket_reply))
