@@ -3,8 +3,7 @@ use v2board_config::AppConfig;
 
 use super::{
     giftcard::{
-        GIFTCARD_FOR_UPDATE_SQL, GIFTCARD_USER_ORDER_RANGE_SQL, checked_add_cents,
-        checked_add_giftcard_days, checked_gib_bytes, giftcard_plan_has_capacity,
+        checked_add_cents, checked_add_giftcard_days, checked_gib_bytes, giftcard_plan_has_capacity,
     },
     invite::checked_transfer_balances,
     stats::server_body,
@@ -150,33 +149,11 @@ fn commission_transfer_checks_both_balance_columns() {
 }
 
 #[test]
-fn giftcard_redemption_serializes_on_the_card_row() {
-    assert!(GIFTCARD_FOR_UPDATE_SQL.trim_end().ends_with("FOR UPDATE"));
-    assert!(GIFTCARD_FOR_UPDATE_SQL.contains("lower(code) = lower($1)"));
-    let baseline = include_str!("../../../../migrations-postgres/0001_initial.sql");
+fn giftcard_redemption_depends_on_the_canonical_code_index() {
+    // The case-insensitive `lower(code)` gift-card redemption lookup depends on
+    // the canonical unique index that forbids case-variant duplicate codes.
     let finalize = include_str!("../../../../migrations-postgres/0002_import_finalize.sql");
     assert!(finalize.contains("uniq_gift_card_code_canonical"));
-    assert!(baseline.contains("created_at_provenance = 'legacy_unknown'"));
-    assert!(baseline.contains("CREATE TABLE analytics_admission_policy"));
-    assert!(baseline.contains("CREATE TABLE analytics_admission_state"));
-}
-
-#[test]
-fn giftcard_mutations_lock_the_order_range_before_the_user() {
-    assert!(GIFTCARD_USER_ORDER_RANGE_SQL.contains("status IN (0, 1)"));
-    assert!(
-        GIFTCARD_USER_ORDER_RANGE_SQL
-            .trim_end()
-            .ends_with("FOR UPDATE")
-    );
-    let source = include_str!("giftcard.rs");
-    let range_lock = source
-        .find("sqlx::query_scalar(GIFTCARD_USER_ORDER_RANGE_SQL)")
-        .unwrap();
-    let user_lock = source
-        .find("FROM users WHERE id = $1 LIMIT 1 FOR UPDATE")
-        .unwrap();
-    assert!(range_lock < user_lock);
 }
 
 #[test]

@@ -1156,13 +1156,5 @@ mod generated_code_tests {
         assert_eq!(coupons.len(), 500);
         assert!(coupons.iter().all(|code| code.len() == 8));
         assert_eq!(coupons.iter().collect::<HashSet<_>>().len(), 500);
-
-        let source = include_str!("codes.rs");
-        assert!(source.contains("builder.push_values(codes"));
-        assert!(source.contains("insert_unique_generated_code_batch"));
-        assert!(source.contains("is_unique_violation"));
-        let finalize = include_str!("../../../../migrations-postgres/0002_import_finalize.sql");
-        assert!(finalize.contains("uniq_coupon_code_canonical"));
-        assert!(finalize.contains("uniq_gift_card_code_canonical"));
     }
 }

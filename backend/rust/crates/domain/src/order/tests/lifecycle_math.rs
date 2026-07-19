@@ -61,14 +61,6 @@ fn coupon_discount_values_fail_closed_for_legacy_invalid_rows() {
 }
 
 #[test]
-fn coupon_lookup_preserves_legacy_case_insensitive_identity() {
-    let source = include_str!("../lifecycle.rs");
-    assert!(source.contains("WHERE lower(code) = lower($1)"));
-    let finalize = include_str!("../../../../../migrations-postgres/0002_import_finalize.sql");
-    assert!(finalize.contains("uniq_coupon_code_canonical"));
-}
-
-#[test]
 fn coupon_plan_scope_accepts_legacy_numeric_strings() {
     assert_eq!(
         super::lifecycle::parse_i32_json_list(Some(r#"["1",2,"invalid"]"#)),

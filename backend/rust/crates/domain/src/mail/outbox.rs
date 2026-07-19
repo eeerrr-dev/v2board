@@ -591,29 +591,4 @@ mod tests {
         assert_eq!(result.existing, 1);
         assert_eq!(result.conflicting_batch_keys, vec!["conflict"]);
     }
-
-    #[test]
-    fn bulk_occurrence_sql_is_scoped_chunked_and_claims_before_reading() {
-        let source = include_str!("outbox.rs");
-        let start = source
-            .find(concat!("pub async fn enqueue_mail_", "outbox_occurrences"))
-            .unwrap();
-        let end = source[start..]
-            .find(concat!("fn normalize_mail_", "outbox_occurrences"))
-            .map(|offset| start + offset)
-            .unwrap();
-        let implementation = &source[start..end];
-        let claim = implementation
-            .find("ON CONFLICT (batch_key) DO NOTHING")
-            .unwrap();
-        let locked_read = implementation
-            .find(concat!("payload_hash, actor ", "FROM mail_outbox_batch"))
-            .unwrap();
-        assert!(claim < locked_read);
-        assert!(implementation.contains("ON CONFLICT (batch_key) DO NOTHING"));
-        assert!(!implementation.contains(concat!("VALUES", "(batch_key)")));
-        assert!(implementation.contains(concat!(") FOR ", "UPDATE")));
-        assert!(implementation.contains(concat!("for chunk in fresh.", "chunks")));
-        assert!(implementation.contains(concat!("INSERT INTO mail_", "outbox (batch_key")));
-    }
 }

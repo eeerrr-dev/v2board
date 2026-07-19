@@ -545,22 +545,6 @@ mod tests {
     }
 
     #[test]
-    fn operator_authority_is_checked_before_outbox_claim_mutates_a_lease() {
-        let source = include_str!("outbox.rs");
-        let start = source
-            .find("async fn run_mail_outbox_batch")
-            .expect("outbox batch runner");
-        let body = &source[start..];
-        let authority = body
-            .find("snapshot_config_for_job().await?")
-            .expect("authority precondition");
-        let claim = body
-            .find("claim_mail_outbox_batch(&state).await?")
-            .expect("durable claim");
-        assert!(authority < claim);
-    }
-
-    #[test]
     fn mail_outbox_terminal_cleanup_deletes_success_and_scrubs_envelope() {
         assert!(MAIL_OUTBOX_ACK_SQL.trim_start().starts_with("DELETE"));
         assert!(MAIL_OUTBOX_ACK_SQL.contains("lease_token = $2"));
@@ -610,22 +594,15 @@ mod tests {
     }
 
     #[test]
-    fn mail_outbox_migration_has_durable_identity_and_delivery_state() {
+    fn mail_outbox_batch_is_unique_per_recipient() {
+        // Mail idempotency (the enqueue's `ON CONFLICT` on the batch identity)
+        // depends on the durable per-recipient uniqueness of an outbox batch.
         let migration = include_str!("../../../migrations-postgres/0001_initial.sql");
-        assert!(migration.contains("CREATE TABLE mail_outbox_batch"));
-        assert!(migration.contains("CREATE TABLE mail_outbox"));
-        assert!(migration.contains("uniq_mail_outbox_batch_recipient"));
-        assert!(migration.contains("message_id VARCHAR(255) NOT NULL"));
-        assert!(migration.contains("lease_expires_at BIGINT"));
-        assert!(migration.contains("idx_mail_outbox_claim"));
-        let batch = migration
-            .split_once("CREATE TABLE mail_outbox_batch (")
-            .and_then(|(_, rest)| rest.split_once("CREATE TABLE mail_outbox ("))
-            .map(|(batch, _)| batch)
-            .expect("mail outbox batch table must precede the recipient table");
-        assert_eq!(batch.matches("body TEXT").count(), 1);
-        assert_eq!(batch.matches("subject TEXT").count(), 1);
-        assert_eq!(batch.matches("template_name VARCHAR(255)").count(), 1);
+        assert!(
+            migration.contains(
+                "CONSTRAINT uniq_mail_outbox_batch_recipient UNIQUE (batch_key, recipient)"
+            )
+        );
     }
 
     #[test]

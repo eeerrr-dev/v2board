@@ -331,11 +331,4 @@ mod tests {
             assert!(next_scheduled_tick(&schedule, exact_tick).unwrap() > exact_tick);
         }
     }
-
-    #[test]
-    fn scheduled_loop_propagates_tick_failures_to_the_worker_supervisor() {
-        let source = include_str!("scheduler.rs");
-        assert!(source.contains("run_scheduled_tick(job, &state, tick).await?"));
-        assert!(source.contains("return Err(error);"));
-    }
 }

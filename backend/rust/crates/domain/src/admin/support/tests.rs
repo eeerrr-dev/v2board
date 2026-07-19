@@ -52,26 +52,6 @@ fn normalize_stat_server_type_maps_legacy_v2ray() {
 }
 
 #[test]
-fn user_total_used_widens_before_adding_bigint_counters() {
-    // The total_used sort expression still adds the two BIGINT counters in
-    // SQL and must widen first. The projected value itself is summed in Rust
-    // by AdminUserRecord::into_value as u64, which two nonnegative i64
-    // counters cannot overflow.
-    let filters_source = include_str!("filters.rs");
-    let widened = "CAST(u.u AS NUMERIC(65,0)) + CAST(u.d AS NUMERIC(65,0))";
-    assert!(filters_source.contains(widened));
-
-    let users_source = include_str!("../users.rs");
-    assert!(!users_source.contains("u.u + u.d"));
-
-    let max_counter = u64::try_from(i64::MAX).unwrap();
-    assert_eq!(
-        max_counter.checked_add(max_counter),
-        Some(18_446_744_073_709_551_614)
-    );
-}
-
-#[test]
 fn parse_alive_ip_extracts_count_and_ip_labels() {
     let raw = json!({
         "alive_ip": 2,

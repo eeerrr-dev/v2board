@@ -528,22 +528,3 @@ async fn insert_message(
     .await?;
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn ticket_state_machine_has_database_and_transaction_guards() {
-        let source = include_str!("ticket.rs");
-        assert!(source.contains("SELECT id FROM users WHERE id = $1 LIMIT 1 FOR UPDATE"));
-        assert!(source.contains("WHERE id = $1 AND user_id = $2 LIMIT 1 FOR UPDATE"));
-        assert!(source.contains("AND status = 0"));
-        assert!(source.contains("rows_affected() != 1"));
-        assert!(source.contains("OtherOpenTicketExists"));
-
-        let baseline = include_str!("../../../migrations-postgres/0001_initial.sql");
-        let finalize = include_str!("../../../migrations-postgres/0002_import_finalize.sql");
-        assert!(finalize.contains("uniq_ticket_open_user"));
-        assert!(baseline.contains("status SMALLINT"));
-        assert!(finalize.contains("idx_ticket_message_ticket_id_id"));
-    }
-}

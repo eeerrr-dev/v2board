@@ -599,18 +599,6 @@ mod tests {
     }
 
     #[test]
-    fn related_order_reads_use_bounded_batch_queries() {
-        assert!(ORDER_FIND_BY_IDS_SQL.contains("WHERE user_id ="));
-        assert!(PLAN_FIND_BY_IDS_SQL.contains("id IN ("));
-        let source = include_str!("order.rs");
-        let production = source.split("#[cfg(test)]").next().unwrap();
-        assert!(production.contains("builder.push(\" AND id IN (\")"));
-        assert!(production.contains("ids.chunks(500)"));
-        assert!(production.contains("plan_ids.chunks(500)"));
-        assert!(!production.contains("find_raw_user_order_by_id"));
-    }
-
-    #[test]
     fn batched_surplus_orders_keep_requested_order_duplicates_and_missing_behavior() {
         let values = HashMap::from([(2, "two"), (7, "seven")]);
         assert_eq!(

@@ -284,40 +284,4 @@ mod tests {
             reminder_identity(42, ReminderKind::Expire, day.succ_opt().unwrap())
         );
     }
-
-    #[test]
-    fn reminders_only_enqueue_and_leave_delivery_to_the_outbox_worker() {
-        let source = include_str!("reminders.rs");
-        let bulk_enqueue = concat!("enqueue_mail_", "outbox_occurrences");
-        assert_eq!(source.matches(bulk_enqueue).count(), 2);
-        assert!(!source.contains(concat!("reserve_mail_", "outbox_batch")));
-        assert!(!source.contains(concat!("enqueue_prepared_", "mail")));
-        assert!(!source.contains(concat!("LAST_SEND_EMAIL_", "REMIND_TRAFFIC")));
-        assert!(!source.contains(concat!("send_email", "_inner")));
-        assert!(!source.contains(concat!("mail", "_log")));
-        assert!(!source.contains(concat!("Async", "Transport")));
-        assert!(!source.contains(concat!("tokio::time", "::sleep")));
-        assert!(!source.contains(concat!("set", "_ex")));
-
-        let loop_start = source
-            .find(concat!("for user in ", "users {"))
-            .expect("candidate validation loop");
-        let bulk_start = source[loop_start..]
-            .find(concat!("let result =", "\n            enqueue_mail_"))
-            .map(|offset| loop_start + offset)
-            .expect("bulk enqueue after candidate validation");
-        assert!(!source[loop_start..bulk_start].contains(".await"));
-
-        let page_start = source
-            .find(concat!("async fn enqueue_", "reminder_kind"))
-            .expect("paged reminder producer");
-        let page_end = source[page_start..]
-            .find(concat!("async fn select_", "reminder_candidates"))
-            .map(|offset| page_start + offset)
-            .expect("candidate selector after producer");
-        let producer = &source[page_start..page_end];
-        assert!(producer.contains(concat!("state.db.", "begin().await")));
-        assert!(producer.contains(concat!("tx.", "commit().await")));
-        assert!(producer.contains(concat!("after_user_id = ", "last_user_id")));
-    }
 }

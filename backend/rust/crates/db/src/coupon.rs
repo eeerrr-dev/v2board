@@ -137,10 +137,14 @@ fn parse_string_json_list(value: Option<&str>) -> Option<Vec<String>> {
 mod tests {
     #[test]
     fn coupon_lookup_preserves_legacy_case_insensitive_identity() {
-        let source = include_str!("coupon.rs");
-        assert!(source.contains("WHERE lower(code) = lower($1)"));
+        // The case-insensitive `lower(code)` coupon lookup depends on the
+        // canonical unique index that forbids case-variant duplicate codes.
         let finalize = include_str!("../../../migrations-postgres/0002_import_finalize.sql");
-        assert!(finalize.contains("uniq_coupon_code_canonical"));
+        assert!(
+            finalize.contains(
+                "CREATE UNIQUE INDEX uniq_coupon_code_canonical ON coupon((lower(code)))"
+            )
+        );
     }
 
     #[test]

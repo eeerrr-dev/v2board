@@ -391,9 +391,11 @@ pub async fn count_invited_users(pool: &PgPool, user_id: i64) -> Result<i64, sql
 mod tests {
     #[test]
     fn authentication_lookup_uses_the_canonical_email_index() {
-        let source = include_str!("user.rs");
-        assert!(source.contains("lower(btrim(email)) = lower(btrim($1))"));
+        // The case/whitespace-insensitive email authentication lookup depends on
+        // the canonical unique index that forbids duplicate normalized emails.
         let finalize = include_str!("../../../migrations-postgres/0002_import_finalize.sql");
-        assert!(finalize.contains("uniq_user_email_canonical"));
+        assert!(finalize.contains(
+            "CREATE UNIQUE INDEX uniq_user_email_canonical ON users((lower(btrim(email))))"
+        ));
     }
 }

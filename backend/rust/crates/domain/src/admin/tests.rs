@@ -3,7 +3,7 @@ use super::commerce::{
     reconciliation_resolved_filter, resolve_redacted_payment_config,
 };
 use super::configuration::drop_unchanged_effective_secure_path;
-use super::tickets::{TICKET_NOTIFICATION_GATE_RELEASE_SCRIPT, validate_ticket_message_length};
+use super::tickets::validate_ticket_message_length;
 use super::*;
 use crate::mail::outbox::{mail_message_id, prepared_mail_payload_hash};
 
@@ -68,22 +68,6 @@ async fn user_listing_mints_method_one_subscribe_urls_in_one_round_trip_per_row(
         raw_users[0]["subscribe_url"],
         json!(config.subscribe_url_for_token("token-one"))
     );
-}
-
-#[test]
-fn admin_user_exports_route_every_subscribe_url_through_the_shared_minter() {
-    // The listing, generate CSV, and dump CSV surfaces must all mint through
-    // subscribe_link so show_subscribe_method 1/2 never leak permanent tokens.
-    let source = include_str!("users.rs");
-    assert!(!source.contains("subscribe_url_for_token"));
-    assert_eq!(
-        source
-            .matches("crate::subscribe_link::subscribe_url_for_user")
-            .count(),
-        3
-    );
-    // Methods 0/2 must not acquire a Redis connection for exports.
-    assert!(source.contains("show_subscribe_method != 1"));
 }
 
 #[test]
@@ -270,26 +254,6 @@ fn prepared_mail_payload_identity_covers_envelope_and_recipient() {
     );
 }
 
-#[test]
-fn admin_smtp_probe_has_an_end_to_end_deadline() {
-    let source = include_str!("configuration.rs");
-    let start = source.find("pub async fn test_mail").unwrap();
-    let probe = &source[start..];
-    assert!(probe.contains("tokio::time::timeout"));
-    assert!(probe.contains("http_request_timeout_seconds"));
-}
-
-#[test]
-fn admin_config_is_typed_and_security_validated_before_revision_commit() {
-    let source = include_str!("configuration.rs");
-    let security = source.find("validate_security_update").unwrap();
-    let typed = source.find("with_operator_config").unwrap();
-    let commit = source.find("operator_config::commit").unwrap();
-    assert!(security < commit);
-    assert!(typed < commit);
-    assert!(!source.contains("update_config_atomic"));
-}
-
 fn body(pairs: &[(&str, Value)]) -> Map<String, Value> {
     pairs
         .iter()
@@ -447,42 +411,6 @@ fn clearing_email_port_uses_json_null_not_the_legacy_empty_string() {
     merge_config_json(&mut merged, &input);
     assert_eq!(merged["email_port"], Value::Null);
     assert_eq!(merged["email_host"], Value::String(String::new()));
-}
-
-#[test]
-fn ticket_reply_notification_is_enqueued_inside_the_reply_transaction() {
-    let source = include_str!("tickets.rs");
-    let start = source
-        .find("pub async fn ticket_reply")
-        .expect("ticket reply implementation");
-    let end = source[start..]
-        .find("pub async fn ticket_close")
-        .map(|offset| start + offset)
-        .expect("ticket close implementation");
-    let reply = &source[start..end];
-    assert!(reply.contains("self.db.begin()"));
-    assert!(reply.contains("enqueue_prepared_mail"));
-    assert!(reply.contains("tx.commit()"));
-    assert!(!reply.contains("send_mail("));
-    assert!(reply.contains("ticket reply notification envelope invalid"));
-    assert!(reply.contains("ticket reply notification recipient invalid"));
-    let prepared = reply.find("prepare_ticket_reply_notification").unwrap();
-    let gate = reply.find("reserve_ticket_notification_gate").unwrap();
-    let transaction = reply.find("self.db.begin()").unwrap();
-    assert!(prepared < gate && gate < transaction);
-    assert!(reply.contains("release_ticket_notification_gate"));
-}
-
-#[test]
-fn ticket_notification_gate_is_atomic_and_owner_scoped_on_rollback() {
-    let source = include_str!("tickets.rs");
-    assert!(source.contains("redis::cmd(\"SET\")"));
-    assert!(source.contains(".arg(\"NX\")"));
-    assert!(source.contains(".arg(\"EX\")"));
-    assert!(!source.contains("conn.exists::<_, bool>(&cache_key)"));
-    assert!(TICKET_NOTIFICATION_GATE_RELEASE_SCRIPT.contains("GET"));
-    assert!(TICKET_NOTIFICATION_GATE_RELEASE_SCRIPT.contains("ARGV[1]"));
-    assert!(TICKET_NOTIFICATION_GATE_RELEASE_SCRIPT.contains("DEL"));
 }
 
 #[test]

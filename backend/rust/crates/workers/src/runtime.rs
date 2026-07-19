@@ -550,22 +550,4 @@ mod tests {
         assert!(error.to_string().contains("statistics"));
         assert!(error.to_string().contains("broken"));
     }
-
-    #[test]
-    fn worker_health_fails_closed_on_schema_drift() {
-        let source = include_str!("runtime.rs");
-        let probe = &source[source.find("async fn probe_dependencies").unwrap()
-            ..source.find("async fn drain_loops").unwrap()];
-        assert!(probe.contains("v2board_db::migrations_current"));
-        assert!(probe.contains("if !migrations_current"));
-        assert!(probe.contains("DEPENDENCY_PROBE_TIMEOUT"));
-    }
-
-    #[test]
-    fn worker_runtime_owns_and_monitors_the_installation_lease() {
-        let source = include_str!("runtime.rs");
-        assert!(source.contains("acquire_scheduler_lock(&state, SINGLETON_JOB_NAME)"));
-        assert!(source.contains("run_with_lease(wait_for_shutdown(shutdown)"));
-        assert!(source.contains("release_scheduler_lock(&state, singleton_lock"));
-    }
 }

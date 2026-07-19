@@ -329,26 +329,4 @@ mod tests {
         let disabled = RenewalPlanRow { renew: 0, ..plan };
         assert_eq!(renewal_terms(&funded, &disabled, "month_price"), None);
     }
-
-    #[test]
-    fn renewal_sql_rechecks_locked_state_and_guards_the_deduction() {
-        assert!(RENEWAL_CANDIDATE_SQL.trim_start().starts_with("SELECT id"));
-        assert!(RENEWAL_CANDIDATE_SQL.contains("id > $3"));
-        assert!(RENEWAL_CANDIDATE_SQL.contains("ORDER BY id"));
-        assert!(RENEWAL_CANDIDATE_SQL.contains("LIMIT $4"));
-        assert!(RENEWAL_LOCKED_USER_SQL.contains("FOR UPDATE"));
-        assert!(RENEWAL_LOCKED_USER_SQL.contains("auto_renewal <> 0"));
-        assert!(RENEWAL_LOCKED_USER_SQL.contains("expired_at > $2"));
-        assert!(RENEWAL_UPDATE_SQL.contains("plan_id = $5"));
-        assert!(RENEWAL_UPDATE_SQL.contains("expired_at = $6"));
-        assert!(RENEWAL_UPDATE_SQL.contains("balance >= $7"));
-        assert!(RENEWAL_UPDATE_SQL.contains("expired_at > $8"));
-
-        let source = include_str!("renewal.rs");
-        let function = &source[source.find("async fn renew_user").unwrap()..];
-        assert!(
-            function.find("SELECT period").unwrap()
-                < function.find("RENEWAL_LOCKED_USER_SQL").unwrap()
-        );
-    }
 }

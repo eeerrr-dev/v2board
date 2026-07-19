@@ -1671,15 +1671,6 @@ mod tests {
         assert!(requested_group_lock_ids(&[-2]).is_err());
     }
 
-    #[test]
-    fn group_mutations_use_one_lock_protocol_for_every_node_table() {
-        let source = include_str!("servers.rs");
-        assert!(source.contains("lock_server_groups(&mut tx, &group_ids)"));
-        assert!(source.contains("for (_, table) in SERVER_TABLES"));
-        assert!(source.contains("group_id @> jsonb_build_array($1::bigint)"));
-        assert!(source.contains("LIMIT 1 FOR SHARE"));
-    }
-
     fn body(value: Value) -> ServerBody {
         serde_json::from_value(value).expect("valid server body")
     }

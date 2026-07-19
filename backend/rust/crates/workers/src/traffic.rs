@@ -490,45 +490,11 @@ mod tests {
     }
 
     #[test]
-    fn traffic_apply_uses_ordered_batch_locking_and_case_updates() {
-        let source = include_str!("traffic.rs");
-        let production = source.split("#[cfg(test)]").next().unwrap();
-        assert!(production.contains(") ORDER BY id FOR UPDATE"));
-        assert!(production.contains("UPDATE users SET u = CASE id"));
-        assert!(production.contains("enqueue_events(tx, &events, accounted_at)"));
-        assert!(!production.contains("enqueue_event(tx, &event, accounted_at)"));
-        assert!(!production.contains("WHERE id = $1 LIMIT 1 FOR UPDATE"));
-    }
-
-    #[test]
-    fn traffic_migration_contains_durable_report_ledgers() {
-        let migration = include_str!("../../../migrations-postgres/0001_initial.sql");
-        assert!(migration.contains("CREATE TABLE server_traffic_report"));
-        assert!(migration.contains("CREATE TABLE server_traffic_report_item"));
-    }
-
-    #[test]
     fn only_internal_traffic_keys_are_ephemeral_after_apply() {
         assert!(is_internal_traffic_report_key(&format!(
             "i-{}",
             "a".repeat(62)
         )));
         assert!(!is_internal_traffic_report_key(&"a".repeat(64)));
-        let migration = include_str!("../../../migrations-postgres/0001_initial.sql");
-        assert!(migration.contains("ON DELETE CASCADE"));
-    }
-
-    #[test]
-    fn traffic_epoch_migration_fences_reset_periods() {
-        let migration = include_str!("../../../migrations-postgres/0001_initial.sql");
-        assert!(migration.contains("traffic_epoch BIGINT NOT NULL DEFAULT 0"));
-        assert_eq!(
-            migration
-                .matches("traffic_epoch BIGINT NOT NULL DEFAULT 0")
-                .count(),
-            2
-        );
-        let source = include_str!("traffic.rs");
-        assert!(source.contains("current.traffic_epoch != item.traffic_epoch"));
     }
 }

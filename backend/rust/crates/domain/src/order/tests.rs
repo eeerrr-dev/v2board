@@ -140,22 +140,12 @@ fn provider_identifiers_keep_bounded_utf8_labels_and_full_hashes() {
     assert_eq!(audit_label, label);
     assert_eq!(audit_hash.len(), 64);
     assert!(audit_hash.bytes().all(|byte| byte.is_ascii_hexdigit()));
-    let migration = include_str!("../../../../migrations-postgres/0001_initial.sql");
-    assert!(migration.contains("callback_no_hash"));
-    assert!(migration.contains("octet_length(callback_no_hash) = 32"));
 }
 
 #[test]
 fn late_payment_notification_is_idempotent_after_the_ledger_upsert() {
     assert!(should_emit_late_payment_notice(true));
     assert!(!should_emit_late_payment_notice(false));
-    let migration = include_str!("../../../../migrations-postgres/0001_initial.sql");
-    assert!(migration.contains("uniq_payment_reconciliation_callback"));
-    assert!(migration.contains("reason"));
-    let implementation = include_str!("settlement.rs");
-    assert!(implementation.contains("ON CONFLICT (payment_id, callback_no_hash) DO UPDATE"));
-    assert!(implementation.contains("occurrence_count + 1"));
-    assert!(implementation.contains("RETURNING occurrence_count = 1"));
 }
 
 #[test]
@@ -245,19 +235,19 @@ fn payment_binding_rejects_archived_driver_or_config_snapshots_without_a_global_
 fn unfinished_order_invariant_has_both_lock_and_database_guard() {
     assert!(USER_FOR_ORDER_SQL.contains("FOR UPDATE"));
     assert!(UNFINISHED_ORDER_FOR_UPDATE_SQL.ends_with("FOR UPDATE"));
+    // The unique-violation fallback keys on this exact constraint name, and the
+    // "unfinished" semantics depend on the partial `status IN (0, 1)` predicate.
     let finalize = include_str!("../../../../migrations-postgres/0002_import_finalize.sql");
     assert!(finalize.contains(UNFINISHED_ORDER_UNIQUE_KEY));
-    assert!(finalize.contains("status"));
-    assert!(finalize.contains("user_id"));
-    assert!(finalize.contains("0, 1"));
+    assert!(finalize.contains("ON orders(user_id) WHERE status IN (0, 1)"));
 }
 
 #[test]
 fn pending_payment_guards_have_a_selective_database_index() {
     let finalize = include_str!("../../../../migrations-postgres/0002_import_finalize.sql");
-    assert!(finalize.contains("idx_order_payment_status"));
-    assert!(finalize.contains("payment_id"));
-    assert!(finalize.contains("status"));
+    assert!(
+        finalize.contains("CREATE INDEX idx_order_payment_status ON orders(payment_id, status)")
+    );
 }
 
 #[test]

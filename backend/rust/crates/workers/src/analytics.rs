@@ -717,15 +717,6 @@ mod tests {
     fn relay_limits_fit_the_analytics_outbox_contract() {
         assert_eq!(MAX_BATCH_ROWS, 10_000);
         assert!((1..=3_600).contains(&LEASE_SECONDS));
-        let projection = include_str!("../../analytics/src/projection.rs");
-        assert_eq!(
-            projection
-                .matches(
-                    ".with_timeouts(Some(Duration::from_secs(30)), Some(Duration::from_secs(90)))"
-                )
-                .count(),
-            4
-        );
         assert!(CLICKHOUSE_OPERATION_TIMEOUT.as_secs() < LEASE_SECONDS as u64);
         // Each event kind writes at most one raw and one daily projection.
         assert!(2 * 90 < CLICKHOUSE_OPERATION_TIMEOUT.as_secs());

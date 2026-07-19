@@ -314,7 +314,9 @@ mod tests {
         assert!(COMMISSION_CLAIM_SQL.contains("ORDER BY id"));
         assert!(COMMISSION_CLAIM_SQL.contains("FOR UPDATE SKIP LOCKED"));
         let finalize = include_str!("../../../migrations-postgres/0002_import_finalize.sql");
-        assert!(finalize.contains("idx_commission_claim"));
+        assert!(
+            finalize.contains("CREATE INDEX idx_commission_claim ON orders(commission_status, id)")
+        );
     }
 
     fn inviter(id: i64, invited_by: Option<i64>) -> InviterRow {

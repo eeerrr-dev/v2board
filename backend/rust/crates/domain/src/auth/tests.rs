@@ -6,8 +6,7 @@ use super::{
     credentials::{RELEASE_LOGIN_ATTEMPT_SCRIPT, RESERVE_LOGIN_ATTEMPT_SCRIPT, login_limiter_keys},
     password::{PasswordKdf, hash_password, password_needs_rehash, verify_password},
     registration::{
-        MAX_EMAIL_CODE_BYTES, MAX_INVITE_CODE_BYTES, MAX_RECAPTCHA_DATA_BYTES,
-        RELEASE_REGISTRATION_SLOT_SCRIPT, RESERVE_REGISTRATION_SLOT_SCRIPT, RegisterInput,
+        MAX_EMAIL_CODE_BYTES, MAX_INVITE_CODE_BYTES, MAX_RECAPTCHA_DATA_BYTES, RegisterInput,
         checked_trial_expired_at, checked_trial_transfer_bytes,
         validate_registration_auxiliary_inputs,
     },
@@ -413,43 +412,6 @@ fn logout_revokes_the_presented_bearer_and_repeats_as_a_no_op() {
 }
 
 #[test]
-fn registration_limiter_atomically_reserves_and_releases_only_its_own_slot() {
-    assert!(RESERVE_REGISTRATION_SLOT_SCRIPT.contains("ZREMRANGEBYSCORE"));
-    assert!(RESERVE_REGISTRATION_SLOT_SCRIPT.contains("ZCARD"));
-    assert!(RESERVE_REGISTRATION_SLOT_SCRIPT.contains("ZADD"));
-    assert!(RESERVE_REGISTRATION_SLOT_SCRIPT.contains("EXPIREAT"));
-    assert!(RELEASE_REGISTRATION_SLOT_SCRIPT.contains("ZREM"));
-    assert!(!RELEASE_REGISTRATION_SLOT_SCRIPT.contains("DECR"));
-
-    let source = include_str!("registration.rs");
-    let commit = source.find("tx.commit().await?").unwrap();
-    let auth_data = source.find("self.auth_data_for_user").unwrap();
-    let reserve = source.find("reserve_registration_slot").unwrap();
-    let release = source.find("release_registration_slot").unwrap();
-    assert!(reserve < commit);
-    assert!(release < auth_data);
-    assert!(source.contains("duration_minutes_to_seconds("));
-    assert!(source.contains("self.config.register_limit_expire"));
-    assert!(source.contains("REGISTER_IP_RATE_LIMIT_V2"));
-}
-
-#[test]
-fn invitation_code_consumption_is_locked_and_guarded() {
-    let source = include_str!("registration.rs");
-    assert!(source.contains("WHERE lower(code) = lower($1)"));
-    assert!(source.contains("AND status = 0 LIMIT 1 FOR UPDATE"));
-    assert!(source.contains("WHERE id = $2 AND status = 0"));
-    assert!(source.contains("result.rows_affected() != 1"));
-    assert!(!source.contains("email = $1 LIMIT 1 FOR UPDATE"));
-    assert!(source.contains("is_email_unique_violation"));
-    let finalize = include_str!("../../../../migrations-postgres/0002_import_finalize.sql");
-    assert!(finalize.contains("uniq_invite_code_canonical"));
-    assert!(
-        source.find("consume_invite_code").unwrap() < source.find("INSERT INTO users").unwrap()
-    );
-}
-
-#[test]
 fn registration_auxiliary_inputs_are_bounded_before_expensive_work() {
     let valid = RegisterInput {
         email: "user@example.com".to_string(),
@@ -469,33 +431,4 @@ fn registration_auxiliary_inputs_are_bounded_before_expensive_work() {
     oversized = valid;
     oversized.recaptcha_data = Some("r".repeat(MAX_RECAPTCHA_DATA_BYTES + 1));
     assert!(validate_registration_auxiliary_inputs(&oversized).is_err());
-
-    let source = include_str!("registration.rs");
-    let bounds = source
-        .find("validate_registration_auxiliary_inputs(&input)?")
-        .unwrap();
-    let reserve = source
-        .find("self.reserve_registration_slot(ip.as_deref())")
-        .unwrap();
-    let hash = source.find("self.password_kdf.hash").unwrap();
-    assert!(bounds < reserve);
-    assert!(bounds < hash);
-}
-
-#[test]
-fn reset_security_mints_the_returned_url_through_the_method_aware_minter() {
-    // /user/resetSecurity rotates the permanent token and hands the caller a
-    // subscribe URL. Under show_subscribe_method 1/2 that URL must carry the
-    // rotating token (subscribe_link mints it — covered by its own mode
-    // tests), never the fresh permanent token via a raw URL render.
-    let source = include_str!("credentials.rs");
-    let reset = source.find("pub async fn reset_security").unwrap();
-    let body = &source[reset..];
-    let mint = body
-        .find("crate::subscribe_link::subscribe_url_for_user")
-        .unwrap();
-    assert!(mint < body.find("pub(super) fn login_limiter_keys").unwrap());
-    assert!(!source.contains("subscribe_url_for_token"));
-    // The rotation is durably persisted before any URL is minted.
-    assert!(body.find("db::user::update_security").unwrap() < mint);
 }

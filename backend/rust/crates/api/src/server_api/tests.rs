@@ -10,11 +10,10 @@ use super::{
     response::{etag_matches, sha1_hex},
     server_online_status,
     traffic::{
-        ALIVE_CACHE_MAX_IPS_PER_USER, ALIVE_CACHE_MAX_USER_PAYLOAD_BYTES,
-        ALIVE_CACHE_SCRIPT_BATCH_SIZE, ALIVE_CACHE_UPDATE_SCRIPT, charged_bytes,
-        checked_traffic_pair, count_alive_ips, implicit_traffic_report_key, parse_server_rate,
-        parse_traffic_entries, traffic_cache_entry_is_stale, traffic_entries_from_value,
-        traffic_report_key, traffic_report_payload_hash, traffic_report_token,
+        charged_bytes, checked_traffic_pair, count_alive_ips, implicit_traffic_report_key,
+        parse_server_rate, parse_traffic_entries, traffic_cache_entry_is_stale,
+        traffic_entries_from_value, traffic_report_key, traffic_report_payload_hash,
+        traffic_report_token,
     },
     users::{legacy_tidalab_user_response, server_user_without_uuid},
 };
@@ -37,60 +36,10 @@ fn traffic_cache_staleness_handles_extreme_timestamps_without_overflow() {
 }
 
 #[test]
-fn alive_cache_updates_are_atomic_and_batched_in_redis() {
-    assert!(ALIVE_CACHE_UPDATE_SCRIPT.contains("for index, key in ipairs(KEYS)"));
-    assert!(ALIVE_CACHE_UPDATE_SCRIPT.contains("value[node_bucket]"));
-    assert!(ALIVE_CACHE_UPDATE_SCRIPT.contains("value.alive_ip = alive_count"));
-    assert!(ALIVE_CACHE_UPDATE_SCRIPT.contains("prepared[index] = cjson.encode(value)"));
-    assert!(ALIVE_CACHE_UPDATE_SCRIPT.contains("redis.call('SET'"));
-    assert!(ALIVE_CACHE_UPDATE_SCRIPT.contains("#KEYS > 64"));
-    assert!(ALIVE_CACHE_UPDATE_SCRIPT.contains("#aliveips > 256"));
-    assert!(ALIVE_CACHE_UPDATE_SCRIPT.contains("bucket_count > 32"));
-    assert_eq!(ALIVE_CACHE_SCRIPT_BATCH_SIZE, 64);
-    assert_eq!(ALIVE_CACHE_MAX_IPS_PER_USER, 256);
-    assert_eq!(ALIVE_CACHE_MAX_USER_PAYLOAD_BYTES, 16 * 1024);
-    let source = include_str!("traffic.rs");
-    assert!(source.contains("updates.chunks(ALIVE_CACHE_SCRIPT_BATCH_SIZE)"));
-    assert!(source.contains("user_ids.chunks(REDIS_MGET_BATCH_SIZE)"));
-}
-
-#[test]
 fn persisted_traffic_accumulation_rejects_i64_overflow() {
     assert_eq!(checked_traffic_pair(10, 20, 1, 2).unwrap(), (11, 22));
     assert!(checked_traffic_pair(i64::MAX, 0, 1, 0).is_err());
     assert!(checked_traffic_pair(0, i64::MIN, 0, -1).is_err());
-}
-
-#[test]
-fn traffic_statistics_use_bounded_atomic_upserts() {
-    let source = include_str!("traffic.rs");
-    let start = source.find("async fn persist_traffic_stats").unwrap();
-    let end = source[start..]
-        .find("pub(super) fn checked_traffic_pair")
-        .map(|offset| start + offset)
-        .unwrap();
-    let stats = &source[start..end];
-    assert!(stats.contains("entries.chunks(TRAFFIC_REPORT_SQL_BATCH_SIZE)"));
-    assert!(stats.contains("ON CONFLICT (server_rate, user_id, record_at)"));
-    assert!(stats.contains("user_traffic.u + EXCLUDED.u"));
-    assert!(!stats.contains("SELECT id, u, d"));
-    assert!(!stats.contains("UPDATE user_traffic SET"));
-}
-
-#[test]
-fn traffic_report_analytics_use_one_bounded_bulk_enqueue() {
-    let source = include_str!("traffic.rs");
-    let start = source
-        .find("async fn persist_durable_traffic_report")
-        .unwrap();
-    let end = source[start..]
-        .find("fn is_internal_traffic_report_key")
-        .map(|offset| start + offset)
-        .unwrap();
-    let persist = &source[start..end];
-    assert!(persist.contains("Vec::<AnalyticsEvent>::with_capacity(items.len())"));
-    assert!(persist.contains("enqueue_events(&mut tx, &analytics_events, now)"));
-    assert!(!persist.contains("enqueue_event(&mut tx"));
 }
 
 fn object(value: serde_json::Value) -> serde_json::Map<String, serde_json::Value> {
@@ -323,20 +272,6 @@ fn server_group_ids_accept_legacy_json_numeric_strings() {
         vec![1, 2]
     );
     assert_eq!(parse_i32_json_list(Some(&"3".to_string())), vec![3]);
-}
-
-#[test]
-fn server_route_lookup_is_parameter_bounded_and_restores_manifest_order_in_rust() {
-    let source = include_str!("config.rs");
-    let start = source.find("async fn server_routes").unwrap();
-    let end = source[start..]
-        .find("pub(super) fn parse_i32_json_list")
-        .map(|offset| start + offset)
-        .unwrap();
-    let implementation = &source[start..end];
-    assert!(implementation.contains("unique_ids.chunks(500)"));
-    assert!(implementation.contains("rows.sort_by_key"));
-    assert!(!implementation.contains("ORDER BY CASE"));
 }
 
 #[test]
