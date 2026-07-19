@@ -149,7 +149,7 @@ export default function DashboardPage() {
                 <span>
                   <Trans
                     i18nKey={($) => $.dashboard.alert_open_ticket}
-                    values={{ count: openTicketCount }}
+                    count={openTicketCount}
                     components={{ strong: <strong /> }}
                   />
                 </span>
@@ -251,13 +251,16 @@ export default function DashboardPage() {
                     <p className="text-sm leading-6 text-muted-foreground">
                       {t(($) => $.dashboard.expires_in, {
                         date: formatBackendDateSlash(subscription.expired_at),
-                        day: vm.daysLeft,
+                        // The view model keeps the legacy toFixed string (may
+                        // be 'NaN'); the plural count needs the numeric form
+                        // and renders identically either way.
+                        count: Number(vm.daysLeft),
                       })}
                       {subscription.reset_day !== null
                         ? subscription.reset_day === 0
                           ? t(($) => $.dashboard.reset_today)
                           : t(($) => $.dashboard.reset_in_days, {
-                              reset_day: subscription.reset_day,
+                              count: subscription.reset_day,
                             })
                         : ''}
                     </p>

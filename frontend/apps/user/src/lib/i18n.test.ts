@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getLocale, installLocaleDocumentEnvironment } from '@v2board/i18n';
+import dayjs from 'dayjs';
+import { applyDayjsLocale, getLocale, installLocaleDocumentEnvironment } from '@v2board/i18n';
 import { createI18n } from '@v2board/i18n/testing';
 
 const originalNavigatorLanguage = window.navigator.language;
@@ -100,10 +101,8 @@ describe('i18n resources', () => {
     expect(i18n.t(($) => $.dashboard.devices_online, { alive_ip: 1, device_limit: 3 })).toBe(
       '在线设备 1/3',
     );
-    expect(i18n.t(($) => $.dashboard.reset_in_days, { reset_day: 5 })).toBe(
-      '已用流量将在 5 日后重置',
-    );
-    expect(i18n.t(($) => $.dashboard.expires_in, { date: '2026/06/04', day: 7 })).toBe(
+    expect(i18n.t(($) => $.dashboard.reset_in_days, { count: 5 })).toBe('已用流量将在 5 日后重置');
+    expect(i18n.t(($) => $.dashboard.expires_in, { date: '2026/06/04', count: 7 })).toBe(
       '于 2026/06/04 到期，距离到期还有 7 天。',
     );
     expect(i18n.t(($) => $.dashboard.alert_traffic_rate, { rate: 80 })).toBe(
@@ -191,10 +190,8 @@ describe('i18n resources', () => {
     expect(i18n.t(($) => $.dashboard.devices_online, { alive_ip: 1, device_limit: 3 })).toBe(
       '在线设备 1/3',
     );
-    expect(i18n.t(($) => $.dashboard.reset_in_days, { reset_day: 5 })).toBe(
-      '已用流量将在 5 日后重置',
-    );
-    expect(i18n.t(($) => $.dashboard.expires_in, { date: '2026/06/04', day: 7 })).toBe(
+    expect(i18n.t(($) => $.dashboard.reset_in_days, { count: 5 })).toBe('已用流量将在 5 日后重置');
+    expect(i18n.t(($) => $.dashboard.expires_in, { date: '2026/06/04', count: 7 })).toBe(
       '于 2026/06/04 到期，距离到期还有 7 天。',
     );
     expect(i18n.t(($) => $.dashboard.alert_traffic_rate, { rate: 80 })).toBe(
@@ -260,10 +257,10 @@ describe('i18n resources', () => {
     expect(i18n.t(($) => $.dashboard.devices_online, { alive_ip: 1, device_limit: 3 })).toBe(
       '1 Online / 3 Device(s)',
     );
-    expect(i18n.t(($) => $.dashboard.reset_in_days, { reset_day: 5 })).toBe(
+    expect(i18n.t(($) => $.dashboard.reset_in_days, { count: 5 })).toBe(
       'Used data will reset after 5 days',
     );
-    expect(i18n.t(($) => $.dashboard.expires_in, { date: '2026/06/04', day: 7 })).toBe(
+    expect(i18n.t(($) => $.dashboard.expires_in, { date: '2026/06/04', count: 7 })).toBe(
       'Will expire on 2026/06/04, 7 days before expiration, ',
     );
     expect(i18n.t(($) => $.dashboard.alert_traffic_rate, { rate: 80 })).toBe(
@@ -482,6 +479,51 @@ describe('i18n resources', () => {
     expect(i18n.t(($) => $.dashboard.devices_online, { alive_ip: 1, device_limit: 3 })).toBe(
       '온라인 1/3 장치',
     );
+  });
+
+  it('resolves English singular/plural forms while invariant locales stay unchanged', () => {
+    setLocalePreference('en-US');
+    let i18n = createI18n();
+
+    expect(i18n.t(($) => $.invite.people_count, { count: 1 })).toBe('1 person');
+    expect(i18n.t(($) => $.invite.people_count, { count: 3 })).toBe('3 people');
+    expect(i18n.t(($) => $.dashboard.reset_in_days, { count: 1 })).toBe(
+      'Used data will reset after 1 day',
+    );
+    expect(i18n.t(($) => $.dashboard.expires_in, { date: '2026/06/04', count: 1 })).toBe(
+      'Will expire on 2026/06/04, 1 day before expiration, ',
+    );
+    expect(i18n.t(($) => $.profile.redeem_days, { count: 1 })).toBe('Subscription time 1 day');
+    expect(i18n.t(($) => $.dashboard.alert_open_ticket, { count: 1 })).toBe(
+      '<strong>1</strong> ticket is in process',
+    );
+
+    setLocalePreference('zh-CN');
+    i18n = createI18n();
+
+    expect(i18n.t(($) => $.invite.people_count, { count: 1 })).toBe('1人');
+    expect(i18n.t(($) => $.dashboard.alert_open_ticket, { count: 2 })).toBe(
+      '<strong>2</strong> 条工单正在处理中',
+    );
+  });
+
+  it('keeps the dayjs global locale in sync with the active language', async () => {
+    await applyDayjsLocale('ja-JP');
+    expect(dayjs.locale()).toBe('ja');
+
+    // The wiring path: installLocaleDocumentEnvironment applies the pack on
+    // every language change (asynchronously, once the pack chunk lands).
+    setLocalePreference('zh-CN');
+    const i18n = createI18n();
+    const uninstall = installLocaleDocumentEnvironment(i18n);
+    await vi.waitFor(() => expect(dayjs.locale()).toBe('zh-cn'));
+
+    await i18n.changeLanguage('ko-KR');
+    await vi.waitFor(() => expect(dayjs.locale()).toBe('ko'));
+
+    uninstall();
+    await applyDayjsLocale('en-US');
+    expect(dayjs.locale()).toBe('en');
   });
 
   // docs/api-dialect.md §11: one canonical key (v2board_locale) written at

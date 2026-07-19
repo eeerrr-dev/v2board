@@ -7,6 +7,9 @@ import {
   resolveSupportedLocale,
 } from './bootstrap';
 import { getActiveI18n, initializeI18n } from './instance';
+import { applyDayjsLocale } from './dayjs-locale';
+
+export { applyDayjsLocale } from './dayjs-locale';
 
 export interface CreateI18nOptions {
   fallback?: SupportedLocale;
@@ -111,10 +114,12 @@ export function installLocaleDocumentEnvironment(
   fallback: SupportedLocale = 'zh-CN',
 ): () => void {
   const apply = (locale?: string) => {
-    applyLocaleDocumentEnvironment(
+    const normalized = applyLocaleDocumentEnvironment(
       locale ?? instance.resolvedLanguage ?? instance.language,
       fallback,
     );
+    // Fire-and-forget: dayjs catches up as soon as its locale pack lands.
+    void applyDayjsLocale(normalized);
   };
   const onLanguageChanged = (locale: string) => apply(locale);
 

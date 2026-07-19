@@ -540,6 +540,9 @@ importers:
 
   packages/i18n:
     dependencies:
+      dayjs:
+        specifier: 'catalog:'
+        version: 1.11.21
       i18next:
         specifier: 'catalog:'
         version: 26.3.6(@typescript/typescript6@6.0.2)

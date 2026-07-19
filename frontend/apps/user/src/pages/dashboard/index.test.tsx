@@ -29,7 +29,7 @@ const mocks = vi.hoisted(() => ({
     'dashboard.devices_online': '在线设备 {alive_ip}/{device_limit}',
     'dashboard.active': '生效中',
     'dashboard.expired_label': '已过期',
-    'dashboard.expires_in': '于 {date} 到期，距离到期还有 {day} 天。',
+    'dashboard.expires_in': '于 {date} 到期，距离到期还有 {count} 天。',
     'dashboard.import_to': '导入到',
     'dashboard.long_term': '该订阅长期有效',
     'dashboard.new_period': '提前开启流量周期',
@@ -40,7 +40,7 @@ const mocks = vi.hoisted(() => ({
     'dashboard.plan': '我的订阅',
     'dashboard.qrcode_client_tip': '使用支持扫码的客户端进行订阅',
     'dashboard.renew_subscribe': '续费订阅',
-    'dashboard.reset_in_days': '已用流量将在 {reset_day} 日后重置',
+    'dashboard.reset_in_days': '已用流量将在 {count} 日后重置',
     'dashboard.reset_package_confirm_content':
       '点击「确定」将会跳转到收银台，支付订单后系统将会清空您当月已使用流量。',
     'dashboard.reset_package_confirm_title': '确定重置当前已用流量？',
@@ -153,10 +153,18 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => createTestTranslation(mocks.labels),
   // Trans resolves like t() with markup tags stripped: the bolded count is
   // presentation, and the assertions read textContent either way.
-  Trans: ({ i18nKey, values }: { i18nKey: TranslationInput; values?: TranslationValues }) => (
+  Trans: ({
+    i18nKey,
+    values,
+    count,
+  }: {
+    i18nKey: TranslationInput;
+    values?: TranslationValues;
+    count?: number;
+  }) => (
     <>
       {createTestTranslation(mocks.labels)
-        .t(i18nKey, values)
+        .t(i18nKey, { ...values, ...(count === undefined ? {} : { count }) })
         .replace(/<[^>]+>/g, '')}
     </>
   ),

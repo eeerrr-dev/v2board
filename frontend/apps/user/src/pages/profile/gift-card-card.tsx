@@ -104,13 +104,13 @@ function redeemGiftcardText(type: number, value: number | null, t: TFunction) {
     case 1:
       return t(($) => $.profile.redeem_balance, { amount: formatCentsPlain(value) });
     case 2:
-      return t(($) => $.profile.redeem_days, { days: value });
+      return t(($) => $.profile.redeem_days, { count: value });
     case 3:
       return t(($) => $.profile.redeem_traffic, { traffic: value });
     case 4:
       return t(($) => $.profile.redeem_reset);
     case 5:
-      return t(($) => $.profile.redeem_plan_days, { days: value });
+      return t(($) => $.profile.redeem_plan_days, { count: value });
     default:
       return t(($) => $.profile.redeem_unknown);
   }
