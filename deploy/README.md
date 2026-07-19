@@ -1,5 +1,10 @@
 # Bare-metal production deployment
 
+Day-2 operation — monitoring/alerting, backup/PITR, restore drills, rollback,
+and incident triage — lives in the
+[production operations runbook](../docs/operations.md); this document covers
+installation and activation.
+
 Production does not run Docker or Compose. Docker is only the reproducible local/CI build
 environment that exports a native Linux artifact. The only supported artifact target is
 Debian 13 Linux amd64 with glibc and the native `libssl3t64` runtime.
@@ -331,7 +336,8 @@ directory, correct the problem, and run the same conversion again from the stopp
 targets. This
 is not recovery of the untouched old database and keeps no resumable intermediate state; there is no import
 rollback, resume, checkpoint, recovery or cleanup/restart workflow. After native service starts, normal
-PostgreSQL backup/PITR is ordinary runtime operation, not a MySQL-import stage. ClickHouse history is
+PostgreSQL backup/PITR is ordinary runtime operation, not a MySQL-import stage — set it up per the
+[operations runbook](../docs/operations.md) §2 before admitting users. ClickHouse history is
 sacrificial: an empty rebuild continues only unpublished and new events, with no full history replay.
 
 The operator permanently retires the old site only after the new result is accepted. Full data and
