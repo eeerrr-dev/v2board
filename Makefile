@@ -300,8 +300,11 @@ cloudflared-config-audit:
 	done
 	@echo "Remotely-managed Cloudflare Tunnel credential and hardened systemd contract are present."
 
+# CI injects BuildKit cache flags here; local builds keep the daemon default.
+NATIVE_RELEASE_AUDIT_BUILD_FLAGS ?=
+
 native-release-audit: cloudflared-config-audit
-	docker build --platform linux/amd64 --target native-release-runtime-audit \
+	docker build $(NATIVE_RELEASE_AUDIT_BUILD_FLAGS) --platform linux/amd64 --target native-release-runtime-audit \
 		--build-arg V2BOARD_SOURCE_REVISION=0000000000000000000000000000000000000000 \
 		--file Dockerfile.rust .
 	@test -f deploy/systemd/v2board-api.service

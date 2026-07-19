@@ -59,8 +59,12 @@ jobs:
 
       - name: Install pinned Rust toolchain
         run: |
-          rustup toolchain install 1.97.0 --profile minimal --component clippy,rustfmt
+          rustup toolchain install 1.97.0 --profile minimal --component clippy,rustfmt,llvm-tools
           rustup default 1.97.0
+
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          workspaces: backend/rust
 
       - name: Format
         run: cargo fmt --all --check
@@ -68,8 +72,21 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
-      - name: Test
-        run: cargo test --workspace --locked
+      - name: Test with coverage
+        run: |
+          cargo install cargo-llvm-cov --version 0.8.7 --locked
+          cargo llvm-cov --workspace --locked --lcov --output-path coverage.lcov
+          cargo llvm-cov report --summary-only | tee coverage-summary.txt
+
+      - name: Upload Rust coverage report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: rust-coverage
+          path: |
+            backend/rust/coverage.lcov
+            backend/rust/coverage-summary.txt
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Audit Rust dependencies
         run: |
@@ -210,8 +227,17 @@ jobs:
       - name: Assert retired runtimes stay isolated
         run: make runtime-isolation-audit
 
+      # The release builds run on a docker-container builder so BuildKit can
+      # read and write the GitHub Actions layer cache across CI runs.
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - uses: crazy-max/ghaction-github-runtime@3cb05d89e1f492524af3d41a1c98c83bc3025124 # v3.1.0
+
       - name: Audit the native release contract
-        run: make native-release-audit
+        run: |
+          make native-release-audit NATIVE_RELEASE_AUDIT_BUILD_FLAGS="\
+            --cache-from type=gha,scope=native-release-audit \
+            --cache-to type=gha,scope=native-release-audit,mode=max"
 
       - name: Export and verify the disposable lifecycle tool
         run: |
@@ -219,11 +245,16 @@ jobs:
             --platform linux/amd64 \
             --target lifecycle-runtime-audit \
             --tag v2board-lifecycle-runtime-audit:debian-13-amd64 \
+            --load \
+            --cache-from type=gha,scope=lifecycle-audit \
+            --cache-to type=gha,scope=lifecycle-audit,mode=max \
             --file Dockerfile.rust .
           docker build \
             --platform linux/amd64 \
             --target lifecycle-tool \
             --output type=local,dest=lifecycle-tool \
+            --cache-from type=gha,scope=lifecycle-tool \
+            --cache-to type=gha,scope=lifecycle-tool,mode=max \
             --file Dockerfile.rust .
           test -x lifecycle-tool/v2board-lifecycle
           test "$(find lifecycle-tool -maxdepth 1 -type f | wc -l)" -eq 1
@@ -250,6 +281,8 @@ jobs:
             --target native-release \
             --build-arg V2BOARD_SOURCE_REVISION="${GITHUB_SHA}" \
             --output type=local,dest=native-release \
+            --cache-from type=gha,scope=native-release \
+            --cache-to type=gha,scope=native-release,mode=max \
             --file Dockerfile.rust .
 
       - name: Verify Debian 13 release layout and checksums
