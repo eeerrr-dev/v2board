@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import type { admin } from '@v2board/api-client';
+import type { admin, FilterClause } from '@v2board/api-client';
 import { formatBackendDateTime } from '@v2board/config/format';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { ErrorState } from '@/components/ui/error-state';
+import { Input } from '@/components/ui/input';
 import { PageHeader, PageShell } from '@/components/ui/page';
 import { PaginationControl } from '@/components/ui/pagination';
 import {
@@ -30,14 +31,35 @@ const SURFACE_TEXT: Record<string, string> = {
   staff: '员工',
 };
 
-// Radix Select items cannot carry an empty value, so the "all" choice uses a
+// Radix Select items cannot carry an empty value, so the "all" choices use a
 // sentinel that simply omits the §7 filter clause.
 const ALL_SURFACES = 'all';
+const ALL_METHODS = 'all';
+
+// The trail only records non-GET/HEAD requests, so these are the only method
+// values that can appear in a row.
+const METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'];
 
 interface QueryState {
   current: number;
   pageSize: number;
   surface: string;
+  actorEmail: string;
+  method: string;
+}
+
+function auditFilter(query: QueryState): FilterClause<admin.AuditLogFilterField>[] | undefined {
+  const clauses: FilterClause<admin.AuditLogFilterField>[] = [];
+  if (query.surface !== ALL_SURFACES) {
+    clauses.push({ field: 'surface', op: 'eq', value: query.surface });
+  }
+  if (query.actorEmail !== '') {
+    clauses.push({ field: 'actor_email', op: 'like', value: query.actorEmail });
+  }
+  if (query.method !== ALL_METHODS) {
+    clauses.push({ field: 'method', op: 'eq', value: query.method });
+  }
+  return clauses.length ? clauses : undefined;
 }
 
 /**
@@ -50,15 +72,24 @@ export default function AuditPage() {
     current: 1,
     pageSize: 20,
     surface: ALL_SURFACES,
+    actorEmail: '',
+    method: ALL_METHODS,
   });
+  // The email input is drafted locally and only becomes a filter clause on
+  // Enter/blur, so typing does not fire a request per keystroke.
+  const [emailDraft, setEmailDraft] = useState('');
   const logs = useAuditLogs({
     page: query.current,
     per_page: query.pageSize,
-    filter:
-      query.surface === ALL_SURFACES
-        ? undefined
-        : [{ field: 'surface', op: 'eq', value: query.surface }],
+    filter: auditFilter(query),
   });
+
+  const applyEmailDraft = () => {
+    const actorEmail = emailDraft.trim();
+    setQuery((state) =>
+      state.actorEmail === actorEmail ? state : { ...state, current: 1, actorEmail },
+    );
+  };
 
   const data = logs.data?.items ?? [];
   const total = logs.data?.total ?? 0;
@@ -149,6 +180,38 @@ export default function AuditPage() {
                 <SelectItem value="staff">员工</SelectItem>
               </SelectContent>
             </Select>
+            <Select
+              value={query.method}
+              onValueChange={(method) => setQuery((state) => ({ ...state, current: 1, method }))}
+            >
+              <SelectTrigger
+                className="w-40"
+                aria-label="方法筛选"
+                data-testid="audit-method-filter"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_METHODS}>全部方法</SelectItem>
+                {METHODS.map((method) => (
+                  <SelectItem key={method} value={method}>
+                    {method}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input
+              className="w-56"
+              placeholder="按操作者邮箱搜索"
+              aria-label="操作者筛选"
+              data-testid="audit-email-filter"
+              value={emailDraft}
+              onChange={(event) => setEmailDraft(event.target.value)}
+              onBlur={applyEmailDraft}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') applyEmailDraft();
+              }}
+            />
           </div>
 
           {logs.isError ? (

@@ -6,7 +6,8 @@ import AuditPage from './audit';
 // §6.11 operator audit trail: a read-only list of the append-only audit_log
 // rows. The wire shape is pinned by the api-client contract schema and the
 // backend production invariant; this covers the page behavior — the §7 filter
-// clause the surface picker mints, pagination state, and the error path.
+// clauses the surface/method/actor-email controls mint, pagination state, and
+// the error path.
 
 const mocks = vi.hoisted(() => ({
   useAuditLogs: vi.fn(),
@@ -72,6 +73,59 @@ describe('AuditPage', () => {
       page: 1,
       per_page: 20,
       filter: [{ field: 'surface', op: 'eq', value: 'staff' }],
+    });
+  });
+
+  it('mints a §7 method clause from the method picker', async () => {
+    const { user } = renderWithProviders(<AuditPage />, { queryClient: true });
+
+    await user.click(screen.getByTestId('audit-method-filter'));
+    await user.click(await screen.findByRole('option', { name: 'DELETE' }));
+
+    expect(mocks.useAuditLogs).toHaveBeenLastCalledWith({
+      page: 1,
+      per_page: 20,
+      filter: [{ field: 'method', op: 'eq', value: 'DELETE' }],
+    });
+  });
+
+  it('mints a like clause from the actor-email search on Enter, trimmed', async () => {
+    const { user } = renderWithProviders(<AuditPage />, { queryClient: true });
+
+    await user.type(screen.getByTestId('audit-email-filter'), '  staff@example.com {enter}');
+
+    expect(mocks.useAuditLogs).toHaveBeenLastCalledWith({
+      page: 1,
+      per_page: 20,
+      filter: [{ field: 'actor_email', op: 'like', value: 'staff@example.com' }],
+    });
+
+    await user.clear(screen.getByTestId('audit-email-filter'));
+    await user.keyboard('{enter}');
+    expect(mocks.useAuditLogs).toHaveBeenLastCalledWith({
+      page: 1,
+      per_page: 20,
+      filter: undefined,
+    });
+  });
+
+  it('combines all three filters into one clause list', async () => {
+    const { user } = renderWithProviders(<AuditPage />, { queryClient: true });
+
+    await user.click(screen.getByTestId('audit-surface-filter'));
+    await user.click(await screen.findByRole('option', { name: '员工' }));
+    await user.click(screen.getByTestId('audit-method-filter'));
+    await user.click(await screen.findByRole('option', { name: 'POST' }));
+    await user.type(screen.getByTestId('audit-email-filter'), 'staff@{enter}');
+
+    expect(mocks.useAuditLogs).toHaveBeenLastCalledWith({
+      page: 1,
+      per_page: 20,
+      filter: [
+        { field: 'surface', op: 'eq', value: 'staff' },
+        { field: 'actor_email', op: 'like', value: 'staff@' },
+        { field: 'method', op: 'eq', value: 'POST' },
+      ],
     });
   });
 
