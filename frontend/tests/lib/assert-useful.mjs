@@ -1129,7 +1129,11 @@ export function assertUsefulInteraction(label, result, target) {
       !result.serverSortMode?.sortModeActive ||
       result.serverSortRequests?.length !== 1 ||
       result.serverSortFailed?.requestCounts?.serverSort !== 1 ||
-      result.fetchDeltas?.plan !== 0)
+      // The oracle never refetches the plan list after a failed mutation; the
+      // redesigned source's optimistic toggle invalidates on settlement, so it
+      // refetches exactly once. Anything beyond that single settle refetch
+      // would mean the failure path re-entered the mutation flow.
+      ![0, 1].includes(result.fetchDeltas?.plan))
   ) {
     throw new Error(
       `admin mutation failure matrix did not preserve legacy state: ${JSON.stringify(result)}`,

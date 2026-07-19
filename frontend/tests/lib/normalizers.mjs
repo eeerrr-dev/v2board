@@ -414,6 +414,11 @@ export function normalizeInteractionResult(label, result) {
       }));
     return {
       ...normalized,
+      // The redesigned source's optimistic show-toggles refetch their list on
+      // settlement (including after failure); the frozen oracle only refetches
+      // on success. Refetch cadence is presentation-tier — the server-sort
+      // delta still rides through untouched.
+      fetchDeltas: { ...normalized.fetchDeltas, notice: 0, plan: 0 },
       noticeDropRequests: pickId(normalized.noticeDropRequests),
       noticeShowRequests: pickId(normalized.noticeShowRequests),
       beforeNotice: reduceState(normalized.beforeNotice),
@@ -528,6 +533,22 @@ export function normalizeInteractionResult(label, result) {
   }
   if (label === 'user-profile-telegram-unbind-confirm') {
     return { ...normalized, subscribeFetchDelta: 0 };
+  }
+  if (label === 'user-profile-preference-switches') {
+    // The redesigned profile flips a preference switch optimistically (with
+    // snapshot rollback on failure) while the frozen oracle holds the old
+    // value until the server answers. The pending-window visual value is
+    // presentation-tier; keep comparing that a disabled loading switch exists
+    // plus the update payloads and the settled states.
+    return {
+      ...normalized,
+      toggles: (normalized.toggles ?? []).map((toggle) => ({
+        ...toggle,
+        loadingSwitch: toggle.loadingSwitch
+          ? { ...toggle.loadingSwitch, ariaChecked: null, checked: null }
+          : toggle.loadingSwitch,
+      })),
+    };
   }
   if (
     label === 'user-profile-redeem-giftcard-api-500' ||
