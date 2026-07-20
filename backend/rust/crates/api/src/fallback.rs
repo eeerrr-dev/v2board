@@ -272,14 +272,16 @@ mod tests {
         assert!(body.contains("<title>Acme &lt;Panel&gt;</title>"));
         assert!(body.contains("<meta name=\"description\" content=\"Fast &amp; simple\" />"));
         assert!(
-            body.contains("<link rel=\"canonical\" href=\"https://panel.example.com/order/T123\" />")
+            body.contains(
+                "<link rel=\"canonical\" href=\"https://panel.example.com/order/T123\" />"
+            )
         );
         assert!(body.contains(
             "<meta property=\"og:url\" content=\"https://panel.example.com/order/T123\" />"
         ));
-        assert!(
-            body.contains("<meta property=\"og:image\" content=\"https://cdn.example.com/logo.png\" />")
-        );
+        assert!(body.contains(
+            "<meta property=\"og:image\" content=\"https://cdn.example.com/logo.png\" />"
+        ));
 
         // The admin document is branded but never carries social metadata.
         let response = app

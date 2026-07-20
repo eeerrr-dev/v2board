@@ -376,9 +376,11 @@ fn substitute_head_branding(
         1,
     );
     match app {
-        FrontendApp::User => {
-            html.replacen(HEAD_META_TOKEN, &social_head_meta(config, path, &title, &description), 1)
-        }
+        FrontendApp::User => html.replacen(
+            HEAD_META_TOKEN,
+            &social_head_meta(config, path, &title, &description),
+            1,
+        ),
         FrontendApp::Admin => html,
     }
 }
@@ -391,14 +393,25 @@ fn social_head_meta(config: &AppConfig, path: &str, title: &str, description: &s
     if let Some(app_url) = config.app_url.as_deref().filter(|value| !value.is_empty()) {
         let canonical = html_escape(&format!("{}{}", app_url.trim_end_matches('/'), path));
         tags.push(format!("<link rel=\"canonical\" href=\"{canonical}\" />"));
-        tags.push(format!("<meta property=\"og:url\" content=\"{canonical}\" />"));
+        tags.push(format!(
+            "<meta property=\"og:url\" content=\"{canonical}\" />"
+        ));
     }
     tags.push("<meta property=\"og:type\" content=\"website\" />".to_owned());
-    tags.push(format!("<meta property=\"og:site_name\" content=\"{title}\" />"));
-    tags.push(format!("<meta property=\"og:title\" content=\"{title}\" />"));
-    tags.push(format!("<meta property=\"og:description\" content=\"{description}\" />"));
+    tags.push(format!(
+        "<meta property=\"og:site_name\" content=\"{title}\" />"
+    ));
+    tags.push(format!(
+        "<meta property=\"og:title\" content=\"{title}\" />"
+    ));
+    tags.push(format!(
+        "<meta property=\"og:description\" content=\"{description}\" />"
+    ));
     if let Some(logo) = config.logo.as_deref().filter(|value| !value.is_empty()) {
-        tags.push(format!("<meta property=\"og:image\" content=\"{}\" />", html_escape(logo)));
+        tags.push(format!(
+            "<meta property=\"og:image\" content=\"{}\" />",
+            html_escape(logo)
+        ));
     }
     tags.join("\n    ")
 }
@@ -624,21 +637,23 @@ mod tests {
         config.app_url = Some("https://panel.example.com/".to_string());
         config.logo = Some("https://cdn.example.com/logo.png".to_string());
 
-        let template = format!(
-            "<head>{USER_TITLE_TOKEN}{DESCRIPTION_TOKEN}{HEAD_META_TOKEN}</head>"
-        );
-        let html =
-            substitute_head_branding(template, &config, FrontendApp::User, "/order/T123");
+        let template =
+            format!("<head>{USER_TITLE_TOKEN}{DESCRIPTION_TOKEN}{HEAD_META_TOKEN}</head>");
+        let html = substitute_head_branding(template, &config, FrontendApp::User, "/order/T123");
         // Text and attribute contexts get the escaped name; the absent
         // description falls back to it.
         assert!(html.contains("<title>Acme &lt;&quot;Panel&quot;&gt;</title>"));
-        assert!(html.contains(
-            "<meta name=\"description\" content=\"Acme &lt;&quot;Panel&quot;&gt;\" />"
-        ));
+        assert!(
+            html.contains(
+                "<meta name=\"description\" content=\"Acme &lt;&quot;Panel&quot;&gt;\" />"
+            )
+        );
         // The trailing app_url slash collapses into the request path.
-        assert!(html.contains(
-            "<link rel=\"canonical\" href=\"https://panel.example.com/order/T123\" />"
-        ));
+        assert!(
+            html.contains(
+                "<link rel=\"canonical\" href=\"https://panel.example.com/order/T123\" />"
+            )
+        );
         assert!(html.contains(
             "<meta property=\"og:url\" content=\"https://panel.example.com/order/T123\" />"
         ));
@@ -651,21 +666,19 @@ mod tests {
         config.app_url = None;
         config.app_description = Some("Fast & simple".to_string());
         config.logo = None;
-        let template = format!(
-            "<head>{USER_TITLE_TOKEN}{DESCRIPTION_TOKEN}{HEAD_META_TOKEN}</head>"
-        );
+        let template =
+            format!("<head>{USER_TITLE_TOKEN}{DESCRIPTION_TOKEN}{HEAD_META_TOKEN}</head>");
         let html = substitute_head_branding(template, &config, FrontendApp::User, "/");
         assert!(!html.contains("rel=\"canonical\""));
         assert!(!html.contains("og:url"));
         assert!(!html.contains("og:image"));
-        assert!(html.contains(
-            "<meta property=\"og:description\" content=\"Fast &amp; simple\" />"
-        ));
+        assert!(
+            html.contains("<meta property=\"og:description\" content=\"Fast &amp; simple\" />")
+        );
 
         // The admin document gets the title/description substitution but
         // never a social block, and a stray marker passes through untouched.
-        let template =
-            format!("<head>{ADMIN_TITLE_TOKEN}{DESCRIPTION_TOKEN}</head>");
+        let template = format!("<head>{ADMIN_TITLE_TOKEN}{DESCRIPTION_TOKEN}</head>");
         let html = substitute_head_branding(template, &config, FrontendApp::Admin, "/admin");
         assert!(html.contains("<title>Acme &lt;&quot;Panel&quot;&gt;</title>"));
         assert!(!html.contains("<meta property=\"og:"));
