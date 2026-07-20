@@ -4,7 +4,7 @@ The backend uses inward-facing dependency boundaries rather than treating the
 historical crate layout as the design authority.
 
 ```text
-generated TypeScript/Zod <--- OpenAPI <--- transport contract (`api-contract`)
+generated TypeScript/Zod <--- OpenAPI <--- operation/transport contract (`api-contract`)
                                                ^
                                                |
 HTTP adapter (`api`) -- maps DTOs <--> application commands/views
@@ -14,16 +14,36 @@ HTTP adapter (`api`) -- maps DTOs <--> application commands/views
                                                |
                                                v
                                   pure domain model (`domain-model`)
+
+RFC 9457 runtime (`compat`) <--- zero-dependency code registry (`problem-code`)
+                                      ---> OpenAPI projection (`api-contract`)
 ```
 
 - `domain-model` owns infrastructure-free value objects and business policy.
   It must not depend on SQL, Redis, HTTP, async runtimes, configuration, or API
-  serialization. Its direct normal, build, and dev allowlists are empty.
-- `api-contract` owns generated-wire schemas and OpenAPI metadata. It must not
-  depend on application services or persistence, and application services must
-  not depend on it. Its direct normal allowlist is limited to `anyhow`,
-  `chrono`, `serde`, `serde_json`, and `utoipa`; its build and dev allowlists
-  are empty. The HTTP adapter performs the explicit conversion.
+  serialization. Its direct normal, build, and dev allowlists are empty. The
+  current pure core covers money, plan pricing, typed order vocabulary,
+  renewal decisions, subscription/reset policy, and commission policy; API,
+  worker, and persistence code translate at those boundaries.
+- `api-contract` owns generated-wire schemas and the canonical 158-operation
+  internal registry. Axum routing and OpenAPI both derive method/path from that
+  registry; the generated document also pins path/query parameters, common and
+  operation-specific headers, request-body presence, security metadata, exact
+  success status/media sets, and the reusable RFC 9457 problem model. This is
+  complete **operation-inventory and operation-metadata coverage**, not a claim
+  that every handler DTO is already field-generated: most JSON request and
+  success bodies deliberately remain `JsonValue` until their transport types
+  move here. It must not depend on application services or persistence, and
+  application services must not depend on it. Its direct normal allowlist is
+  limited to `anyhow`,
+  `chrono`, `serde`, `serde_json`, `utoipa`, and the zero-dependency
+  `v2board-problem-code`; its build and dev allowlists are empty. The HTTP
+  adapter performs the explicit conversion.
+- `problem-code` is the framework-free, zero-dependency registry for all 101
+  application-level problem slugs, status/title assignments, and default or
+  localized details. `compat`
+  projects it into Axum responses and `api-contract` projects it into OpenAPI,
+  so runtime and generated clients cannot acquire separate error registries.
 - `domain` is the historical path for the application layer. It coordinates
   use cases and depends inward on the pure model; it is not a domain-entity
   bucket and may not import HTTP DTOs or server-transport crates such as Axum,
@@ -37,7 +57,8 @@ HTTP adapter (`api`) -- maps DTOs <--> application commands/views
 The dependency-direction tests in `domain-model/tests` inspect Cargo's resolved
 dependency graph (rather than grepping manifests), so dependency aliases cannot
 bypass these boundaries. Direct normal/build dependencies use exact allowlists;
-the current dev allowlists for `domain-model` and `api-contract` are empty, and
+the current dev allowlists for `domain-model`, `problem-code`, and
+`api-contract` are empty, and
 the `domain` transport exclusion is checked across normal, build, and dev edges.
 Adding a test-only or build-script dependency therefore requires the same
 explicit architecture review as a runtime dependency. New business concepts

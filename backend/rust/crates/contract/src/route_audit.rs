@@ -5,6 +5,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
+use v2board_api_contract::INTERNAL_OPERATIONS;
 
 pub fn run() -> Result<()> {
     let admin_path = normalized_admin_path();
@@ -14,7 +15,6 @@ pub fn run() -> Result<()> {
     );
     let rust_root = env_or("ROUTE_AUDIT_RUST_ROOT", "/src/backend/rust");
     let reference = collect_reference_routes(Path::new(&reference_root), &admin_path)?;
-    let rust = collect_rust_routes(Path::new(&rust_root), &admin_path)?;
     let retired = retired_reference_routes(&admin_path);
     let stale_retirements = retired.difference(&reference).cloned().collect::<Vec<_>>();
     if !stale_retirements.is_empty() {
@@ -33,17 +33,16 @@ pub fn run() -> Result<()> {
     // reference route with neither a retirement nor a translation fails the
     // audit loudly.
     let translation = internal_route_translation(&admin_path);
-    let mut required = BTreeSet::new();
-    let mut frozen_external = 0_usize;
+    let mut required_internal = BTreeSet::new();
+    let mut required_frozen = BTreeSet::new();
     let mut unmapped = Vec::new();
     for route in reference.difference(&retired) {
         if is_frozen_external_reference_path(&route.path) {
-            frozen_external += 1;
-            required.insert(route.clone());
+            required_frozen.insert(route.clone());
             continue;
         }
         match translation.get(route) {
-            Some(moderns) => required.extend(moderns.iter().cloned()),
+            Some(moderns) => required_internal.extend(moderns.iter().cloned()),
             None => unmapped.push(route.clone()),
         }
     }
@@ -57,26 +56,124 @@ pub fn run() -> Result<()> {
             unmapped.len()
         );
     }
-    let missing = required.difference(&rust).cloned().collect::<Vec<_>>();
-
-    if !missing.is_empty() {
-        println!("Required routes missing in Rust:");
-        for route in &missing {
-            println!("MISSING {} {}", route.method, route.path);
-        }
+    let rust = collect_rust_routes(Path::new(&rust_root), &admin_path)?;
+    let map_targets = internal_route_targets(&admin_path);
+    audit_exact_routes(
+        "legacy route-map targets",
+        &map_targets,
+        &rust.registry_mapped,
+    )?;
+    audit_required_routes(
+        "translated legacy internal routes",
+        &required_internal,
+        &rust.registry_mapped,
+    )?;
+    audit_exact_routes(
+        "frozen external Rust routes",
+        &required_frozen,
+        &rust.frozen_external,
+    )?;
+    if rust.registry_native.len() != 9 {
         bail!(
-            "route audit failed: {} required routes are missing",
-            missing.len()
+            "route audit failed: expected 9 documented native internal routes, found {}",
+            rust.registry_native.len()
         );
     }
+    if !rust.registry_native.is_disjoint(&rust.registry_mapped) {
+        bail!("route audit failed: native and legacy-mapped registry routes overlap");
+    }
+    let mapped_native_additions = rust
+        .registry_mapped
+        .difference(&required_internal)
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    audit_exact_routes(
+        "route-map native additions",
+        &expected_map_native_additions(&admin_path),
+        &mapped_native_additions,
+    )?;
     println!(
-        "Route audit OK: {} required routes are served by Rust ({} frozen external reference routes verbatim, {} modern translations of the internal reference namespaces); {} obsolete routes are explicitly retired.",
-        required.len(),
-        frozen_external,
-        required.len() - frozen_external,
+        "Route audit OK: the Rust-owned registry exactly declares {} internal routes ({} route-map operations, including {} map-native additions, plus {} operations outside the map), {} frozen external routes remain verbatim, and {} obsolete routes are explicitly retired.",
+        rust.registry_mapped.len() + rust.registry_native.len(),
+        rust.registry_mapped.len(),
+        mapped_native_additions.len(),
+        rust.registry_native.len(),
+        required_frozen.len(),
         retired.len()
     );
     Ok(())
+}
+
+fn collect_registry_routes(admin_path: &str, legacy_mapped: bool) -> BTreeSet<RouteKey> {
+    INTERNAL_OPERATIONS
+        .iter()
+        .filter(|operation| operation.legacy_mapped == legacy_mapped)
+        .map(|operation| {
+            route_key(
+                operation.method.as_str(),
+                operation
+                    .documented_path()
+                    .replace("{secure_path}", admin_path),
+            )
+        })
+        .collect()
+}
+
+struct RustRoutes {
+    registry_mapped: BTreeSet<RouteKey>,
+    registry_native: BTreeSet<RouteKey>,
+    frozen_external: BTreeSet<RouteKey>,
+}
+
+/// Internal routes are read directly from the canonical registry. Source
+/// parsing remains intentionally narrow: it proves only that the frozen §2
+/// external routes still exist as literal Axum registrations.
+fn collect_rust_routes(root: &Path, admin_path: &str) -> Result<RustRoutes> {
+    let routes_source = fs::read_to_string(root.join("crates/api/src/routes.rs"))
+        .context("read crates/api/src/routes.rs for frozen external route audit")?;
+    let frozen_external = collect_rust_axum_routes(&routes_source)
+        .into_iter()
+        .filter(|route| is_frozen_external_reference_path(&route.path))
+        .collect();
+    Ok(RustRoutes {
+        registry_mapped: collect_registry_routes(admin_path, true),
+        registry_native: collect_registry_routes(admin_path, false),
+        frozen_external,
+    })
+}
+
+fn audit_exact_routes(
+    label: &str,
+    expected: &BTreeSet<RouteKey>,
+    actual: &BTreeSet<RouteKey>,
+) -> Result<()> {
+    let missing = expected.difference(actual).collect::<Vec<_>>();
+    let extra = actual.difference(expected).collect::<Vec<_>>();
+    if missing.is_empty() && extra.is_empty() {
+        return Ok(());
+    }
+    for route in missing {
+        println!("MISSING {label}: {} {}", route.method, route.path);
+    }
+    for route in extra {
+        println!("EXTRA {label}: {} {}", route.method, route.path);
+    }
+    bail!("route audit failed: {label} does not match its canonical expected set")
+}
+
+fn audit_required_routes(
+    label: &str,
+    required: &BTreeSet<RouteKey>,
+    actual: &BTreeSet<RouteKey>,
+) -> Result<()> {
+    let missing = required.difference(actual).collect::<Vec<_>>();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    for route in missing {
+        println!("MISSING {label}: {} {}", route.method, route.path);
+    }
+    bail!("route audit failed: {label} are missing from the canonical registry")
 }
 
 /// The frozen §2 external namespaces (docs/api-dialect.md §2). These
@@ -108,6 +205,40 @@ fn internal_route_translation(admin_path: &str) -> BTreeMap<RouteKey, BTreeSet<R
         ));
     }
     map
+}
+
+/// Every modern target named by the compatibility map must be a real
+/// canonical operation, including inert rows whose legacy source is absent
+/// from the pinned reference. Conversely, a `legacy_mapped` registry entry
+/// may not exist without a row in that map.
+fn internal_route_targets(admin_path: &str) -> BTreeSet<RouteKey> {
+    INTERNAL_ROUTE_MAP
+        .iter()
+        .map(|(_, _, modern_method, modern_path)| {
+            route_key(*modern_method, api_v1_path(modern_path, admin_path))
+        })
+        .collect()
+}
+
+fn expected_map_native_additions(admin_path: &str) -> BTreeSet<RouteKey> {
+    [
+        "auth.session.delete",
+        "auth.step-up",
+        "user.orders.stripe-intent",
+        "admin.payment-reconciliations.list",
+    ]
+    .into_iter()
+    .map(|id| {
+        let operation = v2board_api_contract::operation(id)
+            .unwrap_or_else(|| panic!("missing route-map native operation {id}"));
+        route_key(
+            operation.method.as_str(),
+            operation
+                .documented_path()
+                .replace("{secure_path}", admin_path),
+        )
+    })
+    .collect()
 }
 
 fn api_v1_path(path: &str, admin_path: &str) -> String {
@@ -1250,48 +1381,10 @@ fn parse_reference_route_file(
     Ok(routes)
 }
 
-fn collect_rust_routes(root: &Path, admin_path: &str) -> Result<BTreeSet<RouteKey>> {
-    let api_main = fs::read_to_string(root.join("crates/api/src/main.rs"))?;
-    let api_routes = fs::read_to_string(root.join("crates/api/src/routes.rs"))?;
-    let admin = fs::read_to_string(root.join("crates/api/src/admin.rs"))?;
-    let mut routes = collect_rust_axum_routes(&format!("{api_main}\n{api_routes}"));
-    routes.retain(|route| {
-        !route.path.contains("{*admin_path}") && !route.path.contains("{*staff_path}")
-    });
-
-    // The modern admin resources are a nested method-aware router relative
-    // to the live `secure_path` prefix; the staff mirror nests at its fixed
-    // prefix (docs/api-dialect.md §6/§6.9).
-    for route in collect_rust_axum_routes(&function_block(&admin, "fn admin_router(")?) {
-        routes.insert(route_key(
-            route.method,
-            format!("/api/v1/{admin_path}{}", route.path),
-        ));
-    }
-    for route in collect_rust_axum_routes(&function_block(&admin, "fn staff_router(")?) {
-        routes.insert(route_key(
-            route.method,
-            format!("/api/v1/staff{}", route.path),
-        ));
-    }
-    Ok(routes)
-}
-
-/// The source text of one top-level `fn`, from its marker to the next
-/// column-zero closing brace. Fails loudly if the marker vanishes so a
-/// renamed router cannot silently drop every nested route from the audit.
-fn function_block(content: &str, marker: &str) -> Result<String> {
-    let start = content
-        .find(marker)
-        .with_context(|| format!("route audit: `{marker}` not found in crates/api/src/admin.rs"))?;
-    let rest = &content[start..];
-    let end = rest
-        .find("\n}")
-        .map(|index| index + 2)
-        .unwrap_or(rest.len());
-    Ok(rest[..end].to_string())
-}
-
+/// Extract literal Axum `.route("/…", …)` registrations from one source
+/// file. This deliberately does not understand registry-backed internal
+/// routes: the only caller filters the result to byte-frozen external
+/// namespaces, which remain handwritten in `routes.rs`.
 fn collect_rust_axum_routes(content: &str) -> BTreeSet<RouteKey> {
     let lines = content.lines().collect::<Vec<_>>();
     let mut routes = BTreeSet::new();
@@ -1338,8 +1431,8 @@ fn rust_route_block(lines: &[&str], start: usize) -> (String, usize) {
         } else {
             (*line).to_string()
         };
-        for ch in segment.chars() {
-            match ch {
+        for character in segment.chars() {
+            match character {
                 '(' => depth += 1,
                 ')' => depth -= 1,
                 _ => {}

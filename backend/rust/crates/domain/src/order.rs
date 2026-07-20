@@ -7,13 +7,13 @@ use sqlx::FromRow;
 use v2board_compat::ApiError;
 use v2board_config::AppConfig;
 use v2board_db::DbPool;
+use v2board_domain_model::PlanPricePeriod;
 
 mod checkout;
 mod lifecycle;
 mod payment_integrations;
 mod settlement;
 
-use lifecycle::{commission_amount, round_cents};
 use settlement::{PaymentNotifyOutcome, VerifiedPaymentNotify};
 
 pub use lifecycle::generate_order_no;
@@ -29,7 +29,8 @@ use checkout::{
 #[cfg(test)]
 use lifecycle::{
     USER_FOR_ORDER_SQL, add_months, add_period_time, apply_vip_discount, buy_by_one_time,
-    buy_by_period, calculate_handling_amount_cents, commission_is_eligible, percent,
+    buy_by_period, calculate_handling_amount_cents, commission_amount, commission_is_eligible,
+    order_event_resets_traffic, percent, round_cents,
 };
 #[cfg(test)]
 use settlement::{
@@ -55,7 +56,7 @@ pub struct OrderService {
 pub enum SaveOrderInput {
     Plan {
         plan_id: i32,
-        period: String,
+        period: PlanPricePeriod,
         coupon_code: Option<String>,
     },
     Deposit {
@@ -92,11 +93,21 @@ pub fn commission_amount_cents(
     commission_rate: Option<i32>,
     default_rate: i32,
 ) -> Result<i32, ApiError> {
-    round_cents(commission_amount(
-        Decimal::from(total_amount),
-        commission_rate,
-        default_rate,
-    ))
+    v2board_domain_model::order_commission_amount(total_amount, commission_rate, default_rate)
+        .map_err(|_| {
+            ApiError::from(
+                v2board_compat::Problem::new(v2board_compat::Code::PaymentAmountOutOfRange)
+                    .with_detail("Order amount is outside the supported range"),
+            )
+        })
+}
+
+pub fn inviter_commission_is_eligible(
+    commission_type: i16,
+    first_time_enable: bool,
+    has_valid_order: bool,
+) -> bool {
+    lifecycle::commission_is_eligible(commission_type, first_time_enable, has_valid_order)
 }
 
 #[derive(Debug, Clone)]

@@ -9,6 +9,10 @@ use serde::Serialize;
 use v2board_compat::{ApiError, Code, Problem, constant_time_bytes_eq, json::rfc3339_option};
 use v2board_config::{AppConfig, app_now, app_timezone, duration_minutes_to_seconds};
 use v2board_domain::subscribe_link::{hmac_sha1_hex, totp_counter_bytes};
+use v2board_domain_model::{
+    NewPeriodError, NewPeriodWindow, SubscriptionAvailability, TrafficResetMethod,
+    checked_reset_subscription_expiry as decide_reset_subscription_expiry,
+};
 
 use crate::{
     auth::require_user, codec::base64_decode_url_safe, commerce::PlanBody, dialect::problem_from,
@@ -201,31 +205,18 @@ pub(crate) async fn subscription_new_period(
     .await
     .map_err(|error| problem_from(error.into(), locale))?
     .flatten();
+    let decision_now = Utc::now().timestamp();
     let expired_at = row
         .expired_at
-        .filter(|expired_at| *expired_at > Utc::now().timestamp())
+        .filter(|expired_at| *expired_at > decision_now)
         .ok_or_else(not_allowed)?;
-    let mut reset_day =
-        reset_day_by_method(expired_at, plan_reset_method, &config).ok_or_else(not_allowed)?;
-    let mut period = reset_period_by_method(plan_reset_method, &config).ok_or_else(not_allowed)?;
-    match period {
-        1 => {
-            reset_day = 30;
-            period = 30;
-        }
-        30 => {}
-        12 => {
-            reset_day = 365;
-            period = 365;
-        }
-        365 => {}
-        _ => return Err(Problem::localized(Code::ResetPeriodInvalid, locale)),
-    }
-    if reset_day <= 0 {
-        reset_day = period;
-    }
+    let method = resolve_reset_method(plan_reset_method, config.reset_traffic_method)
+        .ok_or_else(not_allowed)?;
+    let scheduled_days = reset_day_for_method(expired_at, method).ok_or_else(not_allowed)?;
+    let window = NewPeriodWindow::for_method(method, scheduled_days).ok_or_else(not_allowed)?;
     if let Some(next_expired_at) =
-        checked_reset_subscription_expiry(expired_at, reset_day, period, Utc::now().timestamp())
+        decide_reset_subscription_expiry(expired_at, window, decision_now)
+            .map_err(new_period_error)
             .map_err(|error| problem_from(error, locale))?
     {
         let updated = sqlx::query(
@@ -233,7 +224,7 @@ pub(crate) async fn subscription_new_period(
              u = 0, d = 0, updated_at = $2 WHERE id = $3",
         )
         .bind(next_expired_at)
-        .bind(Utc::now().timestamp())
+        .bind(decision_now)
         .bind(user.id)
         .execute(&mut *tx)
         .await
@@ -257,35 +248,34 @@ pub(crate) async fn subscription_new_period(
     }
 }
 
+#[cfg(test)]
 pub(super) fn checked_reset_subscription_expiry(
     expired_at: i64,
     reset_day: i64,
     period: i64,
     now: i64,
 ) -> Result<Option<i64>, ApiError> {
-    if reset_day < 0 || period < 0 {
-        return Err(Problem::new(Code::ResetPeriodInvalid).into());
+    decide_reset_subscription_expiry(
+        expired_at,
+        NewPeriodWindow {
+            reset_days: reset_day,
+            period_days: period,
+        },
+        now,
+    )
+    .map_err(new_period_error)
+}
+
+fn new_period_error(error: NewPeriodError) -> ApiError {
+    match error {
+        NewPeriodError::NegativeDuration => Problem::new(Code::ResetPeriodInvalid).into(),
+        NewPeriodError::ResetPeriodOutOfRange => Problem::new(Code::SubscriptionValueOutOfRange)
+            .with_detail("Reset period exceeds the supported range")
+            .into(),
+        NewPeriodError::ExpiryOutOfRange => Problem::new(Code::SubscriptionValueOutOfRange)
+            .with_detail("Subscription expiry exceeds the supported range")
+            .into(),
     }
-    let range_error = |detail: &'static str| {
-        ApiError::from(Problem::new(Code::SubscriptionValueOutOfRange).with_detail(detail))
-    };
-    let threshold = period
-        .checked_add(1)
-        .and_then(|days| days.checked_mul(86_400))
-        .ok_or_else(|| range_error("Reset period exceeds the supported range"))?;
-    let remaining = expired_at
-        .checked_sub(now)
-        .ok_or_else(|| range_error("Subscription expiry exceeds the supported range"))?;
-    if threshold >= remaining {
-        return Ok(None);
-    }
-    let reset_seconds = reset_day
-        .checked_mul(86_400)
-        .ok_or_else(|| range_error("Reset period exceeds the supported range"))?;
-    expired_at
-        .checked_sub(reset_seconds)
-        .map(Some)
-        .ok_or_else(|| range_error("Subscription expiry exceeds the supported range"))
 }
 
 pub(crate) async fn resolve_subscribe_token(
@@ -412,52 +402,37 @@ pub(crate) fn reset_day(
     if expired_at <= v2board_config::now_utc().timestamp() {
         return None;
     }
-    let method = plan
-        .reset_traffic_method
-        .map(i32::from)
-        .unwrap_or(config.reset_traffic_method);
+    let method = resolve_reset_method(plan.reset_traffic_method, config.reset_traffic_method)?;
 
     match method {
-        0 => Some(reset_day_by_month_first_day()),
-        1 => Some(reset_day_by_expire_day(expired_at)),
-        2 => None,
-        3 => days_until_year_first_day(),
-        4 => days_until_year_expire_day(expired_at),
-        _ => None,
+        TrafficResetMethod::MonthStart => Some(reset_day_by_month_first_day()),
+        TrafficResetMethod::ExpiryDay => Some(reset_day_by_expire_day(expired_at)),
+        TrafficResetMethod::Never => None,
+        TrafficResetMethod::YearStart => days_until_year_first_day(),
+        TrafficResetMethod::ExpiryAnniversary => days_until_year_expire_day(expired_at),
     }
 }
 
-fn reset_day_by_method(
-    expired_at: i64,
+fn reset_day_for_method(expired_at: i64, method: TrafficResetMethod) -> Option<i64> {
+    match method {
+        TrafficResetMethod::MonthStart => Some(reset_day_by_month_first_day()),
+        TrafficResetMethod::ExpiryDay => Some(reset_day_by_expire_day(expired_at)),
+        TrafficResetMethod::Never => None,
+        TrafficResetMethod::YearStart => days_until_year_first_day(),
+        TrafficResetMethod::ExpiryAnniversary => days_until_year_expire_day(expired_at),
+    }
+}
+
+fn resolve_reset_method(
     plan_reset_method: Option<i16>,
-    config: &AppConfig,
-) -> Option<i64> {
-    if expired_at <= Utc::now().timestamp() {
-        return None;
-    }
-    match plan_reset_method
-        .map(i32::from)
-        .unwrap_or(config.reset_traffic_method)
-    {
-        0 => Some(reset_day_by_month_first_day()),
-        1 => Some(reset_day_by_expire_day(expired_at)),
-        2 => None,
-        3 => days_until_year_first_day(),
-        4 => days_until_year_expire_day(expired_at),
-        _ => None,
-    }
-}
-
-fn reset_period_by_method(plan_reset_method: Option<i16>, config: &AppConfig) -> Option<i64> {
-    match plan_reset_method
-        .map(i32::from)
-        .unwrap_or(config.reset_traffic_method)
-    {
-        0 => Some(1),
-        1 => Some(30),
-        2 => None,
-        3 => Some(12),
-        4 => Some(365),
+    default_method: i32,
+) -> Option<TrafficResetMethod> {
+    match plan_reset_method.map(i32::from).unwrap_or(default_method) {
+        0 => Some(TrafficResetMethod::MonthStart),
+        1 => Some(TrafficResetMethod::ExpiryDay),
+        2 => Some(TrafficResetMethod::Never),
+        3 => Some(TrafficResetMethod::YearStart),
+        4 => Some(TrafficResetMethod::ExpiryAnniversary),
         _ => None,
     }
 }
@@ -522,9 +497,10 @@ fn last_day_of_current_month() -> u32 {
 }
 
 pub(crate) fn user_is_available(user: &v2board_db::user::UserAccessRow) -> bool {
-    let unexpired = user
-        .expired_at
-        .map(|expired_at| expired_at > Utc::now().timestamp())
-        .unwrap_or(true);
-    user.banned == 0 && user.transfer_enable > 0 && unexpired
+    SubscriptionAvailability {
+        banned: user.banned != 0,
+        transfer_enable: user.transfer_enable,
+        expiry: user.expired_at,
+    }
+    .is_available(Utc::now().timestamp())
 }

@@ -1,0 +1,11 @@
+[package]
+name = "v2board-problem-code"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Framework-free registry for the internal RFC 9457 API error codes"
+
+[lints]
+workspace = true

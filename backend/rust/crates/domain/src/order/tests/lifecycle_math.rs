@@ -1,5 +1,6 @@
 use serde_json::json;
 use v2board_db::plan::PlanRow;
+use v2board_domain_model::OrderKind;
 
 use super::super::*;
 use super::fixture_payment;
@@ -20,6 +21,43 @@ fn draft_fixture(total_amount: i32) -> DraftOrder {
         surplus_order_ids: None,
         invite_user_id: None,
         commission_balance: Decimal::ZERO,
+    }
+}
+
+#[test]
+fn order_event_reset_decodes_known_kinds_and_keeps_unknown_codes_as_noops() {
+    assert!(order_event_resets_traffic(
+        OrderKind::NewSubscription.code(),
+        1,
+        0,
+        0
+    ));
+    assert!(order_event_resets_traffic(
+        OrderKind::Renewal.code(),
+        0,
+        1,
+        0
+    ));
+    assert!(order_event_resets_traffic(
+        OrderKind::PlanChange.code(),
+        0,
+        0,
+        1
+    ));
+    assert!(!order_event_resets_traffic(
+        OrderKind::TrafficReset.code(),
+        1,
+        1,
+        1
+    ));
+    assert!(!order_event_resets_traffic(
+        OrderKind::BalanceDeposit.code(),
+        1,
+        1,
+        1
+    ));
+    for unknown in [i32::MIN, -1, 0, 5, 8, i32::MAX] {
+        assert!(!order_event_resets_traffic(unknown, 1, 1, 1));
     }
 }
 

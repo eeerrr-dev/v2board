@@ -4278,6 +4278,7 @@ dependencies = [
  "serde",
  "serde_json",
  "utoipa",
+ "v2board-problem-code",
 ]
 
 [[package]]
@@ -4295,6 +4296,7 @@ dependencies = [
  "subtle",
  "thiserror",
  "tracing",
+ "v2board-problem-code",
 ]
 
 [[package]]
@@ -4424,6 +4426,10 @@ dependencies = [
  "v2board-domain-model",
  "v2board-provision",
 ]
+
+[[package]]
+name = "v2board-problem-code"
+version = "0.9.0"
 
 [[package]]
 name = "v2board-provision"

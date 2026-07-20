@@ -8,7 +8,10 @@ use v2board_compat::{ApiError, Code, Problem};
 use v2board_config::{app_now, app_timezone};
 use v2board_db::DbTransaction;
 use v2board_db::plan::PlanRow;
-use v2board_domain_model::PlanPricePeriod;
+use v2board_domain_model::{
+    CommissionEligibility, OrderKind, OrderPeriod, OrderState, PlanPricePeriod,
+    SubscriptionAvailability, commission_is_eligible as domain_commission_is_eligible,
+};
 
 use super::{
     CouponRow, DraftOrder, GIB, OrderForCheckout, OrderService, PaymentForCheckout,
@@ -73,7 +76,7 @@ impl OrderService {
             user_id: user.id,
             plan_id: 0,
             coupon_id: None,
-            r#type: 9,
+            r#type: OrderKind::BalanceDeposit.code(),
             period: "deposit".to_string(),
             trade_no,
             total_amount: Decimal::from(amount),
@@ -147,7 +150,7 @@ impl OrderService {
             user_id: user.id,
             plan_id: plan.id,
             coupon_id: None,
-            r#type: 1,
+            r#type: OrderKind::NewSubscription.code(),
             period: period.to_string(),
             trade_no,
             total_amount: Decimal::from(price),
@@ -239,7 +242,7 @@ impl OrderService {
     ) -> Result<(), ApiError> {
         let now = Utc::now().timestamp();
         if draft.period == "reset_price" {
-            draft.r#type = 4;
+            draft.r#type = OrderKind::TrafficReset.code();
             return Ok(());
         }
         if user.plan_id.is_some()
@@ -249,7 +252,7 @@ impl OrderService {
             if !self.config.plan_change_enable {
                 return Err(Problem::new(Code::PlanChangeDisabled).into());
             }
-            draft.r#type = 3;
+            draft.r#type = OrderKind::PlanChange.code();
             if self.config.surplus_enable {
                 self.apply_surplus_value(tx, user, draft).await?;
             }
@@ -263,9 +266,9 @@ impl OrderService {
             return Ok(());
         }
         if user.expired_at.unwrap_or_default() > now && user.plan_id == Some(plan.id) {
-            draft.r#type = 2;
+            draft.r#type = OrderKind::Renewal.code();
         } else {
-            draft.r#type = 1;
+            draft.r#type = OrderKind::NewSubscription.code();
         }
         Ok(())
     }
@@ -503,7 +506,7 @@ impl OrderService {
         tx: &mut DbTransaction<'_>,
         order: OrderForCheckout,
     ) -> Result<(), ApiError> {
-        if order.r#type == 9 {
+        if order.r#type == OrderKind::BalanceDeposit.code() {
             let bonus = self.config.deposit_bonus(order.total_amount);
             let credit = checked_add_cents(
                 order.total_amount,
@@ -549,11 +552,13 @@ impl OrderService {
             "reset_price" => reset_traffic(&mut user)?,
             period => buy_by_period(&mut user, &order, &plan, period, now)?,
         }
-        match order.r#type {
-            1 if self.config.new_order_event_id == 1 => reset_traffic(&mut user)?,
-            2 if self.config.renew_order_event_id == 1 => reset_traffic(&mut user)?,
-            3 if self.config.change_order_event_id == 1 => reset_traffic(&mut user)?,
-            _ => {}
+        if order_event_resets_traffic(
+            order.r#type,
+            self.config.new_order_event_id,
+            self.config.renew_order_event_id,
+            self.config.change_order_event_id,
+        ) {
+            reset_traffic(&mut user)?;
         }
         user.speed_limit = plan.speed_limit;
         save_opened_user(tx, &user).await?;
@@ -563,6 +568,23 @@ impl OrderService {
             .execute(&mut **tx)
             .await?;
         Ok(())
+    }
+}
+
+/// Whether the configured post-fulfilment hook resets traffic for this order.
+/// Unknown codes deliberately remain a no-op, matching the former wildcard
+/// match arm and preventing corrupt historical rows from selecting a hook.
+pub(super) const fn order_event_resets_traffic(
+    order_kind_code: i32,
+    new_order_event_id: i32,
+    renew_order_event_id: i32,
+    change_order_event_id: i32,
+) -> bool {
+    match OrderKind::from_code(order_kind_code) {
+        Some(OrderKind::NewSubscription) => new_order_event_id == 1,
+        Some(OrderKind::Renewal) => renew_order_event_id == 1,
+        Some(OrderKind::PlanChange) => change_order_event_id == 1,
+        Some(OrderKind::TrafficReset | OrderKind::BalanceDeposit) | None => false,
     }
 }
 
@@ -672,16 +694,13 @@ pub(super) fn commission_is_eligible(
     first_time_enable: bool,
     has_valid_order: bool,
 ) -> bool {
-    match commission_type {
-        // case 0: pay unless first-time gating is on and the buyer already ordered.
-        0 => !first_time_enable || !has_valid_order,
-        // case 1: always pay.
-        1 => true,
-        // case 2: pay only on the buyer's first order.
-        2 => !has_valid_order,
-        // unrecognized type: no commission (the switch leaves $isCommission false).
-        _ => false,
-    }
+    let policy = match commission_type {
+        0 => CommissionEligibility::ConfigurableFirstPurchase,
+        1 => CommissionEligibility::Always,
+        2 => CommissionEligibility::FirstPurchaseOnly,
+        _ => return false,
+    };
+    domain_commission_is_eligible(policy, first_time_enable, has_valid_order)
 }
 
 /// The inviter's commission for an order: `total_amount * rate%`. A per-inviter
@@ -824,15 +843,17 @@ pub(super) async fn mark_order_paid(
     sqlx::query(
         r#"
         UPDATE orders
-        SET status = 1, paid_at = $1, callback_no = $2, callback_no_hash = $3, updated_at = $4
-        WHERE id = $5 AND status = 0
+        SET status = $1, paid_at = $2, callback_no = $3, callback_no_hash = $4, updated_at = $5
+        WHERE id = $6 AND status = $7
         "#,
     )
+    .bind(OrderState::Activating.code())
     .bind(now)
     .bind(callback_no_label)
     .bind(callback_no_hash.as_slice())
     .bind(now)
     .bind(order_id)
+    .bind(OrderState::Pending.code())
     .execute(&mut **tx)
     .await?;
     Ok(())
@@ -840,8 +861,9 @@ pub(super) async fn mark_order_paid(
 
 async fn mark_surplus_orders(tx: &mut DbTransaction<'_>, ids: &[i64]) -> Result<(), sqlx::Error> {
     for chunk in ids.chunks(500) {
-        let mut builder =
-            QueryBuilder::<Postgres>::new("UPDATE orders SET status = 4 WHERE id IN (");
+        let mut builder = QueryBuilder::<Postgres>::new("UPDATE orders SET status = ");
+        builder.push_bind(OrderState::Credited.code());
+        builder.push(" WHERE id IN (");
         let mut separated = builder.separated(", ");
         for id in chunk {
             separated.push_bind(id);
@@ -952,15 +974,15 @@ pub(super) fn buy_by_period(
     now: i64,
 ) -> Result<(), ApiError> {
     let transfer_enable = checked_plan_transfer_bytes(plan.transfer_enable)?;
-    if order.r#type == 3 {
+    if order.r#type == OrderKind::PlanChange.code() {
         user.expired_at = Some(now);
     }
     user.transfer_enable = transfer_enable;
     user.device_limit = plan.device_limit;
-    if user.expired_at.is_none() || order.r#type == 1 {
+    if user.expired_at.is_none() || order.r#type == OrderKind::NewSubscription.code() {
         reset_traffic(user)?;
     }
-    if order.r#type == 2
+    if order.r#type == OrderKind::Renewal.code()
         && let Some(expired_at) = user.expired_at
         && is_same_local_month_day(expired_at, now)
     {
@@ -1012,15 +1034,16 @@ fn reset_traffic(user: &mut UserForOrder) -> Result<(), ApiError> {
 }
 
 fn is_available(user: &UserForOrder) -> bool {
-    let unexpired = user
-        .expired_at
-        .map(|expired_at| expired_at > Utc::now().timestamp())
-        .unwrap_or(true);
-    user.banned == 0 && user.transfer_enable > 0 && unexpired
+    SubscriptionAvailability {
+        banned: user.banned != 0,
+        transfer_enable: user.transfer_enable,
+        expiry: user.expired_at,
+    }
+    .is_available(Utc::now().timestamp())
 }
 
 fn plan_period_price(plan: &PlanRow, period: &str) -> Option<i32> {
-    plan.price(plan_price_period_from_order_period(period)?)
+    plan.price(order_period_from_storage(period)?.plan_period()?)
 }
 
 pub(super) fn purchasable_period_price(plan: &PlanRow, period: &str) -> Result<i32, ApiError> {
@@ -1132,24 +1155,34 @@ fn subscription_value_out_of_range(detail: &'static str) -> ApiError {
         .into()
 }
 
-pub(super) fn is_valid_period(period: &str) -> bool {
-    period == "deposit" || plan_price_period_from_order_period(period).is_some()
+pub(super) const fn plan_period_storage_name(period: PlanPricePeriod) -> &'static str {
+    match period {
+        PlanPricePeriod::Month => "month_price",
+        PlanPricePeriod::Quarter => "quarter_price",
+        PlanPricePeriod::HalfYear => "half_year_price",
+        PlanPricePeriod::Year => "year_price",
+        PlanPricePeriod::TwoYear => "two_year_price",
+        PlanPricePeriod::ThreeYear => "three_year_price",
+        PlanPricePeriod::OneTime => "onetime_price",
+        PlanPricePeriod::Reset => "reset_price",
+    }
 }
 
 fn period_months(period: &str) -> Option<u32> {
-    plan_price_period_from_order_period(period)?.recurring_months()
+    order_period_from_storage(period)?.recurring_months()
 }
 
-fn plan_price_period_from_order_period(period: &str) -> Option<PlanPricePeriod> {
+fn order_period_from_storage(period: &str) -> Option<OrderPeriod> {
     match period {
-        "month_price" => Some(PlanPricePeriod::Month),
-        "quarter_price" => Some(PlanPricePeriod::Quarter),
-        "half_year_price" => Some(PlanPricePeriod::HalfYear),
-        "year_price" => Some(PlanPricePeriod::Year),
-        "two_year_price" => Some(PlanPricePeriod::TwoYear),
-        "three_year_price" => Some(PlanPricePeriod::ThreeYear),
-        "onetime_price" => Some(PlanPricePeriod::OneTime),
-        "reset_price" => Some(PlanPricePeriod::Reset),
+        "month_price" => Some(OrderPeriod::Plan(PlanPricePeriod::Month)),
+        "quarter_price" => Some(OrderPeriod::Plan(PlanPricePeriod::Quarter)),
+        "half_year_price" => Some(OrderPeriod::Plan(PlanPricePeriod::HalfYear)),
+        "year_price" => Some(OrderPeriod::Plan(PlanPricePeriod::Year)),
+        "two_year_price" => Some(OrderPeriod::Plan(PlanPricePeriod::TwoYear)),
+        "three_year_price" => Some(OrderPeriod::Plan(PlanPricePeriod::ThreeYear)),
+        "onetime_price" => Some(OrderPeriod::Plan(PlanPricePeriod::OneTime)),
+        "reset_price" => Some(OrderPeriod::Plan(PlanPricePeriod::Reset)),
+        "deposit" => Some(OrderPeriod::Deposit),
         _ => None,
     }
 }

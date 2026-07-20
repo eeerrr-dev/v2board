@@ -22,6 +22,7 @@ use v2board_db::{
     payment::PaymentMethodRow,
     plan::PlanRow,
 };
+use v2board_domain_model::PlanPricePeriod;
 
 use crate::{
     auth::require_user, dialect::DialectJson, dialect::problem_from, locale::request_locale,
@@ -383,11 +384,16 @@ pub(crate) async fn order_create(
         .await
         .map_err(|error| problem_from(error, locale))?;
     let input = match request {
-        CreateOrderRequest::Plan(plan) => v2board_domain::order::SaveOrderInput::Plan {
-            plan_id: plan.plan_id,
-            period: plan.period,
-            coupon_code: plan.coupon_code,
-        },
+        CreateOrderRequest::Plan(plan) => {
+            let period = plan_price_period_from_wire(&plan.period).ok_or_else(|| {
+                commerce_problem(Code::PlanPeriodUnavailable, "Wrong plan period", locale)
+            })?;
+            v2board_domain::order::SaveOrderInput::Plan {
+                plan_id: plan.plan_id,
+                period,
+                coupon_code: plan.coupon_code,
+            }
+        }
         CreateOrderRequest::Deposit(deposit) => v2board_domain::order::SaveOrderInput::Deposit {
             deposit_amount: deposit.deposit_amount,
         },
@@ -399,6 +405,20 @@ pub(crate) async fn order_create(
         .await
         .map_err(|error| problem_from(error, locale))?;
     Ok((StatusCode::CREATED, Json(CreatedOrder { trade_no })))
+}
+
+fn plan_price_period_from_wire(period: &str) -> Option<PlanPricePeriod> {
+    match period {
+        "month_price" => Some(PlanPricePeriod::Month),
+        "quarter_price" => Some(PlanPricePeriod::Quarter),
+        "half_year_price" => Some(PlanPricePeriod::HalfYear),
+        "year_price" => Some(PlanPricePeriod::Year),
+        "two_year_price" => Some(PlanPricePeriod::TwoYear),
+        "three_year_price" => Some(PlanPricePeriod::ThreeYear),
+        "onetime_price" => Some(PlanPricePeriod::OneTime),
+        "reset_price" => Some(PlanPricePeriod::Reset),
+        _ => None,
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -772,6 +792,24 @@ mod tests {
             CreateOrderRequest::Deposit(deposit) => assert_eq!(deposit.deposit_amount, 500),
             CreateOrderRequest::Plan(_) => panic!("parsed the wrong arm"),
         }
+    }
+
+    #[test]
+    fn plan_order_periods_are_decoded_at_the_http_boundary() {
+        for (wire, expected) in [
+            ("month_price", PlanPricePeriod::Month),
+            ("quarter_price", PlanPricePeriod::Quarter),
+            ("half_year_price", PlanPricePeriod::HalfYear),
+            ("year_price", PlanPricePeriod::Year),
+            ("two_year_price", PlanPricePeriod::TwoYear),
+            ("three_year_price", PlanPricePeriod::ThreeYear),
+            ("onetime_price", PlanPricePeriod::OneTime),
+            ("reset_price", PlanPricePeriod::Reset),
+        ] {
+            assert_eq!(plan_price_period_from_wire(wire), Some(expected));
+        }
+        assert_eq!(plan_price_period_from_wire("deposit"), None);
+        assert_eq!(plan_price_period_from_wire("monthly"), None);
     }
 
     #[test]

@@ -9,6 +9,7 @@ members = [
   "crates/db",
   "crates/domain",
   "crates/domain-model",
+  "crates/problem-code",
   "crates/lifecycle",
   "crates/provision",
   "crates/workers",

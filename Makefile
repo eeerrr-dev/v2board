@@ -167,7 +167,8 @@ api-contract-generate:
 		rust-api -lc \
 		'. /usr/local/cargo/env; cargo run --locked -q -p v2board-api-contract --bin v2board-export-openapi -- /contract-openapi/$(API_CONTRACT_OPENAPI_FILE)'
 	$(FRONTEND_RUN) -v "$(CURDIR)/frontend:/contract-frontend" frontend -lc \
-		'node /contract-frontend/scripts/generate-internal-api-contract.mjs --root=/contract-frontend'
+		'node /contract-frontend/scripts/generate-internal-api-contract.mjs --root=/contract-frontend && \
+		 cd /contract-frontend && node --test scripts/internal-api-contract-coverage.test.mjs'
 
 # Drift gate: Rust must reproduce the committed OpenAPI byte-for-byte, then
 # the frontend generator must reproduce both its compile-time and runtime
@@ -179,7 +180,8 @@ api-contract-check:
 		rust-api -lc \
 		'. /usr/local/cargo/env; cargo run --locked -q -p v2board-api-contract --bin v2board-export-openapi -- --check /contract-openapi/$(API_CONTRACT_OPENAPI_FILE)'
 	$(FRONTEND_RUN) frontend -lc \
-		'node /src/frontend/scripts/generate-internal-api-contract.mjs --root=/src/frontend --check'
+		'node /src/frontend/scripts/generate-internal-api-contract.mjs --root=/src/frontend --check && \
+		 cd /src/frontend && node --test scripts/internal-api-contract-coverage.test.mjs'
 
 rust-integration:
 	$(DCF) build rust-api

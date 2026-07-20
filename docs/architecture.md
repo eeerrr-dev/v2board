@@ -98,16 +98,17 @@ sequenceDiagram
 
 ## 后端 crate 结构
 
-`backend/rust/crates/` 下共 12 个 crate:
+`backend/rust/crates/` 下共 13 个 crate:
 
 | Crate | 职责 |
 | --- | --- |
 | `api` | Axum HTTP API、前端 HTML/静态资源交付、认证入口、限流、metrics、golden wire 契约测试;产出 `v2board-api` |
-| `api-contract` | 与框架/存储无关的内部 HTTP DTO、OpenAPI 3.1 与 operation metadata 源；生成 TypeScript 类型和 Zod 运行时校验 |
+| `api-contract` | 与框架/存储无关的内部 HTTP DTO、158 个唯一 operation 的注册源与 OpenAPI 3.1 投影；同一 method/path 注册同时驱动 Axum，并生成 TypeScript/Zod operation bindings；只有已迁入的 DTO 具备字段级类型与运行时校验 |
+| `problem-code` | 零依赖的 101 个应用级 problem code/status/title 注册源；runtime 使用默认或本地化 detail，OpenAPI 投影完整 tuple |
 | `workers` | 调度器、持久后台任务(流量结算、订单、佣金、提醒邮件、重置、统计)、mail outbox 排空与 analytics relay;产出 `v2board-workers` |
 | `analytics` | 类型化不可变分析事件、PostgreSQL outbox、容量准入(admission)、ClickHouse 投影与批次校验;产出 `v2board-analytics-schema` |
 | `domain` | 业务规则与外部集成:认证/会话/step-up、邮件 outbox 入队、operator config 权威、支付 provider 与支付配置加密、订阅链接、SMTP |
-| `domain-model` | 无 SQL/Redis/HTTP/异步运行时依赖的值对象与业务词汇；当前包含金额、套餐价格周期与 typed price collection |
+| `domain-model` | 无 SQL/Redis/HTTP/异步运行时依赖的值对象与业务策略；包含金额、套餐价格、订单词汇、续费决策、订阅/流量重置及佣金策略 |
 | `db` | PostgreSQL-only 运行时数据访问(users、orders、plan、ticket 等)与连接池 |
 | `config` | native `file_only`/`boot_only` JSON 配置的加载、typed 校验与 Redis keyspace 约定 |
 | `compat` | 共享 wire 模型:RFC 9457 problem+json、冻结外部命名空间的 legacy 响应封装、分页、安全响应头 |
@@ -179,9 +180,17 @@ TypeScript + Vite + Tailwind v4 + shadcn/Radix;共享代码在
 `@v2board/api-client`,server state 归 TanStack Query,路由归 React Router
 (history routing)。
 
-已纳入 generated-contract 边界的内部 endpoint 由 Rust `api-contract` DTO
-生成提交到仓库的 OpenAPI、TypeScript、Zod 与 operation 的唯一成功状态码；
-生成器拒绝 `2XX` 通配或多个 2xx，API client 在 Zod 解析响应体前校验实际状态码。
+全部 158 个唯一内部 HTTP operation（155 条迁移语义记录折叠后的 149 个
+operation，加 9 个原生安全/审计 operation）由 Rust `api-contract` 注册表生成
+提交到仓库的 OpenAPI、TypeScript 与 Zod。注册表钉住 method/path、path/query 参数、
+公共及 operation-specific headers、请求体存在性、鉴权、精确成功状态/媒体组合及
+RFC 9457 problem model；生成器拒绝 `2XX`/`3XX`
+通配，并保留一个 operation 合法拥有多个明确成功状态或媒体类型的能力。API client
+在 Zod 解析响应体前校验采用单一成功状态的生成 endpoint；多状态 endpoint 使用
+生成的 `successResponses` 判别表。这里的“全量”指 operation inventory 与上述
+operation-level metadata 全量，不等于 158 个 endpoint 的 JSON 请求及成功响应都已
+字段级迁移；多数尚未迁入 `api-contract` 的 JSON schema 仍显式投影为 `JsonValue`，
+只有已迁入的 DTO 才能称为字段级生成契约。
 API adapter 显式转换
 transport DTO 与 application command/view，前端再显式转换 wire DTO、领域展示
 模型和 form draft。`make api-contract-check` 逐字重建这些产物并阻止漂移；新迁移

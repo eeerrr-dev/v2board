@@ -26,6 +26,16 @@ pub(super) struct TicketsListQuery {
     email: Option<String>,
 }
 
+/// The staff mirror intentionally exposes only its real filter vocabulary.
+/// Keeping this DTO separate prevents admin-only `reply_status`/`email`
+/// extraction and validation from becoming observable ghost behavior.
+#[derive(Deserialize)]
+pub(super) struct StaffTicketsListQuery {
+    page: Option<i64>,
+    per_page: Option<i64>,
+    status: Option<i64>,
+}
+
 /// The §6.5 repeatable `reply_status` query key (a real array — the legacy
 /// JSON-stringified array param died with the wave). `Query<T>` cannot
 /// collect repeated keys into a `Vec`, so the raw pairs are scanned.
@@ -51,6 +61,24 @@ pub(super) async fn tickets_list(
     headers: HeaderMap,
 ) -> Result<Json<Page<Value>>, Problem> {
     tickets_list_response(state, query, pairs, headers, false).await
+}
+
+/// Staff GET `tickets` (§6.9): pagination plus the staff-only `status`
+/// filter, ordered by `created_at` in the domain layer. Admin-only query keys
+/// are not extracted or validated here.
+pub(super) async fn staff_tickets_list(
+    State(state): State<AppState>,
+    Query(query): Query<StaffTicketsListQuery>,
+    headers: HeaderMap,
+) -> Result<Json<Page<Value>>, Problem> {
+    let locale = request_locale(&headers);
+    let pagination = Pagination::resolve(query.page, query.per_page, TICKET_LIST_DEFAULT_PER_PAGE)?;
+    let (items, total) = state
+        .admin_service(state.config_snapshot())
+        .tickets_list(pagination, query.status, &[], None, true)
+        .await
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(page(items, total))
 }
 
 pub(super) async fn tickets_list_response(

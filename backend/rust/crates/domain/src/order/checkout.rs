@@ -4,7 +4,7 @@ use v2board_compat::{ApiError, Code, Problem};
 
 use super::lifecycle::{
     calculate_handling_amount, calculate_handling_amount_cents, find_user_for_order, insert_order,
-    is_valid_period, mark_order_paid,
+    mark_order_paid, plan_period_storage_name,
 };
 use super::payment_integrations::{
     alipay_f2f_pay, bepusdt_pay, btcpay_pay, coinbase_pay, coinpayments_pay, config_string,
@@ -52,18 +52,6 @@ pub(super) fn payment_config_snapshot_matches(
 
 impl OrderService {
     pub async fn save(&self, user_id: i64, input: SaveOrderInput) -> Result<String, ApiError> {
-        // The request union is structural (§5.5): plan_id/period presence is
-        // enforced by the API-layer request struct. The period vocabulary
-        // check stays here; §3.4 folds the legacy "Wrong plan period" 422
-        // onto the 400 plan_period_unavailable problem.
-        if let SaveOrderInput::Plan { period, .. } = &input
-            && !is_valid_period(period)
-        {
-            return Err(Problem::new(Code::PlanPeriodUnavailable)
-                .with_detail("Wrong plan period")
-                .into());
-        }
-
         let mut tx = self.db.begin().await?;
         // Order lifecycle transactions use one global lock order: unfinished/
         // target order first, then user, then plan/payment. The generated-column
@@ -90,11 +78,12 @@ impl OrderService {
                 period,
                 coupon_code,
             } => {
+                let period = plan_period_storage_name(period);
                 self.build_plan_order(
                     &mut tx,
                     user,
                     plan_id,
-                    &period,
+                    period,
                     coupon_code.as_deref(),
                     trade_no,
                 )

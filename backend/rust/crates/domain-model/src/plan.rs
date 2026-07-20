@@ -149,10 +149,7 @@ mod tests {
     #[test]
     fn price_collections_are_period_keyed_and_patch_safe() {
         let mut prices = PlanPrices::default();
-        prices.set(
-            PlanPricePeriod::Month,
-            Some(MoneyMinor::try_from(1_999).unwrap()),
-        );
+        prices.set(PlanPricePeriod::Month, Some(MoneyMinor::from_i32(1_999)));
         assert_eq!(prices.get(PlanPricePeriod::Month).unwrap().get(), 1_999);
         assert_eq!(prices.get(PlanPricePeriod::Year), None);
         assert_eq!(prices.iter().count(), PlanPricePeriod::ALL.len());
@@ -161,7 +158,7 @@ mod tests {
         updates.set(PlanPricePeriod::Month, PlanPriceUpdate::Clear);
         updates.set(
             PlanPricePeriod::Year,
-            PlanPriceUpdate::Set(MoneyMinor::try_from(9_999).unwrap()),
+            PlanPriceUpdate::Set(MoneyMinor::from_i32(9_999)),
         );
         assert_eq!(updates.get(PlanPricePeriod::Month), PlanPriceUpdate::Clear);
         assert!(matches!(

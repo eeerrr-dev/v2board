@@ -1,9 +1,13 @@
 use std::time::Duration;
 
-use chrono::{DateTime, Datelike, FixedOffset, Months, TimeZone, Utc};
+use chrono::{Datelike, Months, TimeZone, Utc};
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
-use v2board_config::{app_now, app_timezone, now_utc};
+use v2board_config::{app_now, app_timezone};
+use v2board_domain_model::{
+    CalendarDay, ScheduledTrafficResetPolicy, TrafficResetFacts, TrafficResetMethod,
+    scheduled_traffic_reset_due,
+};
 
 use crate::{
     lease::{SCHEDULER_LOCK_TTL_SECS, SchedulerLock, release_scheduler_lock, run_with_lease},
@@ -185,46 +189,59 @@ fn should_reset_user(user: &ResetUserRow, default_method: i32) -> bool {
     let Some(expired) = app_timezone().timestamp_opt(user.expired_at, 0).single() else {
         return false;
     };
-    match user.reset_traffic_method {
+    let policy = match user.reset_traffic_method {
         // A plan with an explicit reset_traffic_method uses exactly that branch
         // (ResetTraffic.php:84-106, each `case` has a `break`).
-        Some(method) => reset_matches(i32::from(method), &now, &expired, user.expired_at),
+        Some(method) => {
+            traffic_reset_method(i32::from(method)).map(ScheduledTrafficResetPolicy::Explicit)
+        }
         // A plan whose reset_traffic_method is NULL uses the config default, but the
         // NULL branch's inner switch omits the `break` after `case 3`
         // (ResetTraffic.php:76-80), so a default of 3 ALSO runs resetByExpireYear
         // (case 4). Mirror that fall-through: reset timing is a billing contract.
         None => {
-            reset_matches(default_method, &now, &expired, user.expired_at)
-                || (default_method == 3 && reset_matches(4, &now, &expired, user.expired_at))
+            traffic_reset_method(default_method).map(ScheduledTrafficResetPolicy::LegacyDefault)
         }
+    };
+    let Some(policy) = policy else {
+        return false;
+    };
+    let Some(now_day) = calendar_day(now.year(), now.month(), now.day()) else {
+        return false;
+    };
+    let Some(expiry_day) = calendar_day(expired.year(), expired.month(), expired.day()) else {
+        return false;
+    };
+    scheduled_traffic_reset_due(
+        policy,
+        TrafficResetFacts {
+            now: now_day,
+            expiry: expiry_day,
+            now_epoch: now.timestamp(),
+            expiry_epoch: user.expired_at,
+        },
+    )
+}
+
+fn traffic_reset_method(method: i32) -> Option<TrafficResetMethod> {
+    match method {
+        0 => Some(TrafficResetMethod::MonthStart),
+        1 => Some(TrafficResetMethod::ExpiryDay),
+        2 => Some(TrafficResetMethod::Never),
+        3 => Some(TrafficResetMethod::YearStart),
+        4 => Some(TrafficResetMethod::ExpiryAnniversary),
+        _ => None,
     }
 }
 
-fn reset_matches(
-    method: i32,
-    now: &DateTime<FixedOffset>,
-    expired: &DateTime<FixedOffset>,
-    expired_at: i64,
-) -> bool {
-    match method {
-        // resetByMonthFirstDay (ResetTraffic.php:142-152)
-        0 => now.day() == 1,
-        // resetByExpireDay (ResetTraffic.php:154-175)
-        1 => {
-            let last_day = last_day_of_current_month();
-            let today = now.day();
-            let expire_day = expired.day();
-            (expire_day == today || (today == last_day && expire_day >= last_day))
-                && now_utc().timestamp() < timestamp_before(expired_at, 2_160_000)
-        }
-        // no action (ResetTraffic.php:73-74/94-96)
-        2 => false,
-        // resetByYearFirstDay (ResetTraffic.php:130-140)
-        3 => now.month() == 1 && now.day() == 1,
-        // resetByExpireYear (ResetTraffic.php:112-128)
-        4 => now.month() == expired.month() && now.day() == expired.day(),
-        _ => false,
-    }
+fn calendar_day(year: i32, month: u32, day: u32) -> Option<CalendarDay> {
+    let last_day = last_day_of_month(year, month)?;
+    CalendarDay::new(
+        u8::try_from(month).ok()?,
+        u8::try_from(day).ok()?,
+        u8::try_from(last_day).ok()?,
+    )
+    .ok()
 }
 
 pub(crate) async fn run_log(state: &WorkerState) -> anyhow::Result<()> {
@@ -258,15 +275,20 @@ fn month_delta_timestamp(months: u32) -> Option<i64> {
         .map(|date| date.timestamp())
 }
 
+#[cfg(test)]
 fn last_day_of_current_month() -> u32 {
     let today = app_now().date_naive();
-    let (year, month) = if today.month() == 12 {
-        (today.year() + 1, 1)
+    last_day_of_month(today.year(), today.month()).unwrap_or(today.day())
+}
+
+fn last_day_of_month(year: i32, month: u32) -> Option<u32> {
+    let (next_year, next_month) = if month == 12 {
+        (year.checked_add(1)?, 1)
     } else {
-        (today.year(), today.month() + 1)
+        (year, month.checked_add(1)?)
     };
-    let first_next_month = chrono::NaiveDate::from_ymd_opt(year, month, 1).unwrap_or(today);
-    (first_next_month - chrono::Duration::days(1)).day()
+    let first_next_month = chrono::NaiveDate::from_ymd_opt(next_year, next_month, 1)?;
+    Some((first_next_month - chrono::Duration::days(1)).day())
 }
 
 #[cfg(test)]

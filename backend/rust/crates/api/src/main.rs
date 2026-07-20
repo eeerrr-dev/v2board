@@ -8,6 +8,34 @@ use v2board_domain::{
     smtp::SmtpTransportCache,
 };
 
+/// Define one Axum subrouter from canonical internal-operation ids. The macro
+/// deliberately accepts no method or path: both come from
+/// `v2board_api_contract::INTERNAL_OPERATIONS`, and the generated id slice lets
+/// the coverage test prove every registry entry is bound exactly once.
+macro_rules! define_internal_operation_router {
+    (
+        $visibility:vis fn $router_name:ident;
+        $ids_visibility:vis const $ids_name:ident;
+        { $( $id:literal [$surface:ident] => $handler:path ),+ $(,)? }
+    ) => {
+        #[cfg(test)]
+        $ids_visibility const $ids_name: &[&str] = &[$($id),+];
+
+        $visibility fn $router_name() -> axum::Router<crate::runtime::AppState> {
+            let router = axum::Router::new();
+            $(
+                let router = crate::routes::bind_internal_operation(
+                    router,
+                    v2board_api_contract::OperationSurface::$surface,
+                    $id,
+                    $handler,
+                );
+            )+
+            router
+        }
+    };
+}
+
 mod admin;
 mod audit;
 mod auth;

@@ -1,21 +1,37 @@
-//! Transport-only types for the modern internal API.
+//! Canonical operation inventory and transport-only types for the modern
+//! internal API.
 //!
 //! This crate is intentionally independent from Axum, SQLx, Redis and every
-//! application service.  Rust handlers and generated frontend bindings share
-//! these DTOs; infrastructure rows and form/domain models must not leak here.
+//! application service. DTO families migrated here are shared by Rust handlers
+//! and generated frontend bindings; infrastructure rows and form/domain models
+//! must not leak here.
 
 pub mod commerce;
+pub mod configuration;
+pub mod operations;
 pub mod patch;
+pub mod problem;
 pub mod time;
 
 use utoipa::openapi::security::{Http, HttpAuthScheme, SecurityScheme};
 use utoipa::{Modify, OpenApi};
 
+use crate::problem::{
+    BadGatewayProblem, BadRequestProblem, ConflictProblem, DefaultProblem, ForbiddenProblem,
+    InternalServerProblem, NotFoundProblem, ProblemCode, ProblemDetails, RateLimitedProblem,
+    ServiceUnavailableProblem, UnauthorizedProblem, ValidationProblem,
+};
+
 pub use commerce::{AdminPlanItem, CreatedId, PlanCreate, PlanPatch, SortIdsRequest};
+pub use configuration::{ConfigActivationPending, PendingActivation};
+pub use operations::{
+    HttpMethod, INTERNAL_OPERATIONS, InternalOperation, OperationParameter, OperationSurface,
+    ParameterLocation, ParameterSchema, SuccessRepresentation, SuccessResponse, operation,
+};
 
 /// OpenAPI 3.1 document generated from the Rust transport source of truth.
-/// Endpoint families move into this document as their handlers stop returning
-/// untyped `serde_json::Value`.
+/// Every internal operation is present; individual JSON families become
+/// field-typed as their handlers stop returning untyped `serde_json::Value`.
 #[derive(OpenApi)]
 #[openapi(
     info(
@@ -28,16 +44,32 @@ pub use commerce::{AdminPlanItem, CreatedId, PlanCreate, PlanPatch, SortIdsReque
         CreatedId,
         PlanCreate,
         PlanPatch,
-        SortIdsRequest
-    )),
-    paths(
-        commerce::admin_plans_list_contract,
-        commerce::admin_plan_create_contract,
-        commerce::admin_plan_patch_contract,
-        commerce::admin_plan_delete_contract,
-        commerce::admin_plans_sort_contract
+        SortIdsRequest,
+        ConfigActivationPending,
+        PendingActivation,
+        ProblemCode,
+        ProblemDetails
     ),
-    tags((name = "admin-plans", description = "Administrative plan management")),
+    responses(
+        BadRequestProblem,
+        UnauthorizedProblem,
+        ForbiddenProblem,
+        NotFoundProblem,
+        ConflictProblem,
+        ValidationProblem,
+        RateLimitedProblem,
+        InternalServerProblem,
+        BadGatewayProblem,
+        ServiceUnavailableProblem,
+        DefaultProblem
+    )),
+    tags(
+        (name = "public", description = "Unauthenticated public configuration and content"),
+        (name = "auth", description = "Authentication and session lifecycle"),
+        (name = "user", description = "Authenticated user operations"),
+        (name = "admin", description = "Dynamic-prefix administrative operations"),
+        (name = "staff", description = "Restricted staff operations")
+    ),
     modifiers(&SecurityAddon)
 )]
 pub struct InternalApiDoc;
@@ -86,8 +118,24 @@ mod tests {
     }
 
     #[test]
-    fn admin_plan_operation_set_includes_sort_and_no_legacy_upsert() {
+    fn document_declares_the_five_operation_surface_tags() {
         let document = serde_json::to_value(InternalApiDoc::openapi()).expect("OpenAPI JSON");
+        let actual = document["tags"]
+            .as_array()
+            .expect("OpenAPI tags")
+            .iter()
+            .map(|tag| tag["name"].as_str().expect("tag name"))
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            actual,
+            BTreeSet::from(["public", "auth", "user", "admin", "staff"])
+        );
+    }
+
+    #[test]
+    fn admin_plan_operation_set_includes_sort_and_no_legacy_upsert() {
+        let mut document = serde_json::to_value(InternalApiDoc::openapi()).expect("OpenAPI JSON");
+        crate::operations::augment_openapi_document(&mut document);
         let paths = document["paths"].as_object().expect("paths");
 
         assert_eq!(

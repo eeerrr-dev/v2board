@@ -5,87 +5,1851 @@ import { z } from 'zod';
 export const internalApiRfc3339TimestampSchema = z.iso.datetime({ offset: true });
 
 export const internalApiAdminPlanItemSchema = z.strictObject({
-  "capacity_limit": z.number().int().min(-2147483648).max(2147483647).min(0).nullable(),
-  "content": z.string().nullable(),
+  "capacity_limit": z.union([z.number().int().min(-2147483648).max(2147483647).min(0), z.null()]),
+  "content": z.union([z.string(), z.null()]),
   "count": z.number().int().min(0),
   "created_at": internalApiRfc3339TimestampSchema,
-  "device_limit": z.number().int().min(-2147483648).max(2147483647).min(0).nullable(),
+  "device_limit": z.union([z.number().int().min(-2147483648).max(2147483647).min(0), z.null()]),
   "group_id": z.number().int().min(-2147483648).max(2147483647),
-  "half_year_price": z.number().int().min(-2147483648).max(2147483647).nullable(),
+  "half_year_price": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
   "id": z.number().int().min(-2147483648).max(2147483647),
-  "month_price": z.number().int().min(-2147483648).max(2147483647).nullable(),
+  "month_price": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
   "name": z.string(),
-  "onetime_price": z.number().int().min(-2147483648).max(2147483647).nullable(),
-  "quarter_price": z.number().int().min(-2147483648).max(2147483647).nullable(),
+  "onetime_price": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
+  "quarter_price": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
   "renew": z.boolean(),
-  "reset_price": z.number().int().min(-2147483648).max(2147483647).nullable(),
-  "reset_traffic_method": z.number().int().min(-2147483648).max(2147483647).min(0).max(4).nullable(),
+  "reset_price": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
+  "reset_traffic_method": z.union([z.number().int().min(-2147483648).max(2147483647).min(0).max(4), z.null()]),
   "show": z.boolean(),
-  "sort": z.number().int().min(-2147483648).max(2147483647).nullable(),
-  "speed_limit": z.number().int().min(-2147483648).max(2147483647).min(0).nullable(),
-  "three_year_price": z.number().int().min(-2147483648).max(2147483647).nullable(),
+  "sort": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
+  "speed_limit": z.union([z.number().int().min(-2147483648).max(2147483647).min(0), z.null()]),
+  "three_year_price": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
   "transfer_enable": z.number().int().min(0).max(2147483647),
-  "two_year_price": z.number().int().min(-2147483648).max(2147483647).nullable(),
+  "two_year_price": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
   "updated_at": internalApiRfc3339TimestampSchema,
-  "year_price": z.number().int().min(-2147483648).max(2147483647).nullable(),
+  "year_price": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
+});
+
+export const internalApiPendingActivationSchema = z.literal("pending");
+
+export const internalApiConfigActivationPendingSchema = z.strictObject({
+  "activation": internalApiPendingActivationSchema,
+  "revision": z.number().int().min(1),
 });
 
 export const internalApiCreatedIdSchema = z.strictObject({
   "id": z.number().int().min(-2147483648).max(2147483647),
 });
 
+export const internalApiJsonValueSchema = z.unknown();
+
 export const internalApiPlanCreateSchema = z.strictObject({
-  "capacity_limit": z.number().int().min(0).max(2147483647).nullable().optional(),
-  "content": z.string().nullable().optional(),
-  "device_limit": z.number().int().min(0).max(2147483647).nullable().optional(),
+  "capacity_limit": z.union([z.number().int().min(0).max(2147483647), z.null()]).optional(),
+  "content": z.union([z.string(), z.null()]).optional(),
+  "device_limit": z.union([z.number().int().min(0).max(2147483647), z.null()]).optional(),
   "group_id": z.number().int(),
-  "half_year_price": z.number().int().min(-2147483648).max(2147483647).nullable().optional(),
-  "month_price": z.number().int().min(-2147483648).max(2147483647).nullable().optional(),
+  "half_year_price": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]).optional(),
+  "month_price": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]).optional(),
   "name": z.string(),
-  "onetime_price": z.number().int().min(-2147483648).max(2147483647).nullable().optional(),
-  "quarter_price": z.number().int().min(-2147483648).max(2147483647).nullable().optional(),
-  "reset_price": z.number().int().min(-2147483648).max(2147483647).nullable().optional(),
-  "reset_traffic_method": z.number().int().min(0).max(4).nullable().optional(),
-  "speed_limit": z.number().int().min(0).max(2147483647).nullable().optional(),
-  "three_year_price": z.number().int().min(-2147483648).max(2147483647).nullable().optional(),
+  "onetime_price": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]).optional(),
+  "quarter_price": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]).optional(),
+  "reset_price": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]).optional(),
+  "reset_traffic_method": z.union([z.number().int().min(0).max(4), z.null()]).optional(),
+  "speed_limit": z.union([z.number().int().min(0).max(2147483647), z.null()]).optional(),
+  "three_year_price": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]).optional(),
   "transfer_enable": z.number().int().min(0).max(2147483647),
-  "two_year_price": z.number().int().min(-2147483648).max(2147483647).nullable().optional(),
-  "year_price": z.number().int().min(-2147483648).max(2147483647).nullable().optional(),
+  "two_year_price": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]).optional(),
+  "year_price": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]).optional(),
 });
 
 export const internalApiPlanPatchSchema = z.strictObject({
-  "capacity_limit": z.number().int().min(0).max(2147483647).nullable().optional(),
-  "content": z.string().nullable().optional(),
-  "device_limit": z.number().int().min(0).max(2147483647).nullable().optional(),
+  "capacity_limit": z.union([z.number().int().min(0).max(2147483647), z.null()]).optional(),
+  "content": z.union([z.string(), z.null()]).optional(),
+  "device_limit": z.union([z.number().int().min(0).max(2147483647), z.null()]).optional(),
   "force_update": z.boolean().optional(),
   "group_id": z.number().int().optional(),
-  "half_year_price": z.number().int().min(-2147483648).max(2147483647).nullable().optional(),
-  "month_price": z.number().int().min(-2147483648).max(2147483647).nullable().optional(),
+  "half_year_price": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]).optional(),
+  "month_price": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]).optional(),
   "name": z.string().optional(),
-  "onetime_price": z.number().int().min(-2147483648).max(2147483647).nullable().optional(),
-  "quarter_price": z.number().int().min(-2147483648).max(2147483647).nullable().optional(),
+  "onetime_price": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]).optional(),
+  "quarter_price": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]).optional(),
   "renew": z.boolean().optional(),
-  "reset_price": z.number().int().min(-2147483648).max(2147483647).nullable().optional(),
-  "reset_traffic_method": z.number().int().min(0).max(4).nullable().optional(),
+  "reset_price": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]).optional(),
+  "reset_traffic_method": z.union([z.number().int().min(0).max(4), z.null()]).optional(),
   "show": z.boolean().optional(),
-  "speed_limit": z.number().int().min(0).max(2147483647).nullable().optional(),
-  "three_year_price": z.number().int().min(-2147483648).max(2147483647).nullable().optional(),
+  "speed_limit": z.union([z.number().int().min(0).max(2147483647), z.null()]).optional(),
+  "three_year_price": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]).optional(),
   "transfer_enable": z.number().int().min(0).max(2147483647).optional(),
-  "two_year_price": z.number().int().min(-2147483648).max(2147483647).nullable().optional(),
-  "year_price": z.number().int().min(-2147483648).max(2147483647).nullable().optional(),
+  "two_year_price": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]).optional(),
+  "year_price": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]).optional(),
 });
+
+export const internalApiProblemCodeSchema = z.union([z.literal("validation_failed"), z.literal("invalid_parameter"), z.literal("endpoint_not_found"), z.literal("rate_limited"), z.literal("internal_error"), z.literal("service_unavailable"), z.literal("session_expired"), z.literal("permission_denied"), z.literal("step_up_required"), z.literal("invalid_credentials"), z.literal("account_suspended"), z.literal("registration_closed"), z.literal("register_ip_rate_limited"), z.literal("password_attempts_rate_limited"), z.literal("mfa_code_required"), z.literal("mfa_code_invalid"), z.literal("mfa_already_enabled"), z.literal("mfa_setup_missing"), z.literal("mfa_not_enabled"), z.literal("mfa_enrollment_required"), z.literal("email_already_registered"), z.literal("email_not_registered"), z.literal("invalid_email_code"), z.literal("invalid_invite_code"), z.literal("email_suffix_not_allowed"), z.literal("gmail_alias_not_supported"), z.literal("recaptcha_failed"), z.literal("email_send_rate_limited"), z.literal("invalid_token"), z.literal("old_password_incorrect"), z.literal("password_reset_failed"), z.literal("user_not_found"), z.literal("user_not_registered"), z.literal("plan_not_found"), z.literal("plan_unavailable"), z.literal("plan_sold_out"), z.literal("plan_period_unavailable"), z.literal("plan_change_disabled"), z.literal("pending_order_exists"), z.literal("order_not_found"), z.literal("order_not_pending"), z.literal("payment_method_unavailable"), z.literal("payment_config_invalid"), z.literal("payment_gateway_unsupported"), z.literal("payment_amount_out_of_range"), z.literal("handling_fee_out_of_range"), z.literal("stripe_binding_invalid"), z.literal("insufficient_balance"), z.literal("coupon_invalid"), z.literal("coupon_unavailable"), z.literal("coupon_not_started"), z.literal("coupon_expired"), z.literal("coupon_exhausted"), z.literal("coupon_not_applicable"), z.literal("gift_card_invalid"), z.literal("subscription_value_out_of_range"), z.literal("renewal_not_allowed"), z.literal("reset_period_invalid"), z.literal("transfer_amount_invalid"), z.literal("insufficient_commission_balance"), z.literal("balance_out_of_range"), z.literal("invite_code_limit_reached"), z.literal("telegram_not_configured"), z.literal("telegram_unbind_failed"), z.literal("ticket_not_found"), z.literal("ticket_invalid_state"), z.literal("unresolved_ticket_exists"), z.literal("ticket_requires_plan"), z.literal("withdraw_method_unsupported"), z.literal("withdraw_below_minimum"), z.literal("article_not_found"), z.literal("notice_not_found"), z.literal("knowledge_not_found"), z.literal("config_revision_conflict"), z.literal("config_validation_failed"), z.literal("payment_method_not_found"), z.literal("payment_method_in_use"), z.literal("reconciliation_not_found"), z.literal("reconciliation_already_processed"), z.literal("order_assign_conflict"), z.literal("order_update_conflict"), z.literal("order_update_failed"), z.literal("plan_in_use"), z.literal("plan_update_conflict"), z.literal("plan_force_update_limit_exceeded"), z.literal("coupon_not_found"), z.literal("gift_card_not_found"), z.literal("server_not_found"), z.literal("route_not_found"), z.literal("server_group_not_found"), z.literal("server_group_in_use"), z.literal("invalid_server_type"), z.literal("app_url_not_configured"), z.literal("mail_sender_not_configured"), z.literal("mail_invalid"), z.literal("mail_send_failed"), z.literal("mail_idempotency_conflict"), z.literal("mail_idempotency_key_invalid"), z.literal("telegram_request_failed"), z.literal("telegram_token_invalid"), z.literal("telegram_webhook_failed")]);
+
+export const internalApiProblemDetailsSchema = z.looseObject({
+  "code": internalApiProblemCodeSchema,
+  "detail": z.string(),
+  "errors": z.record(z.string(), z.array(z.string())).optional(),
+  "status": z.number().int().min(-2147483648).max(2147483647).min(400).max(599),
+  "title": z.string(),
+  "type": z.literal("about:blank"),
+}).and(z.discriminatedUnion("code", [z.looseObject({
+  "code": z.literal("validation_failed"),
+  "status": z.literal(422),
+  "title": z.literal("Unprocessable Entity"),
+}), z.looseObject({
+  "code": z.literal("invalid_parameter"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("endpoint_not_found"),
+  "errors": z.never().optional(),
+  "status": z.literal(404),
+  "title": z.literal("Not Found"),
+}), z.looseObject({
+  "code": z.literal("rate_limited"),
+  "errors": z.never().optional(),
+  "status": z.literal(429),
+  "title": z.literal("Too Many Requests"),
+}), z.looseObject({
+  "code": z.literal("internal_error"),
+  "errors": z.never().optional(),
+  "status": z.literal(500),
+  "title": z.literal("Internal Server Error"),
+}), z.looseObject({
+  "code": z.literal("service_unavailable"),
+  "errors": z.never().optional(),
+  "status": z.literal(503),
+  "title": z.literal("Service Unavailable"),
+}), z.looseObject({
+  "code": z.literal("session_expired"),
+  "errors": z.never().optional(),
+  "status": z.literal(401),
+  "title": z.literal("Unauthorized"),
+}), z.looseObject({
+  "code": z.literal("permission_denied"),
+  "errors": z.never().optional(),
+  "status": z.literal(403),
+  "title": z.literal("Forbidden"),
+}), z.looseObject({
+  "code": z.literal("step_up_required"),
+  "errors": z.never().optional(),
+  "status": z.literal(403),
+  "title": z.literal("Forbidden"),
+}), z.looseObject({
+  "code": z.literal("invalid_credentials"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("account_suspended"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("registration_closed"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("register_ip_rate_limited"),
+  "errors": z.never().optional(),
+  "status": z.literal(429),
+  "title": z.literal("Too Many Requests"),
+}), z.looseObject({
+  "code": z.literal("password_attempts_rate_limited"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("mfa_code_required"),
+  "errors": z.never().optional(),
+  "status": z.literal(401),
+  "title": z.literal("Unauthorized"),
+}), z.looseObject({
+  "code": z.literal("mfa_code_invalid"),
+  "errors": z.never().optional(),
+  "status": z.literal(401),
+  "title": z.literal("Unauthorized"),
+}), z.looseObject({
+  "code": z.literal("mfa_already_enabled"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("mfa_setup_missing"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("mfa_not_enabled"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("mfa_enrollment_required"),
+  "errors": z.never().optional(),
+  "status": z.literal(403),
+  "title": z.literal("Forbidden"),
+}), z.looseObject({
+  "code": z.literal("email_already_registered"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("email_not_registered"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("invalid_email_code"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("invalid_invite_code"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("email_suffix_not_allowed"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("gmail_alias_not_supported"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("recaptcha_failed"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("email_send_rate_limited"),
+  "errors": z.never().optional(),
+  "status": z.literal(429),
+  "title": z.literal("Too Many Requests"),
+}), z.looseObject({
+  "code": z.literal("invalid_token"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("old_password_incorrect"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("password_reset_failed"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("user_not_found"),
+  "errors": z.never().optional(),
+  "status": z.literal(404),
+  "title": z.literal("Not Found"),
+}), z.looseObject({
+  "code": z.literal("user_not_registered"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("plan_not_found"),
+  "errors": z.never().optional(),
+  "status": z.literal(404),
+  "title": z.literal("Not Found"),
+}), z.looseObject({
+  "code": z.literal("plan_unavailable"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("plan_sold_out"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("plan_period_unavailable"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("plan_change_disabled"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("pending_order_exists"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("order_not_found"),
+  "errors": z.never().optional(),
+  "status": z.literal(404),
+  "title": z.literal("Not Found"),
+}), z.looseObject({
+  "code": z.literal("order_not_pending"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("payment_method_unavailable"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("payment_config_invalid"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("payment_gateway_unsupported"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("payment_amount_out_of_range"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("handling_fee_out_of_range"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("stripe_binding_invalid"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("insufficient_balance"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("coupon_invalid"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("coupon_unavailable"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("coupon_not_started"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("coupon_expired"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("coupon_exhausted"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("coupon_not_applicable"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("gift_card_invalid"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("subscription_value_out_of_range"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("renewal_not_allowed"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("reset_period_invalid"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("transfer_amount_invalid"),
+  "errors": z.never().optional(),
+  "status": z.literal(422),
+  "title": z.literal("Unprocessable Entity"),
+}), z.looseObject({
+  "code": z.literal("insufficient_commission_balance"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("balance_out_of_range"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("invite_code_limit_reached"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("telegram_not_configured"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("telegram_unbind_failed"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("ticket_not_found"),
+  "errors": z.never().optional(),
+  "status": z.literal(404),
+  "title": z.literal("Not Found"),
+}), z.looseObject({
+  "code": z.literal("ticket_invalid_state"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("unresolved_ticket_exists"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("ticket_requires_plan"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("withdraw_method_unsupported"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("withdraw_below_minimum"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("article_not_found"),
+  "errors": z.never().optional(),
+  "status": z.literal(404),
+  "title": z.literal("Not Found"),
+}), z.looseObject({
+  "code": z.literal("notice_not_found"),
+  "errors": z.never().optional(),
+  "status": z.literal(404),
+  "title": z.literal("Not Found"),
+}), z.looseObject({
+  "code": z.literal("knowledge_not_found"),
+  "errors": z.never().optional(),
+  "status": z.literal(404),
+  "title": z.literal("Not Found"),
+}), z.looseObject({
+  "code": z.literal("config_revision_conflict"),
+  "errors": z.never().optional(),
+  "status": z.literal(409),
+  "title": z.literal("Conflict"),
+}), z.looseObject({
+  "code": z.literal("config_validation_failed"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("payment_method_not_found"),
+  "errors": z.never().optional(),
+  "status": z.literal(404),
+  "title": z.literal("Not Found"),
+}), z.looseObject({
+  "code": z.literal("payment_method_in_use"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("reconciliation_not_found"),
+  "errors": z.never().optional(),
+  "status": z.literal(404),
+  "title": z.literal("Not Found"),
+}), z.looseObject({
+  "code": z.literal("reconciliation_already_processed"),
+  "errors": z.never().optional(),
+  "status": z.literal(409),
+  "title": z.literal("Conflict"),
+}), z.looseObject({
+  "code": z.literal("order_assign_conflict"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("order_update_conflict"),
+  "errors": z.never().optional(),
+  "status": z.literal(409),
+  "title": z.literal("Conflict"),
+}), z.looseObject({
+  "code": z.literal("order_update_failed"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("plan_in_use"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("plan_update_conflict"),
+  "errors": z.never().optional(),
+  "status": z.literal(409),
+  "title": z.literal("Conflict"),
+}), z.looseObject({
+  "code": z.literal("plan_force_update_limit_exceeded"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("coupon_not_found"),
+  "errors": z.never().optional(),
+  "status": z.literal(404),
+  "title": z.literal("Not Found"),
+}), z.looseObject({
+  "code": z.literal("gift_card_not_found"),
+  "errors": z.never().optional(),
+  "status": z.literal(404),
+  "title": z.literal("Not Found"),
+}), z.looseObject({
+  "code": z.literal("server_not_found"),
+  "errors": z.never().optional(),
+  "status": z.literal(404),
+  "title": z.literal("Not Found"),
+}), z.looseObject({
+  "code": z.literal("route_not_found"),
+  "errors": z.never().optional(),
+  "status": z.literal(404),
+  "title": z.literal("Not Found"),
+}), z.looseObject({
+  "code": z.literal("server_group_not_found"),
+  "errors": z.never().optional(),
+  "status": z.literal(404),
+  "title": z.literal("Not Found"),
+}), z.looseObject({
+  "code": z.literal("server_group_in_use"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("invalid_server_type"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("app_url_not_configured"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("mail_sender_not_configured"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("mail_invalid"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("mail_send_failed"),
+  "errors": z.never().optional(),
+  "status": z.literal(502),
+  "title": z.literal("Bad Gateway"),
+}), z.looseObject({
+  "code": z.literal("mail_idempotency_conflict"),
+  "errors": z.never().optional(),
+  "status": z.literal(409),
+  "title": z.literal("Conflict"),
+}), z.looseObject({
+  "code": z.literal("mail_idempotency_key_invalid"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("telegram_request_failed"),
+  "errors": z.never().optional(),
+  "status": z.literal(502),
+  "title": z.literal("Bad Gateway"),
+}), z.looseObject({
+  "code": z.literal("telegram_token_invalid"),
+  "errors": z.never().optional(),
+  "status": z.literal(400),
+  "title": z.literal("Bad Request"),
+}), z.looseObject({
+  "code": z.literal("telegram_webhook_failed"),
+  "errors": z.never().optional(),
+  "status": z.literal(502),
+  "title": z.literal("Bad Gateway"),
+})]));
 
 export const internalApiSortIdsRequestSchema = z.strictObject({
   "ids": z.array(z.number().int()),
 });
 
 export const internalApiOperations = {
+  "adminAccountMfaGet": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/account/mfa",
+    successStatus: 200,
+    adminPath: "/account/mfa",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminAccountMfaTotpConfirm": {
+    method: "POST",
+    path: "/api/v1/{secure_path}/account/mfa/totp/confirm",
+    successStatus: 204,
+    adminPath: "/account/mfa/totp/confirm",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminAccountMfaTotpDisable": {
+    method: "POST",
+    path: "/api/v1/{secure_path}/account/mfa/totp/disable",
+    successStatus: 204,
+    adminPath: "/account/mfa/totp/disable",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminAccountMfaTotpSetup": {
+    method: "POST",
+    path: "/api/v1/{secure_path}/account/mfa/totp",
+    successStatus: 200,
+    adminPath: "/account/mfa/totp",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminConfigGet": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/config",
+    successStatus: 200,
+    adminPath: "/config",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "query": z.strictObject({
+        "group": z.string().optional(),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminConfigUpdate": {
+    method: "PATCH",
+    path: "/api/v1/{secure_path}/config",
+    successStatus: undefined,
+    adminPath: "/config",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      202: {
+        content: {
+          "application/json": internalApiConfigActivationPendingSchema,
+        },
+        headers: {},
+      },
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminCouponsCreate": {
+    method: "POST",
+    path: "/api/v1/{secure_path}/coupons",
+    successStatus: undefined,
+    adminPath: "/coupons",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      200: {
+        content: {
+          "text/csv; charset=utf-8": z.string(),
+        },
+        headers: {
+          "Content-Disposition": z.string(),
+        },
+      },
+      201: {
+        content: {
+          "application/json": internalApiCreatedIdSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminCouponsDelete": {
+    method: "DELETE",
+    path: "/api/v1/{secure_path}/coupons/{id}",
+    successStatus: 204,
+    adminPath: "/coupons/{id}",
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminCouponsList": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/coupons",
+    successStatus: 200,
+    adminPath: "/coupons",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "query": z.strictObject({
+        "page": z.number().int().min(1).optional(),
+        "per_page": z.number().int().min(1).max(100).optional(),
+        "sort_by": z.literal("created_at").optional(),
+        "sort_dir": z.union([z.literal("asc"), z.literal("desc")]).optional(),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminCouponsUpdate": {
+    method: "PATCH",
+    path: "/api/v1/{secure_path}/coupons/{id}",
+    successStatus: 204,
+    adminPath: "/coupons/{id}",
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminEmailTemplatesList": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/email-templates",
+    successStatus: 200,
+    adminPath: "/email-templates",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminGiftCardsCreate": {
+    method: "POST",
+    path: "/api/v1/{secure_path}/gift-cards",
+    successStatus: undefined,
+    adminPath: "/gift-cards",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      200: {
+        content: {
+          "text/csv; charset=utf-8": z.string(),
+        },
+        headers: {
+          "Content-Disposition": z.string(),
+        },
+      },
+      201: {
+        content: {
+          "application/json": internalApiCreatedIdSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminGiftCardsDelete": {
+    method: "DELETE",
+    path: "/api/v1/{secure_path}/gift-cards/{id}",
+    successStatus: 204,
+    adminPath: "/gift-cards/{id}",
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminGiftCardsList": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/gift-cards",
+    successStatus: 200,
+    adminPath: "/gift-cards",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "query": z.strictObject({
+        "page": z.number().int().min(1).optional(),
+        "per_page": z.number().int().min(1).max(100).optional(),
+        "sort_by": z.literal("created_at").optional(),
+        "sort_dir": z.union([z.literal("asc"), z.literal("desc")]).optional(),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminGiftCardsUpdate": {
+    method: "PATCH",
+    path: "/api/v1/{secure_path}/gift-cards/{id}",
+    successStatus: 204,
+    adminPath: "/gift-cards/{id}",
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminKnowledgeCategoriesList": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/knowledge-categories",
+    successStatus: 200,
+    adminPath: "/knowledge-categories",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminKnowledgeCreate": {
+    method: "POST",
+    path: "/api/v1/{secure_path}/knowledge",
+    successStatus: 201,
+    adminPath: "/knowledge",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      201: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminKnowledgeDelete": {
+    method: "DELETE",
+    path: "/api/v1/{secure_path}/knowledge/{id}",
+    successStatus: 204,
+    adminPath: "/knowledge/{id}",
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminKnowledgeGet": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/knowledge/{id}",
+    successStatus: 200,
+    adminPath: "/knowledge/{id}",
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminKnowledgeList": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/knowledge",
+    successStatus: 200,
+    adminPath: "/knowledge",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminKnowledgeSort": {
+    method: "POST",
+    path: "/api/v1/{secure_path}/knowledge/sort",
+    successStatus: 204,
+    adminPath: "/knowledge/sort",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminKnowledgeUpdate": {
+    method: "PATCH",
+    path: "/api/v1/{secure_path}/knowledge/{id}",
+    successStatus: 204,
+    adminPath: "/knowledge/{id}",
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminNodesList": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/nodes",
+    successStatus: 200,
+    adminPath: "/nodes",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminNodesSort": {
+    method: "POST",
+    path: "/api/v1/{secure_path}/nodes/sort",
+    successStatus: 204,
+    adminPath: "/nodes/sort",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminNoticesCreate": {
+    method: "POST",
+    path: "/api/v1/{secure_path}/notices",
+    successStatus: 201,
+    adminPath: "/notices",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      201: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminNoticesDelete": {
+    method: "DELETE",
+    path: "/api/v1/{secure_path}/notices/{id}",
+    successStatus: 204,
+    adminPath: "/notices/{id}",
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminNoticesList": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/notices",
+    successStatus: 200,
+    adminPath: "/notices",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminNoticesUpdate": {
+    method: "PATCH",
+    path: "/api/v1/{secure_path}/notices/{id}",
+    successStatus: 204,
+    adminPath: "/notices/{id}",
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminOrdersCancel": {
+    method: "POST",
+    path: "/api/v1/{secure_path}/orders/{trade_no}/cancel",
+    successStatus: 204,
+    adminPath: "/orders/{trade_no}/cancel",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+        "trade_no": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminOrdersCreate": {
+    method: "POST",
+    path: "/api/v1/{secure_path}/orders",
+    successStatus: 201,
+    adminPath: "/orders",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      201: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminOrdersGet": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/orders/{trade_no}",
+    successStatus: 200,
+    adminPath: "/orders/{trade_no}",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+        "trade_no": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminOrdersList": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/orders",
+    successStatus: 200,
+    adminPath: "/orders",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "query": z.strictObject({
+        "commission_only": z.boolean().optional(),
+        "filter": z.string().optional(),
+        "page": z.number().int().min(1).optional(),
+        "per_page": z.number().int().min(1).max(100).optional(),
+        "sort_by": z.union([z.literal("id"), z.literal("invite_user_id"), z.literal("user_id"), z.literal("plan_id"), z.literal("coupon_id"), z.literal("payment_id"), z.literal("type"), z.literal("period"), z.literal("trade_no"), z.literal("callback_no"), z.literal("total_amount"), z.literal("handling_amount"), z.literal("discount_amount"), z.literal("surplus_amount"), z.literal("refund_amount"), z.literal("balance_amount"), z.literal("status"), z.literal("commission_status"), z.literal("commission_balance"), z.literal("actual_commission_balance"), z.literal("paid_at"), z.literal("created_at"), z.literal("updated_at")]).optional(),
+        "sort_dir": z.union([z.literal("asc"), z.literal("desc")]).optional(),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminOrdersMarkPaid": {
+    method: "POST",
+    path: "/api/v1/{secure_path}/orders/{trade_no}/mark-paid",
+    successStatus: 204,
+    adminPath: "/orders/{trade_no}/mark-paid",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+        "trade_no": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminOrdersUpdate": {
+    method: "PATCH",
+    path: "/api/v1/{secure_path}/orders/{trade_no}",
+    successStatus: 204,
+    adminPath: "/orders/{trade_no}",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+        "trade_no": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminPaymentProvidersForm": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/payment-providers/{code}/form",
+    successStatus: 200,
+    adminPath: "/payment-providers/{code}/form",
+    parameters: {
+      "path": z.strictObject({
+        "code": z.string().min(1),
+        "secure_path": z.string().min(1),
+      }),
+      "query": z.strictObject({
+        "payment_id": z.number().int().optional(),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminPaymentProvidersList": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/payment-providers",
+    successStatus: 200,
+    adminPath: "/payment-providers",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminPaymentReconciliationsList": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/payment-reconciliations",
+    successStatus: 200,
+    adminPath: "/payment-reconciliations",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "query": z.strictObject({
+        "callback_no": z.string().optional(),
+        "page": z.number().int().min(1).optional(),
+        "payment_id": z.number().int().min(-2147483648).max(2147483647).optional(),
+        "per_page": z.number().int().min(1).max(100).optional(),
+        "reason": z.string().optional(),
+        "resolved": z.union([z.literal("0"), z.literal("unresolved"), z.literal("open"), z.literal("1"), z.literal("resolved"), z.literal("closed"), z.literal("all")]).optional(),
+        "trade_no": z.string().optional(),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminPaymentReconciliationsResolve": {
+    method: "POST",
+    path: "/api/v1/{secure_path}/payment-reconciliations/{id}/resolve",
+    successStatus: 204,
+    adminPath: "/payment-reconciliations/{id}/resolve",
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminPaymentsCreate": {
+    method: "POST",
+    path: "/api/v1/{secure_path}/payments",
+    successStatus: 201,
+    adminPath: "/payments",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      201: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminPaymentsDelete": {
+    method: "DELETE",
+    path: "/api/v1/{secure_path}/payments/{id}",
+    successStatus: 204,
+    adminPath: "/payments/{id}",
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminPaymentsList": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/payments",
+    successStatus: 200,
+    adminPath: "/payments",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminPaymentsSort": {
+    method: "POST",
+    path: "/api/v1/{secure_path}/payments/sort",
+    successStatus: 204,
+    adminPath: "/payments/sort",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminPaymentsUpdate": {
+    method: "PATCH",
+    path: "/api/v1/{secure_path}/payments/{id}",
+    successStatus: 204,
+    adminPath: "/payments/{id}",
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
   "adminPlanCreate": {
     method: "POST",
     path: "/api/v1/{secure_path}/plans",
     successStatus: 201,
     adminPath: "/plans",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiPlanCreateSchema,
+    },
     requestSchema: internalApiPlanCreateSchema,
+    successResponses: {
+      201: {
+        content: {
+          "application/json": internalApiCreatedIdSchema,
+        },
+        headers: {},
+      },
+    },
     responseSchema: internalApiCreatedIdSchema,
   },
   "adminPlanDelete": {
@@ -93,7 +1857,25 @@ export const internalApiOperations = {
     path: "/api/v1/{secure_path}/plans/{id}",
     successStatus: 204,
     adminPath: "/plans/{id}",
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
     requestSchema: z.undefined(),
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
     responseSchema: z.undefined(),
   },
   "adminPlanPatch": {
@@ -101,7 +1883,27 @@ export const internalApiOperations = {
     path: "/api/v1/{secure_path}/plans/{id}",
     successStatus: 204,
     adminPath: "/plans/{id}",
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiPlanPatchSchema,
+    },
     requestSchema: internalApiPlanPatchSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
     responseSchema: z.undefined(),
   },
   "adminPlansList": {
@@ -109,7 +1911,25 @@ export const internalApiOperations = {
     path: "/api/v1/{secure_path}/plans",
     successStatus: 200,
     adminPath: "/plans",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
     requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": z.array(internalApiAdminPlanItemSchema),
+        },
+        headers: {},
+      },
+    },
     responseSchema: z.array(internalApiAdminPlanItemSchema),
   },
   "adminPlansSort": {
@@ -117,8 +1937,2811 @@ export const internalApiOperations = {
     path: "/api/v1/{secure_path}/plans/sort",
     successStatus: 204,
     adminPath: "/plans/sort",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiSortIdsRequestSchema,
+    },
     requestSchema: internalApiSortIdsRequestSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
     responseSchema: z.undefined(),
+  },
+  "adminServerGroupsCreate": {
+    method: "POST",
+    path: "/api/v1/{secure_path}/server-groups",
+    successStatus: 201,
+    adminPath: "/server-groups",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      201: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminServerGroupsDelete": {
+    method: "DELETE",
+    path: "/api/v1/{secure_path}/server-groups/{id}",
+    successStatus: 204,
+    adminPath: "/server-groups/{id}",
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminServerGroupsList": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/server-groups",
+    successStatus: 200,
+    adminPath: "/server-groups",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "query": z.strictObject({
+        "group_id": z.number().int().optional(),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminServerGroupsUpdate": {
+    method: "PATCH",
+    path: "/api/v1/{secure_path}/server-groups/{id}",
+    successStatus: 204,
+    adminPath: "/server-groups/{id}",
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminServerRoutesCreate": {
+    method: "POST",
+    path: "/api/v1/{secure_path}/server-routes",
+    successStatus: 201,
+    adminPath: "/server-routes",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      201: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminServerRoutesDelete": {
+    method: "DELETE",
+    path: "/api/v1/{secure_path}/server-routes/{id}",
+    successStatus: 204,
+    adminPath: "/server-routes/{id}",
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminServerRoutesList": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/server-routes",
+    successStatus: 200,
+    adminPath: "/server-routes",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminServerRoutesUpdate": {
+    method: "PATCH",
+    path: "/api/v1/{secure_path}/server-routes/{id}",
+    successStatus: 204,
+    adminPath: "/server-routes/{id}",
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminServersCopy": {
+    method: "POST",
+    path: "/api/v1/{secure_path}/servers/{type}/{id}/copy",
+    successStatus: 201,
+    adminPath: "/servers/{type}/{id}/copy",
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+        "secure_path": z.string().min(1),
+        "type": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      201: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminServersCreate": {
+    method: "POST",
+    path: "/api/v1/{secure_path}/servers/{type}",
+    successStatus: 201,
+    adminPath: "/servers/{type}",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+        "type": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      201: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminServersDelete": {
+    method: "DELETE",
+    path: "/api/v1/{secure_path}/servers/{type}/{id}",
+    successStatus: 204,
+    adminPath: "/servers/{type}/{id}",
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+        "secure_path": z.string().min(1),
+        "type": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminServersUpdate": {
+    method: "PATCH",
+    path: "/api/v1/{secure_path}/servers/{type}/{id}",
+    successStatus: 204,
+    adminPath: "/servers/{type}/{id}",
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+        "secure_path": z.string().min(1),
+        "type": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminStatsOrders": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/stats/orders",
+    successStatus: 200,
+    adminPath: "/stats/orders",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminStatsRecords": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/stats/records",
+    successStatus: 200,
+    adminPath: "/stats/records",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "query": z.strictObject({
+        "type": z.union([z.literal("d"), z.literal("m")]).optional(),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminStatsServerRank": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/stats/server-rank",
+    successStatus: 200,
+    adminPath: "/stats/server-rank",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "query": z.strictObject({
+        "window": z.union([z.literal("today"), z.literal("previous")]),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminStatsSummary": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/stats/summary",
+    successStatus: 200,
+    adminPath: "/stats/summary",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminStatsUserRank": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/stats/user-rank",
+    successStatus: 200,
+    adminPath: "/stats/user-rank",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "query": z.strictObject({
+        "window": z.union([z.literal("today"), z.literal("previous")]),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminStatsUserTraffic": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/stats/user-traffic",
+    successStatus: 200,
+    adminPath: "/stats/user-traffic",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "query": z.strictObject({
+        "page": z.number().int().min(1).optional(),
+        "per_page": z.number().int().min(1).max(100).optional(),
+        "user_id": z.number().int(),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminSystemAuditLogsList": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/system/audit-logs",
+    successStatus: 200,
+    adminPath: "/system/audit-logs",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "query": z.strictObject({
+        "filter": z.string().optional(),
+        "page": z.number().int().min(1).optional(),
+        "per_page": z.number().int().min(1).max(100).optional(),
+        "sort_by": z.literal("created_at").optional(),
+        "sort_dir": z.union([z.literal("asc"), z.literal("desc")]).optional(),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminSystemLogs": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/system/logs",
+    successStatus: 200,
+    adminPath: "/system/logs",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "query": z.strictObject({
+        "filter": z.string().optional(),
+        "page": z.number().int().min(1).optional(),
+        "per_page": z.number().int().min(1).max(100).optional(),
+        "sort_by": z.union([z.literal("created_at"), z.literal("level")]).optional(),
+        "sort_dir": z.union([z.literal("asc"), z.literal("desc")]).optional(),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminSystemQueueMasters": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/system/queue-masters",
+    successStatus: 200,
+    adminPath: "/system/queue-masters",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminSystemQueueStats": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/system/queue-stats",
+    successStatus: 200,
+    adminPath: "/system/queue-stats",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminSystemQueueWorkload": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/system/queue-workload",
+    successStatus: 200,
+    adminPath: "/system/queue-workload",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminSystemStatus": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/system/status",
+    successStatus: 200,
+    adminPath: "/system/status",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminTelegramWebhookSet": {
+    method: "POST",
+    path: "/api/v1/{secure_path}/telegram-webhook",
+    successStatus: 204,
+    adminPath: "/telegram-webhook",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminTestMailSend": {
+    method: "POST",
+    path: "/api/v1/{secure_path}/test-mail",
+    successStatus: 200,
+    adminPath: "/test-mail",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminTicketsClose": {
+    method: "POST",
+    path: "/api/v1/{secure_path}/tickets/{id}/close",
+    successStatus: 204,
+    adminPath: "/tickets/{id}/close",
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminTicketsGet": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/tickets/{id}",
+    successStatus: 200,
+    adminPath: "/tickets/{id}",
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminTicketsList": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/tickets",
+    successStatus: 200,
+    adminPath: "/tickets",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "query": z.strictObject({
+        "email": z.string().optional(),
+        "page": z.number().int().min(1).optional(),
+        "per_page": z.number().int().min(1).max(100).optional(),
+        "reply_status": z.array(z.number().int()).optional(),
+        "status": z.number().int().optional(),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminTicketsRepliesCreate": {
+    method: "POST",
+    path: "/api/v1/{secure_path}/tickets/{id}/replies",
+    successStatus: 204,
+    adminPath: "/tickets/{id}/replies",
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminUsersBan": {
+    method: "POST",
+    path: "/api/v1/{secure_path}/users/ban",
+    successStatus: 204,
+    adminPath: "/users/ban",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminUsersBulkDelete": {
+    method: "POST",
+    path: "/api/v1/{secure_path}/users/bulk-delete",
+    successStatus: 204,
+    adminPath: "/users/bulk-delete",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminUsersCreate": {
+    method: "POST",
+    path: "/api/v1/{secure_path}/users",
+    successStatus: undefined,
+    adminPath: "/users",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      200: {
+        content: {
+          "text/csv; charset=utf-8": z.string(),
+        },
+        headers: {
+          "Content-Disposition": z.string(),
+        },
+      },
+      201: {
+        content: {
+          "application/json": internalApiCreatedIdSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminUsersDelete": {
+    method: "DELETE",
+    path: "/api/v1/{secure_path}/users/{id}",
+    successStatus: 204,
+    adminPath: "/users/{id}",
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminUsersExport": {
+    method: "POST",
+    path: "/api/v1/{secure_path}/users/export",
+    successStatus: 200,
+    adminPath: "/users/export",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      200: {
+        content: {
+          "text/csv; charset=utf-8": z.string(),
+        },
+        headers: {
+          "Content-Disposition": z.string(),
+        },
+      },
+    },
+    responseSchema: z.string(),
+  },
+  "adminUsersGet": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/users/{id}",
+    successStatus: 200,
+    adminPath: "/users/{id}",
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminUsersList": {
+    method: "GET",
+    path: "/api/v1/{secure_path}/users",
+    successStatus: 200,
+    adminPath: "/users",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "query": z.strictObject({
+        "filter": z.string().optional(),
+        "page": z.number().int().min(1).optional(),
+        "per_page": z.number().int().min(1).max(100).optional(),
+        "sort_by": z.union([z.literal("id"), z.literal("email"), z.literal("telegram_id"), z.literal("balance"), z.literal("discount"), z.literal("commission_type"), z.literal("commission_rate"), z.literal("commission_balance"), z.literal("t"), z.literal("u"), z.literal("d"), z.literal("transfer_enable"), z.literal("device_limit"), z.literal("banned"), z.literal("is_admin"), z.literal("is_staff"), z.literal("last_login_at"), z.literal("uuid"), z.literal("group_id"), z.literal("plan_id"), z.literal("speed_limit"), z.literal("token"), z.literal("expired_at"), z.literal("remarks"), z.literal("invite_user_id"), z.literal("created_at"), z.literal("updated_at"), z.literal("total_used")]).optional(),
+        "sort_dir": z.union([z.literal("asc"), z.literal("desc")]).optional(),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "adminUsersMail": {
+    method: "POST",
+    path: "/api/v1/{secure_path}/users/mail",
+    successStatus: 204,
+    adminPath: "/users/mail",
+    parameters: {
+      "path": z.strictObject({
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "Idempotency-Key": z.string().refine((value) => new TextEncoder().encode(value).length <= 512, { message: "Must be at most 512 UTF-8 bytes" }).optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminUsersResetSecret": {
+    method: "POST",
+    path: "/api/v1/{secure_path}/users/{id}/reset-secret",
+    successStatus: 204,
+    adminPath: "/users/{id}/reset-secret",
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminUsersSetInviter": {
+    method: "POST",
+    path: "/api/v1/{secure_path}/users/{id}/set-inviter",
+    successStatus: 204,
+    adminPath: "/users/{id}/set-inviter",
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "adminUsersUpdate": {
+    method: "PATCH",
+    path: "/api/v1/{secure_path}/users/{id}",
+    successStatus: 204,
+    adminPath: "/users/{id}",
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+        "secure_path": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "authEmailCodes": {
+    method: "POST",
+    path: "/api/v1/auth/email-codes",
+    successStatus: 204,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "authLogin": {
+    method: "POST",
+    path: "/api/v1/auth/login",
+    successStatus: 200,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "User-Agent": z.string().optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "authPasswordReset": {
+    method: "POST",
+    path: "/api/v1/auth/password-reset",
+    successStatus: 204,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "authQuickLogin": {
+    method: "GET",
+    path: "/api/v1/auth/quick-login",
+    successStatus: 302,
+    parameters: {
+      "query": z.strictObject({
+        "redirect": z.string().refine((value) => new TextEncoder().encode(value).length <= 2048, { message: "Must be at most 2048 UTF-8 bytes" }).optional(),
+        "token": z.string().min(1).refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      302: {
+        content: {},
+        headers: {
+          "Location": z.string(),
+        },
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "authQuickLoginUrl": {
+    method: "POST",
+    path: "/api/v1/auth/quick-login-url",
+    successStatus: 200,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "authRegister": {
+    method: "POST",
+    path: "/api/v1/auth/register",
+    successStatus: 201,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "User-Agent": z.string().optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      201: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "authSessionDelete": {
+    method: "DELETE",
+    path: "/api/v1/auth/session",
+    successStatus: 204,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "authSessionGet": {
+    method: "GET",
+    path: "/api/v1/auth/session",
+    successStatus: 200,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "authStepUp": {
+    method: "POST",
+    path: "/api/v1/auth/step-up",
+    successStatus: 200,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "authTokenLogin": {
+    method: "POST",
+    path: "/api/v1/auth/token-login",
+    successStatus: 200,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "User-Agent": z.string().optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "publicConfig": {
+    method: "GET",
+    path: "/api/v1/public/config",
+    successStatus: 200,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "publicInviteViewsCreate": {
+    method: "POST",
+    path: "/api/v1/public/invite-views",
+    successStatus: 204,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "staffAccountMfaGet": {
+    method: "GET",
+    path: "/api/v1/staff/account/mfa",
+    successStatus: 200,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "staffAccountMfaTotpConfirm": {
+    method: "POST",
+    path: "/api/v1/staff/account/mfa/totp/confirm",
+    successStatus: 204,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "staffAccountMfaTotpDisable": {
+    method: "POST",
+    path: "/api/v1/staff/account/mfa/totp/disable",
+    successStatus: 204,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "staffAccountMfaTotpSetup": {
+    method: "POST",
+    path: "/api/v1/staff/account/mfa/totp",
+    successStatus: 200,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "staffNoticesCreate": {
+    method: "POST",
+    path: "/api/v1/staff/notices",
+    successStatus: 201,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      201: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "staffNoticesDelete": {
+    method: "DELETE",
+    path: "/api/v1/staff/notices/{id}",
+    successStatus: 204,
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "staffNoticesList": {
+    method: "GET",
+    path: "/api/v1/staff/notices",
+    successStatus: 200,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "staffNoticesUpdate": {
+    method: "PATCH",
+    path: "/api/v1/staff/notices/{id}",
+    successStatus: 204,
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "staffPlansList": {
+    method: "GET",
+    path: "/api/v1/staff/plans",
+    successStatus: 200,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": z.array(internalApiAdminPlanItemSchema),
+        },
+        headers: {},
+      },
+    },
+    responseSchema: z.array(internalApiAdminPlanItemSchema),
+  },
+  "staffTicketsClose": {
+    method: "POST",
+    path: "/api/v1/staff/tickets/{id}/close",
+    successStatus: 204,
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "staffTicketsGet": {
+    method: "GET",
+    path: "/api/v1/staff/tickets/{id}",
+    successStatus: 200,
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "staffTicketsList": {
+    method: "GET",
+    path: "/api/v1/staff/tickets",
+    successStatus: 200,
+    parameters: {
+      "query": z.strictObject({
+        "page": z.number().int().min(1).optional(),
+        "per_page": z.number().int().min(1).max(100).optional(),
+        "status": z.number().int().optional(),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "staffTicketsRepliesCreate": {
+    method: "POST",
+    path: "/api/v1/staff/tickets/{id}/replies",
+    successStatus: 204,
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "staffUsersBan": {
+    method: "POST",
+    path: "/api/v1/staff/users/ban",
+    successStatus: 204,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "staffUsersGet": {
+    method: "GET",
+    path: "/api/v1/staff/users/{id}",
+    successStatus: 200,
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "staffUsersMail": {
+    method: "POST",
+    path: "/api/v1/staff/users/mail",
+    successStatus: 204,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "Idempotency-Key": z.string().refine((value) => new TextEncoder().encode(value).length <= 512, { message: "Must be at most 512 UTF-8 bytes" }).optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "staffUsersUpdate": {
+    method: "PATCH",
+    path: "/api/v1/staff/users/{id}",
+    successStatus: 204,
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+        "X-V2Board-Step-Up": z.string().refine((value) => new TextEncoder().encode(value).length <= 256, { message: "Must be at most 256 UTF-8 bytes" }).optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "userCommissionsList": {
+    method: "GET",
+    path: "/api/v1/user/commissions",
+    successStatus: 200,
+    parameters: {
+      "query": z.strictObject({
+        "page": z.number().int().min(1).optional(),
+        "per_page": z.number().int().min(1).max(100).optional(),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "userCommissionTransfersCreate": {
+    method: "POST",
+    path: "/api/v1/user/commission-transfers",
+    successStatus: 204,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "userConfigGet": {
+    method: "GET",
+    path: "/api/v1/user/config",
+    successStatus: 200,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "userCouponsCheck": {
+    method: "POST",
+    path: "/api/v1/user/coupons/check",
+    successStatus: 200,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "userGiftCardRedemptionsCreate": {
+    method: "POST",
+    path: "/api/v1/user/gift-card-redemptions",
+    successStatus: 200,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "userInviteCodesCreate": {
+    method: "POST",
+    path: "/api/v1/user/invite-codes",
+    successStatus: 204,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "userInviteGet": {
+    method: "GET",
+    path: "/api/v1/user/invite",
+    successStatus: 200,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "userKnowledgeCategoriesList": {
+    method: "GET",
+    path: "/api/v1/user/knowledge-categories",
+    successStatus: 200,
+    parameters: {
+      "query": z.strictObject({
+        "language": z.string().optional(),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "userKnowledgeGet": {
+    method: "GET",
+    path: "/api/v1/user/knowledge/{id}",
+    successStatus: 200,
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "userKnowledgeList": {
+    method: "GET",
+    path: "/api/v1/user/knowledge",
+    successStatus: 200,
+    parameters: {
+      "query": z.strictObject({
+        "keyword": z.string().optional(),
+        "language": z.string().optional(),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "userNoticesList": {
+    method: "GET",
+    path: "/api/v1/user/notices",
+    successStatus: 200,
+    parameters: {
+      "query": z.strictObject({
+        "page": z.number().int().min(1).optional(),
+        "per_page": z.number().int().min(1).max(100).optional(),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "userOrdersCancel": {
+    method: "POST",
+    path: "/api/v1/user/orders/{trade_no}/cancel",
+    successStatus: 204,
+    parameters: {
+      "path": z.strictObject({
+        "trade_no": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "userOrdersCheckout": {
+    method: "POST",
+    path: "/api/v1/user/orders/{trade_no}/checkout",
+    successStatus: 200,
+    parameters: {
+      "path": z.strictObject({
+        "trade_no": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "userOrdersCreate": {
+    method: "POST",
+    path: "/api/v1/user/orders",
+    successStatus: 201,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      201: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "userOrdersGet": {
+    method: "GET",
+    path: "/api/v1/user/orders/{trade_no}",
+    successStatus: 200,
+    parameters: {
+      "path": z.strictObject({
+        "trade_no": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "userOrdersList": {
+    method: "GET",
+    path: "/api/v1/user/orders",
+    successStatus: 200,
+    parameters: {
+      "query": z.strictObject({
+        "status": z.number().int().min(-2147483648).max(2147483647).min(-32768).max(32767).optional(),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "userOrdersStatus": {
+    method: "GET",
+    path: "/api/v1/user/orders/{trade_no}/status",
+    successStatus: 200,
+    parameters: {
+      "path": z.strictObject({
+        "trade_no": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "userOrdersStripeIntent": {
+    method: "POST",
+    path: "/api/v1/user/orders/{trade_no}/stripe-intent",
+    successStatus: 200,
+    parameters: {
+      "path": z.strictObject({
+        "trade_no": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "userPasswordUpdate": {
+    method: "PUT",
+    path: "/api/v1/user/password",
+    successStatus: 204,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "userPaymentMethodsList": {
+    method: "GET",
+    path: "/api/v1/user/payment-methods",
+    successStatus: 200,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "userPlansGet": {
+    method: "GET",
+    path: "/api/v1/user/plans/{id}",
+    successStatus: 200,
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "userPlansList": {
+    method: "GET",
+    path: "/api/v1/user/plans",
+    successStatus: 200,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "userProfileGet": {
+    method: "GET",
+    path: "/api/v1/user/profile",
+    successStatus: 200,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "userProfileUpdate": {
+    method: "PATCH",
+    path: "/api/v1/user/profile",
+    successStatus: 204,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "userServersList": {
+    method: "GET",
+    path: "/api/v1/user/servers",
+    successStatus: 200,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "userSessionsDelete": {
+    method: "DELETE",
+    path: "/api/v1/user/sessions/{session_id}",
+    successStatus: 204,
+    parameters: {
+      "path": z.strictObject({
+        "session_id": z.string().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "userSessionsList": {
+    method: "GET",
+    path: "/api/v1/user/sessions",
+    successStatus: 200,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "userStatsGet": {
+    method: "GET",
+    path: "/api/v1/user/stats",
+    successStatus: 200,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "userSubscriptionGet": {
+    method: "GET",
+    path: "/api/v1/user/subscription",
+    successStatus: 200,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "userSubscriptionNewPeriod": {
+    method: "POST",
+    path: "/api/v1/user/subscription/new-period",
+    successStatus: 204,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "userSubscriptionResetToken": {
+    method: "POST",
+    path: "/api/v1/user/subscription/reset-token",
+    successStatus: 200,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "userTelegramBindingDelete": {
+    method: "DELETE",
+    path: "/api/v1/user/telegram-binding",
+    successStatus: 204,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "userTelegramBotGet": {
+    method: "GET",
+    path: "/api/v1/user/telegram-bot",
+    successStatus: 200,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "userTicketsClose": {
+    method: "POST",
+    path: "/api/v1/user/tickets/{id}/close",
+    successStatus: 204,
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "userTicketsCreate": {
+    method: "POST",
+    path: "/api/v1/user/tickets",
+    successStatus: 201,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      201: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "userTicketsGet": {
+    method: "GET",
+    path: "/api/v1/user/tickets/{id}",
+    successStatus: 200,
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "userTicketsList": {
+    method: "GET",
+    path: "/api/v1/user/tickets",
+    successStatus: 200,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "userTicketsRepliesCreate": {
+    method: "POST",
+    path: "/api/v1/user/tickets/{id}/replies",
+    successStatus: 204,
+    parameters: {
+      "path": z.strictObject({
+        "id": z.number().int().min(1),
+      }),
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      204: {
+        content: {},
+        headers: {},
+      },
+    },
+    responseSchema: z.undefined(),
+  },
+  "userTrafficLogsList": {
+    method: "GET",
+    path: "/api/v1/user/traffic-logs",
+    successStatus: 200,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: false,
+    requestContent: {},
+    requestSchema: z.undefined(),
+    successResponses: {
+      200: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
+  },
+  "userWithdrawalTicketsCreate": {
+    method: "POST",
+    path: "/api/v1/user/withdrawal-tickets",
+    successStatus: 201,
+    parameters: {
+      "header": z.strictObject({
+        "Accept-Language": z.string().optional(),
+      }),
+    },
+    requestRequired: true,
+    requestContent: {
+      "application/json": internalApiJsonValueSchema,
+    },
+    requestSchema: internalApiJsonValueSchema,
+    successResponses: {
+      201: {
+        content: {
+          "application/json": internalApiJsonValueSchema,
+        },
+        headers: {},
+      },
+    },
+    responseSchema: internalApiJsonValueSchema,
   },
 } as const;
 

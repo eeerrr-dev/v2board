@@ -4,6 +4,10 @@ use chrono::Utc;
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use sqlx::{FromRow, Postgres, Transaction};
 use v2board_config::AppConfig;
+use v2board_domain_model::{
+    CommissionInviter, CommissionState, NonNegativeMoneyMinor,
+    plan_commission_payouts as decide_commission_payouts,
+};
 
 use crate::{state::WorkerState, time::timestamp_before};
 
@@ -137,17 +141,20 @@ async fn pay_commission_order_in_tx(
         chain.insert(id, row);
     }
 
-    let payouts = plan_commission_payouts(
-        &shares,
-        order.commission_balance,
-        order.invite_user_id,
-        |id| chain.get(&id).cloned(),
-    );
+    let commission_pool = NonNegativeMoneyMinor::new(order.commission_balance)
+        .map_err(|error| anyhow::anyhow!("invalid commission pool: {error}"))?;
+    let payouts = decide_commission_payouts(&shares, commission_pool, order.invite_user_id, |id| {
+        chain.get(&id).map(|inviter| CommissionInviter {
+            id: inviter.id,
+            inviter_id: inviter.invite_user_id,
+        })
+    });
 
     let mut actual_commission_balance = order.actual_commission_balance.unwrap_or_default();
     for payout in &payouts {
+        let payout_amount = payout.amount.get();
         let next_actual_commission_balance =
-            checked_commission_total(actual_commission_balance, payout.amount).ok_or_else(
+            checked_commission_total(actual_commission_balance, payout_amount).ok_or_else(
                 || anyhow::anyhow!("actual commission balance exceeds supported cents"),
             )?;
         let now = Utc::now().timestamp();
@@ -159,7 +166,7 @@ async fn pay_commission_order_in_tx(
         .await?
         .ok_or_else(|| anyhow::anyhow!("commission recipient no longer exists"))?;
         if state.config.withdraw_close_enable {
-            let balance = checked_commission_total(balance, payout.amount)
+            let balance = checked_commission_total(balance, payout_amount)
                 .ok_or_else(|| anyhow::anyhow!("recipient balance exceeds supported cents"))?;
             sqlx::query("UPDATE users SET balance = $1, updated_at = $2 WHERE id = $3")
                 .bind(balance)
@@ -168,7 +175,7 @@ async fn pay_commission_order_in_tx(
                 .execute(&mut **tx)
                 .await?;
         } else {
-            let commission_balance = checked_commission_total(commission_balance, payout.amount)
+            let commission_balance = checked_commission_total(commission_balance, payout_amount)
                 .ok_or_else(|| {
                     anyhow::anyhow!("recipient commission balance exceeds supported cents")
                 })?;
@@ -190,7 +197,7 @@ async fn pay_commission_order_in_tx(
         .bind(order.user_id)
         .bind(&order.trade_no)
         .bind(order.total_amount)
-        .bind(payout.amount)
+        .bind(payout_amount)
         .bind(now)
         .bind(now)
         .execute(&mut **tx)
@@ -200,13 +207,15 @@ async fn pay_commission_order_in_tx(
     let completed = sqlx::query(
         r#"
         UPDATE orders
-        SET commission_status = 2, actual_commission_balance = $1, updated_at = $2
-        WHERE id = $3 AND commission_status = 1
+        SET commission_status = $1, actual_commission_balance = $2, updated_at = $3
+        WHERE id = $4 AND commission_status = $5
         "#,
     )
+    .bind(CommissionState::Paid.code())
     .bind(actual_commission_balance)
     .bind(Utc::now().timestamp())
     .bind(order.id)
+    .bind(CommissionState::Processing.code())
     .execute(&mut **tx)
     .await?;
     if completed.rows_affected() != 1 {
@@ -215,69 +224,13 @@ async fn pay_commission_order_in_tx(
     Ok(())
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct CommissionPayout {
-    inviter_id: i64,
-    amount: i32,
-}
-
 fn checked_commission_total(current: i32, payout: i32) -> Option<i32> {
+    // The native schema and the one-shot importer intentionally preserve a
+    // signed historical account balance.  The domain decision guarantees the
+    // payout itself is non-negative; applying it must therefore accept a
+    // negative starting balance while still rejecting INTEGER overflow.
+    NonNegativeMoneyMinor::new(payout).ok()?;
     current.checked_add(payout)
-}
-
-/// Pure port of `CheckCommission::payHandle` (CheckCommission.php:95-123): walk the
-/// invite chain and, for each configured share level, pay the CURRENT inviter. A zero
-/// share (or a zero commission product) `continue`s WITHOUT advancing the chain pointer
-/// (CheckCommission.php:98-100), so the SAME inviter is re-evaluated at the next level;
-/// the pointer only advances after a real payout (CheckCommission.php:120).
-fn plan_commission_payouts<F>(
-    shares: &[i32],
-    commission_balance: i32,
-    first_inviter: i64,
-    mut lookup: F,
-) -> Vec<CommissionPayout>
-where
-    F: FnMut(i64) -> Option<InviterRow>,
-{
-    let mut invite_user_id = Some(first_inviter);
-    let mut payouts = Vec::new();
-    for &share in shares {
-        let Some(current) = invite_user_id else {
-            break;
-        };
-        // Laravel `if (!$inviter) continue;` (CheckCommission.php:97) leaves the pointer
-        // unchanged; a missing user never becomes found on a later level, so no further
-        // payout is possible and we can stop.
-        let Some(inviter) = lookup(current) else {
-            break;
-        };
-        if share <= 0 {
-            continue;
-        }
-        // The mathematical value is `commission_balance * share / 100`. Gate on
-        // the exact numerator (not the rounded cents), then perform MySQL's
-        // half-away-from-zero integer conversion without binary float drift.
-        let numerator = i64::from(commission_balance) * i64::from(share);
-        if numerator == 0 {
-            continue;
-        }
-        let mut amount = numerator / 100;
-        let remainder = numerator % 100;
-        if remainder.unsigned_abs() * 2 >= 100 {
-            amount += numerator.signum();
-        }
-        let amount = i32::try_from(amount).unwrap_or(if amount.is_negative() {
-            i32::MIN
-        } else {
-            i32::MAX
-        });
-        payouts.push(CommissionPayout {
-            inviter_id: inviter.id,
-            amount,
-        });
-        invite_user_id = inviter.invite_user_id;
-    }
-    payouts
 }
 
 fn commission_shares(config: &AppConfig) -> Vec<i32> {
@@ -304,6 +257,8 @@ fn parse_share(value: Option<&str>) -> i32 {
 
 #[cfg(test)]
 mod tests {
+    use v2board_domain_model::CommissionPayout;
+
     use super::*;
 
     #[test]
@@ -319,14 +274,14 @@ mod tests {
         );
     }
 
-    fn inviter(id: i64, invited_by: Option<i64>) -> InviterRow {
-        InviterRow {
+    fn inviter(id: i64, invited_by: Option<i64>) -> CommissionInviter {
+        CommissionInviter {
             id,
-            invite_user_id: invited_by,
+            inviter_id: invited_by,
         }
     }
 
-    fn three_level_chain() -> HashMap<i64, InviterRow> {
+    fn three_level_chain() -> HashMap<i64, CommissionInviter> {
         // 1 (invited by 2) -> 2 (invited by 3) -> 3 (top of the chain).
         [
             (1, inviter(1, Some(2))),
@@ -343,12 +298,17 @@ mod tests {
         // shares [0, 50, 0]: level 0 pays nobody but must NOT advance the pointer, so the
         // direct inviter (id 1) is the one paid at level 1's 50% share. Level 2's 0 share
         // again does not advance. Mirrors CheckCommission::payHandle.
-        let payouts = plan_commission_payouts(&[0, 50, 0], 100, 1, |id| chain.get(&id).cloned());
+        let payouts = decide_commission_payouts(
+            &[0, 50, 0],
+            NonNegativeMoneyMinor::new(100).unwrap(),
+            1,
+            |id| chain.get(&id).copied(),
+        );
         assert_eq!(
             payouts,
             vec![CommissionPayout {
                 inviter_id: 1,
-                amount: 50,
+                amount: NonNegativeMoneyMinor::new(50).unwrap(),
             }]
         );
     }
@@ -356,21 +316,26 @@ mod tests {
     #[test]
     fn commission_positive_shares_walk_up_the_chain() {
         let chain = three_level_chain();
-        let payouts = plan_commission_payouts(&[50, 30, 20], 100, 1, |id| chain.get(&id).cloned());
+        let payouts = decide_commission_payouts(
+            &[50, 30, 20],
+            NonNegativeMoneyMinor::new(100).unwrap(),
+            1,
+            |id| chain.get(&id).copied(),
+        );
         assert_eq!(
             payouts,
             vec![
                 CommissionPayout {
                     inviter_id: 1,
-                    amount: 50,
+                    amount: NonNegativeMoneyMinor::new(50).unwrap(),
                 },
                 CommissionPayout {
                     inviter_id: 2,
-                    amount: 30,
+                    amount: NonNegativeMoneyMinor::new(30).unwrap(),
                 },
                 CommissionPayout {
                     inviter_id: 3,
-                    amount: 20,
+                    amount: NonNegativeMoneyMinor::new(20).unwrap(),
                 },
             ]
         );
@@ -380,12 +345,15 @@ mod tests {
     fn commission_single_full_share_pays_direct_inviter() {
         // The distribution-disabled path produces shares = [100].
         let chain = three_level_chain();
-        let payouts = plan_commission_payouts(&[100], 250, 1, |id| chain.get(&id).cloned());
+        let payouts =
+            decide_commission_payouts(&[100], NonNegativeMoneyMinor::new(250).unwrap(), 1, |id| {
+                chain.get(&id).copied()
+            });
         assert_eq!(
             payouts,
             vec![CommissionPayout {
                 inviter_id: 1,
-                amount: 250,
+                amount: NonNegativeMoneyMinor::new(250).unwrap(),
             }]
         );
     }
@@ -394,17 +362,21 @@ mod tests {
     fn commission_share_rounds_half_away_without_floats() {
         let chain = three_level_chain();
         assert_eq!(
-            plan_commission_payouts(&[50], 1, 1, |id| chain.get(&id).cloned()),
+            decide_commission_payouts(&[50], NonNegativeMoneyMinor::new(1).unwrap(), 1, |id| chain
+                .get(&id)
+                .copied()),
             vec![CommissionPayout {
                 inviter_id: 1,
-                amount: 1,
+                amount: NonNegativeMoneyMinor::new(1).unwrap(),
             }]
         );
     }
 
     #[test]
-    fn commission_total_rejects_supported_cents_overflow() {
+    fn commission_total_accepts_signed_current_and_rejects_invalid_payout_or_overflow() {
         assert_eq!(checked_commission_total(100, 20), Some(120));
+        assert_eq!(checked_commission_total(-100, 20), Some(-80));
+        assert_eq!(checked_commission_total(i32::MIN, 1), Some(i32::MIN + 1));
         assert_eq!(checked_commission_total(i32::MAX, 1), None);
         assert_eq!(checked_commission_total(i32::MIN, -1), None);
     }

@@ -192,7 +192,7 @@ make doctor
 
 ```bash
 make doctor                 # Compose、宿主输出、runtime 隔离和配置审计
-make api-contract-check     # Rust OpenAPI → TypeScript/Zod 漂移门禁
+make api-contract-check     # 158 个 Rust operation + 101 个 problem tuple → OpenAPI/TS/Zod 门禁
 make rust-check             # fmt + clippy
 make rust-test              # workspace tests
 make rust-integration       # PostgreSQL/ClickHouse/Redis 与 analytics outbox 往返

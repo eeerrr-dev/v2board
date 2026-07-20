@@ -3,10 +3,11 @@ use std::time::Duration;
 use axum::{
     Router,
     extract::Request,
+    handler::Handler,
     http::{HeaderMap, HeaderName, HeaderValue, Method, header},
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::{delete, get, post, put},
+    routing::{MethodFilter, get, on, post},
 };
 use tower_http::compression::CompressionLayer;
 use tower_http::cors::{AllowOrigin, CorsLayer};
@@ -16,6 +17,7 @@ use tower_http::sensitive_headers::SetSensitiveHeadersLayer;
 use tower_http::services::ServeDir;
 use tower_http::timeout::RequestBodyDeadlineLayer;
 use tower_http::trace::TraceLayer;
+use v2board_api_contract::{HttpMethod, OperationSurface, operation};
 use v2board_config::AppConfig;
 
 use crate::{
@@ -28,6 +30,32 @@ use crate::{
 
 pub(crate) const X_REQUEST_ID: &str = "x-request-id";
 const MAX_REQUEST_BODY_BYTES: usize = 8 * 1024 * 1024;
+
+pub(crate) fn bind_internal_operation<H, T>(
+    router: Router<AppState>,
+    expected_surface: OperationSurface,
+    id: &'static str,
+    handler: H,
+) -> Router<AppState>
+where
+    H: Handler<T, AppState>,
+    T: 'static,
+{
+    let operation = operation(id).unwrap_or_else(|| panic!("unregistered internal operation {id}"));
+    assert_eq!(
+        operation.surface, expected_surface,
+        "internal operation {id} was mounted into the wrong surface"
+    );
+    let filter = match operation.method {
+        HttpMethod::Get => MethodFilter::GET,
+        HttpMethod::Post => MethodFilter::POST,
+        HttpMethod::Put => MethodFilter::PUT,
+        HttpMethod::Patch => MethodFilter::PATCH,
+        HttpMethod::Delete => MethodFilter::DELETE,
+    };
+    let path = operation.runtime_path();
+    router.route(path.as_ref(), on(filter, handler))
+}
 
 /// Preserve cross-origin API clients while keeping authentication explicit in
 /// the Authorization header. The API has no cookie-auth contract, so enabling
@@ -53,6 +81,7 @@ fn cors_layer(state: AppState) -> CorsLayer {
             header::AUTHORIZATION,
             HeaderName::from_static(X_REQUEST_ID),
             HeaderName::from_static("x-v2board-step-up"),
+            HeaderName::from_static("idempotency-key"),
         ])
         .expose_headers([HeaderName::from_static(X_REQUEST_ID)])
         // 7200s is Chromium's preflight cache cap; the legacy 10080 was a
@@ -67,6 +96,65 @@ fn cors_origin_allowed(allowed_origins: &[String], origin: &HeaderValue) -> bool
     allowed_origins
         .iter()
         .any(|allowed| allowed.as_bytes() == origin.as_bytes())
+}
+
+define_internal_operation_router! {
+    pub(crate) fn fixed_internal_router;
+    pub(crate) const FIXED_INTERNAL_OPERATION_IDS;
+    {
+        "public.config" [Public] => crate::client::public_config,
+        "public.invite-views.create" [Public] => crate::auth::public_invite_views,
+        "auth.register" [Auth] => crate::auth::register,
+        "auth.login" [Auth] => crate::auth::login,
+        "auth.quick-login" [Auth] => crate::auth::quick_login,
+        "auth.token-login" [Auth] => crate::auth::token_login,
+        "auth.password-reset" [Auth] => crate::auth::password_reset,
+        "auth.step-up" [Auth] => crate::auth::step_up,
+        "auth.quick-login-url" [Auth] => crate::auth::quick_login_url,
+        "auth.email-codes" [Auth] => crate::auth::email_codes,
+        "auth.session.get" [Auth] => crate::auth::session_get,
+        "auth.session.delete" [Auth] => crate::auth::session_delete,
+        "user.profile.get" [User] => crate::user::user_profile,
+        "user.profile.update" [User] => crate::user::user_profile_update,
+        "user.password.update" [User] => crate::user::user_password_update,
+        "user.stats.get" [User] => crate::user::user_stats,
+        "user.sessions.list" [User] => crate::user::user_sessions,
+        "user.sessions.delete" [User] => crate::user::user_session_delete,
+        "user.commission-transfers.create" [User] => crate::user::commission_transfer_create,
+        "user.gift-card-redemptions.create" [User] => crate::user::gift_card_redemption_create,
+        "user.telegram-binding.delete" [User] => crate::user::user_telegram_binding_delete,
+        "user.telegram-bot.get" [User] => crate::user::telegram_bot,
+        "user.config.get" [User] => crate::user::user_config,
+        "user.subscription.get" [User] => crate::user::user_subscription,
+        "user.subscription.new-period" [User] => crate::user::subscription_new_period,
+        "user.subscription.reset-token" [User] => crate::user::subscription_reset_token,
+        "user.servers.list" [User] => crate::user::user_servers,
+        "user.traffic-logs.list" [User] => crate::user::user_traffic_logs,
+        "user.plans.get" [User] => crate::commerce::plan_detail,
+        "user.plans.list" [User] => crate::commerce::plans_list,
+        "user.orders.create" [User] => crate::commerce::order_create,
+        "user.orders.list" [User] => crate::commerce::orders_list,
+        "user.orders.get" [User] => crate::commerce::order_detail,
+        "user.orders.status" [User] => crate::commerce::order_status,
+        "user.orders.cancel" [User] => crate::commerce::order_cancel,
+        "user.orders.checkout" [User] => crate::commerce::order_checkout,
+        "user.orders.stripe-intent" [User] => crate::commerce::order_stripe_intent,
+        "user.payment-methods.list" [User] => crate::commerce::payment_methods,
+        "user.coupons.check" [User] => crate::commerce::coupon_check,
+        "user.invite-codes.create" [User] => crate::user::invite_code_create,
+        "user.invite.get" [User] => crate::user::invite_get,
+        "user.commissions.list" [User] => crate::user::commissions_list,
+        "user.tickets.get" [User] => crate::ticket::ticket_detail,
+        "user.tickets.list" [User] => crate::ticket::tickets_list,
+        "user.tickets.create" [User] => crate::ticket::ticket_create,
+        "user.tickets.replies.create" [User] => crate::ticket::ticket_reply_create,
+        "user.tickets.close" [User] => crate::ticket::ticket_close,
+        "user.withdrawal-tickets.create" [User] => crate::ticket::withdrawal_ticket_create,
+        "user.knowledge.get" [User] => crate::user::knowledge_detail,
+        "user.knowledge.list" [User] => crate::user::knowledge_list,
+        "user.knowledge-categories.list" [User] => crate::user::knowledge_categories,
+        "user.notices.list" [User] => crate::user::user_notices,
+    }
 }
 
 pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
@@ -98,12 +186,11 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
         .route("/readyz", get(crate::runtime::readyz))
         .route("/metrics", get(crate::metrics::metrics))
         .route("/robots.txt", get(crate::frontend::robots_txt))
-        // ——— Public family, modern dialect (docs/api-dialect.md §5.1, W3) ———
-        .route("/api/v1/public/config", get(crate::client::public_config))
-        .route(
-            "/api/v1/public/invite-views",
-            post(crate::auth::public_invite_views),
-        )
+        // All modern internal fixed-prefix routes derive method and path from
+        // the Rust-owned operation registry. Frozen external routes remain
+        // explicit below because their legacy wire contract is intentionally
+        // outside the modern internal OpenAPI document.
+        .merge(fixed_internal_router())
         .route(
             "/api/v1/guest/payment/notify/{method}/{uuid}",
             get(crate::client::payment_notify).post(crate::client::payment_notify),
@@ -124,155 +211,6 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
             "/api/v1/client/app/getVersion",
             get(crate::client::client_app_version),
         )
-        // ——— Auth family, modern dialect (docs/api-dialect.md §5.2, W2) ———
-        .route("/api/v1/auth/register", post(crate::auth::register))
-        .route("/api/v1/auth/login", post(crate::auth::login))
-        .route("/api/v1/auth/quick-login", get(crate::auth::quick_login))
-        .route("/api/v1/auth/token-login", post(crate::auth::token_login))
-        .route(
-            "/api/v1/auth/password-reset",
-            post(crate::auth::password_reset),
-        )
-        .route("/api/v1/auth/step-up", post(crate::auth::step_up))
-        .route(
-            "/api/v1/auth/quick-login-url",
-            post(crate::auth::quick_login_url),
-        )
-        .route("/api/v1/auth/email-codes", post(crate::auth::email_codes))
-        .route(
-            "/api/v1/auth/session",
-            get(crate::auth::session_get).delete(crate::auth::session_delete),
-        )
-        // ——— User account & subscription family, modern dialect
-        // (docs/api-dialect.md §5.3, §5.4, §9.1, §9.4, W5) ———
-        .route(
-            "/api/v1/user/profile",
-            get(crate::user::user_profile).patch(crate::user::user_profile_update),
-        )
-        .route(
-            "/api/v1/user/password",
-            put(crate::user::user_password_update),
-        )
-        .route("/api/v1/user/stats", get(crate::user::user_stats))
-        .route("/api/v1/user/sessions", get(crate::user::user_sessions))
-        .route(
-            "/api/v1/user/sessions/{session_id}",
-            delete(crate::user::user_session_delete),
-        )
-        .route(
-            "/api/v1/user/gift-card-redemptions",
-            post(crate::user::gift_card_redemption_create),
-        )
-        .route(
-            "/api/v1/user/telegram-binding",
-            delete(crate::user::user_telegram_binding_delete),
-        )
-        .route(
-            "/api/v1/user/subscription",
-            get(crate::user::user_subscription),
-        )
-        .route(
-            "/api/v1/user/subscription/new-period",
-            post(crate::user::subscription_new_period),
-        )
-        .route(
-            "/api/v1/user/subscription/reset-token",
-            post(crate::user::subscription_reset_token),
-        )
-        // ——— User commerce family, modern dialect (docs/api-dialect.md §5.5,
-        // §9.3, §9.4, W4) ———
-        .route("/api/v1/user/plans", get(crate::commerce::plans_list))
-        .route("/api/v1/user/plans/{id}", get(crate::commerce::plan_detail))
-        .route(
-            "/api/v1/user/orders",
-            get(crate::commerce::orders_list).post(crate::commerce::order_create),
-        )
-        .route(
-            "/api/v1/user/orders/{trade_no}",
-            get(crate::commerce::order_detail),
-        )
-        .route(
-            "/api/v1/user/orders/{trade_no}/status",
-            get(crate::commerce::order_status),
-        )
-        .route(
-            "/api/v1/user/orders/{trade_no}/cancel",
-            post(crate::commerce::order_cancel),
-        )
-        .route(
-            "/api/v1/user/orders/{trade_no}/checkout",
-            post(crate::commerce::order_checkout),
-        )
-        .route(
-            "/api/v1/user/orders/{trade_no}/stripe-intent",
-            post(crate::commerce::order_stripe_intent),
-        )
-        .route(
-            "/api/v1/user/payment-methods",
-            get(crate::commerce::payment_methods),
-        )
-        .route(
-            "/api/v1/user/coupons/check",
-            post(crate::commerce::coupon_check),
-        )
-        // ——— Invite & commission family, modern dialect (docs/api-dialect.md
-        // §5.6, the §5.3 /user/commission-transfers row, §9.2, W7) ———
-        .route(
-            "/api/v1/user/invite-codes",
-            post(crate::user::invite_code_create),
-        )
-        .route("/api/v1/user/invite", get(crate::user::invite_get))
-        .route(
-            "/api/v1/user/commissions",
-            get(crate::user::commissions_list),
-        )
-        .route(
-            "/api/v1/user/commission-transfers",
-            post(crate::user::commission_transfer_create),
-        )
-        // ——— User ticket family, modern dialect (docs/api-dialect.md §5.7,
-        // W8) ———
-        .route(
-            "/api/v1/user/tickets",
-            get(crate::ticket::tickets_list).post(crate::ticket::ticket_create),
-        )
-        .route(
-            "/api/v1/user/tickets/{id}",
-            get(crate::ticket::ticket_detail),
-        )
-        .route(
-            "/api/v1/user/tickets/{id}/replies",
-            post(crate::ticket::ticket_reply_create),
-        )
-        .route(
-            "/api/v1/user/tickets/{id}/close",
-            post(crate::ticket::ticket_close),
-        )
-        .route(
-            "/api/v1/user/withdrawal-tickets",
-            post(crate::ticket::withdrawal_ticket_create),
-        )
-        // ——— User service-usage family, modern dialect (docs/api-dialect.md
-        // §5.4 remainder, W6) ———
-        .route("/api/v1/user/servers", get(crate::user::user_servers))
-        .route(
-            "/api/v1/user/traffic-logs",
-            get(crate::user::user_traffic_logs),
-        )
-        // ——— User content family, modern dialect (docs/api-dialect.md §5.8
-        // plus the /user/config and /user/telegram-bot rows in §5.3, W3) ———
-        .route("/api/v1/user/knowledge", get(crate::user::knowledge_list))
-        .route(
-            "/api/v1/user/knowledge/{id}",
-            get(crate::user::knowledge_detail),
-        )
-        .route(
-            "/api/v1/user/knowledge-categories",
-            get(crate::user::knowledge_categories),
-        )
-        .route("/api/v1/user/notices", get(crate::user::user_notices))
-        .route("/api/v1/user/telegram-bot", get(crate::user::telegram_bot))
-        .route("/api/v1/user/config", get(crate::user::user_config))
         // The admin API has no boot-time literal route: every method under
         // the live `/api/v1/{secure_path}/` prefix re-dispatches through
         // `dynamic_fallback` into the nested method-aware admin router
@@ -498,7 +436,7 @@ fn is_content_hashed_asset(path: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::net::SocketAddr;
+    use std::{collections::BTreeSet, net::SocketAddr};
 
     use axum::{
         body::{Body, to_bytes},
@@ -515,6 +453,31 @@ mod tests {
     use crate::runtime::AppState;
 
     const ALLOWED_ORIGIN: &str = "https://app.example.test";
+
+    #[test]
+    fn every_internal_registry_operation_is_bound_exactly_once() {
+        // Construction itself is part of the assertion: Axum rejects
+        // conflicting registrations for the same method/path.
+        let _router = super::fixed_internal_router();
+        let bound = super::FIXED_INTERNAL_OPERATION_IDS
+            .iter()
+            .chain(crate::admin::ADMIN_INTERNAL_OPERATION_IDS)
+            .chain(crate::admin::STAFF_INTERNAL_OPERATION_IDS)
+            .copied()
+            .collect::<Vec<_>>();
+        let unique = bound.iter().copied().collect::<BTreeSet<_>>();
+        assert_eq!(
+            unique.len(),
+            bound.len(),
+            "duplicate internal handler binding"
+        );
+
+        let expected = v2board_api_contract::INTERNAL_OPERATIONS
+            .iter()
+            .map(|operation| operation.id)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(unique, expected);
+    }
 
     /// Builds the real production router with service-free process dependencies:
     /// the PostgreSQL pool and the Redis connection manager are lazy, so every
@@ -554,6 +517,10 @@ mod tests {
                 .uri("/api/v1/auth/login")
                 .header(header::ORIGIN, ALLOWED_ORIGIN)
                 .header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
+                .header(
+                    header::ACCESS_CONTROL_REQUEST_HEADERS,
+                    "authorization, idempotency-key, x-v2board-step-up",
+                )
                 .body(Body::empty())
                 .unwrap(),
         );
@@ -576,6 +543,8 @@ mod tests {
         let allow_headers =
             header_str(&headers, &header::ACCESS_CONTROL_ALLOW_HEADERS).to_ascii_lowercase();
         assert!(allow_headers.contains("authorization"));
+        assert!(allow_headers.contains("idempotency-key"));
+        assert!(allow_headers.contains("x-v2board-step-up"));
         // Origin is a browser-forbidden request header: it can never appear in
         // Access-Control-Request-Headers, so it must not be advertised either.
         assert!(!allow_headers.split(',').any(|name| name.trim() == "origin"));

@@ -104,12 +104,11 @@ async fn transfer(state: &AppState, user_id: i64, transfer_amount: i32) -> Resul
             .bind(user_id)
             .fetch_one(&mut *tx)
             .await?;
-            let is_commission = match inviter.commission_type {
-                0 => !config.commission_first_time_enable || has_valid_order == 0,
-                1 => true,
-                2 => has_valid_order == 0,
-                _ => false,
-            };
+            let is_commission = v2board_domain::order::inviter_commission_is_eligible(
+                inviter.commission_type,
+                config.commission_first_time_enable,
+                has_valid_order != 0,
+            );
             if is_commission {
                 order_commission_balance = v2board_domain::order::commission_amount_cents(
                     i64::from(transfer_amount),

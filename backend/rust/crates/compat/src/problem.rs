@@ -16,6 +16,7 @@ use axum::{
 };
 use indexmap::IndexMap;
 use serde::{Serialize, Serializer};
+pub use v2board_problem_code::Code;
 
 /// RFC 9457 media type emitted for every internal-route error (§3.1).
 const PROBLEM_CONTENT_TYPE: &str = "application/problem+json";
@@ -26,208 +27,8 @@ const BEARER_INVALID_TOKEN: &str = "Bearer error=\"invalid_token\"";
 /// Bare challenge on a 401 whose request carried no credentials at all (§3.2).
 const BEARER_NO_CREDENTIALS: &str = "Bearer";
 
-macro_rules! code_registry {
-    ($( $variant:ident => ($slug:literal, $status:ident, $detail:literal), )+) => {
-        /// The frontend's only error discriminator: a stable snake_case slug
-        /// from the docs/api-dialect.md §3.4 registry. Slugs are append-only
-        /// and never renamed once shipped (§3.3 rule 4); each code carries
-        /// exactly one HTTP status by construction (§3.3 rule 6).
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-        pub enum Code {
-            $($variant,)+
-        }
-
-        impl Code {
-            /// Every registered code, in §3.4 registry order.
-            pub const ALL: &'static [Code] = &[$(Code::$variant,)+];
-
-            /// The stable snake_case wire slug (§3.4).
-            pub fn slug(self) -> &'static str {
-                match self { $(Code::$variant => $slug,)+ }
-            }
-
-            /// The single HTTP status this code ships with (§3.3 rule 6).
-            pub fn status(self) -> StatusCode {
-                match self { $(Code::$variant => StatusCode::$status,)+ }
-            }
-
-            /// Default English `detail` text. Presentation only (§3.1): no
-            /// client logic may match it, and waves may refine the copy.
-            pub fn default_detail(self) -> &'static str {
-                match self { $(Code::$variant => $detail,)+ }
-            }
-        }
-    };
-}
-
-code_registry! {
-    // Transport / generic (§3.4).
-    ValidationFailed => ("validation_failed", UNPROCESSABLE_ENTITY, "The given data was invalid"),
-    InvalidParameter => ("invalid_parameter", BAD_REQUEST, "Invalid parameter"),
-    EndpointNotFound => ("endpoint_not_found", NOT_FOUND, "The requested endpoint does not exist"),
-    RateLimited => ("rate_limited", TOO_MANY_REQUESTS, "Too many requests, please try again later"),
-    InternalError => ("internal_error", INTERNAL_SERVER_ERROR, "Uh-oh, we've had some problems, we're working on it."),
-    ServiceUnavailable => ("service_unavailable", SERVICE_UNAVAILABLE, "Service is temporarily unavailable, please try again later"),
-    // Auth / session (§3.4).
-    SessionExpired => ("session_expired", UNAUTHORIZED, "Your session has expired, please sign in again"),
-    PermissionDenied => ("permission_denied", FORBIDDEN, "Permission denied"),
-    StepUpRequired => ("step_up_required", FORBIDDEN, "Recent password verification is required"),
-    InvalidCredentials => ("invalid_credentials", BAD_REQUEST, "Incorrect email or password"),
-    AccountSuspended => ("account_suspended", BAD_REQUEST, "Your account has been suspended"),
-    RegistrationClosed => ("registration_closed", BAD_REQUEST, "Registration has closed"),
-    RegisterIpRateLimited => ("register_ip_rate_limited", TOO_MANY_REQUESTS, "Register frequently, please try again later"),
-    PasswordAttemptsRateLimited => ("password_attempts_rate_limited", BAD_REQUEST, "There are too many password errors, please try again later"),
-    MfaCodeRequired => ("mfa_code_required", UNAUTHORIZED, "A two-factor authentication code is required"),
-    MfaCodeInvalid => ("mfa_code_invalid", UNAUTHORIZED, "Incorrect two-factor authentication code"),
-    MfaAlreadyEnabled => ("mfa_already_enabled", BAD_REQUEST, "Two-factor authentication is already enabled"),
-    MfaSetupMissing => ("mfa_setup_missing", BAD_REQUEST, "Two-factor authentication setup has not been started"),
-    MfaNotEnabled => ("mfa_not_enabled", BAD_REQUEST, "Two-factor authentication is not enabled"),
-    MfaEnrollmentRequired => ("mfa_enrollment_required", FORBIDDEN, "Two-factor authentication enrollment is required"),
-    EmailAlreadyRegistered => ("email_already_registered", BAD_REQUEST, "Email already exists"),
-    EmailNotRegistered => ("email_not_registered", BAD_REQUEST, "This email is not registered in the system"),
-    InvalidEmailCode => ("invalid_email_code", BAD_REQUEST, "Incorrect email verification code"),
-    InvalidInviteCode => ("invalid_invite_code", BAD_REQUEST, "Invalid invitation code"),
-    EmailSuffixNotAllowed => ("email_suffix_not_allowed", BAD_REQUEST, "Email suffix is not in the Whitelist"),
-    GmailAliasNotSupported => ("gmail_alias_not_supported", BAD_REQUEST, "Gmail alias is not supported"),
-    RecaptchaFailed => ("recaptcha_failed", BAD_REQUEST, "Invalid code is incorrect"),
-    EmailSendRateLimited => ("email_send_rate_limited", TOO_MANY_REQUESTS, "Email sending is too frequent, please try again later"),
-    InvalidToken => ("invalid_token", BAD_REQUEST, "Token error"),
-    OldPasswordIncorrect => ("old_password_incorrect", BAD_REQUEST, "The old password is wrong"),
-    PasswordResetFailed => ("password_reset_failed", BAD_REQUEST, "Reset failed, please try again later"),
-    UserNotFound => ("user_not_found", NOT_FOUND, "The user does not exist"),
-    UserNotRegistered => ("user_not_registered", BAD_REQUEST, "The user does not exist"),
-    // Commerce (user) (§3.4).
-    PlanNotFound => ("plan_not_found", NOT_FOUND, "Subscription plan does not exist"),
-    PlanUnavailable => ("plan_unavailable", BAD_REQUEST, "Subscription plan does not exist"),
-    PlanSoldOut => ("plan_sold_out", BAD_REQUEST, "Current product is sold out"),
-    PlanPeriodUnavailable => ("plan_period_unavailable", BAD_REQUEST, "This payment period cannot be purchased, please choose another period"),
-    PlanChangeDisabled => ("plan_change_disabled", BAD_REQUEST, "Plan change is not allowed at the moment, please contact support"),
-    PendingOrderExists => ("pending_order_exists", BAD_REQUEST, "You have an unpaid or pending order, please try again later or cancel it"),
-    OrderNotFound => ("order_not_found", NOT_FOUND, "Order does not exist or has been paid"),
-    OrderNotPending => ("order_not_pending", BAD_REQUEST, "Only pending orders can be operated on"),
-    PaymentMethodUnavailable => ("payment_method_unavailable", BAD_REQUEST, "Payment method is not available"),
-    PaymentConfigInvalid => ("payment_config_invalid", BAD_REQUEST, "Payment config is invalid"),
-    PaymentGatewayUnsupported => ("payment_gateway_unsupported", BAD_REQUEST, "Payment gateway is not supported"),
-    PaymentAmountOutOfRange => ("payment_amount_out_of_range", BAD_REQUEST, "Payment amount is outside the supported range"),
-    HandlingFeeOutOfRange => ("handling_fee_out_of_range", BAD_REQUEST, "Payment handling fee is outside the supported range"),
-    StripeBindingInvalid => ("stripe_binding_invalid", BAD_REQUEST, "Stripe payment binding is invalid"),
-    InsufficientBalance => ("insufficient_balance", BAD_REQUEST, "Insufficient balance"),
-    CouponInvalid => ("coupon_invalid", BAD_REQUEST, "Invalid coupon"),
-    CouponUnavailable => ("coupon_unavailable", BAD_REQUEST, "This coupon is no longer available"),
-    CouponNotStarted => ("coupon_not_started", BAD_REQUEST, "This coupon has not yet started"),
-    CouponExpired => ("coupon_expired", BAD_REQUEST, "This coupon has expired"),
-    CouponExhausted => ("coupon_exhausted", BAD_REQUEST, "Coupon failed"),
-    CouponNotApplicable => ("coupon_not_applicable", BAD_REQUEST, "This coupon cannot be applied to the selected plan or period"),
-    GiftCardInvalid => ("gift_card_invalid", BAD_REQUEST, "Gift card is invalid"),
-    SubscriptionValueOutOfRange => ("subscription_value_out_of_range", BAD_REQUEST, "Subscription value exceeds the supported range"),
-    RenewalNotAllowed => ("renewal_not_allowed", BAD_REQUEST, "Renewal is not allowed"),
-    ResetPeriodInvalid => ("reset_period_invalid", BAD_REQUEST, "Invalid reset period"),
-    // Profile / invite / ticket / content (user) (§3.4).
-    TransferAmountInvalid => ("transfer_amount_invalid", UNPROCESSABLE_ENTITY, "The transfer amount parameter is wrong"),
-    InsufficientCommissionBalance => ("insufficient_commission_balance", BAD_REQUEST, "Insufficient commission balance"),
-    BalanceOutOfRange => ("balance_out_of_range", BAD_REQUEST, "Balance exceeds the supported range"),
-    InviteCodeLimitReached => ("invite_code_limit_reached", BAD_REQUEST, "The maximum number of creations has been reached"),
-    TelegramNotConfigured => ("telegram_not_configured", BAD_REQUEST, "Telegram bot is not configured"),
-    TelegramUnbindFailed => ("telegram_unbind_failed", BAD_REQUEST, "Unbind telegram failed"),
-    TicketNotFound => ("ticket_not_found", NOT_FOUND, "Ticket does not exist"),
-    TicketInvalidState => ("ticket_invalid_state", BAD_REQUEST, "The ticket does not allow this operation in its current state"),
-    UnresolvedTicketExists => ("unresolved_ticket_exists", BAD_REQUEST, "There are other unresolved tickets"),
-    TicketRequiresPlan => ("ticket_requires_plan", BAD_REQUEST, "An active subscription plan is required to open a ticket"),
-    WithdrawMethodUnsupported => ("withdraw_method_unsupported", BAD_REQUEST, "Unsupported withdrawal method"),
-    WithdrawBelowMinimum => ("withdraw_below_minimum", BAD_REQUEST, "The withdrawal amount is below the minimum"),
-    ArticleNotFound => ("article_not_found", NOT_FOUND, "Article does not exist"),
-    NoticeNotFound => ("notice_not_found", NOT_FOUND, "Notice not found"),
-    KnowledgeNotFound => ("knowledge_not_found", NOT_FOUND, "Knowledge article does not exist"),
-    // Admin (§3.4).
-    ConfigRevisionConflict => ("config_revision_conflict", CONFLICT, "The configuration was updated by another request, please refresh and retry"),
-    ConfigValidationFailed => ("config_validation_failed", BAD_REQUEST, "Configuration validation failed"),
-    PaymentMethodNotFound => ("payment_method_not_found", NOT_FOUND, "Payment method does not exist"),
-    PaymentMethodInUse => ("payment_method_in_use", BAD_REQUEST, "Payment method is in use"),
-    ReconciliationNotFound => ("reconciliation_not_found", NOT_FOUND, "Payment reconciliation record does not exist"),
-    ReconciliationAlreadyProcessed => ("reconciliation_already_processed", CONFLICT, "Payment reconciliation record has already been processed"),
-    OrderAssignConflict => ("order_assign_conflict", BAD_REQUEST, "The user has a pending order and cannot be assigned"),
-    OrderUpdateConflict => ("order_update_conflict", CONFLICT, "The order is being modified by another request, please retry"),
-    OrderUpdateFailed => ("order_update_failed", BAD_REQUEST, "Update failed"),
-    PlanInUse => ("plan_in_use", BAD_REQUEST, "The plan is still in use and cannot be deleted"),
-    PlanUpdateConflict => ("plan_update_conflict", CONFLICT, "The plan was modified by another request, please retry"),
-    PlanForceUpdateLimitExceeded => ("plan_force_update_limit_exceeded", BAD_REQUEST, "The plan has too many users to force update at once"),
-    CouponNotFound => ("coupon_not_found", NOT_FOUND, "Coupon does not exist"),
-    GiftCardNotFound => ("gift_card_not_found", NOT_FOUND, "Gift card does not exist"),
-    ServerNotFound => ("server_not_found", NOT_FOUND, "Server does not exist"),
-    RouteNotFound => ("route_not_found", NOT_FOUND, "Route does not exist"),
-    ServerGroupNotFound => ("server_group_not_found", NOT_FOUND, "Server group does not exist"),
-    ServerGroupInUse => ("server_group_in_use", BAD_REQUEST, "The server group is still in use and cannot be deleted"),
-    InvalidServerType => ("invalid_server_type", BAD_REQUEST, "Invalid server type"),
-    AppUrlNotConfigured => ("app_url_not_configured", BAD_REQUEST, "Configure the site URL in the site settings first"),
-    MailSenderNotConfigured => ("mail_sender_not_configured", BAD_REQUEST, "Email sender is not configured"),
-    MailInvalid => ("mail_invalid", BAD_REQUEST, "Email message is invalid"),
-    MailSendFailed => ("mail_send_failed", BAD_GATEWAY, "Send mail failed"),
-    MailIdempotencyConflict => ("mail_idempotency_conflict", CONFLICT, "Mail idempotency key was reused with a different payload"),
-    MailIdempotencyKeyInvalid => ("mail_idempotency_key_invalid", BAD_REQUEST, "Mail idempotency key is invalid"),
-    TelegramRequestFailed => ("telegram_request_failed", BAD_GATEWAY, "Telegram request failed"),
-    TelegramTokenInvalid => ("telegram_token_invalid", BAD_REQUEST, "Telegram token is invalid"),
-    TelegramWebhookFailed => ("telegram_webhook_failed", BAD_GATEWAY, "Telegram webhook failed"),
-}
-
-impl Code {
-    /// Locale-aware default `detail` (§3.1/§4.3): internal-route localization
-    /// happens at error construction time, keyed by code and the locale
-    /// resolved from `Accept-Language`. Waves populate their family's entries
-    /// as they migrate (consumed from W2 on, docs/api-dialect.md Appendix A);
-    /// unlisted `(code, locale)` pairs fall back to the English default. The
-    /// zh-CN texts are the legacy Laravel catalog values for each code's
-    /// anchor message (crates/api/src/i18n/zh-CN.json), so the default-locale
-    /// wording is unchanged by the dialect flip.
-    pub fn localized_detail(self, locale: &str) -> &'static str {
-        match (self, locale) {
-            // Auth / session family (W2).
-            (Code::SessionExpired, "zh-CN") => "未登录或登陆已过期",
-            (Code::InvalidCredentials, "zh-CN") => "邮箱或密码错误",
-            (Code::AccountSuspended, "zh-CN") => "该账户已被停止使用",
-            (Code::RegistrationClosed, "zh-CN") => "本站已关闭注册",
-            (Code::EmailAlreadyRegistered, "zh-CN") => "邮箱已在系统中存在",
-            (Code::EmailNotRegistered, "zh-CN") => "该邮箱不存在系统中",
-            (Code::InvalidEmailCode, "zh-CN") => "邮箱验证码有误",
-            (Code::InvalidInviteCode, "zh-CN") => "邀请码无效",
-            (Code::EmailSuffixNotAllowed, "zh-CN") => "邮箱后缀不处于白名单中",
-            (Code::GmailAliasNotSupported, "zh-CN") => "不支持 Gmail 别名邮箱",
-            (Code::RecaptchaFailed, "zh-CN") => "验证码有误",
-            (Code::EmailSendRateLimited, "zh-CN") => "验证码已发送，请过一会儿再请求",
-            (Code::InvalidToken, "zh-CN") => "令牌有误",
-            (Code::PasswordResetFailed, "zh-CN") => "重置失败，请稍后再试",
-            (Code::InternalError, "zh-CN") => "遇到了些问题，我们正在进行处理",
-            // Commerce family (W4). `PlanSoldOut` predates the wave: its
-            // zh-CN text is pinned by the §3.1 spec example bytes.
-            (Code::PlanSoldOut, "zh-CN") => "当前产品已售罄",
-            (Code::PlanNotFound, "zh-CN") => "订阅计划不存在",
-            (Code::UserNotFound, "zh-CN") => "用户不存在",
-            (Code::PlanUnavailable, "zh-CN") => "订阅计划不存在",
-            (Code::PlanPeriodUnavailable, "zh-CN") => "该订阅周期无法进行购买，请选择其它周期",
-            (Code::PlanChangeDisabled, "zh-CN") => "目前不允许更改订阅，请联系客服或提交工单操作",
-            (Code::PendingOrderExists, "zh-CN") => "您有未付款或开通中的订单，请稍后再试或将其取消",
-            (Code::OrderNotFound, "zh-CN") => "订单不存在或已支付",
-            (Code::OrderNotPending, "zh-CN") => "只能对待支付的订单进行操作",
-            (Code::PaymentMethodUnavailable, "zh-CN") => "支付方式不可用",
-            (Code::InsufficientBalance, "zh-CN") => "余额不足",
-            (Code::CouponInvalid, "zh-CN") => "优惠券无效",
-            (Code::CouponUnavailable, "zh-CN") => "优惠券已无可用次数",
-            (Code::CouponNotStarted, "zh-CN") => "优惠券还未到可用时间",
-            (Code::CouponExpired, "zh-CN") => "优惠券已过期",
-            (Code::CouponExhausted, "zh-CN") => "优惠券使用失败",
-            (Code::CouponNotApplicable, "zh-CN") => "该订阅无法使用此优惠码",
-            (Code::PlanUpdateConflict, "zh-CN") => "订阅正在被其他请求修改，请重试",
-            _ => self.default_detail(),
-        }
-    }
-}
-
-impl Serialize for Code {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(self.slug())
-    }
+fn http_status(code: Code) -> StatusCode {
+    StatusCode::from_u16(code.status()).expect("problem-code registry contains a valid HTTP status")
 }
 
 /// An internal-route error response (docs/api-dialect.md §3.1): status ≥ 400,
@@ -339,7 +140,7 @@ impl Problem {
     }
 
     pub fn status(&self) -> StatusCode {
-        self.code.status()
+        http_status(self.code)
     }
 
     pub fn detail(&self) -> &str {
@@ -351,10 +152,10 @@ impl Problem {
     }
 
     fn body(&self) -> ProblemBody<'_> {
-        let status = self.code.status();
+        let status = http_status(self.code);
         ProblemBody {
             r#type: "about:blank",
-            title: status.canonical_reason().unwrap_or("Error"),
+            title: self.code.title(),
             status: status.as_u16(),
             code: self.code.slug(),
             detail: &self.detail,
@@ -376,7 +177,7 @@ impl Serialize for Problem {
 
 impl IntoResponse for Problem {
     fn into_response(self) -> Response {
-        let status = self.code.status();
+        let status = http_status(self.code);
         let bytes = serde_json::to_vec(&self.body())
             .expect("problem body serialization is infallible: strings and string maps only");
         let mut response = Response::new(Body::from(bytes));
@@ -406,118 +207,43 @@ mod tests {
 
     use super::*;
 
-    /// The docs/api-dialect.md §3.4 registry, transcribed row-for-row. A
-    /// mismatch here means the enum drifted from the spec (or vice versa).
-    const SPEC_REGISTRY: &[(&str, u16)] = &[
-        ("validation_failed", 422),
-        ("invalid_parameter", 400),
-        ("endpoint_not_found", 404),
-        ("rate_limited", 429),
-        ("internal_error", 500),
-        ("service_unavailable", 503),
-        ("session_expired", 401),
-        ("permission_denied", 403),
-        ("step_up_required", 403),
-        ("invalid_credentials", 400),
-        ("account_suspended", 400),
-        ("registration_closed", 400),
-        ("register_ip_rate_limited", 429),
-        ("password_attempts_rate_limited", 400),
-        ("mfa_code_required", 401),
-        ("mfa_code_invalid", 401),
-        ("mfa_already_enabled", 400),
-        ("mfa_setup_missing", 400),
-        ("mfa_not_enabled", 400),
-        ("mfa_enrollment_required", 403),
-        ("email_already_registered", 400),
-        ("email_not_registered", 400),
-        ("invalid_email_code", 400),
-        ("invalid_invite_code", 400),
-        ("email_suffix_not_allowed", 400),
-        ("gmail_alias_not_supported", 400),
-        ("recaptcha_failed", 400),
-        ("email_send_rate_limited", 429),
-        ("invalid_token", 400),
-        ("old_password_incorrect", 400),
-        ("password_reset_failed", 400),
-        ("user_not_found", 404),
-        ("user_not_registered", 400),
-        ("plan_not_found", 404),
-        ("plan_unavailable", 400),
-        ("plan_sold_out", 400),
-        ("plan_period_unavailable", 400),
-        ("plan_change_disabled", 400),
-        ("pending_order_exists", 400),
-        ("order_not_found", 404),
-        ("order_not_pending", 400),
-        ("payment_method_unavailable", 400),
-        ("payment_config_invalid", 400),
-        ("payment_gateway_unsupported", 400),
-        ("payment_amount_out_of_range", 400),
-        ("handling_fee_out_of_range", 400),
-        ("stripe_binding_invalid", 400),
-        ("insufficient_balance", 400),
-        ("coupon_invalid", 400),
-        ("coupon_unavailable", 400),
-        ("coupon_not_started", 400),
-        ("coupon_expired", 400),
-        ("coupon_exhausted", 400),
-        ("coupon_not_applicable", 400),
-        ("gift_card_invalid", 400),
-        ("subscription_value_out_of_range", 400),
-        ("renewal_not_allowed", 400),
-        ("reset_period_invalid", 400),
-        ("transfer_amount_invalid", 422),
-        ("insufficient_commission_balance", 400),
-        ("balance_out_of_range", 400),
-        ("invite_code_limit_reached", 400),
-        ("telegram_not_configured", 400),
-        ("telegram_unbind_failed", 400),
-        ("ticket_not_found", 404),
-        ("ticket_invalid_state", 400),
-        ("unresolved_ticket_exists", 400),
-        ("ticket_requires_plan", 400),
-        ("withdraw_method_unsupported", 400),
-        ("withdraw_below_minimum", 400),
-        ("article_not_found", 404),
-        ("notice_not_found", 404),
-        ("knowledge_not_found", 404),
-        ("config_revision_conflict", 409),
-        ("config_validation_failed", 400),
-        ("payment_method_not_found", 404),
-        ("payment_method_in_use", 400),
-        ("reconciliation_not_found", 404),
-        ("reconciliation_already_processed", 409),
-        ("order_assign_conflict", 400),
-        ("order_update_conflict", 409),
-        ("order_update_failed", 400),
-        ("plan_in_use", 400),
-        ("plan_update_conflict", 409),
-        ("plan_force_update_limit_exceeded", 400),
-        ("coupon_not_found", 404),
-        ("gift_card_not_found", 404),
-        ("server_not_found", 404),
-        ("route_not_found", 404),
-        ("server_group_not_found", 404),
-        ("server_group_in_use", 400),
-        ("invalid_server_type", 400),
-        ("app_url_not_configured", 400),
-        ("mail_sender_not_configured", 400),
-        ("mail_invalid", 400),
-        ("mail_send_failed", 502),
-        ("mail_idempotency_conflict", 409),
-        ("mail_idempotency_key_invalid", 400),
-        ("telegram_request_failed", 502),
-        ("telegram_token_invalid", 400),
-        ("telegram_webhook_failed", 502),
-    ];
+    const API_DIALECT: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../../../docs/api-dialect.md"
+    ));
+
+    fn documented_registry() -> Vec<(String, u16)> {
+        let (_, after_heading) = API_DIALECT
+            .split_once("### 3.4 Initial code registry")
+            .expect("docs/api-dialect.md §3.4 heading");
+        let (section, _) = after_heading
+            .split_once("\n## 4.")
+            .expect("docs/api-dialect.md §4 heading after registry");
+        section
+            .lines()
+            .filter(|line| line.starts_with("| `"))
+            .map(|line| {
+                let cells = line.split('|').map(str::trim).collect::<Vec<_>>();
+                assert!(cells.len() >= 4, "malformed §3.4 registry row: {line}");
+                let slug = cells[1]
+                    .strip_prefix('`')
+                    .and_then(|value| value.strip_suffix('`'))
+                    .unwrap_or_else(|| panic!("malformed §3.4 code cell: {}", cells[1]));
+                let status = cells[2]
+                    .parse::<u16>()
+                    .unwrap_or_else(|_| panic!("malformed §3.4 status cell: {}", cells[2]));
+                (slug.to_owned(), status)
+            })
+            .collect()
+    }
 
     #[test]
     fn code_registry_matches_spec_table() {
-        assert_eq!(Code::ALL.len(), SPEC_REGISTRY.len());
-        for (code, (slug, status)) in Code::ALL.iter().zip(SPEC_REGISTRY) {
-            assert_eq!(code.slug(), *slug);
-            assert_eq!(code.status().as_u16(), *status, "status drift for {slug}");
+        let documented = documented_registry();
+        assert_eq!(Code::ALL.len(), documented.len());
+        for (code, (slug, status)) in Code::ALL.iter().zip(&documented) {
+            assert_eq!(code.slug(), slug);
+            assert_eq!(code.status(), *status, "status drift for {slug}");
         }
     }
 
@@ -545,7 +271,8 @@ mod tests {
     fn every_status_has_a_canonical_reason_phrase() {
         for code in Code::ALL {
             assert!(
-                code.status().canonical_reason().is_some(),
+                StatusCode::from_u16(code.status())
+                    .is_ok_and(|status| status.canonical_reason().is_some()),
                 "{} has no canonical reason phrase",
                 code.slug()
             );
@@ -676,14 +403,6 @@ mod tests {
         assert_eq!(
             custom.detail(),
             "There are too many password errors, please try again after 5 minutes."
-        );
-    }
-
-    #[test]
-    fn code_serializes_as_its_slug() {
-        assert_eq!(
-            serde_json::to_string(&Code::SessionExpired).unwrap(),
-            "\"session_expired\""
         );
     }
 }

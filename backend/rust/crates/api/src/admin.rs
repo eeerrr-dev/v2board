@@ -1,15 +1,14 @@
 use axum::{
     Json, Router,
-    extract::{Extension, Path, Query, Request, State},
+    extract::{Extension, Path, Request, State},
     http::{HeaderMap, HeaderValue, Method, StatusCode, header},
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::{get, patch, post},
 };
 use serde_json::Value;
 use tower::ServiceExt as _;
 use uuid::Uuid;
-use v2board_compat::{ApiError, Code, Page, Problem};
+use v2board_compat::{ApiError, Code, Problem};
 use v2board_domain::{
     admin::{AdminUserFilterBody, AdminUserMailBody, StaffUserPatch},
     auth::AuthUser,
@@ -57,14 +56,107 @@ use self::statistics::{
     stats_orders, stats_records, stats_server_rank, stats_summary, stats_user_rank,
     stats_user_traffic,
 };
-use self::support::{
-    TicketsListQuery, ticket_close, ticket_detail, ticket_reply, tickets_list,
-    tickets_list_response,
-};
+use self::support::{staff_tickets_list, ticket_close, ticket_detail, ticket_reply, tickets_list};
 use self::users::{
     user_delete, user_detail, user_generate, user_patch, user_reset_secret, user_set_inviter,
     users_ban, users_bulk_delete, users_export, users_list, users_mail,
 };
+
+define_internal_operation_router! {
+    fn admin_operation_router;
+    pub(crate) const ADMIN_INTERNAL_OPERATION_IDS;
+    {
+        "admin.account.mfa.get" [Admin] => account_mfa_status,
+        "admin.account.mfa.totp.setup" [Admin] => account_mfa_totp_setup,
+        "admin.account.mfa.totp.confirm" [Admin] => account_mfa_totp_confirm,
+        "admin.account.mfa.totp.disable" [Admin] => account_mfa_totp_disable,
+        "admin.config.get" [Admin] => config_view,
+        "admin.config.update" [Admin] => config_patch,
+        "admin.email-templates.list" [Admin] => email_templates,
+        "admin.telegram-webhook.set" [Admin] => telegram_webhook,
+        "admin.test-mail.send" [Admin] => test_mail,
+        "admin.system.status" [Admin] => system_status,
+        "admin.system.queue-stats" [Admin] => system_queue_stats,
+        "admin.system.queue-workload" [Admin] => system_queue_workload,
+        "admin.system.queue-masters" [Admin] => system_queue_masters,
+        "admin.system.logs" [Admin] => system_logs,
+        "admin.system.audit-logs.list" [Admin] => audit_logs,
+        "admin.notices.list" [Admin] => notices_list,
+        "admin.notices.create" [Admin] => notice_create,
+        "admin.notices.update" [Admin] => notice_patch,
+        "admin.notices.delete" [Admin] => notice_delete,
+        "admin.knowledge.list" [Admin] => knowledge_list,
+        "admin.knowledge.create" [Admin] => knowledge_create,
+        "admin.knowledge.sort" [Admin] => knowledge_sort,
+        "admin.knowledge.get" [Admin] => knowledge_detail,
+        "admin.knowledge.update" [Admin] => knowledge_patch,
+        "admin.knowledge.delete" [Admin] => knowledge_delete,
+        "admin.knowledge-categories.list" [Admin] => knowledge_categories,
+        "admin.coupons.list" [Admin] => coupons_list,
+        "admin.coupons.create" [Admin] => coupon_generate,
+        "admin.coupons.update" [Admin] => coupon_patch,
+        "admin.coupons.delete" [Admin] => coupon_delete,
+        "admin.gift-cards.list" [Admin] => giftcards_list,
+        "admin.gift-cards.create" [Admin] => giftcard_generate,
+        "admin.gift-cards.update" [Admin] => giftcard_patch,
+        "admin.gift-cards.delete" [Admin] => giftcard_delete,
+        "admin.plans.list" [Admin] => plans_list,
+        "admin.plans.create" [Admin] => plan_create,
+        "admin.plans.sort" [Admin] => plans_sort,
+        "admin.plans.update" [Admin] => plan_patch,
+        "admin.plans.delete" [Admin] => plan_delete,
+        "admin.payments.list" [Admin] => payments_list,
+        "admin.payments.create" [Admin] => payment_create,
+        "admin.payments.sort" [Admin] => payments_sort,
+        "admin.payments.update" [Admin] => payment_patch,
+        "admin.payments.delete" [Admin] => payment_delete,
+        "admin.payment-providers.list" [Admin] => payment_providers,
+        "admin.payment-providers.form" [Admin] => payment_provider_form,
+        "admin.users.list" [Admin] => users_list,
+        "admin.users.create" [Admin] => user_generate,
+        "admin.users.export" [Admin] => users_export,
+        "admin.users.mail" [Admin] => users_mail,
+        "admin.users.ban" [Admin] => users_ban,
+        "admin.users.bulk-delete" [Admin] => users_bulk_delete,
+        "admin.users.get" [Admin] => user_detail,
+        "admin.users.update" [Admin] => user_patch,
+        "admin.users.delete" [Admin] => user_delete,
+        "admin.users.set-inviter" [Admin] => user_set_inviter,
+        "admin.users.reset-secret" [Admin] => user_reset_secret,
+        "admin.tickets.list" [Admin] => tickets_list,
+        "admin.tickets.get" [Admin] => ticket_detail,
+        "admin.tickets.replies.create" [Admin] => ticket_reply,
+        "admin.tickets.close" [Admin] => ticket_close,
+        "admin.stats.summary" [Admin] => stats_summary,
+        "admin.stats.server-rank" [Admin] => stats_server_rank,
+        "admin.stats.user-rank" [Admin] => stats_user_rank,
+        "admin.stats.orders" [Admin] => stats_orders,
+        "admin.stats.user-traffic" [Admin] => stats_user_traffic,
+        "admin.stats.records" [Admin] => stats_records,
+        "admin.orders.list" [Admin] => orders_list,
+        "admin.orders.create" [Admin] => order_assign,
+        "admin.orders.get" [Admin] => order_detail,
+        "admin.orders.update" [Admin] => order_patch,
+        "admin.orders.mark-paid" [Admin] => order_mark_paid,
+        "admin.orders.cancel" [Admin] => order_cancel,
+        "admin.payment-reconciliations.list" [Admin] => reconciliations_list,
+        "admin.payment-reconciliations.resolve" [Admin] => reconciliation_resolve,
+        "admin.nodes.list" [Admin] => nodes_list,
+        "admin.nodes.sort" [Admin] => nodes_sort,
+        "admin.server-groups.list" [Admin] => server_groups_list,
+        "admin.server-groups.create" [Admin] => server_group_create,
+        "admin.server-groups.update" [Admin] => server_group_patch,
+        "admin.server-groups.delete" [Admin] => server_group_delete,
+        "admin.server-routes.list" [Admin] => server_routes_list,
+        "admin.server-routes.create" [Admin] => server_route_create,
+        "admin.server-routes.update" [Admin] => server_route_patch,
+        "admin.server-routes.delete" [Admin] => server_route_delete,
+        "admin.servers.create" [Admin] => server_create,
+        "admin.servers.update" [Admin] => server_patch,
+        "admin.servers.delete" [Admin] => server_delete,
+        "admin.servers.copy" [Admin] => server_copy,
+    }
+}
 
 /// Re-dispatch target for every request under the live admin prefix
 /// (docs/api-dialect.md §6 preamble): `dynamic_fallback` strips the
@@ -106,107 +198,9 @@ pub(crate) async fn dispatch_admin(
 /// modern: unmatched paths get the problem+json 404 (§10.2 rule 1) — the
 /// legacy GET/POST string dispatch is deleted.
 fn admin_router(state: AppState) -> Router {
-    Router::new()
-        .route("/account/mfa", get(account_mfa_status))
-        .route("/account/mfa/totp", post(account_mfa_totp_setup))
-        .route("/account/mfa/totp/confirm", post(account_mfa_totp_confirm))
-        .route("/account/mfa/totp/disable", post(account_mfa_totp_disable))
-        .route("/config", get(config_view).patch(config_patch))
-        .route("/email-templates", get(email_templates))
-        .route("/telegram-webhook", post(telegram_webhook))
-        .route("/test-mail", post(test_mail))
-        .route("/system/status", get(system_status))
-        .route("/system/queue-stats", get(system_queue_stats))
-        .route("/system/queue-workload", get(system_queue_workload))
-        .route("/system/queue-masters", get(system_queue_masters))
-        .route("/system/logs", get(system_logs))
-        .route("/system/audit-logs", get(audit_logs))
-        .route("/notices", get(notices_list).post(notice_create))
-        .route("/notices/{id}", patch(notice_patch).delete(notice_delete))
-        .route("/knowledge", get(knowledge_list).post(knowledge_create))
-        .route("/knowledge/sort", post(knowledge_sort))
-        .route(
-            "/knowledge/{id}",
-            get(knowledge_detail)
-                .patch(knowledge_patch)
-                .delete(knowledge_delete),
-        )
-        .route("/knowledge-categories", get(knowledge_categories))
-        .route("/coupons", get(coupons_list).post(coupon_generate))
-        .route("/coupons/{id}", patch(coupon_patch).delete(coupon_delete))
-        .route("/gift-cards", get(giftcards_list).post(giftcard_generate))
-        .route(
-            "/gift-cards/{id}",
-            patch(giftcard_patch).delete(giftcard_delete),
-        )
-        .route("/plans", get(plans_list).post(plan_create))
-        .route("/plans/sort", post(plans_sort))
-        .route("/plans/{id}", patch(plan_patch).delete(plan_delete))
-        .route("/payments", get(payments_list).post(payment_create))
-        .route("/payments/sort", post(payments_sort))
-        .route(
-            "/payments/{id}",
-            patch(payment_patch).delete(payment_delete),
-        )
-        .route("/payment-providers", get(payment_providers))
-        .route("/payment-providers/{code}/form", get(payment_provider_form))
-        .route("/users", get(users_list).post(user_generate))
-        .route("/users/export", post(users_export))
-        .route("/users/mail", post(users_mail))
-        .route("/users/ban", post(users_ban))
-        .route("/users/bulk-delete", post(users_bulk_delete))
-        .route(
-            "/users/{id}",
-            get(user_detail).patch(user_patch).delete(user_delete),
-        )
-        .route("/users/{id}/set-inviter", post(user_set_inviter))
-        .route("/users/{id}/reset-secret", post(user_reset_secret))
-        .route("/tickets", get(tickets_list))
-        .route("/tickets/{id}", get(ticket_detail))
-        .route("/tickets/{id}/replies", post(ticket_reply))
-        .route("/tickets/{id}/close", post(ticket_close))
-        .route("/stats/summary", get(stats_summary))
-        .route("/stats/server-rank", get(stats_server_rank))
-        .route("/stats/user-rank", get(stats_user_rank))
-        .route("/stats/orders", get(stats_orders))
-        .route("/stats/user-traffic", get(stats_user_traffic))
-        .route("/stats/records", get(stats_records))
-        .route("/orders", get(orders_list).post(order_assign))
-        .route("/orders/{trade_no}", get(order_detail).patch(order_patch))
-        .route("/orders/{trade_no}/mark-paid", post(order_mark_paid))
-        .route("/orders/{trade_no}/cancel", post(order_cancel))
-        .route("/payment-reconciliations", get(reconciliations_list))
-        .route(
-            "/payment-reconciliations/{id}/resolve",
-            post(reconciliation_resolve),
-        )
-        .route("/nodes", get(nodes_list))
-        .route("/nodes/sort", post(nodes_sort))
-        .route(
-            "/server-groups",
-            get(server_groups_list).post(server_group_create),
-        )
-        .route(
-            "/server-groups/{id}",
-            patch(server_group_patch).delete(server_group_delete),
-        )
-        .route(
-            "/server-routes",
-            get(server_routes_list).post(server_route_create),
-        )
-        .route(
-            "/server-routes/{id}",
-            patch(server_route_patch).delete(server_route_delete),
-        )
-        .route("/servers/{type}", post(server_create))
-        .route(
-            "/servers/{type}/{id}",
-            patch(server_patch).delete(server_delete),
-        )
-        .route("/servers/{type}/{id}/copy", post(server_copy))
+    admin_operation_router()
         // §6 preamble: admin auth and the blanket mutation step-up gate are
-        // structural — shared middleware over every modern route, so a new
-        // route cannot silently ship ungated.
+        // structural over every registry-backed operation.
         .route_layer(middleware::from_fn_with_state(state.clone(), admin_guard))
         .fallback(endpoint_not_found)
         .with_state(state)
@@ -323,30 +317,37 @@ async fn audited_run(
     response
 }
 
+define_internal_operation_router! {
+    fn staff_operation_router;
+    pub(crate) const STAFF_INTERNAL_OPERATION_IDS;
+    {
+        "staff.account.mfa.get" [Staff] => account_mfa_status,
+        "staff.account.mfa.totp.setup" [Staff] => account_mfa_totp_setup,
+        "staff.account.mfa.totp.confirm" [Staff] => account_mfa_totp_confirm,
+        "staff.account.mfa.totp.disable" [Staff] => account_mfa_totp_disable,
+        "staff.tickets.list" [Staff] => staff_tickets_list,
+        "staff.tickets.get" [Staff] => ticket_detail,
+        "staff.tickets.replies.create" [Staff] => ticket_reply,
+        "staff.tickets.close" [Staff] => ticket_close,
+        "staff.users.mail" [Staff] => staff_users_mail,
+        "staff.users.ban" [Staff] => staff_users_ban,
+        "staff.users.get" [Staff] => staff_user_detail,
+        "staff.users.update" [Staff] => staff_user_patch,
+        "staff.plans.list" [Staff] => plans_list,
+        "staff.notices.list" [Staff] => notices_list,
+        "staff.notices.create" [Staff] => notice_create,
+        "staff.notices.update" [Staff] => notice_patch,
+        "staff.notices.delete" [Staff] => notice_delete,
+    }
+}
+
 /// The §6.9 staff namespace: `/api/v1/staff/…` keeps its fixed prefix and
 /// allow-list, with paths mirroring the admin resources. Shared handlers
 /// (tickets, plans, notices) are mounted directly; the user routes get
 /// staff-scoped handlers over the staff domain methods. Unmatched paths are
 /// the same problem+json 404 as the admin prefix.
 pub(crate) fn staff_router(state: AppState) -> Router {
-    Router::new()
-        .route("/account/mfa", get(account_mfa_status))
-        .route("/account/mfa/totp", post(account_mfa_totp_setup))
-        .route("/account/mfa/totp/confirm", post(account_mfa_totp_confirm))
-        .route("/account/mfa/totp/disable", post(account_mfa_totp_disable))
-        .route("/tickets", get(staff_tickets_list))
-        .route("/tickets/{id}", get(ticket_detail))
-        .route("/tickets/{id}/replies", post(ticket_reply))
-        .route("/tickets/{id}/close", post(ticket_close))
-        .route("/users/mail", post(staff_users_mail))
-        .route("/users/ban", post(staff_users_ban))
-        .route(
-            "/users/{id}",
-            get(staff_user_detail).patch(staff_user_patch),
-        )
-        .route("/plans", get(plans_list))
-        .route("/notices", get(notices_list).post(notice_create))
-        .route("/notices/{id}", patch(notice_patch).delete(notice_delete))
+    staff_operation_router()
         // §6.9 keeps the §6 structural gates: staff session auth on every
         // method plus the blanket step-up requirement on mutations. Never a
         // session teardown: permission and step-up failures stay 403s.
@@ -374,18 +375,6 @@ async fn staff_guard(State(state): State<AppState>, mut request: Request, next: 
     }
     request.extensions_mut().insert(staff.clone());
     audited_run(state, staff, "staff", request, next).await
-}
-
-/// Staff GET `tickets` (§6.9): the admin list with the staff scope — the
-/// narrower legacy filters (no `reply_status`/`email`) and `created_at`
-/// ordering are applied by the domain layer.
-async fn staff_tickets_list(
-    State(state): State<AppState>,
-    Query(query): Query<TicketsListQuery>,
-    Query(pairs): Query<Vec<(String, String)>>,
-    headers: HeaderMap,
-) -> Result<Json<Page<Value>>, Problem> {
-    tickets_list_response(state, query, pairs, headers, true).await
 }
 
 /// Staff GET `users/{id}` (§6.9): the staff-redacted W12 v2 projection.

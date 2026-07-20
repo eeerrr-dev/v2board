@@ -53,7 +53,9 @@ backend/rust/
   resources/rules/           embedded subscription rule templates
   crates/analytics/          typed events, PostgreSQL outbox and ClickHouse relay/schema
   crates/api/                Axum API and frontend delivery; no legacy source adapter
-  crates/api-contract/       transport DTOs and generated OpenAPI source
+  crates/api-contract/       canonical internal operation registry, transport DTOs and OpenAPI source
+  crates/problem-code/       zero-dependency internal problem code/status/title registry
+  crates/compat/             runtime problem responses and frozen external wire helpers
   crates/config/             native JSON/environment configuration
   crates/db/                 PostgreSQL-only runtime access
   crates/domain/             business rules and external integrations
@@ -100,9 +102,12 @@ API/worker/analytics dependency graphs. The MySQL source adapter is allowed only
 disposable lifecycle/provision import graph.
 
 `make api-contract-check` regenerates the committed OpenAPI 3.1 document and its TypeScript/Zod
-projections from `v2board-api-contract`, then fails on any drift. The HTTP adapter maps these wire
-DTOs to application commands/views; application and pure-domain crates may not depend on the
-transport crate. See [`rust/ARCHITECTURE.md`](rust/ARCHITECTURE.md).
+operation bindings from `v2board-api-contract`, then fails on any drift. This covers every internal
+operation and its operation-level metadata; only DTOs already moved into `api-contract` have
+field-level TypeScript/Zod validation, while most JSON request and success bodies still project as
+`JsonValue`. The HTTP adapter maps typed wire DTOs to application commands/views; application and
+pure-domain crates may not depend on the transport crate. See
+[`rust/ARCHITECTURE.md`](rust/ARCHITECTURE.md).
 
 Do not run host Cargo commands that create `target/` in the repository. The workspace targets Rust
 1.97, Edition 2024 and Cargo resolver 3; `unsafe` is forbidden, CI denies warnings and validates the

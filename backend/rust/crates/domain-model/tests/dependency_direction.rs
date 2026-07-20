@@ -74,10 +74,21 @@ fn pure_model_and_transport_contract_have_exact_direct_dependency_allowlists() {
     assert_direct_dependencies("v2board-domain-model", "build", &[]);
     assert_direct_dependencies("v2board-domain-model", "dev", &[]);
 
+    assert_direct_dependencies("v2board-problem-code", "normal", &[]);
+    assert_direct_dependencies("v2board-problem-code", "build", &[]);
+    assert_direct_dependencies("v2board-problem-code", "dev", &[]);
+
     assert_direct_dependencies(
         "v2board-api-contract",
         "normal",
-        &["anyhow", "chrono", "serde", "serde_json", "utoipa"],
+        &[
+            "anyhow",
+            "chrono",
+            "serde",
+            "serde_json",
+            "utoipa",
+            "v2board-problem-code",
+        ],
     );
     assert_direct_dependencies("v2board-api-contract", "build", &[]);
     assert_direct_dependencies("v2board-api-contract", "dev", &[]);

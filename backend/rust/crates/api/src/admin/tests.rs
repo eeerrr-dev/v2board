@@ -94,25 +94,36 @@ fn both_privileged_guards_run_the_mandatory_mfa_gate() {
 fn every_admin_route_maps_into_the_rbac_registry() {
     // §6.12 coverage guard: a new admin route whose first segment is
     // outside `admin_path_access` would silently fail closed for every
-    // staff grant. Force the mapping to be extended consciously.
-    let source = include_str!("../admin.rs");
-    let router = source
-        .split("fn admin_router")
-        .nth(1)
-        .and_then(|rest| rest.split("fn endpoint_not_found").next())
-        .expect("admin_router precedes endpoint_not_found");
-    let mut routes = 0;
-    for quoted in router.split('"').skip(1).step_by(2) {
-        if !quoted.starts_with('/') {
-            continue;
-        }
-        routes += 1;
+    // staff grant. Use the same registry ids that drive the real Axum
+    // router, rather than scraping `.route` literals from source text.
+    // Construct both prefix-relative routers so Axum also verifies that no
+    // operation id resolves to a conflicting method/path registration.
+    let _admin_router = admin_operation_router();
+    let _staff_router = staff_operation_router();
+    let bound = ADMIN_INTERNAL_OPERATION_IDS
+        .iter()
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
+    let operations = v2board_api_contract::INTERNAL_OPERATIONS
+        .iter()
+        .filter(|operation| operation.surface == v2board_api_contract::OperationSurface::Admin)
+        .collect::<Vec<_>>();
+    let registered = operations
+        .iter()
+        .map(|operation| operation.id)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        bound, registered,
+        "admin Axum bindings drifted from registry"
+    );
+    assert_eq!(operations.len(), 89, "admin registry coverage drifted");
+    for operation in operations {
         assert!(
-            v2board_domain::admin::admin_path_access(quoted).is_some(),
-            "admin route {quoted} is outside the §6.12 RBAC registry mapping"
+            v2board_domain::admin::admin_path_access(operation.path).is_some(),
+            "admin route {} is outside the §6.12 RBAC registry mapping",
+            operation.path
         );
     }
-    assert!(routes >= 50, "route extraction broke: found {routes}");
 }
 
 #[test]
