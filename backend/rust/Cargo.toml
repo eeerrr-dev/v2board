@@ -43,6 +43,9 @@ hmac = "0.13.0"
 indexmap = { version = "2.12.0", features = ["serde"] }
 ipnet = "2.12.0"
 lettre = { version = "0.11.22", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls", "rustls-platform-verifier", "aws-lc-rs", "pool"] }
+# Already in the dependency graph through sqlx; a direct dependency only for
+# the sqlx statement-logging LevelFilter type.
+log = "0.4.28"
 md5 = "0.8.1"
 openssl = "0.10.81"
 # Optional OTLP trace export: entirely inert unless

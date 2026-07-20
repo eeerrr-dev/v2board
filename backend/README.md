@@ -144,7 +144,14 @@ PostgreSQL connection pools are controlled by:
 - `V2BOARD_DATABASE_MAX_CONNECTIONS`;
 - `V2BOARD_DATABASE_ACQUIRE_TIMEOUT_SECONDS`;
 - `V2BOARD_DATABASE_IDLE_TIMEOUT_SECONDS`;
-- `V2BOARD_DATABASE_MAX_LIFETIME_SECONDS`.
+- `V2BOARD_DATABASE_MAX_LIFETIME_SECONDS`;
+- `V2BOARD_DATABASE_STATEMENT_TIMEOUT_SECONDS` (`0` disables the server-side statement cap);
+- `V2BOARD_DATABASE_LOCK_TIMEOUT_SECONDS` (`0` disables the server-side lock-wait cap);
+- `V2BOARD_DATABASE_SLOW_STATEMENT_LOG_MILLIS` (default `1000`; statements slower than this log
+  at `warn` with redacted bind values, `0` disables the slow log).
+
+Pool occupancy is exported by `GET /metrics` as the
+`v2board_db_pool_connections_{max,open,idle}` gauges.
 
 The runtime sets PostgreSQL timezone UTC, `search_path=public` and transaction isolation
 `READ COMMITTED`. Calendar/statistics/reset boundaries remain Asia/Shanghai business semantics.

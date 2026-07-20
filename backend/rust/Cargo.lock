@@ -4306,6 +4306,7 @@ version = "0.1.0"
 dependencies = [
  "argon2",
  "chrono",
+ "log",
  "md5",
  "serde",
  "serde_json",

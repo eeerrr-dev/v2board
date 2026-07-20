@@ -1,6 +1,9 @@
 use argon2::{Argon2, PasswordHasher, password_hash::SaltString};
 use chrono::Utc;
-use sqlx::{AssertSqlSafe, PgConnection, PgPool, Postgres, Transaction, postgres::PgPoolOptions};
+use sqlx::{
+    AssertSqlSafe, ConnectOptions, PgConnection, PgPool, Postgres, Transaction,
+    postgres::{PgConnectOptions, PgPoolOptions},
+};
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -29,6 +32,10 @@ pub struct DbPoolConfig {
     pub statement_timeout: Option<Duration>,
     /// Server-side cap on waiting for a conflicting lock (`None` disables it).
     pub lock_timeout: Option<Duration>,
+    /// Client-side threshold above which a completed statement is logged at
+    /// `warn` (`None` disables the slow log). Catches queries that finish
+    /// well under `statement_timeout` but are still slow enough to matter.
+    pub slow_statement_log_threshold: Option<Duration>,
 }
 
 impl Default for DbPoolConfig {
@@ -41,6 +48,7 @@ impl Default for DbPoolConfig {
             max_lifetime: Duration::from_secs(30 * 60),
             statement_timeout: Some(Duration::from_secs(30)),
             lock_timeout: Some(Duration::from_secs(5)),
+            slow_statement_log_threshold: Some(Duration::from_millis(1000)),
         }
     }
 }
@@ -78,6 +86,10 @@ impl DbPoolConfig {
             lock_timeout: env_optional_timeout(
                 "V2BOARD_DATABASE_LOCK_TIMEOUT_SECONDS",
                 defaults.lock_timeout,
+            )?,
+            slow_statement_log_threshold: env_optional_millis(
+                "V2BOARD_DATABASE_SLOW_STATEMENT_LOG_MILLIS",
+                defaults.slow_statement_log_threshold,
             )?,
         };
         if config.min_connections > config.max_connections {
@@ -143,6 +155,16 @@ pub async fn connect_postgres_with_config(
 ) -> Result<DbPool, DbInitError> {
     let statement_timeout_ms = config.statement_timeout.map(|value| value.as_millis());
     let lock_timeout_ms = config.lock_timeout.map(|value| value.as_millis());
+    // Statement text stays at debug (invisible under the production `info`
+    // filter); only statements crossing the slow threshold surface at warn.
+    // sqlx redacts bind values, so slow-log lines never carry user data.
+    let mut connect_options = database_url
+        .parse::<PgConnectOptions>()?
+        .log_statements(log::LevelFilter::Debug);
+    connect_options = match config.slow_statement_log_threshold {
+        Some(threshold) => connect_options.log_slow_statements(log::LevelFilter::Warn, threshold),
+        None => connect_options.log_slow_statements(log::LevelFilter::Off, Duration::ZERO),
+    };
     let pool = PgPoolOptions::new()
         .min_connections(config.min_connections)
         .max_connections(config.max_connections)
@@ -190,7 +212,7 @@ pub async fn connect_postgres_with_config(
                 Ok(())
             })
         })
-        .connect(database_url)
+        .connect_with(connect_options)
         .await?;
     Ok(pool)
 }
@@ -357,6 +379,33 @@ fn parse_optional_timeout(
         return Ok(None);
     }
     Ok(Some(Duration::from_secs(value)))
+}
+
+/// Millisecond-granularity variant of [`parse_optional_timeout`]: a slow-log
+/// threshold is commonly tuned below one second, where whole seconds are too
+/// coarse. `0` likewise disables it.
+fn env_optional_millis(
+    key: &str,
+    default: Option<Duration>,
+) -> Result<Option<Duration>, DbInitError> {
+    parse_optional_millis(key, std::env::var(key).ok().as_deref(), default)
+}
+
+fn parse_optional_millis(
+    key: &str,
+    raw: Option<&str>,
+    default: Option<Duration>,
+) -> Result<Option<Duration>, DbInitError> {
+    let Some(raw) = raw else {
+        return Ok(default);
+    };
+    let value = raw.trim().parse::<u64>().map_err(|_| {
+        DbInitError::Configuration(format!("{key} must be an unsigned integer, got {raw:?}"))
+    })?;
+    if value == 0 {
+        return Ok(None);
+    }
+    Ok(Some(Duration::from_millis(value)))
 }
 
 fn env_u64(key: &str, default: u64) -> Result<u64, DbInitError> {
@@ -600,6 +649,31 @@ mod tests {
         let defaults = DbPoolConfig::default();
         assert_eq!(defaults.statement_timeout, Some(Duration::from_secs(30)));
         assert_eq!(defaults.lock_timeout, Some(Duration::from_secs(5)));
+        assert_eq!(
+            defaults.slow_statement_log_threshold,
+            Some(Duration::from_millis(1000))
+        );
+    }
+
+    #[test]
+    fn slow_statement_threshold_parses_millis_disabled_zero_and_rejects_garbage() {
+        let default = Some(Duration::from_millis(1000));
+        assert_eq!(
+            parse_optional_millis("K", None, default).unwrap(),
+            default,
+            "unset keeps the default"
+        );
+        assert_eq!(
+            parse_optional_millis("K", Some("0"), default).unwrap(),
+            None,
+            "zero disables the slow log entirely"
+        );
+        assert_eq!(
+            parse_optional_millis("K", Some(" 250 "), default).unwrap(),
+            Some(Duration::from_millis(250)),
+        );
+        let error = parse_optional_millis("K", Some("fast"), default).unwrap_err();
+        assert!(error.to_string().contains("unsigned integer"));
     }
 
     #[test]

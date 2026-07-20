@@ -58,6 +58,7 @@ operator; **warn** means investigate within a working day.
 | Outbox aging | `v2board_analytics_oldest_pending_age_seconds > v2board_analytics_threshold_oldest_age_seconds{level="soft"}` | warn |
 | Capacity headroom low | `v2board_analytics_capacity_headroom_bytes < v2board_analytics_threshold_min_headroom_bytes{level="soft"}` | warn |
 | Elevated 5xx | `increase(v2board_http_requests_total{class="5xx"}[5m]) > 10` | warn |
+| DB pool saturated | `v2board_db_pool_connections_open >= v2board_db_pool_connections_max` for 5m | warn |
 
 ### 1.3 Infrastructure-level monitoring
 

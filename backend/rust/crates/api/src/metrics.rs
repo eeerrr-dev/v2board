@@ -361,6 +361,15 @@ async fn read_worker_metrics(state: &AppState) -> Result<WorkerMetrics, redis::R
     })
 }
 
+/// Point-in-time PostgreSQL pool occupancy, read lock-free from the pool
+/// handle at scrape time.
+#[derive(Debug)]
+struct DbPoolSnapshot {
+    open: u32,
+    idle: usize,
+    max: u32,
+}
+
 #[derive(Debug)]
 struct MetricsSnapshot {
     postgres_up: bool,
@@ -368,6 +377,7 @@ struct MetricsSnapshot {
     frontend_release_present: bool,
     operator_config_acknowledged: bool,
     operator_config_authority_healthy: bool,
+    db_pool: DbPoolSnapshot,
     admission: Option<AnalyticsAdmissionSnapshot>,
     worker: Option<WorkerMetrics>,
     http: HttpSnapshot,
@@ -416,6 +426,11 @@ pub(crate) async fn metrics(State(state): State<AppState>) -> Response {
             && admin_index.is_ok_and(|metadata| metadata.is_file()),
         operator_config_acknowledged: state.operator_config_acknowledged(),
         operator_config_authority_healthy: state.operator_config_authority_healthy(),
+        db_pool: DbPoolSnapshot {
+            open: state.db.size(),
+            idle: state.db.num_idle(),
+            max: state.db.options().get_max_connections(),
+        },
         admission: admission.ok().and_then(|result| match result {
             Ok(snapshot) => Some(snapshot),
             Err(error) => {
@@ -483,6 +498,7 @@ fn render(snapshot: &MetricsSnapshot) -> String {
         gauge(&mut out, name, help);
         sample(&mut out, name, &[], i64::from(value));
     }
+    render_db_pool(&mut out, &snapshot.db_pool);
     render_admission(&mut out, snapshot.admission.as_ref());
     if let Some(worker) = &snapshot.worker {
         render_worker(&mut out, worker);
@@ -579,6 +595,29 @@ fn render_http_routes(out: &mut String, routes: &BTreeMap<String, [u64; 5]>) {
                 );
             }
         }
+    }
+}
+
+fn render_db_pool(out: &mut String, pool: &DbPoolSnapshot) {
+    for (name, help, value) in [
+        (
+            "v2board_db_pool_connections_max",
+            "Configured PostgreSQL pool connection ceiling.",
+            i64::from(pool.max),
+        ),
+        (
+            "v2board_db_pool_connections_open",
+            "PostgreSQL connections currently open (idle plus in use).",
+            i64::from(pool.open),
+        ),
+        (
+            "v2board_db_pool_connections_idle",
+            "Open PostgreSQL connections currently idle in the pool.",
+            i64::try_from(pool.idle).unwrap_or(i64::MAX),
+        ),
+    ] {
+        gauge(out, name, help);
+        sample(out, name, &[], value);
     }
 }
 
@@ -933,6 +972,11 @@ mod tests {
             frontend_release_present: true,
             operator_config_acknowledged: true,
             operator_config_authority_healthy: true,
+            db_pool: DbPoolSnapshot {
+                open: 6,
+                idle: 4,
+                max: 20,
+            },
             admission: Some(admission_fixture()),
             worker: Some(worker),
             http: HttpSnapshot {
@@ -952,6 +996,9 @@ mod tests {
         let text = render(&snapshot);
         assert!(text.contains("v2board_postgres_up 1\n"));
         assert!(text.contains("v2board_redis_up 0\n"));
+        assert!(text.contains("v2board_db_pool_connections_max 20\n"));
+        assert!(text.contains("v2board_db_pool_connections_open 6\n"));
+        assert!(text.contains("v2board_db_pool_connections_idle 4\n"));
         assert!(text.contains("# TYPE v2board_worker_jobs_total counter\n"));
         assert!(text.contains("v2board_worker_jobs_total{job=\"send_email\"} 42\n"));
         assert!(text.contains("v2board_worker_jobs_failed_total{job=\"send_email\"} 2\n"));
@@ -1008,6 +1055,11 @@ mod tests {
             frontend_release_present: false,
             operator_config_acknowledged: false,
             operator_config_authority_healthy: false,
+            db_pool: DbPoolSnapshot {
+                open: 0,
+                idle: 0,
+                max: 20,
+            },
             admission: None,
             worker: Some(WorkerMetrics::default()),
             http: HttpSnapshot {
