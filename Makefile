@@ -415,6 +415,24 @@ deploy-contract-audit:
 	test -n "$$user_hash"; test -n "$$admin_hash"; \
 	grep -qF "USER_PREPAINT_SCRIPT_HASH: &str = \"$$user_hash\"" backend/rust/crates/api/src/frontend.rs || { echo "Rust USER_PREPAINT_SCRIPT_HASH drifted from deploy-contract.mjs prepaintScriptHashes"; exit 1; }; \
 	grep -qF "ADMIN_PREPAINT_SCRIPT_HASH: &str = \"$$admin_hash\"" backend/rust/crates/api/src/frontend.rs || { echo "Rust ADMIN_PREPAINT_SCRIPT_HASH drifted from deploy-contract.mjs prepaintScriptHashes"; exit 1; }; \
+	user_title="$$(sed -n "s|^  user: '\(<title>[^']*</title>\)',$$|\1|p" frontend/scripts/deploy-contract.mjs)"; \
+	admin_title="$$(sed -n "s|^  admin: '\(<title>[^']*</title>\)',$$|\1|p" frontend/scripts/deploy-contract.mjs)"; \
+	test -n "$$user_title"; test -n "$$admin_title"; \
+	grep -qF "USER_TITLE_TOKEN: &str = \"$$user_title\"" backend/rust/crates/api/src/frontend.rs || { echo "Rust USER_TITLE_TOKEN drifted from deploy-contract.mjs documentTitleTokens"; exit 1; }; \
+	grep -qF "ADMIN_TITLE_TOKEN: &str = \"$$admin_title\"" backend/rust/crates/api/src/frontend.rs || { echo "Rust ADMIN_TITLE_TOKEN drifted from deploy-contract.mjs documentTitleTokens"; exit 1; }; \
+	grep -qF "$$user_title" frontend/apps/user/index.html || { echo "user index.html lost the document title literal"; exit 1; }; \
+	grep -qF "$$admin_title" frontend/apps/admin/index.html || { echo "admin index.html lost the document title literal"; exit 1; }; \
+	desc_token="$$(sed -n "s/^export const descriptionToken = '\(.*\)';$$/\1/p" frontend/scripts/deploy-contract.mjs)"; \
+	test -n "$$desc_token"; \
+	rust_desc_token="$$(printf '%s' "$$desc_token" | sed 's/"/\\"/g')"; \
+	grep -qF "DESCRIPTION_TOKEN: &str = \"$$rust_desc_token\"" backend/rust/crates/api/src/frontend.rs || { echo "Rust DESCRIPTION_TOKEN drifted from deploy-contract.mjs descriptionToken"; exit 1; }; \
+	grep -qF "$$desc_token" frontend/apps/user/index.html || { echo "user index.html lost the document description literal"; exit 1; }; \
+	grep -qF "$$desc_token" frontend/apps/admin/index.html || { echo "admin index.html lost the document description literal"; exit 1; }; \
+	head_token="$$(sed -n "s/^export const headMetaToken = '\(.*\)';$$/\1/p" frontend/scripts/deploy-contract.mjs)"; \
+	test -n "$$head_token"; \
+	grep -qF "HEAD_META_TOKEN: &str = \"$$head_token\"" backend/rust/crates/api/src/frontend.rs || { echo "Rust HEAD_META_TOKEN drifted from deploy-contract.mjs headMetaToken"; exit 1; }; \
+	grep -qF "$$head_token" frontend/apps/user/index.html || { echo "user index.html lost the head social-meta marker"; exit 1; }; \
+	if grep -qF "$$head_token" frontend/apps/admin/index.html; then echo "admin index.html must not carry the user-only head social-meta marker"; exit 1; fi; \
 	echo "Deploy-seam contract copies are in lockstep."
 
 reference-oracle-check:

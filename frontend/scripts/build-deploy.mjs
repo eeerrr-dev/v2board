@@ -15,8 +15,11 @@ import { fileURLToPath } from 'node:url';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import {
+  descriptionToken,
+  documentTitleTokens,
   forbiddenLegacyNames,
   hashedAssetNamePattern,
+  headMetaToken,
   prepaintScriptHashes,
   runtimeConfigToken,
 } from './deploy-contract.mjs';
@@ -194,6 +197,16 @@ async function validateViteBuild({ label, outDir, publicBase, prepaintScriptHash
   }
   if (indexSource.includes('window.settings')) {
     throw new Error(`${label} index.html retains the retired window.settings bootstrap`);
+  }
+  // The Rust renderer substitutes these head branding literals per request;
+  // a build that drops one would silently serve the unbranded defaults.
+  const appKey = label.toLowerCase();
+  assertExactlyOnce(indexSource, documentTitleTokens[appKey], `${label} document title literal`);
+  assertExactlyOnce(indexSource, descriptionToken, `${label} document description literal`);
+  if (appKey === 'user') {
+    assertExactlyOnce(indexSource, headMetaToken, `${label} head social-meta marker`);
+  } else if (indexSource.includes(headMetaToken)) {
+    throw new Error(`${label} index.html must not carry the user-only head social-meta marker`);
   }
   assertPrepaintScriptHash(label, indexSource, prepaintScriptHash);
 

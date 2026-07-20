@@ -16,6 +16,21 @@
 export const runtimeConfigToken = '__V2BOARD_RUNTIME_CONFIG__';
 
 /**
+ * Server-substituted head branding literals: the Rust renderer replaces each
+ * one per request with operator-configured values (frontend.rs
+ * USER_/ADMIN_TITLE_TOKEN, DESCRIPTION_TOKEN, HEAD_META_TOKEN). The dev
+ * templates keep human-readable defaults; build-deploy.mjs asserts each
+ * literal survives the build exactly once, and the social-meta marker stays
+ * user-only — the admin document ships a static noindex instead.
+ */
+export const documentTitleTokens = Object.freeze({
+  user: '<title>V2Board</title>',
+  admin: '<title>V2Board Admin</title>',
+});
+export const descriptionToken = '<meta name="description" content="V2Board" />';
+export const headMetaToken = '<!-- __V2BOARD_HEAD_META__ -->';
+
+/**
  * SHA-256 CSP source allowances for each app's single executable inline
  * script — the dark-mode pre-paint (docs/api-dialect.md §10.5). The apps
  * currently share one script byte-for-byte, but the entries stay per-app

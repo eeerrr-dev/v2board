@@ -97,6 +97,7 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
         .route("/healthz", get(crate::runtime::healthz))
         .route("/readyz", get(crate::runtime::readyz))
         .route("/metrics", get(crate::metrics::metrics))
+        .route("/robots.txt", get(crate::frontend::robots_txt))
         // ——— Public family, modern dialect (docs/api-dialect.md §5.1, W3) ———
         .route("/api/v1/public/config", get(crate::client::public_config))
         .route(

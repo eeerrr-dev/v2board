@@ -14,6 +14,20 @@ use crate::runtime::host_matches_app_url;
 /// Must match `runtimeConfigToken` in frontend/scripts/deploy-contract.mjs and
 /// the apps' index.html templates; `make deploy-contract-audit` pins the pair.
 const RUNTIME_CONFIG_TOKEN: &str = "__V2BOARD_RUNTIME_CONFIG__";
+/// Head branding literals replaced per request with operator-configured
+/// values. The dev templates keep human-readable defaults so the Vite dev
+/// server needs no substitution; build-deploy.mjs asserts each literal
+/// survives the build exactly once and `make deploy-contract-audit` pins
+/// these constants to `documentTitleTokens`/`descriptionToken`/`headMetaToken`
+/// in frontend/scripts/deploy-contract.mjs.
+const USER_TITLE_TOKEN: &str = "<title>V2Board</title>";
+const ADMIN_TITLE_TOKEN: &str = "<title>V2Board Admin</title>";
+const DESCRIPTION_TOKEN: &str = "<meta name=\"description\" content=\"V2Board\" />";
+/// User-app-only comment marker replaced with canonical + Open Graph tags.
+/// The admin template must not carry it: the admin app lives under the
+/// operator's secret path and ships a static `noindex` meta instead of
+/// shareable social metadata.
+const HEAD_META_TOKEN: &str = "<!-- __V2BOARD_HEAD_META__ -->";
 /// SHA-256 source allowances for each built app's inline dark-mode pre-paint
 /// script — the only executable inline script either document carries
 /// (docs/api-dialect.md §10.5). Pinned by `prepaintScriptHashes` in
@@ -96,6 +110,7 @@ pub(super) async fn render(
     config: &AppConfig,
     app: FrontendApp,
     method: &Method,
+    path: &str,
     request_headers: &HeaderMap,
 ) -> Response {
     if matches!(app, FrontendApp::User) && !safe_mode_host_allowed(config, request_headers) {
@@ -137,6 +152,7 @@ pub(super) async fn render(
     let sentry = frontend_sentry();
     let runtime_config = script_safe_json(&runtime_config(config, app, sentry));
     let html = template.replacen(RUNTIME_CONFIG_TOKEN, &runtime_config, 1);
+    let html = substitute_head_branding(html, config, app, path);
 
     let mut response = response(
         StatusCode::OK,
@@ -330,6 +346,96 @@ fn runtime_config(config: &AppConfig, app: FrontendApp, sentry: Option<&Frontend
     Value::Object(settings)
 }
 
+/// Server-rendered head branding: the SPA paints no crawler-visible content,
+/// so the document title, meta description, and (user app) canonical/Open
+/// Graph tags come from the operator config at render time. Replacement is
+/// tolerant — build-deploy.mjs guarantees every validated release carries the
+/// literals, so an absent marker only means an older tree, never a 503.
+fn substitute_head_branding(
+    html: String,
+    config: &AppConfig,
+    app: FrontendApp,
+    path: &str,
+) -> String {
+    let title = html_escape(&config.app_name);
+    let description = html_escape(
+        config
+            .app_description
+            .as_deref()
+            .filter(|value| !value.is_empty())
+            .unwrap_or(&config.app_name),
+    );
+    let title_token = match app {
+        FrontendApp::User => USER_TITLE_TOKEN,
+        FrontendApp::Admin => ADMIN_TITLE_TOKEN,
+    };
+    let html = html.replacen(title_token, &format!("<title>{title}</title>"), 1);
+    let html = html.replacen(
+        DESCRIPTION_TOKEN,
+        &format!("<meta name=\"description\" content=\"{description}\" />"),
+        1,
+    );
+    match app {
+        FrontendApp::User => {
+            html.replacen(HEAD_META_TOKEN, &social_head_meta(config, path, &title, &description), 1)
+        }
+        FrontendApp::Admin => html,
+    }
+}
+
+/// Canonical + Open Graph tags for the user document. `title` and
+/// `description` arrive already HTML-escaped. Without a configured `app_url`
+/// there is no absolute self-URL, so the canonical/og:url pair is omitted.
+fn social_head_meta(config: &AppConfig, path: &str, title: &str, description: &str) -> String {
+    let mut tags = Vec::new();
+    if let Some(app_url) = config.app_url.as_deref().filter(|value| !value.is_empty()) {
+        let canonical = html_escape(&format!("{}{}", app_url.trim_end_matches('/'), path));
+        tags.push(format!("<link rel=\"canonical\" href=\"{canonical}\" />"));
+        tags.push(format!("<meta property=\"og:url\" content=\"{canonical}\" />"));
+    }
+    tags.push("<meta property=\"og:type\" content=\"website\" />".to_owned());
+    tags.push(format!("<meta property=\"og:site_name\" content=\"{title}\" />"));
+    tags.push(format!("<meta property=\"og:title\" content=\"{title}\" />"));
+    tags.push(format!("<meta property=\"og:description\" content=\"{description}\" />"));
+    if let Some(logo) = config.logo.as_deref().filter(|value| !value.is_empty()) {
+        tags.push(format!("<meta property=\"og:image\" content=\"{}\" />", html_escape(logo)));
+    }
+    tags.join("\n    ")
+}
+
+/// Escapes operator-controlled strings for HTML text and double-quoted
+/// attribute contexts.
+fn html_escape(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+/// `/robots.txt` is a fixed public route: crawlers may index the HTML routes
+/// but stay out of the API and hashed-asset namespaces. The admin
+/// `secure_path` is deliberately not listed — a robots entry would leak it.
+pub(super) async fn robots_txt() -> Response {
+    let mut response = response(
+        StatusCode::OK,
+        "text/plain; charset=utf-8",
+        Body::from("User-agent: *\nDisallow: /api/\nDisallow: /assets/\n"),
+    );
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=3600"),
+    );
+    response
+}
+
 /// JSON in an HTML script-data element must not be able to synthesize a closing
 /// `</script>` tag. Escaping these code points preserves the parsed JSON value
 /// while keeping operator-controlled branding strings in the data context.
@@ -508,6 +614,61 @@ mod tests {
         assert!(FrontendSentry::parse("not a dsn").is_none());
         assert!(FrontendSentry::parse("https://o1.ingest.sentry.io/2").is_none());
         assert!(FrontendSentry::parse("ftp://key@host/1").is_none());
+    }
+
+    #[test]
+    fn head_branding_substitutes_escaped_operator_values() {
+        let mut config = chat_test_config();
+        config.app_name = "Acme <\"Panel\">".to_string();
+        config.app_description = None;
+        config.app_url = Some("https://panel.example.com/".to_string());
+        config.logo = Some("https://cdn.example.com/logo.png".to_string());
+
+        let template = format!(
+            "<head>{USER_TITLE_TOKEN}{DESCRIPTION_TOKEN}{HEAD_META_TOKEN}</head>"
+        );
+        let html =
+            substitute_head_branding(template, &config, FrontendApp::User, "/order/T123");
+        // Text and attribute contexts get the escaped name; the absent
+        // description falls back to it.
+        assert!(html.contains("<title>Acme &lt;&quot;Panel&quot;&gt;</title>"));
+        assert!(html.contains(
+            "<meta name=\"description\" content=\"Acme &lt;&quot;Panel&quot;&gt;\" />"
+        ));
+        // The trailing app_url slash collapses into the request path.
+        assert!(html.contains(
+            "<link rel=\"canonical\" href=\"https://panel.example.com/order/T123\" />"
+        ));
+        assert!(html.contains(
+            "<meta property=\"og:url\" content=\"https://panel.example.com/order/T123\" />"
+        ));
+        assert!(html.contains(
+            "<meta property=\"og:image\" content=\"https://cdn.example.com/logo.png\" />"
+        ));
+
+        // Without app_url there is no absolute self-URL: canonical/og:url are
+        // omitted while the rest of the social block stays.
+        config.app_url = None;
+        config.app_description = Some("Fast & simple".to_string());
+        config.logo = None;
+        let template = format!(
+            "<head>{USER_TITLE_TOKEN}{DESCRIPTION_TOKEN}{HEAD_META_TOKEN}</head>"
+        );
+        let html = substitute_head_branding(template, &config, FrontendApp::User, "/");
+        assert!(!html.contains("rel=\"canonical\""));
+        assert!(!html.contains("og:url"));
+        assert!(!html.contains("og:image"));
+        assert!(html.contains(
+            "<meta property=\"og:description\" content=\"Fast &amp; simple\" />"
+        ));
+
+        // The admin document gets the title/description substitution but
+        // never a social block, and a stray marker passes through untouched.
+        let template =
+            format!("<head>{ADMIN_TITLE_TOKEN}{DESCRIPTION_TOKEN}</head>");
+        let html = substitute_head_branding(template, &config, FrontendApp::Admin, "/admin");
+        assert!(html.contains("<title>Acme &lt;&quot;Panel&quot;&gt;</title>"));
+        assert!(!html.contains("<meta property=\"og:"));
     }
 
     #[test]

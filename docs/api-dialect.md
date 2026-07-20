@@ -1065,8 +1065,9 @@ fallback for GET/HEAD:
 
 1. Reserved, never HTML: `/api/*` (unknown API paths stay 404
    problem+json/legacy per namespace), `/assets/*` (hashed-asset gate,
-   404 for unknown names), `/healthz`, `/readyz`, and the operator
-   `subscribe_path` alias.
+   404 for unknown names), `/healthz`, `/readyz`, `/robots.txt` (fixed
+   public crawler policy, routed ahead of the fallback; it never lists the
+   admin path), and the operator `subscribe_path` alias.
 2. `/{admin_path}` and `/{admin_path}/*` → admin `index.html`
    (`frontend::render(Admin)`), with runtime-config injection.
 3. Every other GET/HEAD path → user `index.html`, gated by the existing
@@ -1094,8 +1095,8 @@ frozen §2 namespaces. Therefore:
 - `frontend_admin_path` gets the same syntactic validation as
   `secure_path`.
 - The resolved admin path (from either knob) may **not** equal any reserved
-  top-level segment: `api`, `assets`, `healthz`, `readyz`, the operator
-  `subscribe_path` first segment, any user-SPA top-level route root
+  top-level segment: `api`, `assets`, `healthz`, `readyz`, `robots.txt`, the
+  operator `subscribe_path` first segment, any user-SPA top-level route root
   (`login`, `register`, `forgetpassword`, `dashboard`, `plan`, `order`,
   `profile`, `node`, `traffic`, `invite`, `ticket`, `knowledge`), or any
   reserved API namespace (`auth`, `user`, `public`, `staff`, `client`,

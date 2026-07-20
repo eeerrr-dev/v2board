@@ -77,7 +77,7 @@ pub(crate) async fn dynamic_fallback(
         } else {
             frontend::FrontendApp::User
         };
-        return Ok(frontend::render(&config, app, &method, &headers).await);
+        return Ok(frontend::render(&config, app, &method, &path, &headers).await);
     }
 
     Ok(Problem::new(Code::EndpointNotFound).into_response())
@@ -121,15 +121,23 @@ mod tests {
     use crate::runtime::AppState;
 
     /// Minimal deploy tree for `frontend::render`: `current/{user,admin}` with
-    /// an index carrying exactly one runtime-config token.
+    /// an index carrying exactly one runtime-config token plus the head
+    /// branding literals the renderer substitutes (the user template also
+    /// carries the user-only social-meta marker, mirroring the real apps).
     fn write_frontend_release(root: &Path) {
         for app in ["user", "admin"] {
             let dir = root.join("current").join(app);
             std::fs::create_dir_all(&dir).expect("create frontend release dir");
+            let (title, head_meta_marker) = match app {
+                "user" => ("<title>V2Board</title>", "<!-- __V2BOARD_HEAD_META__ -->"),
+                _ => ("<title>V2Board Admin</title>", ""),
+            };
             std::fs::write(
                 dir.join("index.html"),
                 format!(
-                    "<!doctype html><html><head><script type=\"application/json\" \
+                    "<!doctype html><html><head>{title}\
+                     <meta name=\"description\" content=\"V2Board\" />{head_meta_marker}\
+                     <script type=\"application/json\" \
                      id=\"runtime-config\">__V2BOARD_RUNTIME_CONFIG__</script></head>\
                      <body>{app}-shell</body></html>"
                 ),
@@ -240,6 +248,80 @@ mod tests {
             "text/html; charset=utf-8"
         );
         assert!(body_string(response).await.is_empty());
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[tokio::test]
+    async fn served_html_carries_operator_branding_and_user_social_meta() {
+        let root = temp_frontend_root();
+        let mut config = fallback_test_config(&root);
+        config.app_name = "Acme <Panel>".to_string();
+        config.app_description = Some("Fast & simple".to_string());
+        config.app_url = Some("https://panel.example.com/".to_string());
+        config.logo = Some("https://cdn.example.com/logo.png".to_string());
+        let (app, _state) = fallback_test_app(&config);
+
+        let response = app
+            .clone()
+            .oneshot(request(Method::GET, "/order/T123"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = body_string(response).await;
+        assert!(body.contains("<title>Acme &lt;Panel&gt;</title>"));
+        assert!(body.contains("<meta name=\"description\" content=\"Fast &amp; simple\" />"));
+        assert!(
+            body.contains("<link rel=\"canonical\" href=\"https://panel.example.com/order/T123\" />")
+        );
+        assert!(body.contains(
+            "<meta property=\"og:url\" content=\"https://panel.example.com/order/T123\" />"
+        ));
+        assert!(
+            body.contains("<meta property=\"og:image\" content=\"https://cdn.example.com/logo.png\" />")
+        );
+
+        // The admin document is branded but never carries social metadata.
+        let response = app
+            .clone()
+            .oneshot(request(Method::GET, "/boot-admin1"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = body_string(response).await;
+        assert!(body.contains("<title>Acme &lt;Panel&gt;</title>"));
+        assert!(!body.contains("<meta property=\"og:"));
+        assert!(!body.contains("rel=\"canonical\""));
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[tokio::test]
+    async fn robots_txt_is_a_fixed_public_text_route() {
+        let root = temp_frontend_root();
+        let config = fallback_test_config(&root);
+        let (app, _state) = fallback_test_app(&config);
+
+        let response = app
+            .clone()
+            .oneshot(request(Method::GET, "/robots.txt"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            "text/plain; charset=utf-8"
+        );
+        assert_eq!(
+            response.headers().get(header::CACHE_CONTROL).unwrap(),
+            "public, max-age=3600"
+        );
+        let body = body_string(response).await;
+        assert!(body.starts_with("User-agent: *"));
+        assert!(body.contains("Disallow: /api/"));
+        assert!(body.contains("Disallow: /assets/"));
+        // The admin secure_path must never leak into the crawler policy.
+        assert!(!body.contains("boot-admin1"));
 
         std::fs::remove_dir_all(&root).ok();
     }

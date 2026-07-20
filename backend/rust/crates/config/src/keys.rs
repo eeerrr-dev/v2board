@@ -154,6 +154,7 @@ pub(crate) const RESERVED_ADMIN_PATH_SEGMENTS: &[&str] = &[
     "assets",
     "healthz",
     "readyz",
+    "robots.txt",
     // User-SPA route roots.
     "login",
     "register",

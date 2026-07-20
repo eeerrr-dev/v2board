@@ -60,7 +60,8 @@ visual, interaction, database, and native runtime artifacts in Docker volumes.
   plus atomic `current`/`previous` symlinks. Rust reads the production tree
   directly and read-only through `V2BOARD_FRONTEND_DIR`, renders HTML from `current`, and serves hashed
   assets from `current` with `previous` as the in-flight rollout fallback. The
-  public routes are `/`, the dynamic admin path, and `/assets/{user,admin}/*`.
+  public routes are `/`, the dynamic admin path, `/robots.txt`, and
+  `/assets/{user,admin}/*`.
 - Rust-owned mutable configuration and application state live under
   `/var/lib/v2board`, never in a source directory. Production API and worker use
   distinct Unix users and `0600` role-owned config files; container mount

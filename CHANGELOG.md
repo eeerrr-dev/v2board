@@ -9,6 +9,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- 文档级站点标识：服务端按运营方配置渲染 HTML 标题、meta 描述与用户端的
+  canonical / Open Graph 标签；新增固定公共路由 `/robots.txt`；两个应用带
+  SVG favicon；管理端 HTML 恒带 `noindex`。
+
 ## [0.9.0] - 2026-07-20
 
 首个统一版本基线。产品尚未正式发布安装（预发布，`0.x`）；此前的完整开发历史见
