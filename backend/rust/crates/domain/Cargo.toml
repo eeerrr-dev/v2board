@@ -1,6 +1,6 @@
 [package]
 name = "v2board-domain"
-version = "0.1.0"
+version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -36,9 +36,9 @@ tokio.workspace = true
 tracing.workspace = true
 uuid.workspace = true
 url.workspace = true
-v2board-compat = { version = "0.1.0", path = "../compat" }
-v2board-config = { version = "0.1.0", path = "../config" }
-v2board-db = { version = "0.1.0", path = "../db" }
+v2board-compat = { version = "0.9.0", path = "../compat" }
+v2board-config = { version = "0.9.0", path = "../config" }
+v2board-db = { version = "0.9.0", path = "../db" }
 
 [dev-dependencies]
 criterion.workspace = true

@@ -323,6 +323,8 @@ native-release-audit: cloudflared-config-audit
 	@rg -Fqx 'ARG V2BOARD_SOURCE_REVISION' Dockerfile.rust
 	@rg -Fq "'target_distribution=debian'" Dockerfile.rust
 	@rg -Fq "'target_distribution_version=13'" Dockerfile.rust
+	@rg -Fq '"version=$${release_version}"' Dockerfile.rust
+	@rg -q '^version = "[0-9][0-9a-zA-Z.+-]*"$$' backend/rust/Cargo.toml
 	@rg -Fq 'find bin frontend systemd RELEASE -type f -print0' Dockerfile.rust
 	@rg -Fq 'test -L frontend/previous' Dockerfile.rust
 	@retired_ingress="$$(printf '%s%s' ngi nx)"; \

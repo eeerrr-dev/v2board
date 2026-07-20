@@ -90,7 +90,8 @@ and integrity, not authenticity.
 
 The same CI job publishes a separate `v2board-lifecycle-debian-13-amd64` artifact containing
 `v2board-lifecycle-debian-13-amd64.tar.gz` and its external SHA-256. Verify that outer digest, unpack the
-archive, run `sha256sum --check SHA256SUMS`, and confirm `RELEASE` names the expected source revision
+archive, run `sha256sum --check SHA256SUMS`, and confirm `RELEASE` names the expected product
+`version` (the workspace version from `backend/rust/Cargo.toml`) and source revision
 before transferring the executable to the stopped old host. The tool has the same Debian 13 Linux amd64,
 glibc and `libssl3t64` ABI boundary as the native release. The stopped old host that runs it must also satisfy
 this Debian 13 amd64 boundary; the repository provides no second lifecycle build. The lifecycle artifact is

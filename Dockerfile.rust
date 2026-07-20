@@ -149,6 +149,9 @@ WORKDIR /release
 COPY --from=rust-builder /out/ /release/bin/
 COPY --from=frontend-builder /build/frontend/dist-deploy/ /release/frontend/
 COPY deploy/systemd/ /release/systemd/
+# Version source of truth for the RELEASE stamp; staged outside /release so the
+# manifest itself never ships in the payload.
+COPY backend/rust/Cargo.toml /tmp/workspace-manifest.toml
 
 RUN test "${TARGETOS}" = linux \
     && test "${TARGETARCH}" = amd64 \
@@ -167,15 +170,18 @@ RUN test "${TARGETOS}" = linux \
     && test -f systemd/v2board-worker.service \
     && test -f systemd/v2board-cloudflared.service \
     && test "$(find systemd -mindepth 1 -maxdepth 1 | wc -l)" = 3 \
+    && release_version="$(sed -n 's/^version = "\([0-9][0-9a-zA-Z.+-]*\)"$/\1/p' /tmp/workspace-manifest.toml | head -n 1)" \
+    && test -n "${release_version}" \
     && printf '%s\n' \
         'format=v2board-native-release-v1' \
+        "version=${release_version}" \
         "source_revision=${V2BOARD_SOURCE_REVISION}" \
         "target_os=${TARGETOS}" \
         'target_distribution=debian' \
         'target_distribution_version=13' \
         "target_arch=${TARGETARCH}" \
         > RELEASE \
-    && test "$(wc -l < RELEASE)" = 6 \
+    && test "$(wc -l < RELEASE)" = 7 \
     && find bin frontend systemd RELEASE -type f -print0 \
         | sort -z \
         | xargs -0 sha256sum > SHA256SUMS

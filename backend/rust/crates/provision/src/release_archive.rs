@@ -32,6 +32,7 @@ const CANONICAL_WORKER_UNIT_BYTES: &[u8] =
 pub struct ReadOnlyReleaseArchiveInspection {
     pub release_id: String,
     pub archive_sha256: String,
+    pub version: String,
     pub source_revision: String,
     pub entry_count: u64,
     pub regular_file_count: u64,
@@ -416,7 +417,7 @@ fn inspect_open_archive(
             }
         }
     }
-    let source_revision = parse_release_metadata(captured_utf8(&indexed, "RELEASE")?)?;
+    let (version, source_revision) = parse_release_metadata(captured_utf8(&indexed, "RELEASE")?)?;
     if captured_bytes(&indexed, "systemd/v2board-api.service")? != CANONICAL_API_UNIT_BYTES
         || captured_bytes(&indexed, "systemd/v2board-cloudflared.service")?
             != CANONICAL_CLOUDFLARED_UNIT_BYTES
@@ -434,6 +435,7 @@ fn inspect_open_archive(
     Ok(ReadOnlyReleaseArchiveInspection {
         release_id: release_id.to_string(),
         archive_sha256: archive_sha256.to_string(),
+        version,
         source_revision,
         entry_count: entry_count
             .try_into()
@@ -643,7 +645,7 @@ fn captured_utf8<'a>(
         .map_err(|_| ReleaseArchiveError::new("release_archive_contract_file_not_utf8"))
 }
 
-fn parse_release_metadata(text: &str) -> Result<String, ReleaseArchiveError> {
+fn parse_release_metadata(text: &str) -> Result<(String, String), ReleaseArchiveError> {
     if text.contains('\r') || text.as_bytes().contains(&0) {
         return Err(ReleaseArchiveError::new("release_metadata_invalid"));
     }
@@ -657,6 +659,7 @@ fn parse_release_metadata(text: &str) -> Result<String, ReleaseArchiveError> {
             || !matches!(
                 key,
                 "format"
+                    | "version"
                     | "source_revision"
                     | "target_os"
                     | "target_distribution"
@@ -668,7 +671,7 @@ fn parse_release_metadata(text: &str) -> Result<String, ReleaseArchiveError> {
             return Err(ReleaseArchiveError::new("release_metadata_field_invalid"));
         }
     }
-    if fields.len() != 6
+    if fields.len() != 7
         || fields.get("format") != Some(&"v2board-native-release-v1")
         || fields.get("target_os") != Some(&"linux")
         || fields.get("target_distribution") != Some(&"debian")
@@ -678,6 +681,17 @@ fn parse_release_metadata(text: &str) -> Result<String, ReleaseArchiveError> {
         return Err(ReleaseArchiveError::new(
             "release_metadata_contract_invalid",
         ));
+    }
+    let version = fields
+        .get("version")
+        .copied()
+        .ok_or_else(|| ReleaseArchiveError::new("release_version_missing"))?;
+    if !version.as_bytes().first().is_some_and(u8::is_ascii_digit)
+        || !version
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'+' | b'-'))
+    {
+        return Err(ReleaseArchiveError::new("release_version_invalid"));
     }
     let revision = fields
         .get("source_revision")
@@ -690,7 +704,7 @@ fn parse_release_metadata(text: &str) -> Result<String, ReleaseArchiveError> {
     {
         return Err(ReleaseArchiveError::new("release_source_revision_invalid"));
     }
-    Ok(revision.to_string())
+    Ok((version.to_string(), revision.to_string()))
 }
 
 fn verify_sha256sums(
@@ -854,6 +868,7 @@ mod tests {
                 "RELEASE",
                 concat!(
                     "format=v2board-native-release-v1\n",
+                    "version=0.9.0\n",
                     "source_revision=0123456789abcdef0123456789abcdef01234567\n",
                     "target_os=linux\n",
                     "target_distribution=debian\n",
@@ -1013,6 +1028,7 @@ mod tests {
         assert_eq!(inspection.entry_count, 19);
         assert_eq!(inspection.regular_file_count, 10);
         assert_eq!(inspection.internal_checksum_count, 9);
+        assert_eq!(inspection.version, "0.9.0");
         assert_eq!(
             inspection.source_revision,
             "0123456789abcdef0123456789abcdef01234567"

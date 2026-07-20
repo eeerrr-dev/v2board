@@ -14,6 +14,10 @@ members = [
 resolver = "3"
 
 [workspace.package]
+# The single product version: every crate inherits it, /metrics reports it as
+# v2board_build_info{crate_version}, and the native release archive stamps it
+# into RELEASE. Bump it (with CHANGELOG.md) per docs/release-process.md.
+version = "0.9.0"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/v2board/v2board"

@@ -204,6 +204,8 @@ TypeScript + Vite + Tailwind v4 + shadcn/Radix;共享代码在
 - [`mysql-import-invariants.md`](mysql-import-invariants.md) 与
   [`mysql-import.md`](mysql-import.md) — 一次性 MySQL 导入的固定契约与操作
   指南。
+- [`release-process.md`](release-process.md) — 单一版本号策略、升版步骤与发布
+  产物验证;变更记录见根目录 [`CHANGELOG.md`](../CHANGELOG.md)。
 - [`../deploy/README.md`](../deploy/README.md) — 裸机安装、Cloudflare Tunnel
   接入与激活顺序;[`../backend/README.md`](../backend/README.md)、
   [`../frontend/README.md`](../frontend/README.md) — 两侧工作区细节。
