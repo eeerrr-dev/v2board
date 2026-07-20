@@ -5,6 +5,7 @@ import { AlertCircle, RefreshCw } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { reportBoundaryError } from '@/lib/error-reporting';
 
 interface RouteErrorBoundaryProps {
   children: ReactNode;
@@ -33,6 +34,7 @@ export class RouteErrorBoundary extends Component<
 
   override componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error(error, errorInfo);
+    reportBoundaryError(error, errorInfo.componentStack);
   }
 
   override render() {

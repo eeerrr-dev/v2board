@@ -3,6 +3,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/render';
 import { RouteErrorBoundary } from './route-error-boundary';
 
+const reportBoundaryError = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/error-reporting', () => ({ reportBoundaryError }));
+
 function Crash(): never {
   throw new Error('route crashed');
 }
@@ -20,6 +23,10 @@ describe('RouteErrorBoundary white-screen guard', () => {
 
     const failedLabel = i18n!.t(($) => $.common.route_load_failed);
     expect(screen.getByRole('alert')).toHaveTextContent(failedLabel);
+    expect(reportBoundaryError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'route crashed' }),
+      expect.any(String),
+    );
     expect(screen.getByRole('alert')).toHaveTextContent(
       i18n!.t(($) => $.common.route_refresh_hint),
     );

@@ -7,6 +7,7 @@ import { createLazyI18n, installLocaleDocumentEnvironment } from '@v2board/i18n'
 import { applyLegacyHashRedirect } from '@v2board/config';
 import { RouterProvider } from 'react-router/dom';
 import { createAdminRouter } from './App';
+import { AppShellBoundary } from './components/app-shell-boundary';
 import { StepUpDialogProvider } from './components/step-up-dialog';
 import { ConfirmDialogProvider } from './components/ui/confirm-dialog';
 import { Toaster } from './components/ui/toaster';
@@ -80,13 +81,15 @@ if (!root) throw new Error('root element missing');
 
 createRoot(root).render(
   <StrictMode>
-    <I18nextProvider i18n={i18n}>
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-        <ConfirmDialogProvider />
-        <StepUpDialogProvider />
-        <Toaster />
-      </QueryClientProvider>
-    </I18nextProvider>
+    <AppShellBoundary>
+      <I18nextProvider i18n={i18n}>
+        <QueryClientProvider client={queryClient}>
+          <RouterProvider router={router} />
+          <ConfirmDialogProvider />
+          <StepUpDialogProvider />
+          <Toaster />
+        </QueryClientProvider>
+      </I18nextProvider>
+    </AppShellBoundary>
   </StrictMode>,
 );

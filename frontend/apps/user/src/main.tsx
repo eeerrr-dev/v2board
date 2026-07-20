@@ -9,6 +9,7 @@ import { applyLegacyHashRedirect } from '@v2board/config';
 import { RouterProvider } from 'react-router/dom';
 
 import { createUserRouter } from './App';
+import { AppShellBoundary } from './components/app-shell-boundary';
 import { ConfirmDialogProvider } from './components/ui/confirm-dialog';
 import { Toaster } from './components/ui/toaster';
 import { registerSessionCacheClearer, setupAuthSync } from './lib/auth';
@@ -104,17 +105,19 @@ if (!root) throw new Error('root element missing');
 
 createRoot(root).render(
   <StrictMode>
-    <I18nextProvider i18n={i18n}>
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-        <ConfirmDialogProvider />
-        <Toaster />
-        {ReactQueryDevtools ? (
-          <Suspense fallback={null}>
-            <ReactQueryDevtools initialIsOpen={false} />
-          </Suspense>
-        ) : null}
-      </QueryClientProvider>
-    </I18nextProvider>
+    <AppShellBoundary>
+      <I18nextProvider i18n={i18n}>
+        <QueryClientProvider client={queryClient}>
+          <RouterProvider router={router} />
+          <ConfirmDialogProvider />
+          <Toaster />
+          {ReactQueryDevtools ? (
+            <Suspense fallback={null}>
+              <ReactQueryDevtools initialIsOpen={false} />
+            </Suspense>
+          ) : null}
+        </QueryClientProvider>
+      </I18nextProvider>
+    </AppShellBoundary>
   </StrictMode>,
 );

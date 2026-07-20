@@ -14,3 +14,11 @@ export function initSentry(dsn: string): void {
     sendDefaultPii: false,
   });
 }
+
+/** Capture path for render-boundary catches; see `lib/error-reporting.ts`. */
+export function captureBoundaryError(error: unknown, componentStack?: string | null): void {
+  Sentry.captureException(
+    error,
+    componentStack ? { contexts: { react: { componentStack } } } : undefined,
+  );
+}

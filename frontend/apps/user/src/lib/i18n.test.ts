@@ -441,7 +441,9 @@ describe('i18n resources', () => {
     expect(i18n.t(($) => $.traffic.notice)).toBe(
       '귀하의 트래픽 세부 정보는 최근 몇 달 동안만 유지됩니다',
     );
-    expect(i18n.t(($) => $.dashboard.alert_traffic_rate, { rate: 80 })).toBe('当前已使用流量达80%');
+    expect(i18n.t(($) => $.dashboard.alert_traffic_rate, { rate: 80 })).toBe(
+      '현재 데이터 사용량이 80%에 도달했습니다',
+    );
     expect(i18n.t(($) => $.invite.transfer_notice, { title: 'V2Board' })).toBe(
       '이체된 잔액은 V2Board 결제에만 사용됩니다.',
     );
