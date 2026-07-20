@@ -308,12 +308,15 @@ jobs:
           test -f native-release/systemd/v2board-cloudflared.service
           test "$(find native-release/systemd -mindepth 1 -maxdepth 1 | wc -l)" -eq 3
           grep -Fxq 'format=v2board-native-release-v1' native-release/RELEASE
+          workspace_version="$(sed -n 's/^version = "\([0-9][0-9a-zA-Z.+-]*\)"$/\1/p' backend/rust/Cargo.toml | head -n 1)"
+          test -n "${workspace_version}"
+          grep -Fxq "version=${workspace_version}" native-release/RELEASE
           grep -Fxq "source_revision=${GITHUB_SHA}" native-release/RELEASE
           grep -Fxq 'target_os=linux' native-release/RELEASE
           grep -Fxq 'target_distribution=debian' native-release/RELEASE
           grep -Fxq 'target_distribution_version=13' native-release/RELEASE
           grep -Fxq 'target_arch=amd64' native-release/RELEASE
-          test "$(wc -l < native-release/RELEASE)" -eq 6
+          test "$(wc -l < native-release/RELEASE)" -eq 7
           (cd native-release && sha256sum --check SHA256SUMS)
           retired_bundle="$(find native-release/frontend -type f \( \
             -name "u""mi.js" -o -name "u""mi.css" -o \
