@@ -24,7 +24,8 @@ pub(crate) use harness::{
 };
 
 use access_control::{
-    auth_rate_limits, invite_single_consumption, node_identity_epoch, redis_lease_ownership,
+    auth_rate_limits, fixed_window_reservation, invite_single_consumption, node_identity_epoch,
+    redis_lease_ownership,
 };
 use admin_projections::admin_projection_key_sets;
 use admin_users::admin_user_w12_mutations;
@@ -169,6 +170,9 @@ async fn run_isolated_checks(
 
         redis_lease_ownership(&integration_redis).await?;
         pass("a stale worker lease owner cannot renew or release a replacement lease");
+
+        fixed_window_reservation(&integration_redis).await?;
+        pass("the ticket-write fixed window admits exactly its limit under concurrency");
 
         worker_health_process(pool, database_url, database_name, integration_redis_url).await?;
         pass("a live isolated worker publishes health and per-loop heartbeats");

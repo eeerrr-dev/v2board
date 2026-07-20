@@ -11,6 +11,29 @@ pub enum RedisRuntimeError {
     EvictionPolicy(Option<String>),
 }
 
+/// Fixed-window flood reservation: INCR the caller's fully-qualified window
+/// key and report whether the count stayed within `limit`. `EXPIRE NX` pins
+/// the TTL to the window's first write, so the key self-expires and holds no
+/// durable state. Callers own key naming and the denial error shape.
+pub async fn reserve_fixed_window_slot(
+    connection: &mut redis::aio::ConnectionManager,
+    key: &str,
+    limit: i64,
+    window_seconds: i64,
+) -> Result<bool, redis::RedisError> {
+    let (count, _ttl_was_set): (i64, i64) = redis::pipe()
+        .atomic()
+        .cmd("INCR")
+        .arg(key)
+        .cmd("EXPIRE")
+        .arg(key)
+        .arg(window_seconds)
+        .arg("NX")
+        .query_async(connection)
+        .await?;
+    Ok(count <= limit)
+}
+
 /// Verify the disposable Redis runtime without treating it as a durable store.
 ///
 /// Production deliberately checks the `maxmemory_policy` field from `INFO

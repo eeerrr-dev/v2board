@@ -10,6 +10,7 @@ use v2board_config::{AppConfig, RedisKeyspace};
 use v2board_db::installation_id;
 use v2board_domain::{
     auth::{AuthService, PasswordKdf, RegisterInput, hash_password},
+    redis_runtime::reserve_fixed_window_slot,
     server_credentials::{derive_node_token, verify_node_token},
     smtp::SmtpTransportCache,
 };
@@ -317,6 +318,44 @@ pub(super) async fn auth_rate_limits(
             "login limiter key {key} stored {count}, expected 3"
         );
     }
+    Ok(())
+}
+
+/// The ticket-write flood bound rides on this fixed-window primitive: under
+/// concurrent pressure exactly `limit` callers are admitted, the window key
+/// carries a TTL (no durable state), and denial does not consume a slot twice.
+pub(super) async fn fixed_window_reservation(redis: &redis::Client) -> Result<()> {
+    let manager = redis::aio::ConnectionManager::new(redis.clone()).await?;
+    let key = format!(
+        "TICKET_WRITE_LIMIT_CREATE_contract_{}",
+        Uuid::new_v4().simple()
+    );
+    let mut attempts = JoinSet::new();
+    for _ in 0..15 {
+        let mut conn = manager.clone();
+        let key = key.clone();
+        attempts.spawn(async move { reserve_fixed_window_slot(&mut conn, &key, 10, 60).await });
+    }
+    let mut admitted = 0;
+    let mut denied = 0;
+    while let Some(joined) = attempts.join_next().await {
+        if joined?? {
+            admitted += 1;
+        } else {
+            denied += 1;
+        }
+    }
+    ensure!(
+        (admitted, denied) == (10, 5),
+        "fixed window admitted {admitted} of 15 concurrent reservations"
+    );
+    let mut conn = manager.clone();
+    let ttl: i64 = conn.ttl(&key).await?;
+    ensure!(
+        ttl > 0 && ttl <= 60,
+        "fixed window key must self-expire, found ttl {ttl}"
+    );
+    let _: i64 = conn.del(&key).await?;
     Ok(())
 }
 

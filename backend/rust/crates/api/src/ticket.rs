@@ -26,6 +26,38 @@ use crate::{
 const MAX_TICKET_SUBJECT_CHARS: usize = 255;
 const MAX_TICKET_MESSAGE_BYTES: usize = 65_535;
 
+// Ticket writes fan out to operator mail/Telegram notifications, so they carry
+// a per-user flood bound like the auth flows. Creates (support + withdrawal)
+// share one hourly window; replies get their own faster window. The open-ticket
+// uniqueness guard already dedupes concurrent creates — this bounds the
+// close-and-reopen / reply-spam loops it cannot see.
+const TICKET_CREATE_LIMIT: i64 = 10;
+const TICKET_CREATE_WINDOW_SECONDS: i64 = 3600;
+const TICKET_REPLY_LIMIT: i64 = 20;
+const TICKET_REPLY_WINDOW_SECONDS: i64 = 300;
+
+async fn reserve_ticket_write_slot(
+    state: &AppState,
+    user_id: i64,
+    action: &str,
+    limit: i64,
+    window_seconds: i64,
+) -> Result<(), ApiError> {
+    let key = state.redis_key(&format!("TICKET_WRITE_LIMIT_{action}_{user_id}"));
+    let mut conn = state.auth_redis.clone();
+    let admitted = v2board_domain::redis_runtime::reserve_fixed_window_slot(
+        &mut conn,
+        &key,
+        limit,
+        window_seconds,
+    )
+    .await?;
+    if !admitted {
+        return Err(Problem::new(Code::RateLimited).into());
+    }
+    Ok(())
+}
+
 fn commission_balance_meets_minimum(balance_cents: i64, minimum_yuan: Decimal) -> bool {
     minimum_yuan
         .checked_mul(Decimal::from(100))
@@ -251,6 +283,14 @@ async fn create(
     )?;
     validate_ticket_message("message", message)?;
     let require_paid_order = require_paid_order_for(state.config_snapshot().ticket_status)?;
+    reserve_ticket_write_slot(
+        state,
+        user_id,
+        "CREATE",
+        TICKET_CREATE_LIMIT,
+        TICKET_CREATE_WINDOW_SECONDS,
+    )
+    .await?;
     let outcome = v2board_db::ticket::create_ticket(
         &state.db,
         user_id,
@@ -335,6 +375,14 @@ async fn reply(
         "Message cannot be empty",
     )?;
     validate_ticket_message("message", message)?;
+    reserve_ticket_write_slot(
+        state,
+        user_id,
+        "REPLY",
+        TICKET_REPLY_LIMIT,
+        TICKET_REPLY_WINDOW_SECONDS,
+    )
+    .await?;
     let outcome = v2board_db::ticket::reply_ticket(
         &state.db,
         ticket_id,
@@ -470,6 +518,14 @@ async fn create_withdrawal(
             ))
             .into());
     }
+    reserve_ticket_write_slot(
+        state,
+        user_id,
+        "CREATE",
+        TICKET_CREATE_LIMIT,
+        TICKET_CREATE_WINDOW_SECONDS,
+    )
+    .await?;
     let outcome = v2board_db::ticket::create_withdraw_ticket(
         &state.db,
         user_id,
