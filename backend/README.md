@@ -343,7 +343,7 @@ session epoch. `mysql-import.v1` does not import sessions, so every user signs i
 runtime contains no old JWT decoder, query/form authentication fallback or cutoff setting.
 
 Privileged sessions have a shorter TTL and password step-up through
-`POST /api/v1/passport/auth/stepUp`; disabling the gate is an explicit compatibility escape hatch,
+`POST /api/v1/auth/step-up`; disabling the gate is an explicit compatibility escape hatch,
 not the production recommendation. Admin config reads redact stored credentials with `********`;
 posting that sentinel preserves the existing secret.
 
