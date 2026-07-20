@@ -1080,6 +1080,7 @@ describe('createApiClient', () => {
       banned: 0,
       is_admin: 0,
       is_staff: 0,
+      admin_permissions: [],
       invite_user_id: null,
       discount: null,
       commission_rate: null,

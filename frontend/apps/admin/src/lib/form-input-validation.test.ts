@@ -140,6 +140,7 @@ describe('admin form contract schemas', () => {
       discount: '90',
       is_admin: 0,
       is_staff: 0,
+      admin_permissions: [],
     };
     const valid = userManageSchema.safeParse(validUser);
     expect(valid.success).toBe(true);
@@ -178,6 +179,7 @@ describe('admin form contract schemas', () => {
       commission_type: 0,
       is_admin: 0,
       is_staff: 0,
+      admin_permissions: [],
     };
 
     const invalid = userManageSchema.safeParse(input);
