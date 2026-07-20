@@ -59,6 +59,9 @@ export const userManageSchema = z.object({
   speed_limit: optionalInteger,
   is_admin: z.union([z.literal(0), z.literal(1)]),
   is_staff: z.union([z.literal(0), z.literal(1)]),
+  // §6.12 staff grants: `{family}:read|write` registry strings, kept as the
+  // wire array; the drawer edits it through per-family access selects.
+  admin_permissions: z.array(z.string()),
   remarks: z.string().nullable().optional(),
 });
 

@@ -57,6 +57,7 @@ const ADMIN_USER_SELECT: &str = "\
     SELECT u.id, u.email, u.balance, u.commission_balance, u.transfer_enable, \
            u.device_limit, u.u, u.d, u.plan_id, p.name AS plan_name, u.group_id, \
            u.expired_at, u.uuid, u.token, u.banned, u.is_admin, u.is_staff, \
+           u.admin_permissions, \
            u.invite_user_id, u.discount, u.commission_type, u.commission_rate, \
            u.t, u.speed_limit, u.auto_renewal, u.remind_expire, u.remind_traffic, \
            u.remarks, u.telegram_id, u.last_login_at, u.created_at, u.updated_at \
@@ -88,6 +89,7 @@ pub(super) struct AdminUserRecord {
     banned: i16,
     is_admin: i16,
     is_staff: i16,
+    admin_permissions: Json<Vec<String>>,
     invite_user_id: Option<i64>,
     discount: Option<i32>,
     commission_type: i16,
@@ -134,6 +136,7 @@ impl AdminUserRecord {
             "banned": self.banned,
             "is_admin": self.is_admin,
             "is_staff": self.is_staff,
+            "admin_permissions": self.admin_permissions.0,
             "invite_user_id": self.invite_user_id,
             "discount": self.discount,
             "commission_type": self.commission_type,
@@ -237,6 +240,11 @@ pub struct AdminUserPatch {
     pub is_admin: Option<bool>,
     #[serde(default)]
     pub is_staff: Option<bool>,
+    /// §6.12 staff grants: a full-replacement array validated against the
+    /// fixed permission registry. Not clearable to NULL — the column is a
+    /// NOT NULL JSONB array; send `[]` to revoke everything.
+    #[serde(default)]
+    pub admin_permissions: Option<Vec<String>>,
     #[serde(default, with = "double_option")]
     pub device_limit: Option<Option<i64>>,
     #[serde(default, with = "double_option")]
@@ -739,6 +747,18 @@ impl AdminService {
                 )));
             }
         }
+        // §6.12: grants are a full-replacement array over the fixed registry;
+        // unknown entries are a validation failure, never silently dropped.
+        if let Some(permissions) = &body.admin_permissions
+            && let Some(unknown) = permissions
+                .iter()
+                .find(|value| !is_registered_permission(value))
+        {
+            return Err(ApiError::from(Problem::validation_field(
+                "admin_permissions",
+                format!("未注册的权限项:{unknown}"),
+            )));
+        }
 
         let current_email: String =
             sqlx::query_scalar("SELECT email FROM users WHERE id = $1 LIMIT 1")
@@ -785,6 +805,15 @@ impl AdminService {
             if let Some(value) = value {
                 values.push((column, AdminSqlValue::Integer(i64::from(value))));
             }
+        }
+        if let Some(permissions) = &body.admin_permissions {
+            let mut deduplicated: Vec<&String> = Vec::new();
+            for value in permissions {
+                if !deduplicated.contains(&value) {
+                    deduplicated.push(value);
+                }
+            }
+            values.push(("admin_permissions", json_value(json!(deduplicated))));
         }
         for (column, field) in [
             ("device_limit", body.device_limit),
@@ -1595,6 +1624,7 @@ mod tests {
             banned: 0,
             is_admin: 0,
             is_staff: 0,
+            admin_permissions: Json(Vec::new()),
             invite_user_id: Some(1),
             discount: None,
             commission_type: 0,
@@ -1622,6 +1652,7 @@ mod tests {
         assert_eq!(
             sorted,
             vec![
+                "admin_permissions",
                 "alive_ip",
                 "auto_renewal",
                 "balance",

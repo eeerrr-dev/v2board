@@ -189,14 +189,28 @@ fn documents() -> Vec<(&'static str, String)> {
     let auth_session = pretty(&SessionState {
         is_login: true,
         is_admin: None,
+        is_staff: None,
+        admin_permissions: None,
     });
     let auth_session_admin = pretty(&SessionState {
         is_login: true,
         is_admin: Some(true),
+        is_staff: None,
+        admin_permissions: None,
+    });
+    // §6.12: staff sessions carry the pair — grants may be empty but the
+    // array is always present alongside `is_staff`.
+    let auth_session_staff = pretty(&SessionState {
+        is_login: true,
+        is_admin: None,
+        is_staff: Some(true),
+        admin_permissions: Some(vec!["tickets:write".to_string(), "users:read".to_string()]),
     });
     let auth_session_logged_out = pretty(&SessionState {
         is_login: false,
         is_admin: None,
+        is_staff: None,
+        admin_permissions: None,
     });
 
     let auth_step_up = pretty(&StepUpGrant {
@@ -688,6 +702,7 @@ fn documents() -> Vec<(&'static str, String)> {
         ("auth.session.admin.json", auth_session_admin),
         ("auth.session.json", auth_session),
         ("auth.session.logged-out.json", auth_session_logged_out),
+        ("auth.session.staff.json", auth_session_staff),
         ("auth.step-up.json", auth_step_up),
         (
             "problem.config-revision-conflict.json",

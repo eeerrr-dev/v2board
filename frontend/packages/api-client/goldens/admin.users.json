@@ -1,6 +1,7 @@
 {
   "items": [
     {
+      "admin_permissions": [],
       "alive_ip": 0,
       "auto_renewal": 0,
       "balance": 1000,
@@ -38,6 +39,7 @@
       "uuid": "00000000-0000-4000-8000-000000000002"
     },
     {
+      "admin_permissions": [],
       "alive_ip": 0,
       "auto_renewal": 0,
       "balance": 0,

@@ -105,6 +105,8 @@ export interface AdminUserRow {
   banned: 0 | 1;
   is_admin: 0 | 1;
   is_staff: 0 | 1;
+  /** §6.12 staff grants: `{family}:read|write` registry strings. */
+  admin_permissions: string[];
   invite_user_id: number | null;
   invite_user_email?: string | null;
   discount: number | null;
@@ -138,6 +140,8 @@ export interface AdminUserUpdatePayload {
   invite_user_email?: string | null;
   is_admin?: 0 | 1;
   is_staff?: 0 | 1;
+  /** §6.12: full-replacement staff grant array; absent retains. */
+  admin_permissions?: string[];
   banned?: 0 | 1;
   remind_expire?: 0 | 1;
   remind_traffic?: 0 | 1;

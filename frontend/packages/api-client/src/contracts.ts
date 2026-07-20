@@ -45,10 +45,16 @@ export const totpProvisioningSchema = z.looseObject({
   otpauth_url: z.string().min(1),
 });
 
-/** GET /auth/session: the checkLogin successor's bare probe body (§5.2). */
+/**
+ * GET /auth/session: the checkLogin successor's bare probe body (§5.2). The
+ * §6.12 staff pair appears together exactly for staff (non-admin) sessions —
+ * `admin_permissions` may be an empty array.
+ */
 export const sessionStateSchema = z.looseObject({
   is_login: z.boolean(),
   is_admin: z.boolean().optional(),
+  is_staff: z.boolean().optional(),
+  admin_permissions: z.array(z.string()).optional(),
 });
 
 /** POST /auth/quick-login-url: the minted `{url}` body (§5.2, §9.4). */
@@ -641,6 +647,8 @@ export const adminUserBaseSchema = z.looseObject({
   banned: binaryFlagSchema,
   is_admin: binaryFlagSchema,
   is_staff: binaryFlagSchema,
+  // §6.12: the staff grant array (`{family}:read|write` registry strings).
+  admin_permissions: z.array(z.string()),
   invite_user_id: nullableNumber,
   invite_user_email: nullableString.optional(),
   discount: nullableNumber,

@@ -37,6 +37,7 @@ mod codes;
 mod commerce;
 mod configuration;
 mod content;
+mod permissions;
 mod repository;
 mod servers;
 mod statistics;
@@ -63,6 +64,10 @@ pub use configuration::ConfigPatchOutcome;
 pub use content::{
     AdminKnowledgeDetail, AdminKnowledgeSummary, AdminNoticeItem, KnowledgeCreate, KnowledgePatch,
     KnowledgeSortRequest, NoticeCreate, NoticePatch,
+};
+pub use permissions::{
+    ADMIN_PERMISSION_FAMILIES, AdminPathAccess, admin_path_access, is_registered_permission,
+    staff_permissions_allow,
 };
 pub use servers::{RouteCreate, RoutePatch, ServerBody, ServerGroupBody};
 pub use users::{

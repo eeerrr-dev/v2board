@@ -23,6 +23,7 @@ import {
   type AdminLoginLoaderData,
 } from '@/lib/auth';
 import { getAdminBasename } from '@/lib/runtime-config';
+import { canEnterAdminNamespace, firstAllowedRoute, sessionAllowsRoute } from '@/lib/permissions';
 import { adminSessionQueryOptions } from '@/lib/session-queries';
 
 export const ADMIN_ROUTE_PATHS = [
@@ -162,9 +163,16 @@ export function createRequireAdminMiddleware(queryClient: QueryClient): Middlewa
     if (!getAuthData()) throw redirect(buildLoginRedirect(current));
 
     const session = await queryClient.ensureQueryData(adminSessionQueryOptions.session());
-    if (!session.is_login || !session.is_admin) {
+    // §6.12: full admins and granted staff enter; anyone else never does.
+    if (!session.is_login || !canEnterAdminNamespace(session)) {
       logout();
       throw redirect('/login');
+    }
+    // A staff session may only open routes its grants can read — send
+    // anything else to its first readable destination instead of a 403 wall.
+    const pathname = new URL(request.url).pathname;
+    if (!sessionAllowsRoute(session, stripBasePath(pathname, getAdminBasename()))) {
+      throw redirect(firstAllowedRoute(session));
     }
 
     // The shell renders the authenticated identity, so it is route data rather
@@ -226,7 +234,7 @@ export function createAdminLoginLoader(queryClient: QueryClient) {
       throw error;
     }
 
-    if (!session.is_login || !session.is_admin) {
+    if (!session.is_login || !canEnterAdminNamespace(session)) {
       logout();
       return data;
     }
@@ -234,7 +242,10 @@ export function createAdminLoginLoader(queryClient: QueryClient) {
     // Resolve the identity before redirecting into the protected shell. The
     // destination loader reads the same fresh query and issues no duplicate.
     await queryClient.ensureQueryData(adminSessionQueryOptions.userInfo());
-    throw redirect(data.redirectTarget);
+    const targetPath = new URL(data.redirectTarget, 'https://v2board.local').pathname;
+    throw redirect(
+      sessionAllowsRoute(session, targetPath) ? data.redirectTarget : firstAllowedRoute(session),
+    );
   };
 }
 

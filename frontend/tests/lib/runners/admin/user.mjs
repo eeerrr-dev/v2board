@@ -47,6 +47,7 @@ import {
   fillVisibleAt,
   firstInputValue,
   legacySelectDropdownState,
+  visibleCount,
   visibleTexts,
   waitForPageProperty,
   waitForPagePropertyAtLeast,
@@ -553,6 +554,70 @@ export async function runAdminUserTrafficActionInteraction(page) {
   await waitForVisibleText(page, adminDrawerTitleSelector, '流量记录');
   const modal = await adminUserTrafficActionState(page);
   return { before, modal, opened };
+}
+
+// §6.12 admin RBAC: the staff-grants editor is native-only — the frozen oracle
+// predates RBAC — so instead of a cross-world compare this runner asserts the
+// PATCH contract directly: toggling 员工 on reveals the per-family access grid
+// and the submitted body carries the `{family}:read|write` grant array.
+export async function runAdminUserStaffPermissionsInteraction(page) {
+  await openAdminUserRowActionMenu(page, '编辑');
+  await clickFirstVisibleTextStable(page, adminMenuItemSelector, ['编辑']);
+  await page.waitForSelector(adminDrawerOpenSelector, { state: 'visible', timeout: 5_000 });
+  await waitForVisibleText(page, adminDrawerTitleSelector, '用户管理');
+  await waitForOverlayInputValue(page, 'visual-user@example.com');
+  const permissionsBeforeStaff = await visibleCount(
+    page,
+    '[data-testid="user-manage-permissions"]',
+  );
+  if (permissionsBeforeStaff !== 0) {
+    throw new Error('staff permission grid rendered for a non-staff user');
+  }
+  await page.click('#user-manage-is-staff');
+  await page.waitForSelector('[data-testid="user-manage-permissions"]', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  const familySelectCount = await visibleCount(page, '[data-testid^="user-permission-"]');
+  const setFamilyAccess = async (family, optionText) => {
+    await page.click(`[data-testid="user-permission-${family}"]`);
+    await waitForVisibleText(page, adminSelectOptionSelector, optionText);
+    await clickFirstVisibleTextStable(page, adminSelectOptionSelector, [optionText]);
+    await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
+  };
+  await setFamilyAccess('tickets', '读写');
+  await setFamilyAccess('users', '只读');
+  await clickAdminUserManageSubmit(page);
+  await waitForPageProperty(page, '__visualParityLastAdminUserUpdate');
+  const update = page.__visualParityLastAdminUserUpdate;
+  const grants = update?.admin_permissions;
+  if (
+    update?.is_staff !== true ||
+    JSON.stringify(grants) !== JSON.stringify(['tickets:write', 'users:read'])
+  ) {
+    throw new Error(`unexpected staff-permissions update body: ${JSON.stringify(update)}`);
+  }
+  return { familySelectCount, permissionsBeforeStaff, update };
+}
+
+// §6.12 admin RBAC: a staff session (is_staff + grants, no is_admin) entering
+// at /dashboard has no stats grant, so the router middleware must land it on
+// its first granted route and the sidebar must show only granted destinations.
+export async function runAdminStaffSessionGatingInteraction(page) {
+  await page.waitForFunction(() => window.__parityReadSpaRoute().includes('/user'), null, {
+    timeout: 5_000,
+  });
+  await page.waitForSelector(adminTableRowSelector, { state: 'visible', timeout: 5_000 });
+  const navTexts = await visibleTexts(
+    page,
+    '[data-slot="sidebar-content"] [data-slot="sidebar-menu-button"]',
+    20,
+  );
+  if (JSON.stringify(navTexts) !== JSON.stringify(['用户管理', '工单管理'])) {
+    throw new Error(`unexpected staff nav destinations: ${JSON.stringify(navTexts)}`);
+  }
+  const rowCount = await visibleCount(page, adminTableRowSelector);
+  return { navTexts, rowCount: rowCount > 0 ? 'rows' : 'empty' };
 }
 
 export async function runAdminUsersExtremeViewportMatrixInteraction(page) {

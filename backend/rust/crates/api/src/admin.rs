@@ -16,7 +16,7 @@ use v2board_domain::{
 };
 
 use crate::{
-    auth::{require_admin, require_privileged_step_up, require_staff},
+    auth::{require_admin_namespace, require_privileged_step_up, require_staff},
     dialect::{DialectJson, problem_from},
     locale::request_locale,
     route_paths::matches_current_admin_api,
@@ -219,16 +219,25 @@ async fn endpoint_not_found(headers: HeaderMap) -> Problem {
     Problem::localized(Code::EndpointNotFound, request_locale(&headers))
 }
 
-/// Structural admin gate for the modern routes: session auth for every
-/// method, plus the §6 blanket step-up requirement on mutations
+/// Structural admin gate for the modern routes: session auth plus the §6.12
+/// RBAC check for every method (`is_admin` bypasses; staff need a
+/// per-family grant matching the prefix-relative path and access level),
+/// plus the §6 blanket step-up requirement on mutations
 /// (POST/PATCH/PUT/DELETE → 403 `step_up_required` without a valid
 /// `x-v2board-step-up` token). Sensitive reads add their own in-handler
 /// step-up gate (`GET payment-reconciliations` since W11, `GET nodes`
-/// since W13). Never a session teardown: step-up and permission failures
-/// are 403s.
+/// since W13). Never a session teardown: RBAC, step-up, and permission
+/// failures are 403s.
 async fn admin_guard(State(state): State<AppState>, mut request: Request, next: Next) -> Response {
     let locale = request_locale(request.headers());
-    let admin = match require_admin(&state, request.headers()).await {
+    let admin = match require_admin_namespace(
+        &state,
+        request.headers(),
+        request.method(),
+        request.uri().path(),
+    )
+    .await
+    {
         Ok(admin) => admin,
         Err(error) => return problem_from(error, locale).into_response(),
     };

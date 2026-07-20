@@ -57,7 +57,7 @@ vi.mock('react-router', () => ({
 
 vi.mock('@v2board/api-client', async (importOriginal) => ({
   ...(await importOriginal<typeof ApiClientModule>()),
-  user: { info: vi.fn() },
+  user: { info: vi.fn(), checkLogin: vi.fn() },
 }));
 // The account menu's explicit sign-out (revocation + local teardown) lives in
 // lib/api as signOut; the shell only wires the menu item to it.
@@ -69,11 +69,20 @@ vi.mock('@/lib/queries', async (importOriginal) => ({
   useAccountMfa: () => mocks.accountMfa,
 }));
 
-function renderShell({ preloadUserInfo = true }: { preloadUserInfo?: boolean } = {}) {
+function renderShell({
+  preloadUserInfo = true,
+  session = { is_login: true, is_admin: true },
+}: {
+  preloadUserInfo?: boolean;
+  session?: Record<string, unknown>;
+} = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   if (preloadUserInfo) {
     client.setQueryData(adminSessionKeys.userInfo, { email: 'admin@example.com' });
   }
+  // The router middleware always resolves the session probe before the shell
+  // renders, so the shell reads it from the cache (§6.12 nav filtering).
+  client.setQueryData(adminSessionKeys.session, session);
   return render(
     <QueryClientProvider client={client}>
       <AdminLayout />
@@ -128,6 +137,26 @@ describe('AdminLayout', () => {
     expect(document.querySelector('.content-side')).toBeNull();
     expect(document.querySelector('i.si')).toBeNull();
     expect(document.body.innerHTML).not.toContain('v1.7.5');
+  });
+
+  it('shows a staff session only its granted destinations', () => {
+    mocks.location = { pathname: '/user' };
+    renderShell({
+      session: {
+        is_login: true,
+        is_staff: true,
+        admin_permissions: ['tickets:write', 'users:read'],
+      },
+    });
+
+    expect(screen.getByRole('link', { name: '用户管理' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '工单管理' })).toBeInTheDocument();
+    // Ungranted destinations and emptied groups disappear entirely (§6.12).
+    expect(screen.queryByRole('link', { name: '仪表盘' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: '系统配置' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: '审计日志' })).not.toBeInTheDocument();
+    expect(screen.queryByText('设置')).not.toBeInTheDocument();
+    expect(screen.queryByText('指标')).not.toBeInTheDocument();
   });
 
   it('marks the active route and titles the header from the route', () => {

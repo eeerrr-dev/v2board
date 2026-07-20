@@ -7,6 +7,8 @@ import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import type { AdminUserUpdateInput } from '@v2board/api-client';
 import type { AdminUserRow } from '@v2board/types';
+import type { SelectorParam } from 'i18next';
+import { ADMIN_PERMISSION_FAMILIES, type AdminPermissionFamily } from '@/lib/permissions';
 import { useAdminPlans, useAdminUserInfo, useUpdateUserMutation } from '@/lib/queries';
 import { Button } from '@/components/ui/button';
 import { ErrorState } from '@/components/ui/error-state';
@@ -75,6 +77,7 @@ function toFormValues(user: AdminUserEditRecord): UserManageFormValues {
     speed_limit: user.speed_limit ?? null,
     is_admin: user.is_admin ?? 0,
     is_staff: user.is_staff ?? 0,
+    admin_permissions: user.admin_permissions ?? [],
     remarks: user.remarks ?? '',
   };
 }
@@ -99,6 +102,12 @@ function toPayload(values: UserManageFormValues, id: number): AdminUserUpdateInp
     is_admin: values.is_admin ? 1 : 0,
     is_staff: values.is_staff ? 1 : 0,
   };
+  // §6.12: the grant array rides only on staff-relevant saves (currently
+  // staff, or clearing residual grants), keeping ordinary-user PATCH bodies
+  // byte-identical to their pre-RBAC shape.
+  if (!values.is_staff && values.admin_permissions.length === 0) {
+    delete payload.admin_permissions;
+  }
   return payload;
 }
 
@@ -129,6 +138,43 @@ function commissionTypeOptions(t: TFunction) {
     { value: '1', label: t(($) => $.admin.users.commission_type_cycle) },
     { value: '2', label: t(($) => $.admin.users.commission_type_first) },
   ];
+}
+
+// §6.12 staff grants: the form keeps the wire `{family}:read|write` array;
+// each family renders as a none/read/write access select over it.
+const PERMISSION_FAMILY_LABELS: Record<AdminPermissionFamily, SelectorParam> = {
+  config: ($) => $.admin.users.permission_family_config,
+  system: ($) => $.admin.users.permission_family_system,
+  servers: ($) => $.admin.users.permission_family_servers,
+  plans: ($) => $.admin.users.permission_family_plans,
+  orders: ($) => $.admin.users.permission_family_orders,
+  payments: ($) => $.admin.users.permission_family_payments,
+  coupons: ($) => $.admin.users.permission_family_coupons,
+  gift_cards: ($) => $.admin.users.permission_family_gift_cards,
+  users: ($) => $.admin.users.permission_family_users,
+  tickets: ($) => $.admin.users.permission_family_tickets,
+  notices: ($) => $.admin.users.permission_family_notices,
+  knowledge: ($) => $.admin.users.permission_family_knowledge,
+  stats: ($) => $.admin.users.permission_family_stats,
+};
+
+type FamilyAccess = 'none' | 'read' | 'write';
+
+function familyAccess(permissions: string[], family: AdminPermissionFamily): FamilyAccess {
+  if (permissions.includes(`${family}:write`)) return 'write';
+  if (permissions.includes(`${family}:read`)) return 'read';
+  return 'none';
+}
+
+function withFamilyAccess(
+  permissions: string[],
+  family: AdminPermissionFamily,
+  access: FamilyAccess,
+): string[] {
+  const rest = permissions.filter(
+    (value) => value !== `${family}:read` && value !== `${family}:write`,
+  );
+  return access === 'none' ? rest : [...rest, `${family}:${access}`];
 }
 
 function SuffixInput({
@@ -180,6 +226,7 @@ export function UserManageDrawer({
       speed_limit: null,
       is_admin: 0,
       is_staff: 0,
+      admin_permissions: [],
       remarks: '',
     },
   });
@@ -212,6 +259,7 @@ export function UserManageDrawer({
   const commissionType = parseInt(
     String(useWatch({ control: form.control, name: 'commission_type' })),
   );
+  const isStaff = Boolean(useWatch({ control: form.control, name: 'is_staff' }));
   const commissionTypeValue = Number.isNaN(commissionType) ? undefined : String(commissionType);
   const userError = Boolean(open && userId != null && user.isError);
   const userLoading = Boolean(open && userId != null && user.isPending);
@@ -615,6 +663,57 @@ export function UserManageDrawer({
                     </Field>
                   )}
                 />
+                {isStaff ? (
+                  <Controller
+                    control={form.control}
+                    name="admin_permissions"
+                    render={({ field }) => (
+                      <Field data-testid="user-manage-permissions">
+                        <FieldLabel>{t(($) => $.admin.users.permissions_label)}</FieldLabel>
+                        <FieldDescription>
+                          {t(($) => $.admin.users.permissions_hint)}
+                        </FieldDescription>
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          {ADMIN_PERMISSION_FAMILIES.map((family) => (
+                            <div
+                              key={family}
+                              className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2"
+                            >
+                              <span className="text-sm">{t(PERMISSION_FAMILY_LABELS[family])}</span>
+                              <Select
+                                value={familyAccess(field.value, family)}
+                                onValueChange={(access) =>
+                                  field.onChange(
+                                    withFamilyAccess(field.value, family, access as FamilyAccess),
+                                  )
+                                }
+                              >
+                                <SelectTrigger
+                                  className="w-24 shrink-0"
+                                  aria-label={t(PERMISSION_FAMILY_LABELS[family])}
+                                  data-testid={`user-permission-${family}`}
+                                >
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">
+                                    {t(($) => $.admin.users.permission_access_none)}
+                                  </SelectItem>
+                                  <SelectItem value="read">
+                                    {t(($) => $.admin.users.permission_access_read)}
+                                  </SelectItem>
+                                  <SelectItem value="write">
+                                    {t(($) => $.admin.users.permission_access_write)}
+                                  </SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          ))}
+                        </div>
+                      </Field>
+                    )}
+                  />
+                ) : null}
                 <Field>
                   <FieldLabel htmlFor="user-manage-remarks">
                     {t(($) => $.admin.users.remarks)}

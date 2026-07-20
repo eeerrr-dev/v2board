@@ -160,6 +160,8 @@ export const modernAdminOrderFixture = (order) => ({
 export const modernAdminUserFixture = (user) => ({
   ...user,
   password: '',
+  // §6.12: the modern projection always carries the staff grant array.
+  admin_permissions: user.admin_permissions ?? [],
   expired_at: user.expired_at == null ? null : rfc3339FixtureTime(user.expired_at),
   last_login_at: user.last_login_at == null ? null : rfc3339FixtureTime(user.last_login_at),
   created_at: rfc3339FixtureTime(user.created_at),

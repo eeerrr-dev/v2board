@@ -1891,6 +1891,19 @@ const scenarios = [
     readySelector: '[data-testid="audit-page"]',
     visualRetired: true,
   },
+  // §6.12 admin RBAC: a staff session (`is_staff` + grant array) is
+  // native-only — the frozen oracle has no staff namespace — so only its
+  // source-only interaction ever enters here. The /dashboard entry maps to the
+  // ungranted stats family, so the app must land on /user (the first granted
+  // route), where the ready selector resolves.
+  {
+    authenticated: true,
+    label: 'admin-staff-session',
+    path: '/dashboard',
+    readySelector: '[data-slot="table-row"]',
+    staffPermissions: ['tickets:write', 'users:read'],
+    visualRetired: true,
+  },
   {
     authenticated: true,
     label: 'admin-system',

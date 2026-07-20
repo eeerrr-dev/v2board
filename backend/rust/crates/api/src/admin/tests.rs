@@ -91,6 +91,47 @@ fn both_privileged_guards_run_the_mandatory_mfa_gate() {
 }
 
 #[test]
+fn every_admin_route_maps_into_the_rbac_registry() {
+    // §6.12 coverage guard: a new admin route whose first segment is
+    // outside `admin_path_access` would silently fail closed for every
+    // staff grant. Force the mapping to be extended consciously.
+    let source = include_str!("../admin.rs");
+    let router = source
+        .split("fn admin_router")
+        .nth(1)
+        .and_then(|rest| rest.split("fn endpoint_not_found").next())
+        .expect("admin_router precedes endpoint_not_found");
+    let mut routes = 0;
+    for quoted in router.split('"').skip(1).step_by(2) {
+        if !quoted.starts_with('/') {
+            continue;
+        }
+        routes += 1;
+        assert!(
+            v2board_domain::admin::admin_path_access(quoted).is_some(),
+            "admin route {quoted} is outside the §6.12 RBAC registry mapping"
+        );
+    }
+    assert!(routes >= 50, "route extraction broke: found {routes}");
+}
+
+#[test]
+fn admin_guard_authorizes_through_the_rbac_namespace_gate() {
+    // Structural pin: the admin guard must pass method + prefix-relative
+    // path into `require_admin_namespace` so staff grants see the same
+    // path shape as `mfa_exempt_path`.
+    let source = include_str!("../admin.rs");
+    let admin_guard = source
+        .split("async fn admin_guard")
+        .nth(1)
+        .and_then(|rest| rest.split("async fn require_enrolled_mfa").next())
+        .expect("admin_guard precedes require_enrolled_mfa");
+    assert!(admin_guard.contains("require_admin_namespace("));
+    assert!(admin_guard.contains("request.method()"));
+    assert!(admin_guard.contains("request.uri().path()"));
+}
+
+#[test]
 fn config_activation_splits_204_full_activation_from_202_pending() {
     // §6.1: a committed-and-activated PATCH is an empty 204; a durable
     // write this process could not activate is 202 activation-pending

@@ -164,6 +164,32 @@ describe('admin data router', () => {
     expect(mocks.userInfo).toHaveBeenCalledOnce();
   });
 
+  it('rejects a staff identity with no grants and destroys its credential', async () => {
+    setAuthData('staff-token');
+    mocks.checkLogin.mockResolvedValue({ is_login: true, is_staff: true, admin_permissions: [] });
+    const middleware = createRequireAdminMiddleware(new QueryClient());
+
+    await expectRedirect(() => runAuthMiddleware(middleware, '/dashboard'), '/login');
+    expect(getAuthData()).toBeNull();
+  });
+
+  it('lands a staff session on its first granted route instead of an ungranted page', async () => {
+    setAuthData('staff-token');
+    mocks.checkLogin.mockResolvedValue({
+      is_login: true,
+      is_staff: true,
+      admin_permissions: ['tickets:write', 'users:read'],
+    });
+    mocks.userInfo.mockResolvedValue({ email: 'staff@example.com' });
+    const middleware = createRequireAdminMiddleware(queryClient());
+
+    // §6.12: granted routes resolve, an ungranted route re-lands (never a
+    // logout — permission denial must not tear down the session).
+    await expect(runAuthMiddleware(middleware, '/user')).resolves.toBeUndefined();
+    await expectRedirect(() => runAuthMiddleware(middleware, '/dashboard'), '/user');
+    expect(getAuthData()).toBe('staff-token');
+  });
+
   it('lets the route boundary own a shell-identity failure', async () => {
     setAuthData('admin-token');
     const failure = new Error('user info offline');

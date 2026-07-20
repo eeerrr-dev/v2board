@@ -26,6 +26,8 @@ import {
   Wrench,
 } from 'lucide-react';
 import { readCookie } from '@v2board/i18n';
+import type { CheckLoginResult } from '@v2board/types';
+import { sessionAllowsRoute } from '@/lib/permissions';
 import { adminSessionQueryOptions } from '@/lib/session-queries';
 import { useAccountMfa } from '@/lib/queries';
 import { MfaDialog } from '@/components/mfa-dialog';
@@ -132,6 +134,15 @@ const NAV: NavGroup[] = [
   },
 ];
 
+/** §6.12: staff sessions only see the nav destinations their grants can read
+ * (groups left empty disappear); admins keep the full tree. */
+function visibleNav(session: CheckLoginResult): NavGroup[] {
+  return NAV.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => sessionAllowsRoute(session, item.to)),
+  })).filter((group) => group.items.length > 0);
+}
+
 const SIDEBAR_STATE_COOKIE = 'sidebar_state';
 
 function readSidebarDefaultOpen(): boolean {
@@ -151,7 +162,15 @@ function findActiveTitleKey(pathname: string): SelectorParam | undefined {
 // The sidebar lives inside SidebarProvider, so it owns the router hooks and the
 // mobile-sheet close-on-navigate that AdminLayout (which renders the provider)
 // cannot reach through useSidebar.
-function AdminSidebar({ siteTitle, email }: { siteTitle: string; email: string }) {
+function AdminSidebar({
+  siteTitle,
+  email,
+  nav,
+}: {
+  siteTitle: string;
+  email: string;
+  nav: NavGroup[];
+}) {
   const { t } = useTranslation();
   const location = useLocation();
   const { setOpenMobile } = useSidebar();
@@ -183,7 +202,7 @@ function AdminSidebar({ siteTitle, email }: { siteTitle: string; email: string }
       </SidebarHeader>
 
       <SidebarContent role="navigation" aria-label={t(($) => $.admin.nav.primary_nav)}>
-        {NAV.map((group) => (
+        {nav.map((group) => (
           <SidebarGroup key={group.id}>
             {group.titleKey ? (
               <SidebarGroupLabel className="group-data-[collapsible=icon]:mt-0">
@@ -262,6 +281,10 @@ function AdminLayoutContent() {
     ...adminSessionQueryOptions.userInfo(),
     refetchOnMount: false,
   });
+  const { data: session } = useSuspenseQuery({
+    ...adminSessionQueryOptions.session(),
+    refetchOnMount: false,
+  });
   const accountMfa = useAccountMfa();
   const mfaBlocked =
     accountMfa.data?.totp_required === true && accountMfa.data.totp_enabled === false;
@@ -278,7 +301,7 @@ function AdminLayoutContent() {
           (what the old scrollTo effect did) and back/forward restores the
           previous position instead of losing it. */}
       <ScrollRestoration />
-      <AdminSidebar siteTitle={siteTitle} email={userInfo.email} />
+      <AdminSidebar siteTitle={siteTitle} email={userInfo.email} nav={visibleNav(session)} />
 
       <SidebarInset>
         <header

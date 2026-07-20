@@ -14,12 +14,15 @@ use axum::{
     Json,
     body::Body,
     extract::{Extension, Query, State},
-    http::{HeaderMap, HeaderValue, StatusCode, header},
+    http::{HeaderMap, HeaderValue, Method, StatusCode, header},
     response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize};
 use v2board_compat::{ApiError, Code, Problem};
-use v2board_domain::auth::{AuthUser, EmailVerifyInput, ForgetInput, RegisterInput};
+use v2board_domain::{
+    admin::staff_permissions_allow,
+    auth::{AuthUser, EmailVerifyInput, ForgetInput, RegisterInput},
+};
 
 use crate::{
     dialect::{DialectJson, problem_from},
@@ -274,12 +277,19 @@ pub(crate) async fn email_codes(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Bare session-probe body (§5.2): `{is_login: bool, is_admin?: bool}`.
+/// Bare session-probe body (§5.2): `{is_login: bool, is_admin?: bool,
+/// is_staff?: bool, admin_permissions?: string[]}`. The staff pair appears
+/// together for staff sessions — grants may be an empty array — so the admin
+/// SPA can gate its navigation without a second round trip (§6.12).
 #[derive(Debug, Serialize)]
 pub(crate) struct SessionState {
     pub(crate) is_login: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) is_admin: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) is_staff: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) admin_permissions: Option<Vec<String>>,
 }
 
 /// GET /auth/session — the checkLogin successor. A dead or absent bearer is
@@ -291,13 +301,20 @@ pub(crate) async fn session_get(
 ) -> Result<Json<SessionState>, Problem> {
     let locale = request_locale(&headers);
     match require_user(&state, &headers).await {
-        Ok(user) => Ok(Json(SessionState {
-            is_login: true,
-            is_admin: (user.is_admin != 0).then_some(true),
-        })),
+        Ok(user) => {
+            let is_staff = user.is_admin == 0 && user.is_staff != 0;
+            Ok(Json(SessionState {
+                is_login: true,
+                is_admin: (user.is_admin != 0).then_some(true),
+                is_staff: is_staff.then_some(true),
+                admin_permissions: is_staff.then_some(user.admin_permissions),
+            }))
+        }
         Err(error) if error.is_session_expired() => Ok(Json(SessionState {
             is_login: false,
             is_admin: None,
+            is_staff: None,
+            admin_permissions: None,
         })),
         Err(error) => Err(problem_from(error, locale)),
     }
@@ -399,15 +416,26 @@ fn bounded_user_agent(headers: &HeaderMap) -> Option<String> {
     Some(value[..boundary].to_string())
 }
 
-pub(crate) async fn require_admin(
+/// §6.12 admin-namespace gate: `is_admin` has full access; staff enter with
+/// per-family grants (GET/HEAD → `{family}:read`, mutations →
+/// `{family}:write`, `write` implying `read`; the caller's own `account/mfa`
+/// family needs no grant). Everyone else — and every ungranted or unmapped
+/// path — gets the 403 `permission_denied`, never a session teardown.
+pub(crate) async fn require_admin_namespace(
     state: &AppState,
     headers: &HeaderMap,
+    method: &Method,
+    path: &str,
 ) -> Result<AuthUser, ApiError> {
     let user = require_user(state, headers).await?;
-    if user.is_admin == 0 {
-        return Err(Problem::localized(Code::PermissionDenied, request_locale(headers)).into());
+    if user.is_admin != 0 {
+        return Ok(user);
     }
-    Ok(user)
+    let write = !matches!(*method, Method::GET | Method::HEAD);
+    if user.is_staff != 0 && staff_permissions_allow(&user.admin_permissions, path, write) {
+        return Ok(user);
+    }
+    Err(Problem::localized(Code::PermissionDenied, request_locale(headers)).into())
 }
 
 pub(crate) async fn require_staff(
@@ -712,6 +740,7 @@ mod tests {
             email: "admin@example.test".to_string(),
             is_admin: 1,
             is_staff: 0,
+            admin_permissions: Vec::new(),
             session_id: "session".to_string(),
             authenticated_at: 1_000,
             password_authenticated: true,

@@ -81,6 +81,9 @@ pub struct AuthUser {
     pub email: String,
     pub is_admin: i16,
     pub is_staff: i16,
+    /// Granular staff grants (docs/api-dialect.md §6.12); `is_admin`
+    /// bypasses them and ordinary users carry an empty list.
+    pub admin_permissions: Vec<String>,
     pub session_id: String,
     pub authenticated_at: i64,
     pub password_authenticated: bool,
@@ -258,6 +261,7 @@ impl AuthService {
             email: user.email,
             is_admin: user.is_admin,
             is_staff: user.is_staff,
+            admin_permissions: user.admin_permissions.0,
             session_id: identity.session,
             authenticated_at: session_meta.login_at,
             password_authenticated: session_meta.password_authenticated,

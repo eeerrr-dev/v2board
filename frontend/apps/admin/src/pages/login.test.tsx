@@ -176,16 +176,41 @@ describe('Admin LoginPage', () => {
   });
 
   it('rejects a non-admin session without persisting its credential', async () => {
+    // §6.12: a non-admin login answers with a session probe; an ordinary user
+    // (no staff pair) is denied and the transient credential is destroyed.
     mocks.passportLogin.mockResolvedValue({ is_admin: false, auth_data: 'jwt' });
+    mocks.userCheckLogin.mockResolvedValue({ is_login: true });
 
     const { user } = renderLogin();
     await user.type(screen.getByPlaceholderText('邮箱'), 'user@example.com');
     await user.type(screen.getByPlaceholderText('密码'), 'password');
     await user.click(screen.getByTestId('admin-login-submit'));
 
-    await waitFor(() => expect(mocks.passportLogin).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalledTimes(1));
     expect(localStorage.getItem('authorization')).toBeNull();
     expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
+  it('logs a staff account in through the session probe and lands on a granted route', async () => {
+    // §6.12: the login body only carries `is_admin`, so a staff account proves
+    // its grants via the session probe. The /dashboard target maps to the
+    // ungranted stats family — the landing falls to the first granted route.
+    mocks.passportLogin.mockResolvedValue({ is_admin: false, auth_data: 'staff-jwt' });
+    mocks.userCheckLogin.mockResolvedValue({
+      is_login: true,
+      is_staff: true,
+      admin_permissions: ['tickets:write', 'users:read'],
+    });
+    mocks.userInfo.mockResolvedValue({ email: 'staff@example.com' });
+
+    const { user } = renderLogin();
+    await user.type(screen.getByPlaceholderText('邮箱'), 'staff@example.com');
+    await user.type(screen.getByPlaceholderText('密码'), 'password');
+    await user.click(screen.getByTestId('admin-login-submit'));
+
+    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/user', { replace: true }));
+    expect(localStorage.getItem('authorization')).toBe('staff-jwt');
+    expect(mocks.toastError).not.toHaveBeenCalled();
   });
 
   it('delegates a login mutation failure to the shared MutationCache presenter', async () => {

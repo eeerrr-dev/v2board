@@ -557,7 +557,7 @@ response is `problem+json` on error.
 | POST `/passport/auth/stepUp` | POST `/auth/step-up` | json `{password}` | bare `{step_up_token, expires_in}` | |
 | POST `/passport/auth/getQuickLoginUrl` | POST `/auth/quick-login-url` | json `{redirect?}` | bare `{url}` | Consolidates with the duplicate `/user/getQuickLoginUrl` (both require the same user auth; one endpoint remains). |
 | POST `/passport/comm/sendEmailVerify` | POST `/auth/email-codes` | json `{email, is_forget?: bool, recaptcha_data?}` | empty | `isforget: 0/1` → `is_forget: bool`. |
-| GET `/user/checkLogin` | GET `/auth/session` | none | bare `{is_login: bool, is_admin?: bool}` | Session probe moves out of `/user`. |
+| GET `/user/checkLogin` | GET `/auth/session` | none | bare `{is_login: bool, is_admin?: bool, is_staff?: bool, admin_permissions?: string[]}` | Session probe moves out of `/user`. The staff pair is a §6.12 native addition: present together exactly for staff (non-admin) sessions — `admin_permissions` may be `[]` — so the admin SPA can gate its navigation without a second round trip. Admin sessions carry only `is_admin: true`. |
 | POST `/user/logout` | DELETE `/auth/session` | none | empty | Dead/absent bearer stays a successful no-op. |
 
 ### 5.3 User account & profile
@@ -667,6 +667,14 @@ decisions, not side effects): `GET orders/{trade_no}` (was POST
 response is server-redacted via `redact_payment_config`). An
 interaction-parity scenario must cover a PATCH/DELETE step-up rejection.
 
+**Admin-namespace RBAC (§6.12).** The shared admin guard authorizes every
+request through the fixed permission registry: `is_admin` accounts have
+full access; staff accounts enter the admin namespace with per-family
+grants (GET/HEAD needs `{family}:read`, mutations need `{family}:write`,
+`write` implies `read`; the caller's own `account/mfa` family needs no
+grant). Everyone else — and every ungranted or registry-unmapped path — is
+the 403 `permission_denied`, never a session teardown.
+
 Legacy `save`-style upserts split: `POST` creates, `PATCH …/{id}` updates
 (with §4.4 double-Option semantics). Legacy toggle actions (`…/show`,
 `plan/update`, `server/{type}/update`) merge into the same `PATCH` with a
@@ -765,7 +773,7 @@ family entirely; it migrates in W14 alongside the staff mirror.
 | --- | --- | --- | --- | --- |
 | GET `user/fetch` | GET `users` | query + DSL (§7) | page | |
 | GET `user/getUserInfoById?id=` | GET `users/{id}` | none | bare | |
-| POST `user/update` | PATCH `users/{id}` | json | empty | `id` moves to path; §4.4 for nullable fields (`plan_id`, `expired_at`, `device_limit`, …); scaled cents/bytes stay integers. |
+| POST `user/update` | PATCH `users/{id}` | json | empty | `id` moves to path; §4.4 for nullable fields (`plan_id`, `expired_at`, `device_limit`, …); scaled cents/bytes stay integers. `admin_permissions?: string[]` (§6.12) is a full-replacement grant array validated against the fixed registry (422 on unregistered entries; `[]` revokes all; absent retains — the column is NOT NULL, so there is no null-clear arm). |
 | POST `user/setInviteUser` | POST `users/{id}/set-inviter` | json `{invite_user_email}` | empty | Named non-CRUD action. |
 | POST `user/generate` | POST `users` | json | csv/json | Bulk generate; `expired_at` RFC 3339. |
 | POST `user/dumpCSV` | POST `users/export` | json `{filter?}` (DSL) | csv/json | Export stays POST (filter payload). |
@@ -890,6 +898,69 @@ mirror it, so staff accounts cannot read the operator trail.
 | Route | Req | Resp | Notes |
 | --- | --- | --- | --- |
 | GET `system/audit-logs` | query + filter DSL (§7) | page | Row shape `{id, actor_id, actor_email, session_id, surface, method, path, status_code, client_ip, request_id, created_at}`; `surface` is `admin`\|`staff`, `created_at` is RFC 3339, `client_ip`/`request_id` nullable. Default sort `created_at desc`. |
+
+### 6.12 Granular admin RBAC (native addition)
+
+Per-family staff grants over the admin namespace. Like §6.10/§6.11 this is
+a native addition with no legacy counterpart and no §13.1 two-world
+mapping. Legacy staff (`is_staff`) had only the fixed §6.9 staff-prefix
+allow-list; §6.12 additionally lets staff enter the **admin** namespace
+(under the dynamic `secure_path` prefix) with explicit, operator-assigned
+per-family permissions. The §6.9 staff namespace itself is unchanged and
+needs no grants.
+
+**Registry (fixed, code-owned).** A permission is the string
+`{family}:read` or `{family}:write` over exactly these families, which
+partition the admin route table by first path segment:
+
+| Family | Admin route segments |
+| --- | --- |
+| `config` | `config`, `email-templates`, `telegram-webhook`, `test-mail` |
+| `system` | `system` (status, queues, logs, audit-logs) |
+| `servers` | `nodes`, `server-groups`, `server-routes`, `servers` |
+| `plans` | `plans` |
+| `orders` | `orders` |
+| `payments` | `payments`, `payment-providers`, `payment-reconciliations` |
+| `coupons` | `coupons` |
+| `gift_cards` | `gift-cards` |
+| `users` | `users` |
+| `tickets` | `tickets` |
+| `notices` | `notices` |
+| `knowledge` | `knowledge`, `knowledge-categories` |
+| `stats` | `stats` |
+
+Operators pick from the registry but cannot extend it; grant writes are
+validated against it (422 `validation_failed` on unregistered entries).
+
+**Semantics.**
+
+- `is_admin` bypasses the registry entirely — full admin access, no grant
+  list consulted. Ordinary users (neither flag) never enter the admin
+  namespace regardless of stored grants.
+- Staff authorization is method-mapped: GET/HEAD requires `{family}:read`,
+  every mutation requires `{family}:write`; `write` implies `read`.
+- The caller's own `account/mfa` family requires no grant for any
+  admin-namespace principal, so §6.10 enrollment (and `admin_mfa_force`
+  compliance) stays reachable for an ungranted staff account.
+- Every denial — ungranted family, unmapped path, non-privileged caller —
+  is the 403 `permission_denied`, never a session teardown (§3.2). The §6
+  structural gates still apply on top: mandatory-MFA enrollment
+  (`admin_mfa_force`, §6.10), the blanket mutation step-up, in-handler
+  sensitive-read step-ups, and the §6.11 audit trail record staff actors
+  in the admin namespace exactly like admins.
+- Grants are read from the account row on every request: a grant edit
+  takes effect immediately and never revokes sessions (role-flag changes
+  to `is_admin`/`is_staff` keep their existing session-revoking behavior).
+
+**Storage & transport.** Grants live on the user row
+(`users.admin_permissions`, `JSONB NOT NULL DEFAULT '[]'`). The session
+probe exposes the §5.2 staff pair (`is_staff: true` +
+`admin_permissions`, possibly `[]`) so the admin SPA gates its shell and
+navigation without extra round trips; admin user rows/detail carry
+`admin_permissions` (§6.6), and PATCH `users/{id}` accepts the
+full-replacement validated array. Imported legacy staff start with `[]`
+(the migration default) — an operator grants families consciously
+post-import.
 
 ---
 

@@ -250,6 +250,8 @@ function serializeAdminUserPatch(data: AdminUserUpdateInput): Record<string, unk
   for (const flag of ['banned', 'is_admin', 'is_staff'] as const) {
     if (data[flag] !== undefined) body[flag] = Boolean(data[flag]);
   }
+  // §6.12: the staff grant array crosses verbatim (full replacement).
+  set('admin_permissions', data.admin_permissions);
   for (const [field, scale] of Object.entries(ADMIN_USER_SCALED_FIELDS)) {
     const value = data[field as AdminUserScaledField];
     if (value === undefined || value === null || value === '') continue;

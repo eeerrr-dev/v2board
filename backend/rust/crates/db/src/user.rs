@@ -12,6 +12,7 @@ pub struct UserAuthRow {
     pub banned: i16,
     pub is_admin: i16,
     pub is_staff: i16,
+    pub admin_permissions: sqlx::types::Json<Vec<String>>,
 }
 
 #[derive(Debug, Clone, FromRow)]
@@ -91,7 +92,7 @@ pub async fn find_user_for_auth(
 ) -> Result<Option<UserAuthRow>, sqlx::Error> {
     sqlx::query_as::<_, UserAuthRow>(
         r#"
-        SELECT id, email, password, password_algo, password_salt, session_epoch, banned, is_admin, is_staff
+        SELECT id, email, password, password_algo, password_salt, session_epoch, banned, is_admin, is_staff, admin_permissions
         FROM users
         WHERE lower(btrim(email)) = lower(btrim($1))
         LIMIT 1
@@ -108,7 +109,7 @@ pub async fn find_user_for_auth_by_id(
 ) -> Result<Option<UserAuthRow>, sqlx::Error> {
     sqlx::query_as::<_, UserAuthRow>(
         r#"
-        SELECT id, email, password, password_algo, password_salt, session_epoch, banned, is_admin, is_staff
+        SELECT id, email, password, password_algo, password_salt, session_epoch, banned, is_admin, is_staff, admin_permissions
         FROM users
         WHERE id = $1
         LIMIT 1

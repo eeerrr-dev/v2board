@@ -77,6 +77,7 @@ const dialectGoldenSchemas: Record<string, z.ZodType> = {
   'auth.session.admin.json': sessionStateSchema,
   'auth.session.json': sessionStateSchema,
   'auth.session.logged-out.json': sessionStateSchema,
+  'auth.session.staff.json': sessionStateSchema,
   'auth.step-up.json': stepUpGrantSchema,
   // §6.2/§6.4 (W11): the admin commerce family — bare arrays for plans,
   // payments, and payment-providers; `{items, total}` pages for orders and

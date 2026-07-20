@@ -9,6 +9,7 @@ import { LogIn, ShieldCheck } from 'lucide-react';
 import { hasProblemCode, passport } from '@v2board/api-client';
 import { apiClient } from '@/lib/api';
 import { logout, setAuthData, type AdminLoginLoaderData } from '@/lib/auth';
+import { canEnterAdminNamespace, firstAllowedRoute, sessionAllowsRoute } from '@/lib/permissions';
 import { adminSessionQueryOptions } from '@/lib/session-queries';
 import { getAdminBackgroundUrl, getAdminLogo, getAdminTitle } from '@/lib/runtime-config';
 import { Button } from '@/components/ui/button';
@@ -77,20 +78,41 @@ export default function LoginPage() {
     defaultValues: { email: '', password: '', totp_code: '' },
   });
 
+  // §6.12: the login body only carries `is_admin`; a staff account proves its
+  // grants through the session probe before entering the admin namespace.
+  const enterAsStaff = async () => {
+    try {
+      const session = await queryClient.fetchQuery(adminSessionQueryOptions.session());
+      if (!canEnterAdminNamespace(session)) {
+        logout();
+        toast.error(t(($) => $.admin.auth.not_admin));
+        return;
+      }
+      void queryClient.prefetchQuery(adminSessionQueryOptions.userInfo());
+      const target = sessionAllowsRoute(session, redirectTarget)
+        ? redirectTarget
+        : firstAllowedRoute(session);
+      void navigate(target, { replace: true });
+    } catch {
+      logout();
+      toast.error(t(($) => $.admin.auth.not_admin));
+    }
+  };
+
   const submit = form.handleSubmit(({ email, password, totp_code }) => {
     const code = totp_code?.trim();
     login.mutate(
       { email, password, ...(mfaRequired && code ? { totp_code: code } : {}) },
       {
         onSuccess: (result) => {
-          if (!result.is_admin) {
-            logout();
-            toast.error(t(($) => $.admin.auth.not_admin));
+          if (result.is_admin) {
+            setAuthData(result.auth_data);
+            void queryClient.prefetchQuery(adminSessionQueryOptions.userInfo());
+            void navigate(redirectTarget, { replace: true });
             return;
           }
           setAuthData(result.auth_data);
-          void queryClient.prefetchQuery(adminSessionQueryOptions.userInfo());
-          void navigate(redirectTarget, { replace: true });
+          void enterAsStaff();
         },
         onError: (error) => {
           if (hasProblemCode(error, 'mfa_code_required')) {

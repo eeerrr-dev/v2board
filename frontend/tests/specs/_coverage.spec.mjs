@@ -24,14 +24,17 @@ test.describe('parity: coverage', () => {
     // Source-only runs skip the cross-world oracle comparison, so each one must
     // be a deliberate exception: the axe gate (the oracle is not a valid a11y
     // baseline), the §10.3 hash-entry boot translator (the oracle is
-    // hash-routed by design), and the native-only /audit surface (the oracle
-    // has no counterpart page).
+    // hash-routed by design), the native-only /audit surface (the oracle has
+    // no counterpart page), and the §6.12 staff RBAC pair (the oracle
+    // predates staff grants).
     expect(
       interactions.filter((interaction) => interaction.sourceOnly).map(({ label }) => label),
     ).toEqual([
       'user-register-legacy-hash-entry',
       'admin-plan-legacy-hash-entry',
       'admin-audit-filters',
+      'admin-users-staff-permissions',
+      'admin-staff-session-gating',
       'a11y-user-login',
       'a11y-admin-login',
       'a11y-user-dashboard',

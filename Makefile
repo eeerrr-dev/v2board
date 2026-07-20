@@ -56,7 +56,7 @@ INTERACTION_PARITY_SCENARIOS ?= user-login-form-language user-login-language-per
 	admin-notice-save-failure admin-notice-edit-modal admin-notices-fetch-timeout admin-knowledge-create-drawer admin-knowledge-save-failure admin-knowledge-edit-drawer admin-knowledge-fetch-timeout admin-users-filter-input \
 	admin-users-filter-field-select-dropdown admin-users-filter-expiry-picker admin-users-pagination-matrix admin-users-sort-matrix admin-users-fetch-api-500 admin-users-fetch-timeout admin-user-bulk-ban-confirm admin-user-bulk-delete-confirm \
 	admin-user-destructive-failure-matrix admin-user-export-download-matrix admin-user-create-modal admin-user-create-plan-select-dropdown admin-user-create-expiry-picker admin-user-send-mail-modal admin-user-send-mail-submit-matrix admin-user-reset-secret-confirm \
-	admin-user-delete-confirm admin-user-copy-action admin-user-edit-action admin-user-update-validation-failure admin-user-assign-action admin-user-orders-action admin-user-invite-action admin-user-traffic-action \
+	admin-user-delete-confirm admin-user-copy-action admin-user-edit-action admin-user-update-validation-failure admin-users-staff-permissions admin-staff-session-gating admin-user-assign-action admin-user-orders-action admin-user-invite-action admin-user-traffic-action \
 	admin-users-extreme-viewport-matrix a11y-user-login a11y-admin-login a11y-user-dashboard a11y-admin-users \
 	a11y-user-register a11y-user-forget a11y-user-plans a11y-user-plan-checkout a11y-user-orders a11y-user-node a11y-user-traffic a11y-user-invite a11y-user-tickets a11y-user-knowledge a11y-user-profile \
 	a11y-admin-config a11y-admin-plans a11y-admin-server-manage a11y-admin-orders a11y-admin-coupons a11y-admin-notices a11y-admin-tickets a11y-admin-audit

@@ -67,6 +67,7 @@ import {
   runAdminTicketsReplyFilterInteraction,
 } from './runners/admin/ticket.mjs';
 import {
+  runAdminStaffSessionGatingInteraction,
   runAdminUserAssignActionInteraction,
   runAdminUserBulkBanConfirmInteraction,
   runAdminUserBulkDeleteConfirmInteraction,
@@ -83,6 +84,7 @@ import {
   runAdminUserResetSecretConfirmInteraction,
   runAdminUserSendMailModalInteraction,
   runAdminUserSendMailSubmitMatrixInteraction,
+  runAdminUserStaffPermissionsInteraction,
   runAdminUserTrafficActionInteraction,
   runAdminUserUpdateValidationFailureInteraction,
   runAdminUsersExtremeViewportMatrixInteraction,
@@ -1106,6 +1108,24 @@ export const interactions = [
     label: 'admin-user-update-validation-failure',
     run: runAdminUserUpdateValidationFailureInteraction,
     scenarioLabel: 'admin-users',
+  },
+  {
+    // §6.12 admin RBAC: the staff-grants editor and the staff-session
+    // namespace gate are native-only — the frozen oracle predates RBAC — so
+    // both runners assert the contract directly instead of comparing worlds.
+    label: 'admin-users-staff-permissions',
+    run: runAdminUserStaffPermissionsInteraction,
+    scenarioLabel: 'admin-users',
+    sourceOnly: true,
+  },
+  {
+    // Desktop-only: the assertion reads the expanded sidebar's destination
+    // list, which the mobile viewport keeps inside a closed sheet.
+    label: 'admin-staff-session-gating',
+    run: runAdminStaffSessionGatingInteraction,
+    scenarioLabel: 'admin-staff-session',
+    sourceOnly: true,
+    viewports: ['desktop'],
   },
   {
     label: 'admin-user-assign-action',

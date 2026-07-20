@@ -1042,6 +1042,15 @@ export function apiFixtureResponse(
       if (method === 'DELETE') return v2Empty();
       const isLogin = !(scenario.forceUserUnauthorized || scenario.forceAdminUnauthorized);
       const isAdmin = isAdminScenario && !scenario.forceCheckLoginNotAdmin;
+      // §6.12: a staff scenario probes as `is_staff` + its grant array
+      // (golden auth.session.staff) instead of the admin flag.
+      if (isLogin && isAdmin && scenario.staffPermissions) {
+        return v2Body({
+          admin_permissions: scenario.staffPermissions,
+          is_login: true,
+          is_staff: true,
+        });
+      }
       // Mirror the Rust wire (golden auth.session*): `is_admin` appears only
       // on a logged-in admin session.
       return v2Body(isLogin && isAdmin ? { is_admin: true, is_login: true } : { is_login: isLogin });

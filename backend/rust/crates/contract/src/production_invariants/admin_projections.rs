@@ -41,6 +41,7 @@ const ADMIN_USER_ROW_KEYS: &[&str] = &[
     "banned",
     "is_admin",
     "is_staff",
+    "admin_permissions",
     "invite_user_id",
     "discount",
     "commission_type",
