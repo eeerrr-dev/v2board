@@ -36,8 +36,12 @@ export class AppShellBoundary extends Component<AppShellBoundaryProps, AppShellB
           className="flex min-h-screen items-center justify-center bg-background p-6"
         >
           <div className="flex max-w-sm flex-col items-center gap-4 text-center">
-            <h1 className="text-lg font-semibold text-foreground">页面出错了 / Something went wrong</h1>
-            <p className="text-sm text-muted-foreground">请刷新页面重试。Please refresh the page and try again.</p>
+            <h1 className="text-lg font-semibold text-foreground">
+              页面出错了 / Something went wrong
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              请刷新页面重试。Please refresh the page and try again.
+            </p>
             <button
               type="button"
               onClick={() => window.location.reload()}

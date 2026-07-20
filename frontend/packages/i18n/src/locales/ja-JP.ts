@@ -171,7 +171,8 @@ const jaJP: Translations = {
     import_to: 'インポート先:',
     one_click_subscribe: 'ワンクリックインポート',
     scan_qrcode_subscribe: 'QRコードをスキャンしてサブスクを設定',
-    qrcode_client_tip: 'QRコード読み取りに対応したクライアントでサブスクリプションを設定してください',
+    qrcode_client_tip:
+      'QRコード読み取りに対応したクライアントでサブスクリプションを設定してください',
     use_tutorial: 'ご利用方法がわからない方はナレッジベースをご閲覧ください',
     shortcuts: 'ショートカット',
     shortcut_tutorial: 'チュートリアルを表示',
