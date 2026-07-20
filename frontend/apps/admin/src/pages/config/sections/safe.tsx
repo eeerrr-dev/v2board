@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import type { FormCtx } from '../schema';
 import { Section, SwitchRow, TextRow, TextareaRow } from '../rows';
-import { isBackendEnabled, parseBackendInteger, splitComma } from '../values';
+import { isBackendEnabled } from '../values';
 
 export function SafeSection({ ctx }: { ctx: FormCtx }) {
   const { t } = useTranslation();
@@ -60,7 +60,6 @@ export function SafeSection({ ctx }: { ctx: FormCtx }) {
           placeholder={t(($) => $.admin.config.safe.whitelist_suffix_placeholder)}
           rows={4}
           indent
-          coerce={splitComma}
         />
       ) : null}
       <SwitchRow
@@ -109,7 +108,6 @@ export function SafeSection({ ctx }: { ctx: FormCtx }) {
             description={t(($) => $.admin.config.safe.register_limit_count_desc)}
             placeholder={t(($) => $.admin.config.input_placeholder)}
             indent
-            coerce={parseBackendInteger}
           />
           <TextRow
             ctx={ctx}
@@ -119,7 +117,6 @@ export function SafeSection({ ctx }: { ctx: FormCtx }) {
             description={t(($) => $.admin.config.safe.register_limit_expire_desc)}
             placeholder={t(($) => $.admin.config.input_placeholder)}
             indent
-            coerce={parseBackendInteger}
           />
         </>
       ) : null}
@@ -140,7 +137,6 @@ export function SafeSection({ ctx }: { ctx: FormCtx }) {
             description={t(($) => $.admin.config.safe.password_limit_count_desc)}
             placeholder={t(($) => $.admin.config.input_placeholder)}
             indent
-            coerce={parseBackendInteger}
           />
           <TextRow
             ctx={ctx}
@@ -150,7 +146,6 @@ export function SafeSection({ ctx }: { ctx: FormCtx }) {
             description={t(($) => $.admin.config.safe.password_limit_expire_desc)}
             placeholder={t(($) => $.admin.config.input_placeholder)}
             indent
-            coerce={parseBackendInteger}
           />
         </>
       ) : null}

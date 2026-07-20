@@ -76,4 +76,5 @@ export const adminPlans = {
   price_out_of_range: '金额超出可保存范围',
   name_required: '套餐名称不能为空',
   group_required: '权限组不能为空',
+  force_update_edit_only: '强制更新仅适用于已有套餐',
 };

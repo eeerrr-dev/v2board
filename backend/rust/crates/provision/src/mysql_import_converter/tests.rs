@@ -90,6 +90,7 @@ fn complete_source_row(mapping: &TableMapping) -> SourceRow {
     }
     for column in mapping.transformed_columns {
         let value = match column.rule {
+            ColumnRule::Boolean01 => SourceValue::I64(1),
             ColumnRule::ExactDecimal => SourceValue::Text("1".to_string()),
             ColumnRule::Json(JsonShape::Any) => SourceValue::Text("{}".to_string()),
             ColumnRule::Json(JsonShape::Array) => SourceValue::Text("[]".to_string()),
@@ -183,7 +184,28 @@ fn schema_v1_discards_only_audited_operational_history() {
     for table in DISCARDED_SOURCE_TABLES {
         assert!(mapping_for_source(table).is_none());
     }
-    assert_eq!(built_derived_mappings().count(), 1);
+    assert_eq!(built_derived_mappings().count(), 2);
+}
+
+#[test]
+fn plan_mapping_uses_native_booleans_and_consumes_prices_for_normalization() {
+    let plan = mapping_for_source("v2_plan").expect("plan mapping");
+    let transformed = transform_row(plan, &complete_source_row(plan)).expect("transform plan");
+    assert_eq!(transformed.get("show"), Some(&CanonicalValue::Bool(true)));
+    assert_eq!(transformed.get("renew"), Some(&CanonicalValue::Bool(true)));
+    assert!(!transformed.contains_key("month_price"));
+    assert!(
+        plan.consumed_source_columns
+            .iter()
+            .any(|column| column.source == "month_price")
+    );
+
+    let mut invalid = complete_source_row(plan);
+    invalid.insert("show".to_string(), SourceValue::I64(2));
+    assert!(matches!(
+        transform_row(plan, &invalid),
+        Err(ConverterError::InvalidBoolean { .. })
+    ));
 }
 
 #[test]
@@ -255,10 +277,27 @@ fn sql_is_one_ordered_source_and_copy_stream_per_table() {
 
     let verify = target_verify_stream_sql(user).expect("verify sql");
     assert!(verify.starts_with("SELECT \"id\", \"invite_user_id\""));
-    assert!(verify.ends_with("FROM \"users\" ORDER BY \"id\" ASC"));
+    assert!(verify.ends_with("FROM \"users\" ORDER BY \"users\".\"id\" ASC"));
 
     let reset = sequence_reset_sql(user).expect("sequence reset");
     assert!(reset.contains("GREATEST(COALESCE(MAX(id), 1), 1)"));
+}
+
+#[test]
+fn normalized_plan_period_verification_orders_by_native_enum_not_text_alias() {
+    let plan_prices = DERIVED_MAPPINGS
+        .iter()
+        .find(|mapping| mapping.kind == DerivedMappingKind::PlanPrices)
+        .expect("plan-price derived mapping");
+    let verify = derived_target_verify_stream_sql(plan_prices).expect("plan-price verify sql");
+    assert_eq!(
+        verify,
+        "SELECT \"plan_id\", \"period\"::text AS \"period\", \"amount_minor\" FROM \"plan_price\" ORDER BY \"plan_price\".\"plan_id\" ASC, \"plan_price\".\"period\" ASC"
+    );
+    assert!(
+        !verify.ends_with("ORDER BY \"plan_id\" ASC, \"period\" ASC"),
+        "an unqualified period would resolve to the projected TEXT alias"
+    );
 }
 
 #[test]

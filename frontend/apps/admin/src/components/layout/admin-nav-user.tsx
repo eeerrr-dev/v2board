@@ -4,7 +4,7 @@ import { ChevronsUpDown, LogOut, ShieldCheck } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { signOut } from '@/lib/api';
 import { MfaDialog } from '@/components/mfa-dialog';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback } from '@v2board/ui/avatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,13 +12,8 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  useSidebar,
-} from '@/components/ui/sidebar';
+} from '@v2board/ui/dropdown-menu';
+import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from '@v2board/ui/sidebar';
 
 interface AdminNavUserProps {
   email: string;

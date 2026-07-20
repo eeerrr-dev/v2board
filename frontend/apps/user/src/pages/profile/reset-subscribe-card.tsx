@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertCircle, RefreshCcw } from 'lucide-react';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@v2board/ui/alert';
+import { Button } from '@v2board/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@v2board/ui/card';
 import { useResetSubscribeMutation } from '@/lib/queries';
 import { toast } from '@/lib/toast';
 import { ProfileConfirmDialog, SectionIcon } from './profile-ui';

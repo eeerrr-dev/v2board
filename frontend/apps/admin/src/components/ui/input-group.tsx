@@ -1,9 +1,9 @@
 import { Slot as SlotPrimitive } from 'radix-ui';
 import { type ComponentProps } from 'react';
-import { cn } from '@/lib/cn';
-import { Button } from './button';
-import { Input } from './input';
-import { Textarea } from './textarea';
+import { cn } from '@v2board/ui/cn';
+import { Button } from '@v2board/ui/button';
+import { Input } from '@v2board/ui/input';
+import { Textarea } from '@v2board/ui/textarea';
 
 function InputGroup({ className, ...props }: ComponentProps<'div'>) {
   return (

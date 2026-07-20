@@ -17,6 +17,7 @@ import {
   fetchPayments as fetchAdminPayments,
   fetchServerNodes,
   fetchConfig,
+  fetchConfigAtAdminPath,
   fetchSystemLogs,
   generateCoupon,
   generateGiftcard,
@@ -41,6 +42,7 @@ import { config as fetchGuestConfig } from './endpoints/guest';
 import { login, tokenLogin } from './endpoints/passport';
 import * as passportEndpoints from './endpoints/passport';
 import * as userEndpoints from './endpoints/user';
+import { decimalToMoneyMinor } from './money';
 
 function textBuffer(text: string): ArrayBuffer {
   return new TextEncoder().encode(text).buffer as ArrayBuffer;
@@ -106,6 +108,7 @@ function makePlan(overrides: Record<string, unknown> = {}) {
     onetime_price: null,
     reset_price: null,
     capacity_limit: null,
+    count: 0,
     created_at: '2023-11-14T22:13:20Z',
     updated_at: '2023-11-14T22:13:20Z',
     ...overrides,
@@ -117,6 +120,7 @@ function makePlan(overrides: Record<string, unknown> = {}) {
 // `commission_withdraw_limit` decimal-string exception.
 function makeAdminConfig() {
   return {
+    revision: 7,
     ticket: { ticket_status: 0 },
     deposit: { deposit_bounus: ['50:18', '100:38'] },
     invite: {
@@ -172,7 +176,7 @@ function makeAdminConfig() {
     },
     server: {
       server_api_url: 'https://node.example.test',
-      server_token: 'token',
+      server_token: '********',
       server_pull_interval: 60,
       server_push_interval: 60,
       server_node_report_min_traffic: 0,
@@ -184,13 +188,13 @@ function makeAdminConfig() {
       email_host: 'smtp.example.test',
       email_port: 465,
       email_username: 'mailer',
-      email_password: 'password',
+      email_password: '********',
       email_encryption: 'ssl',
       email_from_address: 'noreply@example.test',
     },
     telegram: {
       telegram_bot_enable: true,
-      telegram_bot_token: 'bot-token',
+      telegram_bot_token: '********',
       telegram_discuss_link: 'https://t.me/example',
     },
     app: {
@@ -210,7 +214,7 @@ function makeAdminConfig() {
       email_whitelist_suffix: ['qq.com', 'gmail.com'],
       email_gmail_limit_enable: true,
       recaptcha_enable: true,
-      recaptcha_key: 'secret',
+      recaptcha_key: '********',
       recaptcha_site_key: 'site',
       register_limit_by_ip_enable: true,
       register_limit_count: 3,
@@ -360,6 +364,26 @@ describe('createApiClient', () => {
     await expect(login(client, { email: 'a@b.c', password: 'x' })).rejects.toBeInstanceOf(
       ApiContractError,
     );
+  });
+
+  it('rejects a different 2xx status before parsing an otherwise valid body', async () => {
+    const client = createApiClient({ baseURL: '/api/v1' });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onPost('/resources').reply(200, { id: 7 });
+
+    const error = await client
+      .request({
+        url: '/resources',
+        method: 'POST',
+        expectedStatus: 201,
+        responseSchema: z.object({ id: z.number() }),
+      })
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiContractError);
+    expect((error as Error).cause).toMatchObject({
+      message: 'Expected HTTP 201, received 200',
+    });
   });
 
   it('rejects malformed core query payloads across guest, user, and admin surfaces', async () => {
@@ -1043,11 +1067,12 @@ describe('createApiClient', () => {
     expect(JSON.parse(String(mock.history.patch[0]?.data))).toEqual({ renew: false });
   });
 
-  it('uses the merged boolean-flag PATCH shape for admin plan toggles', () => {
+  it('uses the generated plan PATCH operation for admin plan toggles', () => {
     const source = readFileSync(new URL('./endpoints/admin/commerce.ts', import.meta.url), 'utf8');
 
-    expect(source).toContain("key: 'show' | 'renew', value: boolean");
-    expect(source).toContain('data: { [key]: value }');
+    expect(source).toContain("key: 'show' | 'renew',");
+    expect(source).toContain('internalApiOperations.adminPlanPatch');
+    expect(source).toContain('internalApiPath(operation.adminPath, { id })');
     expect(source).not.toContain("adminPostTrue(client, '/plan/update', { id, [key]: value })");
   });
 
@@ -1215,7 +1240,7 @@ describe('createApiClient', () => {
     });
   });
 
-  it('submits admin plan prices in cents and strips fetched model metadata', async () => {
+  it('submits an already-mapped admin plan wire DTO and strips model metadata', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
     // §6.2 (W11): the row id carries the PATCH path; the body is dialect JSON (204).
@@ -1224,11 +1249,11 @@ describe('createApiClient', () => {
     await savePlan(client, {
       id: 1,
       name: '基础套餐',
-      month_price: '12.34',
-      quarter_price: 0,
+      month_price: decimalToMoneyMinor('12.34'),
+      quarter_price: decimalToMoneyMinor(0),
       half_year_price: null,
-      year_price: '',
-      onetime_price: 300,
+      year_price: null,
+      onetime_price: decimalToMoneyMinor(300),
       force_update: true,
       show: 1,
       renew: 1,
@@ -1238,8 +1263,8 @@ describe('createApiClient', () => {
       updated_at: 1_700_000_001,
     } as Parameters<typeof savePlan>[1] & Record<string, unknown>);
 
-    // Prices serialize to cents; §4.4 turns an empty price into an explicit
-    // null clear; the fetched-model metadata (show/renew/sort/count/timestamps)
+    // Prices arrive as explicit minor-unit DTO values; §4.4 null stays an
+    // explicit clear; fetched-model metadata (show/renew/sort/count/timestamps)
     // is stripped by the save whitelist; `force_update` stays an edit-only flag.
     expect(JSON.parse(String(mock.history.patch[0]?.data))).toEqual({
       name: '基础套餐',
@@ -1250,6 +1275,35 @@ describe('createApiClient', () => {
       onetime_price: 30000,
       force_update: true,
     });
+  });
+
+  it('rejects force_update at the create transport boundary instead of dropping it', () => {
+    const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
+    const mock = new AxiosMockAdapter(client.axios);
+
+    expect(() =>
+      savePlan(client, {
+        name: 'invalid create',
+        group_id: 1,
+        transfer_enable: 100,
+        force_update: true,
+      } as unknown as Parameters<typeof savePlan>[1]),
+    ).toThrow('force_update is only valid when editing an existing plan');
+    expect(mock.history.post).toHaveLength(0);
+  });
+
+  it('enforces the generated 201 status on admin plan creation', async () => {
+    const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onPost('/admin-path/plans').reply(200, { id: 7 });
+
+    await expect(
+      savePlan(client, {
+        name: 'status drift',
+        group_id: 1,
+        transfer_enable: 100,
+      }),
+    ).rejects.toBeInstanceOf(ApiContractError);
   });
 
   it('normalizes schema-validated admin plan prices from cents', async () => {
@@ -1291,6 +1345,23 @@ describe('createApiClient', () => {
       invite: { ...config.invite, commission_withdraw_method: '支付宝,USDT' },
     });
 
+    await expect(fetchConfig(client)).rejects.toBeInstanceOf(ApiContractError);
+  });
+
+  it('rejects fractional and unsafe values for integer config fields', async () => {
+    const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
+    const mock = new AxiosMockAdapter(client.axios);
+    const config = makeAdminConfig();
+    mock.onGet('/admin-path/config').replyOnce(200, {
+      ...config,
+      invite: { ...config.invite, invite_commission: 12.5 },
+    });
+    mock.onGet('/admin-path/config').replyOnce(200, {
+      ...config,
+      safe: { ...config.safe, register_limit_count: Number.MAX_SAFE_INTEGER + 1 },
+    });
+
+    await expect(fetchConfig(client)).rejects.toBeInstanceOf(ApiContractError);
     await expect(fetchConfig(client)).rejects.toBeInstanceOf(ApiContractError);
   });
 
@@ -1353,12 +1424,14 @@ describe('createApiClient', () => {
 
     await expect(
       saveConfig(client, {
+        expected_revision: 7,
         email_whitelist_suffix: ['example.com', 'example.org'],
         commission_withdraw_method: [],
       }),
     ).resolves.toEqual({ activation: 'applied' });
 
     expect(JSON.parse(String(mock.history.patch[0]?.data))).toEqual({
+      expected_revision: 7,
       email_whitelist_suffix: ['example.com', 'example.org'],
       commission_withdraw_method: [],
     });
@@ -1369,11 +1442,11 @@ describe('createApiClient', () => {
     // §6.1: the write is durable — the caller must refetch, never resubmit.
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPatch('/admin-path/config').reply(202, { activation: 'pending' });
+    mock.onPatch('/admin-path/config').reply(202, { activation: 'pending', revision: 8 });
 
-    await expect(saveConfig(client, { app_name: 'Pending Site' })).resolves.toEqual({
-      activation: 'pending',
-    });
+    await expect(
+      saveConfig(client, { expected_revision: 7, app_name: 'Pending Site' }),
+    ).resolves.toEqual({ activation: 'pending', revision: 8 });
   });
 
   it('rejects a stale-revision config save with the 409 conflict problem code', async () => {
@@ -1391,21 +1464,34 @@ describe('createApiClient', () => {
       { 'content-type': 'application/problem+json' },
     );
 
-    await expect(saveConfig(client, { app_name: 'Stale Site' })).rejects.toMatchObject({
-      code: 'config_revision_conflict',
-      status: 409,
-    });
+    await expect(
+      saveConfig(client, { expected_revision: 7, app_name: 'Stale Site' }),
+    ).rejects.toMatchObject({ code: 'config_revision_conflict', status: 409 });
   });
 
   it('passes the modern group query when a page requests a single config group', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
     const site = makeAdminConfig().site;
-    mock.onGet('/admin-path/config?group=site').reply(200, { site });
+    mock.onGet('/admin-path/config?group=site').reply(200, { revision: 7, site });
 
     await expect(fetchConfig(client, 'site')).resolves.toMatchObject({
+      revision: 7,
       site: { currency: 'CNY' },
     });
+  });
+
+  it('probes a pending secure-path revision without mutating the runtime prefix', async () => {
+    const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
+    const mock = new AxiosMockAdapter(client.axios);
+    const safe = { ...makeAdminConfig().safe, secure_path: 'next-admin' };
+    mock.onGet('/next-admin/config?group=safe').reply(200, { revision: 8, safe });
+
+    await expect(fetchConfigAtAdminPath(client, 'next-admin', 'safe')).resolves.toMatchObject({
+      revision: 8,
+      safe: { secure_path: 'next-admin' },
+    });
+    expect(client.resolveAdminPath('/config')).toBe('/admin-path/config');
   });
 
   it('keeps the admin notice fetch as a bare unpaginated array response', async () => {

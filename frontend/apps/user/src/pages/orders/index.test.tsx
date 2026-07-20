@@ -2,7 +2,7 @@ import type { ComponentProps } from 'react';
 import { screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { formatBackendDateMinuteSlash } from '@v2board/config/format';
-import { VIRTUALIZE_MIN_ROWS } from '@/components/ui/table';
+import { VIRTUALIZE_MIN_ROWS } from '@v2board/ui/table';
 import { renderWithProviders } from '@/test/render';
 import { createTestTranslation } from '@/test/i18next-selector';
 import OrdersPage from './index';
@@ -122,7 +122,7 @@ vi.mock('@/lib/queries', () => ({
   }),
 }));
 
-vi.mock('@/components/ui/confirm-dialog', () => ({
+vi.mock('@v2board/ui/confirm-dialog', () => ({
   confirmDialog: mocks.confirmDialog,
 }));
 

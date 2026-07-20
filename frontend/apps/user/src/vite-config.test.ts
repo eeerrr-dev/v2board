@@ -25,6 +25,7 @@ const buildDeploySource = readFileSync(
 );
 
 const srcDir = dirname(fileURLToPath(import.meta.url));
+const sharedUiSrcDir = join(srcDir, '../../../packages/ui/src');
 
 // Collect the first capture group of every match, dropping the impossible
 // undefined that noUncheckedIndexedAccess widens group access to.
@@ -78,7 +79,16 @@ function collectSourceSpecifiers(dir: string, found: Set<string>): Set<string> {
   return found;
 }
 
-const importedThirdParty = collectSourceSpecifiers(srcDir, new Set<string>());
+const appImportedThirdParty = collectSourceSpecifiers(srcDir, new Set<string>());
+const sharedUiThirdParty = collectSourceSpecifiers(sharedUiSrcDir, new Set<string>());
+const importedThirdParty = new Set(appImportedThirdParty);
+for (const specifier of sharedUiThirdParty) {
+  // Vite's nested-dependency syntax resolves packages owned by the linked UI
+  // workspace without making each application redeclare UI internals.
+  importedThirdParty.add(
+    appImportedThirdParty.has(specifier) ? specifier : `@v2board/ui > ${specifier}`,
+  );
+}
 
 // Include entries that never appear as a direct source import: the JSX and React
 // Compiler runtimes the transform injects, the react-dom base entry (source

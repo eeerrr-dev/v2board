@@ -72,7 +72,12 @@ export async function runAdminPlanCreateDrawerInteraction(page) {
   const resetDropdown = await adminPlanDrawerState(page);
   await clickFirstVisibleTextStable(page, adminSelectOptionSelector, ['按月重置']);
   await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
-  await clickFirstVisible(page, adminPlanForceUpdateSelector);
+  // `force_update` is edit-only in the modern contract. The frozen oracle
+  // still renders the historical create checkbox, so exercise it only when it
+  // actually exists; the source-world assertion below requires it to be absent.
+  if ((await visibleCount(page, adminPlanForceUpdateSelector)) > 0) {
+    await clickFirstVisible(page, adminPlanForceUpdateSelector);
+  }
   await page.waitForTimeout(100);
   const filled = await adminPlanDrawerState(page);
   await clickFirstVisible(page, adminPlanSubmitSelector);

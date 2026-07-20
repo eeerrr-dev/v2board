@@ -28,15 +28,15 @@ import {
 import { getSiteTitle } from '@/lib/runtime-config';
 import { readCookie } from '@v2board/i18n';
 import { RouteBoundaryOutlet } from '@/components/route-error-boundary';
-import { Button } from '@/components/ui/button';
+import { Button } from '@v2board/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Separator } from '@/components/ui/separator';
+} from '@v2board/ui/dropdown-menu';
+import { Separator } from '@v2board/ui/separator';
 import {
   Sidebar,
   SidebarContent,
@@ -52,10 +52,10 @@ import {
   SidebarProvider,
   SidebarTrigger,
   useSidebar,
-} from '@/components/ui/sidebar';
-import { LoadingState, SkeletonRows } from '@/components/ui/loading-state';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Spinner } from '@/components/ui/spinner';
+} from '@v2board/ui/sidebar';
+import { LoadingState, SkeletonRows } from '@v2board/ui/loading-state';
+import { Skeleton } from '@v2board/ui/skeleton';
+import { Spinner } from '@v2board/ui/spinner';
 
 type ShellIcon = ComponentType<SVGProps<SVGSVGElement>>;
 

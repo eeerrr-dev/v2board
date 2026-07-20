@@ -2,7 +2,10 @@ use super::commerce::{
     optional_nonnegative_i32, parse_payment_config, reconciliation_resolution,
     reconciliation_resolved_filter, resolve_redacted_payment_config,
 };
-use super::configuration::drop_unchanged_effective_secure_path;
+use super::configuration::{
+    active_operator_revision, config_view_at_revision, drop_unchanged_effective_secure_path,
+    validate_expected_config_revision,
+};
 use super::tickets::validate_ticket_message_length;
 use super::*;
 use crate::mail::outbox::{mail_message_id, prepared_mail_payload_hash};
@@ -78,6 +81,58 @@ fn telegram_webhook_secret_is_stable_scoped_and_header_safe() {
     assert_ne!(first, telegram_webhook_secret("app-key", "456:bot-token"));
     assert_eq!(first.len(), 64);
     assert!(first.bytes().all(|byte| byte.is_ascii_hexdigit()));
+}
+
+#[test]
+fn admin_config_revision_is_required_and_group_views_keep_it_top_level() {
+    use std::path::PathBuf;
+    use v2board_config::RuntimePaths;
+
+    let paths = RuntimePaths {
+        config: PathBuf::from("/tmp/not-read-by-config-map-parser.json"),
+        frontend: PathBuf::from("/tmp/frontend"),
+        rules: PathBuf::from("/tmp/rules"),
+    };
+    let bootstrap = AppConfig::try_from_api_config_map(Map::new(), paths).expect("test config");
+    assert!(matches!(
+        active_operator_revision(&bootstrap),
+        Err(ApiError::Internal(_))
+    ));
+    let active = bootstrap.at_operator_revision(17);
+    assert_eq!(active_operator_revision(&active).unwrap(), 17);
+
+    let groups = json!({
+        "site": { "app_name": "revisioned" },
+        "safe": { "force_https": true }
+    });
+    assert_eq!(
+        config_view_at_revision(groups.clone(), Some("site"), 17).unwrap(),
+        json!({
+            "revision": 17,
+            "site": { "app_name": "revisioned" }
+        })
+    );
+    assert_eq!(
+        config_view_at_revision(groups.clone(), None, 17).unwrap(),
+        json!({
+            "revision": 17,
+            "site": { "app_name": "revisioned" },
+            "safe": { "force_https": true }
+        })
+    );
+    let unknown_group = config_view_at_revision(groups, Some("unknown"), 17).unwrap();
+    assert_eq!(unknown_group["revision"], json!(17));
+    assert!(unknown_group.get("site").is_some());
+
+    assert_eq!(validate_expected_config_revision(17).unwrap(), 17);
+    for invalid in [i64::MIN, -1, 0] {
+        let error = validate_expected_config_revision(invalid)
+            .expect_err("non-positive client revisions must be rejected");
+        assert!(matches!(
+            error,
+            ApiError::Problem(problem) if problem.code() == Code::ConfigValidationFailed
+        ));
+    }
 }
 
 fn validation_parts(error: ApiError) -> (String, indexmap::IndexMap<String, Vec<String>>) {

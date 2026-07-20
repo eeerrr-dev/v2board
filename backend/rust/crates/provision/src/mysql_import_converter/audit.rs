@@ -43,6 +43,9 @@ pub fn audit_registry() -> Result<(), ConverterError> {
     ]
     .into_iter()
     .collect::<BTreeSet<_>>();
+    let expected_derived_target_tables = ["gift_card_redemption", "plan_price"]
+        .into_iter()
+        .collect::<BTreeSet<_>>();
 
     let mut seen_orders = BTreeSet::new();
     let mut seen_sources = BTreeSet::new();
@@ -167,6 +170,8 @@ pub fn audit_registry() -> Result<(), ConverterError> {
     {
         return registry_error("derived mappings are not stored in strict execution order");
     }
+    let mut derived_targets = BTreeSet::new();
+    let mut derived_stream_owners = BTreeSet::new();
     for mapping in DERIVED_MAPPINGS {
         validate_identifier(mapping.target)?;
         if mapping.source_tables.is_empty()
@@ -176,6 +181,18 @@ pub fn audit_registry() -> Result<(), ConverterError> {
             return registry_error(format!(
                 "derived mapping {} has no source, target columns, or key",
                 mapping.target
+            ));
+        }
+        if seen_targets.contains(mapping.target) || !derived_targets.insert(mapping.target) {
+            return registry_error(format!(
+                "derived target {} collides with another target",
+                mapping.target
+            ));
+        }
+        let stream_owner = mapping.source_tables[0];
+        if !derived_stream_owners.insert(stream_owner) {
+            return registry_error(format!(
+                "source {stream_owner} owns more than one derived COPY stream; the single-source executor requires exactly one owner"
             ));
         }
         for source in mapping.source_tables {
@@ -206,6 +223,11 @@ pub fn audit_registry() -> Result<(), ConverterError> {
                 ));
             }
         }
+    }
+    if derived_targets != expected_derived_target_tables {
+        return registry_error(
+            "derived target registry differs from the normalized native inventory",
+        );
     }
     for reference in SCALAR_REFERENCES {
         validate_identifier(reference.source_table)?;

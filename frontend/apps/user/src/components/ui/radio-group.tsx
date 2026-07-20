@@ -1,7 +1,7 @@
 import { RadioGroup as RadioGroupPrimitive } from 'radix-ui';
 import { Circle } from 'lucide-react';
 import { type ComponentProps } from 'react';
-import { cn } from '@/lib/cn';
+import { cn } from '@v2board/ui/cn';
 
 // Intentional divergence from the canonical shadcn radio-group (new-york-v4
 // registry): the island only uses radios as full-width selectable card rows —

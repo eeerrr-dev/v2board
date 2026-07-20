@@ -94,7 +94,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('react-router', () => ({ useNavigate: () => mocks.navigate }));
 
-vi.mock('@/components/ui/confirm-dialog', () => ({ confirmDialog: mocks.confirm }));
+vi.mock('@v2board/ui/confirm-dialog', () => ({ confirmDialog: mocks.confirm }));
 
 vi.mock('@/lib/queries', () => ({
   useAdminOrders: (query: Record<string, unknown>) => {

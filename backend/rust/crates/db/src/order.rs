@@ -328,21 +328,7 @@ async fn fetch_order_plans(
     pool: &PgPool,
     plan_ids: &[i32],
 ) -> Result<HashMap<i32, PlanRow>, sqlx::Error> {
-    let plan_ids = plan_ids.iter().copied().collect::<BTreeSet<_>>();
-    let mut plans = HashMap::with_capacity(plan_ids.len());
-    let plan_ids = plan_ids.into_iter().collect::<Vec<_>>();
-    for chunk in plan_ids.chunks(500) {
-        let mut builder = QueryBuilder::<Postgres>::new(PLAN_FIND_BY_IDS_SQL);
-        let mut separated = builder.separated(", ");
-        for plan_id in chunk {
-            separated.push_bind(*plan_id);
-        }
-        builder.push(")");
-        for plan in builder.build_query_as::<PlanRow>().fetch_all(pool).await? {
-            plans.insert(plan.id, plan);
-        }
-    }
-    Ok(plans)
+    crate::plan::fetch_plans_by_ids(pool, plan_ids).await
 }
 
 fn values_in_requested_order<T: Clone>(ids: &[i64], values: &HashMap<i64, T>) -> Vec<T> {
@@ -403,9 +389,9 @@ fn deposit_plan() -> PlanRow {
         device_limit: None,
         name: "deposit".to_string(),
         speed_limit: None,
-        show: 0,
+        show: false,
         sort: None,
-        renew: 0,
+        renew: false,
         content: None,
         month_price: None,
         quarter_price: None,
@@ -543,34 +529,6 @@ SELECT
     updated_at
 FROM orders
 WHERE user_id =
-"#;
-
-const PLAN_FIND_BY_IDS_SQL: &str = r#"
-SELECT
-    id,
-    group_id,
-    transfer_enable,
-    device_limit,
-    name,
-    speed_limit,
-    show,
-    sort,
-    renew,
-    content,
-    month_price,
-    quarter_price,
-    half_year_price,
-    year_price,
-    two_year_price,
-    three_year_price,
-    onetime_price,
-    reset_price,
-    reset_traffic_method,
-    capacity_limit,
-    created_at,
-    updated_at
-FROM plan
-WHERE id IN (
 "#;
 
 #[cfg(test)]

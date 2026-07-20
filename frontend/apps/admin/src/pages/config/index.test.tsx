@@ -1,9 +1,17 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseProblem } from '@v2board/api-client';
+import type * as ApiClientModule from '@v2board/api-client';
+import type * as ReactRouterModule from 'react-router';
 import { setAdminRuntimeConfig } from '@/test/runtime-config';
 import ConfigPage from './index';
+import {
+  clearPendingConfigCommit,
+  readPendingConfigCommit,
+  subscribePendingConfigCommit,
+  writePendingConfigCommit,
+} from './pending-commit';
 import {
   adminSecurePathLocation,
   isBackendEnabled,
@@ -11,20 +19,9 @@ import {
   parseBackendNumber,
 } from './values';
 
-// The config surface is a redesigned shadcn island (PageShell + section nav +
-// Card sections of labeled shadcn controls) replacing the antd tabs / OneUI
-// replica. All legacy DOM and source byte-pins are retired. What stays covered
-// is the Tier-1 contract: fetch populates the fields, and each control persists
-// the EXACT backend key with its §4.1-typed value through PATCH config
-// (per-field `{ [key]: value }`): real booleans for flags, JSON numbers for
-// integers/rates/enums, real string arrays for lists, and the decimal-string
-// `commission_withdraw_limit` exception. The RHF/Zod section forms also keep
-// rejected drafts inline, replace successful drafts with the refetched server
-// value, honour the §6.1 202 refetch-never-resubmit and 409 conflict flows,
-// and never treat a failed plans/template dependency as an empty result.
-
 function makeConfig() {
   return {
+    revision: 7,
     ticket: { ticket_status: 0 },
     deposit: { deposit_bounus: ['50:18', '100:38'] },
     invite: {
@@ -80,7 +77,7 @@ function makeConfig() {
     },
     server: {
       server_api_url: 'https://node.example.com',
-      server_token: '1234567890123456',
+      server_token: '********',
       server_pull_interval: 60,
       server_push_interval: 60,
       server_node_report_min_traffic: 0,
@@ -93,11 +90,11 @@ function makeConfig() {
       email_port: 465,
       email_encryption: 'ssl',
       email_username: 'mailer',
-      email_password: 'password',
+      email_password: '********',
       email_from_address: 'noreply@example.com',
     },
     telegram: {
-      telegram_bot_token: '0000000000:token',
+      telegram_bot_token: '********',
       telegram_bot_enable: true,
       telegram_discuss_link: 'https://t.me/example',
     },
@@ -118,7 +115,7 @@ function makeConfig() {
       email_whitelist_enable: true,
       email_whitelist_suffix: ['qq.com', 'gmail.com'],
       recaptcha_enable: true,
-      recaptcha_key: 'secret',
+      recaptcha_key: '********',
       recaptcha_site_key: 'site',
       register_limit_by_ip_enable: true,
       register_limit_count: 3,
@@ -131,27 +128,69 @@ function makeConfig() {
 }
 
 const APPLIED = { activation: 'applied' as const };
+const PENDING_SESSION_KEY = 'v2board.admin.pending-config.v2';
+const PENDING_FALLBACK_KEY = 'v2board.admin.pending-config-fallback.v2';
+const storageRestorers: (() => void)[] = [];
+
+function trackStorageSpy<T extends { mockRestore: () => void }>(spy: T): T {
+  storageRestorers.push(() => spy.mockRestore());
+  return spy;
+}
 
 const mocks = vi.hoisted(() => ({
   configData: undefined as unknown,
+  configError: null as Error | null,
   refetch: vi.fn(),
   plansData: [
     { id: 1, name: '基础订阅' },
     { id: 2, name: '高级订阅' },
   ] as { id: number; name: string }[] | undefined,
   plansError: null as Error | null,
-  plansPending: false,
   plansRefetch: vi.fn(),
   emailTemplatesData: ['default', 'notify'] as string[] | undefined,
   emailTemplatesError: null as Error | null,
-  emailTemplatesPending: false,
   emailTemplatesRefetch: vi.fn(),
   saveMutateAsync: vi.fn(),
   webhookMutateAsync: vi.fn(),
   testMailMutateAsync: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
+  blockerState: 'unblocked' as 'unblocked' | 'blocked' | 'proceeding',
+  blockerProceed: vi.fn(),
+  blockerReset: vi.fn(),
+  useBlocker: vi.fn(),
+  beforeUnload: undefined as ((event: BeforeUnloadEvent) => void) | undefined,
+  probeConfigAtAdminPath: vi.fn(),
 }));
+
+vi.mock('@v2board/api-client', async () => {
+  const actual = await vi.importActual<typeof ApiClientModule>('@v2board/api-client');
+  return {
+    ...actual,
+    admin: {
+      ...actual.admin,
+      fetchConfigAtAdminPath: mocks.probeConfigAtAdminPath,
+    },
+  };
+});
+
+vi.mock('react-router', async () => {
+  const actual = await vi.importActual<typeof ReactRouterModule>('react-router');
+  return {
+    ...actual,
+    useBlocker: (when: boolean) => {
+      mocks.useBlocker(when);
+      return {
+        state: when ? mocks.blockerState : 'unblocked',
+        proceed: mocks.blockerProceed,
+        reset: mocks.blockerReset,
+      };
+    },
+    useBeforeUnload: (handler: (event: BeforeUnloadEvent) => void) => {
+      mocks.beforeUnload = handler;
+    },
+  };
+});
 
 vi.mock('@/lib/toast', () => ({
   toast: {
@@ -168,14 +207,13 @@ vi.mock('@/lib/queries', () => ({
     data: mocks.plansData,
     error: mocks.plansError,
     isError: mocks.plansError !== null,
-    isPending: mocks.plansPending,
+    isPending: false,
     refetch: mocks.plansRefetch,
   }),
   useConfig: () => ({
-    error: null,
-    isError: false,
-    isPending: false,
-    isFetching: false,
+    error: mocks.configError,
+    isError: mocks.configError !== null,
+    isPending: mocks.configData === undefined && mocks.configError === null,
     refetch: mocks.refetch,
     data: mocks.configData,
   }),
@@ -183,35 +221,34 @@ vi.mock('@/lib/queries', () => ({
     data: mocks.emailTemplatesData,
     error: mocks.emailTemplatesError,
     isError: mocks.emailTemplatesError !== null,
-    isPending: mocks.emailTemplatesPending,
+    isPending: false,
     refetch: mocks.emailTemplatesRefetch,
   }),
-  useSaveSystemConfigMutation: () => ({
-    mutateAsync: mocks.saveMutateAsync,
-    isPending: false,
-  }),
+  useSaveSystemConfigMutation: () => ({ mutateAsync: mocks.saveMutateAsync, isPending: false }),
   useSetTelegramWebhookMutation: () => ({
     mutateAsync: mocks.webhookMutateAsync,
     isPending: false,
   }),
-  useTestSendMailMutation: () => ({
-    mutateAsync: mocks.testMailMutateAsync,
-    isPending: false,
-  }),
+  useTestSendMailMutation: () => ({ mutateAsync: mocks.testMailMutateAsync, isPending: false }),
 }));
 
 beforeEach(() => {
+  window.sessionStorage.clear();
+  window.localStorage.clear();
+  window.localStorage.setItem('authorization', 'admin-test-token');
+  // Reconcile the module-level fail-closed snapshot with the newly emptied
+  // test stores before a case makes either Storage implementation throw.
+  readPendingConfigCommit();
   mocks.configData = makeConfig();
+  mocks.configError = null;
   mocks.plansData = [
     { id: 1, name: '基础订阅' },
     { id: 2, name: '高级订阅' },
   ];
   mocks.plansError = null;
-  mocks.plansPending = false;
-  mocks.plansRefetch.mockReset().mockResolvedValue(undefined);
   mocks.emailTemplatesData = ['default', 'notify'];
   mocks.emailTemplatesError = null;
-  mocks.emailTemplatesPending = false;
+  mocks.plansRefetch.mockReset().mockResolvedValue(undefined);
   mocks.emailTemplatesRefetch.mockReset().mockResolvedValue(undefined);
   mocks.refetch.mockReset().mockImplementation(async () => ({
     data: mocks.configData,
@@ -220,307 +257,499 @@ beforeEach(() => {
   }));
   mocks.saveMutateAsync.mockReset().mockResolvedValue(APPLIED);
   mocks.webhookMutateAsync.mockReset().mockResolvedValue(undefined);
-  // §6.1: POST test-mail returns bare `{sent, log}` with a nullable log line.
   mocks.testMailMutateAsync.mockReset().mockResolvedValue({ sent: true, log: null });
   mocks.toastSuccess.mockReset();
   mocks.toastError.mockReset();
-  // History routing (docs/api-dialect.md §10.1): the admin app lives under
-  // its injected basename, and the page URL is a path, not a hash.
+  mocks.blockerState = 'unblocked';
+  mocks.blockerProceed.mockReset();
+  mocks.blockerReset.mockReset();
+  mocks.useBlocker.mockReset();
+  mocks.beforeUnload = undefined;
+  mocks.probeConfigAtAdminPath.mockReset().mockImplementation(() => new Promise(() => {}));
   setAdminRuntimeConfig({ secure_path: 'admin-path' });
   window.history.replaceState({}, '', '/admin-path/config/system');
-  // Radix Select pointer + scroll shims for happy-dom.
   window.HTMLElement.prototype.scrollIntoView = vi.fn();
   window.HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
   window.HTMLElement.prototype.setPointerCapture = vi.fn();
   window.HTMLElement.prototype.releasePointerCapture = vi.fn();
 });
 
-describe('SystemConfigPage', () => {
-  it('populates fields from the fetched config', () => {
+afterEach(() => {
+  for (const restore of storageRestorers.splice(0).reverse()) restore();
+  vi.restoreAllMocks();
+});
+
+describe('SystemConfigPage section drafts', () => {
+  it('populates fetched values and starts with clean actions disabled', () => {
     render(<ConfigPage />);
     expect(screen.getByTestId('config-app_name')).toHaveValue('V2Board');
-    expect(screen.getByTestId('config-app_url')).toHaveValue('https://example.com');
-    // force_https = true → switch is on.
     expect(screen.getByTestId('config-force_https')).toHaveAttribute('aria-checked', 'true');
-    // stop_register = false → switch is off.
-    expect(screen.getByTestId('config-stop_register')).toHaveAttribute('aria-checked', 'false');
-    // §10.3: the site group carries the legacy-hash redirect toggle.
-    expect(screen.getByTestId('config-legacy_hash_redirect_enable')).toHaveAttribute(
-      'aria-checked',
-      'true',
-    );
+    expect(screen.getByTestId('config-save')).toBeDisabled();
+    expect(screen.getByTestId('config-discard')).toBeDisabled();
   });
 
-  it('saves a text field on blur with the exact key and raw string value', async () => {
+  it('stages edits locally and sends the complete dirty change-set in one PATCH', async () => {
     const user = userEvent.setup();
     render(<ConfigPage />);
 
-    const input = screen.getByTestId('config-app_name');
-    await user.clear(input);
-    await user.type(input, 'My New Site');
+    const name = screen.getByTestId('config-app_name');
+    await user.clear(name);
+    await user.type(name, 'My New Site');
     await user.tab();
-
-    await waitFor(() =>
-      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ app_name: 'My New Site' }),
-    );
-  });
-
-  it('does not save or refetch when an unchanged text field blurs', async () => {
-    const user = userEvent.setup();
-    render(<ConfigPage />);
-
-    await user.click(screen.getByTestId('config-app_name'));
-    await user.tab();
+    await user.click(screen.getByTestId('config-force_https'));
 
     expect(mocks.saveMutateAsync).not.toHaveBeenCalled();
-    expect(mocks.refetch).not.toHaveBeenCalled();
-  });
-
-  it('serializes saves across configuration sections', async () => {
-    let resolveFirstSave!: () => void;
-    mocks.saveMutateAsync
-      .mockImplementationOnce(
-        () =>
-          new Promise<typeof APPLIED>((resolve) => {
-            resolveFirstSave = () => resolve(APPLIED);
-          }),
-      )
-      .mockResolvedValueOnce(APPLIED);
-    const user = userEvent.setup();
-    render(<ConfigPage />);
-
-    const appName = screen.getByTestId('config-app_name');
-    await user.clear(appName);
-    await user.type(appName, '串行保存一');
-    await user.tab();
-    await waitFor(() =>
-      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ app_name: '串行保存一' }),
-    );
-
-    await user.click(screen.getByTestId('config-tab-invite'));
-    const inviteLimit = screen.getByTestId('config-invite_gen_limit');
-    await user.clear(inviteLimit);
-    await user.type(inviteLimit, '9');
-    await user.tab();
-    await waitFor(() =>
-      expect(inviteLimit.closest('[data-slot="field"]')).toHaveAttribute('aria-busy', 'true'),
-    );
-    expect(mocks.saveMutateAsync).toHaveBeenCalledTimes(1);
-
-    act(() => resolveFirstSave());
-    await waitFor(() =>
-      expect(mocks.saveMutateAsync).toHaveBeenNthCalledWith(2, { invite_gen_limit: 9 }),
-    );
-  });
-
-  it('saves a switch immediately with a real JSON boolean (§4.1)', async () => {
-    const user = userEvent.setup();
-    render(<ConfigPage />);
-
-    // stop_register starts at false → toggling on sends true.
-    await user.click(screen.getByTestId('config-stop_register'));
-    await waitFor(() =>
-      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ stop_register: true }),
-    );
-
-    // force_https starts at true → toggling off sends false.
-    await user.click(screen.getByTestId('config-force_https'));
-    await waitFor(() => expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ force_https: false }));
-  });
-
-  it('saves enum selects as JSON integers and event selects as booleans', async () => {
-    const user = userEvent.setup();
-    render(<ConfigPage />);
-
-    await user.click(screen.getByTestId('config-tab-subscribe'));
-    await user.click(screen.getByTestId('config-reset_traffic_method'));
-    await user.click(await screen.findByRole('option', { name: '按月重置' }));
-    await waitFor(() =>
-      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ reset_traffic_method: 1 }),
-    );
-
-    // Order-event toggles keep their legacy '0'/'1' option ids but travel as
-    // §4.1 booleans (renew_order_event_id starts false and displays 不执行).
-    await user.click(screen.getByTestId('config-renew_order_event_id'));
-    await user.click(await screen.findByRole('option', { name: '重置用户流量' }));
-    await waitFor(() =>
-      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ renew_order_event_id: true }),
-    );
-  });
-
-  it('parseInt-coerces the invite number fields before saving', async () => {
-    const user = userEvent.setup();
-    render(<ConfigPage />);
-
-    await user.click(screen.getByTestId('config-tab-invite'));
-    const input = screen.getByTestId('config-invite_commission');
-    await user.clear(input);
-    await user.type(input, '25');
-    await user.tab();
-
-    await waitFor(() =>
-      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ invite_commission: 25 }),
-    );
-  });
-
-  it('trims comma fields and removes empty entries before saving', async () => {
-    const user = userEvent.setup();
-    render(<ConfigPage />);
-
-    await user.click(screen.getByTestId('config-tab-safe'));
-    // email_whitelist_enable = 1 → the suffix field is shown.
-    const input = screen.getByTestId('config-email_whitelist_suffix');
-    await user.clear(input);
-    await user.type(input, ' a.com, b.com, ,');
-    await user.tab();
+    expect(screen.getByTestId('config-tab-invite')).toBeDisabled();
+    await user.click(screen.getByTestId('config-save'));
 
     await waitFor(() =>
       expect(mocks.saveMutateAsync).toHaveBeenCalledWith({
-        email_whitelist_suffix: ['a.com', 'b.com'],
+        expected_revision: 7,
+        app_name: 'My New Site',
+        force_https: false,
+      }),
+    );
+    expect(mocks.saveMutateAsync).toHaveBeenCalledTimes(1);
+    expect(mocks.refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the GET revision that the dirty draft was based on', async () => {
+    const user = userEvent.setup();
+    const view = render(<ConfigPage />);
+
+    const name = screen.getByTestId('config-app_name');
+    await user.clear(name);
+    await user.type(name, 'Draft from revision 7');
+
+    // A background observation must not silently rebase an already-dirty
+    // form onto a winning revision that the operator has never reviewed.
+    mocks.configData = {
+      ...makeConfig(),
+      revision: 8,
+      site: { ...makeConfig().site, app_name: 'Winner at revision 8' },
+    };
+    view.rerender(<ConfigPage />);
+    expect(name).toHaveValue('Draft from revision 7');
+
+    await user.click(screen.getByTestId('config-save'));
+    await waitFor(() =>
+      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({
+        expected_revision: 7,
+        app_name: 'Draft from revision 7',
       }),
     );
   });
 
-  it('saves a cleared comma field as a real empty array', async () => {
+  it('discards a section draft without a request and unlocks section navigation', async () => {
     const user = userEvent.setup();
     render(<ConfigPage />);
 
+    const name = screen.getByTestId('config-app_name');
+    await user.clear(name);
+    await user.type(name, 'Discard me');
+    expect(screen.getByTestId('config-tab-invite')).toBeDisabled();
+    await user.click(screen.getByTestId('config-discard'));
+
+    expect(name).toHaveValue('V2Board');
+    expect(mocks.saveMutateAsync).not.toHaveBeenCalled();
+    expect(screen.getByTestId('config-tab-invite')).toBeEnabled();
+  });
+
+  it('guards SPA and hard navigation while a section transaction is dirty', async () => {
+    mocks.blockerState = 'blocked';
+    const user = userEvent.setup();
+    render(<ConfigPage />);
+
+    await user.type(screen.getByTestId('config-app_name'), ' changed');
+    expect(mocks.useBlocker).toHaveBeenLastCalledWith(true);
+    expect(await screen.findByTestId('config-leave-dialog')).toHaveTextContent(
+      '本组配置还没有保存，是否离开',
+    );
+
+    const hardLeave = new Event('beforeunload', { cancelable: true }) as BeforeUnloadEvent;
+    mocks.beforeUnload?.(hardLeave);
+    expect(hardLeave.defaultPrevented).toBe(true);
+
+    await user.click(screen.getByTestId('config-stay'));
+    expect(mocks.blockerReset).toHaveBeenCalledOnce();
+    expect(mocks.blockerProceed).not.toHaveBeenCalled();
+  });
+
+  it('keeps JSON number/array coercions inside the draft until Save', async () => {
+    const user = userEvent.setup();
+    render(<ConfigPage />);
     await user.click(screen.getByTestId('config-tab-invite'));
-    const input = screen.getByTestId('config-commission_withdraw_method');
-    await user.clear(input);
+
+    const limit = screen.getByTestId('config-invite_gen_limit');
+    const methods = screen.getByTestId('config-commission_withdraw_method');
+    await user.clear(limit);
+    await user.type(limit, '9');
     await user.tab();
+    await user.clear(methods);
+    await user.type(methods, ' a.com, b.com, ,');
+    await user.tab();
+    expect(mocks.saveMutateAsync).not.toHaveBeenCalled();
+
+    await user.click(screen.getByTestId('config-save'));
+    await waitFor(() =>
+      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({
+        expected_revision: 7,
+        invite_gen_limit: 9,
+        commission_withdraw_method: ['a.com', 'b.com'],
+      }),
+    );
+  });
+
+  it('canonicalizes a focused integer field when Enter submits without blur', async () => {
+    const user = userEvent.setup();
+    render(<ConfigPage />);
+    await user.click(screen.getByTestId('config-tab-invite'));
+
+    const limit = screen.getByTestId('config-invite_gen_limit');
+    await user.clear(limit);
+    await user.type(limit, '9');
+    expect(limit).toHaveFocus();
+    await user.keyboard('{Enter}');
 
     await waitFor(() =>
-      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ commission_withdraw_method: [] }),
+      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({
+        expected_revision: 7,
+        invite_gen_limit: 9,
+      }),
     );
   });
 
-  it('replaces a successful local draft with the authoritative refetched value', async () => {
-    const canonicalConfig = makeConfig();
-    canonicalConfig.site.app_name = '服务端规范化名称';
-    mocks.saveMutateAsync.mockImplementationOnce(async () => {
-      mocks.configData = canonicalConfig;
-      return APPLIED;
-    });
+  it('rejects an integer prefix instead of truncating and sending it', async () => {
+    const user = userEvent.setup();
+    render(<ConfigPage />);
+    await user.click(screen.getByTestId('config-tab-invite'));
+
+    const limit = screen.getByTestId('config-invite_gen_limit');
+    await user.clear(limit);
+    await user.type(limit, '12.9');
+    await user.keyboard('{Enter}');
+
+    const field = limit.closest('[data-slot="field"]');
+    expect(field).not.toBeNull();
+    expect(await within(field as HTMLElement).findByRole('alert')).toHaveTextContent(
+      '请输入完整且有效的整数',
+    );
+    expect(mocks.saveMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('rejects a fractional invite commission before PATCH', async () => {
+    const user = userEvent.setup();
+    render(<ConfigPage />);
+    await user.click(screen.getByTestId('config-tab-invite'));
+
+    const commission = screen.getByTestId('config-invite_commission');
+    await user.clear(commission);
+    await user.type(commission, '12.5');
+    await user.keyboard('{Enter}');
+
+    const field = commission.closest('[data-slot="field"]');
+    expect(field).not.toBeNull();
+    expect(await within(field as HTMLElement).findByRole('alert')).toHaveTextContent(
+      '请输入完整且有效的整数',
+    );
+    expect(mocks.saveMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('maps an emptied nullable text field to the explicit null-clear wire value', async () => {
+    const user = userEvent.setup();
+    render(<ConfigPage />);
+    await user.click(screen.getByTestId('config-tab-email'));
+
+    await user.clear(screen.getByTestId('config-email_host'));
+    await user.click(screen.getByTestId('config-save'));
+
+    await waitFor(() =>
+      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({
+        expected_revision: 7,
+        email_host: null,
+      }),
+    );
+  });
+
+  it('offers an explicit null-clear for non-null projected fields', async () => {
     const user = userEvent.setup();
     render(<ConfigPage />);
 
-    const input = screen.getByTestId('config-app_name');
-    await user.clear(input);
-    await user.type(input, '本地草稿');
-    await user.tab();
+    await user.click(screen.getByTestId('config-app_name-reset-default'));
+    expect(screen.getByText('保存后将恢复系统默认值')).toBeInTheDocument();
+    await user.click(screen.getByTestId('config-save'));
 
-    await waitFor(() => expect(mocks.refetch).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(input).toHaveValue('服务端规范化名称'));
-    expect(mocks.toastSuccess).toHaveBeenCalledWith('保存成功');
+    await waitFor(() =>
+      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({
+        expected_revision: 7,
+        app_name: null,
+      }),
+    );
+    expect(screen.queryByTestId('config-secure_path-reset-default')).not.toBeInTheDocument();
   });
 
-  it('does not overwrite text entered while an earlier save is in flight', async () => {
-    const canonicalConfig = makeConfig();
-    canonicalConfig.site.app_name = '已保存的第一版';
-    let resolveSave!: () => void;
+  it('locks the whole section while a PATCH is in flight', async () => {
+    let finishSave: ((value: typeof APPLIED) => void) | undefined;
     mocks.saveMutateAsync.mockImplementationOnce(
-      () =>
-        new Promise<typeof APPLIED>((resolve) => {
-          resolveSave = () => {
-            mocks.configData = canonicalConfig;
-            resolve(APPLIED);
-          };
-        }),
+      () => new Promise<typeof APPLIED>((resolve) => (finishSave = resolve)),
     );
     const user = userEvent.setup();
     render(<ConfigPage />);
 
-    const input = screen.getByTestId('config-app_name');
-    await user.clear(input);
-    await user.type(input, '已保存的第一版');
-    await user.tab();
-    await waitFor(() => expect(mocks.saveMutateAsync).toHaveBeenCalledTimes(1));
+    const name = screen.getByTestId('config-app_name');
+    await user.clear(name);
+    await user.type(name, 'Locked Site');
+    await user.click(screen.getByTestId('config-save'));
 
-    await user.click(input);
-    await user.clear(input);
-    await user.type(input, '尚未失焦的第二版');
-    act(() => resolveSave());
-
-    await waitFor(() => expect(mocks.refetch).toHaveBeenCalledTimes(1));
-    expect(input).toHaveValue('尚未失焦的第二版');
-    expect(mocks.saveMutateAsync).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(name).toBeDisabled());
+    expect(screen.getByTestId('config-force_https')).toBeDisabled();
+    await user.type(name, ' overwritten');
+    expect(name).toHaveValue('Locked Site');
+    finishSave?.(APPLIED);
+    await waitFor(() => expect(name).toBeEnabled());
   });
 
-  it('queues the latest same-field value and never lets an older refresh reset it', async () => {
-    const firstCanonical = makeConfig();
-    firstCanonical.site.force_https = false;
-    const finalCanonical = makeConfig();
-    finalCanonical.site.force_https = true;
-    let resolveFirstRefresh!: (result: {
-      data: ReturnType<typeof makeConfig>;
-      error: null;
-      isError: false;
-    }) => void;
-    let resolveSecondSave!: () => void;
-    mocks.saveMutateAsync.mockResolvedValueOnce(APPLIED).mockImplementationOnce(
-      () =>
-        new Promise<typeof APPLIED>((resolve) => {
-          resolveSecondSave = () => resolve(APPLIED);
-        }),
-    );
-    mocks.refetch
-      .mockImplementationOnce(
-        () =>
-          new Promise((resolve) => {
-            resolveFirstRefresh = resolve;
-          }),
-      )
-      .mockResolvedValueOnce({ data: finalCanonical, error: null, isError: false });
+  it('refetches but never resubmits a durable 202 change-set', async () => {
+    mocks.saveMutateAsync.mockResolvedValueOnce({ activation: 'pending', revision: 8 });
+    const user = userEvent.setup();
+    render(<ConfigPage />);
+
+    const name = screen.getByTestId('config-app_name');
+    await user.clear(name);
+    await user.type(name, 'Pending Site');
+    await user.click(screen.getByTestId('config-save'));
+
+    await waitFor(() => expect(mocks.refetch).toHaveBeenCalledTimes(1));
+    expect(name).toHaveValue('Pending Site');
+    expect(mocks.saveMutateAsync).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('config-save')).toBeDisabled();
+    expect(screen.getByTestId('config-pending-activation')).toHaveTextContent('revision 8');
+    await user.click(screen.getByTestId('config-tab-invite'));
+    expect(screen.getByTestId('config-invite_gen_limit')).toBeDisabled();
+    await user.click(screen.getByTestId('config-tab-site'));
+    expect(screen.getByTestId('config-save')).toBeDisabled();
+    expect(mocks.saveMutateAsync).toHaveBeenCalledTimes(1);
+    expect(mocks.toastSuccess).toHaveBeenCalledWith('保存成功', {
+      description: '配置已保存，正在等待所有进程生效。',
+    });
+  });
+
+  it('restores pending metadata after remount and unlocks only at the observed revision', async () => {
+    mocks.saveMutateAsync.mockResolvedValueOnce({ activation: 'pending', revision: 8 });
     const user = userEvent.setup();
     const view = render(<ConfigPage />);
 
-    const toggle = screen.getByTestId('config-force_https');
-    await user.click(toggle);
-    await waitFor(() => expect(mocks.refetch).toHaveBeenCalledTimes(1));
-    await user.click(toggle);
+    await user.clear(screen.getByTestId('config-app_name'));
+    await user.type(screen.getByTestId('config-app_name'), 'Pending Site');
+    await user.click(screen.getByTestId('config-save'));
+    await screen.findByTestId('config-pending-activation');
 
-    // React Query publishes refetched data before the refetch promise settles.
-    // Re-render with that stale snapshot and prove the in-flight queue protects
-    // the newer local value even though it equals the original default.
-    mocks.configData = firstCanonical;
-    view.rerender(<ConfigPage />);
-    expect(toggle).toHaveAttribute('aria-checked', 'true');
+    view.unmount();
+    const restored = render(<ConfigPage />);
+    expect(await screen.findByTestId('config-pending-activation')).toHaveTextContent('revision 8');
+    expect(screen.getByTestId('config-app_name')).toBeDisabled();
 
-    act(() => {
-      resolveFirstRefresh({ data: firstCanonical, error: null, isError: false });
-    });
-    await waitFor(() => expect(mocks.saveMutateAsync).toHaveBeenCalledTimes(2));
-    expect(toggle).toHaveAttribute('aria-checked', 'true');
-
-    act(() => resolveSecondSave());
-    await waitFor(() => expect(mocks.refetch).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'));
-    expect(mocks.saveMutateAsync.mock.calls).toEqual([
-      [{ force_https: false }],
-      [{ force_https: true }],
-    ]);
+    mocks.configData = {
+      ...makeConfig(),
+      revision: 8,
+      site: { ...makeConfig().site, app_name: 'Pending Site' },
+    };
+    restored.unmount();
+    render(<ConfigPage />);
+    await waitFor(() =>
+      expect(screen.queryByTestId('config-pending-activation')).not.toBeInTheDocument(),
+    );
+    expect(screen.getByTestId('config-app_name')).toHaveValue('Pending Site');
+    expect(screen.getByTestId('config-app_name')).toBeEnabled();
+    expect(window.sessionStorage.length).toBe(0);
+    expect(window.localStorage.getItem(PENDING_FALLBACK_KEY)).toBeNull();
   });
 
-  it('keeps a rejected draft and renders the mutation error inline', async () => {
-    mocks.saveMutateAsync.mockRejectedValueOnce(new Error('保存被拒绝'));
+  it('recovers a pending commit across remounts through the local fallback when session storage fails', async () => {
+    trackStorageSpy(
+      vi.spyOn(window.sessionStorage, 'getItem').mockImplementation(() => {
+        throw new Error('session get denied');
+      }),
+    );
+    trackStorageSpy(
+      vi.spyOn(window.sessionStorage, 'setItem').mockImplementation(() => {
+        throw new Error('session set denied');
+      }),
+    );
+    trackStorageSpy(
+      vi.spyOn(window.sessionStorage, 'removeItem').mockImplementation(() => {
+        throw new Error('session remove denied');
+      }),
+    );
+    mocks.saveMutateAsync.mockResolvedValueOnce({ activation: 'pending', revision: 8 });
+    const user = userEvent.setup();
+    const first = render(<ConfigPage />);
+
+    await user.clear(screen.getByTestId('config-app_name'));
+    await user.type(screen.getByTestId('config-app_name'), 'Fallback Site');
+    await user.click(screen.getByTestId('config-save'));
+    await screen.findByTestId('config-pending-activation');
+
+    const fallback = window.localStorage.getItem(PENDING_FALLBACK_KEY);
+    expect(fallback).toContain('"version":2');
+    expect(fallback).not.toContain('admin-test-token');
+    expect(fallback).not.toContain('Fallback Site');
+    first.unmount();
+
+    mocks.blockerState = 'blocked';
+    const restored = render(<ConfigPage />);
+    expect(await screen.findByTestId('config-pending-activation')).toHaveTextContent('revision 8');
+    const dialog = await screen.findByTestId('config-leave-dialog');
+    expect(dialog).toHaveTextContent('已有一笔配置提交正在等待 revision 8 生效');
+    expect(within(dialog).queryByTestId('config-leave')).not.toBeInTheDocument();
+
+    mocks.configData = {
+      ...makeConfig(),
+      revision: 8,
+      site: { ...makeConfig().site, app_name: 'Fallback Site' },
+    };
+    restored.unmount();
+    render(<ConfigPage />);
+    await waitFor(() =>
+      expect(screen.queryByTestId('config-pending-activation')).not.toBeInTheDocument(),
+    );
+    expect(window.localStorage.getItem(PENDING_FALLBACK_KEY)).toBeNull();
+  });
+
+  it('keeps the current mount fail-closed when both browser stores become unavailable', async () => {
+    mocks.saveMutateAsync.mockResolvedValueOnce({ activation: 'pending', revision: 8 });
     const user = userEvent.setup();
     render(<ConfigPage />);
 
-    const input = screen.getByTestId('config-app_name');
-    await user.clear(input);
-    await user.type(input, '需要保留的草稿');
-    await user.tab();
+    trackStorageSpy(
+      vi.spyOn(window.sessionStorage, 'getItem').mockImplementation(() => {
+        throw new Error('session get denied');
+      }),
+    );
+    trackStorageSpy(
+      vi.spyOn(window.sessionStorage, 'setItem').mockImplementation(() => {
+        throw new Error('session set denied');
+      }),
+    );
+    trackStorageSpy(
+      vi.spyOn(window.sessionStorage, 'removeItem').mockImplementation(() => {
+        throw new Error('session remove denied');
+      }),
+    );
+    trackStorageSpy(
+      vi.spyOn(window.localStorage, 'getItem').mockImplementation(() => {
+        throw new Error('local get denied');
+      }),
+    );
+    trackStorageSpy(
+      vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => {
+        throw new Error('local set denied');
+      }),
+    );
+    trackStorageSpy(
+      vi.spyOn(window.localStorage, 'removeItem').mockImplementation(() => {
+        throw new Error('local remove denied');
+      }),
+    );
 
-    const field = input.closest('[data-slot="field"]');
-    expect(field).not.toBeNull();
-    expect(await within(field as HTMLElement).findByRole('alert')).toHaveTextContent('保存被拒绝');
-    expect(input).toHaveValue('需要保留的草稿');
-    expect(mocks.refetch).not.toHaveBeenCalled();
-    expect(mocks.toastSuccess).not.toHaveBeenCalled();
+    await user.clear(screen.getByTestId('config-app_name'));
+    await user.type(screen.getByTestId('config-app_name'), 'Memory Site');
+    await user.click(screen.getByTestId('config-save'));
+
+    expect(await screen.findByTestId('config-pending-activation')).toHaveTextContent('revision 8');
+    expect(mocks.useBlocker).toHaveBeenCalledWith(true);
   });
 
-  it('refetches without resubmitting when a save hits a stale-revision 409 (§6.1)', async () => {
+  it('does not let an old activation observer clear a newer pending commit', () => {
+    const oldCommit = { group: 'site' as const, revision: 8 };
+    const newCommit = { group: 'invite' as const, revision: 9 };
+    writePendingConfigCommit(oldCommit);
+    writePendingConfigCommit(newCommit);
+
+    expect(clearPendingConfigCommit(oldCommit)).toBe(false);
+    expect(readPendingConfigCommit()).toEqual(newCommit);
+  });
+
+  it('does not resurrect a consumed commit when session remove alone fails', () => {
+    const commit = { group: 'site' as const, revision: 8 };
+    writePendingConfigCommit(commit);
+    trackStorageSpy(
+      vi.spyOn(window.sessionStorage, 'removeItem').mockImplementation(() => {
+        throw new Error('session remove denied');
+      }),
+    );
+
+    expect(clearPendingConfigCommit(commit)).toBe(true);
+    // The physical stale record demonstrates that this is the in-memory
+    // consumed/tombstone path, not a successful remove disguised as success.
+    expect(window.sessionStorage.getItem(PENDING_SESSION_KEY)).not.toBeNull();
+    expect(window.localStorage.getItem(PENDING_FALLBACK_KEY)).toBeNull();
+    expect(readPendingConfigCommit()).toBeNull();
+  });
+
+  it('reconciles a newer cross-tab fallback over an older session snapshot', () => {
+    writePendingConfigCommit({ group: 'site', revision: 8 });
+    const olderSession = window.sessionStorage.getItem(PENDING_SESSION_KEY);
+    writePendingConfigCommit({ group: 'invite', revision: 9 });
+    const newerFallback = window.localStorage.getItem(PENDING_FALLBACK_KEY);
+    expect(olderSession).not.toBeNull();
+    expect(newerFallback).not.toBeNull();
+    window.sessionStorage.setItem(PENDING_SESSION_KEY, olderSession!);
+
+    expect(readPendingConfigCommit()).toEqual({ group: 'invite', revision: 9 });
+    expect(window.sessionStorage.getItem(PENDING_SESSION_KEY)).toBe(newerFallback);
+  });
+
+  it('keeps equal-revision storage conflicts locked and does not overwrite either source', () => {
+    writePendingConfigCommit({ group: 'site', revision: 8 });
+    const sessionCommit = window.sessionStorage.getItem(PENDING_SESSION_KEY);
+    writePendingConfigCommit({ group: 'invite', revision: 8 });
+    const fallbackCommit = window.localStorage.getItem(PENDING_FALLBACK_KEY);
+    expect(sessionCommit).not.toBeNull();
+    expect(fallbackCommit).not.toBeNull();
+    window.sessionStorage.setItem(PENDING_SESSION_KEY, sessionCommit!);
+
+    const first = readPendingConfigCommit();
+    const second = readPendingConfigCommit();
+    expect(first).not.toBeNull();
+    expect(second).toEqual(first);
+    expect(window.sessionStorage.getItem(PENDING_SESSION_KEY)).toBe(sessionCommit);
+    expect(window.localStorage.getItem(PENDING_FALLBACK_KEY)).toBe(fallbackCommit);
+  });
+
+  it('notifies subscribers when another tab changes the local fallback', () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribePendingConfigCommit(listener);
+
+    window.dispatchEvent(
+      new StorageEvent('storage', {
+        key: PENDING_FALLBACK_KEY,
+        storageArea: window.localStorage,
+      }),
+    );
+    window.dispatchEvent(
+      new StorageEvent('storage', {
+        key: 'unrelated',
+        storageArea: window.localStorage,
+      }),
+    );
+
+    expect(listener).toHaveBeenCalledOnce();
+    unsubscribe();
+  });
+
+  it('rejects and clears persisted pending metadata after the auth identity changes', () => {
+    writePendingConfigCommit({ group: 'site', revision: 8 });
+    expect(window.localStorage.getItem(PENDING_FALLBACK_KEY)).not.toContain('admin-test-token');
+
+    window.localStorage.setItem('authorization', 'different-admin-token');
+
+    expect(readPendingConfigCommit()).toBeNull();
+    expect(window.sessionStorage.getItem(PENDING_SESSION_KEY)).toBeNull();
+    expect(window.localStorage.getItem(PENDING_FALLBACK_KEY)).toBeNull();
+  });
+
+  it('keeps the losing draft and refetches once on revision conflict', async () => {
     mocks.saveMutateAsync.mockRejectedValueOnce(
       parseProblem(
         {
@@ -536,97 +765,129 @@ describe('SystemConfigPage', () => {
     const user = userEvent.setup();
     render(<ConfigPage />);
 
-    const input = screen.getByTestId('config-app_name');
-    await user.clear(input);
-    await user.type(input, '落败的草稿');
-    await user.tab();
+    const name = screen.getByTestId('config-app_name');
+    await user.clear(name);
+    await user.type(name, 'Losing draft');
+    await user.click(screen.getByTestId('config-save'));
 
-    const field = input.closest('[data-slot="field"]');
-    expect(field).not.toBeNull();
-    expect(await within(field as HTMLElement).findByRole('alert')).toHaveTextContent(
+    expect(await screen.findByTestId('config-save-error')).toHaveTextContent(
       '配置已被其他请求更新，请刷新后重试',
     );
-    // The winning config is refetched; the losing value is never resubmitted.
-    await waitFor(() => expect(mocks.refetch).toHaveBeenCalledTimes(1));
-    expect(mocks.saveMutateAsync).toHaveBeenCalledTimes(1);
-    expect(input).toHaveValue('落败的草稿');
-    expect(mocks.toastSuccess).not.toHaveBeenCalled();
+    expect(name).toHaveValue('Losing draft');
+    expect(mocks.refetch).toHaveBeenCalledTimes(1);
+    expect(mocks.saveMutateAsync).toHaveBeenCalledWith({
+      expected_revision: 7,
+      app_name: 'Losing draft',
+    });
   });
 
-  it('refetches and keeps the durable draft on 202 activation-pending (§6.1)', async () => {
-    mocks.saveMutateAsync.mockResolvedValueOnce({ activation: 'pending' });
+  it('redirects only after an applied secure_path change', async () => {
     const user = userEvent.setup();
     render(<ConfigPage />);
-
-    const input = screen.getByTestId('config-app_name');
-    await user.clear(input);
-    await user.type(input, '待激活名称');
-    await user.tab();
-
-    await waitFor(() => expect(mocks.refetch).toHaveBeenCalledTimes(1));
-    // Durable but not yet active: keep the submitted draft, never resubmit.
-    expect(input).toHaveValue('待激活名称');
-    expect(mocks.saveMutateAsync).toHaveBeenCalledTimes(1);
-    await waitFor(() =>
-      expect(mocks.toastSuccess).toHaveBeenCalledWith('保存成功', {
-        description: '配置已保存，正在等待所有进程生效。',
-      }),
-    );
-
-    // The durable value is the new baseline — an unchanged blur stays silent.
-    await user.click(input);
-    await user.tab();
-    expect(mocks.saveMutateAsync).toHaveBeenCalledTimes(1);
-  });
-
-  it('keeps the admin base while a secure_path save is activation-pending (§6.1)', async () => {
-    mocks.saveMutateAsync.mockResolvedValueOnce({ activation: 'pending' });
-    const user = userEvent.setup();
-    render(<ConfigPage />);
-
     await user.click(screen.getByTestId('config-tab-safe'));
-    const input = screen.getByTestId('config-secure_path');
-    await user.clear(input);
-    await user.type(input, 'next-admin');
-    await user.tab();
 
-    await waitFor(() =>
-      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ secure_path: 'next-admin' }),
-    );
-    // The new path is not active yet, so the base must not move.
-    await waitFor(() => expect(mocks.refetch).toHaveBeenCalledTimes(1));
+    const securePath = screen.getByTestId('config-secure_path');
+    await user.clear(securePath);
+    await user.type(securePath, 'next-admin');
+    await user.click(screen.getByTestId('config-save'));
+
+    await waitFor(() => expect(window.location.pathname).toBe('/next-admin/config/system'));
+    expect(mocks.saveMutateAsync).toHaveBeenCalledWith({
+      expected_revision: 7,
+      secure_path: 'next-admin',
+    });
+    expect(mocks.refetch).not.toHaveBeenCalled();
+    const systemRedirect = new Event('beforeunload', { cancelable: true }) as BeforeUnloadEvent;
+    mocks.beforeUnload?.(systemRedirect);
+    expect(systemRedirect.defaultPrevented).toBe(false);
+  });
+
+  it('keeps the current path when a secure_path change is pending activation', async () => {
+    mocks.saveMutateAsync.mockResolvedValueOnce({ activation: 'pending', revision: 8 });
+    const user = userEvent.setup();
+    render(<ConfigPage />);
+    await user.click(screen.getByTestId('config-tab-safe'));
+
+    const securePath = screen.getByTestId('config-secure_path');
+    await user.clear(securePath);
+    await user.type(securePath, 'next-admin');
+    await user.click(screen.getByTestId('config-save'));
+
+    await waitFor(() => expect(mocks.probeConfigAtAdminPath).toHaveBeenCalledTimes(1));
+    expect(mocks.refetch).not.toHaveBeenCalled();
     expect(window.location.pathname).toBe('/admin-path/config/system');
   });
 
-  it('replaces the outer admin path after secure_path saves without refetching the old path', async () => {
+  it('redirects a pending secure_path only after the new prefix serves its revision', async () => {
+    mocks.saveMutateAsync.mockResolvedValueOnce({ activation: 'pending', revision: 8 });
+    mocks.probeConfigAtAdminPath.mockResolvedValueOnce({
+      ...makeConfig(),
+      revision: 8,
+      safe: { ...makeConfig().safe, secure_path: 'next-admin' },
+    });
     const user = userEvent.setup();
     render(<ConfigPage />);
-
     await user.click(screen.getByTestId('config-tab-safe'));
-    const input = screen.getByTestId('config-secure_path');
-    await user.clear(input);
-    await user.type(input, 'next-admin');
-    await user.tab();
 
-    await waitFor(() =>
-      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ secure_path: 'next-admin' }),
-    );
-    // The app-relative route survives the base move (history routing).
+    const securePath = screen.getByTestId('config-secure_path');
+    await user.clear(securePath);
+    await user.type(securePath, 'next-admin');
+    await user.click(screen.getByTestId('config-save'));
+
     await waitFor(() => expect(window.location.pathname).toBe('/next-admin/config/system'));
-    expect(window.location.hash).toBe('');
-    expect(mocks.refetch).not.toHaveBeenCalled();
+    expect(mocks.probeConfigAtAdminPath).toHaveBeenCalledWith(
+      expect.anything(),
+      'next-admin',
+      'safe',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 
-  it('rejects an empty secure_path without invalidating the current admin route', async () => {
-    const user = userEvent.setup();
+  it('blocks SPA navigation while the secure-path activation probe owns the redirect', async () => {
+    writePendingConfigCommit({ group: 'safe', revision: 8, securePath: 'next-admin' });
+    mocks.blockerState = 'blocked';
     render(<ConfigPage />);
 
-    await user.click(screen.getByTestId('config-tab-safe'));
-    const input = screen.getByTestId('config-secure_path');
-    await user.clear(input);
-    await user.tab();
+    const dialog = await screen.findByTestId('config-leave-dialog');
+    expect(dialog).toHaveTextContent('后台路径正在切换');
+    expect(dialog).toHaveTextContent('确认 revision 后会自动跳转');
+    expect(within(dialog).queryByTestId('config-leave')).not.toBeInTheDocument();
+    expect(mocks.probeConfigAtAdminPath).toHaveBeenCalledTimes(1);
+  });
 
-    const field = input.closest('[data-slot="field"]');
+  it('never treats the old-prefix revision as proof that a pending secure path is active', async () => {
+    writePendingConfigCommit({ group: 'safe', revision: 8, securePath: 'next-admin' });
+    mocks.configData = { ...makeConfig(), revision: 99 };
+    render(<ConfigPage />);
+
+    await waitFor(() => expect(mocks.probeConfigAtAdminPath).toHaveBeenCalledTimes(1));
+    expect(window.location.pathname).toBe('/admin-path/config/system');
+    expect(window.sessionStorage.getItem(PENDING_SESSION_KEY)).not.toBeNull();
+  });
+
+  it('keeps the secure-path navigation lock mounted after the old prefix starts returning errors', async () => {
+    writePendingConfigCommit({ group: 'safe', revision: 8, securePath: 'next-admin' });
+    mocks.configError = new Error('old prefix is inactive');
+    mocks.blockerState = 'blocked';
+    render(<ConfigPage />);
+
+    expect(await screen.findByText(/等待 revision 8 生效/)).toBeInTheDocument();
+    const dialog = await screen.findByTestId('config-leave-dialog');
+    expect(dialog).toHaveTextContent('后台路径正在切换');
+    expect(within(dialog).queryByTestId('config-leave')).not.toBeInTheDocument();
+    expect(mocks.probeConfigAtAdminPath).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an empty secure_path without sending or moving the admin route', async () => {
+    const user = userEvent.setup();
+    render(<ConfigPage />);
+    await user.click(screen.getByTestId('config-tab-safe'));
+
+    const securePath = screen.getByTestId('config-secure_path');
+    await user.clear(securePath);
+    await user.click(screen.getByTestId('config-save'));
+
+    const field = securePath.closest('[data-slot="field"]');
     expect(field).not.toBeNull();
     expect(await within(field as HTMLElement).findByRole('alert')).toHaveTextContent(
       '后台路径不能为空',
@@ -635,241 +896,114 @@ describe('SystemConfigPage', () => {
     expect(window.location.pathname).toBe('/admin-path/config/system');
   });
 
-  it('gates sections when their dependent query fails and exposes a scoped retry', async () => {
-    mocks.plansData = undefined;
-    mocks.plansError = new Error('plans failed');
-    mocks.emailTemplatesData = undefined;
-    mocks.emailTemplatesError = new Error('templates failed');
+  it('persists the email draft before testing with the new settings', async () => {
     const user = userEvent.setup();
     render(<ConfigPage />);
-
-    const plansError = screen.getByTestId('config-plans-error');
-    expect(screen.queryByTestId('config-app_name')).not.toBeInTheDocument();
-    await user.click(within(plansError).getByTestId('error-state-retry'));
-    expect(mocks.plansRefetch).toHaveBeenCalledTimes(1);
-
     await user.click(screen.getByTestId('config-tab-email'));
-    const templatesError = screen.getByTestId('config-email-templates-error');
-    expect(screen.queryByTestId('config-email_host')).not.toBeInTheDocument();
-    await user.click(within(templatesError).getByTestId('error-state-retry'));
-    expect(mocks.emailTemplatesRefetch).toHaveBeenCalledTimes(1);
-  });
 
-  it('renders the native frontend color and background controls without custom HTML', async () => {
-    const user = userEvent.setup();
-    render(<ConfigPage />);
-
-    await user.click(screen.getByTestId('config-tab-frontend'));
-
-    expect(screen.getByTestId('config-frontend_theme_color')).toBeInTheDocument();
-    expect(screen.getByTestId('config-frontend_background_url')).toBeInTheDocument();
-    // docs/api-dialect.md §10.5: the custom HTML injection control is removed;
-    // the typed chat-widget editor (§10.6) replaces it.
-    expect(screen.queryByTestId('config-frontend_custom_html')).not.toBeInTheDocument();
-    expect(screen.getByTestId('config-chat_widget_provider')).toBeInTheDocument();
-  });
-
-  it('drives the typed chat-widget editor with per-provider identifier fields', async () => {
-    // The post-save refetch is authoritative, so each step models the
-    // backend-applied value before saving (same pattern as the recaptcha test).
-    const applied = (values: Record<string, unknown>) => {
-      const config = makeConfig();
-      Object.assign(config.frontend, values);
-      mocks.configData = config;
-    };
-    const user = userEvent.setup();
-    render(<ConfigPage />);
-
-    await user.click(screen.getByTestId('config-tab-frontend'));
-
-    // Provider off (null fixture): no identifier fields are shown.
-    expect(screen.queryByTestId('config-chat_widget_crisp_website_id')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('config-chat_widget_tawk_property_id')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('config-chat_widget_tawk_widget_id')).not.toBeInTheDocument();
-
-    // Selecting Crisp saves the exact backend key/value and reveals only the
-    // Crisp identifier field.
-    applied({ chat_widget_provider: 'crisp' });
-    await user.click(screen.getByTestId('config-chat_widget_provider'));
-    await user.click(await screen.findByRole('option', { name: 'Crisp' }));
-    await waitFor(() =>
-      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ chat_widget_provider: 'crisp' }),
-    );
-    const crispInput = await screen.findByTestId('config-chat_widget_crisp_website_id');
-    expect(screen.queryByTestId('config-chat_widget_tawk_property_id')).not.toBeInTheDocument();
-    applied({
-      chat_widget_provider: 'crisp',
-      chat_widget_crisp_website_id: '01234567-89ab-cdef-0123-456789abcdef',
-    });
-    await user.type(crispInput, '01234567-89ab-cdef-0123-456789abcdef');
-    await user.tab();
-    await waitFor(() =>
-      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({
-        chat_widget_crisp_website_id: '01234567-89ab-cdef-0123-456789abcdef',
-      }),
-    );
-
-    // Switching to Tawk swaps the identifier fields.
-    applied({ chat_widget_provider: 'tawk' });
-    await user.click(screen.getByTestId('config-chat_widget_provider'));
-    await user.click(await screen.findByRole('option', { name: 'Tawk.to' }));
-    await waitFor(() =>
-      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ chat_widget_provider: 'tawk' }),
-    );
-    expect(screen.queryByTestId('config-chat_widget_crisp_website_id')).not.toBeInTheDocument();
-    expect(await screen.findByTestId('config-chat_widget_tawk_property_id')).toBeInTheDocument();
-    expect(screen.getByTestId('config-chat_widget_tawk_widget_id')).toBeInTheDocument();
-
-    // 关闭 serializes to the backend's clear value (empty string), never the
-    // 'off' UI sentinel, and hides the identifier fields again.
-    applied({ chat_widget_provider: '' });
-    await user.click(screen.getByTestId('config-chat_widget_provider'));
-    await user.click(await screen.findByRole('option', { name: '关闭' }));
-    await waitFor(() =>
-      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ chat_widget_provider: '' }),
-    );
-    await waitFor(() =>
-      expect(screen.queryByTestId('config-chat_widget_tawk_property_id')).not.toBeInTheDocument(),
-    );
-  });
-
-  it('hides the conditional child field until its toggle is on', async () => {
-    const canonicalConfig = makeConfig();
-    canonicalConfig.safe.recaptcha_enable = false;
-    let resolveSave!: () => void;
-    mocks.saveMutateAsync.mockImplementationOnce(
-      () =>
-        new Promise<typeof APPLIED>((resolve) => {
-          resolveSave = () => resolve(APPLIED);
-        }),
-    );
-    const user = userEvent.setup();
-    render(<ConfigPage />);
-
-    await user.click(screen.getByTestId('config-tab-safe'));
-    expect(screen.getByTestId('config-recaptcha_key')).toBeInTheDocument();
-
-    // recaptcha_enable = true → the keys show. The local form value must hide
-    // them immediately, without waiting for the queued save or refetch.
-    await user.click(screen.getByTestId('config-recaptcha_enable'));
-    expect(screen.queryByTestId('config-recaptcha_key')).not.toBeInTheDocument();
-    expect(mocks.saveMutateAsync).toHaveBeenCalledWith({ recaptcha_enable: false });
-    expect(mocks.refetch).not.toHaveBeenCalled();
-
-    // The successful refresh is authoritative. Model the backend-applied value
-    // instead of returning the stale pre-save fixture, and ensure it cannot
-    // re-open the conditional children.
-    mocks.configData = canonicalConfig;
-    act(() => resolveSave());
-    await waitFor(() => expect(mocks.refetch).toHaveBeenCalledTimes(1));
-    expect(screen.queryByTestId('config-recaptcha_key')).not.toBeInTheDocument();
-  });
-
-  it('passes the current Telegram token to the webhook action', async () => {
-    const user = userEvent.setup();
-    render(<ConfigPage />);
-
-    await user.click(screen.getByTestId('config-tab-telegram'));
-    await user.click(screen.getByTestId('config-set-webhook'));
-    await waitFor(() => expect(mocks.webhookMutateAsync).toHaveBeenCalledWith('0000000000:token'));
-  });
-
-  it('waits for the Telegram token save and authoritative refresh before setting webhook', async () => {
-    let resolveSave!: () => void;
-    mocks.saveMutateAsync.mockImplementationOnce(
-      () =>
-        new Promise<typeof APPLIED>((resolve) => {
-          resolveSave = () => resolve(APPLIED);
-        }),
-    );
-    const user = userEvent.setup();
-    render(<ConfigPage />);
-
-    await user.click(screen.getByTestId('config-tab-telegram'));
-    const token = screen.getByTestId('config-telegram_bot_token');
-    await user.clear(token);
-    await user.type(token, '1111111111:current-token');
-    await user.click(screen.getByTestId('config-set-webhook'));
-
-    await waitFor(() =>
-      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({
-        telegram_bot_token: '1111111111:current-token',
-      }),
-    );
-    expect(mocks.webhookMutateAsync).not.toHaveBeenCalled();
-
-    const canonicalConfig = makeConfig();
-    canonicalConfig.telegram.telegram_bot_token = '1111111111:current-token';
-    mocks.configData = canonicalConfig;
-    act(() => resolveSave());
-
-    await waitFor(() => expect(mocks.refetch).toHaveBeenCalledTimes(1));
-    await waitFor(() =>
-      expect(mocks.webhookMutateAsync).toHaveBeenCalledWith('1111111111:current-token'),
-    );
-  });
-
-  it('waits for the email section save and activation before testing mail', async () => {
-    let resolveSave!: () => void;
-    mocks.saveMutateAsync.mockImplementationOnce(
-      () =>
-        new Promise<typeof APPLIED>((resolve) => {
-          resolveSave = () => resolve(APPLIED);
-        }),
-    );
-    const user = userEvent.setup();
-    render(<ConfigPage />);
-
-    await user.click(screen.getByTestId('config-tab-email'));
-    const fromAddress = screen.getByTestId('config-email_from_address');
-    await user.clear(fromAddress);
-    await user.type(fromAddress, 'fresh@example.com');
+    const host = screen.getByTestId('config-email_host');
+    await user.clear(host);
+    await user.type(host, 'smtp.changed.example');
     await user.click(screen.getByTestId('config-test-mail'));
 
     await waitFor(() =>
       expect(mocks.saveMutateAsync).toHaveBeenCalledWith({
-        email_from_address: 'fresh@example.com',
+        expected_revision: 7,
+        email_host: 'smtp.changed.example',
       }),
     );
-    expect(mocks.testMailMutateAsync).not.toHaveBeenCalled();
+    await waitFor(() => expect(mocks.testMailMutateAsync).toHaveBeenCalledTimes(1));
+    expect(mocks.saveMutateAsync.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.testMailMutateAsync.mock.invocationCallOrder[0]!,
+    );
+  });
 
-    const canonicalConfig = makeConfig();
-    canonicalConfig.email.email_from_address = 'fresh@example.com';
-    mocks.configData = canonicalConfig;
-    act(() => resolveSave());
+  it('does not test mail against the old active snapshot after a pending save', async () => {
+    mocks.saveMutateAsync.mockResolvedValueOnce({ activation: 'pending', revision: 8 });
+    const user = userEvent.setup();
+    render(<ConfigPage />);
+    await user.click(screen.getByTestId('config-tab-email'));
+
+    const host = screen.getByTestId('config-email_host');
+    await user.clear(host);
+    await user.type(host, 'smtp.pending.example');
+    await user.click(screen.getByTestId('config-test-mail'));
 
     await waitFor(() => expect(mocks.refetch).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(mocks.testMailMutateAsync).toHaveBeenCalledWith());
+    expect(mocks.testMailMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('persists a staged Telegram token before setting the webhook', async () => {
+    const user = userEvent.setup();
+    render(<ConfigPage />);
+    await user.click(screen.getByTestId('config-tab-telegram'));
+
+    const token = screen.getByTestId('config-telegram_bot_token');
+    await user.clear(token);
+    await user.type(token, '1111111111:new-token');
+    await user.click(screen.getByTestId('config-set-webhook'));
+
+    await waitFor(() =>
+      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({
+        expected_revision: 7,
+        telegram_bot_token: '1111111111:new-token',
+      }),
+    );
+    await waitFor(() =>
+      expect(mocks.webhookMutateAsync).toHaveBeenCalledWith('1111111111:new-token'),
+    );
+  });
+
+  it('does not set a webhook against the old active snapshot after a pending save', async () => {
+    mocks.saveMutateAsync.mockResolvedValueOnce({ activation: 'pending', revision: 8 });
+    const user = userEvent.setup();
+    render(<ConfigPage />);
+    await user.click(screen.getByTestId('config-tab-telegram'));
+
+    const token = screen.getByTestId('config-telegram_bot_token');
+    await user.clear(token);
+    await user.type(token, '1111111111:pending-token');
+    await user.click(screen.getByTestId('config-set-webhook'));
+
+    await waitFor(() => expect(mocks.refetch).toHaveBeenCalledTimes(1));
+    expect(token).toHaveValue('********');
+    expect(window.sessionStorage.getItem(PENDING_SESSION_KEY)).not.toContain(
+      '1111111111:pending-token',
+    );
+    expect(window.localStorage.getItem(PENDING_FALLBACK_KEY)).not.toContain(
+      '1111111111:pending-token',
+    );
+    expect(screen.getByTestId('config-set-webhook')).toBeDisabled();
+    await user.click(screen.getByTestId('config-set-webhook'));
+    expect(mocks.webhookMutateAsync).not.toHaveBeenCalled();
+    expect(mocks.saveMutateAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('gates a section when its dependency fails and exposes retry', async () => {
+    mocks.plansData = undefined;
+    mocks.plansError = new Error('plans failed');
+    const user = userEvent.setup();
+    render(<ConfigPage />);
+
+    const error = screen.getByTestId('config-plans-error');
+    expect(screen.queryByTestId('config-app_name')).not.toBeInTheDocument();
+    await user.click(within(error).getByTestId('error-state-retry'));
+    expect(mocks.plansRefetch).toHaveBeenCalledTimes(1);
   });
 });
 
-describe('backend coercion helpers', () => {
-  it('reads §4.1 wire booleans first, then legacy numeric spellings', () => {
-    expect(isBackendEnabled(true)).toBe(true);
-    expect(isBackendEnabled(false)).toBe(false);
-    expect(isBackendEnabled(1)).toBe(true);
-    expect(isBackendEnabled('2')).toBe(true);
-    expect(isBackendEnabled(0)).toBe(false);
-    expect(isBackendEnabled('0')).toBe(false);
-    expect(isBackendEnabled('')).toBe(false);
-  });
-
-  it('coerces numeric fields to JSON numbers, clearing to null when empty (§4.4)', () => {
-    expect(parseBackendInteger('12px')).toBe(12);
+describe('config value helpers', () => {
+  it('coerces backend values and preserves history-routing paths', () => {
+    expect(parseBackendInteger('12')).toBe(12);
+    expect(() => parseBackendInteger('12.9')).toThrow('admin.config.integer_invalid');
+    expect(() => parseBackendInteger('12oops')).toThrow('admin.config.integer_invalid');
     expect(parseBackendInteger('')).toBeNull();
     expect(parseBackendNumber('12.5')).toBe(12.5);
-    expect(parseBackendNumber('')).toBeNull();
-  });
-
-  it('re-roots the current route path under the new secure-path base', () => {
-    // History routing (docs/api-dialect.md §10.1): a saved secure_path moves
-    // the admin basename, keeping the app-relative route (and query) intact.
-    expect(adminSecurePathLocation('/new-admin/', '/config/system')).toBe(
-      '/new-admin/config/system',
+    expect(() => parseBackendNumber('12oops')).toThrow('admin.config.number_invalid');
+    expect(isBackendEnabled(true)).toBe(true);
+    expect(isBackendEnabled('0')).toBe(false);
+    expect(adminSecurePathLocation('/next-admin/', '/config/system?tab=safe')).toBe(
+      '/next-admin/config/system?tab=safe',
     );
-    expect(adminSecurePathLocation('new-admin', '/user?page=2')).toBe('/new-admin/user?page=2');
-    // No usable current route falls back to the config page that saved it.
-    expect(adminSecurePathLocation('new-admin', '')).toBe('/new-admin/config/system');
-    expect(adminSecurePathLocation('new-admin', '/')).toBe('/new-admin/config/system');
   });
 });

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "new-york",
+  "rsc": false,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "src/styles/theme.css",
+    "baseColor": "neutral",
+    "cssVariables": true
+  },
+  "iconLibrary": "lucide",
+  "aliases": {
+    "components": "@v2board/ui",
+    "ui": "@v2board/ui",
+    "utils": "@v2board/ui/cn",
+    "lib": "@v2board/ui",
+    "hooks": "@v2board/ui"
+  }
+}

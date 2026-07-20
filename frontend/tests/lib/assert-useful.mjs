@@ -1044,17 +1044,33 @@ export function assertUsefulInteraction(label, result, target) {
   ) {
     throw new Error('admin config tabs did not change active tab');
   }
-  if (label === 'admin-config-unchanged-blur' && result.configSaveDelta !== 0) {
-    throw new Error(`unchanged admin config blur unexpectedly saved: ${JSON.stringify(result)}`);
+  if (
+    label === 'admin-config-draft-discard' &&
+    (result.before?.value === 'Parity Config Draft' ||
+      result.before?.saveDisabled !== true ||
+      result.before?.discardDisabled !== true ||
+      result.staged?.value !== 'Parity Config Draft' ||
+      result.staged?.saveDisabled !== false ||
+      result.staged?.discardDisabled !== false ||
+      result.discarded?.value === 'Parity Config Draft' ||
+      result.discarded?.saveDisabled !== true ||
+      result.discarded?.discardDisabled !== true ||
+      result.configSaveDelta !== 0)
+  ) {
+    throw new Error(
+      `admin config draft/discard did not remain one local transaction: ${JSON.stringify(result)}`,
+    );
   }
   if (
     label === 'admin-config-save-failure-matrix' &&
     (!jsonIncludes(result.before?.activeTabs, '站点') ||
       !jsonIncludes(result.edited?.inputValues, 'Parity Config Failure') ||
+      result.configSaveCountBeforeSubmit !== 0 ||
       result.configSaveRequests?.length !== 1 ||
       result.configSaveRequests?.[0]?.app_name !== 'Parity Config Failure' ||
       result.configFetchDelta !== 0 ||
-      !jsonIncludes(result.configFailed?.inputValues, 'Parity Config Failure'))
+      !jsonIncludes(result.configFailed?.inputValues, 'Parity Config Failure') ||
+      !String(result.errorText).includes('配置保存失败'))
   ) {
     throw new Error(
       `admin config save failure matrix did not preserve the rejected draft: ${JSON.stringify(result)}`,
@@ -1166,7 +1182,9 @@ export function assertUsefulInteraction(label, result, target) {
       !JSON.stringify(result.filled?.selectedValues).includes('按月重置') ||
       !jsonIncludesAny(result.filled?.actionButtons, ['取 消', '取消']) ||
       !jsonIncludesAny(result.filled?.actionButtons, ['提 交', '提交']) ||
-      !result.filled?.forceUpdate?.checked ||
+      (target === 'source'
+        ? result.filled?.forceUpdate !== null
+        : !result.filled?.forceUpdate?.checked) ||
       result.saveRequests?.length !== 1 ||
       result.saveRequests?.[0]?.name !== 'Parity Plan' ||
       result.saveRequests?.[0]?.content !== '<p>Parity plan body</p>' ||
@@ -1180,8 +1198,11 @@ export function assertUsefulInteraction(label, result, target) {
       String(result.saveRequests?.[0]?.capacity_limit) !== '99' ||
       String(result.saveRequests?.[0]?.speed_limit) !== '50' ||
       // W11 (§6.2): the modern create body denies `force_update` (no subscribers
-      // to force on a brand-new plan); the checkbox state is still verified by
-      // `result.filled?.forceUpdate?.checked` above.
+      // to force on a brand-new plan). The source must hide the edit-only
+      // control; the target-specific assertion above keeps the frozen oracle's
+      // historical checkbox meaningful in the finite compatibility lane.
+      (target === 'source' &&
+        Object.hasOwn(result.saveRequests?.[0] ?? {}, 'force_update')) ||
       result.planFetchDelta < 1 ||
       result.closed?.drawerCount !== 0)
   ) {
@@ -2582,6 +2603,27 @@ export function assertUsefulInteraction(label, result, target) {
   ) {
     throw new Error(
       `admin users extreme viewport matrix did not match legacy state: ${JSON.stringify(result)}`,
+    );
+  }
+  if (
+    label === 'admin-users-staff-permissions' &&
+    (result.permissionsBeforeStaff !== 0 ||
+      result.familySelectCount < 1 ||
+      result.update?.is_staff !== true ||
+      stableJson(result.update?.admin_permissions) !==
+        stableJson(['tickets:write', 'users:read']))
+  ) {
+    throw new Error(
+      `admin staff permission editor did not emit the expected grants: ${JSON.stringify(result)}`,
+    );
+  }
+  if (
+    label === 'admin-staff-session-gating' &&
+    (stableJson(result.navTexts) !== stableJson(['用户管理', '工单管理']) ||
+      result.rowCount !== 'rows')
+  ) {
+    throw new Error(
+      `staff session did not stay within its granted destinations: ${JSON.stringify(result)}`,
     );
   }
 }

@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "noEmit": true,
+    "types": ["node"],
+    "paths": {
+      "@v2board/ui": ["./src/components"],
+      "@v2board/ui/cn": ["./src/lib/cn.ts"],
+      "@v2board/ui/*": ["./src/components/*"]
+    }
+  },
+  "include": ["src/**/*"]
+}

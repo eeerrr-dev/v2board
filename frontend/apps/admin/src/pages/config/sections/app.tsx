@@ -1,8 +1,8 @@
 import { Controller } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { Field, FieldError } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
-import type { FormCtx } from '../schema';
+import { Field, FieldError } from '@v2board/ui/field';
+import { Input } from '@v2board/ui/input';
+import type { ConfigGroupField, FormCtx } from '../schema';
 import { Section, SettingRow, WarningAlert } from '../rows';
 import { toText } from '../values';
 
@@ -52,8 +52,8 @@ function AppEntryRow({
   ctx: FormCtx;
   title: string;
   description: string;
-  versionField: string;
-  urlField: string;
+  versionField: Extract<ConfigGroupField<'app'>, `${string}_version`>;
+  urlField: Extract<ConfigGroupField<'app'>, `${string}_download_url`>;
   urlPlaceholder: string;
 }) {
   const { t } = useTranslation();
@@ -76,7 +76,7 @@ function AppEntryRow({
                 onChange={(event) => field.onChange(event.target.value)}
                 onBlur={(event) => {
                   field.onBlur();
-                  void ctx.save('app', versionField, event.target.value);
+                  field.onChange(ctx.stage('app', versionField, event.target.value));
                 }}
               />
               <FieldError errors={[fieldState.error]} />
@@ -99,7 +99,7 @@ function AppEntryRow({
                 onChange={(event) => field.onChange(event.target.value)}
                 onBlur={(event) => {
                   field.onBlur();
-                  void ctx.save('app', urlField, event.target.value);
+                  field.onChange(ctx.stage('app', urlField, event.target.value));
                 }}
               />
               <FieldError errors={[fieldState.error]} />

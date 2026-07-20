@@ -329,6 +329,7 @@ const modernConfigFlag = (value) => value !== 0 && value !== '0' && value !== fa
 
 export const modernAdminConfigFixture = (config) => ({
   ...config,
+  revision: 7,
   invite: {
     ...config.invite,
     invite_force: modernConfigFlag(config.invite.invite_force),
@@ -359,14 +360,17 @@ export const modernAdminConfigFixture = (config) => ({
   },
   server: {
     ...config.server,
+    server_token: config.server.server_token ? '********' : null,
     device_limit_mode: modernConfigFlag(config.server.device_limit_mode),
   },
   email: {
     ...config.email,
+    email_password: config.email.email_password ? '********' : null,
     email_port: config.email.email_port == null ? null : Number(config.email.email_port),
   },
   telegram: {
     ...config.telegram,
+    telegram_bot_token: config.telegram.telegram_bot_token ? '********' : null,
     telegram_bot_enable: modernConfigFlag(config.telegram.telegram_bot_enable),
   },
   safe: {
@@ -377,6 +381,7 @@ export const modernAdminConfigFixture = (config) => ({
     email_whitelist_enable: modernConfigFlag(config.safe.email_whitelist_enable),
     email_gmail_limit_enable: modernConfigFlag(config.safe.email_gmail_limit_enable),
     recaptcha_enable: modernConfigFlag(config.safe.recaptcha_enable),
+    recaptcha_key: config.safe.recaptcha_key ? '********' : null,
     register_limit_by_ip_enable: modernConfigFlag(config.safe.register_limit_by_ip_enable),
     password_limit_enable: modernConfigFlag(config.safe.password_limit_enable),
   },

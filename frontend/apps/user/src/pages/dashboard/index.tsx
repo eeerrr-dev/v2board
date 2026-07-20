@@ -15,15 +15,15 @@ import {
   ShoppingBag,
   Smartphone,
 } from 'lucide-react';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ErrorState } from '@/components/ui/error-state';
-import { PageShell } from '@/components/ui/page';
+import { Alert, AlertDescription } from '@v2board/ui/alert';
+import { Button } from '@v2board/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@v2board/ui/card';
+import { ErrorState } from '@v2board/ui/error-state';
+import { PageShell } from '@v2board/ui/page';
 import { Progress } from '@/components/ui/progress';
-import { LoadingState } from '@/components/ui/loading-state';
-import { Skeleton } from '@/components/ui/skeleton';
-import { StatusBadge } from '@/components/ui/status-badge';
+import { LoadingState } from '@v2board/ui/loading-state';
+import { Skeleton } from '@v2board/ui/skeleton';
+import { StatusBadge } from '@v2board/ui/status-badge';
 import { DashboardNoticeCarousel } from './notice-carousel';
 import {
   DashboardConfirmDialog,
@@ -33,7 +33,7 @@ import {
 import { deriveDashboardSubscription } from './subscription';
 import { useCommConfig, useNotices, useSubscribe, useUserStat } from '@/lib/queries';
 import { formatBackendDateSlash, formatBytes } from '@v2board/config/format';
-import { cn } from '@/lib/cn';
+import { cn } from '@v2board/ui/cn';
 import { getSiteTitle } from '@/lib/runtime-config';
 
 interface ShortcutBase {

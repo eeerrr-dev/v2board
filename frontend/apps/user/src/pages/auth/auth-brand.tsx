@@ -1,5 +1,5 @@
 import { getLogoUrl, getSiteTitle } from '@/lib/runtime-config';
-import { cn } from '@/lib/cn';
+import { cn } from '@v2board/ui/cn';
 
 export function AuthPanelBrand({ className }: { className?: string }) {
   const title = getSiteTitle();

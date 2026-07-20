@@ -13,7 +13,7 @@
   "aliases": {
     "components": "@/components",
     "ui": "@/components/ui",
-    "utils": "@/lib/cn",
+    "utils": "@v2board/ui/cn",
     "lib": "@/lib",
     "hooks": "@/hooks"
   }

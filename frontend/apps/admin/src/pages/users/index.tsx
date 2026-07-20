@@ -34,24 +34,24 @@ import {
 } from '@/lib/queries';
 import { UserManageDrawer } from '@/components/user-manage-drawer';
 import { UserTrafficModal } from '@/components/user-traffic-modal';
-import { confirmDialog } from '@/components/ui/confirm-dialog';
+import { confirmDialog } from '@v2board/ui/confirm-dialog';
 import { toast } from '@/lib/toast';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@v2board/ui/button';
+import { Card, CardContent } from '@v2board/ui/card';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { PageHeader, PageShell } from '@/components/ui/page';
-import { ErrorState } from '@/components/ui/error-state';
-import { PaginationControl } from '@/components/ui/pagination';
-import { LoadingState, SkeletonRows } from '@/components/ui/loading-state';
-import { StatusBadge } from '@/components/ui/status-badge';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@/components/ui/table';
-import { cn } from '@/lib/cn';
+} from '@v2board/ui/dropdown-menu';
+import { PageHeader, PageShell } from '@v2board/ui/page';
+import { ErrorState } from '@v2board/ui/error-state';
+import { PaginationControl } from '@v2board/ui/pagination';
+import { LoadingState, SkeletonRows } from '@v2board/ui/loading-state';
+import { StatusBadge } from '@v2board/ui/status-badge';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@v2board/ui/tooltip';
+import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@v2board/ui/table';
+import { cn } from '@v2board/ui/cn';
 import { AssignOrderModal } from './assign-order-modal';
 import { UserFilterSheet } from './filter-sheet';
 import { GenerateUserModal } from './generate-user-modal';

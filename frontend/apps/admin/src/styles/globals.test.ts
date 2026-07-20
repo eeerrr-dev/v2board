@@ -4,9 +4,13 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const stylesDir = dirname(fileURLToPath(import.meta.url));
-const css = readdirSync(stylesDir)
-  .filter((name) => name.endsWith('.css'))
-  .map((name) => readFileSync(join(stylesDir, name), 'utf8'))
+const sharedStylesDir = join(stylesDir, '../../../../packages/ui/src/styles');
+const css = [stylesDir, sharedStylesDir]
+  .flatMap((directory) =>
+    readdirSync(directory)
+      .filter((name) => name.endsWith('.css'))
+      .map((name) => readFileSync(join(directory, name), 'utf8')),
+  )
   .join('\n');
 
 describe('admin CSS system', () => {

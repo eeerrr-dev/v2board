@@ -3,11 +3,11 @@ import { type FieldPath } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { ExternalLink } from 'lucide-react';
 import type { admin } from '@v2board/api-client';
-import { HeaderTooltip } from '@/components/ui/header-tooltip';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
+import { HeaderTooltip } from '@v2board/ui/header-tooltip';
+import { Input } from '@v2board/ui/input';
+import { Label } from '@v2board/ui/label';
+import { Switch } from '@v2board/ui/switch';
+import { Textarea } from '@v2board/ui/textarea';
 import {
   ANYTLS_PADDING_SCHEME_PLACEHOLDER,
   ENCRYPTION_MODE_OPTIONS,

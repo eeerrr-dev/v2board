@@ -1,6 +1,5 @@
 import { stripBasePath } from '@v2board/config';
 import { getAdminBasename } from '@/lib/runtime-config';
-import type { ConfigFieldValue } from './schema';
 
 // --- Backend-contract value coercions --------------------------------------
 
@@ -16,19 +15,12 @@ export function splitComma(value: string) {
     .filter(Boolean);
 }
 
-export function configValuesEqual(left: ConfigFieldValue, right: ConfigFieldValue) {
-  if (Array.isArray(left) || Array.isArray(right)) {
-    return Array.isArray(left) && Array.isArray(right) && toText(left) === toText(right);
-  }
-  return toText(left) === toText(right);
-}
-
 // History routing (docs/api-dialect.md §10.1): a saved secure_path moves the
 // whole admin base, so the current app-relative route is re-rooted under the
 // new `/{admin_path}` prefix via a full-page replace.
 export function adminSecurePathLocation(securePath: string, currentRoutePath: string) {
   const normalizedPath = securePath.trim().replace(/^\/+|\/+$/g, '');
-  // Dotted i18n key: the save queue surfaces this through FieldError, which
+  // Dotted i18n key: the section form surfaces this through FieldError, which
   // resolves it via translateRuntimeMessage (module scope has no `t`).
   if (!normalizedPath) throw new Error('admin.config.secure_path_required');
   const route = currentRoutePath.startsWith('/') ? currentRoutePath : '/config/system';
@@ -42,18 +34,35 @@ export function replaceAdminSecurePath(securePath: string) {
 }
 
 /**
- * §4.1: integer settings travel as JSON numbers. An empty or non-numeric
- * input coerces to `null`, the §4.4 clear-to-built-in-default signal.
+ * §4.1: integer settings travel as JSON numbers. An empty input maps to the
+ * §4.4 clear signal. Malformed or unsafe values are rejected in full instead
+ * of being silently prefix-parsed or truncated.
  */
 export function parseBackendInteger(value: string): number | null {
-  const parsed = parseInt(value, 10);
-  return Number.isNaN(parsed) ? null : parsed;
+  const normalized = value.trim();
+  if (normalized === '') return null;
+  if (!/^[+-]?\d+$/.test(normalized)) {
+    throw new TypeError('admin.config.integer_invalid');
+  }
+  const parsed = Number(normalized);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new TypeError('admin.config.integer_invalid');
+  }
+  return parsed;
 }
 
-/** §4.1 rate settings (distribution levels, trial hours) are JSON numbers. */
+/** §4.1 decimal settings are finite JSON numbers parsed from the whole input. */
 export function parseBackendNumber(value: string): number | null {
-  const parsed = Number.parseFloat(value);
-  return Number.isFinite(parsed) ? parsed : null;
+  const normalized = value.trim();
+  if (normalized === '') return null;
+  if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(normalized)) {
+    throw new TypeError('admin.config.number_invalid');
+  }
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed)) {
+    throw new TypeError('admin.config.number_invalid');
+  }
+  return parsed;
 }
 
 /** Maps a Radix Select option id to its §4.1 JSON-integer wire value. */
@@ -68,5 +77,6 @@ export function selectBoolean(value: string): boolean {
 
 export function isBackendEnabled(value: unknown) {
   if (typeof value === 'boolean') return value;
-  return Boolean(parseInt(toText(value)));
+  if (typeof value === 'number') return value === 1;
+  return typeof value === 'string' && value.trim() === '1';
 }

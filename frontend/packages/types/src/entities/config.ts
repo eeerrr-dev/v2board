@@ -91,7 +91,7 @@ export interface AdminConfigFlat {
   currency_symbol: string;
   subscribe_url: string | null;
   subscribe_path: string | null;
-  secure_path: string | null;
+  secure_path: string;
   legacy_hash_redirect_enable: boolean;
   frontend_theme_color: 'default' | 'darkblue' | 'black' | 'green';
   frontend_background_url: string | null;
@@ -246,17 +246,35 @@ export interface AdminConfigGroups {
  */
 export type AdminConfig = Partial<AdminConfigGroups> &
   Partial<AdminConfigFlat> & {
+    /** Active operator-config revision represented by this projection. */
+    revision: number;
     tabs?: keyof AdminConfigGroups;
   };
 
 /**
  * PATCH `/{secure_path}/config` (docs/api-dialect.md §6.1): 204 means the
- * write fully activated; 202 `{activation: "pending"}` means the write is
- * durable but not yet active — the admin UI must refetch, never resubmit.
+ * write fully activated; 202 returns the durable revision that the admin UI
+ * must observe on GET before it enables another config transaction.
  */
-export interface AdminConfigPatchResult {
-  activation: 'applied' | 'pending';
-}
+export type AdminConfigPatchResult =
+  { activation: 'applied' } | { activation: 'pending'; revision: number };
+
+/**
+ * PATCH `/{secure_path}/config` changes. Every field is optional (absent
+ * retains the current value) and every resettable field may be `null` (clear
+ * to the backend-owned default), even when the corresponding GET projection
+ * is non-null after default resolution. `secure_path` is the deliberate
+ * exception: the backend requires an explicit non-empty replacement.
+ */
+export type AdminConfigChanges = {
+  [Field in Exclude<keyof AdminConfigFlat, 'secure_path'>]?: AdminConfigFlat[Field] | null;
+} & { secure_path?: NonNullable<AdminConfigFlat['secure_path']> };
+
+/**
+ * PATCH body. `expected_revision` is required and must be the positive token
+ * from the GET projection on which the local draft was based.
+ */
+export type AdminConfigPatch = AdminConfigChanges & { expected_revision: number };
 
 /** GET `/{secure_path}/system/queue-stats` (§6.1, W9): bare snake_case. */
 export interface QueueStats {

@@ -10,24 +10,18 @@ import type { AdminUserRow } from '@v2board/types';
 import type { SelectorParam } from 'i18next';
 import { ADMIN_PERMISSION_FAMILIES, type AdminPermissionFamily } from '@/lib/permissions';
 import { useAdminPlans, useAdminUserInfo, useUpdateUserMutation } from '@/lib/queries';
-import { Button } from '@/components/ui/button';
-import { ErrorState } from '@/components/ui/error-state';
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
-import { EmptyState } from '@/components/ui/page';
+import { Button } from '@v2board/ui/button';
+import { ErrorState } from '@v2board/ui/error-state';
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@v2board/ui/field';
+import { Input } from '@v2board/ui/input';
+import { EmptyState } from '@v2board/ui/page';
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupInput,
   InputGroupText,
 } from '@/components/ui/input-group';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@v2board/ui/select';
 import {
   Sheet,
   SheetContent,
@@ -35,11 +29,11 @@ import {
   SheetFooter,
   SheetHeader,
   SheetTitle,
-} from '@/components/ui/sheet';
-import { LoadingState, SkeletonFields } from '@/components/ui/loading-state';
-import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+} from '@v2board/ui/sheet';
+import { LoadingState, SkeletonFields } from '@v2board/ui/loading-state';
+import { Switch } from '@v2board/ui/switch';
+import { Textarea } from '@v2board/ui/textarea';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@v2board/ui/tooltip';
 import { userManageSchema, type UserManageFormValues } from './user-manage-schema';
 
 function optionalNumber(value: string | number | null | undefined) {

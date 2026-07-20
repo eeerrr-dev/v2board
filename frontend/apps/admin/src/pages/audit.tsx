@@ -3,21 +3,15 @@ import type { SelectorParam } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import type { admin, FilterClause } from '@v2board/api-client';
 import { formatBackendDateTime } from '@v2board/config/format';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
-import { ErrorState } from '@/components/ui/error-state';
-import { Input } from '@/components/ui/input';
-import { PageHeader, PageShell } from '@/components/ui/page';
-import { PaginationControl } from '@/components/ui/pagination';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { LoadingState, SkeletonRows } from '@/components/ui/loading-state';
-import { DataTable, type DataTableColumn } from '@/components/ui/table';
+import { Badge } from '@v2board/ui/badge';
+import { Card, CardContent } from '@v2board/ui/card';
+import { ErrorState } from '@v2board/ui/error-state';
+import { Input } from '@v2board/ui/input';
+import { PageHeader, PageShell } from '@v2board/ui/page';
+import { PaginationControl } from '@v2board/ui/pagination';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@v2board/ui/select';
+import { LoadingState, SkeletonRows } from '@v2board/ui/loading-state';
+import { DataTable, type DataTableColumn } from '@v2board/ui/table';
 import { useAuditLogs } from '@/lib/queries';
 
 // Keyed by the wire `surface` values; labels resolve through t() at render.

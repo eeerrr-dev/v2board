@@ -16,6 +16,10 @@
     {
       "files": "apps/admin/**",
       "options": { "tailwindStylesheet": "apps/admin/src/styles/globals.css" }
+    },
+    {
+      "files": "packages/ui/**",
+      "options": { "tailwindStylesheet": "apps/user/src/styles/globals.css" }
     }
   ]
 }

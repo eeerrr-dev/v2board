@@ -2,8 +2,6 @@ import {
   activeTabState,
   clickVisibleAt,
   clickFirstVisibleTextStable,
-  fillVisibleAt,
-  blurVisibleAt,
   visibleCount,
   waitForPageProperty,
   waitForPagePropertyAtLeast,
@@ -13,7 +11,6 @@ import {
 import { adminConfigSaveFailureState } from '../../state-readers/admin.mjs';
 import {
   adminConfigTabSelector,
-  adminConfigFieldInputSelector,
   adminSelectDropdownSelector,
   adminSelectOptionSelector,
 } from '../../selectors.mjs';
@@ -33,33 +30,57 @@ export async function runAdminConfigTabsInteraction(page) {
 export async function runAdminConfigSaveFailureMatrixInteraction(page) {
   const initialConfigFetchCount = page.__visualParityAdminConfigFetchCount ?? 0;
   const before = await adminConfigSaveFailureState(page);
-  await fillVisibleAt(page, adminConfigFieldInputSelector, 0, 'Parity Config Failure');
-  // The redesigned config field commits on blur (onChange only stages a draft);
-  // the legacy field already saved on the fill's input/change event, so an
-  // explicit blur triggers the source save without adding a second legacy save.
-  await blurVisibleAt(page, adminConfigFieldInputSelector, 0);
-  await page.waitForTimeout(150);
+  await page.locator('[data-testid="config-app_name"]').fill('Parity Config Failure');
+  // A section is one explicit transaction: editing only stages a draft. The
+  // PATCH must begin on Save, never on input/change/blur.
+  await page.locator('[data-testid="config-app_name"]').blur();
   const edited = await adminConfigSaveFailureState(page);
+  const configSaveCountBeforeSubmit = page.__visualParityAdminConfigSaveCount ?? 0;
+  await page.locator('[data-testid="config-save"]').click();
   await waitForPagePropertyAtLeast(page, '__visualParityAdminConfigSaveCount', 1, 7_000);
   await page.waitForTimeout(350);
   const configFailed = await adminConfigSaveFailureState(page);
+  const errorText = await page.locator('[data-testid="config-save-error"]').textContent();
 
   return {
     before,
     configFailed,
     configFetchDelta: (page.__visualParityAdminConfigFetchCount ?? 0) - initialConfigFetchCount,
+    configSaveCountBeforeSubmit,
     configSaveRequests: clonePageRequests(page.__visualParityAdminConfigSaveRequests),
     edited,
+    errorText,
   };
 }
 
-export async function runAdminConfigUnchangedBlurInteraction(page) {
+export async function runAdminConfigDraftDiscardInteraction(page) {
   const initialSaveCount = page.__visualParityAdminConfigSaveCount ?? 0;
-  await clickVisibleAt(page, adminConfigFieldInputSelector, 0);
-  await blurVisibleAt(page, adminConfigFieldInputSelector, 0);
-  await page.waitForTimeout(350);
+  const readState = () =>
+    page.evaluate(() => {
+      const input = document.querySelector('[data-testid="config-app_name"]');
+      const save = document.querySelector('[data-testid="config-save"]');
+      const discard = document.querySelector('[data-testid="config-discard"]');
+      return {
+        value: input instanceof HTMLInputElement ? input.value : null,
+        saveDisabled: save instanceof HTMLButtonElement ? save.disabled : null,
+        discardDisabled: discard instanceof HTMLButtonElement ? discard.disabled : null,
+      };
+    });
+  const before = await readState();
+  await page.locator('[data-testid="config-app_name"]').fill('Parity Config Draft');
+  await page.locator('[data-testid="config-app_name"]').blur();
+  const staged = await readState();
+  await page.locator('[data-testid="config-discard"]').click();
+  await page.waitForFunction(() => {
+    const input = document.querySelector('[data-testid="config-app_name"]');
+    return input instanceof HTMLInputElement && input.value !== 'Parity Config Draft';
+  });
+  const discarded = await readState();
   return {
+    before,
     configSaveDelta: (page.__visualParityAdminConfigSaveCount ?? 0) - initialSaveCount,
+    discarded,
+    staged,
   };
 }
 

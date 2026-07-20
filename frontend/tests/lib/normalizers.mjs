@@ -368,8 +368,10 @@ export function normalizeInteractionResult(label, result) {
     // label chrome (antd's inline 添加权限组), and rendered table rows (操作 dropdown
     // vs inline 编辑/删除 + antd fixed-column duplicates) are Tier-2 presentation.
     // Compare only the Tier-1 essence: drawer open/close, the field values, the
-    // selected option labels, the option lists, the force-update checkbox and the
-    // title. Non-drawer captures (keyboard focus, fetch deltas, save payloads) pass
+    // selected option labels, the option lists, the edit-only force-update
+    // checkbox and the title. The create flow deliberately drops that control:
+    // the modern contract forbids it while the frozen oracle still renders it.
+    // Non-drawer captures (keyboard focus, fetch deltas, save payloads) pass
     // through untouched.
     const reduced = {};
     for (const [key, value] of Object.entries(normalized)) {
@@ -380,7 +382,9 @@ export function normalizeInteractionResult(label, result) {
             ? {
                 drawerCount: value.drawerCount,
                 dropdownItems: value.dropdownItems,
-                forceUpdate: value.forceUpdate,
+                ...(label === 'admin-plan-create-drawer'
+                  ? {}
+                  : { forceUpdate: value.forceUpdate }),
                 inputValues: value.inputValues,
                 selectedValues: value.selectedValues,
                 titles: value.titles,
@@ -787,39 +791,6 @@ export function normalizeInteractionResult(label, result) {
       filterFetchRequests: Array.isArray(normalized.filterFetchRequests)
         ? normalized.filterFetchRequests.map(stripAntdTableParams)
         : normalized.filterFetchRequests,
-    };
-  }
-  if (label === 'admin-config-save-failure-matrix') {
-    // Reduce the config-form snapshots to their Tier-1 essence. Keep only the
-    // non-empty field values (the redesigned site form renders one fewer empty
-    // <input> than the OneUI oracle — which control renders as a text input is
-    // Tier-2), and drop the intermediate saveCount (the redesigned blur-save
-    // lands before `edited` is read while the legacy debounced save lands after
-    // — timing, covered by configSaveRequests). Reduce each config save request
-    // to the single field the interaction changed: the legacy form re-sends the
-    // whole site group's unchanged currency/currency_symbol values, the
-    // redesigned form saves only app_name — both persist app_name identically,
-    // which the raw assertion pins. Theme snapshots already match on both DOMs.
-    const reduceConfigSnapshot = (state) => {
-      if (!state || typeof state !== 'object') return state;
-      const { blockLoadingCount: _blockLoadingCount, saveCount: _saveCount, ...rest } = state;
-      return {
-        ...rest,
-        inputValues: Array.isArray(rest.inputValues)
-          ? rest.inputValues.filter((value) => value !== '')
-          : rest.inputValues,
-      };
-    };
-    return {
-      ...normalized,
-      before: reduceConfigSnapshot(normalized.before),
-      configFailed: reduceConfigSnapshot(normalized.configFailed),
-      configSaveRequests: Array.isArray(normalized.configSaveRequests)
-        ? normalized.configSaveRequests.map((request) =>
-            request && typeof request === 'object' ? { app_name: request.app_name } : request,
-          )
-        : normalized.configSaveRequests,
-      edited: reduceConfigSnapshot(normalized.edited),
     };
   }
   if (label === 'admin-server-create-node-drawer') {

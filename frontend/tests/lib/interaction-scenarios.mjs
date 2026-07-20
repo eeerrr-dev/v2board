@@ -2,7 +2,7 @@ import {
   runAdminAuditFiltersInteraction,
   runAdminConfigSaveFailureMatrixInteraction,
   runAdminConfigTabsInteraction,
-  runAdminConfigUnchangedBlurInteraction,
+  runAdminConfigDraftDiscardInteraction,
 } from './runners/admin/config.mjs';
 import { runAccessibilitySmokeInteraction } from './runners/accessibility.mjs';
 import {
@@ -712,9 +712,12 @@ export const interactions = [
     scenarioLabel: 'admin-config',
   },
   {
-    label: 'admin-config-unchanged-blur',
-    run: runAdminConfigUnchangedBlurInteraction,
+    // Native explicit section transaction: the legacy oracle only has
+    // per-field autosave, so it cannot represent Save/Discard semantics.
+    label: 'admin-config-draft-discard',
+    run: runAdminConfigDraftDiscardInteraction,
     scenarioLabel: 'admin-config',
+    sourceOnly: true,
   },
   {
     adminConfigSaveError: true,
@@ -722,6 +725,7 @@ export const interactions = [
     label: 'admin-config-save-failure-matrix',
     run: runAdminConfigSaveFailureMatrixInteraction,
     scenarioLabel: 'admin-config',
+    sourceOnly: true,
   },
   {
     // §6.11: the /audit operator audit trail and its §7 filter DSL clauses.

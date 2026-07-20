@@ -8,6 +8,7 @@ use v2board_compat::{ApiError, Code, Problem};
 use v2board_config::{app_now, app_timezone};
 use v2board_db::DbTransaction;
 use v2board_db::plan::PlanRow;
+use v2board_domain_model::PlanPricePeriod;
 
 use super::{
     CouponRow, DraftOrder, GIB, OrderForCheckout, OrderService, PaymentForCheckout,
@@ -121,7 +122,7 @@ impl OrderService {
                 )
                 .into());
         }
-        let hidden_unbuyable = plan.show == 0 && (plan.renew == 0 || user.plan_id != Some(plan.id));
+        let hidden_unbuyable = !plan.show && (!plan.renew || user.plan_id != Some(plan.id));
         if hidden_unbuyable && period != "reset_price" {
             return Err(Problem::new(Code::PlanSoldOut)
                 .with_detail(
@@ -129,14 +130,14 @@ impl OrderService {
                 )
                 .into());
         }
-        if plan.renew == 0 && user.plan_id == Some(plan.id) && period != "reset_price" {
+        if !plan.renew && user.plan_id == Some(plan.id) && period != "reset_price" {
             return Err(Problem::new(Code::RenewalNotAllowed)
                 .with_detail(
                     "This subscription cannot be renewed, please change to another subscription",
                 )
                 .into());
         }
-        if plan.show == 0 && plan.renew != 0 && !is_available(&user) {
+        if !plan.show && plan.renew && !is_available(&user) {
             return Err(Problem::new(Code::RenewalNotAllowed)
                 .with_detail("This subscription has expired, please change to another subscription")
                 .into());
@@ -1019,17 +1020,7 @@ fn is_available(user: &UserForOrder) -> bool {
 }
 
 fn plan_period_price(plan: &PlanRow, period: &str) -> Option<i32> {
-    match period {
-        "month_price" => plan.month_price,
-        "quarter_price" => plan.quarter_price,
-        "half_year_price" => plan.half_year_price,
-        "year_price" => plan.year_price,
-        "two_year_price" => plan.two_year_price,
-        "three_year_price" => plan.three_year_price,
-        "onetime_price" => plan.onetime_price,
-        "reset_price" => plan.reset_price,
-        _ => None,
-    }
+    plan.price(plan_price_period_from_order_period(period)?)
 }
 
 pub(super) fn purchasable_period_price(plan: &PlanRow, period: &str) -> Result<i32, ApiError> {
@@ -1142,28 +1133,23 @@ fn subscription_value_out_of_range(detail: &'static str) -> ApiError {
 }
 
 pub(super) fn is_valid_period(period: &str) -> bool {
-    matches!(
-        period,
-        "month_price"
-            | "quarter_price"
-            | "half_year_price"
-            | "year_price"
-            | "two_year_price"
-            | "three_year_price"
-            | "onetime_price"
-            | "reset_price"
-            | "deposit"
-    )
+    period == "deposit" || plan_price_period_from_order_period(period).is_some()
 }
 
 fn period_months(period: &str) -> Option<u32> {
+    plan_price_period_from_order_period(period)?.recurring_months()
+}
+
+fn plan_price_period_from_order_period(period: &str) -> Option<PlanPricePeriod> {
     match period {
-        "month_price" => Some(1),
-        "quarter_price" => Some(3),
-        "half_year_price" => Some(6),
-        "year_price" => Some(12),
-        "two_year_price" => Some(24),
-        "three_year_price" => Some(36),
+        "month_price" => Some(PlanPricePeriod::Month),
+        "quarter_price" => Some(PlanPricePeriod::Quarter),
+        "half_year_price" => Some(PlanPricePeriod::HalfYear),
+        "year_price" => Some(PlanPricePeriod::Year),
+        "two_year_price" => Some(PlanPricePeriod::TwoYear),
+        "three_year_price" => Some(PlanPricePeriod::ThreeYear),
+        "onetime_price" => Some(PlanPricePeriod::OneTime),
+        "reset_price" => Some(PlanPricePeriod::Reset),
         _ => None,
     }
 }

@@ -380,13 +380,18 @@ function fallbackCodeFor(status) {
 /**
  * §13.3/§6.1 — the pinned non-error equivalence: the oracle's 503
  * `配置已提交…` config-activation message and the source world's
- * 202 `{"activation": "pending"}` map to one canonical outcome.
+ * 202 `{"activation": "pending", "revision": n}` map to one canonical
+ * outcome. The source token is validated before the cross-world adapter
+ * deliberately drops it (the oracle has no equivalent revision).
  */
 export const CONFIG_ACTIVATION_PENDING = Object.freeze({ kind: 'config_activation_pending' });
 
 export function canonicalizeConfigActivation(world, { status, body, message }) {
   if (world === 'source') {
-    return Number(status) === 202 && body?.activation === 'pending'
+    return Number(status) === 202 &&
+      body?.activation === 'pending' &&
+      Number.isSafeInteger(body?.revision) &&
+      body.revision > 0
       ? CONFIG_ACTIVATION_PENDING
       : null;
   }

@@ -6,7 +6,7 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
-use v2board_compat::{Page, Pagination, Problem, page};
+use v2board_compat::{ApiError, Page, Pagination, Problem, page};
 use v2board_domain::{
     admin::ConfigPatchOutcome,
     auth::{AuthUser, MfaStatus, TotpProvisioning},
@@ -102,49 +102,81 @@ pub(super) struct ConfigQuery {
     group: Option<String>,
 }
 
-/// GET `config` `?group=` (docs/api-dialect.md §6.1): bare grouped object.
+#[derive(Deserialize)]
+pub(super) struct ConfigPatchBody {
+    /// Optimistic-concurrency token returned by GET `config`.
+    pub(super) expected_revision: i64,
+    /// The remaining top-level members are the partial operator changes.
+    #[serde(flatten)]
+    pub(super) changes: Map<String, Value>,
+}
+
+/// GET `config` `?group=` (docs/api-dialect.md §6.1): bare grouped object with
+/// the active operator `revision` at the top level in both full and grouped
+/// views.
 pub(super) async fn config_view(
     State(state): State<AppState>,
     Query(query): Query<ConfigQuery>,
-) -> Json<Value> {
+    headers: HeaderMap,
+) -> Result<Json<Value>, Problem> {
+    let locale = request_locale(&headers);
     let service = state.admin_service(state.config_snapshot());
-    Json(service.config_view(query.group.as_deref()))
+    service
+        .config_view(query.group.as_deref())
+        .map(Json)
+        .map_err(|error| problem_from(error, locale))
 }
 
 /// PATCH `config` (docs/api-dialect.md §6.1): 204 on full activation, 202
-/// `{"activation": "pending"}` when the write persisted but this API process
-/// could not activate the new snapshot (the write is durable — retrying the
-/// PATCH would 409 `config_revision_conflict`; the admin UI must refetch,
-/// never resubmit), 409 on a stale revision.
+/// `{"activation": "pending", "revision": n}` when the write persisted but
+/// this API process could not activate the new snapshot (the write is durable
+/// — retrying the PATCH would 409 `config_revision_conflict`; the admin UI
+/// must refetch, never resubmit), 409 on a stale revision.
 pub(super) async fn config_patch(
     State(state): State<AppState>,
     Extension(admin): Extension<AuthUser>,
     headers: HeaderMap,
-    DialectJson(body): DialectJson<Map<String, Value>>,
+    DialectJson(body): DialectJson<ConfigPatchBody>,
 ) -> Result<Response, Problem> {
     let locale = request_locale(&headers);
     let service = state.admin_service(state.config_snapshot());
     let outcome = service
-        .config_patch(&body, &admin.email)
+        .config_patch(&body.changes, body.expected_revision, &admin.email)
         .await
         .map_err(|error| problem_from(error, locale))?;
     match outcome {
         ConfigPatchOutcome::Unchanged => Ok(StatusCode::NO_CONTENT.into_response()),
-        ConfigPatchOutcome::Committed(config) => Ok(config_activation_response(
-            state.activate_operator_config(*config).await,
-        )),
+        ConfigPatchOutcome::Committed(config) => {
+            // The response token is the revision PostgreSQL actually committed,
+            // carried by the validated AppConfig. Never derive it from the
+            // request or the still-active pre-patch snapshot.
+            let revision = config
+                .operator_revision()
+                .filter(|revision| *revision > 0)
+                .ok_or_else(|| {
+                    problem_from(
+                        ApiError::internal("committed operator configuration revision is missing"),
+                        locale,
+                    )
+                })?;
+            let applied = state
+                .activate_operator_config(*config)
+                .await
+                .map_err(|error| problem_from(error, locale))?;
+            Ok(config_activation_response(applied, revision))
+        }
     }
 }
 
 /// The only 202 in the dialect (§1): a durable-but-not-yet-active config
 /// write. Success with full activation is an empty 204.
-pub(super) fn config_activation_response(applied: bool) -> Response {
+pub(super) fn config_activation_response(applied: bool, revision: i64) -> Response {
     if applied {
         StatusCode::NO_CONTENT.into_response()
     } else {
         (
             StatusCode::ACCEPTED,
-            Json(json!({ "activation": "pending" })),
+            Json(json!({ "activation": "pending", "revision": revision })),
         )
             .into_response()
     }

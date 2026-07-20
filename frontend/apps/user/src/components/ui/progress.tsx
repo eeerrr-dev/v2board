@@ -1,6 +1,6 @@
 import { Progress as ProgressPrimitive } from 'radix-ui';
 import { type ComponentProps, type ComponentPropsWithoutRef } from 'react';
-import { cn } from '@/lib/cn';
+import { cn } from '@v2board/ui/cn';
 
 type DataAttributes = {
   [key: `data-${string}`]: string | number | boolean | undefined;

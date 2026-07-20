@@ -5,20 +5,14 @@ import { useTranslation } from 'react-i18next';
 import { useEmptyDescription } from '@/lib/use-empty-description';
 import type { Knowledge, KnowledgeSummary } from '@v2board/types';
 import { ChevronRight, Search } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ErrorState } from '@/components/ui/error-state';
-import { Input } from '@/components/ui/input';
-import { PageShell } from '@/components/ui/page';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
-import { LoadingState, SkeletonLines, SkeletonRows } from '@/components/ui/loading-state';
-import { cn } from '@/lib/cn';
+import { Badge } from '@v2board/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@v2board/ui/card';
+import { ErrorState } from '@v2board/ui/error-state';
+import { Input } from '@v2board/ui/input';
+import { PageShell } from '@v2board/ui/page';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@v2board/ui/sheet';
+import { LoadingState, SkeletonLines, SkeletonRows } from '@v2board/ui/loading-state';
+import { cn } from '@v2board/ui/cn';
 import { getRequestLocale } from '@/lib/api';
 import { formatBackendDateSlash } from '@v2board/config/format';
 import { copyText } from '@v2board/config/clipboard';

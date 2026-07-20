@@ -1,8 +1,14 @@
 use super::*;
+use v2board_domain_model::{
+    MoneyMinor, PlanPricePeriod, PlanPriceUpdate, PlanPriceUpdates, PlanPrices,
+};
 
 use super::orders::{OrderPatchAction, order_patch_action};
 use super::payments::handling_fee_percent_decimal;
-use super::plans::plan_patch_validation;
+use super::plans::{
+    plan_create_validation, plan_in_use_problem, plan_patch_validation,
+    plan_reference_for_constraint, plan_sort_ids,
+};
 
 /// §6.4: PATCH `orders/{trade_no}` demands **exactly one** of `status`
 /// and `commission_status` — both or neither is a 422 validation
@@ -102,44 +108,151 @@ fn handling_fee_percent_window_is_exact() {
     assert_eq!(handling_fee_percent_decimal(None).unwrap(), None);
 }
 
-/// §4.4 + amount windows on the plan PATCH: double-Option clears, and
-/// every amount keeps the non-negative 32-bit window.
+/// §4.4 + amount windows on the plan PATCH: the typed update collection
+/// distinguishes retain, clear, and set before the use case runs.
 #[test]
 fn plan_patch_distinguishes_absent_null_and_value_and_validates_amounts() {
-    let patch: PlanPatch = serde_json::from_value(json!({
-        "month_price": null,
-        "capacity_limit": 50,
-        "show": true,
-        "force_update": true
-    }))
-    .unwrap();
-    assert_eq!(patch.month_price, Some(None));
+    let mut prices = PlanPriceUpdates::default();
+    prices.set(PlanPricePeriod::Month, PlanPriceUpdate::Clear);
+    let patch = PlanPatchCommand {
+        prices,
+        capacity_limit: Some(Some(50)),
+        show: Some(true),
+        force_update: Some(true),
+        ..PlanPatchCommand::default()
+    };
+    assert_eq!(
+        patch.prices.get(PlanPricePeriod::Month),
+        PlanPriceUpdate::Clear
+    );
     assert_eq!(patch.capacity_limit, Some(Some(50)));
-    assert!(patch.quarter_price.is_none());
+    assert_eq!(
+        patch.prices.get(PlanPricePeriod::Quarter),
+        PlanPriceUpdate::Retain
+    );
     assert_eq!(patch.show, Some(true));
     assert_eq!(patch.force_update, Some(true));
     assert!(plan_patch_validation(&patch).is_ok());
 
-    for invalid in [
-        json!({ "month_price": -1 }),
-        json!({ "transfer_enable": 2_147_483_648_i64 }),
-    ] {
-        let patch: PlanPatch = serde_json::from_value(invalid).unwrap();
+    assert_eq!(MoneyMinor::try_from(-1).unwrap().get(), -1);
+    let wide_transfer = PlanPatchCommand {
+        transfer_enable: Some(2_147_483_648_i64),
+        ..PlanPatchCommand::default()
+    };
+    assert!(matches!(
+        plan_patch_validation(&wide_transfer),
+        Err(ApiError::Problem(problem)) if problem.code() == Code::ValidationFailed
+    ));
+    let negative_transfer = PlanPatchCommand {
+        transfer_enable: Some(-1),
+        ..PlanPatchCommand::default()
+    };
+    assert!(matches!(
+        plan_patch_validation(&negative_transfer),
+        Err(ApiError::Problem(problem)) if problem.code() == Code::ValidationFailed
+    ));
+    let bad_reset = PlanPatchCommand {
+        reset_traffic_method: Some(Some(40_000)),
+        ..PlanPatchCommand::default()
+    };
+    assert!(plan_patch_validation(&bad_reset).is_err());
+}
+
+#[test]
+fn plan_create_and_patch_reject_reset_methods_outside_the_wire_enum() {
+    for invalid in [-1, 5] {
+        let create = PlanCreateCommand {
+            name: "reset enum".to_string(),
+            group_id: 1,
+            transfer_enable: 1,
+            device_limit: None,
+            speed_limit: None,
+            capacity_limit: None,
+            content: None,
+            prices: PlanPrices::default(),
+            reset_traffic_method: Some(invalid),
+        };
+        assert!(matches!(
+            plan_create_validation(&create),
+            Err(ApiError::Problem(problem)) if problem.code() == Code::ValidationFailed
+        ));
+
+        let patch = PlanPatchCommand {
+            reset_traffic_method: Some(Some(invalid)),
+            ..PlanPatchCommand::default()
+        };
         assert!(matches!(
             plan_patch_validation(&patch),
             Err(ApiError::Problem(problem)) if problem.code() == Code::ValidationFailed
         ));
     }
-    let bad_reset: PlanPatch =
-        serde_json::from_value(json!({ "reset_traffic_method": 40_000 })).unwrap();
-    assert!(plan_patch_validation(&bad_reset).is_err());
+
+    for valid in [0, 4] {
+        let patch = PlanPatchCommand {
+            reset_traffic_method: Some(Some(valid)),
+            ..PlanPatchCommand::default()
+        };
+        assert!(plan_patch_validation(&patch).is_ok());
+    }
 }
 
-/// §6.2/§4.5: admin plan and payment items serialize bool flags and
-/// RFC 3339 timestamps (prices cents, `handling_fee_percent` a number).
+#[test]
+fn plan_sort_requires_unique_positive_i32_ids_before_database_access() {
+    assert_eq!(plan_sort_ids(&[]).unwrap(), Vec::<i32>::new());
+    assert_eq!(plan_sort_ids(&[3, 1, 2]).unwrap(), vec![3, 1, 2]);
+    for invalid in [&[1, 1][..], &[0][..], &[-1][..], &[2_147_483_648][..]] {
+        assert!(matches!(
+            plan_sort_ids(invalid),
+            Err(ApiError::Problem(problem)) if problem.code() == Code::ValidationFailed
+        ));
+    }
+}
+
+#[test]
+fn plan_delete_foreign_keys_map_to_stable_plan_in_use_dependencies() {
+    use v2board_db::plan::PlanReferenceKind;
+
+    for (constraint, expected, detail) in [
+        (
+            "orders_referenced_plan_id_fkey",
+            PlanReferenceKind::Order,
+            "该订阅下存在订单无法删除",
+        ),
+        (
+            "users_plan_id_fkey",
+            PlanReferenceKind::User,
+            "该订阅下存在用户无法删除",
+        ),
+        (
+            "gift_card_plan_id_fkey",
+            PlanReferenceKind::GiftCard,
+            "该订阅仍被礼品卡使用，无法删除",
+        ),
+    ] {
+        let dependency = plan_reference_for_constraint(Some(constraint));
+        assert_eq!(dependency, Some(expected));
+        let problem = plan_in_use_problem(expected);
+        assert_eq!(problem.code(), Code::PlanInUse);
+        assert_eq!(problem.detail(), detail);
+    }
+    assert_eq!(plan_reference_for_constraint(None), None);
+    assert_eq!(
+        plan_reference_for_constraint(Some("future_plan_reference_fkey")),
+        None
+    );
+}
+
+/// The application plan projection keeps booleans, minor units, and epoch
+/// seconds; the HTTP adapter owns RFC 3339 serialization. Payment remains on
+/// its older application DTO until that family gets the same boundary split.
 #[test]
 fn commerce_items_serialize_modern_value_types() {
-    let plan = AdminPlanItem {
+    let mut prices = PlanPrices::default();
+    prices.set(
+        PlanPricePeriod::Month,
+        Some(MoneyMinor::try_from(1_000).unwrap()),
+    );
+    let plan = AdminPlanView {
         id: 1,
         group_id: 1,
         transfer_enable: 100,
@@ -150,26 +263,21 @@ fn commerce_items_serialize_modern_value_types() {
         sort: Some(1),
         renew: false,
         content: None,
-        month_price: Some(1000),
-        quarter_price: None,
-        half_year_price: None,
-        year_price: None,
-        two_year_price: None,
-        three_year_price: None,
-        onetime_price: None,
-        reset_price: None,
+        prices,
         reset_traffic_method: Some(0),
         capacity_limit: None,
         count: 3,
         created_at: 1_700_000_000,
         updated_at: 1_700_000_000,
     };
-    let encoded = serde_json::to_value(&plan).unwrap();
-    assert_eq!(encoded["show"], json!(true));
-    assert_eq!(encoded["renew"], json!(false));
-    assert_eq!(encoded["count"], json!(3));
-    assert_eq!(encoded["month_price"], json!(1000));
-    assert_eq!(encoded["created_at"], json!("2023-11-14T22:13:20Z"));
+    assert!(plan.show);
+    assert!(!plan.renew);
+    assert_eq!(plan.count, 3);
+    assert_eq!(
+        plan.prices.get(PlanPricePeriod::Month).map(MoneyMinor::get),
+        Some(1000)
+    );
+    assert_eq!(plan.created_at, 1_700_000_000);
 
     let payment = AdminPaymentItem {
         id: 7,

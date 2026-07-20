@@ -1,0 +1,719 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "V2Board internal API",
+    "description": "Generated contract for the modern, non-frozen internal API",
+    "license": {
+      "name": "MIT",
+      "identifier": "MIT"
+    },
+    "version": "0.9.0"
+  },
+  "paths": {
+    "/api/v1/{secure_path}/plans": {
+      "get": {
+        "tags": [
+          "admin-plans"
+        ],
+        "operationId": "adminPlansList",
+        "parameters": [
+          {
+            "name": "secure_path",
+            "in": "path",
+            "description": "Live administrative path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "All plans",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminPlanItem"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "admin-plans"
+        ],
+        "operationId": "adminPlanCreate",
+        "parameters": [
+          {
+            "name": "secure_path",
+            "in": "path",
+            "description": "Live administrative path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created plan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedId"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/{secure_path}/plans/sort": {
+      "post": {
+        "tags": [
+          "admin-plans"
+        ],
+        "operationId": "adminPlansSort",
+        "parameters": [
+          {
+            "name": "secure_path",
+            "in": "path",
+            "description": "Live administrative path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SortIdsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Plans reordered"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/{secure_path}/plans/{id}": {
+      "delete": {
+        "tags": [
+          "admin-plans"
+        ],
+        "operationId": "adminPlanDelete",
+        "parameters": [
+          {
+            "name": "secure_path",
+            "in": "path",
+            "description": "Live administrative path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Plan identifier",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Plan deleted"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "admin-plans"
+        ],
+        "operationId": "adminPlanPatch",
+        "parameters": [
+          {
+            "name": "secure_path",
+            "in": "path",
+            "description": "Live administrative path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Plan identifier",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Plan updated"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AdminPlanItem": {
+        "type": "object",
+        "description": "Admin plan response. Prices are always integer minor currency units.",
+        "required": [
+          "id",
+          "group_id",
+          "transfer_enable",
+          "device_limit",
+          "name",
+          "speed_limit",
+          "show",
+          "sort",
+          "renew",
+          "content",
+          "month_price",
+          "quarter_price",
+          "half_year_price",
+          "year_price",
+          "two_year_price",
+          "three_year_price",
+          "onetime_price",
+          "reset_price",
+          "reset_traffic_method",
+          "capacity_limit",
+          "count",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "capacity_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "content": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "created_at": {
+            "$ref": "#/components/schemas/Rfc3339Timestamp"
+          },
+          "device_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "group_id": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "half_year_price": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "month_price": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "name": {
+            "type": "string"
+          },
+          "onetime_price": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "quarter_price": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "renew": {
+            "type": "boolean"
+          },
+          "reset_price": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "reset_traffic_method": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "maximum": 4,
+            "minimum": 0
+          },
+          "show": {
+            "type": "boolean"
+          },
+          "sort": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "speed_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "three_year_price": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "transfer_enable": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 2147483647,
+            "minimum": 0
+          },
+          "two_year_price": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "updated_at": {
+            "$ref": "#/components/schemas/Rfc3339Timestamp"
+          },
+          "year_price": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreatedId": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PlanCreate": {
+        "type": "object",
+        "required": [
+          "name",
+          "group_id",
+          "transfer_enable"
+        ],
+        "properties": {
+          "capacity_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "maximum": 2147483647,
+            "minimum": 0
+          },
+          "content": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "device_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "maximum": 2147483647,
+            "minimum": 0
+          },
+          "group_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "half_year_price": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "maximum": 2147483647,
+            "minimum": -2147483648
+          },
+          "month_price": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "maximum": 2147483647,
+            "minimum": -2147483648
+          },
+          "name": {
+            "type": "string"
+          },
+          "onetime_price": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "maximum": 2147483647,
+            "minimum": -2147483648
+          },
+          "quarter_price": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "maximum": 2147483647,
+            "minimum": -2147483648
+          },
+          "reset_price": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "maximum": 2147483647,
+            "minimum": -2147483648
+          },
+          "reset_traffic_method": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "maximum": 4,
+            "minimum": 0
+          },
+          "speed_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "maximum": 2147483647,
+            "minimum": 0
+          },
+          "three_year_price": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "maximum": 2147483647,
+            "minimum": -2147483648
+          },
+          "transfer_enable": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 2147483647,
+            "minimum": 0
+          },
+          "two_year_price": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "maximum": 2147483647,
+            "minimum": -2147483648
+          },
+          "year_price": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "maximum": 2147483647,
+            "minimum": -2147483648
+          }
+        },
+        "additionalProperties": false
+      },
+      "PlanPatch": {
+        "type": "object",
+        "properties": {
+          "capacity_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "maximum": 2147483647,
+            "minimum": 0
+          },
+          "content": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "device_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "maximum": 2147483647,
+            "minimum": 0
+          },
+          "force_update": {
+            "type": "boolean"
+          },
+          "group_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "half_year_price": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "maximum": 2147483647,
+            "minimum": -2147483648
+          },
+          "month_price": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "maximum": 2147483647,
+            "minimum": -2147483648
+          },
+          "name": {
+            "type": "string"
+          },
+          "onetime_price": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "maximum": 2147483647,
+            "minimum": -2147483648
+          },
+          "quarter_price": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "maximum": 2147483647,
+            "minimum": -2147483648
+          },
+          "renew": {
+            "type": "boolean"
+          },
+          "reset_price": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "maximum": 2147483647,
+            "minimum": -2147483648
+          },
+          "reset_traffic_method": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "maximum": 4,
+            "minimum": 0
+          },
+          "show": {
+            "type": "boolean"
+          },
+          "speed_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "maximum": 2147483647,
+            "minimum": 0
+          },
+          "three_year_price": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "maximum": 2147483647,
+            "minimum": -2147483648
+          },
+          "transfer_enable": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 2147483647,
+            "minimum": 0
+          },
+          "two_year_price": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "maximum": 2147483647,
+            "minimum": -2147483648
+          },
+          "year_price": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "maximum": 2147483647,
+            "minimum": -2147483648
+          }
+        },
+        "additionalProperties": false
+      },
+      "Rfc3339Timestamp": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "SortIdsRequest": {
+        "type": "object",
+        "required": [
+          "ids"
+        ],
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "securitySchemes": {
+      "bearer_auth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "admin-plans",
+      "description": "Administrative plan management"
+    }
+  ]
+}

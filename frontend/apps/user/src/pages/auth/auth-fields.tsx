@@ -1,20 +1,14 @@
 import type { ComponentPropsWithRef, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Button, type ButtonProps } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { LoadingState, SkeletonFields } from '@/components/ui/loading-state';
-import { Skeleton } from '@/components/ui/skeleton';
-import { cn } from '@/lib/cn';
-import { translateRuntimeMessage } from '@/lib/translate-runtime-message';
+import { Alert, AlertDescription } from '@v2board/ui/alert';
+import { Button, type ButtonProps } from '@v2board/ui/button';
+import { Input } from '@v2board/ui/input';
+import { Label } from '@v2board/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@v2board/ui/select';
+import { LoadingState, SkeletonFields } from '@v2board/ui/loading-state';
+import { Skeleton } from '@v2board/ui/skeleton';
+import { cn } from '@v2board/ui/cn';
+import { translateRuntimeMessage } from '@v2board/ui/translate-runtime-message';
 
 type AuthInputProps = ComponentPropsWithRef<typeof Input>;
 

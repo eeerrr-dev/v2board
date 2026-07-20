@@ -186,6 +186,9 @@ jobs:
       - name: Start the native-runtime-shaped test stack and apply real migrations
         run: make deploy-smoke
 
+      - name: Reject Rust OpenAPI and generated TypeScript/Zod contract drift
+        run: make api-contract-check
+
       - name: Assert API/worker/analytics dependency graphs exclude lifecycle, provision, and MySQL
         run: make native-database-audit
 
@@ -199,6 +202,9 @@ jobs:
         env:
           PARITY_WORKERS: '4'
         run: make interaction-parity
+
+      - name: Run browser journeys against isolated Rust, PostgreSQL, and Redis
+        run: make real-stack-e2e
 
       - name: Assert the Docker-driven gates left the host build/deploy targets empty
         run: make public-bundle-audit

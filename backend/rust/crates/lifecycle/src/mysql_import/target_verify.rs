@@ -39,14 +39,13 @@ pub(crate) async fn finalize_and_verify_business_data(
             .ok_or_else(|| anyhow::anyhow!("converter report omitted target {}", mapping.target))?;
         verify_target_table(target, mapping, report).await?;
     }
-    let derived = DERIVED_MAPPINGS
-        .first()
-        .ok_or_else(|| anyhow::anyhow!("converter registry omitted derived mapping"))?;
-    let report = reports
-        .iter()
-        .find(|report| report.target == derived.target)
-        .ok_or_else(|| anyhow::anyhow!("converter report omitted target {}", derived.target))?;
-    verify_derived_target_table(target, derived, report).await?;
+    for derived in DERIVED_MAPPINGS {
+        let report = reports
+            .iter()
+            .find(|report| report.target == derived.target)
+            .ok_or_else(|| anyhow::anyhow!("converter report omitted target {}", derived.target))?;
+        verify_derived_target_table(target, derived, report).await?;
+    }
     validate_transformed_references(target).await?;
 
     for table in discarded_target_tables() {
@@ -184,6 +183,7 @@ fn decode_postgres_row(
                 .as_str()
             {
                 "INT2" | "INT4" | "INT8" => CanonicalValue::I64(postgres_integer(row, index)?),
+                "BOOL" => CanonicalValue::Bool(row.try_get(index)?),
                 "NUMERIC" => CanonicalValue::Decimal(
                     row.try_get::<Decimal, _>(index)?.normalize().to_string(),
                 ),

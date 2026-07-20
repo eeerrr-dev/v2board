@@ -3,7 +3,7 @@ import { getI18n, useTranslation } from 'react-i18next';
 import type { SelectorParam } from 'i18next';
 import type { StatSeriesPoint } from '@v2board/types';
 import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts';
-import { cn } from '@/lib/cn';
+import { cn } from '@v2board/ui/cn';
 import {
   ChartContainer,
   ChartLegend,

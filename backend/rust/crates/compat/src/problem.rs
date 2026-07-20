@@ -149,6 +149,7 @@ code_registry! {
     OrderUpdateConflict => ("order_update_conflict", CONFLICT, "The order is being modified by another request, please retry"),
     OrderUpdateFailed => ("order_update_failed", BAD_REQUEST, "Update failed"),
     PlanInUse => ("plan_in_use", BAD_REQUEST, "The plan is still in use and cannot be deleted"),
+    PlanUpdateConflict => ("plan_update_conflict", CONFLICT, "The plan was modified by another request, please retry"),
     PlanForceUpdateLimitExceeded => ("plan_force_update_limit_exceeded", BAD_REQUEST, "The plan has too many users to force update at once"),
     CouponNotFound => ("coupon_not_found", NOT_FOUND, "Coupon does not exist"),
     GiftCardNotFound => ("gift_card_not_found", NOT_FOUND, "Gift card does not exist"),
@@ -214,6 +215,7 @@ impl Code {
             (Code::CouponExpired, "zh-CN") => "优惠券已过期",
             (Code::CouponExhausted, "zh-CN") => "优惠券使用失败",
             (Code::CouponNotApplicable, "zh-CN") => "该订阅无法使用此优惠码",
+            (Code::PlanUpdateConflict, "zh-CN") => "订阅正在被其他请求修改，请重试",
             _ => self.default_detail(),
         }
     }
@@ -490,6 +492,7 @@ mod tests {
         ("order_update_conflict", 409),
         ("order_update_failed", 400),
         ("plan_in_use", 400),
+        ("plan_update_conflict", 409),
         ("plan_force_update_limit_exceeded", 400),
         ("coupon_not_found", 404),
         ("gift_card_not_found", 404),

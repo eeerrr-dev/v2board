@@ -1,8 +1,8 @@
 import { useState, type ComponentProps } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
-import { Badge } from './badge';
-import { cn } from '@/lib/cn';
+import { Badge } from '@v2board/ui/badge';
+import { cn } from '@v2board/ui/cn';
 
 interface TagsInputProps extends Omit<ComponentProps<'input'>, 'onChange' | 'value'> {
   value: string[];

@@ -23,11 +23,11 @@ import {
   useStatUserLast,
   useStatUserToday,
 } from '@/lib/queries';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { PageShell } from '@/components/ui/page';
-import { ErrorState } from '@/components/ui/error-state';
+import { Alert, AlertDescription } from '@v2board/ui/alert';
+import { Button } from '@v2board/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@v2board/ui/card';
+import { PageShell } from '@v2board/ui/page';
+import { ErrorState } from '@v2board/ui/error-state';
 import type { RankingChartDatum } from '@/components/admin-chart';
 
 const AdminChart = lazy(() => import('@/components/admin-chart'));

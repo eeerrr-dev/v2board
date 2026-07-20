@@ -8,8 +8,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Eye, Plus, XCircle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@v2board/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@v2board/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -17,23 +17,17 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Field, FieldError, FieldLabel } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
-import { PageShell } from '@/components/ui/page';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { confirmDialog } from '@/components/ui/confirm-dialog';
-import { ErrorState } from '@/components/ui/error-state';
-import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
-import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@/components/ui/table';
-import { Textarea } from '@/components/ui/textarea';
-import { cn } from '@/lib/cn';
+} from '@v2board/ui/dialog';
+import { Field, FieldError, FieldLabel } from '@v2board/ui/field';
+import { Input } from '@v2board/ui/input';
+import { PageShell } from '@v2board/ui/page';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@v2board/ui/select';
+import { confirmDialog } from '@v2board/ui/confirm-dialog';
+import { ErrorState } from '@v2board/ui/error-state';
+import { StatusBadge, type StatusTone } from '@v2board/ui/status-badge';
+import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@v2board/ui/table';
+import { Textarea } from '@v2board/ui/textarea';
+import { cn } from '@v2board/ui/cn';
 import { formatBackendDateMinuteSlash } from '@v2board/config/format';
 import { useCloseTicketMutation, useSaveTicketMutation, useTickets } from '@/lib/queries';
 

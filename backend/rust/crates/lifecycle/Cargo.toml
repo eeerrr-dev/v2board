@@ -9,6 +9,10 @@ rust-version.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = []
+real-stack-e2e = ["dep:v2board-db"]
+
 [dependencies]
 anyhow.workspace = true
 chrono.workspace = true
@@ -27,5 +31,11 @@ url.workspace = true
 uuid.workspace = true
 v2board-analytics = { version = "0.9.0", path = "../analytics" }
 v2board-config = { version = "0.9.0", path = "../config" }
+v2board-db = { version = "0.9.0", path = "../db", optional = true }
 v2board-domain = { version = "0.9.0", path = "../domain" }
+v2board-domain-model = { version = "0.9.0", path = "../domain-model" }
 v2board-provision = { version = "0.9.0", path = "../provision" }
+
+[[example]]
+name = "real_stack_e2e_bootstrap"
+required-features = ["real-stack-e2e"]

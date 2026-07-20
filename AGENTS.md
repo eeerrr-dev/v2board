@@ -22,7 +22,10 @@ reports, or deploy output inside the repository.
 - Use `make interaction-parity` (Playwright Test) for focused browser behavior
   checks. Narrow the scenarios with `INTERACTION_PARITY_SCENARIOS=... make
   interaction-parity` and the viewports with `VISUAL_PARITY_VIEWPORTS=desktop`
-  (or `mobile`). The old pixel/screenshot `make visual-parity` lane is retired:
+  (or `mobile`). This standing lane is source-world only. Use
+  `make legacy-oracle-parity` only for an explicit legacy-compatibility audit,
+  and `make real-stack-e2e` for the browser → Rust → restricted PostgreSQL/Redis
+  black-box journey. The old pixel/screenshot `make visual-parity` lane is retired:
   every scenario is `visualRetired`, so parity is behavioral, not byte-for-byte.
 - Use `make reference-oracle-check` before relying on the pinned, read-only
   compatibility reference. `make reference-oracle-up` is only for optional
@@ -372,8 +375,11 @@ application or compatibility layer. New work uses:
 - `@v2board/api-client` for API contracts.
 - Existing i18n infrastructure.
 - Radix primitives for accessible low-level behavior.
-- shadcn/ui registry components copied into and owned by each app's local
-  `components/ui`, composed from Radix primitives.
+- Shared shadcn/ui registry components are source-owned once in
+  `frontend/packages/ui`; each app keeps only product-specific primitives in
+  its local `components/ui`, composed from Radix primitives. Tests for shared
+  components, hooks, and platform utilities are package-owned there as well;
+  do not duplicate them under either app.
 - `lucide-react` for new icons.
 - Tailwind v4.
 - Local CSS variables and shared canonical shadcn token names. Do not add a
@@ -500,7 +506,8 @@ The user knowledge surface (`/knowledge`) is a redesigned shadcn surface.
 ### User Surface System Direction
 
 Every redesigned user surface composes with shadcn/Radix primitives and
-`lucide-react` icons, and owns its shared primitives in
+`lucide-react` icons. Shared primitives, token CSS, and platform utilities live
+in `frontend/packages/ui`; user-only primitives remain in
 `frontend/apps/user/src/components/ui`. (A surface explicitly designated a pure
 shadcn island — see Auth — may use unprefixed Tailwind utilities and shadcn token
 names.) Do not rebuild any redesigned surface on a legacy foundation — e.g. Ant
@@ -511,7 +518,7 @@ body-scroll drawer wiring. Retire legacy presentation code once its shadcn
 replacement lands, and keep tests focused on behavior, accessibility, and shadcn
 structure rather than pixel-era class names.
 
-- Use the local shadcn-style table primitives for redesigned user tables instead
+- Use the shared shadcn-style table primitives for redesigned user tables instead
   of page-local `thead`/`tbody`/`th`/`td` class systems.
 - Keep route-specific `v2board-*` hooks on top of shared primitives when
   behavior or interaction parity needs stable selectors.
@@ -549,12 +556,11 @@ behavior is not a contract.
 - Tier-2 defaults are relaxable here: overlay chrome (sheet vs modal vs drawer),
   button order, spinner/toast/poll/refetch timing, close-overlay-on-save timing,
   table truncation and horizontal-scroll observability, and date-picker chrome.
-- Admin interaction scenarios use union selectors (shadcn slot/testid/role first,
-  Ant class fallback) so one `run(page)` drives both the shadcn source and the
-  read-only reference UI, with a Tier-1 `normalize*InteractionResult` reducer dropping
-  Tier-2 presentation. Keep that pattern when adding or editing admin scenarios
-  rather than branching per world, and reduce cross-world comparison to the
-  Tier-1 payload/query/redirect fields while dropping presentation.
+- Admin interaction scenarios use product-owned shadcn/testid/role selectors in
+  the standing source-world gate. Existing union-selector fallbacks remain only
+  for the finite `make legacy-oracle-parity` migration audit; do not add a new
+  reference-UI dependency to ordinary product scenarios. The optional Tier-1
+  reducer compares payload/query/redirect semantics, never presentation.
 
 For new redesigned surfaces, do not use:
 
@@ -595,5 +601,6 @@ For new redesigned surfaces, do not use:
 - Cloudflare Tunnel service or production-ingress changes: run
   `make cloudflared-config-audit` and `make deploy-smoke`.
 - Redesigned behavior changes: run focused `make interaction-parity` shards.
+- Cross-layer auth/RBAC/data-access changes: run `make real-stack-e2e`.
 - Visual/layout changes: use focused `make visual-smoke` for a browser-rendered
   smoke of the deployed assets.

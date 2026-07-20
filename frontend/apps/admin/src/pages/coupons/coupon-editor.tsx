@@ -4,24 +4,18 @@ import type { SelectorParam } from 'i18next';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm, useFormState, useWatch } from 'react-hook-form';
 import { Loader2 } from 'lucide-react';
-import type { CouponType, Plan } from '@v2board/types';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Field, FieldError, FieldLabel } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
+import type { AdminPlanModel, CouponType } from '@v2board/types';
+import { Button } from '@v2board/ui/button';
+import { Checkbox } from '@v2board/ui/checkbox';
+import { Field, FieldError, FieldLabel } from '@v2board/ui/field';
+import { Input } from '@v2board/ui/input';
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupInput,
   InputGroupText,
 } from '@/components/ui/input-group';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@v2board/ui/select';
 import {
   Sheet,
   SheetContent,
@@ -30,7 +24,7 @@ import {
   SheetHeader,
   SheetTitle,
   SheetTrigger,
-} from '@/components/ui/sheet';
+} from '@v2board/ui/sheet';
 import { couponEditorSchema, type CouponEditorValues } from './form-schema';
 import {
   downloadGeneratedCsv,
@@ -100,7 +94,7 @@ export function CouponEditor({
   children,
 }: {
   record?: CouponRow;
-  plans: Plan[];
+  plans: AdminPlanModel[];
   pending: boolean;
   onSave: (payload: CouponSubmit, onSuccess: (response?: GenerateResponse) => void) => void;
   children: ReactElement<{ onClick?: () => void }>;

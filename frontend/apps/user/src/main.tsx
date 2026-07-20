@@ -10,12 +10,12 @@ import { RouterProvider } from 'react-router/dom';
 
 import { createUserRouter } from './App';
 import { AppShellBoundary } from './components/app-shell-boundary';
-import { ConfirmDialogProvider } from './components/ui/confirm-dialog';
-import { Toaster } from './components/ui/toaster';
+import { ConfirmDialogProvider } from '@v2board/ui/confirm-dialog';
+import { Toaster } from '@v2board/ui/toaster';
 import { registerSessionCacheClearer, setupAuthSync } from './lib/auth';
 import { installChatWidget } from './lib/chat-widget';
 import { installChunkReloadRecovery } from './lib/chunk-recovery';
-import { applyInitialDarkMode } from './lib/dark-mode';
+import { applyInitialDarkMode, useDarkMode } from './lib/dark-mode';
 import {
   applyRuntimeConfig,
   getLegacyHashRedirectEnabled,
@@ -103,6 +103,10 @@ const ReactQueryDevtools = import.meta.env.DEV
 const root = document.getElementById('root');
 if (!root) throw new Error('root element missing');
 
+function AppToaster() {
+  return <Toaster theme={useDarkMode() ? 'dark' : 'light'} />;
+}
+
 createRoot(root).render(
   <StrictMode>
     <AppShellBoundary>
@@ -110,7 +114,7 @@ createRoot(root).render(
         <QueryClientProvider client={queryClient}>
           <RouterProvider router={router} />
           <ConfirmDialogProvider />
-          <Toaster />
+          <AppToaster />
           {ReactQueryDevtools ? (
             <Suspense fallback={null}>
               <ReactQueryDevtools initialIsOpen={false} />

@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 export const sourceBaseUrl = new URL(
   process.env.VISUAL_PARITY_SOURCE_BASE_URL ?? 'http://rust-api:8080',
 );
+export const legacyOracleEnabled = process.env.INTERACTION_LEGACY_ORACLE === '1';
 export const adminPath = stripSlashes(process.env.VISUAL_PARITY_ADMIN_PATH ?? 'admin');
 export const referenceRoot = resolve(process.env.REFERENCE_ORACLE_ROOT ?? '/reference');
 export const oraclePublicRoot = resolve(referenceRoot, 'public');

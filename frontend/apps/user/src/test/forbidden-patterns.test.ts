@@ -12,10 +12,9 @@ import { describe, expect, it } from 'vitest';
 // files. Every rule cites the per-page test file the guard migrated from.
 //
 // Scoping matters: several banned identifiers are legitimate elsewhere —
-// `useSyncExternalStore` lives in lib/dark-mode.ts and components/ui/
-// confirm-dialog.tsx, `refetchInterval` is owned by lib/queries.ts and passed
-// by pages/tickets/detail.tsx, `window.location.pathname` builds the invite
-// copy link, `md:grid-cols-2` lays out plan cards, profile/index.tsx composes the
+// `refetchInterval` is owned by lib/queries.ts and passed by
+// pages/tickets/detail.tsx, `window.location.pathname` builds the invite copy
+// link, `md:grid-cols-2` lays out plan cards, profile/index.tsx composes the
 // shared TableRow primitive for its static deposit table, and the auth LAYOUT
 // (not the card) hosts AuthPanelBrand/AuthLanguageMenu. Each rule therefore
 // applies to the narrowest file set that reproduces the original guard.
@@ -134,25 +133,25 @@ const AUTH_CARD_FILES = [
 describe('forbidden module imports', () => {
   it('never restores or imports retired legacy modules anywhere in src', () => {
     // from: orders/detail.test.tsx (retired '@/components/ui/shadcn-dialog'
-    // migration name; the canonical registry path is '@/components/ui/dialog'),
+    // migration name; the canonical registry path is '@v2board/ui/dialog'),
     // register/forget tests (lib/legacy-toast), login tests
     // (retired components/layout/auth-language-menu), toast.test.ts
     // (@radix-ui/react-toast store replaced by Sonner), form-field.test.tsx
     // (retired cloneElement FormField), and form.test.tsx (retired
     // FormProvider/context stack). RHF forms now compose Controller directly
-    // with the shared '@/components/ui/field' primitive.
+    // with the shared '@v2board/ui/field' primitive.
     const banned = new Map<string, string>([
       [
         'components/ui/shadcn-dialog',
-        "retired migration name — use the canonical '@/components/ui/dialog' registry path",
+        "retired migration name — use the canonical '@v2board/ui/dialog' registry path",
       ],
       [
         'components/ui/form',
-        "retired FormProvider stack — use Controller with '@/components/ui/field'",
+        "retired FormProvider stack — use Controller with '@v2board/ui/field'",
       ],
       [
         'components/ui/form-field',
-        "retired cloneElement FormField — use Controller with '@/components/ui/field'",
+        "retired cloneElement FormField — use Controller with '@v2board/ui/field'",
       ],
       ['lib/legacy-toast', "retired legacy toast — use '@/lib/toast'"],
       ['components/layout/auth-language-menu', 'retired auth language-menu module'],
@@ -614,7 +613,7 @@ describe('scoped legacy APIs and patterns', () => {
     ).toEqual([]);
   });
 
-  it('file-scoped bans: profile form state, ticket cache/polling, recaptcha dialog, confirm-dialog, toaster', () => {
+  it('file-scoped bans: profile form state, ticket cache/polling, and recaptcha dialog', () => {
     expect(
       violations([
         // from: profile/index.test.tsx — schema-based form state, not per-keystroke useState.
@@ -646,25 +645,6 @@ describe('scoped legacy APIs and patterns', () => {
           pattern: /\bsetTimeout\b|delayCaptchaIframeRemoving/,
           scope: ['pages/auth/auth-recaptcha.tsx'],
           why: 'solved reCAPTCHA actions run immediately; delayed legacy iframe/token shims are banned',
-        },
-        // from: confirm-dialog.test.ts — no Ant modal ActionButton compatibility code.
-        {
-          pattern: /\bActionButton\b/,
-          scope: ['components/ui/confirm-dialog.tsx'],
-          why: 'Ant modal ActionButton compatibility is banned',
-        },
-        // from: toast.test.ts — Sonner owns toasts; both bans are toaster-scoped
-        // (dark-mode.ts/confirm-dialog.tsx legitimately use useSyncExternalStore,
-        // and sanitized markdown containers legitimately use innerHTML).
-        {
-          pattern: /\buseSyncExternalStore\b/,
-          scope: ['components/ui/toaster.tsx'],
-          why: 'hand-rolled toast store subscription is banned',
-        },
-        {
-          pattern: /innerHTML/,
-          scope: ['components/ui/toaster.tsx'],
-          why: 'innerHTML toast rendering is banned',
         },
       ]),
     ).toEqual([]);

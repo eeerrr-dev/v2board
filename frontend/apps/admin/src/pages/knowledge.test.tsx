@@ -106,7 +106,7 @@ vi.mock('@/lib/queries', () => ({
   useSortKnowledgeMutation: () => ({ mutate: mocks.sortMutate }),
 }));
 
-vi.mock('@/components/ui/confirm-dialog', () => ({ confirmDialog: mocks.confirm }));
+vi.mock('@v2board/ui/confirm-dialog', () => ({ confirmDialog: mocks.confirm }));
 
 vi.mock('@/lib/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn(), loading: vi.fn(), dismiss: vi.fn() },

@@ -15,10 +15,10 @@ import {
 } from '@/lib/queries';
 import { UserManageDrawer } from '@/components/user-manage-drawer';
 import { UserTrafficModal } from '@/components/user-traffic-modal';
-import { confirmDialog } from '@/components/ui/confirm-dialog';
+import { confirmDialog } from '@v2board/ui/confirm-dialog';
 import { toast } from '@/lib/toast';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@v2board/ui/button';
+import { Card, CardContent } from '@v2board/ui/card';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -26,24 +26,18 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
-import { PageHeader, PageShell } from '@/components/ui/page';
-import { ErrorState } from '@/components/ui/error-state';
-import { PaginationControl } from '@/components/ui/pagination';
-import { SegmentedControl } from '@/components/ui/segmented-control';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
-import { LoadingState, SkeletonRows } from '@/components/ui/loading-state';
-import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
-import { Textarea } from '@/components/ui/textarea';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { DataTable, type DataTableColumn } from '@/components/ui/table';
+} from '@v2board/ui/dropdown-menu';
+import { Input } from '@v2board/ui/input';
+import { PageHeader, PageShell } from '@v2board/ui/page';
+import { ErrorState } from '@v2board/ui/error-state';
+import { PaginationControl } from '@v2board/ui/pagination';
+import { SegmentedControl } from '@v2board/ui/segmented-control';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@v2board/ui/sheet';
+import { LoadingState, SkeletonRows } from '@v2board/ui/loading-state';
+import { StatusBadge, type StatusTone } from '@v2board/ui/status-badge';
+import { Textarea } from '@v2board/ui/textarea';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@v2board/ui/tooltip';
+import { DataTable, type DataTableColumn } from '@v2board/ui/table';
 
 // The status / email / reply_status keys are the §6.5 admin ticket list
 // filters; the page keeps its local {current, pageSize} state and the API

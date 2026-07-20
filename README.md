@@ -192,14 +192,24 @@ make doctor
 
 ```bash
 make doctor                 # Compose、宿主输出、runtime 隔离和配置审计
+make api-contract-check     # Rust OpenAPI → TypeScript/Zod 漂移门禁
 make rust-check             # fmt + clippy
 make rust-test              # workspace tests
 make rust-integration       # PostgreSQL/ClickHouse/Redis 与 analytics outbox 往返
 make native-database-audit  # 新版 runtime 禁止旧数据库 driver/方言回流
 make rust-target-gate       # Rust 全量发布门禁
-make deploy-smoke
+make deploy-artifact-smoke  # 只构建/校验发布树，不启动默认运行栈
+make deploy-smoke           # 发布树 + 默认 Rust 栈 HTTP smoke
+make interaction-parity     # 当前 source world 的浏览器行为
+make real-stack-e2e         # 浏览器 → Rust → tmpfs 隔离的受限 PostgreSQL/Redis
 make behavior-parity
 ```
+
+`make real-stack-e2e` 不启动或挂载普通本地栈的 runtime/data 服务与业务数据卷。
+它会复用 Docker 中的 frontend/Rust 构建缓存、依赖、deploy 与测试报告卷；测试用
+PostgreSQL/Redis 数据只落在 tmpfs；只承载 API 测试凭据的专用
+`real-stack-e2e-api-runtime` 卷会在旅程前后清空内容；
+worker 配置只在 bootstrap 内存中完成校验，不会落入 API 可读的卷。
 
 `make reset` 会删除 PostgreSQL、ClickHouse、Redis、Rust runtime、依赖和构建 volumes 后重建，属于
 破坏性本地操作。需要保留数据时只使用 `make sync`。

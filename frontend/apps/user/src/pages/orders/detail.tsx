@@ -11,18 +11,18 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
+} from '@v2board/ui/dialog';
 import { StripePaymentForm } from '@/components/stripe-payment-form';
 import { formatBackendDateTime } from '@v2board/config/format';
-import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ErrorState } from '@/components/ui/error-state';
-import { EmptyState, PageShell } from '@/components/ui/page';
+import { Button } from '@v2board/ui/button';
+import { Alert, AlertDescription } from '@v2board/ui/alert';
+import { Card, CardContent, CardHeader, CardTitle } from '@v2board/ui/card';
+import { ErrorState } from '@v2board/ui/error-state';
+import { EmptyState, PageShell } from '@v2board/ui/page';
 import { RadioGroup, RadioGroupIndicator, RadioGroupItem } from '@/components/ui/radio-group';
-import { LoadingState, SkeletonLines } from '@/components/ui/loading-state';
-import { Skeleton } from '@/components/ui/skeleton';
-import { cn } from '@/lib/cn';
+import { LoadingState, SkeletonLines } from '@v2board/ui/loading-state';
+import { Skeleton } from '@v2board/ui/skeleton';
+import { cn } from '@v2board/ui/cn';
 import { useOrderCheckoutController } from './use-order-checkout-controller';
 
 const PERIOD_LABEL_KEY: Record<string, SelectorParam> = {

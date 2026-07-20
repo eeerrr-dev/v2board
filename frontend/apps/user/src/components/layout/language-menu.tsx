@@ -1,13 +1,13 @@
 import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { cn } from '@/lib/cn';
+import { cn } from '@v2board/ui/cn';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+} from '@v2board/ui/dropdown-menu';
 import { getCurrentLocaleLabel, getEnabledLocales, selectLocale } from '@/lib/locale-menu';
 
 interface LanguageMenuProps {

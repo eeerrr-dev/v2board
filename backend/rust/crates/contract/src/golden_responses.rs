@@ -25,13 +25,17 @@ use anyhow::{Context, Result, bail, ensure};
 use serde::Serialize;
 use serde_json::json;
 use sqlx::{PgPool, postgres::PgPoolOptions};
+use v2board_api_contract::{AdminPlanItem, time::Rfc3339Timestamp};
 use v2board_compat::{Page, Pagination};
 use v2board_config::AppConfig;
 use v2board_db::installation_id;
 use v2board_domain::{
-    admin::AdminService, auth::PasswordKdf, payment_provider::payment_provider_codes,
+    admin::{AdminPlanView, AdminService},
+    auth::PasswordKdf,
+    payment_provider::payment_provider_codes,
     smtp::SmtpTransportCache,
 };
+use v2board_domain_model::{MoneyMinor, PlanPricePeriod};
 
 use crate::production_invariants::{
     DEFAULT_INTEGRATION_REDIS_URL, DEFAULT_ROOT_DATABASE_URL, GeneratedDatabaseName, MIGRATOR,
@@ -49,6 +53,49 @@ const DEFAULT_GOLDENS_DIR: &str = concat!(
 );
 /// This lane owns exactly the `admin.` fixtures inside the goldens directory.
 const ADMIN_GOLDEN_PREFIX: &str = "admin.";
+
+fn admin_plan_document(view: AdminPlanView) -> AdminPlanItem {
+    AdminPlanItem {
+        id: view.id,
+        group_id: view.group_id,
+        transfer_enable: view.transfer_enable,
+        device_limit: view.device_limit,
+        name: view.name,
+        speed_limit: view.speed_limit,
+        show: view.show,
+        sort: view.sort,
+        renew: view.renew,
+        content: view.content,
+        month_price: view.prices.get(PlanPricePeriod::Month).map(MoneyMinor::get),
+        quarter_price: view
+            .prices
+            .get(PlanPricePeriod::Quarter)
+            .map(MoneyMinor::get),
+        half_year_price: view
+            .prices
+            .get(PlanPricePeriod::HalfYear)
+            .map(MoneyMinor::get),
+        year_price: view.prices.get(PlanPricePeriod::Year).map(MoneyMinor::get),
+        two_year_price: view
+            .prices
+            .get(PlanPricePeriod::TwoYear)
+            .map(MoneyMinor::get),
+        three_year_price: view
+            .prices
+            .get(PlanPricePeriod::ThreeYear)
+            .map(MoneyMinor::get),
+        onetime_price: view
+            .prices
+            .get(PlanPricePeriod::OneTime)
+            .map(MoneyMinor::get),
+        reset_price: view.prices.get(PlanPricePeriod::Reset).map(MoneyMinor::get),
+        reset_traffic_method: view.reset_traffic_method,
+        capacity_limit: view.capacity_limit,
+        count: view.count,
+        created_at: Rfc3339Timestamp::from_epoch_seconds(view.created_at),
+        updated_at: Rfc3339Timestamp::from_epoch_seconds(view.updated_at),
+    }
+}
 
 pub async fn run() -> Result<()> {
     let update = std::env::var("UPDATE_GOLDENS").is_ok_and(|value| value == "1");
@@ -155,7 +202,14 @@ async fn generate_documents(pool: &PgPool, redis_url: &str) -> Result<Vec<(Strin
     };
     documents.push((
         "admin.plans.json".to_string(),
-        pretty_document(&admin.plans_list().await?)?,
+        pretty_document(
+            &admin
+                .plans_list()
+                .await?
+                .into_iter()
+                .map(admin_plan_document)
+                .collect::<Vec<_>>(),
+        )?,
     ));
     documents.push((
         "admin.payments.json".to_string(),
@@ -354,13 +408,19 @@ async fn seed_fixture_rows(pool: &PgPool) -> Result<()> {
     // One visible plan (id 1) referenced by the member and the plan order.
     sqlx::query(
         "INSERT INTO plan (group_id, transfer_enable, device_limit, name, speed_limit, \"show\", \
-         sort, renew, content, month_price, quarter_price, half_year_price, year_price, \
-         two_year_price, three_year_price, onetime_price, reset_price, reset_traffic_method, \
+         sort, renew, content, reset_traffic_method, \
          capacity_limit, created_at, updated_at) \
-         VALUES (1, 107374182400, 3, 'Golden Plan', NULL, 1, 1, 1, 'golden plan content', \
-         1000, 2700, NULL, 9600, NULL, NULL, 15000, 300, 0, 50, $1, $1)",
+         VALUES (1, 100, 3, 'Golden Plan', NULL, TRUE, 1, TRUE, \
+         'golden plan content', 0, 50, $1, $1)",
     )
     .bind(GOLDEN_TIME)
+    .execute(pool)
+    .await?;
+    sqlx::query(
+        "INSERT INTO plan_price (plan_id, period, amount_minor) VALUES \
+         (1, 'month', 1000), (1, 'quarter', 2700), (1, 'year', 9600), \
+         (1, 'one_time', 15000), (1, 'reset', 300)",
+    )
     .execute(pool)
     .await?;
 

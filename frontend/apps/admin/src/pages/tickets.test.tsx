@@ -93,7 +93,7 @@ vi.mock('@/components/user-traffic-modal', () => ({
     open ? <div data-testid="user-traffic-modal" /> : null,
 }));
 
-vi.mock('@/components/ui/confirm-dialog', () => ({ confirmDialog: mocks.confirm }));
+vi.mock('@v2board/ui/confirm-dialog', () => ({ confirmDialog: mocks.confirm }));
 
 vi.mock('@/lib/toast', () => ({
   toast: {

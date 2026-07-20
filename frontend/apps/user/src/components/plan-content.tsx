@@ -1,6 +1,6 @@
 import { Check, X } from 'lucide-react';
 import { z } from 'zod';
-import { cn } from '@/lib/cn';
+import { cn } from '@v2board/ui/cn';
 import { sanitizeBackendHtml } from '@/lib/sanitize-html';
 
 interface PlanContentProps {

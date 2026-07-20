@@ -4,7 +4,7 @@ import { Controller, useForm, useFormState, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { ExternalLink, Loader2 } from 'lucide-react';
 import type { admin } from '@v2board/api-client';
-import { Button } from '@/components/ui/button';
+import { Button } from '@v2board/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -13,10 +13,10 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog';
-import { Field, FieldError, FieldLabel } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
+} from '@v2board/ui/dialog';
+import { Field, FieldError, FieldLabel } from '@v2board/ui/field';
+import { Input } from '@v2board/ui/input';
+import { Textarea } from '@v2board/ui/textarea';
 import {
   SERVER_ROUTE_ACTIONS,
   getRouteActionOptions,

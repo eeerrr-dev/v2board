@@ -6,7 +6,7 @@ import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, ListFilter, Plus, Search } from 'lucide-react';
 import type { AdminFilter } from '@v2board/api-client';
-import type { AdminOrderRow, Plan } from '@v2board/types';
+import type { AdminOrderRow, AdminPlanModel } from '@v2board/types';
 import { formatBackendDateMinuteSlash, formatBackendDateTime } from '@v2board/config/format';
 import { takeStoredAdminFilters } from '@/lib/stored-admin-filters';
 import {
@@ -19,10 +19,10 @@ import {
   useMarkOrderPaidMutation,
   useUpdateOrderMutation,
 } from '@/lib/queries';
-import { confirmDialog } from '@/components/ui/confirm-dialog';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { confirmDialog } from '@v2board/ui/confirm-dialog';
+import { Badge } from '@v2board/ui/badge';
+import { Button } from '@v2board/ui/button';
+import { Card, CardContent } from '@v2board/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -30,7 +30,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
+} from '@v2board/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -40,31 +40,19 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { HeaderTooltip } from '@/components/ui/header-tooltip';
-import { Input } from '@/components/ui/input';
-import { Field, FieldError, FieldLabel } from '@/components/ui/field';
-import { EmptyState, PageHeader, PageShell } from '@/components/ui/page';
-import { ErrorState } from '@/components/ui/error-state';
-import { PaginationControl } from '@/components/ui/pagination';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
-import { LoadingState, SkeletonLines, SkeletonRows } from '@/components/ui/loading-state';
-import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
-import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@/components/ui/table';
-import { TooltipProvider } from '@/components/ui/tooltip';
+} from '@v2board/ui/dropdown-menu';
+import { HeaderTooltip } from '@v2board/ui/header-tooltip';
+import { Input } from '@v2board/ui/input';
+import { Field, FieldError, FieldLabel } from '@v2board/ui/field';
+import { EmptyState, PageHeader, PageShell } from '@v2board/ui/page';
+import { ErrorState } from '@v2board/ui/error-state';
+import { PaginationControl } from '@v2board/ui/pagination';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@v2board/ui/select';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@v2board/ui/sheet';
+import { LoadingState, SkeletonLines, SkeletonRows } from '@v2board/ui/loading-state';
+import { StatusBadge, type StatusTone } from '@v2board/ui/status-badge';
+import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@v2board/ui/table';
+import { TooltipProvider } from '@v2board/ui/tooltip';
 import { assignOrderSchema, type AssignOrderValues } from './users/form-schema';
 
 // The record keys below are backend wire values (period identifiers, order
@@ -175,7 +163,7 @@ function OrderDetailSheet({
   tradeNo?: string;
   open: boolean;
   onClose: () => void;
-  plans: Plan[];
+  plans: AdminPlanModel[];
   onUserFilter: (key: string, condition: string, value: string) => void;
 }) {
   const { t } = useTranslation();
@@ -349,7 +337,7 @@ function OrderDetailSheet({
   );
 }
 
-function AssignOrderDialog({ plans }: { plans: Plan[] }) {
+function AssignOrderDialog({ plans }: { plans: AdminPlanModel[] }) {
   const { t } = useTranslation();
   const periodText = periodTextMap(t);
   const periodOptions = Object.keys(periodText).map((period) => ({

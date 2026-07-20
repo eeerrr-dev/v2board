@@ -4,10 +4,11 @@
 @import 'tailwindcss/preflight.css' layer(base);
 @import 'tailwindcss/utilities.css' layer(utilities) source(none);
 @import 'tw-animate-css';
-@import './admin-theme.css';
-@import './admin-shadcn.css';
+@import '@v2board/ui/styles/theme.css';
+@import '@v2board/ui/styles/shadcn.css';
 
 /* Scan production TypeScript only; tests and test helpers never ship utilities. */
 @source '../**/*.{ts,tsx}';
+@source '../../../../packages/ui/src/**/*.{ts,tsx}';
 @source not '../**/*.{test,spec}.{ts,tsx}';
 @source not '../test/**';

@@ -1,9 +1,8 @@
 import { defineConfig } from '@playwright/test';
-import { viewports } from './tests/lib/env.mjs';
+import { legacyOracleEnabled, viewports } from './tests/lib/env.mjs';
 
-// Faithful to the legacy driver, the interactions lane defaults to serial: each
-// scenario runs both worlds through a shared source server + oracle. Scale up
-// with PARITY_WORKERS once a run is green.
+// The source-owned interactions lane defaults to serial. The optional legacy
+// oracle lane uses the same setting when explicitly requested.
 const workers = Number(process.env.PARITY_WORKERS) || 1;
 
 // VISUAL_PARITY_VIEWPORTS selects which viewport projects run (default both).
@@ -47,13 +46,10 @@ export default defineConfig({
   outputDir: process.env.INTERACTION_PARITY_ARTIFACT_DIR ?? './.cache/playwright-parity',
   fullyParallel: workers > 1,
   workers,
-  // One retry absorbs the reference oracle's animation-timing flakes (its antd
-  // overlays can miss a tight close wait under full-suite load) while keeping
-  // the gate strict: a real contract regression is deterministic and fails both
-  // attempts. The first attempt runs untraced — always-on trace recording added
-  // enough Chromium overhead to tip those oracle waits over the edge — and the
-  // retry records the full trace for diagnosis.
-  retries: 1,
+  // Only the opt-in frozen oracle gets a retry for its legacy animation timing.
+  // The standing source-world contract gate is fail-fast and cannot turn a
+  // first-attempt regression into a passing flaky run.
+  retries: legacyOracleEnabled ? 1 : 0,
   // Unconditional: the Docker gate does not forward CI into the container, and
   // local narrowing goes through INTERACTION_PARITY_SCENARIOS, never test.only.
   // A committed .only would otherwise silently shrink the whole contract gate.

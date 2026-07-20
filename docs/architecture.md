@@ -98,14 +98,16 @@ sequenceDiagram
 
 ## 后端 crate 结构
 
-`backend/rust/crates/` 下共 10 个 crate:
+`backend/rust/crates/` 下共 12 个 crate:
 
 | Crate | 职责 |
 | --- | --- |
 | `api` | Axum HTTP API、前端 HTML/静态资源交付、认证入口、限流、metrics、golden wire 契约测试;产出 `v2board-api` |
+| `api-contract` | 与框架/存储无关的内部 HTTP DTO、OpenAPI 3.1 与 operation metadata 源；生成 TypeScript 类型和 Zod 运行时校验 |
 | `workers` | 调度器、持久后台任务(流量结算、订单、佣金、提醒邮件、重置、统计)、mail outbox 排空与 analytics relay;产出 `v2board-workers` |
 | `analytics` | 类型化不可变分析事件、PostgreSQL outbox、容量准入(admission)、ClickHouse 投影与批次校验;产出 `v2board-analytics-schema` |
 | `domain` | 业务规则与外部集成:认证/会话/step-up、邮件 outbox 入队、operator config 权威、支付 provider 与支付配置加密、订阅链接、SMTP |
+| `domain-model` | 无 SQL/Redis/HTTP/异步运行时依赖的值对象与业务词汇；当前包含金额、套餐价格周期与 typed price collection |
 | `db` | PostgreSQL-only 运行时数据访问(users、orders、plan、ticket 等)与连接池 |
 | `config` | native `file_only`/`boot_only` JSON 配置的加载、typed 校验与 Redis keyspace 约定 |
 | `compat` | 共享 wire 模型:RFC 9457 problem+json、冻结外部命名空间的 legacy 响应封装、分页、安全响应头 |
@@ -113,8 +115,11 @@ sequenceDiagram
 | `provision` | `mysql-import.v1` manifest 解析、固定转换 policy 与 converter、release archive 审计 |
 | `lifecycle` | 一次性 MySQL 导入 CLI(`validate`/`inspect`/`execute`),不进入长期 native release |
 
-依赖边界由 `make native-database-audit` 看守:MySQL driver 只允许出现在
-lifecycle/provision 导入图里,API/worker/analytics 运行时依赖图不得回流。
+依赖边界由 resolved Cargo graph 测试及 `make native-database-audit` 看守:
+`domain-model` 不得依赖 transport/infrastructure，`domain` 不得依赖
+`api-contract`；MySQL driver 只允许出现在 lifecycle/provision 导入图里，
+API/worker/analytics 运行时依赖图不得回流。完整方向见
+[`../backend/rust/ARCHITECTURE.md`](../backend/rust/ARCHITECTURE.md)。
 
 ## Worker 与数据流
 
@@ -170,9 +175,17 @@ flowchart LR
 
 两个独立 SPA(`frontend/apps/user`、`frontend/apps/admin`),React 19 +
 TypeScript + Vite + Tailwind v4 + shadcn/Radix;共享代码在
-`frontend/packages/{api-client,config,i18n,types}`。所有 HTTP 请求经
+`frontend/packages/{api-client,config,i18n,types,ui}`。所有 HTTP 请求经
 `@v2board/api-client`,server state 归 TanStack Query,路由归 React Router
 (history routing)。
+
+已纳入 generated-contract 边界的内部 endpoint 由 Rust `api-contract` DTO
+生成提交到仓库的 OpenAPI、TypeScript、Zod 与 operation 的唯一成功状态码；
+生成器拒绝 `2XX` 通配或多个 2xx，API client 在 Zod 解析响应体前校验实际状态码。
+API adapter 显式转换
+transport DTO 与 application command/view，前端再显式转换 wire DTO、领域展示
+模型和 form draft。`make api-contract-check` 逐字重建这些产物并阻止漂移；新迁移
+的 endpoint family 不再手写第二套 TypeScript wire schema。
 
 构建与发布链路:
 
@@ -189,7 +202,13 @@ TypeScript + Vite + Tailwind v4 + shadcn/Radix;共享代码在
    `/assets/{user,admin}/*` 分发。
 
 行为契约分两层(Tier-1 外部契约不可动 / Tier-2 表现层可放宽),像素级对比已
-退役,交互 parity(`make interaction-parity`)是常设门禁;详见
+退役。`make interaction-parity` 是 source-world 常设门禁,
+`make legacy-oracle-parity` 只用于有限兼容审计。`make real-stack-e2e` 先通过
+不启动默认 runtime/data 服务或挂载普通业务数据卷的
+`make deploy-artifact-smoke` 获得已验证发布树，再以 tmpfs 隔离 PostgreSQL/Redis，
+验证真实登录与页面加载、配置事务，以及套餐价格 Retain/Clear/Set 穿过生成契约
+和规范化 `plan_price` 的跨层闭环。该门禁复用 frontend/Rust 构建缓存、依赖、
+deploy 与报告卷；容器间传递测试凭据的专用 runtime 卷在旅程前后清空；详见
 [ADR 0006](adr/0006-frontend-contract-tiers-interaction-parity.md) 与根目录
 `AGENTS.md` 的 Frontend Contract Direction。
 

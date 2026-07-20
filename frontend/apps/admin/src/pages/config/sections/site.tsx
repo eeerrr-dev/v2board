@@ -1,10 +1,10 @@
 import { useTranslation } from 'react-i18next';
-import type { Plan } from '@v2board/types';
+import type { AdminPlanModel } from '@v2board/types';
 import type { FormCtx } from '../schema';
 import { Section, SelectRow, SwitchRow, TextRow, TextareaRow } from '../rows';
-import { parseBackendNumber, selectInteger } from '../values';
+import { selectInteger } from '../values';
 
-export function SiteSection({ ctx, plans }: { ctx: FormCtx; plans: Plan[] }) {
+export function SiteSection({ ctx, plans }: { ctx: FormCtx; plans: AdminPlanModel[] }) {
   const { t } = useTranslation();
   const tryOutOff = String(ctx.get('site', 'try_out_plan_id') ?? 0) === '0';
   return (
@@ -102,7 +102,6 @@ export function SiteSection({ ctx, plans }: { ctx: FormCtx; plans: Plan[] }) {
           title={t(($) => $.admin.config.site.try_out_hour_title)}
           placeholder={t(($) => $.admin.config.input_placeholder)}
           indent
-          coerce={parseBackendNumber}
         />
       )}
       <TextRow

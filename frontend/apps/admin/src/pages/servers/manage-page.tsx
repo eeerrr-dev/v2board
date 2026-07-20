@@ -23,35 +23,29 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { confirmDialog } from '@/components/ui/confirm-dialog';
+} from '@v2board/ui/alert-dialog';
+import { Badge } from '@v2board/ui/badge';
+import { Button } from '@v2board/ui/button';
+import { Card, CardContent } from '@v2board/ui/card';
+import { Checkbox } from '@v2board/ui/checkbox';
+import { confirmDialog } from '@v2board/ui/confirm-dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { ErrorState } from '@/components/ui/error-state';
-import { HeaderTooltip } from '@/components/ui/header-tooltip';
-import { Input } from '@/components/ui/input';
-import { PageHeader, PageShell } from '@/components/ui/page';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { LoadingState, SkeletonRows } from '@/components/ui/loading-state';
-import { Switch } from '@/components/ui/switch';
-import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@/components/ui/table';
-import { TooltipProvider } from '@/components/ui/tooltip';
-import { cn } from '@/lib/cn';
+} from '@v2board/ui/dropdown-menu';
+import { ErrorState } from '@v2board/ui/error-state';
+import { HeaderTooltip } from '@v2board/ui/header-tooltip';
+import { Input } from '@v2board/ui/input';
+import { PageHeader, PageShell } from '@v2board/ui/page';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@v2board/ui/select';
+import { LoadingState, SkeletonRows } from '@v2board/ui/loading-state';
+import { Switch } from '@v2board/ui/switch';
+import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@v2board/ui/table';
+import { TooltipProvider } from '@v2board/ui/tooltip';
+import { cn } from '@v2board/ui/cn';
 import {
   useCopyServerMutation,
   useDropServerMutation,

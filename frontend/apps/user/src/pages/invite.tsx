@@ -5,17 +5,17 @@ import { Copy, Plus, Send, TrendingUp, Users, WalletCards } from 'lucide-react';
 import { useEmptyDescription } from '@/lib/use-empty-description';
 import { TransferDialog } from '@/components/dialogs/transfer-dialog';
 import { WithdrawDialog } from '@/components/dialogs/withdraw-dialog';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ErrorState } from '@/components/ui/error-state';
-import { HeaderTooltip } from '@/components/ui/header-tooltip';
-import { PaginationControl } from '@/components/ui/pagination';
-import { PageShell } from '@/components/ui/page';
-import { LoadingState } from '@/components/ui/loading-state';
-import { Skeleton } from '@/components/ui/skeleton';
-import { DataTable, type DataTableColumn } from '@/components/ui/table';
-import { TooltipProvider } from '@/components/ui/tooltip';
-import { cn } from '@/lib/cn';
+import { Button } from '@v2board/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@v2board/ui/card';
+import { ErrorState } from '@v2board/ui/error-state';
+import { HeaderTooltip } from '@v2board/ui/header-tooltip';
+import { PaginationControl } from '@v2board/ui/pagination';
+import { PageShell } from '@v2board/ui/page';
+import { LoadingState } from '@v2board/ui/loading-state';
+import { Skeleton } from '@v2board/ui/skeleton';
+import { DataTable, type DataTableColumn } from '@v2board/ui/table';
+import { TooltipProvider } from '@v2board/ui/tooltip';
+import { cn } from '@v2board/ui/cn';
 import {
   useCommConfig,
   useGenerateInviteMutation,

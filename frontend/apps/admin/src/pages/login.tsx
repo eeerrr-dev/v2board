@@ -12,8 +12,8 @@ import { logout, setAuthData, type AdminLoginLoaderData } from '@/lib/auth';
 import { canEnterAdminNamespace, firstAllowedRoute, sessionAllowsRoute } from '@/lib/permissions';
 import { adminSessionQueryOptions } from '@/lib/session-queries';
 import { getAdminBackgroundUrl, getAdminLogo, getAdminTitle } from '@/lib/runtime-config';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@v2board/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@v2board/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -21,9 +21,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Field, FieldError, FieldLabel } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
+} from '@v2board/ui/dialog';
+import { Field, FieldError, FieldLabel } from '@v2board/ui/field';
+import { Input } from '@v2board/ui/input';
 import { toast } from '@/lib/toast';
 
 // Flat runtime message keys (FieldError resolves them through

@@ -42,7 +42,7 @@ pub(crate) const WORKER_CONFIG_FILE: &str = "worker.config.json";
 pub(crate) const REPORT_FILE: &str = "import-report.json";
 
 #[derive(Debug, Serialize)]
-pub(crate) struct MysqlImportExecutionReport {
+pub struct MysqlImportExecutionReport {
     pub(crate) status: &'static str,
     pub(crate) schema_version: u32,
     pub(crate) manifest_sha256: String,
@@ -115,7 +115,7 @@ fn digest_import_report_field(digest: &mut Sha256, field: &[u8]) {
     digest.update(field);
 }
 
-pub(crate) async fn execute(spec: &MysqlImportSpec) -> anyhow::Result<MysqlImportExecutionReport> {
+pub async fn execute(spec: &MysqlImportSpec) -> anyhow::Result<MysqlImportExecutionReport> {
     audit_registry()?;
     let inspection = inspect_mysql_import(spec)?;
     let plan = spec.execution_plan()?;

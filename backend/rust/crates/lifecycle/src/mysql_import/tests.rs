@@ -14,7 +14,7 @@ use v2board_analytics::clickhouse_client;
 use v2board_provision::{
     MysqlImportExecutionPlan, MysqlImportSpec, inspect_mysql_import,
     mysql_import_converter::{
-        CanonicalJson, CanonicalRow, CanonicalValue, DISCARDED_SOURCE_TABLES,
+        CanonicalJson, CanonicalRow, CanonicalValue, DERIVED_MAPPINGS, DISCARDED_SOURCE_TABLES,
         MYSQL_IMPORTED_SOURCE_SCHEMA_SHA256, SourceRow, SourceValue, TABLE_MAPPINGS,
         audit_registry,
     },
@@ -430,7 +430,7 @@ async fn run_full_execute_test(
     anyhow::ensure!(report.status == "complete");
     anyhow::ensure!(report.converted_snapshot_sha256.len() == 64);
     anyhow::ensure!(report.converter_registry_sha256.len() == 64);
-    anyhow::ensure!(report.imported_tables.len() == TABLE_MAPPINGS.len() + 1);
+    anyhow::ensure!(report.imported_tables.len() == TABLE_MAPPINGS.len() + DERIVED_MAPPINGS.len());
     anyhow::ensure!(report.discarded_tables.len() == DISCARDED_SOURCE_TABLES.len());
     for source in ["v2_log", "failed_jobs", "v2_tutorial"] {
         let discarded = report
@@ -829,6 +829,30 @@ async fn representative_mysql_rows_copy_into_fresh_postgres() {
         .find(|report| report.target == "gift_card_redemption")
         .unwrap();
     assert_eq!(redemptions.retained_rows, 2);
+    let plan_prices = reports
+        .iter()
+        .find(|report| report.target == "plan_price")
+        .unwrap();
+    assert_eq!(plan_prices.retained_rows, 8);
+    let prices = sqlx::query_as::<_, (String, i32)>(
+        "SELECT period::text, amount_minor FROM plan_price ORDER BY plan_price.period",
+    )
+    .fetch_all(&target)
+    .await
+    .unwrap();
+    assert_eq!(
+        prices,
+        [
+            ("month".to_string(), 1000),
+            ("quarter".to_string(), 2700),
+            ("half_year".to_string(), 5000),
+            ("year".to_string(), 9000),
+            ("two_year".to_string(), 16000),
+            ("three_year".to_string(), 21000),
+            ("one_time".to_string(), 30000),
+            ("reset".to_string(), -500),
+        ]
+    );
     assert!(
         sqlx::query(
             "INSERT INTO gift_card_redemption \

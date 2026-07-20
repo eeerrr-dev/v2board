@@ -7,8 +7,8 @@ import { z } from 'zod';
 import { WalletCards } from 'lucide-react';
 import { decimalToCents } from '@v2board/api-client';
 import { formatCentsPlain } from '@v2board/config/format';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@v2board/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@v2board/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -16,9 +16,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Field, FieldError, FieldLabel } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
+} from '@v2board/ui/dialog';
+import { Field, FieldError, FieldLabel } from '@v2board/ui/field';
+import { Input } from '@v2board/ui/input';
 import { useCommConfig, useSaveOrderMutation, useUserInfo } from '@/lib/queries';
 import { ProfileSwitch } from './profile-ui';
 import { usePreferenceToggle } from './use-preference-toggle';

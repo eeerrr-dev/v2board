@@ -148,7 +148,7 @@ vi.mock('@tanstack/react-query', () => ({
   }),
 }));
 
-vi.mock('@/components/ui/confirm-dialog', () => ({
+vi.mock('@v2board/ui/confirm-dialog', () => ({
   confirmDialog: mocks.confirmDialog,
 }));
 

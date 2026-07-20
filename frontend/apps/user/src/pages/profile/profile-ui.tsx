@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '@/components/ui/button';
+import { Button } from '@v2board/ui/button';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -10,8 +10,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Switch } from '@/components/ui/switch';
+} from '@v2board/ui/alert-dialog';
+import { Switch } from '@v2board/ui/switch';
 
 // Shared leaf primitives for the profile cards. The god-page split moved each
 // card's own queries/mutations/form/dialog into its own file; the pieces here

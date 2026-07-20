@@ -5,13 +5,13 @@ import type { SelectorParam } from 'i18next';
 import { useCommConfig, usePlans } from '@/lib/queries';
 import { PLAN_PERIOD_LABELS, PURCHASABLE_PLAN_PERIODS } from '@/lib/plan-periods';
 import { PlanContent } from '@/components/plan-content';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ErrorState } from '@/components/ui/error-state';
-import { EmptyState, PageHeader, PageShell } from '@/components/ui/page';
-import { SegmentedControl } from '@/components/ui/segmented-control';
-import { LoadingState, SkeletonRows } from '@/components/ui/loading-state';
-import { StatusBadge } from '@/components/ui/status-badge';
-import { cn } from '@/lib/cn';
+import { Card, CardContent, CardHeader, CardTitle } from '@v2board/ui/card';
+import { ErrorState } from '@v2board/ui/error-state';
+import { EmptyState, PageHeader, PageShell } from '@v2board/ui/page';
+import { SegmentedControl } from '@v2board/ui/segmented-control';
+import { LoadingState, SkeletonRows } from '@v2board/ui/loading-state';
+import { StatusBadge } from '@v2board/ui/status-badge';
+import { cn } from '@v2board/ui/cn';
 
 type PlanLike = NonNullable<ReturnType<typeof usePlans>['data']>[number];
 

@@ -11,9 +11,9 @@ import {
   useSaveNoticeMutation,
   useShowNoticeMutation,
 } from '@/lib/queries';
-import { confirmDialog } from '@/components/ui/confirm-dialog';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { confirmDialog } from '@v2board/ui/confirm-dialog';
+import { Button } from '@v2board/ui/button';
+import { Card, CardContent } from '@v2board/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -21,16 +21,16 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Field, FieldError, FieldLabel } from '@/components/ui/field';
-import { PageHeader, PageShell } from '@/components/ui/page';
-import { ErrorState } from '@/components/ui/error-state';
-import { LoadingState, SkeletonRows } from '@/components/ui/loading-state';
-import { Switch } from '@/components/ui/switch';
+} from '@v2board/ui/dialog';
+import { Input } from '@v2board/ui/input';
+import { Field, FieldError, FieldLabel } from '@v2board/ui/field';
+import { PageHeader, PageShell } from '@v2board/ui/page';
+import { ErrorState } from '@v2board/ui/error-state';
+import { LoadingState, SkeletonRows } from '@v2board/ui/loading-state';
+import { Switch } from '@v2board/ui/switch';
 import { TagsInput } from '@/components/ui/tags-input';
-import { Textarea } from '@/components/ui/textarea';
-import { DataTable, type DataTableColumn } from '@/components/ui/table';
+import { Textarea } from '@v2board/ui/textarea';
+import { DataTable, type DataTableColumn } from '@v2board/ui/table';
 import {
   noticeEditorSchema,
   type NoticeEditorValues,

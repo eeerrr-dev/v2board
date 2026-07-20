@@ -1,17 +1,11 @@
 import type { ReactNode } from 'react';
 import { get, type FieldErrors, type FieldPath, type UseFormSetValue } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
-import { FieldError } from '@/components/ui/field';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { cn } from '@/lib/cn';
+import { Badge } from '@v2board/ui/badge';
+import { Checkbox } from '@v2board/ui/checkbox';
+import { FieldError } from '@v2board/ui/field';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@v2board/ui/select';
+import { cn } from '@v2board/ui/cn';
 import {
   AVAILABLE_STATUS_DOT,
   SERVER_TYPE_BADGE_CLASSES,

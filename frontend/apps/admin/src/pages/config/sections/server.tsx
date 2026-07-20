@@ -1,7 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import type { FormCtx } from '../schema';
 import { Section, SwitchRow, TextRow } from '../rows';
-import { parseBackendInteger } from '../values';
 
 export function ServerSection({ ctx }: { ctx: FormCtx }) {
   const { t } = useTranslation();
@@ -32,7 +31,6 @@ export function ServerSection({ ctx }: { ctx: FormCtx }) {
         placeholder={t(($) => $.admin.config.input_placeholder)}
         type="number"
         suffix={t(($) => $.admin.config.server.seconds_suffix)}
-        coerce={parseBackendInteger}
       />
       <TextRow
         ctx={ctx}
@@ -43,7 +41,6 @@ export function ServerSection({ ctx }: { ctx: FormCtx }) {
         placeholder={t(($) => $.admin.config.input_placeholder)}
         type="number"
         suffix={t(($) => $.admin.config.server.seconds_suffix)}
-        coerce={parseBackendInteger}
       />
       <TextRow
         ctx={ctx}
@@ -54,7 +51,6 @@ export function ServerSection({ ctx }: { ctx: FormCtx }) {
         placeholder={t(($) => $.admin.config.input_placeholder)}
         type="number"
         suffix="Kb"
-        coerce={parseBackendInteger}
       />
       <TextRow
         ctx={ctx}
@@ -65,7 +61,6 @@ export function ServerSection({ ctx }: { ctx: FormCtx }) {
         placeholder={t(($) => $.admin.config.input_placeholder)}
         type="number"
         suffix="Kb"
-        coerce={parseBackendInteger}
       />
       <SwitchRow
         ctx={ctx}

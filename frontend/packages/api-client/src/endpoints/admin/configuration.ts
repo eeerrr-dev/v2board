@@ -1,4 +1,4 @@
-import type { AdminConfig, AdminConfigFlat, AdminConfigPatchResult } from '@v2board/types';
+import type { AdminConfig, AdminConfigPatch, AdminConfigPatchResult } from '@v2board/types';
 import { z, type output } from 'zod';
 import type { ApiClient } from '../../client';
 import {
@@ -31,6 +31,14 @@ function normalizeAdminConfig(config: output<typeof adminConfigSchema>): AdminCo
   };
 }
 
+function explicitAdminConfigPath(securePath: string): string {
+  const normalized = securePath.trim().replace(/^\/+|\/+$/g, '');
+  if (!/^[A-Za-z0-9_-]{8,}$/.test(normalized)) {
+    throw new TypeError('Invalid admin secure path');
+  }
+  return `/${encodeURIComponent(normalized)}/config`;
+}
+
 /** GET /{secure_path}/config `?group=` — dialect v2 bare grouped object (§6.1, W9). */
 export const fetchConfig = async (client: ApiClient, group?: string, config?: QueryRequestConfig) =>
   normalizeAdminConfig(
@@ -45,16 +53,42 @@ export const fetchConfig = async (client: ApiClient, group?: string, config?: Qu
   );
 
 /**
+ * Probe a newly committed admin prefix without changing the page-lifetime
+ * runtime config. This is used only while a secure-path PATCH is durably
+ * pending: the old prefix can disappear before it can report the new active
+ * revision, so activation must be confirmed through the new prefix itself.
+ */
+export const fetchConfigAtAdminPath = async (
+  client: ApiClient,
+  securePath: string,
+  group?: string,
+  config?: QueryRequestConfig,
+) =>
+  normalizeAdminConfig(
+    await client.request({
+      url: explicitAdminConfigPath(securePath),
+      method: 'GET',
+      dialect: 'v2',
+      params: group ? { group } : undefined,
+      responseSchema: adminConfigSchema,
+      ...config,
+    }),
+  );
+
+/**
  * PATCH /{secure_path}/config — dialect v2 partial JSON body in §4.1 native
  * types (real booleans/arrays; the legacy `'[]'`-string empty-array hack is
- * dead) with §4.4 null-clear semantics. 204 means the write fully activated;
- * 202 `{activation: "pending"}` means it is durable but not yet active — the
- * caller must refetch, never resubmit (a resubmit would 409
+ * dead) with §4.4 null-clear semantics for resettable fields; secure_path
+ * always requires an explicit non-empty replacement. `expected_revision` is
+ * the required positive token from the GET snapshot on which the patch is
+ * based. 204 means the write fully activated;
+ * 202 `{activation: "pending", revision}` means it is durable but not yet
+ * active — the caller must observe that revision on GET, never resubmit (a resubmit would 409
  * `config_revision_conflict` on the now-stale revision).
  */
 export const saveConfig = (
   client: ApiClient,
-  data: Partial<AdminConfigFlat>,
+  data: AdminConfigPatch,
 ): Promise<AdminConfigPatchResult> =>
   client
     .request({
@@ -64,7 +98,7 @@ export const saveConfig = (
       data,
       responseSchema: z.union([noContentSchema, configActivationPendingSchema]),
     })
-    .then((body) => ({ activation: body?.activation ?? 'applied' }));
+    .then((body) => body ?? ({ activation: 'applied' } as const));
 
 /** GET /{secure_path}/email-templates — dialect v2 bare array (§6.1, W9). */
 export const getEmailTemplate = (client: ApiClient, config?: QueryRequestConfig) =>

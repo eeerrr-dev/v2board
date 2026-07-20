@@ -3,7 +3,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm, useFormState } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import type { AdminFilter } from '@v2board/api-client';
-import { Button } from '@/components/ui/button';
+import { Button } from '@v2board/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -11,10 +11,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Field, FieldError, FieldLabel } from '@/components/ui/field';
-import { Textarea } from '@/components/ui/textarea';
+} from '@v2board/ui/dialog';
+import { Input } from '@v2board/ui/input';
+import { Field, FieldError, FieldLabel } from '@v2board/ui/field';
+import { Textarea } from '@v2board/ui/textarea';
 import { sendMailSchema, type SendMailValues } from './form-schema';
 import { requestErrorMessage } from './shared';
 

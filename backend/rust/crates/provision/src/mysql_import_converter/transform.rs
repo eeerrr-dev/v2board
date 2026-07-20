@@ -251,6 +251,15 @@ fn apply_rule(
         return Ok(CanonicalValue::Null);
     }
     match column.rule {
+        ColumnRule::Boolean01 => match source {
+            SourceValue::I64(0) | SourceValue::U64(0) => Ok(CanonicalValue::Bool(false)),
+            SourceValue::I64(1) | SourceValue::U64(1) => Ok(CanonicalValue::Bool(true)),
+            SourceValue::I64(_) | SourceValue::U64(_) => Err(ConverterError::InvalidBoolean {
+                table: mapping.source.to_string(),
+                column: column.source.to_string(),
+            }),
+            other => type_mismatch(mapping, column, source_kind(other)),
+        },
         ColumnRule::ExactDecimal => {
             let text = match source {
                 SourceValue::Decimal(value) | SourceValue::Text(value) => value,

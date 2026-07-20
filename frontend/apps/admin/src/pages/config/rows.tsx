@@ -1,21 +1,24 @@
 import type { ReactNode } from 'react';
 import type { TFunction } from 'i18next';
+import { useTranslation } from 'react-i18next';
 import { Controller } from 'react-hook-form';
-import { cn } from '@/lib/cn';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Field, FieldError } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
-import type { ConfigFieldValue, ConfigGroupKey, FormCtx } from './schema';
+import { cn } from '@v2board/ui/cn';
+import { Alert, AlertDescription } from '@v2board/ui/alert';
+import { Button } from '@v2board/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@v2board/ui/card';
+import { Field, FieldError } from '@v2board/ui/field';
+import { Input } from '@v2board/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@v2board/ui/select';
+import { Switch } from '@v2board/ui/switch';
+import { Textarea } from '@v2board/ui/textarea';
+import type {
+  ConfigFieldValue,
+  ConfigFieldName,
+  ConfigGroupField,
+  ConfigGroupFieldWithValue,
+  ConfigGroupKey,
+  FormCtx,
+} from './schema';
 import { isBackendEnabled, toText } from './values';
 
 // --- Shared field primitives ----------------------------------------------
@@ -60,7 +63,43 @@ export function SettingRow({
   );
 }
 
-export function SwitchRow({
+function ResetToDefault({
+  field,
+  disabled,
+  pending,
+  onReset,
+}: {
+  field: ConfigFieldName;
+  disabled: boolean;
+  pending: boolean;
+  onReset: () => void;
+}) {
+  const { t } = useTranslation();
+  // The backend deliberately rejects a null/empty secure_path; changing this
+  // security-sensitive route always requires an explicit replacement.
+  if (field === 'secure_path') return null;
+
+  return (
+    <div className="mt-1 flex min-h-7 items-center justify-between gap-2">
+      <span className="text-xs text-muted-foreground" aria-live="polite">
+        {pending ? t(($) => $.admin.config.reset_default_pending) : null}
+      </span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-7 px-2 text-xs"
+        disabled={disabled}
+        onClick={onReset}
+        data-testid={`config-${field}-reset-default`}
+      >
+        {t(($) => $.admin.config.reset_default)}
+      </Button>
+    </div>
+  );
+}
+
+export function SwitchRow<Group extends ConfigGroupKey>({
   ctx,
   group,
   field,
@@ -69,8 +108,8 @@ export function SwitchRow({
   indent,
 }: {
   ctx: FormCtx;
-  group: ConfigGroupKey;
-  field: string;
+  group: Group;
+  field: ConfigGroupFieldWithValue<Group, boolean>;
   title: string;
   description?: string;
   indent?: boolean;
@@ -89,15 +128,21 @@ export function SwitchRow({
                 checked={isBackendEnabled(controlField.value)}
                 onBlur={controlField.onBlur}
                 onCheckedChange={(checked) => {
-                  // §4.1: config flags are real JSON booleans on the wire.
-                  controlField.onChange(checked);
-                  void ctx.save(group, field, checked);
+                  // §4.1: config flags stay real booleans in the local draft.
+                  controlField.onChange(ctx.stage(group, field, checked));
                 }}
                 aria-label={title}
                 aria-invalid={fieldState.invalid}
                 data-testid={`config-${field}`}
+                disabled={ctx.isSaving(field)}
               />
             </div>
+            <ResetToDefault
+              field={field}
+              disabled={ctx.isSaving(field)}
+              pending={fieldState.isDirty && controlField.value === null}
+              onReset={() => controlField.onChange(ctx.stage(group, field, null))}
+            />
             <FieldError errors={[fieldState.error]} />
           </Field>
         </SettingRow>
@@ -106,7 +151,7 @@ export function SwitchRow({
   );
 }
 
-export function TextRow({
+export function TextRow<Group extends ConfigGroupKey>({
   ctx,
   group,
   field,
@@ -116,18 +161,16 @@ export function TextRow({
   type,
   suffix,
   indent,
-  coerce,
 }: {
   ctx: FormCtx;
-  group: ConfigGroupKey;
-  field: string;
+  group: Group;
+  field: ConfigGroupFieldWithValue<Group, string | number | string[]>;
   title: string;
   description?: string;
   placeholder?: string;
   type?: string;
   suffix?: string;
   indent?: boolean;
-  coerce?: (value: string) => ConfigFieldValue;
 }) {
   return (
     <Controller
@@ -146,16 +189,12 @@ export function TextRow({
                 aria-label={title}
                 aria-invalid={fieldState.invalid}
                 data-testid={`config-${field}`}
-                disabled={field === 'secure_path' && ctx.isSaving(field)}
+                disabled={ctx.isSaving(field)}
                 value={toText(controlField.value)}
                 onChange={(event) => controlField.onChange(event.target.value)}
                 onBlur={(event) => {
                   controlField.onBlur();
-                  void ctx.save(
-                    group,
-                    field,
-                    coerce ? coerce(event.target.value) : event.target.value,
-                  );
+                  controlField.onChange(ctx.stage(group, field, event.target.value));
                 }}
               />
               {suffix ? (
@@ -164,6 +203,12 @@ export function TextRow({
                 </span>
               ) : null}
             </div>
+            <ResetToDefault
+              field={field}
+              disabled={ctx.isSaving(field)}
+              pending={fieldState.isDirty && controlField.value === null}
+              onReset={() => controlField.onChange(ctx.stage(group, field, null))}
+            />
             <FieldError errors={[fieldState.error]} />
           </Field>
         </SettingRow>
@@ -172,7 +217,7 @@ export function TextRow({
   );
 }
 
-export function TextareaRow({
+export function TextareaRow<Group extends ConfigGroupKey>({
   ctx,
   group,
   field,
@@ -181,17 +226,15 @@ export function TextareaRow({
   placeholder,
   rows,
   indent,
-  coerce,
 }: {
   ctx: FormCtx;
-  group: ConfigGroupKey;
-  field: string;
+  group: Group;
+  field: ConfigGroupFieldWithValue<Group, string | number | string[]>;
   title: string;
   description?: string;
   placeholder?: string;
   rows: number;
   indent?: boolean;
-  coerce?: (value: string) => ConfigFieldValue;
 }) {
   return (
     <Controller
@@ -208,16 +251,19 @@ export function TextareaRow({
               aria-label={title}
               aria-invalid={fieldState.invalid}
               data-testid={`config-${field}`}
+              disabled={ctx.isSaving(field)}
               value={toText(controlField.value)}
               onChange={(event) => controlField.onChange(event.target.value)}
               onBlur={(event) => {
                 controlField.onBlur();
-                void ctx.save(
-                  group,
-                  field,
-                  coerce ? coerce(event.target.value) : event.target.value,
-                );
+                controlField.onChange(ctx.stage(group, field, event.target.value));
               }}
+            />
+            <ResetToDefault
+              field={field}
+              disabled={ctx.isSaving(field)}
+              pending={fieldState.isDirty && controlField.value === null}
+              onReset={() => controlField.onChange(ctx.stage(group, field, null))}
             />
             <FieldError errors={[fieldState.error]} />
           </Field>
@@ -227,7 +273,7 @@ export function TextareaRow({
   );
 }
 
-export function SelectRow({
+export function SelectRow<Group extends ConfigGroupKey>({
   ctx,
   group,
   field,
@@ -240,8 +286,8 @@ export function SelectRow({
   serialize,
 }: {
   ctx: FormCtx;
-  group: ConfigGroupKey;
-  field: string;
+  group: Group;
+  field: ConfigGroupField<Group>;
   title: string;
   description?: string;
   placeholder?: string;
@@ -276,10 +322,10 @@ export function SelectRow({
               <Select
                 name={controlField.name}
                 value={current}
+                disabled={ctx.isSaving(field)}
                 onValueChange={(value) => {
                   const wireValue = serialize ? serialize(value) : value;
-                  controlField.onChange(wireValue);
-                  void ctx.save(group, field, wireValue);
+                  controlField.onChange(ctx.stage(group, field, wireValue));
                 }}
               >
                 <SelectTrigger
@@ -299,6 +345,12 @@ export function SelectRow({
                   ))}
                 </SelectContent>
               </Select>
+              <ResetToDefault
+                field={field}
+                disabled={ctx.isSaving(field)}
+                pending={fieldState.isDirty && controlField.value === null}
+                onReset={() => controlField.onChange(ctx.stage(group, field, null))}
+              />
               <FieldError errors={[fieldState.error]} />
             </Field>
           </SettingRow>

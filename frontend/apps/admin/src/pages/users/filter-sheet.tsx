@@ -5,16 +5,10 @@ import { Controller, useFieldArray, useForm, useFormState, useWatch } from 'reac
 import { Plus, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { AdminFilter } from '@v2board/api-client';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Field, FieldError } from '@/components/ui/field';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Button } from '@v2board/ui/button';
+import { Input } from '@v2board/ui/input';
+import { Field, FieldError } from '@v2board/ui/field';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@v2board/ui/select';
 import {
   Sheet,
   SheetContent,
@@ -22,7 +16,7 @@ import {
   SheetFooter,
   SheetHeader,
   SheetTitle,
-} from '@/components/ui/sheet';
+} from '@v2board/ui/sheet';
 import { userFilterSchema, type UserFilterValues } from './form-schema';
 import type { FilterField } from './shared';
 

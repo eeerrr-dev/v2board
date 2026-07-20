@@ -8,16 +8,16 @@ import {
   useGenerateCouponMutation,
   useShowCouponMutation,
 } from '@/lib/queries';
-import { confirmDialog } from '@/components/ui/confirm-dialog';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { PageHeader, PageShell } from '@/components/ui/page';
-import { ErrorState } from '@/components/ui/error-state';
-import { PaginationControl } from '@/components/ui/pagination';
-import { LoadingState, SkeletonRows } from '@/components/ui/loading-state';
-import { Switch } from '@/components/ui/switch';
-import { DataTable, type DataTableColumn } from '@/components/ui/table';
+import { confirmDialog } from '@v2board/ui/confirm-dialog';
+import { Badge } from '@v2board/ui/badge';
+import { Button } from '@v2board/ui/button';
+import { Card, CardContent } from '@v2board/ui/card';
+import { PageHeader, PageShell } from '@v2board/ui/page';
+import { ErrorState } from '@v2board/ui/error-state';
+import { PaginationControl } from '@v2board/ui/pagination';
+import { LoadingState, SkeletonRows } from '@v2board/ui/loading-state';
+import { Switch } from '@v2board/ui/switch';
+import { DataTable, type DataTableColumn } from '@v2board/ui/table';
 import { CouponEditor } from './coupon-editor';
 import {
   CopyableCode,

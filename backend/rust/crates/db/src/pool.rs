@@ -542,17 +542,34 @@ async fn seed_local_locked(connection: &mut PgConnection) -> Result<(), DbInitEr
         r#"
         INSERT INTO plan (
             group_id, transfer_enable, name, show, sort, renew, content,
-            month_price, quarter_price, half_year_price, year_price,
-            onetime_price, created_at, updated_at
+            created_at, updated_at
         )
-        SELECT $1, 100, 'Test Plan', 1, 1, 1, 'Local Rust test plan',
-               100, 280, 540, 1000, 9900, $2, $3
+        SELECT $1, 100, 'Test Plan', TRUE, 1, TRUE, 'Local Rust test plan', $2, $3
         WHERE NOT EXISTS (SELECT 1 FROM plan)
         "#,
     )
     .bind(group_id)
     .bind(now)
     .bind(now)
+    .execute(&mut *connection)
+    .await?;
+
+    let plan_id: i32 = sqlx::query_scalar("SELECT id FROM plan ORDER BY id LIMIT 1")
+        .fetch_one(&mut *connection)
+        .await?;
+    sqlx::query(
+        r#"
+        INSERT INTO plan_price (plan_id, period, amount_minor)
+        VALUES
+            ($1, 'month', 100),
+            ($1, 'quarter', 280),
+            ($1, 'half_year', 540),
+            ($1, 'year', 1000),
+            ($1, 'one_time', 9900)
+        ON CONFLICT (plan_id, period) DO NOTHING
+        "#,
+    )
+    .bind(plan_id)
     .execute(&mut *connection)
     .await?;
 

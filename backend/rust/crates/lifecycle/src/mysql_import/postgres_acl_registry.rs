@@ -3,6 +3,7 @@ pub(crate) const RUNTIME_TABLES: &[&str] = &[
     "system_installation",
     "server_group",
     "plan",
+    "plan_price",
     "payment_method",
     "coupon",
     "users",
@@ -52,6 +53,7 @@ pub(crate) const API_SELECT_TABLES: &[&str] = &[
     "system_installation",
     "server_group",
     "plan",
+    "plan_price",
     "payment_method",
     "coupon",
     "users",
@@ -67,6 +69,7 @@ pub(crate) const API_SELECT_TABLES: &[&str] = &[
     "ticket",
     "ticket_message",
     "system_log",
+    "audit_log",
     "mail_outbox_batch",
     "stat",
     "server_traffic",
@@ -92,6 +95,7 @@ pub(crate) const API_SELECT_TABLES: &[&str] = &[
 pub(crate) const API_INSERT_TABLES: &[&str] = &[
     "server_group",
     "plan",
+    "plan_price",
     "payment_method",
     "coupon",
     "users",
@@ -129,6 +133,7 @@ pub(crate) const API_INSERT_TABLES: &[&str] = &[
 pub(crate) const API_UPDATE_TABLES: &[&str] = &[
     "server_group",
     "plan",
+    "plan_price",
     "payment_method",
     "coupon",
     "users",
@@ -160,6 +165,7 @@ pub(crate) const API_UPDATE_TABLES: &[&str] = &[
 pub(crate) const API_DELETE_TABLES: &[&str] = &[
     "server_group",
     "plan",
+    "plan_price",
     "coupon",
     "users",
     "admin_mfa",
@@ -186,6 +192,7 @@ pub(crate) const WORKER_SELECT_TABLES: &[&str] = &[
     "_sqlx_migrations",
     "system_installation",
     "plan",
+    "plan_price",
     "mail_outbox_batch",
     "mail_outbox",
     "analytics_delivery_batch",
@@ -244,7 +251,17 @@ pub(crate) const API_COLUMN_GRANTS: &[PostgresColumnGrant] = &[
     PostgresColumnGrant {
         privilege: "SELECT",
         table: "operator_config_api_ack",
-        columns: &["singleton"],
+        // PostgreSQL requires SELECT on the conflict key and every target
+        // column referenced by ON CONFLICT DO UPDATE, even when each value is
+        // read from EXCLUDED rather than from the existing row.
+        columns: &[
+            "singleton",
+            "observed_revision",
+            "applied_revision",
+            "status",
+            "error_code",
+            "observed_at",
+        ],
     },
     PostgresColumnGrant {
         privilege: "INSERT",

@@ -1,5 +1,5 @@
 import { Trans } from 'react-i18next';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Checkbox } from '@v2board/ui/checkbox';
 
 export function getSafeTosHref(rawUrl: string): string | null {
   const url = rawUrl.trim().replace(/[\t\n\r]/g, '');

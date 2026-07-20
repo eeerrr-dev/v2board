@@ -145,12 +145,19 @@ test('the config-activation 503/202 equivalence is pinned (§13.3/§6.1)', () =>
   });
   const source = canonicalizeConfigActivation('source', {
     status: 202,
-    body: { activation: 'pending' },
+    body: { activation: 'pending', revision: 8 },
   });
   assert.equal(oracle, CONFIG_ACTIVATION_PENDING);
   assert.equal(source, CONFIG_ACTIVATION_PENDING);
   assert.equal(
     canonicalizeConfigActivation('source', { status: 204, body: null }),
+    null,
+  );
+  assert.equal(
+    canonicalizeConfigActivation('source', {
+      status: 202,
+      body: { activation: 'pending' },
+    }),
     null,
   );
   assert.equal(

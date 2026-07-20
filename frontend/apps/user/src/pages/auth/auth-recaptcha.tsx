@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTitle } from '@v2board/ui/dialog';
 import { i18nGet } from '@/lib/errors';
 import { toast } from '@/lib/toast';
 

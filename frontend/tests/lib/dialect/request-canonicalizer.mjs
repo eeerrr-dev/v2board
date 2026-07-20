@@ -132,6 +132,10 @@ function foldRouteRequest(request) {
 }
 
 const ROUTE_REQUEST_FOLDS = Object.freeze({
+  // W9 (§6.1): the source wire carries a PostgreSQL CAS token that the
+  // read-only legacy oracle cannot represent. It remains mandatory on the
+  // real source request but is excluded only from cross-world semantics.
+  'admin.config.update': foldConfigExpectedRevision,
   'user.orders.create': (request) => {
     const body = request.body;
     if (!isPlainObject(body) || body.kind !== undefined) return request;
@@ -235,6 +239,14 @@ const ROUTE_REQUEST_FOLDS = Object.freeze({
   'staff.users.ban': foldBodyFilterClauses,
   'staff.notices.update': foldBodyIdIntoParams,
 });
+
+function foldConfigExpectedRevision(request) {
+  const body = request.body;
+  if (!isPlainObject(body) || body.expected_revision === undefined) return request;
+  const changes = { ...body };
+  delete changes.expected_revision;
+  return { ...request, body: Object.keys(changes).length === 0 ? null : changes };
+}
 
 /**
  * W14 (§6.5): `reply_status` is one real array cross-world. The modern wire

@@ -3,12 +3,12 @@ import type { SelectorParam } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { CheckCircle2, XCircle } from 'lucide-react';
 import { useQueueStats, useQueueWorkload } from '@/lib/queries';
-import { Card, CardContent } from '@/components/ui/card';
-import { PageShell } from '@/components/ui/page';
-import { LoadingState, SkeletonRows } from '@/components/ui/loading-state';
-import { StatusBadge } from '@/components/ui/status-badge';
-import { DataTable, type DataTableColumn } from '@/components/ui/table';
-import { ErrorState } from '@/components/ui/error-state';
+import { Card, CardContent } from '@v2board/ui/card';
+import { PageShell } from '@v2board/ui/page';
+import { LoadingState, SkeletonRows } from '@v2board/ui/loading-state';
+import { StatusBadge } from '@v2board/ui/status-badge';
+import { DataTable, type DataTableColumn } from '@v2board/ui/table';
+import { ErrorState } from '@v2board/ui/error-state';
 
 type QueueWorkloadRow = { name: string; processes: number; length: number; wait: number };
 

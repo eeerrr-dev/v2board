@@ -16,15 +16,15 @@ import type { PlanPeriod, UserCoupon, UserPlan } from '@v2board/types';
 import { PLAN_PERIOD_LABELS, PURCHASABLE_PLAN_PERIODS } from '@/lib/plan-periods';
 import { isSubscriptionExpired } from '@/pages/dashboard/subscription';
 import { PlanContent } from '@/components/plan-content';
-import { confirmDialog } from '@/components/ui/confirm-dialog';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ErrorState } from '@/components/ui/error-state';
-import { Input } from '@/components/ui/input';
-import { PageShell } from '@/components/ui/page';
+import { confirmDialog } from '@v2board/ui/confirm-dialog';
+import { Alert, AlertDescription } from '@v2board/ui/alert';
+import { Button } from '@v2board/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@v2board/ui/card';
+import { ErrorState } from '@v2board/ui/error-state';
+import { Input } from '@v2board/ui/input';
+import { PageShell } from '@v2board/ui/page';
 import { RadioGroup, RadioGroupIndicator, RadioGroupItem } from '@/components/ui/radio-group';
-import { LoadingState, SkeletonLines, SkeletonRows } from '@/components/ui/loading-state';
+import { LoadingState, SkeletonLines, SkeletonRows } from '@v2board/ui/loading-state';
 
 // Derived from the canonical lib/plan-periods tables; plan-periods.test.ts pins
 // that this derivation matches the backend order-amount contract exactly.

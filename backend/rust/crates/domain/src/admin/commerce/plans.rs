@@ -1,9 +1,95 @@
 use super::*;
-use serde::Deserialize;
-use v2board_compat::json::{double_option, rfc3339};
+use v2board_domain_model::{
+    MoneyMinor, PlanPricePeriod, PlanPriceUpdate, PlanPriceUpdates, PlanPrices,
+};
 
 const PLAN_USER_LOCK_PAGE_SIZE: i64 = 500;
 const PLAN_FORCE_UPDATE_MAX_USERS: usize = 10_000;
+
+pub(super) fn plan_sort_ids(ids: &[i64]) -> Result<Vec<i32>, ApiError> {
+    let mut unique = HashSet::new();
+    let mut normalized = Vec::with_capacity(ids.len());
+    for id in ids {
+        let id = i32::try_from(*id)
+            .ok()
+            .filter(|id| *id > 0)
+            .ok_or_else(|| validation_error("ids", "plan ids must be positive 32-bit integers"))?;
+        if !unique.insert(id) {
+            return Err(validation_error(
+                "ids",
+                "plan ids must not contain duplicates",
+            ));
+        }
+        normalized.push(id);
+    }
+    Ok(normalized)
+}
+
+/// Application command for creating a plan. HTTP deserialization and OpenAPI
+/// metadata belong to the API adapter, not this use-case boundary.
+#[derive(Debug, Clone)]
+pub struct PlanCreateCommand {
+    pub name: String,
+    pub group_id: i64,
+    pub transfer_enable: i64,
+    pub device_limit: Option<i64>,
+    pub speed_limit: Option<i64>,
+    pub capacity_limit: Option<i64>,
+    pub content: Option<String>,
+    pub prices: PlanPrices,
+    pub reset_traffic_method: Option<i64>,
+}
+
+/// Application command for PATCH-like plan changes. The nested option keeps
+/// the use-case distinction between retain, clear, and set without importing
+/// a transport serializer into the application layer.
+#[derive(Debug, Clone, Default)]
+pub struct PlanPatchCommand {
+    pub name: Option<String>,
+    pub group_id: Option<i64>,
+    pub transfer_enable: Option<i64>,
+    pub device_limit: Option<Option<i64>>,
+    pub speed_limit: Option<Option<i64>>,
+    pub capacity_limit: Option<Option<i64>>,
+    pub content: Option<Option<String>>,
+    pub prices: PlanPriceUpdates,
+    pub reset_traffic_method: Option<Option<i64>>,
+    pub show: Option<bool>,
+    pub renew: Option<bool>,
+    pub force_update: Option<bool>,
+}
+
+/// Application projection. Epoch seconds are converted to RFC 3339 only at
+/// the HTTP boundary so this type remains independent of a wire format.
+#[derive(Debug, Clone)]
+pub struct AdminPlanView {
+    pub id: i32,
+    pub group_id: i32,
+    pub transfer_enable: i64,
+    pub device_limit: Option<i32>,
+    pub name: String,
+    pub speed_limit: Option<i32>,
+    pub show: bool,
+    pub sort: Option<i32>,
+    pub renew: bool,
+    pub content: Option<String>,
+    pub prices: PlanPrices,
+    pub reset_traffic_method: Option<i16>,
+    pub capacity_limit: Option<i32>,
+    pub count: i64,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+async fn set_plan_price(
+    tx: &mut DbTransaction<'_>,
+    plan_id: i32,
+    period: PlanPricePeriod,
+    amount_minor: Option<MoneyMinor>,
+) -> Result<(), ApiError> {
+    v2board_db::plan::set_plan_price(tx, plan_id, period, amount_minor).await?;
+    Ok(())
+}
 
 async fn lock_server_group_for_share(
     tx: &mut DbTransaction<'_>,
@@ -23,9 +109,9 @@ async fn lock_server_group_for_share(
 async fn lock_plan_users_for_update(
     tx: &mut DbTransaction<'_>,
     plan_id: i64,
-) -> Result<(), ApiError> {
+) -> Result<Vec<i64>, ApiError> {
     let mut after_id = 0_i64;
-    let mut locked = 0_usize;
+    let mut locked = Vec::new();
     loop {
         let ids = sqlx::query_scalar::<_, i64>(
             r#"
@@ -43,133 +129,35 @@ async fn lock_plan_users_for_update(
         .fetch_all(&mut **tx)
         .await?;
         let Some(last_id) = ids.last().copied() else {
-            return Ok(());
+            return Ok(locked);
         };
-        locked = locked.saturating_add(ids.len());
-        if locked > PLAN_FORCE_UPDATE_MAX_USERS {
+        if locked.len().saturating_add(ids.len()) > PLAN_FORCE_UPDATE_MAX_USERS {
             return Err(Problem::new(Code::PlanForceUpdateLimitExceeded).into());
         }
+        locked.extend(ids);
         after_id = last_id;
     }
 }
 
-/// One admin plan row (§6.2 `GET plans`): the legacy field set plus the
-/// active-user `count`, on modern value types — bool flags, §4.5 RFC 3339
-/// timestamps. Prices stay integer cents; `transfer_enable` stays the
-/// operator-facing GiB figure.
-#[derive(Debug, Serialize)]
-pub struct AdminPlanItem {
-    pub id: i32,
-    pub group_id: i32,
-    pub transfer_enable: i64,
-    pub device_limit: Option<i32>,
-    pub name: String,
-    pub speed_limit: Option<i32>,
-    pub show: bool,
-    pub sort: Option<i32>,
-    pub renew: bool,
-    pub content: Option<String>,
-    pub month_price: Option<i32>,
-    pub quarter_price: Option<i32>,
-    pub half_year_price: Option<i32>,
-    pub year_price: Option<i32>,
-    pub two_year_price: Option<i32>,
-    pub three_year_price: Option<i32>,
-    pub onetime_price: Option<i32>,
-    pub reset_price: Option<i32>,
-    pub reset_traffic_method: Option<i16>,
-    pub capacity_limit: Option<i32>,
-    pub count: i64,
-    #[serde(with = "rfc3339")]
-    pub created_at: i64,
-    #[serde(with = "rfc3339")]
-    pub updated_at: i64,
+async fn plan_user_ids_after_parent_lock(
+    tx: &mut DbTransaction<'_>,
+    plan_id: i64,
+) -> Result<Vec<i64>, ApiError> {
+    // One extra row distinguishes an over-limit late-binding set without
+    // retaining an unbounded vector. The caller already owns the parent plan
+    // lock, so no new binding can commit while this snapshot is read.
+    Ok(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT id FROM users WHERE plan_id = $1 ORDER BY id LIMIT $2",
+        )
+        .bind(plan_id)
+        .bind(i64::try_from(PLAN_FORCE_UPDATE_MAX_USERS).unwrap_or(i64::MAX) + 1)
+        .fetch_all(&mut **tx)
+        .await?,
+    )
 }
 
-/// POST `plans` (§6.2): the legacy PlanSave field set as a JSON body.
-/// Creates keep the DB defaults PlanSave never touched (`show` = 0,
-/// `renew` = 1, `sort` = NULL).
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PlanCreate {
-    pub name: String,
-    pub group_id: i64,
-    pub transfer_enable: i64,
-    #[serde(default)]
-    pub device_limit: Option<i64>,
-    #[serde(default)]
-    pub speed_limit: Option<i64>,
-    #[serde(default)]
-    pub capacity_limit: Option<i64>,
-    #[serde(default)]
-    pub content: Option<String>,
-    #[serde(default)]
-    pub month_price: Option<i64>,
-    #[serde(default)]
-    pub quarter_price: Option<i64>,
-    #[serde(default)]
-    pub half_year_price: Option<i64>,
-    #[serde(default)]
-    pub year_price: Option<i64>,
-    #[serde(default)]
-    pub two_year_price: Option<i64>,
-    #[serde(default)]
-    pub three_year_price: Option<i64>,
-    #[serde(default)]
-    pub onetime_price: Option<i64>,
-    #[serde(default)]
-    pub reset_price: Option<i64>,
-    #[serde(default)]
-    pub reset_traffic_method: Option<i64>,
-}
-
-/// PATCH `plans/{id}` (§6.2): §4.4 partial update merging the legacy
-/// `plan/update` show/renew toggles; `force_update` stays a body flag that
-/// propagates the final plan limits to every subscribed user.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PlanPatch {
-    #[serde(default)]
-    pub name: Option<String>,
-    #[serde(default)]
-    pub group_id: Option<i64>,
-    #[serde(default)]
-    pub transfer_enable: Option<i64>,
-    #[serde(default, with = "double_option")]
-    pub device_limit: Option<Option<i64>>,
-    #[serde(default, with = "double_option")]
-    pub speed_limit: Option<Option<i64>>,
-    #[serde(default, with = "double_option")]
-    pub capacity_limit: Option<Option<i64>>,
-    #[serde(default, with = "double_option")]
-    pub content: Option<Option<String>>,
-    #[serde(default, with = "double_option")]
-    pub month_price: Option<Option<i64>>,
-    #[serde(default, with = "double_option")]
-    pub quarter_price: Option<Option<i64>>,
-    #[serde(default, with = "double_option")]
-    pub half_year_price: Option<Option<i64>>,
-    #[serde(default, with = "double_option")]
-    pub year_price: Option<Option<i64>>,
-    #[serde(default, with = "double_option")]
-    pub two_year_price: Option<Option<i64>>,
-    #[serde(default, with = "double_option")]
-    pub three_year_price: Option<Option<i64>>,
-    #[serde(default, with = "double_option")]
-    pub onetime_price: Option<Option<i64>>,
-    #[serde(default, with = "double_option")]
-    pub reset_price: Option<Option<i64>>,
-    #[serde(default, with = "double_option")]
-    pub reset_traffic_method: Option<Option<i64>>,
-    #[serde(default)]
-    pub show: Option<bool>,
-    #[serde(default)]
-    pub renew: Option<bool>,
-    #[serde(default)]
-    pub force_update: Option<bool>,
-}
-
-fn plan_create_validation(body: &PlanCreate) -> Result<(), ApiError> {
+pub(super) fn plan_create_validation(body: &PlanCreateCommand) -> Result<(), ApiError> {
     if body.name.trim().is_empty() {
         return Err(validation_error("name", "name cannot be empty"));
     }
@@ -178,22 +166,50 @@ fn plan_create_validation(body: &PlanCreate) -> Result<(), ApiError> {
         ("device_limit", body.device_limit),
         ("speed_limit", body.speed_limit),
         ("capacity_limit", body.capacity_limit),
-        ("month_price", body.month_price),
-        ("quarter_price", body.quarter_price),
-        ("half_year_price", body.half_year_price),
-        ("year_price", body.year_price),
-        ("two_year_price", body.two_year_price),
-        ("three_year_price", body.three_year_price),
-        ("onetime_price", body.onetime_price),
-        ("reset_price", body.reset_price),
     ] {
         optional_nonnegative_i32(field, value)?;
     }
-    optional_smallint("reset_traffic_method", body.reset_traffic_method)?;
+    optional_reset_traffic_method("reset_traffic_method", body.reset_traffic_method)?;
     Ok(())
 }
 
-pub(super) fn plan_patch_validation(body: &PlanPatch) -> Result<(), ApiError> {
+pub(super) fn plan_in_use_problem(reference: v2board_db::plan::PlanReferenceKind) -> Problem {
+    let detail = match reference {
+        v2board_db::plan::PlanReferenceKind::Order => "该订阅下存在订单无法删除",
+        v2board_db::plan::PlanReferenceKind::User => "该订阅下存在用户无法删除",
+        v2board_db::plan::PlanReferenceKind::GiftCard => "该订阅仍被礼品卡使用，无法删除",
+    };
+    Problem::new(Code::PlanInUse).with_detail(detail)
+}
+
+pub(super) fn plan_reference_for_constraint(
+    constraint: Option<&str>,
+) -> Option<v2board_db::plan::PlanReferenceKind> {
+    match constraint {
+        Some("orders_referenced_plan_id_fkey") => Some(v2board_db::plan::PlanReferenceKind::Order),
+        Some("users_plan_id_fkey") => Some(v2board_db::plan::PlanReferenceKind::User),
+        Some("gift_card_plan_id_fkey") => Some(v2board_db::plan::PlanReferenceKind::GiftCard),
+        _ => None,
+    }
+}
+
+fn map_plan_delete_error(error: sqlx::Error) -> ApiError {
+    let Some(database_error) = error.as_database_error() else {
+        return ApiError::Database(error);
+    };
+    if database_error.code().as_deref() != Some("23503") {
+        return ApiError::Database(error);
+    }
+    match plan_reference_for_constraint(database_error.constraint()) {
+        Some(reference) => plan_in_use_problem(reference).into(),
+        // The parent has no other restrictive child relation today. Keep an
+        // unknown future FK failure typed and non-leaky instead of exposing a
+        // database error through this business endpoint.
+        None => Problem::new(Code::PlanInUse).into(),
+    }
+}
+
+pub(super) fn plan_patch_validation(body: &PlanPatchCommand) -> Result<(), ApiError> {
     if let Some(name) = &body.name
         && name.trim().is_empty()
     {
@@ -206,21 +222,13 @@ pub(super) fn plan_patch_validation(body: &PlanPatch) -> Result<(), ApiError> {
         ("device_limit", &body.device_limit),
         ("speed_limit", &body.speed_limit),
         ("capacity_limit", &body.capacity_limit),
-        ("month_price", &body.month_price),
-        ("quarter_price", &body.quarter_price),
-        ("half_year_price", &body.half_year_price),
-        ("year_price", &body.year_price),
-        ("two_year_price", &body.two_year_price),
-        ("three_year_price", &body.three_year_price),
-        ("onetime_price", &body.onetime_price),
-        ("reset_price", &body.reset_price),
     ] {
         if let Some(update) = value {
             optional_nonnegative_i32(field, *update)?;
         }
     }
     if let Some(update) = &body.reset_traffic_method {
-        optional_smallint("reset_traffic_method", *update)?;
+        optional_reset_traffic_method("reset_traffic_method", *update)?;
     }
     Ok(())
 }
@@ -228,55 +236,38 @@ pub(super) fn plan_patch_validation(body: &PlanPatch) -> Result<(), ApiError> {
 impl AdminService {
     /// GET `plans` (§6.2): bare array — every plan, shown and hidden, with
     /// its active-user `count`, in the operator sort order.
-    pub async fn plans_list(&self) -> Result<Vec<AdminPlanItem>, ApiError> {
-        let plans = sqlx::query_as::<_, v2board_db::plan::PlanRow>(
-            r#"
-            SELECT id, group_id, transfer_enable, device_limit, name, speed_limit, "show", sort,
-                   renew, content, month_price, quarter_price, half_year_price, year_price,
-                   two_year_price, three_year_price, onetime_price, reset_price,
-                   reset_traffic_method, capacity_limit, created_at, updated_at
-            FROM plan
-            ORDER BY sort ASC NULLS FIRST, id ASC
-            "#,
-        )
-        .fetch_all(&self.db)
-        .await?;
+    pub async fn plans_list(&self) -> Result<Vec<AdminPlanView>, ApiError> {
+        let plans = v2board_db::plan::fetch_all_plans(&self.db).await?;
         let counts = v2board_db::plan::count_active_users_by_plan(&self.db).await?;
         Ok(plans
             .into_iter()
             .map(|plan| {
                 let count = counts.get(&plan.id).copied().unwrap_or_default();
-                AdminPlanItem {
+                let prices = plan.prices()?;
+                Ok(AdminPlanView {
                     id: plan.id,
                     group_id: plan.group_id,
                     transfer_enable: plan.transfer_enable,
                     device_limit: plan.device_limit,
                     name: plan.name,
                     speed_limit: plan.speed_limit,
-                    show: plan.show != 0,
+                    show: plan.show,
                     sort: plan.sort,
-                    renew: plan.renew != 0,
+                    renew: plan.renew,
                     content: plan.content,
-                    month_price: plan.month_price,
-                    quarter_price: plan.quarter_price,
-                    half_year_price: plan.half_year_price,
-                    year_price: plan.year_price,
-                    two_year_price: plan.two_year_price,
-                    three_year_price: plan.three_year_price,
-                    onetime_price: plan.onetime_price,
-                    reset_price: plan.reset_price,
+                    prices,
                     reset_traffic_method: plan.reset_traffic_method,
                     capacity_limit: plan.capacity_limit,
                     count,
                     created_at: plan.created_at,
                     updated_at: plan.updated_at,
-                }
+                })
             })
-            .collect())
+            .collect::<Result<Vec<_>, sqlx::Error>>()?)
     }
 
     /// POST `plans` (§6.2) → the new id (a 201 `{id}` on the wire).
-    pub async fn plan_create(&self, body: &PlanCreate) -> Result<i32, ApiError> {
+    pub async fn plan_create(&self, body: &PlanCreateCommand) -> Result<i32, ApiError> {
         plan_create_validation(body)?;
         let now = Utc::now().timestamp();
         let mut tx = self.db.begin().await?;
@@ -287,18 +278,12 @@ impl AdminService {
             r#"
             INSERT INTO plan (
                 group_id, transfer_enable, device_limit, name, speed_limit,
-                content, month_price, quarter_price, half_year_price, year_price,
-                two_year_price, three_year_price, onetime_price, reset_price,
-                reset_traffic_method, capacity_limit, created_at, updated_at
+                content, reset_traffic_method, capacity_limit, created_at, updated_at
             )
             VALUES (
                 CAST($1::BIGINT AS INTEGER), $2, CAST($3::BIGINT AS INTEGER), $4,
-                CAST($5::BIGINT AS INTEGER), $6, CAST($7::BIGINT AS INTEGER),
-                CAST($8::BIGINT AS INTEGER), CAST($9::BIGINT AS INTEGER),
-                CAST($10::BIGINT AS INTEGER), CAST($11::BIGINT AS INTEGER),
-                CAST($12::BIGINT AS INTEGER), CAST($13::BIGINT AS INTEGER),
-                CAST($14::BIGINT AS INTEGER), CAST($15::BIGINT AS SMALLINT),
-                CAST($16::BIGINT AS INTEGER), $17, $18
+                CAST($5::BIGINT AS INTEGER), $6, CAST($7::BIGINT AS SMALLINT),
+                CAST($8::BIGINT AS INTEGER), $9, $10
             )
             RETURNING id
             "#,
@@ -309,20 +294,17 @@ impl AdminService {
         .bind(&body.name)
         .bind(body.speed_limit)
         .bind(&body.content)
-        .bind(body.month_price)
-        .bind(body.quarter_price)
-        .bind(body.half_year_price)
-        .bind(body.year_price)
-        .bind(body.two_year_price)
-        .bind(body.three_year_price)
-        .bind(body.onetime_price)
-        .bind(body.reset_price)
         .bind(body.reset_traffic_method)
         .bind(body.capacity_limit)
         .bind(now)
         .bind(now)
         .fetch_one(&mut *tx)
         .await?;
+        for (period, amount_minor) in body.prices.iter() {
+            if amount_minor.is_some() {
+                set_plan_price(&mut tx, id, period, amount_minor).await?;
+            }
+        }
         tx.commit().await?;
         Ok(id)
     }
@@ -332,14 +314,14 @@ impl AdminService {
     /// and repropagates the **final** plan limits (post-patch values, with
     /// untouched columns read from the current row) to every subscribed
     /// user, preserving the legacy group -> user -> plan lock ordering.
-    pub async fn plan_patch(&self, id: i64, body: &PlanPatch) -> Result<(), ApiError> {
+    pub async fn plan_patch(&self, id: i64, body: &PlanPatchCommand) -> Result<(), ApiError> {
         plan_patch_validation(body)?;
         let force_update = body.force_update.unwrap_or(false);
         let now = Utc::now().timestamp();
         let mut tx = self.db.begin().await?;
-        // The current values feed the group lock and the force propagation
-        // when the body leaves them untouched. The plain read is safe: the
-        // plan row itself is locked FOR UPDATE below before any write.
+        // This optimistic read identifies the parent group that must be locked
+        // before users and the plan. Values used for propagation are re-read
+        // only after the plan lock has actually been granted below.
         #[derive(FromRow)]
         struct CurrentPlan {
             group_id: i32,
@@ -362,20 +344,44 @@ impl AdminService {
             // the plan or its users can be changed.
             lock_server_group_for_share(&mut tx, target_group).await?;
         }
-        if force_update {
+        let locked_user_ids = if force_update {
             // Order lifecycle writers take user before plan. Acquire every
             // affected user in primary-key pages before the plan row so the
             // force propagation cannot invert that order or materialize an
             // unbounded id list.
-            lock_plan_users_for_update(&mut tx, id).await?;
+            Some(lock_plan_users_for_update(&mut tx, id).await?)
+        } else {
+            None
+        };
+        let locked_current = sqlx::query_as::<_, CurrentPlan>(
+            "SELECT group_id, transfer_enable, device_limit, speed_limit \
+             FROM plan WHERE id = $1 LIMIT 1 FOR UPDATE",
+        )
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| ApiError::from(Problem::new(Code::PlanNotFound)))?;
+        if force_update && body.group_id.is_none() && locked_current.group_id != current.group_id {
+            // Another PATCH moved the plan after our optimistic parent read.
+            // Continuing would either propagate the wrong group or acquire a
+            // group lock after user/plan locks and invert the global order.
+            return Err(Problem::new(Code::PlanUpdateConflict).into());
         }
-        let locked: Option<i32> =
-            sqlx::query_scalar("SELECT id FROM plan WHERE id = $1 LIMIT 1 FOR UPDATE")
-                .bind(id)
-                .fetch_optional(&mut *tx)
-                .await?;
-        if locked.is_none() {
-            return Err(Problem::new(Code::PlanNotFound).into());
+        if let Some(locked_user_ids) = locked_user_ids {
+            // A creator or planless account can take the old plan version's
+            // shared lock after the first user scan and commit its binding
+            // before this exclusive parent lock is granted. Those rows were
+            // not locked in child -> parent order. Updating them now would
+            // invert the order and can deadlock with a concurrent user writer,
+            // so fail the optimistic force attempt and let a retry lock the
+            // authoritative set from the start.
+            let current_user_ids = plan_user_ids_after_parent_lock(&mut tx, id).await?;
+            if current_user_ids.len() > PLAN_FORCE_UPDATE_MAX_USERS {
+                return Err(Problem::new(Code::PlanForceUpdateLimitExceeded).into());
+            }
+            if current_user_ids != locked_user_ids {
+                return Err(Problem::new(Code::PlanUpdateConflict).into());
+            }
         }
 
         let mut values: Vec<(&str, AdminSqlValue)> = Vec::new();
@@ -392,14 +398,6 @@ impl AdminService {
             ("device_limit", &body.device_limit),
             ("speed_limit", &body.speed_limit),
             ("capacity_limit", &body.capacity_limit),
-            ("month_price", &body.month_price),
-            ("quarter_price", &body.quarter_price),
-            ("half_year_price", &body.half_year_price),
-            ("year_price", &body.year_price),
-            ("two_year_price", &body.two_year_price),
-            ("three_year_price", &body.three_year_price),
-            ("onetime_price", &body.onetime_price),
-            ("reset_price", &body.reset_price),
             ("reset_traffic_method", &body.reset_traffic_method),
         ] {
             if let Some(update) = field {
@@ -418,10 +416,10 @@ impl AdminService {
             ));
         }
         if let Some(show) = body.show {
-            values.push(("show", AdminSqlValue::Integer(i64::from(show))));
+            values.push(("show", AdminSqlValue::Boolean(show)));
         }
         if let Some(renew) = body.renew {
-            values.push(("renew", AdminSqlValue::Integer(i64::from(renew))));
+            values.push(("renew", AdminSqlValue::Boolean(renew)));
         }
         let mut builder = QueryBuilder::<Postgres>::new("UPDATE plan SET ");
         for (column, value) in &values {
@@ -435,18 +433,31 @@ impl AdminService {
         builder.push_bind(id);
         builder.build().execute(&mut *tx).await?;
 
+        let plan_id = i32::try_from(id)
+            .map_err(|_| validation_error("id", "plan id is outside the supported range"))?;
+        for (period, update) in body.prices.iter() {
+            match update {
+                PlanPriceUpdate::Retain => {}
+                PlanPriceUpdate::Clear => set_plan_price(&mut tx, plan_id, period, None).await?,
+                PlanPriceUpdate::Set(amount_minor) => {
+                    set_plan_price(&mut tx, plan_id, period, Some(amount_minor)).await?
+                }
+            }
+        }
+
         if force_update {
             let transfer_enable_bytes = checked_gib_bytes(
-                body.transfer_enable.unwrap_or(current.transfer_enable),
+                body.transfer_enable
+                    .unwrap_or(locked_current.transfer_enable),
                 "transfer_enable",
             )?;
             let device_limit = match &body.device_limit {
                 Some(update) => *update,
-                None => current.device_limit.map(i64::from),
+                None => locked_current.device_limit.map(i64::from),
             };
             let speed_limit = match &body.speed_limit {
                 Some(update) => *update,
-                None => current.speed_limit.map(i64::from),
+                None => locked_current.speed_limit.map(i64::from),
             };
             sqlx::query(
                 r#"
@@ -475,37 +486,12 @@ impl AdminService {
     /// blocking dependency in `detail` per §3.4); a missing id is 404
     /// `plan_not_found`. One locking transaction, as the legacy drop.
     pub async fn plan_delete(&self, id: i64) -> Result<(), ApiError> {
+        let id = i32::try_from(id).map_err(|_| ApiError::from(Problem::new(Code::PlanNotFound)))?;
         let mut tx = self.db.begin().await?;
-        let has_order: Option<i64> = sqlx::query_scalar(
-            "SELECT id FROM orders WHERE referenced_plan_id = $1 LIMIT 1 FOR UPDATE",
-        )
-        .bind(id)
-        .fetch_optional(&mut *tx)
-        .await?;
-        if has_order.is_some() {
-            return Err(Problem::new(Code::PlanInUse)
-                .with_detail("该订阅下存在订单无法删除")
-                .into());
-        }
-        let has_user: Option<i64> =
-            sqlx::query_scalar("SELECT id FROM users WHERE plan_id = $1 LIMIT 1 FOR UPDATE")
-                .bind(id)
-                .fetch_optional(&mut *tx)
-                .await?;
-        if has_user.is_some() {
-            return Err(Problem::new(Code::PlanInUse)
-                .with_detail("该订阅下存在用户无法删除")
-                .into());
-        }
-        let has_giftcard: Option<i32> =
-            sqlx::query_scalar("SELECT id FROM gift_card WHERE plan_id = $1 LIMIT 1 FOR UPDATE")
-                .bind(id)
-                .fetch_optional(&mut *tx)
-                .await?;
-        if has_giftcard.is_some() {
-            return Err(Problem::new(Code::PlanInUse)
-                .with_detail("该订阅仍被礼品卡使用，无法删除")
-                .into());
+        if let Some(reference) =
+            v2board_db::plan::find_plan_reference_for_update(&mut tx, id).await?
+        {
+            return Err(plan_in_use_problem(reference).into());
         }
         let exists: Option<i32> =
             sqlx::query_scalar("SELECT id FROM plan WHERE id = $1 LIMIT 1 FOR UPDATE")
@@ -515,19 +501,40 @@ impl AdminService {
         if exists.is_none() {
             return Err(Problem::new(Code::PlanNotFound).into());
         }
+        // The preflight can race with a child writer that acquired the plan's
+        // FK key-share lock just before our parent lock. Once FOR UPDATE is
+        // granted that writer has committed or rolled back, and this fresh
+        // READ COMMITTED check is authoritative. It deliberately does not
+        // lock child rows after the parent, which would invert the global
+        // child -> plan order and permit a deadlock.
+        if let Some(reference) =
+            v2board_db::plan::find_plan_reference_after_parent_lock(&mut tx, id).await?
+        {
+            return Err(plan_in_use_problem(reference).into());
+        }
         let deleted = sqlx::query("DELETE FROM plan WHERE id = $1")
             .bind(id)
             .execute(&mut *tx)
-            .await?;
+            .await
+            .map_err(map_plan_delete_error)?;
         if deleted.rows_affected() != 1 {
             return Err(Problem::new(Code::PlanNotFound).into());
         }
-        tx.commit().await?;
+        tx.commit().await.map_err(map_plan_delete_error)?;
         Ok(())
     }
 
     /// POST `plans/sort` (§6.2): JSON `{ids}` full resequencing; empty 204.
     pub async fn plans_sort(&self, ids: &[i64]) -> Result<(), ApiError> {
-        self.sort_ids("plan", ids).await
+        let ids = plan_sort_ids(ids)?;
+        match v2board_db::plan::sort_plans_exact(&self.db, &ids).await {
+            Ok(()) => Ok(()),
+            Err(v2board_db::plan::SortPlansError::PlanSetChanged) => {
+                Err(Problem::new(Code::PlanUpdateConflict).into())
+            }
+            Err(v2board_db::plan::SortPlansError::Database(error)) => {
+                Err(ApiError::Database(error))
+            }
+        }
     }
 }

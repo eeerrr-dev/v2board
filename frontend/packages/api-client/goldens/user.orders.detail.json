@@ -24,7 +24,7 @@
   "plan": {
     "id": 1,
     "group_id": 1,
-    "transfer_enable": 107374182400,
+    "transfer_enable": 100,
     "device_limit": 3,
     "name": "Golden Plan",
     "speed_limit": null,

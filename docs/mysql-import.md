@@ -189,7 +189,8 @@ PostgreSQL/ClickHouse target 和整实例为空的专用 Redis 8.8 `/0`，执行
 4. 按固定 registry 为每张表执行一条主键有序的 streaming MySQL `SELECT`，以内存中的当前 row、
    byte-bounded COPY send buffer 和最多 4096 项的 payment-id 分类索引完成转换，
    应用包括 Stripe 行级规则在内的固定映射，同时累计 source-derived canonical expectation，并让
-   每张 target 表各自只接受一条 `COPY FROM STDIN`；礼品卡源流固定同时生成基础表和兑换关系表；
+   每张 target 表各自只接受一条 `COPY FROM STDIN`；套餐源流固定同时生成基础表和规范化周期价格表，
+   礼品卡源流固定同时生成基础表和兑换关系表；
 5. 所有保留表 COPY 完成后，统一创建全部业务唯一约束、二级索引和外键；
 6. reset 所有受影响 sequence，然后对全部 imported table 执行 `ANALYZE`；
 7. 按主键顺序对每张保留 target 表做且只做一次整表 canonical scan，与第 4 步累计的 expectation

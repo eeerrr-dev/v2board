@@ -78,8 +78,8 @@ semantics, so an unstated 200-vs-201 choice would drift between waves):
   individually afterwards).
 - `redirect` is **302 Found**.
 - The only **202 Accepted** in the dialect is admin `PATCH config`
-  activation-pending (§6.1); it is a success outcome, not a problem+json
-  error.
+  activation-pending (§6.1), with the committed operator `revision` in its
+  body; it is a success outcome, not a problem+json error.
 
 ---
 
@@ -356,6 +356,7 @@ Admin:
 | `order_update_conflict` | 409 | `订单状态正在被其他请求修改，请重试` |
 | `order_update_failed` | 400 | `更新失败` |
 | `plan_in_use` | 400 | `该订阅下存在订单无法删除` / `…存在用户无法删除` / `该订阅仍被礼品卡使用，无法删除` (which dependency stays in `detail`) |
+| `plan_update_conflict` | 409 | a concurrent plan move won before a `force_update`; retrying preserves the group → user → plan lock order |
 | `plan_force_update_limit_exceeded` | 400 | `该订阅用户过多，单次最多强制更新 10000 个用户` (native `force_update` cap) |
 | `coupon_not_found` | 404 | `优惠券不存在` |
 | `gift_card_not_found` | 404 | `礼品卡不存在` (admin `DELETE gift-cards/{id}`, already `not_found` in the anchor) |
@@ -476,6 +477,11 @@ semantics on **update-class endpoints** (`PATCH`):
 | field absent | retain current value |
 | field `null` | clear (set NULL / disable) |
 | field value | set |
+
+Fields that are not clearable reject `null` explicitly in their endpoint
+contract. In particular, admin config `secure_path` always requires a
+non-empty explicit replacement; absent retains it, while `null`/empty is a
+422 validation failure.
 
 - Rust: `#[serde(default, with = "double_option")] Option<Option<T>>` per
   clearable field (serde double-Option); `deny_unknown_fields` on every
@@ -684,8 +690,8 @@ boolean field.
 
 | Old | New | Req | Resp | Notes |
 | --- | --- | --- | --- | --- |
-| GET `config/fetch?key=` | GET `config` `?group=` | query | bare | Grouped object stays; flags→bool per §4.1. `frontend_custom_html` field removed (§12). |
-| POST `config/save` | PATCH `config` | json | empty / bare (202) | `'[]'`-string array hack dies; arrays are arrays; §4.4 null-clear. 409 `config_revision_conflict` on stale revision. When the write persists but the API cannot yet activate the new config (legacy anchor: `配置已提交…服务将自动重试` — the service auto-retries), the response is **202 Accepted** with `{"activation": "pending"}`, not an error: the write is durable, so retrying the PATCH would 409; the admin UI must refetch, never resubmit. Full activation → 204. |
+| GET `config/fetch?key=` | GET `config` `?group=` | query | bare | Grouped object stays; flags→bool per §4.1. The top level always carries the positive active operator `revision`; `?group=site` therefore returns `{revision, site: {...}}`, not a revision-less fragment. `frontend_custom_html` field removed (§12). |
+| POST `config/save` | PATCH `config` | json `{expected_revision, ...changes}` | empty / bare (202) | `expected_revision` is required, positive, and copied from the GET projection on which the draft is based. The server validates it against the authenticated PostgreSQL active revision; changed writes repeat that comparison atomically inside the commit. Missing/wrong-typed tokens are malformed requests, non-positive tokens fail validation, and stale tokens return 409 `config_revision_conflict`. The server merges omitted fields against that authenticated authoritative revision rather than a process-local snapshot. `'[]'`-string array hack dies; arrays are arrays; §4.4 null-clear. When the write persists but the API cannot yet activate the new config (legacy anchor: `配置已提交…服务将自动重试` — the service auto-retries), the response is **202 Accepted** with `{"activation": "pending", "revision": n}`, where `n` is the revision actually committed by PostgreSQL, not the previously active or requested value. This is not an error: the write is durable, so retrying the PATCH would 409; the admin UI must refetch, never resubmit. Full activation and unchanged writes remain empty 204 responses. |
 | GET `config/getEmailTemplate` | GET `email-templates` | none | array | |
 | POST `config/setTelegramWebhook` | POST `telegram-webhook` | json `{telegram_bot_token?}` | empty | |
 | POST `config/testSendMail` | POST `test-mail` | none | bare `{sent: bool, log}` | Envelope `{data:true, log}` → named object. |
@@ -699,11 +705,11 @@ boolean field.
 
 | Old | New | Req | Resp | Notes |
 | --- | --- | --- | --- | --- |
-| GET `plan/fetch` | GET `plans` | none | array | Prices stay cents. |
-| POST `plan/save` | POST `plans` / PATCH `plans/{id}` | json | bare `{id}` (201) / empty | Upsert split; `force_update` stays a body flag on PATCH. |
+| GET `plan/fetch` | GET `plans` | none | array | Prices stay signed integer cents; `null` still means that period is unavailable. |
+| POST `plan/save` | POST `plans` / PATCH `plans/{id}` | json | bare `{id}` (201) / empty | Upsert split; signed 32-bit price cents remain accepted; `force_update` stays a body flag on PATCH. |
 | POST `plan/update` | PATCH `plans/{id}` | json `{show?: bool, renew?: bool}` | empty | Toggle merged into PATCH. |
 | POST `plan/drop` | DELETE `plans/{id}` | none | empty | |
-| POST `plan/sort` | POST `plans/sort` | json `{ids: [...]}` | empty | `plan_ids` → `ids`. |
+| POST `plan/sort` | POST `plans/sort` | json `{ids: [...]}` | empty | `plan_ids` → `ids`; a non-empty body is the unique, complete current plan-id permutation and is applied atomically, otherwise `plan_update_conflict`. |
 | GET `payment/fetch` | GET `payments` | none | array | `handling_fee_percent` → number (unifies with user side). |
 | GET `payment/getPaymentMethods` | GET `payment-providers` | none | array | Provider codes. |
 | POST `payment/getPaymentForm` | GET `payment-providers/{code}/form` `?payment_id=` | query | bare | Read moves to GET. |
@@ -1379,17 +1385,20 @@ provider and no raw-HTML escape hatch may be added.
 
 ## 13. Parity harness — canonical-semantics adapters
 
-The read-only reference oracle stays (`make reference-oracle-check`,
-global-setup's in-process oracle server). Cross-world **byte** equality for
-internal requests/responses is retired; comparison drops to canonical
-semantics. One `run(page)` still drives both worlds.
+The product-owned source world is the standing `make interaction-parity` gate.
+The read-only reference oracle stays only in the explicit
+`make legacy-oracle-parity` migration lane; cross-world **byte** equality for
+internal requests/responses is retired and that optional comparison drops to
+canonical semantics. `make real-stack-e2e` separately bypasses API fixtures and
+drives a browser through Rust with restricted PostgreSQL/Redis runtime roles.
 
 Harness layout today (`frontend/tests/`): `parity-spec.mjs` (spec factory),
-`specs/*.spec.mjs` (per-surface groups), `lib/world.mjs` (dual-world driver:
-prepare → run → assertUsefulInteraction → normalize → stableJson compare),
+`specs/*.spec.mjs` (per-surface groups), `lib/world.mjs` (source driver plus
+optional legacy prepare → run → assertUsefulInteraction → normalize → compare),
 `lib/api-fixtures.mjs` (route interception), `lib/fixture-data.mjs`
 (fixture objects), `lib/normalizers.mjs` (Tier-1 reducers),
-`lib/interaction-scenarios.mjs` + `lib/runners/**` + `lib/state-readers/**`.
+`lib/interaction-scenarios.mjs` + `lib/runners/**` + `lib/state-readers/**`, and
+`real-stack/` (fixture-free black-box journeys).
 
 New adapter layer, `frontend/tests/lib/dialect/`:
 
@@ -1406,7 +1415,10 @@ New adapter layer, `frontend/tests/lib/dialect/`:
    `{routeId, params, body}` with canonical types (booleans as booleans,
    arrays as arrays, cents as integers, timestamps as epoch seconds
    canonically, tuple/object equivalences from §9 folded to the named
-   form). Tier-1 payload comparison happens on this canonical object.
+   form). Tier-1 payload comparison happens on this canonical object. The
+   admin-config fold discards the source-only `expected_revision` solely for
+   comparison with the read-only legacy oracle, which has no concurrency
+   token; source wire/unit/E2E coverage still requires and asserts it.
    `like` filter values compare on the raw string; because the modern
    backend escapes SQL wildcards while the oracle passes them through
    (§7.1), fixtures must not use `%`/`_`-bearing filter values in
@@ -1418,7 +1430,10 @@ New adapter layer, `frontend/tests/lib/dialect/`:
    split is normalized via the canonical code (`session_expired`). One
    non-error equivalence is also pinned here: the oracle's 503
    `配置已提交…` config-activation message maps to the same canonical
-   outcome as the source world's 202 `{"activation": "pending"}` (§6.1).
+   outcome as the source world's 202
+   `{"activation": "pending", "revision": n}` (§6.1); canonical comparison
+   may discard `revision` only for the read-only legacy oracle, which has no
+   native operator-revision value.
 4. **`page-location-canonicalizer.mjs`** — the SPA-URL adapter. After W1
    the source world is history-routed while the oracle stays hash-routed,
    so raw `window.location` reads diverge on every location-asserting
@@ -1690,8 +1705,9 @@ switches its family atomically. No wave leaves a family half-dialect. Wave
   `specs/admin-config.spec.mjs`; focused shards list exact
   `INTERACTION_PARITY_SCENARIOS` labels (matching is end-anchored — a bare
   `admin` prefix selects nothing).
-- Risk: the config save conflict code (409) and the 202 activation-pending
-  refetch-not-resubmit flow (§6.1) drive admin UX;
+- Risk: the config save conflict code (409), revision-bearing GET views, and
+  the revision-bearing 202 activation-pending refetch-not-resubmit flow
+  (§6.1) drive admin UX;
   array-valued config fields switch off the `'[]'` hack.
 
 ### W10 — Admin content CRUD (notice, knowledge, coupon, gift card)

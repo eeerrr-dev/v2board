@@ -30,11 +30,65 @@ fn without_redacted_config_secrets(body: &Map<String, Value>) -> Map<String, Val
         .collect()
 }
 
+/// Runtime admin configuration is valid only after PostgreSQL operator
+/// authority has supplied a positive revision. Bootstrap-only snapshots must
+/// fail through the typed internal-error path rather than being projected or
+/// committed with an invented revision.
+pub(super) fn active_operator_revision(config: &AppConfig) -> Result<i64, ApiError> {
+    config
+        .operator_revision()
+        .filter(|revision| *revision > 0)
+        .ok_or_else(|| ApiError::internal("operator configuration authority is not active"))
+}
+
+/// PATCH callers must echo the positive revision from the GET projection.
+/// Keeping this validation in the domain boundary prevents non-HTTP callers
+/// from bypassing the optimistic-concurrency contract.
+pub(super) fn validate_expected_config_revision(revision: i64) -> Result<i64, ApiError> {
+    if revision > 0 {
+        Ok(revision)
+    } else {
+        Err(ApiError::from(
+            Problem::new(Code::ConfigValidationFailed)
+                .with_detail("expected_revision must be a positive integer"),
+        ))
+    }
+}
+
+fn config_revision_conflict() -> ApiError {
+    ApiError::from(Problem::new(Code::ConfigRevisionConflict))
+}
+
+/// Adds the active revision to either the complete grouped view or a selected
+/// group. Keeping this as a top-level sibling of every group lets clients use
+/// the same optimistic-concurrency token regardless of `?group=`.
+pub(super) fn config_view_at_revision(
+    data: Value,
+    group: Option<&str>,
+    revision: i64,
+) -> Result<Value, ApiError> {
+    let mut view = if let Some(group) = group
+        && let Some(value) = data.get(group)
+    {
+        let mut selected = Map::new();
+        selected.insert(group.to_string(), value.clone());
+        Value::Object(selected)
+    } else {
+        data
+    };
+    let object = view
+        .as_object_mut()
+        .ok_or_else(|| ApiError::internal("operator configuration view is not an object"))?;
+    object.insert("revision".to_string(), json!(revision));
+    Ok(view)
+}
+
 /// PATCH `config` commit outcome (docs/api-dialect.md §6.1): `Unchanged` when
 /// the normalized candidate equals the active snapshot (nothing written);
 /// `Committed` carries the validated snapshot at its new revision for the API
-/// layer to activate (204 on full activation, 202 `{"activation":"pending"}`
-/// when the write persisted but this process could not activate it yet).
+/// layer to activate (204 on full activation, 202
+/// `{"activation":"pending","revision":n}` when the write persisted but
+/// this process could not activate it yet).
 pub enum ConfigPatchOutcome {
     Unchanged,
     Committed(Box<AppConfig>),
@@ -48,8 +102,10 @@ impl AdminService {
     /// `commission_withdraw_limit` keeps its exact decimal-string form.
     /// Secrets stay redacted to a fixed-width sentinel. A known `?group=`
     /// returns just that group (still keyed); an unknown or absent group
-    /// returns the full object, matching the legacy `?key=` behavior.
-    pub fn config_view(&self, group: Option<&str>) -> Value {
+    /// returns the full object, matching the legacy `?key=` behavior. Every
+    /// shape carries the active operator `revision` at the top level.
+    pub fn config_view(&self, group: Option<&str>) -> Result<Value, ApiError> {
+        let revision = active_operator_revision(&self.config)?;
         let distribution_rate = |value: Option<&str>| {
             value
                 .and_then(|value| value.trim().parse::<f64>().ok())
@@ -167,12 +223,7 @@ impl AdminService {
                 "password_limit_expire": self.config.password_limit_expire,
             },
         });
-        if let Some(group) = group
-            && let Some(value) = data.get(group)
-        {
-            return json!({ group: value });
-        }
-        data
+        config_view_at_revision(data, group, revision)
     }
 
     /// GET `email-templates` (docs/api-dialect.md §6.1): a bare array of the
@@ -187,35 +238,73 @@ impl AdminService {
     /// whitelisted operator settings in §4.1 native types (the `'[]'`-string
     /// array hack is dead — arrays are JSON arrays). §4.4 semantics: an
     /// absent key retains, `null` clears back to the built-in default, a
-    /// value sets. A stale operator revision is the 409
+    /// value sets. `expected_revision` is the positive token returned by GET;
+    /// a stale operator revision is the 409
     /// `config_revision_conflict` problem.
     pub async fn config_patch(
         &self,
         body: &Map<String, Value>,
+        expected_revision: i64,
         admin_email: &str,
     ) -> Result<ConfigPatchOutcome, ApiError> {
+        let expected_revision = validate_expected_config_revision(expected_revision)?;
         let actor = format!("admin:{}", admin_email.trim());
         let mut body = without_redacted_config_secrets(body);
+        let authority =
+            operator_config::load_active(&self.db, self.installation_id, &self.config.app_key)
+                .await
+                .map_err(|error| {
+                    tracing::error!(
+                        ?error,
+                        "failed to load active operator configuration for patch"
+                    );
+                    ApiError::internal("operator configuration authority is unavailable")
+                })?
+                .ok_or_else(config_revision_conflict)?;
+        if authority.revision != expected_revision {
+            return Err(config_revision_conflict());
+        }
+
+        // A request may be routed to an API process whose in-memory snapshot
+        // has not observed the revision returned by another process yet. Base
+        // the partial update on the authenticated PostgreSQL snapshot, never
+        // that possibly stale process-local copy, or omitted fields could be
+        // silently rolled back.
+        let current = self.config.clone();
+        let authority_values = authority.values;
+        let authoritative_config = tokio::task::spawn_blocking(move || {
+            current.with_operator_config(&authority_values, expected_revision)
+        })
+        .await
+        .map_err(|error| {
+            tracing::error!(?error, "authoritative config validation task failed");
+            ApiError::internal("configuration validator is unavailable")
+        })?
+        .map_err(|error| {
+            tracing::error!(?error, "active operator configuration failed validation");
+            ApiError::internal("operator configuration authority is invalid")
+        })?;
+
         // The fetch response exposes the effective fallback path. Patching
         // that unchanged value must remain a no-op even when an old
         // installation's fallback is shorter than today's explicit-path rule.
-        drop_unchanged_effective_secure_path(&mut body, &self.config.admin_path());
+        drop_unchanged_effective_secure_path(&mut body, &authoritative_config.admin_path());
         validate_config_json(&body)?;
         let server_token = match body.get("server_token") {
             Some(Value::String(value)) => Some(value.as_str()),
             Some(Value::Null) => None,
-            _ => self.config.server_token.as_deref(),
+            _ => authoritative_config.server_token.as_deref(),
         };
         let force_https = match body.get("force_https") {
             Some(Value::Bool(value)) => *value,
-            _ => self.config.force_https,
+            _ => authoritative_config.force_https,
         };
         let app_url = match body.get("app_url") {
             Some(Value::String(value)) => Some(value.as_str()),
             Some(Value::Null) => None,
-            _ => self.config.app_url.as_deref(),
+            _ => authoritative_config.app_url.as_deref(),
         };
-        self.config
+        authoritative_config
             .validate_security_update(server_token, force_https, app_url)
             .map_err(|error| {
                 ApiError::from(
@@ -223,13 +312,9 @@ impl AdminService {
                         .with_detail(format!("配置安全校验失败: {error}")),
                 )
             })?;
-        let expected_revision = self
-            .config
-            .operator_revision()
-            .ok_or_else(|| ApiError::internal("operator configuration authority is not active"))?;
-        let mut candidate = self.config.operator_config_map();
+        let mut candidate = authoritative_config.operator_config_map();
         merge_config_json(&mut candidate, &body);
-        let current = self.config.clone();
+        let current = authoritative_config.clone();
         let candidate_config = tokio::task::spawn_blocking(move || {
             current.with_operator_config(&candidate, expected_revision)
         })
@@ -246,7 +331,7 @@ impl AdminService {
             )
         })?;
         let normalized = candidate_config.operator_config_map();
-        if normalized == self.config.operator_config_map() {
+        if normalized == authoritative_config.operator_config_map() {
             return Ok(ConfigPatchOutcome::Unchanged);
         }
         let installation_id = self.installation_id;
@@ -260,9 +345,7 @@ impl AdminService {
         )
         .await
         .map_err(|error| match error {
-            operator_config::OperatorConfigError::Conflict { .. } => {
-                ApiError::from(Problem::new(Code::ConfigRevisionConflict))
-            }
+            operator_config::OperatorConfigError::Conflict { .. } => config_revision_conflict(),
             error => {
                 tracing::error!(?error, "failed to commit operator configuration");
                 ApiError::internal("operator configuration commit failed")

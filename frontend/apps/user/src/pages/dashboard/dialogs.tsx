@@ -8,7 +8,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
+} from '@v2board/ui/dialog';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,8 +18,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Button } from '@/components/ui/button';
+} from '@v2board/ui/alert-dialog';
+import { Button } from '@v2board/ui/button';
 import { DashboardSubscribeMenu } from './subscribe-menu';
 import { useNewPeriodMutation, useSaveOrderMutation, useSubscribe } from '@/lib/queries';
 import { toast } from '@/lib/toast';

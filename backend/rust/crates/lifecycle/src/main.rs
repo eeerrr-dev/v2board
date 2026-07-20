@@ -1,5 +1,4 @@
 mod cli;
-mod mysql_import;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -43,7 +42,7 @@ async fn main() -> anyhow::Result<()> {
         }
         cli::Command::Execute { manifest } => {
             let spec = v2board_provision::load_mysql_import_spec(manifest)?;
-            let report = mysql_import::execute(&spec).await?;
+            let report = v2board_lifecycle::execute_mysql_import(&spec).await?;
             println!("{}", serde_json::to_string_pretty(&report)?);
         }
     }

@@ -369,8 +369,9 @@ const DYNAMIC_SQLX_SITES: &[DynamicSite] = &[
     },
     DynamicSite {
         source: "crates/domain/src/admin/servers.rs",
-        count: 6,
-        coverage: "server-table schema probes, W13 node CRUD, and the wire-shape unit tests",
+        count: 8,
+        coverage: "server-table allowlist queries plus the fixed plan/user dependency-lock SQL \
+                   variants, W13 node CRUD, and the wire-shape unit tests",
     },
     DynamicSite {
         source: "crates/domain/src/admin/support/common.rs",
@@ -422,13 +423,14 @@ const QUERY_BUILDER_SITES: &[DynamicSite] = &[
     },
     DynamicSite {
         source: "crates/db/src/order.rs",
-        count: 2,
+        count: 1,
         coverage: "order lifecycle and late-payment invariant",
     },
     DynamicSite {
         source: "crates/db/src/plan.rs",
-        count: 1,
-        coverage: "commerce interaction contracts",
+        count: 6,
+        coverage: "fixed normalized-price projections and the bind-only plan-ID batch, pinned by \
+                   commerce interaction contracts and plan repository integration tests",
     },
     DynamicSite {
         source: "crates/domain/src/admin/codes.rs",

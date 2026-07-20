@@ -11,14 +11,14 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { AdminUserRow } from '@v2board/types';
-import { Button } from '@/components/ui/button';
+import { Button } from '@v2board/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+} from '@v2board/ui/dropdown-menu';
 
 export function UserRowActions({
   row,

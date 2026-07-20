@@ -9,14 +9,15 @@ import { fileURLToPath } from 'node:url';
 // long as the dialog does not also request a 50% slide animation.
 const here = dirname(fileURLToPath(import.meta.url));
 const globalsCss = readFileSync(resolve(here, 'globals.css'), 'utf8');
-const dialogTsx = readFileSync(resolve(here, '../components/ui/dialog.tsx'), 'utf8');
-const alertTsx = readFileSync(resolve(here, '../components/ui/alert-dialog.tsx'), 'utf8');
-const surfaceTs = readFileSync(resolve(here, '../components/ui/dialog-surface.ts'), 'utf8');
-const dropdownTsx = readFileSync(resolve(here, '../components/ui/dropdown-menu.tsx'), 'utf8');
-const pageTsx = readFileSync(resolve(here, '../components/ui/page.tsx'), 'utf8');
-const selectTsx = readFileSync(resolve(here, '../components/ui/select.tsx'), 'utf8');
-const sheetTsx = readFileSync(resolve(here, '../components/ui/sheet.tsx'), 'utf8');
-const tooltipTsx = readFileSync(resolve(here, '../components/ui/tooltip.tsx'), 'utf8');
+const sharedComponents = resolve(here, '../../../../packages/ui/src/components');
+const dialogTsx = readFileSync(resolve(sharedComponents, 'dialog.tsx'), 'utf8');
+const alertTsx = readFileSync(resolve(sharedComponents, 'alert-dialog.tsx'), 'utf8');
+const surfaceTs = readFileSync(resolve(sharedComponents, 'dialog-surface.ts'), 'utf8');
+const dropdownTsx = readFileSync(resolve(sharedComponents, 'dropdown-menu.tsx'), 'utf8');
+const pageTsx = readFileSync(resolve(sharedComponents, 'page.tsx'), 'utf8');
+const selectTsx = readFileSync(resolve(sharedComponents, 'select.tsx'), 'utf8');
+const sheetTsx = readFileSync(resolve(sharedComponents, 'sheet.tsx'), 'utf8');
+const tooltipTsx = readFileSync(resolve(sharedComponents, 'tooltip.tsx'), 'utf8');
 
 describe('dialog centering composes with official shadcn motion', () => {
   it('loads tw-animate-css once and does not keep an app-owned keyframe fallback', () => {
@@ -51,7 +52,7 @@ describe('dialog centering composes with official shadcn motion', () => {
     // rendering pinned to the left edge. The components glob must cover `.ts`.
     const componentsSource = globalsCss
       .split('\n')
-      .find((line) => line.includes('@source') && line.includes('../**/*'));
+      .find((line) => line.includes('@source') && line.includes('packages/ui'));
     expect(componentsSource, '@source production glob not found in globals.css').toBeDefined();
     // Match `{ts,tsx}` or a bare `*.ts` glob, but not `*.tsx` alone.
     expect(componentsSource).toMatch(/\{ts,tsx\}|\*\.ts['"]/);

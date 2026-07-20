@@ -307,17 +307,13 @@ impl AuthService {
         if self.config.try_out_plan_id <= 0 {
             return Ok(TrialPlan::default());
         }
-        let Some(plan) = sqlx::query_as::<_, TrialPlanRow>(
-            r#"
-            SELECT id, group_id, transfer_enable, device_limit, speed_limit
-            FROM plan
-            WHERE id = $1
-            LIMIT 1
-            "#,
-        )
-        .bind(self.config.try_out_plan_id)
-        .fetch_optional(&mut **tx)
-        .await?
+        // Registration creates a new row, so there is no pre-existing user
+        // lock to participate in the user -> plan order. Holding the shared
+        // parent lock through the private INSERT still makes a forced plan
+        // update/delete serialize on one side of the copied limits, without a
+        // lock cycle with an existing user.
+        let Some(plan) =
+            v2board_db::plan::find_plan_binding_for_share(tx, self.config.try_out_plan_id).await?
         else {
             return Ok(TrialPlan::default());
         };
@@ -380,15 +376,6 @@ fn is_email_unique_violation(error: &sqlx::Error) -> bool {
 struct InviteCodeRow {
     id: i32,
     user_id: i64,
-}
-
-#[derive(Debug, sqlx::FromRow)]
-struct TrialPlanRow {
-    id: i32,
-    group_id: i32,
-    transfer_enable: i64,
-    device_limit: Option<i32>,
-    speed_limit: Option<i32>,
 }
 
 #[derive(Debug, Default)]

@@ -82,7 +82,7 @@ function runMockMutation(
   void Promise.resolve(mutation(payload)).then(options?.onSuccess, options?.onError);
 }
 
-vi.mock('@/components/ui/select', () => ({
+vi.mock('@v2board/ui/select', () => ({
   Select: ({
     children,
     disabled,

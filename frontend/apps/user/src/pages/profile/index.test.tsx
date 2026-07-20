@@ -134,7 +134,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => createTestTranslation(labels),
 }));
 
-vi.mock('@/components/ui/dialog', () => ({
+vi.mock('@v2board/ui/dialog', () => ({
   Dialog: ({ children, open }: { children: ReactNode; open?: boolean }) =>
     open ? <>{children}</> : null,
   DialogContent: ({ children, className }: { children: ReactNode; className?: string }) => (
@@ -146,7 +146,7 @@ vi.mock('@/components/ui/dialog', () => ({
   DialogTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
 }));
 
-vi.mock('@/components/ui/alert-dialog', () => ({
+vi.mock('@v2board/ui/alert-dialog', () => ({
   AlertDialogAction: ({ children }: { children: ReactNode }) => <>{children}</>,
   AlertDialogCancel: ({ children }: { children: ReactNode }) => <>{children}</>,
   AlertDialog: ({ children, open }: { children: ReactNode; open?: boolean }) =>
@@ -255,7 +255,7 @@ vi.mock('@/lib/auth', () => ({
   logout: mocks.logout,
 }));
 
-vi.mock('@/components/ui/confirm-dialog', () => ({
+vi.mock('@v2board/ui/confirm-dialog', () => ({
   confirmDialog: mocks.confirmDialog,
 }));
 

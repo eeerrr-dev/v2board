@@ -13,6 +13,7 @@ ALTER TABLE stat
     ADD CONSTRAINT uniq_stat_record_at UNIQUE (record_at);
 
 CREATE INDEX idx_plan_group_id ON plan(group_id);
+CREATE INDEX idx_plan_price_period ON plan_price(period, plan_id);
 CREATE INDEX idx_payment_method_archived ON payment_method(archived_at, id);
 
 -- Legacy utf8mb4_unicode_ci treated human-entered redemption codes as
@@ -58,6 +59,9 @@ CREATE INDEX idx_ticket_message_ticket_id_id ON ticket_message(ticket_id, id);
 ALTER TABLE plan
     ADD CONSTRAINT plan_group_id_fkey
     FOREIGN KEY (group_id) REFERENCES server_group(id) ON DELETE RESTRICT;
+ALTER TABLE plan_price
+    ADD CONSTRAINT plan_price_plan_id_fkey
+    FOREIGN KEY (plan_id) REFERENCES plan(id) ON DELETE CASCADE;
 ALTER TABLE users
     ADD CONSTRAINT users_group_id_fkey
     FOREIGN KEY (group_id) REFERENCES server_group(id) ON DELETE RESTRICT,

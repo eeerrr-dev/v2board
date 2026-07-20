@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import { WORLDS, routeMap } from '../tests/lib/dialect/route-map.mjs';
 import { viewports } from '../tests/lib/env.mjs';
+import { SOURCE_ONLY_INTERACTION_ALLOWLIST } from '../tests/lib/interaction-contract.mjs';
 import { interactions } from '../tests/lib/interaction-scenarios.mjs';
 import { scenariosByLabel } from '../tests/lib/scenario-meta.mjs';
 import { GROUP_NAMES, groupOf } from '../tests/lib/spec-groups.mjs';
@@ -26,11 +27,13 @@ export async function auditParityConfig(projectRoot = getDefaultProjectRoot()) {
   const makefilePath = resolve(projectRoot, 'Makefile');
   const userAppPath = resolve(projectRoot, 'frontend/apps/user/src/App.tsx');
   const adminAppPath = resolve(projectRoot, 'frontend/apps/admin/src/App.tsx');
+  const assertionPath = resolve(projectRoot, 'frontend/tests/lib/assert-useful.mjs');
 
-  const [makefile, userApp, adminApp] = await Promise.all([
+  const [makefile, userApp, adminApp, assertionSource] = await Promise.all([
     readFile(makefilePath, 'utf8'),
     readFile(userAppPath, 'utf8'),
     readFile(adminAppPath, 'utf8'),
+    readFile(assertionPath, 'utf8'),
   ]);
   const uiSync = await auditUiSync(projectRoot);
 
@@ -77,6 +80,8 @@ export async function auditParityConfig(projectRoot = getDefaultProjectRoot()) {
     ...assertSubset('VISUAL_PARITY_VIEWPORTS', makeViewports, viewportLabels),
     ...assertInteractionTargetsExist(scenarioLabels, interactionTargets),
     ...assertSpecGroupCoverage(interactions, GROUP_NAMES),
+    ...assertSourceOnlyAllowlist(interactions, SOURCE_ONLY_INTERACTION_ALLOWLIST),
+    ...assertUsefulInteractionCoverage(interactions, assertionSource),
     ...assertRouteCoverage(
       'user parity route coverage',
       userRoutes,
@@ -118,10 +123,61 @@ export function formatAuditSuccess(result) {
     `the interaction modules, and App.tsx route definitions cover ${result.userRouteCount} ` +
     `user routes plus ${result.adminRouteCount} admin routes. The dialect route map carries ` +
     `${result.dialectRouteCount} well-formed two-world rows (incl. the §6.5 admin ticket rows). ` +
-    `UI sync covers ` +
+    `Source-only exceptions and useful-result assertions are fail-closed. UI sync covers ` +
     `${result.uiSharedPrimitiveCount} shared primitives, ${result.uiSharedStylesheetCount} ` +
     `shared stylesheets, and ${result.uiAppSpecificCount} explicit app-only ${appOnlyNoun}.`
   );
+}
+
+export function assertSourceOnlyAllowlist(interactionList, allowlist) {
+  return assertSameOrderedList(
+    'sourceOnly interaction allowlist',
+    interactionList.filter((interaction) => interaction.sourceOnly).map(({ label }) => label),
+    [...allowlist],
+  );
+}
+
+export function assertUsefulInteractionCoverage(interactionList, assertionSource) {
+  // Assertions are intentionally composed as direct comparisons, shared
+  // `.includes(label)` arrays, and expectation maps. Treat a full interaction
+  // label literal in this module as an explicit registration while still
+  // supporting deliberate prefix/suffix families.
+  const exactLabels = new Set(
+    [...assertionSource.matchAll(/(['"])([^'"\r\n]+)\1/g)].map((match) => match[2]),
+  );
+  const prefixes = [
+    ...assertionSource.matchAll(/\blabel\.startsWith\('([^']+)'\)/g),
+  ].map((match) => match[1]);
+  const suffixes = [
+    ...assertionSource.matchAll(/\blabel\.endsWith\('([^']+)'\)/g),
+  ].map((match) => match[1]);
+  const interactionLabels = interactionList.map(({ label }) => label);
+  const covered = (label) =>
+    exactLabels.has(label) ||
+    prefixes.some((prefix) => label.startsWith(prefix)) ||
+    suffixes.some((suffix) => label.endsWith(suffix));
+  const missing = interactionLabels.filter((label) => !covered(label));
+  const stalePrefixes = prefixes.filter(
+    (prefix) => !interactionLabels.some((label) => label.startsWith(prefix)),
+  );
+  const staleSuffixes = suffixes.filter(
+    (suffix) => !interactionLabels.some((label) => label.endsWith(suffix)),
+  );
+  const failures = [];
+  if (missing.length > 0) {
+    failures.push(
+      `Interactions missing assertUsefulInteraction checks: ${missing.join(', ')}`,
+    );
+  }
+  if (stalePrefixes.length > 0 || staleSuffixes.length > 0) {
+    failures.push(
+      `assertUsefulInteraction has stale matchers: ${[
+        ...stalePrefixes.map((prefix) => `${prefix}*`),
+        ...staleSuffixes.map((suffix) => `*${suffix}`),
+      ].join(', ')}`,
+    );
+  }
+  return failures;
 }
 
 /**

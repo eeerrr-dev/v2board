@@ -1,15 +1,12 @@
-// Dual-world interaction harness.
+// Source-first interaction harness with an optional legacy comparison lane.
 //
-// One run(page) drives both worlds: the shadcn source build (served live at
-// sourceBaseUrl) and the frozen antd oracle (served by global-setup's in-process
-// server). Each world independently asserts its raw result is useful
-// (assertUsefulInteraction), then the results are reduced to Tier-1 fields
-// (normalizeInteractionResult + collapseCjkDeep) and compared cross-world by
-// stableJson equality. This ports the interactions lane of the retired
-// frontend/scripts/visual-parity.mjs driver (runInteractionParity /
-// runInteractionTarget / preparePageForInteraction) onto @playwright/test.
+// Every run drives the shadcn source build served at sourceBaseUrl and asserts
+// its raw result independently. With INTERACTION_LEGACY_ORACLE=1, the same
+// run(page) also drives the frozen antd witness, reduces both results to Tier-1
+// fields, and compares stable canonical JSON. That compatibility mode is
+// isolated from the standing product gate.
 import { readFileSync } from 'node:fs';
-import { adminPath, sourceBaseUrl, viewports } from './env.mjs';
+import { adminPath, legacyOracleEnabled, sourceBaseUrl, viewports } from './env.mjs';
 import {
   entryUrlFor,
   entryUrlForDialect,
@@ -162,8 +159,8 @@ async function runOneWorld(browser, url, scenario, interaction, viewport, target
   }
 }
 
-// Run one interaction against both worlds and assert cross-world Tier-1 equality.
-// Mirrors the per-item body of runInteractionParity.
+// Run the product-owned source interaction. The explicit legacy-oracle-parity
+// lane additionally drives the frozen witness and compares Tier-1 semantics.
 export async function runParityScenario({ browser, interaction, projectName }) {
   const viewport = viewportByLabel(projectName);
   const scenario = getScenario(interaction.scenarioLabel);
@@ -180,7 +177,7 @@ export async function runParityScenario({ browser, interaction, projectName }) {
   // Accessibility is a quality gate for the redesigned source. The frozen
   // legacy oracle is intentionally not scanned: it is neither shipped nor a
   // valid baseline for modern shadcn semantics.
-  if (interaction.sourceOnly) {
+  if (!legacyOracleEnabled || interaction.sourceOnly) {
     return { sourceResult, oracleResult: null };
   }
 

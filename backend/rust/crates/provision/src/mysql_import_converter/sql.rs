@@ -1,5 +1,5 @@
 use super::audit::audit_registry;
-use super::mappings::{DerivedMapping, TableMapping};
+use super::mappings::{DerivedMapping, DerivedMappingKind, TableMapping};
 use super::transform::source_columns_in_order;
 use super::values::ConverterError;
 
@@ -51,9 +51,23 @@ pub fn derived_target_verify_stream_sql(
     mapping: &DerivedMapping,
 ) -> Result<String, ConverterError> {
     audit_registry()?;
-    Ok(verify_stream_sql(
+    let columns = mapping
+        .target_columns
+        .iter()
+        .map(|column| match (mapping.kind, *column) {
+            // SQLx deliberately does not decode a PostgreSQL user-defined
+            // enum as `String`. Verification is over the enum's canonical
+            // textual label, so cast only this adapter-owned representation.
+            (DerivedMappingKind::PlanPrices, "period") => {
+                "\"period\"::text AS \"period\"".to_string()
+            }
+            _ => postgres_identifier(column),
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    Ok(verify_stream_sql_with_projection(
         mapping.target,
-        mapping.target_columns,
+        &columns,
         mapping.key_columns,
     ))
 }
@@ -64,9 +78,25 @@ fn verify_stream_sql(table: &str, columns: &[&str], key_columns: &[&str]) -> Str
         .map(|column| postgres_identifier(column))
         .collect::<Vec<_>>()
         .join(", ");
+    verify_stream_sql_with_projection(table, &columns, key_columns)
+}
+
+fn verify_stream_sql_with_projection(table: &str, columns: &str, key_columns: &[&str]) -> String {
+    // PostgreSQL resolves an unqualified ORDER BY name against output aliases
+    // before input columns.  A verification projection such as
+    // `period::text AS period` would therefore sort the textual adapter value
+    // instead of the native enum/primary-key value.  Qualifying every key
+    // keeps the scan in the source-derived canonical key order even when a
+    // projected representation deliberately reuses the column name.
     let order = key_columns
         .iter()
-        .map(|column| format!("{} ASC", postgres_identifier(column)))
+        .map(|column| {
+            format!(
+                "{}.{} ASC",
+                postgres_identifier(table),
+                postgres_identifier(column)
+            )
+        })
         .collect::<Vec<_>>()
         .join(", ");
     format!(

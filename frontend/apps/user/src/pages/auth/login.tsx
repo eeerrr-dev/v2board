@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Input } from '@v2board/ui/input';
+import { Label } from '@v2board/ui/label';
 import {
   AuthField,
   AuthFieldError,

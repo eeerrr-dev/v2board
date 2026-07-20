@@ -170,7 +170,7 @@ vi.mock('react-i18next', () => ({
   ),
 }));
 
-vi.mock('@/components/ui/dialog', () => ({
+vi.mock('@v2board/ui/dialog', () => ({
   Dialog: ({
     children,
     open,
@@ -198,7 +198,7 @@ vi.mock('@/components/ui/dialog', () => ({
   DialogTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
 }));
 
-vi.mock('@/components/ui/alert-dialog', () => ({
+vi.mock('@v2board/ui/alert-dialog', () => ({
   AlertDialogAction: ({ children }: { children: ReactNode }) => <>{children}</>,
   AlertDialogCancel: ({ children }: { children: ReactNode }) => <>{children}</>,
   AlertDialog: ({

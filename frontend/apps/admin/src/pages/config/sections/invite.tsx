@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import type { FormCtx } from '../schema';
 import { Section, SwitchRow, TextRow, TextareaRow } from '../rows';
-import { isBackendEnabled, parseBackendInteger, parseBackendNumber, splitComma } from '../values';
+import { isBackendEnabled } from '../values';
 
 export function InviteSection({ ctx }: { ctx: FormCtx }) {
   const { t } = useTranslation();
@@ -21,7 +21,6 @@ export function InviteSection({ ctx }: { ctx: FormCtx }) {
         title={t(($) => $.admin.config.invite.commission_title)}
         description={t(($) => $.admin.config.invite.commission_desc)}
         placeholder={t(($) => $.admin.config.input_placeholder)}
-        coerce={parseBackendInteger}
       />
       <TextRow
         ctx={ctx}
@@ -29,7 +28,6 @@ export function InviteSection({ ctx }: { ctx: FormCtx }) {
         field="invite_gen_limit"
         title={t(($) => $.admin.config.invite.gen_limit_title)}
         placeholder={t(($) => $.admin.config.input_placeholder)}
-        coerce={parseBackendInteger}
       />
       <SwitchRow
         ctx={ctx}
@@ -68,7 +66,6 @@ export function InviteSection({ ctx }: { ctx: FormCtx }) {
         description={t(($) => $.admin.config.invite.withdraw_method_desc)}
         placeholder={t(($) => $.admin.config.invite.withdraw_method_placeholder)}
         rows={4}
-        coerce={splitComma}
       />
       <SwitchRow
         ctx={ctx}
@@ -93,7 +90,6 @@ export function InviteSection({ ctx }: { ctx: FormCtx }) {
             title={t(($) => $.admin.config.invite.distribution_l1_title)}
             placeholder={t(($) => $.admin.config.invite.distribution_l1_placeholder)}
             indent
-            coerce={parseBackendNumber}
           />
           <TextRow
             ctx={ctx}
@@ -102,7 +98,6 @@ export function InviteSection({ ctx }: { ctx: FormCtx }) {
             title={t(($) => $.admin.config.invite.distribution_l2_title)}
             placeholder={t(($) => $.admin.config.invite.distribution_l2_placeholder)}
             indent
-            coerce={parseBackendNumber}
           />
           <TextRow
             ctx={ctx}
@@ -111,7 +106,6 @@ export function InviteSection({ ctx }: { ctx: FormCtx }) {
             title={t(($) => $.admin.config.invite.distribution_l3_title)}
             placeholder={t(($) => $.admin.config.invite.distribution_l3_placeholder)}
             indent
-            coerce={parseBackendNumber}
           />
         </>
       ) : null}

@@ -1,5 +1,4 @@
 use super::*;
-use serde::Deserialize;
 
 // === W11 modern commerce family (docs/api-dialect.md §6.2/§6.4) ===
 //
@@ -16,7 +15,7 @@ mod reconciliations;
 
 pub use orders::{OrderAssign, OrderPatch};
 pub use payments::{AdminPaymentItem, PaymentCreate, PaymentPatch};
-pub use plans::{AdminPlanItem, PlanCreate, PlanPatch};
+pub use plans::{AdminPlanView, PlanCreateCommand, PlanPatchCommand};
 pub use reconciliations::ReconciliationResolveRequest;
 
 #[cfg(test)]
@@ -45,22 +44,14 @@ pub(super) fn optional_nonnegative_i32(
     value.map(|value| nonnegative_i32(field, value)).transpose()
 }
 
-fn optional_smallint(field: &str, value: Option<i64>) -> Result<Option<i64>, ApiError> {
-    if value.is_some_and(|value| i16::try_from(value).is_err()) {
+fn optional_reset_traffic_method(field: &str, value: Option<i64>) -> Result<Option<i64>, ApiError> {
+    if value.is_some_and(|value| !(0..=4).contains(&value)) {
         return Err(ApiError::from(Problem::validation_field(
             field,
-            "Value must be a 16-bit integer",
+            "Value must be one of 0, 1, 2, 3, or 4",
         )));
     }
     Ok(value)
-}
-
-/// POST `plans/sort` / POST `payments/sort` (§6.2): JSON `{ids}` full
-/// resequencing (the legacy `plan_ids` key becomes `ids` per §4.1).
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SortIdsRequest {
-    pub ids: Vec<i64>,
 }
 
 #[cfg(test)]

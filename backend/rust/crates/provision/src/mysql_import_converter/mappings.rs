@@ -26,6 +26,9 @@ pub enum JsonOutput {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ColumnRule {
+    /// Convert a legacy integer flag into a native PostgreSQL boolean. Only
+    /// the exact source values 0 and 1 are accepted.
+    Boolean01,
     /// Parse and bind a base-10 fixed-point value without a binary float.
     ExactDecimal,
     /// Parse legacy JSON text and require the declared top-level shape.
@@ -93,6 +96,7 @@ pub struct TableMapping {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DerivedMappingKind {
+    PlanPrices,
     GiftcardRedemptions,
 }
 
@@ -153,26 +157,64 @@ const PLAN: TableMapping = TableMapping {
         "device_limit",
         "name",
         "speed_limit",
-        "show",
         "sort",
-        "renew",
         "content",
-        "month_price",
-        "quarter_price",
-        "half_year_price",
-        "year_price",
-        "two_year_price",
-        "three_year_price",
-        "onetime_price",
-        "reset_price",
         "reset_traffic_method",
         "capacity_limit",
         "created_at",
         "updated_at",
     ],
-    transformed_columns: &[],
+    transformed_columns: &[
+        TransformColumn {
+            source: "show",
+            target: "show",
+            rule: ColumnRule::Boolean01,
+            source_referenced_table: None,
+            referenced_target_table: None,
+        },
+        TransformColumn {
+            source: "renew",
+            target: "renew",
+            rule: ColumnRule::Boolean01,
+            source_referenced_table: None,
+            referenced_target_table: None,
+        },
+    ],
     added_columns: &[],
-    consumed_source_columns: &[],
+    consumed_source_columns: &[
+        ConsumedSourceColumn {
+            source: "month_price",
+            reason: "normalized into plan_price(period=month)",
+        },
+        ConsumedSourceColumn {
+            source: "quarter_price",
+            reason: "normalized into plan_price(period=quarter)",
+        },
+        ConsumedSourceColumn {
+            source: "half_year_price",
+            reason: "normalized into plan_price(period=half_year)",
+        },
+        ConsumedSourceColumn {
+            source: "year_price",
+            reason: "normalized into plan_price(period=year)",
+        },
+        ConsumedSourceColumn {
+            source: "two_year_price",
+            reason: "normalized into plan_price(period=two_year)",
+        },
+        ConsumedSourceColumn {
+            source: "three_year_price",
+            reason: "normalized into plan_price(period=three_year)",
+        },
+        ConsumedSourceColumn {
+            source: "onetime_price",
+            reason: "normalized into plan_price(period=one_time)",
+        },
+        ConsumedSourceColumn {
+            source: "reset_price",
+            reason: "normalized into plan_price(period=reset)",
+        },
+    ],
 };
 
 pub(super) const PAYMENT: TableMapping = TableMapping {
@@ -562,20 +604,31 @@ pub const TABLE_MAPPINGS: &[TableMapping] = &[
     STAT,
 ];
 
-pub const DERIVED_MAPPINGS: &[DerivedMapping] = &[DerivedMapping {
-    order: 150,
-    target: "gift_card_redemption",
-    kind: DerivedMappingKind::GiftcardRedemptions,
-    source_tables: &["v2_giftcard", "v2_user"],
-    target_columns: &[
-        "giftcard_id",
-        "user_id",
-        "created_at",
-        "created_at_provenance",
-    ],
-    key_columns: &["giftcard_id", "user_id"],
-    rule: "expand distinct used_user_ids; every id must exist; created_at=0 and created_at_provenance=legacy_unknown",
-}];
+pub const DERIVED_MAPPINGS: &[DerivedMapping] = &[
+    DerivedMapping {
+        order: 21,
+        target: "plan_price",
+        kind: DerivedMappingKind::PlanPrices,
+        source_tables: &["v2_plan"],
+        target_columns: &["plan_id", "period", "amount_minor"],
+        key_columns: &["plan_id", "period"],
+        rule: "expand each non-null legacy period price into one native plan_price row",
+    },
+    DerivedMapping {
+        order: 150,
+        target: "gift_card_redemption",
+        kind: DerivedMappingKind::GiftcardRedemptions,
+        source_tables: &["v2_giftcard", "v2_user"],
+        target_columns: &[
+            "giftcard_id",
+            "user_id",
+            "created_at",
+            "created_at_provenance",
+        ],
+        key_columns: &["giftcard_id", "user_id"],
+        rule: "expand distinct used_user_ids; every id must exist; created_at=0 and created_at_provenance=legacy_unknown",
+    },
+];
 
 /// Whole tables intentionally omitted from the target.
 /// Legacy sources `v2_user`, `v2_payment`, `v2_server_group`, and `v2_stat`

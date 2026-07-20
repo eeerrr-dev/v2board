@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import type { FormCtx } from '../schema';
 import { Section, SelectRow, SwitchRow, TextRow, orderEventOptions } from '../rows';
-import { parseBackendInteger, selectBoolean, selectInteger } from '../values';
+import { selectBoolean, selectInteger } from '../values';
 
 export function SubscribeSection({ ctx }: { ctx: FormCtx }) {
   const { t } = useTranslation();
@@ -111,7 +111,6 @@ export function SubscribeSection({ ctx }: { ctx: FormCtx }) {
           description={t(($) => $.admin.config.subscribe.show_expire_desc)}
           placeholder={t(($) => $.admin.config.input_placeholder)}
           indent
-          coerce={parseBackendInteger}
         />
       ) : null}
     </Section>

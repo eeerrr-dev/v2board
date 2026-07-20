@@ -30,10 +30,24 @@ pub(crate) struct PostgresIdentity {
 
 impl PostgresIdentity {
     pub(crate) fn from_plan(plan: &MysqlImportExecutionPlan) -> anyhow::Result<Self> {
-        let bootstrap = Url::parse(&plan.postgres.bootstrap_database_url)?;
-        let migration = Url::parse(&plan.postgres.migration_database_url)?;
-        let api = Url::parse(&plan.postgres.api_database_url)?;
-        let worker = Url::parse(&plan.postgres.worker_database_url)?;
+        Self::from_urls(
+            &plan.postgres.bootstrap_database_url,
+            &plan.postgres.migration_database_url,
+            &plan.postgres.api_database_url,
+            &plan.postgres.worker_database_url,
+        )
+    }
+
+    pub(crate) fn from_urls(
+        bootstrap: &str,
+        migration: &str,
+        api: &str,
+        worker: &str,
+    ) -> anyhow::Result<Self> {
+        let bootstrap = Url::parse(bootstrap)?;
+        let migration = Url::parse(migration)?;
+        let api = Url::parse(api)?;
+        let worker = Url::parse(worker)?;
         Ok(Self {
             database: decoded_database(&migration)?,
             bootstrap_role: decoded_username(&bootstrap)?,

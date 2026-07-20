@@ -1,4 +1,4 @@
-import { PageShell } from '@/components/ui/page';
+import { PageShell } from '@v2board/ui/page';
 import { AccountCard } from './account-card';
 import { GiftCardCard } from './gift-card-card';
 import { NotificationsCard } from './notifications-card';

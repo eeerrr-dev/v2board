@@ -6,14 +6,20 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use v2board_compat::{Page, Pagination, Problem, page};
+use v2board_api_contract::{
+    AdminPlanItem, CreatedId, PlanCreate, PlanPatch, SortIdsRequest, time::Rfc3339Timestamp,
+};
+use v2board_compat::{ApiError, Page, Pagination, Problem, page};
 use v2board_domain::{
     admin::{
-        AdminPaymentItem, AdminPlanItem, OrderAssign, OrderPatch, PaymentCreate, PaymentPatch,
-        PlanCreate, PlanPatch, ReconciliationResolveRequest, SortIdsRequest,
+        AdminPaymentItem, AdminPlanView, OrderAssign, OrderPatch, PaymentCreate, PaymentPatch,
+        PlanCreateCommand, PlanPatchCommand, ReconciliationResolveRequest,
     },
     auth::AuthUser,
     payment_provider::payment_provider_codes,
+};
+use v2board_domain_model::{
+    MoneyMinor, PlanPricePeriod, PlanPriceUpdate, PlanPriceUpdates, PlanPrices,
 };
 
 use crate::{
@@ -27,18 +33,295 @@ use crate::{
 /// admin list default).
 const COMMERCE_LIST_DEFAULT_PER_PAGE: i64 = 10;
 
+fn money_minor(field: &'static str, value: i64) -> Result<MoneyMinor, ApiError> {
+    MoneyMinor::try_from(value).map_err(|_| {
+        Problem::validation_field(field, "price must be a signed 32-bit minor-unit amount").into()
+    })
+}
+
+fn plan_prices(
+    values: [(PlanPricePeriod, &'static str, Option<i64>); PlanPricePeriod::ALL.len()],
+) -> Result<PlanPrices, ApiError> {
+    let mut prices = PlanPrices::default();
+    for (period, field, value) in values {
+        prices.set(
+            period,
+            value.map(|value| money_minor(field, value)).transpose()?,
+        );
+    }
+    Ok(prices)
+}
+
+fn plan_price_updates(
+    values: [(PlanPricePeriod, &'static str, Option<Option<i64>>); PlanPricePeriod::ALL.len()],
+) -> Result<PlanPriceUpdates, ApiError> {
+    let mut prices = PlanPriceUpdates::default();
+    for (period, field, value) in values {
+        let update = match value {
+            None => PlanPriceUpdate::Retain,
+            Some(None) => PlanPriceUpdate::Clear,
+            Some(Some(value)) => PlanPriceUpdate::Set(money_minor(field, value)?),
+        };
+        prices.set(period, update);
+    }
+    Ok(prices)
+}
+
+fn plan_create_command(body: PlanCreate) -> Result<PlanCreateCommand, ApiError> {
+    let prices = plan_prices([
+        (PlanPricePeriod::Month, "month_price", body.month_price),
+        (
+            PlanPricePeriod::Quarter,
+            "quarter_price",
+            body.quarter_price,
+        ),
+        (
+            PlanPricePeriod::HalfYear,
+            "half_year_price",
+            body.half_year_price,
+        ),
+        (PlanPricePeriod::Year, "year_price", body.year_price),
+        (
+            PlanPricePeriod::TwoYear,
+            "two_year_price",
+            body.two_year_price,
+        ),
+        (
+            PlanPricePeriod::ThreeYear,
+            "three_year_price",
+            body.three_year_price,
+        ),
+        (
+            PlanPricePeriod::OneTime,
+            "onetime_price",
+            body.onetime_price,
+        ),
+        (PlanPricePeriod::Reset, "reset_price", body.reset_price),
+    ])?;
+    Ok(PlanCreateCommand {
+        name: body.name,
+        group_id: body.group_id,
+        transfer_enable: body.transfer_enable,
+        device_limit: body.device_limit,
+        speed_limit: body.speed_limit,
+        capacity_limit: body.capacity_limit,
+        content: body.content,
+        prices,
+        reset_traffic_method: body.reset_traffic_method,
+    })
+}
+
+fn plan_patch_command(body: PlanPatch) -> Result<PlanPatchCommand, ApiError> {
+    let prices = plan_price_updates([
+        (PlanPricePeriod::Month, "month_price", body.month_price),
+        (
+            PlanPricePeriod::Quarter,
+            "quarter_price",
+            body.quarter_price,
+        ),
+        (
+            PlanPricePeriod::HalfYear,
+            "half_year_price",
+            body.half_year_price,
+        ),
+        (PlanPricePeriod::Year, "year_price", body.year_price),
+        (
+            PlanPricePeriod::TwoYear,
+            "two_year_price",
+            body.two_year_price,
+        ),
+        (
+            PlanPricePeriod::ThreeYear,
+            "three_year_price",
+            body.three_year_price,
+        ),
+        (
+            PlanPricePeriod::OneTime,
+            "onetime_price",
+            body.onetime_price,
+        ),
+        (PlanPricePeriod::Reset, "reset_price", body.reset_price),
+    ])?;
+    Ok(PlanPatchCommand {
+        name: body.name.into_option(),
+        group_id: body.group_id.into_option(),
+        transfer_enable: body.transfer_enable.into_option(),
+        device_limit: body.device_limit,
+        speed_limit: body.speed_limit,
+        capacity_limit: body.capacity_limit,
+        content: body.content,
+        prices,
+        reset_traffic_method: body.reset_traffic_method,
+        show: body.show.into_option(),
+        renew: body.renew.into_option(),
+        force_update: body.force_update.into_option(),
+    })
+}
+
+fn admin_plan_item(view: AdminPlanView) -> AdminPlanItem {
+    AdminPlanItem {
+        id: view.id,
+        group_id: view.group_id,
+        transfer_enable: view.transfer_enable,
+        device_limit: view.device_limit,
+        name: view.name,
+        speed_limit: view.speed_limit,
+        show: view.show,
+        sort: view.sort,
+        renew: view.renew,
+        content: view.content,
+        month_price: view.prices.get(PlanPricePeriod::Month).map(MoneyMinor::get),
+        quarter_price: view
+            .prices
+            .get(PlanPricePeriod::Quarter)
+            .map(MoneyMinor::get),
+        half_year_price: view
+            .prices
+            .get(PlanPricePeriod::HalfYear)
+            .map(MoneyMinor::get),
+        year_price: view.prices.get(PlanPricePeriod::Year).map(MoneyMinor::get),
+        two_year_price: view
+            .prices
+            .get(PlanPricePeriod::TwoYear)
+            .map(MoneyMinor::get),
+        three_year_price: view
+            .prices
+            .get(PlanPricePeriod::ThreeYear)
+            .map(MoneyMinor::get),
+        onetime_price: view
+            .prices
+            .get(PlanPricePeriod::OneTime)
+            .map(MoneyMinor::get),
+        reset_price: view.prices.get(PlanPricePeriod::Reset).map(MoneyMinor::get),
+        reset_traffic_method: view.reset_traffic_method,
+        capacity_limit: view.capacity_limit,
+        count: view.count,
+        created_at: Rfc3339Timestamp::from_epoch_seconds(view.created_at),
+        updated_at: Rfc3339Timestamp::from_epoch_seconds(view.updated_at),
+    }
+}
+
+#[cfg(test)]
+mod plan_adapter_tests {
+    use serde_json::json;
+    use v2board_compat::{ApiError, Code};
+    use v2board_domain::admin::AdminPlanView;
+    use v2board_domain_model::{MoneyMinor, PlanPricePeriod, PlanPriceUpdate, PlanPrices};
+
+    use super::{PlanCreate, PlanPatch, admin_plan_item, plan_create_command, plan_patch_command};
+
+    #[test]
+    fn patch_adapter_preserves_retain_clear_and_set() {
+        let command = plan_patch_command(
+            serde_json::from_value::<PlanPatch>(json!({
+                "month_price": null,
+                "quarter_price": 1200,
+                "capacity_limit": 50,
+                "show": false
+            }))
+            .expect("transport patch"),
+        )
+        .expect("domain patch");
+
+        assert_eq!(
+            command.prices.get(PlanPricePeriod::Month),
+            PlanPriceUpdate::Clear
+        );
+        assert!(matches!(
+            command.prices.get(PlanPricePeriod::Quarter),
+            PlanPriceUpdate::Set(amount) if amount.get() == 1200
+        ));
+        assert_eq!(command.capacity_limit, Some(Some(50)));
+        assert_eq!(
+            command.prices.get(PlanPricePeriod::HalfYear),
+            PlanPriceUpdate::Retain
+        );
+        assert_eq!(command.show, Some(false));
+    }
+
+    #[test]
+    fn price_adapter_preserves_signed_values_and_reports_the_exact_invalid_wire_field() {
+        let create = plan_create_command(
+            serde_json::from_value::<PlanCreate>(json!({
+                "name": "signed price",
+                "group_id": 1,
+                "transfer_enable": 100,
+                "month_price": -1
+            }))
+            .expect("transport create"),
+        )
+        .expect("signed price must survive the boundary");
+        assert!(matches!(
+            create.prices.get(PlanPricePeriod::Month),
+            Some(amount) if amount.get() == -1
+        ));
+
+        let patch_error = plan_patch_command(
+            serde_json::from_value::<PlanPatch>(json!({
+                "three_year_price": 2_147_483_648_i64
+            }))
+            .expect("transport patch"),
+        )
+        .expect_err("wide price must fail at the boundary");
+        assert!(matches!(
+            patch_error,
+            ApiError::Problem(problem)
+                if problem.code() == Code::ValidationFailed
+                    && problem
+                        .errors()
+                        .is_some_and(|errors| errors.contains_key("three_year_price"))
+        ));
+    }
+
+    #[test]
+    fn response_adapter_flattens_typed_prices_into_minor_unit_wire_fields() {
+        let mut prices = PlanPrices::default();
+        prices.set(
+            PlanPricePeriod::Month,
+            Some(MoneyMinor::try_from(1_000).expect("month price")),
+        );
+        prices.set(
+            PlanPricePeriod::Reset,
+            Some(MoneyMinor::try_from(300).expect("reset price")),
+        );
+
+        let item = admin_plan_item(AdminPlanView {
+            id: 1,
+            group_id: 2,
+            transfer_enable: 100,
+            device_limit: None,
+            name: "typed prices".to_owned(),
+            speed_limit: None,
+            show: true,
+            sort: None,
+            renew: false,
+            content: None,
+            prices,
+            reset_traffic_method: None,
+            capacity_limit: None,
+            count: 0,
+            created_at: 1_700_000_000,
+            updated_at: 1_700_000_000,
+        });
+
+        assert_eq!(item.month_price, Some(1_000));
+        assert_eq!(item.reset_price, Some(300));
+        assert_eq!(item.year_price, None);
+    }
+}
+
 /// GET `plans` (§6.2): bare unpaginated array, prices stay cents.
 pub(super) async fn plans_list(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Vec<AdminPlanItem>>, Problem> {
     let locale = request_locale(&headers);
-    state
+    let plans = state
         .admin_service(state.config_snapshot())
         .plans_list()
         .await
-        .map(Json)
-        .map_err(|error| problem_from(error, locale))
+        .map_err(|error| problem_from(error, locale))?;
+    Ok(Json(plans.into_iter().map(admin_plan_item).collect()))
 }
 
 /// POST `plans` (§6.2): 201 bare `{id}` per §1.
@@ -48,12 +331,13 @@ pub(super) async fn plan_create(
     DialectJson(body): DialectJson<PlanCreate>,
 ) -> Result<Response, Problem> {
     let locale = request_locale(&headers);
+    let command = plan_create_command(body).map_err(|error| problem_from(error, locale))?;
     let id = state
         .admin_service(state.config_snapshot())
-        .plan_create(&body)
+        .plan_create(&command)
         .await
         .map_err(|error| problem_from(error, locale))?;
-    Ok((StatusCode::CREATED, Json(json!({ "id": id }))).into_response())
+    Ok((StatusCode::CREATED, Json(CreatedId { id })).into_response())
 }
 
 /// PATCH `plans/{id}` (§6.2): §4.4 partial update merging the legacy
@@ -66,9 +350,10 @@ pub(super) async fn plan_patch(
     DialectJson(body): DialectJson<PlanPatch>,
 ) -> Result<StatusCode, Problem> {
     let locale = request_locale(&headers);
+    let command = plan_patch_command(body).map_err(|error| problem_from(error, locale))?;
     state
         .admin_service(state.config_snapshot())
-        .plan_patch(id, &body)
+        .plan_patch(id, &command)
         .await
         .map_err(|error| problem_from(error, locale))?;
     Ok(StatusCode::NO_CONTENT)

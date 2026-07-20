@@ -9,15 +9,15 @@ import { RouterProvider } from 'react-router/dom';
 import { createAdminRouter } from './App';
 import { AppShellBoundary } from './components/app-shell-boundary';
 import { StepUpDialogProvider } from './components/step-up-dialog';
-import { ConfirmDialogProvider } from './components/ui/confirm-dialog';
-import { Toaster } from './components/ui/toaster';
+import { ConfirmDialogProvider } from '@v2board/ui/confirm-dialog';
+import { Toaster } from '@v2board/ui/toaster';
 import {
   applyAdminRuntimeConfig,
   getAdminBasename,
   getLegacyHashRedirectEnabled,
   getSentryDsn,
 } from './lib/runtime-config';
-import { applyInitialDarkMode } from './lib/dark-mode';
+import { applyInitialDarkMode, useDarkMode } from './lib/dark-mode';
 import { registerSessionCacheClearer, setupAuthSync } from './lib/auth';
 import { installChunkReloadRecovery } from './lib/chunk-recovery';
 import { registerRouterNavigation } from './lib/router-navigation';
@@ -79,6 +79,10 @@ registerRouterNavigation(router);
 const root = document.getElementById('root');
 if (!root) throw new Error('root element missing');
 
+function AppToaster() {
+  return <Toaster theme={useDarkMode() ? 'dark' : 'light'} />;
+}
+
 createRoot(root).render(
   <StrictMode>
     <AppShellBoundary>
@@ -87,7 +91,7 @@ createRoot(root).render(
           <RouterProvider router={router} />
           <ConfirmDialogProvider />
           <StepUpDialogProvider />
-          <Toaster />
+          <AppToaster />
         </QueryClientProvider>
       </I18nextProvider>
     </AppShellBoundary>

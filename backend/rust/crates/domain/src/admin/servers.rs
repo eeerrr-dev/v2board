@@ -4,6 +4,47 @@ use v2board_compat::{Code, Problem, json::double_option};
 
 const SERVER_GROUP_LOCK_BATCH_SIZE: usize = 500;
 
+const SERVER_GROUP_PLAN_REFERENCE_PREFLIGHT_SQL: &str =
+    "SELECT id FROM plan WHERE group_id = $1 LIMIT 1 FOR SHARE";
+const SERVER_GROUP_PLAN_REFERENCE_RECHECK_SQL: &str =
+    "SELECT id FROM plan WHERE group_id = $1 LIMIT 1";
+const SERVER_GROUP_USER_REFERENCE_PREFLIGHT_SQL: &str =
+    "SELECT id FROM users WHERE group_id = $1 LIMIT 1 FOR SHARE";
+const SERVER_GROUP_USER_REFERENCE_RECHECK_SQL: &str =
+    "SELECT id FROM users WHERE group_id = $1 LIMIT 1";
+
+/// Group deletion is the exceptional, exclusive parent operation in the
+/// group/user/plan lock graph. User binding and order settlement deliberately
+/// keep their established child order (`order -> user -> plan`) and can acquire
+/// an implicit FK key-share lock on `server_group` only when the user write is
+/// issued. Consequently deletion must never hold the conflicting parent
+/// `FOR UPDATE` lock while it waits for a user or plan row. It first performs a
+/// child-locking dependency preflight, then locks the parent, then performs a
+/// plain READ COMMITTED recheck. Plan force-update's group `FOR SHARE` lock is
+/// compatible with the FK key-share lock and therefore does not form this
+/// exclusive-parent cycle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ServerGroupReferenceKind {
+    Server,
+    Plan,
+    User,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ServerGroupReferenceRead {
+    Preflight,
+    AfterParentLock,
+}
+
+impl ServerGroupReferenceRead {
+    const fn lock_clause(self) -> &'static str {
+        match self {
+            Self::Preflight => " FOR SHARE",
+            Self::AfterParentLock => "",
+        }
+    }
+}
+
 /// Allowed `action` values for the §6.7 server-route bodies (the legacy
 /// RouteController `in:` rule — the `ROUTE_ACTIONS` vocabulary is unchanged).
 const ROUTE_ACTIONS: [&str; 8] = [
@@ -95,18 +136,86 @@ async fn server_table_uses_group(
     tx: &mut DbTransaction<'_>,
     table: &str,
     group_id: i64,
+    read: ServerGroupReferenceRead,
 ) -> Result<bool, ApiError> {
+    let lock_clause = read.lock_clause();
     let sql = AssertSqlSafe(format!(
         "SELECT id::bigint FROM {table} \
          WHERE group_id @> jsonb_build_array($1::bigint)
             OR group_id @> jsonb_build_array($1::text) \
-         LIMIT 1 FOR SHARE"
+         LIMIT 1{lock_clause}"
     ));
     Ok(sqlx::query_scalar::<_, i64>(sql)
         .bind(group_id)
         .fetch_optional(&mut **tx)
         .await?
         .is_some())
+}
+
+async fn find_server_group_reference(
+    tx: &mut DbTransaction<'_>,
+    group_id: i64,
+    read: ServerGroupReferenceRead,
+) -> Result<Option<ServerGroupReferenceKind>, ApiError> {
+    for (_, table) in SERVER_TABLES {
+        if server_table_uses_group(tx, table, group_id, read).await? {
+            return Ok(Some(ServerGroupReferenceKind::Server));
+        }
+    }
+    let plan_sql = match read {
+        ServerGroupReferenceRead::Preflight => SERVER_GROUP_PLAN_REFERENCE_PREFLIGHT_SQL,
+        ServerGroupReferenceRead::AfterParentLock => SERVER_GROUP_PLAN_REFERENCE_RECHECK_SQL,
+    };
+    let plan_used: Option<i32> = sqlx::query_scalar(plan_sql)
+        .bind(group_id)
+        .fetch_optional(&mut **tx)
+        .await?;
+    if plan_used.is_some() {
+        return Ok(Some(ServerGroupReferenceKind::Plan));
+    }
+    let user_sql = match read {
+        ServerGroupReferenceRead::Preflight => SERVER_GROUP_USER_REFERENCE_PREFLIGHT_SQL,
+        ServerGroupReferenceRead::AfterParentLock => SERVER_GROUP_USER_REFERENCE_RECHECK_SQL,
+    };
+    let user_used: Option<i64> = sqlx::query_scalar(user_sql)
+        .bind(group_id)
+        .fetch_optional(&mut **tx)
+        .await?;
+    Ok(user_used.map(|_| ServerGroupReferenceKind::User))
+}
+
+fn server_group_in_use_problem(reference: ServerGroupReferenceKind) -> Problem {
+    let detail = match reference {
+        ServerGroupReferenceKind::Server => "该组已被节点所使用，无法删除",
+        ServerGroupReferenceKind::Plan => "该组已被订阅所使用，无法删除",
+        ServerGroupReferenceKind::User => "该组已被用户所使用，无法删除",
+    };
+    Problem::new(Code::ServerGroupInUse).with_detail(detail)
+}
+
+fn server_group_reference_for_constraint(
+    constraint: Option<&str>,
+) -> Option<ServerGroupReferenceKind> {
+    match constraint {
+        Some("plan_group_id_fkey") => Some(ServerGroupReferenceKind::Plan),
+        Some("users_group_id_fkey") => Some(ServerGroupReferenceKind::User),
+        _ => None,
+    }
+}
+
+fn map_server_group_delete_error(error: sqlx::Error) -> ApiError {
+    let Some(database_error) = error.as_database_error() else {
+        return ApiError::Database(error);
+    };
+    if database_error.code().as_deref() != Some("23503") {
+        return ApiError::Database(error);
+    }
+    match server_group_reference_for_constraint(database_error.constraint()) {
+        Some(reference) => server_group_in_use_problem(reference).into(),
+        // JSON-backed node membership has no FK and is covered by both
+        // explicit reads. Keep any future restrictive FK typed and non-leaky.
+        None => Problem::new(Code::ServerGroupInUse).into(),
+    }
 }
 
 /// POST `server-groups` / PATCH `server-groups/{id}` (docs/api-dialect.md
@@ -1116,12 +1225,27 @@ impl AdminService {
 
     /// DELETE `server-groups/{id}` (§6.7). Rejects with 400
     /// `server_group_in_use` (the blocking dependency stays in `detail`)
-    /// while any node, plan, or user still references the group. The group
-    /// row is the serialization point: node/plan writers first take a shared
-    /// group lock, so none can create a late reference after these checks and
-    /// before the delete.
+    /// while any node, plan, or user still references the group. Dependency
+    /// rows are checked before the exclusive parent lock so deletion never
+    /// holds the group while waiting on a user/plan writer. The locked parent
+    /// is the serialization point for a plain authoritative recheck: explicit
+    /// node/plan group locks and the user FK key-share lock make every earlier
+    /// writer finish before that recheck.
     pub async fn server_group_delete(&self, id: i64) -> Result<(), ApiError> {
         let mut tx = self.db.begin().await?;
+        let initially_exists: Option<i32> =
+            sqlx::query_scalar("SELECT id FROM server_group WHERE id = $1 LIMIT 1")
+                .bind(id)
+                .fetch_optional(&mut *tx)
+                .await?;
+        if initially_exists.is_none() {
+            return Err(Problem::new(Code::ServerGroupNotFound).into());
+        }
+        if let Some(reference) =
+            find_server_group_reference(&mut tx, id, ServerGroupReferenceRead::Preflight).await?
+        {
+            return Err(server_group_in_use_problem(reference).into());
+        }
         let exists: Option<i32> =
             sqlx::query_scalar("SELECT id FROM server_group WHERE id = $1 LIMIT 1 FOR UPDATE")
                 .bind(id)
@@ -1130,41 +1254,21 @@ impl AdminService {
         if exists.is_none() {
             return Err(Problem::new(Code::ServerGroupNotFound).into());
         }
-        for (_, table) in SERVER_TABLES {
-            if server_table_uses_group(&mut tx, table, id).await? {
-                return Err(Problem::new(Code::ServerGroupInUse)
-                    .with_detail("该组已被节点所使用，无法删除")
-                    .into());
-            }
-        }
-        let plan_used: Option<i32> =
-            sqlx::query_scalar("SELECT id FROM plan WHERE group_id = $1 LIMIT 1 FOR SHARE")
-                .bind(id)
-                .fetch_optional(&mut *tx)
-                .await?;
-        if plan_used.is_some() {
-            return Err(Problem::new(Code::ServerGroupInUse)
-                .with_detail("该组已被订阅所使用，无法删除")
-                .into());
-        }
-        let user_used: Option<i64> =
-            sqlx::query_scalar("SELECT id FROM users WHERE group_id = $1 LIMIT 1 FOR SHARE")
-                .bind(id)
-                .fetch_optional(&mut *tx)
-                .await?;
-        if user_used.is_some() {
-            return Err(Problem::new(Code::ServerGroupInUse)
-                .with_detail("该组已被用户所使用，无法删除")
-                .into());
+        if let Some(reference) =
+            find_server_group_reference(&mut tx, id, ServerGroupReferenceRead::AfterParentLock)
+                .await?
+        {
+            return Err(server_group_in_use_problem(reference).into());
         }
         let deleted = sqlx::query("DELETE FROM server_group WHERE id = $1")
             .bind(id)
             .execute(&mut *tx)
-            .await?;
+            .await
+            .map_err(map_server_group_delete_error)?;
         if deleted.rows_affected() != 1 {
             return Err(Problem::new(Code::ServerGroupNotFound).into());
         }
-        tx.commit().await?;
+        tx.commit().await.map_err(map_server_group_delete_error)?;
         Ok(())
     }
 
@@ -1655,6 +1759,57 @@ impl AdminService {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn server_group_delete_locks_children_only_during_preflight() {
+        assert_eq!(
+            ServerGroupReferenceRead::Preflight.lock_clause(),
+            " FOR SHARE"
+        );
+        assert_eq!(ServerGroupReferenceRead::AfterParentLock.lock_clause(), "");
+        for sql in [
+            SERVER_GROUP_PLAN_REFERENCE_PREFLIGHT_SQL,
+            SERVER_GROUP_USER_REFERENCE_PREFLIGHT_SQL,
+        ] {
+            assert!(sql.ends_with("FOR SHARE"), "preflight must lock: {sql}");
+        }
+        for sql in [
+            SERVER_GROUP_PLAN_REFERENCE_RECHECK_SQL,
+            SERVER_GROUP_USER_REFERENCE_RECHECK_SQL,
+        ] {
+            assert!(
+                !sql.contains(" FOR "),
+                "post-parent recheck must not wait on a child row: {sql}"
+            );
+        }
+    }
+
+    #[test]
+    fn server_group_delete_foreign_keys_map_to_stable_dependencies() {
+        for (constraint, expected, detail) in [
+            (
+                "plan_group_id_fkey",
+                ServerGroupReferenceKind::Plan,
+                "该组已被订阅所使用，无法删除",
+            ),
+            (
+                "users_group_id_fkey",
+                ServerGroupReferenceKind::User,
+                "该组已被用户所使用，无法删除",
+            ),
+        ] {
+            let reference = server_group_reference_for_constraint(Some(constraint));
+            assert_eq!(reference, Some(expected));
+            let problem = server_group_in_use_problem(expected);
+            assert_eq!(problem.code(), Code::ServerGroupInUse);
+            assert_eq!(problem.detail(), detail);
+        }
+        assert_eq!(server_group_reference_for_constraint(None), None);
+        assert_eq!(
+            server_group_reference_for_constraint(Some("future_group_reference_fkey")),
+            None
+        );
+    }
 
     #[test]
     fn node_group_references_are_nonempty_positive_and_canonicalized() {

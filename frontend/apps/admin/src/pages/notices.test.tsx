@@ -62,7 +62,7 @@ vi.mock('@/lib/queries', () => ({
   useShowNoticeMutation: () => ({ mutate: mocks.showMutate }),
 }));
 
-vi.mock('@/components/ui/confirm-dialog', () => ({ confirmDialog: mocks.confirm }));
+vi.mock('@v2board/ui/confirm-dialog', () => ({ confirmDialog: mocks.confirm }));
 
 describe('NoticesPage', () => {
   beforeEach(() => {

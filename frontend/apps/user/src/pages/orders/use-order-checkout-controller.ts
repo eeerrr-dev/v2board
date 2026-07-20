@@ -13,7 +13,7 @@ import {
   useUserInfo,
   userKeys,
 } from '@/lib/queries';
-import { confirmDialog } from '@/components/ui/confirm-dialog';
+import { confirmDialog } from '@v2board/ui/confirm-dialog';
 import type { StripePaymentFormHandle } from '@/components/stripe-payment-form';
 import { toast } from '@/lib/toast';
 

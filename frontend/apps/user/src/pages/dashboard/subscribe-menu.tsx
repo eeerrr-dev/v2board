@@ -1,7 +1,7 @@
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { Copy, Import as ImportIcon, QrCode } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@v2board/ui/button';
 import { copyText } from '@v2board/config/clipboard';
 import { getSiteTitle } from '@/lib/runtime-config';
 import { toast } from '@/lib/toast';

@@ -1,17 +1,11 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Copy, Link2, MessageCircle, Send } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { ErrorState } from '@/components/ui/error-state';
-import { LoadingState, SkeletonLines } from '@/components/ui/loading-state';
+import { Button } from '@v2board/ui/button';
+import { Card, CardDescription, CardHeader, CardTitle } from '@v2board/ui/card';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@v2board/ui/dialog';
+import { ErrorState } from '@v2board/ui/error-state';
+import { LoadingState, SkeletonLines } from '@v2board/ui/loading-state';
 import {
   useCommConfig,
   useSubscribe,

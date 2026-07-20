@@ -62,7 +62,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('react-router', () => ({ useLocation: () => ({ pathname: mocks.pathname }) }));
 
-vi.mock('@/components/ui/confirm-dialog', () => ({ confirmDialog: mocks.confirm }));
+vi.mock('@v2board/ui/confirm-dialog', () => ({ confirmDialog: mocks.confirm }));
 
 vi.mock('@/lib/toast', () => ({
   toast: { success: mocks.toastSuccess, error: vi.fn(), loading: vi.fn(), dismiss: vi.fn() },

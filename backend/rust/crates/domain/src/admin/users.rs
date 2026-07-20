@@ -322,6 +322,14 @@ pub enum UserGenerateOutcome {
     Csv { filename: String, body: String },
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+struct GeneratedUserPlan {
+    plan_id: Option<i32>,
+    group_id: Option<i32>,
+    transfer_enable: i64,
+    device_limit: Option<i32>,
+}
+
 /// The shared `{filter?}` body for the §6.6 bulk actions `users/export`,
 /// `users/ban`, and `users/bulk-delete`: a raw §7 DSL clause array, unencoded
 /// (§7.1), not the query-param string form.
@@ -760,10 +768,27 @@ impl AdminService {
             )));
         }
 
+        // Password hashing is intentionally outside the database transaction:
+        // the expensive KDF must not extend the user/plan lock lifetime.
+        let password_changed = body
+            .password
+            .as_deref()
+            .is_some_and(|value| !value.is_empty());
+        let password_hash = match body.password.as_deref().filter(|value| !value.is_empty()) {
+            Some(password) => Some(self.password_kdf.hash(password).await?),
+            None => None,
+        };
+
+        let mut tx = self.db.begin().await?;
+        // Existing-account plan writers use user -> plan ordering, matching
+        // order settlement and the child segment of plan force propagation.
+        // The eventual group FK key-share is safe because exclusive group
+        // deletion preflights children before locking its parent row. The user
+        // stays locked through this transaction's final UPDATE and commit.
         let current_email: String =
-            sqlx::query_scalar("SELECT email FROM users WHERE id = $1 LIMIT 1")
+            sqlx::query_scalar("SELECT email FROM users WHERE id = $1 LIMIT 1 FOR UPDATE")
                 .bind(id)
-                .fetch_optional(&self.db)
+                .fetch_optional(&mut *tx)
                 .await?
                 .ok_or_else(|| ApiError::from(Problem::new(Code::UserNotFound)))?;
 
@@ -774,7 +799,7 @@ impl AdminService {
                     "SELECT id FROM users WHERE lower(btrim(email)) = lower(btrim($1)) LIMIT 1",
                 )
                 .bind(email)
-                .fetch_optional(&self.db)
+                .fetch_optional(&mut *tx)
                 .await?;
                 if taken.is_some() {
                     return Err(ApiError::from(Problem::new(Code::EmailAlreadyRegistered)));
@@ -844,19 +869,13 @@ impl AdminService {
         if let Some(plan_update) = body.plan_id {
             match plan_update {
                 Some(plan_id) => {
-                    let plan_group: Option<i32> =
-                        sqlx::query_scalar("SELECT group_id FROM plan WHERE id = $1 LIMIT 1")
-                            .bind(plan_id)
-                            .fetch_optional(&self.db)
-                            .await?
-                            .ok_or_else(|| ApiError::from(Problem::new(Code::PlanNotFound)))?;
+                    let plan_id_db = i32::try_from(plan_id)
+                        .map_err(|_| ApiError::from(Problem::new(Code::PlanNotFound)))?;
+                    let plan = v2board_db::plan::find_plan_binding_for_share(&mut tx, plan_id_db)
+                        .await?
+                        .ok_or_else(|| ApiError::from(Problem::new(Code::PlanNotFound)))?;
                     values.push(("plan_id", AdminSqlValue::Integer(plan_id)));
-                    values.push((
-                        "group_id",
-                        plan_group
-                            .map(|value| AdminSqlValue::Integer(i64::from(value)))
-                            .unwrap_or(AdminSqlValue::IntegerNull),
-                    ));
+                    values.push(("group_id", AdminSqlValue::Integer(i64::from(plan.group_id))));
                 }
                 None => {
                     values.push(("plan_id", AdminSqlValue::IntegerNull));
@@ -865,12 +884,7 @@ impl AdminService {
             }
         }
 
-        let password_changed = body
-            .password
-            .as_deref()
-            .is_some_and(|value| !value.is_empty());
-        if let Some(password) = body.password.as_deref().filter(|value| !value.is_empty()) {
-            let hash = self.password_kdf.hash(password).await?;
+        if let Some(hash) = password_hash {
             values.push(("password", AdminSqlValue::Text(hash)));
             values.push(("password_algo", AdminSqlValue::TextNull));
         }
@@ -912,7 +926,8 @@ impl AdminService {
         builder.push_bind(Utc::now().timestamp());
         builder.push(" WHERE id = ");
         builder.push_bind(id);
-        builder.build().execute(&self.db).await?;
+        builder.build().execute(&mut *tx).await?;
+        tx.commit().await?;
         if revokes_sessions {
             self.remove_user_sessions(id).await;
         }
@@ -926,11 +941,23 @@ impl AdminService {
     /// restricted to non-admin/non-staff users. A cleared `plan_id` keeps the
     /// legacy staff outcome: `plan_id` → NULL with `group_id` untouched.
     pub async fn staff_user_update(&self, id: i64, body: &StaffUserPatch) -> Result<(), ApiError> {
+        let password_changed = body
+            .password
+            .as_deref()
+            .is_some_and(|value| !value.is_empty());
+        let password_hash = match body.password.as_deref().filter(|value| !value.is_empty()) {
+            Some(password) => Some(self.password_kdf.hash(password).await?),
+            None => None,
+        };
+        let mut tx = self.db.begin().await?;
+        // Preserve the same user -> plan binding order as the admin path and
+        // order settlement; see the exclusive-parent delete protocol in
+        // `admin::servers` for the server_group edge of this lock graph.
         let current_email: String = sqlx::query_scalar(
-            "SELECT email FROM users WHERE id = $1 AND is_admin = 0 AND is_staff = 0 LIMIT 1",
+            "SELECT email FROM users WHERE id = $1 AND is_admin = 0 AND is_staff = 0 LIMIT 1 FOR UPDATE",
         )
         .bind(id)
-        .fetch_optional(&self.db)
+        .fetch_optional(&mut *tx)
         .await?
         .ok_or_else(|| ApiError::from(Problem::new(Code::UserNotFound)))?;
 
@@ -941,7 +968,7 @@ impl AdminService {
                     "SELECT id FROM users WHERE lower(btrim(email)) = lower(btrim($1)) LIMIT 1",
                 )
                 .bind(email)
-                .fetch_optional(&self.db)
+                .fetch_optional(&mut *tx)
                 .await?;
                 if taken.is_some() {
                     return Err(ApiError::from(Problem::new(Code::EmailAlreadyRegistered)));
@@ -981,29 +1008,18 @@ impl AdminService {
         if let Some(plan_update) = body.plan_id {
             match plan_update {
                 Some(plan_id) => {
-                    let plan_group: Option<i32> =
-                        sqlx::query_scalar("SELECT group_id FROM plan WHERE id = $1 LIMIT 1")
-                            .bind(plan_id)
-                            .fetch_optional(&self.db)
-                            .await?
-                            .ok_or_else(|| ApiError::from(Problem::new(Code::PlanNotFound)))?;
+                    let plan_id_db = i32::try_from(plan_id)
+                        .map_err(|_| ApiError::from(Problem::new(Code::PlanNotFound)))?;
+                    let plan = v2board_db::plan::find_plan_binding_for_share(&mut tx, plan_id_db)
+                        .await?
+                        .ok_or_else(|| ApiError::from(Problem::new(Code::PlanNotFound)))?;
                     values.push(("plan_id", AdminSqlValue::Integer(plan_id)));
-                    values.push((
-                        "group_id",
-                        plan_group
-                            .map(|value| AdminSqlValue::Integer(i64::from(value)))
-                            .unwrap_or(AdminSqlValue::IntegerNull),
-                    ));
+                    values.push(("group_id", AdminSqlValue::Integer(i64::from(plan.group_id))));
                 }
                 None => values.push(("plan_id", AdminSqlValue::IntegerNull)),
             }
         }
-        let password_changed = body
-            .password
-            .as_deref()
-            .is_some_and(|value| !value.is_empty());
-        if let Some(password) = body.password.as_deref().filter(|value| !value.is_empty()) {
-            let hash = self.password_kdf.hash(password).await?;
+        if let Some(hash) = password_hash {
             values.push(("password", AdminSqlValue::Text(hash)));
             values.push(("password_algo", AdminSqlValue::TextNull));
         }
@@ -1042,7 +1058,8 @@ impl AdminService {
         builder.push(" WHERE id = ");
         builder.push_bind(id);
         builder.push(" AND is_admin = 0 AND is_staff = 0");
-        builder.build().execute(&self.db).await?;
+        builder.build().execute(&mut *tx).await?;
+        tx.commit().await?;
         if revokes_sessions {
             self.remove_user_sessions(id).await;
         }
@@ -1073,30 +1090,29 @@ impl AdminService {
         Ok(())
     }
 
-    /// Resolves the plan referenced by a generate request into
-    /// `(id, group_id, transfer_enable_bytes, device_limit)`. Ports the
-    /// `Plan::find` guard shared by generate() and multiGenerate().
+    /// Resolves and locks the plan referenced by a generate request. The
+    /// caller keeps the shared parent lock through the account INSERT, so a
+    /// forced plan update or deletion serializes entirely before or after the
+    /// copied group and limits.
     async fn generate_plan(
         &self,
+        tx: &mut DbTransaction<'_>,
         plan_id: Option<i64>,
-    ) -> Result<Option<(i64, Option<i64>, i64, Option<i64>)>, ApiError> {
+    ) -> Result<GeneratedUserPlan, ApiError> {
         let Some(plan_id) = plan_id else {
-            return Ok(None);
+            return Ok(GeneratedUserPlan::default());
         };
-        let row: (i64, Option<i64>, Option<i64>, Option<i64>) = sqlx::query_as(
-            "SELECT id::BIGINT, group_id::BIGINT, transfer_enable, device_limit::BIGINT \
-             FROM plan WHERE id = $1::BIGINT LIMIT 1",
-        )
-        .bind(plan_id)
-        .fetch_optional(&self.db)
-        .await?
-        .ok_or_else(|| ApiError::from(Problem::new(Code::PlanUnavailable)))?;
-        Ok(Some((
-            row.0,
-            row.1,
-            checked_gib_bytes(row.2.unwrap_or_default(), "transfer_enable")?,
-            row.3,
-        )))
+        let plan_id = i32::try_from(plan_id)
+            .map_err(|_| ApiError::from(Problem::new(Code::PlanUnavailable)))?;
+        let row = v2board_db::plan::find_plan_binding_for_share(tx, plan_id)
+            .await?
+            .ok_or_else(|| ApiError::from(Problem::new(Code::PlanUnavailable)))?;
+        Ok(GeneratedUserPlan {
+            plan_id: Some(row.id),
+            group_id: Some(row.group_id),
+            transfer_enable: checked_gib_bytes(row.transfer_enable, "transfer_enable")?,
+            device_limit: row.device_limit,
+        })
     }
 
     /// POST `users` (§6.6): single create (real `email_prefix`) → 201 `{id}`,
@@ -1120,28 +1136,6 @@ impl AdminService {
             )));
         }
         let now = Utc::now().timestamp();
-        let plan = self.generate_plan(body.plan_id).await?;
-        let (plan_id, group_id, transfer_enable, device_limit) = match plan {
-            Some((id, group_id, transfer_enable, device_limit)) => {
-                (Some(id), group_id, transfer_enable, device_limit)
-            }
-            None => (None, None, 0, None),
-        };
-        // These values originate from INTEGER columns, but `generate_plan`
-        // exposes i64 for legacy arithmetic. Convert back to exact PostgreSQL
-        // bind types before INSERT (including QueryBuilder's batched path).
-        let plan_id_db = plan_id
-            .map(i32::try_from)
-            .transpose()
-            .map_err(|_| ApiError::internal("stored plan id exceeds PostgreSQL INTEGER"))?;
-        let group_id_db = group_id
-            .map(i32::try_from)
-            .transpose()
-            .map_err(|_| ApiError::internal("stored group id exceeds PostgreSQL INTEGER"))?;
-        let device_limit_db = device_limit
-            .map(i32::try_from)
-            .transpose()
-            .map_err(|_| ApiError::internal("stored device limit exceeds PostgreSQL INTEGER"))?;
 
         // Single generation returns the created id; the CSV path is multiGenerate only.
         if let Some(prefix) = body
@@ -1167,6 +1161,8 @@ impl AdminService {
                 .map(str::to_owned)
                 .unwrap_or_else(|| email.clone());
             let hash = self.password_kdf.hash(&password_plain).await?;
+            let mut tx = self.db.begin().await?;
+            let plan = self.generate_plan(&mut tx, body.plan_id).await?;
             let id: i64 = sqlx::query_scalar(
                 r#"
                 INSERT INTO users (
@@ -1178,18 +1174,19 @@ impl AdminService {
                 "#,
             )
             .bind(&email)
-            .bind(plan_id_db)
-            .bind(group_id_db)
-            .bind(transfer_enable)
-            .bind(device_limit_db)
+            .bind(plan.plan_id)
+            .bind(plan.group_id)
+            .bind(plan.transfer_enable)
+            .bind(plan.device_limit)
             .bind(body.expired_at)
             .bind(Uuid::new_v4().to_string())
             .bind(random_token())
             .bind(&hash)
             .bind(now)
             .bind(now)
-            .fetch_one(&self.db)
+            .fetch_one(&mut *tx)
             .await?;
+            tx.commit().await?;
             return Ok(UserGenerateOutcome::Created { id });
         }
 
@@ -1241,6 +1238,7 @@ impl AdminService {
         prepared.sort_unstable_by_key(|(index, ..)| *index);
 
         let mut tx = self.db.begin().await?;
+        let plan = self.generate_plan(&mut tx, body.plan_id).await?;
         let mut insert = QueryBuilder::<Postgres>::new(
             r#"
             INSERT INTO users (
@@ -1251,10 +1249,10 @@ impl AdminService {
         );
         insert.push_values(&prepared, |mut row, (_, email, _, uuid, token, hash)| {
             row.push_bind(email)
-                .push_bind(plan_id_db)
-                .push_bind(group_id_db)
-                .push_bind(transfer_enable)
-                .push_bind(device_limit_db)
+                .push_bind(plan.plan_id)
+                .push_bind(plan.group_id)
+                .push_bind(plan.transfer_enable)
+                .push_bind(plan.device_limit)
                 .push_bind(expired_at)
                 .push_bind(uuid)
                 .push_bind(token)

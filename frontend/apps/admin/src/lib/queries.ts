@@ -286,7 +286,8 @@ export const useAdminUserTraffic = (
   query: Omit<admin.AdminUserTrafficQuery, 'user_id'>,
   enabled: boolean,
 ) => useQuery({ ...adminQueryOptions.userTraffic(userId, query), enabled });
-export const useConfig = (key?: string) => useQuery(adminQueryOptions.config(key));
+export const useConfig = (key?: string, refetchInterval: number | false = false) =>
+  useQuery({ ...adminQueryOptions.config(key), refetchInterval });
 export const useAdminPlans = () => useQuery(adminQueryOptions.plans());
 export const useAdminPayments = () => useQuery(adminQueryOptions.payments());
 export const usePaymentMethods = (enabled = true) =>
@@ -561,11 +562,11 @@ export function useShowNoticeMutation() {
 }
 
 /**
- * A system-config field keeps its local draft on failure and explicitly
- * refetches the authoritative config before clearing that draft on success.
- * Do not invalidate here as well, otherwise every blur would issue two config
- * refetches. Inline metadata prevents a duplicate global toast while the field
- * renders the backend error beside the control.
+ * A config section submits its complete dirty change-set in one explicit
+ * mutation, then owns the authoritative refetch/202/409 workflow. Do not also
+ * invalidate here: that would race the section's durable-draft baseline.
+ * Inline metadata prevents a duplicate global toast while the form presents
+ * the save error.
  */
 export function useSaveSystemConfigMutation() {
   return useMutation({

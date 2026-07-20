@@ -53,9 +53,11 @@ backend/rust/
   resources/rules/           embedded subscription rule templates
   crates/analytics/          typed events, PostgreSQL outbox and ClickHouse relay/schema
   crates/api/                Axum API and frontend delivery; no legacy source adapter
+  crates/api-contract/       transport DTOs and generated OpenAPI source
   crates/config/             native JSON/environment configuration
   crates/db/                 PostgreSQL-only runtime access
   crates/domain/             business rules and external integrations
+  crates/domain-model/       infrastructure-free business values and policies
   crates/provision/          mysql-import.v1 validation and fixed converter policy
   crates/lifecycle/          disposable validate/inspect/execute MySQL-import CLI
   crates/workers/            scheduler, durable work and analytics relay
@@ -78,6 +80,7 @@ Run setup, builds and tests through the repository Docker workflow:
 ```bash
 make up
 make doctor
+make api-contract-check
 make rust-check
 make rust-test
 make rust-integration
@@ -95,6 +98,11 @@ loss policy and executable importer are covered by Rust gates. No legacy Redis s
 `make native-database-audit` rejects MySQL driver/dialect use in native runtime crates and in the current
 API/worker/analytics dependency graphs. The MySQL source adapter is allowed only in the
 disposable lifecycle/provision import graph.
+
+`make api-contract-check` regenerates the committed OpenAPI 3.1 document and its TypeScript/Zod
+projections from `v2board-api-contract`, then fails on any drift. The HTTP adapter maps these wire
+DTOs to application commands/views; application and pure-domain crates may not depend on the
+transport crate. See [`rust/ARCHITECTURE.md`](rust/ARCHITECTURE.md).
 
 Do not run host Cargo commands that create `target/` in the repository. The workspace targets Rust
 1.97, Edition 2024 and Cargo resolver 3; `unsafe` is forbidden, CI denies warnings and validates the

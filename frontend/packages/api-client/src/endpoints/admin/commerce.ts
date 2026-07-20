@@ -1,7 +1,17 @@
-import type { AdminOrderRow, Plan, PlanPeriod } from '@v2board/types';
+import type {
+  AdminOrderRow,
+  AdminPlanDto,
+  AdminPlanModel,
+  InternalApiAdminPlanItem,
+  InternalApiOperationMap,
+  MoneyMajor,
+  MoneyMinor,
+  PlanPeriod,
+} from '@v2board/types';
 import type { ApiClient } from '../../client';
 import { adminListQueryParams, pageSchema, type FilterClause } from '../../dialect';
-import { decimalToCents } from '../../money';
+import { decimalToCents, moneyMinorToMajor } from '../../money';
+import { internalApiOperations, internalApiPath } from '../../generated/internal-api';
 import {
   adminOrderSchema,
   adminPaymentSchema,
@@ -10,7 +20,6 @@ import {
   createdOrderSchema,
   noContentSchema,
   paymentFormSchema,
-  planSchema,
   stringArraySchema,
 } from '../../contracts';
 import {
@@ -30,7 +39,7 @@ const PLAN_PRICE_KEYS = [
   'three_year_price',
   'onetime_price',
   'reset_price',
-] as const satisfies readonly (keyof Plan)[];
+] as const satisfies readonly PlanPeriod[];
 
 const PLAN_SAVE_KEYS = [
   'id',
@@ -46,65 +55,122 @@ const PLAN_SAVE_KEYS = [
   'force_update',
 ] as const;
 
-type AdminPlanField = Exclude<(typeof PLAN_SAVE_KEYS)[number], 'force_update'>;
+type GeneratedPlanCreate = InternalApiOperationMap['adminPlanCreate']['request'];
+type GeneratedPlanPatch = InternalApiOperationMap['adminPlanPatch']['request'];
+type BrandedPlanPrices<T> = Omit<T, PlanPeriod> & Partial<Record<PlanPeriod, MoneyMinor | null>>;
+type AdminPlanCreateRequest = BrandedPlanPrices<GeneratedPlanCreate>;
+type AdminPlanPatchRequest = BrandedPlanPrices<Omit<GeneratedPlanPatch, 'show' | 'renew'>>;
 
-export type AdminPlanSavePayload = {
-  [K in AdminPlanField]?: Plan[K] | string | null;
-} & {
-  force_update?: boolean;
-};
+/**
+ * Admin plan write DTO. It is intentionally a wire type: prices are branded
+ * minor units and numeric fields are JSON numbers. Form strings and the
+ * major-unit {@link AdminPlanModel} must be mapped before reaching this API.
+ */
+export type AdminPlanSaveRequest =
+  | (AdminPlanCreateRequest & { id?: undefined; force_update?: never })
+  | (AdminPlanPatchRequest & { id: number });
 
-function normalizePlan(plan: Plan): Plan {
-  const next = { ...plan };
-  for (const key of PLAN_PRICE_KEYS) {
-    const value = next[key];
-    next[key] = value !== null ? ((Number(value) / 100) as Plan[typeof key]) : null;
+function toAdminPlanDto(plan: InternalApiAdminPlanItem): AdminPlanDto {
+  const resetTrafficMethod = plan.reset_traffic_method;
+  if (resetTrafficMethod !== null && ![0, 1, 2, 3, 4].includes(resetTrafficMethod)) {
+    throw new TypeError(`Unsupported reset traffic method: ${resetTrafficMethod}`);
   }
-  return next;
+  const toMinor = (value: number | null): MoneyMinor | null => value as MoneyMinor | null;
+  return {
+    ...plan,
+    reset_traffic_method: resetTrafficMethod as AdminPlanDto['reset_traffic_method'],
+    month_price: toMinor(plan.month_price),
+    quarter_price: toMinor(plan.quarter_price),
+    half_year_price: toMinor(plan.half_year_price),
+    year_price: toMinor(plan.year_price),
+    two_year_price: toMinor(plan.two_year_price),
+    three_year_price: toMinor(plan.three_year_price),
+    onetime_price: toMinor(plan.onetime_price),
+    reset_price: toMinor(plan.reset_price),
+  };
 }
 
-/** GET /{secure_path}/plans — dialect v2 bare array (§6.2, W11). Prices ride
- * as cents; `normalizePlan` divides them to yuan for the editor. */
-export const fetchPlans = async (client: ApiClient, config?: QueryRequestConfig) =>
-  (
-    await client.request({
-      url: client.resolveAdminPath('/plans'),
-      method: 'GET',
-      dialect: 'v2',
-      responseSchema: arraySchema(planSchema),
-      ...config,
-    })
-  ).map(normalizePlan);
+function toAdminPlanModel(plan: AdminPlanDto): AdminPlanModel {
+  const toMajor = (value: MoneyMinor | null): MoneyMajor | null =>
+    value === null ? null : moneyMinorToMajor(value);
+  return {
+    ...plan,
+    month_price: toMajor(plan.month_price),
+    quarter_price: toMajor(plan.quarter_price),
+    half_year_price: toMajor(plan.half_year_price),
+    year_price: toMajor(plan.year_price),
+    two_year_price: toMajor(plan.two_year_price),
+    three_year_price: toMajor(plan.three_year_price),
+    onetime_price: toMajor(plan.onetime_price),
+    reset_price: toMajor(plan.reset_price),
+  };
+}
+
+/**
+ * GET /{secure_path}/plans — dialect v2 bare wire DTO array (§6.2, W11),
+ * mapped once at the API boundary to the admin major-unit domain model.
+ */
+export const fetchPlans = async (
+  client: ApiClient,
+  config?: QueryRequestConfig,
+): Promise<AdminPlanModel[]> => {
+  const operation = internalApiOperations.adminPlansList;
+  const plans = await client.request({
+    url: client.resolveAdminPath(internalApiPath(operation.adminPath)),
+    method: operation.method,
+    dialect: 'v2',
+    expectedStatus: operation.successStatus,
+    responseSchema: operation.responseSchema,
+    ...config,
+  });
+  return plans.map(toAdminPlanDto).map(toAdminPlanModel);
+};
 
 /**
  * POST /{secure_path}/plans (201 `{id}`) / PATCH `plans/{id}` (204) — the
- * dialect-v2 upsert split (§6.2, W11). Prices serialize to cents; on PATCH an
- * empty price is a §4.4 clear (null). `force_update` is an edit-only body flag
+ * dialect-v2 upsert split (§6.2, W11). Prices ride as integer minor units; on
+ * PATCH an empty price is a §4.4 clear (null). The caller supplies an explicit
+ * wire DTO; no form-value or currency-unit coercion happens in the transport layer.
+ * `force_update` is an edit-only body flag
  * — the create body denies it (`deny_unknown_fields`; there are no subscribers
  * to force yet).
  */
-export const savePlan = (client: ApiClient, { id, force_update, ...data }: AdminPlanSavePayload) =>
-  id === undefined
-    ? client.request({
-        url: client.resolveAdminPath('/plans'),
-        method: 'POST',
-        dialect: 'v2',
-        data: serializePlanBody(data),
-        responseSchema: createdIdSchema,
-      })
-    : client.request({
-        url: client.resolveAdminPath(`/plans/${id}`),
-        method: 'PATCH',
-        dialect: 'v2',
-        data: {
-          ...serializePlanBody(data),
-          ...(force_update === undefined ? {} : { force_update }),
-        },
-        responseSchema: noContentSchema,
-      });
+export const savePlan = (
+  client: ApiClient,
+  { id, force_update, ...data }: AdminPlanSaveRequest,
+) => {
+  if (id === undefined) {
+    if (force_update !== undefined) {
+      throw new TypeError('force_update is only valid when editing an existing plan');
+    }
+    const operation = internalApiOperations.adminPlanCreate;
+    const request = operation.requestSchema.parse(pickPlanWriteBody(data));
+    return client.request({
+      url: client.resolveAdminPath(internalApiPath(operation.adminPath)),
+      method: operation.method,
+      dialect: 'v2',
+      data: request,
+      expectedStatus: operation.successStatus,
+      responseSchema: operation.responseSchema,
+    });
+  }
+  const operation = internalApiOperations.adminPlanPatch;
+  const request = operation.requestSchema.parse({
+    ...pickPlanWriteBody(data),
+    ...(force_update === undefined ? {} : { force_update }),
+  });
+  return client.request({
+    url: client.resolveAdminPath(internalApiPath(operation.adminPath, { id })),
+    method: operation.method,
+    dialect: 'v2',
+    data: request,
+    expectedStatus: operation.successStatus,
+    responseSchema: operation.responseSchema,
+  });
+};
 
-function serializePlanBody(
-  data: Omit<AdminPlanSavePayload, 'id' | 'force_update'>,
+function pickPlanWriteBody(
+  data: Omit<AdminPlanSaveRequest, 'id' | 'force_update'>,
 ): Record<string, unknown> {
   const next: Record<string, unknown> = {};
   for (const key of PLAN_SAVE_KEYS) {
@@ -112,45 +178,56 @@ function serializePlanBody(
     const value = data[key as keyof typeof data];
     if (value !== undefined) next[key] = value;
   }
-  for (const key of PLAN_PRICE_KEYS) {
-    const value = next[key];
-    if (value === undefined) continue;
-    if (value === null || value === '') {
-      next[key] = null;
-      continue;
-    }
-    next[key] = decimalToCents(value as string | number);
-  }
   return next;
 }
 
 /** PATCH /{secure_path}/plans/{id} `{show|renew}` — the merged legacy toggle (§6.2). */
-export const updatePlan = (client: ApiClient, id: number, key: 'show' | 'renew', value: boolean) =>
-  client.request({
-    url: client.resolveAdminPath(`/plans/${id}`),
-    method: 'PATCH',
+export const updatePlan = (
+  client: ApiClient,
+  id: number,
+  key: 'show' | 'renew',
+  value: boolean,
+) => {
+  const operation = internalApiOperations.adminPlanPatch;
+  const data = { [key]: value } satisfies GeneratedPlanPatch;
+  const request = operation.requestSchema.parse(data);
+  return client.request({
+    url: client.resolveAdminPath(internalApiPath(operation.adminPath, { id })),
+    method: operation.method,
     dialect: 'v2',
-    data: { [key]: value },
-    responseSchema: noContentSchema,
+    data: request,
+    expectedStatus: operation.successStatus,
+    responseSchema: operation.responseSchema,
   });
+};
 
-export const dropPlan = (client: ApiClient, id: number) =>
-  client.request({
-    url: client.resolveAdminPath(`/plans/${id}`),
-    method: 'DELETE',
+export const dropPlan = (client: ApiClient, id: number) => {
+  const operation = internalApiOperations.adminPlanDelete;
+  return client.request({
+    url: client.resolveAdminPath(internalApiPath(operation.adminPath, { id })),
+    method: operation.method,
     dialect: 'v2',
-    responseSchema: noContentSchema,
+    expectedStatus: operation.successStatus,
+    responseSchema: operation.responseSchema,
   });
+};
 
 /** POST /{secure_path}/plans/sort `{ids}` — `plan_ids` → `ids` (§6.2, §4.1). */
-export const sortPlans = (client: ApiClient, ids: number[]) =>
-  client.request({
-    url: client.resolveAdminPath('/plans/sort'),
-    method: 'POST',
+export const sortPlans = (client: ApiClient, ids: number[]) => {
+  const operation = internalApiOperations.adminPlansSort;
+  const data = {
+    ids,
+  } satisfies InternalApiOperationMap['adminPlansSort']['request'];
+  const request = operation.requestSchema.parse(data);
+  return client.request({
+    url: client.resolveAdminPath(internalApiPath(operation.adminPath)),
+    method: operation.method,
     dialect: 'v2',
-    data: { ids },
-    responseSchema: noContentSchema,
+    data: request,
+    expectedStatus: operation.successStatus,
+    responseSchema: operation.responseSchema,
   });
+};
 
 /** §7.1 order filter column kinds. Integer columns take JSON numbers, text/
  * timestamp columns strings; `like` values ride raw. */

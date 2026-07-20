@@ -155,8 +155,41 @@ pub(super) async fn schema_invariants(pool: &PgPool) -> Result<()> {
         .await?;
         ensure!(count == 1, "missing required column {table}.{column}");
     }
+
+    // `plan.show` and `plan.renew` are native PostgreSQL booleans. BOOLEAN
+    // already closes the value domain, so the old SMALLINT-era
+    // `chk_plan_flags` check would be redundant; retain the same production
+    // guarantee by pinning the native type, nullability, and defaults instead.
+    for (column, expected_default) in [("show", "false"), ("renew", "true")] {
+        let (data_type, is_nullable, column_default): (String, String, Option<String>) =
+            sqlx::query_as(
+                r#"
+                SELECT data_type, is_nullable, column_default
+                FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = 'plan'
+                  AND column_name = $1
+                "#,
+            )
+            .bind(column)
+            .fetch_optional(pool)
+            .await?
+            .with_context(|| format!("missing required column plan.{column}"))?;
+        ensure!(
+            data_type == "boolean",
+            "plan.{column} is not a native PostgreSQL boolean"
+        );
+        ensure!(
+            is_nullable == "NO",
+            "plan.{column} does not enforce a two-valued boolean domain"
+        );
+        ensure!(
+            column_default.as_deref() == Some(expected_default),
+            "plan.{column} does not retain its canonical {expected_default} default"
+        );
+    }
+
     for (table, constraint) in [
-        ("plan", "chk_plan_flags"),
         ("coupon", "chk_coupon_type_value"),
         ("users", "chk_user_role_flags"),
         ("users", "chk_user_traffic_nonnegative"),

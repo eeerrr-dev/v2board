@@ -10,11 +10,11 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { ErrorState } from '@/components/ui/error-state';
-import { PaginationControl } from '@/components/ui/pagination';
-import { LoadingState, SkeletonRows } from '@/components/ui/loading-state';
-import { DataTable, type DataTableColumn } from '@/components/ui/table';
+} from '@v2board/ui/dialog';
+import { ErrorState } from '@v2board/ui/error-state';
+import { PaginationControl } from '@v2board/ui/pagination';
+import { LoadingState, SkeletonRows } from '@v2board/ui/loading-state';
+import { DataTable, type DataTableColumn } from '@v2board/ui/table';
 
 function paginationLabels(t: TFunction) {
   return {

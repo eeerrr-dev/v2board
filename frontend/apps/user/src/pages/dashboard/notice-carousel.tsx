@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Notice } from '@v2board/types';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@v2board/ui/dialog';
+import { Badge } from '@v2board/ui/badge';
 import {
   Carousel,
   CarouselContent,
@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/carousel';
 import { formatBackendDate } from '@v2board/config/format';
 import { sanitizeBackendHtml } from '@/lib/sanitize-html';
-import { cn } from '@/lib/cn';
+import { cn } from '@v2board/ui/cn';
 
 interface DashboardNoticeCarouselProps {
   notices: Notice[];

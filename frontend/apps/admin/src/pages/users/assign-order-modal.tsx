@@ -5,7 +5,7 @@ import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import type { AdminUserRow } from '@v2board/types';
 import { useAssignOrderMutation } from '@/lib/queries';
-import { Button } from '@/components/ui/button';
+import { Button } from '@v2board/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -13,16 +13,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Field, FieldError, FieldLabel } from '@/components/ui/field';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+} from '@v2board/ui/dialog';
+import { Input } from '@v2board/ui/input';
+import { Field, FieldError, FieldLabel } from '@v2board/ui/field';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@v2board/ui/select';
 import { assignOrderSchema, type AssignOrderValues } from './form-schema';
 import { requestErrorMessage, type PlanOption } from './shared';
 

@@ -1,4 +1,4 @@
-use super::configuration::config_activation_response;
+use super::configuration::{ConfigPatchBody, config_activation_response};
 use super::*;
 
 #[test]
@@ -132,14 +132,59 @@ fn admin_guard_authorizes_through_the_rbac_namespace_gate() {
 }
 
 #[test]
-fn config_activation_splits_204_full_activation_from_202_pending() {
+fn config_patch_body_requires_and_separates_the_client_revision() {
+    let body = serde_json::from_value::<ConfigPatchBody>(serde_json::json!({
+        "expected_revision": 17,
+        "app_name": "CAS Site",
+        "force_https": true
+    }))
+    .expect("valid revisioned config patch");
+    assert_eq!(body.expected_revision, 17);
+    assert_eq!(
+        body.changes,
+        serde_json::json!({
+            "app_name": "CAS Site",
+            "force_https": true
+        })
+        .as_object()
+        .expect("changes object")
+        .clone()
+    );
+
+    assert!(
+        serde_json::from_value::<ConfigPatchBody>(serde_json::json!({
+            "app_name": "missing token"
+        }))
+        .is_err()
+    );
+    assert!(
+        serde_json::from_value::<ConfigPatchBody>(serde_json::json!({
+            "expected_revision": "17",
+            "app_name": "wrong token type"
+        }))
+        .is_err()
+    );
+}
+
+#[tokio::test]
+async fn config_activation_splits_204_full_activation_from_revisioned_202_pending() {
     // §6.1: a committed-and-activated PATCH is an empty 204; a durable
     // write this process could not activate is 202 activation-pending
     // (never an error — retrying the PATCH would 409).
-    assert_eq!(
-        config_activation_response(true).status(),
-        StatusCode::NO_CONTENT
-    );
-    let pending = config_activation_response(false);
+    let activated = config_activation_response(true, 41);
+    assert_eq!(activated.status(), StatusCode::NO_CONTENT);
+    let activated_body = axum::body::to_bytes(activated.into_body(), 1024)
+        .await
+        .expect("read activated response body");
+    assert!(activated_body.is_empty());
+
+    let pending = config_activation_response(false, 42);
     assert_eq!(pending.status(), StatusCode::ACCEPTED);
+    let pending_body = axum::body::to_bytes(pending.into_body(), 1024)
+        .await
+        .expect("read pending response body");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&pending_body).expect("decode pending response JSON"),
+        serde_json::json!({ "activation": "pending", "revision": 42 })
+    );
 }

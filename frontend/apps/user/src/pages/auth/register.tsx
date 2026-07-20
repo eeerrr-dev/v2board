@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
-import { ErrorState } from '@/components/ui/error-state';
-import { Input } from '@/components/ui/input';
+import { ErrorState } from '@v2board/ui/error-state';
+import { Input } from '@v2board/ui/input';
 import {
   AuthEmailCodeField,
   AuthEmailWithSuffixField,

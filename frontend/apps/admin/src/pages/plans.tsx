@@ -1,7 +1,7 @@
 import { useState, type ReactElement } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { admin } from '@v2board/api-client';
-import type { Plan, PlanPeriod } from '@v2board/types';
+import type { AdminPlanModel, MoneyMajor, PlanPeriod } from '@v2board/types';
 import { ArrowDown, ArrowUp, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import {
   type FieldPath,
@@ -20,29 +20,23 @@ import {
   useSortPlansMutation,
   useUpdatePlanMutation,
 } from '@/lib/queries';
-import { confirmDialog } from '@/components/ui/confirm-dialog';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { HeaderTooltip } from '@/components/ui/header-tooltip';
-import { Field, FieldError, FieldLabel } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
+import { confirmDialog } from '@v2board/ui/confirm-dialog';
+import { Badge } from '@v2board/ui/badge';
+import { Button } from '@v2board/ui/button';
+import { Card, CardContent } from '@v2board/ui/card';
+import { Checkbox } from '@v2board/ui/checkbox';
+import { HeaderTooltip } from '@v2board/ui/header-tooltip';
+import { Field, FieldError, FieldLabel } from '@v2board/ui/field';
+import { Input } from '@v2board/ui/input';
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupInput,
   InputGroupText,
 } from '@/components/ui/input-group';
-import { PageHeader, PageShell } from '@/components/ui/page';
-import { ErrorState } from '@/components/ui/error-state';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { PageHeader, PageShell } from '@v2board/ui/page';
+import { ErrorState } from '@v2board/ui/error-state';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@v2board/ui/select';
 import {
   Sheet,
   SheetContent,
@@ -51,13 +45,17 @@ import {
   SheetHeader,
   SheetTitle,
   SheetTrigger,
-} from '@/components/ui/sheet';
-import { LoadingState, SkeletonRows } from '@/components/ui/loading-state';
-import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
-import { DataTable, type DataTableColumn } from '@/components/ui/table';
-import { TooltipProvider } from '@/components/ui/tooltip';
-import { planEditorSchema, type PlanEditorValues } from './plan-form-schema';
+} from '@v2board/ui/sheet';
+import { LoadingState, SkeletonRows } from '@v2board/ui/loading-state';
+import { Switch } from '@v2board/ui/switch';
+import { Textarea } from '@v2board/ui/textarea';
+import { DataTable, type DataTableColumn } from '@v2board/ui/table';
+import { TooltipProvider } from '@v2board/ui/tooltip';
+import {
+  adminPlanFormToSaveRequest,
+  planEditorSchema,
+  type AdminPlanFormValues,
+} from './plan-form-schema';
 
 // The plan (subscription) manager is a redesigned shadcn island. The Tier-1
 // contract is the shared backend: the /plan/fetch shape, the /plan/save payload
@@ -66,7 +64,7 @@ import { planEditorSchema, type PlanEditorValues } from './plan-form-schema';
 // /plan/sort id list, /plan/drop id, and the dedicated /plan/update
 // { id, [key]: value } show/renew toggles.
 type SavePlanPayload = Parameters<typeof admin.savePlan>[1];
-type EditablePlan = PlanEditorValues;
+type EditablePlan = AdminPlanFormValues;
 
 function parseResetTrafficMethod(value: string): EditablePlan['reset_traffic_method'] {
   switch (value) {
@@ -105,7 +103,7 @@ function emptyPlan(): EditablePlan {
   };
 }
 
-function formatPrice(value: number | null) {
+function formatPrice(value: MoneyMajor | null) {
   return value !== null ? value.toFixed(2) : '-';
 }
 
@@ -202,7 +200,7 @@ function PlanEditor({
   onSave,
   children,
 }: {
-  record?: Plan;
+  record?: AdminPlanModel;
   groups: { id: number; name: string }[];
   currencySymbol?: string;
   pending: boolean;
@@ -239,7 +237,7 @@ function PlanEditor({
   };
 
   const save = form.handleSubmit((validValues) => {
-    onSave(validValues, () => setOpen(false));
+    onSave(adminPlanFormToSaveRequest(validValues), () => setOpen(false));
   });
 
   const resetValue =
@@ -441,19 +439,21 @@ function PlanEditor({
               />
             </div>
 
-            <div className="space-y-1.5">
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
-                <Checkbox
-                  checked={Boolean(submit.force_update)}
-                  onCheckedChange={(value) => change('force_update', value === true)}
-                  data-testid="plan-force-update"
-                />
-                {t(($) => $.admin.plans.force_update_label)}
-              </label>
-              <p className="text-xs text-muted-foreground">
-                {t(($) => $.admin.plans.force_update_hint)}
-              </p>
-            </div>
+            {record ? (
+              <div className="space-y-1.5">
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+                  <Checkbox
+                    checked={Boolean(submit.force_update)}
+                    onCheckedChange={(value) => change('force_update', value === true)}
+                    data-testid="plan-force-update"
+                  />
+                  {t(($) => $.admin.plans.force_update_label)}
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  {t(($) => $.admin.plans.force_update_hint)}
+                </p>
+              </div>
+            ) : null}
           </form>
         </TooltipProvider>
 
@@ -487,7 +487,7 @@ export default function PlansPage() {
   const drop = useDropPlanMutation();
   const update = useUpdatePlanMutation();
   const sort = useSortPlansMutation();
-  const [orderOverride, setOrderOverride] = useState<Plan[] | null>(null);
+  const [orderOverride, setOrderOverride] = useState<AdminPlanModel[] | null>(null);
   const order = orderOverride ?? plans.data ?? [];
   const groupData = groups.data;
   const groupsReady = !groups.isError && groupData !== undefined;
@@ -519,7 +519,7 @@ export default function PlansPage() {
     );
   };
 
-  const removePlan = async (record: Plan) => {
+  const removePlan = async (record: AdminPlanModel) => {
     const confirmed = await confirmDialog({
       title: t(($) => $.admin.plans.delete_confirm_title),
       description: t(($) => $.admin.plans.delete_confirm_description),
@@ -548,7 +548,7 @@ export default function PlansPage() {
     { key: 'reset_price', label: t(($) => $.admin.plans.col_price_reset) },
   ];
 
-  const columns: DataTableColumn<Plan>[] = [
+  const columns: DataTableColumn<AdminPlanModel>[] = [
     {
       id: 'sort',
       meta: { align: 'center' },
@@ -633,7 +633,7 @@ export default function PlansPage() {
       header: () => <span>{t(($) => $.admin.plans.device_limit_label)}</span>,
       cell: ({ row }) => (row.original.device_limit !== null ? row.original.device_limit : '-'),
     },
-    ...priceColumns.map<DataTableColumn<Plan>>((field) => ({
+    ...priceColumns.map<DataTableColumn<AdminPlanModel>>((field) => ({
       id: field.key,
       meta: { className: 'tabular-nums text-muted-foreground' },
       header: () => <span>{field.label}</span>,

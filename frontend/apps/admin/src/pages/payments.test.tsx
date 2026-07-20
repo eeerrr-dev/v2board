@@ -129,7 +129,7 @@ vi.mock('@/lib/queries', () => ({
   useSortPaymentMutation: () => ({ mutate: mocks.sortMutate }),
 }));
 
-vi.mock('@/components/ui/confirm-dialog', () => ({ confirmDialog: mocks.confirm }));
+vi.mock('@v2board/ui/confirm-dialog', () => ({ confirmDialog: mocks.confirm }));
 
 function setDefinition(
   payment: string,

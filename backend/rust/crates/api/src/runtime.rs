@@ -17,6 +17,7 @@ use serde_json::json;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 use uuid::Uuid;
 use v2board_analytics::{AnalyticsPressureState, analytics_admission_snapshot};
+use v2board_compat::ApiError;
 use v2board_config::{AppConfig, RedisKeyspace};
 use v2board_db::{DbPool, migrations_current};
 use v2board_domain::{
@@ -272,14 +273,21 @@ impl AppState {
     /// If the ACK connection fails after commit, the active ArcSwap snapshot is
     /// retained (it matches PostgreSQL), readiness is degraded, and the normal
     /// poller retries only that pending acknowledgement until it succeeds. The
-    /// return value reports only whether the PostgreSQL-active revision entered
+    /// `Ok` reports only whether the PostgreSQL-active revision entered
     /// ArcSwap; a failed acknowledgement does not turn an applied revision into
-    /// an activation failure.
-    pub(crate) async fn activate_operator_config(&self, config: AppConfig) -> bool {
+    /// an activation failure. A malformed committed snapshot without a positive
+    /// revision is a typed internal error, never a process panic.
+    pub(crate) async fn activate_operator_config(
+        &self,
+        config: AppConfig,
+    ) -> Result<bool, ApiError> {
         let _guard = self.config_reload.lock().await;
         let incoming_revision = config
             .operator_revision()
-            .expect("committed operator config has a revision");
+            .filter(|revision| *revision > 0)
+            .ok_or_else(|| {
+                ApiError::internal("committed operator configuration revision is missing")
+            })?;
         let current = self.config_snapshot();
         let authority =
             match operator_config::load_active(&self.db, self.installation_id, &current.app_key)
@@ -290,7 +298,7 @@ impl AppState {
                     self.operator_authority_healthy
                         .store(false, Ordering::Release);
                     tracing::error!("operator configuration authority disappeared after save");
-                    return false;
+                    return Ok(false);
                 }
                 Err(error) => {
                     self.operator_authority_healthy
@@ -314,7 +322,7 @@ impl AppState {
                         ?error,
                         "failed to authenticate active operator configuration"
                     );
-                    return false;
+                    return Ok(false);
                 }
             };
         let active_revision = authority.revision;
@@ -332,7 +340,7 @@ impl AppState {
                     active_revision,
                     "database operator revision moved backwards"
                 );
-                return false;
+                return Ok(false);
             }
         };
         let target = match source {
@@ -364,13 +372,13 @@ impl AppState {
                             active_revision,
                             "rejected superseding operator configuration"
                         );
-                        return false;
+                        return Ok(false);
                     }
                     Err(error) => {
                         self.operator_authority_healthy
                             .store(false, Ordering::Release);
                         tracing::error!(?error, "operator validation task failed");
-                        return false;
+                        return Ok(false);
                     }
                 }
             }
@@ -383,7 +391,7 @@ impl AppState {
         if source == ActivationSource::Current
             && self.pending_operator_ack.load(Ordering::Acquire) != active_revision
         {
-            return true;
+            return Ok(true);
         }
         let acknowledgement = operator_config::acknowledge(
             &self.db,
@@ -394,11 +402,11 @@ impl AppState {
             None,
         )
         .await;
-        finish_applied_operator_activation(
+        Ok(finish_applied_operator_activation(
             &self.pending_operator_ack,
             active_revision,
             acknowledgement,
-        )
+        ))
     }
 
     pub(crate) fn spawn_config_reloader(&self) -> tokio::task::JoinHandle<()> {

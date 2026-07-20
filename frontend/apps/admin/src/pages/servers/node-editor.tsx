@@ -4,10 +4,10 @@ import { Controller, useForm, useFormState, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { ExternalLink, Loader2 } from 'lucide-react';
 import type { admin } from '@v2board/api-client';
-import { Button } from '@/components/ui/button';
-import { Field, FieldError, FieldLabel } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Button } from '@v2board/ui/button';
+import { Field, FieldError, FieldLabel } from '@v2board/ui/field';
+import { Input } from '@v2board/ui/input';
+import { Label } from '@v2board/ui/label';
 import {
   Sheet,
   SheetContent,
@@ -15,9 +15,9 @@ import {
   SheetFooter,
   SheetHeader,
   SheetTitle,
-} from '@/components/ui/sheet';
+} from '@v2board/ui/sheet';
 import { TagsInput } from '@/components/ui/tags-input';
-import { Textarea } from '@/components/ui/textarea';
+import { Textarea } from '@v2board/ui/textarea';
 import { useSaveServerMutation } from '@/lib/queries';
 import {
   ENCRYPTION_SETTINGS_DEFAULTS,

@@ -156,7 +156,7 @@ describe('parity config audit helpers', () => {
         viewportCount: 2,
       }),
     ).toBe(
-      'Parity config audit OK: 240 parity scenarios and 159 interactions across 17 spec groups and 2 viewports, Makefile INTERACTION_PARITY_SCENARIOS mirrors the interaction modules, and App.tsx route definitions cover 16 user routes plus 19 admin routes. The dialect route map carries 155 well-formed two-world rows (incl. the §6.5 admin ticket rows). UI sync covers 31 shared primitives, 2 shared stylesheets, and 6 explicit app-only primitives.',
+      'Parity config audit OK: 240 parity scenarios and 159 interactions across 17 spec groups and 2 viewports, Makefile INTERACTION_PARITY_SCENARIOS mirrors the interaction modules, and App.tsx route definitions cover 16 user routes plus 19 admin routes. The dialect route map carries 155 well-formed two-world rows (incl. the §6.5 admin ticket rows). Source-only exceptions and useful-result assertions are fail-closed. UI sync covers 31 shared primitives, 2 shared stylesheets, and 6 explicit app-only primitives.',
     );
   });
 });

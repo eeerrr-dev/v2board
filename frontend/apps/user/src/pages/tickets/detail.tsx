@@ -3,15 +3,15 @@ import { useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { Send } from 'lucide-react';
 import { getErrorPresentation } from '@v2board/api-client';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { ErrorState } from '@/components/ui/error-state';
-import { Input } from '@/components/ui/input';
-import { cn } from '@/lib/cn';
+import { Badge } from '@v2board/ui/badge';
+import { Button } from '@v2board/ui/button';
+import { ErrorState } from '@v2board/ui/error-state';
+import { Input } from '@v2board/ui/input';
+import { cn } from '@v2board/ui/cn';
 import { formatBackendDateMinuteSlash } from '@v2board/config/format';
 import { toast } from '@/lib/toast';
 import { useReplyTicketMutation, useTicket } from '@/lib/queries';
-import { translateRuntimeMessage } from '@/lib/translate-runtime-message';
+import { translateRuntimeMessage } from '@v2board/ui/translate-runtime-message';
 
 export default function TicketDetailPage() {
   const { ticket_id } = useParams();

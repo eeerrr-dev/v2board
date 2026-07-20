@@ -11,13 +11,14 @@ use sqlx::{
     AssertSqlSafe, Column, MySqlConnection, PgPool, Row, SqlSafeStr, TypeInfo, ValueRef,
     mysql::MySqlRow,
 };
+use v2board_domain_model::PlanPricePeriod;
 use v2board_provision::{
     mysql_import_converter::{
         CanonicalJson, CanonicalRow, CanonicalRowsHasher, CanonicalValue, DERIVED_MAPPINGS,
-        LegacyGiftcardRedemptionRow, MysqlImportRowDisposition, SOURCE_ID_LOWER_BOUND, SourceRow,
-        SourceValue, TABLE_MAPPINGS, TableMapping, copied_table_mappings, derived_target_copy_sql,
-        expand_giftcard_redemptions, source_stream_sql, target_columns_in_order, target_copy_sql,
-        transform_mysql_import_row,
+        DerivedMapping, DerivedMappingKind, LegacyGiftcardRedemptionRow, MysqlImportRowDisposition,
+        SOURCE_ID_LOWER_BOUND, SourceRow, SourceValue, TABLE_MAPPINGS, TableMapping,
+        copied_table_mappings, derived_target_copy_sql, expand_giftcard_redemptions,
+        source_stream_sql, target_columns_in_order, target_copy_sql, transform_mysql_import_row,
     },
     mysql_import_policy::is_legacy_stripe_payment_driver,
 };
@@ -36,20 +37,27 @@ pub(crate) async fn copy_business_data(
 ) -> anyhow::Result<Vec<ImportedTableReport>> {
     let mut known_payment_ids = BTreeSet::new();
     let mut stripe_payment_ids = BTreeSet::new();
-    let mut reports = Vec::with_capacity(TABLE_MAPPINGS.len() + 1);
-    let mut giftcard_redemptions = None;
+    let mut reports = Vec::with_capacity(TABLE_MAPPINGS.len() + DERIVED_MAPPINGS.len());
     for mapping in copied_table_mappings() {
-        if mapping.source == "v2_giftcard" {
-            let (giftcards, redemptions) = copy_giftcards_and_redemptions(
+        // `audit_registry` proves that at most one derived COPY stream is
+        // owned by a source table, so this lookup cannot silently skip a
+        // second derived target while preserving the one-SELECT rule.
+        if let Some(derived) = DERIVED_MAPPINGS
+            .iter()
+            .find(|derived| derived.source_tables.first() == Some(&mapping.source))
+        {
+            let (base, derived) = copy_base_and_derived(
                 &mut *source,
                 target,
                 mapping,
-                &known_payment_ids,
-                &stripe_payment_ids,
+                derived,
+                app_key,
+                &mut known_payment_ids,
+                &mut stripe_payment_ids,
             )
             .await?;
-            reports.push(giftcards);
-            giftcard_redemptions = Some(redemptions);
+            reports.push(base);
+            reports.push(derived);
         } else {
             reports.push(
                 copy_base_table(
@@ -64,9 +72,13 @@ pub(crate) async fn copy_business_data(
             );
         }
     }
-    reports.push(giftcard_redemptions.ok_or_else(|| {
-        anyhow::anyhow!("converter registry omitted the gift-card source mapping")
-    })?);
+    for derived in DERIVED_MAPPINGS {
+        anyhow::ensure!(
+            reports.iter().any(|report| report.target == derived.target),
+            "converter registry did not execute derived target {}",
+            derived.target
+        );
+    }
     Ok(reports)
 }
 
@@ -395,6 +407,13 @@ fn canonical_copy_text(
 ) -> anyhow::Result<Vec<u8>> {
     let bytes = match value {
         CanonicalValue::Null => unreachable!("NULL has dedicated COPY framing"),
+        CanonicalValue::Bool(value) => {
+            if *value {
+                b"true".to_vec()
+            } else {
+                b"false".to_vec()
+            }
+        }
         CanonicalValue::I64(value) => value.to_string().into_bytes(),
         CanonicalValue::U64(value) => i64::try_from(*value)
             .with_context(|| format!("{table}.{column} exceeds PostgreSQL BIGINT"))?
@@ -447,21 +466,21 @@ fn report_copy_progress(table: &str, rows: u64, bytes: u64, started_at: Instant)
     );
 }
 
-async fn copy_giftcards_and_redemptions(
+async fn copy_base_and_derived(
     source: &mut MySqlConnection,
     target: &PgPool,
     mapping: &TableMapping,
-    known_payment_ids: &BTreeSet<i32>,
-    stripe_payment_ids: &BTreeSet<i32>,
+    derived: &DerivedMapping,
+    app_key: &str,
+    known_payment_ids: &mut BTreeSet<i32>,
+    stripe_payment_ids: &mut BTreeSet<i32>,
 ) -> anyhow::Result<(ImportedTableReport, ImportedTableReport)> {
     anyhow::ensure!(
-        mapping.source == "v2_giftcard",
-        "gift-card COPY received source {}",
-        mapping.source
+        derived.source_tables.first() == Some(&mapping.source),
+        "derived COPY {} is not owned by source {}",
+        derived.target,
+        mapping.source,
     );
-    let derived = DERIVED_MAPPINGS
-        .first()
-        .ok_or_else(|| anyhow::anyhow!("converter registry omitted gift-card redemptions"))?;
     let columns = target_columns_in_order(mapping);
     let base_copy_sql = target_copy_sql(mapping)?;
     let derived_copy_sql = derived_target_copy_sql(derived)?;
@@ -511,19 +530,25 @@ async fn copy_giftcards_and_redemptions(
             previous_id = next_source_id(mapping, previous_id, &source_row)?;
             source_rows = source_rows
                 .checked_add(1)
-                .ok_or_else(|| anyhow::anyhow!("gift-card source row count overflow"))?;
+                .ok_or_else(|| anyhow::anyhow!("{} source row count overflow", mapping.source))?;
 
-            let base_row = match transform_mysql_import_row(
+            index_legacy_payment(mapping, &source_row, known_payment_ids, stripe_payment_ids)?;
+
+            let mut base_row = match transform_mysql_import_row(
                 mapping,
                 &source_row,
-                known_payment_ids,
-                stripe_payment_ids,
+                &*known_payment_ids,
+                &*stripe_payment_ids,
             )? {
                 MysqlImportRowDisposition::Retain(row) => row,
                 MysqlImportRowDisposition::Discard => {
-                    anyhow::bail!("gift-card base mapping unexpectedly discarded a row")
+                    anyhow::bail!(
+                        "derived source {} unexpectedly discarded its base row",
+                        mapping.source
+                    )
                 }
             };
+            encrypt_retained_payment_config(mapping, app_key, &mut base_row)?;
             let encoded = encode_copy_row(mapping.target, &columns, &base_row)?;
             base_retained.update_row(&base_row)?;
             if !base_buffer.is_empty()
@@ -531,29 +556,24 @@ async fn copy_giftcards_and_redemptions(
             {
                 base_bytes_sent = base_bytes_sent
                     .checked_add(base_buffer.len() as u64)
-                    .ok_or_else(|| anyhow::anyhow!("gift-card COPY byte count overflow"))?;
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("{} COPY byte count overflow", mapping.target)
+                    })?;
                 base_copy.send(std::mem::take(&mut base_buffer)).await?;
                 base_buffer = Vec::with_capacity(COPY_SEND_BUFFER_BYTES);
             }
             if encoded.len() > COPY_SEND_BUFFER_BYTES {
                 base_bytes_sent = base_bytes_sent
                     .checked_add(encoded.len() as u64)
-                    .ok_or_else(|| anyhow::anyhow!("gift-card COPY byte count overflow"))?;
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("{} COPY byte count overflow", mapping.target)
+                    })?;
                 base_copy.send(encoded).await?;
             } else {
                 base_buffer.extend_from_slice(&encoded);
             }
 
-            let giftcard_id = match source_row.get("id") {
-                Some(SourceValue::I64(value)) => i32::try_from(*value)?,
-                Some(SourceValue::U64(value)) => i32::try_from(*value)?,
-                _ => anyhow::bail!("gift-card source row has no integer id"),
-            };
-            let used_user_ids = source_row
-                .get("used_user_ids")
-                .ok_or_else(|| anyhow::anyhow!("gift-card source row lacks used_user_ids"))?;
-            for redemption in expand_giftcard_redemptions(giftcard_id, used_user_ids)? {
-                let row = giftcard_redemption_canonical(&redemption);
+            for row in derived_rows_for_source(derived, &source_row)? {
                 let encoded = encode_copy_row(derived.target, derived.target_columns, &row)?;
                 derived_retained.update_row(&row)?;
                 if !derived_buffer.is_empty()
@@ -561,7 +581,9 @@ async fn copy_giftcards_and_redemptions(
                 {
                     derived_bytes_sent = derived_bytes_sent
                         .checked_add(derived_buffer.len() as u64)
-                        .ok_or_else(|| anyhow::anyhow!("redemption COPY byte count overflow"))?;
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("{} COPY byte count overflow", derived.target)
+                        })?;
                     derived_copy
                         .send(std::mem::take(&mut derived_buffer))
                         .await?;
@@ -570,7 +592,9 @@ async fn copy_giftcards_and_redemptions(
                 if encoded.len() > COPY_SEND_BUFFER_BYTES {
                     derived_bytes_sent = derived_bytes_sent
                         .checked_add(encoded.len() as u64)
-                        .ok_or_else(|| anyhow::anyhow!("redemption COPY byte count overflow"))?;
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("{} COPY byte count overflow", derived.target)
+                        })?;
                     derived_copy.send(encoded).await?;
                 } else {
                     derived_buffer.extend_from_slice(&encoded);
@@ -585,13 +609,13 @@ async fn copy_giftcards_and_redemptions(
         if !base_buffer.is_empty() {
             base_bytes_sent = base_bytes_sent
                 .checked_add(base_buffer.len() as u64)
-                .ok_or_else(|| anyhow::anyhow!("gift-card COPY byte count overflow"))?;
+                .ok_or_else(|| anyhow::anyhow!("{} COPY byte count overflow", mapping.target))?;
             base_copy.send(std::mem::take(&mut base_buffer)).await?;
         }
         if !derived_buffer.is_empty() {
             derived_bytes_sent = derived_bytes_sent
                 .checked_add(derived_buffer.len() as u64)
-                .ok_or_else(|| anyhow::anyhow!("redemption COPY byte count overflow"))?;
+                .ok_or_else(|| anyhow::anyhow!("{} COPY byte count overflow", derived.target))?;
             derived_copy
                 .send(std::mem::take(&mut derived_buffer))
                 .await?;
@@ -604,7 +628,10 @@ async fn copy_giftcards_and_redemptions(
         let _ = derived_copy
             .abort("v2board import COPY stream failed")
             .await;
-        return Err(error.context("COPY v2_giftcard -> gift_card and gift_card_redemption"));
+        return Err(error.context(format!(
+            "COPY {} -> {} and {}",
+            mapping.source, mapping.target, derived.target
+        )));
     }
     let (base_retained_rows, base_retained_sha256) = base_retained.finish();
     let (derived_retained_rows, derived_retained_sha256) = derived_retained.finish();
@@ -614,11 +641,13 @@ async fn copy_giftcards_and_redemptions(
     let derived_copied_rows = derived_copied_rows?;
     anyhow::ensure!(
         base_copied_rows == base_retained_rows,
-        "gift-card COPY row count mismatch: expected {base_retained_rows}, observed {base_copied_rows}"
+        "{} COPY row count mismatch: expected {base_retained_rows}, observed {base_copied_rows}",
+        mapping.target,
     );
     anyhow::ensure!(
         derived_copied_rows == derived_retained_rows,
-        "gift-card redemption COPY row count mismatch: expected {derived_retained_rows}, observed {derived_copied_rows}"
+        "{} COPY row count mismatch: expected {derived_retained_rows}, observed {derived_copied_rows}",
+        derived.target,
     );
     report_copy_progress(mapping.target, source_rows, base_bytes_sent, started_at);
     report_copy_progress(
@@ -637,7 +666,7 @@ async fn copy_giftcards_and_redemptions(
             retained_sha256: base_retained_sha256,
         },
         ImportedTableReport {
-            source: "v2_giftcard.used_user_ids".to_string(),
+            source: derived_source_label(derived).to_string(),
             target: derived.target.to_string(),
             source_rows,
             retained_rows: derived_retained_rows,
@@ -645,6 +674,106 @@ async fn copy_giftcards_and_redemptions(
             retained_sha256: derived_retained_sha256,
         },
     ))
+}
+
+fn derived_rows_for_source(
+    mapping: &DerivedMapping,
+    source: &SourceRow,
+) -> anyhow::Result<Vec<CanonicalRow>> {
+    match mapping.kind {
+        DerivedMappingKind::PlanPrices => {
+            let plan_id = required_source_i32(source, "id", "v2_plan")?;
+            let mut rows = Vec::with_capacity(8);
+            for period in PlanPricePeriod::ALL {
+                let source_column = legacy_plan_price_column(period);
+                let Some(amount_minor) = optional_source_i32(source, source_column, "v2_plan")?
+                else {
+                    continue;
+                };
+                rows.push(CanonicalRow::from([
+                    (
+                        "plan_id".to_string(),
+                        CanonicalValue::I64(i64::from(plan_id)),
+                    ),
+                    (
+                        "period".to_string(),
+                        CanonicalValue::Text(native_plan_price_period(period).to_string()),
+                    ),
+                    (
+                        "amount_minor".to_string(),
+                        CanonicalValue::I64(i64::from(amount_minor)),
+                    ),
+                ]));
+            }
+            Ok(rows)
+        }
+        DerivedMappingKind::GiftcardRedemptions => {
+            let giftcard_id = required_source_i32(source, "id", "v2_giftcard")?;
+            let used_user_ids = source
+                .get("used_user_ids")
+                .ok_or_else(|| anyhow::anyhow!("v2_giftcard source row lacks used_user_ids"))?;
+            expand_giftcard_redemptions(giftcard_id, used_user_ids)?
+                .into_iter()
+                .map(|redemption| Ok(giftcard_redemption_canonical(&redemption)))
+                .collect()
+        }
+    }
+}
+
+fn legacy_plan_price_column(period: PlanPricePeriod) -> &'static str {
+    match period {
+        PlanPricePeriod::Month => "month_price",
+        PlanPricePeriod::Quarter => "quarter_price",
+        PlanPricePeriod::HalfYear => "half_year_price",
+        PlanPricePeriod::Year => "year_price",
+        PlanPricePeriod::TwoYear => "two_year_price",
+        PlanPricePeriod::ThreeYear => "three_year_price",
+        PlanPricePeriod::OneTime => "onetime_price",
+        PlanPricePeriod::Reset => "reset_price",
+    }
+}
+
+fn native_plan_price_period(period: PlanPricePeriod) -> &'static str {
+    match period {
+        PlanPricePeriod::Month => "month",
+        PlanPricePeriod::Quarter => "quarter",
+        PlanPricePeriod::HalfYear => "half_year",
+        PlanPricePeriod::Year => "year",
+        PlanPricePeriod::TwoYear => "two_year",
+        PlanPricePeriod::ThreeYear => "three_year",
+        PlanPricePeriod::OneTime => "one_time",
+        PlanPricePeriod::Reset => "reset",
+    }
+}
+
+fn required_source_i32(source: &SourceRow, column: &str, table: &str) -> anyhow::Result<i32> {
+    optional_source_i32(source, column, table)?
+        .ok_or_else(|| anyhow::anyhow!("{table}.{column} must not be NULL"))
+}
+
+fn optional_source_i32(
+    source: &SourceRow,
+    column: &str,
+    table: &str,
+) -> anyhow::Result<Option<i32>> {
+    match source.get(column) {
+        Some(SourceValue::Null) => Ok(None),
+        Some(SourceValue::I64(value)) => i32::try_from(*value)
+            .map(Some)
+            .with_context(|| format!("{table}.{column} is outside PostgreSQL INTEGER range")),
+        Some(SourceValue::U64(value)) => i32::try_from(*value)
+            .map(Some)
+            .with_context(|| format!("{table}.{column} is outside PostgreSQL INTEGER range")),
+        Some(_) => anyhow::bail!("{table}.{column} is not an integer"),
+        None => anyhow::bail!("{table} source row lacks {column}"),
+    }
+}
+
+fn derived_source_label(mapping: &DerivedMapping) -> &'static str {
+    match mapping.kind {
+        DerivedMappingKind::PlanPrices => "v2_plan.price_columns",
+        DerivedMappingKind::GiftcardRedemptions => "v2_giftcard.used_user_ids",
+    }
 }
 
 fn giftcard_redemption_canonical(row: &LegacyGiftcardRedemptionRow) -> CanonicalRow {

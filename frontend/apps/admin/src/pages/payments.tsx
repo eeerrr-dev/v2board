@@ -14,28 +14,22 @@ import {
   useShowPaymentMutation,
   useSortPaymentMutation,
 } from '@/lib/queries';
-import { confirmDialog } from '@/components/ui/confirm-dialog';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { HeaderTooltip } from '@/components/ui/header-tooltip';
-import { Field, FieldError, FieldLabel } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
+import { confirmDialog } from '@v2board/ui/confirm-dialog';
+import { Alert, AlertDescription } from '@v2board/ui/alert';
+import { Button } from '@v2board/ui/button';
+import { Card, CardContent } from '@v2board/ui/card';
+import { HeaderTooltip } from '@v2board/ui/header-tooltip';
+import { Field, FieldError, FieldLabel } from '@v2board/ui/field';
+import { Input } from '@v2board/ui/input';
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupInput,
   InputGroupText,
 } from '@/components/ui/input-group';
-import { PageHeader, PageShell } from '@/components/ui/page';
-import { ErrorState } from '@/components/ui/error-state';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { PageHeader, PageShell } from '@v2board/ui/page';
+import { ErrorState } from '@v2board/ui/error-state';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@v2board/ui/select';
 import {
   Sheet,
   SheetContent,
@@ -43,11 +37,11 @@ import {
   SheetFooter,
   SheetHeader,
   SheetTitle,
-} from '@/components/ui/sheet';
-import { LoadingState, SkeletonFields, SkeletonRows } from '@/components/ui/loading-state';
-import { Switch } from '@/components/ui/switch';
-import { DataTable, type DataTableColumn } from '@/components/ui/table';
-import { TooltipProvider } from '@/components/ui/tooltip';
+} from '@v2board/ui/sheet';
+import { LoadingState, SkeletonFields, SkeletonRows } from '@v2board/ui/loading-state';
+import { Switch } from '@v2board/ui/switch';
+import { DataTable, type DataTableColumn } from '@v2board/ui/table';
+import { TooltipProvider } from '@v2board/ui/tooltip';
 import { paymentFormSchema, type PaymentEditorValues } from './payment-form-schema';
 
 type SavePaymentPayload = Parameters<typeof admin.savePayment>[1];

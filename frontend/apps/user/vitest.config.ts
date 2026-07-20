@@ -7,7 +7,10 @@ export default defineConfig({
   // Mirror vite.config.ts: unit tests must exercise the same React Compiler
   // output that dev and deploy builds ship, not unmemoized variants.
   plugins: [react(), babel({ presets: [reactCompilerPreset()] })],
-  resolve: { alias: { '@': path.resolve(import.meta.dirname, 'src') } },
+  resolve: {
+    alias: { '@': path.resolve(import.meta.dirname, 'src') },
+    dedupe: ['@tanstack/react-table', '@tanstack/react-virtual', 'react', 'react-dom'],
+  },
   test: {
     environment: 'happy-dom',
     globals: false,

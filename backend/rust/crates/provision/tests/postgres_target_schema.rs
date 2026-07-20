@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use sqlx::{AssertSqlSafe, Executor, SqlSafeStr};
 use v2board_provision::mysql_import_converter::{
@@ -218,6 +218,124 @@ async fn mysql_import_registry_matches_fresh_postgres_schema() {
         .unwrap_or_else(|error| panic!("inspect fixed-empty target table {table}: {error}"));
         assert!(exists, "fixed-empty target table {table} is missing");
     }
+
+    let plan_columns = sqlx::query_as::<_, (String, String)>(
+        r#"
+        SELECT column_name, data_type
+        FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'plan'
+        "#,
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("inspect normalized plan columns")
+    .into_iter()
+    .collect::<HashMap<_, _>>();
+    assert_eq!(
+        plan_columns.get("show").map(String::as_str),
+        Some("boolean")
+    );
+    assert_eq!(
+        plan_columns.get("renew").map(String::as_str),
+        Some("boolean")
+    );
+    for legacy_price_column in [
+        "month_price",
+        "quarter_price",
+        "half_year_price",
+        "year_price",
+        "two_year_price",
+        "three_year_price",
+        "onetime_price",
+        "reset_price",
+    ] {
+        assert!(
+            !plan_columns.contains_key(legacy_price_column),
+            "legacy horizontal price column plan.{legacy_price_column} returned"
+        );
+    }
+
+    sqlx::query(
+        "INSERT INTO server_group (id, name, created_at, updated_at) VALUES (1, 'schema', 1, 1)",
+    )
+    .execute(&pool)
+    .await
+    .expect("insert normalized plan group fixture");
+    for (id, transfer_enable) in [(2, -1_i64), (3, i64::from(i32::MAX) + 1)] {
+        assert_constraint_violation(
+            sqlx::query(
+                "INSERT INTO plan (id, group_id, transfer_enable, name, created_at, updated_at) \
+                 VALUES ($1, 1, $2, 'invalid-transfer', 1, 1)",
+            )
+            .bind(id)
+            .bind(transfer_enable)
+            .execute(&pool)
+            .await,
+            "chk_plan_transfer_i32_range",
+            "native plan transfer allowances stay within the nonnegative i32 GiB contract",
+        );
+    }
+    assert_constraint_violation(
+        sqlx::query(
+            "INSERT INTO plan (id, group_id, transfer_enable, device_limit, name, created_at, updated_at) \
+             VALUES (2, 1, 0, -1, 'invalid-device', 1, 1)",
+        )
+        .execute(&pool)
+        .await,
+        "chk_plan_device_limit_nonnegative",
+        "native plan device limits reject negative values",
+    );
+    assert_constraint_violation(
+        sqlx::query(
+            "INSERT INTO plan (id, group_id, transfer_enable, speed_limit, name, created_at, updated_at) \
+             VALUES (2, 1, 0, -1, 'invalid-speed', 1, 1)",
+        )
+        .execute(&pool)
+        .await,
+        "chk_plan_speed_limit_nonnegative",
+        "native plan speed limits reject negative values",
+    );
+    assert_constraint_violation(
+        sqlx::query(
+            "INSERT INTO plan (id, group_id, transfer_enable, capacity_limit, name, created_at, updated_at) \
+             VALUES (2, 1, 0, -1, 'invalid-capacity', 1, 1)",
+        )
+        .execute(&pool)
+        .await,
+        "chk_plan_capacity_limit_nonnegative",
+        "native plan capacity limits reject negative values",
+    );
+    sqlx::query(
+        "INSERT INTO plan (id, group_id, transfer_enable, name, show, renew, created_at, updated_at) \
+         VALUES (1, 1, 0, 'schema', TRUE, FALSE, 1, 1)",
+    )
+    .execute(&pool)
+    .await
+    .expect("insert normalized plan fixture");
+    sqlx::query("INSERT INTO plan_price (plan_id, period, amount_minor) VALUES (1, 'month', 100)")
+        .execute(&pool)
+        .await
+        .expect("insert normalized price fixture");
+    sqlx::query("INSERT INTO plan_price (plan_id, period, amount_minor) VALUES (1, 'year', -1)")
+        .execute(&pool)
+        .await
+        .expect("signed legacy-compatible plan price must remain representable");
+    let signed_price: i32 = sqlx::query_scalar(
+        "SELECT amount_minor FROM plan_price WHERE plan_id = 1 AND period = 'year'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("read signed normalized plan price");
+    assert_eq!(signed_price, -1);
+    sqlx::query("DELETE FROM plan WHERE id = 1")
+        .execute(&pool)
+        .await
+        .expect("delete normalized plan fixture");
+    let orphaned_prices: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM plan_price")
+        .fetch_one(&pool)
+        .await
+        .expect("count cascaded plan prices");
+    assert_eq!(orphaned_prices, 0, "plan deletion must cascade its prices");
 
     let missing_required_value = sqlx::query(
         "INSERT INTO gift_card \

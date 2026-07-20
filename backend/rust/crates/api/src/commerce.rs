@@ -79,9 +79,9 @@ impl From<PlanRow> for PlanBody {
             device_limit: row.device_limit,
             name: row.name,
             speed_limit: row.speed_limit,
-            show: row.show != 0,
+            show: row.show,
             sort: row.sort,
-            renew: row.renew != 0,
+            renew: row.renew,
             content: row.content,
             month_price: row.month_price,
             quarter_price: row.quarter_price,
@@ -327,9 +327,9 @@ pub(crate) async fn plan_detail(
         .await
         .map_err(|error| problem_from(error.into(), locale))?
         .ok_or_else(|| Problem::localized(Code::PlanNotFound, locale))?;
-    let hidden_plan = plan.show == 0;
+    let hidden_plan = !plan.show;
     let unavailable_hidden_plan =
-        hidden_plan && (plan.renew == 0 || subscribe.plan_id != Some(plan.id));
+        hidden_plan && (!plan.renew || subscribe.plan_id != Some(plan.id));
     if unavailable_hidden_plan {
         return Err(Problem::localized(Code::PlanNotFound, locale));
     }

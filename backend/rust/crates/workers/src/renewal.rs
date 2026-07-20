@@ -1,6 +1,8 @@
 use chrono::{Months, TimeZone, Utc};
 use sqlx::{FromRow, Postgres, Transaction};
 use v2board_config::app_timezone;
+use v2board_db::plan::{RenewalPlanRow, find_renewal_plan_for_share};
+use v2board_domain_model::PlanPricePeriod;
 
 use crate::{batch::finish_item_batch, state::WorkerState, time::timestamp_after};
 
@@ -46,18 +48,6 @@ struct RenewalUserRow {
     balance: i32,
     plan_id: i32,
     expired_at: i64,
-}
-
-#[derive(Debug, Clone, FromRow)]
-struct RenewalPlanRow {
-    id: i32,
-    renew: i16,
-    month_price: Option<i32>,
-    quarter_price: Option<i32>,
-    half_year_price: Option<i32>,
-    year_price: Option<i32>,
-    two_year_price: Option<i32>,
-    three_year_price: Option<i32>,
 }
 
 pub(crate) async fn run(state: &WorkerState) -> anyhow::Result<()> {
@@ -129,20 +119,7 @@ async fn renew_user(state: &WorkerState, user_id: i64) -> anyhow::Result<()> {
         tx.commit().await?;
         return Ok(());
     };
-    let Some(plan) = sqlx::query_as::<_, RenewalPlanRow>(
-        r#"
-        SELECT id, renew, month_price, quarter_price, half_year_price, year_price,
-               two_year_price, three_year_price
-        FROM plan
-        WHERE id = $1
-        LIMIT 1
-        FOR SHARE
-        "#,
-    )
-    .bind(user.plan_id)
-    .fetch_optional(&mut *tx)
-    .await?
-    else {
+    let Some(plan) = find_renewal_plan_for_share(&mut tx, user.plan_id).await? else {
         disable_auto_renewal(&mut tx, user.id, now).await?;
         tx.commit().await?;
         return Ok(());
@@ -205,7 +182,7 @@ fn renewal_terms(
     plan: &RenewalPlanRow,
     period: &str,
 ) -> Option<RenewalTerms> {
-    if plan.renew == 0 {
+    if !plan.renew {
         return None;
     }
     let price = renewal_price(plan, period)?;
@@ -224,15 +201,7 @@ fn renewal_terms(
 /// period auto-renews at no cost rather than disabling auto-renewal. Only a period
 /// that is not a recognized recurring key yields `None` (cannot be renewed).
 fn renewal_price(plan: &RenewalPlanRow, period: &str) -> Option<i32> {
-    match period {
-        "month_price" => Some(plan.month_price.unwrap_or(0)),
-        "quarter_price" => Some(plan.quarter_price.unwrap_or(0)),
-        "half_year_price" => Some(plan.half_year_price.unwrap_or(0)),
-        "year_price" => Some(plan.year_price.unwrap_or(0)),
-        "two_year_price" => Some(plan.two_year_price.unwrap_or(0)),
-        "three_year_price" => Some(plan.three_year_price.unwrap_or(0)),
-        _ => None,
-    }
+    plan.recurring_price(plan_price_period_from_order_period(period)?)
 }
 
 async fn disable_auto_renewal(
@@ -251,15 +220,7 @@ async fn disable_auto_renewal(
 }
 
 fn add_period(timestamp: i64, period: &str) -> Option<i64> {
-    let months = match period {
-        "month_price" => 1,
-        "quarter_price" => 3,
-        "half_year_price" => 6,
-        "year_price" => 12,
-        "two_year_price" => 24,
-        "three_year_price" => 36,
-        _ => return None,
-    };
+    let months = plan_price_period_from_order_period(period)?.recurring_months()?;
     let base = if timestamp < Utc::now().timestamp() {
         Utc::now().timestamp()
     } else {
@@ -272,6 +233,20 @@ fn add_period(timestamp: i64, period: &str) -> Option<i64> {
         .map(|date| date.timestamp())
 }
 
+fn plan_price_period_from_order_period(period: &str) -> Option<PlanPricePeriod> {
+    match period {
+        "month_price" => Some(PlanPricePeriod::Month),
+        "quarter_price" => Some(PlanPricePeriod::Quarter),
+        "half_year_price" => Some(PlanPricePeriod::HalfYear),
+        "year_price" => Some(PlanPricePeriod::Year),
+        "two_year_price" => Some(PlanPricePeriod::TwoYear),
+        "three_year_price" => Some(PlanPricePeriod::ThreeYear),
+        "onetime_price" => Some(PlanPricePeriod::OneTime),
+        "reset_price" => Some(PlanPricePeriod::Reset),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -280,7 +255,7 @@ mod tests {
     fn renewal_price_treats_null_or_zero_as_free_not_disable() {
         let plan = RenewalPlanRow {
             id: 1,
-            renew: 1,
+            renew: true,
             month_price: None,      // unpriced period
             quarter_price: Some(0), // explicitly free
             half_year_price: Some(1000),
@@ -307,7 +282,7 @@ mod tests {
         };
         let plan = RenewalPlanRow {
             id: 3,
-            renew: 1,
+            renew: true,
             month_price: Some(1_000),
             quarter_price: Some(-1),
             half_year_price: None,
@@ -326,7 +301,10 @@ mod tests {
             renewal_terms(&funded, &plan, "month_price").map(|terms| terms.price),
             Some(1_000)
         );
-        let disabled = RenewalPlanRow { renew: 0, ..plan };
+        let disabled = RenewalPlanRow {
+            renew: false,
+            ..plan
+        };
         assert_eq!(renewal_terms(&funded, &disabled, "month_price"), None);
     }
 }

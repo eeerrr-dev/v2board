@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { Bell } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@v2board/ui/card';
 import { useUserInfo } from '@/lib/queries';
 import { ProfileSwitch, SectionIcon } from './profile-ui';
 import { usePreferenceToggle } from './use-preference-toggle';

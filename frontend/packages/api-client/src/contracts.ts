@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import type { AdminConfig } from '@v2board/types';
 
+export { internalApiAdminPlanItemSchema as planSchema } from './generated/internal-api';
+
 const nullableNumber = z.number().nullable();
 const nullableString = z.string().nullable();
 const binaryFlagSchema = z.union([z.literal(0), z.literal(1)]);
@@ -115,40 +117,6 @@ export const planPeriodSchema = z.enum([
   'onetime_price',
   'reset_price',
 ]);
-
-/**
- * Admin GET /{secure_path}/plans + /{secure_path}/plans/{id} (docs/api-dialect.md
- * §6.2, W11): bare rows with boolean `show`/`renew` (§4.1) and RFC 3339
- * timestamps (§4.5). Prices stay integer cents; the admin list keeps the
- * legacy sold `count`.
- */
-export const planSchema = z.looseObject({
-  id: z.number(),
-  group_id: z.number(),
-  transfer_enable: z.number(),
-  device_limit: nullableNumber,
-  speed_limit: nullableNumber,
-  reset_traffic_method: z
-    .union([z.literal(0), z.literal(1), z.literal(2), z.literal(3), z.literal(4)])
-    .nullable(),
-  name: z.string(),
-  show: z.boolean(),
-  sort: nullableNumber,
-  renew: z.boolean(),
-  content: nullableString,
-  month_price: nullableNumber,
-  quarter_price: nullableNumber,
-  half_year_price: nullableNumber,
-  year_price: nullableNumber,
-  two_year_price: nullableNumber,
-  three_year_price: nullableNumber,
-  onetime_price: nullableNumber,
-  reset_price: nullableNumber,
-  capacity_limit: nullableNumber,
-  count: z.number().optional(),
-  created_at: z.string(),
-  updated_at: z.string(),
-});
 
 /**
  * GET /user/plans and /user/plans/{id} (docs/api-dialect.md §5.5, W4): bare
@@ -887,6 +855,13 @@ const configDecimalStringSchema = z
   .trim()
   .regex(/^-?(?:\d+\.?\d*|\.\d+)$/);
 const configNullableStringSchema = z.union([z.string(), z.null()]);
+const configSafeIntegerSchema = z.number().int();
+const configNonnegativeSafeIntegerSchema = configSafeIntegerSchema.min(0);
+const configNonnegativeI32Schema = configNonnegativeSafeIntegerSchema.max(2_147_483_647);
+const configPositiveSafeIntegerSchema = configSafeIntegerSchema.positive();
+const configDurationMinutesSchema = configPositiveSafeIntegerSchema.max(365 * 24 * 60);
+const configNonnegativeNumberSchema = z.number().min(0);
+const configNullableNonnegativeNumberSchema = configNonnegativeNumberSchema.nullable();
 
 const ticketConfigSchema = z.looseObject({
   ticket_status: configTicketStatusSchema,
@@ -896,8 +871,8 @@ const depositConfigSchema = z.looseObject({
 });
 const inviteConfigSchema = z.looseObject({
   invite_force: configFlagSchema,
-  invite_commission: z.number(),
-  invite_gen_limit: z.number(),
+  invite_commission: configNonnegativeI32Schema,
+  invite_gen_limit: configNonnegativeSafeIntegerSchema,
   invite_never_expire: configFlagSchema,
   commission_first_time_enable: configFlagSchema,
   commission_auto_check_enable: configFlagSchema,
@@ -905,9 +880,9 @@ const inviteConfigSchema = z.looseObject({
   commission_withdraw_method: stringArraySchema,
   withdraw_close_enable: configFlagSchema,
   commission_distribution_enable: configFlagSchema,
-  commission_distribution_l1: nullableNumber,
-  commission_distribution_l2: nullableNumber,
-  commission_distribution_l3: nullableNumber,
+  commission_distribution_l1: configNullableNonnegativeNumberSchema,
+  commission_distribution_l2: configNullableNonnegativeNumberSchema,
+  commission_distribution_l3: configNullableNonnegativeNumberSchema,
 });
 const siteConfigSchema = z.looseObject({
   logo: configNullableStringSchema,
@@ -918,8 +893,8 @@ const siteConfigSchema = z.looseObject({
   app_url: configNullableStringSchema,
   subscribe_url: configNullableStringSchema,
   subscribe_path: configNullableStringSchema,
-  try_out_plan_id: z.number(),
-  try_out_hour: z.number(),
+  try_out_plan_id: configNonnegativeI32Schema,
+  try_out_hour: configNonnegativeNumberSchema,
   tos_url: configNullableStringSchema,
   currency: z.string(),
   currency_symbol: z.string(),
@@ -936,7 +911,7 @@ const subscribeConfigSchema = z.looseObject({
   change_order_event_id: configFlagSchema,
   show_info_to_server_enable: configFlagSchema,
   show_subscribe_method: configTicketStatusSchema,
-  show_subscribe_expire: z.number(),
+  show_subscribe_expire: configDurationMinutesSchema,
 });
 const frontendConfigSchema = z.looseObject({
   frontend_theme_color: z.enum(['default', 'darkblue', 'black', 'green']),
@@ -951,10 +926,10 @@ const frontendConfigSchema = z.looseObject({
 const serverConfigSchema = z.looseObject({
   server_api_url: configNullableStringSchema,
   server_token: configNullableStringSchema,
-  server_pull_interval: z.number(),
-  server_push_interval: z.number(),
-  server_node_report_min_traffic: z.number(),
-  server_device_online_min_traffic: z.number(),
+  server_pull_interval: configPositiveSafeIntegerSchema.max(2_147_483_647),
+  server_push_interval: configPositiveSafeIntegerSchema.max(2_147_483_647),
+  server_node_report_min_traffic: configNonnegativeI32Schema,
+  server_device_online_min_traffic: configNonnegativeI32Schema,
   device_limit_mode: configFlagSchema,
 });
 const emailConfigSchema = z.looseObject({
@@ -963,7 +938,7 @@ const emailConfigSchema = z.looseObject({
     .nullable()
     .transform((value) => value ?? 'default'),
   email_host: configNullableStringSchema,
-  email_port: nullableNumber,
+  email_port: configSafeIntegerSchema.min(1).max(65_535).nullable(),
   email_username: configNullableStringSchema,
   email_password: configNullableStringSchema,
   email_encryption: configNullableStringSchema,
@@ -986,7 +961,7 @@ const safeConfigSchema = z.looseObject({
   email_verify: configFlagSchema,
   safe_mode_enable: configFlagSchema,
   admin_mfa_force: configFlagSchema,
-  secure_path: configNullableStringSchema,
+  secure_path: z.string(),
   email_whitelist_enable: configFlagSchema,
   email_whitelist_suffix: stringArraySchema,
   email_gmail_limit_enable: configFlagSchema,
@@ -994,11 +969,11 @@ const safeConfigSchema = z.looseObject({
   recaptcha_key: configNullableStringSchema,
   recaptcha_site_key: configNullableStringSchema,
   register_limit_by_ip_enable: configFlagSchema,
-  register_limit_count: z.number(),
-  register_limit_expire: z.number(),
+  register_limit_count: configPositiveSafeIntegerSchema,
+  register_limit_expire: configDurationMinutesSchema,
   password_limit_enable: configFlagSchema,
-  password_limit_count: z.number(),
-  password_limit_expire: z.number(),
+  password_limit_count: configPositiveSafeIntegerSchema,
+  password_limit_expire: configDurationMinutesSchema,
 });
 
 /**
@@ -1006,6 +981,7 @@ const safeConfigSchema = z.looseObject({
  * Every stable field is still parsed whenever its group is present.
  */
 export const adminConfigSchema = z.looseObject({
+  revision: z.number().int().positive(),
   ticket: ticketConfigSchema.optional(),
   deposit: depositConfigSchema.optional(),
   invite: inviteConfigSchema.optional(),
@@ -1037,6 +1013,7 @@ export const testMailResultSchema = z.looseObject({
  */
 export const configActivationPendingSchema = z.looseObject({
   activation: z.literal('pending'),
+  revision: z.number().int().positive(),
 });
 
 /**

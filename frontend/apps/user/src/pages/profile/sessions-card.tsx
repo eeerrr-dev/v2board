@@ -1,12 +1,12 @@
 import { useTranslation } from 'react-i18next';
 import { MonitorSmartphone } from 'lucide-react';
 import { formatBackendDateTime } from '@v2board/config/format';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { confirmDialog } from '@/components/ui/confirm-dialog';
-import { ErrorState } from '@/components/ui/error-state';
-import { LoadingState, SkeletonRows } from '@/components/ui/loading-state';
+import { Badge } from '@v2board/ui/badge';
+import { Button } from '@v2board/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@v2board/ui/card';
+import { confirmDialog } from '@v2board/ui/confirm-dialog';
+import { ErrorState } from '@v2board/ui/error-state';
+import { LoadingState, SkeletonRows } from '@v2board/ui/loading-state';
 import {
   Table,
   TableBody,
@@ -15,7 +15,7 @@ import {
   TableHeader,
   TableRow,
   TableScroll,
-} from '@/components/ui/table';
+} from '@v2board/ui/table';
 import { useActiveSessions, useRemoveSessionMutation } from '@/lib/queries';
 import { toast } from '@/lib/toast';
 import { SectionIcon } from './profile-ui';

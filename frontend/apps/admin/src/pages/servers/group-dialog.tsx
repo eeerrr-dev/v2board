@@ -4,7 +4,7 @@ import { useForm, useFormState } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { Loader2 } from 'lucide-react';
 import type { admin } from '@v2board/api-client';
-import { Button } from '@/components/ui/button';
+import { Button } from '@v2board/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -13,9 +13,9 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog';
-import { Field, FieldError, FieldLabel } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
+} from '@v2board/ui/dialog';
+import { Field, FieldError, FieldLabel } from '@v2board/ui/field';
+import { Input } from '@v2board/ui/input';
 import { serverGroupFormSchema, type ServerGroupFormValues } from './form-schema';
 
 export function ServerGroupDialog({

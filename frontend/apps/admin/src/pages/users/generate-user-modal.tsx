@@ -5,7 +5,7 @@ import { Controller, useForm, useFormState, useWatch } from 'react-hook-form';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import type { admin } from '@v2board/api-client';
-import { Button } from '@/components/ui/button';
+import { Button } from '@v2board/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -13,16 +13,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Field, FieldError, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+} from '@v2board/ui/dialog';
+import { Input } from '@v2board/ui/input';
+import { Field, FieldError, FieldLabel, FieldLegend, FieldSet } from '@v2board/ui/field';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@v2board/ui/select';
 import { generateUserSchema, type GenerateUserValues } from './form-schema';
 import { PLAN_NONE, requestErrorMessage, type PlanOption } from './shared';
 

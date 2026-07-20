@@ -910,11 +910,6 @@ export async function fillVisibleAt(page, selector, index, value) {
   await page.locator(selector).nth(domIndex).fill(value);
 }
 
-export async function blurVisibleAt(page, selector, index) {
-  const domIndex = await visibleElementDomIndex(page, selector, index);
-  await page.locator(selector).nth(domIndex).blur();
-}
-
 export async function readDebugSnapshot(page) {
   const [title, body] = await Promise.all([
     page.title().catch((error) => `title error: ${error.message}`),

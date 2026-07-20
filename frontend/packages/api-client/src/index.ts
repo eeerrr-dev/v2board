@@ -36,7 +36,13 @@ export type {
   ProblemDetails,
   SortDir,
 } from './dialect';
-export { decimalToCents, decimalToMinorUnits, decimalToScaledInteger } from './money';
+export {
+  decimalToCents,
+  decimalToMinorUnits,
+  decimalToMoneyMinor,
+  decimalToScaledInteger,
+  moneyMinorToMajor,
+} from './money';
 export {
   getErrorPresentation,
   INLINE_MUTATION_ERROR_META,

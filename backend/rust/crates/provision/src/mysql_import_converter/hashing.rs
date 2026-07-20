@@ -211,6 +211,10 @@ fn digest_canonical_value(
 ) -> Result<(), ConverterError> {
     match value {
         CanonicalValue::Null => digest_field(digest, b"null"),
+        CanonicalValue::Bool(value) => {
+            digest_field(digest, b"boolean");
+            digest_field(digest, if *value { b"true" } else { b"false" });
+        }
         CanonicalValue::I64(value) => {
             digest_field(digest, b"integer");
             digest_field(digest, value.to_string().as_bytes());

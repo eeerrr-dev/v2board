@@ -5,13 +5,15 @@ mod mysql_source;
 mod postgres_acl_registry;
 mod postgres_grants;
 mod postgres_target;
+#[cfg(feature = "real-stack-e2e")]
+pub(crate) mod real_stack_e2e;
 mod redis_target;
 mod target_verify;
 
 #[cfg(test)]
 mod tests;
 
-pub(crate) use execute::execute;
+pub use execute::execute;
 
 #[cfg(test)]
 use {

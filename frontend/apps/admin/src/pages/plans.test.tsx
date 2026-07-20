@@ -8,8 +8,8 @@ import PlansPage from './plans';
 // replica. Legacy DOM and source byte-pins are retired; the drag handle is
 // swapped for accessible move buttons. What stays covered is the Tier-1
 // contract anchored on the shared backend: the /plan/fetch shape, the
-// /plan/save payload with every field passed through verbatim (per-period
-// prices stay raw strings — the ×100 cents scaling lives in the api-client — and
+// /plan/save wire payload (the form mapper converts decimal major-unit strings
+// to branded integer minor units before calling the API client, while
 // untouched/emptied prices stay `null`), group_id, the /plan/sort id-list
 // reorder, the /plan/drop id, and the /plan/update { id, [key]: value } toggles.
 
@@ -107,7 +107,7 @@ vi.mock('@/lib/queries', () => ({
   useSortPlansMutation: () => ({ mutate: mocks.sortMutate, isPending: false }),
 }));
 
-vi.mock('@/components/ui/confirm-dialog', () => ({ confirmDialog: mocks.confirm }));
+vi.mock('@v2board/ui/confirm-dialog', () => ({ confirmDialog: mocks.confirm }));
 
 describe('PlansPage', () => {
   beforeEach(() => {
@@ -153,12 +153,13 @@ describe('PlansPage', () => {
     expect(mocks.groupsRefetch).toHaveBeenCalledOnce();
   });
 
-  it('creates a plan passing prices through verbatim, keeping untouched prices null', async () => {
+  it('creates a plan with an explicit major-unit form to minor-unit DTO mapping', async () => {
     const user = userEvent.setup();
     render(<PlansPage />);
 
     await user.click(screen.getByTestId('plan-create'));
     const sheet = await screen.findByTestId('plan-editor');
+    expect(within(sheet).queryByTestId('plan-force-update')).not.toBeInTheDocument();
     await user.type(within(sheet).getByTestId('plan-name'), '新套餐');
     await user.type(within(sheet).getByTestId('plan-transfer-enable'), '100');
     await user.click(within(sheet).getByTestId('plan-group'));
@@ -171,10 +172,13 @@ describe('PlansPage', () => {
 
     await waitFor(() => expect(mocks.saveMutateAsync).toHaveBeenCalled());
     const payload = mocks.saveMutateAsync.mock.calls[0]![0];
-    // Page forwards the raw yuan string; the ×100 cents scaling is the
-    // api-client's job (serializePlanForSave).
-    expect(payload).toMatchObject({ name: '新套餐', month_price: '12.34' });
-    // Untouched prices stay null so the api-client leaves them null (not NaN).
+    expect(payload).toMatchObject({
+      name: '新套餐',
+      group_id: 2,
+      transfer_enable: 100,
+      month_price: 1234,
+    });
+    // Untouched prices stay null in the wire DTO (not NaN).
     expect(payload.quarter_price).toBeNull();
     expect(payload.year_price).toBeNull();
     expect(payload.onetime_price).toBeNull();
@@ -187,6 +191,7 @@ describe('PlansPage', () => {
 
     await user.click(screen.getByTestId('plan-edit-1'));
     const sheet = await screen.findByTestId('plan-editor');
+    expect(within(sheet).getByTestId('plan-force-update')).toBeInTheDocument();
     expect(within(sheet).getByTestId('plan-name')).toHaveValue('基础套餐');
     fireEvent.change(within(sheet).getByTestId('plan-price-month_price'), {
       target: { value: '' },

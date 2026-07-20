@@ -1,9 +1,8 @@
 import { Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '@/components/ui/button';
+import { Button } from '@v2board/ui/button';
 import type { FormCtx } from '../schema';
 import { Section, SelectRow, SettingRow, TextRow, WarningAlert } from '../rows';
-import { parseBackendInteger } from '../values';
 
 export function EmailSection({
   ctx,
@@ -36,7 +35,6 @@ export function EmailSection({
           title={t(($) => $.admin.config.email.port_title)}
           description={t(($) => $.admin.config.email.port_desc)}
           placeholder={t(($) => $.admin.config.input_placeholder)}
-          coerce={parseBackendInteger}
         />
         <TextRow
           ctx={ctx}
@@ -82,7 +80,7 @@ export function EmailSection({
           title={t(($) => $.admin.config.email.send_test_mail)}
           description={t(($) => $.admin.config.email.send_test_mail_desc)}
         >
-          <Button onClick={onTest} disabled={testing} data-testid="config-test-mail">
+          <Button type="button" onClick={onTest} disabled={testing} data-testid="config-test-mail">
             {testing ? (
               <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
             ) : null}

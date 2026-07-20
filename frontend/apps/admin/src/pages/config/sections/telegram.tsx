@@ -1,6 +1,6 @@
 import { Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '@/components/ui/button';
+import { Button } from '@v2board/ui/button';
 import type { FormCtx } from '../schema';
 import { Section, SettingRow, SwitchRow, TextRow } from '../rows';
 
@@ -30,7 +30,12 @@ export function TelegramSection({
           title={t(($) => $.admin.config.telegram.webhook_title)}
           description={t(($) => $.admin.config.telegram.webhook_desc)}
         >
-          <Button onClick={onWebhook} disabled={webhookPending} data-testid="config-set-webhook">
+          <Button
+            type="button"
+            onClick={onWebhook}
+            disabled={webhookPending}
+            data-testid="config-set-webhook"
+          >
             {webhookPending ? (
               <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
             ) : null}

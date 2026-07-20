@@ -31,7 +31,7 @@ import { sessionAllowsRoute } from '@/lib/permissions';
 import { adminSessionQueryOptions } from '@/lib/session-queries';
 import { useAccountMfa } from '@/lib/queries';
 import { MfaDialog } from '@/components/mfa-dialog';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent } from '@v2board/ui/card';
 import { getAdminTitle } from '@/lib/runtime-config';
 import {
   setThemePreference,
@@ -41,16 +41,16 @@ import {
 } from '@/lib/dark-mode';
 import { RouteBoundaryOutlet } from '@/components/route-error-boundary';
 import { AdminNavUser } from './admin-nav-user';
-import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
+import { Button } from '@v2board/ui/button';
+import { Spinner } from '@v2board/ui/spinner';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Separator } from '@/components/ui/separator';
+} from '@v2board/ui/dropdown-menu';
+import { Separator } from '@v2board/ui/separator';
 import {
   Sidebar,
   SidebarContent,
@@ -66,7 +66,7 @@ import {
   SidebarProvider,
   SidebarTrigger,
   useSidebar,
-} from '@/components/ui/sidebar';
+} from '@v2board/ui/sidebar';
 
 type ShellIcon = ComponentType<SVGProps<SVGSVGElement>>;
 

@@ -2,7 +2,7 @@ import { useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import { ApiError, ApiProblemError, passport } from '@v2board/api-client';
-import { Button } from '@/components/ui/button';
+import { Button } from '@v2board/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -10,9 +10,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Field, FieldLabel } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
+} from '@v2board/ui/dialog';
+import { Field, FieldLabel } from '@v2board/ui/field';
+import { Input } from '@v2board/ui/input';
 import { apiClient } from '@/lib/api';
 import { toast } from '@/lib/toast';
 import {

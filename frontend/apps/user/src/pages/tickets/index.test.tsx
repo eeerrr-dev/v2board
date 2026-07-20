@@ -3,7 +3,7 @@ import type * as ReactRouterModule from 'react-router';
 import { screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { formatBackendDateMinuteSlash } from '@v2board/config/format';
-import { VIRTUALIZE_MIN_ROWS } from '@/components/ui/table';
+import { VIRTUALIZE_MIN_ROWS } from '@v2board/ui/table';
 import { renderWithProviders } from '@/test/render';
 import { createTestTranslation } from '@/test/i18next-selector';
 import TicketsPage from './index';
@@ -112,7 +112,7 @@ vi.mock('@/lib/queries', () => ({
   }),
 }));
 
-vi.mock('@/components/ui/confirm-dialog', () => ({
+vi.mock('@v2board/ui/confirm-dialog', () => ({
   confirmDialog,
 }));
 
@@ -120,7 +120,7 @@ vi.mock('@/components/ui/confirm-dialog', () => ({
 // so the file keeps its native-select stand-in. The real trigger/content hooks
 // (`ticket-select-trigger` / `ticket-select-content`) stay covered by the
 // interaction-parity harness in a real browser.
-vi.mock('@/components/ui/select', () => ({
+vi.mock('@v2board/ui/select', () => ({
   Select: ({
     children,
     onValueChange,

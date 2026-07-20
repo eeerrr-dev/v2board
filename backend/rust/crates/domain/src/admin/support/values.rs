@@ -5,6 +5,7 @@ pub(in super::super) enum AdminSqlValue {
     TextNull,
     IntegerNull,
     Integer(i64),
+    Boolean(bool),
     Text(String),
     Json(Option<Value>),
 }
@@ -111,6 +112,9 @@ pub(in super::super) fn push_admin_sql_value(
         AdminSqlValue::Integer(value) => {
             push_admin_integer_value(separated, column, Some(*value));
         }
+        AdminSqlValue::Boolean(value) => {
+            separated.push_bind(*value);
+        }
         AdminSqlValue::Text(value) => {
             separated.push_bind(value.clone());
         }
@@ -134,6 +138,9 @@ pub(in super::super) fn push_admin_sql_bind(
         }
         AdminSqlValue::Integer(value) => {
             push_admin_integer_bind(builder, column, Some(*value));
+        }
+        AdminSqlValue::Boolean(value) => {
+            builder.push_bind(*value);
         }
         AdminSqlValue::Text(value) => {
             builder.push_bind(value.clone());

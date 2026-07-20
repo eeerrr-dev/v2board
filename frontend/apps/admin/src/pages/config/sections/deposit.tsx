@@ -1,7 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import type { FormCtx } from '../schema';
 import { Section, TextareaRow } from '../rows';
-import { splitComma } from '../values';
 
 export function DepositSection({ ctx }: { ctx: FormCtx }) {
   const { t } = useTranslation();
@@ -15,7 +14,6 @@ export function DepositSection({ ctx }: { ctx: FormCtx }) {
         description={t(($) => $.admin.config.deposit.bonus_desc)}
         placeholder={t(($) => $.admin.config.deposit.bonus_placeholder)}
         rows={2}
-        coerce={splitComma}
       />
     </Section>
   );

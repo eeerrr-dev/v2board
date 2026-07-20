@@ -1,7 +1,7 @@
 import type { FormHTMLAttributes, ReactNode } from 'react';
 import { Link, type LinkProps } from 'react-router';
-import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
-import { cn } from '@/lib/cn';
+import { Card, CardContent, CardDescription, CardHeader } from '@v2board/ui/card';
+import { cn } from '@v2board/ui/cn';
 
 interface AuthPanelProps extends Omit<
   FormHTMLAttributes<HTMLFormElement>,

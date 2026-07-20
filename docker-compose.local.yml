@@ -376,6 +376,245 @@ services:
     tmpfs:
       - /data
 
+  # Disposable black-box browser target. Unlike the ordinary local stack, the
+  # API never receives bootstrap/superuser credentials: lifecycle prepares the
+  # same restricted PostgreSQL and Redis runtime principals as an installation.
+  postgres-real-stack-e2e:
+    profiles: ["real-stack-e2e"]
+    logging: *local-logging
+    image: postgres:18.4-bookworm@sha256:d9c83446333daec3f0588cc709adb80c26090b7f9f0f7ec8d43c243385d79818
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: e2e_bootstrap
+      POSTGRES_PASSWORD: E2eBootstrapSecret-32-bytes
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=C.UTF-8 --data-checksums
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U e2e_bootstrap -d postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+    restart: "no"
+    networks:
+      - real-stack-e2e-data
+    tmpfs:
+      - /var/lib/postgresql
+
+  redis-real-stack-e2e:
+    profiles: ["real-stack-e2e"]
+    logging: *local-logging
+    image: redis:8.8.0-alpine@sha256:9d317178eceac8454a2284a9e6df2466b93c745529947f0cd42a0fa9609d7005
+    command:
+      - sh
+      - -ec
+      - |
+        cp /bootstrap/users.acl /data/users.acl
+        exec redis-server --save '' --appendonly no --maxmemory-policy noeviction --aclfile /data/users.acl
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "redis-cli",
+          "--user",
+          "import_bootstrap",
+          "--pass",
+          "RedisImportBootstrapTestSecret-32-bytes",
+          "--no-auth-warning",
+          "ping",
+        ]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    restart: "no"
+    networks:
+      - real-stack-e2e-data
+    volumes:
+      - ./backend/rust/crates/lifecycle/tests/fixtures/redis-import-target.acl:/bootstrap/users.acl:ro
+    tmpfs:
+      - /data
+
+  # Read-only browser runner. It consumes the workspace and dependencies that
+  # frontend-build prepared, but it cannot mutate the deploy tree and has no
+  # route to either the ordinary stack or the dedicated datastore network.
+  real-stack-e2e-runner:
+    profiles: ["real-stack-e2e"]
+    logging: *local-logging
+    image: v2board-frontend-dev
+    init: true
+    working_dir: /app/frontend
+    environment:
+      CI: "true"
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      NODE_OPTIONS: ${NODE_OPTIONS:---max-old-space-size=4096}
+      PLAYWRIGHT_BROWSERS_PATH: /app/frontend/.cache/ms-playwright
+    read_only: true
+    restart: "no"
+    networks:
+      - real-stack-e2e-browser
+    tmpfs:
+      - /tmp
+    volumes:
+      - frontend-workspace:/app/frontend:ro
+      - frontend-interaction-artifacts:/app/frontend/.cache/interaction-parity
+      - frontend-node_modules:/app/frontend/node_modules:ro
+      - frontend-playwright-cache:/app/frontend/.cache/ms-playwright
+
+  # Downloads the pinned Chromium build before the browser is moved onto its
+  # internal-only runtime network. It has no runtime credentials or deploy tree.
+  real-stack-e2e-browser-build:
+    profiles: ["real-stack-e2e"]
+    logging: *local-logging
+    image: v2board-frontend-dev
+    init: true
+    working_dir: /app/frontend
+    entrypoint: ["/bin/sh", "-lc"]
+    command:
+      - |
+        set -eu
+        if ! find /app/frontend/.cache/ms-playwright -path '*/chrome-linux/chrome' -type f | grep -q .; then
+          pnpm exec playwright install chromium
+        fi
+    environment:
+      CI: "true"
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      PLAYWRIGHT_BROWSERS_PATH: /app/frontend/.cache/ms-playwright
+    restart: "no"
+    networks:
+      - real-stack-e2e-build
+    tmpfs:
+      - /tmp
+    volumes:
+      - frontend-workspace:/app/frontend:ro
+      - frontend-node_modules:/app/frontend/node_modules:ro
+      - frontend-playwright-cache:/app/frontend/.cache/ms-playwright
+
+  # Networked build preparation is deliberately separated from the credentialed
+  # runtime. It can populate only Cargo dependency/target volumes, then the
+  # bootstrap and API execute offline on the internal data topology.
+  real-stack-e2e-build:
+    profiles: ["real-stack-e2e"]
+    logging: *local-logging
+    build:
+      context: .
+      dockerfile: Dockerfile.rust
+      target: development
+    image: v2board-rust-dev
+    init: true
+    working_dir: /src/backend/rust
+    # A login shell rewrites PATH on Debian and hides /usr/local/cargo/bin,
+    # even though the development image exports it. Keep the image-owned
+    # toolchain environment intact for this dependency/build-only process.
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -euo pipefail
+        cargo build --locked -p v2board-api
+        cargo build --locked -p v2board-lifecycle --features real-stack-e2e --example real_stack_e2e_bootstrap
+    environment:
+      V2BOARD_ENV: testing
+    restart: "no"
+    networks:
+      - real-stack-e2e-build
+    tmpfs:
+      - /tmp
+    volumes:
+      - ./backend/rust:/src/backend/rust:ro
+      - ./docs:/src/docs:ro
+      - ./deploy/systemd:/src/deploy/systemd:ro
+      - rust-cargo-registry:/usr/local/cargo/registry
+      - rust-cargo-git:/usr/local/cargo/git
+      - rust-target:/app/target
+
+  real-stack-e2e-bootstrap:
+    profiles: ["real-stack-e2e"]
+    logging: *local-logging
+    build:
+      context: .
+      dockerfile: Dockerfile.rust
+      target: development
+    image: v2board-rust-dev
+    init: true
+    working_dir: /src/backend/rust
+    command: /app/target/debug/examples/real_stack_e2e_bootstrap
+    environment:
+      V2BOARD_ENV: testing
+      V2BOARD_SEED_LOCAL: "1"
+      REAL_STACK_E2E_POSTGRES_BOOTSTRAP_URL: postgresql://e2e_bootstrap:E2eBootstrapSecret-32-bytes@postgres-real-stack-e2e:5432/postgres
+      REAL_STACK_E2E_POSTGRES_MIGRATION_URL: postgresql://e2e_migration:E2eMigrationSecret-32-bytes@postgres-real-stack-e2e:5432/v2board_e2e
+      REAL_STACK_E2E_POSTGRES_API_URL: postgresql://e2e_api:E2eApiRuntimeSecret-32-bytes@postgres-real-stack-e2e:5432/v2board_e2e
+      REAL_STACK_E2E_POSTGRES_WORKER_URL: postgresql://e2e_worker:E2eWorkerRuntimeSecret-32-bytes@postgres-real-stack-e2e:5432/v2board_e2e
+      REAL_STACK_E2E_REDIS_BOOTSTRAP_URL: redis://import_bootstrap:RedisImportBootstrapTestSecret-32-bytes@redis-real-stack-e2e:6379/0
+      REAL_STACK_E2E_RUNTIME_ROOT: /app/real-stack-e2e-runtime
+      REAL_STACK_E2E_APP_KEY: real-stack-e2e-app-key
+      REAL_STACK_E2E_ADMIN_PATH: admin-e2e
+    depends_on:
+      postgres-real-stack-e2e:
+        condition: service_healthy
+      redis-real-stack-e2e:
+        condition: service_healthy
+    restart: "no"
+    read_only: true
+    networks:
+      - real-stack-e2e-data
+    tmpfs:
+      - /tmp
+    volumes:
+      - rust-target:/app/target:ro
+      - real-stack-e2e-api-runtime:/app/real-stack-e2e-runtime/api
+
+  # Dependency-free, narrowly mounted credential scrubber. The Make trap runs
+  # this before and after every real-stack journey; it cannot see ordinary
+  # runtime/data, frontend, dependency, cache, or artifact volumes.
+  real-stack-e2e-runtime-clean:
+    profiles: ["real-stack-e2e"]
+    logging: *local-logging
+    image: v2board-rust-dev
+    entrypoint:
+      - /bin/sh
+      - -ec
+    command:
+      - |
+        find /app/real-stack-e2e-runtime -mindepth 1 -delete
+        test -z "$$(find /app/real-stack-e2e-runtime -mindepth 1 -print -quit)"
+    network_mode: none
+    read_only: true
+    restart: "no"
+    volumes:
+      - real-stack-e2e-api-runtime:/app/real-stack-e2e-runtime
+
+  rust-real-stack-api:
+    profiles: ["real-stack-e2e"]
+    logging: *local-logging
+    image: v2board-rust-dev
+    init: true
+    working_dir: /src/backend/rust
+    command: /app/target/debug/v2board-api
+    environment:
+      V2BOARD_CONFIG_PATH: /app/real-stack-e2e-runtime/api/config.json
+      V2BOARD_FRONTEND_DIR: /app/frontend-deploy
+      RUST_LOG: v2board_api=info,tower_http=info
+    depends_on:
+      frontend-build:
+        condition: service_completed_successfully
+      real-stack-e2e-bootstrap:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:8080/readyz"]
+      interval: 2s
+      timeout: 3s
+      start_period: 180s
+      retries: 30
+    restart: "no"
+    read_only: true
+    networks:
+      - real-stack-e2e-browser
+      - real-stack-e2e-data
+    volumes:
+      - rust-target:/app/target:ro
+      - real-stack-e2e-api-runtime:/app/real-stack-e2e-runtime/api:ro
+      - frontend-deploy:/app/frontend-deploy:ro
+    tmpfs:
+      - /tmp
+
   postgres:
     logging: *local-logging
     image: postgres:18.4-bookworm@sha256:d9c83446333daec3f0588cc709adb80c26090b7f9f0f7ec8d43c243385d79818
@@ -447,6 +686,15 @@ services:
       - "1025:1025"
       - "8025:8025"
 
+networks:
+  # Dependency downloads are isolated from every credentialed process. Runtime
+  # browser and data networks are both internal; only Rust bridges them.
+  real-stack-e2e-build:
+  real-stack-e2e-browser:
+    internal: true
+  real-stack-e2e-data:
+    internal: true
+
 volumes:
   frontend-workspace:
   frontend-deploy:
@@ -461,6 +709,7 @@ volumes:
   frontend-i18n-node_modules:
   frontend-types-node_modules:
   postgres-data:
+  real-stack-e2e-api-runtime:
   clickhouse-data:
   clickhouse-logs:
   redis-data:

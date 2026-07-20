@@ -1,16 +1,16 @@
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 import { Server } from 'lucide-react';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { ErrorState } from '@/components/ui/error-state';
-import { HeaderTooltip } from '@/components/ui/header-tooltip';
-import { PageShell } from '@/components/ui/page';
-import { LoadingState, SkeletonRows } from '@/components/ui/loading-state';
-import { StatusBadge } from '@/components/ui/status-badge';
-import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@/components/ui/table';
-import { TooltipProvider } from '@/components/ui/tooltip';
+import { Alert, AlertDescription } from '@v2board/ui/alert';
+import { Button } from '@v2board/ui/button';
+import { Card, CardContent } from '@v2board/ui/card';
+import { ErrorState } from '@v2board/ui/error-state';
+import { HeaderTooltip } from '@v2board/ui/header-tooltip';
+import { PageShell } from '@v2board/ui/page';
+import { LoadingState, SkeletonRows } from '@v2board/ui/loading-state';
+import { StatusBadge } from '@v2board/ui/status-badge';
+import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@v2board/ui/table';
+import { TooltipProvider } from '@v2board/ui/tooltip';
 import { useServers, useSubscribe } from '@/lib/queries';
 import { useTableScrollPosition } from '@/lib/use-table-scroll-position';
 

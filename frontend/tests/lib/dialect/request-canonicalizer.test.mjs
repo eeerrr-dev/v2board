@@ -52,6 +52,28 @@ test('form-encoded and JSON bodies decode to one canonical object (§13.2)', () 
   assert.deepEqual(source, oracle);
 });
 
+test('the W9 config CAS token stays source-only in cross-world semantics (§6.1)', () => {
+  const oracle = canonicalizeRequest('oracle', {
+    method: 'POST',
+    url: '/api/v1/sec/config/save',
+    postData: 'app_name=CAS+Site',
+    securePath: 'sec',
+  });
+  const source = canonicalizeRequest('source', {
+    method: 'PATCH',
+    url: '/api/v1/sec/config',
+    postData: JSON.stringify({ expected_revision: 17, app_name: 'CAS Site' }),
+    securePath: 'sec',
+  });
+
+  assert.deepEqual(source, oracle);
+  assert.deepEqual(source, {
+    routeId: 'admin.config.update',
+    params: {},
+    body: { app_name: 'CAS Site' },
+  });
+});
+
 test('the W10 legacy edit-by-generate folds onto the modern PATCH identity (§6.3)', () => {
   const oracle = canonicalizeRequest('oracle', {
     method: 'POST',

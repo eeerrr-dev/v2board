@@ -1,7 +1,7 @@
 .PHONY: up down reset sync logs ps shell doctor \
-	rust-check rust-test rust-integration rust-route-audit rust-worker-reconcile rust-target-gate contract-goldens \
+	rust-check rust-test rust-integration rust-route-audit rust-worker-reconcile rust-target-gate contract-goldens api-contract-generate api-contract-check \
 	public-bundle-audit runtime-isolation-audit native-database-audit cloudflared-config-audit native-release-audit frontend-source-audit parity-config-audit ui-sync-audit deploy-contract-audit \
-	deploy-smoke visual-smoke interaction-parity accessibility-smoke behavior-parity \
+	deploy-artifact-smoke deploy-smoke visual-smoke interaction-parity legacy-oracle-parity real-stack-e2e accessibility-smoke behavior-parity \
 	reference-oracle-check reference-oracle-up reference-oracle-down \
 	clean-frontend-runs clean-host clean-host-apply mailpit-ui admin-url
 
@@ -16,6 +16,8 @@ COMPOSE_FILE ?= docker-compose.local.yml
 COMPOSE_PROJECT ?= v2board
 DCF := $(DC) -p $(COMPOSE_PROJECT) -f $(COMPOSE_FILE)
 REFERENCE_DCF := $(DCF) --profile reference
+REAL_STACK_E2E_DCF := $(DCF) --profile real-stack-e2e
+REAL_STACK_E2E_ALLOWED_SERVICES := frontend-build postgres-real-stack-e2e redis-real-stack-e2e real-stack-e2e-build real-stack-e2e-browser-build real-stack-e2e-runner real-stack-e2e-bootstrap rust-real-stack-api real-stack-e2e-runtime-clean
 
 # ≥ 8 chars of [A-Za-z0-9_-] and no reserved-segment collision: the admin
 # path knobs are validated (docs/api-dialect.md §10.2), so the local default
@@ -34,6 +36,7 @@ RUST_WORKER_RECONCILE_STRICT ?= 1
 VISUAL_PARITY_VIEWPORTS ?= desktop mobile
 PARITY_WORKERS ?=
 INTERACTION_PARITY_ARTIFACT_DIR ?= /app/frontend/.cache/interaction-parity
+REAL_STACK_E2E_ARTIFACT_DIR ?= /app/frontend/.cache/interaction-parity/real-stack-e2e
 A11Y_SMOKE_SCENARIOS ?= a11y-user-login a11y-admin-login a11y-user-dashboard a11y-admin-users \
 	a11y-user-register a11y-user-forget a11y-user-plans a11y-user-plan-checkout a11y-user-orders a11y-user-node a11y-user-traffic a11y-user-invite a11y-user-tickets a11y-user-knowledge a11y-user-profile \
 	a11y-admin-config a11y-admin-plans a11y-admin-server-manage a11y-admin-orders a11y-admin-coupons a11y-admin-notices a11y-admin-tickets a11y-admin-audit
@@ -47,7 +50,7 @@ INTERACTION_PARITY_SCENARIOS ?= user-login-form-language user-login-language-per
 	user-knowledge-fetch-timeout user-invite-generate user-invite-transfer-modal user-invite-transfer-insufficient-balance user-invite-withdraw-modal user-invite-finance-submit-matrix user-invite-tooltips user-ticket-reply-send \
 	user-ticket-error-matrix user-tickets-fetch-timeout user-ticket-create-submit user-ticket-create-validation-failure admin-ticket-reply-send admin-tickets-reply-filter admin-tickets-fetch-timeout admin-dashboard-dark-mode-persistence \
 	admin-dashboard-avatar-dropdown admin-session-expired-redirect admin-auth-401-no-redirect admin-dashboard-commission-shortcut user-order-cancel-confirm admin-plan-create-drawer admin-plan-save-failure admin-plan-create-group-select-dropdown \
-	admin-plans-fetch-timeout admin-plan-reset-method-matrix admin-plan-drawer-keyboard-close admin-plan-edit-drawer admin-plan-renew-tooltip admin-plan-legacy-hash-entry admin-mutation-failure-matrix admin-config-tabs admin-config-unchanged-blur admin-config-save-failure-matrix admin-audit-filters \
+	admin-plans-fetch-timeout admin-plan-reset-method-matrix admin-plan-drawer-keyboard-close admin-plan-edit-drawer admin-plan-renew-tooltip admin-plan-legacy-hash-entry admin-mutation-failure-matrix admin-config-tabs admin-config-draft-discard admin-config-save-failure-matrix admin-audit-filters \
 	admin-server-create-node-drawer admin-server-vless-reality-matrix admin-server-node-save-failure admin-server-protocol-field-matrix admin-server-v2node-protocol-matrix admin-server-v2node-security-transport-matrix admin-server-manage-fetch-timeout \
 	admin-server-edit-node-drawer admin-server-route-create-modal admin-server-route-edit-modal admin-server-group-create-modal admin-server-group-save-failure admin-server-group-edit-modal admin-payment-create-modal admin-payment-save-failure \
 	admin-payment-edit-modal admin-payment-plugin-field-matrix admin-payment-modal-keyboard-close admin-payments-fetch-timeout admin-payment-notify-tooltip admin-order-detail-modal admin-order-status-tooltips admin-order-assign-modal \
@@ -106,6 +109,7 @@ shell:
 
 doctor:
 	@$(DCF) config --quiet
+	$(MAKE) --no-print-directory api-contract-check
 	$(MAKE) --no-print-directory public-bundle-audit
 	$(MAKE) --no-print-directory runtime-isolation-audit
 	$(MAKE) --no-print-directory native-database-audit
@@ -126,6 +130,8 @@ rust-check:
 # the serialized wire bodies byte-for-byte.
 GOLDENS_HOST_DIR := $(CURDIR)/frontend/packages/api-client/goldens
 GOLDENS_MOUNT_DIR := /src/frontend/packages/api-client/goldens
+API_CONTRACT_OPENAPI_HOST_DIR := $(CURDIR)/frontend/packages/api-client/openapi
+API_CONTRACT_OPENAPI_FILE := internal-api.openapi.json
 
 rust-test:
 	$(DCF) build rust-api
@@ -149,6 +155,31 @@ contract-goldens:
 		'set -euo pipefail; . /usr/local/cargo/env; \
 		 cargo test --locked -p v2board-api golden_wire; \
 		 cargo run --locked -p v2board-contract -- golden-responses'
+
+# Rust owns the internal wire contract. The checked-in OpenAPI document, TS
+# declarations, and runtime Zod validators are deterministic projections of
+# that source, generated entirely inside the local Docker toolchains.
+api-contract-generate:
+	@mkdir -p "$(API_CONTRACT_OPENAPI_HOST_DIR)"
+	$(DCF) build rust-api frontend-build
+	$(DCF) run --rm -T --no-deps --entrypoint bash \
+		-v "$(API_CONTRACT_OPENAPI_HOST_DIR):/contract-openapi" \
+		rust-api -lc \
+		'. /usr/local/cargo/env; cargo run --locked -q -p v2board-api-contract --bin v2board-export-openapi -- /contract-openapi/$(API_CONTRACT_OPENAPI_FILE)'
+	$(FRONTEND_RUN) -v "$(CURDIR)/frontend:/contract-frontend" frontend -lc \
+		'node /contract-frontend/scripts/generate-internal-api-contract.mjs --root=/contract-frontend'
+
+# Drift gate: Rust must reproduce the committed OpenAPI byte-for-byte, then
+# the frontend generator must reproduce both its compile-time and runtime
+# bindings from that exact document.
+api-contract-check:
+	$(DCF) build rust-api frontend-build
+	$(DCF) run --rm -T --no-deps --entrypoint bash \
+		-v "$(API_CONTRACT_OPENAPI_HOST_DIR):/contract-openapi:ro" \
+		rust-api -lc \
+		'. /usr/local/cargo/env; cargo run --locked -q -p v2board-api-contract --bin v2board-export-openapi -- --check /contract-openapi/$(API_CONTRACT_OPENAPI_FILE)'
+	$(FRONTEND_RUN) frontend -lc \
+		'node /src/frontend/scripts/generate-internal-api-contract.mjs --root=/src/frontend --check'
 
 rust-integration:
 	$(DCF) build rust-api
@@ -184,6 +215,9 @@ rust-integration:
 		 cargo test --locked -p v2board-lifecycle imported_source_schema_matches_oracle_mysql_8_legacy_fixture; \
 		 cargo test --locked -p v2board-lifecycle representative_mysql_rows_copy_into_fresh_postgres; \
 		 RUST_INTEGRATION_DATABASE_URL="$$RUST_INTEGRATION_SCHEMA_DATABASE_URL" cargo test --locked -p v2board-provision --test postgres_target_schema; \
+		 cargo test --locked -p v2board-db --test plan_binding_concurrency -- --test-threads=1; \
+		 cargo test --locked -p v2board-db --test plan_sort_exact -- --test-threads=1; \
+		 cargo test --locked -p v2board-db --test plan_price_concurrency; \
 		 cargo test --locked -p v2board-lifecycle -- --list | grep -Fx "mysql_import::tests::full_execute_bootstraps_and_retires_every_principal: test"; \
 		 cargo test --locked -p v2board-lifecycle mysql_import::tests::full_execute_bootstraps_and_retires_every_principal -- --exact; \
 		 cargo test --locked -p v2board-analytics --test clickhouse_roundtrip; \
@@ -208,7 +242,7 @@ rust-worker-reconcile:
 		-e WORKER_RECONCILE_STRICT=$(RUST_WORKER_RECONCILE_STRICT) \
 		rust-api cargo run --locked -p v2board-contract -- worker-reconcile
 
-rust-target-gate: rust-check rust-test rust-integration rust-route-audit rust-worker-reconcile
+rust-target-gate: api-contract-check rust-check rust-test rust-integration rust-route-audit rust-worker-reconcile
 	@echo "Rust API, worker, route, and reconciliation gates passed."
 
 public-bundle-audit:
@@ -230,7 +264,99 @@ runtime-isolation-audit:
 	@$(DCF) config --format json | jq -e \
 		'.services | all(.[]; .logging.driver == "local" and .logging.options["max-size"] == "10m" and .logging.options["max-file"] == "3")' \
 		>/dev/null || { echo "Every local Compose service must use bounded local logging (10m x 3)."; exit 1; }
-	@echo "Production workflow has no retired runtime dependency; local service logs are bounded."
+	@rg -Fqx 'real-stack-e2e: deploy-artifact-smoke' Makefile || { \
+		echo "real-stack-e2e must depend on the artifact-only gate, never deploy-smoke."; exit 1; \
+	}
+	@$(REAL_STACK_E2E_DCF) config --format json | jq -e \
+		'def named_sources($$service): [$$service.volumes[]? | select(.type == "volume") | .source]; \
+		 def network_names($$service): [$$service.networks | keys[]] | sort; \
+		 .services as $$services | \
+		 .networks as $$networks | \
+		 ($$services["frontend-build"].depends_on == null) and \
+		 ($$services["real-stack-e2e-build"].depends_on == null) and \
+		 ($$services["real-stack-e2e-browser-build"].depends_on == null) and \
+		 ($$services["real-stack-e2e-runner"].depends_on == null) and \
+		 ($$services["real-stack-e2e-runner"].read_only == true) and \
+		 ($$services["real-stack-e2e-runtime-clean"].depends_on == null) and \
+		 ($$services["real-stack-e2e-runtime-clean"].network_mode == "none") and \
+		 ($$services["real-stack-e2e-runtime-clean"].read_only == true) and \
+		 (network_names($$services["real-stack-e2e-runner"]) == ["real-stack-e2e-browser"]) and \
+		 (network_names($$services["real-stack-e2e-build"]) == ["real-stack-e2e-build"]) and \
+		 (network_names($$services["real-stack-e2e-browser-build"]) == ["real-stack-e2e-build"]) and \
+		 (network_names($$services["postgres-real-stack-e2e"]) == ["real-stack-e2e-data"]) and \
+		 (network_names($$services["redis-real-stack-e2e"]) == ["real-stack-e2e-data"]) and \
+		 (network_names($$services["real-stack-e2e-bootstrap"]) == ["real-stack-e2e-data"]) and \
+		 (network_names($$services["rust-real-stack-api"]) == ["real-stack-e2e-browser", "real-stack-e2e-data"]) and \
+		 ($$networks["real-stack-e2e-browser"].internal == true) and \
+		 ($$networks["real-stack-e2e-data"].internal == true) and \
+		 (($$services["real-stack-e2e-bootstrap"].depends_on | keys | sort) == ["postgres-real-stack-e2e", "redis-real-stack-e2e"]) and \
+		 (($$services["rust-real-stack-api"].depends_on | keys | sort) == ["frontend-build", "real-stack-e2e-bootstrap"]) and \
+		 ($$services["postgres-real-stack-e2e"].tmpfs == ["/var/lib/postgresql"]) and \
+		 ($$services["redis-real-stack-e2e"].tmpfs == ["/data"]) and \
+		 (named_sources($$services["postgres-real-stack-e2e"]) == []) and \
+		 (named_sources($$services["redis-real-stack-e2e"]) == []) and \
+		 ((named_sources($$services["real-stack-e2e-runner"]) | sort) == ["frontend-interaction-artifacts", "frontend-node_modules", "frontend-playwright-cache", "frontend-workspace"]) and \
+		 ((named_sources($$services["real-stack-e2e-build"]) | sort) == ["rust-cargo-git", "rust-cargo-registry", "rust-target"]) and \
+		 ((named_sources($$services["real-stack-e2e-browser-build"]) | sort) == ["frontend-node_modules", "frontend-playwright-cache", "frontend-workspace"]) and \
+		 ([ $$services["real-stack-e2e-runner"].volumes[] | select(.target == "/app/frontend" and .read_only == true) ] | length == 1) and \
+		 (named_sources($$services["real-stack-e2e-runner"]) | all(. != "frontend-deploy")) and \
+		 (named_sources($$services["real-stack-e2e-runtime-clean"]) == ["real-stack-e2e-api-runtime"]) and \
+		 ((named_sources($$services["real-stack-e2e-bootstrap"]) | sort) == ["real-stack-e2e-api-runtime", "rust-target"]) and \
+		 ((named_sources($$services["rust-real-stack-api"]) | sort) == ["frontend-deploy", "real-stack-e2e-api-runtime", "rust-target"]) and \
+		 ([ $$services["real-stack-e2e-bootstrap"].volumes[] | select(.source == "rust-target" and .read_only == true) ] | length == 1) and \
+		 ([ $$services["rust-real-stack-api"].volumes[] | select(.source == "rust-target" and .read_only == true) ] | length == 1) and \
+		 ([ $$services["real-stack-e2e-bootstrap"].volumes[] | select(.source == "real-stack-e2e-api-runtime" and .target == "/app/real-stack-e2e-runtime/api" and .read_only != true) ] | length == 1) and \
+		 ([ $$services["rust-real-stack-api"].volumes[] | select(.source == "real-stack-e2e-api-runtime" and .target == "/app/real-stack-e2e-runtime/api" and .read_only == true) ] | length == 1) and \
+		 ([named_sources($$services["frontend-build"])[], \
+		   named_sources($$services["real-stack-e2e-build"])[], \
+		   named_sources($$services["real-stack-e2e-browser-build"])[], \
+		   named_sources($$services["real-stack-e2e-runner"])[], \
+		   named_sources($$services["real-stack-e2e-bootstrap"])[], \
+		   named_sources($$services["rust-real-stack-api"])[], \
+		   named_sources($$services["real-stack-e2e-runtime-clean"])[]] | \
+		  all(. != "postgres-data" and . != "redis-data" and . != "clickhouse-data" and \
+		      . != "clickhouse-logs" and . != "v2board-runtime"))' \
+		>/dev/null || { echo "The real-stack browser lane must keep dedicated networks, dependency-free frontend tooling, and tmpfs-only datastores."; exit 1; }
+	@recipe="$$(awk '/^real-stack-e2e:/ { capture = 1; next } capture && /^[^[:space:]#][^:]*:/ { exit } capture { print }' Makefile)"; \
+	runner_lines="$$(printf '%s\n' "$$recipe" | rg -F 'playwright.real-stack.config.mjs' || true)"; \
+	runner_count="$$(printf '%s\n' "$$runner_lines" | awk 'NF { count++ } END { print count + 0 }')"; \
+	scrubber_count="$$(printf '%s\n' "$$recipe" | rg -c 'run --rm -T --no-deps real-stack-e2e-runtime-clean' || true)"; \
+	if [ "$$runner_count" -ne 1 ]; then echo "real-stack-e2e must have exactly one Playwright runner."; exit 1; fi; \
+	if [ "$$scrubber_count" -ne 2 ]; then echo "real-stack-e2e must scrub its credential bridge before and after the journey."; exit 1; fi; \
+	case "$$runner_lines" in *"real-stack-e2e-runner -lc "*"playwright.real-stack.config.mjs"*) ;; \
+		*) echo "The real-stack Playwright runner must be the dedicated read-only runner service."; exit 1 ;; \
+	esac; \
+	case "$$recipe" in *'$$(DCF)'*|*'$$(FRONTEND_RUN)'*) \
+		echo "real-stack-e2e must use only REAL_STACK_E2E_DCF after its artifact prerequisite."; exit 1 ;; \
+	esac; \
+	if printf '%s\n' "$$recipe" | rg -q '(^|[[:space:]])frontend[[:space:]]+-lc'; then \
+		echo "The dependency-bearing frontend service must not run in real-stack-e2e."; exit 1; \
+	fi
+	@commands="$$( $(MAKE) --no-print-directory -n real-stack-e2e COMPOSE_PROJECT=v2board-delivery-topology-audit )"; \
+	joined="$$(printf '%s\n' "$$commands" | awk '/\\$$/ { sub(/\\$$/, ""); printf "%s ", $$0; next } { print }')"; \
+	compose_commands="$$(printf '%s\n' "$$joined" | tr ';' '\n' | rg -F 'docker compose ' || true)"; \
+	all_services="$$( $(REAL_STACK_E2E_DCF) config --format json | jq -r '.services | keys[]' | tr '\n' ' ')"; \
+	test -n "$$compose_commands"; test -n "$$all_services"; \
+	violations="$$(printf '%s\n' "$$compose_commands" | awk \
+		-v allowed=' $(REAL_STACK_E2E_ALLOWED_SERVICES) ' -v services=" $$all_services " ' \
+		function contains(set, value) { return index(set, " " value " ") > 0 } \
+		function normalize(value) { gsub(/^[({]+/, "", value); gsub(/[;\\)}]+$$/, "", value); return value } \
+		{ \
+			action = ""; allowed_service = 0; forbidden_service = 0; \
+			for (i = 1; i <= NF; i++) { \
+				token = normalize($$i); \
+				if (contains(services, token)) { \
+					if (contains(allowed, token)) allowed_service = 1; else forbidden_service = 1; \
+				} \
+				if (token ~ /^(build|run|up|stop|rm|exec|start|restart|create|kill|pause|unpause|cp|down)$$/) action = token; \
+			} \
+			if (action == "down" || forbidden_service || (action != "" && !allowed_service)) print; \
+		}')"; \
+	if [ -n "$$violations" ] || printf '%s\n' "$$joined" | rg -Fq 'docker volume '; then \
+		echo "real-stack-e2e contains a project-wide or non-allowlisted Docker state operation:"; \
+		printf '%s\n' "$$violations"; exit 1; \
+	fi
+	@echo "Production workflow has no retired runtime dependency; local service logs are bounded; real-stack E2E is isolated from default runtime/data services and volumes."
 
 native-database-audit:
 	@matches="$$(rg -n \
@@ -451,12 +577,13 @@ reference-oracle-down:
 	$(REFERENCE_DCF) stop reference-oracle >/dev/null 2>&1 || true
 	$(REFERENCE_DCF) rm -f reference-oracle >/dev/null 2>&1 || true
 
-deploy-smoke: cloudflared-config-audit deploy-contract-audit
-	$(DCF) up -d --build --wait postgres clickhouse redis rust-api
-	$(FRONTEND_RUN) \
-		-e "DEPLOY_SMOKE_BASE_URL=$(SOURCE_BASE_URL)" \
-		-e "DEPLOY_SMOKE_ADMIN_PATH=$(ADMIN_PATH)" \
-		frontend -lc 'set -eu; \
+# Use only the dependency-free frontend-build service here. The frontend dev
+# service belongs to the ordinary stack and carries a rust-api dependency.
+deploy-artifact-smoke: deploy-contract-audit
+	$(DCF) build frontend-build
+	$(DCF) run --rm -T --no-deps frontend-build
+	$(DCF) run --rm -T --no-deps --entrypoint sh \
+		frontend-build -lc 'set -eu; \
 		test -L /app/frontend-deploy/current; \
 		test -f /app/frontend-deploy/current/user/index.html; \
 		test -f /app/frontend-deploy/current/user/manifest.json; \
@@ -466,7 +593,14 @@ deploy-smoke: cloudflared-config-audit deploy-contract-audit
 			if find /app/frontend-deploy/current -type f -name "$$name" | grep -q .; then \
 				echo "Forbidden legacy deploy artifact found: $$name"; exit 1; \
 			fi; \
-		done; \
+		done'
+
+deploy-smoke: cloudflared-config-audit deploy-artifact-smoke
+	$(DCF) up -d --build --wait postgres clickhouse redis rust-api
+	$(FRONTEND_RUN) \
+		-e "DEPLOY_SMOKE_BASE_URL=$(SOURCE_BASE_URL)" \
+		-e "DEPLOY_SMOKE_ADMIN_PATH=$(ADMIN_PATH)" \
+		frontend -lc 'set -eu; \
 		node /src/frontend/scripts/deploy-smoke.mjs'
 
 visual-smoke: deploy-smoke
@@ -476,12 +610,27 @@ visual-smoke: deploy-smoke
 		-e VISUAL_SMOKE_ADMIN_PATH=$(ADMIN_PATH) \
 		frontend -lc '$(FRONTEND_SETUP) && $(PLAYWRIGHT_SETUP) && node scripts/visual-smoke.mjs'
 
-interaction-parity: reference-oracle-check deploy-smoke
+interaction-parity: deploy-smoke
+	$(DCF) build frontend-build
+	$(FRONTEND_RUN) \
+		-e INTERACTION_PARITY_ARTIFACT_DIR=$(INTERACTION_PARITY_ARTIFACT_DIR) \
+		-e INTERACTION_PARITY_SCENARIOS='$(INTERACTION_PARITY_SCENARIOS)' \
+		-e INTERACTION_LEGACY_ORACLE=0 \
+		-e PARITY_WORKERS='$(PARITY_WORKERS)' \
+		-e VISUAL_PARITY_ADMIN_PATH=$(ADMIN_PATH) \
+		-e VISUAL_PARITY_SOURCE_BASE_URL=$(SOURCE_BASE_URL) \
+		-e VISUAL_PARITY_VIEWPORTS='$(VISUAL_PARITY_VIEWPORTS)' \
+		frontend -lc '$(FRONTEND_SETUP) && $(PLAYWRIGHT_SETUP) && pnpm exec playwright test'
+
+# Finite migration-compatibility lane. The standing browser gate above is
+# source-owned; invoke this target explicitly when changing a legacy contract.
+legacy-oracle-parity: reference-oracle-check deploy-smoke
 	$(DCF) build frontend-build
 	$(FRONTEND_RUN) \
 		-v "$(CURDIR)/references/wyx2685-v2board:/reference:ro" \
 		-e INTERACTION_PARITY_ARTIFACT_DIR=$(INTERACTION_PARITY_ARTIFACT_DIR) \
 		-e INTERACTION_PARITY_SCENARIOS='$(INTERACTION_PARITY_SCENARIOS)' \
+		-e INTERACTION_LEGACY_ORACLE=1 \
 		-e PARITY_WORKERS='$(PARITY_WORKERS)' \
 		-e REFERENCE_ORACLE_ROOT=/reference \
 		-e REFERENCE_ORACLE_STATE_ROOT=/tmp/v2board-reference-oracle \
@@ -490,11 +639,41 @@ interaction-parity: reference-oracle-check deploy-smoke
 		-e VISUAL_PARITY_VIEWPORTS='$(VISUAL_PARITY_VIEWPORTS)' \
 		frontend -lc '$(FRONTEND_SETUP) && $(PLAYWRIGHT_SETUP) && rm -rf /tmp/v2board-reference-oracle && pnpm exec playwright test'
 
+# Browser -> deployed frontend -> real Rust -> restricted PostgreSQL/Redis.
+# Build/dependency/deploy/report volumes are shared, but ordinary runtime/data
+# services and volumes are excluded. Datastores are tmpfs-backed; the trap
+# removes disposable containers and scrubs the dedicated credential bridge.
+real-stack-e2e: deploy-artifact-smoke
+	$(REAL_STACK_E2E_DCF) build real-stack-e2e-build
+	@set -eu; \
+	cleanup() { \
+		status=$$?; cleanup_failed=0; trap - EXIT INT TERM; \
+		if ! $(REAL_STACK_E2E_DCF) stop rust-real-stack-api postgres-real-stack-e2e redis-real-stack-e2e >/dev/null 2>&1; then cleanup_failed=1; fi; \
+		if ! $(REAL_STACK_E2E_DCF) rm -f rust-real-stack-api postgres-real-stack-e2e redis-real-stack-e2e >/dev/null 2>&1; then cleanup_failed=1; fi; \
+		if ! $(REAL_STACK_E2E_DCF) run --rm -T --no-deps real-stack-e2e-runtime-clean >/dev/null; then \
+			echo "Could not scrub the dedicated real-stack E2E runtime credential volume." >&2; cleanup_failed=1; \
+		fi; \
+		if [ "$$status" -eq 0 ] && [ "$$cleanup_failed" -ne 0 ]; then status=1; fi; \
+		exit "$$status"; \
+	}; \
+	trap 'exit 130' INT; trap 'exit 143' TERM; trap cleanup EXIT; \
+	$(REAL_STACK_E2E_DCF) run --rm -T --no-deps real-stack-e2e-build; \
+	$(REAL_STACK_E2E_DCF) run --rm -T --no-deps real-stack-e2e-browser-build; \
+	$(REAL_STACK_E2E_DCF) run --rm -T --no-deps real-stack-e2e-runtime-clean; \
+	$(REAL_STACK_E2E_DCF) up -d --wait --force-recreate postgres-real-stack-e2e redis-real-stack-e2e; \
+	$(REAL_STACK_E2E_DCF) run --rm -T --no-deps real-stack-e2e-bootstrap; \
+	$(REAL_STACK_E2E_DCF) up -d --wait --no-deps --force-recreate rust-real-stack-api; \
+	$(REAL_STACK_E2E_DCF) run --rm -T --no-deps --entrypoint sh \
+		-e REAL_STACK_E2E_ARTIFACT_DIR=$(REAL_STACK_E2E_ARTIFACT_DIR) \
+		-e REAL_STACK_E2E_BASE_URL=http://rust-real-stack-api:8080 \
+		-e REAL_STACK_E2E_ADMIN_PATH=admin-e2e \
+		real-stack-e2e-runner -lc 'test -n "$$(find /app/frontend/.cache/ms-playwright -path "*/chrome-linux/chrome" -type f -print -quit)" && pnpm exec playwright test --config=playwright.real-stack.config.mjs'
+
 accessibility-smoke:
 	$(MAKE) --no-print-directory interaction-parity \
 		INTERACTION_PARITY_SCENARIOS='$(A11Y_SMOKE_SCENARIOS)'
 
-behavior-parity: interaction-parity
+behavior-parity: interaction-parity real-stack-e2e
 
 clean-frontend-runs:
 	@$(DCF) rm -sf frontend-build reference-oracle >/dev/null 2>&1 || true

@@ -10,7 +10,7 @@ import {
   useEffect,
   useState,
 } from 'react';
-import { cn } from '@/lib/cn';
+import { cn } from '@v2board/ui/cn';
 
 export type CarouselApi = UseEmblaCarouselType[1];
 type UseCarouselParameters = Parameters<typeof useEmblaCarousel>;

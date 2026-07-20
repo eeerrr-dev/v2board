@@ -110,7 +110,7 @@ vi.mock('@tanstack/react-query', () => {
   return { useQueryClient: () => client };
 });
 
-vi.mock('@/components/ui/confirm-dialog', () => ({
+vi.mock('@v2board/ui/confirm-dialog', () => ({
   confirmDialog,
 }));
 

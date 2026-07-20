@@ -1,13 +1,13 @@
 import { useTranslation } from 'react-i18next';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import type { admin } from '@v2board/api-client';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { confirmDialog } from '@/components/ui/confirm-dialog';
-import { ErrorState } from '@/components/ui/error-state';
-import { PageHeader, PageShell } from '@/components/ui/page';
-import { LoadingState, SkeletonRows } from '@/components/ui/loading-state';
-import { DataTable, type DataTableColumn } from '@/components/ui/table';
+import { Button } from '@v2board/ui/button';
+import { Card, CardContent } from '@v2board/ui/card';
+import { confirmDialog } from '@v2board/ui/confirm-dialog';
+import { ErrorState } from '@v2board/ui/error-state';
+import { PageHeader, PageShell } from '@v2board/ui/page';
+import { LoadingState, SkeletonRows } from '@v2board/ui/loading-state';
+import { DataTable, type DataTableColumn } from '@v2board/ui/table';
 import {
   useDropServerRouteMutation,
   useSaveServerRouteMutation,

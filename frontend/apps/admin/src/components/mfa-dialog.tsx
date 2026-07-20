@@ -4,7 +4,7 @@ import { Copy, ShieldCheck, ShieldOff } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { ApiError, ApiProblemError, hasProblemCode } from '@v2board/api-client';
 import { copyText } from '@v2board/config/clipboard';
-import { Button } from '@/components/ui/button';
+import { Button } from '@v2board/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -12,10 +12,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Field, FieldLabel } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
-import { Skeleton } from '@/components/ui/skeleton';
+} from '@v2board/ui/dialog';
+import { Field, FieldLabel } from '@v2board/ui/field';
+import { Input } from '@v2board/ui/input';
+import { Skeleton } from '@v2board/ui/skeleton';
 import {
   useAccountMfa,
   useConfirmTotpMutation,

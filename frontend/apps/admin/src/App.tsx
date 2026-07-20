@@ -14,7 +14,7 @@ import type { CheckLoginResult } from '@v2board/types';
 import { AdminLayout } from '@/components/layout/admin-layout';
 import { RequireAuth } from '@/components/layout/require-auth';
 import { RouteBoundaryOutlet, RouteErrorFallback } from '@/components/route-error-boundary';
-import { Spinner } from '@/components/ui/spinner';
+import { Spinner } from '@v2board/ui/spinner';
 import {
   AUTH_KEY,
   buildLoginRedirect,

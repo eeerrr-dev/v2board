@@ -1,12 +1,14 @@
 [workspace]
 members = [
   "crates/api",
+  "crates/api-contract",
   "crates/analytics",
   "crates/compat",
   "crates/config",
   "crates/contract",
   "crates/db",
   "crates/domain",
+  "crates/domain-model",
   "crates/lifecycle",
   "crates/provision",
   "crates/workers",
@@ -94,3 +96,4 @@ tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt", "json"] }
 uuid = { version = "1.23.4", features = ["v4"] }
 url = "2.5.8"
+utoipa = { version = "5.5.0", features = ["chrono", "uuid"] }

@@ -1,3 +1,5 @@
+import type { MoneyMajor, MoneyMinor } from '@v2board/types';
+
 function parseDecimal(value: string | number) {
   const input = String(value).trim();
   const match = /^([+-]?)(\d+)(?:\.(\d*))?$/.exec(input);
@@ -53,4 +55,18 @@ export function decimalToMinorUnits(value: string | number, scale = 2): number {
 
 export function decimalToCents(value: string | number): number {
   return decimalToMinorUnits(value, 2);
+}
+
+/**
+ * Explicit admin-model boundary: decimal major-unit input to integer wire
+ * minor units. The brand prevents a plain display amount from being submitted
+ * without making this conversion visible at the call site.
+ */
+export function decimalToMoneyMinor(value: string | number): MoneyMinor {
+  return decimalToCents(value) as MoneyMinor;
+}
+
+/** Explicit admin-model boundary: integer wire minor units to decimal major units. */
+export function moneyMinorToMajor(value: MoneyMinor): MoneyMajor {
+  return (Number(value) / 100) as MoneyMajor;
 }

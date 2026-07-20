@@ -18,6 +18,7 @@ pub enum SourceValue {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CanonicalValue {
     Null,
+    Bool(bool),
     I64(i64),
     U64(u64),
     Decimal(String),
@@ -174,6 +175,8 @@ pub enum ConverterError {
     },
     #[error("{table}.{column} contains an invalid exact decimal")]
     InvalidDecimal { table: String, column: String },
+    #[error("{table}.{column} must be the integer flag 0 or 1")]
+    InvalidBoolean { table: String, column: String },
     #[error("{table}.{column} contains an invalid positive id at member {index}")]
     InvalidIdArray {
         table: String,

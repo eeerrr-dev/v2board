@@ -70,6 +70,12 @@ export type ApiRequestConfig = AxiosRequestConfig & {
    * as per-endpoint documentation of the §5–§6 route tables.
    */
   dialect?: 'v2';
+  /**
+   * Exact success status declared by the endpoint contract. Axios still
+   * accepts every 2xx at the transport boundary so the client can surface a
+   * status drift as an ApiContractError before applying the response schema.
+   */
+  expectedStatus?: number;
 };
 
 export type JsonApiRequestConfig<TSchema extends ZodType> = Omit<
@@ -179,9 +185,10 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
   return {
     axios: instance,
     request: async <TSchema extends ZodType>(config: JsonApiRequestConfig<TSchema>) => {
-      const { responseSchema, ...requestConfig } = config;
+      const { responseSchema, expectedStatus, ...requestConfig } = config;
       const response = await instance.request<unknown>(requestConfig);
       const endpoint = String(config.url ?? '<unknown>');
+      assertExpectedSuccessStatus(response, expectedStatus, endpoint);
       // §14: the dialect response is the bare success body — nothing to
       // unwrap. A bodiless 204 (axios yields '' or undefined) parses as
       // undefined against the endpoint's empty-success schema.
@@ -191,14 +198,15 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     requestBinary: async <TJsonSchema extends ZodType>(
       config: BinaryApiRequestConfig<TJsonSchema>,
     ) => {
-      const { jsonResponseSchema, ...requestConfig } = config;
+      const { jsonResponseSchema, expectedStatus, ...requestConfig } = config;
       const response = await instance.request<unknown>({
         ...requestConfig,
         responseType: 'arraybuffer',
       });
+      const endpoint = String(config.url ?? '<unknown>');
+      assertExpectedSuccessStatus(response, expectedStatus, endpoint);
       const buffer = toArrayBuffer(response.data);
       if (buffer) return { code: response.status, data: buffer, buffer };
-      const endpoint = String(config.url ?? '<unknown>');
       // §14: the dialect JSON arm is the bare success body (e.g. the §1
       // 201 `{id}` create) — no envelope to unwrap; the CSV arm above is
       // byte-frozen either way.
@@ -210,6 +218,19 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       return `/${securePath}${path}`;
     },
   };
+}
+
+function assertExpectedSuccessStatus(
+  response: AxiosResponse<unknown>,
+  expectedStatus: number | undefined,
+  endpoint: string,
+): void {
+  if (expectedStatus === undefined || response.status === expectedStatus) return;
+  throw new ApiContractError(
+    endpoint,
+    response.data,
+    new TypeError(`Expected HTTP ${expectedStatus}, received ${response.status}`),
+  );
 }
 
 function parseContract<TSchema extends ZodType>(
