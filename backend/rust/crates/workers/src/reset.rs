@@ -3,7 +3,7 @@ use std::time::Duration;
 use chrono::{DateTime, Datelike, FixedOffset, Months, TimeZone, Utc};
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
-use v2board_config::{app_now, app_timezone};
+use v2board_config::{app_now, app_timezone, now_utc};
 
 use crate::{
     lease::{SCHEDULER_LOCK_TTL_SECS, SchedulerLock, release_scheduler_lock, run_with_lease},
@@ -215,7 +215,7 @@ fn reset_matches(
             let today = now.day();
             let expire_day = expired.day();
             (expire_day == today || (today == last_day && expire_day >= last_day))
-                && Utc::now().timestamp() < timestamp_before(expired_at, 2_160_000)
+                && now_utc().timestamp() < timestamp_before(expired_at, 2_160_000)
         }
         // no action (ResetTraffic.php:73-74/94-96)
         2 => false,
@@ -271,7 +271,96 @@ fn last_day_of_current_month() -> u32 {
 
 #[cfg(test)]
 mod tests {
+    use v2board_config::freeze_time;
+
     use super::*;
+
+    fn shanghai_ts(year: i32, month: u32, day: u32, hour: u32) -> i64 {
+        app_timezone()
+            .with_ymd_and_hms(year, month, day, hour, 0, 0)
+            .single()
+            .expect("valid Shanghai timestamp")
+            .timestamp()
+    }
+
+    fn expire_day_user(expired_at: i64) -> ResetUserRow {
+        ResetUserRow {
+            id: 1,
+            expired_at,
+            reset_traffic_method: Some(1),
+        }
+    }
+
+    #[test]
+    fn expire_day_reset_clamps_to_the_short_month_end() {
+        // Expiry anniversary on the 31st; February has no 31st, so the reset
+        // must fire on February's last day. The frozen instant is still
+        // Feb 27 in UTC — the calendar decision is pinned to Asia/Shanghai.
+        let expired_at = shanghai_ts(2026, 3, 31, 10);
+        let frozen = Utc.with_ymd_and_hms(2026, 2, 27, 20, 0, 0).unwrap();
+        assert_eq!(frozen.with_timezone(&app_timezone()).day(), 28);
+        let _clock = freeze_time(frozen);
+        assert!(should_reset_user(&expire_day_user(expired_at), 2));
+    }
+
+    #[test]
+    fn expire_day_reset_skips_ordinary_non_matching_days() {
+        let expired_at = shanghai_ts(2026, 3, 31, 10);
+        let _clock = freeze_time(Utc.with_ymd_and_hms(2026, 2, 26, 20, 0, 0).unwrap());
+        // Shanghai Feb 27: neither the expire day nor the month's last day.
+        assert!(!should_reset_user(&expire_day_user(expired_at), 2));
+    }
+
+    #[test]
+    fn expire_day_reset_yields_to_the_25_day_expiry_guard() {
+        // The day matches (the 31st), but the subscription expires later the
+        // same day — inside the 25-day guard window, so no reset is due.
+        let expired_at = shanghai_ts(2026, 3, 31, 23);
+        let _clock = freeze_time(Utc.with_ymd_and_hms(2026, 3, 30, 17, 0, 0).unwrap());
+        assert!(!should_reset_user(&expire_day_user(expired_at), 2));
+    }
+
+    #[test]
+    fn month_first_day_reset_uses_the_shanghai_calendar_day() {
+        let user = ResetUserRow {
+            id: 1,
+            expired_at: shanghai_ts(2027, 1, 1, 0),
+            reset_traffic_method: Some(0),
+        };
+        // UTC Feb 28 16:30 is already Mar 1 00:30 in Shanghai: reset fires.
+        {
+            let _clock = freeze_time(Utc.with_ymd_and_hms(2026, 2, 28, 16, 30, 0).unwrap());
+            assert!(should_reset_user(&user, 2));
+        }
+        // UTC Mar 1 20:00 is already Mar 2 in Shanghai: no reset.
+        let _clock = freeze_time(Utc.with_ymd_and_hms(2026, 3, 1, 20, 0, 0).unwrap());
+        assert!(!should_reset_user(&user, 2));
+    }
+
+    #[test]
+    fn expire_year_reset_fires_only_on_the_exact_anniversary() {
+        let user = ResetUserRow {
+            id: 1,
+            expired_at: shanghai_ts(2027, 6, 15, 12),
+            reset_traffic_method: Some(4),
+        };
+        {
+            let _clock = freeze_time(Utc.with_ymd_and_hms(2026, 6, 15, 4, 0, 0).unwrap());
+            assert!(should_reset_user(&user, 2));
+        }
+        let _clock = freeze_time(Utc.with_ymd_and_hms(2026, 6, 16, 4, 0, 0).unwrap());
+        assert!(!should_reset_user(&user, 2));
+    }
+
+    #[test]
+    fn last_day_of_month_handles_december_and_leap_february() {
+        {
+            let _clock = freeze_time(Utc.with_ymd_and_hms(2026, 12, 15, 4, 0, 0).unwrap());
+            assert_eq!(last_day_of_current_month(), 31);
+        }
+        let _clock = freeze_time(Utc.with_ymd_and_hms(2028, 2, 10, 4, 0, 0).unwrap());
+        assert_eq!(last_day_of_current_month(), 29);
+    }
 
     #[test]
     fn null_reset_method_default_three_falls_through_to_expire_year() {

@@ -61,6 +61,47 @@ fn reset_day_returns_none_for_plan_less_user_ignoring_config_default() {
     assert_eq!(reset_day(Some(1), Some(&null_method), &config), None);
 }
 
+#[test]
+fn reset_day_by_expire_day_clamps_to_the_short_month_end_under_a_frozen_clock() {
+    use chrono::TimeZone;
+    let config = AppConfig::from_api_env();
+    let expire_day_plan = reset_day_plan_fixture(Some(1));
+    // Expiry anniversary on the 31st (Asia/Shanghai calendar).
+    let expired_at = v2board_config::app_timezone()
+        .with_ymd_and_hms(2026, 3, 31, 10, 0, 0)
+        .single()
+        .expect("valid Shanghai timestamp")
+        .timestamp();
+
+    // Frozen at UTC Feb 27 20:00 = Shanghai Feb 28: February has no 31st, so
+    // the clamped reset day is today (0 days out) on the month's last day.
+    {
+        let _clock =
+            v2board_config::freeze_time(Utc.with_ymd_and_hms(2026, 2, 27, 20, 0, 0).unwrap());
+        assert_eq!(
+            reset_day(Some(expired_at), Some(&expire_day_plan), &config),
+            Some(0)
+        );
+    }
+    // Frozen mid-February: 8 days until the clamped Feb 28 reset.
+    {
+        let _clock =
+            v2board_config::freeze_time(Utc.with_ymd_and_hms(2026, 2, 19, 20, 0, 0).unwrap());
+        assert_eq!(
+            reset_day(Some(expired_at), Some(&expire_day_plan), &config),
+            Some(8)
+        );
+    }
+    // Frozen after the March anniversary date has passed (Shanghai Apr 1 —
+    // but expiry itself is behind us now): expired subscriptions have no
+    // reset day at all.
+    let _clock = v2board_config::freeze_time(Utc.with_ymd_and_hms(2026, 3, 31, 16, 0, 0).unwrap());
+    assert_eq!(
+        reset_day(Some(expired_at), Some(&expire_day_plan), &config),
+        None
+    );
+}
+
 fn server_row_fixture() -> v2board_db::server::AvailableServerRow {
     v2board_db::server::AvailableServerRow {
         id: 1,

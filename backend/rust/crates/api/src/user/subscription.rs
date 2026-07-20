@@ -409,7 +409,7 @@ pub(crate) fn reset_day(
     // reset_traffic_method is NULL still uses the config default (the `unwrap_or`
     // below), mirroring the `=== NULL` switch arm.
     let plan = plan?;
-    if expired_at <= Utc::now().timestamp() {
+    if expired_at <= v2board_config::now_utc().timestamp() {
         return None;
     }
     let method = plan

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use chrono::{DateTime, FixedOffset, Utc};
+use chrono::{DateTime, FixedOffset};
 
 use crate::{keys::MAX_CONFIG_DURATION_MINUTES, validation::env_path};
 
@@ -18,9 +18,10 @@ pub fn app_timezone() -> FixedOffset {
     FixedOffset::east_opt(8 * 3600).expect("Asia/Shanghai is a valid fixed offset")
 }
 
-/// Current time in the pinned application timezone (`Asia/Shanghai`).
+/// Current time in the pinned application timezone (`Asia/Shanghai`), read
+/// through the freezable [`crate::clock::now_utc`] source.
 pub fn app_now() -> DateTime<FixedOffset> {
-    Utc::now().with_timezone(&app_timezone())
+    crate::clock::now_utc().with_timezone(&app_timezone())
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
