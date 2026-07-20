@@ -257,7 +257,8 @@ service activation is therefore fixed and read-only with respect to schema:
    HTTPS, and install the connector token while leaving the connector offline;
 4. atomically point `/opt/v2board/current` at the staged release and install/verify its three systemd
    units, including the still-disabled `v2board-cloudflared.service`;
-5. start `v2board-api.service` and require `GET http://127.0.0.1:8080/readyz` to pass locally;
+5. start `v2board-api.service`, require systemd `READY=1`, and require
+   `GET http://127.0.0.1:8080/readyz` to pass locally;
 6. start `v2board-worker.service` and require systemd `READY=1` plus a healthy watchdog;
 7. only now run `systemctl enable --now v2board-cloudflared.service`, require the unit to reach active
    state, verify the canonical public HTTPS URL, and use `curl --head --max-redirs 0` against the same
@@ -351,6 +352,11 @@ backup policy, never as part of a secret-bearing migration workspace.
 
 Both units write stdout/stderr to journald. Configure `SystemMaxUse`, retention, and alerting for the
 host; configure PostgreSQL, ClickHouse, and Redis native log rotation separately. A full log disk is
-a database outage. API and worker use SIGTERM with bounded graceful shutdown. Worker uses
-`Type=notify`, `WatchdogSec=30s`, and `/run/v2board-worker/health`; no persistent `/tmp` health file
-or Docker HEALTHCHECK exists in production.
+a database outage. API and worker use SIGTERM with bounded graceful shutdown. Both are
+`Type=notify` with `WatchdogSec=30s`: the worker's watchdog is gated on dependency health (restart
+away from a wedged dependency), while the API pings unconditionally as an event-loop liveness
+signal — dependency outages surface through `/readyz`, not restarts. Worker health also writes
+`/run/v2board-worker/health`; no persistent `/tmp` health file or Docker HEALTHCHECK exists in
+production. cloudflared carries no `WatchdogSec` (the official binary sends no WATCHDOG
+keepalives). All three units carry `MemoryHigh`/`MemoryMax` ceilings; CPU stays weight-based
+(background worker at `CPUWeight=50`) with no hard quota on the single-role host.

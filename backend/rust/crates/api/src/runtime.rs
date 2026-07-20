@@ -913,6 +913,11 @@ pub(crate) async fn shutdown_signal() {
         () = ctrl_c => {}
         () = terminate => {}
     }
+    if let Err(error) =
+        v2board_config::systemd_notify("STOPPING=1\nSTATUS=Draining HTTP connections")
+    {
+        tracing::warn!(?error, "failed to notify systemd of shutdown");
+    }
     tracing::info!("shutdown signal received; draining HTTP connections");
 }
 

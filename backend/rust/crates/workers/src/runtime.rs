@@ -1,6 +1,7 @@
 use std::{future::Future, path::PathBuf, time::Duration};
 
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use v2board_config::systemd_notify;
 
 use crate::{
     analytics,
@@ -382,32 +383,6 @@ async fn run_health_loop(
 async fn write_health_heartbeat(path: &std::path::Path) -> anyhow::Result<()> {
     let now = chrono::Utc::now().timestamp().to_string();
     tokio::fs::write(path, now).await?;
-    Ok(())
-}
-
-#[cfg(target_os = "linux")]
-fn systemd_notify(message: &str) -> anyhow::Result<()> {
-    use std::{
-        os::{linux::net::SocketAddrExt, unix::ffi::OsStrExt},
-        path::Path,
-    };
-
-    let Some(path) = std::env::var_os("NOTIFY_SOCKET") else {
-        return Ok(());
-    };
-    let socket = std::os::unix::net::UnixDatagram::unbound()?;
-    let bytes = path.as_os_str().as_bytes();
-    if let Some(abstract_name) = bytes.strip_prefix(b"@") {
-        let address = std::os::unix::net::SocketAddr::from_abstract_name(abstract_name)?;
-        socket.send_to_addr(message.as_bytes(), &address)?;
-    } else {
-        socket.send_to(message.as_bytes(), Path::new(&path))?;
-    }
-    Ok(())
-}
-
-#[cfg(not(target_os = "linux"))]
-fn systemd_notify(_message: &str) -> anyhow::Result<()> {
     Ok(())
 }
 

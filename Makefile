@@ -337,13 +337,19 @@ native-release-audit: cloudflared-config-audit
 		rg -Fqx 'ProtectHome=true' "$$unit" || exit 1; \
 		rg -Fqx 'PrivateTmp=true' "$$unit" || exit 1; \
 		rg -Fqx 'CapabilityBoundingSet=' "$$unit" || exit 1; \
+		rg -q '^MemoryHigh=' "$$unit" || exit 1; \
+		rg -q '^MemoryMax=' "$$unit" || exit 1; \
 	done
 	@rg -Fqx 'User=v2board-api' deploy/systemd/v2board-api.service
 	@rg -Fqx 'ReadWritePaths=/var/lib/v2board/api' deploy/systemd/v2board-api.service
+	@rg -Fqx 'Type=notify' deploy/systemd/v2board-api.service
+	@rg -Fqx 'WatchdogSec=30s' deploy/systemd/v2board-api.service
 	@rg -Fqx 'User=v2board-worker' deploy/systemd/v2board-worker.service
 	@rg -Fqx 'Type=notify' deploy/systemd/v2board-worker.service
 	@rg -Fqx 'WatchdogSec=30s' deploy/systemd/v2board-worker.service
 	@rg -Fqx 'ReadWritePaths=/var/lib/v2board/worker' deploy/systemd/v2board-worker.service
+	@if rg -q '^WatchdogSec=' deploy/systemd/v2board-cloudflared.service; then \
+		echo "cloudflared does not send WATCHDOG keepalives; a watchdog would flap the tunnel."; exit 1; fi
 	@rg -q '^  native-release:$$' .github/workflows/native-ci.yml
 	@rg -q '^  native-attest:$$' .github/workflows/native-ci.yml
 	@rg -q -- '--target native-release' .github/workflows/native-ci.yml

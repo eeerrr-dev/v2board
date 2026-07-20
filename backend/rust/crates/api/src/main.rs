@@ -178,12 +178,30 @@ async fn run() -> anyhow::Result<()> {
 
     let listener = tokio::net::TcpListener::bind(&config.bind_addr).await?;
     tracing::info!(bind_addr = %config.bind_addr, "v2board rust api listening");
+    v2board_config::systemd_notify("READY=1\nSTATUS=HTTP listener is accepting connections")?;
+    // Unlike the worker (whose watchdog is gated on dependency health so systemd
+    // restarts it away from a wedged dependency), the API pings unconditionally:
+    // dependency outages are surfaced through /readyz and 5xx responses, where a
+    // restart would only add flapping. The watchdog exists to catch a hung or
+    // deadlocked event loop.
+    let watchdog = tokio::spawn(async {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(10));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            interval.tick().await;
+            if let Err(error) = v2board_config::systemd_notify("WATCHDOG=1") {
+                tracing::warn!(?error, "failed to ping the systemd watchdog");
+            }
+        }
+    });
     let server_result = axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
     .with_graceful_shutdown(shutdown_signal())
     .await;
+    watchdog.abort();
+    let _ = watchdog.await;
     config_reloader.abort();
     let _ = config_reloader.await;
     server_result?;

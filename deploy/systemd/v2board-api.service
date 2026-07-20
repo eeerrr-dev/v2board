@@ -6,7 +6,9 @@ StartLimitIntervalSec=60s
 StartLimitBurst=5
 
 [Service]
-Type=exec
+Type=notify
+NotifyAccess=main
+WatchdogSec=30s
 User=v2board-api
 Group=v2board-api
 WorkingDirectory=/var/lib/v2board/api
@@ -61,6 +63,13 @@ ReadOnlyPaths=/opt/v2board/current /var/lib/v2board/rules
 ReadWritePaths=/var/lib/v2board/api
 LimitNOFILE=65536
 TasksMax=4096
+# Memory ceilings keep a leak from taking down the whole single-role host; the
+# kernel reclaims above MemoryHigh and OOM-kills only past MemoryMax. CPU stays
+# weight-based (no CPUQuota): on a dedicated host a hard quota would throttle
+# the only latency-sensitive workload for no one's benefit.
+MemoryHigh=1G
+MemoryMax=2G
+CPUWeight=100
 
 [Install]
 WantedBy=multi-user.target

@@ -68,6 +68,11 @@ ReadOnlyPaths=/opt/v2board/current
 ReadWritePaths=/var/lib/v2board/worker
 LimitNOFILE=65536
 TasksMax=4096
+# Background jobs yield to the API under contention (CPUWeight below the API's
+# 100); memory ceilings bound a runaway batch without a hard CPU quota.
+MemoryHigh=512M
+MemoryMax=1G
+CPUWeight=50
 
 [Install]
 WantedBy=multi-user.target

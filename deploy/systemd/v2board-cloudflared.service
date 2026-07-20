@@ -57,6 +57,11 @@ SystemCallErrorNumber=EPERM
 DevicePolicy=closed
 LimitNOFILE=65536
 TasksMax=4096
+# The tunnel client is a small fixed workload; the ceiling exists to keep a
+# connector bug from starving the origin it fronts. No WatchdogSec: the
+# official cloudflared binary does not send WATCHDOG keepalives.
+MemoryHigh=256M
+MemoryMax=512M
 
 [Install]
 WantedBy=multi-user.target

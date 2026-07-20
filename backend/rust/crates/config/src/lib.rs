@@ -3,6 +3,7 @@ mod file_io;
 mod keys;
 mod keyspace;
 mod runtime;
+mod systemd;
 mod validation;
 mod values;
 
@@ -14,4 +15,5 @@ pub use file_io::*;
 pub use keys::*;
 pub use keyspace::*;
 pub use runtime::*;
+pub use systemd::*;
 pub use validation::*;
