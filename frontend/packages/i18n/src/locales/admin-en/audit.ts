@@ -1,0 +1,23 @@
+export const adminAudit = {
+  surface_admin: 'Admin',
+  surface_staff: 'Staff',
+  time: 'Time',
+  actor: 'Actor',
+  surface: 'Surface',
+  method: 'Method',
+  path: 'Path',
+  status: 'Status',
+  client_ip: 'Client IP',
+  request_id: 'Request ID',
+  title: 'Audit Log',
+  description:
+    'A read-only, append-only record of every admin/staff mutation. Request bodies are not recorded.',
+  surface_filter_label: 'Filter by surface',
+  all_surfaces: 'All surfaces',
+  method_filter_label: 'Filter by method',
+  all_methods: 'All methods',
+  email_filter_placeholder: 'Search by actor email',
+  email_filter_label: 'Filter by actor',
+  load_error: 'Failed to load the audit log',
+  empty: 'No audit records',
+};

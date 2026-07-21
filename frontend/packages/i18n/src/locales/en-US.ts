@@ -1,5 +1,5 @@
 import type { Translations } from './zh-CN';
-import { adminZh } from './admin';
+import { adminEn } from './admin-en';
 
 const enUS: Translations = {
   common: {
@@ -588,7 +588,7 @@ const enUS: Translations = {
     'Payment failed. Please check your credit card information':
       'Payment failed. Please check your credit card information',
   },
-  admin: adminZh,
+  admin: adminEn,
 };
 
 export default enUS;
