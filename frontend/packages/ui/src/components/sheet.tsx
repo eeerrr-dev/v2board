@@ -8,8 +8,11 @@ import { dialogOverlayClassName } from './dialog-surface';
 
 const Sheet = SheetPrimitive.Root;
 const SheetTrigger = SheetPrimitive.Trigger;
-const SheetClose = SheetPrimitive.Close;
 const SheetPortal = SheetPrimitive.Portal;
+
+function SheetClose(props: ComponentProps<typeof SheetPrimitive.Close>) {
+  return <SheetPrimitive.Close {...props} data-slot="sheet-close" />;
+}
 
 function SheetOverlay({ className, ...props }: ComponentProps<typeof SheetPrimitive.Overlay>) {
   return (
@@ -55,10 +58,10 @@ function SheetContent({ side = 'right', className, children, ...props }: SheetCo
         {...props}
       >
         {children}
-        <SheetPrimitive.Close className="absolute top-4 right-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none disabled:pointer-events-none">
+        <SheetClose className="absolute top-4 right-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none disabled:pointer-events-none">
           <X className="size-4" />
           <span className="sr-only">{t(($) => $.common.close_dialog)}</span>
-        </SheetPrimitive.Close>
+        </SheetClose>
       </SheetPrimitive.Content>
     </SheetPortal>
   );

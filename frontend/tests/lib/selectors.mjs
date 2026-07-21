@@ -99,7 +99,9 @@ export function scopedSelectorUnion(scopeSelector, childSelector) {
 }
 
 // Admin redesigned-vs-legacy union selectors.
-export const adminDrawerOpenSelector = '.ant-drawer-open, [data-slot="sheet-content"]';
+export const adminDrawerOpenSelector =
+  '.ant-drawer-open, [data-slot="sheet-content"][data-state="open"]';
+export const adminDrawerMountedSelector = '.ant-drawer, [data-slot="sheet-content"]';
 export const adminDialogOpenSelector = '.ant-modal, [data-slot="dialog-content"]';
 export const adminOverlayOpenSelector = `${adminDrawerOpenSelector}, ${adminDialogOpenSelector}`;
 export const adminFormInputSelector = '.ant-input, [data-slot="input"], [data-slot="textarea"]';

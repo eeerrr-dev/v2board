@@ -36,6 +36,7 @@ import {
   adminDrawerInputSelector,
   adminDrawerLabelSelector,
   adminDrawerLegendSelector,
+  adminDrawerMountedSelector,
   adminDrawerOpenSelector,
   adminDrawerSelectTriggerSelector,
   adminDrawerSelectedValueSelector,
@@ -334,10 +335,8 @@ export async function reloadAdminServerManagePage(page) {
 
 export async function closeVisibleAdminServerDrawers(page) {
   for (let attempt = 0; attempt < 6; attempt += 1) {
-    if ((await visibleCount(page, adminDrawerOpenSelector)) === 0) {
-      await page.waitForTimeout(100);
-      return;
-    }
+    const openCount = await visibleCount(page, adminDrawerOpenSelector);
+    if (openCount === 0) break;
     const clicked = await page.evaluate((closeSelector) => {
       const isVisible = (element) => {
         const rect = element.getBoundingClientRect();
@@ -356,21 +355,41 @@ export async function closeVisibleAdminServerDrawers(page) {
       if (!(button instanceof HTMLElement)) return false;
       button.click();
       return true;
-    }, '.ant-drawer-open .ant-drawer-close, [data-slot="sheet-content"] [data-slot="sheet-close"]');
+    }, '.ant-drawer-open .ant-drawer-close, [data-slot="sheet-content"][data-state="open"] [data-slot="sheet-close"]');
     if (!clicked) {
-      // The redesigned sheet closes on Escape when no explicit close button is
-      // exposed.
+      // Escape remains a cross-world fallback for a drawer without an exposed
+      // close control. A nested sheet closes one level per loop iteration.
       await page.keyboard.press('Escape').catch(() => undefined);
-      await page.waitForTimeout(250);
-      if ((await visibleCount(page, adminDrawerOpenSelector)) === 0) return;
-      break;
     }
-    await page.waitForTimeout(250);
+    await page.waitForFunction(
+      ({ expectedBelow, selector }) => {
+        const isVisible = (element) => {
+          const rect = element.getBoundingClientRect();
+          const style = window.getComputedStyle(element);
+          return (
+            rect.width > 0 &&
+            rect.height > 0 &&
+            style.display !== 'none' &&
+            style.visibility !== 'hidden' &&
+            !element.closest('.ant-dropdown-hidden')
+          );
+        };
+        return (
+          Array.from(document.querySelectorAll(selector)).filter(isVisible).length < expectedBelow
+        );
+      },
+      { expectedBelow: openCount, selector: adminDrawerOpenSelector },
+      { timeout: 5_000 },
+    );
   }
   const remaining = await visibleCount(page, adminDrawerOpenSelector);
   if (remaining > 0) {
     throw new Error(`Timed out closing admin server drawers; ${remaining} remained visible`);
   }
+  // Radix keeps data-state="closed" content mounted for its exit animation.
+  // Wait for that mounted surface to leave before the next interaction instead
+  // of guessing at animation duration with a fixed sleep.
+  await waitForVisibleElementsHidden(page, adminDrawerMountedSelector);
 }
 
 export async function selectAdminOverlayOption(page, triggerIndex, optionText) {
