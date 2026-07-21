@@ -10,10 +10,14 @@ use chrono::Utc;
 use redis::AsyncCommands;
 use sqlx::PgPool;
 use tokio::task::JoinSet;
+use v2board_application::ticket::{
+    NewTicket, TicketCreateOutcome, TicketRepository, UserTicketReply, UserTicketReplyOutcome,
+};
 use v2board_config::RedisKeyspace;
-use v2board_db::installation_id;
+use v2board_db::{installation_id, ticket::PostgresTicketRepository};
+use v2board_domain_model::TicketLevel;
 
-use super::harness::{INTEGRATION_APP_KEY, env_or, insert_user, random_traffic_key};
+use super::harness::{env_or, insert_user, operator_authority_config, random_traffic_key};
 
 const DEFAULT_WORKER_BIN: &str = "/app/target/debug/v2board-workers";
 
@@ -134,24 +138,22 @@ pub(super) async fn ticket_state_machine(
     database_name: &str,
     redis_url: &str,
 ) -> Result<()> {
-    use v2board_db::ticket::{TicketCreateOutcome, UserTicketReplyOutcome};
-
     let user_id = insert_user(pool, "ticket", "not-used").await?;
     let now = Utc::now().timestamp();
     let mut creates = JoinSet::new();
     for sequence in 0..8 {
         let pool = pool.clone();
         creates.spawn(async move {
-            v2board_db::ticket::create_ticket(
-                &pool,
-                user_id,
-                &format!("concurrent ticket {sequence}"),
-                1,
-                "initial message",
-                now,
-                false,
-            )
-            .await
+            PostgresTicketRepository::new(pool)
+                .create(NewTicket {
+                    user_id,
+                    subject: format!("concurrent ticket {sequence}"),
+                    level: TicketLevel::Medium,
+                    message: "initial message".to_string(),
+                    created_at: now,
+                    require_paid_order: false,
+                })
+                .await
         });
     }
     let mut created = 0;
@@ -173,22 +175,24 @@ pub(super) async fn ticket_state_machine(
             .fetch_one(pool)
             .await?;
     ensure!(
-        v2board_db::ticket::close_ticket(pool, user_id, first_ticket, now + 1).await?,
+        PostgresTicketRepository::new(pool.clone())
+            .close_as_user(user_id, first_ticket, now + 1)
+            .await?,
         "failed to close the ticket used by the uniqueness check"
     );
 
     ensure!(
-        v2board_db::ticket::create_ticket(
-            pool,
-            user_id,
-            "reply race",
-            1,
-            "user opening message",
-            now - 90_000,
-            false,
-        )
-        .await
-        .map(|outcome| matches!(outcome, TicketCreateOutcome::Created(_)))?,
+        PostgresTicketRepository::new(pool.clone())
+            .create(NewTicket {
+                user_id,
+                subject: "reply race".to_string(),
+                level: TicketLevel::Medium,
+                message: "user opening message".to_string(),
+                created_at: now - 90_000,
+                require_paid_order: false,
+            })
+            .await
+            .map(|outcome| matches!(outcome, TicketCreateOutcome::Created(_)))?,
         "failed to create reply-race ticket"
     );
     let race_ticket: i64 =
@@ -204,14 +208,14 @@ pub(super) async fn ticket_state_machine(
         redis_url.to_string(),
         "check_ticket",
     ));
-    let reply = v2board_db::ticket::reply_ticket(
-        pool,
-        race_ticket,
-        user_id,
-        "reply concurrent with auto-close",
-        Utc::now().timestamp(),
-    )
-    .await?;
+    let reply = PostgresTicketRepository::new(pool.clone())
+        .reply_as_user(UserTicketReply {
+            ticket_id: race_ticket,
+            user_id,
+            message: "reply concurrent with auto-close".to_string(),
+            replied_at: Utc::now().timestamp(),
+        })
+        .await?;
     worker.await??;
     ensure!(
         reply == UserTicketReplyOutcome::Replied,
@@ -225,20 +229,22 @@ pub(super) async fn ticket_state_machine(
         race_status == 0,
         "auto-close closed a ticket after a fresh user reply"
     );
-    v2board_db::ticket::close_ticket(pool, user_id, race_ticket, now + 2).await?;
+    PostgresTicketRepository::new(pool.clone())
+        .close_as_user(user_id, race_ticket, now + 2)
+        .await?;
 
     ensure!(
-        v2board_db::ticket::create_ticket(
-            pool,
-            user_id,
-            "stale answered ticket",
-            1,
-            "old user opening message",
-            now - 90_000,
-            false,
-        )
-        .await
-        .map(|outcome| matches!(outcome, TicketCreateOutcome::Created(_)))?,
+        PostgresTicketRepository::new(pool.clone())
+            .create(NewTicket {
+                user_id,
+                subject: "stale answered ticket".to_string(),
+                level: TicketLevel::Medium,
+                message: "old user opening message".to_string(),
+                created_at: now - 90_000,
+                require_paid_order: false,
+            })
+            .await
+            .map(|outcome| matches!(outcome, TicketCreateOutcome::Created(_)))?,
         "failed to create stale ticket"
     );
     let stale_ticket: i64 =
@@ -284,6 +290,7 @@ pub(super) async fn worker_health_process(
     redis_url: &str,
 ) -> Result<()> {
     let worker_bin = env_or("RUST_INTEGRATION_WORKER_BIN", DEFAULT_WORKER_BIN);
+    let app_key = operator_authority_config()?.app_key;
     let runtime_root = PathBuf::from("/tmp").join(format!("{database_name}-health-runtime"));
     let health_file = PathBuf::from("/tmp").join(format!("{database_name}-worker-health"));
     let _ = tokio::fs::remove_file(&health_file).await;
@@ -296,7 +303,7 @@ pub(super) async fn worker_health_process(
         .env("V2BOARD_RUNTIME_ROOT", runtime_root)
         .env("V2BOARD_WORKER_HEALTH_FILE", &health_file)
         .env("V2BOARD_WORKER_HEARTBEAT_INTERVAL_SECONDS", "1")
-        .env("APP_KEY", INTEGRATION_APP_KEY)
+        .env("APP_KEY", app_key)
         .env("RUST_LOG", "v2board_workers=error")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -383,6 +390,7 @@ async fn run_worker_once(
     let database_name = database_name.into();
     let redis_url = redis_url.into();
     let worker_bin = env_or("RUST_INTEGRATION_WORKER_BIN", DEFAULT_WORKER_BIN);
+    let app_key = operator_authority_config()?.app_key;
     tokio::task::spawn_blocking(move || {
         let runtime_root = PathBuf::from("/tmp").join(format!("{database_name}-worker"));
         let output = Command::new(&worker_bin)
@@ -393,7 +401,7 @@ async fn run_worker_once(
             .env("V2BOARD_ENV", "testing")
             .env("V2BOARD_SEED_LOCAL", "0")
             .env("V2BOARD_RUNTIME_ROOT", runtime_root)
-            .env("APP_KEY", INTEGRATION_APP_KEY)
+            .env("APP_KEY", app_key)
             .env("RUST_LOG", "v2board_workers=error")
             .output()
             .with_context(|| format!("execute {worker_bin} run-once {job}"))?;

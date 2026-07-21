@@ -37,6 +37,15 @@ import {
 const adminPaymentInputSelector =
   `${adminDrawerInputSelector}, ${adminDrawerInputGroupControlSelector}`;
 
+const paymentConfigInputSelector = (key, placeholder) =>
+  scopedSelectorUnion(
+    adminOverlayOpenSelector,
+    `#payment-config-${key}, input[placeholder="${placeholder}"]`,
+  );
+
+const fillPaymentConfig = (page, key, placeholder, value) =>
+  fillFirstVisible(page, paymentConfigInputSelector(key, placeholder), value);
+
 export async function runAdminPaymentCreateModalInteraction(page) {
   const initialPaymentFetchCount = page.__visualParityAdminPaymentFetchCount ?? 0;
   await clickFirstVisibleText(page, 'button', ['添加支付方式']);
@@ -44,7 +53,7 @@ export async function runAdminPaymentCreateModalInteraction(page) {
     state: 'visible',
     timeout: 5_000,
   });
-  await page.waitForFunction(() => document.body.textContent.includes('商户ID'), null, {
+  await page.waitForFunction(() => document.body.textContent.includes('支付宝APPID'), null, {
     timeout: 5_000,
   });
   await fillVisibleAt(page, adminPaymentInputSelector, 0, 'Parity Pay');
@@ -58,11 +67,24 @@ export async function runAdminPaymentCreateModalInteraction(page) {
   const dropdown = await adminPaymentModalState(page);
   await clickFirstVisibleTextStable(page, adminSelectOptionSelector, ['StripeCheckout']);
   await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
-  await page.waitForFunction(() => document.body.textContent.includes('Secret Key'), null, {
+  await page.waitForFunction(() => document.body.textContent.includes('SK_LIVE'), null, {
     timeout: 5_000,
   });
-  await fillVisibleAt(page, adminPaymentInputSelector, 5, 'pk_parity_create');
-  await fillVisibleAt(page, adminPaymentInputSelector, 6, 'sk_parity_create');
+  await fillPaymentConfig(page, 'currency', '请输入货币单位', 'usd');
+  await fillPaymentConfig(page, 'stripe_sk_live', 'API 密钥', 'sk_parity_create');
+  await fillPaymentConfig(page, 'stripe_pk_live', 'API 公钥', 'pk_parity_create');
+  await fillPaymentConfig(
+    page,
+    'stripe_webhook_key',
+    '请输入 WebHook 密钥签名',
+    'whsec_parity_create',
+  );
+  await fillPaymentConfig(
+    page,
+    'stripe_custom_field_name',
+    '例如可设置为“联系方式”，以便及时与客户取得联系',
+    'Contact',
+  );
   await page.waitForTimeout(100);
   const switched = await adminPaymentModalState(page);
   await clickFirstVisible(page, adminPaymentSaveSelector);
@@ -94,7 +116,7 @@ export async function runAdminPaymentSaveFailureInteraction(page) {
     state: 'visible',
     timeout: 5_000,
   });
-  await page.waitForFunction(() => document.body.textContent.includes('商户ID'), null, {
+  await page.waitForFunction(() => document.body.textContent.includes('支付宝APPID'), null, {
     timeout: 5_000,
   });
   await fillVisibleAt(page, adminPaymentInputSelector, 0, 'Parity Failed Pay');
@@ -103,8 +125,10 @@ export async function runAdminPaymentSaveFailureInteraction(page) {
   // whereas the controlled form correctly submits displayed values. Explicit
   // input makes the failure request itself a shared, backend-valid Tier-1
   // payload instead of normalizing away that legacy defect.
-  await fillVisibleAt(page, adminPaymentInputSelector, 5, 'failed-secret');
-  await fillVisibleAt(page, adminPaymentInputSelector, 6, 'failed-merchant');
+  await fillPaymentConfig(page, 'app_id', '请输入支付宝 APPID', 'failed-app-id');
+  await fillPaymentConfig(page, 'private_key', '请输入支付宝私钥', 'failed-private-key');
+  await fillPaymentConfig(page, 'public_key', '请输入支付宝公钥', 'failed-public-key');
+  await fillPaymentConfig(page, 'product_name', '将会体现在支付宝账单中', 'Failed Product');
   await page.waitForTimeout(100);
   const filled = await adminPaymentModalState(page);
   await clickFirstVisible(page, adminPaymentSaveSelector);
@@ -136,15 +160,13 @@ export async function runAdminPaymentEditModalInteraction(page) {
       const values = Array.from(document.querySelectorAll(inputSelector)).map(
         (element) => ('value' in element ? element.value : ''),
       );
-      return values.includes('Alipay') && values.includes('visual-merchant');
+      return values.includes('Alipay') && values.includes('visual-alipay-app');
     },
     adminPaymentInputSelector,
     { timeout: 5_000 },
   );
   const opened = await adminPaymentModalState(page);
   await fillVisibleAt(page, adminPaymentInputSelector, 0, 'Parity Edited Pay');
-  await fillVisibleAt(page, adminPaymentInputSelector, 5, 'edited-secret');
-  await fillVisibleAt(page, adminPaymentInputSelector, 6, 'edited-merchant');
   await page.waitForTimeout(100);
   const edited = await adminPaymentModalState(page);
   await clickFirstVisible(page, adminPaymentSaveSelector);
@@ -176,31 +198,35 @@ export async function runAdminPaymentPluginFieldMatrixInteraction(page) {
     state: 'visible',
     timeout: 5_000,
   });
-  await page.waitForFunction(() => document.body.textContent.includes('商户ID'), null, {
+  await page.waitForFunction(() => document.body.textContent.includes('支付宝APPID'), null, {
     timeout: 5_000,
   });
   await fillVisibleAt(page, adminPaymentInputSelector, 0, 'Parity Plugin Matrix');
   const alipay = await adminPaymentModalState(page);
   await selectLegacyFormOption(page, adminOverlayOpenSelector, '接口文件', ['MGate']);
-  await waitForVisibleText(page, adminDrawerLabelSelector, 'Token');
-  await fillFirstVisible(
-    page,
-    scopedSelectorUnion(adminOverlayOpenSelector, 'input[placeholder="请输入 MGate Token"]'),
-    'mgate_matrix_token',
-  );
+  await waitForVisibleText(page, adminDrawerLabelSelector, 'AppSecret');
+  await fillPaymentConfig(page, 'mgate_url', '请输入 MGate API 地址', 'https://matrix.mgate.test');
+  await fillPaymentConfig(page, 'mgate_app_id', '请输入 MGate APPID', 'mgate_matrix_app');
+  await fillPaymentConfig(page, 'mgate_app_secret', '请输入 MGate AppSecret', 'mgate_matrix_secret');
+  await fillPaymentConfig(page, 'mgate_source_currency', '请输入 MGate 源货币', 'CNY');
   await page.waitForTimeout(100);
   const mgate = await adminPaymentModalState(page);
   await selectLegacyFormOption(page, adminOverlayOpenSelector, '接口文件', ['StripeCheckout']);
-  await waitForVisibleText(page, adminDrawerLabelSelector, 'Secret Key');
-  await fillFirstVisible(
+  await waitForVisibleText(page, adminDrawerLabelSelector, 'SK_LIVE');
+  await fillPaymentConfig(page, 'currency', '请输入货币单位', 'usd');
+  await fillPaymentConfig(page, 'stripe_sk_live', 'API 密钥', 'sk_matrix_plugin');
+  await fillPaymentConfig(page, 'stripe_pk_live', 'API 公钥', 'pk_matrix_plugin');
+  await fillPaymentConfig(
     page,
-    scopedSelectorUnion(adminOverlayOpenSelector, 'input[placeholder="请输入 Stripe Publishable Key"]'),
-    'pk_matrix_plugin',
+    'stripe_webhook_key',
+    '请输入 WebHook 密钥签名',
+    'whsec_matrix_plugin',
   );
-  await fillFirstVisible(
+  await fillPaymentConfig(
     page,
-    scopedSelectorUnion(adminOverlayOpenSelector, 'input[placeholder="请输入 Stripe Secret Key"]'),
-    'sk_matrix_plugin',
+    'stripe_custom_field_name',
+    '例如可设置为“联系方式”，以便及时与客户取得联系',
+    'Contact',
   );
   await page.waitForTimeout(100);
   const stripe = await adminPaymentModalState(page);

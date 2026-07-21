@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use axum::{body::to_bytes, extract::Request, http::header};
 use quick_xml::{Reader, escape::resolve_predefined_entity, events::Event};
+use v2board_application::order::PaymentNotifyInput;
 use v2board_compat::ApiError;
 
 const MAX_PARAMETER_COUNT: usize = 4096;
@@ -13,7 +14,7 @@ const MAX_FORWARDED_HEADER_VALUE_BYTES: usize = 16 * 1024;
 pub(crate) async fn payment_request_input(
     request: Request,
     method: &str,
-) -> Result<v2board_domain::order::PaymentNotifyInput, ApiError> {
+) -> Result<PaymentNotifyInput, ApiError> {
     let mut params = HashMap::new();
     if let Some(query) = request.uri().query().filter(|query| !query.is_empty()) {
         params.extend(parse_urlencoded_params(query)?);
@@ -30,10 +31,10 @@ pub(crate) async fn payment_request_input(
         .map_err(|_| ApiError::bad_request("Invalid payment notify body"))?;
     if body.is_empty() {
         validate_params(&params, "Invalid payment notify body")?;
-        return Ok(v2board_domain::order::PaymentNotifyInput {
-            params,
+        return Ok(PaymentNotifyInput {
+            params: params.into_iter().collect(),
             body: Vec::new(),
-            headers,
+            headers: headers.into_iter().collect(),
         });
     }
     if content_type.contains("application/json") || body.first() == Some(&b'{') {
@@ -51,10 +52,10 @@ pub(crate) async fn payment_request_input(
         params.extend(parse_urlencoded_params(body)?);
     }
     validate_params(&params, "Invalid payment notify body")?;
-    Ok(v2board_domain::order::PaymentNotifyInput {
-        params,
+    Ok(PaymentNotifyInput {
+        params: params.into_iter().collect(),
         body: body.to_vec(),
-        headers,
+        headers: headers.into_iter().collect(),
     })
 }
 

@@ -456,8 +456,8 @@ export const TLS_SETTINGS_DEFAULTS = {
   cert_mode: 'self',
   provider: '',
   dns_env: '',
-  reject_unknown_sni: '0',
-  allow_insecure: '0',
+  reject_unknown_sni: false,
+  allow_insecure: false,
 };
 export const ENCRYPTION_SETTINGS_DEFAULTS = {
   mode: 'native',

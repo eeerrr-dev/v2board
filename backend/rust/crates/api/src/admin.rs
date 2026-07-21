@@ -5,17 +5,16 @@ use axum::{
     middleware::{self, Next},
     response::{IntoResponse, Response},
 };
-use serde_json::Value;
 use tower::ServiceExt as _;
 use uuid::Uuid;
-use v2board_compat::{ApiError, Code, Problem};
-use v2board_domain::{
-    admin::{AdminUserFilterBody, AdminUserMailBody, StaffUserPatch},
-    auth::AuthUser,
+use v2board_api_contract::admin_business::{
+    AdminUserFilterRequest, AdminUserMailRequest, StaffUserDetail, StaffUserPatchRequest,
 };
+use v2board_application::{auth::AuthUser, configuration::MailAudience};
+use v2board_compat::{ApiError, Code, Problem};
 
 use crate::{
-    auth::{require_admin_namespace, require_privileged_step_up, require_staff},
+    auth::{auth_error, require_admin_namespace, require_privileged_step_up, require_staff},
     dialect::{DialectJson, problem_from},
     locale::request_locale,
     route_paths::matches_current_admin_api,
@@ -38,8 +37,9 @@ use self::commerce::{
 };
 use self::configuration::{
     account_mfa_status, account_mfa_totp_confirm, account_mfa_totp_disable, account_mfa_totp_setup,
-    audit_logs, config_patch, config_view, email_templates, system_logs, system_queue_masters,
-    system_queue_stats, system_queue_workload, system_status, telegram_webhook, test_mail,
+    audit_logs, config_patch, config_view, configuration_error, email_templates, system_logs,
+    system_queue_masters, system_queue_stats, system_queue_workload, system_status,
+    telegram_webhook, test_mail,
 };
 use self::content::{
     coupon_delete, coupon_generate, coupon_patch, coupons_list, giftcard_delete, giftcard_generate,
@@ -58,8 +58,9 @@ use self::statistics::{
 };
 use self::support::{staff_tickets_list, ticket_close, ticket_detail, ticket_reply, tickets_list};
 use self::users::{
-    user_delete, user_detail, user_generate, user_patch, user_reset_secret, user_set_inviter,
-    users_ban, users_bulk_delete, users_export, users_list, users_mail,
+    admin_user_error, staff_user_detail_item, staff_user_patch_request, user_delete, user_detail,
+    user_filter_request, user_generate, user_mail_request, user_patch, user_reset_secret,
+    user_set_inviter, users_ban, users_bulk_delete, users_export, users_list, users_mail,
 };
 
 define_internal_operation_router! {
@@ -264,7 +265,11 @@ async fn require_enrolled_mfa(
     if mfa_exempt_path(path) {
         return Ok(());
     }
-    let status = state.auth_service().admin_mfa_status(actor.id).await?;
+    let status = state
+        .auth_service()
+        .admin_mfa_status(actor.id)
+        .await
+        .map_err(auth_error)?;
     if status.totp_enabled {
         return Ok(());
     }
@@ -382,13 +387,15 @@ async fn staff_user_detail(
     State(state): State<AppState>,
     Path(id): Path<i64>,
     headers: HeaderMap,
-) -> Result<Json<Value>, Problem> {
+) -> Result<Json<StaffUserDetail>, Problem> {
     let locale = request_locale(&headers);
     state
-        .admin_service(state.config_snapshot())
+        .admin_user_service()
         .staff_user_detail(id)
         .await
+        .map(staff_user_detail_item)
         .map(Json)
+        .map_err(admin_user_error)
         .map_err(|error| problem_from(error, locale))
 }
 
@@ -398,13 +405,15 @@ async fn staff_user_patch(
     State(state): State<AppState>,
     Path(id): Path<i64>,
     headers: HeaderMap,
-    DialectJson(body): DialectJson<StaffUserPatch>,
+    DialectJson(body): DialectJson<StaffUserPatchRequest>,
 ) -> Result<StatusCode, Problem> {
     let locale = request_locale(&headers);
+    let body = staff_user_patch_request(body);
     state
-        .admin_service(state.config_snapshot())
-        .staff_user_update(id, &body)
+        .admin_user_service()
+        .update_staff_user(id, body, chrono::Utc::now().timestamp())
         .await
+        .map_err(admin_user_error)
         .map_err(|error| problem_from(error, locale))?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -415,15 +424,17 @@ async fn staff_users_mail(
     State(state): State<AppState>,
     Extension(staff): Extension<AuthUser>,
     headers: HeaderMap,
-    DialectJson(body): DialectJson<AdminUserMailBody>,
+    DialectJson(body): DialectJson<AdminUserMailRequest>,
 ) -> Result<StatusCode, Problem> {
     let locale = request_locale(&headers);
+    let body = user_mail_request(body).map_err(|error| problem_from(error, locale))?;
     let idempotency_key =
         mail_idempotency_key(&headers).map_err(|error| problem_from(error, locale))?;
     state
-        .admin_service(state.config_snapshot())
-        .staff_users_mail(&body, &staff.email, &idempotency_key)
+        .configuration_service()
+        .send_bulk_mail(MailAudience::Staff, &body, &staff.email, &idempotency_key)
         .await
+        .map_err(configuration_error)
         .map_err(|error| problem_from(error, locale))?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -433,13 +444,15 @@ async fn staff_users_mail(
 async fn staff_users_ban(
     State(state): State<AppState>,
     headers: HeaderMap,
-    DialectJson(body): DialectJson<AdminUserFilterBody>,
+    DialectJson(body): DialectJson<AdminUserFilterRequest>,
 ) -> Result<StatusCode, Problem> {
     let locale = request_locale(&headers);
+    let filters = user_filter_request(body).map_err(|error| problem_from(error, locale))?;
     state
-        .admin_service(state.config_snapshot())
-        .staff_users_ban(&body.filter.unwrap_or_default())
+        .admin_user_service()
+        .ban_users(filters, true, chrono::Utc::now().timestamp())
         .await
+        .map_err(admin_user_error)
         .map_err(|error| problem_from(error, locale))?;
     Ok(StatusCode::NO_CONTENT)
 }

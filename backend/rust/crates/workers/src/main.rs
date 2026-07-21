@@ -24,14 +24,15 @@ mod statistics;
 mod tickets;
 mod time;
 mod traffic;
+mod traffic_adapters;
 
 use std::{env, sync::Arc};
 
 use v2board_config::AppConfig;
-use v2board_domain::{
-    operator_config::{self, OperatorConfigConsumer, OperatorConfigError},
-    smtp::SmtpTransportCache,
+use v2board_configuration_adapters::operator_config::{
+    self, OperatorConfigConsumer, OperatorConfigError,
 };
+use v2board_mail_adapters::smtp::SmtpTransportCache;
 
 use crate::state::WorkerState;
 
@@ -85,7 +86,7 @@ async fn run() -> anyhow::Result<()> {
     let redis = redis::Client::open(config.redis_url.clone())?;
     tokio::time::timeout(
         std::time::Duration::from_secs(config.http_connect_timeout_seconds),
-        v2board_domain::redis_runtime::verify_redis_runtime(&redis, config.environment),
+        v2board_redis_adapters::verify_redis_runtime(&redis, config.environment),
     )
     .await
     .map_err(|_| anyhow::anyhow!("timed out verifying the Redis runtime policy"))??;

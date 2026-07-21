@@ -2,12 +2,12 @@ use super::*;
 use serde::{Serialize, Serializer, ser::SerializeMap};
 
 pub(super) fn build_shadowsocks_sip008_subscription(
-    user: &v2board_db::user::UserAccessRow,
-    servers: &[v2board_db::server::AvailableServerRow],
+    user: &v2board_application::subscription::ClientSubscriptionAccount,
+    servers: &[crate::subscription::AvailableServer],
 ) -> Result<String, ApiError> {
     let bytes_used = user
-        .u
-        .checked_add(user.d)
+        .upload
+        .checked_add(user.download)
         .ok_or_else(|| ApiError::internal("subscription traffic exceeds the supported range"))?;
     let bytes_remaining = user
         .transfer_enable
@@ -43,11 +43,11 @@ pub(super) fn build_shadowsocks_sip008_subscription(
 }
 
 pub(super) fn build_shadowrocket_subscription(
-    user: &v2board_db::user::UserAccessRow,
-    servers: &[v2board_db::server::AvailableServerRow],
+    user: &v2board_application::subscription::ClientSubscriptionAccount,
+    servers: &[crate::subscription::AvailableServer],
 ) -> String {
-    let upload = php_round2(round2(user.u as f64 / GIB));
-    let download = php_round2(round2(user.d as f64 / GIB));
+    let upload = php_round2(round2(user.upload as f64 / GIB));
+    let download = php_round2(round2(user.download as f64 / GIB));
     let total = php_round2(round2(user.transfer_enable as f64 / GIB));
     // Shadowrocket.php:28 has no null guard: `date('Y-m-d', $user['expired_at'])`.
     // A null timestamp coerces to time() (today), not 长期有效.
@@ -72,7 +72,7 @@ pub(super) fn build_shadowrocket_subscription(
 
 pub(super) fn build_sagernet_subscription(
     uuid: &str,
-    servers: &[v2board_db::server::AvailableServerRow],
+    servers: &[crate::subscription::AvailableServer],
 ) -> String {
     let mut uris = String::new();
     for server in servers {
@@ -90,14 +90,14 @@ pub(super) fn build_sagernet_subscription(
 
 pub(super) fn build_base64_uri_subscription(
     uuid: &str,
-    servers: &[v2board_db::server::AvailableServerRow],
+    servers: &[crate::subscription::AvailableServer],
 ) -> String {
     build_general_subscription(uuid, servers)
 }
 
 pub(super) fn build_general_subscription(
     uuid: &str,
-    servers: &[v2board_db::server::AvailableServerRow],
+    servers: &[crate::subscription::AvailableServer],
 ) -> String {
     let mut uris = String::new();
     for server in servers {
@@ -108,7 +108,7 @@ pub(super) fn build_general_subscription(
     standard_base64_encode(uris.as_bytes())
 }
 
-fn build_server_uri(uuid: &str, server: &v2board_db::server::AvailableServerRow) -> Option<String> {
+fn build_server_uri(uuid: &str, server: &crate::subscription::AvailableServer) -> Option<String> {
     match server_protocol(server).as_str() {
         "shadowsocks" => build_shadowsocks_uri(uuid, server),
         "vmess" => build_vmess_uri(uuid, server),
@@ -124,7 +124,7 @@ fn build_server_uri(uuid: &str, server: &v2board_db::server::AvailableServerRow)
 
 fn build_shadowrocket_vmess_uri(
     uuid: &str,
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
 ) -> Option<String> {
     let userinfo = standard_base64_encode(
         format!("auto:{uuid}@{}:{}", server.host, first_port(server)).as_bytes(),
@@ -207,7 +207,7 @@ fn build_shadowrocket_vmess_uri(
 
 fn build_shadowsocks_uri(
     uuid: &str,
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
 ) -> Option<String> {
     let cipher = extra_string(server, "cipher")?;
     let password = shadowsocks_password(uuid, server)?;
@@ -243,7 +243,7 @@ fn build_shadowsocks_uri(
     Some(format!("{uri}#{}\r\n", percent_encode(&server.name)))
 }
 
-fn build_vmess_uri(uuid: &str, server: &v2board_db::server::AvailableServerRow) -> Option<String> {
+fn build_vmess_uri(uuid: &str, server: &crate::subscription::AvailableServer) -> Option<String> {
     let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
     let tls = extra_i64(server, "tls").unwrap_or_default();
     let tls_settings = extra_json(server, "tls_settings");
@@ -292,7 +292,7 @@ fn build_vmess_uri(uuid: &str, server: &v2board_db::server::AvailableServerRow) 
     ))
 }
 
-fn build_vless_uri(uuid: &str, server: &v2board_db::server::AvailableServerRow) -> Option<String> {
+fn build_vless_uri(uuid: &str, server: &crate::subscription::AvailableServer) -> Option<String> {
     let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
     let tls = extra_i64(server, "tls").unwrap_or_default();
     let tls_settings = extra_json(server, "tls_settings");
@@ -385,7 +385,7 @@ fn build_vless_uri(uuid: &str, server: &v2board_db::server::AvailableServerRow) 
 
 fn build_trojan_uri(
     password: &str,
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
 ) -> Option<String> {
     let tls_settings = extra_json(server, "tls_settings");
     let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
@@ -441,7 +441,7 @@ fn build_trojan_uri(
 
 fn build_hysteria_uri(
     password: &str,
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
 ) -> Option<String> {
     if extra_i64(server, "version") == Some(2) {
         return build_hysteria2_uri(password, server);
@@ -466,7 +466,7 @@ fn build_hysteria_uri(
 
 fn build_hysteria2_uri(
     password: &str,
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
 ) -> Option<String> {
     let tls_settings = extra_json(server, "tls_settings");
     let insecure = extra_i64(server, "insecure")
@@ -490,10 +490,7 @@ fn build_hysteria2_uri(
     Some(format!("{uri}#{}\r\n", encode_uri_component(&server.name)))
 }
 
-fn build_tuic_uri(
-    password: &str,
-    server: &v2board_db::server::AvailableServerRow,
-) -> Option<String> {
+fn build_tuic_uri(password: &str, server: &crate::subscription::AvailableServer) -> Option<String> {
     let tls_settings = extra_json(server, "tls_settings");
     let params = vec![
         (
@@ -536,7 +533,7 @@ fn build_tuic_uri(
 
 fn build_anytls_uri(
     password: &str,
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
 ) -> Option<String> {
     let tls_settings = extra_json(server, "tls_settings");
     let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
@@ -792,7 +789,7 @@ fn add_ech_param(params: &mut Vec<(String, String)>, tls_settings: &serde_json::
 
 fn append_hysteria_obfs(
     uri: &mut String,
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
     hysteria2: bool,
 ) {
     let Some(obfs) = extra_string(server, "obfs") else {
@@ -816,7 +813,7 @@ fn append_hysteria_obfs(
 fn build_uri_string(
     scheme: &str,
     auth: &str,
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
     name: &str,
     params: &[(String, String)],
 ) -> String {

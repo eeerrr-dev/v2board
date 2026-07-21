@@ -1,4 +1,92 @@
+use std::collections::BTreeSet;
+
 use crate::MoneyMinor;
+
+pub const PLAN_FORCE_UPDATE_MAX_USERS: usize = 10_000;
+const GIB_BYTES: i64 = 1_073_741_824;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PlanInputViolation {
+    EmptyName,
+    TransferEnableOutOfRange,
+    DeviceLimitOutOfRange,
+    SpeedLimitOutOfRange,
+    CapacityLimitOutOfRange,
+    InvalidResetTrafficMethod,
+    SortIdOutOfRange,
+    DuplicateSortId,
+}
+
+pub fn validate_plan_name(name: &str) -> Result<(), PlanInputViolation> {
+    if name.trim().is_empty() {
+        Err(PlanInputViolation::EmptyName)
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_nonnegative_i32(
+    value: i64,
+    violation: PlanInputViolation,
+) -> Result<(), PlanInputViolation> {
+    if (0..=i64::from(i32::MAX)).contains(&value) {
+        Ok(())
+    } else {
+        Err(violation)
+    }
+}
+
+pub fn validate_plan_transfer_enable(value: i64) -> Result<(), PlanInputViolation> {
+    validate_nonnegative_i32(value, PlanInputViolation::TransferEnableOutOfRange)
+}
+
+pub fn validate_plan_device_limit(value: Option<i64>) -> Result<(), PlanInputViolation> {
+    value.map_or(Ok(()), |value| {
+        validate_nonnegative_i32(value, PlanInputViolation::DeviceLimitOutOfRange)
+    })
+}
+
+pub fn validate_plan_speed_limit(value: Option<i64>) -> Result<(), PlanInputViolation> {
+    value.map_or(Ok(()), |value| {
+        validate_nonnegative_i32(value, PlanInputViolation::SpeedLimitOutOfRange)
+    })
+}
+
+pub fn validate_plan_capacity_limit(value: Option<i64>) -> Result<(), PlanInputViolation> {
+    value.map_or(Ok(()), |value| {
+        validate_nonnegative_i32(value, PlanInputViolation::CapacityLimitOutOfRange)
+    })
+}
+
+pub fn validate_plan_reset_traffic_method(value: Option<i64>) -> Result<(), PlanInputViolation> {
+    if value.is_none_or(|value| (0..=4).contains(&value)) {
+        Ok(())
+    } else {
+        Err(PlanInputViolation::InvalidResetTrafficMethod)
+    }
+}
+
+pub fn plan_transfer_bytes(gib: i64) -> Result<i64, PlanInputViolation> {
+    validate_plan_transfer_enable(gib)?;
+    gib.checked_mul(GIB_BYTES)
+        .ok_or(PlanInputViolation::TransferEnableOutOfRange)
+}
+
+pub fn normalize_plan_sort_ids(ids: &[i64]) -> Result<Vec<i32>, PlanInputViolation> {
+    let mut unique = BTreeSet::new();
+    let mut normalized = Vec::with_capacity(ids.len());
+    for id in ids {
+        let id = i32::try_from(*id)
+            .ok()
+            .filter(|id| *id > 0)
+            .ok_or(PlanInputViolation::SortIdOutOfRange)?;
+        if !unique.insert(id) {
+            return Err(PlanInputViolation::DuplicateSortId);
+        }
+        normalized.push(id);
+    }
+    Ok(normalized)
+}
 
 /// A purchasable or account-reset period for a subscription plan.
 ///
@@ -169,5 +257,40 @@ mod tests {
             updates.get(PlanPricePeriod::Quarter),
             PlanPriceUpdate::Retain
         );
+    }
+
+    #[test]
+    fn plan_limits_and_reset_policy_are_pure_domain_rules() {
+        assert_eq!(validate_plan_name("  "), Err(PlanInputViolation::EmptyName));
+        assert_eq!(
+            validate_plan_transfer_enable(-1),
+            Err(PlanInputViolation::TransferEnableOutOfRange)
+        );
+        assert_eq!(plan_transfer_bytes(2), Ok(2_147_483_648));
+        assert_eq!(
+            validate_plan_device_limit(Some(i64::from(i32::MAX) + 1)),
+            Err(PlanInputViolation::DeviceLimitOutOfRange)
+        );
+        assert_eq!(validate_plan_reset_traffic_method(Some(4)), Ok(()));
+        assert_eq!(
+            validate_plan_reset_traffic_method(Some(5)),
+            Err(PlanInputViolation::InvalidResetTrafficMethod)
+        );
+    }
+
+    #[test]
+    fn exact_sort_ids_are_positive_unique_i32_values() {
+        assert_eq!(normalize_plan_sort_ids(&[]), Ok(Vec::new()));
+        assert_eq!(normalize_plan_sort_ids(&[3, 1, 2]), Ok(vec![3, 1, 2]));
+        assert_eq!(
+            normalize_plan_sort_ids(&[1, 1]),
+            Err(PlanInputViolation::DuplicateSortId)
+        );
+        for invalid in [0, -1, i64::from(i32::MAX) + 1] {
+            assert_eq!(
+                normalize_plan_sort_ids(&[invalid]),
+                Err(PlanInputViolation::SortIdOutOfRange)
+            );
+        }
     }
 }

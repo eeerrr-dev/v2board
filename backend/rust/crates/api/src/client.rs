@@ -4,35 +4,17 @@ use axum::{
     http::{HeaderMap, HeaderValue, header},
     response::{IntoResponse, Response},
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
+pub(crate) use v2board_api_contract::auth::PublicConfig;
+use v2board_application::subscription::SubscriptionError;
 use v2board_compat::{ApiError, LegacyEnvelope, legacy_data};
 
 use crate::{
-    codec::standard_base64_encode,
-    request_params::payment_request_input,
-    runtime::AppState,
-    subscription,
-    telegram::send_telegram_message_with_admin,
-    user::{reset_day, resolve_subscribe_token, user_is_available},
-    validation::forbidden,
+    codec::standard_base64_encode, request_params::payment_request_input, runtime::AppState,
+    subscription, subscription_adapters::reset_day, telegram::send_telegram_message_with_admin,
+    user::resolve_subscribe_token, validation::forbidden,
 };
-
-/// Bare GET /public/config body (docs/api-dialect.md §5.1, W3): flags are
-/// booleans and `email_whitelist_suffix` is always a real array — the legacy
-/// `0` disabled-sentinel dies (§4.1).
-#[derive(Debug, Serialize)]
-pub(crate) struct PublicConfig {
-    pub(crate) tos_url: Option<String>,
-    pub(crate) is_email_verify: bool,
-    pub(crate) is_invite_force: bool,
-    pub(crate) email_whitelist_suffix: Vec<String>,
-    pub(crate) is_recaptcha: bool,
-    pub(crate) recaptcha_site_key: Option<String>,
-    pub(crate) app_description: Option<String>,
-    pub(crate) app_url: Option<String>,
-    pub(crate) logo: Option<String>,
-}
 
 pub(crate) async fn public_config(State(state): State<AppState>) -> Json<PublicConfig> {
     let config = state.config_snapshot();
@@ -82,23 +64,28 @@ pub(crate) async fn client_subscribe_response(
         .filter(|token| !token.is_empty())
         .ok_or_else(|| forbidden("token is null"))?;
     let token = resolve_subscribe_token(state, token).await?;
-    let user = v2board_db::user::find_user_access_by_token(&state.db, &token)
-        .await?
-        .ok_or_else(|| forbidden("token is error"))?;
-
-    let mut servers = if user_is_available(&user) {
-        v2board_db::server::fetch_available_servers(&state.db, user.group_id).await?
-    } else {
-        Vec::new()
-    };
+    let now = chrono::Utc::now().timestamp();
+    let context = state
+        .subscription_service()
+        .client_context(&token, now)
+        .await
+        .map_err(client_subscription_error)?;
+    let user = context.account;
+    let mut servers = context
+        .servers
+        .into_iter()
+        .map(subscription::available_server)
+        .collect::<Result<Vec<_>, _>>()?;
     // Prepend the show_info_to_server_enable pseudo-nodes (remaining traffic /
     // next reset / expiry). build_info_servers self-checks the config flag and
     // an empty server list, so calling it unconditionally is safe.
-    let plan = match user.plan_id {
-        Some(plan_id) => v2board_db::plan::find_plan(&state.db, plan_id).await?,
-        None => None,
-    };
-    let reset = reset_day(user.expired_at, plan.as_ref(), &config).filter(|day| *day != 0);
+    let reset = reset_day(
+        user.expired_at,
+        context.plan_reset_method,
+        config.reset_traffic_method,
+        now,
+    )
+    .filter(|day| *day != 0);
     let info = subscription::build_info_servers(&user, &servers, reset, &config);
     if !info.is_empty() {
         let mut merged = info;
@@ -163,23 +150,23 @@ pub(crate) async fn client_subscribe_response(
     let userinfo = match profile {
         Profile::Clash | Profile::ClashMeta | Profile::Loon | Profile::SingBox => Some(format!(
             "upload={}; download={}; total={}; expire={}",
-            user.u, user.d, user.transfer_enable, expire_or_empty
+            user.upload, user.download, user.transfer_enable, expire_or_empty
         )),
         Profile::QuantumultX => Some(format!(
             "upload={}; download={}; total={}; expire={}",
-            user.u,
-            user.d,
+            user.upload,
+            user.download,
             user.transfer_enable,
             user.expired_at.unwrap_or(0)
         )),
         Profile::V2RayTun => Some(match user.expired_at {
             Some(expired_at) => format!(
                 "upload={}; download={}; total={}; expire={}",
-                user.u, user.d, user.transfer_enable, expired_at
+                user.upload, user.download, user.transfer_enable, expired_at
             ),
             None => format!(
                 "upload={}; download={}; total={}",
-                user.u, user.d, user.transfer_enable
+                user.upload, user.download, user.transfer_enable
             ),
         }),
         Profile::None | Profile::Surge => None,
@@ -255,6 +242,14 @@ enum SubscriptionHeaderProfile {
     SingBox,
 }
 
+fn client_subscription_error(error: SubscriptionError) -> ApiError {
+    match error {
+        SubscriptionError::UserNotRegistered => forbidden("token is error"),
+        SubscriptionError::Repository(error) => ApiError::internal(error.to_string()),
+        error => ApiError::internal(error.to_string()),
+    }
+}
+
 /// Classify a subscribe flag into its header profile, mirroring the renderer selection in
 /// `subscription::SubscriptionFormat::detect` so the headers always match the emitted body.
 fn subscription_header_profile(flag: &str) -> SubscriptionHeaderProfile {
@@ -311,14 +306,17 @@ pub(crate) async fn client_app_config(
         .filter(|token| !token.is_empty())
         .ok_or_else(|| forbidden("token is null"))?;
     let token = resolve_subscribe_token(&state, token).await?;
-    let user = v2board_db::user::find_user_access_by_token(&state.db, &token)
-        .await?
-        .ok_or_else(|| forbidden("token is error"))?;
-    let servers = if user_is_available(&user) {
-        v2board_db::server::fetch_available_servers(&state.db, user.group_id).await?
-    } else {
-        Vec::new()
-    };
+    let context = state
+        .subscription_service()
+        .client_context(&token, chrono::Utc::now().timestamp())
+        .await
+        .map_err(client_subscription_error)?;
+    let user = context.account;
+    let servers = context
+        .servers
+        .into_iter()
+        .map(subscription::available_server)
+        .collect::<Result<Vec<_>, _>>()?;
     let config = state.config_snapshot();
     let body = subscription::build_client_app_config(&config, &user.uuid, &servers).await?;
     let mut response = body.into_response();
@@ -341,9 +339,11 @@ pub(crate) async fn client_app_version(
         .filter(|token| !token.is_empty())
         .ok_or_else(|| forbidden("token is null"))?;
     let token = resolve_subscribe_token(&state, token).await?;
-    let _user = v2board_db::user::find_user_access_by_token(&state.db, &token)
-        .await?
-        .ok_or_else(|| forbidden("token is error"))?;
+    let _user = state
+        .subscription_service()
+        .client_account(&token)
+        .await
+        .map_err(client_subscription_error)?;
     let config = state.config_snapshot();
     let ua = headers
         .get(header::USER_AGENT)
@@ -377,9 +377,14 @@ pub(crate) async fn payment_notify(
     request: Request,
 ) -> Result<Response, ApiError> {
     let input = payment_request_input(request, &method).await?;
-    let service =
-        v2board_domain::order::OrderService::new(state.db.clone(), state.config_snapshot());
-    let result = service.handle_payment_notify(&method, &uuid, input).await?;
+    let result = state
+        .order_service()
+        .handle_payment_notify(&method, &uuid, input)
+        .await
+        .map_err(|error| {
+            tracing::warn!(method, uuid, ?error, "payment notify failed");
+            ApiError::legacy("fail")
+        })?;
     // Laravel `PaymentController::handle` sends the `成功收款` admin Telegram message only
     // inside the `$order->status !== 0` guard, i.e. exactly on the fresh paid transition
     // (`paid_notice` is `Some`). A gateway replay leaves it `None` and stays silent. The

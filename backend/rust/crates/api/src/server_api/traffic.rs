@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::HashMap;
 
 use axum::{
     Json,
@@ -6,136 +6,26 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use chrono::{Datelike, TimeZone, Utc};
-use redis::AsyncCommands;
+#[cfg(test)]
 use rust_decimal::{Decimal, RoundingStrategy, prelude::ToPrimitive};
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use sqlx::{Postgres, QueryBuilder, Transaction};
 use uuid::Uuid;
-use v2board_analytics::{
-    AnalyticsEvent, IdentityKind, ReportedTrafficEvent, TrafficEventCore, enqueue_events,
+use v2board_application::server_runtime::{
+    AliveUpdate, PersistTrafficError, PersistTrafficReport, RuntimeTrafficEntry, ServerMetric,
 };
 use v2board_compat::ApiError;
+use v2board_domain_model::ServerKind;
 
 use crate::{json_value::value_to_i64, runtime::AppState};
 
 use super::{
     ParsedTrafficEntries, ServerNodeRow, TrafficEntry,
-    config::parse_i32_json_list,
-    repository::{load_server_node, load_uniproxy_node},
-    request::required_i32_param,
+    request::{load_server_node, load_uniproxy_node, required_i32_param},
 };
 
-const TRAFFIC_REPORT_SQL_BATCH_SIZE: usize = 500;
-const REDIS_MGET_BATCH_SIZE: usize = 500;
-pub(super) const ALIVE_CACHE_SCRIPT_BATCH_SIZE: usize = 64;
 pub(super) const ALIVE_CACHE_MAX_IPS_PER_USER: usize = 256;
 pub(super) const ALIVE_CACHE_MAX_USER_PAYLOAD_BYTES: usize = 16 * 1024;
-
-#[derive(Debug, Clone)]
-struct AcceptedTrafficItem {
-    user_id: i64,
-    traffic_epoch: i64,
-    raw_u: i64,
-    raw_d: i64,
-    charged_u: i64,
-    charged_d: i64,
-}
-
-// Merge every user's per-node alive-IP bucket in Redis itself. Reports from
-// different nodes can race; a client-side GET/SET loop loses one of those
-// updates and also costs two network round trips per user. This bounded script
-// makes each bounded batch atomic and sends each user's payload only once.
-pub(super) const ALIVE_CACHE_UPDATE_SCRIPT: &str = r#"
-local node_bucket = ARGV[1]
-local now = tonumber(ARGV[2])
-local device_limit_mode = tonumber(ARGV[3])
-
-if #KEYS == 0 or #KEYS > 64 or #ARGV ~= #KEYS + 3 then
-    return redis.error_reply('alive-IP batch exceeds its fixed bounds')
-end
-
-local prepared = {}
-for index, key in ipairs(KEYS) do
-    local value = {}
-    local current = redis.call('GET', key)
-    if current then
-        local ok, decoded = pcall(cjson.decode, current)
-        if ok and type(decoded) == 'table' then
-            value = decoded
-        end
-    end
-
-    local ok, aliveips = pcall(cjson.decode, ARGV[index + 3])
-    if not ok or type(aliveips) ~= 'table' then
-        return redis.error_reply('invalid alive-IP payload')
-    end
-    if #aliveips > 256 then
-        return redis.error_reply('alive-IP user payload exceeds its fixed bound')
-    end
-    value[node_bucket] = { aliveips = aliveips, lastupdateAt = now }
-
-    local stale = {}
-    for bucket, node in pairs(value) do
-        if bucket ~= 'alive_ip' then
-            local last_update = 0
-            if type(node) == 'table' then
-                last_update = tonumber(node.lastupdateAt) or 0
-            end
-            if now - last_update > 100 then
-                table.insert(stale, bucket)
-            end
-        end
-    end
-    for _, bucket in ipairs(stale) do
-        value[bucket] = nil
-    end
-
-    local bucket_count = 0
-    for bucket in pairs(value) do
-        if bucket ~= 'alive_ip' then
-            bucket_count = bucket_count + 1
-        end
-    end
-    if bucket_count > 32 then
-        return redis.error_reply('alive-IP cache exceeds its active-node bound')
-    end
-
-    local alive_count = 0
-    if device_limit_mode == 1 then
-        local unique = {}
-        for bucket, node in pairs(value) do
-            if bucket ~= 'alive_ip' and type(node) == 'table' and type(node.aliveips) == 'table' then
-                for _, ip_node in ipairs(node.aliveips) do
-                    if type(ip_node) == 'string' then
-                        local separator = string.find(ip_node, '_', 1, true)
-                        local ip = separator and string.sub(ip_node, 1, separator - 1) or ip_node
-                        unique[ip] = true
-                    end
-                end
-            end
-        end
-        for _ in pairs(unique) do
-            alive_count = alive_count + 1
-        end
-    else
-        for bucket, node in pairs(value) do
-            if bucket ~= 'alive_ip' and type(node) == 'table' and type(node.aliveips) == 'table' then
-                alive_count = alive_count + #node.aliveips
-            end
-        end
-    end
-
-    value.alive_ip = alive_count
-    prepared[index] = cjson.encode(value)
-end
-
-for index, key in ipairs(KEYS) do
-    redis.call('SET', key, prepared[index], 'EX', 120)
-end
-
-return #KEYS
-"#;
 
 pub(super) async fn server_push(
     state: &AppState,
@@ -152,9 +42,10 @@ pub(super) async fn server_push(
         // (e.g. DeepbworkController::submit -> ServerVmess::find + trafficFetch(..,'vmess')) and
         // never honor a request `node_type`. Force the caller's fixed protocol so a submit with a
         // spoofed node_type cannot load a different protocol's node / write its SERVER_* keys.
-        let node_type = fallback_node_type.unwrap_or("shadowsocks").to_string();
+        let node_type = ServerKind::try_from(fallback_node_type.unwrap_or("shadowsocks"))
+            .map_err(|_| ApiError::legacy("server is not exist"))?;
         let node_id = required_i32_param(params, "node_id")?;
-        let Some(node) = load_server_node(&state.db, &node_type, node_id).await? else {
+        let Some(node) = load_server_node(state, node_type, node_id).await? else {
             return Ok(Json(json!({ "ret": 0, "msg": "server is not found" })).into_response());
         };
         (node_type, node)
@@ -170,7 +61,7 @@ pub(super) async fn server_push(
     if parsed.ignored_rows != 0 || parsed.defaulted_counters != 0 {
         tracing::warn!(
             node_id = node.id,
-            node_type,
+            node_type = node_type.as_str(),
             ignored_rows = parsed.ignored_rows,
             defaulted_counters = parsed.defaulted_counters,
             "legacy traffic payload required compatibility coercion"
@@ -179,20 +70,29 @@ pub(super) async fn server_push(
     let entries = parsed.entries;
     server_cache_count(
         state,
-        "ONLINE_USER",
-        &node_type,
+        ServerMetric::OnlineUser,
+        node_type,
         node.id,
         entries.len() as i64,
     )
     .await?;
-    server_cache_timestamp(state, "LAST_PUSH_AT", &node_type, node.id).await?;
+    state
+        .server_runtime_service()
+        .write_metric(
+            node_type,
+            node.id,
+            ServerMetric::LastPushAt,
+            Utc::now().timestamp(),
+        )
+        .await
+        .map_err(|error| ApiError::internal(error.to_string()))?;
     if !entries.is_empty() {
         // Success means the complete report (charged deltas + daily statistics) is
         // durably committed. The worker applies user counters exactly once. Older
         // nodes without a client id receive a server-generated report identity;
         // they cannot get retry deduplication across a lost HTTP response, but they
         // no longer get a false 200 after partial Redis/SQL persistence.
-        persist_traffic_fetch(state, &node, &node_type, &entries, report_token.as_deref()).await?;
+        persist_traffic_fetch(state, &node, node_type, &entries, report_token.as_deref()).await?;
     }
 
     if uniproxy {
@@ -210,37 +110,14 @@ pub(super) async fn server_alive_list(
     // node before every action, aborting 500 'server is not exist' on a missing/invalid node_id.
     // Reproduce that gate here so alivelist matches `alive`/`user`/`push` (which already validate).
     load_uniproxy_node(state, params).await?;
-    let user_ids = sqlx::query_scalar::<_, i64>(
-        r#"
-        SELECT id
-        FROM users
-        WHERE CAST(u AS DECIMAL(30,0)) + CAST(d AS DECIMAL(30,0))
-              < CAST(transfer_enable AS DECIMAL(30,0))
-          AND (expired_at >= $1 OR expired_at IS NULL)
-          AND banned = 0
-          AND device_limit > 0
-        "#,
-    )
-    .bind(Utc::now().timestamp())
-    .fetch_all(&state.db)
-    .await?;
-
-    let mut conn = state.redis.get_multiplexed_async_connection().await?;
     let mut alive = serde_json::Map::new();
-    for user_ids in user_ids.chunks(REDIS_MGET_BATCH_SIZE) {
-        let keys = user_ids
-            .iter()
-            .map(|user_id| state.redis_key(&format!("ALIVE_IP_USER_{user_id}")))
-            .collect::<Vec<_>>();
-        let cached = conn.mget::<_, Vec<Option<String>>>(&keys).await?;
-        for (user_id, value) in user_ids.iter().copied().zip(cached) {
-            if let Some(value) = value
-                && let Ok(value) = serde_json::from_str::<serde_json::Value>(&value)
-                && let Some(alive_ip) = value.get("alive_ip").and_then(value_to_i64)
-            {
-                alive.insert(user_id.to_string(), json!(alive_ip));
-            }
-        }
+    for (user_id, alive_ip) in state
+        .server_runtime_service()
+        .alive_counts(Utc::now().timestamp())
+        .await
+        .map_err(|error| ApiError::internal(error.to_string()))?
+    {
+        alive.insert(user_id.to_string(), json!(alive_ip));
     }
     Ok(Json(json!({ "alive": alive })).into_response())
 }
@@ -258,7 +135,7 @@ pub(super) async fn server_alive(
     let now = Utc::now().timestamp();
     // UniProxyController::alive :174 reads device_limit_mode to decide how alive IPs are counted.
     let device_limit_mode = state.config_snapshot().device_limit_mode;
-    let node_bucket = format!("{node_type}{}", node.id);
+    let node_bucket = format!("{}{}", node_type.as_str(), node.id);
     let mut updates = Vec::with_capacity(object.len());
     for (uid, ips) in object {
         let Ok(user_id) = uid.parse::<i64>() else {
@@ -279,31 +156,16 @@ pub(super) async fn server_alive(
                 "Alive-IP user payload exceeds the supported size limit",
             ));
         }
-        updates.push((state.redis_key(&format!("ALIVE_IP_USER_{user_id}")), ips));
+        updates.push(AliveUpdate {
+            user_id,
+            ips_json: ips,
+        });
     }
-    if !updates.is_empty() {
-        let mut conn = state.redis.get_multiplexed_async_connection().await?;
-        let script = redis::Script::new(ALIVE_CACHE_UPDATE_SCRIPT);
-        for batch in updates.chunks(ALIVE_CACHE_SCRIPT_BATCH_SIZE) {
-            let mut invocation = script.prepare_invoke();
-            for (key, _) in batch {
-                invocation.key(key);
-            }
-            invocation.arg(&node_bucket).arg(now).arg(device_limit_mode);
-            for (_, ips) in batch {
-                invocation.arg(ips);
-            }
-            let updated = invocation.invoke_async::<i64>(&mut conn).await?;
-            let expected = i64::try_from(batch.len()).map_err(|_| {
-                ApiError::internal("Alive-IP update count is outside the supported range")
-            })?;
-            if updated != expected {
-                return Err(ApiError::internal(
-                    "Alive-IP cache update returned an unexpected count",
-                ));
-            }
-        }
-    }
+    state
+        .server_runtime_service()
+        .merge_alive(&node_bucket, now, device_limit_mode, &updates)
+        .await
+        .map_err(|error| ApiError::internal(error.to_string()))?;
     Ok(Json(json!({ "data": true })).into_response())
 }
 
@@ -352,28 +214,31 @@ pub(super) fn count_alive_ips(
 
 pub(super) async fn server_cache_timestamp(
     state: &AppState,
-    suffix: &str,
-    node_type: &str,
+    node_type: ServerKind,
     node_id: i32,
 ) -> Result<(), ApiError> {
-    server_cache_count(state, suffix, node_type, node_id, Utc::now().timestamp()).await
+    server_cache_count(
+        state,
+        ServerMetric::LastCheckAt,
+        node_type,
+        node_id,
+        Utc::now().timestamp(),
+    )
+    .await
 }
 
 async fn server_cache_count(
     state: &AppState,
-    suffix: &str,
-    node_type: &str,
+    metric: ServerMetric,
+    node_type: ServerKind,
     node_id: i32,
     value: i64,
 ) -> Result<(), ApiError> {
-    let key = state.redis_key(&format!(
-        "SERVER_{}_{}_{node_id}",
-        node_type.to_ascii_uppercase(),
-        suffix
-    ));
-    let mut conn = state.redis.get_multiplexed_async_connection().await?;
-    let _: () = conn.set_ex(key, value, 3600).await?;
-    Ok(())
+    state
+        .server_runtime_service()
+        .write_metric(node_type, node_id, metric, value)
+        .await
+        .map_err(|error| ApiError::internal(error.to_string()))
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -624,367 +489,85 @@ pub(super) fn traffic_report_payload_hash(
 async fn persist_traffic_fetch(
     state: &AppState,
     node: &ServerNodeRow,
-    node_type: &str,
+    node_type: ServerKind,
     entries: &[TrafficEntry],
     report_token: Option<&str>,
 ) -> Result<(), ApiError> {
-    let rate = parse_server_rate(&node.rate);
+    let node_type_text = node_type.as_str();
     let report_key = report_token.map_or_else(
-        || implicit_traffic_report_key(node_type, node.id),
-        |token| traffic_report_key(node_type, node.id, token),
+        || implicit_traffic_report_key(node_type_text, node.id),
+        |token| traffic_report_key(node_type_text, node.id, token),
     );
-    persist_durable_traffic_report(state, node, node_type, entries, rate, &report_key).await
-}
-
-async fn persist_durable_traffic_report(
-    state: &AppState,
-    node: &ServerNodeRow,
-    node_type: &str,
-    entries: &[TrafficEntry],
-    rate: Decimal,
-    report_key: &str,
-) -> Result<(), ApiError> {
-    let payload_hash = traffic_report_payload_hash(node.id, &node.rate, node_type, entries);
     let now = Utc::now().timestamp();
     let accounting_date = v2board_config::app_now().date_naive();
-    let identity_kind = if is_internal_traffic_report_key(report_key) {
-        IdentityKind::Implicit
-    } else {
-        IdentityKind::Explicit
+    let report = PersistTrafficReport {
+        installation_id: state.installation_id.to_string(),
+        report_key,
+        payload_hash: traffic_report_payload_hash(node.id, &node.rate, node_type_text, entries),
+        node_id: node.id,
+        node_kind: node_type,
+        group_ids: node.group_ids.clone(),
+        rate: node.rate.clone(),
+        entries: entries
+            .iter()
+            .map(|entry| RuntimeTrafficEntry {
+                user_id: entry.user_id,
+                upload: entry.u,
+                download: entry.d,
+            })
+            .collect(),
+        accepted_at: now,
+        accounting_date: accounting_date.format("%Y-%m-%d").to_string(),
+        accounting_record_at: today_start_timestamp(),
     };
-    let rate_text = canonical_rate_text(&node.rate, rate);
-    let rate_decimal_10_2 = rate_decimal_10_2(rate)?;
-    let mut tx = state.db.begin().await?;
-    let inserted = match sqlx::query(
-        r#"
-        INSERT INTO server_traffic_report
-            (report_key, payload_hash, node_id, node_type, rate_text, rate_decimal_10_2,
-             identity_kind, accepted_at, accounting_date, applied_at, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULL, $10, $11)
-        "#,
-    )
-    .bind(report_key)
-    .bind(&payload_hash)
-    .bind(node.id)
-    .bind(node_type)
-    .bind(&rate_text)
-    .bind(rate_decimal_10_2)
-    .bind(identity_kind_db_value(identity_kind))
-    .bind(now)
-    .bind(accounting_date)
-    .bind(now)
-    .bind(now)
-    .execute(&mut *tx)
-    .await
-    {
-        Ok(_) => true,
-        Err(error)
-            if error
-                .as_database_error()
-                .is_some_and(|error| error.is_unique_violation()) =>
-        {
-            false
-        }
-        Err(error) => return Err(error.into()),
-    };
-    if !inserted {
-        let existing_hash: String = sqlx::query_scalar(
-            "SELECT payload_hash FROM server_traffic_report WHERE report_key = $1 FOR UPDATE",
-        )
-        .bind(report_key)
-        .fetch_one(&mut *tx)
-        .await?;
-        if existing_hash != payload_hash {
-            return Err(ApiError::bad_request(
-                "Traffic report idempotency key was reused with a different payload",
-            ));
-        }
-        tx.commit().await?;
-        return Ok(());
-    }
-
-    // The user rows are the serialization point between report acceptance and
-    // every subscription mutation that resets traffic. Capturing the epoch
-    // while those rows are locked gives each item one unambiguous quota period.
-    // It also prevents a compromised node from charging users outside the
-    // groups currently assigned to that node.
-    let epochs = lock_report_users(&mut tx, node, entries).await?;
-    let mut items = Vec::with_capacity(entries.len());
-    for entry in entries {
-        let epoch = *epochs
-            .get(&entry.user_id)
-            .ok_or_else(|| ApiError::bad_request("Traffic report contains an unauthorized user"))?;
-        items.push(AcceptedTrafficItem {
-            user_id: entry.user_id,
-            traffic_epoch: epoch,
-            raw_u: entry.u,
-            raw_d: entry.d,
-            charged_u: charged_bytes(entry.u, rate)?,
-            charged_d: charged_bytes(entry.d, rate)?,
-        });
-    }
-    for chunk in items.chunks(TRAFFIC_REPORT_SQL_BATCH_SIZE) {
-        let mut builder = QueryBuilder::<Postgres>::new(
-            "INSERT INTO server_traffic_report_item \
-             (report_key, user_id, traffic_epoch, raw_u, raw_d, charged_u, charged_d) ",
-        );
-        builder.push_values(chunk, |mut row, item| {
-            row.push_bind(report_key)
-                .push_bind(item.user_id)
-                .push_bind(item.traffic_epoch)
-                .push_bind(item.raw_u)
-                .push_bind(item.raw_d)
-                .push_bind(item.charged_u)
-                .push_bind(item.charged_d);
-        });
-        builder.build().execute(&mut *tx).await?;
-    }
-    let rate_decimal_text = decimal_with_scale(rate_decimal_10_2, 2);
-    let mut analytics_events = Vec::<AnalyticsEvent>::with_capacity(items.len());
-    for item in &items {
-        let core = TrafficEventCore {
-            installation_id: state.installation_id.to_string(),
-            report_key: report_key.to_owned(),
-            payload_hash: payload_hash.clone(),
-            identity_kind,
-            user_id: item.user_id.to_string(),
-            traffic_epoch: item.traffic_epoch.to_string(),
-            server_id: node.id.to_string(),
-            server_type: node_type.to_owned(),
-            rate_text: rate_text.clone(),
-            rate_decimal_10_2: rate_decimal_text.clone(),
-            raw_u: item.raw_u.to_string(),
-            raw_d: item.raw_d.to_string(),
-            charged_u: item.charged_u.to_string(),
-            charged_d: item.charged_d.to_string(),
-            accepted_at: now,
-            accounting_date: accounting_date.format("%Y-%m-%d").to_string(),
-            accounting_timezone: "Asia/Shanghai".to_owned(),
-        };
-        let event = ReportedTrafficEvent::new(core)
-            .and_then(ReportedTrafficEvent::into_outbox)
-            .map_err(traffic_analytics_event_error)?;
-        analytics_events.push(event);
-    }
-    enqueue_events(&mut tx, &analytics_events, now)
+    state
+        .server_runtime_service()
+        .persist_traffic(report)
         .await
-        .map_err(traffic_analytics_outbox_error)?;
-    persist_traffic_stats(&mut tx, node, node_type, entries, rate).await?;
-    tx.commit().await?;
-    Ok(())
+        .map_err(persist_traffic_error)
 }
 
-fn is_internal_traffic_report_key(report_key: &str) -> bool {
-    report_key.starts_with("i-")
-}
-
-fn identity_kind_db_value(identity_kind: IdentityKind) -> &'static str {
-    match identity_kind {
-        IdentityKind::Explicit => "explicit",
-        IdentityKind::Implicit => "implicit",
-    }
-}
-
-fn canonical_rate_text(raw: &str, parsed: Decimal) -> String {
-    if raw.trim().parse::<Decimal>().is_ok() {
-        raw.trim().to_owned()
-    } else {
-        parsed.normalize().to_string()
-    }
-}
-
-fn rate_decimal_10_2(rate: Decimal) -> Result<Decimal, ApiError> {
-    let rounded = rate.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
-    let maximum = Decimal::new(9_999_999_999, 2);
-    if rounded.is_sign_negative() || rounded > maximum {
-        return Err(ApiError::bad_request(
-            "Server traffic rate is outside the supported range",
-        ));
-    }
-    Ok(rounded)
-}
-
-fn decimal_with_scale(mut value: Decimal, scale: u32) -> String {
-    value.rescale(scale);
-    value.to_string()
-}
-
-fn traffic_analytics_event_error(error: v2board_analytics::EventValidationError) -> ApiError {
-    tracing::error!(
-        ?error,
-        "refusing to persist an invalid traffic analytics event"
-    );
-    ApiError::internal("failed to persist traffic analytics event")
-}
-
-fn traffic_analytics_outbox_error(error: v2board_analytics::OutboxError) -> ApiError {
-    use v2board_analytics::{AnalyticsAdmissionError, OutboxError};
-
+fn persist_traffic_error(error: PersistTrafficError) -> ApiError {
     match error {
-        OutboxError::Admission(error @ AnalyticsAdmissionError::SoftRateLimited) => {
-            tracing::warn!(?error, "traffic analytics soft-pressure rate limit reached");
+        PersistTrafficError::IdempotencyConflict => ApiError::bad_request(
+            "Traffic report idempotency key was reused with a different payload",
+        ),
+        PersistTrafficError::UnauthorizedUser => {
+            ApiError::bad_request("Traffic report contains an unauthorized user")
+        }
+        PersistTrafficError::RateOutOfRange => {
+            ApiError::bad_request("Server traffic rate is outside the supported range")
+        }
+        PersistTrafficError::ChargeOutOfRange => {
+            ApiError::bad_request("Server traffic charge is outside the supported range")
+        }
+        PersistTrafficError::TotalOutOfRange => {
+            ApiError::bad_request("Server traffic total is outside the supported range")
+        }
+        PersistTrafficError::AnalyticsRateLimited => {
+            tracing::warn!("traffic analytics soft-pressure rate limit reached");
             ApiError::too_many_requests(
                 "Traffic ingestion is temporarily rate limited; retry later",
             )
         }
-        OutboxError::Admission(
-            error @ (AnalyticsAdmissionError::HardStop
-            | AnalyticsAdmissionError::MissingOrMismatchedPolicy
-            | AnalyticsAdmissionError::InvalidState),
-        ) => {
-            tracing::warn!(
-                ?error,
-                "traffic analytics admission refused the transaction"
-            );
+        PersistTrafficError::AnalyticsUnavailable => {
+            tracing::warn!("traffic analytics admission refused the transaction");
             ApiError::service_unavailable(
                 "Traffic ingestion is temporarily unavailable; retry later",
             )
         }
-        error => {
+        PersistTrafficError::AnalyticsEventInvalid => {
+            tracing::error!("refusing to persist an invalid traffic analytics event");
+            ApiError::internal("failed to persist traffic analytics event")
+        }
+        PersistTrafficError::Repository(error) => {
             tracing::error!(?error, "failed to enqueue the traffic analytics event");
             ApiError::internal("failed to persist traffic analytics event")
         }
     }
 }
 
-async fn lock_report_users(
-    tx: &mut Transaction<'_, Postgres>,
-    node: &ServerNodeRow,
-    entries: &[TrafficEntry],
-) -> Result<BTreeMap<i64, i64>, ApiError> {
-    let user_ids = entries
-        .iter()
-        .map(|entry| entry.user_id)
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
-    if user_ids.is_empty() {
-        return Ok(BTreeMap::new());
-    }
-    let group_ids = parse_i32_json_list(Some(&node.group_id));
-    if group_ids.is_empty() {
-        return Err(ApiError::bad_request(
-            "Traffic report contains an unauthorized user",
-        ));
-    }
-
-    let mut epochs = BTreeMap::new();
-    for user_chunk in user_ids.chunks(TRAFFIC_REPORT_SQL_BATCH_SIZE) {
-        let mut builder =
-            QueryBuilder::<Postgres>::new("SELECT id, traffic_epoch FROM users WHERE id IN (");
-        {
-            let mut separated = builder.separated(", ");
-            for user_id in user_chunk {
-                separated.push_bind(*user_id);
-            }
-        }
-        builder.push(") AND group_id IN (");
-        {
-            let mut separated = builder.separated(", ");
-            for group_id in &group_ids {
-                separated.push_bind(*group_id);
-            }
-        }
-        builder.push(") ORDER BY id FOR UPDATE");
-        for (user_id, epoch) in builder
-            .build_query_as::<(i64, i64)>()
-            .fetch_all(&mut **tx)
-            .await?
-        {
-            epochs.insert(user_id, epoch);
-        }
-    }
-    if epochs.len() != user_ids.len() {
-        return Err(ApiError::bad_request(
-            "Traffic report contains an unauthorized user",
-        ));
-    }
-    Ok(epochs)
-}
-
-async fn persist_traffic_stats(
-    tx: &mut Transaction<'_, Postgres>,
-    node: &ServerNodeRow,
-    node_type: &str,
-    entries: &[TrafficEntry],
-    rate: Decimal,
-) -> Result<(), ApiError> {
-    let record_at = today_start_timestamp();
-    let now = Utc::now().timestamp();
-    let mut total_u = 0_i64;
-    let mut total_d = 0_i64;
-    for entry in entries {
-        (total_u, total_d) = checked_traffic_pair(total_u, total_d, entry.u, entry.d)?;
-    }
-
-    // A single row-alias upsert per fixed-size chunk replaces the former
-    // SELECT + UPDATE/INSERT round trip for every user.  The unique statistics
-    // key serializes concurrent node reports, while strict PostgreSQL arithmetic
-    // rejects rather than wraps a signed BIGINT overflow.
-    for chunk in entries.chunks(TRAFFIC_REPORT_SQL_BATCH_SIZE) {
-        let mut builder = QueryBuilder::<Postgres>::new(
-            "INSERT INTO user_traffic \
-             (user_id, server_rate, u, d, record_type, record_at, created_at, updated_at) ",
-        );
-        builder.push_values(chunk, |mut row, entry| {
-            row.push_bind(entry.user_id)
-                .push_bind(rate)
-                .push_bind(entry.u)
-                .push_bind(entry.d)
-                .push_bind("d")
-                .push_bind(record_at)
-                .push_bind(now)
-                .push_bind(now);
-        });
-        builder.push(
-            " ON CONFLICT (server_rate, user_id, record_at) DO UPDATE SET \
-             u = user_traffic.u + EXCLUDED.u, \
-             d = user_traffic.d + EXCLUDED.d, \
-             updated_at = EXCLUDED.updated_at",
-        );
-        builder
-            .build()
-            .execute(&mut **tx)
-            .await
-            .map_err(traffic_stat_write_error)?;
-    }
-
-    sqlx::query(
-        r#"
-        INSERT INTO server_traffic
-            (server_id, server_type, u, d, record_type, record_at, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, 'd', $5, $6, $7)
-        ON CONFLICT (server_id, server_type, record_at) DO UPDATE SET
-            u = server_traffic.u + EXCLUDED.u,
-            d = server_traffic.d + EXCLUDED.d,
-            updated_at = EXCLUDED.updated_at
-        "#,
-    )
-    .bind(node.id)
-    .bind(node_type)
-    .bind(total_u)
-    .bind(total_d)
-    .bind(record_at)
-    .bind(now)
-    .bind(now)
-    .execute(&mut **tx)
-    .await
-    .map_err(traffic_stat_write_error)?;
-    Ok(())
-}
-
-fn traffic_stat_write_error(error: sqlx::Error) -> ApiError {
-    let is_overflow = error
-        .as_database_error()
-        .and_then(|error| error.code())
-        .is_some_and(|code| code.as_ref() == "22003");
-    if is_overflow {
-        ApiError::bad_request("Server traffic total is outside the supported range")
-    } else {
-        ApiError::Database(error)
-    }
-}
-
+#[cfg(test)]
 pub(super) fn checked_traffic_pair(
     current_u: i64,
     current_d: i64,
@@ -1017,12 +600,14 @@ fn today_start_timestamp() -> i64 {
 /// Coerce a node's `rate` to a multiplier. Laravel reads `$server['rate']` as a raw string and
 /// PHP coerces a non-numeric / empty value to 0 (so charged traffic becomes 0), NOT to 1 — the
 /// pinned "traffic-charge coercion" contract.
+#[cfg(test)]
 pub(super) fn parse_server_rate(rate: &str) -> Decimal {
     rate.parse::<Decimal>().unwrap_or(Decimal::ZERO)
 }
 
 /// Charged bytes billed against a user's quota: raw counter × node rate, rounded to an integer
 /// for the durable traffic outbox consumed by the worker.
+#[cfg(test)]
 pub(super) fn charged_bytes(bytes: i64, rate: Decimal) -> Result<i64, ApiError> {
     Decimal::from(bytes)
         .checked_mul(rate)
@@ -1039,38 +624,28 @@ pub(super) fn charged_bytes(bytes: i64, rate: Decimal) -> Result<i64, ApiError> 
 #[cfg(test)]
 mod admission_tests {
     use axum::{http::StatusCode, response::IntoResponse};
-    use v2board_analytics::{AnalyticsAdmissionError, OutboxError};
+    use v2board_application::server_runtime::PersistTrafficError;
 
-    use super::traffic_analytics_outbox_error;
+    use super::persist_traffic_error;
 
     #[test]
     fn traffic_hard_capacity_refusals_are_retryable_service_unavailable() {
-        for error in [
-            AnalyticsAdmissionError::HardStop,
-            AnalyticsAdmissionError::MissingOrMismatchedPolicy,
-            AnalyticsAdmissionError::InvalidState,
-        ] {
-            let response =
-                traffic_analytics_outbox_error(OutboxError::Admission(error)).into_response();
-            assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-        }
+        let response =
+            persist_traffic_error(PersistTrafficError::AnalyticsUnavailable).into_response();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 
     #[test]
     fn traffic_soft_pressure_uses_rate_limit_status() {
-        let response = traffic_analytics_outbox_error(OutboxError::Admission(
-            AnalyticsAdmissionError::SoftRateLimited,
-        ))
-        .into_response();
+        let response =
+            persist_traffic_error(PersistTrafficError::AnalyticsRateLimited).into_response();
         assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
     }
 
     #[test]
     fn admission_integrity_failures_are_not_mislabeled_as_capacity_pressure() {
-        let response = traffic_analytics_outbox_error(OutboxError::Admission(
-            AnalyticsAdmissionError::Overflow,
-        ))
-        .into_response();
+        let response =
+            persist_traffic_error(PersistTrafficError::AnalyticsEventInvalid).into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }
 }

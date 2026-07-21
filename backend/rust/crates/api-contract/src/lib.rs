@@ -6,12 +6,22 @@
 //! and generated frontend bindings; infrastructure rows and form/domain models
 //! must not leak here.
 
+pub mod admin_business;
+pub mod admin_codes;
+pub mod admin_platform;
+pub mod admin_servers;
+pub mod auth;
 pub mod commerce;
+pub mod common;
 pub mod configuration;
+pub mod content;
 pub mod operations;
 pub mod patch;
 pub mod problem;
 pub mod time;
+pub mod user;
+pub mod user_activity;
+pub mod user_commerce;
 
 use utoipa::openapi::security::{Http, HttpAuthScheme, SecurityScheme};
 use utoipa::{Modify, OpenApi};
@@ -23,6 +33,7 @@ use crate::problem::{
 };
 
 pub use commerce::{AdminPlanItem, CreatedId, PlanCreate, PlanPatch, SortIdsRequest};
+pub use common::{CreatedInt32Id, CreatedInt64Id, CreatedTradeNo, Page};
 pub use configuration::{ConfigActivationPending, PendingActivation};
 pub use operations::{
     HttpMethod, INTERNAL_OPERATIONS, InternalOperation, OperationParameter, OperationSurface,
@@ -30,8 +41,9 @@ pub use operations::{
 };
 
 /// OpenAPI 3.1 document generated from the Rust transport source of truth.
-/// Every internal operation is present; individual JSON families become
-/// field-typed as their handlers stop returning untyped `serde_json::Value`.
+/// Every internal operation and every JSON root is represented by a named,
+/// field-typed DTO. Deliberately dynamic maps are individually inventoried by
+/// the contract coverage gate and still constrain their value schemas.
 #[derive(OpenApi)]
 #[openapi(
     info(

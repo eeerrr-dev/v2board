@@ -6,11 +6,11 @@ use std::sync::{
 use arc_swap::ArcSwap;
 use uuid::Uuid;
 use v2board_config::{AppConfig, RedisKeyspace};
-use v2board_db::DbPool;
-use v2board_domain::{
-    operator_config::{self, OperatorConfigConsumer, OperatorConfigError},
-    smtp::SmtpTransportCache,
+use v2board_configuration_adapters::operator_config::{
+    self, OperatorConfigConsumer, OperatorConfigError,
 };
+use v2board_db::DbPool;
+use v2board_mail_adapters::smtp::SmtpTransportCache;
 
 #[derive(Clone)]
 pub(crate) struct WorkerState {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
-import type { admin } from '@v2board/api-client';
+import { admin } from '@v2board/api-client';
 import type { AdminPayment, PaymentFormDefinition } from '@v2board/types';
 import { ArrowDown, ArrowUp, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { Controller, useForm, useFormState, useWatch } from 'react-hook-form';
@@ -106,29 +106,35 @@ function PaymentEditor({
   // caches proxy reads, which freezes error/submit UI after the first render.
   const { errors: formErrors } = useFormState({ control: form.control });
   const selectedPaymentMethod = useWatch({ control: form.control, name: 'payment' });
-  const paymentMethodsQuery = usePaymentMethods(open);
+  const creating = record === undefined;
+  const paymentMethodsQuery = usePaymentMethods(open && creating);
   const definitionQuery = usePaymentForm(
     selectedPaymentMethod,
-    record?.id,
-    open && Boolean(selectedPaymentMethod),
+    undefined,
+    open && creating && Boolean(selectedPaymentMethod),
   );
   const paymentMethods = paymentMethodsQuery.data ?? [];
   const definition = definitionQuery.data;
-  const methodsLoading = open && (paymentMethodsQuery.isPending || paymentMethodsQuery.isFetching);
-  const methodsError = open && paymentMethodsQuery.isError;
+  const methodsLoading =
+    open && creating && (paymentMethodsQuery.isPending || paymentMethodsQuery.isFetching);
+  const methodsError = open && creating && paymentMethodsQuery.isError;
   const methodsEmpty =
     open &&
+    creating &&
     !methodsLoading &&
     !methodsError &&
     paymentMethodsQuery.data !== undefined &&
     paymentMethods.length === 0;
   const definitionLoading =
     open &&
+    creating &&
     Boolean(selectedPaymentMethod) &&
     (definitionQuery.isPending || definitionQuery.isFetching);
-  const definitionError = open && Boolean(selectedPaymentMethod) && definitionQuery.isError;
+  const definitionError =
+    open && creating && Boolean(selectedPaymentMethod) && definitionQuery.isError;
   const definitionEmpty =
     open &&
+    creating &&
     Boolean(selectedPaymentMethod) &&
     !definitionLoading &&
     !definitionError &&
@@ -136,12 +142,15 @@ function PaymentEditor({
     Object.keys(definition).length === 0;
   const definitionReady =
     open &&
+    creating &&
     Boolean(selectedPaymentMethod) &&
     !definitionLoading &&
     !definitionError &&
     definition !== undefined &&
     Object.keys(definition).length > 0;
-  const editorReady = open && !methodsLoading && !methodsError && !methodsEmpty && definitionReady;
+  const editorReady = record
+    ? open
+    : open && !methodsLoading && !methodsError && !methodsEmpty && definitionReady;
 
   // Deliberate useCallback: the payment-form hydration effect below keys on
   // this identity; a per-render function would replay the hydration.
@@ -182,10 +191,23 @@ function PaymentEditor({
   ]);
 
   const save = form.handleSubmit((values) => {
-    if (!editorReady || !definition) return;
+    if (!editorReady) return;
+    const metadata = {
+      name: values.name,
+      icon: values.icon,
+      notify_domain: values.notify_domain,
+      handling_fee_percent: values.handling_fee_percent,
+      handling_fee_fixed: values.handling_fee_fixed,
+    };
+    if (record) {
+      onSave({ id: record.id, ...metadata }, () => onOpenChange(false));
+      return;
+    }
+    if (!definition) return;
     onSave(
       {
-        ...values,
+        ...metadata,
+        payment: admin.paymentProviderCodeSchema.parse(values.payment),
         config: configForDefinition(definition, values.config),
       },
       () => onOpenChange(false),
@@ -284,26 +306,30 @@ function PaymentEditor({
             <FieldLabel htmlFor="payment-method">
               {t(($) => $.admin.payments.method_label)}
             </FieldLabel>
-            <Select
-              value={selectedPaymentMethod ?? ''}
-              disabled={methodsLoading || methodsError || methodsEmpty}
-              onValueChange={onSelectPaymentMethod}
-            >
-              <SelectTrigger
-                id="payment-method"
-                className="w-full"
-                aria-invalid={Boolean(formErrors.payment)}
+            {record ? (
+              <Input id="payment-method" value={record.payment} disabled />
+            ) : (
+              <Select
+                value={selectedPaymentMethod ?? ''}
+                disabled={methodsLoading || methodsError || methodsEmpty}
+                onValueChange={onSelectPaymentMethod}
               >
-                <SelectValue placeholder={t(($) => $.admin.payments.method_placeholder)} />
-              </SelectTrigger>
-              <SelectContent>
-                {paymentMethods.map((method) => (
-                  <SelectItem key={method} value={method}>
-                    {method}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                <SelectTrigger
+                  id="payment-method"
+                  className="w-full"
+                  aria-invalid={Boolean(formErrors.payment)}
+                >
+                  <SelectValue placeholder={t(($) => $.admin.payments.method_placeholder)} />
+                </SelectTrigger>
+                <SelectContent>
+                  {paymentMethods.map((method) => (
+                    <SelectItem key={method} value={method}>
+                      {method}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             <FieldError errors={[formErrors.payment]} />
           </Field>
 
@@ -355,39 +381,48 @@ function PaymentEditor({
             />
           ) : null}
 
-          {definitionReady && definition
-            ? Object.entries(definition).map(([key, definitionField]) => {
-                const inputType = definitionField.type;
-                const showInput =
-                  inputType === 'input' ||
-                  inputType === 'text' ||
-                  inputType === 'string' ||
-                  !inputType;
+          {record
+            ? Object.entries(record.config).map(([key, value]) => (
+                <Field key={`${record.payment}:${key}`}>
+                  <FieldLabel htmlFor={`payment-config-${key}`}>{key}</FieldLabel>
+                  <Input id={`payment-config-${key}`} value={value} disabled />
+                </Field>
+              ))
+            : definitionReady && definition
+              ? Object.entries(definition).map(([key, definitionField]) => {
+                  const inputType = definitionField.type;
+                  const showInput =
+                    inputType === 'input' ||
+                    inputType === 'text' ||
+                    inputType === 'string' ||
+                    !inputType;
 
-                return (
-                  <Field key={`${selectedPaymentMethod}:${key}`}>
-                    <FieldLabel htmlFor={`payment-config-${key}`}>
-                      {definitionField.label}
-                    </FieldLabel>
-                    {showInput ? (
-                      <Controller
-                        control={form.control}
-                        name={`config.${key}`}
-                        defaultValue={form.getValues('config')[key] ?? definitionField.value ?? ''}
-                        render={({ field }) => (
-                          <Input
-                            id={`payment-config-${key}`}
-                            placeholder={definitionField.description}
-                            {...field}
-                          />
-                        )}
-                      />
-                    ) : null}
-                  </Field>
-                );
-              })
-            : null}
-          <FieldError errors={[formErrors.config]} />
+                  return (
+                    <Field key={`${selectedPaymentMethod}:${key}`}>
+                      <FieldLabel htmlFor={`payment-config-${key}`}>
+                        {definitionField.label}
+                      </FieldLabel>
+                      {showInput ? (
+                        <Controller
+                          control={form.control}
+                          name={`config.${key}`}
+                          defaultValue={
+                            form.getValues('config')[key] ?? definitionField.value ?? ''
+                          }
+                          render={({ field }) => (
+                            <Input
+                              id={`payment-config-${key}`}
+                              placeholder={definitionField.description}
+                              {...field}
+                            />
+                          )}
+                        />
+                      ) : null}
+                    </Field>
+                  );
+                })
+              : null}
+          {creating ? <FieldError errors={[formErrors.config]} /> : null}
 
           {selectedPaymentMethod === 'MGate' ? (
             <Alert className="border-warning/30 bg-warning/10 text-warning">

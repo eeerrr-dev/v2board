@@ -32,6 +32,10 @@ pub(crate) fn integration_config(_pool: &PgPool, redis_url: &str) -> Result<AppC
     Ok(config)
 }
 
+pub(super) fn operator_authority_config() -> Result<AppConfig> {
+    AppConfig::try_from_api_env().context("load contract AppConfig")
+}
+
 /// Payment fixtures must store the same at-rest AES-256-GCM envelope the
 /// runtime writes; a plaintext `payment_method.config` row is an integrity
 /// error to every reader.
@@ -43,7 +47,7 @@ pub(crate) fn encrypt_payment_fixture_config(
     let object = config
         .as_object()
         .context("payment fixture config must be a JSON object")?;
-    v2board_domain::payment_secrets::encrypt_payment_config(
+    v2board_payment_adapters::payment_secrets::encrypt_payment_config(
         INTEGRATION_APP_KEY,
         payment,
         uuid,

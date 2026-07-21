@@ -1,21 +1,20 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::BTreeMap, sync::Arc};
 
 use anyhow::{Context, Result, ensure};
 use chrono::Utc;
 use sqlx::PgPool;
 use tokio::task::JoinSet;
 use uuid::Uuid;
-use v2board_db::installation_id;
-use v2board_domain::{
-    admin::{AdminService, PaymentCreate},
-    auth::PasswordKdf,
-    order::{OrderService, PaymentNotifyInput},
-    smtp::SmtpTransportCache,
+use v2board_application::{
+    order::PaymentNotifyInput,
+    payment::{PaymentCreateInput, PaymentService},
+    reconciliation::ReconciliationService,
 };
+use v2board_db::{
+    admin_payment::PostgresPaymentRepository, reconciliation::PostgresReconciliationRepository,
+};
+use v2board_order_adapters::runtime_order_service;
+use v2board_payment_adapters::{EncryptedPaymentSecurity, Sha256ReconciliationIdentityHasher};
 
 use super::harness::{insert_user, integration_config, sha256_bytes, sha256_hex};
 
@@ -68,22 +67,20 @@ pub(super) async fn late_payment_reconciliation(
 
     // Exercise the real admin path: drop must archive rather than delete, hide
     // the version from ordinary reads, and retain it for delayed callbacks.
-    let admin = AdminService::new(
-        pool.clone(),
-        redis::Client::open(redis_url)?,
-        installation_id(pool).await?,
-        Arc::new(integration_config(pool, redis_url)?),
-        reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(2))
-            .timeout(Duration::from_secs(5))
-            .build()?,
-        PasswordKdf::new(1),
-        SmtpTransportCache::default(),
+    let payment_config = integration_config(pool, redis_url)?;
+    let payments = PaymentService::new(
+        PostgresPaymentRepository::new(pool.clone()),
+        EncryptedPaymentSecurity::new(payment_config.app_key.clone()),
+        payment_config.app_url.clone(),
     );
-    admin.payment_delete(i64::from(payment_id)).await?;
-    let payments = admin.payments_list().await?;
+    let reconciliations = ReconciliationService::new(
+        PostgresReconciliationRepository::new(pool.clone()),
+        Sha256ReconciliationIdentityHasher,
+    );
+    payments.archive(i64::from(payment_id), now).await?;
+    let active_payments = payments.payments().await?;
     ensure!(
-        payments.iter().all(|row| row.id != payment_id),
+        active_payments.iter().all(|row| row.id != payment_id),
         "archived payment remained visible in the ordinary admin list"
     );
 
@@ -104,14 +101,14 @@ pub(super) async fn late_payment_reconciliation(
     );
     signed.insert("sign_type".to_string(), "MD5".to_string());
     let input = PaymentNotifyInput {
-        params: signed.into_iter().collect::<HashMap<_, _>>(),
+        params: signed,
         body: Vec::new(),
-        headers: HashMap::new(),
+        headers: BTreeMap::new(),
     };
 
     let mut config = integration_config(pool, redis_url)?;
     config.database_url = database_url.to_string();
-    let order = OrderService::new(pool.clone(), Arc::new(config));
+    let order = runtime_order_service(pool.clone(), Arc::new(config));
     let mut callbacks = JoinSet::new();
     const CALLBACK_COUNT: usize = 8;
     for _ in 0..CALLBACK_COUNT {
@@ -183,7 +180,7 @@ pub(super) async fn late_payment_reconciliation(
             PaymentNotifyInput {
                 params: mismatched.into_iter().collect(),
                 body: Vec::new(),
-                headers: HashMap::new(),
+                headers: BTreeMap::new(),
             },
         )
         .await?;
@@ -236,7 +233,7 @@ pub(super) async fn late_payment_reconciliation(
             PaymentNotifyInput {
                 params: unknown_order.into_iter().collect(),
                 body: Vec::new(),
-                headers: HashMap::new(),
+                headers: BTreeMap::new(),
             },
         )
         .await?;
@@ -291,24 +288,14 @@ pub(super) async fn late_payment_reconciliation(
         "delayed callbacks did not preserve the archived verification version"
     );
     let expected_callback_hash_hex = sha256_hex(&unknown_callback_no);
-    let (list_rows, list_total) = admin
-        .reconciliations_list(
-            v2board_compat::Pagination {
-                page: 1,
-                per_page: 10,
-            },
-            None,
-            None,
-            None,
-            Some(&missing_trade_no),
-            None,
-        )
+    let list_page = reconciliations
+        .reconciliations(10, 0, None, None, None, Some(&missing_trade_no), None)
         .await?;
     ensure!(
-        list_total == 1
-            && list_rows.first().is_some_and(|row| {
-                row["reason"] == "order_not_found"
-                    && row["callback_no_hash"].as_str() == Some(expected_callback_hash_hex.as_str())
+        list_page.total == 1
+            && list_page.items.first().is_some_and(|row| {
+                row.reason == "order_not_found"
+                    && row.callback_no_hash == expected_callback_hash_hex
             }),
         "unknown-order reconciliation was not discoverable through the global admin API"
     );
@@ -349,7 +336,7 @@ pub(super) async fn late_payment_reconciliation(
     let paid_input = PaymentNotifyInput {
         params: paid_callback.into_iter().collect(),
         body: Vec::new(),
-        headers: HashMap::new(),
+        headers: BTreeMap::new(),
     };
     let paid_response = order
         .handle_payment_notify("EPay", &payment_uuid, paid_input.clone())
@@ -411,37 +398,33 @@ pub(super) async fn late_payment_reconciliation(
 pub(super) async fn payment_config_at_rest_opacity(pool: &PgPool, redis_url: &str) -> Result<()> {
     let mut config = integration_config(pool, redis_url)?;
     config.app_url = Some("https://opacity.integration.invalid".to_string());
-    let admin = AdminService::new(
-        pool.clone(),
-        redis::Client::open(redis_url)?,
-        installation_id(pool).await?,
-        Arc::new(config),
-        reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(2))
-            .timeout(Duration::from_secs(5))
-            .build()?,
-        PasswordKdf::new(1),
-        SmtpTransportCache::default(),
+    let payments = PaymentService::new(
+        PostgresPaymentRepository::new(pool.clone()),
+        EncryptedPaymentSecurity::new(config.app_key.clone()),
+        config.app_url.clone(),
     );
-    let submitted = serde_json::json!({
-        "url": "https://opacity.pay.invalid",
-        "pid": "opacity-epay-pid-4242",
-        "key": "opacity-epay-secret-key-material",
-    });
-    let submitted_object = submitted
-        .as_object()
-        .context("submitted opacity config is an object")?
-        .clone();
-    let payment_id = admin
-        .payment_create(&PaymentCreate {
-            name: "at-rest opacity".to_string(),
-            payment: "EPay".to_string(),
-            config: submitted_object.clone(),
-            icon: None,
-            notify_domain: None,
-            handling_fee_fixed: None,
-            handling_fee_percent: None,
-        })
+    let submitted = BTreeMap::from([
+        ("url".to_string(), "https://opacity.pay.invalid".to_string()),
+        ("pid".to_string(), "opacity-epay-pid-4242".to_string()),
+        (
+            "key".to_string(),
+            "opacity-epay-secret-key-material".to_string(),
+        ),
+    ]);
+    let now = Utc::now().timestamp();
+    let payment_id = payments
+        .create(
+            PaymentCreateInput {
+                name: "at-rest opacity".to_string(),
+                provider: "EPay".to_string(),
+                config: submitted.clone(),
+                icon: None,
+                notify_domain: None,
+                handling_fee_fixed: None,
+                handling_fee_percent: None,
+            },
+            now,
+        )
         .await?;
 
     let (raw_config, payment_uuid): (String, String) =
@@ -449,10 +432,7 @@ pub(super) async fn payment_config_at_rest_opacity(pool: &PgPool, redis_url: &st
             .bind(payment_id)
             .fetch_one(pool)
             .await?;
-    for secret in submitted_object.values() {
-        let secret = secret
-            .as_str()
-            .context("opacity fixture values are strings")?;
+    for secret in submitted.values() {
         ensure!(
             !raw_config.contains(secret),
             "submitted payment secret {secret:?} appeared in the raw stored config column"
@@ -474,7 +454,7 @@ pub(super) async fn payment_config_at_rest_opacity(pool: &PgPool, redis_url: &st
                 == Some(1),
         "stored payment config is not the version-1 encrypted envelope shape"
     );
-    let decrypted = v2board_domain::payment_secrets::decrypt_payment_config(
+    let decrypted = v2board_payment_adapters::payment_secrets::decrypt_payment_config(
         super::harness::INTEGRATION_APP_KEY,
         "EPay",
         &payment_uuid,
@@ -482,23 +462,28 @@ pub(super) async fn payment_config_at_rest_opacity(pool: &PgPool, redis_url: &st
     )
     .context("stored payment envelope did not decrypt with the driver/uuid binding")?;
     ensure!(
-        decrypted == serde_json::Value::Object(submitted_object),
+        decrypted
+            == serde_json::Value::Object(
+                submitted
+                    .iter()
+                    .map(|(key, value)| { (key.clone(), serde_json::Value::String(value.clone())) })
+                    .collect(),
+            ),
         "decrypted payment envelope does not round-trip the submitted config"
     );
 
-    let listed = admin
-        .payments_list()
+    let listed = payments
+        .payments()
         .await?
         .into_iter()
         .find(|row| row.id == payment_id)
         .context("created payment method is missing from the admin list")?;
     ensure!(
-        listed.config.get("key").and_then(serde_json::Value::as_str) == Some("********")
-            && listed.config.get("url").and_then(serde_json::Value::as_str)
-                == Some("https://opacity.pay.invalid")
-            && listed.config.get("ciphertext").is_none(),
+        listed.config.get("key").map(String::as_str) == Some("********")
+            && listed.config.get("url").map(String::as_str) == Some("https://opacity.pay.invalid")
+            && !listed.config.contains_key("ciphertext"),
         "admin payment list stopped returning the redacted plaintext config shape"
     );
-    admin.payment_delete(i64::from(payment_id)).await?;
+    payments.archive(i64::from(payment_id), now + 1).await?;
     Ok(())
 }

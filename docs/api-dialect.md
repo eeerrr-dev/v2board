@@ -19,16 +19,14 @@ removed and CSP tightened; one canonical locale-persistence key; parity by
 canonical semantics through per-world adapters; no dual-dialect compatibility
 branches ship — each endpoint family switches atomically.
 
-Route inventory below was enumerated from
-`backend/rust/crates/api/src/routes.rs`, `crates/api/src/admin.rs`, and
-`crates/domain/src/admin.rs` (dispatch match arms) at the time of writing.
-No standalone R1–R30 audit document is retained in the repository; R-item
-coverage is established by this code enumeration, not by cross-referencing a
-checklist. The re-enumeration for this revision confirmed that the admin
-`ticket/*` arms (now §6.5) and the `order/update` `reconciliation_id`
-demultiplex (now §6.4) were the only dispatch arms the draft had left
-unmapped; every other `admin_get`/`admin_post`/`staff_get`/`staff_post` arm
-maps to exactly one row below.
+The current executable route inventory is the single 158-operation registry in
+`backend/rust/crates/api-contract/src/operations.rs`. Axum mounts every
+internal route by operation id and derives its method/path from that registry;
+route-coverage, OpenAPI-generation, and golden-wire gates require every entry
+to be bound exactly once. The initial draft was historically enumerated from
+the then-current `crates/api` dispatchers and the now-retired
+`crates/domain/src/admin.rs`; those paths are provenance, not current
+architecture. No standalone R1–R30 checklist is retained.
 
 ---
 
@@ -238,16 +236,17 @@ wave records the reclassification in §3.4.
 
 ### 3.4 Initial code registry
 
-Originally derived from the legacy `ApiError::business/legacy/bad_request/
-not_found/validation_field/unauthorized` call sites in `crates/api` and
-`crates/domain` (internal routes only). The W14 teardown deleted those
-internal constructors, so internal routes now emit this registry solely
-through the `Problem` constructors (`crates/compat/src/problem.rs`); the
-W14 sweep verified the shipped `Code` enum matches these tables
+Historically derived from the legacy `ApiError::business/legacy/bad_request/
+not_found/validation_field/unauthorized` call sites in `crates/api` and the
+now-retired `crates/domain` (internal routes only). The current code/status
+registry lives in `crates/problem-code/src/lib.rs`, its RFC 9457 transport DTO
+lives in `crates/api-contract/src/problem.rs`, and
+`crates/compat/src/problem.rs` is the HTTP response adapter. W14 deleted the
+legacy internal constructors; the gates verify these sources match the tables
 slug-for-slug and status-for-status, with every code reachable from a live
-emitter. "Legacy anchor" is the message literal the code replaced; it is
-also the key the parity error canonicalizer (§13.3) uses to map
-oracle-world errors onto codes.
+emitter. "Legacy anchor" is the message literal the code replaced; it is also
+the key the parity error canonicalizer (§13.3) uses to map oracle-world errors
+onto codes.
 
 Transport / generic:
 
@@ -496,14 +495,18 @@ non-empty explicit replacement; absent retains it, while `null`/empty is a
   `POST` (create) + `PATCH` (partial update) per resource (§6.3), so the
   double-Option table above covers every mutation.
 - Per-endpoint-class notes appear in the route tables (`notes` column) where
-  a legacy endpoint had load-bearing present-gating (e.g. server save's
-  `param_present` gates in `support/server.rs` map 1:1 onto double-Option).
+  a legacy endpoint had load-bearing present-gating. The current transport
+  shapes live in `crates/api-contract/src/admin_servers.rs`, are translated by
+  `crates/api/src/server_management_adapters.rs`, and reach the application
+  command without reviving the retired `param_present` convention.
 
 ### 4.5 Timestamps — RFC 3339 UTC
 
 All epoch-second integers in internal request/response bodies become RFC
-3339 UTC strings (`"2026-07-17T08:30:00Z"`), or `null`. Inventory of
-today's epoch fields (from `contracts.ts`):
+3339 UTC strings (`"2026-07-17T08:30:00Z"`), or `null`. The current inventory
+is enforced by the Rust DTOs in `crates/api-contract` and their generated
+TypeScript/Zod projections (the former hand-written `contracts.ts` was
+deleted):
 
 - `created_at`, `updated_at` (every entity)
 - `expired_at` (user, subscribe info, admin user; `null` = never expires)
@@ -759,12 +762,13 @@ backend detail lookup switches to `trade_no`).
 
 ### 6.5 Tickets (admin)
 
-The admin dispatcher serves the ticket family under the dynamic
-`{secure_path}` prefix (`admin.rs` arms `ticket/fetch`, `ticket/reply`,
-`ticket/close`), consumed by the admin app's ticket pages — distinct from
-the §6.9 staff mirror, which shares the domain methods but has its own
-prefix, allow-list, and narrower list filters. The draft omitted this
-family entirely; it migrates in W14 alongside the staff mirror.
+The operation registry mounts the ticket family under the dynamic
+`{secure_path}` prefix (`crates/api/src/admin.rs` operation ids backed by
+`admin/support.rs`), consumed by the admin app's ticket pages — distinct from
+the §6.9 staff mirror. Both inbound adapters call the shared
+`application/src/ticket.rs` use cases but retain separate prefix,
+authorization, and filter policies. The draft omitted this family entirely;
+it migrated in W14 alongside the staff mirror.
 
 | Old | New | Req | Resp | Notes |
 | --- | --- | --- | --- | --- |
@@ -1002,8 +1006,8 @@ no wave has to improvise:
 
 | Endpoint | Filter fields |
 | --- | --- |
-| GET `users` | the guarded `user_column` list (`support/filters.rs`) |
-| GET `orders` | the guarded `order_column` list (`support/filters.rs`) |
+| GET `users` | the typed `UserFilterField` whitelist in `application/src/admin_user.rs`; SQL expressions are allowlisted in `db/src/admin_user.rs` |
+| GET `orders` | the typed order predicate whitelist translated in `api/src/admin/commerce.rs` and executed through `application/src/admin_order.rs` + `db/src/admin_order.rs` |
 | GET `system/logs` | `level` only |
 | GET `system/audit-logs` | `surface`, `actor_email`, `method` |
 | GET `coupons`, GET `gift-cards` | **none** — no legacy filter support; none invented (§6.3) |
@@ -1055,8 +1059,9 @@ Replaces `sort` + `sort_type` (`"ASC"`-exact match). Invalid values → 422
 - Response: `{ "items": [...], "total": <i64> }`. Replaces the
   `{data, total}` page envelope.
 - Non-paginated lists are bare arrays; never wrap them in `items`.
-- Out-of-range values → 422 `validation_failed` (matching today's explicit
-  pagination validation in `invite.rs`/`support/common.rs`).
+- Out-of-range values → 422 `validation_failed`; the shared
+  `crates/compat` `Pagination::resolve` policy is exercised by the typed API
+  handlers.
 - Frontend history-pagination display clamping stays a Tier-2 client
   concern; the raw `page` is sent unclamped, as today.
 
@@ -1211,8 +1216,8 @@ Tier-1.
 
 | Mint site | Was | Becomes |
 | --- | --- | --- |
-| Email verify / quick-login target (`sessions.rs login_redirect_url`) | `{app_url}/#/login?verify={token}&redirect={path}` | `{app_url}/login?verify={token}&redirect={path}` |
-| Payment return URL (`payment_integrations.rs`) — both branches: absolute with `app_url`, and the relative fallback handed to providers when `app_url` is unset | `{app_url}/#/order/{trade_no}` / `/#/order/{trade_no}` | `{app_url}/order/{trade_no}` / `/order/{trade_no}` |
+| Email verify / quick-login target (`application/src/auth.rs` `login_redirect_url`) | `{app_url}/#/login?verify={token}&redirect={path}` | `{app_url}/login?verify={token}&redirect={path}` |
+| Payment return URL (`payment-adapters/src/gateway/integrations.rs`) — both branches: absolute with `app_url`, and the relative fallback handed to providers when `app_url` is unset | `{app_url}/#/order/{trade_no}` / `/#/order/{trade_no}` | `{app_url}/order/{trade_no}` / `/order/{trade_no}` |
 | `GET /auth/quick-login?token=` 302 Location | same as login_redirect_url | same, path-style |
 
 `?verify=` / `?redirect=` query names and token semantics are unchanged
@@ -1478,31 +1483,36 @@ commit series that switches it (no dual goldens).
 
 ## 14. Backend & client implementation skeleton (normative)
 
-- **Rust error type**: a new `Problem` type in a shared crate
-  (`v2board_compat` successor module) with
-  `Problem::new(status, Code::PlanSoldOut)` constructors, a `Code` enum
-  generated from §3.4, localized `detail` via the locale resolved from
-  `Accept-Language`, and `IntoResponse` emitting problem+json. Internal
-  routes migrate to it family-by-family; `ApiError` remains only for §2
-  external routes when migration completes.
-- **Rust extractors**: `Json<T>` with `deny_unknown_fields` request structs
-  replaces `Form<T>`/`admin_request_params` flattening on internal routes;
-  the admin dispatcher's `HashMap<String, String>` params are replaced by
-  typed per-action request structs as each family migrates. Axum method
-  routing replaces the manual GET/POST dispatch match arms — with the one
-  structural exception that the admin resources' method-aware router is not
-  registered against a boot-time `{secure_path}` literal but re-dispatched
-  per request from `dynamic_fallback` behind the live-prefix check, so a
-  runtime `secure_path` change keeps working without restart for every
-  method (§6 preamble, §10.2 rule 4).
-- **api-client**: `request()` returns the parsed bare body;
-  `requestEnvelope` and `pageEnvelopeSchema` are replaced by a
-  `pageSchema(item)` = `z.object({items: z.array(item), total: z.number()})`;
-  errors surface `{status, code, detail, errors}`; `resolveAdminPath` and
-  the step-up/locale header hooks stay (with the header renames in §4).
-- **Types**: `@v2board/types` payload interfaces move to booleans/arrays/
-  RFC 3339 strings per family; display-string normalizations
-  (`formatScaledBackendValue`) stay client-side and out of the wire
+- **Contract registry**: `crates/api-contract/src/operations.rs` is the
+  executable source for all 158 internal operation ids, methods, paths,
+  parameters, authentication, and explicit success/error representations.
+  Its named DTO modules cover all 64 JSON request bodies and all 95 JSON
+  success representations; OpenAPI and generated TypeScript/Zod are derived
+  artifacts, never parallel hand-written contracts.
+- **Rust errors**: `crates/problem-code/src/lib.rs` owns the stable code/status
+  registry, `crates/api-contract/src/problem.rs` owns the RFC 9457 wire DTO,
+  and `crates/compat/src/problem.rs` adapts it to Axum responses with localized
+  `detail`. Internal handlers map application failures to this boundary;
+  legacy `ApiError` behavior is confined to the §2 frozen external routes.
+- **Rust routing and extractors**: the operation-router macro mounts every
+  internal operation exactly once and derives method/path from the registry.
+  Typed `Json<T>`, path, and query extractors replace flattened form maps.
+  Admin resources remain method-aware and are re-dispatched behind the live
+  `secure_path` check, so a runtime prefix change needs no restart (§6
+  preamble, §10.2 rule 4).
+- **Use-case boundary**: HTTP handlers translate contract DTOs into commands
+  owned by `crates/application`; application services depend on explicit
+  ports, while PostgreSQL, Redis, SMTP, provider, and protocol details live in
+  `db` and the focused `*-adapters` crates. Transport DTOs and persistence rows
+  do not become application models by convenience.
+- **api-client**: generated operation metadata and Zod schemas drive each
+  wrapper. `request()` returns the parsed bare body; pages are
+  `{items,total}`; errors surface `{status, code, detail, errors}`. The
+  deleted envelope and hand-written `contracts.ts` paths cannot be used as a
+  fallback.
+- **Types and presentation**: generated `@v2board/types` wire interfaces use
+  booleans, arrays, and RFC 3339 strings. Display normalization such as
+  `formatScaledBackendValue` remains client-side and outside the wire
   contract.
 
 ---
@@ -1553,6 +1563,13 @@ error codes + api-client + app pages + fixtures + scenarios + goldens) that
 switches its family atomically. No wave leaves a family half-dialect. Wave
 0/1 are cross-cutting enablers. `make behavior-parity` and focused
 `INTERACTION_PARITY_SCENARIOS` shards gate every wave.
+
+The `Files` bullets below are an immutable migration log: they name files as
+they existed when each wave landed and may therefore mention the retired
+`crates/domain` or deleted hand-written `contracts.ts`. Current ownership is
+the contract registry/DTOs in `api-contract`, use cases and ports in
+`application`, outbound implementations in `db` and focused `*-adapters`, and
+thin inbound adapters in `api`.
 
 ### W0 — Foundations (no route switches)
 
@@ -1614,10 +1631,13 @@ switches its family atomically. No wave leaves a family half-dialect. Wave
   on every internal request, including not-yet-migrated families, while
   `select_auth_data` starts requiring and stripping the prefix on internal
   routes; §2 external routes never used `Authorization`).
-- Files: `crates/api/src/auth.rs`, `crates/domain/src/auth/*`;
+- Historical files at landing: `crates/api/src/auth.rs`, the now-retired
+  `crates/domain/src/auth/*`;
   `packages/api-client/src/endpoints/passport.ts`, `client.ts` error hooks;
   `apps/user/src/pages/auth/*`, `apps/admin/src/pages/login*`,
-  `apps/*/src/lib/auth.ts`.
+  `apps/*/src/lib/auth.ts`. Current backend owners are
+  `application/src/auth.rs`, `auth-adapters/src/{cache,external,password}.rs`,
+  `db/src/auth.rs`, and the `api/src/auth.rs` inbound adapter.
 - Fixtures/scenarios: `runners/auth.mjs`, `specs/auth.spec.mjs`,
   `state-readers/auth.mjs`, fetch-failure auth cases.
 - Risk: token2Login split (GET redirect vs POST exchange), recaptcha and TOS
@@ -1637,12 +1657,16 @@ switches its family atomically. No wave leaves a family half-dialect. Wave
 ### W4 — Commerce
 
 - Routes: §5.5 + checkout union + `/user/payment-methods`.
-- Files: `crates/api/src/commerce.rs`, `crates/domain/src/order*`;
-  `endpoints/user.ts` commerce section, `contracts.ts` order/plan/coupon
-  schemas; `apps/user/src/pages/{plan,order}*`, `stripe-payment-form.tsx`,
+- Historical files at landing: `crates/api/src/commerce.rs`, the now-retired
+  `crates/domain/src/order*`; `endpoints/user.ts` commerce section, the now-
+  deleted `contracts.ts` order/plan/coupon schemas;
+  `apps/user/src/pages/{plan,order}*`, `stripe-payment-form.tsx`,
   and `apps/user/src/pages/profile/wallet-card.tsx` (the deposit arm of the
   §5.5 order union replaces its `plan_id: 0` + `period: "deposit"` sentinel
   payload in this wave, even though the page belongs to W5's surface).
+  Current backend owners are `application/src/{order,plan,payment}.rs`,
+  `db/src/{order_checkout,order_lifecycle,order_runtime,plan}.rs`, and the
+  `order-adapters`/`payment-adapters` crates behind the API inbound adapters.
 - Fixtures/scenarios: `runners/commerce.mjs`, `specs/commerce.spec.mjs`,
   commerce fixtures in `fixture-data.mjs` (world-split), commerce goldens.
 - Risk: largest error-code surface (coupons/sold-out/periods); Stripe
@@ -1698,8 +1722,11 @@ switches its family atomically. No wave leaves a family half-dialect. Wave
 - Routes: §6.1. The §7 filter/sort DSL module ships **here**, with its
   first consumer (`GET system/logs`); W11/W12 reuse it. No wave ships a
   modern route that still parses legacy `filter[i][key]` brackets.
-- Files: `crates/domain/src/admin/configuration.rs`, `statistics.rs`
-  (system rows), admin dispatcher rows; `endpoints/admin.ts` config/system;
+- Historical files at landing: the now-retired
+  `crates/domain/src/admin/{configuration,statistics}.rs` (system rows),
+  admin dispatcher rows; `endpoints/admin.ts` config/system. Current backend
+  owners are `application/src/{configuration,logs,system_monitoring}.rs`,
+  `configuration-adapters`, and the corresponding `db`/`api` adapters;
   `apps/admin/src/pages/config*`, system pages.
 - Fixtures/scenarios: `runners/admin/config.mjs`,
   `specs/admin-config.spec.mjs`; focused shards list exact
@@ -1713,7 +1740,10 @@ switches its family atomically. No wave leaves a family half-dialect. Wave
 ### W10 — Admin content CRUD (notice, knowledge, coupon, gift card)
 
 - Routes: §6.3.
-- Files: `crates/domain/src/admin/{content,codes}.rs`; `endpoints/admin.ts`;
+- Historical files at landing: the now-retired
+  `crates/domain/src/admin/{content,codes}.rs`; `endpoints/admin.ts`. Current
+  backend owners are `application/src/{content,promotion,giftcard}.rs`,
+  `db/src/{content,coupon,giftcard}.rs`, and `api/src/admin/content.rs`;
   `apps/admin/src/pages/{notice,knowledge,coupon,giftcard}*`.
 - Fixtures/scenarios: `runners/admin/coupon-giftcard-notice-knowledge.mjs`,
   `specs/admin-coupon-giftcard-notice-knowledge.spec.mjs`.
@@ -1723,8 +1753,12 @@ switches its family atomically. No wave leaves a family half-dialect. Wave
 ### W11 — Admin commerce (plans, payments, orders, reconciliation)
 
 - Routes: §6.2 + §6.4.
-- Files: `crates/domain/src/admin/commerce.rs` + `commerce/*.rs`;
-  `endpoints/admin.ts`; `apps/admin/src/pages/{plan,payment,order}*`.
+- Historical files at landing: the now-retired
+  `crates/domain/src/admin/commerce.rs` + `commerce/*.rs`;
+  `endpoints/admin.ts`; `apps/admin/src/pages/{plan,payment,order}*`. Current
+  backend owners are `application/src/{admin_order,plan,payment,reconciliation}.rs`,
+  their `db` repositories, `order-adapters`/`payment-adapters`, and the API
+  inbound adapters.
 - Fixtures/scenarios: `runners/admin/{plan,payment,order}.mjs`,
   `specs/admin-{plan,payment,order}.spec.mjs`.
 - Risk: order identifier switch to `trade_no`; payment present-but-empty
@@ -1734,8 +1768,11 @@ switches its family atomically. No wave leaves a family half-dialect. Wave
 
 - Routes: §6.6; the users list adopts the §7 DSL (module shipped in W9)
   with the largest column whitelist.
-- Files: `crates/domain/src/admin/users.rs`, `support/filters.rs`;
-  `endpoints/admin.ts`; `apps/admin/src/pages/user*`.
+- Historical files at landing: the now-retired
+  `crates/domain/src/admin/{users,support/filters}.rs`; `endpoints/admin.ts`;
+  `apps/admin/src/pages/user*`. Current backend owners are
+  `application/src/admin_user.rs`, `db/src/admin_user.rs`, and
+  `api/src/admin_user_adapters.rs` + `api/src/admin/users.rs`.
 - Fixtures/scenarios: `runners/admin/user.mjs`, `specs/admin-user.spec.mjs`.
 - Risk: filter DSL correctness against the column whitelists;
   `Idempotency-Key` mail replay; CSV export path.
@@ -1743,8 +1780,11 @@ switches its family atomically. No wave leaves a family half-dialect. Wave
 ### W13 — Admin servers
 
 - Routes: §6.7.
-- Files: `crates/domain/src/admin/servers.rs`, `support/server.rs`;
-  `endpoints/admin.ts`; `apps/admin/src/pages/server*`.
+- Historical files at landing: the now-retired
+  `crates/domain/src/admin/{servers,support/server}.rs`; `endpoints/admin.ts`;
+  `apps/admin/src/pages/server*`. Current backend owners are
+  `application/src/server_management.rs`, `db/src/admin_server.rs`,
+  `server-adapters`, and the API server-management inbound adapters.
 - Fixtures/scenarios: `runners/admin/server.mjs`,
   `specs/admin-server.spec.mjs`.
 - Risk: eight protocol payload matrices; `param_present` → double-Option

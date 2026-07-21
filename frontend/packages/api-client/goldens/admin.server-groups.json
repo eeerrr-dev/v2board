@@ -1,10 +1,10 @@
 [
   {
-    "created_at": "2023-11-14T22:13:20Z",
     "id": 1,
     "name": "Golden group",
+    "user_count": 0,
     "server_count": 1,
-    "updated_at": "2023-11-14T22:13:20Z",
-    "user_count": 0
+    "created_at": "2023-11-14T22:13:20Z",
+    "updated_at": "2023-11-14T22:13:20Z"
   }
 ]

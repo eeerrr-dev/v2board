@@ -53,6 +53,47 @@ function refName(reference) {
   return decodePointerSegment(reference.slice(prefix.length));
 }
 
+function isObjectSchema(schema) {
+  return (
+    schema?.type === 'object' ||
+    (Array.isArray(schema?.type) && schema.type.includes('object')) ||
+    schema?.properties !== undefined
+  );
+}
+
+/**
+ * OpenAPI's implicit object policy is permissive, which is too easy to emit by
+ * accident when a Rust DTO is `deny_unknown_fields`. Require the source
+ * document to make every object decision explicit: `false` for transport DTOs,
+ * `true`/a schema only for reviewed map and JSON-extension islands.
+ */
+function assertExplicitObjectPolicies(schema, context) {
+  if (schema === true || schema === false || schema === undefined) return;
+  assert.ok(schema && typeof schema === 'object', `invalid OpenAPI schema at ${context}`);
+  if (isObjectSchema(schema)) {
+    assert.ok(
+      Object.hasOwn(schema, 'additionalProperties'),
+      `${context} is an object schema without an explicit additionalProperties policy`,
+    );
+  }
+  if (schema.items) assertExplicitObjectPolicies(schema.items, `${context}/items`);
+  if (schema.additionalProperties && schema.additionalProperties !== true) {
+    assertExplicitObjectPolicies(schema.additionalProperties, `${context}/additionalProperties`);
+  }
+  for (const keyword of ['oneOf', 'anyOf', 'allOf']) {
+    for (const [index, member] of (schema[keyword] ?? []).entries()) {
+      assertExplicitObjectPolicies(member, `${context}/${keyword}/${index}`);
+    }
+  }
+  for (const [name, property] of Object.entries(schema.properties ?? {})) {
+    assertExplicitObjectPolicies(property, `${context}/properties/${name}`);
+  }
+}
+
+for (const [name, schema] of Object.entries(schemas)) {
+  assertExplicitObjectPolicies(schema, `#/components/schemas/${name}`);
+}
+
 function generatedTypeName(name) {
   return `InternalApi${name}`;
 }
@@ -114,15 +155,71 @@ function objectTypeExpression(schema) {
         `${JSON.stringify(name)}${required.has(name) ? '' : '?'}: ${typeExpression(property)}`,
     );
   const additional = schema.additionalProperties;
+  assert.ok(
+    Object.hasOwn(schema, 'additionalProperties'),
+    'object schemas must declare additionalProperties explicitly',
+  );
   if (properties.length === 0) {
     if (additional === false) return emptyObjectType;
-    return `Record<string, ${additional && additional !== true ? typeExpression(additional) : 'unknown'}>`;
+    // Keep recursive JSON-like aliases legal: TypeScript accepts a direct
+    // recursive index signature, while routing the same edge through the
+    // generic `Record` alias is rejected as an immediate circular alias.
+    return `{ [key: string]: ${additional && additional !== true ? typeExpression(additional) : 'unknown'} }`;
   }
   // TypeScript cannot precisely express JSON Schema's "known properties plus
   // a differently typed additional-property set". Keep extensions available
   // without incorrectly constraining the declared properties.
   if (additional !== false) properties.push('[key: string]: unknown');
   return `{ ${properties.join('; ')} }`;
+}
+
+function resolveAllOfObjectMember(schema) {
+  if (schema?.$ref && Object.keys(semanticRefSiblings(schema)).length === 0) {
+    const resolved = schemas[refName(schema.$ref)];
+    return isObjectSchema(resolved) && !resolved.oneOf && !resolved.anyOf && !resolved.allOf
+      ? resolved
+      : null;
+  }
+  return isObjectSchema(schema) && !schema.oneOf && !schema.anyOf && !schema.allOf ? schema : null;
+}
+
+/**
+ * utoipa represents flattened Rust structs and tagged-enum payloads as allOf.
+ * Intersecting two strict Zod objects is invalid because each side rejects the
+ * fields introduced by the other. Merge plain object members into the one
+ * closed shape that Serde actually accepts; non-object allOf (notably the
+ * RFC 9457 base + tuple discriminator) remains a real intersection.
+ */
+function mergedAllOfObject(schema) {
+  if (!schema?.allOf?.length) return null;
+  const members = schema.allOf.map(resolveAllOfObjectMember);
+  if (members.some((member) => member === null)) return null;
+
+  const properties = {};
+  const required = new Set();
+  let additionalProperties = true;
+  for (const member of members) {
+    for (const [name, property] of Object.entries(member.properties ?? {})) {
+      const existing = properties[name];
+      properties[name] =
+        existing === undefined || JSON.stringify(existing) === JSON.stringify(property)
+          ? property
+          : { allOf: [existing, property] };
+    }
+    for (const name of member.required ?? []) required.add(name);
+    const additional = member.additionalProperties;
+    if (additional === false) additionalProperties = false;
+    else if (additionalProperties !== false && additional !== true) {
+      additionalProperties =
+        additionalProperties === true ? additional : { allOf: [additionalProperties, additional] };
+    }
+  }
+  return {
+    type: 'object',
+    properties,
+    required: [...required],
+    additionalProperties,
+  };
 }
 
 function typeExpression(schema) {
@@ -143,7 +240,12 @@ function typeExpression(schema) {
   if (Object.hasOwn(schema, 'const')) return literalType(schema.const);
   if (schema.oneOf) return unionType(schema.oneOf.map(typeExpression));
   if (schema.anyOf) return unionType(schema.anyOf.map(typeExpression));
-  if (schema.allOf) return intersectionType(schema.allOf.map(typeExpression));
+  if (schema.allOf) {
+    const merged = mergedAllOfObject(schema);
+    return merged
+      ? objectTypeExpression(merged)
+      : intersectionType(schema.allOf.map(typeExpression));
+  }
   if (Array.isArray(schema.type)) {
     return unionType(schema.type.map((type) => typeExpression({ ...schema, type })));
   }
@@ -203,6 +305,10 @@ function zodObjectExpression(schema) {
   const shape = `{
 ${properties.join('\n')}
 }`;
+  assert.ok(
+    Object.hasOwn(schema, 'additionalProperties'),
+    'object schemas must declare additionalProperties explicitly',
+  );
   const additional = schema.additionalProperties;
   if (properties.length === 0 && additional !== false) {
     return `z.record(z.string(), ${additional && additional !== true ? zodExpression(additional) : 'z.unknown()'})`;
@@ -211,7 +317,7 @@ ${properties.join('\n')}
   if (additional && additional !== true) {
     return `z.object(${shape}).catchall(${zodExpression(additional)})`;
   }
-  return `z.looseObject(${shape})`;
+  return `z.object(${shape}).catchall(z.unknown())`;
 }
 
 function zodExpression(schema) {
@@ -238,7 +344,10 @@ function zodExpression(schema) {
     return zodUnion(members);
   }
   if (schema.anyOf) return zodUnion(schema.anyOf.map(zodExpression));
-  if (schema.allOf) return zodIntersection(schema.allOf.map(zodExpression));
+  if (schema.allOf) {
+    const merged = mergedAllOfObject(schema);
+    return merged ? zodObjectExpression(merged) : zodIntersection(schema.allOf.map(zodExpression));
+  }
   if (Array.isArray(schema.type)) {
     return zodUnion(schema.type.map((type) => zodExpression({ ...schema, type })));
   }
@@ -334,24 +443,82 @@ function schemaDependencies(schema, output = new Set()) {
   return output;
 }
 
-function topologicalSchemaNames() {
-  const ordered = [];
-  const visiting = new Set();
-  const visited = new Set();
-  function visit(name) {
-    assert.ok(schemas[name], `unknown component schema: ${name}`);
-    if (visited.has(name)) return;
-    assert.ok(
-      !visiting.has(name),
-      `recursive schema requires an explicit generator policy: ${name}`,
-    );
-    visiting.add(name);
-    for (const dependency of [...schemaDependencies(schemas[name])].sort()) visit(dependency);
-    visiting.delete(name);
-    visited.add(name);
-    ordered.push(name);
+function orderedSchemaGroups() {
+  const names = Object.keys(schemas).sort();
+  const dependencies = new Map(
+    names.map((name) => [
+      name,
+      [...schemaDependencies(schemas[name])]
+        .filter((dependency) => Object.hasOwn(schemas, dependency))
+        .sort(),
+    ]),
+  );
+
+  // Tarjan SCCs let recursive Rust DTOs (for example an order containing
+  // surplus orders) become z.lazy component schemas without making every
+  // generated validator lazy or weakening it to unknown.
+  let nextIndex = 0;
+  const indices = new Map();
+  const lowLinks = new Map();
+  const stack = [];
+  const stacked = new Set();
+  const components = [];
+
+  function connect(name) {
+    indices.set(name, nextIndex);
+    lowLinks.set(name, nextIndex);
+    nextIndex += 1;
+    stack.push(name);
+    stacked.add(name);
+
+    for (const dependency of dependencies.get(name)) {
+      if (!indices.has(dependency)) {
+        connect(dependency);
+        lowLinks.set(name, Math.min(lowLinks.get(name), lowLinks.get(dependency)));
+      } else if (stacked.has(dependency)) {
+        lowLinks.set(name, Math.min(lowLinks.get(name), indices.get(dependency)));
+      }
+    }
+
+    if (lowLinks.get(name) !== indices.get(name)) return;
+    const component = [];
+    while (stack.length > 0) {
+      const member = stack.pop();
+      stacked.delete(member);
+      component.push(member);
+      if (member === name) break;
+    }
+    components.push(component.sort());
   }
-  for (const name of Object.keys(schemas).sort()) visit(name);
+
+  for (const name of names) if (!indices.has(name)) connect(name);
+
+  const componentByName = new Map();
+  components.forEach((component, index) => {
+    for (const name of component) componentByName.set(name, index);
+  });
+  const ordered = [];
+  const visited = new Set();
+  function visitComponent(index) {
+    if (visited.has(index)) return;
+    visited.add(index);
+    const component = components[index];
+    const dependencyComponents = new Set();
+    for (const name of component) {
+      for (const dependency of dependencies.get(name)) {
+        const dependencyIndex = componentByName.get(dependency);
+        if (dependencyIndex !== index) dependencyComponents.add(dependencyIndex);
+      }
+    }
+    for (const dependencyIndex of [...dependencyComponents].sort((left, right) => left - right)) {
+      visitComponent(dependencyIndex);
+    }
+    ordered.push({
+      names: component,
+      recursive: component.length > 1 || dependencies.get(component[0]).includes(component[0]),
+    });
+  }
+  for (const name of names) visitComponent(componentByName.get(name));
   return ordered;
 }
 
@@ -422,12 +589,33 @@ function responseHeaders(response) {
     });
 }
 
-function primaryResponseSchema(successResponses) {
-  if (successResponses.length !== 1) return undefined;
-  const [{ content }] = successResponses;
-  const json = content.find(({ mediaType }) => mediaType === 'application/json');
-  if (json) return json.schema;
-  return content.length === 1 ? content[0].schema : undefined;
+function responseVariants(successResponses, { jsonOnly = false } = {}) {
+  const variants = [];
+  for (const response of successResponses) {
+    if (response.content.length === 0) {
+      if (!jsonOnly) variants.push({ empty: true });
+      continue;
+    }
+    const content = jsonOnly
+      ? response.content.filter(({ mediaType }) => mediaType === 'application/json')
+      : response.content;
+    for (const { schema } of content) variants.push({ empty: false, schema });
+  }
+  return variants;
+}
+
+function responseVariantsType(variants) {
+  if (variants.length === 0) return 'undefined';
+  return unionType(
+    variants.map((variant) => (variant.empty ? 'undefined' : typeExpression(variant.schema))),
+  );
+}
+
+function responseVariantsRuntime(variants) {
+  if (variants.length === 0) return 'z.undefined()';
+  return zodUnion(
+    variants.map((variant) => (variant.empty ? 'z.undefined()' : zodExpression(variant.schema))),
+  );
 }
 
 function operations() {
@@ -476,6 +664,8 @@ function operations() {
       );
 
       const successStatus = successResponses.length === 1 ? successResponses[0].status : undefined;
+      const responses = responseVariants(successResponses);
+      const jsonResponses = responseVariants(successResponses, { jsonOnly: true });
       const adminPrefix = '/api/v1/{secure_path}';
       found.push({
         id: operation.operationId,
@@ -490,7 +680,8 @@ function operations() {
         request,
         successStatus,
         successResponses,
-        response: primaryResponseSchema(successResponses),
+        responses,
+        jsonResponses,
       });
     }
   }
@@ -579,9 +770,8 @@ function renderTypes() {
         `    request: ${operation.request ? typeExpression(operation.request) : 'undefined'};`,
       );
       blocks.push(`    successResponses: ${successResponsesType(operation.successResponses)};`);
-      blocks.push(
-        `    response: ${operation.response ? typeExpression(operation.response) : 'undefined'};`,
-      );
+      blocks.push(`    response: ${responseVariantsType(operation.responses)};`);
+      blocks.push(`    jsonResponse: ${responseVariantsType(operation.jsonResponses)};`);
       blocks.push('  };');
     }
     blocks.push('}');
@@ -641,10 +831,16 @@ function renderRuntime() {
     '// @generated by scripts/generate-internal-api-contract.mjs; do not edit.',
     '// Source: backend/rust/crates/api-contract.',
     "import { z } from 'zod';",
+    "import type * as InternalApiTypes from '@v2board/types';",
     '',
   ];
-  for (const name of topologicalSchemaNames()) {
-    blocks.push(`export const ${generatedSchemaName(name)} = ${zodExpression(schemas[name])};`, '');
+  for (const group of orderedSchemaGroups()) {
+    for (const name of group.names) {
+      const declaration = group.recursive
+        ? `export const ${generatedSchemaName(name)}: z.ZodType<InternalApiTypes.${generatedTypeName(name)}> = z.lazy(() => ${zodExpression(schemas[name])});`
+        : `export const ${generatedSchemaName(name)} = ${zodExpression(schemas[name])};`;
+      blocks.push(declaration, '');
+    }
   }
   blocks.push('export const internalApiOperations = {');
   for (const operation of operations()) {
@@ -664,9 +860,8 @@ function renderRuntime() {
       `    requestSchema: ${operation.request ? zodExpression(operation.request) : 'z.undefined()'},`,
     );
     blocks.push(`    successResponses: ${successResponsesRuntime(operation.successResponses)},`);
-    blocks.push(
-      `    responseSchema: ${operation.response ? zodExpression(operation.response) : 'z.undefined()'},`,
-    );
+    blocks.push(`    responseSchema: ${responseVariantsRuntime(operation.responses)},`);
+    blocks.push(`    jsonResponseSchema: ${responseVariantsRuntime(operation.jsonResponses)},`);
     blocks.push('  },');
   }
   blocks.push(

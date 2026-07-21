@@ -18,32 +18,36 @@ use std::path::PathBuf;
 use indexmap::IndexMap;
 use serde::Serialize;
 use serde_json::json;
+use v2board_api_contract::{
+    CreatedInt64Id, Page,
+    admin_platform::{MfaStatusView, TotpProvisioningView},
+    auth::AuthData,
+    content::{KnowledgeDetailView, KnowledgeGroups, KnowledgeSummaryView, NoticeView},
+    time::Rfc3339Timestamp,
+    user::TelegramBot,
+    user_activity::{
+        CommissionView, InviteCodeView, InviteStatView, InviteView, UserServerFields,
+        UserShadowsocksExtra, UserTicketDetailView, UserTicketMessageView, UserTicketView,
+    },
+};
+use v2board_application::{
+    account::AccountProfile,
+    order::{AvailablePaymentMethod, StripePaymentIntent, UserOrder, UserOrderPlan},
+    plan::Plan,
+};
 use v2board_compat::{Code, Problem};
-use v2board_db::{
-    coupon::CouponRow,
-    order::{DepositPlan, OrderPlan, OrderRow},
-    payment::PaymentMethodRow,
-    plan::PlanRow,
-    user::UserInfoRow,
-};
-use v2board_domain::{
-    auth::{AuthData, MfaStatus, TotpProvisioning},
-    order::StripePaymentIntentResult,
-};
+use v2board_domain_model::{Coupon, MoneyMinor, PlanPricePeriod, PlanPrices};
 
 use crate::{
     auth::{QuickLoginUrl, SessionState, StepUpGrant},
     client::PublicConfig,
     commerce::{
-        CheckoutOutcome, CouponBody, CreatedOrder, OrderBody, OrderStatusBody, PaymentMethodBody,
-        PlanBody,
+        CheckoutOutcome, CreatedOrder, OrderStatusBody, coupon_body, order_body,
+        payment_method_body, plan_body, stripe_payment_intent,
     },
-    ticket::{CreatedTicket, TicketBody, TicketDetailBody, TicketMessageBody},
     user::{
-        account::{SessionBody, UserConfig, UserProfileBody},
-        content::{KnowledgeDetail, KnowledgeSummary, NoticeItem, TelegramBot},
+        account::{SessionBody, UserConfig, user_profile_body},
         giftcard::GiftCardRedemptionBody,
-        invite::{CommissionItem, InviteBody, InviteCodeBody, InviteStatBody},
         stats::{ServerBody, TrafficLogBody, UserStatsBody},
         subscription::{ResetTokenBody, SubscriptionBody},
     },
@@ -55,6 +59,10 @@ const GOLDEN_EXPIRED_AT: i64 = GOLDEN_TIME + 86_400 * 30;
 const GOLDEN_EMAIL: &str = "golden-member@example.test";
 const GOLDEN_UUID: &str = "00000000-0000-4000-8000-000000000002";
 const GOLDEN_TOKEN: &str = "goldenmembertoken000000000000002";
+
+const fn golden_timestamp(value: i64) -> Rfc3339Timestamp {
+    Rfc3339Timestamp::from_epoch_seconds(value)
+}
 /// The file-name prefixes this test owns inside the shared goldens directory.
 /// `passport.` and `guest.` stay owned with zero fixtures so a retired legacy
 /// fixture can never linger unpinned (W3 flipped both namespaces' last
@@ -85,8 +93,21 @@ fn pretty<T: Serialize>(value: &T) -> String {
     )
 }
 
-fn golden_plan() -> PlanRow {
-    PlanRow {
+fn golden_plan() -> Plan {
+    let mut prices = PlanPrices::default();
+    for (period, amount) in [
+        (PlanPricePeriod::Month, Some(1_000)),
+        (PlanPricePeriod::Quarter, Some(2_700)),
+        (PlanPricePeriod::HalfYear, None),
+        (PlanPricePeriod::Year, Some(9_600)),
+        (PlanPricePeriod::TwoYear, None),
+        (PlanPricePeriod::ThreeYear, None),
+        (PlanPricePeriod::OneTime, Some(15_000)),
+        (PlanPricePeriod::Reset, Some(300)),
+    ] {
+        prices.set(period, amount.map(MoneyMinor::from_i32));
+    }
+    Plan {
         id: 1,
         group_id: 1,
         transfer_enable: 100,
@@ -97,29 +118,23 @@ fn golden_plan() -> PlanRow {
         sort: Some(1),
         renew: true,
         content: Some("golden plan content".to_string()),
-        month_price: Some(1000),
-        quarter_price: Some(2700),
-        half_year_price: None,
-        year_price: Some(9600),
-        two_year_price: None,
-        three_year_price: None,
-        onetime_price: Some(15_000),
-        reset_price: Some(300),
+        prices,
         reset_traffic_method: Some(0),
         capacity_limit: Some(50),
+        count: 0,
         created_at: GOLDEN_TIME,
         updated_at: GOLDEN_TIME,
     }
 }
 
-fn golden_plan_order() -> OrderRow {
-    OrderRow {
+fn golden_plan_order() -> UserOrder {
+    UserOrder {
         trade_no: "golden-trade-plan-00000000000001".to_string(),
         callback_no: None,
         plan_id: 1,
         coupon_id: None,
         payment_id: Some(1),
-        r#type: 1,
+        kind: 1,
         period: "month_price".to_string(),
         total_amount: 1000,
         handling_amount: Some(20),
@@ -136,22 +151,22 @@ fn golden_plan_order() -> OrderRow {
         paid_at: None,
         created_at: GOLDEN_TIME,
         updated_at: GOLDEN_TIME,
-        plan: Some(OrderPlan::Full(Box::new(golden_plan()))),
+        plan: Some(UserOrderPlan::Full(Box::new(golden_plan()))),
         try_out_plan_id: None,
         surplus_orders: None,
-        bounus: None,
+        bonus: None,
         get_amount: None,
     }
 }
 
-fn golden_deposit_order() -> OrderRow {
-    OrderRow {
+fn golden_deposit_order() -> UserOrder {
+    UserOrder {
         trade_no: "golden-trade-deposit-00000000002".to_string(),
         callback_no: None,
         plan_id: 0,
         coupon_id: None,
         payment_id: None,
-        r#type: 1,
+        kind: 1,
         period: "deposit".to_string(),
         total_amount: 500,
         handling_amount: None,
@@ -171,7 +186,7 @@ fn golden_deposit_order() -> OrderRow {
         plan: None,
         try_out_plan_id: None,
         surplus_orders: None,
-        bounus: None,
+        bonus: None,
         get_amount: None,
     }
 }
@@ -221,17 +236,17 @@ fn documents() -> Vec<(&'static str, String)> {
     // Privileged-account TOTP MFA (docs/api-dialect.md §6.10): the status
     // and one-time provisioning bodies shared by the admin and staff
     // `account/mfa` routes.
-    let auth_mfa_status = pretty(&MfaStatus {
+    let auth_mfa_status = pretty(&MfaStatusView {
         totp_enabled: false,
         totp_enabled_at: None,
         totp_required: false,
     });
-    let auth_mfa_status_enabled = pretty(&MfaStatus {
+    let auth_mfa_status_enabled = pretty(&MfaStatusView {
         totp_enabled: true,
-        totp_enabled_at: Some(GOLDEN_TIME),
+        totp_enabled_at: Some(golden_timestamp(GOLDEN_TIME)),
         totp_required: true,
     });
-    let auth_mfa_totp = pretty(&TotpProvisioning {
+    let auth_mfa_totp = pretty(&TotpProvisioningView {
         secret: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ".to_string(),
         otpauth_url: "otpauth://totp/Golden%20Panel:golden-admin@example.test?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=Golden+Panel&algorithm=SHA1&digits=6&period=30".to_string(),
     });
@@ -257,16 +272,16 @@ fn documents() -> Vec<(&'static str, String)> {
     // Modern-dialect user account & subscription family (docs/api-dialect.md
     // §5.3, §5.4, §9.1, §9.4, W5): bare bodies, RFC 3339 timestamps, boolean
     // flags, and the named-object tuple/scalar replacements.
-    let user_profile = pretty(&UserProfileBody::from(UserInfoRow {
+    let user_profile = pretty(&user_profile_body(AccountProfile {
         email: GOLDEN_EMAIL.to_string(),
         transfer_enable: 107_374_182_400,
         device_limit: Some(3),
         last_login_at: None,
         created_at: GOLDEN_TIME,
-        banned: 0,
-        auto_renewal: Some(0),
-        remind_expire: Some(1),
-        remind_traffic: Some(1),
+        banned: false,
+        auto_renewal: false,
+        remind_expire: true,
+        remind_traffic: true,
         expired_at: Some(GOLDEN_EXPIRED_AT),
         balance: 1000,
         commission_balance: 500,
@@ -292,14 +307,14 @@ fn documents() -> Vec<(&'static str, String)> {
             session_id: "golden-session-digest-0000000002".to_string(),
             ip: "203.0.113.7".to_string(),
             ua: "GoldenBrowser/2.0".to_string(),
-            login_at: GOLDEN_TIME + 3_600,
+            login_at: Rfc3339Timestamp::from_epoch_seconds(GOLDEN_TIME + 3_600),
             current: true,
         },
         SessionBody {
             session_id: "golden-session-digest-0000000001".to_string(),
             ip: String::new(),
             ua: String::new(),
-            login_at: GOLDEN_TIME,
+            login_at: Rfc3339Timestamp::from_epoch_seconds(GOLDEN_TIME),
             current: false,
         },
     ]);
@@ -312,14 +327,14 @@ fn documents() -> Vec<(&'static str, String)> {
     let subscription = pretty(&SubscriptionBody {
         plan_id: Some(1),
         token: GOLDEN_TOKEN.to_string(),
-        expired_at: Some(GOLDEN_EXPIRED_AT),
+        expired_at: Some(Rfc3339Timestamp::from_epoch_seconds(GOLDEN_EXPIRED_AT)),
         u: 1_073_741_824,
         d: 2_147_483_648,
         transfer_enable: 107_374_182_400,
         device_limit: Some(3),
         email: GOLDEN_EMAIL.to_string(),
         uuid: GOLDEN_UUID.to_string(),
-        plan: Some(PlanBody::from(golden_plan())),
+        plan: Some(plan_body(golden_plan())),
         alive_ip: 0,
         subscribe_url: format!(
             "https://golden.v2board.test/api/v1/client/subscribe?token={GOLDEN_TOKEN}"
@@ -352,26 +367,26 @@ fn documents() -> Vec<(&'static str, String)> {
     // Modern-dialect user commerce family (docs/api-dialect.md §5.5, §9.3,
     // §9.4, W4): bare bodies, RFC 3339 timestamps, boolean `show`/`renew`,
     // numeric `handling_fee_percent`, and the discriminated checkout union.
-    let plans = pretty(&vec![PlanBody::from(golden_plan())]);
-    let plan_detail = pretty(&PlanBody::from(golden_plan()));
+    let plans = pretty(&vec![plan_body(golden_plan())]);
+    let plan_detail = pretty(&plan_body(golden_plan()));
 
     let orders = pretty(&vec![
-        OrderBody::from(golden_plan_order()),
-        OrderBody::from(golden_deposit_order()),
+        order_body(golden_plan_order()),
+        order_body(golden_deposit_order()),
     ]);
 
     let mut plan_order_detail = golden_plan_order();
     plan_order_detail.try_out_plan_id = Some(0);
-    let order_detail = pretty(&OrderBody::from(plan_order_detail));
+    let order_detail = pretty(&order_body(plan_order_detail));
 
     let mut deposit_detail = golden_deposit_order();
-    deposit_detail.plan = Some(OrderPlan::Deposit(DepositPlan {
+    deposit_detail.plan = Some(UserOrderPlan::Deposit {
         id: 0,
-        name: "deposit",
-    }));
-    deposit_detail.bounus = Some(50);
+        name: "deposit".to_string(),
+    });
+    deposit_detail.bonus = Some(50);
     deposit_detail.get_amount = Some(550);
-    let order_detail_deposit = pretty(&OrderBody::from(deposit_detail));
+    let order_detail_deposit = pretty(&order_body(deposit_detail));
 
     let order_created = pretty(&CreatedOrder {
         trade_no: "golden-trade-plan-00000000000001".to_string(),
@@ -379,18 +394,18 @@ fn documents() -> Vec<(&'static str, String)> {
     let order_status = pretty(&OrderStatusBody { status: 0 });
 
     let payment_methods = pretty(&vec![
-        PaymentMethodBody::from(PaymentMethodRow {
+        payment_method_body(AvailablePaymentMethod {
             id: 1,
             name: "Golden EPay".to_string(),
-            payment: "EPay".to_string(),
+            provider: "EPay".to_string(),
             icon: None,
             handling_fee_fixed: Some(20),
             handling_fee_percent: Some("0.50".to_string()),
         }),
-        PaymentMethodBody::from(PaymentMethodRow {
+        payment_method_body(AvailablePaymentMethod {
             id: 2,
             name: "Golden Stripe".to_string(),
-            payment: "StripeCheckout".to_string(),
+            provider: "StripeCheckout".to_string(),
             icon: Some("/icons/stripe.svg".to_string()),
             handling_fee_fixed: None,
             handling_fee_percent: None,
@@ -405,26 +420,26 @@ fn documents() -> Vec<(&'static str, String)> {
     });
     let checkout_settled = pretty(&CheckoutOutcome::Settled);
 
-    let stripe_intent = pretty(&StripePaymentIntentResult {
+    let stripe_intent = pretty(&stripe_payment_intent(StripePaymentIntent {
         public_key: "pk_test_golden000000000000000001".to_string(),
         client_secret: "pi_golden_secret_000000000000001".to_string(),
         amount: 1020,
         currency: "usd".to_string(),
-    });
+    }));
 
-    let coupon_check = pretty(&CouponBody::from(CouponRow {
+    let coupon_check = pretty(&coupon_body(Coupon {
         id: 1,
         code: "GOLDEN10".to_string(),
         name: "Golden Coupon".to_string(),
-        r#type: 2,
+        kind_code: 2,
         value: 10,
-        show: 1,
-        limit_use: Some(100),
-        limit_use_with_user: Some(1),
-        limit_plan_ids: Some(vec![1]),
-        limit_period: Some(vec!["month_price".to_string()]),
-        started_at: GOLDEN_TIME - 86_400,
-        ended_at: GOLDEN_EXPIRED_AT,
+        visible: true,
+        remaining_uses: Some(100),
+        per_user_limit: Some(1),
+        plan_ids: Some(vec![1]),
+        periods: Some(vec!["month_price".to_string()]),
+        starts_at: GOLDEN_TIME - 86_400,
+        ends_at: GOLDEN_EXPIRED_AT,
         created_at: GOLDEN_TIME,
         updated_at: GOLDEN_TIME,
     }));
@@ -435,59 +450,61 @@ fn documents() -> Vec<(&'static str, String)> {
         TrafficLogBody {
             u: 1_073_741_824,
             d: 2_147_483_648,
-            record_at: GOLDEN_TIME,
+            record_at: golden_timestamp(GOLDEN_TIME),
             user_id: 2,
             server_rate: 1.0,
         },
         TrafficLogBody {
             u: 104_857_600,
             d: 209_715_200,
-            record_at: GOLDEN_TIME - 86_400,
+            record_at: golden_timestamp(GOLDEN_TIME - 86_400),
             user_id: 2,
             server_rate: 1.5,
         },
     ]);
 
     let servers = pretty(&vec![
-        ServerBody {
-            id: 1,
-            parent_id: None,
-            group_id: vec![1],
-            route_id: Some(vec![2]),
-            name: "Golden Node 01".to_string(),
-            rate: 1.0,
-            r#type: "shadowsocks".to_string(),
-            host: "node-01.golden.v2board.test".to_string(),
-            port: 443,
-            cache_key: format!("shadowsocks-1-{GOLDEN_TIME}-1"),
-            last_check_at: Some(GOLDEN_TIME),
-            is_online: true,
-            tags: Some(vec!["IEPL".to_string(), "Golden".to_string()]),
-            sort: Some(1),
-            extra: json!({
-                "cipher": "aes-128-gcm",
-                "obfs": null,
-                "obfs_settings": null,
-                "created_at": GOLDEN_TIME,
+        ServerBody::Shadowsocks {
+            server: UserServerFields {
+                id: 1,
+                parent_id: None,
+                group_id: vec![1],
+                route_id: Some(vec![2]),
+                name: "Golden Node 01".to_string(),
+                rate: 1.0,
+                host: "node-01.golden.v2board.test".to_string(),
+                port: 443,
+                cache_key: format!("shadowsocks-1-{GOLDEN_TIME}-1"),
+                last_check_at: Some(golden_timestamp(GOLDEN_TIME)),
+                is_online: true,
+                tags: Some(vec!["IEPL".to_string(), "Golden".to_string()]),
+                sort: Some(1),
+            },
+            extra: Some(UserShadowsocksExtra {
+                cipher: "aes-128-gcm".to_string(),
+                obfs: None,
+                obfs_settings: None,
+                created_at: GOLDEN_TIME,
             }),
         },
-        ServerBody {
-            id: 2,
-            parent_id: None,
-            group_id: vec![1],
-            route_id: None,
-            name: "Golden Node 02".to_string(),
-            rate: 2.5,
-            r#type: "trojan".to_string(),
-            host: "node-02.golden.v2board.test".to_string(),
-            port: 8443,
-            cache_key: format!("trojan-2-{GOLDEN_TIME}-0"),
-            last_check_at: None,
-            is_online: false,
-            tags: None,
-            sort: Some(2),
+        ServerBody::Trojan {
+            server: UserServerFields {
+                id: 2,
+                parent_id: None,
+                group_id: vec![1],
+                route_id: None,
+                name: "Golden Node 02".to_string(),
+                rate: 2.5,
+                host: "node-02.golden.v2board.test".to_string(),
+                port: 8443,
+                cache_key: format!("trojan-2-{GOLDEN_TIME}-0"),
+                last_check_at: None,
+                is_online: false,
+                tags: None,
+                sort: Some(2),
+            },
             // Null extra pins the skip_serializing_if omission.
-            extra: serde_json::Value::Null,
+            extra: None,
         },
     ]);
 
@@ -517,45 +534,45 @@ fn documents() -> Vec<(&'static str, String)> {
     });
 
     // Modern-dialect user content family (docs/api-dialect.md §5.8, W3).
-    let notices_page = pretty(&v2board_compat::Page {
+    let notices_page = pretty(&Page {
         items: vec![
-            NoticeItem {
+            NoticeView {
                 id: 2,
                 title: "Golden popup notice".to_string(),
                 content: "<p>Golden popup body</p>".to_string(),
                 show: true,
                 img_url: None,
                 tags: Some(vec!["弹窗".to_string()]),
-                created_at: GOLDEN_TIME + 86_400,
-                updated_at: GOLDEN_TIME + 86_400,
+                created_at: golden_timestamp(GOLDEN_TIME + 86_400),
+                updated_at: golden_timestamp(GOLDEN_TIME + 86_400),
             },
-            NoticeItem {
+            NoticeView {
                 id: 1,
                 title: "Golden notice".to_string(),
                 content: "<p>Golden notice body</p>".to_string(),
                 show: true,
                 img_url: Some("https://golden.v2board.test/notice.png".to_string()),
                 tags: None,
-                created_at: GOLDEN_TIME,
-                updated_at: GOLDEN_TIME,
+                created_at: golden_timestamp(GOLDEN_TIME),
+                updated_at: golden_timestamp(GOLDEN_TIME),
             },
         ],
         total: 7,
     });
 
-    let knowledge_list = pretty(&std::collections::BTreeMap::from([(
+    let knowledge_list = pretty(&KnowledgeGroups(std::collections::BTreeMap::from([(
         "Golden Apps".to_string(),
-        vec![KnowledgeSummary {
+        vec![KnowledgeSummaryView {
             id: 3,
             category: "Golden Apps".to_string(),
             title: "Golden setup guide".to_string(),
             sort: Some(1),
             show: true,
-            updated_at: GOLDEN_TIME,
+            updated_at: golden_timestamp(GOLDEN_TIME),
         }],
-    )]));
+    )])));
 
-    let knowledge_detail = pretty(&KnowledgeDetail {
+    let knowledge_detail = pretty(&KnowledgeDetailView {
         id: 3,
         language: "en-US".to_string(),
         category: "Golden Apps".to_string(),
@@ -565,8 +582,8 @@ fn documents() -> Vec<(&'static str, String)> {
         ),
         sort: Some(1),
         show: true,
-        created_at: GOLDEN_TIME,
-        updated_at: GOLDEN_TIME,
+        created_at: golden_timestamp(GOLDEN_TIME),
+        updated_at: golden_timestamp(GOLDEN_TIME),
     });
 
     let knowledge_categories = pretty(&vec![
@@ -582,24 +599,24 @@ fn documents() -> Vec<(&'static str, String)> {
     // §8, §9.2, W7): the bare `{codes, stat}` body with the named stat
     // object, and the commissions `{items, total}` page envelope. Money
     // stays integer cents.
-    let invite = pretty(&InviteBody {
+    let invite = pretty(&InviteView {
         codes: vec![
-            InviteCodeBody {
+            InviteCodeView {
                 id: 2,
                 code: "goldinv2".to_string(),
                 pv: 0,
-                created_at: GOLDEN_TIME + 86_400,
-                updated_at: GOLDEN_TIME + 86_400,
+                created_at: golden_timestamp(GOLDEN_TIME + 86_400),
+                updated_at: golden_timestamp(GOLDEN_TIME + 86_400),
             },
-            InviteCodeBody {
+            InviteCodeView {
                 id: 1,
                 code: "goldinv1".to_string(),
                 pv: 3,
-                created_at: GOLDEN_TIME,
-                updated_at: GOLDEN_TIME,
+                created_at: golden_timestamp(GOLDEN_TIME),
+                updated_at: golden_timestamp(GOLDEN_TIME),
             },
         ],
-        stat: InviteStatBody {
+        stat: InviteStatView {
             registered_count: 12,
             valid_commission: 12_300,
             pending_commission: 4_500,
@@ -614,7 +631,7 @@ fn documents() -> Vec<(&'static str, String)> {
     // numeric enums (§4.1); `last_reply_user_id` is an explicit null when no
     // message exists yet.
     let tickets = pretty(&vec![
-        TicketBody {
+        UserTicketView {
             id: 8,
             user_id: 2,
             subject: "Golden closed ticket".to_string(),
@@ -622,10 +639,10 @@ fn documents() -> Vec<(&'static str, String)> {
             status: 1,
             reply_status: 1,
             last_reply_user_id: Some(1),
-            created_at: GOLDEN_TIME + 86_400,
-            updated_at: GOLDEN_TIME + 172_800,
+            created_at: golden_timestamp(GOLDEN_TIME + 86_400),
+            updated_at: golden_timestamp(GOLDEN_TIME + 172_800),
         },
-        TicketBody {
+        UserTicketView {
             id: 7,
             user_id: 2,
             subject: "Golden open ticket".to_string(),
@@ -633,12 +650,12 @@ fn documents() -> Vec<(&'static str, String)> {
             status: 0,
             reply_status: 0,
             last_reply_user_id: None,
-            created_at: GOLDEN_TIME,
-            updated_at: GOLDEN_TIME,
+            created_at: golden_timestamp(GOLDEN_TIME),
+            updated_at: golden_timestamp(GOLDEN_TIME),
         },
     ]);
 
-    let ticket_detail = pretty(&TicketDetailBody {
+    let ticket_detail = pretty(&UserTicketDetailView {
         id: 7,
         user_id: 2,
         subject: "Golden open ticket".to_string(),
@@ -646,48 +663,48 @@ fn documents() -> Vec<(&'static str, String)> {
         status: 0,
         reply_status: 0,
         last_reply_user_id: Some(1),
-        created_at: GOLDEN_TIME,
-        updated_at: GOLDEN_TIME + 3_600,
+        created_at: golden_timestamp(GOLDEN_TIME),
+        updated_at: golden_timestamp(GOLDEN_TIME + 3_600),
         message: vec![
-            TicketMessageBody {
+            UserTicketMessageView {
                 id: 21,
                 user_id: 2,
                 ticket_id: 7,
                 message: "My subscription stopped working.".to_string(),
                 is_me: true,
-                created_at: GOLDEN_TIME,
-                updated_at: GOLDEN_TIME,
+                created_at: golden_timestamp(GOLDEN_TIME),
+                updated_at: golden_timestamp(GOLDEN_TIME),
             },
-            TicketMessageBody {
+            UserTicketMessageView {
                 id: 22,
                 user_id: 1,
                 ticket_id: 7,
                 message: "We are looking into it.".to_string(),
                 is_me: false,
-                created_at: GOLDEN_TIME + 3_600,
-                updated_at: GOLDEN_TIME + 3_600,
+                created_at: golden_timestamp(GOLDEN_TIME + 3_600),
+                updated_at: golden_timestamp(GOLDEN_TIME + 3_600),
             },
         ],
     });
 
-    let ticket_created = pretty(&CreatedTicket { id: 9 });
-    let withdrawal_ticket_created = pretty(&CreatedTicket { id: 10 });
+    let ticket_created = pretty(&CreatedInt64Id { id: 9 });
+    let withdrawal_ticket_created = pretty(&CreatedInt64Id { id: 10 });
 
-    let commissions = pretty(&v2board_compat::Page {
+    let commissions = pretty(&Page {
         items: vec![
-            CommissionItem {
+            CommissionView {
                 id: 2,
                 trade_no: "golden-trade-commission-0000002".to_string(),
                 order_amount: 2_000,
                 get_amount: 200,
-                created_at: GOLDEN_TIME + 86_400,
+                created_at: golden_timestamp(GOLDEN_TIME + 86_400),
             },
-            CommissionItem {
+            CommissionView {
                 id: 1,
                 trade_no: "golden-trade-commission-0000001".to_string(),
                 order_amount: 1_000,
                 get_amount: 100,
-                created_at: GOLDEN_TIME,
+                created_at: golden_timestamp(GOLDEN_TIME),
             },
         ],
         total: 12,

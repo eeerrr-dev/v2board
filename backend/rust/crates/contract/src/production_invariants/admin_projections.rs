@@ -1,13 +1,149 @@
-use std::{collections::BTreeSet, sync::Arc, time::Duration};
+use std::{collections::BTreeSet, sync::Arc};
 
 use anyhow::{Context, Result, bail, ensure};
 use chrono::Utc;
 use sqlx::PgPool;
 use uuid::Uuid;
-use v2board_db::installation_id;
-use v2board_domain::{admin::AdminService, auth::PasswordKdf, smtp::SmtpTransportCache};
+use v2board_api_contract::{
+    admin_business::{AdminTicketDetail, AdminTicketItem, AdminTicketMessageItem},
+    admin_codes::{AdminCouponItem, AdminGiftcardItem},
+    admin_platform::{AdminUserTrafficView, AuditLogView, StatSeriesPointView, SystemLogView},
+    content::{KnowledgeDetailView, KnowledgeSummaryView},
+    time::Rfc3339Timestamp,
+};
+use v2board_application::{
+    admin_order::{AdminOrderQuery, OrderSort},
+    admin_user::{AdminUserListRequest, UserSort},
+    content::{ContentService, KnowledgeArticle, KnowledgeSummary},
+    logs::{
+        AuditLogField, AuditLogFilter, AuditLogQuery, LogService, SortDirection, SystemLogQuery,
+        SystemLogSort, TextPredicate,
+    },
+    promotion::{
+        AdminCoupon as ApplicationAdminCoupon, GiftCard as ApplicationGiftCard, PromotionService,
+    },
+    reconciliation::ReconciliationService,
+    statistics::{StatisticsBucket, StatisticsService},
+    ticket::{
+        OperatorTicketListQuery, OperatorTicketOrder, Ticket, TicketDetail, TicketMessage,
+        TicketRepository,
+    },
+};
+use v2board_db::{
+    content::PostgresContentRepository, coupon::PostgresPromotionRepository,
+    logs::PostgresLogRepository, reconciliation::PostgresReconciliationRepository,
+    statistics::PostgresStatisticsRepository, ticket::PostgresTicketRepository,
+};
+use v2board_payment_adapters::Sha256ReconciliationIdentityHasher;
 
 use super::harness::{insert_user, integration_config, sha256_bytes};
+use crate::admin_user_projection::{
+    admin_user_detail, admin_user_list_item, contract_admin_user_service, staff_user_detail,
+};
+use crate::order_projection::{admin_order_detail, admin_order_list, contract_order_service};
+use crate::reconciliation_projection::admin_reconciliation;
+use crate::server_projection::{
+    contract_server_service, server_group_view, server_node_view, server_route_view,
+};
+use crate::statistics_calendar::ContractStatisticsCalendar;
+
+fn admin_ticket_item(ticket: Ticket) -> AdminTicketItem {
+    AdminTicketItem {
+        id: ticket.id,
+        user_id: ticket.user_id,
+        subject: ticket.subject,
+        level: ticket.level.code(),
+        status: ticket.status.code(),
+        reply_status: ticket.reply_status.code(),
+        last_reply_user_id: ticket.last_reply_user_id,
+        created_at: Rfc3339Timestamp::from_epoch_seconds(ticket.created_at),
+        updated_at: Rfc3339Timestamp::from_epoch_seconds(ticket.updated_at),
+    }
+}
+
+fn admin_coupon_document(view: ApplicationAdminCoupon) -> AdminCouponItem {
+    AdminCouponItem {
+        id: view.id,
+        code: view.code,
+        name: view.name,
+        coupon_type: view.kind_code,
+        value: view.value,
+        show: view.visible,
+        limit_use: view.remaining_uses,
+        limit_use_with_user: view.per_user_limit,
+        limit_plan_ids: view.plan_ids,
+        limit_period: view.periods,
+        started_at: Rfc3339Timestamp::from_epoch_seconds(view.starts_at),
+        ended_at: Rfc3339Timestamp::from_epoch_seconds(view.ends_at),
+        created_at: Rfc3339Timestamp::from_epoch_seconds(view.created_at),
+        updated_at: Rfc3339Timestamp::from_epoch_seconds(view.updated_at),
+    }
+}
+
+fn admin_giftcard_document(view: ApplicationGiftCard) -> AdminGiftcardItem {
+    AdminGiftcardItem {
+        id: view.id,
+        code: view.code,
+        name: view.name,
+        card_type: view.kind_code,
+        value: view.value,
+        plan_id: view.plan_id,
+        limit_use: view.remaining_uses,
+        used_user_ids: view.redeemed_user_ids,
+        started_at: Rfc3339Timestamp::from_epoch_seconds(view.starts_at),
+        ended_at: Rfc3339Timestamp::from_epoch_seconds(view.ends_at),
+        created_at: Rfc3339Timestamp::from_epoch_seconds(view.created_at),
+        updated_at: Rfc3339Timestamp::from_epoch_seconds(view.updated_at),
+    }
+}
+
+fn admin_ticket_message(message: TicketMessage) -> AdminTicketMessageItem {
+    AdminTicketMessageItem {
+        id: message.id,
+        user_id: message.user_id,
+        ticket_id: message.ticket_id,
+        message: message.message,
+        is_me: message.is_me,
+        created_at: Rfc3339Timestamp::from_epoch_seconds(message.created_at),
+        updated_at: Rfc3339Timestamp::from_epoch_seconds(message.updated_at),
+    }
+}
+
+fn admin_ticket_detail(detail: TicketDetail) -> AdminTicketDetail {
+    AdminTicketDetail {
+        ticket: admin_ticket_item(detail.ticket),
+        message: detail
+            .messages
+            .into_iter()
+            .map(admin_ticket_message)
+            .collect(),
+    }
+}
+
+fn knowledge_summary_document(view: KnowledgeSummary) -> KnowledgeSummaryView {
+    KnowledgeSummaryView {
+        id: view.id,
+        category: view.category,
+        title: view.title,
+        sort: view.sort,
+        show: view.visibility.is_visible(),
+        updated_at: Rfc3339Timestamp::from_epoch_seconds(view.updated_at),
+    }
+}
+
+fn knowledge_detail_document(view: KnowledgeArticle) -> KnowledgeDetailView {
+    KnowledgeDetailView {
+        id: view.id,
+        language: view.language,
+        category: view.category,
+        title: view.title,
+        body: view.body,
+        sort: view.sort,
+        show: view.visibility.is_visible(),
+        created_at: Rfc3339Timestamp::from_epoch_seconds(view.created_at),
+        updated_at: Rfc3339Timestamp::from_epoch_seconds(view.updated_at),
+    }
+}
 
 /// The exact serialized key set of every reachable admin endpoint that emits a
 /// SQL-projected row. Each constant is the producer-side contract for one
@@ -349,24 +485,27 @@ fn assert_rfc3339_fields(context: &str, value: &serde_json::Value, fields: &[&st
 }
 
 /// Pins the exact serialized key set of every reachable admin endpoint whose
-/// rows are produced by a SQL projection, using the real AdminService against
-/// the migrated schema. This is the DB-backed producer-side contract: any
+/// rows are produced by a SQL projection, using the real application/admin
+/// services against the migrated schema. This is the DB-backed producer-side contract: any
 /// projection edit that adds, renames, or drops a key fails here before it can
 /// silently leak (or break) a field the admin frontend consumes.
 pub(super) async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) -> Result<()> {
     let now = Utc::now().timestamp();
-    let admin = AdminService::new(
-        pool.clone(),
-        redis::Client::open(redis_url)?,
-        installation_id(pool).await?,
-        Arc::new(integration_config(pool, redis_url)?),
-        reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(2))
-            .timeout(Duration::from_secs(5))
-            .build()?,
-        PasswordKdf::new(1),
-        SmtpTransportCache::default(),
+    let admin =
+        contract_admin_user_service(pool.clone(), Arc::new(integration_config(pool, redis_url)?));
+    let servers = contract_server_service(pool.clone());
+    let promotions = PromotionService::new(PostgresPromotionRepository::new(pool.clone()));
+    let content = ContentService::new(PostgresContentRepository::new(pool.clone()));
+    let statistics = StatisticsService::new(
+        PostgresStatisticsRepository::new(pool.clone()),
+        ContractStatisticsCalendar,
     );
+    let logs = LogService::new(PostgresLogRepository::new(pool.clone()));
+    let reconciliations = ReconciliationService::new(
+        PostgresReconciliationRepository::new(pool.clone()),
+        Sha256ReconciliationIdentityHasher,
+    );
+    let orders = contract_order_service(pool.clone());
 
     // Users: one inviter-linked target so the detail endpoint exercises the
     // conditional invite_user attachment, and the inviter itself as the
@@ -380,21 +519,21 @@ pub(super) async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) ->
         .await?;
 
     // GET users (§6.6): the modern DSL list, W12 projection (no `t`).
-    let (rows, _total) = admin
-        .users_list(
-            v2board_compat::Pagination::resolve(None, None, 10)
-                .map_err(|problem| anyhow::anyhow!("users pagination: {problem:?}"))?,
-            None,
-            None,
-            None,
-        )
+    let page = admin
+        .users(AdminUserListRequest {
+            limit: 10,
+            offset: 0,
+            filters: Vec::new(),
+            sort: UserSort::default(),
+        })
         .await?;
-    for row in &rows {
-        assert_exact_keys("users", row, ADMIN_USER_ROW_KEYS)?;
+    for row in page.items.into_iter().map(admin_user_list_item) {
+        let row = serde_json::to_value(row)?;
+        assert_exact_keys("users", &row, ADMIN_USER_ROW_KEYS)?;
     }
 
     // GET users/{id} (§6.6): the bare projection with the conditional inviter.
-    let with_inviter = admin.user_detail(user_id).await?;
+    let with_inviter = serde_json::to_value(admin_user_detail(admin.user_detail(user_id).await?))?;
     let mut detail_keys = ADMIN_USER_ROW_KEYS.to_vec();
     detail_keys.push("invite_user");
     assert_exact_keys("users/{id} (invited)", &with_inviter, &detail_keys)?;
@@ -403,7 +542,8 @@ pub(super) async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) ->
         &with_inviter["invite_user"],
         &["id", "email"],
     )?;
-    let without_inviter = admin.user_detail(inviter_id).await?;
+    let without_inviter =
+        serde_json::to_value(admin_user_detail(admin.user_detail(inviter_id).await?))?;
     assert_exact_keys(
         "users/{id} (no inviter)",
         &without_inviter,
@@ -413,7 +553,8 @@ pub(super) async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) ->
     // Staff GET users/{id} (§6.9, W14): the staff-redacted view now shares
     // the W12 v2 projection — `t` dropped, RFC 3339 timestamps, and never an
     // `invite_user` attachment.
-    let staff_detail = admin.staff_user_detail(user_id).await?;
+    let staff_detail =
+        serde_json::to_value(staff_user_detail(admin.staff_user_detail(user_id).await?))?;
     assert_exact_keys("staff users/{id}", &staff_detail, ADMIN_USER_ROW_KEYS)?;
     assert_rfc3339_fields(
         "staff users/{id}",
@@ -434,24 +575,28 @@ pub(super) async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) ->
     .await?;
     // GET stats/user-traffic (§6.8, W14): §8 page, `server_rate` as a JSON
     // number, `record_at` RFC 3339.
-    let (traffic_rows, traffic_total) = admin
-        .stats_user_traffic(
-            user_id,
-            v2board_compat::Pagination::resolve(None, None, 10)
-                .map_err(|problem| anyhow::anyhow!("stats/user-traffic pagination: {problem:?}"))?,
-        )
+    let pagination = v2board_compat::Pagination::resolve(None, None, 10)
+        .map_err(|problem| anyhow::anyhow!("stats/user-traffic pagination: {problem:?}"))?;
+    let (traffic_rows, traffic_total) = statistics
+        .user_traffic(user_id, pagination.limit(), pagination.offset())
         .await?;
     ensure!(
         traffic_total >= 1 && !traffic_rows.is_empty(),
         "stats/user-traffic must return the seeded projection row"
     );
-    for row in &traffic_rows {
-        assert_exact_keys("stats/user-traffic", row, ADMIN_USER_TRAFFIC_KEYS)?;
+    for row in traffic_rows {
+        let row = serde_json::to_value(AdminUserTrafficView {
+            record_at: Rfc3339Timestamp::from_epoch_seconds(row.recorded_at),
+            u: row.upload,
+            d: row.download,
+            server_rate: row.server_rate,
+        })?;
+        assert_exact_keys("stats/user-traffic", &row, ADMIN_USER_TRAFFIC_KEYS)?;
         ensure!(
             row["server_rate"].is_f64(),
             "stats/user-traffic: server_rate must cross as a JSON number"
         );
-        assert_rfc3339_fields("stats/user-traffic", row, &["record_at"])?;
+        assert_rfc3339_fields("stats/user-traffic", &row, &["record_at"])?;
     }
 
     // Aggregated stat records.
@@ -468,25 +613,35 @@ pub(super) async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) ->
     .await?;
     // GET stats/records + stats/orders (§6.8, W14): the series re-spec —
     // `{series,date,value}` rows, snake_case slugs, integer values.
-    let record_rows = admin.stats_records("d").await?;
+    let record_rows = statistics.series(StatisticsBucket::Daily).await?;
     ensure!(
         !record_rows.is_empty(),
         "stats/records must return the seeded stat period"
     );
-    for row in &record_rows {
-        assert_exact_keys("stats/records", row, ADMIN_STAT_SERIES_KEYS)?;
+    for row in record_rows {
+        let row = serde_json::to_value(StatSeriesPointView {
+            series: row.series.to_string(),
+            date: row.date,
+            value: row.value,
+        })?;
+        assert_exact_keys("stats/records", &row, ADMIN_STAT_SERIES_KEYS)?;
         ensure!(
             row["value"].is_i64(),
             "stats/records: value must be an integer (cents/counts)"
         );
     }
-    let order_rows = admin.stats_orders().await?;
+    let order_rows = statistics.series(StatisticsBucket::Daily).await?;
     ensure!(
         !order_rows.is_empty(),
         "stats/orders must return the seeded stat period"
     );
-    for row in &order_rows {
-        assert_exact_keys("stats/orders", row, ADMIN_STAT_SERIES_KEYS)?;
+    for row in order_rows {
+        let row = serde_json::to_value(StatSeriesPointView {
+            series: row.series.to_string(),
+            date: row.date,
+            value: row.value,
+        })?;
+        assert_exact_keys("stats/orders", &row, ADMIN_STAT_SERIES_KEYS)?;
     }
 
     // System log.
@@ -500,19 +655,34 @@ pub(super) async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) ->
     .await?;
     // W9 modern route: GET system/logs (§8 pagination + §7 DSL). The row key
     // set is unchanged from the legacy projection.
-    let (log_rows, log_total) = admin
-        .system_logs(
-            v2board_compat::Pagination::resolve(None, None, 10)
-                .map_err(|problem| anyhow::anyhow!("system/logs pagination: {problem:?}"))?,
-            Some(r#"[{"field":"level","op":"eq","value":"info"}]"#),
-            None,
-            None,
-        )
+    let pagination = v2board_compat::Pagination::resolve(None, None, 10)
+        .map_err(|problem| anyhow::anyhow!("system/logs pagination: {problem:?}"))?;
+    let (log_rows, log_total) = logs
+        .system_logs(SystemLogQuery {
+            level: vec![TextPredicate::Equal("info".to_string())],
+            sort: SystemLogSort::CreatedAt,
+            direction: SortDirection::Descending,
+            limit: pagination.limit(),
+            offset: pagination.offset(),
+        })
         .await?;
     if log_total < 1 || log_rows.is_empty() {
         anyhow::bail!("system/logs must return the seeded projection row");
     }
     for row in log_rows {
+        let row = serde_json::to_value(SystemLogView {
+            id: row.id,
+            title: row.title,
+            level: row.level,
+            host: row.host,
+            uri: row.uri,
+            method: row.method,
+            data: row.data,
+            ip: row.ip,
+            context: row.context,
+            created_at: Rfc3339Timestamp::from_epoch_seconds(row.created_at),
+            updated_at: Rfc3339Timestamp::from_epoch_seconds(row.updated_at),
+        })?;
         assert_exact_keys("system/logs", &row, ADMIN_SYSTEM_LOG_KEYS)?;
     }
 
@@ -526,19 +696,36 @@ pub(super) async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) ->
     .bind(now)
     .execute(pool)
     .await?;
-    let (audit_rows, audit_total) = admin
-        .audit_logs(
-            v2board_compat::Pagination::resolve(None, None, 10)
-                .map_err(|problem| anyhow::anyhow!("system/audit-logs pagination: {problem:?}"))?,
-            Some(r#"[{"field":"surface","op":"eq","value":"admin"}]"#),
-            None,
-            None,
-        )
+    let pagination = v2board_compat::Pagination::resolve(None, None, 10)
+        .map_err(|problem| anyhow::anyhow!("system/audit-logs pagination: {problem:?}"))?;
+    let (audit_rows, audit_total) = logs
+        .audit_logs(AuditLogQuery {
+            filters: vec![AuditLogFilter {
+                field: AuditLogField::Surface,
+                predicate: TextPredicate::Equal("admin".to_string()),
+            }],
+            direction: SortDirection::Descending,
+            limit: pagination.limit(),
+            offset: pagination.offset(),
+        })
         .await?;
     if audit_total < 1 || audit_rows.is_empty() {
         anyhow::bail!("system/audit-logs must return the seeded projection row");
     }
     for row in audit_rows {
+        let row = serde_json::to_value(AuditLogView {
+            id: row.id,
+            actor_id: row.actor_id,
+            actor_email: row.actor_email,
+            session_id: row.session_id,
+            surface: row.surface,
+            method: row.method,
+            path: row.path,
+            status_code: row.status_code,
+            client_ip: row.client_ip,
+            request_id: row.request_id,
+            created_at: Rfc3339Timestamp::from_epoch_seconds(row.created_at),
+        })?;
         assert_exact_keys("system/audit-logs", &row, ADMIN_AUDIT_LOG_KEYS)?;
     }
 
@@ -553,7 +740,12 @@ pub(super) async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) ->
     .bind(now)
     .fetch_one(pool)
     .await?;
-    let knowledge_rows = admin.knowledge_list().await?;
+    let knowledge_rows = content
+        .knowledge()
+        .await?
+        .into_iter()
+        .map(knowledge_summary_document)
+        .collect::<Vec<_>>();
     ensure!(
         !knowledge_rows.is_empty(),
         "knowledge list must return the seeded projection row"
@@ -565,7 +757,8 @@ pub(super) async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) ->
             ADMIN_KNOWLEDGE_LIST_KEYS,
         )?;
     }
-    let knowledge_detail = admin.knowledge_detail(i64::from(knowledge_id)).await?;
+    let knowledge_detail =
+        knowledge_detail_document(content.knowledge_detail(i64::from(knowledge_id)).await?);
     assert_exact_keys(
         "knowledge detail",
         &serde_json::to_value(&knowledge_detail)?,
@@ -595,24 +788,38 @@ pub(super) async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) ->
     // GET tickets (§6.5, W14) on both prefixes: the admin list and the §6.9
     // staff mirror share the projection (key set unchanged from the legacy
     // rows; timestamps now RFC 3339).
-    let ticket_pagination = || {
-        v2board_compat::Pagination::resolve(None, None, 10)
-            .map_err(|problem| anyhow::anyhow!("tickets pagination: {problem:?}"))
-    };
+    let ticket_repository = PostgresTicketRepository::new(pool.clone());
     for (context, staff) in [("tickets", false), ("staff tickets", true)] {
-        let (ticket_rows, ticket_total) = admin
-            .tickets_list(ticket_pagination()?, None, &[], None, staff)
+        let ticket_page = ticket_repository
+            .list_for_operator(OperatorTicketListQuery {
+                limit: 10,
+                offset: 0,
+                status: None,
+                reply_statuses: Vec::new(),
+                email: None,
+                order: if staff {
+                    OperatorTicketOrder::CreatedAt
+                } else {
+                    OperatorTicketOrder::UpdatedAt
+                },
+            })
             .await?;
         ensure!(
-            ticket_total >= 1 && !ticket_rows.is_empty(),
+            ticket_page.total >= 1 && !ticket_page.items.is_empty(),
             "{context}: list must return the seeded projection row"
         );
-        for row in &ticket_rows {
-            assert_exact_keys(context, row, ADMIN_TICKET_ROW_KEYS)?;
-            assert_rfc3339_fields(context, row, &["created_at", "updated_at"])?;
+        for row in ticket_page.items {
+            let row = serde_json::to_value(admin_ticket_item(row))?;
+            assert_exact_keys(context, &row, ADMIN_TICKET_ROW_KEYS)?;
+            assert_rfc3339_fields(context, &row, &["created_at", "updated_at"])?;
         }
     }
-    let ticket_detail = admin.ticket_detail(ticket_id).await?;
+    let ticket_detail = serde_json::to_value(admin_ticket_detail(
+        ticket_repository
+            .find_for_operator(ticket_id)
+            .await?
+            .context("seeded projection ticket missing")?,
+    ))?;
     let mut ticket_detail_keys = ADMIN_TICKET_ROW_KEYS.to_vec();
     ticket_detail_keys.push("message");
     assert_exact_keys("tickets/{id}", &ticket_detail, &ticket_detail_keys)?;
@@ -644,21 +851,12 @@ pub(super) async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) ->
     .bind(now)
     .execute(pool)
     .await?;
-    let (coupon_rows, coupon_total) = admin
-        .coupons_list(
-            v2board_compat::Pagination {
-                page: 1,
-                per_page: 10,
-            },
-            None,
-            None,
-        )
-        .await?;
+    let coupon_page = promotions.coupons(10, 0, None, None).await?;
     ensure!(
-        coupon_total >= 1 && !coupon_rows.is_empty(),
+        coupon_page.total >= 1 && !coupon_page.items.is_empty(),
         "coupons list must return the seeded projection row"
     );
-    for row in &coupon_rows {
+    for row in coupon_page.items.into_iter().map(admin_coupon_document) {
         assert_exact_keys("coupons", &serde_json::to_value(row)?, ADMIN_COUPON_KEYS)?;
     }
     sqlx::query(
@@ -672,21 +870,12 @@ pub(super) async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) ->
     .bind(now)
     .execute(pool)
     .await?;
-    let (giftcard_rows, giftcard_total) = admin
-        .giftcards_list(
-            v2board_compat::Pagination {
-                page: 1,
-                per_page: 10,
-            },
-            None,
-            None,
-        )
-        .await?;
+    let giftcard_page = promotions.gift_cards(10, 0, None, None).await?;
     ensure!(
-        giftcard_total >= 1 && !giftcard_rows.is_empty(),
+        giftcard_page.total >= 1 && !giftcard_page.items.is_empty(),
         "gift-cards list must return the seeded projection row"
     );
-    for row in &giftcard_rows {
+    for row in giftcard_page.items.into_iter().map(admin_giftcard_document) {
         assert_exact_keys(
             "gift-cards",
             &serde_json::to_value(row)?,
@@ -754,21 +943,24 @@ pub(super) async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) ->
     // W11 modern commerce routes: GET orders, GET orders/{trade_no},
     // GET payment-reconciliations. Order projections keep their key sets; the
     // list is `{items,total}` and the detail is a bare object.
-    let commerce_page = || v2board_compat::Pagination {
-        page: 1,
-        per_page: 10,
-    };
-    let (order_rows, order_total) = admin
-        .orders_list(commerce_page(), None, None, None, false)
+    let order_page = orders
+        .orders(AdminOrderQuery {
+            predicates: Vec::new(),
+            sort: OrderSort::default(),
+            commission_only: false,
+            limit: 10,
+            offset: 0,
+        })
         .await?;
     ensure!(
-        order_total >= 1 && !order_rows.is_empty(),
+        order_page.total >= 1 && !order_page.items.is_empty(),
         "orders list must return the seeded projection row"
     );
-    for row in &order_rows {
-        assert_exact_keys("orders", row, ADMIN_ORDER_FETCH_KEYS)?;
+    for row in order_page.items {
+        let row = serde_json::to_value(admin_order_list(row))?;
+        assert_exact_keys("orders", &row, ADMIN_ORDER_FETCH_KEYS)?;
     }
-    let order_detail = admin.order_detail(&trade_no).await?;
+    let order_detail = serde_json::to_value(admin_order_detail(orders.order(&trade_no).await?))?;
     assert_exact_keys("orders detail", &order_detail, ADMIN_ORDER_DETAIL_KEYS)?;
     let commission_rows = order_detail["commission_log"]
         .as_array()
@@ -798,17 +990,18 @@ pub(super) async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) ->
             ADMIN_ORDER_RECONCILIATION_KEYS,
         )?;
     }
-    let (reconciliation_list_rows, reconciliation_total) = admin
-        .reconciliations_list(commerce_page(), None, None, None, Some(&trade_no), None)
+    let reconciliation_page = reconciliations
+        .reconciliations(10, 0, None, None, None, Some(&trade_no), None)
         .await?;
     ensure!(
-        reconciliation_total >= 1 && !reconciliation_list_rows.is_empty(),
+        reconciliation_page.total >= 1 && !reconciliation_page.items.is_empty(),
         "payment-reconciliations must return the seeded projection row"
     );
-    for row in &reconciliation_list_rows {
+    for row in reconciliation_page.items {
+        let row = serde_json::to_value(admin_reconciliation(row))?;
         assert_exact_keys(
             "payment-reconciliations",
-            row,
+            &row,
             ADMIN_RECONCILIATION_FETCH_KEYS,
         )?;
     }
@@ -823,20 +1016,21 @@ pub(super) async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) ->
     .bind(now)
     .fetch_one(pool)
     .await?;
-    for row in admin.server_groups_list(None).await? {
+    for group in servers.groups(None).await? {
+        let row = serde_json::to_value(server_group_view(group))?;
         assert_exact_keys("server-groups", &row, ADMIN_SERVER_GROUP_LIST_KEYS)?;
         assert_rfc3339_fields("server-groups", &row, &["created_at", "updated_at"])?;
     }
     // The single-group filter keeps the same uniform projection (the legacy
     // count-less single fetch shape is gone with the dialect flip).
-    let single_group = admin.server_groups_list(Some(i64::from(group_id))).await?;
+    let single_group = servers.groups(Some(i64::from(group_id))).await?;
     ensure!(
         single_group.len() == 1,
         "server-groups?group_id must return exactly the one matching row"
     );
     assert_exact_keys(
         "server-groups single",
-        &single_group[0],
+        &serde_json::to_value(server_group_view(single_group[0].clone()))?,
         ADMIN_SERVER_GROUP_LIST_KEYS,
     )?;
 
@@ -848,7 +1042,8 @@ pub(super) async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) ->
     .bind(now)
     .execute(pool)
     .await?;
-    for row in admin.server_routes_list().await? {
+    for route in servers.routes().await? {
+        let row = serde_json::to_value(server_route_view(route))?;
         assert_exact_keys("server-routes", &row, ADMIN_SERVER_ROUTE_KEYS)?;
         ensure!(
             row["match"].is_array(),
@@ -867,7 +1062,15 @@ pub(super) async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) ->
     .bind(now)
     .execute(pool)
     .await?;
-    let nodes = admin.nodes_list().await?;
+    let nodes = servers
+        .nodes(now)
+        .await?
+        .into_iter()
+        .map(server_node_view)
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .map(serde_json::to_value)
+        .collect::<Result<Vec<_>, _>>()?;
     let node = nodes
         .iter()
         .find(|node| node["name"].as_str() == Some(node_name.as_str()))

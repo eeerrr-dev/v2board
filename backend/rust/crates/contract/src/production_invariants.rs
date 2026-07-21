@@ -4,11 +4,12 @@ use anyhow::{Context, Result, ensure};
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use v2board_config::RuntimeEnvironment;
 use v2board_db::{DbPoolConfig, migrations_current};
-use v2board_domain::redis_runtime::verify_redis_runtime;
+use v2board_redis_adapters::verify_redis_runtime;
 
 mod access_control;
 mod admin_projections;
 mod admin_users;
+mod configuration;
 mod harness;
 mod payments;
 mod schema;
@@ -29,6 +30,7 @@ use access_control::{
 };
 use admin_projections::admin_projection_key_sets;
 use admin_users::admin_user_w12_mutations;
+use configuration::operator_configuration_application_flow;
 #[cfg(test)]
 use harness::validate_generated_database_name;
 use payments::{late_payment_reconciliation, payment_config_at_rest_opacity};
@@ -133,8 +135,10 @@ async fn run_isolated_checks(
         );
         installation_identity_invariant(pool).await?;
         pass("installation identity is explicit, unique, and immutable");
-        install_contract_operator_config_authority(pool, integration_redis_url).await?;
+        install_contract_operator_config_authority(pool).await?;
         pass("operator configuration authority is explicit and authenticated");
+        operator_configuration_application_flow(pool).await?;
+        pass("operator configuration application flow is revisioned and redacted");
         install_contract_analytics_admission(pool).await?;
         pass("analytics admission policy is installation-bound and measurable");
         schema_invariants(pool).await?;

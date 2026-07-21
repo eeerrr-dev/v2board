@@ -15,7 +15,7 @@ import {
   Trash2,
   UserPlus,
 } from 'lucide-react';
-import type { AdminFilter } from '@v2board/api-client';
+import { isRawBinaryResponse, type AdminFilter } from '@v2board/api-client';
 import type { AdminUserRow } from '@v2board/types';
 import { copyText } from '@v2board/config/clipboard';
 import { formatBackendDateMinuteSlash, formatDateTime } from '@v2board/config/format';
@@ -304,7 +304,9 @@ export default function UsersPage() {
     const toastId = toast.loading(t(($) => $.admin.users.exporting));
     dumpCsv.mutate(query.filter, {
       onSuccess: (response) => {
-        downloadText(`${formatDateTime(Date.now() / 1000)}.csv`, response.buffer);
+        if (isRawBinaryResponse(response)) {
+          downloadText(`${formatDateTime(Date.now() / 1000)}.csv`, response.buffer);
+        }
       },
       onSettled: () => {
         toast.dismiss(toastId);
@@ -682,7 +684,9 @@ export default function UsersPage() {
         onSubmit={async (values) => {
           if (!plansReady) return;
           const response = await generate.mutateAsync(values);
-          if (values.generate_count) downloadGeneratedUserCsv(response.buffer);
+          if (values.generate_count && isRawBinaryResponse(response)) {
+            downloadGeneratedUserCsv(response.buffer);
+          }
           setCreating(false);
         }}
       />

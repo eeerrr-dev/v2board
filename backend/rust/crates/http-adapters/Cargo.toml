@@ -1,0 +1,20 @@
+[package]
+name = "v2board-http-adapters"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Bounded untrusted upstream HTTP response adapters"
+
+[lints]
+workspace = true
+
+[dependencies]
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+v2board-compat = { version = "0.9.0", path = "../compat" }
+
+[dev-dependencies]
+tokio.workspace = true

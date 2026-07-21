@@ -10,12 +10,14 @@ import {
 } from './dialect/page-location-canonicalizer.mjs';
 import {
   modernAdminConfigFixture,
+  modernAdminOrderDetailFixture,
   modernAdminOrderFixture,
   modernAdminPaymentFixture,
   modernAdminPlanFixture,
   modernAdminServerGroupFixture,
   modernAdminServerNodeFixture,
   modernAdminServerRouteFixture,
+  modernAdminStatFixture,
   modernAdminUserDetailFixture,
   modernAdminUserFixture,
   modernAdminUserTrafficFixture,
@@ -420,7 +422,7 @@ export function apiFixtureResponse(
       if (method === 'GET') {
         const requestedTradeNo = decodeURIComponent(modernOrderScopedMatch[1]);
         return v2Body(
-          modernAdminOrderFixture(
+          modernAdminOrderDetailFixture(
             adminOrderFixturesFor(scenario).find(
               (order) => order.trade_no === requestedTradeNo,
             ) ?? adminOrderFixtures[0],
@@ -539,7 +541,7 @@ export function apiFixtureResponse(
       return v2Empty();
     }
     if (adminEndpoint === '/stats/summary') {
-      return v2Body(adminStatFixture);
+      return v2Body(modernAdminStatFixture(adminStatFixture));
     }
     if (adminEndpoint === '/stats/orders' || adminEndpoint === '/stats/records') {
       return v2Body(adminOrderStatFixtures);

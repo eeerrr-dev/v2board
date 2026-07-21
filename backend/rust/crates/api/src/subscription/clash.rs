@@ -18,7 +18,7 @@ static STASH_TEMPLATE: LazyLock<Result<Value, String>> =
 pub(super) async fn build_clash_subscription(
     config: &AppConfig,
     uuid: &str,
-    servers: &[v2board_db::server::AvailableServerRow],
+    servers: &[crate::subscription::AvailableServer],
     kind: ClashKind,
     host: &str,
 ) -> Result<String, ApiError> {
@@ -53,7 +53,7 @@ pub(super) async fn build_clash_subscription(
 pub(super) async fn build_client_app_config(
     config: &AppConfig,
     uuid: &str,
-    servers: &[v2board_db::server::AvailableServerRow],
+    servers: &[crate::subscription::AvailableServer],
 ) -> Result<String, ApiError> {
     let template = load_clash_template(
         config,
@@ -67,7 +67,7 @@ pub(super) async fn build_client_app_config(
 pub(super) fn render_client_app_config(
     template: Value,
     uuid: &str,
-    servers: &[v2board_db::server::AvailableServerRow],
+    servers: &[crate::subscription::AvailableServer],
 ) -> Result<String, ApiError> {
     let proxies = build_clash_proxies(uuid, servers, false);
     render_clash_document(
@@ -82,7 +82,7 @@ pub(super) fn render_client_app_config(
 
 fn build_clash_proxies(
     uuid: &str,
-    servers: &[v2board_db::server::AvailableServerRow],
+    servers: &[crate::subscription::AvailableServer],
     meta: bool,
 ) -> Vec<Value> {
     servers
@@ -393,7 +393,7 @@ pub(super) fn render_clash_document(
 
 pub(super) fn build_clash_proxy(
     uuid: &str,
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
     meta: bool,
 ) -> Option<Value> {
     match server_protocol(server).as_str() {
@@ -422,7 +422,7 @@ pub(super) fn build_clash_proxy(
 
 fn build_clash_shadowsocks(
     uuid: &str,
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
 ) -> Option<Value> {
     let cipher = extra_string(server, "cipher")?;
     let mut object = proxy_base(server, "ss");
@@ -457,7 +457,7 @@ fn build_clash_shadowsocks(
     Some(Value::Object(object))
 }
 
-fn build_clash_vmess(uuid: &str, server: &v2board_db::server::AvailableServerRow) -> Option<Value> {
+fn build_clash_vmess(uuid: &str, server: &crate::subscription::AvailableServer) -> Option<Value> {
     let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
     let tls = extra_i64(server, "tls").unwrap_or_default();
     let tls_settings = extra_json(server, "tls_settings");
@@ -493,7 +493,7 @@ fn build_clash_vmess(uuid: &str, server: &v2board_db::server::AvailableServerRow
     Some(Value::Object(object))
 }
 
-fn build_clash_vless(uuid: &str, server: &v2board_db::server::AvailableServerRow) -> Option<Value> {
+fn build_clash_vless(uuid: &str, server: &crate::subscription::AvailableServer) -> Option<Value> {
     let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
     let tls = extra_i64(server, "tls").unwrap_or_default();
     let tls_settings = extra_json(server, "tls_settings");
@@ -538,10 +538,7 @@ fn build_clash_vless(uuid: &str, server: &v2board_db::server::AvailableServerRow
     Some(Value::Object(object))
 }
 
-fn build_clash_trojan(
-    uuid: &str,
-    server: &v2board_db::server::AvailableServerRow,
-) -> Option<Value> {
+fn build_clash_trojan(uuid: &str, server: &crate::subscription::AvailableServer) -> Option<Value> {
     let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
     let tls_settings = extra_json(server, "tls_settings");
     let mut object = proxy_base(server, "trojan");
@@ -571,7 +568,7 @@ fn build_clash_trojan(
     Some(Value::Object(object))
 }
 
-fn build_clash_tuic(uuid: &str, server: &v2board_db::server::AvailableServerRow) -> Option<Value> {
+fn build_clash_tuic(uuid: &str, server: &crate::subscription::AvailableServer) -> Option<Value> {
     let tls_settings = extra_json(server, "tls_settings");
     let mut object = proxy_base(server, "tuic");
     object.insert("uuid".to_string(), Value::String(uuid.to_string()));
@@ -613,10 +610,7 @@ fn build_clash_tuic(uuid: &str, server: &v2board_db::server::AvailableServerRow)
     Some(Value::Object(object))
 }
 
-fn build_clash_anytls(
-    uuid: &str,
-    server: &v2board_db::server::AvailableServerRow,
-) -> Option<Value> {
+fn build_clash_anytls(uuid: &str, server: &crate::subscription::AvailableServer) -> Option<Value> {
     let tls_settings = extra_json(server, "tls_settings");
     let mut object = proxy_base(server, "anytls");
     object.insert("password".to_string(), Value::String(uuid.to_string()));
@@ -646,7 +640,7 @@ fn build_clash_anytls(
 
 fn build_clash_hysteria(
     uuid: &str,
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
 ) -> Option<Value> {
     if extra_i64(server, "version") == Some(2) {
         return build_clash_hysteria2(uuid, server);
@@ -677,7 +671,7 @@ fn build_clash_hysteria(
 
 fn build_clash_hysteria2(
     uuid: &str,
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
 ) -> Option<Value> {
     let tls_settings = extra_json(server, "tls_settings");
     let mut object = proxy_base(server, "hysteria2");
@@ -711,7 +705,7 @@ fn build_clash_hysteria2(
 }
 
 fn proxy_base(
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
     proxy_type: &str,
 ) -> Map<String, Value> {
     let mut object = Map::new();

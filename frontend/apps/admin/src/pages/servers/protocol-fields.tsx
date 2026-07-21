@@ -1390,7 +1390,7 @@ function TlsSettingsField({
             <Switch
               id="node-tls-reject-unknown-sni"
               checked={toBoolean(settingValue(value, 'reject_unknown_sni'))}
-              onCheckedChange={(checked) => change('reject_unknown_sni', checked ? '1' : '0')}
+              onCheckedChange={(checked) => change('reject_unknown_sni', checked)}
             />
           </div>
         </div>
@@ -1401,7 +1401,7 @@ function TlsSettingsField({
           <Switch
             id="node-tls-allow-insecure"
             checked={toBoolean(settingValue(value, 'allow_insecure'))}
-            onCheckedChange={(checked) => change('allow_insecure', checked ? '1' : '0')}
+            onCheckedChange={(checked) => change('allow_insecure', checked)}
           />
         </div>
       </div>

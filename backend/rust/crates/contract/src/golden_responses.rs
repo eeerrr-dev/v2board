@@ -2,10 +2,11 @@
 //!
 //! `golden-responses` regenerates or verifies the `admin.*` JSON fixtures in
 //! `frontend/packages/api-client/goldens`. Each fixture is a full response
-//! body produced by the real `AdminService` against a disposable, freshly
-//! migrated PostgreSQL database seeded with fixed timestamps, identifiers,
-//! and codes — since W14 every family serializes the bare modern dialect-v2
-//! body (no legacy envelope remains). The api-client vitest suite parses
+//! body produced by the real application services and remaining admin service
+//! against a disposable, freshly migrated PostgreSQL database seeded with
+//! fixed timestamps, identifiers, and codes — since W14 every family
+//! serializes the bare modern dialect-v2 body (no legacy envelope remains).
+//! The api-client vitest suite parses
 //! every fixture with its zod contract schema, closing the Rust→zod edge
 //! that previously drifted silently. The `guest.*`/`passport.*`/`user.*`
 //! fixtures for pure serde response structs are owned by the `v2board-api`
@@ -18,29 +19,62 @@
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
-    time::Duration,
 };
 
 use anyhow::{Context, Result, bail, ensure};
 use serde::Serialize;
 use serde_json::json;
 use sqlx::{PgPool, postgres::PgPoolOptions};
-use v2board_api_contract::{AdminPlanItem, time::Rfc3339Timestamp};
-use v2board_compat::{Page, Pagination};
+use v2board_api_contract::{
+    AdminPlanItem, Page,
+    admin_business::{
+        AdminPaymentItem, AdminTicketDetail, AdminTicketItem, AdminTicketMessageItem,
+    },
+    admin_codes::{AdminCouponItem, AdminGiftcardItem},
+    admin_platform::{AdminUserTrafficView, StatSeriesPointView},
+    content::{KnowledgeDetailView, KnowledgeSummaryView, NoticeView},
+    time::Rfc3339Timestamp,
+};
+use v2board_application::{
+    admin_order::{AdminOrderQuery, OrderSort},
+    admin_user::{AdminUserListRequest, UserSort},
+    content::{ContentService, KnowledgeArticle, KnowledgeSummary, Notice},
+    payment::{PaymentMethod, PaymentService},
+    plan::{Plan, PlanService},
+    promotion::{
+        AdminCoupon as ApplicationAdminCoupon, GiftCard as ApplicationGiftCard, PromotionService,
+    },
+    reconciliation::ReconciliationService,
+    statistics::{StatisticsBucket, StatisticsService},
+    ticket::{
+        OperatorTicketListQuery, OperatorTicketOrder, Ticket, TicketDetail, TicketMessage,
+        TicketRepository,
+    },
+};
+use v2board_compat::Pagination;
 use v2board_config::AppConfig;
-use v2board_db::installation_id;
-use v2board_domain::{
-    admin::{AdminPlanView, AdminService},
-    auth::PasswordKdf,
-    payment_provider::payment_provider_codes,
-    smtp::SmtpTransportCache,
+use v2board_db::{
+    admin_payment::PostgresPaymentRepository, content::PostgresContentRepository,
+    coupon::PostgresPromotionRepository, plan::PostgresPlanRepository,
+    reconciliation::PostgresReconciliationRepository, statistics::PostgresStatisticsRepository,
+    ticket::PostgresTicketRepository,
 };
 use v2board_domain_model::{MoneyMinor, PlanPricePeriod};
+use v2board_payment_adapters::{EncryptedPaymentSecurity, Sha256ReconciliationIdentityHasher};
 
+use crate::admin_user_projection::{
+    admin_user_detail, admin_user_list_item, contract_admin_user_service,
+};
+use crate::order_projection::{admin_order_detail, admin_order_list, contract_order_service};
 use crate::production_invariants::{
     DEFAULT_INTEGRATION_REDIS_URL, DEFAULT_ROOT_DATABASE_URL, GeneratedDatabaseName, MIGRATOR,
     create_database, database_url_for, drop_database, env_or, flush_redis, integration_config,
 };
+use crate::reconciliation_projection::admin_reconciliation;
+use crate::server_projection::{
+    contract_server_service, server_group_view, server_node_view, server_route_view,
+};
+use crate::statistics_calendar::ContractStatisticsCalendar;
 
 /// 2023-11-14T22:13:20Z. Every seeded row pins its timestamps near this value
 /// so regeneration is byte-stable regardless of when it runs.
@@ -54,7 +88,111 @@ const DEFAULT_GOLDENS_DIR: &str = concat!(
 /// This lane owns exactly the `admin.` fixtures inside the goldens directory.
 const ADMIN_GOLDEN_PREFIX: &str = "admin.";
 
-fn admin_plan_document(view: AdminPlanView) -> AdminPlanItem {
+fn admin_ticket_item(ticket: Ticket) -> AdminTicketItem {
+    AdminTicketItem {
+        id: ticket.id,
+        user_id: ticket.user_id,
+        subject: ticket.subject,
+        level: ticket.level.code(),
+        status: ticket.status.code(),
+        reply_status: ticket.reply_status.code(),
+        last_reply_user_id: ticket.last_reply_user_id,
+        created_at: Rfc3339Timestamp::from_epoch_seconds(ticket.created_at),
+        updated_at: Rfc3339Timestamp::from_epoch_seconds(ticket.updated_at),
+    }
+}
+
+fn admin_coupon_document(view: ApplicationAdminCoupon) -> AdminCouponItem {
+    AdminCouponItem {
+        id: view.id,
+        code: view.code,
+        name: view.name,
+        coupon_type: view.kind_code,
+        value: view.value,
+        show: view.visible,
+        limit_use: view.remaining_uses,
+        limit_use_with_user: view.per_user_limit,
+        limit_plan_ids: view.plan_ids,
+        limit_period: view.periods,
+        started_at: Rfc3339Timestamp::from_epoch_seconds(view.starts_at),
+        ended_at: Rfc3339Timestamp::from_epoch_seconds(view.ends_at),
+        created_at: Rfc3339Timestamp::from_epoch_seconds(view.created_at),
+        updated_at: Rfc3339Timestamp::from_epoch_seconds(view.updated_at),
+    }
+}
+
+fn admin_giftcard_document(view: ApplicationGiftCard) -> AdminGiftcardItem {
+    AdminGiftcardItem {
+        id: view.id,
+        code: view.code,
+        name: view.name,
+        card_type: view.kind_code,
+        value: view.value,
+        plan_id: view.plan_id,
+        limit_use: view.remaining_uses,
+        used_user_ids: view.redeemed_user_ids,
+        started_at: Rfc3339Timestamp::from_epoch_seconds(view.starts_at),
+        ended_at: Rfc3339Timestamp::from_epoch_seconds(view.ends_at),
+        created_at: Rfc3339Timestamp::from_epoch_seconds(view.created_at),
+        updated_at: Rfc3339Timestamp::from_epoch_seconds(view.updated_at),
+    }
+}
+
+fn admin_ticket_message(message: TicketMessage) -> AdminTicketMessageItem {
+    AdminTicketMessageItem {
+        id: message.id,
+        user_id: message.user_id,
+        ticket_id: message.ticket_id,
+        message: message.message,
+        is_me: message.is_me,
+        created_at: Rfc3339Timestamp::from_epoch_seconds(message.created_at),
+        updated_at: Rfc3339Timestamp::from_epoch_seconds(message.updated_at),
+    }
+}
+
+fn admin_ticket_detail(detail: TicketDetail) -> AdminTicketDetail {
+    AdminTicketDetail {
+        ticket: admin_ticket_item(detail.ticket),
+        message: detail
+            .messages
+            .into_iter()
+            .map(admin_ticket_message)
+            .collect(),
+    }
+}
+
+fn admin_payment_document(payment: PaymentMethod) -> Result<AdminPaymentItem> {
+    let handling_fee_percent = payment
+        .handling_fee_percent
+        .map(|value| {
+            value
+                .parse::<f64>()
+                .ok()
+                .filter(|value| value.is_finite())
+                .context("stored payment fee is not a finite number")
+        })
+        .transpose()?;
+    Ok(AdminPaymentItem {
+        id: payment.id,
+        name: payment.name,
+        payment: payment.provider,
+        icon: payment.icon,
+        handling_fee_fixed: payment.handling_fee_fixed,
+        handling_fee_percent,
+        uuid: payment.uuid,
+        config: payment.config,
+        notify_domain: payment.notify_domain,
+        notify_url: payment.notify_url,
+        enable: payment.enable,
+        sort: payment.sort,
+        created_at: Rfc3339Timestamp::from_epoch_seconds(payment.created_at),
+        updated_at: Rfc3339Timestamp::from_epoch_seconds(payment.updated_at),
+        legacy_md5_signature: payment.legacy_md5_signature,
+        security_warning: payment.security_warning,
+    })
+}
+
+fn admin_plan_document(view: Plan) -> AdminPlanItem {
     AdminPlanItem {
         id: view.id,
         group_id: view.group_id,
@@ -92,6 +230,44 @@ fn admin_plan_document(view: AdminPlanView) -> AdminPlanItem {
         reset_traffic_method: view.reset_traffic_method,
         capacity_limit: view.capacity_limit,
         count: view.count,
+        created_at: Rfc3339Timestamp::from_epoch_seconds(view.created_at),
+        updated_at: Rfc3339Timestamp::from_epoch_seconds(view.updated_at),
+    }
+}
+
+fn notice_document(view: Notice) -> NoticeView {
+    NoticeView {
+        id: view.id,
+        title: view.title,
+        content: view.content,
+        show: view.visibility.is_visible(),
+        img_url: view.img_url,
+        tags: view.tags,
+        created_at: Rfc3339Timestamp::from_epoch_seconds(view.created_at),
+        updated_at: Rfc3339Timestamp::from_epoch_seconds(view.updated_at),
+    }
+}
+
+fn knowledge_summary_document(view: KnowledgeSummary) -> KnowledgeSummaryView {
+    KnowledgeSummaryView {
+        id: view.id,
+        category: view.category,
+        title: view.title,
+        sort: view.sort,
+        show: view.visibility.is_visible(),
+        updated_at: Rfc3339Timestamp::from_epoch_seconds(view.updated_at),
+    }
+}
+
+fn knowledge_detail_document(view: KnowledgeArticle) -> KnowledgeDetailView {
+    KnowledgeDetailView {
+        id: view.id,
+        language: view.language,
+        category: view.category,
+        title: view.title,
+        body: view.body,
+        sort: view.sort,
+        show: view.visibility.is_visible(),
         created_at: Rfc3339Timestamp::from_epoch_seconds(view.created_at),
         updated_at: Rfc3339Timestamp::from_epoch_seconds(view.updated_at),
     }
@@ -177,17 +353,25 @@ async fn generate_documents(pool: &PgPool, redis_url: &str) -> Result<Vec<(Strin
         .context("apply every embedded migration to the disposable goldens database")?;
     seed_fixture_rows(pool).await?;
 
-    let admin = AdminService::new(
-        pool.clone(),
-        redis::Client::open(redis_url)?,
-        installation_id(pool).await?,
-        Arc::new(golden_config(pool, redis_url)?),
-        reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(2))
-            .timeout(Duration::from_secs(5))
-            .build()?,
-        PasswordKdf::new(1),
-        SmtpTransportCache::default(),
+    let config = golden_config(pool, redis_url)?;
+    let payments = PaymentService::new(
+        PostgresPaymentRepository::new(pool.clone()),
+        EncryptedPaymentSecurity::new(config.app_key.clone()),
+        config.app_url.clone(),
+    );
+    let reconciliations = ReconciliationService::new(
+        PostgresReconciliationRepository::new(pool.clone()),
+        Sha256ReconciliationIdentityHasher,
+    );
+    let orders = contract_order_service(pool.clone());
+    let admin = contract_admin_user_service(pool.clone(), Arc::new(config));
+    let servers = contract_server_service(pool.clone());
+    let content = ContentService::new(PostgresContentRepository::new(pool.clone()));
+    let plans = PlanService::new(PostgresPlanRepository::new(pool.clone()));
+    let promotions = PromotionService::new(PostgresPromotionRepository::new(pool.clone()));
+    let statistics = StatisticsService::new(
+        PostgresStatisticsRepository::new(pool.clone()),
+        ContractStatisticsCalendar,
     );
 
     let mut documents = Vec::new();
@@ -203,8 +387,8 @@ async fn generate_documents(pool: &PgPool, redis_url: &str) -> Result<Vec<(Strin
     documents.push((
         "admin.plans.json".to_string(),
         pretty_document(
-            &admin
-                .plans_list()
+            &plans
+                .plans()
                 .await?
                 .into_iter()
                 .map(admin_plan_document)
@@ -213,33 +397,62 @@ async fn generate_documents(pool: &PgPool, redis_url: &str) -> Result<Vec<(Strin
     ));
     documents.push((
         "admin.payments.json".to_string(),
-        pretty_document(&admin.payments_list().await?)?,
+        pretty_document(
+            &payments
+                .payments()
+                .await?
+                .into_iter()
+                .map(admin_payment_document)
+                .collect::<Result<Vec<_>>>()?,
+        )?,
     ));
     documents.push((
         "admin.payment-providers.json".to_string(),
-        pretty_document(&payment_provider_codes())?,
+        pretty_document(&payments.provider_codes())?,
     ));
-    let (items, total) = admin
-        .orders_list(commerce_page, None, None, None, false)
+    let order_page = orders
+        .orders(AdminOrderQuery {
+            predicates: Vec::new(),
+            sort: OrderSort::default(),
+            commission_only: false,
+            limit: commerce_page.limit(),
+            offset: commerce_page.offset(),
+        })
         .await?;
     documents.push((
         "admin.orders.json".to_string(),
-        pretty_document(&Page { items, total })?,
+        pretty_document(&Page {
+            items: order_page.items.into_iter().map(admin_order_list).collect(),
+            total: order_page.total,
+        })?,
     ));
     documents.push((
         "admin.order.detail.json".to_string(),
-        pretty_document(
-            &admin
-                .order_detail("golden-trade-plan-00000000000001")
-                .await?,
-        )?,
+        pretty_document(&admin_order_detail(
+            orders.order("golden-trade-plan-00000000000001").await?,
+        ))?,
     ));
-    let (items, total) = admin
-        .reconciliations_list(commerce_page, None, None, None, None, None)
+    let reconciliation_page = reconciliations
+        .reconciliations(
+            commerce_page.limit(),
+            commerce_page.offset(),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
         .await?;
     documents.push((
         "admin.payment-reconciliations.json".to_string(),
-        pretty_document(&Page { items, total })?,
+        pretty_document(&Page {
+            items: reconciliation_page
+                .items
+                .into_iter()
+                .map(admin_reconciliation)
+                .collect(),
+            total: reconciliation_page.total,
+        })?,
     ));
 
     // The W12 admin users family (docs/api-dialect.md §6.6) serializes the
@@ -247,26 +460,32 @@ async fn generate_documents(pool: &PgPool, redis_url: &str) -> Result<Vec<(Strin
     // `{items,total}` list plus the two bare detail projections (member id 2
     // carries an inviter, id 1 does not). The projection drops `t` and crosses
     // every epoch as an RFC 3339 string (§4.5).
-    let user_page = Pagination {
-        page: 1,
-        per_page: 10,
-    };
-    let (items, total) = admin.users_list(user_page, None, None, None).await?;
+    let page = admin
+        .users(AdminUserListRequest {
+            limit: 10,
+            offset: 0,
+            filters: Vec::new(),
+            sort: UserSort::default(),
+        })
+        .await?;
     documents.push((
         "admin.users.json".to_string(),
-        pretty_document(&Page { items, total })?,
+        pretty_document(&Page {
+            items: page.items.into_iter().map(admin_user_list_item).collect(),
+            total: page.total,
+        })?,
     ));
     documents.push((
         "admin.user.detail.json".to_string(),
-        pretty_document(&admin.user_detail(2).await?)?,
+        pretty_document(&admin_user_detail(admin.user_detail(2).await?))?,
     ));
     documents.push((
         "admin.user.detail.no-inviter.json".to_string(),
-        pretty_document(&admin.user_detail(1).await?)?,
+        pretty_document(&admin_user_detail(admin.user_detail(1).await?))?,
     ));
 
     // The W10 content family (docs/api-dialect.md §6.3) serializes modern
-    // dialect-v2 bodies straight from the typed domain methods: bare arrays
+    // dialect-v2 bodies straight from typed application methods: bare arrays
     // for the deliberately unpaginated notice/knowledge lists, `{items,total}`
     // for the paginated coupon/gift-card lists, bare objects for details.
     let content_page = Pagination {
@@ -275,29 +494,59 @@ async fn generate_documents(pool: &PgPool, redis_url: &str) -> Result<Vec<(Strin
     };
     documents.push((
         "admin.notices.json".to_string(),
-        pretty_document(&admin.notices_list().await?)?,
+        pretty_document(
+            &content
+                .notices()
+                .await?
+                .into_iter()
+                .map(notice_document)
+                .collect::<Vec<_>>(),
+        )?,
     ));
     documents.push((
         "admin.knowledge.json".to_string(),
-        pretty_document(&admin.knowledge_list().await?)?,
+        pretty_document(
+            &content
+                .knowledge()
+                .await?
+                .into_iter()
+                .map(knowledge_summary_document)
+                .collect::<Vec<_>>(),
+        )?,
     ));
     documents.push((
         "admin.knowledge.detail.json".to_string(),
-        pretty_document(&admin.knowledge_detail(1).await?)?,
+        pretty_document(&knowledge_detail_document(
+            content.knowledge_detail(1).await?,
+        ))?,
     ));
     documents.push((
         "admin.knowledge-categories.json".to_string(),
-        pretty_document(&admin.knowledge_categories_list().await?)?,
+        pretty_document(&content.knowledge_categories().await?)?,
     ));
-    let (items, total) = admin.coupons_list(content_page, None, None).await?;
+    let page = promotions
+        .coupons(content_page.limit(), content_page.offset(), None, None)
+        .await?;
     documents.push((
         "admin.coupons.json".to_string(),
-        pretty_document(&Page { items, total })?,
+        pretty_document(&Page {
+            items: page.items.into_iter().map(admin_coupon_document).collect(),
+            total: page.total,
+        })?,
     ));
-    let (items, total) = admin.giftcards_list(content_page, None, None).await?;
+    let page = promotions
+        .gift_cards(content_page.limit(), content_page.offset(), None, None)
+        .await?;
     documents.push((
         "admin.gift-cards.json".to_string(),
-        pretty_document(&Page { items, total })?,
+        pretty_document(&Page {
+            items: page
+                .items
+                .into_iter()
+                .map(admin_giftcard_document)
+                .collect(),
+            total: page.total,
+        })?,
     ));
 
     // The W13 admin servers family (docs/api-dialect.md §6.7) serializes
@@ -307,15 +556,36 @@ async fn generate_documents(pool: &PgPool, redis_url: &str) -> Result<Vec<(Strin
     // with the vmess camelCase settings keys kept as-is (R22).
     documents.push((
         "admin.nodes.json".to_string(),
-        pretty_document(&admin.nodes_list().await?)?,
+        pretty_document(
+            &servers
+                .nodes(GOLDEN_TIME)
+                .await?
+                .into_iter()
+                .map(server_node_view)
+                .collect::<Result<Vec<_>>>()?,
+        )?,
     ));
     documents.push((
         "admin.server-groups.json".to_string(),
-        pretty_document(&admin.server_groups_list(None).await?)?,
+        pretty_document(
+            &servers
+                .groups(None)
+                .await?
+                .into_iter()
+                .map(server_group_view)
+                .collect::<Vec<_>>(),
+        )?,
     ));
     documents.push((
         "admin.server-routes.json".to_string(),
-        pretty_document(&admin.server_routes_list().await?)?,
+        pretty_document(
+            &servers
+                .routes()
+                .await?
+                .into_iter()
+                .map(server_route_view)
+                .collect::<Vec<_>>(),
+        )?,
     ));
 
     // The W14 admin tickets + stats families (docs/api-dialect.md §6.5/§6.8)
@@ -325,41 +595,86 @@ async fn generate_documents(pool: &PgPool, redis_url: &str) -> Result<Vec<(Strin
     // `{series,date,value}` arrays with snake_case series slugs and
     // integer-cent money. `local_month_day` uses the fixed +08:00 app
     // timezone, so the seeded `stat` rows render byte-stable dates.
-    let ticket_page = Pagination {
-        page: 1,
-        per_page: 10,
-    };
-    let (items, total) = admin
-        .tickets_list(ticket_page, None, &[], None, false)
+    let ticket_repository = PostgresTicketRepository::new(pool.clone());
+    let ticket_page = ticket_repository
+        .list_for_operator(OperatorTicketListQuery {
+            limit: 10,
+            offset: 0,
+            status: None,
+            reply_statuses: Vec::new(),
+            email: None,
+            order: OperatorTicketOrder::UpdatedAt,
+        })
         .await?;
     documents.push((
         "admin.tickets.json".to_string(),
-        pretty_document(&Page { items, total })?,
+        pretty_document(&Page {
+            items: ticket_page
+                .items
+                .into_iter()
+                .map(admin_ticket_item)
+                .collect(),
+            total: ticket_page.total,
+        })?,
     ));
     documents.push((
         "admin.ticket.detail.json".to_string(),
-        pretty_document(&admin.ticket_detail(1).await?)?,
+        pretty_document(&admin_ticket_detail(
+            ticket_repository
+                .find_for_operator(1)
+                .await?
+                .context("seeded golden ticket missing")?,
+        ))?,
     ));
-    let (items, total) = admin
-        .stats_user_traffic(
-            2,
-            Pagination {
-                page: 1,
-                per_page: 10,
-            },
-        )
+    let pagination = Pagination {
+        page: 1,
+        per_page: 10,
+    };
+    let (items, total) = statistics
+        .user_traffic(2, pagination.limit(), pagination.offset())
         .await?;
+    let items = items
+        .into_iter()
+        .map(|item| AdminUserTrafficView {
+            record_at: Rfc3339Timestamp::from_epoch_seconds(item.recorded_at),
+            u: item.upload,
+            d: item.download,
+            server_rate: item.server_rate,
+        })
+        .collect();
     documents.push((
         "admin.stats.user-traffic.json".to_string(),
         pretty_document(&Page { items, total })?,
     ));
     documents.push((
         "admin.stats.orders.json".to_string(),
-        pretty_document(&admin.stats_orders().await?)?,
+        pretty_document(
+            &statistics
+                .series(StatisticsBucket::Daily)
+                .await?
+                .into_iter()
+                .map(|point| StatSeriesPointView {
+                    series: point.series.to_string(),
+                    date: point.date,
+                    value: point.value,
+                })
+                .collect::<Vec<_>>(),
+        )?,
     ));
     documents.push((
         "admin.stats.records.json".to_string(),
-        pretty_document(&admin.stats_records("m").await?)?,
+        pretty_document(
+            &statistics
+                .series(StatisticsBucket::Monthly)
+                .await?
+                .into_iter()
+                .map(|point| StatSeriesPointView {
+                    series: point.series.to_string(),
+                    date: point.date,
+                    value: point.value,
+                })
+                .collect::<Vec<_>>(),
+        )?,
     ));
     documents.sort_by(|left, right| left.0.cmp(&right.0));
 

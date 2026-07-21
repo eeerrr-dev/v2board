@@ -6,10 +6,14 @@ use axum::{
     http::{HeaderMap, header},
 };
 use v2board_compat::ApiError;
-use v2board_config::AppConfig;
-use v2board_db::DbPool;
+use v2board_domain_model::ServerKind;
 
-use crate::request_params::{flatten_admin_json, parse_urlencoded_params};
+use crate::{
+    request_params::{flatten_admin_json, parse_urlencoded_params},
+    runtime::AppState,
+};
+
+use super::ServerNodeRow;
 
 pub(super) struct ServerRequestInput {
     pub(super) params: HashMap<String, String>,
@@ -53,7 +57,7 @@ pub(super) async fn server_request_input(request: Request) -> Result<ServerReque
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ServerIdentity {
-    pub(super) node_type: String,
+    pub(super) kind: ServerKind,
     pub(super) node_id: i32,
 }
 
@@ -75,15 +79,16 @@ pub(super) fn server_identity(
         "v2node" => "v2node".to_string(),
         _ => return Err(ApiError::not_found("Server route not found")),
     };
+    let kind = ServerKind::try_from(node_type.as_str())
+        .map_err(|_| ApiError::legacy("server is not exist"))?;
     Ok(ServerIdentity {
-        node_type,
+        kind,
         node_id: required_i32_param(params, "node_id")?,
     })
 }
 
 pub(super) async fn validate_server_token(
-    db: &DbPool,
-    config: &AppConfig,
+    state: &AppState,
     headers: &HeaderMap,
     params: &HashMap<String, String>,
     identity: &ServerIdentity,
@@ -114,27 +119,12 @@ pub(super) async fn validate_server_token(
         return Err(ApiError::legacy("token is error"));
     }
 
-    let master_key = config
-        .server_token
-        .as_deref()
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| ApiError::legacy("token is error"))?;
-    let credential_epoch = sqlx::query_scalar::<_, i64>(
-        "SELECT credential_epoch FROM server_credential \
-         WHERE node_type = $1 AND node_id = $2 LIMIT 1",
-    )
-    .bind(&identity.node_type)
-    .bind(identity.node_id)
-    .fetch_optional(db)
-    .await?
-    .ok_or_else(|| ApiError::legacy("token is error"))?;
-    if v2board_domain::server_credentials::verify_node_token(
-        master_key,
-        &identity.node_type,
-        identity.node_id,
-        credential_epoch,
-        token,
-    ) {
+    if state
+        .server_runtime_service()
+        .authenticate(identity.kind, identity.node_id, token)
+        .await
+        .map_err(|error| ApiError::internal(error.to_string()))?
+    {
         return Ok(());
     }
     Err(ApiError::legacy("token is error"))
@@ -159,4 +149,36 @@ pub(super) fn normalize_server_node_type(value: &str) -> String {
         "hysteria2" => "hysteria".to_string(),
         value => value.to_string(),
     }
+}
+
+pub(super) async fn load_server_node(
+    state: &AppState,
+    kind: ServerKind,
+    node_id: i32,
+) -> Result<Option<ServerNodeRow>, ApiError> {
+    state
+        .server_runtime_service()
+        .node(kind, node_id)
+        .await
+        .map_err(|error| ApiError::internal(error.to_string()))
+}
+
+pub(super) async fn load_uniproxy_node(
+    state: &AppState,
+    params: &HashMap<String, String>,
+) -> Result<(ServerKind, ServerNodeRow), ApiError> {
+    let node_type = params
+        .get("node_type")
+        .map(String::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(normalize_server_node_type)
+        .ok_or_else(|| ApiError::legacy("server is not exist"))?;
+    let kind = ServerKind::try_from(node_type.as_str())
+        .map_err(|_| ApiError::legacy("server is not exist"))?;
+    let node_id = required_i32_param(params, "node_id")?;
+    let node = load_server_node(state, kind, node_id)
+        .await?
+        .ok_or_else(|| ApiError::legacy("server is not exist"))?;
+    Ok((kind, node))
 }

@@ -1,33 +1,99 @@
-import type { AdminConfig, AdminConfigPatch, AdminConfigPatchResult } from '@v2board/types';
-import { z, type output } from 'zod';
+import type {
+  AdminConfig,
+  AdminConfigPatch,
+  AdminConfigPatchResult,
+  InternalApiOperationMap,
+} from '@v2board/types';
 import type { ApiClient } from '../../client';
-import {
-  adminConfigSchema,
-  configActivationPendingSchema,
-  mfaStatusSchema,
-  noContentSchema,
-  stringArraySchema,
-  testMailResultSchema,
-  totpProvisioningSchema,
-} from '../../contracts';
+import { requestInternal } from '../../internal-operation';
 import type { QueryRequestConfig } from './shared';
 
-export type AdminTestMailResult = output<typeof testMailResultSchema>;
+export type AdminTestMailResult = InternalApiOperationMap['adminTestMailSend']['response'];
+type AdminConfigWire = InternalApiOperationMap['adminConfigGet']['response'];
 
-function normalizeAdminConfig(config: output<typeof adminConfigSchema>): AdminConfig {
+function numericEnum<const Values extends readonly number[]>(
+  value: number,
+  values: Values,
+  field: string,
+): Values[number] {
+  if (!values.includes(value)) throw new TypeError(`Unsupported ${field}: ${value}`);
+  return value as Values[number];
+}
+
+const FRONTEND_THEME_COLORS = ['default', 'darkblue', 'black', 'green'] as const;
+
+function frontendThemeColor(value: string): (typeof FRONTEND_THEME_COLORS)[number] {
+  if (!(FRONTEND_THEME_COLORS as readonly string[]).includes(value)) {
+    throw new TypeError(`Unsupported frontend theme color: ${value}`);
+  }
+  return value as (typeof FRONTEND_THEME_COLORS)[number];
+}
+
+function normalizeAdminConfig(config: AdminConfigWire): AdminConfig {
+  const {
+    ticket,
+    deposit,
+    invite,
+    site,
+    subscribe,
+    frontend,
+    server,
+    email,
+    telegram,
+    app,
+    safe,
+    ...flat
+  } = config;
+  const normalizedTicket =
+    ticket == null
+      ? undefined
+      : { ...ticket, ticket_status: numericEnum(ticket.ticket_status, [0, 1, 2], 'ticket status') };
+  const normalizedSubscribe =
+    subscribe == null
+      ? undefined
+      : {
+          ...subscribe,
+          reset_traffic_method: numericEnum(
+            subscribe.reset_traffic_method,
+            [0, 1, 2, 3, 4],
+            'reset traffic method',
+          ),
+          show_subscribe_method: numericEnum(
+            subscribe.show_subscribe_method,
+            [0, 1, 2],
+            'subscribe display method',
+          ),
+        };
+  const normalizedFrontend =
+    frontend == null
+      ? undefined
+      : { ...frontend, frontend_theme_color: frontendThemeColor(frontend.frontend_theme_color) };
+  const normalizedEmail =
+    email == null ? undefined : { ...email, email_template: email.email_template ?? 'default' };
   return {
-    ...(config.ticket ?? {}),
-    ...(config.deposit ?? {}),
-    ...(config.invite ?? {}),
-    ...(config.site ?? {}),
-    ...(config.subscribe ?? {}),
-    ...(config.frontend ?? {}),
-    ...(config.server ?? {}),
-    ...(config.email ?? {}),
-    ...(config.telegram ?? {}),
-    ...(config.app ?? {}),
-    ...(config.safe ?? {}),
-    ...config,
+    ...(normalizedTicket ?? {}),
+    ...(deposit ?? {}),
+    ...(invite ?? {}),
+    ...(site ?? {}),
+    ...(normalizedSubscribe ?? {}),
+    ...(normalizedFrontend ?? {}),
+    ...(server ?? {}),
+    ...(normalizedEmail ?? {}),
+    ...(telegram ?? {}),
+    ...(app ?? {}),
+    ...(safe ?? {}),
+    ...flat,
+    ...(normalizedTicket === undefined ? {} : { ticket: normalizedTicket }),
+    ...(deposit == null ? {} : { deposit }),
+    ...(invite == null ? {} : { invite }),
+    ...(site == null ? {} : { site }),
+    ...(normalizedSubscribe === undefined ? {} : { subscribe: normalizedSubscribe }),
+    ...(normalizedFrontend === undefined ? {} : { frontend: normalizedFrontend }),
+    ...(server == null ? {} : { server }),
+    ...(normalizedEmail === undefined ? {} : { email: normalizedEmail }),
+    ...(telegram == null ? {} : { telegram }),
+    ...(app == null ? {} : { app }),
+    ...(safe == null ? {} : { safe }),
   };
 }
 
@@ -42,12 +108,8 @@ function explicitAdminConfigPath(securePath: string): string {
 /** GET /{secure_path}/config `?group=` — dialect v2 bare grouped object (§6.1, W9). */
 export const fetchConfig = async (client: ApiClient, group?: string, config?: QueryRequestConfig) =>
   normalizeAdminConfig(
-    await client.request({
-      url: client.resolveAdminPath('/config'),
-      method: 'GET',
-      dialect: 'v2',
-      params: group ? { group } : undefined,
-      responseSchema: adminConfigSchema,
+    await requestInternal(client, 'adminConfigGet', {
+      query: group ? { group } : {},
       ...config,
     }),
   );
@@ -65,12 +127,9 @@ export const fetchConfigAtAdminPath = async (
   config?: QueryRequestConfig,
 ) =>
   normalizeAdminConfig(
-    await client.request({
-      url: explicitAdminConfigPath(securePath),
-      method: 'GET',
-      dialect: 'v2',
-      params: group ? { group } : undefined,
-      responseSchema: adminConfigSchema,
+    await requestInternal(client, 'adminConfigGet', {
+      contractUrlOverride: explicitAdminConfigPath(securePath),
+      query: group ? { group } : {},
       ...config,
     }),
   );
@@ -90,34 +149,20 @@ export const saveConfig = (
   client: ApiClient,
   data: AdminConfigPatch,
 ): Promise<AdminConfigPatchResult> =>
-  client
-    .request({
-      url: client.resolveAdminPath('/config'),
-      method: 'PATCH',
-      dialect: 'v2',
-      data,
-      responseSchema: z.union([noContentSchema, configActivationPendingSchema]),
-    })
-    .then((body) => body ?? ({ activation: 'applied' } as const));
+  requestInternal(client, 'adminConfigUpdate', {
+    data,
+  }).then((body) => body ?? ({ activation: 'applied' } as const));
 
 /** GET /{secure_path}/email-templates — dialect v2 bare array (§6.1, W9). */
 export const getEmailTemplate = (client: ApiClient, config?: QueryRequestConfig) =>
-  client.request({
-    url: client.resolveAdminPath('/email-templates'),
-    method: 'GET',
-    dialect: 'v2',
-    responseSchema: stringArraySchema,
+  requestInternal(client, 'adminEmailTemplatesList', {
     ...config,
   });
 
 /** POST /{secure_path}/telegram-webhook — dialect v2, 204 (§6.1, W9). */
 export const setTelegramWebhook = (client: ApiClient, telegram_bot_token?: string) =>
-  client.request({
-    url: client.resolveAdminPath('/telegram-webhook'),
-    method: 'POST',
-    dialect: 'v2',
+  requestInternal(client, 'adminTelegramWebhookSet', {
     data: telegram_bot_token === undefined ? {} : { telegram_bot_token },
-    responseSchema: noContentSchema,
   });
 
 /**
@@ -125,21 +170,11 @@ export const setTelegramWebhook = (client: ApiClient, telegram_bot_token?: strin
  * the legacy `{data: true, log}` envelope became a named object; failures are
  * problems (400 mail_sender_not_configured/mail_invalid, 502 mail_send_failed).
  */
-export const testSendMail = (client: ApiClient) =>
-  client.request({
-    url: client.resolveAdminPath('/test-mail'),
-    method: 'POST',
-    dialect: 'v2',
-    responseSchema: testMailResultSchema,
-  });
+export const testSendMail = (client: ApiClient) => requestInternal(client, 'adminTestMailSend', {});
 
 /** GET /{secure_path}/account/mfa — the caller's own two-factor state (§6.10). */
 export const fetchAccountMfa = (client: ApiClient, config?: QueryRequestConfig) =>
-  client.request({
-    url: client.resolveAdminPath('/account/mfa'),
-    method: 'GET',
-    dialect: 'v2',
-    responseSchema: mfaStatusSchema,
+  requestInternal(client, 'adminAccountMfaGet', {
     ...config,
   });
 
@@ -148,29 +183,16 @@ export const fetchAccountMfa = (client: ApiClient, config?: QueryRequestConfig) 
  * (§6.10). The provisioning secret in the response is shown exactly once.
  */
 export const setupAccountTotp = (client: ApiClient) =>
-  client.request({
-    url: client.resolveAdminPath('/account/mfa/totp'),
-    method: 'POST',
-    dialect: 'v2',
-    responseSchema: totpProvisioningSchema,
-  });
+  requestInternal(client, 'adminAccountMfaTotpSetup', {});
 
 /** POST /{secure_path}/account/mfa/totp/confirm — enable with a live code; 204 (§6.10). */
 export const confirmAccountTotp = (client: ApiClient, code: string) =>
-  client.request({
-    url: client.resolveAdminPath('/account/mfa/totp/confirm'),
-    method: 'POST',
-    dialect: 'v2',
+  requestInternal(client, 'adminAccountMfaTotpConfirm', {
     data: { code },
-    responseSchema: noContentSchema,
   });
 
 /** POST /{secure_path}/account/mfa/totp/disable — remove with a live code; 204 (§6.10). */
 export const disableAccountTotp = (client: ApiClient, code: string) =>
-  client.request({
-    url: client.resolveAdminPath('/account/mfa/totp/disable'),
-    method: 'POST',
-    dialect: 'v2',
+  requestInternal(client, 'adminAccountMfaTotpDisable', {
     data: { code },
-    responseSchema: noContentSchema,
   });

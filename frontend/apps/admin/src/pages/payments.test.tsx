@@ -8,10 +8,10 @@ import PaymentsPage from './payments';
 // DataTable + a Sheet editor) replacing the antd modal / drag-sort / ant-table
 // replica. The DOM and source byte-pins are retired; the drag handle is swapped
 // for accessible move buttons. What stays covered is the Tier-1 contract: the
-// paymentMethods/paymentForm keyed query contract, the save payload
-// ({...submit, payment, config}); fixed-fee cents conversion is covered at the
-// api-client boundary rather than duplicated in this form. The enable
-// and delete mutations, and the sort.mutate id-list reorder payload.
+// paymentMethods/paymentForm keyed create contract, the provider-discriminated
+// create payload, and metadata-only edits (provider credentials are immutable);
+// fixed-fee cents conversion is covered at the api-client boundary rather than
+// duplicated in this form. The enable/delete mutations and id-list reorder stay covered.
 
 function makePayments() {
   return [
@@ -394,34 +394,33 @@ describe('PaymentsPage', () => {
     );
   });
 
-  it('preserves same-driver edits but restores the record config after switching away and back', async () => {
+  it('renders the provider and redacted config as immutable while editing metadata', async () => {
     mocks.data[0] = {
       ...mocks.data[0]!,
       config: { key: 'record-key' },
     };
     const user = userEvent.setup();
-    const { rerender } = render(<PaymentsPage />);
+    render(<PaymentsPage />);
 
     await user.click(screen.getByTestId('payment-edit-1'));
-    const keyInput = await screen.findByLabelText('支付宝密钥');
+    const methodInput = screen.getByLabelText('接口文件');
+    const keyInput = screen.getByLabelText('key');
+    expect(methodInput).toHaveValue('AlipayF2F');
+    expect(methodInput).toBeDisabled();
     expect(keyInput).toHaveValue('record-key');
-    await user.clear(keyInput);
-    await user.type(keyInput, 'same-driver-edit');
+    expect(keyInput).toBeDisabled();
+    expect(mocks.paymentMethodsHook).toHaveBeenLastCalledWith(false);
+    expect(mocks.paymentFormHook).toHaveBeenLastCalledWith('AlipayF2F', undefined, false);
 
-    // A same-key query refresh re-applies the definition without replacing the
-    // user's current config value with its default.
-    setDefinition('AlipayF2F', {
-      key: { label: '支付宝密钥', type: 'input', value: 'new-default' },
-    });
-    rerender(<PaymentsPage />);
-    expect(screen.getByLabelText('支付宝密钥')).toHaveValue('same-driver-edit');
+    await user.clear(screen.getByLabelText('显示名称'));
+    await user.type(screen.getByLabelText('显示名称'), 'Renamed');
+    await user.click(screen.getByTestId('payment-save'));
 
-    await user.click(screen.getByLabelText('接口文件'));
-    await user.click(await screen.findByRole('option', { name: 'MGate' }));
-    await screen.findByLabelText('MGate Token');
-    await user.click(screen.getByLabelText('接口文件'));
-    await user.click(await screen.findByRole('option', { name: 'AlipayF2F' }));
-    expect(await screen.findByLabelText('支付宝密钥')).toHaveValue('record-key');
+    await waitFor(() => expect(mocks.saveMutateAsync).toHaveBeenCalledOnce());
+    const payload = mocks.saveMutateAsync.mock.calls[0]?.[0];
+    expect(payload).toEqual(expect.objectContaining({ id: 1, name: 'Renamed' }));
+    expect(payload).not.toHaveProperty('payment');
+    expect(payload).not.toHaveProperty('config');
   });
 
   it('keeps the configured editor open when the save request fails', async () => {
@@ -463,14 +462,13 @@ describe('PaymentsPage', () => {
   });
 
   it('renders a legacy zero percentage fee as blank for API-boundary normalization', async () => {
-    setDefinition('AlipayF2F', {
-      key: { label: '密钥', type: 'input', value: 'configured' },
-    });
+    mocks.data[0] = { ...mocks.data[0]!, config: { key: 'configured' } };
     const user = userEvent.setup();
     render(<PaymentsPage />);
 
     await user.click(screen.getByTestId('payment-edit-1'));
-    await waitFor(() => expect(screen.getByLabelText('密钥')).toHaveValue('configured'));
+    expect(screen.getByLabelText('key')).toHaveValue('configured');
+    expect(screen.getByLabelText('key')).toBeDisabled();
     expect(screen.getByLabelText('百分比手续费(选填)')).toHaveDisplayValue('');
     await user.click(screen.getByTestId('payment-save'));
 

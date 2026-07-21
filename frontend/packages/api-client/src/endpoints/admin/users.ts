@@ -1,14 +1,8 @@
-import type { AdminUserRow, AdminUserUpdatePayload } from '@v2board/types';
-import type { output } from 'zod';
+import type { AdminUserRow, AdminUserUpdatePayload, InternalApiOperationMap } from '@v2board/types';
 import type { ApiClient } from '../../client';
-import { adminListQueryParams, pageSchema, type FilterClause } from '../../dialect';
+import { adminListQueryParams, type FilterClause } from '../../dialect';
+import { requestInternal, requestInternalBinary } from '../../internal-operation';
 import { decimalToScaledInteger } from '../../money';
-import {
-  adminUserDetailSchema,
-  adminUserSchema,
-  createdIdSchema,
-  noContentSchema,
-} from '../../contracts';
 import {
   LEGACY_FILTER_OPS,
   type AdminFilter,
@@ -18,6 +12,10 @@ import {
 } from './shared';
 
 const BYTES_PER_GIB = 1_073_741_824;
+
+type AdminUserListItem = InternalApiOperationMap['adminUsersList']['response']['items'][number];
+type AdminUserDetail = InternalApiOperationMap['adminUsersGet']['response'];
+type GeneratedAdminUserPatch = InternalApiOperationMap['adminUsersUpdate']['request'];
 
 const bulkMailIdempotencyKeys = new WeakMap<object, string>();
 
@@ -35,13 +33,29 @@ function formatScaledBackendValue(value: unknown, divisor: number) {
   return (Number(value) / divisor).toFixed(2);
 }
 
+function binaryInteger(value: number, field: string): 0 | 1 {
+  if (value !== 0 && value !== 1) throw new TypeError(`Unsupported ${field}: ${value}`);
+  return value;
+}
+
+function commissionType(value: number): 0 | 1 | 2 {
+  if (value !== 0 && value !== 1 && value !== 2) {
+    throw new TypeError(`Unsupported commission type: ${value}`);
+  }
+  return value;
+}
+
 function normalizeAdminUser(
-  user: output<typeof adminUserSchema>,
+  user: AdminUserListItem,
   { normalizeTotalUsed = false }: { normalizeTotalUsed?: boolean } = {},
 ): AdminUserRow {
   return {
     ...user,
     password: '',
+    banned: binaryInteger(user.banned, 'banned flag'),
+    is_admin: binaryInteger(user.is_admin, 'admin flag'),
+    is_staff: binaryInteger(user.is_staff, 'staff flag'),
+    commission_type: commissionType(user.commission_type),
     transfer_enable: formatScaledBackendValue(user.transfer_enable, BYTES_PER_GIB),
     u: formatScaledBackendValue(user.u, BYTES_PER_GIB),
     d: formatScaledBackendValue(user.d, BYTES_PER_GIB),
@@ -54,7 +68,7 @@ function normalizeAdminUser(
   };
 }
 
-function normalizeAdminUserDetail(user: output<typeof adminUserDetailSchema>) {
+function normalizeAdminUserDetail(user: AdminUserDetail) {
   return {
     ...user,
     password: '',
@@ -182,18 +196,14 @@ export const fetchUsers = async (
   query: AdminPageQuery = {},
   config?: QueryRequestConfig,
 ): Promise<PageResult<AdminUserRow>> => {
-  const page = await client.request({
-    url: client.resolveAdminPath('/users'),
-    method: 'GET',
-    dialect: 'v2',
-    params: adminListQueryParams<UserFilterField>({
+  const page = await requestInternal(client, 'adminUsersList', {
+    query: adminListQueryParams<UserFilterField>({
       page: query.current,
       per_page: query.pageSize,
       sort_by: query.sort,
       sort_dir: query.sort_type ? (query.sort_type === 'ASC' ? 'asc' : 'desc') : undefined,
       filter: userFilterClauses(query.filter),
-    }),
-    responseSchema: pageSchema(adminUserSchema),
+    }) as InternalApiOperationMap['adminUsersList']['parameters']['query'],
     ...config,
   });
   return {
@@ -218,16 +228,6 @@ export type AdminUserUpdateInput = Omit<AdminUserUpdatePayload, AdminUserScaledF
   [K in AdminUserScaledField]?: string | number | null;
 };
 
-/** PATCH `users/{id}` fields that clear on JSON `null` (§4.4 double-Option). */
-const ADMIN_USER_NULLABLE_FIELDS = [
-  'plan_id',
-  'device_limit',
-  'commission_rate',
-  'discount',
-  'speed_limit',
-  'remarks',
-] as const;
-
 /**
  * Build the §6.6 PATCH `users/{id}` body (docs/api-dialect.md §4.4): scaled
  * fields ride as integer bytes/cents, the 0/1 flags cross as JSON booleans,
@@ -236,47 +236,63 @@ const ADMIN_USER_NULLABLE_FIELDS = [
  * inviter is the dedicated `set-inviter` action) and the profile
  * `remind_*` flags are not part of the admin update.
  */
-function serializeAdminUserPatch(data: AdminUserUpdateInput): Record<string, unknown> {
-  const body: Record<string, unknown> = {};
-  const set = (key: string, value: unknown) => {
-    if (value !== undefined) body[key] = value;
-  };
-  set('email', data.email);
-  if (data.password !== undefined && data.password !== '') body.password = data.password;
-  set(
-    'commission_type',
-    data.commission_type === undefined ? undefined : Number(data.commission_type),
-  );
-  for (const flag of ['banned', 'is_admin', 'is_staff'] as const) {
-    if (data[flag] !== undefined) body[flag] = Boolean(data[flag]);
-  }
-  // §6.12: the staff grant array crosses verbatim (full replacement).
-  set('admin_permissions', data.admin_permissions);
-  for (const [field, scale] of Object.entries(ADMIN_USER_SCALED_FIELDS)) {
-    const value = data[field as AdminUserScaledField];
-    if (value === undefined || value === null || value === '') continue;
-    body[field] = decimalToScaledInteger(value, scale);
-  }
-  for (const field of ADMIN_USER_NULLABLE_FIELDS) {
+function serializeAdminUserPatch(data: AdminUserUpdateInput): GeneratedAdminUserPatch {
+  const scaled = (field: AdminUserScaledField): number | undefined => {
     const value = data[field];
-    if (value === undefined) continue;
-    body[field] = value === null || value === '' ? null : value;
-  }
-  if (data.expired_at !== undefined) {
-    body.expired_at = data.expired_at === null ? null : userFilterEpochToRfc3339(data.expired_at);
-  }
-  return body;
+    if (value === undefined || value === null || value === '') return undefined;
+    return decimalToScaledInteger(value, ADMIN_USER_SCALED_FIELDS[field]);
+  };
+  const nullable = <T>(value: T | null | undefined): T | null | undefined =>
+    value === undefined ? undefined : value === null || value === '' ? null : value;
+
+  const transferEnable = scaled('transfer_enable');
+  const uploaded = scaled('u');
+  const downloaded = scaled('d');
+  const balance = scaled('balance');
+  const commissionBalance = scaled('commission_balance');
+  const planId = nullable(data.plan_id);
+  const deviceLimit = nullable(data.device_limit);
+  const commissionRate = nullable(data.commission_rate);
+  const discount = nullable(data.discount);
+  const speedLimit = nullable(data.speed_limit);
+  const remarks = nullable(data.remarks);
+
+  return {
+    email: data.email,
+    ...(data.password === undefined || data.password === '' ? {} : { password: data.password }),
+    ...(data.commission_type === undefined
+      ? {}
+      : { commission_type: Number(data.commission_type) }),
+    ...(data.banned === undefined ? {} : { banned: Boolean(data.banned) }),
+    ...(data.is_admin === undefined ? {} : { is_admin: Boolean(data.is_admin) }),
+    ...(data.is_staff === undefined ? {} : { is_staff: Boolean(data.is_staff) }),
+    // §6.12: the staff grant array crosses verbatim (full replacement).
+    ...(data.admin_permissions === undefined ? {} : { admin_permissions: data.admin_permissions }),
+    ...(transferEnable === undefined ? {} : { transfer_enable: transferEnable }),
+    ...(uploaded === undefined ? {} : { u: uploaded }),
+    ...(downloaded === undefined ? {} : { d: downloaded }),
+    ...(balance === undefined ? {} : { balance }),
+    ...(commissionBalance === undefined ? {} : { commission_balance: commissionBalance }),
+    ...(planId === undefined ? {} : { plan_id: planId }),
+    ...(deviceLimit === undefined ? {} : { device_limit: deviceLimit }),
+    ...(commissionRate === undefined ? {} : { commission_rate: commissionRate }),
+    ...(discount === undefined ? {} : { discount }),
+    ...(speedLimit === undefined ? {} : { speed_limit: speedLimit }),
+    ...(remarks === undefined ? {} : { remarks }),
+    ...(data.expired_at === undefined
+      ? {}
+      : {
+          expired_at: data.expired_at === null ? null : userFilterEpochToRfc3339(data.expired_at),
+        }),
+  };
 }
 
 /** POST /{secure_path}/users/{id}/set-inviter — dialect v2 (§6.6, W12): a
  * present `invite_user_email` resolves the inviter; empty/null clears it. */
 export const setUserInviter = (client: ApiClient, id: number, invite_user_email?: string | null) =>
-  client.request({
-    url: client.resolveAdminPath(`/users/${id}/set-inviter`),
-    method: 'POST',
-    dialect: 'v2',
+  requestInternal(client, 'adminUsersSetInviter', {
+    path: { id },
     data: { invite_user_email: invite_user_email ?? null },
-    responseSchema: noContentSchema,
   });
 
 /**
@@ -286,12 +302,9 @@ export const setUserInviter = (client: ApiClient, id: number, invite_user_email?
  * form carries an `invite_user_email` value.
  */
 export const updateUser = async (client: ApiClient, data: AdminUserUpdateInput) => {
-  await client.request({
-    url: client.resolveAdminPath(`/users/${data.id}`),
-    method: 'PATCH',
-    dialect: 'v2',
+  await requestInternal(client, 'adminUsersUpdate', {
+    path: { id: data.id },
     data: serializeAdminUserPatch(data),
-    responseSchema: noContentSchema,
   });
   if (data.invite_user_email !== undefined) {
     await setUserInviter(client, data.id, data.invite_user_email);
@@ -300,11 +313,8 @@ export const updateUser = async (client: ApiClient, data: AdminUserUpdateInput) 
 
 export const getUserInfoById = async (client: ApiClient, id: number, config?: QueryRequestConfig) =>
   normalizeAdminUserDetail(
-    await client.request({
-      url: client.resolveAdminPath(`/users/${id}`),
-      method: 'GET',
-      dialect: 'v2',
-      responseSchema: adminUserDetailSchema,
+    await requestInternal(client, 'adminUsersGet', {
+      path: { id },
       ...config,
     }),
   );
@@ -325,10 +335,7 @@ export const generateUser = (
     generate_count?: number | string;
   },
 ) =>
-  client.requestBinary({
-    url: client.resolveAdminPath('/users'),
-    method: 'POST',
-    dialect: 'v2',
+  requestInternalBinary(client, 'adminUsersCreate', {
     data: {
       ...(data.email_prefix ? { email_prefix: data.email_prefix } : {}),
       email_suffix: data.email_suffix,
@@ -338,8 +345,7 @@ export const generateUser = (
         ? {}
         : { expired_at: userFilterEpochToRfc3339(data.expired_at) }),
       ...(data.generate_count ? { generate_count: Number(data.generate_count) } : {}),
-    },
-    jsonResponseSchema: createdIdSchema,
+    } as InternalApiOperationMap['adminUsersCreate']['request'],
   });
 
 /** POST /{secure_path}/users/mail — dialect v2, 204 (§6.6, W12): the DSL
@@ -349,16 +355,12 @@ export const sendMailToUsers = (
   client: ApiClient,
   data: { subject: string; content: string; filter?: AdminFilter[] },
 ) =>
-  client.request({
-    url: client.resolveAdminPath('/users/mail'),
-    method: 'POST',
-    dialect: 'v2',
+  requestInternal(client, 'adminUsersMail', {
     data: {
       subject: data.subject,
       content: data.content,
       ...(userFilterClauses(data.filter) ? { filter: userFilterClauses(data.filter) } : {}),
     },
-    responseSchema: noContentSchema,
     // TanStack invokes a mutation retry with the same variables object. Keeping
     // the key by object identity makes that retry replay the durable batch.
     headers: { 'Idempotency-Key': mutationIdempotencyKey(data) },
@@ -367,49 +369,27 @@ export const sendMailToUsers = (
 /** POST /{secure_path}/users/export — dialect v2 (§6.6, W12): CSV over the DSL
  * `{filter?}` body. */
 export const dumpUsersCsv = (client: ApiClient, filter?: AdminFilter[]) =>
-  client.requestBinary({
-    url: client.resolveAdminPath('/users/export'),
-    method: 'POST',
-    dialect: 'v2',
+  requestInternalBinary(client, 'adminUsersExport', {
     data: { ...(userFilterClauses(filter) ? { filter: userFilterClauses(filter) } : {}) },
-    jsonResponseSchema: createdIdSchema,
   });
 
 /** POST /{secure_path}/users/ban — dialect v2, 204 (§6.6, W12): DSL `{filter?}`. */
 export const banUsers = (client: ApiClient, filter?: AdminFilter[]) =>
-  client.request({
-    url: client.resolveAdminPath('/users/ban'),
-    method: 'POST',
-    dialect: 'v2',
+  requestInternal(client, 'adminUsersBan', {
     data: { ...(userFilterClauses(filter) ? { filter: userFilterClauses(filter) } : {}) },
-    responseSchema: noContentSchema,
   });
 
 /** POST /{secure_path}/users/{id}/reset-secret — dialect v2, 204 (§6.6, W12). */
 export const resetUserSecret = (client: ApiClient, id: number) =>
-  client.request({
-    url: client.resolveAdminPath(`/users/${id}/reset-secret`),
-    method: 'POST',
-    dialect: 'v2',
-    responseSchema: noContentSchema,
-  });
+  requestInternal(client, 'adminUsersResetSecret', { path: { id } });
 
 /** DELETE /{secure_path}/users/{id} — dialect v2, 204 (§6.6, W12). */
 export const deleteUser = (client: ApiClient, id: number) =>
-  client.request({
-    url: client.resolveAdminPath(`/users/${id}`),
-    method: 'DELETE',
-    dialect: 'v2',
-    responseSchema: noContentSchema,
-  });
+  requestInternal(client, 'adminUsersDelete', { path: { id } });
 
 /** POST /{secure_path}/users/bulk-delete — dialect v2, 204 (§6.6, W12): DSL
  * `{filter?}` (kept a POST action; DELETE-with-body is hostile to proxies). */
 export const deleteAllUsers = (client: ApiClient, filter?: AdminFilter[]) =>
-  client.request({
-    url: client.resolveAdminPath('/users/bulk-delete'),
-    method: 'POST',
-    dialect: 'v2',
+  requestInternal(client, 'adminUsersBulkDelete', {
     data: { ...(userFilterClauses(filter) ? { filter: userFilterClauses(filter) } : {}) },
-    responseSchema: noContentSchema,
   });

@@ -1,22 +1,22 @@
 {
-  "created_at": "2023-11-14T22:13:20Z",
   "id": 1,
-  "last_reply_user_id": 2,
+  "user_id": 2,
+  "subject": "Golden ticket subject",
   "level": 1,
+  "status": 0,
+  "reply_status": 0,
+  "last_reply_user_id": 2,
+  "created_at": "2023-11-14T22:13:20Z",
+  "updated_at": "2023-11-14T22:13:20Z",
   "message": [
     {
-      "created_at": "2023-11-14T22:13:20Z",
       "id": 1,
-      "is_me": false,
-      "message": "golden ticket message",
+      "user_id": 2,
       "ticket_id": 1,
-      "updated_at": "2023-11-14T22:13:20Z",
-      "user_id": 2
+      "message": "golden ticket message",
+      "is_me": false,
+      "created_at": "2023-11-14T22:13:20Z",
+      "updated_at": "2023-11-14T22:13:20Z"
     }
-  ],
-  "reply_status": 0,
-  "status": 0,
-  "subject": "Golden ticket subject",
-  "updated_at": "2023-11-14T22:13:20Z",
-  "user_id": 2
+  ]
 }

@@ -1,12 +1,10 @@
 use std::net::SocketAddr;
 
+use v2board_auth_adapters::{PasswordKdf, runtime_operator_access_service};
 use v2board_config::AppConfig;
+use v2board_configuration_adapters::operator_config::{self, OperatorConfigConsumer};
 use v2board_db::{connect_postgres, migrate_postgres, migrations_current};
-use v2board_domain::{
-    auth::PasswordKdf,
-    operator_config::{self, OperatorConfigConsumer},
-    smtp::SmtpTransportCache,
-};
+use v2board_mail_adapters::smtp::SmtpTransportCache;
 
 /// Define one Axum subrouter from canonical internal-operation ids. The macro
 /// deliberately accepts no method or path: both come from
@@ -37,6 +35,8 @@ macro_rules! define_internal_operation_router {
 }
 
 mod admin;
+mod admin_order_adapters;
+mod admin_user_adapters;
 mod audit;
 mod auth;
 mod cli;
@@ -59,9 +59,16 @@ mod route_paths;
 mod routes;
 mod runtime;
 mod server_api;
+mod server_management_adapters;
+mod server_runtime_adapters;
+mod service_usage_adapters;
+mod statistics_adapters;
 mod subscription;
+mod subscription_adapters;
 mod telegram;
+mod telegram_adapters;
 mod ticket;
+mod ticket_adapters;
 mod user;
 mod validation;
 
@@ -129,14 +136,25 @@ async fn run() -> anyhow::Result<()> {
         );
     }
     let password_kdf = PasswordKdf::new(config.password_kdf_max_parallel);
+    let installation_id = v2board_db::installation_id(&db).await?;
     if let cli::Command::ResetAdminPassword { email } = command {
-        return reset_admin_password(&db, &config, &password_kdf, &email, admin_password_secret)
-            .await;
+        let service = runtime_operator_access_service(
+            db,
+            password_kdf,
+            config.redis_url.clone(),
+            installation_id,
+        );
+        return reset_admin_password(&service, &email, admin_password_secret).await;
     }
     if let cli::Command::ResetAdminTotp { email } = command {
-        return reset_admin_totp(&db, &email).await;
+        let service = runtime_operator_access_service(
+            db,
+            password_kdf,
+            config.redis_url.clone(),
+            installation_id,
+        );
+        return reset_admin_totp(&service, &email).await;
     }
-    let installation_id = v2board_db::installation_id(&db).await?;
     let authority_result = if config.environment.is_production() {
         operator_config::load_active(&db, installation_id, &config.app_key)
             .await
@@ -179,7 +197,7 @@ async fn run() -> anyhow::Result<()> {
     let redis = redis::Client::open(config.redis_url.clone())?;
     tokio::time::timeout(
         std::time::Duration::from_secs(config.http_connect_timeout_seconds),
-        v2board_domain::redis_runtime::verify_redis_runtime(&redis, config.environment),
+        v2board_redis_adapters::verify_redis_runtime(&redis, config.environment),
     )
     .await
     .map_err(|_| anyhow::anyhow!("timed out verifying the Redis runtime policy"))??;

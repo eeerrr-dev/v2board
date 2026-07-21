@@ -1189,8 +1189,10 @@ export const longAdminUserFixtures = Array.from({ length: 12 }, (_, index) => ({
 export const adminPaymentFixtures = [
   {
     config: {
-      mch_id: 'visual-merchant',
-      key: 'visual-secret',
+      app_id: 'visual-alipay-app',
+      private_key: '********',
+      product_name: 'Visual Subscription',
+      public_key: 'visual-alipay-public-key',
     },
     created_at: 1_700_000_000,
     enable: 1,
@@ -1208,8 +1210,11 @@ export const adminPaymentFixtures = [
   },
   {
     config: {
-      app_id: 'visual-stripe',
-      secret_key: 'sk_test_visual',
+      currency: 'usd',
+      stripe_custom_field_name: 'Contact',
+      stripe_pk_live: 'pk_test_visual',
+      stripe_sk_live: '********',
+      stripe_webhook_key: '********',
     },
     created_at: 1_700_086_400,
     enable: 0,
@@ -1229,39 +1234,87 @@ export const adminPaymentFixtures = [
 export const adminPaymentMethodsFixture = ['AlipayF2F', 'StripeCheckout', 'MGate'];
 export const adminPaymentFormFixtures = {
   AlipayF2F: {
-    key: {
-      description: '请输入支付宝当面付密钥',
-      label: '密钥',
+    app_id: {
+      description: '请输入支付宝 APPID',
+      label: '支付宝APPID',
       type: 'input',
-      value: 'visual-secret-default',
+      value: 'visual-alipay-app-default',
     },
-    mch_id: {
-      description: '请输入支付宝商户ID',
-      label: '商户ID',
+    private_key: {
+      description: '请输入支付宝私钥',
+      label: '支付宝私钥',
       type: 'input',
-      value: 'visual-merchant-default',
+      value: 'visual-alipay-private-key-default',
+    },
+    public_key: {
+      description: '请输入支付宝公钥',
+      label: '支付宝公钥',
+      type: 'input',
+      value: 'visual-alipay-public-key-default',
+    },
+    product_name: {
+      description: '将会体现在支付宝账单中',
+      label: '自定义商品名称',
+      type: 'input',
+      value: 'Visual Subscription',
     },
   },
   MGate: {
-    token: {
-      description: '请输入 MGate Token',
-      label: 'Token',
+    mgate_url: {
+      description: '请输入 MGate API 地址',
+      label: 'API地址',
       type: 'input',
-      value: 'visual-mgate-token',
+      value: 'https://mgate.example.test',
+    },
+    mgate_app_id: {
+      description: '请输入 MGate APPID',
+      label: 'APPID',
+      type: 'input',
+      value: 'visual-mgate-app',
+    },
+    mgate_app_secret: {
+      description: '请输入 MGate AppSecret',
+      label: 'AppSecret',
+      type: 'input',
+      value: 'visual-mgate-secret',
+    },
+    mgate_source_currency: {
+      description: '请输入 MGate 源货币',
+      label: '源货币',
+      type: 'input',
+      value: 'CNY',
     },
   },
   StripeCheckout: {
-    publishable_key: {
-      description: '请输入 Stripe Publishable Key',
-      label: 'Publishable Key',
+    currency: {
+      description: '请输入货币单位',
+      label: '货币单位',
+      type: 'input',
+      value: 'usd',
+    },
+    stripe_sk_live: {
+      description: 'API 密钥',
+      label: 'SK_LIVE',
+      type: 'input',
+      value: 'sk_test_visual_default',
+    },
+    stripe_pk_live: {
+      description: 'API 公钥',
+      label: 'PK_LIVE',
       type: 'input',
       value: 'pk_test_visual',
     },
-    secret_key: {
-      description: '请输入 Stripe Secret Key',
-      label: 'Secret Key',
+    stripe_webhook_key: {
+      description: '请输入 WebHook 密钥签名',
+      label: 'WebHook 密钥签名',
       type: 'input',
-      value: 'sk_test_visual_default',
+      value: 'whsec_visual_default',
+    },
+    stripe_custom_field_name: {
+      description: '例如可设置为“联系方式”，以便及时与客户取得联系',
+      label: '自定义字段名称',
+      type: 'input',
+      value: 'Contact',
     },
   },
 };

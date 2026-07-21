@@ -71,11 +71,12 @@ export type ApiRequestConfig = AxiosRequestConfig & {
    */
   dialect?: 'v2';
   /**
-   * Exact success status declared by the endpoint contract. Axios still
-   * accepts every 2xx at the transport boundary so the client can surface a
-   * status drift as an ApiContractError before applying the response schema.
+   * Exact success status (or finite exact status set) declared by the
+   * endpoint contract. Axios still accepts every 2xx at the transport
+   * boundary so the client can surface a status drift as an ApiContractError
+   * before applying the response schema.
    */
-  expectedStatus?: number;
+  expectedStatus?: number | readonly number[];
 };
 
 export type JsonApiRequestConfig<TSchema extends ZodType> = Omit<
@@ -98,6 +99,16 @@ export interface RawBinaryResponse {
   code: number;
   data: ArrayBuffer;
   buffer: ArrayBuffer;
+}
+
+/** Narrow the explicit CSV/binary arm returned by a mixed-content operation. */
+export function isRawBinaryResponse(value: unknown): value is RawBinaryResponse {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'buffer' in value &&
+    value.buffer instanceof ArrayBuffer
+  );
 }
 
 export type BinaryApiResponse<TJsonSchema extends ZodType> =
@@ -222,14 +233,21 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
 
 function assertExpectedSuccessStatus(
   response: AxiosResponse<unknown>,
-  expectedStatus: number | undefined,
+  expectedStatus: number | readonly number[] | undefined,
   endpoint: string,
 ): void {
-  if (expectedStatus === undefined || response.status === expectedStatus) return;
+  const accepted =
+    expectedStatus === undefined ||
+    (typeof expectedStatus === 'number'
+      ? response.status === expectedStatus
+      : expectedStatus.includes(response.status));
+  if (accepted) return;
+  const expected =
+    typeof expectedStatus === 'number' ? String(expectedStatus) : expectedStatus.join(' or ');
   throw new ApiContractError(
     endpoint,
     response.data,
-    new TypeError(`Expected HTTP ${expectedStatus}, received ${response.status}`),
+    new TypeError(`Expected HTTP ${expected}, received ${response.status}`),
   );
 }
 

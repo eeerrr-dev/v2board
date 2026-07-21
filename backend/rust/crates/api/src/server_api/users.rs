@@ -7,14 +7,13 @@ use axum::{
 };
 use serde_json::json;
 use v2board_compat::ApiError;
+use v2board_domain_model::ServerKind;
 
 use crate::runtime::AppState;
 
 use super::{
     ServerUserRow,
-    config::parse_i32_json_list,
-    repository::{load_server_node, load_uniproxy_node, server_available_users},
-    request::required_i32_param,
+    request::{load_server_node, load_uniproxy_node, required_i32_param},
     response::{
         etag_matches, insert_etag, not_modified_response, raw_value_response,
         response_wants_msgpack, sha1_hex,
@@ -28,9 +27,15 @@ pub(super) async fn server_uniproxy_user(
     params: &HashMap<String, String>,
 ) -> Result<Response, ApiError> {
     let (node_type, node) = load_uniproxy_node(state, params).await?;
-    server_cache_timestamp(state, "LAST_CHECK_AT", &node_type, node.id).await?;
-    let users =
-        server_available_users(&state.db, parse_i32_json_list(Some(&node.group_id))).await?;
+    server_cache_timestamp(state, node_type, node.id).await?;
+    let users = state
+        .server_runtime_service()
+        .users(&node.group_ids, chrono::Utc::now().timestamp())
+        .await
+        .map_err(|error| ApiError::internal(error.to_string()))?
+        .into_iter()
+        .map(ServerUserRow::from)
+        .collect::<Vec<_>>();
     raw_value_response(
         json!({ "users": users }),
         headers,
@@ -45,12 +50,19 @@ pub(super) async fn server_tidalab_user(
     params: &HashMap<String, String>,
 ) -> Result<Response, ApiError> {
     let node_id = required_i32_param(params, "node_id")?;
-    let Some(node) = load_server_node(&state.db, node_type, node_id).await? else {
+    let kind = ServerKind::try_from(node_type).map_err(|_| ApiError::legacy("fail"))?;
+    let Some(node) = load_server_node(state, kind, node_id).await? else {
         return Err(ApiError::legacy("fail"));
     };
-    server_cache_timestamp(state, "LAST_CHECK_AT", node_type, node.id).await?;
-    let users =
-        server_available_users(&state.db, parse_i32_json_list(Some(&node.group_id))).await?;
+    server_cache_timestamp(state, kind, node.id).await?;
+    let users = state
+        .server_runtime_service()
+        .users(&node.group_ids, chrono::Utc::now().timestamp())
+        .await
+        .map_err(|error| ApiError::internal(error.to_string()))?
+        .into_iter()
+        .map(ServerUserRow::from)
+        .collect::<Vec<_>>();
     let data = match node_type {
         "shadowsocks" => users
             .iter()

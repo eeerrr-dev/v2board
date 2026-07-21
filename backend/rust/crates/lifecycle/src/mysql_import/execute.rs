@@ -186,7 +186,7 @@ pub(crate) async fn execute_validated(
     eprintln!("mysql-import PostgreSQL finalize phase completed");
     let converted_snapshot_sha256 = converted_snapshot_sha256(&imported_tables, &discarded_tables);
     install_admission(&target, installation_id, now, &plan).await?;
-    v2board_domain::operator_config::seed_initial_authority(
+    v2board_configuration_adapters::operator_config::seed_initial_authority(
         &target,
         installation_id,
         &plan.app_key,

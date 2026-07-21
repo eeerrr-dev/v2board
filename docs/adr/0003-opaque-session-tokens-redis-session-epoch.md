@@ -17,7 +17,7 @@
 ## 决策(Decision)
 
 - 登录签发 **256-bit 不透明 token**:`getrandom` 取 32 字节,base64url 无填充
-  编码(`crates/domain/src/auth/sessions.rs` 的 `generate_auth_token`)。
+  编码（`auth-adapters` 实现 application 的随机凭据 port）。
 - **Redis 只存 SHA-256(token) 十六进制查找键**(带绝对 TTL),不存明文 token;
   会话记录含用户、`session_epoch`、签发 IP/UA、`password_authenticated` 等。
 - **`users.session_epoch`(PostgreSQL)是持久吊销锚点**:改密码、封禁、staff/
@@ -51,10 +51,13 @@
 
 ## 证据
 
-- [`../../backend/rust/crates/domain/src/auth/sessions.rs`](../../backend/rust/crates/domain/src/auth/sessions.rs)
-  — token 生成、SHA-256 查找键、`session_epoch` 校验、step-up 键。
-- [`../../backend/rust/crates/domain/src/auth/credentials.rs`](../../backend/rust/crates/domain/src/auth/credentials.rs)
-  — 会话签发与 epoch 绑定。
+- [`../../backend/rust/crates/application/src/auth.rs`](../../backend/rust/crates/application/src/auth.rs)
+  — 会话签发、epoch 校验、step-up 与吊销策略。
+- [`../../backend/rust/crates/auth-adapters/src/external.rs`](../../backend/rust/crates/auth-adapters/src/external.rs)
+  与 [`../../backend/rust/crates/auth-adapters/src/cache.rs`](../../backend/rust/crates/auth-adapters/src/cache.rs)
+  — 256-bit token 生成、SHA-256 Redis 查找键和原子会话脚本。
+- [`../../backend/rust/crates/db/src/auth.rs`](../../backend/rust/crates/db/src/auth.rs)
+  — PostgreSQL 账户及 `session_epoch` 持久化 port 实现。
 - [`../../backend/README.md`](../../backend/README.md) — Authentication and
   operational contracts 章节。
 - [`../api-dialect.md`](../api-dialect.md) §3.2(401/403 语义)、§5.2(auth 路由

@@ -97,7 +97,7 @@ fn pure_model_and_transport_contract_have_exact_direct_dependency_allowlists() {
 #[test]
 fn application_layer_cannot_reach_transport_through_any_dependency_kind() {
     assert_direct_dependencies_exclude(
-        "v2board-domain",
+        "v2board-application",
         "normal,build,dev",
         &[
             "axum",
@@ -118,7 +118,7 @@ fn application_layer_cannot_reach_transport_through_any_dependency_kind() {
 #[test]
 fn http_adapter_directly_depends_on_application_and_transport_contract() {
     let api_direct = direct_dependencies("v2board-api", "normal");
-    for required in ["v2board-domain", "v2board-api-contract"] {
+    for required in ["v2board-application", "v2board-api-contract"] {
         assert!(
             api_direct.contains(required),
             "HTTP adapter must directly depend on {required}: {api_direct:?}"

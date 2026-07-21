@@ -1,21 +1,13 @@
-import type { output } from 'zod';
+import type { InternalApiOperationMap } from '@v2board/types';
 import type { ApiClient } from '../../client';
-import { adminListQueryParams, pageSchema, type AdminListQuery } from '../../dialect';
-import {
-  adminStatSummarySchema,
-  adminUserTrafficSchema,
-  arraySchema,
-  auditLogSchema,
-  queueStatsSchema,
-  queueWorkloadSchema,
-  serverRankSchema,
-  statSeriesPointSchema,
-  systemLogSchema,
-  userRankSchema,
-} from '../../contracts';
+import { adminListQueryParams, type AdminListQuery } from '../../dialect';
+import { requestInternal } from '../../internal-operation';
 import type { PageResult, QueryRequestConfig } from './shared';
 
-export type AdminUserTrafficRecord = output<typeof adminUserTrafficSchema>;
+type PageItem<Value> = Value extends { items: Array<infer Item> } ? Item : never;
+export type AdminUserTrafficRecord = PageItem<
+  InternalApiOperationMap['adminStatsUserTraffic']['response']
+>;
 
 export interface AdminUserTrafficQuery {
   user_id: number;
@@ -25,21 +17,13 @@ export interface AdminUserTrafficQuery {
 
 /** GET /{secure_path}/system/queue-stats — dialect v2 bare object (§6.1, W9). */
 export const queueStats = (client: ApiClient, config?: QueryRequestConfig) =>
-  client.request({
-    url: client.resolveAdminPath('/system/queue-stats'),
-    method: 'GET',
-    dialect: 'v2',
-    responseSchema: queueStatsSchema,
+  requestInternal(client, 'adminSystemQueueStats', {
     ...config,
   });
 
 /** GET /{secure_path}/system/queue-workload — dialect v2 bare array (§6.1, W9). */
 export const queueWorkload = (client: ApiClient, config?: QueryRequestConfig) =>
-  client.request({
-    url: client.resolveAdminPath('/system/queue-workload'),
-    method: 'GET',
-    dialect: 'v2',
-    responseSchema: arraySchema(queueWorkloadSchema),
+  requestInternal(client, 'adminSystemQueueWorkload', {
     ...config,
   });
 
@@ -47,7 +31,7 @@ export const queueWorkload = (client: ApiClient, config?: QueryRequestConfig) =>
 export const SYSTEM_LOG_FILTER_FIELDS = ['level'] as const;
 export const SYSTEM_LOG_SORT_FIELDS = ['created_at', 'level'] as const;
 export type SystemLogFilterField = (typeof SYSTEM_LOG_FILTER_FIELDS)[number];
-export type AdminSystemLogRecord = output<typeof systemLogSchema>;
+export type AdminSystemLogRecord = PageItem<InternalApiOperationMap['adminSystemLogs']['response']>;
 
 /**
  * GET /{secure_path}/system/logs — dialect v2 `{items, total}` page (§6.1,
@@ -61,12 +45,8 @@ export const fetchSystemLogs = (
   query: AdminListQuery<SystemLogFilterField> = {},
   config?: QueryRequestConfig,
 ) =>
-  client.request({
-    url: client.resolveAdminPath('/system/logs'),
-    method: 'GET',
-    dialect: 'v2',
-    params: adminListQueryParams(query),
-    responseSchema: pageSchema(systemLogSchema),
+  requestInternal(client, 'adminSystemLogs', {
+    query: adminListQueryParams(query),
     ...config,
   });
 
@@ -74,7 +54,9 @@ export const fetchSystemLogs = (
 export const AUDIT_LOG_FILTER_FIELDS = ['surface', 'actor_email', 'method'] as const;
 export const AUDIT_LOG_SORT_FIELDS = ['created_at'] as const;
 export type AuditLogFilterField = (typeof AUDIT_LOG_FILTER_FIELDS)[number];
-export type AdminAuditLogRecord = output<typeof auditLogSchema>;
+export type AdminAuditLogRecord = PageItem<
+  InternalApiOperationMap['adminSystemAuditLogsList']['response']
+>;
 
 /**
  * GET /{secure_path}/system/audit-logs — the §6.11 append-only operator audit
@@ -86,12 +68,8 @@ export const fetchAuditLogs = (
   query: AdminListQuery<AuditLogFilterField> = {},
   config?: QueryRequestConfig,
 ) =>
-  client.request({
-    url: client.resolveAdminPath('/system/audit-logs'),
-    method: 'GET',
-    dialect: 'v2',
-    params: adminListQueryParams(query),
-    responseSchema: pageSchema(auditLogSchema),
+  requestInternal(client, 'adminSystemAuditLogsList', {
+    query: adminListQueryParams(query),
     ...config,
   });
 
@@ -101,11 +79,7 @@ export type StatsRankWindow = 'today' | 'previous';
 /** GET /{secure_path}/stats/summary — dialect v2 bare object (§6.8, W14):
  * the three legacy aliases collapsed into one route; money in integer cents. */
 export const statSummary = (client: ApiClient, config?: QueryRequestConfig) =>
-  client.request({
-    url: client.resolveAdminPath('/stats/summary'),
-    method: 'GET',
-    dialect: 'v2',
-    responseSchema: adminStatSummarySchema,
+  requestInternal(client, 'adminStatsSummary', {
     ...config,
   });
 
@@ -115,12 +89,8 @@ export const statServerRank = (
   window: StatsRankWindow,
   config?: QueryRequestConfig,
 ) =>
-  client.request({
-    url: client.resolveAdminPath('/stats/server-rank'),
-    method: 'GET',
-    dialect: 'v2',
-    params: { window },
-    responseSchema: arraySchema(serverRankSchema),
+  requestInternal(client, 'adminStatsServerRank', {
+    query: { window },
     ...config,
   });
 
@@ -130,23 +100,15 @@ export const statUserRank = (
   window: StatsRankWindow,
   config?: QueryRequestConfig,
 ) =>
-  client.request({
-    url: client.resolveAdminPath('/stats/user-rank'),
-    method: 'GET',
-    dialect: 'v2',
-    params: { window },
-    responseSchema: arraySchema(userRankSchema),
+  requestInternal(client, 'adminStatsUserRank', {
+    query: { window },
     ...config,
   });
 
 /** GET /{secure_path}/stats/orders — bare `{series, date, value}` array (§6.8, W14):
  * snake_case series slugs, integer-cent money. */
 export const statOrder = (client: ApiClient, config?: QueryRequestConfig) =>
-  client.request({
-    url: client.resolveAdminPath('/stats/orders'),
-    method: 'GET',
-    dialect: 'v2',
-    responseSchema: arraySchema(statSeriesPointSchema),
+  requestInternal(client, 'adminStatsOrders', {
     ...config,
   });
 
@@ -161,12 +123,8 @@ export const statUser = async (
   query: AdminUserTrafficQuery,
   config?: QueryRequestConfig,
 ): Promise<PageResult<AdminUserTrafficRecord>> => {
-  const page = await client.request({
-    url: client.resolveAdminPath('/stats/user-traffic'),
-    method: 'GET',
-    dialect: 'v2',
-    params: { user_id: query.user_id, page: query.current, per_page: query.pageSize },
-    responseSchema: pageSchema(adminUserTrafficSchema),
+  const page = await requestInternal(client, 'adminStatsUserTraffic', {
+    query: { user_id: query.user_id, page: query.current, per_page: query.pageSize },
     ...config,
   });
   return { data: page.items, total: page.total };

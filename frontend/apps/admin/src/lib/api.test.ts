@@ -65,8 +65,22 @@ const sessionExpiredProblem = {
   detail: '未登录或登陆已过期',
 };
 
-function forbiddenProblem(code: string, detail: string) {
-  return { type: 'about:blank', title: 'Forbidden', status: 403, code, detail };
+function forbiddenProblem(code: 'permission_denied' | 'step_up_required', detail: string) {
+  return code === 'permission_denied'
+    ? {
+        type: 'about:blank' as const,
+        title: 'Forbidden' as const,
+        status: 403 as const,
+        code,
+        detail,
+      }
+    : {
+        type: 'about:blank' as const,
+        title: 'Forbidden' as const,
+        status: 403 as const,
+        code,
+        detail,
+      };
 }
 
 describe('admin api legacy path resolution', () => {

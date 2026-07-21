@@ -13,7 +13,7 @@ use std::net::IpAddr;
 
 use axum::http::{Method, StatusCode};
 use chrono::Utc;
-use v2board_domain::auth::AuthUser;
+use v2board_application::{audit::PrivilegedMutationAudit, auth::AuthUser};
 
 use crate::runtime::AppState;
 
@@ -32,23 +32,21 @@ pub(crate) async fn record_privileged_mutation(
     actor: &AuthUser,
     record: MutationRecord<'_>,
 ) {
-    let result = sqlx::query(
-        "INSERT INTO audit_log \
-         (actor_id, actor_email, session_id, surface, method, path, status_code, client_ip, request_id, created_at) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
-    )
-    .bind(actor.id)
-    .bind(&actor.email)
-    .bind(&actor.session_id)
-    .bind(record.surface)
-    .bind(record.method.as_str())
-    .bind(record.path)
-    .bind(i32::from(record.status.as_u16()))
-    .bind(record.client_ip.map(|ip| ip.to_string()))
-    .bind(record.request_id)
-    .bind(Utc::now().timestamp())
-    .execute(&state.db)
-    .await;
+    let result = state
+        .audit_service()
+        .record(PrivilegedMutationAudit {
+            actor_id: actor.id,
+            actor_email: actor.email.clone(),
+            session_id: actor.session_id.clone(),
+            surface: record.surface.to_string(),
+            method: record.method.as_str().to_string(),
+            path: record.path.to_string(),
+            status_code: i32::from(record.status.as_u16()),
+            client_ip: record.client_ip.map(|ip| ip.to_string()),
+            request_id: record.request_id.map(str::to_string),
+            created_at: Utc::now().timestamp(),
+        })
+        .await;
     if let Err(error) = result {
         tracing::error!(
             ?error,

@@ -84,6 +84,7 @@ export const modernPlanFixture = (plan) => {
 
 export const modernOrderFixture = (order) => ({
   ...order,
+  actual_commission_balance: order.actual_commission_balance ?? null,
   paid_at: order.paid_at == null ? null : rfc3339FixtureTime(order.paid_at),
   created_at: rfc3339FixtureTime(order.created_at),
   updated_at: rfc3339FixtureTime(order.updated_at),
@@ -141,15 +142,50 @@ export const modernAdminPaymentFixture = (payment) => ({
   enable: payment.enable !== 0,
   handling_fee_percent:
     payment.handling_fee_percent == null ? null : Number(payment.handling_fee_percent),
+  legacy_md5_signature: payment.legacy_md5_signature ?? false,
+  security_warning: payment.security_warning ?? null,
   created_at: rfc3339FixtureTime(payment.created_at),
   updated_at: rfc3339FixtureTime(payment.updated_at),
 });
 
+const modernAdminOrderFieldsFixture = (order) => {
+  const {
+    commission_log: _commissionLog,
+    email: _email,
+    payment_reconciliation_open_count: _paymentReconciliationOpenCount,
+    payment_reconciliations: _paymentReconciliations,
+    plan_name: _planName,
+    ...fields
+  } = order;
+  return {
+    ...fields,
+    actual_commission_balance: order.actual_commission_balance ?? null,
+    paid_at: order.paid_at == null ? null : rfc3339FixtureTime(order.paid_at),
+    created_at: rfc3339FixtureTime(order.created_at),
+    updated_at: rfc3339FixtureTime(order.updated_at),
+  };
+};
+
 export const modernAdminOrderFixture = (order) => ({
-  ...order,
-  paid_at: order.paid_at == null ? null : rfc3339FixtureTime(order.paid_at),
-  created_at: rfc3339FixtureTime(order.created_at),
-  updated_at: rfc3339FixtureTime(order.updated_at),
+  ...modernAdminOrderFieldsFixture(order),
+  email: order.email ?? `user-${order.user_id}@example.test`,
+  plan_name: order.plan_name ?? null,
+  payment_reconciliation_open_count: order.payment_reconciliation_open_count ?? 0,
+});
+
+export const modernAdminOrderDetailFixture = (order) => ({
+  ...modernAdminOrderFieldsFixture(order),
+  commission_log: (order.commission_log ?? []).map((entry) => ({
+    ...entry,
+    created_at: rfc3339FixtureTime(entry.created_at),
+    updated_at: rfc3339FixtureTime(entry.updated_at),
+  })),
+  payment_reconciliations: (order.payment_reconciliations ?? []).map((entry) => ({
+    ...entry,
+    first_seen_at: rfc3339FixtureTime(entry.first_seen_at),
+    last_seen_at: rfc3339FixtureTime(entry.last_seen_at),
+    resolved_at: entry.resolved_at == null ? null : rfc3339FixtureTime(entry.resolved_at),
+  })),
 });
 
 // ——— W12 modern-wire projections (docs/api-dialect.md §6.6) ——— the admin user
@@ -162,6 +198,12 @@ export const modernAdminUserFixture = (user) => ({
   password: '',
   // §6.12: the modern projection always carries the staff grant array.
   admin_permissions: user.admin_permissions ?? [],
+  auto_renewal: user.auto_renewal ?? 0,
+  commission_type: user.commission_type ?? 0,
+  remarks: user.remarks ?? null,
+  remind_expire: user.remind_expire ?? 1,
+  remind_traffic: user.remind_traffic ?? 1,
+  speed_limit: user.speed_limit ?? null,
   expired_at: user.expired_at == null ? null : rfc3339FixtureTime(user.expired_at),
   last_login_at: user.last_login_at == null ? null : rfc3339FixtureTime(user.last_login_at),
   created_at: rfc3339FixtureTime(user.created_at),
@@ -173,7 +215,7 @@ export const modernAdminUserDetailFixture = (user, users) => {
     user.invite_user_id == null ? null : users.find((row) => row.id === user.invite_user_id);
   return {
     ...modernAdminUserFixture(user),
-    subscribe_url: '',
+    subscribe_url: user.subscribe_url ?? '',
     ...(inviter ? { invite_user: { id: inviter.id, email: inviter.email } } : {}),
   };
 };
@@ -183,19 +225,120 @@ export const modernAdminUserDetailFixture = (user, users) => {
 // to numbers, crosses timestamps as RFC 3339 UTC, and always carries the
 // projection's api_key/last_push_at columns; groups and routes keep their
 // rows with RFC 3339 timestamps.
+const fixtureBoolean = (value) => value === true || value === 1 || value === '1';
+
+const modernAdminServerProtocolFixture = (node) => {
+  switch (node.type) {
+    case 'shadowsocks':
+      return {
+        cipher: node.cipher ?? 'aes-128-gcm',
+        obfs: node.obfs ?? null,
+        obfs_settings: node.obfs_settings ?? null,
+      };
+    case 'vmess':
+      return {
+        dnsSettings: node.dnsSettings ?? null,
+        network: node.network ?? 'tcp',
+        networkSettings: node.networkSettings ?? node.network_settings ?? null,
+        rules: node.rules ?? null,
+        ruleSettings: node.ruleSettings ?? null,
+        tls: Number(node.tls ?? 0),
+        tlsSettings: node.tlsSettings ?? node.tls_settings ?? null,
+      };
+    case 'trojan':
+      return {
+        allow_insecure: fixtureBoolean(node.allow_insecure ?? false),
+        network: node.network ?? null,
+        network_settings: node.network_settings ?? null,
+        server_name: node.server_name ?? null,
+      };
+    case 'tuic':
+      return {
+        congestion_control: node.congestion_control ?? null,
+        disable_sni: fixtureBoolean(node.disable_sni ?? false),
+        insecure: fixtureBoolean(node.insecure ?? false),
+        server_name: node.server_name ?? null,
+        udp_relay_mode: node.udp_relay_mode ?? null,
+        zero_rtt_handshake: fixtureBoolean(node.zero_rtt_handshake ?? false),
+      };
+    case 'hysteria':
+      return {
+        down_mbps: Number(node.down_mbps ?? 0),
+        insecure: fixtureBoolean(node.insecure ?? false),
+        obfs: node.obfs ?? null,
+        obfs_password: node.obfs_password ?? null,
+        server_name: node.server_name ?? null,
+        up_mbps: Number(node.up_mbps ?? 0),
+        version: Number(node.version ?? 2),
+      };
+    case 'vless':
+      return {
+        encryption: node.encryption ?? null,
+        encryption_settings: node.encryption_settings ?? null,
+        flow: node.flow ?? null,
+        network: node.network ?? 'tcp',
+        network_settings: node.network_settings ?? null,
+        tls: Number(node.tls ?? 0),
+        tls_settings: node.tls_settings ?? null,
+      };
+    case 'anytls':
+      return {
+        insecure: fixtureBoolean(node.insecure ?? false),
+        padding_scheme: node.padding_scheme ?? null,
+        server_name: node.server_name ?? null,
+      };
+    case 'v2node':
+      return {
+        cipher: node.cipher ?? null,
+        congestion_control: node.congestion_control ?? null,
+        disable_sni: fixtureBoolean(node.disable_sni ?? false),
+        down_mbps: Number(node.down_mbps ?? 0),
+        encryption: node.encryption ?? null,
+        encryption_settings: node.encryption_settings ?? null,
+        flow: node.flow ?? null,
+        install_command: node.install_command ?? '',
+        listen_ip: node.listen_ip ?? '0.0.0.0',
+        network: node.network ?? 'tcp',
+        network_settings: node.network_settings ?? null,
+        obfs: node.obfs ?? null,
+        obfs_password: node.obfs_password ?? null,
+        padding_scheme: node.padding_scheme ?? null,
+        protocol: node.protocol ?? 'vless',
+        tls: Number(node.tls ?? 0),
+        tls_settings: node.tls_settings ?? null,
+        udp_relay_mode: node.udp_relay_mode ?? null,
+        up_mbps: Number(node.up_mbps ?? 0),
+        zero_rtt_handshake: fixtureBoolean(node.zero_rtt_handshake ?? false),
+      };
+    default:
+      throw new Error(`Unsupported modern admin server fixture type: ${node.type}`);
+  }
+};
+
 export const modernAdminServerNodeFixture = (node) => {
-  const { is_online: _dropped, ...rest } = node;
   return {
-    ...rest,
+    ...modernAdminServerProtocolFixture(node),
+    api_key: node.api_key ?? null,
+    available_status: node.available_status ?? 0,
+    created_at: rfc3339FixtureTime(node.created_at ?? 1_700_000_000),
     group_id: node.group_id.map(Number),
-    route_id: node.route_id == null ? null : node.route_id.map(Number),
-    rate: Number(node.rate),
-    show: node.show !== 0,
+    host: node.host,
+    id: node.id,
     last_check_at: node.last_check_at == null ? null : rfc3339FixtureTime(node.last_check_at),
-    last_push_at: null,
-    api_key: null,
-    created_at: rfc3339FixtureTime(1_700_000_000),
-    updated_at: rfc3339FixtureTime(1_700_000_000),
+    last_push_at:
+      node.last_push_at == null ? null : rfc3339FixtureTime(node.last_push_at),
+    name: node.name,
+    online: node.online ?? null,
+    parent_id: node.parent_id ?? null,
+    port: Number(node.port),
+    rate: Number(node.rate),
+    route_id: node.route_id == null ? null : node.route_id.map(Number),
+    server_port: Number(node.server_port ?? node.port),
+    show: node.show !== 0,
+    sort: node.sort ?? node.id,
+    tags: node.tags ?? null,
+    type: node.type,
+    updated_at: rfc3339FixtureTime(node.updated_at ?? 1_700_000_000),
   };
 };
 
@@ -241,6 +384,7 @@ export const modernServerFixture = (server) => ({
   rate: Number(server.rate),
   port: Number(server.port),
   is_online: server.is_online !== 0,
+  sort: server.sort ?? server.id,
   last_check_at: server.last_check_at == null ? null : rfc3339FixtureTime(server.last_check_at),
 });
 
@@ -313,9 +457,17 @@ export const modernTicketDetailFixture = (ticket) => ({
 // ——— W14 modern-wire projections (docs/api-dialect.md §4.5, §6.8) ———
 // stats/user-traffic rows carry RFC 3339 record_at; server_rate is already a
 // JSON number on the admin fixture row.
+export const modernAdminStatFixture = (stat) => ({
+  ...stat,
+  payment_reconciliation_pending_amount: stat.payment_reconciliation_pending_amount ?? 0,
+  payment_reconciliation_pending_total: stat.payment_reconciliation_pending_total ?? 0,
+});
+
 export const modernAdminUserTrafficFixture = (entry) => ({
-  ...entry,
+  d: entry.d,
   record_at: rfc3339FixtureTime(entry.record_at),
+  server_rate: Number(entry.server_rate),
+  u: entry.u,
 });
 
 // ——— W9 modern-wire projections (docs/api-dialect.md §4.1, §6.1) ———

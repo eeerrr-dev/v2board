@@ -1,52 +1,52 @@
 [
   {
-    "date": "11-14",
     "series": "commission_paid_count",
+    "date": "11-14",
     "value": 1
   },
   {
-    "date": "11-14",
     "series": "commission_paid_total",
+    "date": "11-14",
     "value": 100
   },
   {
-    "date": "11-14",
     "series": "paid_count",
+    "date": "11-14",
     "value": 2
   },
   {
-    "date": "11-14",
     "series": "paid_total",
+    "date": "11-14",
     "value": 1500
   },
   {
-    "date": "11-14",
     "series": "register_count",
+    "date": "11-14",
     "value": 4
   },
   {
-    "date": "11-15",
     "series": "commission_paid_count",
+    "date": "11-15",
     "value": 2
   },
   {
-    "date": "11-15",
     "series": "commission_paid_total",
+    "date": "11-15",
     "value": 300
   },
   {
-    "date": "11-15",
     "series": "paid_count",
+    "date": "11-15",
     "value": 3
   },
   {
-    "date": "11-15",
     "series": "paid_total",
+    "date": "11-15",
     "value": 2500
   },
   {
-    "date": "11-15",
     "series": "register_count",
+    "date": "11-15",
     "value": 6
   }
 ]

@@ -882,7 +882,7 @@ async fn representative_mysql_rows_copy_into_fresh_postgres() {
             .unwrap();
     assert!(!stored_config.contains("migration-test"));
     assert!(stored_config.contains("ciphertext"));
-    let decrypted = v2board_domain::payment_secrets::decrypt_payment_config_canonical(
+    let decrypted = v2board_payment_adapters::payment_secrets::decrypt_payment_config_canonical(
         import_app_key,
         "Manual",
         "11111111111111111111111111111111",

@@ -6,22 +6,19 @@ import type {
   InternalApiOperationMap,
   MoneyMajor,
   MoneyMinor,
+  PaymentFormDefinition,
   PlanPeriod,
 } from '@v2board/types';
 import type { ApiClient } from '../../client';
-import { adminListQueryParams, pageSchema, type FilterClause } from '../../dialect';
-import { decimalToCents, moneyMinorToMajor } from '../../money';
-import { internalApiOperations, internalApiPath } from '../../generated/internal-api';
+import { adminListQueryParams, type FilterClause } from '../../dialect';
 import {
-  adminOrderSchema,
-  adminPaymentSchema,
-  arraySchema,
-  createdIdSchema,
-  createdOrderSchema,
-  noContentSchema,
-  paymentFormSchema,
-  stringArraySchema,
-} from '../../contracts';
+  internalApiAdminPaymentCreateRequestSchema,
+  internalApiPlanCreateSchema,
+  internalApiPlanPatchSchema,
+  internalApiPaymentProviderCodeSchema,
+} from '../../generated/internal-api';
+import { requestInternal } from '../../internal-operation';
+import { decimalToCents, moneyMinorToMajor } from '../../money';
 import {
   LEGACY_FILTER_OPS,
   type AdminFilter,
@@ -41,25 +38,39 @@ const PLAN_PRICE_KEYS = [
   'reset_price',
 ] as const satisfies readonly PlanPeriod[];
 
-const PLAN_SAVE_KEYS = [
-  'id',
-  'name',
-  'content',
-  'group_id',
-  'transfer_enable',
-  'device_limit',
-  ...PLAN_PRICE_KEYS,
-  'reset_traffic_method',
-  'capacity_limit',
-  'speed_limit',
-  'force_update',
-] as const;
-
 type GeneratedPlanCreate = InternalApiOperationMap['adminPlanCreate']['request'];
 type GeneratedPlanPatch = InternalApiOperationMap['adminPlanPatch']['request'];
+type GeneratedAdminOrder = InternalApiOperationMap['adminOrdersList']['response']['items'][number];
 type BrandedPlanPrices<T> = Omit<T, PlanPeriod> & Partial<Record<PlanPeriod, MoneyMinor | null>>;
 type AdminPlanCreateRequest = BrandedPlanPrices<GeneratedPlanCreate>;
 type AdminPlanPatchRequest = BrandedPlanPrices<Omit<GeneratedPlanPatch, 'show' | 'renew'>>;
+
+const ADMIN_ORDER_PERIODS = new Set<string>(['deposit', ...PLAN_PRICE_KEYS]);
+const ADMIN_ORDER_TYPES = new Set([1, 2, 3, 4, 9]);
+const ADMIN_ORDER_STATUSES = new Set([0, 1, 2, 3, 4]);
+const ADMIN_ORDER_COMMISSION_STATUSES = new Set([0, 1, 2, 3]);
+
+function toAdminOrderRow(order: GeneratedAdminOrder): AdminOrderRow {
+  if (!ADMIN_ORDER_PERIODS.has(order.period)) {
+    throw new TypeError(`Unsupported admin order period: ${order.period}`);
+  }
+  if (!ADMIN_ORDER_TYPES.has(order.type)) {
+    throw new TypeError(`Unsupported admin order type: ${order.type}`);
+  }
+  if (!ADMIN_ORDER_STATUSES.has(order.status)) {
+    throw new TypeError(`Unsupported admin order status: ${order.status}`);
+  }
+  if (!ADMIN_ORDER_COMMISSION_STATUSES.has(order.commission_status)) {
+    throw new TypeError(`Unsupported admin order commission status: ${order.commission_status}`);
+  }
+  return {
+    ...order,
+    period: order.period as AdminOrderRow['period'],
+    type: order.type as AdminOrderRow['type'],
+    status: order.status as AdminOrderRow['status'],
+    commission_status: order.commission_status as AdminOrderRow['commission_status'],
+  };
+}
 
 /**
  * Admin plan write DTO. It is intentionally a wire type: prices are branded
@@ -114,13 +125,7 @@ export const fetchPlans = async (
   client: ApiClient,
   config?: QueryRequestConfig,
 ): Promise<AdminPlanModel[]> => {
-  const operation = internalApiOperations.adminPlansList;
-  const plans = await client.request({
-    url: client.resolveAdminPath(internalApiPath(operation.adminPath)),
-    method: operation.method,
-    dialect: 'v2',
-    expectedStatus: operation.successStatus,
-    responseSchema: operation.responseSchema,
+  const plans = await requestInternal(client, 'adminPlansList', {
     ...config,
   });
   return plans.map(toAdminPlanDto).map(toAdminPlanModel);
@@ -143,42 +148,42 @@ export const savePlan = (
     if (force_update !== undefined) {
       throw new TypeError('force_update is only valid when editing an existing plan');
     }
-    const operation = internalApiOperations.adminPlanCreate;
-    const request = operation.requestSchema.parse(pickPlanWriteBody(data));
-    return client.request({
-      url: client.resolveAdminPath(internalApiPath(operation.adminPath)),
-      method: operation.method,
-      dialect: 'v2',
-      data: request,
-      expectedStatus: operation.successStatus,
-      responseSchema: operation.responseSchema,
+    return requestInternal(client, 'adminPlanCreate', {
+      data: internalApiPlanCreateSchema.parse(pickPlanWriteBody(data)),
     });
   }
-  const operation = internalApiOperations.adminPlanPatch;
-  const request = operation.requestSchema.parse({
-    ...pickPlanWriteBody(data),
-    ...(force_update === undefined ? {} : { force_update }),
-  });
-  return client.request({
-    url: client.resolveAdminPath(internalApiPath(operation.adminPath, { id })),
-    method: operation.method,
-    dialect: 'v2',
-    data: request,
-    expectedStatus: operation.successStatus,
-    responseSchema: operation.responseSchema,
+  return requestInternal(client, 'adminPlanPatch', {
+    path: { id },
+    data: internalApiPlanPatchSchema.parse({
+      ...pickPlanWriteBody(data),
+      ...(force_update === undefined ? {} : { force_update }),
+    }),
   });
 };
 
 function pickPlanWriteBody(
   data: Omit<AdminPlanSaveRequest, 'id' | 'force_update'>,
-): Record<string, unknown> {
-  const next: Record<string, unknown> = {};
-  for (const key of PLAN_SAVE_KEYS) {
-    if (key === 'id' || key === 'force_update') continue;
-    const value = data[key as keyof typeof data];
-    if (value !== undefined) next[key] = value;
-  }
-  return next;
+): GeneratedPlanPatch {
+  return {
+    ...(data.name === undefined ? {} : { name: data.name }),
+    ...(data.content === undefined ? {} : { content: data.content }),
+    ...(data.group_id === undefined ? {} : { group_id: data.group_id }),
+    ...(data.transfer_enable === undefined ? {} : { transfer_enable: data.transfer_enable }),
+    ...(data.device_limit === undefined ? {} : { device_limit: data.device_limit }),
+    ...(data.month_price === undefined ? {} : { month_price: data.month_price }),
+    ...(data.quarter_price === undefined ? {} : { quarter_price: data.quarter_price }),
+    ...(data.half_year_price === undefined ? {} : { half_year_price: data.half_year_price }),
+    ...(data.year_price === undefined ? {} : { year_price: data.year_price }),
+    ...(data.two_year_price === undefined ? {} : { two_year_price: data.two_year_price }),
+    ...(data.three_year_price === undefined ? {} : { three_year_price: data.three_year_price }),
+    ...(data.onetime_price === undefined ? {} : { onetime_price: data.onetime_price }),
+    ...(data.reset_price === undefined ? {} : { reset_price: data.reset_price }),
+    ...(data.reset_traffic_method === undefined
+      ? {}
+      : { reset_traffic_method: data.reset_traffic_method }),
+    ...(data.capacity_limit === undefined ? {} : { capacity_limit: data.capacity_limit }),
+    ...(data.speed_limit === undefined ? {} : { speed_limit: data.speed_limit }),
+  };
 }
 
 /** PATCH /{secure_path}/plans/{id} `{show|renew}` — the merged legacy toggle (§6.2). */
@@ -188,44 +193,23 @@ export const updatePlan = (
   key: 'show' | 'renew',
   value: boolean,
 ) => {
-  const operation = internalApiOperations.adminPlanPatch;
   const data = { [key]: value } satisfies GeneratedPlanPatch;
-  const request = operation.requestSchema.parse(data);
-  return client.request({
-    url: client.resolveAdminPath(internalApiPath(operation.adminPath, { id })),
-    method: operation.method,
-    dialect: 'v2',
-    data: request,
-    expectedStatus: operation.successStatus,
-    responseSchema: operation.responseSchema,
+  return requestInternal(client, 'adminPlanPatch', {
+    path: { id },
+    data,
   });
 };
 
-export const dropPlan = (client: ApiClient, id: number) => {
-  const operation = internalApiOperations.adminPlanDelete;
-  return client.request({
-    url: client.resolveAdminPath(internalApiPath(operation.adminPath, { id })),
-    method: operation.method,
-    dialect: 'v2',
-    expectedStatus: operation.successStatus,
-    responseSchema: operation.responseSchema,
-  });
-};
+export const dropPlan = (client: ApiClient, id: number) =>
+  requestInternal(client, 'adminPlanDelete', { path: { id } });
 
 /** POST /{secure_path}/plans/sort `{ids}` — `plan_ids` → `ids` (§6.2, §4.1). */
 export const sortPlans = (client: ApiClient, ids: number[]) => {
-  const operation = internalApiOperations.adminPlansSort;
   const data = {
     ids,
   } satisfies InternalApiOperationMap['adminPlansSort']['request'];
-  const request = operation.requestSchema.parse(data);
-  return client.request({
-    url: client.resolveAdminPath(internalApiPath(operation.adminPath)),
-    method: operation.method,
-    dialect: 'v2',
-    data: request,
-    expectedStatus: operation.successStatus,
-    responseSchema: operation.responseSchema,
+  return requestInternal(client, 'adminPlansSort', {
+    data,
   });
 };
 
@@ -271,53 +255,38 @@ export const fetchOrders = async (
   query: AdminPageQuery & { commission_only?: boolean } = {},
   config?: QueryRequestConfig,
 ): Promise<PageResult<AdminOrderRow>> => {
-  const params: Record<string, unknown> = adminListQueryParams({
-    page: query.current,
-    per_page: query.pageSize,
-    sort_by: query.sort,
-    sort_dir: query.sort_type ? (query.sort_type === 'ASC' ? 'asc' : 'desc') : undefined,
-    filter: orderFilterClauses(query.filter),
-  });
-  if (query.commission_only !== undefined) params.commission_only = query.commission_only;
-  const page = await client.request({
-    url: client.resolveAdminPath('/orders'),
-    method: 'GET',
-    dialect: 'v2',
-    params,
-    responseSchema: pageSchema(adminOrderSchema),
+  const params = {
+    ...adminListQueryParams({
+      page: query.current,
+      per_page: query.pageSize,
+      sort_by: query.sort,
+      sort_dir: query.sort_type ? (query.sort_type === 'ASC' ? 'asc' : 'desc') : undefined,
+      filter: orderFilterClauses(query.filter),
+    }),
+    ...(query.commission_only === undefined ? {} : { commission_only: query.commission_only }),
+  };
+  const page = await requestInternal(client, 'adminOrdersList', {
+    query: params as InternalApiOperationMap['adminOrdersList']['parameters']['query'],
     ...config,
   });
-  return { data: page.items, total: page.total };
+  return { data: page.items.map(toAdminOrderRow), total: page.total };
 };
 
 /** GET /{secure_path}/orders/{trade_no} — dialect v2 bare detail (§6.4, W11);
  * the read moved off POST and the identifier from numeric id to trade_no. */
 export const orderDetail = (client: ApiClient, trade_no: string, config?: QueryRequestConfig) =>
-  client.request({
-    url: client.resolveAdminPath(`/orders/${encodeURIComponent(trade_no)}`),
-    method: 'GET',
-    dialect: 'v2',
-    responseSchema: adminOrderSchema,
+  requestInternal(client, 'adminOrdersGet', {
+    path: { trade_no },
     ...config,
   });
 
 /** POST /{secure_path}/orders/{trade_no}/mark-paid — 204 (§6.4). */
 export const paidOrder = (client: ApiClient, trade_no: string) =>
-  client.request({
-    url: client.resolveAdminPath(`/orders/${encodeURIComponent(trade_no)}/mark-paid`),
-    method: 'POST',
-    dialect: 'v2',
-    responseSchema: noContentSchema,
-  });
+  requestInternal(client, 'adminOrdersMarkPaid', { path: { trade_no } });
 
 /** POST /{secure_path}/orders/{trade_no}/cancel — 204 (§6.4). */
 export const cancelOrder = (client: ApiClient, trade_no: string) =>
-  client.request({
-    url: client.resolveAdminPath(`/orders/${encodeURIComponent(trade_no)}/cancel`),
-    method: 'POST',
-    dialect: 'v2',
-    responseSchema: noContentSchema,
-  });
+  requestInternal(client, 'adminOrdersCancel', { path: { trade_no } });
 
 /**
  * PATCH /{secure_path}/orders/{trade_no} — dialect v2 (§6.4): exactly one of
@@ -330,12 +299,9 @@ export const updateOrder = (
   key: 'commission_status' | 'status',
   value: string | number,
 ) =>
-  client.request({
-    url: client.resolveAdminPath(`/orders/${encodeURIComponent(trade_no)}`),
-    method: 'PATCH',
-    dialect: 'v2',
-    data: { [key]: Number(value) },
-    responseSchema: noContentSchema,
+  requestInternal(client, 'adminOrdersUpdate', {
+    path: { trade_no },
+    data: key === 'status' ? { status: Number(value) } : { commission_status: Number(value) },
   });
 
 /** POST /{secure_path}/orders — dialect v2 create (§6.4, legacy `order/assign`):
@@ -349,48 +315,53 @@ export const assignOrder = (
     total_amount: number | string;
   },
 ) =>
-  client.request({
-    url: client.resolveAdminPath('/orders'),
-    method: 'POST',
-    dialect: 'v2',
+  requestInternal(client, 'adminOrdersCreate', {
     data: {
       ...data,
       // Legacy '' meant "no charge"; omit so Rust's Option default (0) applies.
       total_amount: data.total_amount === '' ? undefined : decimalToCents(data.total_amount),
     },
-    responseSchema: createdOrderSchema,
   });
 
 /** GET /{secure_path}/payments — dialect v2 bare array (§6.2, W11). */
 export const fetchPayments = (client: ApiClient, config?: QueryRequestConfig) =>
-  client.request({
-    url: client.resolveAdminPath('/payments'),
-    method: 'GET',
-    dialect: 'v2',
-    responseSchema: arraySchema(adminPaymentSchema),
+  requestInternal(client, 'adminPaymentsList', {
     ...config,
   });
 
 /** GET /{secure_path}/payment-providers — dialect v2 provider-code array (§6.2). */
 export const paymentMethods = (client: ApiClient, config?: QueryRequestConfig) =>
-  client.request({
-    url: client.resolveAdminPath('/payment-providers'),
-    method: 'GET',
-    dialect: 'v2',
-    responseSchema: stringArraySchema,
+  requestInternal(client, 'adminPaymentProvidersList', {
     ...config,
   });
 
-export interface SavePaymentPayload {
-  id?: number;
+type GeneratedPaymentCreate = InternalApiOperationMap['adminPaymentsCreate']['request'];
+type GeneratedPaymentPatch = InternalApiOperationMap['adminPaymentsUpdate']['request'];
+export type PaymentProviderCode =
+  InternalApiOperationMap['adminPaymentProvidersList']['response'][number];
+export const paymentProviderCodeSchema = internalApiPaymentProviderCodeSchema;
+
+interface PaymentFormMetadata {
   name: string;
   icon?: string | null;
-  payment: string;
-  config: Record<string, unknown>;
   notify_domain?: string | null;
   handling_fee_fixed?: string | number | null;
   handling_fee_percent?: string | number | null;
 }
+
+export interface SavePaymentCreatePayload extends PaymentFormMetadata {
+  id?: undefined;
+  payment: PaymentProviderCode;
+  config: Record<string, string>;
+}
+
+export interface SavePaymentPatchPayload extends PaymentFormMetadata {
+  id: number;
+  payment?: never;
+  config?: never;
+}
+
+export type SavePaymentPayload = SavePaymentCreatePayload | SavePaymentPatchPayload;
 
 /**
  * GET /{secure_path}/payment-providers/{code}/form `?payment_id=` — dialect v2
@@ -403,21 +374,23 @@ export const paymentForm = (
   id?: number,
   config?: QueryRequestConfig,
 ) =>
-  client.request({
-    url: client.resolveAdminPath(`/payment-providers/${encodeURIComponent(payment ?? '')}/form`),
-    method: 'GET',
-    dialect: 'v2',
-    params: id === undefined ? undefined : { payment_id: id },
-    responseSchema: paymentFormSchema,
+  requestInternal(client, 'adminPaymentProvidersForm', {
+    path: { code: payment ?? '' },
+    query: id === undefined ? undefined : { payment_id: id },
     ...config,
-  });
-
-const optionalPaymentFields = [
-  'icon',
-  'notify_domain',
-  'handling_fee_fixed',
-  'handling_fee_percent',
-] as const;
+  }).then((definition): PaymentFormDefinition =>
+    Object.fromEntries(
+      Object.entries(definition).map(([key, field]) => [
+        key,
+        {
+          label: field.label,
+          description: field.description,
+          type: field.type,
+          ...(field.value == null ? {} : { value: field.value }),
+        },
+      ]),
+    ),
+  );
 
 /**
  * The dialect-v2 payment body (§6.2, §4.4, W11): whitelist the columns the
@@ -426,30 +399,49 @@ const optionalPaymentFields = [
  * empty optional is an explicit `null` clear. `handling_fee_fixed` serializes
  * to cents and `handling_fee_percent` to a JSON number (§4.1).
  */
-function serializePaymentBody(data: SavePaymentPayload): Record<string, unknown> {
-  const isCreate = data.id === undefined;
-  const payload: Record<string, unknown> = {
+function paymentOptionalFields(
+  data: PaymentFormMetadata,
+  emptyMeansClear: boolean,
+): Pick<
+  GeneratedPaymentPatch,
+  'icon' | 'notify_domain' | 'handling_fee_fixed' | 'handling_fee_percent'
+> {
+  const text = (value: string | null | undefined): string | null | undefined => {
+    if (value === undefined || (value === '' && !emptyMeansClear)) return undefined;
+    return value === '' ? null : value;
+  };
+  const number = (
+    value: string | number | null | undefined,
+    convert: (present: string | number) => number,
+  ): number | null | undefined => {
+    if (value === undefined || (value === '' && !emptyMeansClear)) return undefined;
+    return value === '' || value === null ? null : convert(value);
+  };
+  return {
+    icon: text(data.icon),
+    notify_domain: text(data.notify_domain),
+    handling_fee_fixed: number(data.handling_fee_fixed, decimalToCents),
+    handling_fee_percent: number(data.handling_fee_percent, Number),
+  };
+}
+
+function serializePaymentCreate(data: SavePaymentCreatePayload): GeneratedPaymentCreate {
+  // The form definition is keyed dynamically for rendering, but the transport
+  // boundary selects the generated provider-discriminated DTO and rejects a
+  // missing, surplus, or cross-provider configuration field.
+  return internalApiAdminPaymentCreateRequestSchema.parse({
     name: data.name,
     payment: data.payment,
     config: data.config,
+    ...paymentOptionalFields(data, false),
+  });
+}
+
+function serializePaymentPatch(data: SavePaymentPatchPayload): GeneratedPaymentPatch {
+  return {
+    name: data.name,
+    ...paymentOptionalFields(data, true),
   };
-  for (const key of optionalPaymentFields) {
-    const value = data[key];
-    if (value === undefined) continue;
-    if (value === '') {
-      if (isCreate) continue;
-      payload[key] = null;
-      continue;
-    }
-    payload[key] = value;
-  }
-  if (payload.handling_fee_fixed != null) {
-    payload.handling_fee_fixed = decimalToCents(payload.handling_fee_fixed as string | number);
-  }
-  if (payload.handling_fee_percent != null) {
-    payload.handling_fee_percent = Number(payload.handling_fee_percent);
-  }
-  return payload;
 }
 
 /**
@@ -459,45 +451,26 @@ function serializePaymentBody(data: SavePaymentPayload): Record<string, unknown>
  */
 export const savePayment = (client: ApiClient, data: SavePaymentPayload) =>
   data.id === undefined
-    ? client.request({
-        url: client.resolveAdminPath('/payments'),
-        method: 'POST',
-        dialect: 'v2',
-        data: serializePaymentBody(data),
-        responseSchema: createdIdSchema,
+    ? requestInternal(client, 'adminPaymentsCreate', {
+        data: serializePaymentCreate(data),
       })
-    : client.request({
-        url: client.resolveAdminPath(`/payments/${data.id}`),
-        method: 'PATCH',
-        dialect: 'v2',
-        data: serializePaymentBody(data),
-        responseSchema: noContentSchema,
+    : requestInternal(client, 'adminPaymentsUpdate', {
+        path: { id: data.id },
+        data: serializePaymentPatch(data),
       });
 
 /** PATCH /{secure_path}/payments/{id} `{enable}` — the merged legacy toggle (§6.2). */
 export const showPayment = (client: ApiClient, id: number, enable: boolean) =>
-  client.request({
-    url: client.resolveAdminPath(`/payments/${id}`),
-    method: 'PATCH',
-    dialect: 'v2',
+  requestInternal(client, 'adminPaymentsUpdate', {
+    path: { id },
     data: { enable },
-    responseSchema: noContentSchema,
   });
 
 /** POST /{secure_path}/payments/sort `{ids}` — 204 (§6.2). */
 export const sortPayments = (client: ApiClient, ids: number[]) =>
-  client.request({
-    url: client.resolveAdminPath('/payments/sort'),
-    method: 'POST',
-    dialect: 'v2',
+  requestInternal(client, 'adminPaymentsSort', {
     data: { ids },
-    responseSchema: noContentSchema,
   });
 
 export const dropPayment = (client: ApiClient, id: number) =>
-  client.request({
-    url: client.resolveAdminPath(`/payments/${id}`),
-    method: 'DELETE',
-    dialect: 'v2',
-    responseSchema: noContentSchema,
-  });
+  requestInternal(client, 'adminPaymentsDelete', { path: { id } });

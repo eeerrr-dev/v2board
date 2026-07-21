@@ -1,4 +1,4 @@
-export { createApiClient, ApiContractError, ApiError } from './client';
+export { createApiClient, isRawBinaryResponse, ApiContractError, ApiError } from './client';
 export type {
   ApiClient,
   ApiClientOptions,

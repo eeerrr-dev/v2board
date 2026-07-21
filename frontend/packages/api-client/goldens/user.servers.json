@@ -1,5 +1,6 @@
 [
   {
+    "type": "shadowsocks",
     "id": 1,
     "parent_id": null,
     "group_id": [
@@ -10,7 +11,6 @@
     ],
     "name": "Golden Node 01",
     "rate": 1.0,
-    "type": "shadowsocks",
     "host": "node-01.golden.v2board.test",
     "port": 443,
     "cache_key": "shadowsocks-1-1700000000-1",
@@ -23,12 +23,13 @@
     "sort": 1,
     "extra": {
       "cipher": "aes-128-gcm",
-      "created_at": 1700000000,
       "obfs": null,
-      "obfs_settings": null
+      "obfs_settings": null,
+      "created_at": 1700000000
     }
   },
   {
+    "type": "trojan",
     "id": 2,
     "parent_id": null,
     "group_id": [
@@ -37,7 +38,6 @@
     "route_id": null,
     "name": "Golden Node 02",
     "rate": 2.5,
-    "type": "trojan",
     "host": "node-02.golden.v2board.test",
     "port": 8443,
     "cache_key": "trojan-2-1700000000-0",

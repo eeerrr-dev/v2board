@@ -24,7 +24,6 @@ const specProblemBody = {
   status: 400,
   code: 'plan_sold_out',
   detail: '当前产品已售罄',
-  errors: { email: ['邮箱格式不正确'] },
 };
 
 describe('bearer header assembly (§4.2)', () => {
@@ -73,24 +72,31 @@ describe('problem+json parsing (§3.1)', () => {
     expect(problem?.status).toBe(400);
     expect(problem?.code).toBe('plan_sold_out');
     expect(problem?.detail).toBe('当前产品已售罄');
-    expect(problem?.errors).toEqual({ email: ['邮箱格式不正确'] });
+    expect(problem?.errors).toBeUndefined();
     // detail is the human-readable message; code stays the only machine key.
     expect(problem?.message).toBe('当前产品已售罄');
   });
 
   it('keeps the errors bag optional (present only for validation_failed)', () => {
-    const { errors: _errors, ...withoutErrors } = specProblemBody;
-    const problem = parseProblem(withoutErrors, 400);
-    expect(problem?.errors).toBeUndefined();
+    const problem = parseProblem(
+      {
+        ...specProblemBody,
+        code: 'validation_failed',
+        title: 'Unprocessable Entity',
+        status: 422,
+        errors: { email: ['邮箱格式不正确'] },
+      },
+      422,
+    );
+    expect(problem?.errors).toEqual({ email: ['邮箱格式不正确'] });
   });
 
-  it('parses unknown codes so apps can fall back to detail verbatim', () => {
+  it('rejects codes outside the stable generated registry', () => {
     const problem = parseProblem(
       { ...specProblemBody, code: 'some_future_code', detail: 'future detail' },
       400,
     );
-    expect(problem?.code).toBe('some_future_code');
-    expect(problem?.detail).toBe('future detail');
+    expect(problem).toBeNull();
   });
 
   it('tolerates RFC 9457 extension members', () => {
@@ -113,9 +119,21 @@ describe('problem+json parsing (§3.1)', () => {
 });
 
 describe('code-first discrimination (§3.2)', () => {
+  const problemTitles: Record<string, string> = {
+    coupon_expired: 'Bad Request',
+    permission_denied: 'Forbidden',
+    session_expired: 'Unauthorized',
+    step_up_required: 'Forbidden',
+  };
   const problemOf = (status: number, code: string) =>
     parseProblem(
-      { type: 'about:blank', title: 'Error', status, code, detail: 'detail' },
+      {
+        type: 'about:blank',
+        title: problemTitles[code] ?? 'Bad Request',
+        status,
+        code,
+        detail: 'detail',
+      },
       status,
     ) as ApiProblemError;
 

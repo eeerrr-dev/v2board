@@ -312,11 +312,11 @@ describe('createApiClient', () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);
     mock.onPost('/auth/login').reply(200, { is_admin: false, auth_data: 'jwt' });
-    const result = await login(client, { email: 'a@b.c', password: 'x' });
+    const result = await login(client, { email: 'a@b.c', password: 'password1' });
     expect(result).toEqual({ is_admin: false, auth_data: 'jwt' });
     expect(JSON.parse(String(mock.history.post[0]?.data))).toEqual({
       email: 'a@b.c',
-      password: 'x',
+      password: 'password1',
     });
     expect(mock.history.post[0]?.headers?.['Content-Type']).toContain('application/json');
   });
@@ -327,7 +327,7 @@ describe('createApiClient', () => {
     mock.onPost('/auth/register').reply(201, { is_admin: false, auth_data: 'jwt' });
 
     await expect(
-      passportEndpoints.register(client, { email: 'a@b.c', password: 'x' }),
+      passportEndpoints.register(client, { email: 'a@b.c', password: 'password1' }),
     ).resolves.toMatchObject({ auth_data: 'jwt' });
   });
 
@@ -337,7 +337,11 @@ describe('createApiClient', () => {
     mock.onPost('/auth/password-reset').reply(204);
 
     await expect(
-      passportEndpoints.forget(client, { email: 'a@b.c', email_code: '123456', password: 'x' }),
+      passportEndpoints.forget(client, {
+        email: 'a@b.c',
+        email_code: '123456',
+        password: 'password1',
+      }),
     ).resolves.toBeUndefined();
   });
 
@@ -361,7 +365,7 @@ describe('createApiClient', () => {
     const mock = new AxiosMockAdapter(client.axios);
     mock.onPost('/auth/login').reply(200, { is_admin: false });
 
-    await expect(login(client, { email: 'a@b.c', password: 'x' })).rejects.toBeInstanceOf(
+    await expect(login(client, { email: 'a@b.c', password: 'password1' })).rejects.toBeInstanceOf(
       ApiContractError,
     );
   });
@@ -717,11 +721,13 @@ describe('createApiClient', () => {
     const mock = new AxiosMockAdapter(client.axios);
     mock.onPost('/auth/step-up').reply(200, { step_up_token: 'grant-token', expires_in: 900 });
 
-    await expect(passportEndpoints.stepUp(client, { password: 'secret' })).resolves.toMatchObject({
+    await expect(
+      passportEndpoints.stepUp(client, { password: 'secret123' }),
+    ).resolves.toMatchObject({
       step_up_token: 'grant-token',
       expires_in: 900,
     });
-    expect(JSON.parse(String(mock.history.post[0]?.data))).toEqual({ password: 'secret' });
+    expect(JSON.parse(String(mock.history.post[0]?.data))).toEqual({ password: 'secret123' });
   });
 
   it('rides the step-up token on requests as the x-v2board-step-up header', async () => {
@@ -816,7 +822,9 @@ describe('createApiClient', () => {
       detail: '邮箱格式不正确',
       errors: { email: ['邮箱格式不正确'] },
     });
-    await expect(login(client, { email: '', password: '' })).rejects.toMatchObject({
+    await expect(
+      login(client, { email: 'valid@example.com', password: 'password1' }),
+    ).rejects.toMatchObject({
       code: 'validation_failed',
       message: '邮箱格式不正确',
       errors: { email: ['邮箱格式不正确'] },
@@ -948,7 +956,7 @@ describe('createApiClient', () => {
     // §6.8 (W14): RFC 3339 record_at, numeric server_rate, `{items,total}`.
     const record = { record_at: '2023-11-14T22:13:20Z', u: 1024, d: 2048, server_rate: 1 };
     mock
-      .onGet('/admin-path/stats/user-traffic?user_id=1&page=2&per_page=10')
+      .onGet('/admin-path/stats/user-traffic?page=2&per_page=10&user_id=1')
       .reply(200, { items: [record], total: 1 });
 
     await expect(statUser(client, { user_id: 1, current: 2, pageSize: 10 })).resolves.toEqual({
@@ -956,7 +964,7 @@ describe('createApiClient', () => {
       total: 1,
     });
     expect(mock.history.get[0]?.url).toBe(
-      '/admin-path/stats/user-traffic?user_id=1&page=2&per_page=10',
+      '/admin-path/stats/user-traffic?page=2&per_page=10&user_id=1',
     );
   });
 
@@ -990,12 +998,30 @@ describe('createApiClient', () => {
     // §6.2 (W11): POST /payments is a dialect JSON create answered with 201 {id}.
     mock.onPost('/admin-path/payments').reply(201, { id: 1 });
 
-    await generateCoupon(client, { type: 1, value: '19.99' });
-    await generateGiftcard(client, { type: 1, value: '0.1' });
+    await generateCoupon(client, {
+      name: 'Coupon',
+      type: 1,
+      value: '19.99',
+      started_at: 1_700_000_000,
+      ended_at: 1_700_003_600,
+    });
+    await generateGiftcard(client, {
+      name: 'Gift card',
+      type: 1,
+      value: '0.1',
+      started_at: 1_700_000_000,
+      ended_at: 1_700_003_600,
+    });
     await savePayment(client, {
       name: 'Card',
       payment: 'StripeCheckout',
-      config: {},
+      config: {
+        currency: 'USD',
+        stripe_sk_live: 'sk_live_test',
+        stripe_pk_live: 'pk_live_test',
+        stripe_webhook_key: 'whsec_test',
+        stripe_custom_field_name: 'contact',
+      },
       handling_fee_fixed: '1.05',
     });
 
@@ -1016,28 +1042,35 @@ describe('createApiClient', () => {
     await savePayment(client, {
       name: 'New gateway',
       payment: 'StripeCheckout',
-      config: { secret_key: 'sk_new' },
+      config: {
+        currency: 'USD',
+        stripe_sk_live: 'sk_new',
+        stripe_pk_live: 'pk_new',
+        stripe_webhook_key: 'whsec_new',
+        stripe_custom_field_name: 'contact',
+      },
       icon: '',
       notify_domain: '',
       handling_fee_fixed: '',
       handling_fee_percent: '',
-      // Exercise the runtime whitelist as well as the stricter TS contract.
-      uuid: 'must-not-round-trip',
-      enable: 1,
-    } as unknown as Parameters<typeof savePayment>[1]);
+    });
 
     // §4.4: on create an empty optional is absent (the documented default).
     expect(JSON.parse(String(mock.history.post[0]?.data))).toEqual({
       name: 'New gateway',
       payment: 'StripeCheckout',
-      config: { secret_key: 'sk_new' },
+      config: {
+        currency: 'USD',
+        stripe_sk_live: 'sk_new',
+        stripe_pk_live: 'pk_new',
+        stripe_webhook_key: 'whsec_new',
+        stripe_custom_field_name: 'contact',
+      },
     });
 
     await savePayment(client, {
       id: 7,
       name: 'Edited gateway',
-      payment: 'StripeCheckout',
-      config: { secret_key: 'sk_edited' },
       icon: '',
       notify_domain: '',
       handling_fee_fixed: '',
@@ -1047,13 +1080,25 @@ describe('createApiClient', () => {
     // §4.4: on PATCH an empty optional is an explicit `null` clear.
     expect(JSON.parse(String(mock.history.patch[0]?.data))).toEqual({
       name: 'Edited gateway',
-      payment: 'StripeCheckout',
-      config: { secret_key: 'sk_edited' },
       icon: null,
       notify_domain: null,
       handling_fee_fixed: null,
       handling_fee_percent: null,
     });
+  });
+
+  it('rejects a provider config draft unless it matches the selected generated DTO', () => {
+    const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
+    const mock = new AxiosMockAdapter(client.axios);
+
+    expect(() =>
+      savePayment(client, {
+        name: 'Invalid Stripe',
+        payment: 'StripeCheckout',
+        config: { secret_key: 'legacy-untyped-key' },
+      }),
+    ).toThrow();
+    expect(mock.history.post).toHaveLength(0);
   });
 
   it('merges the admin plan show/renew toggle into the dialect PATCH', async () => {
@@ -1071,8 +1116,8 @@ describe('createApiClient', () => {
     const source = readFileSync(new URL('./endpoints/admin/commerce.ts', import.meta.url), 'utf8');
 
     expect(source).toContain("key: 'show' | 'renew',");
-    expect(source).toContain('internalApiOperations.adminPlanPatch');
-    expect(source).toContain('internalApiPath(operation.adminPath, { id })');
+    expect(source).toContain("requestInternal(client, 'adminPlanPatch'");
+    expect(source).toContain('path: { id }');
     expect(source).not.toContain("adminPostTrue(client, '/plan/update', { id, [key]: value })");
   });
 
@@ -1107,8 +1152,14 @@ describe('createApiClient', () => {
       is_staff: 0,
       admin_permissions: [],
       invite_user_id: null,
+      auto_renewal: null,
+      commission_type: 0,
       discount: null,
       commission_rate: null,
+      remarks: null,
+      remind_expire: null,
+      remind_traffic: null,
+      speed_limit: null,
       telegram_id: null,
       last_login_at: '2023-11-14T22:13:20Z',
       created_at: '2023-11-14T22:13:20Z',
@@ -1227,7 +1278,7 @@ describe('createApiClient', () => {
       port: 443,
       server_port: 443,
       rate: 1,
-      padding_scheme: '["30-30"]',
+      padding_scheme: ['30-30'],
     });
     expect(JSON.parse(mock.history.patch[0]?.data ?? '{}')).toEqual({
       name: 'AnyTLS',
@@ -1718,10 +1769,28 @@ describe('createApiClient', () => {
       'content-type': 'text/csv',
     });
 
-    await expect(generateCoupon(client, { generate_count: '2' })).resolves.toMatchObject({
+    await expect(
+      generateCoupon(client, {
+        name: 'Coupon batch',
+        type: 1,
+        value: 100,
+        started_at: 1_700_000_000,
+        ended_at: 1_700_003_600,
+        generate_count: '2',
+      }),
+    ).resolves.toMatchObject({
       buffer: couponBuffer,
     });
-    await expect(generateGiftcard(client, { generate_count: '2' })).resolves.toMatchObject({
+    await expect(
+      generateGiftcard(client, {
+        name: 'Gift card batch',
+        type: 1,
+        value: 100,
+        started_at: 1_700_000_000,
+        ended_at: 1_700_003_600,
+        generate_count: '2',
+      }),
+    ).resolves.toMatchObject({
       buffer: giftcardBuffer,
     });
     expect(JSON.parse(String(mock.history.post[0]?.data))).toMatchObject({ generate_count: 2 });

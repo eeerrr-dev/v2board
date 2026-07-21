@@ -6,9 +6,201 @@
 //! [`InternalOperation::documented_path`]. This keeps the live admin prefix
 //! dynamic without duplicating its 89 route literals.
 
-use std::borrow::Cow;
+use std::{borrow::Cow, collections::BTreeMap};
 
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
+use utoipa::{OpenApi as _, ToSchema};
+
+/// One selectable server-owned mail template identifier.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(transparent)]
+pub struct EmailTemplateName(pub String);
+
+/// One administrator-visible knowledge category name. The user endpoint has
+/// an object projection; the administrator endpoint deliberately returns bare
+/// strings and therefore has a distinct contract.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(transparent)]
+pub struct AdminKnowledgeCategoryName(pub String);
+
+/// Named map root for the provider-owned payment form vocabulary.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(transparent)]
+pub struct PaymentProviderFormResponse(
+    pub BTreeMap<String, crate::admin_business::PaymentProviderFormField>,
+);
+
+macro_rules! page_schema {
+    ($name:ident, $item:path) => {
+        #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+        #[serde(deny_unknown_fields)]
+        pub struct $name {
+            pub items: Vec<$item>,
+            pub total: i64,
+        }
+    };
+}
+
+page_schema!(UserNoticePage, crate::content::NoticeView);
+page_schema!(UserCommissionPage, crate::user_activity::CommissionView);
+page_schema!(SystemLogPage, crate::admin_platform::SystemLogView);
+page_schema!(AuditLogPage, crate::admin_platform::AuditLogView);
+page_schema!(AdminCouponPage, crate::admin_codes::AdminCouponItem);
+page_schema!(AdminGiftcardPage, crate::admin_codes::AdminGiftcardItem);
+page_schema!(AdminOrderPage, crate::admin_business::AdminOrderListItem);
+page_schema!(
+    AdminPaymentReconciliationPage,
+    crate::admin_business::AdminPaymentReconciliationListItem
+);
+page_schema!(AdminTicketPage, crate::admin_business::AdminTicketItem);
+page_schema!(AdminUserPage, crate::admin_business::AdminUserListItem);
+page_schema!(
+    AdminUserTrafficPage,
+    crate::admin_platform::AdminUserTrafficView
+);
+
+/// Component-only catalog for every root schema referenced by the canonical
+/// operation inventory. Nested DTO dependencies are recursively registered by
+/// `utoipa`; the explicit root list makes an omitted operation contract fail
+/// closed in `schema_value` instead of degrading to an open JSON object.
+#[derive(utoipa::OpenApi)]
+#[openapi(components(schemas(
+    crate::auth::PublicConfig,
+    crate::auth::InviteViewRequest,
+    crate::auth::LoginRequest,
+    crate::auth::RegisterRequest,
+    crate::auth::AuthData,
+    crate::auth::TokenLoginRequest,
+    crate::auth::PasswordResetRequest,
+    crate::auth::EmailCodeRequest,
+    crate::auth::StepUpRequest,
+    crate::auth::StepUpGrant,
+    crate::auth::QuickLoginUrlRequest,
+    crate::auth::QuickLoginUrl,
+    crate::auth::SessionState,
+    crate::user::UserProfile,
+    crate::user::UserProfilePatch,
+    crate::user::PasswordUpdateRequest,
+    crate::user::UserStats,
+    crate::user::UserSession,
+    crate::user::UserConfig,
+    crate::user::UserPlan,
+    crate::user::Subscription,
+    crate::user::ResetSubscriptionToken,
+    crate::user::TelegramBot,
+    crate::user::CommissionTransferRequest,
+    crate::user::GiftCardRedemptionRequest,
+    crate::user::GiftCardRedemption,
+    crate::user_activity::UserServerView,
+    crate::user_activity::TrafficLogView,
+    crate::user_activity::InviteView,
+    crate::user_activity::CommissionView,
+    crate::user_activity::UserTicketView,
+    crate::user_activity::UserTicketDetailView,
+    crate::user_activity::UserTicketCreateRequest,
+    crate::user_activity::UserTicketReplyRequest,
+    crate::user_activity::WithdrawalTicketCreateRequest,
+    crate::user_commerce::UserOrder,
+    crate::user_commerce::PaymentMethod,
+    crate::user_commerce::Coupon,
+    crate::user_commerce::CreateOrderRequest,
+    crate::user_commerce::OrderStatus,
+    crate::user_commerce::CheckoutRequest,
+    crate::user_commerce::StripeIntentRequest,
+    crate::user_commerce::CheckoutOutcome,
+    crate::user_commerce::StripePaymentIntent,
+    crate::user_commerce::CouponCheckRequest,
+    crate::admin_platform::MfaCodeRequest,
+    crate::admin_platform::MfaStatusView,
+    crate::admin_platform::TotpProvisioningView,
+    crate::admin_platform::AdminConfigView,
+    crate::admin_platform::AdminConfigPatchRequest,
+    crate::admin_platform::TelegramWebhookRequest,
+    crate::admin_platform::TestMailResult,
+    crate::admin_platform::SystemStatusView,
+    crate::admin_platform::QueueStatsView,
+    crate::admin_platform::QueueWorkloadItem,
+    crate::admin_platform::QueueMasterView,
+    crate::admin_platform::SystemLogView,
+    crate::admin_platform::AuditLogView,
+    crate::admin_platform::AdminStatSummaryView,
+    crate::admin_platform::ServerRankView,
+    crate::admin_platform::UserRankView,
+    crate::admin_platform::StatSeriesPointView,
+    crate::admin_platform::AdminUserTrafficView,
+    crate::commerce::AdminPlanItem,
+    crate::commerce::CreatedId,
+    crate::commerce::PlanCreate,
+    crate::commerce::PlanPatch,
+    crate::commerce::SortIdsRequest,
+    crate::admin_business::AdminPaymentItem,
+    crate::admin_business::PaymentProviderCode,
+    crate::admin_business::AdminPaymentCreateRequest,
+    crate::admin_business::AdminPaymentPatchRequest,
+    crate::admin_business::PaymentProviderFormField,
+    crate::admin_business::AdminOrderListItem,
+    crate::admin_business::AdminOrderDetail,
+    crate::admin_business::AdminOrderPatchRequest,
+    crate::admin_business::AdminOrderCreateRequest,
+    crate::admin_business::ReconciliationResolveRequest,
+    crate::admin_business::AdminPaymentReconciliationListItem,
+    crate::admin_business::AdminTicketItem,
+    crate::admin_business::AdminTicketDetail,
+    crate::admin_business::TicketReplyRequest,
+    crate::admin_business::AdminUserListItem,
+    crate::admin_business::AdminUserDetail,
+    crate::admin_business::StaffUserDetail,
+    crate::admin_business::AdminUserGenerateRequest,
+    crate::admin_business::AdminUserPatchRequest,
+    crate::admin_business::StaffUserPatchRequest,
+    crate::admin_business::AdminUserFilterRequest,
+    crate::admin_business::AdminUserMailRequest,
+    crate::admin_business::AdminSetInviterRequest,
+    crate::content::NoticeView,
+    crate::content::NoticeCreateRequest,
+    crate::content::NoticePatchRequest,
+    crate::content::KnowledgeGroups,
+    crate::content::KnowledgeSummaryView,
+    crate::content::KnowledgeDetailView,
+    crate::content::KnowledgeCategoryView,
+    crate::content::KnowledgeCreateRequest,
+    crate::content::KnowledgePatchRequest,
+    crate::content::KnowledgeSortRequest,
+    crate::admin_codes::AdminCouponItem,
+    crate::admin_codes::CouponGenerateRequest,
+    crate::admin_codes::CouponPatchRequest,
+    crate::admin_codes::AdminGiftcardItem,
+    crate::admin_codes::GiftcardGenerateRequest,
+    crate::admin_codes::GiftcardPatchRequest,
+    crate::admin_servers::NodeSortRequest,
+    crate::admin_servers::ServerNodeView,
+    crate::admin_servers::ServerGroupView,
+    crate::admin_servers::ServerGroupWriteRequest,
+    crate::admin_servers::ServerRouteView,
+    crate::admin_servers::ServerRouteCreateRequest,
+    crate::admin_servers::ServerRoutePatchRequest,
+    crate::admin_servers::ServerWriteRequest,
+    crate::common::CreatedInt32Id,
+    crate::common::CreatedInt64Id,
+    crate::common::CreatedTradeNo,
+    crate::configuration::ConfigActivationPending,
+    EmailTemplateName,
+    AdminKnowledgeCategoryName,
+    PaymentProviderFormResponse,
+    UserNoticePage,
+    UserCommissionPage,
+    SystemLogPage,
+    AuditLogPage,
+    AdminCouponPage,
+    AdminGiftcardPage,
+    AdminOrderPage,
+    AdminPaymentReconciliationPage,
+    AdminTicketPage,
+    AdminUserPage,
+    AdminUserTrafficPage
+)))]
+struct OperationSchemaCatalog;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum OperationSurface {
@@ -59,9 +251,6 @@ impl HttpMethod {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SuccessRepresentation {
     pub content_type: &'static str,
-    /// Filled as each response DTO moves into this crate. `None` is an
-    /// explicit schema migration slot, not an unknown status/content type.
-    pub schema: Option<&'static str>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,7 +290,6 @@ impl SuccessResponse {
             status,
             representations: &[SuccessRepresentation {
                 content_type: "text/csv; charset=utf-8",
-                schema: Some("string"),
             }],
             headers: &["Content-Disposition"],
         }
@@ -209,38 +397,23 @@ impl OperationParameter {
     }
 }
 
-const JSON_VALUE: &[SuccessRepresentation] = &[SuccessRepresentation {
+const JSON: &[SuccessRepresentation] = &[SuccessRepresentation {
     content_type: "application/json",
-    schema: None,
-}];
-const JSON_CREATED_ID: &[SuccessRepresentation] = &[SuccessRepresentation {
-    content_type: "application/json",
-    schema: Some("CreatedId"),
-}];
-const JSON_CONFIG_ACTIVATION_PENDING: &[SuccessRepresentation] = &[SuccessRepresentation {
-    content_type: "application/json",
-    schema: Some("ConfigActivationPending"),
-}];
-const JSON_ADMIN_PLAN_ITEMS: &[SuccessRepresentation] = &[SuccessRepresentation {
-    content_type: "application/json",
-    schema: Some("AdminPlanItem[]"),
 }];
 
-const OK_JSON: &[SuccessResponse] = &[SuccessResponse::json(200, JSON_VALUE)];
-const CREATED_JSON: &[SuccessResponse] = &[SuccessResponse::json(201, JSON_VALUE)];
+const OK_JSON: &[SuccessResponse] = &[SuccessResponse::json(200, JSON)];
+const CREATED_JSON: &[SuccessResponse] = &[SuccessResponse::json(201, JSON)];
 const NO_CONTENT: &[SuccessResponse] = &[SuccessResponse::empty(204)];
 const FOUND_LOCATION: &[SuccessResponse] = &[SuccessResponse::redirect(302)];
 const CONFIG_PATCH: &[SuccessResponse] = &[
-    SuccessResponse::json(202, JSON_CONFIG_ACTIVATION_PENDING),
+    SuccessResponse::json(202, JSON),
     SuccessResponse::empty(204),
 ];
-const GENERATED_JSON_OR_CSV: &[SuccessResponse] = &[
-    SuccessResponse::json(201, JSON_CREATED_ID),
-    SuccessResponse::csv(200),
-];
+const GENERATED_JSON_OR_CSV: &[SuccessResponse] =
+    &[SuccessResponse::json(201, JSON), SuccessResponse::csv(200)];
 const CSV_DOWNLOAD: &[SuccessResponse] = &[SuccessResponse::csv(200)];
-const PLAN_LIST: &[SuccessResponse] = &[SuccessResponse::json(200, JSON_ADMIN_PLAN_ITEMS)];
-const PLAN_CREATE: &[SuccessResponse] = &[SuccessResponse::json(201, JSON_CREATED_ID)];
+const PLAN_LIST: &[SuccessResponse] = OK_JSON;
+const PLAN_CREATE: &[SuccessResponse] = CREATED_JSON;
 
 const PAGE: OperationParameter = OperationParameter::query(
     "page",
@@ -774,9 +947,9 @@ impl InternalOperation {
         format!("{}{}", self.surface.documented_prefix(), self.path)
     }
 
-    /// Stable generated-client key. The already-shipped plan slice keeps its
-    /// exact camelCase names; later entries deterministically derive camelCase
-    /// from the canonical dotted id.
+    /// Stable generated-client key. Five plan operation ids predate the
+    /// deterministic naming rule and retain their exact client-visible names;
+    /// every other entry derives camelCase from the canonical dotted id.
     pub fn openapi_operation_id(self) -> String {
         match self.id {
             "admin.plans.list" => "adminPlansList".to_owned(),
@@ -842,37 +1015,189 @@ impl InternalOperation {
         COMMON_HEADERS
     }
 
-    /// Whether the handler consumes the modern JSON body. Schemas already
-    /// migrated to this crate are named; remaining bodies deliberately use a
-    /// generic JSON schema until their DTO family lands.
-    pub fn request_body_schema(self) -> Option<Option<&'static str>> {
-        let schema = match self.id {
+    /// Exact named JSON request root, or no request body. Every mutating route
+    /// is classified explicitly; adding a POST/PATCH/PUT without selecting a
+    /// DTO is a hard failure instead of an open-object fallback.
+    pub fn request_body_schema(self) -> Option<&'static str> {
+        match self.id {
+            "public.invite-views.create" => Some("InviteViewRequest"),
+            "auth.register" => Some("RegisterRequest"),
+            "auth.login" => Some("LoginRequest"),
+            "auth.token-login" => Some("TokenLoginRequest"),
+            "auth.password-reset" => Some("PasswordResetRequest"),
+            "auth.step-up" => Some("StepUpRequest"),
+            "auth.quick-login-url" => Some("QuickLoginUrlRequest"),
+            "auth.email-codes" => Some("EmailCodeRequest"),
+            "user.profile.update" => Some("UserProfilePatch"),
+            "user.password.update" => Some("PasswordUpdateRequest"),
+            "user.commission-transfers.create" => Some("CommissionTransferRequest"),
+            "user.gift-card-redemptions.create" => Some("GiftCardRedemptionRequest"),
+            "user.orders.create" => Some("CreateOrderRequest"),
+            "user.orders.checkout" => Some("CheckoutRequest"),
+            "user.orders.stripe-intent" => Some("StripeIntentRequest"),
+            "user.coupons.check" => Some("CouponCheckRequest"),
+            "user.tickets.create" => Some("UserTicketCreateRequest"),
+            "user.tickets.replies.create" => Some("UserTicketReplyRequest"),
+            "user.withdrawal-tickets.create" => Some("WithdrawalTicketCreateRequest"),
+            "admin.account.mfa.totp.confirm"
+            | "admin.account.mfa.totp.disable"
+            | "staff.account.mfa.totp.confirm"
+            | "staff.account.mfa.totp.disable" => Some("MfaCodeRequest"),
+            "admin.config.update" => Some("AdminConfigPatchRequest"),
+            "admin.telegram-webhook.set" => Some("TelegramWebhookRequest"),
             "admin.plans.create" => Some("PlanCreate"),
             "admin.plans.update" => Some("PlanPatch"),
-            "admin.plans.sort" => Some("SortIdsRequest"),
-            _ => None,
-        };
-        let no_body_post = matches!(
-            self.id,
+            "admin.plans.sort" | "admin.payments.sort" => Some("SortIdsRequest"),
+            "admin.payments.create" => Some("AdminPaymentCreateRequest"),
+            "admin.payments.update" => Some("AdminPaymentPatchRequest"),
+            "admin.notices.create" | "staff.notices.create" => Some("NoticeCreateRequest"),
+            "admin.notices.update" | "staff.notices.update" => Some("NoticePatchRequest"),
+            "admin.knowledge.create" => Some("KnowledgeCreateRequest"),
+            "admin.knowledge.update" => Some("KnowledgePatchRequest"),
+            "admin.knowledge.sort" => Some("KnowledgeSortRequest"),
+            "admin.coupons.create" => Some("CouponGenerateRequest"),
+            "admin.coupons.update" => Some("CouponPatchRequest"),
+            "admin.gift-cards.create" => Some("GiftcardGenerateRequest"),
+            "admin.gift-cards.update" => Some("GiftcardPatchRequest"),
+            "admin.payment-reconciliations.resolve" => Some("ReconciliationResolveRequest"),
+            "admin.orders.update" => Some("AdminOrderPatchRequest"),
+            "admin.orders.create" => Some("AdminOrderCreateRequest"),
+            "admin.tickets.replies.create" | "staff.tickets.replies.create" => {
+                Some("TicketReplyRequest")
+            }
+            "admin.users.update" => Some("AdminUserPatchRequest"),
+            "staff.users.update" => Some("StaffUserPatchRequest"),
+            "admin.users.set-inviter" => Some("AdminSetInviterRequest"),
+            "admin.users.create" => Some("AdminUserGenerateRequest"),
+            "admin.users.export"
+            | "admin.users.ban"
+            | "admin.users.bulk-delete"
+            | "staff.users.ban" => Some("AdminUserFilterRequest"),
+            "admin.users.mail" | "staff.users.mail" => Some("AdminUserMailRequest"),
+            "admin.nodes.sort" => Some("NodeSortRequest"),
+            "admin.server-groups.create" | "admin.server-groups.update" => {
+                Some("ServerGroupWriteRequest")
+            }
+            "admin.server-routes.create" => Some("ServerRouteCreateRequest"),
+            "admin.server-routes.update" => Some("ServerRoutePatchRequest"),
+            "admin.servers.create" | "admin.servers.update" => Some("ServerWriteRequest"),
             "user.subscription.new-period"
-                | "user.subscription.reset-token"
-                | "user.orders.cancel"
-                | "user.invite-codes.create"
-                | "user.tickets.close"
-                | "admin.account.mfa.totp.setup"
-                | "admin.test-mail.send"
-                | "admin.orders.mark-paid"
-                | "admin.orders.cancel"
-                | "admin.tickets.close"
-                | "admin.users.reset-secret"
-                | "admin.servers.copy"
-                | "staff.account.mfa.totp.setup"
-                | "staff.tickets.close"
-        );
-        match self.method {
-            HttpMethod::Put | HttpMethod::Patch => Some(schema),
-            HttpMethod::Post if !no_body_post => Some(schema),
-            HttpMethod::Get | HttpMethod::Delete | HttpMethod::Post => None,
+            | "user.subscription.reset-token"
+            | "user.orders.cancel"
+            | "user.invite-codes.create"
+            | "user.tickets.close"
+            | "admin.account.mfa.totp.setup"
+            | "admin.test-mail.send"
+            | "admin.orders.mark-paid"
+            | "admin.orders.cancel"
+            | "admin.tickets.close"
+            | "admin.users.reset-secret"
+            | "admin.servers.copy"
+            | "staff.account.mfa.totp.setup"
+            | "staff.tickets.close" => None,
+            _ if matches!(self.method, HttpMethod::Get | HttpMethod::Delete) => None,
+            _ => panic!(
+                "unclassified JSON request body for {} {}",
+                self.method.as_str(),
+                self.id
+            ),
+        }
+    }
+
+    /// Named schema for one successful JSON representation. This is called
+    /// only for an `application/json` success arm; non-JSON/empty successes
+    /// never acquire a phantom body.
+    pub fn json_success_schema(self, status: u16) -> &'static str {
+        match (self.id, status) {
+            ("public.config", 200) => "PublicConfig",
+            ("auth.register", 201) | ("auth.login" | "auth.token-login", 200) => "AuthData",
+            ("auth.step-up", 200) => "StepUpGrant",
+            ("auth.quick-login-url", 200) => "QuickLoginUrl",
+            ("auth.session.get", 200) => "SessionState",
+            ("user.profile.get", 200) => "UserProfile",
+            ("user.stats.get", 200) => "UserStats",
+            ("user.sessions.list", 200) => "UserSession[]",
+            ("user.gift-card-redemptions.create", 200) => "GiftCardRedemption",
+            ("user.telegram-bot.get", 200) => "TelegramBot",
+            ("user.config.get", 200) => "UserConfig",
+            ("user.subscription.get", 200) => "Subscription",
+            ("user.subscription.reset-token", 200) => "ResetSubscriptionToken",
+            ("user.servers.list", 200) => "UserServerView[]",
+            ("user.traffic-logs.list", 200) => "TrafficLogView[]",
+            ("user.plans.get", 200) => "UserPlan",
+            ("user.plans.list", 200) => "UserPlan[]",
+            ("user.orders.create", 201) => "CreatedTradeNo",
+            ("user.orders.list", 200) => "UserOrder[]",
+            ("user.orders.get", 200) => "UserOrder",
+            ("user.orders.status", 200) => "OrderStatus",
+            ("user.orders.checkout", 200) => "CheckoutOutcome",
+            ("user.orders.stripe-intent", 200) => "StripePaymentIntent",
+            ("user.payment-methods.list", 200) => "PaymentMethod[]",
+            ("user.coupons.check", 200) => "Coupon",
+            ("user.invite.get", 200) => "InviteView",
+            ("user.commissions.list", 200) => "UserCommissionPage",
+            ("user.tickets.get", 200) => "UserTicketDetailView",
+            ("user.tickets.list", 200) => "UserTicketView[]",
+            ("user.tickets.create" | "user.withdrawal-tickets.create", 201) => "CreatedInt64Id",
+            ("user.knowledge.get", 200) => "KnowledgeDetailView",
+            ("user.knowledge.list", 200) => "KnowledgeGroups",
+            ("user.knowledge-categories.list", 200) => "KnowledgeCategoryView[]",
+            ("user.notices.list", 200) => "UserNoticePage",
+            ("admin.account.mfa.get" | "staff.account.mfa.get", 200) => "MfaStatusView",
+            ("admin.account.mfa.totp.setup" | "staff.account.mfa.totp.setup", 200) => {
+                "TotpProvisioningView"
+            }
+            ("admin.config.get", 200) => "AdminConfigView",
+            ("admin.config.update", 202) => "ConfigActivationPending",
+            ("admin.email-templates.list", 200) => "EmailTemplateName[]",
+            ("admin.payment-providers.list", 200) => "PaymentProviderCode[]",
+            ("admin.test-mail.send", 200) => "TestMailResult",
+            ("admin.system.status", 200) => "SystemStatusView",
+            ("admin.system.queue-stats", 200) => "QueueStatsView",
+            ("admin.system.queue-workload", 200) => "QueueWorkloadItem[]",
+            ("admin.system.queue-masters", 200) => "QueueMasterView[]",
+            ("admin.system.logs", 200) => "SystemLogPage",
+            ("admin.system.audit-logs.list", 200) => "AuditLogPage",
+            ("admin.plans.list" | "staff.plans.list", 200) => "AdminPlanItem[]",
+            ("admin.plans.create", 201) => "CreatedId",
+            ("admin.payments.list", 200) => "AdminPaymentItem[]",
+            ("admin.payment-providers.form", 200) => "PaymentProviderFormResponse",
+            ("admin.payments.create", 201) => "CreatedInt32Id",
+            ("admin.notices.list" | "staff.notices.list", 200) => "NoticeView[]",
+            ("admin.notices.create" | "staff.notices.create", 201) => "CreatedInt32Id",
+            ("admin.knowledge.list", 200) => "KnowledgeSummaryView[]",
+            ("admin.knowledge.get", 200) => "KnowledgeDetailView",
+            ("admin.knowledge-categories.list", 200) => "AdminKnowledgeCategoryName[]",
+            ("admin.knowledge.create", 201) => "CreatedInt32Id",
+            ("admin.coupons.list", 200) => "AdminCouponPage",
+            ("admin.coupons.create", 201) => "CreatedInt32Id",
+            ("admin.gift-cards.list", 200) => "AdminGiftcardPage",
+            ("admin.gift-cards.create", 201) => "CreatedInt32Id",
+            ("admin.orders.list", 200) => "AdminOrderPage",
+            ("admin.orders.get", 200) => "AdminOrderDetail",
+            ("admin.orders.create", 201) => "CreatedTradeNo",
+            ("admin.payment-reconciliations.list", 200) => "AdminPaymentReconciliationPage",
+            ("admin.tickets.list" | "staff.tickets.list", 200) => "AdminTicketPage",
+            ("admin.tickets.get" | "staff.tickets.get", 200) => "AdminTicketDetail",
+            ("admin.users.list", 200) => "AdminUserPage",
+            ("admin.users.get", 200) => "AdminUserDetail",
+            ("staff.users.get", 200) => "StaffUserDetail",
+            ("admin.users.create", 201) => "CreatedInt64Id",
+            ("admin.nodes.list", 200) => "ServerNodeView[]",
+            ("admin.server-groups.list", 200) => "ServerGroupView[]",
+            ("admin.server-groups.create", 201) => "CreatedInt32Id",
+            ("admin.server-routes.list", 200) => "ServerRouteView[]",
+            ("admin.server-routes.create", 201) => "CreatedInt32Id",
+            ("admin.servers.create" | "admin.servers.copy", 201) => "CreatedInt32Id",
+            ("admin.stats.summary", 200) => "AdminStatSummaryView",
+            ("admin.stats.server-rank", 200) => "ServerRankView[]",
+            ("admin.stats.user-rank", 200) => "UserRankView[]",
+            ("admin.stats.orders" | "admin.stats.records", 200) => "StatSeriesPointView[]",
+            ("admin.stats.user-traffic", 200) => "AdminUserTrafficPage",
+            _ => panic!(
+                "unclassified JSON success schema for {} status {}",
+                self.id, status
+            ),
         }
     }
 }
@@ -2354,17 +2679,31 @@ pub fn operation(id: &str) -> Option<&'static InternalOperation> {
 }
 
 /// Add every registry operation to the generated OpenAPI JSON document.
-/// Method and path are created only here; typed DTO metadata (currently the
-/// plan slice) is selected from the same operation id without a second route
-/// declaration.
+/// Method, path, transport metadata, typed request bodies, typed success
+/// responses, and RFC 9457 failures all come from the same operation entry;
+/// there is no second documentation route declaration.
 pub fn augment_openapi_document(document: &mut Value) {
     crate::problem::augment_problem_schema(document);
+    let catalog = serde_json::to_value(OperationSchemaCatalog::openapi())
+        .expect("operation schema catalog must serialize");
+    let catalog_schemas = catalog["components"]["schemas"]
+        .as_object()
+        .expect("operation schema catalog components.schemas")
+        .clone();
     let component_schemas = document["components"]["schemas"]
         .as_object_mut()
         .expect("OpenAPI components.schemas");
-    component_schemas
-        .entry("JsonValue".to_owned())
-        .or_insert_with(|| json!({}));
+    for (name, schema) in catalog_schemas {
+        if let Some(existing) = component_schemas.get(&name) {
+            assert_eq!(
+                existing, &schema,
+                "conflicting OpenAPI component schema {name}"
+            );
+        } else {
+            component_schemas.insert(name, schema);
+        }
+    }
+    normalize_closed_component_schemas(component_schemas);
     let component_names = component_schemas
         .keys()
         .cloned()
@@ -2447,6 +2786,131 @@ pub fn augment_openapi_document(document: &mut Value) {
     }
 }
 
+/// Serde's `deny_unknown_fields` is not projected consistently by utoipa for
+/// flattened/allOf fragments and inline tagged-enum variants. Close every
+/// ordinary object recursively at the generated-document boundary. Deliberate
+/// map/extension islands already carry `additionalProperties` and are left
+/// intact; RFC 9457's open `ProblemDetails` is handled explicitly by its own
+/// augmenter.
+fn normalize_closed_component_schemas(schemas: &mut Map<String, Value>) {
+    let catalog = schemas.clone();
+    for (name, schema) in schemas {
+        if name != "ProblemDetails" {
+            normalize_structural_schema(schema, &catalog, 0);
+        }
+    }
+}
+
+fn normalize_structural_schema(schema: &mut Value, catalog: &Map<String, Value>, depth: usize) {
+    assert!(
+        depth < 32,
+        "OpenAPI structural schema recursion is too deep"
+    );
+    if let Some(flattened) = flatten_structural_all_of(schema, catalog, depth) {
+        *schema = flattened;
+    }
+
+    match schema {
+        Value::Array(items) => {
+            for item in items {
+                normalize_structural_schema(item, catalog, depth + 1);
+            }
+        }
+        Value::Object(object) => {
+            for value in object.values_mut() {
+                normalize_structural_schema(value, catalog, depth + 1);
+            }
+            let object_type = object.get("type").is_some_and(|kind| {
+                kind == "object"
+                    || kind
+                        .as_array()
+                        .is_some_and(|kinds| kinds.iter().any(|kind| kind == "object"))
+            });
+            if (object_type || object.contains_key("properties"))
+                && !object.contains_key("additionalProperties")
+            {
+                object.insert("additionalProperties".to_owned(), Value::Bool(false));
+            }
+        }
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+    }
+}
+
+fn flatten_structural_all_of(
+    schema: &Value,
+    catalog: &Map<String, Value>,
+    depth: usize,
+) -> Option<Value> {
+    let original = schema.as_object()?;
+    let members = original.get("allOf")?.as_array()?;
+    let mut output = original.clone();
+    output.remove("allOf");
+    let mut properties = output
+        .remove("properties")
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+    let mut required = output
+        .remove("required")
+        .and_then(|value| value.as_array().cloned())
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|value| value.as_str().map(str::to_owned))
+        .collect::<std::collections::BTreeSet<_>>();
+
+    for member in members {
+        let mut member = resolve_schema_reference(member, catalog)?;
+        normalize_structural_schema(&mut member, catalog, depth + 1);
+        let member = member.as_object()?;
+        let is_object = member.get("type").is_some_and(|kind| kind == "object")
+            || member.contains_key("properties");
+        if !is_object
+            || member.contains_key("oneOf")
+            || member.contains_key("anyOf")
+            || member.contains_key("not")
+        {
+            return None;
+        }
+        if let Some(member_properties) = member.get("properties").and_then(Value::as_object) {
+            for (name, property) in member_properties {
+                if let Some(existing) = properties.insert(name.clone(), property.clone()) {
+                    assert_eq!(
+                        &existing, property,
+                        "conflicting property {name} while flattening OpenAPI allOf"
+                    );
+                }
+            }
+        }
+        if let Some(member_required) = member.get("required").and_then(Value::as_array) {
+            required.extend(member_required.iter().map(|value| {
+                value
+                    .as_str()
+                    .expect("required item must be a string")
+                    .to_owned()
+            }));
+        }
+    }
+
+    output.insert("type".to_owned(), Value::String("object".to_owned()));
+    output.insert("properties".to_owned(), Value::Object(properties));
+    if !required.is_empty() {
+        output.insert(
+            "required".to_owned(),
+            Value::Array(required.into_iter().map(Value::String).collect()),
+        );
+    }
+    output.insert("additionalProperties".to_owned(), Value::Bool(false));
+    Some(Value::Object(output))
+}
+
+fn resolve_schema_reference(schema: &Value, catalog: &Map<String, Value>) -> Option<Value> {
+    let object = schema.as_object()?;
+    let Some(reference) = object.get("$ref").and_then(Value::as_str) else {
+        return Some(schema.clone());
+    };
+    let name = reference.strip_prefix("#/components/schemas/")?;
+    catalog.get(name).cloned()
+}
+
 fn add_registry_extensions(target: &mut Map<String, Value>, operation: &InternalOperation) {
     target.insert(
         "x-v2board-operation-id".to_owned(),
@@ -2478,10 +2942,18 @@ fn generated_responses(
                 .representations
                 .iter()
                 .map(|representation| {
+                    let schema_name = match representation.content_type {
+                        "application/json" => operation.json_success_schema(response.status),
+                        "text/csv; charset=utf-8" => "string",
+                        other => panic!(
+                            "unclassified success representation {other} on {}",
+                            operation.id
+                        ),
+                    };
                     (
                         representation.content_type.to_owned(),
                         json!({
-                            "schema": schema_value(representation.schema, component_names)
+                            "schema": schema_value(schema_name, component_names)
                         }),
                     )
                 })
@@ -2513,25 +2985,24 @@ fn generated_responses(
     Value::Object(responses)
 }
 
-fn schema_value(name: Option<&str>, component_names: &std::collections::BTreeSet<String>) -> Value {
+fn schema_value(name: &str, component_names: &std::collections::BTreeSet<String>) -> Value {
     match name {
-        Some("string") => json!({ "type": "string" }),
-        Some(name) if name.ends_with("[]") => {
+        "string" => json!({ "type": "string" }),
+        name if name.ends_with("[]") => {
             let item = name.trim_end_matches("[]");
-            if component_names.contains(item) {
-                json!({
-                    "type": "array",
-                    "items": { "$ref": format!("#/components/schemas/{item}") }
-                })
-            } else {
-                json!({ "type": "array", "items": {} })
-            }
+            assert!(
+                component_names.contains(item),
+                "unregistered OpenAPI array item schema {item}"
+            );
+            json!({
+                "type": "array",
+                "items": { "$ref": format!("#/components/schemas/{item}") }
+            })
         }
-        Some(name) if component_names.contains(name) => {
+        name if component_names.contains(name) => {
             json!({ "$ref": format!("#/components/schemas/{name}") })
         }
-        Some(name) => panic!("unregistered OpenAPI component schema {name}"),
-        None => json!({ "$ref": "#/components/schemas/JsonValue" }),
+        name => panic!("unregistered OpenAPI component schema {name}"),
     }
 }
 
@@ -2689,7 +3160,6 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
 
     use super::*;
-    use utoipa::OpenApi as _;
 
     #[test]
     fn registry_is_exact_unique_and_fully_documented() {
@@ -2826,6 +3296,193 @@ mod tests {
                     .all(|status| status < 400)
             );
         }
+    }
+
+    #[test]
+    fn generated_structural_objects_are_flattened_and_closed() {
+        let document = augmented_document();
+        let schemas = document["components"]["schemas"]
+            .as_object()
+            .expect("component schemas");
+
+        for name in [
+            "AdminOrderDetail",
+            "AdminOrderListItem",
+            "AdminPaymentReconciliationListItem",
+            "AdminTicketDetail",
+            "AdminUserDetail",
+            "AdminUserListItem",
+            "StaffUserDetail",
+        ] {
+            let schema = &schemas[name];
+            assert!(schema.get("allOf").is_none(), "{name} must be flattened");
+            assert_eq!(schema["type"], "object", "{name}");
+            assert_eq!(schema["additionalProperties"], false, "{name}");
+        }
+        assert!(
+            schemas["AdminOrderDetail"]["properties"]
+                .get("trade_no")
+                .is_some()
+        );
+        assert!(
+            schemas["AdminOrderDetail"]["properties"]
+                .get("commission_log")
+                .is_some()
+        );
+
+        for name in ["CreateOrderRequest", "ServerNodeView"] {
+            for variant in schemas[name]["oneOf"]
+                .as_array()
+                .unwrap_or_else(|| panic!("{name} oneOf"))
+            {
+                assert!(variant.get("allOf").is_none(), "{name} variant");
+                assert_eq!(variant["type"], "object", "{name} variant");
+                assert_eq!(variant["additionalProperties"], false, "{name} variant");
+            }
+        }
+
+        fn assert_object_policy(schema: &Value, path: &str) {
+            match schema {
+                Value::Array(items) => {
+                    for (index, item) in items.iter().enumerate() {
+                        assert_object_policy(item, &format!("{path}/{index}"));
+                    }
+                }
+                Value::Object(object) => {
+                    let structural_object = object.get("type").is_some_and(|kind| {
+                        kind == "object"
+                            || kind
+                                .as_array()
+                                .is_some_and(|kinds| kinds.iter().any(|kind| kind == "object"))
+                    }) || object.contains_key("properties");
+                    if structural_object {
+                        assert!(
+                            object.contains_key("additionalProperties"),
+                            "object schema lacks explicit unknown-field policy at {path}: {schema}"
+                        );
+                    }
+                    for (name, child) in object {
+                        assert_object_policy(child, &format!("{path}/{name}"));
+                    }
+                }
+                Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+            }
+        }
+
+        for (name, schema) in schemas {
+            if name != "ProblemDetails" {
+                assert_object_policy(schema, name);
+            }
+        }
+        assert!(
+            schemas["AdminPaymentPatchRequest"]["properties"]
+                .get("config")
+                .is_none(),
+            "provider configuration is immutable and must not leak into PATCH"
+        );
+    }
+
+    fn assert_named_json_root(schema: &Value, context: &str) {
+        if let Some(reference) = schema.get("$ref").and_then(Value::as_str) {
+            assert_ne!(
+                reference, "#/components/schemas/JsonValue",
+                "{context} uses the forbidden JsonValue root"
+            );
+            assert!(
+                reference.starts_with("#/components/schemas/"),
+                "{context} has a non-component root ref {reference}"
+            );
+            return;
+        }
+        if schema.get("type") == Some(&Value::String("array".to_owned())) {
+            let item_reference = schema["items"]["$ref"]
+                .as_str()
+                .unwrap_or_else(|| panic!("{context} array items must use a named schema"));
+            assert_ne!(
+                item_reference, "#/components/schemas/JsonValue",
+                "{context} uses the forbidden JsonValue item root"
+            );
+            assert!(item_reference.starts_with("#/components/schemas/"));
+            return;
+        }
+        panic!("{context} JSON root is not a named DTO: {schema}");
+    }
+
+    #[test]
+    fn every_json_request_and_success_has_a_named_non_json_value_root() {
+        let document = augmented_document();
+        let mut json_request_count = 0_usize;
+        let mut json_success_count = 0_usize;
+        for operation in INTERNAL_OPERATIONS {
+            let wire = wire_operation(&document, operation.id);
+            match operation.request_body_schema() {
+                Some(_) => {
+                    json_request_count += 1;
+                    assert_named_json_root(
+                        &wire["requestBody"]["content"]["application/json"]["schema"],
+                        &format!("{} request", operation.id),
+                    );
+                }
+                None => assert!(
+                    wire.get("requestBody").is_none(),
+                    "{} must not declare a request body",
+                    operation.id
+                ),
+            }
+            for response in operation.successes {
+                let response_wire = &wire["responses"][response.status.to_string()];
+                for representation in response.representations {
+                    let schema = &response_wire["content"][representation.content_type]["schema"];
+                    if representation.content_type == "application/json" {
+                        json_success_count += 1;
+                        assert_named_json_root(
+                            schema,
+                            &format!("{} {} response", operation.id, response.status),
+                        );
+                    } else if representation.content_type == "text/csv; charset=utf-8" {
+                        assert_eq!(schema, &json!({ "type": "string" }));
+                    } else {
+                        panic!(
+                            "{} has unclassified success content type {}",
+                            operation.id, representation.content_type
+                        );
+                    }
+                }
+            }
+        }
+        assert_eq!(json_request_count, 64);
+        assert_eq!(json_success_count, 95);
+    }
+
+    fn assert_local_refs_resolve(document: &Value, value: &Value, location: &str) {
+        match value {
+            Value::Object(object) => {
+                if let Some(reference) = object.get("$ref").and_then(Value::as_str) {
+                    let pointer = reference
+                        .strip_prefix('#')
+                        .unwrap_or_else(|| panic!("external ref at {location}: {reference}"));
+                    assert!(
+                        document.pointer(pointer).is_some(),
+                        "unresolved ref at {location}: {reference}"
+                    );
+                }
+                for (key, child) in object {
+                    assert_local_refs_resolve(document, child, &format!("{location}/{key}"));
+                }
+            }
+            Value::Array(items) => {
+                for (index, child) in items.iter().enumerate() {
+                    assert_local_refs_resolve(document, child, &format!("{location}/{index}"));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn every_generated_openapi_reference_resolves() {
+        let document = augmented_document();
+        assert_local_refs_resolve(&document, &document, "#");
     }
 
     #[test]

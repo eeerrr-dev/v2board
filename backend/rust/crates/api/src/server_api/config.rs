@@ -6,9 +6,8 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde_json::json;
-use sqlx::{Postgres, QueryBuilder};
 use v2board_compat::ApiError;
-use v2board_db::DbPool;
+use v2board_domain_model::ServerKind;
 
 use crate::{
     codec::{prefix_bytes, standard_base64_encode},
@@ -16,9 +15,8 @@ use crate::{
 };
 
 use super::{
-    ServerNodeRow, ServerRouteRow,
-    repository::{load_server_node, load_uniproxy_node},
-    request::required_i32_param,
+    ServerNodeRow,
+    request::{load_server_node, load_uniproxy_node, required_i32_param},
     response::raw_value_response,
 };
 
@@ -28,7 +26,7 @@ pub(super) async fn server_uniproxy_config(
     params: &HashMap<String, String>,
 ) -> Result<Response, ApiError> {
     let (node_type, node) = load_uniproxy_node(state, params).await?;
-    let value = server_v1_config_value(state, &node_type, &node).await?;
+    let value = server_v1_config_value(state, node_type, &node).await?;
     raw_value_response(value, headers, false)
 }
 
@@ -41,7 +39,7 @@ pub(super) async fn server_trojan_tidalab_config(
         .get("local_port")
         .and_then(|value| value.parse::<i32>().ok())
         .ok_or_else(|| ApiError::legacy("参数错误"))?;
-    let node = load_server_node(&state.db, "trojan", node_id)
+    let node = load_server_node(state, ServerKind::Trojan, node_id)
         .await?
         .ok_or_else(|| ApiError::legacy("节点不存在"))?;
     Ok(Json(json!({
@@ -74,26 +72,17 @@ pub(super) async fn server_deepbwork_config(
         .get("local_port")
         .and_then(|value| value.parse::<i32>().ok())
         .ok_or_else(|| ApiError::legacy("参数错误"))?;
-    let node = load_server_node(&state.db, "vmess", node_id)
+    let node = load_server_node(state, ServerKind::Vmess, node_id)
         .await?
         .ok_or_else(|| ApiError::legacy("节点不存在"))?;
-    // The shared node row already carries tls_settings/network_settings; dnsSettings and
-    // ruleSettings live only on server_vmess, so fetch just those two extra columns.
-    let (dns_settings_raw, rule_settings_raw) =
-        sqlx::query_as::<_, (Option<String>, Option<String>)>(
-            "SELECT \"dnsSettings\"::text, \"ruleSettings\"::text \
-             FROM server_vmess WHERE id = $1 LIMIT 1",
-        )
-        .bind(node_id)
-        .fetch_optional(&state.db)
-        .await?
-        .unwrap_or((None, None));
+    let dns_settings_raw = node.dns_settings_json.as_deref();
+    let rule_settings_raw = node.rule_settings_json.as_deref();
 
     let network = node.network.as_deref().unwrap_or("tcp");
     let mut stream_settings = serde_json::Map::new();
     stream_settings.insert("network".to_string(), json!(network));
     // setNetwork (DeepbworkController :144-171).
-    if let Some(settings) = json_text(node.network_settings.as_deref())
+    if let Some(settings) = json_text(node.network_settings_json.as_deref())
         .as_object()
         .cloned()
     {
@@ -112,7 +101,7 @@ pub(super) async fn server_deepbwork_config(
     // tlsSettings (only when present) alongside the fixed certificate paths.
     if node.tls.unwrap_or_default() != 0 {
         stream_settings.insert("security".to_string(), json!("tls"));
-        let tls_in = json_text(node.tls_settings.as_deref());
+        let tls_in = json_text(node.tls_settings_json.as_deref());
         let mut tls_out = serde_json::Map::new();
         if let Some(server_name) = tls_in.get("serverName") {
             tls_out.insert("serverName".to_string(), json!(php_string(server_name)));
@@ -140,7 +129,7 @@ pub(super) async fn server_deepbwork_config(
     // (`array_filter(explode(PHP_EOL, config('v2board.server_v2ray_domain')))`), then append
     // the node's own filtered ruleSettings domain/protocol entries via array_merge.
     let config = state.config_snapshot();
-    let rule_settings = json_text(rule_settings_raw.as_deref());
+    let rule_settings = json_text(rule_settings_raw);
     let mut domain_rules: Vec<serde_json::Value> =
         explode_php_lines(config.server_v2ray_domain.as_deref());
     let mut protocol_rules: Vec<serde_json::Value> =
@@ -170,7 +159,7 @@ pub(super) async fn server_deepbwork_config(
 
     // setDns (DeepbworkController :131-142): merge the node dnsSettings, append the fixed
     // resolvers, and switch the freedom outbound to UseIP.
-    let dns_in = json_text(dns_settings_raw.as_deref());
+    let dns_in = json_text(dns_settings_raw);
     let (dns_value, use_ip) = if dns_in.is_object() || dns_in.is_array() {
         let mut dns = dns_in;
         if let Some(servers) = dns
@@ -290,19 +279,19 @@ pub(super) fn php_truthy(value: &serde_json::Value) -> bool {
 }
 async fn server_v1_config_value(
     state: &AppState,
-    node_type: &str,
+    node_type: ServerKind,
     node: &ServerNodeRow,
 ) -> Result<serde_json::Value, ApiError> {
     let config = state.config_snapshot();
     let mut response = serde_json::Map::new();
-    match node_type {
+    match node_type.as_str() {
         "shadowsocks" => {
             response.insert("server_port".to_string(), json!(node.server_port));
             response.insert("cipher".to_string(), json!(node.cipher));
             response.insert("obfs".to_string(), json!(node.obfs));
             response.insert(
                 "obfs_settings".to_string(),
-                json_text(node.obfs_settings.as_deref()),
+                json_text(node.obfs_settings_json.as_deref()),
             );
             if let Some(cipher) = node.cipher.as_deref() {
                 if cipher == "2022-blake3-aes-128-gcm" {
@@ -323,7 +312,7 @@ async fn server_v1_config_value(
             response.insert("network".to_string(), json!(node.network));
             response.insert(
                 "networkSettings".to_string(),
-                json_text(node.network_settings.as_deref()),
+                json_text(node.network_settings_json.as_deref()),
             );
             response.insert("tls".to_string(), json!(node.tls.unwrap_or_default()));
         }
@@ -332,18 +321,18 @@ async fn server_v1_config_value(
             response.insert("network".to_string(), json!(node.network));
             response.insert(
                 "networkSettings".to_string(),
-                json_text(node.network_settings.as_deref()),
+                json_text(node.network_settings_json.as_deref()),
             );
             response.insert("tls".to_string(), json!(node.tls.unwrap_or_default()));
             response.insert("flow".to_string(), json!(node.flow));
             response.insert(
                 "tls_settings".to_string(),
-                json_text(node.tls_settings.as_deref()),
+                json_text(node.tls_settings_json.as_deref()),
             );
             response.insert("encryption".to_string(), json!(node.encryption));
             response.insert(
                 "encryption_settings".to_string(),
-                json_text(node.encryption_settings.as_deref()),
+                json_text(node.encryption_settings_json.as_deref()),
             );
         }
         "trojan" => {
@@ -351,7 +340,7 @@ async fn server_v1_config_value(
             response.insert("network".to_string(), json!(node.network));
             response.insert(
                 "networkSettings".to_string(),
-                json_text(node.network_settings.as_deref()),
+                json_text(node.network_settings_json.as_deref()),
             );
             response.insert("server_port".to_string(), json!(node.server_port));
             response.insert("server_name".to_string(), json!(node.server_name));
@@ -397,7 +386,7 @@ async fn server_v1_config_value(
             response.insert("server_name".to_string(), json!(node.server_name));
             response.insert(
                 "padding_scheme".to_string(),
-                json_text(node.padding_scheme.as_deref()),
+                json_text(node.padding_scheme_json.as_deref()),
             );
         }
         _ => {}
@@ -409,7 +398,7 @@ async fn server_v1_config_value(
             "pull_interval": config.server_pull_interval,
         }),
     );
-    let routes = server_routes(&state.db, parse_i32_json_list(node.route_id.as_ref())).await?;
+    let routes = server_routes(state, &node.route_ids).await?;
     if !routes.is_empty() {
         response.insert("routes".to_string(), json!(routes));
     }
@@ -427,18 +416,18 @@ pub(super) async fn server_v2_config_value(
     response.insert("network".to_string(), json!(node.network));
     response.insert(
         "network_settings".to_string(),
-        json_text(node.network_settings.as_deref()),
+        json_text(node.network_settings_json.as_deref()),
     );
     response.insert("protocol".to_string(), json!(node.protocol));
     response.insert("tls".to_string(), json!(node.tls.unwrap_or_default()));
     response.insert(
         "tls_settings".to_string(),
-        json_text(node.tls_settings.as_deref()),
+        json_text(node.tls_settings_json.as_deref()),
     );
     response.insert("encryption".to_string(), json!(node.encryption));
     response.insert(
         "encryption_settings".to_string(),
-        json_text(node.encryption_settings.as_deref()),
+        json_text(node.encryption_settings_json.as_deref()),
     );
     response.insert("flow".to_string(), json!(node.flow));
     response.insert("cipher".to_string(), json!(node.cipher));
@@ -462,7 +451,7 @@ pub(super) async fn server_v2_config_value(
     response.insert("obfs_password".to_string(), json!(node.obfs_password));
     response.insert(
         "padding_scheme".to_string(),
-        json_text(node.padding_scheme.as_deref()),
+        json_text(node.padding_scheme_json.as_deref()),
     );
     if let Some(cipher) = node.cipher.as_deref() {
         if cipher == "2022-blake3-aes-128-gcm" {
@@ -490,7 +479,7 @@ pub(super) async fn server_v2_config_value(
             "device_online_min_traffic": config.server_device_online_min_traffic,
         }),
     );
-    let routes = server_routes(&state.db, parse_i32_json_list(node.route_id.as_ref())).await?;
+    let routes = server_routes(state, &node.route_ids).await?;
     if !routes.is_empty() {
         response.insert("routes".to_string(), json!(routes));
     }
@@ -498,49 +487,25 @@ pub(super) async fn server_v2_config_value(
 }
 
 async fn server_routes(
-    db: &DbPool,
-    route_ids: Vec<i32>,
+    state: &AppState,
+    route_ids: &[i32],
 ) -> Result<Vec<serde_json::Value>, ApiError> {
     if route_ids.is_empty() {
         return Ok(Vec::new());
     }
-    let mut positions = HashMap::with_capacity(route_ids.len());
-    let mut unique_ids = Vec::with_capacity(route_ids.len());
-    for route_id in route_ids {
-        if positions.contains_key(&route_id) {
-            continue;
-        }
-        positions.insert(route_id, unique_ids.len());
-        unique_ids.push(route_id);
-    }
-    let mut rows = Vec::with_capacity(unique_ids.len());
-    for chunk in unique_ids.chunks(500) {
-        let mut builder = QueryBuilder::<Postgres>::new(
-            "SELECT id, \"match\"::text AS match_text, action, \
-             action_value::text AS action_value \
-             FROM server_route WHERE id IN (",
-        );
-        let mut separated = builder.separated(", ");
-        for route_id in chunk {
-            separated.push_bind(*route_id);
-        }
-        separated.push_unseparated(")");
-        rows.extend(
-            builder
-                .build_query_as::<ServerRouteRow>()
-                .fetch_all(db)
-                .await?,
-        );
-    }
-    rows.sort_by_key(|row| positions.get(&row.id).copied().unwrap_or(usize::MAX));
+    let rows = state
+        .server_runtime_service()
+        .routes(route_ids)
+        .await
+        .map_err(|error| ApiError::internal(error.to_string()))?;
     Ok(rows
         .into_iter()
         .map(|row| {
             json!({
                 "id": row.id,
-                "match": json_text(Some(&row.match_text)),
+                "match": json_text(Some(&row.match_json)),
                 "action": row.action,
-                "action_value": row.action_value,
+                "action_value": row.action_value_json,
             })
         })
         .collect())
@@ -559,6 +524,7 @@ fn server_key(created_at: i64, length: usize) -> String {
     standard_base64_encode(prefix_bytes(&seed, length))
 }
 
+#[cfg(test)]
 pub(super) fn parse_i32_json_list(value: Option<&String>) -> Vec<i32> {
     let Some(value) = value
         .map(String::as_str)

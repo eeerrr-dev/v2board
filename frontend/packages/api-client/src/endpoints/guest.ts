@@ -3,13 +3,9 @@
 // historical `guest` name so call sites stay stable while the wire moved off
 // `/guest/comm/config`.
 import type { ApiClient, ApiRequestConfig } from '../client';
-import { guestConfigSchema } from '../contracts';
+import { requestInternal } from '../internal-operation';
 
 export const config = (client: ApiClient, request?: Pick<ApiRequestConfig, 'signal'>) =>
-  client.request({
-    url: '/public/config',
-    method: 'GET',
-    dialect: 'v2',
-    responseSchema: guestConfigSchema,
+  requestInternal(client, 'publicConfig', {
     ...request,
   });

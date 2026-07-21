@@ -98,28 +98,40 @@ sequenceDiagram
 
 ## 后端 crate 结构
 
-`backend/rust/crates/` 下共 13 个 crate:
+`backend/rust/crates/` 下共 22 个 workspace crate。核心只向内依赖，外围 crate
+实现 application 定义的端口；HTTP 与 worker 是两个组合根：
 
 | Crate | 职责 |
 | --- | --- |
 | `api` | Axum HTTP API、前端 HTML/静态资源交付、认证入口、限流、metrics、golden wire 契约测试;产出 `v2board-api` |
-| `api-contract` | 与框架/存储无关的内部 HTTP DTO、158 个唯一 operation 的注册源与 OpenAPI 3.1 投影；同一 method/path 注册同时驱动 Axum，并生成 TypeScript/Zod operation bindings；只有已迁入的 DTO 具备字段级类型与运行时校验 |
+| `api-contract` | 与 application/存储无关的内部 HTTP DTO、158 个唯一 operation 的注册源与 OpenAPI 3.1 投影；64 个 JSON request body 与 95 个 JSON success representation 全部是具名字段级契约，同一 method/path 注册同时驱动 Axum 与 TypeScript/Zod 生成 |
+| `application` | 纯 use case 编排、command/view、业务错误与 outbound ports；普通依赖严格只有 `thiserror` 和 `domain-model`，不含 serde、SQL、Redis、HTTP、SMTP、异步 runtime 或运行时配置 |
+| `domain-model` | 零依赖的业务值对象与策略；包含金额、套餐价格、订单词汇、续费、订阅/流量重置、佣金、内容、优惠券、礼品卡、节点及工单政策 |
 | `problem-code` | 零依赖的 101 个应用级 problem code/status/title 注册源；runtime 使用默认或本地化 detail，OpenAPI 投影完整 tuple |
 | `workers` | 调度器、持久后台任务(流量结算、订单、佣金、提醒邮件、重置、统计)、mail outbox 排空与 analytics relay;产出 `v2board-workers` |
 | `analytics` | 类型化不可变分析事件、PostgreSQL outbox、容量准入(admission)、ClickHouse 投影与批次校验;产出 `v2board-analytics-schema` |
-| `domain` | 业务规则与外部集成:认证/会话/step-up、邮件 outbox 入队、operator config 权威、支付 provider 与支付配置加密、订阅链接、SMTP |
-| `domain-model` | 无 SQL/Redis/HTTP/异步运行时依赖的值对象与业务策略；包含金额、套餐价格、订单词汇、续费决策、订阅/流量重置及佣金策略 |
-| `db` | PostgreSQL-only 运行时数据访问(users、orders、plan、ticket 等)与连接池 |
+| `db` | PostgreSQL-only repository adapters、事务性/CAS 操作与连接池；实现 application 的持久化端口，SQL 不进入 handler/use case |
+| `auth-adapters` | 认证外层适配：密码学、Redis 会话/限流、验证 HTTP、邮件和运行时组合 |
+| `configuration-adapters` | operator config 权威/激活、SMTP/Telegram 管理动作与 bulk-mail 适配 |
+| `http-adapters` | 对不可信上游 HTTP response 做统一大小上限与有界 JSON/bytes 读取 |
+| `mail-adapters` | 邮件模板、SMTP、事务性 durable outbox，以及提醒候选/enqueue 与 relay claim/ack/failure/cleanup 的 PostgreSQL 适配 |
+| `order-adapters` | 订单 use case 的运行时组合、配置策略、时钟和稳定编号/identity 适配 |
+| `payment-adapters` | 支付 provider catalog、加密配置/密钥与支付网关 HTTP 适配 |
+| `redis-adapters` | 共享 Redis admission、运行态验证与边界适配 |
+| `server-adapters` | 节点 credential 与 server runtime 外层适配 |
+| `subscription-adapters` | 按订阅方式解析/生成链接 token 与 Redis minting 适配 |
 | `config` | native `file_only`/`boot_only` JSON 配置的加载、typed 校验与 Redis keyspace 约定 |
 | `compat` | 共享 wire 模型:RFC 9457 problem+json、冻结外部命名空间的 legacy 响应封装、分页、安全响应头 |
 | `contract` | 门禁二进制:route audit、live SQL prepare 清单、golden responses、production invariants、worker reconcile |
 | `provision` | `mysql-import.v1` manifest 解析、固定转换 policy 与 converter、release archive 审计 |
 | `lifecycle` | 一次性 MySQL 导入 CLI(`validate`/`inspect`/`execute`),不进入长期 native release |
 
-依赖边界由 resolved Cargo graph 测试及 `make native-database-audit` 看守:
-`domain-model` 不得依赖 transport/infrastructure，`domain` 不得依赖
-`api-contract`；MySQL driver 只允许出现在 lifecycle/provision 导入图里，
-API/worker/analytics 运行时依赖图不得回流。完整方向见
+依赖边界由 resolved Cargo graph、源码方向门禁及 `make native-database-audit`
+共同看守：`domain-model` 的 normal/build/dev 依赖均为空，`application` 的精确
+普通依赖集合只有 `thiserror` + `domain-model`，且不得导入 transport 或
+infrastructure；`api-contract` 与 application 互不依赖，转换只发生在 API inbound
+adapter。MySQL driver 只允许出现在 lifecycle/provision 导入图里，API/worker/
+analytics 运行时依赖图不得回流。完整方向见
 [`../backend/rust/ARCHITECTURE.md`](../backend/rust/ARCHITECTURE.md)。
 
 ## Worker 与数据流
@@ -152,9 +164,12 @@ flowchart LR
   503 —— 认证、订单、支付不过这道门;relay 始终继续排空,达到 recovery 水位后
   自动恢复。状态同步进 Redis hash `RUST_ANALYTICS_ADMISSION` 并由 `/readyz`
   暴露。
-- **Mail outbox**:请求处理器与后台任务都经 `domain/mail/outbox.rs` 事务性入队;
-  worker(`crates/workers/src/outbox.rs`)以每批 10 封、15 分钟租约、最多 8 次
-  尝试的节奏排空,经 SMTP 发送。
+- **Mail outbox**:请求处理器与后台任务都经
+  `crates/mail-adapters/src/mail/outbox.rs` 事务性入队；纯编排与 retry/ack/retention
+  policy 位于 `crates/application/src/worker_mail.rs`，PostgreSQL
+  claim/ack/failure/cleanup 与 SMTP 位于 `crates/mail-adapters/src/worker.rs`。
+  `crates/workers/src/outbox.rs` 只保留调度、配置快照、取消和 metrics，以每批 10
+  封、15 分钟租约、最多 8 次尝试的节奏驱动 use case。
 - **定时清理**:有界清理只删过期的已发布 analytics 证据(固定保留 7 天,每次
   ≤10,000 行、间隔 ≥5 分钟)、过期邮件记录与幂等状态(默认各保留 90 天);
   pending、quarantined 和持有租约的工作永不被清理。
@@ -184,17 +199,18 @@ TypeScript + Vite + Tailwind v4 + shadcn/Radix;共享代码在
 operation，加 9 个原生安全/审计 operation）由 Rust `api-contract` 注册表生成
 提交到仓库的 OpenAPI、TypeScript 与 Zod。注册表钉住 method/path、path/query 参数、
 公共及 operation-specific headers、请求体存在性、鉴权、精确成功状态/媒体组合及
-RFC 9457 problem model；生成器拒绝 `2XX`/`3XX`
-通配，并保留一个 operation 合法拥有多个明确成功状态或媒体类型的能力。API client
-在 Zod 解析响应体前校验采用单一成功状态的生成 endpoint；多状态 endpoint 使用
-生成的 `successResponses` 判别表。这里的“全量”指 operation inventory 与上述
-operation-level metadata 全量，不等于 158 个 endpoint 的 JSON 请求及成功响应都已
-字段级迁移；多数尚未迁入 `api-contract` 的 JSON schema 仍显式投影为 `JsonValue`，
-只有已迁入的 DTO 才能称为字段级生成契约。
-API adapter 显式转换
-transport DTO 与 application command/view，前端再显式转换 wire DTO、领域展示
-模型和 form draft。`make api-contract-check` 逐字重建这些产物并阻止漂移；新迁移
-的 endpoint family 不再手写第二套 TypeScript wire schema。
+RFC 9457 problem model；生成器拒绝 `2XX`/`3XX` 通配，并保留一个 operation
+合法拥有多个明确成功状态或媒体类型的能力。64 个 JSON request body 与 95 个
+JSON success representation 均以具名、字段级 DTO 为根，不存在递归 `JsonValue`
+schema。结构对象默认明确关闭未知字段；开放结构只允许进入逐项登记且值类型受限的
+动态 map（如 provider manifest 字段、队列名、transport headers、DNS host key）
+以及 RFC 9457 extension member。
+
+API client 在 Zod 解析响应体前校验采用单一成功状态的生成 endpoint；多状态
+endpoint 使用生成的 `successResponses` 判别表。API adapter 显式转换 transport
+DTO 与 application command/view，前端再显式转换 wire DTO、领域展示模型和 form
+draft。`make api-contract-check` 逐字重建这些产物并阻止漂移；endpoint wrapper 只能
+消费具名生成 operation，不能以手写 `unknown`/`any` schema 重新打开业务 DTO。
 
 构建与发布链路:
 

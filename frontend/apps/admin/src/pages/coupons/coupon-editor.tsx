@@ -4,6 +4,7 @@ import type { SelectorParam } from 'i18next';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm, useFormState, useWatch } from 'react-hook-form';
 import { Loader2 } from 'lucide-react';
+import { isRawBinaryResponse } from '@v2board/api-client';
 import type { AdminPlanModel, CouponType } from '@v2board/types';
 import { Button } from '@v2board/ui/button';
 import { Checkbox } from '@v2board/ui/checkbox';
@@ -143,7 +144,7 @@ export function CouponEditor({
 
   const save = form.handleSubmit((validValues) => {
     onSave(normalizeGenerationPayload(validValues) as CouponSubmit, (response) => {
-      if (validValues.generate_count && response?.buffer)
+      if (validValues.generate_count && isRawBinaryResponse(response))
         downloadGeneratedCsv('COUPON', response.buffer);
       setOpen(false);
     });

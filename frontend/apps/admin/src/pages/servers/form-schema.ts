@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { admin } from '@v2board/api-client';
 import { isEmptyInput, isIntegerInput, isNumericInput } from '@/lib/form-input-validation';
 import {
   SERVER_ROUTE_ACTIONS,
@@ -71,14 +72,23 @@ const securityScalar = z.union([
   z.literal('2'),
 ]);
 const nullableString = z.string().nullable().optional();
-const settingsContainer = z.union([z.looseObject({}), z.array(z.unknown())], {
-  error: 'admin.servers.settings_invalid',
-});
-const settingsInput = z.preprocess(parseJsonContainer, settingsContainer.nullable().optional());
-const obfsSettingsInput = z.preprocess(
-  parseJsonContainer,
-  z.object({ path: optionalScalar, host: optionalScalar }).nullable().optional(),
-);
+const obfsSettingsInput = z
+  .preprocess(
+    parseJsonContainer,
+    z.object({ path: optionalScalar, host: optionalScalar }).nullable().optional(),
+  )
+  .transform((value) =>
+    value == null
+      ? value
+      : {
+          ...(value.path === undefined
+            ? {}
+            : { path: value.path === null ? null : String(value.path) }),
+          ...(value.host === undefined
+            ? {}
+            : { host: value.host === null ? null : String(value.host) }),
+        },
+  );
 
 function parseJsonContainer(value: unknown): unknown {
   if (typeof value !== 'string') return value;
@@ -91,34 +101,44 @@ function parseJsonContainer(value: unknown): unknown {
   }
 }
 
-const jsonContainerInput = z
-  .preprocess(
-    parseJsonContainer,
-    z
-      .union([settingsContainer, z.null()], { error: 'admin.servers.network_settings_invalid' })
-      .optional(),
-  )
+const networkSettingsInput = z
+  .preprocess(parseJsonContainer, admin.serverNetworkSettingsSchema.nullable().optional())
   .transform((value) => value ?? null);
 
-const dnsSettingsInput = settingsInput.transform((value) => {
-  if (!value || Array.isArray(value)) return null;
-  return Array.isArray(value.servers) && value.servers.length > 0 ? value : null;
-});
-
-function isJsonContainer(value: string): boolean {
-  if (!value.trim()) return true;
-  const parsed = parseJsonContainer(value);
-  return parsed === null || typeof parsed === 'object';
-}
+const tlsSettingsInput = z.preprocess(
+  parseJsonContainer,
+  admin.serverTlsSettingsSchema.nullable().optional(),
+);
+const encryptionSettingsInput = z.preprocess(
+  parseJsonContainer,
+  admin.serverEncryptionSettingsSchema.nullable().optional(),
+);
+const ruleSettingsInput = z.preprocess(
+  parseJsonContainer,
+  admin.vmessRuleSettingsSchema.nullable().optional(),
+);
+const dnsSettingsInput = z
+  .preprocess(parseJsonContainer, admin.vmessDnsSettingsSchema.nullable().optional())
+  .transform((value) => (value?.servers?.length ? value : null));
 
 const paddingSchemeInput = z
   .string()
   .nullable()
   .optional()
-  .refine(
-    (value) => value == null || !value.trim() || isJsonContainer(value),
-    'admin.servers.padding_scheme_invalid',
-  );
+  .transform((value, context): string[] | null | undefined => {
+    if (value == null) return value;
+    if (!value.trim()) return null;
+    try {
+      const parsed: unknown = JSON.parse(value);
+      if (Array.isArray(parsed) && parsed.every((entry) => typeof entry === 'string')) {
+        return parsed;
+      }
+    } catch {
+      // The issue below owns both invalid JSON and the wrong decoded shape.
+    }
+    context.addIssue({ code: 'custom', message: 'admin.servers.padding_scheme_invalid' });
+    return z.NEVER;
+  });
 
 const commonNodeFields = {
   id: z.number().int().positive().optional(),
@@ -147,16 +167,16 @@ const vmessNodeSchema = commonNodeSchema.extend({
   type: z.literal('vmess'),
   tls: binaryScalar,
   network: z.enum(VMESS_NETWORKS, { error: 'admin.servers.network_invalid' }),
-  networkSettings: jsonContainerInput,
-  tlsSettings: settingsInput,
-  ruleSettings: settingsInput,
+  networkSettings: networkSettingsInput,
+  tlsSettings: tlsSettingsInput,
+  ruleSettings: ruleSettingsInput,
   dnsSettings: dnsSettingsInput,
 });
 
 const trojanNodeSchema = commonNodeSchema.extend({
   type: z.literal('trojan'),
   network: z.enum(TROJAN_NETWORKS, { error: 'admin.servers.network_invalid' }),
-  network_settings: jsonContainerInput,
+  network_settings: networkSettingsInput,
   allow_insecure: binaryScalar.optional(),
   server_name: nullableString,
 });
@@ -186,12 +206,12 @@ const vlessNodeSchema = commonNodeSchema.extend({
   type: z.literal('vless'),
   sort: optionalScalar,
   tls: securityScalar,
-  tls_settings: settingsInput,
+  tls_settings: tlsSettingsInput,
   flow: z.union([z.literal('xtls-rprx-vision'), z.null()]).optional(),
   network: z.string().refine((value) => value.length > 0, 'admin.servers.network_required'),
-  network_settings: jsonContainerInput,
+  network_settings: networkSettingsInput,
   encryption: nullableString,
-  encryption_settings: settingsInput,
+  encryption_settings: encryptionSettingsInput,
 });
 
 const anytlsNodeSchema = commonNodeSchema.extend({
@@ -206,7 +226,7 @@ const v2nodeProtocolCommonFields = {
   network: z.enum(V2NODE_TRANSPORTS, {
     error: 'admin.servers.network_invalid',
   }),
-  network_settings: jsonContainerInput,
+  network_settings: networkSettingsInput,
   disable_sni: binaryScalar,
   zero_rtt_handshake: binaryScalar,
 };
@@ -224,32 +244,32 @@ const v2nodeProtocolInputSchema = z.discriminatedUnion('protocol', [
   z.object({
     ...v2nodeProtocolCommonFields,
     protocol: z.literal('vmess'),
-    tls_settings: settingsInput,
+    tls_settings: tlsSettingsInput,
   }),
   z.object({
     ...v2nodeProtocolCommonFields,
     protocol: z.literal('vless'),
-    tls_settings: settingsInput,
+    tls_settings: tlsSettingsInput,
     flow: z.union([z.literal('xtls-rprx-vision'), z.null()]).optional(),
     encryption: nullableString,
-    encryption_settings: settingsInput,
+    encryption_settings: encryptionSettingsInput,
   }),
   z.object({
     ...v2nodeProtocolCommonFields,
     protocol: z.literal('trojan'),
-    tls_settings: settingsInput,
+    tls_settings: tlsSettingsInput,
   }),
   z.object({
     ...v2nodeProtocolCommonFields,
     protocol: z.literal('tuic'),
-    tls_settings: settingsInput,
+    tls_settings: tlsSettingsInput,
     udp_relay_mode: nullableString,
     congestion_control: nullableString,
   }),
   z.object({
     ...v2nodeProtocolCommonFields,
     protocol: z.literal('hysteria2'),
-    tls_settings: settingsInput,
+    tls_settings: tlsSettingsInput,
     up_mbps: optionalNumericScalar,
     down_mbps: optionalNumericScalar,
     obfs: nullableString,
@@ -258,7 +278,7 @@ const v2nodeProtocolInputSchema = z.discriminatedUnion('protocol', [
   z.object({
     ...v2nodeProtocolCommonFields,
     protocol: z.literal('anytls'),
-    tls_settings: settingsInput,
+    tls_settings: tlsSettingsInput,
     padding_scheme: paddingSchemeInput,
   }),
 ]);

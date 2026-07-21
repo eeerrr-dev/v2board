@@ -124,13 +124,3 @@ pub async fn disable(pool: &PgPool, user_id: i64, accepted_step: i64) -> Result<
     .await?;
     Ok(result.rows_affected())
 }
-
-/// Operator escape hatch (`v2board-api reset-admin-totp`): remove the row
-/// unconditionally, pending or enabled.
-pub async fn reset(pool: &PgPool, user_id: i64) -> Result<u64, sqlx::Error> {
-    let result = sqlx::query("DELETE FROM admin_mfa WHERE user_id = $1")
-        .bind(user_id)
-        .execute(pool)
-        .await?;
-    Ok(result.rows_affected())
-}

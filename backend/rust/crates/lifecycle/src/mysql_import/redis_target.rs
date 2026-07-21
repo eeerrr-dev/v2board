@@ -358,12 +358,12 @@ async fn verify_redis_runtime_acl(
 ) -> anyhow::Result<()> {
     let api = redis::Client::open(api_url)?;
     let worker = redis::Client::open(worker_url)?;
-    v2board_domain::redis_runtime::verify_redis_runtime(
+    v2board_redis_adapters::verify_redis_runtime(
         &api,
         v2board_config::RuntimeEnvironment::Production,
     )
     .await?;
-    v2board_domain::redis_runtime::verify_redis_runtime(
+    v2board_redis_adapters::verify_redis_runtime(
         &worker,
         v2board_config::RuntimeEnvironment::Production,
     )
@@ -562,7 +562,7 @@ async fn verify_redis_runtime_acl(
 
 pub(crate) async fn verify_empty_redis(redis_url: &str) -> anyhow::Result<()> {
     let client = redis::Client::open(redis_url)?;
-    v2board_domain::redis_runtime::verify_redis_runtime(
+    v2board_redis_adapters::verify_redis_runtime(
         &client,
         v2board_config::RuntimeEnvironment::Production,
     )

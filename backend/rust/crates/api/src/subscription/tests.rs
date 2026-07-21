@@ -486,7 +486,7 @@ fn client_app_config_keeps_full_policy_without_usable_proxies() {
 fn quantumultx_skips_anytls() {
     // QuantumultX.php has no anytls case (it only handles ss/vmess/vless/
     // trojan), so anytls servers must emit nothing.
-    let server = v2board_db::server::AvailableServerRow {
+    let server = crate::subscription::AvailableServer {
         id: 1,
         parent_id: None,
         group_id: vec![1],
@@ -517,8 +517,8 @@ fn server_row(
     kind: &str,
     port: serde_json::Value,
     extra: serde_json::Value,
-) -> v2board_db::server::AvailableServerRow {
-    v2board_db::server::AvailableServerRow {
+) -> crate::subscription::AvailableServer {
+    crate::subscription::AvailableServer {
         id: 1,
         parent_id: None,
         group_id: vec![1],

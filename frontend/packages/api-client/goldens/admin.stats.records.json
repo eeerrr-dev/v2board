@@ -1,27 +1,27 @@
 [
   {
-    "date": "10-16",
     "series": "commission_paid_count",
+    "date": "10-16",
     "value": 6
   },
   {
-    "date": "10-16",
     "series": "commission_paid_total",
+    "date": "10-16",
     "value": 900
   },
   {
-    "date": "10-16",
     "series": "paid_count",
+    "date": "10-16",
     "value": 20
   },
   {
-    "date": "10-16",
     "series": "paid_total",
+    "date": "10-16",
     "value": 45000
   },
   {
-    "date": "10-16",
     "series": "register_count",
+    "date": "10-16",
     "value": 40
   }
 ]

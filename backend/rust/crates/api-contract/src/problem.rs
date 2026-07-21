@@ -59,6 +59,10 @@ pub(crate) fn augment_problem_schema(document: &mut Value) {
         .remove("ProblemDetails")
         .expect("ProblemDetails component schema");
     base["properties"]["type"]["const"] = Value::String("about:blank".to_owned());
+    // RFC 9457 explicitly permits extension members. Keep this exception
+    // machine-readable so the general closed-DTO normalization cannot make
+    // the problem base accidentally strict.
+    base["additionalProperties"] = Value::Bool(true);
 
     let variants = Code::ALL
         .iter()
@@ -73,6 +77,7 @@ pub(crate) fn augment_problem_schema(document: &mut Value) {
             }
             json!({
                 "type": "object",
+                "additionalProperties": true,
                 "required": ["code", "status", "title"],
                 "properties": properties
             })
@@ -263,7 +268,7 @@ mod tests {
         assert!(!required.contains("errors"));
         assert_eq!(base["properties"]["type"]["const"], "about:blank");
         assert_eq!(base["properties"]["errors"]["type"], "object");
-        assert_ne!(base["additionalProperties"], Value::Bool(false));
+        assert_eq!(base["additionalProperties"], Value::Bool(true));
         assert_eq!(discriminated["discriminator"]["propertyName"], "code");
 
         let variants = discriminated["oneOf"]
@@ -271,6 +276,7 @@ mod tests {
             .expect("problem-code variants");
         assert_eq!(variants.len(), Code::ALL.len());
         for (variant, code) in variants.iter().zip(Code::ALL) {
+            assert_eq!(variant["additionalProperties"], Value::Bool(true));
             assert_eq!(variant["properties"]["code"]["const"], code.slug());
             assert_eq!(variant["properties"]["status"]["const"], code.status());
             assert_eq!(variant["properties"]["title"]["const"], code.title());

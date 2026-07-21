@@ -6,14 +6,13 @@ use redis::AsyncCommands;
 use sqlx::PgPool;
 use tokio::task::JoinSet;
 use uuid::Uuid;
+use v2board_application::auth::{AuthCode, AuthError, RegisterInput};
+use v2board_auth_adapters::{PasswordKdf, RuntimeAuthService, hash_password, runtime_auth_service};
 use v2board_config::{AppConfig, RedisKeyspace};
 use v2board_db::installation_id;
-use v2board_domain::{
-    auth::{AuthService, PasswordKdf, RegisterInput, hash_password},
-    redis_runtime::reserve_fixed_window_slot,
-    server_credentials::{derive_node_token, verify_node_token},
-    smtp::SmtpTransportCache,
-};
+use v2board_mail_adapters::smtp::SmtpTransportCache;
+use v2board_redis_adapters::reserve_fixed_window_slot;
+use v2board_server_adapters::{derive_node_token, verify_node_token};
 
 use super::harness::{flush_redis, insert_user, insert_user_with_email, integration_config};
 
@@ -61,7 +60,10 @@ pub(super) async fn invite_single_consumption(pool: &PgPool, redis_url: &str) ->
     while let Some(joined) = attempts.join_next().await {
         match joined? {
             Ok(_) => success += 1,
-            Err(error) if error.to_string().contains("Invalid invitation code") => rejected += 1,
+            Err(AuthError::Business {
+                code: AuthCode::InvalidInviteCode,
+                ..
+            }) => rejected += 1,
             Err(error) => bail!("unexpected invitation registration error: {error:#}"),
         }
     }
@@ -186,7 +188,10 @@ pub(super) async fn auth_rate_limits(
     while let Some(joined) = duplicate_registrations.join_next().await {
         match joined? {
             Ok(_) => same_email_success += 1,
-            Err(error) if error.to_string().contains("Email already exists") => {
+            Err(AuthError::Business {
+                code: AuthCode::EmailAlreadyRegistered,
+                ..
+            }) => {
                 same_email_rejected += 1;
             }
             Err(error) => bail!("unexpected same-email registration error: {error:#}"),
@@ -238,7 +243,10 @@ pub(super) async fn auth_rate_limits(
     while let Some(joined) = registrations.join_next().await {
         match joined? {
             Ok(_) => registered += 1,
-            Err(error) if error.to_string().contains("Register frequently") => {
+            Err(AuthError::Business {
+                code: AuthCode::RegisterIpRateLimited,
+                ..
+            }) => {
                 registration_limited += 1;
             }
             Err(error) => bail!("unexpected registration limiter error: {error:#}"),
@@ -291,10 +299,16 @@ pub(super) async fn auth_rate_limits(
     while let Some(joined) = logins.join_next().await {
         match joined? {
             Ok(_) => bail!("wrong password unexpectedly authenticated"),
-            Err(error) if error.to_string().contains("Incorrect email or password") => {
+            Err(AuthError::Business {
+                code: AuthCode::InvalidCredentials,
+                ..
+            }) => {
                 incorrect += 1;
             }
-            Err(error) if error.to_string().contains("too many password errors") => {
+            Err(AuthError::Business {
+                code: AuthCode::PasswordAttemptsRateLimited,
+                ..
+            }) => {
                 login_limited += 1;
             }
             Err(error) => bail!("unexpected login limiter error: {error:#}"),
@@ -415,10 +429,14 @@ pub(super) async fn redis_lease_ownership(redis: &redis::Client) -> Result<()> {
     Ok(())
 }
 
-async fn auth_service(pool: &PgPool, redis_url: &str, config: AppConfig) -> Result<AuthService> {
+async fn auth_service(
+    pool: &PgPool,
+    redis_url: &str,
+    config: AppConfig,
+) -> Result<RuntimeAuthService> {
     let redis = redis::Client::open(redis_url)?;
     let manager = redis::aio::ConnectionManager::new(redis).await?;
-    Ok(AuthService::new(
+    Ok(runtime_auth_service(
         pool.clone(),
         manager,
         installation_id(pool).await?,

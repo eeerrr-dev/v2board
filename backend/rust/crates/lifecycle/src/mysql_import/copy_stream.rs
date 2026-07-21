@@ -222,7 +222,7 @@ pub(crate) fn encrypt_retained_payment_config(
         Some(CanonicalValue::Json(value)) => value.to_compact_json()?,
         _ => anyhow::bail!("retained payment row has no JSON config"),
     };
-    let envelope = v2board_domain::payment_secrets::encrypt_payment_config_canonical(
+    let envelope = v2board_payment_adapters::payment_secrets::encrypt_payment_config_canonical(
         app_key,
         &payment,
         &uuid,

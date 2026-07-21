@@ -85,7 +85,8 @@ test('generator preserves multiple exact success statuses without inventing a pr
   assert.match(runtime, /successStatus: undefined,/);
   assert.match(runtime, /200: \{/);
   assert.match(runtime, /204: \{/);
-  assert.match(runtime, /responseSchema: z\.undefined\(\),/);
+  assert.match(runtime, /responseSchema: z\.union\(\[z\.string\(\), z\.undefined\(\)\]\),/);
+  assert.match(runtime, /jsonResponseSchema: z\.string\(\),/);
 });
 
 test('generator rejects an ambiguous OpenAPI 2XX response key', async () => {
@@ -123,8 +124,16 @@ test('generator projects unions, intersections, consts, maps, nullable refs, par
         Flexible: { anyOf: [{ type: 'string' }, { type: 'integer' }] },
         Combined: {
           allOf: [
-            { type: 'object', properties: { left: { type: 'string' } } },
-            { type: 'object', properties: { right: { type: 'boolean' } } },
+            {
+              type: 'object',
+              properties: { left: { type: 'string' } },
+              additionalProperties: false,
+            },
+            {
+              type: 'object',
+              properties: { right: { type: 'boolean' } },
+              additionalProperties: false,
+            },
           ],
         },
         Labels: { type: 'object', additionalProperties: { type: 'string' } },
@@ -201,10 +210,11 @@ test('generator projects unions, intersections, consts, maps, nullable refs, par
   });
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(types, /InternalApiLabels = Record<string, string>/);
+  assert.match(types, /InternalApiLabels = \{ \[key: string\]: string \}/);
   assert.match(types, /InternalApiEmptyClosed = Record<string, never>/);
   assert.match(types, /InternalApiNullablePet = InternalApiPet \| null/);
-  assert.match(types, /InternalApiCombined = .* & /);
+  assert.match(types, /InternalApiCombined = \{ "left"\?: string; "right"\?: boolean \}/);
+  assert.match(runtime, /internalApiCombinedSchema = z\.strictObject\(\{/);
   assert.match(runtime, /z\.discriminatedUnion\("kind"/);
   assert.match(runtime, /internalApiLabelsSchema = z\.record\(z\.string\(\), z\.string\(\)\)/);
   assert.match(
@@ -228,6 +238,108 @@ test('generator projects unions, intersections, consts, maps, nullable refs, par
   assert.match(runtime, /302: \{/);
   assert.match(types, /"Location": string/);
   assert.match(runtime, /"Location": z\.string\(\),/);
+  assert.doesNotMatch(runtime, /z\.looseObject/);
+});
+
+test('generator rejects an object whose additional-property policy is implicit', async () => {
+  const { result } = await runGenerator({
+    openapi: '3.1.0',
+    components: {
+      schemas: {
+        AccidentalOpenDto: {
+          type: 'object',
+          properties: { id: { type: 'integer' } },
+        },
+      },
+    },
+    paths: {},
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stderr || result.stdout,
+    /AccidentalOpenDto.*without an explicit additionalProperties policy/,
+  );
+});
+
+test('generator distinguishes reviewed open maps from strict transport DTOs', async () => {
+  const { result, types, runtime } = await runGenerator({
+    openapi: '3.1.0',
+    components: {
+      schemas: {
+        StrictDto: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['id'],
+          properties: { id: { type: 'integer' } },
+        },
+        ProviderConfig: {
+          type: 'object',
+          additionalProperties: true,
+        },
+      },
+    },
+    paths: {},
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(types, /InternalApiStrictDto = \{ "id": number \}/);
+  assert.doesNotMatch(types, /InternalApiStrictDto = .*\[key: string\]/);
+  assert.match(runtime, /internalApiStrictDtoSchema = z\.strictObject/);
+  assert.match(types, /InternalApiProviderConfig = \{ \[key: string\]: unknown \}/);
+  assert.match(
+    runtime,
+    /internalApiProviderConfigSchema = z\.record\(z\.string\(\), z\.unknown\(\)\)/,
+  );
+});
+
+test('generator emits typed lazy validators for recursive component schemas', async () => {
+  const { result, types, runtime } = await runGenerator({
+    openapi: '3.1.0',
+    components: {
+      schemas: {
+        Tree: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['name'],
+          properties: {
+            name: { type: 'string' },
+            children: {
+              type: 'array',
+              items: { $ref: '#/components/schemas/Tree' },
+            },
+          },
+        },
+      },
+    },
+    paths: {
+      '/api/v1/tree': {
+        get: {
+          operationId: 'treeGet',
+          responses: {
+            200: {
+              description: 'Tree',
+              content: {
+                'application/json': { schema: { $ref: '#/components/schemas/Tree' } },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(
+    types,
+    /InternalApiTree = \{ "children"\?: Array<InternalApiTree>; "name": string \}/,
+  );
+  assert.match(
+    runtime,
+    /internalApiTreeSchema: z\.ZodType<InternalApiTypes\.InternalApiTree> = z\.lazy\(\(\) =>/,
+  );
+  assert.match(runtime, /"children": z\.array\(internalApiTreeSchema\)\.optional\(\)/);
+  assert.doesNotMatch(runtime, /z\.looseObject/);
 });
 
 test('generator rejects query arrays without repeated-key form encoding', async () => {

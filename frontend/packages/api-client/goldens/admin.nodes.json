@@ -1,29 +1,29 @@
 [
   {
-    "api_key": null,
-    "available_status": 0,
-    "cipher": "aes-128-gcm",
-    "created_at": "2023-11-14T22:13:20Z",
+    "type": "shadowsocks",
+    "id": 1,
     "group_id": [
       1
     ],
-    "host": "ss.golden.test",
-    "id": 1,
-    "last_check_at": null,
-    "last_push_at": null,
-    "name": "Golden shadowsocks node",
-    "obfs": null,
-    "obfs_settings": null,
-    "online": null,
-    "parent_id": null,
-    "port": 443,
-    "rate": 1,
     "route_id": null,
+    "parent_id": null,
+    "tags": null,
+    "name": "Golden shadowsocks node",
+    "rate": 1.0,
+    "host": "ss.golden.test",
+    "port": 443.0,
     "server_port": 443,
     "show": true,
     "sort": 1,
-    "tags": null,
-    "type": "shadowsocks",
-    "updated_at": "2023-11-14T22:13:20Z"
+    "created_at": "2023-11-14T22:13:20Z",
+    "updated_at": "2023-11-14T22:13:20Z",
+    "online": null,
+    "last_check_at": null,
+    "last_push_at": null,
+    "available_status": 0,
+    "api_key": null,
+    "cipher": "aes-128-gcm",
+    "obfs": null,
+    "obfs_settings": null
   }
 ]

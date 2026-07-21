@@ -1,5 +1,7 @@
-use super::configuration::{ConfigPatchBody, config_activation_response};
+use super::configuration::config_activation_response;
 use super::*;
+use serde_json::Value;
+use v2board_api_contract::admin_platform::AdminConfigPatchRequest;
 
 #[test]
 fn bulk_mail_idempotency_header_is_optional_trimmed_and_bounded() {
@@ -119,7 +121,7 @@ fn every_admin_route_maps_into_the_rbac_registry() {
     assert_eq!(operations.len(), 89, "admin registry coverage drifted");
     for operation in operations {
         assert!(
-            v2board_domain::admin::admin_path_access(operation.path).is_some(),
+            v2board_domain_model::admin_path_access(operation.path).is_some(),
             "admin route {} is outside the §6.12 RBAC registry mapping",
             operation.path
         );
@@ -144,32 +146,24 @@ fn admin_guard_authorizes_through_the_rbac_namespace_gate() {
 
 #[test]
 fn config_patch_body_requires_and_separates_the_client_revision() {
-    let body = serde_json::from_value::<ConfigPatchBody>(serde_json::json!({
+    let body = serde_json::from_value::<AdminConfigPatchRequest>(serde_json::json!({
         "expected_revision": 17,
         "app_name": "CAS Site",
         "force_https": true
     }))
     .expect("valid revisioned config patch");
     assert_eq!(body.expected_revision, 17);
-    assert_eq!(
-        body.changes,
-        serde_json::json!({
-            "app_name": "CAS Site",
-            "force_https": true
-        })
-        .as_object()
-        .expect("changes object")
-        .clone()
-    );
+    assert_eq!(body.app_name, Some(Some("CAS Site".to_owned())));
+    assert_eq!(body.force_https, Some(Some(true)));
 
     assert!(
-        serde_json::from_value::<ConfigPatchBody>(serde_json::json!({
+        serde_json::from_value::<AdminConfigPatchRequest>(serde_json::json!({
             "app_name": "missing token"
         }))
         .is_err()
     );
     assert!(
-        serde_json::from_value::<ConfigPatchBody>(serde_json::json!({
+        serde_json::from_value::<AdminConfigPatchRequest>(serde_json::json!({
             "expected_revision": "17",
             "app_name": "wrong token type"
         }))

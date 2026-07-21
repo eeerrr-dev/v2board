@@ -1,9 +1,14 @@
 use anyhow::{Result, bail};
 
+mod admin_user_projection;
 mod golden_responses;
+mod order_projection;
 mod production_invariants;
+mod reconciliation_projection;
 mod route_audit;
+mod server_projection;
 mod sql_schema_prepare;
+mod statistics_calendar;
 mod worker_reconcile;
 
 #[tokio::main]

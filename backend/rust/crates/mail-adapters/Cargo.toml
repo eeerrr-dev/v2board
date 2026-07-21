@@ -1,0 +1,27 @@
+[package]
+name = "v2board-mail-adapters"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "SMTP delivery, template rendering, and durable mail outbox adapters"
+
+[lints]
+workspace = true
+
+[dependencies]
+hex.workspace = true
+lettre.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+v2board-application = { version = "0.9.0", path = "../application" }
+v2board-compat = { version = "0.9.0", path = "../compat" }
+v2board-config = { version = "0.9.0", path = "../config" }
+v2board-db = { version = "0.9.0", path = "../db" }

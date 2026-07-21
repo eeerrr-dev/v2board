@@ -8,7 +8,6 @@ use super::{
     ServerUserRow, TrafficEntry,
     config::{explode_php_lines, parse_i32_json_list, php_int_truthy, php_truthy},
     response::{etag_matches, sha1_hex},
-    server_online_status,
     traffic::{
         charged_bytes, checked_traffic_pair, count_alive_ips, implicit_traffic_report_key,
         parse_server_rate, parse_traffic_entries, traffic_cache_entry_is_stale,
@@ -17,15 +16,6 @@ use super::{
     },
     users::{legacy_tidalab_user_response, server_user_without_uuid},
 };
-
-#[test]
-fn online_status_handles_extreme_timestamps_without_overflow() {
-    assert_eq!(server_online_status(10_000, Some(9_701)), 1);
-    assert_eq!(server_online_status(10_000, Some(9_700)), 1);
-    assert_eq!(server_online_status(10_000, Some(9_699)), 0);
-    assert_eq!(server_online_status(i64::MAX, Some(i64::MIN)), 0);
-    assert_eq!(server_online_status(i64::MIN, Some(i64::MIN)), 1);
-}
 
 #[test]
 fn traffic_cache_staleness_handles_extreme_timestamps_without_overflow() {

@@ -1252,8 +1252,10 @@ export function assertUsefulInteraction(label, result, target) {
       requestMatches: (request) =>
         request?.name === 'Parity Failed Pay' &&
         request?.payment === 'AlipayF2F' &&
-        request?.config?.key === 'failed-secret' &&
-        request?.config?.mch_id === 'failed-merchant',
+        request?.config?.app_id === 'failed-app-id' &&
+        request?.config?.private_key === 'failed-private-key' &&
+        request?.config?.public_key === 'failed-public-key' &&
+        request?.config?.product_name === 'Failed Product',
     },
     'admin-plan-save-failure': {
       fetchDeltaKey: 'planFetchDelta',
@@ -1408,19 +1410,20 @@ export function assertUsefulInteraction(label, result, target) {
       !JSON.stringify(result.opened?.titles).includes('添加支付方式') ||
       !JSON.stringify(result.opened?.labels).includes('显示名称') ||
       !JSON.stringify(result.opened?.labels).includes('接口文件') ||
-      !JSON.stringify(result.opened?.labels).includes('商户ID') ||
+      !JSON.stringify(result.opened?.labels).includes('支付宝APPID') ||
       !JSON.stringify(result.opened?.inputValues).includes('Parity Pay') ||
       !JSON.stringify(result.opened?.selectedPayment).includes('AlipayF2F') ||
       !JSON.stringify(result.dropdown?.dropdownItems).includes('StripeCheckout') ||
       !JSON.stringify(result.switched?.selectedPayment).includes('StripeCheckout') ||
-      !JSON.stringify(result.switched?.labels).includes('Secret Key') ||
+      !JSON.stringify(result.switched?.labels).includes('SK_LIVE') ||
       !JSON.stringify(result.switched?.inputValues).includes('pk_parity_create') ||
       !JSON.stringify(result.switched?.inputValues).includes('sk_parity_create') ||
       result.saveRequests?.length !== 1 ||
       result.saveRequests?.[0]?.name !== 'Parity Pay' ||
       result.saveRequests?.[0]?.payment !== 'StripeCheckout' ||
-      result.saveRequests?.[0]?.config?.publishable_key !== 'pk_parity_create' ||
-      result.saveRequests?.[0]?.config?.secret_key !== 'sk_parity_create' ||
+      result.saveRequests?.[0]?.config?.stripe_pk_live !== 'pk_parity_create' ||
+      result.saveRequests?.[0]?.config?.stripe_sk_live !== 'sk_parity_create' ||
+      result.saveRequests?.[0]?.config?.stripe_webhook_key !== 'whsec_parity_create' ||
       result.paymentFetchDelta < 1 ||
       result.closed?.modalCount !== 0)
   ) {
@@ -1437,25 +1440,28 @@ export function assertUsefulInteraction(label, result, target) {
       !JSON.stringify(result.opened?.titles).includes('编辑支付方式') ||
       !JSON.stringify(result.opened?.labels).includes('显示名称') ||
       !JSON.stringify(result.opened?.labels).includes('接口文件') ||
-      !JSON.stringify(result.opened?.labels).includes('商户ID') ||
-      !JSON.stringify(result.opened?.labels).includes('密钥') ||
       !JSON.stringify(result.opened?.inputValues).includes('Alipay') ||
-      !JSON.stringify(result.opened?.inputValues).includes('visual-secret') ||
-      !JSON.stringify(result.opened?.inputValues).includes('visual-merchant') ||
-      !JSON.stringify(result.opened?.selectedPayment).includes('AlipayF2F') ||
+      !JSON.stringify(result.opened?.inputValues).includes('AlipayF2F') ||
+      !JSON.stringify(result.opened?.inputValues).includes('********') ||
       // Footer button labels ('保存'/'取消') are Tier-2 chrome; the antd oracle
       // renders them with a two-CJK-char space ('保 存'/'取 消') and the shadcn
       // Sheet without it, so the raw form can't share a literal. The edit outcome
       // is covered by title/labels/inputValues/saveRequests below.
       !JSON.stringify(result.edited?.inputValues).includes('Parity Edited Pay') ||
-      !JSON.stringify(result.edited?.inputValues).includes('edited-secret') ||
-      !JSON.stringify(result.edited?.inputValues).includes('edited-merchant') ||
       result.saveRequests?.length !== 1 ||
       String(result.saveRequests?.[0]?.id) !== '1' ||
       result.saveRequests?.[0]?.name !== 'Parity Edited Pay' ||
-      result.saveRequests?.[0]?.payment !== 'AlipayF2F' ||
-      result.saveRequests?.[0]?.config?.key !== 'edited-secret' ||
-      result.saveRequests?.[0]?.config?.mch_id !== 'edited-merchant' ||
+      (target === 'source' &&
+        (!hasExactObjectKeys(result.saveRequests?.[0], [
+          'handling_fee_fixed',
+          'handling_fee_percent',
+          'icon',
+          'id',
+          'name',
+          'notify_domain',
+        ]) ||
+          Object.hasOwn(result.saveRequests?.[0] ?? {}, 'payment') ||
+          Object.hasOwn(result.saveRequests?.[0] ?? {}, 'config'))) ||
       result.paymentFetchDelta < 1 ||
       result.closed?.modalCount !== 0)
   ) {
@@ -1467,21 +1473,22 @@ export function assertUsefulInteraction(label, result, target) {
     label === 'admin-payment-plugin-field-matrix' &&
     (result.alipay?.modalCount !== 1 ||
       !JSON.stringify(result.alipay?.selectedPayment).includes('AlipayF2F') ||
-      !JSON.stringify(result.alipay?.labels).includes('密钥') ||
-      !JSON.stringify(result.alipay?.labels).includes('商户ID') ||
+      !JSON.stringify(result.alipay?.labels).includes('支付宝私钥') ||
+      !JSON.stringify(result.alipay?.labels).includes('支付宝APPID') ||
       !JSON.stringify(result.mgate?.selectedPayment).includes('MGate') ||
-      !JSON.stringify(result.mgate?.labels).includes('Token') ||
-      !JSON.stringify(result.mgate?.inputValues).includes('mgate_matrix_token') ||
+      !JSON.stringify(result.mgate?.labels).includes('AppSecret') ||
+      !JSON.stringify(result.mgate?.inputValues).includes('mgate_matrix_secret') ||
       !JSON.stringify(result.stripe?.selectedPayment).includes('StripeCheckout') ||
-      !JSON.stringify(result.stripe?.labels).includes('Publishable Key') ||
-      !JSON.stringify(result.stripe?.labels).includes('Secret Key') ||
+      !JSON.stringify(result.stripe?.labels).includes('PK_LIVE') ||
+      !JSON.stringify(result.stripe?.labels).includes('SK_LIVE') ||
       !JSON.stringify(result.stripe?.inputValues).includes('pk_matrix_plugin') ||
       !JSON.stringify(result.stripe?.inputValues).includes('sk_matrix_plugin') ||
       result.saveRequests?.length !== 1 ||
       result.saveRequests?.[0]?.name !== 'Parity Plugin Matrix' ||
       result.saveRequests?.[0]?.payment !== 'StripeCheckout' ||
-      result.saveRequests?.[0]?.config?.publishable_key !== 'pk_matrix_plugin' ||
-      result.saveRequests?.[0]?.config?.secret_key !== 'sk_matrix_plugin' ||
+      result.saveRequests?.[0]?.config?.stripe_pk_live !== 'pk_matrix_plugin' ||
+      result.saveRequests?.[0]?.config?.stripe_sk_live !== 'sk_matrix_plugin' ||
+      result.saveRequests?.[0]?.config?.stripe_webhook_key !== 'whsec_matrix_plugin' ||
       result.paymentFetchDelta < 1 ||
       result.closed?.modalCount !== 0)
   ) {

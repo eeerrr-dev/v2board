@@ -5,8 +5,9 @@ use sqlx::{
     postgres::{PgConnectOptions, PgPoolOptions},
 };
 use tokio::sync::oneshot;
+use v2board_application::plan::PlanReference;
 use v2board_db::plan::{
-    PlanReferenceKind, find_plan_binding_for_share, find_plan_reference_after_parent_lock,
+    find_plan_binding_for_share, find_plan_reference_after_parent_lock,
     find_plan_reference_for_update,
 };
 
@@ -133,7 +134,7 @@ async fn post_parent_recheck_observes_a_reference_created_after_delete_preflight
         find_plan_reference_after_parent_lock(&mut deleting, DELETE_PLAN_ID)
             .await
             .expect("run authoritative dependency recheck"),
-        Some(PlanReferenceKind::User)
+        Some(PlanReference::User)
     );
     deleting.rollback().await.expect("roll back test deletion");
 

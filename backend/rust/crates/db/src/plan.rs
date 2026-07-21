@@ -2,7 +2,19 @@ use std::collections::{BTreeSet, HashMap};
 
 use serde::Serialize;
 use sqlx::{FromRow, PgPool, Postgres, QueryBuilder, Transaction};
-use v2board_domain_model::{MoneyMinor, PlanPricePeriod, PlanPrices};
+use v2board_application::{
+    RepositoryError,
+    plan::{
+        CreatePlanOutcome, DeletePlanOutcome, NewPlan, PatchPlanOutcome, Plan, PlanChanges,
+        PlanReference, PlanRepository, RepositoryResult, SortPlansOutcome,
+    },
+};
+use v2board_domain_model::{
+    MoneyMinor, PLAN_FORCE_UPDATE_MAX_USERS, PlanPricePeriod, PlanPriceUpdate, PlanPrices,
+    plan_transfer_bytes,
+};
+
+const PLAN_USER_LOCK_PAGE_SIZE: i64 = 500;
 
 #[derive(Debug, Clone, FromRow, Serialize)]
 pub struct PlanRow {
@@ -41,13 +53,6 @@ pub struct PlanBindingRow {
     pub transfer_enable: i64,
     pub device_limit: Option<i32>,
     pub speed_limit: Option<i32>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PlanReferenceKind {
-    Order,
-    User,
-    GiftCard,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -242,14 +247,14 @@ pub async fn find_plan_binding_for_share(
 pub async fn find_plan_reference_for_update(
     tx: &mut Transaction<'_, Postgres>,
     id: i32,
-) -> Result<Option<PlanReferenceKind>, sqlx::Error> {
+) -> Result<Option<PlanReference>, sqlx::Error> {
     find_plan_reference(tx, id, true).await
 }
 
 pub async fn find_plan_reference_after_parent_lock(
     tx: &mut Transaction<'_, Postgres>,
     id: i32,
-) -> Result<Option<PlanReferenceKind>, sqlx::Error> {
+) -> Result<Option<PlanReference>, sqlx::Error> {
     find_plan_reference(tx, id, false).await
 }
 
@@ -257,7 +262,7 @@ async fn find_plan_reference(
     tx: &mut Transaction<'_, Postgres>,
     id: i32,
     lock_child: bool,
-) -> Result<Option<PlanReferenceKind>, sqlx::Error> {
+) -> Result<Option<PlanReference>, sqlx::Error> {
     let order = if lock_child {
         sqlx::query_scalar::<_, i64>(
             "SELECT id FROM orders WHERE referenced_plan_id = $1 LIMIT 1 FOR UPDATE",
@@ -272,7 +277,7 @@ async fn find_plan_reference(
             .await?
     };
     if order.is_some() {
-        return Ok(Some(PlanReferenceKind::Order));
+        return Ok(Some(PlanReference::Order));
     }
 
     let user = if lock_child {
@@ -287,7 +292,7 @@ async fn find_plan_reference(
             .await?
     };
     if user.is_some() {
-        return Ok(Some(PlanReferenceKind::User));
+        return Ok(Some(PlanReference::User));
     }
 
     let gift_card = if lock_child {
@@ -303,7 +308,7 @@ async fn find_plan_reference(
             .fetch_optional(&mut **tx)
             .await?
     };
-    Ok(gift_card.map(|_| PlanReferenceKind::GiftCard))
+    Ok(gift_card.map(|_| PlanReference::GiftCard))
 }
 
 /// Worker renewal reads the normalized price projection while sharing the same
@@ -512,6 +517,444 @@ pub async fn count_capacity_usage_by_plan(pool: &PgPool) -> Result<HashMap<i32, 
 struct PlanActiveCountRow {
     plan_id: i32,
     count: i64,
+}
+
+/// PostgreSQL adapter for the complete operator plan use-case boundary.
+///
+/// The application service owns validation and business outcome mapping;
+/// this adapter owns every SQL statement, transaction, and lock-order rule.
+#[derive(Clone, Debug)]
+pub struct PostgresPlanRepository {
+    pool: PgPool,
+}
+
+impl PostgresPlanRepository {
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
+}
+
+fn repository_error(operation: &'static str, error: impl std::fmt::Display) -> RepositoryError {
+    RepositoryError::new(operation, error)
+}
+
+fn application_plan(row: PlanRow, count: i64) -> Result<Plan, sqlx::Error> {
+    let prices = row.prices()?;
+    Ok(Plan {
+        id: row.id,
+        group_id: row.group_id,
+        transfer_enable: row.transfer_enable,
+        device_limit: row.device_limit,
+        name: row.name,
+        speed_limit: row.speed_limit,
+        show: row.show,
+        sort: row.sort,
+        renew: row.renew,
+        content: row.content,
+        prices,
+        reset_traffic_method: row.reset_traffic_method,
+        capacity_limit: row.capacity_limit,
+        count,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+    })
+}
+
+async fn lock_server_group_for_share(
+    tx: &mut Transaction<'_, Postgres>,
+    group_id: i64,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar::<_, i32>(
+        "SELECT id FROM server_group WHERE id::BIGINT = $1 LIMIT 1 FOR SHARE",
+    )
+    .bind(group_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map(|row| row.is_some())
+}
+
+enum LockedPlanUsers {
+    Locked(Vec<i64>),
+    LimitExceeded,
+}
+
+async fn lock_plan_users_for_update(
+    tx: &mut Transaction<'_, Postgres>,
+    plan_id: i32,
+) -> Result<LockedPlanUsers, sqlx::Error> {
+    let mut after_id = 0_i64;
+    let mut locked = Vec::new();
+    loop {
+        let ids = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT id
+            FROM users
+            WHERE plan_id = $1 AND id > $2
+            ORDER BY id
+            LIMIT $3
+            FOR UPDATE
+            "#,
+        )
+        .bind(plan_id)
+        .bind(after_id)
+        .bind(PLAN_USER_LOCK_PAGE_SIZE)
+        .fetch_all(&mut **tx)
+        .await?;
+        let Some(last_id) = ids.last().copied() else {
+            return Ok(LockedPlanUsers::Locked(locked));
+        };
+        if locked.len().saturating_add(ids.len()) > PLAN_FORCE_UPDATE_MAX_USERS {
+            return Ok(LockedPlanUsers::LimitExceeded);
+        }
+        locked.extend(ids);
+        after_id = last_id;
+    }
+}
+
+async fn plan_user_ids_after_parent_lock(
+    tx: &mut Transaction<'_, Postgres>,
+    plan_id: i32,
+) -> Result<Vec<i64>, sqlx::Error> {
+    sqlx::query_scalar::<_, i64>("SELECT id FROM users WHERE plan_id = $1 ORDER BY id LIMIT $2")
+        .bind(plan_id)
+        .bind(i64::try_from(PLAN_FORCE_UPDATE_MAX_USERS).unwrap_or(i64::MAX) + 1)
+        .fetch_all(&mut **tx)
+        .await
+}
+
+#[derive(Debug, FromRow)]
+struct CurrentPlan {
+    group_id: i32,
+    transfer_enable: i64,
+    device_limit: Option<i32>,
+    speed_limit: Option<i32>,
+}
+
+fn plan_reference_for_constraint(constraint: Option<&str>) -> PlanReference {
+    match constraint {
+        Some("orders_referenced_plan_id_fkey") => PlanReference::Order,
+        Some("users_plan_id_fkey") => PlanReference::User,
+        Some("gift_card_plan_id_fkey") => PlanReference::GiftCard,
+        _ => PlanReference::Unknown,
+    }
+}
+
+fn plan_delete_outcome(error: &sqlx::Error) -> Option<DeletePlanOutcome> {
+    let database_error = error.as_database_error()?;
+    (database_error.code().as_deref() == Some("23503")).then(|| {
+        DeletePlanOutcome::InUse(plan_reference_for_constraint(database_error.constraint()))
+    })
+}
+
+impl PlanRepository for PostgresPlanRepository {
+    async fn list(&self) -> RepositoryResult<Vec<Plan>> {
+        let rows = fetch_all_plans(&self.pool)
+            .await
+            .map_err(|error| repository_error("list plans", error))?;
+        let counts = count_active_users_by_plan(&self.pool)
+            .await
+            .map_err(|error| repository_error("count active plan users", error))?;
+        rows.into_iter()
+            .map(|row| {
+                let count = counts.get(&row.id).copied().unwrap_or_default();
+                application_plan(row, count)
+                    .map_err(|error| repository_error("decode plan prices", error))
+            })
+            .collect()
+    }
+
+    async fn create(&self, plan: NewPlan) -> RepositoryResult<CreatePlanOutcome> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|error| repository_error("begin plan creation", error))?;
+        if !lock_server_group_for_share(&mut tx, plan.input.group_id)
+            .await
+            .map_err(|error| repository_error("lock plan server group", error))?
+        {
+            return Ok(CreatePlanOutcome::ServerGroupNotFound);
+        }
+        let id = sqlx::query_scalar::<_, i32>(
+            r#"
+            INSERT INTO plan (
+                group_id, transfer_enable, device_limit, name, speed_limit,
+                content, reset_traffic_method, capacity_limit, created_at, updated_at
+            )
+            VALUES (
+                CAST($1::BIGINT AS INTEGER), $2, CAST($3::BIGINT AS INTEGER), $4,
+                CAST($5::BIGINT AS INTEGER), $6, CAST($7::BIGINT AS SMALLINT),
+                CAST($8::BIGINT AS INTEGER), $9, $10
+            )
+            RETURNING id
+            "#,
+        )
+        .bind(plan.input.group_id)
+        .bind(plan.input.transfer_enable)
+        .bind(plan.input.device_limit)
+        .bind(&plan.input.name)
+        .bind(plan.input.speed_limit)
+        .bind(&plan.input.content)
+        .bind(plan.input.reset_traffic_method)
+        .bind(plan.input.capacity_limit)
+        .bind(plan.created_at)
+        .bind(plan.updated_at)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|error| repository_error("insert plan", error))?;
+        for (period, amount_minor) in plan.input.prices.iter() {
+            if amount_minor.is_some() {
+                set_plan_price(&mut tx, id, period, amount_minor)
+                    .await
+                    .map_err(|error| repository_error("insert plan price", error))?;
+            }
+        }
+        tx.commit()
+            .await
+            .map_err(|error| repository_error("commit plan creation", error))?;
+        Ok(CreatePlanOutcome::Created(id))
+    }
+
+    async fn patch(&self, id: i32, changes: PlanChanges) -> RepositoryResult<PatchPlanOutcome> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|error| repository_error("begin plan update", error))?;
+        let current = sqlx::query_as::<_, CurrentPlan>(
+            "SELECT group_id, transfer_enable, device_limit, speed_limit \
+             FROM plan WHERE id = $1 LIMIT 1",
+        )
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|error| repository_error("read current plan", error))?;
+        let Some(current) = current else {
+            return Ok(PatchPlanOutcome::PlanNotFound);
+        };
+
+        let target_group = changes.group_id.unwrap_or(i64::from(current.group_id));
+        if (changes.group_id.is_some() || changes.force_update)
+            && !lock_server_group_for_share(&mut tx, target_group)
+                .await
+                .map_err(|error| repository_error("lock plan server group", error))?
+        {
+            return Ok(PatchPlanOutcome::ServerGroupNotFound);
+        }
+
+        let locked_user_ids = if changes.force_update {
+            match lock_plan_users_for_update(&mut tx, id)
+                .await
+                .map_err(|error| repository_error("lock plan users", error))?
+            {
+                LockedPlanUsers::Locked(ids) => Some(ids),
+                LockedPlanUsers::LimitExceeded => {
+                    return Ok(PatchPlanOutcome::ForceUpdateLimitExceeded);
+                }
+            }
+        } else {
+            None
+        };
+
+        let locked_current = sqlx::query_as::<_, CurrentPlan>(
+            "SELECT group_id, transfer_enable, device_limit, speed_limit \
+             FROM plan WHERE id = $1 LIMIT 1 FOR UPDATE",
+        )
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|error| repository_error("lock current plan", error))?;
+        let Some(locked_current) = locked_current else {
+            return Ok(PatchPlanOutcome::PlanNotFound);
+        };
+        if changes.force_update
+            && changes.group_id.is_none()
+            && locked_current.group_id != current.group_id
+        {
+            return Ok(PatchPlanOutcome::UpdateConflict);
+        }
+        if let Some(locked_user_ids) = locked_user_ids {
+            let current_user_ids = plan_user_ids_after_parent_lock(&mut tx, id)
+                .await
+                .map_err(|error| repository_error("verify locked plan users", error))?;
+            if current_user_ids.len() > PLAN_FORCE_UPDATE_MAX_USERS {
+                return Ok(PatchPlanOutcome::ForceUpdateLimitExceeded);
+            }
+            if current_user_ids != locked_user_ids {
+                return Ok(PatchPlanOutcome::UpdateConflict);
+            }
+        }
+
+        let mut builder = QueryBuilder::<Postgres>::new("UPDATE plan SET ");
+        {
+            let mut assignments = builder.separated(", ");
+            if let Some(name) = &changes.name {
+                assignments
+                    .push("\"name\" = ")
+                    .push_bind_unseparated(name.clone());
+            }
+            if let Some(group_id) = changes.group_id {
+                assignments
+                    .push("\"group_id\" = CAST(")
+                    .push_bind_unseparated(group_id)
+                    .push_unseparated(" AS INTEGER)");
+            }
+            if let Some(transfer_enable) = changes.transfer_enable {
+                assignments
+                    .push("\"transfer_enable\" = ")
+                    .push_bind_unseparated(transfer_enable);
+            }
+            for (column, update) in [
+                ("device_limit", changes.device_limit),
+                ("speed_limit", changes.speed_limit),
+                ("capacity_limit", changes.capacity_limit),
+            ] {
+                if let Some(value) = update {
+                    assignments
+                        .push(format!("\"{column}\" = CAST("))
+                        .push_bind_unseparated(value)
+                        .push_unseparated(" AS INTEGER)");
+                }
+            }
+            if let Some(content) = &changes.content {
+                assignments
+                    .push("\"content\" = ")
+                    .push_bind_unseparated(content.clone());
+            }
+            if let Some(reset_traffic_method) = changes.reset_traffic_method {
+                assignments
+                    .push("\"reset_traffic_method\" = CAST(")
+                    .push_bind_unseparated(reset_traffic_method)
+                    .push_unseparated(" AS SMALLINT)");
+            }
+            if let Some(show) = changes.show {
+                assignments.push("\"show\" = ").push_bind_unseparated(show);
+            }
+            if let Some(renew) = changes.renew {
+                assignments
+                    .push("\"renew\" = ")
+                    .push_bind_unseparated(renew);
+            }
+            assignments
+                .push("\"updated_at\" = ")
+                .push_bind_unseparated(changes.updated_at);
+        }
+        builder.push(" WHERE id = ").push_bind(id);
+        builder
+            .build()
+            .execute(&mut *tx)
+            .await
+            .map_err(|error| repository_error("update plan", error))?;
+
+        for (period, update) in changes.prices.iter() {
+            let amount = match update {
+                PlanPriceUpdate::Retain => continue,
+                PlanPriceUpdate::Clear => None,
+                PlanPriceUpdate::Set(amount) => Some(amount),
+            };
+            set_plan_price(&mut tx, id, period, amount)
+                .await
+                .map_err(|error| repository_error("update plan price", error))?;
+        }
+
+        if changes.force_update {
+            let transfer_enable = changes
+                .transfer_enable
+                .unwrap_or(locked_current.transfer_enable);
+            let transfer_enable_bytes = plan_transfer_bytes(transfer_enable).map_err(|error| {
+                repository_error("convert plan transfer allowance", format!("{error:?}"))
+            })?;
+            let device_limit = changes
+                .device_limit
+                .unwrap_or(locked_current.device_limit.map(i64::from));
+            let speed_limit = changes
+                .speed_limit
+                .unwrap_or(locked_current.speed_limit.map(i64::from));
+            sqlx::query(
+                r#"
+                UPDATE users
+                SET group_id = CAST($1::BIGINT AS INTEGER), transfer_enable = $2,
+                    device_limit = CAST($3::BIGINT AS INTEGER),
+                    speed_limit = CAST($4::BIGINT AS INTEGER), updated_at = $5
+                WHERE plan_id = $6
+                "#,
+            )
+            .bind(target_group)
+            .bind(transfer_enable_bytes)
+            .bind(device_limit)
+            .bind(speed_limit)
+            .bind(changes.updated_at)
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|error| repository_error("propagate plan limits", error))?;
+        }
+
+        tx.commit()
+            .await
+            .map_err(|error| repository_error("commit plan update", error))?;
+        Ok(PatchPlanOutcome::Updated)
+    }
+
+    async fn delete(&self, id: i32) -> RepositoryResult<DeletePlanOutcome> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|error| repository_error("begin plan deletion", error))?;
+        if let Some(reference) = find_plan_reference_for_update(&mut tx, id)
+            .await
+            .map_err(|error| repository_error("preflight plan references", error))?
+        {
+            return Ok(DeletePlanOutcome::InUse(reference));
+        }
+        let exists =
+            sqlx::query_scalar::<_, i32>("SELECT id FROM plan WHERE id = $1 LIMIT 1 FOR UPDATE")
+                .bind(id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|error| repository_error("lock plan for deletion", error))?;
+        if exists.is_none() {
+            return Ok(DeletePlanOutcome::PlanNotFound);
+        }
+        if let Some(reference) = find_plan_reference_after_parent_lock(&mut tx, id)
+            .await
+            .map_err(|error| repository_error("verify plan references", error))?
+        {
+            return Ok(DeletePlanOutcome::InUse(reference));
+        }
+        let deleted = match sqlx::query("DELETE FROM plan WHERE id = $1")
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+        {
+            Ok(result) => result,
+            Err(error) => {
+                if let Some(outcome) = plan_delete_outcome(&error) {
+                    return Ok(outcome);
+                }
+                return Err(repository_error("delete plan", error));
+            }
+        };
+        if deleted.rows_affected() != 1 {
+            return Ok(DeletePlanOutcome::PlanNotFound);
+        }
+        if let Err(error) = tx.commit().await {
+            if let Some(outcome) = plan_delete_outcome(&error) {
+                return Ok(outcome);
+            }
+            return Err(repository_error("commit plan deletion", error));
+        }
+        Ok(DeletePlanOutcome::Deleted)
+    }
+
+    async fn sort_exact(&self, ids: &[i32]) -> RepositoryResult<SortPlansOutcome> {
+        match sort_plans_exact(&self.pool, ids).await {
+            Ok(()) => Ok(SortPlansOutcome::Sorted),
+            Err(SortPlansError::PlanSetChanged) => Ok(SortPlansOutcome::PlanSetChanged),
+            Err(SortPlansError::Database(error)) => Err(repository_error("sort plans", error)),
+        }
+    }
 }
 
 const PLAN_PROJECTION_SQL: &str = r#"

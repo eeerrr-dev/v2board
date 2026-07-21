@@ -1,71 +1,48 @@
 use chrono::Utc;
-use v2board_config::AppConfig;
-
-use super::{
-    giftcard::{
-        checked_add_cents, checked_add_giftcard_days, checked_gib_bytes, giftcard_plan_has_capacity,
-    },
-    invite::checked_transfer_balances,
-    stats::server_body,
-    subscription::{checked_reset_subscription_expiry, reset_day, reset_day_by_month_first_day},
+use v2board_application::service_usage::ServiceServer;
+use v2board_domain_model::{
+    checked_add_cents, checked_add_giftcard_days, checked_gib_bytes, giftcard_plan_has_capacity,
 };
 
-fn reset_day_plan_fixture(reset_traffic_method: Option<i16>) -> v2board_db::plan::PlanRow {
-    v2board_db::plan::PlanRow {
-        id: 1,
-        group_id: 1,
-        transfer_enable: 0,
-        device_limit: None,
-        name: "p".to_string(),
-        speed_limit: None,
-        show: true,
-        sort: None,
-        renew: true,
-        content: None,
-        month_price: None,
-        quarter_price: None,
-        half_year_price: None,
-        year_price: None,
-        two_year_price: None,
-        three_year_price: None,
-        onetime_price: None,
-        reset_price: None,
-        reset_traffic_method,
-        capacity_limit: None,
-        created_at: 0,
-        updated_at: 0,
-    }
-}
+use crate::subscription_adapters::{reset_day, reset_day_by_month_first_day};
+
+use super::{
+    invite::checked_transfer_balances,
+    stats::{ServerBody, server_body},
+};
 
 #[test]
 fn reset_day_returns_none_for_plan_less_user_ignoring_config_default() {
-    let mut config = AppConfig::from_api_env();
     // A month-first-day default would otherwise compute a non-null day.
-    config.reset_traffic_method = 0;
     let future = Utc::now().timestamp() + 30 * 86_400;
 
     // Plan-less: getResetDay returns null at the `plan_id === NULL` guard, never
     // the config default.
-    assert_eq!(reset_day(Some(future), None, &config), None);
-    // A resolved plan whose own method is NULL still uses the config default.
-    let null_method = reset_day_plan_fixture(None);
     assert_eq!(
-        reset_day(Some(future), Some(&null_method), &config),
+        reset_day(Some(future), None, 0, Utc::now().timestamp()),
+        None
+    );
+    // A resolved plan whose own method is NULL still uses the config default.
+    assert_eq!(
+        reset_day(Some(future), Some(None), 0, Utc::now().timestamp()),
         Some(reset_day_by_month_first_day())
     );
     // method 2 (no reset) is null even with a plan.
-    let no_reset = reset_day_plan_fixture(Some(2));
-    assert_eq!(reset_day(Some(future), Some(&no_reset), &config), None);
+    assert_eq!(
+        reset_day(Some(future), Some(Some(2)), 0, Utc::now().timestamp()),
+        None
+    );
     // Missing / past expiry is null.
-    assert_eq!(reset_day(None, Some(&null_method), &config), None);
-    assert_eq!(reset_day(Some(1), Some(&null_method), &config), None);
+    assert_eq!(reset_day(None, Some(None), 0, Utc::now().timestamp()), None);
+    assert_eq!(
+        reset_day(Some(1), Some(None), 0, Utc::now().timestamp()),
+        None
+    );
 }
 
 #[test]
 fn reset_day_by_expire_day_clamps_to_the_short_month_end_under_a_frozen_clock() {
     use chrono::TimeZone;
-    let config = AppConfig::from_api_env();
-    let expire_day_plan = reset_day_plan_fixture(Some(1));
     // Expiry anniversary on the 31st (Asia/Shanghai calendar).
     let expired_at = v2board_config::app_timezone()
         .with_ymd_and_hms(2026, 3, 31, 10, 0, 0)
@@ -79,7 +56,12 @@ fn reset_day_by_expire_day_clamps_to_the_short_month_end_under_a_frozen_clock() 
         let _clock =
             v2board_config::freeze_time(Utc.with_ymd_and_hms(2026, 2, 27, 20, 0, 0).unwrap());
         assert_eq!(
-            reset_day(Some(expired_at), Some(&expire_day_plan), &config),
+            reset_day(
+                Some(expired_at),
+                Some(Some(1)),
+                0,
+                v2board_config::now_utc().timestamp(),
+            ),
             Some(0)
         );
     }
@@ -88,7 +70,12 @@ fn reset_day_by_expire_day_clamps_to_the_short_month_end_under_a_frozen_clock() 
         let _clock =
             v2board_config::freeze_time(Utc.with_ymd_and_hms(2026, 2, 19, 20, 0, 0).unwrap());
         assert_eq!(
-            reset_day(Some(expired_at), Some(&expire_day_plan), &config),
+            reset_day(
+                Some(expired_at),
+                Some(Some(1)),
+                0,
+                v2board_config::now_utc().timestamp(),
+            ),
             Some(8)
         );
     }
@@ -97,28 +84,33 @@ fn reset_day_by_expire_day_clamps_to_the_short_month_end_under_a_frozen_clock() 
     // reset day at all.
     let _clock = v2board_config::freeze_time(Utc.with_ymd_and_hms(2026, 3, 31, 16, 0, 0).unwrap());
     assert_eq!(
-        reset_day(Some(expired_at), Some(&expire_day_plan), &config),
+        reset_day(
+            Some(expired_at),
+            Some(Some(1)),
+            0,
+            v2board_config::now_utc().timestamp(),
+        ),
         None
     );
 }
 
-fn server_row_fixture() -> v2board_db::server::AvailableServerRow {
-    v2board_db::server::AvailableServerRow {
+fn server_row_fixture() -> ServiceServer {
+    ServiceServer {
         id: 1,
         parent_id: None,
-        group_id: vec![1],
-        route_id: None,
+        group_ids: vec![1],
+        route_ids: None,
         name: "Node".to_string(),
-        rate: "1.5".to_string(),
-        r#type: "shadowsocks".to_string(),
+        rate: 1.5,
+        kind: "shadowsocks".to_string(),
         host: "node.example.test".to_string(),
-        port: serde_json::Value::from(443_i64),
+        port: 443,
         cache_key: "shadowsocks-1-0-1".to_string(),
         last_check_at: Some(1_700_000_000),
-        is_online: 1,
+        online: true,
         tags: None,
         sort: None,
-        extra: serde_json::Value::Null,
+        extra_json: None,
     }
 }
 
@@ -128,57 +120,31 @@ fn server_row_fixture() -> v2board_db::server::AvailableServerRow {
 #[test]
 fn server_body_enforces_the_numeric_wire_contract() {
     let body = server_body(server_row_fixture()).unwrap();
-    assert_eq!(body.rate, 1.5);
-    assert_eq!(body.port, 443);
-    assert!(body.is_online);
-    assert_eq!(body.last_check_at, Some(1_700_000_000));
+    let ServerBody::Shadowsocks { server, extra } = body else {
+        panic!("fixture must project to the shadowsocks variant");
+    };
+    assert!(extra.is_none());
+    assert_eq!(server.rate, 1.5);
+    assert_eq!(server.port, 443);
+    assert!(server.is_online);
+    assert_eq!(
+        server.last_check_at,
+        Some(v2board_api_contract::time::Rfc3339Timestamp::from_epoch_seconds(1_700_000_000,))
+    );
 
-    // String-typed but numeric legacy port values still convert.
-    let mut string_port = server_row_fixture();
-    string_port.port = serde_json::Value::String(" 8443 ".to_string());
-    string_port.is_online = 0;
-    let body = server_body(string_port).unwrap();
-    assert_eq!(body.port, 8443);
-    assert!(!body.is_online);
-
-    // Non-numeric operator values are internal errors, not string fallbacks.
-    let mut bad_rate = server_row_fixture();
-    bad_rate.rate = "fast".to_string();
-    assert!(server_body(bad_rate).is_err());
-    let mut nan_rate = server_row_fixture();
-    nan_rate.rate = "NaN".to_string();
-    assert!(server_body(nan_rate).is_err());
-    let mut bad_port = server_row_fixture();
-    bad_port.port = serde_json::Value::String("443,8443".to_string());
-    assert!(server_body(bad_port).is_err());
+    let mut offline = server_row_fixture();
+    offline.online = false;
+    let body = server_body(offline).unwrap();
+    let ServerBody::Shadowsocks { server, .. } = body else {
+        panic!("fixture must project to the shadowsocks variant");
+    };
+    assert!(!server.is_online);
 }
 
 #[test]
 fn cents_addition_rejects_balance_overflow() {
-    assert_eq!(checked_add_cents(10, 20, "overflow").unwrap(), 30);
-    assert!(checked_add_cents(i32::MAX, 1, "overflow").is_err());
-}
-
-#[test]
-fn reset_subscription_expiry_math_rejects_timestamp_overflow() {
-    assert_eq!(
-        checked_reset_subscription_expiry(100 * 86_400, 30, 30, 0).unwrap(),
-        Some(70 * 86_400)
-    );
-    assert_eq!(
-        checked_reset_subscription_expiry(31 * 86_400, 30, 30, 0).unwrap(),
-        None
-    );
-    assert!(checked_reset_subscription_expiry(i64::MAX, 30, 30, i64::MIN).is_err());
-    // An already-expired timestamp safely short-circuits before a reset is applied; the huge
-    // reset duration is irrelevant on this branch and is not itself a timestamp overflow.
-    assert_eq!(
-        checked_reset_subscription_expiry(i64::MIN, i64::MAX, 30, 0).unwrap(),
-        None
-    );
-    // A future expiry reaches the reset calculation and rejects the unrepresentable duration.
-    assert!(checked_reset_subscription_expiry(i64::MAX, i64::MAX, 30, 0).is_err());
-    assert!(checked_reset_subscription_expiry(100, 1, i64::MAX, 0).is_err());
+    assert_eq!(checked_add_cents(10, 20).unwrap(), 30);
+    assert!(checked_add_cents(i32::MAX, 1).is_err());
 }
 
 #[test]

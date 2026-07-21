@@ -114,7 +114,7 @@ pub(crate) async fn prepare_from_env() -> anyhow::Result<()> {
         ]),
         runtime_paths,
     )?;
-    v2board_domain::operator_config::seed_initial_authority(
+    v2board_configuration_adapters::operator_config::seed_initial_authority(
         &migration,
         installation_id,
         &candidate.app_key,

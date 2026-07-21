@@ -54,11 +54,20 @@ backend/rust/
   crates/analytics/          typed events, PostgreSQL outbox and ClickHouse relay/schema
   crates/api/                Axum API and frontend delivery; no legacy source adapter
   crates/api-contract/       canonical internal operation registry, transport DTOs and OpenAPI source
+  crates/application/        infrastructure-free use cases, commands/views and outbound ports
+  crates/auth-adapters/      password, Redis-session and external-auth adapters
+  crates/configuration-adapters/ operator-config activation and configuration integrations
+  crates/http-adapters/      bounded upstream HTTP response adapters
+  crates/mail-adapters/      SMTP, durable mail outbox and worker-mail PostgreSQL adapters
+  crates/order-adapters/     order runtime composition, clock and identifier adapters
+  crates/payment-adapters/   payment gateways, provider secrets and provider HTTP adapters
+  crates/redis-adapters/     shared Redis admission/runtime adapters
+  crates/server-adapters/    node credential and server-runtime adapters
+  crates/subscription-adapters/ subscription token/link adapters
   crates/problem-code/       zero-dependency internal problem code/status/title registry
   crates/compat/             runtime problem responses and frozen external wire helpers
   crates/config/             native JSON/environment configuration
-  crates/db/                 PostgreSQL-only runtime access
-  crates/domain/             business rules and external integrations
+  crates/db/                 PostgreSQL repository adapters and transaction boundaries
   crates/domain-model/       infrastructure-free business values and policies
   crates/provision/          mysql-import.v1 validation and fixed converter policy
   crates/lifecycle/          disposable validate/inspect/execute MySQL-import CLI
@@ -103,10 +112,10 @@ disposable lifecycle/provision import graph.
 
 `make api-contract-check` regenerates the committed OpenAPI 3.1 document and its TypeScript/Zod
 operation bindings from `v2board-api-contract`, then fails on any drift. This covers every internal
-operation and its operation-level metadata; only DTOs already moved into `api-contract` have
-field-level TypeScript/Zod validation, while most JSON request and success bodies still project as
-`JsonValue`. The HTTP adapter maps typed wire DTOs to application commands/views; application and
-pure-domain crates may not depend on the transport crate. See
+operation and its operation-level metadata. All 64 JSON request bodies and all 95 JSON success
+representations use named, field-level DTO roots; the recursive `JsonValue` contract is absent and
+ordinary objects are closed to unknown fields. The HTTP adapter maps typed wire DTOs to application
+commands/views; application and pure-domain crates may not depend on the transport crate. See
 [`rust/ARCHITECTURE.md`](rust/ARCHITECTURE.md).
 
 Do not run host Cargo commands that create `target/` in the repository. The workspace targets Rust

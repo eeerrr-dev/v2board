@@ -1,5 +1,4 @@
 mod config;
-mod repository;
 mod request;
 mod response;
 mod traffic;
@@ -13,12 +12,9 @@ use axum::{
     http::HeaderMap,
     response::Response,
 };
-use chrono::Utc;
-use redis::AsyncCommands;
 use serde::Serialize;
-use sqlx::FromRow;
+use v2board_application::server_runtime::{RuntimeServerNode as ServerNodeRow, RuntimeServerUser};
 use v2board_compat::ApiError;
-use v2board_db::server::AvailableServerRow;
 
 use crate::runtime::AppState;
 
@@ -27,14 +23,11 @@ use self::{
         server_deepbwork_config, server_trojan_tidalab_config, server_uniproxy_config,
         server_v2_config_value,
     },
-    repository::load_server_node,
     request::{required_i32_param, server_identity, server_request_input, validate_server_token},
     response::{raw_value_response, server_fail_response},
     traffic::{server_alive, server_alive_list, server_push},
     users::{server_tidalab_user, server_uniproxy_user},
 };
-
-const REDIS_MGET_BATCH_SIZE: usize = 500;
 
 pub(super) async fn server_v1(
     State(state): State<AppState>,
@@ -43,11 +36,10 @@ pub(super) async fn server_v1(
     request: Request,
 ) -> Result<Response, ApiError> {
     let input = server_request_input(request).await?;
-    let config = state.config_snapshot();
     let class = class.to_ascii_lowercase();
     let action = action.to_ascii_lowercase();
     let identity = server_identity(&class, &input.params)?;
-    validate_server_token(&state.db, &config, &headers, &input.params, &identity).await?;
+    validate_server_token(&state, &headers, &input.params, &identity).await?;
 
     match (class.as_str(), action.as_str()) {
         ("uniproxy", "user") => server_uniproxy_user(&state, &headers, &input.params).await,
@@ -119,21 +111,23 @@ pub(super) async fn server_v2_config(
     request: Request,
 ) -> Result<Response, ApiError> {
     let input = server_request_input(request).await?;
-    let config = state.config_snapshot();
     let identity = match server_identity("v2node", &input.params) {
         Ok(identity) => identity,
         Err(error) => return Ok(server_fail_response(error.to_string())),
     };
-    if let Err(error) =
-        validate_server_token(&state.db, &config, &headers, &input.params, &identity).await
-    {
+    if let Err(error) = validate_server_token(&state, &headers, &input.params, &identity).await {
         return Ok(server_fail_response(error.to_string()));
     }
     let node_id = match required_i32_param(&input.params, "node_id") {
         Ok(node_id) => node_id,
         Err(error) => return Ok(server_fail_response(error.to_string())),
     };
-    let Some(node) = load_server_node(&state.db, "v2node", node_id).await? else {
+    let Some(node) = state
+        .server_runtime_service()
+        .node(v2board_domain_model::ServerKind::V2node, node_id)
+        .await
+        .map_err(|error| ApiError::internal(error.to_string()))?
+    else {
         return Ok(server_fail_response("server is not exist"));
     };
     // COST DECISION (accept, do not cache): every node poll re-materializes and
@@ -153,100 +147,7 @@ pub(super) async fn server_v2_config(
     raw_value_response(value, &headers, false)
 }
 
-/// Hydrate `is_online` / `last_check_at` on the available-server rows from the node health
-/// cache keys the node API writes (`SERVER_<TYPE>_LAST_CHECK_AT_<id>`, uppercase type).
-///
-/// `fetch_available_servers` (v2board_db) cannot reach Redis, so it emits every row with
-/// `last_check_at = None` / `is_online = 0`. This mirrors ServerService::getAvailableServers
-/// (ServerService.php:245-246): a node is online when its last check-in is newer than 300s ago,
-/// and a child (relay) node inherits its parent's check-in (the per-protocol `getAvailable*`
-/// helpers key `last_check_at` on `parent_id ?? id`). The `cache_key` embeds `is_online`
-/// (ServerService.php:246), so its trailing segment is rewritten in place.
-///
-/// Call this from `main.rs` immediately after `fetch_available_servers`, on a `mut` binding.
-pub(super) async fn hydrate_online_status(
-    state: &AppState,
-    servers: &mut [AvailableServerRow],
-) -> Result<(), ApiError> {
-    if servers.is_empty() {
-        return Ok(());
-    }
-    let mut conn = state.redis.get_multiplexed_async_connection().await?;
-    let now = Utc::now().timestamp();
-    for servers in servers.chunks_mut(REDIS_MGET_BATCH_SIZE) {
-        let keys = servers
-            .iter()
-            .map(|server| {
-                let check_id = server.parent_id.unwrap_or(server.id);
-                state.redis_key(&format!(
-                    "SERVER_{}_LAST_CHECK_AT_{check_id}",
-                    server.r#type.to_ascii_uppercase()
-                ))
-            })
-            .collect::<Vec<_>>();
-        let last_check_values = conn.mget::<_, Vec<Option<i64>>>(&keys).await?;
-        for (server, last_check_at) in servers.iter_mut().zip(last_check_values) {
-            server.last_check_at = last_check_at;
-            // ServerService.php:245 — is_online = (time() - 300 > last_check_at) ? 0 : 1; a missing
-            // key (null) compares as 0 in PHP, i.e. offline.
-            let is_online = server_online_status(now, last_check_at);
-            server.is_online = is_online;
-            // cache_key is `{type}-{id}-{updated_at}-{is_online}` — rewrite only the last segment.
-            // Take an owned prefix first so the borrow ends before the reassignment.
-            if let Some(prefix) = server
-                .cache_key
-                .rsplit_once('-')
-                .map(|(prefix, _)| prefix.to_owned())
-            {
-                server.cache_key = format!("{prefix}-{is_online}");
-            }
-        }
-    }
-    Ok(())
-}
-
-fn server_online_status(now: i64, last_check_at: Option<i64>) -> i16 {
-    // Widen before subtracting so the exact legacy boundary (`now - 300 > last_check_at`) is
-    // preserved without collapsing an i64 underflow onto `i64::MIN`.
-    if i128::from(now) - 300 > i128::from(last_check_at.unwrap_or(0)) {
-        0
-    } else {
-        1
-    }
-}
-
-#[derive(Debug, Clone, FromRow)]
-struct ServerNodeRow {
-    id: i32,
-    group_id: String,
-    route_id: Option<String>,
-    rate: String,
-    host: String,
-    server_port: i32,
-    created_at: i64,
-    listen_ip: Option<String>,
-    protocol: Option<String>,
-    version: Option<i32>,
-    tls: Option<i16>,
-    tls_settings: Option<String>,
-    flow: Option<String>,
-    network: Option<String>,
-    network_settings: Option<String>,
-    encryption: Option<String>,
-    encryption_settings: Option<String>,
-    zero_rtt_handshake: Option<i16>,
-    congestion_control: Option<String>,
-    cipher: Option<String>,
-    obfs: Option<String>,
-    obfs_settings: Option<String>,
-    obfs_password: Option<String>,
-    padding_scheme: Option<String>,
-    server_name: Option<String>,
-    up_mbps: Option<i32>,
-    down_mbps: Option<i32>,
-}
-
-#[derive(Debug, Clone, FromRow, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 struct ServerUserRow {
     id: i64,
     uuid: String,
@@ -254,6 +155,17 @@ struct ServerUserRow {
     speed_limit: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     device_limit: Option<i32>,
+}
+
+impl From<RuntimeServerUser> for ServerUserRow {
+    fn from(user: RuntimeServerUser) -> Self {
+        Self {
+            id: user.id,
+            uuid: user.uuid,
+            speed_limit: user.speed_limit,
+            device_limit: user.device_limit,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -268,12 +180,4 @@ struct ParsedTrafficEntries {
     entries: Vec<TrafficEntry>,
     ignored_rows: usize,
     defaulted_counters: usize,
-}
-
-#[derive(Debug, Clone, FromRow)]
-struct ServerRouteRow {
-    id: i32,
-    match_text: String,
-    action: String,
-    action_value: Option<String>,
 }

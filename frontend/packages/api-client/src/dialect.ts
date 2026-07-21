@@ -1,4 +1,6 @@
+import type { InternalApiProblemDetails } from '@v2board/types';
 import { z } from 'zod';
+import { internalApiProblemDetailsSchema } from './generated/internal-api';
 
 // Modern internal-dialect client core (docs/api-dialect.md §14, Appendix A
 // §W0). Inert foundations: everything here is exported and unit-tested only —
@@ -45,20 +47,12 @@ export function dialectRequestHeaders({ authData, locale }: DialectHeaderInputs 
 
 /**
  * §3.1 — the RFC 9457 problem body every internal-route error carries.
- * Loose: RFC 9457 permits extension members, and unknown `code` slugs must
- * still parse (apps fall back to `detail` verbatim for unknown codes).
+ * RFC 9457 extension members remain accepted, while the generated stable
+ * internal `code` registry and each code's status/title invariants stay closed.
  */
-export const problemDetailsSchema = z.looseObject({
-  type: z.string(),
-  title: z.string(),
-  status: z.number().int().min(400),
-  code: z.string().min(1),
-  detail: z.string(),
-  /** Present only for `validation_failed`: ordered `{field: [messages]}`. */
-  errors: z.record(z.string(), z.array(z.string())).optional(),
-});
+export const problemDetailsSchema = internalApiProblemDetailsSchema;
 
-export type ProblemDetails = z.output<typeof problemDetailsSchema>;
+export type ProblemDetails = InternalApiProblemDetails;
 
 /**
  * The modern error surface: `{status, code, detail, errors}` (§14). `code` is

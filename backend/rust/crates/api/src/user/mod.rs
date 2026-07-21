@@ -18,8 +18,8 @@ pub(crate) use invite::{
 };
 pub(crate) use stats::{user_servers, user_stats, user_traffic_logs};
 pub(crate) use subscription::{
-    reset_day, resolve_subscribe_token, resolve_totp_subscribe_token, subscribe_url_for_user,
-    subscription_new_period, subscription_reset_token, user_is_available, user_subscription,
+    resolve_subscribe_token, resolve_totp_subscribe_token, subscribe_url_for_user,
+    subscription_new_period, subscription_reset_token, user_subscription,
 };
 
 #[cfg(test)]

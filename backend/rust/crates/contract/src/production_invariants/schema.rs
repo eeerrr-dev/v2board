@@ -7,10 +7,10 @@ use v2board_analytics::{
     install_analytics_admission_policy, mark_batch_published, refresh_analytics_admission,
     release_batch_for_retry,
 };
+use v2board_configuration_adapters::operator_config;
 use v2board_db::{installation_id, migrations_current};
-use v2board_domain::operator_config;
 
-use super::harness::{MIGRATOR, insert_user, integration_config, random_traffic_key};
+use super::harness::{MIGRATOR, insert_user, operator_authority_config, random_traffic_key};
 
 pub(super) async fn install_contract_analytics_admission(pool: &PgPool) -> Result<()> {
     let now = Utc::now().timestamp();
@@ -42,11 +42,11 @@ pub(super) async fn install_contract_analytics_admission(pool: &PgPool) -> Resul
     Ok(())
 }
 
-pub(super) async fn install_contract_operator_config_authority(
-    pool: &PgPool,
-    redis_url: &str,
-) -> Result<()> {
-    let config = integration_config(pool, redis_url)?;
+pub(super) async fn install_contract_operator_config_authority(pool: &PgPool) -> Result<()> {
+    // This authority is the one invariant that must retain the process's real
+    // bootstrap-only fields. Hot-reload validation deliberately rejects the
+    // test-only environment/Redis/app-key mutations used by other contracts.
+    let config = operator_authority_config()?;
     let installation_id = installation_id(pool).await?;
     let candidate = config.operator_config_map();
     let snapshot = operator_config::seed_initial_authority(

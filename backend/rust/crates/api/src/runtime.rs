@@ -12,19 +12,70 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use chrono::Utc;
 use serde_json::json;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 use uuid::Uuid;
 use v2board_analytics::{AnalyticsPressureState, analytics_admission_snapshot};
+use v2board_application::{
+    account::AccountService,
+    admin_order::{AdminOrderService, AssignOrderPolicy},
+    admin_user::AdminUserService,
+    audit::AuditService,
+    content::ContentService,
+    giftcard::GiftCardService,
+    invite::InviteService,
+    logs::LogService,
+    operator_access::{OperatorMfaResetOutcome, OperatorPasswordResetOutcome},
+    payment::PaymentService,
+    plan::PlanService,
+    promotion::PromotionService,
+    reconciliation::ReconciliationService,
+    server_management::ServerManagementService,
+    server_runtime::ServerRuntimeService,
+    service_usage::ServiceUsageService,
+    statistics::StatisticsService,
+    subscription::{SubscriptionAccessService, SubscriptionService},
+    system_monitoring::SystemMonitoringService,
+    telegram::{TelegramPolicy, TelegramService},
+    ticket::{TicketPolicy, TicketService},
+};
+use v2board_auth_adapters::{
+    PasswordKdf, RuntimeAuthService, RuntimeOperatorAccessService, runtime_auth_service,
+};
 use v2board_compat::ApiError;
 use v2board_config::{AppConfig, RedisKeyspace};
-use v2board_db::{DbPool, migrations_current};
-use v2board_domain::{
-    admin::AdminService,
-    auth::{AuthService, PasswordKdf},
-    operator_config::{self, OperatorConfigConsumer},
-    smtp::SmtpTransportCache,
+use v2board_configuration_adapters::operator_config::{self, OperatorConfigConsumer};
+use v2board_configuration_adapters::{RuntimeConfigurationService, runtime_configuration_service};
+use v2board_db::{
+    DbPool, account::PostgresAccountRepository, admin_order::PostgresAdminOrderRepository,
+    admin_payment::PostgresPaymentRepository, admin_server::PostgresServerManagementRepository,
+    admin_user::PostgresAdminUserRepository, audit::PostgresAuditRepository,
+    content::PostgresContentRepository, coupon::PostgresPromotionRepository,
+    giftcard::PostgresGiftCardRepository, invite::PostgresInviteRepository,
+    logs::PostgresLogRepository, migrations_current, plan::PostgresPlanRepository,
+    reconciliation::PostgresReconciliationRepository,
+    server_runtime::PostgresServerRuntimeRepository, service_usage::PostgresServiceUsageRepository,
+    statistics::PostgresStatisticsRepository, subscription::PostgresSubscriptionRepository,
+    telegram::PostgresTelegramRepository, ticket::PostgresTicketRepository,
+};
+use v2board_domain_model::TicketCreationPolicy;
+use v2board_mail_adapters::smtp::SmtpTransportCache;
+use v2board_order_adapters::{
+    RuntimeOrderService, TimestampOrderNumberGenerator, runtime_order_service,
+};
+use v2board_payment_adapters::{EncryptedPaymentSecurity, Sha256ReconciliationIdentityHasher};
+use v2board_server_adapters::HmacNodeCredentials;
+
+use crate::{
+    admin_order_adapters::{RuntimeAdminOrderLifecycle, RuntimeOrderNumberGenerator},
+    admin_user_adapters::RuntimeAdminUserExternal,
+    server_management_adapters::{OpenSslServerCredentials, RedisAdminServerPresence},
+    server_runtime_adapters::RedisServerRuntimeCache,
+    service_usage_adapters::RedisServerPresence,
+    statistics_adapters::{ConfiguredStatisticsCalendar, RedisWorkerMetrics},
+    subscription_adapters::{ConfiguredResetCalendar, RedisSubscriptionAccess},
+    telegram_adapters::RuntimeTelegramExternal,
+    ticket_adapters::{RedisTicketAdmission, TicketEmailNotifications},
 };
 
 mod ingress;
@@ -122,8 +173,8 @@ impl AppState {
         self.config.store(Arc::new(config));
     }
 
-    pub(crate) fn auth_service(&self) -> AuthService {
-        AuthService::new(
+    pub(crate) fn auth_service(&self) -> RuntimeAuthService {
+        runtime_auth_service(
             self.db.clone(),
             self.auth_redis.clone(),
             self.installation_id,
@@ -134,15 +185,237 @@ impl AppState {
         )
     }
 
-    pub(crate) fn admin_service(&self, config: Arc<AppConfig>) -> AdminService {
-        AdminService::new(
+    pub(crate) fn configuration_service(&self) -> RuntimeConfigurationService {
+        runtime_configuration_service(
             self.db.clone(),
-            self.redis.clone(),
             self.installation_id,
-            config,
+            self.config_snapshot(),
             self.http.clone(),
-            self.password_kdf.clone(),
             self.smtp.clone(),
+        )
+    }
+
+    pub(crate) fn audit_service(&self) -> AuditService<PostgresAuditRepository> {
+        AuditService::new(PostgresAuditRepository::new(self.db.clone()))
+    }
+
+    pub(crate) fn content_service(&self) -> ContentService<PostgresContentRepository> {
+        ContentService::new(PostgresContentRepository::new(self.db.clone()))
+    }
+
+    pub(crate) fn account_service(&self) -> AccountService<PostgresAccountRepository> {
+        AccountService::new(PostgresAccountRepository::new(self.db.clone()))
+    }
+
+    pub(crate) fn invite_service(
+        &self,
+    ) -> InviteService<PostgresInviteRepository, TimestampOrderNumberGenerator> {
+        InviteService::new(
+            PostgresInviteRepository::new(self.db.clone()),
+            TimestampOrderNumberGenerator,
+        )
+    }
+
+    pub(crate) fn plan_service(&self) -> PlanService<PostgresPlanRepository> {
+        PlanService::new(PostgresPlanRepository::new(self.db.clone()))
+    }
+
+    pub(crate) fn payment_service(
+        &self,
+    ) -> PaymentService<PostgresPaymentRepository, EncryptedPaymentSecurity> {
+        let config = self.config_snapshot();
+        PaymentService::new(
+            PostgresPaymentRepository::new(self.db.clone()),
+            EncryptedPaymentSecurity::new(config.app_key.clone()),
+            config.app_url.clone(),
+        )
+    }
+
+    pub(crate) fn order_service(&self) -> RuntimeOrderService {
+        runtime_order_service(self.db.clone(), self.config_snapshot())
+    }
+
+    pub(crate) fn admin_order_service(
+        &self,
+    ) -> AdminOrderService<
+        PostgresAdminOrderRepository,
+        RuntimeAdminOrderLifecycle,
+        RuntimeOrderNumberGenerator,
+    > {
+        let config = self.config_snapshot();
+        AdminOrderService::new(
+            PostgresAdminOrderRepository::new(self.db.clone()),
+            RuntimeAdminOrderLifecycle::new(self.db.clone(), config.clone()),
+            RuntimeOrderNumberGenerator,
+            AssignOrderPolicy {
+                default_commission_rate: config.invite_commission,
+                commission_first_time_enable: config.commission_first_time_enable,
+            },
+        )
+    }
+
+    pub(crate) fn admin_user_service(
+        &self,
+    ) -> AdminUserService<PostgresAdminUserRepository, RuntimeAdminUserExternal> {
+        AdminUserService::new(
+            PostgresAdminUserRepository::new(self.db.clone()),
+            RuntimeAdminUserExternal::new(
+                self.redis.clone(),
+                self.redis_keys.clone(),
+                self.config_snapshot(),
+                self.password_kdf.clone(),
+            ),
+        )
+    }
+
+    pub(crate) fn reconciliation_service(
+        &self,
+    ) -> ReconciliationService<PostgresReconciliationRepository, Sha256ReconciliationIdentityHasher>
+    {
+        ReconciliationService::new(
+            PostgresReconciliationRepository::new(self.db.clone()),
+            Sha256ReconciliationIdentityHasher,
+        )
+    }
+
+    pub(crate) fn promotion_service(&self) -> PromotionService<PostgresPromotionRepository> {
+        PromotionService::new(PostgresPromotionRepository::new(self.db.clone()))
+    }
+
+    pub(crate) fn server_management_service(
+        &self,
+    ) -> ServerManagementService<
+        PostgresServerManagementRepository,
+        RedisAdminServerPresence,
+        OpenSslServerCredentials,
+    > {
+        let config = self.config_snapshot();
+        let install_api_host = config
+            .server_api_url
+            .clone()
+            .or_else(|| config.app_url.clone())
+            .unwrap_or_default();
+        ServerManagementService::new(
+            PostgresServerManagementRepository::new(self.db.clone()),
+            RedisAdminServerPresence::new(self.redis.clone(), self.redis_keys.clone()),
+            OpenSslServerCredentials::new(
+                config.server_token.clone().unwrap_or_default(),
+                install_api_host,
+            ),
+        )
+    }
+
+    pub(crate) fn giftcard_service(&self) -> GiftCardService<PostgresGiftCardRepository> {
+        GiftCardService::new(PostgresGiftCardRepository::new(self.db.clone()))
+    }
+
+    pub(crate) fn server_runtime_service(
+        &self,
+    ) -> ServerRuntimeService<
+        PostgresServerRuntimeRepository,
+        RedisServerRuntimeCache,
+        HmacNodeCredentials,
+    > {
+        ServerRuntimeService::new(
+            PostgresServerRuntimeRepository::new(self.db.clone()),
+            RedisServerRuntimeCache::new(self.redis.clone(), self.redis_keys.clone()),
+            HmacNodeCredentials::new(
+                self.config_snapshot()
+                    .server_token
+                    .clone()
+                    .unwrap_or_default(),
+            ),
+        )
+    }
+
+    pub(crate) fn service_usage_service(
+        &self,
+    ) -> ServiceUsageService<PostgresServiceUsageRepository, RedisServerPresence> {
+        ServiceUsageService::new(
+            PostgresServiceUsageRepository::new(self.db.clone()),
+            RedisServerPresence::new(self.redis.clone(), self.redis_keys.clone()),
+        )
+    }
+
+    pub(crate) fn subscription_service(
+        &self,
+    ) -> SubscriptionService<PostgresSubscriptionRepository, ConfiguredResetCalendar> {
+        SubscriptionService::new(
+            PostgresSubscriptionRepository::new(self.db.clone()),
+            ConfiguredResetCalendar,
+        )
+    }
+
+    pub(crate) fn subscription_access_service(
+        &self,
+    ) -> SubscriptionAccessService<PostgresSubscriptionRepository, RedisSubscriptionAccess> {
+        SubscriptionAccessService::new(
+            PostgresSubscriptionRepository::new(self.db.clone()),
+            RedisSubscriptionAccess::new(
+                self.auth_redis.clone(),
+                self.redis_keys.clone(),
+                self.config_snapshot(),
+            ),
+        )
+    }
+
+    pub(crate) fn statistics_service(
+        &self,
+    ) -> StatisticsService<PostgresStatisticsRepository, ConfiguredStatisticsCalendar> {
+        StatisticsService::new(
+            PostgresStatisticsRepository::new(self.db.clone()),
+            ConfiguredStatisticsCalendar,
+        )
+    }
+
+    pub(crate) fn log_service(&self) -> LogService<PostgresLogRepository> {
+        LogService::new(PostgresLogRepository::new(self.db.clone()))
+    }
+
+    pub(crate) fn system_monitoring_service(&self) -> SystemMonitoringService<RedisWorkerMetrics> {
+        SystemMonitoringService::new(RedisWorkerMetrics::new(
+            self.redis.clone(),
+            self.redis_keys.clone(),
+        ))
+    }
+
+    pub(crate) fn ticket_service(
+        &self,
+    ) -> TicketService<PostgresTicketRepository, RedisTicketAdmission, TicketEmailNotifications>
+    {
+        let config = self.config_snapshot();
+        TicketService::new(
+            PostgresTicketRepository::new(self.db.clone()),
+            RedisTicketAdmission::new(self.auth_redis.clone(), self.redis_keys.clone()),
+            TicketEmailNotifications::new(
+                self.redis.clone(),
+                self.redis_keys.clone(),
+                config.clone(),
+            ),
+            TicketPolicy {
+                creation: TicketCreationPolicy::from(config.ticket_status),
+                withdrawal_closed: config.withdraw_close_enable,
+                withdrawal_methods: config.commission_withdraw_method.clone(),
+                withdrawal_minimum_mantissa: config.commission_withdraw_limit.mantissa(),
+                withdrawal_minimum_scale: config.commission_withdraw_limit.scale(),
+                withdrawal_minimum_display: config.commission_withdraw_limit.to_string(),
+            },
+        )
+    }
+
+    pub(crate) fn telegram_service(
+        &self,
+        bot_token: String,
+    ) -> TelegramService<PostgresTelegramRepository, RuntimeTelegramExternal> {
+        let config = self.config_snapshot();
+        TelegramService::new(
+            PostgresTelegramRepository::new(self.db.clone()),
+            RuntimeTelegramExternal::new(self.clone(), bot_token),
+            TelegramPolicy {
+                app_name: config.app_name.clone(),
+                app_url: config.app_url.clone().unwrap_or_default(),
+                notifications_enabled: config.telegram_bot_enable,
+            },
         )
     }
 
@@ -493,31 +766,28 @@ pub(crate) fn build_http_client(config: &AppConfig) -> anyhow::Result<reqwest::C
 /// `v2board-api reset-admin-totp <email>` — the operator escape hatch for a
 /// privileged account locked out of its TOTP factor. Removes the factor
 /// (pending or enabled); the account's password remains untouched.
-pub(crate) async fn reset_admin_totp(db: &DbPool, email: &str) -> anyhow::Result<()> {
+pub(crate) async fn reset_admin_totp(
+    service: &RuntimeOperatorAccessService,
+    email: &str,
+) -> anyhow::Result<()> {
     let email = email.trim();
     if email.is_empty() {
         anyhow::bail!("usage: v2board-api reset-admin-totp <email>");
     }
-    let user_id = sqlx::query_scalar::<_, i64>(
-        "SELECT id FROM users \
-         WHERE lower(btrim(email)) = lower(btrim($1)) AND (is_admin = 1 OR is_staff = 1) LIMIT 1",
-    )
-    .bind(email)
-    .fetch_optional(db)
-    .await?
-    .ok_or_else(|| anyhow::anyhow!("privileged account not found: {email}"))?;
-    if v2board_db::admin_mfa::reset(db, user_id).await? == 0 {
-        println!("no TOTP factor was configured for {email}; nothing to remove");
-    } else {
-        println!("TOTP factor removed for {email}");
+    match service.reset_mfa(email).await? {
+        OperatorMfaResetOutcome::AccountNotFound => {
+            anyhow::bail!("privileged account not found: {email}")
+        }
+        OperatorMfaResetOutcome::NoFactorConfigured => {
+            println!("no TOTP factor was configured for {email}; nothing to remove");
+        }
+        OperatorMfaResetOutcome::Reset => println!("TOTP factor removed for {email}"),
     }
     Ok(())
 }
 
 pub(crate) async fn reset_admin_password(
-    db: &DbPool,
-    config: &AppConfig,
-    password_kdf: &PasswordKdf,
+    service: &RuntimeOperatorAccessService,
     email: &str,
     password: Option<String>,
 ) -> anyhow::Result<()> {
@@ -527,65 +797,24 @@ pub(crate) async fn reset_admin_password(
             "usage: provide the v2board-new-password systemd credential (or V2BOARD_NEW_PASSWORD_FILE) and run v2board-api reset-admin-password <email>"
         );
     }
-    let password = password
-        .filter(|password| password.chars().count() >= 8)
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "the one-shot administrator password must contain at least 8 characters"
-            )
-        })?;
-    let password_hash = password_kdf
-        .hash(&password)
-        .await
-        .map_err(|error| anyhow::anyhow!(error.to_string()))?;
-    let mut tx = db.begin().await?;
-    let user_id = sqlx::query_scalar::<_, i64>(
-        "SELECT id FROM users \
-         WHERE lower(btrim(email)) = lower(btrim($1)) AND is_admin = 1 LIMIT 1 FOR UPDATE",
-    )
-    .bind(email)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| anyhow::anyhow!("admin account not found: {email}"))?;
-    let result = sqlx::query(
-        r#"
-        UPDATE users
-        SET password = $1, password_algo = NULL, password_salt = NULL,
-            session_epoch = session_epoch + 1, updated_at = $2
-        WHERE id = $3 AND is_admin = 1
-        "#,
-    )
-    .bind(password_hash)
-    .bind(Utc::now().timestamp())
-    .bind(user_id)
-    .execute(&mut *tx)
-    .await?;
-    if result.rows_affected() != 1 {
-        anyhow::bail!("admin account not found: {email}");
-    }
-    tx.commit().await?;
-
-    match redis::Client::open(config.redis_url.clone()) {
-        Ok(redis) => {
-            let redis_keys = RedisKeyspace::new(v2board_db::installation_id(db).await?);
-            if let Err(error) =
-                v2board_domain::auth::remove_user_sessions_from_client(&redis, &redis_keys, user_id)
-                    .await
-            {
-                tracing::warn!(
-                    user_id,
-                    ?error,
-                    "administrator password changed but cached sessions could not be removed"
-                );
-            }
+    match service.reset_password(email, password.as_deref()).await? {
+        OperatorPasswordResetOutcome::AccountNotFound => {
+            anyhow::bail!("admin account not found: {email}")
         }
-        Err(error) => {
+        OperatorPasswordResetOutcome::Updated {
+            user_id,
+            session_cleanup_error: Some(error),
+        } => {
             tracing::warn!(
                 user_id,
                 ?error,
-                "administrator password changed but Redis could not be opened for session cleanup"
+                "administrator password changed but cached sessions could not be removed"
             );
         }
+        OperatorPasswordResetOutcome::Updated {
+            session_cleanup_error: None,
+            ..
+        } => {}
     }
     println!("administrator password updated: {email}");
     Ok(())
@@ -936,7 +1165,7 @@ mod tests {
         normalize_otlp_traces_endpoint, parse_sentry_dsn,
     };
     use std::sync::atomic::{AtomicI64, Ordering};
-    use v2board_domain::operator_config::OperatorConfigError;
+    use v2board_configuration_adapters::operator_config::OperatorConfigError;
 
     #[test]
     fn operator_activation_uses_the_database_active_revision_monotonically() {

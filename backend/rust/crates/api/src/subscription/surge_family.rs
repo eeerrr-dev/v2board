@@ -8,8 +8,8 @@ const SURFBOARD_TEMPLATE: &str = include_str!("../../../../resources/rules/defau
 
 pub(super) fn build_surge_subscription(
     config: &AppConfig,
-    user: &v2board_db::user::UserAccessRow,
-    servers: &[v2board_db::server::AvailableServerRow],
+    user: &v2board_application::subscription::ClientSubscriptionAccount,
+    servers: &[crate::subscription::AvailableServer],
     host: &str,
     // Method-aware subscribe URL precomputed by the caller (the substitution
     // point cannot go async); Surge.php:71 minted it via Helper::getSubscribeUrl.
@@ -38,8 +38,8 @@ pub(super) fn build_surge_subscription(
 
 pub(super) fn build_surfboard_subscription(
     config: &AppConfig,
-    user: &v2board_db::user::UserAccessRow,
-    servers: &[v2board_db::server::AvailableServerRow],
+    user: &v2board_application::subscription::ClientSubscriptionAccount,
+    servers: &[crate::subscription::AvailableServer],
     host: &str,
     subs_link: &str,
 ) -> String {
@@ -68,14 +68,14 @@ pub(super) fn build_surfboard_subscription(
 fn render_managed_config(
     template: &str,
     config: &AppConfig,
-    user: &v2board_db::user::UserAccessRow,
+    user: &v2board_application::subscription::ClientSubscriptionAccount,
     host: &str,
     proxies: &str,
     proxy_group: &str,
     subs_link: &str,
 ) -> String {
-    let upload = round2(user.u as f64 / GIB);
-    let download = round2(user.d as f64 / GIB);
+    let upload = round2(user.upload as f64 / GIB);
+    let download = round2(user.download as f64 / GIB);
     let use_traffic = upload + download;
     let total = round2(user.transfer_enable as f64 / GIB);
     let expire = user
@@ -103,7 +103,7 @@ fn render_managed_config(
 
 pub(super) fn build_quantumultx_subscription(
     uuid: &str,
-    servers: &[v2board_db::server::AvailableServerRow],
+    servers: &[crate::subscription::AvailableServer],
 ) -> String {
     let lines = servers
         .iter()
@@ -120,7 +120,7 @@ pub(super) fn build_quantumultx_subscription(
 
 pub(super) fn build_loon_subscription(
     uuid: &str,
-    servers: &[v2board_db::server::AvailableServerRow],
+    servers: &[crate::subscription::AvailableServer],
 ) -> String {
     servers
         .iter()
@@ -128,10 +128,7 @@ pub(super) fn build_loon_subscription(
         .collect::<String>()
 }
 
-fn build_surge_proxy(
-    uuid: &str,
-    server: &v2board_db::server::AvailableServerRow,
-) -> Option<String> {
+fn build_surge_proxy(uuid: &str, server: &crate::subscription::AvailableServer) -> Option<String> {
     match server_protocol(server).as_str() {
         "shadowsocks" => Some(format!(
             "{}=ss,{},{},encrypt-method={},password={},fast-open=false,udp=true\r\n",
@@ -223,7 +220,7 @@ fn build_surge_proxy(
 
 fn build_surfboard_proxy(
     uuid: &str,
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
 ) -> Option<String> {
     match server_protocol(server).as_str() {
         "shadowsocks" => Some(format!(
@@ -288,7 +285,7 @@ fn build_surfboard_proxy(
 
 pub(super) fn build_loon_proxy(
     uuid: &str,
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
 ) -> Option<String> {
     // Loon.php:27-44 dispatch. vless requires tcp/ws, trojan excludes grpc,
     // hysteria only matches the raw `hysteria` type at version 2 (there is no
@@ -318,7 +315,7 @@ pub(super) fn build_loon_proxy(
 // into obfs-host/obfs-path (ServerService.php:161-164).
 fn build_loon_shadowsocks(
     uuid: &str,
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
 ) -> Option<String> {
     let cipher = extra_string(server, "cipher")?;
     let mut config = vec![
@@ -350,7 +347,7 @@ fn build_loon_shadowsocks(
 // Loon.php:85-135. vmess reads the legacy camelCase tlsSettings inner keys
 // (allowInsecure/serverName) and the networkSettings `security`; block order is
 // base, TCP transport, TLS, WS transport.
-fn build_loon_vmess(uuid: &str, server: &v2board_db::server::AvailableServerRow) -> Option<String> {
+fn build_loon_vmess(uuid: &str, server: &crate::subscription::AvailableServer) -> Option<String> {
     let network = extra_string(server, "network").unwrap_or_default();
     let network_settings = extra_json(server, "network_settings");
     let tls_settings = extra_json(server, "tls_settings");
@@ -413,7 +410,7 @@ fn build_loon_vmess(uuid: &str, server: &v2board_db::server::AvailableServerRow)
 
 // Loon.php:137-199. vless uses snake_case tls_settings and strict tls === 1/2;
 // `flow` is emitted (raw, even empty) inside each TLS branch.
-fn build_loon_vless(uuid: &str, server: &v2board_db::server::AvailableServerRow) -> Option<String> {
+fn build_loon_vless(uuid: &str, server: &crate::subscription::AvailableServer) -> Option<String> {
     let network = extra_string(server, "network").unwrap_or_default();
     let network_settings = extra_json(server, "network_settings");
     let tls_settings = extra_json(server, "tls_settings");
@@ -499,10 +496,7 @@ fn build_loon_vless(uuid: &str, server: &v2board_db::server::AvailableServerRow)
 
 // Loon.php:201-229. tls-name is positional (before fast-open) and array_filter
 // drops it when server_name is empty; adds the ws block after skip-cert-verify.
-fn build_loon_trojan(
-    uuid: &str,
-    server: &v2board_db::server::AvailableServerRow,
-) -> Option<String> {
+fn build_loon_trojan(uuid: &str, server: &crate::subscription::AvailableServer) -> Option<String> {
     let mut config = vec![
         format!("{}=trojan", server.name),
         server.host.clone(),
@@ -539,7 +533,7 @@ fn build_loon_trojan(
 // positional (before udp); salamander-password is gated on isset(obfs).
 fn build_loon_hysteria(
     uuid: &str,
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
 ) -> Option<String> {
     let mut config = vec![
         format!("{}=hysteria2", server.name),
@@ -570,10 +564,7 @@ fn build_loon_hysteria(
 
 // Loon.php:264-284. skip-cert-verify is always emitted (true/false); sni follows
 // udp and coalesces server_name then tls_settings.server_name.
-fn build_loon_anytls(
-    uuid: &str,
-    server: &v2board_db::server::AvailableServerRow,
-) -> Option<String> {
+fn build_loon_anytls(uuid: &str, server: &crate::subscription::AvailableServer) -> Option<String> {
     let tls_settings = extra_json(server, "tls_settings");
     let mut config = vec![
         format!("{}=anytls", server.name),
@@ -601,7 +592,7 @@ fn build_loon_anytls(
 
 pub(super) fn build_quantumultx_proxy(
     uuid: &str,
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
 ) -> Option<String> {
     // QuantumultX.php only handles ss/vmess/vless/trojan — there is no anytls
     // (nor hysteria) case, so those protocols emit nothing.
@@ -623,7 +614,7 @@ pub(super) fn build_quantumultx_proxy(
 // column alone (as before) dropped obfs for those nodes.
 fn build_quantumultx_shadowsocks(
     uuid: &str,
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
 ) -> Option<String> {
     let cipher = extra_string(server, "cipher")?;
     let password = shadowsocks_password(uuid, server)?;
@@ -675,7 +666,7 @@ fn build_quantumultx_shadowsocks(
 }
 
 // QuantumultX.php:119-219
-fn build_quantumultx_vmess(uuid: &str, server: &v2board_db::server::AvailableServerRow) -> String {
+fn build_quantumultx_vmess(uuid: &str, server: &crate::subscription::AvailableServer) -> String {
     let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
     let tls_settings = extra_json(server, "tls_settings");
     let net_settings = extra_json(server, "network_settings");
@@ -716,7 +707,7 @@ fn build_quantumultx_vmess(uuid: &str, server: &v2board_db::server::AvailableSer
 // QuantumultX.php:221-311
 fn build_quantumultx_vless(
     uuid: &str,
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
 ) -> Option<String> {
     let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
     let tls = extra_i64(server, "tls").unwrap_or_default();
@@ -769,7 +760,7 @@ fn build_quantumultx_vless(
 }
 
 // QuantumultX.php:313-378
-fn build_quantumultx_trojan(uuid: &str, server: &v2board_db::server::AvailableServerRow) -> String {
+fn build_quantumultx_trojan(uuid: &str, server: &crate::subscription::AvailableServer) -> String {
     let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
     let tls_settings = extra_json(server, "tls_settings");
     let net_settings = extra_json(server, "network_settings");
@@ -866,7 +857,7 @@ fn push_quantumultx_host_path(
     }
 }
 
-fn supports_surge(server: &v2board_db::server::AvailableServerRow) -> bool {
+fn supports_surge(server: &crate::subscription::AvailableServer) -> bool {
     matches!(
         server_protocol(server).as_str(),
         "shadowsocks" | "vmess" | "trojan" | "anytls"
@@ -874,14 +865,14 @@ fn supports_surge(server: &v2board_db::server::AvailableServerRow) -> bool {
         && extra_i64(server, "version") == Some(2))
 }
 
-fn supports_surfboard(server: &v2board_db::server::AvailableServerRow) -> bool {
+fn supports_surfboard(server: &crate::subscription::AvailableServer) -> bool {
     matches!(
         server_protocol(server).as_str(),
         "shadowsocks" | "vmess" | "trojan" | "anytls"
     )
 }
 
-fn append_surge_like_tls(server: &v2board_db::server::AvailableServerRow, parts: &mut Vec<String>) {
+fn append_surge_like_tls(server: &crate::subscription::AvailableServer, parts: &mut Vec<String>) {
     if extra_i64(server, "tls").unwrap_or_default() == 0 {
         return;
     }
@@ -901,7 +892,7 @@ fn append_surge_like_tls(server: &v2board_db::server::AvailableServerRow, parts:
     }
 }
 
-fn append_surge_like_ws(server: &v2board_db::server::AvailableServerRow, parts: &mut Vec<String>) {
+fn append_surge_like_ws(server: &crate::subscription::AvailableServer, parts: &mut Vec<String>) {
     if extra_string(server, "network").as_deref() != Some("ws") {
         return;
     }
@@ -921,7 +912,7 @@ fn append_surge_like_ws(server: &v2board_db::server::AvailableServerRow, parts: 
 }
 
 fn append_sni_and_insecure(
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
     parts: &mut Vec<String>,
     sni_key: &str,
 ) {

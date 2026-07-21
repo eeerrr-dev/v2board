@@ -1,104 +1,32 @@
-use std::time::Duration;
-
 use chrono::{Datelike, Months, TimeZone, Utc};
-use sqlx::{FromRow, Postgres, QueryBuilder};
-use uuid::Uuid;
-use v2board_config::{app_now, app_timezone};
-use v2board_domain_model::{
-    CalendarDay, ScheduledTrafficResetPolicy, TrafficResetFacts, TrafficResetMethod,
-    scheduled_traffic_reset_due,
+use v2board_application::maintenance::{
+    RetentionCutoff, RetentionDataset, RetentionService, ScheduledTrafficResetRun,
+    ScheduledTrafficResetService, TrafficResetCalendar,
 };
+#[cfg(test)]
+use v2board_application::maintenance::{ScheduledResetCandidate, scheduled_reset_is_due};
+use v2board_config::{app_now, app_timezone};
+use v2board_db::maintenance::PostgresMaintenanceRepository;
+use v2board_domain_model::CalendarDay;
 
 use crate::{
-    lease::{SCHEDULER_LOCK_TTL_SECS, SchedulerLock, release_scheduler_lock, run_with_lease},
+    lease::{release_scheduler_lock, run_with_lease},
     state::WorkerState,
     time::timestamp_before,
+    traffic_adapters::acquire_traffic_reset_lock,
 };
 
-pub(crate) const TRAFFIC_RESET_LOCK_KEY: &str = "traffic_reset_lock";
-const TRAFFIC_UPDATE_SCHEDULER_LOCK_KEY: &str = "RUST_SCHEDULER_LOCK_traffic_update";
-const RESET_LOCK_IO_TIMEOUT: Duration = Duration::from_secs(5);
 const RESET_USER_BATCH_SIZE: i64 = 500;
 const RETENTION_DELETE_BATCH_SIZE: i64 = 5_000;
 const RETENTION_MAX_BATCHES_PER_TABLE: usize = 20;
-const STAT_USER_RETENTION_SQL: &str = r#"
-WITH doomed AS (
-    SELECT id FROM user_traffic
-    WHERE record_at < $1
-    ORDER BY record_at, id
-    LIMIT $2
-)
-DELETE FROM user_traffic AS target
-USING doomed
-WHERE target.id = doomed.id
-"#;
-const STAT_SERVER_RETENTION_SQL: &str = r#"
-WITH doomed AS (
-    SELECT id FROM server_traffic
-    WHERE record_at < $1
-    ORDER BY record_at, id
-    LIMIT $2
-)
-DELETE FROM server_traffic AS target
-USING doomed
-WHERE target.id = doomed.id
-"#;
-const SYSTEM_LOG_RETENTION_SQL: &str = r#"
-WITH doomed AS (
-    SELECT id FROM system_log
-    WHERE created_at < $1
-    ORDER BY created_at, id
-    LIMIT $2
-)
-DELETE FROM system_log AS target
-USING doomed
-WHERE target.id = doomed.id
-"#;
 
-#[derive(Debug, Clone, FromRow)]
-struct ResetUserRow {
-    id: i64,
-    expired_at: i64,
-    reset_traffic_method: Option<i16>,
-}
+#[derive(Clone, Copy, Debug, Default)]
+struct AppTrafficResetCalendar;
 
-async fn acquire_traffic_reset_lock(state: &WorkerState) -> anyhow::Result<SchedulerLock> {
-    let token = Uuid::new_v4().to_string();
-    let reset_lock_key = state.redis_key(TRAFFIC_RESET_LOCK_KEY);
-    let traffic_update_lock_key = state.redis_key(TRAFFIC_UPDATE_SCHEDULER_LOCK_KEY);
-    loop {
-        let acquired: i64 = tokio::time::timeout(RESET_LOCK_IO_TIMEOUT, async {
-            let mut conn = state.redis.get_multiplexed_async_connection().await?;
-            // This is an availability barrier; quota_epoch is the durable
-            // correctness fence. Redis executes the two-key admission check
-            // atomically so ordinary runs avoid producing stale reports.
-            redis::Script::new(
-                r#"
-                if redis.call("EXISTS", KEYS[1]) == 1
-                    or redis.call("EXISTS", KEYS[2]) == 1 then
-                    return 0
-                end
-                local result = redis.call("SET", KEYS[1], ARGV[1], "NX", "EX", ARGV[2])
-                if result then return 1 end
-                return 0
-                "#,
-            )
-            .key(&reset_lock_key)
-            .key(&traffic_update_lock_key)
-            .arg(&token)
-            .arg(SCHEDULER_LOCK_TTL_SECS)
-            .invoke_async(&mut conn)
-            .await
-        })
-        .await
-        .map_err(|_| anyhow::anyhow!("timed out acquiring traffic reset barrier"))??;
-        if acquired == 1 {
-            return Ok(SchedulerLock {
-                key: reset_lock_key,
-                token,
-            });
-        }
-        tokio::time::sleep(Duration::from_secs(1)).await;
+impl TrafficResetCalendar for AppTrafficResetCalendar {
+    fn day_at(&self, timestamp: i64) -> Option<CalendarDay> {
+        let instant = app_timezone().timestamp_opt(timestamp, 0).single()?;
+        calendar_day(instant.year(), instant.month(), instant.day())
     }
 }
 
@@ -118,120 +46,43 @@ pub(crate) async fn run_traffic(state: &WorkerState) -> anyhow::Result<()> {
 }
 
 async fn reset_traffic_inner(state: &WorkerState) -> anyhow::Result<()> {
-    let now = Utc::now().timestamp();
-    let reset_key = app_now().format("%Y-%m-%d").to_string();
-    // INNER JOIN, not LEFT JOIN: ResetTraffic.php groups existing plans by
-    // reset_traffic_method and only resets users whose plan_id is in one of those
-    // GROUP_CONCAT lists (`whereIn('plan_id', $planIds)`). A user with a NULL or
-    // orphaned plan_id is never in any list, so it is never reset. The join keeps
-    // only users backed by a real plan; a matched row with a NULL method genuinely
-    // means "plan exists but method is NULL" and falls through to the config default.
-    let mut after_id = 0_i64;
-    loop {
-        let mut tx = state.db.begin().await?;
-        let users = sqlx::query_as::<_, ResetUserRow>(
-            r#"
-            SELECT u.id, u.expired_at, p.reset_traffic_method
-            FROM users u
-            INNER JOIN plan p ON p.id = u.plan_id
-            WHERE u.id > $1
-              AND u.expired_at IS NOT NULL
-              AND u.expired_at > $2
-            ORDER BY u.id
-            LIMIT $3
-            FOR UPDATE
-            "#,
-        )
-        .bind(after_id)
-        .bind(now)
-        .bind(RESET_USER_BATCH_SIZE)
-        .fetch_all(&mut *tx)
-        .await?;
-        let Some(last_id) = users.last().map(|user| user.id) else {
-            tx.commit().await?;
-            break;
-        };
-        let ids = users
-            .iter()
-            .filter(|user| should_reset_user(user, state.config.reset_traffic_method))
-            .map(|user| user.id)
-            .collect::<Vec<_>>();
-        if !ids.is_empty() {
-            let mut builder = QueryBuilder::<Postgres>::new(
-                "UPDATE users SET traffic_epoch = traffic_epoch + 1, \
-                 u = 0, d = 0, scheduled_traffic_reset_key = ",
-            );
-            builder.push_bind(&reset_key);
-            builder.push(", updated_at = ");
-            builder.push_bind(now);
-            builder.push(" WHERE id IN (");
-            {
-                let mut separated = builder.separated(", ");
-                for id in ids {
-                    separated.push_bind(id);
-                }
-            }
-            builder.push(
-                ") AND (scheduled_traffic_reset_key IS NULL OR scheduled_traffic_reset_key <> ",
-            );
-            builder.push_bind(&reset_key);
-            builder.push(")");
-            builder.build().execute(&mut *tx).await?;
-        }
-        tx.commit().await?;
-        after_id = last_id;
-    }
+    let now = app_now();
+    let Some(now_day) = calendar_day(now.year(), now.month(), now.day()) else {
+        anyhow::bail!("application timezone produced an invalid calendar day");
+    };
+    let command = ScheduledTrafficResetRun {
+        now_epoch: now.timestamp(),
+        now_day,
+        reset_key: now.format("%Y-%m-%d").to_string(),
+        default_method: state.config.reset_traffic_method,
+        batch_size: RESET_USER_BATCH_SIZE,
+    };
+    ScheduledTrafficResetService::new(
+        PostgresMaintenanceRepository::new(state.db.clone()),
+        AppTrafficResetCalendar,
+    )
+    .run(&command)
+    .await?;
     Ok(())
 }
 
-fn should_reset_user(user: &ResetUserRow, default_method: i32) -> bool {
+#[cfg(test)]
+fn should_reset_user(user: &ScheduledResetCandidate, default_method: i32) -> bool {
     let now = app_now();
-    let Some(expired) = app_timezone().timestamp_opt(user.expired_at, 0).single() else {
-        return false;
-    };
-    let policy = match user.reset_traffic_method {
-        // A plan with an explicit reset_traffic_method uses exactly that branch
-        // (ResetTraffic.php:84-106, each `case` has a `break`).
-        Some(method) => {
-            traffic_reset_method(i32::from(method)).map(ScheduledTrafficResetPolicy::Explicit)
-        }
-        // A plan whose reset_traffic_method is NULL uses the config default, but the
-        // NULL branch's inner switch omits the `break` after `case 3`
-        // (ResetTraffic.php:76-80), so a default of 3 ALSO runs resetByExpireYear
-        // (case 4). Mirror that fall-through: reset timing is a billing contract.
-        None => {
-            traffic_reset_method(default_method).map(ScheduledTrafficResetPolicy::LegacyDefault)
-        }
-    };
-    let Some(policy) = policy else {
-        return false;
-    };
     let Some(now_day) = calendar_day(now.year(), now.month(), now.day()) else {
         return false;
     };
-    let Some(expiry_day) = calendar_day(expired.year(), expired.month(), expired.day()) else {
-        return false;
-    };
-    scheduled_traffic_reset_due(
-        policy,
-        TrafficResetFacts {
-            now: now_day,
-            expiry: expiry_day,
+    scheduled_reset_is_due(
+        user,
+        &ScheduledTrafficResetRun {
             now_epoch: now.timestamp(),
-            expiry_epoch: user.expired_at,
+            now_day,
+            reset_key: now.format("%Y-%m-%d").to_string(),
+            default_method,
+            batch_size: RESET_USER_BATCH_SIZE,
         },
+        &AppTrafficResetCalendar,
     )
-}
-
-fn traffic_reset_method(method: i32) -> Option<TrafficResetMethod> {
-    match method {
-        0 => Some(TrafficResetMethod::MonthStart),
-        1 => Some(TrafficResetMethod::ExpiryDay),
-        2 => Some(TrafficResetMethod::Never),
-        3 => Some(TrafficResetMethod::YearStart),
-        4 => Some(TrafficResetMethod::ExpiryAnniversary),
-        _ => None,
-    }
 }
 
 fn calendar_day(year: i32, month: u32, day: u32) -> Option<CalendarDay> {
@@ -249,23 +100,26 @@ pub(crate) async fn run_log(state: &WorkerState) -> anyhow::Result<()> {
     let stat_before =
         month_delta_timestamp(2).unwrap_or_else(|| timestamp_before(now, 60 * 86_400));
     let log_before = month_delta_timestamp(1).unwrap_or_else(|| timestamp_before(now, 30 * 86_400));
-    for (sql, cutoff) in [
-        (STAT_USER_RETENTION_SQL, stat_before),
-        (STAT_SERVER_RETENTION_SQL, stat_before),
-        (SYSTEM_LOG_RETENTION_SQL, log_before),
-    ] {
-        for _ in 0..RETENTION_MAX_BATCHES_PER_TABLE {
-            let deleted = sqlx::query(sql)
-                .bind(cutoff)
-                .bind(RETENTION_DELETE_BATCH_SIZE)
-                .execute(&state.db)
-                .await?
-                .rows_affected();
-            if deleted < RETENTION_DELETE_BATCH_SIZE as u64 {
-                break;
-            }
-        }
-    }
+    RetentionService::new(PostgresMaintenanceRepository::new(state.db.clone()))
+        .prune(
+            &[
+                RetentionCutoff {
+                    dataset: RetentionDataset::UserTraffic,
+                    before: stat_before,
+                },
+                RetentionCutoff {
+                    dataset: RetentionDataset::ServerTraffic,
+                    before: stat_before,
+                },
+                RetentionCutoff {
+                    dataset: RetentionDataset::SystemLog,
+                    before: log_before,
+                },
+            ],
+            RETENTION_DELETE_BATCH_SIZE,
+            RETENTION_MAX_BATCHES_PER_TABLE,
+        )
+        .await?;
     Ok(())
 }
 
@@ -305,8 +159,8 @@ mod tests {
             .timestamp()
     }
 
-    fn expire_day_user(expired_at: i64) -> ResetUserRow {
-        ResetUserRow {
+    fn expire_day_user(expired_at: i64) -> ScheduledResetCandidate {
+        ScheduledResetCandidate {
             id: 1,
             expired_at,
             reset_traffic_method: Some(1),
@@ -344,7 +198,7 @@ mod tests {
 
     #[test]
     fn month_first_day_reset_uses_the_shanghai_calendar_day() {
-        let user = ResetUserRow {
+        let user = ScheduledResetCandidate {
             id: 1,
             expired_at: shanghai_ts(2027, 1, 1, 0),
             reset_traffic_method: Some(0),
@@ -361,7 +215,7 @@ mod tests {
 
     #[test]
     fn expire_year_reset_fires_only_on_the_exact_anniversary() {
-        let user = ResetUserRow {
+        let user = ScheduledResetCandidate {
             id: 1,
             expired_at: shanghai_ts(2027, 6, 15, 12),
             reset_traffic_method: Some(4),
@@ -388,7 +242,7 @@ mod tests {
     fn null_reset_method_default_three_falls_through_to_expire_year() {
         // A plan with reset_traffic_method = NULL whose expiry anniversary (m-d) is today.
         let now_ts = app_now().timestamp();
-        let user = ResetUserRow {
+        let user = ScheduledResetCandidate {
             id: 1,
             expired_at: now_ts,
             reset_traffic_method: None,
@@ -406,25 +260,11 @@ mod tests {
     fn explicit_reset_method_ignores_config_default_fall_through() {
         let now_ts = app_now().timestamp();
         // Explicit method 2 ("no action") must never reset, regardless of config default.
-        let user = ResetUserRow {
+        let user = ScheduledResetCandidate {
             id: 1,
             expired_at: now_ts,
             reset_traffic_method: Some(2),
         };
         assert!(!should_reset_user(&user, 3));
-    }
-
-    #[test]
-    fn retention_deletes_are_index_ordered_and_bounded() {
-        for sql in [
-            STAT_USER_RETENTION_SQL,
-            STAT_SERVER_RETENTION_SQL,
-            SYSTEM_LOG_RETENTION_SQL,
-        ] {
-            assert!(sql.contains("WITH doomed AS"));
-            assert!(sql.contains("ORDER BY"));
-            assert!(sql.contains("LIMIT $2"));
-            assert!(sql.contains("USING doomed"));
-        }
     }
 }

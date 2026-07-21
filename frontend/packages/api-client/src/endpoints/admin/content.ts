@@ -1,18 +1,9 @@
-import type { Coupon, Giftcard, Knowledge, Notice } from '@v2board/types';
+import type { Coupon, Giftcard, InternalApiOperationMap, Knowledge, Notice } from '@v2board/types';
 import type { ApiClient, BinaryApiResponse } from '../../client';
-import { adminListQueryParams, pageSchema, type AdminListQuery } from '../../dialect';
+import { adminListQueryParams, type AdminListQuery } from '../../dialect';
+import { internalApiCreatedInt32IdSchema } from '../../generated/internal-api';
+import { requestInternal, requestInternalBinary } from '../../internal-operation';
 import { decimalToCents } from '../../money';
-import {
-  arraySchema,
-  createdIdSchema,
-  giftcardSchema,
-  knowledgeSchema,
-  knowledgeSummarySchema,
-  noContentSchema,
-  noticeSchema,
-  stringArraySchema,
-  userCouponSchema,
-} from '../../contracts';
 import type { QueryRequestConfig } from './shared';
 
 /**
@@ -21,11 +12,7 @@ import type { QueryRequestConfig } from './shared';
  * pagination was invented.
  */
 export const fetchNotices = (client: ApiClient, config?: QueryRequestConfig) =>
-  client.request({
-    url: client.resolveAdminPath('/notices'),
-    method: 'GET',
-    dialect: 'v2',
-    responseSchema: arraySchema(noticeSchema),
+  requestInternal(client, 'adminNoticesList', {
     ...config,
   });
 
@@ -40,37 +27,22 @@ export type SaveNoticePayload = Pick<Notice, 'content' | 'img_url' | 'tags' | 't
  */
 export const saveNotice = (client: ApiClient, { id, ...data }: SaveNoticePayload) =>
   id === undefined
-    ? client.request({
-        url: client.resolveAdminPath('/notices'),
-        method: 'POST',
-        dialect: 'v2',
+    ? requestInternal(client, 'adminNoticesCreate', {
         data,
-        responseSchema: createdIdSchema,
       })
-    : client.request({
-        url: client.resolveAdminPath(`/notices/${id}`),
-        method: 'PATCH',
-        dialect: 'v2',
+    : requestInternal(client, 'adminNoticesUpdate', {
+        path: { id },
         data,
-        responseSchema: noContentSchema,
       });
 
 export const dropNotice = (client: ApiClient, id: number) =>
-  client.request({
-    url: client.resolveAdminPath(`/notices/${id}`),
-    method: 'DELETE',
-    dialect: 'v2',
-    responseSchema: noContentSchema,
-  });
+  requestInternal(client, 'adminNoticesDelete', { path: { id } });
 
 /** PATCH /{secure_path}/notices/{id} `{show}` — the merged legacy toggle (§6.3). */
 export const showNotice = (client: ApiClient, id: number, show: boolean) =>
-  client.request({
-    url: client.resolveAdminPath(`/notices/${id}`),
-    method: 'PATCH',
-    dialect: 'v2',
+  requestInternal(client, 'adminNoticesUpdate', {
+    path: { id },
     data: { show },
-    responseSchema: noContentSchema,
   });
 
 /**
@@ -80,26 +52,47 @@ export const showNotice = (client: ApiClient, id: number, show: boolean) =>
  */
 export type ContentListQuery = Pick<AdminListQuery, 'page' | 'per_page' | 'sort_by' | 'sort_dir'>;
 
+type GeneratedCoupon = InternalApiOperationMap['adminCouponsList']['response']['items'][number];
+type GeneratedGiftcard = InternalApiOperationMap['adminGiftCardsList']['response']['items'][number];
+
+function toCoupon(coupon: GeneratedCoupon): Coupon {
+  if (coupon.type !== 1 && coupon.type !== 2) {
+    throw new TypeError(`Unsupported coupon type: ${coupon.type}`);
+  }
+  return {
+    ...coupon,
+    type: coupon.type,
+    // Client-side money rule (§6.3): amount coupons stay integer cents on the
+    // wire; the admin table displays decimal yuan.
+    value: coupon.type === 1 ? coupon.value / 100 : coupon.value,
+  };
+}
+
+function toGiftcard(giftcard: GeneratedGiftcard): Giftcard {
+  if (![1, 2, 3, 4, 5].includes(giftcard.type)) {
+    throw new TypeError(`Unsupported gift-card type: ${giftcard.type}`);
+  }
+  return {
+    ...giftcard,
+    type: giftcard.type as Giftcard['type'],
+    // Client-side money rule (§6.3): amount cards stay integer cents on the wire.
+    value: giftcard.type === 1 && giftcard.value !== null ? giftcard.value / 100 : giftcard.value,
+  };
+}
+
 /** GET /{secure_path}/coupons — dialect v2 `{items, total}` page (§6.3, W10). */
 export const fetchCoupons = async (
   client: ApiClient,
   query: ContentListQuery = {},
   config?: QueryRequestConfig,
 ) => {
-  const page = await client.request({
-    url: client.resolveAdminPath('/coupons'),
-    method: 'GET',
-    dialect: 'v2',
-    params: adminListQueryParams(query),
-    responseSchema: pageSchema(userCouponSchema),
+  const page = await requestInternal(client, 'adminCouponsList', {
+    query: adminListQueryParams(
+      query,
+    ) as InternalApiOperationMap['adminCouponsList']['parameters']['query'],
     ...config,
   });
-  // Client-side money rule (§6.3): amount coupons stay integer cents on the
-  // wire; the admin table displays decimal yuan.
-  page.items.forEach((coupon) => {
-    if (coupon.type === 1) coupon.value = coupon.value / 100;
-  });
-  return page;
+  return { items: page.items.map(toCoupon), total: page.total };
 };
 
 export type GenerateCouponPayload = Omit<
@@ -115,7 +108,7 @@ export type GenerateCouponPayload = Omit<
   generate_count?: number | string;
 };
 
-export type GenerateCsvResponse = BinaryApiResponse<typeof createdIdSchema>;
+export type GenerateCsvResponse = BinaryApiResponse<typeof internalApiCreatedInt32IdSchema>;
 
 // §4.5: the editor form keeps its epoch-second window state; the wire takes
 // RFC 3339 UTC. Conversion lives here at the API boundary, like the money
@@ -161,43 +154,28 @@ function serializeCouponBody(data: GenerateCouponPayload) {
  * CSV bulk attachment.
  */
 export const generateCoupon = (client: ApiClient, data: GenerateCouponPayload) =>
-  client.requestBinary({
-    url: client.resolveAdminPath('/coupons'),
-    method: 'POST',
-    dialect: 'v2',
+  requestInternalBinary(client, 'adminCouponsCreate', {
     data: {
       ...serializeCouponBody(data),
       ...(data.generate_count ? { generate_count: Number(data.generate_count) } : {}),
-    },
-    jsonResponseSchema: createdIdSchema,
+    } as InternalApiOperationMap['adminCouponsCreate']['request'],
   });
 
 /** PATCH /{secure_path}/coupons/{id} — dialect v2 update (§6.3, W10). */
 export const updateCoupon = (client: ApiClient, id: number, data: GenerateCouponPayload) =>
-  client.request({
-    url: client.resolveAdminPath(`/coupons/${id}`),
-    method: 'PATCH',
-    dialect: 'v2',
-    data: serializeCouponBody(data),
-    responseSchema: noContentSchema,
+  requestInternal(client, 'adminCouponsUpdate', {
+    path: { id },
+    data: serializeCouponBody(data) as InternalApiOperationMap['adminCouponsUpdate']['request'],
   });
 
 export const dropCoupon = (client: ApiClient, id: number) =>
-  client.request({
-    url: client.resolveAdminPath(`/coupons/${id}`),
-    method: 'DELETE',
-    dialect: 'v2',
-    responseSchema: noContentSchema,
-  });
+  requestInternal(client, 'adminCouponsDelete', { path: { id } });
 
 /** PATCH /{secure_path}/coupons/{id} `{show}` — the merged legacy toggle (§6.3). */
 export const showCoupon = (client: ApiClient, id: number, show: boolean) =>
-  client.request({
-    url: client.resolveAdminPath(`/coupons/${id}`),
-    method: 'PATCH',
-    dialect: 'v2',
+  requestInternal(client, 'adminCouponsUpdate', {
+    path: { id },
     data: { show },
-    responseSchema: noContentSchema,
   });
 
 /** GET /{secure_path}/gift-cards — dialect v2 `{items, total}` page (§6.3, W10). */
@@ -206,19 +184,13 @@ export const fetchGiftcards = async (
   query: ContentListQuery = {},
   config?: QueryRequestConfig,
 ) => {
-  const page = await client.request({
-    url: client.resolveAdminPath('/gift-cards'),
-    method: 'GET',
-    dialect: 'v2',
-    params: adminListQueryParams(query),
-    responseSchema: pageSchema(giftcardSchema),
+  const page = await requestInternal(client, 'adminGiftCardsList', {
+    query: adminListQueryParams(
+      query,
+    ) as InternalApiOperationMap['adminGiftCardsList']['parameters']['query'],
     ...config,
   });
-  // Client-side money rule (§6.3): amount cards stay integer cents on the wire.
-  page.items.forEach((giftcard) => {
-    if (giftcard.type === 1 && giftcard.value !== null) giftcard.value /= 100;
-  });
-  return page;
+  return { items: page.items.map(toGiftcard), total: page.total };
 };
 
 export type GenerateGiftcardPayload = Omit<
@@ -260,64 +232,39 @@ function serializeGiftcardBody(data: GenerateGiftcardPayload) {
  * `{id}` single create or the byte-frozen CSV bulk attachment.
  */
 export const generateGiftcard = (client: ApiClient, data: GenerateGiftcardPayload) =>
-  client.requestBinary({
-    url: client.resolveAdminPath('/gift-cards'),
-    method: 'POST',
-    dialect: 'v2',
+  requestInternalBinary(client, 'adminGiftCardsCreate', {
     data: {
       ...serializeGiftcardBody(data),
       ...(data.generate_count ? { generate_count: Number(data.generate_count) } : {}),
-    },
-    jsonResponseSchema: createdIdSchema,
+    } as InternalApiOperationMap['adminGiftCardsCreate']['request'],
   });
 
 /** PATCH /{secure_path}/gift-cards/{id} — dialect v2 update (§6.3, W10). */
 export const updateGiftcard = (client: ApiClient, id: number, data: GenerateGiftcardPayload) =>
-  client.request({
-    url: client.resolveAdminPath(`/gift-cards/${id}`),
-    method: 'PATCH',
-    dialect: 'v2',
-    data: serializeGiftcardBody(data),
-    responseSchema: noContentSchema,
+  requestInternal(client, 'adminGiftCardsUpdate', {
+    path: { id },
+    data: serializeGiftcardBody(data) as InternalApiOperationMap['adminGiftCardsUpdate']['request'],
   });
 
 export const dropGiftcard = (client: ApiClient, id: number) =>
-  client.request({
-    url: client.resolveAdminPath(`/gift-cards/${id}`),
-    method: 'DELETE',
-    dialect: 'v2',
-    responseSchema: noContentSchema,
-  });
+  requestInternal(client, 'adminGiftCardsDelete', { path: { id } });
 
 /** GET /{secure_path}/knowledge — dialect v2 bare summary array (§6.3, W10). */
 export const fetchKnowledge = (client: ApiClient, config?: QueryRequestConfig) =>
-  client.request({
-    url: client.resolveAdminPath('/knowledge'),
-    method: 'GET',
-    dialect: 'v2',
-    responseSchema: arraySchema(knowledgeSummarySchema),
+  requestInternal(client, 'adminKnowledgeList', {
     ...config,
   });
 
 /** GET /{secure_path}/knowledge/{id} — dialect v2 bare detail, raw stored body (§6.3). */
 export const knowledgeDetail = (client: ApiClient, id: number, config?: QueryRequestConfig) =>
-  client.request({
-    url: client.resolveAdminPath(`/knowledge/${id}`),
-    method: 'GET',
-    dialect: 'v2',
-    responseSchema: knowledgeSchema,
+  requestInternal(client, 'adminKnowledgeGet', {
+    path: { id },
     ...config,
   });
 
 /** GET /{secure_path}/knowledge-categories — dialect v2 bare name array (§6.3). */
 export const knowledgeCategories = (client: ApiClient, config?: QueryRequestConfig) =>
-  client.request({
-    url: client.resolveAdminPath('/knowledge-categories'),
-    method: 'GET',
-    dialect: 'v2',
-    responseSchema: stringArraySchema,
-    ...config,
-  });
+  requestInternal(client, 'adminKnowledgeCategoriesList', { ...config });
 
 export type SaveKnowledgePayload = Pick<Knowledge, 'body' | 'category' | 'language' | 'title'> & {
   id?: number;
@@ -329,45 +276,26 @@ export type SaveKnowledgePayload = Pick<Knowledge, 'body' | 'category' | 'langua
  */
 export const saveKnowledge = (client: ApiClient, { id, ...data }: SaveKnowledgePayload) =>
   id === undefined
-    ? client.request({
-        url: client.resolveAdminPath('/knowledge'),
-        method: 'POST',
-        dialect: 'v2',
+    ? requestInternal(client, 'adminKnowledgeCreate', {
         data,
-        responseSchema: createdIdSchema,
       })
-    : client.request({
-        url: client.resolveAdminPath(`/knowledge/${id}`),
-        method: 'PATCH',
-        dialect: 'v2',
+    : requestInternal(client, 'adminKnowledgeUpdate', {
+        path: { id },
         data,
-        responseSchema: noContentSchema,
       });
 
 /** PATCH /{secure_path}/knowledge/{id} `{show}` — the merged legacy toggle (§6.3). */
 export const showKnowledge = (client: ApiClient, id: number, show: boolean) =>
-  client.request({
-    url: client.resolveAdminPath(`/knowledge/${id}`),
-    method: 'PATCH',
-    dialect: 'v2',
+  requestInternal(client, 'adminKnowledgeUpdate', {
+    path: { id },
     data: { show },
-    responseSchema: noContentSchema,
   });
 
 export const dropKnowledge = (client: ApiClient, id: number) =>
-  client.request({
-    url: client.resolveAdminPath(`/knowledge/${id}`),
-    method: 'DELETE',
-    dialect: 'v2',
-    responseSchema: noContentSchema,
-  });
+  requestInternal(client, 'adminKnowledgeDelete', { path: { id } });
 
 /** POST /{secure_path}/knowledge/sort `{ids}` — dialect v2 full resequencing (§6.3). */
 export const sortKnowledge = (client: ApiClient, ids: number[]) =>
-  client.request({
-    url: client.resolveAdminPath('/knowledge/sort'),
-    method: 'POST',
-    dialect: 'v2',
+  requestInternal(client, 'adminKnowledgeSort', {
     data: { ids },
-    responseSchema: noContentSchema,
   });

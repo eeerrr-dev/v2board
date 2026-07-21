@@ -770,7 +770,7 @@ describe('server node config contract helpers', () => {
         network: 'ws',
         networkSettings: '{"path":"/vmess"}',
         tlsSettings: { serverName: 'sni.example.test' },
-        ruleSettings: { domainStrategy: 'AsIs' },
+        ruleSettings: { domain: ['geosite:category-ads-all'] },
         dnsSettings: { servers: [] },
       },
       data: {
@@ -779,7 +779,7 @@ describe('server node config contract helpers', () => {
         network: 'ws',
         networkSettings: { path: '/vmess' },
         tlsSettings: { serverName: 'sni.example.test' },
-        ruleSettings: { domainStrategy: 'AsIs' },
+        ruleSettings: { domain: ['geosite:category-ads-all'] },
         dnsSettings: null,
       },
     },
@@ -888,7 +888,7 @@ describe('server node config contract helpers', () => {
         ...commonNodeValues,
         server_name: 'anytls-sni.example.test',
         insecure: 0,
-        padding_scheme: '["stop=8","1=2-4"]',
+        padding_scheme: ['stop=8', '1=2-4'],
       },
     },
     {
@@ -938,6 +938,46 @@ describe('server node config contract helpers', () => {
     },
   ])('builds the exact $type save payload', ({ type, values, data }) => {
     expect(serverNodeFormSchema.parse(values)).toEqual({ type, data });
+  });
+
+  it('rejects unknown nested settings and non-string AnyTLS padding before save', () => {
+    const vmessValues = {
+      ...commonNodeValues,
+      type: 'vmess' as const,
+      tls: 1 as const,
+      network: 'ws' as const,
+      networkSettings: '{"path":"/vmess","pth":"typo"}',
+      tlsSettings: null,
+      ruleSettings: null,
+      dnsSettings: null,
+    };
+    expect(serverNodeFormSchema.safeParse(vmessValues).success).toBe(false);
+    expect(
+      serverNodeFormSchema.safeParse({
+        ...vmessValues,
+        networkSettings: '{"path":"/vmess"}',
+        tlsSettings: '{"serverName":"sni.example.test","reject_unknown_sni":"yes"}',
+      }).success,
+    ).toBe(false);
+
+    const anytlsValues = {
+      ...commonNodeValues,
+      type: 'anytls' as const,
+      server_name: 'anytls-sni.example.test',
+      insecure: 0 as const,
+    };
+    expect(
+      serverNodeFormSchema.safeParse({
+        ...anytlsValues,
+        padding_scheme: '{"stop":"8"}',
+      }).success,
+    ).toBe(false);
+    expect(
+      serverNodeFormSchema.safeParse({
+        ...anytlsValues,
+        padding_scheme: '["stop=8",42]',
+      }).success,
+    ).toBe(false);
   });
 
   it('adds the record id only at the edit save boundary', () => {

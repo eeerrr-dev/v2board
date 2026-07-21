@@ -211,18 +211,28 @@ const paymentSaveFields = new Set([
 ]);
 
 const paymentConfigKeysByDriver = new Map([
-  ['AlipayF2F', ['key', 'mch_id']],
-  ['MGate', ['token']],
-  ['StripeCheckout', ['publishable_key', 'secret_key']],
+  ['AlipayF2F', ['app_id', 'private_key', 'product_name', 'public_key']],
+  ['MGate', ['mgate_app_id', 'mgate_app_secret', 'mgate_source_currency', 'mgate_url']],
+  [
+    'StripeCheckout',
+    [
+      'currency',
+      'stripe_custom_field_name',
+      'stripe_pk_live',
+      'stripe_sk_live',
+      'stripe_webhook_key',
+    ],
+  ],
 ]);
 
-export function reducePaymentSaveRequest(request) {
+export function reducePaymentSaveRequest(request, metadataOnly = false) {
   if (!request || typeof request !== 'object' || Array.isArray(request)) return request;
   const base = Object.fromEntries(
     Object.entries(request)
-      .filter(([key]) => paymentSaveFields.has(key))
+      .filter(([key]) => paymentSaveFields.has(key) && (!metadataOnly || key !== 'payment'))
       .map(([key, value]) => [key, value == null ? '' : value]),
   );
+  if (metadataOnly) return base;
   // W11 (§6.2): `config` is the canonical nested object — both worlds fold their
   // spellings onto it (the legacy `config[key]` bracket form and the modern
   // nested JSON). Keep only the selected driver's keys so the frozen oracle's
@@ -661,11 +671,27 @@ export function normalizeInteractionResult(label, result) {
     // Fetched model metadata that Laravel validation ignores is dropped as before.
     // All presentation signals remain verified per-target by the raw assertion.
     const reduced = {};
+    const metadataOnly = label === 'admin-payment-edit-modal';
     for (const [key, value] of Object.entries(normalized)) {
-      reduced[key] =
-        key === 'saveRequests' && Array.isArray(value)
-          ? value.map(reducePaymentSaveRequest)
-          : reducePaymentSnapshot(value);
+      if (key === 'saveRequests' && Array.isArray(value)) {
+        reduced[key] = value.map((request) => reducePaymentSaveRequest(request, metadataOnly));
+        continue;
+      }
+      const snapshot = reducePaymentSnapshot(value);
+      if (metadataOnly && snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)) {
+        const { selectedPayment: _selectedPayment, ...metadataSnapshot } = snapshot;
+        reduced[key] = {
+          ...metadataSnapshot,
+          ...(Array.isArray(metadataSnapshot.inputValues)
+            ? { inputValues: metadataSnapshot.inputValues.slice(0, 5) }
+            : {}),
+          ...(Array.isArray(metadataSnapshot.labels)
+            ? { labels: metadataSnapshot.labels.slice(0, 5) }
+            : {}),
+        };
+      } else {
+        reduced[key] = snapshot;
+      }
     }
     return reduced;
   }

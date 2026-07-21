@@ -1,5 +1,219 @@
 use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
+use v2board_application::{
+    RepositoryError,
+    invite::{
+        CommissionEntry, CommissionPage, CommissionTransfer, CommissionTransferOrder, InviteCode,
+        InviteOverview, InviteRepository, InviteStatistics, TransferInviter, TransferUser,
+    },
+};
+
+fn repository_error(operation: &'static str, error: impl std::fmt::Display) -> RepositoryError {
+    RepositoryError::new(operation, error)
+}
+
+#[derive(Clone, Debug)]
+pub struct PostgresInviteRepository {
+    pool: PgPool,
+}
+
+impl PostgresInviteRepository {
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
+}
+
+pub struct PostgresCommissionTransfer<'a> {
+    transaction: Transaction<'a, Postgres>,
+}
+
+impl CommissionTransfer for PostgresCommissionTransfer<'_> {
+    async fn lock_user(&mut self, user_id: i64) -> Result<Option<TransferUser>, RepositoryError> {
+        #[derive(FromRow)]
+        struct Row {
+            commission_balance: i32,
+            balance: i32,
+            invite_user_id: Option<i64>,
+        }
+
+        sqlx::query_as::<_, Row>(
+            "SELECT commission_balance, balance, invite_user_id FROM users WHERE id = $1 LIMIT 1 FOR UPDATE",
+        )
+        .bind(user_id)
+        .fetch_optional(&mut *self.transaction)
+        .await
+        .map(|row| {
+            row.map(|row| TransferUser {
+                commission_balance: row.commission_balance,
+                balance: row.balance,
+                inviter_id: row.invite_user_id,
+            })
+        })
+        .map_err(|error| repository_error("lock commission-transfer user", error))
+    }
+
+    async fn update_balances(
+        &mut self,
+        user_id: i64,
+        commission_balance: i32,
+        balance: i32,
+        updated_at: i64,
+    ) -> Result<(), RepositoryError> {
+        sqlx::query(
+            "UPDATE users SET commission_balance = $1, balance = $2, updated_at = $3 WHERE id = $4",
+        )
+        .bind(commission_balance)
+        .bind(balance)
+        .bind(updated_at)
+        .bind(user_id)
+        .execute(&mut *self.transaction)
+        .await
+        .map(|_| ())
+        .map_err(|error| repository_error("update commission-transfer balances", error))
+    }
+
+    async fn find_inviter(
+        &mut self,
+        inviter_id: i64,
+    ) -> Result<Option<TransferInviter>, RepositoryError> {
+        #[derive(FromRow)]
+        struct Row {
+            commission_type: i16,
+            commission_rate: Option<i32>,
+        }
+
+        sqlx::query_as::<_, Row>(
+            "SELECT commission_type, commission_rate FROM users WHERE id = $1 LIMIT 1",
+        )
+        .bind(inviter_id)
+        .fetch_optional(&mut *self.transaction)
+        .await
+        .map(|row| {
+            row.map(|row| TransferInviter {
+                commission_type: row.commission_type,
+                commission_rate: row.commission_rate,
+            })
+        })
+        .map_err(|error| repository_error("find commission-transfer inviter", error))
+    }
+
+    async fn buyer_has_valid_order(&mut self, user_id: i64) -> Result<bool, RepositoryError> {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM orders WHERE user_id = $1 AND status NOT IN (0, 2)",
+        )
+        .bind(user_id)
+        .fetch_one(&mut *self.transaction)
+        .await
+        .map(|count| count != 0)
+        .map_err(|error| repository_error("count commission-transfer buyer orders", error))
+    }
+
+    async fn insert_transfer_order(
+        &mut self,
+        order: CommissionTransferOrder,
+    ) -> Result<(), RepositoryError> {
+        sqlx::query(
+            r#"
+            INSERT INTO orders (
+                user_id, invite_user_id, plan_id, period, trade_no, total_amount, surplus_amount,
+                "type", status, callback_no, commission_status, commission_balance, created_at, updated_at
+            )
+            VALUES ($1, $2, 0, 'deposit', $3, 0, $4, 9, 3, '佣金划转 Commission transfer', 0, $5, $6, $7)
+            "#,
+        )
+        .bind(order.user_id)
+        .bind(order.inviter_id)
+        .bind(order.trade_no)
+        .bind(order.transferred_amount)
+        .bind(order.inviter_commission)
+        .bind(order.created_at)
+        .bind(order.created_at)
+        .execute(&mut *self.transaction)
+        .await
+        .map(|_| ())
+        .map_err(|error| repository_error("insert commission-transfer order", error))
+    }
+
+    async fn commit(self) -> Result<(), RepositoryError> {
+        self.transaction
+            .commit()
+            .await
+            .map_err(|error| repository_error("commit commission transfer", error))
+    }
+}
+
+impl InviteRepository for PostgresInviteRepository {
+    type Transfer<'a> = PostgresCommissionTransfer<'a>;
+
+    async fn begin_transfer(&self) -> Result<Self::Transfer<'_>, RepositoryError> {
+        self.pool
+            .begin()
+            .await
+            .map(|transaction| PostgresCommissionTransfer { transaction })
+            .map_err(|error| repository_error("begin commission transfer", error))
+    }
+
+    async fn create_invite_code(
+        &self,
+        user_id: i64,
+        limit: i64,
+        now: i64,
+    ) -> Result<bool, RepositoryError> {
+        create_invite_code(&self.pool, user_id, limit, now)
+            .await
+            .map_err(|error| repository_error("create invite code", error))
+    }
+
+    async fn invite_overview(&self, user_id: i64) -> Result<InviteOverview, RepositoryError> {
+        let row = fetch_invite(&self.pool, user_id)
+            .await
+            .map_err(|error| repository_error("fetch invite overview", error))?;
+        Ok(InviteOverview {
+            codes: row
+                .codes
+                .into_iter()
+                .map(|code| InviteCode {
+                    id: code.id,
+                    code: code.code,
+                    views: code.pv,
+                    created_at: code.created_at,
+                    updated_at: code.updated_at,
+                })
+                .collect(),
+            statistics: InviteStatistics {
+                registered_count: row.stat.registered_count,
+                valid_commission: row.stat.valid_commission,
+                pending_commission: row.stat.pending_commission,
+                commission_rate: row.stat.commission_rate,
+                available_commission: row.stat.available_commission,
+            },
+        })
+    }
+
+    async fn commission_page(
+        &self,
+        user_id: i64,
+        limit: i64,
+        offset: i64,
+    ) -> Result<CommissionPage, RepositoryError> {
+        let (rows, total) = fetch_commission_details(&self.pool, user_id, limit, offset)
+            .await
+            .map_err(|error| repository_error("fetch commission page", error))?;
+        Ok(CommissionPage {
+            items: rows
+                .into_iter()
+                .map(|row| CommissionEntry {
+                    id: row.id,
+                    trade_no: row.trade_no,
+                    order_amount: row.order_amount,
+                    amount: row.get_amount,
+                    created_at: row.created_at,
+                })
+                .collect(),
+            total,
+        })
+    }
+}
 
 const VALID_COMMISSION_SUM_SQL: &str =
     "SELECT COALESCE(SUM(get_amount), 0)::text FROM commission_log WHERE invite_user_id = $1";

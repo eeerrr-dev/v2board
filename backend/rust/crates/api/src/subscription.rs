@@ -1,5 +1,7 @@
 use chrono::TimeZone;
+use serde::Serialize;
 use serde_json::{Map, Value, json};
+use v2board_application::subscription::{ClientSubscriptionAccount, ClientSubscriptionServer};
 use v2board_compat::ApiError;
 use v2board_config::{AppConfig, app_now, app_timezone};
 
@@ -30,6 +32,55 @@ pub(super) struct SubscriptionDocument {
     // content-disposition header value; per-format so main.rs can emit it verbatim
     // (Clash.php:27, Stash.php:27, Surge.php:25, Singbox.php:33).
     pub(super) content_disposition: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(super) struct AvailableServer {
+    pub(super) id: i32,
+    pub(super) parent_id: Option<i32>,
+    pub(super) group_id: Vec<i32>,
+    pub(super) route_id: Option<Vec<i32>>,
+    pub(super) name: String,
+    pub(super) rate: String,
+    pub(super) r#type: String,
+    pub(super) host: String,
+    pub(super) port: Value,
+    pub(super) cache_key: String,
+    pub(super) last_check_at: Option<i64>,
+    pub(super) is_online: i16,
+    pub(super) tags: Option<Vec<String>>,
+    pub(super) sort: Option<i32>,
+    #[serde(skip_serializing_if = "Value::is_null")]
+    pub(super) extra: Value,
+}
+
+pub(super) fn available_server(
+    server: ClientSubscriptionServer,
+) -> Result<AvailableServer, ApiError> {
+    let port = server
+        .port
+        .parse::<i64>()
+        .map(Value::from)
+        .unwrap_or_else(|_| Value::String(server.port));
+    let extra = serde_json::from_str(&server.extra_json)
+        .map_err(|_| ApiError::internal("invalid subscription server settings"))?;
+    Ok(AvailableServer {
+        id: server.id,
+        parent_id: server.parent_id,
+        group_id: server.group_ids,
+        route_id: server.route_ids,
+        name: server.name,
+        rate: server.rate,
+        r#type: server.kind,
+        host: server.host,
+        port,
+        cache_key: server.cache_key,
+        last_check_at: server.last_check_at,
+        is_online: server.online,
+        tags: server.tags,
+        sort: server.sort,
+        extra,
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -165,8 +216,8 @@ fn version_at_least(version: &str, minimum: &[u64]) -> bool {
 pub(super) async fn build_subscription_document(
     state: &crate::runtime::AppState,
     config: &AppConfig,
-    user: &v2board_db::user::UserAccessRow,
-    servers: &[v2board_db::server::AvailableServerRow],
+    user: &ClientSubscriptionAccount,
+    servers: &[AvailableServer],
     flag: &str,
     // Request Host header, used for Surge/Surfboard `$subs_domain` and Stash's
     // forced-DIRECT rule (`$_SERVER['HTTP_HOST']` in Laravel). Pass "" if absent.
@@ -249,7 +300,7 @@ pub(super) async fn build_subscription_document(
 pub(super) async fn build_client_app_config(
     config: &AppConfig,
     uuid: &str,
-    servers: &[v2board_db::server::AvailableServerRow],
+    servers: &[AvailableServer],
 ) -> Result<String, ApiError> {
     clash::build_client_app_config(config, uuid, servers).await
 }
@@ -263,17 +314,17 @@ pub(super) async fn build_client_app_config(
 /// main.rs from the user's plan (`UserService::getResetDay`); pass `None` to omit
 /// the reset banner.
 pub(super) fn build_info_servers(
-    user: &v2board_db::user::UserAccessRow,
-    servers: &[v2board_db::server::AvailableServerRow],
+    user: &ClientSubscriptionAccount,
+    servers: &[AvailableServer],
     reset_day: Option<i64>,
     config: &AppConfig,
-) -> Vec<v2board_db::server::AvailableServerRow> {
+) -> Vec<AvailableServer> {
     // Laravel returns early when there are no servers or the feature is off.
     if servers.is_empty() || !config.show_info_to_server_enable {
         return Vec::new();
     }
     let base = &servers[0];
-    let use_traffic = i128::from(user.u) + i128::from(user.d);
+    let use_traffic = i128::from(user.upload) + i128::from(user.download);
     let remaining = traffic_convert(i128::from(user.transfer_enable) - use_traffic);
     // `$user['expired_at'] ? date('Y-m-d', ...) : '长期有效'` — 0/null are falsy.
     let expired = user

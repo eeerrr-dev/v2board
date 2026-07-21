@@ -1,93 +1,130 @@
 import type {
+  CheckLoginResult,
   CommissionDetailPage,
+  InternalApiOperationMap,
+  Order,
   OrderCheckoutPayload,
   OrderCheckoutResult,
-  OrderCreatePayload,
   PlanPeriod,
   StripePaymentIntentPayload,
   TicketCreatePayload,
   TicketReplyPayload,
   TicketWithdrawPayload,
   UserUpdatePayload,
+  UserCoupon,
+  UserPlan,
   UserStat,
 } from '@v2board/types';
 import type { ApiClient, ApiRequestConfig } from '../client';
-import type { output } from 'zod';
-import { bearerAuthorization, pageSchema } from '../dialect';
+import { bearerAuthorization } from '../dialect';
+import { requestInternal } from '../internal-operation';
 import { decimalToCents } from '../money';
-import {
-  activeSessionSchema,
-  arraySchema,
-  availableServerSchema,
-  checkoutResultSchema,
-  commissionDetailSchema,
-  createdOrderSchema,
-  createdTicketSchema,
-  giftCardRedemptionSchema,
-  inviteFetchSchema,
-  knowledgeCategorySchema,
-  knowledgeSchema,
-  noContentSchema,
-  noticeSchema,
-  orderStatusSchema,
-  paymentMethodSchema,
-  resetSubscribeTokenSchema,
-  sessionStateSchema,
-  stripePaymentIntentSchema,
-  subscriptionSchema,
-  telegramBotInfoSchema,
-  trafficLogSchema,
-  userCommConfigSchema,
-  userCouponSchema,
-  userOrderSchema,
-  userOrdersSchema,
-  userPlanSchema,
-  userProfileSchema,
-  userStatsSchema,
-  userTicketDetailSchema,
-  userTicketSchema,
-} from '../contracts';
 
 type QueryRequestConfig = Pick<ApiRequestConfig, 'signal'>;
+type GeneratedUserPlan = InternalApiOperationMap['userPlansGet']['response'];
+type GeneratedUserOrder = InternalApiOperationMap['userOrdersGet']['response'];
+type GeneratedCoupon = InternalApiOperationMap['userCouponsCheck']['response'];
+
+const ORDER_PERIODS = new Set<string>([
+  'month_price',
+  'quarter_price',
+  'half_year_price',
+  'year_price',
+  'two_year_price',
+  'three_year_price',
+  'onetime_price',
+  'reset_price',
+  'deposit',
+]);
+
+function toUserPlan(plan: GeneratedUserPlan): UserPlan {
+  const resetMethod = plan.reset_traffic_method;
+  if (resetMethod !== null && ![0, 1, 2, 3, 4].includes(resetMethod)) {
+    throw new TypeError(`Unsupported reset traffic method: ${resetMethod}`);
+  }
+  return {
+    ...plan,
+    reset_traffic_method: resetMethod as UserPlan['reset_traffic_method'],
+  };
+}
+
+function toUserOrder(order: GeneratedUserOrder): Order {
+  if (!ORDER_PERIODS.has(order.period)) {
+    throw new TypeError(`Unsupported order period: ${order.period}`);
+  }
+  if (![1, 2, 3, 4, 9].includes(order.type)) {
+    throw new TypeError(`Unsupported order type: ${order.type}`);
+  }
+  if (![0, 1, 2, 3, 4].includes(order.status)) {
+    throw new TypeError(`Unsupported order status: ${order.status}`);
+  }
+  if (![0, 1, 2, 3].includes(order.commission_status)) {
+    throw new TypeError(`Unsupported order commission status: ${order.commission_status}`);
+  }
+  const { plan, surplus_orders, try_out_plan_id, bounus, get_amount, ...base } = order;
+  let normalizedPlan: Order['plan'];
+  if (plan != null) {
+    if ('capacity_limit' in plan) normalizedPlan = toUserPlan(plan);
+    else {
+      if (plan.id !== 0 || plan.name !== 'deposit') {
+        throw new TypeError('Unsupported deposit order plan discriminator');
+      }
+      normalizedPlan = { id: 0, name: 'deposit' };
+    }
+  }
+  return {
+    ...base,
+    period: order.period as Order['period'],
+    type: order.type as Order['type'],
+    status: order.status as Order['status'],
+    commission_status: order.commission_status as Order['commission_status'],
+    ...(normalizedPlan === undefined ? {} : { plan: normalizedPlan }),
+    ...(surplus_orders == null ? {} : { surplus_orders: surplus_orders.map(toUserOrder) }),
+    ...(try_out_plan_id == null ? {} : { try_out_plan_id }),
+    ...(bounus == null ? {} : { bounus }),
+    ...(get_amount == null ? {} : { get_amount }),
+  };
+}
+
+function toUserCoupon(coupon: GeneratedCoupon): UserCoupon {
+  if (coupon.type !== 1 && coupon.type !== 2) {
+    throw new TypeError(`Unsupported coupon type: ${coupon.type}`);
+  }
+  return { ...coupon, type: coupon.type };
+}
 
 /** GET /user/profile — dialect v2 bare profile (docs/api-dialect.md §5.3, W5). */
 export const info = (client: ApiClient, config?: QueryRequestConfig) =>
-  client.request({
-    url: '/user/profile',
-    method: 'GET',
-    dialect: 'v2',
-    responseSchema: userProfileSchema,
+  requestInternal(client, 'userProfileGet', {
     ...config,
   });
 
 /** GET /user/stats — dialect v2 named counts (§9.1, W5). */
 export const getStat = (client: ApiClient, config?: QueryRequestConfig): Promise<UserStat> =>
-  client.request({
-    url: '/user/stats',
-    method: 'GET',
-    dialect: 'v2',
-    responseSchema: userStatsSchema,
+  requestInternal(client, 'userStatsGet', {
     ...config,
   });
 
 // Session probe (GET /auth/session, dialect v2 — the checkLogin successor).
 // A dead or absent bearer is data ({is_login: false}), never a 401.
-export const checkLogin = (client: ApiClient, config?: QueryRequestConfig) =>
-  client.request({
-    url: '/auth/session',
-    method: 'GET',
-    dialect: 'v2',
-    responseSchema: sessionStateSchema,
+export const checkLogin = async (
+  client: ApiClient,
+  config?: QueryRequestConfig,
+): Promise<CheckLoginResult> => {
+  const session = await requestInternal(client, 'authSessionGet', {
     ...config,
   });
+  return {
+    is_login: session.is_login,
+    ...(session.is_admin == null ? {} : { is_admin: session.is_admin }),
+    ...(session.is_staff == null ? {} : { is_staff: session.is_staff }),
+    ...(session.admin_permissions == null ? {} : { admin_permissions: session.admin_permissions }),
+  };
+};
 
 /** GET /user/subscription — dialect v2 bare body, explicit-null plan (§5.4, W5). */
 export const getSubscribe = (client: ApiClient, config?: QueryRequestConfig) =>
-  client.request({
-    url: '/user/subscription',
-    method: 'GET',
-    dialect: 'v2',
-    responseSchema: subscriptionSchema,
+  requestInternal(client, 'userSubscriptionGet', {
     ...config,
   });
 
@@ -96,22 +133,14 @@ export const getSubscribe = (client: ApiClient, config?: QueryRequestConfig) =>
  * absent flag retains the stored value, so callers send only what changed.
  */
 export const update = (client: ApiClient, payload: UserUpdatePayload) =>
-  client.request({
-    url: '/user/profile',
-    method: 'PATCH',
-    dialect: 'v2',
+  requestInternal(client, 'userProfileUpdate', {
     data: payload,
-    responseSchema: noContentSchema,
   });
 
 /** PUT /user/password — dialect v2, 204 (§5.3, W5). */
 export const changePassword = (client: ApiClient, old_password: string, new_password: string) =>
-  client.request({
-    url: '/user/password',
-    method: 'PUT',
-    dialect: 'v2',
+  requestInternal(client, 'userPasswordUpdate', {
     data: { old_password, new_password },
-    responseSchema: noContentSchema,
   });
 
 /**
@@ -119,14 +148,7 @@ export const changePassword = (client: ApiClient, old_password: string, new_pass
  * subscribe token and returns the freshly minted URL as `{subscribe_url}`.
  */
 export const resetSecurity = (client: ApiClient) =>
-  client
-    .request({
-      url: '/user/subscription/reset-token',
-      method: 'POST',
-      dialect: 'v2',
-      responseSchema: resetSubscribeTokenSchema,
-    })
-    .then((body) => body.subscribe_url);
+  requestInternal(client, 'userSubscriptionResetToken', {}).then((body) => body.subscribe_url);
 
 /**
  * POST /user/commission-transfers — dialect v2, 204 (docs/api-dialect.md
@@ -134,46 +156,29 @@ export const resetSecurity = (client: ApiClient) =>
  * callers pass decimal major units.
  */
 export const transfer = (client: ApiClient, transferAmount: number | string | undefined) =>
-  client.request({
-    url: '/user/commission-transfers',
-    method: 'POST',
-    dialect: 'v2',
+  requestInternal(client, 'userCommissionTransfersCreate', {
     data: { transfer_amount: decimalToCents(transferAmount ?? '') },
-    responseSchema: noContentSchema,
   });
 
 /** POST /user/subscription/new-period — dialect v2, 204 (§5.4, W5). */
 export const newPeriod = (client: ApiClient) =>
-  client.request({
-    url: '/user/subscription/new-period',
-    method: 'POST',
-    dialect: 'v2',
-    responseSchema: noContentSchema,
-  });
+  requestInternal(client, 'userSubscriptionNewPeriod', {});
 
-export type RedeemGiftCardResult = output<typeof giftCardRedemptionSchema>;
+export type RedeemGiftCardResult =
+  InternalApiOperationMap['userGiftCardRedemptionsCreate']['response'];
 
 /** POST /user/gift-card-redemptions — dialect v2 bare `{type, value}` (§9.4, W5). */
 export const redeemGiftCard = (
   client: ApiClient,
   giftcard: string,
 ): Promise<RedeemGiftCardResult> =>
-  client.request({
-    url: '/user/gift-card-redemptions',
-    method: 'POST',
-    dialect: 'v2',
+  requestInternal(client, 'userGiftCardRedemptionsCreate', {
     data: { giftcard },
-    responseSchema: giftCardRedemptionSchema,
   });
 
 /** DELETE /user/telegram-binding — dialect v2, 204 (§5.3, W5). */
 export const unbindTelegram = (client: ApiClient) =>
-  client.request({
-    url: '/user/telegram-binding',
-    method: 'DELETE',
-    dialect: 'v2',
-    responseSchema: noContentSchema,
-  });
+  requestInternal(client, 'userTelegramBindingDelete', {});
 
 // Explicit sign-out: best-effort server-side revocation of the current opaque
 // session (DELETE /auth/session, 204 — a Rust-only endpoint; the legacy API
@@ -184,74 +189,69 @@ export const unbindTelegram = (client: ApiClient) =>
 // (§4.2). The backend treats a dead or absent bearer as a successful no-op.
 export const logout = (client: ApiClient, capturedAuthData?: string | null) => {
   const authorization = bearerAuthorization(capturedAuthData);
-  return client.request({
-    url: '/auth/session',
-    method: 'DELETE',
-    dialect: 'v2',
-    responseSchema: noContentSchema,
+  return requestInternal(client, 'authSessionDelete', {
     ...(authorization ? { headers: { authorization } } : {}),
   });
 };
 
 /** GET /user/sessions — dialect v2 array with `session_id` (§9.4, W5). */
 export const getActiveSession = (client: ApiClient, config?: QueryRequestConfig) =>
-  client.request({
-    url: '/user/sessions',
-    method: 'GET',
-    dialect: 'v2',
-    responseSchema: arraySchema(activeSessionSchema),
+  requestInternal(client, 'userSessionsList', {
     ...config,
   });
 
 /** DELETE /user/sessions/{session_id} — dialect v2, 204, idempotent (§9.4, W5). */
 export const removeActiveSession = (client: ApiClient, session_id: string) =>
-  client.request({
-    url: `/user/sessions/${encodeURIComponent(session_id)}`,
-    method: 'DELETE',
-    dialect: 'v2',
-    responseSchema: noContentSchema,
+  requestInternal(client, 'userSessionsDelete', {
+    path: { session_id },
   });
 
 /** GET /user/plans — dialect v2 bare array (docs/api-dialect.md §5.5, W4). */
-export const fetchPlans = (client: ApiClient, config?: QueryRequestConfig) =>
-  client.request({
-    url: '/user/plans',
-    method: 'GET',
-    dialect: 'v2',
-    responseSchema: arraySchema(userPlanSchema),
-    ...config,
-  });
+export const fetchPlans = async (client: ApiClient, config?: QueryRequestConfig) =>
+  (
+    await requestInternal(client, 'userPlansList', {
+      ...config,
+    })
+  ).map(toUserPlan);
 
 /** GET /user/plans/{id} — dialect v2 bare plan; a miss is 404 plan_not_found (§5.5, W4). */
-export const fetchPlan = (client: ApiClient, id: number | string, config?: QueryRequestConfig) =>
-  client.request({
-    url: `/user/plans/${encodeURIComponent(id)}`,
-    method: 'GET',
-    dialect: 'v2',
-    responseSchema: userPlanSchema,
-    ...config,
-  });
+export const fetchPlan = async (
+  client: ApiClient,
+  id: number | string,
+  config?: QueryRequestConfig,
+) =>
+  toUserPlan(
+    await requestInternal(client, 'userPlansGet', {
+      path: { id: Number(id) },
+      ...config,
+    }),
+  );
 
 /** GET /user/orders?status= — dialect v2 bare array (§5.5, W4). */
-export const fetchOrders = (client: ApiClient, status?: number, config?: QueryRequestConfig) =>
-  client.request({
-    url: '/user/orders',
-    method: 'GET',
-    dialect: 'v2',
-    params: status === undefined ? {} : { status },
-    responseSchema: userOrdersSchema,
-    ...config,
-  });
+export const fetchOrders = async (
+  client: ApiClient,
+  status?: number,
+  config?: QueryRequestConfig,
+) =>
+  (
+    await requestInternal(client, 'userOrdersList', {
+      query: status === undefined ? {} : { status },
+      ...config,
+    })
+  ).map(toUserOrder);
 
 /** GET /user/orders/{trade_no} — dialect v2 bare order (§5.5, W4). */
-export const orderDetail = (client: ApiClient, trade_no: string, config?: QueryRequestConfig) =>
-  client.request({
-    url: `/user/orders/${encodeURIComponent(trade_no)}`,
-    method: 'GET',
-    dialect: 'v2',
-    responseSchema: userOrderSchema,
-    ...config,
-  });
+export const orderDetail = async (
+  client: ApiClient,
+  trade_no: string,
+  config?: QueryRequestConfig,
+) =>
+  toUserOrder(
+    await requestInternal(client, 'userOrdersGet', {
+      path: { trade_no },
+      ...config,
+    }),
+  );
 
 export type SaveOrderInput =
   | { kind: 'plan'; plan_id: number; period: PlanPeriod; coupon_code?: string }
@@ -268,16 +268,12 @@ export type SaveOrderInput =
  * rule: callers omit the field entirely when no coupon is applied.
  */
 export const saveOrder = async (client: ApiClient, payload: SaveOrderInput) => {
-  const data: OrderCreatePayload =
+  const data: InternalApiOperationMap['userOrdersCreate']['request'] =
     payload.kind === 'deposit'
       ? { kind: 'deposit', deposit_amount: decimalToCents(payload.deposit_amount) }
       : payload;
-  const created = await client.request({
-    url: '/user/orders',
-    method: 'POST',
-    dialect: 'v2',
+  const created = await requestInternal(client, 'userOrdersCreate', {
     data,
-    responseSchema: createdOrderSchema,
   });
   return created.trade_no;
 };
@@ -287,12 +283,9 @@ export const checkoutOrder = (
   client: ApiClient,
   payload: OrderCheckoutPayload,
 ): Promise<OrderCheckoutResult> =>
-  client.request({
-    url: `/user/orders/${encodeURIComponent(payload.trade_no)}/checkout`,
-    method: 'POST',
-    dialect: 'v2',
+  requestInternal(client, 'userOrdersCheckout', {
+    path: { trade_no: payload.trade_no },
     data: { method_id: payload.method_id },
-    responseSchema: checkoutResultSchema,
   });
 
 /**
@@ -300,32 +293,20 @@ export const checkoutOrder = (
  * resolves to the bare status number the 3s poll consumes.
  */
 export const checkOrder = (client: ApiClient, trade_no: string, config?: QueryRequestConfig) =>
-  client
-    .request({
-      url: `/user/orders/${encodeURIComponent(trade_no)}/status`,
-      method: 'GET',
-      dialect: 'v2',
-      responseSchema: orderStatusSchema,
-      ...config,
-    })
-    .then((body) => body.status);
+  requestInternal(client, 'userOrdersStatus', {
+    path: { trade_no },
+    ...config,
+  }).then((body) => body.status);
 
 /** POST /user/orders/{trade_no}/cancel — dialect v2, trade_no in the path, 204 (§5.5, W4). */
 export const cancelOrder = (client: ApiClient, trade_no: string) =>
-  client.request({
-    url: `/user/orders/${encodeURIComponent(trade_no)}/cancel`,
-    method: 'POST',
-    dialect: 'v2',
-    responseSchema: noContentSchema,
+  requestInternal(client, 'userOrdersCancel', {
+    path: { trade_no },
   });
 
 /** GET /user/payment-methods — dialect v2 bare array, numeric percent (§5.5, W4). */
 export const getPaymentMethod = (client: ApiClient, config?: QueryRequestConfig) =>
-  client.request({
-    url: '/user/payment-methods',
-    method: 'GET',
-    dialect: 'v2',
-    responseSchema: arraySchema(paymentMethodSchema),
+  requestInternal(client, 'userPaymentMethodsList', {
     ...config,
   });
 
@@ -336,12 +317,7 @@ export const getPaymentMethod = (client: ApiClient, config?: QueryRequestConfig)
  * instead of consuming a created id.
  */
 export const generateInvite = (client: ApiClient) =>
-  client.request({
-    url: '/user/invite-codes',
-    method: 'POST',
-    dialect: 'v2',
-    responseSchema: noContentSchema,
-  });
+  requestInternal(client, 'userInviteCodesCreate', {});
 
 /**
  * GET /user/invite — dialect v2 bare `{codes, stat}` with the §9.2 named
@@ -349,11 +325,7 @@ export const generateInvite = (client: ApiClient) =>
  * integer cents.
  */
 export const fetchInvite = (client: ApiClient, config?: QueryRequestConfig) =>
-  client.request({
-    url: '/user/invite',
-    method: 'GET',
-    dialect: 'v2',
-    responseSchema: inviteFetchSchema,
+  requestInternal(client, 'userInviteGet', {
     ...config,
   });
 
@@ -370,12 +342,8 @@ export const inviteDetails = async (
   perPage?: number,
   config?: QueryRequestConfig,
 ): Promise<CommissionDetailPage> => {
-  const result = await client.request({
-    url: '/user/commissions',
-    method: 'GET',
-    dialect: 'v2',
-    params: { page, per_page: perPage },
-    responseSchema: pageSchema(commissionDetailSchema),
+  const result = await requestInternal(client, 'userCommissionsList', {
+    query: { page, per_page: perPage },
     ...config,
   });
   return { data: result.items, total: result.total };
@@ -389,11 +357,7 @@ export const inviteDetails = async (
  * as legacy (Tier-1); consumers read the unwrapped items array.
  */
 export const fetchNotices = async (client: ApiClient, config?: QueryRequestConfig) => {
-  const page = await client.request({
-    url: '/user/notices',
-    method: 'GET',
-    dialect: 'v2',
-    responseSchema: pageSchema(noticeSchema),
+  const page = await requestInternal(client, 'userNoticesList', {
     ...config,
   });
   return page.items;
@@ -401,102 +365,86 @@ export const fetchNotices = async (client: ApiClient, config?: QueryRequestConfi
 
 /** GET /user/tickets — dialect v2 bare array (docs/api-dialect.md §5.7, W8). */
 export const fetchTickets = (client: ApiClient, config?: QueryRequestConfig) =>
-  client.request({
-    url: '/user/tickets',
-    method: 'GET',
-    dialect: 'v2',
-    responseSchema: arraySchema(userTicketSchema),
+  requestInternal(client, 'userTicketsList', {
     ...config,
   });
 
 /** GET /user/tickets/{id} — dialect v2 bare detail with the `message[]` thread (§5.7, W8). */
 export const ticketDetail = (client: ApiClient, id: number | string, config?: QueryRequestConfig) =>
-  client.request({
-    url: `/user/tickets/${encodeURIComponent(id)}`,
-    method: 'GET',
-    dialect: 'v2',
-    responseSchema: userTicketDetailSchema,
+  requestInternal(client, 'userTicketsGet', {
+    path: { id: Number(id) },
     ...config,
   });
 
 /** POST /user/tickets — dialect v2 JSON `{subject, level, message}` → 201 `{id}` (§5.7, W8). */
 export const saveTicket = (client: ApiClient, payload: TicketCreatePayload) =>
-  client.request({
-    url: '/user/tickets',
-    method: 'POST',
-    dialect: 'v2',
-    data: payload,
-    responseSchema: createdTicketSchema,
-  });
+  requestInternal(client, 'userTicketsCreate', { data: requiredTicketCreate(payload) });
+
+function requiredTicketCreate(
+  payload: TicketCreatePayload,
+): InternalApiOperationMap['userTicketsCreate']['request'] {
+  const { subject, level, message } = payload;
+  if (subject === undefined || level === undefined || message === undefined) {
+    throw new TypeError('Ticket subject, level, and message are required');
+  }
+  return { subject, level, message };
+}
 
 /** POST /user/tickets/{id}/replies — dialect v2, 204; the `id` moves to the path (§5.7, W8). */
 export const replyTicket = (client: ApiClient, payload: TicketReplyPayload) => {
-  const { id, ...data } = payload;
-  return client.request({
-    url: `/user/tickets/${encodeURIComponent(id)}/replies`,
-    method: 'POST',
-    dialect: 'v2',
-    data,
-    responseSchema: noContentSchema,
+  const { id, message } = payload;
+  if (message === undefined) throw new TypeError('Ticket reply message is required');
+  return requestInternal(client, 'userTicketsRepliesCreate', {
+    path: { id: Number(id) },
+    data: { message },
   });
 };
 
 /** POST /user/tickets/{id}/close — dialect v2, 204, no body (§5.7, W8). */
 export const closeTicket = (client: ApiClient, id: number) =>
-  client.request({
-    url: `/user/tickets/${encodeURIComponent(id)}/close`,
-    method: 'POST',
-    dialect: 'v2',
-    responseSchema: noContentSchema,
+  requestInternal(client, 'userTicketsClose', {
+    path: { id },
   });
 
 /** POST /user/withdrawal-tickets — dialect v2 JSON → 201 `{id}` (§5.7, W8). */
 export const withdrawTicket = (client: ApiClient, payload: TicketWithdrawPayload) =>
-  client.request({
-    url: '/user/withdrawal-tickets',
-    method: 'POST',
-    dialect: 'v2',
-    data: payload,
-    responseSchema: createdTicketSchema,
+  requestInternal(client, 'userWithdrawalTicketsCreate', {
+    data: requiredWithdrawalTicket(payload),
   });
+
+function requiredWithdrawalTicket(
+  payload: TicketWithdrawPayload,
+): InternalApiOperationMap['userWithdrawalTicketsCreate']['request'] {
+  const { withdraw_method, withdraw_account } = payload;
+  if (withdraw_method === undefined || withdraw_account === undefined) {
+    throw new TypeError('Withdrawal method and account are required');
+  }
+  return { withdraw_method, withdraw_account };
+}
 
 /** GET /user/servers — dialect v2 bare array (§5.4, W6). */
 export const fetchServers = (client: ApiClient, config?: QueryRequestConfig) =>
-  client.request({
-    url: '/user/servers',
-    method: 'GET',
-    dialect: 'v2',
-    responseSchema: arraySchema(availableServerSchema),
+  requestInternal(client, 'userServersList', {
     ...config,
   });
 
 /** POST /user/coupons/check — dialect v2 JSON `{code, plan_id}` → bare coupon (§5.5, W4). */
-export const checkCoupon = (client: ApiClient, code: string, plan_id: number | string) =>
-  client.request({
-    url: '/user/coupons/check',
-    method: 'POST',
-    dialect: 'v2',
-    data: { code, plan_id: Number(plan_id) },
-    responseSchema: userCouponSchema,
-  });
+export const checkCoupon = async (client: ApiClient, code: string, plan_id: number | string) =>
+  toUserCoupon(
+    await requestInternal(client, 'userCouponsCheck', {
+      data: { code, plan_id: Number(plan_id) },
+    }),
+  );
 
 /** GET /user/telegram-bot — dialect v2 bare `{username}` (§5.3, W3). */
 export const getTelegramBotInfo = (client: ApiClient, config?: QueryRequestConfig) =>
-  client.request({
-    url: '/user/telegram-bot',
-    method: 'GET',
-    dialect: 'v2',
-    responseSchema: telegramBotInfoSchema,
+  requestInternal(client, 'userTelegramBotGet', {
     ...config,
   });
 
 /** GET /user/config — dialect v2 bare body (§5.3, W3). */
 export const commConfig = (client: ApiClient, config?: QueryRequestConfig) =>
-  client.request({
-    url: '/user/config',
-    method: 'GET',
-    dialect: 'v2',
-    responseSchema: userCommConfigSchema,
+  requestInternal(client, 'userConfigGet', {
     ...config,
   });
 
@@ -510,12 +458,9 @@ export const prepareStripePaymentIntent = (
   payload: StripePaymentIntentPayload,
   config?: QueryRequestConfig,
 ) =>
-  client.request({
-    url: `/user/orders/${encodeURIComponent(payload.trade_no)}/stripe-intent`,
-    method: 'POST',
-    dialect: 'v2',
+  requestInternal(client, 'userOrdersStripeIntent', {
+    path: { trade_no: payload.trade_no },
     data: { method_id: payload.method_id },
-    responseSchema: stripePaymentIntentSchema,
     ...config,
   });
 
@@ -526,12 +471,8 @@ export const fetchKnowledge = (
   keyword?: string,
   config?: QueryRequestConfig,
 ) =>
-  client.request({
-    url: '/user/knowledge',
-    method: 'GET',
-    dialect: 'v2',
-    params: { language, keyword },
-    responseSchema: knowledgeCategorySchema,
+  requestInternal(client, 'userKnowledgeList', {
+    query: { language, keyword },
     signal: config?.signal,
   });
 
@@ -545,22 +486,19 @@ export const knowledgeDetail = (
   id: number | string,
   language: string,
   config?: QueryRequestConfig,
-) =>
-  client.request({
-    url: `/user/knowledge/${id}`,
-    method: 'GET',
-    dialect: 'v2',
-    params: { language },
-    responseSchema: knowledgeSchema,
-    signal: config?.signal,
+) => {
+  // Language remains part of the query key/caller API so a locale switch
+  // refetches the non-idempotent body. The modern detail route itself selects
+  // the stored article by id and has no language query parameter.
+  void language;
+  return requestInternal(client, 'userKnowledgeGet', {
+    path: { id: Number(id) },
+    ...config,
   });
+};
 
 /** GET /user/traffic-logs — dialect v2 bare array (§5.4, W6). */
 export const getTrafficLog = (client: ApiClient, config?: QueryRequestConfig) =>
-  client.request({
-    url: '/user/traffic-logs',
-    method: 'GET',
-    dialect: 'v2',
-    responseSchema: arraySchema(trafficLogSchema),
+  requestInternal(client, 'userTrafficLogsList', {
     ...config,
   });

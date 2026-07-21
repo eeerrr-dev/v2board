@@ -50,7 +50,7 @@ pub(super) fn format_date_timestamp(timestamp: i64) -> String {
 
 pub(super) fn add_multi_port_fields(
     object: &mut Map<String, Value>,
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
 ) {
     if let Some(mport) = mport(server) {
         object.insert("ports".to_string(), Value::String(mport.clone()));
@@ -70,7 +70,7 @@ pub(super) fn insert_opt_value(object: &mut Map<String, Value>, key: &str, value
     }
 }
 
-pub(super) fn port_value(server: &v2board_db::server::AvailableServerRow) -> Value {
+pub(super) fn port_value(server: &crate::subscription::AvailableServer) -> Value {
     first_port(server)
         .parse::<i64>()
         .map(Value::from)
@@ -79,7 +79,7 @@ pub(super) fn port_value(server: &v2board_db::server::AvailableServerRow) -> Val
 
 pub(super) fn shadowsocks_password(
     uuid: &str,
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
 ) -> Option<String> {
     let cipher = extra_string(server, "cipher")?;
     if cipher.contains("2022-blake3") {
@@ -151,7 +151,7 @@ pub(super) fn format_datetime_timestamp(timestamp: i64) -> String {
         .unwrap_or_else(|| timestamp.to_string())
 }
 
-pub(super) fn server_protocol(server: &v2board_db::server::AvailableServerRow) -> String {
+pub(super) fn server_protocol(server: &crate::subscription::AvailableServer) -> String {
     if server.r#type == "v2node" {
         return extra_string(server, "protocol").unwrap_or_else(|| "v2node".to_string());
     }
@@ -159,7 +159,7 @@ pub(super) fn server_protocol(server: &v2board_db::server::AvailableServerRow) -
 }
 
 pub(super) fn extra_json(
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
     key: &str,
 ) -> serde_json::Value {
     match server.extra.get(key) {
@@ -172,13 +172,13 @@ pub(super) fn extra_json(
 }
 
 pub(super) fn extra_string(
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
     key: &str,
 ) -> Option<String> {
     server.extra.get(key).and_then(value_to_string)
 }
 
-pub(super) fn extra_i64(server: &v2board_db::server::AvailableServerRow, key: &str) -> Option<i64> {
+pub(super) fn extra_i64(server: &crate::subscription::AvailableServer, key: &str) -> Option<i64> {
     server.extra.get(key).and_then(value_to_i64)
 }
 
@@ -224,7 +224,7 @@ pub(super) fn value_is_non_empty(value: &serde_json::Value) -> bool {
     }
 }
 
-pub(super) fn first_port(server: &v2board_db::server::AvailableServerRow) -> String {
+pub(super) fn first_port(server: &crate::subscription::AvailableServer) -> String {
     port_text(server)
         .split(',')
         .next()
@@ -236,12 +236,12 @@ pub(super) fn first_port(server: &v2board_db::server::AvailableServerRow) -> Str
         .to_string()
 }
 
-pub(super) fn mport(server: &v2board_db::server::AvailableServerRow) -> Option<String> {
+pub(super) fn mport(server: &crate::subscription::AvailableServer) -> Option<String> {
     let port = port_text(server);
     (port.contains('-') || port.contains(',')).then_some(port)
 }
 
-pub(super) fn port_text(server: &v2board_db::server::AvailableServerRow) -> String {
+pub(super) fn port_text(server: &crate::subscription::AvailableServer) -> String {
     value_to_string(&server.port).unwrap_or_default()
 }
 

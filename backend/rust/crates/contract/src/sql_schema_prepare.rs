@@ -144,7 +144,14 @@ fn inventory(root: &Path) -> Result<SourceInventory> {
     // `provision` is intentionally absent: its explicitly named legacy MySQL
     // source adapter is not native runtime SQL. Analytics is included because
     // API/worker processes call its PostgreSQL outbox directly.
-    for crate_name in ["analytics", "api", "db", "domain", "workers"] {
+    for crate_name in [
+        "analytics",
+        "api",
+        "configuration-adapters",
+        "db",
+        "mail-adapters",
+        "workers",
+    ] {
         let source = root.join("crates").join(crate_name).join("src");
         ensure!(
             source.is_dir(),
@@ -346,9 +353,27 @@ const DYNAMIC_SQLX_SITES: &[DynamicSite] = &[
         coverage: "fixed policy/state SELECT variants plus PostgreSQL admission integration tests",
     },
     DynamicSite {
-        source: "crates/api/src/server_api/repository.rs",
+        source: "crates/db/src/admin_order.rs",
         count: 1,
-        coverage: "all node variants are collected as indirect static SQL and server API contracts",
+        coverage: "allowlisted admin-order sort projection, pinned by repository integration tests",
+    },
+    DynamicSite {
+        source: "crates/db/src/admin_server.rs",
+        count: 8,
+        coverage: "server-table allowlist queries plus fixed dependency-lock SQL variants, pinned \
+                   by server-management repository and concurrency tests",
+    },
+    DynamicSite {
+        source: "crates/db/src/server_runtime.rs",
+        count: 1,
+        coverage: "allowlisted server-kind node projections, pinned by external server runtime \
+                   repository and byte-frozen API tests",
+    },
+    DynamicSite {
+        source: "crates/db/src/coupon.rs",
+        count: 2,
+        coverage: "§7.2 whitelist-sorted coupon/gift-card list SELECTs, pinned by the golden \
+                   responses, production-invariant projections, and promotion repository tests",
     },
     DynamicSite {
         source: "crates/db/src/pool.rs",
@@ -357,46 +382,36 @@ const DYNAMIC_SQLX_SITES: &[DynamicSite] = &[
                    milliseconds (SET takes no binds); pinned by the timeout parsing unit tests",
     },
     DynamicSite {
-        source: "crates/domain/src/admin/codes.rs",
-        count: 2,
-        coverage: "§7.2 whitelist-sorted coupon/gift-card list SELECTs, pinned by the golden \
-                   responses and production-invariant projections",
+        source: "crates/db/src/statistics.rs",
+        count: 1,
+        coverage: "allowlisted statistics grouping projection, pinned by calendar and repository tests",
     },
     DynamicSite {
-        source: "crates/domain/src/admin/repository.rs",
+        source: "crates/db/src/ticket.rs",
         count: 3,
-        coverage: "safe-table allowlist and admin interaction parity",
+        coverage: "fixed ticket filter/sort SQL variants, pinned by ticket repository tests",
     },
     DynamicSite {
-        source: "crates/domain/src/admin/servers.rs",
-        count: 8,
-        coverage: "server-table allowlist queries plus the fixed plan/user dependency-lock SQL \
-                   variants, W13 node CRUD, and the wire-shape unit tests",
-    },
-    DynamicSite {
-        source: "crates/domain/src/admin/support/common.rs",
-        count: 3,
-        coverage: "literal caller SQL is collected and prepared by this AST audit",
-    },
-    DynamicSite {
-        source: "crates/domain/src/operator_config.rs",
+        source: "crates/configuration-adapters/src/operator_config.rs",
         count: 1,
         coverage: "fixed API/worker acknowledgement variants, unit tests, and PostgreSQL 18 role-isolation tests",
     },
     DynamicSite {
-        source: "crates/domain/src/order/lifecycle.rs",
+        source: "crates/db/src/order_lifecycle.rs",
         count: 1,
         coverage: "variable ID batch and payment lifecycle integration",
     },
     DynamicSite {
-        source: "crates/workers/src/outbox.rs",
+        source: "crates/mail-adapters/src/worker.rs",
         count: 1,
-        coverage: "constant retention SQL is prepared and an isolated live worker runs cleanup",
+        coverage: "allowlisted retention statements selected from fixed constants, pinned by the \
+                   application retention-policy tests and real PostgreSQL worker-mail repository test",
     },
     DynamicSite {
-        source: "crates/workers/src/reset.rs",
+        source: "crates/db/src/maintenance.rs",
         count: 1,
-        coverage: "fixed retention SQL variants and bounded reset worker tests",
+        coverage: "fixed retention SQL variants, bounded maintenance use-case tests, and real \
+                   PostgreSQL maintenance repository coverage",
     },
 ];
 
@@ -407,19 +422,54 @@ const QUERY_BUILDER_SITES: &[DynamicSite] = &[
         coverage: "2,001-row enqueue, conflict, and PostgreSQL-to-ClickHouse round-trip tests",
     },
     DynamicSite {
-        source: "crates/api/src/server_api/config.rs",
+        source: "crates/configuration-adapters/src/bulk_mail.rs",
         count: 1,
-        coverage: "server API contracts",
+        coverage: "typed, allowlisted user-audience filtering with bound values, pinned by the \
+                   application filter-policy tests and bulk-mail outbox integration",
     },
     DynamicSite {
-        source: "crates/api/src/server_api/repository.rs",
-        count: 1,
-        coverage: "server-node enumeration and API contracts",
-    },
-    DynamicSite {
-        source: "crates/api/src/server_api/traffic.rs",
+        source: "crates/db/src/admin_order.rs",
         count: 3,
-        coverage: "traffic epoch production invariant",
+        coverage: "bind-only admin order filter and update builders, pinned by repository tests",
+    },
+    DynamicSite {
+        source: "crates/db/src/admin_payment.rs",
+        count: 1,
+        coverage: "bind-only payment-method update builder, pinned by payment repository tests",
+    },
+    DynamicSite {
+        source: "crates/db/src/admin_server.rs",
+        count: 5,
+        coverage: "allowlisted server-table writes and group locks, pinned by server-management \
+                   repository and concurrency tests",
+    },
+    DynamicSite {
+        source: "crates/db/src/server_runtime.rs",
+        count: 5,
+        coverage: "bind-only external node users/routes/traffic/stat builders, pinned by runtime \
+                   repository tests and traffic epoch production invariants",
+    },
+    DynamicSite {
+        source: "crates/db/src/admin_user.rs",
+        count: 13,
+        coverage: "bind-only admin user filters and bulk mutations, pinned by repository tests",
+    },
+    DynamicSite {
+        source: "crates/db/src/content.rs",
+        count: 2,
+        coverage: "bind-only notice and knowledge mutations, pinned by content repository tests",
+    },
+    DynamicSite {
+        source: "crates/db/src/coupon.rs",
+        count: 6,
+        coverage: "coupon lookup locks, atomic batch generation, and nullable PATCH builders, \
+                   pinned by promotion policy/unit tests, real PostgreSQL lifecycle and last-use \
+                   concurrency tests, and admin content interaction parity",
+    },
+    DynamicSite {
+        source: "crates/db/src/logs.rs",
+        count: 4,
+        coverage: "allowlisted log filters and sort projections, pinned by production-invariant projections",
     },
     DynamicSite {
         source: "crates/db/src/order.rs",
@@ -428,95 +478,46 @@ const QUERY_BUILDER_SITES: &[DynamicSite] = &[
     },
     DynamicSite {
         source: "crates/db/src/plan.rs",
-        count: 6,
+        count: 7,
         coverage: "fixed normalized-price projections and the bind-only plan-ID batch, pinned by \
                    commerce interaction contracts and plan repository integration tests",
     },
     DynamicSite {
-        source: "crates/domain/src/admin/codes.rs",
-        count: 3,
-        coverage: "coupon/gift-card batch and single code INSERTs, pinned by the generated-code \
-                   unit tests and admin content interaction parity",
-    },
-    DynamicSite {
-        source: "crates/domain/src/admin/commerce/orders.rs",
-        count: 3,
-        coverage: "admin commerce interaction parity",
-    },
-    DynamicSite {
-        source: "crates/domain/src/admin/commerce/payments.rs",
+        source: "crates/db/src/statistics.rs",
         count: 1,
-        coverage: "admin commerce interaction parity",
+        coverage: "bind-only statistics calendar projection, pinned by calendar tests",
     },
     DynamicSite {
-        source: "crates/domain/src/admin/commerce/plans.rs",
-        count: 1,
-        coverage: "admin commerce interaction parity",
-    },
-    DynamicSite {
-        source: "crates/domain/src/admin/repository.rs",
-        count: 1,
-        coverage: "safe-table allowlisted §4.4 PATCH executor and admin interaction parity",
-    },
-    DynamicSite {
-        source: "crates/domain/src/admin/servers.rs",
-        count: 4,
-        coverage: "server-table schema probes and admin server parity",
-    },
-    DynamicSite {
-        source: "crates/domain/src/admin/statistics.rs",
-        count: 5,
-        coverage: "admin dashboard/list interaction parity plus the audit-trail list production invariant",
-    },
-    DynamicSite {
-        source: "crates/domain/src/admin/support/filter_dsl.rs",
-        count: 1,
-        coverage: "§7 DSL bind-only SQL-shape unit tests (whitelisted exprs, bound values) plus the system/logs production-invariant projection",
-    },
-    DynamicSite {
-        source: "crates/domain/src/admin/support/filters.rs",
-        count: 1,
-        coverage: "§7 GET users whitelist bind-only SQL-shape unit tests (every user column resolves and binds its expression)",
-    },
-    DynamicSite {
-        source: "crates/domain/src/admin/support/values.rs",
+        source: "crates/db/src/ticket.rs",
         count: 2,
-        coverage: "exact PostgreSQL integer-cast builder unit tests and caller interaction parity",
+        coverage: "bind-only ticket list and update builders, pinned by ticket repository tests",
     },
     DynamicSite {
-        source: "crates/domain/src/admin/tickets.rs",
-        count: 2,
-        coverage: "admin ticket interaction parity",
-    },
-    DynamicSite {
-        source: "crates/domain/src/admin/users.rs",
-        count: 18,
-        coverage: "admin user filter/bulk interaction parity",
-    },
-    DynamicSite {
-        source: "crates/domain/src/mail/outbox.rs",
+        source: "crates/mail-adapters/src/mail/outbox.rs",
         count: 5,
         coverage: "mail outbox tests and isolated live worker",
     },
     DynamicSite {
-        source: "crates/domain/src/order/lifecycle.rs",
+        source: "crates/db/src/order_lifecycle.rs",
         count: 1,
         coverage: "order lifecycle and late-payment invariant",
     },
     DynamicSite {
-        source: "crates/workers/src/outbox.rs",
+        source: "crates/mail-adapters/src/worker.rs",
         count: 1,
-        coverage: "isolated live worker and reconciliation",
+        coverage: "bind-only leased outbox claim, pinned by the application relay tests and real \
+                   PostgreSQL worker-mail repository state-machine test",
     },
     DynamicSite {
-        source: "crates/workers/src/reset.rs",
+        source: "crates/db/src/maintenance.rs",
         count: 1,
-        coverage: "traffic epoch/reset integration",
+        coverage: "bind-only scheduled reset selection, pinned by maintenance policy tests and \
+                   real PostgreSQL repository coverage",
     },
     DynamicSite {
-        source: "crates/workers/src/traffic.rs",
+        source: "crates/db/src/worker_traffic.rs",
         count: 2,
-        coverage: "delayed-report traffic integration",
+        coverage: "atomic delayed-report accounting repository tests and traffic epoch production invariant",
     },
 ];
 

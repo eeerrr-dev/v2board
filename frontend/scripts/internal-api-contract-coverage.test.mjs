@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import test from 'node:test';
 
 import { routeMap } from '../tests/lib/dialect/route-map.mjs';
@@ -43,11 +44,17 @@ function openApiOperations() {
 function resolveLocalReference(value) {
   if (!value?.$ref) return value;
   const prefix = '#/';
-  assert.ok(value.$ref.startsWith(prefix), `only local OpenAPI references are supported: ${value.$ref}`);
+  assert.ok(
+    value.$ref.startsWith(prefix),
+    `only local OpenAPI references are supported: ${value.$ref}`,
+  );
   return value.$ref
     .slice(prefix.length)
     .split('/')
-    .reduce((current, segment) => current?.[segment.replaceAll('~1', '/').replaceAll('~0', '~')], spec);
+    .reduce(
+      (current, segment) => current?.[segment.replaceAll('~1', '/').replaceAll('~0', '~')],
+      spec,
+    );
 }
 
 function parametersAt(operation, location) {
@@ -56,6 +63,104 @@ function parametersAt(operation, location) {
 
 function registryId(operation) {
   return operation['x-v2board-operation-id'];
+}
+
+function isObjectSchema(schema) {
+  return (
+    schema?.type === 'object' ||
+    (Array.isArray(schema?.type) && schema.type.includes('object')) ||
+    schema?.properties !== undefined
+  );
+}
+
+function objectPolicies(schema, path, result) {
+  if (schema === true || schema === false || !schema || typeof schema !== 'object') return;
+  if (isObjectSchema(schema)) {
+    result.push({
+      path: path.join('/'),
+      policy: Object.hasOwn(schema, 'additionalProperties')
+        ? schema.additionalProperties
+        : undefined,
+    });
+  }
+  if (schema.items) objectPolicies(schema.items, [...path, 'items'], result);
+  if (schema.additionalProperties && schema.additionalProperties !== true) {
+    objectPolicies(schema.additionalProperties, [...path, 'additionalProperties'], result);
+  }
+  for (const keyword of ['oneOf', 'anyOf', 'allOf']) {
+    for (const [index, member] of (schema[keyword] ?? []).entries()) {
+      objectPolicies(member, [...path, keyword, String(index)], result);
+    }
+  }
+  for (const [name, property] of Object.entries(schema.properties ?? {})) {
+    objectPolicies(property, [...path, 'properties', name], result);
+  }
+}
+
+const reviewedOpenObjects = new Map([
+  [
+    'AdminPaymentItem/properties/config',
+    'Imported installations can contain an unknown historical provider; reads preserve its fully redacted string-valued manifest keys, while create uses a closed provider union and PATCH cannot mutate configuration.',
+  ],
+  [
+    'KnowledgeGroups',
+    'Operator-authored knowledge category names are dynamic; every value is a typed article array.',
+  ],
+  [
+    'NodeSortRequest',
+    'The first map key is a protocol name; every value is the typed per-protocol node sort map.',
+  ],
+  [
+    'NodeSortRequest/additionalProperties',
+    'The second map key is a database node id; every value is an integer sort position.',
+  ],
+  [
+    'PaymentProviderFormResponse',
+    'The field name comes from the selected provider manifest; every value is a typed form-field DTO.',
+  ],
+  [
+    'QueueStatsView/properties/last_failure_at',
+    'Queue names are deployment-defined; every value is an RFC 3339 timestamp.',
+  ],
+  [
+    'QueueStatsView/properties/last_run_at',
+    'Queue names are deployment-defined; every value is an RFC 3339 timestamp.',
+  ],
+  [
+    'QueueStatsView/properties/last_success_at',
+    'Queue names are deployment-defined; every value is an RFC 3339 timestamp.',
+  ],
+  [
+    'QueueStatsView/properties/wait',
+    'Queue names are deployment-defined; every value is an integer wait count.',
+  ],
+  [
+    'ServerTransportHeaders',
+    'HTTP transport header names are protocol-defined and dynamic; every value is a closed string-or-string-array union.',
+  ],
+  [
+    'VmessDnsSettings/properties/hosts',
+    'DNS hostnames are configuration-defined map keys; every value is a closed string-or-string-array union.',
+  ],
+]);
+
+function isReviewedOpenObject(path) {
+  if (reviewedOpenObjects.has(path)) return true;
+  return (
+    path === 'ProblemDetails/allOf/0' ||
+    path === 'ProblemDetails/allOf/0/properties/errors' ||
+    /^ProblemDetails\/allOf\/1\/oneOf\/(?:[0-9]|[1-9][0-9]|100)$/.test(path)
+  );
+}
+
+async function filesBelow(root) {
+  const files = [];
+  for (const entry of await readdir(root, { withFileTypes: true })) {
+    const path = join(root, entry.name);
+    if (entry.isDirectory()) files.push(...(await filesBelow(path)));
+    else files.push(path);
+  }
+  return files;
 }
 
 test('OpenAPI covers the exact 158-operation internal runtime surface', () => {
@@ -68,12 +173,172 @@ test('OpenAPI covers the exact 158-operation internal runtime surface', () => {
 
   assert.equal(routeMap.length, 155, 'the compatibility map semantic-row count drifted');
   assert.equal(expected.size, 158, 'the unique internal operation inventory drifted');
-  assert.equal(actualOperations.length, actual.size, 'the OpenAPI operation set contains duplicates');
+  assert.equal(
+    actualOperations.length,
+    actual.size,
+    'the OpenAPI operation set contains duplicates',
+  );
   assert.deepEqual(actual, expected);
 
   const operationIds = actualOperations.map(([, , operation]) => operation.operationId);
   assert.ok(operationIds.every(Boolean), 'every internal operation needs an operationId');
-  assert.equal(new Set(operationIds).size, operationIds.length, 'operationId values must be unique');
+  assert.equal(
+    new Set(operationIds).size,
+    operationIds.length,
+    'operationId values must be unique',
+  );
+});
+
+test('production wrappers consume only named generated operations', async () => {
+  const endpointFiles = (await filesBelow('packages/api-client/src/endpoints')).filter((path) =>
+    path.endsWith('.ts'),
+  );
+  const endpointSources = await Promise.all(
+    endpointFiles.map(async (path) => [path, await readFile(path, 'utf8')]),
+  );
+  const generatedRuntime = await readFile(
+    'packages/api-client/src/generated/internal-api.ts',
+    'utf8',
+  );
+  const generatedNames = new Set(
+    [...generatedRuntime.matchAll(/^  "([A-Za-z0-9]+)": \{$/gm)].map((match) => match[1]),
+  );
+
+  assert.equal(generatedNames.size, 158, 'the generated runtime operation registry drifted');
+  const wrapperNames = [];
+  for (const [path, source] of endpointSources) {
+    assert.doesNotMatch(
+      source,
+      /client\.(?:request|requestBinary)\s*\(/,
+      `${path} bypasses the generated operation executor`,
+    );
+    assert.doesNotMatch(
+      source,
+      /resolveAdminPath\s*\(/,
+      `${path} hand-builds a generated admin route`,
+    );
+    assert.doesNotMatch(
+      source,
+      /(?:json)?responseSchema\s*:/i,
+      `${path} hand-selects a response schema`,
+    );
+    wrapperNames.push(
+      ...[...source.matchAll(/requestInternal(?:Binary)?\(client,\s*['"]([^'"]+)['"]/g)].map(
+        (match) => match[1],
+      ),
+    );
+  }
+
+  assert.ok(wrapperNames.length > 0, 'no generated operation wrappers were found');
+  for (const name of wrapperNames) {
+    assert.ok(generatedNames.has(name), `endpoint wrapper references unknown operation ${name}`);
+  }
+  await assert.rejects(
+    readFile('packages/api-client/src/contracts.ts', 'utf8'),
+    /ENOENT/,
+    'the retired handwritten root DTO registry returned',
+  );
+});
+
+test('runtime contracts contain no permissive-object escape hatch', async () => {
+  const sourceFiles = (await filesBelow('packages/api-client/src')).filter((path) =>
+    path.endsWith('.ts'),
+  );
+  sourceFiles.push('scripts/generate-internal-api-contract.mjs');
+  for (const path of sourceFiles) {
+    assert.doesNotMatch(
+      await readFile(path, 'utf8'),
+      /z\.looseObject|looseObject/,
+      `${path} reintroduced an implicit permissive object contract`,
+    );
+  }
+});
+
+test('every object schema is explicitly closed or belongs to the reviewed open-map inventory', () => {
+  const policies = [];
+  for (const [name, schema] of Object.entries(spec.components?.schemas ?? {})) {
+    objectPolicies(schema, [name], policies);
+  }
+
+  assert.deepEqual(
+    policies.filter(({ policy }) => policy === undefined).map(({ path }) => path),
+    [],
+    'an object schema omitted additionalProperties and therefore became implicitly open',
+  );
+  const open = policies.filter(({ policy }) => policy !== false);
+  assert.equal(open.length, 114, 'the reviewed open-object inventory drifted');
+  assert.deepEqual(
+    open.filter(({ path }) => !isReviewedOpenObject(path)).map(({ path }) => path),
+    [],
+    'an unreviewed open object entered the transport contract',
+  );
+  assert.equal(
+    open.filter(({ path }) => /^ProblemDetails\/allOf\/1\/oneOf\//.test(path)).length,
+    101,
+    'the RFC 9457 tuple-arm inventory drifted',
+  );
+  assert.deepEqual(
+    open
+      .filter(({ path }) => !path.startsWith('ProblemDetails/'))
+      .map(({ path }) => path)
+      .sort(),
+    [...reviewedOpenObjects.keys()].sort(),
+    'every non-problem open map needs an exact path and durable rationale',
+  );
+  assert.ok(
+    [...reviewedOpenObjects.values()].every((reason) => reason.length >= 40),
+    'every reviewed open map needs a substantive rationale',
+  );
+  assert.equal(
+    spec.components?.schemas?.JsonValue,
+    undefined,
+    'the recursive arbitrary-JSON transport type must not return',
+  );
+});
+
+test('generated permissive types and catchalls stay confined to explicit extension islands', async () => {
+  const types = await readFile('packages/types/src/generated/internal-api.ts', 'utf8');
+  const unknownIndexOwners = types
+    .split('\n')
+    .filter((line) => line.includes('[key: string]: unknown'))
+    .map((line) => line.match(/^export type (InternalApi\w+) =/)?.[1]);
+  assert.deepEqual(unknownIndexOwners, ['InternalApiProblemDetails']);
+  assert.doesNotMatch(
+    types,
+    /InternalApiJsonValue|Record<string, unknown>/,
+    'business DTOs must not expose a recursive arbitrary-JSON or unknown-valued map',
+  );
+
+  const runtime = await readFile('packages/api-client/src/generated/internal-api.ts', 'utf8');
+  const problemStart = runtime.indexOf('export const internalApiProblemDetailsSchema');
+  assert.notEqual(problemStart, -1, 'the generated RFC 9457 schema is missing');
+  const problemEnd = runtime.indexOf('\nexport const ', problemStart + 1);
+  const runtimeWithoutProblem =
+    runtime.slice(0, problemStart) + runtime.slice(problemEnd === -1 ? runtime.length : problemEnd);
+  assert.doesNotMatch(
+    runtimeWithoutProblem,
+    /\.catchall\(/,
+    'a non-RFC transport validator became permissive',
+  );
+  assert.equal(
+    [...runtime.matchAll(/\.catchall\(z\.unknown\(\)\)/g)].length,
+    102,
+    'only the RFC 9457 base and 101 tuple arms may use unknown catchalls',
+  );
+});
+
+test('handwritten endpoint adapters cannot reopen generated business DTOs', async () => {
+  const endpointFiles = (await filesBelow('packages/api-client/src/endpoints')).filter((file) =>
+    file.endsWith('.ts'),
+  );
+  for (const file of endpointFiles) {
+    const source = await readFile(file, 'utf8');
+    assert.doesNotMatch(
+      source,
+      /JsonValue|Record<string, unknown>|z\.(?:unknown|any|looseObject)\s*\(/,
+      `${file} reopens a generated request or response DTO`,
+    );
+  }
 });
 
 test('OpenAPI query parameters match the exact 22 Axum Query operations', () => {
@@ -95,7 +360,10 @@ test('OpenAPI query parameters match the exact 22 Axum Query operations', () => 
     ['admin.stats.records', ['type']],
     ['admin.payment-providers.form', ['payment_id']],
     ['admin.orders.list', ['commission_only', 'filter', 'page', 'per_page', 'sort_by', 'sort_dir']],
-    ['admin.payment-reconciliations.list', ['callback_no', 'page', 'payment_id', 'per_page', 'reason', 'resolved', 'trade_no']],
+    [
+      'admin.payment-reconciliations.list',
+      ['callback_no', 'page', 'payment_id', 'per_page', 'reason', 'resolved', 'trade_no'],
+    ],
     ['admin.tickets.list', ['email', 'page', 'per_page', 'reply_status', 'status']],
     ['admin.users.list', ['filter', 'page', 'per_page', 'sort_by', 'sort_dir']],
     ['admin.server-groups.list', ['group_id']],
@@ -116,7 +384,9 @@ test('OpenAPI query parameters match the exact 22 Axum Query operations', () => 
   }
   assert.deepEqual(actualIds, new Set(expected.keys()));
 
-  const byId = new Map(openApiOperations().map(([, , operation]) => [registryId(operation), operation]));
+  const byId = new Map(
+    openApiOperations().map(([, , operation]) => [registryId(operation), operation]),
+  );
   const parameter = (id, name) => {
     const found = parametersAt(byId.get(id), 'query').find((item) => item.name === name);
     assert.ok(found, `${id} is missing query parameter ${name}`);
@@ -130,7 +400,10 @@ test('OpenAPI query parameters match the exact 22 Axum Query operations', () => 
   ]) {
     assert.equal(parameter(id, name).required, true, `${id}.${name} must be required`);
   }
-  assert.deepEqual(parameter('admin.stats.server-rank', 'window').schema.enum, ['today', 'previous']);
+  assert.deepEqual(parameter('admin.stats.server-rank', 'window').schema.enum, [
+    'today',
+    'previous',
+  ]);
   assert.deepEqual(parameter('admin.stats.records', 'type').schema.enum, ['d', 'm']);
   assert.equal(parameter('admin.stats.records', 'type').schema.default, 'd');
   assert.equal(parameter('user.notices.list', 'page').schema.minimum, 1);
@@ -223,10 +496,7 @@ test('the shared problem schema pins all 101 code/status/title tuples', () => {
   assert.equal(problem.allOf?.length, 2);
   const [base, discriminated] = problem.allOf;
   assert.equal(base.type, 'object');
-  assert.deepEqual(
-    new Set(base.required),
-    new Set(['type', 'title', 'status', 'code', 'detail']),
-  );
+  assert.deepEqual(new Set(base.required), new Set(['type', 'title', 'status', 'code', 'detail']));
   assert.equal(base.properties?.type?.const, 'about:blank');
   assert.equal(base.properties?.errors?.type, 'object');
   assert.ok(!base.required.includes('errors'), 'validation errors must remain optional');
@@ -242,10 +512,7 @@ test('the shared problem schema pins all 101 code/status/title tuples', () => {
     errors: variant.properties?.errors,
   }));
   assert.equal(new Set(tuples.map(({ code }) => code)).size, 101);
-  assert.deepEqual(
-    new Set(tuples.map(({ code }) => code)),
-    new Set(problemCode.enum),
-  );
+  assert.deepEqual(new Set(tuples.map(({ code }) => code)), new Set(problemCode.enum));
   assert.ok(tuples.every(({ status }) => Number.isInteger(status) && status >= 400));
   assert.ok(tuples.every(({ title }) => typeof title === 'string' && title.length > 0));
   assert.ok(

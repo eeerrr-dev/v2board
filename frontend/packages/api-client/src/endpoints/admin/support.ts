@@ -1,8 +1,27 @@
-import type { Ticket, TicketReplyPayload } from '@v2board/types';
+import type { InternalApiOperationMap, Ticket, TicketReplyPayload } from '@v2board/types';
 import type { ApiClient } from '../../client';
-import { pageSchema } from '../../dialect';
-import { noContentSchema, userTicketDetailSchema, userTicketSchema } from '../../contracts';
+import { requestInternal } from '../../internal-operation';
 import type { PageResult, QueryRequestConfig } from './shared';
+
+type AdminTicketItem = InternalApiOperationMap['adminTicketsList']['response']['items'][number];
+
+function toTicket(ticket: AdminTicketItem): Ticket {
+  if (![0, 1, 2].includes(ticket.level)) {
+    throw new TypeError(`Unsupported ticket level: ${ticket.level}`);
+  }
+  if (![0, 1].includes(ticket.status)) {
+    throw new TypeError(`Unsupported ticket status: ${ticket.status}`);
+  }
+  if (![0, 1].includes(ticket.reply_status)) {
+    throw new TypeError(`Unsupported ticket reply status: ${ticket.reply_status}`);
+  }
+  return {
+    ...ticket,
+    level: ticket.level as Ticket['level'],
+    status: ticket.status as Ticket['status'],
+    reply_status: ticket.reply_status as Ticket['reply_status'],
+  };
+}
 
 /**
  * §6.5 (W14) list query: pages keep their local `{current, pageSize}` state;
@@ -29,50 +48,38 @@ export const fetchTickets = async (
   query: AdminTicketListQuery = {},
   config?: QueryRequestConfig,
 ): Promise<PageResult<Ticket>> => {
-  const page = await client.request({
-    url: client.resolveAdminPath('/tickets'),
-    method: 'GET',
-    dialect: 'v2',
-    params: {
+  const page = await requestInternal(client, 'adminTicketsList', {
+    query: {
       page: query.current,
       per_page: query.pageSize,
       status: query.status,
       email: query.email || undefined,
       reply_status: query.reply_status?.length ? query.reply_status : undefined,
     },
-    responseSchema: pageSchema(userTicketSchema),
     ...config,
   });
-  return { data: page.items, total: page.total };
+  return { data: page.items.map(toTicket), total: page.total };
 };
 
 /** GET /{secure_path}/tickets/{id} — bare detail with the `message[]` thread (§6.5, W14). */
 export const ticketDetail = (client: ApiClient, id: number | string, config?: QueryRequestConfig) =>
-  client.request({
-    url: client.resolveAdminPath(`/tickets/${encodeURIComponent(id)}`),
-    method: 'GET',
-    dialect: 'v2',
-    responseSchema: userTicketDetailSchema,
+  requestInternal(client, 'adminTicketsGet', {
+    path: { id: Number(id) },
     ...config,
   });
 
 /** POST /{secure_path}/tickets/{id}/replies `{message}` — 204; the `id` moves to the path (§6.5). */
 export const replyTicket = (client: ApiClient, payload: TicketReplyPayload) => {
   const { id, ...data } = payload;
-  return client.request({
-    url: client.resolveAdminPath(`/tickets/${encodeURIComponent(id)}/replies`),
-    method: 'POST',
-    dialect: 'v2',
-    data,
-    responseSchema: noContentSchema,
+  if (data.message === undefined) throw new TypeError('Ticket reply message is required');
+  return requestInternal(client, 'adminTicketsRepliesCreate', {
+    path: { id: Number(id) },
+    data: { message: data.message },
   });
 };
 
 /** POST /{secure_path}/tickets/{id}/close — 204, no body (§6.5, W14). */
 export const closeTicket = (client: ApiClient, id: number) =>
-  client.request({
-    url: client.resolveAdminPath(`/tickets/${encodeURIComponent(id)}/close`),
-    method: 'POST',
-    dialect: 'v2',
-    responseSchema: noContentSchema,
+  requestInternal(client, 'adminTicketsClose', {
+    path: { id },
   });

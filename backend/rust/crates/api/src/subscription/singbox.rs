@@ -15,7 +15,7 @@ static SINGBOX_LEGACY_TEMPLATE: LazyLock<Result<Value, String>> = LazyLock::new(
 pub(super) async fn build_singbox_subscription(
     config: &AppConfig,
     uuid: &str,
-    servers: &[v2board_db::server::AvailableServerRow],
+    servers: &[crate::subscription::AvailableServer],
     modern: bool,
 ) -> Result<String, ApiError> {
     let proxies = servers
@@ -140,7 +140,7 @@ fn inject_singbox_proxies(config: &mut Value, proxy_tags: &[String], proxies: Ve
 
 pub(super) fn build_singbox_proxy(
     uuid: &str,
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
     modern: bool,
 ) -> Option<Value> {
     match server_protocol(server).as_str() {
@@ -170,7 +170,7 @@ fn insert_singbox_domain_resolver(object: &mut Map<String, Value>, modern: bool)
 
 fn build_singbox_shadowsocks(
     uuid: &str,
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
     modern: bool,
 ) -> Option<Value> {
     let cipher = extra_string(server, "cipher")?;
@@ -216,7 +216,7 @@ fn build_singbox_shadowsocks(
 
 fn build_singbox_vmess(
     uuid: &str,
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
     modern: bool,
 ) -> Option<Value> {
     let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
@@ -243,7 +243,7 @@ fn build_singbox_vmess(
 
 fn build_singbox_vless(
     uuid: &str,
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
     modern: bool,
 ) -> Option<Value> {
     let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
@@ -273,7 +273,7 @@ fn build_singbox_vless(
 
 fn build_singbox_trojan(
     uuid: &str,
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
     modern: bool,
 ) -> Option<Value> {
     let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
@@ -295,7 +295,7 @@ fn build_singbox_trojan(
 
 fn build_singbox_tuic(
     uuid: &str,
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
     modern: bool,
 ) -> Option<Value> {
     // Singbox.php:333-357 (modern) / SingboxOld.php:281-304 (legacy). The two
@@ -356,7 +356,7 @@ fn build_singbox_tuic(
 
 fn build_singbox_anytls(
     uuid: &str,
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
 ) -> Option<Value> {
     // Singbox.php:359-418. anytls is modern-only (SingboxOld has no builder), so
     // it always emits `domain_resolver`. TLS: alpn ['h2','http/1.1'], optional
@@ -420,7 +420,7 @@ fn build_singbox_anytls(
 
 fn build_singbox_hysteria(
     uuid: &str,
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
     modern: bool,
 ) -> Option<Value> {
     // Singbox.php:420-478 (modern) / SingboxOld.php:306-351 (legacy). A single
@@ -481,7 +481,7 @@ fn build_singbox_hysteria(
 
 fn build_singbox_hysteria2(
     uuid: &str,
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
     modern: bool,
 ) -> Option<Value> {
     // Singbox.php:480-509 (modern) / SingboxOld.php:353-381 (legacy). Always a
@@ -512,7 +512,7 @@ fn build_singbox_hysteria2(
 }
 
 fn singbox_base(
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
     proxy_type: &str,
 ) -> Map<String, Value> {
     let mut object = Map::new();
@@ -576,7 +576,7 @@ fn add_singbox_transport(object: &mut Map<String, Value>, network: &str, setting
 // insecure/server_name resolution shared by every sing-box TLS block, checking
 // both v2node (`allow_insecure`/`server_name`) and legacy (`allowInsecure`/
 // `serverName`) key spellings plus the outer server columns.
-fn singbox_insecure(server: &v2board_db::server::AvailableServerRow, tls_settings: &Value) -> bool {
+fn singbox_insecure(server: &crate::subscription::AvailableServer, tls_settings: &Value) -> bool {
     extra_i64(server, "insecure")
         .or_else(|| extra_i64(server, "allow_insecure"))
         .or_else(|| json_path_i64(tls_settings, &["allow_insecure"]))
@@ -586,7 +586,7 @@ fn singbox_insecure(server: &v2board_db::server::AvailableServerRow, tls_setting
 }
 
 fn singbox_server_name(
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
     tls_settings: &Value,
 ) -> String {
     extra_string(server, "server_name")
@@ -596,7 +596,7 @@ fn singbox_server_name(
 }
 
 fn singbox_tls(
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
     tls_settings: &Value,
     tls_mode: i64,
     utls: bool,
@@ -664,7 +664,7 @@ fn add_singbox_ech(object: &mut Map<String, Value>, tls_settings: &Value) {
 // entries only (bare single ports inside a comma list are discarded).
 fn set_singbox_hysteria_ports(
     object: &mut Map<String, Value>,
-    server: &v2board_db::server::AvailableServerRow,
+    server: &crate::subscription::AvailableServer,
 ) {
     let raw = port_text(server);
     let parts = raw.split(',').map(str::trim).collect::<Vec<_>>();

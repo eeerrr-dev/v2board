@@ -17,12 +17,18 @@ use axum::{
     http::{HeaderMap, HeaderValue, Method, StatusCode, header},
     response::{IntoResponse, Response},
 };
-use serde::{Deserialize, Serialize};
-use v2board_compat::{ApiError, Code, Problem};
-use v2board_domain::{
-    admin::staff_permissions_allow,
-    auth::{AuthUser, EmailVerifyInput, ForgetInput, RegisterInput},
+use serde::Deserialize;
+use v2board_api_contract::auth::{
+    AuthData, EmailCodeRequest, InviteViewRequest, LoginRequest, PasswordResetRequest,
+    QuickLoginUrlRequest, RegisterRequest, StepUpRequest, TokenLoginRequest,
 };
+pub(crate) use v2board_api_contract::auth::{QuickLoginUrl, SessionState, StepUpGrant};
+use v2board_application::auth::{
+    AuthCode, AuthData as ApplicationAuthData, AuthError, AuthUser, EmailVerifyInput, ForgetInput,
+    RegisterInput,
+};
+use v2board_compat::{ApiError, Code, Problem};
+use v2board_domain_model::staff_permissions_allow;
 
 use crate::{
     dialect::{DialectJson, problem_from},
@@ -38,25 +44,13 @@ const STEP_UP_HEADER: &str = "x-v2board-step-up";
 /// §4.2 — the only accepted Authorization scheme on internal routes.
 const BEARER_SCHEME: &str = "Bearer ";
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct LoginRequest {
-    email: String,
-    password: String,
-    /// Required (as a second phase) only for privileged accounts with an
-    /// enabled TOTP factor: absent → 401 `mfa_code_required`, wrong →
-    /// 401 `mfa_code_invalid`.
-    #[serde(default)]
-    totp_code: Option<String>,
-}
-
 /// POST /auth/login — bare `{is_admin: bool, auth_data}` (§5.2).
 pub(crate) async fn login(
     State(state): State<AppState>,
     Extension(ClientIp(client_ip)): Extension<ClientIp>,
     headers: HeaderMap,
     DialectJson(payload): DialectJson<LoginRequest>,
-) -> Result<Json<v2board_domain::auth::AuthData>, Problem> {
+) -> Result<Json<AuthData>, Problem> {
     let locale = request_locale(&headers);
     let auth = state.auth_service();
     let user_agent = bounded_user_agent(&headers);
@@ -70,8 +64,9 @@ pub(crate) async fn login(
             user_agent,
         )
         .await
+        .map_err(auth_error)
         .map_err(|error| problem_from(error, locale))?;
-    Ok(Json(data))
+    Ok(Json(auth_data(data)))
 }
 
 /// POST /auth/register — 201 with the same bare auth body (§1, §5.2).
@@ -79,16 +74,24 @@ pub(crate) async fn register(
     State(state): State<AppState>,
     Extension(ClientIp(client_ip)): Extension<ClientIp>,
     headers: HeaderMap,
-    DialectJson(payload): DialectJson<RegisterInput>,
+    DialectJson(payload): DialectJson<RegisterRequest>,
 ) -> Result<Response, Problem> {
     let locale = request_locale(&headers);
     let auth = state.auth_service();
     let user_agent = bounded_user_agent(&headers);
+    let input = RegisterInput {
+        email: payload.email,
+        password: payload.password,
+        invite_code: payload.invite_code,
+        email_code: payload.email_code,
+        recaptcha_data: payload.recaptcha_data,
+    };
     let data = auth
-        .register(payload, Some(client_ip.to_string()), user_agent)
+        .register(input, Some(client_ip.to_string()), user_agent)
         .await
+        .map_err(auth_error)
         .map_err(|error| problem_from(error, locale))?;
-    Ok((StatusCode::CREATED, Json(data)).into_response())
+    Ok((StatusCode::CREATED, Json(auth_data(data))).into_response())
 }
 
 #[derive(Debug, Deserialize)]
@@ -136,12 +139,6 @@ pub(crate) async fn quick_login(
     Ok(response)
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct TokenLoginRequest {
-    verify: String,
-}
-
 /// POST /auth/token-login — the SPA one-time `?verify=` exchange; a dead or
 /// malformed token is 400 `invalid_token` (§5.2, §3.4).
 pub(crate) async fn token_login(
@@ -149,7 +146,7 @@ pub(crate) async fn token_login(
     Extension(ClientIp(client_ip)): Extension<ClientIp>,
     headers: HeaderMap,
     DialectJson(payload): DialectJson<TokenLoginRequest>,
-) -> Result<Json<v2board_domain::auth::AuthData>, Problem> {
+) -> Result<Json<AuthData>, Problem> {
     let locale = request_locale(&headers);
     let verify = payload.verify.trim();
     if verify.is_empty() {
@@ -166,35 +163,28 @@ pub(crate) async fn token_login(
     let data = auth
         .token_login(verify, Some(client_ip.to_string()), user_agent)
         .await
+        .map_err(auth_error)
         .map_err(|error| problem_from(error, locale))?;
-    Ok(Json(data))
+    Ok(Json(auth_data(data)))
 }
 
 /// POST /auth/password-reset — empty success (204).
 pub(crate) async fn password_reset(
     State(state): State<AppState>,
     headers: HeaderMap,
-    DialectJson(payload): DialectJson<ForgetInput>,
+    DialectJson(payload): DialectJson<PasswordResetRequest>,
 ) -> Result<StatusCode, Problem> {
     let locale = request_locale(&headers);
     let auth = state.auth_service();
-    auth.forget(payload)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
+    auth.forget(ForgetInput {
+        email: payload.email,
+        email_code: payload.email_code,
+        password: payload.password,
+    })
+    .await
+    .map_err(auth_error)
+    .map_err(|error| problem_from(error, locale))?;
     Ok(StatusCode::NO_CONTENT)
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct StepUpRequest {
-    password: String,
-}
-
-/// Bare step-up grant body (§5.2): `{step_up_token, expires_in}`.
-#[derive(Serialize)]
-pub(crate) struct StepUpGrant {
-    pub(crate) step_up_token: String,
-    pub(crate) expires_in: u64,
 }
 
 /// POST /auth/step-up — re-verify the privileged password; the grant rides
@@ -222,24 +212,13 @@ pub(crate) async fn step_up(
             Some(&client_ip),
         )
         .await
+        .map_err(auth_error)
         .map_err(|error| problem_from(error, locale))?;
     let expires_in = state.config_snapshot().privileged_step_up_ttl_seconds;
     Ok(Json(StepUpGrant {
         step_up_token: token,
         expires_in,
     }))
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct QuickLoginUrlRequest {
-    redirect: Option<String>,
-}
-
-/// Bare minted-URL body (§5.2, §9.4): `{url}`.
-#[derive(Serialize)]
-pub(crate) struct QuickLoginUrl {
-    pub(crate) url: String,
 }
 
 /// POST /auth/quick-login-url — consolidates the duplicate legacy
@@ -257,6 +236,7 @@ pub(crate) async fn quick_login_url(
     let url = auth
         .quick_login_url(user.id, payload.redirect.as_deref())
         .await
+        .map_err(auth_error)
         .map_err(|error| problem_from(error, locale))?;
     Ok(Json(QuickLoginUrl { url }))
 }
@@ -267,29 +247,22 @@ pub(crate) async fn email_codes(
     State(state): State<AppState>,
     Extension(ClientIp(client_ip)): Extension<ClientIp>,
     headers: HeaderMap,
-    DialectJson(payload): DialectJson<EmailVerifyInput>,
+    DialectJson(payload): DialectJson<EmailCodeRequest>,
 ) -> Result<StatusCode, Problem> {
     let locale = request_locale(&headers);
     let auth = state.auth_service();
-    auth.send_email_verify(payload, Some(client_ip.to_string()))
-        .await
-        .map_err(|error| problem_from(error, locale))?;
+    auth.send_email_verify(
+        EmailVerifyInput {
+            email: payload.email,
+            is_forget: payload.is_forget,
+            recaptcha_data: payload.recaptcha_data,
+        },
+        Some(client_ip.to_string()),
+    )
+    .await
+    .map_err(auth_error)
+    .map_err(|error| problem_from(error, locale))?;
     Ok(StatusCode::NO_CONTENT)
-}
-
-/// Bare session-probe body (§5.2): `{is_login: bool, is_admin?: bool,
-/// is_staff?: bool, admin_permissions?: string[]}`. The staff pair appears
-/// together for staff sessions — grants may be an empty array — so the admin
-/// SPA can gate its navigation without a second round trip (§6.12).
-#[derive(Debug, Serialize)]
-pub(crate) struct SessionState {
-    pub(crate) is_login: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) is_admin: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) is_staff: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) admin_permissions: Option<Vec<String>>,
 }
 
 /// GET /auth/session — the checkLogin successor. A dead or absent bearer is
@@ -332,15 +305,10 @@ pub(crate) async fn session_delete(
         let auth = state.auth_service();
         auth.logout(&auth_data)
             .await
+            .map_err(auth_error)
             .map_err(|error| problem_from(error, locale))?;
     }
     Ok(StatusCode::NO_CONTENT)
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct InviteViewRequest {
-    invite_code: String,
 }
 
 /// POST /public/invite-views — unauthenticated invite-view telemetry
@@ -355,8 +323,63 @@ pub(crate) async fn public_invite_views(
     let auth = state.auth_service();
     auth.passport_pv(Some(payload.invite_code.as_str()))
         .await
+        .map_err(auth_error)
         .map_err(|error| problem_from(error, locale))?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+fn auth_data(data: ApplicationAuthData) -> AuthData {
+    AuthData {
+        is_admin: data.is_admin,
+        auth_data: data.auth_data,
+    }
+}
+
+pub(crate) fn auth_error(error: AuthError) -> ApiError {
+    match error {
+        AuthError::Validation { field, message } => {
+            Problem::validation_field(field, message).into()
+        }
+        AuthError::Business { code, detail } => {
+            let code = match code {
+                AuthCode::AccountSuspended => Code::AccountSuspended,
+                AuthCode::EmailAlreadyRegistered => Code::EmailAlreadyRegistered,
+                AuthCode::EmailNotRegistered => Code::EmailNotRegistered,
+                AuthCode::EmailSendRateLimited => Code::EmailSendRateLimited,
+                AuthCode::EmailSuffixNotAllowed => Code::EmailSuffixNotAllowed,
+                AuthCode::GmailAliasNotSupported => Code::GmailAliasNotSupported,
+                AuthCode::InvalidCredentials => Code::InvalidCredentials,
+                AuthCode::InvalidEmailCode => Code::InvalidEmailCode,
+                AuthCode::InvalidInviteCode => Code::InvalidInviteCode,
+                AuthCode::InvalidParameter => Code::InvalidParameter,
+                AuthCode::InvalidToken => Code::InvalidToken,
+                AuthCode::MailInvalid => Code::MailInvalid,
+                AuthCode::MailSendFailed => Code::MailSendFailed,
+                AuthCode::MailSenderNotConfigured => Code::MailSenderNotConfigured,
+                AuthCode::MfaAlreadyEnabled => Code::MfaAlreadyEnabled,
+                AuthCode::MfaCodeInvalid => Code::MfaCodeInvalid,
+                AuthCode::MfaCodeRequired => Code::MfaCodeRequired,
+                AuthCode::MfaNotEnabled => Code::MfaNotEnabled,
+                AuthCode::MfaSetupMissing => Code::MfaSetupMissing,
+                AuthCode::OldPasswordIncorrect => Code::OldPasswordIncorrect,
+                AuthCode::PasswordAttemptsRateLimited => Code::PasswordAttemptsRateLimited,
+                AuthCode::PasswordResetFailed => Code::PasswordResetFailed,
+                AuthCode::RecaptchaFailed => Code::RecaptchaFailed,
+                AuthCode::RegisterIpRateLimited => Code::RegisterIpRateLimited,
+                AuthCode::RegistrationClosed => Code::RegistrationClosed,
+                AuthCode::UserNotRegistered => Code::UserNotRegistered,
+            };
+            let problem = Problem::new(code);
+            if let Some(detail) = detail {
+                problem.with_detail(detail).into()
+            } else {
+                problem.into()
+            }
+        }
+        AuthError::Unauthorized => ApiError::unauthorized(),
+        AuthError::Internal(message) => ApiError::internal(message),
+        AuthError::Repository(error) => ApiError::internal(error.to_string()),
+    }
 }
 
 /// Authenticate the shared session extractor path. Missing, malformed, or
@@ -378,6 +401,7 @@ pub(crate) async fn require_user(
     let auth = state.auth_service();
     auth.user_from_auth_data(&auth_data)
         .await
+        .map_err(auth_error)
         .map_err(|error| error.relocalize_problem(locale))
 }
 
@@ -468,7 +492,8 @@ pub(crate) async fn require_privileged_step_up(
         if state
             .auth_service()
             .verify_privileged_step_up(user.id, &user.session_id, token)
-            .await?
+            .await
+            .map_err(auth_error)?
         {
             return Ok(());
         }
@@ -504,9 +529,11 @@ mod tests {
     use v2board_config::AppConfig;
 
     use super::{
-        MAX_USER_AGENT_BYTES, bounded_user_agent, recent_password_authentication, select_auth_data,
+        MAX_USER_AGENT_BYTES, auth_error, bounded_user_agent, recent_password_authentication,
+        select_auth_data,
     };
-    use v2board_domain::auth::AuthUser;
+    use v2board_application::auth::{AuthCode, AuthError, AuthUser};
+    use v2board_compat::{ApiError, Code};
 
     fn with_loopback_peer(mut request: Request) -> Request {
         request
@@ -750,5 +777,63 @@ mod tests {
         assert!(!recent_password_authentication(&user, 999, 600));
         user.password_authenticated = false;
         assert!(!recent_password_authentication(&user, 1_001, 600));
+    }
+
+    #[test]
+    fn application_auth_codes_map_exhaustively_to_the_stable_problem_registry() {
+        for (application, wire) in [
+            (AuthCode::AccountSuspended, Code::AccountSuspended),
+            (
+                AuthCode::EmailAlreadyRegistered,
+                Code::EmailAlreadyRegistered,
+            ),
+            (AuthCode::EmailNotRegistered, Code::EmailNotRegistered),
+            (AuthCode::EmailSendRateLimited, Code::EmailSendRateLimited),
+            (AuthCode::EmailSuffixNotAllowed, Code::EmailSuffixNotAllowed),
+            (
+                AuthCode::GmailAliasNotSupported,
+                Code::GmailAliasNotSupported,
+            ),
+            (AuthCode::InvalidCredentials, Code::InvalidCredentials),
+            (AuthCode::InvalidEmailCode, Code::InvalidEmailCode),
+            (AuthCode::InvalidInviteCode, Code::InvalidInviteCode),
+            (AuthCode::InvalidParameter, Code::InvalidParameter),
+            (AuthCode::InvalidToken, Code::InvalidToken),
+            (AuthCode::MailInvalid, Code::MailInvalid),
+            (AuthCode::MailSendFailed, Code::MailSendFailed),
+            (
+                AuthCode::MailSenderNotConfigured,
+                Code::MailSenderNotConfigured,
+            ),
+            (AuthCode::MfaAlreadyEnabled, Code::MfaAlreadyEnabled),
+            (AuthCode::MfaCodeInvalid, Code::MfaCodeInvalid),
+            (AuthCode::MfaCodeRequired, Code::MfaCodeRequired),
+            (AuthCode::MfaNotEnabled, Code::MfaNotEnabled),
+            (AuthCode::MfaSetupMissing, Code::MfaSetupMissing),
+            (AuthCode::OldPasswordIncorrect, Code::OldPasswordIncorrect),
+            (
+                AuthCode::PasswordAttemptsRateLimited,
+                Code::PasswordAttemptsRateLimited,
+            ),
+            (AuthCode::PasswordResetFailed, Code::PasswordResetFailed),
+            (AuthCode::RecaptchaFailed, Code::RecaptchaFailed),
+            (AuthCode::RegisterIpRateLimited, Code::RegisterIpRateLimited),
+            (AuthCode::RegistrationClosed, Code::RegistrationClosed),
+            (AuthCode::UserNotRegistered, Code::UserNotRegistered),
+        ] {
+            match auth_error(AuthError::business(application)) {
+                ApiError::Problem(problem) => assert_eq!(problem.code(), wire),
+                error => panic!("auth business code mapped outside problem registry: {error:?}"),
+            }
+        }
+
+        match auth_error(AuthError::business_detail(
+            AuthCode::InvalidParameter,
+            "preserved detail",
+        )) {
+            ApiError::Problem(problem) => assert_eq!(problem.detail(), "preserved detail"),
+            error => panic!("auth business detail mapped outside problem registry: {error:?}"),
+        }
+        assert!(auth_error(AuthError::Unauthorized).is_session_expired());
     }
 }

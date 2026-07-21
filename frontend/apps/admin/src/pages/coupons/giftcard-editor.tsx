@@ -4,6 +4,7 @@ import type { TFunction } from 'i18next';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm, useFormState, useWatch } from 'react-hook-form';
 import { Loader2 } from 'lucide-react';
+import { isRawBinaryResponse } from '@v2board/api-client';
 import type { AdminPlanModel } from '@v2board/types';
 import { Button } from '@v2board/ui/button';
 import { Field, FieldError, FieldLabel } from '@v2board/ui/field';
@@ -107,7 +108,7 @@ export function GiftcardEditor({
 
   const save = form.handleSubmit((validValues) => {
     onSave(normalizeGenerationPayload(validValues) as GiftcardSubmit, (response) => {
-      if (validValues.generate_count && response?.buffer)
+      if (validValues.generate_count && isRawBinaryResponse(response))
         downloadGeneratedCsv('GIFTCARD', response.buffer);
       setOpen(false);
     });

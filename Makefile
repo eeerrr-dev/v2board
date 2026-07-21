@@ -198,6 +198,12 @@ rust-integration:
 	$(DCF) exec -T clickhouse clickhouse-client --user v2board_analytics --password v2board \
 		--query 'CREATE DATABASE v2board_analytics_test'
 	$(DCF) run --rm -T --no-deps --entrypoint bash \
+		-e RUST_INTEGRATION_DATABASE_URL=postgresql://v2board:v2board@postgres:5432/v2board_schema_test \
+		rust-api -lc \
+		'. /usr/local/cargo/env; cargo test --locked -p v2board-provision --test postgres_target_schema'
+	$(DCF) exec -T postgres dropdb --force --if-exists -U v2board v2board_schema_test
+	$(DCF) exec -T postgres createdb -U v2board v2board_schema_test
+	$(DCF) run --rm -T --no-deps --entrypoint bash \
 		-v "$(GOLDENS_HOST_DIR):$(GOLDENS_MOUNT_DIR):ro" \
 		-e RUST_INTEGRATION_DATABASE_ROOT_URL=postgresql://v2board:v2board@postgres:5432/postgres \
 		-e RUST_INTEGRATION_DATABASE_URL=postgresql://v2board:v2board@postgres:5432/v2board_analytics_test \
@@ -216,8 +222,25 @@ rust-integration:
 		'set -euo pipefail; . /usr/local/cargo/env; \
 		 cargo test --locked -p v2board-lifecycle imported_source_schema_matches_oracle_mysql_8_legacy_fixture; \
 		 cargo test --locked -p v2board-lifecycle representative_mysql_rows_copy_into_fresh_postgres; \
-		 RUST_INTEGRATION_DATABASE_URL="$$RUST_INTEGRATION_SCHEMA_DATABASE_URL" cargo test --locked -p v2board-provision --test postgres_target_schema; \
 		 cargo test --locked -p v2board-db --test plan_binding_concurrency -- --test-threads=1; \
+		 cargo test --locked -p v2board-db --test auth_repository; \
+		 RUST_INTEGRATION_REDIS_URL="$$REDIS_URL" cargo test --locked -p v2board-auth-adapters --test redis_auth_cache; \
+		 cargo test --locked -p v2board-db --test content_repository; \
+		 cargo test --locked -p v2board-db --test giftcard_repository; \
+		 cargo test --locked -p v2board-db --test promotion_repository -- --test-threads=1; \
+		 cargo test --locked -p v2board-db --test payment_repository -- --test-threads=1; \
+		 cargo test --locked -p v2board-db --test reconciliation_repository -- --test-threads=1; \
+		 cargo test --locked -p v2board-db --test plan_repository -- --test-threads=1; \
+		 cargo test --locked -p v2board-db --test admin_order_repository -- --test-threads=1; \
+		 cargo test --locked -p v2board-db --test order_jobs_repository -- --test-threads=1; \
+		 cargo test --locked -p v2board-db --test admin_user_repository -- --test-threads=1; \
+		 cargo test --locked -p v2board-db --test telegram_repository -- --test-threads=1; \
+		 cargo test --locked -p v2board-mail-adapters --test worker_mail_repository -- --test-threads=1; \
+		 cargo test --locked -p v2board-db --test maintenance_repository -- --test-threads=1; \
+		 cargo test --locked -p v2board-db --test operator_access_repository -- --test-threads=1; \
+		 cargo test --locked -p v2board-db --test server_management_repository -- --test-threads=1; \
+		 cargo test --locked -p v2board-db --test worker_traffic_statistics_repository -- --test-threads=1; \
+		 cargo test --locked -p v2board-db --test ticket_repository; \
 		 cargo test --locked -p v2board-db --test plan_sort_exact -- --test-threads=1; \
 		 cargo test --locked -p v2board-db --test plan_price_concurrency; \
 		 cargo test --locked -p v2board-lifecycle -- --list | grep -Fx "mysql_import::tests::full_execute_bootstraps_and_retires_every_principal: test"; \
@@ -360,19 +383,37 @@ runtime-isolation-audit:
 	fi
 	@echo "Production workflow has no retired runtime dependency; local service logs are bounded; real-stack E2E is isolated from default runtime/data services and volumes."
 
+NATIVE_RUNTIME_CRATES := \
+	backend/rust/crates/analytics \
+	backend/rust/crates/api \
+	backend/rust/crates/api-contract \
+	backend/rust/crates/application \
+	backend/rust/crates/auth-adapters \
+	backend/rust/crates/compat \
+	backend/rust/crates/config \
+	backend/rust/crates/configuration-adapters \
+	backend/rust/crates/contract \
+	backend/rust/crates/db \
+	backend/rust/crates/domain-model \
+	backend/rust/crates/http-adapters \
+	backend/rust/crates/mail-adapters \
+	backend/rust/crates/order-adapters \
+	backend/rust/crates/payment-adapters \
+	backend/rust/crates/problem-code \
+	backend/rust/crates/redis-adapters \
+	backend/rust/crates/server-adapters \
+	backend/rust/crates/subscription-adapters \
+	backend/rust/crates/workers
+
 native-database-audit:
 	@matches="$$(rg -n \
 		'\b(MySql|MySqlPool|MySqlConnection)\b|connect_mysql|migrate_mysql|ON DUPLICATE KEY|INSERT IGNORE|GET_LOCK\(|RELEASE_LOCK\(' \
-		backend/rust/crates/api backend/rust/crates/analytics backend/rust/crates/compat backend/rust/crates/config \
-		backend/rust/crates/contract backend/rust/crates/db backend/rust/crates/domain \
-		backend/rust/crates/workers \
+		$(NATIVE_RUNTIME_CRATES) \
 		--glob '*.rs' || true)"; \
 	if [ -n "$$matches" ]; then echo "$$matches"; exit 1; fi
 	@matches="$$(rg -n \
 		'features[[:space:]]*=[[:space:]]*\[[^]]*"mysql"|v2board-provision|v2board-lifecycle' \
-		backend/rust/crates/api/Cargo.toml backend/rust/crates/analytics/Cargo.toml backend/rust/crates/db/Cargo.toml \
-		backend/rust/crates/domain/Cargo.toml backend/rust/crates/workers/Cargo.toml \
-		backend/rust/crates/contract/Cargo.toml || true)"; \
+		$(addsuffix /Cargo.toml,$(NATIVE_RUNTIME_CRATES)) || true)"; \
 	if [ -n "$$matches" ]; then echo "$$matches"; exit 1; fi
 	@$(DCF) build rust-api >/dev/null
 	@graph="$$( $(DCF) run --rm -T --no-deps --entrypoint bash rust-api -lc \

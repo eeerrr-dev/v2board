@@ -1,66 +1,109 @@
 # Backend architecture
 
-The backend uses inward-facing dependency boundaries rather than treating the
-historical crate layout as the design authority.
+The native backend follows an inward-facing application/ports-and-adapters
+architecture. Crate placement is part of the design: transport, persistence,
+Redis, cryptography, SMTP, upstream HTTP, clocks, and runtime configuration do
+not enter the application core.
 
 ```text
-generated TypeScript/Zod <--- OpenAPI <--- operation/transport contract (`api-contract`)
-                                               ^
-                                               |
-HTTP adapter (`api`) -- maps DTOs <--> application commands/views
-                                               |
-                                               v
-                         application services (`domain`, historical path)
-                                               |
-                                               v
-                                  pure domain model (`domain-model`)
+generated TypeScript/Zod <--- OpenAPI <--- transport contract (`api-contract`)
+                                                ^
+                                                |
+HTTP inbound adapter (`api`) -- DTO <--> command/view mapping
+                                                |
+                                                v
+                         use cases + outbound ports (`application`)
+                                                |
+                                                v
+                               pure policy/value objects (`domain-model`)
+                                                ^
+                                                |
+ PostgreSQL (`db`) + production `*-adapters` implement the outbound ports
 
-RFC 9457 runtime (`compat`) <--- zero-dependency code registry (`problem-code`)
+RFC 9457 runtime (`compat`) <--- code registry (`problem-code`)
                                       ---> OpenAPI projection (`api-contract`)
 ```
 
-- `domain-model` owns infrastructure-free value objects and business policy.
-  It must not depend on SQL, Redis, HTTP, async runtimes, configuration, or API
-  serialization. Its direct normal, build, and dev allowlists are empty. The
-  current pure core covers money, plan pricing, typed order vocabulary,
-  renewal decisions, subscription/reset policy, and commission policy; API,
-  worker, and persistence code translate at those boundaries.
-- `api-contract` owns generated-wire schemas and the canonical 158-operation
-  internal registry. Axum routing and OpenAPI both derive method/path from that
-  registry; the generated document also pins path/query parameters, common and
-  operation-specific headers, request-body presence, security metadata, exact
-  success status/media sets, and the reusable RFC 9457 problem model. This is
-  complete **operation-inventory and operation-metadata coverage**, not a claim
-  that every handler DTO is already field-generated: most JSON request and
-  success bodies deliberately remain `JsonValue` until their transport types
-  move here. It must not depend on application services or persistence, and
-  application services must not depend on it. Its direct normal allowlist is
-  limited to `anyhow`,
-  `chrono`, `serde`, `serde_json`, `utoipa`, and the zero-dependency
-  `v2board-problem-code`; its build and dev allowlists are empty. The HTTP
-  adapter performs the explicit conversion.
-- `problem-code` is the framework-free, zero-dependency registry for all 101
-  application-level problem slugs, status/title assignments, and default or
-  localized details. `compat`
-  projects it into Axum responses and `api-contract` projects it into OpenAPI,
-  so runtime and generated clients cannot acquire separate error registries.
-- `domain` is the historical path for the application layer. It coordinates
-  use cases and depends inward on the pure model; it is not a domain-entity
-  bucket and may not import HTTP DTOs or server-transport crates such as Axum,
-  Tower, Hyper, or Utoipa.
-- `db`, lifecycle import code, API handlers, workers, and external providers
-  remain integration boundaries. Legacy source fields and public wire names
-  are translated there instead of leaking into the native schema or pure
-  model. Existing direct infrastructure calls from the historical application
-  crate are a bounded migration surface, not a model for new code.
+## Inward core
 
-The dependency-direction tests in `domain-model/tests` inspect Cargo's resolved
-dependency graph (rather than grepping manifests), so dependency aliases cannot
-bypass these boundaries. Direct normal/build dependencies use exact allowlists;
-the current dev allowlists for `domain-model`, `problem-code`, and
-`api-contract` are empty, and
-the `domain` transport exclusion is checked across normal, build, and dev edges.
-Adding a test-only or build-script dependency therefore requires the same
-explicit architecture review as a runtime dependency. New business concepts
-should enter `domain-model`; new wire DTOs should enter `api-contract`;
-orchestration stays in the application layer.
+- `domain-model` owns infrastructure-free business value objects and policies.
+  Its normal, build, and dev dependency sets are empty. It cannot know about
+  SQL rows, Redis keys, HTTP DTOs, async runtimes, configuration files, or wire
+  serialization.
+- `application` owns use-case orchestration, commands, views, business errors,
+  and outbound port traits. Its exact normal dependency allowlist is
+  `thiserror` plus `v2board-domain-model`; it has no build or dev dependencies.
+  Application source is also checked for transport and infrastructure imports.
+  Transactions and atomicity required by a use case are expressed through a
+  port operation, not reconstructed across several calls by an inbound handler.
+- `api-contract` owns the internal HTTP transport vocabulary and the canonical
+  158-operation registry. It is independent of application and persistence;
+  `application` is likewise independent of it. The HTTP adapter performs the
+  explicit conversion between transport DTOs and application commands/views.
+- `problem-code` is a zero-dependency registry for all 101 internal RFC 9457
+  problem codes and their status/title assignments. `compat` projects it into
+  runtime responses while `api-contract` projects the same registry into
+  OpenAPI, preventing runtime and generated clients from drifting apart.
+
+## Ports and adapters
+
+- `db` is the PostgreSQL adapter. Repository implementations satisfy
+  application ports with typed parameters and transaction-scoped operations;
+  SQL does not live in Axum handlers or application services.
+- The production adapter crates own integration-specific behavior:
+  `auth-adapters`, `configuration-adapters`, `http-adapters`, `mail-adapters`,
+  `order-adapters`, `payment-adapters`, `redis-adapters`, `server-adapters`, and
+  `subscription-adapters`. Examples include password hashing, session caches,
+  operator-configuration activation, bounded upstream bodies, SMTP/outbox,
+  clocks and identifiers, encrypted provider secrets, Redis admission, node
+  credentials, and subscription-token minting.
+- `api` is the HTTP composition root and inbound adapter; `workers` is the
+  background-process composition root. They construct concrete adapters and
+  call application services. Frozen external namespaces keep their wire bytes
+  at the inbound boundary while still using the same application ports behind
+  that boundary.
+- `config` loads and validates typed boot/runtime configuration. It does not own
+  integration algorithms. Provider calls and derived integration secrets stay
+  in their production adapter crates.
+- `provision` and `lifecycle` form the separate, one-shot legacy MySQL import
+  boundary. They are not a second runtime architecture and cannot leak MySQL
+  into the API or worker dependency graphs.
+
+## Complete internal transport contract
+
+The registry drives both Axum method/path registration and OpenAPI 3.1. It pins
+path/query parameters, shared and operation-specific headers, request-body
+presence, authentication, exact success status/media sets, and default RFC 9457
+responses for all 158 internal operations.
+
+All 64 JSON request bodies and all 95 JSON success representations have named,
+field-level DTO roots. The recursive `JsonValue` schema is absent. Structural
+objects are explicitly closed by default; the only open structures are the
+reviewed, typed dynamic-map islands (for example provider manifest fields,
+queue names, transport headers, and DNS host keys) plus RFC 9457 extension
+members. The generated TypeScript types and Zod validators preserve those same
+closed/open policies. Endpoint wrappers may consume only named generated
+operations and cannot reopen a business DTO with `unknown`, `any`, or a
+handwritten permissive schema.
+
+## Enforced boundaries
+
+Architecture is executable rather than aspirational:
+
+- `application/tests/dependency_direction.rs` checks the exact dependency
+  allowlist, rejects infrastructure imports, and verifies that business inbound
+  handlers use application services while PostgreSQL/external adapters implement
+  their ports.
+- `domain-model/tests/dependency_direction.rs` inspects Cargo's resolved graph,
+  including normal, build, and dev edges, for the pure model, problem registry,
+  contract crate, and HTTP/application boundary.
+- `api-contract` and frontend coverage tests pin the 158-operation set, the
+  64/95 named JSON roots, closed-object policy, local reference resolution,
+  problem registry, generated artifacts, and route drift.
+- The contract SQL inventory and live prepare gates account for every dynamic
+  SQL builder in runtime adapter crates. Real PostgreSQL repository tests cover
+  transaction- and constraint-sensitive behavior.
+
+New business policy belongs in `domain-model`; orchestration and ports belong in
+`application`; transport DTOs belong in `api-contract`; infrastructure belongs
+in `db` or a focused outer-adapter crate.

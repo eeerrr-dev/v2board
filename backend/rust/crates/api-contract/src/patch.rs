@@ -29,10 +29,30 @@ where
 }
 
 impl<T> NonNull<T> {
+    #[must_use]
+    pub const fn is_retain(&self) -> bool {
+        matches!(self, Self::Retain)
+    }
+
     pub fn into_option(self) -> Option<T> {
         match self {
             Self::Retain => None,
             Self::Set(value) => Some(value),
+        }
+    }
+}
+
+impl<T> Serialize for NonNull<T>
+where
+    T: Serialize,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            Self::Retain => serializer.serialize_none(),
+            Self::Set(value) => value.serialize(serializer),
         }
     }
 }
