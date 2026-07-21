@@ -456,7 +456,7 @@ services:
       - frontend-workspace:/app/frontend:ro
       - frontend-interaction-artifacts:/app/frontend/.cache/interaction-parity
       - frontend-node_modules:/app/frontend/node_modules:ro
-      - frontend-playwright-cache:/app/frontend/.cache/ms-playwright
+      - frontend-playwright-cache:/app/frontend/.cache/ms-playwright:ro
 
   # Downloads the pinned Chromium build before the browser is moved onto its
   # internal-only runtime network. It has no runtime credentials or deploy tree.
@@ -470,9 +470,7 @@ services:
     command:
       - |
         set -eu
-        if ! find /app/frontend/.cache/ms-playwright -path '*/chrome-linux/chrome' -type f | grep -q .; then
-          pnpm exec playwright install chromium
-        fi
+        pnpm exec playwright install chromium
     environment:
       CI: "true"
       COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"

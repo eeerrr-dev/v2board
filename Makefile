@@ -67,7 +67,7 @@ INTERACTION_PARITY_SCENARIOS ?= user-login-form-language user-login-language-per
 FRONTEND_RUN := $(DCF) run --rm -T --no-deps --entrypoint sh
 FRONTEND_WORKSPACE_BOOTSTRAP := if [ ! -f /app/frontend/package.json ]; then mkdir -p /app/frontend && tar --exclude=node_modules --exclude=.pnpm-store --exclude=dist --exclude=dist-deploy -C /src/frontend -cf - . | tar -C /app/frontend -xf -; fi
 FRONTEND_SETUP := $(FRONTEND_WORKSPACE_BOOTSTRAP) && pnpm config set store-dir /app/frontend/.pnpm-store >/dev/null && pnpm install --frozen-lockfile
-PLAYWRIGHT_SETUP := if ! find /app/frontend/.cache/ms-playwright -path '*/chrome-linux/chrome' -type f 2>/dev/null | grep -q .; then pnpm exec playwright install chromium; fi
+PLAYWRIGHT_SETUP := pnpm exec playwright install chromium
 
 up:
 	$(DCF) up -d --build
@@ -292,6 +292,9 @@ runtime-isolation-audit:
 	@rg -Fqx 'real-stack-e2e: deploy-artifact-smoke' Makefile || { \
 		echo "real-stack-e2e must depend on the artifact-only gate, never deploy-smoke."; exit 1; \
 	}
+	@rg -Fqx 'PLAYWRIGHT_SETUP := pnpm exec playwright install chromium' Makefile || { \
+		echo "Playwright setup must delegate browser revision and platform resolution to the official installer."; exit 1; \
+	}
 	@$(REAL_STACK_E2E_DCF) config --format json | jq -e \
 		'def named_sources($$service): [$$service.volumes[]? | select(.type == "volume") | .source]; \
 		 def network_names($$service): [$$service.networks | keys[]] | sort; \
@@ -316,6 +319,7 @@ runtime-isolation-audit:
 		 ($$networks["real-stack-e2e-data"].internal == true) and \
 		 (($$services["real-stack-e2e-bootstrap"].depends_on | keys | sort) == ["postgres-real-stack-e2e", "redis-real-stack-e2e"]) and \
 		 (($$services["rust-real-stack-api"].depends_on | keys | sort) == ["frontend-build", "real-stack-e2e-bootstrap"]) and \
+		 ($$services["real-stack-e2e-browser-build"].command == ["set -eu\npnpm exec playwright install chromium\n"]) and \
 		 ($$services["postgres-real-stack-e2e"].tmpfs == ["/var/lib/postgresql"]) and \
 		 ($$services["redis-real-stack-e2e"].tmpfs == ["/data"]) and \
 		 (named_sources($$services["postgres-real-stack-e2e"]) == []) and \
@@ -324,6 +328,8 @@ runtime-isolation-audit:
 		 ((named_sources($$services["real-stack-e2e-build"]) | sort) == ["rust-cargo-git", "rust-cargo-registry", "rust-target"]) and \
 		 ((named_sources($$services["real-stack-e2e-browser-build"]) | sort) == ["frontend-node_modules", "frontend-playwright-cache", "frontend-workspace"]) and \
 		 ([ $$services["real-stack-e2e-runner"].volumes[] | select(.target == "/app/frontend" and .read_only == true) ] | length == 1) and \
+		 ([ $$services["real-stack-e2e-runner"].volumes[] | select(.source == "frontend-playwright-cache" and .target == "/app/frontend/.cache/ms-playwright" and .read_only == true) ] | length == 1) and \
+		 ([ $$services["real-stack-e2e-browser-build"].volumes[] | select(.source == "frontend-playwright-cache" and .target == "/app/frontend/.cache/ms-playwright" and .read_only != true) ] | length == 1) and \
 		 (named_sources($$services["real-stack-e2e-runner"]) | all(. != "frontend-deploy")) and \
 		 (named_sources($$services["real-stack-e2e-runtime-clean"]) == ["real-stack-e2e-api-runtime"]) and \
 		 ((named_sources($$services["real-stack-e2e-bootstrap"]) | sort) == ["real-stack-e2e-api-runtime", "rust-target"]) and \
@@ -351,6 +357,9 @@ runtime-isolation-audit:
 	case "$$runner_lines" in *"real-stack-e2e-runner -lc "*"playwright.real-stack.config.mjs"*) ;; \
 		*) echo "The real-stack Playwright runner must be the dedicated read-only runner service."; exit 1 ;; \
 	esac; \
+	if printf '%s\n' "$$runner_lines" | rg -q 'find|playwright install'; then \
+		echo "The isolated runner must let Playwright resolve its installed browser without private path probes or downloads."; exit 1; \
+	fi; \
 	case "$$recipe" in *'$$(DCF)'*|*'$$(FRONTEND_RUN)'*) \
 		echo "real-stack-e2e must use only REAL_STACK_E2E_DCF after its artifact prerequisite."; exit 1 ;; \
 	esac; \
@@ -710,7 +719,7 @@ real-stack-e2e: deploy-artifact-smoke
 		-e REAL_STACK_E2E_ARTIFACT_DIR=$(REAL_STACK_E2E_ARTIFACT_DIR) \
 		-e REAL_STACK_E2E_BASE_URL=http://rust-real-stack-api:8080 \
 		-e REAL_STACK_E2E_ADMIN_PATH=admin-e2e \
-		real-stack-e2e-runner -lc 'test -n "$$(find /app/frontend/.cache/ms-playwright -path "*/chrome-linux/chrome" -type f -print -quit)" && pnpm exec playwright test --config=playwright.real-stack.config.mjs'
+		real-stack-e2e-runner -lc 'pnpm exec playwright test --config=playwright.real-stack.config.mjs'
 
 accessibility-smoke:
 	$(MAKE) --no-print-directory interaction-parity \
