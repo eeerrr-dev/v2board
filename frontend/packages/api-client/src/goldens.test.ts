@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { z } from 'zod';
+import type { z } from 'zod';
 import type { InternalOperationName } from './internal-operation';
 import { problemDetailsSchema } from './dialect';
 import { internalApiOperations } from './generated/internal-api';

@@ -6,7 +6,10 @@
 //! [`InternalOperation::documented_path`]. This keeps the live admin prefix
 //! dynamic without duplicating its 89 route literals.
 
-use std::{borrow::Cow, collections::BTreeMap};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, BTreeSet},
+};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -2784,6 +2787,402 @@ pub fn augment_openapi_document(document: &mut Value) {
         add_registry_extensions(&mut generated, operation);
         path_item.insert(method, Value::Object(generated));
     }
+
+    prune_unreachable_components(document).unwrap_or_else(|error| {
+        panic!("invalid OpenAPI component graph: {error}");
+    });
+    ensure_all_components_are_reachable(document).unwrap_or_else(|error| {
+        panic!("invalid exported OpenAPI component graph: {error}");
+    });
+}
+
+/// OpenAPI component maps are registries, not independent schema roots. Keep
+/// only entries reachable from an actual path or webhook, inherited security
+/// requirements, or the deliberately published reusable response catalog.
+/// Follow local references recursively across every component kind supported
+/// by OpenAPI 3.1, without interpreting arbitrary example/default values as
+/// OpenAPI structure. This removes schemas left behind when structural `allOf`
+/// references are flattened and prevents generator output from exposing unused
+/// runtime validators.
+const COMPONENT_KINDS: [&str; 10] = [
+    "schemas",
+    "responses",
+    "parameters",
+    "examples",
+    "requestBodies",
+    "headers",
+    "securitySchemes",
+    "links",
+    "callbacks",
+    "pathItems",
+];
+
+type ComponentKey = (String, String);
+
+fn prune_unreachable_components(document: &mut Value) -> Result<BTreeSet<ComponentKey>, String> {
+    let inventory = component_inventory(document)?;
+    let reachable = reachable_components(document, &inventory)?;
+    let removed = inventory
+        .difference(&reachable)
+        .cloned()
+        .collect::<BTreeSet<_>>();
+
+    let components = document
+        .get_mut("components")
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| "components must be an object".to_owned())?;
+    for kind in COMPONENT_KINDS {
+        let Some(entries) = components.get_mut(kind) else {
+            continue;
+        };
+        let entries = entries
+            .as_object_mut()
+            .ok_or_else(|| format!("components.{kind} must be an object"))?;
+        entries.retain(|name, _| reachable.contains(&(kind.to_owned(), name.clone())));
+    }
+
+    Ok(removed)
+}
+
+fn ensure_all_components_are_reachable(document: &Value) -> Result<(), String> {
+    let inventory = component_inventory(document)?;
+    let reachable = reachable_components(document, &inventory)?;
+    let unreachable = inventory
+        .difference(&reachable)
+        .map(|(kind, name)| format!("#/components/{kind}/{name}"))
+        .collect::<Vec<_>>();
+    if unreachable.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "components are unreachable from contract roots: {}",
+            unreachable.join(", ")
+        ))
+    }
+}
+
+fn component_inventory(document: &Value) -> Result<BTreeSet<ComponentKey>, String> {
+    let components = document
+        .get("components")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "components must be an object".to_owned())?;
+    let mut inventory = BTreeSet::new();
+    for (kind, entries) in components {
+        if kind.starts_with("x-") {
+            continue;
+        }
+        if !COMPONENT_KINDS.contains(&kind.as_str()) {
+            return Err(format!("unsupported component kind {kind}"));
+        }
+        let entries = entries
+            .as_object()
+            .ok_or_else(|| format!("components.{kind} must be an object"))?;
+        inventory.extend(entries.keys().map(|name| (kind.clone(), name.clone())));
+    }
+    Ok(inventory)
+}
+
+fn reachable_components(
+    document: &Value,
+    inventory: &BTreeSet<ComponentKey>,
+) -> Result<BTreeSet<ComponentKey>, String> {
+    let paths = document
+        .get("paths")
+        .ok_or_else(|| "paths is missing".to_owned())?;
+    let mut traversal = ComponentTraversal {
+        document,
+        inventory,
+        reachable: BTreeSet::new(),
+        visited_references: BTreeSet::new(),
+    };
+    traversal.visit_extensible_named_map(paths, "#/paths")?;
+    if let Some(webhooks) = document.get("webhooks") {
+        traversal.visit_extensible_named_map(webhooks, "#/webhooks")?;
+    }
+    if let Some(security) = document.get("security") {
+        traversal.visit_security_requirements(security, "#/security")?;
+    }
+    // The detailed RFC 9457 responses form a reusable status catalog even
+    // though operations intentionally point at one honest `default` fallback.
+    // Registering a response component is therefore an explicit publication
+    // decision; any schemas it references are part of the exported contract.
+    for (_, name) in inventory.iter().filter(|(kind, _)| kind == "responses") {
+        let reference = format!(
+            "#/components/responses/{}",
+            encode_json_pointer_segment(name)
+        );
+        traversal.visit_reference(&reference, "#/components/responses")?;
+    }
+    Ok(traversal.reachable)
+}
+
+struct ComponentTraversal<'a> {
+    document: &'a Value,
+    inventory: &'a BTreeSet<ComponentKey>,
+    reachable: BTreeSet<ComponentKey>,
+    visited_references: BTreeSet<String>,
+}
+
+impl ComponentTraversal<'_> {
+    fn visit_extensible_named_map(&mut self, value: &Value, location: &str) -> Result<(), String> {
+        let entries = value
+            .as_object()
+            .ok_or_else(|| format!("OpenAPI map at {location} must be an object"))?;
+        for (name, child) in entries {
+            if !name.starts_with("x-") {
+                self.visit_value(child, &format!("{location}/{name}"))?;
+            }
+        }
+        Ok(())
+    }
+
+    fn visit_named_map(&mut self, value: &Value, location: &str) -> Result<(), String> {
+        let entries = value
+            .as_object()
+            .ok_or_else(|| format!("OpenAPI map at {location} must be an object"))?;
+        for (name, child) in entries {
+            self.visit_value(child, &format!("{location}/{name}"))?;
+        }
+        Ok(())
+    }
+
+    fn visit_value(&mut self, value: &Value, location: &str) -> Result<(), String> {
+        match value {
+            Value::Object(object) => {
+                let reference = object.get("$ref").and_then(Value::as_str);
+                if let Some(reference) = reference {
+                    self.visit_reference(reference, location)?;
+                }
+                let dynamic_reference = object.get("$dynamicRef").and_then(Value::as_str);
+                if let Some(reference) = dynamic_reference {
+                    return Err(format!(
+                        "unsupported dynamic reference at {location}: {reference}"
+                    ));
+                }
+                let has_security_requirements = object.get("responses").is_some()
+                    && object.get("security").is_some_and(Value::is_array);
+                if has_security_requirements {
+                    let security = &object["security"];
+                    self.visit_security_requirements(security, &format!("{location}/security"))?;
+                }
+                let has_discriminator = object.get("discriminator").is_some();
+                if let Some(discriminator) = object.get("discriminator") {
+                    self.visit_discriminator(discriminator, &format!("{location}/discriminator"))?;
+                }
+                for (name, child) in object {
+                    let handled_reference = name == "$ref" && reference.is_some();
+                    let handled_dynamic_reference =
+                        name == "$dynamicRef" && dynamic_reference.is_some();
+                    let handled_security = name == "security" && has_security_requirements;
+                    let handled_discriminator = name == "discriminator" && has_discriminator;
+                    if !handled_reference
+                        && !handled_dynamic_reference
+                        && !handled_security
+                        && !handled_discriminator
+                        && !name.starts_with("x-")
+                        && !is_instance_data_field(name, child)
+                    {
+                        let child_location = format!("{location}/{name}");
+                        if name == "responses" && child.is_object() {
+                            self.visit_extensible_named_map(child, &child_location)?;
+                        } else if name == "links" && child.is_object() {
+                            self.visit_links_map(child, &child_location)?;
+                        } else if is_named_structure_map(name, child) {
+                            self.visit_named_map(child, &child_location)?;
+                        } else {
+                            self.visit_value(child, &child_location)?;
+                        }
+                    }
+                }
+            }
+            Value::Array(items) => {
+                for (index, child) in items.iter().enumerate() {
+                    self.visit_value(child, &format!("{location}/{index}"))?;
+                }
+            }
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+        }
+        Ok(())
+    }
+
+    fn visit_links_map(&mut self, value: &Value, location: &str) -> Result<(), String> {
+        let links = value
+            .as_object()
+            .ok_or_else(|| format!("links at {location} must be an object"))?;
+        for (name, link) in links {
+            self.visit_link(link, &format!("{location}/{name}"))?;
+        }
+        Ok(())
+    }
+
+    fn visit_link(&mut self, value: &Value, location: &str) -> Result<(), String> {
+        let link = value
+            .as_object()
+            .ok_or_else(|| format!("link at {location} must be an object"))?;
+        if let Some(reference) = link.get("$ref").and_then(Value::as_str) {
+            return self.visit_reference(reference, location);
+        }
+        if let Some(reference) = link.get("$dynamicRef").and_then(Value::as_str) {
+            return Err(format!(
+                "unsupported dynamic reference at {location}: {reference}"
+            ));
+        }
+
+        // Link parameter values and request bodies are runtime expressions or
+        // arbitrary instance data. They are not OpenAPI structure and may
+        // legitimately contain a property named `$ref`.
+        for (name, child) in link {
+            if !matches!(name.as_str(), "parameters" | "requestBody") && !name.starts_with("x-") {
+                self.visit_value(child, &format!("{location}/{name}"))?;
+            }
+        }
+        Ok(())
+    }
+
+    fn visit_discriminator(&mut self, value: &Value, location: &str) -> Result<(), String> {
+        let discriminator = value
+            .as_object()
+            .ok_or_else(|| format!("discriminator at {location} must be an object"))?;
+        let Some(mapping) = discriminator.get("mapping") else {
+            return Ok(());
+        };
+        let mapping = mapping.as_object().ok_or_else(|| {
+            format!("discriminator mapping at {location}/mapping must be an object")
+        })?;
+        for (variant, target) in mapping {
+            let target = target.as_str().ok_or_else(|| {
+                format!("discriminator target at {location}/mapping/{variant} must be a string")
+            })?;
+            let reference = if target.starts_with('#') {
+                target.to_owned()
+            } else {
+                let key = ("schemas".to_owned(), target.to_owned());
+                if !self.inventory.contains(&key) {
+                    return Err(format!(
+                        "external or unknown discriminator target at {location}/mapping/{variant}: {target}"
+                    ));
+                }
+                format!(
+                    "#/components/schemas/{}",
+                    encode_json_pointer_segment(target)
+                )
+            };
+            self.visit_reference(&reference, &format!("{location}/mapping/{variant}"))?;
+        }
+        Ok(())
+    }
+
+    fn visit_reference(&mut self, reference: &str, location: &str) -> Result<(), String> {
+        if !reference.starts_with('#') {
+            return Err(format!("external reference at {location}: {reference}"));
+        }
+        if !self.visited_references.insert(reference.to_owned()) {
+            return Ok(());
+        }
+        let pointer = reference
+            .strip_prefix('#')
+            .expect("local reference prefix checked");
+        let target = self
+            .document
+            .pointer(pointer)
+            .ok_or_else(|| format!("unresolved reference at {location}: {reference}"))?
+            .clone();
+        if let Some(key) = component_key_from_reference(reference)? {
+            if !self.inventory.contains(&key) {
+                return Err(format!(
+                    "reference targets an unknown component: {reference}"
+                ));
+            }
+            self.reachable.insert(key);
+        }
+        if component_key_from_reference(reference)?.is_some_and(|(kind, _)| kind == "links") {
+            self.visit_link(&target, reference)
+        } else {
+            self.visit_value(&target, reference)
+        }
+    }
+
+    fn visit_security_requirements(&mut self, value: &Value, location: &str) -> Result<(), String> {
+        let requirements = value
+            .as_array()
+            .ok_or_else(|| format!("security requirements at {location} must be an array"))?;
+        for (index, requirement) in requirements.iter().enumerate() {
+            let requirement = requirement.as_object().ok_or_else(|| {
+                format!("security requirement at {location}/{index} must be an object")
+            })?;
+            for (scheme, scopes) in requirement {
+                if !scopes.is_array() {
+                    return Err(format!(
+                        "security scopes at {location}/{index}/{scheme} must be an array"
+                    ));
+                }
+                let key = ("securitySchemes".to_owned(), scheme.clone());
+                if !self.inventory.contains(&key) {
+                    return Err(format!(
+                        "security requirement references unknown scheme {scheme} at {location}/{index}"
+                    ));
+                }
+                if self.reachable.insert(key) {
+                    let target = self.document["components"]["securitySchemes"][scheme].clone();
+                    self.visit_value(&target, &format!("#/components/securitySchemes/{scheme}"))?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+fn is_instance_data_field(name: &str, value: &Value) -> bool {
+    matches!(name, "value" | "example" | "default" | "const" | "enum")
+        || (name == "examples" && value.is_array())
+}
+
+fn is_named_structure_map(name: &str, value: &Value) -> bool {
+    value.is_object()
+        && matches!(
+            name,
+            "properties"
+                | "patternProperties"
+                | "dependentSchemas"
+                | "$defs"
+                | "content"
+                | "headers"
+                | "callbacks"
+                | "examples"
+                | "encoding"
+                | "variables"
+                | "scopes"
+        )
+}
+
+fn component_key_from_reference(reference: &str) -> Result<Option<ComponentKey>, String> {
+    let Some(pointer) = reference.strip_prefix("#/components/") else {
+        return Ok(None);
+    };
+    let mut segments = pointer.split('/');
+    let kind = segments
+        .next()
+        .ok_or_else(|| format!("malformed component reference {reference}"))?;
+    let name = segments
+        .next()
+        .ok_or_else(|| format!("malformed component reference {reference}"))?;
+    if !COMPONENT_KINDS.contains(&kind) {
+        return Err(format!(
+            "reference uses unsupported component kind {kind}: {reference}"
+        ));
+    }
+    Ok(Some((
+        decode_json_pointer_segment(kind),
+        decode_json_pointer_segment(name),
+    )))
+}
+
+fn decode_json_pointer_segment(segment: &str) -> String {
+    segment.replace("~1", "/").replace("~0", "~")
+}
+
+fn encode_json_pointer_segment(segment: &str) -> String {
+    segment.replace('~', "~0").replace('/', "~1")
 }
 
 /// Serde's `deny_unknown_fields` is not projected consistently by utoipa for
@@ -3483,6 +3882,230 @@ mod tests {
     fn every_generated_openapi_reference_resolves() {
         let document = augmented_document();
         assert_local_refs_resolve(&document, &document, "#");
+    }
+
+    #[test]
+    fn exported_component_graph_is_exactly_reachable_from_contract_roots() {
+        let document = augmented_document();
+        let inventory = component_inventory(&document).expect("component inventory");
+        let reachable =
+            reachable_components(&document, &inventory).expect("reachable component graph");
+
+        assert_eq!(inventory, reachable);
+        ensure_all_components_are_reachable(&document).expect("closed component graph");
+    }
+
+    #[test]
+    fn component_reachability_follows_every_component_kind_and_fails_closed() {
+        let mut document = json!({
+            "openapi": "3.1.0",
+            "paths": {
+                "/root": {
+                    "$ref": "#/components/pathItems/Root",
+                    "x-fixture": { "$ref": "https://example.invalid/extension-data" }
+                },
+                "x-fixture": { "$ref": "https://example.invalid/extension-data" }
+            },
+            "webhooks": {
+                "event": { "$ref": "#/components/pathItems/Webhook" }
+            },
+            "components": {
+                "schemas": {
+                    "Payload": {
+                        "type": "object",
+                        "properties": {
+                            "next": { "$ref": "#/components/schemas/Payload" },
+                            "default": {
+                                "$ref": "#/components/schemas/PropertyDependency"
+                            }
+                        },
+                        "default": {
+                            "$ref": "https://example.invalid/instance-data",
+                            "security": [{ "not_a_scheme": [] }]
+                        },
+                        "discriminator": {
+                            "propertyName": "kind",
+                            "mapping": {
+                                "mapped": "MappedPayload"
+                            }
+                        }
+                    },
+                    "WebhookPayload": {
+                        "type": "object",
+                        "additionalProperties": false
+                    },
+                    "PropertyDependency": {
+                        "type": "string"
+                    },
+                    "MappedPayload": {
+                        "type": "object",
+                        "additionalProperties": false
+                    }
+                },
+                "responses": {
+                    "Ok": {
+                        "description": "ok",
+                        "headers": {
+                            "Trace": { "$ref": "#/components/headers/Trace" }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/Payload" }
+                            }
+                        },
+                        "links": {
+                            "next": { "$ref": "#/components/links/Next" }
+                        }
+                    }
+                },
+                "parameters": {
+                    "Query": {
+                        "name": "q",
+                        "in": "query",
+                        "schema": { "$ref": "#/components/schemas/Payload" }
+                    }
+                },
+                "examples": {
+                    "Payload": {
+                        "value": {
+                            "$ref": "https://example.invalid/instance-data",
+                            "security": [{ "not_a_scheme": [] }]
+                        }
+                    }
+                },
+                "requestBodies": {
+                    "Body": {
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/Payload" },
+                                "examples": {
+                                    "payload": { "$ref": "#/components/examples/Payload" }
+                                }
+                            }
+                        }
+                    }
+                },
+                "headers": {
+                    "Trace": {
+                        "schema": { "$ref": "#/components/schemas/Payload" }
+                    }
+                },
+                "securitySchemes": {
+                    "bearer": { "type": "http", "scheme": "bearer" }
+                },
+                "links": {
+                    "Next": {
+                        "operationId": "next",
+                        "parameters": {
+                            "payload": { "$ref": "https://example.invalid/instance-data" }
+                        },
+                        "requestBody": {
+                            "$ref": "https://example.invalid/instance-data"
+                        },
+                        "x-fixture": {
+                            "$ref": "https://example.invalid/extension-data"
+                        }
+                    }
+                },
+                "callbacks": {
+                    "Event": {
+                        "{$request.body#/callback}": {
+                            "$ref": "#/components/pathItems/Callback"
+                        }
+                    }
+                },
+                "pathItems": {
+                    "Root": {
+                        "get": {
+                            "parameters": [
+                                { "$ref": "#/components/parameters/Query" }
+                            ],
+                            "requestBody": { "$ref": "#/components/requestBodies/Body" },
+                            "responses": {
+                                "200": { "$ref": "#/components/responses/Ok" },
+                                "x-fixture": {
+                                    "$ref": "https://example.invalid/extension-data"
+                                }
+                            },
+                            "callbacks": {
+                                "event": { "$ref": "#/components/callbacks/Event" }
+                            },
+                            "security": [{ "bearer": [] }]
+                        }
+                    },
+                    "Callback": {
+                        "post": {
+                            "responses": {
+                                "200": { "$ref": "#/components/responses/Ok" }
+                            }
+                        }
+                    },
+                    "Webhook": {
+                        "post": {
+                            "requestBody": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "$ref": "#/components/schemas/WebhookPayload"
+                                        }
+                                    }
+                                }
+                            },
+                            "responses": {
+                                "200": { "$ref": "#/components/responses/Ok" }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        let inventory = component_inventory(&document).expect("component inventory");
+        let reachable =
+            reachable_components(&document, &inventory).expect("recursive component graph");
+        assert_eq!(inventory, reachable);
+        assert_eq!(inventory.len(), 15);
+        assert!(reachable.contains(&("securitySchemes".to_owned(), "bearer".to_owned())));
+        assert!(reachable.contains(&("pathItems".to_owned(), "Webhook".to_owned())));
+        assert!(reachable.contains(&("schemas".to_owned(), "WebhookPayload".to_owned())));
+        assert!(reachable.contains(&("schemas".to_owned(), "PropertyDependency".to_owned())));
+        assert!(reachable.contains(&("schemas".to_owned(), "MappedPayload".to_owned())));
+
+        let mut unresolved = document.clone();
+        unresolved["paths"]["/root"]["$ref"] =
+            Value::String("#/components/pathItems/Missing".to_owned());
+        let error = ensure_all_components_are_reachable(&unresolved)
+            .expect_err("an unresolved local reference must fail the audit");
+        assert!(
+            error.contains("unresolved reference")
+                && error.contains("#/components/pathItems/Missing"),
+            "{error}"
+        );
+
+        let mut dynamic = document.clone();
+        dynamic["paths"]["/root"].as_object_mut().unwrap().insert(
+            "$dynamicRef".to_owned(),
+            Value::String("#/components/pathItems/Root".to_owned()),
+        );
+        let error = ensure_all_components_are_reachable(&dynamic)
+            .expect_err("an unsupported dynamic reference must fail closed");
+        assert!(error.contains("unsupported dynamic reference"), "{error}");
+
+        document["components"]["schemas"]
+            .as_object_mut()
+            .expect("component schemas")
+            .insert("Orphan".to_owned(), json!({ "type": "string" }));
+        let error = ensure_all_components_are_reachable(&document)
+            .expect_err("an unreferenced component must fail the audit");
+        assert!(error.contains("#/components/schemas/Orphan"), "{error}");
+
+        let removed =
+            prune_unreachable_components(&mut document).expect("prune unreachable components");
+        assert_eq!(
+            removed,
+            BTreeSet::from([("schemas".to_owned(), "Orphan".to_owned())])
+        );
+        ensure_all_components_are_reachable(&document).expect("pruned component graph");
     }
 
     #[test]

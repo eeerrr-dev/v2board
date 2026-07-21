@@ -419,14 +419,6 @@ export const internalApiAdminOrderStatusPatchSchema = z.strictObject({
 
 export const internalApiAdminOrderPatchRequestSchema = z.union([internalApiAdminOrderStatusPatchSchema, internalApiAdminOrderCommissionStatusPatchSchema]);
 
-export const internalApiAdminPaymentCreateFieldsSchema = z.strictObject({
-  "handling_fee_fixed": z.union([z.number().int(), z.null()]).optional(),
-  "handling_fee_percent": z.union([z.number(), z.null()]).optional(),
-  "icon": z.union([z.string(), z.null()]).optional(),
-  "name": z.string(),
-  "notify_domain": z.union([z.string(), z.null()]).optional(),
-});
-
 export const internalApiAlipayF2FConfigSchema = z.strictObject({
   "app_id": z.string(),
   "private_key": z.string(),
@@ -798,40 +790,6 @@ export const internalApiAdminUserDetailSchema = z.strictObject({
   "uuid": z.string(),
 });
 
-export const internalApiAdminUserFieldsSchema = z.strictObject({
-  "admin_permissions": z.array(z.string()),
-  "auto_renewal": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
-  "balance": z.number().int().min(-2147483648).max(2147483647),
-  "banned": z.number().int().min(-2147483648).max(2147483647),
-  "commission_balance": z.number().int().min(-2147483648).max(2147483647),
-  "commission_rate": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
-  "commission_type": z.number().int().min(-2147483648).max(2147483647),
-  "created_at": internalApiRfc3339TimestampSchema,
-  "d": z.number().int(),
-  "device_limit": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
-  "discount": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
-  "email": z.string(),
-  "expired_at": z.union([z.null(), internalApiRfc3339TimestampSchema]),
-  "group_id": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
-  "id": z.number().int(),
-  "invite_user_id": z.union([z.number().int(), z.null()]),
-  "is_admin": z.number().int().min(-2147483648).max(2147483647),
-  "is_staff": z.number().int().min(-2147483648).max(2147483647),
-  "last_login_at": z.union([z.null(), internalApiRfc3339TimestampSchema]),
-  "password": z.string(),
-  "plan_id": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
-  "remarks": z.union([z.string(), z.null()]),
-  "remind_expire": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
-  "remind_traffic": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
-  "speed_limit": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
-  "telegram_id": z.union([z.number().int(), z.null()]),
-  "token": z.string(),
-  "transfer_enable": z.number().int(),
-  "u": z.number().int(),
-  "updated_at": internalApiRfc3339TimestampSchema,
-  "uuid": z.string(),
-});
-
 export const internalApiAdminUserFilterRequestSchema = z.strictObject({
   "filter": z.union([z.array(internalApiAdminFilterClauseSchema), z.null()]).optional(),
 });
@@ -927,31 +885,6 @@ export const internalApiAdminUserTrafficViewSchema = z.strictObject({
 export const internalApiAdminUserTrafficPageSchema = z.strictObject({
   "items": z.array(internalApiAdminUserTrafficViewSchema),
   "total": z.number().int(),
-});
-
-export const internalApiAnytlsNodeViewSchema = z.strictObject({
-  "api_key": z.union([z.string(), z.null()]),
-  "available_status": z.number().int().min(-2147483648).max(2147483647),
-  "created_at": internalApiRfc3339TimestampSchema,
-  "group_id": z.array(z.number().int()),
-  "host": z.string(),
-  "id": z.number().int().min(-2147483648).max(2147483647),
-  "insecure": z.boolean(),
-  "last_check_at": z.union([z.null(), internalApiRfc3339TimestampSchema]),
-  "last_push_at": z.union([z.null(), internalApiRfc3339TimestampSchema]),
-  "name": z.string(),
-  "online": z.union([z.number().int(), z.null()]),
-  "padding_scheme": z.union([z.array(z.string()), z.null()]),
-  "parent_id": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
-  "port": z.number(),
-  "rate": z.number(),
-  "route_id": z.union([z.array(z.number().int()), z.null()]),
-  "server_name": z.union([z.string(), z.null()]),
-  "server_port": z.number().int().min(-2147483648).max(2147483647),
-  "show": z.boolean(),
-  "sort": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
-  "tags": z.union([z.array(z.string()), z.null()]),
-  "updated_at": internalApiRfc3339TimestampSchema,
 });
 
 export const internalApiAuditLogViewSchema = z.strictObject({
@@ -1092,10 +1025,6 @@ export const internalApiDepositOrderPlanSchema = z.strictObject({
   "name": z.string().regex(new RegExp("^deposit$")),
 });
 
-export const internalApiDepositOrderRequestSchema = z.strictObject({
-  "deposit_amount": z.number().int().min(-2147483648).max(2147483647).min(1).max(9999998),
-});
-
 export const internalApiEmailCodeRequestSchema = z.strictObject({
   "email": z.string(),
   "is_forget": z.union([z.boolean(), z.null()]).optional(),
@@ -1138,35 +1067,6 @@ export const internalApiGiftcardPatchRequestSchema = z.strictObject({
   "started_at": z.iso.datetime({ offset: true }).optional(),
   "type": z.number().int().min(1).max(5).optional(),
   "value": z.union([z.number().int(), z.null()]).optional(),
-});
-
-export const internalApiHysteriaNodeViewSchema = z.strictObject({
-  "api_key": z.union([z.string(), z.null()]),
-  "available_status": z.number().int().min(-2147483648).max(2147483647),
-  "created_at": internalApiRfc3339TimestampSchema,
-  "down_mbps": z.number().int().min(-2147483648).max(2147483647),
-  "group_id": z.array(z.number().int()),
-  "host": z.string(),
-  "id": z.number().int().min(-2147483648).max(2147483647),
-  "insecure": z.boolean(),
-  "last_check_at": z.union([z.null(), internalApiRfc3339TimestampSchema]),
-  "last_push_at": z.union([z.null(), internalApiRfc3339TimestampSchema]),
-  "name": z.string(),
-  "obfs": z.union([z.string(), z.null()]),
-  "obfs_password": z.union([z.string(), z.null()]),
-  "online": z.union([z.number().int(), z.null()]),
-  "parent_id": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
-  "port": z.number(),
-  "rate": z.number(),
-  "route_id": z.union([z.array(z.number().int()), z.null()]),
-  "server_name": z.union([z.string(), z.null()]),
-  "server_port": z.number().int().min(-2147483648).max(2147483647),
-  "show": z.boolean(),
-  "sort": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
-  "tags": z.union([z.array(z.string()), z.null()]),
-  "up_mbps": z.number().int().min(-2147483648).max(2147483647),
-  "updated_at": internalApiRfc3339TimestampSchema,
-  "version": z.number().int().min(-2147483648).max(2147483647),
 });
 
 export const internalApiInviteCodeViewSchema = z.strictObject({
@@ -1363,12 +1263,6 @@ export const internalApiPlanCreateSchema = z.strictObject({
   "transfer_enable": z.number().int().min(0).max(2147483647),
   "two_year_price": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]).optional(),
   "year_price": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]).optional(),
-});
-
-export const internalApiPlanOrderRequestSchema = z.strictObject({
-  "coupon_code": z.union([z.string(), z.null()]).optional(),
-  "period": z.string().regex(new RegExp("^(month_price|quarter_price|half_year_price|year_price|two_year_price|three_year_price|onetime_price|reset_price)$")),
-  "plan_id": z.number().int().min(-2147483648).max(2147483647).min(1),
 });
 
 export const internalApiPlanPatchSchema = z.strictObject({
@@ -2457,31 +2351,6 @@ export const internalApiSessionStateSchema = z.strictObject({
   "is_staff": z.union([z.boolean(), z.null()]).optional(),
 });
 
-export const internalApiShadowsocksNodeViewSchema = z.strictObject({
-  "api_key": z.union([z.string(), z.null()]),
-  "available_status": z.number().int().min(-2147483648).max(2147483647),
-  "cipher": z.string(),
-  "created_at": internalApiRfc3339TimestampSchema,
-  "group_id": z.array(z.number().int()),
-  "host": z.string(),
-  "id": z.number().int().min(-2147483648).max(2147483647),
-  "last_check_at": z.union([z.null(), internalApiRfc3339TimestampSchema]),
-  "last_push_at": z.union([z.null(), internalApiRfc3339TimestampSchema]),
-  "name": z.string(),
-  "obfs": z.union([z.string(), z.null()]),
-  "obfs_settings": z.union([z.null(), internalApiShadowsocksObfsSettingsSchema]),
-  "online": z.union([z.number().int(), z.null()]),
-  "parent_id": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
-  "port": z.number(),
-  "rate": z.number(),
-  "route_id": z.union([z.array(z.number().int()), z.null()]),
-  "server_port": z.number().int().min(-2147483648).max(2147483647),
-  "show": z.boolean(),
-  "sort": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
-  "tags": z.union([z.array(z.string()), z.null()]),
-  "updated_at": internalApiRfc3339TimestampSchema,
-});
-
 export const internalApiSortIdsRequestSchema = z.strictObject({
   "ids": z.array(z.number().int()),
 });
@@ -2648,60 +2517,6 @@ export const internalApiTrafficLogViewSchema = z.strictObject({
   "user_id": z.number().int(),
 });
 
-export const internalApiTrojanNodeViewSchema = z.strictObject({
-  "allow_insecure": z.boolean(),
-  "api_key": z.union([z.string(), z.null()]),
-  "available_status": z.number().int().min(-2147483648).max(2147483647),
-  "created_at": internalApiRfc3339TimestampSchema,
-  "group_id": z.array(z.number().int()),
-  "host": z.string(),
-  "id": z.number().int().min(-2147483648).max(2147483647),
-  "last_check_at": z.union([z.null(), internalApiRfc3339TimestampSchema]),
-  "last_push_at": z.union([z.null(), internalApiRfc3339TimestampSchema]),
-  "name": z.string(),
-  "network": z.union([z.string(), z.null()]),
-  "network_settings": z.union([z.null(), internalApiServerNetworkSettingsSchema]),
-  "online": z.union([z.number().int(), z.null()]),
-  "parent_id": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
-  "port": z.number(),
-  "rate": z.number(),
-  "route_id": z.union([z.array(z.number().int()), z.null()]),
-  "server_name": z.union([z.string(), z.null()]),
-  "server_port": z.number().int().min(-2147483648).max(2147483647),
-  "show": z.boolean(),
-  "sort": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
-  "tags": z.union([z.array(z.string()), z.null()]),
-  "updated_at": internalApiRfc3339TimestampSchema,
-});
-
-export const internalApiTuicNodeViewSchema = z.strictObject({
-  "api_key": z.union([z.string(), z.null()]),
-  "available_status": z.number().int().min(-2147483648).max(2147483647),
-  "congestion_control": z.union([z.string(), z.null()]),
-  "created_at": internalApiRfc3339TimestampSchema,
-  "disable_sni": z.boolean(),
-  "group_id": z.array(z.number().int()),
-  "host": z.string(),
-  "id": z.number().int().min(-2147483648).max(2147483647),
-  "insecure": z.boolean(),
-  "last_check_at": z.union([z.null(), internalApiRfc3339TimestampSchema]),
-  "last_push_at": z.union([z.null(), internalApiRfc3339TimestampSchema]),
-  "name": z.string(),
-  "online": z.union([z.number().int(), z.null()]),
-  "parent_id": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
-  "port": z.number(),
-  "rate": z.number(),
-  "route_id": z.union([z.array(z.number().int()), z.null()]),
-  "server_name": z.union([z.string(), z.null()]),
-  "server_port": z.number().int().min(-2147483648).max(2147483647),
-  "show": z.boolean(),
-  "sort": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
-  "tags": z.union([z.array(z.string()), z.null()]),
-  "udp_relay_mode": z.union([z.string(), z.null()]),
-  "updated_at": internalApiRfc3339TimestampSchema,
-  "zero_rtt_handshake": z.boolean(),
-});
-
 export const internalApiUserAnytlsExtraSchema = z.strictObject({
   "insecure": internalApiServerSettingBoolSchema,
   "padding_scheme": z.union([z.array(z.string()), z.null()]),
@@ -2804,22 +2619,6 @@ export const internalApiUserRankViewSchema = z.strictObject({
   "total": z.number(),
   "u": z.number().int(),
   "user_id": z.number().int(),
-});
-
-export const internalApiUserServerFieldsSchema = z.strictObject({
-  "cache_key": z.string(),
-  "group_id": z.array(z.number().int().min(-2147483648).max(2147483647)),
-  "host": z.string(),
-  "id": z.number().int().min(-2147483648).max(2147483647),
-  "is_online": z.boolean(),
-  "last_check_at": z.union([z.null(), internalApiRfc3339TimestampSchema]),
-  "name": z.string(),
-  "parent_id": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
-  "port": z.number().int(),
-  "rate": z.number(),
-  "route_id": z.union([z.array(z.number().int().min(-2147483648).max(2147483647)), z.null()]),
-  "sort": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
-  "tags": z.union([z.array(z.string()), z.null()]),
 });
 
 export const internalApiUserShadowsocksExtraSchema = z.strictObject({
@@ -3070,106 +2869,6 @@ export const internalApiUserTicketViewSchema = z.strictObject({
   "subject": z.string(),
   "updated_at": internalApiRfc3339TimestampSchema,
   "user_id": z.number().int(),
-});
-
-export const internalApiV2nodeNodeViewSchema = z.strictObject({
-  "api_key": z.union([z.string(), z.null()]),
-  "available_status": z.number().int().min(-2147483648).max(2147483647),
-  "cipher": z.union([z.string(), z.null()]),
-  "congestion_control": z.union([z.string(), z.null()]),
-  "created_at": internalApiRfc3339TimestampSchema,
-  "disable_sni": z.boolean(),
-  "down_mbps": z.number().int().min(-2147483648).max(2147483647),
-  "encryption": z.union([z.string(), z.null()]),
-  "encryption_settings": z.union([z.null(), internalApiServerEncryptionSettingsSchema]),
-  "flow": z.union([z.string(), z.null()]),
-  "group_id": z.array(z.number().int()),
-  "host": z.string(),
-  "id": z.number().int().min(-2147483648).max(2147483647),
-  "install_command": z.string(),
-  "last_check_at": z.union([z.null(), internalApiRfc3339TimestampSchema]),
-  "last_push_at": z.union([z.null(), internalApiRfc3339TimestampSchema]),
-  "listen_ip": z.string(),
-  "name": z.string(),
-  "network": z.string(),
-  "network_settings": z.union([z.null(), internalApiServerNetworkSettingsSchema]),
-  "obfs": z.union([z.string(), z.null()]),
-  "obfs_password": z.union([z.string(), z.null()]),
-  "online": z.union([z.number().int(), z.null()]),
-  "padding_scheme": z.union([z.array(z.string()), z.null()]),
-  "parent_id": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
-  "port": z.number(),
-  "protocol": z.string(),
-  "rate": z.number(),
-  "route_id": z.union([z.array(z.number().int()), z.null()]),
-  "server_port": z.number().int().min(-2147483648).max(2147483647),
-  "show": z.boolean(),
-  "sort": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
-  "tags": z.union([z.array(z.string()), z.null()]),
-  "tls": z.number().int().min(-2147483648).max(2147483647),
-  "tls_settings": z.union([z.null(), internalApiServerTlsSettingsSchema]),
-  "udp_relay_mode": z.union([z.string(), z.null()]),
-  "up_mbps": z.number().int().min(-2147483648).max(2147483647),
-  "updated_at": internalApiRfc3339TimestampSchema,
-  "zero_rtt_handshake": z.boolean(),
-});
-
-export const internalApiVlessNodeViewSchema = z.strictObject({
-  "api_key": z.union([z.string(), z.null()]),
-  "available_status": z.number().int().min(-2147483648).max(2147483647),
-  "created_at": internalApiRfc3339TimestampSchema,
-  "encryption": z.union([z.string(), z.null()]),
-  "encryption_settings": z.union([z.null(), internalApiServerEncryptionSettingsSchema]),
-  "flow": z.union([z.string(), z.null()]),
-  "group_id": z.array(z.number().int()),
-  "host": z.string(),
-  "id": z.number().int().min(-2147483648).max(2147483647),
-  "last_check_at": z.union([z.null(), internalApiRfc3339TimestampSchema]),
-  "last_push_at": z.union([z.null(), internalApiRfc3339TimestampSchema]),
-  "name": z.string(),
-  "network": z.string(),
-  "network_settings": z.union([z.null(), internalApiServerNetworkSettingsSchema]),
-  "online": z.union([z.number().int(), z.null()]),
-  "parent_id": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
-  "port": z.number(),
-  "rate": z.number(),
-  "route_id": z.union([z.array(z.number().int()), z.null()]),
-  "server_port": z.number().int().min(-2147483648).max(2147483647),
-  "show": z.boolean(),
-  "sort": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
-  "tags": z.union([z.array(z.string()), z.null()]),
-  "tls": z.number().int().min(-2147483648).max(2147483647),
-  "tls_settings": z.union([z.null(), internalApiServerTlsSettingsSchema]),
-  "updated_at": internalApiRfc3339TimestampSchema,
-});
-
-export const internalApiVmessNodeViewSchema = z.strictObject({
-  "api_key": z.union([z.string(), z.null()]),
-  "available_status": z.number().int().min(-2147483648).max(2147483647),
-  "created_at": internalApiRfc3339TimestampSchema,
-  "dnsSettings": z.union([z.null(), internalApiVmessDnsSettingsSchema]),
-  "group_id": z.array(z.number().int()),
-  "host": z.string(),
-  "id": z.number().int().min(-2147483648).max(2147483647),
-  "last_check_at": z.union([z.null(), internalApiRfc3339TimestampSchema]),
-  "last_push_at": z.union([z.null(), internalApiRfc3339TimestampSchema]),
-  "name": z.string(),
-  "network": z.string(),
-  "networkSettings": z.union([z.null(), internalApiServerNetworkSettingsSchema]),
-  "online": z.union([z.number().int(), z.null()]),
-  "parent_id": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
-  "port": z.number(),
-  "rate": z.number(),
-  "route_id": z.union([z.array(z.number().int()), z.null()]),
-  "rules": z.union([z.array(internalApiVmessRoutingRuleSchema), z.null()]),
-  "ruleSettings": z.union([z.null(), internalApiVmessRuleSettingsSchema]),
-  "server_port": z.number().int().min(-2147483648).max(2147483647),
-  "show": z.boolean(),
-  "sort": z.union([z.number().int().min(-2147483648).max(2147483647), z.null()]),
-  "tags": z.union([z.array(z.string()), z.null()]),
-  "tls": z.number().int().min(-2147483648).max(2147483647),
-  "tlsSettings": z.union([z.null(), internalApiServerTlsSettingsSchema]),
-  "updated_at": internalApiRfc3339TimestampSchema,
 });
 
 export const internalApiWithdrawalTicketCreateRequestSchema = z.strictObject({

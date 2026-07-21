@@ -45,8 +45,6 @@ export type InternalApiAdminOrderPatchRequest = InternalApiAdminOrderStatusPatch
 
 export type InternalApiAdminOrderStatusPatch = { "status": number };
 
-export type InternalApiAdminPaymentCreateFields = { "handling_fee_fixed"?: number | null; "handling_fee_percent"?: number | null; "icon"?: string | null; "name": string; "notify_domain"?: string | null };
-
 export type InternalApiAdminPaymentCreateRequest = { "config": InternalApiAlipayF2FConfig; "handling_fee_fixed"?: number | null; "handling_fee_percent"?: number | null; "icon"?: string | null; "name": string; "notify_domain"?: string | null; "payment": "AlipayF2F" } | { "config": InternalApiBEasyPaymentUsdtConfig; "handling_fee_fixed"?: number | null; "handling_fee_percent"?: number | null; "icon"?: string | null; "name": string; "notify_domain"?: string | null; "payment": "BEasyPaymentUSDT" } | { "config": InternalApiBtcPayConfig; "handling_fee_fixed"?: number | null; "handling_fee_percent"?: number | null; "icon"?: string | null; "name": string; "notify_domain"?: string | null; "payment": "BTCPay" } | { "config": InternalApiCoinPaymentsConfig; "handling_fee_fixed"?: number | null; "handling_fee_percent"?: number | null; "icon"?: string | null; "name": string; "notify_domain"?: string | null; "payment": "CoinPayments" } | { "config": InternalApiCoinbaseConfig; "handling_fee_fixed"?: number | null; "handling_fee_percent"?: number | null; "icon"?: string | null; "name": string; "notify_domain"?: string | null; "payment": "Coinbase" } | { "config": InternalApiEPayConfig; "handling_fee_fixed"?: number | null; "handling_fee_percent"?: number | null; "icon"?: string | null; "name": string; "notify_domain"?: string | null; "payment": "EPay" } | { "config": InternalApiMGateConfig; "handling_fee_fixed"?: number | null; "handling_fee_percent"?: number | null; "icon"?: string | null; "name": string; "notify_domain"?: string | null; "payment": "MGate" } | { "config": InternalApiStripeAllConfig; "handling_fee_fixed"?: number | null; "handling_fee_percent"?: number | null; "icon"?: string | null; "name": string; "notify_domain"?: string | null; "payment": "StripeALL" } | { "config": InternalApiStripeAlipayConfig; "handling_fee_fixed"?: number | null; "handling_fee_percent"?: number | null; "icon"?: string | null; "name": string; "notify_domain"?: string | null; "payment": "StripeAlipay" } | { "config": InternalApiStripeCheckoutConfig; "handling_fee_fixed"?: number | null; "handling_fee_percent"?: number | null; "icon"?: string | null; "name": string; "notify_domain"?: string | null; "payment": "StripeCheckout" } | { "config": InternalApiStripeCreditConfig; "handling_fee_fixed"?: number | null; "handling_fee_percent"?: number | null; "icon"?: string | null; "name": string; "notify_domain"?: string | null; "payment": "StripeCredit" } | { "config": InternalApiStripeWepayConfig; "handling_fee_fixed"?: number | null; "handling_fee_percent"?: number | null; "icon"?: string | null; "name": string; "notify_domain"?: string | null; "payment": "StripeWepay" } | { "config": InternalApiWechatPayNativeConfig; "handling_fee_fixed"?: number | null; "handling_fee_percent"?: number | null; "icon"?: string | null; "name": string; "notify_domain"?: string | null; "payment": "WechatPayNative" };
 
 export type InternalApiAdminPaymentItem = { "config": { [key: string]: string }; "created_at": InternalApiRfc3339Timestamp; "enable": boolean; "handling_fee_fixed": number | null; "handling_fee_percent": number | null; "icon": string | null; "id": number; "legacy_md5_signature": boolean; "name": string; "notify_domain": string | null; "notify_url": string; "payment": string; "security_warning": string | null; "sort": number | null; "updated_at": InternalApiRfc3339Timestamp; "uuid": string };
@@ -75,8 +73,6 @@ export type InternalApiAdminTicketPage = { "items": Array<InternalApiAdminTicket
 
 export type InternalApiAdminUserDetail = { "admin_permissions": Array<string>; "alive_ip": number; "auto_renewal": number | null; "balance": number; "banned": number; "commission_balance": number; "commission_rate": number | null; "commission_type": number; "created_at": InternalApiRfc3339Timestamp; "d": number; "device_limit": number | null; "discount": number | null; "email": string; "expired_at": null | InternalApiRfc3339Timestamp; "group_id": number | null; "id": number; "invite_user"?: null | InternalApiAdminInviterItem; "invite_user_id": number | null; "ips": string; "is_admin": number; "is_staff": number; "last_login_at": null | InternalApiRfc3339Timestamp; "password": string; "plan_id": number | null; "plan_name": string | null; "remarks": string | null; "remind_expire": number | null; "remind_traffic": number | null; "speed_limit": number | null; "subscribe_url": string; "telegram_id": number | null; "token": string; "total_used": number; "transfer_enable": number; "u": number; "updated_at": InternalApiRfc3339Timestamp; "uuid": string };
 
-export type InternalApiAdminUserFields = { "admin_permissions": Array<string>; "auto_renewal": number | null; "balance": number; "banned": number; "commission_balance": number; "commission_rate": number | null; "commission_type": number; "created_at": InternalApiRfc3339Timestamp; "d": number; "device_limit": number | null; "discount": number | null; "email": string; "expired_at": null | InternalApiRfc3339Timestamp; "group_id": number | null; "id": number; "invite_user_id": number | null; "is_admin": number; "is_staff": number; "last_login_at": null | InternalApiRfc3339Timestamp; "password": string; "plan_id": number | null; "remarks": string | null; "remind_expire": number | null; "remind_traffic": number | null; "speed_limit": number | null; "telegram_id": number | null; "token": string; "transfer_enable": number; "u": number; "updated_at": InternalApiRfc3339Timestamp; "uuid": string };
-
 export type InternalApiAdminUserFilterRequest = { "filter"?: Array<InternalApiAdminFilterClause> | null };
 
 export type InternalApiAdminUserGenerateRequest = { "email_prefix"?: string | null; "email_suffix": string; "expired_at"?: null | InternalApiRfc3339Timestamp; "generate_count"?: number | null; "password"?: string | null; "plan_id"?: number | null };
@@ -94,8 +90,6 @@ export type InternalApiAdminUserTrafficPage = { "items": Array<InternalApiAdminU
 export type InternalApiAdminUserTrafficView = { "d": number; "record_at": InternalApiRfc3339Timestamp; "server_rate": number; "u": number };
 
 export type InternalApiAlipayF2FConfig = { "app_id": string; "private_key": string; "product_name": string; "public_key": string };
-
-export type InternalApiAnytlsNodeView = { "api_key": string | null; "available_status": number; "created_at": InternalApiRfc3339Timestamp; "group_id": Array<number>; "host": string; "id": number; "insecure": boolean; "last_check_at": null | InternalApiRfc3339Timestamp; "last_push_at": null | InternalApiRfc3339Timestamp; "name": string; "online": number | null; "padding_scheme": Array<string> | null; "parent_id": number | null; "port": number; "rate": number; "route_id": Array<number> | null; "server_name": string | null; "server_port": number; "show": boolean; "sort": number | null; "tags": Array<string> | null; "updated_at": InternalApiRfc3339Timestamp };
 
 export type InternalApiAppDownloadConfigView = { "android_download_url": string | null; "android_version": string | null; "macos_download_url": string | null; "macos_version": string | null; "windows_download_url": string | null; "windows_version": string | null };
 
@@ -145,8 +139,6 @@ export type InternalApiDepositConfigView = { "deposit_bounus": Array<string> };
 
 export type InternalApiDepositOrderPlan = { "id": number; "name": string };
 
-export type InternalApiDepositOrderRequest = { "deposit_amount": number };
-
 export type InternalApiEPayConfig = { "key": string; "pid": string; "type": string; "url": string };
 
 export type InternalApiEmailCodeRequest = { "email": string; "is_forget"?: boolean | null; "recaptcha_data"?: string | null };
@@ -166,8 +158,6 @@ export type InternalApiGiftCardRedemptionRequest = { "giftcard": string };
 export type InternalApiGiftcardGenerateRequest = { "code"?: string | null; "ended_at": InternalApiRfc3339Timestamp; "generate_count"?: number | null; "limit_use"?: number | null; "name": string; "plan_id"?: number | null; "started_at": InternalApiRfc3339Timestamp; "type": number; "value"?: number | null };
 
 export type InternalApiGiftcardPatchRequest = { "code"?: string; "ended_at"?: string; "limit_use"?: number | null; "name"?: string; "plan_id"?: number | null; "started_at"?: string; "type"?: number; "value"?: number | null };
-
-export type InternalApiHysteriaNodeView = { "api_key": string | null; "available_status": number; "created_at": InternalApiRfc3339Timestamp; "down_mbps": number; "group_id": Array<number>; "host": string; "id": number; "insecure": boolean; "last_check_at": null | InternalApiRfc3339Timestamp; "last_push_at": null | InternalApiRfc3339Timestamp; "name": string; "obfs": string | null; "obfs_password": string | null; "online": number | null; "parent_id": number | null; "port": number; "rate": number; "route_id": Array<number> | null; "server_name": string | null; "server_port": number; "show": boolean; "sort": number | null; "tags": Array<string> | null; "up_mbps": number; "updated_at": InternalApiRfc3339Timestamp; "version": number };
 
 export type InternalApiInviteCodeView = { "code": string; "created_at": InternalApiRfc3339Timestamp; "id": number; "pv": number; "updated_at": InternalApiRfc3339Timestamp };
 
@@ -228,8 +218,6 @@ export type InternalApiPaymentProviderFormResponse = { [key: string]: InternalAp
 export type InternalApiPendingActivation = "pending";
 
 export type InternalApiPlanCreate = { "capacity_limit"?: number | null; "content"?: string | null; "device_limit"?: number | null; "group_id": number; "half_year_price"?: number | null; "month_price"?: number | null; "name": string; "onetime_price"?: number | null; "quarter_price"?: number | null; "reset_price"?: number | null; "reset_traffic_method"?: number | null; "speed_limit"?: number | null; "three_year_price"?: number | null; "transfer_enable": number; "two_year_price"?: number | null; "year_price"?: number | null };
-
-export type InternalApiPlanOrderRequest = { "coupon_code"?: string | null; "period": string; "plan_id": number };
 
 export type InternalApiPlanPatch = { "capacity_limit"?: number | null; "content"?: string | null; "device_limit"?: number | null; "force_update"?: boolean; "group_id"?: number; "half_year_price"?: number | null; "month_price"?: number | null; "name"?: string; "onetime_price"?: number | null; "quarter_price"?: number | null; "renew"?: boolean; "reset_price"?: number | null; "reset_traffic_method"?: number | null; "show"?: boolean; "speed_limit"?: number | null; "three_year_price"?: number | null; "transfer_enable"?: number; "two_year_price"?: number | null; "year_price"?: number | null };
 
@@ -305,8 +293,6 @@ export type InternalApiServerXhttpXmuxSettings = { "cMaxReuseTimes"?: number | n
 
 export type InternalApiSessionState = { "admin_permissions"?: Array<string> | null; "is_admin"?: boolean | null; "is_login": boolean; "is_staff"?: boolean | null };
 
-export type InternalApiShadowsocksNodeView = { "api_key": string | null; "available_status": number; "cipher": string; "created_at": InternalApiRfc3339Timestamp; "group_id": Array<number>; "host": string; "id": number; "last_check_at": null | InternalApiRfc3339Timestamp; "last_push_at": null | InternalApiRfc3339Timestamp; "name": string; "obfs": string | null; "obfs_settings": null | InternalApiShadowsocksObfsSettings; "online": number | null; "parent_id": number | null; "port": number; "rate": number; "route_id": Array<number> | null; "server_port": number; "show": boolean; "sort": number | null; "tags": Array<string> | null; "updated_at": InternalApiRfc3339Timestamp };
-
 export type InternalApiShadowsocksObfsSettings = { "host"?: string | null; "path"?: string | null };
 
 export type InternalApiSiteConfigView = { "app_description": string | null; "app_name": string; "app_url": string | null; "currency": string; "currency_symbol": string; "force_https": boolean; "legacy_hash_redirect_enable": boolean; "logo": string | null; "stop_register": boolean; "subscribe_path": string | null; "subscribe_url": string | null; "tos_url": string | null; "try_out_hour": number; "try_out_plan_id": number };
@@ -365,10 +351,6 @@ export type InternalApiTotpProvisioningView = { "otpauth_url": string; "secret":
 
 export type InternalApiTrafficLogView = { "d": number; "record_at": InternalApiRfc3339Timestamp; "server_rate": number; "u": number; "user_id": number };
 
-export type InternalApiTrojanNodeView = { "allow_insecure": boolean; "api_key": string | null; "available_status": number; "created_at": InternalApiRfc3339Timestamp; "group_id": Array<number>; "host": string; "id": number; "last_check_at": null | InternalApiRfc3339Timestamp; "last_push_at": null | InternalApiRfc3339Timestamp; "name": string; "network": string | null; "network_settings": null | InternalApiServerNetworkSettings; "online": number | null; "parent_id": number | null; "port": number; "rate": number; "route_id": Array<number> | null; "server_name": string | null; "server_port": number; "show": boolean; "sort": number | null; "tags": Array<string> | null; "updated_at": InternalApiRfc3339Timestamp };
-
-export type InternalApiTuicNodeView = { "api_key": string | null; "available_status": number; "congestion_control": string | null; "created_at": InternalApiRfc3339Timestamp; "disable_sni": boolean; "group_id": Array<number>; "host": string; "id": number; "insecure": boolean; "last_check_at": null | InternalApiRfc3339Timestamp; "last_push_at": null | InternalApiRfc3339Timestamp; "name": string; "online": number | null; "parent_id": number | null; "port": number; "rate": number; "route_id": Array<number> | null; "server_name": string | null; "server_port": number; "show": boolean; "sort": number | null; "tags": Array<string> | null; "udp_relay_mode": string | null; "updated_at": InternalApiRfc3339Timestamp; "zero_rtt_handshake": boolean };
-
 export type InternalApiUserAnytlsExtra = { "insecure": InternalApiServerSettingBool; "padding_scheme": Array<string> | null; "server_name": string | null };
 
 export type InternalApiUserCommissionPage = { "items": Array<InternalApiCommissionView>; "total": number };
@@ -388,8 +370,6 @@ export type InternalApiUserProfile = { "auto_renewal": boolean; "avatar_url": st
 export type InternalApiUserProfilePatch = { "auto_renewal"?: boolean | null; "remind_expire"?: boolean | null; "remind_traffic"?: boolean | null };
 
 export type InternalApiUserRankView = { "d": number; "email": string; "total": number; "u": number; "user_id": number };
-
-export type InternalApiUserServerFields = { "cache_key": string; "group_id": Array<number>; "host": string; "id": number; "is_online": boolean; "last_check_at": null | InternalApiRfc3339Timestamp; "name": string; "parent_id": number | null; "port": number; "rate": number; "route_id": Array<number> | null; "sort": number | null; "tags": Array<string> | null };
 
 export type InternalApiUserServerView = { "cache_key": string; "extra"?: null | InternalApiUserShadowsocksExtra; "group_id": Array<number>; "host": string; "id": number; "is_online": boolean; "last_check_at": null | InternalApiRfc3339Timestamp; "name": string; "parent_id": number | null; "port": number; "rate": number; "route_id": Array<number> | null; "sort": number | null; "tags": Array<string> | null; "type": "shadowsocks" } | { "cache_key": string; "extra"?: null | InternalApiUserVmessExtra; "group_id": Array<number>; "host": string; "id": number; "is_online": boolean; "last_check_at": null | InternalApiRfc3339Timestamp; "name": string; "parent_id": number | null; "port": number; "rate": number; "route_id": Array<number> | null; "sort": number | null; "tags": Array<string> | null; "type": "vmess" } | { "cache_key": string; "extra"?: null | InternalApiUserTrojanExtra; "group_id": Array<number>; "host": string; "id": number; "is_online": boolean; "last_check_at": null | InternalApiRfc3339Timestamp; "name": string; "parent_id": number | null; "port": number; "rate": number; "route_id": Array<number> | null; "sort": number | null; "tags": Array<string> | null; "type": "trojan" } | { "cache_key": string; "extra"?: null | InternalApiUserTuicExtra; "group_id": Array<number>; "host": string; "id": number; "is_online": boolean; "last_check_at": null | InternalApiRfc3339Timestamp; "name": string; "parent_id": number | null; "port": number; "rate": number; "route_id": Array<number> | null; "sort": number | null; "tags": Array<string> | null; "type": "tuic" } | { "cache_key": string; "extra"?: null | InternalApiUserHysteriaExtra; "group_id": Array<number>; "host": string; "id": number; "is_online": boolean; "last_check_at": null | InternalApiRfc3339Timestamp; "name": string; "parent_id": number | null; "port": number; "rate": number; "route_id": Array<number> | null; "sort": number | null; "tags": Array<string> | null; "type": "hysteria" } | { "cache_key": string; "extra"?: null | InternalApiUserVlessExtra; "group_id": Array<number>; "host": string; "id": number; "is_online": boolean; "last_check_at": null | InternalApiRfc3339Timestamp; "name": string; "parent_id": number | null; "port": number; "rate": number; "route_id": Array<number> | null; "sort": number | null; "tags": Array<string> | null; "type": "vless" } | { "cache_key": string; "extra"?: null | InternalApiUserAnytlsExtra; "group_id": Array<number>; "host": string; "id": number; "is_online": boolean; "last_check_at": null | InternalApiRfc3339Timestamp; "name": string; "parent_id": number | null; "port": number; "rate": number; "route_id": Array<number> | null; "sort": number | null; "tags": Array<string> | null; "type": "anytls" } | { "cache_key": string; "extra"?: null | InternalApiUserV2nodeExtra; "group_id": Array<number>; "host": string; "id": number; "is_online": boolean; "last_check_at": null | InternalApiRfc3339Timestamp; "name": string; "parent_id": number | null; "port": number; "rate": number; "route_id": Array<number> | null; "sort": number | null; "tags": Array<string> | null; "type": "v2node" };
 
@@ -419,10 +399,6 @@ export type InternalApiUserVlessExtra = { "encryption": string | null; "encrypti
 
 export type InternalApiUserVmessExtra = { "network": string; "network_settings": null | InternalApiServerNetworkSettings; "tls": number; "tls_settings": null | InternalApiServerTlsSettings };
 
-export type InternalApiV2nodeNodeView = { "api_key": string | null; "available_status": number; "cipher": string | null; "congestion_control": string | null; "created_at": InternalApiRfc3339Timestamp; "disable_sni": boolean; "down_mbps": number; "encryption": string | null; "encryption_settings": null | InternalApiServerEncryptionSettings; "flow": string | null; "group_id": Array<number>; "host": string; "id": number; "install_command": string; "last_check_at": null | InternalApiRfc3339Timestamp; "last_push_at": null | InternalApiRfc3339Timestamp; "listen_ip": string; "name": string; "network": string; "network_settings": null | InternalApiServerNetworkSettings; "obfs": string | null; "obfs_password": string | null; "online": number | null; "padding_scheme": Array<string> | null; "parent_id": number | null; "port": number; "protocol": string; "rate": number; "route_id": Array<number> | null; "server_port": number; "show": boolean; "sort": number | null; "tags": Array<string> | null; "tls": number; "tls_settings": null | InternalApiServerTlsSettings; "udp_relay_mode": string | null; "up_mbps": number; "updated_at": InternalApiRfc3339Timestamp; "zero_rtt_handshake": boolean };
-
-export type InternalApiVlessNodeView = { "api_key": string | null; "available_status": number; "created_at": InternalApiRfc3339Timestamp; "encryption": string | null; "encryption_settings": null | InternalApiServerEncryptionSettings; "flow": string | null; "group_id": Array<number>; "host": string; "id": number; "last_check_at": null | InternalApiRfc3339Timestamp; "last_push_at": null | InternalApiRfc3339Timestamp; "name": string; "network": string; "network_settings": null | InternalApiServerNetworkSettings; "online": number | null; "parent_id": number | null; "port": number; "rate": number; "route_id": Array<number> | null; "server_port": number; "show": boolean; "sort": number | null; "tags": Array<string> | null; "tls": number; "tls_settings": null | InternalApiServerTlsSettings; "updated_at": InternalApiRfc3339Timestamp };
-
 export type InternalApiVmessDnsHostValue = string | Array<string>;
 
 export type InternalApiVmessDnsServer = string | InternalApiVmessDnsServerObject;
@@ -430,8 +406,6 @@ export type InternalApiVmessDnsServer = string | InternalApiVmessDnsServerObject
 export type InternalApiVmessDnsServerObject = { "address": string; "clientIp"?: string | null; "domains"?: Array<string> | null; "expectIPs"?: Array<string> | null; "port"?: number | null; "queryStrategy"?: string | null; "skipFallback"?: null | InternalApiServerSettingBool };
 
 export type InternalApiVmessDnsSettings = { "clientIp"?: string | null; "disableCache"?: null | InternalApiServerSettingBool; "disableFallback"?: null | InternalApiServerSettingBool; "disableFallbackIfMatch"?: null | InternalApiServerSettingBool; "hosts"?: { [key: string]: InternalApiVmessDnsHostValue } | null; "queryStrategy"?: string | null; "servers"?: Array<InternalApiVmessDnsServer> | null };
-
-export type InternalApiVmessNodeView = { "api_key": string | null; "available_status": number; "created_at": InternalApiRfc3339Timestamp; "dnsSettings": null | InternalApiVmessDnsSettings; "group_id": Array<number>; "host": string; "id": number; "last_check_at": null | InternalApiRfc3339Timestamp; "last_push_at": null | InternalApiRfc3339Timestamp; "name": string; "network": string; "networkSettings": null | InternalApiServerNetworkSettings; "online": number | null; "parent_id": number | null; "port": number; "rate": number; "route_id": Array<number> | null; "rules": Array<InternalApiVmessRoutingRule> | null; "ruleSettings": null | InternalApiVmessRuleSettings; "server_port": number; "show": boolean; "sort": number | null; "tags": Array<string> | null; "tls": number; "tlsSettings": null | InternalApiServerTlsSettings; "updated_at": InternalApiRfc3339Timestamp };
 
 export type InternalApiVmessRoutingRule = { "attrs"?: string | null; "balancerTag"?: string | null; "domain"?: Array<string> | null; "inboundTag"?: Array<string> | null; "ip"?: Array<string> | null; "network"?: string | null; "outboundTag"?: string | null; "port"?: string | null; "protocol"?: Array<string> | null; "source"?: Array<string> | null; "type"?: string | null; "user"?: Array<string> | null };
 
@@ -464,7 +438,6 @@ export interface InternalApiSchemaMap {
   "AdminOrderPage": InternalApiAdminOrderPage;
   "AdminOrderPatchRequest": InternalApiAdminOrderPatchRequest;
   "AdminOrderStatusPatch": InternalApiAdminOrderStatusPatch;
-  "AdminPaymentCreateFields": InternalApiAdminPaymentCreateFields;
   "AdminPaymentCreateRequest": InternalApiAdminPaymentCreateRequest;
   "AdminPaymentItem": InternalApiAdminPaymentItem;
   "AdminPaymentPatchRequest": InternalApiAdminPaymentPatchRequest;
@@ -479,7 +452,6 @@ export interface InternalApiSchemaMap {
   "AdminTicketMessageItem": InternalApiAdminTicketMessageItem;
   "AdminTicketPage": InternalApiAdminTicketPage;
   "AdminUserDetail": InternalApiAdminUserDetail;
-  "AdminUserFields": InternalApiAdminUserFields;
   "AdminUserFilterRequest": InternalApiAdminUserFilterRequest;
   "AdminUserGenerateRequest": InternalApiAdminUserGenerateRequest;
   "AdminUserListItem": InternalApiAdminUserListItem;
@@ -489,7 +461,6 @@ export interface InternalApiSchemaMap {
   "AdminUserTrafficPage": InternalApiAdminUserTrafficPage;
   "AdminUserTrafficView": InternalApiAdminUserTrafficView;
   "AlipayF2FConfig": InternalApiAlipayF2FConfig;
-  "AnytlsNodeView": InternalApiAnytlsNodeView;
   "AppDownloadConfigView": InternalApiAppDownloadConfigView;
   "AuditLogPage": InternalApiAuditLogPage;
   "AuditLogView": InternalApiAuditLogView;
@@ -514,7 +485,6 @@ export interface InternalApiSchemaMap {
   "CreatedTradeNo": InternalApiCreatedTradeNo;
   "DepositConfigView": InternalApiDepositConfigView;
   "DepositOrderPlan": InternalApiDepositOrderPlan;
-  "DepositOrderRequest": InternalApiDepositOrderRequest;
   "EPayConfig": InternalApiEPayConfig;
   "EmailCodeRequest": InternalApiEmailCodeRequest;
   "EmailConfigView": InternalApiEmailConfigView;
@@ -525,7 +495,6 @@ export interface InternalApiSchemaMap {
   "GiftCardRedemptionRequest": InternalApiGiftCardRedemptionRequest;
   "GiftcardGenerateRequest": InternalApiGiftcardGenerateRequest;
   "GiftcardPatchRequest": InternalApiGiftcardPatchRequest;
-  "HysteriaNodeView": InternalApiHysteriaNodeView;
   "InviteCodeView": InternalApiInviteCodeView;
   "InviteConfigView": InternalApiInviteConfigView;
   "InviteStatView": InternalApiInviteStatView;
@@ -556,7 +525,6 @@ export interface InternalApiSchemaMap {
   "PaymentProviderFormResponse": InternalApiPaymentProviderFormResponse;
   "PendingActivation": InternalApiPendingActivation;
   "PlanCreate": InternalApiPlanCreate;
-  "PlanOrderRequest": InternalApiPlanOrderRequest;
   "PlanPatch": InternalApiPlanPatch;
   "ProblemCode": InternalApiProblemCode;
   "ProblemDetails": InternalApiProblemDetails;
@@ -594,7 +562,6 @@ export interface InternalApiSchemaMap {
   "ServerXhttpExtraSettings": InternalApiServerXhttpExtraSettings;
   "ServerXhttpXmuxSettings": InternalApiServerXhttpXmuxSettings;
   "SessionState": InternalApiSessionState;
-  "ShadowsocksNodeView": InternalApiShadowsocksNodeView;
   "ShadowsocksObfsSettings": InternalApiShadowsocksObfsSettings;
   "SiteConfigView": InternalApiSiteConfigView;
   "SortIdsRequest": InternalApiSortIdsRequest;
@@ -624,8 +591,6 @@ export interface InternalApiSchemaMap {
   "TokenLoginRequest": InternalApiTokenLoginRequest;
   "TotpProvisioningView": InternalApiTotpProvisioningView;
   "TrafficLogView": InternalApiTrafficLogView;
-  "TrojanNodeView": InternalApiTrojanNodeView;
-  "TuicNodeView": InternalApiTuicNodeView;
   "UserAnytlsExtra": InternalApiUserAnytlsExtra;
   "UserCommissionPage": InternalApiUserCommissionPage;
   "UserConfig": InternalApiUserConfig;
@@ -636,7 +601,6 @@ export interface InternalApiSchemaMap {
   "UserProfile": InternalApiUserProfile;
   "UserProfilePatch": InternalApiUserProfilePatch;
   "UserRankView": InternalApiUserRankView;
-  "UserServerFields": InternalApiUserServerFields;
   "UserServerView": InternalApiUserServerView;
   "UserSession": InternalApiUserSession;
   "UserShadowsocksExtra": InternalApiUserShadowsocksExtra;
@@ -651,13 +615,10 @@ export interface InternalApiSchemaMap {
   "UserV2nodeExtra": InternalApiUserV2nodeExtra;
   "UserVlessExtra": InternalApiUserVlessExtra;
   "UserVmessExtra": InternalApiUserVmessExtra;
-  "V2nodeNodeView": InternalApiV2nodeNodeView;
-  "VlessNodeView": InternalApiVlessNodeView;
   "VmessDnsHostValue": InternalApiVmessDnsHostValue;
   "VmessDnsServer": InternalApiVmessDnsServer;
   "VmessDnsServerObject": InternalApiVmessDnsServerObject;
   "VmessDnsSettings": InternalApiVmessDnsSettings;
-  "VmessNodeView": InternalApiVmessNodeView;
   "VmessRoutingRule": InternalApiVmessRoutingRule;
   "VmessRuleSettings": InternalApiVmessRuleSettings;
   "WechatPayNativeConfig": InternalApiWechatPayNativeConfig;

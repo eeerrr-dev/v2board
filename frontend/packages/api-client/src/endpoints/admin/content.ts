@@ -1,7 +1,7 @@
 import type { Coupon, Giftcard, InternalApiOperationMap, Knowledge, Notice } from '@v2board/types';
 import type { ApiClient, BinaryApiResponse } from '../../client';
 import { adminListQueryParams, type AdminListQuery } from '../../dialect';
-import { internalApiCreatedInt32IdSchema } from '../../generated/internal-api';
+import type { internalApiCreatedInt32IdSchema } from '../../generated/internal-api';
 import { requestInternal, requestInternalBinary } from '../../internal-operation';
 import { decimalToCents } from '../../money';
 import type { QueryRequestConfig } from './shared';

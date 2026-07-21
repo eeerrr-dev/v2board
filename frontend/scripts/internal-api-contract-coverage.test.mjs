@@ -201,7 +201,7 @@ test('production wrappers consume only named generated operations', async () => 
     'utf8',
   );
   const generatedNames = new Set(
-    [...generatedRuntime.matchAll(/^  "([A-Za-z0-9]+)": \{$/gm)].map((match) => match[1]),
+    [...generatedRuntime.matchAll(/^[ ]{2}"([A-Za-z0-9]+)": \{$/gm)].map((match) => match[1]),
   );
 
   assert.equal(generatedNames.size, 158, 'the generated runtime operation registry drifted');
