@@ -108,9 +108,11 @@ Also frozen (non-route contracts):
   responses encode.
 - Stripe PaymentIntent metadata/webhook payloads and reCAPTCHA verification
   payloads.
-- The `localStorage` **`authorization`** persistence key and its stored value
-  format (the raw `auth_data` token — the `Bearer` scheme in §4.2 is added on
-  the wire only, never persisted).
+- The user app's `localStorage` **`authorization`** persistence key and its
+  stored value format (the raw `auth_data` token — the `Bearer` scheme in
+  §4.2 is added on the wire only, never persisted). The admin app uses its
+  own independently pinned `v2board.admin_auth_data` key instead (see
+  `docs/adr/0003-opaque-session-tokens-redis-session-epoch.md`).
 - Legacy locale keys `umi_locale` / the i18n cookie / `window.g_lang` as
   **one-time migration reads only** (§11).
 - The MySQL import contract (docs/mysql-import*.md) — unaffected. (The

@@ -271,8 +271,10 @@ wave-by-wave migration appendix recording how each family flipped.
   `subscribe_path` alias), `/api/v1/server/{class}/{action}`,
   `/api/v2/server/config`, `/api/v1/guest/payment/notify/{method}/{uuid}`,
   `/api/v1/guest/telegram/webhook`, the subscribe-URL/token/flag scheme,
-  Stripe/reCAPTCHA integration payloads, and the localStorage
-  `authorization` key (legacy locale keys remain one-time migration reads).
+  Stripe/reCAPTCHA integration payloads, and the user app's localStorage
+  `authorization` key (the admin app is independently pinned to its own
+  `v2board.admin_auth_data` key — `docs/adr/0003-opaque-session-tokens-redis-session-epoch.md`;
+  legacy locale keys remain one-time migration reads).
 - No dual-dialect compatibility branches exist or may return: every family
   switched atomically — backend + frontend + api-client + fixtures +
   scenarios + goldens in one commit series, per the appendix waves — and
@@ -321,9 +323,11 @@ The behavioral outcomes those lines pin remain contracts throughout.
     path-style per `docs/api-dialect.md` §10.4 — the SPA must keep resolving
     the URLs the backend mints (the `?verify=` email login link, the
     `{app_url}/order/{trade_no}` payment return, quick-login redirects;
-    `?verify=`/`?redirect=` query names unchanged); the browser-persisted `authorization`
-    localStorage key, plus the legacy locale keys strictly as
-    one-time-migration reads; imported-data interpretations (the notice
+    `?verify=`/`?redirect=` query names unchanged); the browser-persisted
+    user-app `authorization` localStorage key and the admin app's own,
+    independently pinned `v2board.admin_auth_data` key (ADR-0003), plus the
+    legacy locale keys strictly as one-time-migration reads; imported-data
+    interpretations (the notice
     `弹窗` auto-popup tag, the knowledge `copy()`/`jump()` hooks in rendered
     markdown); and security- and session-critical OUTCOMES — session teardown
     exactly on session expiry (401 + `session_expired`; permission-denied and

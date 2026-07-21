@@ -165,7 +165,7 @@ describe('Admin LoginPage', () => {
         { email: 'admin@example.com', password: 'password' },
       ),
     );
-    expect(localStorage.getItem('authorization')).toBe('jwt');
+    expect(localStorage.getItem('v2board.admin_auth_data')).toBe('jwt');
     await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/order', { replace: true }));
     await waitFor(() => expect(mocks.userInfo).toHaveBeenCalledTimes(1));
     await waitFor(() =>
@@ -187,7 +187,7 @@ describe('Admin LoginPage', () => {
     await user.click(screen.getByTestId('admin-login-submit'));
 
     await waitFor(() => expect(mocks.toastError).toHaveBeenCalledTimes(1));
-    expect(localStorage.getItem('authorization')).toBeNull();
+    expect(localStorage.getItem('v2board.admin_auth_data')).toBeNull();
     expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
@@ -209,7 +209,7 @@ describe('Admin LoginPage', () => {
     await user.click(screen.getByTestId('admin-login-submit'));
 
     await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/user', { replace: true }));
-    expect(localStorage.getItem('authorization')).toBe('staff-jwt');
+    expect(localStorage.getItem('v2board.admin_auth_data')).toBe('staff-jwt');
     expect(mocks.toastError).not.toHaveBeenCalled();
   });
 
@@ -239,7 +239,7 @@ describe('Admin LoginPage', () => {
   });
 
   it('does not probe an existing session from a component effect', async () => {
-    localStorage.setItem('authorization', 'jwt');
+    localStorage.setItem('v2board.admin_auth_data', 'jwt');
     renderLogin();
 
     await Promise.resolve();
@@ -260,7 +260,7 @@ describe('Admin LoginPage', () => {
     await Promise.resolve();
     expect(mocks.passportTokenLogin).not.toHaveBeenCalled();
     expect(mocks.userCheckLogin).not.toHaveBeenCalled();
-    expect(localStorage.getItem('authorization')).toBeNull();
+    expect(localStorage.getItem('v2board.admin_auth_data')).toBeNull();
     expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
@@ -290,7 +290,7 @@ describe('Admin LoginPage', () => {
       ),
     );
     const totp = await screen.findByTestId('admin-login-totp');
-    expect(localStorage.getItem('authorization')).toBeNull();
+    expect(localStorage.getItem('v2board.admin_auth_data')).toBeNull();
 
     // Phase 2: the retry includes the entered code and completes the login.
     await user.type(totp, '123456');
@@ -301,7 +301,7 @@ describe('Admin LoginPage', () => {
         { email: 'admin@example.com', password: 'password', totp_code: '123456' },
       ),
     );
-    expect(localStorage.getItem('authorization')).toBe('jwt');
+    expect(localStorage.getItem('v2board.admin_auth_data')).toBe('jwt');
     await waitFor(() =>
       expect(mocks.navigate).toHaveBeenCalledWith('/dashboard', { replace: true }),
     );
@@ -327,7 +327,7 @@ describe('Admin LoginPage', () => {
 
     await user.type(totp, '000000');
     expect(screen.getByPlaceholderText('邮箱')).toHaveValue('admin@example.com');
-    expect(localStorage.getItem('authorization')).toBeNull();
+    expect(localStorage.getItem('v2board.admin_auth_data')).toBeNull();
   });
 
   it('shows the native reset command in the forgot-password dialog', async () => {

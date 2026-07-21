@@ -8,21 +8,21 @@ import {
   subscribeAuth,
 } from './auth';
 
-describe('admin legacy auth storage', () => {
+describe('admin auth storage', () => {
   afterEach(() => {
     registerSessionCacheClearer(() => undefined);
     localStorage.clear();
   });
 
-  it('uses the original authorization localStorage key shared by the legacy bundles', () => {
-    setAuthData('legacy-token');
+  it('uses its own admin-only localStorage key, independent of the user app', () => {
+    setAuthData('admin-token');
 
-    expect(localStorage.getItem('authorization')).toBe('legacy-token');
-    expect(localStorage.getItem('v2board.admin_auth_data')).toBeNull();
-    expect(getAuthData()).toBe('legacy-token');
+    expect(localStorage.getItem('v2board.admin_auth_data')).toBe('admin-token');
+    expect(localStorage.getItem('authorization')).toBeNull();
+    expect(getAuthData()).toBe('admin-token');
   });
 
-  it('notifies subscribers and removes the legacy token on logout', () => {
+  it('notifies subscribers and removes the token on logout', () => {
     const listener = vi.fn();
     const unsubscribe = subscribeAuth(listener);
 
@@ -32,7 +32,7 @@ describe('admin legacy auth storage', () => {
 
     expect(listener).toHaveBeenNthCalledWith(1, 'jwt');
     expect(listener).toHaveBeenNthCalledWith(2, null);
-    expect(localStorage.getItem('authorization')).toBeNull();
+    expect(localStorage.getItem('v2board.admin_auth_data')).toBeNull();
   });
 
   it('clears all admin server state when the token identity changes', () => {
@@ -54,7 +54,9 @@ describe('admin legacy auth storage', () => {
     const unsubscribe = subscribeAuth(listener);
     setupAuthSync();
 
-    window.dispatchEvent(new StorageEvent('storage', { key: 'authorization', newValue: null }));
+    window.dispatchEvent(
+      new StorageEvent('storage', { key: 'v2board.admin_auth_data', newValue: null }),
+    );
 
     expect(clear).toHaveBeenCalledOnce();
     expect(listener).toHaveBeenCalledWith(null);

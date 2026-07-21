@@ -10,7 +10,7 @@ import {
 
 const options: RouteGuardOptions = {
   matchRoute: (route, path, end) => matchPath({ path: route, end }, path),
-  authStorageKey: 'authorization',
+  authStorageKey: 'v2board.admin_auth_data',
   authenticatedFallback: '/dashboard',
   authenticatedPublicFallbackRoutes: [],
   guestFallback: '/login',
@@ -37,14 +37,14 @@ describe('route-guard contract adapter', () => {
     expect(getNormalizedRoutePath('/dashboard', options)).toBe('/login');
     expect(getNormalizedRoutePath('/unknown', options)).toBe('/login');
 
-    window.localStorage.setItem('authorization', 'token');
+    window.localStorage.setItem('v2board.admin_auth_data', 'token');
     expect(getNormalizedRoutePath('/dashboard', options)).toBe('/dashboard');
     expect(getNormalizedRoutePath('/unknown', options)).toBe('/dashboard');
     expect(getNormalizedRoutePath('/login', options)).toBe('/login');
   });
 
   it('recognizes dynamic routes and recovers duplicated nested prefixes', () => {
-    window.localStorage.setItem('authorization', 'token');
+    window.localStorage.setItem('v2board.admin_auth_data', 'token');
 
     expect(getNormalizedRoutePath('/ticket/42', options)).toBe('/ticket/42');
     expect(getNormalizedRoutePath('/dashboard/ticket/42', options)).toBe('/ticket/42');

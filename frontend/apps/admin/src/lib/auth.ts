@@ -1,9 +1,11 @@
 import { useSyncExternalStore } from 'react';
 import { clearStepUpGrant } from './step-up';
 
-// Tier-1 pinned session key; also consumed by the route-normalization guard
-// via ADMIN_ROUTE_GUARD_OPTIONS.
-export const AUTH_KEY = 'authorization';
+// Admin-only pinned session key, independent of the user app's shared
+// `authorization` key (see AGENTS.md Frontend Contract Direction and
+// ADR-0003); also consumed by the route-normalization guard via
+// ADMIN_ROUTE_GUARD_OPTIONS.
+export const AUTH_KEY = 'v2board.admin_auth_data';
 
 export interface AdminLoginLoaderData {
   redirectTarget: string;

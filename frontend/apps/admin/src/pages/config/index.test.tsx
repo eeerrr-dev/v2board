@@ -231,7 +231,7 @@ vi.mock('@/lib/queries', () => ({
 beforeEach(() => {
   window.sessionStorage.clear();
   window.localStorage.clear();
-  window.localStorage.setItem('authorization', 'admin-test-token');
+  window.localStorage.setItem('v2board.admin_auth_data', 'admin-test-token');
   // Reconcile the module-level fail-closed snapshot with the newly emptied
   // test stores before a case makes either Storage implementation throw.
   readPendingConfigCommit();
@@ -738,7 +738,7 @@ describe('SystemConfigPage section drafts', () => {
     writePendingConfigCommit({ group: 'site', revision: 8 });
     expect(window.localStorage.getItem(PENDING_FALLBACK_KEY)).not.toContain('admin-test-token');
 
-    window.localStorage.setItem('authorization', 'different-admin-token');
+    window.localStorage.setItem('v2board.admin_auth_data', 'different-admin-token');
 
     expect(readPendingConfigCommit()).toBeNull();
     expect(window.sessionStorage.getItem(PENDING_SESSION_KEY)).toBeNull();

@@ -9,8 +9,10 @@
 
 - 改密码、封禁、管理员重置**必须立刻让该用户所有已发放会话失效** —— 这是
   安全结果,不是可选优化;
-- 浏览器持久化键 `localStorage.authorization` 及其存储值格式是冻结的外部
-  契约(存原始 token,`Bearer` 只在 wire 上加);
+- user 应用浏览器持久化键 `localStorage.authorization` 及其存储值格式是冻结
+  的外部契约(存原始 token,`Bearer` 只在 wire 上加);admin 应用使用独立的
+  `localStorage.v2board.admin_auth_data` 键(2026-07-21 修订;此前 admin 与
+  user 共享同一个 `authorization` 键 —— 见下方决策与后果);
 - 管理/staff 的特权写操作需要"近期密码复核"(step-up)这层额外门;
 - 生产是单机,不存在跨服务无状态验签的需求;Redis 本来就在栈里。
 
@@ -28,6 +30,13 @@
   `permission_denied`/`step_up_required` 绝不拆会话(方言 §3.2 固定)。
 - MySQL 导入**不迁移任何旧会话**,上线后全员重新登录;native 运行时不含旧
   JWT 解码器或 query/form 认证回退。
+- **admin 与 user 使用互相独立的 localStorage 键**(user: `authorization`;
+  admin: `v2board.admin_auth_data`):两个重做的 shadcn 界面同源共存,共享同
+  一个字面 key 名意味着 user 界面上的任何同源脚本执行都能直接按名读取到
+  admin 的会话 token;拆成两个独立键并不能阻止同源脚本枚举
+  `localStorage` 本身(这不是一个真正的安全边界),但能消除"两个界面的会话
+  在同一个 key 下互相踩踏/误读"的意外耦合,并缩小"脚本按字面 key 名猜测"这
+  类最低成本攻击的命中面。user 端的键值维持原样冻结,不受影响。
 
 **明确拒绝的替代方案:**
 
