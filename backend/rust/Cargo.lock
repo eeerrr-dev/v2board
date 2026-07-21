@@ -4437,7 +4437,6 @@ dependencies = [
  "tokio",
  "url",
  "v2board-config",
- "v2board-domain-model",
 ]
 
 [[package]]
@@ -4504,7 +4503,6 @@ dependencies = [
  "v2board-domain-model",
  "v2board-mail-adapters",
  "v2board-order-adapters",
- "v2board-payment-adapters",
  "v2board-redis-adapters",
 ]
 
