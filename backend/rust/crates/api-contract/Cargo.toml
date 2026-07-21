@@ -15,7 +15,7 @@ chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 utoipa.workspace = true
-v2board-problem-code = { version = "0.9.0", path = "../problem-code" }
+v2board-problem-code = { path = "../problem-code" }
 
 [[bin]]
 name = "v2board-export-openapi"

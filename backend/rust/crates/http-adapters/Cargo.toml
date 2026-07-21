@@ -14,7 +14,7 @@ workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-v2board-compat = { version = "0.9.0", path = "../compat" }
+v2board-compat = { path = "../compat" }
 
 [dev-dependencies]
 tokio.workspace = true

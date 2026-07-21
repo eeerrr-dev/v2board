@@ -9,9 +9,9 @@
 产品版本号只有一个权威来源：`backend/rust/Cargo.toml` 的
 `[workspace.package] version`。它从这里传播到所有对外可见的位置：
 
-- 全部 10 个 workspace crate 通过 `version.workspace = true` 继承；crate 之间的
-  路径依赖同时固定版本（`{ version = "X.Y.Z", path = "../..." }`），升版时必须
-  一起改。
+- 全部 workspace crate 通过 `version.workspace = true` 继承;crate 之间的路径
+  依赖只写 `{ path = "../..." }`,不重复声明版本号,升版不需要在这些依赖行上
+  做任何改动。
 - 前端 7 个 `package.json`（`frontend/`、`frontend/apps/{user,admin}`、
   `frontend/packages/{api-client,config,i18n,types}`）的 `version` 字段人工保持
   同值。前端包互相通过 `workspace:*` 引用，版本字段纯粹是标识，不参与解析。
@@ -30,9 +30,7 @@
 一次升版是一个提交，包含以下全部内容：
 
 1. 改 `backend/rust/Cargo.toml` 的 `[workspace.package] version`。
-2. 把 crate 间路径依赖的版本固定值改成同一新值；用
-   `rg 'version = "' backend/rust/crates/*/Cargo.toml` 确认没有遗漏的旧值。
-3. 在 Docker 内重新生成 `Cargo.lock`（rust 源码在容器里是只读挂载，需要先拷到
+2. 在 Docker 内重新生成 `Cargo.lock`（rust 源码在容器里是只读挂载，需要先拷到
    容器内可写目录）：
 
    ```sh
@@ -44,12 +42,12 @@
    ```
 
    随后 `git diff backend/rust/Cargo.lock` 应当只包含 workspace crate 的版本行。
-4. 同步改 7 个前端 `package.json` 的 `version` 字段。
-5. 更新根目录 `CHANGELOG.md`：把 `[Unreleased]` 下积累的条目移入
+3. 同步改 7 个前端 `package.json` 的 `version` 字段。
+4. 更新根目录 `CHANGELOG.md`：把 `[Unreleased]` 下积累的条目移入
    `[X.Y.Z] - 日期` 小节，保留空的 `[Unreleased]`。
-6. 验证：`make rust-check`、`make rust-test`、`make native-release-audit`，前端
+5. 验证：`make rust-check`、`make rust-test`、`make native-release-audit`，前端
    改动后 `make sync` 加相关 typecheck。
-7. 直接提交到 main。打 git 标签不是自动的：只在真正裁切一次发布时人工执行
+6. 直接提交到 main。打 git 标签不是自动的：只在真正裁切一次发布时人工执行
    `git tag vX.Y.Z && git push origin vX.Y.Z`，日常版本号提交不打标签。
 
 ## 3. 发布产物与验证

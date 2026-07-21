@@ -21,7 +21,7 @@ thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 uuid.workspace = true
-v2board-application = { version = "0.9.0", path = "../application" }
-v2board-compat = { version = "0.9.0", path = "../compat" }
-v2board-config = { version = "0.9.0", path = "../config" }
-v2board-db = { version = "0.9.0", path = "../db" }
+v2board-application = { path = "../application" }
+v2board-compat = { path = "../compat" }
+v2board-config = { path = "../config" }
+v2board-db = { path = "../db" }

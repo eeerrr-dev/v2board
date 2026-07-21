@@ -13,4 +13,4 @@ workspace = true
 [dependencies]
 redis.workspace = true
 thiserror.workspace = true
-v2board-config = { version = "0.9.0", path = "../config" }
+v2board-config = { path = "../config" }

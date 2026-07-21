@@ -17,8 +17,8 @@ hmac.workspace = true
 redis.workspace = true
 sha1.workspace = true
 uuid.workspace = true
-v2board-compat = { version = "0.9.0", path = "../compat" }
-v2board-config = { version = "0.9.0", path = "../config" }
+v2board-compat = { path = "../compat" }
+v2board-config = { path = "../config" }
 
 [dev-dependencies]
 serde_json.workspace = true
