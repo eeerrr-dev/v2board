@@ -271,7 +271,7 @@ wave-by-wave migration appendix recording how each family flipped.
   `subscribe_path` alias), `/api/v1/server/{class}/{action}`,
   `/api/v2/server/config`, `/api/v1/guest/payment/notify/{method}/{uuid}`,
   `/api/v1/guest/telegram/webhook`, the subscribe-URL/token/flag scheme,
-  Stripe/reCAPTCHA/Crisp/Tawk integration payloads, and the localStorage
+  Stripe/reCAPTCHA integration payloads, and the localStorage
   `authorization` key (legacy locale keys remain one-time migration reads).
 - No dual-dialect compatibility branches exist or may return: every family
   switched atomically — backend + frontend + api-client + fixtures +
@@ -315,8 +315,8 @@ The behavioral outcomes those lines pin remain contracts throughout.
     where changing one breaks a real external party: the byte-frozen external
     namespaces and integration payloads (subscription clients, node agents,
     payment-gateway notify routes and webhooks, Telegram, Google reCAPTCHA
-    verification, Stripe PaymentIntent metadata/webhooks, Crisp/Tawk session
-    data — `docs/api-dialect.md` §2); history route paths plus the
+    verification, and Stripe PaymentIntent metadata/webhooks —
+    `docs/api-dialect.md` §2); history route paths plus the
     `legacy_hash_redirect_enable` translator; backend-minted URLs are
     path-style per `docs/api-dialect.md` §10.4 — the SPA must keep resolving
     the URLs the backend mints (the `?verify=` email login link, the

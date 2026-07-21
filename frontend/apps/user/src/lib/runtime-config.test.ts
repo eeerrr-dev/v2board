@@ -4,7 +4,6 @@ import { setRuntimeConfig } from '@/test/runtime-config';
 import {
   applyRuntimeConfig,
   getBackgroundUrl,
-  getChatWidgetConfig,
   getLegacyHashRedirectEnabled,
   getLogoUrl,
   getRuntimeConfig,
@@ -77,34 +76,6 @@ describe('runtime config bootstrap', () => {
 
     setRuntimeConfig({ legacy_hash_redirect_enable: true });
     expect(getLegacyHashRedirectEnabled()).toBe(true);
-  });
-
-  it('accepts only the two complete typed chat_widget shapes (docs/api-dialect.md §10.6)', () => {
-    setRuntimeConfig({});
-    expect(getChatWidgetConfig()).toBeUndefined();
-
-    setRuntimeConfig({
-      chat_widget: { provider: 'crisp', website_id: '01234567-89ab-cdef-0123-456789abcdef' },
-    });
-    expect(getChatWidgetConfig()).toEqual({
-      provider: 'crisp',
-      website_id: '01234567-89ab-cdef-0123-456789abcdef',
-    });
-
-    setRuntimeConfig({
-      chat_widget: { provider: 'tawk', property_id: '0123456789abcdef01234567', widget_id: 'w1' },
-    });
-    expect(getChatWidgetConfig()).toEqual({
-      provider: 'tawk',
-      property_id: '0123456789abcdef01234567',
-      widget_id: 'w1',
-    });
-
-    // Partial or unknown shapes stay inert: the widget is off.
-    setRuntimeConfig({ chat_widget: { provider: 'tawk', property_id: 'abc' } as never });
-    expect(getChatWidgetConfig()).toBeUndefined();
-    setRuntimeConfig({ chat_widget: { provider: 'zendesk' } as never });
-    expect(getChatWidgetConfig()).toBeUndefined();
   });
 
   it('activates error reporting only for an injected non-empty sentry_dsn', () => {

@@ -19,14 +19,6 @@ const THIRD_PARTY_ROOTS = [
     selector:
       'iframe[src*="google.com/recaptcha"], iframe[src*="recaptcha.net/recaptcha"]',
   },
-  {
-    owner: 'Crisp',
-    selector: 'iframe[src*="crisp.chat"], iframe[src*="client.crisp.chat"]',
-  },
-  {
-    owner: 'Tawk',
-    selector: 'iframe[src*="tawk.to"], iframe[src*="embed.tawk.to"]',
-  },
 ];
 
 function formatBlockingViolations(violations) {

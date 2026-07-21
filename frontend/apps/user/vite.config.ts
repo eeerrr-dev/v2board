@@ -38,7 +38,6 @@ export default defineConfig({
       '@v2board/api-client > axios',
       '@v2board/ui > class-variance-authority',
       '@v2board/ui > clsx',
-      'dayjs',
       'dompurify',
       'embla-carousel-react',
       'i18next',

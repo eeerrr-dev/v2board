@@ -226,30 +226,6 @@
               "null"
             ]
           },
-          "chat_widget_crisp_website_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "chat_widget_provider": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "chat_widget_tawk_property_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "chat_widget_tawk_widget_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "commission_auto_check_enable": {
             "type": [
               "boolean",
@@ -5260,30 +5236,6 @@
       "FrontendConfigView": {
         "additionalProperties": false,
         "properties": {
-          "chat_widget_crisp_website_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "chat_widget_provider": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "chat_widget_tawk_property_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "chat_widget_tawk_widget_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "frontend_background_url": {
             "type": [
               "string",
@@ -5296,11 +5248,7 @@
         },
         "required": [
           "frontend_theme_color",
-          "frontend_background_url",
-          "chat_widget_provider",
-          "chat_widget_crisp_website_id",
-          "chat_widget_tawk_property_id",
-          "chat_widget_tawk_widget_id"
+          "frontend_background_url"
         ],
         "type": "object"
       },

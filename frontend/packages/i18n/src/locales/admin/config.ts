@@ -206,11 +206,6 @@ export const adminConfig = {
     theme_green: '奶绿色',
     background_title: '背景',
     background_desc: '将会在后台登录页面进行展示。',
-    chat_widget_title: '在线聊天挂件',
-    chat_widget_desc: '为用户端加载官方聊天 SDK；需要完整填写所选提供商的标识后才会生效。',
-    crisp_website_id_desc: 'Crisp 后台的 Website ID（UUID 格式）。',
-    tawk_property_id_desc: 'Tawk 后台的 Property ID（24 位十六进制）。',
-    tawk_widget_id_desc: 'Tawk 后台的 Widget ID。',
   },
   server: {
     api_url_title: '节点对接API地址',

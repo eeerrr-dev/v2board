@@ -25,10 +25,6 @@ export const internalApiAdminConfigPatchRequestSchema = z.strictObject({
   "app_name": z.union([z.string(), z.null()]).optional(),
   "app_url": z.union([z.string(), z.null()]).optional(),
   "change_order_event_id": z.union([z.boolean(), z.null()]).optional(),
-  "chat_widget_crisp_website_id": z.union([z.string(), z.null()]).optional(),
-  "chat_widget_provider": z.union([z.string(), z.null()]).optional(),
-  "chat_widget_tawk_property_id": z.union([z.string(), z.null()]).optional(),
-  "chat_widget_tawk_widget_id": z.union([z.string(), z.null()]).optional(),
   "commission_auto_check_enable": z.union([z.boolean(), z.null()]).optional(),
   "commission_distribution_enable": z.union([z.boolean(), z.null()]).optional(),
   "commission_distribution_l1": z.union([z.number(), z.null()]).optional(),
@@ -128,10 +124,6 @@ export const internalApiEmailConfigViewSchema = z.strictObject({
 });
 
 export const internalApiFrontendConfigViewSchema = z.strictObject({
-  "chat_widget_crisp_website_id": z.union([z.string(), z.null()]),
-  "chat_widget_provider": z.union([z.string(), z.null()]),
-  "chat_widget_tawk_property_id": z.union([z.string(), z.null()]),
-  "chat_widget_tawk_widget_id": z.union([z.string(), z.null()]),
   "frontend_background_url": z.union([z.string(), z.null()]),
   "frontend_theme_color": z.string(),
 });

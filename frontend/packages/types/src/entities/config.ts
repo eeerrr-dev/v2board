@@ -95,10 +95,6 @@ export interface AdminConfigFlat {
   legacy_hash_redirect_enable: boolean;
   frontend_theme_color: 'default' | 'darkblue' | 'black' | 'green';
   frontend_background_url: string | null;
-  chat_widget_provider: string | null;
-  chat_widget_crisp_website_id: string | null;
-  chat_widget_tawk_property_id: string | null;
-  chat_widget_tawk_widget_id: string | null;
   safe_mode_enable: boolean;
   admin_mfa_force: boolean;
   server_api_url: string | null;
@@ -176,15 +172,7 @@ export interface AdminConfigGroups {
     | 'show_subscribe_method'
     | 'show_subscribe_expire'
   >;
-  frontend: Pick<
-    AdminConfigFlat,
-    | 'frontend_theme_color'
-    | 'frontend_background_url'
-    | 'chat_widget_provider'
-    | 'chat_widget_crisp_website_id'
-    | 'chat_widget_tawk_property_id'
-    | 'chat_widget_tawk_widget_id'
-  >;
+  frontend: Pick<AdminConfigFlat, 'frontend_theme_color' | 'frontend_background_url'>;
   server: Pick<
     AdminConfigFlat,
     | 'server_api_url'

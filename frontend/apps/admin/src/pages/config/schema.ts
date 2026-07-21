@@ -283,10 +283,6 @@ const CONFIG_FIELD_CODECS = {
   frontend: {
     frontend_theme_color: stringEnumField(['default', 'darkblue', 'black', 'green'] as const),
     frontend_background_url: nullableStringField,
-    chat_widget_provider: nullableStringField,
-    chat_widget_crisp_website_id: nullableStringField,
-    chat_widget_tawk_property_id: nullableStringField,
-    chat_widget_tawk_widget_id: nullableStringField,
   },
   server: {
     server_api_url: nullableStringField,

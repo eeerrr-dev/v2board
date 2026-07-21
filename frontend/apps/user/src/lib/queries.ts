@@ -8,9 +8,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import type { UseQueryResult } from '@tanstack/react-query';
-import type { StripePaymentIntent, SubscribeInfo, UserInfo } from '@v2board/types';
-import dayjs from 'dayjs';
-import { formatBytes } from '@v2board/config/format';
+import type { StripePaymentIntent, UserInfo } from '@v2board/types';
 import { apiClient } from './api';
 
 export type SaveOrderInput = Parameters<typeof user.saveOrder>[1];
@@ -20,51 +18,6 @@ interface QueryFreshnessOptions {
   enabled?: boolean;
   refetchInterval?: number | false;
   refetchOnMount?: boolean | 'always';
-}
-
-declare global {
-  interface Window {
-    Tawk_API?: { visitor?: { name?: string; email?: string } };
-    $crisp?: { push: (command: unknown[]) => void };
-  }
-}
-
-// The original getUserInfo / getSubscribe sagas report the user to the Tawk and
-// Crisp live-chat widgets right after each successful fetch. React Query v5
-// removed the per-observer useQuery onSuccess; its canonical replacement is the
-// QueryClient-level QueryCache onSuccess, which fires once per successful fetch
-// keyed by query. main.tsx wires these reporters there (on userKeys.info /
-// userKeys.subscribe), so the queryFns below stay pure while preserving the
-// saga's "report after each successful 200" cadence, including refetches. The
-// Crisp/Tawk payloads are external-integration contracts — keep their shape.
-export function reportUserInfoToChat(info: UserInfo) {
-  if (window.Tawk_API) {
-    window.Tawk_API.visitor = { name: info.email, email: info.email };
-  }
-  if (window.$crisp) {
-    window.$crisp.push(['set', 'user:email', info.email]);
-    window.$crisp.push(['set', 'session:data', [[['Balance', info.balance / 100]]]]);
-  }
-}
-
-export function reportSubscribeToChat(data: SubscribeInfo) {
-  if (!window.$crisp) return;
-  // The external chat contract formats `expired_at` in local time; a null expiry
-  // becomes the epoch date (there is intentionally no '-' fallback here). The
-  // wire value is RFC 3339 (§4.5); the Crisp 'YYYY-MM-DD' output stays frozen.
-  const expireTime = dayjs(data.expired_at ?? 0).format('YYYY-MM-DD');
-  window.$crisp.push([
-    'set',
-    'session:data',
-    [
-      [
-        ['Plan', data.plan?.name || '-'],
-        ['ExpireTime', expireTime],
-        ['UsedTraffic', formatBytes(data.u + data.d)],
-        ['AllTraffic', formatBytes(data.transfer_enable)],
-      ],
-    ],
-  ]);
 }
 
 // Shared prefix for every order query (list + detail + status). Kept as a single

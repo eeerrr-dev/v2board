@@ -2,15 +2,6 @@ import { SUPPORTED_LOCALES } from '@v2board/i18n';
 
 export type RuntimeThemeColor = 'default' | 'darkblue' | 'black' | 'green';
 
-/**
- * docs/api-dialect.md §10.6: the typed chat-widget object Rust injects into the
- * user runtime config when — and only when — a provider is completely
- * configured. Absent means the feature is off.
- */
-export type ChatWidgetConfig =
-  | { provider: 'crisp'; website_id: string }
-  | { provider: 'tawk'; property_id: string; widget_id: string };
-
 export interface RuntimeConfig {
   title?: string;
   theme?: {
@@ -22,8 +13,6 @@ export interface RuntimeConfig {
   i18n?: string[];
   /** docs/api-dialect.md §10.3: boot-time legacy `#/…` → history-URL toggle. */
   legacy_hash_redirect_enable?: boolean;
-  /** docs/api-dialect.md §10.6: absent = chat widget off (the default). */
-  chat_widget?: ChatWidgetConfig;
   /** Absent = frontend error reporting off (the default). */
   sentry_dsn?: string;
 }
@@ -40,8 +29,8 @@ const DEFAULT_RUNTIME_CONFIG = {
   i18n: SUPPORTED_LOCALES.map((locale) => locale.code),
   // Mirrors the Rust config default (config.rs legacy_hash_redirect_enable).
   legacy_hash_redirect_enable: true,
-  // `chat_widget` and `sentry_dsn` are deliberately absent: off is the default.
-} as const satisfies Required<Omit<RuntimeConfig, 'chat_widget' | 'sentry_dsn'>>;
+  // `sentry_dsn` is deliberately absent: off is the default.
+} as const satisfies Required<Omit<RuntimeConfig, 'sentry_dsn'>>;
 const THEME_COLORS = new Set<RuntimeThemeColor>(['default', 'darkblue', 'black', 'green']);
 const THEME_META_COLORS: Record<RuntimeThemeColor, string> = {
   default: '#0665d0',
@@ -68,7 +57,6 @@ export function resetRuntimeConfigForTests(): void {
 function freezeConfig(config: RuntimeConfig): RuntimeConfig {
   if (config.theme) Object.freeze(config.theme);
   if (config.i18n) Object.freeze(config.i18n);
-  if (config.chat_widget) Object.freeze(config.chat_widget);
   return Object.freeze(config);
 }
 
@@ -96,29 +84,11 @@ function readRuntimeConfig(): RuntimeConfig {
         typeof value.legacy_hash_redirect_enable === 'boolean'
           ? value.legacy_hash_redirect_enable
           : DEFAULT_RUNTIME_CONFIG.legacy_hash_redirect_enable,
-      chat_widget: parseChatWidget(value.chat_widget),
       sentry_dsn: nonEmptyString(value.sentry_dsn) ? value.sentry_dsn : undefined,
     };
   } catch {
     return cloneDefaults();
   }
-}
-
-// docs/api-dialect.md §10.6: only the two complete typed shapes activate the
-// widget; anything partial or unknown stays inert (feature off).
-function parseChatWidget(value: unknown): ChatWidgetConfig | undefined {
-  if (!isRecord(value)) return undefined;
-  if (value.provider === 'crisp' && nonEmptyString(value.website_id)) {
-    return { provider: 'crisp', website_id: value.website_id };
-  }
-  if (
-    value.provider === 'tawk' &&
-    nonEmptyString(value.property_id) &&
-    nonEmptyString(value.widget_id)
-  ) {
-    return { provider: 'tawk', property_id: value.property_id, widget_id: value.widget_id };
-  }
-  return undefined;
 }
 
 function nonEmptyString(value: unknown): value is string {
@@ -134,11 +104,6 @@ export function getLegacyHashRedirectEnabled(): boolean {
     getRuntimeConfig().legacy_hash_redirect_enable ??
     DEFAULT_RUNTIME_CONFIG.legacy_hash_redirect_enable
   );
-}
-
-/** docs/api-dialect.md §10.6: undefined = chat widget off (the default). */
-export function getChatWidgetConfig(): ChatWidgetConfig | undefined {
-  return getRuntimeConfig().chat_widget;
 }
 
 /** undefined = frontend error reporting off (the default). */

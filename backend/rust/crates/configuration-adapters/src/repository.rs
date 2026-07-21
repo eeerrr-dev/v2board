@@ -271,10 +271,6 @@ fn grouped_view(config: &AppConfig) -> Value {
         "frontend": {
             "frontend_theme_color": config.frontend_theme_color,
             "frontend_background_url": config.frontend_background_url,
-            "chat_widget_provider": config.chat_widget_provider,
-            "chat_widget_crisp_website_id": config.chat_widget_crisp_website_id,
-            "chat_widget_tawk_property_id": config.chat_widget_tawk_property_id,
-            "chat_widget_tawk_widget_id": config.chat_widget_tawk_widget_id,
         },
         "server": {
             "server_api_url": config.server_api_url,

@@ -1,8 +1,7 @@
 import { lazy, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
-import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MutationCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { presentMutationError, shouldRetryQuery } from '@v2board/api-client';
-import type { SubscribeInfo, UserInfo } from '@v2board/types';
 import { I18nextProvider } from 'react-i18next';
 import { createLazyI18n, installLocaleDocumentEnvironment } from '@v2board/i18n';
 import { applyLegacyHashRedirect } from '@v2board/config';
@@ -13,7 +12,6 @@ import { AppShellBoundary } from './components/app-shell-boundary';
 import { ConfirmDialogProvider } from '@v2board/ui/confirm-dialog';
 import { Toaster } from '@v2board/ui/toaster';
 import { registerSessionCacheClearer, setupAuthSync } from './lib/auth';
-import { installChatWidget } from './lib/chat-widget';
 import { installChunkReloadRecovery } from './lib/chunk-recovery';
 import { applyInitialDarkMode, useDarkMode } from './lib/dark-mode';
 import {
@@ -22,7 +20,6 @@ import {
   getSentryDsn,
 } from './lib/runtime-config';
 import { i18nGet } from './lib/errors';
-import { reportSubscribeToChat, reportUserInfoToChat, userKeys } from './lib/queries';
 import { registerRouterNavigation } from './lib/router-navigation';
 import { toast } from './lib/toast';
 import './styles/globals.css';
@@ -39,28 +36,10 @@ if (sentryDsn) {
 }
 const i18n = await createLazyI18n();
 installLocaleDocumentEnvironment(i18n);
-function queryKeyEquals(a: readonly unknown[], b: readonly unknown[]): boolean {
-  return a.length === b.length && a.every((value, index) => value === b[index]);
-}
-
-// Preserve the Tawk/Crisp integration contract: report the user to the widgets
-// after each successful user/info and user/subscribe fetch (refetches included).
-// QueryCache onSuccess is React Query v5's canonical replacement for the removed
-// useQuery onSuccess and fires once per successful fetch keyed by query, so the
-// queryFns stay pure. The Crisp/Tawk payloads are external-integration contracts.
 const queryClient = new QueryClient({
   mutationCache: new MutationCache({
     onError: (error, _variables, _context, mutation) => {
       presentMutationError(error, mutation.meta, (message) => toast.error(message), i18nGet);
-    },
-  }),
-  queryCache: new QueryCache({
-    onSuccess: (data, query) => {
-      if (queryKeyEquals(query.queryKey, userKeys.info)) {
-        reportUserInfoToChat(data as UserInfo);
-      } else if (queryKeyEquals(query.queryKey, userKeys.subscribe)) {
-        reportSubscribeToChat(data as SubscribeInfo);
-      }
     },
   }),
   defaultOptions: {
@@ -79,10 +58,6 @@ registerSessionCacheClearer(() => queryClient.clear());
 setupAuthSync();
 
 applyInitialDarkMode();
-// docs/api-dialect.md §10.6: load the configured chat provider's official SDK
-// (dynamic script insertion, never inline) so the frozen Crisp/Tawk
-// session-data pushes above have their globals.
-installChatWidget();
 // docs/api-dialect.md §10.3: translate a legacy `/#/x?y` entry URL into its
 // history URL before router creation, gated on the injected admin toggle.
 applyLegacyHashRedirect({ enabled: getLegacyHashRedirectEnabled() });

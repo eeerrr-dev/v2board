@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import type { PlaceholderDataFunction, UseQueryOptions } from '@tanstack/react-query';
-import type { KnowledgeCategory, SubscribeInfo, UserInfo } from '@v2board/types';
+import type { KnowledgeCategory, UserInfo } from '@v2board/types';
 
 // useQuery/useMutation are mocked to echo their options back, but the React
 // Compiler compiles these hooks (in tests exactly as in production), so every
@@ -260,61 +260,6 @@ describe('user query state behavior', () => {
     expect((callHook(() => useOrder('T123')) as unknown as UseQueryOptions).queryFn).toBeTypeOf(
       'function',
     );
-  });
-
-  it('keeps the user/info and subscribe queryFns pure (chat reporting moved to QueryCache)', async () => {
-    const { userQueryOptions } = await import('./queries');
-
-    const push = vi.fn();
-    window.Tawk_API = {};
-    window.$crisp = { push };
-    apiUser.info.mockReset().mockResolvedValue({ email: 'user@example.test', balance: 100 });
-    apiUser.getSubscribe.mockReset().mockResolvedValue({ u: 1, d: 2, transfer_enable: 3 });
-    const context = { signal: new AbortController().signal };
-
-    await (userQueryOptions.info().queryFn as QueryFn)(context);
-    await (userQueryOptions.subscribe().queryFn as QueryFn)(context);
-
-    // The reporters must not run inside the queryFns anymore — main.tsx wires
-    // them through QueryCache onSuccess instead.
-    expect(push).not.toHaveBeenCalled();
-    expect(window.Tawk_API).toEqual({});
-  });
-
-  it('reports the user to Tawk and Crisp after a successful user/info fetch', async () => {
-    const { reportUserInfoToChat } = await import('./queries');
-    const push = vi.fn();
-    window.Tawk_API = {};
-    window.$crisp = { push };
-
-    reportUserInfoToChat({ email: 'user@example.test', balance: 1234 } as unknown as UserInfo);
-
-    expect(window.Tawk_API).toEqual({
-      visitor: { name: 'user@example.test', email: 'user@example.test' },
-    });
-    expect(push).toHaveBeenCalledWith(['set', 'user:email', 'user@example.test']);
-    expect(push).toHaveBeenCalledWith(['set', 'session:data', [[['Balance', 12.34]]]]);
-  });
-
-  it('reports the subscription to Crisp with formatted traffic after a successful fetch', async () => {
-    const { reportSubscribeToChat } = await import('./queries');
-    const push = vi.fn();
-    window.$crisp = { push };
-
-    reportSubscribeToChat({
-      expired_at: '2023-11-14T22:13:20Z',
-      plan: { name: 'Pro' },
-      u: 100,
-      d: 200,
-      transfer_enable: 4096,
-    } as unknown as SubscribeInfo);
-
-    expect(push).toHaveBeenCalledTimes(1);
-    const rows = push.mock.calls[0]![0][2][0] as [string, unknown][];
-    expect(rows).toContainEqual(['Plan', 'Pro']);
-    expect(rows).toContainEqual(['UsedTraffic', '300.00 B']);
-    expect(rows).toContainEqual(['AllTraffic', '4.00 KB']);
-    expect(rows.find(([label]) => label === 'ExpireTime')?.[1]).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
   it('invalidates all order queries after cancel so detail state is not kept stale', async () => {

@@ -9,7 +9,7 @@
 字符串精确匹配来分流(改一个文案就破坏前端逻辑)、bracket 风格
 `filter[i][...]` 查询参数、hash 路由、以及混进 500 的确定性业务拒绝。同时,
 一批**真实外部方**依赖既有字节:订阅客户端、节点代理、支付网关回调、
-Telegram webhook、Stripe/reCAPTCHA/Crisp/Tawk 集成 —— 它们不升级、不协商,
+Telegram webhook、Stripe/reCAPTCHA 集成 —— 它们不升级、不协商,
 改一个字节就是生产事故。
 
 ## 决策(Decision)

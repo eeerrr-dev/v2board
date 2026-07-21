@@ -166,7 +166,7 @@ pub(super) async fn render(
     // The full document policy (docs/api-dialect.md §10.5) is set here on the
     // HTML response; the security middleware only fills in the API/asset
     // baseline when a handler has not already claimed the header.
-    if let Ok(csp) = HeaderValue::from_str(&content_security_policy(config, app, sentry)) {
+    if let Ok(csp) = HeaderValue::from_str(&content_security_policy(app, sentry)) {
         response
             .headers_mut()
             .insert(header::CONTENT_SECURITY_POLICY, csp);
@@ -174,69 +174,24 @@ pub(super) async fn render(
     response
 }
 
-/// Typed chat-widget integration (docs/api-dialect.md §10.6). Only a complete
-/// provider configuration activates the widget: the SPA builds the official
-/// embed from these values and the CSP widens below, so partial state must
-/// stay inert. Config saves are validated upstream; this re-check keeps
-/// env-driven local snapshots equally safe.
-enum ChatWidget<'a> {
-    Crisp {
-        website_id: &'a str,
-    },
-    Tawk {
-        property_id: &'a str,
-        widget_id: &'a str,
-    },
-}
-
-fn chat_widget(config: &AppConfig) -> Option<ChatWidget<'_>> {
-    fn present(value: &Option<String>) -> Option<&str> {
-        value.as_deref().map(str::trim).filter(|v| !v.is_empty())
-    }
-    let provider = present(&config.chat_widget_provider)?.to_ascii_lowercase();
-    match provider.as_str() {
-        "crisp" => Some(ChatWidget::Crisp {
-            website_id: present(&config.chat_widget_crisp_website_id)?,
-        }),
-        "tawk" => Some(ChatWidget::Tawk {
-            property_id: present(&config.chat_widget_tawk_property_id)?,
-            widget_id: present(&config.chat_widget_tawk_widget_id)?,
-        }),
-        _ => None,
-    }
-}
-
 /// Document CSP (docs/api-dialect.md §10.5): `'self'`-anchored with the
 /// per-app inline pre-paint hash, the Stripe Payment Element hosts, the
-/// China-reachable reCAPTCHA loader hosts, and — user app only, when a chat
-/// widget is configured — that provider's documented embed hosts (§10.6).
-/// `img-src https:` already covers provider images alongside operator
-/// logo/background URLs.
-fn content_security_policy(
-    config: &AppConfig,
-    app: FrontendApp,
-    sentry: Option<&FrontendSentry>,
-) -> String {
+/// China-reachable reCAPTCHA loader hosts, and an optional Sentry ingest
+/// origin. Every external origin is fixed by a first-class integration.
+fn content_security_policy(app: FrontendApp, sentry: Option<&FrontendSentry>) -> String {
     let prepaint_hash = match app {
         FrontendApp::User => USER_PREPAINT_SCRIPT_HASH,
         FrontendApp::Admin => ADMIN_PREPAINT_SCRIPT_HASH,
     };
-    let mut script_src = format!(
+    let script_src = format!(
         "'self' '{prepaint_hash}' https://js.stripe.com https://www.recaptcha.net https://www.gstatic.com"
     );
-    let mut style_src = "'self' 'unsafe-inline'".to_string();
+    let style_src = "'self' 'unsafe-inline'";
     let mut connect_src = "'self' https://api.stripe.com https://m.stripe.network \
          https://r.stripe.com https://q.stripe.com https://www.recaptcha.net"
         .to_string();
-    let mut frame_src =
-        "https://js.stripe.com https://hooks.stripe.com https://m.stripe.network https://www.recaptcha.net"
-            .to_string();
-    let mut form_action = "'self'".to_string();
-    // font/media/worker fall back to `default-src 'self'` unless a provider
-    // needs them widened.
-    let mut font_src: Option<String> = None;
-    let mut media_src: Option<String> = None;
-    let mut worker_src: Option<String> = None;
+    let frame_src = "https://js.stripe.com https://hooks.stripe.com \
+        https://m.stripe.network https://www.recaptcha.net";
 
     // Both documents report to the same ingest origin when the operator
     // configures frontend Sentry; the DSN itself travels via runtime config.
@@ -245,52 +200,11 @@ fn content_security_policy(
         connect_src.push_str(&sentry.ingest_origin);
     }
 
-    if matches!(app, FrontendApp::User) {
-        match chat_widget(config) {
-            // docs.crisp.chat "Crisp domain names" whitelist.
-            Some(ChatWidget::Crisp { .. }) => {
-                script_src.push_str(" https://*.crisp.chat");
-                style_src.push_str(" https://*.crisp.chat");
-                connect_src.push_str(
-                    " https://*.crisp.chat wss://*.relay.crisp.chat wss://*.relay.rescue.crisp.chat",
-                );
-                frame_src.push_str(" https://*.crisp.chat https://*.crisp.help");
-                font_src = Some("'self' https://*.crisp.chat".to_string());
-                media_src = Some("'self' https://*.crisp.chat".to_string());
-                worker_src = Some("'self' blob: https://*.crisp.chat".to_string());
-            }
-            // help.tawk.to Content-Security-Policy article.
-            Some(ChatWidget::Tawk { .. }) => {
-                script_src.push_str(" https://*.tawk.to https://cdn.jsdelivr.net");
-                style_src.push_str(
-                    " https://*.tawk.to https://fonts.googleapis.com https://cdn.jsdelivr.net",
-                );
-                connect_src.push_str(" https://*.tawk.to wss://*.tawk.to");
-                frame_src.push_str(" https://*.tawk.to");
-                form_action.push_str(" https://*.tawk.to");
-                font_src = Some("'self' https://*.tawk.to https://fonts.gstatic.com".to_string());
-            }
-            None => {}
-        }
-    }
-
-    let mut policy = format!(
+    format!(
         "default-src 'self'; script-src {script_src}; style-src {style_src}; \
-         img-src 'self' data: https:; connect-src {connect_src}; frame-src {frame_src}"
-    );
-    for (directive, value) in [
-        ("font-src", font_src),
-        ("media-src", media_src),
-        ("worker-src", worker_src),
-    ] {
-        if let Some(value) = value {
-            policy.push_str(&format!("; {directive} {value}"));
-        }
-    }
-    policy.push_str("; frame-ancestors 'self'; base-uri 'self'; form-action ");
-    policy.push_str(&form_action);
-    policy.push_str("; object-src 'none'");
-    policy
+         img-src 'self' data: https:; connect-src {connect_src}; frame-src {frame_src}; \
+         frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'"
+    )
 }
 
 fn runtime_config(config: &AppConfig, app: FrontendApp, sentry: Option<&FrontendSentry>) -> Value {
@@ -318,26 +232,6 @@ fn runtime_config(config: &AppConfig, app: FrontendApp, sentry: Option<&Frontend
     match app {
         FrontendApp::User => {
             settings.insert("i18n".to_string(), json!(ENABLED_LOCALES));
-            // docs/api-dialect.md §10.6: the user SPA loads the provider SDK
-            // from this typed value (A4); absent when no provider is
-            // completely configured.
-            if let Some(widget) = chat_widget(config) {
-                let value = match widget {
-                    ChatWidget::Crisp { website_id } => json!({
-                        "provider": "crisp",
-                        "website_id": website_id,
-                    }),
-                    ChatWidget::Tawk {
-                        property_id,
-                        widget_id,
-                    } => json!({
-                        "provider": "tawk",
-                        "property_id": property_id,
-                        "widget_id": widget_id,
-                    }),
-                };
-                settings.insert("chat_widget".to_string(), value);
-            }
         }
         FrontendApp::Admin => {
             settings.insert("secure_path".to_string(), json!(config.admin_path()));
@@ -504,112 +398,34 @@ mod tests {
         assert_eq!(decoded["title"], "</script><script>alert(1)</script>");
     }
 
-    fn chat_test_config() -> AppConfig {
-        let mut config = AppConfig::from_api_env();
-        config.chat_widget_provider = None;
-        config.chat_widget_crisp_website_id = None;
-        config.chat_widget_tawk_property_id = None;
-        config.chat_widget_tawk_widget_id = None;
-        config
+    fn test_config() -> AppConfig {
+        AppConfig::from_api_env()
     }
 
     #[test]
     fn document_csp_pins_the_prepaint_hash_and_stays_self_anchored() {
-        let config = chat_test_config();
         for app in [FrontendApp::User, FrontendApp::Admin] {
-            let policy = content_security_policy(&config, app, None);
+            let policy = content_security_policy(app, None);
             assert!(policy.starts_with("default-src 'self'; script-src 'self' 'sha256-"));
             assert!(policy.contains("https://js.stripe.com"));
             assert!(policy.contains("https://www.recaptcha.net"));
             assert!(policy.contains("img-src 'self' data: https:"));
             assert!(policy.contains("frame-ancestors 'self'"));
             assert!(policy.ends_with("form-action 'self'; object-src 'none'"));
-            assert!(!policy.contains("crisp"));
-            assert!(!policy.contains("tawk"));
-            // No provider: font/media/worker stay on the default-src fallback.
+            // Unused resource types stay on the default-src fallback.
             assert!(!policy.contains("font-src"));
             assert!(!policy.contains("worker-src"));
         }
     }
 
     #[test]
-    fn document_csp_widens_only_for_the_configured_chat_provider() {
-        let mut config = chat_test_config();
-        config.chat_widget_provider = Some("crisp".to_string());
-        config.chat_widget_crisp_website_id =
-            Some("a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d".to_string());
-        let policy = content_security_policy(&config, FrontendApp::User, None);
-        assert!(policy.contains("script-src 'self' 'sha256-"));
-        assert!(policy.contains("https://*.crisp.chat"));
-        assert!(policy.contains("wss://*.relay.crisp.chat"));
-        assert!(policy.contains("worker-src 'self' blob: https://*.crisp.chat"));
-        assert!(!policy.contains("tawk"));
-        // The chat widget is a user-app surface; the admin document must not
-        // widen.
-        assert!(!content_security_policy(&config, FrontendApp::Admin, None).contains("crisp"));
-
-        let mut config = chat_test_config();
-        config.chat_widget_provider = Some("tawk".to_string());
-        config.chat_widget_tawk_property_id = Some("5f0c1d2e3a4b5c6d7e8f9a0b".to_string());
-        config.chat_widget_tawk_widget_id = Some("default".to_string());
-        let policy = content_security_policy(&config, FrontendApp::User, None);
-        assert!(policy.contains("https://*.tawk.to"));
-        assert!(policy.contains("wss://*.tawk.to"));
-        assert!(policy.contains("form-action 'self' https://*.tawk.to"));
-        assert!(policy.contains("font-src 'self' https://*.tawk.to https://fonts.gstatic.com"));
-        assert!(!policy.contains("crisp"));
-    }
-
-    #[test]
-    fn chat_widget_runtime_config_requires_a_complete_provider() {
-        let mut config = chat_test_config();
-        // Partial configuration stays inert in both the runtime config and
-        // the CSP.
-        config.chat_widget_provider = Some("crisp".to_string());
-        assert!(chat_widget(&config).is_none());
-        let value = runtime_config(&config, FrontendApp::User, None);
-        assert!(value.get("chat_widget").is_none());
-        assert!(!content_security_policy(&config, FrontendApp::User, None).contains("crisp"));
-
-        config.chat_widget_crisp_website_id =
-            Some("a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d".to_string());
-        let value = runtime_config(&config, FrontendApp::User, None);
-        assert_eq!(
-            value["chat_widget"],
-            json!({
-                "provider": "crisp",
-                "website_id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
-            })
-        );
-        // Admin documents never carry the widget.
-        assert!(
-            runtime_config(&config, FrontendApp::Admin, None)
-                .get("chat_widget")
-                .is_none()
-        );
-
-        let mut config = chat_test_config();
-        config.chat_widget_provider = Some("tawk".to_string());
-        config.chat_widget_tawk_property_id = Some("5f0c1d2e3a4b5c6d7e8f9a0b".to_string());
-        config.chat_widget_tawk_widget_id = Some("default".to_string());
-        assert_eq!(
-            runtime_config(&config, FrontendApp::User, None)["chat_widget"],
-            json!({
-                "provider": "tawk",
-                "property_id": "5f0c1d2e3a4b5c6d7e8f9a0b",
-                "widget_id": "default",
-            })
-        );
-    }
-
-    #[test]
     fn sentry_dsn_widens_connect_src_and_lands_in_runtime_config_only_when_configured() {
-        let config = chat_test_config();
+        let config = test_config();
         let dsn = "https://f00d@o111111.ingest.sentry.io/2222";
         let sentry = FrontendSentry::parse(dsn).expect("a complete browser DSN parses");
         assert_eq!(sentry.ingest_origin, "https://o111111.ingest.sentry.io");
         for app in [FrontendApp::User, FrontendApp::Admin] {
-            let policy = content_security_policy(&config, app, Some(&sentry));
+            let policy = content_security_policy(app, Some(&sentry));
             assert!(policy.contains(" https://o111111.ingest.sentry.io"));
             assert_eq!(
                 runtime_config(&config, app, Some(&sentry))["sentry_dsn"],
@@ -621,7 +437,7 @@ mod tests {
                     .get("sentry_dsn")
                     .is_none()
             );
-            assert!(!content_security_policy(&config, app, None).contains("ingest.sentry.io"));
+            assert!(!content_security_policy(app, None).contains("ingest.sentry.io"));
         }
         // A keyless or non-HTTP value cannot activate reporting.
         assert!(FrontendSentry::parse("not a dsn").is_none());
@@ -631,7 +447,7 @@ mod tests {
 
     #[test]
     fn head_branding_substitutes_escaped_operator_values() {
-        let mut config = chat_test_config();
+        let mut config = test_config();
         config.app_name = "Acme <\"Panel\">".to_string();
         config.app_description = None;
         config.app_url = Some("https://panel.example.com/".to_string());

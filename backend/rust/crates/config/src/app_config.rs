@@ -129,15 +129,6 @@ pub struct AppConfig {
     pub server_v2ray_protocol: Option<String>,
     pub frontend_theme_color: Option<String>,
     pub frontend_background_url: Option<String>,
-    /// First-class chat-widget integration (docs/api-dialect.md §10.6):
-    /// `crisp` or `tawk`. Replaces the removed operator `custom_html`
-    /// injection path — the user SPA loads the provider SDK from typed
-    /// runtime config, and CSP gains the provider hosts only when a
-    /// provider is configured.
-    pub chat_widget_provider: Option<String>,
-    pub chat_widget_crisp_website_id: Option<String>,
-    pub chat_widget_tawk_property_id: Option<String>,
-    pub chat_widget_tawk_widget_id: Option<String>,
     pub frontend_admin_path: Option<String>,
     pub secure_path: Option<String>,
     /// docs/api-dialect.md §10.3: client-side `#/…` → history-URL translation
@@ -340,10 +331,6 @@ impl AppConfig {
             "server_v2ray_protocol": self.server_v2ray_protocol,
             "frontend_theme_color": self.frontend_theme_color,
             "frontend_background_url": self.frontend_background_url,
-            "chat_widget_provider": self.chat_widget_provider,
-            "chat_widget_crisp_website_id": self.chat_widget_crisp_website_id,
-            "chat_widget_tawk_property_id": self.chat_widget_tawk_property_id,
-            "chat_widget_tawk_widget_id": self.chat_widget_tawk_widget_id,
             "frontend_admin_path": self.frontend_admin_path,
             "secure_path": self.secure_path,
             "legacy_hash_redirect_enable": self.legacy_hash_redirect_enable,
@@ -1112,26 +1099,6 @@ impl AppConfig {
                 &file_config,
                 "frontend_background_url",
                 "V2BOARD_FRONTEND_BACKGROUND_URL",
-            ),
-            chat_widget_provider: config_or_env(
-                &file_config,
-                "chat_widget_provider",
-                "V2BOARD_CHAT_WIDGET_PROVIDER",
-            ),
-            chat_widget_crisp_website_id: config_or_env(
-                &file_config,
-                "chat_widget_crisp_website_id",
-                "V2BOARD_CHAT_WIDGET_CRISP_WEBSITE_ID",
-            ),
-            chat_widget_tawk_property_id: config_or_env(
-                &file_config,
-                "chat_widget_tawk_property_id",
-                "V2BOARD_CHAT_WIDGET_TAWK_PROPERTY_ID",
-            ),
-            chat_widget_tawk_widget_id: config_or_env(
-                &file_config,
-                "chat_widget_tawk_widget_id",
-                "V2BOARD_CHAT_WIDGET_TAWK_WIDGET_ID",
             ),
             frontend_admin_path: config_or_env(
                 &file_config,

@@ -27,10 +27,6 @@ describe('user entrypoint', () => {
     expect(mainSource).not.toContain('queryCache: new QueryCache({\n    onError');
   });
 
-  it('installs the configured chat-widget SDK at boot (docs/api-dialect.md §10.6)', () => {
-    expect(mainSource).toContain('installChatWidget()');
-  });
-
   it('translates legacy #/ entry URLs before router creation (docs/api-dialect.md §10.3)', () => {
     expect(mainSource).toContain(
       'applyLegacyHashRedirect({ enabled: getLegacyHashRedirectEnabled() })',

@@ -202,49 +202,6 @@ fn admin_path_knobs_are_validated_syntactically_and_against_reserved_segments() 
     assert!(validate_admin_path_configuration(&config).is_ok());
 }
 
-/// docs/api-dialect.md §10.6: a configured chat provider must carry its
-/// complete, well-formed identifiers; anything else fails the config save.
-#[test]
-fn chat_widget_configuration_requires_complete_well_formed_provider_ids() {
-    let paths = RuntimePaths {
-        config: PathBuf::from("/tmp/not-read-by-config-map-parser.json"),
-        frontend: PathBuf::from("/tmp/frontend"),
-        rules: PathBuf::from("/tmp/rules"),
-    };
-    let mut config =
-        AppConfig::try_from_api_config_map(Map::new(), paths).expect("development config parses");
-
-    // No provider: identifiers are irrelevant.
-    assert!(validate_chat_widget_configuration(&config).is_ok());
-    config.chat_widget_provider = Some("   ".to_string());
-    assert!(validate_chat_widget_configuration(&config).is_ok());
-
-    config.chat_widget_provider = Some("livechat".to_string());
-    let error = validate_chat_widget_configuration(&config).unwrap_err();
-    assert!(error.to_string().contains("chat_widget_provider"));
-
-    // Crisp requires a UUID-shaped website ID.
-    config.chat_widget_provider = Some("crisp".to_string());
-    assert!(validate_chat_widget_configuration(&config).is_err());
-    config.chat_widget_crisp_website_id = Some("not-a-uuid".to_string());
-    assert!(validate_chat_widget_configuration(&config).is_err());
-    config.chat_widget_crisp_website_id = Some("a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d".to_string());
-    assert!(validate_chat_widget_configuration(&config).is_ok());
-
-    // Tawk requires the 24-hex property ID plus a bounded widget ID.
-    config.chat_widget_provider = Some("Tawk".to_string());
-    assert!(validate_chat_widget_configuration(&config).is_err());
-    config.chat_widget_tawk_property_id = Some("5f0c1d2e3a4b5c6d7e8f9a0b".to_string());
-    assert!(validate_chat_widget_configuration(&config).is_err());
-    config.chat_widget_tawk_widget_id = Some("default".to_string());
-    assert!(validate_chat_widget_configuration(&config).is_ok());
-    config.chat_widget_tawk_property_id = Some("nothexnothexnothexnothex".to_string());
-    assert!(validate_chat_widget_configuration(&config).is_err());
-    config.chat_widget_tawk_property_id = Some("5f0c1d2e3a4b5c6d7e8f9a0b".to_string());
-    config.chat_widget_tawk_widget_id = Some("bad widget!".to_string());
-    assert!(validate_chat_widget_configuration(&config).is_err());
-}
-
 fn subscribe_config(subscribe_url: Option<&str>) -> AppConfig {
     let paths = RuntimePaths {
         config: PathBuf::from("/tmp/not-read-by-config-map-parser.json"),

@@ -112,14 +112,6 @@ pub struct FrontendConfigView {
     pub frontend_theme_color: String,
     #[schema(required)]
     pub frontend_background_url: Option<String>,
-    #[schema(required)]
-    pub chat_widget_provider: Option<String>,
-    #[schema(required)]
-    pub chat_widget_crisp_website_id: Option<String>,
-    #[schema(required)]
-    pub chat_widget_tawk_property_id: Option<String>,
-    #[schema(required)]
-    pub chat_widget_tawk_widget_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -298,10 +290,6 @@ config_patch_request! {
         show_subscribe_expire: i64,
         frontend_theme_color: String,
         frontend_background_url: String,
-        chat_widget_provider: String,
-        chat_widget_crisp_website_id: String,
-        chat_widget_tawk_property_id: String,
-        chat_widget_tawk_widget_id: String,
         safe_mode_enable: bool,
         admin_mfa_force: bool,
         server_api_url: String,

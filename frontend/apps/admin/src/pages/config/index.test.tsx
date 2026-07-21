@@ -70,10 +70,6 @@ function makeConfig() {
     frontend: {
       frontend_theme_color: 'default',
       frontend_background_url: 'https://example.com/bg.png',
-      chat_widget_provider: null,
-      chat_widget_crisp_website_id: null,
-      chat_widget_tawk_property_id: null,
-      chat_widget_tawk_widget_id: null,
     },
     server: {
       server_api_url: 'https://node.example.com',
